@@ -24,7 +24,7 @@ pub use schema::{
 use std::collections::HashSet;
 use std::path::Path;
 
-use crabmate_tools::workspace::path::canonical_workspace_root;
+use crabmate_types::path_utils::canonical_workspace_root;
 use numeric::default_code_extensions;
 use rebuild::{RebuildIndexParams, rebuild_index};
 

@@ -8,3 +8,4 @@ pub use crabmate_types;
 pub use crabmate_types as types;
 
 pub mod memory;
+pub(crate) mod tool_check;

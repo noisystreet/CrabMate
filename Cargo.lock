@@ -1258,7 +1258,6 @@ dependencies = [
  "crabmate-config",
  "crabmate-llm",
  "crabmate-sse-protocol",
- "crabmate-tools",
  "crabmate-types",
  "fastembed",
  "futures-util",
@@ -1386,6 +1385,7 @@ dependencies = [
  "crabmate-display-rules",
  "serde",
  "serde_json",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
