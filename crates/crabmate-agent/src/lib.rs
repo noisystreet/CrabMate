@@ -6,6 +6,8 @@
 
 pub mod acceptance;
 pub mod agent_turn;
+/// 单轮 `TurnBudgetCounter` 与 `message_pipeline` / 上下文摘要的联动策略。
+pub mod context_budget_pressure;
 pub mod evolution;
 pub mod intent_l0;
 pub mod intent_pipeline;
@@ -14,12 +16,14 @@ mod log_preview;
 pub mod message_pipeline;
 pub mod per_coord;
 pub mod plan_artifact;
+pub mod plan_ensemble;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在根包 `per_plan_semantic_check`）。
 pub mod plan_rewrite;
 /// PER 侧向语义校验结果类型（侧向 LLM 调用本身仍在根包）。
 pub mod plan_semantic;
 pub mod step_executor_policy;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
+pub mod step_verifier;
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
 pub mod turn_budget;

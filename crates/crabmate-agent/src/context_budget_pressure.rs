@@ -1,10 +1,10 @@
-//! 单轮 [`TurnBudgetCounter`] 与 [`crate::agent::message_pipeline`] / 上下文摘要的联动策略。
+//! 单轮 [`TurnBudgetCounter`] 与 [`crate::message_pipeline`] / 上下文摘要的联动策略。
 //!
-//! 主 Agent 外循环与分层 Operator ReAct 共用本模块，避免「预算将尽仍按默认 char 预算裁剪」的分叉。
+//! 主 Agent 外循环与 Operator ReAct 共用本模块，避免「预算将尽仍按默认 char 预算裁剪」的分叉。
 
 use crabmate_config::AgentConfig;
 
-use crate::agent::turn_budget::TurnBudgetCounter;
+use crate::turn_budget::TurnBudgetCounter;
 
 /// 预算压力下的上下文裁剪/摘要调节（百分制，`100` 表示不调节）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -78,7 +78,7 @@ pub fn scale_message_pipeline_char_budget(base: usize, scale_percent: u8) -> usi
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::turn_budget::TurnBudgetCounter;
+    use crate::turn_budget::TurnBudgetCounter;
 
     #[test]
     fn no_pressure_without_turn_budget() {

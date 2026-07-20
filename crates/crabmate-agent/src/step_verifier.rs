@@ -4,22 +4,14 @@
 //! 可选 **`step_episode_start_index`**：同一步下标在补丁重试 / 新分步注入后，回退扫描自**首次**分步注入至下一条真实 user 的全部 `role: tool`。
 //! 空规范直接 **Pass**；仅 **`expect_file_exists`** 时查工作区、**不要求**本步 `role: tool`；其余规则在本步窗口内**自后向前**逐条 `role: tool` 尝试，**任一**满足即 **Pass**。
 //!
-//! 核心判定逻辑见 [`crate::agent::acceptance`]。
-//!
-//! 支持的验证规则：
-//! - `expect_exit_code`：退出码验证（如 `cargo test` → 0）
-//! - `expect_stdout_contains`：stdout 是否包含指定字符串
-//! - `expect_stderr_contains`：stderr 是否包含指定字符串
-//! - `expect_file_exists`：文件是否存在
-//! - `expect_json_path_equals`：JSON path 验证
-//! - `expect_http_status`：HTTP 状态码验证（仅对 http_request/fetch 类工具）
+//! 核心判定逻辑见 [`crate::acceptance`]。
 
-use crate::agent::acceptance::{
+use crate::acceptance::{
     AcceptanceEvidence, AcceptanceSpec, VerifyOutcome, verify_plan_step_acceptance_for_tool_message,
 };
-use crate::agent::plan_artifact::PlanStepAcceptance;
-use crate::tool_result::ToolError;
-use crate::types::{
+use crate::plan_artifact::PlanStepAcceptance;
+use crabmate_tools::tool_result::ToolError;
+use crabmate_types::{
     Message, tool_messages_in_staged_step_episode, tool_messages_in_staged_step_window,
 };
 
@@ -99,7 +91,7 @@ pub fn verify_step_execution_with_episode(
             file_resolve: spec.file_resolve,
             combined_text_override: None,
         };
-        return crate::agent::acceptance::verify_against_spec(&spec, &ev);
+        return crate::acceptance::verify_against_spec(&spec, &ev);
     }
 
     let primary = tool_messages_in_staged_step_window(messages, step_user_index);
@@ -139,7 +131,7 @@ pub fn verify_step_execution_with_episode(
 }
 
 /// 对单个步骤的工具执行结果进行验证（供测试与内部复用）。
-#[allow(dead_code)] // 生产路径经 `verify_plan_step_acceptance_for_tool_message`；单测仍直接调用
+#[allow(dead_code)]
 pub(crate) fn verify_tool_execution_inner(
     acceptance: &PlanStepAcceptance,
     tool_name: &str,
@@ -161,13 +153,13 @@ pub(crate) fn verify_tool_execution_inner(
         file_resolve: spec.file_resolve,
         combined_text_override: None,
     };
-    crate::agent::acceptance::verify_against_spec(&spec, &ev)
+    crate::acceptance::verify_against_spec(&spec, &ev)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::plan_artifact::JsonPathEqualsRule;
+    use crate::plan_artifact::JsonPathEqualsRule;
 
     #[test]
     fn test_exit_code_pass() {
@@ -182,9 +174,9 @@ mod tests {
 
         let fake_error = ToolError {
             code: "0".to_string(),
-            category: crate::tool_result::ToolFailureCategory::External,
+            category: crabmate_tools::tool_result::ToolFailureCategory::External,
             message: "ok".to_string(),
-            legacy_parsed: crate::tool_result::ParsedLegacyOutput {
+            legacy_parsed: crabmate_tools::tool_result::ParsedLegacyOutput {
                 ok: true,
                 exit_code: Some(0),
                 stdout: String::new(),
@@ -220,9 +212,9 @@ mod tests {
 
         let fake_error = ToolError {
             code: "1".to_string(),
-            category: crate::tool_result::ToolFailureCategory::External,
+            category: crabmate_tools::tool_result::ToolFailureCategory::External,
             message: "failed".to_string(),
-            legacy_parsed: crate::tool_result::ParsedLegacyOutput {
+            legacy_parsed: crabmate_tools::tool_result::ParsedLegacyOutput {
                 ok: false,
                 exit_code: Some(1),
                 stdout: String::new(),
@@ -262,9 +254,9 @@ mod tests {
         let result = verify_tool_execution_inner(
             &acceptance,
             "cargo_test",
-            "",               // tool_output
-            "2 tests passed", // stdout
-            "",               // stderr
+            "",
+            "2 tests passed",
+            "",
             None,
             std::path::Path::new("/tmp"),
         );
@@ -454,9 +446,9 @@ mod tests {
 
         let fake_error = ToolError {
             code: "0".to_string(),
-            category: crate::tool_result::ToolFailureCategory::External,
+            category: crabmate_tools::tool_result::ToolFailureCategory::External,
             message: "ok".to_string(),
-            legacy_parsed: crate::tool_result::ParsedLegacyOutput {
+            legacy_parsed: crabmate_tools::tool_result::ParsedLegacyOutput {
                 ok: true,
                 exit_code: Some(0),
                 stdout: "all tests passed".to_string(),
@@ -504,11 +496,10 @@ mod tests {
         assert!(result.is_pass());
     }
 
-    /// 分阶段：步窗口内自后向前聚合 tool；前序 build 成功、末条 probe 失败时仍 Pass。
     #[test]
     fn verify_step_passes_when_earlier_tool_satisfies_acceptance_not_last_probe() {
-        use crate::types::Message;
-        use crate::types::MessageContent;
+        use crabmate_types::Message;
+        use crabmate_types::MessageContent;
 
         let t_step = |exit: i32, stdout: &str| {
             let body = if stdout.is_empty() {
@@ -543,11 +534,10 @@ mod tests {
         assert!(r.is_pass());
     }
 
-    /// 分阶段：验收只读「本步 / 自 step_user 至下一 user 之间」的 tool 窗口；若误用**全局**最后一条，会在后续 `user` 之后仍错判为最后 tool。
     #[test]
     fn verify_step_uses_last_tool_in_step_window_not_last_tool_globally() {
-        use crate::types::Message;
-        use crate::types::MessageContent;
+        use crabmate_types::Message;
+        use crabmate_types::MessageContent;
 
         let t_step = |exit: i32, stdout: &str| {
             let body = if stdout.is_empty() {
@@ -569,9 +559,9 @@ mod tests {
         let messages = vec![
             Message::user_only("### 分步 1/1"),
             t_step(0, "alpha"),
-            t_step(1, "beta-expected"), // 本步最后 tool
+            t_step(1, "beta-expected"),
             Message::user_only("next block"),
-            t_step(0, "gamma-wrong"), // 全局 last tool；不得用于本步
+            t_step(0, "gamma-wrong"),
         ];
         let acceptance = PlanStepAcceptance {
             expect_exit_code: Some(1),
@@ -646,11 +636,10 @@ mod tests {
         }
     }
 
-    /// 补丁重试：新分步注入后当前窗口无 tool，episode 内先前 ctest/hello 仍满足 `expect_exit_code: 0`。
     #[test]
     fn verify_step_episode_fallback_after_patch_reinjection() {
-        use crate::types::Message;
-        use crate::types::MessageContent;
+        use crabmate_types::Message;
+        use crabmate_types::MessageContent;
 
         let t_ok = Message {
             role: "tool".to_string(),
