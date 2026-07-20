@@ -3,7 +3,7 @@
 //! 部分独立工具模块已提取到 `crabmate-runtime` crate，在此重导出。
 
 pub mod benchmark;
-pub mod chat_export;
+pub use crabmate_runtime::chat_export;
 pub mod cli;
 pub mod cli_doctor;
 pub mod cli_exit;
@@ -14,9 +14,8 @@ pub use crabmate_runtime::cli_wait_spinner;
 pub mod cli_workflow;
 pub(crate) mod config_reload;
 pub use crabmate_runtime::latex_unicode;
-pub(crate) mod message_display;
-pub(crate) mod message_display_parts;
-pub(crate) mod message_snapshot_display;
+pub(crate) use crabmate_runtime::message_display;
+pub(crate) use crabmate_runtime::message_snapshot_display;
 pub use crabmate_runtime::plan_section;
 #[cfg(feature = "repl")]
 pub(crate) mod repl_reedline;

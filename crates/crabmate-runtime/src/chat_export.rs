@@ -2,7 +2,7 @@
 //! 供 `runtime/workspace_session` 使用；Web 前端 `frontend/src/session_export.rs` 应对齐
 //! `CHAT_EXPORT_SCHEMA_*`、`CHAT_SESSION_FILE_VERSION` 与字段含义。
 
-use crate::types::Message;
+use crabmate_types::Message;
 use serde::{Deserialize, Serialize};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -119,9 +119,9 @@ fn messages_to_markdown(messages: &[Message]) -> String {
         md.push_str(heading);
         md.push_str("\n\n");
         let body = if m.role == "assistant" {
-            crate::runtime::message_display::assistant_raw_markdown_body_for_message(m)
+            crate::message_display::assistant_raw_markdown_body_for_message(m)
         } else {
-            crate::types::message_content_as_str(&m.content)
+            crabmate_types::message_content_as_str(&m.content)
                 .unwrap_or("")
                 .to_string()
         };

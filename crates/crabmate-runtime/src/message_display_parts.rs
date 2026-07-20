@@ -1,8 +1,8 @@
 //! `message_display` 中 JSON 工具信封（`NormalizedToolEnvelope`）的展示辅助。
 
-use crate::tool_result::NormalizedToolEnvelope;
+use crabmate_tools::tool_result::NormalizedToolEnvelope;
 
-pub(crate) const TOOL_OUTPUT_SECTION_HEADLINE: &str = "### 执行输出";
+pub const TOOL_OUTPUT_SECTION_HEADLINE: &str = "### 执行输出";
 
 fn normalized_tool_output_trunc_note(env: &NormalizedToolEnvelope) -> Option<String> {
     if !env.output_truncated {
@@ -93,7 +93,7 @@ fn tool_display_normalized_envelope_summary_only(
     }
 }
 
-pub(crate) fn tool_display_from_normalized_envelope(
+pub fn tool_display_from_normalized_envelope(
     v: &serde_json::Value,
     t: &str,
     env: &NormalizedToolEnvelope,

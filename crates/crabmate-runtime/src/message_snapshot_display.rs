@@ -2,12 +2,12 @@
 
 use serde::Serialize;
 
-use crate::runtime::message_display::{
+use crate::message_display::{
     assistant_markdown_source_for_message, user_message_for_chat_display,
 };
-use crate::tool_result::normalize_tool_message_content;
-use crate::types::{Message, message_content_as_str};
 use crabmate_tool_card::{NormalizedToolSnapshotFields, ToolCardLocale, tool_stored_text};
+use crabmate_tools::tool_result::normalize_tool_message_content;
+use crabmate_types::{Message, message_content_as_str};
 
 /// 客户端快照单条消息：`Message` 字段 + 可选展示层正文。
 #[derive(Debug, Clone, Serialize)]
@@ -21,7 +21,7 @@ pub struct WebClientSnapshotMessage {
 }
 
 /// 过滤后的会话消息转为带 `display_*` 的快照行（与 Web SSE/水合 [`tool_stored_text`] 同源）。
-pub(crate) fn web_client_snapshot_messages(
+pub fn web_client_snapshot_messages(
     messages: &[Message],
     locale: ToolCardLocale,
 ) -> Vec<WebClientSnapshotMessage> {
@@ -74,7 +74,7 @@ pub(crate) fn web_client_snapshot_messages(
 }
 
 /// 默认 zh-Hans 快照（与 Web 默认语言一致）。
-pub(crate) fn web_client_snapshot_messages_default_zh(
+pub fn web_client_snapshot_messages_default_zh(
     messages: &[Message],
 ) -> Vec<WebClientSnapshotMessage> {
     web_client_snapshot_messages(messages, ToolCardLocale::ZhHans)
