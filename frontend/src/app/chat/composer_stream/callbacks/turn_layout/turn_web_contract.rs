@@ -333,4 +333,59 @@ mod tests {
         assert!(batch_idx < tool_idx);
         assert_eq!(messages[batch_idx].text, "好的，我来看看当前工作区的情况。");
     }
+
+    /// 零工具轮次：流式 delta 累积 → repartition → sync_web_projection → FINAL_ANSWER_ROW。
+    /// 验证终答完整无重复，且不产生 batch 或 tool 行。
+    #[test]
+    fn zero_tool_answer_bubble_layout() {
+        let mut turn = TurnCanonicalState::new();
+        let full_answer = "我具备以下技能，按类别整理如下：\n\n---\n\n### 📁 文件与目录操作\n- `read_file`、`create_file`\n\n---\n\n需要我帮你做什么？可以直接说任务。";
+        // 模拟流式逐 chunk 累积 final_answer
+        let chars: Vec<char> = full_answer.chars().collect();
+        let third = chars.len() / 3;
+        for chunk in [
+            &chars[..third],
+            &chars[third..2 * third],
+            &chars[2 * third..],
+        ] {
+            let delta: String = chunk.iter().collect();
+            assert!(turn.try_apply_answer_delta(delta.as_str()));
+        }
+        turn.repartition_web_block_layout_stream();
+
+        let mut messages = tool_messages_from_projection(&turn);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+
+        // 不应有 tool 行
+        assert!(
+            !messages.iter().any(|m| m.is_tool),
+            "zero-tool turn must not produce tool rows"
+        );
+        // 不应有 batch 行
+        assert!(
+            !messages.iter().any(|m| m.id == BATCH_NARRATION_ROW_ID),
+            "zero-tool turn must not produce batch row"
+        );
+        // 必须有 FINAL_ANSWER_ROW 且内容完整
+        let final_idx = messages
+            .iter()
+            .position(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("zero-tool turn must produce FINAL_ANSWER_ROW");
+        let text = &messages[final_idx].text;
+        assert!(
+            text.contains("文件与目录操作"),
+            "FINAL_ANSWER_ROW must contain core content"
+        );
+        assert!(
+            text.contains("需要我帮你做什么？"),
+            "FINAL_ANSWER_ROW must contain closing sentence"
+        );
+        // 验证无加倍：长度不超过原文 1.1 倍
+        assert!(
+            text.len() <= (full_answer.len() as f64 * 1.1) as usize + 5,
+            "FINAL_ANSWER_ROW must not be doubled: len={}, expected≤{}",
+            text.len(),
+            (full_answer.len() as f64 * 1.1) as usize
+        );
+    }
 }
