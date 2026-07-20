@@ -18,6 +18,23 @@ pub(super) struct TurnCanonicalState {
     new_round_answer_state: NewRoundAnswerState,
 }
 
+/// `try_ingest_final_response_text` 的写入结果（阶段 2 起 canonical 不再被该路径写入）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum IngestFinalResponseOutcome {
+    /// 未消费（空文本 / `tool_phase_open`）。
+    NotConsumed,
+    /// 消费但不写入 overlay（旧轮晚到 / 已有流式正文不替换）。
+    Consumed,
+    /// 消费并把文本写入 overlay（replace if empty）。
+    WriteToOverlay(String),
+}
+
+impl IngestFinalResponseOutcome {
+    pub(super) fn consumed(&self) -> bool {
+        !matches!(self, Self::NotConsumed)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum NewRoundAnswerState {
     Stable,
@@ -270,37 +287,40 @@ impl TurnCanonicalState {
         true
     }
 
-    /// `final_response` 时间线：写入 canonical 终答（不新增 assistant 行）；已 fuzzy 等价则 no-op。
-    pub(super) fn try_ingest_final_response_text(&mut self, text: &str) -> bool {
+    /// `final_response` 时间线：把要写入的终答交给调用方写 overlay（阶段 2 起 canonical 不再被该路径写入）。
+    ///
+    /// `current_overlay_answer`：当前 loading 尾泡的 overlay 终答（用于"已有流式正文不替换"判断）。
+    pub(super) fn try_ingest_final_response_text(
+        &mut self,
+        text: &str,
+        current_overlay_answer: Option<&str>,
+    ) -> IngestFinalResponseOutcome {
         if text.trim().is_empty() || self.turn.tool_phase_open {
-            return false;
+            return IngestFinalResponseOutcome::NotConsumed;
         }
+        let overlay_has_content = current_overlay_answer
+            .map(str::trim)
+            .is_some_and(|t| !t.is_empty());
         // 新轮次刚开始时，`final_response` 可能是上一轮晚到的终答总结。
         // 只有确认新轮次文本已被路由到 commentary，且内容匹配时，才补写终答。
         match self.new_round_answer_state {
             NewRoundAnswerState::AwaitingFirstDelta => {
-                return true;
+                return IngestFinalResponseOutcome::Consumed;
             }
             NewRoundAnswerState::CommentaryDeltaSeen => {
-                if self.turn.final_answer.is_none() && self.commentary_matches_final_response(text)
-                {
+                if !overlay_has_content && self.commentary_matches_final_response(text) {
                     self.new_round_answer_state = NewRoundAnswerState::Stable;
-                    self.apply(TurnEvent::AnswerDelta {
-                        delta: text.to_string(),
-                    });
+                    return IngestFinalResponseOutcome::WriteToOverlay(text.to_string());
                 }
-                return true;
+                return IngestFinalResponseOutcome::Consumed;
             }
             NewRoundAnswerState::Stable => {}
         }
-        if self.turn.final_answer.is_some() {
+        if overlay_has_content {
             // 已有流式正文，不再用 final_response 替换——保留流式阶段的真实文本
-            return true;
+            return IngestFinalResponseOutcome::Consumed;
         }
-        self.apply(TurnEvent::AnswerDelta {
-            delta: text.to_string(),
-        });
-        true
+        IngestFinalResponseOutcome::WriteToOverlay(text.to_string())
     }
 
     /// 块布局批说明字符数（形态 B 短终答门控）。
@@ -516,11 +536,13 @@ mod tests {
     fn ingest_final_response_extends_shorter_stream_with_timeline_detail() {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_answer_delta("当前目录下有三个压缩包。"));
-        assert!(turn.try_ingest_final_response_text("当前目录下有三个压缩包：\n\n1. **A** — x"));
-        // final_response 不再替换已有流式正文
+        // 阶段 2：已有流式正文 → Consumed，不写 overlay
         assert_eq!(
-            turn.turn_ref().final_answer.as_deref(),
-            Some("当前目录下有三个压缩包。")
+            turn.try_ingest_final_response_text(
+                "当前目录下有三个压缩包：\n\n1. **A** — x",
+                Some("当前目录下有三个压缩包。")
+            ),
+            IngestFinalResponseOutcome::Consumed
         );
     }
 
@@ -528,9 +550,11 @@ mod tests {
     fn ingest_final_response_keeps_stream_text_when_already_streamed() {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_answer_delta("短。"));
-        assert!(turn.try_ingest_final_response_text("短。完整终答段落。"));
-        // final_response 不再替换已有流式正文
-        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("短。"));
+        // 阶段 2：已有流式正文 → Consumed，不写 overlay
+        assert_eq!(
+            turn.try_ingest_final_response_text("短。完整终答段落。", Some("短。")),
+            IngestFinalResponseOutcome::Consumed
+        );
     }
 
     #[test]
@@ -542,7 +566,10 @@ mod tests {
         turn.reset_final_answer_for_new_round();
         assert!(turn.turn_ref().final_answer.is_none());
         // 上一轮 final_response 在 reset 之后、新 delta 之前晚到 → 消费但不写入。
-        assert!(turn.try_ingest_final_response_text("旧轮正文。"));
+        assert_eq!(
+            turn.try_ingest_final_response_text("旧轮正文。", None),
+            IngestFinalResponseOutcome::Consumed
+        );
         assert!(turn.turn_ref().final_answer.is_none());
         // 新轮次 delta 到达 → 只写入新轮正文，不拼接旧轮文本。
         assert!(turn.try_apply_answer_delta("新轮正文。"));
@@ -557,9 +584,11 @@ mod tests {
         // 新轮次 delta 先到达 → 写入 final_answer，清除 awaiting
         assert!(turn.try_apply_answer_delta("流式正文。"));
         assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("流式正文。"));
-        // final_response 后到达 → 已有流式正文，不替换
-        assert!(turn.try_ingest_final_response_text("旧轮总结。"));
-        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("流式正文。"));
+        // 阶段 2：overlay 已有流式正文 → Consumed，不替换
+        assert_eq!(
+            turn.try_ingest_final_response_text("旧轮总结。", Some("流式正文。")),
+            IngestFinalResponseOutcome::Consumed
+        );
     }
 
     #[test]
@@ -572,15 +601,15 @@ mod tests {
         let _ =
             turn.try_apply_commentary_delta("已创建 `README.md`，包含构建步骤、选项说明和示例。");
         assert!(turn.turn_ref().final_answer.is_none());
-        // final_response 到达 → 应写入 final_answer（因为 deltas 去了 commentary）
-        assert!(
-            turn.try_ingest_final_response_text(
-                "已创建 `README.md`，包含构建步骤、选项说明和示例。"
-            )
-        );
+        // 阶段 2：overlay 为空 + commentary 匹配 → WriteToOverlay（调用方写 overlay）
         assert_eq!(
-            turn.turn_ref().final_answer.as_deref(),
-            Some("已创建 `README.md`，包含构建步骤、选项说明和示例。")
+            turn.try_ingest_final_response_text(
+                "已创建 `README.md`，包含构建步骤、选项说明和示例。",
+                None
+            ),
+            IngestFinalResponseOutcome::WriteToOverlay(
+                "已创建 `README.md`，包含构建步骤、选项说明和示例。".to_string()
+            )
         );
     }
 
@@ -590,21 +619,26 @@ mod tests {
         turn.reset_final_answer_for_new_round();
         let _ = turn.try_apply_commentary_delta("新轮 commentary。");
 
-        assert!(turn.try_ingest_final_response_text("旧轮终答。"));
-        assert!(turn.turn_ref().final_answer.is_none());
-
-        assert!(turn.try_ingest_final_response_text("新轮 commentary。"));
+        // 旧轮晚到的 final_response 不匹配 → Consumed，不写
         assert_eq!(
-            turn.turn_ref().final_answer.as_deref(),
-            Some("新轮 commentary。")
+            turn.try_ingest_final_response_text("旧轮终答。", None),
+            IngestFinalResponseOutcome::Consumed
+        );
+
+        // 匹配 commentary → WriteToOverlay
+        assert_eq!(
+            turn.try_ingest_final_response_text("新轮 commentary。", None),
+            IngestFinalResponseOutcome::WriteToOverlay("新轮 commentary。".to_string())
         );
     }
 
     #[test]
     fn final_response_before_rotation_is_written_normally() {
         let mut turn = TurnCanonicalState::new();
-        // 首轮（无 rotation）：final_response 到达时 final_answer 为空
-        assert!(turn.try_ingest_final_response_text("终答文本。"));
-        assert_eq!(turn.turn_ref().final_answer.as_deref(), Some("终答文本。"));
+        // 首轮（无 rotation）：overlay 为空 → WriteToOverlay
+        assert_eq!(
+            turn.try_ingest_final_response_text("终答文本。", None),
+            IngestFinalResponseOutcome::WriteToOverlay("终答文本。".to_string())
+        );
     }
 }

@@ -2,19 +2,25 @@
 
 use std::rc::Rc;
 
+use leptos::prelude::GetUntracked;
+
 use crate::app::turn_lifecycle::TurnLifecycleEvent;
 use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
+use crate::stream_text_overlay::{
+    stream_overlay_answer_for_message, stream_overlay_replace_answer_for_message,
+};
 use crate::timeline_scan::{
     timeline_state_intent_analysis_snapshot, timeline_state_local_snapshot,
 };
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
+use super::super::super::turn_canonical::IngestFinalResponseOutcome;
 use super::super::helpers::*;
 use super::super::turn_layout::TurnLayout;
 
-/// 收敛写入：`final_response` 只更新 canonical 并投影到现有 loading 尾泡，**不** push 新 assistant 行。
+/// 收敛写入：`final_response` 阶段 2 起写入 overlay（不再写 canonical），并投影到现有 loading 尾泡，**不** push 新 assistant 行。
 fn timeline_log_dispatch_final_response(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
@@ -31,15 +37,32 @@ fn timeline_log_dispatch_final_response(
     if !final_text.is_empty() {
         let already_visible = assistant_message_has_visible_text(stream_ctx, &final_text)
             || streaming_assistant_tail_has_text(stream_ctx, &final_text);
-        if !already_visible
-            && stream_ctx
+        if !already_visible {
+            let mid = stream_ctx.scratch.clone_assistant_id();
+            let sid = stream_ctx.bound_stream_session_id.clone();
+            let current_overlay = stream_overlay_answer_for_message(
+                stream_ctx.chat.stream_text_overlay.get_untracked().as_ref(),
+                sid.as_str(),
+                mid.as_str(),
+            );
+            let outcome = stream_ctx
                 .scratch
-                .try_ingest_final_response_text(final_text.as_str())
-        {
-            stream_ctx.scratch.open_post_tool_final_answer_gate();
-            stream_ctx.scratch.sync_turn_projection(stream_ctx);
-            stream_ctx.scratch.sync_stream_preview(stream_ctx);
-            accum.add_answer_delta_chars(final_text.chars().count());
+                .try_ingest_final_response_text(final_text.as_str(), current_overlay.as_deref());
+            if let IngestFinalResponseOutcome::WriteToOverlay(ref text) = outcome {
+                stream_overlay_replace_answer_for_message(
+                    stream_ctx.chat.stream_text_overlay,
+                    sid.as_str(),
+                    mid.as_str(),
+                    text.as_str(),
+                    Some(stream_ctx.chat.stream_overlay_revision),
+                );
+            }
+            if outcome.consumed() {
+                stream_ctx.scratch.open_post_tool_final_answer_gate();
+                stream_ctx.scratch.sync_turn_projection(stream_ctx);
+                stream_ctx.scratch.sync_stream_preview(stream_ctx);
+                accum.add_answer_delta_chars(final_text.chars().count());
+            }
         }
         if !TurnLayout::should_defer_finalize_on_final_response(stream_ctx) {
             TurnLayout::finalize_loading_segment(stream_ctx);
