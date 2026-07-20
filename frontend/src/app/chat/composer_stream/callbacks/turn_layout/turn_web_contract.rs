@@ -137,7 +137,7 @@ mod tests {
             );
 
             let mut messages = tool_messages_from_projection(&turn);
-            BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+            BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
 
             let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref())
                 .expect("case must define batch row when tools exist");
@@ -199,7 +199,7 @@ mod tests {
 
         let mut messages = tool_messages_from_projection(&turn);
         let queue = BubbleOutputQueue;
-        queue.sync_web_projection(&mut messages, &turn, None);
+        queue.sync_web_projection(&mut messages, &turn, None, None);
 
         let batch_idx = batch_row_index(&messages).expect("batch row");
         let final_idx = messages
@@ -249,7 +249,7 @@ mod tests {
 
         let mut messages = tool_messages_from_projection(&turn);
         let queue = BubbleOutputQueue;
-        queue.sync_web_projection(&mut messages, &turn, None);
+        queue.sync_web_projection(&mut messages, &turn, None, None);
 
         let batch_idx = batch_row_index(&messages).expect("batch row");
         let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
@@ -282,7 +282,7 @@ mod tests {
         assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
 
         let batch_idx = batch_row_index(&messages).expect("batch row");
         let final_idx = messages
@@ -326,7 +326,7 @@ mod tests {
         assert!(turn.try_apply_answer_delta("当前工作区是一个空目录。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
 
         let batch_idx = batch_row_index(&messages).expect("batch");
         let tool_idx = messages.iter().position(|m| m.is_tool).expect("tool");
@@ -354,7 +354,7 @@ mod tests {
         turn.repartition_web_block_layout_stream();
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
 
         // 不应有 tool 行
         assert!(

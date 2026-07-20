@@ -670,11 +670,19 @@ impl TurnLayout {
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let pin_active = stream_ctx.scratch.post_tool_stream_tail_active();
+        // 阶段 1：闭包外取出 overlay answer，让 `flush_final_answer_row` 双路读取。
+        let overlay_answer = overlay_answer_for_loading_tail(stream_ctx, mid.as_str());
+        let overlay_answer_str = overlay_answer.as_deref();
         stream_ctx.update_bound_session(|s| {
             if pin_active {
                 pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
             }
-            queue.sync_web_projection(&mut s.messages, turn, Some(mid.as_str()));
+            queue.sync_web_projection(
+                &mut s.messages,
+                turn,
+                Some(mid.as_str()),
+                overlay_answer_str,
+            );
         });
         let clear_overlay = stream_ctx
             .read_bound_session(|s| should_clear_preview_overlay_answer(turn, &s.messages))
