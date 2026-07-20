@@ -12,7 +12,12 @@ pub mod intent_pipeline;
 pub mod intent_router;
 mod log_preview;
 pub mod message_pipeline;
+pub mod per_coord;
 pub mod plan_artifact;
+/// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在根包 `per_plan_semantic_check`）。
+pub mod plan_rewrite;
+/// PER 侧向语义校验结果类型（侧向 LLM 调用本身仍在根包）。
+pub mod plan_semantic;
 pub mod step_executor_policy;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
 pub mod text_sanitize;
@@ -21,6 +26,9 @@ pub mod turn_budget;
 pub mod turn_tool_policy;
 pub mod workflow_reflection_controller;
 pub mod workspace_snapshot;
+
+pub use plan_rewrite::PlanRewriteExhaustedReason;
+pub use plan_semantic::PlanSemanticLlmOutcome;
 
 #[cfg(test)]
 mod acceptance_regression_golden;

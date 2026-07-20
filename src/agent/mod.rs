@@ -13,7 +13,8 @@ pub use crabmate_agent::intent_pipeline;
 mod intent_regression_golden;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crabmate_agent::message_pipeline;
-pub mod per_coord;
+/// 规划–执行–反思（PER）协调、终答规划门控与重写（移入 `crabmate-agent` crate）。
+pub use crabmate_agent::per_coord;
 mod per_plan_semantic_check;
 mod plan_ensemble;
 mod plan_optimizer;

@@ -1,11 +1,11 @@
 //! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、**分阶段补丁规划累计轮次**（与前者独立）、`after_final_assistant` 分支）。
 //! 可变回合侧字段按职责拆入 **[`per_turn_state`]**（计数 / `workflow_validate` 层缓存 / 工具失败短路表），减少顶层「一锅烩」。
-//! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`super::reflection::plan_rewrite`]；侧向 **LLM** 调用在 [`super::per_plan_semantic_check`]。
+//! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`crate::plan_rewrite`]；侧向 **LLM** 调用仍在根包 `crabmate::agent::per_plan_semantic_check`。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
 //!
 //! 终答规划门控（`after_final_assistant` 决策树）见 [`final_plan_gate`]。
 
-pub(crate) mod final_plan_gate;
+pub mod final_plan_gate;
 mod final_plan_gate_context;
 mod final_plan_gate_reason;
 mod per_turn_state;
@@ -13,12 +13,12 @@ mod per_turn_state;
 /// 何时要求模型在**最终** assistant 正文中嵌入可解析的 `agent_reply_plan` v1（见 `plan_artifact`）。
 pub use crabmate_config::FinalPlanRequirementMode;
 
-use crate::config::AgentConfig;
-use crate::types::Message;
+use crabmate_config::AgentConfig;
+use crabmate_types::Message;
 
-use super::plan_artifact;
-use super::reflection::plan_rewrite;
-use super::workflow_reflection_controller::{self, WorkflowReflectionController};
+use crate::plan_artifact;
+use crate::plan_rewrite;
+use crate::workflow_reflection_controller::{self, WorkflowReflectionController};
 use serde_json::Value;
 
 pub use plan_rewrite::PlanRewriteExhaustedReason;
