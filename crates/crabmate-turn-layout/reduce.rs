@@ -313,8 +313,30 @@ fn looks_like_blockquote_attribution(text: &str) -> bool {
 
 fn apply_repartition_split(turn: &mut Turn, batch_text: String, final_text: String) {
     clear_batch_commentary_from_turn(turn);
-    attach_batch_text_to_turn(turn, &batch_text);
-    turn.final_answer = Some(final_text);
+    let attached = attach_batch_text_to_turn(turn, &batch_text);
+    if !attached && !batch_text.trim().is_empty() {
+        // 零工具轮次（无 tool step 可附着）：batch 段合并回 final_answer，
+        // 避免 `flush_final_answer_row` 因 `batch_projection_pending` 跳过。
+        turn.final_answer = Some(merge_batch_and_final(&batch_text, &final_text));
+    } else {
+        turn.final_answer = Some(final_text);
+    }
+}
+
+/// 将批说明文本附着到首个 tool step（若存在）。
+/// 返回 `true` 表示成功附着到 tool step；`false` 表示无 tool step（零工具场景），
+/// 调用方应将 batch 文本合并回 `final_answer`。
+fn attach_batch_text_to_turn(turn: &mut Turn, text: &str) -> bool {
+    if text.trim().is_empty() {
+        return false;
+    }
+    if let Some(first_id) = turn.steps.first().map(|s| s.tool_call_id.clone()) {
+        attach_closed_commentary_to_step(turn, first_id.as_str(), text.to_string());
+        return true;
+    }
+    // 零工具场景：不推入 segment（否则 `batch_narration_text` 会找到，导致
+    // `batch_projection_pending_in_messages` 阻塞 `flush_final_answer_row`）。
+    false
 }
 
 fn try_repartition_combined_text(combined: &str) -> Option<(String, String)> {
@@ -337,23 +359,6 @@ fn clear_batch_commentary_from_turn(turn: &mut Turn) {
         !(s.kind == SegmentKind::Commentary
             && (s.before_tool_call_id.is_some()
                 || s.segment_id == PENDING_STREAM_COMMENTARY_SEGMENT_ID))
-    });
-}
-
-fn attach_batch_text_to_turn(turn: &mut Turn, text: &str) {
-    if text.trim().is_empty() {
-        return;
-    }
-    if let Some(first_id) = turn.steps.first().map(|s| s.tool_call_id.clone()) {
-        attach_closed_commentary_to_step(turn, first_id.as_str(), text.to_string());
-        return;
-    }
-    turn.segments.push(TurnSegment {
-        segment_id: PENDING_STREAM_COMMENTARY_SEGMENT_ID.to_string(),
-        kind: SegmentKind::Commentary,
-        before_tool_call_id: None,
-        text: text.to_string(),
-        open: false,
     });
 }
 
@@ -798,5 +803,55 @@ mod tests {
                 .iter()
                 .any(|s| s.segment_id == "seg-before-b" && s.open)
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // `repartition_web_block_layout_stream`：零工具场景不损坏 final_answer
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn repartition_zero_tool_keeps_final_answer_unchanged() {
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        r.apply(
+            &mut turn,
+            TurnEvent::AnswerDelta {
+                delta: "我具备以下技能，按类别整理如下：\n\n---\n\n### 📁 文件与目录操作\n- **读写文件**：`read_file`、`create_file`\n\n---\n\n需要我帮你做什么？可以直接说任务。".into(),
+            },
+        );
+        repartition_web_block_layout_stream(&mut turn);
+        let after = turn.final_answer.as_deref().unwrap_or("");
+        assert!(!after.is_empty(), "零工具轮次 final_answer 不应被清空");
+        assert!(after.contains("文件与目录操作"), "终答应保留核心内容");
+        assert!(after.contains("需要我帮你做什么？"), "终答应保留结尾");
+    }
+
+    #[test]
+    fn repartition_zero_tool_answer_not_doubled_from_streaming() {
+        // 模拟流式期间累积的 final_answer（无工具轮次，无 batch commentary）
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        let answer = "我具备以下技能，按类别整理如下：\n\n---\n\n### 📁 文件与目录操作\n- **读写文件**：`read_file`、`create_file`\n\n---\n\n需要我帮你做什么？可以直接说任务。";
+        // 按字符位置模拟流式逐 delta 累积
+        let chars: Vec<char> = answer.chars().collect();
+        let third = chars.len() / 3;
+        for chunk in [
+            &chars[..third],
+            &chars[third..2 * third],
+            &chars[2 * third..],
+        ] {
+            let delta: String = chunk.iter().collect();
+            r.apply(&mut turn, TurnEvent::AnswerDelta { delta });
+        }
+        repartition_web_block_layout_stream(&mut turn);
+        let after = turn.final_answer.as_deref().unwrap_or("");
+        // 验证总长度不超过原文 1.1 倍（无加倍）
+        assert!(
+            after.len() <= (answer.len() as f64 * 1.1) as usize + 5,
+            "final_answer 不应加倍: len={}, expected≤{}",
+            after.len(),
+            (answer.len() as f64 * 1.1) as usize
+        );
+        assert!(after.contains("文件与目录操作"), "终答应保留核心内容");
     }
 }
