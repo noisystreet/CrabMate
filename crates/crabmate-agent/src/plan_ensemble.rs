@@ -2,19 +2,16 @@
 //!
 //! 仍为**同进程、同模型、串行 API**：通过不同 system 侧 user 注入模拟多角色；不保证更优，且 **API 次数与费用**随 `staged_plan_ensemble_count` 增加。
 
-use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
+use crate::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 
 /// 规划员 B 的 user 注入标记（用于取消/失败时弹出临时 user，避免孤立上下文）。
-pub(crate) const STAGED_PLAN_ENSEMBLE_B_COACH_MARK: &str =
-    "### 分阶段规划 · 逻辑规划员 B（服务端注入）";
+pub const STAGED_PLAN_ENSEMBLE_B_COACH_MARK: &str = "### 分阶段规划 · 逻辑规划员 B（服务端注入）";
 
 /// 规划员 C 的 user 注入标记。
-pub(crate) const STAGED_PLAN_ENSEMBLE_C_COACH_MARK: &str =
-    "### 分阶段规划 · 逻辑规划员 C（服务端注入）";
+pub const STAGED_PLAN_ENSEMBLE_C_COACH_MARK: &str = "### 分阶段规划 · 逻辑规划员 C（服务端注入）";
 
 /// 合并轮的 user 注入标记。
-pub(crate) const STAGED_PLAN_ENSEMBLE_MERGE_COACH_MARK: &str =
-    "### 分阶段规划 · 合并多规划（服务端注入）";
+pub const STAGED_PLAN_ENSEMBLE_MERGE_COACH_MARK: &str = "### 分阶段规划 · 合并多规划（服务端注入）";
 
 fn format_planner_label(idx: usize) -> String {
     let name = match idx {
@@ -45,7 +42,7 @@ fn format_prior_plans_markdown(plans: &[AgentReplyPlanV1]) -> String {
 }
 
 /// 追加规划员 B/C 时注入的 user 正文（`prior` 为已接受的规划，不含本轮）。
-pub(crate) fn ensemble_secondary_planner_user_body(
+pub fn ensemble_secondary_planner_user_body(
     planner_index: u8,
     prior: &[AgentReplyPlanV1],
 ) -> String {
@@ -77,7 +74,7 @@ pub(crate) fn ensemble_secondary_planner_user_body(
 }
 
 /// 合并多份规划为单一 `agent_reply_plan` v1 的 user 正文。
-pub(crate) fn ensemble_merge_planner_user_body(plans: &[AgentReplyPlanV1]) -> String {
+pub fn ensemble_merge_planner_user_body(plans: &[AgentReplyPlanV1]) -> String {
     let n = plans.len();
     let body_plans = format_prior_plans_markdown(plans);
     format!(
@@ -99,7 +96,7 @@ pub(crate) fn ensemble_merge_planner_user_body(plans: &[AgentReplyPlanV1]) -> St
 }
 
 /// 解析追加规划员或合并轮回复；`no_task` 或空 `steps` 视为失败。
-pub(crate) fn try_parse_ensemble_planner_reply(content: &str) -> Option<Vec<PlanStepV1>> {
+pub fn try_parse_ensemble_planner_reply(content: &str) -> Option<Vec<PlanStepV1>> {
     let p = plan_artifact::parse_agent_reply_plan_v1(content).ok()?;
     if p.no_task || p.steps.is_empty() {
         return None;
@@ -110,7 +107,7 @@ pub(crate) fn try_parse_ensemble_planner_reply(content: &str) -> Option<Vec<Plan
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::plan_artifact::PlanStepV1;
+    use crate::plan_artifact::PlanStepV1;
 
     #[test]
     fn secondary_body_contains_coach_b() {

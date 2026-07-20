@@ -2,10 +2,6 @@
 //!
 //! 同步变换的**步骤实现与编排**见 [`super::message_pipeline`]（[`apply_session_sync_pipeline`]）；本文件保留 **async 摘要**与对外的 `prepare_messages_for_model` 入口。
 
-use crate::agent::context_budget_pressure::{
-    effective_summary_trigger_for_turn, resolve_context_budget_pressure,
-    scale_message_pipeline_char_budget,
-};
 use crate::agent::per_coord::PerCoordinator;
 use crate::config::AgentConfig;
 use crate::llm::{
@@ -15,6 +11,10 @@ use crate::llm::{
 use crate::types::{
     ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
     message_content_as_str, message_content_into_text_lossy,
+};
+use crabmate_agent::context_budget_pressure::{
+    effective_summary_trigger_for_turn, resolve_context_budget_pressure,
+    scale_message_pipeline_char_budget,
 };
 use log::{info, warn};
 use reqwest::Client;
