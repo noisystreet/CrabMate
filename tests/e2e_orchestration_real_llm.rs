@@ -119,6 +119,30 @@ async fn e2e_single_agent_tool_round() {
     assert!(metrics.last_role == "assistant", "末条应为 assistant");
 }
 
+/// 单场景技能询问测试：提问"你有哪些技能"，验证 agent 能描述自身能力。
+///
+/// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "设置 REAL_LLM_E2E=1 后执行；需先录制或使用真实 LLM"]
+async fn e2e_single_agent_skills() {
+    let e2e_cfg = test_e2e_config();
+    let metrics = run_scenario(
+        &TestScenario {
+            name: "orch_single_agent_skills".to_string(),
+            user_message: "你有哪些技能".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec!["技能".to_string(), "工具".to_string()],
+            expected_tool_used: None,
+        },
+        &e2e_cfg,
+    )
+    .await;
+
+    assert!(metrics.success, "技能询问测试应成功");
+    assert!(!metrics.final_output_preview.is_empty(), "回复不应为空");
+    assert!(metrics.expected_output_matched, "回复应提及技能或工具");
+}
+
 /// 单场景 C++ CMake 项目测试：编译并运行 hello world。
 ///
 /// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时启用。
@@ -203,6 +227,13 @@ async fn e2e_all_scenarios() {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: Some("get_current_time".to_string()),
+        },
+        TestScenario {
+            name: "orch_single_agent_skills".to_string(),
+            user_message: "你有哪些技能".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec!["技能".to_string(), "工具".to_string()],
+            expected_tool_used: None,
         },
         TestScenario {
             name: "orch_cpp_cmake".to_string(),

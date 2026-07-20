@@ -23,6 +23,7 @@ CrabMate 采用**三层 e2e 架构**，详见 [`docs/design/e2e_real_llm_testing
 |------|----------|
 | `orch_single_agent_smoke` | 简单问候，验证一轮 LLM 调用后正常结束 |
 | `orch_single_agent_tool` | 工具调用（`get_current_time`），验证工具调用 → 终答闭环 |
+| `orch_single_agent_skills` | 技能询问（"你有哪些技能"），验证 agent 能描述自身能力 |
 | `orch_cpp_cmake` | 多步工具编排（read_file → run_command），验证编译执行全流程 |
 
 ### 运行
