@@ -1048,6 +1048,7 @@ dependencies = [
  "clap_mangen",
  "cmd_mate",
  "crabmate-agent",
+ "crabmate-benchmark",
  "crabmate-config",
  "crabmate-display-rules",
  "crabmate-internal",
@@ -1104,6 +1105,20 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.19",
+]
+
+[[package]]
+name = "crabmate-benchmark"
+version = "0.1.0"
+dependencies = [
+ "crabmate-config",
+ "crabmate-types",
+ "log",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
