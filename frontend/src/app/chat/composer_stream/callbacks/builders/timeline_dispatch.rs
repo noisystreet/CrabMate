@@ -48,6 +48,7 @@ fn timeline_log_dispatch_final_response(
             let outcome = stream_ctx
                 .scratch
                 .try_ingest_final_response_text(final_text.as_str(), current_overlay.as_deref());
+            let wrote_overlay = matches!(outcome, IngestFinalResponseOutcome::WriteToOverlay(_));
             if let IngestFinalResponseOutcome::WriteToOverlay(ref text) = outcome {
                 stream_overlay_replace_answer_for_message(
                     stream_ctx.chat.stream_text_overlay,
@@ -56,11 +57,18 @@ fn timeline_log_dispatch_final_response(
                     text.as_str(),
                     Some(stream_ctx.chat.stream_overlay_revision),
                 );
+                // overlay 已被本路径写入，避免 `sync_stream_preview` 用 canonical `final_answer`
+                // （阶段 2 后该路径不再写 canonical）replace 掉 overlay。
+                stream_ctx.chat.set_stream_overlay_display_mid(mid.as_str());
             }
             if outcome.consumed() {
                 stream_ctx.scratch.open_post_tool_final_answer_gate();
                 stream_ctx.scratch.sync_turn_projection(stream_ctx);
-                stream_ctx.scratch.sync_stream_preview(stream_ctx);
+                if !wrote_overlay {
+                    // `Consumed`（未写 overlay）：canonical 未变，sync 是 no-op 安全；
+                    // `WriteToOverlay` 已写 overlay，跳过避免清空。
+                    stream_ctx.scratch.sync_stream_preview(stream_ctx);
+                }
                 accum.add_answer_delta_chars(final_text.chars().count());
             }
         }
