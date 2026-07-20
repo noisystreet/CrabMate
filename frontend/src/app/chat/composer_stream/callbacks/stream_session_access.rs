@@ -15,7 +15,7 @@ use super::super::context::ChatStreamCallbackCtx;
 
 #[cfg(debug_assertions)]
 fn debug_assert_sse_session_binding(stream_ctx: &ChatStreamCallbackCtx, sid: &str) {
-    let transport = stream_ctx.chat.stream_transport.get();
+    let transport = stream_ctx.chat.stream_transport.get_untracked();
     let bound = transport.bound_session_id();
     if let Some(bound) = bound {
         debug_assert_eq!(
@@ -70,7 +70,7 @@ pub(super) fn with_stream_write_session_ref<R>(
     stream_ctx
         .chat
         .sessions
-        .with(|list| list.iter().find(|s| s.id == sid).map(f))
+        .with_untracked(|list| list.iter().find(|s| s.id == sid).map(f))
 }
 
 impl ChatStreamCallbackCtx {

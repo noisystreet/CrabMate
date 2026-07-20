@@ -97,9 +97,22 @@ impl TurnCanonicalState {
     }
 
     /// `parsing_tool_calls` demote 后：将已显示在 loading 泡内的正文迁入 canonical pending 段。
+    /// 注意：调用方可能因 overlay + stored 双路径推送同一文本，此处需要去重。
     pub(super) fn ingest_pre_tool_commentary(&mut self, text: &str) {
-        if text.trim().is_empty() {
+        let t = text.trim();
+        if t.is_empty() {
             return;
+        }
+        // 去重：PENDING 段已以 t 结尾时不重复推送
+        if let Some(existing) = self
+            .turn
+            .segments
+            .iter()
+            .find(|s| s.segment_id == PENDING_STREAM_COMMENTARY_SEGMENT_ID)
+        {
+            if existing.text.ends_with(t) || assistant_texts_fuzzy_duplicate(&existing.text, t) {
+                return;
+            }
         }
         self.ensure_pending_stream_segment();
         self.apply(TurnEvent::SegmentDelta {
@@ -447,14 +460,15 @@ mod tests {
     }
 
     #[test]
-    fn double_ingest_pre_tool_duplicates_commentary_text() {
+    fn double_ingest_pre_tool_dedup_duplicate_text() {
         let mut turn = TurnCanonicalState::new();
         turn.ingest_pre_tool_commentary("好的，先解压。");
         turn.ingest_pre_tool_commentary("好的，先解压。");
         turn.on_tool_call("tc_a", "tool_a", "tool a");
         assert_eq!(
             turn.commentary_before_tool("tc_a").as_deref(),
-            Some("好的，先解压。好的，先解压。")
+            Some("好的，先解压。"),
+            "重复的 ingest_pre_tool_commentary 应被去重"
         );
     }
 
