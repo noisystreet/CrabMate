@@ -1,0 +1,19 @@
+[package]
+name = "crabmate-runtime"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "CrabMate CLI/TUI runtime utilities (display, spinner, exit codes, completion)"
+
+[features]
+repl = ["dep:reedline", "dep:unicode-width"]
+tui = ["repl"]
+
+[dependencies]
+crabmate-display-rules = { workspace = true }
+indicatif = { workspace = true }
+log = { workspace = true }
+regex = { workspace = true }
+reedline = { workspace = true, optional = true }
+unicode-width = { workspace = true, optional = true }
+unicodeit = { workspace = true }
