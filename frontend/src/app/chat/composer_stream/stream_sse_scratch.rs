@@ -196,11 +196,6 @@ impl StreamSseScratch {
         self.state.open_post_tool_final_answer_gate();
     }
 
-    pub(super) fn repartition_turn_for_web_layout(&self) {
-        self.turn.borrow_mut().repartition_web_block_layout_stream();
-        self.state.open_post_tool_final_answer_gate();
-    }
-
     /// 流结束：关 open 段、尾泡正文入 canonical 并投影落盘。
     pub(super) fn finalize_turn_projection_before_stream_done(
         &self,
