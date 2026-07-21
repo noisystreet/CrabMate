@@ -164,6 +164,9 @@ impl TurnCanonicalState {
     }
 
     /// 形态 B 巨泡：`final_answer` 与 batch 合并时拆回块布局。
+    /// 阶段 5b 起：生产路径已移除该调用（`turn.final_answer` 始终为 `None`）；
+    /// 仅测试用于构造形态 B 巨泡场景。
+    #[cfg(test)]
     pub(super) fn repartition_web_block_layout_stream(&mut self) {
         crabmate_turn_layout::repartition_web_block_layout_stream(&mut self.turn);
     }

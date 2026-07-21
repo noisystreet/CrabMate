@@ -159,7 +159,12 @@ fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx)
     let _ = drained.into_inner();
 }
 
-/// 流结束：先关 open 段 → drain 尾泡 → 形态 B 拆分 → 投影落盘。
+/// 流结束：先关 open 段 → drain 尾泡 → 投影落盘。
+///
+/// 阶段 5b 起：移除 `repartition_turn_for_web_layout` 调用。阶段 3c 后 answer 热路径
+/// 不再写 canonical `final_answer`，`repartition_web_block_layout_stream` 在生产路径
+/// 已是 dead code（`turn.final_answer` 始终为 `None`）。形态 B 巨泡拆分改由 overlay
+/// 热路径 + `flush_final_answer_row`（overlay-only）承担。
 fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCallbackCtx) {
     if stream_ctx.scratch.tool_phase_open() {
         stream_ctx.scratch.on_turn_tool_phase_end();
@@ -168,7 +173,6 @@ fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCall
         stream_ctx.scratch.close_post_tool_final_answer_gate();
     }
     drain_stream_tail_into_canonical_for_done(stream_ctx);
-    stream_ctx.scratch.repartition_turn_for_web_layout();
     stream_ctx.scratch.sync_turn_projection(stream_ctx);
 }
 
