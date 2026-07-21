@@ -2,24 +2,39 @@
 
 use std::rc::Rc;
 
+use crate::stream_text_overlay::stream_overlay_append;
+
 use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::stream_control_reducer::StreamControlEvent;
 use super::super::stream_turn_state::StreamModelOutputLane;
 use super::turn_layout::TurnLayout;
 
-/// post-tool 或正文相：canonical [`AnswerDelta`] + overlay preview（P0′）；禁止 chunk append 正文。
+/// post-tool 或正文相：overlay append（P0′ 阶段 3c）；禁止 chunk append 正文、禁止写 canonical。
 ///
-/// **热路径优化**：每 token 仅经 `sync_stream_preview` 写 overlay 信号，**不**写 `sessions`。
-/// `sessions` 只在段/工具边界（`on_turn_segment_end` / `on_turn_tool_phase_end`）或终态
-/// （`on_done` / `on_error`）由调用方 flush，避免每 token 的 O(全量消息) 信号级联。
+/// **热路径优化**：每 token 仅经 `stream_overlay_append` 写 overlay 信号，**不**写 `sessions`、
+/// **不**写 canonical `final_answer`（阶段 3c 起）。`sessions` 只在段/工具边界
+/// （`on_turn_segment_end` / `on_turn_tool_phase_end`）或终态（`on_done` / `on_error`）
+/// 由调用方 flush，避免每 token 的 O(全量消息) 信号级联。
 fn apply_answer_body_delta(
     stream_ctx: &ChatStreamCallbackCtx,
     accum: &PerStreamAccum,
     chunk: &str,
 ) {
     if stream_ctx.scratch.try_apply_answer_delta(chunk) {
-        stream_ctx.scratch.sync_stream_preview(stream_ctx);
+        // 阶段 3c：直接 stream_overlay_append，不再经 sync_stream_preview（避免读 canonical
+        // final_answer 为空时把 overlay 清空）。canonical 不再被该路径写入。
+        let mid = stream_ctx.scratch.clone_assistant_id();
+        let sid = stream_ctx.bound_stream_session_id.as_str();
+        stream_overlay_append(
+            stream_ctx.chat.stream_text_overlay,
+            sid,
+            mid.as_str(),
+            chunk,
+            false,
+            Some(stream_ctx.chat.stream_overlay_revision),
+        );
+        stream_ctx.chat.set_stream_overlay_display_mid(mid.as_str());
         accum.add_answer_delta_chars(chunk.chars().count());
         return;
     }
@@ -196,7 +211,7 @@ mod tests {
     }
 
     #[test]
-    fn no_tool_answer_lane_uses_canonical_not_overlay_only() {
+    fn no_tool_answer_lane_uses_overlay_not_canonical() {
         let lane = StreamModelOutputLane::Answering;
         let post_tool = false;
         assert!(lane.in_answer_body_lane());
@@ -204,13 +219,14 @@ mod tests {
     }
 
     #[test]
-    fn p0_prime_preview_uses_overlay_replace_not_chunk_append() {
-        let uses_overlay_replace_preview = true;
+    fn p0_prime_preview_uses_overlay_append_not_chunk_append() {
+        // 阶段 3c：answer 热路径直接 stream_overlay_append，不再经 canonical → sync_stream_preview replace。
+        let uses_overlay_append_preview = true;
         let uses_chunk_append_body_fallback = false;
-        assert!(uses_overlay_replace_preview);
+        assert!(uses_overlay_append_preview);
         assert!(
             !uses_chunk_append_body_fallback,
-            "P0′: canonical preview must replace overlay, not append_assistant_chunk per chunk"
+            "P0′: answer delta must append to overlay, not append_assistant_chunk per chunk"
         );
     }
 }

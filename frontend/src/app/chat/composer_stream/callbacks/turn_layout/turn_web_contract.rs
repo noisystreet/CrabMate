@@ -91,7 +91,9 @@ mod tests {
                 turn.on_tool_phase_end();
             }
             TurnEvent::AnswerDelta { delta } => {
-                let _ = turn.try_apply_answer_delta(delta.as_str());
+                // 阶段 3c：`try_apply_answer_delta` 不再写 canonical；golden 测试需要 canonical
+                // `final_answer` 供 `project_turn_web` 投影，故用 `apply_answer_delta_event_for_test`。
+                let _ = turn.apply_answer_delta_event_for_test(delta.as_str());
             }
         }
     }
@@ -188,6 +190,7 @@ mod tests {
         turn.on_tool_call("tc_read", "read_file", "read INSTALL");
         turn.on_tool_call("tc_make", "run_command", "make");
         turn.on_tool_phase_end();
+        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
         assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
 
         let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
@@ -199,7 +202,7 @@ mod tests {
 
         let mut messages = tool_messages_from_projection(&turn);
         let queue = BubbleOutputQueue;
-        queue.sync_web_projection(&mut messages, &turn, None, None);
+        queue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"));
 
         let batch_idx = batch_row_index(&messages).expect("batch row");
         let final_idx = messages
@@ -279,10 +282,11 @@ mod tests {
         turn.on_tool_call("tc_make", "run_command", "make arch=Linux_Serial");
         assert!(turn.try_apply_commentary_delta("开始编译。"));
         turn.on_tool_phase_end();
+        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
         assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"));
 
         let batch_idx = batch_row_index(&messages).expect("batch row");
         let final_idx = messages
@@ -323,10 +327,16 @@ mod tests {
         turn.on_tool_call("tc_list", "list_tree", "list tree");
         assert!(turn.try_apply_commentary_delta("好的，我来看看当前工作区的情况。"));
         turn.on_tool_phase_end();
+        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
         assert!(turn.try_apply_answer_delta("当前工作区是一个空目录。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
+        BubbleOutputQueue.sync_web_projection(
+            &mut messages,
+            &turn,
+            None,
+            Some("当前工作区是一个空目录。"),
+        );
 
         let batch_idx = batch_row_index(&messages).expect("batch");
         let tool_idx = messages.iter().position(|m| m.is_tool).expect("tool");
@@ -340,7 +350,7 @@ mod tests {
     fn zero_tool_answer_bubble_layout() {
         let mut turn = TurnCanonicalState::new();
         let full_answer = "我具备以下技能，按类别整理如下：\n\n---\n\n### 📁 文件与目录操作\n- `read_file`、`create_file`\n\n---\n\n需要我帮你做什么？可以直接说任务。";
-        // 模拟流式逐 chunk 累积 final_answer
+        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta` 逐 chunk append）。
         let chars: Vec<char> = full_answer.chars().collect();
         let third = chars.len() / 3;
         for chunk in [
@@ -354,7 +364,7 @@ mod tests {
         turn.repartition_web_block_layout_stream();
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer));
 
         // 不应有 tool 行
         assert!(
