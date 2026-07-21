@@ -19,9 +19,7 @@ pub(in super::super) fn make_on_turn_segment_start(
         // 此时应结束当前 loading 气泡并创建新气泡。
         if info.kind == "answer" {
             TurnLayout::rotate_followup_model_round(stream_ctx.as_ref());
-            stream_ctx
-                .scratch
-                .reset_canonical_final_answer_for_new_round();
+            stream_ctx.scratch.reset_answer_state_for_new_round();
         }
         stream_ctx.scratch.on_turn_segment_start(info);
         stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());

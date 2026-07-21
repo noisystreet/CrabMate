@@ -131,7 +131,6 @@ pub fn project_turn(turn: &Turn) -> Vec<ProjectedRow> {
 }
 
 /// Web 块布局投影：无旁注工具 → 单条 `assistant_batch_narration` → 含旁注工具批。
-/// 阶段 5c 起：不再从 `turn.final_answer` 投影 `assistant_answer` 行（字段已删除），
 /// 终答由 overlay 承载，`flush_final_answer_row` 从 overlay 参数读取。
 #[must_use]
 pub fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
@@ -255,8 +254,7 @@ mod tests {
             },
         );
         r.apply(&mut turn, TurnEvent::ToolPhaseEnd);
-        // 阶段 5c：`TurnEvent::AnswerDelta` 已删除，终答不再写入 canonical；
-        // `project_turn` 不再产生 `assistant_answer` 行。
+        // 终答由 overlay 承载，`project_turn` 不产生 `assistant_answer` 行。
         let rows = project_turn(&turn);
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].kind, "tool");

@@ -107,8 +107,7 @@ fn reduce_segment_end(turn: &mut Turn, segment_id: String) {
     let mut seg = turn.segments.remove(idx);
     seg.open = false;
     if seg.kind == SegmentKind::Answer {
-        // 阶段 5c：Answer 段正文不再写入 canonical `final_answer`（字段已删除）；
-        // 终答正文由 overlay 承载。段关闭后直接丢弃正文。
+        // Answer 段正文由 overlay 承载，段关闭后直接丢弃正文。
         return;
     }
     if seg.segment_id == PENDING_STREAM_COMMENTARY_SEGMENT_ID {

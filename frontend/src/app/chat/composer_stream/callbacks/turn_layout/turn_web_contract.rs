@@ -185,8 +185,8 @@ mod tests {
         turn.on_tool_call("tc_read", "read_file", "read INSTALL");
         turn.on_tool_call("tc_make", "run_command", "make");
         turn.on_tool_phase_end();
-        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
-        assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
+        // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
+        assert!(turn.try_apply_answer_state_transition("HPCG 编译完成。"));
 
         let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
         assert!(
@@ -277,8 +277,8 @@ mod tests {
         turn.on_tool_call("tc_make", "run_command", "make arch=Linux_Serial");
         assert!(turn.try_apply_commentary_delta("开始编译。"));
         turn.on_tool_phase_end();
-        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
-        assert!(turn.try_apply_answer_delta("HPCG 编译完成。"));
+        // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
+        assert!(turn.try_apply_answer_state_transition("HPCG 编译完成。"));
 
         let mut messages = tool_messages_from_projection(&turn);
         BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"));
@@ -322,8 +322,8 @@ mod tests {
         turn.on_tool_call("tc_list", "list_tree", "list tree");
         assert!(turn.try_apply_commentary_delta("好的，我来看看当前工作区的情况。"));
         turn.on_tool_phase_end();
-        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta`）。
-        assert!(turn.try_apply_answer_delta("当前工作区是一个空目录。"));
+        // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
+        assert!(turn.try_apply_answer_state_transition("当前工作区是一个空目录。"));
 
         let mut messages = tool_messages_from_projection(&turn);
         BubbleOutputQueue.sync_web_projection(
@@ -339,13 +339,13 @@ mod tests {
         assert_eq!(messages[batch_idx].text, "好的，我来看看当前工作区的情况。");
     }
 
-    /// 零工具轮次：流式 delta 累积 → repartition → sync_web_projection → FINAL_ANSWER_ROW。
+    /// 零工具轮次：流式 delta 累积 → sync_web_projection → FINAL_ANSWER_ROW。
     /// 验证终答完整无重复，且不产生 batch 或 tool 行。
     #[test]
     fn zero_tool_answer_bubble_layout() {
         let mut turn = TurnCanonicalState::new();
         let full_answer = "我具备以下技能，按类别整理如下：\n\n---\n\n### 📁 文件与目录操作\n- `read_file`、`create_file`\n\n---\n\n需要我帮你做什么？可以直接说任务。";
-        // 阶段 3c：`try_apply_answer_delta` 仅状态转换，终答在 overlay（模拟 `apply_answer_body_delta` 逐 chunk append）。
+        // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
         let chars: Vec<char> = full_answer.chars().collect();
         let third = chars.len() / 3;
         for chunk in [
@@ -354,7 +354,7 @@ mod tests {
             &chars[2 * third..],
         ] {
             let delta: String = chunk.iter().collect();
-            assert!(turn.try_apply_answer_delta(delta.as_str()));
+            assert!(turn.try_apply_answer_state_transition(delta.as_str()));
         }
 
         let mut messages = tool_messages_from_projection(&turn);

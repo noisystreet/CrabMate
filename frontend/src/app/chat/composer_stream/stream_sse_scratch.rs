@@ -140,10 +140,12 @@ impl StreamSseScratch {
         self.turn.borrow_mut().try_apply_commentary_delta(delta)
     }
 
-    /// post-tool 终答 plain delta → canonical `final_answer`。
+    /// post-tool 终答 plain delta → 仅做 `NewRoundAnswerState` 转换。
     #[inline]
-    pub(super) fn try_apply_answer_delta(&self, delta: &str) -> bool {
-        self.turn.borrow_mut().try_apply_answer_delta(delta)
+    pub(super) fn try_apply_answer_state_transition(&self, delta: &str) -> bool {
+        self.turn
+            .borrow_mut()
+            .try_apply_answer_state_transition(delta)
     }
 
     pub(super) fn batch_narration_char_len(&self) -> usize {
@@ -224,8 +226,8 @@ impl StreamSseScratch {
         super::callbacks::TurnLayout::sync_turn_projection(stream_ctx, &turn, &mut queue);
     }
 
-    /// 新模型轮次：清空 canonical 终答桶，避免旧文本覆盖新气泡 overlay。
-    pub(super) fn reset_canonical_final_answer_for_new_round(&self) {
-        self.turn.borrow_mut().reset_final_answer_for_new_round();
+    /// 新模型轮次：重置终答状态机，避免旧轮终答覆盖新气泡 overlay。
+    pub(super) fn reset_answer_state_for_new_round(&self) {
+        self.turn.borrow_mut().reset_answer_state_for_new_round();
     }
 }

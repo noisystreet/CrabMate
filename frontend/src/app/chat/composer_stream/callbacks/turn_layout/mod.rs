@@ -132,9 +132,8 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
 
 /// `on_done` 前：将 loading 尾泡 overlay 正文迁入 stored message。
 ///
-/// `final_answer` 在流式期间已通过每 delta 的 `try_apply_answer_delta` 累积，
-/// 此处只需确保 overlay 正文合并到 stored（供后续 dedupe/展示），
-/// 不再 commit 回 canonical（否则 `push_str` 会全文追加，导致终答重复）。
+/// 流式期间终答正文由 overlay 承载，此处只需确保 overlay 正文合并到 stored
+/// （供后续 dedupe/展示）。
 fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
