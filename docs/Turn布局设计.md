@@ -98,7 +98,7 @@ flowchart TB
 | 文件 | 内容 |
 |------|------|
 | `model.rs` | `Turn`、`ToolStep`、`TurnSegment`、`SegmentKind` |
-| `event.rs` | `TurnEvent`（`SegmentStart/Delta/End`、`ToolCall`、`ToolPhaseEnd`、`AnswerDelta` 等） |
+| `event.rs` | `TurnEvent`（`SegmentStart/Delta/End`、`ToolCall`、`ToolPhaseEnd`） |
 | `reduce.rs` | `reduce_event`：允许 **晚到 `SegmentDelta`** 挂到已关闭段或 `seg-before-{tool_call_id}` |
 | `project.rs` | `project_turn` → `Vec<ProjectedRow>` |
 
@@ -297,7 +297,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | Invariant | 规则 |
 |-----------|------|
-| **I6 旁注/终答单写** | plain `on_delta`：commentary 车道 → `try_apply_commentary_delta` + sync；post-tool / 无工具正文相 → `try_apply_answer_delta` + sync；**禁止** sync 成功后再 `append_assistant_chunk` 写 answer |
+| **I6 旁注/终答单写** | plain `on_delta`：commentary 车道 → `try_apply_commentary_delta` + sync；post-tool / 无工具正文相 → `try_apply_answer_state_transition`（仅状态转换）+ `stream_overlay_append` 写 overlay；**禁止** sync 成功后再 `append_assistant_chunk` 写 answer |
 | **I7 final_response 不增行** | `timeline_log` `kind=final_response` → `try_ingest_final_response_text` + sync + finalize loading；**不** `push_assistant_timeline_bubble` / `final_response_snapshot` 新行 |
 | **I8 overlay 从属** | 每次 `sync_turn_projection` 后对该 loading id 执行 `stream_overlay_clear_answer_for_message`；`on_done` merge 幂等 |
 
@@ -330,8 +330,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | 机制 | 说明 |
 |------|------|
-| `project_turn` | 已 flush 的 `before_commentary` → `assistant_commentary` 行；`final_answer` → `assistant_answer`（仅 `!tool_phase_open` 时 sync） |
-| post-tool + `tool_phase_open` | plain delta → `CommentaryDelta`（`delta_apply`），**不**进 `final_answer` |
+| `project_turn` | 已 flush 的 `before_commentary` → `assistant_commentary` 行；终答由 overlay 承载，`flush_final_answer_row` 从 overlay 读取 |
+| post-tool + `tool_phase_open` | plain delta → `CommentaryDelta`（`delta_apply`），**不**进终答 |
 | `sync_turn_projection` | 工具批进行中：跳过 `assistant_answer`；尾泡 = `streaming_commentary_block_text()` |
 | `turn_segment_start` | 段一开即 sync，占位/更新当前块 |
 | `apply_answer_body_delta` fallback | canonical 拒答时 **禁止** `append_assistant_chunk` 累积尾泡（I6 补全） |
