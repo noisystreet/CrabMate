@@ -132,8 +132,14 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
 
 /// `on_done` 前：将 loading 尾泡 overlay 正文迁入 stored message。
 ///
-/// 流式期间终答正文由 overlay 承载，此处只需确保 overlay 正文合并到 stored
+/// 流式期间终答正文由 overlay 承载，此处将 overlay 正文合并到 stored
 /// （供后续 dedupe/展示）。
+///
+/// **不变量**：本函数会 [`stream_overlay_take_into_stored_message`] 消费 overlay
+/// answer（`take` 后清空）。调用者必须在本函数**之后**不再通过 `overlay_answer_for_loading_tail`
+/// 或等价的 overlay 读路径读取终答正文——例如 [`sync_turn_projection`] 必须在
+/// [`drain_stream_tail_into_canonical_for_done`] **之前**调用，否则
+/// `flush_final_answer_row` 将读到空 overlay 而落盘不全。
 fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
@@ -154,16 +160,15 @@ fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx)
         }
         s.messages[idx].text.clear();
     });
-    // `final_answer` 已在流式期间累积，此处只做 overlay→stored 迁移，不做 canonical commit。
     let _ = drained.into_inner();
 }
 
-/// 流结束：先关 open 段 → drain 尾泡 → 投影落盘。
+/// 流结束：先关 open 段 → `sync_turn_projection`（投影 FINAL_ANSWER_ROW）→ `drain` 尾泡到 stored。
 ///
-/// 阶段 5b 起：移除 `repartition_turn_for_web_layout` 调用。阶段 3c 后 answer 热路径
-/// 不再写 canonical `final_answer`，`repartition_web_block_layout_stream` 在生产路径
-/// 已是 dead code（`turn.final_answer` 始终为 `None`）。形态 B 巨泡拆分改由 overlay
-/// 热路径 + `flush_final_answer_row`（overlay-only）承担。
+/// **顺序不变量**：`sync_turn_projection` 必须在前，`drain` 在后。
+/// `flush_final_answer_row` 从 overlay 读取终答正文；`drain` 会 `take` 消费 overlay。
+/// 若先 drain 再 sync，则 FINAL_ANSWER_ROW 读到空 overlay 而只保留流式期间的
+/// 最后增量片段，导致重启后回退完整内容。
 fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCallbackCtx) {
     if stream_ctx.scratch.tool_phase_open() {
         stream_ctx.scratch.on_turn_tool_phase_end();
@@ -171,8 +176,10 @@ fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCall
         stream_ctx.scratch.close_open_commentary_for_projection();
         stream_ctx.scratch.close_post_tool_final_answer_gate();
     }
-    drain_stream_tail_into_canonical_for_done(stream_ctx);
+    // sync_turn_projection 在前：flush_final_answer_row 需读 overlay 创建 FINAL_ANSWER_ROW。
+    // drain 在后：take overlay → stored；顺序不可交换，否则 FINAL_ANSWER_ROW 落盘不全。
     stream_ctx.scratch.sync_turn_projection(stream_ctx);
+    drain_stream_tail_into_canonical_for_done(stream_ctx);
 }
 
 fn discard_premature_assistant_tail(
