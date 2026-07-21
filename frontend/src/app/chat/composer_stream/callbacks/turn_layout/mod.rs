@@ -584,9 +584,21 @@ impl TurnLayout {
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.as_str();
+        // 阶段 3b：读 overlay answer 传入 loading_preview_for_messages，避免 canonical `final_answer`
+        // 为空时把 overlay 清空。
+        let overlay_answer = stream_overlay_answer_for_message(
+            stream_ctx.chat.stream_text_overlay.get_untracked().as_ref(),
+            sid,
+            mid.as_str(),
+        );
+        let overlay_answer_str = overlay_answer.as_deref();
         let preview = stream_ctx
             .read_bound_session(|s| {
-                BubbleOutputQueue::loading_preview_for_messages(turn, &s.messages)
+                BubbleOutputQueue::loading_preview_for_messages(
+                    turn,
+                    &s.messages,
+                    overlay_answer_str,
+                )
             })
             .unwrap_or_default();
         let overlay = stream_ctx.chat.stream_text_overlay.get_untracked();
@@ -685,7 +697,9 @@ impl TurnLayout {
             );
         });
         let clear_overlay = stream_ctx
-            .read_bound_session(|s| should_clear_preview_overlay_answer(turn, &s.messages))
+            .read_bound_session(|s| {
+                should_clear_preview_overlay_answer(turn, &s.messages, overlay_answer_str)
+            })
             .unwrap_or(false);
         if clear_overlay {
             stream_overlay_clear_answer_for_message(
@@ -703,8 +717,9 @@ impl TurnLayout {
 pub(super) fn should_clear_preview_overlay_answer(
     turn: &TurnCanonicalState,
     messages: &[StoredMessage],
+    overlay_answer: Option<&str>,
 ) -> bool {
-    BubbleOutputQueue::loading_preview_for_messages(turn, messages).is_empty()
+    BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }
 
 #[cfg_attr(not(test), expect(dead_code))]
