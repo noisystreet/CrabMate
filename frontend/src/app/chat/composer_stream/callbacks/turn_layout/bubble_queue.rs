@@ -210,8 +210,7 @@ impl BubbleOutputQueue {
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
     ///
-    /// 阶段 1 起双路读取：canonical `turn.final_answer` 优先；为空时 fallback 到 `overlay_answer`。
-    /// 后续阶段将逐步切到 overlay-only。
+    /// 阶段 4 起仅从 overlay 读取终答正文（canonical `turn.final_answer` 读取路径已删除）。
     pub(super) fn flush_final_answer_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -225,12 +224,8 @@ impl BubbleOutputQueue {
         if Self::batch_projection_pending_in_messages(messages, turn) {
             return;
         }
-        let text = turn
-            .turn_ref()
-            .final_answer
-            .as_deref()
+        let text = overlay_answer
             .filter(|t| !t.trim().is_empty())
-            .or_else(|| overlay_answer.filter(|t| !t.trim().is_empty()))
             .map(str::to_string);
         let Some(text) = text else {
             return;
