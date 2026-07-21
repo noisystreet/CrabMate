@@ -154,9 +154,16 @@ fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx)
             mid.as_str(),
             &mut s.messages[idx],
         );
-        let text = s.messages[idx].text.trim();
-        if !text.is_empty() {
-            *drained.borrow_mut() = Some(s.messages[idx].text.clone());
+        let merged_text = s.messages[idx].text.clone();
+        if !merged_text.trim().is_empty() {
+            *drained.borrow_mut() = Some(merged_text.clone());
+            // 零工具补偿：overlay 可能在 sync_turn_projection 前已被清空，
+            // 导致 FINAL_ANSWER_ROW 缺失。此时 loading 尾泡仍携有正文，从 stored 补建。
+            BubbleOutputQueue::ensure_final_answer_row_from_text(
+                &mut s.messages,
+                &merged_text,
+                Some(mid.as_str()),
+            );
         }
         s.messages[idx].text.clear();
     });

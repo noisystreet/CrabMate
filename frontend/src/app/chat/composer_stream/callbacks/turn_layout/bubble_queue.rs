@@ -235,6 +235,36 @@ impl BubbleOutputQueue {
         Self::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
     }
 
+    /// 若 FINAL_ANSWER_ROW 缺失，从给定正文补建。
+    ///
+    /// 零工具场景中 overlay 可能在 `sync_turn_projection` 前已被清空
+    /// （流式 delta 写入 loading 尾泡而非 overlay），导致 `flush_final_answer_row` 读不到
+    /// overlay。此时 `drain` 将 loading 正文合并到 stored 后，调用此方法补建
+    /// FINAL_ANSWER_ROW 以持久化终答。
+    pub(super) fn ensure_final_answer_row_from_text(
+        messages: &mut Vec<crate::storage::StoredMessage>,
+        text: &str,
+        loading_tail_id: Option<&str>,
+    ) {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        if messages
+            .iter()
+            .any(|m| m.id == FINAL_ANSWER_ROW_ID && !m.text.trim().is_empty())
+        {
+            return;
+        }
+        let insert_idx = Self::insert_index_for_final_row(messages, loading_tail_id);
+        Self::upsert_assistant_row(
+            messages,
+            FINAL_ANSWER_ROW_ID,
+            trimmed.to_string(),
+            insert_idx,
+        );
+    }
+
     /// preview 是否应写入 loading 尾泡（与 stored 一致则不再 duplicate）。
     pub(super) fn loading_preview_for_messages(
         turn: &TurnCanonicalState,

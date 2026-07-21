@@ -11,6 +11,7 @@ mod tests {
     use super::super::super::super::turn_canonical::TurnCanonicalState;
     use crate::sse_dispatch::TurnSegmentStartInfo;
     use crate::storage::StoredMessage;
+    use crate::storage::StoredMessageState;
 
     use super::super::bubble_queue::{
         BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID,
@@ -468,6 +469,85 @@ mod tests {
         assert_eq!(
             final_after, final_before,
             "FINAL_ANSWER_ROW must be preserved when overlay is empty (already drained)"
+        );
+    }
+
+    /// 回归测试：零工具场景 overlay 已被清空（如 `already_visible=true` 跳过 final_response），
+    /// `drain` 后 loading 尾泡仍有正文时，`ensure_final_answer_row_from_text` 应补建
+    /// FINAL_ANSWER_ROW。
+    #[test]
+    fn zero_tool_ensure_final_answer_row_from_loading_tail_text() {
+        let mut turn = TurnCanonicalState::new();
+        // 零工具：无 tool_call，只有 answer 文本（由流式 delta 写入 loading 尾泡）。
+        assert!(turn.try_apply_answer_state_transition("终答正文。"));
+
+        let mut messages = tool_messages_from_projection(&turn);
+        // 模拟 stream 中 loading 尾泡已有正文（overlay 已清空但 loading text 保留）
+        messages.push(StoredMessage {
+            id: "loading-tail".into(),
+            role: "assistant".into(),
+            text: "终答正文。".to_string(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        });
+
+        // FINAL_ANSWER_ROW 尚不存在
+        assert!(
+            !messages.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "FINAL_ANSWER_ROW must not exist before ensure"
+        );
+
+        BubbleOutputQueue::ensure_final_answer_row_from_text(
+            &mut messages,
+            "终答正文。",
+            Some("loading-tail"),
+        );
+
+        let final_row = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("FINAL_ANSWER_ROW must be created");
+        assert_eq!(final_row.text, "终答正文。");
+
+        // 再次调用不重复创建
+        let count_before = messages
+            .iter()
+            .filter(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .count();
+        BubbleOutputQueue::ensure_final_answer_row_from_text(
+            &mut messages,
+            "终答正文。",
+            Some("loading-tail"),
+        );
+        let count_after = messages
+            .iter()
+            .filter(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .count();
+        assert_eq!(
+            count_after, count_before,
+            "ensure_final_answer_row_from_text must be idempotent"
+        );
+    }
+
+    /// 回归测试：零工具 `ensure_final_answer_row_from_text` 在 loading 文本为空时
+    /// 不应创建空的 FINAL_ANSWER_ROW。
+    #[test]
+    fn zero_tool_ensure_skips_on_empty_text() {
+        let mut messages: Vec<StoredMessage> =
+            tool_messages_from_projection(&TurnCanonicalState::new());
+        BubbleOutputQueue::ensure_final_answer_row_from_text(
+            &mut messages,
+            "",
+            Some("loading-tail"),
+        );
+        assert!(
+            !messages.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "empty text must not create FINAL_ANSWER_ROW"
         );
     }
 }
