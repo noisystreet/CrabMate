@@ -137,11 +137,19 @@ fn reduce_segment_start(
         return;
     }
     close_open_commentary_except(turn, None);
+    // 若步骤已有 before_commentary（来自早到的 fallback delta，即
+    // segment_delta 先于 segment_start 到达），将其移入新段以保持文本完整。
+    // 否则该文本与后续 delta 分别落在 step 和 segment，投影/导出时分裂为两条。
+    let initial_text = before_tool_call_id
+        .as_deref()
+        .and_then(|tid| turn.step_by_call_id_mut(tid))
+        .and_then(|s| s.before_commentary.take())
+        .unwrap_or_default();
     turn.segments.push(TurnSegment {
         segment_id,
         kind,
         before_tool_call_id,
-        text: String::new(),
+        text: initial_text,
         open: true,
     });
 }
@@ -543,6 +551,68 @@ mod tests {
             turn.segments
                 .iter()
                 .any(|s| s.segment_id == "seg-before-b" && s.open)
+        );
+    }
+
+    /// 回归测试：delta 先于 segment_start 到达时，
+    /// segment_start 应把 fallback 写入 step.before_commentary 的文本移入新段，
+    /// 避免文本在 step 和 segment 间分裂。
+    #[test]
+    fn segment_start_moves_fallback_text_into_segment() {
+        let mut turn = Turn::default();
+        let r = TurnReducer;
+        // 工具先到，创建 step
+        r.apply(
+            &mut turn,
+            TurnEvent::ToolCall {
+                tool_call_id: "tc_X".into(),
+                name: "tool".into(),
+                summary: "".into(),
+            },
+        );
+        // delta 先于 segment_start 到达 → fallback 写入 step.before_commentary
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_X".into(),
+                delta: "看".into(),
+            },
+        );
+        // segment_start 到达 → 应把 step 中的 "看" 移入新段
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentStart {
+                segment_id: "seg-before-tc_X".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_X".into()),
+            },
+        );
+        // step 中不再有 before_commentary
+        assert!(
+            turn.step_by_call_id("tc_X")
+                .and_then(|s| s.before_commentary.as_deref())
+                .is_none(),
+            "step.before_commentary must be taken by segment_start"
+        );
+        // 段中应有完整文本
+        let seg = turn
+            .segment_by_id_mut("seg-before-tc_X")
+            .expect("segment exists");
+        assert_eq!(seg.text, "看", "fallback text moved into segment");
+        assert!(seg.open);
+
+        // 后续 delta 正常追加
+        r.apply(
+            &mut turn,
+            TurnEvent::SegmentDelta {
+                segment_id: "seg-before-tc_X".into(),
+                delta: "一下构建目录的状态。".into(),
+            },
+        );
+        assert_eq!(
+            turn.segment_by_id_mut("seg-before-tc_X").unwrap().text,
+            "看一下构建目录的状态。",
+            "subsequent deltas append to segment"
         );
     }
 }
