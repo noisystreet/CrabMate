@@ -392,4 +392,82 @@ mod tests {
             (full_answer.len() as f64 * 1.1) as usize
         );
     }
+
+    /// 回归测试：post-tool `sync_web_projection` 将完整 overlay answer 写入 FINAL_ANSWER_ROW。
+    ///
+    /// 若 `drain` 先于 `sync` 调用导致 overlay 被清空，则 `flush_final_answer_row` 读不到
+    /// 终答正文，FINAL_ANSWER_ROW 缺失或内容为流式期间的最后一个增量片段。
+    #[test]
+    fn post_tool_final_answer_row_receives_full_overlay_answer() {
+        let mut turn = TurnCanonicalState::new();
+        // 模拟工具阶段
+        turn.on_tool_call("tc_read", "read_file", "read file");
+        assert!(turn.try_apply_commentary_delta("先看看文件内容。"));
+        turn.on_tool_phase_end();
+        turn.on_tool_phase_end(); // finalize_inner 会再调一次
+
+        // 完整终答正文（模拟 1664 字节的中文回答）
+        let full_answer = "这是一个小型 C++ CMake 项目，已构建完成且全部测试通过。项目包含主程序 hello.cpp、测试文件 test_hello.cpp 和 README 文档，使用 CMake FetchContent 自动拉取 Google Test。\n\n## 核心功能\n\n`hello` 命令行问候工具支持 --name、--count、--help 三个选项，测试用例 6/6 全部通过（22 ms）。\n\n有什么需要我帮忙的吗？比如添加新功能、重构、或分析代码质量。";
+        // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
+        assert!(turn.try_apply_answer_state_transition(full_answer));
+
+        let mut messages = tool_messages_from_projection(&turn);
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer));
+
+        let final_text = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .map(|m| m.text.as_str())
+            .unwrap_or("<missing>");
+        assert_eq!(
+            final_text, full_answer,
+            "FINAL_ANSWER_ROW must contain complete overlay answer, not partial deltas"
+        );
+    }
+
+    /// 回归测试：overlay 被消费后（`overlay_answer = None`），`flush_final_answer_row` 不产生
+    /// FINAL_ANSWER_ROW——防止用空的 canonical 或旧增量片段覆盖已有完整行。
+    #[test]
+    fn flush_final_answer_row_skips_when_overlay_empty() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_read", "read_file", "read file");
+        assert!(turn.try_apply_commentary_delta("先看看文件内容。"));
+        turn.on_tool_phase_end();
+        turn.on_tool_phase_end();
+        assert!(turn.try_apply_answer_state_transition("完整终答。"));
+
+        // 先正常投影，创建完整的 FINAL_ANSWER_ROW
+        let mut messages = tool_messages_from_projection(&turn);
+        let full_answer = "完整终答。";
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer));
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.id == FINAL_ANSWER_ROW_ID && m.text == full_answer),
+            "first sync must create FINAL_ANSWER_ROW"
+        );
+
+        // 模拟 drain 后 overlay 已空：第二次 sync 不应覆盖已有完整行
+        let final_before = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .unwrap()
+            .text
+            .clone();
+        BubbleOutputQueue.sync_web_projection(
+            &mut messages,
+            &turn,
+            None,
+            None, // overlay 已被 drain 消费
+        );
+        let final_after = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .map(|m| m.text.as_str())
+            .unwrap_or("<missing>");
+        assert_eq!(
+            final_after, final_before,
+            "FINAL_ANSWER_ROW must be preserved when overlay is empty (already drained)"
+        );
+    }
 }
