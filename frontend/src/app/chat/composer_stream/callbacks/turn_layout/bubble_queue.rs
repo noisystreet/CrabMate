@@ -125,7 +125,8 @@ impl BubbleOutputQueue {
 
     /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final）。
     ///
-    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（阶段 1 起作为 `final_answer` 的 fallback）。
+    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（阶段 1 起作为 `final_answer` 的 fallback；
+    /// 阶段 3c 起 answer 热路径不再写 canonical，overlay 成为终答唯一来源）。
     pub(super) fn sync_web_projection(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -133,7 +134,7 @@ impl BubbleOutputQueue {
         loading_tail_id: Option<&str>,
         overlay_answer: Option<&str>,
     ) {
-        self.flush_batch_narration_row(messages, turn);
+        self.flush_batch_narration_row(messages, turn, overlay_answer);
         self.flush_final_answer_row(messages, turn, loading_tail_id, overlay_answer);
     }
 
@@ -162,10 +163,14 @@ impl BubbleOutputQueue {
     }
 
     /// 按 [`project_turn_web`] upsert `turn-batch-narration` 行。
+    ///
+    /// `overlay_answer`：阶段 3c 起 answer 热路径不再写 canonical `final_answer`，
+    /// batch 去重需同时检查 canonical 与 overlay（任一非空即视为终答已存在）。
     pub(super) fn flush_batch_narration_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
         turn: &TurnCanonicalState,
+        overlay_answer: Option<&str>,
     ) {
         let Some(batch) = Self::batch_row_from_projection(turn) else {
             return;
@@ -174,10 +179,18 @@ impl BubbleOutputQueue {
             return;
         }
         // 根本去重：batch 文本是终答的前缀或子集时，不再创建重复行。
-        if let Some(ref final_text) = turn.turn_ref().final_answer {
+        // 阶段 3c：终答可能仅在 overlay（canonical `final_answer` 为空），需同时检查。
+        let final_text = turn
+            .turn_ref()
+            .final_answer
+            .as_deref()
+            .filter(|t| !t.trim().is_empty())
+            .or_else(|| overlay_answer.filter(|t| !t.trim().is_empty()));
+        if let Some(final_text) = final_text {
             let trimmed = batch.text.trim();
-            if !final_text.trim().is_empty()
-                && (final_text.contains(trimmed) || final_text.starts_with(trimmed))
+            let final_trimmed = final_text.trim();
+            if !final_trimmed.is_empty()
+                && (final_trimmed.contains(trimmed) || final_trimmed.starts_with(trimmed))
             {
                 return;
             }
@@ -325,12 +338,12 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        queue.flush_batch_narration_row(&mut msgs, &turn);
+        queue.flush_batch_narration_row(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 2);
         assert_eq!(msgs[0].id, BATCH_NARRATION_ROW_ID);
         assert_eq!(msgs[0].text, "步骤 A。");
         assert_eq!(msgs[1].id, "t");
-        queue.flush_batch_narration_row(&mut msgs, &turn);
+        queue.flush_batch_narration_row(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 2, "second flush must not duplicate row");
     }
 
@@ -366,7 +379,8 @@ mod tests {
                 created_at: 0,
             },
         ];
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), None);
+        // 阶段 3c：answer 热路径写 overlay，canonical `final_answer` 为空；模拟 overlay 已有终答。
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("完成。"));
         // loading tail 保留正文（不再清空，避免聊天列气泡闪烁）
         let load = msgs.iter().find(|m| m.id == "load").expect("loading shell");
         assert_eq!(load.text, "不应落盘的尾泡正文");
@@ -427,7 +441,7 @@ mod tests {
                 created_at: 0,
             },
         ];
-        queue.flush_batch_narration_row(&mut msgs, &turn);
+        queue.flush_batch_narration_row(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].id, "tc_archive");
         assert_eq!(msgs[1].id, BATCH_NARRATION_ROW_ID);
@@ -461,7 +475,8 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        queue.flush_final_answer_row(&mut msgs, &turn, Some("load"), None);
+        // 阶段 3c：answer 在 overlay，canonical 为空；模拟 overlay 已有终答。
+        queue.flush_final_answer_row(&mut msgs, &turn, Some("load"), Some("终答。"));
         assert!(
             !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
             "final must not appear before batch row"
@@ -482,7 +497,7 @@ mod tests {
                 created_at: 0,
             },
         );
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), None);
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("终答。"));
         let batch_idx = msgs
             .iter()
             .position(|m| m.id == BATCH_NARRATION_ROW_ID)
@@ -502,7 +517,7 @@ mod tests {
         let turn = make_turn_with_batch_commentary();
         let queue = BubbleOutputQueue;
         let mut msgs = Vec::new();
-        queue.flush_batch_narration_row(&mut msgs, &turn);
+        queue.flush_batch_narration_row(&mut msgs, &turn, None);
         assert!(msgs.is_empty());
     }
 }
