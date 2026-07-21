@@ -44,11 +44,21 @@ impl BubbleOutputQueue {
     }
 
     /// loading 尾泡 overlay：**仅**未落盘的增量（open commentary 段或 post-tool 终答）。
-    pub(super) fn loading_preview_text(turn: &TurnCanonicalState) -> String {
+    /// 阶段 3b：`overlay_answer` 优先，canonical `final_answer` 作为 fallback。
+    /// 阶段 3c 后 canonical 不再被 `try_apply_answer_delta` 写入，overlay 成为唯一来源。
+    pub(super) fn loading_preview_text(
+        turn: &TurnCanonicalState,
+        overlay_answer: Option<&str>,
+    ) -> String {
         if turn.tool_phase_open() {
             return streaming_commentary_block_text(turn.turn_ref()).unwrap_or_default();
         }
-        turn.turn_ref().final_answer.clone().unwrap_or_default()
+        overlay_answer
+            .map(str::trim)
+            .filter(|t| !t.is_empty())
+            .map(str::to_string)
+            .or_else(|| turn.turn_ref().final_answer.clone())
+            .unwrap_or_default()
     }
 
     fn insert_index_before_loading_tail(
@@ -231,8 +241,9 @@ impl BubbleOutputQueue {
     pub(super) fn loading_preview_for_messages(
         turn: &TurnCanonicalState,
         messages: &[crate::storage::StoredMessage],
+        overlay_answer: Option<&str>,
     ) -> String {
-        let preview = Self::loading_preview_text(turn);
+        let preview = Self::loading_preview_text(turn, overlay_answer);
         if preview.trim().is_empty() {
             return String::new();
         }
@@ -293,7 +304,7 @@ mod tests {
             Some("步骤 A。")
         );
         assert_eq!(
-            BubbleOutputQueue::loading_preview_text(&turn).as_str(),
+            BubbleOutputQueue::loading_preview_text(&turn, None).as_str(),
             "步骤 B。"
         );
     }
