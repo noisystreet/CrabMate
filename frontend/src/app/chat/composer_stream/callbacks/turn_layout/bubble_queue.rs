@@ -44,7 +44,6 @@ impl BubbleOutputQueue {
     }
 
     /// loading 尾泡 overlay：**仅**未落盘的增量（open commentary 段或 post-tool 终答）。
-    /// 阶段 5a 起：仅读 overlay，移除 canonical `final_answer` fallback。
     pub(super) fn loading_preview_text(
         turn: &TurnCanonicalState,
         overlay_answer: Option<&str>,
@@ -123,7 +122,7 @@ impl BubbleOutputQueue {
 
     /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final）。
     ///
-    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（阶段 5a 起为终答唯一来源）。
+    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（终答唯一来源）。
     pub(super) fn sync_web_projection(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -161,7 +160,7 @@ impl BubbleOutputQueue {
 
     /// 按 [`project_turn_web`] upsert `turn-batch-narration` 行。
     ///
-    /// `overlay_answer`：阶段 5a 起 batch 去重仅检查 overlay（canonical `final_answer` 读取路径已删除）。
+    /// `overlay_answer`：batch 去重仅检查 overlay。
     pub(super) fn flush_batch_narration_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -175,7 +174,7 @@ impl BubbleOutputQueue {
             return;
         }
         // 根本去重：batch 文本是终答的前缀或子集时，不再创建重复行。
-        // 阶段 5a：终答仅从 overlay 读取。
+        // 终答仅从 overlay 读取。
         let final_text = overlay_answer.filter(|t| !t.trim().is_empty());
         if let Some(final_text) = final_text {
             let trimmed = batch.text.trim();
@@ -201,7 +200,7 @@ impl BubbleOutputQueue {
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
     ///
-    /// 阶段 4 起仅从 overlay 读取终答正文（canonical `turn.final_answer` 读取路径已删除）。
+    /// 从 overlay 读取终答正文。
     pub(super) fn flush_final_answer_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -336,7 +335,7 @@ mod tests {
     #[test]
     fn sync_web_projection_keeps_loading_body() {
         let mut turn = TurnCanonicalState::new();
-        assert!(turn.try_apply_answer_delta("完成。"));
+        assert!(turn.try_apply_answer_state_transition("完成。"));
         turn.on_tool_phase_end();
         let queue = BubbleOutputQueue;
         let mut msgs = vec![
@@ -365,7 +364,7 @@ mod tests {
                 created_at: 0,
             },
         ];
-        // 阶段 3c：answer 热路径写 overlay，canonical `final_answer` 为空；模拟 overlay 已有终答。
+        // 终答在 overlay；模拟 overlay 已有终答。
         queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("完成。"));
         // loading tail 保留正文（不再清空，避免聊天列气泡闪烁）
         let load = msgs.iter().find(|m| m.id == "load").expect("loading shell");
@@ -446,7 +445,7 @@ mod tests {
         assert!(turn.try_apply_commentary_delta("批说明。"));
         turn.on_segment_end("seg-before-tc_a".into());
         turn.on_tool_phase_end();
-        assert!(turn.try_apply_answer_delta("终答。"));
+        assert!(turn.try_apply_answer_state_transition("终答。"));
 
         let queue = BubbleOutputQueue;
         let mut msgs = vec![crate::storage::StoredMessage {
@@ -461,7 +460,7 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        // 阶段 3c：answer 在 overlay，canonical 为空；模拟 overlay 已有终答。
+        // 终答在 overlay；模拟 overlay 已有终答。
         queue.flush_final_answer_row(&mut msgs, &turn, Some("load"), Some("终答。"));
         assert!(
             !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),

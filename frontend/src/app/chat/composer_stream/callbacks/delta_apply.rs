@@ -21,7 +21,7 @@ fn apply_answer_body_delta(
     accum: &PerStreamAccum,
     chunk: &str,
 ) {
-    if stream_ctx.scratch.try_apply_answer_delta(chunk) {
+    if stream_ctx.scratch.try_apply_answer_state_transition(chunk) {
         // 阶段 3c：直接 stream_overlay_append，不再经 sync_stream_preview（避免读 canonical
         // final_answer 为空时把 overlay 清空）。canonical 不再被该路径写入。
         let mid = stream_ctx.scratch.clone_assistant_id();

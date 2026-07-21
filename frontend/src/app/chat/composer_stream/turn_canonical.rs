@@ -264,7 +264,7 @@ impl TurnCanonicalState {
     /// post-tool 终答 plain delta → 仅做 `NewRoundAnswerState` 转换（`Stable`）。
     /// 由调用方 [`super::super::callbacks::delta_apply::apply_answer_body_delta`]
     /// 直接 `stream_overlay_append` 写 overlay，canonical 不被该路径写入。
-    pub(super) fn try_apply_answer_delta(&mut self, delta: &str) -> bool {
+    pub(super) fn try_apply_answer_state_transition(&mut self, delta: &str) -> bool {
         if delta.is_empty() {
             return false;
         }
@@ -357,7 +357,7 @@ impl TurnCanonicalState {
     }
 
     /// 新模型轮次：设 `AwaitingFirstDelta`，避免旧轮终答覆盖新气泡 overlay。
-    pub(super) fn reset_final_answer_for_new_round(&mut self) {
+    pub(super) fn reset_answer_state_for_new_round(&mut self) {
         self.new_round_answer_state = NewRoundAnswerState::AwaitingFirstDelta;
     }
 }
@@ -481,19 +481,19 @@ mod tests {
         turn.ingest_pre_tool_commentary("先解压。");
         turn.on_tool_call("tc1", "tool_a", "tool a");
         turn.on_tool_phase_end();
-        assert!(turn.try_apply_answer_delta("段一。"));
-        assert!(turn.try_apply_answer_delta("段二。"));
+        assert!(turn.try_apply_answer_state_transition("段一。"));
+        assert!(turn.try_apply_answer_state_transition("段二。"));
         // post-tool 终答不得再 `ingest_pre_tool_commentary`（见 `demote_answer_before_tools` 门控）。
         turn.on_tool_call("tc2", "tool_b", "tool b");
         assert!(turn.commentary_before_tool("tc2").is_none());
     }
 
     #[test]
-    fn answer_delta_blocked_while_tool_phase_open() {
+    fn answer_state_transition_blocked_while_tool_phase_open() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_a", "tool_a", "tool a");
         // tool_phase_open 时返回 false，不转换状态。
-        assert!(!turn.try_apply_answer_delta("不应写入。"));
+        assert!(!turn.try_apply_answer_state_transition("不应写入。"));
         turn.on_segment_start(TurnSegmentStartInfo {
             segment_id: "seg-before-tc_b".into(),
             kind: "commentary".into(),
@@ -505,14 +505,14 @@ mod tests {
             Some("工具前旁注。")
         );
         turn.on_tool_phase_end();
-        // tool_phase 结束后，`try_apply_answer_delta` 返回 true（仅状态转换）。
-        assert!(turn.try_apply_answer_delta("完成。"));
+        // tool_phase 结束后，`try_apply_answer_state_transition` 返回 true（仅状态转换）。
+        assert!(turn.try_apply_answer_state_transition("完成。"));
     }
 
     #[test]
     fn ingest_final_response_extends_shorter_stream_with_timeline_detail() {
         let mut turn = TurnCanonicalState::new();
-        assert!(turn.try_apply_answer_delta("当前目录下有三个压缩包。"));
+        assert!(turn.try_apply_answer_state_transition("当前目录下有三个压缩包。"));
         // 阶段 2：已有流式正文 → Consumed，不写 overlay
         assert_eq!(
             turn.try_ingest_final_response_text(
@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn ingest_final_response_keeps_stream_text_when_already_streamed() {
         let mut turn = TurnCanonicalState::new();
-        assert!(turn.try_apply_answer_delta("短。"));
+        assert!(turn.try_apply_answer_state_transition("短。"));
         // 阶段 2：已有流式正文 → Consumed，不写 overlay
         assert_eq!(
             turn.try_ingest_final_response_text("短。完整终答段落。", Some("短。")),
@@ -539,25 +539,25 @@ mod tests {
         // 模拟旧轮正文已到达，新轮次 reset 后验证状态机行为。
         let mut turn = TurnCanonicalState::new();
         // 旧轮次：流式 delta 仅做状态转换
-        assert!(turn.try_apply_answer_delta("旧轮正文。"));
+        assert!(turn.try_apply_answer_state_transition("旧轮正文。"));
         // 新轮次开始：reset 设 awaiting 标志
-        turn.reset_final_answer_for_new_round();
+        turn.reset_answer_state_for_new_round();
         // 上一轮 final_response 在 reset 之后、新 delta 之前晚到 → 消费但不写入。
         assert_eq!(
             turn.try_ingest_final_response_text("旧轮正文。", None),
             IngestFinalResponseOutcome::Consumed
         );
         // 新轮次 delta 到达 → 状态转换为 Stable。
-        assert!(turn.try_apply_answer_delta("新轮正文。"));
+        assert!(turn.try_apply_answer_state_transition("新轮正文。"));
     }
 
     #[test]
     fn final_response_after_rotation_does_not_replace_existing_answer() {
         let mut turn = TurnCanonicalState::new();
         // 新轮次开始：reset
-        turn.reset_final_answer_for_new_round();
+        turn.reset_answer_state_for_new_round();
         // 新轮次 delta 先到达 → 状态转换为 Stable。
-        assert!(turn.try_apply_answer_delta("流式正文。"));
+        assert!(turn.try_apply_answer_state_transition("流式正文。"));
         // overlay 已有流式正文 → Consumed，不替换
         assert_eq!(
             turn.try_ingest_final_response_text("旧轮总结。", Some("流式正文。")),
@@ -569,7 +569,7 @@ mod tests {
     fn final_response_writes_when_deltas_routed_to_commentary() {
         let mut turn = TurnCanonicalState::new();
         // 模拟 llm-24 场景：新轮次开始
-        turn.reset_final_answer_for_new_round();
+        turn.reset_answer_state_for_new_round();
         // 流式 delta 被路由到 commentary
         let _ =
             turn.try_apply_commentary_delta("已创建 `README.md`，包含构建步骤、选项说明和示例。");
@@ -588,7 +588,7 @@ mod tests {
     #[test]
     fn final_response_after_commentary_route_ignores_unmatched_late_text() {
         let mut turn = TurnCanonicalState::new();
-        turn.reset_final_answer_for_new_round();
+        turn.reset_answer_state_for_new_round();
         let _ = turn.try_apply_commentary_delta("新轮 commentary。");
 
         // 旧轮晚到的 final_response 不匹配 → Consumed，不写

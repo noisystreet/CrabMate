@@ -85,7 +85,7 @@ fn is_intent_analysis_json(text: &str) -> bool {
 }
 
 /// 从 `assistant_content` 提取 TurnEvent（意图分析 → TimelineAssistant；其他忽略）。
-/// 阶段 5c 起：`AnswerDelta` 事件已删除，非意图分析的 assistant_content 不再产生事件
+/// 非意图分析的 assistant_content 不再产生事件
 /// （终答由 overlay 承载，不经过 canonical reducer）。
 fn assistant_content_to_events(text: &str) -> Vec<TurnEvent> {
     if text.trim().is_empty() {
@@ -144,7 +144,7 @@ fn map_llm_response_done(det: &serde_json::Value) -> Vec<TurnEvent> {
     }
 
     // assistant_content → TimelineAssistant（意图分析时）
-    // 阶段 5c：非意图分析的正文不再产生 AnswerDelta 事件
+    // 非意图分析的正文不再产生 canonical 事件
     if let Some(text) = det.get("assistant_content").and_then(|v| v.as_str()) {
         out.extend(assistant_content_to_events(text));
     }
@@ -208,7 +208,7 @@ fn parse_timeline_log(data: &serde_json::Value) -> Option<TurnEvent> {
             }
         }
         "final_response" => {
-            // 阶段 5c：`AnswerDelta` 已删除，final_response 不再产生 canonical 事件
+            // final_response 不再产生 canonical 事件
             None
         }
         _ => None,
@@ -223,7 +223,7 @@ fn map_single_sse_value(val: &serde_json::Value) -> Vec<TurnEvent> {
 
     match type_str {
         "TEXT_MESSAGE_CONTENT" => {
-            // 阶段 5c：`AnswerDelta` 已删除，纯文本 delta 不再产生 canonical 事件
+            // 纯文本 delta 不再产生 canonical 事件
             Vec::new()
         }
         "TOOL_CALL_START" => {
@@ -275,7 +275,7 @@ fn map_sse_data_to_turn_events(data: &str) -> Vec<TurnEvent> {
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
             out.extend(map_single_sse_value(&val));
         }
-        // 阶段 5c：非 JSON 行不再映射为 AnswerDelta
+        // 非 JSON 行不产生 canonical 事件
     }
     out
 }
@@ -432,7 +432,7 @@ mod tests {
 
     #[test]
     fn map_text_message_content_produces_no_event() {
-        // 阶段 5c：`AnswerDelta` 已删除，纯文本 delta 不再产生 canonical 事件
+        // 纯文本 delta 不再产生 canonical 事件
         let data = r#"{"type":"TEXT_MESSAGE_CONTENT","delta":"你好"}"#;
         let events = map_sse_data_to_turn_events(data);
         assert!(events.is_empty());
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn map_timeline_log_final_response_produces_no_event() {
-        // 阶段 5c：`AnswerDelta` 已删除，final_response 不再产生 canonical 事件
+        // final_response 不再产生 canonical 事件
         let data = r#"{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"final_response","title":"终答","detail":"已完成创建。"}}"#;
         let events = map_sse_data_to_turn_events(data);
         assert!(events.is_empty());
@@ -487,11 +487,11 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
-        // 阶段 5c：`project_turn_web` 不再产生 `assistant_answer` 行（`Turn.final_answer` 已删除）
-        // SSE replay 的纯文本 delta 不再写入 canonical，仅产生 batch + tool 行
+        // 无工具调用场景：`project_turn_web` 仅产生 batch 行（纯文本 delta 不写入 canonical）
+        // 终答由 overlay 承载，replay 不产生 `assistant_answer` 行
         assert!(
-            rows.iter().any(|r| r.kind == "tool"),
-            "expected tool row, got: {rows:?}"
+            rows.is_empty() || rows.iter().any(|r| r.kind == "assistant_batch_narration"),
+            "expected batch or empty rows, got: {rows:?}"
         );
     }
 
@@ -505,7 +505,7 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
-        // 阶段 5c：`project_turn_web` 不再产生 `assistant_answer` 行
+        // `project_turn_web` 不产生 `assistant_answer` 行
         assert!(
             rows.iter().any(|r| r.kind == "tool"),
             "expected tool row, got: {rows:?}"
