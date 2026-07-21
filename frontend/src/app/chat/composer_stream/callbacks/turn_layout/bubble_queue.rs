@@ -44,8 +44,7 @@ impl BubbleOutputQueue {
     }
 
     /// loading 尾泡 overlay：**仅**未落盘的增量（open commentary 段或 post-tool 终答）。
-    /// 阶段 3b：`overlay_answer` 优先，canonical `final_answer` 作为 fallback。
-    /// 阶段 3c 后 canonical 不再被 `try_apply_answer_delta` 写入，overlay 成为唯一来源。
+    /// 阶段 5a 起：仅读 overlay，移除 canonical `final_answer` fallback。
     pub(super) fn loading_preview_text(
         turn: &TurnCanonicalState,
         overlay_answer: Option<&str>,
@@ -57,7 +56,6 @@ impl BubbleOutputQueue {
             .map(str::trim)
             .filter(|t| !t.is_empty())
             .map(str::to_string)
-            .or_else(|| turn.turn_ref().final_answer.clone())
             .unwrap_or_default()
     }
 
@@ -125,8 +123,7 @@ impl BubbleOutputQueue {
 
     /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final）。
     ///
-    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（阶段 1 起作为 `final_answer` 的 fallback；
-    /// 阶段 3c 起 answer 热路径不再写 canonical，overlay 成为终答唯一来源）。
+    /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（阶段 5a 起为终答唯一来源）。
     pub(super) fn sync_web_projection(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -164,8 +161,7 @@ impl BubbleOutputQueue {
 
     /// 按 [`project_turn_web`] upsert `turn-batch-narration` 行。
     ///
-    /// `overlay_answer`：阶段 3c 起 answer 热路径不再写 canonical `final_answer`，
-    /// batch 去重需同时检查 canonical 与 overlay（任一非空即视为终答已存在）。
+    /// `overlay_answer`：阶段 5a 起 batch 去重仅检查 overlay（canonical `final_answer` 读取路径已删除）。
     pub(super) fn flush_batch_narration_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -179,13 +175,8 @@ impl BubbleOutputQueue {
             return;
         }
         // 根本去重：batch 文本是终答的前缀或子集时，不再创建重复行。
-        // 阶段 3c：终答可能仅在 overlay（canonical `final_answer` 为空），需同时检查。
-        let final_text = turn
-            .turn_ref()
-            .final_answer
-            .as_deref()
-            .filter(|t| !t.trim().is_empty())
-            .or_else(|| overlay_answer.filter(|t| !t.trim().is_empty()));
+        // 阶段 5a：终答仅从 overlay 读取。
+        let final_text = overlay_answer.filter(|t| !t.trim().is_empty());
         if let Some(final_text) = final_text {
             let trimmed = batch.text.trim();
             let final_trimmed = final_text.trim();
