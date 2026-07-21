@@ -90,11 +90,6 @@ mod tests {
             TurnEvent::ToolPhaseEnd => {
                 turn.on_tool_phase_end();
             }
-            TurnEvent::AnswerDelta { delta } => {
-                // 阶段 3c：`try_apply_answer_delta` 不再写 canonical；golden 测试需要 canonical
-                // `final_answer` 供 `project_turn_web` 投影，故用 `apply_answer_delta_event_for_test`。
-                let _ = turn.apply_answer_delta_event_for_test(delta.as_str());
-            }
         }
     }
 
@@ -361,7 +356,6 @@ mod tests {
             let delta: String = chunk.iter().collect();
             assert!(turn.try_apply_answer_delta(delta.as_str()));
         }
-        turn.repartition_web_block_layout_stream();
 
         let mut messages = tool_messages_from_projection(&turn);
         BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer));

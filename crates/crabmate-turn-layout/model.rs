@@ -35,7 +35,6 @@ pub struct Turn {
     pub pre_tool_timeline: Vec<String>,
     pub steps: Vec<ToolStep>,
     pub segments: Vec<TurnSegment>,
-    pub final_answer: Option<String>,
     pub tool_phase_open: bool,
 }
 

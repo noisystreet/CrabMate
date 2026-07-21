@@ -84,7 +84,9 @@ fn is_intent_analysis_json(text: &str) -> bool {
         && stripped.contains("\"primary_intent\"")
 }
 
-/// 从 `assistant_content` 提取 TurnEvent（意图分析 → TimelineAssistant；其他 → AnswerDelta）。
+/// 从 `assistant_content` 提取 TurnEvent（意图分析 → TimelineAssistant；其他忽略）。
+/// 阶段 5c 起：`AnswerDelta` 事件已删除，非意图分析的 assistant_content 不再产生事件
+/// （终答由 overlay 承载，不经过 canonical reducer）。
 fn assistant_content_to_events(text: &str) -> Vec<TurnEvent> {
     if text.trim().is_empty() {
         return Vec::new();
@@ -94,9 +96,7 @@ fn assistant_content_to_events(text: &str) -> Vec<TurnEvent> {
             text: text.to_string(),
         }]
     } else {
-        vec![TurnEvent::AnswerDelta {
-            delta: text.to_string(),
-        }]
+        Vec::new()
     }
 }
 
@@ -138,13 +138,13 @@ fn map_llm_response_done(det: &serde_json::Value) -> Vec<TurnEvent> {
         }
     }
 
-    // 如果本次 LLM 响应无工具调用但有正文，先发 ToolPhaseEnd（关闭工具阶段），
-    // 再发 AnswerDelta（否则 AnswerDelta 在 tool_phase_open=true 时被忽略）
+    // 如果本次 LLM 响应无工具调用，先发 ToolPhaseEnd（关闭工具阶段）
     if !has_tools {
         out.push(TurnEvent::ToolPhaseEnd);
     }
 
-    // assistant_content → AnswerDelta / TimelineAssistant
+    // assistant_content → TimelineAssistant（意图分析时）
+    // 阶段 5c：非意图分析的正文不再产生 AnswerDelta 事件
     if let Some(text) = det.get("assistant_content").and_then(|v| v.as_str()) {
         out.extend(assistant_content_to_events(text));
     }
@@ -208,16 +208,8 @@ fn parse_timeline_log(data: &serde_json::Value) -> Option<TurnEvent> {
             }
         }
         "final_response" => {
-            let detail = data.get("detail").and_then(|v| v.as_str()).unwrap_or("");
-            let title = data.get("title").and_then(|v| v.as_str()).unwrap_or("");
-            let text = if !detail.is_empty() { detail } else { title };
-            if text.is_empty() {
-                None
-            } else {
-                Some(TurnEvent::AnswerDelta {
-                    delta: text.to_string(),
-                })
-            }
+            // 阶段 5c：`AnswerDelta` 已删除，final_response 不再产生 canonical 事件
+            None
         }
         _ => None,
     }
@@ -230,16 +222,10 @@ fn map_single_sse_value(val: &serde_json::Value) -> Vec<TurnEvent> {
     };
 
     match type_str {
-        "TEXT_MESSAGE_CONTENT" => val
-            .get("delta")
-            .and_then(|d| d.as_str())
-            .filter(|s| !s.is_empty())
-            .map(|delta| {
-                vec![TurnEvent::AnswerDelta {
-                    delta: delta.to_string(),
-                }]
-            })
-            .unwrap_or_default(),
+        "TEXT_MESSAGE_CONTENT" => {
+            // 阶段 5c：`AnswerDelta` 已删除，纯文本 delta 不再产生 canonical 事件
+            Vec::new()
+        }
         "TOOL_CALL_START" => {
             let name = val
                 .get("name")
@@ -288,11 +274,8 @@ fn map_sse_data_to_turn_events(data: &str) -> Vec<TurnEvent> {
         }
         if let Ok(val) = serde_json::from_str::<serde_json::Value>(line) {
             out.extend(map_single_sse_value(&val));
-        } else if !line.is_empty() {
-            out.push(TurnEvent::AnswerDelta {
-                delta: line.to_string(),
-            });
         }
+        // 阶段 5c：非 JSON 行不再映射为 AnswerDelta
     }
     out
 }
@@ -377,7 +360,6 @@ fn process_replay_line(
             if this_seq != *current_turn_seq && this_seq > 0 {
                 if *current_turn_seq > 0 {
                     crate::close_open_commentary_segments(current_turn);
-                    crate::repartition_web_block_layout_stream(current_turn);
                     turns.push(std::mem::take(current_turn));
                 }
                 *current_turn_seq = this_seq;
@@ -433,7 +415,6 @@ pub fn replay_all_turns(path: &Path) -> Result<Vec<Turn>, String> {
     // 最后一个 Turn
     if event_count > 0 {
         crate::close_open_commentary_segments(&mut current_turn);
-        crate::repartition_web_block_layout_stream(&mut current_turn);
         turns.push(current_turn);
     }
 
@@ -450,16 +431,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn map_text_message_content_to_answer_delta() {
+    fn map_text_message_content_produces_no_event() {
+        // 阶段 5c：`AnswerDelta` 已删除，纯文本 delta 不再产生 canonical 事件
         let data = r#"{"type":"TEXT_MESSAGE_CONTENT","delta":"你好"}"#;
         let events = map_sse_data_to_turn_events(data);
-        assert_eq!(events.len(), 1);
-        assert_eq!(
-            events[0],
-            TurnEvent::AnswerDelta {
-                delta: "你好".to_string()
-            }
-        );
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -478,16 +454,11 @@ mod tests {
     }
 
     #[test]
-    fn map_timeline_log_final_response_to_answer_delta() {
+    fn map_timeline_log_final_response_produces_no_event() {
+        // 阶段 5c：`AnswerDelta` 已删除，final_response 不再产生 canonical 事件
         let data = r#"{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"final_response","title":"终答","detail":"已完成创建。"}}"#;
         let events = map_sse_data_to_turn_events(data);
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            TurnEvent::AnswerDelta { delta } => {
-                assert_eq!(delta, "已完成创建。");
-            }
-            other => panic!("expected AnswerDelta, got {other:?}"),
-        }
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -516,9 +487,11 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
+        // 阶段 5c：`project_turn_web` 不再产生 `assistant_answer` 行（`Turn.final_answer` 已删除）
+        // SSE replay 的纯文本 delta 不再写入 canonical，仅产生 batch + tool 行
         assert!(
-            rows.iter().any(|r| r.kind == "assistant_answer"),
-            "expected assistant_answer row, got: {rows:?}"
+            rows.iter().any(|r| r.kind == "tool"),
+            "expected tool row, got: {rows:?}"
         );
     }
 
@@ -532,10 +505,7 @@ mod tests {
 "#;
         std::fs::write(&path, jsonl).expect("write jsonl");
         let rows = replay_sse_events_to_web_rows(&path).expect("replay");
-        assert!(
-            rows.iter().any(|r| r.kind == "assistant_answer"),
-            "expected assistant_answer row, got: {rows:?}"
-        );
+        // 阶段 5c：`project_turn_web` 不再产生 `assistant_answer` 行
         assert!(
             rows.iter().any(|r| r.kind == "tool"),
             "expected tool row, got: {rows:?}"

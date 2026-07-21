@@ -20,8 +20,7 @@ pub use project::{
     streaming_commentary_block_text,
 };
 pub use reduce::{
-    TurnReducer, close_open_commentary_segments, reduce_event, repartition_web_block_layout_stream,
-    try_split_combined_post_tool_answer,
+    TurnReducer, close_open_commentary_segments, reduce_event, try_split_combined_post_tool_answer,
 };
 
 #[cfg(test)]

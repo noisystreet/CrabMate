@@ -28,7 +28,4 @@ pub enum TurnEvent {
         summary: String,
     },
     ToolPhaseEnd,
-    AnswerDelta {
-        delta: String,
-    },
 }
