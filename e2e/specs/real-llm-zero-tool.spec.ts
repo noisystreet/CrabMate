@@ -5,30 +5,49 @@
  *   - 流完成后终答正文在 UI 中可见
  *   - 会话消息持久化包含 assistant 终答
  *
- * 前置条件（与 mock SSE 测试不同，此文件需真实 LLM 后端）：
+ * 前置条件：
  *   1. `cargo run -- serve` 在 127.0.0.1:8080 运行
- *   2. `API_KEY` 环境变量已设置为有效的 LLM API 密钥
+ *   2. 本地 Tauri 配置中已设置 API 密钥（~/.local/share/crabmate/secrets/client_llm）
+ *      或通过 API_KEY 环境变量传入
  *
  * 运行方式：
- *   cd e2e && API_KEY="sk-xxx" npx playwright test specs/real-llm-zero-tool.spec.ts
+ *   cd e2e && npx playwright test specs/real-llm-zero-tool.spec.ts
  *
  * 注意：
+ *   - 密钥优先级：环境变量 API_KEY > Tauri secrets 文件
  *   - 真实 LLM 调用较慢，超时设置为 180 秒
- *   - 无 API_KEY 时测试自动跳过（不影响 CI 中 mock SSE 测试）
+ *   - 无密钥时测试自动跳过（不影响 CI 中 mock SSE 测试）
  */
 
 import { test, expect } from "@playwright/test";
+import * as fs from "fs";
+import * as path from "path";
 import {
   setupRealLLMSession,
   sendMessage,
   waitForReady,
 } from "../fixtures/helpers";
 
-const API_KEY = process.env.API_KEY || "";
+/** 读取 API 密钥：优先环境变量，其次 Tauri secrets 文件。 */
+function resolveApiKey(): string {
+  const env = process.env.API_KEY;
+  if (env && env.trim()) return env.trim();
+  const dataHome =
+    process.env.XDG_DATA_HOME ||
+    path.join(process.env.HOME || "", ".local", "share");
+  const secretsPath = path.join(dataHome, "crabmate", "secrets", "client_llm");
+  try {
+    return fs.readFileSync(secretsPath, "utf8").trim();
+  } catch {
+    return "";
+  }
+}
+
+const API_KEY = resolveApiKey();
 const SID = "s_e2e_real_zero_tool";
 
 test.describe("真实 LLM：无工具终答场景", () => {
-  // 无 API_KEY 时跳过（describe 块始终运行，内部按条件跳过）
+  // 无密钥时跳过（describe 块始终运行，内部按条件跳过）
   const runTest = API_KEY ? test : test.skip;
 
   runTest("流完成后终答正文在 UI 中可见", async ({ page }) => {
