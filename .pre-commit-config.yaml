@@ -82,6 +82,21 @@ repos:
         always_run: true
         stages: [pre-commit]
 
+      - id: e2e-format
+        name: e2e format (prettier)
+        entry: bash -c 'cd e2e && npm run format:check'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+      - id: e2e-lint
+        name: e2e lint (tsc --noEmit)
+        entry: bash -c 'cd e2e && npm run lint'
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
   - repo: https://github.com/crate-ci/typos
     rev: v1.35.5
     hooks:
