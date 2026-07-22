@@ -33,6 +33,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Install wasm target & trunk
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install trunk --locked
+
+      - name: Build frontend WASM
+        run: cd frontend && trunk build
+
       - name: Build backend (serve)
         run: cargo build -p crabmate --features web
 
