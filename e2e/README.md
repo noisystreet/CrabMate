@@ -43,8 +43,12 @@ npx playwright test
 # 列出所有测试
 npx playwright test --list
 
-# 运行单个文件
+# 运行 mock SSE 回归测试（CI 中的标准模式）
 npx playwright test specs/mock-overlay-timing.spec.ts
+
+# 运行真实 LLM 测试（需本地 Tauri 已配置 API 密钥）
+# 自动读取 ~/.local/share/crabmate/secrets/client_llm
+npx playwright test specs/real-llm-*.spec.ts
 
 # 运行单个用例（按名称过滤）
 npx playwright test --grep "final_response"
@@ -67,7 +71,8 @@ e2e/
 ├── fixtures/
 │   └── helpers.ts         — 公共辅助函数
 └── specs/
-    └── mock-overlay-timing.spec.ts  — mock SSE 回归测试
+    ├── mock-overlay-timing.spec.ts  — mock SSE 回归测试（CI 运行）
+    └── real-llm-zero-tool.spec.ts   — 真实 LLM 终答验证（本地运行）
 ```
 
 ## 测试编写指南
@@ -129,6 +134,30 @@ x-stream-job-id: 1
 ```
 
 完整示例见 `specs/mock-overlay-timing.spec.ts`。
+
+## 真实 LLM 测试
+
+`specs/real-llm-*.spec.ts` 需要真实 LLM 后端，不在 CI 中运行。
+
+### 密钥解析
+
+自动读取 Tauri 本地配置（无需手动传 `API_KEY`）：
+
+1. 环境变量 `API_KEY`（最高优先级）
+2. `$XDG_DATA_HOME/crabmate/secrets/client_llm`
+3. `$HOME/.local/share/crabmate/secrets/client_llm`
+
+无密钥时测试自动跳过。
+
+### 本地运行
+
+```bash
+# 确保后端运行
+cargo run -- serve
+
+# 运行真实 LLM 测试
+cd e2e && npx playwright test specs/real-llm-zero-tool.spec.ts
+```
 
 ### 注意事项
 
