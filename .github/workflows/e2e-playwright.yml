@@ -1,0 +1,107 @@
+# Playwright E2E 测试
+#
+# 运行 e2e/ 目录下的 Playwright 端到端测试：
+#   - mock SSE 测试：不依赖 LLM API，每次 CI 运行
+#   - 真实 LLM 测试：需 API_KEY，仅在 secrets 可用时运行
+#
+# 前置：后端 `cargo run -- serve` 启动后，Playwright 测试以 headless Chromium 访问。
+
+name: E2E Playwright
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_real_llm:
+        description: "是否运行真实 LLM 测试（需提供 API_KEY secret）"
+        type: boolean
+        default: false
+
+concurrency:
+  group: e2e-pw-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  playwright:
+    name: Playwright E2E
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps (OpenSSL / libssh2)
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build backend (serve)
+        run: cargo build -p crabmate --features web
+        env:
+          CARGO_PROFILE_RELEASE_DEBUG: 1
+
+      - name: Start backend server
+        run: |
+          cargo run -- serve &
+          sleep 5
+          # 等待 /health 就绪（最多 60 秒）
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8080/health > /dev/null 2>&1; then
+              echo "✅ 后端就绪 (尝试 $i)"
+              break
+            fi
+            echo "⏳ 等待后端... (尝试 $i)"
+            sleep 2
+          done
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install Playwright dependencies
+        run: |
+          npm ci
+          npx playwright install chromium
+        working-directory: e2e
+
+      - name: Run mock SSE tests
+        run: npx playwright test specs/mock-overlay-timing.spec.ts --reporter=list
+        working-directory: e2e
+        env:
+          # mock SSE 测试不需要 API_KEY
+          PLAYWRIGHT_HTML_REPORT: playwright-report-mock
+
+      - name: Run real LLM tests (if API_KEY available)
+        if: ${{ secrets.API_KEY != '' }}
+        run: npx playwright test specs/real-llm-zero-tool.spec.ts --reporter=list
+        working-directory: e2e
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          PLAYWRIGHT_HTML_REPORT: playwright-report-real-llm
+
+      - name: Upload Playwright report (mock SSE)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-mock
+          path: e2e/playwright-report-mock/
+          retention-days: 7
+
+      - name: Upload Playwright report (real LLM)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-real-llm
+          path: e2e/playwright-report-real-llm/
+          retention-days: 7
+
+      - name: Stop backend
+        if: always()
+        run: pkill -f "crabmate" || true
