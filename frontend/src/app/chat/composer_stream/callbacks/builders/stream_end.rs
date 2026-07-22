@@ -93,6 +93,9 @@ pub(in super::super) fn chat_stream_on_done_builder(
                 loc,
             );
         });
+        // 将 `turn-final-answer` 脱钩为普通 assistant 行，
+        // 防止下一轮 `sync_turn_projection` 覆盖时挤掉已显示的旧文本。
+        TurnLayout::detach_final_answer_projection(stream_ctx.as_ref());
         stream_ctx.chat.clear_stream_text_overlay();
         stream_ctx
             .shell
