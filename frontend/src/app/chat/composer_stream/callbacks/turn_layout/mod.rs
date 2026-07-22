@@ -351,7 +351,7 @@ impl TurnLayout {
 
     /// 将 `turn-final-answer` 投影行脱钩为普通 assistant 行，
     /// 防止下一轮 `sync_turn_projection` 覆盖时挤掉已显示的旧文本。
-    fn detach_final_answer_projection(stream_ctx: &ChatStreamCallbackCtx) {
+    pub(crate) fn detach_final_answer_projection(stream_ctx: &ChatStreamCallbackCtx) {
         stream_ctx.update_bound_session(|s| {
             if let Some(idx) = s
                 .messages
