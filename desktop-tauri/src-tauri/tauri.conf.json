@@ -41,7 +41,6 @@
           "etc/crabmate/context_inject.toml": "../../config/context_inject.toml",
           "etc/crabmate/tools.toml": "../../config/tools.toml",
           "etc/crabmate/sandbox.toml": "../../config/sandbox.toml",
-          "etc/crabmate/planning.toml": "../../config/planning.toml",
           "etc/crabmate/memory.toml": "../../config/memory.toml",
           "etc/crabmate/prompts/base_system_prompt.md": "../../config/prompts/base_system_prompt.md",
           "etc/crabmate/prompts/coding_workbench_increment.md": "../../config/prompts/coding_workbench_increment.md",
