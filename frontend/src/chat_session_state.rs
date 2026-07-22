@@ -24,6 +24,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use leptos::prelude::GetUntracked;
 use leptos::prelude::*;
 
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;

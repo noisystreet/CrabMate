@@ -535,4 +535,61 @@ mod tests {
         queue.flush_batch_narration_row(&mut msgs, &turn, None);
         assert!(msgs.is_empty());
     }
+
+    /// 无工具场景：`flush_final_answer_row` 从 overlay 创建 FINAL_ANSWER_ROW。
+    ///
+    /// 这是无工具问答的正常路径：流式 delta 写入 overlay，on_done 时
+    /// `flush_final_answer_row` 读 overlay 创建终答行。
+    #[test]
+    fn no_tool_flush_final_creates_row_from_overlay() {
+        let turn = TurnCanonicalState::new();
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![crate::storage::StoredMessage {
+            id: "load".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(crate::storage::StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }];
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("无工具终答正文。"));
+        // FINAL_ANSWER_ROW 应创建
+        let final_row = msgs
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("FINAL_ANSWER_ROW must be created in no-tool scenario");
+        assert_eq!(final_row.text, "无工具终答正文。");
+        // loading tail 仍保留
+        assert!(msgs.iter().any(|m| m.id == "load"));
+    }
+
+    /// 无工具场景 overlay 为空时：`flush_final_answer_row` 不应创建
+    /// FINAL_ANSWER_ROW（对应 overlay 被 prematurely 清空的情况）。
+    #[test]
+    fn no_tool_flush_final_skips_when_overlay_empty() {
+        let turn = TurnCanonicalState::new();
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![crate::storage::StoredMessage {
+            id: "load".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(crate::storage::StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }];
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), None);
+        // overlay 为空时不应创建 FINAL_ANSWER_ROW
+        assert!(
+            !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "FINAL_ANSWER_ROW must not be created when overlay is empty"
+        );
+    }
 }

@@ -72,7 +72,14 @@ fn timeline_log_dispatch_final_response(
                 accum.add_answer_delta_chars(final_text.chars().count());
             }
         }
-        if !TurnLayout::should_defer_finalize_on_final_response(stream_ctx) {
+        // 当 overlay 已有流式正文（already_visible=true）时，final_response 提前 finalize
+        // 会消费 overlay，导致后续 on_done 时 sync_turn_projection 无法读取 overlay 创建
+        // FINAL_ANSWER_ROW。此时延迟到 on_done 处理（finalize_turn_projection_before_stream_done）。
+        // 仅在 final_response 写入了新 overlay（already_visible=false 且 outcome.consumed()）
+        // 或 post-tool 延迟场景才跳过立即 finalize。
+        let defer =
+            already_visible || TurnLayout::should_defer_finalize_on_final_response(stream_ctx);
+        if !defer {
             TurnLayout::finalize_loading_segment(stream_ctx);
         }
     } else {

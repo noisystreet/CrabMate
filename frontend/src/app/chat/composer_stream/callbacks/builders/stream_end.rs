@@ -38,7 +38,12 @@ pub(in super::super) fn chat_stream_on_done_builder(
         }
         // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
         // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
-        if stream_ctx.scratch.take_followup_rotation_pending() {
+        let followup_pending = stream_ctx.scratch.take_followup_rotation_pending();
+        if followup_pending {
+            // 先从旧 overlay 创建 FINAL_ANSWER_ROW，再 rotate。
+            // 否则 rotate 中的 finalize_loading_segment 会消费 overlay，
+            // 导致后续 sync_turn_projection 读到空 overlay 而 SKIP FINAL_ANSWER_ROW。
+            TurnLayout::finalize_turn_projection_before_stream_done(stream_ctx.as_ref());
             TurnLayout::rotate_followup_model_round(stream_ctx.as_ref());
             accum.clear_answer_delta_chars();
         }

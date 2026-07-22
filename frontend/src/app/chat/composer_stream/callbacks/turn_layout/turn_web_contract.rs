@@ -8,7 +8,9 @@ mod tests {
     use crabmate_turn_layout::{SegmentKind, TurnEvent, project_turn_web};
     use serde::Deserialize;
 
-    use super::super::super::super::turn_canonical::TurnCanonicalState;
+    use super::super::super::super::turn_canonical::{
+        IngestFinalResponseOutcome, TurnCanonicalState,
+    };
     use crate::sse_dispatch::TurnSegmentStartInfo;
     use crate::storage::StoredMessage;
     use crate::storage::StoredMessageState;
@@ -548,6 +550,98 @@ mod tests {
         assert!(
             !messages.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
             "empty text must not create FINAL_ANSWER_ROW"
+        );
+    }
+
+    /// 回归测试（修复一）：零工具场景下 `final_response` 到达时 overlay 已有流式正文，
+    /// `try_ingest_final_response_text` 必须返回 `Consumed`（不覆盖 overlay），保留流式真实文本。
+    ///
+    /// 对应 `timeline_dispatch.rs` 中 `already_visible=true` 时延迟 `finalize_loading_segment`
+    /// 的守卫：若 `final_response` 提前消费/覆盖 overlay，后续 `on_done` 时
+    /// `sync_turn_projection` → `flush_final_answer_row` 读不到 overlay，FINAL_ANSWER_ROW 丢失。
+    ///
+    /// 此测试确保数据层不变量：overlay 有内容时 `final_response` 不写入 overlay，
+    /// `sync_web_projection` 仍能从原 overlay 创建完整 FINAL_ANSWER_ROW。
+    #[test]
+    fn zero_tool_final_response_preserves_existing_overlay_answer() {
+        let mut turn = TurnCanonicalState::new();
+        // 流式 delta 累积正文到 overlay（模拟第一次 assistant_answer_phase 后的 delta 流）
+        let streamed_answer =
+            "我具备以下技能：文件读写、代码分析、命令执行。可以帮你完成多种开发任务。";
+        assert!(turn.try_apply_answer_state_transition(streamed_answer));
+
+        // final_response 到达，overlay 已有流式正文（already_visible=true）
+        let final_response_text =
+            "我具备以下技能：文件读写、代码分析、命令执行。可以帮你完成多种开发任务。";
+        let outcome = turn.try_ingest_final_response_text(
+            final_response_text,
+            Some(streamed_answer), // overlay 已有内容
+        );
+        // 必须返回 Consumed，不能是 WriteToOverlay（否则会覆盖流式正文）
+        assert_eq!(
+            outcome,
+            IngestFinalResponseOutcome::Consumed,
+            "final_response must not overwrite existing overlay answer (Consumed, not WriteToOverlay)"
+        );
+
+        // sync_web_projection 仍能从原 overlay 创建完整 FINAL_ANSWER_ROW
+        let mut messages = tool_messages_from_projection(&turn);
+        BubbleOutputQueue.sync_web_projection(
+            &mut messages,
+            &turn,
+            None,
+            Some(streamed_answer), // overlay 仍保留流式正文
+        );
+        let final_row = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("FINAL_ANSWER_ROW must be created from preserved overlay answer");
+        assert_eq!(
+            final_row.text, streamed_answer,
+            "FINAL_ANSWER_ROW must contain the streamed overlay answer, not final_response replacement"
+        );
+    }
+
+    /// 回归测试（修复二）：`on_done` 中 `followup_pending=true` 时必须先
+    /// `finalize_turn_projection_before_stream_done`（sync_web_projection 创建 FINAL_ANSWER_ROW）
+    /// 再 `rotate_followup_model_round`（finalize_loading_segment 消费 overlay）。
+    ///
+    /// 若顺序颠倒（先 rotate 再 finalize），rotate 中的 `finalize_loading_segment` 会 take overlay，
+    /// 导致后续 `sync_turn_projection` → `flush_final_answer_row` 读到空 overlay 而 SKIP。
+    ///
+    /// 此测试文档化数据层不变量：`sync_web_projection` 必须在 overlay 被消费（drain）之前调用，
+    /// 且 drain 后 FINAL_ANSWER_ROW 必须保留（不被空 overlay 覆盖）。
+    #[test]
+    fn followup_pending_sync_before_drain_preserves_final_answer() {
+        let mut turn = TurnCanonicalState::new();
+        // 模拟流式 delta 累积完整正文（对应 bug 场景的 2725 字符终答）
+        let full_answer = "终答正文，模拟第二次 assistant_answer_phase 前累积的完整内容。包含足够长度以验证无截断。";
+        assert!(turn.try_apply_answer_state_transition(full_answer));
+
+        let mut messages = tool_messages_from_projection(&turn);
+
+        // 正确顺序（修复后）：先 sync（overlay 有内容）→ 创建 FINAL_ANSWER_ROW
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer));
+        let final_row = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("sync before drain must create FINAL_ANSWER_ROW");
+        assert_eq!(
+            final_row.text, full_answer,
+            "FINAL_ANSWER_ROW must contain full overlay answer"
+        );
+
+        // 之后 rotate 中的 finalize_loading_segment 会 take overlay（drain）。
+        // 模拟 drain：第二次 sync 时 overlay 已空（None）。
+        // FINAL_ANSWER_ROW 必须保留，不被空 overlay 覆盖。
+        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
+        let final_row_after_drain = messages
+            .iter()
+            .find(|m| m.id == FINAL_ANSWER_ROW_ID)
+            .expect("FINAL_ANSWER_ROW must be preserved after overlay drain");
+        assert_eq!(
+            final_row_after_drain.text, full_answer,
+            "FINAL_ANSWER_ROW must be preserved after overlay is drained (rotate)"
         );
     }
 }
