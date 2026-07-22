@@ -158,14 +158,10 @@ pub async fn run_agent_turn<'a>(
                 mcp_turn,
                 read_file_turn_cache,
                 workspace_changelist,
-                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-                staged_plan_optimizer_requires_parallel_tools: cfg
-                    .staged_planning
-                    .staged_plan_optimizer_requires_parallel_tools,
-                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-                staged_plan_skip_ensemble_on_casual_prompt: cfg
-                    .staged_planning
-                    .staged_plan_skip_ensemble_on_casual_prompt,
+                staged_plan_optimizer_round: false,
+                staged_plan_optimizer_requires_parallel_tools: false,
+                staged_plan_ensemble_count: 1u8,
+                staged_plan_skip_ensemble_on_casual_prompt: false,
                 turn_allowed_tool_names: turn_allowed_tool_names.clone(),
             },
             obs: crate::agent::agent_turn::RunLoopObs {

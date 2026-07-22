@@ -27,7 +27,6 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         web_api: finalize_section_web_api(tail),
         chat_queues_cache: finalize_section_chat_queues_cache(tail),
         session_workspace_changelist: finalize_section_session_workspace_changelist(tail),
-        staged_planning: finalize_section_staged_planning(tail),
         sync_tool_sandbox: finalize_section_sync_tool_sandbox(tail),
         conversation_persistence: finalize_section_conversation_persistence(mid, tail),
         context_bootstrap_inject: finalize_section_context_bootstrap_inject(tail),
@@ -258,32 +257,6 @@ fn finalize_section_session_workspace_changelist(
     types::SessionWorkspaceChangelistConfig {
         session_workspace_changelist_enabled: tail.session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars: tail.session_workspace_changelist_max_chars,
-    }
-}
-
-fn finalize_section_staged_planning(tail: &FinalizeTailScalars) -> types::StagedPlanningConfig {
-    types::StagedPlanningConfig {
-        staged_plan_phase_instruction: tail.staged_plan_phase_instruction.clone(),
-        staged_plan_allow_no_task: tail.staged_plan_allow_no_task,
-        staged_plan_feedback_mode: tail.staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts: tail.staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream: tail.staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: tail.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: tail.staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: tail.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: tail.staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display: tail.staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass: tail.staged_plan_intent_gate_advisory_bypass,
-        staged_plan_advisory_bypass_extra_impl_blockers: tail
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .clone(),
-        staged_plan_advisory_bypass_extra_arch_markers: tail
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .clone(),
-        staged_plan_advisory_bypass_extra_consult_markers: tail
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .clone(),
-        staged_plan_baseline_mode: tail.staged_plan_baseline_mode,
     }
 }
 

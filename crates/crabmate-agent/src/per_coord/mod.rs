@@ -60,9 +60,7 @@ impl PerCoordinatorInit {
             reflection_default_max_rounds: cfg.per_plan_policy.reflection_default_max_rounds,
             final_plan_policy: cfg.per_plan_policy.final_plan_requirement,
             plan_rewrite_max_attempts: cfg.per_plan_policy.plan_rewrite_max_attempts,
-            staged_plan_patch_max_attempts_config: cfg
-                .staged_planning
-                .staged_plan_patch_max_attempts,
+            staged_plan_patch_max_attempts_config: 2,
             final_plan_require_strict_workflow_node_coverage: cfg
                 .per_plan_policy
                 .final_plan_require_strict_workflow_node_coverage,

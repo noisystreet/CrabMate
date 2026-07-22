@@ -40,8 +40,6 @@ pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};
 #[allow(unused_imports)]
 pub use terminal_render::terminal_render_agent_markdown;
 
-pub(crate) use crabmate_llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS;
-
 use crabmate_types::{ChatRequest, Message};
 
 /// 调用 `chat/completions`（含指数退避重试）；Chrome trace 在根包包装层附加。

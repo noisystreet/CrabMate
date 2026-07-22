@@ -8,13 +8,16 @@ use std::sync::Arc;
 use serde_json::Value;
 use tokio::sync::{Mutex, mpsc};
 
+#[allow(dead_code)]
 const CHANNEL_CAP: usize = 512;
 
+#[allow(dead_code)]
 struct GateState {
     seen_answer_phase: bool,
     post_phase: Vec<String>,
 }
 
+#[allow(dead_code)]
 pub(crate) struct PlannerSseGate {
     pub(crate) inner_tx: mpsc::Sender<String>,
     state: Arc<Mutex<GateState>>,
@@ -22,6 +25,7 @@ pub(crate) struct PlannerSseGate {
     real_out: mpsc::Sender<String>,
 }
 
+#[allow(dead_code)]
 impl PlannerSseGate {
     pub(crate) fn spawn(real_out: mpsc::Sender<String>) -> Self {
         let (inner_tx, mut inner_rx) = mpsc::channel::<String>(CHANNEL_CAP);
@@ -74,6 +78,7 @@ impl PlannerSseGate {
     }
 
     /// `inner_tx` 须在调用前随 `CompleteChatRetryingParams` 一并释放（drop）。
+    #[allow(dead_code)]
     pub(crate) async fn finish(self, assistant_msg: &crate::types::Message) {
         let Self {
             inner_tx,

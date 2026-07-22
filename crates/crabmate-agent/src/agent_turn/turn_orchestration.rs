@@ -53,7 +53,7 @@ pub fn resolve_non_hierarchical_turn_phase(
     if !staged_intent_gate_allow {
         return NonHierarchicalTurnPhase::ReAct;
     }
-    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
+    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::SingleAgent {
         return NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual);
     }
     NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn logical_dual_planned_step_when_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, true),
             NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual)
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn freeform_when_gate_denies() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, false),
             NonHierarchicalTurnPhase::ReAct
@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn turn_resolution_denied_gate_carries_reason() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         let gate = StagedPlanningGateOutcome::Deny {
             reason: StagedPlanningDenyReason::EmptyEffectiveTask,
             task_preview: None,
@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn turn_resolution_logical_dual_no_freeform_because() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Allow {

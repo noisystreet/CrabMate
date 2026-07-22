@@ -33,8 +33,7 @@ pub use stream_hub::SseStreamHub;
 pub use control_mirror::SseControlMirror;
 pub use protocol::{
     ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,
-    ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StagedPlanFinishedBody,
-    StagedPlanStartedBody, StagedPlanStepFinishedBody, StagedPlanStepStartedBody, StreamEndedBody,
+    ConversationSavedBody, SseCapabilitiesBody, SseErrorBody, SsePayload, StreamEndedBody,
     ThinkingTraceBody, TimelineLogBody, ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
     TurnSegmentEndBody, TurnSegmentStartBody, encode_message,
 };

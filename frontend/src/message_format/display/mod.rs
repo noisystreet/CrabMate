@@ -11,7 +11,6 @@ pub(crate) use message_ex::{
 };
 #[cfg(test)]
 pub(crate) use plan_fence::assistant_text_for_display;
-pub(crate) use plan_fence::stored_message_is_staged_planner_round;
 #[cfg(test)]
 pub(crate) use thinking_strip::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
@@ -22,13 +21,12 @@ mod tests {
     use super::super::plain::collapse_consecutive_blank_lines;
     use super::message_text_for_display_ex;
     use super::plan_fence::assistant_text_for_display;
-    use super::plan_fence::stored_message_is_staged_planner_round;
     use super::thinking_strip::{
         assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
         filter_redacted_thinking_for_display,
     };
     use crate::i18n::Locale;
-    use crate::storage::{StoredMessage, StoredMessageState};
+    use crate::storage::StoredMessage;
 
     /// Embedded copy of `fixtures/chat_resp1.md` (redacted blocks + `agent_reply_plan` fence).
     const CHAT_RESP1_FIXTURE: &str = include_str!("../../../fixtures/chat_resp1.md");
@@ -335,88 +333,6 @@ mod tests {
         assert!(out.contains("本轮不调用新工具") || out.contains("不调用新工具"));
         assert!(!out.contains("```"));
         assert!(!out.contains("plan_summary"));
-    }
-
-    #[test]
-    fn stored_message_is_staged_planner_round_detects_plan_in_text() {
-        let m = StoredMessage {
-            id: "1".into(),
-            role: "assistant".into(),
-            text: r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(stored_message_is_staged_planner_round(&m));
-    }
-
-    #[test]
-    fn stored_message_is_staged_planner_round_detects_plan_in_reasoning_only() {
-        let m = StoredMessage {
-            id: "2".into(),
-            role: "assistant".into(),
-            text: String::new(),
-            reasoning_text: r#"{"type":"agent_reply_plan","version":1,"no_task":true,"steps":[]}"#
-                .into(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(stored_message_is_staged_planner_round(&m));
-    }
-
-    #[test]
-    fn stored_message_is_staged_planner_round_streaming_prefix() {
-        let m = StoredMessage {
-            id: "3".into(),
-            role: "assistant".into(),
-            text: r#"{"type":"agent_reply_plan","version":1"#.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::Loading),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(stored_message_is_staged_planner_round(&m));
-    }
-
-    #[test]
-    fn stored_message_is_staged_planner_round_false_for_user_and_tool() {
-        let user = StoredMessage {
-            id: "u".into(),
-            role: "user".into(),
-            text: r#"{"type":"agent_reply_plan","version":1}"#.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(!stored_message_is_staged_planner_round(&user));
-        let tool = StoredMessage {
-            id: "t".into(),
-            role: "assistant".into(),
-            text: r#"{"type":"agent_reply_plan","version":1}"#.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: true,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(!stored_message_is_staged_planner_round(&tool));
     }
 
     #[test]

@@ -136,10 +136,6 @@ impl ConfigBuilder {
             &mut self.web_api.web_api_bearer_token,
             agent.web_api_bearer_token.as_ref(),
         );
-        override_opt_string_trimmed(
-            &mut self.staged_planning.staged_plan_phase_instruction,
-            agent.staged_plan_phase_instruction.as_ref(),
-        );
         if let Some(ref k) = agent.web_search_api_key {
             self.web_search.web_search_api_key = Some(k.clone());
         }
@@ -335,63 +331,6 @@ impl ConfigBuilder {
         swc.session_workspace_changelist_max_chars = agent
             .session_workspace_changelist_max_chars
             .or(swc.session_workspace_changelist_max_chars);
-        let sp = &mut self.staged_planning;
-        sp.staged_plan_allow_no_task = agent
-            .staged_plan_allow_no_task
-            .or(sp.staged_plan_allow_no_task);
-        override_opt_string_non_empty(
-            &mut sp.staged_plan_feedback_mode_str,
-            agent.staged_plan_feedback_mode.clone(),
-        );
-        sp.staged_plan_patch_max_attempts = agent
-            .staged_plan_patch_max_attempts
-            .or(sp.staged_plan_patch_max_attempts);
-        sp.staged_plan_cli_show_planner_stream = agent
-            .staged_plan_cli_show_planner_stream
-            .or(sp.staged_plan_cli_show_planner_stream);
-        sp.staged_plan_optimizer_round = agent
-            .staged_plan_optimizer_round
-            .or(sp.staged_plan_optimizer_round);
-        sp.staged_plan_optimizer_requires_parallel_tools = agent
-            .staged_plan_optimizer_requires_parallel_tools
-            .or(sp.staged_plan_optimizer_requires_parallel_tools);
-        sp.staged_plan_ensemble_count = agent
-            .staged_plan_ensemble_count
-            .or(sp.staged_plan_ensemble_count);
-        sp.staged_plan_skip_ensemble_on_casual_prompt = agent
-            .staged_plan_skip_ensemble_on_casual_prompt
-            .or(sp.staged_plan_skip_ensemble_on_casual_prompt);
-        sp.staged_plan_two_phase_nl_display = agent
-            .staged_plan_two_phase_nl_display
-            .or(sp.staged_plan_two_phase_nl_display);
-        sp.staged_plan_intent_gate_advisory_bypass = agent
-            .staged_plan_intent_gate_advisory_bypass
-            .or(sp.staged_plan_intent_gate_advisory_bypass);
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_impl_blockers = Some(v.clone());
-        }
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_arch_markers = Some(v.clone());
-        }
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_consult_markers = Some(v.clone());
-        }
-        override_opt_string_non_empty(
-            &mut sp.staged_plan_baseline_mode_str,
-            agent.staged_plan_baseline_mode.clone(),
-        );
     }
 
     /// 同步工具沙盒、Web API 审计与会话持久化路径合并。

@@ -315,9 +315,6 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if is_commentary_before_tools_assistant(m) {
         return true;
     }
-    if crate::message_format::stored_message_is_staged_planner_round(m) {
-        return true;
-    }
     if is_tool_argument_residue_assistant_text(&m.text) {
         return true;
     }
@@ -513,28 +510,6 @@ mod tests {
             created_at: 0,
         };
         assert!(is_commentary_before_tools_assistant(&m));
-        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
-    }
-
-    #[test]
-    fn staged_planner_round_dropped_for_export() {
-        let m = StoredMessage {
-            id: "plan".into(),
-            role: "assistant".into(),
-            text: r#"1. `rerun-demo`: 重新运行 demo
-
-```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"rerun-demo","description":"重新运行 demo"}],"no_task":false}
-```"#
-                .into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
         assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 

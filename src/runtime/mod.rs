@@ -16,7 +16,6 @@ pub(crate) mod config_reload;
 pub use crabmate_runtime::latex_unicode;
 pub(crate) use crabmate_runtime::message_display;
 pub(crate) use crabmate_runtime::message_snapshot_display;
-pub use crabmate_runtime::plan_section;
 #[cfg(feature = "repl")]
 pub(crate) mod repl_reedline;
 #[cfg(feature = "repl")]

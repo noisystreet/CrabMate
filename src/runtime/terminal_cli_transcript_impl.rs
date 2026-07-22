@@ -64,6 +64,7 @@ pub(crate) fn tool_result_header_detail(args: &str, summary: Option<&str>) -> Op
     }
 }
 
+#[allow(dead_code)]
 fn write_staged_plan_title_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
     if color {
         queue!(
@@ -79,6 +80,7 @@ fn write_staged_plan_title_line(w: &mut io::Stdout, color: bool, t: &str) -> io:
     Ok(())
 }
 
+#[allow(dead_code)]
 fn write_staged_plan_desc_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
     if color {
         queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
@@ -93,6 +95,7 @@ fn write_staged_plan_desc_line(w: &mut io::Stdout, color: bool, t: &str) -> io::
 /// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
 ///
 /// `clear_before` 时先空一行，并对**首条非空行**加粗 + [`CLI_REPL_HELP_TITLE_FG`]（与 **`/help`** 节标题同级）；其余非空行用 [`CLI_REPL_HELP_DESC_FG`]。
+#[allow(dead_code)]
 pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Result<()> {
     let display = user_message_for_chat_display(text);
     debug!(

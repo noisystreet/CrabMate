@@ -35,11 +35,6 @@ pub enum AgentLineKind {
         error_preview: Option<String>,
         code: Option<String>,
     },
-    /// 分阶段规划摘要（仅 TUI 队列页/状态栏使用；Web 忽略）
-    StagedPlanNotice {
-        text: String,
-        clear_before: bool,
-    },
     StreamEnded {
         reason: StreamEndReason,
     },
@@ -61,7 +56,6 @@ impl AgentLineKind {
             AgentLineKind::CommandApproval { .. } => "command_approval",
             AgentLineKind::ToolResult { .. } => "tool_result",
             AgentLineKind::StreamError { .. } => "stream_error",
-            AgentLineKind::StagedPlanNotice { .. } => "staged_plan_notice",
             AgentLineKind::StreamEnded { .. } => "stream_ended",
             AgentLineKind::Ignore => "ignore",
             AgentLineKind::Plain => "plain",
@@ -127,18 +121,8 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     code: body.code,
                 };
             }
-            super::protocol::SsePayload::StagedPlanNotice { text, clear_before } => {
-                return AgentLineKind::StagedPlanNotice { text, clear_before };
-            }
             super::protocol::SsePayload::ChatUiSeparator { .. } => {
                 // TUI 聊天区分隔线已随 `messages` 全量同步，勿再追加。
-                return AgentLineKind::Ignore;
-            }
-            super::protocol::SsePayload::StagedPlanStarted { .. }
-            | super::protocol::SsePayload::StagedPlanStepStarted { .. }
-            | super::protocol::SsePayload::StagedPlanStepFinished { .. }
-            | super::protocol::SsePayload::StagedPlanFinished { .. } => {
-                // 结构化分步事件当前由 Web 侧优先消费；TUI 继续使用 staged_plan_notice 队列文本。
                 return AgentLineKind::Ignore;
             }
             super::protocol::SsePayload::PlanRequired { .. } => {
@@ -345,15 +329,6 @@ mod tests {
             }
             other => panic!("unexpected kind: {:?}", other),
         }
-    }
-
-    #[test]
-    fn parse_staged_plan_structured_event_as_ignore() {
-        let line = r#"{"v":1,"staged_plan_step_started":{"plan_id":"p-1","step_id":"s1","step_index":1,"total_steps":2,"description":"desc","executor_kind":"patch_write"}}"#;
-        assert!(matches!(
-            classify_agent_sse_line(line),
-            AgentLineKind::Ignore
-        ));
     }
 
     #[test]

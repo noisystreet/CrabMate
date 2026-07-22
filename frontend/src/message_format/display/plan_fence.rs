@@ -3,7 +3,6 @@
 use serde_json::Value;
 
 use crate::i18n::Locale;
-use crate::storage::StoredMessage;
 
 use super::thinking_strip::filter_assistant_thinking_markers_for_display;
 
@@ -157,18 +156,6 @@ fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
         return true;
     }
     t.contains("\"type\"") && t.contains("\"version\"") && t.contains("\"steps\"")
-}
-
-/// Web 气泡眉「规划轮」标记：分阶段规划模型产出在 `text` / `reasoning_text` 中含 `agent_reply_plan`（含流式不完整前缀）。
-pub(crate) fn stored_message_is_staged_planner_round(m: &StoredMessage) -> bool {
-    if m.role != "assistant" || m.is_tool {
-        return false;
-    }
-    let raw = format!("{}{}", m.reasoning_text, m.text);
-    if raw.contains("\"agent_reply_plan\"") || raw.contains("\"type\":\"agent_reply_plan\"") {
-        return true;
-    }
-    looks_like_incomplete_agent_reply_plan_whole_json(raw.trim())
 }
 
 fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {

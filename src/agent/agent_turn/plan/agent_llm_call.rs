@@ -9,10 +9,12 @@ use crate::types::ChatRequest;
 use crate::agent::agent_turn::params::RunLoopParams;
 
 /// 绑定一轮 `run_agent_turn` 的传输层与 Chrome trace，便于只改 `out` / `render_to_terminal` 等再调模型。
+#[allow(dead_code)]
 pub(crate) struct AgentLlmCall<'p> {
     p: &'p RunLoopParams<'p>,
 }
 
+#[allow(dead_code)]
 impl<'p> AgentLlmCall<'p> {
     #[inline]
     pub(crate) fn new(p: &'p RunLoopParams<'p>) -> Self {

@@ -1,9 +1,31 @@
-//! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控（与分阶段 `empty_execution` 互补）。
+//! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控。
 
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
 use crate::types::{Message, last_real_user_message_index, message_content_as_str};
 
-use super::staged::empty_execution::tool_message_indicates_build_progress;
+/// 从 tool 消息正文检查是否包含构建/编译进展信号。
+fn tool_message_indicates_build_progress(m: &Message) -> bool {
+    let Some(content) = message_content_as_str(&m.content) else {
+        return false;
+    };
+    let lowered = content.to_lowercase();
+    // 除 exit code 0 外，还检查编译/构建/测试类标志性关键词
+    if lowered.contains("exit code 0") || lowered.contains("exit code: 0") {
+        return true;
+    }
+    // 构建成功信号
+    if lowered.contains("build successful")
+        || lowered.contains("compilation successful")
+        || lowered.contains("built successfully")
+    {
+        return true;
+    }
+    // 测试通过信号
+    if lowered.contains("test result: ok") || lowered.contains("test passed") {
+        return true;
+    }
+    false
+}
 
 /// 连续无构建进展的终答轮次达到该值后注入硬反馈（含当前轮）。
 pub(crate) const OUTER_LOOP_BUILD_IDLE_STREAK_THRESHOLD: u32 = 2;

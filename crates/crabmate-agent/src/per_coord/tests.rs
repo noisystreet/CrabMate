@@ -22,10 +22,6 @@ fn per_coordinator_init_from_agent_config_matches_cfg_fields() {
         cfg.per_plan_policy.plan_rewrite_max_attempts
     );
     assert_eq!(
-        i.staged_plan_patch_max_attempts_config,
-        cfg.staged_planning.staged_plan_patch_max_attempts
-    );
-    assert_eq!(
         i.final_plan_require_strict_workflow_node_coverage,
         cfg.per_plan_policy
             .final_plan_require_strict_workflow_node_coverage

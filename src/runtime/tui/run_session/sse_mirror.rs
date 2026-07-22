@@ -65,32 +65,6 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
                 "结束"
             }
         )),
-        SsePayload::StagedPlanNotice { text, clear_before } => {
-            let head = text.lines().next().unwrap_or("");
-            Some(format!(
-                "· 规划 {}{}",
-                if *clear_before { "[清空] " } else { "" },
-                truncate_chars_with_ellipsis(head, 200)
-            ))
-        }
-        SsePayload::StagedPlanStarted { started } => Some(format!(
-            "· 规划开始 plan_id={} 共 {} 步",
-            started.plan_id, started.total_steps
-        )),
-        SsePayload::StagedPlanStepStarted { started } => Some(format!(
-            "· 步骤 {}/{} {}",
-            started.step_index.saturating_add(1),
-            started.total_steps,
-            truncate_chars_with_ellipsis(started.description.as_str(), 160)
-        )),
-        SsePayload::StagedPlanStepFinished { finished } => Some(format!(
-            "· 步骤结束 {} status={}",
-            finished.step_id, finished.status
-        )),
-        SsePayload::StagedPlanFinished { finished } => Some(format!(
-            "· 规划结束 {} {}/{}",
-            finished.status, finished.completed_steps, finished.total_steps
-        )),
         SsePayload::TimelineLog { log } => Some(format!(
             "· {} {}",
             log.kind,

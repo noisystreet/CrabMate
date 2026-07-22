@@ -242,68 +242,24 @@ pub fn apply_orchestration_profile_to_staged_gate(
     intent_gate: &IntentGateSnapshot,
     gate: &StagedPlanningGateOutcome,
 ) -> StagedPlanningGateOutcome {
-    match profile {
-        OrchestrationProfile::Auto => gate.clone(),
-        OrchestrationProfile::ReAct => {
-            if gate.allows_staged_planning() {
+    if profile == OrchestrationProfile::ReAct && gate.allows_staged_planning() {
+        StagedPlanningGateOutcome::Deny {
+            reason: StagedPlanningDenyReason::OrchestrationProfileFreeform,
+            task_preview: match gate {
+                StagedPlanningGateOutcome::Allow { task_preview, .. } => Some(task_preview.clone()),
+                StagedPlanningGateOutcome::Deny { task_preview, .. } => task_preview.clone(),
+            },
+            intent_decision: match gate {
+                StagedPlanningGateOutcome::Allow { decision, .. } => Some(decision.clone()),
                 StagedPlanningGateOutcome::Deny {
-                    reason: StagedPlanningDenyReason::OrchestrationProfileFreeform,
-                    task_preview: match gate {
-                        StagedPlanningGateOutcome::Allow { task_preview, .. } => {
-                            Some(task_preview.clone())
-                        }
-                        StagedPlanningGateOutcome::Deny { task_preview, .. } => {
-                            task_preview.clone()
-                        }
-                    },
-                    intent_decision: match gate {
-                        StagedPlanningGateOutcome::Allow { decision, .. } => Some(decision.clone()),
-                        StagedPlanningGateOutcome::Deny {
-                            intent_decision, ..
-                        } => intent_decision
-                            .clone()
-                            .or_else(|| intent_decision_from_gate_snapshot(intent_gate)),
-                    },
-                }
-            } else {
-                gate.clone()
-            }
+                    intent_decision, ..
+                } => intent_decision
+                    .clone()
+                    .or_else(|| intent_decision_from_gate_snapshot(intent_gate)),
+            },
         }
-        OrchestrationProfile::Staged => match gate {
-            StagedPlanningGateOutcome::Deny {
-                reason:
-                    StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
-                    | StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
-                intent_decision: Some(decision),
-                task_preview,
-            } if matches!(decision.action, IntentAction::Execute) => {
-                StagedPlanningGateOutcome::Allow {
-                    task_preview: task_preview
-                        .clone()
-                        .unwrap_or_else(|| decision.primary_intent.clone()),
-                    intent_kind: decision.kind,
-                    primary_intent: decision.primary_intent.clone(),
-                    confidence: decision.confidence,
-                    decision: decision.clone(),
-                }
-            }
-            StagedPlanningGateOutcome::Deny {
-                reason:
-                    StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
-                    | StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
-                ..
-            } => intent_decision_from_gate_snapshot(intent_gate)
-                .filter(|d| matches!(d.action, IntentAction::Execute))
-                .map(|decision| StagedPlanningGateOutcome::Allow {
-                    task_preview: decision.primary_intent.clone(),
-                    intent_kind: decision.kind,
-                    primary_intent: decision.primary_intent.clone(),
-                    confidence: decision.confidence,
-                    decision,
-                })
-                .unwrap_or_else(|| gate.clone()),
-            _ => gate.clone(),
-        },
+    } else {
+        gate.clone()
     }
 }
 

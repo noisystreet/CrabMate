@@ -2,7 +2,6 @@
 //!
 //! 可见性筛选与 fuzzy dedupe 见 [`crate::visible_messages`]（单一读路径）；本模块只负责 **chunk 折叠**。
 
-use crate::message_format::is_staged_timeline_bubble;
 use crate::storage::StoredMessage;
 use crate::visible_messages::VisibleMessageScope;
 
@@ -45,7 +44,7 @@ fn push_tool_run_chunk(out: &mut Vec<ChatChunk>, slice: Vec<(usize, StoredMessag
 
 #[inline]
 fn is_staged_or_tool(m: &StoredMessage) -> bool {
-    is_staged_timeline_bubble(m) || m.is_tool
+    m.is_tool
 }
 
 /// 从 `start`（须为分阶段旁注）起，向后扩展直到遇到非（旁注|工具）消息。
@@ -70,18 +69,7 @@ fn chunk_staged_cluster(
 ) {
     let mut k = cluster_start;
     while k < cluster_end {
-        if is_staged_timeline_bubble(&msgs[k]) {
-            let s_start = k;
-            while k < cluster_end && is_staged_timeline_bubble(&msgs[k]) {
-                k += 1;
-            }
-            for (off, msg) in msgs[s_start..k].iter().cloned().enumerate() {
-                out.push(ChatChunk::Single {
-                    idx: s_start + off,
-                    msg,
-                });
-            }
-        } else if msgs[k].is_tool {
+        if msgs[k].is_tool {
             let t_start = k;
             while k < cluster_end && msgs[k].is_tool {
                 k += 1;
@@ -108,7 +96,7 @@ pub(crate) fn chunk_messages(msgs: &[StoredMessage]) -> Vec<ChatChunk> {
                 end = visible[vi] + 1;
             }
             chunk_tool_run(msgs, start, end, &mut out);
-        } else if is_staged_timeline_bubble(&msgs[i]) {
+        } else if false {
             let j = staged_cluster_end_exclusive(msgs, i);
             chunk_staged_cluster(msgs, i, j, &mut out);
             while vi < visible.len() && visible[vi] < j {

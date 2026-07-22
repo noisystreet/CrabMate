@@ -591,26 +591,9 @@ impl CliReplStyle {
 
     fn write_repl_config_summary_staged_section(
         &self,
-        out: &mut io::Stdout,
-        cfg: &AgentConfig,
+        _out: &mut io::Stdout,
+        _cfg: &AgentConfig,
     ) -> io::Result<()> {
-        let bypass = if cfg.staged_planning.staged_plan_intent_gate_advisory_bypass {
-            "开启（Execute 咨询/架构可绕分阶段）"
-        } else {
-            "关闭（门控放行一律 PlannedStep）"
-        };
-        self.write_banner_item(out, "staged_plan_intent_gate_advisory_bypass", bypass)?;
-        self.write_banner_item(
-            out,
-            "staged_plan_feedback_mode",
-            cfg.staged_planning.staged_plan_feedback_mode.as_str(),
-        )?;
-        let staged_cli = if cfg.staged_planning.staged_plan_cli_show_planner_stream {
-            "开启（CLI 规划轮打印模型 stdout）"
-        } else {
-            "关闭（CLI 规划轮不打印模型 stdout）"
-        };
-        self.write_banner_item(out, "staged_plan_cli_show_planner_stream", staged_cli)?;
         Ok(())
     }
 

@@ -48,10 +48,6 @@
 | `turn_segment_start` | 回合段开始；体含 **`segment_id`**、**`kind`**（`commentary` \| `answer`）、可选 **`before_tool_call_id`**（本段展示在该工具调用**之前**；晚到 delta 仍挂此锚点） | Web：**handled**；`onTurnSegmentStart` 更新 canonical turn 投影 |
 | `turn_segment_end` | 关闭 `turn_segment_start` 所开段；体含 **`segment_id`** | Web：**handled**；`onTurnSegmentEnd` |
 | `turn_tool_phase_end`: `true` | 本批工具执行结束；后续正文增量为 post-tool 终答（与 `assistant_answer_phase` 配合） | Web：**handled**；`onTurnToolPhaseEnd` |
-| `staged_plan_started` | 分阶段规划开始 | `onStagedPlanStarted` |
-| `staged_plan_step_started` | 单步开始；负载含 `plan_id`、`step_id`、`step_index`、`total_steps`、`description`，可选 `executor_kind`（`review_readonly` / `patch_write` / `test_runner`，与规划 JSON 一致） | `onStagedPlanStepStarted` |
-| `staged_plan_step_finished` | 单步结束；`status`: `ok` / `cancelled` / `failed`；可选 `executor_kind`（与 `staged_plan_step_started` 对齐） | `onStagedPlanStepFinished` |
-| `staged_plan_finished` | 整轮计划结束；`status` 同上 | `onStagedPlanFinished` |
 | `clarification_questionnaire` | 澄清问卷：模型调用工具 **`present_clarification_questionnaire`** 且成功后，在 **`tool_result` SSE** 之后补发；体含 **`questionnaire_id`**、**`intro`**、**`questions[]`**（`id` / `label` / 可选 `hint` / `required` / `kind`：`text` \| `choice`） | Web：展示表单；用户提交时下一请求体带 **`clarify_questionnaire_answers`**（见 README / OpenAPI）；TUI：`line` 分类为 **ignore** |
 | `thinking_trace` | 调试：运行时**默认开启**下发；**`CM_THINKING_TRACE_ENABLED=0`** 时关闭。**不**从 **`[agent]`** TOML 读入。体须含非空 **`op`**（如 **`reasoning_delta`**、**`answer_phase`**、**`tool_call`**、**`tool_done`**）；可选 **`node_id`** / **`parent_id`** / **`title`**、**`chunk`**（推理片段）、**`context_snapshot`**（工具前后上下文摘要，非全文） | Web：「调试台」侧栏累积展示；TUI：`line` 分类为 **ignore** |
 | `workspace_changed`: `true` | 工作区已被工具更新 | `onWorkspaceChanged` |
@@ -61,14 +57,13 @@
 | `tool_output_chunk` | 工具执行中的输出片段（如 PTY）；**不**进入模型上下文；体内须含非空 **`tool_call_id`**、非负整数 **`seq`**；可选 **`name`**、**`chunk`**（UTF-8 文本，可多次下发由前端拼接）、**`stream`**（`stdout` / `stderr` / `combined`）；最终以 **`tool_result`** 收束 | Web：**handled**，`onToolOutputChunk` 追加至对应 `tool_call_id` 的工具气泡详情；TUI：控制面镜像展示截断摘要 |
 | `tool_result` | 工具结束；含 `output` 等 | `onToolResult` |
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
-| `staged_plan_notice` / `staged_plan_notice_clear` | 规划进度文本（TUI 等）；Web **吞掉**不当下文 | `handled`，不 `onDelta` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（`prompt_tokens` + `tiktoken_model`，与 `GET /conversation/messages` 同规则） | Leptos：更新 `revision` 与底栏上下文用量（`conversation_prompt_tokens`） |
 | `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（回合结束时的 prompt 粗估，通常早于或伴随 `conversation_saved`） | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
-**`timeline_log.kind` 常用值**：`intent_analysis`（意图门控）、`final_response`（终答标记）、`staged_step_verify`（分阶段步级确定性验收 pass/fail，与 `staged_plan_step_finished.verify_fail_reason` 互补）。
+**`timeline_log.kind` 常用值**：`intent_analysis`（意图门控）、`final_response`（终答标记）。
 
 ### `tool_result` 常用字段
 
@@ -162,8 +157,6 @@
 | `STREAM_CANCELLED` | 499 | 用户/协作取消（非标准状态码，与 SSE 同源码；部分客户端可能按 4xx 处理） |
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
-
-**历史/文档保留（当前实现通常不再下发对应 SSE 帧）**：`staged_plan_tool_calls`、`staged_plan_invalid`（旧版规划轮行为；见 `chat_job_queue` 对 `staged_plan_invalid:` 前缀错误的日志分支，一般不序列化为控制面错误）。
 
 ## `tool_result.error_code`（工具 / 工作流）
 
@@ -276,7 +269,6 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 | `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
 | `timeline_log` | `timeline_log` | `on_timeline_log` |
 | `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
-| `staged_plan_*` | `staged_plan_*` | `on_staged_plan_step_started/finished` |
 | `chat_ui_separator` | `chat_ui_separator` | 忽略 |
 | `sse_capabilities` | `sse_capabilities` | 忽略 |
 

@@ -83,35 +83,6 @@ pub enum SsePayload {
     PlanRequired {
         plan_required: bool,
     },
-    /// 分阶段规划：前端可忽略（**`frontend/src/api/chat_stream/`** 等路径吞掉不当下文）。
-    StagedPlanNotice {
-        /// 可多行 `\n` 分隔。
-        #[serde(rename = "staged_plan_notice")]
-        text: String,
-        /// 为 true 时客户端清空本轮规划日志再追加 `text` 各行。
-        #[serde(default, rename = "staged_plan_notice_clear")]
-        clear_before: bool,
-    },
-    /// 分阶段规划：结构化「计划已生成」事件（供 Web 精准展示进度，不依赖文本解析）。
-    StagedPlanStarted {
-        #[serde(rename = "staged_plan_started")]
-        started: StagedPlanStartedBody,
-    },
-    /// 分阶段规划：单步开始事件。
-    StagedPlanStepStarted {
-        #[serde(rename = "staged_plan_step_started")]
-        started: StagedPlanStepStartedBody,
-    },
-    /// 分阶段规划：单步结束事件。
-    StagedPlanStepFinished {
-        #[serde(rename = "staged_plan_step_finished")]
-        finished: StagedPlanStepFinishedBody,
-    },
-    /// 分阶段规划：整轮计划结束事件。
-    StagedPlanFinished {
-        #[serde(rename = "staged_plan_finished")]
-        finished: StagedPlanFinishedBody,
-    },
     /// 分阶段规划：每步结束短分隔线。Web 用本事件追加。（`false` 保留兼容，客户端可忽略。）
     ChatUiSeparator {
         /// `true` 为短分隔线。
@@ -283,52 +254,6 @@ pub struct TurnSegmentStartBody {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TurnSegmentEndBody {
     pub segment_id: String,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct StagedPlanStartedBody {
-    pub plan_id: String,
-    pub total_steps: usize,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct StagedPlanStepStartedBody {
-    pub plan_id: String,
-    pub step_id: String,
-    /// 从 1 开始的人类可读序号。
-    pub step_index: usize,
-    pub total_steps: usize,
-    pub description: String,
-    /// 分阶段 `steps[].executor_kind`（蛇形）；无则省略。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub executor_kind: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct StagedPlanStepFinishedBody {
-    pub plan_id: String,
-    pub step_id: String,
-    /// 从 1 开始的人类可读序号。
-    pub step_index: usize,
-    pub total_steps: usize,
-    /// `ok` / `cancelled` / `failed`
-    pub status: String,
-    /// 与 `staged_plan_step_started` 对齐；无则省略。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub executor_kind: Option<String>,
-    /// 验证失败原因（当 `status` 为 `failed` 且失败源于步级验收时填充）。
-    /// 格式示例：`exit_code_mismatch: expected 0, got 1`。
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub verify_fail_reason: Option<String>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct StagedPlanFinishedBody {
-    pub plan_id: String,
-    pub total_steps: usize,
-    pub completed_steps: usize,
-    /// `ok` / `cancelled` / `failed`
-    pub status: String,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -581,22 +506,6 @@ mod tests {
     }
 
     #[test]
-    fn roundtrip_staged_plan_notice() {
-        let s = encode_message_v1(&SsePayload::StagedPlanNotice {
-            text: "**规划** · 共 2 步\n  1. [a] x".into(),
-            clear_before: true,
-        });
-        let m: SseMessage = serde_json::from_str(&s).unwrap();
-        match m.payload {
-            SsePayload::StagedPlanNotice { text, clear_before } => {
-                assert!(clear_before);
-                assert_eq!(text, "**规划** · 共 2 步\n  1. [a] x");
-            }
-            _ => panic!("expected staged_plan_notice payload"),
-        }
-    }
-
-    #[test]
     fn roundtrip_chat_ui_separator() {
         let s = encode_message_v1(&SsePayload::ChatUiSeparator { short: true });
         assert!(s.contains("\"chat_ui_separator\":true"));
@@ -611,83 +520,6 @@ mod tests {
             m2.payload,
             SsePayload::ChatUiSeparator { short: false }
         ));
-    }
-
-    #[test]
-    fn roundtrip_staged_plan_structured_events() {
-        let started = encode_message_v1(&SsePayload::StagedPlanStarted {
-            started: StagedPlanStartedBody {
-                plan_id: "plan-1".into(),
-                total_steps: 3,
-            },
-        });
-        let msg_started: SseMessage = serde_json::from_str(&started).unwrap();
-        match msg_started.payload {
-            SsePayload::StagedPlanStarted { started } => {
-                assert_eq!(started.plan_id, "plan-1");
-                assert_eq!(started.total_steps, 3);
-            }
-            _ => panic!("expected staged_plan_started payload"),
-        }
-
-        let step_started = encode_message_v1(&SsePayload::StagedPlanStepStarted {
-            started: StagedPlanStepStartedBody {
-                plan_id: "plan-1".into(),
-                step_id: "collect-context".into(),
-                step_index: 1,
-                total_steps: 3,
-                description: "收集上下文".into(),
-                executor_kind: Some("review_readonly".into()),
-            },
-        });
-        let msg_step_started: SseMessage = serde_json::from_str(&step_started).unwrap();
-        match msg_step_started.payload {
-            SsePayload::StagedPlanStepStarted { started } => {
-                assert_eq!(started.step_id, "collect-context");
-                assert_eq!(started.step_index, 1);
-                assert_eq!(started.total_steps, 3);
-                assert_eq!(started.executor_kind.as_deref(), Some("review_readonly"));
-            }
-            _ => panic!("expected staged_plan_step_started payload"),
-        }
-
-        let step_finished = encode_message_v1(&SsePayload::StagedPlanStepFinished {
-            finished: StagedPlanStepFinishedBody {
-                plan_id: "plan-1".into(),
-                step_id: "collect-context".into(),
-                step_index: 1,
-                total_steps: 3,
-                status: "failed".into(),
-                executor_kind: Some("review_readonly".into()),
-                verify_fail_reason: None,
-            },
-        });
-        let msg_step_finished: SseMessage = serde_json::from_str(&step_finished).unwrap();
-        match msg_step_finished.payload {
-            SsePayload::StagedPlanStepFinished { finished } => {
-                assert_eq!(finished.status, "failed");
-                assert_eq!(finished.step_index, 1);
-                assert_eq!(finished.executor_kind.as_deref(), Some("review_readonly"));
-            }
-            _ => panic!("expected staged_plan_step_finished payload"),
-        }
-
-        let finished = encode_message_v1(&SsePayload::StagedPlanFinished {
-            finished: StagedPlanFinishedBody {
-                plan_id: "plan-1".into(),
-                total_steps: 3,
-                completed_steps: 3,
-                status: "ok".into(),
-            },
-        });
-        let msg_finished: SseMessage = serde_json::from_str(&finished).unwrap();
-        match msg_finished.payload {
-            SsePayload::StagedPlanFinished { finished } => {
-                assert_eq!(finished.completed_steps, 3);
-                assert_eq!(finished.status, "ok");
-            }
-            _ => panic!("expected staged_plan_finished payload"),
-        }
     }
 
     fn arb_short_text() -> impl Strategy<Value = String> {

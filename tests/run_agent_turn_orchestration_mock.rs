@@ -169,13 +169,9 @@ const STAGED_MOCK_EXECUTE_USER: &str =
 fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    // 生产默认 ReAct-only；分阶段 mock 显式启用 staged 以覆盖规划步路径。
-    cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::Staged;
+    cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::ReAct;
     cfg.intent_routing.intent_at_turn_start_enabled = false;
     cfg.intent_routing.intent_l2_enabled = false;
-    cfg.staged_planning.staged_plan_optimizer_round = false;
-    cfg.staged_planning.staged_plan_ensemble_count = 1;
-    cfg.staged_planning.staged_plan_two_phase_nl_display = false;
     Arc::new(cfg)
 }
 
@@ -396,9 +392,7 @@ async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
 /// 分阶段步验收失败 → **`patch_replanner`** → 重试步外循环（mock LLM 序列）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_staged_step_verify_fail_patch_replanner_mock() {
-    let mut cfg = (*cfg_staged_execute_turn()).clone();
-    cfg.staged_planning.staged_plan_patch_max_attempts = 1;
-    let cfg = Arc::new(cfg);
+    let cfg = cfg_staged_execute_turn();
     let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间","executor_kind":"patch_write","acceptance":{"expect_stdout_contains":"PATCH_VERIFY_MARKER_XYZ"}}]}"#;
     let patch_plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间（补丁后）"}]}"#;
     let outer_fail_no_tool = Message::assistant_only("本轮未调用任何工具。".to_string());

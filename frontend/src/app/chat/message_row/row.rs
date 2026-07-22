@@ -5,8 +5,6 @@ use std::collections::{HashMap, HashSet};
 use leptos::prelude::*;
 
 use crate::i18n::Locale;
-use crate::message_format::is_staged_timeline_bubble;
-use crate::message_format::stored_message_is_staged_planner_round;
 use crate::message_format::stored_tool_message_detail_text;
 use crate::session_ops::format_msg_time_label;
 use crate::storage::ChatSession;
@@ -197,8 +195,8 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
     let retry_visible_rc = arc_retry_visible_for_message(row_state_map, mid_highlight.clone());
     let actions_bar_visible_rc =
         arc_actions_bar_visible(is_tool_bubble, is_user_plain, retry_visible_rc.clone());
-    let show_planner_round_badge = stored_message_is_staged_planner_round(&m);
-    let is_staged_timeline = is_staged_timeline_bubble(&m);
+    let show_planner_round_badge = false;
+    let is_staged_timeline = false;
     let subgoal_phase_chip = extract_hierarchical_phase_chip(&m, loc_ut);
     let subgoal_metrics_line = extract_hierarchical_metrics(&m, loc_ut);
     let subgoal_target_line = extract_hierarchical_goal_target(&m);

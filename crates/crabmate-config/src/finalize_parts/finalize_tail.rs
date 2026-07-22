@@ -55,21 +55,6 @@ struct FinalizeTailScalars {
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
     session_workspace_changelist_max_chars: usize,
-    staged_plan_phase_instruction: String,
-    staged_plan_allow_no_task: bool,
-    staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    staged_plan_patch_max_attempts: usize,
-    staged_plan_cli_show_planner_stream: bool,
-    staged_plan_optimizer_round: bool,
-    staged_plan_optimizer_requires_parallel_tools: bool,
-    staged_plan_ensemble_count: u8,
-    staged_plan_skip_ensemble_on_casual_prompt: bool,
-    staged_plan_two_phase_nl_display: bool,
-    staged_plan_intent_gate_advisory_bypass: bool,
-    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
-    staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -362,21 +347,6 @@ fn derive_tail_context_queues_session_scalars(
 
 #[allow(clippy::struct_excessive_bools)]
 struct TailStagedSandboxWebScalars {
-    staged_plan_phase_instruction: String,
-    staged_plan_allow_no_task: bool,
-    staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    staged_plan_patch_max_attempts: usize,
-    staged_plan_cli_show_planner_stream: bool,
-    staged_plan_optimizer_round: bool,
-    staged_plan_optimizer_requires_parallel_tools: bool,
-    staged_plan_ensemble_count: u8,
-    staged_plan_skip_ensemble_on_casual_prompt: bool,
-    staged_plan_two_phase_nl_display: bool,
-    staged_plan_intent_gate_advisory_bypass: bool,
-    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
-    staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -392,52 +362,6 @@ struct TailStagedSandboxWebScalars {
 fn derive_tail_staged_sandbox_web_scalars(
     b: &ConfigBuilder,
 ) -> Result<TailStagedSandboxWebScalars, String> {
-    let staged_plan_phase_instruction = b.staged_planning.staged_plan_phase_instruction.clone().unwrap_or_default();
-    let staged_plan_allow_no_task = b.staged_planning.staged_plan_allow_no_task.unwrap_or(true);
-    let staged_plan_feedback_mode = match b.staged_planning.staged_plan_feedback_mode_str.as_deref() {
-        Some(s) => StagedPlanFeedbackMode::parse(s)?,
-        None => StagedPlanFeedbackMode::default(),
-    };
-    let staged_plan_patch_max_attempts =
-        b.staged_planning.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
-    let staged_plan_cli_show_planner_stream = b.staged_planning.staged_plan_cli_show_planner_stream.unwrap_or(true);
-    let staged_plan_optimizer_round = b.staged_planning.staged_plan_optimizer_round.unwrap_or(true);
-    let staged_plan_optimizer_requires_parallel_tools = b
-        .staged_planning.staged_plan_optimizer_requires_parallel_tools
-        .unwrap_or(false);
-    let staged_plan_ensemble_count = b.staged_planning.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
-    let staged_plan_skip_ensemble_on_casual_prompt =
-        b.staged_planning.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
-    let staged_plan_two_phase_nl_display = b.staged_planning.staged_plan_two_phase_nl_display.unwrap_or(false);
-    let staged_plan_intent_gate_advisory_bypass =
-        b.staged_planning.staged_plan_intent_gate_advisory_bypass.unwrap_or(false);
-    let advisory_extra_keywords = |v: Option<Vec<String>>| -> Vec<String> {
-        v.unwrap_or_default()
-            .into_iter()
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
-            .take(48)
-            .collect()
-    };
-    let staged_plan_advisory_bypass_extra_impl_blockers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .clone(),
-    );
-    let staged_plan_advisory_bypass_extra_arch_markers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .clone(),
-    );
-    let staged_plan_advisory_bypass_extra_consult_markers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .clone(),
-    );
-    let staged_plan_baseline_mode = match b.staged_planning.staged_plan_baseline_mode_str.as_deref() {
-        Some(s) => StagedPlanBaselineMode::parse(s)?,
-        None => StagedPlanBaselineMode::default(),
-    };
     let sync_default_tool_sandbox_mode = match b.sync_tool_sandbox.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -480,21 +404,6 @@ fn derive_tail_staged_sandbox_web_scalars(
     let allow_insecure_no_auth_for_non_loopback =
         b.web_api.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
     Ok(TailStagedSandboxWebScalars {
-        staged_plan_phase_instruction,
-        staged_plan_allow_no_task,
-        staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass,
-        staged_plan_advisory_bypass_extra_impl_blockers,
-        staged_plan_advisory_bypass_extra_arch_markers,
-        staged_plan_advisory_bypass_extra_consult_markers,
-        staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -791,27 +700,6 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
-        staged_plan_phase_instruction: ssw.staged_plan_phase_instruction.clone(),
-        staged_plan_allow_no_task: ssw.staged_plan_allow_no_task,
-        staged_plan_feedback_mode: ssw.staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts: ssw.staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream: ssw.staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: ssw.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: ssw.staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: ssw.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: ssw.staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display: ssw.staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass: ssw.staged_plan_intent_gate_advisory_bypass,
-        staged_plan_advisory_bypass_extra_impl_blockers: ssw
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .clone(),
-        staged_plan_advisory_bypass_extra_arch_markers: ssw
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .clone(),
-        staged_plan_advisory_bypass_extra_consult_markers: ssw
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .clone(),
-        staged_plan_baseline_mode: ssw.staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode: ssw.sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image: ssw.sync_default_tool_sandbox_docker_image.clone(),
         sync_default_tool_sandbox_docker_network: ssw.sync_default_tool_sandbox_docker_network.clone(),

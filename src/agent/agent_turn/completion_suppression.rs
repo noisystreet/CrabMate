@@ -21,6 +21,7 @@ const RUN_COMMAND_VERIFY_MARKERS: &[&str] = &[
     "ls ", "ls -", "stat ", "test -", "file ", "--help", "timeout ", "strace ", " 2>&1",
 ];
 
+#[allow(dead_code)]
 const FOLLOWUP_WRITE_OR_FIX_MARKERS: &[&str] = &[
     "implement",
     "implementation",
@@ -47,6 +48,7 @@ const FOLLOWUP_WRITE_OR_FIX_MARKERS: &[&str] = &[
     "调整",
 ];
 
+#[allow(dead_code)]
 const REDUNDANT_PROBE_TEXT_MARKERS: &[&str] = &[
     "verify",
     "verification",
@@ -149,11 +151,13 @@ fn run_command_invocation_text(args_json: &str) -> Option<String> {
     Some(parts.join(" "))
 }
 
+#[allow(dead_code)]
 pub(crate) fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
     steps.iter().all(plan_step_is_redundant_after_completion)
 }
 
 /// 须由分阶段步执行器实际跑工具/验收，不可被任务级早停或重复规划抑制跳过。
+#[allow(dead_code)]
 pub(crate) fn plan_step_requires_formal_execution(step: &PlanStepV1) -> bool {
     step.acceptance
         .as_ref()
@@ -161,10 +165,12 @@ pub(crate) fn plan_step_requires_formal_execution(step: &PlanStepV1) -> bool {
         || matches!(step.executor_kind, Some(PlanStepExecutorKind::TestRunner))
 }
 
+#[allow(dead_code)]
 pub(crate) fn plan_steps_require_formal_execution(steps: &[PlanStepV1]) -> bool {
     steps.iter().any(plan_step_requires_formal_execution)
 }
 
+#[allow(dead_code)]
 pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool {
     if plan_step_requires_formal_execution(step) {
         return false;
@@ -176,6 +182,7 @@ pub(crate) fn plan_step_is_redundant_after_completion(step: &PlanStepV1) -> bool
     text_contains_any_marker(&text, REDUNDANT_PROBE_TEXT_MARKERS)
 }
 
+#[allow(dead_code)]
 fn redundant_plan_step_text(step: &PlanStepV1) -> String {
     format!(
         "{}\n{}\n{}",

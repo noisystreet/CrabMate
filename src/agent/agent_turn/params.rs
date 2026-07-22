@@ -90,12 +90,16 @@ pub(crate) struct RunLoopAttach<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
+    #[allow(dead_code)]
     pub staged_plan_optimizer_round: bool,
     /// 无「可同轮并行批处理」内建工具时是否跳过步骤优化轮；`true` 省一次 LLM。嵌入默认 `false`（`config/planning.toml`）；finalize 缺省亦为 `false`。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
+    #[allow(dead_code)]
     pub staged_plan_optimizer_requires_parallel_tools: bool,
     /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
+    #[allow(dead_code)]
     pub staged_plan_ensemble_count: u8,
     /// 寒暄/极短用户输入时是否跳过 ensemble。见 `AgentConfig::staged_plan_skip_ensemble_on_casual_prompt`。
+    #[allow(dead_code)]
     pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// 多角色工作台：本回合工具白名单；`None` 不限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
@@ -137,8 +141,10 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) intent_turn_gate_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 分阶段滚动视界：时间序上**第一条**合格 user 正文（跳过注入类 user）；仅首次写入。
+    #[allow(dead_code)]
     pub(crate) staged_immutable_user_goal: Option<String>,
-    /// 首轮进入分步循环前定稿的 `agent_reply_plan` v1（仅 [`crate::config::StagedPlanBaselineMode`] 非 `immutable_goal_only` 时写入一次）。
+    /// 首轮进入分步循环前定稿的 `agent_reply_plan` v1。
+    #[allow(dead_code)]
     pub(crate) staged_baseline_plan: Option<crate::agent::plan_artifact::AgentReplyPlanV1>,
     /// 上一完成分步的 effective `acceptance`（步验收 Pass 后写入；供滚动视界早停）。
     pub(crate) staged_last_completed_step_effective_acceptance:
@@ -151,6 +157,7 @@ pub(crate) struct TurnPlannerHints {
 
 /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 共享的 L2 判定缓存（按 effective task 键）。
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct IntentRoutingCacheEntry {
     pub(crate) task: String,
     pub(crate) decision: crate::agent::intent_pipeline::IntentDecision,
@@ -201,6 +208,7 @@ impl TurnPlannerHints {
     }
 
     /// 分阶段滚动规划：懒填充本轮「不变层」用户原文（**最新真实 user**，与 trigger 对齐），仅首次写入。
+    #[allow(dead_code)]
     pub(crate) fn ensure_staged_immutable_user_goal_from_messages(&mut self, messages: &[Message]) {
         if self.staged_immutable_user_goal.is_some() {
             return;
@@ -211,6 +219,7 @@ impl TurnPlannerHints {
     }
 
     /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    #[allow(dead_code)]
     pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
         let v = self.suppress_duplicate_intent_timeline_once;
         self.suppress_duplicate_intent_timeline_once = false;
@@ -218,6 +227,7 @@ impl TurnPlannerHints {
     }
 
     /// 若缓存键与 `task` 一致则返回 L2 管线结果（不消费缓存，供 staged 门控只读复用）。
+    #[allow(dead_code)]
     pub(crate) fn intent_routing_cache_for_task(
         &self,
         task: &str,
@@ -300,6 +310,7 @@ impl<'a> RunLoopTurnState<'a> {
         r
     }
 
+    #[allow(dead_code)]
     pub(crate) fn truncate_messages(&mut self, len: usize) {
         if self.messages_buf.len() != len {
             self.messages_buf.truncate(len);
@@ -332,6 +343,7 @@ impl<'a> RunLoopTurnState<'a> {
     }
 
     /// 分阶段规划：若末条为教练 / ensemble 注入的临时 user，则弹出并递增 **`messages_revision`**。
+    #[allow(dead_code)]
     pub(crate) fn pop_last_staged_planner_coach_user_if_present(&mut self) {
         let n = self.messages_buf.len();
         pop_last_staged_planner_coach_user_if_present(self.messages_buf);
@@ -346,12 +358,14 @@ impl<'a> RunLoopTurnState<'a> {
     }
 
     /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    #[allow(dead_code)]
     pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
         self.turn_planner_hints
             .take_suppress_duplicate_intent_timeline_once()
     }
 
     /// 分阶段滚动不变层：基于当前缓冲懒填充 [`TurnPlannerHints::staged_immutable_user_goal`] 并返回只读引用。
+    #[allow(dead_code)]
     pub(crate) fn staged_immutable_user_goal_snapshot(&mut self) -> Option<&str> {
         let msgs = self.messages_buf.as_slice();
         self.turn_planner_hints
@@ -392,6 +406,7 @@ impl RunLoopParams<'_> {
     }
 
     /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::plan::AgentLlmCall`] 复用。
+    #[allow(dead_code)]
     #[inline]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
         crate::llm::LlmRetryingTransportOpts {

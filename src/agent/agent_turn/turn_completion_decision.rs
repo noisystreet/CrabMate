@@ -16,21 +16,40 @@ use super::super::task_level_evidence::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TurnCompletionDecision {
     AllowEarlyStop,
-    DenyEarlyStop { reason: &'static str },
+    DenyEarlyStop {
+        reason: &'static str,
+    },
+    #[allow(dead_code)]
     AllowSuppressReplanning,
-    DenySuppressReplanning { reason: &'static str },
+    #[allow(dead_code)]
+    DenySuppressReplanning {
+        reason: &'static str,
+    },
     AllowRedundantTools,
-    DenyRedundantTools { reason: &'static str },
-    AllowRollingHorizonStop { via: RollingHorizonStopVia },
-    DenyRollingHorizonStop { reason: &'static str },
+    DenyRedundantTools {
+        reason: &'static str,
+    },
+    #[allow(dead_code)]
+    AllowRollingHorizonStop {
+        via: RollingHorizonStopVia,
+    },
+    #[allow(dead_code)]
+    DenyRollingHorizonStop {
+        reason: &'static str,
+    },
     AllowMissingFinalAnswerFeedback,
-    DenyMissingFinalAnswerFeedback { reason: &'static str },
+    DenyMissingFinalAnswerFeedback {
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RollingHorizonStopVia {
+    #[allow(dead_code)]
     HeuristicEarlyStop,
+    #[allow(dead_code)]
     StepAcceptancePass,
+    #[allow(dead_code)]
     GoalEvidenceSatisfied,
 }
 
@@ -72,6 +91,7 @@ impl TurnCompletionDecision {
         )
     }
 
+    #[allow(dead_code)]
     pub(crate) fn rolling_horizon_via(self) -> Option<RollingHorizonStopVia> {
         match self {
             Self::AllowRollingHorizonStop { via } => Some(via),
@@ -120,6 +140,7 @@ pub(crate) fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDe
     decision
 }
 
+#[allow(dead_code)]
 pub(crate) fn evaluate_turn_suppress_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,
@@ -171,6 +192,7 @@ pub(crate) fn evaluate_turn_redundant_tools(
     decision
 }
 
+#[allow(dead_code)]
 pub(crate) fn evaluate_turn_staged_rolling_horizon_early_stop(
     messages: &[Message],
     last_completed_step_effective_acceptance: Option<&PlanStepAcceptance>,

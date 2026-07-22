@@ -199,25 +199,6 @@ pub(crate) struct ConfigBuilderSessionWorkspaceChangelist {
 }
 
 #[derive(Default)]
-pub(crate) struct ConfigBuilderStagedPlanning {
-    pub(crate) staged_plan_phase_instruction: Option<String>,
-    pub(crate) staged_plan_allow_no_task: Option<bool>,
-    pub(crate) staged_plan_feedback_mode_str: Option<String>,
-    pub(crate) staged_plan_patch_max_attempts: Option<u64>,
-    pub(crate) staged_plan_cli_show_planner_stream: Option<bool>,
-    pub(crate) staged_plan_optimizer_round: Option<bool>,
-    pub(crate) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
-    pub(crate) staged_plan_ensemble_count: Option<u64>,
-    pub(crate) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
-    pub(crate) staged_plan_two_phase_nl_display: Option<bool>,
-    pub(crate) staged_plan_intent_gate_advisory_bypass: Option<bool>,
-    pub(crate) staged_plan_advisory_bypass_extra_impl_blockers: Option<Vec<String>>,
-    pub(crate) staged_plan_advisory_bypass_extra_arch_markers: Option<Vec<String>>,
-    pub(crate) staged_plan_advisory_bypass_extra_consult_markers: Option<Vec<String>>,
-    pub(crate) staged_plan_baseline_mode_str: Option<String>,
-}
-
-#[derive(Default)]
 pub(crate) struct ConfigBuilderSyncToolSandbox {
     pub(crate) sync_default_tool_sandbox_mode_str: Option<String>,
     pub(crate) sync_default_tool_sandbox_docker_image: Option<String>,
@@ -348,7 +329,6 @@ pub(crate) struct ConfigBuilder {
     pub(crate) web_api: ConfigBuilderWebApi,
     pub(crate) chat_queues_cache: ConfigBuilderChatQueuesCache,
     pub(crate) session_workspace_changelist: ConfigBuilderSessionWorkspaceChangelist,
-    pub(crate) staged_planning: ConfigBuilderStagedPlanning,
     pub(crate) sync_tool_sandbox: ConfigBuilderSyncToolSandbox,
     pub(crate) conversation_persistence: ConfigBuilderConversationPersistence,
     pub(crate) context_bootstrap_inject: ConfigBuilderContextBootstrapInject,

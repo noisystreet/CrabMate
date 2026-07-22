@@ -22,7 +22,6 @@ const SESSION_DEFAULT_CONFIG: &str = include_str!("../../../config/session.toml"
 const CONTEXT_INJECT_DEFAULT_CONFIG: &str = include_str!("../../../config/context_inject.toml");
 const TOOLS_DEFAULT_CONFIG: &str = include_str!("../../../config/tools.toml");
 const SANDBOX_DEFAULT_CONFIG: &str = include_str!("../../../config/sandbox.toml");
-const PLANNING_DEFAULT_CONFIG: &str = include_str!("../../../config/planning.toml");
 const MEMORY_DEFAULT_CONFIG: &str = include_str!("../../../config/memory.toml");
 
 fn apply_embedded_agent_shard(
@@ -64,7 +63,6 @@ pub(super) fn apply_embedded_config_shards(b: &mut ConfigBuilder) -> Result<(), 
     }
 
     apply_embedded_agent_shard(b, "sandbox.toml", SANDBOX_DEFAULT_CONFIG)?;
-    apply_embedded_agent_shard(b, "planning.toml", PLANNING_DEFAULT_CONFIG)?;
     apply_embedded_agent_shard(b, "memory.toml", MEMORY_DEFAULT_CONFIG)?;
     Ok(())
 }

@@ -206,32 +206,6 @@ pub(super) struct AgentSection {
     pub(super) session_workspace_changelist_enabled: Option<bool>,
     pub(super) session_workspace_changelist_max_chars: Option<u64>,
 
-    pub(super) staged_plan_phase_instruction: Option<String>,
-    /// 兼容旧键；已无运行时语义（见 `AgentConfig::staged_plan_allow_no_task`）。
-    pub(super) staged_plan_allow_no_task: Option<bool>,
-    /// `fail_fast` 或 `patch_planner`（嵌入默认见 `config/planning.toml`）
-    pub(super) staged_plan_feedback_mode: Option<String>,
-    pub(super) staged_plan_patch_max_attempts: Option<u64>,
-    /// CLI 是否在无工具规划轮向 stdout 打印模型原文；默认 true。`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`
-    pub(super) staged_plan_cli_show_planner_stream: Option<bool>,
-    /// 首轮规划后是否再跑无工具优化轮；默认 true。`CM_STAGED_PLAN_OPTIMIZER_ROUND`
-    pub(super) staged_plan_optimizer_round: Option<bool>,
-    /// 无并行批处理内建工具时是否跳过优化轮；默认 true。`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`
-    pub(super) staged_plan_optimizer_requires_parallel_tools: Option<bool>,
-    /// 逻辑多规划员份数上限（1–3）。`CM_STAGED_PLAN_ENSEMBLE_COUNT`
-    pub(super) staged_plan_ensemble_count: Option<u64>,
-    /// 寒暄/极短用户输入时是否跳过 ensemble；默认 true。`CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`
-    pub(super) staged_plan_skip_ensemble_on_casual_prompt: Option<bool>,
-    /// 分阶段规划：先 JSON（对用户不可见流）再 NL 补全。`CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`
-    pub(super) staged_plan_two_phase_nl_display: Option<bool>,
-    /// 咨询类 **`Execute`** 是否绕过分阶段意图门控；默认 **`false`**（仍走滚动分阶段）。
-    pub(super) staged_plan_intent_gate_advisory_bypass: Option<bool>,
-    /// 追加到咨询 bypass「落地强度」词表（子串，小写存储）；非空时覆盖合并链中该列表。
-    pub(super) staged_plan_advisory_bypass_extra_impl_blockers: Option<Vec<String>>,
-    pub(super) staged_plan_advisory_bypass_extra_arch_markers: Option<Vec<String>>,
-    pub(super) staged_plan_advisory_bypass_extra_consult_markers: Option<Vec<String>>,
-    /// `immutable_goal_only` | `goal_plus_baseline_plan` | `strict_baseline_steps`；`CM_STAGED_PLAN_BASELINE_MODE`
-    pub(super) staged_plan_baseline_mode: Option<String>,
     /// `none` | `docker`；`CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`
     pub(super) sync_default_tool_sandbox_mode: Option<String>,
     /// Docker 沙盒镜像。`CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_IMAGE`

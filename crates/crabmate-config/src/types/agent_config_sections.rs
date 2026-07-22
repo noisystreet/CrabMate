@@ -8,8 +8,8 @@ use crate::FinalPlanRequirementMode;
 
 use super::{
     AgentRoleCatalog, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, StagedPlanBaselineMode,
-    StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
+    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, SyncDefaultToolSandboxMode,
+    WebSearchProvider,
 };
 
 /// REPL/TUI 与会话列表相关。
@@ -179,30 +179,6 @@ pub struct ChatQueuesCacheConfig {
 pub struct SessionWorkspaceChangelistConfig {
     pub session_workspace_changelist_enabled: bool,
     pub session_workspace_changelist_max_chars: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct StagedPlanningConfig {
-    pub staged_plan_phase_instruction: String,
-    pub staged_plan_allow_no_task: bool,
-    pub staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    pub staged_plan_patch_max_attempts: usize,
-    pub staged_plan_cli_show_planner_stream: bool,
-    pub staged_plan_optimizer_round: bool,
-    pub staged_plan_optimizer_requires_parallel_tools: bool,
-    pub staged_plan_ensemble_count: u8,
-    pub staged_plan_skip_ensemble_on_casual_prompt: bool,
-    pub staged_plan_two_phase_nl_display: bool,
-    /// 为 **`true`** 时，非分层下 `staged_plan_intent_gate` 对命中架构/咨询启发式的 **`Execute`** 任务**绕过分阶段**；**`false`**（默认）时仍走滚动分阶段。
-    pub staged_plan_intent_gate_advisory_bypass: bool,
-    /// 首轮定稿计划是否作为后续滚动重规划的蓝图锚点（见 [`StagedPlanBaselineMode`]）。
-    pub staged_plan_baseline_mode: StagedPlanBaselineMode,
-    /// 追加到内置「落地强度」词表（子串匹配，**小写**）；命中则**不**因咨询启发式绕过分阶段。
-    pub staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    /// 追加到内置「架构/技术债」词表（子串匹配，**小写**）。
-    pub staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    /// 追加到内置「征询语气」词表（子串匹配，**小写**）。
-    pub staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

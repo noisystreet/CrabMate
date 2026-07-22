@@ -8,8 +8,7 @@ mod turn_completion_golden;
 
 pub(crate) use turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
-    evaluate_turn_staged_rolling_horizon_early_stop, evaluate_turn_suppress_replanning,
-    log_turn_completion_decision,
+    evaluate_turn_suppress_replanning, log_turn_completion_decision,
 };
 
 pub(crate) use super::completion_suppression::redundant_tool_names_for_log;
@@ -48,6 +47,7 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
 }
 
 /// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
+#[allow(dead_code)]
 pub(crate) fn turn_suppress_completed_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,

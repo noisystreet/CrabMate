@@ -41,8 +41,6 @@ pub struct SseWorkspaceToolHooks<'a> {
 pub struct SseStagedPlanHooks<'a> {
     /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
     pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
-    pub on_staged_plan_step_started: Option<&'a mut dyn FnMut(StagedPlanStepStartInfo)>,
-    pub on_staged_plan_step_finished: Option<&'a mut dyn FnMut(StagedPlanStepEndInfo)>,
     pub on_turn_segment_start: Option<&'a mut dyn FnMut(TurnSegmentStartInfo)>,
     pub on_turn_segment_end: Option<&'a mut dyn FnMut(String)>,
     pub on_turn_tool_phase_end: Option<&'a mut dyn FnMut()>,
@@ -126,24 +124,6 @@ pub struct CommandApprovalRequest {
     pub command: String,
     pub args: String,
     pub allowlist_key: Option<String>,
-}
-
-/// `staged_plan_step_started`：Web 时间线展示用字段子集。
-#[derive(Debug, Clone)]
-pub struct StagedPlanStepStartInfo {
-    pub step_index: usize,
-    pub total_steps: usize,
-    pub description: String,
-    pub executor_kind: Option<String>,
-}
-
-/// `staged_plan_step_finished`：Web 时间线展示用字段子集。
-#[derive(Debug, Clone)]
-pub struct StagedPlanStepEndInfo {
-    pub step_index: usize,
-    pub total_steps: usize,
-    pub status: String,
-    pub executor_kind: Option<String>,
 }
 
 /// `clarification_questionnaire`：Web 表单用字段子集。
