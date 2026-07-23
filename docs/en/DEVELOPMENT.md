@@ -77,7 +77,7 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 
 | Area | Responsibility |
 |------|----------------|
-| **`agent/`** | Single- and multi-turn orchestration: **`agent_turn`** (outer loop, **staged** planning, intent gating, **`execute_tools`**), **`context_window`** / **`message_pipeline`**, **`per_coord`** (final answer and workflow coordination), **`workflow`** (DAG), optional **`hierarchy`** (layered Manager/Operator). |
+| **`agent/`** | Single- and multi-turn orchestration: **`agent_turn`** (outer loop, intent gating, **`execute_tools`**), **`context_window`** / **`message_pipeline`**, **`per_coord`** (final answer and workflow coordination), **`workflow`** (DAG), optional **`hierarchy`** (layered Manager/Operator). |
 | **`llm/`** | **`complete_chat_retrying`**, request construction, **vendor** quirks, **`api`** HTTP/SSE. |
 | **`tools/`** | Function-calling implementations, **`run_tool`**, schemas and **tool_specs_registry**. |
 | **`tool_registry/`** | Dispatch by tool name, parallelism policy, Web/CLI approvals and timeouts. |
@@ -96,7 +96,7 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 | **`types` (root re-export)** | Same as `crabmate-types`; in-repo code still commonly uses **`crate::types::`**. |
 | **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
 
-For **sub-paths** (e.g. **`agent_turn/staged`**, **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).
+For **sub-paths** (e.g. **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).
 
 ---
 
@@ -124,4 +124,4 @@ Leptos CSR: **`api`** / **`sse_dispatch`** consume SSE; **`app/`** chat and work
 
 ## Further reading (design notes and topics)
 
-Staged planning, workflow orchestration, context trimming, Web theming, and other **topic designs** remain in **`docs/`** (and **`docs/en/`** where mirrored); this page is an **entry-level index**, not a full copy of those documents.
+Workflow orchestration, context trimming, Web theming, and other **topic designs** remain in **`docs/`** (and **`docs/en/`** where mirrored); this page is an **entry-level index**, not a full copy of those documents.
