@@ -1,10 +1,9 @@
 # 完成判定金样：每行一条 JSON，供 `agent_turn/turn_completion_golden.rs` 加载。
 # 运行：`cargo test golden_turn_completion -p crabmate`
+# 注：rolling_horizon 案例已随 Step 4 删除 staged/ 目录移除。
 {"id":"readonly_early_stop","case":"early_stop","fixture":"readonly_satisfied","expect":"allow"}
 {"id":"build_early_stop","case":"early_stop","fixture":"build_satisfied","expect":"deny","deny_reason":"build_or_test_intent"}
 {"id":"readonly_suppress_replan","case":"suppress_replanning","fixture":"readonly_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"allow"}
 {"id":"build_no_suppress_replan","case":"suppress_replanning","fixture":"build_satisfied","entered_from_step":true,"steps_fixture":"probe_only","expect":"deny","deny_reason":"early_stop_not_allowed"}
 {"id":"readonly_redundant_tools","case":"redundant_tools","fixture":"readonly_satisfied","tool_fixture":"list_dir_probe","expect":"allow"}
 {"id":"build_no_redundant_tools","case":"redundant_tools","fixture":"build_satisfied","tool_fixture":"list_dir_probe","expect":"deny","deny_reason":"early_stop_not_allowed"}
-{"id":"build_rolling_acceptance_pass","case":"rolling_horizon","fixture":"build_step_acceptance_pass","expect":"allow","via":"step_acceptance_pass"}
-{"id":"build_rolling_no_acceptance","case":"rolling_horizon","fixture":"build_satisfied","expect":"deny","deny_reason":"no_last_step_acceptance"}
