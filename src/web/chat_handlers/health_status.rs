@@ -76,20 +76,6 @@ struct StatusResponse {
     orchestration_profile: &'static str,
     /// 本进程有效编排路径摘要（不含用户任务级门控）。
     effective_orchestration_path: String,
-    /// 为 true 时每条用户消息先无工具规划轮再按步执行（见 `agent::agent_turn`；由 `staged_plan_intent_gate` 门控）。
-    staged_plan_intent_gate_advisory_bypass: bool,
-    /// CLI 是否在分阶段/逻辑双 agent 的**无工具规划轮**向 stdout 打印模型原文（默认 true）。
-    staged_plan_cli_show_planner_stream: bool,
-    /// 首轮规划后是否再跑无工具「步骤优化」轮（默认 true）。
-    staged_plan_optimizer_round: bool,
-    /// 无并行批处理内建工具时是否跳过优化轮（默认 true）。
-    staged_plan_optimizer_requires_parallel_tools: bool,
-    /// 逻辑多规划员份数上限（1–3，默认 1 即关闭）。
-    staged_plan_ensemble_count: u8,
-    /// 寒暄/极短用户输入时是否跳过逻辑多规划员（默认 true）。
-    staged_plan_skip_ensemble_on_casual_prompt: bool,
-    /// 首轮定稿计划蓝图模式：`immutable_goal_only` | `goal_plus_baseline_plan` | `strict_baseline_steps`。
-    staged_plan_baseline_mode: String,
     /// SyncDefault 工具沙盒：`none` | `docker`。
     sync_default_tool_sandbox_mode: String,
     /// `docker` 模式下的镜像名（可能为空表示未启用或未配置）。
@@ -291,25 +277,6 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
         planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
         orchestration_profile: cfg.per_plan_policy.orchestration_profile.as_str(),
         effective_orchestration_path,
-        staged_plan_intent_gate_advisory_bypass: cfg
-            .staged_planning
-            .staged_plan_intent_gate_advisory_bypass,
-        staged_plan_cli_show_planner_stream: cfg
-            .staged_planning
-            .staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: cfg
-            .staged_planning
-            .staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: cfg
-            .staged_planning
-            .staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_baseline_mode: cfg
-            .staged_planning
-            .staged_plan_baseline_mode
-            .as_str()
-            .to_string(),
         sync_default_tool_sandbox_mode: cfg
             .sync_tool_sandbox
             .sync_default_tool_sandbox_mode

@@ -3,6 +3,8 @@
 //! - 规划 JSON（合并 `reasoning_content` + 正文）解析为 `no_task: true` 时：不向浏览器下发规划轮正文（SSE 缓冲清空）。
 //! - 否则：丢弃 CrabMate 信封前出现的纯文本增量（`reasoning_*`），保留信封与 `assistant_answer_phase` 之后的正文增量。
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 
 use serde_json::Value;

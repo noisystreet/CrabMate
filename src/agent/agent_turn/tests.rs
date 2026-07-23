@@ -2,9 +2,6 @@ mod push_assistant_merge_tests {
     use crate::types::{Message, MessageContent, message_content_as_str};
 
     use super::super::messages::push_assistant_merging_trailing_empty_placeholder;
-    use super::super::staged::{
-        build_logical_dual_planner_messages, build_single_agent_planner_messages,
-    };
 
     fn empty_assistant() -> Message {
         Message {
@@ -44,76 +41,6 @@ mod push_assistant_merge_tests {
         push_assistant_merging_trailing_empty_placeholder(&mut m, assistant_body("second"));
         assert_eq!(m.len(), 3);
         assert_eq!(message_content_as_str(&m[2].content), Some("second"));
-    }
-
-    #[test]
-    fn planner_messages_single_agent_keeps_tool_results() {
-        let src = vec![
-            Message::system_only("sys"),
-            Message::user_only("u1"),
-            assistant_body("a1"),
-            Message {
-                role: "tool".to_string(),
-                content: Some(MessageContent::Text("tool out".to_string())),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("tc1".to_string()),
-            },
-        ];
-        let out = build_single_agent_planner_messages(&src, "plan sys".to_string(), false, false);
-        assert_eq!(out.len(), 5);
-        assert_eq!(out[3].role, "tool");
-        assert_eq!(out[4].role, "system");
-        assert_eq!(message_content_as_str(&out[4].content), Some("plan sys"));
-    }
-
-    #[test]
-    fn planner_messages_logical_dual_drops_tool_and_empty_assistant() {
-        let src = vec![
-            Message::system_only("sys"),
-            Message::user_only("u1"),
-            assistant_body("a1"),
-            empty_assistant(),
-            Message {
-                role: "tool".to_string(),
-                content: Some(MessageContent::Text("tool out".to_string())),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("tc1".to_string()),
-            },
-        ];
-        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string(), false, false);
-        assert_eq!(out.len(), 4);
-        assert_eq!(out[0].role, "system");
-        assert_eq!(out[1].role, "user");
-        assert_eq!(out[2].role, "assistant");
-        assert_eq!(out[3].role, "system");
-        assert_eq!(message_content_as_str(&out[3].content), Some("plan sys"));
-        assert!(!out.iter().any(|m| m.role == "tool"));
-    }
-
-    #[test]
-    fn planner_messages_logical_dual_keeps_tools_in_last_step_window() {
-        let src = vec![
-            Message::user_only("编译"),
-            Message::user_staged_step_injection("### 分步 1/1\n- id: s1\n- 描述: build"),
-            assistant_body("running"),
-            Message {
-                role: "tool".to_string(),
-                content: Some(MessageContent::Text("make ok".to_string())),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: Some("run_command".to_string()),
-                tool_call_id: Some("tc1".to_string()),
-            },
-        ];
-        let out = build_logical_dual_planner_messages(&src, "plan sys".to_string(), false, false);
-        assert!(out.iter().any(|m| m.role == "tool"));
     }
 }
 
@@ -256,10 +183,6 @@ mod per_reflect_tests {
                     mcp_turn: None,
                     read_file_turn_cache: None,
                     workspace_changelist: None,
-                    staged_plan_optimizer_round: false,
-                    staged_plan_optimizer_requires_parallel_tools: true,
-                    staged_plan_ensemble_count: 1,
-                    staged_plan_skip_ensemble_on_casual_prompt: true,
                     turn_allowed_tool_names: None,
                 },
                 obs: RunLoopObs {
@@ -294,141 +217,7 @@ mod per_reflect_tests {
     }
 }
 
-mod staged_single_step_rolling_tests {
-    use super::super::staged::{
-        StagedPlanRunOutcome, simulate_single_step_rolling_horizon_for_test,
-    };
-
-    #[test]
-    fn single_step_then_no_task_finished_reenters_once_then_converges() {
-        let rounds = simulate_single_step_rolling_horizon_for_test(
-            &[
-                StagedPlanRunOutcome::ContinuePlanning,
-                StagedPlanRunOutcome::Finished,
-            ],
-            64,
-        )
-        .expect("should finish");
-        assert_eq!(
-            rounds, 2,
-            "应先完成一次单步执行并触发重入，再在下一轮 no_task 收敛退出"
-        );
-    }
-
-    #[test]
-    fn rolling_horizon_stops_when_round_limit_exceeded() {
-        let err = simulate_single_step_rolling_horizon_for_test(
-            &[StagedPlanRunOutcome::ContinuePlanning; 70],
-            64,
-        )
-        .expect_err("should hit round limit");
-        assert!(err.contains("超过上限"));
-    }
-}
-
-mod staged_intent_gate_tests {
-    use super::super::intent::staged_planning_gate::{
-        StagedPlanningDenyReason, StagedPlanningGateOutcome, assess_staged_planning_gate,
-    };
-    use crate::types::Message;
-
-    fn test_cfg() -> crate::config::AgentConfig {
-        crate::config::load_config(None).expect("embed default")
-    }
-
-    #[test]
-    fn plain_qa_should_not_enter_staged_planning() {
-        let cfg = test_cfg();
-        let messages = vec![Message::user_only("你有哪些技能")];
-        let gate = assess_staged_planning_gate(&messages, &cfg);
-        assert!(!gate.allows_staged_planning(), "普通问答不应进入分阶段规划");
-        match gate {
-            StagedPlanningGateOutcome::Deny {
-                reason: StagedPlanningDenyReason::IntentPipelineNotExecute,
-                task_preview: Some(_),
-                intent_decision: Some(_),
-            } => {}
-            other => panic!("unexpected gate outcome: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn execute_task_should_enter_staged_planning() {
-        let cfg = test_cfg();
-        let messages = vec![Message::user_only(
-            "请修复 src/lib.rs 的编译错误，梳理多个模块的依赖关系并运行 cargo test",
-        )];
-        let gate = assess_staged_planning_gate(&messages, &cfg);
-        assert!(
-            gate.allows_staged_planning(),
-            "任务执行类请求应进入分阶段规划"
-        );
-        assert!(
-            matches!(gate, StagedPlanningGateOutcome::Allow { .. }),
-            "expected Allow outcome"
-        );
-    }
-
-    #[test]
-    fn empty_messages_yield_empty_task_deny() {
-        let cfg = test_cfg();
-        let messages: Vec<Message> = Vec::new();
-        let gate = assess_staged_planning_gate(&messages, &cfg);
-        assert!(!gate.allows_staged_planning());
-        match gate {
-            StagedPlanningGateOutcome::Deny {
-                reason: StagedPlanningDenyReason::EmptyEffectiveTask,
-                task_preview: None,
-                intent_decision: None,
-            } => {}
-            other => panic!("unexpected gate outcome: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn advisory_refactor_consultation_still_allows_staged_when_advisory_bypass_enabled() {
-        let mut cfg = test_cfg();
-        // 默认 L1 对该句常为 ConfirmThenExecute（不进入分阶段）；下调高阈值以稳定得到 Execute，从而专门验证「咨询启发式」分支。
-        cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
-        cfg.staged_planning.staged_plan_intent_gate_advisory_bypass = true;
-        let messages = vec![Message::user_only(
-            "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
-        )];
-        let gate = assess_staged_planning_gate(&messages, &cfg);
-        assert!(
-            gate.allows_staged_planning(),
-            "咨询绕过已移除：开启 advisory_bypass 时，Execute 路径下仍应进入滚动分阶段规划"
-        );
-        match gate {
-            StagedPlanningGateOutcome::Allow {
-                task_preview: _,
-                intent_kind: _,
-                primary_intent: _,
-                confidence: _,
-                decision: _,
-            } => {
-                // 咨询绕过已从分阶段资格判定中移除，所有 Execute 任务均进入分阶段规划
-            }
-            other => panic!("unexpected gate outcome: {:?}", other),
-        }
-    }
-
-    #[test]
-    fn advisory_refactor_consultation_allows_staged_planning_by_default() {
-        let mut cfg = test_cfg();
-        cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
-        let messages = vec![Message::user_only(
-            "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
-        )];
-        let gate = assess_staged_planning_gate(&messages, &cfg);
-        assert!(
-            gate.allows_staged_planning(),
-            "默认关闭咨询绕过时，Execute + 咨询启发式仍应进入分阶段"
-        );
-    }
-}
-
-mod staged_workflow_binding_context_tests {
+mod workflow_binding_context_tests {
     use crate::agent::plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids;
 
     fn workflow_bound_two_step_plan_json() -> &'static str {
@@ -460,116 +249,8 @@ mod staged_workflow_binding_context_tests {
 }
 
 mod multi_turn_orchestration_fixture_tests {
-    use crate::agent::agent_turn::params::{RunLoopTurnState, TurnPlannerHints};
-    use crate::agent::agent_turn::task_level_evidence::{
-        GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
-    };
-    use crate::agent::agent_turn::turn_completion::{
-        plan_steps_are_redundant_after_completion, tool_calls_are_redundant_after_completion,
-    };
-    use crate::agent::plan_optimizer::staged_plan_trigger_user_content;
-    use crate::types::{FunctionCall, LlmSeedOverride, Message, ToolCall};
-
-    fn msg(role: &str, text: &str) -> Message {
-        Message {
-            role: role.to_string(),
-            content: Some(text.into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        }
-    }
-
-    fn tool_env(name: &str, output: &str) -> Message {
-        let parsed = crate::tool_result::parse_legacy_output(name, output);
-        msg(
-            "tool",
-            &crate::tool_result::encode_tool_message_envelope_v1(
-                name,
-                name.to_string(),
-                &parsed,
-                output,
-                None,
-            ),
-        )
-    }
-
-    #[test]
-    fn multi_turn_readonly_then_compile_keeps_active_goal_and_suppression_off() {
-        let messages = vec![
-            msg("user", "分析当前目录"),
-            tool_env("list_tree", "list tree: ."),
-            msg(
-                "assistant",
-                "当前目录包含三个压缩包与归档文件，分析结果如下。",
-            ),
-            msg("user", "编译 hpcg"),
-            msg("assistant", "好的，开始编译。"),
-        ];
-        assert_eq!(
-            staged_plan_trigger_user_content(&messages),
-            Some("编译 hpcg")
-        );
-        assert_eq!(
-            check_active_user_goal_completion_evidence(&messages),
-            GoalCompletionEvidenceCheck::NotApplicable
-        );
-        assert!(plan_steps_are_redundant_after_completion(&[
-            crate::agent::plan_artifact::PlanStepV1 {
-                id: "verify".into(),
-                description: "检查产物是否存在".into(),
-                workflow_node_id: None,
-                executor_kind: None,
-                step_kind: Some("verify".into()),
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            }
-        ]));
-    }
-
-    #[test]
-    fn orchestration_correction_user_does_not_replace_active_goal() {
-        let messages = vec![
-            msg("user", "编译 hpcg"),
-            msg("user", "【编排纠偏】请实际执行 make"),
-        ];
-        assert_eq!(
-            staged_plan_trigger_user_content(&messages),
-            Some("编译 hpcg")
-        );
-    }
-
-    #[test]
-    fn immutable_snapshot_aligns_with_latest_real_user() {
-        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
-
-        let mut storage = vec![
-            Message::user_only("分析当前目录"),
-            Message::assistant_only("完成"),
-            Message::user_only("编译 hpcg"),
-        ];
-        let mut turn = RunLoopTurnState {
-            messages_buf: &mut storage,
-            messages_revision: 0,
-            sub_phase: AgentTurnSubPhase::Planner,
-            turn_planner_hints: TurnPlannerHints::default(),
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: LlmSeedOverride::FromConfig,
-            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
-        };
-        assert_eq!(
-            turn.staged_immutable_user_goal_snapshot(),
-            Some("编译 hpcg")
-        );
-    }
+    use crate::agent::agent_turn::turn_completion::tool_calls_are_redundant_after_completion;
+    use crate::types::{FunctionCall, ToolCall};
 
     #[test]
     fn redundant_probe_tools_detected_for_completed_outer_loop() {

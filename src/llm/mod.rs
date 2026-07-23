@@ -40,6 +40,7 @@ pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};
 #[allow(unused_imports)]
 pub use terminal_render::terminal_render_agent_markdown;
 
+#[allow(unused_imports)]
 pub(crate) use crabmate_llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS;
 
 use crabmate_types::{ChatRequest, Message};

@@ -1,6 +1,8 @@
 //! 薄封装：在 **`RunLoopParams`** 上复用 [`crate::llm::CompleteChatRetryingParams`] 拼装，减少分阶段等路径的重复样板。
 //! 仍**只**经 [`crate::llm::complete_chat_retrying`] 出站，不直接调 `api::stream_chat`。
 
+#![allow(dead_code)]
+
 use crate::llm::{
     CompleteChatRetryingParams, LlmCompleteError, LlmRetryingTransportOpts, complete_chat_retrying,
 };

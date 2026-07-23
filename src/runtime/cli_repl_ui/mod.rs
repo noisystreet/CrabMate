@@ -373,7 +373,6 @@ impl CliReplStyle {
         cfg: &AgentConfig,
     ) -> io::Result<()> {
         banner_highlights_section::write_banner_highlights_core_limits(self, w, cfg)?;
-        banner_highlights_section::write_banner_highlights_staged_and_planner(self, w, cfg)?;
         banner_highlights_section::write_banner_highlights_optional_flags(self, w, cfg)?;
         Ok(())
     }
@@ -440,7 +439,6 @@ impl CliReplStyle {
         self.write_repl_config_summary_workspace_section(&mut out, work_dir, tool_count)?;
         self.write_repl_config_summary_essentials_section(&mut out, cfg)?;
         self.write_repl_config_summary_planning_section(&mut out, cfg)?;
-        self.write_repl_config_summary_staged_section(&mut out, cfg)?;
         self.write_repl_config_summary_cursor_section(&mut out, cfg, inner)?;
         self.write_repl_config_summary_flags_section(&mut out, cfg)?;
         self.write_repl_config_summary_optional_services(&mut out, cfg)?;
@@ -586,31 +584,6 @@ impl CliReplStyle {
             "planner_executor_mode",
             cfg.per_plan_policy.planner_executor_mode.as_str(),
         )?;
-        Ok(())
-    }
-
-    fn write_repl_config_summary_staged_section(
-        &self,
-        out: &mut io::Stdout,
-        cfg: &AgentConfig,
-    ) -> io::Result<()> {
-        let bypass = if cfg.staged_planning.staged_plan_intent_gate_advisory_bypass {
-            "开启（Execute 咨询/架构可绕分阶段）"
-        } else {
-            "关闭（门控放行一律 PlannedStep）"
-        };
-        self.write_banner_item(out, "staged_plan_intent_gate_advisory_bypass", bypass)?;
-        self.write_banner_item(
-            out,
-            "staged_plan_feedback_mode",
-            cfg.staged_planning.staged_plan_feedback_mode.as_str(),
-        )?;
-        let staged_cli = if cfg.staged_planning.staged_plan_cli_show_planner_stream {
-            "开启（CLI 规划轮打印模型 stdout）"
-        } else {
-            "关闭（CLI 规划轮不打印模型 stdout）"
-        };
-        self.write_banner_item(out, "staged_plan_cli_show_planner_stream", staged_cli)?;
         Ok(())
     }
 

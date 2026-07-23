@@ -1,5 +1,7 @@
 //! [`super::terminal_cli_transcript`] 的实现体（拆文件以便 `lizard`/`fn-nloc` 正确统计函数边界）。
 
+#![allow(dead_code)]
+
 use log::debug;
 
 use crate::redact;

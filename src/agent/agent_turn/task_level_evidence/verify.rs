@@ -236,8 +236,7 @@ fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
 pub(crate) fn check_active_user_goal_completion_evidence(
     messages: &[Message],
 ) -> GoalCompletionEvidenceCheck {
-    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
-    else {
+    let Some(task) = crate::types::last_real_user_task_content(messages, false) else {
         return GoalCompletionEvidenceCheck::NotApplicable;
     };
     let Some(window) = messages_slice_since_last_user(messages) else {

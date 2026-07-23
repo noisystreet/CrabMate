@@ -1,7 +1,7 @@
 //! [`TurnCompletionDecision`] 与 evaluate 入口（供 tracing / 金样回归）。
 
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
-use crate::types::{Message, ToolCall, last_staged_step_injection_index};
+use crate::agent::plan_artifact::PlanStepV1;
+use crate::types::{Message, ToolCall};
 
 use super::super::completion_suppression::{
     plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
@@ -16,21 +16,40 @@ use super::super::task_level_evidence::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TurnCompletionDecision {
     AllowEarlyStop,
-    DenyEarlyStop { reason: &'static str },
+    DenyEarlyStop {
+        reason: &'static str,
+    },
+    #[allow(dead_code)]
     AllowSuppressReplanning,
-    DenySuppressReplanning { reason: &'static str },
+    #[allow(dead_code)]
+    DenySuppressReplanning {
+        reason: &'static str,
+    },
     AllowRedundantTools,
-    DenyRedundantTools { reason: &'static str },
-    AllowRollingHorizonStop { via: RollingHorizonStopVia },
-    DenyRollingHorizonStop { reason: &'static str },
+    DenyRedundantTools {
+        reason: &'static str,
+    },
+    #[allow(dead_code)]
+    AllowRollingHorizonStop {
+        via: RollingHorizonStopVia,
+    },
+    #[allow(dead_code)]
+    DenyRollingHorizonStop {
+        reason: &'static str,
+    },
     AllowMissingFinalAnswerFeedback,
-    DenyMissingFinalAnswerFeedback { reason: &'static str },
+    DenyMissingFinalAnswerFeedback {
+        reason: &'static str,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RollingHorizonStopVia {
+    #[allow(dead_code)]
     HeuristicEarlyStop,
+    #[allow(dead_code)]
     StepAcceptancePass,
+    #[allow(dead_code)]
     GoalEvidenceSatisfied,
 }
 
@@ -71,7 +90,7 @@ impl TurnCompletionDecision {
                 | Self::AllowMissingFinalAnswerFeedback
         )
     }
-
+    #[allow(dead_code)]
     pub(crate) fn rolling_horizon_via(self) -> Option<RollingHorizonStopVia> {
         match self {
             Self::AllowRollingHorizonStop { via } => Some(via),
@@ -99,8 +118,7 @@ fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision 
             reason: "evidence_not_satisfied",
         };
     }
-    let Some(task) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
-    else {
+    let Some(task) = crate::types::last_real_user_task_content(messages, false) else {
         return TurnCompletionDecision::DenyEarlyStop {
             reason: "no_active_user_task",
         };
@@ -120,6 +138,7 @@ pub(crate) fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDe
     decision
 }
 
+#[allow(dead_code)]
 pub(crate) fn evaluate_turn_suppress_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,
@@ -168,61 +187,5 @@ pub(crate) fn evaluate_turn_redundant_tools(
         TurnCompletionDecision::AllowRedundantTools
     };
     log_turn_completion_decision(decision, "redundant_tools");
-    decision
-}
-
-pub(crate) fn evaluate_turn_staged_rolling_horizon_early_stop(
-    messages: &[Message],
-    last_completed_step_effective_acceptance: Option<&PlanStepAcceptance>,
-    workspace_root: &std::path::Path,
-) -> TurnCompletionDecision {
-    if matches!(
-        turn_early_stop_allowed_core(messages),
-        TurnCompletionDecision::AllowEarlyStop
-    ) {
-        let decision = TurnCompletionDecision::AllowRollingHorizonStop {
-            via: RollingHorizonStopVia::HeuristicEarlyStop,
-        };
-        log_turn_completion_decision(decision, "rolling_horizon_early_stop");
-        return decision;
-    }
-    let Some(acceptance) = last_completed_step_effective_acceptance else {
-        let decision = TurnCompletionDecision::DenyRollingHorizonStop {
-            reason: "no_last_step_acceptance",
-        };
-        log_turn_completion_decision(decision, "rolling_horizon_early_stop");
-        return decision;
-    };
-    let Some(step_idx) = last_staged_step_injection_index(messages) else {
-        let decision = TurnCompletionDecision::DenyRollingHorizonStop {
-            reason: "no_staged_step_injection",
-        };
-        log_turn_completion_decision(decision, "rolling_horizon_early_stop");
-        return decision;
-    };
-    let decision = if crate::agent::step_verifier::verify_step_execution(
-        acceptance,
-        messages,
-        step_idx,
-        workspace_root,
-    )
-    .is_pass()
-    {
-        TurnCompletionDecision::AllowRollingHorizonStop {
-            via: RollingHorizonStopVia::StepAcceptancePass,
-        }
-    } else if matches!(
-        check_active_user_goal_completion_evidence(messages),
-        GoalCompletionEvidenceCheck::Satisfied
-    ) {
-        TurnCompletionDecision::AllowRollingHorizonStop {
-            via: RollingHorizonStopVia::GoalEvidenceSatisfied,
-        }
-    } else {
-        TurnCompletionDecision::DenyRollingHorizonStop {
-            reason: "step_acceptance_not_pass",
-        }
-    };
-    log_turn_completion_decision(decision, "rolling_horizon_early_stop");
     decision
 }

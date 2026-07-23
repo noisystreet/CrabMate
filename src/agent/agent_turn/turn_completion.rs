@@ -8,13 +8,13 @@ mod turn_completion_golden;
 
 pub(crate) use turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
-    evaluate_turn_staged_rolling_horizon_early_stop, evaluate_turn_suppress_replanning,
-    log_turn_completion_decision,
+    evaluate_turn_suppress_replanning, log_turn_completion_decision,
 };
 
 pub(crate) use super::completion_suppression::redundant_tool_names_for_log;
 
 #[cfg(test)]
+#[allow(unused_imports)]
 pub(crate) use super::completion_suppression::{
     plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion,
@@ -48,6 +48,7 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
 }
 
 /// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
+#[allow(dead_code)]
 pub(crate) fn turn_suppress_completed_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,
@@ -122,9 +123,7 @@ pub(crate) fn outer_loop_missing_final_answer_feedback_if_needed(
 
 #[cfg(test)]
 mod tests {
-    use super::turn_completion_decision::{
-        RollingHorizonStopVia, evaluate_turn_staged_rolling_horizon_early_stop,
-    };
+
     use super::*;
     use crate::agent::plan_artifact::PlanStepV1;
     use crate::types::Message;
@@ -223,47 +222,5 @@ mod tests {
         ];
         let fb = outer_loop_missing_final_answer_feedback_if_needed(&msgs, &msgs[2], 0);
         assert!(fb.is_some());
-    }
-
-    #[test]
-    fn rolling_horizon_build_early_stop_when_last_step_acceptance_passes() {
-        use crate::agent::plan_artifact::PlanStepAcceptance;
-        use crate::types::MessageContent;
-
-        let t_step = |stdout: &str| Message {
-            role: "tool".to_string(),
-            content: Some(MessageContent::Text(format!(
-                "退出码：0\n标准输出：\n{stdout}\n"
-            ))),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: Some("run_command".to_string()),
-            tool_call_id: None,
-        };
-        let messages = vec![
-            Message::user_only("编译 hello"),
-            Message::user_staged_step_injection("### 分步 1/1\n- id: build\n- 描述: 构建"),
-            t_step("[100%] Built target hello"),
-            Message::assistant_only("构建步骤完成。"),
-        ];
-        let acceptance = PlanStepAcceptance {
-            expect_exit_code: Some(0),
-            expect_stdout_contains: Some("Built target hello".to_string()),
-            expect_stderr_contains: None,
-            expect_file_exists: None,
-            expect_json_path_equals: None,
-            expect_http_status: None,
-        };
-        let decision = evaluate_turn_staged_rolling_horizon_early_stop(
-            &messages,
-            Some(&acceptance),
-            std::path::Path::new("/tmp"),
-        );
-        assert!(decision.is_allow());
-        assert_eq!(
-            decision.rolling_horizon_via(),
-            Some(RollingHorizonStopVia::StepAcceptancePass)
-        );
     }
 }

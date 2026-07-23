@@ -47,7 +47,6 @@ mod params;
 mod plan;
 mod reflect;
 mod run_dispatch;
-mod staged;
 mod sub_agent_policy;
 mod task_level_evidence;
 mod turn_completion;
@@ -112,12 +111,6 @@ pub(crate) async fn run_agent_turn_common(
     info!(
         target: "crabmate::agent_turn",
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        staged_plan_intent_gate_advisory_bypass = p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_intent_gate_advisory_bypass,
         intent_at_turn_start_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled,
         top_level_dispatch = top_dispatch.as_str(),
         "run_agent_turn_common enter"

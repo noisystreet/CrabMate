@@ -1,9 +1,54 @@
-//! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控（与分阶段 `empty_execution` 互补）。
+//! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控。
 
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
 use crate::types::{Message, last_real_user_message_index, message_content_as_str};
 
-use super::staged::empty_execution::tool_message_indicates_build_progress;
+/// 从工具名 + 正文推断此工具结果指示了「构建类进展」（非简单退出码 0 检测）。
+pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
+    let Some(name) = m.name.as_deref() else {
+        return false;
+    };
+    if matches!(
+        name,
+        "run_executable"
+            | "cargo_test"
+            | "cargo_check"
+            | "cargo_clippy"
+            | "cargo_fmt_check"
+            | "pytest_run"
+            | "go_test"
+            | "cppcheck_analyze"
+            | "shellcheck_check"
+    ) {
+        return true;
+    }
+    if name != "run_command" {
+        return false;
+    }
+    let Some(content) = message_content_as_str(&m.content) else {
+        return false;
+    };
+    let lower = content.to_lowercase();
+    const BUILD_MARKERS: &[&str] = &[
+        "make ",
+        "make\n",
+        "cmake --build",
+        "cmake -build",
+        "cargo build",
+        "cargo test",
+        "cargo run",
+        "ninja ",
+        "meson compile",
+        "meson test",
+        "go build",
+        "npm run build",
+        "npm test",
+        "ctest ",
+        "bazel build",
+        "buck build",
+    ];
+    BUILD_MARKERS.iter().any(|marker| lower.contains(marker))
+}
 
 /// 连续无构建进展的终答轮次达到该值后注入硬反馈（含当前轮）。
 pub(crate) const OUTER_LOOP_BUILD_IDLE_STREAK_THRESHOLD: u32 = 2;

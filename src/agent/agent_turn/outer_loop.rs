@@ -411,7 +411,7 @@ async fn run_outer_loop_single_iteration(
 
     if completed_goal_with_redundant_tool_calls(p, &msg) {
         let messages = p.turn.messages();
-        let goal_preview = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
+        let goal_preview = crate::types::last_real_user_task_content(messages, false)
             .unwrap_or("")
             .chars()
             .take(80)

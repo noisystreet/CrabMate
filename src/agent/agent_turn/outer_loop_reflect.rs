@@ -31,9 +31,7 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
     match outcome {
         ReflectOnAssistantOutcome::StopTurn => {
             let messages = p.turn.messages();
-            if let Some(task) =
-                crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages)
-            {
+            if let Some(task) = crate::types::last_real_user_task_content(messages, false) {
                 if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
                     per_coord.reset_outer_loop_build_idle_streak();
                 } else if outer_loop_assistant_is_build_idle_without_tools(msg) {
