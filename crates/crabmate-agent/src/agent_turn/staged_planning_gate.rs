@@ -16,9 +16,8 @@ use crate::agent_turn::{StagedPlanningDenyReason, StagedPlanningGateOutcome};
 use crate::intent_pipeline::{IntentAction, IntentDecision, assess_and_route};
 use crate::intent_router::ExecuteIntentThresholds;
 
-fn decision_engine_mode_from_config(cfg: &AgentConfig) -> DecisionEngineMode {
-    DecisionEngineMode::parse(&cfg.per_plan_policy.orchestration_decision_mode)
-        .unwrap_or(DecisionEngineMode::Auto)
+fn decision_engine_mode_from_config() -> DecisionEngineMode {
+    DecisionEngineMode::Auto
 }
 
 fn intent_action_discriminant(action: &IntentAction) -> &'static str {
@@ -87,18 +86,12 @@ fn log_staged_gate_outcome(
 fn gate_outcome_from_decision(
     task: String,
     decision: IntentDecision,
-    cfg: &AgentConfig,
+    _cfg: &AgentConfig,
     sse_tag: &str,
 ) -> StagedPlanningGateOutcome {
-    let mode = decision_engine_mode_from_config(cfg);
-    let threshold = cfg.per_plan_policy.decision_staged_threshold;
-    let weights = FactorWeights {
-        intent: cfg.per_plan_policy.decision_weight_intent,
-        complexity: cfg.per_plan_policy.decision_weight_complexity,
-        workspace: cfg.per_plan_policy.decision_weight_workspace,
-        history: cfg.per_plan_policy.decision_weight_history,
-        cost: cfg.per_plan_policy.decision_weight_cost,
-    };
+    let mode = decision_engine_mode_from_config();
+    let threshold = 0.4;
+    let weights = FactorWeights::default();
     let eligibility =
         staged_plan_eligibility_for_intent(task.as_str(), &decision, mode, threshold, &weights);
     log_staged_gate_outcome(task.as_str(), &decision, sse_tag, eligibility);

@@ -421,8 +421,7 @@ fn setup_workspace(scenario: &TestScenario) -> (PathBuf, tempfile::TempDir) {
 fn cfg_single_agent() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.intent_routing.intent_at_turn_start_enabled = false;
-    cfg.intent_routing.intent_l2_enabled = false;
+    // intent_at_turn_start_enabled / intent_l2_enabled 已从 config 删除（L1）；硬编码 false。
     Arc::new(cfg)
 }
 

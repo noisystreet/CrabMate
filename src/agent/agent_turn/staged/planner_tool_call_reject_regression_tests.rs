@@ -109,14 +109,10 @@ fn make_run_loop_params<'a>(
                 mcp_turn: None,
                 read_file_turn_cache: None,
                 workspace_changelist: None,
-                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-                staged_plan_optimizer_requires_parallel_tools: cfg
-                    .staged_planning
-                    .staged_plan_optimizer_requires_parallel_tools,
-                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-                staged_plan_skip_ensemble_on_casual_prompt: cfg
-                    .staged_planning
-                    .staged_plan_skip_ensemble_on_casual_prompt,
+                staged_plan_optimizer_round: true,
+                staged_plan_optimizer_requires_parallel_tools: false,
+                staged_plan_ensemble_count: 1,
+                staged_plan_skip_ensemble_on_casual_prompt: true,
                 turn_allowed_tool_names: None,
             },
             obs: RunLoopObs {

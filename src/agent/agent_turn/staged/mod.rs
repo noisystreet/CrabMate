@@ -30,6 +30,7 @@ mod rolling_horizon_advance_reduce;
 mod rolling_horizon_facade;
 mod rolling_horizon_preflight_reduce;
 mod sse;
+pub(crate) mod staged_config_compat;
 mod staged_parse_terminal;
 mod staged_step_patch_recover;
 mod step_after_outer;
@@ -49,6 +50,11 @@ mod planner_tool_call_reject_regression_tests;
 mod staged_plan_prepare_fixture_tests;
 
 use sse as staged_sse;
+
+use staged_config_compat::{
+    DEFAULT_STAGED_PLAN_BASELINE_MODE, DEFAULT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM,
+    StagedPlanBaselineMode,
+};
 
 use completed_replanning_reduce::{
     CompletedReplanningReduceAction, reduce_completed_replanning_suppression,
@@ -158,23 +164,12 @@ pub(super) async fn prepare_staged_planner_no_tools_request(
         .staged_immutable_user_goal_snapshot()
         .map(crate::agent::plan_optimizer::staged_rolling_immutable_plan_system_appendix);
 
-    let instr = p
-        .ctx
-        .core
-        .cfg
-        .staged_planning
-        .staged_plan_phase_instruction
-        .trim();
-    let mut plan_system = if instr.is_empty() {
-        staged_plan_phase_instruction_default()
-    } else {
-        instr.to_string()
-    };
+    let mut plan_system = staged_plan_phase_instruction_default();
     if let Some(app) = immutable_appendix {
         plan_system.push_str(&app);
     }
-    let baseline_mode = p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode;
-    if baseline_mode != crate::config::StagedPlanBaselineMode::ImmutableGoalOnly
+    let baseline_mode = DEFAULT_STAGED_PLAN_BASELINE_MODE;
+    if baseline_mode != StagedPlanBaselineMode::ImmutableGoalOnly
         && let Some(ref baseline) = p.turn.turn_planner_hints.staged_baseline_plan
     {
         plan_system.push_str(
@@ -317,12 +312,7 @@ where
                     .attach
                     .staged_plan_optimizer_requires_parallel_tools,
                 parallel_tool_names_csv: parallel_csv.as_str(),
-                staged_plan_two_phase_nl_display: p
-                    .ctx
-                    .core
-                    .cfg
-                    .staged_planning
-                    .staged_plan_two_phase_nl_display,
+                staged_plan_two_phase_nl_display: false,
             });
 
             advance_full_pipeline_phases_after_parse_inner(AdvanceFullPipelineAfterParseParams {
@@ -389,12 +379,7 @@ async fn run_no_task_branch_then_outer<F>(
 where
     F: Fn(String) -> Message,
 {
-    if p.ctx
-        .core
-        .cfg
-        .staged_planning
-        .staged_plan_two_phase_nl_display
-    {
+    if false {
         run_staged_plan_nl_followup_round(p, per_coord, make_step_user_message).await?;
     }
     debug!(
@@ -631,8 +616,8 @@ where
 
     debug_staged_full_pipeline_transition(fp_phase, None);
 
-    let baseline_mode = p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode;
-    if baseline_mode != crate::config::StagedPlanBaselineMode::ImmutableGoalOnly
+    let baseline_mode = DEFAULT_STAGED_PLAN_BASELINE_MODE;
+    if baseline_mode != StagedPlanBaselineMode::ImmutableGoalOnly
         && p.turn.turn_planner_hints.staged_baseline_plan.is_none()
     {
         p.turn.turn_planner_hints.staged_baseline_plan = Some(plan.clone());
@@ -684,12 +669,7 @@ where
     F: Fn(String) -> Message,
 {
     let planner_render_to_terminal = render_to_terminal
-        && (p.ctx.io.out.is_some()
-            || p.ctx
-                .core
-                .cfg
-                .staged_planning
-                .staged_plan_cli_show_planner_stream);
+        && (p.ctx.io.out.is_some() || DEFAULT_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM);
     loop {
         let (mut msg, finish_reason) = complete_first_planner_round_maybe_retry_tool_reject(
             p,

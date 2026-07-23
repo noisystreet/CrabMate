@@ -97,10 +97,6 @@ mod tests {
     #[test]
     fn top_level_dispatch_always_non_hierarchical() {
         assert_eq!(
-            resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::Hierarchical)),
-            TurnTopLevelDispatch::NonHierarchical
-        );
-        assert_eq!(
             resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::SingleAgent)),
             TurnTopLevelDispatch::NonHierarchical
         );

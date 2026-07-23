@@ -4,8 +4,9 @@ use std::collections::BTreeSet;
 
 use crate::agent::plan_artifact::{self, AgentReplyPlanV1, PlanStepV1};
 use crate::config::AgentConfig;
-use crate::config::StagedPlanBaselineMode;
 use crate::types::{Message, Tool};
+
+use crate::agent::agent_turn::staged::staged_config_compat::StagedPlanBaselineMode;
 
 /// 步骤优化轮注入的 user 正文标记（取消/失败时弹出临时 user）。
 pub(crate) const STAGED_PLAN_OPTIMIZER_COACH_MARK: &str = "### 分阶段规划 · 步骤优化（服务端注入）";
@@ -77,8 +78,7 @@ pub(crate) fn staged_baseline_plan_planner_system_appendix(
 ) -> String {
     match mode {
         StagedPlanBaselineMode::ImmutableGoalOnly => String::new(),
-        StagedPlanBaselineMode::GoalPlusBaselinePlan
-        | StagedPlanBaselineMode::StrictBaselineSteps => {
+        StagedPlanBaselineMode::StrictBaselineSteps => {
             let md = format_baseline_plan_v1_compact_md(baseline);
             let strict_note = if mode == StagedPlanBaselineMode::StrictBaselineSteps {
                 "\n### 严格模式（`strict_baseline_steps`）\n\

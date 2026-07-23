@@ -262,7 +262,7 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
     );
     let effective_orchestration_path = crabmate_config::effective_orchestration_path_summary(
         cfg.per_plan_policy.planner_executor_mode.as_str(),
-        cfg.per_plan_policy.orchestration_profile,
+        crabmate_config::OrchestrationProfile::ReAct,
     );
     Json(StatusResponse {
         status: "ok",
@@ -289,27 +289,16 @@ pub(crate) async fn status_handler(State(state): State<Arc<AppState>>) -> impl I
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
         planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
-        orchestration_profile: cfg.per_plan_policy.orchestration_profile.as_str(),
+        orchestration_profile: crabmate_config::OrchestrationProfile::ReAct.as_str(),
         effective_orchestration_path,
-        staged_plan_intent_gate_advisory_bypass: cfg
-            .staged_planning
-            .staged_plan_intent_gate_advisory_bypass,
-        staged_plan_cli_show_planner_stream: cfg
-            .staged_planning
-            .staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: cfg
-            .staged_planning
-            .staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: cfg
-            .staged_planning
-            .staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_baseline_mode: cfg
-            .staged_planning
-            .staged_plan_baseline_mode
-            .as_str()
-            .to_string(),
+        // L1 硬编码：staged_planning 配置字段已删除
+        staged_plan_intent_gate_advisory_bypass: false,
+        staged_plan_cli_show_planner_stream: false,
+        staged_plan_optimizer_round: false,
+        staged_plan_optimizer_requires_parallel_tools: false,
+        staged_plan_ensemble_count: 1,
+        staged_plan_skip_ensemble_on_casual_prompt: true,
+        staged_plan_baseline_mode: "immutable_goal_only".to_string(),
         sync_default_tool_sandbox_mode: cfg
             .sync_tool_sandbox
             .sync_default_tool_sandbox_mode

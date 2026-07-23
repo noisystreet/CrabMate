@@ -21,10 +21,8 @@ fn per_coordinator_init_from_agent_config_matches_cfg_fields() {
         i.plan_rewrite_max_attempts,
         cfg.per_plan_policy.plan_rewrite_max_attempts
     );
-    assert_eq!(
-        i.staged_plan_patch_max_attempts_config,
-        cfg.staged_planning.staged_plan_patch_max_attempts
-    );
+    // L1 硬编码：staged_planning 配置字段已删除，默认值为 2
+    assert_eq!(i.staged_plan_patch_max_attempts_config, 2);
     assert_eq!(
         i.final_plan_require_strict_workflow_node_coverage,
         cfg.per_plan_policy
@@ -46,7 +44,7 @@ fn pc(policy: FinalPlanRequirementMode, plan_rewrite_max: usize) -> PerCoordinat
         reflection_default_max_rounds: 5,
         final_plan_policy: policy,
         plan_rewrite_max_attempts: plan_rewrite_max,
-        staged_plan_patch_max_attempts_config: 2,
+        staged_plan_patch_max_attempts_config: 3,
         final_plan_require_strict_workflow_node_coverage: false,
         final_plan_semantic_check_enabled: false,
         final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -442,7 +440,7 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
         reflection_default_max_rounds: 5,
         final_plan_policy: FinalPlanRequirementMode::WorkflowReflection,
         plan_rewrite_max_attempts: 3,
-        staged_plan_patch_max_attempts_config: 2,
+        staged_plan_patch_max_attempts_config: 3,
         final_plan_require_strict_workflow_node_coverage: true,
         final_plan_semantic_check_enabled: false,
         final_plan_semantic_check_max_non_readonly_tools: 0,

@@ -39,7 +39,8 @@ pub(crate) enum IntentGateResult {
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
-    if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
+    if false {
+        // L1 硬编码：intent_at_turn_start_enabled 已从 config 删除
         p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
         return Ok(true);
     }
@@ -225,7 +226,7 @@ async fn run_intent_l0_l1_l2_gate(
             cfg: p.ctx.core.cfg.as_ref(),
             in_clarification_flow,
             thresholds,
-            l2_enabled: p.ctx.core.cfg.intent_routing.intent_l2_enabled,
+            l2_enabled: true, // L1 硬编码：intent_l2_enabled 默认 true
             sse_log_tag,
         },
     )

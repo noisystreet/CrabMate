@@ -11,6 +11,7 @@ use super::planner_round_driver::{
     complete_planner_no_tools_chat_retrying, emit_staged_planner_tool_call_rejected_timeline,
 };
 use super::sse::{send_staged_plan_notice, staged_plan_queue_summary_text};
+use super::staged_config_compat::{DEFAULT_STAGED_PLAN_BASELINE_MODE, StagedPlanBaselineMode};
 use super::{StagedPlanRunLabels, prepare_staged_planner_no_tools_request};
 
 /// 分阶段规划补丁轮入参（控制 clippy `too_many_arguments`）。
@@ -158,8 +159,7 @@ where
         failed_step_zero_based,
     ) {
         Ok(merged) => {
-            if p.ctx.core.cfg.staged_planning.staged_plan_baseline_mode
-                == crate::config::StagedPlanBaselineMode::StrictBaselineSteps
+            if DEFAULT_STAGED_PLAN_BASELINE_MODE == StagedPlanBaselineMode::StrictBaselineSteps
                 && let Some(ref baseline) = p.turn.turn_planner_hints.staged_baseline_plan
                 && let Err(e) = plan_artifact::validate_staged_patch_merged_strict_baseline_ids(
                     &baseline.steps,

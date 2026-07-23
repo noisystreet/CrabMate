@@ -16,14 +16,6 @@ struct FinalizeTailScalars {
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
-    orchestration_profile: OrchestrationProfile,
-    orchestration_decision_mode: String,
-    decision_staged_threshold: f32,
-    decision_weight_intent: f32,
-    decision_weight_complexity: f32,
-    decision_weight_workspace: f32,
-    decision_weight_history: f32,
-    decision_weight_cost: f32,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -55,21 +47,6 @@ struct FinalizeTailScalars {
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
     session_workspace_changelist_max_chars: usize,
-    staged_plan_phase_instruction: String,
-    staged_plan_allow_no_task: bool,
-    staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    staged_plan_patch_max_attempts: usize,
-    staged_plan_cli_show_planner_stream: bool,
-    staged_plan_optimizer_round: bool,
-    staged_plan_optimizer_requires_parallel_tools: bool,
-    staged_plan_ensemble_count: u8,
-    staged_plan_skip_ensemble_on_casual_prompt: bool,
-    staged_plan_two_phase_nl_display: bool,
-    staged_plan_intent_gate_advisory_bypass: bool,
-    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
-    staged_plan_baseline_mode: StagedPlanBaselineMode,
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -117,14 +94,6 @@ struct TailPlanToolThinkingScalars {
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
-    orchestration_profile: OrchestrationProfile,
-    orchestration_decision_mode: String,
-    decision_staged_threshold: f32,
-    decision_weight_intent: f32,
-    decision_weight_complexity: f32,
-    decision_weight_workspace: f32,
-    decision_weight_history: f32,
-    decision_weight_cost: f32,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -163,19 +132,8 @@ fn derive_tail_plan_tool_thinking_scalars(
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
     // 统一强制走 ReAct（单 Agent 外循环），不再暴露给用户选择。
-    // `planner_executor_mode` 与 `orchestration_profile` 的 TOML/环境变量配置不再生效。
+    // `planner_executor_mode` 的 TOML/环境变量配置不再生效。
     let planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    let orchestration_profile = crate::OrchestrationProfile::ReAct;
-    let orchestration_decision_mode = match b.per_plan_policy.orchestration_decision_mode_str.as_deref() {
-        Some(s) => s.to_string(),
-        None => "auto".to_string(),
-    };
-    let decision_staged_threshold = b.per_plan_policy.decision_staged_threshold.unwrap_or(0.4) as f32;
-    let decision_weight_intent = b.per_plan_policy.decision_weight_intent.unwrap_or(0.35) as f32;
-    let decision_weight_complexity = b.per_plan_policy.decision_weight_complexity.unwrap_or(0.25) as f32;
-    let decision_weight_workspace = b.per_plan_policy.decision_weight_workspace.unwrap_or(0.20) as f32;
-    let decision_weight_history = b.per_plan_policy.decision_weight_history.unwrap_or(0.10) as f32;
-    let decision_weight_cost = b.per_plan_policy.decision_weight_cost.unwrap_or(0.10) as f32;
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -222,14 +180,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
-        orchestration_profile,
-        orchestration_decision_mode,
-        decision_staged_threshold,
-        decision_weight_intent,
-        decision_weight_complexity,
-        decision_weight_workspace,
-        decision_weight_history,
-        decision_weight_cost,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -361,22 +311,7 @@ fn derive_tail_context_queues_session_scalars(
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct TailStagedSandboxWebScalars {
-    staged_plan_phase_instruction: String,
-    staged_plan_allow_no_task: bool,
-    staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    staged_plan_patch_max_attempts: usize,
-    staged_plan_cli_show_planner_stream: bool,
-    staged_plan_optimizer_round: bool,
-    staged_plan_optimizer_requires_parallel_tools: bool,
-    staged_plan_ensemble_count: u8,
-    staged_plan_skip_ensemble_on_casual_prompt: bool,
-    staged_plan_two_phase_nl_display: bool,
-    staged_plan_intent_gate_advisory_bypass: bool,
-    staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
-    staged_plan_baseline_mode: StagedPlanBaselineMode,
+struct TailSandboxWebScalars {
     sync_default_tool_sandbox_mode: types::SyncDefaultToolSandboxMode,
     sync_default_tool_sandbox_docker_image: String,
     sync_default_tool_sandbox_docker_network: String,
@@ -389,55 +324,9 @@ struct TailStagedSandboxWebScalars {
     allow_insecure_no_auth_for_non_loopback: bool,
 }
 
-fn derive_tail_staged_sandbox_web_scalars(
+fn derive_tail_sandbox_web_scalars(
     b: &ConfigBuilder,
-) -> Result<TailStagedSandboxWebScalars, String> {
-    let staged_plan_phase_instruction = b.staged_planning.staged_plan_phase_instruction.clone().unwrap_or_default();
-    let staged_plan_allow_no_task = b.staged_planning.staged_plan_allow_no_task.unwrap_or(true);
-    let staged_plan_feedback_mode = match b.staged_planning.staged_plan_feedback_mode_str.as_deref() {
-        Some(s) => StagedPlanFeedbackMode::parse(s)?,
-        None => StagedPlanFeedbackMode::default(),
-    };
-    let staged_plan_patch_max_attempts =
-        b.staged_planning.staged_plan_patch_max_attempts.unwrap_or(2).clamp(1, 16) as usize;
-    let staged_plan_cli_show_planner_stream = b.staged_planning.staged_plan_cli_show_planner_stream.unwrap_or(true);
-    let staged_plan_optimizer_round = b.staged_planning.staged_plan_optimizer_round.unwrap_or(true);
-    let staged_plan_optimizer_requires_parallel_tools = b
-        .staged_planning.staged_plan_optimizer_requires_parallel_tools
-        .unwrap_or(false);
-    let staged_plan_ensemble_count = b.staged_planning.staged_plan_ensemble_count.unwrap_or(1).clamp(1, 3) as u8;
-    let staged_plan_skip_ensemble_on_casual_prompt =
-        b.staged_planning.staged_plan_skip_ensemble_on_casual_prompt.unwrap_or(true);
-    let staged_plan_two_phase_nl_display = b.staged_planning.staged_plan_two_phase_nl_display.unwrap_or(false);
-    let staged_plan_intent_gate_advisory_bypass =
-        b.staged_planning.staged_plan_intent_gate_advisory_bypass.unwrap_or(false);
-    let advisory_extra_keywords = |v: Option<Vec<String>>| -> Vec<String> {
-        v.unwrap_or_default()
-            .into_iter()
-            .map(|s| s.trim().to_lowercase())
-            .filter(|s| !s.is_empty())
-            .take(48)
-            .collect()
-    };
-    let staged_plan_advisory_bypass_extra_impl_blockers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .clone(),
-    );
-    let staged_plan_advisory_bypass_extra_arch_markers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .clone(),
-    );
-    let staged_plan_advisory_bypass_extra_consult_markers = advisory_extra_keywords(
-        b.staged_planning
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .clone(),
-    );
-    let staged_plan_baseline_mode = match b.staged_planning.staged_plan_baseline_mode_str.as_deref() {
-        Some(s) => StagedPlanBaselineMode::parse(s)?,
-        None => StagedPlanBaselineMode::default(),
-    };
+) -> Result<TailSandboxWebScalars, String> {
     let sync_default_tool_sandbox_mode = match b.sync_tool_sandbox.sync_default_tool_sandbox_mode_str.as_deref() {
         Some(s) => types::SyncDefaultToolSandboxMode::parse(s)?,
         None => types::SyncDefaultToolSandboxMode::default(),
@@ -479,22 +368,7 @@ fn derive_tail_staged_sandbox_web_scalars(
     let web_audit_trust_x_forwarded_for = b.web_api.web_audit_trust_x_forwarded_for.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
         b.web_api.allow_insecure_no_auth_for_non_loopback.unwrap_or(false);
-    Ok(TailStagedSandboxWebScalars {
-        staged_plan_phase_instruction,
-        staged_plan_allow_no_task,
-        staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass,
-        staged_plan_advisory_bypass_extra_impl_blockers,
-        staged_plan_advisory_bypass_extra_arch_markers,
-        staged_plan_advisory_bypass_extra_consult_markers,
-        staged_plan_baseline_mode,
+    Ok(TailSandboxWebScalars {
         sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image,
         sync_default_tool_sandbox_docker_network,
@@ -682,7 +556,7 @@ fn assemble_finalize_tail_scalars(
     pack: TailCursorSkillsPack,
     ptt: TailPlanToolThinkingScalars,
     cqs: TailContextQueuesSessionScalars,
-    ssw: TailStagedSandboxWebScalars,
+    ssw: TailSandboxWebScalars,
     sin: TailStorageInjectNetScalars,
 ) -> FinalizeTailScalars {
     let TailPlanToolThinkingScalars {
@@ -693,14 +567,6 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
-        orchestration_profile,
-        orchestration_decision_mode,
-        decision_staged_threshold,
-        decision_weight_intent,
-        decision_weight_complexity,
-        decision_weight_workspace,
-        decision_weight_history,
-        decision_weight_cost,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -752,14 +618,6 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
-        orchestration_profile,
-        orchestration_decision_mode,
-        decision_staged_threshold,
-        decision_weight_intent,
-        decision_weight_complexity,
-        decision_weight_workspace,
-        decision_weight_history,
-        decision_weight_cost,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -791,27 +649,6 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
-        staged_plan_phase_instruction: ssw.staged_plan_phase_instruction.clone(),
-        staged_plan_allow_no_task: ssw.staged_plan_allow_no_task,
-        staged_plan_feedback_mode: ssw.staged_plan_feedback_mode,
-        staged_plan_patch_max_attempts: ssw.staged_plan_patch_max_attempts,
-        staged_plan_cli_show_planner_stream: ssw.staged_plan_cli_show_planner_stream,
-        staged_plan_optimizer_round: ssw.staged_plan_optimizer_round,
-        staged_plan_optimizer_requires_parallel_tools: ssw.staged_plan_optimizer_requires_parallel_tools,
-        staged_plan_ensemble_count: ssw.staged_plan_ensemble_count,
-        staged_plan_skip_ensemble_on_casual_prompt: ssw.staged_plan_skip_ensemble_on_casual_prompt,
-        staged_plan_two_phase_nl_display: ssw.staged_plan_two_phase_nl_display,
-        staged_plan_intent_gate_advisory_bypass: ssw.staged_plan_intent_gate_advisory_bypass,
-        staged_plan_advisory_bypass_extra_impl_blockers: ssw
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .clone(),
-        staged_plan_advisory_bypass_extra_arch_markers: ssw
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .clone(),
-        staged_plan_advisory_bypass_extra_consult_markers: ssw
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .clone(),
-        staged_plan_baseline_mode: ssw.staged_plan_baseline_mode,
         sync_default_tool_sandbox_mode: ssw.sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image: ssw.sync_default_tool_sandbox_docker_image.clone(),
         sync_default_tool_sandbox_docker_network: ssw.sync_default_tool_sandbox_docker_network.clone(),
@@ -867,7 +704,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         run_command_working_dir.as_path(),
     )?;
     let cqs = derive_tail_context_queues_session_scalars(b, max_message_history);
-    let ssw = derive_tail_staged_sandbox_web_scalars(b)?;
+    let ssw = derive_tail_sandbox_web_scalars(b)?;
     let sin = derive_tail_storage_inject_net_scalars(b, command_timeout_secs)?;
     Ok(assemble_finalize_tail_scalars(pack, ptt, cqs, ssw, sin))
 }

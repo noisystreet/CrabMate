@@ -23,7 +23,6 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
     apply_env_overrides_part_5(b);
     apply_env_overrides_part_6(b);
     apply_env_overrides_part_7(b);
-    apply_env_staged_planning_overrides_part_8(b);
     apply_env_sync_tool_sandbox_overrides_part_8(b);
     apply_env_overrides_part_9(b);
     apply_env_overrides_part_10(b);
@@ -476,7 +475,6 @@ fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
 fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {
     env_override_context_transcript_and_health_probe(b);
     env_overrides_chat_queue::env_override_chat_queue_parallel_and_caches(b);
-    env_override_staged_plan_allow_no_task_flag(b);
 }
 
 fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
@@ -494,76 +492,6 @@ fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.web_api.health_llm_models_probe_cache_secs = Some(n);
-    }
-}
-
-fn env_override_staged_plan_allow_no_task_flag(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_ALLOW_NO_TASK")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_allow_no_task = Some(val);
-    }
-}
-
-fn apply_env_staged_planning_overrides_part_8(b: &mut ConfigBuilder) {
-    apply_env_staged_planning_overrides_part_8a(b);
-    apply_env_staged_planning_overrides_part_8b(b);
-}
-
-fn apply_env_staged_planning_overrides_part_8a(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_PHASE_INSTRUCTION") {
-        b.staged_planning.staged_plan_phase_instruction = Some(v);
-    }
-    if let Ok(s) = std::env::var("CM_STAGED_PLAN_FEEDBACK_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.staged_planning.staged_plan_feedback_mode_str = Some(s);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.staged_planning.staged_plan_patch_max_attempts = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_cli_show_planner_stream = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_OPTIMIZER_ROUND")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_optimizer_round = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning
-            .staged_plan_optimizer_requires_parallel_tools = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_ENSEMBLE_COUNT")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.staged_planning.staged_plan_ensemble_count = Some(n);
-    }
-}
-
-fn apply_env_staged_planning_overrides_part_8b(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_skip_ensemble_on_casual_prompt = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.staged_planning.staged_plan_two_phase_nl_display = Some(val);
-    }
-    if let Ok(s) = std::env::var("CM_STAGED_PLAN_BASELINE_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.staged_planning.staged_plan_baseline_mode_str = Some(s);
-        }
     }
 }
 

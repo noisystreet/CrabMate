@@ -111,7 +111,7 @@ pub(super) fn resolve_web_llm_for_job(
     {
         let mut c = (*cfg).clone();
         c.per_plan_policy.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;
-        c.per_plan_policy.orchestration_profile = crate::config::OrchestrationProfile::ReAct;
+        // orchestration_profile 已从 PerPlanPolicyConfig 删除（L1）；默认即 ReAct。
         cfg = Arc::new(c);
     }
     (cfg, key)

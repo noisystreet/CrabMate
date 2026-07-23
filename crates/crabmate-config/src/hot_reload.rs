@@ -39,7 +39,6 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.chat_queues_cache.clone_from(&src.chat_queues_cache);
     dst.session_workspace_changelist
         .clone_from(&src.session_workspace_changelist);
-    dst.staged_planning.clone_from(&src.staged_planning);
     dst.sync_tool_sandbox.clone_from(&src.sync_tool_sandbox);
     dst.context_bootstrap_inject
         .clone_from(&src.context_bootstrap_inject);

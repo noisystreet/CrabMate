@@ -77,7 +77,7 @@ pub(crate) async fn assess_staged_planning_gate_full_pipeline(
                         .intent_routing
                         .intent_non_hier_execute_high_threshold,
                 },
-                l2_enabled: p.ctx.core.cfg.intent_routing.intent_l2_enabled,
+                l2_enabled: true, // L1 硬编码：intent_l2_enabled 默认 true
                 sse_log_tag,
             },
         )

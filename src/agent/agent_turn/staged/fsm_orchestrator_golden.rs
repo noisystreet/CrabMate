@@ -12,6 +12,7 @@ use super::rolling_horizon_advance_reduce::reduce_rolling_horizon_advance;
 use super::rolling_horizon_preflight_reduce::{
     RollingHorizonPreflightInput, reduce_rolling_horizon_preflight,
 };
+use super::staged_config_compat::StagedPlanFeedbackMode;
 use super::step_loop::{
     StagedStepIterationCtl, StagedStepPatchFailureKind, StagedStepPostOuterRoute,
     StepPatchRecoverBranch, StepPatchRecoverReduceAction, StepPatchRecoverReduceInput,
@@ -34,7 +35,6 @@ use crate::agent::agent_turn::outer_loop_iteration_reduce::{
     reduce_outer_loop_reflect_branch,
 };
 use crate::agent::plan_artifact::AgentReplyPlanV1;
-use crate::config::StagedPlanFeedbackMode;
 use crate::types::Message;
 use serde::Deserialize;
 use std::fs;

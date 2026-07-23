@@ -11,16 +11,6 @@ pub(super) fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
 }
 
 fn intent_override_turn_start_and_l2(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_INTENT_AT_TURN_START_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_at_turn_start_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_INTENT_L2_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_l2_enabled = Some(val);
-    }
     if let Ok(v) = std::env::var("CM_INTENT_L2_MIN_CONFIDENCE")
         && let Ok(f) = v.trim().parse::<f64>()
     {

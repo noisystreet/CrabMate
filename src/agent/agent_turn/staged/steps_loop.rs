@@ -22,6 +22,7 @@ use super::sse::{
     finish_staged_plan_step_sse, send_staged_plan_finished, send_staged_plan_step_started,
     staged_step_emit_ok_step_and_queue_notice,
 };
+use super::staged_config_compat::{DEFAULT_STAGED_PLAN_FEEDBACK_MODE, StagedPlanFeedbackMode};
 use super::staged_step_patch_recover::{
     StagedStepPatchRecoverBundles, StagedStepPatchRecoverSpec, staged_step_try_patch_recover,
 };
@@ -274,12 +275,13 @@ where
         step_verify_failed_reason,
         outer_loop_error_text,
     } = p;
-    let staged_cfg = &patch_ctx.p.ctx.core.cfg.staged_planning;
+    let staged_cfg_feedback_mode: StagedPlanFeedbackMode = DEFAULT_STAGED_PLAN_FEEDBACK_MODE;
+    let staged_cfg_patch_max_attempts: usize = 3;
     let reduce_action = reduce_step_patch_recover(StepPatchRecoverReduceInput {
         branch: StepPatchRecoverBranch::OuterExecOrVerify,
-        feedback_mode: staged_cfg.staged_plan_feedback_mode,
+        feedback_mode: staged_cfg_feedback_mode,
         step_max_retries: step.max_step_retries,
-        staged_plan_patch_max_attempts: staged_cfg.staged_plan_patch_max_attempts,
+        staged_plan_patch_max_attempts: staged_cfg_patch_max_attempts,
         step_verify_failed_reason: step_verify_failed_reason.clone(),
         has_outer_loop_error: outer_loop_error_text.is_some(),
     });
@@ -350,12 +352,13 @@ where
         step_user_index,
         step,
     } = p;
-    let staged_cfg = &patch_ctx.p.ctx.core.cfg.staged_planning;
+    let staged_cfg_feedback_mode: StagedPlanFeedbackMode = DEFAULT_STAGED_PLAN_FEEDBACK_MODE;
+    let staged_cfg_patch_max_attempts: usize = 3;
     let reduce_action = reduce_step_patch_recover(StepPatchRecoverReduceInput {
         branch: StepPatchRecoverBranch::ToolFailure,
-        feedback_mode: staged_cfg.staged_plan_feedback_mode,
+        feedback_mode: staged_cfg_feedback_mode,
         step_max_retries: step.max_step_retries,
-        staged_plan_patch_max_attempts: staged_cfg.staged_plan_patch_max_attempts,
+        staged_plan_patch_max_attempts: staged_cfg_patch_max_attempts,
         step_verify_failed_reason: None,
         has_outer_loop_error: false,
     });
@@ -456,15 +459,7 @@ where
             .cancel
             .is_some_and(|c| c.load(Ordering::SeqCst));
     let tools_ok = staged_step_tool_messages_all_ok(patch_ctx.p.turn.messages(), step_user_idx);
-    let patch_planner_on = staged_step_patch_planner_enabled(
-        patch_ctx
-            .p
-            .ctx
-            .core
-            .cfg
-            .staged_planning
-            .staged_plan_feedback_mode,
-    );
+    let patch_planner_on = staged_step_patch_planner_enabled(DEFAULT_STAGED_PLAN_FEEDBACK_MODE);
     let post_outer_route = resolve_staged_step_post_outer_route_from_results(
         &run_step,
         &step_verify_failed_reason,

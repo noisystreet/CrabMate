@@ -8,8 +8,8 @@ use crate::FinalPlanRequirementMode;
 
 use super::{
     AgentRoleCatalog, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, StagedPlanBaselineMode,
-    StagedPlanFeedbackMode, SyncDefaultToolSandboxMode, WebSearchProvider,
+    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, SyncDefaultToolSandboxMode,
+    WebSearchProvider,
 };
 
 /// REPL/TUI 与会话列表相关。
@@ -60,18 +60,6 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
     pub planner_executor_mode: PlannerExecutorMode,
-    /// 编排档位：`freeform` / `staged` / `auto`（映射分阶段门控，不增第四套实现）。
-    pub orchestration_profile: crate::OrchestrationProfile,
-    /// 决策引擎模式：`auto` / `scored`（默认 `auto`）。
-    pub orchestration_decision_mode: String,
-    /// 分阶段门控阈值（totoal_score ≥ 此值走 Staged）。
-    pub decision_staged_threshold: f32,
-    /// 各因子权重（总和建议 1.0）。
-    pub decision_weight_intent: f32,
-    pub decision_weight_complexity: f32,
-    pub decision_weight_workspace: f32,
-    pub decision_weight_history: f32,
-    pub decision_weight_cost: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -179,30 +167,6 @@ pub struct ChatQueuesCacheConfig {
 pub struct SessionWorkspaceChangelistConfig {
     pub session_workspace_changelist_enabled: bool,
     pub session_workspace_changelist_max_chars: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct StagedPlanningConfig {
-    pub staged_plan_phase_instruction: String,
-    pub staged_plan_allow_no_task: bool,
-    pub staged_plan_feedback_mode: StagedPlanFeedbackMode,
-    pub staged_plan_patch_max_attempts: usize,
-    pub staged_plan_cli_show_planner_stream: bool,
-    pub staged_plan_optimizer_round: bool,
-    pub staged_plan_optimizer_requires_parallel_tools: bool,
-    pub staged_plan_ensemble_count: u8,
-    pub staged_plan_skip_ensemble_on_casual_prompt: bool,
-    pub staged_plan_two_phase_nl_display: bool,
-    /// 为 **`true`** 时，非分层下 `staged_plan_intent_gate` 对命中架构/咨询启发式的 **`Execute`** 任务**绕过分阶段**；**`false`**（默认）时仍走滚动分阶段。
-    pub staged_plan_intent_gate_advisory_bypass: bool,
-    /// 首轮定稿计划是否作为后续滚动重规划的蓝图锚点（见 [`StagedPlanBaselineMode`]）。
-    pub staged_plan_baseline_mode: StagedPlanBaselineMode,
-    /// 追加到内置「落地强度」词表（子串匹配，**小写**）；命中则**不**因咨询启发式绕过分阶段。
-    pub staged_plan_advisory_bypass_extra_impl_blockers: Vec<String>,
-    /// 追加到内置「架构/技术债」词表（子串匹配，**小写**）。
-    pub staged_plan_advisory_bypass_extra_arch_markers: Vec<String>,
-    /// 追加到内置「征询语气」词表（子串匹配，**小写**）。
-    pub staged_plan_advisory_bypass_extra_consult_markers: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -323,13 +287,11 @@ pub struct HierarchyRoutingConfig {
 #[derive(Debug, Clone)]
 pub struct IntentRoutingConfig {
     pub intent_mode_bias_enabled: bool,
-    pub intent_l2_enabled: bool,
     pub intent_l2_min_confidence: f32,
     pub intent_l2_max_tokens: u32,
     pub intent_execute_low_threshold: f32,
     pub intent_execute_high_threshold: f32,
     pub intent_non_hier_execute_low_threshold: f32,
     pub intent_non_hier_execute_high_threshold: f32,
-    pub intent_at_turn_start_enabled: bool,
     pub intent_l0_routing_boost_enabled: bool,
 }

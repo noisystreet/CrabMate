@@ -65,8 +65,8 @@ pub(super) async fn emit_staged_planner_tool_call_rejected_timeline(
 }
 
 /// 两阶段 NL 开启时：无工具规划轮不向 Web/终端流式下发（由 NL 补全轮承担用户可见输出）。
-fn staged_planner_sse_fully_suppressed(cfg: &crate::config::AgentConfig) -> bool {
-    cfg.staged_planning.staged_plan_two_phase_nl_display
+fn staged_planner_sse_fully_suppressed(_cfg: &crate::config::AgentConfig) -> bool {
+    false
 }
 
 /// 无工具规划轮 `complete_chat_retrying`：

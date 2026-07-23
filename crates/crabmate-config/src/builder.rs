@@ -106,27 +106,6 @@ impl ConfigBuilder {
             agent.planner_executor_mode.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.per_plan_policy.orchestration_profile_str,
-            agent.orchestration_profile.clone(),
-        );
-        override_opt_string_non_empty(
-            &mut self.per_plan_policy.orchestration_decision_mode_str,
-            agent.orchestration_decision_mode.clone(),
-        );
-        let pp = &mut self.per_plan_policy;
-        pp.decision_staged_threshold = agent
-            .decision_staged_threshold
-            .or(pp.decision_staged_threshold);
-        pp.decision_weight_intent = agent.decision_weight_intent.or(pp.decision_weight_intent);
-        pp.decision_weight_complexity = agent
-            .decision_weight_complexity
-            .or(pp.decision_weight_complexity);
-        pp.decision_weight_workspace = agent
-            .decision_weight_workspace
-            .or(pp.decision_weight_workspace);
-        pp.decision_weight_history = agent.decision_weight_history.or(pp.decision_weight_history);
-        pp.decision_weight_cost = agent.decision_weight_cost.or(pp.decision_weight_cost);
-        override_opt_string_non_empty(
             &mut self.cursor_rules.cursor_rules_dir,
             agent.cursor_rules_dir.clone(),
         );
@@ -135,10 +114,6 @@ impl ConfigBuilder {
         override_opt_string_trimmed(
             &mut self.web_api.web_api_bearer_token,
             agent.web_api_bearer_token.as_ref(),
-        );
-        override_opt_string_trimmed(
-            &mut self.staged_planning.staged_plan_phase_instruction,
-            agent.staged_plan_phase_instruction.as_ref(),
         );
         if let Some(ref k) = agent.web_search_api_key {
             self.web_search.web_search_api_key = Some(k.clone());
@@ -335,63 +310,6 @@ impl ConfigBuilder {
         swc.session_workspace_changelist_max_chars = agent
             .session_workspace_changelist_max_chars
             .or(swc.session_workspace_changelist_max_chars);
-        let sp = &mut self.staged_planning;
-        sp.staged_plan_allow_no_task = agent
-            .staged_plan_allow_no_task
-            .or(sp.staged_plan_allow_no_task);
-        override_opt_string_non_empty(
-            &mut sp.staged_plan_feedback_mode_str,
-            agent.staged_plan_feedback_mode.clone(),
-        );
-        sp.staged_plan_patch_max_attempts = agent
-            .staged_plan_patch_max_attempts
-            .or(sp.staged_plan_patch_max_attempts);
-        sp.staged_plan_cli_show_planner_stream = agent
-            .staged_plan_cli_show_planner_stream
-            .or(sp.staged_plan_cli_show_planner_stream);
-        sp.staged_plan_optimizer_round = agent
-            .staged_plan_optimizer_round
-            .or(sp.staged_plan_optimizer_round);
-        sp.staged_plan_optimizer_requires_parallel_tools = agent
-            .staged_plan_optimizer_requires_parallel_tools
-            .or(sp.staged_plan_optimizer_requires_parallel_tools);
-        sp.staged_plan_ensemble_count = agent
-            .staged_plan_ensemble_count
-            .or(sp.staged_plan_ensemble_count);
-        sp.staged_plan_skip_ensemble_on_casual_prompt = agent
-            .staged_plan_skip_ensemble_on_casual_prompt
-            .or(sp.staged_plan_skip_ensemble_on_casual_prompt);
-        sp.staged_plan_two_phase_nl_display = agent
-            .staged_plan_two_phase_nl_display
-            .or(sp.staged_plan_two_phase_nl_display);
-        sp.staged_plan_intent_gate_advisory_bypass = agent
-            .staged_plan_intent_gate_advisory_bypass
-            .or(sp.staged_plan_intent_gate_advisory_bypass);
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_impl_blockers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_impl_blockers = Some(v.clone());
-        }
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_arch_markers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_arch_markers = Some(v.clone());
-        }
-        if let Some(v) = agent
-            .staged_plan_advisory_bypass_extra_consult_markers
-            .as_ref()
-            && !v.is_empty()
-        {
-            sp.staged_plan_advisory_bypass_extra_consult_markers = Some(v.clone());
-        }
-        override_opt_string_non_empty(
-            &mut sp.staged_plan_baseline_mode_str,
-            agent.staged_plan_baseline_mode.clone(),
-        );
     }
 
     /// 同步工具沙盒、Web API 审计与会话持久化路径合并。
@@ -585,14 +503,10 @@ impl ConfigBuilder {
         ir.intent_mode_bias_enabled = agent
             .intent_mode_bias_enabled
             .or(ir.intent_mode_bias_enabled);
-        ir.intent_l2_enabled = agent.intent_l2_enabled.or(ir.intent_l2_enabled);
         ir.intent_l2_min_confidence = agent
             .intent_l2_min_confidence
             .or(ir.intent_l2_min_confidence);
         ir.intent_l2_max_tokens = agent.intent_l2_max_tokens.or(ir.intent_l2_max_tokens);
-        ir.intent_at_turn_start_enabled = agent
-            .intent_at_turn_start_enabled
-            .or(ir.intent_at_turn_start_enabled);
         ir.intent_l0_routing_boost_enabled = agent
             .intent_l0_routing_boost_enabled
             .or(ir.intent_l0_routing_boost_enabled);

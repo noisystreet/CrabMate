@@ -12,9 +12,10 @@ use std::collections::HashMap;
 use crate::agent::agent_turn::errors::RunAgentTurnError;
 use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepControlFlow, PlanStepV1};
 use crate::agent::step_executor_policy::executor_kind_user_label;
-use crate::config::StagedPlanFeedbackMode;
 use crate::types::Message;
 use crabmate_display_rules::STAGED_FSM_CONTROL_FLOW_PREFIX;
+
+use super::staged_config_compat::StagedPlanFeedbackMode;
 
 use super::StagedPlanRunOutcome;
 use super::empty_execution::{

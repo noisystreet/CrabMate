@@ -15,7 +15,7 @@ use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
     FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
     RunAgentTurnParams, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, build_tools,
-    config::OrchestrationProfile, load_config, message_content_as_str, run_agent_turn,
+    load_config, message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -58,8 +58,7 @@ impl ChatCompletionsBackend for SequencedMockBackend {
 fn cfg_freeform_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.intent_routing.intent_at_turn_start_enabled = false;
-    cfg.intent_routing.intent_l2_enabled = false;
+    // L1 硬编码：intent_at_turn_start_enabled / intent_l2_enabled 已从 config 删除
     Arc::new(cfg)
 }
 
@@ -169,13 +168,13 @@ const STAGED_MOCK_EXECUTE_USER: &str =
 fn cfg_staged_execute_turn() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    // 生产默认 ReAct-only；分阶段 mock 显式启用 staged 以覆盖规划步路径。
-    cfg.per_plan_policy.orchestration_profile = OrchestrationProfile::Staged;
-    cfg.intent_routing.intent_at_turn_start_enabled = false;
-    cfg.intent_routing.intent_l2_enabled = false;
-    cfg.staged_planning.staged_plan_optimizer_round = false;
-    cfg.staged_planning.staged_plan_ensemble_count = 1;
-    cfg.staged_planning.staged_plan_two_phase_nl_display = false;
+    // L1 硬编码：OrchestrationProfile::Staged 已删除，production 默认 ReAct-only；
+    // staged 路径由 intent gate 自动路由 Execute 任务。
+    // intent_at_turn_start_enabled / intent_l2_enabled 已从 config 删除。
+    // staged_planning 字段已删除，使用默认值：
+    //   staged_plan_optimizer_round = false
+    //   staged_plan_ensemble_count = 1
+    //   staged_plan_two_phase_nl_display = false
     Arc::new(cfg)
 }
 
@@ -236,7 +235,9 @@ async fn run_mock_agent_turn(
 }
 
 /// 分阶段 `no_task=true`：规划轮后降级 **`run_agent_outer_loop`**（PER 轨），仅再消耗一次 mock LLM。
+/// L1 硬编码 ReAct-only 后 staged 路径不再可达，待 L3 删除 staged 引擎时正式删除此测试。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "L1: staged config removed, staged path unreachable; remove in L3"]
 async fn run_agent_turn_staged_no_task_degrades_to_outer_loop() {
     let cfg = cfg_staged_execute_turn();
     let outer_final = "staged no_task mock：外循环终答";
@@ -268,7 +269,9 @@ async fn run_agent_turn_staged_no_task_degrades_to_outer_loop() {
 }
 
 /// 分阶段首轮规划解析失败：降级 **`run_agent_outer_loop`**。
+/// L1 硬编码 ReAct-only 后 staged 路径不再可达，待 L3 删除 staged 引擎时正式删除此测试。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "L1: staged config removed, staged path unreachable; remove in L3"]
 async fn run_agent_turn_staged_invalid_plan_degrades_to_outer_loop() {
     let cfg = cfg_staged_execute_turn();
     let outer_final = "staged degrade mock：解析失败后外循环终答";
@@ -298,7 +301,9 @@ async fn run_agent_turn_staged_invalid_plan_degrades_to_outer_loop() {
 }
 
 /// 分阶段单步：规划 JSON → 步内外循环工具轮 → 步内终答（mock LLM 序列）。
+/// L1 硬编码 ReAct-only 后 staged 路径不再可达，待 L3 删除 staged 引擎时正式删除此测试。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "L1: staged config removed, staged path unreachable; remove in L3"]
 async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
     let cfg = cfg_staged_execute_turn();
     let client = reqwest::Client::new();
@@ -394,10 +399,12 @@ async fn run_agent_turn_staged_single_step_mock_llm_sequence() {
 }
 
 /// 分阶段步验收失败 → **`patch_replanner`** → 重试步外循环（mock LLM 序列）。
+/// L1 硬编码 ReAct-only 后 staged 路径不再可达，待 L3 删除 staged 引擎时正式删除此测试。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "L1: staged config removed, staged path unreachable; remove in L3"]
 async fn run_agent_turn_staged_step_verify_fail_patch_replanner_mock() {
-    let mut cfg = (*cfg_staged_execute_turn()).clone();
-    cfg.staged_planning.staged_plan_patch_max_attempts = 1;
+    let cfg = (*cfg_staged_execute_turn()).clone();
+    // L1 硬编码：staged_plan_patch_max_attempts 已从 config 删除，使用默认值 3
     let cfg = Arc::new(cfg);
     let plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间","executor_kind":"patch_write","acceptance":{"expect_stdout_contains":"PATCH_VERIFY_MARKER_XYZ"}}]}"#;
     let patch_plan_json = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"调用 get_current_time 查询时间（补丁后）"}]}"#;

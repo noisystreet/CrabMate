@@ -202,7 +202,7 @@ mod per_reflect_tests {
             reflection_default_max_rounds: 5,
             final_plan_policy: FinalPlanRequirementMode::Never,
             plan_rewrite_max_attempts: 3,
-            staged_plan_patch_max_attempts_config: 2,
+            staged_plan_patch_max_attempts_config: 3,
             final_plan_require_strict_workflow_node_coverage: false,
             final_plan_semantic_check_enabled: false,
             final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -390,7 +390,7 @@ mod staged_intent_gate_tests {
         let mut cfg = test_cfg();
         // 默认 L1 对该句常为 ConfirmThenExecute（不进入分阶段）；下调高阈值以稳定得到 Execute，从而专门验证「咨询启发式」分支。
         cfg.intent_routing.intent_non_hier_execute_high_threshold = 0.35;
-        cfg.staged_planning.staged_plan_intent_gate_advisory_bypass = true;
+        // L1 硬编码：staged_plan_intent_gate_advisory_bypass 已从 config 删除，门控不再读取此字段
         let messages = vec![Message::user_only(
             "我想对它进行重构，哪些地方隐式状态比较严重，需要重构",
         )];

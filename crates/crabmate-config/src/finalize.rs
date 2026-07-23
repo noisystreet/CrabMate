@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::FinalPlanRequirementMode;
-use crate::OrchestrationProfile;
 
 use super::agent_roles;
 use super::builder::ConfigBuilder;
@@ -13,7 +12,7 @@ use super::cursor_rules;
 use super::skills;
 use super::types::{
     self, AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    ScheduledAgentTask, StagedPlanBaselineMode, StagedPlanFeedbackMode, WebSearchProvider,
+    ScheduledAgentTask, WebSearchProvider,
 };
 use super::validate;
 use super::workspace_roots;
@@ -307,10 +306,8 @@ struct IntentDerived {
     intent_non_hier_execute_low_threshold: f32,
     intent_non_hier_execute_high_threshold: f32,
     intent_mode_bias_enabled: bool,
-    intent_l2_enabled: bool,
     intent_l2_min_confidence: f32,
     intent_l2_max_tokens: u32,
-    intent_at_turn_start_enabled: bool,
     intent_l0_routing_boost_enabled: bool,
 }
 
@@ -354,7 +351,6 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         intent_non_hier_execute_low_threshold,
         intent_non_hier_execute_high_threshold,
         intent_mode_bias_enabled: b.intent_routing.intent_mode_bias_enabled.unwrap_or(true),
-        intent_l2_enabled: b.intent_routing.intent_l2_enabled.unwrap_or(true),
         intent_l2_min_confidence: b
             .intent_routing
             .intent_l2_min_confidence
@@ -365,10 +361,6 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
             .intent_l2_max_tokens
             .unwrap_or(384)
             .clamp(32, 1024) as u32,
-        intent_at_turn_start_enabled: b
-            .intent_routing
-            .intent_at_turn_start_enabled
-            .unwrap_or(false),
         intent_l0_routing_boost_enabled: b
             .intent_routing
             .intent_l0_routing_boost_enabled

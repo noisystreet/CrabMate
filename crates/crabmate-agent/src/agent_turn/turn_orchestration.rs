@@ -3,7 +3,7 @@
 //! 非分层路径由统一 driver（**`non_hierarchical_turn`**）消费 [`NonHierarchicalTurnPhase`]：
 //! **`ReAct`**（仅外循环）或 **`PlannedStep`**（无工具规划 + 滚动视界步循环）。
 
-use crabmate_config::{AgentConfig, PlannerExecutorMode};
+use crabmate_config::AgentConfig;
 
 use crate::agent_turn::staged_planning_gate_types::{
     StagedPlanningDenyReason, StagedPlanningGateOutcome,
@@ -47,14 +47,11 @@ impl NonHierarchicalTurnPhase {
 
 /// 解析非分层回合阶段（纯函数；**不**再读取 `staged_plan_execution` 作顶层分叉）。
 pub fn resolve_non_hierarchical_turn_phase(
-    cfg: &AgentConfig,
+    _cfg: &AgentConfig,
     staged_intent_gate_allow: bool,
 ) -> NonHierarchicalTurnPhase {
     if !staged_intent_gate_allow {
         return NonHierarchicalTurnPhase::ReAct;
-    }
-    if cfg.per_plan_policy.planner_executor_mode == PlannerExecutorMode::LogicalDualAgent {
-        return NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual);
     }
     NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
 }
@@ -151,28 +148,13 @@ impl TurnOrchestrationMode {
 mod tests {
     use super::*;
 
-    fn cfg_with(mode: PlannerExecutorMode) -> AgentConfig {
-        let mut c = crabmate_config::load_config(None).expect("embed default config");
-        c.per_plan_policy.planner_executor_mode = mode;
-        c
-    }
-
-    #[test]
-    fn logical_dual_planned_step_when_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
-        assert_eq!(
-            resolve_non_hierarchical_turn_phase(&cfg, true),
-            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual)
-        );
-        assert_eq!(
-            TurnOrchestrationMode::from(resolve_non_hierarchical_turn_phase(&cfg, true)),
-            TurnOrchestrationMode::PlannedStepLogicalDual
-        );
+    fn cfg_default() -> AgentConfig {
+        crabmate_config::load_config(None).expect("embed default config")
     }
 
     #[test]
     fn single_agent_planned_step_when_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        let cfg = cfg_default();
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, true),
             NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
@@ -181,7 +163,7 @@ mod tests {
 
     #[test]
     fn freeform_when_gate_denies() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_default();
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, false),
             NonHierarchicalTurnPhase::ReAct
@@ -190,7 +172,7 @@ mod tests {
 
     #[test]
     fn gate_allow_always_planned_step_when_intent_gate_allows() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        let cfg = cfg_default();
         assert_eq!(
             resolve_non_hierarchical_turn_phase(&cfg, true),
             NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::SingleAgent)
@@ -199,7 +181,7 @@ mod tests {
 
     #[test]
     fn turn_resolution_denied_gate_carries_reason() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
+        let cfg = cfg_default();
         let gate = StagedPlanningGateOutcome::Deny {
             reason: StagedPlanningDenyReason::EmptyEffectiveTask,
             task_preview: None,
@@ -217,7 +199,7 @@ mod tests {
 
     #[test]
     fn turn_resolution_allow_yields_planned_step_without_freeform_because() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        let cfg = cfg_default();
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Allow {
@@ -245,37 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn turn_resolution_logical_dual_no_freeform_because() {
-        let cfg = cfg_with(PlannerExecutorMode::LogicalDualAgent);
-        use crate::intent_pipeline::{IntentAction, IntentDecision};
-        use crate::intent_router::IntentKind;
-        let gate = StagedPlanningGateOutcome::Allow {
-            task_preview: "t".into(),
-            intent_kind: IntentKind::Execute,
-            primary_intent: "execute.test".into(),
-            confidence: 0.9,
-            decision: IntentDecision {
-                kind: IntentKind::Execute,
-                primary_intent: "execute.test".into(),
-                secondary_intents: Vec::new(),
-                confidence: 0.9,
-                abstain: false,
-                need_clarification: false,
-                action: IntentAction::Execute,
-                multi_intent: None,
-            },
-        };
-        let r = NonHierarchicalTurnResolution::resolve(&cfg, &gate);
-        assert_eq!(
-            r.turn_phase,
-            NonHierarchicalTurnPhase::PlannedStep(PlannedStepKind::LogicalDual)
-        );
-        assert!(r.freeform_because.is_none());
-    }
-
-    #[test]
     fn turn_resolution_advisory_bypass_yields_freeform() {
-        let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
+        let cfg = cfg_default();
         use crate::intent_pipeline::{IntentAction, IntentDecision};
         use crate::intent_router::IntentKind;
         let gate = StagedPlanningGateOutcome::Deny {

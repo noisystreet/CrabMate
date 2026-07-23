@@ -6,10 +6,10 @@ pub use agent_config_sections::{
     ConversationPersistenceConfig, CursorRulesConfigSection, DsmlMaterializeConfig,
     HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LongTermMemoryConfig,
     McpClientConfig, PerPlanPolicyConfig, RolesPromptsConfig, SessionUiConfig,
-    SessionWorkspaceChangelistConfig, SkillsConfigSection, StagedPlanningConfig,
-    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
-    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig,
-    WebSearchConfigSection, WorkspaceRootsConfig,
+    SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncToolSandboxConfig,
+    ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig,
+    TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
+    WorkspaceRootsConfig,
 };
 
 pub use crabmate_types::llm_config::{
@@ -50,26 +50,20 @@ impl WebSearchProvider {
     }
 }
 
-/// 规划器与执行器的运行模式。
+/// 规划器与执行器的运行模式——仅 `SingleAgent`。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlannerExecutorMode {
-    /// 单 agent 外层循环（历史行为）。
-    SingleAgent,
-    /// 同进程逻辑双 agent：规划轮与执行轮使用不同上下文视图。
-    LogicalDualAgent,
-    /// 分层多 Agent：Manager 分解任务 + Operator 执行子目标。
+    /// 单 agent 外层循环。
     #[default]
-    Hierarchical,
+    SingleAgent,
 }
 
 impl PlannerExecutorMode {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
             "single_agent" => Ok(Self::SingleAgent),
-            "logical_dual_agent" => Ok(Self::LogicalDualAgent),
-            "hierarchical" => Ok(Self::Hierarchical),
             _ => Err(format!(
-                "未知的 planner_executor_mode: {:?}（支持 single_agent、logical_dual_agent、hierarchical）",
+                "未知的 planner_executor_mode: {:?}（仅支持 single_agent）",
                 s.trim()
             )),
         }
@@ -78,20 +72,8 @@ impl PlannerExecutorMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SingleAgent => "single_agent",
-            Self::LogicalDualAgent => "logical_dual_agent",
-            Self::Hierarchical => "hierarchical",
         }
     }
-}
-
-/// 分阶段规划在单步执行失败或工具报错时的反馈模式（第二模式：短规划补丁）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StagedPlanFeedbackMode {
-    /// 与历史一致：步级 `run_agent_outer_loop` 返回 `Err` 时整轮计划失败并向上传播。
-    #[default]
-    FailFast,
-    /// 将失败信号回灌 planner：追加 user 说明后发起无工具规划轮，产出补丁 `agent_reply_plan` 与未完成步后缀合并再继续。
-    PatchPlanner,
 }
 
 /// `HandlerId::SyncDefault` 工具是否在隔离环境中执行（默认宿主进程内 `spawn_blocking`）。
@@ -167,60 +149,6 @@ fn effective_current_uid_gid_spec() -> SandboxDockerContainerUser {
 #[cfg(not(unix))]
 fn effective_current_uid_gid_spec() -> SandboxDockerContainerUser {
     SandboxDockerContainerUser::ImageDefault
-}
-
-impl StagedPlanFeedbackMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "fail_fast" | "failfast" => Ok(Self::FailFast),
-            "patch_planner" | "patchplanner" => Ok(Self::PatchPlanner),
-            _ => Err(format!(
-                "未知的 staged_plan_feedback_mode: {:?}（支持 fail_fast、patch_planner）",
-                s.trim()
-            )),
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::FailFast => "fail_fast",
-            Self::PatchPlanner => "patch_planner",
-        }
-    }
-}
-
-/// 分阶段滚动重规划时，首轮定稿的 `agent_reply_plan` v1 是否作为「蓝图」锚点参与后续无工具规划（与不变层用户原文并列）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StagedPlanBaselineMode {
-    /// 与历史一致：仅 [`crate::agent::agent_turn::TurnPlannerHints::staged_immutable_user_goal`] 作为硬锚；计划可自由滚动修订。
-    #[default]
-    ImmutableGoalOnly,
-    /// 在进入分步循环时冻结一份首轮定稿计划；后续规划轮在 system 中附带该蓝图摘要，并要求模型说明相对初版的变更意图。
-    GoalPlusBaselinePlan,
-    /// 在 [`Self::GoalPlusBaselinePlan`] 基础上，`patch_planner` 合并后的步骤须与冻结计划在**已完成前缀**上逐步 `id` 一致。
-    StrictBaselineSteps,
-}
-
-impl StagedPlanBaselineMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "immutable_goal_only" | "goal_only" => Ok(Self::ImmutableGoalOnly),
-            "goal_plus_baseline_plan" | "baseline_plan" => Ok(Self::GoalPlusBaselinePlan),
-            "strict_baseline_steps" | "strict" => Ok(Self::StrictBaselineSteps),
-            _ => Err(format!(
-                "未知的 staged_plan_baseline_mode: {:?}（支持 immutable_goal_only、goal_plus_baseline_plan、strict_baseline_steps）",
-                s.trim()
-            )),
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ImmutableGoalOnly => "immutable_goal_only",
-            Self::GoalPlusBaselinePlan => "goal_plus_baseline_plan",
-            Self::StrictBaselineSteps => "strict_baseline_steps",
-        }
-    }
 }
 
 #[cfg(test)]
@@ -365,7 +293,6 @@ pub struct AgentConfig {
     pub web_api: WebApiConfig,
     pub chat_queues_cache: ChatQueuesCacheConfig,
     pub session_workspace_changelist: SessionWorkspaceChangelistConfig,
-    pub staged_planning: StagedPlanningConfig,
     pub sync_tool_sandbox: SyncToolSandboxConfig,
     pub conversation_persistence: ConversationPersistenceConfig,
     pub context_bootstrap_inject: ContextBootstrapInjectConfig,

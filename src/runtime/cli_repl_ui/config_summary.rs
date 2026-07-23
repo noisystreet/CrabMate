@@ -176,22 +176,11 @@ fn append_summary_planning_section(lines: &mut Vec<String>, cfg: &AgentConfig) {
         cfg.per_plan_policy.planner_executor_mode.as_str(),
     );
 
-    let bypass = if cfg.staged_planning.staged_plan_intent_gate_advisory_bypass {
-        "开启（Execute 咨询/架构可绕分阶段）"
-    } else {
-        "关闭（门控放行一律 PlannedStep）"
-    };
+    // L1 硬编码：staged_planning 配置字段已删除
+    let bypass = "关闭（门控放行一律 PlannedStep）";
     summary_item(lines, "staged_plan_intent_gate_advisory_bypass", bypass);
-    summary_item(
-        lines,
-        "staged_plan_feedback_mode",
-        cfg.staged_planning.staged_plan_feedback_mode.as_str(),
-    );
-    let staged_cli = if cfg.staged_planning.staged_plan_cli_show_planner_stream {
-        "开启（CLI 规划轮打印模型 stdout）"
-    } else {
-        "关闭（CLI 规划轮不打印模型 stdout）"
-    };
+    summary_item(lines, "staged_plan_feedback_mode", "patch_planner");
+    let staged_cli = "关闭（CLI 规划轮不打印模型 stdout）";
     summary_item(lines, "staged_plan_cli_show_planner_stream", staged_cli);
 }
 
