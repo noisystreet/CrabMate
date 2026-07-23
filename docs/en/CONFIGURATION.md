@@ -70,21 +70,21 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 
 **Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace/fs.rs`**: on Linux, **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`; symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**: checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone; **`create_dir_all`** + opens are not fully atomic. This is **not** a kernel sandbox; use **Web auth** on open networks. See **`src/workspace/path.rs`**.
 
-### Planning & staged planning
+### Planning
 
 | Variable | Description |
 | --- | --- |
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `CM_PLANNER_EXECUTOR_MODE` | `single_agent` / `logical_dual_agent`. |
-| `CM_STAGED_PLAN_PHASE_INSTRUCTION` | Planner phase instruction text. |
-| `CM_STAGED_PLAN_ALLOW_NO_TASK` | Legacy; **no effect** (`no_task` rules come from embedded schema in the default planner system). |
-| `CM_STAGED_PLAN_FEEDBACK_MODE` | `fail_fast` / `patch_planner` (embedded default in **`config/planning.toml`**). |
-| `CM_STAGED_PLAN_PATCH_MAX_ATTEMPTS` | Max patch-planner rounds. |
-| `CM_STAGED_PLAN_ENSEMBLE_COUNT` | Logical multi-planner count (1–3, default 1). |
-| `CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM` | Print no-tools planner stream to stdout in CLI/`chat` (default `true`; see § Staged planning). |
-| `CM_STAGED_PLAN_OPTIMIZER_ROUND` | Enable post-plan optimizer round (default `true`). |
-| `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY` | When `true`, suppress user-visible streaming for finalized no-tools plan JSON, then run a follow-up no-tools round for natural-language-only output (default `false`; see § Staged planning). |
+| `CM_INTENT_L2_ENABLED` | Enable default L2 no-tools semantic intent classification (extra `chat`; falls back to deprecated rules on failure; **default on**). TOML: `intent_l2_enabled`. |
+| `CM_INTENT_L2_MIN_CONFIDENCE` | Observation threshold for L2 `confidence` (0.0–1.0, default 0.7); below still uses L2, only flags in log/timeline. TOML: `intent_l2_min_confidence`. |
+| `CM_INTENT_L2_MAX_TOKENS` | L2 classification `max_tokens` (32–1024, default 384). TOML: `intent_l2_max_tokens`. |
+| `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | Conservative L0-feature boost for ambiguous sentences (default on). TOML: `intent_l0_routing_boost_enabled`. |
+| `CM_INTENT_EXECUTE_LOW_THRESHOLD` | Deprecated-rule fallback "confirm then execute" low threshold (0.0–1.0, default 0.2). TOML: `intent_execute_low_threshold`. |
+| `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | Deprecated-rule fallback "execute directly" high threshold, ≥ low (default 0.45). TOML: `intent_execute_high_threshold`. |
+| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | Non-hierarchical override for "confirm then execute" low; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
+| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | Non-hierarchical override for "execute directly" high, ≥ non-hier low; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
+| `CM_INTENT_MODE_BIAS_ENABLED` | Whether hierarchical `runner` lightly biases execution mode by `primary_intent` (default on). TOML: `intent_mode_bias_enabled`. |
 
 ### Intent gates vs `plan_rewrite` (quick reference)
 
@@ -92,8 +92,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- | --- |
 | **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | Turn-start **`intent_at_turn_start`**: confidence bands for “confirm then execute” vs “execute directly”, etc. | **None** — does not consume rewrite budget |
 | **`intent_non_hier_execute_*`** | Same stack, but overrides the two thresholds when **`planner_executor_mode != hierarchical`**; falls back to **`intent_execute_*`** if unset | **None** |
-| **`intent_at_turn_start` (gate ①)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
-| **`staged_plan_intent_gate` (gate ②)** | After gate ① passes; same L0+L1+optional L2; denial skips rolling staged planner and uses the single-agent outer loop (**`Freeform`**) | **None** |
+| **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of intent thresholds; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
 **Clarify / confirm and tool narrowing**: **`ClarifyThenExecute`** / **`ConfirmThenExecute`** set **`step_executor_constraint = ReviewReadonly`** before the main loop (same idea as **`qa.readonly`** narrowing).
@@ -213,9 +212,6 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | **`parallel_sync_denied_prefixes`** | Same, by name prefix. |
 | **`sync_default_inline_tools`** | **`SyncDefault`** tools run inline on the async task (skip **`spawn_blocking`**); default small builtin set if omitted. |
 | **`write_effect_tools`** | Tools treated as mutating for **`is_readonly_tool`**, explain card, codebase semantic invalidation, etc.; default builtin set if omitted. |
-| **`sub_agent_patch_write_extra_tools`** | Extra tool names allowed for staged **`executor_kind: patch_write`** beyond the default patch set (must still be registered for the session). |
-| **`sub_agent_test_runner_extra_tools`** | Same for **`test_runner`**. |
-| **`sub_agent_review_readonly_deny_tools`** | Tool names explicitly denied in **`review_readonly`** steps (exact match; overrides readonly classification). |
 
 ### Context & tool messages
 
@@ -377,34 +373,6 @@ With `workflow_validate_only` results, **`spec.layer_count`** constrains step co
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
 Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**, see **`docs/en/SSE_PROTOCOL.md`**).
-
-## Logical dual agent (`planner_executor_mode = logical_dual_agent`)
-
-No-tools planning round first, then executor loop; planner context strips `role: tool` bodies. When the intent gate allows, this shares the same planning-round shape as **`PlannedStep`** rolling horizon.
-
-## Staged planning (`staged_plan_intent_gate` → `PlannedStep`)
-
-Non-hierarchical turns enter rolling staged planning only when **`staged_plan_intent_gate`** allows. The **`staged_plan_execution`** / **`CM_STAGED_PLAN_EXECUTION`** toggle has been removed. With **`planner_executor_mode = single_agent`**, each user message runs a no-tools plan round then **`steps`**. **`no_task` + empty `steps`** skips execution. Invalid plan JSON falls back to normal tool loop (more API calls than off).
-
-**`staged_plan_intent_gate`**: Same L0+L1+optional L2 stack as **`intent_at_turn_start`**. Besides denying staged entry when the pipeline action is not **`IntentAction::Execute`**, when **`staged_plan_intent_gate_advisory_bypass`** is **`true`** (**`false`** is the default) the gate may also deny staged planning when the action is **`Execute`** but the effective user text matches an **advisory architecture/refactor** heuristic (built-in keyword groups in **`src/agent/agent_turn/intent/advisory_bypass.rs`**; append-only lists on **`[agent]`**: **`staged_plan_advisory_bypass_extra_impl_blockers`**, **`staged_plan_advisory_bypass_extra_arch_markers`**, **`staged_plan_advisory_bypass_extra_consult_markers`** — normalized at finalize, no **`CM_*`** vars). In that case the turn falls back to the **single-agent outer loop**; logs use deny reason **`advisory_execute_bypass_staged`**. Default no-tools planner prose is **`staged_plan_phase_instruction_default`** in sources (override with **`staged_plan_phase_instruction`**).
-
-**Per-step sub-agent (`executor_kind` in plan JSON)**: Each **`steps[]`** entry in **`agent_reply_plan` v1** may set **`executor_kind`** to **`review_readonly`**, **`patch_write`**, or **`test_runner`** to narrow the tool list for that staged step and reject out-of-role **`tool_calls`** at execution time (deny messages include a short CSV of allowed tool names for that step); omit the field for legacy behavior. **`test_runner`** includes built-in test runners and **`run_command`** for **allowlisted** commands only (same **`allowed_commands`** rules as elsewhere), e.g. **`cargo build`** / **`cargo check`**. Readonly/write semantics align with **`write_effect_tools`**; patch and test allowlists extend via **`sub_agent_patch_write_extra_tools`** / **`sub_agent_test_runner_extra_tools`**. Does **not** replace **`run_command`** allowlists or MCP approval. SSE **`staged_plan_step_started`** / **`staged_plan_step_finished`** may include optional **`executor_kind`** for UI. On **`patch_planner`** merges, if a patched step omits **`executor_kind`**, the server inherits it from the same index in the pre-patch plan (with a **`debug`** log) to avoid silently dropping sub-agent boundaries.
-
-**`staged_plan_feedback_mode`**: Default **`patch_planner`** in embedded **`config/planning.toml`**; **`fail_fast`** ends the turn on first step/tool/acceptance failure. **`patch_planner`** injects feedback and reruns planner without tools, merging patched **`steps`** (capped by **`staged_plan_patch_max_attempts`**).
-
-**`staged_plan_cli_show_planner_stream`** (default `true`, **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM`**)**: For CLI/`chat` with **`out: None`**, whether no-tools planner (and patch planner) streams to stdout. **`false`** hides planner raw output but keeps notices and execution steps; Web SSE unchanged.
-
-**`staged_plan_optimizer_round`** (default `true`): After first plan with ≥2 steps, optional no-tools round to merge read-only probes and parallelize per **`parallel_readonly_tools`** rules.
-
-**`staged_plan_optimizer_requires_parallel_tools`** (embedded default `false`, **`CM_STAGED_PLAN_OPTIMIZER_REQUIRES_PARALLEL_TOOLS`**)**: When `false`, run the optimizer whenever **`steps.len() >= 2`** and **`staged_plan_optimizer_round`** allow—even if no built-in parallel-readonly tools are available (helps sequential-only plans). When `true`, skip the optimizer if this turn’s tool list has **no** eligible parallel-readonly names (saves one planner-class API call when the CSV would be empty).
-
-**`staged_plan_ensemble_count`** (default `1`, clamp 1–3, **`CM_STAGED_PLAN_ENSEMBLE_COUNT`**)**: **`1`** off. **`2`/`3`**: extra serial no-tools “planner B/C” rounds (aux assistants **not** in history), then merge round—**significantly more API cost**.
-
-**`staged_plan_skip_ensemble_on_casual_prompt`** (default `true`, **`CM_STAGED_PLAN_SKIP_ENSEMBLE_ON_CASUAL_PROMPT`**)**: When **`staged_plan_ensemble_count` > 1**, skip ensemble + merge if the **current user message** (heuristic: very short or common small-talk) looks casual—saves planner API calls. Set `false` to always run ensemble when configured.
-
-**`staged_plan_baseline_mode`** (default **`immutable_goal_only`**, **`CM_STAGED_PLAN_BASELINE_MODE`**)**: Whether the first finalized **`agent_reply_plan` v1** before the step loop is frozen as a **blueprint** for later no-tools planner rounds (alongside the immutable user-goal layer). **`immutable_goal_only`**: legacy behavior (no plan snapshot). **`goal_plus_baseline_plan`**: append a compact blueprint summary + self-check constraints to planner **`system`**. **`strict_baseline_steps`**: additionally require **`patch_planner`** merges to keep the same **`step.id`** as the frozen plan for every index **before** the failed step; mismatches reject the patch round.
-
-**Two-phase display (`staged_plan_two_phase_nl_display`, default `false`, `CM_STAGED_PLAN_TWO_PHASE_NL_DISPLAY`)**: When `true`, after a parsed **`agent_reply_plan` v1** is merged into history (including optional ensemble/merge + optimizer; **`no_task`** path also runs this before the regular loop), **no-tools planner-class rounds** call **`complete_chat_retrying`** with **no user-visible streaming** of the plan JSON (`out: None` and suppressed `render_to_terminal`, combined with **`staged_plan_cli_show_planner_stream`** for CLI). A bridging **user** (`staged_plan_nl_followup_user_body`: text states **system bridge, not a user question**, and instructs the model to answer only the **earlier real user message** plus the finalized plan; same display-hidden first line as staged step injections; **not** shown in chat) is appended, then another **no-tools** completion streams **natural language only**. History keeps JSON assistant + bridge user + NL assistant. There is **no** vendor **`response_format: json_object`** enforcement; the first round still relies on fence/body parsing. **`patch_planner`** replans mid-run **do not** automatically trigger this NL follow-up (only the initial finalize path does).
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
 

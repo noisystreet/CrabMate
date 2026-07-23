@@ -136,11 +136,9 @@ Exactly one of `--query`, `--stdin`, `--user-prompt-file`. `--system-prompt-file
 
 ## Built-in CLI commands
 
-**Startup banner**: Interactive CLI prints sections—**model** (truncated `api_base`, `llm_http_auth`, `temperature`, `llm_seed`, current **`--no-stream`**), **workspace & tools**, **slash commands**, **key config** (`max_tokens`, `max_message_history`, API timeouts/retries, `run_command` timeout/output caps, staged planning, optional session restore/MCP/long-term memory, etc.). Styling matches **`cli_repl_ui`** `/help`; **`NO_COLOR`** or non-TTY disables ANSI. **`/config`** reprints a **key config summary** anytime (same family as banner, **no** secrets).
+**Startup banner**: Interactive CLI prints sections—**model** (truncated `api_base`, `llm_http_auth`, `temperature`, `llm_seed`, current **`--no-stream`**), **workspace & tools**, **slash commands**, **key config** (`max_tokens`, `max_message_history`, API timeouts/retries, `run_command` timeout/output caps, optional session restore/MCP/long-term memory, etc.). Styling matches **`cli_repl_ui`** `/help`; **`NO_COLOR`** or non-TTY disables ANSI. **`/config`** reprints a **key config summary** anytime (same family as banner, **no** secrets).
 
 **Optional**: **`CM_CLI_WAIT_SPINNER=1`** shows stderr spinner and elapsed time while waiting for the **first** streaming chunk (or full body with **`--no-stream`**); default off; needs stderr TTY and no **`NO_COLOR`**. See **`docs/配置说明.md`**.
-
-**Staged planning (terminal)**: To hide **no-tools planner** model text in interactive CLI, set **`staged_plan_cli_show_planner_stream = false`** or **`CM_STAGED_PLAN_CLI_SHOW_PLANNER_STREAM=0`** (step queue summary and execution steps still apply; see **`docs/配置说明.md`**). By default there is an extra no-tools **optimizer** round after first **`agent_reply_plan`**; disable with **`staged_plan_optimizer_round = false`** or **`CM_STAGED_PLAN_OPTIMIZER_ROUND=0`**.
 
 **SyncDefault Docker (CLI + `chat`)**: Optionally run **SyncDefault** and some tools inside **Docker** after host approval/allowlist (**`sync_default_tool_sandbox_mode = docker`**, image, `user`, etc.; Unix often uses **effective uid:gid** for workspace ownership). Full notes in **`docs/配置说明.md`** § SyncDefault Docker sandbox.
 

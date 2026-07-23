@@ -4,8 +4,7 @@
 
 **Status**: design draft (**no committed implementation timeline**).  
 **Audience**: maintainers and product/protocol designers.  
-**Related docs**: runtime behavior remains defined by `workflow_execute` / `workflow_validate` contracts in **`docs/en/TOOLS.md`** and architecture sections in **`docs/en/DEVELOPMENT.md`**. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging from today’s DAG semantics.  
-**With plan-execute-verify (P-E-V)**: session-level P-E-V, `plan_rewrite`, and acceptance gates are covered in **`docs/规划执行验证架构.md`**; this document focuses on **DAG/FSM orchestration shape**.
+**Related docs**: runtime behavior remains defined by `workflow_execute` / `workflow_validate` contracts in **`docs/en/TOOLS.md`** and architecture sections in **`docs/en/DEVELOPMENT.md`**. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging from today's DAG semantics.
 
 ---
 
@@ -14,7 +13,7 @@
 CrabMate already has:
 
 - **In-turn DAG orchestration** via `workflow_execute` (`src/agent/workflow/`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
-- **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, staged planning (`staged_plan_*`), final `agent_reply_plan` v1, and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
+- **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, final `agent_reply_plan` v1, and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
 
 Roadmap and product expectations are moving toward state-machine-style configurations and readable conditional/loop expression. The core tension is that current `WorkflowSpec` is a **DAG**, not a native FSM/cyclic graph runtime.
 
@@ -38,8 +37,8 @@ If we add syntax without explicit boundaries, risks include scheduler complexity
 1. **Intra-turn orchestration**  
    `workflow_execute` triggered by tool calls, completed inside one execution step in a single turn.
 
-2. **Inter-turn orchestration**  
-   Multi-turn P → E → P flows via outer loop, staged planning, and PER-related components.
+2. **Inter-turn orchestration**
+   Multi-turn P → E → P flows via outer loop and PER-related components.
 
 3. **Declarative plan layer**  
    `agent_reply_plan` v1 with `id` / `workflow_node_id` / `executor_kind` alignment rules.
@@ -88,17 +87,15 @@ Safe subsets:
 
 ---
 
-## 5. Relation with staged planning and workflow reflection
+## 5. Relation with workflow reflection
 
-- **Staged planning** fits coarse-grained phase control (plan → readonly review → patch → test), especially with `executor_kind` tool narrowing.
 - **`workflow_execute` DAG** fits intra-turn parallel dependency chains.
 - **Workflow reflection + `workflow_node_id`** should remain valid even if FSM is compiled into physical DAG nodes; mapping rules must stay explicit when logical and physical node IDs differ.
 
 Recommended product narrative:
 
-- “phase/role/policy” → staged + PER
-- “in-turn tool pipeline” → DAG (or FSM→DAG)
-- “long-horizon decomposition” → `agent_reply_plan` + multi-turn execution
+- "in-turn tool pipeline" → DAG (or FSM→DAG)
+- "long-horizon decomposition" → `agent_reply_plan` + multi-turn execution
 
 ---
 
@@ -144,4 +141,4 @@ Out of scope for current consensus: making `workflow_execute` simultaneously sup
 
 | Date | Summary |
 |---|---|
-| 2026-04-12 | Initial draft in Chinese: layered model (intra-turn DAG / inter-turn orchestration / declarative plan), FSM-compile-first direction, condition/loop boundaries, and explicit cross-reference with P-E-V design doc. |
+| 2026-04-12 | Initial draft in Chinese: layered model (intra-turn DAG / inter-turn orchestration / declarative plan), FSM-compile-first direction, condition/loop boundaries. |

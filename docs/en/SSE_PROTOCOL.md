@@ -48,10 +48,6 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `turn_segment_start` | Turn segment start; body: **`segment_id`**, **`kind`** (`commentary` \| `answer`), optional **`before_tool_call_id`** (display this segment **before** that tool; late deltas still anchor here) | Web: **handled**; `onTurnSegmentStart` updates canonical turn projection |
 | `turn_segment_end` | Closes a segment opened by `turn_segment_start`; body: **`segment_id`** | Web: **handled**; `onTurnSegmentEnd` |
 | `turn_tool_phase_end`: `true` | Tool batch finished; following text deltas are post-tool final answer (with `assistant_answer_phase`) | Web: **handled**; `onTurnToolPhaseEnd` |
-| `staged_plan_started` | Staged plan start | `onStagedPlanStarted` |
-| `staged_plan_step_started` | Step start; body has `plan_id`, `step_id`, `step_index`, `total_steps`, `description`, optional `executor_kind` (`review_readonly` / `patch_write` / `test_runner`) | `onStagedPlanStepStarted` |
-| `staged_plan_step_finished` | Step end; `status`: `ok` / `cancelled` / `failed`; optional `executor_kind` (mirrors `staged_plan_step_started`) | `onStagedPlanStepFinished` |
-| `staged_plan_finished` | Whole plan end | `onStagedPlanFinished` |
 | `clarification_questionnaire` | Clarification form: after a successful **`present_clarification_questionnaire`** tool run, emitted **after** the `tool_result` SSE; body has **`questionnaire_id`**, **`intro`**, **`questions[]`** (`id` / `label` / optional `hint` / `required` / `kind`: `text` \| `choice`) | Web: show form; next request includes **`clarify_questionnaire_answers`**; TUI: `line` treats as **ignore** |
 | `thinking_trace` | Debug: **on by default** at runtime; disabled with **`CM_THINKING_TRACE_ENABLED=0`**. **Not** read from **`[agent]`** TOML. Body must include non-empty **`op`** (e.g. **`reasoning_delta`**, **`answer_phase`**, **`tool_call`**, **`tool_done`**); optional **`node_id`** / **`parent_id`** / **`title`**, **`chunk`** (reasoning fragment), **`context_snapshot`** (tool before/after context summary, not full text) | Web: accumulates in the **debug console** sidebar; TUI: `line` treats as **ignore** |
 | `workspace_changed`: `true` | Tools updated workspace | `onWorkspaceChanged` |
@@ -61,7 +57,6 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `tool_output_chunk` | Incremental tool output (e.g. PTY); **not** model context; body requires non-empty **`tool_call_id`** and **`seq`** (`u64`); optional **`name`**, **`chunk`** (UTF-8; may repeat), **`stream`** (`stdout` / `stderr` / `combined`); ends with **`tool_result`** | Web: **handled**, `onToolOutputChunk` appends to the tool bubble for that `tool_call_id`; TUI: control-plane mirror shows a truncated line |
 | `tool_result` | Tool finished; includes `output` | `onToolResult` |
 | `command_approval_request` | Approval for `run_command` / workflow | `onCommandApprovalRequest` |
-| `staged_plan_notice` / `staged_plan_notice_clear` | Plan progress text; Web **swallows** | `handled`, not `onDelta` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** | Updates `revision` and context meter |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
@@ -121,7 +116,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Rate limit / quota class (**HTTP 429** or heuristic aligned with `agent_errors::is_quota_or_rate_limit_llm_message`) |
 | `turn_aborted` | `chat_job_queue` (mapped from `agent_turn`) | Orchestration early stop (e.g. SSE receiver closed while the turn continues); **`error`** is user-facing |
 | `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open |
-| `plan_rewrite_exhausted` | `agent_turn/outer_loop`, `agent_turn/staged` | Final plan rewrite budget exhausted |
+| `plan_rewrite_exhausted` | `agent_turn/outer_loop` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 
 **Optional `reason_code`**: sibling string sub-code for client branching under the same top-level `code`; **`plan_rewrite_exhausted`** uses the semantic table below; **`INTERNAL_ERROR`** / **`STEP_RETRY_EXHAUSTED`**, etc. use a **truncated internal summary** for triage (older clients may ignore it).
@@ -160,8 +155,6 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `STREAM_CANCELLED` | 499 | User/cooperative cancel (non-standard; same mapping as SSE; some clients treat as 4xx) |
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
-
-**Legacy** (rarely emitted today): `staged_plan_tool_calls`, `staged_plan_invalid` — see `chat_job_queue` logging for `staged_plan_invalid:` prefix errors.
 
 ## `tool_result.error_code` (tools / workflow)
 
@@ -280,7 +273,6 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 | `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
 | `timeline_log` | `timeline_log` | `on_timeline_log` |
 | `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
-| `staged_plan_*` | `staged_plan_*` | `on_staged_plan_step_started/finished` |
 | `chat_ui_separator` | `chat_ui_separator` | Ignored |
 | `sse_capabilities` | `sse_capabilities` | Ignored |
 
