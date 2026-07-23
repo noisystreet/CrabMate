@@ -2,13 +2,11 @@
 //!
 //! - [`plain`]：与角色无关的行级整理
 //! - [`tool_card`]：工具结果卡片单行摘要
-//! - [`staged_timeline`]：分阶段时间线 `system` 前缀
 //! - [`display`]：助手/用户/系统正文管道（内分 `plan_fence` / `thinking_strip` / `message_ex`）
 
 mod display;
 mod dsml_strip;
 mod plain;
-mod staged_timeline;
 mod stored_message;
 mod strip_ansi;
 mod tool_card;
@@ -23,9 +21,6 @@ pub(crate) use display::{
 #[cfg(test)]
 pub(crate) use display::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
-};
-pub(crate) use staged_timeline::{
-    STAGED_TIMELINE_SYSTEM_PREFIX, is_staged_timeline_bubble, staged_timeline_system_message_body,
 };
 pub(crate) use stored_message::tool_stored_text_from_result_info;
 pub(crate) use strip_ansi::strip_ansi_codes;

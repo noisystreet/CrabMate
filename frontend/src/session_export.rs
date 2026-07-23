@@ -8,9 +8,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
 
 use crate::i18n::Locale;
-use crate::message_format::{
-    STAGED_TIMELINE_SYSTEM_PREFIX, message_text_for_display_ex, stored_tool_message_detail_text,
-};
+use crate::message_format::{message_text_for_display_ex, stored_tool_message_detail_text};
 use crate::storage::{ChatSession, StoredMessage};
 use crate::visible_messages::{VisibleMessageScope, visible_message_indices};
 
@@ -127,17 +125,6 @@ fn stored_messages_to_export(
             continue;
         }
         if m.role == "system" {
-            if m.text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX) {
-                out.push(ExportMessage {
-                    role: "system".to_string(),
-                    content: Some(message_text_for_export(
-                        m,
-                        loc,
-                        apply_assistant_display_filters,
-                    )),
-                    name: None,
-                });
-            }
             continue;
         }
         out.push(ExportMessage {

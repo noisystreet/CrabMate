@@ -5,8 +5,8 @@
 
 use crate::sse_dispatch::{
     ClarificationFormField, ClarificationQuestionnaireInfo, CommandApprovalRequest, SseControlSink,
-    SseDispatch, StagedPlanStepEndInfo, StagedPlanStepStartInfo, ThinkingTraceInfo,
-    TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo, TurnSegmentStartInfo,
+    SseDispatch, ThinkingTraceInfo, TimelineLogInfo, ToolOutputChunkInfo, ToolResultInfo,
+    TurnSegmentStartInfo,
 };
 
 use super::sse_parser::SseParser;
@@ -252,9 +252,7 @@ fn dispatch_custom(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
         "assistant_answer_phase"
         | "turn_segment_start"
         | "turn_segment_end"
-        | "turn_tool_phase_end"
-        | "staged_plan_step_started"
-        | "staged_plan_step_finished" => {
+        | "turn_tool_phase_end" => {
             dispatch_plan_custom(custom_type, val, sink);
         }
         "clarification_questionnaire"
@@ -367,50 +365,6 @@ fn dispatch_plan_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
         "turn_tool_phase_end" => {
             if let Some(hook) = sink.staged_plan.on_turn_tool_phase_end.as_mut() {
                 hook();
-            }
-        }
-        "staged_plan_step_started" => {
-            if let Some(data) = val.get("data") {
-                let info = StagedPlanStepStartInfo {
-                    step_index: data.get("stepIndex").and_then(|v| v.as_u64()).unwrap_or(0)
-                        as usize,
-                    total_steps: data.get("totalSteps").and_then(|v| v.as_u64()).unwrap_or(0)
-                        as usize,
-                    description: data
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    executor_kind: data
-                        .get("executorKind")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string),
-                };
-                if let Some(hook) = sink.staged_plan.on_staged_plan_step_started.as_mut() {
-                    hook(info);
-                }
-            }
-        }
-        "staged_plan_step_finished" => {
-            if let Some(data) = val.get("data") {
-                let info = StagedPlanStepEndInfo {
-                    step_index: data.get("stepIndex").and_then(|v| v.as_u64()).unwrap_or(0)
-                        as usize,
-                    total_steps: data.get("totalSteps").and_then(|v| v.as_u64()).unwrap_or(0)
-                        as usize,
-                    status: data
-                        .get("status")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string(),
-                    executor_kind: data
-                        .get("executorKind")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string),
-                };
-                if let Some(hook) = sink.staged_plan.on_staged_plan_step_finished.as_mut() {
-                    hook(info);
-                }
             }
         }
         _ => {}

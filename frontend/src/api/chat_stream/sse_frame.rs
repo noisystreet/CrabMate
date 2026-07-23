@@ -194,8 +194,6 @@ pub(super) fn handle_sse_block(
         |rev: u64, tiktoken: Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>| {
             (cbs.on_conversation_revision)(rev, tiktoken);
         };
-    let mut on_staged_start = |info| (cbs.on_staged_plan_step_started)(info);
-    let mut on_staged_end = |info| (cbs.on_staged_plan_step_finished)(info);
     let mut on_clar = |info| (cbs.on_clarification_questionnaire)(info);
     let mut on_phase = || (cbs.on_assistant_answer_phase)();
     let mut on_turn_seg_start = |info: crate::sse_dispatch::TurnSegmentStartInfo| {
@@ -229,8 +227,6 @@ pub(super) fn handle_sse_block(
         },
         staged_plan: SseStagedPlanHooks {
             on_assistant_answer_phase: Some(&mut on_phase),
-            on_staged_plan_step_started: Some(&mut on_staged_start),
-            on_staged_plan_step_finished: Some(&mut on_staged_end),
             on_turn_segment_start: Some(&mut on_turn_seg_start),
             on_turn_segment_end: Some(&mut on_turn_seg_end),
             on_turn_tool_phase_end: Some(&mut on_turn_phase_end),
@@ -298,8 +294,6 @@ mod tests {
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),
             on_parsing_tool_calls: Rc::new(|_b| {}),
-            on_staged_plan_step_started: Rc::new(|_info| {}),
-            on_staged_plan_step_finished: Rc::new(|_info| {}),
             on_clarification_questionnaire: Rc::new(|_info| {}),
             on_thinking_trace: Rc::new(|_info| {}),
             on_timeline_log: Rc::new(|_info| {}),
@@ -370,8 +364,6 @@ mod tests {
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),
             on_parsing_tool_calls: Rc::new(|_b| {}),
-            on_staged_plan_step_started: Rc::new(|_info| {}),
-            on_staged_plan_step_finished: Rc::new(|_info| {}),
             on_clarification_questionnaire: Rc::new(|_info| {}),
             on_thinking_trace: Rc::new(|_info| {}),
             on_timeline_log: Rc::new(|_info| {}),

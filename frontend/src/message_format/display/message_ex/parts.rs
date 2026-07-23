@@ -6,7 +6,6 @@ use crabmate_display_rules::{
 
 use crate::i18n::Locale;
 use crate::message_format::display::plan_fence::assistant_text_for_display;
-use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
 
 fn coach_ordinal_from_injection_header(first_line: &str) -> usize {
     let s = first_line.trim();
@@ -76,10 +75,7 @@ fn maybe_format_timeline_standalone_agent_reply_plan(body: &str, loc: Locale) ->
 }
 
 pub(super) fn system_text_for_chat_display(raw: &str, loc: Locale) -> String {
-    let after_timeline = raw
-        .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
-        .unwrap_or(raw);
-    let after_timeline = maybe_format_timeline_standalone_agent_reply_plan(after_timeline, loc);
+    let after_timeline = maybe_format_timeline_standalone_agent_reply_plan(raw, loc);
     if let Some((ord, rest)) = strip_staged_plan_system_coach_header(&after_timeline) {
         let rest = rest.trim_start();
         if rest.is_empty() {

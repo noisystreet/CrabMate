@@ -3,24 +3,19 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::message_format::STAGED_TIMELINE_SYSTEM_PREFIX;
 use crate::storage::{StoredMessage, StoredMessageState};
 
 pub use crate::storage::TIMELINE_UI_STATE_KEY;
 
 fn is_planner_tool_call_rejected_timeline_text(text: &str) -> bool {
-    text.starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
-        && (text.contains("planner_tool_call_rejected")
-            || text.contains("PLANNER_TOOL_CALL_REJECTED")
-            || text.contains("规划轮工具调用已拒绝"))
+    text.contains("planner_tool_call_rejected")
+        || text.contains("PLANNER_TOOL_CALL_REJECTED")
+        || text.contains("规划轮工具调用已拒绝")
 }
 
 /// 编排路由决议（`timeline_log` `kind=orchestration_route`）仅供 tracing / replay，不进聊天气泡。
 fn is_orchestration_route_timeline_text(text: &str) -> bool {
-    let body = text
-        .strip_prefix(STAGED_TIMELINE_SYSTEM_PREFIX)
-        .unwrap_or(text);
-    body.trim_start().starts_with("编排路由：")
+    text.trim_start().starts_with("编排路由：")
 }
 
 /// 已落盘的编排路由旁注：导出与聊天列均跳过。
@@ -128,43 +123,6 @@ fn is_bare_single_line_path_residue(text: &str) -> bool {
 struct TimelineUiState {
     k: String,
     t: String,
-}
-
-/// 写入 `StoredMessage.state` 的时间线 JSON，供侧栏解析（**仅**本机 UI）。
-pub fn timeline_state_staged_start(
-    msg_id: &str,
-    step_index: usize,
-    total_steps: usize,
-) -> StoredMessageState {
-    StoredMessageState::TimelineUiJson(
-        json!({
-            "k": TIMELINE_UI_STATE_KEY,
-            "t": "staged_start",
-            "msg": msg_id,
-            "i": step_index,
-            "n": total_steps,
-        })
-        .to_string(),
-    )
-}
-
-pub fn timeline_state_staged_end(
-    msg_id: &str,
-    step_index: usize,
-    total_steps: usize,
-    status: &str,
-) -> StoredMessageState {
-    StoredMessageState::TimelineUiJson(
-        json!({
-            "k": TIMELINE_UI_STATE_KEY,
-            "t": "staged_end",
-            "msg": msg_id,
-            "i": step_index,
-            "n": total_steps,
-            "st": status,
-        })
-        .to_string(),
-    )
 }
 
 pub fn timeline_state_tool(msg_id: &str, ok: bool) -> StoredMessageState {
@@ -461,10 +419,7 @@ mod tests {
         let m = StoredMessage {
             id: "reject".into(),
             role: "assistant".into(),
-            text: format!(
-                "{}规划轮工具调用已拒绝\ncode=PLANNER_TOOL_CALL_REJECTED",
-                STAGED_TIMELINE_SYSTEM_PREFIX
-            ),
+            text: "规划轮工具调用已拒绝\ncode=PLANNER_TOOL_CALL_REJECTED".to_string(),
             reasoning_text: String::new(),
             image_urls: vec![],
             state: Some(timeline_state_local_snapshot()),
@@ -473,28 +428,6 @@ mod tests {
             tool_name: None,
             created_at: 0,
         };
-        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
-    }
-
-    #[test]
-    fn orchestration_route_timeline_dropped_for_export_and_display() {
-        use crate::message_format::staged_timeline_system_message_body;
-
-        let m = StoredMessage {
-            id: "route".into(),
-            role: "assistant".into(),
-            text: staged_timeline_system_message_body(
-                "编排路由：freeform\n{\"version\":1,\"orchestration_mode\":\"freeform\"}",
-            ),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_local_snapshot()),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(is_orchestration_route_timeline_message(&m));
         assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
     }
 

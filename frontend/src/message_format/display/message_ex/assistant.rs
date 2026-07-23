@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 
 use crate::i18n::Locale;
-use crate::message_format::staged_timeline::STAGED_TIMELINE_SYSTEM_PREFIX;
 use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::plan_fence::{
@@ -12,7 +11,7 @@ use super::super::plan_fence::{
 use super::super::thinking_strip::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
 };
-use super::parts::{maybe_trim_hierarchical_subgoal_redundant_lines, system_text_for_chat_display};
+use super::parts::maybe_trim_hierarchical_subgoal_redundant_lines;
 
 pub(super) fn assistant_message_text_for_display_ex(
     m: &StoredMessage,
@@ -53,14 +52,6 @@ pub(super) fn assistant_message_text_for_display_ex_with_body(
     } else {
         Cow::Borrowed(text)
     };
-    // `timeline_log` 的 tool_step_* 写入助手气泡但带分步前缀：与 `system` 旁注同形，走 system 剥前缀逻辑。
-    if text_for_split
-        .trim_start()
-        .starts_with(STAGED_TIMELINE_SYSTEM_PREFIX)
-        && reasoning_for_split.trim().is_empty()
-    {
-        return system_text_for_chat_display(text_for_split.trim(), loc);
-    }
     let (r_body, t_body) = assistant_thinking_body_and_answer_raw(
         reasoning_for_split.as_ref(),
         text_for_split.as_ref(),

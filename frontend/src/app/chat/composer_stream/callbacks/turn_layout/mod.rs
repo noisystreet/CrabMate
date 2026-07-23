@@ -511,6 +511,7 @@ impl TurnLayout {
     }
 
     /// 分阶段 system 时间线 `push` 到末尾后 pin loading 尾泡。
+    #[expect(dead_code)]
     pub(crate) fn after_auxiliary_system_push(stream_ctx: &ChatStreamCallbackCtx) {
         Self::pin_loading_tail(stream_ctx);
     }
