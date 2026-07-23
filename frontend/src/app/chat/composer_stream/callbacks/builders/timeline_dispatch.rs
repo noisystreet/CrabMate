@@ -5,7 +5,6 @@ use std::rc::Rc;
 use leptos::prelude::GetUntracked;
 
 use crate::app::turn_lifecycle::TurnLifecycleEvent;
-use crate::message_format::staged_timeline_system_message_body;
 use crate::sse_dispatch::TimelineLogInfo;
 use crate::stream_text_overlay::{
     stream_overlay_answer_for_message, stream_overlay_replace_answer_for_message,
@@ -141,11 +140,7 @@ fn timeline_log_dispatch_default_body(stream_ctx: &ChatStreamCallbackCtx, info: 
         return;
     }
     let state = Some(timeline_state_local_snapshot());
-    push_assistant_timeline_bubble(
-        stream_ctx,
-        staged_timeline_system_message_body(&body),
-        state,
-    );
+    push_assistant_timeline_bubble(stream_ctx, body, state);
 }
 
 fn timeline_log_dispatch_body(

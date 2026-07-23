@@ -8,21 +8,18 @@ use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
 use crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse;
-use crate::i18n;
-use crate::message_format::staged_timeline_system_message_body;
-use crate::session_ops::{make_message_id, message_created_ms};
+use crate::session_ops::message_created_ms;
 use crate::sse_dispatch::{
-    ClarificationQuestionnaireInfo, CommandApprovalRequest, StagedPlanStepEndInfo,
-    StagedPlanStepStartInfo, ThinkingTraceInfo,
+    ClarificationQuestionnaireInfo, CommandApprovalRequest, ThinkingTraceInfo,
 };
 use crate::storage::{StoredMessage, StoredMessageState};
-use crate::timeline_scan::{timeline_state_staged_end, timeline_state_staged_start};
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::turn_layout::TurnLayout;
 
+#[expect(dead_code)]
 fn push_timeline_system_bubble_with_tail(
     stream_ctx: &ChatStreamCallbackCtx,
     msg_id: String,
@@ -167,26 +164,6 @@ pub(crate) fn build_chat_stream_callbacks(
         })
     };
 
-    let on_staged_step_started: Rc<dyn Fn(StagedPlanStepStartInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |info: StagedPlanStepStartInfo| {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            let loc = stream_ctx.locale.get_untracked();
-            let text = staged_timeline_system_message_body(&i18n::timeline_staged_step_started(
-                loc,
-                info.step_index,
-                info.total_steps,
-                &info.description,
-                info.executor_kind.as_deref(),
-            ));
-            let id = make_message_id();
-            let state = timeline_state_staged_start(&id, info.step_index, info.total_steps);
-            push_timeline_system_bubble_with_tail(&stream_ctx, id, text, state);
-        })
-    };
-
     let on_clarification: Rc<dyn Fn(ClarificationQuestionnaireInfo)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |info: ClarificationQuestionnaireInfo| {
@@ -205,27 +182,6 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_turn_segment_start = make_on_turn_segment_start(Rc::clone(&stream_ctx));
     let on_turn_segment_end = make_on_turn_segment_end(Rc::clone(&stream_ctx));
     let on_turn_tool_phase_end = make_on_turn_tool_phase_end(Rc::clone(&stream_ctx));
-
-    let on_staged_step_finished: Rc<dyn Fn(StagedPlanStepEndInfo)> = {
-        let stream_ctx = Rc::clone(&stream_ctx);
-        Rc::new(move |info: StagedPlanStepEndInfo| {
-            if stream_ctx.is_stale() {
-                return;
-            }
-            let loc = stream_ctx.locale.get_untracked();
-            let text = staged_timeline_system_message_body(&i18n::timeline_staged_step_finished(
-                loc,
-                info.step_index,
-                info.total_steps,
-                &info.status,
-                info.executor_kind.as_deref(),
-            ));
-            let id = make_message_id();
-            let state =
-                timeline_state_staged_end(&id, info.step_index, info.total_steps, &info.status);
-            push_timeline_system_bubble_with_tail(&stream_ctx, id, text, state);
-        })
-    };
 
     // thinking_trace 写入侧栏调试台（`thinking_trace_log`），不进聊天正文。
     const MAX_THINKING_TRACE_ENTRIES: usize = 512;
@@ -264,8 +220,6 @@ pub(crate) fn build_chat_stream_callbacks(
         on_last_sse_event_id,
         on_assistant_answer_phase,
         on_parsing_tool_calls,
-        on_staged_plan_step_started: on_staged_step_started,
-        on_staged_plan_step_finished: on_staged_step_finished,
         on_clarification_questionnaire: on_clarification,
         on_thinking_trace,
         on_timeline_log,

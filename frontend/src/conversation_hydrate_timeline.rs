@@ -38,14 +38,11 @@ fn first_tool_call_function_name(tool_calls: &Value) -> Option<String> {
 }
 
 use crate::i18n::load_locale_from_storage;
-use crate::message_format::staged_timeline_system_message_body;
 use crate::message_format::{
     format_tool_role_content_for_stored_message, tool_result_info_from_stored_content,
 };
 use crate::storage::StoredMessage;
-use crate::timeline_scan::{
-    timeline_state_staged_end, timeline_state_staged_start, timeline_state_tool,
-};
+use crate::timeline_scan::timeline_state_tool;
 
 /// 将 `role=system` 且 `name=crabmate_timeline` 的一条 API 消息追加到 `out`（`t` 为单调 `created_at`）。
 pub(crate) fn append_crabmate_timeline_system_message(
@@ -55,122 +52,7 @@ pub(crate) fn append_crabmate_timeline_system_message(
     t: &mut i64,
 ) {
     let body_trim = body.trim();
-    if let Ok(v) = serde_json::from_str::<Value>(body_trim)
-        && let Some(obj) = v.as_object()
-    {
-        let kind = obj
-            .get("kind")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .trim();
-        if kind == "staged_plan_step_started" {
-            append_staged_plan_step_started(obj, base_ms, out, t);
-            return;
-        }
-        if kind == "staged_plan_step_finished" {
-            append_staged_plan_step_finished(obj, base_ms, out, t);
-            return;
-        }
-    }
     append_generic_timeline_card(body_trim, base_ms, out, t);
-}
-
-fn append_staged_plan_step_started(
-    obj: &serde_json::Map<String, Value>,
-    base_ms: i64,
-    out: &mut Vec<StoredMessage>,
-    t: &mut i64,
-) {
-    let id = format!("h_{}_{}", base_ms, out.len());
-    *t = t.saturating_add(1);
-    let step = obj.get("step_index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-    let total = obj.get("total_steps").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-    let desc = obj
-        .get("description")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .trim();
-    let exec = obj
-        .get("executor_kind")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let ord = step.max(1);
-    let inner = if let Some(e) = exec {
-        if desc.is_empty() {
-            format!("({e})")
-        } else {
-            format!("{desc}\n({e})")
-        }
-    } else {
-        desc.to_string()
-    };
-    let body = if inner.is_empty() {
-        format!("{ord}.")
-    } else {
-        format!("{ord}. {inner}")
-    };
-    let display = staged_timeline_system_message_body(&body);
-    let state = timeline_state_staged_start(&id, step, total);
-    out.push(StoredMessage {
-        id,
-        role: "system".into(),
-        text: display,
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: Some(state),
-        is_tool: false,
-        tool_call_id: None,
-        tool_name: None,
-        created_at: *t,
-    });
-}
-
-fn append_staged_plan_step_finished(
-    obj: &serde_json::Map<String, Value>,
-    base_ms: i64,
-    out: &mut Vec<StoredMessage>,
-    t: &mut i64,
-) {
-    let id = format!("h_{}_{}", base_ms, out.len());
-    *t = t.saturating_add(1);
-    let step = obj.get("step_index").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-    let total = obj.get("total_steps").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-    let status = obj
-        .get("status")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .to_string();
-    let exec = obj
-        .get("executor_kind")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let ord = step.max(1);
-    let inner = if let Some(e) = exec {
-        format!("{status}\n({e})")
-    } else {
-        status.clone()
-    };
-    let body = if inner.trim().is_empty() {
-        format!("{ord}.")
-    } else {
-        format!("{ord}. {inner}")
-    };
-    let display = staged_timeline_system_message_body(&body);
-    let state = timeline_state_staged_end(&id, step, total, &status);
-    out.push(StoredMessage {
-        id,
-        role: "system".into(),
-        text: display,
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: Some(state),
-        is_tool: false,
-        tool_call_id: None,
-        tool_name: None,
-        created_at: *t,
-    });
 }
 
 fn append_generic_timeline_card(
@@ -181,7 +63,7 @@ fn append_generic_timeline_card(
 ) {
     let id = format!("h_{}_{}", base_ms, out.len());
     *t = t.saturating_add(1);
-    let display = staged_timeline_system_message_body(body_trim);
+    let display = body_trim.to_string();
     out.push(StoredMessage {
         id,
         role: "system".into(),

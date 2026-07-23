@@ -20,18 +20,11 @@ use super::non_assistant_body::{NonAssistantMessageBodyParams, build_non_assista
 pub(super) fn chat_message_row_meta_view(
     locale: RwSignal<Locale>,
     show_planner_round_badge: bool,
-    is_staged_timeline: bool,
     m_role: StoredMessage,
     time_str: String,
 ) -> impl IntoView {
     let is_tool = m_role.is_tool;
-    let role_lbl = move || {
-        if is_staged_timeline {
-            i18n::msg_staged_timeline_role_meta(locale.get())
-        } else {
-            message_role_label(&m_role, locale.get())
-        }
-    };
+    let role_lbl = move || message_role_label(&m_role, locale.get());
     view! {
         <div class="msg-meta" aria-hidden="true">
             <span class="msg-meta-primary">
