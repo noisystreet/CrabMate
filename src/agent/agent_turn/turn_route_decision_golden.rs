@@ -1,13 +1,9 @@
 //! `TurnRouteDecision` v1 金样：`fixtures/turn_route_decision_golden.jsonl`（经 [`assess_turn_routing`]）。
 
 use crabmate_agent::agent_turn::{
-    AssessTurnRoutingParams, IntentGateSnapshot, StagedGateSnapshot, StagedPlanningDenyReason,
-    StagedPlanningGateOutcome, TurnRouteDecisionV1, TurnRouteDriver, TurnTopLevelDispatch,
-    assess_turn_routing,
+    AssessTurnRoutingParams, IntentGateSnapshot, TurnRouteDecisionV1, TurnRouteDriver,
+    TurnTopLevelDispatch, assess_turn_routing,
 };
-use crabmate_agent::intent_pipeline::{IntentAction, IntentDecision};
-use crabmate_agent::intent_router::IntentKind;
-use crabmate_config::PlannerExecutorMode;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
@@ -18,8 +14,6 @@ struct GoldenLine {
     id: String,
     cfg_mode: String,
     intent_gate: Value,
-    #[serde(default)]
-    staged_gate: Option<Value>,
     #[serde(default)]
     expect_early: bool,
     expect: GoldenExpect,
@@ -34,12 +28,11 @@ struct GoldenExpect {
     #[serde(default, alias = "freeform_because")]
     react_because: Option<Value>,
     #[serde(default)]
-    staged_gate: Option<String>,
-    #[serde(default)]
     driver: Option<String>,
 }
 
 fn cfg_with(mode: &str) -> crabmate_config::AgentConfig {
+    use crabmate_config::PlannerExecutorMode;
     let pem = PlannerExecutorMode::parse(mode).expect("planner mode");
     let mut c = crabmate_config::load_config(None).expect("embed default config");
     c.per_plan_policy.planner_executor_mode = pem;
@@ -70,50 +63,6 @@ fn parse_intent_gate(v: &Value) -> IntentGateSnapshot {
                 .unwrap_or(false),
         },
         other => panic!("unknown intent_gate outcome {other}"),
-    }
-}
-
-fn parse_staged_gate(v: &Value) -> StagedPlanningGateOutcome {
-    match v["outcome"].as_str().expect("staged_gate.outcome") {
-        "allow" => {
-            let primary = v["primary_intent"].as_str().expect("primary").to_string();
-            let confidence = v["confidence"].as_f64().expect("confidence") as f32;
-            StagedPlanningGateOutcome::Allow {
-                task_preview: primary.clone(),
-                intent_kind: IntentKind::Execute,
-                primary_intent: primary.clone(),
-                confidence,
-                decision: IntentDecision {
-                    kind: IntentKind::Execute,
-                    primary_intent: primary,
-                    secondary_intents: Vec::new(),
-                    confidence,
-                    abstain: false,
-                    need_clarification: false,
-                    action: IntentAction::Execute,
-                    multi_intent: None,
-                },
-            }
-        }
-        "deny" => {
-            let reason = match v["reason"].as_str().expect("reason") {
-                "empty_effective_task" => StagedPlanningDenyReason::EmptyEffectiveTask,
-                "intent_pipeline_not_execute" => StagedPlanningDenyReason::IntentPipelineNotExecute,
-                "advisory_execute_bypass_staged" => {
-                    StagedPlanningDenyReason::AdvisoryExecuteBypassStaged
-                }
-                "readonly_overview_bypass_staged" => {
-                    StagedPlanningDenyReason::ReadonlyOverviewBypassStaged
-                }
-                other => panic!("unknown deny reason {other}"),
-            };
-            StagedPlanningGateOutcome::Deny {
-                reason,
-                task_preview: None,
-                intent_decision: None,
-            }
-        }
-        other => panic!("unknown staged_gate outcome {other}"),
     }
 }
 
@@ -149,14 +98,11 @@ fn golden_turn_route_decision() {
         let cfg = cfg_with(&row.cfg_mode);
         let intent_gate = parse_intent_gate(&row.intent_gate);
 
-        let staged_gate = row.staged_gate.as_ref().map(parse_staged_gate);
-        let staged_ref = staged_gate.as_ref();
-
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: &cfg,
             top_level: TurnTopLevelDispatch::NonHierarchical,
             intent_gate: intent_gate.clone(),
-            staged_gate: staged_ref,
+            staged_gate: None,
             hierarchical_decision: None,
         });
         let decision = &assessed.decision;
@@ -175,15 +121,6 @@ fn golden_turn_route_decision() {
             &row.expect.react_because.clone().unwrap_or(Value::Null),
             &ctx,
         );
-        if let Some(sg) = &row.expect.staged_gate {
-            assert!(
-                matches!(
-                    (&decision.staged_gate, sg.as_str()),
-                    (StagedGateSnapshot::NotEvaluated, "not_evaluated")
-                ),
-                "{ctx}"
-            );
-        }
         if row.expect_early {
             assert_eq!(assessed.driver, TurnRouteDriver::IntentEarlyExit, "{ctx}");
         } else if let Some(driver) = &row.expect.driver {
@@ -197,62 +134,4 @@ fn golden_turn_route_decision() {
         }
         assert!(decision.to_json().expect("json").contains("\"version\":1"));
     }
-}
-
-#[test]
-fn assess_turn_routing_cartesian_non_hierarchical_execute_gate_matrix() {
-    let cfg = cfg_with("single_agent");
-    let intent = IntentGateSnapshot::ProceedExecute {
-        kind: "execute".into(),
-        primary_intent: "execute.run_test_build".into(),
-        action: "execute".into(),
-        confidence: 0.95,
-        need_clarification: false,
-    };
-    for (reason, expect_mode) in [
-        (
-            StagedPlanningDenyReason::AdvisoryExecuteBypassStaged,
-            "react",
-        ),
-        (
-            StagedPlanningDenyReason::ReadonlyOverviewBypassStaged,
-            "react",
-        ),
-        (StagedPlanningDenyReason::EmptyEffectiveTask, "react"),
-    ] {
-        let gate = StagedPlanningGateOutcome::Deny {
-            reason,
-            task_preview: None,
-            intent_decision: None,
-        };
-        let assessed = assess_turn_routing(AssessTurnRoutingParams {
-            cfg: &cfg,
-            top_level: TurnTopLevelDispatch::NonHierarchical,
-            intent_gate: intent.clone(),
-            staged_gate: Some(&gate),
-            hierarchical_decision: None,
-        });
-        assert_eq!(assessed.decision.orchestration_mode, expect_mode);
-        assert!(matches!(
-            assessed.driver,
-            TurnRouteDriver::NonHierarchical(_)
-        ));
-    }
-    let allow = parse_staged_gate(&serde_json::json!({
-        "outcome": "allow",
-        "primary_intent": "execute.run_test_build",
-        "confidence": 0.95
-    }));
-    let assessed = assess_turn_routing(AssessTurnRoutingParams {
-        cfg: &cfg,
-        top_level: TurnTopLevelDispatch::NonHierarchical,
-        intent_gate: intent,
-        staged_gate: Some(&allow),
-        hierarchical_decision: None,
-    });
-    assert_eq!(assessed.decision.orchestration_mode, "react");
-    assert_eq!(
-        assessed.decision.freeform_because.as_deref(),
-        Some("orchestration_profile_freeform")
-    );
 }

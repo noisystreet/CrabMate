@@ -27,7 +27,7 @@ fn resolved_turn_llm_backend<'a>(
 /// 当 `transport.out` 为 `None` 且 `transport.render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`transport.plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
-/// 分阶段规划（`staged_plan_intent_gate` 放行 / `logical_dual_agent`）下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与门控拒绝时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再从正文 DeepSeek DSML 物化并视情况执行工具，避免网关误报 `tool_calls` 时 CLI 静默无动作。
+/// 分阶段规划下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与门控拒绝时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再从正文 DeepSeek DSML 物化并视情况执行工具，避免网关误报 `tool_calls` 时 CLI 静默无动作。
 /// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
@@ -158,14 +158,6 @@ pub async fn run_agent_turn<'a>(
                 mcp_turn,
                 read_file_turn_cache,
                 workspace_changelist,
-                staged_plan_optimizer_round: cfg.staged_planning.staged_plan_optimizer_round,
-                staged_plan_optimizer_requires_parallel_tools: cfg
-                    .staged_planning
-                    .staged_plan_optimizer_requires_parallel_tools,
-                staged_plan_ensemble_count: cfg.staged_planning.staged_plan_ensemble_count,
-                staged_plan_skip_ensemble_on_casual_prompt: cfg
-                    .staged_planning
-                    .staged_plan_skip_ensemble_on_casual_prompt,
                 turn_allowed_tool_names: turn_allowed_tool_names.clone(),
             },
             obs: crate::agent::agent_turn::RunLoopObs {

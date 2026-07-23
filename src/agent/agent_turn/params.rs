@@ -28,8 +28,7 @@ use tokio::sync::mpsc;
 
 use super::errors::AgentTurnSubPhase;
 use super::messages::{
-    insert_separator_after_last_user_for_turn, pop_last_staged_planner_coach_user_if_present,
-    push_assistant_merging_trailing_empty_placeholder,
+    insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
 };
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
@@ -90,13 +89,6 @@ pub(crate) struct RunLoopAttach<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// 本会话工作区变更集；`None` 时不记录/不注入（见 `session_workspace_changelist_*` 配置）。
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
-    pub staged_plan_optimizer_round: bool,
-    /// 无「可同轮并行批处理」内建工具时是否跳过步骤优化轮；`true` 省一次 LLM。嵌入默认 `false`（`config/planning.toml`）；finalize 缺省亦为 `false`。见 `AgentConfig::staged_plan_optimizer_requires_parallel_tools`。
-    pub staged_plan_optimizer_requires_parallel_tools: bool,
-    /// 逻辑多规划员：首轮后的独立规划份数上限（1=关闭）。见 `AgentConfig::staged_plan_ensemble_count`。
-    pub staged_plan_ensemble_count: u8,
-    /// 寒暄/极短用户输入时是否跳过 ensemble。见 `AgentConfig::staged_plan_skip_ensemble_on_casual_prompt`。
-    pub staged_plan_skip_ensemble_on_casual_prompt: bool,
     /// 多角色工作台：本回合工具白名单；`None` 不限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
 }
@@ -130,19 +122,11 @@ pub(crate) struct RunLoopCtx<'a> {
 /// - **意图时间线去重**：`intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接时跳过重复 `intent_analysis`。
 /// - **门控临时 system**：澄清/确认/只读路径在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
-/// - **滚动分阶段不变层**：[`Self::staged_immutable_user_goal`] 为本轮最新真实 user 快照（懒填充，与 trigger 对齐），供每次无工具规划与分步执行注入。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
     pub(crate) suppress_duplicate_intent_timeline_once: bool,
     pub(crate) intent_turn_gate_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
-    /// 分阶段滚动视界：时间序上**第一条**合格 user 正文（跳过注入类 user）；仅首次写入。
-    pub(crate) staged_immutable_user_goal: Option<String>,
-    /// 首轮进入分步循环前定稿的 `agent_reply_plan` v1（仅 [`crate::config::StagedPlanBaselineMode`] 非 `immutable_goal_only` 时写入一次）。
-    pub(crate) staged_baseline_plan: Option<crate::agent::plan_artifact::AgentReplyPlanV1>,
-    /// 上一完成分步的 effective `acceptance`（步验收 Pass 后写入；供滚动视界早停）。
-    pub(crate) staged_last_completed_step_effective_acceptance:
-        Option<crate::agent::plan_artifact::PlanStepAcceptance>,
     /// 本回合 **`intent_at_turn_start`** 门控快照（供 [`TurnRouteDecisionV1`] 组装）。
     pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
     /// 本回合 **`intent_at_turn_start`** 已跑的 L2 管线结果；供 `staged_plan_intent_gate` 复用，避免重复 LLM。
@@ -151,6 +135,7 @@ pub(crate) struct TurnPlannerHints {
 
 /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 共享的 L2 判定缓存（按 effective task 键）。
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub(crate) struct IntentRoutingCacheEntry {
     pub(crate) task: String,
     pub(crate) decision: crate::agent::intent_pipeline::IntentDecision,
@@ -200,17 +185,8 @@ impl TurnPlannerHints {
         self.intent_turn_gate_hint.take()
     }
 
-    /// 分阶段滚动规划：懒填充本轮「不变层」用户原文（**最新真实 user**，与 trigger 对齐），仅首次写入。
-    pub(crate) fn ensure_staged_immutable_user_goal_from_messages(&mut self, messages: &[Message]) {
-        if self.staged_immutable_user_goal.is_some() {
-            return;
-        }
-        if let Some(g) = crate::agent::plan_optimizer::staged_plan_trigger_user_content(messages) {
-            self.staged_immutable_user_goal = Some(g.to_string());
-        }
-    }
-
     /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    #[allow(dead_code)]
     pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
         let v = self.suppress_duplicate_intent_timeline_once;
         self.suppress_duplicate_intent_timeline_once = false;
@@ -218,6 +194,7 @@ impl TurnPlannerHints {
     }
 
     /// 若缓存键与 `task` 一致则返回 L2 管线结果（不消费缓存，供 staged 门控只读复用）。
+    #[allow(dead_code)]
     pub(crate) fn intent_routing_cache_for_task(
         &self,
         task: &str,
@@ -225,11 +202,6 @@ impl TurnPlannerHints {
         self.intent_routing_cache
             .as_ref()
             .filter(|c| c.task == task)
-    }
-
-    /// 新 agent 回合开始时清空步后 completion 缓存。
-    pub(crate) fn reset_staged_completion_hints_for_new_agent_turn(&mut self) {
-        self.staged_last_completed_step_effective_acceptance = None;
     }
 }
 
@@ -300,6 +272,7 @@ impl<'a> RunLoopTurnState<'a> {
         r
     }
 
+    #[allow(dead_code)]
     pub(crate) fn truncate_messages(&mut self, len: usize) {
         if self.messages_buf.len() != len {
             self.messages_buf.truncate(len);
@@ -322,19 +295,8 @@ impl<'a> RunLoopTurnState<'a> {
 
     /// 本轮 user 后插入 UI 分隔线（若未插入则不变更代数）。
     pub(crate) fn insert_separator_after_last_user_for_turn(&mut self) {
-        self.turn_planner_hints
-            .reset_staged_completion_hints_for_new_agent_turn();
         let n = self.messages_buf.len();
         insert_separator_after_last_user_for_turn(self.messages_buf);
-        if self.messages_buf.len() != n {
-            self.bump_messages_revision();
-        }
-    }
-
-    /// 分阶段规划：若末条为教练 / ensemble 注入的临时 user，则弹出并递增 **`messages_revision`**。
-    pub(crate) fn pop_last_staged_planner_coach_user_if_present(&mut self) {
-        let n = self.messages_buf.len();
-        pop_last_staged_planner_coach_user_if_present(self.messages_buf);
         if self.messages_buf.len() != n {
             self.bump_messages_revision();
         }
@@ -346,19 +308,10 @@ impl<'a> RunLoopTurnState<'a> {
     }
 
     /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
+    #[allow(dead_code)]
     pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
         self.turn_planner_hints
             .take_suppress_duplicate_intent_timeline_once()
-    }
-
-    /// 分阶段滚动不变层：基于当前缓冲懒填充 [`TurnPlannerHints::staged_immutable_user_goal`] 并返回只读引用。
-    pub(crate) fn staged_immutable_user_goal_snapshot(&mut self) -> Option<&str> {
-        let msgs = self.messages_buf.as_slice();
-        self.turn_planner_hints
-            .ensure_staged_immutable_user_goal_from_messages(msgs);
-        self.turn_planner_hints
-            .staged_immutable_user_goal
-            .as_deref()
     }
 }
 
@@ -393,6 +346,7 @@ impl RunLoopParams<'_> {
 
     /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::plan::AgentLlmCall`] 复用。
     #[inline]
+    #[allow(dead_code)]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
         crate::llm::LlmRetryingTransportOpts {
             out: self.ctx.io.out,
@@ -527,85 +481,5 @@ mod turn_planner_hints_tests {
         assert_eq!(turn.messages_buffer_revision(), 2);
         turn.retain_messages(|m| m.role != "tool");
         assert_eq!(turn.messages_buffer_revision(), 2);
-    }
-
-    #[test]
-    fn reset_staged_completion_hints_clears_last_step_acceptance() {
-        use crate::agent::plan_artifact::PlanStepAcceptance;
-
-        let mut hints = TurnPlannerHints {
-            staged_last_completed_step_effective_acceptance: Some(PlanStepAcceptance {
-                expect_exit_code: Some(0),
-                expect_stdout_contains: None,
-                expect_stderr_contains: None,
-                expect_file_exists: None,
-                expect_json_path_equals: None,
-                expect_http_status: None,
-            }),
-            ..Default::default()
-        };
-        hints.reset_staged_completion_hints_for_new_agent_turn();
-        assert!(
-            hints
-                .staged_last_completed_step_effective_acceptance
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn messages_revision_increments_when_coach_user_popped() {
-        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
-        use crate::agent::plan_optimizer::STAGED_PLAN_OPTIMIZER_COACH_MARK;
-        use crate::types::{LlmSeedOverride, Message};
-
-        let coach = format!("{STAGED_PLAN_OPTIMIZER_COACH_MARK}\ntext");
-        let mut storage = vec![Message::user_only("u"), Message::user_only(coach)];
-        let mut turn = super::RunLoopTurnState {
-            messages_buf: &mut storage,
-            messages_revision: 0,
-            sub_phase: AgentTurnSubPhase::Planner,
-            turn_planner_hints: TurnPlannerHints::default(),
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: LlmSeedOverride::FromConfig,
-            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
-        };
-        turn.pop_last_staged_planner_coach_user_if_present();
-        assert_eq!(turn.messages().len(), 1);
-        assert_eq!(turn.messages_buffer_revision(), 1);
-    }
-
-    #[test]
-    fn staged_immutable_user_goal_uses_latest_real_user_in_multi_turn() {
-        use crate::agent::agent_turn::errors::AgentTurnSubPhase;
-        use crate::types::{LlmSeedOverride, Message};
-
-        let mut storage = vec![
-            Message::user_only("分析当前目录"),
-            Message::assistant_only("完成"),
-            Message::user_only("编译 hpcg"),
-        ];
-        let mut turn = super::RunLoopTurnState {
-            messages_buf: &mut storage,
-            messages_revision: 0,
-            sub_phase: AgentTurnSubPhase::Planner,
-            turn_planner_hints: TurnPlannerHints::default(),
-            temperature_override: None,
-            model_override: None,
-            use_executor_model: false,
-            executor_model_override: None,
-            executor_api_base: None,
-            executor_api_key: None,
-            seed_override: LlmSeedOverride::FromConfig,
-            turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
-        };
-        assert_eq!(
-            turn.staged_immutable_user_goal_snapshot(),
-            Some("编译 hpcg")
-        );
     }
 }

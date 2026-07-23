@@ -153,8 +153,6 @@ pub struct PerFlightStatusEntry {
     pub job_id: u64,
     pub awaiting_plan_rewrite_model: bool,
     pub plan_rewrite_attempts: usize,
-    pub staged_plan_patch_planner_rounds_completed: usize,
-    pub staged_plan_patch_max_attempts_config: usize,
     pub require_plan_in_final_content: bool,
 }
 
@@ -398,12 +396,6 @@ impl ChatJobQueue {
                     .awaiting_plan_rewrite_model
                     .load(Ordering::Relaxed),
                 plan_rewrite_attempts: flight.plan_rewrite_attempts.load(Ordering::Relaxed),
-                staged_plan_patch_planner_rounds_completed: flight
-                    .staged_plan_patch_planner_rounds_completed
-                    .load(Ordering::Relaxed),
-                staged_plan_patch_max_attempts_config: flight
-                    .staged_plan_patch_max_attempts_config
-                    .load(Ordering::Relaxed),
                 require_plan_in_final_content: flight
                     .require_plan_in_final_content
                     .load(Ordering::Relaxed),

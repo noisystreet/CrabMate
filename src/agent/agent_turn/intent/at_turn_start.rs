@@ -39,10 +39,6 @@ pub(crate) enum IntentGateResult {
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
-    if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
-        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
-        return Ok(true);
-    }
     let in_clarification_flow =
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
@@ -71,6 +67,11 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         "intent_at_turn",
     )
     .await?;
+    // 始终运行意图管线 & 发射时间线。intent_at_turn_start_enabled 仅控制门控是否提前终答。
+    if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
+        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
+        return Ok(true);
+    }
     let proceed = matches!(out, IntentGateResult::ProceedExecute { .. });
     if proceed {
         p.turn

@@ -1,11 +1,10 @@
 //! 完成判定金样回归：`fixtures/turn_completion_golden.jsonl`。
 
 use super::turn_completion_decision::{
-    RollingHorizonStopVia, TurnCompletionDecision, evaluate_turn_early_stop,
-    evaluate_turn_redundant_tools, evaluate_turn_staged_rolling_horizon_early_stop,
+    TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     evaluate_turn_suppress_replanning,
 };
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepV1};
+use crate::agent::plan_artifact::PlanStepV1;
 use crate::types::{FunctionCall, Message, ToolCall};
 use serde::Deserialize;
 use std::fs;
@@ -26,6 +25,7 @@ struct GoldenLine {
     #[serde(default)]
     deny_reason: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     via: Option<String>,
 }
 
@@ -120,37 +120,11 @@ fn fixture_tool_calls(name: &str) -> Vec<ToolCall> {
     }
 }
 
-fn rolling_acceptance_for_fixture(fixture: &str) -> Option<PlanStepAcceptance> {
-    if fixture == "build_step_acceptance_pass" {
-        Some(PlanStepAcceptance {
-            expect_exit_code: Some(0),
-            expect_stdout_contains: Some("Built target hello".to_string()),
-            expect_stderr_contains: None,
-            expect_file_exists: None,
-            expect_json_path_equals: None,
-            expect_http_status: None,
-        })
-    } else {
-        None
-    }
-}
-
-fn assert_expect_allow(ctx: &str, decision: TurnCompletionDecision, via: Option<&str>) {
+fn assert_expect_allow(ctx: &str, decision: TurnCompletionDecision) {
     assert!(
         decision.is_allow(),
         "{ctx}: expected allow, got {decision:?}"
     );
-    if let Some(v) = via {
-        assert_eq!(
-            decision.rolling_horizon_via().map(|x| match x {
-                RollingHorizonStopVia::HeuristicEarlyStop => "heuristic_early_stop",
-                RollingHorizonStopVia::StepAcceptancePass => "step_acceptance_pass",
-                RollingHorizonStopVia::GoalEvidenceSatisfied => "goal_evidence_satisfied",
-            }),
-            Some(v),
-            "{ctx}: rolling via"
-        );
-    }
 }
 
 fn assert_expect_deny(ctx: &str, decision: TurnCompletionDecision, deny_reason: Option<&str>) {
@@ -175,15 +149,10 @@ fn assert_golden_line(ctx: &str, row: &GoldenLine) {
             let tools = fixture_tool_calls(row.tool_fixture.as_deref().unwrap_or("list_dir_probe"));
             evaluate_turn_redundant_tools(&tools, &messages)
         }
-        "rolling_horizon" => evaluate_turn_staged_rolling_horizon_early_stop(
-            &messages,
-            rolling_acceptance_for_fixture(&row.fixture).as_ref(),
-            std::path::Path::new("/tmp"),
-        ),
         other => panic!("{ctx}: unknown case {other}"),
     };
     match row.expect.as_str() {
-        "allow" => assert_expect_allow(ctx, decision, row.via.as_deref()),
+        "allow" => assert_expect_allow(ctx, decision),
         "deny" => assert_expect_deny(ctx, decision, row.deny_reason.as_deref()),
         other => panic!("{ctx}: unknown expect {other}"),
     }
