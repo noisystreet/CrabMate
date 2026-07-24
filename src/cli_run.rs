@@ -729,9 +729,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 pub(super) async fn run_cli_from_parsed(
     args: ParsedCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // serve 模式默认只输出 WARN/ERROR（避免 INFO 日志刷屏）；设 RUST_LOG=info 可恢复。
     observability::init_tracing_subscriber(
         args.log_file.as_deref().map(std::path::Path::new),
-        args.serve_port.is_none(),
+        /* quiet_cli_default */ true,
     )?;
 
     if run_early_commands(
