@@ -22,6 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # check + clippy + test（含 frontend 原生 lib test 链接）易占满 runner 磁盘；先回收预装大目录。
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force 2>/dev/null || true
+          df -h
+
       - name: Install system deps (OpenSSL / libssh2 / Wayland)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
 
@@ -51,7 +58,10 @@ jobs:
         run: cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: cargo test (workspace)
-        run: cargo test --workspace --all-features --no-fail-fast
+        run: |
+          # check/clippy 已验证编译；清理 dev 产物为 test 链接腾出空间（避免 No space left on device）。
+          cargo clean
+          cargo test --workspace --all-features --no-fail-fast
 
       # desktop-tauri 是独立 workspace（含 Victauri E2E 测试）
       - name: Install Tauri system deps (libgtk-3 / libwebkit2gtk / libappindicator)
