@@ -155,42 +155,6 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
             custom_type: "staged_plan_notice".into(),
             data: serde_json::json!({"text": text, "clearBefore": clear_before}),
         },
-        SsePayload::StagedPlanStarted { started } => AgUiEvent::Custom {
-            custom_type: "staged_plan_started".into(),
-            data: serde_json::json!({"planId": started.plan_id, "totalSteps": started.total_steps}),
-        },
-        SsePayload::StagedPlanStepStarted { started } => AgUiEvent::Custom {
-            custom_type: "staged_plan_step_started".into(),
-            data: serde_json::json!({
-                "planId": started.plan_id,
-                "stepId": started.step_id,
-                "stepIndex": started.step_index,
-                "totalSteps": started.total_steps,
-                "description": started.description,
-                "executorKind": started.executor_kind,
-            }),
-        },
-        SsePayload::StagedPlanStepFinished { finished } => AgUiEvent::Custom {
-            custom_type: "staged_plan_step_finished".into(),
-            data: serde_json::json!({
-                "planId": finished.plan_id,
-                "stepId": finished.step_id,
-                "stepIndex": finished.step_index,
-                "totalSteps": finished.total_steps,
-                "status": finished.status,
-                "executorKind": finished.executor_kind,
-                "verifyFailReason": finished.verify_fail_reason,
-            }),
-        },
-        SsePayload::StagedPlanFinished { finished } => AgUiEvent::Custom {
-            custom_type: "staged_plan_finished".into(),
-            data: serde_json::json!({
-                "planId": finished.plan_id,
-                "totalSteps": finished.total_steps,
-                "completedSteps": finished.completed_steps,
-                "status": finished.status,
-            }),
-        },
         SsePayload::ChatUiSeparator { short } => AgUiEvent::Custom {
             custom_type: "chat_ui_separator".into(),
             data: serde_json::json!({"short": short}),
@@ -252,8 +216,8 @@ mod tests {
     use crate::sse::protocol::StreamEndReason;
     use crate::sse::protocol::{
         ClarificationQuestionField, ClarificationQuestionnaireBody, SseCapabilitiesBody,
-        SseErrorBody, StagedPlanStartedBody, StreamEndedBody, ThinkingTraceBody, TimelineLogBody,
-        ToolCallSummary, ToolOutputChunkBody, ToolResultBody,
+        SseErrorBody, StreamEndedBody, ThinkingTraceBody, TimelineLogBody, ToolCallSummary,
+        ToolOutputChunkBody, ToolResultBody,
     };
 
     #[test]
@@ -410,15 +374,6 @@ mod tests {
                 "timeline_log",
             ),
             (
-                SsePayload::StagedPlanStarted {
-                    started: StagedPlanStartedBody {
-                        plan_id: "p1".into(),
-                        total_steps: 3,
-                    },
-                },
-                "staged_plan_started",
-            ),
-            (
                 SsePayload::SseCapabilities {
                     caps: SseCapabilitiesBody {
                         supported_sse_v: 2,
@@ -543,8 +498,7 @@ mod tests {
 mod golden_tests {
     use crate::sse::{
         ConversationSavedBody, SseCapabilitiesBody, SseEncoder, SseErrorBody, SsePayload,
-        StagedPlanFinishedBody, StagedPlanStartedBody, StagedPlanStepFinishedBody,
-        StagedPlanStepStartedBody, StreamEndedBody, TurnSegmentEndBody, TurnSegmentStartBody,
+        StreamEndedBody, TurnSegmentEndBody, TurnSegmentStartBody,
     };
 
     /// 验证 V2Encoder 输出所有 SsePayload 变体时 JSON 包含正确的 `type` 字段。
@@ -570,53 +524,6 @@ mod golden_tests {
             (
                 SsePayload::ParsingToolCalls {
                     parsing_tool_calls: true,
-                },
-                "CUSTOM",
-            ),
-            (
-                SsePayload::StagedPlanStarted {
-                    started: StagedPlanStartedBody {
-                        plan_id: "p".into(),
-                        total_steps: 1,
-                    },
-                },
-                "CUSTOM",
-            ),
-            (
-                SsePayload::StagedPlanStepStarted {
-                    started: StagedPlanStepStartedBody {
-                        plan_id: "p".into(),
-                        step_id: "s".into(),
-                        step_index: 1,
-                        total_steps: 1,
-                        description: "d".into(),
-                        executor_kind: None,
-                    },
-                },
-                "CUSTOM",
-            ),
-            (
-                SsePayload::StagedPlanStepFinished {
-                    finished: StagedPlanStepFinishedBody {
-                        plan_id: "p".into(),
-                        step_id: "s".into(),
-                        step_index: 1,
-                        total_steps: 1,
-                        status: "ok".into(),
-                        executor_kind: None,
-                        verify_fail_reason: None,
-                    },
-                },
-                "CUSTOM",
-            ),
-            (
-                SsePayload::StagedPlanFinished {
-                    finished: StagedPlanFinishedBody {
-                        plan_id: "p".into(),
-                        total_steps: 1,
-                        completed_steps: 1,
-                        status: "ok".into(),
-                    },
                 },
                 "CUSTOM",
             ),

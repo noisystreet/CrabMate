@@ -1,14 +1,8 @@
 # 每行：标签<TAB>正文<TAB>hide|show
 # 运行 `cargo test -p crabmate-display-rules display_hide_user_golden`
 
-NL 桥接 hide	### CrabMate·NL补全\n请继续	hide
-分步注入 hide	### 分步 1\n- id: a\n- 描述: b	hide
-coach user hide	### 分阶段规划 · 步骤优化\n反馈	hide
 规划轮拒绝重写 hide	### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）\n请重写	hide
 步级补丁反馈 hide	### 分阶段规划 · 步级反馈（plan_id=p1）\n请输出 JSON	hide
 终答 plan_rewrite hide	你的最终回答缺少**结构化规划**。请在 content 中加入 json 围栏	hide
-普通 user show	你好，请帮我看一下代码	show
-分步前缀在段中 hide	前缀\n### 分步 2\n- id: x\n- 描述: y	hide
 外循环纠偏 hide	【编排纠偏】请实际执行 make	hide
-重复规划拦截 hide	### 分阶段·重复规划拦截\n已提示	hide
-状态机流转 hide	### 状态机流转：触发控制流跳转\n请调整	hide
+普通 user show	你好，请帮我看一下代码	show
