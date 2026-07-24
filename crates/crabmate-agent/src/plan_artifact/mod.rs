@@ -9,19 +9,15 @@ mod validate;
 pub use types::{
     AgentReplyPlanV1, JsonPathEqualsRule, PLAN_V1_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES,
     PlanArtifactError, PlanStepAcceptance, PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1,
-    STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX, agent_reply_plan_v1_to_json_string,
-    is_staged_plan_invalid_run_agent_turn_error, merge_staged_plan_steps_after_step_failure,
-    plan_acceptance_path_looks_like_build_artifact, plan_artifact_error_log_summary,
-    plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
-    plan_steps_fingerprint, validate_staged_patch_merged_strict_baseline_ids,
+    agent_reply_plan_v1_to_json_string, plan_acceptance_path_looks_like_build_artifact,
+    plan_artifact_error_log_summary, plan_step_acceptance_implies_build_progress,
+    plan_step_description_implies_build_execution, plan_steps_fingerprint,
 };
-
-pub use types::staged_plan_invalid_run_agent_turn_error;
 
 pub use display::{augment_agent_reply_plan_goal_for_display, prose_before_first_fence};
 pub use display::{
     format_agent_reply_plan_for_display, format_plan_steps_markdown,
-    format_plan_steps_markdown_for_staged_queue, strip_agent_reply_plan_fence_blocks_for_display,
+    strip_agent_reply_plan_fence_blocks_for_display,
 };
 
 pub use fence::fenced_body_after_optional_jsonish_lang_label;
@@ -46,166 +42,11 @@ pub use validate::validate_agent_reply_plan_v1_with_validate_only_binding_ids;
 
 #[cfg(test)]
 mod tests {
-    use super::types::staged_plan_invalid_run_agent_turn_error;
     use super::*;
 
     fn sample_json() -> String {
         r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do a"}]}"#
             .to_string()
-    }
-
-    #[test]
-    fn staged_plan_invalid_error_prefix_and_detector() {
-        let e = staged_plan_invalid_run_agent_turn_error(PlanArtifactError::NotFound);
-        assert!(is_staged_plan_invalid_run_agent_turn_error(&e));
-        assert!(e.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX));
-    }
-
-    #[test]
-    fn merge_staged_plan_steps_replaces_suffix_from_failed_index() {
-        let base = vec![
-            PlanStepV1 {
-                id: "s0".into(),
-                description: "test".to_string(),
-                workflow_node_id: None,
-                executor_kind: None,
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            },
-            PlanStepV1 {
-                id: "s1".into(),
-                description: "fail".into(),
-                workflow_node_id: None,
-                executor_kind: None,
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            },
-            PlanStepV1 {
-                id: "s2".into(),
-                description: "old tail".into(),
-                workflow_node_id: None,
-                executor_kind: None,
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            },
-        ];
-        let patch = AgentReplyPlanV1 {
-            plan_type: "agent_reply_plan".into(),
-            version: 1,
-            steps: vec![
-                PlanStepV1 {
-                    id: "s1b".into(),
-                    description: "retry".into(),
-                    workflow_node_id: None,
-                    executor_kind: None,
-                    step_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
-                },
-                PlanStepV1 {
-                    id: "s2b".into(),
-                    description: "new tail".into(),
-                    workflow_node_id: None,
-                    executor_kind: None,
-                    step_kind: None,
-                    acceptance: None,
-                    max_step_retries: None,
-                    transitions: None,
-                },
-            ],
-            no_task: false,
-        };
-        let merged = merge_staged_plan_steps_after_step_failure(&base, &patch, 1).unwrap();
-        assert_eq!(merged.len(), 3);
-        assert_eq!(merged[0].id, "s0");
-        assert_eq!(merged[1].id, "s1b");
-        assert_eq!(merged[2].id, "s2b");
-    }
-
-    #[test]
-    fn validate_staged_patch_merged_strict_baseline_ids_ok_and_mismatch() {
-        let baseline = vec![step_v1("a", "1"), step_v1("b", "2"), step_v1("c", "3")];
-        let patch = AgentReplyPlanV1 {
-            plan_type: "agent_reply_plan".into(),
-            version: 1,
-            steps: vec![step_v1("b2", "retry")],
-            no_task: false,
-        };
-        let merged = merge_staged_plan_steps_after_step_failure(&baseline, &patch, 1).unwrap();
-        validate_staged_patch_merged_strict_baseline_ids(&baseline, &merged, 1).unwrap();
-
-        let merged_corrupt_prefix = vec![step_v1("a_wrong", "1"), step_v1("x", "patch")];
-        assert!(
-            validate_staged_patch_merged_strict_baseline_ids(&baseline, &merged_corrupt_prefix, 1)
-                .is_err()
-        );
-    }
-
-    fn step_v1(id: &str, desc: &str) -> PlanStepV1 {
-        PlanStepV1 {
-            id: id.into(),
-            description: desc.into(),
-            workflow_node_id: None,
-            executor_kind: None,
-            step_kind: None,
-            acceptance: None,
-            max_step_retries: None,
-            transitions: None,
-        }
-    }
-
-    #[test]
-    fn merge_staged_plan_backfills_executor_kind_from_base_suffix() {
-        let base = vec![
-            PlanStepV1 {
-                id: "a".into(),
-                description: "x".into(),
-                workflow_node_id: None,
-                executor_kind: Some(PlanStepExecutorKind::ReviewReadonly),
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            },
-            PlanStepV1 {
-                id: "b".into(),
-                description: "y".into(),
-                workflow_node_id: None,
-                executor_kind: Some(PlanStepExecutorKind::PatchWrite),
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            },
-        ];
-        let patch = AgentReplyPlanV1 {
-            plan_type: "agent_reply_plan".into(),
-            version: 1,
-            steps: vec![PlanStepV1 {
-                id: "b2".into(),
-                description: "retry".into(),
-                workflow_node_id: None,
-                executor_kind: None,
-                step_kind: None,
-                acceptance: None,
-                max_step_retries: None,
-                transitions: None,
-            }],
-            no_task: false,
-        };
-        let merged = merge_staged_plan_steps_after_step_failure(&base, &patch, 1).unwrap();
-        assert_eq!(merged.len(), 2);
-        assert_eq!(
-            merged[1].executor_kind,
-            Some(PlanStepExecutorKind::PatchWrite)
-        );
     }
 
     #[test]
@@ -704,22 +545,6 @@ not json
 ```
 "#;
         assert!(parse_agent_reply_plan_v1(content).is_ok());
-    }
-
-    #[test]
-    fn staged_queue_marks_done_steps() {
-        let plan = parse_agent_reply_plan_v1(
-            r#"{"type":"agent_reply_plan","version":1,"steps":[
-                {"id":"a","description":"one"}
-            ]}"#,
-        )
-        .unwrap();
-        let s0 = format_plan_steps_markdown_for_staged_queue(&plan, 0);
-        assert!(s0.contains("[ ]"));
-        assert!(!s0.contains("[✓]"));
-        let s1 = format_plan_steps_markdown_for_staged_queue(&plan, 1);
-        assert!(s1.lines().next().unwrap_or("").contains("[✓]"));
-        assert_eq!(s1.matches("[✓]").count(), 1);
     }
 
     #[test]

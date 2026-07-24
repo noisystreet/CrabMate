@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crabmate_sse_protocol::StreamEndReason;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 
@@ -370,20 +370,6 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         e_text
                     );
                     (false, true, None, StreamEndReason::Cancelled)
-                }
-                AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy => {
-                    warn!(
-                        target: "crabmate",
-                        "chat stream 任务结束（staged_plan_invalid 前缀错误，多为旧服务端或非常规路径） job_id={} detail={}",
-                        job_id,
-                        e_text
-                    );
-                    (
-                        false,
-                        false,
-                        Some("staged_plan_invalid".to_string()),
-                        StreamEndReason::Fallback,
-                    )
                 }
                 AgentTurnJobOutcomeKind::FailureEmitSseError => {
                     error!(

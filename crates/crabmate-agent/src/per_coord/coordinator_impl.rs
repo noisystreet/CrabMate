@@ -30,36 +30,9 @@ impl PerCoordinator {
         self.counters.plan_rewrite_attempts
     }
 
-    /// 本回合内已成功完成的分阶段补丁规划轮次数（与 [`Self::plan_rewrite_attempts_snapshot`] 独立）。
-    pub fn staged_plan_patch_planner_rounds_snapshot(&self) -> usize {
-        self.counters.staged_plan_patch_planner_rounds_completed
-    }
-
-    /// 配置中的 **`staged_plan_patch_max_attempts`**（与单步失败分支内补丁循环上界一致；**非** `plan_rewrite_max_attempts`）。
-    pub fn staged_plan_patch_max_attempts_config_snapshot(&self) -> usize {
-        self.staged_plan_patch_max_attempts_config
-    }
-
     /// 配置中的规划重写上限（与 `plan_rewrite_max_attempts` 一致）。
     pub fn plan_rewrite_max_attempts_limit(&self) -> usize {
         self.plan_rewrite_max_attempts
-    }
-
-    /// 分阶段补丁规划轮成功合并 `steps` 后调用，递增与 **`plan_rewrite`** 独立的计数。
-    pub fn record_staged_plan_patch_planner_round_completed(&mut self) {
-        self.counters
-            .record_staged_plan_patch_planner_round_completed();
-    }
-
-    /// 分阶段步级补丁耗尽等错误串尾部：标明与 **`plan_rewrite`** 独立的计数（供排障）。
-    pub fn staged_plan_patch_vs_plan_rewrite_counters_footer(&self) -> String {
-        format!(
-            "\n\n[计数] 分阶段补丁规划已成功合并轮次={}（配置 `staged_plan_patch_max_attempts`={}，约束**本步失败分支**内尝试上界）；终答 `plan_rewrite` 已用次数={}/{}（**独立计数**，不计入上式）。",
-            self.counters.staged_plan_patch_planner_rounds_completed,
-            self.staged_plan_patch_max_attempts_config,
-            self.counters.plan_rewrite_attempts,
-            self.plan_rewrite_max_attempts
-        )
     }
 
     pub fn plan_semantic_mismatch_rewrite_message_with_feedback(
@@ -86,9 +59,6 @@ impl PerCoordinator {
             reflection: WorkflowReflectionController::new(init.reflection_default_max_rounds),
             final_plan_policy: init.final_plan_policy,
             plan_rewrite_max_attempts: init.plan_rewrite_max_attempts.max(1),
-            staged_plan_patch_max_attempts_config: init
-                .staged_plan_patch_max_attempts_config
-                .max(1),
             final_plan_require_strict_workflow_node_coverage: init
                 .final_plan_require_strict_workflow_node_coverage,
             final_plan_semantic_check_enabled: init.final_plan_semantic_check_enabled,

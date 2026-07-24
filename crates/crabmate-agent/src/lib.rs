@@ -23,7 +23,6 @@ pub mod plan_rewrite;
 pub mod plan_semantic;
 pub mod step_executor_policy;
 /// 面向用户可见正文的轻量清洗（规划摘要等）。
-pub mod step_verifier;
 pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
 pub mod turn_budget;

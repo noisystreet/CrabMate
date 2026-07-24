@@ -1,6 +1,5 @@
 //! 分阶段门控与意图上下文装配（无 IO）。
 
-pub mod advisory_bypass;
 pub mod context;
 pub mod readonly_overview_bypass;
 pub mod simple_execute_fast_path;

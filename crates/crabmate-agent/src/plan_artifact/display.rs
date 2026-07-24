@@ -33,31 +33,6 @@ pub fn format_plan_steps_markdown(plan: &AgentReplyPlanV1) -> String {
     out.trim_end().to_string()
 }
 
-/// 分阶段规划**队列**区：每步前加 `[ ]` 未完成 / `[✓]` 已完成（`completed_count` 为已完成步数，与 `run_staged_plan_then_execute_steps` 中步下标一致）。
-/// 仅展示 `description`（**不**输出 `step.id`，便于阅读；`Message` / `debug!` 等仍含 id）。
-pub fn format_plan_steps_markdown_for_staged_queue(
-    plan: &AgentReplyPlanV1,
-    completed_count: usize,
-) -> String {
-    use std::fmt::Write;
-
-    let mut out = String::new();
-    let n = plan.steps.len();
-    let done = completed_count.min(n);
-    let mut line_no = 1usize;
-    for (idx, st) in plan.steps.iter().enumerate() {
-        let desc = crate::text_sanitize::naturalize_plan_step_description(&st.description);
-        let id = st.id.trim();
-        if id.is_empty() {
-            continue;
-        }
-        let mark = if idx < done { "[✓]" } else { "[ ]" };
-        let _ = writeln!(&mut out, "{mark} {}. {}", line_no, desc.trim());
-        line_no += 1;
-    }
-    out.trim_end().to_string()
-}
-
 /// 模型常把「以下是任务拆解」写在首步 `description`，围栏前只有开场白；隐藏 JSON 时该句会随步骤列表一并从主气泡消失。若围栏前 goal 未同时含「以下」与「拆解」，则从首步描述里取**一行**简短引导拼到 goal 前。
 pub fn augment_agent_reply_plan_goal_for_display(goal: &str, plan: &AgentReplyPlanV1) -> String {
     let goal = goal.trim();

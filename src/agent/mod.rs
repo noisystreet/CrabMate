@@ -22,7 +22,6 @@ mod plan_optimizer;
 pub mod reflection;
 /// 分阶段 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
 pub(crate) mod step_executor_policy;
-pub use crabmate_agent::step_verifier;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
 pub mod tiktoken_prompt_tokens;
 pub use crabmate_workflow as workflow;

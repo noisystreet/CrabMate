@@ -10,5 +10,5 @@ pub(crate) mod user {
 
 pub(crate) use at_turn_start as intent_at_turn_start;
 #[allow(unused_imports)]
-pub(crate) use crabmate_agent::agent_turn::intent::{advisory_bypass, readonly_overview_bypass};
+pub(crate) use crabmate_agent::agent_turn::intent::readonly_overview_bypass;
 pub(crate) use user as intent_user;

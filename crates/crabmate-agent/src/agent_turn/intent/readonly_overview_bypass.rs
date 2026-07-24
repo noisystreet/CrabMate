@@ -4,7 +4,68 @@
 use crate::intent_pipeline::{IntentAction, IntentDecision};
 use crate::intent_router::{qa_explain_style_primary, qa_readonly_style_primary};
 
-use super::advisory_bypass;
+const DEFAULT_IMPL_STRENGTH: &[&str] = &[
+    "请修改",
+    "请实现",
+    "请添加",
+    "请删除",
+    "帮我改",
+    "帮我写",
+    "帮我删",
+    "直接改",
+    "直接写",
+    "运行 cargo",
+    "cargo test",
+    "cargo build",
+    "cargo fmt",
+    "提交",
+    "开 pr",
+    "pull request",
+    "cherry-pick",
+    "rebase",
+    "fix bug",
+    "implement ",
+    "add feature",
+    "apply_patch",
+];
+
+const DEFAULT_CONSULT: &[&str] = &[
+    "哪里",
+    "哪些",
+    "如何",
+    "怎么",
+    "建议",
+    "分析",
+    "说明",
+    "介绍",
+    "严重",
+    "痛点",
+    "值得",
+    "要不要",
+    "哪些方面",
+    "有何问题",
+    "什么问题",
+    "where ",
+    "what parts",
+    "which areas",
+    "how should",
+    "suggest",
+    "recommend",
+];
+
+#[inline]
+fn contains_any(lower: &str, defaults: &[&str], extras: &[&str]) -> bool {
+    defaults.iter().any(|k| lower.contains(k))
+        || extras.iter().any(|k| !k.is_empty() && lower.contains(k))
+}
+
+fn task_has_impl_strength_markers(lower: &str, extra_blockers: &[&str]) -> bool {
+    contains_any(lower, DEFAULT_IMPL_STRENGTH, extra_blockers)
+}
+
+fn task_has_consult_markers(lower: &str, extra_markers: &[&str]) -> bool {
+    contains_any(lower, DEFAULT_CONSULT, extra_markers)
+}
 
 const OVERVIEW_SCOPE_MARKERS: &[&str] = &[
     "项目",
@@ -36,10 +97,10 @@ pub fn readonly_overview_task_heuristic(task: &str) -> bool {
     if lower.is_empty() {
         return false;
     }
-    if advisory_bypass::task_has_impl_strength_markers(&lower, &[]) {
+    if task_has_impl_strength_markers(&lower, &[]) {
         return false;
     }
-    let has_consult = advisory_bypass::task_has_consult_markers(&lower, &[]);
+    let has_consult = task_has_consult_markers(&lower, &[]);
     let has_scope = OVERVIEW_SCOPE_MARKERS.iter().any(|m| lower.contains(m));
     has_consult && has_scope
 }
@@ -53,7 +114,7 @@ pub fn should_bypass_staged_for_readonly_overview_execute(
         return false;
     }
     let lower = task.trim().to_lowercase();
-    if advisory_bypass::task_has_impl_strength_markers(&lower, &[]) {
+    if task_has_impl_strength_markers(&lower, &[]) {
         return false;
     }
     if readonly_overview_style_primary(decision.primary_intent.as_str()) {

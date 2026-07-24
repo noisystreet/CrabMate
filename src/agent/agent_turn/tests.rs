@@ -129,7 +129,6 @@ mod per_reflect_tests {
             reflection_default_max_rounds: 5,
             final_plan_policy: FinalPlanRequirementMode::Never,
             plan_rewrite_max_attempts: 3,
-            staged_plan_patch_max_attempts_config: 2,
             final_plan_require_strict_workflow_node_coverage: false,
             final_plan_semantic_check_enabled: false,
             final_plan_semantic_check_max_non_readonly_tools: 0,
