@@ -294,7 +294,11 @@ fn insert_tool_row(
     }
 }
 
-/// 结束 loading 行：直接移除（Phase 9 正文由投影行管理，loading 行仅作 preview 占位）。
+/// 结束 loading 行：清除 loading 状态，保留行作为普通 assistant 消息。
+///
+/// 无工具多轮场景中，`rotate_followup_model_round` 经 `finalize_loading_segment`
+/// 调用此函数。若直接删除行，且无 BATCH_NARRATION_ROW 保存内容，则上一轮内容丢失。
+/// 改为保留行并清除 `state`，后续 `on_done` 中的 dedup 会清理多余行。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
         return;
@@ -303,7 +307,14 @@ fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if m.role != "assistant" || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
         return;
     }
-    messages.remove(idx);
+    let content_saved = !m.text.trim().is_empty() || !m.reasoning_text.trim().is_empty();
+    if content_saved {
+        // 有实际内容：保留行，仅清除 loading 状态
+        messages[idx].state = None;
+    } else {
+        // 空 loading 行：直接移除（正常工具场景）
+        messages.remove(idx);
+    }
 }
 
 fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &str) {

@@ -228,10 +228,15 @@ fn finalize_loading_row_at_removes_row_with_text() {
     finalize_loading_row_at(&mut msgs, 1);
     assert_eq!(
         msgs.len(),
-        1,
-        "loading row with text must be removed (text is in projection rows)"
+        2,
+        "loading row with text must be kept (finalized, not removed; on_done dedup handles duplicate projection rows)"
     );
-    assert_eq!(msgs[0].id, "u1");
+    assert_eq!(msgs[1].id, "a_load");
+    assert!(
+        msgs[1].state.is_none(),
+        "loading state must be cleared after finalize"
+    );
+    assert_eq!(msgs[1].text, "流式正文预览", "text must be preserved");
 }
 
 #[test]
