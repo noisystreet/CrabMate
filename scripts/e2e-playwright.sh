@@ -99,7 +99,7 @@ echo ""
 
 (
     cd "$E2E_DIR"
-    no_proxy=127.0.0.1,localhost npx playwright test "$@"
+    CRABMATE_PORT="$PORT" no_proxy=127.0.0.1,localhost npx playwright test "$@"
 ) || EXIT_CODE=$?
 
 if [[ $EXIT_CODE -eq 0 ]]; then
