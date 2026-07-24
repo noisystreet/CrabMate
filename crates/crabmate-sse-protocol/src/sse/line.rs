@@ -134,13 +134,6 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 // TUI 聊天区分隔线已随 `messages` 全量同步，勿再追加。
                 return AgentLineKind::Ignore;
             }
-            super::protocol::SsePayload::StagedPlanStarted { .. }
-            | super::protocol::SsePayload::StagedPlanStepStarted { .. }
-            | super::protocol::SsePayload::StagedPlanStepFinished { .. }
-            | super::protocol::SsePayload::StagedPlanFinished { .. } => {
-                // 结构化分步事件当前由 Web 侧优先消费；TUI 继续使用 staged_plan_notice 队列文本。
-                return AgentLineKind::Ignore;
-            }
             super::protocol::SsePayload::PlanRequired { .. } => {
                 return AgentLineKind::Ignore;
             }

@@ -1,8 +1,6 @@
 //! 角色正文管道的共用片段（剥前缀、用户过滤、层级子目标裁剪）。
 
-use crabmate_display_rules::{
-    STAGED_PLAN_SYSTEM_COACH_PREFIX, user_message_should_hide_for_chat_display,
-};
+use crabmate_display_rules::user_message_should_hide_for_chat_display;
 
 use crate::i18n::Locale;
 use crate::message_format::display::plan_fence::assistant_text_for_display;
@@ -38,7 +36,7 @@ fn text_has_leading_ordinal_prefix(s: &str) -> bool {
 /// 剥除 `### 分阶段规划 · …` 首行；返回 `(展示用序号, 剩余正文)`；不匹配则 `None`。
 fn strip_staged_plan_system_coach_header(body_after_timeline: &str) -> Option<(usize, &str)> {
     let trimmed = body_after_timeline.trim_start();
-    if !trimmed.starts_with(STAGED_PLAN_SYSTEM_COACH_PREFIX) {
+    if !trimmed.starts_with("### 分阶段规划 ·") {
         return None;
     }
     let first_nl = trimmed.find('\n').unwrap_or(trimmed.len());

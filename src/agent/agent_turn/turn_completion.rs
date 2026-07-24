@@ -13,6 +13,9 @@ pub(crate) use turn_completion_decision::{
 
 pub(crate) use super::completion_suppression::redundant_tool_names_for_log;
 
+/// 外循环构建空转纠偏 user 首行。
+const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
+
 #[cfg(test)]
 #[allow(unused_imports)]
 pub(crate) use super::completion_suppression::{
@@ -88,7 +91,7 @@ pub(crate) fn outer_loop_missing_final_answer_feedback_body() -> String {
     format!(
         "{prefix}本轮工具已执行并产生结果，但助手终答为空或过短。请基于**当前对话与工具输出**，用自然语言向用户给出完整终答：\
          说明已完成什么、关键结果/路径/命令输出摘要，以及若仍有未完成项请明确列出。**禁止**再发起无必要的 tool_calls。",
-        prefix = crabmate_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
+        prefix = OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
     )
 }
 

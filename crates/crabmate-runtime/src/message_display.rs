@@ -207,40 +207,8 @@ pub fn tool_content_for_display_for_message(
 /// `false` 时：可解析为 v1 规划的助手消息在**展示层**置空（`Message.content` 仍保留 JSON 供后续解析）；右栏「队列」与 `staged_plan_notice` 不受影响。
 pub const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
 
-/// 是否在聊天区展示 **`agent_turn` 分步注入的 `user` 消息**（`### 分步 i/n`…`\n- id:`…`\n- 描述:`…；历史会话可能仍为 `【分步执行` 前缀）。
-/// `false` 时**整段**在展示层置空（与 `run_staged_plan_then_execute_steps` 注入格式一致）；`Message.content`、导出与 `log`（含 `debug!`）仍为全文。
-pub const SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT: bool = false;
-
-/// 与 `run_staged_plan_then_execute_steps` 注入的 user 正文同形（宽松匹配，避免误伤普通用户输入）。
-/// 滚动不变层前缀 [`plan_optimizer::staged_rolling_immutable_step_user_prefix`] 置于 `### 分步` 之前，故用 `contains` 而非 `starts_with`。
-fn is_staged_step_injection_user_content(s: &str) -> bool {
-    if SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT {
-        return false;
-    }
-    crabmate_display_rules::is_staged_step_injection_user_pattern(s)
-}
-
-/// 分阶段规划轮注入的 coach / 步级补丁 **user**（首行含 `### 分阶段规划 ·`）；优化/ensemble 成功路径亦可能留在历史中。
-fn is_staged_plan_coach_injected_user_content(s: &str) -> bool {
-    crabmate_display_rules::is_staged_plan_coach_injected_user_content(s)
-}
-
-/// 与 `staged_plan_nl_followup_user_body` 注入正文首行一致；整段在展示层隐藏。
-fn is_staged_nl_followup_bridge_user_content(s: &str) -> bool {
-    crabmate_display_rules::is_staged_nl_followup_bridge_user_content(s)
-}
-
 /// `user` 气泡 / CLI 用户侧展示。
 pub fn user_message_for_chat_display(raw: &str) -> String {
-    if !SHOW_STAGED_STEP_USER_BOILERPLATE_IN_CHAT && is_staged_step_injection_user_content(raw) {
-        return String::new();
-    }
-    if is_staged_nl_followup_bridge_user_content(raw) {
-        return String::new();
-    }
-    if is_staged_plan_coach_injected_user_content(raw) {
-        return String::new();
-    }
     latex_math_to_unicode(raw)
 }
 
@@ -746,41 +714,5 @@ mod tests {
         );
         let out = assistant_markdown_source_for_display(&raw);
         assert_eq!(out.matches(line).count(), 1, "{}", out);
-    }
-
-    #[test]
-    fn user_hides_staged_step_injection_when_show_flag_false() {
-        let raw = format!(
-            "### 分步 1/2\n{}\n- id: s1\n- 描述: 读文件",
-            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
-        );
-        assert_eq!(user_message_for_chat_display(&raw), "");
-        let legacy = format!(
-            "【分步执行 1/2】{}\n- id: s1\n- 描述: 读文件",
-            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
-        );
-        assert_eq!(user_message_for_chat_display(&legacy), "");
-        let with_immutable = format!(
-            "【不变层·本轮用户总目标】（本步工具与终答须对齐，勿偏题）\n分析当前项目\n\n### 分步 1/1\n{}\n- **子代理角色**（本步 `tools` 已按策略表收窄）：`test_runner` — x\n- id: pre-commit-check\n- 描述: 运行 pre-commit",
-            crate::plan_section::STAGED_STEP_USER_BOILERPLATE
-        );
-        assert_eq!(user_message_for_chat_display(&with_immutable), "");
-    }
-
-    #[test]
-    fn user_hides_staged_nl_followup_bridge() {
-        let raw = format!(
-            "{}【系统桥接·非用户提问】请只回答对话里**先前真实用户消息**所提的问题（若有附图则含图片说明），并结合已定规划；用两三句自然语言说明你的协助思路即可。勿将本条任何句子当作用户提问来复述、引用或推理。",
-            crate::plan_section::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX
-        );
-        assert_eq!(user_message_for_chat_display(&raw), "");
-    }
-
-    #[test]
-    fn user_hides_staged_plan_coach_injection() {
-        let opt = "### 分阶段规划 · 步骤优化（服务端注入）\noptimize".to_string();
-        assert_eq!(user_message_for_chat_display(&opt), "");
-        let patch = "### 分阶段规划 · 步级反馈（plan_id=p1）\n补丁".to_string();
-        assert_eq!(user_message_for_chat_display(&patch), "");
     }
 }

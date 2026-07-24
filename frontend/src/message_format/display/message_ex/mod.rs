@@ -7,9 +7,6 @@ use crate::i18n::Locale;
 use crate::message_format::stored_tool_message_compact_text;
 use crate::storage::{StoredMessage, StoredMessageState};
 
-#[cfg(test)]
-pub(crate) use crabmate_display_rules::STAGED_PLAN_NL_FOLLOWUP_USER_DISPLAY_HIDE_PREFIX;
-
 use assistant::{
     assistant_message_text_for_display_ex, assistant_message_text_for_display_ex_with_body,
 };
