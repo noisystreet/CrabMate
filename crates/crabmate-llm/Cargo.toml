@@ -15,9 +15,9 @@ reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-tokio = { version = "1", default-features = false, features = ["sync", "time", "fs"] }
+tokio = { workspace = true, features = ["sync", "time", "fs"] }
 
 [dev-dependencies]
 crabmate-config = { workspace = true }
 tempfile = { workspace = true }
-tokio = { version = "1", default-features = false, features = ["sync", "time", "fs", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["sync", "time", "fs", "macros", "rt-multi-thread"] }
