@@ -618,12 +618,12 @@ mod tests {
     }
 
     #[test]
-    fn assistant_hides_staged_plan_v1_when_show_flag_false() {
+    fn assistant_formats_agent_reply_plan_v1_for_display() {
         let raw =
             r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"a","description":"do"}]}"#;
         let out = assistant_markdown_source_for_display(raw);
-        assert!(out.contains("已生成分阶段规划"));
-        assert!(out.contains("共 1 步"));
+        assert!(out.contains("1. `a`: do"));
+        assert!(!out.contains("agent_reply_plan"));
     }
 
     #[test]
