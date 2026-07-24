@@ -19,10 +19,9 @@ use std::io::{self, Write};
 #[allow(unused_imports)]
 pub(crate) use terminal_cli_transcript_impl::{
     echo_tool_result_transcript, list_tree_result_terminal_summary,
-    print_cli_playbook_healing_hint, print_staged_plan_notice, print_tool_result_terminal,
-    read_dir_result_terminal_summary, read_file_result_terminal_summary,
-    rust_file_outline_result_terminal_short, search_in_files_result_terminal_short,
-    tool_result_header_detail,
+    print_cli_playbook_healing_hint, print_tool_result_terminal, read_dir_result_terminal_summary,
+    read_file_result_terminal_summary, rust_file_outline_result_terminal_short,
+    search_in_files_result_terminal_short, tool_result_header_detail,
 };
 
 /// CLI 回合收尾提示：统一展示终止原因（同源于 `StreamEndReason`），便于与 Web/TUI 对齐排障。

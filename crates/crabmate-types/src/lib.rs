@@ -61,7 +61,6 @@ mod message;
 mod message_lineage;
 mod real_user_message;
 pub mod server_injected_user;
-mod staged_step_window;
 mod tiktoken_snapshot;
 
 pub mod path_utils;
@@ -75,14 +74,7 @@ pub use real_user_message::{
     last_real_user_task_content, messages_slice_since_last_real_user,
 };
 pub use server_injected_user::{
-    is_ephemeral_staged_coach_user_message, is_server_injected_user_message,
-    strip_orchestration_injected_users_for_conversation_store,
-};
-pub use staged_step_window::{
-    is_staged_step_injection_user_message, is_staged_step_window_boundary_user,
-    last_staged_step_injection_index, staged_step_episode_end_exclusive,
-    staged_step_window_end_exclusive, tool_messages_in_staged_step_episode,
-    tool_messages_in_staged_step_window,
+    is_server_injected_user_message, strip_orchestration_injected_users_for_conversation_store,
 };
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
@@ -96,13 +88,12 @@ mod server_injected_user_store_tests {
     fn strip_orchestration_injected_users_keeps_real_user_and_workspace_profile() {
         let mut v = vec![
             Message::user_only("真实用户"),
-            Message::user_staged_step_injection("### 分步 1/1\n- id: a\n- 描述: b"),
             Message::user_plan_rewrite_injection("你的最终回答缺少**结构化规划**"),
             Message::user_first_turn_workspace_context("工作区画像"),
             Message::assistant_only("ok"),
         ];
         strip_orchestration_injected_users_for_conversation_store(&mut v);
-        assert_eq!(v.len(), 3);
+        assert_eq!(v.len(), 2);
         assert!(v.iter().any(|m| {
             message_content_as_str(&m.content).is_some_and(|c| c.contains("真实用户"))
         }));
@@ -155,26 +146,8 @@ mod api_messages_strip_tests {
         let cases: Vec<(Message, bool)> = vec![
             (plain.clone(), true),
             (
-                Message::user_staged_step_injection("### 分步 1/2\n- id: s1\n- 描述: 运行检查"),
-                false,
-            ),
-            (
-                Message::user_staged_orchestration_injection(format!(
-                    "{}\n请优化",
-                    crabmate_display_rules::STAGED_PLAN_OPTIMIZER_COACH_MARK
-                )),
-                false,
-            ),
-            (
                 Message::user_plan_rewrite_injection(
                     "你的最终回答缺少**结构化规划**。请加入 agent_reply_plan JSON",
-                ),
-                false,
-            ),
-            (
-                Message::user_server_injection(
-                    CRABMATE_STAGED_PATCH_FEEDBACK_NAME,
-                    "### 分阶段规划 · 步级反馈（plan_id=x）\n补丁",
                 ),
                 false,
             ),

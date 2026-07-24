@@ -18,9 +18,7 @@ use std::io::{self, Write};
 
 use super::strip_redundant_tool_summary_prefix;
 use crate::runtime::latex_unicode::latex_math_to_unicode;
-use crate::runtime::message_display::{
-    tool_content_for_display_full, user_message_for_chat_display,
-};
+use crate::runtime::message_display::tool_content_for_display_full;
 
 /// CLI 工具标题中，工具名与详情之间统一使用 **` : `**；若 `detail` 已以 `:` 开头（如去重后的 `: path`）则不再插入第二个冒号。
 fn terminal_tool_title_suffix_after_name(detail: &str) -> Option<String> {
@@ -64,65 +62,6 @@ pub(crate) fn tool_result_header_detail(args: &str, summary: Option<&str>) -> Op
     } else {
         Some(single_line)
     }
-}
-
-fn write_staged_plan_title_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
-    if color {
-        queue!(
-            w,
-            SetAttribute(Attribute::Bold),
-            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
-        )?;
-    }
-    writeln!(w, "{t}")?;
-    if color {
-        queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
-    }
-    Ok(())
-}
-
-fn write_staged_plan_desc_line(w: &mut io::Stdout, color: bool, t: &str) -> io::Result<()> {
-    if color {
-        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
-        writeln!(w, "{t}")?;
-        queue!(w, ResetColor)?;
-    } else {
-        writeln!(w, "{t}")?;
-    }
-    Ok(())
-}
-
-/// 与 TUI 聊天区展示一致：正文经 **`user_message_for_chat_display`**（含分步注入 user 长句压缩、LaTeX），再按行打印到 stdout。
-///
-/// `clear_before` 时先空一行，并对**首条非空行**加粗 + [`CLI_REPL_HELP_TITLE_FG`]（与 **`/help`** 节标题同级）；其余非空行用 [`CLI_REPL_HELP_DESC_FG`]。
-pub(crate) fn print_staged_plan_notice(clear_before: bool, text: &str) -> io::Result<()> {
-    let display = user_message_for_chat_display(text);
-    debug!(
-        target: "crabmate::print",
-        "CLI 打印分阶段规划通知 clear_before={} text_len={} text_preview={}",
-        clear_before,
-        display.len(),
-        redact::preview_chars(&display, redact::MESSAGE_LOG_PREVIEW_CHARS)
-    );
-    let mut w = io::stdout();
-    let color = cli_repl_stdout_use_color();
-    if clear_before {
-        writeln!(w)?;
-    }
-    let mut highlight_first_nonempty = clear_before;
-    for line in display.lines() {
-        let t = line.trim_end();
-        if t.is_empty() {
-            continue;
-        }
-        if highlight_first_nonempty {
-            highlight_first_nonempty = false;
-            write_staged_plan_title_line(&mut w, color, t)?;
-        } else {
-            write_staged_plan_desc_line(&mut w, color, t)?;
-        }
-    }
-    w.flush()
 }
 
 const PLAYBOOK_HINT_SNIPPET_MAX: usize = 12_000;
