@@ -79,11 +79,22 @@ mod tests {
     use crate::{CRABMATE_LONG_TERM_MEMORY_NAME, Message};
 
     #[test]
+    fn skips_orchestration_correction_user_for_last_real_user() {
+        let msgs = vec![
+            Message::user_only("编译 hpcg"),
+            Message::user_only("【编排纠偏】请实际执行 make"),
+        ];
+        assert_eq!(last_real_user_task_content(&msgs, false), Some("编译 hpcg"));
+        assert_eq!(last_real_user_message_index(&msgs, false), Some(0));
+    }
+
+    #[test]
     fn slice_since_last_real_user_ignores_trailing_injection() {
         let msgs = vec![
             Message::user_only("分析目录"),
             Message::assistant_only("完成"),
             Message::user_only("编译 hpcg"),
+            Message::user_only("【编排纠偏】继续构建"),
             Message::assistant_only("好的"),
         ];
         let window = messages_slice_since_last_real_user(&msgs, false).expect("window");

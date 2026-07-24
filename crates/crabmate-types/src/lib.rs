@@ -93,7 +93,7 @@ mod server_injected_user_store_tests {
             Message::assistant_only("ok"),
         ];
         strip_orchestration_injected_users_for_conversation_store(&mut v);
-        assert_eq!(v.len(), 2);
+        assert_eq!(v.len(), 3);
         assert!(v.iter().any(|m| {
             message_content_as_str(&m.content).is_some_and(|c| c.contains("真实用户"))
         }));
