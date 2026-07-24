@@ -151,10 +151,6 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
             custom_type: "plan_required".into(),
             data: serde_json::json!({"required": true}),
         },
-        SsePayload::StagedPlanNotice { text, clear_before } => AgUiEvent::Custom {
-            custom_type: "staged_plan_notice".into(),
-            data: serde_json::json!({"text": text, "clearBefore": clear_before}),
-        },
         SsePayload::ChatUiSeparator { short } => AgUiEvent::Custom {
             custom_type: "chat_ui_separator".into(),
             data: serde_json::json!({"short": short}),

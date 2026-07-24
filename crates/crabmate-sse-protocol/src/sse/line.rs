@@ -35,11 +35,6 @@ pub enum AgentLineKind {
         error_preview: Option<String>,
         code: Option<String>,
     },
-    /// 分阶段规划摘要（仅 TUI 队列页/状态栏使用；Web 忽略）
-    StagedPlanNotice {
-        text: String,
-        clear_before: bool,
-    },
     StreamEnded {
         reason: StreamEndReason,
     },
@@ -61,7 +56,6 @@ impl AgentLineKind {
             AgentLineKind::CommandApproval { .. } => "command_approval",
             AgentLineKind::ToolResult { .. } => "tool_result",
             AgentLineKind::StreamError { .. } => "stream_error",
-            AgentLineKind::StagedPlanNotice { .. } => "staged_plan_notice",
             AgentLineKind::StreamEnded { .. } => "stream_ended",
             AgentLineKind::Ignore => "ignore",
             AgentLineKind::Plain => "plain",
@@ -126,9 +120,6 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                     error_preview: summarize_stream_error(&body.error),
                     code: body.code,
                 };
-            }
-            super::protocol::SsePayload::StagedPlanNotice { text, clear_before } => {
-                return AgentLineKind::StagedPlanNotice { text, clear_before };
             }
             super::protocol::SsePayload::ChatUiSeparator { .. } => {
                 // TUI 聊天区分隔线已随 `messages` 全量同步，勿再追加。

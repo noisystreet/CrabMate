@@ -65,14 +65,6 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
                 "结束"
             }
         )),
-        SsePayload::StagedPlanNotice { text, clear_before } => {
-            let head = text.lines().next().unwrap_or("");
-            Some(format!(
-                "· 规划 {}{}",
-                if *clear_before { "[清空] " } else { "" },
-                truncate_chars_with_ellipsis(head, 200)
-            ))
-        }
         SsePayload::TimelineLog { log } => Some(format!(
             "· {} {}",
             log.kind,

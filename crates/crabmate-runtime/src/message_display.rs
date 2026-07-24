@@ -7,8 +7,8 @@ use std::sync::LazyLock;
 use crate::latex_unicode::latex_math_to_unicode;
 use crate::message_display_parts::tool_display_from_normalized_envelope;
 use crabmate_agent::plan_artifact::{
-    augment_agent_reply_plan_goal_for_display, fenced_body_after_optional_jsonish_lang_label,
-    format_agent_reply_plan_for_display, parse_agent_reply_plan_v1, prose_before_first_fence,
+    fenced_body_after_optional_jsonish_lang_label, format_agent_reply_plan_for_display,
+    parse_agent_reply_plan_v1, prose_before_first_fence,
     strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crabmate_tools::tool_result::{ToolResult, normalize_tool_message_content};
@@ -203,10 +203,6 @@ pub fn tool_content_for_display_for_message(
 
 // --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（与 TUI / CLI `terminal_render_agent_markdown` 共用）---
 
-/// 是否在助手气泡 / CLI 终端中展示「分阶段规划轮」产出的 `agent_reply_plan` 正文（可读化后的列表等）。
-/// `false` 时：可解析为 v1 规划的助手消息在**展示层**置空（`Message.content` 仍保留 JSON 供后续解析）；右栏「队列」与 `staged_plan_notice` 不受影响。
-pub const SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT: bool = false;
-
 /// `user` 气泡 / CLI 用户侧展示。
 pub fn user_message_for_chat_display(raw: &str) -> String {
     latex_math_to_unicode(raw)
@@ -389,7 +385,7 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let raw = prose_before_first_fence(stripped);
     // 与 `preprocess_unfenced_assistant_prose_dedup` 在「围栏前段落」上的 dedupe 对齐，避免流式与收齐后开场白不一致。
     let raw = crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(&raw);
-    // 与收齐后 `staged_plan_hidden_chat_prose_only` 一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
+    // 与收齐后展示路径一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
     let prose_t = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
     let prose_t = prose_t.trim();
     if prose_t.is_empty() {
@@ -399,59 +395,21 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     }
 }
 
-/// TUI 状态栏：取 `staged_plan_notice` 首条**非占位**非空行（截断）；若无非占位行则空串（调用方回退仅模型名）。
-/// 主聊天区隐藏 v1 规划列表时：
-/// - 若围栏前有自然语言开场白，优先展示开场白（避免首句被覆盖）；
-/// - 若只有纯 JSON，回退固定短提示（避免消息消失）。
-fn staged_plan_hidden_chat_prose_only(original: &str) -> String {
-    if let Ok(plan) = parse_agent_reply_plan_v1(original) {
-        let raw_goal = prose_before_first_fence(original);
-        let goal = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
-        let merged = augment_agent_reply_plan_goal_for_display(goal.trim(), &plan);
-        let merged = merged.trim();
-        if merged.is_empty() {
-            format!("已生成分阶段规划（共 {} 步）。", plan.steps.len())
-        } else {
-            latex_math_to_unicode(merged)
-        }
-    } else {
-        // 兜底：无法解析时沿用原有“围栏前自然语言”展示逻辑。
-        let raw_goal = prose_before_first_fence(original);
-        let goal = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw_goal);
-        let goal_t = goal.trim();
-        if goal_t.is_empty() {
-            String::new()
-        } else {
-            latex_math_to_unicode(goal_t)
-        }
-    }
-}
-
 /// 剥标签后的助手正文：可读化规划、去围栏、LaTeX（**非流式**完整处理）。
 fn assistant_markdown_from_stripped(stripped: &str) -> String {
-    if SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT {
-        let display =
-            format_agent_reply_plan_for_display(stripped).unwrap_or_else(|| stripped.to_string());
+    if let Some(display) = format_agent_reply_plan_for_display(stripped) {
         return latex_math_to_unicode(&display);
-    }
-    if parse_agent_reply_plan_v1(stripped).is_ok() {
-        return staged_plan_hidden_chat_prose_only(stripped);
     }
     let without_fences = strip_agent_reply_plan_fence_blocks_for_display(stripped);
     let trimmed = without_fences.trim();
     if trimmed.is_empty() {
         return String::new();
     }
-    if parse_agent_reply_plan_v1(trimmed).is_ok() {
-        return staged_plan_hidden_chat_prose_only(stripped);
-    }
     let display = format_agent_reply_plan_for_display(&without_fences).unwrap_or(without_fences);
     latex_math_to_unicode(&display)
 }
 
 /// 助手气泡 / CLI ANSI / 导出共用：剥标签 → `agent_reply_plan` 可读化 → LaTeX。
-/// `SHOW_STAGED_PLAN_PHASE_ASSISTANT_IN_CHAT` 为 `false` 时：可解析为 v1 规划 → 不展示列表/JSON，
-/// 优先展示围栏前开场白；纯 JSON 时回退固定短提示，避免消息隐藏。
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
@@ -487,8 +445,8 @@ pub fn assistant_raw_markdown_body_from_parts(reasoning: &str, content: &str) ->
     let r = reasoning.trim();
     let c = content.trim();
     match (r.is_empty(), c.is_empty()) {
-        (false, false) => format!("### 思考过程\n\n{r}\n\n---\n\n{c}"),
-        (false, true) => format!("### 思考过程\n\n{r}"),
+        (false, false) => format!("#\u{0023}# 思考过程\n\n{r}\n\n---\n\n{c}"),
+        (false, true) => format!("#\u{0023}# 思考过程\n\n{r}"),
         (true, false) => c.to_string(),
         (true, true) => String::new(),
     }

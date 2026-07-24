@@ -23,8 +23,6 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         "command_approval_request",
         "clarification_questionnaire",
         "assistant_answer_phase",
-        "staged_plan_step_started",
-        "staged_plan_step_finished",
         "turn_segment_start",
         "turn_segment_end",
         "tool_call",
@@ -33,9 +31,6 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         "timeline_log",
         "thinking_trace",
         "conversation_saved",
-        "staged_plan_started",
-        "staged_plan_finished",
-        "staged_plan_notice",
         "sse_capabilities",
     ];
     for key in NON_NULL_KEYS {

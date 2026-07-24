@@ -42,7 +42,7 @@ pub fn messages_slice_since_last_real_user(
     Some(&messages[idx..])
 }
 
-/// 自后向前：最后一条真实 user 的正文（与分阶段 `staged_plan_trigger_user_content` 对齐）。
+/// 自后向前：最后一条真实 user 的正文。
 #[must_use]
 pub fn last_real_user_task_content(
     messages: &[Message],
