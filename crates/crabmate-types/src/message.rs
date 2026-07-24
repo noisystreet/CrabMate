@@ -244,18 +244,6 @@ pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
 /// 分阶段无工具规划轮：模型违规输出 `tool_calls` 后的一次性重写约束（`user.name`）；送模型，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME: &str = "crabmate_planner_tool_call_reject";
 
-/// 分阶段单步执行注入（`user.name`）；送模型，聊天区与快照过滤。
-pub const CRABMATE_STAGED_STEP_INJECTION_NAME: &str = "crabmate_staged_step_injection";
-
-/// 分阶段规划 coach / ensemble / 优化轮等（`user.name`）。
-pub const CRABMATE_STAGED_PLAN_COACH_NAME: &str = "crabmate_staged_plan_coach";
-
-/// 两阶段 NL 展示桥接（`user.name`）。
-pub const CRABMATE_STAGED_NL_FOLLOWUP_NAME: &str = "crabmate_staged_nl_followup";
-
-/// 分阶段步失败补丁规划反馈（`user.name`）。
-pub const CRABMATE_STAGED_PATCH_FEEDBACK_NAME: &str = "crabmate_staged_patch_feedback";
-
 /// 终答 `plan_rewrite` / 侧向语义反馈（`user.name`）。
 pub const CRABMATE_PLAN_REWRITE_NAME: &str = "crabmate_plan_rewrite";
 
@@ -507,21 +495,9 @@ impl Message {
         }
     }
 
-    /// 分阶段单步执行注入。
-    pub fn user_staged_step_injection(content: impl Into<String>) -> Self {
-        Self::user_server_injection(CRABMATE_STAGED_STEP_INJECTION_NAME, content)
-    }
-
     /// 终答规划重写 / 语义反馈 user。
     pub fn user_plan_rewrite_injection(content: impl Into<String>) -> Self {
         Self::user_server_injection(CRABMATE_PLAN_REWRITE_NAME, content)
-    }
-
-    /// 分阶段路径：按正文特征选择 [`CRABMATE_STAGED_*`] `name`。
-    pub fn user_staged_orchestration_injection(content: impl Into<String>) -> Self {
-        let body = content.into();
-        let name = crate::server_injected_user::staged_injection_user_name_for_content(&body);
-        Self::user_server_injection(name, body)
     }
 
     /// 无 `tool_calls` 的 `assistant` 消息（如分阶段规划补丁合并后的 JSON 快照）。

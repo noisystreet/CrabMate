@@ -1,7 +1,4 @@
 //! 助手消息合并与「本轮用户后」UI 分隔线插入。
-//!
-//! 分阶段规划教练 / ensemble 注入的临时 **user** 弹出逻辑见 [`pop_last_staged_planner_coach_user_if_present`]（底层仅操作 `Vec`；
-//! 回合侧请用 [`super::params::RunLoopTurnState::pop_last_staged_planner_coach_user_if_present`] 以同步 **`messages_revision`**）。
 
 use crabmate_types::{Message, is_chat_ui_separator, message_content_as_str};
 
@@ -45,14 +42,5 @@ pub fn insert_separator_after_last_user_for_turn(messages: &mut Vec<Message>) {
         _ => {
             messages.push(sep);
         }
-    }
-}
-
-/// 若最后一条为分阶段 coach / NL 桥接 / ensemble 等临时 user，则弹出（取消或解析失败时避免孤立上下文）。
-pub fn pop_last_staged_planner_coach_user_if_present(messages: &mut Vec<Message>) {
-    if let Some(last) = messages.last()
-        && crabmate_types::is_ephemeral_staged_coach_user_message(last)
-    {
-        messages.pop();
     }
 }

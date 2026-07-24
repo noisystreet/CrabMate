@@ -3,7 +3,6 @@
 mod adapter;
 mod normalizer;
 mod parser;
-mod staged_policy;
 mod stream;
 mod strip;
 mod strip_scan;
@@ -18,11 +17,6 @@ pub use stream::StreamingDsmlContentFilter;
 pub use strip::strip_deepseek_dsml_for_display;
 #[allow(unused_imports)]
 pub use types::{DsmlMaterializePolicy, StagedDsmlHandling, StagedDsmlScanResult};
-
-pub use staged_policy::{
-    staged_first_planner_tool_call_total_after_materialize, staged_no_tools_materialized_count,
-    staged_no_tools_scan, strip_staged_planner_message_tool_calls,
-};
 
 #[cfg(test)]
 mod tests_materialize_tail;
