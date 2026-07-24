@@ -14,7 +14,7 @@ export default defineConfig({
     ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
   use: {
-    baseURL: "http://127.0.0.1:8080",
+    baseURL: `http://127.0.0.1:${process.env.CRABMATE_PORT || "8080"}`,
     headless: true,
     viewport: { width: 1280, height: 840 },
     actionTimeout: 15_000,
