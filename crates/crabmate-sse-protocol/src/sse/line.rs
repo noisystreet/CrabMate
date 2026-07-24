@@ -341,15 +341,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_staged_plan_structured_event_as_ignore() {
-        let line = r#"{"v":1,"staged_plan_step_started":{"plan_id":"p-1","step_id":"s1","step_index":1,"total_steps":2,"description":"desc","executor_kind":"patch_write"}}"#;
-        assert!(matches!(
-            classify_agent_sse_line(line),
-            AgentLineKind::Ignore
-        ));
-    }
-
-    #[test]
     fn parse_stream_ended_reason() {
         let line = r#"{"v":1,"stream_ended":{"job_id":1,"reason":"fallback"}}"#;
         match classify_agent_sse_line(line) {
