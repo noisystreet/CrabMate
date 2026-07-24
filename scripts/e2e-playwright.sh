@@ -68,6 +68,8 @@ fi
 # ---------------------------------------------------------------------------
 # 3. 启动后端
 # ---------------------------------------------------------------------------
+# E2E 测试时只输出 WARN/ERROR，避免 INFO 日志刷屏
+export RUST_LOG="${CM_E2E_RUST_LOG:-warn}"
 if [[ -n "${CRABMATE_BIN:-}" ]]; then
     echo ">>> 启动后端 (来自 CRABMATE_BIN=$CRABMATE_BIN)..."
     "$CRABMATE_BIN" serve --port "$PORT" &
