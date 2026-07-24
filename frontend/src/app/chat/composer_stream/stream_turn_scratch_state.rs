@@ -10,7 +10,7 @@
 //! | `on_assistant_answer_phase` | `on_assistant_answer_phase` | [`StreamModelOutputLane::apply_assistant_answer_phase`] |
 //! | `on_delta`（写入前） | `take_followup_rotation_pending` | 若 `true` 须先轮换尾泡（见 `callbacks::helpers`） |
 //! | 用户取消 / `on_done` 早退 | `clear_followup_pending` | 丢弃 PendingFollowup |
-//! | 工具后 / 多轮正文 | `adopt_new_assistant_tail_after_rotation` | 更新尾泡 id + `post_tool_stream_tail` |
+//! | 工具后 / 多轮正文 | `adopt_new_assistant_tail_after_rotation` | 更新尾泡 id；**`post_tool_stream_tail = false`**（新尾泡不继承 post-tool 状态） |
 //!
 //! # 单 `RefCell` 内聚
 //!
@@ -123,7 +123,11 @@ impl StreamTurnScratchState {
     pub(super) fn adopt_new_assistant_tail_after_rotation(&self, id: String) {
         let mut g = self.inner.borrow_mut();
         g.assistant_message_id = id;
-        g.post_tool_stream_tail = true;
+        // 新尾泡不应继承 post-tool 状态——若为 true 会导致后续 delta 走
+        // `apply_post_tool_plain_delta` 而非正常 commentary 路径，多轮场景中
+        // 可能引发 commentary 文本路由错误（前缀截断或合并到上一轮 batch 行）。
+        // 单测 `adopt_tail_sets_id_and_post_tool_flag` 验证此不变量。
+        g.post_tool_stream_tail = false;
         g.post_tool_final_answer_open = false;
         g.lane.reset_for_new_assistant_tail();
     }
@@ -212,9 +216,9 @@ mod tests {
         );
         s.adopt_new_assistant_tail_after_rotation("new".into());
         assert_eq!(s.clone_assistant_id(), "new");
-        assert!(s.post_tool_stream_tail_active());
+        assert!(!s.post_tool_stream_tail_active());
         assert!(
-            !TurnLayout::should_finalize_loading_when_tail_matches_final_response(
+            TurnLayout::should_finalize_loading_when_tail_matches_final_response(
                 s.post_tool_stream_tail_active()
             )
         );
