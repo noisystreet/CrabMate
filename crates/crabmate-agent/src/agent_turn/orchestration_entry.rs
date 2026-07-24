@@ -2,9 +2,6 @@
 
 use crabmate_config::AgentConfig;
 
-use super::staged_planning_gate_types::StagedPlanningGateOutcome;
-use super::turn_orchestration::NonHierarchicalTurnResolution;
-
 /// `run_agent_turn_common` 顶层分发：当前仅非分层模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnTopLevelDispatch {
@@ -43,15 +40,6 @@ pub fn resolve_turn_top_level_dispatch(_cfg: &AgentConfig) -> TurnTopLevelDispat
     TurnTopLevelDispatch::NonHierarchical
 }
 
-/// 非分层：`staged_plan_intent_gate` 结果 + 配置 → 回合阶段（与 [`NonHierarchicalTurnResolution::resolve`] 对齐）。
-#[inline]
-pub fn resolve_non_hierarchical_turn(
-    cfg: &AgentConfig,
-    staged_gate: &StagedPlanningGateOutcome,
-) -> NonHierarchicalTurnResolution {
-    NonHierarchicalTurnResolution::resolve(cfg, staged_gate)
-}
-
 /// 统一 info 日志字段，减少 `mod.rs` / `run_dispatch` / `hierarchy` 散落叙述。
 pub fn log_orchestration_transition(
     transition: TurnOrchestrationTransition,
@@ -84,8 +72,9 @@ pub fn log_orchestration_transition(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent_turn::staged_planning_gate_types::StagedPlanningDenyReason;
-    use crate::agent_turn::turn_orchestration::NonHierarchicalTurnPhase;
+    use crate::agent_turn::{
+        NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, ReActBecause,
+    };
     use crabmate_config::PlannerExecutorMode;
 
     fn cfg_with(mode: PlannerExecutorMode) -> AgentConfig {
@@ -107,14 +96,10 @@ mod tests {
     }
 
     #[test]
-    fn non_hierarchical_turn_delegates_to_turn_orchestration() {
+    fn resolve_react_returns_freeform() {
         let cfg = cfg_with(PlannerExecutorMode::SingleAgent);
-        let gate = StagedPlanningGateOutcome::Deny {
-            reason: StagedPlanningDenyReason::EmptyEffectiveTask,
-            task_preview: None,
-            intent_decision: None,
-        };
-        let r = resolve_non_hierarchical_turn(&cfg, &gate);
+        let r = NonHierarchicalTurnResolution::resolve_react(&cfg);
         assert_eq!(r.turn_phase, NonHierarchicalTurnPhase::ReAct);
+        assert_eq!(r.freeform_because, Some(ReActBecause::Freeform));
     }
 }

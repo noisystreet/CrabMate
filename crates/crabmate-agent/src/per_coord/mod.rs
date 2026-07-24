@@ -1,4 +1,4 @@
-//! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、**分阶段补丁规划累计轮次**（与前者独立）、`after_final_assistant` 分支）。
+//! 规划–执行–反思（PER）协调：**工作流反思**状态机（`prepare_workflow_execute` / `append_tool_result_and_reflection`）与 **`PerCoordinator` 回合状态**（规划需求来源、**终答 `plan_rewrite` 计数**、`after_final_assistant` 分支）。
 //! 可变回合侧字段按职责拆入 **[`per_turn_state`]**（计数 / `workflow_validate` 层缓存 / 工具失败短路表），减少顶层「一锅烩」。
 //! 终答规划 JSON 的**静态校验**、重写 user 文案组装、历史里 `workflow_validate` 扫描与侧向校验**摘要**在 [`crate::plan_rewrite`]；侧向 **LLM** 调用仍在根包 `crabmate::agent::per_plan_semantic_check`。
 //! Web 与 CLI 的 `run_agent_turn` 共用此层。
@@ -43,8 +43,6 @@ pub struct PerCoordinatorInit {
     pub reflection_default_max_rounds: usize,
     pub final_plan_policy: FinalPlanRequirementMode,
     pub plan_rewrite_max_attempts: usize,
-    /// 分阶段 **`patch_planner`** 路径下，配置项 **`staged_plan_patch_max_attempts`** 的镜像（仅用于审计/反馈文案；**不**改变 `plan_rewrite_max_attempts`）。
-    pub staged_plan_patch_max_attempts_config: usize,
     /// 为 true 时：若任一步填写 `workflow_node_id`，则须覆盖最近一次工作流工具结果中的**全部** `nodes[].id`。
     pub final_plan_require_strict_workflow_node_coverage: bool,
     /// 可选二次 LLM：对比规划 JSON 与最近工具摘要；默认 false。
@@ -60,9 +58,6 @@ impl PerCoordinatorInit {
             reflection_default_max_rounds: cfg.per_plan_policy.reflection_default_max_rounds,
             final_plan_policy: cfg.per_plan_policy.final_plan_requirement,
             plan_rewrite_max_attempts: cfg.per_plan_policy.plan_rewrite_max_attempts,
-            staged_plan_patch_max_attempts_config: cfg
-                .staged_planning
-                .staged_plan_patch_max_attempts,
             final_plan_require_strict_workflow_node_coverage: cfg
                 .per_plan_policy
                 .final_plan_require_strict_workflow_node_coverage,
@@ -107,14 +102,12 @@ pub struct PerCoordinator {
     reflection: WorkflowReflectionController,
     final_plan_policy: FinalPlanRequirementMode,
     plan_rewrite_max_attempts: usize,
-    /// 配置 **`staged_plan_patch_max_attempts`** 的镜像（供补丁反馈与 `/status` 展示；与 **`plan_rewrite_max_attempts`** 正交）。
-    staged_plan_patch_max_attempts_config: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     /// 在 [`FinalPlanRequirementMode::WorkflowReflection`] 下，由 `prepare_workflow_execute` 根据反思注入置位。
     plan_requirement_source: PlanRequirementSource,
-    /// 本回合**可变计数**（终答 `plan_rewrite` vs 分阶段补丁已成功合并轮次）；详见 [`per_turn_state::PerTurnCounters`]。
+    /// 本回合**可变计数**（终答 `plan_rewrite` 已用次数）；详见 [`per_turn_state::PerTurnCounters`]。
     pub(crate) counters: per_turn_state::PerTurnCounters,
     pub(crate) workflow_validate_cache: per_turn_state::WorkflowValidateLayerCache,
     pub(crate) repeated_tool_failures: per_turn_state::RepeatedToolFailureMemo,
@@ -128,10 +121,6 @@ mod final_plan_gate_golden;
 
 #[cfg(test)]
 impl PerCoordinator {
-    fn increment_plan_rewrite_attempts(&mut self) {
-        self.counters.plan_rewrite_attempts += 1;
-    }
-
     fn test_workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
         self.workflow_validate_layer_need(messages)
     }

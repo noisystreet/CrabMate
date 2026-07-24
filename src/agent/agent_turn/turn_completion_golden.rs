@@ -77,15 +77,6 @@ fn fixture_messages(name: &str) -> Vec<Message> {
             ),
             msg("assistant", "HPCG 编译完成成功。"),
         ],
-        "build_step_acceptance_pass" => vec![
-            Message::user_only("编译 hello"),
-            Message::user_staged_step_injection("### 分步 1/1\n- id: build\n- 描述: 构建"),
-            tool_env(
-                "run_command",
-                "退出码：0\n标准输出：\n[100%] Built target hello\n",
-            ),
-            Message::assistant_only("构建步骤完成。"),
-        ],
         other => panic!("unknown fixture: {other}"),
     }
 }

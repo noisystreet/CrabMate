@@ -109,8 +109,6 @@ pub enum RunAgentTurnError {
 pub(crate) enum AgentTurnJobOutcomeKind {
     /// 用户/协作取消（含 `Display` 串上的取消启发式）。
     UserCancelled,
-    /// 历史 **`staged_plan_invalid:`** 前缀（多为旧路径；一般不发送 SSE Error 帧）。
-    StagedPlanInvalidLegacy,
     /// 发送 **`sse_error_payload`** 的失败路径。
     FailureEmitSseError,
 }
@@ -139,8 +137,6 @@ impl RunAgentTurnError {
             || crate::agent_errors::is_user_cancelled_run_agent_error(&text)
         {
             AgentTurnJobOutcomeKind::UserCancelled
-        } else if crate::agent::plan_artifact::is_staged_plan_invalid_run_agent_turn_error(&text) {
-            AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy
         } else {
             AgentTurnJobOutcomeKind::FailureEmitSseError
         }
@@ -520,26 +516,6 @@ mod tests {
         let api = e.http_api_error();
         assert_eq!(api.code, "LLM_REQUEST_FAILED");
         assert!(api.reason_code.is_none());
-    }
-
-    #[test]
-    fn job_queue_stream_cancelled_by_signal_overrides_staged_invalid() {
-        use crate::agent::plan_artifact::{
-            PlanArtifactError, staged_plan_invalid_run_agent_turn_error,
-        };
-        let msg = staged_plan_invalid_run_agent_turn_error(PlanArtifactError::NotFound);
-        let e = RunAgentTurnError::Other {
-            phase: AgentTurnSubPhase::Planner,
-            message: msg,
-        };
-        assert_eq!(
-            e.job_queue_stream_outcome_kind(true),
-            AgentTurnJobOutcomeKind::UserCancelled
-        );
-        assert_eq!(
-            e.job_queue_stream_outcome_kind(false),
-            AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy
-        );
     }
 
     #[test]

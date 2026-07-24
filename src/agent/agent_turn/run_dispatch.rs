@@ -3,8 +3,8 @@
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 
 use crabmate_agent::agent_turn::{
-    AssessTurnRoutingParams, IntentGateSnapshot, StagedPlanningDenyReason,
-    StagedPlanningGateOutcome, TurnRouteDriver, TurnTopLevelDispatch, assess_turn_routing,
+    AssessTurnRoutingParams, IntentGateSnapshot, TurnRouteDriver, TurnTopLevelDispatch,
+    assess_turn_routing,
 };
 
 use crate::agent::per_coord::PerCoordinator;
@@ -17,15 +17,6 @@ use super::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_
 use super::orchestration_route::record_and_emit_turn_route_decision;
 use super::params::RunLoopParams;
 use super::turn_orchestration::TurnOrchestrationMode;
-
-/// 分阶段规划已移除：非分层始终返回拒绝（走 ReAct 外循环）。
-fn staged_gate_deny() -> StagedPlanningGateOutcome {
-    StagedPlanningGateOutcome::Deny {
-        reason: StagedPlanningDenyReason::OrchestrationProfileFreeform,
-        task_preview: None,
-        intent_decision: None,
-    }
-}
 
 fn intent_gate_snapshot_or_unknown(p: &RunLoopParams<'_>) -> IntentGateSnapshot {
     p.turn
@@ -40,14 +31,11 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    let deny = staged_gate_deny();
     if !intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await? {
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: p.ctx.core.cfg.as_ref(),
             top_level: TurnTopLevelDispatch::NonHierarchical,
             intent_gate: intent_gate_snapshot_or_unknown(p),
-            staged_gate: Some(&deny),
-            hierarchical_decision: None,
         });
         record_and_emit_turn_route_decision(p, &assessed.decision).await;
         tracing::info!(
@@ -62,8 +50,6 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
         cfg: p.ctx.core.cfg.as_ref(),
         top_level: TurnTopLevelDispatch::NonHierarchical,
         intent_gate: intent_gate_snapshot_or_unknown(p),
-        staged_gate: Some(&deny),
-        hierarchical_decision: None,
     });
     let entry_phase = match assessed.driver {
         TurnRouteDriver::NonHierarchical(phase) => phase,
@@ -77,13 +63,7 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     log_orchestration_transition(
         TurnOrchestrationTransition::NonHierarchicalEntryResolved,
         Some(mode),
-        &[
-            ("non_hierarchical_turn_phase", entry_phase.as_str()),
-            (
-                "freeform_because",
-                assessed.decision.freeform_because.as_deref().unwrap_or(""),
-            ),
-        ],
+        &[("non_hierarchical_turn_phase", entry_phase.as_str())],
     );
     tracing::info!(
         target: "crabmate::agent_turn",

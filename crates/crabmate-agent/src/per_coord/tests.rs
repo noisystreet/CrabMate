@@ -22,10 +22,6 @@ fn per_coordinator_init_from_agent_config_matches_cfg_fields() {
         cfg.per_plan_policy.plan_rewrite_max_attempts
     );
     assert_eq!(
-        i.staged_plan_patch_max_attempts_config,
-        cfg.staged_planning.staged_plan_patch_max_attempts
-    );
-    assert_eq!(
         i.final_plan_require_strict_workflow_node_coverage,
         cfg.per_plan_policy
             .final_plan_require_strict_workflow_node_coverage
@@ -46,7 +42,6 @@ fn pc(policy: FinalPlanRequirementMode, plan_rewrite_max: usize) -> PerCoordinat
         reflection_default_max_rounds: 5,
         final_plan_policy: policy,
         plan_rewrite_max_attempts: plan_rewrite_max,
-        staged_plan_patch_max_attempts_config: 2,
         final_plan_require_strict_workflow_node_coverage: false,
         final_plan_semantic_check_enabled: false,
         final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -442,7 +437,6 @@ fn strict_workflow_coverage_requires_all_nodes_when_any_workflow_node_id() {
         reflection_default_max_rounds: 5,
         final_plan_policy: FinalPlanRequirementMode::WorkflowReflection,
         plan_rewrite_max_attempts: 3,
-        staged_plan_patch_max_attempts_config: 2,
         final_plan_require_strict_workflow_node_coverage: true,
         final_plan_semantic_check_enabled: false,
         final_plan_semantic_check_max_non_readonly_tools: 0,
@@ -668,20 +662,6 @@ fn prepare_workflow_reflection_disabled_passes_through() {
     assert!(prep.execute);
     assert!(prep.reflection_inject.is_none());
     assert!(!c.require_plan_in_final_flag_snapshot());
-}
-
-#[test]
-fn staged_patch_planner_counter_independent_of_plan_rewrite() {
-    let mut c = pc(FinalPlanRequirementMode::Never, 2);
-    assert_eq!(c.staged_plan_patch_planner_rounds_snapshot(), 0);
-    assert_eq!(c.plan_rewrite_attempts_snapshot(), 0);
-    c.record_staged_plan_patch_planner_round_completed();
-    assert_eq!(c.staged_plan_patch_planner_rounds_snapshot(), 1);
-    c.increment_plan_rewrite_attempts();
-    assert_eq!(c.plan_rewrite_attempts_snapshot(), 1);
-    let footer = c.staged_plan_patch_vs_plan_rewrite_counters_footer();
-    assert!(footer.contains("分阶段补丁规划已成功合并轮次=1"));
-    assert!(footer.contains("plan_rewrite"));
 }
 
 #[test]

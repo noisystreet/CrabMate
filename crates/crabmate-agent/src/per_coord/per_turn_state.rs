@@ -1,7 +1,7 @@
 //! 单轮 `run_agent_turn` 内与 PER 协调相关的**可变回合状态**，从 [`super::PerCoordinator`] 顶层字段拆出，
 //! 便于一眼区分：**配置镜像 / 策略来源** vs **本回合计数** vs **派生缓存** vs **工具失败短路表**。
 //!
-//! - **[`PerTurnCounters`]**：终答 `plan_rewrite` 与分阶段补丁规划「已成功合并轮次」两套**独立**计数（见模块级注释不变量）。
+//! - **[`PerTurnCounters`]**：终答 `plan_rewrite` 已用次数。
 //! - **[`WorkflowValidateLayerCache`]**：`last_workflow_validate_layer_count` 随 `messages.len()` 的缓存；上下文裁剪后必须失效。
 //! - **[`RepeatedToolFailureMemo`]**：同轮工具失败签名 / 族短路（只读查询 + 记录清除）。
 //! - **[`SuccessfulRunCommandDedupeMemo`]**：同轮已成功构建/运行命令的结果缓存（防重复 spawn）。
@@ -11,17 +11,15 @@ use std::collections::HashMap;
 
 use crate::plan_rewrite;
 
-/// 本 `run_agent_turn` 内、与配置上限对照的两套**正交**计数器。
+/// 本 `run_agent_turn` 内、与配置上限对照的**正交**计数器。
 ///
 /// - **`plan_rewrite_attempts`**：终答路径 `agent_reply_plan` 不合格时追加重写 user 的已用次数（与 **`plan_rewrite_max_attempts`** 对照）。
-/// - **`staged_plan_patch_planner_rounds_completed`**：分阶段 **`patch_planner`** 路径下，已成功解析并合并 `steps` 的无工具轮次数（与 **`staged_plan_patch_max_attempts`** 约束的「单步失败分支内尝试」不同）。
 /// - **`outer_loop_build_idle_streak`**：L2 外循环连续「承诺构建但无 tool_calls」轮次（见 **`outer_loop_build_idle`**）。
 /// - **`outer_loop_build_idle_feedback_injected`**：已注入的构建空转纠偏 user 条数上限计数。
 /// - **`outer_loop_missing_final_answer_feedback_injected`**：已注入的终答缺失纠偏 user 条数上限计数。
 #[derive(Debug, Clone)]
 pub(crate) struct PerTurnCounters {
     pub(crate) plan_rewrite_attempts: usize,
-    pub(crate) staged_plan_patch_planner_rounds_completed: usize,
     pub(crate) outer_loop_build_idle_streak: u32,
     pub(crate) outer_loop_build_idle_feedback_injected: u32,
     pub(crate) outer_loop_missing_final_answer_feedback_injected: u32,
@@ -31,17 +29,10 @@ impl PerTurnCounters {
     pub(crate) fn new() -> Self {
         Self {
             plan_rewrite_attempts: 0,
-            staged_plan_patch_planner_rounds_completed: 0,
             outer_loop_build_idle_streak: 0,
             outer_loop_build_idle_feedback_injected: 0,
             outer_loop_missing_final_answer_feedback_injected: 0,
         }
-    }
-
-    pub(crate) fn record_staged_plan_patch_planner_round_completed(&mut self) {
-        self.staged_plan_patch_planner_rounds_completed = self
-            .staged_plan_patch_planner_rounds_completed
-            .saturating_add(1);
     }
 
     pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
@@ -230,23 +221,5 @@ impl SuccessfulRunCommandDedupeMemo {
 
     pub(crate) fn clear_all(&mut self) {
         self.outputs.clear();
-    }
-}
-
-#[cfg(test)]
-mod per_turn_state_tests {
-    use super::PerTurnCounters;
-
-    #[test]
-    fn staged_patch_round_counter_independent_of_plan_rewrite() {
-        let mut c = PerTurnCounters::new();
-        assert_eq!(c.plan_rewrite_attempts, 0);
-        assert_eq!(c.staged_plan_patch_planner_rounds_completed, 0);
-        c.record_staged_plan_patch_planner_round_completed();
-        assert_eq!(c.plan_rewrite_attempts, 0);
-        assert_eq!(c.staged_plan_patch_planner_rounds_completed, 1);
-        c.plan_rewrite_attempts += 1;
-        assert_eq!(c.plan_rewrite_attempts, 1);
-        assert_eq!(c.staged_plan_patch_planner_rounds_completed, 1);
     }
 }

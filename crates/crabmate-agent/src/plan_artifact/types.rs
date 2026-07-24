@@ -412,9 +412,6 @@ pub enum PlanArtifactError {
     },
 }
 
-/// [`staged_plan_invalid_run_agent_turn_error`] 返回串的固定前缀；供测试、`chat_job_queue` 历史分支识别（**勿**与用户输入拼接）。当前主路径在规划 JSON 无效时已降级为常规循环，一般不再产生该串。
-pub const STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX: &str = "staged_plan_invalid:";
-
 /// 供日志单行输出：`WrongType` 仅记长度与短预览，不记完整 `type` 字符串。
 pub fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
     match e {
@@ -449,20 +446,6 @@ pub fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
     }
 }
 
-/// 分阶段规划轮解析失败时的错误串（含结构化摘要）；主路径已改为降级，本函数供单测与兼容识别保留。
-#[allow(dead_code)]
-pub fn staged_plan_invalid_run_agent_turn_error(e: PlanArtifactError) -> String {
-    format!(
-        "{} {}",
-        STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX,
-        plan_artifact_error_log_summary(&e)
-    )
-}
-
-pub fn is_staged_plan_invalid_run_agent_turn_error(msg: &str) -> bool {
-    msg.starts_with(STAGED_PLAN_INVALID_RUN_AGENT_TURN_ERROR_PREFIX)
-}
-
 /// Plan v1 的 schema 规则描述（中文），供提示词引用。
 pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
@@ -485,91 +468,9 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 /// Plan v1 的 JSON 示例。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"verify-cargo-check","description":"在本工作区运行 cargo check 并确认通过","executor_kind":"test_runner","step_kind":"verify","max_step_retries":2,"acceptance":{"expect_exit_code":0,"expect_stdout_contains":"Finished"}}]}"#;
 
-/// 从整段 assistant `content` 中提取并校验 v1 规划（支持 \`\`\`json / \`\`\`markdown / \`\`\`md 等带语言行的围栏，或整段即为单个 JSON 对象）。
-/// 分阶段执行中：当前步工具未全部成功时，将模型返回的**补丁规划**与未完成步之后缀合并。
-/// `failed_step_index` 为**零基**（对应 `plan.steps` 下标）；补丁的 `steps` 替换自该步起的后缀。
-/// 将合法 v1 规划序列化为单行 JSON（供分阶段规划轮/补丁助手消息写入历史）。
+/// 将合法 v1 规划序列化为单行 JSON（供补丁助手消息写入历史）。
 pub fn agent_reply_plan_v1_to_json_string(
     plan: &AgentReplyPlanV1,
 ) -> Result<String, serde_json::Error> {
     serde_json::to_string(plan)
-}
-
-/// `strict_baseline_steps`：`patch_planner` 合并结果在 `[0, failed_step_index)` 上与冻结蓝图逐步 `id` 一致。
-pub fn validate_staged_patch_merged_strict_baseline_ids(
-    baseline_steps: &[PlanStepV1],
-    merged: &[PlanStepV1],
-    failed_step_index: usize,
-) -> Result<(), PlanArtifactError> {
-    for i in 0..failed_step_index {
-        let b = baseline_steps
-            .get(i)
-            .ok_or(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "staged_strict_baseline_prefix_missing",
-            })?;
-        let m = merged.get(i).ok_or(PlanArtifactError::InvalidStep {
-            index: i,
-            reason: "staged_strict_merged_prefix_missing",
-        })?;
-        if b.id.trim() != m.id.trim() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: i,
-                reason: "staged_strict_baseline_step_id_mismatch",
-            });
-        }
-    }
-    Ok(())
-}
-
-pub fn merge_staged_plan_steps_after_step_failure(
-    base: &[PlanStepV1],
-    patch: &AgentReplyPlanV1,
-    failed_step_index: usize,
-) -> Result<Vec<PlanStepV1>, PlanArtifactError> {
-    if patch.no_task {
-        return Err(PlanArtifactError::InvalidStep {
-            index: 0,
-            reason: "staged_patch_no_task",
-        });
-    }
-    if patch.steps.is_empty() {
-        return Err(PlanArtifactError::EmptySteps);
-    }
-    if failed_step_index >= base.len() {
-        return Err(PlanArtifactError::InvalidStep {
-            index: failed_step_index,
-            reason: "failed_step_index out of range",
-        });
-    }
-    let mut out = Vec::with_capacity(failed_step_index + patch.steps.len());
-    out.extend_from_slice(&base[..failed_step_index]);
-    out.extend(patch.steps.iter().cloned());
-    backfill_executor_kinds_after_staged_patch(base, &mut out, failed_step_index);
-    for step in &mut out {
-        normalize_plan_step_acceptance_in_place(step);
-    }
-    Ok(out)
-}
-
-/// 补丁规划若省略 `executor_kind`，从**同下标**原步继承（仅覆盖被替换后缀及可能对齐的前缀位），避免 `patch_planner` 合并后子代理边界静默丢失。
-fn backfill_executor_kinds_after_staged_patch(
-    base: &[PlanStepV1],
-    merged: &mut [PlanStepV1],
-    failed_step_index: usize,
-) {
-    for (i, step) in merged.iter_mut().enumerate().skip(failed_step_index) {
-        if step.executor_kind.is_none()
-            && let Some(b) = base.get(i)
-            && b.executor_kind.is_some()
-        {
-            step.executor_kind = b.executor_kind;
-            debug!(
-                target: "crabmate",
-                "staged_plan_patch_backfill_executor_kind step_index={} kind={:?}",
-                i,
-                step.executor_kind
-            );
-        }
-    }
 }

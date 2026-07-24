@@ -201,7 +201,7 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     p: &AgentReplyPlanV1,
     validate_only_binding_ids: Option<&[String]>,
 ) -> Result<(), PlanArtifactError> {
-    const STAGED_PLAN_FIXED_MAX_STEPS: usize = 1;
+    const PLAN_FIXED_MAX_STEPS: usize = 1;
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
     }
@@ -220,7 +220,7 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
     // 固定单步：默认只允许 1 步。
     // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，且存在 validate-only 绑定上下文，
     // 允许多步交由 `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
-    let workflow_bound_multi_step = p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS
+    let workflow_bound_multi_step = p.steps.len() > PLAN_FIXED_MAX_STEPS
         && p.steps.iter().all(|s| {
             s.workflow_node_id
                 .as_deref()
@@ -231,9 +231,9 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
         validate_only_binding_ids.is_some_and(|ids| !ids.is_empty());
     let allow_workflow_bound_multi_step =
         workflow_bound_multi_step && has_validate_only_binding_context;
-    if p.steps.len() > STAGED_PLAN_FIXED_MAX_STEPS && !allow_workflow_bound_multi_step {
+    if p.steps.len() > PLAN_FIXED_MAX_STEPS && !allow_workflow_bound_multi_step {
         return Err(PlanArtifactError::TooManySteps {
-            max: STAGED_PLAN_FIXED_MAX_STEPS,
+            max: PLAN_FIXED_MAX_STEPS,
             got: p.steps.len(),
         });
     }

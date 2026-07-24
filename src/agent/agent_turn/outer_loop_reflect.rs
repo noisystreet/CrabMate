@@ -49,8 +49,15 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                             OuterLoopReflectPreGateReason::BuildIdleFeedback.as_str(),
                             streak,
                         );
-                        p.turn
-                            .push_message(Message::user_staged_orchestration_injection(feedback));
+                        p.turn.push_message(Message {
+                            role: "user".to_string(),
+                            content: Some(feedback.into()),
+                            reasoning_content: None,
+                            reasoning_details: None,
+                            tool_calls: None,
+                            name: None,
+                            tool_call_id: None,
+                        });
                         per_coord.record_outer_loop_build_idle_feedback_injected();
                         if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                             f.sync_from_per_coord(per_coord);
@@ -68,8 +75,15 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
                         "outer loop pre-gate: {}",
                         OuterLoopReflectPreGateReason::MissingFinalAnswerFeedback.as_str(),
                     );
-                    p.turn
-                        .push_message(Message::user_staged_orchestration_injection(feedback));
+                    p.turn.push_message(Message {
+                        role: "user".to_string(),
+                        content: Some(feedback.into()),
+                        reasoning_content: None,
+                        reasoning_details: None,
+                        tool_calls: None,
+                        name: None,
+                        tool_call_id: None,
+                    });
                     per_coord.record_outer_loop_missing_final_answer_feedback_injected();
                     if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                         f.sync_from_per_coord(per_coord);

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use tokio::sync::oneshot;
 
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
@@ -172,14 +172,6 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                     info!(
                         target: "crabmate",
                         "chat json 任务已取消 job_id={} err_kind=cancelled {}",
-                        job_id,
-                        e.diag_log_kv(),
-                    );
-                }
-                AgentTurnJobOutcomeKind::StagedPlanInvalidLegacy => {
-                    warn!(
-                        target: "crabmate",
-                        "chat json 任务结束（分阶段规划解析失败） job_id={} err_kind=staged_plan_invalid {}",
                         job_id,
                         e.diag_log_kv(),
                     );

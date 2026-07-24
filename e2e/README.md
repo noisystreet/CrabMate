@@ -152,11 +152,11 @@ x-stream-job-id: 1
 ### 本地运行
 
 ```bash
-# 确保后端运行
-cargo run -- serve
+# 确保后端运行（如系统有 http_proxy，须排除 LLM API 域名防超时）
+no_proxy=api.deepseek.com,localhost,127.0.0.1 cargo run -- serve
 
 # 运行真实 LLM 测试
-cd e2e && npx playwright test specs/real-llm-zero-tool.spec.ts
+cd e2e && npx playwright test specs/real-llm-*.spec.ts
 ```
 
 ### 注意事项
@@ -200,5 +200,6 @@ jobs:
 | `net::ERR_CONNECTION_REFUSED` | 后端未运行 | `cargo run -- serve` |
 | 测试超时 20s+ | 状态栏卡住或 SSE mock 未生效 | 检查响应头是否包含 `x-conversation-id` |
 | `waitForFunction` timeout | 终答内容未出现 | 确认 SSE 使用 AG-UI V2 格式 |
-| proxy 干扰 | 环境变量 `http_proxy` 影响本地连接 | `no_proxy=127.0.0.1,localhost` |
+| proxy 干扰（浏览器） | 环境变量 `http_proxy` 使浏览器无法访问本地后端 | `no_proxy=127.0.0.1,localhost` |
+| proxy 干扰（后端 LLM） | 环境变量 `http_proxy` 使后端调用 LLM API 走代理超时 | 启动后端时设置 `no_proxy=api.deepseek.com,localhost,127.0.0.1`（替换为实际 `api_base` 域名） |
 | 前端 WASM 未加载 | `frontend/dist/` 未构建 | `cd frontend && trunk build` |

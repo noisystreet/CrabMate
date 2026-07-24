@@ -102,8 +102,6 @@ fn golden_turn_route_decision() {
             cfg: &cfg,
             top_level: TurnTopLevelDispatch::NonHierarchical,
             intent_gate: intent_gate.clone(),
-            staged_gate: None,
-            hierarchical_decision: None,
         });
         let decision = &assessed.decision;
 
