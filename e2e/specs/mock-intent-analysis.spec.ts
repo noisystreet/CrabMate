@@ -6,7 +6,7 @@
  *
  * 测试矩阵：
  *   1. 正向测试：SSE 含 intent_analysis → 卡片可见（前端能力验证）
- *   2. 负向测试：SSE 不含 intent_analysis → 卡片不可见（当前后端行为复现）
+ *   2. 意图分析始终执行 → 负向测试不再适用（staged plan 移除后 intent_analysis 是标准流程）
  *
  * 运行方式（前置：`cargo run -- serve` 在 127.0.0.1:8080 运行）：
  *   cd e2e && npx playwright test specs/mock-intent-analysis.spec.ts
@@ -35,16 +35,6 @@ function sseWithIntent(): string {
     `id: 2\ndata: {"type":"CUSTOM","customType":"assistant_answer_phase"}\n\n`,
     `id: 3\ndata: ${answer}\n\n`,
     `id: 4\ndata: {"type":"RUN_FINISHED"}\n\n`,
-  ].join("");
-}
-
-/** 构造不含 intent_analysis 的 SSE 流（负向=复现当前后端行为）。 */
-function sseWithoutIntent(): string {
-  const answer = "这是不带意图分析的测试回复。";
-  return [
-    `id: 1\ndata: {"type":"CUSTOM","customType":"assistant_answer_phase"}\n\n`,
-    `id: 2\ndata: ${answer}\n\n`,
-    `id: 3\ndata: {"type":"RUN_FINISHED"}\n\n`,
   ].join("");
 }
 
@@ -89,27 +79,5 @@ test.describe("意图分析卡片回归", () => {
     await expect(
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText("这是带意图分析的测试回复。", { timeout: 3000 });
-  });
-
-  test("负向（复现 Bug）：SSE 不含 intent_analysis → 卡片不可见", async ({
-    page,
-  }) => {
-    await installSseRoute(page, sseWithoutIntent());
-    await seedSession(page, SID + "_neg");
-    await sendMessage(page, "测试");
-
-    await expect(page.locator('[data-testid="status-bar"]')).toContainText(
-      "就绪",
-      { timeout: 25000 },
-    );
-
-    // 意图分析卡片不应出现
-    const scroller = page.locator('[data-testid="chat-messages-scroller"]');
-    await expect(scroller).not.toContainText("意图分析：", { timeout: 3000 });
-
-    // 终答仍然正常
-    await expect(scroller).toContainText("这是不带意图分析的测试回复。", {
-      timeout: 3000,
-    });
   });
 });

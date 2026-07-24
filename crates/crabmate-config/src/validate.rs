@@ -297,18 +297,6 @@ fn u64_range_rows_a2() -> &'static [U64RangeRow] {
             500_000,
         ),
         (
-            "staged_plan_patch_max_attempts",
-            |b| b.staged_planning.staged_plan_patch_max_attempts,
-            1,
-            16,
-        ),
-        (
-            "staged_plan_ensemble_count",
-            |b| b.staged_planning.staged_plan_ensemble_count,
-            1,
-            3,
-        ),
-        (
             "sync_default_tool_sandbox_docker_timeout_secs",
             |b| {
                 b.sync_tool_sandbox
