@@ -33,7 +33,7 @@ Web 单轮流式会话中，用户可见的 **`ChatSession.messages`** 目标顺
 [终局 assistant 答*]
 ```
 
-**v2 不可变布局**（§13）为每个已有旁注的 `tool_call_id` 发布独立 assistant 行；发布后正文、ID 与相对顺序不可再改变。v1 `turn-batch-narration` 只用于历史会话兼容识别。
+**v2 不可变布局**（§13）为每个已有旁注的 `tool_call_id` 发布独立 assistant 行；发布后正文、ID 与相对顺序不可再改变。旧 `turn-batch-narration` 仅作为普通历史 assistant 行读取，不再参与流式布局判断。
 
 **`TurnLayout`**（前端 imperative 状态机）负责 **尾泡 peel/restore、loading 插入位置、时间线插入**；  
 **`crabmate-turn-layout`**（共享 crate）负责 **与到达顺序无关** 的 canonical 归约；  
@@ -101,7 +101,7 @@ flowchart TB
 | `reduce.rs` | `reduce_event`：允许 **晚到 `SegmentDelta`** 挂到已关闭段或 `seg-before-{tool_call_id}` |
 | `project.rs` | `project_turn` → `Vec<ProjectedRow>` |
 
-**金样**：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 块布局 `project_turn_web` + stored sync）  
+**金样**：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 事件形状 + v2 stored sync）
 **测试**：`cargo test -p crabmate-turn-layout golden_turn_project` · `golden_turn_project_web` · `cd frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
@@ -197,7 +197,7 @@ TUI **`sse_mirror`** 对 `turn_segment_*` 仅 `Ignore`（不追加附录行）�
 | 命令 | 覆盖 |
 |------|------|
 | `cargo test -p crabmate-turn-layout` | reducer + `golden_turn_project` + `golden_turn_project_web` |
-| `cd frontend && cargo test --lib golden_turn_web_stored_sync` | Web v1 金样兼容 + `project_turn_web_v2` 逐旁注不可变落盘 |
+| `cd frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
 | `cargo test -p crabmate-sse-protocol golden_sse_control` | 控制面 `handled` 分类 |
 | `cd frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
 | `cd frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
@@ -414,7 +414,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
-**生产投影**：[`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs)；v1 [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs) 与 `turn-batch-narration` 暂留作兼容。
+**生产投影**：[`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs)。Web 已移除 v1 batch 特判；crate 级 [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
 
 Web `sync_turn_projection` 遍历 `assistant_commentary` 行，以 `tool_call_id` 生成稳定消息 ID，并插入对应工具之前。若同 ID 已存在则 no-op，禁止覆盖正文或重排。
 

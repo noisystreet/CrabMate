@@ -29,7 +29,7 @@ struct StreamTurnScratchInner {
     lane: StreamModelOutputLane,
     assistant_message_id: String,
     post_tool_stream_tail: bool,
-    /// 工具批结束后：false 时 plain delta 进 batch 说明；`final_response` / 分隔符 / `on_done` 拆分为 true。
+    /// 工具批结束后：false 时 plain delta 进 commentary；`final_response` / 分隔符 / `on_done` 拆分为 true。
     post_tool_final_answer_open: bool,
     pending_tool_message_ids: VecDeque<String>,
 }
@@ -125,7 +125,7 @@ impl StreamTurnScratchState {
         g.assistant_message_id = id;
         // 新尾泡不应继承 post-tool 状态——若为 true 会导致后续 delta 走
         // `apply_post_tool_plain_delta` 而非正常 commentary 路径，多轮场景中
-        // 可能引发 commentary 文本路由错误（前缀截断或合并到上一轮 batch 行）。
+        // 可能引发 commentary 文本路由错误（前缀截断或合并到上一轮 finalized 行）。
         // 单测 `adopt_tail_sets_id_and_post_tool_flag` 验证此不变量。
         g.post_tool_stream_tail = false;
         g.post_tool_final_answer_open = false;

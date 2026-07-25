@@ -54,13 +54,13 @@ fn apply_answer_body_delta(
     accum.add_answer_delta_chars(chunk.chars().count());
 }
 
-/// post-tool 形态 B：工具批结束后、终答门开前 plain delta → batch 说明；门开后 → 终答。
+/// post-tool 形态 B：工具批结束后、终答门开前 plain delta → commentary；门开后 → 终答。
 ///
 /// **热路径优化**：门转换处的 `sync_turn_projection` 保留（需将门状态落盘到 `sessions`）；
 /// 纯 commentary delta 仅走 overlay（同行 20–40 行 `apply_answer_body_delta`）。
-fn morph_b_chunk_is_standalone_final(chunk: &str, batch_len: usize) -> bool {
+fn morph_b_chunk_is_standalone_final(chunk: &str, commentary_len: usize) -> bool {
     let t = chunk.trim();
-    batch_len >= 8
+    commentary_len >= 8
         && t.len() >= 4
         && t.len() <= 200
         && !t.contains('\n')
@@ -73,7 +73,8 @@ fn apply_post_tool_plain_delta(
     chunk: &str,
 ) {
     if !stream_ctx.scratch.post_tool_final_answer_open() {
-        if morph_b_chunk_is_standalone_final(chunk, stream_ctx.scratch.batch_narration_char_len()) {
+        if morph_b_chunk_is_standalone_final(chunk, stream_ctx.scratch.closed_commentary_char_len())
+        {
             stream_ctx.scratch.open_post_tool_final_answer_gate();
             apply_answer_body_delta(stream_ctx, accum, chunk);
             stream_ctx.scratch.sync_turn_projection(stream_ctx);
@@ -81,13 +82,13 @@ fn apply_post_tool_plain_delta(
             accum.add_answer_delta_chars(chunk.chars().count());
             return;
         }
-        if let Some((batch_part, final_part)) =
+        if let Some((commentary_part, final_part)) =
             crabmate_turn_layout::try_split_combined_post_tool_answer(chunk)
         {
-            if !batch_part.is_empty() {
+            if !commentary_part.is_empty() {
                 let _ = stream_ctx
                     .scratch
-                    .try_apply_commentary_delta(batch_part.as_str());
+                    .try_apply_commentary_delta(commentary_part.as_str());
             }
             stream_ctx.scratch.open_post_tool_final_answer_gate();
             if !final_part.is_empty() {
@@ -127,7 +128,7 @@ pub(super) fn apply_chat_stream_text_delta(
     let lane = stream_ctx.scratch.current_output_lane();
     let post_tool = stream_ctx.scratch.post_tool_stream_tail_active();
 
-    // post-tool：工具批进行中 → commentary 块；结束后 → batch / 终答（形态 B 门控）。
+    // post-tool：工具批进行中 → commentary；结束后 → commentary / 终答（形态 B 门控）。
     if post_tool && lane != StreamModelOutputLane::AnsweringCommentaryBeforeTools {
         if stream_ctx.scratch.tool_phase_open() {
             apply_commentary_lane_delta(stream_ctx, chunk);
@@ -193,8 +194,8 @@ mod tests {
         let post_tool = true;
         let tool_phase_open = false;
         let final_gate_open = false;
-        let routes_to_batch = post_tool && !tool_phase_open && !final_gate_open;
-        assert!(routes_to_batch);
+        let routes_to_commentary = post_tool && !tool_phase_open && !final_gate_open;
+        assert!(routes_to_commentary);
     }
 
     #[test]
