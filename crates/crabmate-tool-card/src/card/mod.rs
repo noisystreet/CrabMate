@@ -15,7 +15,7 @@ use title_signal_dedup::{
     tool_compact_signal_paren_suffix_after_redundant_head, tool_compact_signal_redundant_with_title,
 };
 
-const COMPACT_SEPARATOR: &str = " ｜ ";
+const COMPACT_SEPARATOR: &str = " ";
 
 fn strip_leading_workspace_write_json_header(raw: &str) -> String {
     let first = raw.lines().next().map(str::trim).unwrap_or("");

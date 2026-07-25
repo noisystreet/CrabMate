@@ -3,7 +3,7 @@
 use crate::ToolCardInput;
 use crate::locale::{self, ToolCardLocale};
 
-const COMPACT_SEPARATOR: &str = " ｜ ";
+const COMPACT_SEPARATOR: &str = " ";
 
 fn join_compact_parts(left: &str, right: &str) -> String {
     format!("{left}{COMPACT_SEPARATOR}{right}")

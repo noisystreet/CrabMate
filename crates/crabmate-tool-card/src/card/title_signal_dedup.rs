@@ -14,7 +14,7 @@ fn normalize_tool_label_for_dedup(s: &str) -> String {
     mapped.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// 紧凑条右侧「信号」与左侧标题仅下划线/空格差异时视为同一信息（如 `git_status` 与 `git status`），不拼 `｜`。
+/// 紧凑条右侧「信号」与左侧标题仅下划线/空格差异时视为同一信息（如 `git_status` 与 `git status`），不拼分隔符。
 #[inline]
 fn compact_title_signal_redundant(title: &str, signal: &str) -> bool {
     let t = title.trim();

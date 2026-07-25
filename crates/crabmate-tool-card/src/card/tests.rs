@@ -43,10 +43,9 @@ fn compact_git_diff_keeps_paren_suffix_without_dup_cli_head() {
     info.summary =
         Some("git diff (working): frontend/src/message_format/tool_card/mod.rs".to_string());
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
-    assert!(out.contains('｜'), "应保留参数后缀: {out:?}");
     assert!(
         out.contains("(working): frontend/src/message_format/tool_card/mod.rs"),
-        "compact={out:?}"
+        "应保留参数后缀: {out:?}"
     );
     assert!(
         !out.contains("git diff (working)"),
@@ -228,7 +227,7 @@ fn compact_run_command_prefers_invocation_from_output() {
     assert!(out.contains("命令执行"));
     assert!(out.contains("cargo check --workspace"), "compact={out}");
     assert!(
-        !out.contains("命令 ｜ cargo"),
+        !out.contains("命令  cargo") && !out.contains("命令 ｜ cargo"),
         "不应重复「命令」标签: compact={out}"
     );
 }
@@ -240,9 +239,9 @@ fn compact_read_dir_uses_short_human_signal() {
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
     assert!(out.contains("读取目录"));
     assert!(!out.contains("读取目录完成"));
-    assert!(out.contains(". ｜ 0 项"));
+    assert!(out.contains(". 0 项"));
     assert!(
-        !out.contains("目录 . ｜"),
+        !out.contains("读取目录 目录"),
         "不应重复「目录」标签: compact={out}"
     );
 }
@@ -254,7 +253,7 @@ fn compact_read_file_uses_path_and_line_count() {
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
     assert!(out.contains("读取文件"));
     assert!(!out.contains("读取文件完成"));
-    assert!(out.contains("src/main.cpp ｜ 128 行"));
+    assert!(out.contains("src/main.cpp 128 行"));
 }
 
 #[test]
@@ -267,7 +266,7 @@ fn compact_read_file_parses_english_summary_line() {
         out.contains("src/lib.rs"),
         "应展示路径而非占位「文件」: compact={out}"
     );
-    assert!(!out.contains("读取文件 ｜ 文件 ｜"));
+    assert!(!out.contains("读取文件  文件") && !out.contains("读取文件 ｜ 文件"));
 }
 
 #[test]
@@ -277,7 +276,7 @@ fn compact_copy_file_shows_from_to_without_extra_label() {
     info.output = "从→到：a.txt → b.txt\n已复制（12 字节）".to_string();
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
     assert!(out.contains("a.txt → b.txt"), "compact 应含源→目标: {out}");
-    assert!(!out.contains("从→到 ｜"), "不应再叠「从→到」标签: {out}");
+    assert!(!out.contains("从→到"), "不应再叠「从→到」标签: {out}");
 }
 
 #[test]
@@ -288,7 +287,7 @@ fn compact_read_file_prefers_json_header_in_output() {
     info.summary = Some("read file: README.md".to_string());
     info.output = format!("{hdr}\n文件: README.md\n总行数: 200\n...\n");
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
-    assert!(out.contains("README.md ｜ 200 行"), "compact={out}");
+    assert!(out.contains("README.md 200 行"), "compact={out}");
 }
 
 #[test]
@@ -301,10 +300,7 @@ fn compact_search_prefers_structured_output_with_scope_and_hits() {
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
     assert!(out.contains("全文检索"));
     assert!(!out.contains("全文检索完成"));
-    assert!(
-        out.contains("搜索 ｜ TODO · . · 命中 7 处"),
-        "compact={out}"
-    );
+    assert!(out.contains("搜索 TODO · . · 命中 7 处"), "compact={out}");
 }
 
 #[test]
@@ -313,7 +309,7 @@ fn compact_search_legacy_summary_fallback_keyword_and_hits() {
     info.name = "search_in_files".to_string();
     let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
     assert!(out.contains("全文检索"));
-    assert!(out.contains("关键词 TODO ｜ 命中 7 处"));
+    assert!(out.contains("关键词 TODO 命中 7 处"));
 }
 
 #[test]
