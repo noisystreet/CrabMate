@@ -205,7 +205,7 @@ pub(super) fn handle_sse_block(
     let mut on_timeline_log = |info| (cbs.on_timeline_log)(info);
     let mut on_run_finished = || {
         *saw_stream_ended = true;
-        (cbs.on_done)();
+        (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
     };
     let mut on_state_snapshot = |_state: serde_json::Value| {
         // STATE_SNAPSHOT 由上层应用层注册回调处理；此处为占位桥接。
@@ -258,7 +258,8 @@ pub(super) fn handle_sse_block(
             Ok(SseFrameKind::TextDelta)
         }
         crate::sse_dispatch::SseDispatch::StreamEnded => {
-            // V2Parser 已通过 `on_run_finished` 设置 `saw_stream_ended` 并调用 `on_done`
+            // RUN_FINISHED 只进入 Draining；响应体可能还有 conversation_saved 等尾部控制面。
+            // `on_done` 由 body 消费完成后的 send_helpers 统一调用。
             if stop {
                 return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
@@ -270,9 +271,9 @@ pub(super) fn handle_sse_block(
 #[cfg(test)]
 mod tests {
     use super::super::ChatStreamCallbacks;
-    use super::{flush_sse_tail, handle_sse_block, process_sse_buffer};
+    use super::{SseFrameKind, flush_sse_tail, handle_sse_block, process_sse_buffer};
     use crate::i18n::Locale;
-    use std::cell::RefCell;
+    use std::cell::{Cell, RefCell};
     use std::rc::Rc;
 
     fn callbacks_with_end_capture(ended: Rc<RefCell<Option<String>>>) -> ChatStreamCallbacks {
@@ -341,6 +342,59 @@ mod tests {
         assert!(res.is_ok());
         assert!(saw_stream_ended);
         assert_eq!(ended.borrow().as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn run_finished_enters_draining_before_body_tail_is_consumed() {
+        let ended = Rc::new(RefCell::new(None::<String>));
+        let cbs = callbacks_with_end_capture(Rc::clone(&ended));
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        let block =
+            "id: 13\ndata: {\"type\":\"RUN_FINISHED\",\"threadId\":\"\",\"runId\":\"1\"}\n\n";
+        let kind = handle_sse_block(
+            block,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .expect("RUN_FINISHED should be accepted");
+        assert_eq!(kind, SseFrameKind::StreamEnded);
+        assert!(saw_stream_ended);
+        assert_eq!(ended.borrow().as_deref(), Some("completed"));
+    }
+
+    #[test]
+    fn conversation_saved_after_run_finished_arrives_before_done() {
+        let done_count = Rc::new(Cell::new(0u32));
+        let revision = Rc::new(Cell::new(0u64));
+        let done_count_for_cb = Rc::clone(&done_count);
+        let revision_for_cb = Rc::clone(&revision);
+        let cbs = ChatStreamCallbacks {
+            on_done: Rc::new(move || done_count_for_cb.set(done_count_for_cb.get() + 1)),
+            on_conversation_revision: Rc::new(move |rev, _| revision_for_cb.set(rev)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buffer = concat!(
+            "id: 13\ndata: {\"type\":\"RUN_FINISHED\",\"threadId\":\"\",\"runId\":\"1\"}\n\n",
+            "id: 14\ndata: {\"type\":\"CUSTOM\",\"customType\":\"conversation_saved\",",
+            "\"data\":{\"revision\":7}}\n\n"
+        )
+        .to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        process_sse_buffer(
+            &mut buffer,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .expect("tail control frames should be consumed");
+        assert!(saw_stream_ended);
+        assert_eq!(revision.get(), 7);
+        assert_eq!(done_count.get(), 0, "done belongs to body completion");
     }
 
     /// `data: ` 后仅空格的增量不得被 `trim_start` 吞掉，否则英文词会粘在一起。

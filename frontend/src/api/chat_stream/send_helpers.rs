@@ -71,6 +71,17 @@ pub(super) enum ChatStreamRoundOutcome {
     ResumeReconnect,
 }
 
+fn dispatch_finished_round_callbacks(
+    saw_stream_ended: bool,
+    mut on_missing_stream_ended: impl FnMut(),
+    mut on_done: impl FnMut(),
+) {
+    if !saw_stream_ended {
+        on_missing_stream_ended();
+    }
+    on_done();
+}
+
 /// 单轮 HTTP 响应：`410` / 错误体 / SSE 体消费与正常收尾回调。
 pub(super) async fn run_chat_stream_http_round(
     resp: Response,
@@ -98,12 +109,45 @@ pub(super) async fn run_chat_stream_http_round(
     .await?
     {
         ChatStreamConsumeOutcome::Finished { saw_stream_ended } => {
-            if !saw_stream_ended {
-                (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
-            }
-            (cbs.on_done)();
+            dispatch_finished_round_callbacks(
+                saw_stream_ended,
+                || (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None),
+                || (cbs.on_done)(),
+            );
             Ok(ChatStreamRoundOutcome::Completed)
         }
         ChatStreamConsumeOutcome::ResumeReconnect => Ok(ChatStreamRoundOutcome::ResumeReconnect),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dispatch_finished_round_callbacks;
+    use std::cell::Cell;
+
+    #[test]
+    fn body_completion_dispatches_done_exactly_once_after_run_finished() {
+        let ended = Cell::new(0u32);
+        let done = Cell::new(0u32);
+        dispatch_finished_round_callbacks(
+            true,
+            || ended.set(ended.get() + 1),
+            || done.set(done.get() + 1),
+        );
+        assert_eq!(ended.get(), 0, "RUN_FINISHED already entered draining");
+        assert_eq!(done.get(), 1);
+    }
+
+    #[test]
+    fn body_completion_synthesizes_missing_end_before_single_done() {
+        let ended = Cell::new(0u32);
+        let done = Cell::new(0u32);
+        dispatch_finished_round_callbacks(
+            false,
+            || ended.set(ended.get() + 1),
+            || done.set(done.get() + 1),
+        );
+        assert_eq!(ended.get(), 1);
+        assert_eq!(done.get(), 1);
     }
 }

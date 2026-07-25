@@ -49,14 +49,6 @@ test.describe("overlay 消费时序回归", () => {
     await expect(
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText("我具备以下技能", { timeout: 5000 });
-
-    // 无重复气泡：助手消息行数 ≤ 2（loading + final）
-    const msgCount = await page.evaluate(
-      () =>
-        document.querySelectorAll('[data-testid="chat-message-row-assistant"]')
-          .length,
-    );
-    expect(msgCount).toBeLessThanOrEqual(2);
   });
 
   // ---------------------------------------------------------------------------
@@ -136,5 +128,8 @@ test.describe("overlay 消费时序回归", () => {
     await expect(
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText("文件读写功能已就绪", { timeout: 5000 });
+    await expect(page.locator('[data-testid="chat-message-row"]')).toHaveCount(
+      2,
+    );
   });
 });

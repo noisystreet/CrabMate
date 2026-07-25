@@ -142,6 +142,20 @@ fn merge_tail_page_into_session_messages(
     merge_session_tail(hydrated, session.messages.as_slice())
 }
 
+fn should_merge_hydrated_messages(
+    session: &ChatSession,
+    resp: &ConversationMessagesResponse,
+) -> bool {
+    session.messages.is_empty()
+        || session
+            .server_revision
+            .is_none_or(|local_revision| local_revision < resp.revision)
+}
+
+fn hydration_revision_after_response(local_revision: Option<u64>, response_revision: u64) -> u64 {
+    local_revision.unwrap_or_default().max(response_revision)
+}
+
 fn prepend_older_page_into_session(
     session: &mut ChatSession,
     hydrated: Vec<StoredMessage>,
@@ -185,10 +199,14 @@ fn merge_hydration_into_active_session(
     ) {
         return out;
     }
-    let new_messages = merge_tail_page_into_session_messages(session, hydrated, resp);
-    session.messages = new_messages;
+    if should_merge_hydrated_messages(session, resp) {
+        session.messages = merge_tail_page_into_session_messages(session, hydrated, resp);
+    }
     apply_history_meta_from_response(session, resp);
-    session.server_revision = Some(resp.revision);
+    session.server_revision = Some(hydration_revision_after_response(
+        session.server_revision,
+        resp.revision,
+    ));
     if !agent_role_user_override.get_untracked()
         && let Some(role) = resp
             .active_agent_role
@@ -549,10 +567,100 @@ pub fn wire_session_hydration(
 
 #[cfg(test)]
 mod merge_tail_page_order_tests {
-    use super::merge_tail_page_into_session_messages;
+    use super::{
+        hydration_revision_after_response, merge_tail_page_into_session_messages,
+        should_merge_hydrated_messages,
+    };
     use crate::conversation_hydrate::ConversationMessagesResponse;
     use crate::storage::{ChatSession, StoredMessage};
     use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
+
+    fn revision_session(messages: Vec<StoredMessage>, revision: Option<u64>) -> ChatSession {
+        ChatSession {
+            id: "sid".into(),
+            title: "t".into(),
+            draft: String::new(),
+            messages,
+            updated_at: 0,
+            pinned: false,
+            starred: false,
+            server_conversation_id: Some("cid".into()),
+            server_revision: revision,
+            workspace_root: None,
+            history_total: None,
+            history_window_start: Some(0),
+            history_has_older: None,
+        }
+    }
+
+    fn revision_response(revision: u64) -> ConversationMessagesResponse {
+        ConversationMessagesResponse {
+            conversation_id: "cid".into(),
+            messages: vec![],
+            revision,
+            total_count: 1,
+            window_start_index: 0,
+            has_older: false,
+            active_agent_role: None,
+            tiktoken_prompt_tokens: None,
+        }
+    }
+
+    #[test]
+    fn same_revision_keeps_nonempty_local_projection() {
+        let local = StoredMessage {
+            id: "turn-commentary-tc_read".into(),
+            role: "assistant".into(),
+            text: "已关闭的本地旁注".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let session = revision_session(vec![local], Some(7));
+        assert!(!should_merge_hydrated_messages(
+            &session,
+            &revision_response(7)
+        ));
+        assert!(!should_merge_hydrated_messages(
+            &session,
+            &revision_response(6)
+        ));
+        assert!(should_merge_hydrated_messages(
+            &session,
+            &revision_response(8)
+        ));
+        assert!(should_merge_hydrated_messages(
+            &revision_session(vec![], Some(7)),
+            &revision_response(7)
+        ));
+    }
+
+    #[test]
+    fn stale_hydration_response_neither_merges_nor_downgrades_revision() {
+        let local = StoredMessage {
+            id: "turn-final-answer".into(),
+            role: "assistant".into(),
+            text: "本地较新终答".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let session = revision_session(vec![local], Some(9));
+        let stale_response = revision_response(7);
+        assert!(!should_merge_hydrated_messages(&session, &stale_response));
+        assert_eq!(
+            hydration_revision_after_response(session.server_revision, stale_response.revision),
+            9
+        );
+    }
 
     #[test]
     fn merge_tail_page_keeps_intent_before_server_answer() {

@@ -32,7 +32,7 @@ impl StreamModelOutputLane {
             Self::Answering | Self::AnsweringPendingFollowupBubble => {
                 Self::AnsweringPendingFollowupBubble
             }
-            Self::AnsweringCommentaryBeforeTools => Self::AnsweringCommentaryBeforeTools,
+            Self::AnsweringCommentaryBeforeTools => Self::AnsweringPendingFollowupBubble,
         };
     }
 
@@ -125,5 +125,17 @@ mod tests {
         let c = Cell::new(StreamModelOutputLane::AnsweringPendingFollowupBubble);
         lane_clear_followup_pending(&c);
         assert_eq!(c.get(), StreamModelOutputLane::Answering);
+    }
+
+    #[test]
+    fn lane_commentary_answer_phase_marks_pending() {
+        // 工具执行后收到新一轮 assistant_answer_phase → 应触发气泡轮换
+        let c = Cell::new(StreamModelOutputLane::AnsweringCommentaryBeforeTools);
+        lane_on_assistant_answer_phase(&c);
+        assert_eq!(
+            c.get(),
+            StreamModelOutputLane::AnsweringPendingFollowupBubble,
+            "commentary 阶段收到 assistant_answer_phase 后必须标记 PendingFollowupBubble 以触发轮换"
+        );
     }
 }

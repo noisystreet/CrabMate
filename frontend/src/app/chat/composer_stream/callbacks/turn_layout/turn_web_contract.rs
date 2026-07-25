@@ -5,7 +5,9 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crabmate_turn_layout::{SegmentKind, TurnEvent, project_turn_web};
+    use crabmate_turn_layout::{
+        ASSISTANT_COMMENTARY, SegmentKind, TurnEvent, project_turn_web, project_turn_web_v2,
+    };
     use serde::Deserialize;
 
     use super::super::super::super::turn_canonical::{
@@ -16,7 +18,8 @@ mod tests {
     use crate::storage::StoredMessageState;
 
     use super::super::bubble_queue::{
-        BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID,
+        BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id,
+        is_commentary_row_id,
     };
 
     #[derive(Debug, Deserialize)]
@@ -115,8 +118,35 @@ mod tests {
             .collect()
     }
 
-    fn batch_row_index(messages: &[StoredMessage]) -> Option<usize> {
-        messages.iter().position(|m| m.id == BATCH_NARRATION_ROW_ID)
+    fn commentary_row_indices(messages: &[StoredMessage]) -> Vec<usize> {
+        messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| is_commentary_row_id(message.id.as_str()))
+            .map(|(idx, _)| idx)
+            .collect()
+    }
+
+    fn assert_v2_commentary_rows(turn: &TurnCanonicalState, messages: &[StoredMessage]) {
+        for row in project_turn_web_v2(turn.turn_ref())
+            .into_iter()
+            .filter(|row| row.kind == ASSISTANT_COMMENTARY)
+        {
+            let tool_call_id = row.tool_call_id.as_deref().expect("commentary anchor");
+            let row_id = commentary_row_id(tool_call_id);
+            let commentary_idx = messages
+                .iter()
+                .position(|message| message.id == row_id)
+                .unwrap_or_else(|| panic!("missing commentary row {row_id}"));
+            let tool_idx = messages
+                .iter()
+                .position(|message| {
+                    message.is_tool && message.tool_call_id.as_deref() == Some(tool_call_id)
+                })
+                .unwrap_or_else(|| panic!("missing anchor tool {tool_call_id}"));
+            assert_eq!(messages[commentary_idx].text, row.text);
+            assert!(commentary_idx < tool_idx, "{row_id} must precede its tool");
+        }
     }
 
     #[test]
@@ -139,33 +169,7 @@ mod tests {
             let mut messages = tool_messages_from_projection(&turn);
             BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
 
-            let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref())
-                .expect("case must define batch row when tools exist");
-            let batch_idx = batch_row_index(&messages).unwrap_or_else(|| {
-                panic!(
-                    "case {} at {}:{}: missing turn-batch-narration row",
-                    case.id,
-                    path.display(),
-                    line_no
-                )
-            });
-            assert_eq!(
-                messages[batch_idx].text, batch.text,
-                "case {} batch text",
-                case.id
-            );
-
-            if let Some(ref anchor) = batch.tool_call_id {
-                let tool_idx = messages
-                    .iter()
-                    .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(anchor.as_str()))
-                    .unwrap_or_else(|| panic!("case {} missing anchor tool {anchor}", case.id));
-                assert!(
-                    batch_idx < tool_idx,
-                    "case {}: batch row must precede anchor tool",
-                    case.id
-                );
-            }
+            assert_v2_commentary_rows(&turn, &messages);
 
             if let Some(ref preview) = case.expect_open_preview {
                 assert_eq!(
@@ -202,28 +206,25 @@ mod tests {
         let queue = BubbleOutputQueue;
         queue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"));
 
-        let batch_idx = batch_row_index(&messages).expect("batch row");
+        assert_v2_commentary_rows(&turn, &messages);
         let final_idx = messages
             .iter()
             .position(|m| m.id == FINAL_ANSWER_ROW_ID)
             .expect("final row");
-        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
-        assert!(
-            batch_idx < first_tool,
-            "batch must precede tools: idx batch={batch_idx} tool={first_tool}"
-        );
-        assert!(
-            final_idx > batch_idx,
-            "final must follow batch: batch={batch_idx} final={final_idx}"
-        );
+        let last_tool = messages.iter().rposition(|m| m.is_tool).expect("tool row");
+        assert!(final_idx > last_tool, "final must follow all tools");
         assert_eq!(messages[final_idx].text, "HPCG 编译完成。");
+        let expected_commentaries = project_turn_web_v2(turn.turn_ref())
+            .into_iter()
+            .filter(|row| row.kind == ASSISTANT_COMMENTARY)
+            .count();
         assert!(
             messages
                 .iter()
                 .filter(|m| m.role == "assistant" && !m.is_tool)
                 .count()
-                >= 2,
-            "expected separate batch + final assistant rows"
+                == expected_commentaries + 1,
+            "expected one immutable row per commentary plus final"
         );
     }
 
@@ -252,18 +253,10 @@ mod tests {
         let queue = BubbleOutputQueue;
         queue.sync_web_projection(&mut messages, &turn, None, None);
 
-        let batch_idx = batch_row_index(&messages).expect("batch row");
-        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
+        assert_v2_commentary_rows(&turn, &messages);
         assert!(
-            batch_idx < first_tool,
-            "batch must precede tools: batch={batch_idx} tool={first_tool}"
-        );
-        assert!(
-            messages
-                .iter()
-                .find(|m| m.id == BATCH_NARRATION_ROW_ID)
-                .is_some_and(|m| m.text.len() > 20),
-            "batch row must hold merged narration, not empty shell"
+            commentary_row_indices(&messages).len() >= 2,
+            "closed commentary must remain in separate rows"
         );
     }
 
@@ -286,14 +279,12 @@ mod tests {
         let mut messages = tool_messages_from_projection(&turn);
         BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"));
 
-        let batch_idx = batch_row_index(&messages).expect("batch row");
+        assert_v2_commentary_rows(&turn, &messages);
         let final_idx = messages
             .iter()
             .position(|m| m.id == FINAL_ANSWER_ROW_ID)
             .expect("final row");
-        let first_tool = messages.iter().position(|m| m.is_tool).expect("tool row");
         let last_tool = messages.iter().rposition(|m| m.is_tool).expect("last tool");
-        assert!(batch_idx < first_tool, "batch before tools");
         assert!(final_idx > last_tool, "final after tools");
 
         let assistant_rows: Vec<_> = messages
@@ -302,18 +293,12 @@ mod tests {
             .collect();
         assert_eq!(
             assistant_rows.len(),
-            2,
-            "export must be batch + final, not mega bubble: {:?}",
+            commentary_row_indices(&messages).len() + 1,
+            "export must contain immutable commentary rows plus final: {:?}",
             assistant_rows
                 .iter()
                 .map(|m| (m.id.as_str(), m.text.len()))
                 .collect::<Vec<_>>()
-        );
-        assert!(
-            messages[batch_idx].text.contains("先解压 HPCG")
-                && messages[batch_idx].text.contains("开始编译"),
-            "batch={}",
-            messages[batch_idx].text
         );
         assert_eq!(messages[final_idx].text, "HPCG 编译完成。");
     }
@@ -336,10 +321,17 @@ mod tests {
             Some("当前工作区是一个空目录。"),
         );
 
-        let batch_idx = batch_row_index(&messages).expect("batch");
+        assert_v2_commentary_rows(&turn, &messages);
+        let commentary_idx = messages
+            .iter()
+            .position(|message| message.id == commentary_row_id("tc_list"))
+            .expect("commentary");
         let tool_idx = messages.iter().position(|m| m.is_tool).expect("tool");
-        assert!(batch_idx < tool_idx);
-        assert_eq!(messages[batch_idx].text, "好的，我来看看当前工作区的情况。");
+        assert!(commentary_idx < tool_idx);
+        assert_eq!(
+            messages[commentary_idx].text,
+            "好的，我来看看当前工作区的情况。"
+        );
     }
 
     /// 零工具轮次：流式 delta 累积 → sync_web_projection → FINAL_ANSWER_ROW。
@@ -602,11 +594,10 @@ mod tests {
         );
     }
 
-    /// 回归测试（修复二）：`on_done` 中 `followup_pending=true` 时必须先
-    /// `finalize_turn_projection_before_stream_done`（sync_web_projection 创建 FINAL_ANSWER_ROW）
-    /// 再 `rotate_followup_model_round`（finalize_loading_segment 消费 overlay）。
+    /// 回归测试：`on_done` 必须先
+    /// `sync_web_projection` 创建 FINAL_ANSWER_ROW，再由统一收尾消费 overlay。
     ///
-    /// 若顺序颠倒（先 rotate 再 finalize），rotate 中的 `finalize_loading_segment` 会 take overlay，
+    /// 若顺序颠倒（先 drain 再 projection），
     /// 导致后续 `sync_turn_projection` → `flush_final_answer_row` 读到空 overlay 而 SKIP。
     ///
     /// 此测试文档化数据层不变量：`sync_web_projection` 必须在 overlay 被消费（drain）之前调用，
@@ -631,7 +622,7 @@ mod tests {
             "FINAL_ANSWER_ROW must contain full overlay answer"
         );
 
-        // 之后 rotate 中的 finalize_loading_segment 会 take overlay（drain）。
+        // 之后统一收尾会 take overlay（drain）。
         // 模拟 drain：第二次 sync 时 overlay 已空（None）。
         // FINAL_ANSWER_ROW 必须保留，不被空 overlay 覆盖。
         BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
@@ -641,7 +632,7 @@ mod tests {
             .expect("FINAL_ANSWER_ROW must be preserved after overlay drain");
         assert_eq!(
             final_row_after_drain.text, full_answer,
-            "FINAL_ANSWER_ROW must be preserved after overlay is drained (rotate)"
+            "FINAL_ANSWER_ROW must be preserved after overlay is drained"
         );
     }
 }
