@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use super::scroll_follow::follow_after_content_paint;
-use super::scroll_shell::{ChatScrollShellSignals, arm_programmatic_stick};
+use super::scroll_shell::ChatScrollShellSignals;
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
 use super::tui_line_markdown::TuiBodyPatch;
 use super::tui_transcript_sync::{TuiMountState, TuiSyncPlan, plan_tui_sync};
@@ -37,6 +37,58 @@ fn remove_plain_line(body: &web_sys::HtmlElement) {
     }
 }
 
+fn apply_tool_row_patch(
+    body: &web_sys::HtmlElement,
+    status: &str,
+    one_line: &str,
+    detail: Option<&str>,
+) -> bool {
+    let Some(status_el) = body
+        .query_selector(".chat-tui-tool-status")
+        .ok()
+        .flatten()
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+    else {
+        return false;
+    };
+    let Some(one_el) = body
+        .query_selector(".chat-tui-tool-one-line")
+        .ok()
+        .flatten()
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+    else {
+        return false;
+    };
+    status_el.set_text_content(Some(status));
+    one_el.set_text_content(Some(one_line));
+    match detail {
+        Some(text) => {
+            let Some(pre) = body
+                .query_selector(".chat-tui-tool-detail-body")
+                .ok()
+                .flatten()
+                .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+            else {
+                // 需要 details 但 DOM 仍是无详情结构 → 交由全量重建
+                return false;
+            };
+            pre.set_text_content(Some(text));
+        }
+        None => {
+            if body
+                .query_selector(".chat-tui-tool-details")
+                .ok()
+                .flatten()
+                .is_some()
+            {
+                // DOM 仍有 details、计划已无 → 结构变化，重建
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
     match patch {
         TuiBodyPatch::ReplaceAll { chunks } => {
@@ -66,6 +118,11 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
             }
             true
         }
+        TuiBodyPatch::ToolRow {
+            status,
+            one_line,
+            detail,
+        } => apply_tool_row_patch(body, &status, &one_line, detail.as_deref()),
     }
 }
 
@@ -240,8 +297,6 @@ pub(crate) fn ChatTuiStreamView(
             return;
         };
 
-        // 先于 DOM 写入：工具 ReplaceAll / 追加回合可能夹低 scrollTop，避免误 unpin。
-        arm_programmatic_stick(scroll_shell);
         let applied = apply_tui_sync_plan(el, &plan);
         if applied {
             mount_state.set(Some(plan.next));

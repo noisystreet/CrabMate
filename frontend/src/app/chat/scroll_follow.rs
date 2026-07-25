@@ -13,9 +13,7 @@ use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
 
-use crate::app::chat::scroll_shell::{
-    ChatScrollShellSignals, arm_programmatic_stick, stick_pin, stick_unpin,
-};
+use crate::app::chat::scroll_shell::{ChatScrollShellSignals, stick_pin, stick_unpin};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::ChatSession;
@@ -27,7 +25,6 @@ fn snap_to_bottom(shell: ChatScrollShellSignals) {
     if messages_scroller_has_non_collapsed_selection(&el) {
         return;
     }
-    arm_programmatic_stick(shell);
     el.set_scroll_top(el.scroll_height());
 }
 
@@ -92,9 +89,8 @@ pub(crate) fn disengage_follow_and_scroll_top(shell: ChatScrollShellSignals) {
 
 /// Markdown/纯文本已实际写入 DOM 后跟底，避免先读旧 `scrollHeight` 再发生内容增高。
 ///
-/// 同步 snap 一次（尽快贴底），再 rAF + 短延迟兜底布局完成（工具 `ReplaceAll` / 追加回合常见）。
+/// 同步 snap 一次（尽快贴底），再 rAF + 短延迟兜底布局完成（工具追加 / 助手行闭合常见）。
 pub(crate) fn follow_after_content_paint(shell: ChatScrollShellSignals) {
-    arm_programmatic_stick(shell);
     snap_to_bottom_if_following(shell);
     request_animation_frame(move || {
         snap_to_bottom_if_following(shell);
@@ -158,7 +154,6 @@ pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatSc
         if !shell.auto_scroll_chat.get() {
             return;
         }
-        arm_programmatic_stick(shell);
         // rAF 等布局完成再读 scrollHeight（Leptos 批处理 + 浏览器布局）
         request_animation_frame(move || {
             snap_to_bottom_if_following(shell);

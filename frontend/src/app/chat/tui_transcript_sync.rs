@@ -13,7 +13,7 @@ use super::tui_actions_bar::turn_actions_bar_html;
 use super::tui_line_markdown::{
     TuiBodyChunks, TuiBodyPatch, parse_tui_body_chunks, plan_tui_body_patch,
 };
-use super::tui_tool_process::tool_process_body_html;
+use super::tui_tool_process::{tool_process_body_html, tool_row_live_fields};
 
 /// 上一帧挂载状态。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -24,6 +24,8 @@ pub(crate) struct TuiMountState {
     pub committed_key: u64,
     pub live_id: Option<String>,
     pub live_body: Option<TuiBodyChunks>,
+    /// live 工具行是否已挂载 details（用于决定 ToolRow vs ReplaceAll）。
+    pub live_tool_has_details: Option<bool>,
 }
 
 /// 一次 Effect 的 DOM 计划（可组合：先 promote/append，再 live / refresh patch）。
@@ -300,6 +302,21 @@ fn ids_prefix(mounted: &[String], messages: &[StoredMessage]) -> bool {
         .all(|(id, message)| id == &message.id)
 }
 
+fn live_tool_has_details_flag(
+    messages: &[StoredMessage],
+    live_id: Option<&str>,
+    locale: Locale,
+    tool_chunks: &HashMap<String, String>,
+) -> Option<bool> {
+    let id = live_id?;
+    let message = messages.iter().find(|m| m.id == id)?;
+    if !message.is_tool {
+        return None;
+    }
+    let live = tool_live_overlay(message, tool_chunks);
+    Some(tool_row_live_fields(message, locale, live).wants_details())
+}
+
 fn full_rebuild_plan(
     messages: &[StoredMessage],
     session_id: &str,
@@ -323,6 +340,8 @@ fn full_rebuild_plan(
             )
         })
     });
+    let live_tool_has_details =
+        live_tool_has_details_flag(messages, live_id.as_deref(), locale, tool_chunks);
     TuiSyncPlan {
         next: TuiMountState {
             session_id: session_id.to_string(),
@@ -330,6 +349,7 @@ fn full_rebuild_plan(
             committed_key,
             live_id,
             live_body,
+            live_tool_has_details,
         },
         full_html: Some(build_tui_transcript_html(
             messages,
@@ -423,6 +443,28 @@ fn plan_live_patch(
             ctx.apply_filters,
             ctx.tool_chunks,
         );
+        if message.is_tool && prev.live_id.as_deref() == Some(id) {
+            let live = tool_live_overlay(message, ctx.tool_chunks);
+            let fields = tool_row_live_fields(message, ctx.locale, live);
+            let prev_has = prev.live_tool_has_details.unwrap_or(false);
+            // 结构未变：只改 status / one-line 文案，避免 ReplaceAll 抖高。
+            if prev_has == fields.wants_details() {
+                return Some(LiveBodyPlan {
+                    message_id: id.to_string(),
+                    patch: TuiBodyPatch::ToolRow {
+                        status: fields.status,
+                        one_line: fields.one_line,
+                        detail: fields.detail,
+                    },
+                });
+            }
+            return Some(LiveBodyPlan {
+                message_id: id.to_string(),
+                patch: TuiBodyPatch::ReplaceAll {
+                    chunks: next_chunks,
+                },
+            });
+        }
         let prev_chunks = prev
             .live_body
             .as_ref()
@@ -529,12 +571,15 @@ fn next_mount_state(
             )
         })
     });
+    let live_tool_has_details =
+        live_tool_has_details_flag(messages, live_id.as_deref(), ctx.locale, ctx.tool_chunks);
     TuiMountState {
         session_id: ctx.session_id.to_string(),
         mounted_ids: messages.iter().map(|m| m.id.clone()).collect(),
         committed_key,
         live_id,
         live_body,
+        live_tool_has_details,
     }
 }
 
@@ -810,5 +855,49 @@ mod tests {
         assert!(output.contains("chat-tui-tool-process"), "got {output}");
         assert!(output.contains("read_file"), "got {output}");
         assert!(!output.contains("工具:"), "got {output}");
+    }
+
+    #[test]
+    fn live_tool_chunk_uses_tool_row_patch_not_replace_all() {
+        let user = message("u1", "user", "hi");
+        let mut tool = message("t1", "assistant", "");
+        tool.is_tool = true;
+        tool.tool_name = Some("read_file".to_string());
+        tool.tool_call_id = Some("tc1".to_string());
+        tool.state = Some(StoredMessageState::Loading);
+        let messages = vec![user, tool];
+        let mut chunks = HashMap::new();
+        chunks.insert("tc1".to_string(), "part-a".to_string());
+        let plan1 = plan_tui_sync(None, &messages, "s1", None, Locale::ZhHans, false, &chunks);
+        assert!(plan1.full_html.is_some());
+        assert_eq!(plan1.next.live_tool_has_details, Some(false));
+
+        chunks.insert("tc1".to_string(), "part-a part-b".to_string());
+        let plan2 = plan_tui_sync(
+            Some(&plan1.next),
+            &messages,
+            "s1",
+            None,
+            Locale::ZhHans,
+            false,
+            &chunks,
+        );
+        assert!(plan2.full_html.is_none());
+        let live = plan2.live.expect("tool live patch");
+        assert_eq!(live.message_id, "t1");
+        match live.patch {
+            TuiBodyPatch::ToolRow {
+                status,
+                one_line,
+                detail,
+            } => {
+                assert!(
+                    status.contains("执行") || status.contains("running") || !status.is_empty()
+                );
+                assert!(one_line.contains("part-b"), "{one_line}");
+                assert!(detail.is_none());
+            }
+            other => panic!("expected ToolRow, got {other:?}"),
+        }
     }
 }
