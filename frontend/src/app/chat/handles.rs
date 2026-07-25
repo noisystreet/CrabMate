@@ -109,6 +109,9 @@ pub(crate) struct ChatMessagesPaneSignals {
     pub chat: ChatSessionSignals,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub scroll_shell: ChatScrollShellSignals,
+    pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
+    pub stream_turn_busy_ui: Memo<bool>,
+    pub status_err: RwSignal<Option<String>>,
 }
 
 /// 输入区与发送条所需信号（与 [`ChatMessagesPaneSignals`] 对称，由 [`ChatColumnShell`] 单点组装）。
@@ -143,6 +146,8 @@ pub struct ChatColumnShell {
     pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
+    /// 与 [`ChatComposerWires::stream_follow_up`] 同源。
+    pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
 }
 
 impl ChatColumnShell {
@@ -157,6 +162,9 @@ impl ChatColumnShell {
             chat: app.chat,
             apply_assistant_display_filters: su.apply_assistant_display_filters,
             scroll_shell: ChatScrollShellSignals::from_composer(&cc),
+            stream_follow_up: self.stream_follow_up,
+            stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,
+            status_err: self.stream_shell.stream.status_err,
         }
     }
 
@@ -186,11 +194,13 @@ impl ChatColumnShell {
     }
 }
 
-/// `wire_chat_composer_streams` 的返回值：发送、停止、新会话句柄。
+/// `wire_chat_composer_streams` 的返回值：发送、停止、新会话句柄与待发流式队列。
 pub(crate) struct ChatComposerWires {
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub cancel_stream: Arc<dyn Fn() + Send + Sync>,
     pub new_session: Rc<dyn Fn()>,
+    /// 截断再生 / 失败重试队列（终端流操作条与气泡路径共用）。
+    pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
 }
 
 /// `wire_chat_composer_streams` 的会话侧切片（初始化、活动会话、语言、草稿、角色）。

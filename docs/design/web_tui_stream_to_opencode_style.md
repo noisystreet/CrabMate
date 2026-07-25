@@ -54,10 +54,10 @@
 |------|------|
 | **默认视图** | `chat_column_view` → `ChatTuiStreamView`（无切换按钮） |
 | **数据** | 仍用 `ChatSessionSignals` + `stream_text_overlay`；发送/SSE 未分叉 |
-| **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；半行与未闭合围栏纯文本 |
-| **DOM 写入** | transcript 容器 `set_inner_html` 全量替换（按会话重建 HTML 字符串） |
+| **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；半行与未闭合围栏纯文本；回合带 `--user` / `--assistant` / `--tool` 等角色样式（对齐气泡） |
+| **DOM 写入** | 按回合 `section`：append / live 行级 patch；会话切换或 id 前缀破坏时全量重建 |
 | **跟底** | 共用 `ChatMessagesScrollShell` + ResizeObserver / sentinel / pointer 意图 |
-| **缺口** | 无一键复制/重试 UI；工具过程在 transcript 中偏扁；全量 HTML 重建在超长会话会变贵；气泡路径 `allow(dead_code)` 保留 |
+| **缺口** | 气泡路径 `allow(dead_code)` 保留 |
 
 ---
 
@@ -134,7 +134,8 @@ SSE / overlay / sessions（不变）
 1. 每回合独立 `section[data-tui-msg-id]`；新回合 `insertAdjacentHTML` append，不重刷已挂载 section。  
 2. live 正文按行：`closed[]` append + 半行 `.chat-tui-line--plain` 只改 `textContent`；闭合行晋升时才插入 HTML 块。  
 3. 会话切换 / id 前缀破坏 → 全量重建；live 落定 → 去掉 `data-tui-live` 并 Finalize body。  
-4. 模块：`tui_line_markdown`（chunks/patch）、`tui_transcript_sync`（计划）、`tui_stream_view`（DOM 应用）。
+4. 模块：`tui_line_markdown`（chunks/patch）、`tui_transcript_sync`（计划）、`tui_stream_view`（DOM 应用）。  
+5. 角色样式：用户靠右 accent、助手中性卡、工具扁平 mono + loading 呼吸边框（自气泡 `.msg-*` 迁入）。
 
 **验收**：
 
@@ -150,15 +151,13 @@ SSE / overlay / sessions（不变）
 
 **动机**：OpenCode 类产品不靠气泡也能复制/重试；工具可见但不「重卡」。
 
-建议：
+**状态（部分落地）**：
 
-1. **操作条**（composer 上方或 transcript 底）：  
-   - 复制全文 / 复制最后一条助手  
-   - 重试最后一条失败助手 / 从最后一条用户再生（复用 `message_row_actions` / `ComposerStreamFollowUp` 逻辑，不复用气泡 DOM）  
-2. **工具过程**：SSE `tool_*` 在终端流中追加一行摘要（可复用 `tool_card_compact_text` 或 TUI `format_sse_payload_one_line` 思路），默认折叠详情为可展开 `<details>` 或点击复制。  
+1. **操作条**（每回合 `section` 下方，对齐气泡 `msg-actions-below` 图标行）：复制本条、失败助手重试、自该用户消息再生/分支（`msg-action-icon-btn` + SVG；复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
+2. **工具过程**（已落地）：工具回合渲染为一行摘要（名称 / 状态 / compact）+ 可选 `<details>` 详情；流式 `tool_output_chunks` 并入 live 摘要。
 3. **不做**：流式期完整工具卡网格、多级折叠组（除非用户显式打开调试台）。
 
-**验收**：E2E 覆盖复制按钮与一次 mock 重试；工具回合 transcript 可见工具名且跟底仍稳。
+**验收**：E2E 覆盖复制/重试与工具过程行；跟底仍稳。
 
 ---
 

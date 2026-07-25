@@ -1,10 +1,11 @@
-//! TUI 风格聊天视图：每回合独立 section；live 按行局部更新（Phase 2）。
+//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按行局部更新。
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
+use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
 use super::tui_line_markdown::TuiBodyPatch;
 use super::tui_transcript_sync::{TuiMountState, TuiSyncPlan, plan_tui_sync};
 use crate::chat_session_state::ChatSessionSignals;
@@ -47,7 +48,6 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
             open_plain,
         } => {
             if !append_closed.is_empty() {
-                // 闭合行晋升：先去掉旧 plain，再 append 闭合块，再写新 plain。
                 remove_plain_line(body);
                 for chunk in &append_closed {
                     if body.insert_adjacent_html("beforeend", chunk).is_err() {
@@ -81,6 +81,18 @@ fn find_turn_section(
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
 }
 
+fn find_turn_wrap(
+    transcript: &web_sys::HtmlElement,
+    message_id: &str,
+) -> Option<web_sys::HtmlElement> {
+    let selector = format!(".chat-tui-turn-wrap[data-tui-wrap-id=\"{message_id}\"]");
+    transcript
+        .query_selector(&selector)
+        .ok()
+        .flatten()
+        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
+}
+
 fn find_turn_body(
     transcript: &web_sys::HtmlElement,
     message_id: &str,
@@ -93,6 +105,19 @@ fn find_turn_body(
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
 }
 
+fn apply_actions_html(transcript: &web_sys::HtmlElement, message_id: &str, html: &str) -> bool {
+    let Some(wrap) = find_turn_wrap(transcript, message_id) else {
+        return false;
+    };
+    if let Some(existing) = wrap.query_selector(".chat-tui-turn-actions").ok().flatten() {
+        existing.remove();
+    }
+    if html.is_empty() {
+        return true;
+    }
+    wrap.insert_adjacent_html("beforeend", html).is_ok()
+}
+
 fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) -> bool {
     if let Some(html) = &plan.full_html {
         transcript.set_inner_html(html);
@@ -103,10 +128,11 @@ fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) ->
         && let Some(section) = find_turn_section(transcript, promote_id)
     {
         let _ = section.remove_attribute("data-tui-live");
+        let _ = section.class_list().remove_1("chat-tui-turn--live");
+        let _ = section.class_list().remove_1("is-loading");
     }
 
     if !plan.append_sections.is_empty() {
-        // 去掉空会话占位。
         if let Some(empty) = transcript.query_selector(".chat-tui-empty").ok().flatten() {
             empty.remove();
         }
@@ -138,7 +164,30 @@ fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) ->
         }
     }
 
+    for actions in &plan.refresh_actions {
+        if !apply_actions_html(transcript, &actions.message_id, &actions.html) {
+            return false;
+        }
+    }
+
     true
+}
+
+fn action_click_from_event(ev: &web_sys::MouseEvent) -> Option<(String, String, usize)> {
+    let target = ev.target()?.dyn_into::<web_sys::Element>().ok()?;
+    let btn = target
+        .closest("[data-tui-action]")
+        .ok()
+        .flatten()?
+        .dyn_into::<web_sys::HtmlElement>()
+        .ok()?;
+    let action = btn.get_attribute("data-tui-action")?;
+    let message_id = btn.get_attribute("data-tui-msg-id")?;
+    let msg_idx = btn
+        .get_attribute("data-tui-msg-idx")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    Some((action, message_id, msg_idx))
 }
 
 #[component]
@@ -147,12 +196,14 @@ pub(crate) fn ChatTuiStreamView(
     locale: RwSignal<Locale>,
     apply_assistant_display_filters: RwSignal<bool>,
     scroll_shell: ChatScrollShellSignals,
+    action_handlers: TuiTurnActionHandlers,
 ) -> impl IntoView {
     let transcript_ref = NodeRef::<leptos::html::Div>::new();
     let mount_state = RwSignal::new(None::<TuiMountState>);
 
     Effect::new(move |_| {
         let _ = chat.stream_overlay_revision.get();
+        let tool_chunks = chat.tool_output_chunks.get();
         let active_id = chat.active_id.get();
         let locale = locale.get();
         let apply_filters = apply_assistant_display_filters.get();
@@ -161,7 +212,15 @@ pub(crate) fn ChatTuiStreamView(
         let plan = chat.sessions.with(|sessions| {
             let session = sessions.iter().find(|session| session.id == active_id);
             match session {
-                None => plan_tui_sync(prev.as_ref(), &[], &active_id, None, locale, apply_filters),
+                None => plan_tui_sync(
+                    prev.as_ref(),
+                    &[],
+                    &active_id,
+                    None,
+                    locale,
+                    apply_filters,
+                    &tool_chunks,
+                ),
                 Some(session) => plan_tui_sync(
                     prev.as_ref(),
                     &session.messages,
@@ -169,6 +228,7 @@ pub(crate) fn ChatTuiStreamView(
                     overlay.as_ref(),
                     locale,
                     apply_filters,
+                    &tool_chunks,
                 ),
             }
         });
@@ -187,7 +247,15 @@ pub(crate) fn ChatTuiStreamView(
             let forced = chat.sessions.with(|sessions| {
                 let session = sessions.iter().find(|session| session.id == active_id);
                 match session {
-                    None => plan_tui_sync(None, &[], &active_id, None, locale, apply_filters),
+                    None => plan_tui_sync(
+                        None,
+                        &[],
+                        &active_id,
+                        None,
+                        locale,
+                        apply_filters,
+                        &tool_chunks,
+                    ),
                     Some(session) => plan_tui_sync(
                         None,
                         &session.messages,
@@ -195,6 +263,7 @@ pub(crate) fn ChatTuiStreamView(
                         overlay.as_ref(),
                         locale,
                         apply_filters,
+                        &tool_chunks,
                     ),
                 }
             });
@@ -215,6 +284,12 @@ pub(crate) fn ChatTuiStreamView(
                 node_ref=transcript_ref
                 aria-live="polite"
                 aria-atomic="false"
+                on:click=move |ev| {
+                    let Some((action, message_id, msg_idx)) = action_click_from_event(&ev) else {
+                        return;
+                    };
+                    let _ = dispatch_tui_turn_action(action_handlers, &action, &message_id, msg_idx);
+                }
             />
         </div>
     }

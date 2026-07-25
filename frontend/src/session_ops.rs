@@ -433,16 +433,19 @@ pub fn messages_scroller_has_non_collapsed_selection(scroller: &HtmlElement) -> 
 }
 
 /// 将文本写入系统剪贴板；失败时 `window.alert` 简短提示。
+///
+/// **须在用户手势同步栈内调用**（如 `click`）：先同步发起 `clipboard.writeText`，再 `await` Promise，
+/// 避免整段逻辑放进 `spawn_local` 后丢失 transient user activation。
 pub fn write_clipboard_text(text: &str, locale: crate::i18n::Locale) {
     let Some(w) = web_sys::window() else {
         return;
     };
-    let t = text.to_string();
     let msg = crate::i18n::clipboard_failed(locale).to_string();
-    wasm_bindgen_futures::spawn_local(async move {
-        let nav = w.navigator();
-        let clip = nav.clipboard();
-        match JsFuture::from(clip.write_text(&t)).await {
+    let nav = w.navigator();
+    let clip = nav.clipboard();
+    let write_promise = clip.write_text(text);
+    spawn_local(async move {
+        match JsFuture::from(write_promise).await {
             Ok(_) => {}
             Err(_) => {
                 let _ = w.alert_with_message(&msg);

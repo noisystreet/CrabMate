@@ -17,6 +17,7 @@ use super::scroll_shell::{
     on_messages_stick_scroll_event, on_messages_wheel_follow_intent, scroll_gap_px,
     stick_content_root,
 };
+use super::tui_actions_bar::TuiTurnActionHandlers;
 use super::tui_stream_view::ChatTuiStreamView;
 use crate::api::upload_files_multipart;
 use crate::i18n;
@@ -161,7 +162,18 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat,
         locale,
         apply_assistant_display_filters,
+        stream_follow_up,
+        stream_turn_busy_ui,
+        status_err,
     } = signals;
+    let action_handlers = TuiTurnActionHandlers {
+        chat,
+        locale,
+        apply_assistant_display_filters,
+        stream_follow_up,
+        stream_turn_busy_ui,
+        status_err,
+    };
 
     view! {
         <ChatMessagesScrollShell scroll_shell>
@@ -170,6 +182,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                 locale=locale
                 apply_assistant_display_filters=apply_assistant_display_filters
                 scroll_shell=scroll_shell
+                action_handlers=action_handlers
             />
         </ChatMessagesScrollShell>
     }

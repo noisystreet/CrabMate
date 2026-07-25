@@ -253,11 +253,15 @@
   border: 0;
   background: transparent;
   color: inherit;
-  font-family: var(--font-mono, ui-monospace, monospace);
-  font-size: 0.84rem;
+  font-family: inherit;
+  font-size: var(--text-sm, 0.875rem);
   line-height: 1.65;
   overflow-wrap: anywhere;
   tab-size: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
 }
 
 .chat-tui-transcript::selection,
@@ -265,18 +269,148 @@
   background: color-mix(in srgb, var(--accent) 54%, transparent);
 }
 
-.chat-tui-turn + .chat-tui-turn {
-  margin-top: var(--space-4);
+.chat-tui-turn {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: min(92%, 100%);
+  border-radius: 12px;
+  padding: var(--space-2) var(--space-inset-msg, 0.85rem);
+  border: 1px solid transparent;
 }
 
+.chat-tui-turn + .chat-tui-turn {
+  margin-top: 0;
+}
+
+/* 角色元信息：对齐气泡 .msg-meta / .msg-meta-role */
 .chat-tui-role {
-  color: var(--text-muted);
-  font-weight: 600;
-  margin-bottom: 0.25rem;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin-bottom: 6px;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--muted) 88%, transparent);
+  font-weight: var(--font-weight-label, 600);
+  line-height: var(--line-tight, 1.25);
+  white-space: nowrap;
+}
+
+.chat-tui-role:empty,
+.chat-tui-role-label:empty {
+  display: none;
 }
 
 .chat-tui-body {
   min-width: 0;
+}
+
+/* —— 用户：accent 轻卡片，靠右（外层 wrap 负责贴右） —— */
+.chat-tui-turn--user {
+  width: fit-content;
+  background: linear-gradient(
+    160deg,
+    color-mix(in srgb, var(--accent) 26%, var(--surface)) 0%,
+    color-mix(in srgb, var(--accent) 15%, var(--surface)) 58%,
+    color-mix(in srgb, var(--accent) 10%, var(--surface)) 100%
+  );
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
+    0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.chat-tui-turn--user .chat-tui-role {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+}
+
+.chat-tui-turn--user .chat-tui-body {
+  /* 块靠右；正文在块内左对齐（与「整气泡贴右」区分） */
+  text-align: left;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+/* —— 助手：中性卡片，拉满 —— */
+.chat-tui-turn--assistant {
+  align-self: stretch;
+  width: 100%;
+  background: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--surface) 96%, var(--muted)) 0%,
+    color-mix(in srgb, var(--surface) 97%, var(--bg-elevated)) 55%,
+    color-mix(in srgb, var(--surface) 95%, var(--bg-elevated)) 100%
+  );
+  border-color: color-mix(in srgb, var(--border) 42%, var(--muted));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset,
+    0 2px 10px color-mix(in srgb, var(--bg) 38%, transparent);
+}
+
+.app-shell-ds .chat-tui-turn--assistant {
+  background: linear-gradient(
+    168deg,
+    color-mix(in srgb, var(--surface) 96%, var(--bg)) 0%,
+    color-mix(in srgb, var(--surface) 98%, var(--bg-elevated)) 100%
+  );
+  border-color: color-mix(in srgb, var(--border-subtle) 72%, var(--surface));
+  box-shadow: var(--shadow-sm);
+}
+
+.app-shell-ds .chat-tui-turn--user {
+  background: color-mix(in srgb, var(--surface) 90%, var(--bg));
+  border-color: color-mix(in srgb, var(--border) 78%, var(--surface));
+  box-shadow: none;
+}
+
+/* —— 系统 —— */
+.chat-tui-turn--system,
+.chat-tui-turn--other {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  background: var(--bg-elevated);
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid color-mix(in srgb, var(--muted) 65%, var(--border));
+  box-shadow: none;
+  border-radius: var(--radius-md);
+}
+
+/* —— 工具：扁平 mono，对齐 .msg-tool —— */
+.chat-tui-turn--tool {
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  border-radius: calc(var(--radius-md) / 2);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 4px var(--space-inset-msg, 0.85rem) 6px;
+}
+
+.chat-tui-turn--tool .chat-tui-role {
+  text-transform: none;
+  letter-spacing: 0.02em;
+  font-family: inherit;
+}
+
+.chat-tui-turn--tool.is-loading,
+.chat-tui-turn--tool.chat-tui-turn--live.is-loading {
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border-subtle));
+  background: color-mix(in srgb, var(--surface) 93%, var(--success) 7%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent),
+    0 2px 10px color-mix(in srgb, var(--success) 10%, transparent);
+  animation: msg-tool-exec-border-breathe 2.2s ease-in-out infinite;
 }
 
 .chat-tui-line > :first-child {
@@ -302,15 +436,112 @@
   white-space: pre-wrap;
 }
 
-.chat-tui-line pre,
-.chat-tui-line code {
-  font-family: inherit;
+.chat-tui-turn--assistant .chat-tui-line pre,
+.chat-tui-turn--assistant .chat-tui-line code {
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 0.92em;
+}
+
+.chat-tui-turn--tool .chat-tui-line pre,
+.chat-tui-turn--tool .chat-tui-line code {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* 工具过程一行摘要 + 折叠详情 */
+.chat-tui-tool-process {
+  min-width: 0;
+}
+
+.chat-tui-tool-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.55rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.chat-tui-tool-emoji {
+  flex: 0 0 auto;
+}
+
+.chat-tui-tool-name {
+  font-weight: var(--font-weight-label, 600);
+  color: color-mix(in srgb, var(--text) 82%, var(--muted));
+}
+
+.chat-tui-tool-status {
+  color: var(--muted);
+  font-size: 0.92em;
+}
+
+.chat-tui-tool-one-line {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: color-mix(in srgb, var(--text) 90%, var(--muted));
+}
+
+.chat-tui-tool-details {
+  margin-top: 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.chat-tui-tool-details > summary {
+  cursor: pointer;
+  color: var(--muted);
+  user-select: none;
+}
+
+.chat-tui-tool-detail-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 16rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--surface) 88%, var(--bg));
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: var(--radius-md);
 }
 
 .chat-tui-empty {
   color: var(--text-muted);
   white-space: pre-wrap;
+}
+
+/* 每回合：内容卡 + 下方操作条（对齐气泡 msg-actions-below） */
+.chat-tui-turn-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.chat-tui-turn-wrap--user {
+  align-self: flex-end;
+  align-items: flex-end;
+  max-width: min(92%, 100%);
+}
+
+.chat-tui-turn-wrap .chat-tui-turn {
+  max-width: 100%;
+}
+
+.chat-tui-turn-wrap--user .chat-tui-turn {
+  align-self: flex-end;
+}
+
+.chat-tui-turn-actions {
+  margin-top: 6px;
+}
+
+.chat-tui-turn-wrap--user .chat-tui-turn-actions {
+  justify-content: flex-end;
 }
 
 .messages-history-load {

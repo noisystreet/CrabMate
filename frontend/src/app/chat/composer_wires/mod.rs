@@ -158,5 +158,6 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         run_send_message,
         cancel_stream,
         new_session,
+        stream_follow_up,
     }
 }

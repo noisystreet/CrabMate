@@ -1,4 +1,6 @@
-//! TUI transcript：每回合独立 `section`；流式只对 live 按行 patch（Phase 2）。
+//! TUI transcript：每回合独立 wrap（section + 操作条）；工具为一行摘要；流式只对 live 按行 patch。
+
+use std::collections::HashMap;
 
 use crate::i18n::Locale;
 use crate::markdown::plaintext_to_safe_html;
@@ -7,9 +9,11 @@ use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
 
+use super::tui_actions_bar::turn_actions_bar_html;
 use super::tui_line_markdown::{
     TuiBodyChunks, TuiBodyPatch, parse_tui_body_chunks, plan_tui_body_patch,
 };
+use super::tui_tool_process::tool_process_body_html;
 
 /// 上一帧挂载状态。
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -32,6 +36,8 @@ pub(crate) struct TuiSyncPlan {
     pub append_sections: Vec<String>,
     /// 同结构下刷新已挂载回合 body（不拆 section）。
     pub refresh_bodies: Vec<LiveBodyPlan>,
+    /// 刷新回合下方操作条（状态变化：loading→done / error）。
+    pub refresh_actions: Vec<TurnActionsPlan>,
     pub live: Option<LiveBodyPlan>,
 }
 
@@ -41,6 +47,12 @@ pub(crate) struct LiveBodyPlan {
     pub patch: TuiBodyPatch,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TurnActionsPlan {
+    pub message_id: String,
+    pub html: String,
+}
+
 fn message_finalize_open_line(message: &StoredMessage) -> bool {
     !message
         .state
@@ -48,24 +60,24 @@ fn message_finalize_open_line(message: &StoredMessage) -> bool {
         .is_some_and(StoredMessageState::is_loading)
 }
 
+/// 工具名写在过程行内；不重复角色标签（对齐气泡）。
 fn tui_role_label(message: &StoredMessage, locale: Locale) -> String {
     if message.is_tool {
-        return message
-            .tool_name
-            .as_deref()
-            .filter(|name| !name.is_empty())
-            .map_or_else(
-                || crate::i18n::msg_role_tool(locale).to_string(),
-                |name| format!("{}:{name}", crate::i18n::msg_role_tool(locale)),
-            );
+        return String::new();
+    }
+    crate::session_ops::message_role_label(message, locale).to_string()
+}
+
+fn tui_turn_role_class(message: &StoredMessage) -> &'static str {
+    if message.is_tool {
+        return "chat-tui-turn--tool";
     }
     match message.role.as_str() {
-        "user" => crate::i18n::msg_role_user(locale),
-        "assistant" => crate::i18n::msg_role_assistant(locale),
-        "system" => crate::i18n::msg_role_system(locale),
-        _ => crate::i18n::msg_role_other(locale),
+        "user" => "chat-tui-turn--user",
+        "assistant" => "chat-tui-turn--assistant",
+        "system" => "chat-tui-turn--system",
+        _ => "chat-tui-turn--other",
     }
-    .to_string()
 }
 
 #[must_use]
@@ -118,6 +130,18 @@ pub(crate) fn committed_fingerprint(messages: &[StoredMessage], live_id: Option<
     fingerprint
 }
 
+fn tool_live_overlay<'a>(
+    message: &StoredMessage,
+    tool_chunks: &'a HashMap<String, String>,
+) -> Option<&'a str> {
+    message
+        .tool_call_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .and_then(|id| tool_chunks.get(id))
+        .map(String::as_str)
+}
+
 fn message_display_text(
     message: &StoredMessage,
     session_id: &str,
@@ -140,7 +164,15 @@ fn message_body_chunks(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    tool_chunks: &HashMap<String, String>,
 ) -> TuiBodyChunks {
+    if message.is_tool {
+        let live = tool_live_overlay(message, tool_chunks);
+        return TuiBodyChunks {
+            closed: vec![tool_process_body_html(message, locale, live)],
+            open_plain: None,
+        };
+    }
     let text = message_display_text(
         message,
         session_id,
@@ -151,31 +183,73 @@ fn message_body_chunks(
     parse_tui_body_chunks(&text, message_finalize_open_line(message))
 }
 
-fn turn_section_html(
-    message: &StoredMessage,
-    session_id: &str,
-    overlay: Option<&StreamTextOverlay>,
+struct TurnSectionArgs<'a> {
+    message: &'a StoredMessage,
+    msg_idx: usize,
+    session_id: &'a str,
+    overlay: Option<&'a StreamTextOverlay>,
     locale: Locale,
-    apply_assistant_display_filters: bool,
+    apply_filters: bool,
     is_live: bool,
-) -> String {
+    tool_chunks: &'a HashMap<String, String>,
+}
+
+fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
+    let TurnSectionArgs {
+        message,
+        msg_idx,
+        session_id,
+        overlay,
+        locale,
+        apply_filters,
+        is_live,
+        tool_chunks,
+    } = args;
     let role = tui_role_label(message, locale);
     let body = message_body_chunks(
         message,
         session_id,
         overlay,
         locale,
-        apply_assistant_display_filters,
+        apply_filters,
+        tool_chunks,
     )
     .to_inner_html();
+    let role_class = tui_turn_role_class(message);
+    let live_class = if is_live { " chat-tui-turn--live" } else { "" };
+    let loading_class = if message
+        .state
+        .as_ref()
+        .is_some_and(StoredMessageState::is_loading)
+    {
+        " is-loading"
+    } else {
+        ""
+    };
     let live_attr = if is_live { " data-tui-live=\"1\"" } else { "" };
-    format!(
-        "<section class=\"chat-tui-turn\" data-tui-msg-id=\"{}\"{live_attr}>\
-         <div class=\"chat-tui-role\">{}</div>\
+    let role_block = if role.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "<div class=\"chat-tui-role\"><span class=\"chat-tui-role-label\">{}</span></div>",
+            plaintext_to_safe_html(&role)
+        )
+    };
+    let id_esc = plaintext_to_safe_html(&message.id);
+    let section = format!(
+        "<section class=\"chat-tui-turn {role_class}{live_class}{loading_class}\" data-tui-msg-id=\"{id_esc}\"{live_attr}>\
+         {role_block}\
          <div class=\"chat-tui-body\">{body}</div>\
-         </section>",
-        plaintext_to_safe_html(&message.id),
-        plaintext_to_safe_html(&format!("{role} ❯")),
+         </section>"
+    );
+    let actions = turn_actions_bar_html(message, msg_idx, locale);
+    let wrap_align = if role_class == "chat-tui-turn--user" {
+        " chat-tui-turn-wrap--user"
+    } else {
+        ""
+    };
+    format!(
+        "<div class=\"chat-tui-turn-wrap{wrap_align}\" data-tui-wrap-id=\"{id_esc}\">{section}{actions}</div>"
     )
 }
 
@@ -186,22 +260,25 @@ pub(crate) fn build_tui_transcript_html(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    tool_chunks: &HashMap<String, String>,
 ) -> String {
     if messages.is_empty() {
         return empty_transcript_html(locale);
     }
     let live_id = live_message_id(messages, overlay);
     let mut html = String::new();
-    for message in messages {
+    for (msg_idx, message) in messages.iter().enumerate() {
         let is_live = live_id.as_deref() == Some(message.id.as_str());
-        html.push_str(&turn_section_html(
+        html.push_str(&turn_section_html(TurnSectionArgs {
             message,
+            msg_idx,
             session_id,
             overlay,
             locale,
-            apply_assistant_display_filters,
+            apply_filters: apply_assistant_display_filters,
             is_live,
-        ));
+            tool_chunks,
+        }));
     }
     html
 }
@@ -229,6 +306,7 @@ fn full_rebuild_plan(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    tool_chunks: &HashMap<String, String>,
 ) -> TuiSyncPlan {
     let live_id = live_message_id(messages, overlay);
     let committed_key = committed_fingerprint(messages, live_id.as_deref());
@@ -241,6 +319,7 @@ fn full_rebuild_plan(
                 overlay,
                 locale,
                 apply_assistant_display_filters,
+                tool_chunks,
             )
         })
     });
@@ -258,10 +337,12 @@ fn full_rebuild_plan(
             overlay,
             locale,
             apply_assistant_display_filters,
+            tool_chunks,
         )),
         promote_id: None,
         append_sections: Vec::new(),
         refresh_bodies: Vec::new(),
+        refresh_actions: Vec::new(),
         live: None,
     }
 }
@@ -287,6 +368,7 @@ struct TuiRenderCtx<'a> {
     overlay: Option<&'a StreamTextOverlay>,
     locale: Locale,
     apply_filters: bool,
+    tool_chunks: &'a HashMap<String, String>,
 }
 
 fn append_new_turn_sections(
@@ -295,17 +377,21 @@ fn append_new_turn_sections(
     live_id: Option<&str>,
     ctx: &TuiRenderCtx<'_>,
 ) -> Vec<String> {
-    messages[prev.mounted_ids.len()..]
+    messages
         .iter()
-        .map(|message| {
-            turn_section_html(
+        .enumerate()
+        .skip(prev.mounted_ids.len())
+        .map(|(msg_idx, message)| {
+            turn_section_html(TurnSectionArgs {
                 message,
-                ctx.session_id,
-                ctx.overlay,
-                ctx.locale,
-                ctx.apply_filters,
-                live_id == Some(message.id.as_str()),
-            )
+                msg_idx,
+                session_id: ctx.session_id,
+                overlay: ctx.overlay,
+                locale: ctx.locale,
+                apply_filters: ctx.apply_filters,
+                is_live: live_id == Some(message.id.as_str()),
+                tool_chunks: ctx.tool_chunks,
+            })
         })
         .collect()
 }
@@ -335,6 +421,7 @@ fn plan_live_patch(
             ctx.overlay,
             ctx.locale,
             ctx.apply_filters,
+            ctx.tool_chunks,
         );
         let prev_chunks = prev
             .live_body
@@ -353,6 +440,7 @@ fn plan_live_patch(
         ctx.overlay,
         ctx.locale,
         ctx.apply_filters,
+        ctx.tool_chunks,
     );
     Some(LiveBodyPlan {
         message_id: pid.to_string(),
@@ -377,12 +465,49 @@ fn plan_refresh_bodies(
                 ctx.overlay,
                 ctx.locale,
                 ctx.apply_filters,
+                ctx.tool_chunks,
             );
             LiveBodyPlan {
                 message_id: message.id.clone(),
                 patch: TuiBodyPatch::ReplaceAll { chunks },
             }
         })
+        .collect()
+}
+
+fn plan_refresh_actions(
+    messages: &[StoredMessage],
+    live_id: Option<&str>,
+    locale: Locale,
+) -> Vec<TurnActionsPlan> {
+    messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| live_id != Some(message.id.as_str()))
+        .map(|(msg_idx, message)| TurnActionsPlan {
+            message_id: message.id.clone(),
+            html: turn_actions_bar_html(message, msg_idx, locale),
+        })
+        .collect()
+}
+
+fn actions_for_promote(
+    messages: &[StoredMessage],
+    promote_id: Option<&str>,
+    locale: Locale,
+) -> Vec<TurnActionsPlan> {
+    let Some(pid) = promote_id else {
+        return Vec::new();
+    };
+    messages
+        .iter()
+        .enumerate()
+        .find(|(_, m)| m.id == pid)
+        .map(|(msg_idx, message)| TurnActionsPlan {
+            message_id: message.id.clone(),
+            html: turn_actions_bar_html(message, msg_idx, locale),
+        })
+        .into_iter()
         .collect()
 }
 
@@ -400,6 +525,7 @@ fn next_mount_state(
                 ctx.overlay,
                 ctx.locale,
                 ctx.apply_filters,
+                ctx.tool_chunks,
             )
         })
     });
@@ -421,6 +547,7 @@ pub(crate) fn plan_tui_sync(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    tool_chunks: &HashMap<String, String>,
 ) -> TuiSyncPlan {
     let Some(prev) = prev else {
         return full_rebuild_plan(
@@ -429,6 +556,7 @@ pub(crate) fn plan_tui_sync(
             overlay,
             locale,
             apply_assistant_display_filters,
+            tool_chunks,
         );
     };
     if must_full_rebuild(prev, messages, session_id) {
@@ -438,6 +566,7 @@ pub(crate) fn plan_tui_sync(
             overlay,
             locale,
             apply_assistant_display_filters,
+            tool_chunks,
         );
     }
 
@@ -446,6 +575,7 @@ pub(crate) fn plan_tui_sync(
         overlay,
         locale,
         apply_filters: apply_assistant_display_filters,
+        tool_chunks,
     };
     let live_id = live_message_id(messages, overlay);
     let committed_key = committed_fingerprint(messages, live_id.as_deref());
@@ -468,6 +598,7 @@ pub(crate) fn plan_tui_sync(
             promote_id: None,
             append_sections: Vec::new(),
             refresh_bodies: Vec::new(),
+            refresh_actions: Vec::new(),
             live,
         };
     }
@@ -475,22 +606,27 @@ pub(crate) fn plan_tui_sync(
     if same_turn_ids(prev, messages) && append_sections.is_empty() {
         let refresh_bodies =
             plan_refresh_bodies(messages, live_id.as_deref(), promote_id.as_deref(), &ctx);
+        let mut refresh_actions = plan_refresh_actions(messages, live_id.as_deref(), locale);
+        refresh_actions.extend(actions_for_promote(messages, promote_id.as_deref(), locale));
         return TuiSyncPlan {
             next,
             full_html: None,
             promote_id,
             append_sections: Vec::new(),
             refresh_bodies,
+            refresh_actions,
             live,
         };
     }
 
+    let refresh_actions = actions_for_promote(messages, promote_id.as_deref(), locale);
     TuiSyncPlan {
         next,
         full_html: None,
         promote_id,
         append_sections,
         refresh_bodies: Vec::new(),
+        refresh_actions,
         live,
     }
 }
@@ -500,6 +636,7 @@ mod tests {
     use super::*;
     use crate::storage::StoredMessageState;
     use crate::stream_text_overlay::StreamTextOverlay;
+    use std::collections::HashMap;
 
     fn message(id: &str, role: &str, text: &str) -> StoredMessage {
         StoredMessage {
@@ -535,6 +672,7 @@ mod tests {
             Some(&overlay1),
             Locale::ZhHans,
             false,
+            &HashMap::new(),
         );
         assert!(plan1.full_html.is_some());
 
@@ -551,6 +689,7 @@ mod tests {
             Some(&overlay2),
             Locale::ZhHans,
             false,
+            &HashMap::new(),
         );
         assert!(plan2.full_html.is_none());
         assert!(plan2.append_sections.is_empty());
@@ -578,6 +717,7 @@ mod tests {
             None,
             Locale::ZhHans,
             false,
+            &HashMap::new(),
         );
         assert!(plan1.full_html.is_some());
 
@@ -597,6 +737,7 @@ mod tests {
             Some(&overlay),
             Locale::ZhHans,
             false,
+            &HashMap::new(),
         );
         assert!(plan2.full_html.is_none(), "should append section");
         assert_eq!(plan2.append_sections.len(), 1);
@@ -610,7 +751,15 @@ mod tests {
     #[test]
     fn session_switch_forces_full_rebuild() {
         let messages = vec![message("u1", "user", "hi")];
-        let plan1 = plan_tui_sync(None, &messages, "s1", None, Locale::ZhHans, false);
+        let plan1 = plan_tui_sync(
+            None,
+            &messages,
+            "s1",
+            None,
+            Locale::ZhHans,
+            false,
+            &HashMap::new(),
+        );
         let plan2 = plan_tui_sync(
             Some(&plan1.next),
             &messages,
@@ -618,6 +767,7 @@ mod tests {
             None,
             Locale::ZhHans,
             false,
+            &HashMap::new(),
         );
         assert!(plan2.full_html.is_some());
     }
@@ -628,11 +778,37 @@ mod tests {
             message("u1", "user", "你好"),
             message("a1", "assistant", "**原样**"),
         ];
-        let output = build_tui_transcript_html(&messages, "s1", None, Locale::ZhHans, false);
+        let output = build_tui_transcript_html(
+            &messages,
+            "s1",
+            None,
+            Locale::ZhHans,
+            false,
+            &HashMap::new(),
+        );
         assert!(output.contains("data-tui-msg-id"), "got {output}");
+        assert!(output.contains("chat-tui-turn--user"), "got {output}");
+        assert!(output.contains("chat-tui-turn--assistant"), "got {output}");
+        assert!(output.contains("chat-tui-role-label"), "got {output}");
+        assert!(output.contains("chat-tui-turn-actions"), "got {output}");
+        assert!(output.contains("data-tui-action=\"copy\""), "got {output}");
+        assert!(!output.contains('❯'), "got {output}");
         assert!(
             output.contains("<strong>") || output.contains("<b>"),
             "got {output}"
         );
+    }
+
+    #[test]
+    fn tool_turn_uses_tool_modifier_without_generic_role_word() {
+        let mut tool = message("t1", "assistant", "ok");
+        tool.is_tool = true;
+        tool.tool_name = Some("read_file".to_string());
+        let output =
+            build_tui_transcript_html(&[tool], "s1", None, Locale::ZhHans, false, &HashMap::new());
+        assert!(output.contains("chat-tui-turn--tool"), "got {output}");
+        assert!(output.contains("chat-tui-tool-process"), "got {output}");
+        assert!(output.contains("read_file"), "got {output}");
+        assert!(!output.contains("工具:"), "got {output}");
     }
 }

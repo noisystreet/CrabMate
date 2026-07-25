@@ -9,6 +9,20 @@ pub fn chat_tui_empty(l: Locale) -> &'static str {
     }
 }
 
+pub fn chat_tui_tool_status_done(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "完成",
+        Locale::En => "done",
+    }
+}
+
+pub fn chat_tui_tool_status_failed(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "失败",
+        Locale::En => "failed",
+    }
+}
+
 pub fn composer_ph(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
