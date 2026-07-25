@@ -11,10 +11,10 @@ use wasm_bindgen::prelude::Closure;
 use super::column_keyboard::ChatColumnHomeEndNav;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
-use super::scroll_follow::follow_after_content_paint;
+use super::scroll_follow::on_content_resize_if_pinned;
 use super::scroll_shell::{
-    ChatScrollShellSignals, on_messages_pointer_scroll_event, on_messages_pointer_scroll_intent,
-    on_messages_wheel_follow_intent,
+    ChatScrollShellSignals, on_messages_pointer_scroll_intent, on_messages_stick_scroll_event,
+    on_messages_wheel_follow_intent, stick_content_root,
 };
 use super::tui_stream_view::ChatTuiStreamView;
 use crate::api::upload_files_multipart;
@@ -56,10 +56,36 @@ fn ChatMessagesScrollShell(
     let observer_handle = RwSignal::new_local(None::<ScrollSentinelObserver>);
     let resize_observer_handle = RwSignal::new_local(None::<ScrollContentResizeObserver>);
     let auto_scroll = scroll_shell.auto_scroll_chat;
+    let pointer_scroll_active = scroll_shell.pointer_scroll_active;
+    scroll_shell.messages_scroller.on_load(move |root| {
+        let resize_callback = Closure::new(
+            move |_entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::ResizeObserver| {
+                on_content_resize_if_pinned(scroll_shell);
+            },
+        );
+        let Some(content) = stick_content_root(root.as_ref()) else {
+            return;
+        };
+        let resize_observer =
+            web_sys::ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
+                .expect("ResizeObserver");
+        resize_observer.observe(&content);
+        resize_observer_handle.set(Some(ScrollContentResizeObserver {
+            _callback: resize_callback,
+            observer: resize_observer,
+        }));
+    });
+    // 哨兵仅 re-pin：流式增高时 scroll gap 可能短暂超过 NEAR，IO 补齐「滚回底部」恢复跟随。
+    // root 用 sentinel.parent（即 `.messages`），避免 NodeRef 尚未就绪时落到 viewport 误 pin。
+    // 指针拖拽期间不 pin，避免与离底 unpin 竞态。
     sentinel_ref.on_load(move |el| {
         let ac = auto_scroll;
+        let pointer = pointer_scroll_active;
         let cb = Closure::new(
             move |entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::IntersectionObserver| {
+                if pointer.get_untracked() {
+                    return;
+                }
                 if let Some(entry) = entries.first() {
                     if let Ok(entry) = entry
                         .clone()
@@ -72,7 +98,7 @@ fn ChatMessagesScrollShell(
             },
         );
         let options = web_sys::IntersectionObserverInit::new();
-        if let Some(root) = scroll_shell.messages_scroller.get_untracked() {
+        if let Some(root) = el.parent_element() {
             options.set_root(Some(root.as_ref()));
         }
         let observer =
@@ -83,25 +109,6 @@ fn ChatMessagesScrollShell(
             _callback: cb,
             observer,
         }));
-        let resize_callback = Closure::new(
-            move |_entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::ResizeObserver| {
-                follow_after_content_paint(scroll_shell);
-            },
-        );
-        if let Some(content) = scroll_shell
-            .messages_scroller
-            .get_untracked()
-            .and_then(|root| root.query_selector(".chat-thread").ok().flatten())
-        {
-            let resize_observer =
-                web_sys::ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
-                    .expect("ResizeObserver");
-            resize_observer.observe(&content);
-            resize_observer_handle.set(Some(ScrollContentResizeObserver {
-                _callback: resize_callback,
-                observer: resize_observer,
-            }));
-        }
     });
     view! {
         <div
@@ -109,7 +116,7 @@ fn ChatMessagesScrollShell(
             data-testid="chat-messages-scroller"
             node_ref=scroll_shell.messages_scroller
             on:wheel=move |ev: web_sys::WheelEvent| {
-                on_messages_wheel_follow_intent(scroll_shell.auto_scroll_chat, ev);
+                on_messages_wheel_follow_intent(scroll_shell, ev);
             }
             on:pointerdown=move |_| {
                 on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, true);
@@ -121,7 +128,7 @@ fn ChatMessagesScrollShell(
                 on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, false);
             }
             on:scroll=move |ev: web_sys::Event| {
-                on_messages_pointer_scroll_event(scroll_shell, ev);
+                on_messages_stick_scroll_event(scroll_shell, ev);
             }
         >
             <div class="chat-thread">{children()}</div>
@@ -145,6 +152,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                 chat=chat
                 locale=locale
                 apply_assistant_display_filters=apply_assistant_display_filters
+                scroll_shell=scroll_shell
             />
         </ChatMessagesScrollShell>
     }
