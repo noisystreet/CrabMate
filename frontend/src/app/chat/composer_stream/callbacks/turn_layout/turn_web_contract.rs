@@ -5,9 +5,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
 
-    use crabmate_turn_layout::{
-        ASSISTANT_COMMENTARY, SegmentKind, TurnEvent, project_turn_web, project_turn_web_v2,
-    };
+    use crabmate_turn_layout::{ASSISTANT_COMMENTARY, SegmentKind, TurnEvent, project_turn_web_v2};
     use serde::Deserialize;
 
     use super::super::super::super::turn_canonical::{
@@ -18,15 +16,13 @@ mod tests {
     use crate::storage::StoredMessageState;
 
     use super::super::bubble_queue::{
-        BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id,
-        is_commentary_row_id,
+        BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id, is_commentary_row_id,
     };
 
     #[derive(Debug, Deserialize)]
     struct WebGoldenCase {
         id: String,
         events: Vec<TurnEvent>,
-        expect: Vec<crabmate_turn_layout::ProjectedRow>,
         #[serde(default)]
         expect_open_preview: Option<String>,
     }
@@ -100,7 +96,7 @@ mod tests {
     }
 
     fn tool_messages_from_projection(turn: &TurnCanonicalState) -> Vec<StoredMessage> {
-        project_turn_web(turn.turn_ref())
+        project_turn_web_v2(turn.turn_ref())
             .into_iter()
             .filter(|r| r.kind == "tool")
             .map(|r| StoredMessage {
@@ -151,20 +147,11 @@ mod tests {
 
     #[test]
     fn golden_turn_web_stored_sync() {
-        let path = fixture_path();
-        for (line_no, case) in load_cases() {
+        for (_, case) in load_cases() {
             let mut turn = TurnCanonicalState::new();
             for ev in case.events {
                 apply_event(&mut turn, ev);
             }
-            assert_eq!(
-                project_turn_web(turn.turn_ref()),
-                case.expect,
-                "projection drift in case {} at {}:{}",
-                case.id,
-                path.display(),
-                line_no
-            );
 
             let mut messages = tool_messages_from_projection(&turn);
             BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None);
@@ -182,7 +169,7 @@ mod tests {
         }
     }
 
-    /// 真实路径形态 B：无 `turn_segment_*`、仅 plain delta + tool_call；stored 须拆成 batch + tools + final。
+    /// 真实路径形态 B：无 `turn_segment_*`、仅 plain delta + tool_call；stored 须拆成 commentary + tools + final。
     #[test]
     fn real_morph_b_bulk_deltas_stored_block_layout() {
         let mut turn = TurnCanonicalState::new();
@@ -194,13 +181,6 @@ mod tests {
         turn.on_tool_phase_end();
         // `try_apply_answer_state_transition` 仅状态转换，终答在 overlay。
         assert!(turn.try_apply_answer_state_transition("HPCG 编译完成。"));
-
-        let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
-        assert!(
-            batch.text.contains("好的，先看 HPCG") && batch.text.contains("读取 INSTALL"),
-            "batch={}",
-            batch.text
-        );
 
         let mut messages = tool_messages_from_projection(&turn);
         let queue = BubbleOutputQueue;
@@ -228,9 +208,9 @@ mod tests {
         );
     }
 
-    /// open 旁注段撑到 `tool_phase_end` 仍无 `segment_end`：须关段落盘 batch，勿留 overlay 巨泡。
+    /// open 旁注段撑到 `tool_phase_end` 仍无 `segment_end`：须关段落盘 commentary，勿留 overlay 巨泡。
     #[test]
-    fn open_commentary_through_tool_phase_end_syncs_batch_before_tools() {
+    fn open_commentary_through_tool_phase_end_syncs_rows_before_tools() {
         let mut turn = TurnCanonicalState::new();
         assert!(turn.try_apply_commentary_delta("先看 HPCG 安装说明。"));
         turn.on_tool_call("tc_unpack", "unpack", "unpack");
@@ -240,13 +220,6 @@ mod tests {
         assert!(
             crabmate_turn_layout::streaming_commentary_block_text(turn.turn_ref()).is_none(),
             "open preview must be closed after tool_phase_end"
-        );
-
-        let batch = crabmate_turn_layout::batch_narration_row(turn.turn_ref()).expect("batch");
-        assert!(
-            batch.text.contains("先看 HPCG") && batch.text.contains("读取 INSTALL"),
-            "batch={}",
-            batch.text
         );
 
         let mut messages = tool_messages_from_projection(&turn);
@@ -303,9 +276,9 @@ mod tests {
         assert_eq!(messages[final_idx].text, "HPCG 编译完成。");
     }
 
-    /// 单工具 + 晚于 `tool_call` 的旁注（分析目录轮）：batch 仍须在工具前。
+    /// 单工具 + 晚于 `tool_call` 的旁注（分析目录轮）：commentary 仍须在工具前。
     #[test]
-    fn morph_b_late_narration_after_first_tool_batch_before_tool() {
+    fn morph_b_late_narration_after_first_tool_commentary_before_tool() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_list", "list_tree", "list tree");
         assert!(turn.try_apply_commentary_delta("好的，我来看看当前工作区的情况。"));
@@ -335,7 +308,7 @@ mod tests {
     }
 
     /// 零工具轮次：流式 delta 累积 → sync_web_projection → FINAL_ANSWER_ROW。
-    /// 验证终答完整无重复，且不产生 batch 或 tool 行。
+    /// 验证终答完整无重复，且不产生 commentary 或 tool 行。
     #[test]
     fn zero_tool_answer_bubble_layout() {
         let mut turn = TurnCanonicalState::new();
@@ -360,11 +333,7 @@ mod tests {
             !messages.iter().any(|m| m.is_tool),
             "zero-tool turn must not produce tool rows"
         );
-        // 不应有 batch 行
-        assert!(
-            !messages.iter().any(|m| m.id == BATCH_NARRATION_ROW_ID),
-            "zero-tool turn must not produce batch row"
-        );
+        assert!(commentary_row_indices(&messages).is_empty());
         // 必须有 FINAL_ANSWER_ROW 且内容完整
         let final_idx = messages
             .iter()

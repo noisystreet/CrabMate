@@ -148,8 +148,8 @@ impl StreamSseScratch {
             .try_apply_answer_state_transition(delta)
     }
 
-    pub(super) fn batch_narration_char_len(&self) -> usize {
-        self.turn.borrow().batch_narration_char_len()
+    pub(super) fn closed_commentary_char_len(&self) -> usize {
+        self.turn.borrow().closed_commentary_char_len()
     }
 
     #[inline]
@@ -177,10 +177,8 @@ impl StreamSseScratch {
     }
 
     #[inline]
-    pub(super) fn ingest_batch_commentary_from_peel(&self, text: &str) {
-        self.turn
-            .borrow_mut()
-            .ingest_batch_commentary_from_peel(text);
+    pub(super) fn ingest_commentary_from_peel(&self, text: &str) {
+        self.turn.borrow_mut().ingest_commentary_from_peel(text);
     }
 
     #[inline]

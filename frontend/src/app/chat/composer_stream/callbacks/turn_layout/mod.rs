@@ -72,7 +72,7 @@ fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) ->
     if stream_ctx.scratch.tool_phase_open() {
         stream_ctx
             .scratch
-            .ingest_batch_commentary_from_peel(answer.as_str());
+            .ingest_commentary_from_peel(answer.as_str());
     } else {
         stream_ctx
             .scratch
@@ -84,7 +84,7 @@ fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) ->
 /// 工具边界 / demote：overlay 与 loading stored 正文 **仅** 迁入 canonical，不写 `StoredMessage` 助手行。
 ///
 /// 注意：`commit_overlay_commentary_to_canonical` 已从 overlay 推送过正文，
-/// 后续 stored message 中取出的文本与之相同，**不再重复推送**（否则 batch 加倍）。
+/// 后续 stored message 中取出的文本与之相同，**不再重复推送**（否则 commentary 加倍）。
 pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
     if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
         return;
@@ -116,7 +116,7 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
         if stream_ctx.scratch.tool_phase_open() {
             stream_ctx
                 .scratch
-                .ingest_batch_commentary_from_peel(text.as_str());
+                .ingest_commentary_from_peel(text.as_str());
         } else {
             stream_ctx
                 .scratch
@@ -700,7 +700,7 @@ impl TurnLayout {
         }
     }
 
-    /// 流结束：batch 已落盘时去掉仍含正文的 loading 尾泡（真实 LLM 形态 B 巨泡兜底）。
+    /// 流结束：commentary 已落盘时去掉仍含正文的 loading 尾泡（真实 LLM 形态 B 巨泡兜底）。
     pub(crate) fn dedupe_loading_tail_against_commentary_rows(
         messages: &mut Vec<StoredMessage>,
         loading_id: &str,

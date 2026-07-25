@@ -9,8 +9,6 @@ use crate::storage::{V2_COMMENTARY_ROW_ID_PREFIX, V2_FINAL_ANSWER_ROW_ID};
 
 use super::super::super::turn_canonical::TurnCanonicalState;
 
-/// v1 历史会话的批说明稳定 id；新流仅用于兼容识别。
-pub(crate) const BATCH_NARRATION_ROW_ID: &str = "turn-batch-narration";
 /// 工具批结束后终答块的稳定 id（与 `project_turn_web` · `assistant_answer` 对应）。
 pub(crate) const FINAL_ANSWER_ROW_ID: &str = V2_FINAL_ANSWER_ROW_ID;
 
@@ -21,7 +19,7 @@ pub(crate) fn commentary_row_id(tool_call_id: &str) -> String {
 }
 
 pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
-    message_id == BATCH_NARRATION_ROW_ID || message_id.starts_with(V2_COMMENTARY_ROW_ID_PREFIX)
+    message_id.starts_with(V2_COMMENTARY_ROW_ID_PREFIX)
 }
 
 /// 流式 preview / 边界 flush 队列。
@@ -329,7 +327,7 @@ mod tests {
     use super::*;
     use crate::sse_dispatch::TurnSegmentStartInfo;
 
-    fn make_turn_with_batch_commentary() -> TurnCanonicalState {
+    fn make_turn_with_commentary() -> TurnCanonicalState {
         let mut turn = TurnCanonicalState::new();
         turn.on_segment_start(TurnSegmentStartInfo {
             segment_id: "seg-before-tc_a".into(),
@@ -360,7 +358,7 @@ mod tests {
         });
         assert!(turn.try_apply_commentary_delta("步骤 B。"));
         assert_eq!(
-            crabmate_turn_layout::batch_narration_text(turn.turn_ref()).as_deref(),
+            crabmate_turn_layout::commentary_for_tool(turn.turn_ref(), "tc_a").as_deref(),
             Some("步骤 A。")
         );
         assert_eq!(
@@ -371,7 +369,7 @@ mod tests {
 
     #[test]
     fn flush_commentary_inserts_immutable_row_before_its_tool() {
-        let turn = make_turn_with_batch_commentary();
+        let turn = make_turn_with_commentary();
         let queue = BubbleOutputQueue;
         let mut msgs = vec![crate::storage::StoredMessage {
             id: "t".into(),
@@ -402,7 +400,7 @@ mod tests {
         let queue = BubbleOutputQueue;
         let mut msgs = vec![
             crate::storage::StoredMessage {
-                id: BATCH_NARRATION_ROW_ID.into(),
+                id: commentary_row_id("tc_existing"),
                 role: "assistant".into(),
                 text: "说明。".into(),
                 reasoning_text: String::new(),
@@ -496,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_final_deferred_until_batch_row_present() {
+    fn flush_final_deferred_until_commentary_row_present() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_a", "tool_a", "tool a");
         turn.on_segment_start(crate::sse_dispatch::TurnSegmentStartInfo {
@@ -526,7 +524,7 @@ mod tests {
         queue.flush_final_answer_row(&mut msgs, &turn, Some("load"), Some("终答。"));
         assert!(
             !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
-            "final must not appear before batch row"
+            "final must not appear before commentary row"
         );
 
         msgs.insert(
@@ -560,8 +558,8 @@ mod tests {
     }
 
     #[test]
-    fn flush_batch_narration_skips_without_tool_row() {
-        let turn = make_turn_with_batch_commentary();
+    fn flush_commentary_skips_without_tool_row() {
+        let turn = make_turn_with_commentary();
         let queue = BubbleOutputQueue;
         let mut msgs = Vec::new();
         queue.flush_commentary_rows(&mut msgs, &turn, None);

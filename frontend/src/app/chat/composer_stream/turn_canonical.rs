@@ -4,8 +4,9 @@
 //! 带 `tool_call_id` 锚点的可见 assistant 行（置于对应工具之前）。
 
 use crabmate_turn_layout::{
-    PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnEvent, batch_narration_text,
-    commentary_for_tool, reduce_event, streaming_commentary_block_text,
+    PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnEvent,
+    batch_narration_text as closed_commentary_text, commentary_for_tool, reduce_event,
+    streaming_commentary_block_text,
 };
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -91,7 +92,7 @@ impl TurnCanonicalState {
     }
 
     fn commentary_matches_final_response(&self, text: &str) -> bool {
-        let closed = batch_narration_text(&self.turn).unwrap_or_default();
+        let closed = closed_commentary_text(&self.turn).unwrap_or_default();
         let open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
         let mut commentary = String::with_capacity(closed.len() + open.len());
         commentary.push_str(&closed);
@@ -165,13 +166,13 @@ impl TurnCanonicalState {
         });
     }
 
-    /// overlay / peel 正文 append 到批说明（块布局）；不因已有 step 旁注而丢弃。
-    pub(super) fn ingest_batch_commentary_from_peel(&mut self, text: &str) {
+    /// 将 overlay / peel 正文归入 canonical commentary；不因已有 step 旁注而丢弃。
+    pub(super) fn ingest_commentary_from_peel(&mut self, text: &str) {
         let t = text.trim();
         if t.is_empty() {
             return;
         }
-        let closed = batch_narration_text(&self.turn).unwrap_or_default();
+        let closed = closed_commentary_text(&self.turn).unwrap_or_default();
         let open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
         let mut combined = String::with_capacity(closed.len() + open.len());
         combined.push_str(&closed);
@@ -311,17 +312,17 @@ impl TurnCanonicalState {
         IngestFinalResponseOutcome::WriteToOverlay(text.to_string())
     }
 
-    /// 块布局批说明字符数（形态 B 短终答门控）。
-    pub(super) fn batch_narration_char_len(&self) -> usize {
-        crabmate_turn_layout::batch_narration_text(&self.turn)
+    /// 已关闭 commentary 字符数（形态 B 短终答门控）。
+    pub(super) fn closed_commentary_char_len(&self) -> usize {
+        closed_commentary_text(&self.turn)
             .map(|t| t.chars().count())
             .unwrap_or(0)
     }
 
-    /// 块布局批说明全文（[`crabmate_turn_layout::batch_narration_text`]）— 测试用；生产路径见 `project_turn_web`。
+    /// 已关闭 commentary 全文（测试用）。
     #[cfg(test)]
-    pub(super) fn batch_narration_text(&self) -> Option<String> {
-        crabmate_turn_layout::batch_narration_text(&self.turn)
+    pub(super) fn closed_commentary_text(&self) -> Option<String> {
+        closed_commentary_text(&self.turn)
     }
 
     /// 首个 `tool_call` 前：把尾泡旁注收进 pending 旁注段。
@@ -412,22 +413,22 @@ mod tests {
     }
 
     #[test]
-    fn ingest_batch_commentary_appends_after_first_tool_step() {
+    fn ingest_commentary_from_peel_appends_after_first_tool_step() {
         let mut turn = TurnCanonicalState::new();
         turn.ingest_pre_tool_commentary("先解压。");
         turn.on_tool_call("tc1", "unpack", "unpack");
-        turn.ingest_batch_commentary_from_peel("再看 INSTALL。");
+        turn.ingest_commentary_from_peel("再看 INSTALL。");
         turn.on_tool_call("tc2", "read_file", "read file");
         assert_eq!(
-            turn.batch_narration_text().as_deref(),
+            turn.closed_commentary_text().as_deref(),
             Some("先解压。再看 INSTALL。")
         );
     }
 
     #[test]
-    fn batch_narration_text_merges_pending_and_step_commentary() {
+    fn closed_commentary_text_merges_pending_and_step_commentary() {
         let mut turn = TurnCanonicalState::new();
-        turn.ingest_batch_commentary_from_peel("pending。");
+        turn.ingest_commentary_from_peel("pending。");
         turn.on_segment_start(TurnSegmentStartInfo {
             segment_id: "seg-before-tc_a".into(),
             kind: "commentary".into(),
@@ -445,7 +446,7 @@ mod tests {
         turn.on_segment_end("seg-before-tc_b".into());
         turn.on_tool_call("tc_b", "tool_b", "tool b");
         assert_eq!(
-            turn.batch_narration_text().as_deref(),
+            turn.closed_commentary_text().as_deref(),
             Some("pending。步骤 A。步骤 B。")
         );
     }
