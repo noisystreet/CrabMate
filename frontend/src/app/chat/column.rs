@@ -1,6 +1,5 @@
-//! 中部聊天列：消息列表、输入框、查找入口。
+//! 中部聊天列：终端流消息区、输入框、查找入口。
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use leptos::prelude::{StoredValue, *};
@@ -12,14 +11,12 @@ use wasm_bindgen::prelude::Closure;
 use super::column_keyboard::ChatColumnHomeEndNav;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
-use super::message_group_views::ToolRunGroupSignals;
-use super::messages_list::{ChatMessagesList, ChatMessagesListSignals};
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::{
     ChatScrollShellSignals, on_messages_pointer_scroll_event, on_messages_pointer_scroll_intent,
     on_messages_wheel_follow_intent,
 };
-use super::tail_loading_memo::tail_loading_assistant_mid_memo;
+use super::tui_stream_view::ChatTuiStreamView;
 use crate::api::upload_files_multipart;
 use crate::i18n;
 
@@ -127,69 +124,8 @@ fn ChatMessagesScrollShell(
                 on_messages_pointer_scroll_event(scroll_shell, ev);
             }
         >
-            {children()}
+            <div class="chat-thread">{children()}</div>
             <div data-testid="scroll-sentinel" node_ref=sentinel_ref style="height:1px" />
-        </div>
-    }
-}
-
-#[component]
-fn ChatMessagesThreadBody(
-    pane: ChatMessagesPaneSignals,
-    tool_run_group_signals: ToolRunGroupSignals,
-) -> impl IntoView {
-    let ChatMessagesPaneSignals {
-        locale,
-        chat,
-        scroll_shell,
-        ..
-    } = pane;
-
-    let sessions = chat.sessions;
-    let active_id = chat.active_id;
-
-    view! {
-        <div class="chat-thread">
-            <div class="messages-inner">
-                <Show
-                    when=move || {
-                        let id = active_id.get();
-                        sessions.with(|list| {
-                            list.iter()
-                                .find(|s| s.id == id)
-                                .map(|s| !s.messages.is_empty())
-                                .unwrap_or(false)
-                        })
-                    }
-                    fallback=move || {
-                        view! {
-                            <div class="messages-empty" role="status">
-                                <div class="messages-empty-card">
-                                    <p class="messages-empty-title">
-                                        {move || i18n::chat_empty_title(locale.get())}
-                                    </p>
-                                    <p class="messages-empty-lead">
-                                        {move || i18n::chat_empty_lead(locale.get())}
-                                    </p>
-                                    <ul class="messages-empty-tips">
-                                        <li>{move || i18n::chat_empty_tip1(locale.get())}</li>
-                                        <li>{move || i18n::chat_empty_tip2(locale.get())}</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        }
-                    }
-                >
-                    <ChatMessagesList signals=ChatMessagesListSignals {
-                        chat,
-                        sessions,
-                        active_id,
-                        locale,
-                        scroll_shell,
-                        tool_run_group_signals,
-                    } />
-                </Show>
-            </div>
         </div>
     }
 }
@@ -199,44 +135,17 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
     let ChatMessagesPaneSignals {
         scroll_shell,
         chat,
-        collapsed_long_assistant_ids,
-        collapsed_tool_run_heads,
-        tool_detail_expanded_ids,
-        chat_find_query,
-        chat_find_match_ids,
-        chat_find_cursor,
-        stream_turn_busy_ui,
-        stream_follow_up,
-        status_err,
         locale,
-        markdown_render,
         apply_assistant_display_filters,
     } = signals;
 
-    let tail_loading_assistant_mid = tail_loading_assistant_mid_memo(chat);
-
-    let tool_run_group_signals = ToolRunGroupSignals {
-        collapsed_tool_run_heads,
-        tool_detail_expanded_ids,
-        chat_find_query,
-        chat_find_match_ids,
-        chat,
-        collapsed_long_assistant_ids,
-        chat_find_cursor,
-        stream_turn_busy_ui,
-        tail_loading_assistant_mid,
-        stream_follow_up,
-        status_err,
-        scroll_shell,
-        locale,
-        markdown_render,
-        apply_assistant_display_filters,
-        row_state_map: Memo::new(move |_| HashMap::new()),
-    };
-
     view! {
         <ChatMessagesScrollShell scroll_shell>
-            <ChatMessagesThreadBody pane=signals tool_run_group_signals />
+            <ChatTuiStreamView
+                chat=chat
+                locale=locale
+                apply_assistant_display_filters=apply_assistant_display_filters
+            />
         </ChatMessagesScrollShell>
     }
 }

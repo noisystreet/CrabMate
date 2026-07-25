@@ -15,6 +15,8 @@ pub struct ChatComposerSignals {
     pub composer_input_ref: NodeRef<leptos::html::Textarea>,
     pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
     /// 连续工具组中用户手动**收起**为仅显示最后一条的分组 head（message id）；默认空 = 全部展开。
+    /// 主列当前默认终端流，气泡列表未挂载时此信号暂无读取方。
+    #[allow(dead_code)]
     pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
     /// 工具气泡「详情抽屉」展开中的消息 id（与 `StoredMessage::id` 一致）；避免 `For` 重挂行时丢失本地 `RwSignal<bool>`。
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,

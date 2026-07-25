@@ -1,6 +1,9 @@
 //! 将 `StoredMessage` 切片折叠为连续工具组，供聊天列迭代渲染。
 //!
 //! 可见性筛选与 fuzzy dedupe 见 [`crate::visible_messages`]（单一读路径）；本模块只负责 **chunk 折叠**。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 use crate::storage::StoredMessage;
 use crate::visible_messages::VisibleMessageScope;

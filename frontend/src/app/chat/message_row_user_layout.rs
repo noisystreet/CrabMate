@@ -1,4 +1,7 @@
 //! 用户消息行内联 flex（与 `layout-chat.css` 中 `.msg-row-user` 配对）及工具卡附带数据。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 

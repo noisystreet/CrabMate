@@ -1,5 +1,8 @@
 //! 连续工具输出组视图（[`super::message_row::chat_message_row`]）：默认展开全部，可收起为仅最后一条；
 //! 组内顺序与 [`super::message_chunks::chunk_messages`] 传入的 `items` 一致（即会话里消息到达/排列顺序，通常旧在上、新在下），标题栏在组内底部。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 

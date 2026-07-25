@@ -23,6 +23,13 @@ pub fn msg_role_system(l: Locale) -> &'static str {
     }
 }
 
+pub fn msg_role_tool(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "工具",
+        Locale::En => "Tool",
+    }
+}
+
 pub fn msg_role_other(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "其它",

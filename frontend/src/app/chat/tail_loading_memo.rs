@@ -1,4 +1,7 @@
 //! 尾部「非工具助手」loading 状态：供消息行打字点等 UI **单次**订阅，避免每行 `sessions.with` 扫全表。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 use leptos::prelude::*;
 

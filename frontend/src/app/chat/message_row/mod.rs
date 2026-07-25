@@ -1,6 +1,9 @@
 //! 单条消息气泡与下方操作条（复制 / 重试 / 分支等）。
 //!
 //! 与 `POST /chat/branch`、本地截断再生相关的副作用见 [`super::message_row_actions`]。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 pub(crate) mod helpers;
 mod non_assistant_body;

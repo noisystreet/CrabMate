@@ -1,4 +1,7 @@
 //! 消息行上的**副作用动作**（分支 API、本地截断后再流式）：从 `message_row` 视图拆出，降低视图文件与 `api`/`session_ops` 的纠缠。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;

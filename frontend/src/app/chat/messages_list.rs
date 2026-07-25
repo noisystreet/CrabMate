@@ -1,4 +1,7 @@
 //! 消息列：全量 chunk 渲染与「加载更早」按钮。
+//!
+//! 主列当前默认终端流；本模块保留气泡列表实现供后续恢复。
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 

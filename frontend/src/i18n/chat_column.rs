@@ -2,32 +2,10 @@ use super::Locale;
 
 // --- 聊天列空态 / 输入区 ---
 
-pub fn chat_empty_lead(l: Locale) -> &'static str {
+pub fn chat_tui_empty(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "在下方输入消息，Enter 发送，Shift+Enter 换行。",
-        Locale::En => "Type below: Enter to send, Shift+Enter for newline.",
-    }
-}
-
-pub fn chat_empty_tip1(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => {
-            "左侧可新建对话、切换最近会话；会话项右键或列表空白处右键可「管理会话」、导出与重命名。"
-        }
-        Locale::En => {
-            "Use the left rail for new chat and recent sessions; right-click a session or empty list space for Manage sessions, export, and rename."
-        }
-    }
-}
-
-pub fn chat_empty_tip2(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => {
-            "侧栏展开时工具栏在右列顶部；「隐藏侧栏」后右侧贴边纵向三键，同宽铺满一条，无额外围框。视图菜单可在隐藏、工作区、任务之间切换。"
-        }
-        Locale::En => {
-            "With the side panel open, tools are on the top of the right column; when hidden, three buttons stack on the right edge. The view menu switches hide / workspace / tasks."
-        }
+        Locale::ZhHans => "CrabMate 已就绪。输入消息开始纯文本流式对话。",
+        Locale::En => "CrabMate ready. Send a message to start the plain-text stream.",
     }
 }
 
@@ -144,13 +122,6 @@ pub fn chat_history_loading_older(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "正在加载更早的消息…",
         Locale::En => "Loading older messages…",
-    }
-}
-
-pub fn chat_empty_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "开始对话",
-        Locale::En => "Start a conversation",
     }
 }
 

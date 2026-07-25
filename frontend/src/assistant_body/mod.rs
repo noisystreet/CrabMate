@@ -11,6 +11,9 @@
 //!
 //! 当前活动会话中按 `message_id` 取展示快照见 [`helpers::snapshot_assistant_message_for_mid`]，
 //! 与 [`helpers::assistant_markdown_display_memo`]、折叠条、`class=` 分支共用。
+//!
+//! 主列当前默认终端流；本模块随气泡列表一并保留。
+#![allow(dead_code)]
 
 mod helpers;
 mod md_answer_effect;
