@@ -94,7 +94,7 @@ fn tool_detail_body(
     detail
 }
 
-/// 工具回合 body 内层 HTML（单块，不做按行 Markdown）。
+/// 工具回合 body 内层 HTML（折叠态单行固定高度；详情展开后才增高）。
 #[must_use]
 pub(crate) fn tool_process_body_html(
     message: &StoredMessage,
@@ -106,32 +106,37 @@ pub(crate) fn tool_process_body_html(
     let status = tool_status_label(message, locale);
     let summary = tool_summary_line(message, locale, live_output_overlay);
     let detail = tool_detail_body(message, locale, live_output_overlay);
+    let row_inner = format!(
+        "<span class=\"chat-tui-tool-emoji\" aria-hidden=\"true\">{emoji}</span>\
+         <span class=\"chat-tui-tool-name\">{name}</span>\
+         <span class=\"chat-tui-tool-status\">{status}</span>\
+         <span class=\"chat-tui-tool-one-line\">{one}</span>",
+        emoji = emoji,
+        name = plaintext_to_safe_html(&name),
+        status = plaintext_to_safe_html(status),
+        one = plaintext_to_safe_html(&summary),
+    );
     let mut html = String::new();
     html.push_str("<div class=\"chat-tui-tool-process\" data-testid=\"chat-tui-tool-process\">");
-    html.push_str("<div class=\"chat-tui-tool-summary\">");
-    html.push_str("<span class=\"chat-tui-tool-emoji\" aria-hidden=\"true\">");
-    html.push_str(emoji);
-    html.push_str("</span>");
-    html.push_str("<span class=\"chat-tui-tool-name\">");
-    html.push_str(&plaintext_to_safe_html(&name));
-    html.push_str("</span>");
-    html.push_str("<span class=\"chat-tui-tool-status\">");
-    html.push_str(&plaintext_to_safe_html(status));
-    html.push_str("</span>");
-    html.push_str("<span class=\"chat-tui-tool-one-line\">");
-    html.push_str(&plaintext_to_safe_html(&summary));
-    html.push_str("</span></div>");
     let detail_trim = detail.trim();
     if !detail_trim.is_empty() && detail_trim != summary.trim() {
+        // summary 即整行工具条；展开后 pre 落在固定行之外。
         html.push_str("<details class=\"chat-tui-tool-details\">");
-        html.push_str("<summary>");
+        html.push_str("<summary class=\"chat-tui-tool-row\" title=\"");
         html.push_str(&plaintext_to_safe_html(i18n::msg_tool_detail_expand_title(
             locale,
         )));
+        html.push_str("\">");
+        html.push_str(&row_inner);
+        html.push_str("<span class=\"chat-tui-tool-expand\" aria-hidden=\"true\">▸</span>");
         html.push_str("</summary>");
         html.push_str("<pre class=\"chat-tui-tool-detail-body\">");
         html.push_str(&plaintext_to_safe_html(detail_trim));
         html.push_str("</pre></details>");
+    } else {
+        html.push_str("<div class=\"chat-tui-tool-row\">");
+        html.push_str(&row_inner);
+        html.push_str("</div>");
     }
     html.push_str("</div>");
     html
@@ -162,6 +167,7 @@ mod tests {
         let m = tool_msg("read_file", "读取中…", "", true);
         let html = tool_process_body_html(&m, Locale::ZhHans, None);
         assert!(html.contains("chat-tui-tool-process"), "{html}");
+        assert!(html.contains("chat-tui-tool-row"), "{html}");
         assert!(html.contains("read_file"), "{html}");
         assert!(html.contains("工具执行中"), "{html}");
         assert!(!html.contains("<details"), "{html}");
@@ -177,6 +183,10 @@ mod tests {
         );
         let html = tool_process_body_html(&m, Locale::ZhHans, None);
         assert!(html.contains("chat-tui-tool-one-line"), "{html}");
+        assert!(
+            html.contains("summary class=\"chat-tui-tool-row\""),
+            "{html}"
+        );
         assert!(html.contains("<details"), "{html}");
         assert!(html.contains("println"), "{html}");
         assert!(html.contains("完成"), "{html}");

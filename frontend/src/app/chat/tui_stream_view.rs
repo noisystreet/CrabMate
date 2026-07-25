@@ -4,7 +4,7 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use super::scroll_follow::follow_after_content_paint;
-use super::scroll_shell::ChatScrollShellSignals;
+use super::scroll_shell::{ChatScrollShellSignals, arm_programmatic_stick};
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
 use super::tui_line_markdown::TuiBodyPatch;
 use super::tui_transcript_sync::{TuiMountState, TuiSyncPlan, plan_tui_sync};
@@ -240,6 +240,8 @@ pub(crate) fn ChatTuiStreamView(
             return;
         };
 
+        // 先于 DOM 写入：工具 ReplaceAll / 追加回合可能夹低 scrollTop，避免误 unpin。
+        arm_programmatic_stick(scroll_shell);
         let applied = apply_tui_sync_plan(el, &plan);
         if applied {
             mount_state.set(Some(plan.next));

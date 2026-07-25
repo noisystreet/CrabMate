@@ -11,7 +11,9 @@
 //!
 //! 内容增高时的 snap（ResizeObserver / 信号 Effect / paint 回调）见 [`super::scroll_follow`]。
 //! **Unpin 只来自用户意图**；末尾哨兵 IntersectionObserver **仅** re-pin，不参与 unpin（避免与 gap 双重关跟底）。
+//! 程序化贴底 / 工具 body `ReplaceAll` 可能夹低 `scrollTop`，经 [`arm_programmatic_stick`] 短时抑制「上滑 unpin」。
 
+use gloo_timers::callback::Timeout;
 use leptos::html::Div;
 use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
@@ -22,6 +24,8 @@ use crate::app::app_signals::ChatComposerSignals;
 pub(crate) const STICK_NEAR_BOTTOM_GAP_PX: i32 = 4;
 /// 指针拖拽离底超过此 gap 则 unpin（避免内容增高误触发）。
 pub(crate) const STICK_UNPIN_GAP_PX: i32 = 24;
+/// 程序化贴底后抑制 scrollTop 下降 unpin 的窗口（ms）。
+const PROGRAMMATIC_STICK_SUPPRESS_MS: u32 = 160;
 
 /// 消息列滚动容器与跟底相关信号（`Copy`，供 `column` / `scroll_follow` 共用）。
 #[derive(Clone, Copy)]
@@ -30,6 +34,8 @@ pub(crate) struct ChatScrollShellSignals {
     /// `true` = StickToBottom **Pinned**。
     pub auto_scroll_chat: RwSignal<bool>,
     pub pointer_scroll_active: RwSignal<bool>,
+    /// 非 0：忽略 scroll 事件里的「scrollTop 下降 → unpin」。
+    pub suppress_scroll_unpin_gen: RwSignal<u32>,
 }
 
 impl ChatScrollShellSignals {
@@ -39,6 +45,7 @@ impl ChatScrollShellSignals {
             messages_scroller: cc.messages_scroller,
             auto_scroll_chat: cc.auto_scroll_chat,
             pointer_scroll_active: cc.messages_pointer_scroll_active,
+            suppress_scroll_unpin_gen: cc.suppress_scroll_unpin_gen,
         }
     }
 
@@ -94,6 +101,27 @@ pub(crate) fn stick_unpin(shell: ChatScrollShellSignals) {
     shell.auto_scroll_chat.set(false);
 }
 
+#[inline]
+pub(crate) fn scroll_unpin_suppressed(shell: ChatScrollShellSignals) -> bool {
+    shell.suppress_scroll_unpin_gen.get_untracked() != 0
+}
+
+/// 程序化贴底或即将 DOM 重写前调用：短时忽略 scrollTop 下降导致的 unpin。
+pub(crate) fn arm_programmatic_stick(shell: ChatScrollShellSignals) {
+    let epoch = shell
+        .suppress_scroll_unpin_gen
+        .get_untracked()
+        .wrapping_add(1)
+        .max(1);
+    shell.suppress_scroll_unpin_gen.set(epoch);
+    Timeout::new(PROGRAMMATIC_STICK_SUPPRESS_MS, move || {
+        if shell.suppress_scroll_unpin_gen.get_untracked() == epoch {
+            shell.suppress_scroll_unpin_gen.set(0);
+        }
+    })
+    .forget();
+}
+
 /// 内容根（ResizeObserver）：优先 `.chat-thread`（含 transcript 与其外层增高），否则 transcript。
 pub(crate) fn stick_content_root(scroller: &web_sys::Element) -> Option<web_sys::Element> {
     scroller
@@ -128,7 +156,7 @@ pub(crate) fn on_messages_pointer_scroll_intent(
 /// scroll：用户上滑 → unpin；近底 → re-pin；指针拖离底 → unpin。
 ///
 /// `last_scroll_top` 用于识别 scrollTop 下降（上滑），不依赖 wheel/pointer 是否送达。
-/// 程序化贴底会抬高 scrollTop，不会误 unpin。
+/// 程序化贴底通常抬高 scrollTop；工具 `ReplaceAll` 等可能夹低 scrollTop，见 [`arm_programmatic_stick`]。
 pub(crate) fn on_messages_stick_scroll_event(
     shell: ChatScrollShellSignals,
     last_scroll_top: RwSignal<i32>,
@@ -141,9 +169,11 @@ pub(crate) fn on_messages_stick_scroll_event(
     last_scroll_top.set(top);
     let gap = scroll_gap_px(element.scroll_height(), top, element.client_height());
     let pointer_active = shell.pointer_scroll_active.get_untracked();
+    let suppress = scroll_unpin_suppressed(shell);
 
     // 上滑（含拖滚动条）：关跟底。阈值避免亚像素抖动。
-    if top + 2 < prev_top {
+    // 程序化窗口内跳过：DOM 重写夹低 scrollTop 不是用户意图。
+    if !suppress && top + 2 < prev_top {
         stick_unpin(shell);
         return;
     }
