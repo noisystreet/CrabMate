@@ -1,10 +1,13 @@
-//! TUI 风格纯文本聊天视图：复用会话与 SSE overlay，只替换消息展示层。
+//! TUI 风格聊天视图：复用会话与 SSE overlay；正文按行轻量 Markdown 渲染。
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
+use super::tui_line_markdown::render_tui_line_markdown;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
-use crate::storage::StoredMessage;
+use crate::markdown::plaintext_to_safe_html;
+use crate::storage::{StoredMessage, StoredMessageState};
 use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
@@ -29,29 +32,42 @@ fn tui_role_label(message: &StoredMessage, locale: Locale) -> String {
     .to_string()
 }
 
-fn build_tui_transcript(
+fn message_finalize_open_line(message: &StoredMessage) -> bool {
+    !message
+        .state
+        .as_ref()
+        .is_some_and(StoredMessageState::is_loading)
+}
+
+fn build_tui_transcript_html(
     messages: &[StoredMessage],
     session_id: &str,
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
 ) -> String {
-    let mut transcript = String::new();
+    let mut html = String::new();
     for message in messages {
-        if !transcript.is_empty() {
-            transcript.push_str("\n\n");
-        }
-        transcript.push_str(&tui_role_label(message, locale));
-        transcript.push_str(" ❯\n");
-        transcript.push_str(&message_text_for_display_including_stream_overlay(
+        let body = message_text_for_display_including_stream_overlay(
             message,
             overlay,
             session_id,
             locale,
             apply_assistant_display_filters,
+        );
+        let role = tui_role_label(message, locale);
+        html.push_str("<section class=\"chat-tui-turn\">");
+        html.push_str("<div class=\"chat-tui-role\">");
+        html.push_str(&plaintext_to_safe_html(&format!("{role} ❯")));
+        html.push_str("</div>");
+        html.push_str("<div class=\"chat-tui-body\">");
+        html.push_str(&render_tui_line_markdown(
+            &body,
+            message_finalize_open_line(message),
         ));
+        html.push_str("</div></section>");
     }
-    transcript
+    html
 }
 
 #[component]
@@ -60,23 +76,33 @@ pub(crate) fn ChatTuiStreamView(
     locale: RwSignal<Locale>,
     apply_assistant_display_filters: RwSignal<bool>,
 ) -> impl IntoView {
-    let transcript = move || {
+    let transcript_ref = NodeRef::<leptos::html::Div>::new();
+
+    Effect::new(move |_| {
         let _ = chat.stream_overlay_revision.get();
         let active_id = chat.active_id.get();
         let locale = locale.get();
         let apply_filters = apply_assistant_display_filters.get();
         let overlay = chat.stream_text_overlay.get();
-        chat.sessions.with(|sessions| {
+        let html = chat.sessions.with(|sessions| {
             sessions
                 .iter()
                 .find(|session| session.id == active_id)
                 .map_or_else(
-                    || i18n::chat_tui_empty(locale).to_string(),
+                    || {
+                        format!(
+                            "<div class=\"chat-tui-empty\">{}</div>",
+                            plaintext_to_safe_html(i18n::chat_tui_empty(locale))
+                        )
+                    },
                     |session| {
                         if session.messages.is_empty() {
-                            i18n::chat_tui_empty(locale).to_string()
+                            format!(
+                                "<div class=\"chat-tui-empty\">{}</div>",
+                                plaintext_to_safe_html(i18n::chat_tui_empty(locale))
+                            )
                         } else {
-                            build_tui_transcript(
+                            build_tui_transcript_html(
                                 &session.messages,
                                 &session.id,
                                 overlay.as_ref(),
@@ -86,20 +112,26 @@ pub(crate) fn ChatTuiStreamView(
                         }
                     },
                 )
-        })
-    };
+        });
+        if let Some(node) = transcript_ref.get()
+            && let Some(el) = node.dyn_ref::<web_sys::HtmlElement>()
+        {
+            el.set_inner_html(&html);
+        }
+    });
 
     view! {
         <div
             class="messages-inner chat-tui-inner"
             data-testid="chat-tui-stream-view"
         >
-            <pre
+            <div
                 class="chat-tui-transcript"
                 data-testid="chat-tui-transcript"
+                node_ref=transcript_ref
                 aria-live="polite"
                 aria-atomic="false"
-            >{transcript}</pre>
+            />
         </div>
     }
 }
@@ -107,7 +139,6 @@ pub(crate) fn ChatTuiStreamView(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::storage::StoredMessageState;
 
     fn message(id: &str, role: &str, text: &str) -> StoredMessage {
         StoredMessage {
@@ -125,27 +156,33 @@ mod tests {
     }
 
     #[test]
-    fn transcript_keeps_markdown_as_plain_text() {
+    fn finished_assistant_bold_becomes_strong() {
         let messages = vec![
             message("u1", "user", "你好"),
             message("a1", "assistant", "**原样**"),
         ];
-        let output = build_tui_transcript(&messages, "s1", None, Locale::ZhHans, false);
-        assert_eq!(output, "用户 ❯\n你好\n\n助手 ❯\n**原样**");
+        let output = build_tui_transcript_html(&messages, "s1", None, Locale::ZhHans, false);
+        assert!(output.contains("用户"), "got {output}");
+        assert!(
+            output.contains("<strong>") || output.contains("<b>"),
+            "got {output}"
+        );
+        assert!(!output.contains("**原样**"), "got {output}");
     }
 
     #[test]
-    fn transcript_includes_live_stream_overlay() {
+    fn loading_open_line_keeps_raw_markers() {
         let mut assistant = message("a1", "assistant", "");
         assistant.state = Some(StoredMessageState::Loading);
         let overlay = StreamTextOverlay {
             session_id: "s1".to_string(),
             message_id: "a1".to_string(),
-            answer: "流式片段".to_string(),
+            answer: "**流式".to_string(),
             reasoning: String::new(),
         };
         let output =
-            build_tui_transcript(&[assistant], "s1", Some(&overlay), Locale::ZhHans, false);
-        assert_eq!(output, "助手 ❯\n流式片段");
+            build_tui_transcript_html(&[assistant], "s1", Some(&overlay), Locale::ZhHans, false);
+        assert!(output.contains("**流式"), "got {output}");
+        assert!(!output.contains("<strong>"), "got {output}");
     }
 }
