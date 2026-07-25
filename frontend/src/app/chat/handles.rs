@@ -3,13 +3,11 @@
 //! 不引入整份壳层 Leptos Context；[`super::shell_runtime_context::ChatShellLeptosContext`] 承载可 `Copy` 的聊天切片。
 //! 仍为显式结构体传递 [`super::app_shell_ctx::AppShellCtx`]，便于跳转与类型检查（同因 `Rc` 等未走整包 `provide_context`）。
 
-use std::collections::HashSet;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use leptos::prelude::*;
 
-use super::composer_follow_up::ComposerStreamFollowUp;
 use super::scroll_shell::ChatScrollShellSignals;
 use crate::app::app_signals::{AppSignals, StreamControlSignals};
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
@@ -109,16 +107,6 @@ impl ComposerStreamShell {
 pub(crate) struct ChatMessagesPaneSignals {
     pub locale: RwSignal<crate::i18n::Locale>,
     pub chat: ChatSessionSignals,
-    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
-    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
-    pub chat_find_query: RwSignal<String>,
-    pub chat_find_match_ids: RwSignal<Vec<String>>,
-    pub chat_find_cursor: RwSignal<usize>,
-    pub stream_turn_busy_ui: Memo<bool>,
-    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
-    pub status_err: RwSignal<Option<String>>,
-    pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub scroll_shell: ChatScrollShellSignals,
 }
@@ -155,8 +143,6 @@ pub struct ChatColumnShell {
     pub stream_busy_memos: ChatStreamBusyMemos,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
-    /// 截断再生 / 失败助手重试：由 **`composer_wires::follow_up`** 侧 `Effect` 消费（与主发送路径分离审阅）。
-    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
 }
 
 impl ChatColumnShell {
@@ -169,16 +155,6 @@ impl ChatColumnShell {
         ChatMessagesPaneSignals {
             locale: su.locale,
             chat: app.chat,
-            collapsed_long_assistant_ids: cc.collapsed_long_assistant_ids,
-            collapsed_tool_run_heads: cc.collapsed_tool_run_heads,
-            tool_detail_expanded_ids: cc.tool_detail_expanded_ids,
-            chat_find_query: cc.chat_find_query,
-            chat_find_match_ids: cc.chat_find_match_ids,
-            chat_find_cursor: cc.chat_find_cursor,
-            stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,
-            stream_follow_up: self.stream_follow_up,
-            status_err: self.stream_shell.stream.status_err,
-            markdown_render: su.markdown_render,
             apply_assistant_display_filters: su.apply_assistant_display_filters,
             scroll_shell: ChatScrollShellSignals::from_composer(&cc),
         }
@@ -210,9 +186,8 @@ impl ChatColumnShell {
     }
 }
 
-/// `wire_chat_composer_streams` 的返回值：待发流式后续动作与发送、停止、新会话句柄。
+/// `wire_chat_composer_streams` 的返回值：发送、停止、新会话句柄。
 pub(crate) struct ChatComposerWires {
-    pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub cancel_stream: Arc<dyn Fn() + Send + Sync>,
     pub new_session: Rc<dyn Fn()>,

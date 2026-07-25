@@ -155,7 +155,6 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     });
 
     ChatComposerWires {
-        stream_follow_up,
         run_send_message,
         cancel_stream,
         new_session,

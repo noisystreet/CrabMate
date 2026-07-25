@@ -240,6 +240,31 @@
   min-width: 0;
 }
 
+.chat-tui-inner {
+  gap: 0;
+}
+
+.chat-tui-transcript {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 12rem;
+  margin: 0;
+  padding: var(--space-4);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.84rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+}
+
+.chat-tui-transcript::selection {
+  background: color-mix(in srgb, var(--accent) 54%, transparent);
+}
+
 .messages-history-load {
   display: flex;
   justify-content: center;
