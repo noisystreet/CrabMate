@@ -26,6 +26,8 @@ pub(super) struct StreamJobRuntime {
     pub executor_api_base: Option<String>,
     pub executor_api_key: Option<String>,
     pub executor_model_override: Option<String>,
+    /// 客户端请求中 client_llm.model 覆盖值，单独传递以避免影响内部组件（如 L2 分类器）。
+    pub client_model_override: Option<String>,
     pub web_tool_ctx: Option<crate::tool_registry::WebToolRuntime>,
     pub approval_session_id: Option<String>,
 }
@@ -115,6 +117,12 @@ pub(super) async fn stream_job_setup_runtime(
     ));
     let (executor_api_base, executor_api_key, executor_model_override) =
         stream_job_resolve_executor_llm(p.queue_deps, cfg_turn.clone(), p.envelope);
+    // 提取 client_llm.model 覆盖值，单独传递给 model_override 而非写入 cfg.llm.model
+    let client_model_override = p
+        .envelope
+        .llm_override
+        .as_ref()
+        .and_then(|o| o.model.clone());
 
     let runtime = StreamJobRuntime {
         sse_tx,
@@ -127,6 +135,7 @@ pub(super) async fn stream_job_setup_runtime(
         executor_api_base,
         executor_api_key,
         executor_model_override,
+        client_model_override,
         web_tool_ctx,
         approval_session_id,
     };

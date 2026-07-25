@@ -98,6 +98,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         }
         None => (None, None, None),
     };
+    // 提取 client_llm.model 覆盖值，单独传递给 model_override 而非写入 cfg.llm.model
+    let client_model_override = llm_override.as_ref().and_then(|o| o.model.clone());
     let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
         crate::WebChatJsonBuildArgs {
             shared: crate::RunAgentTurnSharedInputs {
@@ -111,7 +113,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             workspace_is_set,
             per_flight: flight,
             temperature_override,
-            model_override: None,
+            model_override: client_model_override,
             use_executor_model: false,
             executor_model_override,
             executor_api_base,

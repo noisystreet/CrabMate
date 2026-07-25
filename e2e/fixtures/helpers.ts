@@ -146,7 +146,7 @@ export async function setupRealLLMSession(
 ) {
   const cfg = {
     apiBase: llmConfig?.apiBase ?? "https://api.deepseek.com",
-    model: llmConfig?.model ?? "deepseek-chat",
+    model: llmConfig?.model ?? "deepseek-v4-flash",
     contextTokens: llmConfig?.contextTokens ?? "1000000",
     thinkingMode: llmConfig?.thinkingMode ?? "off",
   };

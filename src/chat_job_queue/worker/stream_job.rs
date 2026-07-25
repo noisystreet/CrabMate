@@ -75,7 +75,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         per_flight: rt.flight,
         web_tool_ctx: rt.web_tool_ctx.as_ref(),
         temperature_override,
-        model_override: None,
+        model_override: rt.client_model_override,
         use_executor_model: false,
         executor_model_override: rt.executor_model_override,
         executor_api_base: rt.executor_api_base,
