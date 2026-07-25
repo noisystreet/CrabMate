@@ -140,7 +140,8 @@ jobs:
       - name: Smoke test — binary runs and prints version
         run: |
           ./target/release/crabmate --version
-          ./target/release/crabmate doctor --dry-run
+          ./target/release/crabmate doctor
+          ./target/release/crabmate config --dry-run
           # 验证前端静态文件被正确嵌入 dist
           test -f frontend/dist/index.html && echo "✅ dist/index.html 存在"
           # 验证二进制体积（粗略检查，防意外膨胀）
