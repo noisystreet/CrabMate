@@ -238,9 +238,9 @@ fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
         )
     };
     let id_esc = plaintext_to_safe_html(&message.id);
+    // 角色字样在卡片外（wrap 内、section 上），与气泡 msg-meta 外置一致。
     let section = format!(
         "<section class=\"chat-tui-turn {role_class}{live_class}{loading_class}\" data-tui-msg-id=\"{id_esc}\"{live_attr}>\
-         {role_block}\
          <div class=\"chat-tui-body\">{body}</div>\
          </section>"
     );
@@ -251,7 +251,7 @@ fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
         ""
     };
     format!(
-        "<div class=\"chat-tui-turn-wrap{wrap_align}\" data-tui-wrap-id=\"{id_esc}\">{section}{actions}</div>"
+        "<div class=\"chat-tui-turn-wrap{wrap_align}\" data-tui-wrap-id=\"{id_esc}\">{role_block}{section}{actions}</div>"
     )
 }
 
@@ -835,6 +835,14 @@ mod tests {
         assert!(output.contains("chat-tui-turn--user"), "got {output}");
         assert!(output.contains("chat-tui-turn--assistant"), "got {output}");
         assert!(output.contains("chat-tui-role-label"), "got {output}");
+        assert!(
+            !output.contains("<section class=\"chat-tui-turn")
+                || !output
+                    .split("<section")
+                    .skip(1)
+                    .any(|chunk| chunk.contains("chat-tui-role-label")),
+            "role label must be outside section card, got {output}"
+        );
         assert!(output.contains("chat-tui-turn-actions"), "got {output}");
         assert!(output.contains("data-tui-action=\"copy\""), "got {output}");
         assert!(!output.contains('❯'), "got {output}");

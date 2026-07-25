@@ -261,7 +261,8 @@
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--space-3);
+  /* 回合 wrap 间距：对话节奏主轴（勿再叠 wrap margin） */
+  gap: var(--space-5);
 }
 
 .chat-tui-transcript::selection,
@@ -282,12 +283,12 @@
   margin-top: 0;
 }
 
-/* 角色元信息：对齐气泡 .msg-meta / .msg-meta-role */
+/* 角色元信息：在卡片外（wrap 内、section 上），对齐气泡 .msg-meta */
 .chat-tui-role {
   display: flex;
   align-items: baseline;
   gap: var(--space-2);
-  margin-bottom: 6px;
+  margin: 0 2px;
   font-size: var(--text-2xs);
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -300,6 +301,12 @@
 .chat-tui-role:empty,
 .chat-tui-role-label:empty {
   display: none;
+}
+
+.chat-tui-turn-wrap--user .chat-tui-role {
+  flex-direction: row-reverse;
+  justify-content: flex-start;
+  align-self: flex-end;
 }
 
 .chat-tui-body {
@@ -319,11 +326,6 @@
   box-shadow:
     0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
     0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.chat-tui-turn--user .chat-tui-role {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
 }
 
 .chat-tui-turn--user .chat-tui-body {
@@ -396,12 +398,6 @@
   /* 与 .chat-tui-tool-row 固定高配合：折叠态回合高度稳定 */
   padding: 2px var(--space-inset-msg, 0.85rem);
   box-sizing: border-box;
-}
-
-.chat-tui-turn--tool .chat-tui-role {
-  text-transform: none;
-  letter-spacing: 0.02em;
-  font-family: inherit;
 }
 
 .chat-tui-turn--tool.is-loading,
@@ -539,11 +535,12 @@
   white-space: pre-wrap;
 }
 
-/* 每回合：内容卡 + 下方操作条（对齐气泡 msg-actions-below） */
+/* 每回合：角色 + 内容卡 + 下方操作条（回合间距由 .chat-tui-transcript gap 承担） */
 .chat-tui-turn-wrap {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: 4px;
   min-width: 0;
   max-width: 100%;
 }
@@ -563,11 +560,16 @@
 }
 
 .chat-tui-turn-actions {
-  margin-top: 6px;
+  margin-top: 0;
 }
 
 .chat-tui-turn-wrap--user .chat-tui-turn-actions {
   justify-content: flex-end;
+}
+
+/* 连续工具行稍紧，避免工具刷屏把对话节奏撑松 */
+.chat-tui-turn-wrap:has(> .chat-tui-turn--tool) + .chat-tui-turn-wrap:has(> .chat-tui-turn--tool) {
+  margin-top: calc(var(--space-2) - var(--space-5));
 }
 
 .messages-history-load {
@@ -1855,7 +1857,7 @@
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: var(--radius-input);
+  border-radius: 0;
   padding: 11px 14px;
   font-family: inherit;
   font-size: 13px;
