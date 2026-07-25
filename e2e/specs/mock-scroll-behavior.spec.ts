@@ -319,3 +319,85 @@ test("生成完成后的延迟布局增高仍自动对齐最新消息末尾", as
     return gap >= 0 && gap <= 4;
   }, heightBefore);
 });
+
+function buildToolHeavySseEvents(): string[] {
+  const longToolBody = Array.from(
+    { length: 40 },
+    (_, i) =>
+      `tool-out-line-${i.toString().padStart(2, "0")}: ${"x".repeat(80)}`,
+  ).join("\n");
+  const events = [
+    'id: 1\ndata: {"type":"CUSTOM","customType":"assistant_answer_phase"}\n\n',
+    `id: 2\ndata: ${JSON.stringify({
+      type: "TEXT_MESSAGE_CONTENT",
+      delta: "先说一句，随后调用工具。\n",
+    })}\n\n`,
+    'id: 3\ndata: {"type":"TOOL_CALL_START","toolCallId":"tc-scroll-1","name":"read_file","summary":"读取大文件"}\n\n',
+    'id: 4\ndata: {"type":"CUSTOM","customType":"tool_running","data":{"running":true}}\n\n',
+  ];
+  // 多段 partial TOOL_CALL_RESULT → tool_output_chunks，触发工具 body 反复 ReplaceAll
+  for (let i = 0; i < 12; i += 1) {
+    const chunk = `chunk-${i} ${"y".repeat(120)}\n`;
+    events.push(
+      `id: ${5 + i}\ndata: ${JSON.stringify({
+        type: "TOOL_CALL_RESULT",
+        toolCallId: "tc-scroll-1",
+        content: chunk,
+        metadata: {
+          name: "read_file",
+          partial: true,
+          seq: i,
+        },
+      })}\n\n`,
+    );
+  }
+  events.push(
+    `id: 20\ndata: ${JSON.stringify({
+      type: "TOOL_CALL_RESULT",
+      toolCallId: "tc-scroll-1",
+      content: longToolBody,
+      metadata: {
+        name: "read_file",
+        ok: true,
+        summary: "读取成功",
+      },
+    })}\n\n`,
+  );
+  events.push(
+    'id: 21\ndata: {"type":"CUSTOM","customType":"turn_tool_phase_end","data":{"phase":"tool_end"}}\n\n',
+  );
+  events.push(
+    'id: 22\ndata: {"type":"CUSTOM","customType":"assistant_answer_phase"}\n\n',
+  );
+  for (let i = 0; i < 30; i += 1) {
+    const suffix = i === 29 ? FINAL_MARKER : "";
+    events.push(
+      `id: ${23 + i}\ndata: ${JSON.stringify({
+        type: "TEXT_MESSAGE_CONTENT",
+        delta: `after-tool-${i}: 工具后继续流式增高。${suffix}\n`,
+      })}\n\n`,
+    );
+  }
+  events.push('id: 60\ndata: {"type":"RUN_FINISHED"}\n\n');
+  return events;
+}
+
+test("含工具调用与输出 chunk 时仍保持跟底", async ({ page }) => {
+  await prepareScrollableSession(page, "s_e2e_scroll_tool");
+  await installDelayedMockSse(page, buildToolHeavySseEvents(), 40);
+  await sendMessage(page, "tool streaming scroll test");
+  await waitForText(page, "先说一句，随后调用工具");
+  await waitForScrollToBottom(page);
+
+  await expect(page.getByTestId("chat-tui-tool-process")).toBeVisible({
+    timeout: 10_000,
+  });
+  // 工具过程更新期间 gap 不应长期偏离底部
+  await expect
+    .poll(async () => scrollGapPx(page), { timeout: 8_000 })
+    .toBeLessThanOrEqual(24);
+
+  await waitForText(page, FINAL_MARKER, 20_000);
+  await waitForScrollToBottom(page);
+  expect(await scrollGapPx(page)).toBeLessThanOrEqual(4);
+});

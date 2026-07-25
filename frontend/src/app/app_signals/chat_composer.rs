@@ -22,6 +22,8 @@ pub struct ChatComposerSignals {
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_pointer_scroll_active: RwSignal<bool>,
+    /// 非 0：程序化贴底 / DOM 重写窗口内忽略「scrollTop 下降 → unpin」（工具 ReplaceAll 会夹低 scrollTop）。
+    pub suppress_scroll_unpin_gen: RwSignal<u32>,
     pub messages_scroller: NodeRef<Div>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
@@ -43,6 +45,7 @@ impl ChatComposerSignals {
             tool_detail_expanded_ids: RwSignal::new(HashSet::new()),
             auto_scroll_chat: RwSignal::new(true),
             messages_pointer_scroll_active: RwSignal::new(false),
+            suppress_scroll_unpin_gen: RwSignal::new(0),
             messages_scroller: NodeRef::new(),
             chat_find_query: RwSignal::new(String::new()),
             chat_find_match_ids: RwSignal::new(Vec::new()),

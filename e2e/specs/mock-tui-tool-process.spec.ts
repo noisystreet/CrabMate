@@ -37,6 +37,16 @@ test("终端流工具过程：一行摘要 + 可展开详情", async ({ page }) 
   await expect(process).toHaveCount(1, { timeout: 10_000 });
   await expect(process).toContainText("read_file");
   await expect(process.locator(".chat-tui-tool-one-line")).toBeVisible();
+  await expect(process.locator(".chat-tui-tool-row")).toBeVisible();
+  // 折叠态固定单行高度，避免流式 ReplaceAll 抖高
+  const rowHeight = await process
+    .locator(".chat-tui-tool-row")
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return { height: style.height, maxHeight: style.maxHeight };
+    });
+  expect(rowHeight.height).toBe(rowHeight.maxHeight);
+  expect(parseFloat(rowHeight.height)).toBeGreaterThan(0);
   await expect(page.getByTestId("chat-tui-transcript")).toContainText(
     postToolAnswer,
   );
