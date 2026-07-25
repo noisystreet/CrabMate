@@ -397,6 +397,7 @@ mod tests {
     fn by_ids_keeps_session_order_and_omits_unselected() {
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![
@@ -435,6 +436,7 @@ mod tests {
     fn skips_plain_system_keeps_tool_cards_as_tool_role() {
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![
@@ -468,6 +470,7 @@ mod tests {
     fn export_skips_legacy_duplicate_local_snapshot_assistant() {
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![
@@ -506,6 +509,7 @@ mod tests {
 
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![
@@ -546,6 +550,7 @@ mod tests {
             "读取目录完成\n\n目录：foo\n\n总计遍历：1，展示：1\nfile: a.txt\n".to_string();
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![msg("1", "user", "hi", false), tool_msg],
@@ -573,6 +578,7 @@ mod tests {
         let compact = "当前目录下有三个压缩包：\n1. **A** — x\n2. **B** — y";
         let session = ChatSession {
             id: "s1".to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".to_string(),
             draft: String::new(),
             messages: vec![

@@ -32,6 +32,7 @@ mod tests {
     fn s(id: &str, updated: i64, pinned: bool, starred: bool) -> ChatSession {
         ChatSession {
             id: id.to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: id.to_string(),
             draft: String::new(),
             messages: vec![],

@@ -43,7 +43,7 @@ function toolSse(
   ];
 }
 
-test("多轮助手正文不应合并为一条 stored_message", async ({ page }) => {
+test("多轮助手正文不应合并为一条 stored_message", async ({ page, browser }) => {
   // ── 构造 mock SSE 事件序列 ──
   let seq = 1;
   const sseParts: string[] = [];
@@ -104,8 +104,9 @@ test("多轮助手正文不应合并为一条 stored_message", async ({ page }) 
     { timeout: 25000 },
   );
 
-  // 等待 DOM 更新完成
-  await page.waitForTimeout(500);
+  // 流结束后立即刷新；v2 finalized 行应已进入会话缓存，水合不得走 legacy pool 重排。
+  await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
+  await page.waitForSelector('[data-testid="chat-composer-input"]');
 
   // ── DOM 快照：检查所有助手正文在独立气泡中 ──
   const domState = await page.evaluate(() => {
@@ -150,4 +151,46 @@ test("多轮助手正文不应合并为一条 stored_message", async ({ page }) 
   }
   const finalRow = assistantRowTexts[3] ?? "";
   expect(finalRow).toContain(TEXT_SIGNATURES[3]);
+
+  await expect
+    .poll(
+      () =>
+        page.evaluate((sessionId) => {
+          return fetch("/user-data/workspaces/current/sessions")
+            .then((response) => response.json())
+            .then((data) => {
+              const session = (data.sessions ?? []).find(
+                (candidate: { id?: string }) => candidate.id === sessionId,
+              );
+              return {
+                layoutSchemaVersion: session?.layout_schema_version ?? 0,
+                messages: session?.messages ?? [],
+              };
+            });
+        }, sid),
+      { timeout: 10_000 },
+    )
+    .toMatchObject({
+      layoutSchemaVersion: 2,
+      messages: expect.arrayContaining([
+        expect.objectContaining({ id: "turn-commentary-tc-1" }),
+        expect.objectContaining({ id: "turn-commentary-tc-2" }),
+        expect.objectContaining({ id: "turn-commentary-tc-3" }),
+        expect.objectContaining({ text: TEXT_SIGNATURES[3] }),
+      ]),
+    });
+
+  // 独立浏览器上下文从同一服务端缓存加载，v2 ready 行不经 legacy pool 重排。
+  const secondContext = await browser.newContext();
+  const secondPage = await secondContext.newPage();
+  await secondPage.goto("/", { waitUntil: "networkidle", timeout: 20_000 });
+  await secondPage.waitForSelector('[data-testid="chat-composer-input"]');
+  for (const signature of TEXT_SIGNATURES) {
+    await expect(
+      secondPage.locator('[data-testid="chat-message-row"]').filter({
+        hasText: signature,
+      }),
+    ).toHaveCount(1);
+  }
+  await secondContext.close();
 });

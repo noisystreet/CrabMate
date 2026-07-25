@@ -145,10 +145,23 @@ async fn fetch_json<T: for<'de> Deserialize<'de>>(
     serde_json::from_str(&s).map_err(|e| e.to_string())
 }
 
-async fn put_json_no_content(url: &str, body: &str, loc: Locale) -> Result<(), String> {
+async fn put_json_no_content_with_keepalive(
+    url: &str,
+    body: &str,
+    loc: Locale,
+    keepalive: bool,
+) -> Result<(), String> {
     let init = RequestInit::new();
     init.set_method("PUT");
     init.set_mode(RequestMode::Cors);
+    if keepalive {
+        js_sys::Reflect::set(
+            init.as_ref(),
+            &wasm_bindgen::JsValue::from_str("keepalive"),
+            &wasm_bindgen::JsValue::TRUE,
+        )
+        .map_err(|e| format!("request keepalive: {e:?}"))?;
+    }
     let h = auth_headers();
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
@@ -183,6 +196,10 @@ async fn put_json_no_content(url: &str, body: &str, loc: Locale) -> Result<(), S
             ))
         }
     }
+}
+
+async fn put_json_no_content(url: &str, body: &str, loc: Locale) -> Result<(), String> {
+    put_json_no_content_with_keepalive(url, body, loc, false).await
 }
 
 pub async fn fetch_user_data_prefs(loc: Locale) -> Result<UserPrefsDto, String> {
@@ -420,4 +437,20 @@ pub async fn put_current_web_sessions(
     };
     let json = serde_json::to_string(&body).map_err(|e| e.to_string())?;
     put_json_no_content("/user-data/workspaces/current/sessions", &json, loc).await
+}
+
+/// 流结束边界的 best-effort 持久化；`keepalive` 允许页面立即刷新时继续发送小型会话快照。
+pub async fn put_current_web_sessions_keepalive(
+    sessions: &[ChatSession],
+    active_id: Option<&str>,
+    loc: Locale,
+) -> Result<(), String> {
+    let sessions_val = serde_json::to_value(sessions).map_err(|e| e.to_string())?;
+    let body = PutSessionsBody {
+        sessions: sessions_val,
+        active_session_id: active_id.map(str::to_string),
+    };
+    let json = serde_json::to_string(&body).map_err(|e| e.to_string())?;
+    put_json_no_content_with_keepalive("/user-data/workspaces/current/sessions", &json, loc, true)
+        .await
 }

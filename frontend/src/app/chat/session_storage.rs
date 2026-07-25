@@ -8,7 +8,7 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use crate::api::fetch_web_ui_config;
-use crate::api::user_data::put_current_web_sessions;
+use crate::api::user_data::{put_current_web_sessions, put_current_web_sessions_keepalive};
 use crate::chat_session_state::ChatSessionSignals;
 
 use super::session_hydrate::bump_session_hydrate_nonce;
@@ -20,6 +20,22 @@ use crate::user_data_bootstrap::load_web_sessions;
 use crate::user_prefs_sync::wire_load_user_prefs_from_server;
 
 const PERSIST_SESSIONS_DEBOUNCE_MS: u32 = 400;
+
+/// 流结束后立即发起一次可跨页面刷新的持久化；常规变更仍由防抖 Effect 兜底。
+pub(crate) fn persist_chat_sessions_at_stream_end(chat: ChatSessionSignals, loc: Locale) {
+    let aid = chat.active_id.get_untracked();
+    if aid.is_empty() {
+        return;
+    }
+    let list = chat.sessions.get_untracked();
+    let merged = sessions_snapshot_with_stream_overlay_merged(
+        list.as_slice(),
+        chat.stream_text_overlay.get_untracked().as_ref(),
+    );
+    spawn_local(async move {
+        let _ = put_current_web_sessions_keepalive(&merged, Some(aid.as_str()), loc).await;
+    });
+}
 
 /// 首次渲染时从 `/user-data` 加载会话列表并设活动会话与草稿。
 pub fn wire_initial_sessions_from_storage(app: crate::app::app_signals::AppSignals) {
@@ -42,6 +58,7 @@ pub fn wire_initial_sessions_from_storage(app: crate::app::app_signals::AppSigna
             let (mut list, def_id) =
                 ensure_at_least_one(list, i18n::default_session_title(loc).to_string());
             for s in &mut list {
+                s.normalize_layout_schema_version();
                 clear_stale_assistant_loading_states(&mut s.messages);
             }
             let pick = aid

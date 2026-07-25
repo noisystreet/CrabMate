@@ -202,6 +202,7 @@ mod tests {
     fn make_session(id: &str, messages: Vec<StoredMessage>) -> ChatSession {
         ChatSession {
             id: id.to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: String::new(),
             draft: String::new(),
             messages,

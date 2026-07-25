@@ -106,7 +106,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 }
 ```
 
-每条 `ChatSession` 可含 `server_conversation_id`、`workspace_root`、草稿、`messages` 本地展示缓存等（字段保持与前端 serde 一致）。
+每条 `ChatSession` 可含 `server_conversation_id`、`workspace_root`、草稿、`messages` 本地展示缓存等（字段保持与前端 serde 一致）。`layout_schema_version` 标识消息行投影版本：旧缓存缺省为 `1`，新建会话及 v2 流式投影写 `2`；v1 reader 可忽略该扩展字段。
 
 ### 4.4 `llm_overrides.json`（非机密 LLM 覆盖）
 

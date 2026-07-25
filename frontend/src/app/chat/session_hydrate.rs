@@ -8,9 +8,10 @@
 //! - **勿**订阅 `sessions` 或会被水合写回的信号，否则会在合并后再次触发并叠加重复行。
 //! - 异步段经 [`conversation_hydration_cycle::run`]；同步段用 [`try_hydration_wire_snapshot`]。
 //!
-//! ## 尾部合并（[`super::session_merge::merge_session_tail`]）
+//! ## 尾部合并
 //!
-//! - 唯一入口：plain user 补回 + 按 local 顺序回放；算法与 golden 见 `session_merge.rs`。
+//! - v2 finalized projection 保持不可变；空缓存或 v1 会话才调用
+//!   [`super::session_merge::merge_session_tail`] 执行 plain user 补回与 local 顺序回放。
 
 use std::collections::HashSet;
 
@@ -27,7 +28,7 @@ use crate::conversation_hydrate::{
 use crate::i18n::{self, Locale};
 use crate::message_loading::messages_have_any_loading;
 use crate::session_ops::title_from_user_prompt;
-use crate::storage::{ChatSession, StoredMessage};
+use crate::storage::{ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage};
 
 use super::session_merge::merge_session_tail;
 
@@ -128,6 +129,9 @@ fn merge_tail_page_into_session_messages(
     hydrated: Vec<StoredMessage>,
     resp: &ConversationMessagesResponse,
 ) -> Vec<StoredMessage> {
+    if session.has_v2_layout_projection() && session.has_v2_finalized_rows() {
+        return session.messages.clone();
+    }
     let tail_start = resp.window_start_index;
     if let Some(local_start) = session.history_window_start {
         if tail_start >= local_start {
@@ -154,6 +158,23 @@ fn should_merge_hydrated_messages(
 
 fn hydration_revision_after_response(local_revision: Option<u64>, response_revision: u64) -> u64 {
     local_revision.unwrap_or_default().max(response_revision)
+}
+
+fn apply_hydrated_tail_if_newer(
+    session: &mut ChatSession,
+    hydrated: Vec<StoredMessage>,
+    resp: &ConversationMessagesResponse,
+) {
+    if !should_merge_hydrated_messages(session, resp) {
+        return;
+    }
+    let preserved_v2_projection =
+        session.has_v2_layout_projection() && session.has_v2_finalized_rows();
+    session.messages = merge_tail_page_into_session_messages(session, hydrated, resp);
+    if !preserved_v2_projection {
+        // `/conversation/messages` 暂无 segment projection key；空缓存或 v1 缓存走 legacy adapter。
+        session.layout_schema_version = LEGACY_LAYOUT_SCHEMA_VERSION;
+    }
 }
 
 fn prepend_older_page_into_session(
@@ -199,9 +220,7 @@ fn merge_hydration_into_active_session(
     ) {
         return out;
     }
-    if should_merge_hydrated_messages(session, resp) {
-        session.messages = merge_tail_page_into_session_messages(session, hydrated, resp);
-    }
+    apply_hydrated_tail_if_newer(session, hydrated, resp);
     apply_history_meta_from_response(session, resp);
     session.server_revision = Some(hydration_revision_after_response(
         session.server_revision,
@@ -568,16 +587,19 @@ pub fn wire_session_hydration(
 #[cfg(test)]
 mod merge_tail_page_order_tests {
     use super::{
-        hydration_revision_after_response, merge_tail_page_into_session_messages,
-        should_merge_hydrated_messages,
+        apply_hydrated_tail_if_newer, hydration_revision_after_response,
+        merge_tail_page_into_session_messages, should_merge_hydrated_messages,
     };
     use crate::conversation_hydrate::ConversationMessagesResponse;
-    use crate::storage::{ChatSession, StoredMessage};
+    use crate::storage::{
+        CURRENT_LAYOUT_SCHEMA_VERSION, ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage,
+    };
     use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
 
     fn revision_session(messages: Vec<StoredMessage>, revision: Option<u64>) -> ChatSession {
         ChatSession {
             id: "sid".into(),
+            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages,
@@ -606,12 +628,11 @@ mod merge_tail_page_order_tests {
         }
     }
 
-    #[test]
-    fn same_revision_keeps_nonempty_local_projection() {
-        let local = StoredMessage {
-            id: "turn-commentary-tc_read".into(),
-            role: "assistant".into(),
-            text: "已关闭的本地旁注".into(),
+    fn plain_message(id: &str, role: &str, text: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: role.into(),
+            text: text.into(),
             reasoning_text: String::new(),
             image_urls: vec![],
             state: None,
@@ -619,7 +640,12 @@ mod merge_tail_page_order_tests {
             tool_call_id: None,
             tool_name: None,
             created_at: 0,
-        };
+        }
+    }
+
+    #[test]
+    fn same_revision_keeps_nonempty_local_projection() {
+        let local = plain_message("turn-commentary-tc_read", "assistant", "已关闭的本地旁注");
         let session = revision_session(vec![local], Some(7));
         assert!(!should_merge_hydrated_messages(
             &session,
@@ -641,18 +667,7 @@ mod merge_tail_page_order_tests {
 
     #[test]
     fn stale_hydration_response_neither_merges_nor_downgrades_revision() {
-        let local = StoredMessage {
-            id: "turn-final-answer".into(),
-            role: "assistant".into(),
-            text: "本地较新终答".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
+        let local = plain_message("turn-final-answer", "assistant", "本地较新终答");
         let session = revision_session(vec![local], Some(9));
         let stale_response = revision_response(7);
         assert!(!should_merge_hydrated_messages(&session, &stale_response));
@@ -663,47 +678,77 @@ mod merge_tail_page_order_tests {
     }
 
     #[test]
+    fn newer_hydration_keeps_nonempty_v2_projection_without_legacy_pool_merge() {
+        let local = vec![
+            plain_message("u-local", "user", "question"),
+            plain_message("turn-commentary-tc_read", "assistant", "不可变 commentary"),
+            plain_message("turn-final-answer", "assistant", "本地终答"),
+        ];
+        let mut session = revision_session(local.clone(), Some(7));
+        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
+        let hydrated = vec![
+            plain_message("h-user", "user", "question"),
+            plain_message("h-assistant", "assistant", "服务端 canonical 快照"),
+        ];
+
+        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(8));
+
+        assert_eq!(
+            session
+                .messages
+                .iter()
+                .map(|m| m.id.as_str())
+                .collect::<Vec<_>>(),
+            local.iter().map(|m| m.id.as_str()).collect::<Vec<_>>()
+        );
+        assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn empty_v2_cache_uses_legacy_adapter_for_canonical_hydration() {
+        let mut session = revision_session(vec![], Some(7));
+        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
+        let hydrated = vec![plain_message("h-assistant", "assistant", "服务端终答")];
+
+        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(7));
+
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].id, "h-assistant");
+        assert_eq!(session.layout_schema_version, LEGACY_LAYOUT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn v1_history_still_uses_legacy_adapter() {
+        let mut session = revision_session(
+            vec![plain_message("local-assistant", "assistant", "本地旧投影")],
+            Some(1),
+        );
+        let hydrated = vec![plain_message("h-assistant", "assistant", "服务端旧会话")];
+
+        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(2));
+
+        assert_eq!(session.messages.len(), 1);
+        assert_eq!(session.messages[0].id, "h-assistant");
+        assert_eq!(session.layout_schema_version, LEGACY_LAYOUT_SCHEMA_VERSION);
+    }
+
+    #[test]
     fn merge_tail_page_keeps_intent_before_server_answer() {
         let session = ChatSession {
             id: "sid".into(),
+            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages: vec![
+                plain_message("u1", "user", "question"),
                 StoredMessage {
-                    id: "u1".into(),
-                    role: "user".into(),
-                    text: "question".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: None,
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
-                    created_at: 0,
-                },
-                StoredMessage {
-                    id: "tl-intent".into(),
-                    role: "assistant".into(),
-                    text: "意图分析：执行类\n\n".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
                     state: Some(timeline_state_intent_analysis_snapshot()),
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
                     created_at: 1,
+                    ..plain_message("tl-intent", "assistant", "意图分析：执行类\n\n")
                 },
                 StoredMessage {
-                    id: "a-local".into(),
-                    role: "assistant".into(),
-                    text: "stream draft".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: None,
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
                     created_at: 2,
+                    ..plain_message("a-local", "assistant", "stream draft")
                 },
             ],
             updated_at: 0,
@@ -717,29 +762,10 @@ mod merge_tail_page_order_tests {
             history_has_older: None,
         };
         let hydrated = vec![
+            plain_message("u1", "user", "question"),
             StoredMessage {
-                id: "u1".into(),
-                role: "user".into(),
-                text: "question".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            StoredMessage {
-                id: "a-srv".into(),
-                role: "assistant".into(),
-                text: "final answer".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
                 created_at: 2,
+                ..plain_message("a-srv", "assistant", "final answer")
             },
         ];
         let resp = ConversationMessagesResponse {
@@ -765,44 +791,19 @@ mod merge_tail_page_order_tests {
     fn merge_tail_page_keeps_user_before_intent_when_server_omits_user() {
         let session = ChatSession {
             id: "sid".into(),
+            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages: vec![
+                plain_message("u-local", "user", "你好"),
                 StoredMessage {
-                    id: "u-local".into(),
-                    role: "user".into(),
-                    text: "你好".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: None,
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
-                    created_at: 0,
-                },
-                StoredMessage {
-                    id: "tl-intent".into(),
-                    role: "assistant".into(),
-                    text: "意图分析：问候类\n\n".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
                     state: Some(timeline_state_intent_analysis_snapshot()),
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
                     created_at: 1,
+                    ..plain_message("tl-intent", "assistant", "意图分析：问候类\n\n")
                 },
                 StoredMessage {
-                    id: "a-local".into(),
-                    role: "assistant".into(),
-                    text: "你好！".into(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: None,
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
                     created_at: 2,
+                    ..plain_message("a-local", "assistant", "你好！")
                 },
             ],
             updated_at: 0,
@@ -817,28 +818,13 @@ mod merge_tail_page_order_tests {
         };
         let hydrated = vec![
             StoredMessage {
-                id: "tl-intent-srv".into(),
-                role: "assistant".into(),
-                text: "意图分析：问候类\n\n".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
                 state: Some(timeline_state_intent_analysis_snapshot()),
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
                 created_at: 1,
+                ..plain_message("tl-intent-srv", "assistant", "意图分析：问候类\n\n")
             },
             StoredMessage {
-                id: "a-srv".into(),
-                role: "assistant".into(),
-                text: "你好！我是 CrabMate 的 AI 助手。".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
                 created_at: 2,
+                ..plain_message("a-srv", "assistant", "你好！我是 CrabMate 的 AI 助手。")
             },
         ];
         let resp = ConversationMessagesResponse {
@@ -861,11 +847,14 @@ mod merge_tail_page_order_tests {
 #[cfg(test)]
 mod conversation_server_id_for_hydrate_tests {
     use super::conversation_server_id_if_hydratable_for_wire;
-    use crate::storage::{ChatSession, StoredMessage, StoredMessageState};
+    use crate::storage::{
+        ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage, StoredMessageState,
+    };
 
     fn base_session() -> ChatSession {
         ChatSession {
             id: "sid".into(),
+            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages: vec![],

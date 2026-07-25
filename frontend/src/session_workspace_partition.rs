@@ -104,6 +104,7 @@ pub fn wire_workspace_session_storage_partition(args: WireWorkspaceSessionPartit
             align_workspace_roots_to_server_path(&mut list2, wd.path.as_str());
 
             for s in list2.iter_mut() {
+                s.normalize_layout_schema_version();
                 clear_stale_assistant_loading_states(&mut s.messages);
             }
             let (list2, def_id) =

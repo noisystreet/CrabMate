@@ -477,6 +477,7 @@ mod tests {
     fn persist_snapshot_merges_overlay_without_loading() {
         let session = ChatSession {
             id: "s1".into(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages: vec![StoredMessage {
@@ -516,6 +517,7 @@ mod tests {
     fn persist_snapshot_merges_overlay() {
         let session = ChatSession {
             id: "s1".into(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             messages: vec![StoredMessage {
