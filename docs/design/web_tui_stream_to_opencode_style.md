@@ -129,19 +129,17 @@ SSE / overlay / sessions（不变）
 
 **动机**：对标 append-only；超长会话下全量重建是下一瓶颈，也会放大跟底抖动窗口。
 
-建议：
+**状态（已落地）**：
 
-1. Transcript 拆成：  
-   - **committed**：历史 turn 的 DOM 节点（按 `message.id` 挂载一次）  
-   - **live**：当前 loading 助手尾块（只更新这一节点）  
-2. overlay revision 变化时：**仅**更新 live 节点文本/HTML，不重刷 committed。  
-3. 回合 `on_done` / 切换会话：把 live 固化进 committed，或整段重建一次（会话切换可全量，流式热路径不可）。  
-4. 按行 Markdown：对 live 块继续「半行纯文本 + 闭合行升级」；升级时尽量只改 live 子树。
+1. 每回合独立 `section[data-tui-msg-id]`；新回合 `insertAdjacentHTML` append，不重刷已挂载 section。  
+2. live 正文按行：`closed[]` append + 半行 `.chat-tui-line--plain` 只改 `textContent`；闭合行晋升时才插入 HTML 块。  
+3. 会话切换 / id 前缀破坏 → 全量重建；live 落定 → 去掉 `data-tui-live` 并 Finalize body。  
+4. 模块：`tui_line_markdown`（chunks/patch）、`tui_transcript_sync`（计划）、`tui_stream_view`（DOM 应用）。
 
 **验收**：
 
-- 单元：live 更新不销毁 committed 节点（可用测试 id / 计数钩子）。  
-- E2E：长内容流式过程中 `scrollHeight` 单调增、无整页闪白。  
+- 单元：live 半行增长为 Incremental；newline 晋升 closed；append 新回合不 FullRebuild。  
+- E2E：长内容流式 / 按行 Markdown / scroll specs。  
 - 性能备忘：人为 2万字流式时主线程长任务可接受（人工或可选 bench）。
 
 **风险**：查找高亮、导出预览若依赖整棵 HTML，需改读模型而非 DOM。
@@ -240,3 +238,4 @@ Phase 0（基线）
 |------|------|
 | 2026-07-25 | 初稿：自当前终端流 + 按行 Markdown 向 OpenCode/OpenClaw 式 append-only + 简单 pin 演进 |
 | 2026-07-25 | Phase 1：跟底状态机收敛（pin/unpin、去掉 IO 双重真相、盯 transcript） |
+| 2026-07-25 | Phase 2：每回合 section + live 按行 textContent/append（非整 body innerHTML） |

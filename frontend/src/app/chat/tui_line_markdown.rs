@@ -1,5 +1,5 @@
-//! 终端流按行 Markdown：已闭合行（含 `\n`）做安全 HTML；未闭合末行流式期保持纯文本；
-//! 围栏代码块开闭完整后再整块渲染，未闭合围栏整段纯文本。
+//! 终端流按行 Markdown：已闭合行做安全 HTML；未闭合末行流式期纯文本；
+//! 围栏开闭完整后再整块渲染。提供 chunk 解析与增量 patch，供按回合局部 DOM 更新。
 
 use crate::markdown::{plaintext_to_safe_html, to_safe_html};
 
@@ -14,31 +14,19 @@ fn fence_info(line: &str) -> &str {
         .unwrap_or("")
 }
 
-fn push_md_line(line: &str, out: &mut String) {
+fn md_line_html(line: &str) -> String {
     if line.is_empty() {
-        out.push_str("<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>");
-        return;
+        return "<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>".to_string();
     }
     let html = to_safe_html(line);
     if html.is_empty() {
-        out.push_str("<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>");
+        "<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>".to_string()
     } else {
-        out.push_str("<div class=\"chat-tui-line\">");
-        out.push_str(&html);
-        out.push_str("</div>");
+        format!("<div class=\"chat-tui-line\">{html}</div>")
     }
 }
 
-fn push_plain_fragment(text: &str, out: &mut String) {
-    if text.is_empty() {
-        return;
-    }
-    out.push_str("<div class=\"chat-tui-line chat-tui-line--plain\">");
-    out.push_str(&plaintext_to_safe_html(text));
-    out.push_str("</div>");
-}
-
-fn flush_closed_fence(lang: &str, body: &str, out: &mut String) {
+fn fence_html(lang: &str, body: &str) -> String {
     let mut fenced = String::with_capacity(body.len() + lang.len() + 16);
     fenced.push_str("```");
     fenced.push_str(lang);
@@ -49,29 +37,59 @@ fn flush_closed_fence(lang: &str, body: &str, out: &mut String) {
     }
     fenced.push_str("```");
     let html = to_safe_html(&fenced);
-    out.push_str("<div class=\"chat-tui-line chat-tui-line--fence\">");
-    out.push_str(&html);
-    out.push_str("</div>");
+    format!("<div class=\"chat-tui-line chat-tui-line--fence\">{html}</div>")
 }
 
-fn push_open_fence_plain(lang: &str, body: &str, open_tail: &str, out: &mut String) {
+fn open_fence_plain_text(lang: &str, body: &str, open_tail: &str) -> String {
     let mut plain = String::new();
     plain.push_str("```");
     plain.push_str(lang);
     plain.push('\n');
     plain.push_str(body);
     plain.push_str(open_tail);
-    push_plain_fragment(&plain, out);
+    plain
 }
 
-/// 将助手/用户正文转为可写入 `innerHTML` 的按行流式 HTML。
-///
-/// - `finalize_open_line == false`：末尾无 `\n` 的半行保持转义纯文本（流式中）。
-/// - `finalize_open_line == true`：末行也按 Markdown 渲染（消息已落定）。
+/// 按行解析结果：闭合块 HTML 列表 + 可选流式半行纯文本（写入 `textContent`）。
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TuiBodyChunks {
+    pub closed: Vec<String>,
+    pub open_plain: Option<String>,
+}
+
+impl TuiBodyChunks {
+    #[must_use]
+    pub fn to_inner_html(&self) -> String {
+        let mut out = String::new();
+        for chunk in &self.closed {
+            out.push_str(chunk);
+        }
+        if let Some(plain) = &self.open_plain {
+            out.push_str("<div class=\"chat-tui-line chat-tui-line--plain\">");
+            out.push_str(&plaintext_to_safe_html(plain));
+            out.push_str("</div>");
+        }
+        out
+    }
+}
+
+/// live body 增量：优先 append 闭合行 + 改末行 text；否则整 body 替换。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TuiBodyPatch {
+    ReplaceAll {
+        chunks: TuiBodyChunks,
+    },
+    Incremental {
+        append_closed: Vec<String>,
+        open_plain: Option<String>,
+    },
+}
+
+/// 将正文解析为可挂载的 closed / open 块。
 #[must_use]
-pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String {
+pub fn parse_tui_body_chunks(text: &str, finalize_open_line: bool) -> TuiBodyChunks {
     if text.is_empty() {
-        return String::new();
+        return TuiBodyChunks::default();
     }
 
     let ends_with_nl = text.ends_with('\n');
@@ -86,7 +104,7 @@ pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String 
         (&raw[..last], Some(raw[last]))
     };
 
-    let mut out = String::with_capacity(text.len().saturating_mul(2));
+    let mut closed = Vec::new();
     let mut in_fence = false;
     let mut fence_lang = String::new();
     let mut fence_body = String::new();
@@ -94,7 +112,7 @@ pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String 
     for line in complete {
         if is_fence_marker(line) {
             if in_fence {
-                flush_closed_fence(&fence_lang, &fence_body, &mut out);
+                closed.push(fence_html(&fence_lang, &fence_body));
                 in_fence = false;
                 fence_lang.clear();
                 fence_body.clear();
@@ -109,32 +127,54 @@ pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String 
             fence_body.push_str(line);
             fence_body.push('\n');
         } else {
-            push_md_line(line, &mut out);
+            closed.push(md_line_html(line));
         }
     }
 
-    match open_line {
-        Some(open) if in_fence => {
-            push_open_fence_plain(&fence_lang, &fence_body, open, &mut out);
-        }
+    let open_plain = match open_line {
+        Some(open) if in_fence => Some(open_fence_plain_text(&fence_lang, &fence_body, open)),
         Some(open) if finalize_open_line => {
-            push_md_line(open, &mut out);
+            closed.push(md_line_html(open));
+            None
         }
-        Some(open) => {
-            push_plain_fragment(open, &mut out);
-        }
-        None if in_fence => {
-            push_open_fence_plain(&fence_lang, &fence_body, "", &mut out);
-        }
-        None => {}
-    }
+        Some(open) => Some(open.to_string()),
+        None if in_fence => Some(open_fence_plain_text(&fence_lang, &fence_body, "")),
+        None => None,
+    };
 
-    out
+    TuiBodyChunks { closed, open_plain }
+}
+
+/// 对比上一帧 closed 前缀：可增量则 append，否则整段替换。
+#[must_use]
+pub fn plan_tui_body_patch(prev: Option<&TuiBodyChunks>, next: &TuiBodyChunks) -> TuiBodyPatch {
+    let Some(prev) = prev else {
+        return TuiBodyPatch::ReplaceAll {
+            chunks: next.clone(),
+        };
+    };
+    if next.closed.len() >= prev.closed.len() && next.closed[..prev.closed.len()] == prev.closed[..]
+    {
+        return TuiBodyPatch::Incremental {
+            append_closed: next.closed[prev.closed.len()..].to_vec(),
+            open_plain: next.open_plain.clone(),
+        };
+    }
+    TuiBodyPatch::ReplaceAll {
+        chunks: next.clone(),
+    }
+}
+
+/// 将助手/用户正文转为可写入 `innerHTML` 的按行流式 HTML。
+#[must_use]
+#[cfg(test)]
+pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String {
+    parse_tui_body_chunks(text, finalize_open_line).to_inner_html()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::render_tui_line_markdown;
+    use super::*;
 
     #[test]
     fn complete_bold_line_renders_strong() {
@@ -171,5 +211,42 @@ mod tests {
         let h = render_tui_line_markdown("```rust\nlet x = 1;\n```\n", false);
         assert!(h.contains("<code") || h.contains("<pre"), "got {h}");
         assert!(h.contains("let x = 1;"), "got {h}");
+    }
+
+    #[test]
+    fn streaming_open_line_growth_is_incremental_text_only() {
+        let a = parse_tui_body_chunks("**a", false);
+        let b = parse_tui_body_chunks("**ab", false);
+        match plan_tui_body_patch(Some(&a), &b) {
+            TuiBodyPatch::Incremental {
+                append_closed,
+                open_plain,
+            } => {
+                assert!(append_closed.is_empty());
+                assert_eq!(open_plain.as_deref(), Some("**ab"));
+            }
+            other => panic!("expected Incremental, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn newline_promotes_open_to_closed_chunk() {
+        let a = parse_tui_body_chunks("hello", false);
+        let b = parse_tui_body_chunks("hello\nworld", false);
+        match plan_tui_body_patch(Some(&a), &b) {
+            TuiBodyPatch::Incremental {
+                append_closed,
+                open_plain,
+            } => {
+                assert_eq!(append_closed.len(), 1);
+                assert!(
+                    append_closed[0].contains("hello"),
+                    "got {}",
+                    append_closed[0]
+                );
+                assert_eq!(open_plain.as_deref(), Some("world"));
+            }
+            other => panic!("expected Incremental, got {other:?}"),
+        }
     }
 }

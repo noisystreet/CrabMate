@@ -125,25 +125,35 @@ pub(crate) fn on_messages_pointer_scroll_intent(
     pointer_scroll_active.set(active);
 }
 
-/// scroll：近底 → re-pin；指针拖拽离底 → unpin（内容增高产生的 scroll 不 unpin）。
+/// scroll：用户上滑 → unpin；近底 → re-pin；指针拖离底 → unpin。
 ///
-/// 用 scroller 自身量 gap，避免 `event.target` 在冒泡路径上不是滚动容器。
-/// 指针按住期间不 re-pin，避免拖离底的同一帧被近底/哨兵逻辑拉回。
-pub(crate) fn on_messages_stick_scroll_event(shell: ChatScrollShellSignals, _ev: web_sys::Event) {
+/// `last_scroll_top` 用于识别 scrollTop 下降（上滑），不依赖 wheel/pointer 是否送达。
+/// 程序化贴底会抬高 scrollTop，不会误 unpin。
+pub(crate) fn on_messages_stick_scroll_event(
+    shell: ChatScrollShellSignals,
+    last_scroll_top: RwSignal<i32>,
+) {
     let Some(element) = shell.messages_scroller.get_untracked() else {
         return;
     };
-    let gap = scroll_gap_px(
-        element.scroll_height(),
-        element.scroll_top(),
-        element.client_height(),
-    );
+    let top = element.scroll_top();
+    let prev_top = last_scroll_top.get_untracked();
+    last_scroll_top.set(top);
+    let gap = scroll_gap_px(element.scroll_height(), top, element.client_height());
     let pointer_active = shell.pointer_scroll_active.get_untracked();
+
+    // 上滑（含拖滚动条）：关跟底。阈值避免亚像素抖动。
+    if top + 2 < prev_top {
+        stick_unpin(shell);
+        return;
+    }
     if pointer_active && gap > STICK_UNPIN_GAP_PX {
         stick_unpin(shell);
         return;
     }
-    if !pointer_active && is_near_bottom(gap) {
+    // 近底或主动下滑回到阈值内 → re-pin（流式增高时 gap 可能短暂 > NEAR）。
+    let scrolled_down = top > prev_top + 2;
+    if !pointer_active && (is_near_bottom(gap) || (scrolled_down && gap <= STICK_UNPIN_GAP_PX)) {
         stick_pin(shell);
     }
 }

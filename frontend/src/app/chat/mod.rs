@@ -30,6 +30,7 @@ mod stream_user_abort;
 mod tail_loading_memo;
 mod tui_line_markdown;
 mod tui_stream_view;
+mod tui_transcript_sync;
 pub(crate) mod turn_lifecycle;
 pub(crate) mod wire_chat_domain;
 pub(crate) mod wire_chat_session_lifecycle;
