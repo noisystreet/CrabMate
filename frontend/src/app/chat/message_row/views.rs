@@ -1,6 +1,7 @@
 //! 消息行内部子视图：元信息、正文、子目标横幅、工具气泡与操作条。
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use leptos::prelude::*;
@@ -15,6 +16,8 @@ use crate::stream_text_overlay::StreamTextOverlay;
 
 use super::super::composer_follow_up::ComposerStreamFollowUp;
 use super::super::message_row_actions::MessageRowActionSignals;
+use super::super::scroll_follow::follow_after_content_paint;
+use super::super::scroll_shell::ChatScrollShellSignals;
 use super::non_assistant_body::{NonAssistantMessageBodyParams, build_non_assistant_message_body};
 
 pub(super) fn chat_message_row_meta_view(
@@ -64,7 +67,7 @@ pub(super) struct ChatMessageRowBodyCoreParams {
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub tool_mid: String,
     pub jump_uid: Option<String>,
-    pub auto_scroll_chat: RwSignal<bool>,
+    pub scroll_shell: ChatScrollShellSignals,
     pub tool_output_chunks: RwSignal<HashMap<String, String>>,
 }
 
@@ -86,10 +89,12 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
         tool_detail_expanded_ids,
         tool_mid,
         jump_uid,
-        auto_scroll_chat,
+        scroll_shell,
         tool_output_chunks,
     } = p;
+    let auto_scroll_chat = scroll_shell.auto_scroll_chat;
     if m.role == "assistant" && !m.is_tool {
+        let on_dom_painted = Rc::new(move || follow_after_content_paint(scroll_shell));
         return assistant_markdown_collapsible_view(AssistantMarkdownCollapsibleWire {
             sessions,
             active_id,
@@ -100,6 +105,7 @@ pub(super) fn chat_message_row_body_core(p: ChatMessageRowBodyCoreParams) -> Any
             apply_assistant_display_filters,
             stream_text_overlay,
             stream_overlay_display_mid,
+            on_dom_painted,
         })
         .into_any();
     }

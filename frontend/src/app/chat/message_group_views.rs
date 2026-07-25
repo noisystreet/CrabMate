@@ -7,6 +7,7 @@ use leptos::prelude::*;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use super::message_row::{ChatMessageRowSignals, chat_message_row};
+use super::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::session_search::normalize_search_query;
@@ -29,7 +30,7 @@ pub(crate) struct ToolRunGroupSignals {
     pub tail_loading_assistant_mid: Memo<Option<String>>,
     pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub status_err: RwSignal<Option<String>>,
-    pub auto_scroll_chat: RwSignal<bool>,
+    pub scroll_shell: ChatScrollShellSignals,
     pub locale: RwSignal<Locale>,
     pub markdown_render: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
@@ -49,7 +50,7 @@ fn chat_row_for_tool_group(
         chat_find_query: g.chat_find_query,
         chat_find_match_ids: g.chat_find_match_ids,
         chat_find_cursor: g.chat_find_cursor,
-        auto_scroll_chat: g.auto_scroll_chat,
+        scroll_shell: g.scroll_shell,
         stream_turn_busy_ui: g.stream_turn_busy_ui,
         tail_loading_assistant_mid: g.tail_loading_assistant_mid,
         stream_follow_up: g.stream_follow_up,

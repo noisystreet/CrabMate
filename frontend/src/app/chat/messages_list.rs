@@ -35,7 +35,6 @@ pub(crate) fn ChatMessagesList(signals: ChatMessagesListSignals) -> impl IntoVie
         tool_run_group_signals,
     } = signals;
     let ToolRunGroupSignals {
-        auto_scroll_chat,
         tail_loading_assistant_mid,
         collapsed_long_assistant_ids,
         chat_find_query,
@@ -82,7 +81,7 @@ pub(crate) fn ChatMessagesList(signals: ChatMessagesListSignals) -> impl IntoVie
             chat_find_query,
             chat_find_match_ids,
             chat_find_cursor,
-            auto_scroll_chat,
+            scroll_shell,
             stream_turn_busy_ui,
             tail_loading_assistant_mid,
             stream_follow_up,

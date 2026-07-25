@@ -3,6 +3,7 @@
 use leptos::html::Div;
 use leptos::prelude::*;
 
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::i18n::{self, Locale};
@@ -26,6 +27,7 @@ pub struct AssistantMarkdownCollapsibleWire {
     pub apply_assistant_display_filters: RwSignal<bool>,
     pub stream_text_overlay: RwSignal<Option<StreamTextOverlay>>,
     pub stream_overlay_display_mid: RwSignal<Option<String>>,
+    pub on_dom_painted: Rc<dyn Fn()>,
 }
 
 /// 助手非工具消息：Markdown → 净化 HTML；思维链独立区域 + 终答区。
@@ -40,6 +42,7 @@ pub fn assistant_markdown_collapsible_view(w: AssistantMarkdownCollapsibleWire) 
         apply_assistant_display_filters,
         stream_text_overlay,
         stream_overlay_display_mid,
+        on_dom_painted,
     } = w;
     let answer_body_ref = NodeRef::<Div>::new();
     let mid_for_btn = message_id.clone();
@@ -62,6 +65,7 @@ pub fn assistant_markdown_collapsible_view(w: AssistantMarkdownCollapsibleWire) 
         markdown_render,
         answer_body_ref: answer_body_ref.clone(),
         answer_paint: answer_paint.clone(),
+        on_dom_painted,
     });
 
     let mid_stored = StoredValue::new(mid_for_btn.clone());

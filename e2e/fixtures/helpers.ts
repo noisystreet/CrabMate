@@ -94,6 +94,63 @@ export function installMockSse(
   });
 }
 
+/** 用浏览器 ReadableStream 分批返回 SSE，覆盖真实流式渲染与滚动时序。 */
+export async function installDelayedMockSse(
+  page: Page,
+  sseEvents: string[],
+  delayMs = 35,
+  convId = "e2e-streaming-conv",
+) {
+  await page.evaluate(
+    ({ events, delay, conversationId }) => {
+      const originalFetch = window.fetch.bind(window);
+      const mockedFetch: typeof window.fetch = async (input, init) => {
+        const requestUrl =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const method =
+          init?.method ?? (input instanceof Request ? input.method : "GET");
+        if (
+          !requestUrl.includes("/chat/stream") ||
+          method.toUpperCase() !== "POST"
+        ) {
+          return originalFetch(input, init);
+        }
+
+        const encoder = new TextEncoder();
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            let index = 0;
+            const pushNext = () => {
+              if (index >= events.length) {
+                controller.close();
+                return;
+              }
+              controller.enqueue(encoder.encode(events[index]));
+              index += 1;
+              window.setTimeout(pushNext, delay);
+            };
+            pushNext();
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: {
+            "content-type": "text/event-stream; charset=utf-8",
+            "x-conversation-id": conversationId,
+            "x-stream-job-id": "1",
+          },
+        });
+      };
+      window.fetch = mockedFetch;
+    },
+    { events: sseEvents, delay: delayMs, conversationId: convId },
+  );
+}
+
 /** 等待页面中出现指定文本（超时 ms）。*/
 export async function waitForText(page: Page, text: string, timeoutMs = 20000) {
   await page.waitForFunction((t) => document.body.innerText.includes(t), text, {

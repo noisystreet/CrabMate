@@ -19,16 +19,13 @@ pub struct ChatComposerSignals {
     /// 工具气泡「详情抽屉」展开中的消息 id（与 `StoredMessage::id` 一致）；避免 `For` 重挂行时丢失本地 `RwSignal<bool>`。
     pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
-    pub messages_scroll_from_effect: RwSignal<bool>,
-    pub last_messages_scroll_top: RwSignal<i32>,
+    pub messages_pointer_scroll_active: RwSignal<bool>,
     pub messages_scroller: NodeRef<Div>,
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,
     pub chat_find_panel_open: RwSignal<bool>,
     pub focus_message_id_after_nav: RwSignal<Option<String>>,
-    /// 流式跟底：上一帧 `scrollHeight` 基线（[`crate::scroll_anchor`] delta 追底）。
-    pub stream_scroll_height_baseline: RwSignal<i32>,
 }
 
 impl ChatComposerSignals {
@@ -43,15 +40,13 @@ impl ChatComposerSignals {
             collapsed_tool_run_heads: RwSignal::new(HashSet::new()),
             tool_detail_expanded_ids: RwSignal::new(HashSet::new()),
             auto_scroll_chat: RwSignal::new(true),
-            messages_scroll_from_effect: RwSignal::new(false),
-            last_messages_scroll_top: RwSignal::new(0),
+            messages_pointer_scroll_active: RwSignal::new(false),
             messages_scroller: NodeRef::new(),
             chat_find_query: RwSignal::new(String::new()),
             chat_find_match_ids: RwSignal::new(Vec::new()),
             chat_find_cursor: RwSignal::new(0),
             chat_find_panel_open: RwSignal::new(false),
             focus_message_id_after_nav: RwSignal::new(None),
-            stream_scroll_height_baseline: RwSignal::new(0),
         }
     }
 }
