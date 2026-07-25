@@ -81,9 +81,8 @@ pub(super) fn resolve_web_llm_for_job(
             if let Some(ref x) = o.api_base {
                 c.llm.api_base.clone_from(x);
             }
-            if let Some(ref x) = o.model {
-                c.llm.model.clone_from(x);
-            }
+            // 注意：client_llm.model 不会覆盖 cfg.llm.model，以避免影响内部组件（如 L2 分类器）
+            // 的模型选择。model 覆盖由调用方通过 model_override 参数单独传递给主对话循环。
             if let Some(ref x) = o.api_key {
                 key.clone_from(x);
                 c.llm.llm_http_auth_mode = LlmHttpAuthMode::Bearer;
