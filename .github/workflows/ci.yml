@@ -1,5 +1,7 @@
 # 主 CI：编译检查、Clippy（-D warnings）与工作区测试，防止错误合入 main。
 # 与 pre-commit 的 cargo clippy / frontend-wasm-check 对齐；cargo test 仅在本 workflow（及 code-complexity 金样）跑。
+#
+# desktop-tauri 是独立 workspace（含 Victauri E2E 测试），与主 workspace 并行执行。
 name: CI
 
 on:
@@ -16,13 +18,13 @@ permissions:
   contents: read
 
 jobs:
-  check-clippy-test:
+  workspace:
     name: check · clippy · test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # check + clippy + test（含 frontend 原生 lib test 链接）易占满 runner 磁盘；先回收预装大目录。
+      # check + clippy + test 易占满 runner 磁盘；先回收预装大目录。
       - name: Free disk space
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
@@ -63,9 +65,27 @@ jobs:
           cargo clean
           cargo test --workspace --all-features --no-fail-fast
 
-      # desktop-tauri 是独立 workspace（含 Victauri E2E 测试）
-      - name: Install Tauri system deps (libgtk-3 / libwebkit2gtk / libappindicator)
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+  desktop:
+    name: desktop (check · clippy · test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force 2>/dev/null || true
+
+      - name: Install system deps (OpenSSL / libssh2 / libgtk-3 / libwebkit2gtk / libappindicator)
+        run: sudo apt-get update && sudo apt-get install -y \
+          libssl-dev libssh2-1-dev \
+          libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
 
       # tauri-build 校验 externalBin 存在性；CI 中 only check/test，创建 dummy sidecar
       - name: Create dummy files for tauri-build
@@ -74,15 +94,15 @@ jobs:
           touch desktop-tauri/binaries/crabmate-x86_64-unknown-linux-gnu
           echo '<html></html>' > desktop-tauri/dist/index.html
 
-      - name: cargo check (desktop-tauri, all targets)
+      - name: cargo check (all targets)
         run: cargo check --tests
         working-directory: desktop-tauri/src-tauri
 
-      - name: cargo clippy (desktop-tauri, -D warnings)
+      - name: cargo clippy (-D warnings)
         run: cargo clippy --all-targets -- -D warnings
         working-directory: desktop-tauri/src-tauri
 
-      - name: cargo test (desktop-tauri, Victauri auto-skip)
+      - name: cargo test (Victauri auto-skip)
         run: cargo test --no-fail-fast
         working-directory: desktop-tauri/src-tauri
 
