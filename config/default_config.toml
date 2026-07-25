@@ -5,7 +5,7 @@
 
 # 1. LLM 网关（OpenAI 兼容 chat/completions）
 api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
+model = "deepseek-v4-flash"
 # 鉴权密钥：仅认环境变量 API_KEY（或进程继承）；勿将真实密钥写入本文件。本程序不读取 TOML 中的 api_key 键。
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
