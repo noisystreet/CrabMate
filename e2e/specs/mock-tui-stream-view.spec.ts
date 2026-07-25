@@ -7,10 +7,11 @@ import {
 
 const SID = "e2e-tui-stream-view";
 
-test("默认终端流按纯文本增量展示且不解析 Markdown", async ({ page }) => {
+test("终端流按行渲染：流式半行纯文本，结束后 Markdown 生效", async ({
+  page,
+}) => {
   await seedSession(page, SID);
   await expect(page.getByTestId("chat-tui-stream-view")).toBeVisible();
-  await expect(page.getByTestId("chat-view-mode-toggle")).toHaveCount(0);
 
   await installDelayedMockSse(
     page,
@@ -26,14 +27,22 @@ test("默认终端流按纯文本增量展示且不解析 Markdown", async ({ pa
       })}\n\n`,
       'id: 4\ndata: {"type":"RUN_FINISHED"}\n\n',
     ],
-    180,
+    220,
   );
 
   await sendMessage(page, "验证终端流");
   const transcript = page.getByTestId("chat-tui-transcript");
   await expect(transcript).toContainText("用户 ❯");
   await expect(transcript).toContainText("验证终端流");
+
+  // 仅第一段到达时：半行保持字面量，尚未出现第二段
   await expect(transcript).toContainText("**第一段");
+  await expect(transcript).not.toContainText("第二段");
   await expect(transcript.locator("strong")).toHaveCount(0);
-  await expect(transcript).toContainText("**第一段，第二段**");
+
+  // 回合结束后 finalize：粗体生效
+  await expect(transcript.locator("strong")).toHaveCount(1, {
+    timeout: 10_000,
+  });
+  await expect(transcript.locator("strong")).toHaveText("第一段，第二段");
 });
