@@ -85,7 +85,10 @@ jobs:
         with:
           components: clippy
 
+      # desktop-tauri 是独立 workspace，须指定 workspaces 以便 rust-cache 用正确的 Cargo.lock
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-tauri/src-tauri
 
       # tauri-build 校验 externalBin 存在性；CI 中 only check/test，创建 dummy sidecar
       - name: Create dummy files for tauri-build
