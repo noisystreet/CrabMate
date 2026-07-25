@@ -15,6 +15,7 @@ use super::hash_routing::{
     SettingsSection, read_settings_section_from_hash, settings_page_install_hashchange_listener,
 };
 use crate::app::settings_form_state::SettingsDirtyBaselines;
+use crate::app::settings_mcp_status::{McpSettingsPageState, spawn_reload_mcp};
 
 /// 设置页全屏视图入参（阶段 B：`App` 单行传入）。
 #[derive(Clone)]
@@ -68,6 +69,15 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
     };
 
     let baselines = SettingsDirtyBaselines::from_form_current(&form_current_untracked(drafts));
+
+    let mcp = McpSettingsPageState::new();
+    Effect::new(move |_| {
+        if !settings_page.get() {
+            return;
+        }
+        // 仅在打开设置页时拉取；草稿上提后切 MCP 子页不会丢未保存删除。
+        spawn_reload_mcp(form.locale.get_untracked(), mcp);
+    });
 
     let session_switch_feedback = RwSignal::new(None::<String>);
     let session_switch_busy = RwSignal::new(false);
@@ -124,6 +134,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
             session_switch_busy,
             status_data,
             refresh_status: refresh_status_sv,
+            mcp,
         } />
     }
 }

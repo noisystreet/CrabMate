@@ -12,6 +12,7 @@ use crate::app::app_shell_ctx::SettingsModalSignals;
 use crate::app::settings_form_state::{
     SettingsDirtyBaselines, SettingsFormUiPhase, derive_settings_form_ui_phase,
 };
+use crate::app::settings_mcp_status::McpSettingsPageState;
 use crate::app::settings_modal_dialog::{SettingsModalDialogInput, settings_modal_dialog};
 use crate::app::settings_page::form_snapshot::{
     SettingsPageDraftSignals, form_current_tracked, form_current_untracked,
@@ -124,6 +125,9 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         )
     });
 
+    // 弹窗无 MCP 子页；占位态永不 dirty，仅满足「保存全部」共用路径。
+    let mcp = McpSettingsPageState::new();
+
     let close_modal = {
         let settings_modal = settings_modal;
         move || {
@@ -145,6 +149,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
                 executor_llm_settings_feedback,
                 client_llm_storage_tick,
                 baselines,
+                mcp,
             });
         }
     };

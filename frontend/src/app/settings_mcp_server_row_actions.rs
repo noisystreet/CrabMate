@@ -19,7 +19,7 @@ pub(crate) fn SettingsMcpServerRowActions(
         <div class="settings-mcp-row-actions">
             <button
                 type="button"
-                class="settings-btn settings-btn-secondary"
+                class="btn btn-secondary btn-sm"
                 prop:disabled=move || busy.get()
                 on:click=move |_| spawn_probe_mcp_server(ctx, id_probe.clone())
             >
@@ -27,7 +27,8 @@ pub(crate) fn SettingsMcpServerRowActions(
             </button>
             <button
                 type="button"
-                class="settings-btn settings-btn-danger"
+                class="btn btn-danger btn-sm"
+                data-testid="settings-mcp-remove"
                 on:click=move |_| {
                     let sid = id_remove.clone();
                     set_file.update(|f| f.servers.retain(|s| s.id != sid));

@@ -12,12 +12,107 @@ pub(crate) struct McpSettingsSignals {
     pub locale: RwSignal<Locale>,
     pub file: ReadSignal<McpServersFileDto>,
     pub set_file: WriteSignal<McpServersFileDto>,
+    pub baseline: RwSignal<McpServersFileDto>,
     pub status: ReadSignal<Option<McpServersStatusDto>>,
     pub set_status: WriteSignal<Option<McpServersStatusDto>>,
     pub busy: ReadSignal<bool>,
     pub set_busy: WriteSignal<bool>,
     pub probing: ReadSignal<bool>,
     pub set_probing: WriteSignal<bool>,
+}
+
+/// 设置页级 MCP 草稿（上提至 `SettingsPageView`，避免切量子页时丢失未保存删除）。
+#[derive(Clone, Copy)]
+pub(crate) struct McpSettingsPageState {
+    pub file: ReadSignal<McpServersFileDto>,
+    pub set_file: WriteSignal<McpServersFileDto>,
+    pub baseline: RwSignal<McpServersFileDto>,
+    pub import_json: RwSignal<String>,
+    pub status: ReadSignal<Option<McpServersStatusDto>>,
+    pub set_status: WriteSignal<Option<McpServersStatusDto>>,
+    pub busy: ReadSignal<bool>,
+    pub set_busy: WriteSignal<bool>,
+    pub probing: ReadSignal<bool>,
+    pub set_probing: WriteSignal<bool>,
+    pub feedback: ReadSignal<Option<String>>,
+    pub set_feedback: WriteSignal<Option<String>>,
+}
+
+impl McpSettingsPageState {
+    #[must_use]
+    pub(crate) fn new() -> Self {
+        let (file, set_file) = signal(McpServersFileDto::default());
+        let baseline = RwSignal::new(McpServersFileDto::default());
+        let import_json = RwSignal::new(String::new());
+        let (status, set_status) = signal(None::<McpServersStatusDto>);
+        let (busy, set_busy) = signal(false);
+        let (probing, set_probing) = signal(false);
+        let (feedback, set_feedback) = signal(None::<String>);
+        Self {
+            file,
+            set_file,
+            baseline,
+            import_json,
+            status,
+            set_status,
+            busy,
+            set_busy,
+            probing,
+            set_probing,
+            feedback,
+            set_feedback,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn is_dirty_tracked(&self) -> bool {
+        mcp_draft_is_dirty(
+            &self.file.get(),
+            &self.baseline.get(),
+            &self.import_json.get(),
+        )
+    }
+
+    #[must_use]
+    pub(crate) fn is_dirty_untracked(&self) -> bool {
+        mcp_draft_is_dirty(
+            &self.file.get_untracked(),
+            &self.baseline.get_untracked(),
+            &self.import_json.get_untracked(),
+        )
+    }
+
+    pub(crate) fn discard_to_baseline(&self) {
+        self.set_file.set(self.baseline.get_untracked());
+        self.import_json.set(String::new());
+        self.set_feedback.set(None);
+    }
+
+    #[must_use]
+    pub(crate) fn as_row_ctx(&self, locale: RwSignal<Locale>) -> McpSettingsSignals {
+        McpSettingsSignals {
+            locale,
+            file: self.file,
+            set_file: self.set_file,
+            baseline: self.baseline,
+            status: self.status,
+            set_status: self.set_status,
+            busy: self.busy,
+            set_busy: self.set_busy,
+            probing: self.probing,
+            set_probing: self.set_probing,
+        }
+    }
+}
+
+/// 草稿相对 baseline / 待合并 JSON 是否未保存。
+#[must_use]
+pub(crate) fn mcp_draft_is_dirty(
+    file: &McpServersFileDto,
+    baseline: &McpServersFileDto,
+    pending_import: &str,
+) -> bool {
+    file != baseline || !pending_import.trim().is_empty()
 }
 
 pub(crate) fn merge_probe_into_status(
@@ -120,6 +215,27 @@ pub(crate) struct McpSaveJob {
     pub set_feedback: WriteSignal<Option<String>>,
 }
 
+pub(crate) fn spawn_reload_mcp(loc: Locale, state: McpSettingsPageState) {
+    let McpSettingsPageState {
+        set_file,
+        baseline,
+        set_status,
+        set_probing,
+        ..
+    } = state;
+    spawn_local(async move {
+        set_probing.set(true);
+        if let Ok(f) = crate::api::user_data::fetch_mcp_servers(loc).await {
+            set_file.set(f.clone());
+            baseline.set(f.clone());
+            if let Some(st) = refresh_mcp_status_with_probe(loc, &f).await {
+                set_status.set(Some(st));
+            }
+        }
+        set_probing.set(false);
+    });
+}
+
 pub(crate) fn spawn_save_mcp(job: McpSaveJob) {
     let McpSaveJob {
         loc,
@@ -131,6 +247,7 @@ pub(crate) fn spawn_save_mcp(job: McpSaveJob) {
     let McpSettingsSignals {
         file,
         set_file,
+        baseline,
         set_status,
         set_busy,
         set_probing,
@@ -143,7 +260,8 @@ pub(crate) fn spawn_save_mcp(job: McpSaveJob) {
             match crate::api::user_data::post_mcp_servers_import(&pending_import, loc).await {
                 Ok(outcome) => {
                     import_json.set(String::new());
-                    set_file.set(outcome.file);
+                    set_file.set(outcome.file.clone());
+                    baseline.set(outcome.file);
                     let mut msg = crate::i18n::settings_mcp_import_merged_on_save(loc);
                     if !outcome.skipped_remote.is_empty() {
                         msg.push('\n');
@@ -178,9 +296,12 @@ pub(crate) fn spawn_save_mcp(job: McpSaveJob) {
                 set_feedback.set(Some(crate::i18n::settings_mcp_save(loc).to_string() + " ✓"));
                 if let Ok(f) = crate::api::user_data::fetch_mcp_servers(loc).await {
                     set_file.set(f.clone());
+                    baseline.set(f.clone());
                     if let Some(st) = refresh_mcp_status_with_probe(loc, &f).await {
                         set_status.set(Some(st));
                     }
+                } else {
+                    baseline.set(draft);
                 }
             }
             Err(e) => set_feedback.set(Some(e)),
@@ -209,4 +330,37 @@ pub(crate) fn spawn_probe_all_mcp(ctx: McpSettingsSignals) {
         set_busy.set(false);
         set_probing.set(false);
     });
+}
+
+#[cfg(test)]
+mod mcp_draft_dirty_tests {
+    use super::mcp_draft_is_dirty;
+    use crate::api::user_data::{McpServerEntryDto, McpServersFileDto};
+
+    fn sample_file(servers: Vec<McpServerEntryDto>) -> McpServersFileDto {
+        McpServersFileDto {
+            schema_version: 1,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers,
+        }
+    }
+
+    #[test]
+    fn delete_server_marks_dirty() {
+        let baseline = sample_file(vec![McpServerEntryDto {
+            id: "mcp_a".into(),
+            name: "A".into(),
+            ..Default::default()
+        }]);
+        let draft = sample_file(vec![]);
+        assert!(mcp_draft_is_dirty(&draft, &baseline, ""));
+        assert!(!mcp_draft_is_dirty(&baseline, &baseline, ""));
+    }
+
+    #[test]
+    fn pending_import_marks_dirty() {
+        let file = sample_file(vec![]);
+        assert!(mcp_draft_is_dirty(&file, &file, "{\"mcpServers\":{}}"));
+    }
 }

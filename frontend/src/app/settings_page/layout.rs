@@ -5,6 +5,7 @@ use std::sync::Arc;
 use leptos::prelude::*;
 
 use super::super::settings_mcp_block::SettingsMcpBlock;
+use super::super::settings_mcp_status::McpSettingsPageState;
 use super::super::settings_models_registry::{
     SettingsModelsRegistryBundle, SettingsModelsRegistryPanel,
 };
@@ -143,6 +144,7 @@ pub(super) fn SettingsPageContentPanels(
     clear_executor_key_intent: RwSignal<bool>,
     readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     registry_wire: SettingsPageContentRegistryWire,
+    mcp: McpSettingsPageState,
 ) -> impl IntoView {
     let SettingsPageContentRegistryWire {
         sync_saved_presets_baseline,
@@ -252,7 +254,7 @@ pub(super) fn SettingsPageContentPanels(
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Mcp>
-                <SettingsMcpBlock locale=appearance_locale />
+                <SettingsMcpBlock locale=appearance_locale mcp=mcp />
             </Show>
 
             <Show when=move || active_section.get() == SettingsSection::Session>
