@@ -14,6 +14,7 @@
  *      - 项目根 config.toml（[agent] 节下的 api_key）
  *      - 项目根 .agent_demo.toml（同上）
  *      - ~/.local/share/crabmate/secrets/client_llm（Tauri 本地配置）
+ *   3. 目录工具用例须通过 POST /workspace 预先设置有效工作区；未设置时前置检查立即失败
  *
  * 运行方式：
  *   cd e2e && npx playwright test specs/real-llm-tool-call.spec.ts
@@ -23,7 +24,7 @@
  *   - 真实 LLM 调用较慢，超时设置为 180 秒
  */
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
 import {
@@ -94,6 +95,33 @@ function resolveApiKey(): string {
 const API_KEY = resolveApiKey();
 const SID_BASE = "s_e2e_real_tool_call";
 
+async function requireConfiguredWorkspace(page: Page): Promise<void> {
+  const workspace = await page.evaluate(async () => {
+    const response = await fetch("/workspace");
+    if (!response.ok) {
+      return {
+        path: "",
+        error: `GET /workspace returned HTTP ${response.status}`,
+      };
+    }
+    const data = (await response.json()) as {
+      path?: unknown;
+      error?: unknown;
+    };
+    return {
+      path: typeof data.path === "string" ? data.path.trim() : "",
+      error: typeof data.error === "string" ? data.error.trim() : "",
+    };
+  });
+
+  if (!workspace.path || workspace.error) {
+    throw new Error(
+      `真实工具调用 E2E 需要预先设置有效工作区；请先通过 POST /workspace 配置目录。` +
+        ` 当前状态：${workspace.error || "workspace path is empty"}`,
+    );
+  }
+}
+
 test.describe("真实 LLM：工具调用场景", () => {
   const runTest = API_KEY ? test : test.skip;
   // 每次运行用唯一 SID，避免前次会话残留状态干扰
@@ -102,6 +130,7 @@ test.describe("真实 LLM：工具调用场景", () => {
 
   runTest("工具卡 + 工具结果 + 终答在 UI 中可见", async ({ page }) => {
     await setupRealLLMSession(page, uniqueSid, API_KEY);
+    await requireConfiguredWorkspace(page);
     // 要求列出文件结构，模型必然会调用 list_tree 工具
     await sendMessage(page, "列出当前工作区目录结构，用列表工具。");
 
