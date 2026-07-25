@@ -73,7 +73,7 @@ impl TuiBodyChunks {
     }
 }
 
-/// live body 增量：优先 append 闭合行 + 改末行 text；否则整 body 替换。
+/// live body 增量：优先 append 闭合行 + 改末行 text；工具行改 status/one-line；否则整 body 替换。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TuiBodyPatch {
     ReplaceAll {
@@ -82,6 +82,13 @@ pub enum TuiBodyPatch {
     Incremental {
         append_closed: Vec<String>,
         open_plain: Option<String>,
+    },
+    /// 工具折叠行：只改文案，不重写 HTML（高度与结构保持不变）。
+    ToolRow {
+        status: String,
+        one_line: String,
+        /// 若 DOM 已有 details，同步更新详情正文；`None` 表示无详情块。
+        detail: Option<String>,
     },
 }
 

@@ -94,6 +94,44 @@ fn tool_detail_body(
     detail
 }
 
+/// 工具折叠行可增量更新的字段（与 DOM `.chat-tui-tool-status` / `.chat-tui-tool-one-line` 对应）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ToolRowLiveFields {
+    pub status: String,
+    pub one_line: String,
+    /// 非空则折叠行带 `<details>`（结构变化时须整段 ReplaceAll）。
+    pub detail: Option<String>,
+}
+
+impl ToolRowLiveFields {
+    #[inline]
+    pub(crate) fn wants_details(&self) -> bool {
+        self.detail.is_some()
+    }
+}
+
+/// 从工具消息提取 live 行字段。
+#[must_use]
+pub(crate) fn tool_row_live_fields(
+    message: &StoredMessage,
+    locale: Locale,
+    live_output_overlay: Option<&str>,
+) -> ToolRowLiveFields {
+    let summary = tool_summary_line(message, locale, live_output_overlay);
+    let detail = tool_detail_body(message, locale, live_output_overlay);
+    let detail_trim = detail.trim();
+    let detail = if !detail_trim.is_empty() && detail_trim != summary.trim() {
+        Some(detail_trim.to_string())
+    } else {
+        None
+    };
+    ToolRowLiveFields {
+        status: tool_status_label(message, locale).to_string(),
+        one_line: summary,
+        detail,
+    }
+}
+
 /// 工具回合 body 内层 HTML（折叠态单行固定高度；详情展开后才增高）。
 #[must_use]
 pub(crate) fn tool_process_body_html(
@@ -103,9 +141,7 @@ pub(crate) fn tool_process_body_html(
 ) -> String {
     let name = tool_display_name(message);
     let emoji = i18n::tool_kind_emoji(&name);
-    let status = tool_status_label(message, locale);
-    let summary = tool_summary_line(message, locale, live_output_overlay);
-    let detail = tool_detail_body(message, locale, live_output_overlay);
+    let fields = tool_row_live_fields(message, locale, live_output_overlay);
     let row_inner = format!(
         "<span class=\"chat-tui-tool-emoji\" aria-hidden=\"true\">{emoji}</span>\
          <span class=\"chat-tui-tool-name\">{name}</span>\
@@ -113,13 +149,12 @@ pub(crate) fn tool_process_body_html(
          <span class=\"chat-tui-tool-one-line\">{one}</span>",
         emoji = emoji,
         name = plaintext_to_safe_html(&name),
-        status = plaintext_to_safe_html(status),
-        one = plaintext_to_safe_html(&summary),
+        status = plaintext_to_safe_html(&fields.status),
+        one = plaintext_to_safe_html(&fields.one_line),
     );
     let mut html = String::new();
     html.push_str("<div class=\"chat-tui-tool-process\" data-testid=\"chat-tui-tool-process\">");
-    let detail_trim = detail.trim();
-    if !detail_trim.is_empty() && detail_trim != summary.trim() {
+    if let Some(detail_trim) = fields.detail.as_deref() {
         // summary 即整行工具条；展开后 pre 落在固定行之外。
         html.push_str("<details class=\"chat-tui-tool-details\">");
         html.push_str("<summary class=\"chat-tui-tool-row\" title=\"");

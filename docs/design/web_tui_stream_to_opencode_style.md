@@ -56,7 +56,7 @@
 | **数据** | 仍用 `ChatSessionSignals` + `stream_text_overlay`；发送/SSE 未分叉 |
 | **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；半行与未闭合围栏纯文本；回合带 `--user` / `--assistant` / `--tool` 等角色样式（对齐气泡） |
 | **DOM 写入** | 按回合 `section`：append / live 行级 patch；会话切换或 id 前缀破坏时全量重建 |
-| **跟底** | 共用 `ChatMessagesScrollShell` + ResizeObserver / sentinel / pointer 意图；`arm_programmatic_stick` 抑制工具 body 重写夹低 `scrollTop` 的误 unpin |
+| **跟底** | 共用 `ChatMessagesScrollShell`；unpin **仅** wheel↑ / 指针离底 / Home / 查找；工具 live 用 `ToolRow` 改文案，折叠定高 |
 | **缺口** | 气泡路径 `allow(dead_code)` 保留 |
 
 ---
@@ -154,7 +154,7 @@ SSE / overlay / sessions（不变）
 **状态（部分落地）**：
 
 1. **操作条**（每回合 `section` 下方，对齐气泡 `msg-actions-below` 图标行）：复制本条、失败助手重试、自该用户消息再生/分支（`msg-action-icon-btn` + SVG；复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
-2. **工具过程**（已落地）：工具回合折叠态为**固定单行高度**（名称 / 状态 / compact + 可选展开）；详情默认折叠，展开后才增高；流式 `tool_output_chunks` 并入 live 摘要（ellipsis）。
+2. **工具过程**（已落地）：工具回合折叠态为**固定单行高度**；live 输出用 `TuiBodyPatch::ToolRow` 只改 status/one-line（结构变化才 ReplaceAll）；详情默认折叠，展开后才增高。
 3. **不做**：流式期完整工具卡网格、多级折叠组（除非用户显式打开调试台）。
 
 **验收**：E2E 覆盖复制/重试与工具过程行；跟底仍稳。
