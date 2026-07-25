@@ -1,7 +1,8 @@
 //! 单轮 `/chat/stream` 内 **`messages` 布局** 的唯一入口（方向 A：显式 TurnLayout 状态机）。
 //!
-//! 目标顺序（Phase 9 块布局）：`[时间线*] → [turn-batch-narration] → [工具*] → [turn-final-answer] → [loading 空壳]`
-//! assistant 批说明 / 终答正文 **仅** 经 [`BubbleOutputQueue::sync_web_projection`] 落盘。
+//! 目标顺序（v2 不可变布局）：`[时间线*] → ([commentary] → [工具])* → [turn-final-answer] → [loading 空壳]`
+//! 已关闭 commentary 以 `tool_call_id` 为稳定键，只允许首次插入；终答正文经
+//! [`BubbleOutputQueue::sync_web_projection`] 落盘。
 //!
 //! | 事件 | 入口 |
 //! |------|------|
@@ -10,7 +11,7 @@
 //! | `tool_result` 新建行 | [`TurnLayout::on_tool_result_inserted`] |
 //! | 时间线 / 意图 / 规划旁注 | [`TurnLayout::push_assistant_timeline`] |
 //! | 分阶段 system 时间线 push | [`TurnLayout::after_auxiliary_system_push`] |
-//! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_followup_model_round`] |
+//! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_bubble`]（`ContinueAnswering`）|
 //! | `final_response` 撤 loading | [`TurnLayout::remove_loading_placeholder_or_rotate`] |
 //!
 //! 原先分散在 `timeline_tail` 的 `peel` / `finalize` / `ensure_tail` / `restore` 均收拢为本模块私有步骤。
@@ -38,7 +39,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
-pub(crate) use bubble_queue::{BATCH_NARRATION_ROW_ID, BubbleOutputQueue, FINAL_ANSWER_ROW_ID};
+pub(crate) use bubble_queue::{BubbleOutputQueue, FINAL_ANSWER_ROW_ID, is_commentary_row_id};
 
 /// post-tool 尾泡被提前 finalize 时暂存的总结正文。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -296,7 +297,7 @@ fn insert_tool_row(
 
 /// 结束 loading 行：清除 loading 状态，保留行作为普通 assistant 消息。
 ///
-/// 无工具多轮场景中，`rotate_followup_model_round` 经 `finalize_loading_segment`
+/// 无工具多轮场景中，`rotate_bubble` 经 `finalize_loading_segment`
 /// 调用此函数。若直接删除行，且无 BATCH_NARRATION_ROW 保存内容，则上一轮内容丢失。
 /// 改为保留行并清除 `state`，后续 `on_done` 中的 dedup 会清理多余行。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
@@ -349,6 +350,17 @@ fn insert_post_tool_loading_after_tool(
     messages.insert(tidx + 1, row);
     pin_loading_tail_in_messages(messages, new_asst_id.as_str());
     Some(new_asst_id)
+}
+
+/// 气泡轮换的语义：旋转后是否继续接收正文 delta。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BubbleRotationSemantics {
+    /// 旋转后需要接收正文 delta（lane 推进到 Answering）。
+    /// 用于：`turn_segment_start(kind="answer")`、`on_delta` 时 followup 待轮换。
+    ContinueAnswering,
+    /// 旋转后即将结束流程，不需要接收正文（lane 保持 Reasoning）。
+    /// 用于：`stream_end` cleanup、`remove_loading_placeholder`。
+    Cleanup,
 }
 
 /// 单轮流式会话的消息布局状态机（无独立字段：状态由 `messages` + scratch 共同表示）。
@@ -464,6 +476,7 @@ impl TurnLayout {
                 .scratch
                 .adopt_new_assistant_tail_after_rotation(id.clone());
             stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
+            stream_ctx.scratch.on_assistant_answer_phase();
         } else {
             Self::pin_loading_tail(stream_ctx);
         }
@@ -544,11 +557,16 @@ impl TurnLayout {
         });
     }
 
-    /// 无工具的多轮 model round：finalize → 新 loading 尾泡 → pin。
-    pub(crate) fn rotate_followup_model_round(stream_ctx: &ChatStreamCallbackCtx) {
+    /// 统一的气泡轮换入口：finalize 当前段 → 新 loading 尾泡 → 按语义管理 lane。
+    ///
+    /// - [`BubbleRotationSemantics::ContinueAnswering`]：旋转后补调 `on_assistant_answer_phase()`
+    ///   将 lane 推进到 `Answering`。
+    /// - [`BubbleRotationSemantics::Cleanup`]：旋转后 lane 保持 `Reasoning`（adopt 重置后的默认值）。
+    pub(crate) fn rotate_bubble(
+        stream_ctx: &ChatStreamCallbackCtx,
+        semantics: BubbleRotationSemantics,
+    ) {
         Self::finalize_loading_segment(stream_ctx);
-        // 将旧的 turn-final-answer 投影行改为普通 assistant 行，
-        // 避免后续 sync_turn_projection 覆盖新轮文本时挤掉旧气泡内容。
         Self::detach_final_answer_projection(stream_ctx);
         let now = message_created_ms();
         let new_tail_id = RefCell::new(None::<String>);
@@ -575,6 +593,10 @@ impl TurnLayout {
             stream_ctx.chat.set_stream_overlay_display_mid(id.as_str());
         }
         Self::pin_loading_tail(stream_ctx);
+
+        if matches!(semantics, BubbleRotationSemantics::ContinueAnswering) {
+            stream_ctx.scratch.on_assistant_answer_phase();
+        }
     }
 
     /// `final_response` 等提前撤 loading；若尾泡已不存在则轮换新占位。
@@ -602,7 +624,7 @@ impl TurnLayout {
             })
             .unwrap_or(false);
         if !tail_still_present {
-            Self::rotate_followup_model_round(stream_ctx);
+            Self::rotate_bubble(stream_ctx, BubbleRotationSemantics::Cleanup);
         }
     }
 
@@ -679,17 +701,15 @@ impl TurnLayout {
     }
 
     /// 流结束：batch 已落盘时去掉仍含正文的 loading 尾泡（真实 LLM 形态 B 巨泡兜底）。
-    pub(crate) fn dedupe_loading_tail_against_batch_narration_row(
+    pub(crate) fn dedupe_loading_tail_against_commentary_rows(
         messages: &mut Vec<StoredMessage>,
         loading_id: &str,
     ) {
-        let Some(batch_idx) = messages
-            .iter()
-            .position(|m| m.id == bubble_queue::BATCH_NARRATION_ROW_ID)
-        else {
-            return;
-        };
-        if messages[batch_idx].text.trim().is_empty() {
+        let has_commentary = messages.iter().any(|message| {
+            bubble_queue::is_commentary_row_id(message.id.as_str())
+                && !message.text.trim().is_empty()
+        });
+        if !has_commentary {
             return;
         }
         let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {

@@ -92,18 +92,18 @@ function resolveApiKey(): string {
 }
 
 const API_KEY = resolveApiKey();
-const SID = "s_e2e_real_tool_call";
+const SID_BASE = "s_e2e_real_tool_call";
 
 test.describe("真实 LLM：工具调用场景", () => {
   const runTest = API_KEY ? test : test.skip;
+  // 每次运行用唯一 SID，避免前次会话残留状态干扰
+  const uniqueSid = `${SID_BASE}_${Date.now()}`;
+  const uniqueSidPersist = `${SID_BASE}_persist_${Date.now()}`;
 
   runTest("工具卡 + 工具结果 + 终答在 UI 中可见", async ({ page }) => {
-    await setupRealLLMSession(page, SID, API_KEY);
-    // 发送明确需要调用工具的消息
-    await sendMessage(
-      page,
-      "现在几点？请用 get_current_time 工具获取当前时间。",
-    );
+    await setupRealLLMSession(page, uniqueSid, API_KEY);
+    // 要求列出文件结构，模型必然会调用 list_tree 工具
+    await sendMessage(page, "列出当前工作区目录结构，用列表工具。");
 
     await waitForReady(page, 180_000);
 
@@ -132,7 +132,7 @@ test.describe("真实 LLM：工具调用场景", () => {
   });
 
   runTest("会话消息持久化包含助手终答内容", async ({ page }) => {
-    await setupRealLLMSession(page, SID + "_persist", API_KEY);
+    await setupRealLLMSession(page, uniqueSidPersist, API_KEY);
     await sendMessage(
       page,
       "现在几点？请用 get_current_time 工具获取当前时间。",
@@ -158,7 +158,7 @@ test.describe("真实 LLM：工具调用场景", () => {
                 : null;
               return s ? s.messages || [] : [];
             }),
-        SID + "_persist",
+        uniqueSidPersist,
       );
       // 至少 2 条消息意味着用户消息和助手回复都已持久化
       if (fetched.length >= 2) {

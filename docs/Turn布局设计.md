@@ -27,14 +27,13 @@ Web 单轮流式会话中，用户可见的 **`ChatSession.messages`** 目标顺
 
 ```text
 [时间线/意图等 system 旁注*]
-[无旁注的工具*]                ← 可选；如 HPCG 中 archive 在说明块之前
-[工具批 assistant 说明块]        ← 单条，合并 pending + 各 step before_commentary（§13）
-[含旁注的工具批 / ToolGroup*]  ← 从「首个带 before_commentary 的 tool」起
+[无旁注的工具*]                ← 可选
+([已关闭 commentary] → [工具])* ← 每条旁注按 tool_call_id 稳定锚定（§13）
 [post-tool loading 尾泡]       ← 仅流式进行中；终答写入或 finalize
 [终局 assistant 答*]
 ```
 
-**Phase 8 块布局**（§13）不再要求 **每个** `tool_call_id` 前各一条 assistant 行；reducer 仍按锚点归并 canonical 文本，投影层合并为 **`turn-batch-narration`** 一行。
+**v2 不可变布局**（§13）为每个已有旁注的 `tool_call_id` 发布独立 assistant 行；发布后正文、ID 与相对顺序不可再改变。v1 `turn-batch-narration` 只用于历史会话兼容识别。
 
 **`TurnLayout`**（前端 imperative 状态机）负责 **尾泡 peel/restore、loading 插入位置、时间线插入**；  
 **`crabmate-turn-layout`**（共享 crate）负责 **与到达顺序无关** 的 canonical 归约；  
@@ -198,7 +197,7 @@ TUI **`sse_mirror`** 对 `turn_segment_*` 仅 `Ignore`（不追加附录行）�
 | 命令 | 覆盖 |
 |------|------|
 | `cargo test -p crabmate-turn-layout` | reducer + `golden_turn_project` + `golden_turn_project_web` |
-| `cd frontend && cargo test --lib golden_turn_web_stored_sync` | Web 块布局：`project_turn_web` → `turn-batch-narration` flush |
+| `cd frontend && cargo test --lib golden_turn_web_stored_sync` | Web v1 金样兼容 + `project_turn_web_v2` 逐旁注不可变落盘 |
 | `cargo test -p crabmate-sse-protocol golden_sse_control` | 控制面 `handled` 分类 |
 | `cd frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
 | `cd frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
@@ -269,7 +268,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 单轮含工具时，维护者验收应满足：
 
-1. **I1 批前说明可见**：所有非空 `before_commentary`（含 pending 段）合并为 **一条** assistant 说明块；该块位于 **`turn.steps` 顺序下首个带旁注的工具** 对应 `messages` 行 **之前**（§13）。其 **之前** 仍可有「无旁注」工具行；不要求 per-tool 交错行。
+1. **I1 finalized 旁注不可变**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定放在对应 `tool_call_id` 之前；发布后不得改文、删除或移动（§13）。
 2. **I2 尾泡职责单一**：post-tool loading 尾泡 **仅**承接 `tool_phase` 结束后的终答增量；工具相旁注 **不得**在 `try_apply` 失败时静默 `append` 到尾泡（见 §12.4 P1）。
 3. **I3 首次工具边界**：第一次 `tool_call` 与后续工具 **同一套** peel/切段规则（不得因 `post_tool_stream_tail_active == false` 跳过 peel，导致 demote 整泡留在工具区之前）。
 4. **I4 终答唯一**：finalize 时若尾泡正文与已存在的终局 assistant **前缀/哈希**重复，去重或删空尾泡（形态 C）。
@@ -394,38 +393,36 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | 场景 | 期望 |
 |------|------|
-| C++/CMake（read → create ×2 → cmake ×2 → run） | **一条** 工具批说明块在工具组前；无空「工具：create_file」占位 |
-| 目录分析 → 用户追问「编译 hpcg」 | 第二轮 **无** 整段聚合块堆在工具批末尾；说明块在工具前、终答 **一段** |
-| 晚到 delta（金样 `late_commentary_delta_after_tool_call`） | reducer 仍挂到正确锚点；投影合并进说明块 |
+| C++/CMake（read → create ×2 → cmake ×2 → run） | 每条已关闭旁注稳定显示在对应工具前；无空「工具：create_file」占位 |
+| 目录分析 → 用户追问「编译 hpcg」 | 第二轮旁注不聚合回旧气泡；终答保持独立 |
+| 晚到 delta（金样 `late_commentary_delta_after_tool_call`） | reducer 仍挂到正确锚点；v2 投影按工具键发布 |
 
 ---
 
-## 13. 块布局（Phase 8）
+## 13. 不可变逐旁注布局（v2）
 
-**目标**：对齐 Cursor/OpenAI 默认形态——**一条 assistant 说明 + ToolGroup + 终答**；删除 P2 per-tool stored 行与 pin 重排。
+**目标**：active/loading 行可流式增长；一旦旁注 ready，后续事件不得再改文、删除或移动该行。
 
 | 机制 | 说明 |
 |------|------|
-| canonical | reducer 仍按 `before_tool_call_id` 归并；**Web sync 消费** [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs)（`assistant_batch_narration` 行 + 锚点 `tool_call_id`） |
-| 落盘 | `BubbleOutputQueue::flush_batch_narration_row` 从 **`project_turn_web`** 取 batch 行 upsert 为 **`turn-batch-narration`**；见 §13.1 |
-| 流式 | P0′：open 段 → loading overlay **仅增量**；**已关闭**旁注经 `sync_turn_projection` **即时** upsert 到 `turn-batch-narration`（delta / segment 边界均 flush） |
+| canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs) |
+| 落盘 | `BubbleOutputQueue::flush_commentary_rows` 按 `tool_call_id` 生成 `turn-commentary-*`，只执行 insert-if-absent |
+| 流式 | open 段只写 loading overlay；已关闭旁注在 segment/tool 边界发布为 finalized 行 |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
-| 可见性 | 说明块为普通 assistant 行（**非** `CommentaryBeforeTools` hidden 态） |
-| E2E | `sse-turn-layout-interleaved.spec.ts`：说明块含三段旁注、位于含旁注工具组前；导出同理 |
+| 可见性 | finalized commentary 为普通 assistant 行；overlay 只从属于唯一 active 行 |
+| E2E | `mock-ready-bubble-stability.spec.ts` 按绘制帧监控 ready 行不追加、不消失 |
 
-### 13.1 落盘位置（`project_turn_web` → `StoredMessage`）
+### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
-**权威投影**：[`project_turn_web`](../../crates/crabmate-turn-layout/project.rs)（块布局）；逐步旁注金样仍用 [`project_turn`](../../crates/crabmate-turn-layout/project.rs) + `fixtures/turn_project_golden.jsonl`。
+**生产投影**：[`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs)；v1 [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs) 与 `turn-batch-narration` 暂留作兼容。
 
-Web `sync_turn_projection` 只 upsert **`assistant_batch_narration`** 行为 `turn-batch-narration`；工具行仍由 `on_tool_call` imperative 插入，顺序与投影中 `tool` 行一致。
-
-**`assistant_batch_narration.tool_call_id`**：首个带 `before_commentary` 的 step 的 `tool_call_id`；说明块插入该工具 **之前**。若无（仅 closed pending 段），回退为首个 `is_tool` 之前。
+Web `sync_turn_projection` 遍历 `assistant_commentary` 行，以 `tool_call_id` 生成稳定消息 ID，并插入对应工具之前。若同 ID 已存在则 no-op，禁止覆盖正文或重排。
 
 **行序示例（HPCG）**：
 
 ```text
-project_turn_web: [tool: archive] → [assistant_batch_narration @ unpack] → [tool: unpack] → …
-messages:         同上（batch 行 id 固定为 turn-batch-narration）
+project_turn_web_v2: [tool: archive] → [commentary @ unpack] → [tool: unpack] → …
+messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 ```
 
 **仍保留**：`demote_answer_before_tools`、post-tool loading peel/pin、`TurnReducer` 金样（`fixtures/turn_project_golden.jsonl` 仍可按 step 锚点断言 canonical，与 UI 投影可分叉）。
@@ -434,18 +431,18 @@ messages:         同上（batch 行 id 固定为 turn-batch-narration）
 
 ## 14. 写入收敛（Phase 9）
 
-**目标**：assistant 批说明 / 终答 **仅** 经 `TurnReducer` → `project_turn_web` → [`BubbleOutputQueue::sync_web_projection`] upsert 到 `StoredMessage`；`TurnLayout` **只** 改形状（工具行、loading 空壳、pin），**不** 向 loading `stored.text` 写旁注/终答正文。
+**目标**：finalized commentary / 终答经 `TurnReducer` → v2 projector → [`BubbleOutputQueue::sync_web_projection`] 落盘；`TurnLayout` 只维护 active/loading 形状。
 
 | Invariant | 规则 |
 |-----------|------|
-| **I9 唯一落盘** | `sync_web_projection` = batch + final upsert + 清空 loading 壳 `text` |
+| **I9 唯一落盘** | `sync_web_projection` = immutable commentary insert + final upsert |
 | **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
-| **I12 on_done** | 若 `turn-final-answer` 或 `turn-batch-narration` 已落盘 → **不** merge overlay 进 loading 尾泡 |
-| **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前 `close_open_commentary_segments`：open 旁注并入 batch，禁止经 loading merge 成巨泡 |
+| **I12 on_done** | 若终答或任一 `turn-commentary-*` 已落盘 → **不** merge overlay 进 loading 尾泡 |
+| **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前关闭 open 旁注，并按工具键发布 |
 
 **顺序（`tool_call`）**：`demote` → `drain` → `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection`。
 
 **`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
 
-**测试**：`real_morph_b_bulk_deltas_stored_block_layout` · `open_commentary_through_tool_phase_end_syncs_batch_before_tools` · `real_hpcg_morph_b_export_section_order` · `morph_b_late_narration_after_first_tool_batch_before_tool` · 金样 `morph_b_hpcg_real_plain_deltas` / `morph_b_late_narration_after_first_tool`（`fixtures/turn_project_web_golden.jsonl`）· Victauri `victauri_turn_layout.rs` · `sync_web_projection_clears_loading_stored_body`
+**测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts`。

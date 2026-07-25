@@ -2,6 +2,8 @@ use crate::model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn};
 
 /// Web 块布局：`assistant_batch_narration` 行 kind（与 `project_turn_web` / 金样一致）。
 pub const ASSISTANT_BATCH_NARRATION: &str = "assistant_batch_narration";
+/// Web v2：已关闭、锚定到工具调用的不可变旁注行。
+pub const ASSISTANT_COMMENTARY: &str = "assistant_commentary";
 /// Web 块布局：终答行 kind。
 pub const ASSISTANT_ANSWER: &str = "assistant_answer";
 
@@ -160,6 +162,35 @@ pub fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
         for step in &turn.steps {
             out.push(tool_row(step));
         }
+    }
+    out
+}
+
+/// Web v2 投影：每个工具调用前的已关闭旁注独立成行。
+///
+/// `tool_call_id` 同时作为旁注行的稳定 projection key。调用方只能首次插入该行，
+/// 不得在后续投影中改写或移动已经发布的行。open segment 继续由流式 overlay 承载，
+/// 不进入本投影。
+#[must_use]
+pub fn project_turn_web_v2(turn: &Turn) -> Vec<ProjectedRow> {
+    let mut out = Vec::new();
+    for timeline in &turn.pre_tool_timeline {
+        out.push(row("assistant_timeline", timeline.clone()));
+    }
+    for step in &turn.steps {
+        if let Some(commentary) = step
+            .before_commentary
+            .as_ref()
+            .filter(|text| !text.trim().is_empty())
+        {
+            out.push(ProjectedRow {
+                kind: ASSISTANT_COMMENTARY.into(),
+                text: commentary.clone(),
+                tool_name: None,
+                tool_call_id: Some(step.tool_call_id.clone()),
+            });
+        }
+        out.push(tool_row(step));
     }
     out
 }
@@ -361,5 +392,38 @@ mod tests {
         assert_eq!(rows[2].tool_call_id.as_deref(), Some("tc_unpack"));
         assert_eq!(rows[3].kind, "tool");
         assert_eq!(rows[3].tool_call_id.as_deref(), Some("tc_read"));
+    }
+
+    #[test]
+    fn project_turn_web_v2_keeps_closed_commentary_rows_stable() {
+        let turn = Turn {
+            steps: vec![
+                crate::model::ToolStep {
+                    tool_call_id: "tc_a".into(),
+                    name: "list_tree".into(),
+                    summary: "list".into(),
+                    before_commentary: Some("第一段。".into()),
+                },
+                crate::model::ToolStep {
+                    tool_call_id: "tc_b".into(),
+                    name: "read_file".into(),
+                    summary: "read".into(),
+                    before_commentary: Some("第二段。".into()),
+                },
+            ],
+            ..Turn::default()
+        };
+
+        let first_projection = project_turn_web_v2(&Turn {
+            steps: turn.steps[..1].to_vec(),
+            ..Turn::default()
+        });
+        let full_projection = project_turn_web_v2(&turn);
+
+        assert_eq!(first_projection, full_projection[..2]);
+        assert_eq!(full_projection[0].kind, ASSISTANT_COMMENTARY);
+        assert_eq!(full_projection[0].tool_call_id.as_deref(), Some("tc_a"));
+        assert_eq!(full_projection[2].kind, ASSISTANT_COMMENTARY);
+        assert_eq!(full_projection[2].tool_call_id.as_deref(), Some("tc_b"));
     }
 }

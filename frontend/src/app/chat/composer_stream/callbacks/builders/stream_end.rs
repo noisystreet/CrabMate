@@ -17,7 +17,7 @@ use super::super::super::stream_control_reducer::StreamControlEvent;
 use super::super::done_session::apply_stream_done_to_loading_assistant;
 use super::super::error_session::apply_stream_error_on_messages;
 use super::super::helpers::build_stream_error_with_suggestion;
-use super::super::turn_layout::{BATCH_NARRATION_ROW_ID, FINAL_ANSWER_ROW_ID, TurnLayout};
+use super::super::turn_layout::{FINAL_ANSWER_ROW_ID, TurnLayout, is_commentary_row_id};
 
 pub(in super::super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -36,17 +36,10 @@ pub(in super::super) fn chat_stream_on_done_builder(
         if stream_ctx.is_stale() {
             return;
         }
-        // 第二次 `assistant_answer_phase` 后若再无正文增量，须在此补做轮换并清零计数器；
-        // 否则 `answer_delta_chars` 仍为上一轮时间轴累计，易误判「有输出却无正文」。
-        let followup_pending = stream_ctx.scratch.take_followup_rotation_pending();
-        if followup_pending {
-            // 先从旧 overlay 创建 FINAL_ANSWER_ROW，再 rotate。
-            // 否则 rotate 中的 finalize_loading_segment 会消费 overlay，
-            // 导致后续 sync_turn_projection 读到空 overlay 而 SKIP FINAL_ANSWER_ROW。
-            TurnLayout::finalize_turn_projection_before_stream_done(stream_ctx.as_ref());
-            TurnLayout::rotate_followup_model_round(stream_ctx.as_ref());
-            accum.clear_answer_delta_chars();
-        }
+        // pending 若一直保留到 on_done，说明该 answer_phase 后没有正文 delta：
+        // 普通 delta 会在 apply_chat_stream_text_delta 入口先消费 pending 并轮换。
+        // 此处只清除 pending，由统一收尾投影现有 overlay；禁止创建无正文的新气泡。
+        stream_ctx.scratch.clear_followup_pending();
         let turn = accum.summarize_for_stream_done();
         let loc = stream_ctx.locale.get_untracked();
         let mid = stream_ctx.scratch.clone_assistant_id();
@@ -56,7 +49,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
         stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
             let projection_flushed = s.messages.iter().any(|m| {
-                (m.id == FINAL_ANSWER_ROW_ID || m.id == BATCH_NARRATION_ROW_ID)
+                (m.id == FINAL_ANSWER_ROW_ID || is_commentary_row_id(m.id.as_str()))
                     && !m.text.trim().is_empty()
             });
             if projection_flushed {
@@ -78,10 +71,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
                 );
             }
             TurnLayout::dedupe_loading_tail_against_final_answer_row(&mut s.messages, mid.as_str());
-            TurnLayout::dedupe_loading_tail_against_batch_narration_row(
-                &mut s.messages,
-                mid.as_str(),
-            );
+            TurnLayout::dedupe_loading_tail_against_commentary_rows(&mut s.messages, mid.as_str());
             apply_stream_done_to_loading_assistant(
                 &mut s.messages,
                 mid.as_str(),

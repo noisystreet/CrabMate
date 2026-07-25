@@ -8,7 +8,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::stream_control_reducer::StreamControlEvent;
 use super::super::stream_turn_state::StreamModelOutputLane;
-use super::turn_layout::TurnLayout;
+use super::turn_layout::{BubbleRotationSemantics, TurnLayout};
 
 /// post-tool 或正文相：overlay append（P0′ 阶段 3c）；禁止 chunk append 正文、禁止写 canonical。
 ///
@@ -121,7 +121,7 @@ pub(super) fn apply_chat_stream_text_delta(
     chunk: &str,
 ) {
     if stream_ctx.scratch.take_followup_rotation_pending() {
-        TurnLayout::rotate_followup_model_round(stream_ctx);
+        TurnLayout::rotate_bubble(stream_ctx, BubbleRotationSemantics::ContinueAnswering);
         accum.clear_answer_delta_chars();
     }
     let lane = stream_ctx.scratch.current_output_lane();

@@ -88,7 +88,7 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
 // ── 生命周期 ──
 
 fn dispatch_run_finished(_val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
-    // RUN_FINISHED → on_done
+    // RUN_FINISHED → 进入 Draining；on_done 由响应体消费完成后统一触发。
     if let Some(hook) = sink.notice_timeline.on_run_finished.as_mut() {
         hook();
     }

@@ -1,34 +1,44 @@
-//! 块布局：流式 delta → loading overlay preview；`StoredMessage` upsert 对齐 [`project_turn_web`]。
+//! v2 布局：流式 delta → loading overlay preview；已关闭 commentary 按工具键不可变落盘。
 
 use crabmate_turn_layout::{
-    ASSISTANT_BATCH_NARRATION, project_turn_web, streaming_commentary_block_text,
+    ASSISTANT_COMMENTARY, project_turn_web_v2, streaming_commentary_block_text,
 };
 
 use crate::message_loading::is_loading_plain_assistant;
 
 use super::super::super::turn_canonical::TurnCanonicalState;
 
-/// 单轮工具批前说明块的稳定 id（与 `project_turn_web` · `assistant_batch_narration` 对应）。
+/// v1 历史会话的批说明稳定 id；新流仅用于兼容识别。
 pub(crate) const BATCH_NARRATION_ROW_ID: &str = "turn-batch-narration";
+pub(crate) const COMMENTARY_ROW_ID_PREFIX: &str = "turn-commentary-";
 /// 工具批结束后终答块的稳定 id（与 `project_turn_web` · `assistant_answer` 对应）。
 pub(crate) const FINAL_ANSWER_ROW_ID: &str = "turn-final-answer";
 
-const PROJECT_KIND_BATCH_NARRATION: &str = ASSISTANT_BATCH_NARRATION;
+const PROJECT_KIND_COMMENTARY: &str = ASSISTANT_COMMENTARY;
+
+pub(crate) fn commentary_row_id(tool_call_id: &str) -> String {
+    format!("{COMMENTARY_ROW_ID_PREFIX}{tool_call_id}")
+}
+
+pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
+    message_id == BATCH_NARRATION_ROW_ID || message_id.starts_with(COMMENTARY_ROW_ID_PREFIX)
+}
 
 /// 流式 preview / 边界 flush 队列。
 #[derive(Default, Debug)]
 pub(crate) struct BubbleOutputQueue;
 
 impl BubbleOutputQueue {
-    fn batch_row_from_projection(
+    fn commentary_rows_from_projection(
         turn: &TurnCanonicalState,
-    ) -> Option<crabmate_turn_layout::ProjectedRow> {
-        project_turn_web(turn.turn_ref())
+    ) -> Vec<crabmate_turn_layout::ProjectedRow> {
+        project_turn_web_v2(turn.turn_ref())
             .into_iter()
-            .find(|r| r.kind == PROJECT_KIND_BATCH_NARRATION)
+            .filter(|row| row.kind == PROJECT_KIND_COMMENTARY)
+            .collect()
     }
 
-    fn insert_index_for_batch_row(
+    fn insert_index_for_commentary_row(
         messages: &[crate::storage::StoredMessage],
         anchor_tool_call_id: Option<&str>,
     ) -> Option<usize> {
@@ -120,7 +130,40 @@ impl BubbleOutputQueue {
         messages.insert(insert_idx.min(messages.len()), row);
     }
 
-    /// Phase 9：**唯一** Web assistant 正文落盘入口（batch + final）。
+    fn insert_finalized_assistant_row(
+        messages: &mut Vec<crate::storage::StoredMessage>,
+        row_id: &str,
+        text: String,
+        insert_idx: usize,
+    ) {
+        if text.trim().is_empty() || messages.iter().any(|message| message.id == row_id) {
+            return;
+        }
+        let row = crate::storage::StoredMessage {
+            id: row_id.to_string(),
+            role: "assistant".to_string(),
+            text,
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    crate::session_ops::message_created_ms()
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    0
+                }
+            },
+        };
+        messages.insert(insert_idx.min(messages.len()), row);
+    }
+
+    /// Web assistant 正文落盘入口（不可变 commentary + final）。
     ///
     /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（终答唯一来源）。
     pub(super) fn sync_web_projection(
@@ -130,21 +173,19 @@ impl BubbleOutputQueue {
         loading_tail_id: Option<&str>,
         overlay_answer: Option<&str>,
     ) {
-        self.flush_batch_narration_row(messages, turn, overlay_answer);
+        self.flush_commentary_rows(messages, turn, overlay_answer);
         self.flush_final_answer_row(messages, turn, loading_tail_id, overlay_answer);
     }
 
-    fn batch_projection_pending_in_messages(
+    fn commentary_projection_pending_in_messages(
         messages: &[crate::storage::StoredMessage],
         turn: &TurnCanonicalState,
     ) -> bool {
-        let Some(batch) = Self::batch_row_from_projection(turn) else {
-            return false;
-        };
-        if batch.text.trim().is_empty() {
-            return false;
-        }
-        !messages.iter().any(|m| m.id == BATCH_NARRATION_ROW_ID)
+        Self::commentary_rows_from_projection(turn)
+            .into_iter()
+            .filter_map(|row| row.tool_call_id)
+            .map(|tool_call_id| commentary_row_id(tool_call_id.as_str()))
+            .any(|row_id| messages.iter().all(|message| message.id != row_id))
     }
 
     fn insert_index_for_final_row(
@@ -152,50 +193,41 @@ impl BubbleOutputQueue {
         loading_tail_id: Option<&str>,
     ) -> usize {
         let mut insert_idx = Self::insert_index_before_loading_tail(messages, loading_tail_id);
-        if let Some(batch_idx) = messages.iter().position(|m| m.id == BATCH_NARRATION_ROW_ID) {
-            insert_idx = insert_idx.max(batch_idx + 1);
+        if let Some(commentary_idx) = messages
+            .iter()
+            .enumerate()
+            .filter(|(_, message)| is_commentary_row_id(message.id.as_str()))
+            .map(|(idx, _)| idx)
+            .max()
+        {
+            insert_idx = insert_idx.max(commentary_idx + 1);
         }
         insert_idx
     }
 
-    /// 按 [`project_turn_web`] upsert `turn-batch-narration` 行。
-    ///
-    /// `overlay_answer`：batch 去重仅检查 overlay。
-    pub(super) fn flush_batch_narration_row(
+    /// 发布按工具调用键控的不可变 commentary 行。
+    pub(super) fn flush_commentary_rows(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
         turn: &TurnCanonicalState,
-        overlay_answer: Option<&str>,
+        _overlay_answer: Option<&str>,
     ) {
-        let Some(batch) = Self::batch_row_from_projection(turn) else {
-            return;
-        };
-        if batch.text.trim().is_empty() {
-            return;
+        for commentary in Self::commentary_rows_from_projection(turn) {
+            let Some(tool_call_id) = commentary.tool_call_id.as_deref() else {
+                continue;
+            };
+            let Some(insert_idx) =
+                Self::insert_index_for_commentary_row(messages, Some(tool_call_id))
+            else {
+                continue;
+            };
+            Self::insert_finalized_assistant_row(
+                messages,
+                commentary_row_id(tool_call_id).as_str(),
+                commentary.text,
+                insert_idx,
+            );
         }
-        // 根本去重：batch 文本是终答的前缀或子集时，不再创建重复行。
-        // 终答仅从 overlay 读取。
-        let final_text = overlay_answer.filter(|t| !t.trim().is_empty());
-        if let Some(final_text) = final_text {
-            let trimmed = batch.text.trim();
-            let final_trimmed = final_text.trim();
-            if !final_trimmed.is_empty()
-                && (final_trimmed.contains(trimmed) || final_trimmed.starts_with(trimmed))
-            {
-                return;
-            }
-        }
-        let Some(insert_idx) =
-            Self::insert_index_for_batch_row(messages, batch.tool_call_id.as_deref())
-        else {
-            return;
-        };
-        Self::upsert_assistant_row(
-            messages,
-            BATCH_NARRATION_ROW_ID,
-            batch.text.clone(),
-            insert_idx,
-        );
     }
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
@@ -211,7 +243,7 @@ impl BubbleOutputQueue {
         if turn.tool_phase_open() {
             return;
         }
-        if Self::batch_projection_pending_in_messages(messages, turn) {
+        if Self::commentary_projection_pending_in_messages(messages, turn) {
             return;
         }
         let text = overlay_answer
@@ -338,7 +370,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_batch_narration_inserts_single_row_before_first_tool() {
+    fn flush_commentary_inserts_immutable_row_before_its_tool() {
         let turn = make_turn_with_batch_commentary();
         let queue = BubbleOutputQueue;
         let mut msgs = vec![crate::storage::StoredMessage {
@@ -353,12 +385,12 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        queue.flush_batch_narration_row(&mut msgs, &turn, None);
+        queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].id, BATCH_NARRATION_ROW_ID);
+        assert_eq!(msgs[0].id, commentary_row_id("tc_a"));
         assert_eq!(msgs[0].text, "步骤 A。");
         assert_eq!(msgs[1].id, "t");
-        queue.flush_batch_narration_row(&mut msgs, &turn, None);
+        queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 2, "second flush must not duplicate row");
     }
 
@@ -406,7 +438,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_batch_repositions_before_anchor_after_early_flush() {
+    fn flush_commentary_does_not_move_existing_finalized_row() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_archive", "archive_list", "list");
         turn.on_segment_start(crate::sse_dispatch::TurnSegmentStartInfo {
@@ -432,18 +464,6 @@ mod tests {
                 created_at: 0,
             },
             crate::storage::StoredMessage {
-                id: BATCH_NARRATION_ROW_ID.into(),
-                role: "assistant".into(),
-                text: "好的，先解压。".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            crate::storage::StoredMessage {
                 id: "tc_unpack".into(),
                 role: "system".into(),
                 text: "unpack".into(),
@@ -455,12 +475,24 @@ mod tests {
                 tool_name: None,
                 created_at: 0,
             },
+            crate::storage::StoredMessage {
+                id: commentary_row_id("tc_unpack"),
+                role: "assistant".into(),
+                text: "好的，先解压。".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
         ];
-        queue.flush_batch_narration_row(&mut msgs, &turn, None);
+        queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].id, "tc_archive");
-        assert_eq!(msgs[1].id, BATCH_NARRATION_ROW_ID);
-        assert_eq!(msgs[2].id, "tc_unpack");
+        assert_eq!(msgs[1].id, "tc_unpack");
+        assert_eq!(msgs[2].id, commentary_row_id("tc_unpack"));
     }
 
     #[test]
@@ -513,17 +545,17 @@ mod tests {
             },
         );
         queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("终答。"));
-        let batch_idx = msgs
+        let commentary_idx = msgs
             .iter()
-            .position(|m| m.id == BATCH_NARRATION_ROW_ID)
-            .expect("batch");
+            .position(|m| m.id == commentary_row_id("tc_a"))
+            .expect("commentary");
         let final_idx = msgs
             .iter()
             .position(|m| m.id == FINAL_ANSWER_ROW_ID)
             .expect("final");
         assert!(
-            batch_idx < final_idx,
-            "batch must precede final in stored order"
+            commentary_idx < final_idx,
+            "commentary must precede final in stored order"
         );
     }
 
@@ -532,7 +564,7 @@ mod tests {
         let turn = make_turn_with_batch_commentary();
         let queue = BubbleOutputQueue;
         let mut msgs = Vec::new();
-        queue.flush_batch_narration_row(&mut msgs, &turn, None);
+        queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert!(msgs.is_empty());
     }
 

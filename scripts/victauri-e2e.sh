@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Victauri E2E 一键脚本（Linux headless：默认 exec xvfb-run 重入，窗口不落到本机桌面）
 #
-# 用法: ./scripts/victauri-e2e.sh [test_name|all|real_llm]
+# 用法: ./scripts/victauri-e2e.sh [test_binary|all|real_llm] [test_filter]
 #
 # 环境变量:
 #   VICTAURI_USE_XVFB     1（默认）| 0 | auto
@@ -27,6 +27,7 @@ BACKEND_BIN="${CM_DESKTOP_BACKEND_BIN:-$ROOT/target/debug/crabmate}"
 DESKTOP_BIN="$TAURI_DIR/target/debug/crabmate-desktop"
 
 TEST="${1:-all}"
+TEST_FILTER="${2:-}"
 REAL_LLM="${REAL_LLM_E2E:-}"
 VICTAURI_PORT="${VICTAURI_PORT:-7373}"
 VICTAURI_START_TIMEOUT="${VICTAURI_START_TIMEOUT:-120}"
@@ -92,7 +93,7 @@ start_desktop_background() {
     env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u GDK_BACKEND \
         WINIT_UNIX_BACKEND=x11 \
         LIBGL_ALWAYS_SOFTWARE=1 \
-        CM_E2E_FIXTURES=1 \
+        CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}" \
         CM_DESKTOP_BACKEND_BIN="$BACKEND_BIN" \
         "$DESKTOP_BIN" >>"$VICTAURI_E2E_LOG" 2>&1 &
     echo $!
@@ -101,7 +102,8 @@ start_desktop_background() {
 wait_for_victauri_health() {
     local pid="$1"
     for i in $(seq 1 "$VICTAURI_START_TIMEOUT"); do
-        if curl -sf "http://127.0.0.1:${VICTAURI_PORT}/health" >/dev/null 2>&1; then
+        if curl --noproxy '*' --connect-timeout 1 --max-time 2 -sf \
+            "http://127.0.0.1:${VICTAURI_PORT}/health" >/dev/null 2>&1; then
             echo "   Victauri /health OK after ${i}s"
             return 0
         fi
@@ -151,7 +153,7 @@ fi
 CM_DESKTOP_BACKEND_BIN="$BACKEND_BIN" bash "$DESKTOP_ROOT/scripts/prepare-sidecar.sh"
 
 cd "$TAURI_DIR"
-cargo build --tests 2>&1 | tail -3
+cargo build --tests --features victauri 2>&1 | tail -3
 echo "   done."
 
 # ── Phase 2: Kill old processes ─────────────────────────────
@@ -195,7 +197,7 @@ echo ""
 echo ">>> Running tests ..."
 cd "$TAURI_DIR"
 export VICTAURI_E2E=1
-export CM_E2E_FIXTURES=1
+export CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}"
 export VICTAURI_PORT
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
@@ -228,12 +230,7 @@ elif [ "$TEST" = "all" ]; then
         fi
     done
 else
-    BIN=$(find_test_bin "$TEST")
-    if [ -n "$BIN" ]; then
-        "$BIN" || EXIT=$?
-    else
-        cargo test --test "$TEST" -- --nocapture || EXIT=$?
-    fi
+    cargo test --features victauri --test "$TEST" -- "$TEST_FILTER" --nocapture || EXIT=$?
 fi
 
 # ── Phase 7: Cleanup ────────────────────────────────────────
