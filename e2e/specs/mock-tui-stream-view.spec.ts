@@ -32,8 +32,9 @@ test("终端流按行渲染：流式半行纯文本，结束后 Markdown 生效"
 
   await sendMessage(page, "验证终端流");
   const transcript = page.getByTestId("chat-tui-transcript");
-  await expect(transcript).toContainText("用户 ❯");
+  await expect(transcript).toContainText("用户");
   await expect(transcript).toContainText("验证终端流");
+  await expect(transcript.locator(".chat-tui-turn--user")).toHaveCount(1);
 
   // 用户回合 section 在流式过程中应保持同一 DOM 节点（append-only）
   const userTurnStable = await page.evaluate(() => {
