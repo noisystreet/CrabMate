@@ -13,8 +13,9 @@ use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
 use super::scroll_follow::on_content_resize_if_pinned;
 use super::scroll_shell::{
-    ChatScrollShellSignals, on_messages_pointer_scroll_intent, on_messages_stick_scroll_event,
-    on_messages_wheel_follow_intent, stick_content_root,
+    ChatScrollShellSignals, STICK_UNPIN_GAP_PX, on_messages_pointer_scroll_intent,
+    on_messages_stick_scroll_event, on_messages_wheel_follow_intent, scroll_gap_px,
+    stick_content_root,
 };
 use super::tui_stream_view::ChatTuiStreamView;
 use crate::api::upload_files_multipart;
@@ -57,6 +58,7 @@ fn ChatMessagesScrollShell(
     let resize_observer_handle = RwSignal::new_local(None::<ScrollContentResizeObserver>);
     let auto_scroll = scroll_shell.auto_scroll_chat;
     let pointer_scroll_active = scroll_shell.pointer_scroll_active;
+    let last_scroll_top = RwSignal::new(0_i32);
     scroll_shell.messages_scroller.on_load(move |root| {
         let resize_callback = Closure::new(
             move |_entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::ResizeObserver| {
@@ -92,6 +94,21 @@ fn ChatMessagesScrollShell(
                         .dyn_into::<web_sys::IntersectionObserverEntry>()
                         && entry.is_intersecting()
                     {
+                        // 双保险：哨兵可见且 scroller 近底才 pin，避免误拉回。
+                        if let Some(root) = entry
+                            .target()
+                            .parent_element()
+                            .and_then(|p| p.dyn_into::<web_sys::HtmlElement>().ok())
+                        {
+                            let gap = scroll_gap_px(
+                                root.scroll_height(),
+                                root.scroll_top(),
+                                root.client_height(),
+                            );
+                            if gap > STICK_UNPIN_GAP_PX {
+                                return;
+                            }
+                        }
                         ac.set(true);
                     }
                 }
@@ -127,8 +144,8 @@ fn ChatMessagesScrollShell(
             on:pointercancel=move |_| {
                 on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, false);
             }
-            on:scroll=move |ev: web_sys::Event| {
-                on_messages_stick_scroll_event(scroll_shell, ev);
+            on:scroll=move |_ev: web_sys::Event| {
+                on_messages_stick_scroll_event(scroll_shell, last_scroll_top);
             }
         >
             <div class="chat-thread">{children()}</div>

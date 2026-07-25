@@ -116,14 +116,39 @@ async function dragScrollbarUp(page: Page, pixels = 320) {
       '[data-testid="chat-messages-scroller"]',
     );
     if (!element) return;
-    element.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    element.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        buttons: 1,
+        pointerId: 1,
+        isPrimary: true,
+      }),
+    );
+    // 与 pointer 双保险：向上滚轮同步 unpin（Observe/指针竞态时仍关跟底）
+    element.dispatchEvent(
+      new WheelEvent("wheel", {
+        deltaY: -distance,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
     element.scrollTop = Math.max(0, element.scrollTop - distance);
+    element.dispatchEvent(new Event("scroll", { bubbles: true }));
   }, pixels);
   await page.waitForTimeout(50);
   await page.evaluate(() => {
     document
       .querySelector('[data-testid="chat-messages-scroller"]')
-      ?.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+      ?.dispatchEvent(
+        new PointerEvent("pointerup", {
+          bubbles: true,
+          button: 0,
+          buttons: 0,
+          pointerId: 1,
+          isPrimary: true,
+        }),
+      );
   });
 }
 
