@@ -109,22 +109,19 @@ SSE / overlay / sessions（不变）
 
 **动机**：现有 scroll 壳来自气泡时代，规则偏多；终端流只需「贴底 pin」。
 
-建议：
+**状态（已落地）**：
 
-1. 抽出 `StickToBottom`（或收窄 `scroll_shell` / `scroll_follow`）专用 API：  
-   - `pin` / `unpin`  
-   - `on_content_resize_if_pinned`  
-   - `engage_on_user_send`  
-2. 终端流内容根固定为 `.chat-tui-transcript`（或外层 `.chat-thread`），ResizeObserver 只盯这一处。  
-3. 用户上滚 / 拖滚动条：unpin；滚回底部阈值内：re-pin。  
-4. 减少与 IntersectionObserver sentinel 的双重真相（可保留 sentinel 仅作「是否在底部」辅助，或逐步淘汰）。
+1. `scroll_shell`：`stick_pin` / `stick_unpin`、近底 gap re-pin、指针离底 unpin；模块注释含 Pinned/Unpinned 状态图。  
+2. `scroll_follow`：`on_content_resize_if_pinned`、`engage_follow_and_scroll_bottom` / `disengage_follow_and_scroll_top`。  
+3. ResizeObserver 盯 `stick_content_root`（优先 `.chat-thread`，否则 `.chat-tui-transcript`）；TUI `innerHTML` 后补一次 paint 跟底。  
+4. 末尾哨兵 IntersectionObserver **仅** re-pin（流式下 gap 竞态补齐）；unpin 只来自用户意图，避免双重关跟底。
 
 **验收**：
 
 - E2E：长流式贴底、上滚不拉回、回底恢复、生成后延迟增高仍贴底（沿用现有 scroll specs）。  
 - 代码：跟底路径可在注释中画清状态图（Pinned / Unpinned）。
 
-**风险**：改动 scroll 影响查找跳转；`focus_message_id_after_nav` 须显式 unpin 或「临时滚到目标」。
+**风险**：改动 scroll 影响查找跳转；`focus_message_id_after_nav` 须显式 unpin 或「临时滚到目标」（查找路径仍 `auto_scroll_chat.set(false)`）。
 
 ---
 
@@ -242,3 +239,4 @@ Phase 0（基线）
 | 日期 | 说明 |
 |------|------|
 | 2026-07-25 | 初稿：自当前终端流 + 按行 Markdown 向 OpenCode/OpenClaw 式 append-only + 简单 pin 演进 |
+| 2026-07-25 | Phase 1：跟底状态机收敛（pin/unpin、去掉 IO 双重真相、盯 transcript） |

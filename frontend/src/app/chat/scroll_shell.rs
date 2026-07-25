@@ -1,11 +1,16 @@
-//! 消息列滚动壳：统一信号、prepend 后锚点补偿。
+//! 消息列滚动壳：统一信号、prepend 锚点、StickToBottom **用户意图**侧。
 //!
-//! # 滚动跟底架构
+//! # 跟底状态机（`auto_scroll_chat` ≡ pin）
 //!
-//! - **用户滚动检测**：向上滚轮，或按住指针拖动滚动区域离底时关闭跟底
-//! - **自动跟底**：`IntersectionObserver` 只在末尾哨兵可见时恢复跟底，不因内容增长关闭
-//! - **流式追底**：内容变化时 `Effect` → rAF → `scrollTop = scrollHeight`（无条件 snap）
-//! - **主动滚底**：发送消息 / End 键 → `engage_follow_and_scroll_bottom`
+//! ```text
+//!                    wheel↑ / pointer 离底 / Home / 查找跳转
+//!     Pinned  ─────────────────────────────────────────────►  Unpinned
+//!                    scroll gap ≤ NEAR / 哨兵可见 / 发送 / End
+//!     Unpinned ◄─────────────────────────────────────────────  Pinned
+//! ```
+//!
+//! 内容增高时的 snap（ResizeObserver / 信号 Effect / paint 回调）见 [`super::scroll_follow`]。
+//! **Unpin 只来自用户意图**；末尾哨兵 IntersectionObserver **仅** re-pin，不参与 unpin（避免与 gap 双重关跟底）。
 
 use leptos::html::Div;
 use leptos::prelude::*;
@@ -13,10 +18,16 @@ use leptos_dom::helpers::request_animation_frame;
 
 use crate::app::app_signals::ChatComposerSignals;
 
+/// 视为「在底部」、可 re-pin 的最大 gap（px）。
+pub(crate) const STICK_NEAR_BOTTOM_GAP_PX: i32 = 4;
+/// 指针拖拽离底超过此 gap 则 unpin（避免内容增高误触发）。
+pub(crate) const STICK_UNPIN_GAP_PX: i32 = 24;
+
 /// 消息列滚动容器与跟底相关信号（`Copy`，供 `column` / `scroll_follow` 共用）。
 #[derive(Clone, Copy)]
 pub(crate) struct ChatScrollShellSignals {
     pub messages_scroller: NodeRef<Div>,
+    /// `true` = StickToBottom **Pinned**。
     pub auto_scroll_chat: RwSignal<bool>,
     pub pointer_scroll_active: RwSignal<bool>,
 }
@@ -63,13 +74,47 @@ pub(crate) struct PrependScrollSnapshot {
     pub scroll_height_before: i32,
 }
 
-/// **入口 A（滚轮）**：向上滚则立即关闭跟底（Observe 异步，此同步关闭防抖）。
+#[inline]
+pub(crate) fn scroll_gap_px(scroll_height: i32, scroll_top: i32, client_height: i32) -> i32 {
+    scroll_height - scroll_top - client_height
+}
+
+#[inline]
+pub(crate) fn is_near_bottom(gap_px: i32) -> bool {
+    gap_px <= STICK_NEAR_BOTTOM_GAP_PX
+}
+
+#[inline]
+pub(crate) fn stick_pin(shell: ChatScrollShellSignals) {
+    shell.auto_scroll_chat.set(true);
+}
+
+#[inline]
+pub(crate) fn stick_unpin(shell: ChatScrollShellSignals) {
+    shell.auto_scroll_chat.set(false);
+}
+
+/// 内容根（ResizeObserver）：优先 `.chat-thread`（含 transcript 与其外层增高），否则 transcript。
+pub(crate) fn stick_content_root(scroller: &web_sys::Element) -> Option<web_sys::Element> {
+    scroller
+        .query_selector(".chat-thread")
+        .ok()
+        .flatten()
+        .or_else(|| {
+            scroller
+                .query_selector(".chat-tui-transcript")
+                .ok()
+                .flatten()
+        })
+}
+
+/// 向上滚轮 → unpin（同步，避免仅靠 scroll 异步判定漏关）。
 pub(crate) fn on_messages_wheel_follow_intent(
-    auto_scroll_chat: RwSignal<bool>,
+    shell: ChatScrollShellSignals,
     ev: web_sys::WheelEvent,
 ) {
     if ev.delta_y() < 0.0 {
-        auto_scroll_chat.set(false);
+        stick_unpin(shell);
     }
 }
 
@@ -80,21 +125,39 @@ pub(crate) fn on_messages_pointer_scroll_intent(
     pointer_scroll_active.set(active);
 }
 
-/// 仅在指针按住期间把离底滚动认作用户意图，避免内容增长产生的 `scroll` 事件误关跟底。
-pub(crate) fn on_messages_pointer_scroll_event(shell: ChatScrollShellSignals, ev: web_sys::Event) {
-    use wasm_bindgen::JsCast;
-
-    if !shell.pointer_scroll_active.get_untracked() {
+/// scroll：近底 → re-pin；指针拖拽离底 → unpin（内容增高产生的 scroll 不 unpin）。
+///
+/// 用 scroller 自身量 gap，避免 `event.target` 在冒泡路径上不是滚动容器。
+/// 指针按住期间不 re-pin，避免拖离底的同一帧被近底/哨兵逻辑拉回。
+pub(crate) fn on_messages_stick_scroll_event(shell: ChatScrollShellSignals, _ev: web_sys::Event) {
+    let Some(element) = shell.messages_scroller.get_untracked() else {
+        return;
+    };
+    let gap = scroll_gap_px(
+        element.scroll_height(),
+        element.scroll_top(),
+        element.client_height(),
+    );
+    let pointer_active = shell.pointer_scroll_active.get_untracked();
+    if pointer_active && gap > STICK_UNPIN_GAP_PX {
+        stick_unpin(shell);
         return;
     }
-    let Some(target) = ev.target() else {
-        return;
-    };
-    let Ok(element) = target.dyn_into::<web_sys::HtmlElement>() else {
-        return;
-    };
-    let gap = element.scroll_height() - element.scroll_top() - element.client_height();
-    if gap > 24 {
-        shell.auto_scroll_chat.set(false);
+    if !pointer_active && is_near_bottom(gap) {
+        stick_pin(shell);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gap_and_near_bottom() {
+        assert_eq!(scroll_gap_px(1000, 800, 200), 0);
+        assert_eq!(scroll_gap_px(1000, 700, 200), 100);
+        assert!(is_near_bottom(0));
+        assert!(is_near_bottom(STICK_NEAR_BOTTOM_GAP_PX));
+        assert!(!is_near_bottom(STICK_NEAR_BOTTOM_GAP_PX + 1));
     }
 }

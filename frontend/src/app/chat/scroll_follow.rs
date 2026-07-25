@@ -1,14 +1,19 @@
-//! 聊天跟底：**一条规则** + **两个入口**。
+//! StickToBottom **内容侧**：Pinned 时内容变高则 snap 到底。
 //!
-//! - **规则**（流式内容变化）：`wire_content_follow_scroll` 监听内容信号 → rAF → `scrollTop = scrollHeight`
-//! - **入口 A**（用户滚动意图）：[`super::scroll_shell`] 的 `on:wheel` / `IntersectionObserver`
-//! - **入口 B**（主动跟底）：发送 / End 键 → [`engage_follow_and_scroll_bottom`]
+//! 状态图与用户意图（wheel / pointer / 近底 re-pin）见 [`super::scroll_shell`]。
+//!
+//! | API | 作用 |
+//! |-----|------|
+//! | [`engage_follow_and_scroll_bottom`] | 发送 / End → pin + 滚底（即 engage_on_user_send） |
+//! | [`on_content_resize_if_pinned`] / [`follow_after_content_paint`] | ResizeObserver / DOM paint 后若仍 pin 则贴底 |
+//! | [`wire_content_follow_scroll`] | 会话尾指纹 / overlay revision 变化时若 pin 则 rAF 贴底 |
+//! | [`disengage_follow_and_scroll_top`] | Home → unpin + 滚顶 |
 
 use gloo_timers::callback::Timeout;
 use leptos::prelude::*;
 use leptos_dom::helpers::request_animation_frame;
 
-use crate::app::chat::scroll_shell::ChatScrollShellSignals;
+use crate::app::chat::scroll_shell::{ChatScrollShellSignals, stick_pin, stick_unpin};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::session_ops::messages_scroller_has_non_collapsed_selection;
 use crate::storage::ChatSession;
@@ -56,20 +61,20 @@ fn scroll_to_top(shell: ChatScrollShellSignals) {
     });
 }
 
-/// **入口 B**：开启跟底并滚到底。
+/// 用户发送 / End：进入 Pinned 并滚到底。
 ///
 /// setTimeout(0) + rAF + setTimeout(100) 三重确保：
 /// - setTimeout(0)：等 Leptos DOM 批处理完成后再 snap，避免提前读到旧 scrollHeight
 /// - rAF：布局完成后最终位置
 /// - setTimeout(100)：Tauri 失焦兜底
 pub(crate) fn engage_follow_and_scroll_bottom(shell: ChatScrollShellSignals) {
-    shell.auto_scroll_chat.set(true);
+    stick_pin(shell);
     // setTimeout(0) 等 Leptos DOM 批处理完成后再 snap，
     // 避免同步 snap 读到旧 scrollHeight 导致的"向上跳动"。
     // 首次 snap 是明确的发送/End 意图，不能被内容增长产生的 Observer 中间态取消。
     Timeout::new(0, move || {
         snap_to_bottom(shell);
-        shell.auto_scroll_chat.set(true);
+        stick_pin(shell);
     })
     .forget();
     // rAF + setTimeout 兜底
@@ -78,13 +83,19 @@ pub(crate) fn engage_follow_and_scroll_bottom(shell: ChatScrollShellSignals) {
 
 /// Home 键：关闭跟底并滚到顶。
 pub(crate) fn disengage_follow_and_scroll_top(shell: ChatScrollShellSignals) {
-    shell.auto_scroll_chat.set(false);
+    stick_unpin(shell);
     scroll_to_top(shell);
 }
 
 /// Markdown/纯文本已实际写入 DOM 后跟底，避免先读旧 `scrollHeight` 再发生内容增高。
 pub(crate) fn follow_after_content_paint(shell: ChatScrollShellSignals) {
     snap_to_bottom_if_following(shell);
+}
+
+/// 内容根尺寸变化且仍 Pinned 时贴底（ResizeObserver）。
+#[inline]
+pub(crate) fn on_content_resize_if_pinned(shell: ChatScrollShellSignals) {
+    follow_after_content_paint(shell);
 }
 
 fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u64 {
@@ -105,7 +116,7 @@ fn active_session_tail_scroll_fingerprint(list: &[ChatSession], aid: &str) -> u6
     fingerprint
 }
 
-/// **规则**接线：内容变化时若跟底开启则 snap 到底。
+/// 内容信号变化时若仍 Pinned 则 snap 到底。
 ///
 /// stored 尾消息变化和 overlay revision 负责兜底；流式正文以实际 DOM paint 回调为准。
 pub(crate) fn wire_content_follow_scroll(chat: ChatSessionSignals, shell: ChatScrollShellSignals) {

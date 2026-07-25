@@ -3,6 +3,8 @@
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use super::scroll_follow::follow_after_content_paint;
+use super::scroll_shell::ChatScrollShellSignals;
 use super::tui_line_markdown::render_tui_line_markdown;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
@@ -75,6 +77,7 @@ pub(crate) fn ChatTuiStreamView(
     chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
     apply_assistant_display_filters: RwSignal<bool>,
+    scroll_shell: ChatScrollShellSignals,
 ) -> impl IntoView {
     let transcript_ref = NodeRef::<leptos::html::Div>::new();
 
@@ -117,6 +120,8 @@ pub(crate) fn ChatTuiStreamView(
             && let Some(el) = node.dyn_ref::<web_sys::HtmlElement>()
         {
             el.set_inner_html(&html);
+            // 与 ResizeObserver 互补：innerHTML 增高后立刻若仍 pin 则贴底。
+            follow_after_content_paint(scroll_shell);
         }
     });
 
