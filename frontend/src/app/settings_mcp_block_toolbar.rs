@@ -56,7 +56,7 @@ pub(crate) fn SettingsMcpBlockToolbar(
         <div class="settings-mcp-actions">
             <button
                 type="button"
-                class="settings-btn"
+                class="btn btn-primary btn-sm"
                 data-testid="settings-mcp-save"
                 prop:disabled=move || busy.get()
                 on:click=move |_| {
@@ -74,7 +74,7 @@ pub(crate) fn SettingsMcpBlockToolbar(
             </button>
             <button
                 type="button"
-                class="settings-btn settings-btn-secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="settings-mcp-probe-all"
                 prop:disabled=move || busy.get()
                 on:click=move |_| spawn_probe_all_mcp(row_ctx)

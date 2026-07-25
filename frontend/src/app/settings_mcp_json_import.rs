@@ -48,6 +48,7 @@ pub(crate) fn SettingsMcpJsonImportPanel(
     locale: RwSignal<Locale>,
     import_json: RwSignal<String>,
     set_file: WriteSignal<McpServersFileDto>,
+    baseline: RwSignal<McpServersFileDto>,
     set_feedback: WriteSignal<Option<String>>,
 ) -> impl IntoView {
     let apply_import = move |_| {
@@ -62,7 +63,9 @@ pub(crate) fn SettingsMcpJsonImportPanel(
                         &outcome.warnings,
                         &outcome.skipped_remote,
                     );
-                    set_file.set(outcome.file);
+                    // import 接口已落盘：同步 baseline，避免顶栏误判为未保存。
+                    set_file.set(outcome.file.clone());
+                    baseline.set(outcome.file);
                     set_feedback.set(Some(msg));
                     import_json.set(String::new());
                 }
@@ -89,7 +92,8 @@ pub(crate) fn SettingsMcpJsonImportPanel(
                     );
                     msg.push('\n');
                     msg.push_str(i18n::settings_mcp_import_auto_paste(loc));
-                    set_file.set(outcome.file);
+                    set_file.set(outcome.file.clone());
+                    baseline.set(outcome.file);
                     set_feedback.set(Some(msg));
                     import_json.set(String::new());
                 }
@@ -117,7 +121,7 @@ pub(crate) fn SettingsMcpJsonImportPanel(
             ></textarea>
             <button
                 type="button"
-                class="settings-btn settings-btn-secondary"
+                class="btn btn-secondary btn-sm"
                 data-testid="settings-mcp-import-apply"
                 on:click=apply_import
             >

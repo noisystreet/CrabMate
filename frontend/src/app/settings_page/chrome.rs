@@ -19,6 +19,7 @@ use super::page_actions::{
 use crate::app::settings_form_state::{
     SettingsDirtyBaselines, SettingsFormCurrent, SettingsFormUiPhase, derive_settings_form_ui_phase,
 };
+use crate::app::settings_mcp_status::McpSettingsPageState;
 use crate::i18n::Locale;
 
 /// `SettingsPageChrome` 所需的信号（`SettingsPageView` 在挂接 `wire_*` 后传入）。
@@ -39,6 +40,7 @@ pub(crate) struct SettingsPageChromeCtx {
     pub session_switch_busy: RwSignal<bool>,
     pub status_data: RwSignal<Option<crate::api::StatusData>>,
     pub refresh_status: StoredValue<Arc<dyn Fn() + Send + Sync>>,
+    pub mcp: McpSettingsPageState,
 }
 
 #[component]
@@ -59,6 +61,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
         session_switch_busy,
         status_data,
         refresh_status,
+        mcp,
     } = ctx;
     let SettingsPageFormSignals {
         locale,
@@ -88,10 +91,11 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
 
     let dirty = Memo::new(move |_| {
         let current: SettingsFormCurrent = form_current_tracked(drafts);
-        matches!(
+        let form_dirty = matches!(
             derive_settings_form_ui_phase(&current, &baselines),
             SettingsFormUiPhase::Dirty
-        )
+        );
+        form_dirty || mcp.is_dirty_tracked()
     });
 
     let discard_rc: Rc<dyn Fn()> = Rc::new(move || {
@@ -101,6 +105,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
             llm_settings_feedback,
             executor_llm_settings_feedback,
         });
+        mcp.discard_to_baseline();
     });
 
     let save_rc: Rc<dyn Fn()> = {
@@ -117,6 +122,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
                 executor_llm_settings_feedback,
                 client_llm_storage_tick,
                 baselines,
+                mcp,
             });
         })
     };
@@ -187,6 +193,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
                             session_switch_feedback,
                             session_switch_busy,
                         }
+                        mcp=mcp
                     />
                 </div>
             </div>

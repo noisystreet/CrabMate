@@ -220,7 +220,7 @@ pub async fn put_llm_overrides(file: &LlmOverridesDto, loc: Locale) -> Result<()
     put_json_no_content("/user-data/llm-overrides", &body, loc).await
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServerEntryDto {
     #[serde(default)]
     pub id: String,
@@ -242,7 +242,7 @@ fn default_true() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct McpServersFileDto {
     #[serde(default)]
     pub schema_version: u32,
