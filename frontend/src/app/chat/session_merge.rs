@@ -1,4 +1,4 @@
-//! 会话尾部水合：**唯一**合并入口 [`merge_session_tail`]。
+//! v1 会话尾部水合 adapter：无稳定 v2 projection key 时由 [`merge_session_tail`] 合并。
 //!
 //! ## 算法（维护时只改本模块）
 //!
@@ -204,7 +204,7 @@ fn replay_local_order_against_server(
     out
 }
 
-/// 将服务端尾部快照与本地 `local_tail` 合并为**单一**消息序列（水合写回 `ChatSession.messages` 的唯一路径）。
+/// 将服务端尾部快照与 v1 `local_tail` 合并为单一消息序列。
 #[must_use]
 pub(crate) fn merge_session_tail(
     server_hydrated: Vec<StoredMessage>,

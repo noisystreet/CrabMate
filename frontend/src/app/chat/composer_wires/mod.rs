@@ -130,6 +130,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             let now = js_sys::Date::now() as i64;
             let s = ChatSession {
                 id: make_session_id(),
+                layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
                 title: DEFAULT_CHAT_SESSION_TITLE.to_string(),
                 draft: String::new(),
                 messages: vec![],

@@ -5,23 +5,23 @@ use crabmate_turn_layout::{
 };
 
 use crate::message_loading::is_loading_plain_assistant;
+use crate::storage::{V2_COMMENTARY_ROW_ID_PREFIX, V2_FINAL_ANSWER_ROW_ID};
 
 use super::super::super::turn_canonical::TurnCanonicalState;
 
 /// v1 历史会话的批说明稳定 id；新流仅用于兼容识别。
 pub(crate) const BATCH_NARRATION_ROW_ID: &str = "turn-batch-narration";
-pub(crate) const COMMENTARY_ROW_ID_PREFIX: &str = "turn-commentary-";
 /// 工具批结束后终答块的稳定 id（与 `project_turn_web` · `assistant_answer` 对应）。
-pub(crate) const FINAL_ANSWER_ROW_ID: &str = "turn-final-answer";
+pub(crate) const FINAL_ANSWER_ROW_ID: &str = V2_FINAL_ANSWER_ROW_ID;
 
 const PROJECT_KIND_COMMENTARY: &str = ASSISTANT_COMMENTARY;
 
 pub(crate) fn commentary_row_id(tool_call_id: &str) -> String {
-    format!("{COMMENTARY_ROW_ID_PREFIX}{tool_call_id}")
+    format!("{V2_COMMENTARY_ROW_ID_PREFIX}{tool_call_id}")
 }
 
 pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
-    message_id == BATCH_NARRATION_ROW_ID || message_id.starts_with(COMMENTARY_ROW_ID_PREFIX)
+    message_id == BATCH_NARRATION_ROW_ID || message_id.starts_with(V2_COMMENTARY_ROW_ID_PREFIX)
 }
 
 /// 流式 preview / 边界 flush 队列。

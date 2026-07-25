@@ -413,6 +413,7 @@ mod conflict_loading_tests {
         let keep = "asst_new";
         let sessions = vec![ChatSession {
             id: sid.to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: String::new(),
             draft: String::new(),
             messages: vec![plain_assistant(keep, Some(StoredMessageState::Loading))],
@@ -436,6 +437,7 @@ mod conflict_loading_tests {
         let sid = "s1";
         let sessions = vec![ChatSession {
             id: sid.to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: String::new(),
             draft: String::new(),
             messages: vec![
@@ -462,6 +464,7 @@ mod conflict_loading_tests {
         let sid = "s1";
         let sessions = vec![ChatSession {
             id: sid.to_string(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: String::new(),
             draft: String::new(),
             messages: vec![

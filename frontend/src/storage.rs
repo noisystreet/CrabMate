@@ -2,6 +2,18 @@ use serde::{Deserialize, Serialize};
 
 /// 新建会话默认标题（**存储用**，与语言无关）；界面展示用 [`crate::i18n::session_title_for_display`]。
 pub const DEFAULT_CHAT_SESSION_TITLE: &str = "New chat";
+/// 旧会话未记录布局版本时使用的兼容版本。
+pub const LEGACY_LAYOUT_SCHEMA_VERSION: u32 = 1;
+/// 当前 Web 流式投影布局版本：closed commentary 按稳定行分别持久化。
+pub const CURRENT_LAYOUT_SCHEMA_VERSION: u32 = 2;
+/// v2 closed commentary 的持久化消息 ID 前缀。
+pub const V2_COMMENTARY_ROW_ID_PREFIX: &str = "turn-commentary-";
+/// v2 终答的持久化消息 ID。
+pub const V2_FINAL_ANSWER_ROW_ID: &str = "turn-final-answer";
+
+const fn default_layout_schema_version() -> u32 {
+    LEGACY_LAYOUT_SCHEMA_VERSION
+}
 
 /// `StoredMessageState::TimelineUiJson` 内嵌 JSON 的判别键 `k`（时间线侧栏；与旧版字符串协议一致）。
 pub const TIMELINE_UI_STATE_KEY: &str = "cm_tl";
@@ -152,6 +164,9 @@ pub struct StoredMessage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatSession {
     pub id: String,
+    /// Web 消息行投影版本。旧缓存缺省为 v1；新建会话写 v2。
+    #[serde(default = "default_layout_schema_version")]
+    pub layout_schema_version: u32,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
@@ -188,6 +203,29 @@ pub struct ChatSession {
 }
 
 impl ChatSession {
+    /// 是否已有可直接复用的 v2 投影。稳定 key 优先于旧缓存中可能缺失的版本字段。
+    #[must_use]
+    pub fn has_v2_layout_projection(&self) -> bool {
+        self.layout_schema_version >= CURRENT_LAYOUT_SCHEMA_VERSION || self.has_v2_finalized_rows()
+    }
+
+    /// 是否已经持久化至少一条可安全复用的 v2 finalized 行。
+    #[must_use]
+    pub fn has_v2_finalized_rows(&self) -> bool {
+        self.messages.iter().any(|m| {
+            m.id.starts_with(V2_COMMENTARY_ROW_ID_PREFIX) || m.id == V2_FINAL_ANSWER_ROW_ID
+        })
+    }
+
+    /// 加载旧缓存后补齐可由稳定 projection key 明确判定的 v2 版本。
+    pub fn normalize_layout_schema_version(&mut self) {
+        if self.has_v2_finalized_rows() {
+            self.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
+        } else if self.layout_schema_version == 0 {
+            self.layout_schema_version = LEGACY_LAYOUT_SCHEMA_VERSION;
+        }
+    }
+
     #[must_use]
     pub fn history_has_older_flag(&self) -> bool {
         self.history_has_older.unwrap_or(false)
@@ -239,6 +277,7 @@ pub fn ensure_at_least_one(
     let now = js_sys::Date::now() as i64;
     let s = ChatSession {
         id: make_session_id(),
+        layout_schema_version: CURRENT_LAYOUT_SCHEMA_VERSION,
         title: default_title,
         draft: String::new(),
         messages: Vec::new(),
@@ -323,5 +362,24 @@ mod tests {
     #[test]
     fn normalize_workspace_partition_trims_slash() {
         assert_eq!(normalize_workspace_partition_path("/tmp/ws/"), "/tmp/ws");
+    }
+
+    #[test]
+    fn legacy_session_without_layout_version_defaults_to_v1() {
+        let session: ChatSession = serde_json::from_str(r#"{"id":"s","messages":[]}"#)
+            .expect("deserialize legacy session");
+        assert_eq!(session.layout_schema_version, LEGACY_LAYOUT_SCHEMA_VERSION);
+        assert!(!session.has_v2_layout_projection());
+    }
+
+    #[test]
+    fn stable_commentary_key_upgrades_cache_to_v2() {
+        let mut session: ChatSession = serde_json::from_str(
+            r#"{"id":"s","messages":[{"id":"turn-commentary-t1","role":"assistant"}]}"#,
+        )
+        .expect("deserialize pre-versioned v2 session");
+        session.normalize_layout_schema_version();
+        assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
+        assert!(session.has_v2_layout_projection());
     }
 }

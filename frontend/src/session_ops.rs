@@ -701,6 +701,7 @@ mod message_branch_tests {
     fn truncate_branch_local_drops_from_user_onwards() {
         let mut sessions = vec![ChatSession {
             id: "s1".into(),
+            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
             title: "t".into(),
             draft: String::new(),
             pinned: false,

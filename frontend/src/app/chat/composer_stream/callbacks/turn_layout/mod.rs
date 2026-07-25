@@ -735,6 +735,7 @@ impl TurnLayout {
         let overlay_answer = overlay_answer_for_loading_tail(stream_ctx, mid.as_str());
         let overlay_answer_str = overlay_answer.as_deref();
         stream_ctx.update_bound_session(|s| {
+            s.layout_schema_version = crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION;
             if pin_active {
                 pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
             }

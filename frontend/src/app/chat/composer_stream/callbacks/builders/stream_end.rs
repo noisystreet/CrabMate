@@ -5,6 +5,7 @@ use std::rc::Rc;
 use leptos::prelude::*;
 
 use crate::app::chat::session_hydrate::bump_session_hydrate_nonce;
+use crate::app::chat::session_storage::persist_chat_sessions_at_stream_end;
 use crate::i18n;
 use crate::stream_text_overlay::{
     stream_overlay_clear_answer_for_message, stream_overlay_take_into_stored_message,
@@ -87,6 +88,7 @@ pub(in super::super) fn chat_stream_on_done_builder(
         // 防止下一轮 `sync_turn_projection` 覆盖时挤掉已显示的旧文本。
         TurnLayout::detach_final_answer_projection(stream_ctx.as_ref());
         stream_ctx.chat.clear_stream_text_overlay();
+        persist_chat_sessions_at_stream_end(stream_ctx.chat, loc);
         stream_ctx
             .shell
             .stream
