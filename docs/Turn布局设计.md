@@ -432,7 +432,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 - `ChatSession.layout_schema_version`：旧缓存缺字段按 v1 读取；新建会话及流式投影写 v2。
 - 加载缓存时，`turn-commentary-*` / `turn-final-answer` 稳定 key 可将未带版本字段的早期 v2 缓存识别为 v2。
 - 流结束边界立即发起 best-effort `keepalive` 会话快照 PUT，覆盖常规大小会话“状态就绪后马上刷新”；常规 400ms 防抖写盘继续作为兜底。
-- 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或更新时均不再进入 assistant/tool pool 启发式重排，只更新服务端元数据。
+- 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或仅覆盖已有回合时不进入 assistant/tool pool 启发式重排。若较新 revision 含更多 user 回合，则保留本地 v2 行不变，并从首个服务端独有 user 起追加 canonical 后缀，避免另一浏览器新增的回合被本地快照遮蔽。
 - 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 因暂不携带 segment projection key，继续走 v1 legacy adapter；因此旧会话无需迁移，回滚 v1 reader 也不要求改盘。
 
 ---

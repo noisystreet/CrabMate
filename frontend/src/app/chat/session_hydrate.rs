@@ -10,7 +10,8 @@
 //!
 //! ## 尾部合并
 //!
-//! - v2 finalized projection 保持不可变；空缓存或 v1 会话才调用
+//! - v2 finalized projection 保持不可变；服务端 revision 包含新增 user 回合时，仅追加该回合起的 canonical 后缀。
+//! - 空缓存或 v1 会话才调用
 //!   [`super::session_merge::merge_session_tail`] 执行 plain user 补回与 local 顺序回放。
 
 use std::collections::HashSet;
@@ -130,7 +131,7 @@ fn merge_tail_page_into_session_messages(
     resp: &ConversationMessagesResponse,
 ) -> Vec<StoredMessage> {
     if session.has_v2_layout_projection() && session.has_v2_finalized_rows() {
-        return session.messages.clone();
+        return append_server_only_turns_to_v2_projection(session.messages.as_slice(), hydrated);
     }
     let tail_start = resp.window_start_index;
     if let Some(local_start) = session.history_window_start {
@@ -144,6 +145,36 @@ fn merge_tail_page_into_session_messages(
         }
     }
     merge_session_tail(hydrated, session.messages.as_slice())
+}
+
+fn append_server_only_turns_to_v2_projection(
+    local: &[StoredMessage],
+    hydrated: Vec<StoredMessage>,
+) -> Vec<StoredMessage> {
+    let local_user_count = count_user_role_bubbles(local);
+    let mut hydrated_user_count = 0;
+    let suffix_start = hydrated.iter().position(|message| {
+        if message.role != "user" {
+            return false;
+        }
+        let starts_new_turn = hydrated_user_count == local_user_count;
+        hydrated_user_count += 1;
+        starts_new_turn
+    });
+    let Some(suffix_start) = suffix_start else {
+        return local.to_vec();
+    };
+
+    let mut combined = local.to_vec();
+    let mut existing_ids: HashSet<_> = local.iter().map(|message| message.id.as_str()).collect();
+    combined.extend(
+        hydrated
+            .iter()
+            .skip(suffix_start)
+            .filter(|message| existing_ids.insert(message.id.as_str()))
+            .cloned(),
+    );
+    combined
 }
 
 fn should_merge_hydrated_messages(
@@ -678,7 +709,7 @@ mod merge_tail_page_order_tests {
     }
 
     #[test]
-    fn newer_hydration_keeps_nonempty_v2_projection_without_legacy_pool_merge() {
+    fn newer_same_turn_hydration_keeps_v2_projection_without_legacy_pool_merge() {
         let local = vec![
             plain_message("u-local", "user", "question"),
             plain_message("turn-commentary-tc_read", "assistant", "不可变 commentary"),
@@ -700,6 +731,34 @@ mod merge_tail_page_order_tests {
                 .map(|m| m.id.as_str())
                 .collect::<Vec<_>>(),
             local.iter().map(|m| m.id.as_str()).collect::<Vec<_>>()
+        );
+        assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
+    }
+
+    #[test]
+    fn newer_hydration_appends_server_only_turn_after_v2_projection() {
+        let local = vec![
+            plain_message("u-local", "user", "question"),
+            plain_message("turn-final-answer", "assistant", "本地终答"),
+        ];
+        let mut session = revision_session(local, Some(7));
+        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
+        let hydrated = vec![
+            plain_message("h-user-1", "user", "question"),
+            plain_message("h-answer-1", "assistant", "服务端旧终答"),
+            plain_message("h-user-2", "user", "new question"),
+            plain_message("h-answer-2", "assistant", "服务端新增终答"),
+        ];
+
+        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(8));
+
+        assert_eq!(
+            session
+                .messages
+                .iter()
+                .map(|message| message.id.as_str())
+                .collect::<Vec<_>>(),
+            ["u-local", "turn-final-answer", "h-user-2", "h-answer-2"]
         );
         assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
     }
@@ -845,62 +904,5 @@ mod merge_tail_page_order_tests {
 }
 
 #[cfg(test)]
-mod conversation_server_id_for_hydrate_tests {
-    use super::conversation_server_id_if_hydratable_for_wire;
-    use crate::storage::{
-        ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage, StoredMessageState,
-    };
-
-    fn base_session() -> ChatSession {
-        ChatSession {
-            id: "sid".into(),
-            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
-            title: "t".into(),
-            draft: String::new(),
-            messages: vec![],
-            updated_at: 0,
-            pinned: false,
-            starred: false,
-            server_conversation_id: Some("  srv-9  ".into()),
-            server_revision: None,
-            workspace_root: None,
-            history_total: None,
-            history_window_start: None,
-            history_has_older: None,
-        }
-    }
-
-    #[test]
-    fn returns_trimmed_id_without_loading() {
-        let s = base_session();
-        assert_eq!(
-            conversation_server_id_if_hydratable_for_wire(&s).as_deref(),
-            Some("srv-9")
-        );
-    }
-
-    #[test]
-    fn returns_none_when_any_loading_placeholder() {
-        let mut s = base_session();
-        s.messages.push(StoredMessage {
-            id: "m1".into(),
-            role: "assistant".into(),
-            text: String::new(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::Loading),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        });
-        assert!(conversation_server_id_if_hydratable_for_wire(&s).is_none());
-    }
-
-    #[test]
-    fn returns_none_without_server_conversation_id() {
-        let mut s = base_session();
-        s.server_conversation_id = None;
-        assert!(conversation_server_id_if_hydratable_for_wire(&s).is_none());
-    }
-}
+#[path = "session_hydrate_conversation_id_tests.rs"]
+mod conversation_server_id_for_hydrate_tests;
