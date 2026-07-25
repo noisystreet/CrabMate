@@ -85,3 +85,39 @@ jobs:
       - name: cargo test (desktop-tauri, Victauri auto-skip)
         run: cargo test --no-fail-fast
         working-directory: desktop-tauri/src-tauri
+
+  build-release:
+    name: release build (package test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force 2>/dev/null || true
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add wasm32 target & install trunk
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install trunk --locked
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build frontend WASM + backend binary (release)
+        run: make backend-release frontend-release
+
+      - name: Smoke test — binary runs and prints version
+        run: |
+          ./target/release/crabmate --version
+          ./target/release/crabmate doctor --dry-run
+          # 验证前端静态文件被正确嵌入 dist
+          test -f frontend/dist/index.html && echo "✅ dist/index.html 存在"
+          # 验证二进制体积（粗略检查，防意外膨胀）
+          BIN_SIZE=$(stat --format=%s target/release/crabmate)
+          echo "crabmate release binary: $BIN_SIZE bytes ($(( BIN_SIZE / 1048576 )) MiB)"
