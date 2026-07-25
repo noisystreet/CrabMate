@@ -125,11 +125,11 @@ test.describe("overlay 消费时序回归", () => {
       "就绪",
       { timeout: 25000 },
     );
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("文件读写功能已就绪", { timeout: 5000 });
-    await expect(page.locator('[data-testid="chat-message-row"]')).toHaveCount(
-      2,
-    );
+    const transcript = page.getByTestId("chat-tui-transcript");
+    await expect(transcript).toContainText("文件读写功能已就绪", {
+      timeout: 5000,
+    });
+    // 默认终端流视图：user + assistant 各一节（无 chat-message-row 气泡）
+    await expect(page.locator(".chat-tui-turn")).toHaveCount(2);
   });
 });
