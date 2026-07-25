@@ -135,7 +135,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         chat_find_query,
         chat_find_match_ids,
         chat_find_cursor,
-        auto_scroll_chat,
+        scroll_shell,
         stream_turn_busy_ui,
         tail_loading_assistant_mid,
         stream_follow_up,
@@ -190,7 +190,7 @@ pub(crate) fn chat_message_row(s: ChatMessageRowSignals) -> impl IntoView {
         tool_detail_expanded_ids,
         tool_mid: mid_highlight.clone(),
         jump_uid,
-        auto_scroll_chat,
+        scroll_shell,
         tool_output_chunks: chat.tool_output_chunks,
     });
     let retry_visible_rc = arc_retry_visible_for_message(row_state_map, mid_highlight.clone());

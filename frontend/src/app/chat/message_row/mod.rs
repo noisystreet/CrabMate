@@ -11,6 +11,7 @@ mod views;
 use std::collections::{HashMap, HashSet};
 
 use super::composer_follow_up::ComposerStreamFollowUp;
+use super::scroll_shell::ChatScrollShellSignals;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::StoredMessage;
@@ -27,7 +28,7 @@ pub(crate) struct ChatMessageRowSignals {
     pub chat_find_query: RwSignal<String>,
     pub chat_find_match_ids: RwSignal<Vec<String>>,
     pub chat_find_cursor: RwSignal<usize>,
-    pub auto_scroll_chat: RwSignal<bool>,
+    pub scroll_shell: ChatScrollShellSignals,
     pub stream_turn_busy_ui: Memo<bool>,
     /// 当前活动会话尾部 loading 助手消息 id；仅该行显示打字点，避免每行 `sessions.with`。
     pub tail_loading_assistant_mid: Memo<Option<String>>,

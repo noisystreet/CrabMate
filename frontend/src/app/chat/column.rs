@@ -7,23 +7,105 @@ use leptos::prelude::{StoredValue, *};
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::prelude::Closure;
 
 use super::column_keyboard::ChatColumnHomeEndNav;
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
 use super::message_group_views::ToolRunGroupSignals;
 use super::messages_list::{ChatMessagesList, ChatMessagesListSignals};
+use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::{
-    ChatScrollShellSignals, on_messages_scroll_event, on_messages_wheel_follow_intent,
+    ChatScrollShellSignals, on_messages_pointer_scroll_event, on_messages_pointer_scroll_intent,
+    on_messages_wheel_follow_intent,
 };
 use super::tail_loading_memo::tail_loading_assistant_mid_memo;
 use crate::api::upload_files_multipart;
 use crate::i18n;
+
+type ScrollSentinelCallback =
+    Closure<dyn Fn(Vec<wasm_bindgen::JsValue>, web_sys::IntersectionObserver)>;
+type ScrollResizeCallback = Closure<dyn Fn(Vec<wasm_bindgen::JsValue>, web_sys::ResizeObserver)>;
+
+struct ScrollSentinelObserver {
+    _callback: ScrollSentinelCallback,
+    observer: web_sys::IntersectionObserver,
+}
+
+impl Drop for ScrollSentinelObserver {
+    fn drop(&mut self) {
+        self.observer.disconnect();
+    }
+}
+
+struct ScrollContentResizeObserver {
+    _callback: ScrollResizeCallback,
+    observer: web_sys::ResizeObserver,
+}
+
+impl Drop for ScrollContentResizeObserver {
+    fn drop(&mut self) {
+        self.observer.disconnect();
+    }
+}
+
 #[component]
 fn ChatMessagesScrollShell(
     scroll_shell: ChatScrollShellSignals,
     children: Children,
 ) -> impl IntoView {
+    let sentinel_ref = NodeRef::<leptos::html::Div>::new();
+    // 本地 signal 随组件 Owner 销毁；Drop 同时断开 Observer，避免回调失活或泄漏。
+    let observer_handle = RwSignal::new_local(None::<ScrollSentinelObserver>);
+    let resize_observer_handle = RwSignal::new_local(None::<ScrollContentResizeObserver>);
+    let auto_scroll = scroll_shell.auto_scroll_chat;
+    sentinel_ref.on_load(move |el| {
+        let ac = auto_scroll;
+        let cb = Closure::new(
+            move |entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::IntersectionObserver| {
+                if let Some(entry) = entries.first() {
+                    if let Ok(entry) = entry
+                        .clone()
+                        .dyn_into::<web_sys::IntersectionObserverEntry>()
+                        && entry.is_intersecting()
+                    {
+                        ac.set(true);
+                    }
+                }
+            },
+        );
+        let options = web_sys::IntersectionObserverInit::new();
+        if let Some(root) = scroll_shell.messages_scroller.get_untracked() {
+            options.set_root(Some(root.as_ref()));
+        }
+        let observer =
+            web_sys::IntersectionObserver::new_with_options(cb.as_ref().unchecked_ref(), &options)
+                .expect("IntersectionObserver");
+        observer.observe(&el);
+        observer_handle.set(Some(ScrollSentinelObserver {
+            _callback: cb,
+            observer,
+        }));
+        let resize_callback = Closure::new(
+            move |_entries: Vec<wasm_bindgen::JsValue>, _observer: web_sys::ResizeObserver| {
+                follow_after_content_paint(scroll_shell);
+            },
+        );
+        if let Some(content) = scroll_shell
+            .messages_scroller
+            .get_untracked()
+            .and_then(|root| root.query_selector(".chat-thread").ok().flatten())
+        {
+            let resize_observer =
+                web_sys::ResizeObserver::new(resize_callback.as_ref().unchecked_ref())
+                    .expect("ResizeObserver");
+            resize_observer.observe(&content);
+            resize_observer_handle.set(Some(ScrollContentResizeObserver {
+                _callback: resize_callback,
+                observer: resize_observer,
+            }));
+        }
+    });
     view! {
         <div
             class="messages"
@@ -32,11 +114,21 @@ fn ChatMessagesScrollShell(
             on:wheel=move |ev: web_sys::WheelEvent| {
                 on_messages_wheel_follow_intent(scroll_shell.auto_scroll_chat, ev);
             }
+            on:pointerdown=move |_| {
+                on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, true);
+            }
+            on:pointerup=move |_| {
+                on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, false);
+            }
+            on:pointercancel=move |_| {
+                on_messages_pointer_scroll_intent(scroll_shell.pointer_scroll_active, false);
+            }
             on:scroll=move |ev: web_sys::Event| {
-                on_messages_scroll_event(scroll_shell, ev);
+                on_messages_pointer_scroll_event(scroll_shell, ev);
             }
         >
             {children()}
+            <div data-testid="scroll-sentinel" node_ref=sentinel_ref style="height:1px" />
         </div>
     }
 }
@@ -121,8 +213,6 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         apply_assistant_display_filters,
     } = signals;
 
-    let auto_scroll_chat = scroll_shell.auto_scroll_chat;
-
     let tail_loading_assistant_mid = tail_loading_assistant_mid_memo(chat);
 
     let tool_run_group_signals = ToolRunGroupSignals {
@@ -137,7 +227,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         tail_loading_assistant_mid,
         stream_follow_up,
         status_err,
-        auto_scroll_chat,
+        scroll_shell,
         locale,
         markdown_render,
         apply_assistant_display_filters,

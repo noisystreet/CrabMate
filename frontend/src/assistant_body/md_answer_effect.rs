@@ -4,6 +4,7 @@
 //! - **流式节流**：rAF 逐帧检查节流条件（自适应 interval 40–72ms），无需独立 Timeout；世代门禁防陈旧
 //! - **完成时**：清空容器后 `insertAdjacentHTML('beforeend', …)` 一次追加，避免 `innerHTML` 全量重建
 
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use leptos::html::Div;
@@ -136,6 +137,7 @@ fn enqueue_answer_body_paint(
     html: String,
     is_replace: bool,
     stream_gen_gate: Option<u64>,
+    on_dom_painted: Rc<dyn Fn()>,
 ) {
     let paint_run = Arc::clone(paint_arc);
     let answer_body_ref = answer_body_ref.clone();
@@ -162,10 +164,13 @@ fn enqueue_answer_body_paint(
         if html.is_empty() {
             return;
         }
-        if is_replace {
-            answer_body_replace_html(&answer_body_ref, &html);
+        let painted = if is_replace {
+            answer_body_replace_html(&answer_body_ref, &html)
         } else {
-            answer_body_append_html(&answer_body_ref, &html);
+            answer_body_append_html(&answer_body_ref, &html)
+        };
+        if painted {
+            on_dom_painted();
         }
     });
 }
@@ -174,6 +179,7 @@ fn schedule_pending_stream_dom_flush(
     paint_arc: &Arc<Mutex<SectionPaint>>,
     answer_body_ref: &NodeRef<Div>,
     when_scheduled: u64,
+    on_dom_painted: Rc<dyn Fn()>,
 ) {
     let paint_run = Arc::clone(paint_arc);
     let answer_body_ref = answer_body_ref.clone();
@@ -191,7 +197,12 @@ fn schedule_pending_stream_dom_flush(
                 let min_interval = adaptive_stream_interval(elapsed) as f64;
                 if elapsed < min_interval {
                     drop(g);
-                    schedule_pending_stream_dom_flush(&paint_run, &answer_body_ref, when_scheduled);
+                    schedule_pending_stream_dom_flush(
+                        &paint_run,
+                        &answer_body_ref,
+                        when_scheduled,
+                        Rc::clone(&on_dom_painted),
+                    );
                     return;
                 }
             }
@@ -203,7 +214,14 @@ fn schedule_pending_stream_dom_flush(
                 None => return,
             }
         };
-        enqueue_answer_body_paint(&paint_run, &answer_body_ref, html, false, None);
+        enqueue_answer_body_paint(
+            &paint_run,
+            &answer_body_ref,
+            html,
+            false,
+            None,
+            on_dom_painted,
+        );
     });
 }
 
@@ -212,6 +230,7 @@ fn queue_stream_text_append(
     answer_body_ref: &NodeRef<Div>,
     html: String,
     through_len: usize,
+    on_dom_painted: Rc<dyn Fn()>,
 ) {
     let when_scheduled = {
         let mut g = paint_arc.lock().expect("answer paint mutex poisoned");
@@ -220,7 +239,7 @@ fn queue_stream_text_append(
             None => return, // backpressure
         }
     };
-    schedule_pending_stream_dom_flush(paint_arc, answer_body_ref, when_scheduled);
+    schedule_pending_stream_dom_flush(paint_arc, answer_body_ref, when_scheduled, on_dom_painted);
 }
 
 fn snapshot_pair(snap: Option<AssistantMsgSnapshot>) -> (String, bool) {
@@ -235,6 +254,7 @@ pub(super) struct AssistantMarkdownAnswerEffectBundle {
     pub(super) markdown_render: RwSignal<bool>,
     pub(super) answer_body_ref: NodeRef<Div>,
     pub(super) answer_paint: StoredValue<Arc<Mutex<SectionPaint>>>,
+    pub(super) on_dom_painted: Rc<dyn Fn()>,
 }
 
 /// 供 [`super::view::assistant_markdown_collapsible_view`] 挂载：回答区 `Effect`。
@@ -247,6 +267,7 @@ pub(super) fn install_assistant_markdown_answer_effect(
         markdown_render,
         answer_body_ref,
         answer_paint,
+        on_dom_painted,
     } = bundle;
 
     Effect::new({
@@ -273,7 +294,13 @@ pub(super) fn install_assistant_markdown_answer_effect(
                 if text_src.len() > prev_len {
                     let new_text = &text_src[prev_len..];
                     let html = fragment_to_chat_safe_html(new_text, false);
-                    queue_stream_text_append(&paint_arc, &answer_body_ref, html, text_src.len());
+                    queue_stream_text_append(
+                        &paint_arc,
+                        &answer_body_ref,
+                        html,
+                        text_src.len(),
+                        Rc::clone(&on_dom_painted),
+                    );
                 }
                 return;
             }
@@ -288,9 +315,10 @@ pub(super) fn install_assistant_markdown_answer_effect(
             let text = text_src.clone();
             let body_ref = answer_body_ref.clone();
             let arc = paint_arc.clone();
+            let on_dom_painted = Rc::clone(&on_dom_painted);
             spawn_local(async move {
                 let html = fragment_to_chat_safe_html(&text, md_on);
-                enqueue_answer_body_paint(&arc, &body_ref, html, true, None);
+                enqueue_answer_body_paint(&arc, &body_ref, html, true, None, on_dom_painted);
             });
         }
     });
