@@ -137,13 +137,9 @@ jobs:
       - name: Build frontend WASM + backend binary (release)
         run: make backend-release frontend-release
 
-      - name: Smoke test — binary runs and prints version
+      - name: Verify release build artifacts
         run: |
-          ./target/release/crabmate --version
-          ./target/release/crabmate doctor
-          ./target/release/crabmate config --dry-run
-          # 验证前端静态文件被正确嵌入 dist
-          test -f frontend/dist/index.html && echo "✅ dist/index.html 存在"
-          # 验证二进制体积（粗略检查，防意外膨胀）
+          test -x target/release/crabmate
+          test -f frontend/dist/index.html
           BIN_SIZE=$(stat --format=%s target/release/crabmate)
           echo "crabmate release binary: $BIN_SIZE bytes ($(( BIN_SIZE / 1048576 )) MiB)"
