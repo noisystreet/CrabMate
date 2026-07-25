@@ -23,7 +23,7 @@ pub const CLIENT_LLM_API_BASE_PRESETS: &[ClientLlmApiBasePreset] = &[
     ClientLlmApiBasePreset {
         id: "deepseek",
         url: "https://api.deepseek.com/v1",
-        suggested_model: Some("deepseek-chat"),
+        suggested_model: Some("deepseek-v4-flash"),
     },
     ClientLlmApiBasePreset {
         id: "minimax",
