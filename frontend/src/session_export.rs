@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn export_tool_message_prefers_reasoning_full_card_over_compact_text() {
-        let mut tool_msg = msg("3", "system", "读取目录 ｜ . ｜ 0 项", true);
+        let mut tool_msg = msg("3", "system", "读取目录 . 0 项", true);
         tool_msg.reasoning_text =
             "读取目录完成\n\n目录：foo\n\n总计遍历：1，展示：1\nfile: a.txt\n".to_string();
         let session = ChatSession {
