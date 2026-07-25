@@ -835,14 +835,14 @@ mod tests {
         assert!(output.contains("chat-tui-turn--user"), "got {output}");
         assert!(output.contains("chat-tui-turn--assistant"), "got {output}");
         assert!(output.contains("chat-tui-role-label"), "got {output}");
-        assert!(
-            !output.contains("<section class=\"chat-tui-turn")
-                || !output
-                    .split("<section")
-                    .skip(1)
-                    .any(|chunk| chunk.contains("chat-tui-role-label")),
-            "role label must be outside section card, got {output}"
-        );
+        for section in output.split("<section class=\"chat-tui-turn") {
+            if let Some(end) = section.find("</section>") {
+                assert!(
+                    !section[..end].contains("chat-tui-role-label"),
+                    "role label must be outside section card, got {output}"
+                );
+            }
+        }
         assert!(output.contains("chat-tui-turn-actions"), "got {output}");
         assert!(output.contains("data-tui-action=\"copy\""), "got {output}");
         assert!(!output.contains('❯'), "got {output}");
