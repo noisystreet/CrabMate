@@ -546,6 +546,10 @@ mod slash_completion_tests {
         assert!(s.iter().any(|x| x.value == "/api-base set "));
         let s2 = c.complete("/apibase", 8);
         assert!(s2.iter().any(|x| x.value == "/apibase set "));
+        let line = "/api-base set ";
+        let s3 = c.complete(line, line.len());
+        assert!(s3.iter().any(|x| x.value == "/api-base set deepseek"));
+        assert!(s3.iter().any(|x| x.value == "/api-base set ollama"));
     }
 
     #[test]

@@ -10,6 +10,7 @@ members = [
     "crates/crabmate-turn-layout",
     "crates/crabmate-im-bridge",
     "crates/crabmate-types",
+    "crates/crabmate-chat-export",
     "crates/crabmate-approval",
     "crates/crabmate-web-host",
     "crates/crabmate-config",
@@ -44,6 +45,7 @@ crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-tools = { path = "crates/crabmate-tools" }
 crabmate-turn-layout = { path = "crates/crabmate-turn-layout" }
 crabmate-types = { path = "crates/crabmate-types" }
+crabmate-chat-export = { path = "crates/crabmate-chat-export" }
 
 # Shared third-party (pin versions; enable features per crate)
 async-trait = "0.1"

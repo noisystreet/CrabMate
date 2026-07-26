@@ -236,9 +236,12 @@ async fn slash_api_base_show(
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     let _ = style.print_line(&format!("api_base: {}", cfg.llm.api_base));
-    let _ = style.print_line(
-        "提示: /api-base set <url> 可改 OpenAI 兼容网关根地址（仅内存；别名 /apibase）。",
-    );
+    let _ =
+        style.print_line("提示: /api-base set <url|预设id>（仅内存；别名 /apibase）。预设 id：");
+    for p in crabmate_types::llm_api_base_presets_with_url() {
+        let model = p.suggested_model.unwrap_or("-");
+        let _ = style.print_line(&format!("  {} → {}（建议 model: {model}）", p.id, p.url));
+    }
     ReplSlashHandled::Handled
 }
 
@@ -249,31 +252,46 @@ async fn slash_api_base_set(
 ) -> ReplSlashHandled {
     let t = url.trim();
     if t.is_empty() {
-        let _ = style.eprint_error("用法: /api-base set <url>（例如 https://api.openai.com/v1）");
-    } else if t.len() > REPL_LLM_API_BASE_MAX {
-        let _ = style.eprint_error(&format!(
-            "api_base 过长（上限 {REPL_LLM_API_BASE_MAX} 字符）。"
-        ));
-    } else if t.contains('\0') || t.contains('\r') || t.contains('\n') {
-        let _ = style.eprint_error("api_base 含非法控制字符，已拒绝。");
+        let _ = style.eprint_error(
+            "用法: /api-base set <url|预设id>（例如 https://api.openai.com/v1 或 deepseek）",
+        );
+    } else if let Some((label, suggested_model)) = crabmate_types::resolve_api_base_set_arg(t) {
+        if label.len() > REPL_LLM_API_BASE_MAX {
+            let _ = style.eprint_error(&format!(
+                "api_base 过长（上限 {REPL_LLM_API_BASE_MAX} 字符）。"
+            ));
+        } else if label.contains('\0') || label.contains('\r') || label.contains('\n') {
+            let _ = style.eprint_error("api_base 含非法控制字符，已拒绝。");
+        } else {
+            let mut w = cfg_holder.write().await;
+            w.llm.api_base.clone_from(&label);
+            if let Some(m) = suggested_model
+                && w.llm.model.trim().is_empty()
+            {
+                w.llm.model = m.to_string();
+            }
+            let model = w.llm.model.clone();
+            let api_base = w.llm.api_base.clone();
+            w.llm_vendor_flags.llm_reasoning_split =
+                crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(
+                    &model, &api_base,
+                );
+            drop(w);
+            let _ = style.print_success(&format!(
+                "已设 api_base = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
+            ));
+        }
     } else {
-        let label = t.to_string();
-        let mut w = cfg_holder.write().await;
-        w.llm.api_base.clone_from(&label);
-        let model = w.llm.model.clone();
-        let api_base = w.llm.api_base.clone();
-        w.llm_vendor_flags.llm_reasoning_split =
-            crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(&model, &api_base);
-        drop(w);
-        let _ = style.print_success(&format!(
-            "已设 api_base = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
-        ));
+        let _ = style.eprint_error(
+            "无法解析 api_base：server/custom 无固定 URL，请直接写完整网关根地址，或使用 ollama/deepseek/minimax/zhipu/moonshot。",
+        );
     }
     ReplSlashHandled::Handled
 }
 
 fn slash_api_base_usage(style: &CliReplStyle) -> ReplSlashHandled {
-    let _ = style.eprint_error("用法: /api-base（显示当前）· /api-base set <url>（写内存）");
+    let _ = style
+        .eprint_error("用法: /api-base（显示当前与预设）· /api-base set <url|预设id>（写内存）");
     ReplSlashHandled::Handled
 }
 

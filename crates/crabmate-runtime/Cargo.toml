@@ -11,6 +11,7 @@ tui = ["repl"]
 
 [dependencies]
 crabmate-agent = { workspace = true, default-features = false }
+crabmate-chat-export = { workspace = true }
 crabmate-display-rules = { workspace = true }
 chrono = { workspace = true }
 crabmate-tool-card = { workspace = true }

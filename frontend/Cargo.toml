@@ -8,8 +8,10 @@ description = "CrabMate Web UI (Leptos CSR + WASM)"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+crabmate-chat-export = { workspace = true }
 crabmate-display-rules = { workspace = true }
 crabmate-tool-card = { workspace = true }
+crabmate-types = { workspace = true }
 crabmate-sse-protocol = { workspace = true }
 crabmate-turn-layout = { workspace = true }
 ammonia = ">=4.1.4"

@@ -17,8 +17,8 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
         "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
     ),
     (
-        "/api-base · /api-base set <url> · /apibase …",
-        "显示或写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
+        "/api-base · /api-base set <url|预设id> · /apibase …",
+        "显示当前 api_base 与网关预设；写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
     ),
     (
         "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",

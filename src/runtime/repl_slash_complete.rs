@@ -356,6 +356,22 @@ fn complete_slash_api_base_second(span: Span, cmd: &str, after_ws: &str) -> Vec<
     };
     let ap = after_ws.trim_start();
     let ap_l = ap.to_ascii_lowercase();
+    // `/api-base set <preset|url>`：补全有 URL 的预设 id
+    if let Some(rest) = ap.strip_prefix("set") {
+        let after_set = rest.trim_start();
+        if rest.starts_with(char::is_whitespace) || rest.is_empty() {
+            let prefix = after_set.to_ascii_lowercase();
+            return crabmate_types::llm_api_base_presets_with_url()
+                .filter(|p| prefix.is_empty() || p.id.starts_with(prefix.as_str()))
+                .map(|p| Suggestion {
+                    value: format!("{slash} set {}", p.id),
+                    span,
+                    append_whitespace: false,
+                    ..Default::default()
+                })
+                .collect();
+        }
+    }
     let hits: Vec<&str> = if ap_l.is_empty() {
         vec!["set"]
     } else {

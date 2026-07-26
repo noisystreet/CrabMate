@@ -89,7 +89,8 @@ Runtime **`AgentConfig`** merges TOML shards / environment variables and is vali
 | **`memory/`** | Long-term memory, optional semantic index, etc. |
 | **`runtime/`** | REPL, one-shot `chat`, **`chat_export`**, TUI bridge, benchmark helpers, etc. |
 | **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
-| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible messages; root **`pub use crabmate_types as types`**. |
+| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible messages; **`llm_gateway_presets`**; root **`pub use crabmate_types as types`**. |
+| **`crabmate-chat-export`** (`crates/crabmate-chat-export`) | Shared export schema / Markdown helpers; runtime write path + Web/Tauri reuse. |
 | **`crabmate-config`** (`crates/crabmate-config`) | **`AgentConfig`** loading, `finalize`, hot reload, CLI definitions; root **`pub use crabmate_config as config`**. |
 | **`crabmate-llm`** (`crates/crabmate-llm`) | **`vendor`**, outbound **`vendor_messages`**, **`requests`** (`ChatRequest` builders), shared **`http_client`**, **`ChatCompletionsBackend`** trait, error types; root **`llm`** re-exports and hosts **`api::stream_chat`** / **`complete_chat_retrying`**. |
 | **`crabmate-agent`** (`crates/crabmate-agent`) | **`plan_artifact`**, **`intent_*`** / **`intent_routing`**, **`agent_turn::tool_execution`** (batch mode, **`ToolExecutionHost`**, early-deny), **`step_executor_policy`**, **`turn_budget`**, workflow reflection controller, etc.; root **`agent`** hosts **`tool_execution_host`**, SSE **`emit`**, **`hierarchy`** / workflow execution. |
