@@ -6,8 +6,8 @@ license = "Apache-2.0"
 description = "Workflow DAG execution engine for CrabMate"
 
 [dependencies]
+crabmate-approval = { workspace = true }
 crabmate-config = { workspace = true }
-crabmate-internal = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 futures-util = { workspace = true }

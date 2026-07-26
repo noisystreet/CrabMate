@@ -628,8 +628,8 @@ async fn request_approval(
     command: &str,
     args: &str,
 ) -> CommandApprovalDecision {
-    let spec = crabmate_internal::tool_approval::ApprovalRequestSpec {
-        capability: crabmate_internal::tool_approval::SensitiveCapability::WorkflowGate,
+    let spec = crabmate_approval::ApprovalRequestSpec {
+        capability: crabmate_approval::SensitiveCapability::WorkflowGate,
         sse_command: command.to_string(),
         sse_args: args.to_string(),
         allowlist_key: None,
@@ -637,16 +637,16 @@ async fn request_approval(
         cli_detail: String::new(),
         web_timeline_prefix_zh: "工作流审批：",
     };
-    let sink = crabmate_internal::tool_approval::WebApprovalSink {
+    let sink = crabmate_approval::WebApprovalSink {
         out_tx: &out_tx,
         approval_rx_shared: &approval_rx,
         approval_request_guard: &approval_request_guard,
     };
-    crabmate_internal::tool_approval::run_web_tool_approval(
+    crabmate_approval::run_web_tool_approval(
         sink,
         &spec,
         "workflow::execute approval request",
-        crabmate_internal::tool_approval::WebApprovalChannelMode::Lenient,
+        crabmate_approval::WebApprovalChannelMode::Lenient,
     )
     .await
     .unwrap_or(CommandApprovalDecision::Deny)
