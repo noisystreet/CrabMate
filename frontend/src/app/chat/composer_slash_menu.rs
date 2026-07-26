@@ -1,4 +1,4 @@
-//! Web composer：`/` skill 浮层状态与菜单组件。
+//! Web composer：`/` 浮层（内建命令 + skill）状态与菜单组件。
 
 use leptos::html::Textarea;
 use leptos::prelude::*;
@@ -6,7 +6,7 @@ use leptos::prelude::*;
 use crate::api::{SkillListItem, SkillsListData, fetch_skills};
 use crate::i18n::{self, Locale};
 
-/// 草稿是否处于「仅 `/` + 可选 id 前缀、尚无空白」的 skill 浮层态。
+/// 草稿是否处于「仅 `/` + 可选前缀、尚无空白」的浮层态。
 pub(super) fn slash_skill_prefix(draft: &str) -> Option<&str> {
     let s = draft.trim_start();
     let rest = s.strip_prefix('/')?;
@@ -16,29 +16,125 @@ pub(super) fn slash_skill_prefix(draft: &str) -> Option<&str> {
     Some(rest)
 }
 
-fn filter_skills(skills: &[SkillListItem], prefix: &str) -> Vec<SkillListItem> {
+/// IME 组字中：勿拦截方向键/Enter，也勿触发发送。
+pub(super) fn keydown_is_ime_composing(ev: &web_sys::KeyboardEvent) -> bool {
+    if ev.is_composing() {
+        return true;
+    }
+    // 旧引擎在 composition 期间常报 keyCode 229。
+    ev.key_code() == 229
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SlashItemKind {
+    Builtin,
+    Skill,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct SlashMenuItem {
+    pub kind: SlashItemKind,
+    /// 前缀匹配键（不含 `/`）。
+    pub match_key: String,
+    /// 写入草稿的全文。
+    pub insert: String,
+    /// 左侧展示（含 `/`）。
+    pub label: String,
+    pub description: String,
+}
+
+fn web_builtin_slash_items(locale: Locale) -> Vec<SlashMenuItem> {
+    vec![
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "skills".to_string(),
+            insert: "/skills".to_string(),
+            label: "/skills".to_string(),
+            description: i18n::composer_slash_builtin_skills(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "skills list".to_string(),
+            insert: "/skills list".to_string(),
+            label: "/skills list".to_string(),
+            description: i18n::composer_slash_builtin_skills_list(locale).to_string(),
+        },
+    ]
+}
+
+fn item_matches_prefix(item: &SlashMenuItem, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return true;
+    }
     let p = prefix.to_ascii_lowercase();
-    let mut out: Vec<SkillListItem> = skills
-        .iter()
-        .filter(|s| p.is_empty() || s.id.to_ascii_lowercase().starts_with(&p))
-        .cloned()
+    item.match_key.to_ascii_lowercase().starts_with(&p)
+        || item
+            .label
+            .trim_start_matches('/')
+            .to_ascii_lowercase()
+            .starts_with(&p)
+}
+
+fn skill_to_menu_item(s: &SkillListItem) -> SlashMenuItem {
+    let desc = if s.description.trim().is_empty() {
+        s.path.clone()
+    } else {
+        s.description.clone()
+    };
+    SlashMenuItem {
+        kind: SlashItemKind::Skill,
+        match_key: s.id.clone(),
+        insert: format!("/{} ", s.id),
+        label: format!("/{}", s.id),
+        description: desc,
+    }
+}
+
+fn build_filtered_menu(
+    prefix: &str,
+    locale: Locale,
+    cache: Option<&SkillsListData>,
+) -> Vec<SlashMenuItem> {
+    let mut out: Vec<SlashMenuItem> = web_builtin_slash_items(locale)
+        .into_iter()
+        .filter(|it| item_matches_prefix(it, prefix))
         .collect();
-    out.sort_by_key(|a| a.id.to_ascii_lowercase());
-    out.truncate(24);
+    if let Some(cache) = cache
+        && cache.enabled
+    {
+        let mut skills: Vec<SlashMenuItem> = cache
+            .skills
+            .iter()
+            .filter(|s| {
+                prefix.is_empty()
+                    || s.id
+                        .to_ascii_lowercase()
+                        .starts_with(&prefix.to_ascii_lowercase())
+            })
+            .map(skill_to_menu_item)
+            .collect();
+        skills.sort_by(|a, b| {
+            a.match_key
+                .to_ascii_lowercase()
+                .cmp(&b.match_key.to_ascii_lowercase())
+        });
+        skills.truncate(24);
+        out.extend(skills);
+    }
     out
 }
 
-pub(super) fn apply_skill_id(
+pub(super) fn apply_slash_item(
     draft: RwSignal<String>,
     selected_idx: RwSignal<usize>,
     menu_dismissed: RwSignal<bool>,
     composer_input_ref: NodeRef<Textarea>,
-    id: &str,
+    item: &SlashMenuItem,
 ) {
-    menu_dismissed.set(false);
-    let next = format!("/{id} ");
+    let next = item.insert.clone();
     draft.set(next.clone());
     selected_idx.set(0);
+    menu_dismissed.set(true);
     if let Some(ta) = composer_input_ref.get() {
         let _ = ta.focus();
         let len = next.chars().count() as u32;
@@ -49,7 +145,7 @@ pub(super) fn apply_skill_id(
 #[derive(Clone, Copy)]
 pub(super) struct SlashMenuSignals {
     pub menu_open: Memo<bool>,
-    pub filtered: Memo<Vec<SkillListItem>>,
+    pub filtered: Memo<Vec<SlashMenuItem>>,
     pub skills_cache: RwSignal<Option<SkillsListData>>,
     pub skills_loading: RwSignal<bool>,
     pub skills_err: RwSignal<Option<String>>,
@@ -75,15 +171,10 @@ pub(super) fn install_slash_menu_effects(
     let filtered = Memo::new(move |_| {
         let draft_now = draft.get();
         let Some(prefix) = slash_skill_prefix(&draft_now) else {
-            return Vec::<SkillListItem>::new();
+            return Vec::<SlashMenuItem>::new();
         };
-        let Some(cache) = skills_cache.get() else {
-            return Vec::new();
-        };
-        if !cache.enabled {
-            return Vec::new();
-        }
-        filter_skills(&cache.skills, prefix)
+        let loc = locale.get();
+        build_filtered_menu(prefix, loc, skills_cache.get().as_ref())
     });
 
     Effect::new(move |_| {
@@ -163,7 +254,7 @@ pub(super) fn handle_slash_menu_keydown(
     draft: RwSignal<String>,
     composer_input_ref: NodeRef<Textarea>,
 ) -> bool {
-    if !slash.menu_open.get_untracked() {
+    if keydown_is_ime_composing(ev) || !slash.menu_open.get_untracked() {
         return false;
     }
     let key = ev.key();
@@ -194,12 +285,12 @@ pub(super) fn handle_slash_menu_keydown(
     if key == "Tab" || (key == "Enter" && !ev.shift_key()) {
         ev.prevent_default();
         if let Some(item) = items.get(slash.selected_idx.get_untracked()) {
-            apply_skill_id(
+            apply_slash_item(
                 draft,
                 slash.selected_idx,
                 slash.menu_dismissed,
                 composer_input_ref,
-                &item.id,
+                item,
             );
         }
         return true;
@@ -228,6 +319,18 @@ pub(super) fn ComposerSlashMenu(
     }
 }
 
+fn slash_empty_hint(locale: Locale, cache: Option<&SkillsListData>, loading: bool) -> &'static str {
+    if loading && cache.is_none() {
+        return i18n::composer_slash_menu_loading(locale);
+    }
+    if let Some(c) = cache
+        && !c.enabled
+    {
+        return i18n::composer_slash_menu_skills_disabled(locale);
+    }
+    i18n::composer_slash_menu_empty(locale)
+}
+
 fn slash_menu_body(
     locale: RwSignal<Locale>,
     slash: SlashMenuSignals,
@@ -241,64 +344,162 @@ fn slash_menu_body(
     let selected_idx = slash.selected_idx;
     let menu_dismissed = slash.menu_dismissed;
 
-    if skills_loading.get() && skills_cache.get().is_none() {
-        return view! {
-            <div class="composer-slash-menu-empty">
-                {move || i18n::composer_slash_menu_loading(locale.get())}
-            </div>
-        }
-        .into_any();
-    }
-    if let Some(err) = skills_err.get() {
-        return view! {
-            <div class="composer-slash-menu-empty">{err}</div>
-        }
-        .into_any();
-    }
+    let loc = locale.get();
+    let cache = skills_cache.get();
+    let loading = skills_loading.get();
+    let err = skills_err.get();
     let items = filtered.get();
+
+    // 内建命令可立刻展示；仅在「尚无任何可选项」时显示空态（加载中也先等一帧内建列表）。
     if items.is_empty() {
+        let hint = slash_empty_hint(loc, cache.as_ref(), loading);
         return view! {
-            <div class="composer-slash-menu-empty">
-                {move || i18n::composer_slash_menu_empty(locale.get())}
-            </div>
+            <div class="composer-slash-menu-empty">{hint}</div>
         }
         .into_any();
     }
+
+    let mut views: Vec<AnyView> = Vec::new();
+    if let Some(err) = err {
+        views.push(
+            view! { <div class="composer-slash-menu-banner composer-slash-menu-banner--err">{err}</div> }
+                .into_any(),
+        );
+    } else if loading && cache.is_none() {
+        views.push(
+            view! {
+                <div class="composer-slash-menu-banner">
+                    {i18n::composer_slash_menu_loading(loc)}
+                </div>
+            }
+            .into_any(),
+        );
+    } else if let Some(ref c) = cache
+        && !c.enabled
+    {
+        views.push(
+            view! {
+                <div class="composer-slash-menu-banner">
+                    {i18n::composer_slash_menu_skills_disabled(loc)}
+                </div>
+            }
+            .into_any(),
+        );
+    }
+
+    let has_builtin = items.iter().any(|i| i.kind == SlashItemKind::Builtin);
+    let has_skill = items.iter().any(|i| i.kind == SlashItemKind::Skill);
+    let show_sections = has_builtin && has_skill;
     let sel = selected_idx.get();
-    items
-        .into_iter()
-        .enumerate()
-        .map(|(i, item)| {
-            let id = item.id.clone();
-            let id_btn = id.clone();
-            let desc = item.description.clone();
-            let path = item.path.clone();
-            let active = i == sel;
+    let mut last_kind: Option<SlashItemKind> = None;
+
+    for (i, item) in items.into_iter().enumerate() {
+        if show_sections && last_kind != Some(item.kind) {
+            let title = match item.kind {
+                SlashItemKind::Builtin => i18n::composer_slash_section_commands(loc),
+                SlashItemKind::Skill => i18n::composer_slash_section_skills(loc),
+            };
+            views.push(
+                view! { <div class="composer-slash-menu-section" role="presentation">{title}</div> }
+                    .into_any(),
+            );
+            last_kind = Some(item.kind);
+        }
+        let active = i == sel;
+        let item_btn = item.clone();
+        let kind_class = match item.kind {
+            SlashItemKind::Builtin => "composer-slash-menu-item composer-slash-menu-item--builtin",
+            SlashItemKind::Skill => "composer-slash-menu-item composer-slash-menu-item--skill",
+        };
+        views.push(
             view! {
                 <button
                     type="button"
-                    class="composer-slash-menu-item"
+                    class=kind_class
                     class:composer-slash-menu-item--active=active
                     role="option"
                     prop:aria-selected=active
                     on:mousedown=move |ev| {
                         ev.prevent_default();
-                        apply_skill_id(
+                        apply_slash_item(
                             draft,
                             selected_idx,
                             menu_dismissed,
                             composer_input_ref,
-                            &id_btn,
+                            &item_btn,
                         );
                     }
                 >
-                    <span class="composer-slash-menu-id">{format!("/{id}")}</span>
-                    <span class="composer-slash-menu-desc">
-                        {if desc.is_empty() { path } else { desc }}
-                    </span>
+                    <span class="composer-slash-menu-id">{item.label.clone()}</span>
+                    <span class="composer-slash-menu-desc">{item.description.clone()}</span>
                 </button>
             }
-        })
-        .collect_view()
-        .into_any()
+            .into_any(),
+        );
+    }
+
+    views.collect_view().into_any()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn slash_prefix_rejects_whitespace_and_extra_slash() {
+        assert_eq!(slash_skill_prefix("/"), Some(""));
+        assert_eq!(slash_skill_prefix("/skills"), Some("skills"));
+        assert_eq!(slash_skill_prefix("  /ab"), Some("ab"));
+        assert!(slash_skill_prefix("/skills list").is_none());
+        assert!(slash_skill_prefix("/a/b").is_none());
+        assert!(slash_skill_prefix("hi").is_none());
+    }
+
+    #[test]
+    fn builtins_always_available_without_cache() {
+        let items = build_filtered_menu("", Locale::ZhHans, None);
+        assert!(items.iter().any(|i| i.insert == "/skills"));
+        assert!(items.iter().any(|i| i.insert == "/skills list"));
+        assert!(items.iter().all(|i| i.kind == SlashItemKind::Builtin));
+    }
+
+    #[test]
+    fn filter_prefix_matches_builtin_and_skill() {
+        let cache = SkillsListData {
+            enabled: true,
+            skills_dir: ".crabmate/skills".into(),
+            skills: vec![SkillListItem {
+                id: "cpp-programming".into(),
+                name: None,
+                description: "C++ tips".into(),
+                path: "x".into(),
+            }],
+            error: None,
+        };
+        let items = build_filtered_menu("sk", Locale::En, Some(&cache));
+        assert!(items.iter().any(|i| i.insert == "/skills"));
+        assert!(items.iter().any(|i| i.insert == "/skills list"));
+        assert!(!items.iter().any(|i| i.kind == SlashItemKind::Skill));
+
+        let items = build_filtered_menu("cpp", Locale::En, Some(&cache));
+        assert!(items.iter().all(|i| i.kind == SlashItemKind::Skill));
+        assert_eq!(items[0].insert, "/cpp-programming ");
+    }
+
+    #[test]
+    fn disabled_skills_omit_skill_rows() {
+        let cache = SkillsListData {
+            enabled: false,
+            skills_dir: ".crabmate/skills".into(),
+            skills: vec![SkillListItem {
+                id: "x".into(),
+                name: None,
+                description: String::new(),
+                path: "x".into(),
+            }],
+            error: None,
+        };
+        let items = build_filtered_menu("", Locale::En, Some(&cache));
+        assert!(items.iter().all(|i| i.kind == SlashItemKind::Builtin));
+    }
 }
