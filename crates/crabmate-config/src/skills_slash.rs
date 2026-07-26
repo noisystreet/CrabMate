@@ -38,25 +38,17 @@ pub fn is_reserved_slash_head(head: &str) -> bool {
     )
 }
 
-/// 可供 `/<id>` 调用的标识：优先 frontmatter `name`，否则文件名 stem。
+/// 可供 `/<id>` 调用的标识：优先 frontmatter `name`，否则路径 stem
+///（平铺 `foo.md` → `foo`；`<id>/SKILL.md` → 父目录名）。
 pub fn skill_callable_id(doc: &SkillDoc) -> String {
     if let Some(n) = doc.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         return n.to_string();
     }
-    Path::new(&doc.display_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| "skill".to_string())
+    super::skills::skill_path_stem(&doc.display_path).unwrap_or_else(|| "skill".to_string())
 }
 
 fn skill_stem(doc: &SkillDoc) -> Option<String> {
-    Path::new(&doc.display_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
+    super::skills::skill_path_stem(&doc.display_path)
 }
 
 /// Skill `/` 解析失败（用户可见文案经 [`Display`]；Web 经 [`SkillSlashError::into_turn_err`] 打标）。
@@ -456,5 +448,39 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, "alpha");
         assert!(entries[0].description.contains("Alpha skill"));
+    }
+
+    #[test]
+    fn nested_skill_md_layout_resolves_by_dir_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let skills = tmp.path().join(".crabmate/skills");
+        let nested = skills.join("cpp-programming");
+        write_skill(
+            &nested,
+            "SKILL.md",
+            "# C++ 编程规范与技巧\n\nUse modern C++.\n",
+        );
+        write_skill(
+            &skills,
+            "flat.md",
+            "---\nname: flat-skill\n---\nflat body\n",
+        );
+        let docs = crate::skills::list_skills_from_base(tmp.path(), ".crabmate/skills").unwrap();
+        assert_eq!(docs.len(), 2);
+
+        let by_dir =
+            resolve_skill_by_id(tmp.path(), ".crabmate/skills", "cpp-programming").unwrap();
+        assert!(by_dir.content.contains("C++"));
+        assert_eq!(skill_callable_id(&by_dir), "cpp-programming");
+
+        let entries = list_skill_catalog_entries(tmp.path(), ".crabmate/skills").unwrap();
+        let ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
+        assert!(ids.contains(&"cpp-programming"));
+        assert!(ids.contains(&"flat-skill"));
+        assert!(
+            entries
+                .iter()
+                .any(|e| e.id == "cpp-programming" && e.description.contains("C++"))
+        );
     }
 }

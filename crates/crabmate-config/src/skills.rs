@@ -33,6 +33,32 @@ fn is_markdown_file(path: &Path) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
 }
 
+/// Cursor 同形：`<skills_dir>/<id>/SKILL.md`（文件名大小写不敏感）。
+fn is_skill_md_basename(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|s| s.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case("SKILL.md"))
+}
+
+/// 无 frontmatter `name` 时用于 `/<id>` 的 stem：平铺 `foo.md` → `foo`；`<id>/SKILL.md` → 父目录名。
+pub(crate) fn skill_path_stem(display_path: &str) -> Option<String> {
+    let path = Path::new(display_path);
+    if is_skill_md_basename(path) {
+        return path
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string);
+    }
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
 fn parse_frontmatter_scalar(rest: &str) -> Option<String> {
     let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
     if v.is_empty() {
@@ -146,6 +172,65 @@ fn resolve_skills_dir(base_dir: &Path, skills_dir: &str) -> Result<PathBuf, Stri
     Ok(dir_path)
 }
 
+/// Cursor 同形：`<id>/SKILL.md`（同目录多个大小写变体时取排序后第一个）。
+fn find_nested_skill_md(skill_dir: &Path) -> Option<PathBuf> {
+    let Ok(sub_entries) = std::fs::read_dir(skill_dir) else {
+        return None;
+    };
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for sub in sub_entries {
+        let Ok(sub) = sub else {
+            continue;
+        };
+        let p = sub.path();
+        if p.is_file() && is_skill_md_basename(&p) {
+            candidates.push(p);
+        }
+    }
+    candidates.sort();
+    candidates.into_iter().next()
+}
+
+fn collect_skill_file_paths(dir_path: &Path) -> Result<Vec<PathBuf>, String> {
+    let mut skill_files: Vec<PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(dir_path)
+        .map_err(|e| format!("无法读取 skills_dir \"{}\": {}", dir_path.display(), e))?
+    {
+        let Ok(entry) = entry else {
+            continue;
+        };
+        let child = entry.path();
+        if child.is_file() && is_markdown_file(&child) {
+            skill_files.push(child);
+        } else if child.is_dir()
+            && let Some(p) = find_nested_skill_md(&child)
+        {
+            skill_files.push(p);
+        }
+    }
+    skill_files.sort();
+    Ok(skill_files)
+}
+
+fn skill_doc_from_path(base_dir: &Path, path: &Path) -> Result<Option<SkillDoc>, String> {
+    let content = std::fs::read_to_string(path)
+        .map_err(|e| format!("无法读取技能文件 \"{}\": {}", path.display(), e))?;
+    if content.trim().is_empty() {
+        return Ok(None);
+    }
+    let display_path = path
+        .strip_prefix(base_dir)
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string());
+    let (name, description) = parse_skill_frontmatter(&content);
+    Ok(Some(SkillDoc {
+        display_path,
+        content,
+        name,
+        description,
+    }))
+}
+
 pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<SkillDoc>, String> {
     let dir_path = resolve_skills_dir(base_dir, skills_dir)?;
     if dir_path.exists() && !dir_path.is_dir() {
@@ -158,38 +243,12 @@ pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<Sk
         return Ok(Vec::new());
     }
 
-    let mut skill_files: Vec<PathBuf> = Vec::new();
-    for entry in std::fs::read_dir(&dir_path)
-        .map_err(|e| format!("无法读取 skills_dir \"{}\": {}", dir_path.display(), e))?
-    {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let child = entry.path();
-        if child.is_file() && is_markdown_file(&child) {
-            skill_files.push(child);
-        }
-    }
-    skill_files.sort();
-
+    let skill_files = collect_skill_file_paths(&dir_path)?;
     let mut out: Vec<SkillDoc> = Vec::new();
     for path in skill_files {
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| format!("无法读取技能文件 \"{}\": {}", path.display(), e))?;
-        if content.trim().is_empty() {
-            continue;
+        if let Some(doc) = skill_doc_from_path(base_dir, &path)? {
+            out.push(doc);
         }
-        let display_path = path
-            .strip_prefix(base_dir)
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| path.display().to_string());
-        let (name, description) = parse_skill_frontmatter(&content);
-        out.push(SkillDoc {
-            display_path,
-            content,
-            name,
-            description,
-        });
     }
     Ok(out)
 }
