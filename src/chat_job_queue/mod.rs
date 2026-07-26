@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::AppState;
 use crate::config::{AgentConfig, LlmHttpAuthMode, SharedAgentConfig};
 use crate::llm::ChatCompletionsBackend;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
@@ -17,6 +16,7 @@ use crate::per_turn_flight::PerTurnFlight;
 use crate::request_audit::WebRequestAudit;
 use crate::sse::SseStreamHub;
 use crate::types::{CommandApprovalDecision, LlmSeedOverride, Message, Tool};
+use crate::web::WebChatJobAppFacet;
 use log::debug;
 use tokio::sync::{Semaphore, mpsc, oneshot};
 
@@ -28,9 +28,9 @@ mod tests;
 
 const RECENT_CAP: usize = 32;
 
-/// Web 队列任务执行所需的**运行时句柄**（与 [`AppState`] 中会话/上传等字段解耦，便于单测与依赖边界清晰）。
+/// Web 队列任务执行所需的**运行时句柄**（与 [`crate::AppState`] 中会话/上传等字段解耦，便于单测与依赖边界清晰）。
 ///
-/// 会话落盘、审批会话表等仍经入队参数中的 [`Arc<AppState>`] 完成。
+/// 会话落盘、审批会话表等经入队参数中的 [`WebChatJobAppFacet`] 完成（不再持有整包 [`crate::AppState`]）。
 #[derive(Clone)]
 pub(crate) struct WebChatQueueDeps {
     pub cfg: SharedAgentConfig,
@@ -182,9 +182,10 @@ pub enum ChatJsonJobFailure {
 /// `POST /chat` 与 `/chat/stream` 入队任务共用的载荷（会话、消息、覆盖与审计）。
 pub struct WebChatJobEnvelope {
     pub job_id: u64,
-    /// 队列执行用 LLM/工具/hub 句柄（与 [`AppState`] 会话字段分离）。
+    /// 队列执行用 LLM/工具/hub 句柄（与 [`crate::AppState`] 会话字段分离）。
     pub queue_deps: Arc<WebChatQueueDeps>,
-    pub app: Arc<AppState>,
+    /// 会话落盘 / 审批清理 / `ProcessHandles`（[`WebChatJobAppFacet`]，非整包 AppState）。
+    pub app: WebChatJobAppFacet,
     pub conversation_id: String,
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,

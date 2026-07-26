@@ -17,6 +17,12 @@
 - 显式保留 **`pub use crabmate_internal::tool_sandbox`**（`main` 的 `tool-runner-internal`）。
 - 稳定对外面仍为显式 `pub use`：`run_agent_turn`、`load_config`、`build_tools*`、`ProcessHandles`、`ChatCompletionsBackend`、CLI 解析符号等。
 
+## 第 3 轮：AppState 消费面切片
+
+- 新增 **`WebChatJobAppFacet`**（`web/app_state`）：会话落盘 + 审批表 + `ProcessHandles`。
+- **`WebChatJobEnvelope.app`** 由 **`Arc<AppState>`** 改为 **`WebChatJobAppFacet`**；LTM 索引走已有 **`WebChatQueueDeps.long_term_memory`**。
+- 会话 load/save/truncate/delete/count 实现迁至 **`AppStateConversationRuntime`**；`AppState` 保留薄委托供 HTTP handler。
+
 ## 禁止边（门禁）
 
 见 **`scripts/check-crate-deps.sh`**：
@@ -30,5 +36,5 @@
 
 ## 后续（未做）
 
-- `AppState` 消费面切片
 - turn IO / `ProcessHandles` 瘦身
+- handler 侧 `FromRef` / 更细 facet（upload、config_reload 等）

@@ -9,7 +9,7 @@ use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 use crate::types::Message;
 
-use super::super::stream_finish::post_turn_web_prepare_and_save;
+use super::super::stream_finish::{PostTurnWebPrepareParams, post_turn_web_prepare_and_save};
 use super::super::{
     ChatJsonJobFailure, PerTurnFlight, WebChatJobEnvelope, resolve_executor_llm_for_job,
     resolve_web_llm_for_job,
@@ -124,21 +124,22 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
             conversation_id: conversation_id.as_str(),
             turn_allowed_tool_names: turn_allow,
             request_audit: std::sync::Arc::new(request_audit),
-            process_handles: Arc::clone(&app.aux.process_handles),
+            process_handles: Arc::clone(&app.process_handles),
         },
     ))
     .await;
     let (ok, cancelled, err) = match r {
         Ok(()) => {
-            match post_turn_web_prepare_and_save(
-                app.as_ref(),
-                &cfg_snap,
-                &conversation_id,
-                &mut messages,
+            match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
+                app: &app,
+                queue_deps: queue_deps.as_ref(),
+                cfg_snap: &cfg_snap,
+                conversation_id: &conversation_id,
+                messages: &mut messages,
                 expected_revision,
-                request_agent_role.as_deref(),
-                persisted_active_agent_role.as_deref(),
-            )
+                request_agent_role: request_agent_role.as_deref(),
+                persisted_active_agent_role: persisted_active_agent_role.as_deref(),
+            })
             .await
             {
                 crate::SaveConversationOutcome::Saved => {

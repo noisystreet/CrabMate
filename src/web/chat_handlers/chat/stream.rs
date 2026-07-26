@@ -273,7 +273,7 @@ async fn chat_stream_try_enqueue_job(
             envelope: chat_job_queue::WebChatJobEnvelope {
                 job_id,
                 queue_deps: state.chat.chat_queue_job_deps.clone(),
-                app: state.clone(),
+                app: state.chat_job_app_facet(),
                 conversation_id: p.conversation_id.clone(),
                 messages: turn_seed.messages,
                 expected_revision: turn_seed.expected_revision,

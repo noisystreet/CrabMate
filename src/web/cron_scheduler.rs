@@ -150,7 +150,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
             envelope: chat_job_queue::WebChatJobEnvelope {
                 job_id,
                 queue_deps: state.chat.chat_queue_job_deps.clone(),
-                app: state.clone(),
+                app: state.chat_job_app_facet(),
                 conversation_id: prepared.conversation_id,
                 messages: prepared.turn_seed.messages,
                 expected_revision: prepared.turn_seed.expected_revision,
