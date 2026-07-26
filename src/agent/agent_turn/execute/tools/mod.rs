@@ -62,10 +62,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub workspace_is_set: bool,
     /// 单轮 `read_file` 缓存；`None` 表示关闭。
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
-    pub out: Option<&'a mpsc::Sender<String>>,
-    pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    pub clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    /// SSE 控制面 / 钩子（与 [`crate::agent::agent_turn::RunLoopIo::control`] 同源）。
+    pub control: crate::agent::agent_turn::TurnControlSink<'a>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -94,10 +92,6 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     /// 与 [`crate::process_handles::TurnProcessHandles::readonly_tool_ttl_cache`] 同源。
     pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
-    /// 无 HTTP SSE 时镜像控制面（与 Web `SsePayload` 对齐）；Web 为 `None`。
-    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    /// SSE 编码器
-    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 pub(crate) use crabmate_agent::agent_turn::{
@@ -346,9 +340,7 @@ pub(crate) async fn per_execute_tools_web(
         effective_working_dir,
         workspace_is_set,
         read_file_turn_cache,
-        out,
-        tool_running_hook,
-        clarification_questionnaire_hook,
+        control,
         web_tool_ctx,
         cli_tool_ctx,
         echo_terminal_transcript,
@@ -366,8 +358,6 @@ pub(crate) async fn per_execute_tools_web(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
-        sse_control_mirror,
-        sse_encoder,
     } = ctx;
 
     let _tool_trace = request_chrome_trace
@@ -383,9 +373,9 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         read_file_turn_cache,
         workspace_changelist,
-        out,
-        tool_running_hook,
-        clarification_questionnaire_hook,
+        out: control.out,
+        tool_running_hook: control.tool_running_hook,
+        clarification_questionnaire_hook: control.clarification_questionnaire_hook,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_exec.command_max_output_len,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
@@ -404,8 +394,8 @@ pub(crate) async fn per_execute_tools_web(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
-        sse_control_mirror,
-        sse_encoder,
+        sse_control_mirror: control.sse_control_mirror,
+        sse_encoder: control.sse_encoder,
     })
     .await
 }

@@ -29,7 +29,7 @@ pub(crate) async fn record_and_emit_turn_route_decision(
         title.as_str(),
         detail.as_deref(),
     );
-    if let Some(out) = p.ctx.io.out {
+    if let Some(out) = p.ctx.io.control.out {
         let payload = SsePayload::TimelineLog {
             log: sse::protocol::TimelineLogBody {
                 kind: "orchestration_route".to_string(),

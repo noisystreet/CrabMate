@@ -114,7 +114,7 @@ pub(super) async fn map_reflect_outcome_to_branch_ctl(
             if let Some(f) = p.ctx.attach.per_flight.as_ref() {
                 f.sync_from_per_coord(per_coord);
             }
-            if let Some(tx) = p.ctx.io.out {
+            if let Some(tx) = p.ctx.io.control.out {
                 let _ = crate::sse::send_string_logged(
                     tx,
                     encode_message(SsePayload::Error(sse_plan_rewrite_exhausted_body(

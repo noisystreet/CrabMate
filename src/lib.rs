@@ -90,7 +90,7 @@ pub struct AgentTurnTransport<'a> {
     pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
-    /// 澄清问卷回调（与 [`crate::agent::agent_turn::RunLoopIo::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
+    /// 澄清问卷回调（与 [`crate::agent::agent_turn::TurnControlSink::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
     pub clarification_questionnaire_hook:
         Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 无 `/chat/stream` 通道时镜像 SSE 控制面（与 Web [`crate::sse::SsePayload`] 同形），供 TUI 等终端界面展示。
