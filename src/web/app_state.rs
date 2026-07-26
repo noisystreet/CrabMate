@@ -112,7 +112,7 @@ pub(crate) struct AppState {
 #[derive(Clone)]
 pub(crate) struct WebChatJobAppFacet {
     pub(crate) conversation: AppStateConversationRuntime,
-    pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
+    pub(crate) process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
 }
 
@@ -121,7 +121,7 @@ impl AppState {
     pub(crate) fn chat_job_app_facet(&self) -> WebChatJobAppFacet {
         WebChatJobAppFacet {
             conversation: self.conversation.clone(),
-            process_handles: Arc::clone(&self.aux.process_handles),
+            process_handles: self.aux.process_handles.turn_handles_arc(),
             approval_sessions: Arc::clone(&self.aux.approval_sessions),
         }
     }

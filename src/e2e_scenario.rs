@@ -530,7 +530,7 @@ async fn run_single_agent_turn(
         turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles(),
+        process_handles: ProcessHandles::default_arc_process_handles().turn_handles_arc(),
     };
 
     let result = run_agent_turn(params).await;

@@ -23,6 +23,12 @@
 - **`WebChatJobEnvelope.app`** 由 **`Arc<AppState>`** 改为 **`WebChatJobAppFacet`**；LTM 索引走已有 **`WebChatQueueDeps.long_term_memory`**。
 - 会话 load/save/truncate/delete/count 实现迁至 **`AppStateConversationRuntime`**；`AppState` 保留薄委托供 HTTP handler。
 
+## 第 4 轮：turn IO / ProcessHandles 瘦身
+
+- 新增 **`TurnProcessHandles`**：变更集注册表、工具统计、handler、沙盒、只读 TTL。
+- **`RunAgentTurnParams`** / **`RunLoopObs`** / **`WebChatJobAppFacet`** 改为持 **`Arc<TurnProcessHandles>`**（经 **`ProcessHandles::turn_handles_arc`**）。
+- 完整 **`ProcessHandles`** 仍留在 **`AppState` / CLI / TUI**（侧栏任务、CLI LTM）。
+
 ## 禁止边（门禁）
 
 见 **`scripts/check-crate-deps.sh`**：
@@ -36,5 +42,4 @@
 
 ## 后续（未做）
 
-- turn IO / `ProcessHandles` 瘦身
 - handler 侧 `FromRef` / 更细 facet（upload、config_reload 等）

@@ -105,7 +105,7 @@ pub(crate) async fn run_agent_turn_for_cli(
             long_term_memory: ltm.clone(),
             long_term_memory_scope_id: scope.clone(),
             turn_allowed_tool_names: turn_allow,
-            process_handles,
+            process_handles: process_handles.turn_handles_arc(),
             sse_control_mirror,
         },
     ))

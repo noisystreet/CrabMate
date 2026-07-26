@@ -38,6 +38,7 @@ mod llm;
 mod meta_dialogue;
 mod per_turn_flight;
 pub use process_handles::ProcessHandles;
+pub use process_handles::TurnProcessHandles;
 mod request_audit;
 mod shutdown;
 
@@ -147,8 +148,8 @@ pub struct RunAgentTurnParams<'a> {
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
     /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
     pub request_audit: Option<Arc<WebRequestAudit>>,
-    /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::ProcessHandles::default_arc_process_handles`]）。
-    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::TurnProcessHandles::default_arc`]；完整袋见 [`ProcessHandles`]）。
+    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
@@ -175,7 +176,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub out: &'a mpsc::Sender<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
-    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
@@ -199,7 +200,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub conversation_id: &'a str,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
-    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
 }
 pub struct CliTerminalChatBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
@@ -220,7 +221,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub long_term_memory_scope_id: Option<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// TUI：SSE 控制面镜像（与 Web `SsePayload` 对齐）；`repl` / `chat` 为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
 }
@@ -240,7 +241,7 @@ struct WebChatJobCommonParts<'a> {
     turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
-    process_handles: Arc<crate::process_handles::ProcessHandles>,
+    process_handles: Arc<crate::process_handles::TurnProcessHandles>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
@@ -514,7 +515,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names: None,
             tracing_chat_turn: None,
             request_audit: None,
-            process_handles: crate::process_handles::ProcessHandles::default_arc_process_handles(),
+            process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
         }
     }
 }

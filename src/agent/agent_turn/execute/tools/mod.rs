@@ -92,7 +92,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// 与 `process_handles.handler_lookup` 同源（随 `RunLoopCtx` 注入，避免在批处理中再借 `process_handles`）。
     pub handler_lookup: crate::tool_registry::HandlerLookupTable,
     pub sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
-    /// 与 [`crate::process_handles::ProcessHandles::readonly_tool_ttl_cache`] 同源。
+    /// 与 [`crate::process_handles::TurnProcessHandles::readonly_tool_ttl_cache`] 同源。
     pub readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
     /// 无 HTTP SSE 时镜像控制面（与 Web `SsePayload` 对齐）；Web 为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,

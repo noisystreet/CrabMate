@@ -4,7 +4,7 @@
 //! - [`RunLoopCore`]：LLM 接入、配置快照、工具表与工作目录；
 //! - [`RunLoopIo`]：SSE/终端流式、取消与 CLI/TUI 回调；
 //! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆、分阶段冻结开关；
-//! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::ProcessHandles`]。
+//! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::TurnProcessHandles`]。
 //!
 //! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（私有 **`messages_buf`**、**`messages()`** / **`messages_buffer_mut()`**、**`messages_revision`**、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
 //!
@@ -101,8 +101,8 @@ pub(crate) struct RunLoopObs {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web：HTTP 审计；非 Web 为 `None`。
     pub request_audit: Option<Arc<WebRequestAudit>>,
-    /// 进程句柄：工具统计记录器等（与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
-    pub process_handles: Arc<crate::process_handles::ProcessHandles>,
+    /// 回合句柄：工具统计记录器等（[`TurnProcessHandles`](crate::process_handles::TurnProcessHandles)；与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
+    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// per-step trace sink（bench/e2e 注入；`None` 时零开销）。
     /// 由 [`crate::AgentTurnTransport::trace_sink`] 传入，供 LLM 请求/响应、工具调用前后 emit
     /// [`crabmate_llm::TraceEvent`]。
