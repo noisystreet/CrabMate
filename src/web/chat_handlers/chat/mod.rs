@@ -24,8 +24,8 @@ use crate::types::{CommandApprovalDecision, filter_messages_for_web_client_snaps
 use crate::web::app_state::AppState;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
-    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesQuery,
-    ConversationMessagesResponseBody,
+    ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesHttpResponse,
+    ConversationMessagesQuery,
 };
 
 use builtin_skills::run_web_builtin_command;
@@ -219,7 +219,7 @@ pub(crate) async fn chat_branch_handler(
 pub(crate) async fn conversation_messages_handler(
     State(state): State<Arc<AppState>>,
     Query(q): Query<ConversationMessagesQuery>,
-) -> Result<Json<ConversationMessagesResponseBody>, (StatusCode, Json<ApiError>)> {
+) -> Result<Json<ConversationMessagesHttpResponse>, (StatusCode, Json<ApiError>)> {
     let conversation_id =
         normalize_client_conversation_id(Some(&q.conversation_id)).map_err(|msg| {
             (
@@ -283,7 +283,7 @@ pub(crate) async fn conversation_messages_handler(
             &cfg,
             &seed.messages,
         );
-    Ok(Json(ConversationMessagesResponseBody {
+    Ok(Json(ConversationMessagesHttpResponse {
         conversation_id: cid,
         revision,
         active_agent_role,

@@ -44,5 +44,4 @@
 ## 后续（未做）
 
 - handler 侧剩余宽入口（chat/stream/async）逐步 facet 化——见 **`docs/design/web_host_extract.md`**
-- **`crabmate-web-host`**：继续迁 `http_types` / routes / handlers / `chat_job_queue`（阶段 B）
-- 根包 `serve` 仅装配（阶段 C）
+- 若未来打断 `chat_job_queue → run_agent_turn` 循环依赖（例如 turn runner 注入），再评估将更多 handler 迁入 **`crabmate-web-host`**
