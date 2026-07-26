@@ -1,0 +1,12 @@
+[package]
+name = "crabmate-approval"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Sensitive-tool Web approval types and SSE round (shared by workflow and tool_registry)"
+
+[dependencies]
+crabmate-sse-protocol = { workspace = true }
+crabmate-types = { workspace = true }
+log = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }

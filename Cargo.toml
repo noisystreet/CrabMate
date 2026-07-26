@@ -11,6 +11,7 @@ members = [
     "crates/crabmate-turn-layout",
     "crates/crabmate-im-bridge",
     "crates/crabmate-types",
+    "crates/crabmate-approval",
     "crates/crabmate-config",
     "crates/crabmate-llm",
     "crates/crabmate-agent",
@@ -27,6 +28,7 @@ resolver = "2"
 # Workspace crates
 cmd_mate = { path = "crates/cmd_mate" }
 crabmate-agent = { path = "crates/crabmate-agent", default-features = false }
+crabmate-approval = { path = "crates/crabmate-approval" }
 crabmate-benchmark = { path = "crates/crabmate-benchmark" }
 crabmate-runtime = { path = "crates/crabmate-runtime" }
 crabmate-config = { path = "crates/crabmate-config", default-features = false }

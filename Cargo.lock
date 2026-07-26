@@ -1111,6 +1111,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-approval"
+version = "0.1.0"
+dependencies = [
+ "crabmate-sse-protocol",
+ "crabmate-types",
+ "log",
+ "tokio",
+]
+
+[[package]]
 name = "crabmate-benchmark"
 version = "0.1.0"
 dependencies = [
@@ -1188,6 +1198,7 @@ dependencies = [
  "async-trait",
  "bollard",
  "cmd_mate",
+ "crabmate-approval",
  "crabmate-config",
  "crabmate-dsml",
  "crabmate-llm",
@@ -1419,8 +1430,8 @@ dependencies = [
 name = "crabmate-workflow"
 version = "0.1.0"
 dependencies = [
+ "crabmate-approval",
  "crabmate-config",
- "crabmate-internal",
  "crabmate-tools",
  "crabmate-types",
  "futures-util",
