@@ -7,13 +7,17 @@
 #![recursion_limit = "512"]
 
 pub mod agent;
-pub use crabmate_internal::{
-    agent_errors, agent_role_turn, agent_turn_prep, cargo_metadata, clarification_questionnaire,
-    clarification_questionnaire_body_if_tool_ok, context_bootstrap, dsml, dynamic_tools, health,
-    health_dep_compat, mcp, memory, memory_tool_hosts, observability, process_handles,
-    read_file_turn_cache, readonly_tool_ttl_cache, redact, request_chrome_trace, text_encoding,
-    text_util, tool_approval, tool_call_explain, tool_registry, tool_result, tool_sandbox,
-    tool_stats, tools, user_message_file_refs, web_static_dir, workspace,
+/// Docker 沙盒内 `tool-runner-internal` 入口；二进制与 `main` 经此路径调用。
+pub use crabmate_internal::tool_sandbox;
+/// `crabmate-internal` 门面：仅本包（及同 crate 集成路径）可见，避免把服务内部模块整包升格为公共 API。
+/// 稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
+pub(crate) use crabmate_internal::{
+    agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire,
+    clarification_questionnaire_body_if_tool_ok, context_bootstrap, dsml, health, mcp, memory,
+    memory_tool_hosts, observability, process_handles, read_file_turn_cache,
+    readonly_tool_ttl_cache, redact, request_chrome_trace, text_encoding, text_util, tool_approval,
+    tool_call_explain, tool_registry, tool_result, tool_stats, tools, user_message_file_refs,
+    web_static_dir, workspace,
 };
 /// SSE 控制面协议与运行时（原 `crabmate_internal::sse`，已迁移至 `crabmate-sse-protocol`）。
 pub use crabmate_sse_protocol::sse;
