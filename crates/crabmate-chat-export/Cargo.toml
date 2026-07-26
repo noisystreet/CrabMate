@@ -1,0 +1,11 @@
+[package]
+name = "crabmate-chat-export"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared chat session export schema and Markdown helpers (CLI/TUI/Web/WASM)"
+
+[dependencies]
+crabmate-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

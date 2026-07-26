@@ -1,6 +1,7 @@
-//! 浏览器内导出会话：JSON 与 `runtime/chat_export::ChatSessionFile` 对齐（`schema` / `schema_version` / `version`）；
-//! Markdown 与 CLI `messages_to_markdown` 语义对齐（跳过纯 system，工具卡为「工具」段）。
+//! 浏览器内导出会话：schema 常量与 Markdown 标题来自 [`crabmate_chat_export`]（与 CLI/TUI 同源）；
+//! 消息体为展示投影（瘦 [`ExportMessage`]），下载壳为浏览器 / Tauri。
 
+use crabmate_chat_export::{ExportMdLocale, markdown_from_role_bodies};
 use gloo_timers::callback::Timeout;
 use serde::Serialize;
 use wasm_bindgen::JsCast;
@@ -11,6 +12,10 @@ use crate::i18n::Locale;
 use crate::message_format::{message_text_for_display_ex, stored_tool_message_detail_text};
 use crate::storage::{ChatSession, StoredMessage};
 use crate::visible_messages::{VisibleMessageScope, visible_message_indices};
+
+pub use crabmate_chat_export::{
+    CHAT_EXPORT_SCHEMA_ID, CHAT_EXPORT_SCHEMA_VERSION, CHAT_SESSION_FILE_VERSION,
+};
 
 #[wasm_bindgen(inline_js = r#"
 export function invokeTauriSaveTextFile(defaultName, body) {
@@ -60,14 +65,12 @@ pub(crate) async fn tauri_pick_workspace_folder() -> Result<Option<String>, Stri
     }
 }
 
-/// 须与 `src/runtime/chat_export.rs` 中 `CHAT_SESSION_FILE_VERSION` 一致。
-pub const CHAT_SESSION_FILE_VERSION: u32 = 1;
-
-/// 须与 `src/runtime/chat_export.rs` 中 `CHAT_EXPORT_SCHEMA_ID` 一致。
-pub const CHAT_EXPORT_SCHEMA_ID: &str = "crabmate.chat_session";
-
-/// 须与 `src/runtime/chat_export.rs` 中 `CHAT_EXPORT_SCHEMA_VERSION` 一致。
-pub const CHAT_EXPORT_SCHEMA_VERSION: &str = "1.0.0";
+fn export_md_locale(loc: Locale) -> ExportMdLocale {
+    match loc {
+        Locale::ZhHans => ExportMdLocale::ZhHans,
+        Locale::En => ExportMdLocale::En,
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ExportMessage {
@@ -163,30 +166,16 @@ fn message_text_for_export(
     body
 }
 
-fn markdown_sections_for_export(messages: &[ExportMessage], loc: Locale) -> String {
-    // session.messages 顺序由 TurnLayout 实时保证（assistant → tools → next_assistant），不需要事后重排。
-    let mut md = String::new();
-    for m in messages {
-        let role = m.role.as_str();
-        if role == "system" {
-            continue;
-        }
-        let heading = match role {
-            "user" => crate::i18n::export_md_heading_user(loc),
-            "assistant" => crate::i18n::export_md_heading_assistant(loc),
-            "tool" => crate::i18n::export_md_heading_tool(loc),
-            "system" => crate::i18n::export_md_heading_timeline(loc),
-            _ => crate::i18n::export_md_heading_other(loc),
-        };
-        md.push_str(heading);
-        md.push_str("\n\n");
-        md.push_str(m.content.as_deref().unwrap_or(""));
-        md.push_str("\n\n");
-    }
-    md
+/// session.messages 顺序由 TurnLayout 实时保证（assistant → tools → next_assistant），不需要事后重排。
+fn markdown_from_export_messages(title: &str, messages: &[ExportMessage], loc: Locale) -> String {
+    let pairs: Vec<(&str, &str)> = messages
+        .iter()
+        .map(|m| (m.role.as_str(), m.content.as_deref().unwrap_or("")))
+        .collect();
+    markdown_from_role_bodies(title, pairs, export_md_locale(loc))
 }
 
-/// 与 `chat_export::messages_to_markdown` 一致：跳过 `system`；`tool` 与 `user`/`assistant` 分段。
+/// 与 CLI `messages_to_markdown` 一致：跳过 `system`；`tool` 与 `user`/`assistant` 分段。
 pub fn session_to_markdown(
     session: &ChatSession,
     loc: Locale,
@@ -194,9 +183,11 @@ pub fn session_to_markdown(
 ) -> String {
     let messages =
         stored_messages_to_export(&session.messages, loc, apply_assistant_display_filters);
-    let mut md = String::from(crate::i18n::export_md_title_full(loc));
-    md.push_str(&markdown_sections_for_export(&messages, loc));
-    md
+    markdown_from_export_messages(
+        crabmate_chat_export::export_md_title_full(export_md_locale(loc)),
+        &messages,
+        loc,
+    )
 }
 
 /// 按会话内顺序导出**已选 id** 对应的消息（与全会话 Markdown 规则相同；未选中的 id 忽略）。
@@ -216,9 +207,11 @@ pub fn stored_messages_by_ids_to_markdown(
         .cloned()
         .collect();
     let messages = stored_messages_to_export(&subset, loc, apply_assistant_display_filters);
-    let mut md = String::from(crate::i18n::export_md_title_selection(loc));
-    md.push_str(&markdown_sections_for_export(&messages, loc));
-    md
+    markdown_from_export_messages(
+        crabmate_chat_export::export_md_title_selection(export_md_locale(loc)),
+        &messages,
+        loc,
+    )
 }
 
 pub fn export_filename_stem(prefix: &str) -> String {

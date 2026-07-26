@@ -1136,6 +1136,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "crabmate-chat-export"
+version = "0.1.0"
+dependencies = [
+ "crabmate-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "crabmate-config"
 version = "0.1.0"
 dependencies = [
@@ -1283,6 +1292,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "crabmate-agent",
+ "crabmate-chat-export",
  "crabmate-display-rules",
  "crabmate-tool-card",
  "crabmate-tools",
@@ -1395,10 +1405,12 @@ dependencies = [
  "ammonia",
  "async-trait",
  "console_error_panic_hook",
+ "crabmate-chat-export",
  "crabmate-display-rules",
  "crabmate-sse-protocol",
  "crabmate-tool-card",
  "crabmate-turn-layout",
+ "crabmate-types",
  "futures-util",
  "gloo-timers",
  "js-sys",

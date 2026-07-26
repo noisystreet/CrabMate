@@ -7,10 +7,10 @@
 mod display;
 mod plain;
 mod stored_message;
-mod strip_ansi;
 mod tool_card;
 mod tool_envelope;
 
+pub(crate) use crabmate_tool_card::strip_ansi_codes;
 #[cfg(test)]
 pub(crate) use display::assistant_text_for_display;
 pub(crate) use display::{
@@ -22,7 +22,6 @@ pub(crate) use display::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
 };
 pub(crate) use stored_message::tool_stored_text_from_result_info;
-pub(crate) use strip_ansi::strip_ansi_codes;
 pub(crate) use tool_envelope::{
     format_tool_role_content_for_stored_message, stored_tool_message_compact_text,
     stored_tool_message_detail_text, tool_result_info_from_stored_content,
