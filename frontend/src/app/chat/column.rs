@@ -423,6 +423,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
         draft,
         composer_mirror_html,
         composer_mirror_scroll_top,
+        workspace_path,
     } = signals;
 
     view! {
@@ -448,6 +449,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                         composer_mirror_scroll_top=composer_mirror_scroll_top
                         run_send_message=run_send_message.clone()
                         locale=locale
+                        workspace_path=workspace_path
                     />
                     <div class="composer-bar-actions">
                         <label

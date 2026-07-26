@@ -354,6 +354,27 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     "error": { "type": "string", "nullable": true }
                 }
             },
+            "SkillListItem": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string", "nullable": true },
+                    "description": { "type": "string" },
+                    "path": { "type": "string" }
+                }
+            },
+            "SkillsListResponse": {
+                "type": "object",
+                "properties": {
+                    "enabled": { "type": "boolean" },
+                    "skills_dir": { "type": "string" },
+                    "skills": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/SkillListItem" }
+                    },
+                    "error": { "type": "string", "nullable": true }
+                }
+            },
             "WorkspaceChangelogResponse": {
                 "type": "object",
                 "properties": {

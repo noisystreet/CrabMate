@@ -167,11 +167,17 @@ async fn chat_stream_build_turn_seed(
     )
     .await
     .map_err(|e| {
+        let (code, message) =
+            if let Some(msg) = crate::config::skills_slash::SkillSlashError::strip_turn_err(&e) {
+                ("SKILL_INVOKE_FAILED", msg.to_string())
+            } else {
+                ("INVALID_AGENT_ROLE", e)
+            };
         (
             StatusCode::BAD_REQUEST,
             Json(ApiError {
-                code: "INVALID_AGENT_ROLE",
-                message: e,
+                code,
+                message,
                 reason_code: None,
             }),
         )

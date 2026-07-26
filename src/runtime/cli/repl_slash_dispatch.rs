@@ -40,8 +40,27 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
             ReplSlashHandled::Handled
         }
         ReplBuiltIn::Unknown(head) => {
-            let _ = style.eprint_error(&format!("未知命令 /{head}。输入 /help 查看列表。"));
-            ReplSlashHandled::Handled
+            let cfg = cfg_holder.read().await;
+            match crate::config::skills_slash::prepare_user_message_for_skills(
+                // 整行由外层传入；此处仅用 head 探测——实际用 messages 路径会再 prepare。
+                // 用假输入 /head 探测是否为 skill。
+                &format!("/{head}"),
+                work_dir.as_path(),
+                cfg.skills.skills_dir.as_str(),
+                cfg.skills.skills_enabled,
+            ) {
+                Ok(p) if p.forced_skill.is_some() => ReplSlashHandled::NotSlash,
+                Ok(_) => {
+                    let _ = style.eprint_error(&format!(
+                        "未知命令 /{head}。输入 /help 查看内建命令；skill 用 /skills list 查看可调用 id。"
+                    ));
+                    ReplSlashHandled::Handled
+                }
+                Err(e) => {
+                    let _ = style.eprint_error(&e.to_string());
+                    ReplSlashHandled::Handled
+                }
+            }
         }
         ReplBuiltIn::Clear => {
             slash_clear(
@@ -350,10 +369,23 @@ async fn slash_skills_list(
             let _ = style.print_line("当前未发现 skills。");
         }
         Ok(files) => {
-            let _ = style.print_line(&format!("当前 skills（{}）：", files.len()));
+            let _ = style.print_line(&format!(
+                "当前 skills（{}）；对话中可用 `/<id> [任务]` 强制调用：",
+                files.len()
+            ));
             for f in files {
-                let name = f.name.as_deref().unwrap_or("未声明 name");
-                let _ = style.print_line(&format!("  - {} (name: {})", f.display_path, name));
+                let id = crate::config::skills_slash::skill_callable_id(&f);
+                let name = f.name.as_deref().unwrap_or("（无 frontmatter name）");
+                let desc = crate::config::skills::skill_ui_description(&f);
+                if desc.is_empty() {
+                    let _ = style
+                        .print_line(&format!("  - /{id}  →  {}  (name: {name})", f.display_path));
+                } else {
+                    let _ = style.print_line(&format!(
+                        "  - /{id}  →  {}  (name: {name}) — {desc}",
+                        f.display_path
+                    ));
+                }
             }
         }
         Err(e) => {

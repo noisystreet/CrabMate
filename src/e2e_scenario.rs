@@ -452,6 +452,7 @@ fn build_turn_messages(cfg: &AgentConfig, user_text: &str) -> Vec<Message> {
             agent_role: None,
             user_msg_for_skills: None,
             skills_base_dir: None,
+            forced_skill: None,
             role_resolution: RoleSystemResolution::Strict,
         },
     )

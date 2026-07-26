@@ -150,6 +150,7 @@ fn resolve_system_prompt_for_chat(
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
     work_dir: &Path,
     user_text_for_skills: Option<&str>,
+    forced_skill: Option<&crate::config::skills::SkillDoc>,
 ) -> Result<
     (
         String,
@@ -170,18 +171,22 @@ fn resolve_system_prompt_for_chat(
             tool_recorder,
             None,
         );
-        let (final_prompt, skills_meta) = if let Some(user_text) = user_text_for_skills
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+        let (final_prompt, skills_meta) = if forced_skill.is_some()
+            || user_text_for_skills
+                .map(str::trim)
+                .is_some_and(|s| !s.is_empty())
         {
             crate::config::skills::merge_system_prompt_with_skills_selected_with_meta(
                 l4.clone(),
-                cfg.skills.skills_enabled,
-                cfg.skills.skills_dir.as_str(),
-                cfg.skills.skills_max_chars,
-                work_dir,
-                user_text,
-                cfg.skills.skills_top_k,
+                crate::config::skills::SkillsSelectedMergeOpts {
+                    skills_enabled: cfg.skills.skills_enabled,
+                    skills_dir: cfg.skills.skills_dir.as_str(),
+                    skills_max_chars: cfg.skills.skills_max_chars,
+                    base_dir: work_dir,
+                    user_text: user_text_for_skills.unwrap_or(""),
+                    top_k: cfg.skills.skills_top_k,
+                    forced_skill,
+                },
             )
             .unwrap_or((
                 l4.clone(),
@@ -220,6 +225,7 @@ fn resolve_system_prompt_for_chat(
             agent_role: role.as_deref(),
             user_msg_for_skills: user_text_for_skills,
             skills_base_dir: Some(work_dir.to_path_buf()),
+            forced_skill: forced_skill.cloned(),
             role_resolution: crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
         },
     )
@@ -392,6 +398,14 @@ async fn chat_batch_jsonl_merge_line_value(
         };
         let u_exp = expand_at_file_refs_in_user_message(u, work_dir, cfg_snap.as_ref())
             .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+        let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
+            &u_exp,
+            work_dir,
+            cfg_snap.skills.skills_dir.as_str(),
+            cfg_snap.skills.skills_enabled,
+        )
+        .map_err(|e| CliExitError::new(EXIT_USAGE, e.to_string()))?;
+        let u_exp = prepared.user_message;
         if messages.is_empty() {
             let (system_selected, diag) = resolve_system_prompt_for_chat(
                 &cfg_snap,
@@ -400,6 +414,7 @@ async fn chat_batch_jsonl_merge_line_value(
                 &process_handles.tool_outcome_recorder,
                 work_dir,
                 Some(u_exp.as_str()),
+                prepared.forced_skill.as_ref(),
             )?;
             log_first_system_diagnostics("cli_chat_batch_first_turn", &diag);
             *messages = messages_chat_seed(&system_selected, &u_exp);
@@ -601,6 +616,14 @@ async fn chat_invocation_via_cli_query(
     };
     let user = expand_at_file_refs_in_user_message(&user, ctx.work_dir, cfg_for_expand.as_ref())
         .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
+    let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
+        &user,
+        ctx.work_dir,
+        cfg_for_expand.skills.skills_dir.as_str(),
+        cfg_for_expand.skills.skills_enabled,
+    )
+    .map_err(|e| CliExitError::new(EXIT_USAGE, e.to_string()))?;
+    let user = prepared.user_message;
     let (system, diag) = resolve_system_prompt_for_chat(
         &cfg_for_expand,
         ctx.chat,
@@ -608,6 +631,7 @@ async fn chat_invocation_via_cli_query(
         &ctx.process_handles.tool_outcome_recorder,
         ctx.work_dir,
         Some(user.as_str()),
+        prepared.forced_skill.as_ref(),
     )?;
     log_first_system_diagnostics("cli_chat_query_first_turn", &diag);
     let mut messages = messages_chat_seed(&system, &user);

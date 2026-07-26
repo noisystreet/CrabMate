@@ -152,6 +152,22 @@ fn parse_chat_stream_request_tail(
     })
 }
 
+fn prepare_turn_user_and_forced_skill(
+    cfg: &crate::config::AgentConfig,
+    workspace_root: &std::path::Path,
+    user_msg: &str,
+) -> Result<(String, Option<crate::config::skills::SkillDoc>), String> {
+    let skills_base = resolve_skills_base_dir(workspace_root);
+    let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
+        user_msg,
+        skills_base.as_path(),
+        cfg.skills.skills_dir.as_str(),
+        cfg.skills.skills_enabled,
+    )
+    .map_err(crate::config::skills_slash::SkillSlashError::into_turn_err)?;
+    Ok((prepared.user_message, prepared.forced_skill))
+}
+
 fn refresh_existing_turn_system(
     cfg: &crate::config::AgentConfig,
     seed: &mut ConversationTurnSeed,
@@ -159,6 +175,7 @@ fn refresh_existing_turn_system(
     user_msg: &str,
     workspace_root: &std::path::Path,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    forced_skill: Option<crate::config::skills::SkillDoc>,
 ) -> Result<(), String> {
     let persisted = seed.persisted_active_agent_role.clone();
     if let Some(id) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
@@ -188,6 +205,7 @@ fn refresh_existing_turn_system(
             agent_role: role_for_turn.as_deref(),
             user_msg_for_skills: Some(user_msg),
             skills_base_dir: Some(skills_base),
+            forced_skill,
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;
@@ -218,10 +236,14 @@ pub(super) async fn build_messages_for_turn(
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
+    let (user_msg, forced_skill) = {
+        let cfg = state.http.cfg.read().await;
+        prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)?
+    };
     let last_user = if image_urls.is_empty() {
-        Message::user_only(user_msg.to_string())
+        Message::user_only(user_msg.clone())
     } else {
-        message_user_with_images(user_msg, image_urls)
+        message_user_with_images(&user_msg, image_urls)
     };
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         {
@@ -230,9 +252,10 @@ pub(super) async fn build_messages_for_turn(
                 &cfg,
                 &mut seed,
                 agent_role,
-                user_msg,
+                user_msg.as_str(),
                 root.as_path(),
                 &state.aux.process_handles.tool_outcome_recorder,
+                forced_skill,
             )?;
         }
         seed.messages.push(last_user);
@@ -249,8 +272,9 @@ pub(super) async fn build_messages_for_turn(
         &state.aux.process_handles.tool_outcome_recorder,
         FirstSystemComposeOpts {
             agent_role: role_for_turn.as_deref(),
-            user_msg_for_skills: Some(user_msg),
+            user_msg_for_skills: Some(user_msg.as_str()),
             skills_base_dir: Some(skills_base),
+            forced_skill,
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;

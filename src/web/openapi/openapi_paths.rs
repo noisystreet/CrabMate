@@ -745,6 +745,28 @@ fn openapi_paths_fragment_workspace_rest() -> Value {
     ])
 }
 
+fn openapi_paths_fragment_skills() -> Value {
+    json!({
+        "/skills": {
+            "get": {
+                "tags": ["skills"],
+                "summary": "列出当前工作区 skills（供 composer `/` 浮层）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "skills 目录 JSON",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SkillsListResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
+
 pub(super) fn openapi_paths_value() -> Value {
     merge_path_fragments(&[
         openapi_paths_fragment_system(),
@@ -752,6 +774,7 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_chat_async(),
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
+        openapi_paths_fragment_skills(),
         openapi_paths_fragment_github(),
         openapi_paths_fragment_workspace_rest(),
         openapi_paths_user_data::openapi_paths_fragment_user_data(),

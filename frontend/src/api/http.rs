@@ -465,6 +465,32 @@ pub async fn post_workspace_set(path: Option<String>, loc: Locale) -> Result<Str
         .unwrap_or_else(|| format!("HTTP {}", resp.status())))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SkillListItem {
+    pub id: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub path: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct SkillsListData {
+    pub enabled: bool,
+    #[serde(default)]
+    pub skills_dir: String,
+    #[serde(default)]
+    pub skills: Vec<SkillListItem>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+pub async fn fetch_skills(loc: Locale) -> Result<SkillsListData, String> {
+    fetch_json("GET", "/skills", None, loc).await
+}
+
 pub async fn fetch_tasks(loc: Locale) -> Result<TasksData, String> {
     fetch_json("GET", "/tasks", None, loc).await
 }

@@ -4,6 +4,7 @@
 //! |--------|------------------------|------|
 //! | [`chat`] | `/chat*`、`/upload*`、`/uploads/delete` | 对话与上传（handler 在 `chat_handlers`） |
 //! | [`config`] | `/config/reload` | 配置热重载 |
+//! | [`skills`] | `/skills` | 工作区 skills 目录 JSON（composer `/` 浮层） |
 //! | [`workspace`] | `/workspace*` | 工作区浏览、文件、changelog |
 //! | [`tasks`] | `/tasks` | 侧栏任务清单（内存） |
 //! | [`user_data`] | `/user-data/*` | 本机用户数据（prefs、会话桶、LLM 覆盖、secrets） |
@@ -15,6 +16,7 @@ pub(crate) mod chat;
 pub(crate) mod config;
 pub(crate) mod e2e_fixtures;
 pub(crate) mod github;
+pub(crate) mod skills;
 pub(crate) mod system;
 pub(crate) mod tasks;
 pub(crate) mod user_data;
