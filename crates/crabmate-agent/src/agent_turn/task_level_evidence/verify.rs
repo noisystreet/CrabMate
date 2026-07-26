@@ -1,11 +1,11 @@
 //! 任务级执行证据核对（写源码 / 编译 / 运行）。
 
-use crate::types::{Message, message_content_as_str};
+use crabmate_types::{Message, message_content_as_str};
 
 use super::common::is_program_build_run_request;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum GoalCompletionEvidenceCheck {
+pub enum GoalCompletionEvidenceCheck {
     Satisfied,
     Missing(String),
     NotApplicable,
@@ -62,7 +62,7 @@ fn message_history_build_flags(history_lower: &str) -> (bool, bool, bool) {
     (wrote_source, compiled, ran_program)
 }
 
-fn normalized_tool_text(env: &crate::tool_result::NormalizedToolEnvelope) -> String {
+fn normalized_tool_text(env: &crabmate_tools::tool_result::NormalizedToolEnvelope) -> String {
     let structured = env
         .structured_payload
         .as_ref()
@@ -74,7 +74,9 @@ fn normalized_tool_text(env: &crate::tool_result::NormalizedToolEnvelope) -> Str
     )
 }
 
-fn run_command_invocation_from_env(env: &crate::tool_result::NormalizedToolEnvelope) -> String {
+fn run_command_invocation_from_env(
+    env: &crabmate_tools::tool_result::NormalizedToolEnvelope,
+) -> String {
     let payload_invocation = env
         .structured_payload
         .as_ref()
@@ -87,7 +89,7 @@ fn run_command_invocation_from_env(env: &crate::tool_result::NormalizedToolEnvel
     env.summary.clone()
 }
 
-fn structured_stdout_nonempty(env: &crate::tool_result::NormalizedToolEnvelope) -> bool {
+fn structured_stdout_nonempty(env: &crabmate_tools::tool_result::NormalizedToolEnvelope) -> bool {
     env.structured_payload
         .as_ref()
         .and_then(|v| v.get("stdout_nonempty"))
@@ -109,13 +111,13 @@ fn looks_like_build_artifact_run(invocation_lower: &str, lower_text: &str) -> bo
         .any(|hint| invocation_lower.contains(hint) || lower_text.contains(hint))
 }
 
-fn tool_exit_ok(env: &crate::tool_result::NormalizedToolEnvelope) -> bool {
+fn tool_exit_ok(env: &crabmate_tools::tool_result::NormalizedToolEnvelope) -> bool {
     env.ok || env.exit_code == Some(0)
 }
 
 fn update_program_evidence_from_tool_env(
     evidence: &mut ProgramBuildRunEvidence,
-    env: &crate::tool_result::NormalizedToolEnvelope,
+    env: &crabmate_tools::tool_result::NormalizedToolEnvelope,
 ) {
     let text = normalized_tool_text(env);
     let lower = text.to_lowercase();
@@ -135,8 +137,10 @@ fn update_program_evidence_from_tool_env(
         {
             evidence.compiled = true;
         }
-        let parsed =
-            crate::tool_result::parse_legacy_output(env.name.as_str(), env.output.as_str());
+        let parsed = crabmate_tools::tool_result::parse_legacy_output(
+            env.name.as_str(),
+            env.output.as_str(),
+        );
         let stdout_nonempty = structured_stdout_nonempty(env) || !parsed.stdout.trim().is_empty();
         if looks_like_build_artifact_run(&invocation, &lower)
             && tool_exit_ok(env)
@@ -161,7 +165,7 @@ fn program_build_run_evidence_from_messages(messages: &[Message]) -> ProgramBuil
         let Some(raw) = message_content_as_str(&m.content) else {
             continue;
         };
-        if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+        if let Some(env) = crabmate_tools::tool_result::normalize_tool_message_content(raw) {
             update_program_evidence_from_tool_env(&mut evidence, &env);
         } else {
             update_program_evidence_from_legacy_text(&mut evidence, raw);
@@ -204,10 +208,10 @@ fn check_program_build_run_messages(
 }
 
 fn tool_message_has_success_evidence(raw: &str) -> bool {
-    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crabmate_tools::tool_result::normalize_tool_message_content(raw) {
         return env.ok || env.exit_code == Some(0);
     }
-    let parsed = crate::tool_result::parse_legacy_output("generic_tool", raw);
+    let parsed = crabmate_tools::tool_result::parse_legacy_output("generic_tool", raw);
     if parsed.ok || parsed.exit_code == Some(0) {
         return true;
     }
@@ -221,22 +225,22 @@ fn tool_message_has_success_evidence(raw: &str) -> bool {
 }
 
 /// 用户任务是否像编译/构建/测试类（供外循环门控与完成证据抑制共用）。
-pub(crate) fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
+pub fn generic_task_intent_implies_build_or_test(task: &str) -> bool {
     generic_task_intent_from_task(task).build_or_test
 }
 
 fn messages_slice_since_last_user(messages: &[Message]) -> Option<&[Message]> {
-    crate::types::messages_slice_since_last_real_user(messages, false)
+    crabmate_types::messages_slice_since_last_real_user(messages, false)
 }
 
 /// L2 外循环与分阶段滚动视界：以**最新一条用户消息**为目标，且仅在自该 user 起的消息窗口内核对完成证据。
 ///
-/// 勿用会话首条 user 或分阶段「不变层」历史锚点（[`crate::types::first_real_user_task_content`]），
+/// 勿用会话首条 user 或分阶段「不变层」历史锚点（[`crabmate_types::first_real_user_task_content`]），
 /// 否则多轮对话会把上一任务（如「分析目录」）误判为当前目标（如「编译 hpcg」）已完成。
-pub(crate) fn check_active_user_goal_completion_evidence(
+pub fn check_active_user_goal_completion_evidence(
     messages: &[Message],
 ) -> GoalCompletionEvidenceCheck {
-    let Some(task) = crate::types::last_real_user_task_content(messages, false) else {
+    let Some(task) = crabmate_types::last_real_user_task_content(messages, false) else {
         return GoalCompletionEvidenceCheck::NotApplicable;
     };
     let Some(window) = messages_slice_since_last_user(messages) else {
@@ -358,13 +362,13 @@ fn update_generic_tool_evidence_from_tool_text(
 }
 
 fn update_generic_tool_evidence_from_raw(evidence: &mut GenericToolEvidence, raw: &str) {
-    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crabmate_tools::tool_result::normalize_tool_message_content(raw) {
         let text = normalized_tool_text(&env);
         let ok = env.ok || env.exit_code == Some(0);
         update_generic_tool_evidence_from_tool_text(evidence, env.name.as_str(), &text, ok);
         return;
     }
-    let parsed = crate::tool_result::parse_legacy_output("generic_tool", raw);
+    let parsed = crabmate_tools::tool_result::parse_legacy_output("generic_tool", raw);
     let ok = parsed.ok || parsed.exit_code == Some(0) || tool_message_has_success_evidence(raw);
     update_generic_tool_evidence_from_tool_text(evidence, "generic_tool", raw, ok);
 }
@@ -493,7 +497,7 @@ fn check_generic_successful_tool_then_completion(
 /// 对分阶段滚动执行的当前消息历史做目标完成证据核对。
 ///
 /// 编排层只消费三态结果；具体领域规则（当前先覆盖程序写入/编译/运行）在本模块内扩展。
-pub(crate) fn check_goal_completion_evidence_from_messages(
+pub fn check_goal_completion_evidence_from_messages(
     task: &str,
     messages: &[Message],
 ) -> GoalCompletionEvidenceCheck {
@@ -522,10 +526,10 @@ mod tests {
     }
 
     fn tool_env(name: &str, summary: &str, output: &str) -> Message {
-        let parsed = crate::tool_result::parse_legacy_output(name, output);
+        let parsed = crabmate_tools::tool_result::parse_legacy_output(name, output);
         msg(
             "tool",
-            &crate::tool_result::encode_tool_message_envelope_v1(
+            &crabmate_tools::tool_result::encode_tool_message_envelope_v1(
                 name,
                 summary.to_string(),
                 &parsed,

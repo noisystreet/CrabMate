@@ -2,8 +2,8 @@
 
 #![allow(dead_code)]
 
-use crate::agent::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
-use crate::types::{Message, ToolCall};
+use crate::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
+use crabmate_types::{Message, ToolCall};
 
 use super::run_command_dedupe::{
     normalize_run_command_key, successful_run_command_keys_from_messages,
@@ -94,14 +94,14 @@ fn text_contains_any_marker(text: &str, markers: &[&str]) -> bool {
     markers.iter().any(|marker| text.contains(marker))
 }
 
-pub(crate) fn tool_calls_are_redundant_after_completion(tool_calls: &[ToolCall]) -> bool {
+pub fn tool_calls_are_redundant_after_completion(tool_calls: &[ToolCall]) -> bool {
     tool_calls
         .iter()
         .all(tool_call_is_redundant_after_completion)
 }
 
 /// 活跃目标已有完成证据时：探针类 + **已成功过的相同** `run_command` 签名视为冗余。
-pub(crate) fn tool_calls_are_redundant_when_goal_satisfied(
+pub fn tool_calls_are_redundant_when_goal_satisfied(
     tool_calls: &[ToolCall],
     messages: &[Message],
 ) -> bool {
@@ -125,7 +125,7 @@ fn tool_call_is_redundant_build_run_repeat(
         .is_some_and(|key| prior_success.contains(&key))
 }
 
-pub(crate) fn tool_call_is_redundant_after_completion(tc: &ToolCall) -> bool {
+pub fn tool_call_is_redundant_after_completion(tc: &ToolCall) -> bool {
     let name = tc.function.name.as_str();
     if READONLY_PROBE_TOOL_NAMES.contains(&name) {
         return true;
@@ -151,7 +151,7 @@ fn run_command_invocation_text(args_json: &str) -> Option<String> {
     Some(parts.join(" "))
 }
 
-pub(crate) fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
+pub fn plan_steps_are_redundant_after_completion(steps: &[PlanStepV1]) -> bool {
     steps.iter().all(plan_step_is_redundant_after_completion)
 }
 
@@ -163,7 +163,7 @@ pub(crate) fn plan_step_requires_formal_execution(step: &PlanStepV1) -> bool {
         || matches!(step.executor_kind, Some(PlanStepExecutorKind::TestRunner))
 }
 
-pub(crate) fn plan_steps_require_formal_execution(steps: &[PlanStepV1]) -> bool {
+pub fn plan_steps_require_formal_execution(steps: &[PlanStepV1]) -> bool {
     steps.iter().any(plan_step_requires_formal_execution)
 }
 
@@ -188,7 +188,7 @@ fn redundant_plan_step_text(step: &PlanStepV1) -> String {
     .to_lowercase()
 }
 
-pub(crate) fn redundant_tool_names_for_log(tool_calls: &[ToolCall]) -> Vec<&str> {
+pub fn redundant_tool_names_for_log(tool_calls: &[ToolCall]) -> Vec<&str> {
     tool_calls
         .iter()
         .map(|tc| tc.function.name.as_str())
@@ -198,8 +198,8 @@ pub(crate) fn redundant_tool_names_for_log(tool_calls: &[ToolCall]) -> Vec<&str>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::plan_artifact::PlanStepV1;
-    use crate::types::{FunctionCall, ToolCall};
+    use crate::plan_artifact::PlanStepV1;
+    use crabmate_types::{FunctionCall, ToolCall};
 
     fn step(id: &str, kind: Option<&str>, description: &str) -> PlanStepV1 {
         PlanStepV1 {
@@ -270,7 +270,7 @@ mod tests {
             id: "run-tests".into(),
             description: "运行 cargo test 验收".into(),
             workflow_node_id: None,
-            executor_kind: Some(crate::agent::plan_artifact::PlanStepExecutorKind::TestRunner),
+            executor_kind: Some(crate::plan_artifact::PlanStepExecutorKind::TestRunner),
             step_kind: None,
             acceptance: Some(PlanStepAcceptance {
                 expect_exit_code: Some(0),
@@ -284,7 +284,7 @@ mod tests {
 
     #[test]
     fn satisfied_goal_marks_exact_run_command_repeat_redundant() {
-        use crate::types::Message;
+        use crabmate_types::Message;
         let messages = vec![Message {
             role: "tool".into(),
             content: Some(
@@ -306,7 +306,7 @@ mod tests {
 
     #[test]
     fn satisfied_goal_does_not_mark_different_run_command_redundant() {
-        use crate::types::Message;
+        use crabmate_types::Message;
         let messages = vec![Message {
             role: "tool".into(),
             content: Some(

@@ -2,7 +2,7 @@
 
 ## 目标
 
-把无 IO 的外循环相位 / reduce / driver / pre-gate reason 下沉到 **`crabmate-agent`**，根包只保留再导出与带副作用的 `outer_loop` / `outer_loop_reflect`；并把回合 IO 适配面切成可传递的控制通道与终端呈现。
+把无 IO 的外循环相位 / reduce / driver / pre-gate reason 下沉到 **`crabmate-agent`**，根包只保留再导出与带副作用的 `outer_loop` / `outer_loop_reflect`；并把回合 IO 适配面切成可传递的控制通道与终端呈现；完成判定核亦下沉。
 
 ## T1（已做）：外循环纯 FSM
 
@@ -14,6 +14,17 @@
 | `outer_loop_driver` | 同上 |
 
 根包 `src/agent/agent_turn/mod.rs` 以 `pub(crate) use crabmate_agent::agent_turn::…` 保持原路径。
+
+## T1b（已做）：完成判定核
+
+| 模块 | 位置 |
+|------|------|
+| `turn_completion_decision` | `crates/crabmate-agent/src/agent_turn/` |
+| `completion_suppression` | 同上 |
+| `run_command_dedupe` | 同上（根包再导出，供 serial emit） |
+| `task_level_evidence` | 同上（原计划 T3，随判定核一并下沉） |
+
+根包保留 `turn_completion.rs`：早停/冗余包装、依赖 `tool_result` 的终答空答纠偏文案与金样。
 
 ## T2（已做）：TurnSink 形状
 
@@ -29,6 +40,4 @@
 
 ## 后续（未做）
 
-- T1b：`turn_completion_decision` / `completion_suppression` 判定核下沉
-- T3：`task_level_evidence` 规则下沉
 - T4：根包目录收成 `loop/` / `plan_reflect/` / `host/`

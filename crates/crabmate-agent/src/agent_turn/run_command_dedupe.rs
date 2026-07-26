@@ -2,17 +2,17 @@
 
 use std::collections::HashSet;
 
-use crate::types::{Message, message_content_as_str};
+use crabmate_types::{Message, message_content_as_str};
 
 const KEY_SEP: &str = "\u{1f}";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RunCommandInvocation {
+pub struct RunCommandInvocation {
     pub command: String,
     pub args: Vec<String>,
 }
 
-pub(crate) fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
+pub fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
     let command = v.get("command")?.as_str()?.trim().to_string();
     if command.is_empty() {
@@ -30,7 +30,7 @@ pub(crate) fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvoca
     Some(RunCommandInvocation { command, args })
 }
 
-pub(crate) fn normalize_run_command_key(args_json: &str) -> Option<String> {
+pub fn normalize_run_command_key(args_json: &str) -> Option<String> {
     let inv = parse_run_command_args(args_json)?;
     Some(format!(
         "run_command|{}|{}",
@@ -40,20 +40,20 @@ pub(crate) fn normalize_run_command_key(args_json: &str) -> Option<String> {
 }
 
 /// 单轮内可对已成功执行过的 `run_command` 做精确签名去重（不限工具链）。
-pub(crate) fn run_command_duplicate_suppress_key(args_json: &str) -> Option<String> {
+pub fn run_command_duplicate_suppress_key(args_json: &str) -> Option<String> {
     normalize_run_command_key(args_json)
 }
 
 fn tool_exit_ok_from_raw(raw: &str) -> bool {
-    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crabmate_tools::tool_result::normalize_tool_message_content(raw) {
         return env.ok || env.exit_code == Some(0);
     }
-    let parsed = crate::tool_result::parse_legacy_output("run_command", raw);
+    let parsed = crabmate_tools::tool_result::parse_legacy_output("run_command", raw);
     parsed.ok || parsed.exit_code == Some(0)
 }
 
 fn run_command_args_from_tool_message(raw: &str) -> Option<String> {
-    if let Some(env) = crate::tool_result::normalize_tool_message_content(raw) {
+    if let Some(env) = crabmate_tools::tool_result::normalize_tool_message_content(raw) {
         if env.name != "run_command" {
             return None;
         }
@@ -77,7 +77,7 @@ fn run_command_args_from_tool_message(raw: &str) -> Option<String> {
 }
 
 /// 自消息历史收集已成功执行过的 `run_command` 规范化签名。
-pub(crate) fn successful_run_command_keys_from_messages(messages: &[Message]) -> HashSet<String> {
+pub fn successful_run_command_keys_from_messages(messages: &[Message]) -> HashSet<String> {
     let mut keys = HashSet::new();
     for m in messages {
         if m.role != "tool" && m.tool_call_id.is_none() {
@@ -122,7 +122,7 @@ fn infer_args_json_from_legacy_run_output(raw: &str) -> Option<String> {
     Some(serde_json::json!({ "command": command, "args": args }).to_string())
 }
 
-pub(crate) const RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG: &str =
+pub const RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG: &str =
     "命令重复执行已抑制：本轮内已成功执行过相同命令";
 
 #[cfg(test)]
