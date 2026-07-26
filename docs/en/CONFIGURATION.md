@@ -122,9 +122,9 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | Variable | Description |
 | --- | --- |
 | `CM_ALLOWED_COMMANDS` | Comma-separated allowlist for **`run_command`** and the first **`terminal_session` `exec`**. Embedded defaults also include **`bash`** / **`sh`** (for **`bash -c` / `sh -c`** compound one-liners), **`docker`**, **`podman`**, **`mvn`**, **`gradle`**, …; full list **`config/tools.toml`**. |
-| `CM_MCP_ENABLED` | Enable MCP. Requires **`cargo build --features mcp`**; without that feature, `mcp list` and in-process MCP tool proxy are unavailable. |
-| `CM_MCP_COMMAND` | MCP stdio launch command. |
-| `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; one stdio session per fingerprint; **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. |
+| `CM_MCP_ENABLED` | Enable MCP. Requires **`cargo build --features mcp`**; without that feature, `mcp list` and in-process MCP tool proxy are unavailable. Multi-server source of truth: **`~/.local/share/crabmate/mcp_servers.json`**. |
+| `CM_MCP_COMMAND` | Legacy single stdio command; imported **once** only when user-data has no servers yet. |
+| `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; stdio reused by fingerprint (`command`/`args`/`env`/`cwd`); **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. MCP JSON import stores structured fields (no forced `sh -c`); connect failures surface as status **`last_error`** and turn `timeline_log` / terminal notice. |
 | `CM_CODEBASE_SEMANTIC_SEARCH_ENABLED` | Register **`codebase_semantic_search`** (`false` removes from tool list). |
 | `CM_CODEBASE_SEMANTIC_INDEX_SQLITE_PATH` | Relative semantic index SQLite path; default **`.crabmate/codebase_semantic.sqlite`**. |
 | `CM_CODEBASE_SEMANTIC_MAX_FILE_BYTES` | Max bytes per indexed file. |

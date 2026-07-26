@@ -4,7 +4,9 @@
 //! - **关闭时**（`--no-default-features` 且不加 `mcp`）：不链接 **`rmcp`**，调用返回明确错误。
 
 pub mod resolve;
+pub mod schema_sanitize;
 pub use resolve::resolve_mcp_config;
+pub use schema_sanitize::sanitize_mcp_json_schema;
 
 #[cfg(feature = "mcp")]
 mod mcp_impl;

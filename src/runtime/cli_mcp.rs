@@ -46,7 +46,13 @@ mod full {
     pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
         let resolved = crate::mcp::resolve_mcp_config(cfg);
         if probe {
-            let _ = crate::mcp::try_open_turn_handle(&resolved).await;
+            let opened = crate::mcp::try_open_turn_handle(&resolved).await;
+            if !opened.skipped.is_empty() {
+                println!("MCP：部分服务器连接失败：");
+                for s in &opened.skipped {
+                    println!("  [{}] {} — {}", s.id, s.name, s.error);
+                }
+            }
         }
         if !resolved.global_enabled {
             println!("MCP：user-data 中 global_enabled=false，本进程无 MCP 工具。");
@@ -81,7 +87,13 @@ mod full {
             }
             for st in &runtime {
                 if st.enabled {
-                    println!("  [{}] {} (slug={}) — 未连接", st.id, st.name, st.slug);
+                    match &st.last_error {
+                        Some(err) => println!(
+                            "  [{}] {} (slug={}) — 未连接：{err}",
+                            st.id, st.name, st.slug
+                        ),
+                        None => println!("  [{}] {} (slug={}) — 未连接", st.id, st.name, st.slug),
+                    }
                 }
             }
             return;

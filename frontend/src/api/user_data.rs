@@ -230,6 +230,12 @@ pub struct McpServerEntryDto {
     pub slug: String,
     #[serde(default)]
     pub has_command: bool,
+    #[serde(default)]
+    pub has_args: bool,
+    #[serde(default)]
+    pub has_env: bool,
+    #[serde(default)]
+    pub has_cwd: bool,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]

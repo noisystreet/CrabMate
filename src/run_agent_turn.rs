@@ -18,6 +18,50 @@ fn resolved_turn_llm_backend<'a>(
     }
 }
 
+async fn emit_mcp_servers_skipped_notice(
+    skipped: &[crate::mcp::McpServerSkipInfo],
+    out: Option<&tokio::sync::mpsc::Sender<String>>,
+    render_to_terminal: bool,
+) {
+    if skipped.is_empty() {
+        return;
+    }
+    let detail = skipped
+        .iter()
+        .map(|s| format!("{} ({}): {}", s.name, s.id, s.error))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let title = if skipped.len() == 1 {
+        format!("MCP 服务器连接失败：{}", skipped[0].name)
+    } else {
+        format!("MCP：{} 个服务器连接失败", skipped.len())
+    };
+    log::warn!(target: "crabmate", "MCP 本轮跳过服务器：\n{detail}");
+    if render_to_terminal {
+        eprintln!("[MCP] {title}\n{detail}");
+    }
+    crate::turn_replay_dump::append_turn_replay_event_if_configured(
+        "mcp_servers_skipped",
+        title.as_str(),
+        Some(detail.as_str()),
+    );
+    if let Some(tx) = out {
+        let payload = crate::sse::SsePayload::TimelineLog {
+            log: crate::sse::protocol::TimelineLogBody {
+                kind: "mcp_servers_skipped".to_string(),
+                title,
+                detail: Some(detail),
+            },
+        };
+        let _ = crate::sse::send_string_logged(
+            tx,
+            crate::sse::encode_message(payload),
+            "mcp_servers_skipped",
+        )
+        .await;
+    }
+}
+
 /// 执行一轮 Agent：发请求、若遇 tool_calls 则执行工具并继续，直到模型返回最终回复。
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
@@ -96,6 +140,7 @@ pub async fn run_agent_turn<'a>(
     let crate::agent_turn_prep::ToolsForTurnPrepared {
         tools_for_turn,
         mcp_turn,
+        mcp_skipped,
     } = crate::agent_turn_prep::prepare_tools_for_turn(
         cfg,
         tools,
@@ -103,6 +148,7 @@ pub async fn run_agent_turn<'a>(
         turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
     )
     .await;
+    emit_mcp_servers_skipped_notice(&mcp_skipped, out, render_to_terminal).await;
 
     let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
         .map(|_| Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));

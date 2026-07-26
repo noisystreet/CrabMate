@@ -11,6 +11,8 @@ use crabmate_config::AgentConfig;
 use crabmate_types::McpRemoteToolSummary;
 use crabmate_types::Tool;
 
+use crate::resolve::{McpStdioLaunch, ResolvedMcpConfig, ResolvedMcpServer};
+
 /// 与完整实现同名的占位类型（无 rmcp 会话）。
 #[derive(Debug)]
 pub struct McpClientSession;
@@ -31,6 +33,12 @@ pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)>
 }
 
 pub async fn connect_stdio_client(_cmdline: &str) -> Result<McpClientSession, String> {
+    Err("本 crabmate 二进制未启用 `mcp` Cargo feature，无法建立 MCP 连接".to_string())
+}
+
+pub async fn connect_stdio_client_launch(
+    _launch: &McpStdioLaunch,
+) -> Result<McpClientSession, String> {
     Err("本 crabmate 二进制未启用 `mcp` Cargo feature，无法建立 MCP 连接".to_string())
 }
 
@@ -93,15 +101,37 @@ impl McpTurnSessions {
 
 pub type McpTurnHandle = Arc<McpTurnSessions>;
 
-pub async fn try_open_turn_handle(
-    _resolved: &crate::resolve::ResolvedMcpConfig,
-) -> Option<(McpTurnHandle, Vec<Tool>)> {
-    None
+#[derive(Debug, Clone)]
+pub struct McpServerSkipInfo {
+    pub id: String,
+    pub name: String,
+    pub error: String,
 }
 
-pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
-    // stub：无 rmcp；user-data 感知版本见 crabmate_internal::mcp::try_open_session_and_tools
-    None
+#[derive(Default)]
+pub struct McpTurnOpenResult {
+    pub handle: Option<McpTurnHandle>,
+    pub tools: Vec<Tool>,
+    pub skipped: Vec<McpServerSkipInfo>,
+}
+
+impl McpTurnOpenResult {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn into_option_pair(self) -> Option<(McpTurnHandle, Vec<Tool>)> {
+        self.handle.map(|h| (h, self.tools))
+    }
+}
+
+pub async fn try_open_turn_handle(_resolved: &ResolvedMcpConfig) -> McpTurnOpenResult {
+    McpTurnOpenResult::empty()
+}
+
+#[deprecated(note = "servers 恒空；请使用 crabmate_internal::mcp::try_open_session_and_tools")]
+pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> McpTurnOpenResult {
+    McpTurnOpenResult::empty()
 }
 
 #[derive(Debug, Clone)]
@@ -117,7 +147,7 @@ pub struct McpServerRuntimeStatus {
 }
 
 pub async fn mcp_servers_runtime_status(
-    resolved: &crate::resolve::ResolvedMcpConfig,
+    resolved: &ResolvedMcpConfig,
 ) -> Vec<McpServerRuntimeStatus> {
     resolved
         .servers
@@ -130,14 +160,12 @@ pub async fn mcp_servers_runtime_status(
             connected: false,
             openai_tool_names: Vec::new(),
             remote_tools: Vec::new(),
-            last_error: None,
+            last_error: Some("本构建未启用 `mcp` Cargo feature".to_string()),
         })
         .collect()
 }
 
-pub async fn probe_mcp_server(
-    server: &crate::resolve::ResolvedMcpServer,
-) -> McpServerRuntimeStatus {
+pub async fn probe_mcp_server(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
     McpServerRuntimeStatus {
         id: server.id.clone(),
         name: server.name.clone(),

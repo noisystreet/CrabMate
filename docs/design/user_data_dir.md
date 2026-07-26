@@ -145,7 +145,10 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
       "id": "mcp_1730000000000",
       "name": "Filesystem",
       "slug": "filesystem",
-      "command": "npx -y @modelcontextprotocol/server-filesystem /path",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path"],
+      "env": {},
+      "cwd": null,
       "enabled": true,
       "created_at_ms": 0,
       "updated_at_ms": 0
@@ -154,9 +157,12 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 }
 ```
 
-若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含 `command`，仅 `has_command`）、`POST …/import`（JSON 解析并追加）、`GET …/status`、`POST …/{id}/probe`。
+- **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
+- **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名，`command` 由 `command`+`args`+`env`+`cwd` 合成；`slug` 仍于保存时由 `name` 生成）。仅 **stdio**（含 `command`）；仅 `url` 的远程 MCP 会跳过。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。
+若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd`）、`POST …/import`（JSON 解析并追加）、`GET …/status`（含连接失败时的 `last_error`）、`POST …/{id}/probe`。
+
+Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**；`slug` 仍于保存时由 `name` 生成）。仅 **stdio**（含 `command`）；仅 `url` 的远程 MCP 会跳过。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。
 
 ### 4.6 `secrets/`（机密）
 

@@ -1,5 +1,7 @@
 //! `~/.local/share/crabmate` JSON 契约（与 `docs/design/user_data_dir.md` 对齐）。
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -146,14 +148,21 @@ pub struct McpServerEntry {
     pub id: String,
     pub name: String,
     pub slug: String,
+    /// 可执行文件，或 legacy 整行命令（`args`/`env`/`cwd` 皆空时按词法拆分启动）。
     #[serde(default)]
     pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     pub enabled: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
 
-/// Web `GET /user-data/mcp-servers`：不返回 `command`（仅 `has_command`）。
+/// Web `GET /user-data/mcp-servers`：不返回启动命令明文（仅 `has_*` 标志）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerEntryPublic {
     pub id: String,
@@ -161,6 +170,12 @@ pub struct McpServerEntryPublic {
     pub slug: String,
     pub enabled: bool,
     pub has_command: bool,
+    #[serde(default)]
+    pub has_args: bool,
+    #[serde(default)]
+    pub has_env: bool,
+    #[serde(default)]
+    pub has_cwd: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -193,6 +208,9 @@ impl From<&McpServersFile> for McpServersFilePublic {
                     slug: s.slug.clone(),
                     enabled: s.enabled,
                     has_command: !s.command.trim().is_empty(),
+                    has_args: !s.args.is_empty(),
+                    has_env: !s.env.is_empty(),
+                    has_cwd: s.cwd.as_ref().is_some_and(|c| !c.trim().is_empty()),
                     created_at_ms: s.created_at_ms,
                     updated_at_ms: s.updated_at_ms,
                 })
