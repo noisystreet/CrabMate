@@ -6,7 +6,7 @@
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
 //! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`params`、**`outer_loop_fsm`** + **`outer_loop_reflect`** + **`outer_loop`**。
-//! 外循环 FSM / reduce / driver / pre-gate reason 已下沉 **`crabmate-agent::agent_turn`**，本目录再导出。
+//! 外循环 FSM / reduce / driver / pre-gate reason，以及完成判定核（`turn_completion_decision` / `completion_suppression` / `task_level_evidence` / `run_command_dedupe`）已下沉 **`crabmate-agent::agent_turn`**，本目录再导出。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
@@ -23,10 +23,11 @@ use self::orchestration_entry::{
 };
 
 mod check_abort;
-mod completion_suppression;
 mod errors;
 pub(crate) mod execute;
-pub(crate) mod run_command_dedupe;
+pub(crate) mod run_command_dedupe {
+    pub(crate) use crabmate_agent::agent_turn::run_command_dedupe::*;
+}
 pub(crate) use execute::tools as execute_tools;
 mod intent;
 pub(crate) mod messages {
@@ -57,7 +58,6 @@ mod plan;
 mod reflect;
 mod run_dispatch;
 mod sub_agent_policy;
-mod task_level_evidence;
 mod turn_completion;
 mod turn_sink;
 pub(crate) mod turn_orchestration {

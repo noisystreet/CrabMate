@@ -1,20 +1,20 @@
 //! [`TurnCompletionDecision`] 与 evaluate 入口（供 tracing / 金样回归）。
 
-use crate::agent::plan_artifact::PlanStepV1;
-use crate::types::{Message, ToolCall};
+use crate::plan_artifact::PlanStepV1;
+use crabmate_types::{Message, ToolCall};
 
-use super::super::completion_suppression::{
+use super::completion_suppression::{
     plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
     tool_calls_are_redundant_when_goal_satisfied,
 };
-use super::super::task_level_evidence::{
+use super::task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
     generic_task_intent_implies_build_or_test,
 };
 
 /// 完成判定结果（结构化日志与金样对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum TurnCompletionDecision {
+pub enum TurnCompletionDecision {
     AllowEarlyStop,
     DenyEarlyStop {
         reason: &'static str,
@@ -44,7 +44,7 @@ pub(crate) enum TurnCompletionDecision {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum RollingHorizonStopVia {
+pub enum RollingHorizonStopVia {
     #[allow(dead_code)]
     HeuristicEarlyStop,
     #[allow(dead_code)]
@@ -54,7 +54,7 @@ pub(crate) enum RollingHorizonStopVia {
 }
 
 impl TurnCompletionDecision {
-    pub(crate) fn as_trace_str(self) -> &'static str {
+    pub fn as_trace_str(self) -> &'static str {
         match self {
             Self::AllowEarlyStop => "allow_early_stop",
             Self::DenyEarlyStop { .. } => "deny_early_stop",
@@ -69,7 +69,7 @@ impl TurnCompletionDecision {
         }
     }
 
-    pub(crate) fn deny_reason(self) -> Option<&'static str> {
+    pub fn deny_reason(self) -> Option<&'static str> {
         match self {
             Self::DenyEarlyStop { reason }
             | Self::DenySuppressReplanning { reason }
@@ -80,7 +80,7 @@ impl TurnCompletionDecision {
         }
     }
 
-    pub(crate) fn is_allow(self) -> bool {
+    pub fn is_allow(self) -> bool {
         matches!(
             self,
             Self::AllowEarlyStop
@@ -91,7 +91,7 @@ impl TurnCompletionDecision {
         )
     }
     #[allow(dead_code)]
-    pub(crate) fn rolling_horizon_via(self) -> Option<RollingHorizonStopVia> {
+    pub fn rolling_horizon_via(self) -> Option<RollingHorizonStopVia> {
         match self {
             Self::AllowRollingHorizonStop { via } => Some(via),
             _ => None,
@@ -99,7 +99,7 @@ impl TurnCompletionDecision {
     }
 }
 
-pub(crate) fn log_turn_completion_decision(decision: TurnCompletionDecision, check: &'static str) {
+pub fn log_turn_completion_decision(decision: TurnCompletionDecision, check: &'static str) {
     tracing::debug!(
         target: "crabmate::agent_turn",
         turn_completion_check = check,
@@ -118,7 +118,7 @@ fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision 
             reason: "evidence_not_satisfied",
         };
     }
-    let Some(task) = crate::types::last_real_user_task_content(messages, false) else {
+    let Some(task) = crabmate_types::last_real_user_task_content(messages, false) else {
         return TurnCompletionDecision::DenyEarlyStop {
             reason: "no_active_user_task",
         };
@@ -132,14 +132,14 @@ fn turn_early_stop_allowed_core(messages: &[Message]) -> TurnCompletionDecision 
     }
 }
 
-pub(crate) fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDecision {
+pub fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDecision {
     let decision = turn_early_stop_allowed_core(messages);
     log_turn_completion_decision(decision, "early_stop");
     decision
 }
 
 #[allow(dead_code)]
-pub(crate) fn evaluate_turn_suppress_replanning(
+pub fn evaluate_turn_suppress_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,
     steps: &[PlanStepV1],
@@ -171,7 +171,7 @@ pub(crate) fn evaluate_turn_suppress_replanning(
     decision
 }
 
-pub(crate) fn evaluate_turn_redundant_tools(
+pub fn evaluate_turn_redundant_tools(
     tool_calls: &[ToolCall],
     messages: &[Message],
 ) -> TurnCompletionDecision {

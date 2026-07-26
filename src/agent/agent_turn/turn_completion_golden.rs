@@ -1,6 +1,6 @@
 //! 完成判定金样回归：`fixtures/turn_completion_golden.jsonl`。
 
-use super::turn_completion_decision::{
+use super::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     evaluate_turn_suppress_replanning,
 };

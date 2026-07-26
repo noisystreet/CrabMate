@@ -1,24 +1,25 @@
 //! 回合级「目标完成 / 早停 / 冗余工具抑制 / 终答纠偏 / 步后抑规划」共用判定。
+//!
+//! 纯判定核（[`TurnCompletionDecision`] / evaluate_*）已下沉 **`crabmate-agent`**；本文件保留
+//! 外循环纠偏文案与依赖 `tool_result` 信封的终答空答检测。
 
-#[path = "turn_completion_decision.rs"]
-mod turn_completion_decision;
 #[cfg(test)]
 #[path = "turn_completion_golden.rs"]
 mod turn_completion_golden;
 
-pub(crate) use turn_completion_decision::{
+pub(crate) use crabmate_agent::agent_turn::turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     evaluate_turn_suppress_replanning, log_turn_completion_decision,
 };
 
-pub(crate) use super::completion_suppression::redundant_tool_names_for_log;
+pub(crate) use crabmate_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
 
 /// 外循环构建空转纠偏 user 首行。
 const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
 
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use super::completion_suppression::{
+pub(crate) use crabmate_agent::agent_turn::completion_suppression::{
     plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion,
 };
