@@ -1,7 +1,7 @@
 //! HTTP JSON 语义上限（字段长度、条数），与传输层请求体大小限制配合。
 //!
 //! [`super::chat::ChatRequestBody`] / [`super::chat::ChatAsyncRequestBody`] 顶层键白名单见
-//! [`CHAT_REQUEST_BODY_ALLOWED_KEYS`]（自定义 `Deserialize`）；嵌套对象仍由对应结构的
+//! [`crabmate_web_host::http_types::chat_keys`]（自定义 `Deserialize`）；嵌套对象仍由对应结构的
 //! `deny_unknown_fields` 拦截。
 
 use axum::Json;
@@ -11,65 +11,12 @@ use serde_json::Value;
 use super::chat::{ApiError, ChatRequestBody};
 use super::workspace::{WorkspaceFileWriteBody, WorkspaceSearchBody};
 
-/// `POST /chat*`、流式请求 JSON 顶层允许的键（字母序，供二分查找）。
-pub(crate) const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
-    "agent_role",
-    "approval_session_id",
-    "clarify_questionnaire_answers",
-    "client_llm",
-    "client_sse_protocol",
-    "conversation_id",
-    "executor_llm",
-    "image_urls",
-    "message",
-    "readonly_tool_ttl_cache_secs",
-    "seed",
-    "seed_policy",
-    "stream_resume",
-    "temperature",
-];
-
-/// `POST /chat/async` 除对话字段外允许的顶层键。
-pub(crate) const CHAT_ASYNC_EXTRA_KEYS: &[&str] = &["webhook_secret", "webhook_url"];
-
 /// `clarify_questionnaire_answers.answers` JSON 预算（防畸形嵌套占内存）。
 const CLARIFY_ANSWERS_JSON_MAX_DEPTH: usize = 24;
 const CLARIFY_ANSWERS_JSON_MAX_NODES: usize = 8192;
 
 /// `encoding` 查询参数字节上限。
 pub(crate) const WORKSPACE_QUERY_ENCODING_MAX_BYTES: usize = 64;
-
-pub(crate) fn reject_unknown_chat_body_keys(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<(), String> {
-    for k in obj.keys() {
-        if CHAT_REQUEST_BODY_ALLOWED_KEYS
-            .binary_search(&k.as_str())
-            .is_err()
-        {
-            return Err(format!("未知的请求字段: {k}"));
-        }
-    }
-    Ok(())
-}
-
-pub(crate) fn reject_unknown_async_chat_body_keys(
-    obj: &serde_json::Map<String, Value>,
-) -> Result<(), String> {
-    for k in obj.keys() {
-        if CHAT_REQUEST_BODY_ALLOWED_KEYS
-            .binary_search(&k.as_str())
-            .is_ok()
-        {
-            continue;
-        }
-        if CHAT_ASYNC_EXTRA_KEYS.binary_search(&k.as_str()).is_ok() {
-            continue;
-        }
-        return Err(format!("未知的请求字段: {k}"));
-    }
-    Ok(())
-}
 
 fn clarify_answers_walk(
     v: &Value,
@@ -268,14 +215,17 @@ mod tests {
     use super::super::workspace::WorkspaceSearchBody;
     use super::{
         WORKSPACE_SEARCH_MAX_RESULTS_CAP, WORKSPACE_SEARCH_PATTERN_MAX_BYTES,
-        clamp_workspace_search_max_results, reject_unknown_chat_body_keys,
-        validate_clarify_answers_json_budget, validate_workspace_query_encoding_optional,
-        validate_workspace_search_pattern, workspace_search_pattern_or_error,
+        clamp_workspace_search_max_results, validate_clarify_answers_json_budget,
+        validate_workspace_query_encoding_optional, validate_workspace_search_pattern,
+        workspace_search_pattern_or_error,
+    };
+    use crabmate_web_host::http_types::chat_keys::{
+        CHAT_REQUEST_BODY_ALLOWED_KEYS, reject_unknown_chat_body_keys,
     };
 
     #[test]
     fn chat_request_body_allowed_keys_stay_sorted_for_binary_search() {
-        let keys = super::CHAT_REQUEST_BODY_ALLOWED_KEYS;
+        let keys = CHAT_REQUEST_BODY_ALLOWED_KEYS;
         for w in keys.windows(2) {
             assert!(
                 w[0] < w[1],
