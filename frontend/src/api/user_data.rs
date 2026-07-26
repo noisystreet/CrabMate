@@ -15,6 +15,9 @@ use super::browser::{auth_headers, window};
 pub struct UserPrefsDto {
     #[serde(default)]
     pub last_workspace_root: Option<String>,
+    /// 最近打开的工作区根（新在前；与 `last_workspace_root` 同步为首项）。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recent_workspace_roots: Vec<String>,
     #[serde(default)]
     pub locale: Option<String>,
     #[serde(default)]

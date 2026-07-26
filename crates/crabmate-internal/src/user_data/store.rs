@@ -402,11 +402,18 @@ mod tests {
         let _root = test_root();
         let p = UserPrefs {
             locale: Some("zh-Hans".to_string()),
+            recent_workspace_roots: vec!["/tmp/a".into(), "/tmp/b".into()],
+            last_workspace_root: Some("/tmp/a".into()),
             ..UserPrefs::default()
         };
         save_prefs(&p).expect("save");
         let loaded = load_prefs();
         assert_eq!(loaded.locale.as_deref(), Some("zh-Hans"));
+        assert_eq!(
+            loaded.recent_workspace_roots,
+            vec!["/tmp/a".to_string(), "/tmp/b".to_string()]
+        );
+        assert_eq!(loaded.last_workspace_root.as_deref(), Some("/tmp/a"));
     }
 
     #[test]

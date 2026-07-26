@@ -49,6 +49,13 @@ pub fn ide_menu_open_workspace(l: Locale) -> &'static str {
     }
 }
 
+pub fn ide_menu_recent_workspaces(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "最近的工作区",
+        Locale::En => "Recent workspaces",
+    }
+}
+
 pub fn ide_new_file_prompt(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "相对工作区的文件路径（例如 src/main.rs）",

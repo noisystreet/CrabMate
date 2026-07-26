@@ -74,7 +74,13 @@ pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
             !crate::api::client_llm_storage::load_readonly_tool_ttl_cache_follow_server_from_memory(
             ),
         ),
-        last_workspace_root: None,
+        last_workspace_root: app
+            .workspace
+            .recent_workspace_roots
+            .get_untracked()
+            .first()
+            .cloned(),
+        recent_workspace_roots: app.workspace.recent_workspace_roots.get_untracked(),
     }
 }
 
@@ -118,6 +124,9 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
             .session_chat_font
             .set(crate::session_typography_prefs::normalize_session_chat_font(f));
     }
+    app.workspace
+        .recent_workspace_roots
+        .set(crate::user_data_bootstrap::recent_roots_from_prefs(dto));
 }
 
 fn apply_ide_and_llm_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
@@ -175,6 +184,8 @@ pub fn wire_load_user_prefs_from_server(app: AppSignals) {
                 apply_prefs_dto(&app, &dto);
                 crate::app::shell_prefs_storage::apply_loaded_prefs_to_dom(&app);
             }
+            // 无论成功失败都置位，避免永久阻塞壳偏好落盘；失败时最近列表可能为空。
+            app.workspace.user_prefs_hydrated.set(true);
         });
     });
 }
@@ -184,6 +195,10 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
     let debounce_tick = StoredValue::new(Arc::new(AtomicU64::new(0)));
 
     Effect::new(move |_| {
+        // 须等首启 GET 结束，否则空 `recent_workspace_roots` 会覆盖磁盘上的最近列表。
+        if !app.workspace.user_prefs_hydrated.get() {
+            return;
+        }
         let _ = app.shell_ui.theme.get();
         let _ = app.shell_ui.bg_decor.get();
         let _ = app.shell_ui.locale.get();
@@ -200,6 +215,7 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
         let _ = app.ide_editor.word_wrap.get();
         let _ = app.ide_editor.tab_size.get();
         let _ = app.llm_settings.selected_agent_role.get();
+        let _ = app.workspace.recent_workspace_roots.get();
 
         let ctr = debounce_tick.get_value();
         let prev = ctr.fetch_add(1, Ordering::Relaxed);
@@ -209,6 +225,9 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
         spawn_local(async move {
             TimeoutFuture::new(PERSIST_DEBOUNCE_MS).await;
             if ctr2.load(Ordering::Relaxed) != tick {
+                return;
+            }
+            if !app2.workspace.user_prefs_hydrated.get_untracked() {
                 return;
             }
             let loc = app2.shell_ui.locale.get_untracked();

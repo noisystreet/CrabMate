@@ -31,6 +31,22 @@ pub fn normalize_workspace_partition_path(path: &str) -> String {
     path.trim().trim_end_matches('/').to_string()
 }
 
+/// `prefs.recent_workspace_roots` 上限（与前端菜单一致）。
+pub const RECENT_WORKSPACE_ROOTS_MAX: usize = 10;
+
+/// 将规范路径推到最近列表最前（去重、截断）；空路径忽略。
+pub fn push_recent_workspace_root(list: &mut Vec<String>, path: &str) {
+    let norm = normalize_workspace_partition_path(path);
+    if norm.is_empty() {
+        return;
+    }
+    list.retain(|p| p != &norm);
+    list.insert(0, norm);
+    if list.len() > RECENT_WORKSPACE_ROOTS_MAX {
+        list.truncate(RECENT_WORKSPACE_ROOTS_MAX);
+    }
+}
+
 /// 非空工作区根 → SHA256 hex；空表示 legacy 全局桶。
 #[must_use]
 pub fn workspace_partition_hash(workspace_root: &str) -> Option<String> {
@@ -78,5 +94,19 @@ mod tests {
         let a = workspace_partition_hash("/tmp/ws");
         let b = workspace_partition_hash("/tmp/ws/");
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn push_recent_workspace_root_dedupes_and_caps() {
+        let mut list = Vec::new();
+        push_recent_workspace_root(&mut list, "/a/");
+        push_recent_workspace_root(&mut list, "/b");
+        push_recent_workspace_root(&mut list, "/a");
+        assert_eq!(list, vec!["/a".to_string(), "/b".to_string()]);
+        for i in 0..20 {
+            push_recent_workspace_root(&mut list, &format!("/p{i}"));
+        }
+        assert_eq!(list.len(), RECENT_WORKSPACE_ROOTS_MAX);
+        assert_eq!(list[0], "/p19");
     }
 }
