@@ -17,7 +17,7 @@
 | 阶段 | 内容 | 状态 |
 |------|------|------|
 | **A** | handler `FromRef` + 更细 facet；`AppStateHttpCore` 承载工作区路径解析 | **进行中**（config_reload / upload / tasks / workspace / skills / health / status / changelog / github / user_data / auth） |
-| **B** | 新建 **`crabmate-web-host`**：先迁 HTTP DTO，再迁 routes/handlers / `chat_job_queue` | **进行中**（DTO + **`chat_keys`** + **`limits`**；axum 包装与 `ConversationMessagesResponseBody` 仍留根包） |
+| **B** | 新建 **`crabmate-web-host`**：先迁 HTTP DTO，再迁 routes/handlers / `chat_job_queue` | **进行中**（DTO / `chat_keys` / `limits`；**`GET /web-ui` handler+route** 已下沉；其余 routes 仍根包） |
 | **C** | 根包 `serve` 只装配 `AppState` + router + 静态 UI | 未做 |
 
 ## A 阶段约定

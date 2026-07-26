@@ -11,7 +11,7 @@
 //! | [`auth`] | Web API Bearer 中间件 |
 //! | [`chat`] | `/chat*` 与队列入队 |
 //! | [`workspace_changelog`] | `GET /workspace/changelog` |
-//! | [`health_status`] | `GET /health`、`GET /status`、`GET /web-ui` |
+//! | [`health_status`] | `GET /health`、`GET /status` |
 //! | [`config_reload`] | `POST /config/reload` |
 //! | [`session_conversation_store`] | `POST /config/session/conversation-store` |
 
@@ -33,7 +33,7 @@ pub(crate) use chat::{
 };
 pub(crate) use config_reload::config_reload_handler;
 pub(crate) use conflict::conversation_conflict_sse_line;
-pub(crate) use health_status::{health_handler, status_handler, web_ui_config_handler};
+pub(crate) use health_status::{health_handler, status_handler};
 pub(crate) use parse::normalize_agent_role;
 pub(crate) use parse::normalize_client_conversation_id;
 pub(crate) use session_conversation_store::session_conversation_store_handler;
