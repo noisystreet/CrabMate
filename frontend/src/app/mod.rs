@@ -57,6 +57,7 @@ mod tauri_window_controls;
 mod wire_workspace_domain;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;
+mod workspace_root_actions;
 
 use crate::i18n::{self, Locale};
 use crate::tauri_shell::tauri_shell_available;

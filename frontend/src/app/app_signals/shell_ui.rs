@@ -13,7 +13,7 @@ pub struct ShellUISignals {
     pub bg_decor: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub view_menu_open: RwSignal<bool>,
-    /// IDE 菜单栏任一下拉打开时为 `true`（供全局 Escape 关闭）。
+    /// 顶栏「文件 / 编辑 / 视图」任一下拉打开时为 `true`（对话与 IDE 共用；供全局 Escape 关闭）。
     pub ide_menubar_dropdown_open: RwSignal<bool>,
     /// IDE 布局挂载后由 [`IdeLayoutView`](crate::app::ide_layout::IdeLayoutView) 写入，供统一顶栏渲染菜单。
     pub ide_menu_bar_bridge: RwSignal<Option<IdeMenuBarBridge>>,

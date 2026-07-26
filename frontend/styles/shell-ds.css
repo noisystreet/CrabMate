@@ -471,7 +471,7 @@
 }
 
 .shell-main-header-title {
-  /* 与 `.shell-topbar-title` 同构；保留类名供旧选择器/E2E */
+  /* 保留类名供旧选择器/E2E；样式已统一由 `.shell-topbar` 路径承担 */
 }
 
 /* 「视图」下拉：工作区 / 任务 / 隐藏侧栏 */
@@ -641,7 +641,7 @@
 }
 
 .shell-main-header-title {
-  /* 视觉由 `.shell-topbar-title` 承担 */
+  /* 保留类名；视觉由 `.shell-topbar` 路径承担 */
 }
 
 .nav-rail-backdrop {

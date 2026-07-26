@@ -42,6 +42,13 @@ pub fn ide_menu_new_file(l: Locale) -> &'static str {
     }
 }
 
+pub fn ide_menu_open_workspace(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "选择工作区目录…",
+        Locale::En => "Open workspace folder…",
+    }
+}
+
 pub fn ide_new_file_prompt(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "相对工作区的文件路径（例如 src/main.rs）",

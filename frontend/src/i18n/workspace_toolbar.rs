@@ -147,28 +147,19 @@ pub fn ws_root_label(l: Locale) -> &'static str {
 
 pub fn ws_input_ph(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => {
-            "绝对路径（允许根内）；桌面壳可点「浏览」选目录并提交；浏览器请手输后按 Enter"
-        }
-        Locale::En => {
-            "Absolute path (within allowed roots); desktop app can Browse and submit; browser: type and Enter"
-        }
+        Locale::ZhHans => "工作区根目录（Enter 提交；或「文件 → 选择工作区目录」）",
+        Locale::En => "Workspace root (Enter to set; or File → Open workspace folder)",
     }
 }
 
 pub fn ws_input_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "桌面壳（Tauri）可用系统文件夹对话框；浏览器仅手输路径后按 Enter",
-        Locale::En => {
-            "Desktop (Tauri) can use the native folder picker; browser: type path and press Enter"
+        Locale::ZhHans => {
+            "工作区根目录。桌面壳可用「文件 → 选择工作区目录」；亦可在此手输绝对路径后按 Enter"
         }
-    }
-}
-
-pub fn ws_browse_label(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "浏览…",
-        Locale::En => "Browse…",
+        Locale::En => {
+            "Workspace root. Desktop: File → Open workspace folder; or type an absolute path and press Enter"
+        }
     }
 }
 

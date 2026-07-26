@@ -8,13 +8,16 @@ mod view_menu;
 
 pub use props::{IdeMenuBarBridge, IdeMenuBarSignals};
 
+pub(crate) use file_menu::ChatShellFileMenu;
+pub(crate) use menu_id::IdeMenuId;
+
 use edit_menu::IdeMenuEditSection;
 use file_menu::IdeMenuFileSection;
 use leptos::prelude::*;
-use menu_id::IdeMenuId;
+use menu_id::IdeMenuId as MenuId;
 use view_menu::IdeMenuViewSection;
 
-/// IDE 模式顶栏内容：文件 / 编辑 / 视图、路径（布局切换与窗口控件见统一壳顶栏右侧）。
+/// IDE 模式顶栏菜单：文件 / 编辑 / 视图（工作区根与当前文件路径由统一壳顶栏渲染）。
 #[component]
 pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
     let IdeMenuBarBridge {
@@ -25,9 +28,6 @@ pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
     } = bridge;
 
     let IdeMenuBarSignals {
-        ide_path,
-        ide_text,
-        ide_baseline,
         ide_menubar_dropdown_open,
         ..
     } = signals;
@@ -52,12 +52,6 @@ pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
                 ide_menubar_dropdown_open=signals.ide_menubar_dropdown_open
             />
         </div>
-        <div class="shell-topbar-status ide-menu-bar-status">
-            <Show when=move || ide_text.get() != ide_baseline.get()>
-                <span class="ide-dirty-dot" aria-hidden="true">"●"</span>
-            </Show>
-            <span class="ide-menu-bar-path">{move || ide_path.get().unwrap_or_default()}</span>
-        </div>
         <Show when=move || open_menu.get().is_some()>
             <button
                 type="button"
@@ -79,7 +73,7 @@ pub fn wire_ide_menu_bar_bridge(
     editor_visible: RwSignal<bool>,
     signals: IdeMenuBarSignals,
 ) {
-    let open_menu = RwSignal::new(None::<IdeMenuId>);
+    let open_menu = RwSignal::new(None::<MenuId>);
 
     Effect::new(move |_| {
         if !signals.ide_menubar_dropdown_open.get() {
