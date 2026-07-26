@@ -1,5 +1,13 @@
 //! `POST /chat*`、`/upload*`、`POST /config/reload` 等 JSON 体；路由表见 [`crate::web::routes::chat::router`]。
 //! 根级 [`ChatRequestBody`] 字段长度与条数上限见 [`super::validation`]。
+//!
+//! 上传 / `ApiError` / 配置热重载等共用体已下沉 **`crabmate-web-host::http_types::api`**，此处再导出。
+
+pub(crate) use crabmate_web_host::http_types::api::{
+    ApiError, ConfigReloadResponseBody, DeleteUploadsBody, DeleteUploadsResponseBody,
+    SessionConversationStoreRequestBody, SessionConversationStoreResponseBody, UploadResponseBody,
+    UploadedFileInfo,
+};
 
 use serde::Deserialize;
 
@@ -186,31 +194,6 @@ pub(crate) struct ChatBranchResponseBody {
 }
 
 #[derive(serde::Serialize)]
-pub(crate) struct UploadedFileInfo {
-    pub(crate) url: String,
-    pub(crate) filename: String,
-    pub(crate) mime: String,
-    pub(crate) size: u64,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct UploadResponseBody {
-    pub(crate) files: Vec<UploadedFileInfo>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteUploadsBody {
-    pub(crate) urls: Vec<String>,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct DeleteUploadsResponseBody {
-    pub(crate) deleted: Vec<String>,
-    pub(crate) skipped: Vec<String>,
-}
-
-#[derive(serde::Serialize)]
 pub(crate) struct ChatResponseBody {
     pub(crate) reply: String,
     pub(crate) conversation_id: String,
@@ -253,40 +236,6 @@ pub(crate) struct ConversationMessagesResponseBody {
     /// 是否还有更早消息可拉取。
     #[serde(default)]
     pub(crate) has_older: bool,
-}
-
-/// 统一的 API 错误结构：包含错误码与面向用户的友好提示
-#[derive(serde::Serialize, Clone)]
-pub(crate) struct ApiError {
-    /// 机器可读的错误码（前端或日志可用）
-    pub code: &'static str,
-    /// 面向用户展示的友好错误信息
-    pub message: String,
-    /// 与 `code` 配套的细分子码（如 `INTERNAL_ERROR` 时的截断内部摘要）；旧客户端可忽略。
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reason_code: Option<String>,
-}
-
-impl ApiError {
-    pub(crate) fn new(code: &'static str, message: impl Into<String>) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            reason_code: None,
-        }
-    }
-
-    pub(crate) fn with_reason(
-        code: &'static str,
-        message: impl Into<String>,
-        reason_code: impl Into<String>,
-    ) -> Self {
-        Self {
-            code,
-            message: message.into(),
-            reason_code: Some(reason_code.into()),
-        }
-    }
 }
 
 fn chat_request_body_from_json(v: serde_json::Value) -> Result<ChatRequestBody, String> {
@@ -346,23 +295,4 @@ impl<'de> Deserialize<'de> for ChatAsyncRequestBody {
         let v = serde_json::Value::deserialize(deserializer)?;
         chat_async_request_body_from_json(v).map_err(serde::de::Error::custom)
     }
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct ConfigReloadResponseBody {
-    pub(crate) ok: bool,
-    pub(crate) message: String,
-}
-
-/// `POST /config/session/conversation-store`：在进程内切换 Web 会话存储后端（内存 ↔ SQLite）。
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SessionConversationStoreRequestBody {
-    pub(crate) sqlite: bool,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct SessionConversationStoreResponseBody {
-    pub(crate) ok: bool,
-    pub(crate) message: String,
 }
