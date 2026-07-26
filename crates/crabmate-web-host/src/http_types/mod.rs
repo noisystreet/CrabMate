@@ -6,4 +6,5 @@ pub mod chat_keys;
 pub mod github;
 pub mod limits;
 pub mod skills;
+pub mod tasks;
 pub mod workspace;

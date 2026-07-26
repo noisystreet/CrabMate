@@ -206,6 +206,24 @@ pub struct ConversationMessagesQuery {
     pub before_index: Option<u32>,
 }
 
+/// `GET /conversation/messages` 响应（消息行类型由调用方绑定）。
+#[derive(serde::Serialize)]
+pub struct ConversationMessagesResponseBody<M> {
+    pub conversation_id: String,
+    pub revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_agent_role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiktoken_prompt_tokens: Option<crabmate_types::TiktokenPromptTokensSnapshot>,
+    pub messages: Vec<M>,
+    #[serde(default)]
+    pub total_count: u32,
+    #[serde(default)]
+    pub window_start_index: u32,
+    #[serde(default)]
+    pub has_older: bool,
+}
+
 fn chat_request_body_from_json(v: serde_json::Value) -> Result<ChatRequestBody, String> {
     let obj = v
         .as_object()

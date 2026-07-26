@@ -57,6 +57,8 @@ pub(crate) struct ConversationTurnSeed {
 }
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
+///
+/// 宿主侧亦见 **`crabmate_web_host::AppStateHttpCore`**（同构；根包保留本类型以满足 `FromRef` 孤儿规则）。
 #[derive(Clone)]
 pub(crate) struct AppStateHttpCore {
     pub(crate) cfg: SharedAgentConfig,
@@ -72,8 +74,6 @@ pub(crate) struct AppStateHttpCore {
 
 impl AppStateHttpCore {
     /// 当前 Web 会话选中的工作区根路径（**未**调用 `POST /workspace` 成功设置前返回空串）。
-    ///
-    /// 与配置项 **`run_command_working_dir`** 分离：后者仍供 CLI、配置解析、`GET /health` 等使用；Web 侧栏在首次设置前不应默认等同于进程当前目录。
     pub(crate) async fn effective_workspace_path(&self) -> String {
         let guard = self.workspace_override.read().await;
         match guard.as_deref() {
@@ -87,7 +87,6 @@ impl AppStateHttpCore {
     }
 
     /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
-    /// `Some("")` 仅表示回退默认目录，不视为“已设置工作区”。
     pub(crate) async fn workspace_is_set(&self) -> bool {
         let guard = self.workspace_override.read().await;
         guard.as_deref().is_some_and(|s| !s.trim().is_empty())

@@ -43,14 +43,12 @@ pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<S
             enabled: true,
             skills_dir,
             skills: Vec::new(),
-            // 勿把绝对路径原样回给浏览器；保留短错误摘要。
             error: Some(sanitize_skills_list_error(&e)),
         }),
     }
 }
 
 fn sanitize_skills_list_error(raw: &str) -> String {
-    // 常见形如 `无法读取技能文件 "/abs/...": …`：去掉引号内绝对路径。
     let mut out = String::with_capacity(raw.len());
     let mut chars = raw.chars().peekable();
     while let Some(c) = chars.next() {
