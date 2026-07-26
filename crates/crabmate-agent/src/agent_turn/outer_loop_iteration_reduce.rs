@@ -1,17 +1,17 @@
-//! 外循环单次迭代 **reflect / 工具后** → 无 IO 的 reduce（表驱动；IO 仍在 **`outer_loop`**）。
+//! 外循环单次迭代 **reflect / 工具后** → 无 IO 的 reduce（表驱动；IO 仍在根包 **`outer_loop`**）。
 
 use super::outer_loop_fsm::{OuterLoopIterationExit, ReflectBranchCtl};
 
 /// 反思分支 reduce（工具轮之前）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OuterLoopReflectReduceAction {
+pub enum OuterLoopReflectReduceAction {
     StopOuterLoop,
     ContinueNextIteration,
     ProceedToTools,
 }
 
 impl OuterLoopReflectReduceAction {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::StopOuterLoop => "stop_outer_loop",
             Self::ContinueNextIteration => "continue_next_iteration",
@@ -20,9 +20,7 @@ impl OuterLoopReflectReduceAction {
     }
 }
 
-pub(crate) fn reduce_outer_loop_reflect_branch(
-    ctl: ReflectBranchCtl,
-) -> OuterLoopReflectReduceAction {
+pub fn reduce_outer_loop_reflect_branch(ctl: ReflectBranchCtl) -> OuterLoopReflectReduceAction {
     match ctl {
         ReflectBranchCtl::BreakOuter => OuterLoopReflectReduceAction::StopOuterLoop,
         ReflectBranchCtl::ContinueOuter => OuterLoopReflectReduceAction::ContinueNextIteration,
@@ -30,7 +28,7 @@ pub(crate) fn reduce_outer_loop_reflect_branch(
     }
 }
 
-pub(crate) fn outer_loop_iteration_exit_from_reflect_reduce(
+pub fn outer_loop_iteration_exit_from_reflect_reduce(
     action: OuterLoopReflectReduceAction,
 ) -> Option<OuterLoopIterationExit> {
     match action {
@@ -42,9 +40,7 @@ pub(crate) fn outer_loop_iteration_exit_from_reflect_reduce(
     }
 }
 
-pub(crate) fn reduce_outer_loop_post_tools_exit(
-    task_level_early_stop: bool,
-) -> OuterLoopIterationExit {
+pub fn reduce_outer_loop_post_tools_exit(task_level_early_stop: bool) -> OuterLoopIterationExit {
     if task_level_early_stop {
         OuterLoopIterationExit::StopOuterLoop
     } else {

@@ -1,10 +1,10 @@
 //! 单 Agent **`run_agent_outer_loop`** 迭代相位与反思分支（`docs/design/per_state_machine_consolidation.md` P/R/E 外层）。
-//! IO 与 LLM 调用留在 [`super::outer_loop`]；本模块仅类型与 `tracing` 字符串。
+//! IO 与 LLM 调用留在根包 `agent_turn::outer_loop`；本模块仅类型与 `tracing` 字符串。
 
 /// 单 Agent 外循环内一次迭代的**粗粒度**阶段（与 `AgentTurnSubPhase` 正交，仅用于 `tracing` 排障）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OuterLoopIterationPhase {
-    /// 通过迭代守卫后、准备 planner 上下文前（[`OuterLoopPlanCallModelRole`] 已应用到 `use_executor_model`）。
+pub enum OuterLoopIterationPhase {
+    /// 通过迭代守卫后、准备 planner 上下文前。
     IterationEnter,
     /// `prepare_messages_for_model` 等准备完成，即将 `per_plan_call_model_retrying`。
     PrepareContextDone,
@@ -17,7 +17,7 @@ pub(crate) enum OuterLoopIterationPhase {
 }
 
 impl OuterLoopIterationPhase {
-    pub(crate) fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::IterationEnter => "iteration_enter",
             Self::PrepareContextDone => "prepare_context_done",
@@ -30,7 +30,7 @@ impl OuterLoopIterationPhase {
 
 /// 单次外层迭代结束后的显式去向（替代隐式 `break` / `continue`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum OuterLoopIterationExit {
+pub enum OuterLoopIterationExit {
     /// 进入下一轮 `per_plan_call_model_retrying`（含规划重写 `continue` 语义）。
     ContinueNextIteration,
     /// 结束 `run_agent_outer_loop`（正常停轮、取消、`BreakOuter` 等）。
@@ -38,7 +38,7 @@ pub(crate) enum OuterLoopIterationExit {
 }
 
 impl OuterLoopIterationExit {
-    pub(crate) fn as_trace_str(self) -> &'static str {
+    pub fn as_trace_str(self) -> &'static str {
         match self {
             Self::ContinueNextIteration => "continue_next_iteration",
             Self::StopOuterLoop => "stop_outer_loop",
@@ -46,9 +46,9 @@ impl OuterLoopIterationExit {
     }
 }
 
-/// `per_reflect_after_assistant` 结果映射为外循环控制（见 [`super::outer_loop`]）。
+/// `per_reflect_after_assistant` 结果映射为外循环控制（见根包 `outer_loop`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ReflectBranchCtl {
+pub enum ReflectBranchCtl {
     /// 结束外层循环（正常停轮或规划重写耗尽已处理 SSE）。
     BreakOuter,
     /// `continue 'outer`（规划重写）。
@@ -58,7 +58,7 @@ pub(crate) enum ReflectBranchCtl {
 }
 
 impl ReflectBranchCtl {
-    pub(crate) fn as_trace_str(&self) -> &'static str {
+    pub fn as_trace_str(self) -> &'static str {
         match self {
             Self::BreakOuter => "break_outer",
             Self::ContinueOuter => "continue_outer",

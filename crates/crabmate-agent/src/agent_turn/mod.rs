@@ -1,9 +1,13 @@
-//! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析）。
+//! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析、外循环 FSM）。
 
 pub mod intent;
 pub mod intent_routing;
 pub mod messages;
 pub mod orchestration_entry;
+pub mod outer_loop_driver;
+pub mod outer_loop_fsm;
+pub mod outer_loop_iteration_reduce;
+pub mod outer_loop_reflect_reason;
 pub mod tool_execution;
 pub mod turn_orchestration;
 pub mod turn_route_decision;
@@ -17,6 +21,13 @@ pub use orchestration_entry::{
     TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
     resolve_turn_top_level_dispatch,
 };
+pub use outer_loop_driver::OuterLoopDriver;
+pub use outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
+pub use outer_loop_iteration_reduce::{
+    OuterLoopReflectReduceAction, outer_loop_iteration_exit_from_reflect_reduce,
+    reduce_outer_loop_post_tools_exit, reduce_outer_loop_reflect_branch,
+};
+pub use outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 pub use tool_execution::{
     ExecuteToolsBatchOutcome, ToolBatchExecutionMode, ToolBatchModeParams,
     ToolPolicyEarlyDenyParams, dedup_readonly_tool_calls_count, replay_force_serial_from_env,
