@@ -9,14 +9,14 @@ use crabmate_agent::agent_turn::{
 
 use crate::agent::per_coord::PerCoordinator;
 
-use super::errors::RunAgentTurnError;
+use crate::agent::agent_turn::errors::RunAgentTurnError;
 
-use super::intent_at_turn_start;
 use super::non_hierarchical_turn::run_non_hierarchical_turn;
 use super::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_transition};
 use super::orchestration_route::record_and_emit_turn_route_decision;
-use super::params::RunLoopParams;
 use super::turn_orchestration::TurnOrchestrationMode;
+use crate::agent::agent_turn::intent_at_turn_start;
+use crate::agent::agent_turn::params::RunLoopParams;
 
 fn intent_gate_snapshot_or_unknown(p: &RunLoopParams<'_>) -> IntentGateSnapshot {
     p.turn

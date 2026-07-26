@@ -16,22 +16,24 @@ use crate::sse::{
 };
 use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
 
-use super::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
-use super::execute_tools::{ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web};
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
 use super::outer_loop_iteration_reduce::outer_loop_iteration_exit_from_reflect_reduce;
 use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
-use super::params::{OuterLoopPlanCallModelRole, RunLoopParams};
-use super::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
-use super::reflect::ReflectOnAssistantOutcome;
-use super::reflect::per_reflect_after_assistant;
-use super::sub_agent_policy::filter_tool_defs_for_executor_kind;
 use super::turn_completion::{
     redundant_tool_names_for_log, task_level_satisfied_allows_early_stop,
     turn_redundant_tools_after_completion_allowed,
 };
+use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
+use crate::agent::agent_turn::execute_tools::{
+    ExecuteToolsBatchOutcome, WebExecuteCtx, per_execute_tools_web,
+};
+use crate::agent::agent_turn::params::{OuterLoopPlanCallModelRole, RunLoopParams};
+use crate::agent::agent_turn::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
+use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
+use crate::agent::agent_turn::reflect::per_reflect_after_assistant;
+use crate::agent::agent_turn::sub_agent_policy::filter_tool_defs_for_executor_kind;
 
 fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
     if let Err(msg) = p

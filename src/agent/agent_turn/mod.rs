@@ -5,12 +5,16 @@
 //!
 //! 被 crate 根 [`crate::run_agent_turn`]（Web/CLI）与 Axum handler 共用。
 //!
-//! 子模块：`intent`、`plan`（P）、`reflect`（R）、`execute`（E，实现见 **`execute/tools`**）、`messages`、`params`、**`outer_loop_fsm`** + **`outer_loop_reflect`** + **`outer_loop`**。
-//! 外循环 FSM / reduce / driver / pre-gate reason，以及完成判定核（`turn_completion_decision` / `completion_suppression` / `task_level_evidence` / `run_command_dedupe`）已下沉 **`crabmate-agent::agent_turn`**，本目录再导出。
+//! **目录分组（T4）**：
+//! - [`turn_loop`]（目录 `loop/`）：外循环 IO、分发、完成纠偏包装
+//! - [`plan_reflect`]：P / R / 意图门控
+//! - [`host`]：工具执行宿主、`RunLoopParams`、TurnSink、错误类型
+//!
+//! 外循环 FSM / 完成判定核等纯逻辑已下沉 **`crabmate-agent::agent_turn`**；本目录再导出。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
-//! **编排接线**：回合模式分发（分层 / 非分层）见 **`run_dispatch`**；非分层统一 driver 见 **`non_hierarchical_turn`**；回合阶段枚举 **`turn_orchestration::NonHierarchicalTurnPhase`**（**`ReAct`**）见 **`turn_orchestration`**；分层意图后路由见 **`hierarchical_intent_route`**；主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
+//! **编排接线**：回合模式分发见 **`run_dispatch`**；非分层 driver 见 **`non_hierarchical_turn`**；主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
 
 use log::debug;
 use tracing::info;
@@ -22,49 +26,23 @@ use self::orchestration_entry::{
     resolve_turn_top_level_dispatch,
 };
 
-mod check_abort;
-mod errors;
-pub(crate) mod execute;
-pub(crate) mod run_command_dedupe {
-    pub(crate) use crabmate_agent::agent_turn::run_command_dedupe::*;
-}
-pub(crate) use execute::tools as execute_tools;
-mod intent;
+pub(crate) mod host;
+pub(crate) mod plan_reflect;
+#[path = "loop/mod.rs"]
+pub(crate) mod turn_loop;
+
+// ---- 稳定模块路径（对外 / `$crate::agent::agent_turn::…`）----
+pub(crate) use host::{
+    errors, execute, execute_tools, params, run_command_dedupe, sub_agent_policy, turn_sink,
+};
+pub(crate) use plan_reflect::{intent, plan, reflect};
+#[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
+pub(crate) use turn_loop::turn_completion;
+pub(crate) use turn_loop::{orchestration_entry, run_dispatch, turn_orchestration};
+
 pub(crate) mod messages {
     pub(crate) use crabmate_agent::agent_turn::messages::*;
 }
-mod non_hierarchical_turn;
-pub(crate) mod orchestration_entry {
-    pub(crate) use crabmate_agent::agent_turn::orchestration_entry::*;
-}
-mod orchestration_route;
-mod outer_loop;
-mod outer_loop_build_idle;
-pub(crate) mod outer_loop_driver {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_driver::*;
-}
-pub(crate) mod outer_loop_fsm {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_fsm::*;
-}
-pub(crate) mod outer_loop_iteration_reduce {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_iteration_reduce::*;
-}
-mod outer_loop_reflect;
-pub(crate) mod outer_loop_reflect_reason {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_reflect_reason::*;
-}
-mod params;
-mod plan;
-mod reflect;
-mod run_dispatch;
-mod sub_agent_policy;
-mod turn_completion;
-mod turn_sink;
-pub(crate) mod turn_orchestration {
-    pub(crate) use crabmate_agent::agent_turn::turn_orchestration::*;
-}
-#[cfg(test)]
-mod turn_route_decision_golden;
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。
 pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};
@@ -95,6 +73,8 @@ pub(crate) use turn_sink::{TurnControlSink, TurnTerminalIo};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod turn_route_decision_golden;
 
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,

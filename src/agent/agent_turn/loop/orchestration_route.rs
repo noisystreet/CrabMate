@@ -4,7 +4,7 @@ use crabmate_agent::agent_turn::{TurnRouteDecisionV1, log_turn_route_decision};
 
 use crate::sse::{self, SsePayload};
 
-use super::params::RunLoopParams;
+use crate::agent::agent_turn::params::RunLoopParams;
 
 pub(crate) async fn record_and_emit_turn_route_decision(
     p: &RunLoopParams<'_>,
