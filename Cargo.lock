@@ -1044,18 +1044,14 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
- "clap",
  "clap_mangen",
- "cmd_mate",
  "crabmate-agent",
  "crabmate-benchmark",
  "crabmate-config",
- "crabmate-display-rules",
  "crabmate-internal",
  "crabmate-llm",
  "crabmate-runtime",
  "crabmate-sse-protocol",
- "crabmate-tool-card",
  "crabmate-turn-layout",
  "crabmate-types",
  "crabmate-web-host",
@@ -1063,7 +1059,6 @@ dependencies = [
  "crossterm",
  "futures-util",
  "indicatif",
- "jsonschema",
  "libc",
  "log",
  "nix",
@@ -1080,13 +1075,10 @@ dependencies = [
  "subtle",
  "tempfile",
  "termimad",
- "thiserror 2.0.19",
  "tiktoken-rs",
  "tokio",
  "tokio-cron-scheduler",
  "tokio-stream",
- "tower",
- "tower-http 0.7.0",
  "tracing",
  "unicode-width 0.2.2",
  "unicodeit",
@@ -1107,7 +1099,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "thiserror 2.0.19",
  "tracing",
 ]
 
@@ -1125,14 +1116,9 @@ dependencies = [
 name = "crabmate-benchmark"
 version = "0.1.0"
 dependencies = [
- "crabmate-config",
- "crabmate-types",
- "log",
  "regex",
- "reqwest",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -1154,7 +1140,6 @@ dependencies = [
  "log",
  "secrecy",
  "serde",
- "serde_json",
  "tempfile",
  "tokio",
  "tokio-cron-scheduler",
@@ -1186,7 +1171,7 @@ dependencies = [
  "subtle",
  "thiserror 2.0.19",
  "tokio",
- "tower-http 0.7.0",
+ "tower-http",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1197,7 +1182,6 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "bollard",
- "cmd_mate",
  "crabmate-approval",
  "crabmate-config",
  "crabmate-llm",
@@ -1218,7 +1202,6 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
- "tokei",
  "tokio",
  "tracing",
  "tracing-log",
@@ -1253,7 +1236,6 @@ dependencies = [
  "crabmate-types",
  "log",
  "rmcp",
- "serde",
  "serde_json",
  "tokio",
 ]
@@ -1262,15 +1244,9 @@ dependencies = [
 name = "crabmate-memory"
 version = "0.1.0"
 dependencies = [
- "async-trait",
- "base64 0.22.1",
- "chrono",
  "crabmate-config",
- "crabmate-llm",
- "crabmate-sse-protocol",
  "crabmate-types",
  "fastembed",
- "futures-util",
  "glob",
  "ignore",
  "log",
@@ -1281,9 +1257,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
- "thiserror 2.0.19",
  "tokio",
- "tracing",
 ]
 
 [[package]]
@@ -1293,17 +1267,13 @@ dependencies = [
  "chrono",
  "crabmate-agent",
  "crabmate-chat-export",
- "crabmate-display-rules",
  "crabmate-tool-card",
  "crabmate-tools",
  "crabmate-types",
  "indicatif",
- "log",
- "reedline",
  "regex",
  "serde",
  "serde_json",
- "unicode-width 0.2.2",
  "unicodeit",
 ]
 
@@ -1331,7 +1301,6 @@ dependencies = [
 name = "crabmate-tools"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "base64 0.22.1",
  "bzip2",
  "chardetng",
@@ -1344,11 +1313,9 @@ dependencies = [
  "ego-tree",
  "encoding_rs",
  "flate2",
- "futures-util",
  "glob",
  "ignore",
  "jsonschema",
- "libc",
  "log",
  "nix",
  "path-absolutize",
@@ -1357,7 +1324,6 @@ dependencies = [
  "reqwest",
  "schemars",
  "scraper",
- "secrecy",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1367,9 +1333,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokei",
  "tokio",
- "tokio-stream",
  "toml 1.1.3+spec-1.1.0",
- "tracing",
  "uom",
  "urlencoding",
  "walkdir",
@@ -1403,7 +1367,6 @@ name = "crabmate-web"
 version = "0.1.0"
 dependencies = [
  "ammonia",
- "async-trait",
  "console_error_panic_hook",
  "crabmate-chat-export",
  "crabmate-display-rules",
@@ -1419,7 +1382,6 @@ dependencies = [
  "pulldown-cmark",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "urlencoding",
  "wasm-bindgen",
  "wasm-bindgen-futures",
@@ -1437,7 +1399,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tower",
- "tower-http 0.7.0",
+ "tower-http",
 ]
 
 [[package]]
@@ -5237,7 +5199,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-util",
  "tower",
- "tower-http 0.6.11",
+ "tower-http",
  "tower-service",
  "url",
  "wasm-bindgen",
@@ -6642,24 +6604,6 @@ checksum = "4cfcf7e2740e6fc6d4d688b4ef00650406bb94adf4731e43c096c3a19fe40840"
 dependencies = [
  "bitflags",
  "bytes",
- "futures-util",
- "http",
- "http-body",
- "pin-project-lite",
- "tower",
- "tower-layer",
- "tower-service",
- "url",
-]
-
-[[package]]
-name = "tower-http"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b11f75e912b0c2be01b63d8cf8057b8c3f97cf34abb3d431a3a4c8675498e233"
-dependencies = [
- "bitflags",
- "bytes",
  "futures-core",
  "futures-util",
  "http",
@@ -6673,9 +6617,11 @@ dependencies = [
  "pin-project-lite",
  "tokio",
  "tokio-util",
+ "tower",
  "tower-layer",
  "tower-service",
  "tracing",
+ "url",
 ]
 
 [[package]]

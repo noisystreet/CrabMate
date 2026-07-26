@@ -7,13 +7,12 @@ description = "CrabMate internal services (tools, SSE, workspace, MCP, memory)"
 
 [features]
 default = []
-project_metrics = ["crabmate-tools/project_metrics", "dep:tokei"]
+project_metrics = ["crabmate-tools/project_metrics"]
 mcp = ["crabmate-mcp/mcp", "crabmate-config/mcp"]
 docker_sandbox = ["dep:bollard", "crabmate-config/docker_sandbox"]
 fastembed = ["crabmate-memory/fastembed", "crabmate-config/fastembed", "crabmate-tools/fastembed"]
 
 [dependencies]
-cmd_mate = { workspace = true }
 crabmate-config = { workspace = true }
 crabmate-approval = { workspace = true }
 crabmate-llm = { workspace = true }
@@ -53,7 +52,6 @@ tokio = { workspace = true, features = [
     "process",
     "io-util",
 ] }
-tokei = { workspace = true, optional = true }
 bollard = { version = "0.21", optional = true, default-features = false, features = [
     "http",
     "pipe",

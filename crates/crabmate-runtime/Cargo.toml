@@ -6,22 +6,19 @@ license = "Apache-2.0"
 description = "CrabMate CLI/TUI runtime utilities (display, spinner, exit codes, completion)"
 
 [features]
-repl = ["dep:reedline", "dep:unicode-width"]
+## 历史保留：REPL 行编辑在根包 `src/runtime/repl_reedline.rs`，不经本 crate 依赖 reedline。
+repl = []
 tui = ["repl"]
 
 [dependencies]
 crabmate-agent = { workspace = true, default-features = false }
 crabmate-chat-export = { workspace = true }
-crabmate-display-rules = { workspace = true }
 chrono = { workspace = true }
 crabmate-tool-card = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 indicatif = { workspace = true }
-log = { workspace = true }
 regex = { workspace = true }
-reedline = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-unicode-width = { workspace = true, optional = true }
 unicodeit = { workspace = true }
