@@ -84,15 +84,21 @@ pub fn ensure_fastembed_cache_dir() -> Result<PathBuf, String> {
 }
 
 #[cfg(test)]
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 测试用：序列化所有会改 `CM_*` / `HOME` / cwd 的配置发现用例。
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn cache_subdir_rejects_path_segments() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = test_env_lock();
         assert!(ensure_user_cache_subdir("../x").is_err());
         assert!(ensure_user_cache_subdir("a/b").is_err());
         assert!(ensure_user_cache_subdir("").is_err());
@@ -100,7 +106,7 @@ mod tests {
 
     #[test]
     fn cache_override_env_used() {
-        let _g = ENV_LOCK.lock().unwrap();
+        let _g = test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("cache-root");
         // SAFETY: serialized by ENV_LOCK; test-only.

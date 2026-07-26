@@ -50,16 +50,31 @@ fn require_api_key_for_cli_models_probe(
     Ok(v)
 }
 
-/// `serve` / `repl` / `chat` / `bench`：读取 **`API_KEY`**；`bearer` 且未设置时返回空串（不报错）。
+/// `serve` / `repl` / `chat` / `tui` / `bench`：读取 LLM Bearer 密钥。
+///
+/// 优先级：**环境变量 `API_KEY`** → 本机 **`$XDG_DATA_HOME/crabmate/secrets/client_llm`**（与 Web/桌面同源）；
+/// `bearer` 且二者皆空时返回空串（不报错，可由 **`/api-key set`** 再填）。
 fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> String {
-    let v = env::var("API_KEY").unwrap_or_default();
-    if cfg.llm.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer && v.trim().is_empty() {
+    let from_env = env::var("API_KEY").unwrap_or_default();
+    if !from_env.trim().is_empty() {
+        return from_env;
+    }
+    if let Some(from_disk) = crate::user_data::read_secret_client_llm()
+        && !from_disk.trim().is_empty()
+    {
         info!(
             target: "crabmate",
-            "API_KEY 未设置（llm_http_auth_mode=bearer）：Web 请在侧栏设置中填写 API 密钥；REPL 请使用 /api-key set <密钥>"
+            "API_KEY 未设置：已从本机 user-data secrets/client_llm 加载（与 Web 侧栏同源）"
+        );
+        return from_disk;
+    }
+    if cfg.llm.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer {
+        info!(
+            target: "crabmate",
+            "API_KEY 未设置（llm_http_auth_mode=bearer）：可 export API_KEY、使用 Web 侧栏保存的 secrets/client_llm，或 REPL/TUI /api-key set <密钥>"
         );
     }
-    v
+    String::new()
 }
 
 fn apply_cli_llm_context_tokens_override(
@@ -72,14 +87,44 @@ fn apply_cli_llm_context_tokens_override(
     cfg
 }
 
-fn load_cli_config_for_early_command(
-    config_path: &Option<String>,
+fn finalize_cli_config_path(explicit: Option<String>) -> Option<String> {
+    if let Some(p) = explicit.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        return Some(p.to_string());
+    }
+    config::resolve_interactive_cli_config_path(None).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// 无 CLI 显式工作区 / 角色时，回退本机 prefs（与 Web 侧栏最近工作区、`cm_role` 对齐）。
+fn apply_prefs_cli_defaults(workspace: &mut Option<String>, agent_role: &mut Option<String>) {
+    let prefs = crate::user_data::load_prefs();
+    if workspace
+        .as_ref()
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true)
+        && let Some(root) = prefs.last_workspace_root.filter(|s| !s.trim().is_empty())
+    {
+        *workspace = Some(root);
+    }
+    if agent_role
+        .as_ref()
+        .map(|s| s.trim().is_empty())
+        .unwrap_or(true)
+        && let Some(role) = prefs.cm_role.filter(|s| !s.trim().is_empty())
+    {
+        *agent_role = Some(role);
+    }
+}
+
+fn load_cli_agent_config(
+    config_path: Option<&str>,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<config::AgentConfig, Box<dyn std::error::Error>> {
-    Ok(apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(config_path.as_deref())?,
+    let mut cfg = apply_cli_llm_context_tokens_override(
+        config::load_config_for_cli(config_path)?,
         llm_context_tokens_cli,
-    ))
+    );
+    crate::user_data::apply_user_data_llm_overrides(&mut cfg);
+    Ok(cfg)
 }
 
 struct EarlyCliDispatch<'a> {
@@ -105,7 +150,7 @@ fn try_early_save_session(
     let Some(ss) = d.save_session.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli::run_save_session_command(&cfg, d.workspace_cli, ss)?;
     Ok(true)
 }
@@ -117,7 +162,7 @@ fn try_early_tool_replay(
     let Some(tr) = d.tool_replay.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
     Ok(true)
 }
@@ -137,7 +182,7 @@ fn try_early_plugin_init(
     let Some(pi) = d.plugin_init.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli::run_plugin_init_command(&cfg, d.workspace_cli, pi)?;
     Ok(true)
 }
@@ -149,7 +194,7 @@ fn try_early_plugin_validate(
     let Some(pv) = d.plugin_validate.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli::run_plugin_validate_command(&cfg, d.workspace_cli, pv)?;
     Ok(true)
 }
@@ -161,7 +206,7 @@ fn try_early_plugin_list(
     let Some(pl) = d.plugin_list.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli::run_plugin_list_command(&cfg, d.workspace_cli, pl)?;
     Ok(true)
 }
@@ -195,7 +240,7 @@ async fn try_early_workflow_run(
     let Some(wr) = d.workflow_run.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     crate::runtime::cli_workflow::run_workflow_run_command(&cfg, d.workspace_cli, wr)
         .await
         .map_err(|e| Box::new(crate::CliExitError::new(2, e)) as Box<dyn std::error::Error>)?;
@@ -209,7 +254,7 @@ async fn try_early_e2e(
     let Some(e2e) = d.e2e.clone() else {
         return Ok(false);
     };
-    let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+    let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
     let api_key = read_llm_api_key_from_env_lenient(&cfg);
 
     let mode = match e2e.mode.as_str() {
@@ -250,17 +295,17 @@ async fn try_dispatch_early_extra_cli(
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
     match d.extra_cli {
         ExtraCliCommand::Doctor => {
-            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
             crate::runtime::cli_doctor::print_doctor_report(&cfg, d.workspace_cli.as_deref());
             Ok(Some(true))
         }
         ExtraCliCommand::McpList { probe } => {
-            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
             crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
             Ok(Some(true))
         }
         ExtraCliCommand::McpServe { no_tools, port } => {
-            let cfg = load_cli_config_for_early_command(d.config_path, tokens)?;
+            let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
             crate::runtime::cli_mcp::run_mcp_serve(&cfg, d.workspace_cli, no_tools, port)
                 .await
                 .map_err(std::io::Error::other)?;
@@ -328,10 +373,7 @@ async fn run_dry_run(
     config_path: &Option<String>,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(config_path.as_deref())?,
-        llm_context_tokens_cli,
-    );
+    let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
     let static_dir = web_static_dir::resolve_web_static_dir();
     if !static_dir.is_dir() {
         let msg = format!(
@@ -344,13 +386,18 @@ async fn run_dry_run(
     let key_note = match cfg.llm.llm_http_auth_mode {
         config::LlmHttpAuthMode::None => "llm_http_auth_mode=none（API_KEY 可选）".to_string(),
         config::LlmHttpAuthMode::Bearer => {
-            if env::var("API_KEY")
+            let env_ok = env::var("API_KEY")
                 .map(|s| !s.trim().is_empty())
-                .unwrap_or(false)
-            {
+                .unwrap_or(false);
+            let disk_ok =
+                crate::user_data::read_secret_client_llm().is_some_and(|s| !s.trim().is_empty());
+            if env_ok {
                 "llm_http_auth_mode=bearer 且 API_KEY 非空".to_string()
+            } else if disk_ok {
+                "llm_http_auth_mode=bearer：API_KEY 空，已检测到本机 secrets/client_llm（与 Web 同源）"
+                    .to_string()
             } else {
-                "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY（可在 Web 侧栏设置或 REPL /api-key 配置后再对话）"
+                "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY 或 secrets/client_llm（可在 Web 侧栏保存、export API_KEY 或 REPL/TUI /api-key）"
                     .to_string()
             }
         }
@@ -368,10 +415,7 @@ async fn run_models_or_probe(
     extra_cli: ExtraCliCommand,
     llm_context_tokens_cli: Option<u32>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cfg = apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(config_path.as_deref())?,
-        llm_context_tokens_cli,
-    );
+    let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
     let api_key = require_api_key_for_cli_models_probe(&cfg)?;
     let client = http_client::build_shared_api_client(&cfg.llm_http_retry)?;
     if extra_cli == ExtraCliCommand::Models {
@@ -727,13 +771,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 /// 已解析 argv：初始化日志并处理 `doctor` / `save-session` 等早退子命令。
 pub(super) async fn run_cli_from_parsed(
-    args: ParsedCliArgs,
+    mut args: ParsedCliArgs,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // serve 模式默认只输出 WARN/ERROR（避免 INFO 日志刷屏）；设 RUST_LOG=info 可恢复。
     observability::init_tracing_subscriber(
         args.log_file.as_deref().map(std::path::Path::new),
         /* quiet_cli_default */ true,
     )?;
+
+    args.config_path = finalize_cli_config_path(args.config_path.take());
+    apply_prefs_cli_defaults(&mut args.workspace_cli, &mut args.agent_role_cli);
 
     if run_early_commands(
         EarlyCliDispatch {
@@ -768,10 +815,7 @@ async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::er
         return Ok(());
     }
 
-    let cfg = apply_cli_llm_context_tokens_override(
-        config::load_config_for_cli(args.config_path.as_deref())?,
-        args.llm_context_tokens_cli,
-    );
+    let cfg = load_cli_agent_config(args.config_path.as_deref(), args.llm_context_tokens_cli)?;
 
     if matches!(
         args.extra_cli,

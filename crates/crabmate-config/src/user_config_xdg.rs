@@ -118,6 +118,32 @@ pub fn resolve_default_user_config_toml_after_seed() -> Option<PathBuf> {
     p.is_file().then_some(p)
 }
 
+/// 交互式 CLI（`repl` / `tui` / `chat` / `serve`）配置路径：与桌面 Tauri 对齐。
+///
+/// - 调用方已有非空 `--config` → 返回 `None`（继续用显式路径）
+/// - cwd 已有 `config.toml` / `.agent_demo.toml` → `None`（由 [`crate::load_config`] 合并 cwd）
+/// - 否则种子后返回用户 XDG `config.toml`（**源码树内也采用**，便于与桌面共用）
+/// - 用户副本仍无且 `/etc/crabmate/config.toml` 存在 → 只读回退系统模板
+#[must_use]
+pub fn resolve_interactive_cli_config_path(explicit: Option<&str>) -> Option<PathBuf> {
+    if explicit.map(str::trim).is_some_and(|s| !s.is_empty()) {
+        return None;
+    }
+    if cwd_has_local_user_config() {
+        return None;
+    }
+    let seed = ensure_user_config_seeded_from_system();
+    let user = user_config_toml_path();
+    if user.is_file() {
+        return Some(user);
+    }
+    if let Err(e) = seed {
+        log::warn!("seed user config from {SYSTEM_CONFIG_DIR}: {e}");
+    }
+    let system = system_config_toml_path();
+    system.is_file().then_some(system)
+}
+
 fn copy_seed_subset_no_overwrite(src: &Path, dst: &Path) -> Result<(), String> {
     for name in SEED_ROOT_FILES {
         let from = src.join(name);
@@ -187,13 +213,19 @@ fn copy_dir_contents_no_overwrite(src: &Path, dst: &Path) -> Result<(), String> 
 mod tests {
     use super::*;
     use crate::xdg::ENV_CONFIG_DIR;
-    use std::sync::Mutex;
+    use crate::xdg::test_env_lock;
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    fn recover_cwd_if_needed() {
+        if std::env::current_dir().is_err() {
+            let fallback = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let _ = std::env::set_current_dir(&fallback);
+        }
+    }
 
     #[test]
     fn seed_copies_once_and_never_overwrites() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         let tmp = tempfile::tempdir().expect("tempdir");
         let system = tmp.path().join("etc");
         let user = tmp.path().join("xdg");
@@ -237,7 +269,8 @@ mod tests {
 
     #[test]
     fn seed_skips_when_system_config_missing() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         let tmp = tempfile::tempdir().expect("tempdir");
         let system = tmp.path().join("etc");
         let user = tmp.path().join("xdg");
@@ -248,7 +281,8 @@ mod tests {
 
     #[test]
     fn skip_seed_env_disables_system_seed() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         // SAFETY: serialized by ENV_LOCK; test-only.
         unsafe {
             std::env::set_var(ENV_SKIP_CONFIG_SEED, "1");
@@ -262,12 +296,13 @@ mod tests {
 
     #[test]
     fn source_tree_skips_xdg_unless_config_dir_override() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../..")
             .canonicalize()
             .expect("repo root");
-        let prev = std::env::current_dir().unwrap();
+        let prev = std::env::current_dir().unwrap_or_else(|_| root.clone());
         // SAFETY: serialized by ENV_LOCK; test-only.
         unsafe {
             std::env::remove_var(ENV_CONFIG_DIR);
@@ -298,6 +333,40 @@ mod tests {
             resolve_default_user_config_toml_after_seed().is_none(),
             "empty override dir + skip seed => no config.toml"
         );
+
+        std::env::set_current_dir(prev).unwrap();
+        unsafe {
+            std::env::remove_var(ENV_CONFIG_DIR);
+            std::env::remove_var(ENV_SKIP_CONFIG_SEED);
+        }
+    }
+
+    #[test]
+    fn interactive_cli_resolves_xdg_even_in_source_tree() {
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .expect("repo root");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let xdg = tmp.path().join("xdg");
+        std::fs::create_dir_all(&xdg).unwrap();
+        let user_toml = xdg.join("config.toml");
+        std::fs::write(&user_toml, b"[agent]\nmodel = \"xdg\"\n").unwrap();
+
+        let prev = std::env::current_dir().unwrap_or_else(|_| root.clone());
+        // SAFETY: serialized by ENV_LOCK; test-only.
+        unsafe {
+            std::env::set_var(ENV_CONFIG_DIR, &xdg);
+            std::env::set_var(ENV_SKIP_CONFIG_SEED, "1");
+        }
+        std::env::set_current_dir(&root).unwrap();
+        assert!(cwd_in_crabmate_source_tree());
+        let got = resolve_interactive_cli_config_path(None);
+        assert_eq!(got.as_deref(), Some(user_toml.as_path()));
+        // 显式 --config 时不改写
+        assert!(resolve_interactive_cli_config_path(Some("/tmp/explicit.toml")).is_none());
 
         std::env::set_current_dir(prev).unwrap();
         unsafe {
