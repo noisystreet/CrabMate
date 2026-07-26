@@ -15,6 +15,7 @@
 //!     workspace_files: vec![],
 //!     expected_output_contains: vec![],
 //!     expected_tool_used: None,
+//!     allowed_tools: None,
 //! }, &e2e_cfg).await;
 //! assert!(metrics.success, "{} should succeed", metrics.scenario);
 //! ```
@@ -122,6 +123,10 @@ pub struct TestScenario {
     pub expected_output_contains: Vec<String>,
     /// 期望 agent 使用的工具名称（可选）。
     pub expected_tool_used: Option<String>,
+    /// 回合工具白名单（可选）。含 `"mcp"` 时允许全部 `mcp__*` 代理工具；
+    /// 用于 MCP 等场景避免百余个内置工具淹没模型。
+    #[serde(default)]
+    pub allowed_tools: Option<Vec<String>>,
 }
 
 /// 单次 e2e 测试的结构化运行指标。
@@ -190,6 +195,13 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
     let workspace_is_set = !scenario.workspace_files.is_empty();
 
     // 3. 执行 agent turn
+    let turn_allowed_tool_names = scenario.allowed_tools.as_ref().map(|names| {
+        names
+            .iter()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect::<std::collections::HashSet<_>>()
+    });
     let turn_result = run_single_agent_turn(SingleAgentTurnCfg {
         test_name: scenario_name,
         cfg: &cfg,
@@ -199,6 +211,7 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
         api_key: &e2e_cfg.api_key,
         recordings_dir: &e2e_cfg.recordings_dir,
         mode: e2e_cfg.mode,
+        turn_allowed_tool_names,
     })
     .await;
 
@@ -284,6 +297,7 @@ pub fn preset_scenarios() -> Vec<TestScenario> {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: None,
+            allowed_tools: None,
         },
         TestScenario {
             name: "orch_single_agent_tool".to_string(),
@@ -292,6 +306,7 @@ pub fn preset_scenarios() -> Vec<TestScenario> {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: Some("get_current_time".to_string()),
+            allowed_tools: None,
         },
         TestScenario {
             name: "orch_cpp_cmake".to_string(),
@@ -319,6 +334,7 @@ add_executable(cpp_e2e_test main.cpp)
             ],
             expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
             expected_tool_used: Some("run_command".to_string()),
+            allowed_tools: None,
         },
     ]
 }
@@ -454,6 +470,7 @@ struct SingleAgentTurnCfg<'a> {
     api_key: &'a str,
     recordings_dir: &'a Path,
     mode: E2eMode,
+    turn_allowed_tool_names: Option<std::collections::HashSet<String>>,
 }
 
 /// 构造 e2e 后端并注入 `RunAgentTurnParams`，执行单轮 agent turn。
@@ -509,7 +526,7 @@ async fn run_single_agent_turn(
         long_term_memory: None,
         long_term_memory_scope_id: None,
         read_file_turn_cache: None,
-        turn_allowed_tool_names: None,
+        turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
         tracing_chat_turn: None,
         request_audit: None,
         process_handles: ProcessHandles::default_arc_process_handles(),

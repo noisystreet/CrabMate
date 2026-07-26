@@ -64,13 +64,7 @@ pub fn turn_allow_for_web_or_cli_job(
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
 #[inline]
 pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {
-    let Some(set) = allow else {
-        return true;
-    };
-    if crabmate_tools::tool_naming::is_mcp_proxy_tool(name) {
-        return set.contains("mcp");
-    }
-    set.contains(name)
+    crabmate_tools::tool_naming::tool_name_allowed_by_turn_allowlist(name, allow)
 }
 
 pub fn turn_tool_denied_message(name: &str) -> String {
@@ -114,5 +108,26 @@ mod tests {
         allow.insert("read_file".to_string());
         assert!(!tool_allowed_for_turn("run_command", Some(&allow)));
         assert!(tool_allowed_for_turn("read_file", Some(&allow)));
+    }
+
+    #[test]
+    fn turn_allow_mcp_by_token_or_exact_name() {
+        let mut by_token = HashSet::new();
+        by_token.insert("mcp".to_string());
+        assert!(tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_watchlist_list",
+            Some(&by_token)
+        ));
+
+        let mut by_exact = HashSet::new();
+        by_exact.insert("mcp__fanalyzer__fanalyzer_watchlist_list".to_string());
+        assert!(tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_watchlist_list",
+            Some(&by_exact)
+        ));
+        assert!(!tool_allowed_for_turn(
+            "mcp__fanalyzer__fanalyzer_analyze",
+            Some(&by_exact)
+        ));
     }
 }

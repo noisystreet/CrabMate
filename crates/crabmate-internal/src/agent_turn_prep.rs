@@ -82,13 +82,11 @@ pub async fn prepare_tools_for_turn(
         });
     }
     if let Some(allow) = turn_allowed_tool_names {
-        let mcp_ok = allow.contains("mcp");
         tools_for_turn.retain(|t| {
-            let n = t.function.name.as_str();
-            if n.starts_with("mcp__") {
-                return mcp_ok;
-            }
-            allow.contains(n)
+            crabmate_tools::tool_naming::tool_name_allowed_by_turn_allowlist(
+                t.function.name.as_str(),
+                Some(allow),
+            )
         });
     }
     ToolsForTurnPrepared {

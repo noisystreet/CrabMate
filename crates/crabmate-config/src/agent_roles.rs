@@ -19,7 +19,7 @@ pub(super) struct AgentRoleEntryBuilder {
     pub(super) system_prompt_file: Option<String>,
     /// 非 `false` 时在通用 L0 之后叠加编程工作台层（仍受全局 `coding_workbench_enabled` 约束）。
     pub(super) prepend_coding_workbench: Option<bool>,
-    /// 非空：仅允许列出的工具；含字面量 **`mcp`** 表示允许所有 `mcp__*`。空数组表示不允许任何内置工具（仍可按上条规则放行 MCP）。
+    /// 非空：仅允许列出的工具；含字面量 **`mcp`** 表示允许所有 `mcp__*`，亦可写完整 `mcp__…` 名。空数组表示不允许任何内置工具（仍可按上条规则放行 MCP）。
     pub(super) allowed_tools: Option<Vec<String>>,
 }
 

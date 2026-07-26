@@ -32,7 +32,7 @@ impl PlanStepExecutorKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkflowNodeToolRole {
-    /// 与 `PlanStepExecutorKind::ReviewReadonly` 一致：只读工具，禁 MCP。
+    /// 与 `PlanStepExecutorKind::ReviewReadonly` 一致：只读工具 + 用户启用的 MCP 代理。
     ReviewReadonly,
     /// 与 `PlanStepExecutorKind::PatchWrite` 一致。
     PatchWrite,

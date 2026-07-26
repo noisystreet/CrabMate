@@ -100,6 +100,7 @@ pub async fn try_open_turn_handle(
 }
 
 pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
+    // stub：无 rmcp；user-data 感知版本见 crabmate_internal::mcp::try_open_session_and_tools
     None
 }
 

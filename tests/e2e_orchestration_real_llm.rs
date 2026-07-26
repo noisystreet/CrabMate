@@ -83,6 +83,7 @@ async fn e2e_single_agent_smoke() {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: None,
+            allowed_tools: None,
         },
         &e2e_cfg,
     )
@@ -108,6 +109,7 @@ async fn e2e_single_agent_tool_round() {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: Some("get_current_time".to_string()),
+            allowed_tools: None,
         },
         &e2e_cfg,
     )
@@ -133,6 +135,7 @@ async fn e2e_single_agent_skills() {
             workspace_files: vec![],
             expected_output_contains: vec!["技能".to_string(), "工具".to_string()],
             expected_tool_used: None,
+            allowed_tools: None,
         },
         &e2e_cfg,
     )
@@ -177,6 +180,7 @@ add_executable(cpp_e2e_test main.cpp)
             ],
             expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
             expected_tool_used: Some("run_command".to_string()),
+            allowed_tools: None,
         },
         &e2e_cfg,
     )
@@ -188,6 +192,57 @@ add_executable(cpp_e2e_test main.cpp)
         "输出应包含程序运行结果或编译成功信息"
     );
     assert!(metrics.expected_tool_matched, "应使用 run_command 工具");
+}
+
+/// MCP fanalyzer 工具调用测试：通过 fanalyzer 的 watchlist_list 工具查询观察列表。
+///
+/// 前置条件：
+///   - `~/.local/share/crabmate/mcp_servers.json` 中配置了 fanalyzer MCP 服务器
+///   - `fanalyzer` 命令在 PATH 中可用
+///   - MCP `global_enabled=true` 且服务器 `enabled=true`
+///   - 测试通过 `crabmate mcp list --probe` 验证 MCP 工具已连接后再运行
+///
+/// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "设置 REAL_LLM_E2E=1 后执行；需先配置 fanalyzer MCP 服务器"]
+async fn e2e_mcp_fanalyzer_watchlist() {
+    let e2e_cfg = test_e2e_config();
+    let metrics = run_scenario(
+        &TestScenario {
+            name: "mcp_fanalyzer_watchlist".to_string(),
+            user_message: "请调用 MCP 工具 mcp__fanalyzer__fanalyzer_watchlist_list（无需参数）列出观察列表，然后用一句话总结结果。".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
+            expected_tool_used: Some("mcp__fanalyzer__fanalyzer_watchlist_list".to_string()),
+            allowed_tools: Some(vec![
+                "mcp__fanalyzer__fanalyzer_watchlist_list".to_string(),
+            ]),
+        },
+        &e2e_cfg,
+    )
+    .await;
+
+    assert!(
+        metrics.success,
+        "MCP fanalyzer 测试应成功: {:?}",
+        metrics.error_message
+    );
+    assert!(metrics.tool_call_count > 0, "应调用了 MCP 工具");
+
+    // 验证至少有一个工具名称以 mcp__ 前缀开头（MCP 工具）
+    let has_mcp_tool = metrics.tool_names.iter().any(|n| n.starts_with("mcp__"));
+    assert!(
+        has_mcp_tool,
+        "应调用了 MCP 工具（mcp__ 前缀），实际工具: {:?}",
+        metrics.tool_names,
+    );
+
+    assert!(metrics.last_role == "assistant", "末条应为 assistant");
+    assert!(
+        metrics.tool_errors == 0,
+        "MCP 工具不应报错，错误数: {}",
+        metrics.tool_errors
+    );
 }
 
 /// 统一场景迭代测试：运行所有预设场景，生成汇总报告。
@@ -205,6 +260,7 @@ add_executable(cpp_e2e_test main.cpp)
 ///     workspace_files: &[("file.txt", "content")],
 ///     expected_output_contains: &["关键词"],
 ///     expected_tool_used: Some("some_tool"),
+///     allowed_tools: None,
 /// }
 /// ```
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -219,6 +275,7 @@ async fn e2e_all_scenarios() {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: None,
+            allowed_tools: None,
         },
         TestScenario {
             name: "orch_single_agent_tool".to_string(),
@@ -227,6 +284,7 @@ async fn e2e_all_scenarios() {
             workspace_files: vec![],
             expected_output_contains: vec![],
             expected_tool_used: Some("get_current_time".to_string()),
+            allowed_tools: None,
         },
         TestScenario {
             name: "orch_single_agent_skills".to_string(),
@@ -234,6 +292,7 @@ async fn e2e_all_scenarios() {
             workspace_files: vec![],
             expected_output_contains: vec!["技能".to_string(), "工具".to_string()],
             expected_tool_used: None,
+            allowed_tools: None,
         },
         TestScenario {
             name: "orch_cpp_cmake".to_string(),
@@ -261,6 +320,17 @@ add_executable(cpp_e2e_test main.cpp)
             ],
             expected_output_contains: vec!["Hello from C++".to_string(), "编译成功".to_string()],
             expected_tool_used: Some("run_command".to_string()),
+            allowed_tools: None,
+        },
+        TestScenario {
+            name: "mcp_fanalyzer_watchlist".to_string(),
+            user_message: "请调用 MCP 工具 mcp__fanalyzer__fanalyzer_watchlist_list（无需参数）列出观察列表，然后用一句话总结结果。".to_string(),
+            workspace_files: vec![],
+            expected_output_contains: vec![],
+            expected_tool_used: Some("mcp__fanalyzer__fanalyzer_watchlist_list".to_string()),
+            allowed_tools: Some(vec![
+                "mcp__fanalyzer__fanalyzer_watchlist_list".to_string(),
+            ]),
         },
     ];
 
