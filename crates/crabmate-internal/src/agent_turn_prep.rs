@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 
-use crate::process_handles::ProcessHandles;
+use crate::process_handles::TurnProcessHandles;
 use crate::read_file_turn_cache::ReadFileTurnCache;
 use crate::workspace::changelist::WorkspaceChangelist;
 use crabmate_config::AgentConfig;
@@ -34,7 +34,7 @@ pub fn resolve_read_file_turn_cache_for_turn(
 
 pub fn workspace_changelist_for_turn(
     cfg: &AgentConfig,
-    process_handles: &ProcessHandles,
+    process_handles: &TurnProcessHandles,
     long_term_memory_scope_id: Option<&str>,
 ) -> Option<Arc<WorkspaceChangelist>> {
     if !cfg

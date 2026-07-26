@@ -44,7 +44,7 @@ pub use crabmate_tools::{
     text_encoding, tool_result, tools, workspace,
 };
 
-pub use process_handles::ProcessHandles;
+pub use process_handles::{ProcessHandles, TurnProcessHandles};
 
 #[cfg(test)]
 pub fn reset_process_tool_globals_for_tests() {

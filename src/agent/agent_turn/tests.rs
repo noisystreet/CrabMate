@@ -188,8 +188,7 @@ mod per_reflect_tests {
                     request_chrome_trace: None,
                     tracing_chat_turn: None,
                     request_audit: None,
-                    process_handles:
-                        crate::process_handles::ProcessHandles::default_arc_process_handles(),
+                    process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
                     trace_sink: None,
                 },
             },

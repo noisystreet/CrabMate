@@ -13,8 +13,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
-    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles,
-    RunAgentTurnParams, RunAgentTurnSharedInputs, StreamChatParams, ToolCall, build_tools,
+    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnParams,
+    RunAgentTurnSharedInputs, StreamChatParams, ToolCall, TurnProcessHandles, build_tools,
     load_config, message_content_as_str, run_agent_turn,
 };
 
@@ -140,7 +140,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles(),
+        process_handles: TurnProcessHandles::default_arc(),
     };
 
     run_agent_turn(params)
@@ -211,7 +211,7 @@ async fn run_mock_agent_turn(
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles(),
+        process_handles: TurnProcessHandles::default_arc(),
     };
     run_agent_turn(params)
         .await
@@ -282,7 +282,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
         turn_allowed_tool_names: None,
         tracing_chat_turn: None,
         request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles(),
+        process_handles: TurnProcessHandles::default_arc(),
     };
 
     run_agent_turn(params)

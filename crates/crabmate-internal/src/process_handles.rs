@@ -1,6 +1,8 @@
 //! 单进程内共享的运行时句柄（非 `static`）：工作区变更集注册表、工具调用统计记录器、只读类 **`run_command`** 短时 TTL 缓存与 CLI 长期记忆缓存。
 //! 侧栏任务清单（[`workspace::tasks_side`]）与 Web **`GET`/`POST /tasks`** 共用同一内存表。
-//! 由 Web `AppState` 或 CLI 入口构造并注入 [`crate::RunAgentTurnParams`]，避免隐式全局状态；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
+//! 由 Web `AppState` 或 CLI 入口构造并注入回合路径；**`default_arc_process_handles`** 为无 `AppState` 时的独立默认 `Arc`（**不**用进程级 `static` 单例）。
+//!
+//! 回合编排只消费 [`TurnProcessHandles`]（经 [`ProcessHandles::turn_handles`]）；侧栏任务与 CLI LTM 仍挂在完整 [`ProcessHandles`] 上。
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -13,6 +15,26 @@ use crate::tool_sandbox::SyncDefaultSandboxBackend;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::workspace::changelist::WorkspaceChangelistRegistry;
 use crate::workspace::tasks_side::{TasksData, WorkspaceTasksByPath};
+
+/// `run_agent_turn` / 工具执行所需的进程句柄面（不含侧栏任务表与 CLI LTM）。
+#[derive(Clone)]
+pub struct TurnProcessHandles {
+    pub workspace_changelist_registry: Arc<WorkspaceChangelistRegistry>,
+    pub tool_outcome_recorder: Arc<ToolOutcomeRecorder>,
+    /// 工具名 → 分发 handler（原模块级 `HANDLER_MAP`）。
+    pub handler_lookup: HandlerLookupTable,
+    /// Docker `sync_default` 沙盒后端（原模块级 `SANDBOX_BACKEND`）。
+    pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
+    /// 只读类 **`run_command`** 短时 TTL 缓存（按工作区键失效；配置见 **`readonly_tool_ttl_cache_*`**）。
+    pub readonly_tool_ttl_cache: Arc<ReadonlyToolTtlCache>,
+}
+
+impl TurnProcessHandles {
+    /// 默认回合句柄（独立 `Arc`）：bench / 单元测试等无完整 [`ProcessHandles`] 的路径。
+    pub fn default_arc() -> Arc<Self> {
+        ProcessHandles::default_arc_process_handles().turn_handles_arc()
+    }
+}
 
 /// Web `serve` 与 CLI `chat`/`repl` 共用的进程级句柄（显式 `Arc` 传递，替代模块级 `static`）。
 pub struct ProcessHandles {
@@ -62,8 +84,24 @@ impl ProcessHandles {
         ))
     }
 
-    /// 默认进程句柄（独立 `Arc`，非全局单例）：用于 **`RunAgentTurnParams::benchmark_batch`**、单元测试等无 `AppState` 的路径。
-    /// Web `serve` / CLI `chat`·`repl` 应在入口构造 [`ProcessHandles::new_arc`] 并注入 `run_agent_turn`，以便与工作区会话对齐。
+    /// 回合路径消费面：变更集注册表、工具统计、handler、沙盒、只读 TTL（不含 tasks / CLI LTM）。
+    pub fn turn_handles(&self) -> TurnProcessHandles {
+        TurnProcessHandles {
+            workspace_changelist_registry: Arc::clone(&self.workspace_changelist_registry),
+            tool_outcome_recorder: Arc::clone(&self.tool_outcome_recorder),
+            handler_lookup: self.handler_lookup.clone(),
+            sync_default_sandbox_backend: Arc::clone(&self.sync_default_sandbox_backend),
+            readonly_tool_ttl_cache: Arc::clone(&self.readonly_tool_ttl_cache),
+        }
+    }
+
+    /// [`turn_handles`] 的 `Arc` 形式，供 `run_agent_turn` 入参等使用。
+    pub fn turn_handles_arc(&self) -> Arc<TurnProcessHandles> {
+        Arc::new(self.turn_handles())
+    }
+
+    /// 默认进程句柄（独立 `Arc`，非全局单例）：用于装配 Web/`AppState`、CLI session 等。
+    /// 回合入参请用 [`TurnProcessHandles::default_arc`] 或 [`Self::turn_handles_arc`]。
     pub fn default_arc_process_handles() -> Arc<Self> {
         ProcessHandles::new_arc(
             Arc::new(WorkspaceChangelistRegistry::default()),
