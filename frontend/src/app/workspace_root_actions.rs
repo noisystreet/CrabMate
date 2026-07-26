@@ -15,7 +15,7 @@ use crate::session_export::tauri_pick_workspace_folder;
 use crate::session_workspace_bind::patch_active_session_workspace_root;
 use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 use crate::tauri_shell::tauri_shell_available;
-use crate::user_data_bootstrap::persist_last_workspace_root;
+use crate::user_data_bootstrap::remember_workspace_root;
 use crate::workspace_shell::reload_workspace_panel;
 
 use super::workspace_panel_state::WorkspacePanelSignals;
@@ -51,7 +51,7 @@ pub(crate) async fn commit_workspace_root(
     }
     match post_workspace_set(Some(path.clone()), loc).await {
         Ok(_) => {
-            persist_last_workspace_root(&path, loc).await;
+            remember_workspace_root(&path, ws.recent_workspace_roots);
             let aid = chat.active_id.get_untracked();
             patch_active_session_workspace_root(chat.sessions, &aid, path_for_bind);
             reload_workspace_panel(
@@ -140,6 +140,24 @@ impl WorkspaceRootPickHandle {
         } else {
             i18n::ide_menu_open_workspace(loc)
         }
+    }
+
+    /// 从最近列表打开已记录路径（不打开系统对话框）。
+    pub fn spawn_open_recent(self, path: String) {
+        let Self {
+            locale, chat, ws, ..
+        } = self;
+        ws.workspace_set_err.set(None);
+        let p = path.trim().to_string();
+        if p.is_empty() || workspace_inputs_blocked(ws) {
+            return;
+        }
+        ws.workspace_path_draft.set(p.clone());
+        ws.workspace_set_busy.set(true);
+        let loc = locale.get_untracked();
+        spawn_local(async move {
+            commit_workspace_root(chat, ws, p, loc).await;
+        });
     }
 }
 

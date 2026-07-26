@@ -1,4 +1,4 @@
-//! 「文件」菜单（对话顶栏与 IDE 顶栏共用「选择工作区目录」项）。
+//! 「文件」菜单（对话顶栏与 IDE 顶栏共用「选择工作区目录」与最近工作区）。
 
 use leptos::prelude::*;
 
@@ -8,6 +8,7 @@ use crate::app::ide_layout_switch::exit_editor_layout;
 use crate::app::workspace_root_actions::WorkspaceRootPickHandle;
 use crate::i18n::{self, Locale};
 use crate::ide_save::{spawn_save_active_tab, spawn_save_all_dirty_tabs};
+use crate::user_data_bootstrap::workspace_recent_menu_label;
 
 fn toggle_file_menu(
     open_menu: RwSignal<Option<IdeMenuId>>,
@@ -68,7 +69,95 @@ pub(crate) fn ShellMenuOpenWorkspaceItem(
     }
 }
 
-/// 对话模式顶栏「文件」菜单（仅工作区选择）。
+/// 「最近的工作区」级联子菜单（右侧飞出列表）。
+#[component]
+pub(crate) fn ShellMenuRecentWorkspaces(
+    workspace_pick: WorkspaceRootPickHandle,
+    open_menu: RwSignal<Option<IdeMenuId>>,
+    menubar_dropdown_open: RwSignal<bool>,
+    /// IDE 菜单在「最近」与「新建文件」之间再画一条分隔线。
+    #[prop(optional)]
+    trailing_separator: bool,
+) -> impl IntoView {
+    let recent = workspace_pick.ws.recent_workspace_roots;
+    let locale = workspace_pick.locale;
+    let submenu_open = RwSignal::new(false);
+
+    Effect::new(move |_| {
+        if open_menu.get() != Some(IdeMenuId::File) {
+            submenu_open.set(false);
+        }
+    });
+
+    view! {
+        <Show when=move || !recent.get().is_empty()>
+            <div
+                class="ide-menu-submenu"
+                class:ide-menu-submenu-open=move || submenu_open.get()
+                data-testid="shell-menu-recent-workspaces"
+                on:mouseenter=move |_| submenu_open.set(true)
+                on:mouseleave=move |_| submenu_open.set(false)
+            >
+                <button
+                    type="button"
+                    class="ide-menu-item ide-menu-submenu-trigger"
+                    role="menuitem"
+                    aria-haspopup="true"
+                    prop:aria-expanded=move || submenu_open.get().to_string()
+                    prop:disabled=move || workspace_pick.pick_busy_tracked()
+                    on:click=move |ev| {
+                        ev.stop_propagation();
+                        submenu_open.update(|o| *o = !*o);
+                    }
+                >
+                    <span class="ide-menu-submenu-label">
+                        {move || i18n::ide_menu_recent_workspaces(locale.get())}
+                    </span>
+                    <span class="ide-menu-submenu-chevron" aria-hidden="true">"›"</span>
+                </button>
+                <Show when=move || submenu_open.get()>
+                    <div class="ide-menu-submenu-flyout" role="menu">
+                        <For
+                            each=move || recent.get()
+                            key=|p| p.clone()
+                            let:path
+                        >
+                            {
+                                let path_for_click = path.clone();
+                                let path_for_title = path.clone();
+                                let path_for_label = path.clone();
+                                let path_for_test = path.clone();
+                                view! {
+                                    <button
+                                        type="button"
+                                        class="ide-menu-item ide-menu-item-recent"
+                                        role="menuitem"
+                                        data-testid="shell-menu-recent-workspace"
+                                        prop:data-path=path_for_test
+                                        prop:disabled=move || workspace_pick.pick_busy_tracked()
+                                        prop:title=path_for_title
+                                        on:click=move |_| {
+                                            workspace_pick.spawn_open_recent(path_for_click.clone());
+                                            submenu_open.set(false);
+                                            close_menus(open_menu, menubar_dropdown_open);
+                                        }
+                                    >
+                                        {workspace_recent_menu_label(&path_for_label)}
+                                    </button>
+                                }
+                            }
+                        </For>
+                    </div>
+                </Show>
+            </div>
+            <Show when=move || trailing_separator>
+                <div class="ide-menu-separator" role="separator" />
+            </Show>
+        </Show>
+    }
+}
+
+/// 对话模式顶栏「文件」菜单（工作区选择 + 最近）。
 #[component]
 pub(crate) fn ChatShellFileMenu(
     locale: RwSignal<Locale>,
@@ -94,6 +183,11 @@ pub(crate) fn ChatShellFileMenu(
                 <Show when=move || open_menu.get() == Some(IdeMenuId::File)>
                     <div class="ide-menu-dropdown" role="menu">
                         <ShellMenuOpenWorkspaceItem
+                            workspace_pick=workspace_pick
+                            open_menu=open_menu
+                            menubar_dropdown_open=menubar_dropdown_open
+                        />
+                        <ShellMenuRecentWorkspaces
                             workspace_pick=workspace_pick
                             open_menu=open_menu
                             menubar_dropdown_open=menubar_dropdown_open
@@ -155,6 +249,12 @@ pub(super) fn IdeMenuFileSection(
                         workspace_pick=workspace_pick
                         open_menu=open_menu
                         menubar_dropdown_open=ide_menubar_dropdown_open
+                    />
+                    <ShellMenuRecentWorkspaces
+                        workspace_pick=workspace_pick
+                        open_menu=open_menu
+                        menubar_dropdown_open=ide_menubar_dropdown_open
+                        trailing_separator=true
                     />
                     <button
                         type="button"

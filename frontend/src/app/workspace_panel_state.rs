@@ -21,6 +21,8 @@ pub struct WorkspacePanelSignals {
     pub workspace_set_err: RwSignal<Option<String>>,
     pub workspace_set_busy: RwSignal<bool>,
     pub workspace_pick_busy: RwSignal<bool>,
+    /// 最近打开的工作区根（新在前；来自 `prefs.recent_workspace_roots`）。
+    pub recent_workspace_roots: RwSignal<Vec<String>>,
     pub workspace_context_menu:
         RwSignal<Option<crate::workspace_context_menu::WorkspaceContextAnchor>>,
     pub workspace_pending_create:
