@@ -70,6 +70,30 @@ pub(crate) struct AppStateHttpCore {
     pub(crate) uploads_dir: std::path::PathBuf,
 }
 
+impl AppStateHttpCore {
+    /// 当前 Web 会话选中的工作区根路径（**未**调用 `POST /workspace` 成功设置前返回空串）。
+    ///
+    /// 与配置项 **`run_command_working_dir`** 分离：后者仍供 CLI、配置解析、`GET /health` 等使用；Web 侧栏在首次设置前不应默认等同于进程当前目录。
+    pub(crate) async fn effective_workspace_path(&self) -> String {
+        let guard = self.workspace_override.read().await;
+        match guard.as_deref() {
+            None => String::new(),
+            Some(s) if s.trim().is_empty() => {
+                let cfg = self.cfg.read().await;
+                cfg.command_exec.run_command_working_dir.clone()
+            }
+            Some(s) => s.to_string(),
+        }
+    }
+
+    /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
+    /// `Some("")` 仅表示回退默认目录，不视为“已设置工作区”。
+    pub(crate) async fn workspace_is_set(&self) -> bool {
+        let guard = self.workspace_override.read().await;
+        guard.as_deref().is_some_and(|s| !s.trim().is_empty())
+    }
+}
+
 /// `/chat` / `/chat/stream` 进程内队列及其 worker 依赖。
 #[derive(Clone)]
 pub(crate) struct AppStateChatRuntime {
@@ -185,26 +209,12 @@ async fn sqlite_conversation_store_op(
 }
 
 impl AppState {
-    /// 当前 Web 会话选中的工作区根路径（**未**调用 `POST /workspace` 成功设置前返回空串）。
-    ///
-    /// 与配置项 **`run_command_working_dir`** 分离：后者仍供 CLI、配置解析、`GET /health` 等使用；Web 侧栏在首次设置前不应默认等同于进程当前目录。
     pub(crate) async fn effective_workspace_path(&self) -> String {
-        let guard = self.http.workspace_override.read().await;
-        match guard.as_deref() {
-            None => String::new(),
-            Some(s) if s.trim().is_empty() => {
-                let cfg = self.http.cfg.read().await;
-                cfg.command_exec.run_command_working_dir.clone()
-            }
-            Some(s) => s.to_string(),
-        }
+        self.http.effective_workspace_path().await
     }
 
-    /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
-    /// `Some("")` 仅表示回退默认目录，不视为“已设置工作区”。
     pub(crate) async fn workspace_is_set(&self) -> bool {
-        let guard = self.http.workspace_override.read().await;
-        guard.as_deref().is_some_and(|s| !s.trim().is_empty())
+        self.http.workspace_is_set().await
     }
 
     pub(crate) fn next_conversation_id(&self) -> String {
@@ -261,6 +271,7 @@ impl AppState {
             .await
     }
 
+    #[allow(dead_code)] // status 等已改走 WebStatusAppFacet；保留 AppState 薄委托对称面
     pub(crate) async fn conversation_count(&self) -> usize {
         self.conversation.conversation_count().await
     }

@@ -9,8 +9,8 @@ use axum::{
 use log::error;
 use serde_json;
 
-use crate::AppState;
 use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
+use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::{
     clamp_workspace_search_max_results, validate_workspace_file_write_request,
     validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
@@ -43,7 +43,7 @@ use nix::sys::stat::fstatat;
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
 
 async fn workspace_file_read_resolve(
-    state: &Arc<AppState>,
+    http: &AppStateHttpCore,
     query: &WorkspaceFileQuery,
 ) -> Result<
     (
@@ -59,7 +59,7 @@ async fn workspace_file_read_resolve(
             error: Some(e),
         }));
     }
-    let base_canonical = match effective_workspace_base_canonical(state).await {
+    let base_canonical = match effective_workspace_base_canonical(http).await {
         Ok(p) => p,
         Err(e) => {
             return Err(Json(WorkspaceFileReadResponse {
@@ -99,9 +99,9 @@ async fn workspace_file_read_resolve(
 
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
 async fn effective_workspace_base_canonical(
-    state: &Arc<AppState>,
+    http: &AppStateHttpCore,
 ) -> Result<std::path::PathBuf, WorkspacePathError> {
-    let base_str = state.effective_workspace_path().await;
+    let base_str = http.effective_workspace_path().await;
     if base_str.trim().is_empty() {
         return Err(WorkspacePathError::WebEffectiveWorkspaceUnset);
     }
@@ -109,7 +109,7 @@ async fn effective_workspace_base_canonical(
     let base_canonical = base
         .canonicalize()
         .map_err(WorkspacePathError::WorkspaceResolveFailed)?;
-    let cfg = state.http.cfg.read().await;
+    let cfg = http.cfg.read().await;
     validate_effective_workspace_base(&cfg, &base_canonical)?;
     Ok(base_canonical)
 }
@@ -122,17 +122,17 @@ pub async fn workspace_pick_handler() -> Json<WorkspacePickResponse> {
 
 /// 设置当前工作区根目录（来自前端）。非空路径须已存在、为目录，且落在配置的 `workspace_allowed_roots` 内（未配置时仅允许 `run_command_working_dir` 及其子目录），并且不得命中敏感系统目录黑名单。
 pub async fn workspace_set_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Json(body): Json<WorkspaceSetBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let raw = body.path.as_deref().map(|s| s.trim()).unwrap_or("");
-    let mut guard = state.http.workspace_override.write().await;
+    let mut guard = http.workspace_override.write().await;
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
         *guard = Some(String::new());
         return Ok(Json(serde_json::json!({ "ok": true, "path": "" })));
     }
-    let cfg = state.http.cfg.read().await;
+    let cfg = http.cfg.read().await;
     let canon = match validate_workspace_set_path(&cfg, raw) {
         Ok(p) => p,
         Err(e) => {
@@ -154,10 +154,10 @@ pub async fn workspace_set_handler(
 
 /// 列出当前工作区或子目录
 pub async fn workspace_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceQuery>,
 ) -> Json<WorkspaceResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(WorkspacePathError::WebEffectiveWorkspaceUnset) => {
             return Json(WorkspaceResponse {
@@ -294,7 +294,7 @@ pub async fn workspace_handler(
 
 /// 在当前工作区内搜索文件内容（基于 search_in_files/grep 工具），返回纯文本结果
 pub async fn workspace_search_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Json(body): Json<WorkspaceSearchBody>,
 ) -> Json<WorkspaceSearchResponse> {
     let pattern = match workspace_search_pattern_or_error(&body) {
@@ -306,7 +306,7 @@ pub async fn workspace_search_handler(
             });
         }
     };
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceSearchResponse {
@@ -351,7 +351,7 @@ pub async fn workspace_search_handler(
     }
     let args_json = args.to_string();
     let cfg_snap = {
-        let g = state.http.cfg.read().await;
+        let g = http.cfg.read().await;
         g.clone()
     };
     let cfg_arc = Arc::new(cfg_snap);
@@ -387,11 +387,11 @@ pub async fn workspace_search_handler(
 
 /// 工作区文件读取：按 path 返回文件内容（path 为工作区内文件路径）
 pub async fn workspace_file_read_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileReadResponse> {
     let (base_canonical, canonical, enc_name) =
-        match workspace_file_read_resolve(&state, &query).await {
+        match workspace_file_read_resolve(&http, &query).await {
             Ok(x) => x,
             Err(e) => return e,
         };
@@ -489,10 +489,10 @@ pub async fn workspace_file_read_handler(
 
 /// 删除工作区内的文件：path 为工作区内文件路径，不能删除目录
 pub async fn workspace_file_delete_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileDeleteResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceFileDeleteResponse {
@@ -670,10 +670,10 @@ async fn workspace_file_write_resolved(
 
 /// 工作区文件写入：支持创建、写入（创建或覆盖）、仅创建、仅修改
 pub async fn workspace_file_write_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Json(body): Json<WorkspaceFileWriteBody>,
 ) -> Json<WorkspaceFileWriteResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceFileWriteResponse {
@@ -704,16 +704,16 @@ pub async fn workspace_file_write_handler(
 
 /// 在工作区内创建目录（可选 `parents` 创建中间路径）；`delete=true` 时删除目录。
 pub async fn workspace_dir_create_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Json(body): Json<WorkspaceDirCreateBody>,
 ) -> Json<WorkspaceDirCreateResponse> {
     if body.delete {
         let WorkspaceDirDeleteResponse { error } =
-            workspace_dir_delete_resolved(&state, body.path.as_str(), body.confirm, body.recursive)
+            workspace_dir_delete_resolved(&http, body.path.as_str(), body.confirm, body.recursive)
                 .await;
         return Json(WorkspaceDirCreateResponse { error });
     }
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceDirCreateResponse {
@@ -762,17 +762,17 @@ fn workspace_dir_create_sync(canonical: std::path::PathBuf, parents: bool) -> Re
 
 /// 删除工作区内的目录：`confirm=true` 必填；非空目录须 `recursive=true`。
 pub async fn workspace_dir_delete_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceDirDeleteQuery>,
 ) -> Json<WorkspaceDirDeleteResponse> {
     Json(
-        workspace_dir_delete_resolved(&state, query.path.as_str(), query.confirm, query.recursive)
+        workspace_dir_delete_resolved(&http, query.path.as_str(), query.confirm, query.recursive)
             .await,
     )
 }
 
 async fn workspace_dir_delete_resolved(
-    state: &Arc<AppState>,
+    http: &AppStateHttpCore,
     path: &str,
     confirm: bool,
     recursive: bool,
@@ -782,7 +782,7 @@ async fn workspace_dir_delete_resolved(
             error: Some("拒绝执行：需要 confirm=true".to_string()),
         };
     }
-    let base_canonical = match effective_workspace_base_canonical(state).await {
+    let base_canonical = match effective_workspace_base_canonical(http).await {
         Ok(p) => p,
         Err(e) => {
             return WorkspaceDirDeleteResponse {
@@ -840,9 +840,9 @@ fn workspace_dir_delete_sync(canonical: std::path::PathBuf, recursive: bool) -> 
 
 /// 返回当前工作区的项目画像（Markdown）。与 `project_profile_inject_max_chars` 上限一致；为 0 时返回空正文。
 pub async fn workspace_profile_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
 ) -> Json<WorkspaceProfileResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&state).await {
+    let base_canonical = match effective_workspace_base_canonical(&http).await {
         Ok(p) => p,
         Err(e) => {
             return Json(WorkspaceProfileResponse {
@@ -851,8 +851,7 @@ pub async fn workspace_profile_handler(
             });
         }
     };
-    let max_chars = state
-        .http
+    let max_chars = http
         .cfg
         .read()
         .await

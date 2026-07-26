@@ -2,8 +2,6 @@
 //!
 //! 受保护路径接受 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置中的同一密钥比对）；二者满足其一即可。
 
-use std::sync::Arc;
-
 use axum::Json;
 use axum::extract::{Request, State};
 use axum::http::{StatusCode, header};
@@ -11,7 +9,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use subtle::ConstantTimeEq;
 
-use super::super::app_state::AppState;
+use super::super::app_state::AppStateHttpCore;
 use crate::config::ExposeSecret;
 use crate::web::http_types::chat::ApiError;
 
@@ -71,12 +69,12 @@ fn is_authorized_for_web_api_secret(
 }
 
 pub(crate) async fn require_web_api_bearer_auth(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     req: Request,
     next: Next,
 ) -> Response {
     let token = {
-        let g = state.http.cfg.read().await;
+        let g = http.cfg.read().await;
         g.web_api
             .web_api_bearer_token
             .expose_secret()

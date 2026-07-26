@@ -1,0 +1,10 @@
+[package]
+name = "crabmate-web-host"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "CrabMate Axum Web host surface (HTTP DTOs and future routes/handlers); not the Leptos WASM UI (crabmate-web)"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

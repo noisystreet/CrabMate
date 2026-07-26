@@ -1,14 +1,12 @@
 //! `POST /upload`、`POST /upload/delete` 与 uploads 目录清理。
 
-use std::sync::Arc;
-
 use axum::Json;
 use axum::extract::{Multipart, State};
 use axum::http::StatusCode;
 use log::error;
 use tokio::io::AsyncWriteExt;
 
-use super::super::app_state::AppState;
+use crate::web::app_state_facets::UploadsFacet;
 use crate::web::http_types::chat::{
     ApiError, DeleteUploadsBody, DeleteUploadsResponseBody, UploadResponseBody, UploadedFileInfo,
 };
@@ -48,7 +46,7 @@ fn upload_max_single_bytes(file_name: &str, mime: &str) -> Result<u64, UploadErr
 }
 
 pub(crate) async fn delete_uploads_handler(
-    State(state): State<Arc<AppState>>,
+    State(facet): State<UploadsFacet>,
     Json(body): Json<DeleteUploadsBody>,
 ) -> Result<Json<DeleteUploadsResponseBody>, (StatusCode, Json<ApiError>)> {
     let mut deleted = Vec::new();
@@ -64,7 +62,7 @@ pub(crate) async fn delete_uploads_handler(
             skipped.push(u);
             continue;
         }
-        let path = state.http.uploads_dir.join(name);
+        let path = facet.uploads_dir.join(name);
         // 不暴露更多信息：不存在也当作 skipped
         match tokio::fs::remove_file(&path).await {
             Ok(()) => deleted.push(format!("/uploads/{}", name)),
@@ -172,7 +170,7 @@ fn ext_lower(file_name: &str) -> Option<String> {
 }
 
 pub(crate) async fn upload_handler(
-    State(state): State<Arc<AppState>>,
+    State(facet): State<UploadsFacet>,
     mut multipart: Multipart,
 ) -> Result<Json<UploadResponseBody>, UploadErr> {
     let mut out: Vec<UploadedFileInfo> = Vec::new();
@@ -219,7 +217,7 @@ pub(crate) async fn upload_handler(
             .as_millis();
         let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let safe_name = format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot);
-        let path = state.http.uploads_dir.join(&safe_name);
+        let path = facet.uploads_dir.join(&safe_name);
 
         let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
             upload_api_error(

@@ -12,6 +12,7 @@ members = [
     "crates/crabmate-im-bridge",
     "crates/crabmate-types",
     "crates/crabmate-approval",
+    "crates/crabmate-web-host",
     "crates/crabmate-config",
     "crates/crabmate-llm",
     "crates/crabmate-agent",
@@ -29,6 +30,7 @@ resolver = "2"
 cmd_mate = { path = "crates/cmd_mate" }
 crabmate-agent = { path = "crates/crabmate-agent", default-features = false }
 crabmate-approval = { path = "crates/crabmate-approval" }
+crabmate-web-host = { path = "crates/crabmate-web-host" }
 crabmate-benchmark = { path = "crates/crabmate-benchmark" }
 crabmate-runtime = { path = "crates/crabmate-runtime" }
 crabmate-config = { path = "crates/crabmate-config", default-features = false }
@@ -158,6 +160,7 @@ web = [
     "dep:tower-http",
     "dep:rusqlite",
     "dep:tokio-cron-scheduler",
+    "dep:crabmate-web-host",
 ]
 ## 交互式 REPL（**reedline**）。
 repl = ["dep:reedline", "dep:unicode-width"]
@@ -196,6 +199,7 @@ crabmate-benchmark = { workspace = true }
 crabmate-runtime = { workspace = true }
 crabmate-workflow = { workspace = true }
 crabmate-internal = { workspace = true, default-features = false }
+crabmate-web-host = { workspace = true, optional = true }
 reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 futures-util = { workspace = true }
 serde = { workspace = true }

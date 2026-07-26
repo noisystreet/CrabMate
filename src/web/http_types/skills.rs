@@ -1,21 +1,5 @@
 //! `GET /skills` JSON 体；路由表见 [`crate::web::routes::skills::router`]。
+//!
+//! 类型定义在 **`crabmate-web-host`**（阶段 B 首迁）；此处再导出保持 `crate::web::http_types::skills` 路径。
 
-use serde::Serialize;
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SkillListItem {
-    pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    pub description: String,
-    pub path: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct SkillsListResponse {
-    pub enabled: bool,
-    pub skills_dir: String,
-    pub skills: Vec<SkillListItem>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-}
+pub use crabmate_web_host::http_types::skills::{SkillListItem, SkillsListResponse};

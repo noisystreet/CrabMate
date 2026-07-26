@@ -1,16 +1,14 @@
 //! `GET /skills`：当前工作区 skills 目录的 JSON 目录（供 Web composer `/` 浮层）。
 
-use std::sync::Arc;
-
 use axum::Json;
 use axum::extract::State;
 
-use super::app_state::AppState;
+use super::app_state::AppStateHttpCore;
 use super::http_types::skills::{SkillListItem, SkillsListResponse};
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
 
-pub async fn skills_list_handler(State(state): State<Arc<AppState>>) -> Json<SkillsListResponse> {
-    let cfg = state.http.cfg.read().await;
+pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<SkillsListResponse> {
+    let cfg = http.cfg.read().await;
     let enabled = cfg.skills.skills_enabled;
     let skills_dir = cfg.skills.skills_dir.clone();
     drop(cfg);
@@ -24,7 +22,7 @@ pub async fn skills_list_handler(State(state): State<Arc<AppState>>) -> Json<Ski
         });
     }
 
-    let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let ws = std::path::PathBuf::from(http.effective_workspace_path().await);
     let base_dir = resolve_skills_base_dir(ws.as_path());
     match crate::config::skills_slash::list_skill_catalog_entries(base_dir.as_path(), &skills_dir) {
         Ok(entries) => Json(SkillsListResponse {
