@@ -1,4 +1,4 @@
-//! `App` 级副作用：首启加载会话、`localStorage` 与 DOM 偏好同步、`Escape` 分层关闭等。
+//! `App` 级副作用：首启加载会话、`/user-data` 与 DOM 偏好同步、`Escape` 分层关闭等。
 //!
 //! 从 `app/mod.rs` 抽出，使根组件以「声明信号 + 调用 `wire_*`」为主。
 //!

@@ -4,6 +4,8 @@ pub mod agent_memory;
 pub mod auto_summarize_experience;
 pub mod codebase_semantic_index;
 pub mod codebase_semantic_invalidation;
+#[cfg(feature = "fastembed")]
+pub mod fastembed_init;
 pub mod long_term_memory;
 pub mod long_term_memory_recall;
 pub mod long_term_memory_store;

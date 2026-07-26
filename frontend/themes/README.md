@@ -1,6 +1,6 @@
 # Web 预设主题（`data-theme`）
 
-本目录存放 **按 slug 拆分** 的 CSS 覆层：每条 `[data-theme="…"]` 对应设置里可选的一套外观（与 `localStorage["crabmate-theme"]` 一致）。
+本目录存放 **按 slug 拆分** 的 CSS 覆层：每条 `[data-theme="…"]` 对应设置里可选的一套外观（与 `/user-data/prefs` 的 `theme` 一致）。
 
 ## 加载顺序
 

@@ -22,7 +22,7 @@
 | **显式接线** | 与时间、订阅、浏览器相关的副作用集中在 **`wire_*` 函数**或小型 `Effect` 模块，不在任意组件深处散落 `spawn_local`。 |
 | **状态聚合** | 同一业务横切面（如会话 + 流式 + 水合）用**单一聚合类型**持有相关 `RwSignal` 句柄（如已有 **`ChatSessionSignals`**），减少参数列表爆炸。 |
 | **纯逻辑外提** | 与 DOM 无关的格式化、扫描、防抖判定、消息展示过滤等留在 `message_format`、`message_render`（展示字符串 → 安全 HTML 单一路径）、`timeline_scan`、`debounce_schedule` 等模块，**`app/` 以组合与接线为主**。 |
-| **三端逻辑复用意识** | 会话存储、导出形状、SSE 语义以后端与 `runtime` 为准；前端仅负责展示与本地 `localStorage` 持久化，**不**复制一套互不等价的业务规则（见仓库 `cli-tui-web-shared-logic` 类规则）。 |
+| **三端逻辑复用意识** | 会话存储、导出形状、SSE 语义以后端与 `runtime` 为准；前端仅负责展示；用户级持久化经 `/user-data` 落本机 XDG Data，**不**复制一套互不等价的业务规则（见仓库 `cli-tui-web-shared-logic` 类规则）。 |
 
 ## 4. 目标分层（逻辑依赖自上而下）
 
@@ -69,7 +69,7 @@
 
 - **全局壳级**：主题、语言、侧栏宽度、`SidePanelView`、仅与「壳」相关的 `RwSignal` 可保留在 **`App`**。
 - **会话 + 流式**：已与 **`ChatSessionSignals`** 对齐；**`stream_transport`**（[`ChatStreamTransport`]）在 Bound 车道内持有 attach 时快照的 `session_id`，与 UI **`active_id`** 可暂时不一致（SSE 仍写绑定会话）。**`composer_stream/callbacks/stream_session_access`** 的 **`append_stream_assistant_chunk`** 为 **`on_delta`** 正文/思维链追加的单一入口。壳层整轮流式相见 **`stream_run_phase`**（**`StreamControlSignals::stream_run_phase`**，与 `attach_generation` 对齐）。**`stream_lane_overlay_phase_untracked`** 汇总传输车道与尾条 overlay 的联合象限。后续新增字段（如只读展示标志）应优先加在聚合体上，而非再增加平行的 6 个参数。
-- **壳首屏读**：主题 / 语言 / 侧栏视图与宽度等 **`localStorage`** 键由 **`shell_prefs_storage::read_shell_ui_initial_snapshot`** 聚合后再填入 **`ShellUISignals`**，避免 `AppSignals::new` 内散落读键。
+- **壳首屏读**：主题 / 语言 / 侧栏视图与宽度等由 **`shell_prefs_storage::read_shell_ui_initial_snapshot`**（及随后的 **`/user-data/prefs`** 同步）填入 **`ShellUISignals`**，避免 `AppSignals::new` 内散落读键。
 - **模态与抽屉**：各自用独立 `RwSignal<bool>` 或小型结构；**关闭顺序**（Escape 层级）由 **`app_shell_effects::wire_escape_key_layered_dismiss`**（或同类集中模块）处理，避免多处重复监听。
 - **Context**：若未来子树加深，可对「只读下传」的句柄使用 Leptos **Context** 减少 props 钻孔；**慎用**全局隐式 context，以免调试困难。
 

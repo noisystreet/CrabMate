@@ -7,7 +7,7 @@
 //! - **会话 JSON**：[`crate::storage`] / [`crate::app::chat::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
 //!
-//! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落 `set_item`。
+//! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落写偏好逻辑。
 
 use leptos::prelude::GetUntracked;
 use wasm_bindgen::JsCast;

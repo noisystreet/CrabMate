@@ -20,8 +20,10 @@ mod source;
 mod text_util;
 mod types;
 mod user_config_layers;
+mod user_config_xdg;
 mod validate;
 mod workspace_roots;
+mod xdg;
 
 pub use final_plan_requirement_mode::FinalPlanRequirementMode;
 pub use gateway_hints::{
@@ -30,6 +32,17 @@ pub use gateway_hints::{
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
 pub use orchestration_profile::{OrchestrationProfile, effective_orchestration_path_summary};
+pub use user_config_xdg::{
+    ENV_SKIP_CONFIG_SEED, SYSTEM_CONFIG_DIR, cwd_has_local_user_config,
+    cwd_in_crabmate_source_tree, ensure_user_config_seeded_from,
+    ensure_user_config_seeded_from_system, resolve_default_user_config_toml_after_seed,
+    should_resolve_xdg_user_config, system_config_toml_path, user_config_dir,
+    user_config_toml_path,
+};
+pub use xdg::{
+    ENV_CACHE_DIR, ENV_CONFIG_DIR, ensure_fastembed_cache_dir, ensure_user_cache_subdir,
+    user_cache_dir,
+};
 
 pub use finalize::embedded_thinking_avoid_echo_appendix;
 

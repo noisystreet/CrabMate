@@ -5,7 +5,7 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 /// 各子命令共用的全局选项（须写在子命令之前：`crabmate --config x serve`）。
 #[derive(Parser, Debug, Clone, Default)]
 pub struct GlobalOpts {
-    /// 显式指定配置文件路径（覆盖默认的 config.toml / .agent_demo.toml 搜索）
+    /// 显式指定配置文件路径（覆盖默认的 cwd / XDG `config.toml` 搜索）
     #[arg(long, global = true)]
     pub config: Option<String>,
 

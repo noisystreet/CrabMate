@@ -13,7 +13,7 @@ fn embedded_repo_config_search_bases() -> Vec<std::path::PathBuf> {
 }
 
 /// 加载配置：嵌入的 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 为底，再被配置文件覆盖，最后被环境变量覆盖。
-/// 若指定 `config_path`，则只从该文件读取覆盖；否则依次尝试 config.toml、.agent_demo.toml。
+/// 若指定 `config_path`，则只从该文件读取覆盖；否则优先 cwd 的 `config.toml` / `.agent_demo.toml`，再尝试 **`$XDG_CONFIG_HOME/crabmate/config.toml`**（可从 **`/etc/crabmate`** 首次种子；源码树内默认跳过，除非设 **`CM_CRABMATE_CONFIG_DIR`**）。
 /// 若最终 api_base、model 或任一运行参数仍未设置则返回错误。
 /// 默认 **`system_prompt_file`** 在 [`super::finalize::finalize`] 中按 cwd、各已加载配置文件目录（逆序）、`run_command_working_dir` 解析相对路径。
 pub fn load_config(config_path: Option<&str>) -> Result<AgentConfig, String> {

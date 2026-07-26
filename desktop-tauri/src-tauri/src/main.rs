@@ -103,12 +103,24 @@ fn sidecar_backend_candidates() -> Vec<PathBuf> {
 }
 
 fn resolve_backend_config_path() -> Option<PathBuf> {
-    let candidate = PathBuf::from("/etc/crabmate/config.toml");
-    if candidate.exists() {
-        Some(candidate)
-    } else {
-        None
+    let seed = crabmate_config::ensure_user_config_seeded_from_system();
+    let user = crabmate_config::user_config_toml_path();
+    if user.is_file() {
+        return Some(user);
     }
+    // 种子失败且尚无用户副本时，只读回退系统模板（日常路径仍以 XDG 用户副本为准）。
+    if let Err(e) = seed {
+        eprintln!("[crabmate-desktop] seed XDG config from /etc/crabmate: {e}");
+        let system = crabmate_config::system_config_toml_path();
+        if system.is_file() {
+            eprintln!(
+                "[crabmate-desktop] falling back to read-only {}",
+                system.display()
+            );
+            return Some(system);
+        }
+    }
+    None
 }
 
 fn configure_backend_serve_command(command: &mut Command, backend_config_path: &Option<PathBuf>) {

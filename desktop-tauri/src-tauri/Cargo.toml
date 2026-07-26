@@ -17,6 +17,7 @@ tokio = { version = "1", features = ["sync"] }
 url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+crabmate-config = { path = "../../crates/crabmate-config", default-features = false }
 
 [dev-dependencies]
 victauri-test = "0.8"

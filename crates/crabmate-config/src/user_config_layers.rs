@@ -5,17 +5,33 @@ use std::path::{Path, PathBuf};
 use super::agent_roles;
 use super::builder::{ConfigBuilder, override_opt_string_non_empty};
 use super::source::parse_config_file_roles;
+use super::user_config_xdg::{
+    cwd_has_local_user_config, resolve_default_user_config_toml_after_seed,
+};
 
 /// 合并用户 TOML（步骤 8–9），返回 `system_prompt_file` 相对路径解析用的配置目录栈（先发现者在前，后加载在后）。
 pub(super) fn merge_user_config_layers(
     config_path: Option<&str>,
     b: &mut ConfigBuilder,
 ) -> Result<Vec<PathBuf>, String> {
-    let config_paths: Vec<&str> = match config_path {
-        Some(p) => {
-            let p = p.trim();
-            if p.is_empty() { vec![] } else { vec![p] }
+    // 无显式 `--config` 时：
+    // 1) cwd 已有 `config.toml` / `.agent_demo.toml` → 合并二者（项目本地优先）
+    // 2) 否则尝试 `$XDG_CONFIG_HOME/crabmate/config.toml`（可从 `/etc/crabmate` 首次种子；
+    //    源码树内默认跳过，除非设了 `CM_CRABMATE_CONFIG_DIR`）
+    let xdg_owned = match config_path.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(_) => None,
+        None if cwd_has_local_user_config() => None,
+        None => {
+            resolve_default_user_config_toml_after_seed().map(|p| p.to_string_lossy().into_owned())
         }
+    };
+    let effective_path = config_path
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or(xdg_owned.as_deref());
+
+    let config_paths: Vec<&str> = match effective_path {
+        Some(p) => vec![p],
         None => vec!["config.toml", ".agent_demo.toml"],
     };
 
@@ -23,11 +39,11 @@ pub(super) fn merge_user_config_layers(
 
     merge_from_primary_user_files(
         &config_paths,
-        config_path,
+        effective_path,
         b,
         &mut system_prompt_search_bases,
     )?;
-    merge_agent_roles_sidecar(config_path, b)?;
+    merge_agent_roles_sidecar(effective_path, b)?;
 
     Ok(system_prompt_search_bases)
 }
@@ -116,5 +132,74 @@ fn directory_containing_config_file(config_path: &str) -> PathBuf {
             std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
         }
         Some(parent) => parent.to_path_buf(),
+    }
+}
+
+#[cfg(test)]
+mod discovery_tests {
+    use super::*;
+    use crate::builder::ConfigBuilder;
+    use crate::xdg::ENV_CONFIG_DIR;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn cwd_local_config_beats_xdg() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let xdg = tmp.path().join("xdg");
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&xdg).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::write(xdg.join("config.toml"), b"[agent]\nmodel = \"from-xdg\"\n").unwrap();
+        std::fs::write(cwd.join("config.toml"), b"[agent]\nmodel = \"from-cwd\"\n").unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        // SAFETY: serialized by ENV_LOCK; test-only.
+        unsafe {
+            std::env::set_var(ENV_CONFIG_DIR, &xdg);
+        }
+        std::env::set_current_dir(&cwd).unwrap();
+
+        let mut b = ConfigBuilder::default();
+        let bases = merge_user_config_layers(None, &mut b).unwrap();
+
+        std::env::set_current_dir(prev).unwrap();
+        unsafe {
+            std::env::remove_var(ENV_CONFIG_DIR);
+        }
+
+        assert_eq!(b.llm.model, "from-cwd");
+        assert_eq!(bases, vec![cwd]);
+    }
+
+    #[test]
+    fn xdg_used_when_no_cwd_local_and_config_dir_set() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let xdg = tmp.path().join("xdg");
+        let cwd = tmp.path().join("cwd");
+        std::fs::create_dir_all(&xdg).unwrap();
+        std::fs::create_dir_all(&cwd).unwrap();
+        std::fs::write(xdg.join("config.toml"), b"[agent]\nmodel = \"from-xdg\"\n").unwrap();
+
+        let prev = std::env::current_dir().unwrap();
+        // SAFETY: serialized by ENV_LOCK; test-only.
+        unsafe {
+            std::env::set_var(ENV_CONFIG_DIR, &xdg);
+        }
+        std::env::set_current_dir(&cwd).unwrap();
+
+        let mut b = ConfigBuilder::default();
+        let bases = merge_user_config_layers(None, &mut b).unwrap();
+
+        std::env::set_current_dir(prev).unwrap();
+        unsafe {
+            std::env::remove_var(ENV_CONFIG_DIR);
+        }
+
+        assert_eq!(b.llm.model, "from-xdg");
+        assert_eq!(bases, vec![xdg]);
     }
 }
