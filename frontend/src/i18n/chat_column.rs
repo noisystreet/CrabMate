@@ -77,22 +77,57 @@ pub fn composer_attach_image_aria(l: Locale) -> &'static str {
 
 pub fn composer_slash_menu_aria(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "技能快捷调用",
-        Locale::En => "Skill slash menu",
+        Locale::ZhHans => "斜杠命令与技能",
+        Locale::En => "Slash commands and skills",
     }
 }
 
 pub fn composer_slash_menu_loading(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "加载技能…",
+        Locale::ZhHans => "加载技能列表…",
         Locale::En => "Loading skills…",
     }
 }
 
 pub fn composer_slash_menu_empty(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "无匹配技能（可在 `.crabmate/skills` 添加）",
-        Locale::En => "No matching skills (add under `.crabmate/skills`)",
+        Locale::ZhHans => "无匹配项（可试 `/skills`，或在 `.crabmate/skills` 添加技能）",
+        Locale::En => "No matches (try `/skills`, or add under `.crabmate/skills`)",
+    }
+}
+
+pub fn composer_slash_menu_skills_disabled(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "技能已关闭（skills_enabled=false）；仍可选用下方内建命令",
+        Locale::En => "Skills disabled (skills_enabled=false); built-in commands still listed",
+    }
+}
+
+pub fn composer_slash_section_commands(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "命令",
+        Locale::En => "Commands",
+    }
+}
+
+pub fn composer_slash_section_skills(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "技能",
+        Locale::En => "Skills",
+    }
+}
+
+pub fn composer_slash_builtin_skills(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "查看当前工作区 skills 概览（不调用模型）",
+        Locale::En => "List workspace skills overview (no model call)",
+    }
+}
+
+pub fn composer_slash_builtin_skills_list(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "列出可 `/id` 调用的技能明细",
+        Locale::En => "List callable `/id` skills in detail",
     }
 }
 

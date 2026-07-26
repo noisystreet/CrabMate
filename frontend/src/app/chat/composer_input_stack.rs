@@ -9,6 +9,7 @@ use wasm_bindgen::JsCast;
 
 use super::composer_slash_menu::{
     ComposerSlashMenu, handle_slash_menu_keydown, install_slash_menu_effects,
+    keydown_is_ime_composing,
 };
 use crate::i18n::{self, Locale};
 
@@ -75,6 +76,10 @@ pub fn ComposerInputStack(
                 on:keydown={
                     let r = Arc::clone(&run_send_message);
                     move |ev: web_sys::KeyboardEvent| {
+                        // IME 组字中不拦截、不发送，避免中文选词误触发。
+                        if keydown_is_ime_composing(&ev) {
+                            return;
+                        }
                         if handle_slash_menu_keydown(&ev, slash, draft, composer_input_ref) {
                             return;
                         }
