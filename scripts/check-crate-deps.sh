@@ -31,6 +31,8 @@ check_forbidden crabmate-agent crabmate-internal \
   "agent crate must not depend on internal facade"
 check_forbidden crabmate-approval crabmate-internal \
   "approval types must stay below internal"
+check_forbidden crabmate-web-host crabmate-internal \
+  "web host must not depend on internal facade"
 
 if [[ "$fail" -ne 0 ]]; then
   echo "dependency policy FAILED"

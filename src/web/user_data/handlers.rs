@@ -1,14 +1,11 @@
 //! `GET` / `PUT` / `POST` **`/user-data/*`**（受保护路由；密钥不落 GET 明文）。
 
-use std::sync::Arc;
-
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::AppState;
 use crate::user_data::{
     LlmOverridesFile, McpServerStatusEntry, McpServersFile, McpServersFilePublic,
     McpServersImportResponse, McpServersStatusResponse, SecretsStatusResponse, UserPrefs,
@@ -21,6 +18,7 @@ use crate::user_data::{
     save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_sessions_value,
     write_secret_client_llm, write_secret_executor_llm, write_secret_web_api_bearer,
 };
+use crate::web::app_state::AppStateHttpCore;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SecretWriteBody {
@@ -105,19 +103,19 @@ pub(crate) async fn get_workspaces_handler()
 }
 
 pub(crate) async fn get_current_sessions_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
 ) -> Json<WebSessionsFile> {
-    let ws = state.effective_workspace_path().await;
+    let ws = http.effective_workspace_path().await;
     Json(load_web_sessions(&ws))
 }
 
 pub(crate) async fn put_current_sessions_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Json(body): Json<PutSessionsBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     validate_sessions_value(&body.sessions)
         .map_err(|e| user_data_err(StatusCode::BAD_REQUEST, e))?;
-    let ws = state.effective_workspace_path().await;
+    let ws = http.effective_workspace_path().await;
     let file = WebSessionsFile {
         schema_version: crate::user_data::SCHEMA_VERSION,
         sessions: body.sessions,
@@ -128,8 +126,8 @@ pub(crate) async fn put_current_sessions_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn mcp_legacy_import_params(state: &AppState) -> (bool, String, u64) {
-    let cfg = state.http.cfg.read().await;
+async fn mcp_legacy_import_params(http: &AppStateHttpCore) -> (bool, String, u64) {
+    let cfg = http.cfg.read().await;
     (
         cfg.mcp_client.mcp_enabled,
         cfg.mcp_client.mcp_command.clone(),
@@ -138,10 +136,10 @@ async fn mcp_legacy_import_params(state: &AppState) -> (bool, String, u64) {
 }
 
 pub(crate) async fn get_mcp_servers_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
 ) -> Json<McpServersFilePublic> {
     let _ = ensure_user_data_tree();
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&state).await;
+    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
     let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
     Json(McpServersFilePublic::from(&file))
 }
@@ -178,7 +176,7 @@ fn decode_mcp_servers_put(value: Value) -> Result<McpServersFile, String> {
 }
 
 pub(crate) async fn put_mcp_servers_handler(
-    State(_state): State<Arc<AppState>>,
+    State(_http): State<AppStateHttpCore>,
     Json(body): Json<Value>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let file =
@@ -215,12 +213,12 @@ pub(crate) async fn post_mcp_servers_import_handler(
 }
 
 pub(crate) async fn get_mcp_servers_status_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
 ) -> Json<McpServersStatusResponse> {
     let _ = ensure_user_data_tree();
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&state).await;
+    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
     let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
-    let cfg = state.http.cfg.read().await;
+    let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
     let servers: Vec<McpServerStatusEntry> = runtime
@@ -244,12 +242,12 @@ pub(crate) async fn get_mcp_servers_status_handler(
 }
 
 pub(crate) async fn post_mcp_server_probe_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
     Path(server_id): Path<String>,
 ) -> Result<Json<McpServerStatusEntry>, (StatusCode, String)> {
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&state).await;
+    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
     let _ = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
-    let cfg = state.http.cfg.read().await;
+    let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let Some(server) = resolved.servers.iter().find(|s| s.id == server_id) else {
         return Err(user_data_err(StatusCode::NOT_FOUND, "未找到 MCP 服务器"));
@@ -268,11 +266,11 @@ pub(crate) async fn post_mcp_server_probe_handler(
 }
 
 pub(crate) async fn post_mcp_servers_probe_all_handler(
-    State(state): State<Arc<AppState>>,
+    State(http): State<AppStateHttpCore>,
 ) -> Json<Vec<McpServerStatusEntry>> {
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&state).await;
+    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
     let _ = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
-    let cfg = state.http.cfg.read().await;
+    let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let mut out = Vec::new();
     for server in resolved.servers.iter().filter(|s| s.enabled) {

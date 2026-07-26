@@ -1058,6 +1058,7 @@ dependencies = [
  "crabmate-tool-card",
  "crabmate-turn-layout",
  "crabmate-types",
+ "crabmate-web-host",
  "crabmate-workflow",
  "crossterm",
  "futures-util",
@@ -1424,6 +1425,14 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
  "web-sys",
+]
+
+[[package]]
+name = "crabmate-web-host"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
