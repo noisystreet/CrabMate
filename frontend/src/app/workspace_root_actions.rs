@@ -1,10 +1,7 @@
-//! 工作区根目录选择 / 提交（顶栏路径框与「文件」菜单共用）。
+//! 工作区根目录选择 / 提交（顶栏只读路径与「文件」菜单共用）。
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
-use leptos_dom::helpers::event_target_value;
-use wasm_bindgen::JsCast;
-use web_sys::KeyboardEvent;
 
 use crate::api::post_workspace_set;
 use crate::api::user_data::put_current_web_sessions;
@@ -73,23 +70,8 @@ pub(crate) async fn commit_workspace_root(
     ws.workspace_set_busy.set(false);
 }
 
-fn focus_workspace_root_input() {
-    spawn_local(async move {
-        gloo_timers::future::TimeoutFuture::new(0).await;
-        let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-            return;
-        };
-        let Ok(Some(el)) = doc.query_selector("[data-testid=\"workspace-root-input\"]") else {
-            return;
-        };
-        if let Ok(html) = el.dyn_into::<web_sys::HtmlElement>() {
-            let _ = html.focus();
-        }
-    });
-}
-
 impl WorkspaceRootPickHandle {
-    /// 桌面壳：系统文件夹对话框并提交；浏览器：聚焦顶栏路径框。
+    /// 桌面壳：系统文件夹对话框并提交；浏览器：提示输入绝对路径后提交。
     pub fn spawn_pick_or_reveal(self) {
         let Self {
             locale,
@@ -103,7 +85,27 @@ impl WorkspaceRootPickHandle {
         }
         if !tauri_shell_available() {
             side_panel_view.set(SidePanelView::Workspace);
-            focus_workspace_root_input();
+            let loc = locale.get_untracked();
+            let current = ws.workspace_path_draft.get_untracked();
+            let Some(w) = web_sys::window() else {
+                return;
+            };
+            let Ok(Some(raw)) =
+                w.prompt_with_message_and_default(i18n::ws_path_prompt(loc), &current)
+            else {
+                return;
+            };
+            let p = raw.trim().to_string();
+            if p.is_empty() {
+                ws.workspace_set_err
+                    .set(Some(i18n::ws_path_required(loc).to_string()));
+                return;
+            }
+            ws.workspace_path_draft.set(p.clone());
+            ws.workspace_set_busy.set(true);
+            spawn_local(async move {
+                commit_workspace_root(chat, ws, p, loc).await;
+            });
             return;
         }
         ws.workspace_pick_busy.set(true);
@@ -161,49 +163,34 @@ impl WorkspaceRootPickHandle {
     }
 }
 
-/// 顶栏正中：工作区根路径（手输 Enter 提交；选目录见「文件」菜单）。
+/// 顶栏正中：工作区根路径只读标题（切换目录见「文件」菜单）。
 #[component]
 pub(crate) fn ShellTopbarWorkspaceRoot(pick: WorkspaceRootPickHandle) -> impl IntoView {
-    let WorkspaceRootPickHandle {
-        locale, chat, ws, ..
-    } = pick;
+    let WorkspaceRootPickHandle { locale, ws, .. } = pick;
     view! {
         <div class="shell-topbar-workspace" data-testid="shell-topbar-workspace">
-            <input
-                type="text"
-                class="shell-topbar-workspace-input"
-                data-testid="workspace-root-input"
-                prop:placeholder=move || i18n::ws_input_ph(locale.get())
-                prop:title=move || i18n::ws_input_title(locale.get())
+            <span
+                class="shell-topbar-workspace-title"
+                data-testid="workspace-root-title"
                 prop:aria-label=move || i18n::ws_root_label(locale.get())
-                prop:value=move || ws.workspace_path_draft.get()
-                prop:disabled=move || workspace_inputs_blocked(ws)
-                on:input=move |ev| {
-                    ws.workspace_path_draft.set(event_target_value(&ev));
+                prop:title=move || {
+                    let path = ws.workspace_path_draft.get();
+                    if path.trim().is_empty() {
+                        i18n::ws_path_title_hint(locale.get()).to_string()
+                    } else {
+                        path
+                    }
                 }
-                on:keydown=move |ev: KeyboardEvent| {
-                    if ev.key() != "Enter" {
-                        return;
+            >
+                {move || {
+                    let path = ws.workspace_path_draft.get();
+                    if path.trim().is_empty() {
+                        i18n::ws_path_empty(locale.get()).to_string()
+                    } else {
+                        path
                     }
-                    ev.prevent_default();
-                    ws.workspace_set_err.set(None);
-                    let p = ws.workspace_path_draft.get().trim().to_string();
-                    if p.is_empty() {
-                        ws.workspace_set_err.set(Some(
-                            i18n::ws_path_required(locale.get()).to_string(),
-                        ));
-                        return;
-                    }
-                    if workspace_inputs_blocked(ws) {
-                        return;
-                    }
-                    ws.workspace_set_busy.set(true);
-                    let loc = locale.get_untracked();
-                    spawn_local(async move {
-                        commit_workspace_root(chat, ws, p, loc).await;
-                    });
-                }
-            />
+                }}
+            </span>
             <Show when=move || ws.workspace_set_err.get().is_some()>
                 <span class="shell-topbar-workspace-error" role="alert" prop:title=move || {
                     ws.workspace_set_err.get().unwrap_or_default()

@@ -145,21 +145,25 @@ pub fn ws_root_label(l: Locale) -> &'static str {
     }
 }
 
-pub fn ws_input_ph(l: Locale) -> &'static str {
+pub fn ws_path_empty(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "工作区根目录（Enter 提交；或「文件 → 选择工作区目录」）",
-        Locale::En => "Workspace root (Enter to set; or File → Open workspace folder)",
+        Locale::ZhHans => "未选择工作区",
+        Locale::En => "No workspace selected",
     }
 }
 
-pub fn ws_input_title(l: Locale) -> &'static str {
+pub fn ws_path_title_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => {
-            "工作区根目录。桌面壳可用「文件 → 选择工作区目录」；亦可在此手输绝对路径后按 Enter"
-        }
-        Locale::En => {
-            "Workspace root. Desktop: File → Open workspace folder; or type an absolute path and press Enter"
-        }
+        Locale::ZhHans => "用「文件 → 选择工作区目录」或「最近的工作区」设置",
+        Locale::En => "Set via File → Open workspace folder or Recent workspaces",
+    }
+}
+
+/// 浏览器（非 Tauri）下手输绝对路径的 `window.prompt` 文案。
+pub fn ws_path_prompt(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请输入工作区根目录的绝对路径",
+        Locale::En => "Enter the absolute path of the workspace root",
     }
 }
 

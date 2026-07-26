@@ -1,14 +1,14 @@
 /* —— 状态栏 —— */
 .status-bar {
   flex-shrink: 0;
-  padding: 8px 16px;
+  padding: 4px 12px;
   font-size: 12px;
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg) 68%, var(--bg-elevated));
   color: var(--muted);
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
   justify-content: space-between;
 }
@@ -18,10 +18,10 @@
   flex: 1 1 auto;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 1px;
+  padding-bottom: 0;
 }
 
 .status-chips--role-menu-open {
@@ -31,9 +31,9 @@
 .status-chip {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  height: 28px;
-  padding: 0 10px;
+  gap: 5px;
+  height: 24px;
+  padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: var(--radius-btn);
   background: color-mix(in srgb, var(--bg-elevated) 86%, var(--surface));
@@ -257,9 +257,9 @@
 .status-run {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 10px;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
   border-radius: var(--radius-btn);
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-hover) 70%, var(--surface));
