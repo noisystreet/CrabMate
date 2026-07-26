@@ -30,6 +30,9 @@ pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
                 name: s.name,
                 slug: s.slug,
                 command: s.command,
+                args: s.args,
+                env: s.env,
+                cwd: s.cwd,
                 enabled: s.enabled,
             })
             .collect(),

@@ -1,6 +1,6 @@
 //! 将通用 MCP 配置 JSON（`mcpServers`）转为 `McpServersFile` 条目（与 Web 设置页导入逻辑对齐）。
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -80,10 +80,19 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         }
         return;
     }
-    let command = server.command.unwrap_or_default();
+    let command = server.command.unwrap_or_default().trim().to_string();
     let args = server.args.unwrap_or_default();
-    let env = server.env.unwrap_or_default();
-    let cwd = server.cwd.filter(|s| !s.trim().is_empty());
+    let env: BTreeMap<String, String> = server
+        .env
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(k, _)| !k.trim().is_empty())
+        .map(|(k, v)| (k.trim().to_string(), v))
+        .collect();
+    let cwd = server
+        .cwd
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
 
     if let Some(path) = server.env_file.filter(|s| !s.trim().is_empty()) {
         out.warnings.push(format!(
@@ -102,7 +111,6 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         ));
     }
 
-    let cmdline = build_stdio_command_line(&command, &args, &env, cwd.as_deref());
     let enabled = !server.disabled.unwrap_or(false);
     let now = super::store::now_ms();
 
@@ -110,7 +118,10 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         id: super::store::new_mcp_server_id(),
         name: name_from_mcp_server_key(key),
         slug: String::new(),
-        command: cmdline,
+        command,
+        args,
+        env,
+        cwd,
         enabled,
         created_at_ms: now,
         updated_at_ms: now,
@@ -137,67 +148,13 @@ fn capitalize_word(word: &str) -> String {
     }
 }
 
-fn build_stdio_command_line(
-    command: &str,
-    args: &[String],
-    env: &HashMap<String, String>,
-    cwd: Option<&str>,
-) -> String {
-    let cmd = command.trim();
-    if env.is_empty() && cwd.is_none() {
-        return join_argv(cmd, args);
-    }
-    let mut script = String::new();
-    if let Some(dir) = cwd.filter(|d| !d.trim().is_empty()) {
-        script.push_str("cd ");
-        script.push_str(&shell_quote(dir));
-        script.push_str(" && ");
-    }
-    for (k, v) in env {
-        if k.trim().is_empty() {
-            continue;
-        }
-        script.push_str("export ");
-        script.push_str(k.trim());
-        script.push('=');
-        script.push_str(&shell_quote(v));
-        script.push_str("; ");
-    }
-    script.push_str(cmd);
-    for arg in args {
-        script.push(' ');
-        script.push_str(&shell_quote(arg));
-    }
-    format!("sh -c {}", shell_quote(&script))
-}
-
-fn join_argv(command: &str, args: &[String]) -> String {
-    let mut parts = vec![shell_quote(command)];
-    for a in args {
-        parts.push(shell_quote(a));
-    }
-    parts.join(" ")
-}
-
-fn shell_quote(s: &str) -> String {
-    if s.is_empty() {
-        return "''".to_string();
-    }
-    if s.chars().all(|c| {
-        c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | ':' | '@' | '%' | '+')
-    }) {
-        return s.to_string();
-    }
-    format!("'{}'", s.replace('\'', "'\"'\"'"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
 
     #[test]
-    fn import_fanalyzer_shape() {
+    fn import_fanalyzer_shape_structured() {
         let root = json!({
             "mcpServers": {
                 "fanalyzer": {
@@ -211,14 +168,40 @@ mod tests {
         let r = import_mcp_json_value(&root).expect("import");
         assert_eq!(r.entries.len(), 1);
         assert_eq!(r.entries[0].name, "Fanalyzer");
-        assert!(r.entries[0].command.contains("fanalyzer"));
-        assert!(!r.entries[0].id.is_empty());
-        let argv = cmd_mate::split_command_line(&r.entries[0].command);
-        assert_eq!(argv.first().map(String::as_str), Some("sh"));
-        assert_eq!(argv.get(1).map(String::as_str), Some("-c"));
-        assert!(
-            argv.get(2)
-                .is_some_and(|s| s.contains("fanalyzer") && s.contains("analysis_fund"))
+        assert_eq!(
+            r.entries[0].command,
+            "/home/gzz/code/analysis_fund/target/debug/fanalyzer"
         );
+        assert_eq!(
+            r.entries[0].args,
+            vec!["mcp", "serve", "--profile", "summary"]
+        );
+        assert_eq!(
+            r.entries[0].cwd.as_deref(),
+            Some("/home/gzz/code/analysis_fund")
+        );
+        assert_eq!(
+            r.entries[0].env.get("RUST_LOG").map(String::as_str),
+            Some("warn")
+        );
+        assert!(!r.entries[0].command.contains("sh -c"));
+        assert!(!r.entries[0].id.is_empty());
+    }
+
+    #[test]
+    fn import_command_only_no_forced_shell() {
+        let root = json!({
+            "mcpServers": {
+                "fs": {
+                    "command": "npx",
+                    "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+                }
+            }
+        });
+        let r = import_mcp_json_value(&root).expect("import");
+        assert_eq!(r.entries[0].command, "npx");
+        assert_eq!(r.entries[0].args.len(), 3);
+        assert!(r.entries[0].env.is_empty());
+        assert!(r.entries[0].cwd.is_none());
     }
 }

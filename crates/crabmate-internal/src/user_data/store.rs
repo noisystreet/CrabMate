@@ -102,7 +102,7 @@ pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
     write_json_atomic(&mcp_servers_path(&r), file)
 }
 
-/// PUT 时保留磁盘上已有 `command`（Web 不往返启动命令）。
+/// PUT 时保留磁盘上已有启动规格（Web 不往返 `command`/`args`/`env`/`cwd`）。
 pub fn merge_mcp_commands_from_stored(mut incoming: McpServersFile) -> McpServersFile {
     let existing = load_mcp_servers();
     let by_id: std::collections::HashMap<&str, &McpServerEntry> = existing
@@ -111,10 +111,25 @@ pub fn merge_mcp_commands_from_stored(mut incoming: McpServersFile) -> McpServer
         .map(|s| (s.id.as_str(), s))
         .collect();
     for srv in &mut incoming.servers {
-        if srv.command.trim().is_empty()
-            && let Some(old) = by_id.get(srv.id.as_str())
-        {
+        let Some(old) = by_id.get(srv.id.as_str()) else {
+            continue;
+        };
+        if srv.command.trim().is_empty() {
             srv.command = old.command.clone();
+        }
+        if srv.args.is_empty() {
+            srv.args = old.args.clone();
+        }
+        if srv.env.is_empty() {
+            srv.env = old.env.clone();
+        }
+        if srv
+            .cwd
+            .as_ref()
+            .map(|c| c.trim().is_empty())
+            .unwrap_or(true)
+        {
+            srv.cwd = old.cwd.clone();
         }
     }
     incoming
@@ -156,6 +171,18 @@ pub fn normalize_mcp_servers_file(mut file: McpServersFile) -> Result<McpServers
             return Err("MCP 服务器 name 不能为空".to_string());
         }
         srv.command = srv.command.trim().to_string();
+        srv.args = srv.args.iter().map(|a| a.trim().to_string()).collect();
+        srv.env = srv
+            .env
+            .iter()
+            .filter(|(k, _)| !k.trim().is_empty())
+            .map(|(k, v)| (k.trim().to_string(), v.clone()))
+            .collect();
+        srv.cwd = srv
+            .cwd
+            .take()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
         if srv.enabled && srv.command.is_empty() {
             return Err(format!("已启用的 MCP 服务器「{}」须填写 command", srv.name));
         }
@@ -203,6 +230,9 @@ pub fn maybe_import_legacy_toml_mcp(
         name: legacy_mcp_display_name(cmd),
         slug: String::new(),
         command: cmd.to_string(),
+        args: Vec::new(),
+        env: std::collections::BTreeMap::new(),
+        cwd: None,
         enabled: true,
         created_at_ms: now,
         updated_at_ms: now,
@@ -393,6 +423,9 @@ mod tests {
                 name: "My Server".into(),
                 slug: String::new(),
                 command: "echo mcp".into(),
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                cwd: None,
                 enabled: true,
                 created_at_ms: 0,
                 updated_at_ms: 0,
@@ -400,5 +433,58 @@ mod tests {
         })
         .expect("normalize");
         assert_eq!(file.servers[0].slug, "my_server");
+    }
+
+    #[test]
+    fn merge_preserves_structured_launch_fields() {
+        let _root = test_root();
+        use crate::user_data::SCHEMA_VERSION;
+        use crate::user_data::types::{McpServerEntry, McpServersFile};
+        use std::collections::BTreeMap;
+        let mut env = BTreeMap::new();
+        env.insert("RUST_LOG".into(), "warn".into());
+        let stored = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers: vec![McpServerEntry {
+                id: "mcp_x".into(),
+                name: "X".into(),
+                slug: "x".into(),
+                command: "fanalyzer".into(),
+                args: vec!["mcp".into(), "serve".into()],
+                env,
+                cwd: Some("/tmp/ws".into()),
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+        };
+        save_mcp_servers(&stored).expect("save");
+        let incoming = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 90,
+            servers: vec![McpServerEntry {
+                id: "mcp_x".into(),
+                name: "X Renamed".into(),
+                slug: String::new(),
+                command: String::new(),
+                args: Vec::new(),
+                env: BTreeMap::new(),
+                cwd: None,
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+        };
+        let merged = merge_mcp_commands_from_stored(incoming);
+        assert_eq!(merged.servers[0].command, "fanalyzer");
+        assert_eq!(merged.servers[0].args, vec!["mcp", "serve"]);
+        assert_eq!(
+            merged.servers[0].env.get("RUST_LOG").map(String::as_str),
+            Some("warn")
+        );
+        assert_eq!(merged.servers[0].cwd.as_deref(), Some("/tmp/ws"));
     }
 }

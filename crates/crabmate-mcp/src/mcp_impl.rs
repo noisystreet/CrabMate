@@ -55,17 +55,41 @@ pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)>
     Some((slug.to_string(), remote.to_string()))
 }
 
-/// 连接 MCP server（stdio）。失败时返回 `Err`；调用方可降级为不启用 MCP。
+/// 连接 MCP server（stdio，legacy 整行命令）。失败时返回 `Err`；调用方可降级为不启用 MCP。
 pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, String> {
-    let parts = cmd_mate::split_command_line(cmdline.trim());
-    if parts.is_empty() {
+    let server = ResolvedMcpServer {
+        id: String::new(),
+        name: String::new(),
+        slug: String::new(),
+        command: cmdline.to_string(),
+        args: Vec::new(),
+        env: std::collections::BTreeMap::new(),
+        cwd: None,
+        enabled: true,
+    };
+    connect_stdio_client_launch(&server.stdio_launch()?).await
+}
+
+/// 按结构化 / legacy 规格连接 MCP stdio 子进程。
+pub async fn connect_stdio_client_launch(
+    launch: &crate::resolve::McpStdioLaunch,
+) -> Result<McpClientSession, String> {
+    if launch.program.trim().is_empty() {
         return Err("MCP command 为空或仅空白".to_string());
     }
-    let program = parts[0].clone();
-    let args: Vec<String> = parts[1..].to_vec();
+    let program = launch.program.clone();
+    let args = launch.args.clone();
+    let env = launch.env.clone();
+    let cwd = launch.cwd.clone();
 
-    let transport = TokioChildProcess::new(Command::new(&program).configure(|c| {
+    let transport = TokioChildProcess::new(Command::new(&program).configure(move |c| {
         c.args(&args);
+        for (k, v) in &env {
+            c.env(k, v);
+        }
+        if let Some(dir) = &cwd {
+            c.current_dir(dir);
+        }
         c.kill_on_drop(true);
     }))
     .map_err(|e| format!("启动 MCP 子进程失败: {e}"))?;
@@ -84,7 +108,7 @@ pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, Str
 }
 
 fn json_schema_to_parameters(schema: &serde_json::Map<String, Value>) -> Value {
-    Value::Object(schema.clone())
+    crate::sanitize_mcp_json_schema(schema)
 }
 
 /// 将 MCP 工具转为 OpenAI `Tool` 列表（名称带 `mcp__` 前缀以免与内建工具冲突）。
@@ -279,31 +303,67 @@ impl Clone for McpServerCacheEntry {
 }
 
 fn server_fingerprint(server: &ResolvedMcpServer) -> String {
-    format!("v2\0{}\0{}", server.id, server.command.trim())
+    let env_part = server
+        .env
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "v3\0{}\0{}\0{}\0{}\0{}",
+        server.id,
+        server.command.trim(),
+        server.args.join("\0"),
+        env_part,
+        server.cwd.as_deref().unwrap_or("").trim()
+    )
 }
 
 static MCP_MULTI_CACHE: LazyLock<TokioMutex<HashMap<String, McpServerCacheEntry>>> =
+    LazyLock::new(|| TokioMutex::new(HashMap::new()));
+
+/// 连接失败时保留的最近错误（成功连接后清除），供 status API 展示。
+static MCP_LAST_ERRORS: LazyLock<TokioMutex<HashMap<String, String>>> =
     LazyLock::new(|| TokioMutex::new(HashMap::new()));
 
 /// 丢弃进程内 MCP stdio 缓存（user-data 变更或配置热重载后调用）。
 pub async fn clear_mcp_process_cache() {
     let mut guard = MCP_MULTI_CACHE.lock().await;
     guard.clear();
+    let mut errs = MCP_LAST_ERRORS.lock().await;
+    errs.clear();
+}
+
+fn launch_for_log(server: &ResolvedMcpServer) -> String {
+    let Ok(launch) = server.stdio_launch() else {
+        return crabmate_tools::redact::mcp_command_line_for_log(server.command.trim());
+    };
+    let mut parts = vec![launch.program];
+    parts.extend(launch.args);
+    let mut s = parts.join(" ");
+    if !launch.env.is_empty() {
+        let env_preview: Vec<String> = launch.env.keys().map(|k| format!("{k}=…")).collect();
+        s.push_str(" env=[");
+        s.push_str(&env_preview.join(","));
+        s.push(']');
+    }
+    if let Some(dir) = &launch.cwd {
+        s.push_str(" cwd=");
+        s.push_str(&dir.display().to_string());
+    }
+    crabmate_tools::redact::mcp_command_line_for_log(&s)
 }
 
 async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheEntry, String> {
-    let cmd = server.command.trim();
-    if cmd.is_empty() {
-        return Err("command 为空".to_string());
-    }
+    let launch = server.stdio_launch()?;
     log::info!(
         target: "crabmate",
-        "MCP 启动 id={} slug={} command={}",
+        "MCP 启动 id={} slug={} launch={}",
         server.id,
         server.slug,
-        crabmate_tools::redact::mcp_command_line_for_log(cmd),
+        launch_for_log(server),
     );
-    let client = connect_stdio_client(cmd).await?;
+    let client = connect_stdio_client_launch(&launch).await?;
     let list = client
         .list_all_tools()
         .await
@@ -348,11 +408,19 @@ async fn get_or_open_cached(server: &ResolvedMcpServer) -> Result<McpServerCache
     }
     match open_server_fresh(server).await {
         Ok(entry) => {
+            {
+                let mut errs = MCP_LAST_ERRORS.lock().await;
+                errs.remove(&server.id);
+            }
             let mut guard = MCP_MULTI_CACHE.lock().await;
             guard.insert(server.id.clone(), entry.clone());
             Ok(entry)
         }
         Err(e) => {
+            {
+                let mut errs = MCP_LAST_ERRORS.lock().await;
+                errs.insert(server.id.clone(), e.clone());
+            }
             let mut guard = MCP_MULTI_CACHE.lock().await;
             guard.remove(&server.id);
             Err(e)
@@ -360,19 +428,44 @@ async fn get_or_open_cached(server: &ResolvedMcpServer) -> Result<McpServerCache
     }
 }
 
-/// 打开多 server 会话并拉取合并工具列表；失败的服务器跳过。
-pub async fn try_open_turn_handle(
-    resolved: &ResolvedMcpConfig,
-) -> Option<(McpTurnHandle, Vec<Tool>)> {
+/// 单服务器连接跳过信息（本轮打开失败）。
+#[derive(Debug, Clone)]
+pub struct McpServerSkipInfo {
+    pub id: String,
+    pub name: String,
+    pub error: String,
+}
+
+/// `try_open_turn_handle` 结果：可能部分服务器失败但仍有可用会话。
+#[derive(Default)]
+pub struct McpTurnOpenResult {
+    pub handle: Option<McpTurnHandle>,
+    pub tools: Vec<Tool>,
+    pub skipped: Vec<McpServerSkipInfo>,
+}
+
+impl McpTurnOpenResult {
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    pub fn into_option_pair(self) -> Option<(McpTurnHandle, Vec<Tool>)> {
+        self.handle.map(|h| (h, self.tools))
+    }
+}
+
+/// 打开多 server 会话并拉取合并工具列表；失败的服务器记入 `skipped` 并写 `last_error`。
+pub async fn try_open_turn_handle(resolved: &ResolvedMcpConfig) -> McpTurnOpenResult {
     if !resolved.global_enabled {
-        return None;
+        return McpTurnOpenResult::empty();
     }
     let enabled: Vec<&ResolvedMcpServer> = resolved.enabled_servers().collect();
     if enabled.is_empty() {
-        return None;
+        return McpTurnOpenResult::empty();
     }
     let mut sessions = HashMap::new();
     let mut all_tools = Vec::new();
+    let mut skipped = Vec::new();
     for srv in enabled {
         match get_or_open_cached(srv).await {
             Ok(entry) => {
@@ -387,27 +480,41 @@ pub async fn try_open_turn_handle(
                     srv.name,
                     e
                 );
+                skipped.push(McpServerSkipInfo {
+                    id: srv.id.clone(),
+                    name: srv.name.clone(),
+                    error: e,
+                });
             }
         }
     }
     if sessions.is_empty() {
-        return None;
+        return McpTurnOpenResult {
+            handle: None,
+            tools: Vec::new(),
+            skipped,
+        };
     }
-    Some((
-        Arc::new(McpTurnSessions::new(
+    McpTurnOpenResult {
+        handle: Some(Arc::new(McpTurnSessions::new(
             resolved.tool_timeout_secs.max(1),
             sessions,
-        )),
-        all_tools,
-    ))
+        ))),
+        tools: all_tools,
+        skipped,
+    }
 }
 
-/// 仅按 TOML/`AgentConfig` 基础字段打开 MCP（**不含** user-data `mcp_servers.json`，`servers` 恒空）。
+/// **已封死**：仅按 TOML 基础字段打开（`servers` 恒空），对 agent 回合无用。
 ///
-/// Agent 回合请使用 `crabmate_internal::mcp::try_open_session_and_tools`（会加载 user-data）。
-pub async fn try_open_session_and_tools(cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
-    let resolved = crate::resolve_mcp_config(cfg);
-    try_open_turn_handle(&resolved).await
+/// 请改用 `crabmate_internal::mcp::try_open_session_and_tools`（加载 user-data）。
+#[deprecated(note = "servers 恒空；请使用 crabmate_internal::mcp::try_open_session_and_tools")]
+pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> McpTurnOpenResult {
+    log::error!(
+        target: "crabmate",
+        "crabmate_mcp::try_open_session_and_tools 已废弃且恒返回空（不含 user-data）；请改用 crabmate_internal::mcp::try_open_session_and_tools"
+    );
+    McpTurnOpenResult::empty()
 }
 
 /// 运维用：单 server 缓存状态（不发起新连接）。
@@ -427,6 +534,7 @@ pub async fn mcp_servers_runtime_status(
     resolved: &ResolvedMcpConfig,
 ) -> Vec<McpServerRuntimeStatus> {
     let guard = MCP_MULTI_CACHE.lock().await;
+    let errs = MCP_LAST_ERRORS.lock().await;
     resolved
         .servers
         .iter()
@@ -458,7 +566,7 @@ pub async fn mcp_servers_runtime_status(
                 connected: false,
                 openai_tool_names: Vec::new(),
                 remote_tools: Vec::new(),
-                last_error: None,
+                last_error: errs.get(&srv.id).cloned(),
             }
         })
         .collect()
@@ -519,5 +627,24 @@ mod tests {
         assert_eq!(parts[1], "-c");
         assert!(parts[2].contains("mcp-server"));
         assert!(parts[2].contains("cd /tmp/ws"));
+    }
+
+    #[test]
+    fn fingerprint_includes_structured_fields() {
+        let mut env = std::collections::BTreeMap::new();
+        env.insert("A".into(), "1".into());
+        let a = ResolvedMcpServer {
+            id: "id".into(),
+            name: "n".into(),
+            slug: "s".into(),
+            command: "bin".into(),
+            args: vec!["x".into()],
+            env: env.clone(),
+            cwd: Some("/tmp".into()),
+            enabled: true,
+        };
+        let mut b = a.clone();
+        b.args = vec!["y".into()];
+        assert_ne!(server_fingerprint(&a), server_fingerprint(&b));
     }
 }
