@@ -1157,16 +1157,6 @@ name = "crabmate-display-rules"
 version = "0.1.0"
 
 [[package]]
-name = "crabmate-dsml"
-version = "0.1.0"
-dependencies = [
- "crabmate-types",
- "log",
- "regex",
- "serde_json",
-]
-
-[[package]]
 name = "crabmate-im-bridge"
 version = "0.1.0"
 dependencies = [
@@ -1201,7 +1191,6 @@ dependencies = [
  "cmd_mate",
  "crabmate-approval",
  "crabmate-config",
- "crabmate-dsml",
  "crabmate-llm",
  "crabmate-mcp",
  "crabmate-memory",
@@ -1295,7 +1284,6 @@ dependencies = [
  "chrono",
  "crabmate-agent",
  "crabmate-display-rules",
- "crabmate-dsml",
  "crabmate-tool-card",
  "crabmate-tools",
  "crabmate-types",

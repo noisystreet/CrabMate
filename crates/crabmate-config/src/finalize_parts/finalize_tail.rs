@@ -27,8 +27,6 @@ struct FinalizeTailScalars {
     agent_tool_stats_min_samples: usize,
     agent_tool_stats_max_chars: usize,
     agent_tool_stats_warn_below_success_ratio: f64,
-    materialize_deepseek_dsml_tool_calls: bool,
-    dsml_stream_strip_enabled: bool,
     thinking_avoid_echo_system_prompt: bool,
     thinking_avoid_echo_appendix: String,
     context_char_budget: usize,
@@ -107,8 +105,6 @@ struct TailPlanToolThinkingScalars {
     agent_tool_stats_min_samples: usize,
     agent_tool_stats_max_chars: usize,
     agent_tool_stats_warn_below_success_ratio: f64,
-    materialize_deepseek_dsml_tool_calls: bool,
-    dsml_stream_strip_enabled: bool,
     thinking_avoid_echo_system_prompt: bool,
     thinking_avoid_echo_appendix: String,
 }
@@ -166,13 +162,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         .agent_tool_stats.agent_tool_stats_warn_below_success_ratio
         .unwrap_or(0.65)
         .clamp(0.0, 1.0);
-    let materialize_deepseek_dsml_tool_calls =
-        b.dsml_materialize.materialize_deepseek_dsml_tool_calls.unwrap_or(true);
-    let dsml_stream_strip_enabled = b
-        .dsml_materialize
-        .dsml_stream_strip_enabled
-        .or(b.dsml_materialize.materialize_deepseek_dsml_tool_calls)
-        .unwrap_or(true);
     let thinking_avoid_echo_system_prompt = b.thinking_echo.thinking_avoid_echo_system_prompt.unwrap_or(true);
     let thinking_avoid_echo_appendix = resolve_thinking_avoid_echo_appendix(
         thinking_avoid_echo_system_prompt,
@@ -200,8 +189,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         agent_tool_stats_min_samples,
         agent_tool_stats_max_chars,
         agent_tool_stats_warn_below_success_ratio,
-        materialize_deepseek_dsml_tool_calls,
-        dsml_stream_strip_enabled,
         thinking_avoid_echo_system_prompt,
         thinking_avoid_echo_appendix,
     })
@@ -589,8 +576,6 @@ fn assemble_finalize_tail_scalars(
         agent_tool_stats_min_samples,
         agent_tool_stats_max_chars,
         agent_tool_stats_warn_below_success_ratio,
-        materialize_deepseek_dsml_tool_calls,
-        dsml_stream_strip_enabled,
         thinking_avoid_echo_system_prompt,
         thinking_avoid_echo_appendix,
     } = ptt;
@@ -642,8 +627,6 @@ fn assemble_finalize_tail_scalars(
         agent_tool_stats_min_samples,
         agent_tool_stats_max_chars,
         agent_tool_stats_warn_below_success_ratio,
-        materialize_deepseek_dsml_tool_calls,
-        dsml_stream_strip_enabled,
         thinking_avoid_echo_system_prompt,
         thinking_avoid_echo_appendix,
         context_char_budget,

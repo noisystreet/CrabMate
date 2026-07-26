@@ -613,15 +613,6 @@ impl CliReplStyle {
         out: &mut io::Stdout,
         cfg: &AgentConfig,
     ) -> io::Result<()> {
-        self.write_banner_item(
-            out,
-            "materialize_deepseek_dsml_tool_calls",
-            if cfg.dsml_materialize.materialize_deepseek_dsml_tool_calls {
-                "开启"
-            } else {
-                "关闭"
-            },
-        )?;
         let explain = if cfg.tool_call_explain.tool_call_explain_enabled {
             format!(
                 "开启（{}～{} 字）",

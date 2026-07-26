@@ -52,15 +52,15 @@ pub use agent_role_spec::AgentRoleSpec;
 pub use types::{
     AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig,
     CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, CursorRulesConfigSection, DsmlMaterializeConfig, ExposeSecret,
-    HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LlmConnectionConfig,
-    LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig, LlmVendorFlagsConfig,
-    LongTermMemoryConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, McpClientConfig,
-    PerPlanPolicyConfig, PlannerExecutorMode, RolesPromptsConfig, ScheduledAgentTask,
-    SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection,
-    SyncDefaultToolSandboxMode, SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig,
-    ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig,
-    WebApiConfig, WebSearchConfigSection, WebSearchProvider, WorkspaceRootsConfig,
+    ConversationPersistenceConfig, CursorRulesConfigSection, ExposeSecret, HierarchyRoutingConfig,
+    HttpFetchConfigSection, IntentRoutingConfig, LlmConnectionConfig, LlmHttpAuthMode,
+    LlmHttpRetryConfig, LlmSamplingConfig, LlmVendorFlagsConfig, LongTermMemoryConfig,
+    LongTermMemoryScopeMode, LongTermMemoryVectorBackend, McpClientConfig, PerPlanPolicyConfig,
+    PlannerExecutorMode, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,
+    SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncDefaultToolSandboxMode,
+    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
+    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig,
+    WebSearchConfigSection, WebSearchProvider, WorkspaceRootsConfig,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。

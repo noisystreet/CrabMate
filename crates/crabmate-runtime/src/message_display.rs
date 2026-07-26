@@ -385,7 +385,7 @@ fn staged_plan_streaming_chat_body(stripped: &str) -> String {
     let raw = prose_before_first_fence(stripped);
     // 与 `preprocess_unfenced_assistant_prose_dedup` 在「围栏前段落」上的 dedupe 对齐，避免流式与收齐后开场白不一致。
     let raw = crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(&raw);
-    // 与收齐后展示路径一致：DSML、相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
+    // 与收齐后展示路径一致：相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
     let prose_t = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
     let prose_t = prose_t.trim();
     if prose_t.is_empty() {
@@ -413,7 +413,6 @@ fn assistant_markdown_from_stripped(stripped: &str) -> String {
 /// 若仅围栏内为规划 JSON（含解析失败但形状明显的块），从展示串中移除围栏，**不**把原始 JSON 打到终端/气泡；`Message.content` 与日志不变。
 pub fn assistant_markdown_source_for_display(raw: &str) -> String {
     let stripped = strip_assistant_echo_label(raw);
-    let stripped = crabmate_dsml::strip_deepseek_dsml_for_display(&stripped);
     let stripped = preprocess_unfenced_assistant_prose_dedup(&stripped);
     assistant_markdown_from_stripped(&stripped)
 }
@@ -479,15 +478,6 @@ fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
 mod tests {
     use super::*;
     use crabmate_types::{FunctionCall, Message, ToolCall};
-
-    #[test]
-    fn assistant_markdown_strips_dsml_tool_calls_markup() {
-        let raw = "前言\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"plan\">\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>\n后记";
-        let out = assistant_markdown_source_for_display(raw);
-        assert!(!out.contains("DSML"));
-        assert!(out.contains("前言"));
-        assert!(out.contains("后记"));
-    }
 
     #[test]
     fn tool_json_human_summary_then_result_block() {

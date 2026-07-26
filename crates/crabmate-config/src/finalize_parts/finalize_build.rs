@@ -20,7 +20,6 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         tool_transcript: finalize_section_tool_transcript(tail),
         agent_thinking_trace: finalize_section_agent_thinking_trace(tail),
         agent_tool_stats: finalize_section_agent_tool_stats(tail),
-        dsml_materialize: finalize_section_dsml_materialize(tail),
         thinking_echo: finalize_section_thinking_echo(tail),
         context_pipeline: finalize_section_context_pipeline(tail),
         workspace_roots: finalize_section_workspace_roots(mid),
@@ -186,13 +185,6 @@ fn finalize_section_agent_tool_stats(tail: &FinalizeTailScalars) -> types::Agent
         agent_tool_stats_min_samples: tail.agent_tool_stats_min_samples,
         agent_tool_stats_max_chars: tail.agent_tool_stats_max_chars,
         agent_tool_stats_warn_below_success_ratio: tail.agent_tool_stats_warn_below_success_ratio,
-    }
-}
-
-fn finalize_section_dsml_materialize(tail: &FinalizeTailScalars) -> types::DsmlMaterializeConfig {
-    types::DsmlMaterializeConfig {
-        materialize_deepseek_dsml_tool_calls: tail.materialize_deepseek_dsml_tool_calls,
-        dsml_stream_strip_enabled: tail.dsml_stream_strip_enabled,
     }
 }
 

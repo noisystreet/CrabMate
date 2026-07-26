@@ -31,7 +31,6 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.agent_thinking_trace
         .clone_from(&src.agent_thinking_trace);
     dst.agent_tool_stats.clone_from(&src.agent_tool_stats);
-    dst.dsml_materialize.clone_from(&src.dsml_materialize);
     dst.thinking_echo.clone_from(&src.thinking_echo);
     dst.context_pipeline.clone_from(&src.context_pipeline);
     dst.workspace_roots.clone_from(&src.workspace_roots);

@@ -1,12 +1,11 @@
-//! 根包 [`crabmate_llm::StreamChatHost`] 实现（SSE、终端、redact、DSML）。
+//! 根包 [`crabmate_llm::StreamChatHost`] 实现（SSE、终端、redact）。
 
 use std::io;
 use std::sync::atomic::AtomicBool;
 
 use async_trait::async_trait;
 use crabmate_llm::{
-    CliWaitSpinnerGuardHost, DsmlStreamFilter, LlmCallError, StreamChatHost,
-    TerminalPlainFragmentCtx,
+    CliWaitSpinnerGuardHost, LlmCallError, StreamChatHost, TerminalPlainFragmentCtx,
 };
 use crabmate_sse_protocol::StreamEndReason;
 use crabmate_types::{ChatRequest, Message, message_content_as_str};
@@ -25,18 +24,6 @@ use crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard;
 use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
 
 const THINKING_TRACE_CHUNK_MAX: usize = 4096;
-
-struct CrabmateDsmlStreamFilter(crate::dsml::StreamingDsmlContentFilter);
-
-impl DsmlStreamFilter for CrabmateDsmlStreamFilter {
-    fn push_chunk(&mut self, chunk: &str) -> String {
-        self.0.push_chunk(chunk)
-    }
-
-    fn finish(&mut self) -> String {
-        self.0.finish()
-    }
-}
 
 struct CrabmateCliWaitSpinnerGuard(#[allow(dead_code)] CliWaitSpinnerGuard);
 
@@ -250,12 +237,6 @@ impl StreamChatHost for CrabmateStreamChatHost {
 
     fn encode_text_message_start_sse(&self) -> String {
         crate::sse::encode_text_message_start_sse_str()
-    }
-
-    fn new_dsml_stream_filter(&self, enabled: bool) -> Box<dyn DsmlStreamFilter> {
-        Box::new(CrabmateDsmlStreamFilter(
-            crate::dsml::StreamingDsmlContentFilter::new(enabled),
-        ))
     }
 
     fn try_start_cli_wait_spinner(

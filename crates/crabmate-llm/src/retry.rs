@@ -50,8 +50,7 @@ pub async fn complete_chat_retrying(
         }
         match p.llm_backend.stream_chat(&p.stream, &mut req).await {
             Ok(r) => {
-                let (mut msg, finish_reason) = r;
-                hooks.materialize_dsml_tool_calls(&mut msg);
+                let (msg, finish_reason) = r;
                 info!(
                     target: "crabmate",
                     "llm chat 完成 model={} elapsed_ms={} attempt={}",
