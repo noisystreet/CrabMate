@@ -23,13 +23,14 @@ pub use client_llm_storage::{
 };
 #[allow(unused_imports)]
 pub use http::{
-    ChatBranchError, GithubRepoContextData, StatusData, TaskItem, TasksData, UploadedFileInfo,
-    WebUiConfig, WorkspaceChangelogResponse, WorkspaceData, WorkspaceEntry, WorkspaceFileReadData,
-    delete_workspace_dir, delete_workspace_file, fetch_conversation_messages,
-    fetch_github_repo_context, fetch_status, fetch_tasks, fetch_web_ui_config, fetch_workspace,
-    fetch_workspace_changelog, fetch_workspace_file, post_chat_branch, post_workspace_dir,
-    post_workspace_file_write, post_workspace_file_write_opts, post_workspace_set, save_tasks,
-    submit_chat_approval, upload_files_multipart,
+    ChatBranchError, GithubRepoContextData, SkillListItem, SkillsListData, StatusData, TaskItem,
+    TasksData, UploadedFileInfo, WebUiConfig, WorkspaceChangelogResponse, WorkspaceData,
+    WorkspaceEntry, WorkspaceFileReadData, delete_workspace_dir, delete_workspace_file,
+    fetch_conversation_messages, fetch_github_repo_context, fetch_skills, fetch_status,
+    fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
+    fetch_workspace_file, post_chat_branch, post_workspace_dir, post_workspace_file_write,
+    post_workspace_file_write_opts, post_workspace_set, save_tasks, submit_chat_approval,
+    upload_files_multipart,
 };
 pub use saved_models::{
     ExecutorLlmDraftSignals, MainLlmDraftSignals, SavedModelPreset,

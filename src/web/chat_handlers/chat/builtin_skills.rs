@@ -37,26 +37,34 @@ struct SkillFileInfo {
     display_path: String,
     content: String,
     skill_name: Option<String>,
+    description: Option<String>,
 }
 
-fn parse_skill_name_from_frontmatter(content: &str) -> Option<String> {
+fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>) {
     let mut lines = content.lines();
-    if lines.next()?.trim() != "---" {
-        return None;
+    if lines.next().map(str::trim) != Some("---") {
+        return (None, None);
     }
+    let mut name = None;
+    let mut description = None;
     for line in lines {
         let t = line.trim();
         if t == "---" {
             break;
         }
         if let Some(rest) = t.strip_prefix("name:") {
-            let name = rest.trim().trim_matches('"').trim_matches('\'').trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
+            let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
+            if !v.is_empty() && name.is_none() {
+                name = Some(v.to_string());
+            }
+        } else if let Some(rest) = t.strip_prefix("description:") {
+            let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
+            if !v.is_empty() && description.is_none() {
+                description = Some(v.to_string());
             }
         }
     }
-    None
+    (name, description)
 }
 
 fn is_markdown_file(path: &std::path::Path) -> bool {
@@ -96,14 +104,45 @@ fn list_skill_files_for_web_builtin(
             .unwrap_or_else(|_| skill_path.display().to_string());
         let content = std::fs::read_to_string(&skill_path)
             .map_err(|e| format!("读取技能文件失败 {}: {e}", skill_path.display()))?;
+        let (skill_name, description) = parse_skill_frontmatter(&content);
         out.push(SkillFileInfo {
             display_path: display,
-            skill_name: parse_skill_name_from_frontmatter(&content),
+            skill_name,
+            description,
             content,
         });
     }
     out.sort_by(|a, b| a.display_path.cmp(&b.display_path));
     Ok(out)
+}
+
+fn format_skill_list_line(f: &SkillFileInfo) -> String {
+    let id = f
+        .skill_name
+        .as_deref()
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| {
+            std::path::Path::new(&f.display_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("skill")
+                .to_string()
+        });
+    let name = f.skill_name.as_deref().unwrap_or("未声明 name");
+    let doc = crate::config::skills::SkillDoc {
+        display_path: f.display_path.clone(),
+        content: f.content.clone(),
+        name: f.skill_name.clone(),
+        description: f.description.clone(),
+    };
+    let desc = crate::config::skills::skill_ui_description(&doc);
+    let desc = if desc.is_empty() {
+        String::new()
+    } else {
+        format!(" — {desc}")
+    };
+    format!("- `/{id}` → `{}` (name: `{name}`){desc}", f.display_path)
 }
 
 fn split_loaded_skills_by_budget(
@@ -160,7 +199,7 @@ pub(super) async fn run_web_builtin_command(
                 Ok(files) => {
                     let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
                     format!(
-                        "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：`{}`\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看具体文件。",
+                        "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：`{}`\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看可 `/<id>` 调用的技能；对话中发送 `/<id> [任务]` 可强制选用。",
                         files.len(),
                         loaded.len(),
                         skipped.len(),
@@ -197,10 +236,7 @@ pub(super) async fn run_web_builtin_command(
                     } else {
                         loaded
                             .iter()
-                            .map(|f| {
-                                let name = f.skill_name.as_deref().unwrap_or("未声明 name");
-                                format!("- `{}` (name: `{}`)", f.display_path, name)
-                            })
+                            .map(format_skill_list_line)
                             .collect::<Vec<_>>()
                             .join("\n")
                     };
@@ -209,15 +245,12 @@ pub(super) async fn run_web_builtin_command(
                     } else {
                         skipped
                             .iter()
-                            .map(|f| {
-                                let name = f.skill_name.as_deref().unwrap_or("未声明 name");
-                                format!("- `{}` (name: `{}`)", f.display_path, name)
-                            })
+                            .map(format_skill_list_line)
                             .collect::<Vec<_>>()
                             .join("\n")
                     };
                     format!(
-                        "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n目录：`{}`\n上限：skills_max_chars={}（扫描总数：{}）",
+                        "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n对话中可用 `/<id> [任务]` 强制选用某一技能（跳过 Top-K）。\n目录：`{}`\n上限：skills_max_chars={}（扫描总数：{}）",
                         loaded_lines,
                         skipped_lines,
                         dir,

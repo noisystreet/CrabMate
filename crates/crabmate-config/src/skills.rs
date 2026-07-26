@@ -5,6 +5,8 @@ pub struct SkillDoc {
     pub display_path: String,
     pub content: String,
     pub name: Option<String>,
+    /// Frontmatter `description:`（单行）；缺省时 UI 可用正文首行作回退。
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -13,30 +15,121 @@ pub struct SkillsSelectionMeta {
     pub selected_labels: Vec<String>,
 }
 
+/// Options for [`merge_system_prompt_with_skills_selected_with_meta`].
+#[derive(Debug, Clone, Copy)]
+pub struct SkillsSelectedMergeOpts<'a> {
+    pub skills_enabled: bool,
+    pub skills_dir: &'a str,
+    pub skills_max_chars: usize,
+    pub base_dir: &'a Path,
+    pub user_text: &'a str,
+    pub top_k: usize,
+    pub forced_skill: Option<&'a SkillDoc>,
+}
+
 fn is_markdown_file(path: &Path) -> bool {
     path.extension()
         .and_then(|s| s.to_str())
         .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
 }
 
-fn parse_skill_name_from_frontmatter(content: &str) -> Option<String> {
-    let mut lines = content.lines();
-    if lines.next()?.trim() != "---" {
-        return None;
+fn parse_frontmatter_scalar(rest: &str) -> Option<String> {
+    let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
+    if v.is_empty() {
+        None
+    } else {
+        Some(v.to_string())
     }
+}
+
+fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>) {
+    let mut lines = content.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return (None, None);
+    }
+    let mut name = None;
+    let mut description = None;
     for line in lines {
         let t = line.trim();
         if t == "---" {
             break;
         }
         if let Some(rest) = t.strip_prefix("name:") {
-            let name = rest.trim().trim_matches('"').trim_matches('\'').trim();
-            if !name.is_empty() {
-                return Some(name.to_string());
+            if name.is_none() {
+                name = parse_frontmatter_scalar(rest);
             }
+        } else if let Some(rest) = t.strip_prefix("description:")
+            && description.is_none()
+        {
+            description = parse_frontmatter_scalar(rest);
         }
     }
-    None
+    (name, description)
+}
+
+/// UI / 补全用短描述：优先 frontmatter `description`，否则取正文首个非空行（去 `#` 标题前缀）。
+pub fn skill_ui_description(doc: &SkillDoc) -> String {
+    const MAX: usize = 160;
+    if let Some(d) = doc
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return truncate_chars(d, MAX);
+    }
+    let body = strip_yaml_frontmatter(&doc.content);
+    for line in body.lines() {
+        let t = line.trim();
+        if t.is_empty() {
+            continue;
+        }
+        let t = t.trim_start_matches('#').trim();
+        if t.is_empty() {
+            continue;
+        }
+        return truncate_chars(t, MAX);
+    }
+    String::new()
+}
+
+fn strip_yaml_frontmatter(content: &str) -> &str {
+    let mut lines = content.lines();
+    if lines.next().map(str::trim) != Some("---") {
+        return content;
+    }
+    let Some(first_nl) = content.find('\n') else {
+        return content;
+    };
+    let mut offset = first_nl + 1;
+    while offset <= content.len() {
+        let rest = &content[offset..];
+        let line_end = rest.find('\n').map(|i| offset + i).unwrap_or(content.len());
+        let line = content.get(offset..line_end).unwrap_or("");
+        let after = if line_end < content.len() {
+            line_end + 1
+        } else {
+            line_end
+        };
+        if line.trim() == "---" {
+            return content.get(after..).unwrap_or("");
+        }
+        if line_end == content.len() {
+            break;
+        }
+        offset = after;
+    }
+    content
+}
+
+fn truncate_chars(s: &str, max: usize) -> String {
+    let count = s.chars().count();
+    if count <= max {
+        return s.to_string();
+    }
+    let mut out: String = s.chars().take(max.saturating_sub(1)).collect();
+    out.push('…');
+    out
 }
 
 fn resolve_skills_dir(base_dir: &Path, skills_dir: &str) -> Result<PathBuf, String> {
@@ -90,23 +183,38 @@ pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<Sk
             .strip_prefix(base_dir)
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| path.display().to_string());
-        let name = parse_skill_name_from_frontmatter(&content);
+        let (name, description) = parse_skill_frontmatter(&content);
         out.push(SkillDoc {
             display_path,
             content,
             name,
+            description,
         });
     }
     Ok(out)
 }
 
 fn render_skills_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
+    render_skills_appendix_with_title(
+        docs,
+        max_chars,
+        "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n",
+    )
+}
+
+fn render_forced_skill_appendix(doc: &SkillDoc, max_chars: usize) -> String {
+    let title = format!(
+        "【用户显式选用技能（/{}）】\n以下内容由用户通过斜杠命令强制注入；若与更高优先级指令冲突，以更高优先级为准。\n",
+        crate::skills_slash::skill_callable_id(doc)
+    );
+    render_skills_appendix_with_title(std::slice::from_ref(doc), max_chars, &title)
+}
+
+fn render_skills_appendix_with_title(docs: &[SkillDoc], max_chars: usize, title: &str) -> String {
     if docs.is_empty() {
         return String::new();
     }
-    let mut body = String::from(
-        "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n",
-    );
+    let mut body = String::from(title);
     for d in docs {
         body.push_str("\n\n---\n");
         body.push_str(&format!("技能文件: {}\n\n", d.display_path));
@@ -239,17 +347,31 @@ pub(crate) fn select_skills_top_k(
 
 pub fn merge_system_prompt_with_skills_selected_with_meta(
     system_prompt: String,
-    skills_enabled: bool,
-    skills_dir: &str,
-    skills_max_chars: usize,
-    base_dir: &Path,
-    user_text: &str,
-    top_k: usize,
+    opts: SkillsSelectedMergeOpts<'_>,
 ) -> Result<(String, SkillsSelectionMeta), String> {
-    if !skills_enabled {
+    if !opts.skills_enabled {
         return Ok((system_prompt, SkillsSelectionMeta::default()));
     }
-    let docs = list_skills_from_base(base_dir, skills_dir)?;
+    if let Some(doc) = opts.forced_skill {
+        let mut meta = SkillsSelectionMeta {
+            total_docs: 1,
+            selected_labels: vec![format!(
+                "{} ({}) [forced]",
+                crate::skills_slash::skill_callable_id(doc),
+                doc.display_path
+            )],
+        };
+        let appendix = render_forced_skill_appendix(doc, opts.skills_max_chars);
+        if appendix.is_empty() {
+            meta.selected_labels.clear();
+            return Ok((system_prompt, meta));
+        }
+        return Ok((
+            format!("{}\n\n{}", system_prompt.trim_end(), appendix),
+            meta,
+        ));
+    }
+    let docs = list_skills_from_base(opts.base_dir, opts.skills_dir)?;
     if docs.is_empty() {
         return Ok((system_prompt, SkillsSelectionMeta::default()));
     }
@@ -257,7 +379,7 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
         total_docs: docs.len(),
         selected_labels: Vec::new(),
     };
-    let selected = select_skills_top_k(&docs, user_text, top_k);
+    let selected = select_skills_top_k(&docs, opts.user_text, opts.top_k);
     if selected.is_empty() {
         return Ok((system_prompt, meta));
     }
@@ -272,7 +394,7 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
                 .unwrap_or_else(|| d.display_path.clone())
         })
         .collect();
-    let appendix = render_skills_appendix(&selected, skills_max_chars);
+    let appendix = render_skills_appendix(&selected, opts.skills_max_chars);
     if appendix.is_empty() {
         return Ok((system_prompt, meta));
     }

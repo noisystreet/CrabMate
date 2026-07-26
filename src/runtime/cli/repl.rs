@@ -338,6 +338,22 @@ pub(crate) async fn repl_dispatch_chat_round(
     let clarify_take = clarify_answers_for_next_user_message
         .and_then(|m| m.lock().ok().and_then(|mut g| g.take()));
     let user_body = merge_user_text_with_clarification_answers(expanded_user, clarify_take);
+    let prepared = {
+        let g = cfg_holder.read().await;
+        match crate::config::skills_slash::prepare_user_message_for_skills(
+            &user_body,
+            work_dir,
+            g.skills.skills_dir.as_str(),
+            g.skills.skills_enabled,
+        ) {
+            Ok(p) => p,
+            Err(e) => {
+                let _ = style.eprint_error(&e.to_string());
+                return Ok(());
+            }
+        }
+    };
+    let user_body = prepared.user_message;
     {
         let g = cfg_holder.read().await;
         if let Some(first) = messages.first_mut()
@@ -362,6 +378,7 @@ pub(crate) async fn repl_dispatch_chat_round(
                         agent_role: role.as_deref(),
                         user_msg_for_skills: Some(user_body.as_str()),
                         skills_base_dir: Some(work_dir.to_path_buf()),
+                        forced_skill: prepared.forced_skill,
                         role_resolution:
                             crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
                     },
@@ -692,6 +709,28 @@ pub async fn run_repl(
             &mut messages,
             initial_pending.as_ref(),
         );
+
+        {
+            let g = cfg_holder.read().await;
+            let items = if g.skills.skills_enabled {
+                crate::config::skills_slash::list_skill_catalog_entries(
+                    work_dir.as_path(),
+                    g.skills.skills_dir.as_str(),
+                )
+                .unwrap_or_default()
+                .into_iter()
+                .map(
+                    |e| crate::runtime::repl_slash_complete::SkillSlashCompleteItem {
+                        id: e.id,
+                        description: e.description,
+                    },
+                )
+                .collect()
+            } else {
+                Vec::new()
+            };
+            crate::runtime::repl_slash_complete::refresh_skill_slash_completions(items);
+        }
 
         let ed = repl_editor.clone();
         let read_res = tokio::task::spawn_blocking(move || {

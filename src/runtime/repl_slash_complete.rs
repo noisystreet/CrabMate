@@ -1,5 +1,7 @@
 //! REPL `/` 行内补全逻辑（由 [`super::repl_reedline::ReplSlashCompleter`] 调用）。
 
+use std::sync::{Mutex, OnceLock};
+
 use reedline::{Span, Suggestion};
 
 /// 内建 `/` 命令名（不含斜杠；`?` 单独成项）。
@@ -21,10 +23,30 @@ pub(super) const SLASH_COMMANDS: &[&str] = &[
     "models",
     "probe",
     "save-session",
+    "skills",
     "tools",
     "version",
     "workspace",
 ];
+
+/// 供 Tab 补全的 skill 条目（由 REPL 在读行前刷新）。
+#[derive(Debug, Clone)]
+pub(crate) struct SkillSlashCompleteItem {
+    pub id: String,
+    pub description: String,
+}
+
+fn skill_complete_items() -> &'static Mutex<Vec<SkillSlashCompleteItem>> {
+    static ITEMS: OnceLock<Mutex<Vec<SkillSlashCompleteItem>>> = OnceLock::new();
+    ITEMS.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// 更新 skill `/id` 补全列表（工作区或配置变化后调用）。
+pub(crate) fn refresh_skill_slash_completions(items: Vec<SkillSlashCompleteItem>) {
+    if let Ok(mut g) = skill_complete_items().lock() {
+        *g = items;
+    }
+}
 
 /// `/export` 与 `/save-session` 后的格式参数（与 REPL `repl_export_kind_from_arg` 一致）。
 pub(super) const EXPORT_FORMAT_ARGS: &[&str] = &["both", "json", "markdown", "md"];
@@ -43,16 +65,42 @@ pub(super) fn suggestion_slash_command(span: Span, cmd: &str) -> Suggestion {
     }
 }
 
-fn suggestions_first_token(partial: &str) -> Vec<&'static str> {
+fn suggestion_skill(span: Span, item: &SkillSlashCompleteItem) -> Suggestion {
+    let description = if item.description.trim().is_empty() {
+        None
+    } else {
+        Some(item.description.clone())
+    };
+    Suggestion {
+        value: format!("/{}", item.id),
+        description,
+        span,
+        append_whitespace: true,
+        ..Default::default()
+    }
+}
+
+fn suggestions_first_token(span: Span, partial: &str) -> Vec<Suggestion> {
     let p = partial.to_ascii_lowercase();
-    let mut hits: Vec<&str> = SLASH_COMMANDS
+    let mut hits: Vec<(String, Suggestion)> = SLASH_COMMANDS
         .iter()
         .copied()
         .filter(|c| p.is_empty() || c.to_ascii_lowercase().starts_with(&p))
+        .map(|c| (c.to_ascii_lowercase(), suggestion_slash_command(span, c)))
         .collect();
-    hits.sort_unstable();
-    hits.dedup();
-    hits
+    if let Ok(g) = skill_complete_items().lock() {
+        for item in g.iter() {
+            if p.is_empty() || item.id.to_ascii_lowercase().starts_with(&p) {
+                let key = item.id.to_ascii_lowercase();
+                if hits.iter().any(|(k, _)| k == &key) {
+                    continue;
+                }
+                hits.push((key, suggestion_skill(span, item)));
+            }
+        }
+    }
+    hits.sort_by(|a, b| a.0.cmp(&b.0));
+    hits.into_iter().map(|(_, s)| s).collect()
 }
 
 fn suggestions_session_export_formats(span: Span, prefix: &str) -> Vec<Suggestion> {
@@ -161,10 +209,7 @@ pub(super) fn complete_slash_no_whitespace_tail(span: Span, tail: &str) -> Vec<S
             })
             .collect();
     }
-    suggestions_first_token(tail)
-        .into_iter()
-        .map(|cmd| suggestion_slash_command(span, cmd))
-        .collect()
+    suggestions_first_token(span, tail)
 }
 
 fn complete_slash_config_second(span: Span, after_ws: &str) -> Vec<Suggestion> {

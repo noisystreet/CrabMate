@@ -26,10 +26,10 @@ pub fn chat_tui_tool_status_failed(l: Locale) -> &'static str {
 pub fn composer_ph(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "输入消息，Enter 发送 / Shift+Enter 换行；@相对路径 可展开文件（与 read_file 一致）…"
+            "输入消息，Enter 发送 / Shift+Enter 换行；/ 选用技能；@相对路径 展开文件…"
         }
         Locale::En => {
-            "Message: Enter send / Shift+Enter newline; @rel/path expands file (read_file rules)…"
+            "Message: Enter send / Shift+Enter newline; / for skills; @rel/path expands file…"
         }
     }
 }
@@ -72,6 +72,27 @@ pub fn composer_attach_image_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "附加图片",
         Locale::En => "Attach image",
+    }
+}
+
+pub fn composer_slash_menu_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "技能快捷调用",
+        Locale::En => "Skill slash menu",
+    }
+}
+
+pub fn composer_slash_menu_loading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "加载技能…",
+        Locale::En => "Loading skills…",
+    }
+}
+
+pub fn composer_slash_menu_empty(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "无匹配技能（可在 `.crabmate/skills` 添加）",
+        Locale::En => "No matching skills (add under `.crabmate/skills`)",
     }
 }
 

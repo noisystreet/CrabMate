@@ -72,7 +72,13 @@ pub(crate) async fn prepare_json_chat_enqueue(
         agent_role.as_deref(),
     )
     .await
-    .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
+    .map_err(|e| {
+        if let Some(msg) = crate::config::skills_slash::SkillSlashError::strip_turn_err(&e) {
+            bad_request("SKILL_INVOKE_FAILED", msg)
+        } else {
+            bad_request("INVALID_AGENT_ROLE", e)
+        }
+    })?;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
         let cfg = state.http.cfg.read().await;

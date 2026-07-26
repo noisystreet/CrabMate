@@ -15,6 +15,7 @@ mod load;
 mod orchestration_profile;
 mod scheduled_agent_task;
 pub mod skills;
+pub mod skills_slash;
 mod source;
 mod text_util;
 mod types;

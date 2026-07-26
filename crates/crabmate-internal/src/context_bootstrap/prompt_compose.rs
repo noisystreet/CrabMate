@@ -54,6 +54,8 @@ pub fn resolve_agent_role_for_prompt_compose(
 pub struct SkillsComposeContext<'a> {
     pub base_dir: &'a Path,
     pub user_text: &'a str,
+    /// 用户通过 `/<id>` 显式选用的 skill；若设置则跳过 Top-K。
+    pub forced_skill: Option<crabmate_config::skills::SkillDoc>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -104,6 +106,8 @@ pub struct FirstSystemComposeOpts<'a> {
     pub agent_role: Option<&'a str>,
     pub user_msg_for_skills: Option<&'a str>,
     pub skills_base_dir: Option<PathBuf>,
+    /// 用户 `/<id>` 强制选用的 skill（与 [`SkillsComposeContext::forced_skill`] 同源）。
+    pub forced_skill: Option<crabmate_config::skills::SkillDoc>,
     /// 保留字段；实现恒按 [`RoleSystemResolution::Strict`] 解析已传入的 `agent_role`。
     pub role_resolution: RoleSystemResolution,
 }
@@ -128,15 +132,22 @@ pub fn compose_first_system_for_turn_with_diagnostics(
         RoleSystemResolution::Strict,
         "pass pre-resolved agent_role via resolve_agent_role_for_prompt_compose"
     );
-    let skills_ctx = opts
-        .skills_base_dir
+    let FirstSystemComposeOpts {
+        agent_role,
+        user_msg_for_skills,
+        skills_base_dir,
+        forced_skill,
+        role_resolution: _,
+    } = opts;
+    let skills_ctx = skills_base_dir
         .as_ref()
-        .zip(opts.user_msg_for_skills)
+        .zip(user_msg_for_skills)
         .map(|(base, user)| SkillsComposeContext {
             base_dir: base.as_path(),
             user_text: user,
+            forced_skill,
         });
-    let base = resolve_role_system_base(cfg, opts.agent_role)?;
+    let base = resolve_role_system_base(cfg, agent_role)?;
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
     let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, skills_ctx);
@@ -196,12 +207,15 @@ fn merge_skills_into_system_with_meta(
     };
     crabmate_config::skills::merge_system_prompt_with_skills_selected_with_meta(
         system_prompt.clone(),
-        cfg.skills.skills_enabled,
-        cfg.skills.skills_dir.as_str(),
-        cfg.skills.skills_max_chars,
-        sk.base_dir,
-        sk.user_text,
-        cfg.skills.skills_top_k,
+        crabmate_config::skills::SkillsSelectedMergeOpts {
+            skills_enabled: cfg.skills.skills_enabled,
+            skills_dir: cfg.skills.skills_dir.as_str(),
+            skills_max_chars: cfg.skills.skills_max_chars,
+            base_dir: sk.base_dir,
+            user_text: sk.user_text,
+            top_k: cfg.skills.skills_top_k,
+            forced_skill: sk.forced_skill.as_ref(),
+        },
     )
     .unwrap_or((
         system_prompt,
@@ -285,6 +299,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: None,
                 skills_base_dir: None,
+                forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
             },
         )
@@ -323,6 +338,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: Some("请帮我跑 cargo test"),
                 skills_base_dir: Some(tmp.path().to_path_buf()),
+                forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
             },
         )
@@ -331,5 +347,48 @@ mod tests {
         assert_eq!(diag.skills_total_docs, 1);
         assert_eq!(diag.skills_selected_labels.len(), 1);
         assert!(diag.skills_selected_labels[0].contains("Rust Build Skill"));
+    }
+
+    #[test]
+    fn compose_first_system_forced_skill_skips_topk() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let skills_dir = tmp.path().join(".crabmate/skills");
+        std::fs::create_dir_all(&skills_dir).expect("create skills dir");
+        std::fs::write(
+            skills_dir.join("a.md"),
+            "---\nname: alpha\n---\nalpha body\n",
+        )
+        .expect("write a");
+        std::fs::write(
+            skills_dir.join("b.md"),
+            "---\nname: beta\n---\nbeta body cargo\n",
+        )
+        .expect("write b");
+        let forced = crabmate_config::skills_slash::resolve_skill_by_id(
+            tmp.path(),
+            ".crabmate/skills",
+            "alpha",
+        )
+        .expect("resolve");
+        let mut cfg = crabmate_config::load_config(None).expect("embed default");
+        cfg.skills.skills_enabled = true;
+        cfg.skills.skills_dir = ".crabmate/skills".to_string();
+        cfg.skills.skills_top_k = 4;
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        let (system, diag) = compose_first_system_for_turn_with_diagnostics(
+            &cfg,
+            &rec,
+            FirstSystemComposeOpts {
+                agent_role: None,
+                user_msg_for_skills: Some("cargo"),
+                skills_base_dir: Some(tmp.path().to_path_buf()),
+                forced_skill: Some(forced),
+                role_resolution: RoleSystemResolution::Strict,
+            },
+        )
+        .expect("compose");
+        assert!(system.contains("alpha body"));
+        assert!(!system.contains("beta body"));
+        assert!(diag.skills_selected_labels[0].contains("[forced]"));
     }
 }

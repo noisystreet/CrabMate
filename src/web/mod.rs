@@ -20,6 +20,7 @@ pub mod github;
 pub mod openapi;
 pub mod routes;
 pub mod server;
+pub(crate) mod skills_handlers;
 pub mod task;
 mod user_data;
 pub mod workspace;

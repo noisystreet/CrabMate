@@ -1902,6 +1902,62 @@
   align-self: flex-end;
 }
 
+.composer-slash-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 30;
+  max-height: min(280px, 40vh);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 8px;
+  background: var(--surface, #fff);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.composer-slash-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.composer-slash-menu-item:hover,
+.composer-slash-menu-item--active {
+  background: var(--accent-muted, rgba(9, 105, 218, 0.12));
+}
+
+.composer-slash-menu-id {
+  font-weight: 600;
+  font-size: 0.92em;
+}
+
+.composer-slash-menu-desc {
+  font-size: 0.82em;
+  opacity: 0.78;
+  line-height: 1.35;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.composer-slash-menu-empty {
+  padding: 10px 12px;
+  font-size: 0.85em;
+  opacity: 0.75;
+}
+
 /* textarea 在 stack 内不再是 flex 行的直接子项，沿用 flex:1 不会撑宽；须显式 100% 宽，否则会回落到默认 cols≈20 的窄条 */
 .composer-input-stack > .composer-input {
   display: block;

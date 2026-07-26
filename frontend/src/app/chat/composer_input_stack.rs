@@ -1,4 +1,4 @@
-//! 带工作区 `@引用` 镜像高亮的输入栈（底层 HTML + 假占位提示 + 透明字色 textarea）。
+//! 带工作区 `@引用` 镜像高亮的输入栈，以及输入 `/` 时的 skill 浮层。
 
 use std::sync::Arc;
 
@@ -7,6 +7,9 @@ use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
 
+use super::composer_slash_menu::{
+    ComposerSlashMenu, handle_slash_menu_keydown, install_slash_menu_effects,
+};
 use crate::i18n::{self, Locale};
 
 #[component]
@@ -17,6 +20,7 @@ pub fn ComposerInputStack(
     composer_mirror_scroll_top: RwSignal<f64>,
     run_send_message: Arc<dyn Fn() + Send + Sync>,
     locale: RwSignal<Locale>,
+    workspace_path: Memo<String>,
 ) -> impl IntoView {
     let mirror_inner_ref = NodeRef::<leptos::html::Div>::new();
     Effect::new({
@@ -29,6 +33,9 @@ pub fn ComposerInputStack(
             }
         }
     });
+
+    let slash = install_slash_menu_effects(draft, locale, workspace_path);
+    let menu_open = slash.menu_open;
 
     view! {
         <div class="composer-input-stack">
@@ -47,12 +54,19 @@ pub fn ComposerInputStack(
                     }
                 ></div>
             </div>
+            <ComposerSlashMenu
+                locale=locale
+                slash=slash
+                draft=draft
+                composer_input_ref=composer_input_ref
+            />
             <textarea
                 class="composer-input composer-input--mirror-overlay"
                 data-testid="chat-composer-input"
                 dir="ltr"
                 placeholder=""
                 prop:aria-label=move || i18n::composer_ph(locale.get())
+                prop:aria-expanded=move || menu_open.get()
                 node_ref=composer_input_ref
                 on:input=move |ev| {
                     let v = event_target_value(&ev);
@@ -61,6 +75,9 @@ pub fn ComposerInputStack(
                 on:keydown={
                     let r = Arc::clone(&run_send_message);
                     move |ev: web_sys::KeyboardEvent| {
+                        if handle_slash_menu_keydown(&ev, slash, draft, composer_input_ref) {
+                            return;
+                        }
                         if ev.key() == "Enter" && !ev.shift_key() {
                             ev.prevent_default();
                             r();

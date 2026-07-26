@@ -8,6 +8,7 @@ mod composer;
 mod composer_follow_up;
 mod composer_input_stack;
 mod composer_mirror;
+mod composer_slash_menu;
 mod composer_stream;
 mod composer_wires;
 mod find;

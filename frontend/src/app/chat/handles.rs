@@ -130,6 +130,8 @@ pub(crate) struct ChatComposerPaneSignals {
     pub draft: RwSignal<String>,
     pub composer_mirror_html: RwSignal<String>,
     pub composer_mirror_scroll_top: RwSignal<f64>,
+    /// 当前已生效工作区路径（`workspace_data.path`；用于 `/` skill 浮层缓存失效）。
+    pub workspace_path: Memo<String>,
 }
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
@@ -190,6 +192,10 @@ impl ChatColumnShell {
             draft: cc.draft,
             composer_mirror_html: cc.composer_mirror_html,
             composer_mirror_scroll_top: cc.composer_mirror_scroll_top,
+            workspace_path: {
+                let wd = app.workspace.workspace_data;
+                Memo::new(move |_| wd.get().map(|d| d.path).unwrap_or_default())
+            },
         }
     }
 }

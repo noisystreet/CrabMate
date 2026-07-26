@@ -92,6 +92,7 @@ pub fn apply_agent_role_switch_to_messages(
             agent_role: resolved_role.as_deref(),
             user_msg_for_skills: skills_user,
             skills_base_dir: skills_base,
+            forced_skill: None,
             role_resolution: RoleSystemResolution::Strict,
         },
     )?;

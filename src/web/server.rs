@@ -26,6 +26,7 @@ pub(crate) fn build_app(
     let mut protected_api = Router::new()
         .merge(super::routes::chat::router())
         .merge(super::routes::workspace::router())
+        .merge(super::routes::skills::router())
         .merge(super::routes::github::router())
         .merge(super::routes::tasks::router())
         .merge(super::routes::config::router())
