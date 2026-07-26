@@ -1,5 +1,5 @@
 //! 工作区侧栏滚动区：加载骨架与已加载内容（从 `side_column.rs` 拆出以降低组件圈复杂度）。
-//! 工作区根路径已迁至顶栏正中（见 [`super::workspace_root_actions::ShellTopbarWorkspaceRoot`]）。
+//! 工作区根路径已迁至顶栏正中只读标题（见 [`super::workspace_root_actions::ShellTopbarWorkspaceRoot`]）。
 
 use leptos::prelude::*;
 use std::sync::Arc;

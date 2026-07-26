@@ -23,7 +23,7 @@ use debounce::{
     GLOBAL_MESSAGE_SEARCH_DEBOUNCE_MS, SIDEBAR_SESSION_FILTER_DEBOUNCE_MS,
     debounce_signal_to_effect, rail_context_menu_target_is_session_row_or_hit,
 };
-use mode_actions::NavRailModeActions;
+use mode_actions::NavRailBrandActions;
 use search_panel::nav_rail_search_panel;
 use session_rail::{NavRailSessionScrollSignals, nav_rail_session_scroll_inner};
 
@@ -75,21 +75,13 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                         <h1>"CrabMate"</h1>
                     </div>
                 </div>
-                <button
-                    type="button"
-                    class="btn btn-icon btn-nav-rail-collapse"
-                    prop:aria-label=move || crate::i18n::nav_sidebar_collapse_aria(locale.get())
-                    prop:aria-expanded=move || (!sidebar_rail_collapsed.get()).to_string()
-                    on:click=move |_| sidebar_rail_collapsed.set(true)
-                >
-                    "‹"
-                </button>
+                <NavRailBrandActions
+                    locale=locale
+                    new_session=new_session.clone()
+                    mobile_nav_open=mobile_nav_open
+                    sidebar_rail_collapsed=sidebar_rail_collapsed
+                />
             </div>
-            <NavRailModeActions
-                locale=locale
-                new_session=new_session.clone()
-                mobile_nav_open=mobile_nav_open
-            />
             {nav_rail_search_panel(
                 locale,
                 sidebar_search_panel_open,

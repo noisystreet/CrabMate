@@ -43,7 +43,7 @@
   padding-right: 0.15rem;
 }
 
-/* 顶栏正中：工作区根路径 */
+/* 顶栏正中：工作区根路径（只读标题） */
 .shell-topbar-workspace {
   flex: 1 1 auto;
   min-width: 0;
@@ -56,30 +56,26 @@
   margin: 0 auto;
 }
 
-.shell-topbar-workspace-input {
+.shell-topbar-workspace-title {
+  display: block;
   width: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 0.28rem 0.65rem;
+  padding: 0.2rem 0.5rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
   line-height: 1.25;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 0;
+  color: var(--muted);
   text-align: center;
-  background: color-mix(in srgb, var(--bg) 70%, var(--surface));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+  cursor: default;
 }
 
-.shell-topbar-workspace-input:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
-  box-shadow: 0 0 0 2px var(--accent-glow);
-}
-
-.shell-topbar-workspace-input:focus-visible {
-  outline: var(--focus-ring-width) solid var(--accent);
-  outline-offset: var(--focus-ring-offset);
+.shell-topbar-workspace-title:empty {
+  display: none;
 }
 
 .shell-topbar-workspace-error {
@@ -121,12 +117,12 @@
 
 .shell-topbar .layout-mode-toggle-btn,
 .shell-topbar .shell-topbar-layout-toggle {
-  width: auto;
+  width: 2rem;
+  min-width: 2rem;
+  min-height: 1.75rem;
   margin: 0;
-  padding: 0.28rem 0.65rem;
-  font-size: 0.8125rem;
-  line-height: 1.2;
-  white-space: nowrap;
+  padding: 0;
+  line-height: 1;
   flex-shrink: 0;
 }
 
