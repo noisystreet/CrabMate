@@ -19,7 +19,8 @@
 当前桌面壳逻辑会在启动时执行：
 
 - `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`
-- 若存在 `/etc/crabmate/config.toml`，自动追加 `--config /etc/crabmate/config.toml`
+- 若存在 **`/etc/crabmate/config.toml`** 且用户尚无 XDG 配置：首次启动**种子拷贝**运行时子集（**`config.toml`**、**`agent_roles.toml`**、**`prompts/`**、**`config/`**）到 **`$XDG_CONFIG_HOME/crabmate/`**（不覆盖已有文件；嵌入分片如 **`tools.toml`** 不拷贝）
+- 若存在用户级 **`$XDG_CONFIG_HOME/crabmate/config.toml`**，追加 **`--config`** 指向该文件；仅当种子失败且尚无用户副本时，才只读回退 **`/etc/crabmate/config.toml`**
 
 并等待后端输出 `web_ready` JSON，再加载 WebView URL。
 

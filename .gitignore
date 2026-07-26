@@ -80,8 +80,9 @@ vendor/**/target/
 .crabmate/
 
 ########################
-# fastembed / ONNX 模型缓存（本机产物，勿提交）
+# 本机缓存（勿提交；正式路径为 $XDG_CACHE_HOME/crabmate/）
 ########################
+# 历史 cwd 缓存目录名（已不再写入；保留忽略以防误提交）
 .fastembed_cache/
 
 ########################

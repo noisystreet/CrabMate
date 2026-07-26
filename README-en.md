@@ -192,8 +192,8 @@ Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged plannin
 ## Deployment and security
 
 - **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs **`web_api_bearer_token`** or an explicit insecure switch ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, a non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML **`web_api_bearer_token`**) is required before start. When the token is non-empty, the Bearer layer is mounted; send **`Authorization: Bearer …`** or **`X-API-Key: …`**. The UI may store **`localStorage["crabmate-api-bearer-token"]`**. For exposed or untrusted networks, prefer **`web_api_require_bearer = true`** plus a configured secret.
-- **Other**: Web sidebar **Settings** needs **Save all** to persist in the browser; workspace must stay under allowed roots (path checks: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)). Debug env vars and **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
+- **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, a non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML **`web_api_bearer_token`**) is required before start. When the token is non-empty, the Bearer layer is mounted; send **`Authorization: Bearer …`** or **`X-API-Key: …`**. The UI may store the same secret via **`/user-data/secrets/web-api-bearer`**. For exposed or untrusted networks, prefer **`web_api_require_bearer = true`** plus a configured secret.
+- **Other**: Web sidebar **Settings** needs **Save all** to persist via **`/user-data`**; workspace must stay under allowed roots (path checks: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)). Debug env vars and **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 - **Personal VPS (reverse-proxy TLS)**: walkthrough (Chinese) in [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (**`127.0.0.1` + `CM_WEB_API_BEARER_TOKEN` + Caddy/Nginx**).
 
 ## Project structure

@@ -2,15 +2,15 @@
 
 ## 1. 背景与问题
 
-当前 Web / Tauri 将大量**用户级**状态写在浏览器 **`localStorage`**（键见 `frontend/src/app/local_storage_index.rs`）。Tauri 桌面端由 WebKit 落盘到 **`~/.local/share/com.crabmate.desktop/localstorage/`**，按来源 `http://127.0.0.1:<port>` 分文件，导致：
+**历史问题**（已解决）：早期 Web / Tauri 曾把用户级状态写在浏览器 **`localStorage`**（Tauri WebKit 按 `http://127.0.0.1:<port>` 分叉），导致跨端口不一致、难备份，且 CLI/TUI 无法读取。
 
-- 与系统浏览器访问同端口时可能**同源共享**，与不同端口/纯 `serve` 实例则**分叉**；
-- 路径隐蔽、难以备份与手工排查（例如工作区被记为固定目录）；
-- CLI / TUI **无法**读取侧栏会话列表、主题、上次工作区等非机密偏好。
+**工作区内**数据（`conversations.db`、导出、`repl_history.txt` 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
 
-**工作区内**数据（`conversations.db`、导出、`repl_history.txt` 等）已落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
+**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。见 **`docs/配置说明.md`**。
 
-**状态**：**已实现（P0–P4）**；Web 经 **`/user-data/*`** 读写 **`~/.local/share/crabmate`**，**不再**使用浏览器 `localStorage` 存会话/偏好/LLM 覆盖。
+**可清理缓存**：默认 **`$XDG_CACHE_HOME/crabmate/`**（**`CM_CRABMATE_CACHE_DIR`**）；含 **`fastembed/`** ONNX 模型。**不要**把会话/密钥放进 cache。
+
+**状态**：**已实现（P0–P4）**；Web 经 **`/user-data/*`** 读写 **`$XDG_DATA_HOME/crabmate`**（默认 **`~/.local/share/crabmate`**）。
 
 ---
 
@@ -42,6 +42,14 @@
 CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 否则 XDG_DATA_HOME/crabmate → Linux 通常为 ~/.local/share/crabmate
 ```
+
+并列的 XDG 根（实现见 **`crabmate-config::xdg`** / **`user_config_xdg`**）：
+
+| 用途 | 默认 | 覆盖 |
+|------|------|------|
+| 配置 | `$XDG_CONFIG_HOME/crabmate` | `CM_CRABMATE_CONFIG_DIR` |
+| 缓存 | `$XDG_CACHE_HOME/crabmate`（含 `fastembed/`） | `CM_CRABMATE_CACHE_DIR` |
+| 数据 | `$XDG_DATA_HOME/crabmate`（本设计） | `CM_CRABMATE_USER_DATA_DIR` |
 
 ```text
 ~/.local/share/crabmate/
@@ -79,7 +87,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 ### 4.2 `prefs.json`（全局，非机密）
 
-| 字段 | 现 localStorage 键（参考） | 说明 |
+| 字段 | 历史 localStorage 键（参考） | 说明 |
 |------|---------------------------|------|
 | `last_workspace_root` | （计划键 `crabmate-last-workspace-root`） | 上次手动 `POST /workspace` 成功的规范路径（与 `recent_workspace_roots[0]` 同步） |
 | `recent_workspace_roots` | — | 最近打开的工作区根列表（**新在前**，最多 **10** 项）；Web/Tauri **「文件 → 最近的工作区」** 级联子菜单读取此列表 |
@@ -171,7 +179,7 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 |------|------|
 | `client_llm` | 云厂商 Bearer（现 `crabmate-client-llm-api-key`） |
 | `executor_llm` | 可选（现 `crabmate-executor-llm-api-key`） |
-| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate 鉴权（现 `localStorage` 可选键） |
+| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate 鉴权 |
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 
@@ -307,7 +315,7 @@ WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `
 ## 13. 参考
 
 - `frontend/src/storage.rs` — 会话分桶与 `ChatSession` 形状  
-- `frontend/src/api/client_llm_storage.rs` — LLM localStorage 键  
+- `frontend/src/api/client_llm_storage.rs` — LLM 覆盖经 `/user-data/llm-overrides` 与 `secrets/`  
 - `docs/命令行与路由.md` — CLI 与 Web 会话持久对照  
 - `docs/配置说明.md` — `API_KEY`、`client_llm`、鉴权  
 - `.cursor/rules/secrets-and-logging.mdc` — 密钥与日志  

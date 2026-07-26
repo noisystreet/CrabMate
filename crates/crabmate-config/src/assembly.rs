@@ -9,7 +9,7 @@
 //! 5. 嵌入 **`config/sandbox.toml`**
 //! 6. 嵌入 **`config/planning.toml`**
 //! 7. 嵌入 **`config/memory.toml`**
-//! 8. 用户 **`config.toml`** 或 **`.agent_demo.toml`**（或 **`--config`** 指定单文件；存在则不再探测另一默认名）
+//! 8. 用户配置（无 **`--config`** 时）：优先 cwd 的 **`config.toml`** / **`.agent_demo.toml`**（二者可并存合并）；否则 **`$XDG_CONFIG_HOME/crabmate/config.toml`**（可由 **`/etc/crabmate`** 首次种子；源码树内默认跳过，除非设 **`CM_CRABMATE_CONFIG_DIR`**）；有 **`--config`** 则只读该文件
 //! 9. 可选 **`agent_roles.toml`**（与主配置同目录，或仓库 **`config/agent_roles.toml`**）
 //! 10. **`CM_*` 环境变量**（在 `config/env_overrides.rs` 的 `apply_env_overrides` 中应用，本模块不负责）
 

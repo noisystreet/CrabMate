@@ -10,7 +10,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 #[cfg(feature = "fastembed")]
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use fastembed::TextEmbedding;
 use log::{debug, info, warn};
 use rusqlite::Connection;
 
@@ -184,8 +184,8 @@ impl LongTermMemoryRuntime {
             .lock()
             .map_err(|e| format!("长期记忆 embedder 锁失败: {e}"))?;
         if g.is_none() {
-            let model = TextEmbedding::try_new(TextInitOptions::new(EmbeddingModel::AllMiniLML6V2))
-                .map_err(|e| format!("长期记忆 fastembed 初始化失败: {e}"))?;
+            let model = crate::memory::fastembed_init::try_new_text_embedding()
+                .map_err(|e| format!("长期记忆 {e}"))?;
             *g = Some(model);
         }
         Ok(())

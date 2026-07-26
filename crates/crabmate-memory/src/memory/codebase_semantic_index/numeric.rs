@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 #[cfg(feature = "fastembed")]
-use fastembed::{EmbeddingModel, TextEmbedding, TextInitOptions};
+use fastembed::TextEmbedding;
 use regex::Regex;
 use sha2::{Digest, Sha256};
 
@@ -194,8 +194,7 @@ pub fn bytes_to_f32_slice(blob: &[u8]) -> Option<Vec<f32>> {
 
 #[cfg(feature = "fastembed")]
 pub fn ensure_embedder() -> Result<TextEmbedding, String> {
-    TextEmbedding::try_new(TextInitOptions::new(EmbeddingModel::AllMiniLML6V2))
-        .map_err(|e| format!("fastembed 初始化失败: {}", e))
+    crate::memory::fastembed_init::try_new_text_embedding()
 }
 
 pub fn rel_path_for_workspace(workspace_root: &Path, file: &Path) -> Option<String> {

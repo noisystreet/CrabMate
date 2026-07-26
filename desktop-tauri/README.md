@@ -5,7 +5,7 @@
 ## 启动流程（与代码一致）
 
 1. `src-tauri/src/main.rs` 按优先级解析后端二进制（**`CM_DESKTOP_BACKEND_BIN`** → sidecar → **`PATH`**）。
-2. 子进程命令：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（若存在 **`/etc/crabmate/config.toml`** 则追加 **`--config`**）。
+2. 子进程命令：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（若存在 **`$XDG_CONFIG_HOME/crabmate/config.toml`** 则追加 **`--config`**；可由 **`/etc/crabmate`** 首次种子；种子失败且尚无用户副本时只读回退 **`/etc`**）。
 3. 读取 stdout 中 **`{"event":"web_ready",…}`**，取 **`url`** 打开主窗口。
 4. 应用退出时 kill 子进程。
 
