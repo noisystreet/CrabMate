@@ -22,13 +22,13 @@
 | `TurnControlSink` | `src/agent/agent_turn/turn_sink.rs` | SSE `out`、编码器、镜像、工具批 / 澄清钩子 |
 | `TurnTerminalIo` | 同上 | `render_to_terminal`、plain stream、TUI scratch |
 | `RunLoopIo` | `params.rs` | `no_stream` / `cancel` + 嵌套上述二者 |
-| `WebExecuteCtx` | `execute/tools` | 持有 `control: TurnControlSink`（emit 形参仍扁平，边界处拆开） |
+| `WebExecuteCtx` / `ExecuteToolsCommonCtx` | `execute/tools` | 持有 `control: TurnControlSink` |
+| `EmitToolResultParams` / serial·parallel 状态 | 同上 | 控制面字段收成 `control`（底层 `emit_*` 自由函数仍吃扁平 `out`/`encoder`） |
 
 入口装配：`run_agent_turn.rs`；宏 `check_abort!` 读 `io.control.out`。
 
 ## 后续（未做）
 
 - T1b：`turn_completion_decision` / `completion_suppression` 判定核下沉
-- T2b：把 emit / serial 状态也收成 `TurnControlSink` 形参（减少重复字段）
 - T3：`task_level_evidence` 规则下沉
 - T4：根包目录收成 `loop/` / `plan_reflect/` / `host/`

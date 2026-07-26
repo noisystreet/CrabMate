@@ -211,9 +211,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     let EmitToolResultParams {
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -224,6 +222,9 @@ pub(super) async fn emit_tool_result_sse_and_append(
         reflection_inject,
         envelope_ctx,
     } = p;
+    let out = control.out;
+    let sse_control_mirror = control.sse_control_mirror;
+    let clarification_questionnaire_hook = control.clarification_questionnaire_hook;
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
     let tool_summary = if let Some(ref parsed) = args_parsed {
         tools::summarize_tool_call_parsed(name, parsed)
