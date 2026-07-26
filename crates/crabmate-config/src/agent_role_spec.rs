@@ -7,6 +7,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct AgentRoleSpec {
     pub system_prompt: String,
-    /// `Some`：仅允许这些工具名；显式写 `"mcp"` 表示允许所有 `mcp__*`。`None`：不限制（与未配置该项一致）。
+    /// `Some`：仅允许这些工具名；显式写 `"mcp"` 表示允许所有 `mcp__*`，亦可写完整 `mcp__…` 名精确放行。`None`：不限制（与未配置该项一致）。
     pub allowed_tools: Option<Arc<HashSet<String>>>,
 }

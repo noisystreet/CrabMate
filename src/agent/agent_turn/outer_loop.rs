@@ -90,14 +90,11 @@ fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a>
                 k,
             );
             if let Some(ref allow) = p.ctx.attach.turn_allowed_tool_names {
-                let mcp_ok = allow.contains("mcp");
                 v.retain(|t| {
-                    let n = t.function.name.as_str();
-                    if n.starts_with("mcp__") {
-                        mcp_ok
-                    } else {
-                        allow.contains(n)
-                    }
+                    crate::agent_role_turn::tool_allowed_for_turn(
+                        t.function.name.as_str(),
+                        Some(allow.as_ref()),
+                    )
                 });
             }
             Some(v)

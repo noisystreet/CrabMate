@@ -151,24 +151,15 @@ pub fn maybe_apply_mid_session_agent_role_switch(
     )
 }
 
-/// 按角色 `allowed_tools` 过滤 `tools`（`None` 表示不限制）。`mcp__` 前缀工具仅在允许集合显式包含 `"mcp"` 时保留。
+/// 按角色 `allowed_tools` 过滤 `tools`（`None` 表示不限制）。
+/// `mcp__*`：允许集合含 `"mcp"` 或完整工具名时保留（与 [`tool_allowed_for_turn`] 一致）。
 pub fn filter_tools_for_agent_role(
     tools: &[crabmate_types::Tool],
     allowed: Option<&HashSet<String>>,
 ) -> Vec<crabmate_types::Tool> {
-    let Some(set) = allowed else {
-        return tools.to_vec();
-    };
-    let mcp_allowed = set.contains("mcp");
     tools
         .iter()
-        .filter(|t| {
-            let n = t.function.name.as_str();
-            if n.starts_with("mcp__") {
-                return mcp_allowed;
-            }
-            set.contains(n)
-        })
+        .filter(|t| tool_allowed_for_turn(t.function.name.as_str(), allowed))
         .cloned()
         .collect()
 }
@@ -195,15 +186,12 @@ pub fn turn_allow_for_web_or_cli_job(
 }
 
 /// 多角色工具白名单：`allow` 为 `None` 时不限制。
+///
+/// 实现委托 [`crabmate_tools::tool_naming::tool_name_allowed_by_turn_allowlist`]，
+/// 与 `crabmate_agent::turn_tool_policy` 保持同一规则。
 #[inline]
 pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {
-    let Some(set) = allow else {
-        return true;
-    };
-    if name.starts_with("mcp__") {
-        return set.contains("mcp");
-    }
-    set.contains(name)
+    crabmate_tools::tool_naming::tool_name_allowed_by_turn_allowlist(name, allow)
 }
 
 pub fn turn_tool_denied_message(name: &str) -> String {
@@ -279,5 +267,12 @@ mod tests {
         let f2 = filter_tools_for_agent_role(&tools, Some(&s2));
         assert_eq!(f2.len(), 1);
         assert_eq!(f2[0].function.name, "mcp__x");
+
+        let mut s3 = HashSet::new();
+        s3.insert("mcp__x".to_string());
+        let f3 = filter_tools_for_agent_role(&tools, Some(&s3));
+        assert_eq!(f3.len(), 1);
+        assert_eq!(f3[0].function.name, "mcp__x");
+        assert!(tool_allowed_for_turn("mcp__x", Some(&s3)));
     }
 }

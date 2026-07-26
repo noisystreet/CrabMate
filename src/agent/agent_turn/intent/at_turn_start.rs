@@ -67,9 +67,13 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         "intent_at_turn",
     )
     .await?;
-    // 始终运行意图管线 & 发射时间线。intent_at_turn_start_enabled 仅控制门控是否提前终答。
+    // 始终运行意图管线 & 发射时间线。intent_at_turn_start_enabled 仅控制门控是否提前终答；
+    // 关闭时清除管线附带的工具约束，避免「门控关闭」仍把回合收窄为 ReviewReadonly（进而滤掉 MCP）。
     if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
         p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
+        p.turn
+            .turn_planner_hints
+            .clear_tool_narrowing_side_effects();
         return Ok(true);
     }
     let proceed = matches!(out, IntentGateResult::ProceedExecute { .. });

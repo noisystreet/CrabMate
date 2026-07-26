@@ -133,6 +133,14 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) intent_routing_cache: Option<IntentRoutingCacheEntry>,
 }
 
+impl TurnPlannerHints {
+    /// `intent_at_turn_start_enabled=false` 时清除管线附带的工具收窄（保留时间线副作用由调用方处理）。
+    pub(crate) fn clear_tool_narrowing_side_effects(&mut self) {
+        self.step_executor_constraint = None;
+        self.intent_turn_gate_hint = None;
+    }
+}
+
 /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 共享的 L2 判定缓存（按 effective task 键）。
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -427,6 +435,19 @@ mod turn_planner_hints_tests {
         };
         assert_eq!(h.take_intent_turn_gate_hint().as_deref(), Some("hint"));
         assert!(h.take_intent_turn_gate_hint().is_none());
+    }
+
+    #[test]
+    fn clear_tool_narrowing_side_effects_resets_constraint_and_hint() {
+        use crate::agent::plan_artifact::PlanStepExecutorKind;
+        let mut h = TurnPlannerHints {
+            intent_turn_gate_hint: Some("hint".into()),
+            step_executor_constraint: Some(PlanStepExecutorKind::ReviewReadonly),
+            ..Default::default()
+        };
+        h.clear_tool_narrowing_side_effects();
+        assert!(h.intent_turn_gate_hint.is_none());
+        assert!(h.step_executor_constraint.is_none());
     }
 
     #[test]

@@ -402,7 +402,9 @@ pub async fn try_open_turn_handle(
     ))
 }
 
-/// 按当前 `AgentConfig` 解析 user-data 并打开 MCP 回合句柄。
+/// 仅按 TOML/`AgentConfig` 基础字段打开 MCP（**不含** user-data `mcp_servers.json`，`servers` 恒空）。
+///
+/// Agent 回合请使用 `crabmate_internal::mcp::try_open_session_and_tools`（会加载 user-data）。
 pub async fn try_open_session_and_tools(cfg: &AgentConfig) -> Option<(McpTurnHandle, Vec<Tool>)> {
     let resolved = crate::resolve_mcp_config(cfg);
     try_open_turn_handle(&resolved).await

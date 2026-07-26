@@ -109,6 +109,11 @@ pub fn tool_allowed_for_step_executor_kind(
     name: &str,
     kind: PlanStepExecutorKind,
 ) -> bool {
+    // 用户显式启用的 MCP 代理：三种子代理角色均可调用。
+    // （仍视为非只读，不参与并行只读批；副作用面由 MCP server 自身与审批策略约束。）
+    if is_mcp_proxy_tool(name) {
+        return true;
+    }
     match kind {
         PlanStepExecutorKind::ReviewReadonly => {
             if cfg
@@ -119,18 +124,12 @@ pub fn tool_allowed_for_step_executor_kind(
             {
                 return false;
             }
-            is_readonly_tool(cfg, name) && !is_mcp_proxy_tool(name)
+            is_readonly_tool(cfg, name)
         }
         PlanStepExecutorKind::PatchWrite => {
-            if is_mcp_proxy_tool(name) {
-                return false;
-            }
             is_readonly_tool(cfg, name) || patch_write_allowed_name(cfg, name)
         }
         PlanStepExecutorKind::TestRunner => {
-            if is_mcp_proxy_tool(name) {
-                return false;
-            }
             is_readonly_tool(cfg, name) || test_runner_allowed_name(cfg, name)
         }
     }
@@ -247,6 +246,39 @@ mod tests {
             "my_patch",
             PlanStepExecutorKind::ReviewReadonly
         ));
+    }
+
+    #[test]
+    fn review_readonly_allows_mcp_proxy() {
+        let cfg = load_config(None).expect("embed default");
+        assert!(tool_allowed_for_step_executor_kind(
+            &cfg,
+            "mcp__fanalyzer__fanalyzer_watchlist_list",
+            PlanStepExecutorKind::ReviewReadonly
+        ));
+    }
+
+    #[test]
+    fn all_executor_kinds_allow_mcp_proxy() {
+        let cfg = load_config(None).expect("embed default");
+        let name = "mcp__fanalyzer__fanalyzer_watchlist_list";
+        for kind in [
+            PlanStepExecutorKind::ReviewReadonly,
+            PlanStepExecutorKind::PatchWrite,
+            PlanStepExecutorKind::TestRunner,
+        ] {
+            assert!(
+                tool_allowed_for_step_executor_kind(&cfg, name, kind),
+                "kind={kind:?} should allow MCP"
+            );
+        }
+        let filtered = filter_tool_defs_for_executor_kind(
+            &[tool_named(name), tool_named("create_file")],
+            &cfg,
+            PlanStepExecutorKind::ReviewReadonly,
+        );
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].function.name, name);
     }
 
     #[test]
