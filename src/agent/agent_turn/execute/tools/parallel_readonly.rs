@@ -297,11 +297,7 @@ struct ParallelEmitOrderedParams<'a> {
     messages: &'a mut Vec<Message>,
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
-    out: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    sse_encoder: &'a dyn crate::sse::SseEncoder,
-    clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    control: crate::agent::agent_turn::TurnControlSink<'a>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -318,16 +314,15 @@ async fn parallel_emit_ordered_tool_results(
         messages,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        sse_encoder,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
     } = p;
 
-    let sse_mirror_ref = sse_control_mirror.as_ref();
+    let out = control.out;
+    let sse_mirror_ref = control.sse_control_mirror.as_ref();
+    let sse_encoder = control.sse_encoder.as_ref();
 
     for tc in tool_calls {
         if abort_tool_batch_if_sse_closed(
@@ -380,9 +375,7 @@ async fn parallel_emit_ordered_tool_results(
             super::EmitToolResultParams {
                 cfg,
                 tool_outcome_recorder,
-                out,
-                sse_control_mirror: sse_control_mirror.clone(),
-                clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+                control: control.clone(),
                 echo_terminal_transcript,
                 terminal_tool_display_max_chars,
                 tool_result_envelope_v1,
@@ -413,8 +406,7 @@ pub(super) async fn execute_tools_parallel(
         workspace_is_set: _,
         read_file_turn_cache,
         workspace_changelist,
-        out,
-        tool_running_hook: _,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -433,12 +425,7 @@ pub(super) async fn execute_tools_parallel(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache: _,
-        clarification_questionnaire_hook,
-        sse_control_mirror,
-        sse_encoder,
     } = ctx;
-
-    let sse_mirror_parallel = sse_control_mirror.clone();
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);
 
@@ -500,13 +487,10 @@ pub(super) async fn execute_tools_parallel(
         messages,
         cfg,
         tool_outcome_recorder: &tool_outcome_recorder,
-        out,
-        sse_control_mirror: sse_mirror_parallel,
-        sse_encoder: sse_encoder.as_ref(),
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
-        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
     })
     .await
 }

@@ -178,33 +178,31 @@ pub(super) fn serial_log_web_audit_write_tool_if_needed(
 
 pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSsePreface<'_>) {
     let SerialToolIterationSsePreface {
-        out,
-        sse_mirror,
+        control,
         cfg,
         tracing_chat_turn,
         id,
         name,
         args,
         messages,
-        encoder,
     } = p;
     if let Some(t) = tracing_chat_turn {
         t.record_tool_call_id_for_log(id);
     }
     emit_tool_call_summary_sse(
-        out,
-        sse_mirror,
+        control.out,
+        control.sse_control_mirror.as_ref(),
         cfg.as_ref(),
         id,
         name,
         args,
         messages,
-        encoder,
+        control.sse_encoder.as_ref(),
     )
     .await;
     emit_timeline_log_sse(
-        out,
-        sse_mirror,
+        control.out,
+        control.sse_control_mirror.as_ref(),
         "tool_step_started",
         name.to_string(),
         Some(format!(
@@ -212,7 +210,7 @@ pub(super) async fn serial_tool_iteration_sse_preface(p: SerialToolIterationSseP
             crate::redact::tool_arguments_preview_for_sse(args)
         )),
         "execute_tools::timeline tool_step_started",
-        encoder,
+        control.sse_encoder.as_ref(),
     )
     .await;
     info!(

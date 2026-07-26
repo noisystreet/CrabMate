@@ -10,8 +10,6 @@ use crate::agent::agent_turn::execute::tool_execution_host::CrabmateToolExecutio
 use crate::tool_registry::{self, ToolRuntime};
 use crate::types::ToolCall;
 
-use std::sync::Arc;
-
 use super::super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, abort_tool_batch_if_sse_closed,
 };
@@ -54,7 +52,7 @@ struct SerialToolLoopState<'a> {
     read_file_turn_cache: Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist:
         Option<&'a std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
-    out: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    control: crate::agent::agent_turn::TurnControlSink<'a>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -75,10 +73,6 @@ struct SerialToolLoopState<'a> {
     sync_default_sandbox_backend:
         std::sync::Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: std::sync::Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
-    clarification_questionnaire_hook:
-        Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
-    sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
     workspace_changed: &'a mut bool,
 }
 
@@ -93,9 +87,7 @@ impl<'a> SerialToolLoopState<'a> {
             workspace_is_set,
             read_file_turn_cache,
             workspace_changelist,
-            out,
-            tool_running_hook: _,
-            clarification_questionnaire_hook,
+            control,
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -114,8 +106,6 @@ impl<'a> SerialToolLoopState<'a> {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache,
-            sse_control_mirror,
-            sse_encoder,
         } = ctx;
         Self {
             tool_calls,
@@ -126,7 +116,7 @@ impl<'a> SerialToolLoopState<'a> {
             workspace_is_set,
             read_file_turn_cache,
             workspace_changelist,
-            out,
+            control,
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -145,9 +135,6 @@ impl<'a> SerialToolLoopState<'a> {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache,
-            clarification_questionnaire_hook,
-            sse_control_mirror,
-            sse_encoder,
             workspace_changed,
         }
     }
@@ -160,9 +147,9 @@ async fn serial_execute_one_tool_call(
     tc: &ToolCall,
 ) -> bool {
     if abort_tool_batch_if_sse_closed(
-        st.out,
+        st.control.out,
         "SSE sender closed during tool execution, aborting remaining tools",
-        st.sse_encoder.as_ref(),
+        st.control.sse_encoder.as_ref(),
     )
     .await
     {
@@ -172,18 +159,15 @@ async fn serial_execute_one_tool_call(
     let name = tc.function.name.clone();
     let args = tc.function.arguments.clone();
     let id = tc.id.clone();
-    let sse_mirror_for_emit = st.sse_control_mirror.clone();
 
     serial_tool_iteration_sse_preface(SerialToolIterationSsePreface {
-        out: st.out,
-        sse_mirror: sse_mirror_for_emit.as_ref(),
+        control: st.control.clone(),
         cfg: st.cfg,
         tracing_chat_turn: st.tracing_chat_turn.as_ref(),
         id: id.as_str(),
         name: &name,
         args: &args,
         messages: st.messages,
-        encoder: st.sse_encoder.as_ref(),
     })
     .await;
 
@@ -192,9 +176,7 @@ async fn serial_execute_one_tool_call(
         per_coord: st.per_coord,
         cfg: st.cfg,
         tool_outcome_recorder: &st.tool_outcome_recorder,
-        out: st.out,
-        sse_control_mirror: sse_mirror_for_emit.clone(),
-        clarification_questionnaire_hook: st.clarification_questionnaire_hook.clone(),
+        control: st.control.clone(),
         echo_terminal_transcript: st.echo_terminal_transcript,
         terminal_tool_display_max_chars: st.terminal_tool_display_max_chars,
         tool_result_envelope_v1: st.tool_result_envelope_v1,
@@ -207,7 +189,6 @@ async fn serial_execute_one_tool_call(
         turn_allow: st.turn_allow,
         readonly_cache,
         readonly_tool_ttl_cache: &st.readonly_tool_ttl_cache,
-        encoder: st.sse_encoder.as_ref(),
     })
     .await
     {
@@ -242,8 +223,8 @@ async fn serial_execute_one_tool_call(
                 workspace_is_set: st.workspace_is_set,
                 name: &name,
                 args: &args,
-                sse_out_tx: st.out,
-                sse_control_mirror: sse_mirror_for_emit.as_ref(),
+                sse_out_tx: st.control.out,
+                sse_control_mirror: st.control.sse_control_mirror.as_ref(),
                 tc,
                 read_file_turn_cache: st.read_file_turn_cache.clone(),
                 workspace_changelist: st.workspace_changelist.cloned(),
@@ -329,9 +310,7 @@ async fn serial_execute_one_tool_call(
         per_coord: st.per_coord,
         cfg: st.cfg,
         tool_outcome_recorder: &st.tool_outcome_recorder,
-        out: st.out,
-        sse_control_mirror: sse_mirror_for_emit,
-        clarification_questionnaire_hook: st.clarification_questionnaire_hook.clone(),
+        control: st.control.clone(),
         echo_terminal_transcript: st.echo_terminal_transcript,
         terminal_tool_display_max_chars: st.terminal_tool_display_max_chars,
         tool_result_envelope_v1: st.tool_result_envelope_v1,
@@ -340,7 +319,6 @@ async fn serial_execute_one_tool_call(
         id: id.as_str(),
         result,
         reflection_inject,
-        encoder: st.sse_encoder.as_ref(),
     })
     .await;
     false

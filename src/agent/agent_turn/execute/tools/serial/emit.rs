@@ -50,9 +50,7 @@ pub(super) async fn serial_try_ttl_run_command_cache_hit(
         per_coord: p.per_coord,
         cfg: p.cfg,
         tool_outcome_recorder: p.tool_outcome_recorder,
-        out: p.out,
-        sse_control_mirror: p.sse_control_mirror.clone(),
-        clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
+        control: p.control.clone(),
         echo_terminal_transcript: p.echo_terminal_transcript,
         terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
         tool_result_envelope_v1: p.tool_result_envelope_v1,
@@ -61,7 +59,6 @@ pub(super) async fn serial_try_ttl_run_command_cache_hit(
         id: p.id,
         result: body,
         reflection_inject: None,
-        encoder: p.encoder,
     })
     .await;
     true
@@ -97,9 +94,7 @@ pub(super) async fn serial_emit_early_tool_policy_denials(
             per_coord: p.per_coord,
             cfg: p.cfg,
             tool_outcome_recorder: p.tool_outcome_recorder,
-            out: p.out,
-            sse_control_mirror: p.sse_control_mirror.clone(),
-            clarification_questionnaire_hook: p.clarification_questionnaire_hook.clone(),
+            control: p.control.clone(),
             echo_terminal_transcript: p.echo_terminal_transcript,
             terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
             tool_result_envelope_v1: p.tool_result_envelope_v1,
@@ -108,7 +103,6 @@ pub(super) async fn serial_emit_early_tool_policy_denials(
             id: p.id,
             result: denied,
             reflection_inject: None,
-            encoder: p.encoder,
         })
         .await;
         return true;
@@ -163,9 +157,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -174,7 +166,6 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         id,
         result,
         reflection_inject,
-        encoder,
     } = p;
     let env = crate::tool_result::ToolEnvelopeContext {
         tool_call_id: id,
@@ -187,9 +178,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         super::super::EmitToolResultParams {
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror,
-            clarification_questionnaire_hook,
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -200,7 +189,7 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
             reflection_inject,
             envelope_ctx: Some(env),
         },
-        encoder,
+        control.sse_encoder.as_ref(),
     )
     .await;
 }
@@ -219,17 +208,13 @@ struct SerialRunCommandDupShortCircuitEmitCtx<'a> {
     per_coord: &'a mut PerCoordinator,
     cfg: &'a std::sync::Arc<crate::config::AgentConfig>,
     tool_outcome_recorder: &'a std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
-    out: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    clarification_questionnaire_hook:
-        Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    control: crate::agent::agent_turn::TurnControlSink<'a>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
     name: &'a str,
     args: &'a str,
     id: &'a str,
-    encoder: &'a dyn crate::sse::SseEncoder,
 }
 
 type SerialRunCommandSuccessDedupeParams<'a> = SerialRunCommandDupShortCircuitEmitCtx<'a>;
@@ -242,16 +227,13 @@ async fn serial_emit_run_command_success_dedupe(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
         name,
         args,
         id,
-        encoder,
     } = p;
     let Some(suppress_key) = run_command_duplicate_suppress_key(args) else {
         return false;
@@ -273,9 +255,7 @@ async fn serial_emit_run_command_success_dedupe(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror: sse_control_mirror.clone(),
-        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+        control: control.clone(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -284,7 +264,6 @@ async fn serial_emit_run_command_success_dedupe(
         id,
         result: format!("{RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG}\n{cached}"),
         reflection_inject: None,
-        encoder,
     })
     .await;
     true
@@ -299,16 +278,13 @@ async fn serial_emit_run_command_failure_short_circuits(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
         name,
         args,
         id,
-        encoder,
     } = p;
     if let Some(prev_error) = per_coord.repeated_tool_failure_error_marker(name, args) {
         let short_circuit = format!(
@@ -325,9 +301,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -336,7 +310,6 @@ async fn serial_emit_run_command_failure_short_circuits(
             id,
             result: short_circuit,
             reflection_inject: None,
-            encoder,
         })
         .await;
         return true;
@@ -363,9 +336,7 @@ async fn serial_emit_run_command_failure_short_circuits(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -374,7 +345,6 @@ async fn serial_emit_run_command_failure_short_circuits(
             id,
             result: short_circuit,
             reflection_inject: None,
-            encoder,
         })
         .await;
         return true;
@@ -391,9 +361,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror,
-        clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -406,7 +374,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
         turn_allow,
         readonly_cache,
         readonly_tool_ttl_cache,
-        encoder,
     } = p;
     if let Some(preflight_error) =
         run_command_cargo_workdir_preflight_error(name, args, effective_working_dir)
@@ -417,9 +384,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -428,7 +393,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: preflight_error,
             reflection_inject: None,
-            encoder,
         })
         .await;
         return true;
@@ -440,9 +404,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -451,7 +413,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: preflight_error,
             reflection_inject: None,
-            encoder,
         })
         .await;
         return true;
@@ -462,9 +423,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror: sse_control_mirror.clone(),
-        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+        control: control.clone(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -474,7 +433,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
         step_executor_constraint,
         tools_defs_full,
         turn_allow,
-        encoder,
     })
     .await
     {
@@ -490,16 +448,13 @@ pub(super) async fn serial_emit_early_without_dispatch(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
             name,
             args,
             id,
-            encoder,
         })
         .await
     {
@@ -512,16 +467,13 @@ pub(super) async fn serial_emit_early_without_dispatch(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
             name,
             args,
             id,
-            encoder,
         })
         .await
     {
@@ -533,9 +485,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
         per_coord,
         cfg,
         tool_outcome_recorder,
-        out,
-        sse_control_mirror: sse_control_mirror.clone(),
-        clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+        control: control.clone(),
         echo_terminal_transcript,
         terminal_tool_display_max_chars,
         tool_result_envelope_v1,
@@ -544,7 +494,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
         args,
         id,
         readonly_tool_ttl_cache,
-        encoder,
     })
     .await
     {
@@ -563,9 +512,7 @@ pub(super) async fn serial_emit_early_without_dispatch(
             per_coord,
             cfg,
             tool_outcome_recorder,
-            out,
-            sse_control_mirror: sse_control_mirror.clone(),
-            clarification_questionnaire_hook: clarification_questionnaire_hook.clone(),
+            control: control.clone(),
             echo_terminal_transcript,
             terminal_tool_display_max_chars,
             tool_result_envelope_v1,
@@ -574,7 +521,6 @@ pub(super) async fn serial_emit_early_without_dispatch(
             id,
             result: cached.clone(),
             reflection_inject: None,
-            encoder,
         })
         .await;
         return true;

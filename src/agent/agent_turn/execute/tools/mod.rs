@@ -102,11 +102,7 @@ pub(crate) use crabmate_agent::agent_turn::{
 pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
-    out: Option<&'a mpsc::Sender<String>>,
-    sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    /// 无 SSE 时（如 `crabmate tui`）：仍通知澄清问卷控制面，与 Web SSE 语义对齐。
-    clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
+    control: crate::agent::agent_turn::TurnControlSink<'a>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -156,7 +152,7 @@ struct ExecuteToolsCommonCtx<'a> {
     workspace_is_set: bool,
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    out: Option<&'a mpsc::Sender<String>>,
+    control: crate::agent::agent_turn::TurnControlSink<'a>,
     echo_terminal_transcript: bool,
     terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
@@ -175,11 +171,6 @@ struct ExecuteToolsCommonCtx<'a> {
     handler_lookup: crate::tool_registry::HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
-    tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
-    sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    sse_encoder: Arc<dyn crate::sse::SseEncoder>,
 }
 
 fn notify_cli_tool_running_hook(
@@ -196,10 +187,11 @@ fn notify_cli_tool_running_hook(
 }
 
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
-    let tool_running_hook = ctx.tool_running_hook.clone();
-    let out = ctx.out;
-    let sse_control_mirror = ctx.sse_control_mirror.clone();
-    let sse_encoder = ctx.sse_encoder.clone();
+    let control = ctx.control.clone();
+    let out = control.out;
+    let tool_running_hook = control.tool_running_hook.clone();
+    let sse_control_mirror = control.sse_control_mirror.clone();
+    let sse_encoder = control.sse_encoder.clone();
     let force_serial = replay_force_serial_from_env();
 
     emit_sse_tool_running(
@@ -373,9 +365,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         read_file_turn_cache,
         workspace_changelist,
-        out: control.out,
-        tool_running_hook: control.tool_running_hook,
-        clarification_questionnaire_hook: control.clarification_questionnaire_hook,
+        control,
         echo_terminal_transcript,
         terminal_tool_display_max_chars: cfg.command_exec.command_max_output_len,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
@@ -394,8 +384,6 @@ pub(crate) async fn per_execute_tools_web(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache,
-        sse_control_mirror: control.sse_control_mirror,
-        sse_encoder: control.sse_encoder,
     })
     .await
 }
