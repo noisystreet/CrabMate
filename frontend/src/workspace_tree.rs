@@ -212,14 +212,17 @@ fn context_menu_target_is_tree_row(ev: &web_sys::MouseEvent) -> bool {
     el.closest("li").ok().flatten().is_some()
 }
 
-fn context_menu_target_is_workspace_set(ev: &web_sys::MouseEvent) -> bool {
+fn context_menu_target_is_workspace_chrome(ev: &web_sys::MouseEvent) -> bool {
     let Some(t) = ev.target() else {
         return false;
     };
     let Ok(el) = t.dyn_into::<web_sys::HtmlElement>() else {
         return false;
     };
-    el.closest(".workspace-set").ok().flatten().is_some()
+    el.closest(".shell-topbar-workspace")
+        .ok()
+        .flatten()
+        .is_some()
 }
 
 /// 工作区树面板空白处（含列表下方留白）右键：在根目录新建。
@@ -227,7 +230,7 @@ pub(crate) fn handle_workspace_tree_panel_context_menu(
     ev: web_sys::MouseEvent,
     workspace_context_menu: RwSignal<Option<crate::workspace_context_menu::WorkspaceContextAnchor>>,
 ) {
-    if context_menu_target_is_tree_row(&ev) || context_menu_target_is_workspace_set(&ev) {
+    if context_menu_target_is_tree_row(&ev) || context_menu_target_is_workspace_chrome(&ev) {
         return;
     }
     open_workspace_context_menu(ev, workspace_context_menu, None, false, String::new());

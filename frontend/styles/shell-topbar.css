@@ -43,25 +43,66 @@
   padding-right: 0.15rem;
 }
 
-.shell-topbar-title {
-  flex: 1;
+/* 顶栏正中：工作区根路径 */
+.shell-topbar-workspace {
+  flex: 1 1 auto;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 650;
-  letter-spacing: -0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  max-width: min(42rem, 100%);
+  margin: 0 auto;
+}
+
+.shell-topbar-workspace-input {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0.28rem 0.65rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.25;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg) 70%, var(--surface));
+}
+
+.shell-topbar-workspace-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.shell-topbar-workspace-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.shell-topbar-workspace-error {
+  margin: 0;
+  padding: 0 0.35rem;
+  font-size: 0.65rem;
+  line-height: 1.2;
+  color: var(--danger, #c44);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: center;
 }
 
-.shell-topbar-status {
-  flex: 1;
+.shell-topbar-file-status {
+  flex: 0 1 14rem;
   min-width: 0;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 0.35rem;
   overflow: hidden;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--muted);
 }
 
@@ -121,20 +162,10 @@
   display: flex;
 }
 
-/* Web 桌面：对话模式顶栏仅保留左侧布局切换（侧栏已有品牌；☰ 仅窄屏需要） */
+/* Web 桌面：对话模式顶栏隐藏窄屏 ☰（侧栏已有品牌）；保留文件菜单与工作区路径 */
 @media (min-width: 769px) {
   .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-topbar-nav {
     display: none;
-  }
-
-  .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-topbar-title {
-    display: none;
-  }
-
-  .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-main-header-mobile.shell-topbar {
-    border-bottom: none;
-    background: transparent;
-    backdrop-filter: none;
   }
 }
 

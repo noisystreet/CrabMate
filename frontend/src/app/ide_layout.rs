@@ -29,7 +29,6 @@ use crate::workspace_context_menu::WorkspaceContextMenuActions;
 #[component]
 fn IdeLayoutLeftPane(
     locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
     workspace_panel: WorkspacePanelSignals,
     open_sv: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     ctx_actions: StoredValue<WorkspaceContextMenuActions>,
@@ -53,7 +52,6 @@ fn IdeLayoutLeftPane(
             <div class="ide-workspace-scroll">
                 <WorkspaceSideCardScrollInner
                     locale=locale
-                    chat=chat
                     ws=workspace_panel
                     insert_workspace_file_ref=open_sv
                     on_file_single_click=open_sv
@@ -262,6 +260,12 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
         editor_host,
         tabs,
         save_ctx,
+        workspace_pick: crate::app::workspace_root_actions::WorkspaceRootPickHandle {
+            locale,
+            chat,
+            ws: workspace_panel,
+            side_panel_view: shell_ui.side_panel_view,
+        },
     };
     wire_ide_menu_bar_bridge(shell_ui.ide_menu_bar_bridge, editor_visible, menu_signals);
 
@@ -270,7 +274,6 @@ pub fn IdeLayoutView(shell: IdeLayoutShellSignals) -> impl IntoView {
             <div class="ide-layout-body">
                 <IdeLayoutLeftPane
                     locale=locale
-                    chat=chat
                     workspace_panel=workspace_panel
                     open_sv=open_sv
                     ctx_actions=ctx_actions
