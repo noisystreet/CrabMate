@@ -25,12 +25,12 @@ use crate::agent::turn_budget::TurnBudgetCounter;
 use crate::workspace::changelist::WorkspaceChangelist;
 
 use super::errors::AgentTurnSubPhase;
-use super::messages::{
-    insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
-};
 use super::turn_sink::{TurnControlSink, TurnTerminalIo};
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
+use crate::agent::agent_turn::messages::{
+    insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
+};
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;

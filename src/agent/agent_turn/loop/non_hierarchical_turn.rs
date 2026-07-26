@@ -3,9 +3,9 @@
 use crate::agent::agent_turn::turn_orchestration::NonHierarchicalTurnPhase;
 use crate::agent::per_coord::PerCoordinator;
 
-use super::errors::RunAgentTurnError;
 use super::outer_loop::run_agent_outer_loop;
-use super::params::RunLoopParams;
+use crate::agent::agent_turn::errors::RunAgentTurnError;
+use crate::agent::agent_turn::params::RunLoopParams;
 
 /// 非分层回合统一入口（`ReAct` 外循环）。
 pub(crate) async fn run_non_hierarchical_turn(

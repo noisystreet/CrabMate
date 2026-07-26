@@ -13,9 +13,9 @@ use crabmate_agent::agent_turn::{
     intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision,
 };
 
-use super::super::params::RunLoopParams;
 use super::intent_user;
 use super::l2_classifier_host::CrabmateIntentL2ClassifierHost;
+use crate::agent::agent_turn::params::RunLoopParams;
 
 /// 只读门控：主模型作答 + 工具已收窄为只读。
 const GATE_HINT_READONLY_ZH: &str = "【意图门控】当前回合应只读理解仓库（可列出/读取文件），不要改文件、不要跑测试或长耗时构建，除非用户明确要求。勿将用户宽泛诉求静默收窄为单点深层修复；若拟切换任务粒度须先征得用户同意。";
@@ -38,7 +38,7 @@ pub(crate) enum IntentGateResult {
 /// `false` 表示本回合已写入助手终答，调用方应 `return Ok(())`。
 pub(crate) async fn run_intent_at_turn_start_if_configured(
     p: &mut RunLoopParams<'_>,
-) -> Result<bool, super::super::errors::RunAgentTurnError> {
+) -> Result<bool, crate::agent::agent_turn::errors::RunAgentTurnError> {
     let in_clarification_flow =
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
@@ -181,7 +181,7 @@ pub(crate) async fn emit_intent_timeline_gate_only(
 async fn apply_non_execute_and_finish(
     p: &mut RunLoopParams<'_>,
     reply: &str,
-) -> Result<bool, super::super::errors::RunAgentTurnError> {
+) -> Result<bool, crate::agent::agent_turn::errors::RunAgentTurnError> {
     p.turn
         .push_message(crate::types::Message::assistant_only(reply.to_string()));
     if let Some(out) = p.ctx.io.control.out {
@@ -214,7 +214,7 @@ async fn run_intent_l0_l1_l2_gate(
     in_clarification_flow: bool,
     thresholds: ExecuteIntentThresholds,
     sse_log_tag: &'static str,
-) -> Result<IntentGateResult, super::super::errors::RunAgentTurnError> {
+) -> Result<IntentGateResult, crate::agent::agent_turn::errors::RunAgentTurnError> {
     let host = CrabmateIntentL2ClassifierHost {
         cfg: p.ctx.core.cfg.as_ref(),
         llm_backend: p.ctx.core.llm_backend,
@@ -236,7 +236,7 @@ async fn run_intent_l0_l1_l2_gate(
     )
     .await;
     p.turn.turn_planner_hints.intent_routing_cache =
-        Some(super::super::params::IntentRoutingCacheEntry {
+        Some(crate::agent::agent_turn::params::IntentRoutingCacheEntry {
             task: task.to_string(),
             decision: outcome.decision.clone(),
             merge_meta: outcome.merge_meta.clone(),
