@@ -34,7 +34,6 @@ fastembed = []
 crabmate-config = { workspace = true }
 crabmate-types = { workspace = true }
 cmd_mate = { workspace = true }
-async-trait = { workspace = true }
 base64 = { workspace = true }
 bzip2 = { workspace = true, optional = true }
 chardetng = { version = "1.0", optional = true }
@@ -44,18 +43,15 @@ diffy = { workspace = true }
 ego-tree = { workspace = true, optional = true }
 encoding_rs = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
-futures-util = { workspace = true }
 glob = { workspace = true }
 ignore = { workspace = true }
 jsonschema = { workspace = true, optional = true }
-libc = { workspace = true }
 log = { workspace = true }
 path-absolutize = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
 schemars = { workspace = true }
 scraper = { workspace = true, optional = true }
-secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
@@ -76,9 +72,7 @@ tokio = { workspace = true, features = [
     "process",
     "io-util",
 ] }
-tokio-stream = { workspace = true }
 toml = { workspace = true }
-tracing = { workspace = true }
 urlencoding = { workspace = true }
 walkdir = { workspace = true }
 xz2 = { workspace = true, optional = true }
