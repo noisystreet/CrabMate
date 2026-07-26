@@ -2,7 +2,9 @@
 //!
 //! 磁盘读写与类型定义在 **`crabmate-internal`**；Web 请求体合并（依赖 `web::http_types`）保留在根 crate。
 
+mod cli_llm_align;
 mod merge;
 
+pub use cli_llm_align::apply_user_data_llm_overrides;
 pub use crabmate_internal::user_data::*;
 pub use merge::{merge_client_llm_body, merge_executor_llm_body};

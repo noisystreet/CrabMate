@@ -139,14 +139,19 @@ fn directory_containing_config_file(config_path: &str) -> PathBuf {
 mod discovery_tests {
     use super::*;
     use crate::builder::ConfigBuilder;
-    use crate::xdg::ENV_CONFIG_DIR;
-    use std::sync::Mutex;
+    use crate::xdg::{ENV_CONFIG_DIR, test_env_lock};
 
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    fn recover_cwd_if_needed() {
+        if std::env::current_dir().is_err() {
+            let fallback = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+            let _ = std::env::set_current_dir(&fallback);
+        }
+    }
 
     #[test]
     fn cwd_local_config_beats_xdg() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         let tmp = tempfile::tempdir().expect("tempdir");
         let xdg = tmp.path().join("xdg");
         let cwd = tmp.path().join("cwd");
@@ -155,7 +160,7 @@ mod discovery_tests {
         std::fs::write(xdg.join("config.toml"), b"[agent]\nmodel = \"from-xdg\"\n").unwrap();
         std::fs::write(cwd.join("config.toml"), b"[agent]\nmodel = \"from-cwd\"\n").unwrap();
 
-        let prev = std::env::current_dir().unwrap();
+        let prev = std::env::current_dir().unwrap_or_else(|_| cwd.clone());
         // SAFETY: serialized by ENV_LOCK; test-only.
         unsafe {
             std::env::set_var(ENV_CONFIG_DIR, &xdg);
@@ -165,7 +170,7 @@ mod discovery_tests {
         let mut b = ConfigBuilder::default();
         let bases = merge_user_config_layers(None, &mut b).unwrap();
 
-        std::env::set_current_dir(prev).unwrap();
+        let _ = std::env::set_current_dir(&prev);
         unsafe {
             std::env::remove_var(ENV_CONFIG_DIR);
         }
@@ -176,7 +181,8 @@ mod discovery_tests {
 
     #[test]
     fn xdg_used_when_no_cwd_local_and_config_dir_set() {
-        let _guard = ENV_LOCK.lock().expect("env lock");
+        let _guard = test_env_lock();
+        recover_cwd_if_needed();
         let tmp = tempfile::tempdir().expect("tempdir");
         let xdg = tmp.path().join("xdg");
         let cwd = tmp.path().join("cwd");
@@ -184,7 +190,7 @@ mod discovery_tests {
         std::fs::create_dir_all(&cwd).unwrap();
         std::fs::write(xdg.join("config.toml"), b"[agent]\nmodel = \"from-xdg\"\n").unwrap();
 
-        let prev = std::env::current_dir().unwrap();
+        let prev = std::env::current_dir().unwrap_or_else(|_| cwd.clone());
         // SAFETY: serialized by ENV_LOCK; test-only.
         unsafe {
             std::env::set_var(ENV_CONFIG_DIR, &xdg);
@@ -194,7 +200,7 @@ mod discovery_tests {
         let mut b = ConfigBuilder::default();
         let bases = merge_user_config_layers(None, &mut b).unwrap();
 
-        std::env::set_current_dir(prev).unwrap();
+        let _ = std::env::set_current_dir(&prev);
         unsafe {
             std::env::remove_var(ENV_CONFIG_DIR);
         }

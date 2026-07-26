@@ -24,8 +24,11 @@ pub(crate) use terminal_cli_transcript_impl::{
     search_in_files_result_terminal_short, tool_result_header_detail,
 };
 
-/// CLI 回合收尾提示：统一展示终止原因（同源于 `StreamEndReason`），便于与 Web/TUI 对齐排障。
+/// CLI 回合收尾提示：异常/取消等原因仍打印；**正常 `completed` 不再刷屏**（REPL/TUI 已能从助手正文判断结束）。
 pub(crate) fn print_stream_end_reason_terminal(reason: StreamEndReason) -> io::Result<()> {
+    if matches!(reason, StreamEndReason::Completed) {
+        return Ok(());
+    }
     let mut w = io::stdout();
     let color = cli_repl_stdout_use_color();
     if color {
