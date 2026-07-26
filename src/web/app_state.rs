@@ -106,6 +106,27 @@ pub(crate) struct AppState {
     pub(crate) aux: AppStateWebAux,
 }
 
+/// 队列 worker 所需的 AppState **消费面**：会话落盘、审批表、`ProcessHandles`（不含 HTTP/上传/整包状态）。
+///
+/// 与 [`crate::chat_job_queue::WebChatQueueDeps`] 互补：后者管 LLM/工具/SSE hub；本类型管回合后落盘与审批清理。
+#[derive(Clone)]
+pub(crate) struct WebChatJobAppFacet {
+    pub(crate) conversation: AppStateConversationRuntime,
+    pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
+    pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
+}
+
+impl AppState {
+    /// 入队时克隆出队列 worker 面，避免 [`WebChatJobEnvelope`](crate::chat_job_queue::WebChatJobEnvelope) 持有整包 [`AppState`]。
+    pub(crate) fn chat_job_app_facet(&self) -> WebChatJobAppFacet {
+        WebChatJobAppFacet {
+            conversation: self.conversation.clone(),
+            process_handles: Arc::clone(&self.aux.process_handles),
+            approval_sessions: Arc::clone(&self.aux.approval_sessions),
+        }
+    }
+}
+
 /// Web 会话存储后端。
 #[derive(Clone)]
 pub(crate) enum ConversationBacking {
@@ -202,7 +223,93 @@ impl AppState {
         &self,
         conversation_id: &str,
     ) -> Option<ConversationTurnSeed> {
-        let backing = self.conversation.conversation_backing.read().await;
+        self.conversation
+            .load_conversation_seed(conversation_id)
+            .await
+    }
+
+    pub(crate) async fn save_conversation_messages_if_revision(
+        &self,
+        conversation_id: String,
+        messages: Vec<Message>,
+        active_agent_role: Option<&str>,
+        expected_revision: Option<u64>,
+    ) -> SaveConversationOutcome {
+        self.conversation
+            .save_conversation_messages_if_revision(
+                conversation_id,
+                messages,
+                active_agent_role,
+                expected_revision,
+            )
+            .await
+    }
+
+    /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆/变更集/首轮工作区画像等注入），且仅当 `revision` 匹配时成功。
+    pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
+        &self,
+        conversation_id: String,
+        user_ordinal: usize,
+        expected_revision: u64,
+    ) -> SaveConversationOutcome {
+        self.conversation
+            .truncate_conversation_before_user_ordinal_if_revision(
+                conversation_id,
+                user_ordinal,
+                expected_revision,
+            )
+            .await
+    }
+
+    pub(crate) async fn conversation_count(&self) -> usize {
+        self.conversation.conversation_count().await
+    }
+
+    /// 删除持久化会话行（仅 E2E 夹具 `replace` 等；不存在时视为成功）。
+    pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
+        self.conversation
+            .delete_conversation_record(conversation_id)
+            .await
+    }
+
+    /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
+    pub(crate) async fn set_web_conversation_store_sqlite(
+        &self,
+        sqlite: bool,
+    ) -> Result<(), String> {
+        if sqlite {
+            let path = {
+                let g = self.http.cfg.read().await;
+                g.conversation_persistence
+                    .conversation_store_sqlite_path
+                    .clone()
+            };
+            if path.trim().is_empty() {
+                return Err(
+                    "未配置 conversation_store_sqlite_path，无法启用 SQLite 会话存储。".into(),
+                );
+            }
+            let new_backing = {
+                let conn =
+                    open_conversation_sqlite(Path::new(path.trim())).map_err(|e| e.to_string())?;
+                ConversationBacking::Sqlite(conn)
+            };
+            let mut w = self.conversation.conversation_backing.write().await;
+            *w = new_backing;
+        } else {
+            let mut w = self.conversation.conversation_backing.write().await;
+            *w = ConversationBacking::memory_default();
+        }
+        Ok(())
+    }
+}
+
+impl AppStateConversationRuntime {
+    pub(crate) async fn load_conversation_seed(
+        &self,
+        conversation_id: &str,
+    ) -> Option<ConversationTurnSeed> {
+        let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
@@ -291,7 +398,7 @@ impl AppState {
         active_agent_role: Option<&str>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
-        let backing = self.conversation.conversation_backing.read().await;
+        let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
@@ -355,7 +462,7 @@ impl AppState {
         user_ordinal: usize,
         expected_revision: u64,
     ) -> SaveConversationOutcome {
-        let backing = self.conversation.conversation_backing.read().await;
+        let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
@@ -408,7 +515,7 @@ impl AppState {
     }
 
     pub(crate) async fn conversation_count(&self) -> usize {
-        let backing = self.conversation.conversation_backing.read().await;
+        let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => map.read().await.len(),
             ConversationBacking::Sqlite(conn) => {
@@ -428,7 +535,7 @@ impl AppState {
 
     /// 删除持久化会话行（仅 E2E 夹具 `replace` 等；不存在时视为成功）。
     pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
-        let backing = self.conversation.conversation_backing.read().await;
+        let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
@@ -445,37 +552,6 @@ impl AppState {
                 .await;
             }
         }
-    }
-
-    /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
-    pub(crate) async fn set_web_conversation_store_sqlite(
-        &self,
-        sqlite: bool,
-    ) -> Result<(), String> {
-        if sqlite {
-            let path = {
-                let g = self.http.cfg.read().await;
-                g.conversation_persistence
-                    .conversation_store_sqlite_path
-                    .clone()
-            };
-            if path.trim().is_empty() {
-                return Err(
-                    "未配置 conversation_store_sqlite_path，无法启用 SQLite 会话存储。".into(),
-                );
-            }
-            let new_backing = {
-                let conn =
-                    open_conversation_sqlite(Path::new(path.trim())).map_err(|e| e.to_string())?;
-                ConversationBacking::Sqlite(conn)
-            };
-            let mut w = self.conversation.conversation_backing.write().await;
-            *w = new_backing;
-        } else {
-            let mut w = self.conversation.conversation_backing.write().await;
-            *w = ConversationBacking::memory_default();
-        }
-        Ok(())
     }
 }
 

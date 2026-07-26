@@ -87,7 +87,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         out: &rt.sse_tx,
         turn_allowed_tool_names: rt.turn_allow,
         request_audit: std::sync::Arc::new(request_audit),
-        process_handles: std::sync::Arc::clone(&app.aux.process_handles),
+        process_handles: std::sync::Arc::clone(&app.process_handles),
     });
     // e2e 测试注入的自定义 LLM 后端（`None` 时使用默认 HTTP 后端）。
     params.transport.llm_backend = queue_deps.llm_backend;
@@ -95,7 +95,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
 
     cancel_watcher.abort();
     if let Some(session_id) = rt.approval_session_id.as_deref() {
-        app.aux.approval_sessions.write().await.remove(session_id);
+        app.approval_sessions.write().await.remove(session_id);
     }
 
     let cancelled_by_signal = rt.cancel.load(std::sync::atomic::Ordering::SeqCst);
@@ -109,7 +109,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             job_id,
             messages: &mut messages,
             cfg_snap: &cfg_snap,
-            app: app.as_ref(),
+            app: &app,
             conversation_id: conversation_id.as_str(),
             expected_revision,
             request_agent_role: request_agent_role.as_deref(),

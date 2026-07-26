@@ -10,7 +10,7 @@ pub(crate) mod web_ui_env;
 
 pub(crate) use app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
-    ConversationBacking, open_conversation_sqlite,
+    ConversationBacking, WebChatJobAppFacet, open_conversation_sqlite,
 };
 pub(crate) use chat_handlers::{cleanup_uploads_dir, conversation_conflict_sse_line};
 

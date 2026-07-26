@@ -7,29 +7,45 @@ use log::{debug, error, info};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 
-use crate::AppState;
 use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::agent_role_turn::persisted_agent_role_after_turn;
 use crate::config::AgentConfig;
 use crate::sse::SseStreamHub;
 use crate::types::{Message, message_content_as_str};
+use crate::web::WebChatJobAppFacet;
 
 use super::WebChatQueueDeps;
 
+/// [`post_turn_web_prepare_and_save`] 入参（避免过长形参列表）。
+pub(super) struct PostTurnWebPrepareParams<'a> {
+    pub(super) app: &'a WebChatJobAppFacet,
+    pub(super) queue_deps: &'a WebChatQueueDeps,
+    pub(super) cfg_snap: &'a Arc<AgentConfig>,
+    pub(super) conversation_id: &'a str,
+    pub(super) messages: &'a mut Vec<Message>,
+    pub(super) expected_revision: Option<u64>,
+    pub(super) request_agent_role: Option<&'a str>,
+    pub(super) persisted_active_agent_role: Option<&'a str>,
+}
+
 /// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
 pub(super) async fn post_turn_web_prepare_and_save(
-    app: &AppState,
-    cfg_snap: &Arc<AgentConfig>,
-    conversation_id: &str,
-    messages: &mut Vec<Message>,
-    expected_revision: Option<u64>,
-    request_agent_role: Option<&str>,
-    persisted_active_agent_role: Option<&str>,
+    p: PostTurnWebPrepareParams<'_>,
 ) -> crate::SaveConversationOutcome {
+    let PostTurnWebPrepareParams {
+        app,
+        queue_deps,
+        cfg_snap,
+        conversation_id,
+        messages,
+        expected_revision,
+        request_agent_role,
+        persisted_active_agent_role,
+    } = p;
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
     if let (Some(ltm), true) = (
-        app.aux.long_term_memory.as_ref(),
+        queue_deps.long_term_memory.as_ref(),
         cfg_snap.long_term_memory.long_term_memory_enabled,
     ) {
         ltm.clone()
@@ -40,13 +56,14 @@ pub(super) async fn post_turn_web_prepare_and_save(
     crate::types::strip_orchestration_injected_users_for_conversation_store(messages);
     let active_save =
         persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
-    app.save_conversation_messages_if_revision(
-        conversation_id.to_string(),
-        messages.clone(),
-        active_save.as_deref(),
-        expected_revision,
-    )
-    .await
+    app.conversation
+        .save_conversation_messages_if_revision(
+            conversation_id.to_string(),
+            messages.clone(),
+            active_save.as_deref(),
+            expected_revision,
+        )
+        .await
 }
 
 /// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
@@ -234,7 +251,7 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) job_id: u64,
     pub(super) messages: &'a mut Vec<Message>,
     pub(super) cfg_snap: &'a Arc<AgentConfig>,
-    pub(super) app: &'a AppState,
+    pub(super) app: &'a WebChatJobAppFacet,
     pub(super) conversation_id: &'a str,
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
@@ -309,19 +326,21 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 tiktoken_prompt_tokens.clone(),
             )
             .await;
-            match post_turn_web_prepare_and_save(
+            match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
                 app,
+                queue_deps,
                 cfg_snap,
                 conversation_id,
                 messages,
                 expected_revision,
                 request_agent_role,
                 persisted_active_agent_role,
-            )
+            })
             .await
             {
                 crate::SaveConversationOutcome::Saved => {
                     if let Some(new_rev) = app
+                        .conversation
                         .load_conversation_seed(conversation_id)
                         .await
                         .and_then(|s| s.expected_revision)
