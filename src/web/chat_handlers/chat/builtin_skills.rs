@@ -3,23 +3,9 @@
 use std::sync::Arc;
 
 use super::super::super::app_state::AppState;
+use crate::config::skills::{SkillDoc, list_skills_from_base, skill_ui_description};
+use crate::config::skills_slash::skill_callable_id;
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
-
-fn resolve_skills_dir_path(
-    base_dir: &std::path::Path,
-    skills_dir: &str,
-) -> Result<std::path::PathBuf, String> {
-    let raw = skills_dir.trim();
-    if raw.is_empty() {
-        return Err("skills_dir 为空".to_string());
-    }
-    let p = std::path::Path::new(raw);
-    Ok(if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        base_dir.join(p)
-    })
-}
 
 fn classify_web_builtin_command(input: &str) -> Option<&'static str> {
     let s = input.trim();
@@ -32,129 +18,28 @@ fn classify_web_builtin_command(input: &str) -> Option<&'static str> {
     None
 }
 
-#[derive(Debug, Clone)]
-struct SkillFileInfo {
-    display_path: String,
-    content: String,
-    skill_name: Option<String>,
-    description: Option<String>,
-}
-
-fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>) {
-    let mut lines = content.lines();
-    if lines.next().map(str::trim) != Some("---") {
-        return (None, None);
-    }
-    let mut name = None;
-    let mut description = None;
-    for line in lines {
-        let t = line.trim();
-        if t == "---" {
-            break;
-        }
-        if let Some(rest) = t.strip_prefix("name:") {
-            let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
-            if !v.is_empty() && name.is_none() {
-                name = Some(v.to_string());
-            }
-        } else if let Some(rest) = t.strip_prefix("description:") {
-            let v = rest.trim().trim_matches('"').trim_matches('\'').trim();
-            if !v.is_empty() && description.is_none() {
-                description = Some(v.to_string());
-            }
-        }
-    }
-    (name, description)
-}
-
-fn is_markdown_file(path: &std::path::Path) -> bool {
-    path.extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("md"))
-}
-
-fn list_skill_files_for_web_builtin(
-    skills_dir: &str,
-    base_dir: &std::path::Path,
-) -> Result<Vec<SkillFileInfo>, String> {
-    let base = resolve_skills_dir_path(base_dir, skills_dir)?;
-    if !base.exists() {
-        return Ok(Vec::new());
-    }
-    if !base.is_dir() {
-        return Err(format!("skills_dir 不是目录: {}", base.display()));
-    }
-    let mut out: Vec<SkillFileInfo> = Vec::new();
-    for entry in std::fs::read_dir(&base).map_err(|e| format!("无法读取 skills_dir: {e}"))? {
-        let Ok(entry) = entry else {
-            continue;
-        };
-        let child = entry.path();
-        let skill_path = if child.is_file() && is_markdown_file(&child) {
-            child
-        } else {
-            continue;
-        };
-        if !skill_path.is_file() {
-            continue;
-        }
-        let display = skill_path
-            .strip_prefix(base_dir)
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| skill_path.display().to_string());
-        let content = std::fs::read_to_string(&skill_path)
-            .map_err(|e| format!("读取技能文件失败 {}: {e}", skill_path.display()))?;
-        let (skill_name, description) = parse_skill_frontmatter(&content);
-        out.push(SkillFileInfo {
-            display_path: display,
-            skill_name,
-            description,
-            content,
-        });
-    }
-    out.sort_by(|a, b| a.display_path.cmp(&b.display_path));
-    Ok(out)
-}
-
-fn format_skill_list_line(f: &SkillFileInfo) -> String {
-    let id = f
-        .skill_name
-        .as_deref()
-        .filter(|n| !n.trim().is_empty())
-        .map(|n| n.to_string())
-        .unwrap_or_else(|| {
-            std::path::Path::new(&f.display_path)
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("skill")
-                .to_string()
-        });
-    let name = f.skill_name.as_deref().unwrap_or("未声明 name");
-    let doc = crate::config::skills::SkillDoc {
-        display_path: f.display_path.clone(),
-        content: f.content.clone(),
-        name: f.skill_name.clone(),
-        description: f.description.clone(),
-    };
-    let desc = crate::config::skills::skill_ui_description(&doc);
+fn format_skill_list_line(doc: &SkillDoc) -> String {
+    let id = skill_callable_id(doc);
+    let name = doc.name.as_deref().unwrap_or("未声明 name");
+    let desc = skill_ui_description(doc);
     let desc = if desc.is_empty() {
         String::new()
     } else {
         format!(" — {desc}")
     };
-    format!("- `/{id}` → `{}` (name: `{name}`){desc}", f.display_path)
+    format!("- `/{id}` → `{}` (name: `{name}`){desc}", doc.display_path)
 }
 
 fn split_loaded_skills_by_budget(
-    files: &[SkillFileInfo],
+    files: &[SkillDoc],
     max_chars: usize,
-) -> (Vec<SkillFileInfo>, Vec<SkillFileInfo>) {
+) -> (Vec<SkillDoc>, Vec<SkillDoc>) {
     // 与 `config::skills::render_skills_appendix` 的模板保持一致。
     let mut used = "【项目技能（skills）】\n以下内容来自技能目录；若与更高优先级指令冲突，以更高优先级为准。\n"
         .chars()
         .count();
-    let mut loaded: Vec<SkillFileInfo> = Vec::new();
-    let mut skipped: Vec<SkillFileInfo> = Vec::new();
+    let mut loaded: Vec<SkillDoc> = Vec::new();
+    let mut skipped: Vec<SkillDoc> = Vec::new();
     for f in files {
         let per_file = format!(
             "\n\n---\n技能文件: {}\n\n{}",
@@ -190,7 +75,7 @@ pub(super) async fn run_web_builtin_command(
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());
 
-            let text = match list_skill_files_for_web_builtin(&dir, base_dir.as_path()) {
+            let text = match list_skills_from_base(base_dir.as_path(), &dir) {
                 Ok(files) if files.is_empty() => {
                     format!(
                         "当前未发现 skills。\n目录：`{dir}`\n上限：skills_max_chars={max_chars}"
@@ -223,7 +108,7 @@ pub(super) async fn run_web_builtin_command(
             drop(cfg);
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());
-            let text = match list_skill_files_for_web_builtin(&dir, base_dir.as_path()) {
+            let text = match list_skills_from_base(base_dir.as_path(), &dir) {
                 Ok(files) if files.is_empty() => {
                     format!(
                         "当前未发现 skills。\n目录：`{dir}`\n上限：skills_max_chars={max_chars}"
