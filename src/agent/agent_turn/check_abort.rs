@@ -14,7 +14,7 @@ macro_rules! check_abort {
     ($io:expr, $phase:expr) => {{
         let io = &$io;
         let phase: $crate::agent::agent_turn::errors::AgentTurnSubPhase = $phase;
-        if $crate::agent::agent_turn::execute_tools::sse_sender_closed(io.out) {
+        if $crate::agent::agent_turn::execute_tools::sse_sender_closed(io.control.out) {
             return Err(
                 $crate::agent::agent_turn::errors::RunAgentTurnError::TurnAborted {
                     phase,

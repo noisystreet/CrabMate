@@ -184,7 +184,7 @@ async fn apply_non_execute_and_finish(
 ) -> Result<bool, super::super::errors::RunAgentTurnError> {
     p.turn
         .push_message(crate::types::Message::assistant_only(reply.to_string()));
-    if let Some(out) = p.ctx.io.out {
+    if let Some(out) = p.ctx.io.control.out {
         // 关闭 reasoning 生命周期，开启 text 生命周期
         crate::sse::send_reasoning_message_end_sse(out, "reasoning").await;
         let message_id = "msg-assistant-intent";
@@ -242,8 +242,13 @@ async fn run_intent_l0_l1_l2_gate(
             merge_meta: outcome.merge_meta.clone(),
         });
     let assessment = outcome.decision;
-    emit_intent_timeline_gate_only(p.ctx.io.out, sse_log_tag, &assessment, &outcome.merge_meta)
-        .await;
+    emit_intent_timeline_gate_only(
+        p.ctx.io.control.out,
+        sse_log_tag,
+        &assessment,
+        &outcome.merge_meta,
+    )
+    .await;
 
     if let Some(constraints) = infer_turn_execution_constraints(task)
         && constraints.requires_review_readonly()

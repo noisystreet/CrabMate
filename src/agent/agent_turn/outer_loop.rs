@@ -170,7 +170,7 @@ async fn outer_loop_execute_tools_round(
             message: "无 tool_calls".to_string(),
         })?;
     p.turn.sub_phase = AgentTurnSubPhase::Executor;
-    let echo_terminal_transcript = render_to_terminal && p.ctx.io.out.is_none();
+    let echo_terminal_transcript = render_to_terminal && p.ctx.io.control.out.is_none();
     let step_executor_constraint = p.turn.turn_planner_hints.step_executor_constraint;
     let exec_outcome = per_execute_tools_web(
         tool_calls,
@@ -181,9 +181,7 @@ async fn outer_loop_execute_tools_round(
             effective_working_dir: p.ctx.core.effective_working_dir,
             workspace_is_set: p.ctx.core.workspace_is_set,
             read_file_turn_cache: p.ctx.attach.read_file_turn_cache.clone(),
-            out: p.ctx.io.out,
-            tool_running_hook: p.ctx.io.tool_running_hook.clone(),
-            clarification_questionnaire_hook: p.ctx.io.clarification_questionnaire_hook.clone(),
+            control: p.ctx.io.control.clone(),
             web_tool_ctx: p.ctx.attach.web_tool_ctx,
             cli_tool_ctx: p.ctx.attach.cli_tool_ctx,
             echo_terminal_transcript,
@@ -208,8 +206,6 @@ async fn outer_loop_execute_tools_round(
                 &p.ctx.obs.process_handles.sync_default_sandbox_backend,
             ),
             readonly_tool_ttl_cache: Arc::clone(&p.ctx.obs.process_handles.readonly_tool_ttl_cache),
-            sse_control_mirror: p.ctx.io.sse_control_mirror.clone(),
-            sse_encoder: p.ctx.io.sse_encoder.clone(),
         },
     )
     .await;
@@ -277,7 +273,7 @@ async fn run_outer_loop_single_iteration(
         t.on_outer_loop_iteration();
     }
 
-    let render_to_terminal = p.ctx.io.render_to_terminal;
+    let render_to_terminal = p.ctx.io.terminal.render_to_terminal;
     outer_loop_prepare_planner_context(p, per_coord).await?;
 
     driver.record_phase(OuterLoopIterationPhase::PrepareContextDone);
@@ -294,7 +290,7 @@ async fn run_outer_loop_single_iteration(
     // 非首轮 LLM 调用：通知前端本轮是新的 answer segment，促使其拆分新气泡
     if iteration_count > 1 {
         send_sse_control_payload_optional(
-            p.ctx.io.out,
+            p.ctx.io.control.out,
             None,
             SsePayload::TurnSegmentEnd {
                 end: TurnSegmentEndBody {
@@ -302,11 +298,11 @@ async fn run_outer_loop_single_iteration(
                 },
             },
             "outer_loop::prev_answer_segment_end",
-            p.ctx.io.sse_encoder.as_ref(),
+            p.ctx.io.control.sse_encoder.as_ref(),
         )
         .await;
         send_sse_control_payload_optional(
-            p.ctx.io.out,
+            p.ctx.io.control.out,
             None,
             SsePayload::TurnSegmentStart {
                 start: TurnSegmentStartBody {
@@ -316,17 +312,17 @@ async fn run_outer_loop_single_iteration(
                 },
             },
             "outer_loop::new_answer_segment_start",
-            p.ctx.io.sse_encoder.as_ref(),
+            p.ctx.io.control.sse_encoder.as_ref(),
         )
         .await;
         send_sse_control_payload_optional(
-            p.ctx.io.out,
+            p.ctx.io.control.out,
             None,
             SsePayload::AssistantAnswerPhase {
                 assistant_answer_phase: true,
             },
             "outer_loop::assistant_answer_phase",
-            p.ctx.io.sse_encoder.as_ref(),
+            p.ctx.io.control.sse_encoder.as_ref(),
         )
         .await;
     }
@@ -338,12 +334,12 @@ async fn run_outer_loop_single_iteration(
         cfg: p.ctx.core.cfg.as_ref(),
         tools_defs: planner_tools.as_slice(),
         messages: p.turn.messages(),
-        out: p.ctx.io.out,
+        out: p.ctx.io.control.out,
         render_to_terminal,
         no_stream: p.ctx.io.no_stream,
         cancel: p.ctx.io.cancel,
-        plain_terminal_stream: p.ctx.io.plain_terminal_stream,
-        tui_llm_stream_scratch: p.ctx.io.tui_llm_stream_scratch.clone(),
+        plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
+        tui_llm_stream_scratch: p.ctx.io.terminal.tui_llm_stream_scratch.clone(),
         temperature_override: p.turn.temperature_override,
         seed_override: p.turn.seed_override,
         request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),

@@ -2,7 +2,7 @@
 //!
 //! **`RunLoopCtx`**：整场固定的输入上下文，按职责分为四块（降低扁平字段带来的隐式耦合）：
 //! - [`RunLoopCore`]：LLM 接入、配置快照、工具表与工作目录；
-//! - [`RunLoopIo`]：SSE/终端流式、取消与 CLI/TUI 回调；
+//! - [`RunLoopIo`]：取消 / `no_stream`，以及嵌套的 [`super::TurnControlSink`] 与 [`super::TurnTerminalIo`]；
 //! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆、分阶段冻结开关；
 //! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::TurnProcessHandles`]。
 //!
@@ -24,12 +24,11 @@ use crate::agent::turn_budget::TurnBudgetCounter;
 
 use crate::workspace::changelist::WorkspaceChangelist;
 
-use tokio::sync::mpsc;
-
 use super::errors::AgentTurnSubPhase;
 use super::messages::{
     insert_separator_after_last_user_for_turn, push_assistant_merging_trailing_empty_placeholder,
 };
+use super::turn_sink::{TurnControlSink, TurnTerminalIo};
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
 use crate::agent::plan_artifact::PlanStepExecutorKind;
@@ -37,7 +36,6 @@ use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry;
 use crate::types::{LlmSeedOverride, Message};
-use crabmate_llm::TuiLlmStreamScratchArc;
 
 /// LLM 接入、配置快照与工作目录（整场不变）。
 pub(crate) struct RunLoopCore<'a> {
@@ -51,27 +49,16 @@ pub(crate) struct RunLoopCore<'a> {
 }
 
 /// SSE/终端流式、取消与 CLI/TUI 侧回调（传输语义）。
+///
+/// 控制面与终端呈现已拆到 [`TurnControlSink`] / [`TurnTerminalIo`]（见 `turn_sink`）。
 pub(crate) struct RunLoopIo<'a> {
-    pub out: Option<&'a mpsc::Sender<String>>,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     /// 与 [`cancel`] 同源；供分层并行 `spawn` 共享。
     #[allow(dead_code)]
     pub cancel_arc: Option<Arc<AtomicBool>>,
-    pub render_to_terminal: bool,
-    /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
-    pub plain_terminal_stream: bool,
-    /// TUI：流式增量缓冲；Web/CLI 等为 `None`。
-    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
-    /// 无 SSE 时工具批开始/结束回调（与 [`crate::AgentTurnTransport::tool_running_hook`] 同源）。
-    pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    /// 澄清问卷：工具 `present_clarification_questionnaire` 成功时回调（供 `crabmate tui` 等无 SSE 路径）。
-    pub clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
-    /// 无 SSE 时镜像 [`crate::sse::SsePayload`]（与 Web `/chat/stream` 控制面对齐）；Web 通常为 `None`。
-    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    /// SSE 编码器：当前为 v1，后续可切换为 v2（AG-UI）。
-    pub sse_encoder: Arc<dyn crate::sse::SseEncoder>,
+    pub control: TurnControlSink<'a>,
+    pub terminal: TurnTerminalIo,
 }
 
 /// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。
@@ -357,12 +344,12 @@ impl RunLoopParams<'_> {
     #[allow(dead_code)]
     pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
         crate::llm::LlmRetryingTransportOpts {
-            out: self.ctx.io.out,
-            render_to_terminal: self.ctx.io.render_to_terminal,
+            out: self.ctx.io.control.out,
+            render_to_terminal: self.ctx.io.terminal.render_to_terminal,
             no_stream: self.ctx.io.no_stream,
             cancel: self.ctx.io.cancel,
-            plain_terminal_stream: self.ctx.io.plain_terminal_stream,
-            tui_llm_stream_scratch: self.ctx.io.tui_llm_stream_scratch.clone(),
+            plain_terminal_stream: self.ctx.io.terminal.plain_terminal_stream,
+            tui_llm_stream_scratch: self.ctx.io.terminal.tui_llm_stream_scratch.clone(),
         }
     }
 

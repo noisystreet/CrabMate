@@ -59,6 +59,7 @@ mod run_dispatch;
 mod sub_agent_policy;
 mod task_level_evidence;
 mod turn_completion;
+mod turn_sink;
 pub(crate) mod turn_orchestration {
     pub(crate) use crabmate_agent::agent_turn::turn_orchestration::*;
 }
@@ -90,6 +91,7 @@ pub(crate) use plan::{
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 #[allow(unused_imports)]
 pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
+pub(crate) use turn_sink::{TurnControlSink, TurnTerminalIo};
 
 #[cfg(test)]
 mod tests;
