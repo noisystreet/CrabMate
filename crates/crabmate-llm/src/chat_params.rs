@@ -56,7 +56,5 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
-    /// 流式正文下发前经 DSML 过滤器剥离（实现位于根包 `dsml`）。
-    pub dsml_stream_strip_enabled: bool,
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }

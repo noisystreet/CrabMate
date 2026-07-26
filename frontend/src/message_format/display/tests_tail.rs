@@ -101,43 +101,6 @@ fn hierarchical_subgoal_hides_redundant_header_and_phase_lines() {
 }
 
 #[test]
-fn dsml_strip_strips_tool_calls_double_fullwidth_pipe() {
-    use crate::message_format::dsml_strip::strip_deepseek_dsml_for_display;
-    let s = "说明。\n<｜｜DSML｜｜tool_calls>\n<｜｜DSML｜｜invoke name=\"run_command\">\n</｜｜DSML｜｜invoke>\n</｜｜DSML｜｜tool_calls>\n尾部";
-    let t = strip_deepseek_dsml_for_display(s);
-    assert!(!t.contains("DSML"), "{t}");
-    assert!(t.contains("说明"));
-    assert!(t.contains("尾部"));
-}
-
-#[test]
-fn dsml_strip_strips_nested_dsml_fullwidth() {
-    use crate::message_format::dsml_strip::strip_deepseek_dsml_for_display;
-    let s = "前言<｜DSML｜function_calls><｜DSML｜invoke name=\"f\"><｜DSML｜parameter name=\"x\" string=\"true\">v</｜DSML｜parameter></｜DSML｜invoke></｜DSML｜function_calls>后记";
-    let t = strip_deepseek_dsml_for_display(s);
-    assert!(!t.contains("DSML"), "{t}");
-    assert!(t.contains("前言"));
-    assert!(t.contains("后记"));
-}
-
-#[test]
-fn dsml_strip_strips_ascii_pipe_variant() {
-    use crate::message_format::dsml_strip::strip_deepseek_dsml_for_display;
-    let s = "a <|DSML|function_calls></|DSML|function_calls> b";
-    let t = strip_deepseek_dsml_for_display(s);
-    assert!(!t.contains("DSML"), "{t}");
-    assert!(t.contains('a'));
-    assert!(t.contains('b'));
-}
-
-#[test]
-fn dsml_strip_noop_without_dsml() {
-    use crate::message_format::dsml_strip::strip_deepseek_dsml_for_display;
-    let s = "普通中文与 English\n第二行";
-    assert_eq!(strip_deepseek_dsml_for_display(s), s);
-}
-
-#[test]
 fn pretty_bare_plan_json_in_text_only() {
     use super::message_text_for_display_ex;
     let text = r#"{ "type": "agent_reply_plan", "version": 1, "steps": [ { "id": "modify-main-py-cpu-info", "description": "修改 main.py", "executor_kind": "patch_write", "acceptance": { "expect_exit_code": 0, "expect_stdout_contains": "CPU" } } ] }"#;

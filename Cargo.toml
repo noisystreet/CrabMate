@@ -4,7 +4,6 @@ members = [
     "frontend",
     "crates/cmd_mate",
     "crates/crabmate-display-rules",
-    "crates/crabmate-dsml",
     "crates/crabmate-mcp",
     "crates/crabmate-tool-card",
     "crates/crabmate-sse-protocol",
@@ -35,7 +34,6 @@ crabmate-benchmark = { path = "crates/crabmate-benchmark" }
 crabmate-runtime = { path = "crates/crabmate-runtime" }
 crabmate-config = { path = "crates/crabmate-config", default-features = false }
 crabmate-display-rules = { path = "crates/crabmate-display-rules" }
-crabmate-dsml = { path = "crates/crabmate-dsml" }
 crabmate-internal = { path = "crates/crabmate-internal", default-features = false }
 crabmate-llm = { path = "crates/crabmate-llm" }
 crabmate-mcp = { path = "crates/crabmate-mcp" }

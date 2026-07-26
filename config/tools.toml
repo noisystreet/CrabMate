@@ -1,4 +1,4 @@
-# 内置工具嵌入默认：run_command 白名单/超时/工作目录、工具结果入模与 DSML、只读并行与单轮 read_file 缓存、
+# 内置工具嵌入默认：run_command 白名单/超时/工作目录、工具结果入模、只读并行与单轮 read_file 缓存、
 # 测试输出缓存、会话变更集注入、天气/联网搜索/http_fetch、工具解释卡、MCP 等。（**SyncDefault Docker 沙盒**见 **`config/sandbox.toml`**。）
 # 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml` 在 `load_config` 中顺序合并（本文件在 context_inject 之后），再被 config.toml / .agent_demo.toml 与 CM_* 覆盖。
 # 有效命令白名单仅为 **`allowed_commands`**（无环境分表）。
@@ -125,14 +125,11 @@ allowed_commands = [
 ]
 run_command_working_dir = "."
 
-# --- 工具消息形态与 DeepSeek DSML ---
+# --- 工具消息形态 ---
 tool_message_max_chars = 32768
 tool_result_envelope_v1 = true
 # 为 true 时 SSE `tool_call` 另含脱敏后的 `arguments`（更长上限）；默认 false，防浏览器/共享屏泄露。
 # sse_tool_call_include_arguments = false
-materialize_deepseek_dsml_tool_calls = true
-# 流式 SSE/CLI/TUI 下发前剥离 DSML 标记；省略时与上一项同默认
-dsml_stream_strip_enabled = true
 
 # --- 单轮并行只读工具与 read_file 缓存（与 Web 队列协同；chat_queue 仍在 default_config）---
 # 单轮并行只读工具批 spawn_blocking 最大并发；默认 max(chat_queue_max_concurrent, 3)

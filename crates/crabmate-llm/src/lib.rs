@@ -1,6 +1,6 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的核心封装（厂商适配、HTTP 客户端、错误类型、可插拔后端 trait）。
 //!
-//! 带重试的 [`complete_chat_retrying`] 经 [`LlmRetryHooks`] 注入 turn replay / DSML 等宿主侧效应；
+//! 带重试的 [`complete_chat_retrying`] 经 [`LlmRetryHooks`] 注入 turn replay 等宿主侧效应；
 //! 单次 HTTP [`stream_chat`] 经 [`StreamChatHost`] 注入 SSE 控制面与终端渲染。
 
 pub mod api;
@@ -50,9 +50,7 @@ pub use requests::{
 };
 pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
 pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
-pub use stream_host::{
-    CliWaitSpinnerGuardHost, DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx,
-};
+pub use stream_host::{CliWaitSpinnerGuardHost, StreamChatHost, TerminalPlainFragmentCtx};
 pub use stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceUsage};
 pub use vendor::{

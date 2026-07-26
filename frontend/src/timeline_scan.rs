@@ -105,7 +105,7 @@ fn is_bare_tool_path_arg_residue(text: &str) -> bool {
         || is_bare_single_line_path_residue(t)
 }
 
-/// 单行、无扩展名或疑似截断的文件路径（如 `.../INSTALLe`）——多为 DSML/工具参数残留。
+/// 单行、无扩展名或疑似截断的文件路径（如 `.../INSTALLe`）——多为工具参数残留。
 fn is_bare_single_line_path_residue(text: &str) -> bool {
     if !text.contains('/') {
         return false;

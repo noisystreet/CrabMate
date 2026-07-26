@@ -327,7 +327,7 @@ fn strip_leading_agent_reply_plan_json_tail(s: &str) -> Option<String> {
     }
 }
 
-/// 从展示文本中剥离 `<tool_call>...</tool_call>` XML 块（非 DSML 格式的内部工具调用标记）。
+/// 从展示文本中剥离 `<tool_call>...</tool_call>` XML 块（内部工具调用标记）。
 fn strip_tool_call_xml_from_display(s: &str) -> String {
     let mut out = s.to_string();
     while let Some(start) = out.find("<tool_call") {
@@ -365,8 +365,7 @@ fn assistant_text_for_display_inner(
     is_streaming_last_assistant: bool,
     loc: Locale,
 ) -> String {
-    let content = crate::message_format::dsml_strip::strip_deepseek_dsml_for_display(raw);
-    let content = strip_tool_call_xml_from_display(&content);
+    let content = strip_tool_call_xml_from_display(raw);
     let content = strip_trailing_standalone_agent_reply_plan_blob(&content).unwrap_or(content);
     let trimmed = content.trim();
 

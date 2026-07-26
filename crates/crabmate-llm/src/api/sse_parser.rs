@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 use crabmate_types::{StreamChoice, StreamDelta};
 
 use crate::call_error::LlmCallError;
-use crate::stream_host::{DsmlStreamFilter, StreamChatHost, TerminalPlainFragmentCtx};
+use crate::stream_host::{StreamChatHost, TerminalPlainFragmentCtx};
 use crate::stream_scratch::TuiLlmStreamScratchArc;
 
 use super::sse_turn_segment_emit::{
@@ -251,7 +251,6 @@ pub(super) struct IngestSseState<'a> {
     pub(super) coop_cancel: Option<&'a AtomicBool>,
     pub(super) thinking_trace_enabled: bool,
     pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
-    pub(super) dsml_content_filter: &'a mut dyn DsmlStreamFilter,
     /// SSE 末尾帧提取的 usage。
     pub(super) usage: &'a mut Option<crabmate_types::Usage>,
 }
@@ -321,7 +320,6 @@ struct IngestSseContentFrame<'a> {
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
     tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
-    dsml_content_filter: &'a mut dyn DsmlStreamFilter,
 }
 
 #[inline]
@@ -397,57 +395,6 @@ async fn ingest_sse_reasoning_from_delta(
     Ok(())
 }
 
-struct FlushDsmlTailCtx<'a> {
-    host: &'a dyn StreamChatHost,
-    dsml_content_filter: &'a mut dyn DsmlStreamFilter,
-    out: Option<&'a Sender<String>>,
-    cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &'a mut bool,
-    cli_plain_reasoning_style_active: &'a mut bool,
-    coop_cancel: Option<&'a AtomicBool>,
-    tui_llm_stream_scratch: Option<&'a TuiLlmStreamScratchArc>,
-}
-
-async fn flush_dsml_stream_filter_tail(ctx: FlushDsmlTailCtx<'_>) -> std::io::Result<()> {
-    let FlushDsmlTailCtx {
-        host,
-        dsml_content_filter,
-        out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
-        coop_cancel,
-        tui_llm_stream_scratch,
-    } = ctx;
-    let display = dsml_content_filter.finish();
-    if display.is_empty() {
-        return Ok(());
-    }
-    tui_scratch_push_content(tui_llm_stream_scratch, &display);
-    if cli_terminal_plain {
-        host.cli_terminal_write_plain_fragment(
-            &display,
-            TerminalPlainFragmentCtx {
-                prefix_emitted: cli_plain_prefix_emitted,
-                reasoning_style_active: cli_plain_reasoning_style_active,
-            },
-            false,
-        )?;
-    }
-    if let Some(tx) = out {
-        let line = host.encode_answer_content_sse(&display);
-        let _ = sse_out_send(
-            host,
-            tx,
-            line,
-            "llm::stream_chat flush dsml filter tail",
-            coop_cancel,
-        )
-        .await;
-    }
-    Ok(())
-}
-
 async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std::io::Result<()> {
     let IngestSseContentFrame {
         host,
@@ -461,7 +408,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         coop_cancel,
         thinking_trace_enabled,
         tui_llm_stream_scratch,
-        dsml_content_filter,
     } = frame;
     let Some(s) = delta.content.as_ref() else {
         return Ok(());
@@ -505,14 +451,10 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         .await?;
     }
     content_acc.push_str(s);
-    let display = dsml_content_filter.push_chunk(s);
-    if display.is_empty() {
-        return Ok(());
-    }
-    tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), &display);
+    tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), s);
     if cli_terminal_plain {
         host.cli_terminal_write_plain_fragment(
-            &display,
+            s,
             TerminalPlainFragmentCtx {
                 prefix_emitted: cli_plain_prefix_emitted,
                 reasoning_style_active: cli_plain_reasoning_style_active,
@@ -521,7 +463,7 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         )?;
     }
     if let Some(tx) = out {
-        let line = host.encode_answer_content_sse(&display);
+        let line = host.encode_answer_content_sse(s);
         let _ = sse_out_send(
             host,
             tx,
@@ -559,7 +501,6 @@ pub(super) async fn ingest_sse_data_payload(
         coop_cancel,
         thinking_trace_enabled,
         tui_llm_stream_scratch,
-        dsml_content_filter,
         usage,
     } = state;
     let tui_scratch = tui_llm_stream_scratch.clone();
@@ -599,7 +540,6 @@ pub(super) async fn ingest_sse_data_payload(
             coop_cancel,
             thinking_trace_enabled,
             tui_llm_stream_scratch: tui_scratch,
-            dsml_content_filter,
         })
         .await?;
         ingest_sse_tool_calls_from_delta(IngestSseToolCallsFrame {
@@ -638,7 +578,6 @@ pub(super) struct ConsumeSseStreamOpts<'a> {
     pub out: Option<&'a Sender<String>>,
     pub cli_terminal_plain: bool,
     pub thinking_trace_enabled: bool,
-    pub dsml_stream_strip_enabled: bool,
     pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
@@ -656,7 +595,6 @@ where
         out,
         cli_terminal_plain,
         thinking_trace_enabled,
-        dsml_stream_strip_enabled,
         tui_llm_stream_scratch,
     } = opts;
     let mut buf = Vec::new();
@@ -672,7 +610,6 @@ where
     let mut cli_plain_prefix_emitted = false;
     let mut cli_plain_reasoning_style_active = false;
     let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
-    let mut dsml_content_filter = host.new_dsml_stream_filter(dsml_stream_strip_enabled);
     let mut stream_done = false;
     let mut usage = None;
 
@@ -715,7 +652,6 @@ where
                     coop_cancel: cancel,
                     thinking_trace_enabled,
                     tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-                    dsml_content_filter: dsml_content_filter.as_mut(),
                     usage: &mut usage,
                 },
             )
@@ -754,7 +690,6 @@ where
             coop_cancel: cancel,
             thinking_trace_enabled,
             tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
-            dsml_content_filter: dsml_content_filter.as_mut(),
             usage: &mut usage,
         },
     )
@@ -763,17 +698,6 @@ where
     emit_turn_segment_end_if_open(host, out, cancel, &mut turn_segment_open).await?;
 
     flush_sse_delta_buffer(host, &mut pending_sse_delta, out, cancel).await;
-    flush_dsml_stream_filter_tail(FlushDsmlTailCtx {
-        host,
-        dsml_content_filter: dsml_content_filter.as_mut(),
-        out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
-        coop_cancel: cancel,
-        tui_llm_stream_scratch: tui_llm_stream_scratch.as_ref(),
-    })
-    .await?;
 
     Ok(SseStreamAccum {
         reasoning_acc,

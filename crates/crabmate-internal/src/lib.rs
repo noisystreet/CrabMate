@@ -15,7 +15,6 @@ pub mod agent_role_turn;
 pub mod agent_turn_prep;
 pub mod clarification_sse_bridge;
 pub mod context_bootstrap;
-pub mod dsml;
 pub mod dynamic_tools;
 pub mod health;
 pub mod long_term_memory_tools;

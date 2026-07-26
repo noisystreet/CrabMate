@@ -3,13 +3,12 @@ mod agent_config_sections;
 pub use agent_config_sections::{
     AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, CursorRulesConfigSection, DsmlMaterializeConfig,
-    HierarchyRoutingConfig, HttpFetchConfigSection, IntentRoutingConfig, LongTermMemoryConfig,
-    McpClientConfig, PerPlanPolicyConfig, RolesPromptsConfig, SessionUiConfig,
-    SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncToolSandboxConfig,
-    ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig,
-    TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
-    WorkspaceRootsConfig,
+    ConversationPersistenceConfig, CursorRulesConfigSection, HierarchyRoutingConfig,
+    HttpFetchConfigSection, IntentRoutingConfig, LongTermMemoryConfig, McpClientConfig,
+    PerPlanPolicyConfig, RolesPromptsConfig, SessionUiConfig, SessionWorkspaceChangelistConfig,
+    SkillsConfigSection, SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig,
+    ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig,
+    WebApiConfig, WebSearchConfigSection, WorkspaceRootsConfig,
 };
 
 pub use crabmate_types::llm_config::{
@@ -294,7 +293,6 @@ pub struct AgentConfig {
     pub tool_transcript: ToolTranscriptConfig,
     pub agent_thinking_trace: AgentThinkingTraceConfig,
     pub agent_tool_stats: AgentToolStatsConfig,
-    pub dsml_materialize: DsmlMaterializeConfig,
     pub thinking_echo: ThinkingEchoConfig,
     pub context_pipeline: ContextPipelineConfig,
     pub workspace_roots: WorkspaceRootsConfig,

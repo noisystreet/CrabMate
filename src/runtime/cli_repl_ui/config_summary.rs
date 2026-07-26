@@ -191,15 +191,6 @@ fn append_summary_integrations_section(lines: &mut Vec<String>, cfg: &AgentConfi
     };
     summary_item(lines, "cursor_rules", cursor.as_str());
 
-    summary_item(
-        lines,
-        "materialize_deepseek_dsml_tool_calls",
-        if cfg.dsml_materialize.materialize_deepseek_dsml_tool_calls {
-            "开启"
-        } else {
-            "关闭"
-        },
-    );
     let explain = if cfg.tool_call_explain.tool_call_explain_enabled {
         format!(
             "开启（{}～{} 字）",

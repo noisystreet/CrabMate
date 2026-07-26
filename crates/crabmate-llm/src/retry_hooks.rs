@@ -1,4 +1,4 @@
-//! 宿主侧观测钩子（turn replay、DSML 物化、日志脱敏等），供 [`super::complete_chat_retrying`] 注入。
+//! 宿主侧观测钩子（turn replay、日志脱敏等），供 [`super::complete_chat_retrying`] 注入。
 
 use crabmate_types::Message;
 
@@ -19,8 +19,6 @@ pub trait LlmRetryHooks: Send + Sync {
     fn append_turn_replay_json(&self, event: &str, model: &str, payload: Option<serde_json::Value>);
 
     fn append_decision_point(&self, decision: &LlmRetryDecisionPoint);
-
-    fn materialize_dsml_tool_calls(&self, msg: &mut Message);
 
     fn assistant_preview_for_log(&self, msg: &Message) -> String;
 

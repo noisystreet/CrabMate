@@ -2,12 +2,6 @@ use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
 
-/// 展示用 DSML 剥离：独立 crate 内为轻量占位（完整实现仍在根包 `dsml::strip`；Web 气泡经 `message_display` 走根包 `text_sanitize`）。
-#[inline]
-fn strip_deepseek_dsml_for_display(s: &str) -> String {
-    s.to_string()
-}
-
 fn strip_markdown_fenced_blocks(s: &str) -> String {
     let parts: Vec<&str> = s.split("```").collect();
     let mut out = String::new();
@@ -219,10 +213,9 @@ fn flatten_bullet_lines_to_prose(s: &str) -> String {
     }
 }
 
-/// 规划里单条 `description` / `id` 的展示用：去 DSML、去掉误贴的代码围栏、展开嵌套 JSON、Markdown 列表改叙述。
+/// 规划里单条 `description` / `id` 的展示用：去掉误贴的代码围栏、展开嵌套 JSON、Markdown 列表改叙述。
 pub fn naturalize_plan_step_description(s: &str) -> String {
-    let mut t = strip_deepseek_dsml_for_display(s);
-    t = strip_markdown_fenced_blocks(&t);
+    let t = strip_markdown_fenced_blocks(s);
     let trimmed = t.trim();
     let mut out = if let Some(inner) = try_unwrap_embedded_step_json(trimmed) {
         inner
@@ -238,10 +231,9 @@ pub fn naturalize_plan_step_description(s: &str) -> String {
     flatten_bullet_lines_to_prose(&out)
 }
 
-/// 规划轮 assistant 去掉主 `agent_reply_plan` JSON 围栏后的**剩余正文**：不删任意 ``` 块（避免误伤合法示例），只做 DSML 清洗、相邻重复行折叠、列表并句与「并句后仍整段双份」折叠。
+/// 规划轮 assistant 去掉主 `agent_reply_plan` JSON 围栏后的**剩余正文**：不删任意 ``` 块（避免误伤合法示例），只做相邻重复行折叠、列表并句与「并句后仍整段双份」折叠。
 pub fn naturalize_assistant_plan_prose_tail(s: &str) -> String {
-    let t = strip_deepseek_dsml_for_display(s);
-    let t = dedupe_adjacent_non_empty_trimmed_lines(t.trim());
+    let t = dedupe_adjacent_non_empty_trimmed_lines(s.trim());
     let flat = flatten_bullet_lines_to_prose(t.trim());
     collapse_duplicate_prose_fused_twice(&flat)
 }

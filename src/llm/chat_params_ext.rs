@@ -103,7 +103,6 @@ impl<'a> CompleteChatRetryingParams<'a> {
                 &self.cfg.llm.api_base,
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
-            dsml_stream_strip_enabled: self.cfg.dsml_materialize.dsml_stream_strip_enabled,
             tui_llm_stream_scratch: self.tui_llm_stream_scratch.clone(),
         }
     }

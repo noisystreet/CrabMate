@@ -230,12 +230,6 @@ impl ConfigBuilder {
         ats.agent_tool_stats_warn_below_success_ratio = agent
             .agent_tool_stats_warn_below_success_ratio
             .or(ats.agent_tool_stats_warn_below_success_ratio);
-        self.dsml_materialize.materialize_deepseek_dsml_tool_calls = agent
-            .materialize_deepseek_dsml_tool_calls
-            .or(self.dsml_materialize.materialize_deepseek_dsml_tool_calls);
-        self.dsml_materialize.dsml_stream_strip_enabled = agent
-            .dsml_stream_strip_enabled
-            .or(self.dsml_materialize.dsml_stream_strip_enabled);
         let te = &mut self.thinking_echo;
         te.thinking_avoid_echo_system_prompt = agent
             .thinking_avoid_echo_system_prompt

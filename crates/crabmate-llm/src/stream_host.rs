@@ -1,4 +1,4 @@
-//! 宿主侧钩子：SSE 控制面、终端渲染、日志脱敏、DSML 流式过滤（与 `crabmate-internal` / `runtime` 解耦）。
+//! 宿主侧钩子：SSE 控制面、终端渲染、日志脱敏（与 `crabmate-internal` / `runtime` 解耦）。
 
 use std::io;
 use std::sync::atomic::AtomicBool;
@@ -9,12 +9,6 @@ use crabmate_types::{ChatRequest, Message};
 use tokio::sync::mpsc::Sender;
 
 use crate::call_error::LlmCallError;
-
-/// 流式正文下发前剥离 DSML 标记（展示路径；原文仍由 SSE 累积器保留）。
-pub trait DsmlStreamFilter: Send {
-    fn push_chunk(&mut self, chunk: &str) -> String;
-    fn finish(&mut self) -> String;
-}
 
 /// CLI 纯文本流式片段写入时的可变状态（`Agent:` 前缀与 reasoning/content 分色）。
 pub struct TerminalPlainFragmentCtx<'a> {
@@ -72,8 +66,6 @@ pub trait StreamChatHost: Send + Sync {
 
     /// 返回 TEXT_MESSAGE_START 的 SSE 行（仅 V2）；V1 返回空字符串。
     fn encode_text_message_start_sse(&self) -> String;
-
-    fn new_dsml_stream_filter(&self, enabled: bool) -> Box<dyn DsmlStreamFilter>;
 
     fn try_start_cli_wait_spinner(
         &self,

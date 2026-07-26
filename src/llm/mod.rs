@@ -1,6 +1,6 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的封装层。
 //!
-//! - **重试**：[`complete_chat_retrying`] 实现于 **`crabmate-llm`**，经 [`retry_hooks::CrabmateLlmRetryHooks`] 注入 turn replay / DSML。
+//! - **重试**：[`complete_chat_retrying`] 实现于 **`crabmate-llm`**，经 [`retry_hooks::CrabmateLlmRetryHooks`] 注入 turn replay。
 //! - **单次 HTTP**：[`crabmate_llm::stream_chat`] 经 [`stream_host_impl::CrabmateStreamChatHost`] 注入 SSE 与终端渲染。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
@@ -59,7 +59,7 @@ pub async fn complete_chat_retrying(
         .request_chrome_trace
         .as_ref()
         .map(|t| t.enter_section("llm.chat_completions"));
-    let hooks = retry_hooks::CrabmateLlmRetryHooks { cfg: p.cfg };
+    let hooks = retry_hooks::CrabmateLlmRetryHooks;
     let llm_cfg = crabmate_types::llm_config::LlmConfig {
         llm: p.cfg.llm.clone(),
         sampling: p.cfg.llm_sampling.clone(),

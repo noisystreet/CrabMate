@@ -135,12 +135,6 @@ pub(crate) struct ConfigBuilderAgentToolStats {
 }
 
 #[derive(Default)]
-pub(crate) struct ConfigBuilderDsmlMaterialize {
-    pub(crate) materialize_deepseek_dsml_tool_calls: Option<bool>,
-    pub(crate) dsml_stream_strip_enabled: Option<bool>,
-}
-
-#[derive(Default)]
 pub(crate) struct ConfigBuilderThinkingEcho {
     pub(crate) thinking_avoid_echo_system_prompt: Option<bool>,
     pub(crate) thinking_avoid_echo_appendix: Option<String>,
@@ -315,7 +309,6 @@ pub(crate) struct ConfigBuilder {
     pub(crate) tool_transcript: ConfigBuilderToolTranscript,
     pub(crate) agent_thinking_trace: ConfigBuilderAgentThinkingTrace,
     pub(crate) agent_tool_stats: ConfigBuilderAgentToolStats,
-    pub(crate) dsml_materialize: ConfigBuilderDsmlMaterialize,
     pub(crate) thinking_echo: ConfigBuilderThinkingEcho,
     pub(crate) context_pipeline: ConfigBuilderContextPipeline,
     pub(crate) workspace_roots: ConfigBuilderWorkspaceRoots,

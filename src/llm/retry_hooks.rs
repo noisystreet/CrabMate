@@ -1,14 +1,11 @@
 //! 宿主侧 [`crabmate_llm::LlmRetryHooks`] 实现。
 
-use crabmate_config::AgentConfig;
 use crabmate_llm::{LlmRetryDecisionPoint, LlmRetryHooks};
 use crabmate_types::{Message, message_content_as_str};
 
-pub struct CrabmateLlmRetryHooks<'a> {
-    pub cfg: &'a AgentConfig,
-}
+pub struct CrabmateLlmRetryHooks;
 
-impl LlmRetryHooks for CrabmateLlmRetryHooks<'_> {
+impl LlmRetryHooks for CrabmateLlmRetryHooks {
     fn append_turn_replay_json(
         &self,
         event: &str,
@@ -28,15 +25,6 @@ impl LlmRetryHooks for CrabmateLlmRetryHooks<'_> {
             decision.detail.clone(),
             &decision.anchor_kind,
             decision.anchor.clone(),
-        );
-    }
-
-    fn materialize_dsml_tool_calls(&self, msg: &mut Message) {
-        crate::dsml::materialize_deepseek_dsml_tool_calls_in_message(
-            msg,
-            self.cfg
-                .dsml_materialize
-                .materialize_deepseek_dsml_tool_calls,
         );
     }
 
