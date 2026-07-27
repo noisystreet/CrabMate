@@ -116,7 +116,7 @@ fn messages_to_transcript_range(messages: &[Message], start: usize, end: usize) 
     out
 }
 
-/// 有投影：user/前缀 → `[Turn 投影]`（旁白在工具前）→ 终答等后缀；无投影：整段 Message[]。
+/// 有投影：user/前缀 → 旁白/工具/终答正文（无元标签，对齐 Tauri）→ 后缀；无投影：整段 Message[]。
 fn format_completed_turn_for_past_display(
     messages: &[Message],
     turn_start: usize,
@@ -127,7 +127,7 @@ fn format_completed_turn_for_past_display(
         return messages_to_transcript_range(messages, turn_start, messages.len());
     }
 
-    let has_final_in_projection = block.contains("[终答]");
+    let has_final_in_projection = projection.has_final_answer(None);
     let mut prefix = String::new();
     let mut suffix = String::new();
     let mut seen_tool_phase = false;
@@ -338,15 +338,14 @@ mod tests {
             "live projection must be empty after reset"
         );
         let display = committed.display.as_str();
-        let commentary = display.find("[旁白]").expect("旁白");
-        let tool = display.find("[工具 · read_file]").expect("工具");
-        let final_ans = display.find("[终答]").expect("终答");
+        let commentary = display.find("先看一下 README。").expect("旁白");
+        let tool = display.find("▸ read_file").expect("工具");
+        let final_ans = display.find("总结如下。").expect("终答");
         assert!(
             commentary < tool && tool < final_ans,
             "旁白→工具→终答: {display}"
         );
         assert!(display.contains("[user]"), "{display}");
-        assert!(display.contains("总结如下"), "{display}");
         assert!(
             !display.contains("[tool]"),
             "tool role must not duplicate projection: {display}"
@@ -354,6 +353,10 @@ mod tests {
         assert!(
             !display.contains("[assistant]\n总结"),
             "final must not duplicate as [assistant]: {display}"
+        );
+        assert!(
+            !display.contains("[Turn 投影]") && !display.contains("[旁白]"),
+            "must not show meta labels: {display}"
         );
         assert_eq!(committed.msg_len, messages.len());
     }

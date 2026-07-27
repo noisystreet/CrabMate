@@ -1,7 +1,7 @@
 //! 将 [`crate::sse::SsePayload`] 镜像进 [`super::turn_project`]，并可选追加中区「控制面」附录。
 //!
 //! **Phase 3**：已由 Turn 投影承接的工具/解析事件**不再**写入 `[SSE 控制面]`，避免与
-//! `[Turn 投影]` 双列；附录仅保留错误、思维迹，以及未进投影的 `timeline_log`。
+//! 投影工具行双列；附录仅保留错误、思维迹，以及未进投影的 `timeline_log`。
 
 use std::sync::{Arc, Mutex};
 

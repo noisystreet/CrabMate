@@ -133,7 +133,7 @@ impl TuiTurnProjection {
         }
     }
 
-    /// Web v2 行 + open 旁白 + 工具批后终答（对齐 Tauri `turn-final-answer`）。
+    /// Web v2 行 + open 旁白 + 工具批后终答（对齐 Tauri `turn-final-answer`；无元标签）。
     pub(super) fn format_projection_block(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         let mut rows = project_turn_web_v2(&self.turn);
         if let Some(open) = streaming_commentary_block_text(&self.turn) {
@@ -159,9 +159,14 @@ impl TuiTurnProjection {
         format_projected_rows_for_tui(&rows)
     }
 
-    /// 流式 scratch 正文是否已由 `[Turn 投影]` 承接（避免旁白/终答双显）。
+    /// 是否已有（或可预览）终答，供 flush 时跳过 Message[] 尾部双显。
+    pub(super) fn has_final_answer(&self, scratch: Option<&TuiLlmStreamScratch>) -> bool {
+        !self.resolved_final_answer(scratch).is_empty()
+    }
+
+    /// 流式 scratch 正文是否已由投影块承接（避免旁白/终答双显）。
     ///
-    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答进投影「终答」行，亦隐藏。
+    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答进投影正文，亦隐藏。
     pub(super) fn should_hide_streaming_content(&self, scratch_content: &str) -> bool {
         let c = scratch_content.trim();
         if c.is_empty() {
@@ -272,24 +277,26 @@ impl TuiTurnProjection {
 }
 
 pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
-    let mut out = String::from("[Turn 投影]\n");
+    let mut out = String::new();
     for row in rows {
-        let label = match row.kind.as_str() {
-            "assistant_timeline" => "时间线",
-            "assistant_commentary" | "assistant_commentary_open" => "旁白",
-            "assistant_batch_narration" => "批说明",
-            "assistant_answer" => "终答",
-            "tool" => "工具",
-            other => other,
-        };
         let text = truncate_chars_with_ellipsis(row.text.trim(), 4000);
         if text.is_empty() {
             continue;
         }
-        if let Some(ref name) = row.tool_name {
-            out.push_str(&format!("[{label} · {name}]\n{text}\n\n"));
-        } else {
-            out.push_str(&format!("[{label}]\n{text}\n\n"));
+        match row.kind.as_str() {
+            "tool" => {
+                // 对齐 Tauri tool-card 一行摘要：▸ name  summary（无 [工具] 元标签）
+                let name = row.tool_name.as_deref().unwrap_or("tool");
+                out.push_str(&format!("▸ {name}  {text}\n\n"));
+            }
+            "assistant_timeline" => {
+                out.push_str(&format!("· {text}\n\n"));
+            }
+            // 旁白 / 批说明 / 终答：与 Web 气泡一样直接出正文
+            _ => {
+                out.push_str(&text);
+                out.push_str("\n\n");
+            }
         }
     }
     out
@@ -357,8 +364,11 @@ mod tests {
         assert_eq!(rows[1].kind, "tool");
         assert_eq!(rows[1].tool_name.as_deref(), Some("read_file"));
         let block = proj.format_projection_block(None);
-        assert!(block.contains("[旁白]"), "{block}");
-        assert!(block.contains("[工具 · read_file]"), "{block}");
+        assert!(block.contains("先看一下 README。"), "{block}");
+        assert!(block.contains("▸ read_file"), "{block}");
+        let c = block.find("先看一下 README。").expect("commentary");
+        let t = block.find("▸ read_file").expect("tool");
+        assert!(c < t, "旁白正文须在工具行前: {block}");
         assert!(
             proj.should_hide_streaming_content("先看一下 README。"),
             "tool-phase / absorbed commentary must hide scratch duplicate"
@@ -399,11 +409,10 @@ mod tests {
         );
         scratch.content = "总结如下。".into();
         let block = proj.format_projection_block(Some(&scratch));
-        assert!(block.contains("[工具 · read_file]"), "{block}");
-        let tool_at = block.find("[工具 · read_file]").expect("tool");
-        let final_at = block.find("[终答]").expect("终答 missing");
+        assert!(block.contains("▸ read_file"), "{block}");
+        let tool_at = block.find("▸ read_file").expect("tool");
+        let final_at = block.find("总结如下。").expect("终答 missing");
         assert!(final_at > tool_at, "终答须在工具之后: {block}");
-        assert!(block.contains("总结如下。"), "{block}");
         assert!(
             proj.should_hide_streaming_content("总结如下。"),
             "final answer must not also stream as [assistant] tail"
@@ -411,9 +420,51 @@ mod tests {
         proj.finalize_for_display(&scratch);
         let committed = proj.format_projection_block(None);
         assert!(
-            committed.contains("[终答]") && committed.contains("总结如下。"),
+            committed.contains("总结如下。") && proj.has_final_answer(None),
             "finalize must keep 终答: {committed}"
         );
+    }
+
+    /// Phase 6：模拟 SSE 镜像时序（旁白吸收 → 工具 → phase end → 终答），锁定行序金样。
+    #[test]
+    fn sse_sequence_projects_commentary_tool_final_in_order() {
+        let mut proj = TuiTurnProjection::default();
+        let mut scratch = TuiLlmStreamScratch {
+            content: "我先读 README。".into(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true,
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::ToolCall {
+                tool_call: ToolCallSummary {
+                    name: "read_file".into(),
+                    summary: "README.md".into(),
+                    goal_id: None,
+                    tool_call_id: Some("tc-readme".into()),
+                    arguments_preview: Some("{\"path\":\"README.md\"}".into()),
+                    arguments: None,
+                },
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::TurnToolPhaseEnd {
+                turn_tool_phase_end: true,
+            },
+            &scratch,
+        );
+        scratch.content = "目录如下。".into();
+        proj.finalize_for_display(&scratch);
+        let block = proj.format_projection_block(None);
+        let c = block.find("我先读 README。").expect("旁白");
+        let t = block.find("▸ read_file").expect("工具");
+        let a = block.find("目录如下。").expect("终答");
+        assert!(c < t && t < a, "SSE 时序投影须旁白→工具→终答:\n{block}");
     }
 
     #[test]
@@ -493,8 +544,13 @@ mod tests {
             let web_rows = project_turn_web_v2(proj.turn_ref());
             let block = proj.format_projection_block(None);
             assert!(
-                block.starts_with("[Turn 投影]"),
-                "case {}: missing header in {block}",
+                !block.is_empty() || web_rows.is_empty(),
+                "case {}: empty block for non-empty rows in {block}",
+                case.id
+            );
+            assert!(
+                !block.contains("[Turn 投影]") && !block.contains("[旁白]"),
+                "case {}: must not use meta labels: {block}",
                 case.id
             );
             let mut search_from = 0usize;

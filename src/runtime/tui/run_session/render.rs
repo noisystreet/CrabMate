@@ -178,25 +178,20 @@ fn styled_chat_line(line: &str, color: bool) -> Line<'static> {
 /// 投影/角色标题行样式；正文行返回 `None`。
 fn chat_line_header_style(line: &str) -> Option<Style> {
     let t = line.trim_end();
-    if t == "[Turn 投影]" || t == "[SSE 控制面]" {
+    if t == "[SSE 控制面]" {
         return Some(
             Style::default()
                 .fg(Color::Magenta)
                 .add_modifier(Modifier::BOLD),
         );
     }
-    if t.starts_with("[旁白]") || t.starts_with("[批说明]") || t.starts_with("[时间线]") {
-        return Some(Style::default().fg(Color::Cyan));
-    }
-    if t.starts_with("[工具") {
+    // Tauri 风格工具一行：▸ name  summary
+    if t.starts_with('▸') {
         return Some(Style::default().fg(Color::Yellow));
     }
-    if t.starts_with("[终答]") {
-        return Some(
-            Style::default()
-                .fg(Color::Green)
-                .add_modifier(Modifier::BOLD),
-        );
+    // 时间线短注
+    if t.starts_with('·') && t.chars().nth(1) == Some(' ') {
+        return Some(Style::default().fg(Color::Cyan));
     }
     if t == "[user]" {
         return Some(Style::default().fg(Color::Blue));
@@ -805,16 +800,15 @@ mod tests {
 
     #[test]
     fn chat_line_headers_get_distinct_styles_when_color_on() {
-        assert!(chat_line_header_style("[旁白]").is_some());
-        assert!(chat_line_header_style("[工具 · read_file]").is_some());
-        assert!(chat_line_header_style("[终答]").is_some());
-        assert!(chat_line_header_style("[Turn 投影]").is_some());
+        assert!(chat_line_header_style("▸ read_file  README.md").is_some());
+        assert!(chat_line_header_style("· 意图分析").is_some());
+        assert!(chat_line_header_style("[SSE 控制面]").is_some());
         assert!(chat_line_header_style("普通正文").is_none());
-        let text = chat_body_to_styled_text("[旁白]\nhello\n[工具 · x]\n", true);
-        assert_eq!(text.lines.len(), 4);
-        let plain = chat_body_to_styled_text("[旁白]\nhello", false);
-        assert_eq!(plain.lines.len(), 2);
-        // NO_COLOR 路径：单 span、无额外 style
+        assert!(chat_line_header_style("[旁白]").is_none());
+        let text = chat_body_to_styled_text("旁白正文\n▸ read_file  x\n", true);
+        assert_eq!(text.lines.len(), 3);
+        let plain = chat_body_to_styled_text("▸ tool  hi", false);
+        assert_eq!(plain.lines.len(), 1);
         assert!(plain.lines[0].spans[0].style == Style::default());
     }
 }

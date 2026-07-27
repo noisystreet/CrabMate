@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 与 Phase 1–5 已落地**；Phase 6 未承诺工期）。  
+**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -74,9 +74,9 @@
 | 点 | 终端 TUI | Web / Tauri |
 |----|----------|-------------|
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
-| 终答 | 工具批结束后进投影 `[终答]`（对齐 `turn-final-answer`） | `turn-final-answer` + overlay |
+| 终答 | 工具批后写入投影正文（无 `[终答]` 标签） | `turn-final-answer` + overlay |
 | 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
-| 绘制 | 整块 `Paragraph` + 按行标题着色（旁白/工具/终答） | per-section DOM + 局部 patch |
+| 绘制 | 旁白/终答纯正文；工具 `▸ name  summary` 着色 | per-section DOM + 局部 patch |
 | 导出默认 | 默认仍 `projection=raw`；可选 `--projection display` / slash `display` | UI 导出多为 `display` |
 
 ---
@@ -123,7 +123,7 @@
 
 **问题**：整串 `Paragraph` 不利于分色、按行滚动、局部刷新。
 
-**落地**：`chat_body_to_styled_text` / `chat_line_header_style`：旁白青、工具黄、终答绿、投影头品红；`color=false` 时纯文本。滚动仍按原文估算（既有 clamp）。未改为独立 `List` widget（可后续再拆）。
+**落地**：`format_projected_rows_for_tui`：旁白/终答直接出正文；工具行 `▸ name  summary`；**无** `[Turn 投影]` / `[旁白]` / `[终答]` 元标签（更像 Tauri）。
 
 **验收**：`chat_line_headers_get_distinct_styles_when_color_on`。
 
@@ -133,15 +133,11 @@
 
 **验收**：`display_export_sets_projection_and_skips_system`；CLI `--help` 含 projection。
 
-### Phase 6 — 自动化回归
+### Phase 6 — 自动化回归（已落地）
 
-**方向**：
+**落地**：`sse_sequence_projects_commentary_tool_final_in_order`（SSE 时序 → 投影行序）；既有 `golden_web_v2_row_order_preserved_in_tui_projection_block` / flush / 终答测例继续守门。
 
-- 复用或新增 SSE fixture（可参考 e2e `mock-export-analyze-project-flicker` 时序），经 TUI `turn_project` 断言行序。  
-- 可选：`crabmate sse-replay` 输出与 TUI `format_projection_block` 文本 diff 金样。  
-- 不必上 Playwright 驱动 ratatouille（成本高）；优先库测 + CLI 对照。
-
-**验收**：CI 中有一条锁定「旁白在工具前」的 TUI 侧测试（库测即可）。
+**验收**：`cargo test --lib sse_sequence_projects_commentary_tool_final_in_order`。
 
 ---
 
@@ -166,9 +162,9 @@
 | 3 | ~~Phase 3 控制面收敛~~ | 已落地 |
 | 4 | ~~Phase 4 按行渲染~~ | 已落地（标题着色首刀） |
 | 5 | ~~Phase 5 导出~~ | 已落地 |
-| 6 | Phase 6 自动化回归 | 可并行：金样/CI |
+| 6 | ~~Phase 6 自动化回归~~ | 已落地 |
 
-**推荐下一刀**：Phase 6（SSE fixture → TUI 投影行序金样）。
+**推荐下一刀**：无；维护时保持金样绿即可。
 
 ---
 
@@ -177,7 +173,7 @@
 - [x] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
 - [x] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
 - [x] 常规回合控制面无成对工具噪音（Phase 3）。  
-- [ ] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答测例挂 CI。  
+- [x] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答/SSE 时序测例（Phase 6）。  
 - [ ] 变更 turn-layout / 投影文案时同步 **`docs/Turn布局设计.md`** 与本文「已落地」表。
 
 ---
