@@ -208,7 +208,7 @@ TUI **`sse_mirror`** 对 `turn_segment_*` 仅 `Ignore`（不追加附录行）�
 
 ## 9. 非目标与已知边界
 
-- **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；**CLI** 尚未将 `Turn` 投影到 stdout transcript。
+- **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；**CLI** 尚未将 `Turn` 投影到 stdout transcript。金样：`cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`）。
 - **服务端 `Message` 列表**顺序仍按 OpenAI 工具协议；本设计主要修正 **Web `StoredMessage` 展示/导出** 与终端 TUI 本轮投影。
 - **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**（与 `message_chunks` 跳过 `CommentaryBeforeTools` 的策略并存，后续可统一）。
 - **多 create 工具共享一段旁注**时， reducer 默认挂到 **首个仍空** `before_commentary` 的 step；更细粒度需模型或后端显式多段 `turn_segment_start`。
