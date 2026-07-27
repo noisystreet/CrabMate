@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::scrollbar;
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{
     Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
 };
@@ -151,6 +151,65 @@ pub(super) fn apply_chat_scrollbar_follow_intent(
     }
 }
 
+/// 聊天区按行着色（旁白 / 工具 / 终答 / 角色头）；`color=false`（含 `NO_COLOR`）时纯文本。
+pub(super) fn chat_body_to_styled_text(text: &str, color: bool) -> Text<'static> {
+    if text.is_empty() {
+        return Text::default();
+    }
+    let lines: Vec<Line<'static>> = text
+        .split('\n')
+        .map(|line| styled_chat_line(line, color))
+        .collect();
+    Text::from(lines)
+}
+
+fn styled_chat_line(line: &str, color: bool) -> Line<'static> {
+    let owned = line.to_string();
+    if !color {
+        return Line::from(owned);
+    }
+    let style = chat_line_header_style(line);
+    match style {
+        Some(s) => Line::from(Span::styled(owned, s)),
+        None => Line::from(owned),
+    }
+}
+
+/// 投影/角色标题行样式；正文行返回 `None`。
+fn chat_line_header_style(line: &str) -> Option<Style> {
+    let t = line.trim_end();
+    if t == "[Turn 投影]" || t == "[SSE 控制面]" {
+        return Some(
+            Style::default()
+                .fg(Color::Magenta)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+    if t.starts_with("[旁白]") || t.starts_with("[批说明]") || t.starts_with("[时间线]") {
+        return Some(Style::default().fg(Color::Cyan));
+    }
+    if t.starts_with("[工具") {
+        return Some(Style::default().fg(Color::Yellow));
+    }
+    if t.starts_with("[终答]") {
+        return Some(
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+    if t == "[user]" {
+        return Some(Style::default().fg(Color::Blue));
+    }
+    if t == "[assistant]" {
+        return Some(Style::default().fg(Color::Green));
+    }
+    if t == "[tool]" {
+        return Some(Style::default().fg(Color::Yellow));
+    }
+    None
+}
+
 struct TuiChatPanePrep {
     chat_body: String,
     streaming_nonempty: bool,
@@ -243,7 +302,7 @@ fn render_tui_chat_pane(
     maybe_repin_chat_follow_near_bottom(model, chat_body.as_str(), tw, th, stick_mode);
 
     frame.render_widget(chat_block, chat_pane);
-    let center_body = Paragraph::new(chat_body)
+    let center_body = Paragraph::new(chat_body_to_styled_text(chat_body.as_str(), color))
         .wrap(Wrap { trim: false })
         .scroll((chat_scroll_y, 0));
     frame.render_widget(center_body, text_rect);
@@ -742,5 +801,20 @@ mod tests {
             !out.contains("[user]\nhi\n\n\n[assistant]"),
             "extra blank before [assistant] shifts text vs final: {out:?}"
         );
+    }
+
+    #[test]
+    fn chat_line_headers_get_distinct_styles_when_color_on() {
+        assert!(chat_line_header_style("[旁白]").is_some());
+        assert!(chat_line_header_style("[工具 · read_file]").is_some());
+        assert!(chat_line_header_style("[终答]").is_some());
+        assert!(chat_line_header_style("[Turn 投影]").is_some());
+        assert!(chat_line_header_style("普通正文").is_none());
+        let text = chat_body_to_styled_text("[旁白]\nhello\n[工具 · x]\n", true);
+        assert_eq!(text.lines.len(), 4);
+        let plain = chat_body_to_styled_text("[旁白]\nhello", false);
+        assert_eq!(plain.lines.len(), 2);
+        // NO_COLOR 路径：单 span、无额外 style
+        assert!(plain.lines[0].spans[0].style == Style::default());
     }
 }
