@@ -162,7 +162,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 return;
             }
             TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
-            TurnLayout::drain_loading_commentary_to_canonical(stream_ctx.as_ref());
+            // demote 已 keep-ui 吸收；此处勿再 clear loading，否则旁注投影前助手气泡会空窗。
             stream_ctx.scratch.apply_stream_control_event(
                 &stream_ctx.shell.stream,
                 StreamControlEvent::ToolCallDeclared,
@@ -214,6 +214,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                     subgoal_marker.as_deref(),
                 );
                 stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
+                TurnLayout::release_loading_after_tool_projection(stream_ctx.as_ref());
                 stream_ctx.scratch.sync_stream_preview(stream_ctx.as_ref());
             } else {
                 TurnLayout::on_tool_call_declared(

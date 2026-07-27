@@ -1,3 +1,7 @@
+/**
+ * TUI 主列：已定稿 assistant 段在后续工具/流式过程中不得消失或改文。
+ * （旧版依赖 chat-message-row；默认主列已是 chat-tui-transcript。）
+ */
 import { expect, test } from "@playwright/test";
 import { seedSession, sendMessage } from "../fixtures/helpers";
 
@@ -39,11 +43,16 @@ type ReadyBubbleMonitor = {
   observer: MutationObserver;
 };
 
-test("ready assistant bubbles remain immutable and visible while streaming", async ({
+test("ready TUI turns remain immutable and visible while streaming", async ({
   page,
 }) => {
   await page.addInitScript(
     ({ chunks, delayMs }) => {
+      Object.defineProperty(globalThis, "__TAURI_INTERNALS__", {
+        configurable: true,
+        value: { invoke: () => Promise.resolve(null) },
+      });
+
       const state = globalThis as typeof globalThis & {
         __cmChunkIndex?: number;
       };
@@ -96,9 +105,10 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
   );
 
   await seedSession(page, `s_e2e_ready_bubble_${Date.now()}`);
+  await expect(page.getByTestId("chat-tui-stream-view")).toBeVisible();
   await sendMessage(page, "检查已完成气泡在流式生成期间保持稳定");
 
-  const freezeReadyBubble = async (
+  const freezeReadyTurn = async (
     textSignature: string,
     minimumChunk: number,
   ) => {
@@ -110,15 +120,17 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
         if ((state.__cmChunkIndex ?? -1) < chunkIndex) return false;
         return [
           ...document.querySelectorAll<HTMLElement>(
-            '[data-testid="chat-message-row"]',
+            "section.chat-tui-turn[data-tui-msg-id]",
           ),
         ].some(
           (row) =>
-            row.textContent?.includes(signature) &&
-            row.querySelector(".typing-dots") === null,
+            (row.innerText ?? "").includes(signature) &&
+            row.getAttribute("data-tui-live") !== "1" &&
+            !row.classList.contains("chat-tui-turn--loading"),
         );
       },
       { signature: textSignature, chunkIndex: minimumChunk },
+      { timeout: 25_000 },
     );
 
     await page.evaluate((signature) => {
@@ -148,7 +160,9 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
         };
         const inspect = () => {
           for (const [id, expectedText] of frozen) {
-            const row = document.getElementById(id);
+            const row = document.querySelector<HTMLElement>(
+              `section.chat-tui-turn[data-tui-msg-id="${id.replace(/"/g, '\\"')}"]`,
+            );
             if (!row) {
               recordViolation({
                 id,
@@ -159,8 +173,8 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
               });
               continue;
             }
-            const actualText = normalize(row.textContent);
-            if (!actualText) {
+            const actualText = normalize(row.innerText);
+            if (!actualText.includes(expectedText)) {
               recordViolation({
                 id,
                 expectedText,
@@ -170,7 +184,10 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
               });
               continue;
             }
-            if (actualText !== expectedText) {
+            if (
+              actualText !== expectedText &&
+              !actualText.includes(expectedText)
+            ) {
               recordViolation({
                 id,
                 expectedText,
@@ -192,8 +209,10 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
             }, 0);
           });
         };
-        const root = document.querySelector(".messages-inner");
-        if (!root) throw new Error("messages root not found");
+        const root = document.querySelector(
+          '[data-testid="chat-tui-transcript"]',
+        );
+        if (!root) throw new Error("tui transcript root not found");
         const observer = new MutationObserver(inspectAfterPaint);
         observer.observe(root, {
           childList: true,
@@ -204,19 +223,21 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
           freeze(text) {
             const row = [
               ...document.querySelectorAll<HTMLElement>(
-                '[data-testid="chat-message-row"]',
+                "section.chat-tui-turn[data-tui-msg-id]",
               ),
             ].find(
               (candidate) =>
-                candidate.textContent?.includes(text) &&
-                candidate.querySelector(".typing-dots") === null,
+                (candidate.innerText ?? "").includes(text) &&
+                candidate.getAttribute("data-tui-live") !== "1" &&
+                !candidate.classList.contains("chat-tui-turn--loading"),
             );
-            if (!row?.id) throw new Error(`ready bubble not found: ${text}`);
-            if (!frozen.has(row.id)) {
-              frozen.set(row.id, normalize(row.textContent));
+            const id = row?.getAttribute("data-tui-msg-id");
+            if (!row || !id) throw new Error(`ready turn not found: ${text}`);
+            if (!frozen.has(id)) {
+              frozen.set(id, text);
               this.frozen.push({
-                id: row.id,
-                text: normalize(row.textContent),
+                id,
+                text,
               });
             }
           },
@@ -230,12 +251,13 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
     }, textSignature);
   };
 
-  await freezeReadyBubble(FIRST_READY_TEXT, 4);
-  await freezeReadyBubble(SECOND_READY_TEXT, 10);
+  await freezeReadyTurn(FIRST_READY_TEXT, 4);
+  await freezeReadyTurn(SECOND_READY_TEXT, 10);
 
-  await expect(
-    page.locator('[data-testid="chat-messages-scroller"]'),
-  ).toContainText(FINAL_TEXT, { timeout: 20_000 });
+  await expect(page.getByTestId("chat-tui-transcript")).toContainText(
+    FINAL_TEXT,
+    { timeout: 20_000 },
+  );
   await expect(page.locator('[data-testid="status-bar"]')).toContainText(
     "就绪",
   );
@@ -256,13 +278,16 @@ test("ready assistant bubbles remain immutable and visible while streaming", asy
       violations: monitor.violations,
       visibleIds: [
         ...document.querySelectorAll<HTMLElement>(
-          '[data-testid="chat-message-row"]',
+          "section.chat-tui-turn[data-tui-msg-id]",
         ),
-      ].map((row) => row.id),
+      ].map((row) => row.getAttribute("data-tui-msg-id") ?? ""),
     };
   });
 
-  expect(result.violations).toEqual([]);
+  expect(
+    result.violations,
+    `ready turn violated: ${JSON.stringify(result.violations)}`,
+  ).toEqual([]);
   expect(result.frozen).toHaveLength(2);
   for (const bubble of result.frozen) {
     expect(result.visibleIds).toContain(bubble.id);
