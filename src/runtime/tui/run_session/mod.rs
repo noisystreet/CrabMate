@@ -388,6 +388,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     )
     .await;
     let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
+
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     if !captured.is_empty() {
         g.transcript.push_str("\n[/]\n");
@@ -459,7 +460,10 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
         sqlite_nav.as_deref(),
     )
     .await;
-    let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let chips =
+        sidebar_text::tui_status_chips_line_with_messages(cfg_holder, agent_role_owned, messages)
+            .await;
+
     let transcript = transcript::messages_to_transcript(messages);
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.transcript = transcript;
@@ -594,7 +598,9 @@ pub async fn run_tui_session(
         sqlite_id_nav,
     )
     .await;
-    let status_chips = sidebar_text::tui_status_chips_line(cfg_holder, &agent_role_owned).await;
+    let status_chips =
+        sidebar_text::tui_status_chips_line_with_messages(cfg_holder, &agent_role_owned, &messages)
+            .await;
     let status_line = sidebar_text::tui_status_bar_with_run(&status_chips, "就绪");
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));

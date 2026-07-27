@@ -146,13 +146,28 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
             print_repl_version_line();
             ReplSlashHandled::Handled
         }
+        ReplBuiltIn::Context => slash_context(cfg_holder, messages, style).await,
         ReplBuiltIn::ApiKeyUsage => slash_api_key_usage(style),
         ReplBuiltIn::ApiKeyStatus => {
             slash_api_key_status(cfg_holder, &handles.api_key_holder, style).await
         }
-        ReplBuiltIn::ApiKeyClear => slash_api_key_clear(&handles.api_key_holder, style),
+        ReplBuiltIn::ApiKeyClear { persist } => {
+            slash_api_key_clear_persist(&handles.api_key_holder, style, persist)
+        }
         ReplBuiltIn::ApiKeySet(secret) => slash_api_key_set(secret, &handles.api_key_holder, style),
     }
+}
+
+async fn slash_context(
+    cfg_holder: &SharedAgentConfig,
+    messages: &[Message],
+    style: &CliReplStyle,
+) -> ReplSlashHandled {
+    let cfg = cfg_holder.read().await;
+    for line in crate::runtime::context_usage::context_usage_report_lines(&cfg, messages) {
+        let _ = style.print_line(&line);
+    }
+    ReplSlashHandled::Handled
 }
 
 async fn slash_clear(
@@ -173,6 +188,27 @@ async fn slash_clear(
     ReplSlashHandled::Handled
 }
 
+/// 去掉尾部 `--no-persist`；默认 `persist=true`（写 user-data）。
+fn split_optional_no_persist(raw: &str) -> (String, bool) {
+    let t = raw.trim();
+    if let Some(rest) = t.strip_suffix("--no-persist") {
+        (rest.trim_end().to_string(), false)
+    } else {
+        (t.to_string(), true)
+    }
+}
+
+fn persist_client_llm_overrides(model: Option<&str>, api_base: Option<&str>) -> Result<(), String> {
+    let mut file = crate::user_data::load_llm_overrides();
+    if let Some(m) = model.map(str::trim).filter(|s| !s.is_empty()) {
+        file.client_llm.model = Some(m.to_string());
+    }
+    if let Some(b) = api_base.map(str::trim).filter(|s| !s.is_empty()) {
+        file.client_llm.api_base = Some(b.to_string());
+    }
+    crate::user_data::save_llm_overrides(&file)
+}
+
 async fn slash_model_show(
     cfg_holder: &SharedAgentConfig,
     style: &CliReplStyle,
@@ -190,7 +226,7 @@ async fn slash_model_show(
         let _ = style.print_line("llm_seed: （未设置，请求不带 seed）");
     }
     let _ = style.print_line(
-        "提示: /model set <名称> 可直接改模型 id；/api-base set <url> 可改网关根地址（均仅内存，/config reload 会从磁盘覆盖）。",
+        "提示: /model set <名称> [--no-persist]；默认写入 user-data（与 Web 同源）；加 --no-persist 仅本进程。",
     );
     ReplSlashHandled::Handled
 }
@@ -200,10 +236,11 @@ async fn slash_model_set(
     cfg_holder: &SharedAgentConfig,
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
+    let (name, persist) = split_optional_no_persist(&name);
     let t = name.trim();
     if t.is_empty() {
         let _ = style.eprint_error(
-            "用法: /model set <模型名或 id>（可与 /models list 列出的 id 不同，不校验列表）",
+            "用法: /model set <模型名或 id> [--no-persist]（可与 /models list 列出的 id 不同，不校验列表）",
         );
     } else if t.len() > REPL_LLM_MODEL_MAX {
         let _ = style.eprint_error(&format!("model 过长（上限 {REPL_LLM_MODEL_MAX} 字符）。"));
@@ -216,16 +253,28 @@ async fn slash_model_set(
         w.llm_vendor_flags.llm_reasoning_split =
             crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(&model, &api_base);
         drop(w);
-        let _ = style.print_success(&format!(
-            "已设 model = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
-        ));
+        let mut note = format!("已设 model = {label}");
+        if persist {
+            match persist_client_llm_overrides(Some(&label), None) {
+                Ok(()) => note
+                    .push_str("（已写入 user-data llm_overrides；/config reload 仍会再合并磁盘）"),
+                Err(e) => {
+                    let _ = style.eprint_error(&format!("写 user-data 失败: {e}"));
+                    note.push_str("（仅本进程内存）");
+                }
+            }
+        } else {
+            note.push_str("（仅本进程；--no-persist）");
+        }
+        note.push_str("；llm_reasoning_split 已按网关默认刷新");
+        let _ = style.print_success(&note);
     }
     ReplSlashHandled::Handled
 }
 
 fn slash_model_usage(style: &CliReplStyle) -> ReplSlashHandled {
     let _ = style.eprint_error(
-        "用法: /model（显示当前）· /model set <模型名或 id>（写内存；不校验 GET /models）",
+        "用法: /model（显示当前）· /model set <模型名或 id> [--no-persist]（默认写 user-data）",
     );
     ReplSlashHandled::Handled
 }
@@ -236,8 +285,8 @@ async fn slash_api_base_show(
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     let _ = style.print_line(&format!("api_base: {}", cfg.llm.api_base));
-    let _ =
-        style.print_line("提示: /api-base set <url|预设id>（仅内存；别名 /apibase）。预设 id：");
+    let _ = style
+        .print_line("提示: /api-base set <url|预设id> [--no-persist]（别名 /apibase）。预设 id：");
     for p in crabmate_types::llm_api_base_presets_with_url() {
         let model = p.suggested_model.unwrap_or("-");
         let _ = style.print_line(&format!("  {} → {}（建议 model: {model}）", p.id, p.url));
@@ -250,10 +299,11 @@ async fn slash_api_base_set(
     cfg_holder: &SharedAgentConfig,
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
+    let (url, persist) = split_optional_no_persist(&url);
     let t = url.trim();
     if t.is_empty() {
         let _ = style.eprint_error(
-            "用法: /api-base set <url|预设id>（例如 https://api.openai.com/v1 或 deepseek）",
+            "用法: /api-base set <url|预设id> [--no-persist]（例如 https://api.openai.com/v1 或 deepseek）",
         );
     } else if let Some((label, suggested_model)) = crabmate_types::resolve_api_base_set_arg(t) {
         if label.len() > REPL_LLM_API_BASE_MAX {
@@ -277,9 +327,20 @@ async fn slash_api_base_set(
                     &model, &api_base,
                 );
             drop(w);
-            let _ = style.print_success(&format!(
-                "已设 api_base = {label}（仅本进程；持久化请改配置；/config reload 会从磁盘覆盖；llm_reasoning_split 已按网关默认刷新）"
-            ));
+            let mut note = format!("已设 api_base = {label}");
+            if persist {
+                match persist_client_llm_overrides(None, Some(&label)) {
+                    Ok(()) => note.push_str("（已写入 user-data llm_overrides）"),
+                    Err(e) => {
+                        let _ = style.eprint_error(&format!("写 user-data 失败: {e}"));
+                        note.push_str("（仅本进程内存）");
+                    }
+                }
+            } else {
+                note.push_str("（仅本进程；--no-persist）");
+            }
+            note.push_str("；llm_reasoning_split 已按网关默认刷新");
+            let _ = style.print_success(&note);
         }
     } else {
         let _ = style.eprint_error(
@@ -290,8 +351,9 @@ async fn slash_api_base_set(
 }
 
 fn slash_api_base_usage(style: &CliReplStyle) -> ReplSlashHandled {
-    let _ = style
-        .eprint_error("用法: /api-base（显示当前与预设）· /api-base set <url|预设id>（写内存）");
+    let _ = style.eprint_error(
+        "用法: /api-base（显示当前与预设）· /api-base set <url|预设id> [--no-persist]（默认写 user-data）",
+    );
     ReplSlashHandled::Handled
 }
 
@@ -569,10 +631,11 @@ async fn slash_agent_set(
 /// `/api-key set` 与本进程内存上限对齐（与 HTTP/Web 侧提示一致）。
 pub(super) const REPL_API_KEY_SLASH_MAX_CHARS: usize = 16384;
 
-fn api_key_usage_lines_for_terminal() -> [&'static str; 2] {
+fn api_key_usage_lines_for_terminal() -> [&'static str; 3] {
     [
-        "用法: /api-key status（是否已在本进程设置密钥）· /api-key set <密钥> · /api-key clear",
-        "说明: 密钥仅存本进程内存，不写盘；未设置环境变量 API_KEY 时可用此命令。/config reload 不会清除此处设置的值。",
+        "用法: /api-key status · /api-key set <密钥> [--no-persist] · /api-key clear [--no-persist]",
+        "说明: 默认将密钥写入 user-data secrets/client_llm（与 Web 同源）；加 --no-persist 则仅本进程内存。",
+        "/config reload 不会清除本进程内存中的密钥；未设置环境变量 API_KEY 时可用此命令。",
     ]
 }
 
@@ -596,27 +659,60 @@ pub(crate) async fn api_key_status_lines_owned(
     }
 }
 
-pub(crate) fn api_key_clear_lines_owned(api_key_holder: &Arc<StdMutex<String>>) -> Vec<String> {
+pub(crate) fn api_key_clear_lines_owned_persist(
+    api_key_holder: &Arc<StdMutex<String>>,
+    persist: bool,
+) -> Vec<String> {
     api_key_holder
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clear();
-    vec!["[ok] 已清除本进程内存中的 LLM API 密钥（环境变量 API_KEY 不受影响）。".to_string()]
+    let mut msg = "[ok] 已清除本进程内存中的 LLM API 密钥（环境变量 API_KEY 不受影响）".to_string();
+    if persist {
+        match crate::user_data::write_secret_client_llm("") {
+            Ok(()) => msg.push_str("；已同步清除 user-data secrets/client_llm。"),
+            Err(e) => {
+                return vec![msg, format!("[err] 清除 user-data 密钥失败: {e}")];
+            }
+        }
+    } else {
+        msg.push_str("（--no-persist，未改 user-data）。");
+    }
+    vec![msg]
 }
 
 pub(crate) fn api_key_set_lines_owned(
     secret: String,
     api_key_holder: &Arc<StdMutex<String>>,
 ) -> Vec<String> {
+    let (secret, persist) = split_optional_no_persist(&secret);
+    api_key_set_lines_owned_persist(secret, api_key_holder, persist)
+}
+
+pub(crate) fn api_key_set_lines_owned_persist(
+    secret: String,
+    api_key_holder: &Arc<StdMutex<String>>,
+    persist: bool,
+) -> Vec<String> {
     if secret.len() > REPL_API_KEY_SLASH_MAX_CHARS {
-        vec![format!(
+        return vec![format!(
             "[err] 密钥过长（上限 {} 字符）。",
             REPL_API_KEY_SLASH_MAX_CHARS
-        )]
-    } else {
-        *api_key_holder.lock().unwrap_or_else(|e| e.into_inner()) = secret;
-        vec!["[ok] 已写入本进程 LLM API 密钥（仅存内存；值已隐藏）。".to_string()]
+        )];
     }
+    *api_key_holder.lock().unwrap_or_else(|e| e.into_inner()) = secret.clone();
+    let mut msg = "[ok] 已写入本进程 LLM API 密钥（值已隐藏）".to_string();
+    if persist {
+        match crate::user_data::write_secret_client_llm(&secret) {
+            Ok(()) => msg.push_str("；已写入 user-data secrets/client_llm。"),
+            Err(e) => {
+                return vec![msg, format!("[err] 写 user-data 失败: {e}")];
+            }
+        }
+    } else {
+        msg.push_str("（--no-persist，仅内存）。");
+    }
+    vec![msg]
 }
 
 fn slash_api_key_usage(style: &CliReplStyle) -> ReplSlashHandled {
@@ -642,14 +738,20 @@ async fn slash_api_key_status(
     ReplSlashHandled::Handled
 }
 
-fn slash_api_key_clear(
+fn slash_api_key_clear_persist(
     api_key_holder: &Arc<StdMutex<String>>,
     style: &CliReplStyle,
+    persist: bool,
 ) -> ReplSlashHandled {
-    let lines = api_key_clear_lines_owned(api_key_holder);
-    let line = lines.into_iter().next().unwrap_or_default();
-    if line.starts_with("[ok] ") {
-        let _ = style.print_success(line.strip_prefix("[ok] ").unwrap_or(&line));
+    let lines = api_key_clear_lines_owned_persist(api_key_holder, persist);
+    for line in lines {
+        if line.starts_with("[err] ") {
+            let _ = style.eprint_error(line.strip_prefix("[err] ").unwrap_or(&line));
+        } else if line.starts_with("[ok] ") {
+            let _ = style.print_success(line.strip_prefix("[ok] ").unwrap_or(&line));
+        } else {
+            let _ = style.print_line(&line);
+        }
     }
     ReplSlashHandled::Handled
 }
@@ -660,11 +762,14 @@ fn slash_api_key_set(
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
     let lines = api_key_set_lines_owned(secret, api_key_holder);
-    let line = lines.into_iter().next().unwrap_or_default();
-    if line.starts_with("[err] ") {
-        let _ = style.eprint_error(line.strip_prefix("[err] ").unwrap_or(&line));
-    } else if line.starts_with("[ok] ") {
-        let _ = style.print_success(line.strip_prefix("[ok] ").unwrap_or(&line));
+    for line in lines {
+        if line.starts_with("[err] ") {
+            let _ = style.eprint_error(line.strip_prefix("[err] ").unwrap_or(&line));
+        } else if line.starts_with("[ok] ") {
+            let _ = style.print_success(line.strip_prefix("[ok] ").unwrap_or(&line));
+        } else {
+            let _ = style.print_line(&line);
+        }
     }
     ReplSlashHandled::Handled
 }

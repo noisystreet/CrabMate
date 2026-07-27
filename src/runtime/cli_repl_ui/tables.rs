@@ -13,16 +13,16 @@ pub(super) const HELP_DESC_MIN: usize = 8;
 pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
     ("/clear", "清空对话，仅保留当前 system 提示词"),
     (
-        "/model · /model set <名称>",
-        "显示或写入内存中的 model（set 不校验 GET /models 列表；持久化请改配置）",
+        "/model · /model set <名称> [--no-persist]",
+        "显示或写入 model；默认写 user-data（与 Web 同源），--no-persist 仅本进程",
     ),
     (
-        "/api-base · /api-base set <url|预设id> · /apibase …",
-        "显示当前 api_base 与网关预设；写入内存中的 api_base（OpenAI 兼容网关根；持久化请改配置）",
+        "/api-base · /api-base set <url|预设id> [--no-persist] · /apibase …",
+        "显示或写入 api_base；默认写 user-data，--no-persist 仅本进程",
     ),
     (
-        "/api-key · /api-key status · /api-key set <密钥> · /api-key clear",
-        "本进程内存中的 LLM Bearer 密钥（不写盘；未 export API_KEY 时可用；/config reload 不清除）",
+        "/api-key · /api-key status · /api-key set <密钥> [--no-persist] · /api-key clear [--no-persist]",
+        "本进程 LLM Bearer 密钥；默认同步 user-data secrets/client_llm（与 Web 同源）",
     ),
     (
         "/config",
@@ -31,6 +31,14 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
     (
         "/config reload",
         "从磁盘+环境变量热重载可更字段（不含会话 SQLite 路径；详见文档）",
+    ),
+    (
+        "/context",
+        "本会话 tiktoken prompt 粗估与 llm_context_tokens / 字符预算（与 Web 底栏同源）",
+    ),
+    (
+        "/conv · /branch",
+        "多会话 / 分支（需 conversation_store_sqlite_path；与 TUI/Web 同源）",
     ),
     (
         "/doctor",
@@ -45,8 +53,8 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
         "列出 GET …/models 返回的模型 id（同 crabmate models；需 bearer 时依赖 API_KEY）",
     ),
     (
-        "/models choose <id>",
-        "从上述列表设当前 model（内存；支持唯一前缀；持久化请改配置）",
+        "/models choose <id> [--no-persist]",
+        "从上述列表设当前 model（默认写 user-data；支持唯一前缀）",
     ),
     (
         "/agent · /agent list",

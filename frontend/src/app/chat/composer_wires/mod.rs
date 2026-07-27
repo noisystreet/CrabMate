@@ -15,6 +15,7 @@ use self::helpers::{
     begin_stream_shell_turn, push_user_and_loading_assistant, user_line_and_clarify_from_shell,
 };
 use super::composer_follow_up::ComposerStreamFollowUp;
+use super::composer_slash_control::{WebSlashControlCtx, try_handle_web_control_slash};
 use super::composer_stream::{ComposerStreamHandles, make_attach_chat_stream};
 use super::handles::{
     ChatComposerWires, WireComposerStreamsArgs, WireComposerStreamsSessionSlice,
@@ -36,6 +37,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
         draft,
         selected_agent_role,
         agent_role_user_override,
+        apply_assistant_display_filters,
     } = session;
     let WireComposerStreamsStreamSlice {
         stream_shell,
@@ -63,6 +65,22 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             let text = draft.get_untracked().trim().to_string();
             let imgs = pending_images.get();
             let loc = locale_sig.get();
+            if imgs.is_empty()
+                && try_handle_web_control_slash(
+                    &text,
+                    &shell,
+                    WebSlashControlCtx {
+                        chat,
+                        locale: locale_sig,
+                        draft,
+                        selected_agent_role,
+                        agent_role_user_override,
+                        apply_assistant_display_filters,
+                    },
+                )
+            {
+                return;
+            }
             let Some((user_line, clarify_json)) =
                 user_line_and_clarify_from_shell(&shell, &text, loc)
             else {

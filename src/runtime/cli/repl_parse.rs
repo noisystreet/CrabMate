@@ -47,13 +47,17 @@ pub(crate) enum ReplBuiltIn<'a> {
     McpUnknown(String),
     /// `/version`：二进制与平台信息（不含密钥）
     Version,
+    /// `/context`：本会话 tiktoken 粗估与上下文上限
+    Context,
     /// `/api-key`：用法说明
     ApiKeyUsage,
     /// `/api-key status`
     ApiKeyStatus,
-    /// `/api-key clear`
-    ApiKeyClear,
-    /// `/api-key set <密钥>`：`set ` 后为完整密钥（仅本进程内存）
+    /// `/api-key clear`：清除内存密钥；默认同步清 user-data（`--no-persist` 则仅内存）
+    ApiKeyClear {
+        persist: bool,
+    },
+    /// `/api-key set <密钥>`：`set ` 后为完整密钥（默认写 user-data；`--no-persist` 仅内存）
     ApiKeySet(String),
     /// `/agent list`：列出内建 `default` 与配置中的命名角色 id
     AgentList,
@@ -293,8 +297,12 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
                 ReplBuiltIn::ApiKeyUsage
             } else if a.eq_ignore_ascii_case("status") {
                 ReplBuiltIn::ApiKeyStatus
-            } else if a.eq_ignore_ascii_case("clear") {
-                ReplBuiltIn::ApiKeyClear
+            } else if a.eq_ignore_ascii_case("clear")
+                || a.eq_ignore_ascii_case("clear --no-persist")
+            {
+                ReplBuiltIn::ApiKeyClear {
+                    persist: !a.to_ascii_lowercase().contains("--no-persist"),
+                }
             } else {
                 match parse_repl_set_tail(a) {
                     ReplSetTail::Value(s) => ReplBuiltIn::ApiKeySet(s.to_string()),
@@ -304,6 +312,7 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
         }
         "agent" => classify_agent_slash_command(arg),
         "version" => ReplBuiltIn::Version,
+        "context" => ReplBuiltIn::Context,
         _ => ReplBuiltIn::Unknown(head),
     })
 }
@@ -527,7 +536,7 @@ mod repl_slash_tests {
         );
         assert_eq!(
             classify_repl_slash_command("/api-key clear"),
-            Some(ReplBuiltIn::ApiKeyClear)
+            Some(ReplBuiltIn::ApiKeyClear { persist: true })
         );
         assert_eq!(
             classify_repl_slash_command("/API-KEY SET sk-test"),

@@ -218,6 +218,7 @@ pub struct WireComposerStreamsSessionSlice {
     pub draft: RwSignal<String>,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub apply_assistant_display_filters: RwSignal<bool>,
 }
 
 /// 流式发送路径的壳层与 UI 派生切片（与 SSE 回调、滚底、待发图共享）。
