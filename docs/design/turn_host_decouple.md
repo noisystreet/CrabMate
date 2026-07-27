@@ -48,8 +48,8 @@ crabmate-internal / crabmate-tools
 
 | 阶段 | 内容 | 预估 |
 |------|------|------|
-| **P0** | 本文入库；禁边脚本进门禁 | 本文 |
-| **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | 2–3 天 |
+| **P0** | 本文入库；禁边脚本进门禁 | **完成**（本文） |
+| **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
 | **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | 3–5 天 |
 | **P3** | 参数袋按片收窄（先 `DispatchToolParams` 嵌套重组；再入口子集；chat facet 依赖 P2） | 多 PR |
 | **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
@@ -81,9 +81,9 @@ crabmate-internal / crabmate-tools
 ## 验收清单（规划级）
 
 - [ ] `chat_job_queue` 不直接调用 `run_agent_turn`
-- [ ] `agent_turn/host` 不直接 `use …::dispatch_tool`（经 `ToolDispatch`）
-- [ ] 存在 mock `ToolDispatch` 最小外循环测试
-- [ ] 禁边脚本在 pre-commit 与 CI 中执行
+- [x] `agent_turn/host` 不直接 `use …::dispatch_tool`（经 `ToolDispatch` / `InternalToolDispatch`）
+- [x] 存在 mock `ToolDispatch` 最小分发测试（外循环 mock 留待后续）
+- [x] 禁边脚本在 pre-commit 与 CI 中执行
 - [ ] 对外 SSE / HTTP 字段无静默变更
 - [ ] CLI / TUI / Web 各至少一次真实回合冒烟
 
@@ -93,8 +93,9 @@ crabmate-internal / crabmate-tools
 |------|------|
 | `src/run_agent_turn.rs` | 对外装配入口 |
 | `src/agent/agent_turn/host/params.rs` | `RunLoopParams` 等 |
-| `src/agent/agent_turn/host/execute/tool_execution_host.rs` | 调 registry |
-| `src/agent/agent_turn/tool_execution_trait.rs` | `ToolExecutionHost` |
+| `src/agent/agent_turn/host/execute/tool_execution_host.rs` | 经 `ToolDispatch` 调 registry |
+| `src/agent/agent_turn/host/execute/tool_dispatch.rs` | `ToolDispatch` / `InternalToolDispatch` |
+| `src/agent/agent_turn/host/execute/tool_execution_trait.rs` | `ToolExecutionHost` |
 | `crates/crabmate-internal/src/tool_registry/` | `dispatch_tool` / `DispatchToolParams` |
 | `src/chat_job_queue/worker/` | Web 异步回合消费者 |
 | `src/web/app_state.rs` / `app_state_facets.rs` | Web 状态与 facet |

@@ -1,13 +1,15 @@
-//! 根包 [`ToolExecutionHost`] 实现（`tool_registry` + `workflow_execute`）。
+//! 根包 [`ToolExecutionHost`] 实现（经 [`InternalToolDispatch`] + `workflow_execute`）。
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
 
+use crate::agent::agent_turn::execute::tool_dispatch::InternalToolDispatch;
+use crate::agent::agent_turn::execute::tool_dispatch::ToolDispatch;
 use crate::agent::agent_turn::execute::tool_execution_trait::{
     ParallelPrefetchFailures, ParallelPrefetchParams, ToolExecutionHost,
 };
-use crabmate_internal::tool_registry::{self, DispatchToolParams, HandlerId, dispatch_tool};
+use crabmate_internal::tool_registry::{self, DispatchToolParams, HandlerId};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;
@@ -47,7 +49,7 @@ async fn prefetch_parallel_approval_failures_impl(
     prefetch_failures
 }
 
-/// 进程内默认工具执行宿主（串行批 `dispatch_tool` / `workflow_execute`）。
+/// 进程内默认工具执行宿主（串行批 `ToolDispatch` / `workflow_execute`）。
 pub struct CrabmateToolExecutionHost<'a> {
     pub per_coord: &'a mut PerCoordinator,
     pub request_chrome_trace: Option<Arc<RequestTurnTrace>>,
@@ -76,7 +78,7 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
             )
             .await
         } else {
-            dispatch_tool(p).await
+            InternalToolDispatch.dispatch(p).await
         }
     }
 
@@ -101,7 +103,7 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
                 None,
             );
         }
-        dispatch_tool(p).await
+        InternalToolDispatch.dispatch(p).await
     }
 
     async fn prefetch_parallel_approval_failures(
@@ -166,5 +168,5 @@ impl CrabmateParallelToolDispatch {
     }
 }
 
-/// 仅 `tool_registry::dispatch_tool`（无 `workflow_execute`）；供分层 Operator 等路径复用。
+/// 仅 registry [`ToolDispatch`]（无 `workflow_execute`）；供分层 Operator 等路径复用。
 pub use CrabmateParallelToolDispatch as CrabmateRegistryToolDispatch;
