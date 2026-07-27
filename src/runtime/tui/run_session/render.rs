@@ -23,6 +23,7 @@ pub(super) const STICK_NEAR_BOTTOM_ROWS: u16 = 2;
 pub(super) const STICK_UNPIN_GAP_ROWS: u16 = 4;
 
 /// 流式尾挂：推理始终可显；正文若已由 `[Turn 投影]` 承接则跳过，避免工具相双显。
+/// 不插入 `[assistant · 生成中]` 等角色标签（运行态在底栏右侧，对齐 Tauri）。
 pub(super) fn append_tui_streaming_tail(
     transcript: &str,
     scratch: &crate::runtime::tui::TuiLlmStreamScratch,
@@ -35,7 +36,7 @@ pub(super) fn append_tui_streaming_tail(
         return transcript.to_string();
     }
     let mut out = String::from(transcript);
-    out.push_str("\n────────────────────────────────\n[assistant · 生成中]\n\n");
+    out.push_str("\n\n");
     if !r.is_empty() {
         out.push_str("(推理) ");
         out.push_str(&truncate_chars_with_ellipsis(r, 8000));
@@ -68,18 +69,15 @@ pub(super) fn estimate_wrapped_line_rows(text: &str, inner_width: u16) -> usize 
 pub(super) enum ChatVerticalStickMode {
     /// 用户拖动滚轮/滚动条后的手动位置（仍 clamp 在合法范围内）。
     Manual,
-    /// 流式生成中贴底：**不加** slack，避免估算略高于真实折行时出现「底部大块空白」。
+    /// 流式生成中贴底（按估算折行的严格上限，不加 slack）。
     StreamStickBottom,
-    /// 回合结束、已用完整 transcript 重绘后的首帧贴底：允许 slack，缓解 `WordWrapper` 与 [`estimate_wrapped_line_rows`] 不一致导致的裁底。
+    /// 回合结束 / End / 发送后首帧贴底（同上，避免 slack 造成底部大块空白）。
     SnapAfterRefreshStickBottom,
 }
 
-/// 缓解 `WordWrapper` 与 [`estimate_wrapped_line_rows`] 的偏差；**仅**用于非流式时的滚动上限（含 [`ChatVerticalStickMode::Manual`]），流式贴底见 [`ChatVerticalStickMode::StreamStickBottom`]（slack=0）。
-fn snap_after_refresh_slack_rows(rows_base: usize) -> usize {
-    rows_base.saturating_mul(35).div_ceil(100).clamp(8, 120)
-}
-
 /// ratatui 0.29：`Paragraph::scroll` 的 `y` 不得大到使内部 `area.height + scroll_y` 溢出；也不得大于「总行数 − 视口行数」。
+///
+/// 曾对 Snap/Manual 加 35% slack 防「估算低估裁底」，但估算常偏高，slack 会在回答结束后留下大块空白；与流式一致只用严格上限。
 pub(super) fn clamped_chat_vertical_scroll(
     text: &str,
     inner_width: u16,
@@ -87,30 +85,24 @@ pub(super) fn clamped_chat_vertical_scroll(
     mode: ChatVerticalStickMode,
     manual_scroll_y: u16,
 ) -> u16 {
-    let rows_base = estimate_wrapped_line_rows(text, inner_width);
-    let vis = inner_height.max(1) as usize;
-    let slack = snap_after_refresh_slack_rows(rows_base);
-    let max_strict = rows_base.saturating_sub(vis).min(u16::MAX as usize) as u16;
-    let max_loose = rows_base
-        .saturating_add(slack)
-        .saturating_sub(vis)
-        .min(u16::MAX as usize) as u16;
+    let max_scroll = chat_max_scroll_strict(text, inner_width, inner_height);
     match mode {
-        ChatVerticalStickMode::Manual => manual_scroll_y.min(max_loose),
-        ChatVerticalStickMode::StreamStickBottom => max_strict,
-        ChatVerticalStickMode::SnapAfterRefreshStickBottom => max_loose,
+        ChatVerticalStickMode::Manual => manual_scroll_y.min(max_scroll),
+        ChatVerticalStickMode::StreamStickBottom
+        | ChatVerticalStickMode::SnapAfterRefreshStickBottom => max_scroll,
     }
 }
 
-/// Manual 模式下的滚动上限（含 slack），供近底 re-pin。
-pub(super) fn chat_manual_max_scroll(text: &str, inner_width: u16, inner_height: u16) -> u16 {
+/// 估算折行下的最大 `scroll_y`（无 slack）。
+pub(super) fn chat_max_scroll_strict(text: &str, inner_width: u16, inner_height: u16) -> u16 {
     let rows_base = estimate_wrapped_line_rows(text, inner_width);
     let vis = inner_height.max(1) as usize;
-    let slack = snap_after_refresh_slack_rows(rows_base);
-    rows_base
-        .saturating_add(slack)
-        .saturating_sub(vis)
-        .min(u16::MAX as usize) as u16
+    rows_base.saturating_sub(vis).min(u16::MAX as usize) as u16
+}
+
+/// Manual 模式下的滚动上限，供近底 re-pin（与贴底上限一致）。
+pub(super) fn chat_manual_max_scroll(text: &str, inner_width: u16, inner_height: u16) -> u16 {
+    chat_max_scroll_strict(text, inner_width, inner_height)
 }
 
 #[must_use]
@@ -672,5 +664,35 @@ mod tests {
         );
         assert!(model.chat_follow_bottom);
         assert!(!model.chat_snap_bottom_next_draw);
+    }
+
+    #[test]
+    fn snap_after_refresh_matches_stream_strict_bottom_no_slack_gap() {
+        // 长文：若仍加 35% slack，snap 会显著大于 stream，回答结束后底部出现大空隙。
+        let text = "hello world\n".repeat(80);
+        let stream_y = clamped_chat_vertical_scroll(
+            text.as_str(),
+            40,
+            10,
+            ChatVerticalStickMode::StreamStickBottom,
+            0,
+        );
+        let snap_y = clamped_chat_vertical_scroll(
+            text.as_str(),
+            40,
+            10,
+            ChatVerticalStickMode::SnapAfterRefreshStickBottom,
+            0,
+        );
+        let manual_cap = clamped_chat_vertical_scroll(
+            text.as_str(),
+            40,
+            10,
+            ChatVerticalStickMode::Manual,
+            u16::MAX,
+        );
+        assert_eq!(stream_y, snap_y);
+        assert_eq!(snap_y, manual_cap);
+        assert_eq!(snap_y, chat_max_scroll_strict(text.as_str(), 40, 10));
     }
 }
