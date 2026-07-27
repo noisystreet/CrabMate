@@ -207,18 +207,12 @@ fn chat_line_header_style(line: &str) -> Option<Style> {
 
 struct TuiChatPanePrep {
     chat_body: String,
-    streaming_nonempty: bool,
 }
 
 fn tui_prepare_chat_body_and_stream_flags(
     model: &TuiModel,
     scratch: &TuiLlmStreamScratch,
 ) -> TuiChatPanePrep {
-    let streaming_nonempty = !scratch.reasoning.trim().is_empty()
-        || (!scratch.content.trim().is_empty()
-            && !model
-                .turn_projection
-                .should_hide_streaming_content(scratch.content.as_str()));
     let mut transcript_display = model.transcript.clone();
     let projection = model.turn_projection.format_projection_block(Some(scratch));
     if !projection.is_empty() {
@@ -231,16 +225,10 @@ fn tui_prepare_chat_body_and_stream_flags(
     }
     let chat_body =
         append_tui_streaming_tail(transcript_display.as_str(), scratch, &model.turn_projection);
-    TuiChatPanePrep {
-        chat_body,
-        streaming_nonempty,
-    }
+    TuiChatPanePrep { chat_body }
 }
 
-fn tui_chat_stick_mode_after_snap_clear(
-    model: &mut TuiModel,
-    streaming_nonempty: bool,
-) -> ChatVerticalStickMode {
+fn tui_chat_stick_mode_after_snap_clear(model: &mut TuiModel) -> ChatVerticalStickMode {
     let snap_bottom_this_frame = model.chat_snap_bottom_next_draw;
     if snap_bottom_this_frame {
         model.chat_snap_bottom_next_draw = false;
@@ -248,7 +236,9 @@ fn tui_chat_stick_mode_after_snap_clear(
     }
     if snap_bottom_this_frame {
         ChatVerticalStickMode::SnapAfterRefreshStickBottom
-    } else if streaming_nonempty && model.chat_follow_bottom {
+    } else if model.chat_follow_bottom {
+        // 对齐 Web `auto_scroll_chat`：pin 后任意内容增高都贴底（用户消息入列、投影、流式尾），
+        // 不依赖 `streaming_nonempty`——否则 Enter 时 snap 常在用户气泡写入前被消费，随后退回 Manual。
         ChatVerticalStickMode::StreamStickBottom
     } else {
         ChatVerticalStickMode::Manual
@@ -279,10 +269,7 @@ fn render_tui_chat_pane(
     prep: TuiChatPanePrep,
     color: bool,
 ) {
-    let TuiChatPanePrep {
-        chat_body,
-        streaming_nonempty,
-    } = prep;
+    let TuiChatPanePrep { chat_body } = prep;
     let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
     let chat_inner = chat_block_inner_area(chat_pane);
     let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
@@ -290,7 +277,7 @@ fn render_tui_chat_pane(
     let th = text_rect.height.max(1);
     let rows_base = estimate_wrapped_line_rows(chat_body.as_str(), tw);
     let vis_lines = th as usize;
-    let stick_mode = tui_chat_stick_mode_after_snap_clear(model, streaming_nonempty);
+    let stick_mode = tui_chat_stick_mode_after_snap_clear(model);
     let chat_scroll_y =
         clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
     model.chat_scroll_y = chat_scroll_y;
@@ -727,22 +714,65 @@ mod tests {
             committed_turns: Default::default(),
         };
         assert_eq!(
-            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            tui_chat_stick_mode_after_snap_clear(&mut model),
             ChatVerticalStickMode::Manual
         );
         model.chat_follow_bottom = true;
         assert_eq!(
-            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            tui_chat_stick_mode_after_snap_clear(&mut model),
+            ChatVerticalStickMode::StreamStickBottom
+        );
+        // pin 后即使未流式也要贴底（用户消息入列窗口）
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model),
             ChatVerticalStickMode::StreamStickBottom
         );
         model.chat_snap_bottom_next_draw = true;
         model.chat_follow_bottom = false;
         assert_eq!(
-            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            tui_chat_stick_mode_after_snap_clear(&mut model),
             ChatVerticalStickMode::SnapAfterRefreshStickBottom
         );
         assert!(model.chat_follow_bottom);
         assert!(!model.chat_snap_bottom_next_draw);
+    }
+
+    #[test]
+    fn follow_pin_sticks_without_streaming_like_tauri() {
+        let mut model = TuiModel {
+            header_line: String::new(),
+            nav_summary: String::new(),
+            right_summary: String::new(),
+            transcript: String::new(),
+            chat_scroll_y: 0,
+            chat_snap_bottom_next_draw: false,
+            chat_follow_bottom: true,
+            chat_scrollbar_dragging: false,
+            input: String::new(),
+            status_chips: String::new(),
+            status_run: "就绪".into(),
+            focus: TuiFocus::default(),
+            approval_modal: None,
+            approval_backlog: Default::default(),
+            clarification_modal: None,
+            clarification_backlog: Default::default(),
+            workspace_path_buf: std::path::PathBuf::from("."),
+            workspace_modal: None,
+            sqlite_conversation_id: None,
+            recent_conversation_ids: Vec::new(),
+            control_plane_tail: String::new(),
+            turn_projection: TuiTurnProjection::default(),
+            committed_turns: Default::default(),
+        };
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model),
+            ChatVerticalStickMode::StreamStickBottom
+        );
+        model.chat_follow_bottom = false;
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model),
+            ChatVerticalStickMode::Manual
+        );
     }
 
     #[test]

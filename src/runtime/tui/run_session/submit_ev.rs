@@ -32,6 +32,10 @@ fn tui_make_submit_hooks(
     let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
         let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
         g.transcript = transcript::transcript_with_in_progress(&g.committed_turns, msgs);
+        // 对齐 Web `engage_follow_and_scroll_bottom`：用户气泡写入后再 snap（Enter 时的下一帧
+        // 往往早于本回调，仅靠那一次 snap 会贴在旧高度上）。
+        g.chat_follow_bottom = true;
+        g.chat_snap_bottom_next_draw = true;
         g.status_run = sidebar_text::tui_status_run_model_busy().to_string();
     });
     let model_for_hook = Arc::clone(model);
