@@ -29,6 +29,7 @@ fn push_block(model: &Arc<Mutex<TuiModel>>, lines: &[String]) {
         g.transcript.push('\n');
     }
     g.chat_snap_bottom_next_draw = true;
+    g.chat_follow_bottom = true;
 }
 
 async fn tui_sqlite_slash_refresh_ui(
@@ -104,7 +105,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                 )
                 .await;
                 let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-                g.status = format!("{} · /conv /branch", chips);
+                g.status_chips = format!("{chips} · /conv /branch");
             }
             Ok(true)
         }

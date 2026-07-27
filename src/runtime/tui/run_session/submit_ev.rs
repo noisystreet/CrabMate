@@ -1,7 +1,6 @@
 //! [`UiEvent::Submit`]：可选澄清空提交、`/` 斜杠命令、`repl_dispatch_chat_round` 与会话刷新。
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use reqwest::Client;
 
@@ -28,29 +27,20 @@ fn tui_make_submit_hooks(
     ReplAfterUserMessageEnqueuedCb,
     Arc<dyn Fn(bool) + Send + Sync>,
 ) {
-    let msg_len_turn = Arc::new(AtomicUsize::new(0));
-    let msg_len_for_cb = Arc::clone(&msg_len_turn);
     let model_refresh = Arc::clone(model);
     let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
-        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
         let t = transcript::messages_to_transcript(msgs);
         let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
         g.transcript = t;
-        let chips = g.status_chips.clone();
-        let suf = sidebar_text::tui_status_suffix_model_busy_lines(msgs.len());
-        g.status = sidebar_text::tui_status_bar_with_run(&chips, suf.as_str());
+        g.status_run = sidebar_text::tui_status_run_model_busy().to_string();
     });
     let model_for_hook = Arc::clone(model);
-    let msg_len_for_hook = Arc::clone(&msg_len_turn);
     let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
         let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
-        let chips = g.status_chips.clone();
-        let n = msg_len_for_hook.load(Ordering::SeqCst);
-        g.status = if running {
-            sidebar_text::tui_status_bar_with_run(&chips, "工具执行中…")
+        g.status_run = if running {
+            sidebar_text::tui_status_run_tool_busy().to_string()
         } else {
-            let suf = sidebar_text::tui_status_suffix_model_busy_lines(n.max(1));
-            sidebar_text::tui_status_bar_with_run(&chips, suf.as_str())
+            sidebar_text::tui_status_run_model_busy().to_string()
         };
     });
     (on_user_enqueued, tool_running_hook)

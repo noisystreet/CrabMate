@@ -1,7 +1,7 @@
 //! TUI 分区布局绘制与聊天区滚动估算。
 
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::scrollbar;
 use ratatui::text::{Line, Span};
@@ -16,6 +16,11 @@ use crate::text_util::truncate_chars_with_ellipsis;
 use super::approval;
 use super::turn_project::TuiTurnProjection;
 use super::{TuiFocus, TuiModel};
+
+/// 对齐 Web `STICK_NEAR_BOTTOM_GAP_PX`：距底 ≤ 此行数视为近底，可 re-pin。
+pub(super) const STICK_NEAR_BOTTOM_ROWS: u16 = 2;
+/// 对齐 Web `STICK_UNPIN_GAP_PX`：拖滚动条离底超过此行数则 unpin。
+pub(super) const STICK_UNPIN_GAP_ROWS: u16 = 4;
 
 /// 流式尾挂：推理始终可显；正文若已由 `[Turn 投影]` 承接则跳过，避免工具相双显。
 pub(super) fn append_tui_streaming_tail(
@@ -97,6 +102,42 @@ pub(super) fn clamped_chat_vertical_scroll(
     }
 }
 
+/// Manual 模式下的滚动上限（含 slack），供近底 re-pin。
+pub(super) fn chat_manual_max_scroll(text: &str, inner_width: u16, inner_height: u16) -> u16 {
+    let rows_base = estimate_wrapped_line_rows(text, inner_width);
+    let vis = inner_height.max(1) as usize;
+    let slack = snap_after_refresh_slack_rows(rows_base);
+    rows_base
+        .saturating_add(slack)
+        .saturating_sub(vis)
+        .min(u16::MAX as usize) as u16
+}
+
+#[must_use]
+pub(super) fn chat_scroll_gap_from_bottom(scroll_y: u16, max_scroll: u16) -> u16 {
+    max_scroll.saturating_sub(scroll_y)
+}
+
+#[must_use]
+pub(super) fn is_near_chat_bottom(gap_rows: u16) -> bool {
+    gap_rows <= STICK_NEAR_BOTTOM_ROWS
+}
+
+/// 拖滚动条：近底 re-pin；离底超过 unpin 阈值则 unpin（对齐 Web pointer 离底）。
+pub(super) fn apply_chat_scrollbar_follow_intent(
+    model: &mut TuiModel,
+    scroll_y: u16,
+    max_scroll: u16,
+) {
+    model.chat_scroll_y = scroll_y;
+    let gap = chat_scroll_gap_from_bottom(scroll_y, max_scroll);
+    if is_near_chat_bottom(gap) {
+        model.chat_follow_bottom = true;
+    } else if gap > STICK_UNPIN_GAP_ROWS {
+        model.chat_follow_bottom = false;
+    }
+}
+
 struct TuiChatPanePrep {
     chat_body: String,
     streaming_nonempty: bool,
@@ -136,13 +177,31 @@ fn tui_chat_stick_mode_after_snap_clear(
     let snap_bottom_this_frame = model.chat_snap_bottom_next_draw;
     if snap_bottom_this_frame {
         model.chat_snap_bottom_next_draw = false;
+        model.chat_follow_bottom = true;
     }
     if snap_bottom_this_frame {
         ChatVerticalStickMode::SnapAfterRefreshStickBottom
-    } else if streaming_nonempty {
+    } else if streaming_nonempty && model.chat_follow_bottom {
         ChatVerticalStickMode::StreamStickBottom
     } else {
         ChatVerticalStickMode::Manual
+    }
+}
+
+fn maybe_repin_chat_follow_near_bottom(
+    model: &mut TuiModel,
+    chat_body: &str,
+    tw: u16,
+    th: u16,
+    stick_mode: ChatVerticalStickMode,
+) {
+    if stick_mode != ChatVerticalStickMode::Manual {
+        return;
+    }
+    let max_scroll = chat_manual_max_scroll(chat_body, tw, th);
+    let gap = chat_scroll_gap_from_bottom(model.chat_scroll_y, max_scroll);
+    if is_near_chat_bottom(gap) {
+        model.chat_follow_bottom = true;
     }
 }
 
@@ -168,6 +227,7 @@ fn render_tui_chat_pane(
     let chat_scroll_y =
         clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
     model.chat_scroll_y = chat_scroll_y;
+    maybe_repin_chat_follow_near_bottom(model, chat_body.as_str(), tw, th, stick_mode);
 
     frame.render_widget(chat_block, chat_pane);
     let center_body = Paragraph::new(chat_body)
@@ -282,22 +342,76 @@ pub(super) fn render_full(
         model.focus == TuiFocus::SideRight,
     );
 
+    render_tui_status_bar(frame, vertical[2], model, color);
+
+    render_tui_modal_stack(frame, area, model, color);
+}
+
+fn status_run_kind(run: &str) -> &'static str {
+    if run.starts_with("错误") {
+        "error"
+    } else if run.starts_with("工具执行") {
+        "tool"
+    } else if run.starts_with("模型生成") {
+        "running"
+    } else {
+        "ready"
+    }
+}
+
+fn status_run_fg(color: bool, kind: &str) -> Color {
+    if !color {
+        return Color::Reset;
+    }
+    match kind {
+        "error" => Color::LightRed,
+        "tool" => Color::Cyan,
+        "running" => Color::Yellow,
+        _ => Color::LightGreen,
+    }
+}
+
+fn render_tui_status_bar(frame: &mut Frame<'_>, area: Rect, model: &TuiModel, color: bool) {
     let status_style = status_line_style(color);
     let status_block = Block::default().style(status_style);
-    let status_w = vertical[2].width.saturating_sub(2).max(8) as usize;
-    let status_text = truncate_chars_with_ellipsis(model.status.as_str(), status_w);
-    let status_line = if color {
+    let inner = status_block.inner(area);
+    frame.render_widget(status_block, area);
+    if inner.width == 0 {
+        return;
+    }
+
+    let run = model.status_run.as_str();
+    let run_cols = (UnicodeWidthStr::width(run) as u16)
+        .saturating_add(1)
+        .max(4);
+    let run_w = run_cols
+        .min(inner.width.saturating_div(2).max(4))
+        .min(inner.width);
+    let chips_w = inner.width.saturating_sub(run_w);
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Length(chips_w), Constraint::Length(run_w)])
+        .split(inner);
+
+    let chips_max = chunks[0].width.max(1) as usize;
+    let chips_text = truncate_chars_with_ellipsis(model.status_chips.as_str(), chips_max);
+    let chips_line = if color {
         Line::from(Span::styled(
-            status_text.as_str(),
+            chips_text.as_str(),
             Style::default().fg(Color::White),
         ))
     } else {
-        Line::from(status_text)
+        Line::from(chips_text)
     };
-    let status = Paragraph::new(status_line).block(status_block);
-    frame.render_widget(status, vertical[2]);
+    frame.render_widget(Paragraph::new(chips_line), chunks[0]);
 
-    render_tui_modal_stack(frame, area, model, color);
+    let kind = status_run_kind(run);
+    let run_fg = status_run_fg(color, kind);
+    let run_line = Line::from(Span::styled(run, Style::default().fg(run_fg)));
+    frame.render_widget(
+        Paragraph::new(run_line).alignment(Alignment::Right),
+        chunks[1],
+    );
 }
 
 fn render_top_bar(frame: &mut Frame<'_>, area: Rect, header: &str, color: bool) {
@@ -468,5 +582,95 @@ fn status_line_style(color: bool) -> Style {
         Style::default().bg(Color::DarkGray).fg(Color::White)
     } else {
         Style::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn near_bottom_gap_matches_web_rows() {
+        assert!(is_near_chat_bottom(0));
+        assert!(is_near_chat_bottom(STICK_NEAR_BOTTOM_ROWS));
+        assert!(!is_near_chat_bottom(STICK_NEAR_BOTTOM_ROWS + 1));
+    }
+
+    #[test]
+    fn scrollbar_follow_intent_pins_and_unpins() {
+        let mut model = TuiModel {
+            header_line: String::new(),
+            nav_summary: String::new(),
+            right_summary: String::new(),
+            transcript: String::new(),
+            chat_scroll_y: 0,
+            chat_snap_bottom_next_draw: false,
+            chat_follow_bottom: true,
+            chat_scrollbar_dragging: false,
+            input: String::new(),
+            status_chips: String::new(),
+            status_run: "就绪".into(),
+            focus: TuiFocus::default(),
+            approval_modal: None,
+            approval_backlog: Default::default(),
+            clarification_modal: None,
+            clarification_backlog: Default::default(),
+            workspace_path_buf: std::path::PathBuf::from("."),
+            workspace_modal: None,
+            sqlite_conversation_id: None,
+            control_plane_tail: String::new(),
+            turn_projection: TuiTurnProjection::default(),
+        };
+        apply_chat_scrollbar_follow_intent(&mut model, 0, 20);
+        assert!(!model.chat_follow_bottom);
+        assert_eq!(model.chat_scroll_y, 0);
+
+        apply_chat_scrollbar_follow_intent(&mut model, 19, 20);
+        assert!(model.chat_follow_bottom);
+        assert_eq!(model.chat_scroll_y, 19);
+    }
+
+    #[test]
+    fn stick_mode_respects_follow_pin() {
+        let mut model = TuiModel {
+            header_line: String::new(),
+            nav_summary: String::new(),
+            right_summary: String::new(),
+            transcript: String::new(),
+            chat_scroll_y: 0,
+            chat_snap_bottom_next_draw: false,
+            chat_follow_bottom: false,
+            chat_scrollbar_dragging: false,
+            input: String::new(),
+            status_chips: String::new(),
+            status_run: "就绪".into(),
+            focus: TuiFocus::default(),
+            approval_modal: None,
+            approval_backlog: Default::default(),
+            clarification_modal: None,
+            clarification_backlog: Default::default(),
+            workspace_path_buf: std::path::PathBuf::from("."),
+            workspace_modal: None,
+            sqlite_conversation_id: None,
+            control_plane_tail: String::new(),
+            turn_projection: TuiTurnProjection::default(),
+        };
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            ChatVerticalStickMode::Manual
+        );
+        model.chat_follow_bottom = true;
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            ChatVerticalStickMode::StreamStickBottom
+        );
+        model.chat_snap_bottom_next_draw = true;
+        model.chat_follow_bottom = false;
+        assert_eq!(
+            tui_chat_stick_mode_after_snap_clear(&mut model, true),
+            ChatVerticalStickMode::SnapAfterRefreshStickBottom
+        );
+        assert!(model.chat_follow_bottom);
+        assert!(!model.chat_snap_bottom_next_draw);
     }
 }

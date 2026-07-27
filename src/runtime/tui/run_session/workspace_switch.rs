@@ -47,7 +47,8 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
     {
         let chips = super::sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
         let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.status = format!("{} · 工作区: {}", chips, msg);
+        g.status_chips = format!("{chips} · 工作区: {msg}");
+        g.status_run = super::sidebar_text::tui_status_run_ready().to_string();
     }
 }
 
@@ -109,7 +110,7 @@ pub(super) async fn tui_apply_workspace_switch(
     g.nav_summary = nav;
     g.right_summary = right;
     g.workspace_path_buf = work_dir.clone();
-    g.status_chips = chips.clone();
-    g.status = super::sidebar_text::tui_status_bar_with_run(&chips, "就绪");
+    g.status_chips = chips;
+    g.status_run = super::sidebar_text::tui_status_run_ready().to_string();
     Ok(())
 }
