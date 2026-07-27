@@ -10,7 +10,11 @@
 
 - 独立 Web 微服务 / 独立仓库
 - 改 SSE 行协议或对外 HTTP 契约字段
-- 把 `run_agent_turn` / `chat_job_queue` 迁入 web-host（会与根包形成循环依赖）
+- 在**无**清晰依赖注入时把带状态 handler / 整包 `AppState` 硬迁入 web-host（孤儿规则仍适用）
+
+## 可评估（P2 后）
+
+- **`chat_job_queue`（或 worker）迁出根包 / 贴近 web-host**：`WebChatQueueDeps` 已注入 [`TurnRunner`](./turn_host_decouple.md)，queue **不再**硬连 `run_agent_turn`。迁模块时仍须处理：`AppState` / Facet 与 handler 同 crate（孤儿规则）、以及避免 web-host → internal。**尚未迁**；仅解除「必然循环」的调用边障碍。
 
 ## 阶段
 
@@ -22,15 +26,15 @@
 
 ### 为何 handler 未整包迁入 web-host
 
-axum `FromRef<Arc<AppState>> for Facet` 要求 **Facet 与 AppState 同 crate**（孤儿规则）。`AppState` / 队列 / `run_agent_turn` 仍在根包，故带状态的 handler 留在 `src/web/`；web-host 专责契约与 serve 壳。
+axum `FromRef<Arc<AppState>> for Facet` 要求 **Facet 与 AppState 同 crate**（孤儿规则）。`AppState` 仍在根包，故带状态的 handler 留在 `src/web/`；web-host 专责契约与 serve 壳。
 
-根因与解耦路线（`ToolDispatch` / `TurnRunner`）见 **`docs/design/turn_host_decouple.md`**。在 TurnRunner 注入完成前，**不要**强行把 `chat_job_queue` 迁入 web-host（见上方非目标）。
+回合执行面解耦（`ToolDispatch` / `TurnRunner`）见 **`docs/design/turn_host_decouple.md`**（P1/P2 已在根包落地注入边界）。
 
 ## 依赖方向
 
 ```text
 serve / cli_run（根包）
-  → 装配 AppState、域路由、鉴权中间件
+  → 装配 AppState、域路由、鉴权中间件、DefaultTurnRunner
   → crabmate_web_host::serve::{layer_protected_body_limit, mount_uploads_and_spa}
   → crabmate_web_host::routes::web_ui / http_types / …
 ```

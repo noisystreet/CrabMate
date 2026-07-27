@@ -4,7 +4,8 @@
 
 - **规划入库**：本文（PR-T0）
 - **相关已合**：agent_turn FSM / Sink（#696）、web-host A/B/C（#697）
-- **未做**：`ToolDispatch` / `TurnRunner` 注入（见下文阶段）
+- **P1 / P2**：本分支已落地 `ToolDispatch` 与 `TurnRunner`（queue 经注入调用）
+- **未做**：P3 参数袋收窄、P4 执行面落点、P5 handler/queue 迁出评估
 
 ## 目标
 
@@ -50,7 +51,7 @@ crabmate-internal / crabmate-tools
 |------|------|------|
 | **P0** | 本文入库；禁边脚本进门禁 | **完成**（本文） |
 | **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
-| **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | 3–5 天 |
+| **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | **完成**（本分支） |
 | **P3** | 参数袋按片收窄（先 `DispatchToolParams` 嵌套重组；再入口子集；chat facet 依赖 P2） | 多 PR |
 | **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
 | **P5** | 红利：更多 handler/queue 贴近 web-host；`tools` 拆子包等（另开 PR） | 后续 |
@@ -80,7 +81,7 @@ crabmate-internal / crabmate-tools
 
 ## 验收清单（规划级）
 
-- [ ] `chat_job_queue` 不直接调用 `run_agent_turn`
+- [x] `chat_job_queue` 不直接调用 `run_agent_turn`（经 `TurnRunner`）
 - [x] `agent_turn/host` 不直接 `use …::dispatch_tool`（经 `ToolDispatch` / `InternalToolDispatch`）
 - [x] 存在 mock `ToolDispatch` 最小分发测试（外循环 mock 留待后续）
 - [x] 禁边脚本在 pre-commit 与 CI 中执行
@@ -92,6 +93,7 @@ crabmate-internal / crabmate-tools
 | 路径 | 角色 |
 |------|------|
 | `src/run_agent_turn.rs` | 对外装配入口 |
+| `src/turn_runner.rs` | `TurnRunner` / `DefaultTurnRunner` |
 | `src/agent/agent_turn/host/params.rs` | `RunLoopParams` 等 |
 | `src/agent/agent_turn/host/execute/tool_execution_host.rs` | 经 `ToolDispatch` 调 registry |
 | `src/agent/agent_turn/host/execute/tool_dispatch.rs` | `ToolDispatch` / `InternalToolDispatch` |

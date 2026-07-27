@@ -44,4 +44,5 @@
 ## 后续（未做）
 
 - handler 侧剩余宽入口（chat/stream/async）逐步 facet 化——见 **`docs/design/web_host_extract.md`**
-- 打断 `chat_job_queue → run_agent_turn` 与 `host → dispatch_tool`（**`ToolDispatch` / `TurnRunner` 注入**）——见 **`docs/design/turn_host_decouple.md`**；完成后再评估将更多 handler 迁入 **`crabmate-web-host`**
+- **`ToolDispatch` / `TurnRunner` 注入（P1/P2）已落地**（见 **`docs/design/turn_host_decouple.md`**）；下一步可评估将更多 handler / queue 贴近 **`crabmate-web-host`**（仍受孤儿规则约束）
+- 参数袋收窄（P3）与执行面落点评估（P4）仍见 turn_host_decouple

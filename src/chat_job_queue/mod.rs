@@ -31,6 +31,7 @@ const RECENT_CAP: usize = 32;
 /// Web 队列任务执行所需的**运行时句柄**（与 [`crate::AppState`] 中会话/上传等字段解耦，便于单测与依赖边界清晰）。
 ///
 /// 会话落盘、审批会话表等经入队参数中的 [`WebChatJobAppFacet`] 完成（不再持有整包 [`crate::AppState`]）。
+/// 回合执行经 [`crate::TurnRunner`] 注入（默认 [`crate::DefaultTurnRunner`]），**禁止** worker 直接调用 `run_agent_turn`。
 #[derive(Clone)]
 pub(crate) struct WebChatQueueDeps {
     pub cfg: SharedAgentConfig,
@@ -44,6 +45,8 @@ pub(crate) struct WebChatQueueDeps {
     ///
     /// 仅用于测试；生产路径无需设置。生命周期由 `Box::leak` 保障（`&'static`）。
     pub llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
+    /// 回合执行面（默认转发 [`crate::run_agent_turn`]）。
+    pub turn_runner: Arc<dyn crate::TurnRunner>,
 }
 
 /// Web `client_llm.llm_thinking_mode` 解析后的本回合 **`thinking`** 策略覆盖（不写服务端磁盘配置）。

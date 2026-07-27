@@ -55,6 +55,7 @@ mod runtime;
 #[cfg(feature = "web")]
 pub mod test_serve;
 mod turn_replay_dump;
+mod turn_runner;
 pub use crabmate_agent::text_sanitize;
 pub use crabmate_types;
 pub use crabmate_types as types;
@@ -74,6 +75,8 @@ pub use run_agent_turn::run_agent_turn;
 use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+#[allow(unused_imports)] // `DefaultTurnRunner` 供文档与类型探查；装配走 `default_turn_runner`
+pub(crate) use turn_runner::{DefaultTurnRunner, TurnRunner, default_turn_runner};
 
 /// 回合传输与端点表现（SSE、取消、审批上下文、终端渲染等），与模型采样/路由覆盖解耦。
 pub struct AgentTurnTransport<'a> {

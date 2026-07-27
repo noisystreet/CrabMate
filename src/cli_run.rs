@@ -491,6 +491,7 @@ async fn build_serve_runtime_state(
         long_term_memory: long_term_memory.clone(),
         sse_stream_hub: Arc::clone(&sse_stream_hub),
         llm_backend: None,
+        turn_runner: crate::default_turn_runner(),
     });
     Ok(ServeRuntimeBuilt {
         uploads_dir: uploads_dir.clone(),
