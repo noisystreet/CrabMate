@@ -218,22 +218,32 @@ async fn serial_execute_one_tool_call(
             name.as_str(),
             tool_registry::DispatchToolParams {
                 runtime,
-                cfg: st.cfg,
-                effective_working_dir: st.effective_working_dir,
-                workspace_is_set: st.workspace_is_set,
-                name: &name,
-                args: &args,
-                sse_out_tx: st.control.out,
-                sse_control_mirror: st.control.sse_control_mirror.as_ref(),
-                tc,
-                read_file_turn_cache: st.read_file_turn_cache.clone(),
-                workspace_changelist: st.workspace_changelist.cloned(),
-                mcp_turn: st.mcp_turn,
-                turn_allow: st.turn_allow,
-                long_term_memory: st.long_term_memory.clone(),
-                long_term_memory_scope_id: st.long_term_memory_scope_id.clone(),
-                handler_lookup: &st.handler_lookup,
-                sync_default_sandbox_backend: &st.sync_default_sandbox_backend,
+                call: tool_registry::DispatchToolCall {
+                    name: &name,
+                    args: &args,
+                    tc,
+                },
+                workspace: tool_registry::DispatchToolWorkspace {
+                    effective_working_dir: st.effective_working_dir,
+                    workspace_is_set: st.workspace_is_set,
+                    workspace_changelist: st.workspace_changelist.cloned(),
+                },
+                policy: tool_registry::DispatchToolPolicy {
+                    cfg: st.cfg,
+                    turn_allow: st.turn_allow,
+                    handler_lookup: &st.handler_lookup,
+                    sync_default_sandbox_backend: &st.sync_default_sandbox_backend,
+                },
+                obs: tool_registry::DispatchToolObs {
+                    sse_out_tx: st.control.out,
+                    sse_control_mirror: st.control.sse_control_mirror.as_ref(),
+                },
+                memory: tool_registry::DispatchToolMemory {
+                    read_file_turn_cache: st.read_file_turn_cache.clone(),
+                    long_term_memory: st.long_term_memory.clone(),
+                    long_term_memory_scope_id: st.long_term_memory_scope_id.clone(),
+                    mcp_turn: st.mcp_turn,
+                },
             },
         )
         .await

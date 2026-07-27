@@ -4,8 +4,8 @@
 
 - **规划入库**：本文（PR-T0）
 - **相关已合**：agent_turn FSM / Sink（#696）、web-host A/B/C（#697）
-- **P1 / P2**：本分支已落地 `ToolDispatch` 与 `TurnRunner`（queue 经注入调用）
-- **未做**：P3 参数袋收窄、P4 执行面落点、P5 handler/queue 迁出评估
+- **P1 / P2 / P3a**：本分支已落地 `ToolDispatch`、`TurnRunner`，以及 `DispatchToolParams` 嵌套分组
+- **未做**：P3b–P3d、P4 执行面落点、P5 handler/queue 迁出评估
 
 ## 目标
 
@@ -52,7 +52,7 @@ crabmate-internal / crabmate-tools
 | **P0** | 本文入库；禁边脚本进门禁 | **完成**（本文） |
 | **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
 | **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | **完成**（本分支） |
-| **P3** | 参数袋按片收窄（先 `DispatchToolParams` 嵌套重组；再入口子集；chat facet 依赖 P2） | 多 PR |
+| **P3** | 参数袋按片收窄：先 `DispatchToolParams` 嵌套（**P3a 完成**）；再入口子集 / chat facet（P3b–d） | 多 PR |
 | **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
 | **P5** | 红利：更多 handler/queue 贴近 web-host；`tools` 拆子包等（另开 PR） | 后续 |
 
@@ -66,7 +66,9 @@ crabmate-internal / crabmate-tools
 
 ### P3 注意
 
-`RunLoopParams` 已拆 `Core` / `Io` / `Attach` / `Obs`（见 `host/params.rs`）。P3 重点是入口强制子集与 `DispatchToolParams` 嵌套，而非再拆同级分组。
+`RunLoopParams` 已拆 `Core` / `Io` / `Attach` / `Obs`（见 `host/params.rs`）。  
+**P3a（已完成）**：`DispatchToolParams` 顶层改为 `call` / `workspace` / `policy` / `obs` / `memory` 嵌套（字段不删）。  
+后续 P3 重点是入口强制子集与 chat facet，而非再拆同级分组。
 
 ## 建议 PR 切片
 

@@ -66,14 +66,14 @@ impl ToolExecutionHost for CrabmateToolExecutionHost<'_> {
         name: &str,
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>) {
-        if p.handler_lookup.id_for(name) == HandlerId::Workflow {
+        if p.policy.handler_lookup.id_for(name) == HandlerId::Workflow {
             workflow_tool_dispatch::dispatch_workflow_execute_tool(
                 p.runtime,
                 self.per_coord,
-                p.cfg,
-                p.effective_working_dir,
-                p.workspace_is_set,
-                p.args,
+                p.policy.cfg,
+                p.workspace.effective_working_dir,
+                p.workspace.workspace_is_set,
+                p.call.args,
                 self.request_chrome_trace.clone(),
             )
             .await
@@ -97,7 +97,7 @@ impl ToolExecutionHost for CrabmateParallelToolDispatch {
         name: &str,
         p: DispatchToolParams<'_>,
     ) -> (String, Option<serde_json::Value>) {
-        if p.handler_lookup.id_for(name) == HandlerId::Workflow {
+        if p.policy.handler_lookup.id_for(name) == HandlerId::Workflow {
             return (
                 "错误：并行只读批不支持 workflow_execute。".to_string(),
                 None,

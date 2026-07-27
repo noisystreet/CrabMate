@@ -30,7 +30,10 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    use crate::tool_registry::{CliToolRuntime, HandlerLookupTable, ToolRuntime};
+    use crate::tool_registry::{
+        CliToolRuntime, DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
+        DispatchToolPolicy, DispatchToolWorkspace, HandlerLookupTable, ToolRuntime,
+    };
     use crate::tool_sandbox::default_sync_default_sandbox_backend;
     use crabmate_config::load_config;
     use crabmate_types::{FunctionCall, ToolCall};
@@ -78,22 +81,32 @@ mod tests {
         let (out, inject) = mock
             .dispatch(DispatchToolParams {
                 runtime,
-                cfg: &cfg,
-                effective_working_dir: wd,
-                workspace_is_set: true,
-                name: "get_current_time",
-                args: "{}",
-                sse_out_tx: None,
-                sse_control_mirror: None,
-                tc: &tc,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                mcp_turn: None,
-                turn_allow: None,
-                long_term_memory: None,
-                long_term_memory_scope_id: None,
-                handler_lookup: &lookup,
-                sync_default_sandbox_backend: &sandbox,
+                call: DispatchToolCall {
+                    name: "get_current_time",
+                    args: "{}",
+                    tc: &tc,
+                },
+                workspace: DispatchToolWorkspace {
+                    effective_working_dir: wd,
+                    workspace_is_set: true,
+                    workspace_changelist: None,
+                },
+                policy: DispatchToolPolicy {
+                    cfg: &cfg,
+                    turn_allow: None,
+                    handler_lookup: &lookup,
+                    sync_default_sandbox_backend: &sandbox,
+                },
+                obs: DispatchToolObs {
+                    sse_out_tx: None,
+                    sse_control_mirror: None,
+                },
+                memory: DispatchToolMemory {
+                    read_file_turn_cache: None,
+                    long_term_memory: None,
+                    long_term_memory_scope_id: None,
+                    mcp_turn: None,
+                },
             })
             .await;
         assert_eq!(out, "mock-tool-ok");

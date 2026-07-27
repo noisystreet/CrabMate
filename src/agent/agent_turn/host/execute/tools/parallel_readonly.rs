@@ -228,22 +228,32 @@ async fn parallel_collect_unique_results(
                             name.as_str(),
                             tool_registry::DispatchToolParams {
                                 runtime,
-                                cfg: &cfg,
-                                effective_working_dir: wd.as_path(),
-                                workspace_is_set: true,
-                                name: &name,
-                                args: &args,
-                                sse_out_tx: None,
-                                sse_control_mirror: None,
-                                tc: &tc_owned,
-                                read_file_turn_cache: rfc.clone(),
-                                workspace_changelist: wcl.clone(),
-                                mcp_turn: None,
-                                turn_allow,
-                                long_term_memory: ltm.clone(),
-                                long_term_memory_scope_id: ltm_scope.clone(),
-                                handler_lookup: &hl,
-                                sync_default_sandbox_backend: &sb,
+                                call: tool_registry::DispatchToolCall {
+                                    name: &name,
+                                    args: &args,
+                                    tc: &tc_owned,
+                                },
+                                workspace: tool_registry::DispatchToolWorkspace {
+                                    effective_working_dir: wd.as_path(),
+                                    workspace_is_set: true,
+                                    workspace_changelist: wcl.clone(),
+                                },
+                                policy: tool_registry::DispatchToolPolicy {
+                                    cfg: &cfg,
+                                    turn_allow,
+                                    handler_lookup: &hl,
+                                    sync_default_sandbox_backend: &sb,
+                                },
+                                obs: tool_registry::DispatchToolObs {
+                                    sse_out_tx: None,
+                                    sse_control_mirror: None,
+                                },
+                                memory: tool_registry::DispatchToolMemory {
+                                    read_file_turn_cache: rfc.clone(),
+                                    long_term_memory: ltm.clone(),
+                                    long_term_memory_scope_id: ltm_scope.clone(),
+                                    mcp_turn: None,
+                                },
                             },
                         )
                         .await
