@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**；**§9 左右侧栏语义对齐**已落地）。  
+**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**；**§9 左右侧栏**与 **§10 跟底意图**已落地）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -77,6 +77,7 @@
 | 终答 | 工具批后写入投影正文（无 `[终答]` 标签） | `turn-final-answer` + overlay |
 | 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
 | 绘制 | 旁白/终答纯正文；工具 `▸ name  summary` 着色 | per-section DOM + 局部 patch |
+| 跟底意图 | pin + 上滑 unpin；下滑 gap≤UNPIN / 近底 / 发送 / End re-pin（见 `resolve_chat_follow_after_user_scroll`） | `auto_scroll_chat` + wheel/pointer/`scroll_follow` |
 | 导出默认 | 默认仍 `projection=raw`；可选 `--projection display` / slash `display` | UI 导出多为 `display` |
 
 ---
@@ -164,7 +165,7 @@
 | 5 | ~~Phase 5 导出~~ | 已落地 |
 | 6 | ~~Phase 6 自动化回归~~ | 已落地 |
 
-**推荐下一刀**：无；中区投影与 §9 侧栏维护时保持相关单测绿。
+**推荐下一刀**：会话切换后历史行序（`/conv open` reseed）；跟底与侧栏见 §9–§10。
 
 ---
 
@@ -196,6 +197,21 @@
 | 右：工作区 | 路径、任务、变更预览；快捷键在设置 | 路径短示 + Enter；「任务清单」「变更预览」短摘要；设置 slash 一行 | 文件树、视图切换器、快捷键墙、工具计数 |
 
 **触点**：`sidebar_text.rs`、`workspace_sidebar_extra.rs`；刷新路径 `refresh.rs` / 启动 `mod.rs` / `/conv` `sqlite_slash.rs`。
+
+---
+
+## 10. 跟底意图对齐（与 Web `scroll_shell`）
+
+| 意图 | Web | 终端 TUI |
+|------|-----|----------|
+| 发送 / End | `engage_follow_and_scroll_bottom` | Enter / End → pin + snap；用户入列后再 snap |
+| 上滑 unpin | wheel↑ / Home / 查找 | 滚轮↑ / PgUp / Home（TUI 无查找栏） |
+| 下滑 re-pin | `scrolled_down && gap ≤ UNPIN` 或近底 | `note_chat_user_scroll_down` + `resolve_chat_follow_after_user_scroll`（滚轮↓ / PgDn） |
+| 拖滚动条 | pointer 离底 > UNPIN → unpin；近底 pin | `apply_chat_scrollbar_follow_intent` |
+| pin 后增高 | ResizeObserver / paint 贴底 | 每帧 `chat_follow_bottom` → `StreamStickBottom` |
+
+**触点**：`chat_follow.rs`（意图）、`render.rs`（贴底绘制）、`mod.rs`（滚轮 / PgUp/PgDn / Home）。  
+**验收**：`scroll_down_repins_within_unpin_gap_like_web`；`scroll_up_unpins_and_clears_scroll_down_flag`。
 
 ---
 
