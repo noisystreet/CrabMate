@@ -10,6 +10,9 @@ use ratatui::widgets::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use crate::runtime::message_display::{
+    assistant_markdown_source_for_display, assistant_raw_markdown_body_from_parts,
+};
 use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 use crate::text_util::truncate_chars_with_ellipsis;
 
@@ -22,8 +25,8 @@ pub(super) const STICK_NEAR_BOTTOM_ROWS: u16 = 2;
 /// 对齐 Web `STICK_UNPIN_GAP_PX`：拖滚动条离底超过此行数则 unpin。
 pub(super) const STICK_UNPIN_GAP_ROWS: u16 = 4;
 
-/// 流式尾挂：推理始终可显；正文若已由 `[Turn 投影]` 承接则跳过，避免工具相双显。
-/// 不插入 `[assistant · 生成中]` 等角色标签（运行态在底栏右侧，对齐 Tauri）。
+/// 流式尾挂：形状与 [`super::transcript::messages_to_transcript`] 的 assistant 块一致
+///（`[assistant]\n{body}\n\n`），避免收束后文字跳位；运行态仍只在底栏右侧。
 pub(super) fn append_tui_streaming_tail(
     transcript: &str,
     scratch: &crate::runtime::tui::TuiLlmStreamScratch,
@@ -32,21 +35,39 @@ pub(super) fn append_tui_streaming_tail(
     let r = scratch.reasoning.trim();
     let c = scratch.content.trim();
     let hide_content = projection.should_hide_streaming_content(c);
-    if r.is_empty() && (c.is_empty() || hide_content) {
+    let body = streaming_assistant_body_matching_transcript(r, c, hide_content);
+    if body.is_empty() {
         return transcript.to_string();
     }
     let mut out = String::from(transcript);
-    out.push_str("\n\n");
-    if !r.is_empty() {
-        out.push_str("(推理) ");
-        out.push_str(&truncate_chars_with_ellipsis(r, 8000));
-        out.push_str("\n\n");
-    }
-    if !c.is_empty() && !hide_content {
-        out.push_str(&truncate_chars_with_ellipsis(c, 12000));
+    // transcript 通常已以 `\n\n` 结尾；勿再多插空行，否则相对终态会下移。
+    if !out.is_empty() && !out.ends_with('\n') {
         out.push('\n');
     }
+    out.push_str("[assistant]\n");
+    out.push_str(body.as_str());
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push('\n');
     out
+}
+
+/// 与终态 `assistant_markdown_source_for_message` 同源组装，截断上限对齐 transcript。
+fn streaming_assistant_body_matching_transcript(
+    reasoning: &str,
+    content: &str,
+    hide_content: bool,
+) -> String {
+    let c = if hide_content { "" } else { content };
+    let raw = assistant_raw_markdown_body_from_parts(reasoning, c);
+    let t = assistant_markdown_source_for_display(&raw);
+    let trimmed = t.trim();
+    if trimmed.is_empty() {
+        String::new()
+    } else {
+        truncate_chars_with_ellipsis(trimmed, 12_000)
+    }
 }
 
 /// 粗算 `Paragraph` + `Wrap` 下的总行数（与 ratatui `WordWrapper` 不完全一致；用于 **限制 scroll_y**，避免 `area.height + scroll_y` 的 `u16` 溢出与 panic）。
@@ -694,5 +715,30 @@ mod tests {
         assert_eq!(stream_y, snap_y);
         assert_eq!(snap_y, manual_cap);
         assert_eq!(snap_y, chat_max_scroll_strict(text.as_str(), 40, 10));
+    }
+
+    #[test]
+    fn streaming_tail_matches_transcript_assistant_shape() {
+        let transcript = "[user]\nhi\n\n";
+        let scratch = crate::runtime::tui::TuiLlmStreamScratch {
+            reasoning: String::new(),
+            content: "你好，世界".into(),
+        };
+        let projection = TuiTurnProjection::default();
+        let out = append_tui_streaming_tail(transcript, &scratch, &projection);
+        assert!(
+            out.starts_with("[user]\nhi\n\n[assistant]\n"),
+            "stream must use [assistant] header like final transcript: {out:?}"
+        );
+        assert!(out.contains("你好，世界"), "stream body missing: {out:?}");
+        assert!(
+            out.ends_with("\n\n"),
+            "stream must end with blank line like messages_to_transcript: {out:?}"
+        );
+        // 勿在 transcript 已有 `\n\n` 后再多插一空行
+        assert!(
+            !out.contains("[user]\nhi\n\n\n[assistant]"),
+            "extra blank before [assistant] shifts text vs final: {out:?}"
+        );
     }
 }
