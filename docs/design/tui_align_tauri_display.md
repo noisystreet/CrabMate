@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 已落地**；**Phase 1–2 已落地**；后续阶段未承诺工期）。  
+**状态**：路线图（**P1–P4 已落地**；**Phase 1–3 已落地**；后续阶段未承诺工期）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -75,7 +75,7 @@
 |----|----------|-------------|
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
 | 终答 | 工具批结束后进投影 `[终答]`（对齐 `turn-final-answer`） | `turn-final-answer` + overlay |
-| 控制面附录 | 仍有 `[SSE 控制面]`（工具行易与投影重复） | 事件变成独立消息行 |
+| 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
 | 绘制 | 整块 `Paragraph` 字符串 | per-section DOM + 局部 patch |
 | 导出默认 | `projection=raw` | UI 导出多为 `display` |
 
@@ -111,17 +111,13 @@
 
 **验收**：`post_tool_final_answer_lands_in_projection_not_streaming_tail`；工具批结束后终答在投影区工具之后。
 
-### Phase 3 — 收敛 `[SSE 控制面]`
+### Phase 3 — 收敛 `[SSE 控制面]`（已落地）
 
 **问题**：投影已含工具名/摘要时，控制面「· 工具 ·」行重复。
 
-**方向**：
+**落地**：`sse_mirror::format_sse_payload_one_line` 对 `ToolCall` / `ToolResult` / `ToolRunning` / `ToolOutputChunk` / `ParsingToolCalls` 及已投影的 `timeline_log` kind 返回 `None`；保留错误、思维迹与其余 timeline。
 
-- 默认附录仅保留：错误、审批、澄清、意图时间线、与投影无关的 `timeline_log`。  
-- `ToolCall` / `ToolResult` / `ParsingToolCalls` 等已投影事件 → 不追加控制面（或 `--debug-sse` 才显示）。  
-- 文档同步：`docs/命令行与路由.md` / TUI 模块注释。
-
-**验收**：常规多工具回合中区无「投影工具 + 控制面工具」双列噪音。
+**验收**：`projected_tool_events_skip_control_plane_appendix`；常规多工具回合无「投影工具 + 控制面工具」双列。
 
 ### Phase 4 — 按行渲染（ratatouille 列表）
 
@@ -174,11 +170,11 @@
 |------|-------|----------------|
 | 1 | ~~Phase 1 历史 flush~~ | 已落地 |
 | 2 | ~~Phase 2 终答投影~~ | 已落地 |
-| 3 | Phase 3 控制面收敛 | 小 PR，行为变更需在文档点一句 |
+| 3 | ~~Phase 3 控制面收敛~~ | 已落地 |
 | 4 | Phase 4 按行渲染 | 可拆「仅投影区 List」与「全 transcript List」 |
 | 5 | Phase 5–6 | 可并行：导出选项 vs 金样/CI |
 
-**推荐下一刀**：Phase 3（收敛 `[SSE 控制面]` 工具噪音）。
+**推荐下一刀**：Phase 4（投影区按行 List 渲染）。
 
 ---
 
@@ -186,7 +182,7 @@
 
 - [x] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
 - [x] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
-- [ ] 常规回合控制面无成对工具噪音（Phase 3）。  
+- [x] 常规回合控制面无成对工具噪音（Phase 3）。  
 - [ ] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答测例挂 CI。  
 - [ ] 变更 turn-layout / 投影文案时同步 **`docs/Turn布局设计.md`** 与本文「已落地」表。
 
