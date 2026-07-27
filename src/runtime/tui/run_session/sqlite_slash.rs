@@ -11,14 +11,13 @@ use crate::types::Message;
 
 use super::TuiModel;
 use super::refresh::{TuiAfterChatRoundRefresh, tui_refresh_after_chat_round};
+use super::sidebar_text;
 use super::sqlite_session::TuiSqliteSessionState;
 
 pub(super) struct TuiSqliteSlashEnv<'a> {
     pub(super) cfg_holder: &'a SharedAgentConfig,
     pub(super) model: &'a Arc<Mutex<TuiModel>>,
     pub(super) work_dir: &'a std::path::Path,
-    pub(super) tool_count: usize,
-    pub(super) cli_no_stream: bool,
     pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
@@ -44,8 +43,6 @@ async fn tui_sqlite_slash_refresh_ui(
         work_dir: env.work_dir,
         agent_role_owned,
         messages,
-        tool_count: env.tool_count,
-        cli_no_stream: env.cli_no_stream,
         sqlite_persist: None,
         process_handles: env.process_handles,
     })
@@ -94,18 +91,39 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                     .is_some_and(|s| matches!(s, "open" | "new"));
             if refresh {
                 if let Some(sess) = sqlite_slot.as_ref() {
+                    let recent = sidebar_text::tui_recent_conversation_ids(Some(sess));
                     let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
                     g.sqlite_conversation_id = Some(sess.conversation_id.clone());
+                    g.recent_conversation_ids = recent;
                 }
                 tui_sqlite_slash_refresh_ui(env, messages.as_slice(), agent_role_owned).await;
             } else if trimmed.starts_with("/conv") || trimmed.starts_with("/branch") {
-                let chips = super::sidebar_text::tui_status_chips_line_with_messages(
+                // `/conv list` 等也可能改变可见列表；刷新左栏缓存与文案
+                let recent = sqlite_slot
+                    .as_ref()
+                    .map(|sess| sidebar_text::tui_recent_conversation_ids(Some(sess)))
+                    .unwrap_or_default();
+                let tui_load_nav = env
+                    .cfg_holder
+                    .read()
+                    .await
+                    .session_ui
+                    .tui_load_session_on_start;
+                let chips = sidebar_text::tui_status_chips_line_with_messages(
                     env.cfg_holder,
                     agent_role_owned,
                     messages,
                 )
                 .await;
                 let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
+                g.recent_conversation_ids = recent.clone();
+                g.nav_summary = sidebar_text::build_tui_session_sidebar(
+                    tui_load_nav,
+                    workspace_session::session_file_path(env.work_dir).exists(),
+                    messages.len(),
+                    g.sqlite_conversation_id.as_deref(),
+                    &recent,
+                );
                 g.status_chips = format!("{chips} · /conv /branch");
             }
             Ok(true)

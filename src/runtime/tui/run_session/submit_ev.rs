@@ -91,8 +91,6 @@ pub(super) async fn tui_run_submit_ev(
             cfg_holder: ctx.cfg_holder,
             model: ctx.model,
             work_dir: ctx.work_dir.as_path(),
-            tool_count: ctx.tools.len(),
-            cli_no_stream: ctx.cli_no_stream,
             process_handles: &ctx.process_handles,
         },
     )
@@ -179,8 +177,6 @@ pub(super) async fn tui_run_submit_ev(
         work_dir: ctx.work_dir.as_path(),
         agent_role_owned: ctx.agent_role_owned,
         messages: ctx.messages.as_slice(),
-        tool_count: ctx.tools.len(),
-        cli_no_stream: ctx.cli_no_stream,
         sqlite_persist: Some(&mut ctx.sqlite_session),
         process_handles: &ctx.process_handles,
     })

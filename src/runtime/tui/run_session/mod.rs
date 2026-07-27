@@ -14,7 +14,7 @@
 //!
 //! **撰写区**：按单元格宽度自动换行（**`unicode-width`**）；溢出保留底部行；**「撰写」** 聚焦时显示插入光标。
 //!
-//! **底栏**：对齐 Web / Tauri `status-bar`（左 chips · 右运行态）；快捷键说明在右侧栏。
+//! **底栏**：对齐 Web / Tauri `status-bar`（左 chips · 右运行态）；快捷键见 `/help`（右栏不再堆快捷键墙）。
 //!
 //! **聊天区**：溢出时右侧滚动条；可拖动（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
 //! 跟底 pin（[`TuiModel::chat_follow_bottom`]）对齐 Web `auto_scroll_chat`：上滑 unpin，近底 / 发送 / End re-pin。
@@ -241,7 +241,7 @@ struct TuiModel {
     header_line: String,
     /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
     nav_summary: String,
-    /// 右栏：工作区路径 + 快捷键 / 工具提示（对齐 Web 右侧工作区）
+    /// 右栏：工作区路径 + 任务清单 / 变更预览（对齐 Web 右侧工作区语义）。
     right_summary: String,
     transcript: String,
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
@@ -271,6 +271,8 @@ struct TuiModel {
     workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
     /// 已启用 **`conversation_store_sqlite_path`** 时当前 **`conversation_id`**（左栏与会话命令同源）。
     sqlite_conversation_id: Option<String>,
+    /// 最近会话 id 缓存（左栏「最近会话」；有 SQLite 时刷新）。
+    recent_conversation_ids: Vec<String>,
     /// 本轮 SSE 控制面镜像（无 HTTP 通道时与 Web `SsePayload` 对齐）。
     control_plane_tail: String,
     /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
@@ -285,8 +287,6 @@ struct TuiSlashUiRefresh<'a> {
     work_dir: &'a std::path::Path,
     agent_role_owned: &'a Option<String>,
     message_count: usize,
-    tool_count: usize,
-    cli_no_stream: bool,
     captured: Vec<String>,
     process_handles: &'a Arc<ProcessHandles>,
 }
@@ -354,8 +354,6 @@ pub(super) async fn tui_try_consume_slash_submit(
         work_dir: ctx.work_dir.as_path(),
         agent_role_owned: ctx.agent_role_owned,
         message_count: ctx.messages.len(),
-        tool_count: ctx.tools.len(),
-        cli_no_stream: ctx.cli_no_stream,
         captured,
         process_handles: ctx.process_handles,
     })
@@ -370,27 +368,27 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         work_dir,
         agent_role_owned,
         message_count,
-        tool_count,
-        cli_no_stream,
         captured,
         process_handles,
     } = p;
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let sqlite_nav = {
+    let (sqlite_nav, recent_ids) = {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.sqlite_conversation_id.as_deref().map(|s| s.to_string())
+        (
+            g.sqlite_conversation_id.as_deref().map(|s| s.to_string()),
+            g.recent_conversation_ids.clone(),
+        )
     };
     let nav = sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         message_count,
         sqlite_nav.as_deref(),
+        &recent_ids,
     );
     let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
         work_dir,
-        tool_count,
-        cli_no_stream,
         process_handles,
         cfg_holder,
         sqlite_nav.as_deref(),
@@ -485,16 +483,16 @@ pub async fn run_tui_session(
 
     let header_line = tui_header_summary(work_dir.as_path());
     let sqlite_id_nav = sqlite_sess.as_ref().map(|s| s.conversation_id.as_str());
+    let recent_conversation_ids = sidebar_text::tui_recent_conversation_ids(sqlite_sess.as_ref());
     let nav_summary = sidebar_text::build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
         sqlite_id_nav,
+        &recent_conversation_ids,
     );
     let right_summary = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
         work_dir.as_path(),
-        tools.len(),
-        cli_no_stream,
         &process_handles,
         cfg_holder,
         sqlite_id_nav,
@@ -530,6 +528,7 @@ pub async fn run_tui_session(
         workspace_path_buf: work_dir.clone(),
         workspace_modal: None,
         sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
+        recent_conversation_ids,
         control_plane_tail: String::new(),
         turn_projection: turn_project::TuiTurnProjection::default(),
         committed_turns,

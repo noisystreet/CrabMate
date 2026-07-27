@@ -1,46 +1,83 @@
 //! TUI 侧栏 / 状态栏字符串拼装（从 [`super`](crate::runtime::tui::run_session) 拆分以降低 `mod.rs` 物理行数）。
+//!
+//! 左栏 / 右栏文案对齐 Web/Tauri 分区语义（会话列表、任务清单、变更预览）；不复刻 DOM。
 
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::text_util::truncate_chars_with_ellipsis;
 
-/// 左侧会话栏（对齐 Web：会话在左）。
+use super::sqlite_session::TuiSqliteSessionState;
+
+/// 从 SQLite 会话态拉取最近 id（失败或未启用时为空）。
+pub(in crate::runtime::tui::run_session) fn tui_recent_conversation_ids(
+    sess: Option<&TuiSqliteSessionState>,
+) -> Vec<String> {
+    sess.and_then(|s| s.list_recent_ids(12).ok())
+        .unwrap_or_default()
+}
+
+/// 左侧会话栏（对齐 Web `nav-rail`：会话在左、最近列表）。
 pub(in crate::runtime::tui::run_session) fn build_tui_session_sidebar(
     tui_load_on_start: bool,
     session_file_exists: bool,
     message_count: usize,
     sqlite_conversation_id: Option<&str>,
+    recent_conversation_ids: &[String],
 ) -> String {
-    let sess = if session_file_exists { "有" } else { "无" };
-    let load = if tui_load_on_start { "开" } else { "关" };
-    let sqlite_block = if let Some(id) = sqlite_conversation_id
+    let mut out = String::from("会话\n\n");
+    out.push_str("最近会话\n");
+    let current = sqlite_conversation_id
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        let short = truncate_chars_with_ellipsis(id, 40);
-        format!("\n\nSQLite 会话\n{short}\n（/conv、/branch）")
+        .filter(|s| !s.is_empty());
+    if recent_conversation_ids.is_empty() {
+        if let Some(id) = current {
+            out.push_str("* ");
+            out.push_str(&truncate_chars_with_ellipsis(id, 36));
+            out.push('\n');
+        } else {
+            let sess = if session_file_exists { "有" } else { "无" };
+            let load = if tui_load_on_start { "开" } else { "关" };
+            out.push_str(&format!(
+                "（未启用 SQLite）\n本地文件 {sess} · 启动加载 {load}\n"
+            ));
+        }
     } else {
-        String::new()
-    };
-    format!(
-        "会话\n\n会话文件\ntui_session.json：{sess}\n启动加载：{load}\n\n内存消息\n{message_count} 条（含 system / 工具）{sqlite_block}\n\n中区仅展示 transcript\n可见尾部",
-    )
+        for id in recent_conversation_ids.iter().take(12) {
+            let id = id.trim();
+            if id.is_empty() {
+                continue;
+            }
+            let short = truncate_chars_with_ellipsis(id, 36);
+            if current == Some(id) {
+                out.push_str("* ");
+            } else {
+                out.push_str("  ");
+            }
+            out.push_str(&short);
+            out.push('\n');
+        }
+        if recent_conversation_ids.len() > 12 {
+            out.push_str(&format!("  … 共 {} 个\n", recent_conversation_ids.len()));
+        }
+    }
+    out.push('\n');
+    out.push_str(&format!("{message_count} 条\n"));
+    out.push_str("/conv list · open · new · /branch\n");
+    out
 }
 
-/// 右侧工作区栏 + 任务提示（对齐 Web：工作区在右）。
+/// 右侧工作区栏路径与操作提示（任务/变更由 [`super::workspace_sidebar_extra`] 追加）。
+///
+/// 对齐 Web：路径短示 + Enter 改路径；快捷键不进右栏（见 `/help` / 设置）。
 pub(in crate::runtime::tui::run_session) fn build_tui_workspace_sidebar(
     work_dir: &std::path::Path,
-    tool_count: usize,
-    cli_no_stream: bool,
 ) -> String {
     let wd = work_dir.display().to_string();
     let wd_short = truncate_chars_with_ellipsis(&wd, 40);
-    format!(
-        "工作区\n{wd_short}\n\n聚焦本栏按 Enter：浏览/编辑路径\n（与 Web 侧栏工作区、REPL /workspace 同源校验）\n\n快捷键\n{}\n\n敏感工具审批：全屏 Modal（↑↓ · Enter · Esc · 1/2/3）。\n\n已加载工具：{tool_count} 个",
-        tui_keyboard_help_compact(cli_no_stream),
-    )
+    format!("工作区\n{wd_short}\n\nEnter：浏览/编辑路径\n")
 }
 
-/// 原底栏文案迁至侧栏；与 `--no-stream` 对齐 REPL 提示。
+/// 原底栏文案；仍供 `/help` 或其它提示复用（右栏不再堆快捷键）。
+#[allow(dead_code)] // 保留给 `/help` 文案复用；右栏已不再展示快捷键墙
 pub(in crate::runtime::tui::run_session) fn tui_keyboard_help_compact(
     cli_no_stream: bool,
 ) -> String {
@@ -122,4 +159,40 @@ pub(in crate::runtime::tui::run_session) fn tui_status_run_error(detail: &str) -
 
 pub(in crate::runtime::tui::run_session) fn tui_use_ansi_color() -> bool {
     std::env::var_os("NO_COLOR").is_none()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_sidebar_lists_recent_with_current_star() {
+        let s = build_tui_session_sidebar(
+            true,
+            true,
+            3,
+            Some("conv-current"),
+            &[
+                "conv-current".into(),
+                "conv-older".into(),
+                "conv-third".into(),
+            ],
+        );
+        assert!(s.contains("最近会话"), "{s}");
+        assert!(s.contains("* conv-current"), "{s}");
+        assert!(s.contains("  conv-older"), "{s}");
+        assert!(s.contains("3 条"), "{s}");
+        assert!(s.contains("/conv list"), "{s}");
+        assert!(!s.contains("中区仅展示"), "{s}");
+        assert!(!s.contains("transcript"), "{s}");
+    }
+
+    #[test]
+    fn workspace_sidebar_is_path_only_no_hotkeys_wall() {
+        let s = build_tui_workspace_sidebar(std::path::Path::new("/tmp/ws"));
+        assert!(s.contains("工作区"), "{s}");
+        assert!(s.contains("Enter：浏览/编辑路径"), "{s}");
+        assert!(!s.contains("快捷键"), "{s}");
+        assert!(!s.contains("已加载工具"), "{s}");
+    }
 }

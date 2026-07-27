@@ -18,8 +18,6 @@ pub(super) struct TuiAfterChatRoundRefresh<'a> {
     pub work_dir: &'a std::path::Path,
     pub agent_role_owned: &'a Option<String>,
     pub messages: &'a [Message],
-    pub tool_count: usize,
-    pub cli_no_stream: bool,
     pub sqlite_persist: Option<&'a mut Option<&'a mut sqlite_session::TuiSqliteSessionState>>,
     pub process_handles: &'a Arc<ProcessHandles>,
 }
@@ -31,36 +29,41 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
         work_dir,
         agent_role_owned,
         messages,
-        tool_count,
-        cli_no_stream,
         sqlite_persist,
         process_handles,
     } = p;
-    let persist_note = if let Some(sqlite_slot) = sqlite_persist
-        && let Some(sess) = sqlite_slot.as_mut()
-    {
-        (*sess)
-            .persist_round(messages, agent_role_owned.as_deref())
-            .err()
+    let (persist_note, recent_from_db) = if let Some(sqlite_slot) = sqlite_persist {
+        if let Some(sess) = sqlite_slot.as_mut() {
+            let note = (*sess)
+                .persist_round(messages, agent_role_owned.as_deref())
+                .err();
+            let recent = sidebar_text::tui_recent_conversation_ids(Some(sess));
+            (note, Some(recent))
+        } else {
+            (None, None)
+        }
     } else {
-        None
+        (None, None)
     };
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let sqlite_nav = {
+    let (sqlite_nav, cached_recent) = {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.sqlite_conversation_id.clone()
+        (
+            g.sqlite_conversation_id.clone(),
+            g.recent_conversation_ids.clone(),
+        )
     };
+    let recent_ids = recent_from_db.unwrap_or(cached_recent);
     let nav = sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
         sqlite_nav.as_deref(),
+        &recent_ids,
     );
     let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
         work_dir,
-        tool_count,
-        cli_no_stream,
         process_handles,
         cfg_holder,
         sqlite_nav.as_deref(),
@@ -83,6 +86,7 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
+    g.recent_conversation_ids = recent_ids;
     g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips;
     g.status_run = match persist_note {
