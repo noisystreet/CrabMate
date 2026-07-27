@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 已落地**，见 PR / 分支 `feat/tui-align-tauri-display`；后续阶段未承诺工期）。  
+**状态**：路线图（**P1–P4 已落地**；**Phase 1（历史 flush）已落地**；后续阶段未承诺工期）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -73,7 +73,7 @@
 
 | 点 | 终端 TUI | Web / Tauri |
 |----|----------|-------------|
-| 历史回合行序 | 多轮仍偏 `Message[]` 落盘序 + 本轮投影块 | 全程 `StoredMessage` 投影 id |
+| 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
 | 终答 | 多靠 `[assistant · 生成中]` scratch | `turn-final-answer` + overlay |
 | 控制面附录 | 仍有 `[SSE 控制面]`（工具行易与投影重复） | 事件变成独立消息行 |
 | 绘制 | 整块 `Paragraph` 字符串 | per-section DOM + 局部 patch |
@@ -94,18 +94,14 @@
 | P3 | 流式旁白不双显 | 工具相不出现「投影 + 生成中」同文 |
 | P4 | 金样行序 | `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` |
 
-### Phase 1 — 历史回合并入投影语义
+### Phase 1 — 历史回合并入投影语义（已落地）
 
 **问题**：回合结束后只靠 `messages_to_transcript(Message[])` 刷新，本轮投影块清空后，历史旁白/工具序可能退回 OpenAI 落盘序。
 
-**方向（择一或组合）**：
+**落地**：`transcript::CommittedTurns`；`submit_ev` 在 `finalize_for_display` 后 `flush_completed_turn` 再 `reset`；有投影时定稿为 user 前缀 → `[Turn 投影]` → 终答后缀（跳过 `tool` / 含 `tool_calls` 的 assistant）。会话切换 `msg_len` 不一致时 reseed Message[]。
 
-1. **回合结束 flush**：`finalize_for_display` 后把 `project_turn_web_v2` 行格式化进 `TuiModel` 的「已定稿投影附录」或拼进 transcript 尾部，再 `reset` reducer。  
-2. **读路径重建**：从会话消息尝试重建 turn（难；仅适合有 segment 元数据时）。优先 (1)。  
-3. 长期：会话落盘旁路写入 display 行（与 Web `StoredMessage` 对齐）——触及存储契约，需单独 ADR。
-
-**主要触点**：`submit_ev.rs`（回合后）、`transcript.rs`、`turn_project.rs`。  
-**验收**：同一多工具回合，结束后刷新中区，旁白仍在对应工具之前（无需依赖本轮未 reset 的 reducer）。
+**主要触点**：`submit_ev.rs`、`transcript.rs`、`mod.rs`（`TuiModel::committed_turns`）。  
+**验收**：`flush_keeps_commentary_before_tool_after_projection_reset`；同一多工具回合结束后旁白仍在工具前。
 
 ### Phase 2 — 终答进入投影
 
@@ -180,19 +176,19 @@
 
 | 顺序 | Phase | 建议 PR 粒度 |
 |------|-------|----------------|
-| 1 | Phase 1 历史 flush | 单 PR，可含单测「回合后附录仍含旁白→工具」 |
+| 1 | ~~Phase 1 历史 flush~~ | 已落地 |
 | 2 | Phase 2 终答投影 | 单 PR，依赖 Phase 1 附录形状 |
 | 3 | Phase 3 控制面收敛 | 小 PR，行为变更需在文档点一句 |
 | 4 | Phase 4 按行渲染 | 可拆「仅投影区 List」与「全 transcript List」 |
 | 5 | Phase 5–6 | 可并行：导出选项 vs 金样/CI |
 
-**推荐下一刀**：Phase 1（回合结束把投影并入 transcript / 定稿附录），与已合并的 P1–P4 同一故事线，改动面仍在 `turn_project` / `transcript` / `submit_ev`。
+**推荐下一刀**：Phase 2（终答进入投影）。
 
 ---
 
 ## 7. 验收清单（维护者）
 
-- [ ] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
+- [x] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
 - [ ] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
 - [ ] 常规回合控制面无成对工具噪音（Phase 3）。  
 - [ ] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答测例挂 CI。  

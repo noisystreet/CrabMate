@@ -9,8 +9,9 @@ use crate::runtime::workspace_session;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::types::Message;
 
+use super::TuiModel;
+use super::refresh::{TuiAfterChatRoundRefresh, tui_refresh_after_chat_round};
 use super::sqlite_session::TuiSqliteSessionState;
-use super::{TuiAfterChatRoundRefresh, TuiModel, tui_refresh_after_chat_round};
 
 pub(super) struct TuiSqliteSlashEnv<'a> {
     pub(super) cfg_holder: &'a SharedAgentConfig,

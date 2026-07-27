@@ -633,6 +633,7 @@ mod tests {
             sqlite_conversation_id: None,
             control_plane_tail: String::new(),
             turn_projection: TuiTurnProjection::default(),
+            committed_turns: Default::default(),
         };
         apply_chat_scrollbar_follow_intent(&mut model, 0, 20);
         assert!(!model.chat_follow_bottom);
@@ -667,6 +668,7 @@ mod tests {
             sqlite_conversation_id: None,
             control_plane_tail: String::new(),
             turn_projection: TuiTurnProjection::default(),
+            committed_turns: Default::default(),
         };
         assert_eq!(
             tui_chat_stick_mode_after_snap_clear(&mut model, true),

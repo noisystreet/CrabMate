@@ -15,10 +15,11 @@ use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::tool_registry::CliToolRuntime;
 use crate::types::{Message, Tool};
 
+use super::refresh::{TuiAfterChatRoundRefresh, tui_refresh_after_chat_round};
 use super::{
-    TuiAfterChatRoundRefresh, TuiClarificationShared, TuiModel, TuiSlashSubmit, sidebar_text,
+    TuiClarificationShared, TuiModel, TuiSlashSubmit, sidebar_text,
     sqlite_slash::{TuiSqliteSlashEnv, tui_try_consume_sqlite_slash},
-    transcript, tui_refresh_after_chat_round, tui_try_consume_slash_submit,
+    transcript, tui_try_consume_slash_submit,
 };
 
 fn tui_make_submit_hooks(
@@ -29,9 +30,8 @@ fn tui_make_submit_hooks(
 ) {
     let model_refresh = Arc::clone(model);
     let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
-        let t = transcript::messages_to_transcript(msgs);
         let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
-        g.transcript = t;
+        g.transcript = transcript::transcript_with_in_progress(&g.committed_turns, msgs);
         g.status_run = sidebar_text::tui_status_run_model_busy().to_string();
     });
     let model_for_hook = Arc::clone(model);
@@ -164,6 +164,12 @@ pub(super) async fn tui_run_submit_ev(
         {
             let mut m = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
             m.turn_projection.finalize_for_display(&s);
+            let projection_snapshot = std::mem::take(&mut m.turn_projection);
+            m.committed_turns
+                .flush_completed_turn(ctx.messages.as_slice(), &projection_snapshot);
+            // `take` 已清空本轮投影；再显式 default 以对齐 reset 语义
+            m.turn_projection = Default::default();
+            m.control_plane_tail.clear();
         }
         s.clear();
     }
