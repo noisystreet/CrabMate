@@ -166,16 +166,28 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
     None
 }
 
-/// TUI 行缓存指纹：同一条 `tool` 消息在「assistant 已带上 tool_calls」前后，展示可能多出一节 `summarize_tool_call` 摘要。
-/// **TUI / 导出**：在 [`tool_content_for_display`] 之上，为 `role: tool` 追加与 Web 一致的 `summarize_tool_call` 摘要
-///（依赖历史中**对条** assistant 的 `tool_calls`）。
+/// **TUI / 导出**：优先 [`crabmate_tool_card::tool_stored_text_from_envelope`] compact
+///（与 Web/Tauri `StoredMessage.text` / 快照 `display_content` 同源）；解析失败时回退
+/// [`tool_content_for_display`] + `summarize_tool_call` 前缀。
 pub fn tool_content_for_display_for_message(
     raw: &str,
     messages: &[Message],
     tool_msg_idx: usize,
 ) -> String {
+    let call = find_tool_call_for_display(messages, tool_msg_idx);
+    let name_hint = call.as_ref().map(|(n, _)| n.as_str());
+    if let Some(stored) = crabmate_tool_card::tool_stored_text_from_envelope(
+        raw,
+        name_hint,
+        crabmate_tool_card::ToolCardLocale::ZhHans,
+    ) {
+        let compact = stored.compact.trim();
+        if !compact.is_empty() {
+            return compact.to_string();
+        }
+    }
     let body = tool_content_for_display(raw);
-    let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) else {
+    let Some((name, args)) = call else {
         return body;
     };
     let Some(prefix) = crabmate_tools::tools::summarize_tool_call(&name, &args) else {
@@ -588,6 +600,47 @@ mod tests {
         let out = tool_content_for_display_for_message(raw, &messages, 2);
         assert_eq!(out, "ls");
         assert!(!out.contains(TOOL_OUTPUT_SECTION_HEADLINE));
+    }
+
+    #[test]
+    fn tool_for_message_prefers_tool_card_compact_from_envelope() {
+        let envelope = r#"{"crabmate_tool":{"v":1,"name":"read_file","summary":"读：a.rs","ok":true,"output":"content"}}"#;
+        let messages = vec![
+            Message::user_only("hi"),
+            Message {
+                role: "assistant".into(),
+                content: Some("read".into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "c1".into(),
+                    typ: "function".into(),
+                    function: FunctionCall {
+                        name: "read_file".into(),
+                        arguments: r#"{"path":"a.rs"}"#.into(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+            Message {
+                role: "tool".into(),
+                content: Some(envelope.into()),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("c1".into()),
+            },
+        ];
+        let out = tool_content_for_display_for_message(envelope, &messages, 2);
+        let web = crabmate_tool_card::tool_stored_text_from_envelope(
+            envelope,
+            Some("read_file"),
+            crabmate_tool_card::ToolCardLocale::ZhHans,
+        )
+        .expect("envelope");
+        assert_eq!(out, web.compact);
     }
 
     #[test]
