@@ -1,4 +1,6 @@
 //! 根包工具执行宿主 trait（依赖 `tool_registry` 运行时类型，故置于编排层而非 `crabmate-agent`）。
+//!
+//! 非 workflow 路径经 [`super::tool_dispatch::ToolDispatch`] 间接调用 registry。
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -26,7 +28,7 @@ pub struct ParallelPrefetchParams<'a> {
     pub handler_lookup: &'a HandlerLookupTable,
 }
 
-/// 根包实现的工具分发（`tool_registry::dispatch_tool` 与 `workflow_execute` 等）。
+/// 根包实现的工具分发（经 [`super::ToolDispatch`] 与 `workflow_execute` 等）。
 #[async_trait]
 pub trait ToolExecutionHost: Send + Sync {
     async fn dispatch_tool_call(
