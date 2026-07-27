@@ -1,4 +1,5 @@
-//! TUI 中区 transcript：与 Web 快照一致的过滤与 [`crate::runtime::message_display`] 展示路径。
+//! TUI 中区 transcript：与 Web 快照一致的过滤与 [`crate::runtime::message_display`] 展示路径
+//!（工具条优先 `crabmate-tool-card` compact，与 Tauri/Web 同源）。
 
 use crate::runtime::message_display::{
     assistant_markdown_source_for_message, tool_content_for_display_for_message,
