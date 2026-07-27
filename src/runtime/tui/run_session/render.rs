@@ -17,13 +17,16 @@ use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 use crate::text_util::truncate_chars_with_ellipsis;
 
 use super::approval;
+use super::chat_follow::{
+    chat_scroll_gap_from_bottom, is_near_chat_bottom, resolve_chat_follow_after_user_scroll,
+};
 use super::turn_project::TuiTurnProjection;
 use super::{TuiFocus, TuiModel};
 
-/// 对齐 Web `STICK_NEAR_BOTTOM_GAP_PX`：距底 ≤ 此行数视为近底，可 re-pin。
-pub(super) const STICK_NEAR_BOTTOM_ROWS: u16 = 2;
-/// 对齐 Web `STICK_UNPIN_GAP_PX`：拖滚动条离底超过此行数则 unpin。
-pub(super) const STICK_UNPIN_GAP_ROWS: u16 = 4;
+/// 跟底意图 API（供 `mod.rs` 以 `render::` 调用，实现见 [`super::chat_follow`]）。
+pub(super) use super::chat_follow::{
+    apply_chat_scrollbar_follow_intent, note_chat_user_scroll_down, note_chat_user_scroll_up,
+};
 
 /// 流式尾挂：形状与 [`super::transcript::messages_to_transcript`] 的 assistant 块一致
 ///（`[assistant]\n{body}\n\n`），避免收束后文字跳位；运行态仍只在底栏右侧。
@@ -124,31 +127,6 @@ pub(super) fn chat_max_scroll_strict(text: &str, inner_width: u16, inner_height:
 /// Manual 模式下的滚动上限，供近底 re-pin（与贴底上限一致）。
 pub(super) fn chat_manual_max_scroll(text: &str, inner_width: u16, inner_height: u16) -> u16 {
     chat_max_scroll_strict(text, inner_width, inner_height)
-}
-
-#[must_use]
-pub(super) fn chat_scroll_gap_from_bottom(scroll_y: u16, max_scroll: u16) -> u16 {
-    max_scroll.saturating_sub(scroll_y)
-}
-
-#[must_use]
-pub(super) fn is_near_chat_bottom(gap_rows: u16) -> bool {
-    gap_rows <= STICK_NEAR_BOTTOM_ROWS
-}
-
-/// 拖滚动条：近底 re-pin；离底超过 unpin 阈值则 unpin（对齐 Web pointer 离底）。
-pub(super) fn apply_chat_scrollbar_follow_intent(
-    model: &mut TuiModel,
-    scroll_y: u16,
-    max_scroll: u16,
-) {
-    model.chat_scroll_y = scroll_y;
-    let gap = chat_scroll_gap_from_bottom(scroll_y, max_scroll);
-    if is_near_chat_bottom(gap) {
-        model.chat_follow_bottom = true;
-    } else if gap > STICK_UNPIN_GAP_ROWS {
-        model.chat_follow_bottom = false;
-    }
 }
 
 /// 聊天区按行着色（旁白 / 工具 / 终答 / 角色头）；`color=false`（含 `NO_COLOR`）时纯文本。
@@ -252,6 +230,7 @@ fn maybe_repin_chat_follow_near_bottom(
     th: u16,
     stick_mode: ChatVerticalStickMode,
 ) {
+    // 主动下滑已在 stick 前由 [`resolve_chat_follow_after_user_scroll`] 处理；此处兜底 clamp 后近底。
     if stick_mode != ChatVerticalStickMode::Manual {
         return;
     }
@@ -277,6 +256,9 @@ fn render_tui_chat_pane(
     let th = text_rect.height.max(1);
     let rows_base = estimate_wrapped_line_rows(chat_body.as_str(), tw);
     let vis_lines = th as usize;
+    let max_scroll = chat_max_scroll_strict(chat_body.as_str(), tw, th);
+    // 须在 stick_mode 之前：下滑 re-pin 后本帧即可 StreamStickBottom
+    resolve_chat_follow_after_user_scroll(model, max_scroll);
     let stick_mode = tui_chat_stick_mode_after_snap_clear(model);
     let chat_scroll_y =
         clamped_chat_vertical_scroll(chat_body.as_str(), tw, th, stick_mode, model.chat_scroll_y);
@@ -644,49 +626,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn near_bottom_gap_matches_web_rows() {
-        assert!(is_near_chat_bottom(0));
-        assert!(is_near_chat_bottom(STICK_NEAR_BOTTOM_ROWS));
-        assert!(!is_near_chat_bottom(STICK_NEAR_BOTTOM_ROWS + 1));
-    }
-
-    #[test]
-    fn scrollbar_follow_intent_pins_and_unpins() {
-        let mut model = TuiModel {
-            header_line: String::new(),
-            nav_summary: String::new(),
-            right_summary: String::new(),
-            transcript: String::new(),
-            chat_scroll_y: 0,
-            chat_snap_bottom_next_draw: false,
-            chat_follow_bottom: true,
-            chat_scrollbar_dragging: false,
-            input: String::new(),
-            status_chips: String::new(),
-            status_run: "就绪".into(),
-            focus: TuiFocus::default(),
-            approval_modal: None,
-            approval_backlog: Default::default(),
-            clarification_modal: None,
-            clarification_backlog: Default::default(),
-            workspace_path_buf: std::path::PathBuf::from("."),
-            workspace_modal: None,
-            sqlite_conversation_id: None,
-            recent_conversation_ids: Vec::new(),
-            control_plane_tail: String::new(),
-            turn_projection: TuiTurnProjection::default(),
-            committed_turns: Default::default(),
-        };
-        apply_chat_scrollbar_follow_intent(&mut model, 0, 20);
-        assert!(!model.chat_follow_bottom);
-        assert_eq!(model.chat_scroll_y, 0);
-
-        apply_chat_scrollbar_follow_intent(&mut model, 19, 20);
-        assert!(model.chat_follow_bottom);
-        assert_eq!(model.chat_scroll_y, 19);
-    }
-
-    #[test]
     fn stick_mode_respects_follow_pin() {
         let mut model = TuiModel {
             header_line: String::new(),
@@ -696,6 +635,7 @@ mod tests {
             chat_scroll_y: 0,
             chat_snap_bottom_next_draw: false,
             chat_follow_bottom: false,
+            chat_user_scroll_down: false,
             chat_scrollbar_dragging: false,
             input: String::new(),
             status_chips: String::new(),
@@ -747,6 +687,7 @@ mod tests {
             chat_scroll_y: 0,
             chat_snap_bottom_next_draw: false,
             chat_follow_bottom: true,
+            chat_user_scroll_down: false,
             chat_scrollbar_dragging: false,
             input: String::new(),
             status_chips: String::new(),

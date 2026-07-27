@@ -17,9 +17,11 @@
 //! **底栏**：对齐 Web / Tauri `status-bar`（左 chips · 右运行态）；快捷键见 `/help`（右栏不再堆快捷键墙）。
 //!
 //! **聊天区**：溢出时右侧滚动条；可拖动（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
-//! 跟底 pin（[`TuiModel::chat_follow_bottom`]）对齐 Web `auto_scroll_chat`：上滑 unpin，近底 / 发送 / End re-pin。
+//! 跟底 pin（[`TuiModel::chat_follow_bottom`]）对齐 Web `auto_scroll_chat`：上滑 unpin；
+//! 近底 / 下滑回阈值 / 发送 / End re-pin。
 
 mod approval;
+mod chat_follow;
 mod clarify_modal;
 mod poll_loop;
 mod refresh;
@@ -249,8 +251,10 @@ struct TuiModel {
     chat_scroll_y: u16,
     /// 回合刷新 transcript 后下一帧按当前布局写入真实贴底 `chat_scroll_y`（见 [`render::render_full`]）。
     chat_snap_bottom_next_draw: bool,
-    /// 与 Web `auto_scroll_chat` 同源：`true` = 流式/增高时贴底；上滑 unpin，近底 re-pin。
+    /// 与 Web `auto_scroll_chat` 同源：`true` = 流式/增高时贴底；上滑 unpin，近底 / 下滑回阈值 re-pin。
     chat_follow_bottom: bool,
+    /// 用户主动下滑（滚轮↓ / PgDn）：下一帧按 gap 判定是否 re-pin（对齐 Web `scrolled_down`）。
+    chat_user_scroll_down: bool,
     /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
     chat_scrollbar_dragging: bool,
     input: String,
@@ -516,6 +520,7 @@ pub async fn run_tui_session(
         chat_scroll_y: 0,
         chat_snap_bottom_next_draw: false,
         chat_follow_bottom: true,
+        chat_user_scroll_down: false,
         chat_scrollbar_dragging: false,
         input: String::new(),
         status_chips,
@@ -653,10 +658,11 @@ fn tui_dispatch_mouse(
             g.focus = TuiFocus::Chat;
             match mouse.kind {
                 MouseEventKind::ScrollUp => {
-                    g.chat_follow_bottom = false;
+                    render::note_chat_user_scroll_up(&mut g);
                     g.chat_scroll_y = g.chat_scroll_y.saturating_sub(3);
                 }
                 MouseEventKind::ScrollDown => {
+                    render::note_chat_user_scroll_down(&mut g);
                     g.chat_scroll_y = g.chat_scroll_y.saturating_add(3);
                 }
                 _ => {}
@@ -780,7 +786,7 @@ fn tui_dispatch_key_press(
         KeyCode::PageUp => {
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             if g.focus == TuiFocus::Chat {
-                g.chat_follow_bottom = false;
+                render::note_chat_user_scroll_up(&mut g);
                 g.chat_scroll_y = g.chat_scroll_y.saturating_sub(8);
             }
             TuiPollKeyFlow::ContinueOuter
@@ -788,6 +794,7 @@ fn tui_dispatch_key_press(
         KeyCode::PageDown => {
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             if g.focus == TuiFocus::Chat {
+                render::note_chat_user_scroll_down(&mut g);
                 g.chat_scroll_y = g.chat_scroll_y.saturating_add(8);
             }
             TuiPollKeyFlow::ContinueOuter
@@ -795,7 +802,7 @@ fn tui_dispatch_key_press(
         KeyCode::Home => {
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             if g.focus == TuiFocus::Chat {
-                g.chat_follow_bottom = false;
+                render::note_chat_user_scroll_up(&mut g);
                 g.chat_scroll_y = 0;
             }
             TuiPollKeyFlow::ContinueOuter
