@@ -107,12 +107,15 @@ fn push_step_from_call(
 
 pub fn load_chat_session_file(path: &Path) -> io::Result<ChatSessionFile> {
     let data = std::fs::read_to_string(path)?;
-    serde_json::from_str(&data).map_err(|e| {
+    let file: ChatSessionFile = serde_json::from_str(&data).map_err(|e| {
         io::Error::new(
             io::ErrorKind::InvalidData,
             format!("会话或导出 JSON 无效（期望 ChatSessionFile）: {e}"),
         )
-    })
+    })?;
+    crate::runtime::chat_export::ensure_raw_projection(&file.projection)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(file)
 }
 
 pub fn load_tool_replay_file(path: &Path) -> io::Result<ToolReplayFile> {
@@ -323,5 +326,22 @@ mod tests {
         assert_eq!(steps.len(), 2);
         assert_eq!(steps[0].recorded_output.as_deref(), Some("one"));
         assert_eq!(steps[1].recorded_output.as_deref(), Some("two"));
+    }
+
+    #[test]
+    fn load_chat_session_rejects_display_projection() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("display.json");
+        let body = serde_json::json!({
+            "schema": "crabmate.chat_session",
+            "schema_version": "2.0.0",
+            "projection": "display",
+            "version": 1,
+            "messages": [{"role": "user", "content": "hi"}]
+        });
+        std::fs::write(&path, serde_json::to_string_pretty(&body).unwrap()).unwrap();
+        let err = load_chat_session_file(&path).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("display"));
     }
 }

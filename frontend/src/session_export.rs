@@ -1,9 +1,13 @@
-//! 浏览器内导出会话：schema 常量与 Markdown 标题来自 [`crabmate_chat_export`]（与 CLI/TUI 同源）；
-//! 消息体为展示投影（瘦 [`ExportMessage`]），下载壳为浏览器 / Tauri。
+//! 浏览器内导出会话：schema / 展示投影信封来自 [`crabmate_chat_export`]（`projection=display`）；
+//! 消息正文为展示过滤结果；下载壳为浏览器 / Tauri。
+//!
+//! 与 CLI/TUI **`projection=raw`** 的完整 [`crabmate_chat_export::ChatSessionFile`] 区分：
+//! Web JSON **不可**直接作为 `tool-replay` 输入。
 
-use crabmate_chat_export::{ExportMdLocale, markdown_from_role_bodies};
+use crabmate_chat_export::{
+    DisplayChatSessionFile, DisplayExportMessage, ExportMdLocale, markdown_from_role_bodies,
+};
 use gloo_timers::callback::Timeout;
-use serde::Serialize;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -13,8 +17,12 @@ use crate::message_format::{message_text_for_display_ex, stored_tool_message_det
 use crate::storage::{ChatSession, StoredMessage};
 use crate::visible_messages::{VisibleMessageScope, visible_message_indices};
 
-pub use crabmate_chat_export::{
-    CHAT_EXPORT_SCHEMA_ID, CHAT_EXPORT_SCHEMA_VERSION, CHAT_SESSION_FILE_VERSION,
+pub use crabmate_chat_export::display_session_to_json_pretty;
+
+#[cfg(test)]
+use crabmate_chat_export::{
+    CHAT_EXPORT_PROJECTION_DISPLAY, CHAT_EXPORT_SCHEMA_ID, CHAT_EXPORT_SCHEMA_VERSION,
+    CHAT_SESSION_FILE_VERSION,
 };
 
 #[wasm_bindgen(inline_js = r#"
@@ -72,51 +80,29 @@ fn export_md_locale(loc: Locale) -> ExportMdLocale {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub struct ExportMessage {
-    pub role: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-pub struct ChatSessionFile {
-    pub schema: String,
-    pub schema_version: String,
-    pub version: u32,
-    pub messages: Vec<ExportMessage>,
-}
-
 pub fn session_to_export_file(
     session: &ChatSession,
     loc: Locale,
     apply_assistant_display_filters: bool,
-) -> ChatSessionFile {
-    ChatSessionFile {
-        schema: CHAT_EXPORT_SCHEMA_ID.to_string(),
-        schema_version: CHAT_EXPORT_SCHEMA_VERSION.to_string(),
-        version: CHAT_SESSION_FILE_VERSION,
-        messages: stored_messages_to_export(
-            &session.messages,
-            loc,
-            apply_assistant_display_filters,
-        ),
-    }
+) -> DisplayChatSessionFile {
+    DisplayChatSessionFile::new(stored_messages_to_export(
+        &session.messages,
+        loc,
+        apply_assistant_display_filters,
+    ))
 }
 
 fn stored_messages_to_export(
     messages: &[StoredMessage],
     loc: Locale,
     apply_assistant_display_filters: bool,
-) -> Vec<ExportMessage> {
+) -> Vec<DisplayExportMessage> {
     let indices = visible_message_indices(messages, VisibleMessageScope::Export);
     let mut out = Vec::new();
     for &idx in &indices {
         let m = &messages[idx];
         if m.role == "system" && m.is_tool {
-            out.push(ExportMessage {
+            out.push(DisplayExportMessage {
                 role: "tool".to_string(),
                 content: Some(message_text_for_export(
                     m,
@@ -130,7 +116,7 @@ fn stored_messages_to_export(
         if m.role == "system" {
             continue;
         }
-        out.push(ExportMessage {
+        out.push(DisplayExportMessage {
             role: m.role.clone(),
             content: Some(message_text_for_export(
                 m,
@@ -167,7 +153,11 @@ fn message_text_for_export(
 }
 
 /// session.messages 顺序由 TurnLayout 实时保证（assistant → tools → next_assistant），不需要事后重排。
-fn markdown_from_export_messages(title: &str, messages: &[ExportMessage], loc: Locale) -> String {
+fn markdown_from_export_messages(
+    title: &str,
+    messages: &[DisplayExportMessage],
+    loc: Locale,
+) -> String {
     let pairs: Vec<(&str, &str)> = messages
         .iter()
         .map(|m| (m.role.as_str(), m.content.as_deref().unwrap_or("")))
@@ -451,6 +441,7 @@ mod tests {
         let file = session_to_export_file(&session, Locale::ZhHans, true);
         assert_eq!(file.schema, CHAT_EXPORT_SCHEMA_ID);
         assert_eq!(file.schema_version, CHAT_EXPORT_SCHEMA_VERSION);
+        assert_eq!(file.projection, CHAT_EXPORT_PROJECTION_DISPLAY);
         assert_eq!(file.version, CHAT_SESSION_FILE_VERSION);
         assert_eq!(file.messages.len(), 3);
         assert_eq!(file.messages[0].role, "user");
