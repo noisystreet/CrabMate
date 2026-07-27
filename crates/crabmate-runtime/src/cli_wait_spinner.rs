@@ -1,10 +1,15 @@
-//! 终端等待指示器（旋转菊 / 进度条）的统一入口。
+//! 终端等待指示器（旋转菊）的统一入口。
 //!
-//! 当 LLM 请求处于纯 Text 流模式（`stream: false`）且终端为交互式（非管道/非 TUI）时启动。
+//! 仅在 **CLI plain 终端流**（[`try_start_for_cli_plain_stream`] 的 `cli_terminal_plain`）下启动；
+//! **TUI / Web**（`plain_terminal_stream = false`）不得写 stderr，以免叠到 ratatui 底栏。
+//!
+//! 另须 **`CM_CLI_WAIT_SPINNER`** 为真、stderr 为 TTY、未设 **`NO_COLOR`**（与文档一致，默认关）。
 
-use indicatif::{ProgressBar, ProgressStyle};
+use std::io::{self, IsTerminal};
 use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 
 static SPINNER_DISABLED: AtomicBool = AtomicBool::new(false);
 
@@ -24,29 +29,43 @@ pub fn finish_cli_wait_spinner() {
     GLOBAL_PROGRESS_HIDDEN.store(true, Ordering::Relaxed);
 }
 
-// ---------------------------------------------------------------------------
-// 全局旋转菊守卫
-// ---------------------------------------------------------------------------
-
 static GLOBAL_SPINNER: LazyLock<std::sync::Mutex<Option<ProgressBar>>> =
     LazyLock::new(|| std::sync::Mutex::new(None));
 static GLOBAL_PROGRESS_HIDDEN: AtomicBool = AtomicBool::new(false);
+
+fn env_truthy(name: &str) -> bool {
+    std::env::var_os(name).is_some_and(|v| {
+        let s = v.to_string_lossy();
+        let s = s.trim();
+        !s.is_empty() && s != "0" && !s.eq_ignore_ascii_case("false")
+    })
+}
+
+/// 是否允许启动 CLI wait spinner（不含「已有实例 / 已全局隐藏」）。
+#[must_use]
+pub fn cli_wait_spinner_should_start(cli_terminal_plain: bool) -> bool {
+    if !cli_terminal_plain || SPINNER_DISABLED.load(Ordering::Relaxed) {
+        return false;
+    }
+    if GLOBAL_PROGRESS_HIDDEN.load(Ordering::Relaxed) {
+        return false;
+    }
+    std::env::var_os("NO_COLOR").is_none()
+        && io::stderr().is_terminal()
+        && env_truthy("CM_CLI_WAIT_SPINNER")
+}
 
 /// 旋转菊守卫：构造时创建全局旋转菊；`Drop` 时移除。
 pub struct CliWaitSpinnerGuard;
 
 impl CliWaitSpinnerGuard {
-    /// 仅在纯 CLI 风格下创建并记录全局进度条，若已存在则复用。
-    /// `is_tui_session`：当前是否处于 TUI 会话；TUI 下跳过终端 spinner。
-    pub fn try_start_for_cli_plain_stream(is_tui_session: bool) -> Option<Self> {
-        if is_tui_session || SPINNER_DISABLED.load(Ordering::Relaxed) {
-            return None;
-        }
-        // 已全局隐藏（如前一回合已 finish）则不启动新花
-        if GLOBAL_PROGRESS_HIDDEN.load(Ordering::Relaxed) {
+    /// 仅在 **CLI plain 终端流**下创建并记录全局进度条；TUI（`cli_terminal_plain = false`）跳过。
+    pub fn try_start_for_cli_plain_stream(cli_terminal_plain: bool) -> Option<Self> {
+        if !cli_wait_spinner_should_start(cli_terminal_plain) {
             return None;
         }
         let spinner = ProgressBar::new_spinner();
+        spinner.set_draw_target(ProgressDrawTarget::stderr());
         spinner.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
@@ -58,7 +77,6 @@ impl CliWaitSpinnerGuard {
 
         let mut guard = GLOBAL_SPINNER.lock().expect("spinner lock");
         if guard.is_some() {
-            // 已有 spinner 运行中，跳过
             return None;
         }
         *guard = Some(spinner);
@@ -69,5 +87,16 @@ impl CliWaitSpinnerGuard {
 impl Drop for CliWaitSpinnerGuard {
     fn drop(&mut self) {
         finish_cli_wait_spinner();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tui_or_non_plain_never_starts_spinner() {
+        // TUI / Web：`cli_terminal_plain == false`；无论 env，都不得启动（避免叠底栏）。
+        assert!(!cli_wait_spinner_should_start(false));
     }
 }
