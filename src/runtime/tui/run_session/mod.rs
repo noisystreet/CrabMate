@@ -8,15 +8,15 @@
 //!
 //! **焦点**：左（会话）/中上（聊天）/中下（撰写）/右（工作区）四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**右侧工作区栏聚焦时 `Enter`** 打开工作区 Modal（与 Web 侧栏一致）；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
 //!
-//! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；**工具**条走 [`crate::runtime::message_display::tool_content_for_display_for_message`]（摘要优先，非原始 JSON）；**助手**走 [`assistant_markdown_source_for_message`]；**用户**走 [`user_message_for_chat_display`]（隐藏分步注入等）。
+//! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；工具/助手/用户展示路径见 [`transcript`]；本轮旁白/工具序另经 [`turn_project`]（`crabmate-turn-layout` / `project_turn_web_v2`，对齐 Tauri）。
 //!
 //! **工具审批**：全屏居中 Modal（↑↓ / jk · Enter · Esc · 1/2/3），与 REPL dialoguer 三项语义一致；不退出 alternate screen。
 //!
-//! **撰写区**：按单元格宽度自动换行（宽字符计入 **`unicode-width`**）；纵向往下溢出时仅保留底部可见行（滚动）；**「撰写」** 聚焦时 **`Frame::set_cursor_position`** 显示插入光标。
+//! **撰写区**：按单元格宽度自动换行（**`unicode-width`**）；溢出保留底部行；**「撰写」** 聚焦时显示插入光标。
 //!
-//! **底栏**：对齐 Web `status_bar_footer_view` — **模型 · … · base_url · … · 角色 · … ·** 运行态（**就绪** / **模型生成中…** / **工具执行中…** / **错误:** …）；快捷键说明在右侧栏。
+//! **底栏**：对齐 Web `status_bar_footer_view`（模型 · base_url · 角色 · 运行态）；快捷键说明在右侧栏。
 //!
-//! **聊天区**：内容溢出时右侧显示滚动条；可 **左键拖动** 滚动条改变纵向位置（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
+//! **聊天区**：溢出时右侧滚动条；可拖动（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
 
 mod approval;
 mod clarify_modal;
@@ -29,13 +29,14 @@ mod sqlite_slash;
 mod sse_mirror;
 mod submit_ev;
 mod transcript;
+mod turn_project;
 mod workspace_modal;
 mod workspace_sidebar_extra;
 mod workspace_switch;
 
 use std::collections::VecDeque;
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -49,9 +50,9 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::config::SharedAgentConfig;
 use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::{
-    CliMainInvocationCommon, ReplAfterUserMessageEnqueuedCb, ReplSlashFollowupCtx,
-    ReplSlashHandled, ReplSlashSharedHandles, cli_effective_work_dir,
-    repl_prepare_messages_and_editor, repl_slash_handled_followup, try_handle_repl_slash_command,
+    CliMainInvocationCommon, ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles,
+    cli_effective_work_dir, repl_prepare_messages_and_editor, repl_slash_handled_followup,
+    try_handle_repl_slash_command,
 };
 use crate::runtime::cli_exit::{CliExitError, EXIT_USAGE};
 use crate::runtime::cli_repl_ui::CliReplStyle;
@@ -266,6 +267,8 @@ struct TuiModel {
     sqlite_conversation_id: Option<String>,
     /// 本轮 SSE 控制面镜像（无 HTTP 通道时与 Web `SsePayload` 对齐）。
     control_plane_tail: String,
+    /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
+    turn_projection: turn_project::TuiTurnProjection,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -480,40 +483,6 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
 }
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
-fn tui_make_submit_hooks(
-    model: &Arc<Mutex<TuiModel>>,
-) -> (
-    ReplAfterUserMessageEnqueuedCb,
-    Arc<dyn Fn(bool) + Send + Sync>,
-) {
-    let msg_len_turn = Arc::new(AtomicUsize::new(0));
-    let msg_len_for_cb = Arc::clone(&msg_len_turn);
-    let model_refresh = Arc::clone(model);
-    let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
-        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
-        let t = transcript::messages_to_transcript(msgs);
-        let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
-        g.transcript = t;
-        let chips = g.status_chips.clone();
-        let suf = sidebar_text::tui_status_suffix_model_busy_lines(msgs.len());
-        g.status = sidebar_text::tui_status_bar_with_run(&chips, suf.as_str());
-    });
-    let model_for_hook = Arc::clone(model);
-    let msg_len_for_hook = Arc::clone(&msg_len_turn);
-    let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
-        let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
-        let chips = g.status_chips.clone();
-        let n = msg_len_for_hook.load(Ordering::SeqCst);
-        g.status = if running {
-            sidebar_text::tui_status_bar_with_run(&chips, "工具执行中…")
-        } else {
-            let suf = sidebar_text::tui_status_suffix_model_busy_lines(n.max(1));
-            sidebar_text::tui_status_bar_with_run(&chips, suf.as_str())
-        };
-    });
-    (on_user_enqueued, tool_running_hook)
-}
-
 pub async fn run_tui_session(
     common: CliMainInvocationCommon<'_>,
     cli_no_stream: bool,
@@ -627,6 +596,7 @@ pub async fn run_tui_session(
         workspace_modal: None,
         sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
         control_plane_tail: String::new(),
+        turn_projection: turn_project::TuiTurnProjection::default(),
     }));
 
     let clarify_shared = TuiClarificationShared {
@@ -773,6 +743,7 @@ fn tui_dispatch_mouse(
             if let Some(hit) = render::chat_scrollbar_hit(
                 layout.chat,
                 g.transcript.as_str(),
+                g.turn_projection.format_projection_block().as_str(),
                 g.control_plane_tail.as_str(),
                 &scratch,
             ) {
@@ -787,6 +758,7 @@ fn tui_dispatch_mouse(
                 if let Some(hit) = render::chat_scrollbar_hit(
                     layout.chat,
                     g.transcript.as_str(),
+                    g.turn_projection.format_projection_block().as_str(),
                     g.control_plane_tail.as_str(),
                     &scratch,
                 ) {

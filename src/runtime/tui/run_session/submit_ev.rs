@@ -1,13 +1,15 @@
 //! [`UiEvent::Submit`]：可选澄清空提交、`/` 斜杠命令、`repl_dispatch_chat_round` 与会话刷新。
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use reqwest::Client;
 
 use crate::config::SharedAgentConfig;
 use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::{
-    ReplDispatchChatRoundParams, ReplSlashSharedHandles, repl_dispatch_chat_round,
+    ReplAfterUserMessageEnqueuedCb, ReplDispatchChatRoundParams, ReplSlashSharedHandles,
+    repl_dispatch_chat_round,
 };
 use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::tui::TuiLlmStreamScratchArc;
@@ -15,10 +17,44 @@ use crate::tool_registry::CliToolRuntime;
 use crate::types::{Message, Tool};
 
 use super::{
-    TuiAfterChatRoundRefresh, TuiClarificationShared, TuiModel, TuiSlashSubmit,
+    TuiAfterChatRoundRefresh, TuiClarificationShared, TuiModel, TuiSlashSubmit, sidebar_text,
     sqlite_slash::{TuiSqliteSlashEnv, tui_try_consume_sqlite_slash},
-    tui_make_submit_hooks, tui_refresh_after_chat_round, tui_try_consume_slash_submit,
+    transcript, tui_refresh_after_chat_round, tui_try_consume_slash_submit,
 };
+
+fn tui_make_submit_hooks(
+    model: &Arc<std::sync::Mutex<TuiModel>>,
+) -> (
+    ReplAfterUserMessageEnqueuedCb,
+    Arc<dyn Fn(bool) + Send + Sync>,
+) {
+    let msg_len_turn = Arc::new(AtomicUsize::new(0));
+    let msg_len_for_cb = Arc::clone(&msg_len_turn);
+    let model_refresh = Arc::clone(model);
+    let on_user_enqueued: ReplAfterUserMessageEnqueuedCb = Arc::new(move |msgs: &[Message]| {
+        msg_len_for_cb.store(msgs.len(), Ordering::SeqCst);
+        let t = transcript::messages_to_transcript(msgs);
+        let mut g = model_refresh.lock().unwrap_or_else(|e| e.into_inner());
+        g.transcript = t;
+        let chips = g.status_chips.clone();
+        let suf = sidebar_text::tui_status_suffix_model_busy_lines(msgs.len());
+        g.status = sidebar_text::tui_status_bar_with_run(&chips, suf.as_str());
+    });
+    let model_for_hook = Arc::clone(model);
+    let msg_len_for_hook = Arc::clone(&msg_len_turn);
+    let tool_running_hook: Arc<dyn Fn(bool) + Send + Sync> = Arc::new(move |running| {
+        let mut g = model_for_hook.lock().unwrap_or_else(|e| e.into_inner());
+        let chips = g.status_chips.clone();
+        let n = msg_len_for_hook.load(Ordering::SeqCst);
+        g.status = if running {
+            sidebar_text::tui_status_bar_with_run(&chips, "工具执行中…")
+        } else {
+            let suf = sidebar_text::tui_status_suffix_model_busy_lines(n.max(1));
+            sidebar_text::tui_status_bar_with_run(&chips, suf.as_str())
+        };
+    });
+    (on_user_enqueued, tool_running_hook)
+}
 
 pub(super) enum TuiSubmitHandled {
     /// `try_handle_repl_slash_command` 已处理当前输入；不应再走对话轮。
@@ -103,8 +139,12 @@ pub(super) async fn tui_run_submit_ev(
     {
         let mut m = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
         m.control_plane_tail.clear();
+        m.turn_projection.reset();
     }
-    let sse_mirror_hook = super::sse_mirror::tui_sse_control_mirror(Arc::clone(ctx.model));
+    let sse_mirror_hook = super::sse_mirror::tui_sse_control_mirror(
+        Arc::clone(ctx.model),
+        Arc::clone(ctx.llm_scratch),
+    );
     let (on_user_enqueued, tool_running_hook) = tui_make_submit_hooks(ctx.model);
     repl_dispatch_chat_round(ReplDispatchChatRoundParams {
         input: trimmed,
@@ -131,6 +171,10 @@ pub(super) async fn tui_run_submit_ev(
     .await?;
     {
         let mut s = ctx.llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+        {
+            let mut m = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
+            m.turn_projection.finalize_for_display(&s);
+        }
         s.clear();
     }
     tui_refresh_after_chat_round(TuiAfterChatRoundRefresh {

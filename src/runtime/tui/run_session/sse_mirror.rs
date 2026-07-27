@@ -1,18 +1,25 @@
-//! 将 [`crate::sse::SsePayload`] 格式化为 TUI 中区「控制面」附录（与 Web SSE 控制面对齐）。
+//! 将 [`crate::sse::SsePayload`] 格式化为 TUI 中区「控制面」附录，并驱动 [`super::turn_project`]。
 
 use std::sync::{Arc, Mutex};
 
+use crate::runtime::tui::TuiLlmStreamScratchArc;
 use crate::sse::{SseControlMirror, SsePayload};
 use crate::text_util::truncate_chars_with_ellipsis;
 
 use super::TuiModel;
 
-pub(super) fn tui_sse_control_mirror(model: Arc<Mutex<TuiModel>>) -> SseControlMirror {
+pub(super) fn tui_sse_control_mirror(
+    model: Arc<Mutex<TuiModel>>,
+    llm_scratch: TuiLlmStreamScratchArc,
+) -> SseControlMirror {
     Arc::new(move |p| {
+        let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
+        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+        g.turn_projection.apply_sse(&p, &scratch);
+        drop(scratch);
         let Some(line) = format_sse_payload_one_line(&p) else {
             return;
         };
-        let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
         if !g.control_plane_tail.is_empty() {
             g.control_plane_tail.push('\n');
         }
@@ -71,8 +78,9 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
             truncate_chars_with_ellipsis(&log.title, 200)
         )),
         SsePayload::ThinkingTrace { .. } => Some("· 思维迹".to_string()),
-        SsePayload::AssistantAnswerPhase { .. } => None,
-        SsePayload::TurnSegmentStart { .. }
+        // 段边界进入 turn_projection，不再重复刷控制面一行。
+        SsePayload::AssistantAnswerPhase { .. }
+        | SsePayload::TurnSegmentStart { .. }
         | SsePayload::TurnSegmentEnd { .. }
         | SsePayload::TurnToolPhaseEnd { .. } => None,
         SsePayload::ChatUiSeparator { .. } => None,

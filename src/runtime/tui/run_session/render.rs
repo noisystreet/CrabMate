@@ -105,6 +105,11 @@ fn tui_prepare_chat_body_and_stream_flags(
     let streaming_nonempty =
         !scratch.reasoning.trim().is_empty() || !scratch.content.trim().is_empty();
     let mut transcript_display = model.transcript.clone();
+    let projection = model.turn_projection.format_projection_block();
+    if !projection.is_empty() {
+        transcript_display.push_str("\n\n");
+        transcript_display.push_str(projection.as_str());
+    }
     if !model.control_plane_tail.is_empty() {
         transcript_display.push_str("\n\n[SSE 控制面]\n");
         transcript_display.push_str(model.control_plane_tail.as_str());
@@ -327,6 +332,7 @@ pub(super) struct ChatScrollbarHit {
 pub(super) fn chat_scrollbar_hit(
     chat_pane: Rect,
     transcript: &str,
+    turn_projection_block: &str,
     control_plane_tail: &str,
     scratch: &TuiLlmStreamScratch,
 ) -> Option<ChatScrollbarHit> {
@@ -336,6 +342,10 @@ pub(super) fn chat_scrollbar_hit(
         return None;
     }
     let mut transcript_display = transcript.to_string();
+    if !turn_projection_block.is_empty() {
+        transcript_display.push_str("\n\n");
+        transcript_display.push_str(turn_projection_block);
+    }
     if !control_plane_tail.is_empty() {
         transcript_display.push_str("\n\n[SSE 控制面]\n");
         transcript_display.push_str(control_plane_tail);
