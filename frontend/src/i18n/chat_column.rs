@@ -131,6 +131,76 @@ pub fn composer_slash_builtin_skills_list(l: Locale) -> &'static str {
     }
 }
 
+pub fn composer_slash_builtin_help(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "控制命令帮助（不调用模型）",
+        Locale::En => "Control slash help (no model call)",
+    }
+}
+
+pub fn composer_slash_builtin_workspace(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "显示或切换工作区",
+        Locale::En => "Show or switch workspace",
+    }
+}
+
+pub fn composer_slash_builtin_agent(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "列出或设置 Agent 角色",
+        Locale::En => "List or set agent role",
+    }
+}
+
+pub fn composer_slash_builtin_model(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "显示或设置模型（写 user-data）",
+        Locale::En => "Show or set model (persists to user-data)",
+    }
+}
+
+pub fn composer_slash_builtin_api_base(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "显示或设置 api_base",
+        Locale::En => "Show or set api_base",
+    }
+}
+
+pub fn composer_slash_builtin_export(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "导出当前会话（JSON / Markdown）",
+        Locale::En => "Export current session (JSON / Markdown)",
+    }
+}
+
+pub fn composer_slash_builtin_config(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "配置摘要或 /config reload",
+        Locale::En => "Config summary or /config reload",
+    }
+}
+
+pub fn composer_slash_builtin_context(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "上下文 token / 字符预算",
+        Locale::En => "Context token / char budget",
+    }
+}
+
+pub fn composer_slash_builtin_clear(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "清空当前会话消息",
+        Locale::En => "Clear current session messages",
+    }
+}
+
+pub fn composer_slash_builtin_api_key(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "密钥 status/set/clear（不进对话）",
+        Locale::En => "API key status/set/clear (never in chat)",
+    }
+}
+
 pub fn composer_remove_image_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "移除图片",

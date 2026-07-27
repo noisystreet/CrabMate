@@ -1,9 +1,10 @@
-//! TUI 专用斜杠：**`/conv`**、**`/branch`**（依赖 SQLite 会话库）；在通用 REPL 斜杠之前处理。
+//! TUI 专用斜杠包装：调用共享 [`crate::runtime::cli_sqlite_slash`]。
 
 use std::sync::{Arc, Mutex};
 
 use crate::config::SharedAgentConfig;
 use crate::process_handles::ProcessHandles;
+use crate::runtime::cli_sqlite_slash::{CliSqliteSlashResult, try_apply_cli_sqlite_slash};
 use crate::runtime::workspace_session;
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::types::Message;
@@ -49,25 +50,6 @@ async fn tui_sqlite_slash_refresh_ui(
     .await;
 }
 
-async fn tui_sqlite_no_db_conv_or_branch(
-    trimmed: &str,
-    env: &TuiSqliteSlashEnv<'_>,
-    agent_role_owned: &Option<String>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    if !trimmed.starts_with("/conv") && !trimmed.starts_with("/branch") {
-        return Ok(false);
-    }
-    push_block(
-        env.model,
-        &["未启用 SQLite 会话库。请在配置中设置非空 conversation_store_sqlite_path（与 Web serve 同源）。"
-            .to_string()],
-    );
-    let chips = super::sidebar_text::tui_status_chips_line(env.cfg_holder, agent_role_owned).await;
-    let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-    g.status = format!("{} · /conv /branch 需要会话 SQLite", chips);
-    Ok(true)
-}
-
 pub(super) async fn tui_try_consume_sqlite_slash(
     trimmed: &str,
     sqlite_slot: &mut Option<&mut TuiSqliteSessionState>,
@@ -75,152 +57,56 @@ pub(super) async fn tui_try_consume_sqlite_slash(
     agent_role_owned: &mut Option<String>,
     env: &TuiSqliteSlashEnv<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let Some(sess) = sqlite_slot.as_mut() else {
-        return tui_sqlite_no_db_conv_or_branch(trimmed, env, agent_role_owned).await;
+    let needs_bootstrap = trimmed.starts_with("/conv")
+        && trimmed
+            .split_whitespace()
+            .nth(1)
+            .is_some_and(|s| s == "new");
+    let bootstrap = if needs_bootstrap {
+        let cfg = env.cfg_holder.read().await;
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        Some(workspace_session::repl_bootstrap_messages_fast(
+            &cfg,
+            agent_role_owned.as_ref().map(|s| s.as_str()),
+            &rec,
+        ))
+    } else {
+        None
     };
 
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    let cmd = parts.first().copied().unwrap_or("");
-
-    if cmd == "/branch" {
-        let ord_s = parts.get(1).copied().unwrap_or("");
-        let ord = match ord_s.parse::<usize>() {
-            Ok(v) => v,
-            Err(_) => {
-                push_block(
-                    env.model,
-                    &[
-                        "用法: /branch <before_user_ordinal>".into(),
-                        "ordinal 为 0-based，语义与 Web POST /chat/branch 一致。".into(),
-                    ],
-                );
-                return Ok(true);
-            }
-        };
-        match sess.branch_before_user_ordinal(ord, messages, agent_role_owned) {
-            Ok(()) => {
-                push_block(
-                    env.model,
-                    &[format!(
-                        "已分支：截断到第 {ord} 条用户消息之前（revision 已递增）。"
-                    )],
-                );
+    let result = try_apply_cli_sqlite_slash(
+        trimmed,
+        sqlite_slot.as_deref_mut(),
+        messages,
+        agent_role_owned,
+        bootstrap,
+    );
+    match result {
+        CliSqliteSlashResult::NotHandled => Ok(false),
+        CliSqliteSlashResult::Handled { lines } => {
+            push_block(env.model, &lines);
+            let refresh = trimmed.starts_with("/branch")
+                || trimmed
+                    .split_whitespace()
+                    .nth(1)
+                    .is_some_and(|s| matches!(s, "open" | "new"));
+            if refresh {
+                if let Some(sess) = sqlite_slot.as_ref() {
+                    let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
+                    g.sqlite_conversation_id = Some(sess.conversation_id.clone());
+                }
                 tui_sqlite_slash_refresh_ui(env, messages.as_slice(), agent_role_owned).await;
-            }
-            Err(e) => {
-                push_block(env.model, &[format!("分支失败: {e}")]);
-                let chips =
-                    super::sidebar_text::tui_status_chips_line(env.cfg_holder, agent_role_owned)
-                        .await;
+            } else if trimmed.starts_with("/conv") || trimmed.starts_with("/branch") {
+                let chips = super::sidebar_text::tui_status_chips_line_with_messages(
+                    env.cfg_holder,
+                    agent_role_owned,
+                    messages,
+                )
+                .await;
                 let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-                g.status = format!("{} · {e}", chips);
+                g.status = format!("{} · /conv /branch", chips);
             }
-        }
-        return Ok(true);
-    }
-
-    if cmd != "/conv" {
-        return Ok(false);
-    }
-
-    let sub = parts.get(1).copied().unwrap_or("help");
-    match sub {
-        "help" | "?" => {
-            push_block(
-                env.model,
-                &[
-                    "/conv list — 列出最近会话 id".into(),
-                    "/conv open <id> — 切换会话".into(),
-                    "/conv open last — 打开最近更新的会话".into(),
-                    "/conv new — 新建会话（仅 system 引导）".into(),
-                    "/branch <n> — 截断到用户 ordinal n 之前（Web 同源）".into(),
-                    "环境变量 CM_TUI_CONVERSATION_ID 可指定启动时会话 id。".into(),
-                ],
-            );
-        }
-        "list" => match sess.list_recent_ids(24) {
-            Ok(ids) => {
-                if ids.is_empty() {
-                    push_block(env.model, &["（库中暂无会话）".into()]);
-                } else {
-                    let mut lines: Vec<String> = vec!["最近会话 id（updated 倒序）：".into()];
-                    for id in ids {
-                        lines.push(format!("  · {id}"));
-                    }
-                    push_block(env.model, &lines);
-                }
-            }
-            Err(e) => push_block(env.model, &[format!("列出失败: {e}")]),
-        },
-        "open" => {
-            let target = parts.get(2).copied().unwrap_or("");
-            if target.is_empty() {
-                push_block(
-                    env.model,
-                    &["用法: /conv open <id> 或 /conv open last".into()],
-                );
-                return Ok(true);
-            }
-            let open_res = if target == "last" {
-                let ids = match sess.list_recent_ids(1) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        push_block(env.model, &[format!("列出失败: {e}")]);
-                        return Ok(true);
-                    }
-                };
-                let Some(id) = ids.into_iter().next() else {
-                    push_block(env.model, &["库中暂无会话。".into()]);
-                    return Ok(true);
-                };
-                sess.switch_conversation(id.as_str(), messages, agent_role_owned)
-            } else {
-                sess.switch_conversation(target, messages, agent_role_owned)
-            };
-            match open_res {
-                Ok(()) => {
-                    push_block(env.model, &[format!("已打开会话 {}", sess.conversation_id)]);
-                    {
-                        let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.sqlite_conversation_id = Some(sess.conversation_id.clone());
-                    }
-                    tui_sqlite_slash_refresh_ui(env, messages.as_slice(), agent_role_owned).await;
-                }
-                Err(e) => push_block(env.model, &[format!("打开失败: {e}")]),
-            }
-        }
-        "new" => {
-            let cfg = env.cfg_holder.read().await;
-            let rec = Arc::new(ToolOutcomeRecorder::new());
-            let bootstrap = workspace_session::repl_bootstrap_messages_fast(
-                &cfg,
-                agent_role_owned.as_ref().map(|s| s.as_str()),
-                &rec,
-            );
-            drop(cfg);
-            let role_snap = agent_role_owned.clone();
-            let role_for_save = role_snap.as_deref();
-            match sess.start_fresh_conversation(
-                bootstrap,
-                role_for_save,
-                messages,
-                agent_role_owned,
-            ) {
-                Ok(()) => {
-                    push_block(env.model, &[format!("新建会话 {}", sess.conversation_id)]);
-                    {
-                        let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-                        g.sqlite_conversation_id = Some(sess.conversation_id.clone());
-                    }
-                    tui_sqlite_slash_refresh_ui(env, messages.as_slice(), agent_role_owned).await;
-                }
-                Err(e) => push_block(env.model, &[format!("新建失败: {e}")]),
-            }
-        }
-        _ => {
-            push_block(env.model, &[format!("未知子命令 `{sub}`，输入 /conv help")]);
+            Ok(true)
         }
     }
-
-    Ok(true)
 }

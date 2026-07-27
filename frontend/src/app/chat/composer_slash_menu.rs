@@ -47,6 +47,76 @@ fn web_builtin_slash_items(locale: Locale) -> Vec<SlashMenuItem> {
     vec![
         SlashMenuItem {
             kind: SlashItemKind::Builtin,
+            match_key: "help".to_string(),
+            insert: "/help".to_string(),
+            label: "/help".to_string(),
+            description: i18n::composer_slash_builtin_help(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "workspace".to_string(),
+            insert: "/workspace ".to_string(),
+            label: "/workspace".to_string(),
+            description: i18n::composer_slash_builtin_workspace(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "agent".to_string(),
+            insert: "/agent ".to_string(),
+            label: "/agent".to_string(),
+            description: i18n::composer_slash_builtin_agent(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "model".to_string(),
+            insert: "/model ".to_string(),
+            label: "/model".to_string(),
+            description: i18n::composer_slash_builtin_model(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "api-base".to_string(),
+            insert: "/api-base ".to_string(),
+            label: "/api-base".to_string(),
+            description: i18n::composer_slash_builtin_api_base(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "export".to_string(),
+            insert: "/export ".to_string(),
+            label: "/export".to_string(),
+            description: i18n::composer_slash_builtin_export(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "config".to_string(),
+            insert: "/config".to_string(),
+            label: "/config".to_string(),
+            description: i18n::composer_slash_builtin_config(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "context".to_string(),
+            insert: "/context".to_string(),
+            label: "/context".to_string(),
+            description: i18n::composer_slash_builtin_context(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "clear".to_string(),
+            insert: "/clear".to_string(),
+            label: "/clear".to_string(),
+            description: i18n::composer_slash_builtin_clear(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
+            match_key: "api-key".to_string(),
+            insert: "/api-key ".to_string(),
+            label: "/api-key".to_string(),
+            description: i18n::composer_slash_builtin_api_key(locale).to_string(),
+        },
+        SlashMenuItem {
+            kind: SlashItemKind::Builtin,
             match_key: "skills".to_string(),
             insert: "/skills".to_string(),
             label: "/skills".to_string(),
@@ -460,6 +530,9 @@ mod tests {
         let items = build_filtered_menu("", Locale::ZhHans, None);
         assert!(items.iter().any(|i| i.insert == "/skills"));
         assert!(items.iter().any(|i| i.insert == "/skills list"));
+        assert!(items.iter().any(|i| i.insert == "/help"));
+        assert!(items.iter().any(|i| i.insert == "/context"));
+        assert!(items.iter().any(|i| i.insert.starts_with("/workspace")));
         assert!(items.iter().all(|i| i.kind == SlashItemKind::Builtin));
     }
 

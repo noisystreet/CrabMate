@@ -119,6 +119,14 @@ pub(crate) async fn repl_slash_handled_followup(
         }
         ReplSlashHandled::RunModelsChoose { model_id } => {
             repl_slash_followup_with_optional_tui_handoff(ctx.tui_terminal_tx, async {
+                let (model_id, persist) = {
+                    let t = model_id.trim();
+                    if let Some(rest) = t.strip_suffix("--no-persist") {
+                        (rest.trim_end().to_string(), false)
+                    } else {
+                        (t.to_string(), true)
+                    }
+                };
                 let k = ctx
                     .slash_handles
                     .api_key_holder
@@ -134,9 +142,22 @@ pub(crate) async fn repl_slash_handled_followup(
                 .await
                 {
                     Ok(resolved) => {
-                        let _ = ctx.style.print_success(&format!(
-                        "已设 model = {resolved}（仅本进程有效；持久化请改配置文件；/config reload 会从磁盘覆盖）"
-                    ));
+                        let mut note = format!("已设 model = {resolved}");
+                        if persist {
+                            let mut file = crate::user_data::load_llm_overrides();
+                            file.client_llm.model = Some(resolved.clone());
+                            match crate::user_data::save_llm_overrides(&file) {
+                                Ok(()) => note.push_str("（已写入 user-data）"),
+                                Err(e) => {
+                                    let _ =
+                                        ctx.style.eprint_error(&format!("写 user-data 失败: {e}"));
+                                    note.push_str("（仅本进程内存）");
+                                }
+                            }
+                        } else {
+                            note.push_str("（仅本进程；--no-persist）");
+                        }
+                        let _ = ctx.style.print_success(&note);
                     }
                     Err(e) => {
                         let _ = ctx.style.eprint_error(&e.to_string());
@@ -186,6 +207,7 @@ struct ReplSlashBranchContinueLoopParams<'a> {
     agent_role_owned: &'a mut Option<String>,
     slash_handles: &'a ReplSlashSharedHandles,
     client: &'a reqwest::Client,
+    sqlite_sess: &'a mut Option<crate::runtime::cli_sqlite_session::CliSqliteSessionState>,
 }
 
 async fn repl_slash_branch_continue_loop(
@@ -203,7 +225,39 @@ async fn repl_slash_branch_continue_loop(
         agent_role_owned,
         slash_handles,
         client,
+        sqlite_sess,
     } = p;
+
+    let needs_bootstrap = input.trim().starts_with("/conv")
+        && input.split_whitespace().nth(1).is_some_and(|s| s == "new");
+    let bootstrap = if needs_bootstrap {
+        let cfg = cfg_holder.read().await;
+        Some(
+            crate::runtime::workspace_session::repl_bootstrap_messages_fast(
+                &cfg,
+                agent_role_owned.as_deref(),
+                &slash_handles.process_handles.tool_outcome_recorder,
+            ),
+        )
+    } else {
+        None
+    };
+    match crate::runtime::cli_sqlite_slash::try_apply_cli_sqlite_slash(
+        input.trim(),
+        sqlite_sess.as_mut(),
+        messages,
+        agent_role_owned,
+        bootstrap,
+    ) {
+        crate::runtime::cli_sqlite_slash::CliSqliteSlashResult::NotHandled => {}
+        crate::runtime::cli_sqlite_slash::CliSqliteSlashResult::Handled { lines } => {
+            for ln in lines {
+                let _ = style.print_line(&ln);
+            }
+            return Ok(true);
+        }
+    }
+
     let handled = try_handle_repl_slash_command(
         input,
         cfg_holder,
@@ -563,6 +617,7 @@ struct ReplIterationCtx<'a> {
     cli_rt: &'a CliToolRuntime,
     initial_pending: Option<&'a Arc<StdMutex<Option<Vec<Message>>>>>,
     process_handles: Arc<ProcessHandles>,
+    sqlite_sess: &'a mut Option<crate::runtime::cli_sqlite_session::CliSqliteSessionState>,
 }
 
 async fn repl_iteration_reply_to_read_line(
@@ -607,6 +662,7 @@ async fn repl_iteration_reply_to_read_line(
                 agent_role_owned: ctx.agent_role_owned,
                 slash_handles: ctx.slash_handles,
                 client: ctx.client,
+                sqlite_sess: ctx.sqlite_sess,
             })
             .await?
             {
@@ -636,6 +692,13 @@ async fn repl_iteration_reply_to_read_line(
                 sse_control_mirror: None,
             })
             .await?;
+            if let Some(sess) = ctx.sqlite_sess.as_mut()
+                && let Err(e) = sess.persist_round(ctx.messages, ctx.agent_role_owned.as_deref())
+            {
+                let _ = ctx
+                    .style
+                    .eprint_error(&format!("会话 SQLite 落盘失败: {e}"));
+            }
             Ok(ReplMainIterationCtl::Continue)
         }
     }
@@ -688,13 +751,13 @@ pub async fn run_repl(
         )?;
     }
 
-    let mut agent_role_owned = agent_role
+    let agent_role_owned = agent_role
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string());
 
     // `repl_initial_workspace_messages_enabled` 为 true 时：`initial_workspace_messages` 在独立线程中构建，不阻塞 REPL。
-    let (mut messages, initial_pending, repl_editor) = repl_prepare_messages_and_editor(
+    let (messages, initial_pending, repl_editor) = repl_prepare_messages_and_editor(
         cfg_holder,
         tui_load,
         &work_dir,
@@ -703,6 +766,29 @@ pub async fn run_repl(
         Arc::clone(&process_handles),
     )
     .await?;
+
+    let (mut sqlite_sess, messages_sq, role_sq) =
+        crate::runtime::cli_sqlite_session::maybe_bootstrap_cli_sqlite(
+            cfg_holder,
+            messages,
+            agent_role_owned,
+        )
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
+    let mut messages = messages_sq;
+    let mut agent_role_owned = role_sq;
+    // SQLite 多会话启用时勿再并入 tui_session.json 后台恢复，避免双轨覆盖。
+    let initial_pending = if sqlite_sess.is_some() {
+        None
+    } else {
+        initial_pending
+    };
+    if let Some(ref s) = sqlite_sess {
+        let _ = style.print_line(&format!(
+            "会话 SQLite 已启用 · conversation_id={}（/conv · /branch；CM_CONVERSATION_ID 可指定启动 id）",
+            s.conversation_id
+        ));
+    }
 
     loop {
         crate::runtime::workspace_session::try_merge_background_initial_workspace(
@@ -756,6 +842,7 @@ pub async fn run_repl(
             cli_rt: &cli_rt,
             initial_pending: initial_pending.as_ref(),
             process_handles: Arc::clone(&process_handles),
+            sqlite_sess: &mut sqlite_sess,
         };
         match repl_iteration_reply_to_read_line(read_res, &mut iter_ctx).await? {
             ReplMainIterationCtl::BreakRepl => break,

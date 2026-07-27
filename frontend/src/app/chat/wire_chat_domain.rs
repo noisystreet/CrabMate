@@ -110,6 +110,7 @@ pub(crate) fn wire_chat_domain_effects(
             draft: d.composer.draft,
             selected_agent_role: d.selected_agent_role,
             agent_role_user_override: d.agent_role_user_override,
+            apply_assistant_display_filters: d.apply_assistant_display_filters,
         },
         stream: WireComposerStreamsStreamSlice {
             stream_shell: args.stream_shell,

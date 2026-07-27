@@ -91,6 +91,18 @@ pub(in crate::runtime::tui::run_session) async fn tui_status_chips_line(
     format!("模型 · {model_id} · base_url · {base} · 角色 · {role}")
 }
 
+/// 带会话消息粗估的底栏 chips（与 Web 上下文芯片对齐）。
+pub(in crate::runtime::tui::run_session) async fn tui_status_chips_line_with_messages(
+    cfg_holder: &SharedAgentConfig,
+    agent_role_owned: &Option<String>,
+    messages: &[crate::types::Message],
+) -> String {
+    let base = tui_status_chips_line(cfg_holder, agent_role_owned).await;
+    let g = cfg_holder.read().await;
+    let ctx = crate::runtime::context_usage::context_usage_chip_line(&g, messages);
+    format!("{base} · {ctx}")
+}
+
 pub(in crate::runtime::tui::run_session) fn tui_status_bar_with_run(
     chips: &str,
     run: &str,

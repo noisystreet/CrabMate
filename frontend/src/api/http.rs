@@ -64,11 +64,9 @@ pub struct StatusData {
     pub llm_context_tokens: u32,
     /// 会话同步管道实际采用的近似字符预算（与后端 `AgentConfig::effective_context_char_budget_for_pipeline` 一致）。
     #[serde(default)]
-    #[allow(dead_code)]
     pub effective_context_char_budget: usize,
     /// 与后端 `GET /status` 的 `tiktoken_prompt_counting_model` 一致。
     #[serde(default)]
-    #[allow(dead_code)]
     pub tiktoken_prompt_counting_model: String,
     /// 新会话仅 `system` 时的 prompt token 粗估（键为角色 id，空串为默认）。
     #[serde(default)]
@@ -497,6 +495,31 @@ pub async fn fetch_tasks(loc: Locale) -> Result<TasksData, String> {
 
 pub async fn fetch_status(loc: Locale) -> Result<StatusData, String> {
     fetch_json("GET", "/status", None, loc).await
+}
+
+/// `POST /config/reload`：热重载服务端 `AgentConfig`（与 REPL `/config reload` 同源）。
+pub async fn post_config_reload(loc: Locale) -> Result<String, String> {
+    #[derive(Deserialize)]
+    struct Body {
+        #[serde(default)]
+        ok: bool,
+        #[serde(default)]
+        message: String,
+    }
+    let body: Body = fetch_json_with_body("POST", "/config/reload", "{}", loc).await?;
+    if body.ok {
+        Ok(if body.message.trim().is_empty() {
+            "配置已热重载".into()
+        } else {
+            body.message
+        })
+    } else {
+        Err(if body.message.trim().is_empty() {
+            "配置热重载失败".into()
+        } else {
+            body.message
+        })
+    }
 }
 
 pub async fn fetch_github_repo_context(loc: Locale) -> Result<GithubRepoContextData, String> {
