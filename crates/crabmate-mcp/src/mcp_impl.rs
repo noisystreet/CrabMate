@@ -16,7 +16,7 @@ use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
 
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientInfo, RawContent,
+    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientInfo, ContentBlock,
     ResourceContents,
 };
 use rmcp::service::{PeerRequestOptions, RequestHandle, RunningService, ServiceError};
@@ -205,17 +205,18 @@ fn format_call_tool_result(
     }
 }
 
-fn content_to_text(contents: &[rmcp::model::Content]) -> String {
+fn content_to_text(contents: &[ContentBlock]) -> String {
     let mut buf = String::new();
     for c in contents {
-        let piece = match &c.raw {
-            RawContent::Text(t) => t.text.clone(),
-            RawContent::Resource(r) => match &r.resource {
+        let piece = match c {
+            ContentBlock::Text(t) => t.text.clone(),
+            ContentBlock::Resource(r) => match &r.resource {
                 ResourceContents::TextResourceContents { text, .. } => text.clone(),
                 _ => "[嵌入资源（非文本）已省略]".to_string(),
             },
-            RawContent::Image(_) | RawContent::Audio(_) => "[图像/音频内容已省略]".to_string(),
-            RawContent::ResourceLink(_) => "[资源链接已省略]".to_string(),
+            ContentBlock::Image(_) | ContentBlock::Audio(_) => "[图像/音频内容已省略]".to_string(),
+            ContentBlock::ResourceLink(_) => "[资源链接已省略]".to_string(),
+            _ => "[未知内容块已省略]".to_string(),
         };
         if !buf.is_empty() && !piece.is_empty() {
             buf.push('\n');
