@@ -137,6 +137,25 @@ impl TuiTurnProjection {
         format_projected_rows_for_tui(&rows)
     }
 
+    /// 流式 scratch 正文是否已由 `[Turn 投影]` 承接（避免工具相双显）。
+    ///
+    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答仍走 scratch 尾挂。
+    pub(super) fn should_hide_streaming_content(&self, scratch_content: &str) -> bool {
+        let c = scratch_content.trim();
+        if c.is_empty() {
+            return false;
+        }
+        if self.turn.tool_phase_open {
+            return true;
+        }
+        if self.pending_stream_absorbed && !self.turn.steps.is_empty() {
+            // 工具批尚未结束时已吸收：content 多半是旁白副本
+            // tool_phase_open == false 且已有 steps → 允许终答；若 content 仍等于旁白则隐藏
+            return commentary_text_covers_scratch(&self.turn, c);
+        }
+        commentary_text_covers_scratch(&self.turn, c)
+    }
+
     fn absorb_pre_tool_scratch_if_needed(&mut self, scratch: &TuiLlmStreamScratch) {
         if self.pending_stream_absorbed || self.turn.tool_phase_open {
             return;
@@ -227,6 +246,28 @@ pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
     out
 }
 
+fn commentary_text_covers_scratch(turn: &Turn, scratch: &str) -> bool {
+    if let Some(open) = streaming_commentary_block_text(turn) {
+        let o = open.trim();
+        if !o.is_empty() && (scratch == o || scratch.starts_with(o) || o.starts_with(scratch)) {
+            return true;
+        }
+    }
+    for row in project_turn_web_v2(turn) {
+        if row.kind != "assistant_commentary" && row.kind != "assistant_batch_narration" {
+            continue;
+        }
+        let t = row.text.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if scratch == t || scratch.starts_with(t) || t.starts_with(scratch) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,6 +309,10 @@ mod tests {
         let block = proj.format_projection_block();
         assert!(block.contains("[旁白]"), "{block}");
         assert!(block.contains("[工具 · read_file]"), "{block}");
+        assert!(
+            proj.should_hide_streaming_content("先看一下 README。"),
+            "tool-phase / absorbed commentary must hide scratch duplicate"
+        );
     }
 
     #[test]

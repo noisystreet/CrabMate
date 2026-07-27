@@ -743,7 +743,7 @@ fn tui_dispatch_mouse(
             if let Some(hit) = render::chat_scrollbar_hit(
                 layout.chat,
                 g.transcript.as_str(),
-                g.turn_projection.format_projection_block().as_str(),
+                &g.turn_projection,
                 g.control_plane_tail.as_str(),
                 &scratch,
             ) {
@@ -758,7 +758,7 @@ fn tui_dispatch_mouse(
                 if let Some(hit) = render::chat_scrollbar_hit(
                     layout.chat,
                     g.transcript.as_str(),
-                    g.turn_projection.format_projection_block().as_str(),
+                    &g.turn_projection,
                     g.control_plane_tail.as_str(),
                     &scratch,
                 ) {

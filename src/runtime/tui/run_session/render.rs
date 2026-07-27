@@ -14,15 +14,19 @@ use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 use crate::text_util::truncate_chars_with_ellipsis;
 
 use super::approval;
+use super::turn_project::TuiTurnProjection;
 use super::{TuiFocus, TuiModel};
 
+/// 流式尾挂：推理始终可显；正文若已由 `[Turn 投影]` 承接则跳过，避免工具相双显。
 pub(super) fn append_tui_streaming_tail(
     transcript: &str,
     scratch: &crate::runtime::tui::TuiLlmStreamScratch,
+    projection: &TuiTurnProjection,
 ) -> String {
     let r = scratch.reasoning.trim();
     let c = scratch.content.trim();
-    if r.is_empty() && c.is_empty() {
+    let hide_content = projection.should_hide_streaming_content(c);
+    if r.is_empty() && (c.is_empty() || hide_content) {
         return transcript.to_string();
     }
     let mut out = String::from(transcript);
@@ -32,7 +36,7 @@ pub(super) fn append_tui_streaming_tail(
         out.push_str(&truncate_chars_with_ellipsis(r, 8000));
         out.push_str("\n\n");
     }
-    if !c.is_empty() {
+    if !c.is_empty() && !hide_content {
         out.push_str(&truncate_chars_with_ellipsis(c, 12000));
         out.push('\n');
     }
@@ -102,8 +106,11 @@ fn tui_prepare_chat_body_and_stream_flags(
     model: &TuiModel,
     scratch: &TuiLlmStreamScratch,
 ) -> TuiChatPanePrep {
-    let streaming_nonempty =
-        !scratch.reasoning.trim().is_empty() || !scratch.content.trim().is_empty();
+    let streaming_nonempty = !scratch.reasoning.trim().is_empty()
+        || (!scratch.content.trim().is_empty()
+            && !model
+                .turn_projection
+                .should_hide_streaming_content(scratch.content.as_str()));
     let mut transcript_display = model.transcript.clone();
     let projection = model.turn_projection.format_projection_block();
     if !projection.is_empty() {
@@ -114,7 +121,8 @@ fn tui_prepare_chat_body_and_stream_flags(
         transcript_display.push_str("\n\n[SSE 控制面]\n");
         transcript_display.push_str(model.control_plane_tail.as_str());
     }
-    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), scratch);
+    let chat_body =
+        append_tui_streaming_tail(transcript_display.as_str(), scratch, &model.turn_projection);
     TuiChatPanePrep {
         chat_body,
         streaming_nonempty,
@@ -332,7 +340,7 @@ pub(super) struct ChatScrollbarHit {
 pub(super) fn chat_scrollbar_hit(
     chat_pane: Rect,
     transcript: &str,
-    turn_projection_block: &str,
+    turn_projection: &TuiTurnProjection,
     control_plane_tail: &str,
     scratch: &TuiLlmStreamScratch,
 ) -> Option<ChatScrollbarHit> {
@@ -342,15 +350,17 @@ pub(super) fn chat_scrollbar_hit(
         return None;
     }
     let mut transcript_display = transcript.to_string();
-    if !turn_projection_block.is_empty() {
+    let projection_block = turn_projection.format_projection_block();
+    if !projection_block.is_empty() {
         transcript_display.push_str("\n\n");
-        transcript_display.push_str(turn_projection_block);
+        transcript_display.push_str(projection_block.as_str());
     }
     if !control_plane_tail.is_empty() {
         transcript_display.push_str("\n\n[SSE 控制面]\n");
         transcript_display.push_str(control_plane_tail);
     }
-    let chat_body = append_tui_streaming_tail(transcript_display.as_str(), scratch);
+    let chat_body =
+        append_tui_streaming_tail(transcript_display.as_str(), scratch, turn_projection);
     let tw = text_rect.width.max(1);
     let th = text_rect.height.max(1);
     let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
