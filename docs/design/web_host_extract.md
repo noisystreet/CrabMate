@@ -24,6 +24,8 @@
 
 axum `FromRef<Arc<AppState>> for Facet` 要求 **Facet 与 AppState 同 crate**（孤儿规则）。`AppState` / 队列 / `run_agent_turn` 仍在根包，故带状态的 handler 留在 `src/web/`；web-host 专责契约与 serve 壳。
 
+根因与解耦路线（`ToolDispatch` / `TurnRunner`）见 **`docs/design/turn_host_decouple.md`**。在 TurnRunner 注入完成前，**不要**强行把 `chat_job_queue` 迁入 web-host（见上方非目标）。
+
 ## 依赖方向
 
 ```text
@@ -38,4 +40,4 @@ serve / cli_run（根包）
 ## 验证
 
 - `cargo check` / `cargo clippy`（根包）
-- `bash scripts/check-crate-deps.sh`
+- `bash scripts/check-crate-deps.sh`（亦经 pre-commit / CI）

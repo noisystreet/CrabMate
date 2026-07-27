@@ -45,3 +45,7 @@
 | `host/` | `host` | `execute`、`params`、`turn_sink`、`errors`、`sub_agent_policy` |
 
 根 `mod.rs` 再导出 `errors` / `params` / `execute_tools` / `plan` / `reflect` / `intent` / `turn_completion` 等，保持 `crate::agent::agent_turn::*` 常用路径。
+
+## 后续（执行面）
+
+外循环纯逻辑已下沉；**IO 执行面**（`host` → `dispatch_tool`、`chat_job_queue` → `run_agent_turn`）解耦见 **`docs/design/turn_host_decouple.md`**。

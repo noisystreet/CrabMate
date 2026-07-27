@@ -47,6 +47,9 @@ jobs:
       - name: cargo check (workspace, all targets)
         run: cargo check --workspace --all-targets --all-features
 
+      - name: crate dependency policy (forbidden edges)
+        run: bash scripts/check-crate-deps.sh
+
       - name: cargo check (crabmate default features)
         run: cargo check -p crabmate
 
