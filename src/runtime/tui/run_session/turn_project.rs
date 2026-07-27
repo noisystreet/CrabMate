@@ -220,6 +220,11 @@ impl TuiTurnProjection {
         );
         self.scratch_cursor_at_segment_start = Some(content.len());
     }
+
+    #[cfg(test)]
+    pub(super) fn apply_turn_event_for_test(&mut self, event: TurnEvent) {
+        TurnReducer.apply(&mut self.turn, event);
+    }
 }
 
 pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
@@ -273,6 +278,7 @@ mod tests {
     use super::*;
     use crate::runtime::tui::TuiLlmStreamScratch;
     use crate::sse::{ToolCallSummary, TurnSegmentEndBody, TurnSegmentStartBody};
+    use crabmate_turn_layout::TurnEvent;
 
     #[test]
     fn form_b_scratch_absorbed_before_tool_projects_commentary_then_tool() {
@@ -359,5 +365,57 @@ mod tests {
         let rows = project_turn_web_v2(proj.turn_ref());
         assert_eq!(rows[0].kind, "assistant_commentary");
         assert_eq!(rows[0].text, "旁白正文。");
+    }
+
+    #[test]
+    fn golden_web_v2_row_order_preserved_in_tui_projection_block() {
+        use serde::Deserialize;
+        use std::path::PathBuf;
+
+        #[derive(Debug, Deserialize)]
+        struct GoldenCase {
+            id: String,
+            events: Vec<TurnEvent>,
+        }
+
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/turn_project_golden.jsonl");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for (line_no, line) in raw.lines().enumerate() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let case: GoldenCase = serde_json::from_str(t).unwrap_or_else(|e| {
+                panic!("{}:{}: {e}\n{t}", path.display(), line_no + 1);
+            });
+            let mut proj = TuiTurnProjection::default();
+            for ev in case.events {
+                proj.apply_turn_event_for_test(ev);
+            }
+            proj.finalize_for_display(&TuiLlmStreamScratch::default());
+            let web_rows = project_turn_web_v2(proj.turn_ref());
+            let block = proj.format_projection_block();
+            assert!(
+                block.starts_with("[Turn 投影]"),
+                "case {}: missing header in {block}",
+                case.id
+            );
+            let mut search_from = 0usize;
+            for (i, row) in web_rows.iter().enumerate() {
+                let needle = row.text.trim();
+                if needle.is_empty() {
+                    continue;
+                }
+                let Some(rel) = block[search_from..].find(needle) else {
+                    panic!(
+                        "case {}: row[{i}] kind={} text={needle:?} not found in order after {search_from} in:\n{block}",
+                        case.id, row.kind
+                    );
+                };
+                search_from += rel + needle.len();
+            }
+        }
     }
 }
