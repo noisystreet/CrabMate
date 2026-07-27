@@ -8,7 +8,7 @@
 //!
 //! **焦点**：左（会话）/中上（聊天）/中下（撰写）/右（工作区）四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**右侧工作区栏聚焦时 `Enter`** 打开工作区 Modal（与 Web 侧栏一致）；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
 //!
-//! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；工具/助手/用户展示路径见 [`transcript`]；本轮旁白/工具序另经 [`turn_project`]（`crabmate-turn-layout` / `project_turn_web_v2`，对齐 Tauri）。
+//! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；工具/助手/用户展示路径见 [`transcript`]；本轮旁白/工具序另经 [`turn_project`]（`crabmate-turn-layout` / `project_turn_web_v2`，对齐 Tauri）。回合结束将投影 flush 进 [`transcript::CommittedTurns`]，避免历史退回落盘序。
 //!
 //! **工具审批**：全屏居中 Modal（↑↓ / jk · Enter · Esc · 1/2/3），与 REPL dialoguer 三项语义一致；不退出 alternate screen。
 //!
@@ -22,6 +22,7 @@
 mod approval;
 mod clarify_modal;
 mod poll_loop;
+mod refresh;
 mod render;
 mod session_loop;
 mod sidebar_text;
@@ -33,6 +34,7 @@ mod transcript;
 mod turn_project;
 mod workspace_modal;
 mod workspace_sidebar_extra;
+
 mod workspace_switch;
 
 use std::collections::VecDeque;
@@ -273,6 +275,8 @@ struct TuiModel {
     control_plane_tail: String,
     /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
     turn_projection: turn_project::TuiTurnProjection,
+    /// 已定稿回合展示（含 flush 后的 `[Turn 投影]` 行序）；`msg_len` 与 `messages` 前缀对齐。
+    committed_turns: transcript::CommittedTurns,
 }
 
 struct TuiSlashUiRefresh<'a> {
@@ -411,80 +415,6 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     g.status_run = sidebar_text::tui_status_run_ready().to_string();
 }
 
-pub(in crate::runtime::tui::run_session) struct TuiAfterChatRoundRefresh<'a> {
-    pub model: &'a Arc<Mutex<TuiModel>>,
-    pub cfg_holder: &'a SharedAgentConfig,
-    pub work_dir: &'a std::path::Path,
-    pub agent_role_owned: &'a Option<String>,
-    pub messages: &'a [Message],
-    pub tool_count: usize,
-    pub cli_no_stream: bool,
-    pub sqlite_persist: Option<&'a mut Option<&'a mut sqlite_session::TuiSqliteSessionState>>,
-    pub process_handles: &'a Arc<ProcessHandles>,
-}
-
-async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
-    let TuiAfterChatRoundRefresh {
-        model,
-        cfg_holder,
-        work_dir,
-        agent_role_owned,
-        messages,
-        tool_count,
-        cli_no_stream,
-        sqlite_persist,
-        process_handles,
-    } = p;
-    let persist_note = if let Some(sqlite_slot) = sqlite_persist
-        && let Some(sess) = sqlite_slot.as_mut()
-    {
-        (*sess)
-            .persist_round(messages, agent_role_owned.as_deref())
-            .err()
-    } else {
-        None
-    };
-    let new_header = tui_header_summary(work_dir);
-    let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let sqlite_nav = {
-        let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.sqlite_conversation_id.clone()
-    };
-    let nav = sidebar_text::build_tui_session_sidebar(
-        tui_load_nav,
-        workspace_session::session_file_path(work_dir).exists(),
-        messages.len(),
-        sqlite_nav.as_deref(),
-    );
-    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
-        work_dir,
-        tool_count,
-        cli_no_stream,
-        process_handles,
-        cfg_holder,
-        sqlite_nav.as_deref(),
-    )
-    .await;
-    let chips =
-        sidebar_text::tui_status_chips_line_with_messages(cfg_holder, agent_role_owned, messages)
-            .await;
-
-    let transcript = transcript::messages_to_transcript(messages);
-    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-    g.transcript = transcript;
-    g.chat_snap_bottom_next_draw = true;
-    g.chat_follow_bottom = true;
-    g.header_line = new_header;
-    g.nav_summary = nav;
-    g.right_summary = right;
-    g.workspace_path_buf = work_dir.to_path_buf();
-    g.status_chips = chips;
-    g.status_run = match persist_note {
-        Some(err) => sidebar_text::tui_status_run_error(&format!("SQLite: {err}")),
-        None => sidebar_text::tui_status_run_ready().to_string(),
-    };
-}
-
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
 pub async fn run_tui_session(
     common: CliMainInvocationCommon<'_>,
@@ -577,13 +507,14 @@ pub async fn run_tui_session(
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 
+    let committed_turns = transcript::CommittedTurns::reseed_from_messages(&messages);
     let (ev_tx, mut ev_rx) = unbounded_channel::<UiEvent>();
     let shutdown = Arc::new(AtomicBool::new(false));
     let model = Arc::new(Mutex::new(TuiModel {
         header_line,
         nav_summary,
         right_summary,
-        transcript: transcript::messages_to_transcript(&messages),
+        transcript: committed_turns.display.clone(),
         chat_scroll_y: 0,
         chat_snap_bottom_next_draw: false,
         chat_follow_bottom: true,
@@ -601,6 +532,7 @@ pub async fn run_tui_session(
         sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
         control_plane_tail: String::new(),
         turn_projection: turn_project::TuiTurnProjection::default(),
+        committed_turns,
     }));
 
     let clarify_shared = TuiClarificationShared {
@@ -680,7 +612,7 @@ pub async fn run_tui_session(
     Ok(())
 }
 
-fn tui_header_summary(work_dir: &std::path::Path) -> String {
+pub(super) fn tui_header_summary(work_dir: &std::path::Path) -> String {
     let wd = work_dir.display().to_string();
     let wd_short = truncate_chars_with_ellipsis(&wd, 72);
     format!("CrabMate · {wd_short}")
