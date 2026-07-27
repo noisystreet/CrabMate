@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use rmcp::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, Content, ErrorData as McpError, Implementation,
+    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData as McpError, Implementation,
     ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::{RequestContext, RoleServer, serve_server};
@@ -149,8 +149,8 @@ impl ServerHandler for CrabmateMcpServer {
             };
 
             match (callbacks.run_tool)(&name, &args_json, &work_dir, &cfg) {
-                Ok(output) => Ok(CallToolResult::success(vec![Content::text(output)])),
-                Err(msg) => Ok(CallToolResult::error(vec![Content::text(msg)])),
+                Ok(output) => Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
+                Err(msg) => Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
             }
         }
     }
