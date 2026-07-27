@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 已落地**；**Phase 1–3 已落地**；后续阶段未承诺工期）。  
+**状态**：路线图（**P1–P4 与 Phase 1–4 已落地**；后续阶段未承诺工期）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -76,7 +76,7 @@
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
 | 终答 | 工具批结束后进投影 `[终答]`（对齐 `turn-final-answer`） | `turn-final-answer` + overlay |
 | 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
-| 绘制 | 整块 `Paragraph` 字符串 | per-section DOM + 局部 patch |
+| 绘制 | 整块 `Paragraph` + 按行标题着色（旁白/工具/终答） | per-section DOM + 局部 patch |
 | 导出默认 | `projection=raw` | UI 导出多为 `display` |
 
 ---
@@ -119,17 +119,13 @@
 
 **验收**：`projected_tool_events_skip_control_plane_appendix`；常规多工具回合无「投影工具 + 控制面工具」双列。
 
-### Phase 4 — 按行渲染（ratatouille 列表）
+### Phase 4 — 按行渲染（ratatouille 列表）（已落地 · 首刀）
 
 **问题**：整串 `Paragraph` 不利于分色、按行滚动、局部刷新。
 
-**方向**：
+**落地**：`chat_body_to_styled_text` / `chat_line_header_style`：旁白青、工具黄、终答绿、投影头品红；`color=false` 时纯文本。滚动仍按原文估算（既有 clamp）。未改为独立 `List` widget（可后续再拆）。
 
-- `ProjectedRow` → `List`/`ListItem`（旁白 / 工具 / 终答 / 时间线样式区分）。  
-- 滚动跟底按「行数」估算，减少与 `WordWrapper` 偏差。  
-- **不**要求 Markdown 完备渲染；可先纯文本 + 少量修饰。
-
-**验收**：主题/`NO_COLOR` 下旁白与工具视觉可区分；大输出时滚动不 panic（现有 clamp 不变量保持）。
+**验收**：`chat_line_headers_get_distinct_styles_when_color_on`。
 
 ### Phase 5 — 导出与对照
 
@@ -171,10 +167,10 @@
 | 1 | ~~Phase 1 历史 flush~~ | 已落地 |
 | 2 | ~~Phase 2 终答投影~~ | 已落地 |
 | 3 | ~~Phase 3 控制面收敛~~ | 已落地 |
-| 4 | Phase 4 按行渲染 | 可拆「仅投影区 List」与「全 transcript List」 |
+| 4 | ~~Phase 4 按行渲染~~ | 已落地（标题着色首刀） |
 | 5 | Phase 5–6 | 可并行：导出选项 vs 金样/CI |
 
-**推荐下一刀**：Phase 4（投影区按行 List 渲染）。
+**推荐下一刀**：Phase 5（导出可选 `projection=display`）。
 
 ---
 
