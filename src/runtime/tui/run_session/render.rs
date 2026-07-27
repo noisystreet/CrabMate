@@ -166,7 +166,7 @@ fn tui_prepare_chat_body_and_stream_flags(
                 .turn_projection
                 .should_hide_streaming_content(scratch.content.as_str()));
     let mut transcript_display = model.transcript.clone();
-    let projection = model.turn_projection.format_projection_block();
+    let projection = model.turn_projection.format_projection_block(Some(scratch));
     if !projection.is_empty() {
         transcript_display.push_str("\n\n");
         transcript_display.push_str(projection.as_str());
@@ -477,7 +477,7 @@ pub(super) fn chat_scrollbar_hit(
         return None;
     }
     let mut transcript_display = transcript.to_string();
-    let projection_block = turn_projection.format_projection_block();
+    let projection_block = turn_projection.format_projection_block(Some(scratch));
     if !projection_block.is_empty() {
         transcript_display.push_str("\n\n");
         transcript_display.push_str(projection_block.as_str());
