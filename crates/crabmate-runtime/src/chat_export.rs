@@ -1,13 +1,16 @@
 //! 会话导出落盘：复用 [`crabmate_chat_export`] 的 schema / Markdown；本模块仅负责写
-//! `<workspace>/.crabmate/exports/`。Web / Tauri 见 `frontend/src/session_export.rs`。
+//! `<workspace>/.crabmate/exports/`（**`projection=raw`**）。Web / Tauri 见
+//! `frontend/src/session_export.rs`（**`projection=display`**）。
 
 use crabmate_types::Message;
 use std::io;
 use std::path::{Path, PathBuf};
 
 pub use crabmate_chat_export::{
-    CHAT_EXPORT_SCHEMA_ID, CHAT_EXPORT_SCHEMA_VERSION, CHAT_SESSION_FILE_VERSION, ChatSessionFile,
-    ExportMdLocale, session_to_json_pretty,
+    CHAT_EXPORT_PROJECTION_DISPLAY, CHAT_EXPORT_PROJECTION_RAW, CHAT_EXPORT_SCHEMA_ID,
+    CHAT_EXPORT_SCHEMA_VERSION, CHAT_SESSION_FILE_VERSION, ChatSessionFile, DisplayChatSessionFile,
+    DisplayExportMessage, ExportMdLocale, display_session_to_json_pretty, ensure_raw_projection,
+    projection_is_display, projection_is_raw, session_to_json_pretty,
 };
 
 /// 与 TUI `/export` / Web 导出一致：跳过 `system`；`tool` 与 `assistant`/`user` 分段输出。
@@ -253,12 +256,8 @@ mod tests {
     }
 
     #[test]
-    fn session_file_deserialize_legacy_without_schema() {
+    fn session_file_rejects_missing_envelope_fields() {
         let json = r#"{"version":1,"messages":[]}"#;
-        let f: ChatSessionFile = serde_json::from_str(json).unwrap();
-        assert_eq!(f.schema, CHAT_EXPORT_SCHEMA_ID);
-        assert_eq!(f.schema_version, CHAT_EXPORT_SCHEMA_VERSION);
-        assert_eq!(f.version, 1);
-        assert!(f.messages.is_empty());
+        assert!(serde_json::from_str::<ChatSessionFile>(json).is_err());
     }
 }

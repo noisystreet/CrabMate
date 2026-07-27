@@ -397,7 +397,7 @@ pub fn export_session_json_for_id(
         return;
     };
     let file = session_to_export_file(&s, loc, apply_assistant_display_filters);
-    let Ok(json) = serde_json::to_string_pretty(&file) else {
+    let Ok(json) = crate::session_export::display_session_to_json_pretty(&file) else {
         return;
     };
     let stem = export_filename_stem("chat_export");
