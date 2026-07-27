@@ -207,6 +207,7 @@ fn build_parsed_cli_args(
         Commands::SaveSession(e) => {
             b.save_session = Some(SaveSessionCli {
                 format: e.format,
+                projection: e.projection,
                 session_file: e.session_file,
             });
         }

@@ -319,6 +319,10 @@ pub struct SaveSessionCmd {
     #[arg(long, value_enum, default_value_t = SaveSessionFormat::Both)]
     pub format: SaveSessionFormat,
 
+    /// JSON 信封 `projection`：`raw`（完整 Message，可 tool-replay）或 `display`（展示投影，不可直接 tool-replay）；默认 `raw`
+    #[arg(long, value_enum, default_value_t = SaveSessionProjection::Raw)]
+    pub projection: SaveSessionProjection,
+
     /// 会话文件（默认：`<workspace>/.crabmate/tui_session.json`）
     #[arg(long, value_name = "FILE")]
     pub session_file: Option<String>,
@@ -336,10 +340,21 @@ pub enum SaveSessionFormat {
     Both,
 }
 
+/// `save-session --projection` 取值（JSON 信封；Markdown 不受影响）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum, Default)]
+pub enum SaveSessionProjection {
+    /// 完整 OpenAI 形 `Message`（默认；可 `tool-replay`）
+    #[default]
+    Raw,
+    /// 展示投影瘦消息（对齐 Web/Tauri；**不可**直接 `tool-replay`）
+    Display,
+}
+
 /// 解析后的 `save-session` 参数（供 `runtime::cli` 执行）
 #[derive(Debug, Clone)]
 pub struct SaveSessionCli {
     pub format: SaveSessionFormat,
+    pub projection: SaveSessionProjection,
     pub session_file: Option<String>,
 }
 

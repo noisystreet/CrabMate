@@ -180,8 +180,12 @@ pub fn save_workspace_session(workspace: &Path, messages: &[Message]) -> std::io
     std::fs::write(&path, json)
 }
 
-pub fn export_json(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {
-    chat_export::write_json_export(workspace, messages)
+pub fn export_json_with_projection(
+    workspace: &Path,
+    messages: &[Message],
+    projection: chat_export::JsonExportProjection,
+) -> std::io::Result<PathBuf> {
+    chat_export::write_json_export_with_projection(workspace, messages, projection)
 }
 
 pub fn export_markdown(workspace: &Path, messages: &[Message]) -> std::io::Result<PathBuf> {

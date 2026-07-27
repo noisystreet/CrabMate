@@ -51,7 +51,7 @@ pub(crate) fn refresh_skill_slash_completions(items: Vec<SkillSlashCompleteItem>
     }
 }
 
-/// `/export` 与 `/save-session` 后的格式参数（与 REPL `repl_export_kind_from_arg` 一致）。
+/// `/export` 与 `/save-session` 后的格式/投影参数（与 REPL `repl_export_kind_and_projection_from_arg` 一致）。
 pub(super) const EXPORT_FORMAT_ARGS: &[&str] = &["both", "json", "markdown", "md"];
 
 pub(super) fn suggestion_slash_command(span: Span, cmd: &str) -> Suggestion {

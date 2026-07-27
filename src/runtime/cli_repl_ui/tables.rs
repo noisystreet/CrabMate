@@ -79,8 +79,8 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
         "导出当前内存对话到 .crabmate/exports/（与 Web 同形 JSON/Markdown）",
     ),
     (
-        "/save-session [json|markdown|both]",
-        "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；默认 tui_session.json）",
+        "/save-session [json|markdown|both] [raw|display]",
+        "从磁盘会话文件导出到 .crabmate/exports/（同 crabmate save-session；JSON 默认 raw；display 不可 tool-replay）",
     ),
     (
         "/mcp · /mcp list · /mcp probe · /mcp list probe",

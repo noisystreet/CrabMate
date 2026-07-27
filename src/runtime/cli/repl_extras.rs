@@ -90,26 +90,46 @@ pub(crate) async fn repl_rebuild_bootstrap_messages(
     }
 }
 
-pub(super) fn repl_export_kind_from_arg(arg: &str) -> Result<ReplExportKind, ()> {
-    let a = arg.trim().to_ascii_lowercase();
-    match a.as_str() {
-        "" | "both" => Ok(ReplExportKind::Both),
-        "json" => Ok(ReplExportKind::Json),
-        "markdown" | "md" => Ok(ReplExportKind::Markdown),
-        _ => Err(()),
+/// 解析 `/export` / `/save-session` 参数：格式 + 可选 `display`/`raw`（默认 raw）。
+pub(super) fn repl_export_kind_and_projection_from_arg(
+    arg: &str,
+) -> Result<
+    (
+        ReplExportKind,
+        crate::runtime::chat_export::JsonExportProjection,
+    ),
+    (),
+> {
+    use crate::runtime::chat_export::JsonExportProjection;
+    let mut kind = ReplExportKind::Both;
+    let mut projection = JsonExportProjection::Raw;
+    for tok in arg.split_whitespace() {
+        let t = tok.to_ascii_lowercase();
+        match t.as_str() {
+            "both" => kind = ReplExportKind::Both,
+            "json" => kind = ReplExportKind::Json,
+            "markdown" | "md" => kind = ReplExportKind::Markdown,
+            "display" => projection = JsonExportProjection::Display,
+            "raw" => projection = JsonExportProjection::Raw,
+            _ => return Err(()),
+        }
     }
+    Ok((kind, projection))
 }
 
 /// 将内存中的消息导出到工作区 `.crabmate/exports/`（与 Web 及 `save-session` 落盘形状同形）。
-pub(super) fn repl_export_current_messages(
+pub(super) fn repl_export_current_messages_with_projection(
     work_dir: &Path,
     messages: &[Message],
     kind: ReplExportKind,
+    projection: crate::runtime::chat_export::JsonExportProjection,
     style: &CliReplStyle,
 ) -> io::Result<()> {
     match kind {
         ReplExportKind::Json => {
-            let p = crate::runtime::workspace_session::export_json(work_dir, messages)?;
+            let p = crate::runtime::workspace_session::export_json_with_projection(
+                work_dir, messages, projection,
+            )?;
             style.print_success(&format!("已导出 JSON: {}", p.display()))?;
         }
         ReplExportKind::Markdown => {
@@ -117,7 +137,9 @@ pub(super) fn repl_export_current_messages(
             style.print_success(&format!("已导出 Markdown: {}", p.display()))?;
         }
         ReplExportKind::Both => {
-            let pj = crate::runtime::workspace_session::export_json(work_dir, messages)?;
+            let pj = crate::runtime::workspace_session::export_json_with_projection(
+                work_dir, messages, projection,
+            )?;
             let pm = crate::runtime::workspace_session::export_markdown(work_dir, messages)?;
             style.print_success(&format!("已导出 JSON: {}", pj.display()))?;
             style.print_success(&format!("已导出 Markdown: {}", pm.display()))?;

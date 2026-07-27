@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 与 Phase 1–4 已落地**；后续阶段未承诺工期）。  
+**状态**：路线图（**P1–P4 与 Phase 1–5 已落地**；Phase 6 未承诺工期）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -77,7 +77,7 @@
 | 终答 | 工具批结束后进投影 `[终答]`（对齐 `turn-final-answer`） | `turn-final-answer` + overlay |
 | 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
 | 绘制 | 整块 `Paragraph` + 按行标题着色（旁白/工具/终答） | per-section DOM + 局部 patch |
-| 导出默认 | `projection=raw` | UI 导出多为 `display` |
+| 导出默认 | 默认仍 `projection=raw`；可选 `--projection display` / slash `display` | UI 导出多为 `display` |
 
 ---
 
@@ -127,14 +127,11 @@
 
 **验收**：`chat_line_headers_get_distinct_styles_when_color_on`。
 
-### Phase 5 — 导出与对照
+### Phase 5 — 导出与对照（已落地）
 
-**方向**：
+**落地**：`save-session --projection raw|display`（默认 raw）；`/export` `/save-session` 可选 `display`；`write_json_export_with_projection` + `messages_to_display_export`。display **不可**直接 `tool-replay`。
 
-- TUI/`save-session` 增加可选 **`--projection display`**（或 slash），信封字段与 Web 一致。  
-- 默认仍 `raw`。文档写明：display **不可**直接 `tool-replay`。
-
-**验收**：同一会话 raw vs display 文件信封正确；display 旁白序与中区定稿一致。
+**验收**：`display_export_sets_projection_and_skips_system`；CLI `--help` 含 projection。
 
 ### Phase 6 — 自动化回归
 
@@ -168,9 +165,10 @@
 | 2 | ~~Phase 2 终答投影~~ | 已落地 |
 | 3 | ~~Phase 3 控制面收敛~~ | 已落地 |
 | 4 | ~~Phase 4 按行渲染~~ | 已落地（标题着色首刀） |
-| 5 | Phase 5–6 | 可并行：导出选项 vs 金样/CI |
+| 5 | ~~Phase 5 导出~~ | 已落地 |
+| 6 | Phase 6 自动化回归 | 可并行：金样/CI |
 
-**推荐下一刀**：Phase 5（导出可选 `projection=display`）。
+**推荐下一刀**：Phase 6（SSE fixture → TUI 投影行序金样）。
 
 ---
 
