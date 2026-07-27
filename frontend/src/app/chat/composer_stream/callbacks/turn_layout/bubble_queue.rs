@@ -164,15 +164,20 @@ impl BubbleOutputQueue {
     /// Web assistant 正文落盘入口（不可变 commentary + final）。
     ///
     /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（终答唯一来源）。
+    /// `allow_final_answer`：为 false 时不写 `turn-final-answer`（工具前旁白仍在 overlay/loading，
+    /// 避免 `turn_segment_end` 把旁白误刷进终答行，随后 demote/detach 造成助手气泡闪消失）。
     pub(super) fn sync_web_projection(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
         turn: &TurnCanonicalState,
         loading_tail_id: Option<&str>,
         overlay_answer: Option<&str>,
+        allow_final_answer: bool,
     ) {
         self.flush_commentary_rows(messages, turn, overlay_answer);
-        self.flush_final_answer_row(messages, turn, loading_tail_id, overlay_answer);
+        if allow_final_answer {
+            self.flush_final_answer_row(messages, turn, loading_tail_id, overlay_answer);
+        }
     }
 
     fn commentary_projection_pending_in_messages(
@@ -230,7 +235,7 @@ impl BubbleOutputQueue {
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
     ///
-    /// 从 overlay 读取终答正文。
+    /// 从 overlay 读取终答正文。调用方须已确认允许落盘终答（post-tool / on_done）。
     pub(super) fn flush_final_answer_row(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -425,7 +430,7 @@ mod tests {
             },
         ];
         // 终答在 overlay；模拟 overlay 已有终答。
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("完成。"));
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("完成。"), true);
         // loading tail 保留正文（不再清空，避免聊天列气泡闪烁）
         let load = msgs.iter().find(|m| m.id == "load").expect("loading shell");
         assert_eq!(load.text, "不应落盘的尾泡正文");
@@ -542,7 +547,7 @@ mod tests {
                 created_at: 0,
             },
         );
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("终答。"));
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("终答。"), true);
         let commentary_idx = msgs
             .iter()
             .position(|m| m.id == commentary_row_id("tc_a"))
@@ -566,6 +571,37 @@ mod tests {
         assert!(msgs.is_empty());
     }
 
+    /// 工具前旁白仍在 overlay：`allow_final_answer=false` 时不得写入 turn-final-answer。
+    #[test]
+    fn pre_tool_sync_skips_final_answer_when_not_allowed() {
+        let turn = TurnCanonicalState::new();
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![crate::storage::StoredMessage {
+            id: "load".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(crate::storage::StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }];
+        queue.sync_web_projection(
+            &mut msgs,
+            &turn,
+            Some("load"),
+            Some("好的，这是一个 C++ 项目。"),
+            false,
+        );
+        assert!(
+            !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "pre-tool commentary must not become turn-final-answer"
+        );
+        assert!(msgs.iter().any(|m| m.id == "load"));
+    }
+
     /// 无工具场景：`flush_final_answer_row` 从 overlay 创建 FINAL_ANSWER_ROW。
     ///
     /// 这是无工具问答的正常路径：流式 delta 写入 overlay，on_done 时
@@ -586,7 +622,13 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("无工具终答正文。"));
+        queue.sync_web_projection(
+            &mut msgs,
+            &turn,
+            Some("load"),
+            Some("无工具终答正文。"),
+            true,
+        );
         // FINAL_ANSWER_ROW 应创建
         let final_row = msgs
             .iter()
@@ -615,7 +657,7 @@ mod tests {
             tool_name: None,
             created_at: 0,
         }];
-        queue.sync_web_projection(&mut msgs, &turn, Some("load"), None);
+        queue.sync_web_projection(&mut msgs, &turn, Some("load"), None, true);
         // overlay 为空时不应创建 FINAL_ANSWER_ROW
         assert!(
             !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),

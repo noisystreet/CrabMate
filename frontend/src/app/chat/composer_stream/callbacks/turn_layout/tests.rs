@@ -297,3 +297,36 @@ fn late_tool_order_tool_then_empty_loading_tail() {
     assert_eq!(msgs[2].id, "a_load");
     assert!(msgs[2].text.is_empty());
 }
+
+#[test]
+fn should_not_clear_overlay_during_tool_phase_when_preview_empty() {
+    use crate::app::chat::composer_stream::turn_canonical::TurnCanonicalState;
+    use crate::sse_dispatch::TurnSegmentStartInfo;
+
+    let mut turn = TurnCanonicalState::new();
+    turn.on_segment_start(TurnSegmentStartInfo {
+        segment_id: "seg-c".into(),
+        kind: "commentary".into(),
+        before_tool_call_id: Some("tc1".into()),
+    });
+    assert!(turn.try_apply_commentary_delta("旁白正文。"));
+    turn.on_segment_end("seg-c".into());
+    turn.on_tool_call("tc1", "read_file", "read");
+    assert!(turn.tool_phase_open());
+    let msgs = vec![StoredMessage {
+        id: "turn-commentary-tc1".into(),
+        role: "assistant".into(),
+        text: "旁白正文。".into(),
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state: None,
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: 0,
+    }];
+    assert!(
+        !should_clear_preview_overlay_answer(&turn, &msgs, Some("旁白正文。")),
+        "tool phase must keep live overlay even when loading_preview is empty"
+    );
+}

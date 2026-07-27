@@ -83,9 +83,19 @@ fn commit_overlay_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) ->
 
 /// 工具边界 / demote：overlay 与 loading stored 正文 **仅** 迁入 canonical，不写 `StoredMessage` 助手行。
 ///
+/// `clear_loading_ui`：为 true 时清空 loading 正文与 overlay（旧路径）。为 false 时保留 UI，
+/// 避免旁注行尚未 `flush` 前助手气泡被掏空/删除（用户可见「助手消息消失」）。
+///
 /// 注意：`commit_overlay_commentary_to_canonical` 已从 overlay 推送过正文，
 /// 后续 stored message 中取出的文本与之相同，**不再重复推送**（否则 commentary 加倍）。
 pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
+    drain_loading_commentary_to_canonical_ex(stream_ctx, true);
+}
+
+fn drain_loading_commentary_to_canonical_ex(
+    stream_ctx: &ChatStreamCallbackCtx,
+    clear_loading_ui: bool,
+) {
     if !stream_ctx.scratch.tool_phase_open() && stream_ctx.scratch.post_tool_stream_tail_active() {
         return;
     }
@@ -93,22 +103,38 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
     let drained = RefCell::new(None::<String>);
-    stream_ctx.update_bound_session(|s| {
-        let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
-            return;
-        };
-        stream_overlay_take_into_stored_message(
-            stream_ctx.chat.stream_text_overlay,
-            sid.as_str(),
-            mid.as_str(),
-            &mut s.messages[idx],
-        );
-        let text = s.messages[idx].text.trim();
-        if !text.is_empty() {
-            *drained.borrow_mut() = Some(s.messages[idx].text.clone());
+    if clear_loading_ui {
+        stream_ctx.update_bound_session(|s| {
+            let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
+                return;
+            };
+            stream_overlay_take_into_stored_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid.as_str(),
+                mid.as_str(),
+                &mut s.messages[idx],
+            );
+            let text = s.messages[idx].text.trim();
+            if !text.is_empty() {
+                *drained.borrow_mut() = Some(s.messages[idx].text.clone());
+            }
+            s.messages[idx].text.clear();
+        });
+    } else {
+        // 保留 overlay / stored 正文供 TUI 继续展示；仅把副本推入 canonical。
+        let from_stored = stream_ctx
+            .read_bound_session(|s| {
+                s.messages
+                    .iter()
+                    .find(|m| m.id == mid.as_str())
+                    .map(|m| m.text.clone())
+                    .filter(|t| !t.trim().is_empty())
+            })
+            .flatten();
+        if let Some(text) = from_stored {
+            *drained.borrow_mut() = Some(text);
         }
-        s.messages[idx].text.clear();
-    });
+    }
     // 仅当 overlay 为空时（`overlay_pushed == false`）才从 stored 推送，避免双路径重复。
     if let Some(text) = drained.into_inner()
         && !overlay_pushed
@@ -123,13 +149,22 @@ pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallb
                 .absorb_pre_tool_narration_for_first_tool(text.as_str());
         }
     }
-    stream_overlay_clear_answer_for_message(
-        stream_ctx.chat.stream_text_overlay,
-        sid.as_str(),
-        mid.as_str(),
-        Some(stream_ctx.chat.stream_overlay_revision),
-    );
+    if clear_loading_ui {
+        stream_overlay_clear_answer_for_message(
+            stream_ctx.chat.stream_text_overlay,
+            sid.as_str(),
+            mid.as_str(),
+            Some(stream_ctx.chat.stream_overlay_revision),
+        );
+    }
 }
+
+/// 旁注行已投影后：历史上曾清空 live loading 的 overlay/`text` 以免与 commentary 双显。
+///
+/// **勿再清空**：正文常只在 overlay（stored 为空）；清 overlay 或 `text` 都会让同
+/// `data-tui-msg-id` 的 body 空一帧（气泡还在、内容闪没）。短暂双显可接受；
+/// `turn_segment_start`/`rotate_bubble` 会 finalize 旧尾泡并开新 loading 承接终答。
+fn release_loading_preview_after_commentary_projected(_stream_ctx: &ChatStreamCallbackCtx) {}
 
 /// `on_done` 前：将 loading 尾泡 overlay 正文迁入 stored message。
 ///
@@ -387,11 +422,6 @@ impl TurnLayout {
         });
     }
 
-    /// 工具边界：overlay / loading stored → canonical（Phase 9；不写 stored 助手正文行）。
-    pub(crate) fn drain_loading_commentary_to_canonical(stream_ctx: &ChatStreamCallbackCtx) {
-        drain_loading_commentary_to_canonical(stream_ctx);
-    }
-
     /// 尾泡正文已与 `final_response` 一致时是否应立即 finalize（post-tool 阶段为 false，延迟 finalize）。
     pub(crate) fn should_finalize_loading_when_tail_matches_final_response(
         post_tool_stream_tail_active: bool,
@@ -411,6 +441,9 @@ impl TurnLayout {
     /// 模型轮次确认含 `tool_calls`：将已流出的正文降级为 commentary 旁注。
     ///
     /// **仅首个 `tool_call` 前**执行：post-tool 尾泡正文属于 [`AnswerDelta`] / 终答，不得再迁入 pending 旁注。
+    ///
+    /// **UI 不变量**：此处只把正文吸收进 canonical，**不清空、不删除** loading 助手气泡；
+    /// 旁注行须在工具占位插入并 `sync_turn_projection` 之后才可见，提前掏空会导致助手消息闪消失。
     pub(crate) fn demote_answer_before_tools(
         stream_ctx: &ChatStreamCallbackCtx,
         accum: &PerStreamAccum,
@@ -419,16 +452,7 @@ impl TurnLayout {
             return;
         }
         stream_ctx.scratch.enter_commentary_before_tools_lane();
-        drain_loading_commentary_to_canonical(stream_ctx);
-        stream_ctx.update_bound_session(|session| {
-            let mid = stream_ctx.scratch.clone_assistant_id();
-            let Some(idx) = session.messages.iter().position(|m| m.id == mid) else {
-                return;
-            };
-            if is_loading_streaming_assistant_id(&session.messages[idx], mid.as_str()) {
-                session.messages.remove(idx);
-            }
-        });
+        drain_loading_commentary_to_canonical_ex(stream_ctx, false);
         accum.clear_answer_delta_chars();
     }
 
@@ -443,11 +467,20 @@ impl TurnLayout {
         // 避免终答出现在工具结果之后。
         Self::detach_final_answer_projection(stream_ctx);
         stream_ctx.update_bound_session(|s| {
-            discard_premature_assistant_tail(&mut s.messages, mid.as_str());
+            // 仅 peel 已提前 finalize 的尾泡；loading 上仍有的旁白留给 projection 后再清，
+            // 避免工具行出现前助手气泡被掏空。
+            let _ = peel_premature_summary_from_messages(&mut s.messages, mid.as_str());
             insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
             // 不截断助手文本：工具插入后 loading tail 保持在最后，继续累积后续正文。
             pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
         });
+    }
+
+    /// 工具占位 + `sync_turn_projection` 之后：旁注行已落盘时的 loading 收口钩子。
+    ///
+    /// 故意 **不** 掏空 live 正文（见 [`release_loading_preview_after_commentary_projected`]）。
+    pub(crate) fn release_loading_after_tool_projection(stream_ctx: &ChatStreamCallbackCtx) {
+        release_loading_preview_after_commentary_projected(stream_ctx);
     }
 
     /// `tool_result` 在未命中占位时新建工具行后的布局收口。
@@ -652,6 +685,14 @@ impl TurnLayout {
                 )
             })
             .unwrap_or_default();
+        // 工具相：旁白段已关闭后 `loading_preview_text` 为空；若用空串 replace，
+        // live 气泡正文会被掏空（旁注行虽在，同 mid 仍闪空）。保留已有 overlay。
+        if preview.trim().is_empty()
+            && turn.tool_phase_open()
+            && overlay_answer_str.is_some_and(|t| !t.trim().is_empty())
+        {
+            return;
+        }
         let overlay = stream_ctx.chat.stream_text_overlay.get_untracked();
         let unchanged = overlay.as_ref().is_some_and(|o| {
             o.session_id == sid && o.message_id == mid.as_str() && o.answer == preview
@@ -734,6 +775,17 @@ impl TurnLayout {
         // 阶段 1：闭包外取出 overlay answer，让 `flush_final_answer_row` 双路读取。
         let overlay_answer = overlay_answer_for_loading_tail(stream_ctx, mid.as_str());
         let overlay_answer_str = overlay_answer.as_deref();
+        // 工具前的 segment_end sync 不得把旁白写入 turn-final-answer。
+        // 允许落盘：post-tool 门已开，或会话里已有工具行且工具相已结束。
+        let allow_final_answer = {
+            let post = stream_ctx.scratch.post_tool_final_answer_open()
+                || stream_ctx.scratch.post_tool_stream_tail_active();
+            let tools_done = !stream_ctx.scratch.tool_phase_open()
+                && stream_ctx
+                    .read_bound_session(|s| s.messages.iter().any(|m| m.is_tool))
+                    .unwrap_or(false);
+            post || tools_done
+        };
         stream_ctx.update_bound_session(|s| {
             s.layout_schema_version = crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION;
             if pin_active {
@@ -744,6 +796,7 @@ impl TurnLayout {
                 turn,
                 Some(mid.as_str()),
                 overlay_answer_str,
+                allow_final_answer,
             );
         });
         let clear_overlay = stream_ctx
@@ -764,11 +817,17 @@ impl TurnLayout {
 }
 
 /// 说明块已落盘或无需 preview 时，可安全清空 loading 尾泡 overlay answer。
+///
+/// **工具相例外**：旁白关段后 `loading_preview_for_messages` 为空，但 live 仍靠 overlay
+/// 展示旁白；此时清 overlay 会造成同 `data-tui-msg-id` 正文空窗。保留至 `rotate_bubble`。
 pub(super) fn should_clear_preview_overlay_answer(
     turn: &TurnCanonicalState,
     messages: &[StoredMessage],
     overlay_answer: Option<&str>,
 ) -> bool {
+    if turn.tool_phase_open() {
+        return false;
+    }
     BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }
 
