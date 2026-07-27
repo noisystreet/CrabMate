@@ -16,7 +16,10 @@ mod meta;
 mod policy;
 mod runtime;
 
-pub use execute::{DispatchToolParams, dispatch_tool};
+pub use execute::{
+    DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams, DispatchToolPolicy,
+    DispatchToolWorkspace, dispatch_tool,
+};
 pub use execute::{
     prefetch_http_fetch_parallel_approvals, prefetch_parallel_syncdefault_approvals,
 };

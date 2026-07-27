@@ -194,22 +194,37 @@ async fn dispatch_sync_default_tool(
 pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
         runtime,
-        cfg,
-        effective_working_dir,
-        workspace_is_set,
-        name,
-        args,
-        tc,
-        sse_out_tx,
-        sse_control_mirror,
-        read_file_turn_cache,
-        workspace_changelist,
-        mcp_turn,
-        turn_allow,
-        long_term_memory,
-        long_term_memory_scope_id,
-        handler_lookup,
-        sync_default_sandbox_backend,
+        call:
+            DispatchToolCall {
+                name,
+                args,
+                tc,
+            },
+        workspace:
+            DispatchToolWorkspace {
+                effective_working_dir,
+                workspace_is_set,
+                workspace_changelist,
+            },
+        policy:
+            DispatchToolPolicy {
+                cfg,
+                turn_allow,
+                handler_lookup,
+                sync_default_sandbox_backend,
+            },
+        obs:
+            DispatchToolObs {
+                sse_out_tx,
+                sse_control_mirror,
+            },
+        memory:
+            DispatchToolMemory {
+                read_file_turn_cache,
+                long_term_memory,
+                long_term_memory_scope_id,
+                mcp_turn,
+            },
     } = p;
     let env = ToolExecEnv {
         cfg,

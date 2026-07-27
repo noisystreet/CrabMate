@@ -40,28 +40,51 @@ fn extend_allowed_commands_arc(
     v.push(cmd.to_string());
     v.into()
 }
-pub struct DispatchToolParams<'a> {
-    pub runtime: ToolRuntime<'a>,
-    pub cfg: &'a Arc<AgentConfig>,
-    pub effective_working_dir: &'a Path,
-    pub workspace_is_set: bool,
+pub struct DispatchToolCall<'a> {
     pub name: &'a str,
     pub args: &'a str,
-    pub sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     pub tc: &'a ToolCall,
-    pub read_file_turn_cache:
-        Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+}
+
+pub struct DispatchToolWorkspace<'a> {
+    pub effective_working_dir: &'a Path,
+    pub workspace_is_set: bool,
     pub workspace_changelist:
         Option<std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
-    pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
+}
+
+/// 配置、白名单与 handler 查找（每次 dispatch 必带）。
+pub struct DispatchToolPolicy<'a> {
+    pub cfg: &'a Arc<AgentConfig>,
     /// 多角色工具白名单；`None` 不限制。
     pub turn_allow: Option<&'a HashSet<String>>,
-    pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    pub long_term_memory_scope_id: Option<String>,
     /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
     pub handler_lookup: &'a HandlerLookupTable,
     pub sync_default_sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+}
+
+pub struct DispatchToolObs<'a> {
+    pub sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    pub sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
+}
+
+/// 只读缓存、LTM、MCP 等附属宿主（字段不删，仅分组）。
+pub struct DispatchToolMemory<'a> {
+    pub read_file_turn_cache:
+        Option<std::sync::Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
+    pub long_term_memory: Option<Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
+    pub long_term_memory_scope_id: Option<String>,
+    pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
+}
+
+/// 单次工具分发入参（嵌套分组，避免顶层继续平铺胀袋）。
+pub struct DispatchToolParams<'a> {
+    pub runtime: ToolRuntime<'a>,
+    pub call: DispatchToolCall<'a>,
+    pub workspace: DispatchToolWorkspace<'a>,
+    pub policy: DispatchToolPolicy<'a>,
+    pub obs: DispatchToolObs<'a>,
+    pub memory: DispatchToolMemory<'a>,
 }
 
 /// `HandlerId::SyncDefault` 分支入参（与 [`DispatchToolParams`] 中部分字段一致，避免 `dispatch_sync_default` 形参过多）。
