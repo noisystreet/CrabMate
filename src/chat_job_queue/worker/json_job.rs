@@ -100,34 +100,36 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
     };
     // 提取 client_llm.model 覆盖值，单独传递给 model_override 而非写入 cfg.llm.model
     let client_model_override = llm_override.as_ref().and_then(|o| o.model.clone());
-    let r = crate::run_agent_turn(crate::RunAgentTurnParams::web_chat_json(
-        crate::WebChatJsonBuildArgs {
-            shared: crate::RunAgentTurnSharedInputs {
-                client: &queue_deps.client,
-                api_key: api_key_turn.as_str(),
-                cfg: &cfg_turn,
-                tools: tools_for_job.as_slice(),
+    let r = queue_deps
+        .turn_runner
+        .run(crate::RunAgentTurnParams::web_chat_json(
+            crate::WebChatJsonBuildArgs {
+                shared: crate::RunAgentTurnSharedInputs {
+                    client: &queue_deps.client,
+                    api_key: api_key_turn.as_str(),
+                    cfg: &cfg_turn,
+                    tools: tools_for_job.as_slice(),
+                },
+                messages: &mut messages,
+                effective_working_dir: &work_dir,
+                workspace_is_set,
+                per_flight: flight,
+                temperature_override,
+                model_override: client_model_override,
+                use_executor_model: false,
+                executor_model_override,
+                executor_api_base,
+                executor_api_key,
+                seed_override,
+                long_term_memory: queue_deps.long_term_memory.clone(),
+                job_id,
+                conversation_id: conversation_id.as_str(),
+                turn_allowed_tool_names: turn_allow,
+                request_audit: std::sync::Arc::new(request_audit),
+                process_handles: Arc::clone(&app.process_handles),
             },
-            messages: &mut messages,
-            effective_working_dir: &work_dir,
-            workspace_is_set,
-            per_flight: flight,
-            temperature_override,
-            model_override: client_model_override,
-            use_executor_model: false,
-            executor_model_override,
-            executor_api_base,
-            executor_api_key,
-            seed_override,
-            long_term_memory: queue_deps.long_term_memory.clone(),
-            job_id,
-            conversation_id: conversation_id.as_str(),
-            turn_allowed_tool_names: turn_allow,
-            request_audit: std::sync::Arc::new(request_audit),
-            process_handles: Arc::clone(&app.process_handles),
-        },
-    ))
-    .await;
+        ))
+        .await;
     let (ok, cancelled, err) = match r {
         Ok(()) => {
             match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {

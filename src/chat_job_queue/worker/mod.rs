@@ -1,4 +1,4 @@
-//! 队列 worker：在独立 task 中执行 `run_agent_turn`（流式与 JSON 模式）。
+//! 队列 worker：在独立 task 中经 [`crate::TurnRunner`] 执行回合（流式与 JSON 模式）。
 
 mod json_job;
 mod stream_job;

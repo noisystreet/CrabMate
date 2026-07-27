@@ -91,7 +91,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     });
     // e2e 测试注入的自定义 LLM 后端（`None` 时使用默认 HTTP 后端）。
     params.transport.llm_backend = queue_deps.llm_backend;
-    let r = crate::run_agent_turn(params).await;
+    let r = queue_deps.turn_runner.run(params).await;
 
     cancel_watcher.abort();
     if let Some(session_id) = rt.approval_session_id.as_deref() {

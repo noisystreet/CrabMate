@@ -70,6 +70,7 @@ pub async fn start_test_serve(
         long_term_memory: None,
         sse_stream_hub: Arc::clone(&sse_stream_hub),
         llm_backend,
+        turn_runner: crate::default_turn_runner(),
     });
 
     let state = Arc::new(AppState {
