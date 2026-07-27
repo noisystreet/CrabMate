@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**）。  
+**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**；**§9 左右侧栏语义对齐**已落地）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -164,7 +164,7 @@
 | 5 | ~~Phase 5 导出~~ | 已落地 |
 | 6 | ~~Phase 6 自动化回归~~ | 已落地 |
 
-**推荐下一刀**：无；维护时保持金样绿即可。
+**推荐下一刀**：无；中区投影与 §9 侧栏维护时保持相关单测绿。
 
 ---
 
@@ -183,7 +183,19 @@
 - [ ] 改 `turn_project` / 投影块格式 → 更新本文 Phase 状态 + Turn 布局文档交叉链接  
 - [ ] 改工具展示 → `message_display` + tool-card 金样 / hydrate fixture  
 - [ ] 改导出 projection → **`docs/命令行与路由.md`**、`crabmate-chat-export` 信封说明  
-- [ ] 改 TUI 模块边界 → **`docs/开发文档.md`** 模块索引（若增删 `mod`）
+- [ ] 改 TUI 模块边界 → **`docs/开发文档.md`** 模块索引（若增删 `mod`）  
+- [ ] 改左右侧栏文案分区 → 本文 §9 + 相关 `/conv` / tasks / changelog 契约
+
+---
+
+## 9. 左右侧栏对齐 Tauri / Web（语义，非 DOM）
+
+| 分区 | Tauri / Web | 终端 TUI（目标） | 明确不做 |
+|------|-------------|------------------|----------|
+| 左：会话 | `nav-rail` 最近会话列表、当前高亮、条数 | 「最近会话」+ `* current` + `{N} 条` + `/conv…`；SQLite 时 `list_recent_ids` | pin/star、筛选、DOM 交互列表 |
+| 右：工作区 | 路径、任务、变更预览；快捷键在设置 | 路径短示 + Enter；「任务清单」「变更预览」短摘要；设置 slash 一行 | 文件树、视图切换器、快捷键墙、工具计数 |
+
+**触点**：`sidebar_text.rs`、`workspace_sidebar_extra.rs`；刷新路径 `refresh.rs` / 启动 `mod.rs` / `/conv` `sqlite_slash.rs`。
 
 ---
 

@@ -14,8 +14,6 @@ pub(super) struct TuiWorkspaceUiSwitch<'a> {
     pub(super) model: &'a Arc<Mutex<TuiModel>>,
     pub(super) agent_role_owned: &'a Option<String>,
     pub(super) message_count: usize,
-    pub(super) tool_count: usize,
-    pub(super) cli_no_stream: bool,
     pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
@@ -26,8 +24,6 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
         model,
         agent_role_owned,
         message_count,
-        tool_count,
-        cli_no_stream,
         process_handles,
     } = ctx;
     if let Err(msg) = tui_apply_workspace_switch(
@@ -38,8 +34,6 @@ pub(super) async fn tui_event_workspace_switch(raw: String, ctx: TuiWorkspaceUiS
             model,
             agent_role_owned,
             message_count,
-            tool_count,
-            cli_no_stream,
             process_handles,
         },
     )
@@ -58,8 +52,6 @@ pub(super) struct TuiWorkspaceApplyParams<'a> {
     pub(super) model: &'a Arc<Mutex<TuiModel>>,
     pub(super) agent_role_owned: &'a Option<String>,
     pub(super) message_count: usize,
-    pub(super) tool_count: usize,
-    pub(super) cli_no_stream: bool,
     pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
@@ -73,8 +65,6 @@ pub(super) async fn tui_apply_workspace_switch(
         model,
         agent_role_owned,
         message_count,
-        tool_count,
-        cli_no_stream,
         process_handles,
     } = p;
     let new_root = {
@@ -85,20 +75,22 @@ pub(super) async fn tui_apply_workspace_switch(
     *work_dir = new_root;
     let new_header = tui_header_summary(work_dir.as_path());
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let sqlite_nav = {
+    let (sqlite_nav, recent_ids) = {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.sqlite_conversation_id.clone()
+        (
+            g.sqlite_conversation_id.clone(),
+            g.recent_conversation_ids.clone(),
+        )
     };
     let nav = super::sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         message_count,
         sqlite_nav.as_deref(),
+        &recent_ids,
     );
     let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
         work_dir.as_path(),
-        tool_count,
-        cli_no_stream,
         process_handles,
         cfg_holder,
         sqlite_nav.as_deref(),
