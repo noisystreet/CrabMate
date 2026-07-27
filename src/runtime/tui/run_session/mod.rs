@@ -14,9 +14,10 @@
 //!
 //! **撰写区**：按单元格宽度自动换行（**`unicode-width`**）；溢出保留底部行；**「撰写」** 聚焦时显示插入光标。
 //!
-//! **底栏**：对齐 Web `status_bar_footer_view`（模型 · base_url · 角色 · 运行态）；快捷键说明在右侧栏。
+//! **底栏**：对齐 Web / Tauri `status-bar`（左 chips · 右运行态）；快捷键说明在右侧栏。
 //!
 //! **聊天区**：溢出时右侧滚动条；可拖动（与滚轮 / PgUp/PgDn 共用 [`TuiModel::chat_scroll_y`]）。
+//! 跟底 pin（[`TuiModel::chat_follow_bottom`]）对齐 Web `auto_scroll_chat`：上滑 unpin，近底 / 发送 / End re-pin。
 
 mod approval;
 mod clarify_modal;
@@ -246,12 +247,15 @@ struct TuiModel {
     chat_scroll_y: u16,
     /// 回合刷新 transcript 后下一帧按当前布局写入真实贴底 `chat_scroll_y`（见 [`render::render_full`]）。
     chat_snap_bottom_next_draw: bool,
+    /// 与 Web `auto_scroll_chat` 同源：`true` = 流式/增高时贴底；上滑 unpin，近底 re-pin。
+    chat_follow_bottom: bool,
     /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
     chat_scrollbar_dragging: bool,
     input: String,
-    /// 与 Web 底栏 chips 同源快照（`模型 · … · base_url · … · 角色 · …`），供同步回调拼接运行态。
+    /// 与 Web 底栏 chips 同源快照（`模型 · … · base_url · … · 角色 · …`），左对齐。
     status_chips: String,
-    status: String,
+    /// 与 Web / Tauri `StatusBarRunIndicator` 同源（就绪 / 模型生成中… / 工具执行中… / 错误），底栏最右。
+    status_run: String,
     focus: TuiFocus,
     /// 敏感工具审批 Modal（单条）；多条时先入队。
     approval_modal: Option<approval::TuiApprovalModalState>,
@@ -321,10 +325,8 @@ pub(super) async fn tui_try_consume_slash_submit(
     .await;
     if matches!(handled, ReplSlashHandled::NotSlash) {
         let mut g = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
-        let chips = g.status_chips.clone();
-        g.status = format!(
-            "{} · 错误: {}",
-            chips, "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue"
+        g.status_run = sidebar_text::tui_status_run_error(
+            "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue",
         );
         return Ok(true);
     }
@@ -405,8 +407,8 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
     g.nav_summary = nav;
     g.right_summary = right;
     g.workspace_path_buf = work_dir.to_path_buf();
-    g.status_chips = chips.clone();
-    g.status = sidebar_text::tui_status_bar_with_run(&chips, "就绪");
+    g.status_chips = chips;
+    g.status_run = sidebar_text::tui_status_run_ready().to_string();
 }
 
 pub(in crate::runtime::tui::run_session) struct TuiAfterChatRoundRefresh<'a> {
@@ -471,14 +473,15 @@ async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
     g.transcript = transcript;
     g.chat_snap_bottom_next_draw = true;
+    g.chat_follow_bottom = true;
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
     g.workspace_path_buf = work_dir.to_path_buf();
-    g.status_chips = chips.clone();
-    g.status = match persist_note {
-        Some(err) => format!("{} · SQLite: {}", chips, err),
-        None => sidebar_text::tui_status_bar_with_run(&chips, "就绪"),
+    g.status_chips = chips;
+    g.status_run = match persist_note {
+        Some(err) => sidebar_text::tui_status_run_error(&format!("SQLite: {err}")),
+        None => sidebar_text::tui_status_run_ready().to_string(),
     };
 }
 
@@ -570,7 +573,7 @@ pub async fn run_tui_session(
     let status_chips =
         sidebar_text::tui_status_chips_line_with_messages(cfg_holder, &agent_role_owned, &messages)
             .await;
-    let status_line = sidebar_text::tui_status_bar_with_run(&status_chips, "就绪");
+    let status_run = sidebar_text::tui_status_run_ready().to_string();
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 
@@ -583,10 +586,11 @@ pub async fn run_tui_session(
         transcript: transcript::messages_to_transcript(&messages),
         chat_scroll_y: 0,
         chat_snap_bottom_next_draw: false,
+        chat_follow_bottom: true,
         chat_scrollbar_dragging: false,
         input: String::new(),
         status_chips,
-        status: status_line,
+        status_run,
         focus: TuiFocus::default(),
         approval_modal: None,
         approval_backlog: VecDeque::new(),
@@ -718,6 +722,7 @@ fn tui_dispatch_mouse(
             g.focus = TuiFocus::Chat;
             match mouse.kind {
                 MouseEventKind::ScrollUp => {
+                    g.chat_follow_bottom = false;
                     g.chat_scroll_y = g.chat_scroll_y.saturating_sub(3);
                 }
                 MouseEventKind::ScrollDown => {
@@ -748,7 +753,8 @@ fn tui_dispatch_mouse(
                 &scratch,
             ) {
                 g.focus = TuiFocus::Chat;
-                g.chat_scroll_y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+                let y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+                render::apply_chat_scrollbar_follow_intent(&mut g, y, hit.max_scroll);
             }
         }
         MouseEventKind::Down(MouseButton::Left) => {
@@ -765,7 +771,8 @@ fn tui_dispatch_mouse(
                     if rect_contains(hit.rect, mouse.column, mouse.row) {
                         g.chat_scrollbar_dragging = true;
                         g.focus = TuiFocus::Chat;
-                        g.chat_scroll_y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+                        let y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
+                        render::apply_chat_scrollbar_follow_intent(&mut g, y, hit.max_scroll);
                         true
                     } else {
                         false
@@ -842,6 +849,7 @@ fn tui_dispatch_key_press(
         KeyCode::PageUp => {
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             if g.focus == TuiFocus::Chat {
+                g.chat_follow_bottom = false;
                 g.chat_scroll_y = g.chat_scroll_y.saturating_sub(8);
             }
             TuiPollKeyFlow::ContinueOuter
@@ -850,6 +858,22 @@ fn tui_dispatch_key_press(
             let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
             if g.focus == TuiFocus::Chat {
                 g.chat_scroll_y = g.chat_scroll_y.saturating_add(8);
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::Home => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Chat {
+                g.chat_follow_bottom = false;
+                g.chat_scroll_y = 0;
+            }
+            TuiPollKeyFlow::ContinueOuter
+        }
+        KeyCode::End => {
+            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+            if g.focus == TuiFocus::Chat {
+                g.chat_follow_bottom = true;
+                g.chat_snap_bottom_next_draw = true;
             }
             TuiPollKeyFlow::ContinueOuter
         }
@@ -864,6 +888,8 @@ fn tui_dispatch_key_press(
             }
             let line = {
                 let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
+                g.chat_follow_bottom = true;
+                g.chat_snap_bottom_next_draw = true;
                 std::mem::take(&mut g.input)
             };
             let _ = ev_tx.send(UiEvent::Submit(line));

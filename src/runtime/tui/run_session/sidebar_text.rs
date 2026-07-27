@@ -103,18 +103,21 @@ pub(in crate::runtime::tui::run_session) async fn tui_status_chips_line_with_mes
     format!("{base} · {ctx}")
 }
 
-pub(in crate::runtime::tui::run_session) fn tui_status_bar_with_run(
-    chips: &str,
-    run: &str,
-) -> String {
-    format!("{chips} · {run}")
+/// Web / Tauri `StatusBarRunIndicator` 文案（底栏最右；chips 在左侧单独渲染）。
+pub(in crate::runtime::tui::run_session) fn tui_status_run_ready() -> &'static str {
+    "就绪"
 }
 
-/// Web `status_model_running` 文案 + TUI 补充的消息条数。
-pub(in crate::runtime::tui::run_session) fn tui_status_suffix_model_busy_lines(
-    msg_len: usize,
-) -> String {
-    format!("模型生成中… · {msg_len} 条")
+pub(in crate::runtime::tui::run_session) fn tui_status_run_model_busy() -> &'static str {
+    "模型生成中…"
+}
+
+pub(in crate::runtime::tui::run_session) fn tui_status_run_tool_busy() -> &'static str {
+    "工具执行中…"
+}
+
+pub(in crate::runtime::tui::run_session) fn tui_status_run_error(detail: &str) -> String {
+    format!("错误: {detail}")
 }
 
 pub(in crate::runtime::tui::run_session) fn tui_use_ansi_color() -> bool {
