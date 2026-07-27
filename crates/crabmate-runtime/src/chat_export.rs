@@ -1,8 +1,11 @@
-//! 会话导出落盘：复用 [`crabmate_chat_export`] 的 schema / Markdown；本模块仅负责写
-//! `<workspace>/.crabmate/exports/`（**`projection=raw`**）。Web / Tauri 见
-//! `frontend/src/session_export.rs`（**`projection=display`**）。
+//! 会话导出落盘：复用 [`crabmate_chat_export`] 的 schema / Markdown；本模块写
+//! `<workspace>/.crabmate/exports/`。默认 **`projection=raw`**；可选 **`display`**（对齐 Web/Tauri，
+//! **不可**直接 `tool-replay`）。
 
-use crabmate_types::Message;
+use crabmate_types::{
+    Message, is_message_visible_in_chat_transcript, message_content_as_str,
+    message_content_plain_for_chat_display,
+};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -12,6 +15,14 @@ pub use crabmate_chat_export::{
     DisplayExportMessage, ExportMdLocale, display_session_to_json_pretty, ensure_raw_projection,
     projection_is_display, projection_is_raw, session_to_json_pretty,
 };
+
+/// JSON 导出信封投影（与 CLI `--projection` / Web 信封一致）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum JsonExportProjection {
+    #[default]
+    Raw,
+    Display,
+}
 
 /// 与 TUI `/export` / Web 导出一致：跳过 `system`；`tool` 与 `assistant`/`user` 分段输出。
 /// CLI/TUI 默认中文标题；助手正文经 [`crate::message_display::assistant_raw_markdown_body_for_message`]。
@@ -41,13 +52,87 @@ fn export_filename(prefix: &str, ext: &str) -> String {
     )
 }
 
-/// 写入 `exports/chat_export_YYYYMMDD_HHMMSS.json`。
+/// 将可见消息压成展示投影（对齐 Web `DisplayExportMessage` 语义：展示文案、无 tool_calls）。
+pub fn messages_to_display_export(messages: &[Message]) -> Vec<DisplayExportMessage> {
+    let mut out = Vec::new();
+    for (idx, m) in messages.iter().enumerate() {
+        if !is_message_visible_in_chat_transcript(m) {
+            continue;
+        }
+        let content = match m.role.as_str() {
+            "assistant" => {
+                let body = crate::message_display::assistant_markdown_source_for_message(m);
+                let t = body.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }
+            "user" => {
+                let plain = message_content_plain_for_chat_display(&m.content);
+                let shown = crate::message_display::user_message_for_chat_display(&plain);
+                let t = shown.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }
+            "tool" => {
+                let body = if let Some(raw) = message_content_as_str(&m.content) {
+                    crate::message_display::tool_content_for_display_for_message(raw, messages, idx)
+                } else {
+                    message_content_plain_for_chat_display(&m.content)
+                };
+                let t = body.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }
+            _ => message_content_as_str(&m.content)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string),
+        };
+        if content.is_none() && m.name.is_none() {
+            continue;
+        }
+        out.push(DisplayExportMessage {
+            role: m.role.clone(),
+            content,
+            name: m.name.clone(),
+        });
+    }
+    out
+}
+
+/// 写入 `exports/chat_export_YYYYMMDD_HHMMSS.json`（默认 raw）。
 pub fn write_json_export(workspace: &Path, messages: &[Message]) -> io::Result<PathBuf> {
+    write_json_export_with_projection(workspace, messages, JsonExportProjection::Raw)
+}
+
+/// 按 `projection` 写入 JSON 信封。
+pub fn write_json_export_with_projection(
+    workspace: &Path,
+    messages: &[Message],
+    projection: JsonExportProjection,
+) -> io::Result<PathBuf> {
     let dir = workspace_exports_dir(workspace);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(export_filename("chat_export", "json"));
-    let body = ChatSessionFile::from_slice(messages);
-    let json = session_to_json_pretty(&body).map_err(io::Error::other)?;
+    let json = match projection {
+        JsonExportProjection::Raw => {
+            let body = ChatSessionFile::from_slice(messages);
+            session_to_json_pretty(&body).map_err(io::Error::other)?
+        }
+        JsonExportProjection::Display => {
+            let body = DisplayChatSessionFile::new(messages_to_display_export(messages));
+            display_session_to_json_pretty(&body).map_err(io::Error::other)?
+        }
+    };
     std::fs::write(&path, json)?;
     Ok(path)
 }
@@ -86,6 +171,24 @@ mod tests {
 
     fn md(messages: &[Message]) -> String {
         messages_to_markdown_with_body(messages, ExportMdLocale::ZhHans, plain_body)
+    }
+
+    #[test]
+    fn display_export_sets_projection_and_skips_system() {
+        let messages = vec![
+            Message::system_only("sys"),
+            Message::user_only("hi"),
+            Message::assistant_only("hey"),
+        ];
+        let rows = messages_to_display_export(&messages);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].role, "user");
+        assert_eq!(rows[0].content.as_deref(), Some("hi"));
+        let file = DisplayChatSessionFile::new(rows);
+        assert!(projection_is_display(&file.projection));
+        let json = display_session_to_json_pretty(&file).unwrap();
+        assert!(json.contains(CHAT_EXPORT_PROJECTION_DISPLAY));
+        assert!(!json.contains("sys"));
     }
 
     #[test]

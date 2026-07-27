@@ -17,7 +17,8 @@ use crate::types::Message;
 
 use super::repl_extras::{
     REPL_LLM_API_BASE_MAX, REPL_LLM_MODEL_MAX, ReplSlashHandled, ReplSlashSharedHandles,
-    repl_export_current_messages, repl_export_kind_from_arg, repl_rebuild_bootstrap_messages,
+    repl_export_current_messages_with_projection, repl_export_kind_and_projection_from_arg,
+    repl_rebuild_bootstrap_messages,
 };
 
 #[allow(clippy::too_many_arguments)]
@@ -493,14 +494,18 @@ fn slash_export(
     messages: &[Message],
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
-    let kind = match repl_export_kind_from_arg(arg) {
-        Ok(k) => k,
+    let (kind, projection) = match repl_export_kind_and_projection_from_arg(arg) {
+        Ok(v) => v,
         Err(()) => {
-            let _ = style.eprint_error("用法: /export 或 /export json | markdown | both");
+            let _ = style.eprint_error(
+                "用法: /export [json|markdown|both] [raw|display]（JSON 默认 raw；display 不可 tool-replay）",
+            );
             return ReplSlashHandled::Handled;
         }
     };
-    if let Err(e) = repl_export_current_messages(work_dir, messages, kind, style) {
+    if let Err(e) =
+        repl_export_current_messages_with_projection(work_dir, messages, kind, projection, style)
+    {
         let _ = style.eprint_error(&e.to_string());
     }
     ReplSlashHandled::Handled
@@ -512,11 +517,12 @@ async fn slash_save_session(
     work_dir: &Path,
     style: &CliReplStyle,
 ) -> ReplSlashHandled {
-    let kind = match repl_export_kind_from_arg(arg) {
-        Ok(k) => k,
+    let (kind, projection) = match repl_export_kind_and_projection_from_arg(arg) {
+        Ok(v) => v,
         Err(()) => {
-            let _ =
-                style.eprint_error("用法: /save-session 或 /save-session json | markdown | both");
+            let _ = style.eprint_error(
+                "用法: /save-session [json|markdown|both] [raw|display]（JSON 默认 raw）",
+            );
             return ReplSlashHandled::Handled;
         }
     };
@@ -525,8 +531,17 @@ async fn slash_save_session(
         ReplExportKind::Markdown => SaveSessionFormat::Markdown,
         ReplExportKind::Both => SaveSessionFormat::Both,
     };
+    let projection = match projection {
+        crate::runtime::chat_export::JsonExportProjection::Raw => {
+            crate::config::cli::SaveSessionProjection::Raw
+        }
+        crate::runtime::chat_export::JsonExportProjection::Display => {
+            crate::config::cli::SaveSessionProjection::Display
+        }
+    };
     let cli = SaveSessionCli {
         format,
+        projection,
         session_file: None,
     };
     let ws = Some(work_dir.to_string_lossy().into_owned());

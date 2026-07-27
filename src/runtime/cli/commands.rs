@@ -3,7 +3,7 @@
 use crate::config::AgentConfig;
 use crate::config::cli::{
     PluginInitCli, PluginListCli, PluginValidateCli, SaveSessionCli, SaveSessionFormat,
-    SseReplayCli, ToolReplayCli,
+    SaveSessionProjection, SseReplayCli, ToolReplayCli,
 };
 use crate::runtime::cli::{ReplExportKind, cli_effective_work_dir};
 use crate::runtime::cli_exit::{CliExitError, EXIT_TOOL_REPLAY_MISMATCH, EXIT_USAGE};
@@ -120,9 +120,19 @@ pub fn run_save_session_command(
         SaveSessionFormat::Markdown => ReplExportKind::Markdown,
         SaveSessionFormat::Both => ReplExportKind::Both,
     };
+    let projection = match args.projection {
+        SaveSessionProjection::Raw => crate::runtime::chat_export::JsonExportProjection::Raw,
+        SaveSessionProjection::Display => {
+            crate::runtime::chat_export::JsonExportProjection::Display
+        }
+    };
     match fmt {
         ReplExportKind::Json => {
-            let p = crate::runtime::workspace_session::export_json(&workspace, &parsed.messages)?;
+            let p = crate::runtime::workspace_session::export_json_with_projection(
+                &workspace,
+                &parsed.messages,
+                projection,
+            )?;
             println!("{}", p.display());
         }
         ReplExportKind::Markdown => {
@@ -131,7 +141,11 @@ pub fn run_save_session_command(
             println!("{}", p.display());
         }
         ReplExportKind::Both => {
-            let pj = crate::runtime::workspace_session::export_json(&workspace, &parsed.messages)?;
+            let pj = crate::runtime::workspace_session::export_json_with_projection(
+                &workspace,
+                &parsed.messages,
+                projection,
+            )?;
             let pm =
                 crate::runtime::workspace_session::export_markdown(&workspace, &parsed.messages)?;
             println!("{}", pj.display());
