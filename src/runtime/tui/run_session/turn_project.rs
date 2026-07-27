@@ -18,6 +18,10 @@ pub(super) struct TuiTurnProjection {
     /// 是否已把工具前整段 scratch 吸收进 `pending-stream-commentary`（形态 B）。
     pending_stream_absorbed: bool,
     open_segment_id: Option<String>,
+    /// 已收到 [`SsePayload::TurnToolPhaseEnd`]（对齐 Web 工具批结束 → 终答区）。
+    tool_phase_ended: bool,
+    /// 定稿终答（`finalize_for_display` 从 scratch 固化）；流式中由 scratch 实时覆盖。
+    final_answer_text: String,
 }
 
 impl TuiTurnProjection {
@@ -67,6 +71,8 @@ impl TuiTurnProjection {
                 self.flush_open_segment_from_scratch(scratch);
                 close_open_commentary_segments(&mut self.turn);
                 TurnReducer.apply(&mut self.turn, TurnEvent::ToolPhaseEnd);
+                self.tool_phase_ended = true;
+                self.capture_final_answer_from_scratch(scratch);
             }
             SsePayload::ToolCall { tool_call } => {
                 self.absorb_pre_tool_scratch_if_needed(scratch);
@@ -114,19 +120,35 @@ impl TuiTurnProjection {
         }
     }
 
-    /// 回合结束：关闭 open 段，供最终投影。
+    /// 回合结束：关闭 open 段，并将工具批后 scratch 正文固化为终答。
     pub(super) fn finalize_for_display(&mut self, scratch: &TuiLlmStreamScratch) {
         self.flush_open_segment_from_scratch(scratch);
         close_open_commentary_segments(&mut self.turn);
+        if self.tool_phase_ended || !self.turn.steps.is_empty() {
+            // 有工具步但未收到 phase end 时仍尽量收下终答，避免只进 Message[] 丢行序
+            if !self.tool_phase_ended && !self.turn.steps.is_empty() {
+                self.tool_phase_ended = true;
+            }
+            self.capture_final_answer_from_scratch(scratch);
+        }
     }
 
-    /// Web v2 行 + 仍 open 的旁白预览（与 Tauri loading overlay 语义对齐）。
-    pub(super) fn format_projection_block(&self) -> String {
+    /// Web v2 行 + open 旁白 + 工具批后终答（对齐 Tauri `turn-final-answer`）。
+    pub(super) fn format_projection_block(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         let mut rows = project_turn_web_v2(&self.turn);
         if let Some(open) = streaming_commentary_block_text(&self.turn) {
             rows.push(ProjectedRow {
                 kind: "assistant_commentary_open".into(),
                 text: open,
+                tool_name: None,
+                tool_call_id: None,
+            });
+        }
+        let final_text = self.resolved_final_answer(scratch);
+        if !final_text.is_empty() {
+            rows.push(ProjectedRow {
+                kind: "assistant_answer".into(),
+                text: final_text,
                 tool_name: None,
                 tool_call_id: None,
             });
@@ -137,9 +159,9 @@ impl TuiTurnProjection {
         format_projected_rows_for_tui(&rows)
     }
 
-    /// 流式 scratch 正文是否已由 `[Turn 投影]` 承接（避免工具相双显）。
+    /// 流式 scratch 正文是否已由 `[Turn 投影]` 承接（避免旁白/终答双显）。
     ///
-    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答仍走 scratch 尾挂。
+    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答进投影「终答」行，亦隐藏。
     pub(super) fn should_hide_streaming_content(&self, scratch_content: &str) -> bool {
         let c = scratch_content.trim();
         if c.is_empty() {
@@ -148,12 +170,34 @@ impl TuiTurnProjection {
         if self.turn.tool_phase_open {
             return true;
         }
+        if self.tool_phase_ended && !commentary_text_covers_scratch(&self.turn, c) {
+            return true;
+        }
         if self.pending_stream_absorbed && !self.turn.steps.is_empty() {
-            // 工具批尚未结束时已吸收：content 多半是旁白副本
-            // tool_phase_open == false 且已有 steps → 允许终答；若 content 仍等于旁白则隐藏
             return commentary_text_covers_scratch(&self.turn, c);
         }
         commentary_text_covers_scratch(&self.turn, c)
+    }
+
+    fn resolved_final_answer(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
+        if !self.tool_phase_ended {
+            return String::new();
+        }
+        if let Some(s) = scratch {
+            let c = s.content.trim();
+            if !c.is_empty() && !commentary_text_covers_scratch(&self.turn, c) {
+                return c.to_string();
+            }
+        }
+        self.final_answer_text.trim().to_string()
+    }
+
+    fn capture_final_answer_from_scratch(&mut self, scratch: &TuiLlmStreamScratch) {
+        let c = scratch.content.trim();
+        if c.is_empty() || commentary_text_covers_scratch(&self.turn, c) {
+            return;
+        }
+        self.final_answer_text = c.to_string();
     }
 
     fn absorb_pre_tool_scratch_if_needed(&mut self, scratch: &TuiLlmStreamScratch) {
@@ -312,12 +356,63 @@ mod tests {
         assert!(rows[0].text.contains("README"));
         assert_eq!(rows[1].kind, "tool");
         assert_eq!(rows[1].tool_name.as_deref(), Some("read_file"));
-        let block = proj.format_projection_block();
+        let block = proj.format_projection_block(None);
         assert!(block.contains("[旁白]"), "{block}");
         assert!(block.contains("[工具 · read_file]"), "{block}");
         assert!(
             proj.should_hide_streaming_content("先看一下 README。"),
             "tool-phase / absorbed commentary must hide scratch duplicate"
+        );
+    }
+
+    #[test]
+    fn post_tool_final_answer_lands_in_projection_not_streaming_tail() {
+        let mut proj = TuiTurnProjection::default();
+        let mut scratch = TuiLlmStreamScratch {
+            content: "先看一下 README。".into(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true,
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::ToolCall {
+                tool_call: ToolCallSummary {
+                    name: "read_file".into(),
+                    summary: "README.md".into(),
+                    goal_id: None,
+                    tool_call_id: Some("tc1".into()),
+                    arguments_preview: None,
+                    arguments: None,
+                },
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::TurnToolPhaseEnd {
+                turn_tool_phase_end: true,
+            },
+            &scratch,
+        );
+        scratch.content = "总结如下。".into();
+        let block = proj.format_projection_block(Some(&scratch));
+        assert!(block.contains("[工具 · read_file]"), "{block}");
+        let tool_at = block.find("[工具 · read_file]").expect("tool");
+        let final_at = block.find("[终答]").expect("终答 missing");
+        assert!(final_at > tool_at, "终答须在工具之后: {block}");
+        assert!(block.contains("总结如下。"), "{block}");
+        assert!(
+            proj.should_hide_streaming_content("总结如下。"),
+            "final answer must not also stream as [assistant] tail"
+        );
+        proj.finalize_for_display(&scratch);
+        let committed = proj.format_projection_block(None);
+        assert!(
+            committed.contains("[终答]") && committed.contains("总结如下。"),
+            "finalize must keep 终答: {committed}"
         );
     }
 
@@ -396,7 +491,7 @@ mod tests {
             }
             proj.finalize_for_display(&TuiLlmStreamScratch::default());
             let web_rows = project_turn_web_v2(proj.turn_ref());
-            let block = proj.format_projection_block();
+            let block = proj.format_projection_block(None);
             assert!(
                 block.starts_with("[Turn 投影]"),
                 "case {}: missing header in {block}",

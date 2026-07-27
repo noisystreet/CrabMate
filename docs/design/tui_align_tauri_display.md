@@ -1,6 +1,6 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 已落地**；**Phase 1（历史 flush）已落地**；后续阶段未承诺工期）。  
+**状态**：路线图（**P1–P4 已落地**；**Phase 1–2 已落地**；后续阶段未承诺工期）。  
 **受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
 **语言**：中文。  
 **关联**：
@@ -74,7 +74,7 @@
 | 点 | 终端 TUI | Web / Tauri |
 |----|----------|-------------|
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
-| 终答 | 多靠 `[assistant · 生成中]` scratch | `turn-final-answer` + overlay |
+| 终答 | 工具批结束后进投影 `[终答]`（对齐 `turn-final-answer`） | `turn-final-answer` + overlay |
 | 控制面附录 | 仍有 `[SSE 控制面]`（工具行易与投影重复） | 事件变成独立消息行 |
 | 绘制 | 整块 `Paragraph` 字符串 | per-section DOM + 局部 patch |
 | 导出默认 | `projection=raw` | UI 导出多为 `display` |
@@ -103,17 +103,13 @@
 **主要触点**：`submit_ev.rs`、`transcript.rs`、`mod.rs`（`TuiModel::committed_turns`）。  
 **验收**：`flush_keeps_commentary_before_tool_after_projection_reset`；同一多工具回合结束后旁白仍在工具前。
 
-### Phase 2 — 终答进入投影
+### Phase 2 — 终答进入投影（已落地）
 
 **问题**：post-tool 终答仍挂在 scratch「生成中」；与 Web `turn-final-answer` 不对齐。
 
-**方向**：
+**落地**：`TurnToolPhaseEnd` 后 `tool_phase_ended`；`format_projection_block(scratch)` 追加 `[终答]`；`should_hide_streaming_content` 隐藏终答副本；`finalize_for_display` 固化 `final_answer_text`；flush 时跳过 Message[] 尾部 assistant 双显。
 
-- `TurnToolPhaseEnd` 之后：scratch content 视为终答预览，写入投影块（如 `assistant_answer` 行或专用「终答」标签）。  
-- `on_done` / 回合结束：定稿进 Phase 1 的历史附录；清空 scratch。  
-- 仍 open 的 reasoning 可继续尾挂，或并入「(推理)」小节。
-
-**验收**：工具批结束后，终答出现在投影区「工具」之后；不再与旁白抢同一「生成中」块。
+**验收**：`post_tool_final_answer_lands_in_projection_not_streaming_tail`；工具批结束后终答在投影区工具之后。
 
 ### Phase 3 — 收敛 `[SSE 控制面]`
 
@@ -177,19 +173,19 @@
 | 顺序 | Phase | 建议 PR 粒度 |
 |------|-------|----------------|
 | 1 | ~~Phase 1 历史 flush~~ | 已落地 |
-| 2 | Phase 2 终答投影 | 单 PR，依赖 Phase 1 附录形状 |
+| 2 | ~~Phase 2 终答投影~~ | 已落地 |
 | 3 | Phase 3 控制面收敛 | 小 PR，行为变更需在文档点一句 |
 | 4 | Phase 4 按行渲染 | 可拆「仅投影区 List」与「全 transcript List」 |
 | 5 | Phase 5–6 | 可并行：导出选项 vs 金样/CI |
 
-**推荐下一刀**：Phase 2（终答进入投影）。
+**推荐下一刀**：Phase 3（收敛 `[SSE 控制面]` 工具噪音）。
 
 ---
 
 ## 7. 验收清单（维护者）
 
 - [x] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
-- [ ] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
+- [x] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
 - [ ] 常规回合控制面无成对工具噪音（Phase 3）。  
 - [ ] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答测例挂 CI。  
 - [ ] 变更 turn-layout / 投影文案时同步 **`docs/Turn布局设计.md`** 与本文「已落地」表。

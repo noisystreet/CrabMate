@@ -122,11 +122,12 @@ fn format_completed_turn_for_past_display(
     turn_start: usize,
     projection: &TuiTurnProjection,
 ) -> String {
-    let block = projection.format_projection_block();
+    let block = projection.format_projection_block(None);
     if block.is_empty() {
         return messages_to_transcript_range(messages, turn_start, messages.len());
     }
 
+    let has_final_in_projection = block.contains("[终答]");
     let mut prefix = String::new();
     let mut suffix = String::new();
     let mut seen_tool_phase = false;
@@ -141,6 +142,10 @@ fn format_completed_turn_for_past_display(
         let is_tool = role == "tool";
         if is_tool || is_tc_assistant {
             seen_tool_phase = true;
+            continue;
+        }
+        // 终答已在投影块：跳过 Message[] 尾部 assistant，避免双显
+        if has_final_in_projection && seen_tool_phase && role == "assistant" {
             continue;
         }
         let body = message_body_for_transcript(messages, idx);
@@ -310,28 +315,45 @@ mod tests {
             },
             &scratch,
         );
+        proj.apply_sse(
+            &SsePayload::TurnToolPhaseEnd {
+                turn_tool_phase_end: true,
+            },
+            &scratch,
+        );
+        let scratch_final = TuiLlmStreamScratch {
+            content: "总结如下。".into(),
+            ..Default::default()
+        };
         messages.push(assistant_with_tools("先看一下 README。", "read_file"));
         messages.push(tool_msg("ok"));
         messages.push(Message::assistant_only("总结如下。"));
 
-        proj.finalize_for_display(&TuiLlmStreamScratch::default());
+        proj.finalize_for_display(&scratch_final);
         committed.flush_completed_turn(&messages, &proj);
         proj.reset();
 
         assert!(
-            proj.format_projection_block().is_empty(),
+            proj.format_projection_block(None).is_empty(),
             "live projection must be empty after reset"
         );
         let display = committed.display.as_str();
         let commentary = display.find("[旁白]").expect("旁白");
         let tool = display.find("[工具 · read_file]").expect("工具");
-        assert!(commentary < tool, "旁白须在工具之前: {display}");
+        let final_ans = display.find("[终答]").expect("终答");
+        assert!(
+            commentary < tool && tool < final_ans,
+            "旁白→工具→终答: {display}"
+        );
         assert!(display.contains("[user]"), "{display}");
         assert!(display.contains("总结如下"), "{display}");
-        // 投影承接工具后，Message[] 的 tool 行不应再出现在定稿里
         assert!(
             !display.contains("[tool]"),
             "tool role must not duplicate projection: {display}"
+        );
+        assert!(
+            !display.contains("[assistant]\n总结"),
+            "final must not duplicate as [assistant]: {display}"
         );
         assert_eq!(committed.msg_len, messages.len());
     }
