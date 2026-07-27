@@ -275,7 +275,7 @@ struct TuiModel {
     control_plane_tail: String,
     /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
     turn_projection: turn_project::TuiTurnProjection,
-    /// 已定稿回合展示（含 flush 后的 `[Turn 投影]` 行序）；`msg_len` 与 `messages` 前缀对齐。
+    /// 已定稿回合展示（含 flush 后的投影行序，无 `[Turn 投影]` 元标签）；`msg_len` 与 `messages` 前缀对齐。
     committed_turns: transcript::CommittedTurns,
 }
 
