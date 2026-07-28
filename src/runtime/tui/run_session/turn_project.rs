@@ -72,6 +72,9 @@ impl TuiTurnProjection {
                 close_open_commentary_segments(&mut self.turn);
                 TurnReducer.apply(&mut self.turn, TurnEvent::ToolPhaseEnd);
                 self.tool_phase_ended = true;
+                // 关闭 turn 段后必须清本地 open 游标，否则后续终答会经 live catch-up /
+                // finalize flush 再写进旁白，造成「终答出现在工具前」的双显。
+                self.clear_open_segment_cursor();
                 self.capture_final_answer_from_scratch(scratch);
             }
             SsePayload::ToolCall { tool_call } => {
@@ -122,8 +125,11 @@ impl TuiTurnProjection {
 
     /// 回合结束：关闭 open 段，并将工具批后 scratch 正文固化为终答。
     pub(super) fn finalize_for_display(&mut self, scratch: &TuiLlmStreamScratch) {
-        self.flush_open_segment_from_scratch(scratch);
+        if !self.tool_phase_ended {
+            self.flush_open_segment_from_scratch(scratch);
+        }
         close_open_commentary_segments(&mut self.turn);
+        self.clear_open_segment_cursor();
         if self.tool_phase_ended || !self.turn.steps.is_empty() {
             // 有工具步但未收到 phase end 时仍尽量收下终答，避免只进 Message[] 丢行序
             if !self.tool_phase_ended && !self.turn.steps.is_empty() {
@@ -156,7 +162,10 @@ impl TuiTurnProjection {
     /// Web v2 行 + open 旁白（含未 flush 的 scratch 增量）+ 工具批后终答。
     pub(super) fn format_projection_block(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         let mut rows = project_turn_web_v2(&self.turn);
-        if let Some(open) = self.live_open_commentary_text(scratch) {
+        // 工具批结束后 content lane 归终答；勿再把累积 scratch 挂成 open 旁白。
+        if !self.tool_phase_ended
+            && let Some(open) = self.live_open_commentary_text(scratch)
+        {
             rows.push(ProjectedRow {
                 kind: "assistant_commentary_open".into(),
                 text: open,
@@ -281,14 +290,21 @@ impl TuiTurnProjection {
         false
     }
 
+    fn clear_open_segment_cursor(&mut self) {
+        self.open_segment_id = None;
+        self.scratch_cursor_at_segment_start = None;
+    }
+
     fn resolved_final_answer(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         if !self.tool_phase_ended {
             return String::new();
         }
         if let Some(s) = scratch {
             let c = s.content.trim();
-            if !c.is_empty() && !self.commentary_covers_scratch(c, Some(s)) {
-                return c.to_string();
+            if let Some(final_part) = self.scratch_final_suffix(c)
+                && !final_part.is_empty()
+            {
+                return final_part.to_string();
             }
         }
         self.final_answer_text.trim().to_string()
@@ -296,10 +312,42 @@ impl TuiTurnProjection {
 
     fn capture_final_answer_from_scratch(&mut self, scratch: &TuiLlmStreamScratch) {
         let c = scratch.content.trim();
-        if c.is_empty() || self.commentary_covers_scratch(c, Some(scratch)) {
+        let Some(final_part) = self.scratch_final_suffix(c) else {
+            return;
+        };
+        if final_part.is_empty() {
             return;
         }
-        self.final_answer_text = c.to_string();
+        self.final_answer_text = final_part.to_string();
+    }
+
+    /// 工具批后 scratch 常累积「旁白+终答」；终答取旁白前缀之后的后缀。
+    fn scratch_final_suffix<'a>(&self, scratch_content: &'a str) -> Option<&'a str> {
+        let c = scratch_content.trim();
+        if c.is_empty() {
+            return None;
+        }
+        for row in project_turn_web_v2(&self.turn) {
+            if row.kind != "assistant_commentary" && row.kind != "assistant_batch_narration" {
+                continue;
+            }
+            let t = row.text.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if let Some(rest) = c.strip_prefix(t) {
+                let rest = rest.trim_start();
+                if !rest.is_empty() {
+                    return Some(rest);
+                }
+                // 整段仍是旁白，尚无终答
+                return None;
+            }
+        }
+        if self.commentary_covers_scratch(c, None) {
+            return None;
+        }
+        Some(c)
     }
 
     fn absorb_pre_tool_scratch_if_needed(&mut self, scratch: &TuiLlmStreamScratch) {
@@ -343,6 +391,10 @@ impl TuiTurnProjection {
     }
 
     fn flush_open_segment_from_scratch(&mut self, scratch: &TuiLlmStreamScratch) {
+        // 工具批已结束后的增量属终答 lane，不得再写入 commentary 段。
+        if self.tool_phase_ended {
+            return;
+        }
         let (Some(seg_id), Some(cursor)) = (
             self.open_segment_id.clone(),
             self.scratch_cursor_at_segment_start,
@@ -456,6 +508,89 @@ mod tests {
         assert!(
             proj.owns_streaming_content_lane(&scratch),
             "tool-phase / absorbed commentary must hide scratch duplicate"
+        );
+    }
+
+    #[test]
+    fn cumulative_scratch_final_not_duplicated_into_leading_commentary() {
+        // 复现：scratch 跨工具轮累积「旁白+终答」；若 phase end 后仍 flush open 段，
+        // 终答会被写进 before_commentary，出现在工具之前并与终答区双显。
+        let mut proj = TuiTurnProjection::default();
+        let mut scratch = TuiLlmStreamScratch {
+            content: "先看一下 README。".into(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::TurnSegmentStart {
+                start: TurnSegmentStartBody {
+                    segment_id: "seg-before-tc1".into(),
+                    kind: "commentary".into(),
+                    before_tool_call_id: Some("tc1".into()),
+                },
+            },
+            &TuiLlmStreamScratch::default(),
+        );
+        scratch.content = "先看一下 README。".into();
+        proj.apply_sse(
+            &SsePayload::TurnSegmentEnd {
+                end: TurnSegmentEndBody {
+                    segment_id: "seg-before-tc1".into(),
+                },
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::ToolCall {
+                tool_call: ToolCallSummary {
+                    name: "read_file".into(),
+                    summary: "README.md".into(),
+                    goal_id: None,
+                    tool_call_id: Some("tc1".into()),
+                    arguments_preview: None,
+                    arguments: None,
+                },
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::TurnToolPhaseEnd {
+                turn_tool_phase_end: true,
+            },
+            &scratch,
+        );
+        // 下一轮 LLM 继续往同一 scratch 追加终答（真实路径 push_str，不清空）
+        scratch.content.push_str("总结如下。");
+        let live = proj.format_projection_block(Some(&scratch));
+        let commentary_at = live.find("先看一下 README。").expect("旁白");
+        let tool_at = live.find("▸ read_file").expect("工具");
+        let final_at = live.find("总结如下。").expect("终答");
+        assert!(
+            commentary_at < tool_at && tool_at < final_at,
+            "须旁白→工具→终答:\n{live}"
+        );
+        assert_eq!(
+            live.matches("总结如下。").count(),
+            1,
+            "终答不得双显:\n{live}"
+        );
+        assert!(
+            !live[..tool_at].contains("总结如下。"),
+            "终答不得插入工具前旁白区:\n{live}"
+        );
+        proj.finalize_for_display(&scratch);
+        let committed = proj.format_projection_block(None);
+        assert_eq!(
+            committed.matches("总结如下。").count(),
+            1,
+            "finalize 后终答仍仅一次:\n{committed}"
+        );
+        let c = committed.find("先看一下 README。").expect("旁白");
+        let t = committed.find("▸ read_file").expect("工具");
+        let a = committed.find("总结如下。").expect("终答");
+        assert!(c < t && t < a, "定稿行序:\n{committed}");
+        assert!(
+            !committed[..t].contains("总结如下。"),
+            "定稿终答不得进旁白:\n{committed}"
         );
     }
 
