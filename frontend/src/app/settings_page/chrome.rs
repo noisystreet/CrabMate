@@ -7,7 +7,7 @@ use leptos::prelude::*;
 
 use super::form_signals::SettingsPageFormSignals;
 use super::form_snapshot::{SettingsPageDraftSignals, form_current_tracked};
-use super::hash_routing::SettingsSection;
+use super::hash_routing::{SettingsSection, navigate_to_chat};
 use super::header::SettingsPageHeader;
 use super::layout::{
     SettingsPageContentPanels, SettingsPageContentRegistryWire, SettingsPageNavRail,
@@ -134,7 +134,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
             if dirty.get() {
                 discard_rc();
             }
-            settings_page.set(false);
+            navigate_to_chat(settings_page);
         })
     };
 

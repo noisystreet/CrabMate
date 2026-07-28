@@ -282,6 +282,13 @@ pub fn settings_back(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_back_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "返回对话",
+        Locale::En => "Back to chat",
+    }
+}
+
 pub fn settings_block_shortcuts(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "键盘",

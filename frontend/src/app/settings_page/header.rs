@@ -20,6 +20,7 @@ pub(super) fn SettingsPageHeader(
                 type="button"
                 class="btn btn-ghost settings-page-back"
                 data-testid="settings-back"
+                prop:aria-label=move || i18n::settings_back_aria(appearance_locale.get())
                 on:click=move |_| on_back()
             >
                 <svg

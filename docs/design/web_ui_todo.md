@@ -1,67 +1,14 @@
 # Web UI 未来功能规划
 
-## 1. 设置页面（路由化）
+## 1. 设置页面（路由化）— **已落地**
 
-### 1.1 背景与目标
+全屏设置页 + hash 路由：
 
-当前设置入口为工具栏图标，点击后在主对话区**覆盖层模态框**展示。模态框会遮挡对话内容，用户无法参照对话上下文修改配置。
+- **`#/settings`** / **`#/settings/<section>`**（如 `appearance`、`mcp`）；关闭回到 **`#/`**
+- 兼容旧式 **`#settings/<section>`**
+- 工具栏「设置」、返回键、Esc、浏览器前进/后退与 `settings_page` 信号双向同步
 
-目标：将设置从覆盖层模态框改为独立的**全屏路由页面** `#/settings`，与对话页面分离，提供更沉浸的配置体验。
-
-### 1.2 路由方案
-
-- 路由格式：`/#/settings`（hash-based，不依赖第三方路由库）
-- 页面列表：
-  - `Chat` — `/#/` 或空 hash，默认
-  - `Settings` — `/#/settings`
-
-### 1.3 实现要点
-
-#### 路由监听
-
-```rust
-use leptos_dom::helpers::window_event_listener;
-
-let route = RwSignal::new(parse_hash_route());
-let _hashchange_handle = window_event_listener(leptos::ev::hashchange, {
-    let route = route.clone();
-    move |_ev: web_sys::HashChangeEvent| {
-        route.set(parse_hash_route());
-    }
-});
-```
-
-#### AppShellCtx 与 view! 闭包约束
-
-`AppShellCtx` 包含 `Rc<dyn Fn()>`、`Rc<RefCell<...>>` 等非 `Send+Sync` 类型，**不能**直接作为 `view!` 宏闭包的捕获变量。
-
-**推荐方案**：将路由信号 `route` 作为 `App()` 顶层变量独立管理，通过 `Show when=move || route.get() == Route::Settings` 控制渲染，**不**将 `app_ctx` 捕获进该闭包。
-
-#### CSS 布局
-
-```css
-.settings-page {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  overflow: auto;
-}
-```
-
-### 1.4 待解决的技术风险
-
-- **AppShellCtx 的 Rc 闭包约束**：需确保路由 `Show` 组件不捕获 app_ctx，或将 AppShellCtx 拆分为含 Rc 和不含 Rc 两部分。
-
-### 1.5 文件清单
-
-| 文件 | 操作 |
-|------|------|
-| `frontend/src/app/mod.rs` | 添加 Route 枚举、hashchange 监听、`Show` 路由渲染 |
-| `frontend/src/app/settings_page.rs` | 新建，SettingsPage 组件 |
-| `frontend/src/app/side_column.rs` | 设置按钮改为 hash 跳转 |
-| `frontend/src/i18n/settings.rs` | 添加 `settings_back`、`settings_back_aria` |
-| `frontend/styles/modal.css` | 添加 `.settings-page` 等布局样式 |
+实现：`frontend/src/app/settings_page/hash_routing.rs`、`view.rs`、`chrome.rs`、`side_column_toolbar.rs`。
 
 ---
 

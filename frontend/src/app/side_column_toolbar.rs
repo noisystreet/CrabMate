@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::app::github_embed_page::{
     github_repo_btn_disabled, try_open_github_embed_from_repo, use_github_embed_signals,
 };
+use crate::app::settings_page::{SettingsSection, navigate_to_settings};
 use crate::app_prefs::SidePanelView;
 use crate::i18n::{self, Locale};
 use crate::workspace_shell::begin_side_column_resize;
@@ -305,7 +306,9 @@ fn SideColumnShellToolbarIcons(
                 type="button"
                 class="btn btn-secondary btn-sm shell-toolbar-icon-btn"
                 data-testid="settings-open"
-                on:click=move |_| settings_page.set(true)
+                on:click=move |_| {
+                    navigate_to_settings(settings_page, SettingsSection::Appearance);
+                }
                 prop:title=move || i18n::side_settings_title(locale.get())
                 prop:aria-label=move || i18n::side_settings_title(locale.get())
             >
