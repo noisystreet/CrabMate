@@ -28,8 +28,8 @@ pub(super) use super::chat_follow::{
     apply_chat_scrollbar_follow_intent, note_chat_user_scroll_down, note_chat_user_scroll_up,
 };
 
-/// 流式尾挂：`[assistant]\n{body}\n\n`，与定稿 transcript / 投影旁白·终答一致，
-/// 避免切入投影后角色标签消失；正文是否隐藏仍以 [`TuiTurnProjection::should_hide_streaming_content`] 为准。
+/// 流式尾挂：仅当投影**尚未**拥有 content lane 时附加 `[assistant]\n{body}`。
+/// open 段 / 工具相 / 旁白 / 终答由投影（含 live catch-up）承接，避免双显与藏短。
 pub(super) fn append_tui_streaming_tail(
     transcript: &str,
     scratch: &crate::runtime::tui::TuiLlmStreamScratch,
@@ -37,7 +37,7 @@ pub(super) fn append_tui_streaming_tail(
 ) -> String {
     let r = scratch.reasoning.trim();
     let c = scratch.content.trim();
-    let hide_content = projection.should_hide_streaming_content(scratch);
+    let hide_content = projection.owns_streaming_content_lane(scratch);
     let body = streaming_assistant_body_matching_transcript(r, c, hide_content);
     if body.is_empty() {
         return transcript.to_string();

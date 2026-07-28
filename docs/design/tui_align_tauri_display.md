@@ -65,7 +65,7 @@
 |------|------|
 | SSE → TurnReducer → `project_turn_web_v2` | `src/runtime/tui/run_session/turn_project.rs` |
 | 中区 `[Turn 投影]` 块 | `render.rs` / `tui_prepare_chat_body_*` |
-| 工具相隐藏与投影重复的 scratch 正文 | `should_hide_streaming_content` |
+| 工具相 / 旁白 / 终答由投影拥有 content lane | `owns_streaming_content_lane`（流式尾不再挂 content） |
 | 历史/工具文案优先 tool-card | `crates/crabmate-runtime/src/message_display.rs` → `tool_content_for_display_for_message` |
 | 金样 | `golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`） |
 
@@ -108,7 +108,7 @@
 
 **问题**：post-tool 终答仍挂在 scratch「生成中」；与 Web `turn-final-answer` 不对齐。
 
-**落地**：`TurnToolPhaseEnd` 后 `tool_phase_ended`；`format_projection_block(scratch)` 追加 `[终答]`；`should_hide_streaming_content` 隐藏终答副本；`finalize_for_display` 固化 `final_answer_text`；flush 时跳过 Message[] 尾部 assistant 双显。
+**落地**：`TurnToolPhaseEnd` 后 `tool_phase_ended`；`format_projection_block(scratch)` 追加终答；`owns_streaming_content_lane` 使流式尾不再挂终答副本；`finalize_for_display` 固化 `final_answer_text`；flush 时跳过 Message[] 尾部 assistant 双显。
 
 **验收**：`post_tool_final_answer_lands_in_projection_not_streaming_tail`；工具批结束后终答在投影区工具之后。
 
