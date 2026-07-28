@@ -179,29 +179,32 @@ impl TuiTurnProjection {
         format_projected_rows_for_tui(&rows)
     }
 
-    /// 流式 scratch 正文是否已由投影块承接（避免旁白/终答双显）。
+    /// 本轮 **content 正文 lane** 是否已由投影承接。
     ///
-    /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答进投影正文，亦隐藏。
-    /// open 段用 [`Self::live_open_commentary_text`] 与 scratch 对齐，避免段间 token 滞后导致正文被藏短。
-    pub(super) fn should_hide_streaming_content(&self, scratch: &TuiLlmStreamScratch) -> bool {
-        let c = scratch.content.trim();
-        if c.is_empty() {
-            return false;
-        }
-        // open 段由投影 live catch-up 承接（含尚未 SegmentDelta 的 token），勿再挂流式尾。
+    /// 为 true 时流式尾不再挂 `scratch.content`（仍可由投影 live catch-up / 终答行展示）。
+    /// 仅 timeline、或尚无旁白/工具相/终答的纯问答，返回 false，允许流式尾跟字。
+    pub(super) fn owns_streaming_content_lane(&self, scratch: &TuiLlmStreamScratch) -> bool {
         if self.open_segment_id.is_some() {
             return true;
         }
-        if self.turn.tool_phase_open {
+        if self.turn.tool_phase_open || self.tool_phase_ended {
             return true;
         }
-        if self.tool_phase_ended && !self.commentary_covers_scratch(c, Some(scratch)) {
+        if !self.final_answer_text.trim().is_empty() {
             return true;
         }
-        if self.pending_stream_absorbed && !self.turn.steps.is_empty() {
-            return self.commentary_covers_scratch(c, Some(scratch));
+        if self
+            .live_open_commentary_text(Some(scratch))
+            .is_some_and(|t| !t.trim().is_empty())
+        {
+            return true;
         }
-        self.commentary_covers_scratch(c, Some(scratch))
+        project_turn_web_v2(&self.turn).iter().any(|row| {
+            matches!(
+                row.kind.as_str(),
+                "assistant_commentary" | "assistant_batch_narration"
+            ) && !row.text.trim().is_empty()
+        })
     }
 
     /// open 旁白 + 自 `scratch_cursor` 起尚未写入 reducer 的 scratch 切片（供绘制即时跟底）。
@@ -420,7 +423,7 @@ mod tests {
         let t = block.find("▸ read_file").expect("tool");
         assert!(c < t, "旁白正文须在工具行前: {block}");
         assert!(
-            proj.should_hide_streaming_content(&scratch),
+            proj.owns_streaming_content_lane(&scratch),
             "tool-phase / absorbed commentary must hide scratch duplicate"
         );
     }
@@ -464,7 +467,7 @@ mod tests {
         let final_at = block.find("总结如下。").expect("终答 missing");
         assert!(final_at > tool_at, "终答须在工具之后: {block}");
         assert!(
-            proj.should_hide_streaming_content(&scratch),
+            proj.owns_streaming_content_lane(&scratch),
             "final answer must not also stream as [assistant] tail"
         );
         proj.finalize_for_display(&scratch);
@@ -518,6 +521,45 @@ mod tests {
     }
 
     #[test]
+    fn owns_lane_false_for_timeline_only_true_after_open_segment() {
+        let mut proj = TuiTurnProjection::default();
+        let mut scratch = TuiLlmStreamScratch {
+            content: "回答".into(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::TimelineLog {
+                log: crate::sse::protocol::TimelineLogBody {
+                    kind: "intent_analysis".into(),
+                    title: "直接执行".into(),
+                    detail: None,
+                },
+            },
+            &scratch,
+        );
+        assert!(
+            !proj.owns_streaming_content_lane(&scratch),
+            "timeline must not own content lane"
+        );
+        scratch.content.clear();
+        proj.apply_sse(
+            &SsePayload::TurnSegmentStart {
+                start: TurnSegmentStartBody {
+                    segment_id: "seg-1".into(),
+                    kind: "commentary".into(),
+                    before_tool_call_id: None,
+                },
+            },
+            &scratch,
+        );
+        scratch.content.push_str("旁白");
+        assert!(
+            proj.owns_streaming_content_lane(&scratch),
+            "open segment owns content lane"
+        );
+    }
+
+    #[test]
     fn open_segment_live_catchup_shows_scratch_before_segment_end() {
         let mut proj = TuiTurnProjection::default();
         let mut scratch = TuiLlmStreamScratch {
@@ -541,7 +583,7 @@ mod tests {
             "open segment must live-catch scratch before SegmentEnd: {block}"
         );
         assert!(
-            proj.should_hide_streaming_content(&scratch),
+            proj.owns_streaming_content_lane(&scratch),
             "open segment lane owns content"
         );
         scratch.content.push_str("第二句。");
