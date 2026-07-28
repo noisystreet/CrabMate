@@ -73,7 +73,7 @@ pub(super) async fn tui_apply_workspace_switch(
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         (
             g.sqlite_conversation_id.clone(),
-            g.recent_conversation_ids.clone(),
+            g.recent_conversations.clone(),
         )
     };
     let nav = super::sidebar_text::build_tui_session_sidebar(

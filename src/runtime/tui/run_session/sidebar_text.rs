@@ -1,34 +1,36 @@
 //! TUI 侧栏 / 状态栏字符串拼装（从 [`super`](crate::runtime::tui::run_session) 拆分以降低 `mod.rs` 物理行数）。
 //!
 //! 左栏 / 右栏文案对齐 Web/Tauri 分区语义（会话列表、工作区路径）；不复刻 DOM。
+//! 最近会话行展示标题与 Tauri `nav-session-title` 同源（首条用户消息推导）。
 
 use crate::config::{AgentConfig, SharedAgentConfig};
+use crate::conversation_store::ConversationListEntry;
 use crate::text_util::truncate_chars_with_ellipsis;
 
 use super::sqlite_session::TuiSqliteSessionState;
 
-/// 从 SQLite 会话态拉取最近 id（失败或未启用时为空）。
-pub(in crate::runtime::tui::run_session) fn tui_recent_conversation_ids(
+/// 从 SQLite 会话态拉取最近会话（id + 标题；失败或未启用时为空）。
+pub(in crate::runtime::tui::run_session) fn tui_recent_conversations(
     sess: Option<&TuiSqliteSessionState>,
-) -> Vec<String> {
-    sess.and_then(|s| s.list_recent_ids(12).ok())
+) -> Vec<ConversationListEntry> {
+    sess.and_then(|s| s.list_recent_entries(12).ok())
         .unwrap_or_default()
 }
 
-/// 左侧会话栏（对齐 Web `nav-rail`：会话在左、最近列表）。
+/// 左侧会话栏（对齐 Web `nav-rail`：会话在左、最近列表、标题文案）。
 pub(in crate::runtime::tui::run_session) fn build_tui_session_sidebar(
     tui_load_on_start: bool,
     session_file_exists: bool,
     message_count: usize,
     sqlite_conversation_id: Option<&str>,
-    recent_conversation_ids: &[String],
+    recent: &[ConversationListEntry],
 ) -> String {
     let mut out = String::from("会话\n\n");
     out.push_str("最近会话\n");
     let current = sqlite_conversation_id
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    if recent_conversation_ids.is_empty() {
+    if recent.is_empty() {
         if let Some(id) = current {
             out.push_str("* ");
             out.push_str(&truncate_chars_with_ellipsis(id, 36));
@@ -41,22 +43,27 @@ pub(in crate::runtime::tui::run_session) fn build_tui_session_sidebar(
             ));
         }
     } else {
-        for id in recent_conversation_ids.iter().take(12) {
-            let id = id.trim();
+        for entry in recent.iter().take(12) {
+            let id = entry.id.trim();
             if id.is_empty() {
                 continue;
             }
-            let short = truncate_chars_with_ellipsis(id, 36);
+            let title = entry.title.trim();
+            let label = if title.is_empty() {
+                truncate_chars_with_ellipsis(id, 36)
+            } else {
+                truncate_chars_with_ellipsis(title, 36)
+            };
             if current == Some(id) {
                 out.push_str("* ");
             } else {
                 out.push_str("  ");
             }
-            out.push_str(&short);
+            out.push_str(&label);
             out.push('\n');
         }
-        if recent_conversation_ids.len() > 12 {
-            out.push_str(&format!("  … 共 {} 个\n", recent_conversation_ids.len()));
+        if recent.len() > 12 {
+            out.push_str(&format!("  … 共 {} 个\n", recent.len()));
         }
     }
     out.push('\n');
@@ -161,28 +168,36 @@ pub(in crate::runtime::tui::run_session) fn tui_use_ansi_color() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversation_store::ConversationListEntry;
 
     #[test]
-    fn session_sidebar_lists_recent_with_current_star() {
+    fn session_sidebar_lists_titles_with_current_star() {
         let s = build_tui_session_sidebar(
             true,
             true,
             3,
             Some("conv-current"),
             &[
-                "conv-current".into(),
-                "conv-older".into(),
-                "conv-third".into(),
+                ConversationListEntry {
+                    id: "conv-current".into(),
+                    title: "分析 README".into(),
+                },
+                ConversationListEntry {
+                    id: "conv-older".into(),
+                    title: "修编译错误".into(),
+                },
+                ConversationListEntry {
+                    id: "conv-third".into(),
+                    title: "新会话".into(),
+                },
             ],
         );
         assert!(s.contains("最近会话"), "{s}");
-        assert!(s.contains("* conv-current"), "{s}");
-        assert!(s.contains("  conv-older"), "{s}");
+        assert!(s.contains("* 分析 README"), "{s}");
+        assert!(s.contains("  修编译错误"), "{s}");
         assert!(s.contains("3 条"), "{s}");
+        assert!(!s.contains("conv-current"), "show title not raw id: {s}");
         assert!(!s.contains("/conv"), "{s}");
-        assert!(!s.contains("/branch"), "{s}");
-        assert!(!s.contains("中区仅展示"), "{s}");
-        assert!(!s.contains("transcript"), "{s}");
     }
 
     #[test]

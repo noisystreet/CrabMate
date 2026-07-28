@@ -88,17 +88,17 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                     .is_some_and(|s| matches!(s, "open" | "new"));
             if refresh {
                 if let Some(sess) = sqlite_slot.as_ref() {
-                    let recent = sidebar_text::tui_recent_conversation_ids(Some(sess));
+                    let recent = sidebar_text::tui_recent_conversations(Some(sess));
                     let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
                     g.sqlite_conversation_id = Some(sess.conversation_id.clone());
-                    g.recent_conversation_ids = recent;
+                    g.recent_conversations = recent;
                 }
                 tui_sqlite_slash_refresh_ui(env, messages.as_slice(), agent_role_owned).await;
             } else if trimmed.starts_with("/conv") || trimmed.starts_with("/branch") {
                 // `/conv list` 等也可能改变可见列表；刷新左栏缓存与文案
                 let recent = sqlite_slot
                     .as_ref()
-                    .map(|sess| sidebar_text::tui_recent_conversation_ids(Some(sess)))
+                    .map(|sess| sidebar_text::tui_recent_conversations(Some(sess)))
                     .unwrap_or_default();
                 let tui_load_nav = env
                     .cfg_holder
@@ -113,7 +113,7 @@ pub(super) async fn tui_try_consume_sqlite_slash(
                 )
                 .await;
                 let mut g = env.model.lock().unwrap_or_else(|e| e.into_inner());
-                g.recent_conversation_ids = recent.clone();
+                g.recent_conversations = recent.clone();
                 g.nav_summary = sidebar_text::build_tui_session_sidebar(
                     tui_load_nav,
                     workspace_session::session_file_path(env.work_dir).exists(),

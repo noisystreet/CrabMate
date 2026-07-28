@@ -32,6 +32,7 @@ pub use crabmate_llm;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 #[cfg(feature = "web")]
 mod conversation_store;
+mod session_title;
 pub use crabmate_llm::http_client;
 mod llm;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。

@@ -243,6 +243,15 @@ impl CliSqliteSessionState {
         let g = self.conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
         conversation_store::list_conversation_ids_recent_first(&g, limit).map_err(|e| e.to_string())
     }
+
+    /// 最近会话：id + Tauri 同源展示标题。
+    pub(crate) fn list_recent_entries(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<crate::conversation_store::ConversationListEntry>, String> {
+        let g = self.conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
+        conversation_store::list_conversations_recent_first(&g, limit).map_err(|e| e.to_string())
+    }
 }
 
 fn preferred_conversation_id_from_env() -> Option<String> {

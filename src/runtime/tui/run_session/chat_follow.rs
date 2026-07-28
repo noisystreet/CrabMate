@@ -94,7 +94,7 @@ mod tests {
             workspace_path_buf: std::path::PathBuf::from("."),
             workspace_modal: None,
             sqlite_conversation_id: None,
-            recent_conversation_ids: Vec::new(),
+            recent_conversations: Vec::new(),
             control_plane_tail: String::new(),
             turn_projection: TuiTurnProjection::default(),
             committed_turns: Default::default(),
