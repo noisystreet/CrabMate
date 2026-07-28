@@ -3,13 +3,11 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SharedAgentConfig;
-use crate::process_handles::ProcessHandles;
 use crate::runtime::workspace_session;
 use crate::types::Message;
 
 use super::sidebar_text;
 use super::sqlite_session;
-use super::workspace_sidebar_extra;
 use super::{TuiModel, tui_header_summary};
 
 pub(super) struct TuiAfterChatRoundRefresh<'a> {
@@ -19,7 +17,6 @@ pub(super) struct TuiAfterChatRoundRefresh<'a> {
     pub agent_role_owned: &'a Option<String>,
     pub messages: &'a [Message],
     pub sqlite_persist: Option<&'a mut Option<&'a mut sqlite_session::TuiSqliteSessionState>>,
-    pub process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>) {
@@ -30,7 +27,6 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
         agent_role_owned,
         messages,
         sqlite_persist,
-        process_handles,
     } = p;
     let (persist_note, recent_from_db) = if let Some(sqlite_slot) = sqlite_persist {
         if let Some(sess) = sqlite_slot.as_mut() {
@@ -62,13 +58,7 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
         sqlite_nav.as_deref(),
         &recent_ids,
     );
-    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
-        work_dir,
-        process_handles,
-        cfg_holder,
-        sqlite_nav.as_deref(),
-    )
-    .await;
+    let right = sidebar_text::build_tui_workspace_sidebar(work_dir);
     let chips =
         sidebar_text::tui_status_chips_line_with_messages(cfg_holder, agent_role_owned, messages)
             .await;

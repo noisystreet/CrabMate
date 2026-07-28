@@ -1,6 +1,6 @@
 //! TUI 侧栏 / 状态栏字符串拼装（从 [`super`](crate::runtime::tui::run_session) 拆分以降低 `mod.rs` 物理行数）。
 //!
-//! 左栏 / 右栏文案对齐 Web/Tauri 分区语义（会话列表、任务清单、变更预览）；不复刻 DOM。
+//! 左栏 / 右栏文案对齐 Web/Tauri 分区语义（会话列表、工作区路径）；不复刻 DOM。
 
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::text_util::truncate_chars_with_ellipsis;
@@ -61,19 +61,16 @@ pub(in crate::runtime::tui::run_session) fn build_tui_session_sidebar(
     }
     out.push('\n');
     out.push_str(&format!("{message_count} 条\n"));
-    out.push_str("/conv list · open · new · /branch\n");
     out
 }
 
-/// 右侧工作区栏路径与操作提示（任务/变更由 [`super::workspace_sidebar_extra`] 追加）。
-///
-/// 对齐 Web：路径短示 + Enter 改路径；快捷键不进右栏（见 `/help` / 设置）。
+/// 右侧工作区栏：仅路径短示（无任务清单 / 变更预览 / 快捷键帮助）。
 pub(in crate::runtime::tui::run_session) fn build_tui_workspace_sidebar(
     work_dir: &std::path::Path,
 ) -> String {
     let wd = work_dir.display().to_string();
     let wd_short = truncate_chars_with_ellipsis(&wd, 40);
-    format!("工作区\n{wd_short}\n\nEnter：浏览/编辑路径\n")
+    format!("工作区\n{wd_short}\n")
 }
 
 /// 原底栏文案；仍供 `/help` 或其它提示复用（右栏不再堆快捷键）。
@@ -182,7 +179,8 @@ mod tests {
         assert!(s.contains("* conv-current"), "{s}");
         assert!(s.contains("  conv-older"), "{s}");
         assert!(s.contains("3 条"), "{s}");
-        assert!(s.contains("/conv list"), "{s}");
+        assert!(!s.contains("/conv"), "{s}");
+        assert!(!s.contains("/branch"), "{s}");
         assert!(!s.contains("中区仅展示"), "{s}");
         assert!(!s.contains("transcript"), "{s}");
     }
@@ -191,8 +189,12 @@ mod tests {
     fn workspace_sidebar_is_path_only_no_hotkeys_wall() {
         let s = build_tui_workspace_sidebar(std::path::Path::new("/tmp/ws"));
         assert!(s.contains("工作区"), "{s}");
-        assert!(s.contains("Enter：浏览/编辑路径"), "{s}");
+        assert!(s.contains("/tmp/ws"), "{s}");
+        assert!(!s.contains("Enter"), "{s}");
         assert!(!s.contains("快捷键"), "{s}");
+        assert!(!s.contains("/help"), "{s}");
+        assert!(!s.contains("任务清单"), "{s}");
+        assert!(!s.contains("变更预览"), "{s}");
         assert!(!s.contains("已加载工具"), "{s}");
     }
 }

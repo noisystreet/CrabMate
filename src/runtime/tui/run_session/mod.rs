@@ -35,7 +35,6 @@ mod submit_ev;
 mod transcript;
 mod turn_project;
 mod workspace_modal;
-mod workspace_sidebar_extra;
 
 mod workspace_switch;
 
@@ -53,7 +52,6 @@ use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::config::SharedAgentConfig;
-use crate::process_handles::ProcessHandles;
 use crate::runtime::cli::{
     CliMainInvocationCommon, ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles,
     cli_effective_work_dir, repl_prepare_messages_and_editor, repl_slash_handled_followup,
@@ -243,7 +241,7 @@ struct TuiModel {
     header_line: String,
     /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
     nav_summary: String,
-    /// 右栏：工作区路径 + 任务清单 / 变更预览（对齐 Web 右侧工作区语义）。
+    /// 右栏：当前工作区路径（仅路径；无任务清单 / 变更预览）。
     right_summary: String,
     transcript: String,
     /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
@@ -292,7 +290,6 @@ struct TuiSlashUiRefresh<'a> {
     agent_role_owned: &'a Option<String>,
     message_count: usize,
     captured: Vec<String>,
-    process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) struct TuiSlashSubmit<'a> {
@@ -307,7 +304,6 @@ pub(super) struct TuiSlashSubmit<'a> {
     slash_handles: &'a ReplSlashSharedHandles,
     model: &'a Arc<Mutex<TuiModel>>,
     handoff_tx: &'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>,
-    process_handles: &'a Arc<ProcessHandles>,
 }
 
 pub(super) async fn tui_try_consume_slash_submit(
@@ -359,7 +355,6 @@ pub(super) async fn tui_try_consume_slash_submit(
         agent_role_owned: ctx.agent_role_owned,
         message_count: ctx.messages.len(),
         captured,
-        process_handles: ctx.process_handles,
     })
     .await;
     Ok(true)
@@ -373,7 +368,6 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         agent_role_owned,
         message_count,
         captured,
-        process_handles,
     } = p;
     let new_header = tui_header_summary(work_dir);
     let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
@@ -391,13 +385,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         sqlite_nav.as_deref(),
         &recent_ids,
     );
-    let right = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
-        work_dir,
-        process_handles,
-        cfg_holder,
-        sqlite_nav.as_deref(),
-    )
-    .await;
+    let right = sidebar_text::build_tui_workspace_sidebar(work_dir);
     let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
 
     let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
@@ -495,13 +483,7 @@ pub async fn run_tui_session(
         sqlite_id_nav,
         &recent_conversation_ids,
     );
-    let right_summary = workspace_sidebar_extra::build_tui_workspace_sidebar_extended(
-        work_dir.as_path(),
-        &process_handles,
-        cfg_holder,
-        sqlite_id_nav,
-    )
-    .await;
+    let right_summary = sidebar_text::build_tui_workspace_sidebar(work_dir.as_path());
     let status_chips =
         sidebar_text::tui_status_chips_line_with_messages(cfg_holder, &agent_role_owned, &messages)
             .await;

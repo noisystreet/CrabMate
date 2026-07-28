@@ -3,7 +3,6 @@
 use std::sync::{Arc, Mutex};
 
 use crate::config::SharedAgentConfig;
-use crate::process_handles::ProcessHandles;
 use crate::runtime::cli_sqlite_slash::{CliSqliteSlashResult, try_apply_cli_sqlite_slash};
 use crate::runtime::workspace_session;
 use crate::tool_stats::ToolOutcomeRecorder;
@@ -18,7 +17,6 @@ pub(super) struct TuiSqliteSlashEnv<'a> {
     pub(super) cfg_holder: &'a SharedAgentConfig,
     pub(super) model: &'a Arc<Mutex<TuiModel>>,
     pub(super) work_dir: &'a std::path::Path,
-    pub(super) process_handles: &'a Arc<ProcessHandles>,
 }
 
 fn push_block(model: &Arc<Mutex<TuiModel>>, lines: &[String]) {
@@ -44,7 +42,6 @@ async fn tui_sqlite_slash_refresh_ui(
         agent_role_owned,
         messages,
         sqlite_persist: None,
-        process_handles: env.process_handles,
     })
     .await;
 }
