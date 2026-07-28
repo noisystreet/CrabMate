@@ -92,13 +92,18 @@ ls -l /absolute/path/to/crabmate
 2. 检查 sidecar 位置是否存在后端可执行文件
 3. 再检查 PATH 里的 `crabmate`
 
-### 2.2 一直等待 ready 或超时
+### 2.2 一直等待 ready 或超时 / 启动闪屏
+
+启动时会先显示 **`splash.html`**（无边框小窗）：文案阶段为「正在启动 → 拉起后端 → 等待 web_ready → 打开界面」。后端就绪后关闭闪屏并打开主窗口。
+
+若失败：**闪屏保留**并展示错误详情与「退出」按钮（不再立刻关掉闪屏只弹系统对话框）。排查：
 
 原因：
 
 - 后端未成功启动
 - 后端未输出 `web_ready` 行
 - 本机端口被安全策略拦截
+- **`frontend/dist`** 缺失导致 `serve` 退出
 
 排查建议：
 
@@ -113,6 +118,8 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 - `{"event":"web_ready", ...}`
 
 若 stderr/日志为 **`unexpected argument '--desktop-ready-json' found`**：deb 或 sidecar 里的 **`crabmate` 过旧**，与当前桌面壳不匹配。**无**旧版回退；须按 §6 重编后端并重打 **`cargo tauri build`** 后再 **`dpkg -i`**。
+
+闪屏静态页由 **`prepare-sidecar.sh`** 复制到 **`desktop-tauri/dist/splash.html`**（与 `frontendDist` 一致）。
 
 ### 2.3 Web API 405（如「删除文件夹」）或接口版本不一致
 
