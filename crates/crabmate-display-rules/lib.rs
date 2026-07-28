@@ -10,6 +10,15 @@ pub const STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX: &str =
 /// 外循环构建空转纠偏 user 首行（与 `outer_loop_build_idle` / `turn_completion` 对齐）。
 pub const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
 
+/// 长期记忆召回注入正文前缀（与 `long_term_memory::format_ltm_injection_body` 一致；无 `user.name` 时的兜底识别）。
+pub const LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX: &str = "以下为与当前问题可能相关的长期记忆";
+
+#[must_use]
+pub fn is_long_term_memory_injected_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX)
+}
+
 #[must_use]
 pub fn is_planner_tool_call_reject_injected_user_content(s: &str) -> bool {
     s.trim_start()
@@ -34,6 +43,7 @@ pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
     is_planner_tool_call_reject_injected_user_content(s)
         || is_staged_patch_feedback_user_content(s)
         || is_plan_rewrite_injected_user_content(s)
+        || is_long_term_memory_injected_user_content(s)
         || s.trim_start()
             .starts_with(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX)
 }

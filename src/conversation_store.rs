@@ -525,6 +525,25 @@ mod tests {
     }
 
     #[test]
+    fn list_conversations_title_skips_injected_user_messages() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let mut mem = Message::user_only(
+            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\nx"
+                .to_string(),
+        );
+        mem.name = Some(crate::types::CRABMATE_LONG_TERM_MEMORY_NAME.to_string());
+        let msgs = vec![
+            Message::system_only("s".to_string()),
+            mem,
+            Message::user_only("真正的问题".to_string()),
+        ];
+        save_if_revision(&conn, "c2", msgs, None, None).unwrap();
+        let entries = list_conversations_recent_first(&conn, 10).unwrap();
+        assert_eq!(entries[0].title, "真正的问题");
+    }
+
+    #[test]
     fn list_conversation_ids_recent_first_orders_by_updated_desc() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();

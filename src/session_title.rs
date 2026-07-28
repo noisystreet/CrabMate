@@ -1,8 +1,13 @@
-//! 会话列表标题：与 Web/Tauri [`title_from_user_prompt`] 同源算法（首条用户消息压平截断）。
+//! 会话列表标题：与 Web/Tauri [`title_from_user_prompt`] 同源算法（首条**真实**用户消息压平截断）。
+//!
+//! 跳过长期记忆 / 首轮工作区画像等服务端注入 `user`（与 [`user_message_counts_for_branch_truncation`] 一致），
+//! 避免侧栏标题变成「以下为与当前问题可能相关的长期记忆…」或长期停留在「新会话」。
 //!
 //! Web 侧自定义重命名仅存浏览器 `ChatSession`，不进 SQLite；TUI 只能从落盘消息推导。
 
-use crate::types::{Message, message_content_plain_for_chat_display};
+use crate::types::{
+    Message, message_content_plain_for_chat_display, user_message_counts_for_branch_truncation,
+};
 
 /// 与 frontend `DEFAULT_CHAT_SESSION_TITLE` 存储默认对应的中文展示（TUI 侧栏文案为中文）。
 pub const DEFAULT_SESSION_TITLE_ZH: &str = "新会话";
@@ -35,10 +40,10 @@ pub fn title_from_user_prompt(text: &str) -> String {
     }
 }
 
-/// 从会话消息取首条用户内容生成标题；无用户消息时返回默认「新会话」。
+/// 从会话消息取首条**真实**用户内容生成标题；无则返回默认「新会话」。
 pub fn conversation_title_from_messages(messages: &[Message]) -> String {
     for m in messages {
-        if m.role != "user" {
+        if !user_message_counts_for_branch_truncation(m) {
             continue;
         }
         let plain = message_content_plain_for_chat_display(&m.content);
@@ -53,7 +58,9 @@ pub fn conversation_title_from_messages(messages: &[Message]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Message;
+    use crate::types::{
+        CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_LONG_TERM_MEMORY_NAME, Message,
+    };
 
     #[test]
     fn title_matches_frontend_flatten_and_truncate() {
@@ -77,5 +84,38 @@ mod tests {
             conversation_title_from_messages(&[Message::system_only("s".to_string())]),
             DEFAULT_SESSION_TITLE_ZH
         );
+    }
+
+    #[test]
+    fn conversation_title_skips_long_term_memory_and_first_turn_inject() {
+        let mut mem = Message::user_only(
+            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n- foo"
+                .to_string(),
+        );
+        mem.name = Some(CRABMATE_LONG_TERM_MEMORY_NAME.to_string());
+        let mut ctx = Message::user_only("## 项目画像\n\ncrate = crabmate".to_string());
+        ctx.name = Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.to_string());
+        let msgs = vec![
+            Message::system_only("sys".to_string()),
+            mem,
+            ctx,
+            Message::user_only("修一下编译错误".to_string()),
+        ];
+        assert_eq!(conversation_title_from_messages(&msgs), "修一下编译错误");
+    }
+
+    #[test]
+    fn conversation_title_skips_memory_by_content_prefix_without_name() {
+        // 无 name 的历史落盘：靠 display_rules 内容识别
+        let mem = Message::user_only(
+            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n- bar"
+                .to_string(),
+        );
+        let msgs = vec![
+            Message::system_only("sys".to_string()),
+            mem,
+            Message::user_only("实现纯色块".to_string()),
+        ];
+        assert_eq!(conversation_title_from_messages(&msgs), "实现纯色块");
     }
 }
