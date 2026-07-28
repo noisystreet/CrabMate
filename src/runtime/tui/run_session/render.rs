@@ -183,6 +183,26 @@ fn chat_line_header_style(line: &str) -> Option<Style> {
     None
 }
 
+/// 中区聊天正文唯一合成入口：定稿 transcript + 本轮投影 + 控制面附录 + 流式尾。
+pub(super) fn build_tui_chat_body(
+    transcript: &str,
+    turn_projection: &TuiTurnProjection,
+    control_plane_tail: &str,
+    scratch: &TuiLlmStreamScratch,
+) -> String {
+    let mut out = transcript.to_string();
+    let projection = turn_projection.format_projection_block(Some(scratch));
+    if !projection.is_empty() {
+        out.push_str("\n\n");
+        out.push_str(projection.as_str());
+    }
+    if !control_plane_tail.is_empty() {
+        out.push_str("\n\n[SSE 控制面]\n");
+        out.push_str(control_plane_tail);
+    }
+    append_tui_streaming_tail(out.as_str(), scratch, turn_projection)
+}
+
 struct TuiChatPanePrep {
     chat_body: String,
 }
@@ -191,19 +211,14 @@ fn tui_prepare_chat_body_and_stream_flags(
     model: &TuiModel,
     scratch: &TuiLlmStreamScratch,
 ) -> TuiChatPanePrep {
-    let mut transcript_display = model.transcript.clone();
-    let projection = model.turn_projection.format_projection_block(Some(scratch));
-    if !projection.is_empty() {
-        transcript_display.push_str("\n\n");
-        transcript_display.push_str(projection.as_str());
+    TuiChatPanePrep {
+        chat_body: build_tui_chat_body(
+            model.transcript.as_str(),
+            &model.turn_projection,
+            model.control_plane_tail.as_str(),
+            scratch,
+        ),
     }
-    if !model.control_plane_tail.is_empty() {
-        transcript_display.push_str("\n\n[SSE 控制面]\n");
-        transcript_display.push_str(model.control_plane_tail.as_str());
-    }
-    let chat_body =
-        append_tui_streaming_tail(transcript_display.as_str(), scratch, &model.turn_projection);
-    TuiChatPanePrep { chat_body }
 }
 
 fn tui_chat_stick_mode_after_snap_clear(model: &mut TuiModel) -> ChatVerticalStickMode {
@@ -499,18 +514,7 @@ pub(super) fn chat_scrollbar_hit(
     if sb_rect.width == 0 {
         return None;
     }
-    let mut transcript_display = transcript.to_string();
-    let projection_block = turn_projection.format_projection_block(Some(scratch));
-    if !projection_block.is_empty() {
-        transcript_display.push_str("\n\n");
-        transcript_display.push_str(projection_block.as_str());
-    }
-    if !control_plane_tail.is_empty() {
-        transcript_display.push_str("\n\n[SSE 控制面]\n");
-        transcript_display.push_str(control_plane_tail);
-    }
-    let chat_body =
-        append_tui_streaming_tail(transcript_display.as_str(), scratch, turn_projection);
+    let chat_body = build_tui_chat_body(transcript, turn_projection, control_plane_tail, scratch);
     let tw = text_rect.width.max(1);
     let th = text_rect.height.max(1);
     let rows = estimate_wrapped_line_rows(chat_body.as_str(), tw);
@@ -744,6 +748,22 @@ mod tests {
         assert_eq!(stream_y, snap_y);
         assert_eq!(snap_y, manual_cap);
         assert_eq!(snap_y, chat_max_scroll_strict(text.as_str(), 40, 10));
+    }
+
+    #[test]
+    fn build_tui_chat_body_matches_prepare_and_scrollbar_path() {
+        let transcript = "[user]\nhi\n\n";
+        let scratch = crate::runtime::tui::TuiLlmStreamScratch {
+            content: "你好".into(),
+            ..Default::default()
+        };
+        let projection = TuiTurnProjection::default();
+        let body = build_tui_chat_body(transcript, &projection, "", &scratch);
+        let via_tail = append_tui_streaming_tail(transcript, &scratch, &projection);
+        assert_eq!(body, via_tail);
+        assert!(body.contains("[assistant]\n你好"), "{body}");
+        let with_ctrl = build_tui_chat_body(transcript, &projection, "err line", &scratch);
+        assert!(with_ctrl.contains("[SSE 控制面]\nerr line"), "{with_ctrl}");
     }
 
     #[test]
