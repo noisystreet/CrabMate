@@ -86,7 +86,7 @@ pub fn SettingsPageView(input: SettingsPageViewInput) -> impl IntoView {
         baselines.refresh_from_current(&form_current_untracked(drafts));
     });
 
-    settings_page_install_hashchange_listener(active_section);
+    settings_page_install_hashchange_listener(settings_page, active_section);
 
     wire_settings_page_hash_section_effect(settings_page, active_section);
     wire_settings_page_open_snapshot_effect(

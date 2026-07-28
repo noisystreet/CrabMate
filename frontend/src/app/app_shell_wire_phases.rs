@@ -164,6 +164,7 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         mobile_nav_open: app.sidebar.mobile_nav_open,
         changelist_modal_open: app.modal.changelist_modal_open,
         settings_modal: app.modal.settings_modal,
+        settings_page: app.modal.settings_page,
         ide_settings_page: app.modal.ide_settings_page,
         github_embed: crate::app::github_embed_page::GithubEmbedSignals::from_modal(app.modal),
         session_modal: app.modal.session_modal,

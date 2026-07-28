@@ -13,4 +13,5 @@ mod section_copy;
 mod view;
 
 pub use form_signals::SettingsPageFormSignals;
+pub(crate) use hash_routing::{SettingsSection, navigate_to_chat, navigate_to_settings};
 pub use view::{SettingsPageView, SettingsPageViewInput};
