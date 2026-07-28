@@ -207,6 +207,37 @@ impl TuiTurnProjection {
         })
     }
 
+    /// Message[] 中的纯文本 assistant 是否已由投影旁白/终答承接（flush 时避免双显）。
+    pub(super) fn covers_plain_assistant_body(&self, body: &str) -> bool {
+        let b = body.trim();
+        if b.is_empty() {
+            return true;
+        }
+        let final_t = self.final_answer_text.trim();
+        if !final_t.is_empty() && projection_text_covers(b, final_t) {
+            return true;
+        }
+        for row in project_turn_web_v2(&self.turn) {
+            if !matches!(
+                row.kind.as_str(),
+                "assistant_commentary" | "assistant_batch_narration" | "assistant_answer"
+            ) {
+                continue;
+            }
+            let t = row.text.trim();
+            if !t.is_empty() && projection_text_covers(b, t) {
+                return true;
+            }
+        }
+        for seg in &self.turn.segments {
+            let t = seg.text.trim();
+            if !t.is_empty() && projection_text_covers(b, t) {
+                return true;
+            }
+        }
+        false
+    }
+
     /// open 旁白 + 自 `scratch_cursor` 起尚未写入 reducer 的 scratch 切片（供绘制即时跟底）。
     fn live_open_commentary_text(&self, scratch: Option<&TuiLlmStreamScratch>) -> Option<String> {
         let mut open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
