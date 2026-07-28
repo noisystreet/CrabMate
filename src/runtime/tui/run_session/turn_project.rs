@@ -133,10 +133,30 @@ impl TuiTurnProjection {
         }
     }
 
-    /// Web v2 行 + open 旁白 + 工具批后终答（旁白/终答带 `[assistant]`，与流式尾一致）。
+    /// 是否具备可写入定稿的 turn 布局正文（旁白 / 工具步 / 终答）。
+    ///
+    /// 仅有 `assistant_timeline`（如 intent_analysis）时返回 false：定稿应走 Message[]，
+    /// 避免「投影非空 → 跳过全部 assistant」丢掉真正回答。
+    pub(super) fn has_flushable_turn_layout(&self) -> bool {
+        if !self.turn.steps.is_empty() {
+            return true;
+        }
+        if !self.final_answer_text.trim().is_empty() {
+            return true;
+        }
+        if self.turn.segments.iter().any(|s| !s.text.trim().is_empty()) {
+            return true;
+        }
+        if streaming_commentary_block_text(&self.turn).is_some_and(|t| !t.trim().is_empty()) {
+            return true;
+        }
+        false
+    }
+
+    /// Web v2 行 + open 旁白（含未 flush 的 scratch 增量）+ 工具批后终答。
     pub(super) fn format_projection_block(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         let mut rows = project_turn_web_v2(&self.turn);
-        if let Some(open) = streaming_commentary_block_text(&self.turn) {
+        if let Some(open) = self.live_open_commentary_text(scratch) {
             rows.push(ProjectedRow {
                 kind: "assistant_commentary_open".into(),
                 text: open,
@@ -162,21 +182,69 @@ impl TuiTurnProjection {
     /// 流式 scratch 正文是否已由投影块承接（避免旁白/终答双显）。
     ///
     /// 工具相 / 已吸收 pending 旁白时隐藏 content；工具批结束后的终答进投影正文，亦隐藏。
-    pub(super) fn should_hide_streaming_content(&self, scratch_content: &str) -> bool {
-        let c = scratch_content.trim();
+    /// open 段用 [`Self::live_open_commentary_text`] 与 scratch 对齐，避免段间 token 滞后导致正文被藏短。
+    pub(super) fn should_hide_streaming_content(&self, scratch: &TuiLlmStreamScratch) -> bool {
+        let c = scratch.content.trim();
         if c.is_empty() {
             return false;
+        }
+        // open 段由投影 live catch-up 承接（含尚未 SegmentDelta 的 token），勿再挂流式尾。
+        if self.open_segment_id.is_some() {
+            return true;
         }
         if self.turn.tool_phase_open {
             return true;
         }
-        if self.tool_phase_ended && !commentary_text_covers_scratch(&self.turn, c) {
+        if self.tool_phase_ended && !self.commentary_covers_scratch(c, Some(scratch)) {
             return true;
         }
         if self.pending_stream_absorbed && !self.turn.steps.is_empty() {
-            return commentary_text_covers_scratch(&self.turn, c);
+            return self.commentary_covers_scratch(c, Some(scratch));
         }
-        commentary_text_covers_scratch(&self.turn, c)
+        self.commentary_covers_scratch(c, Some(scratch))
+    }
+
+    /// open 旁白 + 自 `scratch_cursor` 起尚未写入 reducer 的 scratch 切片（供绘制即时跟底）。
+    fn live_open_commentary_text(&self, scratch: Option<&TuiLlmStreamScratch>) -> Option<String> {
+        let mut open = streaming_commentary_block_text(&self.turn).unwrap_or_default();
+        if self.open_segment_id.is_some()
+            && let (Some(s), Some(cursor)) = (scratch, self.scratch_cursor_at_segment_start)
+            && cursor < s.content.len()
+        {
+            open.push_str(&s.content[cursor..]);
+        }
+        if open.trim().is_empty() {
+            None
+        } else {
+            Some(open)
+        }
+    }
+
+    fn commentary_covers_scratch(
+        &self,
+        scratch_content: &str,
+        scratch: Option<&TuiLlmStreamScratch>,
+    ) -> bool {
+        let c = scratch_content.trim();
+        if let Some(open) = self.live_open_commentary_text(scratch) {
+            let o = open.trim();
+            if !o.is_empty() && projection_text_covers(c, o) {
+                return true;
+            }
+        }
+        for row in project_turn_web_v2(&self.turn) {
+            if row.kind != "assistant_commentary" && row.kind != "assistant_batch_narration" {
+                continue;
+            }
+            let t = row.text.trim();
+            if t.is_empty() {
+                continue;
+            }
+            if projection_text_covers(c, t) {
+                return true;
+            }
+        }
+        false
     }
 
     fn resolved_final_answer(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
@@ -185,7 +253,7 @@ impl TuiTurnProjection {
         }
         if let Some(s) = scratch {
             let c = s.content.trim();
-            if !c.is_empty() && !commentary_text_covers_scratch(&self.turn, c) {
+            if !c.is_empty() && !self.commentary_covers_scratch(c, Some(s)) {
                 return c.to_string();
             }
         }
@@ -194,7 +262,7 @@ impl TuiTurnProjection {
 
     fn capture_final_answer_from_scratch(&mut self, scratch: &TuiLlmStreamScratch) {
         let c = scratch.content.trim();
-        if c.is_empty() || commentary_text_covers_scratch(&self.turn, c) {
+        if c.is_empty() || self.commentary_covers_scratch(c, Some(scratch)) {
             return;
         }
         self.final_answer_text = c.to_string();
@@ -298,26 +366,12 @@ pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
     out
 }
 
-fn commentary_text_covers_scratch(turn: &Turn, scratch: &str) -> bool {
-    if let Some(open) = streaming_commentary_block_text(turn) {
-        let o = open.trim();
-        if !o.is_empty() && (scratch == o || scratch.starts_with(o) || o.starts_with(scratch)) {
-            return true;
-        }
-    }
-    for row in project_turn_web_v2(turn) {
-        if row.kind != "assistant_commentary" && row.kind != "assistant_batch_narration" {
-            continue;
-        }
-        let t = row.text.trim();
-        if t.is_empty() {
-            continue;
-        }
-        if scratch == t || scratch.starts_with(t) || t.starts_with(scratch) {
-            return true;
-        }
-    }
-    false
+/// 投影旁白是否已覆盖（或领先于）scratch：相等、投影为前缀扩张、或 scratch 仍是投影前缀。
+///
+/// **注意**：`scratch.starts_with(proj)` 且 scratch 更长时，若投影未做 live catch-up，
+/// 表示投影滞后——调用方应先用 [`TuiTurnProjection::live_open_commentary_text`] 对齐后再判断。
+fn projection_text_covers(scratch: &str, proj: &str) -> bool {
+    scratch == proj || scratch.starts_with(proj) || proj.starts_with(scratch)
 }
 
 #[cfg(test)]
@@ -366,7 +420,7 @@ mod tests {
         let t = block.find("▸ read_file").expect("tool");
         assert!(c < t, "旁白正文须在工具行前: {block}");
         assert!(
-            proj.should_hide_streaming_content("先看一下 README。"),
+            proj.should_hide_streaming_content(&scratch),
             "tool-phase / absorbed commentary must hide scratch duplicate"
         );
     }
@@ -410,7 +464,7 @@ mod tests {
         let final_at = block.find("总结如下。").expect("终答 missing");
         assert!(final_at > tool_at, "终答须在工具之后: {block}");
         assert!(
-            proj.should_hide_streaming_content("总结如下。"),
+            proj.should_hide_streaming_content(&scratch),
             "final answer must not also stream as [assistant] tail"
         );
         proj.finalize_for_display(&scratch);
@@ -461,6 +515,41 @@ mod tests {
         let t = block.find("▸ read_file").expect("工具");
         let a = block.find("目录如下。").expect("终答");
         assert!(c < t && t < a, "SSE 时序投影须旁白→工具→终答:\n{block}");
+    }
+
+    #[test]
+    fn open_segment_live_catchup_shows_scratch_before_segment_end() {
+        let mut proj = TuiTurnProjection::default();
+        let mut scratch = TuiLlmStreamScratch {
+            content: String::new(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::TurnSegmentStart {
+                start: TurnSegmentStartBody {
+                    segment_id: "seg-1".into(),
+                    kind: "commentary".into(),
+                    before_tool_call_id: None,
+                },
+            },
+            &scratch,
+        );
+        scratch.content.push_str("第一句。");
+        let block = proj.format_projection_block(Some(&scratch));
+        assert!(
+            block.contains("第一句。"),
+            "open segment must live-catch scratch before SegmentEnd: {block}"
+        );
+        assert!(
+            proj.should_hide_streaming_content(&scratch),
+            "open segment lane owns content"
+        );
+        scratch.content.push_str("第二句。");
+        let block2 = proj.format_projection_block(Some(&scratch));
+        assert!(
+            block2.contains("第一句。第二句。"),
+            "live catch-up must grow with scratch: {block2}"
+        );
     }
 
     #[test]

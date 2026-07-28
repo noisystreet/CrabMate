@@ -116,14 +116,15 @@ fn messages_to_transcript_range(messages: &[Message], start: usize, end: usize) 
     out
 }
 
-/// 有投影：user/前缀 → 旁白/工具/终答（旁白·终答带 `[assistant]`）→ 后缀；无投影：整段 Message[]。
+/// 有**可定稿的 turn 布局**（旁白/工具/终答）：user/前缀 → 投影 → 后缀，并跳过 Message[] assistant。
+/// 仅 timeline 等非正文投影、或投影为空：回退整段 Message[]（否则会丢掉助手正文，下一轮才像「补全」）。
 fn format_completed_turn_for_past_display(
     messages: &[Message],
     turn_start: usize,
     projection: &TuiTurnProjection,
 ) -> String {
     let block = projection.format_projection_block(None);
-    if block.is_empty() {
+    if block.is_empty() || !projection.has_flushable_turn_layout() {
         return messages_to_transcript_range(messages, turn_start, messages.len());
     }
 
@@ -365,6 +366,44 @@ mod tests {
             "must not show meta labels: {display}"
         );
         assert_eq!(committed.msg_len, messages.len());
+    }
+
+    #[test]
+    fn flush_timeline_only_keeps_message_assistant_body() {
+        // 仅有 intent timeline 时投影非空，但不得跳过 Message[] 终答（否则回合结束正文消失）。
+        let mut committed = CommittedTurns::default();
+        let messages = vec![user_msg("hi"), Message::assistant_only("完整回答正文。")];
+        let mut proj = TuiTurnProjection::default();
+        let scratch = TuiLlmStreamScratch::default();
+        proj.apply_sse(
+            &SsePayload::TimelineLog {
+                log: crate::sse::protocol::TimelineLogBody {
+                    kind: "intent_analysis".into(),
+                    title: "直接执行".into(),
+                    detail: None,
+                },
+            },
+            &scratch,
+        );
+        assert!(
+            !proj.format_projection_block(None).is_empty(),
+            "timeline alone makes a non-empty block"
+        );
+        assert!(
+            !proj.has_flushable_turn_layout(),
+            "timeline-only must not count as flushable layout"
+        );
+        committed.flush_completed_turn(&messages, &proj);
+        assert!(
+            committed.display.contains("完整回答正文。"),
+            "Message[] assistant must survive timeline-only flush: {}",
+            committed.display
+        );
+        assert!(
+            committed.display.contains("[assistant]"),
+            "{}",
+            committed.display
+        );
     }
 
     #[test]
