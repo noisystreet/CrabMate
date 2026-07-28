@@ -133,7 +133,7 @@ impl TuiTurnProjection {
         }
     }
 
-    /// Web v2 行 + open 旁白 + 工具批后终答（对齐 Tauri `turn-final-answer`；无元标签）。
+    /// Web v2 行 + open 旁白 + 工具批后终答（旁白/终答带 `[assistant]`，与流式尾一致）。
     pub(super) fn format_projection_block(&self, scratch: Option<&TuiLlmStreamScratch>) -> String {
         let mut rows = project_turn_web_v2(&self.turn);
         if let Some(open) = streaming_commentary_block_text(&self.turn) {
@@ -157,11 +157,6 @@ impl TuiTurnProjection {
             return String::new();
         }
         format_projected_rows_for_tui(&rows)
-    }
-
-    /// 是否已有（或可预览）终答，供 flush 时跳过 Message[] 尾部双显。
-    pub(super) fn has_final_answer(&self, scratch: Option<&TuiLlmStreamScratch>) -> bool {
-        !self.resolved_final_answer(scratch).is_empty()
     }
 
     /// 流式 scratch 正文是否已由投影块承接（避免旁白/终答双显）。
@@ -292,8 +287,9 @@ pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
             "assistant_timeline" => {
                 out.push_str(&format!("· {text}\n\n"));
             }
-            // 旁白 / 批说明 / 终答：与 Web 气泡一样直接出正文
+            // 旁白 / 批说明 / 终答：带 [assistant]，与流式尾 / Message[] 定稿一致，避免标签闪没。
             _ => {
+                out.push_str("[assistant]\n");
                 out.push_str(&text);
                 out.push_str("\n\n");
             }
@@ -420,7 +416,7 @@ mod tests {
         proj.finalize_for_display(&scratch);
         let committed = proj.format_projection_block(None);
         assert!(
-            committed.contains("总结如下。") && proj.has_final_answer(None),
+            committed.contains("总结如下。"),
             "finalize must keep 终答: {committed}"
         );
     }

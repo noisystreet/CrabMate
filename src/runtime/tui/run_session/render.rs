@@ -28,8 +28,8 @@ pub(super) use super::chat_follow::{
     apply_chat_scrollbar_follow_intent, note_chat_user_scroll_down, note_chat_user_scroll_up,
 };
 
-/// 流式尾挂：形状与 [`super::transcript::messages_to_transcript`] 的 assistant 块一致
-///（`[assistant]\n{body}\n\n`），避免收束后文字跳位；运行态仍只在底栏右侧。
+/// 流式尾挂：`[assistant]\n{body}\n\n`，与定稿 transcript / 投影旁白·终答一致，
+/// 避免切入投影后角色标签消失；正文是否隐藏仍以 [`TuiTurnProjection::should_hide_streaming_content`] 为准。
 pub(super) fn append_tui_streaming_tail(
     transcript: &str,
     scratch: &crate::runtime::tui::TuiLlmStreamScratch,
@@ -747,7 +747,7 @@ mod tests {
     }
 
     #[test]
-    fn streaming_tail_matches_transcript_assistant_shape() {
+    fn streaming_tail_keeps_assistant_header() {
         let transcript = "[user]\nhi\n\n";
         let scratch = crate::runtime::tui::TuiLlmStreamScratch {
             reasoning: String::new(),
@@ -757,17 +757,69 @@ mod tests {
         let out = append_tui_streaming_tail(transcript, &scratch, &projection);
         assert!(
             out.starts_with("[user]\nhi\n\n[assistant]\n"),
-            "stream must use [assistant] header like final transcript: {out:?}"
+            "stream must keep [assistant] like final transcript: {out:?}"
         );
         assert!(out.contains("你好，世界"), "stream body missing: {out:?}");
         assert!(
             out.ends_with("\n\n"),
             "stream must end with blank line like messages_to_transcript: {out:?}"
         );
-        // 勿在 transcript 已有 `\n\n` 后再多插一空行
         assert!(
             !out.contains("[user]\nhi\n\n\n[assistant]"),
             "extra blank before [assistant] shifts text vs final: {out:?}"
+        );
+    }
+
+    #[test]
+    fn streaming_tail_still_shows_when_only_timeline_in_projection() {
+        // 仅有 intent 时间线时不得误藏正文（曾用「投影非空即 owns」会踩坑）。
+        let transcript = "[user]\nhi\n\n";
+        let scratch = crate::runtime::tui::TuiLlmStreamScratch {
+            content: "正文回答".into(),
+            ..Default::default()
+        };
+        let mut projection = TuiTurnProjection::default();
+        projection.apply_sse(
+            &crate::sse::SsePayload::TimelineLog {
+                log: crate::sse::protocol::TimelineLogBody {
+                    kind: "intent_analysis".into(),
+                    title: "直接执行".into(),
+                    detail: None,
+                },
+            },
+            &scratch,
+        );
+        let out = append_tui_streaming_tail(transcript, &scratch, &projection);
+        assert!(
+            out.contains("正文回答"),
+            "timeline-only projection must not suppress stream body: {out:?}"
+        );
+        assert!(out.contains("[assistant]\n正文回答"), "{out:?}");
+    }
+
+    #[test]
+    fn streaming_tail_suppressed_when_projection_owns_content() {
+        let transcript = "[user]\nhi\n\n";
+        let scratch = crate::runtime::tui::TuiLlmStreamScratch {
+            content: "先看一下 README。".into(),
+            ..Default::default()
+        };
+        let mut projection = TuiTurnProjection::default();
+        projection.apply_sse(
+            &crate::sse::SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true,
+            },
+            &scratch,
+        );
+        let out = append_tui_streaming_tail(transcript, &scratch, &projection);
+        assert_eq!(
+            out, transcript,
+            "projection commentary must not also stream: {out:?}"
+        );
+        let block = projection.format_projection_block(Some(&scratch));
+        assert!(
+            block.contains("[assistant]\n先看一下 README。"),
+            "projection must keep [assistant] so the label does not vanish: {block}"
         );
     }
 

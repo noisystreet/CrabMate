@@ -74,9 +74,9 @@
 | 点 | 终端 TUI | Web / Tauri |
 |----|----------|-------------|
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
-| 终答 | 工具批后写入投影正文（无 `[终答]` 标签） | `turn-final-answer` + overlay |
+| 终答 | 工具批后写入投影正文（带 `[assistant]`，与流式尾一致） | `turn-final-answer` + overlay |
 | 控制面附录 | 默认仅错误；工具/思维迹/timeline 不附录（避免生成中刷 `[SSE 控制面]`） | 事件变成独立消息行 |
-| 绘制 | 旁白/终答纯正文；工具 `▸ name  summary` 着色 | per-section DOM + 局部 patch |
+| 绘制 | 旁白/终答带 `[assistant]`；工具 `▸ name  summary` 着色 | per-section DOM + 局部 patch |
 | 跟底意图 | pin + 上滑 unpin；下滑 gap≤UNPIN / 近底 / 发送 / End re-pin（见 `resolve_chat_follow_after_user_scroll`） | `auto_scroll_chat` + wheel/pointer/`scroll_follow` |
 | 导出默认 | 默认仍 `projection=raw`；可选 `--projection display` / slash `display` | UI 导出多为 `display` |
 
