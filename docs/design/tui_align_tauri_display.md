@@ -75,7 +75,7 @@
 |----|----------|-------------|
 | 历史回合行序 | 已定稿回合经 `CommittedTurns` flush 投影行序；会话切换仍 reseed Message[] | 全程 `StoredMessage` 投影 id |
 | 终答 | 工具批后写入投影正文（无 `[终答]` 标签） | `turn-final-answer` + overlay |
-| 控制面附录 | 默认仅错误/思维迹/未投影 timeline；工具事件不附录 | 事件变成独立消息行 |
+| 控制面附录 | 默认仅错误；工具/思维迹/timeline 不附录（避免生成中刷 `[SSE 控制面]`） | 事件变成独立消息行 |
 | 绘制 | 旁白/终答纯正文；工具 `▸ name  summary` 着色 | per-section DOM + 局部 patch |
 | 跟底意图 | pin + 上滑 unpin；下滑 gap≤UNPIN / 近底 / 发送 / End re-pin（见 `resolve_chat_follow_after_user_scroll`） | `auto_scroll_chat` + wheel/pointer/`scroll_follow` |
 | 导出默认 | 默认仍 `projection=raw`；可选 `--projection display` / slash `display` | UI 导出多为 `display` |
@@ -114,11 +114,11 @@
 
 ### Phase 3 — 收敛 `[SSE 控制面]`（已落地）
 
-**问题**：投影已含工具名/摘要时，控制面「· 工具 ·」行重复。
+**问题**：投影已含工具名/摘要时，控制面「· 工具 ·」行重复；生成中 `ThinkingTrace` / 例行 `timeline_log` 仍会刷出 `[SSE 控制面]` 标题。
 
-**落地**：`sse_mirror::format_sse_payload_one_line` 对 `ToolCall` / `ToolResult` / `ToolRunning` / `ToolOutputChunk` / `ParsingToolCalls` 及已投影的 `timeline_log` kind 返回 `None`；保留错误、思维迹与其余 timeline。
+**落地**：`sse_mirror::format_sse_payload_one_line` 对工具事件、`ThinkingTrace`、全部 `TimelineLog` 等返回 `None`；**仅** `Error` 写入附录。
 
-**验收**：`projected_tool_events_skip_control_plane_appendix`；常规多工具回合无「投影工具 + 控制面工具」双列。
+**验收**：`projected_tool_events_skip_control_plane_appendix`、`thinking_and_timeline_skip_control_plane_during_generation`；常规生成过程无 `[SSE 控制面]`。
 
 ### Phase 4 — 按行渲染（ratatouille 列表）（已落地 · 首刀）
 
@@ -173,7 +173,7 @@
 
 - [x] 多工具「分析当前项目」类回合：流式中旁白在工具前；结束后刷新仍如此（Phase 1）。  
 - [x] 工具批结束后终答在工具之后、不与旁白双显（Phase 2）。  
-- [x] 常规回合控制面无成对工具噪音（Phase 3）。  
+- [x] 常规生成过程不出现 `[SSE 控制面]`（附录仅错误；Phase 3）。  
 - [x] `cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block` 保持绿；新增历史/终答/SSE 时序测例（Phase 6）。  
 - [ ] 变更 turn-layout / 投影文案时同步 **`docs/Turn布局设计.md`** 与本文「已落地」表。
 

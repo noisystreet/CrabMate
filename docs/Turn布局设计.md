@@ -111,7 +111,7 @@ flowchart TB
 | `src/agent/agent_turn/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `crates/crabmate-llm` SSE 解析） |
 | 同目录 `mod.rs` | 工具批结束发送 **`turn_tool_phase_end: true`**（在 `tool_running: false` 之前） |
 
-TUI **`sse_mirror`**：`turn_segment_*` 与已投影的工具/`timeline_log`（`intent_analysis` 等）**不**写入 `[SSE 控制面]` 附录，但经 **`turn_project`** 喂入同一套 `TurnReducer`（见 **`docs/design/tui_align_tauri_display.md`** Phase 3）。附录默认仅错误、思维迹与其余 timeline。
+TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录（见 **`docs/design/tui_align_tauri_display.md`** Phase 3）。附录**仅**保留错误，避免生成过程中刷出该标题。
 
 ### 4.3 前端 Web
 
