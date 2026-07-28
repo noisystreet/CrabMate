@@ -116,7 +116,7 @@ fn messages_to_transcript_range(messages: &[Message], start: usize, end: usize) 
     out
 }
 
-/// 有投影：user/前缀 → 旁白/工具/终答正文（无元标签，对齐 Tauri）→ 后缀；无投影：整段 Message[]。
+/// 有投影：user/前缀 → 旁白/工具/终答（旁白·终答带 `[assistant]`）→ 后缀；无投影：整段 Message[]。
 fn format_completed_turn_for_past_display(
     messages: &[Message],
     turn_start: usize,
@@ -127,7 +127,7 @@ fn format_completed_turn_for_past_display(
         return messages_to_transcript_range(messages, turn_start, messages.len());
     }
 
-    let has_final_in_projection = projection.has_final_answer(None);
+    // 投影块已承接助手旁白/终答：Message[] 中所有 assistant 均跳过，避免与投影双显。
     let mut prefix = String::new();
     let mut suffix = String::new();
     let mut seen_tool_phase = false;
@@ -144,8 +144,7 @@ fn format_completed_turn_for_past_display(
             seen_tool_phase = true;
             continue;
         }
-        // 终答已在投影块：跳过 Message[] 尾部 assistant，避免双显
-        if has_final_in_projection && seen_tool_phase && role == "assistant" {
+        if role == "assistant" {
             continue;
         }
         let body = message_body_for_transcript(messages, idx);
@@ -351,14 +350,32 @@ mod tests {
             "tool role must not duplicate projection: {display}"
         );
         assert!(
-            !display.contains("[assistant]\n总结"),
-            "final must not duplicate as [assistant]: {display}"
+            display.contains("[assistant]"),
+            "projection commentary/final must keep [assistant]: {display}"
         );
+        let commentary_count = display.matches("先看一下 README。").count();
+        assert_eq!(
+            commentary_count, 1,
+            "commentary must appear once, not Message[]+projection: {display}"
+        );
+        let final_count = display.matches("总结如下。").count();
+        assert_eq!(final_count, 1, "final must appear once: {display}");
         assert!(
             !display.contains("[Turn 投影]") && !display.contains("[旁白]"),
             "must not show meta labels: {display}"
         );
         assert_eq!(committed.msg_len, messages.len());
+    }
+
+    #[test]
+    fn no_tool_assistant_keeps_role_header() {
+        let messages = vec![user_msg("hi"), Message::assistant_only("你好")];
+        let t = messages_to_transcript(&messages);
+        assert!(t.contains("[user]\nhi"), "{t}");
+        assert!(
+            t.contains("[assistant]\n你好"),
+            "assistant role header must remain: {t}"
+        );
     }
 
     #[test]
