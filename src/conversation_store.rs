@@ -282,6 +282,45 @@ pub fn list_conversation_ids_recent_first(
     Ok(out)
 }
 
+/// 最近会话摘要：id + 与 Tauri 侧栏同源的展示标题（首条用户消息推导）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConversationListEntry {
+    pub id: String,
+    pub title: String,
+}
+
+/// 按最近更新时间倒序返回会话 id 与标题。
+pub fn list_conversations_recent_first(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<ConversationListEntry>, rusqlite::Error> {
+    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
+    let mut stmt = conn.prepare(&format!(
+        "SELECT id, messages_json FROM {TABLE} ORDER BY updated_at_unix DESC LIMIT ?1"
+    ))?;
+    let rows = stmt.query_map(params![lim], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (id, json) = row?;
+        let title = match messages_from_json(&json) {
+            Ok(msgs) => crate::session_title::conversation_title_from_messages(&msgs),
+            Err(e) => {
+                log::warn!(
+                    target: "crabmate",
+                    "list_conversations: 解析 messages_json 失败 id={} error={}",
+                    id,
+                    e
+                );
+                crate::session_title::DEFAULT_SESSION_TITLE_ZH.to_string()
+            }
+        };
+        out.push(ConversationListEntry { id, title });
+    }
+    Ok(out)
+}
+
 fn update_messages_json_if_revision(
     conn: &Connection,
     id: &str,
@@ -468,6 +507,21 @@ mod tests {
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded3.2, "");
+    }
+
+    #[test]
+    fn list_conversations_recent_first_includes_title_from_first_user() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![
+            Message::system_only("s".to_string()),
+            Message::user_only("分析项目结构".to_string()),
+        ];
+        save_if_revision(&conn, "c1", msgs, None, None).unwrap();
+        let entries = list_conversations_recent_first(&conn, 10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, "c1");
+        assert_eq!(entries[0].title, "分析项目结构");
     }
 
     #[test]

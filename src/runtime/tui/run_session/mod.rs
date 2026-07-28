@@ -273,8 +273,8 @@ struct TuiModel {
     workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
     /// 已启用 **`conversation_store_sqlite_path`** 时当前 **`conversation_id`**（左栏与会话命令同源）。
     sqlite_conversation_id: Option<String>,
-    /// 最近会话 id 缓存（左栏「最近会话」；有 SQLite 时刷新）。
-    recent_conversation_ids: Vec<String>,
+    /// 最近会话缓存（左栏「最近会话」；有 SQLite 时刷新；含与 Tauri 同源标题）。
+    recent_conversations: Vec<crate::conversation_store::ConversationListEntry>,
     /// 本轮 SSE 控制面镜像（无 HTTP 通道时与 Web `SsePayload` 对齐）。
     control_plane_tail: String,
     /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
@@ -375,7 +375,7 @@ async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         (
             g.sqlite_conversation_id.as_deref().map(|s| s.to_string()),
-            g.recent_conversation_ids.clone(),
+            g.recent_conversations.clone(),
         )
     };
     let nav = sidebar_text::build_tui_session_sidebar(
@@ -475,13 +475,13 @@ pub async fn run_tui_session(
 
     let header_line = tui_header_summary(work_dir.as_path());
     let sqlite_id_nav = sqlite_sess.as_ref().map(|s| s.conversation_id.as_str());
-    let recent_conversation_ids = sidebar_text::tui_recent_conversation_ids(sqlite_sess.as_ref());
+    let recent_conversations = sidebar_text::tui_recent_conversations(sqlite_sess.as_ref());
     let nav_summary = sidebar_text::build_tui_session_sidebar(
         tui_load,
         workspace_session::session_file_path(work_dir.as_path()).exists(),
         messages.len(),
         sqlite_id_nav,
-        &recent_conversation_ids,
+        &recent_conversations,
     );
     let right_summary = sidebar_text::build_tui_workspace_sidebar(work_dir.as_path());
     let status_chips =
@@ -515,7 +515,7 @@ pub async fn run_tui_session(
         workspace_path_buf: work_dir.clone(),
         workspace_modal: None,
         sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
-        recent_conversation_ids,
+        recent_conversations,
         control_plane_tail: String::new(),
         turn_projection: turn_project::TuiTurnProjection::default(),
         committed_turns,

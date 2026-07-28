@@ -33,7 +33,7 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
             let note = (*sess)
                 .persist_round(messages, agent_role_owned.as_deref())
                 .err();
-            let recent = sidebar_text::tui_recent_conversation_ids(Some(sess));
+            let recent = sidebar_text::tui_recent_conversations(Some(sess));
             (note, Some(recent))
         } else {
             (None, None)
@@ -47,16 +47,16 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
         let g = model.lock().unwrap_or_else(|e| e.into_inner());
         (
             g.sqlite_conversation_id.clone(),
-            g.recent_conversation_ids.clone(),
+            g.recent_conversations.clone(),
         )
     };
-    let recent_ids = recent_from_db.unwrap_or(cached_recent);
+    let recent = recent_from_db.unwrap_or(cached_recent);
     let nav = sidebar_text::build_tui_session_sidebar(
         tui_load_nav,
         workspace_session::session_file_path(work_dir).exists(),
         messages.len(),
         sqlite_nav.as_deref(),
-        &recent_ids,
+        &recent,
     );
     let right = sidebar_text::build_tui_workspace_sidebar(work_dir);
     let chips =
@@ -76,7 +76,7 @@ pub(super) async fn tui_refresh_after_chat_round(p: TuiAfterChatRoundRefresh<'_>
     g.header_line = new_header;
     g.nav_summary = nav;
     g.right_summary = right;
-    g.recent_conversation_ids = recent_ids;
+    g.recent_conversations = recent;
     g.workspace_path_buf = work_dir.to_path_buf();
     g.status_chips = chips;
     g.status_run = match persist_note {
