@@ -1,4 +1,5 @@
-//! 会话与 Web 工作区根绑定：`POST /workspace` 成功后写入当前会话；活动会话变化时自动恢复绑定路径。
+//! 会话与 Web 工作区根绑定：`POST /workspace` 成功后写入当前会话；
+//! 用户切换活动会话时恢复该会话绑定路径（**冷启动不**自动打开上次工作区）。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -90,6 +91,9 @@ pub fn spawn_apply_session_bound_workspace(
 }
 
 /// 初始化完成且活动会话 id 变化时，应用该会话绑定的工作区（若有）。
+///
+/// 首次观察到的活动会话（冷启动）**不**自动 `POST /workspace`；
+/// 之后用户切换到另一会话时才恢复该会话绑定路径。
 pub fn wire_session_bound_workspace_effects(
     initialized: RwSignal<bool>,
     chat: ChatSessionSignals,
@@ -99,6 +103,7 @@ pub fn wire_session_bound_workspace_effects(
     /// 防抖：分区换桶、`active_id` 连变时避免叠多个 `POST /workspace`。
     const SESSION_WS_APPLY_DEBOUNCE_MS: u32 = 160;
     let debounce_seq = StoredValue::new(Arc::new(AtomicU64::new(0)));
+    let prev_active = StoredValue::new(Option::<String>::None);
     Effect::new(move |_| {
         if !initialized.get() {
             return;
@@ -107,10 +112,19 @@ pub fn wire_session_bound_workspace_effects(
         if id.is_empty() {
             return;
         }
+        let previous = prev_active.get_value();
+        prev_active.set_value(Some(id.clone()));
+        let Some(prev) = previous else {
+            // 冷启动：只记下当前会话，不打开其绑定工作区。
+            return;
+        };
+        if prev == id {
+            return;
+        }
         let loc = locale.get_untracked();
         let ctr = debounce_seq.get_value();
-        let prev = ctr.fetch_add(1, Ordering::AcqRel);
-        let my_seq = prev.wrapping_add(1);
+        let prev_seq = ctr.fetch_add(1, Ordering::AcqRel);
+        let my_seq = prev_seq.wrapping_add(1);
         let ctr2 = Arc::clone(&ctr);
         let sessions = chat.sessions;
         spawn_local(async move {

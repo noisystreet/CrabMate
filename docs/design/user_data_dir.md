@@ -89,7 +89,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 | 字段 | 历史 localStorage 键（参考） | 说明 |
 |------|---------------------------|------|
-| `last_workspace_root` | （计划键 `crabmate-last-workspace-root`） | 上次手动 `POST /workspace` 成功的规范路径（与 `recent_workspace_roots[0]` 同步） |
+| `last_workspace_root` | （计划键 `crabmate-last-workspace-root`） | 上次手动 `POST /workspace` 成功的规范路径（与 `recent_workspace_roots[0]` 同步）；供「最近的工作区」菜单；**启动时不**自动打开 |
 | `recent_workspace_roots` | — | 最近打开的工作区根列表（**新在前**，最多 **10** 项）；Web/Tauri **「文件 → 最近的工作区」** 级联子菜单读取此列表 |
 | `locale` | `crabmate-locale` | |
 | `theme` | `crabmate-theme` | |
@@ -227,8 +227,8 @@ flowchart TB
 |----|------|------|
 | **Web** | `GET/PUT /user-data/*` | WASM 无法直接读 `$HOME`；与现有 Bearer 鉴权一致 |
 | **Tauri** | 同 Web（`serve` 动态 loopback URL，见 **`web_ready` JSON**） | 业务数据不再依赖 `com.crabmate.desktop/localstorage/` |
-| **CLI** | `user_data` 直读；`doctor` 打印路径 | REPL 可读 `prefs.last_workspace_root` 提示；密钥优先 `API_KEY` env |
-| **TUI** | 直读 `prefs` + 可选 HTTP | 会话链仍以 SQLite / `tui_session.json` 为主 |
+| **CLI** | `user_data` 直读；`doctor` 打印路径 | 启动**不**自动套用 `prefs.last_workspace_root`（须 `--workspace`）；`cm_role` 仍可回退；密钥优先 `API_KEY` env |
+| **TUI** | 直读 `prefs` + 可选 HTTP | 同 CLI：不自动打开上次工作区；会话链仍以 SQLite / `tui_session.json` 为主 |
 
 ---
 

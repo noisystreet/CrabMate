@@ -94,17 +94,11 @@ fn finalize_cli_config_path(explicit: Option<String>) -> Option<String> {
     config::resolve_interactive_cli_config_path(None).map(|p| p.to_string_lossy().into_owned())
 }
 
-/// 无 CLI 显式工作区 / 角色时，回退本机 prefs（与 Web 侧栏最近工作区、`cm_role` 对齐）。
-fn apply_prefs_cli_defaults(workspace: &mut Option<String>, agent_role: &mut Option<String>) {
+/// 无 CLI 显式角色时，回退本机 prefs 的 `cm_role`（与 Web 侧栏对齐）。
+///
+/// **不**自动恢复 `prefs.last_workspace_root`：须 `--workspace` 或启动后手动选择工作区。
+fn apply_prefs_cli_defaults(agent_role: &mut Option<String>) {
     let prefs = crate::user_data::load_prefs();
-    if workspace
-        .as_ref()
-        .map(|s| s.trim().is_empty())
-        .unwrap_or(true)
-        && let Some(root) = prefs.last_workspace_root.filter(|s| !s.trim().is_empty())
-    {
-        *workspace = Some(root);
-    }
     if agent_role
         .as_ref()
         .map(|s| s.trim().is_empty())
@@ -781,7 +775,7 @@ pub(super) async fn run_cli_from_parsed(
     )?;
 
     args.config_path = finalize_cli_config_path(args.config_path.take());
-    apply_prefs_cli_defaults(&mut args.workspace_cli, &mut args.agent_role_cli);
+    apply_prefs_cli_defaults(&mut args.agent_role_cli);
 
     if run_early_commands(
         EarlyCliDispatch {
