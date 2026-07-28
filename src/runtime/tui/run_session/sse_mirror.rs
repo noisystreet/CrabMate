@@ -1,7 +1,7 @@
 //! 将 [`crate::sse::SsePayload`] 镜像进 [`super::turn_project`]，并可选追加中区「控制面」附录。
 //!
-//! **Phase 3**：已由 Turn 投影承接的工具/解析事件**不再**写入 `[SSE 控制面]`，避免与
-//! 投影工具行双列；附录仅保留错误、思维迹，以及未进投影的 `timeline_log`。
+//! 工具 / 时间线 / 思维迹已由 Turn 投影或流式 scratch 承接，**不再**写入 `[SSE 控制面]`，
+//! 避免生成过程中出现调试感附录；附录仅保留 **错误**。
 
 use std::sync::{Arc, Mutex};
 
@@ -39,40 +39,26 @@ pub(super) fn tui_sse_control_mirror(
 /// 控制面附录一行；`None` = 仅驱动投影 / UI，不刷附录。
 fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
     match p {
-        // 已由 turn_projection / 底栏 tool_running_hook 承接 → 不刷附录
+        // 投影 / 流式 scratch / Modal 已承接 → 不刷附录（生成过程中勿出现 `[SSE 控制面]`）
         SsePayload::ToolCall { .. }
         | SsePayload::ToolResult { .. }
         | SsePayload::ToolRunning { .. }
         | SsePayload::ToolOutputChunk { .. }
-        | SsePayload::ParsingToolCalls { .. } => None,
-        SsePayload::TimelineLog { log } => {
-            // 已写入投影时间线行的 kind 不再附录
-            if matches!(
-                log.kind.as_str(),
-                "intent_analysis" | "approval_decision" | "tool_result_summary"
-            ) {
-                return None;
-            }
-            Some(format!(
-                "· {} {}",
-                log.kind,
-                truncate_chars_with_ellipsis(&log.title, 200)
-            ))
-        }
-        SsePayload::ThinkingTrace { .. } => Some("· 思维迹".to_string()),
-        SsePayload::AssistantAnswerPhase { .. }
+        | SsePayload::ParsingToolCalls { .. }
+        | SsePayload::TimelineLog { .. }
+        | SsePayload::ThinkingTrace { .. }
+        | SsePayload::AssistantAnswerPhase { .. }
         | SsePayload::TurnSegmentStart { .. }
         | SsePayload::TurnSegmentEnd { .. }
-        | SsePayload::TurnToolPhaseEnd { .. } => None,
-        SsePayload::ChatUiSeparator { .. } => None,
-        SsePayload::WorkspaceChanged { .. } => None,
-        SsePayload::PlanRequired { .. } => None,
-        SsePayload::ConversationSaved { .. } => None,
-        SsePayload::SseCapabilities { .. } => None,
-        SsePayload::StreamEnded { .. } => None,
-        // 审批 / 澄清走 Modal，不附录
-        SsePayload::ClarificationQuestionnaire { .. } => None,
-        SsePayload::CommandApproval { .. } => None,
+        | SsePayload::TurnToolPhaseEnd { .. }
+        | SsePayload::ChatUiSeparator { .. }
+        | SsePayload::WorkspaceChanged { .. }
+        | SsePayload::PlanRequired { .. }
+        | SsePayload::ConversationSaved { .. }
+        | SsePayload::SseCapabilities { .. }
+        | SsePayload::StreamEnded { .. }
+        | SsePayload::ClarificationQuestionnaire { .. }
+        | SsePayload::CommandApproval { .. } => None,
         SsePayload::Error(e) => Some(format!(
             "· 错误 {}",
             truncate_chars_with_ellipsis(&e.error, 200)
@@ -108,6 +94,33 @@ mod tests {
         );
         assert!(
             format_sse_payload_one_line(&SsePayload::ToolRunning { tool_running: true }).is_none()
+        );
+    }
+
+    #[test]
+    fn thinking_and_timeline_skip_control_plane_during_generation() {
+        assert!(
+            format_sse_payload_one_line(&SsePayload::ThinkingTrace {
+                trace: crate::sse::ThinkingTraceBody {
+                    op: "reasoning_delta".into(),
+                    node_id: None,
+                    parent_id: None,
+                    title: None,
+                    chunk: Some("x".into()),
+                    context_snapshot: None,
+                },
+            })
+            .is_none()
+        );
+        assert!(
+            format_sse_payload_one_line(&SsePayload::TimelineLog {
+                log: crate::sse::protocol::TimelineLogBody {
+                    kind: "orchestration_route".into(),
+                    title: "hierarchical".into(),
+                    detail: None,
+                },
+            })
+            .is_none()
         );
     }
 
