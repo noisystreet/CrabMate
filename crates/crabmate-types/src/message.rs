@@ -16,32 +16,55 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
+/// 尽力将 `tool_calls[].function.arguments` 修成合法 JSON（紧凑化 / 转义控制字符 / 截断补全）。
+///
+/// - 空串 / 仅空白 → `None`（调用方自行决定是否写成 `"{}"`）
+/// - 无法修复的非空碎片 → `None`（**不**静默改成 `"{}"`）
+///
+/// 本地工具执行请用 [`prepare_tool_call_arguments_for_local_execution`]；发往上游历史请用
+/// [`sanitize_tool_call_arguments_for_openai_compat`]（失败时回退 `"{}"` 以免下一轮 HTTP 400）。
+#[must_use]
+pub fn repair_tool_call_arguments_json(arguments: &str) -> Option<String> {
+    let t = arguments.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
+        return Some(v.to_string());
+    }
+    let escaped = escape_raw_controls_inside_json_string_regions(t);
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&escaped) {
+        return Some(v.to_string());
+    }
+    if let Some(s) = try_repair_truncated_tool_arguments_json(&escaped) {
+        return Some(s);
+    }
+    try_repair_truncated_tool_arguments_json(t)
+}
+
+/// 本地执行前处理：能修则修；空串 → `"{}"`；仍非法则**保留原文**，让工具报「参数 JSON 无效」
+///（避免误报成 Schema「缺 path」——历史上非法 `create_file` 正文被洗成 `{}` 时常见）。
+#[must_use]
+pub fn prepare_tool_call_arguments_for_local_execution(arguments: &str) -> String {
+    if let Some(s) = repair_tool_call_arguments_json(arguments) {
+        return s;
+    }
+    let t = arguments.trim();
+    if t.is_empty() {
+        return "{}".to_string();
+    }
+    t.to_string()
+}
+
 /// 将 `tool_calls[].function.arguments` 规范为上游可解析的 JSON 字符串。
 ///
 /// 部分 OpenAI 兼容网关（如 DeepSeek）在错误响应中报告 **`invalid function arguments json string`**
 ///（常见内部码 2013）：**空串**、仅空白或非 JSON 片段（流式拼接未完成等）会在**下一轮**把整段历史发回时触发 HTTP 400。
 ///
-/// 修复策略（按序）：合法 JSON 直接紧凑化；否则尝试把 **字符串值内未转义的控制字符**（常见为模型把多行代码直接写进 `"code": "…"`）写成 `\n` 等；再尝试 **截断补全**（流式停在未闭合引号时补上 `"` 与 `}`）。
+/// 修复策略见 [`repair_tool_call_arguments_json`]；仍失败时回退为 `"{}"`（仅适合发往上游，勿单独用于本地执行）。
 #[must_use]
 pub fn sanitize_tool_call_arguments_for_openai_compat(arguments: &str) -> String {
-    let t = arguments.trim();
-    if t.is_empty() {
-        return "{}".to_string();
-    }
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(t) {
-        return v.to_string();
-    }
-    let escaped = escape_raw_controls_inside_json_string_regions(t);
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&escaped) {
-        return v.to_string();
-    }
-    if let Some(s) = try_repair_truncated_tool_arguments_json(&escaped) {
-        return s;
-    }
-    if let Some(s) = try_repair_truncated_tool_arguments_json(t) {
-        return s;
-    }
-    "{}".to_string()
+    repair_tool_call_arguments_json(arguments).unwrap_or_else(|| "{}".to_string())
 }
 
 /// 按 JSON 字符串语义扫描：在 **双引号字符串内** 将未转义的 ASCII 控制字符写成 `\n` / `\uXXXX`，其余字节原样复制。

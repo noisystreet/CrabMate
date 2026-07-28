@@ -13,7 +13,7 @@ use crabmate_types::{
     ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
     OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON, Usage,
     merge_reasoning_details_into_reasoning_content, message_content_as_str,
-    message_content_byte_len_for_estimate, sanitize_tool_call_arguments_for_openai_compat,
+    message_content_byte_len_for_estimate, prepare_tool_call_arguments_for_local_execution,
 };
 
 use crate::call_error::LlmCallError;
@@ -41,7 +41,9 @@ fn tool_calls_from_sse_accum(
                 typ,
                 function: FunctionCall {
                     name,
-                    arguments: sanitize_tool_call_arguments_for_openai_compat(&arguments),
+                    // 本地执行：非法 JSON 保留原文，避免洗成 `{}` 后误报 Schema 缺 path。
+                    // 发往上游仍由 `conversation_messages_to_vendor_body` 做 `{}` 回退。
+                    arguments: prepare_tool_call_arguments_for_local_execution(&arguments),
                 },
             })
             .collect(),

@@ -608,12 +608,16 @@ mod fold_system_messages_tests {
 
 #[cfg(test)]
 mod sanitize_tool_call_arguments_tests {
-    use super::sanitize_tool_call_arguments_for_openai_compat;
+    use super::{
+        prepare_tool_call_arguments_for_local_execution,
+        sanitize_tool_call_arguments_for_openai_compat,
+    };
 
     #[test]
     fn empty_and_whitespace_become_empty_object() {
         assert_eq!(sanitize_tool_call_arguments_for_openai_compat(""), "{}");
         assert_eq!(sanitize_tool_call_arguments_for_openai_compat("   "), "{}");
+        assert_eq!(prepare_tool_call_arguments_for_local_execution(""), "{}");
     }
 
     #[test]
@@ -625,11 +629,17 @@ mod sanitize_tool_call_arguments_tests {
     }
 
     #[test]
-    fn invalid_json_becomes_empty_object() {
+    fn invalid_json_becomes_empty_object_for_vendor_only() {
         assert_eq!(sanitize_tool_call_arguments_for_openai_compat("{"), "{}");
         assert_eq!(
             sanitize_tool_call_arguments_for_openai_compat("not json"),
             "{}"
+        );
+        // 本地执行保留原文，避免 create_file 等误报「缺 path」。
+        assert_eq!(prepare_tool_call_arguments_for_local_execution("{"), "{");
+        assert_eq!(
+            prepare_tool_call_arguments_for_local_execution("not json"),
+            "not json"
         );
     }
 
@@ -639,6 +649,9 @@ mod sanitize_tool_call_arguments_tests {
         let out = sanitize_tool_call_arguments_for_openai_compat(raw);
         let v: serde_json::Value = serde_json::from_str(&out).expect("sanitized must parse");
         assert_eq!(v["code"], "def f():\n    pass");
+        let local = prepare_tool_call_arguments_for_local_execution(raw);
+        let v2: serde_json::Value = serde_json::from_str(&local).expect("local must parse");
+        assert_eq!(v2["code"], "def f():\n    pass");
     }
 
     #[test]

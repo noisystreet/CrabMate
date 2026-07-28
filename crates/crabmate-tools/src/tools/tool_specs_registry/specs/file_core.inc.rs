@@ -1,7 +1,7 @@
 [
 ToolSpec {
             name: "create_file",
-            description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。路径相对于工作目录，不能包含 .. 超出工作目录。用于用户要求「新建文件」「创建 xx」等。**JSON 中 content 字符串须正确转义**：换行用 `\\n`，制表用 `\\t`，双引号用 `\\\"`，反斜杠用 `\\\\`。大文件可分多次写入。",
+            description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。**必填** `path`（相对工作目录，禁止 `..`）与 `content`（可为 `\"\"`）；请把 `path` 写在 arguments 靠前位置。别名如 `file_path`/`filename`/`file` 会归一到 `path`。**JSON 中 content 须正确转义**：换行 `\\n`、制表 `\\t`、双引号 `\\\"`、反斜杠 `\\\\`（未转义常导致整段 arguments 非法）。大文件可分多次写入。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_write,
             runner: runner_create_file,
