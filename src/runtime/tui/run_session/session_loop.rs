@@ -103,7 +103,6 @@ pub(super) async fn run_tui_session_event_loop(
                         model: ctx.model,
                         agent_role_owned: ctx.agent_role_owned,
                         message_count: ctx.messages.len(),
-                        process_handles: &ctx.process_handles,
                     },
                 )
                 .await;

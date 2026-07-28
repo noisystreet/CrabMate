@@ -193,10 +193,10 @@
 
 | 分区 | Tauri / Web | 终端 TUI（目标） | 明确不做 |
 |------|-------------|------------------|----------|
-| 左：会话 | `nav-rail` 最近会话列表、当前高亮、条数 | 「最近会话」+ `* current` + `{N} 条` + `/conv…`；SQLite 时 `list_recent_ids` | pin/star、筛选、DOM 交互列表 |
-| 右：工作区 | 路径、任务、变更预览；快捷键在设置 | 路径短示 + Enter；「任务清单」「变更预览」短摘要；设置 slash 一行 | 文件树、视图切换器、快捷键墙、工具计数 |
+| 左：会话 | `nav-rail` 最近会话列表、当前高亮、条数 | 「最近会话」+ `* current` + `{N} 条`；SQLite 时 `list_recent_ids`；**无** slash/快捷键提示 | pin/star、筛选、DOM 交互列表、`/conv` 帮助行 |
+| 右：工作区 | 路径、任务、变更预览；快捷键在设置 | 路径短示；**无**任务清单 / 变更预览 / Enter/slash 帮助 | 文件树、任务/变更区、视图切换器、快捷键墙、工具计数 |
 
-**触点**：`sidebar_text.rs`、`workspace_sidebar_extra.rs`；刷新路径 `refresh.rs` / 启动 `mod.rs` / `/conv` `sqlite_slash.rs`。
+**触点**：`sidebar_text.rs`；刷新路径 `refresh.rs` / 启动 `mod.rs` / `/conv` `sqlite_slash.rs`。
 
 ---
 

@@ -95,7 +95,6 @@ pub(super) async fn tui_run_submit_ev(
             cfg_holder: ctx.cfg_holder,
             model: ctx.model,
             work_dir: ctx.work_dir.as_path(),
-            process_handles: &ctx.process_handles,
         },
     )
     .await?
@@ -117,7 +116,6 @@ pub(super) async fn tui_run_submit_ev(
             slash_handles: ctx.slash_handles,
             model: ctx.model,
             handoff_tx: ctx.handoff_tx,
-            process_handles: &ctx.process_handles,
         },
     )
     .await?
@@ -182,7 +180,6 @@ pub(super) async fn tui_run_submit_ev(
         agent_role_owned: ctx.agent_role_owned,
         messages: ctx.messages.as_slice(),
         sqlite_persist: Some(&mut ctx.sqlite_session),
-        process_handles: &ctx.process_handles,
     })
     .await;
     Ok(TuiSubmitHandled::RanRound)
