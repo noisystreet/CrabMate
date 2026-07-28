@@ -2,6 +2,7 @@
 typ = "typ"
 clen = "clen"
 hel = "hel"
+ratatui = "ratatui"
 
 [files]
 extend-exclude = [

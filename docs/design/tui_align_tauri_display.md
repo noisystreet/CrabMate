@@ -8,6 +8,7 @@
 | 文档 | 用途 |
 |------|------|
 | **`docs/Turn布局设计.md`** | Canonical Turn / `project_turn_web_v2` / Web `TurnLayout` 权威说明 |
+| **`docs/design/tui_chat_display_ownership.md`** | **ADR**：中区 content 所有权（投影权威、合成入口、flush 规则） |
 | **`docs/design/TUI_CLI改造实施步骤.md`** | CLI→TUI 壳与对话闭环（阶段 A–D）；**布局骨架**已完成，展示对齐见本文 |
 | **`docs/design/web_tui_stream_to_opencode_style.md`** | **Web** `ChatTuiStreamView` 流式跟底演进（与 ratatouille **无**代码共用） |
 | **`docs/命令行与路由.md`** | `crabmate tui` 能力、导出 `projection=raw|display` |
@@ -64,7 +65,7 @@
 | 能力 | 路径 |
 |------|------|
 | SSE → TurnReducer → `project_turn_web_v2` | `src/runtime/tui/run_session/turn_project.rs` |
-| 中区 `[Turn 投影]` 块 | `render.rs` / `tui_prepare_chat_body_*` |
+| 中区正文合成 | `build_tui_chat_body`（transcript + 投影 + 控制面 + 流式尾；绘制与滚动条共用） |
 | 工具相 / 旁白 / 终答由投影拥有 content lane | `owns_streaming_content_lane`（流式尾不再挂 content） |
 | 历史/工具文案优先 tool-card | `crates/crabmate-runtime/src/message_display.rs` → `tool_content_for_display_for_message` |
 | 金样 | `golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`） |
