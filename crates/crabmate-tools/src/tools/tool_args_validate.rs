@@ -6,8 +6,9 @@
 //!
 //! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` / **`modify_file`**
 //! 的 **`start_line` / `end_line`** 字符串与整型 JSON 数字、`modify_file` 的 **`mode`** 大小写/同义词、
-//! `path` 的常见别名（**`file_path`** / **`filename`** / **`output_path`** 等）、**`copy_file`** 的 **`src`/`dst`**、
-//! **`create_file`** 的 **`content`** 别名与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
+//! `path` 的常见别名（**`file_path`** / **`filename`** / **`file`** / **`name`** / **`output_path`** 等；键名大小写不敏感）、
+//! **`copy_file`** 的 **`src`/`dst`**、
+//! **`create_file`** 的 **`content`** 别名（含 **`code`**）与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
 //! [`effective_builtin_tool_args_json`]。
 
 use std::borrow::Cow;
@@ -222,9 +223,23 @@ fn schema_has_top_level_prop(tool_name: &str, prop: &str) -> bool {
         .is_some()
 }
 
+/// 按大小写不敏感取出键；优先精确 `want`，再扫一遍别名表。
+fn take_key_ci(map: &mut serde_json::Map<String, Value>, want: &str) -> Option<Value> {
+    if let Some(v) = map.remove(want) {
+        return Some(v);
+    }
+    let found = map.keys().find(|k| k.eq_ignore_ascii_case(want)).cloned()?;
+    map.remove(&found)
+}
+
 fn remap_path_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
     if map.contains_key("path") {
+        // 仅纠正大小写变体残留（如同时有 Path）；已有 path 则不动。
         return false;
+    }
+    if let Some(v) = take_key_ci(map, "path") {
+        map.insert("path".to_string(), v);
+        return true;
     }
     const ALIASES: &[&str] = &[
         "file_path",
@@ -233,14 +248,18 @@ fn remap_path_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
         "rel_path",
         "filename",
         "file_name",
+        "file",
+        "name",
         "output_path",
         "write_path",
         "target_file",
+        "target_path",
+        "target",
         "dest_path",
         "destination_path",
     ];
     for key in ALIASES {
-        if let Some(v) = map.remove(*key) {
+        if let Some(v) = take_key_ci(map, key) {
             map.insert("path".to_string(), v);
             return true;
         }
@@ -252,9 +271,13 @@ fn remap_content_aliases(map: &mut serde_json::Map<String, Value>) -> bool {
     if map.contains_key("content") {
         return false;
     }
-    const ALIASES: &[&str] = &["file_content", "body", "text"];
+    if let Some(v) = take_key_ci(map, "content") {
+        map.insert("content".to_string(), v);
+        return true;
+    }
+    const ALIASES: &[&str] = &["file_content", "body", "text", "source", "code"];
     for key in ALIASES {
-        if let Some(v) = map.remove(*key) {
+        if let Some(v) = take_key_ci(map, key) {
             map.insert("content".to_string(), v);
             return true;
         }
@@ -498,6 +521,26 @@ mod tests {
         assert!(coerce_builtin_tool_args_value("create_file", &mut v));
         assert_eq!(v["path"], "dir/n.txt");
         assert_eq!(v["content"], "x");
+        let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn create_file_file_and_code_aliases_pass_schema() {
+        let mut v = json!({"file": "main.rs", "code": "fn main() {}"});
+        assert!(coerce_builtin_tool_args_value("create_file", &mut v));
+        assert_eq!(v["path"], "main.rs");
+        assert_eq!(v["content"], "fn main() {}");
+        let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn create_file_path_key_case_insensitive() {
+        let mut v = json!({"Path": "a.txt", "Content": "z"});
+        assert!(coerce_builtin_tool_args_value("create_file", &mut v));
+        assert_eq!(v["path"], "a.txt");
+        assert_eq!(v["content"], "z");
         let r = validate_parsed_value_if_known("create_file", &v).expect("create_file");
         assert!(r.is_ok(), "{r:?}");
     }
