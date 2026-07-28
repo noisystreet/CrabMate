@@ -5,9 +5,7 @@ use ratatui::layout::{Alignment, Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::symbols::scrollbar;
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{
-    Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
-};
+use ratatui::widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap};
 use unicode_width::UnicodeWidthStr;
 
 use crate::runtime::message_display::{
@@ -20,6 +18,7 @@ use super::approval;
 use super::chat_follow::{
     chat_scroll_gap_from_bottom, is_near_chat_bottom, resolve_chat_follow_after_user_scroll,
 };
+use super::panel_chrome::{TuiChromeTheme, TuiPanelKind, panel_block};
 use super::turn_project::TuiTurnProjection;
 use super::{TuiFocus, TuiModel};
 
@@ -264,7 +263,14 @@ fn render_tui_chat_pane(
     color: bool,
 ) {
     let TuiChatPanePrep { chat_body } = prep;
-    let chat_block = panel_block(" 聊天 ", color, model.focus == TuiFocus::Chat);
+    let theme = TuiChromeTheme::for_color_mode(color);
+    let chat_block = panel_block(
+        TuiPanelKind::Chat,
+        " 聊天 ",
+        &theme,
+        color,
+        model.focus == TuiFocus::Chat,
+    );
     let chat_inner = chat_block_inner_area(chat_pane);
     let (text_rect, scrollbar_rect) = chat_inner_split_text_and_scrollbar(chat_inner);
     let tw = text_rect.width.max(1);
@@ -309,7 +315,14 @@ fn render_tui_composer_row(
     model: &TuiModel,
     color: bool,
 ) {
-    let composer_block = panel_block(" 撰写 ", color, model.focus == TuiFocus::Composer);
+    let theme = TuiChromeTheme::for_color_mode(color);
+    let composer_block = panel_block(
+        TuiPanelKind::Composer,
+        " 撰写 ",
+        &theme,
+        color,
+        model.focus == TuiFocus::Composer,
+    );
     let composer_inner = composer_block.inner(composer_pane);
     let (composer_text, cursor_rel) =
         super::composer_visible_and_cursor_rel(composer_inner, model.input.as_str());
@@ -368,13 +381,19 @@ pub(super) fn render_full(
 
     let panes = super::compute_tui_pane_layout(area);
 
+    let theme = TuiChromeTheme::for_color_mode(color);
+
     render_side_panel(
         frame,
         panes.nav_left,
-        " 会话 ",
-        model.nav_summary.as_str(),
+        SidePanelDraw {
+            kind: TuiPanelKind::NavLeft,
+            title: " 会话 ",
+            body: model.nav_summary.as_str(),
+            focused: model.focus == TuiFocus::NavLeft,
+        },
+        &theme,
         color,
-        model.focus == TuiFocus::NavLeft,
     );
 
     let scratch_guard = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
@@ -387,10 +406,14 @@ pub(super) fn render_full(
     render_side_panel(
         frame,
         panes.side_right,
-        " 工作区 ",
-        model.right_summary.as_str(),
+        SidePanelDraw {
+            kind: TuiPanelKind::SideRight,
+            title: " 工作区 ",
+            body: model.right_summary.as_str(),
+            focused: model.focus == TuiFocus::SideRight,
+        },
+        &theme,
         color,
-        model.focus == TuiFocus::SideRight,
     );
 
     render_tui_status_bar(frame, vertical[2], model, color);
@@ -479,21 +502,33 @@ fn render_top_bar(frame: &mut Frame<'_>, area: Rect, header: &str, color: bool) 
         Color::Reset
     };
     let line = Line::from(Span::styled(text, Style::default().fg(fg).bg(bg)));
+    // 顶栏底边用下划线充当与面板区的唯一横缝（面板不再画 TOP）。
     let block_style = if color {
-        Style::default().bg(bg)
+        Style::default().bg(bg).add_modifier(Modifier::UNDERLINED)
     } else {
-        Style::default()
+        Style::default().add_modifier(Modifier::UNDERLINED)
     };
-    let p = Paragraph::new(line).block(Block::default().style(block_style));
+    let p = Paragraph::new(line)
+        .style(
+            Style::default()
+                .fg(fg)
+                .bg(bg)
+                .add_modifier(Modifier::UNDERLINED),
+        )
+        .block(Block::default().style(block_style));
     frame.render_widget(p, area);
 }
 
-/// 与绘制一致的聊天面板 content 区（`Block` 边框 + 标题占用与 [`panel_block`] 一致）。
+/// 与绘制一致的聊天面板 content 区（边框与 [`TuiPanelKind::Chat`] 一致）。
 pub(super) fn chat_block_inner_area(chat_pane: Rect) -> Rect {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(Line::from(" 聊天 "))
-        .inner(chat_pane)
+    panel_block(
+        TuiPanelKind::Chat,
+        " 聊天 ",
+        &TuiChromeTheme::for_color_mode(true),
+        true,
+        false,
+    )
+    .inner(chat_pane)
 }
 
 /// 纵向滚动条可交互时的几何与 `max_scroll`（内容未溢出时返回 `None`）。
@@ -567,54 +602,30 @@ fn scrollbar_track_style(color: bool, chat_focused: bool) -> Style {
     }
 }
 
-fn panel_block(title: &str, color: bool, focused: bool) -> Block<'_> {
-    Block::default()
-        .borders(Borders::ALL)
-        .title(Line::from(title))
-        .title_style(title_style(color, focused))
-        .border_style(panel_border_style(color, focused))
-}
-
-fn panel_border_style(color: bool, focused: bool) -> Style {
-    if color {
-        if focused {
-            Style::default().fg(Color::Cyan)
-        } else {
-            Style::default().fg(Color::DarkGray)
-        }
-    } else if focused {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    }
+struct SidePanelDraw<'a> {
+    kind: TuiPanelKind,
+    title: &'a str,
+    body: &'a str,
+    focused: bool,
 }
 
 fn render_side_panel(
     frame: &mut Frame<'_>,
     area: Rect,
-    title: &str,
-    body: &str,
+    draw: SidePanelDraw<'_>,
+    theme: &TuiChromeTheme,
     color: bool,
-    focused: bool,
 ) {
-    let paragraph = Paragraph::new(body)
+    let paragraph = Paragraph::new(draw.body)
         .wrap(Wrap { trim: true })
-        .block(panel_block(title, color, focused));
+        .block(panel_block(
+            draw.kind,
+            draw.title,
+            theme,
+            color,
+            draw.focused,
+        ));
     frame.render_widget(paragraph, area);
-}
-
-fn title_style(color: bool, focused: bool) -> Style {
-    if color {
-        if focused {
-            Style::default().fg(Color::LightCyan)
-        } else {
-            Style::default().fg(Color::Cyan)
-        }
-    } else if focused {
-        Style::default().add_modifier(Modifier::BOLD)
-    } else {
-        Style::default()
-    }
 }
 
 fn status_line_style(color: bool) -> Style {

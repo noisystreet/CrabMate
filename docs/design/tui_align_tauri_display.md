@@ -199,6 +199,8 @@
 
 **触点**：`sidebar_text.rs`；刷新路径 `refresh.rs` / 启动 `mod.rs` / `/conv` `sqlite_slash.rs`。
 
+**面板 chrome**（与侧栏语义无关）：四区默认**纯色块、无边框线**（相邻明度差分区）；见 `panel_chrome.rs` / **`CM_TUI_PANEL_BG`**。
+
 ---
 
 ## 10. 跟底意图对齐（与 Web `scroll_shell`）

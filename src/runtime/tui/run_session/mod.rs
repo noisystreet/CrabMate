@@ -6,7 +6,7 @@
 //!
 //! 架构：专用线程跑 ratatui + crossterm；[`tokio::sync::mpsc::unbounded_channel`] 投递输入；异步侧执行回合并刷新快照。
 //!
-//! **焦点**：左（会话）/中上（聊天）/中下（撰写）/右（工作区）四块可点击聚焦（**`EnableMouseCapture`**），边框与标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。**右侧工作区栏聚焦时 `Enter`** 打开工作区 Modal（与 Web 侧栏一致）；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
+//! **焦点**：左（会话）/中上（聊天）/中下（撰写）/右（工作区）四块可点击聚焦（**`EnableMouseCapture`**），标题高亮；**`Tab` / `Shift+Tab`** 循环焦点。面板默认**纯色块、无边框线**（[`panel_chrome`]；**`CM_TUI_PANEL_BG`** 可切 `transparent`/`dim`/`focus`）；**右侧工作区栏聚焦时 `Enter`** 打开工作区 Modal（与 Web 侧栏一致）；**撰写区聚焦时 `Enter`** 提交输入行。字符输入与退格仅在 **「撰写」** 聚焦时生效；
 //!
 //! **中区 transcript**：与 Web 快照一致的过滤（[`is_message_visible_in_chat_transcript`]）；工具/助手/用户展示路径见 [`transcript`]；本轮旁白/工具序另经 [`turn_project`]（`crabmate-turn-layout` / `project_turn_web_v2`，对齐 Tauri）。回合结束将投影 flush 进 [`transcript::CommittedTurns`]，避免历史退回落盘序。
 //!
@@ -23,6 +23,7 @@
 mod approval;
 mod chat_follow;
 mod clarify_modal;
+mod panel_chrome;
 mod poll_loop;
 mod refresh;
 mod render;
