@@ -148,6 +148,56 @@ fn parse_web_ready_url(line: &str) -> Option<String> {
     v.get("url").and_then(|u| u.as_str()).map(str::to_string)
 }
 
+/// 通过 `eval` 更新启动页文案（须在主线程调用）。
+fn splash_eval_status(splash: &WebviewWindow, status: &str, detail: &str) {
+    let status_js = serde_json::to_string(status).unwrap_or_else(|_| "\"\"".into());
+    let detail_js = serde_json::to_string(detail).unwrap_or_else(|_| "\"\"".into());
+    let _ = splash.eval(format!(
+        "window.setSplashStatus && window.setSplashStatus({status_js}, {detail_js});"
+    ));
+}
+
+fn splash_eval_error(splash: &WebviewWindow, message: &str) {
+    let msg_js = serde_json::to_string(message).unwrap_or_else(|_| "\"启动失败\"".into());
+    let _ = splash.eval(format!(
+        "window.setSplashError && window.setSplashError({msg_js});"
+    ));
+}
+
+fn update_splash_status(app: &tauri::AppHandle, status: &str, detail: &str) {
+    let status = status.to_string();
+    let detail = detail.to_string();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(splash) = handle.get_webview_window("splash") {
+            splash_eval_status(&splash, &status, &detail);
+        }
+    });
+}
+
+fn show_splash_error(app: &tauri::AppHandle, message: String) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(splash) = handle.get_webview_window("splash") {
+            splash_eval_error(&splash, &message);
+            let _ = splash.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                width: 480.0,
+                height: 420.0,
+            }));
+            let _ = splash.center();
+        }
+    });
+}
+
+fn close_splash_window(app: &tauri::AppHandle) {
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if let Some(splash) = handle.get_webview_window("splash") {
+            let _ = splash.close();
+        }
+    });
+}
+
 fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String> {
     let mut attempted = Vec::new();
     let mut last_err = String::new();
@@ -215,8 +265,11 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
     }
 }
 
-fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
+fn spawn_backend_and_wait_ready(
+    on_progress: impl Fn(&str, &str),
+) -> Result<(Child, String), String> {
     let backend_workdir = resolve_backend_workdir();
+    on_progress("正在拉起本地后端…", "解析可执行文件与配置");
 
     let mut child = try_spawn_backend(&backend_workdir).map_err(|e| {
         format!(
@@ -224,14 +277,23 @@ fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
             backend_workdir.display()
         )
     })?;
-    let stderr = child
-        .stderr
-        .take()
-        .ok_or_else(|| "backend stderr pipe unavailable".to_string())?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "backend stdout pipe unavailable".to_string())?;
+    on_progress("等待服务就绪…", "监听 web_ready（最长约 30 秒）");
+    let stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("backend stderr pipe unavailable".to_string());
+        }
+    };
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("backend stdout pipe unavailable".to_string());
+        }
+    };
 
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
@@ -281,19 +343,26 @@ fn spawn_backend_and_wait_ready() -> Result<(Child, String), String> {
     });
 
     loop {
-        if let Some(status) = child
-            .try_wait()
-            .map_err(|e| format!("backend wait failed: {e}"))?
-        {
+        if let Some(status) = child.try_wait().map_err(|e| {
+            let _ = child.kill();
+            let _ = child.wait();
+            format!("backend wait failed: {e}")
+        })? {
             return Err(format!(
                 "backend exited before web_ready (status: {status}); rebuild crabmate and ensure frontend/dist exists"
             ));
         }
         match ready_rx.recv_timeout(Duration::from_millis(120)) {
             Ok(Ok(url)) => return Ok((child, url)),
-            Ok(Err(e)) => return Err(e),
+            Ok(Err(e)) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(e);
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                let _ = child.kill();
+                let _ = child.wait();
                 return Err("backend stdout reader thread exited unexpectedly".to_string());
             }
         }
@@ -369,6 +438,14 @@ fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     app.opener()
         .open_url(parsed.as_str(), None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn quit_desktop_app(app: tauri::AppHandle) {
+    if let Some(state) = app.try_state::<BackendHandle>() {
+        state.kill();
+    }
+    app.exit(0);
 }
 
 fn main_webview_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
@@ -454,7 +531,8 @@ fn main() {
             set_main_window_decorations,
             main_window_minimize,
             main_window_toggle_maximize,
-            main_window_close
+            main_window_close,
+            quit_desktop_app
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -464,7 +542,7 @@ fn main() {
             let _splash =
                 WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
                     .title("CrabMate")
-                    .inner_size(400.0, 300.0)
+                    .inner_size(440.0, 340.0)
                     .resizable(false)
                     .decorations(false)
                     .visible(show_window)
@@ -472,46 +550,59 @@ fn main() {
                     .build()
                     .map_err(|e| format!("failed to create splash window: {e}"))?;
 
+            update_splash_status(
+                &app_handle,
+                "正在启动…",
+                "准备本地后端服务",
+            );
+
             std::thread::spawn(move || {
-                let outcome = spawn_backend_and_wait_ready();
                 let handle = app_handle.clone();
-                // Tauri v2: 通过 evaluate_script 或事件在主线程处理
+                let progress = |status: &str, detail: &str| {
+                    let status = status.to_string();
+                    let detail = detail.to_string();
+                    let h = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        if let Some(splash) = h.get_webview_window("splash") {
+                            splash_eval_status(&splash, &status, &detail);
+                        }
+                    });
+                };
+                let outcome = spawn_backend_and_wait_ready(progress);
                 match outcome {
                     Ok((child, ready_url)) => {
-                        match create_main_window_from_url(
-                            &handle,
-                            ready_url,
-                            child,
-                            Arc::clone(&backend_state),
-                        ) {
-                            Ok(()) => {
-                                if let Some(splash_win) = handle.get_webview_window("splash") {
-                                    let _ = splash_win.close();
-                                }
-                            }
+                        update_splash_status(&handle, "正在打开界面…", "后端已就绪");
+                        let create_result = {
+                            let h = handle.clone();
+                            let state = Arc::clone(&backend_state);
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            let _ = handle.run_on_main_thread(move || {
+                                let r = create_main_window_from_url(&h, ready_url, child, state);
+                                let _ = tx.send(r);
+                            });
+                            rx.recv()
+                                .unwrap_or_else(|_| Err("main window create channel failed".into()))
+                        };
+                        match create_result {
+                            Ok(()) => close_splash_window(&handle),
                             Err(e) => {
-                                if let Some(splash_win) = handle.get_webview_window("splash") {
-                                    let _ = splash_win.close();
+                                show_splash_error(&handle, e);
+                                if !e2e_hide_app_windows() {
+                                    handle
+                                        .dialog()
+                                        .message(
+                                            "主窗口未能创建。详情见启动页；可点击「退出」关闭。",
+                                        )
+                                        .title("CrabMate Desktop")
+                                        .kind(MessageDialogKind::Error)
+                                        .blocking_show();
                                 }
-                                handle
-                                    .dialog()
-                                    .message(e.clone())
-                                    .title("CrabMate Desktop 启动失败")
-                                    .kind(MessageDialogKind::Error)
-                                    .blocking_show();
                             }
                         }
                     }
                     Err(e) => {
-                        if let Some(splash_win) = handle.get_webview_window("splash") {
-                            let _ = splash_win.close();
-                        }
-                        handle
-                            .dialog()
-                            .message(e.clone())
-                            .title("CrabMate Desktop 启动失败")
-                            .kind(MessageDialogKind::Error)
-                            .blocking_show();
+                        eprintln!("[crabmate-desktop] startup failed: {e}");
+                        show_splash_error(&handle, e);
                     }
                 }
             });
@@ -570,4 +661,20 @@ fn create_main_window_from_url(
         .map_err(|e| format!("failed to create main window: {e}"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_web_ready_url;
+
+    #[test]
+    fn parse_web_ready_url_extracts_url() {
+        let line = r#"{"event":"web_ready","host":"127.0.0.1","port":9,"url":"http://127.0.0.1:9/"}"#;
+        assert_eq!(
+            parse_web_ready_url(line).as_deref(),
+            Some("http://127.0.0.1:9/")
+        );
+        assert!(parse_web_ready_url(r#"{"event":"other","url":"http://x/"}"#).is_none());
+        assert!(parse_web_ready_url("not json").is_none());
+    }
 }
