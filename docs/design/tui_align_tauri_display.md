@@ -99,7 +99,7 @@
 
 **问题**：回合结束后只靠 `messages_to_transcript(Message[])` 刷新，本轮投影块清空后，历史旁白/工具序可能退回 OpenAI 落盘序。
 
-**落地**：`transcript::CommittedTurns`；`submit_ev` 在 `finalize_for_display` 后 `flush_completed_turn` 再 `reset`；有投影时定稿为 user 前缀 → `[Turn 投影]` → 终答后缀（跳过 `tool` / 含 `tool_calls` 的 assistant）。会话切换 `msg_len` 不一致时 reseed Message[]。
+**落地**：`transcript::CommittedTurns`；`submit_ev` 在 `finalize_for_display` 后 `flush_completed_turn` 再 `reset`；有可定稿布局时为 user 前缀 → 投影块 → **投影未覆盖**的 plain assistant 后缀（跳过 `tool` / 含 `tool_calls` 的 assistant；`covers_plain_assistant_body` 防双显）。仅 timeline 时回退 Message[]。会话切换 `msg_len` 不一致时 reseed Message[]。
 
 **主要触点**：`submit_ev.rs`、`transcript.rs`、`mod.rs`（`TuiModel::committed_turns`）。  
 **验收**：`flush_keeps_commentary_before_tool_after_projection_reset`；同一多工具回合结束后旁白仍在工具前。

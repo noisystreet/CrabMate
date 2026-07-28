@@ -116,22 +116,23 @@ fn messages_to_transcript_range(messages: &[Message], start: usize, end: usize) 
     out
 }
 
-/// 有**可定稿的 turn 布局**（旁白/工具/终答）：user/前缀 → 投影 → 后缀，并跳过 Message[] assistant。
-/// 仅 timeline 等非正文投影、或投影为空：回退整段 Message[]（否则会丢掉助手正文，下一轮才像「补全」）。
+/// 有**可定稿的 turn 布局**（旁白/工具/终答）：user 前缀 → 投影块 → 投影未覆盖的 assistant 后缀。
+/// 仅 timeline 或无布局：回退整段 Message[]。
 fn format_completed_turn_for_past_display(
     messages: &[Message],
     turn_start: usize,
     projection: &TuiTurnProjection,
 ) -> String {
+    if !projection.has_flushable_turn_layout() {
+        return messages_to_transcript_range(messages, turn_start, messages.len());
+    }
     let block = projection.format_projection_block(None);
-    if block.is_empty() || !projection.has_flushable_turn_layout() {
+    if block.is_empty() {
         return messages_to_transcript_range(messages, turn_start, messages.len());
     }
 
-    // 投影块已承接助手旁白/终答：Message[] 中所有 assistant 均跳过，避免与投影双显。
     let mut prefix = String::new();
-    let mut suffix = String::new();
-    let mut seen_tool_phase = false;
+    let mut uncovered_assistants = String::new();
     let end = messages.len();
     for idx in turn_start..end {
         let m = &messages[idx];
@@ -142,22 +143,21 @@ fn format_completed_turn_for_past_display(
         let is_tc_assistant = role == "assistant" && assistant_has_tool_calls(m);
         let is_tool = role == "tool";
         if is_tool || is_tc_assistant {
-            seen_tool_phase = true;
             continue;
         }
         if role == "assistant" {
+            let body = message_body_for_transcript(messages, idx);
+            if body.is_empty() || projection.covers_plain_assistant_body(&body) {
+                continue;
+            }
+            uncovered_assistants.push_str(&format!("[assistant]\n{body}\n\n"));
             continue;
         }
         let body = message_body_for_transcript(messages, idx);
         if body.is_empty() {
             continue;
         }
-        let chunk = format!("[{role}]\n{body}\n\n");
-        if seen_tool_phase {
-            suffix.push_str(&chunk);
-        } else {
-            prefix.push_str(&chunk);
-        }
+        prefix.push_str(&format!("[{role}]\n{body}\n\n"));
     }
 
     let mut out = prefix;
@@ -168,7 +168,7 @@ fn format_completed_turn_for_past_display(
     if !block.ends_with('\n') {
         out.push('\n');
     }
-    out.push_str(&suffix);
+    out.push_str(&uncovered_assistants);
     out
 }
 
@@ -366,6 +366,60 @@ mod tests {
             "must not show meta labels: {display}"
         );
         assert_eq!(committed.msg_len, messages.len());
+    }
+
+    #[test]
+    fn flush_appends_uncovered_final_when_projection_lacks_answer() {
+        // 投影有旁白+工具但无终答固化时，不得丢掉 Message[] 终答。
+        let mut committed = CommittedTurns::default();
+        let mut messages = vec![user_msg("分析项目")];
+        let mut proj = TuiTurnProjection::default();
+        let scratch = TuiLlmStreamScratch {
+            content: "先看一下 README。".into(),
+            ..Default::default()
+        };
+        proj.apply_sse(
+            &SsePayload::ParsingToolCalls {
+                parsing_tool_calls: true,
+            },
+            &scratch,
+        );
+        proj.apply_sse(
+            &SsePayload::ToolCall {
+                tool_call: ToolCallSummary {
+                    name: "read_file".into(),
+                    summary: "README.md".into(),
+                    goal_id: None,
+                    tool_call_id: Some("tc1".into()),
+                    arguments_preview: None,
+                    arguments: None,
+                },
+            },
+            &scratch,
+        );
+        messages.push(assistant_with_tools("先看一下 README。", "read_file"));
+        messages.push(tool_msg("ok"));
+        messages.push(Message::assistant_only("总结如下。"));
+        // 故意不 finalize / 不 capture 终答
+        assert!(proj.has_flushable_turn_layout());
+        assert!(!proj.covers_plain_assistant_body("总结如下。"));
+        committed.flush_completed_turn(&messages, &proj);
+        assert!(
+            committed.display.contains("总结如下。"),
+            "uncovered Message[] final must remain: {}",
+            committed.display
+        );
+        assert!(
+            committed.display.contains("先看一下 README。"),
+            "commentary still from projection: {}",
+            committed.display
+        );
+        assert_eq!(
+            committed.display.matches("先看一下 README。").count(),
+            1,
+            "commentary once: {}",
+            committed.display
+        );
     }
 
     #[test]
