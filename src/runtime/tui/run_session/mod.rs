@@ -21,6 +21,7 @@
 //! 近底 / 下滑回阈值 / 发送 / End re-pin。
 
 mod approval;
+mod chat_body;
 mod chat_follow;
 mod clarify_modal;
 mod panel_chrome;
