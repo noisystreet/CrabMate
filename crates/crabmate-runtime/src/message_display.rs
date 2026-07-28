@@ -1,5 +1,4 @@
 //! 对话消息在 UI/终端上的展示用正文（与 `Message.content` 存储形态解耦）。
-#![allow(dead_code)]
 
 use regex::Regex;
 use std::sync::LazyLock;
@@ -7,9 +6,7 @@ use std::sync::LazyLock;
 use crate::latex_unicode::latex_math_to_unicode;
 use crate::message_display_parts::tool_display_from_normalized_envelope;
 use crabmate_agent::plan_artifact::{
-    fenced_body_after_optional_jsonish_lang_label, format_agent_reply_plan_for_display,
-    parse_agent_reply_plan_v1, prose_before_first_fence,
-    strip_agent_reply_plan_fence_blocks_for_display,
+    format_agent_reply_plan_for_display, strip_agent_reply_plan_fence_blocks_for_display,
 };
 use crabmate_tools::tool_result::{ToolResult, normalize_tool_message_content};
 use crabmate_types::Message;
@@ -315,98 +312,6 @@ pub fn strip_assistant_echo_label(content: &str) -> String {
     s
 }
 
-/// 流式阶段检测到「正在输出 agent_reply_plan」时，聊天区不刷 JSON 片段；**仅展示围栏前自然语言**（无则空白，不占位文案）。**收齐后**走 [`assistant_markdown_source_for_display`] 再剥 JSON。
-/// 模型若输出同义开场白，用 [`is_staged_plan_placeholder_like_line`] 识别并在展示中去掉，避免复读。
-const STAGED_PLAN_STREAMING_PLACEHOLDER_BASE: &str = "正在生成分阶段规划";
-
-fn triple_backtick_fence_count(s: &str) -> usize {
-    s.match_indices("```").count()
-}
-
-/// 首段代码围栏（`parts[1]`）视为「JSON 规划流」：语言行为 `json` / `markdown` / `md`（与 [`strip_optional_json_fence_label`] 一致）且剥标后正文为空或 `{` 开头。
-///
-/// 不再把「无语言标签 + 内联 `{`」的裸围栏算作规划流：`deepseek-reasoner` 等思维链里常见的
-/// ` ``` ` + `{`（讨论 JSON/代码）会触发 [`should_buffer_agent_reply_plan_stream`]，围栏前又无正文时聊天区会整段空白。
-fn first_fence_inner_looks_like_json_object(s: &str) -> bool {
-    let mut it = s.split("```");
-    let _ = it.next();
-    let Some(inner) = it.next() else {
-        return false;
-    };
-    let Some(body) = fenced_body_after_optional_jsonish_lang_label(inner) else {
-        return false;
-    };
-    let b = body.trim();
-    b.is_empty() || b.starts_with('{')
-}
-
-fn looks_like_incomplete_agent_reply_plan_whole_json(t: &str) -> bool {
-    let t = t.trim();
-    if !t.starts_with('{') {
-        return false;
-    }
-    if t.contains("\"agent_reply_plan\"") {
-        return true;
-    }
-    t.contains("\"type\"") && t.contains("\"version\"") && t.contains("\"steps\"")
-}
-
-/// 流式未结束时：若判定为 agent_reply_plan 相关输出，则不在 UI 上逐 delta 渲染 JSON。
-fn should_buffer_agent_reply_plan_stream(stripped: &str) -> bool {
-    if triple_backtick_fence_count(stripped) % 2 == 1
-        && first_fence_inner_looks_like_json_object(stripped)
-    {
-        return true;
-    }
-    let t = stripped.trim();
-    if !t.starts_with('{') {
-        return false;
-    }
-    if parse_agent_reply_plan_v1(stripped).is_ok() {
-        return false;
-    }
-    serde_json::from_str::<serde_json::Value>(t).is_err()
-        && looks_like_incomplete_agent_reply_plan_whole_json(t)
-}
-
-pub fn is_staged_plan_placeholder_like_line(line: &str) -> bool {
-    let t = line.trim();
-    if t.is_empty() {
-        return false;
-    }
-    let t = t.trim_end_matches(|c: char| {
-        matches!(c, '…' | '.' | '。' | '!' | '！' | '?' | '？' | ':' | '：')
-    });
-    let t = t.trim();
-    t == STAGED_PLAN_STREAMING_PLACEHOLDER_BASE
-        || t.starts_with(STAGED_PLAN_STREAMING_PLACEHOLDER_BASE)
-}
-
-fn drop_leading_placeholder_like_prose_line(prose: &str) -> String {
-    let mut lines = prose.lines();
-    let Some(first) = lines.next() else {
-        return String::new();
-    };
-    if !is_staged_plan_placeholder_like_line(first) {
-        return prose.to_string();
-    }
-    lines.collect::<Vec<_>>().join("\n").trim().to_string()
-}
-
-fn staged_plan_streaming_chat_body(stripped: &str) -> String {
-    let raw = prose_before_first_fence(stripped);
-    // 与 `preprocess_unfenced_assistant_prose_dedup` 在「围栏前段落」上的 dedupe 对齐，避免流式与收齐后开场白不一致。
-    let raw = crabmate_agent::text_sanitize::dedupe_plain_assistant_preamble(&raw);
-    // 与收齐后展示路径一致：相邻重复行、列表并句，避免流式阶段出现双行复读而收齐后变单段等不一致。
-    let prose_t = crabmate_agent::text_sanitize::naturalize_assistant_plan_prose_tail(&raw);
-    let prose_t = prose_t.trim();
-    if prose_t.is_empty() {
-        String::new()
-    } else {
-        drop_leading_placeholder_like_prose_line(prose_t)
-    }
-}
-
 /// 剥标签后的助手正文：可读化规划、去围栏、LaTeX（**非流式**完整处理）。
 fn assistant_markdown_from_stripped(stripped: &str) -> String {
     if let Some(display) = format_agent_reply_plan_for_display(stripped) {
@@ -429,8 +334,7 @@ pub fn assistant_markdown_source_for_display(raw: &str) -> String {
     assistant_markdown_from_stripped(&stripped)
 }
 
-/// TUI 流式：仅对**最后一条助手**且仍处生成中时调用；`agent_reply_plan` 相关输出缓冲为占位，收齐后由普通路径一次性剥 JSON 再展示。
-/// 与流式 SSE 下发顺序一致：先 `reasoning_content` 再 `content`，中间无插入字符（与 `llm::api` 累加顺序一致）。
+/// TUI 流式：拼接思维链与正文（与 `llm::api` 累加顺序一致）。收齐后由 [`assistant_markdown_source_for_display`] 剥规划 JSON。
 pub fn assistant_streaming_plain_concat(m: &Message) -> String {
     let mut s = String::new();
     if let Some(r) = m.reasoning_content.as_deref() {
@@ -471,7 +375,8 @@ pub fn assistant_raw_markdown_body_for_message(m: &Message) -> String {
     )
 }
 
-/// 对助手正文做围栏前复读折叠：无围栏时整段处理；**有围栏时仍只处理首个 ` ``` ` 之前**，与流式阶段（`should_buffer` 前）一致。
+/// 对助手正文做围栏前复读折叠：无围栏时整段处理；**有围栏时仍只处理首个 ` ``` ` 之前**。
+/// 流式规划缓冲逻辑在前端 `message_format/display/plan_fence.rs`。
 fn preprocess_unfenced_assistant_prose_dedup(stripped: &str) -> String {
     let t = stripped.trim_start();
     if t.starts_with('{') {

@@ -62,9 +62,7 @@ pub(crate) use params::{
     TurnPlannerHints,
 };
 #[allow(unused_imports)]
-pub(crate) use plan::{
-    AgentLlmCall, PerPlanCallModelParams, PlannerSseGate, per_plan_call_model_retrying,
-};
+pub(crate) use plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 #[allow(unused_imports)]
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 #[allow(unused_imports)]

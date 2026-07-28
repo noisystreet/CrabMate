@@ -19,9 +19,9 @@ pub enum TurnCompletionDecision {
     DenyEarlyStop {
         reason: &'static str,
     },
-    #[allow(dead_code)]
+    /// 金样 / [`evaluate_turn_suppress_replanning`]；生产 outer_loop 尚未接线。
     AllowSuppressReplanning,
-    #[allow(dead_code)]
+    /// 见 [`AllowSuppressReplanning`]。
     DenySuppressReplanning {
         reason: &'static str,
     },
@@ -29,28 +29,10 @@ pub enum TurnCompletionDecision {
     DenyRedundantTools {
         reason: &'static str,
     },
-    #[allow(dead_code)]
-    AllowRollingHorizonStop {
-        via: RollingHorizonStopVia,
-    },
-    #[allow(dead_code)]
-    DenyRollingHorizonStop {
-        reason: &'static str,
-    },
     AllowMissingFinalAnswerFeedback,
     DenyMissingFinalAnswerFeedback {
         reason: &'static str,
     },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RollingHorizonStopVia {
-    #[allow(dead_code)]
-    HeuristicEarlyStop,
-    #[allow(dead_code)]
-    StepAcceptancePass,
-    #[allow(dead_code)]
-    GoalEvidenceSatisfied,
 }
 
 impl TurnCompletionDecision {
@@ -62,8 +44,6 @@ impl TurnCompletionDecision {
             Self::DenySuppressReplanning { .. } => "deny_suppress_replanning",
             Self::AllowRedundantTools => "allow_redundant_tools",
             Self::DenyRedundantTools { .. } => "deny_redundant_tools",
-            Self::AllowRollingHorizonStop { .. } => "allow_rolling_horizon_stop",
-            Self::DenyRollingHorizonStop { .. } => "deny_rolling_horizon_stop",
             Self::AllowMissingFinalAnswerFeedback => "allow_missing_final_answer_feedback",
             Self::DenyMissingFinalAnswerFeedback { .. } => "deny_missing_final_answer_feedback",
         }
@@ -74,7 +54,6 @@ impl TurnCompletionDecision {
             Self::DenyEarlyStop { reason }
             | Self::DenySuppressReplanning { reason }
             | Self::DenyRedundantTools { reason }
-            | Self::DenyRollingHorizonStop { reason }
             | Self::DenyMissingFinalAnswerFeedback { reason } => Some(reason),
             _ => None,
         }
@@ -86,16 +65,8 @@ impl TurnCompletionDecision {
             Self::AllowEarlyStop
                 | Self::AllowSuppressReplanning
                 | Self::AllowRedundantTools
-                | Self::AllowRollingHorizonStop { .. }
                 | Self::AllowMissingFinalAnswerFeedback
         )
-    }
-    #[allow(dead_code)]
-    pub fn rolling_horizon_via(self) -> Option<RollingHorizonStopVia> {
-        match self {
-            Self::AllowRollingHorizonStop { via } => Some(via),
-            _ => None,
-        }
     }
 }
 
@@ -138,7 +109,9 @@ pub fn evaluate_turn_early_stop(messages: &[Message]) -> TurnCompletionDecision 
     decision
 }
 
-#[allow(dead_code)]
+/// 步后抑规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
+///
+/// 生产 outer_loop 尚未调用；由 **`fixtures/turn_completion_golden.jsonl`** 与根包包装测覆盖。
 pub fn evaluate_turn_suppress_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,

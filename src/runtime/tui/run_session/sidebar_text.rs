@@ -80,22 +80,6 @@ pub(in crate::runtime::tui::run_session) fn build_tui_workspace_sidebar(
     format!("工作区\n{wd_short}\n")
 }
 
-/// 原底栏文案；仍供 `/help` 或其它提示复用（右栏不再堆快捷键）。
-#[allow(dead_code)] // 保留给 `/help` 文案复用；右栏已不再展示快捷键墙
-pub(in crate::runtime::tui::run_session) fn tui_keyboard_help_compact(
-    cli_no_stream: bool,
-) -> String {
-    let mut s = String::from(
-        "Enter 发送 · 空行 q · Ctrl+C · /help · Tab 切焦点 · 鼠标点面板 · 聊天区 PgUp/PgDn · 右侧滚动条拖动",
-    );
-    if cli_no_stream {
-        s.push_str(" · --no-stream");
-    } else {
-        s.push_str(" · 流式（不写 stdout）");
-    }
-    s
-}
-
 /// 与 Web 底栏「角色」下拉一致：显式 `/agent set` 显示 id；否则 default / default (配置 id）。
 pub(in crate::runtime::tui::run_session) fn tui_status_role_label(
     agent_role_owned: &Option<String>,
