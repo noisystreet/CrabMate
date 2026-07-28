@@ -339,20 +339,6 @@ impl RunLoopParams<'_> {
         }
     }
 
-    /// 当前回合的 SSE/终端/流式/取消开关，供 [`crate::llm::CompleteChatRetryingParams::new`] 与 [`super::plan::AgentLlmCall`] 复用。
-    #[inline]
-    #[allow(dead_code)]
-    pub(crate) fn llm_transport_opts(&self) -> crate::llm::LlmRetryingTransportOpts<'_> {
-        crate::llm::LlmRetryingTransportOpts {
-            out: self.ctx.io.control.out,
-            render_to_terminal: self.ctx.io.terminal.render_to_terminal,
-            no_stream: self.ctx.io.no_stream,
-            cancel: self.ctx.io.cancel,
-            plain_terminal_stream: self.ctx.io.terminal.plain_terminal_stream,
-            tui_llm_stream_scratch: self.ctx.io.terminal.tui_llm_stream_scratch.clone(),
-        }
-    }
-
     /// 获取本回合 LLM 调用应使用的 model：
     /// - planner 阶段：`model_override` > `cfg.llm.planner_model` > `cfg.llm.model`
     /// - executor 阶段：`executor_model_override` > `cfg.llm.executor_model` > `cfg.llm.model`

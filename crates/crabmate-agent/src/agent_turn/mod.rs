@@ -47,8 +47,8 @@ pub use tool_execution::{
     resolve_tool_batch_execution_mode, tool_policy_early_deny_message,
 };
 pub use turn_completion_decision::{
-    RollingHorizonStopVia, TurnCompletionDecision, evaluate_turn_early_stop,
-    evaluate_turn_redundant_tools, evaluate_turn_suppress_replanning, log_turn_completion_decision,
+    TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
+    evaluate_turn_suppress_replanning, log_turn_completion_decision,
 };
 pub use turn_orchestration::{
     NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, ReActBecause, TurnOrchestrationMode,

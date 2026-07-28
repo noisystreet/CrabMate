@@ -1,7 +1,5 @@
 //! 目标已有完成证据后，抑制冗余探针类 **tool_calls** 与分阶段 **plan steps** 的共享判定。
 
-#![allow(dead_code)]
-
 use crate::plan_artifact::{PlanStepAcceptance, PlanStepExecutorKind, PlanStepV1};
 use crabmate_types::{Message, ToolCall};
 

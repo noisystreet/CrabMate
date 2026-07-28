@@ -7,9 +7,11 @@
 #[path = "turn_completion_golden.rs"]
 mod turn_completion_golden;
 
+#[cfg(test)]
+pub(crate) use crabmate_agent::agent_turn::turn_completion_decision::evaluate_turn_suppress_replanning;
 pub(crate) use crabmate_agent::agent_turn::turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
-    evaluate_turn_suppress_replanning, log_turn_completion_decision,
+    log_turn_completion_decision,
 };
 
 pub(crate) use crabmate_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
@@ -24,7 +26,6 @@ pub(crate) use crabmate_agent::agent_turn::completion_suppression::{
     tool_calls_are_redundant_after_completion,
 };
 
-use crate::agent::plan_artifact::PlanStepV1;
 use crate::types::{Message, ToolCall, last_real_user_message_index, message_content_as_str};
 
 /// 最多注入次数，避免与外层迭代上限死磕。
@@ -52,11 +53,13 @@ pub(crate) fn turn_redundant_tools_after_completion_allowed(
 }
 
 /// 步后重规划：目标已 Satisfied 且新 `steps` 仅为探针/总结时是否应抑制下一轮无工具规划。
-#[allow(dead_code)]
+///
+/// 生产 outer_loop 尚未接线；仅单测与金样使用。
+#[cfg(test)]
 pub(crate) fn turn_suppress_completed_replanning(
     messages: &[Message],
     entered_from_step_execution_round: bool,
-    steps: &[PlanStepV1],
+    steps: &[crate::agent::plan_artifact::PlanStepV1],
 ) -> bool {
     evaluate_turn_suppress_replanning(messages, entered_from_step_execution_round, steps).is_allow()
 }
