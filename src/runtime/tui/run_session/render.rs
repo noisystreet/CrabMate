@@ -37,7 +37,7 @@ pub(super) fn append_tui_streaming_tail(
 ) -> String {
     let r = scratch.reasoning.trim();
     let c = scratch.content.trim();
-    let hide_content = projection.should_hide_streaming_content(c);
+    let hide_content = projection.should_hide_streaming_content(scratch);
     let body = streaming_assistant_body_matching_transcript(r, c, hide_content);
     if body.is_empty() {
         return transcript.to_string();
