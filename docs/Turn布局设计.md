@@ -442,8 +442,8 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | 机制 | 说明 |
 |------|------|
 | canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs) |
-| 落盘 | `BubbleOutputQueue::upsert_commentary_before_tool`：按 `tool_call_id` upsert `turn-commentary-*`，始终位于锚定工具之前 |
-| 流式 | 工具行尚不存在时 open 段可写 loading overlay；锚点工具已在 `messages` 中时改 upsert 到工具前并清空 overlay |
+| 落盘 | `BubbleOutputQueue::upsert_commentary_before_tool` / `upsert_streaming_anchored_commentary`：按 `tool_call_id` upsert `turn-commentary-*`；工具未到时暂挂 loading 前，到达后锚定工具前 |
+| 流式 | 带 `before_tool_call_id` 的 open 旁白**不**写 loading overlay；无锚点的短暂段仍可走 overlay |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
 | 可见性 | commentary 为普通 assistant 行；overlay 只从属于唯一 active 行 |
 | E2E | `mock-commentary-before-tool-order.spec.ts`（含晚到）；`mock-ready-bubble-stability.spec.ts` |
@@ -500,7 +500,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地，但热路径仍存在 **�
 
 | 债 | 表现 | 收敛方向 |
 |----|------|----------|
-| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | 旁白直写投影；Loading **纯句柄**；handoff 降为兜底 |
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B**：锚定旁白直写 `turn-commentary-*`；Loading **纯句柄**（Phase C）；handoff 降为兜底 |
 | 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler |
 | 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
 | I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | 正式不变量以「稳定 key + 工具前 + 禁止第二行」为准 |
