@@ -96,6 +96,26 @@ pub fn streaming_commentary_block_text(turn: &Turn) -> Option<String> {
         .map(|s| s.text.clone())
 }
 
+/// 工具批进行中：open commentary 若带 `before_tool_call_id`，返回 `(tool_call_id, text)`。
+///
+/// 供 Web 在锚点工具行**已存在**时把流式旁白 upsert 到该工具之前，避免 loading 尾泡
+/// 落在工具之后造成「工具先于描述」。
+#[must_use]
+pub fn streaming_commentary_before_tool(turn: &Turn) -> Option<(String, String)> {
+    let seg = turn
+        .segments
+        .iter()
+        .rev()
+        .find(|s| s.open && s.kind == SegmentKind::Commentary && !s.text.trim().is_empty())?;
+    let tool_call_id = seg
+        .before_tool_call_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    Some((tool_call_id, seg.text.clone()))
+}
+
 fn first_step_with_commentary_index(turn: &Turn) -> Option<usize> {
     turn.steps.iter().position(|s| {
         s.before_commentary
@@ -168,9 +188,9 @@ pub fn project_turn_web(turn: &Turn) -> Vec<ProjectedRow> {
 
 /// Web v2 投影：每个工具调用前的已关闭旁注独立成行。
 ///
-/// `tool_call_id` 同时作为旁注行的稳定 projection key。调用方只能首次插入该行，
-/// 不得在后续投影中改写或移动已经发布的行。open segment 继续由流式 overlay 承载，
-/// 不进入本投影。
+/// `tool_call_id` 同时作为旁注行的稳定 projection key。已关闭旁注首次插入后正文可经
+/// upsert 更新（晚到流式）；open segment 在锚点工具已存在时由 Web 侧 upsert 到工具前，
+/// 不再仅挂 loading 尾泡。
 #[must_use]
 pub fn project_turn_web_v2(turn: &Turn) -> Vec<ProjectedRow> {
     let mut out = Vec::new();

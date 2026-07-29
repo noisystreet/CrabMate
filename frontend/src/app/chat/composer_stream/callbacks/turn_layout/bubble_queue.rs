@@ -36,27 +36,86 @@ impl BubbleOutputQueue {
             .collect()
     }
 
-    fn insert_index_for_commentary_row(
-        messages: &[crate::storage::StoredMessage],
-        anchor_tool_call_id: Option<&str>,
-    ) -> Option<usize> {
-        if let Some(tcid) = anchor_tool_call_id.filter(|t| !t.is_empty()) {
-            if let Some(idx) = messages
-                .iter()
-                .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tcid))
-            {
-                return Some(idx);
-            }
+    /// 将旁注 upsert 到锚定工具行之前（可更新正文；若误落在工具后则搬回）。
+    ///
+    /// 用于：已关闭旁注 flush，以及晚到 open 旁注在工具行已存在时的流式预览。
+    /// 返回是否已把正文挂在工具前的 commentary 行上。
+    pub(super) fn upsert_commentary_before_tool(
+        messages: &mut Vec<crate::storage::StoredMessage>,
+        tool_call_id: &str,
+        text: String,
+    ) -> bool {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return false;
         }
-        messages.iter().position(|m| m.is_tool)
+        let Some(tool_idx) = messages
+            .iter()
+            .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
+        else {
+            return false;
+        };
+        let row_id = commentary_row_id(tool_call_id);
+        if let Some(idx) = messages.iter().position(|m| m.id == row_id) {
+            if messages[idx].text != text {
+                messages[idx].text = text;
+            }
+            if idx > tool_idx {
+                let row = messages.remove(idx);
+                let new_tool_idx = messages
+                    .iter()
+                    .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
+                    .unwrap_or(tool_idx);
+                messages.insert(new_tool_idx, row);
+            }
+            return true;
+        }
+        let row = crate::storage::StoredMessage {
+            id: row_id,
+            role: "assistant".to_string(),
+            text,
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: {
+                #[cfg(target_arch = "wasm32")]
+                {
+                    crate::session_ops::message_created_ms()
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    0
+                }
+            },
+        };
+        messages.insert(tool_idx, row);
+        true
     }
 
     /// loading 尾泡 overlay：**仅**未落盘的增量（open commentary 段或 post-tool 终答）。
+    ///
+    /// 若 open commentary 已锚定到**已存在**的工具行，预览应由
+    /// [`Self::upsert_commentary_before_tool`] 承载，此处返回空以免工具后尾泡双显。
     pub(super) fn loading_preview_text(
         turn: &TurnCanonicalState,
         overlay_answer: Option<&str>,
+        messages: Option<&[crate::storage::StoredMessage]>,
     ) -> String {
         if turn.tool_phase_open() {
+            if let Some((tcid, _)) =
+                crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref())
+            {
+                let tool_present = messages.is_some_and(|msgs| {
+                    msgs.iter()
+                        .any(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tcid.as_str()))
+                });
+                if tool_present {
+                    return String::new();
+                }
+            }
             return streaming_commentary_block_text(turn.turn_ref()).unwrap_or_default();
         }
         overlay_answer
@@ -128,6 +187,8 @@ impl BubbleOutputQueue {
         messages.insert(insert_idx.min(messages.len()), row);
     }
 
+    // dead: kept as insert-once helper for potential no-upsert paths; prefer upsert_*.
+    #[allow(dead_code)]
     fn insert_finalized_assistant_row(
         messages: &mut Vec<crate::storage::StoredMessage>,
         row_id: &str,
@@ -208,7 +269,7 @@ impl BubbleOutputQueue {
         insert_idx
     }
 
-    /// 发布按工具调用键控的不可变 commentary 行。
+    /// 发布按工具调用键控的 commentary 行（可更新正文；始终位于锚定工具之前）。
     pub(super) fn flush_commentary_rows(
         &self,
         messages: &mut Vec<crate::storage::StoredMessage>,
@@ -219,18 +280,24 @@ impl BubbleOutputQueue {
             let Some(tool_call_id) = commentary.tool_call_id.as_deref() else {
                 continue;
             };
-            let Some(insert_idx) =
-                Self::insert_index_for_commentary_row(messages, Some(tool_call_id))
-            else {
-                continue;
-            };
-            Self::insert_finalized_assistant_row(
-                messages,
-                commentary_row_id(tool_call_id).as_str(),
-                commentary.text,
-                insert_idx,
-            );
+            let _ = Self::upsert_commentary_before_tool(messages, tool_call_id, commentary.text);
         }
+    }
+
+    /// 工具相 open commentary 已锚定且工具行已存在时，upsert 到工具前（供流式热路径）。
+    pub(super) fn try_upsert_open_commentary_before_existing_tool(
+        messages: &mut Vec<crate::storage::StoredMessage>,
+        turn: &TurnCanonicalState,
+    ) -> bool {
+        if !turn.tool_phase_open() {
+            return false;
+        }
+        let Some((tcid, text)) =
+            crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref())
+        else {
+            return false;
+        };
+        Self::upsert_commentary_before_tool(messages, tcid.as_str(), text)
     }
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
@@ -306,7 +373,7 @@ impl BubbleOutputQueue {
         messages: &[crate::storage::StoredMessage],
         overlay_answer: Option<&str>,
     ) -> String {
-        let preview = Self::loading_preview_text(turn, overlay_answer);
+        let preview = Self::loading_preview_text(turn, overlay_answer, Some(messages));
         if preview.trim().is_empty() {
             return String::new();
         }
@@ -367,7 +434,7 @@ mod tests {
             Some("步骤 A。")
         );
         assert_eq!(
-            BubbleOutputQueue::loading_preview_text(&turn, None).as_str(),
+            BubbleOutputQueue::loading_preview_text(&turn, None, None).as_str(),
             "步骤 B。"
         );
     }
@@ -395,6 +462,86 @@ mod tests {
         assert_eq!(msgs[1].id, "t");
         queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 2, "second flush must not duplicate row");
+    }
+
+    /// 晚到旁注：工具行已在列表中时，流式 upsert 须插在工具之前（勿落 loading 尾）。
+    #[test]
+    fn upsert_late_streaming_commentary_before_existing_tool() {
+        let mut msgs = vec![
+            crate::storage::StoredMessage {
+                id: "t".into(),
+                role: "system".into(),
+                text: "create".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: true,
+                tool_call_id: Some("tc_create".into()),
+                tool_name: None,
+                created_at: 0,
+            },
+            crate::storage::StoredMessage {
+                id: "load".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(crate::storage::StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+        ];
+        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+            &mut msgs,
+            "tc_create",
+            "工作区是空的。".into(),
+        ));
+        assert_eq!(msgs[0].id, commentary_row_id("tc_create"));
+        assert_eq!(msgs[0].text, "工作区是空的。");
+        assert_eq!(msgs[1].id, "t");
+        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+            &mut msgs,
+            "tc_create",
+            "工作区是空的。继续。".into(),
+        ));
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0].text, "工作区是空的。继续。");
+        assert_eq!(msgs[1].id, "t");
+    }
+
+    #[test]
+    fn loading_preview_empty_when_open_commentary_anchored_to_existing_tool() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_call("tc_create", "create_file", "创建文件");
+        turn.on_segment_start(TurnSegmentStartInfo {
+            segment_id: "seg-late".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_create".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("晚到旁白。"));
+        let msgs = vec![crate::storage::StoredMessage {
+            id: "t".into(),
+            role: "system".into(),
+            text: "tool".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: true,
+            tool_call_id: Some("tc_create".into()),
+            tool_name: None,
+            created_at: 0,
+        }];
+        assert!(
+            BubbleOutputQueue::loading_preview_text(&turn, None, Some(&msgs)).is_empty(),
+            "anchored open commentary must not paint on loading after tool"
+        );
+        assert_eq!(
+            BubbleOutputQueue::loading_preview_text(&turn, None, None).as_str(),
+            "晚到旁白。",
+            "without tool row in messages, preview may still stream on loading"
+        );
     }
 
     #[test]
@@ -441,7 +588,7 @@ mod tests {
     }
 
     #[test]
-    fn flush_commentary_does_not_move_existing_finalized_row() {
+    fn flush_commentary_moves_misordered_row_before_tool() {
         let mut turn = TurnCanonicalState::new();
         turn.on_tool_call("tc_archive", "archive_list", "list");
         turn.on_segment_start(crate::sse_dispatch::TurnSegmentStartInfo {
@@ -494,8 +641,8 @@ mod tests {
         queue.flush_commentary_rows(&mut msgs, &turn, None);
         assert_eq!(msgs.len(), 3);
         assert_eq!(msgs[0].id, "tc_archive");
-        assert_eq!(msgs[1].id, "tc_unpack");
-        assert_eq!(msgs[2].id, commentary_row_id("tc_unpack"));
+        assert_eq!(msgs[1].id, commentary_row_id("tc_unpack"));
+        assert_eq!(msgs[2].id, "tc_unpack");
     }
 
     #[test]

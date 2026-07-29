@@ -1,7 +1,7 @@
 //! 单轮 `/chat/stream` 内 **`messages` 布局** 的唯一入口（方向 A：显式 TurnLayout 状态机）。
 //!
-//! 目标顺序（v2 不可变布局）：`[时间线*] → ([commentary] → [工具])* → [turn-final-answer] → [loading 空壳]`
-//! 已关闭 commentary 以 `tool_call_id` 为稳定键，只允许首次插入；终答正文经
+//! 目标顺序（v2）：`[时间线*] → ([commentary] → [工具])* → [turn-final-answer] → [loading 空壳]`
+//! commentary 以 `tool_call_id` 稳定键 upsert 到锚定工具前；终答经
 //! [`BubbleOutputQueue::sync_web_projection`] 落盘。
 //!
 //! | 事件 | 入口 |
@@ -670,13 +670,30 @@ impl TurnLayout {
         }
     }
 
-    /// **热路径**：canonical open 段 preview → overlay replace；**不** `sessions.update`、不 insert 旁注行。
+    /// 热路径：open 段 preview → overlay。晚到锚点旁注：工具行已在时 upsert 到工具前并清 overlay。
     pub(crate) fn sync_stream_preview(
         stream_ctx: &ChatStreamCallbackCtx,
         turn: &TurnCanonicalState,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.as_str();
+        let placed = RefCell::new(false);
+        stream_ctx.update_bound_session(|s| {
+            *placed.borrow_mut() =
+                BubbleOutputQueue::try_upsert_open_commentary_before_existing_tool(
+                    &mut s.messages,
+                    turn,
+                );
+        });
+        if placed.into_inner() {
+            stream_overlay_clear_answer_for_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid,
+                mid.as_str(),
+                Some(stream_ctx.chat.stream_overlay_revision),
+            );
+            return;
+        }
         // 阶段 3b：读 overlay answer 传入 loading_preview_for_messages，避免 canonical `final_answer`
         // 为空时把 overlay 清空。
         let overlay_answer = stream_overlay_answer_for_message(
