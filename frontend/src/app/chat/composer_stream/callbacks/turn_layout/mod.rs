@@ -18,6 +18,7 @@
 
 mod bubble_queue;
 mod loading_handoff;
+mod projection_reconciler;
 mod stream_done;
 #[cfg(test)]
 mod turn_web_contract;

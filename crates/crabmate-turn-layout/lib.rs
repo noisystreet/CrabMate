@@ -2,7 +2,7 @@
 //!
 //! - **Reducer**：按 SSE / 内部事件更新 canonical 状态（允许事件到达顺序与展示顺序不同）。
 //! - **Projector**：`Turn` → 有序 [`ProjectedRow`]；`project_turn_web` 保留 v1 块布局，
-//!   `project_turn_web_v2` 为按工具键输出不可变 commentary 行的 Web 投影。
+//!   `project_turn_web_v2` / [`project_turn_projection`] 为 Web 定稿行 + 可选 active。
 //!
 //! 金样：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 块布局 `project_turn_web`）；
 //! 测试：`cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web`。
@@ -16,9 +16,10 @@ pub mod replay;
 pub use event::TurnEvent;
 pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSegment};
 pub use project::{
-    ASSISTANT_ANSWER, ASSISTANT_BATCH_NARRATION, ASSISTANT_COMMENTARY, ProjectedRow,
-    batch_narration_row, batch_narration_text, commentary_for_tool, project_turn, project_turn_web,
-    project_turn_web_v2, streaming_commentary_before_tool, streaming_commentary_block_text,
+    ASSISTANT_ANSWER, ASSISTANT_BATCH_NARRATION, ASSISTANT_COMMENTARY, ActiveProjectedRow,
+    ProjectedRow, TurnProjection, batch_narration_row, batch_narration_text, commentary_for_tool,
+    project_turn, project_turn_projection, project_turn_web, project_turn_web_v2,
+    streaming_commentary_before_tool, streaming_commentary_block_text,
 };
 pub use reduce::{
     TurnReducer, close_open_commentary_segments, reduce_event, try_split_combined_post_tool_answer,

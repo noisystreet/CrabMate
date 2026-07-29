@@ -269,7 +269,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 单轮含工具时，维护者验收应满足：
 
-1. **I1 旁注锚定工具前**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定 id `turn-commentary-{tool_call_id}`，位于对应工具之前；晚到流式可 upsert 正文，错序须搬回工具前（§13）。
+1. **I1 旁注锚定工具前**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定 id `turn-commentary-{tool_call_id}`，位于对应工具之前；同 key **允许 upsert 正文与纠错序搬回工具前**；**禁止**第二行与跨 key 合并（§13、Phase D `TurnProjection`）。
 2. **I2 尾泡职责单一**：post-tool loading 尾泡 **仅**承接 `tool_phase` 结束后的终答增量；工具相旁注 **不得**在 `try_apply` 失败时静默 `append` 到尾泡（见 §12.4 P1）。
 3. **I3 首次工具边界**：第一次 `tool_call` 与后续工具 **同一套** peel/切段规则（不得因 `post_tool_stream_tail_active == false` 跳过 peel，导致 demote 整泡留在工具区之前）。
 4. **I4 终答唯一**：finalize 时若尾泡正文与已存在的终局 assistant **前缀/哈希**重复，去重或删空尾泡（形态 C）。
@@ -496,15 +496,15 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 ## 15. 已知过渡债（收敛中）
 
-v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–C** 已收窄双写窗口（观测基线、锚定旁白直写、Loading 纯句柄收口）。热路径仍可短暂持有 overlay 预览；完整 `TurnProjection` 显式化见 Phase D。
+v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 已收窄双写并显式化投影：观测基线、锚定旁白直写、Loading 纯句柄、`TurnProjection { finalized_rows, active_row }` + Web `projection_reconciler`。热路径仍可短暂持有 overlay 预览；完整 reconciler 收窄 `TurnLayout` 表面积见后续迭代。
 
 | 债 | 表现 | 收敛方向 |
 |----|------|----------|
-| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B** 已：锚定旁白直写；**Phase C** 已：`on_done`/`drain` 不再 take 进壳升格；handoff 仍为兜底 |
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B/C** 已收窄；handoff 仍为兜底 |
 | 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler（Phase B） |
 | 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
-| I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | 正式不变量以「稳定 key + 工具前 + 禁止第二行」为准 |
-| 投影类型未显式 | reconciler 仍散落在 `TurnLayout` | **Phase D**：`TurnProjection { finalized_rows, active_row }` |
+| I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | **已定稿**：稳定 key + 工具前 + 禁止第二行（§12 I1 / Phase D） |
+| 投影类型曾隐式 | reconciler 散落在 `TurnLayout` / `BubbleOutputQueue` | **Phase D**：`project_turn_projection` + `projection_reconciler`；`TurnLayout` 仍管工具行插入与 loading 句柄 |
 
 **实施规划**（agent 工作区，不入仓）：`agent_space/streaming-layout-convergence-plan.md`（Phase A 观测 → B 旁白直写 → C Loading 句柄 → D 投影类型 → E 协议）。待评审后可抽 ADR 挂本仓库 `docs/`。
 
