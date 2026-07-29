@@ -1,6 +1,6 @@
 //! 流式布局过渡债观测计数（**仅 `debug_assertions`**；release 为空操作）。
 //!
-//! 对应 `agent_space/streaming-layout-convergence-plan.md` Phase A / 所有权收口：
+//! 对应 `docs/Turn布局设计.md` §15 过渡债观测 / 所有权收口：
 //! - `empty_shell_skip`：本应挂载但因空助手壳被跳过的次数（读路径过滤生效）
 //! - `commentary_handoff`：**兼容路径**清空非空 `loading.text`（与定稿同文）的次数；
 //!   主路径旁白不写 loading，overlay 收口**不**计入此项。
