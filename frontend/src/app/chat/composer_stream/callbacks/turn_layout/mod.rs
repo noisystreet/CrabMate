@@ -18,6 +18,7 @@
 
 mod bubble_queue;
 mod loading_handoff;
+mod stream_done;
 #[cfg(test)]
 mod turn_web_contract;
 
@@ -40,7 +41,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
-pub(crate) use bubble_queue::{BubbleOutputQueue, FINAL_ANSWER_ROW_ID, is_commentary_row_id};
+pub(crate) use bubble_queue::BubbleOutputQueue;
 
 /// post-tool 尾泡被提前 finalize 时暂存的总结正文。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -158,69 +159,6 @@ fn drain_loading_commentary_to_canonical_ex(
             Some(stream_ctx.chat.stream_overlay_revision),
         );
     }
-}
-
-/// `on_done` 前：将 loading 尾泡 overlay 正文迁入 stored message。
-///
-/// 流式期间终答正文由 overlay 承载，此处将 overlay 正文合并到 stored
-/// （供后续 dedupe/展示）。
-///
-/// **不变量**：本函数会 [`stream_overlay_take_into_stored_message`] 消费 overlay
-/// answer（`take` 后清空）。调用者必须在本函数**之后**不再通过 `overlay_answer_for_loading_tail`
-/// 或等价的 overlay 读路径读取终答正文——例如 [`sync_turn_projection`] 必须在
-/// [`drain_stream_tail_into_canonical_for_done`] **之前**调用，否则
-/// `flush_final_answer_row` 将读到空 overlay 而落盘不全。
-fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamCallbackCtx) {
-    let mid = stream_ctx.scratch.clone_assistant_id();
-    let sid = stream_ctx.bound_stream_session_id.clone();
-    let drained = RefCell::new(None::<String>);
-    stream_ctx.update_bound_session(|s| {
-        let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) else {
-            return;
-        };
-        stream_overlay_take_into_stored_message(
-            stream_ctx.chat.stream_text_overlay,
-            sid.as_str(),
-            mid.as_str(),
-            &mut s.messages[idx],
-        );
-        let merged_text = s.messages[idx].text.clone();
-        if !merged_text.trim().is_empty() {
-            *drained.borrow_mut() = Some(merged_text.clone());
-            // 零工具补偿：overlay 可能在 sync_turn_projection 前已被清空，
-            // 导致 FINAL_ANSWER_ROW 缺失。此时 loading 尾泡仍携有正文，从 stored 补建。
-            BubbleOutputQueue::ensure_final_answer_row_from_text(
-                &mut s.messages,
-                &merged_text,
-                Some(mid.as_str()),
-            );
-        }
-        s.messages[idx].text.clear();
-    });
-    let _ = drained.into_inner();
-}
-
-/// 流结束：先关 open 段 → `sync_turn_projection`（投影 FINAL_ANSWER_ROW）→ `drain` 尾泡到 stored。
-///
-/// **顺序不变量**：`sync_turn_projection` 必须在前，`drain` 在后。
-/// `flush_final_answer_row` 从 overlay 读取终答正文；`drain` 会 `take` 消费 overlay。
-/// 若先 drain 再 sync，则 FINAL_ANSWER_ROW 读到空 overlay 而只保留流式期间的
-/// 最后增量片段，导致重启后回退完整内容。
-fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCallbackCtx) {
-    if stream_ctx.scratch.tool_phase_open() {
-        stream_ctx.scratch.on_turn_tool_phase_end();
-    } else {
-        stream_ctx.scratch.close_open_commentary_for_projection();
-        stream_ctx.scratch.close_post_tool_final_answer_gate();
-    }
-    // sync_turn_projection 在前：flush_final_answer_row 需读 overlay 创建 FINAL_ANSWER_ROW。
-    // drain 在后：take overlay → stored；顺序不可交换，否则 FINAL_ANSWER_ROW 落盘不全。
-    // projecting_stream_end：与形态 B 终答门解耦，仅在此窗口允许刷终答（避免中间过程
-    // 因「已有工具行」误写 turn-final-answer 与 commentary/loading 双写）。
-    stream_ctx.scratch.set_projecting_stream_end(true);
-    stream_ctx.scratch.sync_turn_projection(stream_ctx);
-    stream_ctx.scratch.set_projecting_stream_end(false);
-    drain_stream_tail_into_canonical_for_done(stream_ctx);
 }
 
 fn discard_premature_assistant_tail(
@@ -412,7 +350,7 @@ pub(crate) struct TurnLayout;
 impl TurnLayout {
     /// 流结束：`on_done` 前关 open 段、尾泡正文入 canonical 并投影落盘。
     pub(crate) fn finalize_turn_projection_before_stream_done(stream_ctx: &ChatStreamCallbackCtx) {
-        finalize_turn_projection_before_stream_done_inner(stream_ctx);
+        stream_done::finalize_turn_projection_before_stream_done_inner(stream_ctx);
     }
 
     /// 将 `turn-final-answer` 投影行脱钩为普通 assistant 行，

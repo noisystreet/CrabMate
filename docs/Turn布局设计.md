@@ -348,7 +348,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 |------|------|------|
 | open 段 / 流式终答 delta | `sync_stream_preview` → **`stream_overlay_replace_answer_for_message`**（**不** `sessions.update`） | `loading` 且 `stored.text` 空 → 读 overlay |
 | 段/工具边界 | `sync_turn_projection` → flush 旁注 **完整行**到 stored；`pin`；清 overlay answer | stored 行 + 空 loading 壳 |
-| 流结束 / finalize | `stream_overlay_take_into_stored_message` → stored；去 `loading` | stored |
+| 流结束 / finalize | sync 刷终答行 → `drain` 从 overlay（或残留 loading）补 `turn-final-answer` → **清** overlay 与 loading 正文（**不** take 进壳升格） | stored 终答行 + 空 loading 句柄 |
 
 | 机制 | 说明 |
 |------|------|
@@ -482,13 +482,13 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 | **I9 唯一落盘** | `sync_web_projection` = commentary upsert-before-tool + final upsert |
 | **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
-| **I12 on_done** | 若终答或任一 `turn-commentary-*` 已落盘 → **不** merge overlay 进 loading 尾泡 |
+| **I12 on_done** | 投影优先：`sync` 后 `drain` 仅补 `turn-final-answer` 并清空 overlay / loading 正文；**禁止** merge overlay 进 loading 再升格 |
 | **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前关闭 open 旁注，并按工具键发布 |
 | **I14 旁注所有权单写** | `sync_turn_projection` 同一次 `update_bound_session` 内：flush `turn-commentary-*` 后按同文清空 loading `text`，并清 overlay。见 **§12.10.1**、`loading_handoff.rs` |
 
 **顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
 
-**`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
+**`on_done`**：关 open 段 → `sync_turn_projection` → `drain_stream_tail_into_canonical_for_done`（补终答 + 清 loading 句柄）→ tail 决策。
 
 **测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts` · `mock-commentary-no-duplicate.spec.ts` · `finalize_loading_drops_text_already_on_commentary_row`。
 
@@ -496,14 +496,15 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 ## 15. 已知过渡债（收敛中）
 
-v2 逐旁注与 `layout_schema_version=2` 已落地，但热路径仍存在 **「尾泡 + overlay + 事后投影」** 并行持有正文的过渡形态。近期止血（旁白双写门控、晚到 upsert 到工具前、TUI 跳过空 Loading 壳）不改变该结构债。
+v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–C** 已收窄双写窗口（观测基线、锚定旁白直写、Loading 纯句柄收口）。热路径仍可短暂持有 overlay 预览；完整 `TurnProjection` 显式化见 Phase D。
 
 | 债 | 表现 | 收敛方向 |
 |----|------|----------|
-| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B**：锚定旁白直写 `turn-commentary-*`；Loading **纯句柄**（Phase C）；handoff 降为兜底 |
-| 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler |
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B** 已：锚定旁白直写；**Phase C** 已：`on_done`/`drain` 不再 take 进壳升格；handoff 仍为兜底 |
+| 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler（Phase B） |
 | 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
 | I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | 正式不变量以「稳定 key + 工具前 + 禁止第二行」为准 |
+| 投影类型未显式 | reconciler 仍散落在 `TurnLayout` | **Phase D**：`TurnProjection { finalized_rows, active_row }` |
 
 **实施规划**（agent 工作区，不入仓）：`agent_space/streaming-layout-convergence-plan.md`（Phase A 观测 → B 旁白直写 → C Loading 句柄 → D 投影类型 → E 协议）。待评审后可抽 ADR 挂本仓库 `docs/`。
 

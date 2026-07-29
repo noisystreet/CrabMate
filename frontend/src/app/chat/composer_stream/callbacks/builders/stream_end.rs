@@ -18,7 +18,7 @@ use super::super::super::stream_control_reducer::StreamControlEvent;
 use super::super::done_session::apply_stream_done_to_loading_assistant;
 use super::super::error_session::apply_stream_error_on_messages;
 use super::super::helpers::build_stream_error_with_suggestion;
-use super::super::turn_layout::{FINAL_ANSWER_ROW_ID, TurnLayout, is_commentary_row_id};
+use super::super::turn_layout::TurnLayout;
 
 pub(in super::super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -49,27 +49,15 @@ pub(in super::super) fn chat_stream_on_done_builder(
             .finalize_turn_projection_before_stream_done(stream_ctx.as_ref());
         stream_ctx.update_bound_session(|s| {
             let sid = stream_ctx.bound_stream_session_id.as_str();
-            let projection_flushed = s.messages.iter().any(|m| {
-                (m.id == FINAL_ANSWER_ROW_ID || is_commentary_row_id(m.id.as_str()))
-                    && !m.text.trim().is_empty()
-            });
-            if projection_flushed {
-                stream_overlay_clear_answer_for_message(
-                    stream_ctx.chat.stream_text_overlay,
-                    sid,
-                    mid.as_str(),
-                    Some(stream_ctx.chat.stream_overlay_revision),
-                );
-                if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-                    s.messages[idx].text.clear();
-                }
-            } else if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-                stream_overlay_take_into_stored_message(
-                    stream_ctx.chat.stream_text_overlay,
-                    sid,
-                    mid.as_str(),
-                    &mut s.messages[idx],
-                );
+            // Phase C：`finalize`/`drain` 已投影终答并清 overlay；此处只清 loading 句柄，禁止 take 进壳升格。
+            stream_overlay_clear_answer_for_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid,
+                mid.as_str(),
+                Some(stream_ctx.chat.stream_overlay_revision),
+            );
+            if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
+                s.messages[idx].text.clear();
             }
             TurnLayout::dedupe_loading_tail_against_final_answer_row(&mut s.messages, mid.as_str());
             TurnLayout::dedupe_loading_tail_against_commentary_rows(&mut s.messages, mid.as_str());
