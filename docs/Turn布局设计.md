@@ -500,7 +500,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 已收窄�
 
 | 债 | 表现 | 收敛方向 |
 |----|------|----------|
-| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B/C** 已收窄；handoff 仍为兜底 |
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B/C** 已收窄；**2026-07-30**：`text_ownership` + handoff 仅兼容非空 `loading.text`；overlay ≡ active 收口不计 handoff |
 | 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler（Phase B） |
 | 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
 | I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | **已定稿**：稳定 key + 工具前 + 禁止第二行（§12 I1 / Phase D） |

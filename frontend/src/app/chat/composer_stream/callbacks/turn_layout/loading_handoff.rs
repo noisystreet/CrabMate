@@ -1,8 +1,8 @@
-//! 工具前旁注 / 终答投影后的 loading 所有权移交（I14）。
+//! 工具前旁注 / 终答投影后的 loading 所有权移交（I14，**兼容路径**）。
 //!
-//! 在 `sync_turn_projection` 的 **同一次** `update_bound_session` 内：flush
-//! `turn-commentary-*` / `turn-final-answer` 之后，若 live 正文已由某条**已定稿**
-//! 助手行持有，立刻清空 loading `stored.text`；随后清空 overlay。禁止双持有同段持久化正文。
+//! Phase B+ 主路径旁白直写 `turn-commentary-*`，不经 `loading.text`。本模块仅处理：
+//! 残留非空 `loading.text` 与定稿行同文时的清空，以及定稿后清 overlay。
+//! 见 [`super::text_ownership`]。
 
 use leptos::prelude::GetUntracked;
 
@@ -49,10 +49,13 @@ pub(super) fn persisted_assistant_owns_live_text_any(
     })
 }
 
-/// 若 loading 尾泡 live 正文（stored 优先，否则 `overlay_answer`）已与某条定稿助手行
-/// **同文**，清空该尾泡 `text` 并返回 `true`（调用方须清 overlay）。
+/// 若 loading 尾泡 **stored** 正文已与某条定稿助手行同文，清空该尾泡 `text` 并返回 `true`。
 ///
-/// 必须在 `flush_commentary_rows` / `flush_final_answer_row` **之后**、同一 `messages` 更新内调用。
+/// - **兼容路径**：仅当 `loading.text` 非空且与定稿同文时清空，并计入 `commentary_handoff`。
+/// - **主路径**（Phase B+）：旁白不写 `loading.text`；若 stored 已空但 overlay 与定稿同文，
+///   仍返回 `true` 供调用方清 overlay，**不**计入 handoff（overlay ≡ active 缓存收口）。
+///
+/// 必须在 reconciler flush **之后**、同一 `messages` 更新内调用。
 pub(super) fn clear_loading_tail_text_if_persisted_owns(
     messages: &mut [StoredMessage],
     loading_tail_id: Option<&str>,
@@ -65,7 +68,8 @@ pub(super) fn clear_loading_tail_text_if_persisted_owns(
         return false;
     };
     let stored = messages[idx].text.as_str();
-    let live = if !stored.trim().is_empty() {
+    let stored_nonempty = !stored.trim().is_empty();
+    let live = if stored_nonempty {
         stored
     } else {
         overlay_answer.unwrap_or("")
@@ -77,8 +81,10 @@ pub(super) fn clear_loading_tail_text_if_persisted_owns(
     if !persisted_assistant_owns_live_text(messages, idx, live_trim) {
         return false;
     }
-    messages[idx].text.clear();
-    crate::layout_debug_counters::note_commentary_handoff();
+    if stored_nonempty {
+        messages[idx].text.clear();
+        crate::layout_debug_counters::note_commentary_handoff();
+    }
     true
 }
 
@@ -211,10 +217,25 @@ mod tests {
             msg("turn-commentary-tc1", "仅 overlay。", false),
             msg("load", "", true),
         ];
+        // stored 已空：仍信号清 overlay，但不写入/计数 loading.text handoff。
         assert!(clear_loading_tail_text_if_persisted_owns(
             &mut messages,
             Some("load"),
             Some("仅 overlay。")
+        ));
+        assert!(messages[1].text.is_empty());
+    }
+
+    #[test]
+    fn overlay_only_match_does_not_require_nonempty_loading() {
+        let mut messages = vec![
+            msg("turn-final-answer", "终答。", false),
+            msg("load", "", true),
+        ];
+        assert!(clear_loading_tail_text_if_persisted_owns(
+            &mut messages,
+            Some("load"),
+            Some("终答。")
         ));
         assert!(messages[1].text.is_empty());
     }
