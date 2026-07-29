@@ -167,7 +167,7 @@ cd e2e && npx playwright test specs/real-llm-*.spec.ts
 - **选择器偏好**：优先使用 `data-testid` 属性选择器，避免依赖文本或 CSS 类名。
 - **TUI 流式闪烁**：`specs/mock-tui-stream-flicker.spec.ts` 用 8ms 采样 + `innerHTML` 钩子检测「正文首次出现后短暂消失」；含 delayed `conversation_saved` → `GET /conversation/messages`（revision+1）竞态。`specs/mock-ready-bubble-stability.spec.ts` 冻结已定稿 `section.chat-tui-turn` 的 `data-tui-msg-id`，断言流式中不消失。
 - **助手正文清空再出现**：`specs/mock-assistant-content-blank.spec.ts` 冻结首次出现旁白的 `data-tui-msg-id`；旧 mid 移交后变空可接受，但旁白标记不得整段消失再出现。
-- **工具前旁白不双写**：`specs/mock-commentary-no-duplicate.spec.ts` 复现 demote keep-ui → 投影 → finalize 升格路径，断言 DOM/持久化中同文旁白仅一条 `turn-commentary-*`。
+- **工具前旁白恰好一条**：`specs/mock-commentary-no-duplicate.spec.ts` 断言流结束后旁白仍可见且 DOM/持久化恰好一条；并覆盖「上轮已有 commentary」时本轮不得被掏空。
 - **导出会话「分析当前项目」**：`specs/mock-export-analyze-project-flicker.spec.ts` 按 `chat_export_*.md` 时序重放意图分析 + 开场白 + `parsing_tool_calls` + 6× `read_file` + 分块长终答，断言助手正文气泡不归零。
 
 ## CI 集成
