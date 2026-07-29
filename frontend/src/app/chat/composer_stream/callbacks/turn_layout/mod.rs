@@ -670,7 +670,7 @@ impl TurnLayout {
         }
     }
 
-    /// 热路径：open 段 preview → overlay。晚到锚点旁注：工具行已在时 upsert 到工具前并清 overlay。
+    /// 热路径：锚定 open 旁白直写 `turn-commentary-*`；否则终答等走 loading overlay。
     pub(crate) fn sync_stream_preview(
         stream_ctx: &ChatStreamCallbackCtx,
         turn: &TurnCanonicalState,
@@ -679,11 +679,11 @@ impl TurnLayout {
         let sid = stream_ctx.bound_stream_session_id.as_str();
         let placed = RefCell::new(false);
         stream_ctx.update_bound_session(|s| {
-            *placed.borrow_mut() =
-                BubbleOutputQueue::try_upsert_open_commentary_before_existing_tool(
-                    &mut s.messages,
-                    turn,
-                );
+            *placed.borrow_mut() = BubbleOutputQueue::try_upsert_open_anchored_commentary(
+                &mut s.messages,
+                turn,
+                Some(mid.as_str()),
+            );
         });
         if placed.into_inner() {
             stream_overlay_clear_answer_for_message(

@@ -160,11 +160,28 @@ mod tests {
 
             if let Some(ref preview) = case.expect_open_preview {
                 assert_eq!(
-                    BubbleOutputQueue::loading_preview_text(&turn, None, None),
+                    crabmate_turn_layout::streaming_commentary_block_text(turn.turn_ref())
+                        .unwrap_or_default(),
                     preview.as_str(),
-                    "case {} open preview",
+                    "case {} canonical open segment text",
                     case.id
                 );
+                // Phase B：带 before_tool_call_id 的 open 旁白不进 loading overlay。
+                if crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref()).is_some()
+                {
+                    assert!(
+                        BubbleOutputQueue::loading_preview_text(&turn, None, None).is_empty(),
+                        "case {}: anchored open preview must not use loading overlay",
+                        case.id
+                    );
+                } else {
+                    assert_eq!(
+                        BubbleOutputQueue::loading_preview_text(&turn, None, None),
+                        preview.as_str(),
+                        "case {} open preview",
+                        case.id
+                    );
+                }
             }
         }
     }
