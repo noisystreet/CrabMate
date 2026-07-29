@@ -31,6 +31,8 @@ struct StreamTurnScratchInner {
     post_tool_stream_tail: bool,
     /// 工具批结束后：false 时 plain delta 进 commentary；`final_response` / 分隔符 / `on_done` 拆分为 true。
     post_tool_final_answer_open: bool,
+    /// `on_done` 投影窗口：允许把 overlay 刷进 `turn-final-answer`（与形态 B 终答门独立）。
+    projecting_stream_end: bool,
     pending_tool_message_ids: VecDeque<String>,
 }
 
@@ -41,6 +43,7 @@ impl StreamTurnScratchInner {
             assistant_message_id: initial_asst_id,
             post_tool_stream_tail: false,
             post_tool_final_answer_open: false,
+            projecting_stream_end: false,
             pending_tool_message_ids: VecDeque::new(),
         }
     }
@@ -84,6 +87,16 @@ impl StreamTurnScratchState {
     #[inline]
     pub(super) fn post_tool_final_answer_open(&self) -> bool {
         self.inner.borrow().post_tool_final_answer_open
+    }
+
+    #[inline]
+    pub(super) fn set_projecting_stream_end(&self, active: bool) {
+        self.inner.borrow_mut().projecting_stream_end = active;
+    }
+
+    #[inline]
+    pub(super) fn projecting_stream_end(&self) -> bool {
+        self.inner.borrow().projecting_stream_end
     }
 
     #[inline]

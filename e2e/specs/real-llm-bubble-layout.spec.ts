@@ -17,6 +17,10 @@
 import { test, expect } from "@playwright/test";
 import * as fs from "fs";
 import * as path from "path";
+import {
+  consecutiveDuplicateAssistantTexts,
+  fetchPersistedSession,
+} from "../fixtures/session_assertions";
 import { setupRealLLMSession, sendMessage } from "../fixtures/helpers";
 
 function readApiKeyFromToml(filePath: string): string {
@@ -258,6 +262,17 @@ test.describe("真实 LLM：流式后消息结构", () => {
     await sendMessage(page, "编写一个简单c++程序，使用cmake编译执行");
 
     await waitForReadyWhileApproving(page, 180_000);
+
+    // ── 就绪瞬间（导出窗）：禁止相邻助手正文成对双写 ──
+    // 勿先等 hydration 稳定；否则会跳过 chat_export_210001 类本地双写窗口。
+    const earlySession = await fetchPersistedSession(page, SID);
+    const earlyMessages = earlySession?.messages ?? [];
+    expect(earlyMessages.length).toBeGreaterThanOrEqual(3);
+    const earlyDupes = consecutiveDuplicateAssistantTexts(earlyMessages);
+    expect(
+      earlyDupes,
+      `ready-immediate consecutive duplicate assistants (export-shaped): ${JSON.stringify(earlyDupes)}`,
+    ).toEqual([]);
 
     // 等待防抖持久化和异步 hydration 均稳定，避免比较中间快照。
     let messages = await waitForStableSessionMessages(page, SID, 3);

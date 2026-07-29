@@ -354,14 +354,15 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `stream_text_overlay` 展示 | `loading` 且 `stored.text` **非空** → 只读 stored（边界已落盘）；**空** → 读 overlay preview |
 | `sync_turn_projection` | **仅** flush 旁注行 + relocate；**不**把 open 段 preview 写入 loading `stored.text` |
 | `demote_answer_before_tools` | peel + canonical ingest；**暂不清** overlay（旁注未 flush） |
-| `sync_turn_projection`（I14） | flush commentary 后 **同帧** `clear_loading_tail_text_if_commentary_owns`；已移交则清 overlay |
-| `release_loading_after_tool_projection` | 幂等补清 overlay（`clear_overlay_if_commentary_owns_live`） |
-| `finalize_loading_row_at` | 若正文与已有 `turn-commentary-*` 完全相同 → 删空壳，禁止升格双写 |
+| `sync_turn_projection`（I14） | flush 旁注/终答后 **同帧** `clear_loading_tail_text_if_persisted_owns`（同文定稿行）；已移交则清 overlay |
+| `release_loading_after_tool_projection` | 幂等补清 overlay（定稿行已持有同文时） |
+| `finalize_loading_row_at` | 若正文与已有定稿助手行（旁注 / 终答 / 普通）完全相同 → 删空壳，禁止升格双写 |
+| `should_allow_final_answer_flush` | **仅** 形态 B 终答门 **或** `on_done` 的 `projecting_stream_end`；**禁止**因「已有工具行」放行 |
 | post-tool 工具边界 | 新 loading **空壳**；preview 仅 overlay |
 
 ### 12.10.1 旁注所有权：设计张力与 I14 原子移交
 
-**问题本质**不是「缺一次 fuzzy dedupe」，而是 **展示所有者**（loading / overlay）与 **持久化所有者**（`turn-commentary-*`）若分帧双持有，会落入双写或零写。
+**问题本质**不是「缺一次 fuzzy dedupe」，而是 **展示所有者**（loading / overlay）与 **持久化所有者**（`turn-commentary-*` / `turn-final-answer`）若分帧双持有，会落入双写或零写。
 
 | 约束 | 来源 | 要求 |
 |------|------|------|
@@ -370,20 +371,23 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | 失败模式 | 典型路径 |
 |----------|----------|
-| **双写** | demote keep-ui → flush commentary → loading 仍握同文 → `finalize` 升格第二条助手行 |
+| **双写（首工具前）** | demote keep-ui → flush commentary → loading 仍握同文 → `finalize` 升格第二条 |
+| **双写（中间过程）** | 首工具后 `allow_final_answer` 因「已有工具」过宽 → `segment_end` 把旁白写入 `turn-final-answer` → 随后 demote 再 flush `turn-commentary-*` → 导出成对（`chat_export_20260729_210001.md`）；重载后服务端快照无双写（`210740.md`） |
 | **零写** | 见「任意 commentary 已存在」就清 loading → 多轮时误清本轮尚未 flush 的旁白 |
 
-**落地（I14，同帧原子移交）**：
+**落地（I14 + 终答门收紧）**：
 
 1. `demote_answer_before_tools`：`drain(..., clear_loading_ui=false)`，**仅**在工具行尚未插入、commentary 尚未 flush 的窗口内 keep-ui。
-2. `sync_turn_projection` 的 **同一次** `update_bound_session` 内：`sync_web_projection`（flush commentary）→ `loading_handoff::clear_loading_tail_text_if_commentary_owns`（仅 **同文** 匹配时清 loading `text`）→ 若已移交则立刻 `stream_overlay_clear_answer_for_message`。
-3. `release_loading_after_tool_projection`：幂等补清 overlay（`clear_overlay_if_commentary_owns_live`）。
-4. `finalize_loading_row_at`：同文已在 commentary 行则删空壳，禁止升格。
-5. `should_clear_preview_overlay_answer` / `sync_stream_preview`：工具相仅当 commentary **拥有** 当前 overlay 正文时才允许清空。
+2. `sync_turn_projection` 的 **同一次** `update_bound_session` 内：`sync_web_projection` → `loading_handoff::clear_loading_tail_text_if_persisted_owns`（同文定稿行）→ 若已移交则清 overlay。
+3. `should_allow_final_answer_flush`：仅 `post_tool_final_answer_open` 或 `projecting_stream_end`（`on_done` 窗口）；中间多步旁白不得进 `turn-final-answer`。
+4. `release_loading_after_tool_projection`：幂等补清 overlay。
+5. `finalize_loading_row_at`：同文已在定稿助手行则删空壳，禁止升格。
 
-不变量：`LiveOwnsPreview` →（同帧 flush 成功且同文）→ `CommentaryOwnsText`（loading 不得再持有该段持久化正文）。**勿**恢复读侧 assistant fuzzy dedupe（Phase 7 P1）。
+不变量：`LiveOwnsPreview` →（同帧 flush 成功且同文）→ `PersistedOwnsText`（loading 不得再持有该段持久化正文）。**勿**恢复读侧 assistant fuzzy dedupe（Phase 7 P1）。
 
-**回归**：`e2e/specs/mock-commentary-no-duplicate.spec.ts`；`loading_handoff` 单测；`finalize_loading_drops_text_already_on_commentary_row`；`should_clear_overlay_during_tool_phase_when_commentary_owns_text`。
+**复现**：真实 LLM 多工具回合（如 C++/CMake）；流式结束后、重载前导出 Markdown，中间旁白成对。重载后再导出应变正常（服务端无双写）。e2e：`mock-mid-process-commentary-duplicate.spec.ts`（防回归）；单测：`allow_final_answer_flush_requires_gate_or_stream_end`、`finalize_loading_drops_text_already_on_final_answer_row`。
+
+**回归**：`e2e/specs/mock-commentary-no-duplicate.spec.ts`；`mock-mid-process-commentary-duplicate.spec.ts`；`loading_handoff` 单测；`finalize_loading_drops_text_already_on_commentary_row`。
 
 ### 12.11 补丁层退役（Phase 7 P1）
 
@@ -425,7 +429,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 |------|------|
 | C++/CMake（read → create ×2 → cmake ×2 → run） | 每条已关闭旁注稳定显示在对应工具前；无空「工具：create_file」占位 |
 | 目录分析 → 用户追问「编译 hpcg」 | 第二轮旁注不聚合回旧气泡；终答保持独立 |
-| 晚到 delta（金样 `late_commentary_delta_after_tool_call`） | reducer 仍挂到正确锚点；v2 投影按工具键发布 |
+| 晚到 delta（金样 `late_commentary_delta_after_tool_call`） | reducer 仍挂到正确锚点；v2 投影按工具键发布；e2e：`mock-late-commentary.spec.ts` |
 
 ---
 

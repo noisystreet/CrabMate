@@ -196,6 +196,16 @@ impl StreamSseScratch {
         self.state.open_post_tool_final_answer_gate();
     }
 
+    #[inline]
+    pub(super) fn set_projecting_stream_end(&self, active: bool) {
+        self.state.set_projecting_stream_end(active);
+    }
+
+    #[inline]
+    pub(super) fn projecting_stream_end(&self) -> bool {
+        self.state.projecting_stream_end()
+    }
+
     /// 流结束：关 open 段、尾泡正文入 canonical 并投影落盘。
     pub(super) fn finalize_turn_projection_before_stream_done(
         &self,
