@@ -162,7 +162,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 return;
             }
             TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
-            // demote keep-ui；投影后由 release_loading_after_tool_projection 移交所有权。
+            // demote keep-ui；sync_turn_projection 同帧原子移交（I14），release 幂等补清 overlay。
             stream_ctx.scratch.apply_stream_control_event(
                 &stream_ctx.shell.stream,
                 StreamControlEvent::ToolCallDeclared,

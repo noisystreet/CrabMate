@@ -337,7 +337,7 @@ fn late_tool_order_tool_then_empty_loading_tail() {
 }
 
 #[test]
-fn should_not_clear_overlay_during_tool_phase_when_preview_empty() {
+fn should_clear_overlay_during_tool_phase_when_commentary_owns_text() {
     use crate::app::chat::composer_stream::turn_canonical::TurnCanonicalState;
     use crate::sse_dispatch::TurnSegmentStartInfo;
 
@@ -364,7 +364,11 @@ fn should_not_clear_overlay_during_tool_phase_when_preview_empty() {
         created_at: 0,
     }];
     assert!(
-        !should_clear_preview_overlay_answer(&turn, &msgs, Some("旁白正文。")),
-        "tool phase must keep live overlay even when loading_preview is empty"
+        should_clear_preview_overlay_answer(&turn, &msgs, Some("旁白正文。")),
+        "I14: tool phase clears overlay once commentary owns the same text"
+    );
+    assert!(
+        !should_clear_preview_overlay_answer(&turn, &msgs, Some("尚未投影的旁白。")),
+        "must keep overlay when commentary does not own this live text"
     );
 }

@@ -1,7 +1,12 @@
-//! 工具前旁白投影后的 loading 所有权移交。
+//! 工具前旁注投影后的 loading 所有权移交（I14）。
+//!
+//! 在 `sync_turn_projection` 的 **同一次** `update_bound_session` 内：flush
+//! `turn-commentary-*` 之后，若 live 正文已由某条 commentary 行持有，立刻清空
+//! loading `stored.text`；随后清空 overlay。禁止双持有同段持久化正文。
 
 use leptos::prelude::GetUntracked;
 
+use crate::storage::StoredMessage;
 use crate::stream_text_overlay::{
     stream_overlay_answer_for_message, stream_overlay_clear_answer_for_message,
 };
@@ -9,14 +14,54 @@ use crate::stream_text_overlay::{
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::bubble_queue::is_commentary_row_id;
 
-/// 旁注行已投影后：将 live loading 的所有权移交给 commentary 行。
+/// 若 loading 尾泡 live 正文（stored 优先，否则 `overlay_answer`）已与某条
+/// `turn-commentary-*` **同文**，清空该尾泡 `text` 并返回 `true`（调用方须清 overlay）。
 ///
-/// 须在 `sync_turn_projection` 已 flush 出与 **当前 live 正文同文** 的
-/// `turn-commentary-*` 之后调用。不得仅因会话里「任意」旁注行存在就清空——
-/// 多轮时旧轮 commentary 仍在，会把本轮尚未落盘的旁白掏空。
-pub(super) fn release_loading_preview_after_commentary_projected(
-    stream_ctx: &ChatStreamCallbackCtx,
-) {
+/// 必须在 `flush_commentary_rows` **之后**、同一 `messages` 更新内调用。
+pub(super) fn clear_loading_tail_text_if_commentary_owns(
+    messages: &mut [StoredMessage],
+    loading_tail_id: Option<&str>,
+    overlay_answer: Option<&str>,
+) -> bool {
+    let Some(mid) = loading_tail_id.map(str::trim).filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    let Some(idx) = messages.iter().position(|m| m.id == mid) else {
+        return false;
+    };
+    let stored = messages[idx].text.as_str();
+    let live = if !stored.trim().is_empty() {
+        stored
+    } else {
+        overlay_answer.unwrap_or("")
+    };
+    let live_trim = live.trim();
+    if live_trim.is_empty() {
+        return false;
+    }
+    let owned = messages.iter().enumerate().any(|(i, m)| {
+        i != idx && is_commentary_row_id(m.id.as_str()) && m.text.trim() == live_trim
+    });
+    if !owned {
+        return false;
+    }
+    messages[idx].text.clear();
+    true
+}
+
+/// live 正文是否已由 commentary 行持有（只读判定，供 overlay / preview 决策）。
+pub(super) fn commentary_owns_live_text(messages: &[StoredMessage], live_text: &str) -> bool {
+    let live_trim = live_text.trim();
+    if live_trim.is_empty() {
+        return false;
+    }
+    messages
+        .iter()
+        .any(|m| is_commentary_row_id(m.id.as_str()) && m.text.trim() == live_trim)
+}
+
+/// 会话更新外：若 commentary 已拥有当前 overlay/stored 正文，清空 overlay（幂等）。
+pub(super) fn clear_overlay_if_commentary_owns_live(stream_ctx: &ChatStreamCallbackCtx) {
     let mid = stream_ctx.scratch.clone_assistant_id();
     let sid = stream_ctx.bound_stream_session_id.clone();
     let overlay = stream_overlay_answer_for_message(
@@ -38,29 +83,101 @@ pub(super) fn release_loading_preview_after_commentary_projected(
     } else {
         overlay.unwrap_or_default()
     };
-    let live_trim = live.trim();
-    if live_trim.is_empty() {
-        return;
-    }
-    let handed_off = stream_ctx
-        .read_bound_session(|s| {
-            s.messages
-                .iter()
-                .any(|m| is_commentary_row_id(m.id.as_str()) && m.text.trim() == live_trim)
-        })
-        .unwrap_or(false);
-    if !handed_off {
-        return;
-    }
-    stream_ctx.update_bound_session(|s| {
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-            s.messages[idx].text.clear();
+    if live.trim().is_empty() {
+        // stored 已空时仍可能残留 overlay（同文已在 commentary）。
+        let Some(overlay_text) = stream_overlay_answer_for_message(
+            stream_ctx.chat.stream_text_overlay.get_untracked().as_ref(),
+            sid.as_str(),
+            mid.as_str(),
+        ) else {
+            return;
+        };
+        let owns = stream_ctx
+            .read_bound_session(|s| commentary_owns_live_text(&s.messages, overlay_text.as_str()))
+            .unwrap_or(false);
+        if owns {
+            stream_overlay_clear_answer_for_message(
+                stream_ctx.chat.stream_text_overlay,
+                sid.as_str(),
+                mid.as_str(),
+                Some(stream_ctx.chat.stream_overlay_revision),
+            );
         }
-    });
+        return;
+    }
+    let owns = stream_ctx
+        .read_bound_session(|s| commentary_owns_live_text(&s.messages, live.as_str()))
+        .unwrap_or(false);
+    if !owns {
+        return;
+    }
     stream_overlay_clear_answer_for_message(
         stream_ctx.chat.stream_text_overlay,
         sid.as_str(),
         mid.as_str(),
         Some(stream_ctx.chat.stream_overlay_revision),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::StoredMessageState;
+
+    fn msg(id: &str, text: &str, loading: bool) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "assistant".into(),
+            text: text.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: loading.then_some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn clears_loading_when_same_text_on_commentary() {
+        let mut messages = vec![
+            msg("turn-commentary-tc1", "旁白。", false),
+            msg("load", "旁白。", true),
+        ];
+        assert!(clear_loading_tail_text_if_commentary_owns(
+            &mut messages,
+            Some("load"),
+            None
+        ));
+        assert!(messages[1].text.is_empty());
+    }
+
+    #[test]
+    fn keeps_loading_when_only_prior_turn_commentary_differs() {
+        let mut messages = vec![
+            msg("turn-commentary-old", "上轮旁白。", false),
+            msg("load", "本轮旁白。", true),
+        ];
+        assert!(!clear_loading_tail_text_if_commentary_owns(
+            &mut messages,
+            Some("load"),
+            None
+        ));
+        assert_eq!(messages[1].text, "本轮旁白。");
+    }
+
+    #[test]
+    fn clears_loading_using_overlay_when_stored_empty() {
+        let mut messages = vec![
+            msg("turn-commentary-tc1", "仅 overlay。", false),
+            msg("load", "", true),
+        ];
+        assert!(clear_loading_tail_text_if_commentary_owns(
+            &mut messages,
+            Some("load"),
+            Some("仅 overlay。")
+        ));
+        assert!(messages[1].text.is_empty());
+    }
 }

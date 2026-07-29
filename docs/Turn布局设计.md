@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -354,9 +354,36 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `stream_text_overlay` 展示 | `loading` 且 `stored.text` **非空** → 只读 stored（边界已落盘）；**空** → 读 overlay preview |
 | `sync_turn_projection` | **仅** flush 旁注行 + relocate；**不**把 open 段 preview 写入 loading `stored.text` |
 | `demote_answer_before_tools` | peel + canonical ingest；**暂不清** overlay（旁注未 flush） |
-| 投影后 `release_loading_after_tool_projection` | **仅当** live 正文与某条 `turn-commentary-*` **同文** 时清空 loading/`overlay`（勿仅因会话里已有旧旁注就清） |
+| `sync_turn_projection`（I14） | flush commentary 后 **同帧** `clear_loading_tail_text_if_commentary_owns`；已移交则清 overlay |
+| `release_loading_after_tool_projection` | 幂等补清 overlay（`clear_overlay_if_commentary_owns_live`） |
 | `finalize_loading_row_at` | 若正文与已有 `turn-commentary-*` 完全相同 → 删空壳，禁止升格双写 |
 | post-tool 工具边界 | 新 loading **空壳**；preview 仅 overlay |
+
+### 12.10.1 旁注所有权：设计张力与 I14 原子移交
+
+**问题本质**不是「缺一次 fuzzy dedupe」，而是 **展示所有者**（loading / overlay）与 **持久化所有者**（`turn-commentary-*`）若分帧双持有，会落入双写或零写。
+
+| 约束 | 来源 | 要求 |
+|------|------|------|
+| **I6 / I8 / I11** | Phase 4–9 写入收敛 | 旁注真源 = canonical → `turn-commentary-*`；overlay / loading **从属** |
+| **反闪空** | 工具相正文闪空回归 | `demote` 瞬间 **不得** 在 commentary 尚未落盘前掏空同 mid 的 live 正文 |
+
+| 失败模式 | 典型路径 |
+|----------|----------|
+| **双写** | demote keep-ui → flush commentary → loading 仍握同文 → `finalize` 升格第二条助手行 |
+| **零写** | 见「任意 commentary 已存在」就清 loading → 多轮时误清本轮尚未 flush 的旁白 |
+
+**落地（I14，同帧原子移交）**：
+
+1. `demote_answer_before_tools`：`drain(..., clear_loading_ui=false)`，**仅**在工具行尚未插入、commentary 尚未 flush 的窗口内 keep-ui。
+2. `sync_turn_projection` 的 **同一次** `update_bound_session` 内：`sync_web_projection`（flush commentary）→ `loading_handoff::clear_loading_tail_text_if_commentary_owns`（仅 **同文** 匹配时清 loading `text`）→ 若已移交则立刻 `stream_overlay_clear_answer_for_message`。
+3. `release_loading_after_tool_projection`：幂等补清 overlay（`clear_overlay_if_commentary_owns_live`）。
+4. `finalize_loading_row_at`：同文已在 commentary 行则删空壳，禁止升格。
+5. `should_clear_preview_overlay_answer` / `sync_stream_preview`：工具相仅当 commentary **拥有** 当前 overlay 正文时才允许清空。
+
+不变量：`LiveOwnsPreview` →（同帧 flush 成功且同文）→ `CommentaryOwnsText`（loading 不得再持有该段持久化正文）。**勿**恢复读侧 assistant fuzzy dedupe（Phase 7 P1）。
+
+**回归**：`e2e/specs/mock-commentary-no-duplicate.spec.ts`；`loading_handoff` 单测；`finalize_loading_drops_text_already_on_commentary_row`；`should_clear_overlay_during_tool_phase_when_commentary_owns_text`。
 
 ### 12.11 补丁层退役（Phase 7 P1）
 
@@ -451,9 +478,10 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
 | **I12 on_done** | 若终答或任一 `turn-commentary-*` 已落盘 → **不** merge overlay 进 loading 尾泡 |
 | **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前关闭 open 旁注，并按工具键发布 |
+| **I14 旁注所有权单写** | `sync_turn_projection` 同一次 `update_bound_session` 内：flush `turn-commentary-*` 后按同文清空 loading `text`，并清 overlay。见 **§12.10.1**、`loading_handoff.rs` |
 
-**顺序（`tool_call`）**：`demote` → `drain` → `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection`。
+**顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
 
 **`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
 
-**测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts`。
+**测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts` · `mock-commentary-no-duplicate.spec.ts` · `finalize_loading_drops_text_already_on_commentary_row`。
