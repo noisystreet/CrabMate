@@ -18,7 +18,7 @@ pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSeg
 pub use project::{
     ASSISTANT_ANSWER, ASSISTANT_BATCH_NARRATION, ASSISTANT_COMMENTARY, ProjectedRow,
     batch_narration_row, batch_narration_text, commentary_for_tool, project_turn, project_turn_web,
-    project_turn_web_v2, streaming_commentary_block_text,
+    project_turn_web_v2, streaming_commentary_before_tool, streaming_commentary_block_text,
 };
 pub use reduce::{
     TurnReducer, close_open_commentary_segments, reduce_event, try_split_combined_post_tool_answer,

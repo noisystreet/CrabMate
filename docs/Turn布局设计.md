@@ -269,7 +269,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 单轮含工具时，维护者验收应满足：
 
-1. **I1 finalized 旁注不可变**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定放在对应 `tool_call_id` 之前；发布后不得改文、删除或移动（§13）。
+1. **I1 旁注锚定工具前**：每个非空 `ToolStep.before_commentary` 投影为独立 assistant 行，稳定 id `turn-commentary-{tool_call_id}`，位于对应工具之前；晚到流式可 upsert 正文，错序须搬回工具前（§13）。
 2. **I2 尾泡职责单一**：post-tool loading 尾泡 **仅**承接 `tool_phase` 结束后的终答增量；工具相旁注 **不得**在 `try_apply` 失败时静默 `append` 到尾泡（见 §12.4 P1）。
 3. **I3 首次工具边界**：第一次 `tool_call` 与后续工具 **同一套** peel/切段规则（不得因 `post_tool_stream_tail_active == false` 跳过 peel，导致 demote 整泡留在工具区之前）。
 4. **I4 终答唯一**：finalize 时若尾泡正文与已存在的终局 assistant **前缀/哈希**重复，去重或删空尾泡（形态 C）。
@@ -435,22 +435,22 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ## 13. 不可变逐旁注布局（v2）
 
-**目标**：active/loading 行可流式增长；一旦旁注 ready，后续事件不得再改文、删除或移动该行。
+**目标**：active/loading 行可流式增长；旁注以稳定 `turn-commentary-{tool_call_id}` 落在锚定工具**之前**。晚到 open 旁注可 upsert 正文；若误落在工具后须搬回工具前（不得长期挂在 loading 尾泡）。
 
 | 机制 | 说明 |
 |------|------|
 | canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs) |
-| 落盘 | `BubbleOutputQueue::flush_commentary_rows` 按 `tool_call_id` 生成 `turn-commentary-*`，只执行 insert-if-absent |
-| 流式 | open 段只写 loading overlay；已关闭旁注在 segment/tool 边界发布为 finalized 行 |
+| 落盘 | `BubbleOutputQueue::upsert_commentary_before_tool`：按 `tool_call_id` upsert `turn-commentary-*`，始终位于锚定工具之前 |
+| 流式 | 工具行尚不存在时 open 段可写 loading overlay；锚点工具已在 `messages` 中时改 upsert 到工具前并清空 overlay |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
-| 可见性 | finalized commentary 为普通 assistant 行；overlay 只从属于唯一 active 行 |
-| E2E | `mock-ready-bubble-stability.spec.ts` 按绘制帧监控 ready 行不追加、不消失 |
+| 可见性 | commentary 为普通 assistant 行；overlay 只从属于唯一 active 行 |
+| E2E | `mock-commentary-before-tool-order.spec.ts`（含晚到）；`mock-ready-bubble-stability.spec.ts` |
 
 ### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
 **生产投影**：[`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs)。Web 已移除 v1 batch 特判；crate 级 [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
 
-Web `sync_turn_projection` 遍历 `assistant_commentary` 行，以 `tool_call_id` 生成稳定消息 ID，并插入对应工具之前。若同 ID 已存在则 no-op，禁止覆盖正文或重排。
+Web `sync_turn_projection` / `sync_stream_preview` 以 `tool_call_id` 稳定消息 ID upsert 到对应工具之前；同 ID 可更新正文，错序时重排到工具前。
 
 **行序示例（HPCG）**：
 
@@ -477,7 +477,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 | Invariant | 规则 |
 |-----------|------|
-| **I9 唯一落盘** | `sync_web_projection` = immutable commentary insert + final upsert |
+| **I9 唯一落盘** | `sync_web_projection` = commentary upsert-before-tool + final upsert |
 | **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
 | **I12 on_done** | 若终答或任一 `turn-commentary-*` 已落盘 → **不** merge overlay 进 loading 尾泡 |

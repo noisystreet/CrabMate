@@ -160,7 +160,7 @@ mod tests {
 
             if let Some(ref preview) = case.expect_open_preview {
                 assert_eq!(
-                    BubbleOutputQueue::loading_preview_text(&turn, None),
+                    BubbleOutputQueue::loading_preview_text(&turn, None, None),
                     preview.as_str(),
                     "case {} open preview",
                     case.id
