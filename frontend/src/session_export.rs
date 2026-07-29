@@ -181,7 +181,8 @@ pub fn session_to_markdown(
 }
 
 /// 按会话内顺序导出**已选 id** 对应的消息（与全会话 Markdown 规则相同；未选中的 id 忽略）。
-#[allow(dead_code)] // Web UI 多选导出已移除；单测仍覆盖语义。
+/// 多选导出 UI 已移除；保留给单元测试覆盖「按 id 子集」语义。
+#[cfg(test)]
 pub fn stored_messages_by_ids_to_markdown(
     all_messages: &[StoredMessage],
     selected_ids: &[String],

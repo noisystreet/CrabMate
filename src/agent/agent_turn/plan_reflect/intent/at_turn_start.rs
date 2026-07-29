@@ -29,10 +29,7 @@ pub(crate) enum IntentGateResult {
     /// 已写入助手终答，调用方应结束本回合。
     Finished,
     /// L2 判定为直接执行，可继续主循环/分层 Runner（兜底规则层细节已写入 `intent_analysis` 时间线）。
-    ProceedExecute {
-        #[allow(dead_code)]
-        assessment: crate::agent::intent_pipeline::IntentDecision,
-    },
+    ProceedExecute,
 }
 
 /// `false` 表示本回合已写入助手终答，调用方应 `return Ok(())`。
@@ -76,12 +73,7 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
             .clear_tool_narrowing_side_effects();
         return Ok(true);
     }
-    let proceed = matches!(out, IntentGateResult::ProceedExecute { .. });
-    if proceed {
-        p.turn
-            .turn_planner_hints
-            .suppress_duplicate_intent_timeline_once = true;
-    }
+    let proceed = matches!(out, IntentGateResult::ProceedExecute);
     Ok(proceed)
 }
 
@@ -153,7 +145,7 @@ fn format_intent_detail(
     )
 }
 
-/// 推送 `intent_analysis` 时间线（供开局门控与 **非分层** `staged_plan_intent_gate` 共用）。
+/// 推送 `intent_analysis` 时间线（开局门控与主路径共用）。
 pub(crate) async fn emit_intent_timeline_gate_only(
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     sse_log_context: &'static str,
@@ -235,12 +227,6 @@ async fn run_intent_l0_l1_l2_gate(
         },
     )
     .await;
-    p.turn.turn_planner_hints.intent_routing_cache =
-        Some(crate::agent::agent_turn::params::IntentRoutingCacheEntry {
-            task: task.to_string(),
-            decision: outcome.decision.clone(),
-            merge_meta: outcome.merge_meta.clone(),
-        });
     let assessment = outcome.decision;
     emit_intent_timeline_gate_only(
         p.ctx.io.control.out,
@@ -258,13 +244,13 @@ async fn run_intent_l0_l1_l2_gate(
         p.turn.turn_planner_hints.intent_turn_gate_hint = Some(constraints.intent_gate_hint_zh());
         p.turn.turn_planner_hints.intent_gate_snapshot =
             Some(intent_gate_snapshot_from_decision(&assessment));
-        return Ok(IntentGateResult::ProceedExecute { assessment });
+        return Ok(IntentGateResult::ProceedExecute);
     }
 
     if matches!(assessment.action, IntentAction::Execute) {
         p.turn.turn_planner_hints.intent_gate_snapshot =
             Some(intent_gate_snapshot_from_decision(&assessment));
-        return Ok(IntentGateResult::ProceedExecute { assessment });
+        return Ok(IntentGateResult::ProceedExecute);
     }
 
     if assessment.kind == crate::agent::intent_router::IntentKind::Qa
@@ -276,7 +262,7 @@ async fn run_intent_l0_l1_l2_gate(
         p.turn.turn_planner_hints.intent_turn_gate_hint = Some(GATE_HINT_READONLY_ZH.to_string());
         p.turn.turn_planner_hints.intent_gate_snapshot =
             Some(intent_gate_snapshot_from_decision(&assessment));
-        return Ok(IntentGateResult::ProceedExecute { assessment });
+        return Ok(IntentGateResult::ProceedExecute);
     }
 
     if matches!(&assessment.action, IntentAction::DirectReply(_))
@@ -284,7 +270,7 @@ async fn run_intent_l0_l1_l2_gate(
     {
         p.turn.turn_planner_hints.intent_gate_snapshot =
             Some(intent_gate_snapshot_from_decision(&assessment));
-        return Ok(IntentGateResult::ProceedExecute { assessment });
+        return Ok(IntentGateResult::ProceedExecute);
     }
 
     match &assessment.action {
@@ -295,7 +281,7 @@ async fn run_intent_l0_l1_l2_gate(
                 Some(PlanStepExecutorKind::ReviewReadonly);
             p.turn.turn_planner_hints.intent_gate_snapshot =
                 Some(intent_gate_snapshot_from_decision(&assessment));
-            return Ok(IntentGateResult::ProceedExecute { assessment });
+            return Ok(IntentGateResult::ProceedExecute);
         }
         IntentAction::ConfirmThenExecute(_) => {
             p.turn.turn_planner_hints.intent_turn_gate_hint =
@@ -304,7 +290,7 @@ async fn run_intent_l0_l1_l2_gate(
                 Some(PlanStepExecutorKind::ReviewReadonly);
             p.turn.turn_planner_hints.intent_gate_snapshot =
                 Some(intent_gate_snapshot_from_decision(&assessment));
-            return Ok(IntentGateResult::ProceedExecute { assessment });
+            return Ok(IntentGateResult::ProceedExecute);
         }
         _ => {}
     }
