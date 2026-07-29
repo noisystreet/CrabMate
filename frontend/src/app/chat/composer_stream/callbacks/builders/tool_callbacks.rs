@@ -162,7 +162,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 return;
             }
             TurnLayout::demote_answer_before_tools(stream_ctx.as_ref(), accum.as_ref());
-            // demote 已 keep-ui 吸收；此处勿再 clear loading，否则旁注投影前助手气泡会空窗。
+            // demote keep-ui；投影后由 release_loading_after_tool_projection 移交所有权。
             stream_ctx.scratch.apply_stream_control_event(
                 &stream_ctx.shell.stream,
                 StreamControlEvent::ToolCallDeclared,

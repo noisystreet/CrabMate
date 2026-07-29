@@ -240,6 +240,44 @@ fn finalize_loading_row_at_removes_row_with_text() {
 }
 
 #[test]
+fn finalize_loading_drops_text_already_on_commentary_row() {
+    let mut msgs = vec![
+        StoredMessage {
+            id: "turn-commentary-tc1".into(),
+            role: "assistant".into(),
+            text: "旁白正文。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+        StoredMessage {
+            id: "a_load".into(),
+            role: "assistant".into(),
+            text: "旁白正文。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+    ];
+    finalize_loading_row_at(&mut msgs, 1);
+    assert_eq!(
+        msgs.len(),
+        1,
+        "demoted loading must not become a second ready row"
+    );
+    assert_eq!(msgs[0].id, "turn-commentary-tc1");
+    assert_eq!(msgs[0].text, "旁白正文。");
+}
+
+#[test]
 fn pin_loading_tail_in_messages_moves_loading_to_end() {
     let mut msgs = vec![
         empty_msg("t0", "system", "tool", true),

@@ -2,7 +2,8 @@
  * 助手气泡仍在，但正文被掏空再刷回（同 data-tui-msg-id 的 body 变空）。
  *
  * 典型路径：旁白在 live loading 上 → 工具投影写出 commentary 行 → release_loading
- * 清空 live 正文 → 用户看见「内容没了」→ 终答再写入 live「又出现」。
+ * 清空 live 正文。投影后移交时旧 mid 变空可接受，前提是旁白仍在 transcript 可见；
+ * 若旁白标记整段消失再出现，仍视为闪空回归。
  *
  * 运行：
  *   cd e2e && no_proxy=127.0.0.1,localhost npx playwright test specs/mock-assistant-content-blank.spec.ts
@@ -237,15 +238,23 @@ test("live assistant body must not blank after commentary first paint", async ({
               const text = (body.innerText ?? "").replace(/\s+/g, " ").trim();
               const hasMarker = text.includes(commentaryPrefix);
               if (hasMarker) sawCommentaryInFrozen = true;
-              // 同泡曾有旁白，随后 body 变空（气泡还在）
+              // 同泡曾有旁白，随后 body 变空（气泡还在）——仅当旁白在 transcript
+              // 中也消失时才算闪空。投影后移交到 commentary 行时旧 mid 变空是预期。
               if (sawCommentaryInFrozen && text.length === 0) {
-                gaps.push({
-                  reason: "frozen_section_body_blank",
-                  msgId: frozenId,
-                  tMs,
-                  chunkIndex,
-                  bodyLen: 0,
-                });
+                const transcriptText = (
+                  document.querySelector<HTMLElement>(
+                    '[data-testid="chat-tui-transcript"]',
+                  )?.innerText ?? ""
+                ).replace(/\s+/g, " ");
+                if (!transcriptText.includes(commentaryPrefix)) {
+                  gaps.push({
+                    reason: "frozen_section_body_blank",
+                    msgId: frozenId,
+                    tMs,
+                    chunkIndex,
+                    bodyLen: 0,
+                  });
+                }
               }
             }
           }
