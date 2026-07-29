@@ -189,7 +189,19 @@ cd e2e && npx playwright test specs/real-llm-*.spec.ts
 | D 写路径单测 | cargo test | `allow_final_answer` 门控；终答同文移交 | frontend `turn_layout` |
 ## CI 集成
 
+GitHub Actions：`.github/workflows/e2e-playwright.yml`（PR → `main`）。当前跑布局回归基线（流中采样）+ overlay：
+
+- `specs/mock-overlay-timing.spec.ts`
+- `specs/mock-mid-process-commentary-duplicate.spec.ts`
+- `specs/mock-commentary-before-tool-order.spec.ts`
+- `specs/mock-empty-assistant-shell.spec.ts`
+
+本地全量 mock：先 `cd frontend && trunk build`，再 `cargo run -- serve`，然后：
+
+`cd e2e && no_proxy=127.0.0.1,localhost npx playwright test`
+
 ```yaml
+# 示意；以仓库内 workflow 为准
 # .github/workflows/e2e-playwright.yml
 name: E2E Playwright
 on: [pull_request]

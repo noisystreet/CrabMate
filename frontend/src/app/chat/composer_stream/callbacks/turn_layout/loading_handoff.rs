@@ -78,6 +78,7 @@ pub(super) fn clear_loading_tail_text_if_persisted_owns(
         return false;
     }
     messages[idx].text.clear();
+    crate::layout_debug_counters::note_commentary_handoff();
     true
 }
 
