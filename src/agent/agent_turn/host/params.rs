@@ -106,18 +106,14 @@ pub(crate) struct RunLoopCtx<'a> {
 
 /// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
 ///
-/// - **意图时间线去重**：`intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接时跳过重复 `intent_analysis`。
 /// - **门控临时 system**：澄清/确认/只读路径在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
-    pub(crate) suppress_duplicate_intent_timeline_once: bool,
     pub(crate) intent_turn_gate_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 本回合 **`intent_at_turn_start`** 门控快照（供 [`TurnRouteDecisionV1`] 组装）。
     pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
-    /// 本回合 **`intent_at_turn_start`** 已跑的 L2 管线结果；供 `staged_plan_intent_gate` 复用，避免重复 LLM。
-    pub(crate) intent_routing_cache: Option<IntentRoutingCacheEntry>,
 }
 
 impl TurnPlannerHints {
@@ -126,15 +122,6 @@ impl TurnPlannerHints {
         self.step_executor_constraint = None;
         self.intent_turn_gate_hint = None;
     }
-}
-
-/// `intent_at_turn_start` 与 `staged_plan_intent_gate` 共享的 L2 判定缓存（按 effective task 键）。
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub(crate) struct IntentRoutingCacheEntry {
-    pub(crate) task: String,
-    pub(crate) decision: crate::agent::intent_pipeline::IntentDecision,
-    pub(crate) merge_meta: crate::agent::intent_pipeline::IntentMergeMeta,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
@@ -178,25 +165,6 @@ impl TurnPlannerHints {
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.intent_turn_gate_hint.take()
-    }
-
-    /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
-    #[allow(dead_code)]
-    pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
-        let v = self.suppress_duplicate_intent_timeline_once;
-        self.suppress_duplicate_intent_timeline_once = false;
-        v
-    }
-
-    /// 若缓存键与 `task` 一致则返回 L2 管线结果（不消费缓存，供 staged 门控只读复用）。
-    #[allow(dead_code)]
-    pub(crate) fn intent_routing_cache_for_task(
-        &self,
-        task: &str,
-    ) -> Option<&IntentRoutingCacheEntry> {
-        self.intent_routing_cache
-            .as_ref()
-            .filter(|c| c.task == task)
     }
 }
 
@@ -267,7 +235,7 @@ impl<'a> RunLoopTurnState<'a> {
         r
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn truncate_messages(&mut self, len: usize) {
         if self.messages_buf.len() != len {
             self.messages_buf.truncate(len);
@@ -300,13 +268,6 @@ impl<'a> RunLoopTurnState<'a> {
     /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
     pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
         self.turn_planner_hints.take_intent_turn_gate_hint()
-    }
-
-    /// `intent_at_turn_start` 与 `staged_plan_intent_gate` 衔接：读取并清除「跳过重复时间线」标志。
-    #[allow(dead_code)]
-    pub(crate) fn take_suppress_duplicate_intent_timeline_once(&mut self) -> bool {
-        self.turn_planner_hints
-            .take_suppress_duplicate_intent_timeline_once()
     }
 }
 
@@ -388,17 +349,6 @@ impl RunLoopParams<'_> {
 #[cfg(test)]
 mod turn_planner_hints_tests {
     use super::{OuterLoopPlanCallModelRole, TurnPlannerHints};
-
-    #[test]
-    fn take_suppress_duplicate_clears_flag() {
-        let mut h = TurnPlannerHints {
-            suppress_duplicate_intent_timeline_once: true,
-            ..Default::default()
-        };
-        assert!(h.take_suppress_duplicate_intent_timeline_once());
-        assert!(!h.take_suppress_duplicate_intent_timeline_once());
-        assert!(!h.suppress_duplicate_intent_timeline_once);
-    }
 
     #[test]
     fn take_intent_gate_hint_drains_once() {

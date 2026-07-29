@@ -11,8 +11,6 @@
 //! | [`report`] | 节点报告与 `human_summary` 文本 |
 //! | [`compensation`] | 失败补偿阶段 |
 
-#![allow(dead_code)]
-
 mod compensation;
 mod node;
 mod report;
@@ -58,8 +56,9 @@ pub enum WorkflowApprovalMode {
     },
 }
 
-/// 语义检索参数（从 `WorkflowConfig` 构造，不再依赖 `CodebaseSemanticToolParams`）。
+/// 语义检索参数（从 `WorkflowConfig` 构造，再写入 [`WorkflowToolExecCtx`]；字段由工具侧读取）。
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // 整包经 `ToolContext` 透传；本 crate 内不直接读字段
 pub(crate) struct WorkflowSemanticParams {
     pub(crate) enabled: bool,
     pub(crate) invalidate_on_workspace_change: bool,
