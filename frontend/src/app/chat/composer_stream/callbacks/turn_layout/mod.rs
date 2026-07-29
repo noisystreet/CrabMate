@@ -450,7 +450,8 @@ impl TurnLayout {
     /// **仅首个 `tool_call` 前**执行：post-tool 尾泡正文属于 [`AnswerDelta`] / 终答，不得再迁入 pending 旁注。
     ///
     /// **UI 不变量**：此处只把正文吸收进 canonical，**暂不清空** loading（旁注尚未 flush）；
-    /// 投影完成后由 [`TurnLayout::release_loading_after_tool_projection`] 原子移交所有权。
+    /// 首次带 `tool_call_id` 的 `sync_turn_projection` 在同一 `update_bound_session` 内
+    /// flush commentary 并清空同文 loading（I14，见 `loading_handoff`）。
     pub(crate) fn demote_answer_before_tools(
         stream_ctx: &ChatStreamCallbackCtx,
         accum: &PerStreamAccum,
@@ -485,9 +486,9 @@ impl TurnLayout {
 
     /// 工具占位 + `sync_turn_projection` 之后：旁注行已落盘时的 loading 收口钩子。
     ///
-    /// 旁注已可见且与 live 同文后清空 loading 正文/overlay（见 [`loading_handoff`]）。
+    /// 旁注已在同帧 sync 中移交；幂等补清 overlay（见 [`loading_handoff`]）。
     pub(crate) fn release_loading_after_tool_projection(stream_ctx: &ChatStreamCallbackCtx) {
-        loading_handoff::release_loading_preview_after_commentary_projected(stream_ctx);
+        loading_handoff::clear_overlay_if_commentary_owns_live(stream_ctx);
     }
 
     /// `tool_result` 在未命中占位时新建工具行后的布局收口。
@@ -692,9 +693,8 @@ impl TurnLayout {
                 )
             })
             .unwrap_or_default();
-        // 工具相：旁白段已关闭后 `loading_preview_text` 为空；若用空串 replace，
-        // live 气泡正文会被掏空。仅当 **当前 overlay 正文** 已落在同文 commentary 行时
-        // 才清空；不得因会话里任意旧旁注行存在就清掉本轮尚未投影的正文。
+        // 工具相：旁白段已关闭后 `loading_preview_text` 为空。仅当 overlay 正文尚未由
+        // commentary 持有时保留；已移交则允许用空 preview 替换（I14）。
         if preview.trim().is_empty()
             && turn.tool_phase_open()
             && overlay_answer_str.is_some_and(|t| !t.trim().is_empty())
@@ -702,9 +702,7 @@ impl TurnLayout {
             let overlay_trim = overlay_answer_str.map(str::trim).unwrap_or("");
             let handed_off = stream_ctx
                 .read_bound_session(|s| {
-                    s.messages.iter().any(|m| {
-                        is_commentary_row_id(m.id.as_str()) && m.text.trim() == overlay_trim
-                    })
+                    loading_handoff::commentary_owns_live_text(&s.messages, overlay_trim)
                 })
                 .unwrap_or(false);
             if !handed_off {
@@ -782,7 +780,7 @@ impl TurnLayout {
         messages.remove(load_idx);
     }
 
-    /// 段/工具边界：flush 工具批说明块到 stored；未落盘前保留 overlay preview。
+    /// 段/工具边界：flush 工具批说明块到 stored；**I14** 同帧移交 loading 正文。
     pub(crate) fn sync_turn_projection(
         stream_ctx: &ChatStreamCallbackCtx,
         turn: &TurnCanonicalState,
@@ -804,6 +802,7 @@ impl TurnLayout {
                     .unwrap_or(false);
             post || tools_done
         };
+        let handed_off = RefCell::new(false);
         stream_ctx.update_bound_session(|s| {
             s.layout_schema_version = crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION;
             if pin_active {
@@ -816,12 +815,21 @@ impl TurnLayout {
                 overlay_answer_str,
                 allow_final_answer,
             );
+            // I14：flush 与清空 loading text 在同一 `update_bound_session` 内完成。
+            if loading_handoff::clear_loading_tail_text_if_commentary_owns(
+                &mut s.messages,
+                Some(mid.as_str()),
+                overlay_answer_str,
+            ) {
+                *handed_off.borrow_mut() = true;
+            }
         });
-        let clear_overlay = stream_ctx
-            .read_bound_session(|s| {
-                should_clear_preview_overlay_answer(turn, &s.messages, overlay_answer_str)
-            })
-            .unwrap_or(false);
+        let clear_overlay = handed_off.into_inner()
+            || stream_ctx
+                .read_bound_session(|s| {
+                    should_clear_preview_overlay_answer(turn, &s.messages, overlay_answer_str)
+                })
+                .unwrap_or(false);
         if clear_overlay {
             stream_overlay_clear_answer_for_message(
                 stream_ctx.chat.stream_text_overlay,
@@ -836,15 +844,16 @@ impl TurnLayout {
 
 /// 说明块已落盘或无需 preview 时，可安全清空 loading 尾泡 overlay answer。
 ///
-/// **工具相例外**：旁白关段后 `loading_preview_for_messages` 为空，但 live 仍靠 overlay
-/// 展示旁白；此时清 overlay 会造成同 `data-tui-msg-id` 正文空窗。保留至 `rotate_bubble`。
+/// 工具相：仅当 overlay 正文已由同文 `turn-commentary-*` 持有时清（I14）；
+/// 否则保留至移交完成，避免闪空。
 pub(super) fn should_clear_preview_overlay_answer(
     turn: &TurnCanonicalState,
     messages: &[StoredMessage],
     overlay_answer: Option<&str>,
 ) -> bool {
     if turn.tool_phase_open() {
-        return false;
+        return overlay_answer
+            .is_some_and(|t| loading_handoff::commentary_owns_live_text(messages, t));
     }
     BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }
