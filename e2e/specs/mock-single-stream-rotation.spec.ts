@@ -47,10 +47,25 @@ test("单流内两轮气泡轮换不多产生空气泡", async ({ page }) => {
   await expect(scroller).toContainText(TURN1_TEXT, { timeout: 5000 });
   await expect(scroller).toContainText(TURN2_TEXT, { timeout: 5000 });
 
-  // 核心断言：非工具消息行数恰好为 3（用户行 + 第一轮助手 + 第二轮助手）
-  // 若存在双重轮换 bug，会产生第 4 行空气泡
-  const nonToolRows = await page.evaluate(
-    () => document.querySelectorAll('[data-testid="chat-message-row"]').length,
+  // 核心断言：非工具 TUI 回合恰好为 3（用户 + 第一轮助手 + 第二轮助手）
+  // 若存在双重轮换 bug，会产生第 4 个空助手卡
+  const nonToolTurns = await page.evaluate(
+    () =>
+      document.querySelectorAll(
+        "section.chat-tui-turn--user, section.chat-tui-turn--assistant",
+      ).length,
   );
-  expect(nonToolRows).toBe(3);
+  expect(nonToolTurns).toBe(3);
+  const emptyAssistants = await page.evaluate(() => {
+    const turns = document.querySelectorAll("section.chat-tui-turn--assistant");
+    let n = 0;
+    for (const turn of turns) {
+      const text = (turn.querySelector(".chat-tui-body")?.textContent ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!text) n += 1;
+    }
+    return n;
+  });
+  expect(emptyAssistants).toBe(0);
 });
