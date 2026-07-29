@@ -313,14 +313,16 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | API | 说明 |
 |-----|------|
-| `VisibleMessageScope::ChatColumn` | 隐藏编排路由、pre-tool 旁注、`final_response_snapshot` 重复行；**保留** loading 尾泡 |
+| `VisibleMessageScope::ChatColumn` | 隐藏编排路由、pre-tool 旁注、`final_response_snapshot` 重复行，以及**空助手壳**（含空 Loading） |
 | `VisibleMessageScope::Export` | 隐藏 ephemeral 助手行（含 snapshot、编排、pre-tool 等，见 `is_ephemeral_timeline_assistant_for_export`）与空 loading 壳 |
 | `visible_message_indices(messages, scope)` | 按 scope 过滤隐藏规则；**不**对 assistant 正文 fuzzy dedupe（Phase 7 P1） |
+| `tui_should_render_message` | TUI 主列：空助手仅在有 stream overlay 正文时挂载；与 ChatColumn 空壳规则对齐 |
 
 **消费方**：
 
 - `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
 - `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
+- `tui_transcript_sync::{build_tui_transcript_html,plan_tui_sync}` — 经 `tui_should_render_message` 跳过空壳；首 token / overlay 有文后再 append
 
 **E2E（Victauri）**：`victauri_visible_messages.rs`（snapshot / ephemeral 隐藏）；`victauri_turn_layout.rs`（块布局：说明块在工具组前、segment_end 早于 tool_call）。
 

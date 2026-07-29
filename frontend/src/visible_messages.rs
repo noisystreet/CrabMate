@@ -10,7 +10,7 @@ use crate::timeline_scan::{
     is_orchestration_route_timeline_message, timeline_ui_snapshot_type,
 };
 
-/// 可见消息筛选范围（聊天列保留 loading 尾泡；导出去掉 ephemeral 与空 loading 壳）。
+/// 可见消息筛选范围（聊天列 / 导出均隐藏空助手壳；TUI 主列另见 [`tui_should_render_message`]）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisibleMessageScope {
     ChatColumn,
@@ -78,11 +78,33 @@ pub fn is_message_hidden_from_view(
     }
 }
 
-fn is_empty_assistant_body(m: &StoredMessage) -> bool {
+/// 空助手正文（无工具）：含空 Loading 壳；ChatColumn / Export / TUI 均应隐藏。
+#[must_use]
+pub(crate) fn is_empty_assistant_body(m: &StoredMessage) -> bool {
     !m.is_tool
         && m.role == "assistant"
         && m.text.trim().is_empty()
         && m.reasoning_text.trim().is_empty()
+}
+
+/// TUI 主列是否应挂载该消息：空助手壳仅在有 stream overlay 正文时显示。
+#[must_use]
+pub(crate) fn tui_should_render_message(
+    m: &StoredMessage,
+    session_id: &str,
+    overlay: Option<&crate::stream_text_overlay::StreamTextOverlay>,
+) -> bool {
+    if m.is_tool || m.role != "assistant" {
+        return true;
+    }
+    if !is_empty_assistant_body(m) {
+        return true;
+    }
+    overlay.is_some_and(|o| {
+        o.session_id == session_id
+            && o.message_id == m.id
+            && (!o.answer.trim().is_empty() || !o.reasoning.trim().is_empty())
+    })
 }
 
 /// 返回 `messages` 中应对用户展示的原始下标（顺序不变；仅 scope 过滤，无 fuzzy dedupe）。
@@ -157,7 +179,7 @@ mod tests {
                 created_at: 0,
             },
         ];
-        // ChatColumn 和 Export 都隐藏空的 loading 壳
+        // ChatColumn / Export / TUI 都隐藏空的 loading 壳
         assert_eq!(
             visible_message_indices(&messages, VisibleMessageScope::ChatColumn).len(),
             1
@@ -166,6 +188,39 @@ mod tests {
             visible_message_indices(&messages, VisibleMessageScope::Export).len(),
             1
         );
+        assert!(
+            !crate::visible_messages::tui_should_render_message(&messages[1], "s", None),
+            "TUI must hide empty loading shell"
+        );
+    }
+
+    #[test]
+    fn tui_renders_empty_loading_when_overlay_has_answer() {
+        use crate::storage::StoredMessageState;
+        use crate::stream_text_overlay::StreamTextOverlay;
+        let load = StoredMessage {
+            id: "load".into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let overlay = StreamTextOverlay {
+            session_id: "s1".into(),
+            message_id: "load".into(),
+            answer: "流式中".into(),
+            reasoning: String::new(),
+        };
+        assert!(crate::visible_messages::tui_should_render_message(
+            &load,
+            "s1",
+            Some(&overlay)
+        ));
     }
 
     #[test]
