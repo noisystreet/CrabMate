@@ -475,11 +475,11 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 ## 14. 写入收敛（Phase 9）
 
-**目标**：finalized commentary / 终答经 `TurnReducer` → v2 projector → [`BubbleOutputQueue::sync_web_projection`] 落盘；`TurnLayout` 只维护 active/loading 形状。
+**目标**：finalized commentary / 终答 / 工具占位经 `TurnReducer` → `project_turn_projection` → [`projection_reconciler`] 落盘；`TurnLayout` 只维护 scratch、overlay 与 active/loading 句柄。
 
 | Invariant | 规则 |
 |-----------|------|
-| **I9 唯一落盘** | `sync_web_projection` = commentary upsert-before-tool + final upsert |
+| **I9 唯一落盘** | `reconcile_web_projection` = commentary upsert-before-tool + final upsert；工具占位经 `insert_declared_tool` |
 | **I10 边界 commit** | 每个 `tool_call` 前 `drain_loading_commentary_to_canonical`（overlay/stored → canonical **仅**） |
 | **I11 overlay 从属** | preview 仅 open 段 / 未落盘终答增量；已 flush 行与 overlay 互斥 |
 | **I12 on_done** | 投影优先：`sync` 后 `drain` 仅补 `turn-final-answer` 并清空 overlay / loading 正文；**禁止** merge overlay 进 loading 再升格 |
@@ -504,7 +504,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 已收窄�
 | 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler（Phase B） |
 | 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
 | I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | **已定稿**：稳定 key + 工具前 + 禁止第二行（§12 I1 / Phase D） |
-| 投影类型曾隐式 | reconciler 散落在 `TurnLayout` / `BubbleOutputQueue` | **Phase D**：`project_turn_projection` + `projection_reconciler`；`TurnLayout` 仍管工具行插入与 loading 句柄 |
+| 投影类型曾隐式 | reconciler 散落在 `TurnLayout` / `BubbleOutputQueue` | **Phase D**：`project_turn_projection` + `projection_reconciler`（旁白 / 终答 / 工具占位）；`TurnLayout` 管 scratch、overlay、loading 句柄 |
 
 **实施规划**（agent 工作区，不入仓）：`agent_space/streaming-layout-convergence-plan.md`（Phase A 观测 → B 旁白直写 → C Loading 句柄 → D 投影类型 → E 协议）。待评审后可抽 ADR 挂本仓库 `docs/`。
 

@@ -1,5 +1,12 @@
+use super::super::projection_reconciler;
 use super::*;
 use crate::sse_dispatch::TurnSegmentStartInfo;
+use crabmate_turn_layout::project_turn_projection;
+
+fn flush_commentary(msgs: &mut Vec<crate::storage::StoredMessage>, turn: &TurnCanonicalState) {
+    let projection = project_turn_projection(turn.turn_ref());
+    projection_reconciler::reconcile_finalized_commentary(msgs, &projection);
+}
 
 fn make_turn_with_commentary() -> TurnCanonicalState {
     let mut turn = TurnCanonicalState::new();
@@ -110,7 +117,6 @@ fn upsert_parks_anchored_commentary_before_loading_until_tool_exists() {
 #[test]
 fn flush_commentary_inserts_immutable_row_before_its_tool() {
     let turn = make_turn_with_commentary();
-    let queue = BubbleOutputQueue;
     let mut msgs = vec![crate::storage::StoredMessage {
         id: "t".into(),
         role: "system".into(),
@@ -123,12 +129,12 @@ fn flush_commentary_inserts_immutable_row_before_its_tool() {
         tool_name: None,
         created_at: 0,
     }];
-    queue.flush_commentary_rows(&mut msgs, &turn, None);
+    flush_commentary(&mut msgs, &turn);
     assert_eq!(msgs.len(), 2);
     assert_eq!(msgs[0].id, commentary_row_id("tc_a"));
     assert_eq!(msgs[0].text, "步骤 A。");
     assert_eq!(msgs[1].id, "t");
-    queue.flush_commentary_rows(&mut msgs, &turn, None);
+    flush_commentary(&mut msgs, &turn);
     assert_eq!(msgs.len(), 2, "second flush must not duplicate row");
 }
 
@@ -262,7 +268,6 @@ fn flush_commentary_moves_misordered_row_before_tool() {
     assert!(turn.try_apply_commentary_delta("好的，先解压。"));
     turn.on_tool_call("tc_unpack", "unpack", "unpack");
 
-    let queue = BubbleOutputQueue;
     let mut msgs = vec![
         crate::storage::StoredMessage {
             id: "tc_archive".into(),
@@ -301,7 +306,7 @@ fn flush_commentary_moves_misordered_row_before_tool() {
             created_at: 0,
         },
     ];
-    queue.flush_commentary_rows(&mut msgs, &turn, None);
+    flush_commentary(&mut msgs, &turn);
     assert_eq!(msgs.len(), 3);
     assert_eq!(msgs[0].id, "tc_archive");
     assert_eq!(msgs[1].id, commentary_row_id("tc_unpack"));
@@ -322,7 +327,6 @@ fn flush_final_deferred_until_commentary_row_present() {
     turn.on_tool_phase_end();
     assert!(turn.try_apply_answer_state_transition("终答。"));
 
-    let queue = BubbleOutputQueue;
     let mut msgs = vec![crate::storage::StoredMessage {
         id: "load".into(),
         role: "assistant".into(),
@@ -336,7 +340,12 @@ fn flush_final_deferred_until_commentary_row_present() {
         created_at: 0,
     }];
     // 终答在 overlay；模拟 overlay 已有终答。
-    queue.flush_final_answer_row(&mut msgs, &turn, Some("load"), Some("终答。"));
+    projection_reconciler::reconcile_final_answer_from_overlay(
+        &mut msgs,
+        &turn,
+        Some("load"),
+        Some("终答。"),
+    );
     assert!(
         !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
         "final must not appear before commentary row"
@@ -357,7 +366,13 @@ fn flush_final_deferred_until_commentary_row_present() {
             created_at: 0,
         },
     );
-    queue.sync_web_projection(&mut msgs, &turn, Some("load"), Some("终答。"), true);
+    projection_reconciler::reconcile_web_projection(
+        &mut msgs,
+        &turn,
+        Some("load"),
+        Some("终答。"),
+        true,
+    );
     let commentary_idx = msgs
         .iter()
         .position(|m| m.id == commentary_row_id("tc_a"))
@@ -375,9 +390,8 @@ fn flush_final_deferred_until_commentary_row_present() {
 #[test]
 fn flush_commentary_skips_without_tool_row() {
     let turn = make_turn_with_commentary();
-    let queue = BubbleOutputQueue;
     let mut msgs = Vec::new();
-    queue.flush_commentary_rows(&mut msgs, &turn, None);
+    flush_commentary(&mut msgs, &turn);
     assert!(msgs.is_empty());
 }
 
@@ -456,10 +470,10 @@ fn mid_process_overlay_skips_final_answer_when_not_allowed() {
     );
 }
 
-/// 无工具场景：`flush_final_answer_row` 从 overlay 创建 FINAL_ANSWER_ROW。
+/// 无工具场景：`reconcile_final_answer_from_overlay` 从 overlay 创建 FINAL_ANSWER_ROW。
 ///
 /// 这是无工具问答的正常路径：流式 delta 写入 overlay，on_done 时
-/// `flush_final_answer_row` 读 overlay 创建终答行。
+/// reconciler 读 overlay 创建终答行。
 #[test]
 fn no_tool_flush_final_creates_row_from_overlay() {
     let turn = TurnCanonicalState::new();
@@ -493,7 +507,7 @@ fn no_tool_flush_final_creates_row_from_overlay() {
     assert!(msgs.iter().any(|m| m.id == "load"));
 }
 
-/// 无工具场景 overlay 为空时：`flush_final_answer_row` 不应创建
+/// 无工具场景 overlay 为空时：终答 flush 不应创建
 /// FINAL_ANSWER_ROW（对应 overlay 被 prematurely 清空的情况）。
 #[test]
 fn no_tool_flush_final_skips_when_overlay_empty() {

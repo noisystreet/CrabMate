@@ -1,3 +1,4 @@
+use super::projection_reconciler::{insert_tool_row, pin_loading_tail_in_messages};
 use super::*;
 use crate::storage::{StoredMessage, StoredMessageState};
 

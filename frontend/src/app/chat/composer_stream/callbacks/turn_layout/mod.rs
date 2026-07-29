@@ -1,13 +1,13 @@
-//! 单轮 `/chat/stream` 内 **`messages` 布局** 的唯一入口（方向 A：显式 TurnLayout 状态机）。
+//! 单轮 `/chat/stream` 内 **`messages` 布局** 编排入口（方向 A：TurnLayout 状态机）。
 //!
 //! 目标顺序（v2）：`[时间线*] → ([commentary] → [工具])* → [turn-final-answer] → [loading 空壳]`
-//! commentary 以 `tool_call_id` 稳定键 upsert 到锚定工具前；终答经
-//! [`BubbleOutputQueue::sync_web_projection`] 落盘。
+//! 投影落盘经 [`projection_reconciler`]（定稿旁白 / 锚定 active / 终答 / 工具占位）；
+//! 本模块负责 scratch、overlay 与 loading 句柄生命周期。
 //!
 //! | 事件 | 入口 |
 //! |------|------|
 //! | `tool_call` / `parsing_tool_calls` | [`TurnLayout::demote_answer_before_tools`] |
-//! | `tool_call` 占位落盘 | [`TurnLayout::on_tool_call_declared`] |
+//! | `tool_call` 占位落盘 | [`TurnLayout::on_tool_call_declared`] → reconciler |
 //! | `tool_result` 新建行 | [`TurnLayout::on_tool_result_inserted`] |
 //! | 时间线 / 意图 / 规划旁注 | [`TurnLayout::push_assistant_timeline`] |
 //! | 分阶段 system 时间线 push | [`TurnLayout::after_auxiliary_system_push`] |
@@ -29,7 +29,7 @@ use leptos::prelude::GetUntracked;
 
 use crate::message_loading::{
     is_finalized_plain_assistant, is_loading_plain_assistant, is_loading_streaming_assistant_id,
-    is_plain_assistant_message, stored_message_is_loading,
+    is_plain_assistant_message,
 };
 use crate::session_ops::{make_message_id, message_created_ms};
 use crate::storage::{StoredMessage, StoredMessageState};
@@ -236,7 +236,7 @@ fn extract_post_tool_tail_before_tool(
     if m.role != "assistant" || m.is_tool {
         return None;
     }
-    if !stored_message_is_loading(m) {
+    if !crate::message_loading::stored_message_is_loading(m) {
         return None;
     }
     if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
@@ -249,32 +249,6 @@ fn extract_post_tool_tail_before_tool(
     })
 }
 
-fn insert_tool_row(
-    messages: &mut Vec<StoredMessage>,
-    tool_msg: StoredMessage,
-    subgoal_marker: Option<&str>,
-) {
-    if let Some(mk) = subgoal_marker
-        && let Some(idx) = messages.iter().rposition(|m| {
-            m.state
-                .as_ref()
-                .is_some_and(|st| st.matches_full_marker(mk))
-        })
-    {
-        messages.insert(idx + 1, tool_msg);
-    } else {
-        messages.push(tool_msg);
-    }
-}
-
-/// 结束 loading 行：清除 loading 状态，保留行作为普通 assistant 消息。
-///
-/// 无工具多轮场景中，`rotate_bubble` 经 `finalize_loading_segment`
-/// 调用此函数。若直接删除行，且无 BATCH_NARRATION_ROW 保存内容，则上一轮内容丢失。
-/// 改为保留行并清除 `state`，后续 `on_done` 中的 dedup 会清理多余行。
-///
-/// **正文移交**：若正文已与某条已定稿助手行（旁注 / 终答 / 普通 assistant）完全相同，
-/// 视为已移交所有权，清空后按空壳删除，禁止升格成第二条普通助手行。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
         return;
@@ -300,17 +274,6 @@ fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     }
 }
 
-fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &str) {
-    let Some(idx) = messages.iter().position(|m| m.id == loading_id) else {
-        return;
-    };
-    if messages[idx].role != "assistant" || !stored_message_is_loading(&messages[idx]) {
-        return;
-    }
-    let m = messages.remove(idx);
-    messages.push(m);
-}
-
 fn insert_post_tool_loading_after_tool(
     messages: &mut Vec<StoredMessage>,
     tool_message_id: &str,
@@ -330,7 +293,7 @@ fn insert_post_tool_loading_after_tool(
         created_at: message_created_ms(),
     };
     messages.insert(tidx + 1, row);
-    pin_loading_tail_in_messages(messages, new_asst_id.as_str());
+    projection_reconciler::pin_loading_tail_in_messages(messages, new_asst_id.as_str());
     Some(new_asst_id)
 }
 
@@ -418,9 +381,12 @@ impl TurnLayout {
             // 仅 peel 已提前 finalize 的尾泡；loading 上仍有的旁白留给 projection 后再清，
             // 避免工具行出现前助手气泡被掏空。
             let _ = peel_premature_summary_from_messages(&mut s.messages, mid.as_str());
-            insert_tool_row(&mut s.messages, tool_msg, subgoal_marker);
-            // 不截断助手文本：工具插入后 loading tail 保持在最后，继续累积后续正文。
-            pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
+            projection_reconciler::insert_declared_tool(
+                &mut s.messages,
+                tool_msg,
+                subgoal_marker,
+                mid.as_str(),
+            );
         });
     }
 
@@ -487,22 +453,7 @@ impl TurnLayout {
         }
         let mid = stream_ctx.scratch.clone_assistant_id();
         stream_ctx.update_bound_session(|s| {
-            let Some(idx) = s.messages.iter().position(|m| m.id == mid) else {
-                return;
-            };
-            if s.messages[idx].role != "assistant"
-                || !s.messages[idx]
-                    .state
-                    .as_ref()
-                    .is_some_and(|st| st.is_loading())
-            {
-                return;
-            }
-            if idx == s.messages.len().saturating_sub(1) {
-                return;
-            }
-            let m = s.messages.remove(idx);
-            s.messages.push(m);
+            projection_reconciler::pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
         });
     }
 
@@ -772,7 +723,7 @@ impl TurnLayout {
         stream_ctx.update_bound_session(|s| {
             s.layout_schema_version = crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION;
             if pin_active {
-                pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
+                projection_reconciler::pin_loading_tail_in_messages(&mut s.messages, mid.as_str());
             }
             queue.sync_web_projection(
                 &mut s.messages,

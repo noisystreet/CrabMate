@@ -11,8 +11,6 @@ use super::projection_reconciler;
 /// 工具批结束后终答块的稳定 id（与 `project_turn_web` · `assistant_answer` 对应）。
 pub(crate) const FINAL_ANSWER_ROW_ID: &str = V2_FINAL_ANSWER_ROW_ID;
 
-const PROJECT_KIND_COMMENTARY: &str = ASSISTANT_COMMENTARY;
-
 pub(crate) fn commentary_row_id(tool_call_id: &str) -> String {
     format!("{V2_COMMENTARY_ROW_ID_PREFIX}{tool_call_id}")
 }
@@ -26,16 +24,6 @@ pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
 pub(crate) struct BubbleOutputQueue;
 
 impl BubbleOutputQueue {
-    fn commentary_rows_from_projection(
-        turn: &TurnCanonicalState,
-    ) -> Vec<crabmate_turn_layout::ProjectedRow> {
-        project_turn_projection(turn.turn_ref())
-            .finalized_rows
-            .into_iter()
-            .filter(|row| row.kind == PROJECT_KIND_COMMENTARY)
-            .collect()
-    }
-
     /// 将旁注 upsert 到锚定工具行之前（可更新正文；若误落在工具后则搬回）。
     ///
     /// 用于：已关闭旁注 flush，以及晚到 open 旁注在工具行已存在时的流式预览。
@@ -168,7 +156,7 @@ impl BubbleOutputQueue {
         }
     }
 
-    fn insert_index_before_loading_tail(
+    pub(super) fn insert_index_before_loading_tail(
         messages: &[crate::storage::StoredMessage],
         loading_tail_id: Option<&str>,
     ) -> usize {
@@ -180,7 +168,7 @@ impl BubbleOutputQueue {
         messages.len()
     }
 
-    fn upsert_assistant_row(
+    pub(super) fn upsert_assistant_row(
         messages: &mut Vec<crate::storage::StoredMessage>,
         row_id: &str,
         text: String,
@@ -265,7 +253,7 @@ impl BubbleOutputQueue {
         messages.insert(insert_idx.min(messages.len()), row);
     }
 
-    /// Web assistant 正文落盘入口（不可变 commentary + final）。
+    /// Web assistant 正文落盘入口（定稿 commentary + final → reconciler）。
     ///
     /// `overlay_answer`：当前 loading 尾泡的 overlay 正文（终答唯一来源）。
     /// `allow_final_answer`：为 false 时不写 `turn-final-answer`（工具前旁白仍在 overlay/loading，
@@ -278,49 +266,13 @@ impl BubbleOutputQueue {
         overlay_answer: Option<&str>,
         allow_final_answer: bool,
     ) {
-        self.flush_commentary_rows(messages, turn, overlay_answer);
-        if allow_final_answer {
-            self.flush_final_answer_row(messages, turn, loading_tail_id, overlay_answer);
-        }
-    }
-
-    fn commentary_projection_pending_in_messages(
-        messages: &[crate::storage::StoredMessage],
-        turn: &TurnCanonicalState,
-    ) -> bool {
-        Self::commentary_rows_from_projection(turn)
-            .into_iter()
-            .filter_map(|row| row.tool_call_id)
-            .map(|tool_call_id| commentary_row_id(tool_call_id.as_str()))
-            .any(|row_id| messages.iter().all(|message| message.id != row_id))
-    }
-
-    fn insert_index_for_final_row(
-        messages: &[crate::storage::StoredMessage],
-        loading_tail_id: Option<&str>,
-    ) -> usize {
-        let mut insert_idx = Self::insert_index_before_loading_tail(messages, loading_tail_id);
-        if let Some(commentary_idx) = messages
-            .iter()
-            .enumerate()
-            .filter(|(_, message)| is_commentary_row_id(message.id.as_str()))
-            .map(|(idx, _)| idx)
-            .max()
-        {
-            insert_idx = insert_idx.max(commentary_idx + 1);
-        }
-        insert_idx
-    }
-
-    /// 发布按工具调用键控的 commentary 行（可更新正文；始终位于锚定工具之前）。
-    pub(super) fn flush_commentary_rows(
-        &self,
-        messages: &mut Vec<crate::storage::StoredMessage>,
-        turn: &TurnCanonicalState,
-        _overlay_answer: Option<&str>,
-    ) {
-        let projection = project_turn_projection(turn.turn_ref());
-        projection_reconciler::reconcile_finalized_commentary(messages, &projection);
+        projection_reconciler::reconcile_web_projection(
+            messages,
+            turn,
+            loading_tail_id,
+            overlay_answer,
+            allow_final_answer,
+        );
     }
 
     /// 工具相 open 锚定旁白：直接 upsert `turn-commentary-*`（工具可尚未存在）。
@@ -340,71 +292,13 @@ impl BubbleOutputQueue {
         )
     }
 
-    /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
-    ///
-    /// 从 overlay 读取终答正文。调用方须已确认允许落盘终答（post-tool / on_done）。
-    pub(super) fn flush_final_answer_row(
-        &self,
-        messages: &mut Vec<crate::storage::StoredMessage>,
-        turn: &TurnCanonicalState,
-        loading_tail_id: Option<&str>,
-        overlay_answer: Option<&str>,
-    ) {
-        if turn.tool_phase_open() {
-            return;
-        }
-        if Self::commentary_projection_pending_in_messages(messages, turn) {
-            return;
-        }
-        let text = overlay_answer
-            .filter(|t| !t.trim().is_empty())
-            .map(str::to_string);
-        let Some(text) = text else {
-            return;
-        };
-        // 若已有普通 assistant 行内容相同（由 detach_final_answer_projection 产生），
-        // 不再重复创建 FINAL_ANSWER_ROW，避免消息双倍
-        if messages.iter().any(|m| {
-            m.id != FINAL_ANSWER_ROW_ID
-                && m.role == "assistant"
-                && !m.is_tool
-                && m.state.is_none()
-                && m.text.trim() == text.trim()
-        }) {
-            return;
-        }
-        let insert_idx = Self::insert_index_for_final_row(messages, loading_tail_id);
-        Self::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
-    }
-
     /// 若 FINAL_ANSWER_ROW 缺失，从给定正文补建。
-    ///
-    /// 零工具场景中 overlay 可能在 `sync_turn_projection` 前已被清空
-    /// （流式 delta 写入 loading 尾泡而非 overlay），导致 `flush_final_answer_row` 读不到
-    /// overlay。此时 `drain` 将 loading 正文合并到 stored 后，调用此方法补建
-    /// FINAL_ANSWER_ROW 以持久化终答。
     pub(super) fn ensure_final_answer_row_from_text(
         messages: &mut Vec<crate::storage::StoredMessage>,
         text: &str,
         loading_tail_id: Option<&str>,
     ) {
-        let trimmed = text.trim();
-        if trimmed.is_empty() {
-            return;
-        }
-        if messages
-            .iter()
-            .any(|m| m.id == FINAL_ANSWER_ROW_ID && !m.text.trim().is_empty())
-        {
-            return;
-        }
-        let insert_idx = Self::insert_index_for_final_row(messages, loading_tail_id);
-        Self::upsert_assistant_row(
-            messages,
-            FINAL_ANSWER_ROW_ID,
-            trimmed.to_string(),
-            insert_idx,
-        );
+        projection_reconciler::ensure_final_answer_row_from_text(messages, text, loading_tail_id);
     }
 
     /// preview 是否应写入 loading 尾泡（与 stored 一致则不再 duplicate）。
