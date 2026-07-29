@@ -70,9 +70,18 @@ jobs:
           npx playwright install chromium
         working-directory: e2e
 
-      - name: Run mock SSE tests
-        run: npx playwright test specs/mock-overlay-timing.spec.ts --reporter=list
+      - name: Run mock SSE tests (layout baseline + overlay)
+        run: |
+          npx playwright test \
+            specs/mock-overlay-timing.spec.ts \
+            specs/mock-mid-process-commentary-duplicate.spec.ts \
+            specs/mock-commentary-before-tool-order.spec.ts \
+            specs/mock-empty-assistant-shell.spec.ts \
+            --reporter=list
         working-directory: e2e
+        env:
+          no_proxy: 127.0.0.1,localhost
+          NO_PROXY: 127.0.0.1,localhost
 
       - name: Upload Playwright report
         if: always()

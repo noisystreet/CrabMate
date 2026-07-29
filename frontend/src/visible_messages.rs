@@ -100,11 +100,15 @@ pub(crate) fn tui_should_render_message(
     if !is_empty_assistant_body(m) {
         return true;
     }
-    overlay.is_some_and(|o| {
+    let show = overlay.is_some_and(|o| {
         o.session_id == session_id
             && o.message_id == m.id
             && (!o.answer.trim().is_empty() || !o.reasoning.trim().is_empty())
-    })
+    });
+    if !show {
+        crate::layout_debug_counters::note_empty_shell_skip();
+    }
+    show
 }
 
 /// 返回 `messages` 中应对用户展示的原始下标（顺序不变；仅 scope 过滤，无 fuzzy dedupe）。

@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -491,3 +491,26 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 **`on_done`**：`drain_stream_tail_into_canonical_for_done` → `tool_phase_end`（若仍 open）/ `close_open_commentary` → `sync_turn_projection` → 再 tail 决策。
 
 **测试**：`project_turn_web_v2_keeps_closed_commentary_rows_stable` · `golden_turn_web_stored_sync` · `mock-ready-bubble-stability.spec.ts` · `mock-storage-consistency.spec.ts` · `mock-streaming-overlap.spec.ts` · `mock-commentary-no-duplicate.spec.ts` · `finalize_loading_drops_text_already_on_commentary_row`。
+
+---
+
+## 15. 已知过渡债（收敛中）
+
+v2 逐旁注与 `layout_schema_version=2` 已落地，但热路径仍存在 **「尾泡 + overlay + 事后投影」** 并行持有正文的过渡形态。近期止血（旁白双写门控、晚到 upsert 到工具前、TUI 跳过空 Loading 壳）不改变该结构债。
+
+| 债 | 表现 | 收敛方向 |
+|----|------|----------|
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | 旁白直写投影；Loading **纯句柄**；handoff 降为兜底 |
+| 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler |
+| 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
+| I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | 正式不变量以「稳定 key + 工具前 + 禁止第二行」为准 |
+
+**实施规划**（agent 工作区，不入仓）：`agent_space/streaming-layout-convergence-plan.md`（Phase A 观测 → B 旁白直写 → C Loading 句柄 → D 投影类型 → E 协议）。待评审后可抽 ADR 挂本仓库 `docs/`。
+
+**回归基线（流中采样，勿只验就绪后）**：
+
+- `e2e/specs/mock-mid-process-commentary-duplicate.spec.ts`
+- `e2e/specs/mock-commentary-before-tool-order.spec.ts`
+- `e2e/specs/mock-empty-assistant-shell.spec.ts`
+
+**Debug 观测**（仅 debug 构建）：`layout_debug_counters` 累计 `empty_shell_skip` / `commentary_handoff`，控制台 `[layout_debug]`。

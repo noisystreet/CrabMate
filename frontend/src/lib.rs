@@ -30,6 +30,7 @@ mod ide_find;
 mod ide_save;
 mod ide_syntax_highlight;
 mod ide_tabs;
+mod layout_debug_counters;
 mod markdown;
 mod message_dedupe;
 mod message_format;
