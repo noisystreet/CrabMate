@@ -602,6 +602,50 @@ mod tests {
         assert!(msgs.iter().any(|m| m.id == "load"));
     }
 
+    /// 多步工具之间：即使会话已有工具行，中间旁白 overlay 在 `allow=false` 时不得进终答。
+    #[test]
+    fn mid_process_overlay_skips_final_answer_when_not_allowed() {
+        let turn = TurnCanonicalState::new();
+        let queue = BubbleOutputQueue;
+        let mut msgs = vec![
+            crate::storage::StoredMessage {
+                id: "tc_list".into(),
+                role: "system".into(),
+                text: "list".into(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: None,
+                is_tool: true,
+                tool_call_id: Some("tc_list".into()),
+                tool_name: Some("list_tree".into()),
+                created_at: 0,
+            },
+            crate::storage::StoredMessage {
+                id: "load".into(),
+                role: "assistant".into(),
+                text: String::new(),
+                reasoning_text: String::new(),
+                image_urls: vec![],
+                state: Some(crate::storage::StoredMessageState::Loading),
+                is_tool: false,
+                tool_call_id: None,
+                tool_name: None,
+                created_at: 0,
+            },
+        ];
+        queue.sync_web_projection(
+            &mut msgs,
+            &turn,
+            Some("load"),
+            Some("工作区是空的。我来创建程序。"),
+            false,
+        );
+        assert!(
+            !msgs.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
+            "mid-process narration must not become turn-final-answer"
+        );
+    }
+
     /// 无工具场景：`flush_final_answer_row` 从 overlay 创建 FINAL_ANSWER_ROW。
     ///
     /// 这是无工具问答的正常路径：流式 delta 写入 overlay，on_done 时

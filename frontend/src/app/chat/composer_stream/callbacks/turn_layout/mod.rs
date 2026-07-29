@@ -215,7 +215,11 @@ fn finalize_turn_projection_before_stream_done_inner(stream_ctx: &ChatStreamCall
     }
     // sync_turn_projection 在前：flush_final_answer_row 需读 overlay 创建 FINAL_ANSWER_ROW。
     // drain 在后：take overlay → stored；顺序不可交换，否则 FINAL_ANSWER_ROW 落盘不全。
+    // projecting_stream_end：与形态 B 终答门解耦，仅在此窗口允许刷终答（避免中间过程
+    // 因「已有工具行」误写 turn-final-answer 与 commentary/loading 双写）。
+    stream_ctx.scratch.set_projecting_stream_end(true);
     stream_ctx.scratch.sync_turn_projection(stream_ctx);
+    stream_ctx.scratch.set_projecting_stream_end(false);
     drain_stream_tail_into_canonical_for_done(stream_ctx);
 }
 
@@ -330,8 +334,8 @@ fn insert_tool_row(
 /// 调用此函数。若直接删除行，且无 BATCH_NARRATION_ROW 保存内容，则上一轮内容丢失。
 /// 改为保留行并清除 `state`，后续 `on_done` 中的 dedup 会清理多余行。
 ///
-/// **旁注移交**：若正文已与某条 `turn-commentary-*` 行完全相同，视为已移交所有权，
-/// 清空后按空壳删除，禁止升格成第二条普通助手行。
+/// **正文移交**：若正文已与某条已定稿助手行（旁注 / 终答 / 普通 assistant）完全相同，
+/// 视为已移交所有权，清空后按空壳删除，禁止升格成第二条普通助手行。
 fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
     if idx >= messages.len() {
         return;
@@ -341,13 +345,10 @@ fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
         return;
     }
     let text_trim = m.text.trim().to_string();
-    if !text_trim.is_empty() {
-        let duplicate_of_commentary = messages.iter().enumerate().any(|(i, other)| {
-            i != idx && is_commentary_row_id(other.id.as_str()) && other.text.trim() == text_trim
-        });
-        if duplicate_of_commentary {
-            messages[idx].text.clear();
-        }
+    if !text_trim.is_empty()
+        && loading_handoff::persisted_assistant_owns_live_text(messages, idx, text_trim.as_str())
+    {
+        messages[idx].text.clear();
     }
     let content_saved =
         !messages[idx].text.trim().is_empty() || !messages[idx].reasoning_text.trim().is_empty();
@@ -702,7 +703,10 @@ impl TurnLayout {
             let overlay_trim = overlay_answer_str.map(str::trim).unwrap_or("");
             let handed_off = stream_ctx
                 .read_bound_session(|s| {
-                    loading_handoff::commentary_owns_live_text(&s.messages, overlay_trim)
+                    loading_handoff::persisted_assistant_owns_live_text_any(
+                        &s.messages,
+                        overlay_trim,
+                    )
                 })
                 .unwrap_or(false);
             if !handed_off {
@@ -780,6 +784,18 @@ impl TurnLayout {
         messages.remove(load_idx);
     }
 
+    /// 是否允许将 overlay 刷进 `turn-final-answer`。
+    ///
+    /// **禁止**仅因「会话已有工具且工具相已结束」放行——多步工具之间的中间旁白
+    /// 会落在该窗口，误写终答行后再 demote/flush commentary，导出即成对双写
+    ///（见 `chat_export_20260729_210001.md`）。
+    pub(crate) fn should_allow_final_answer_flush(
+        final_gate_open: bool,
+        projecting_stream_end: bool,
+    ) -> bool {
+        final_gate_open || projecting_stream_end
+    }
+
     /// 段/工具边界：flush 工具批说明块到 stored；**I14** 同帧移交 loading 正文。
     pub(crate) fn sync_turn_projection(
         stream_ctx: &ChatStreamCallbackCtx,
@@ -791,17 +807,11 @@ impl TurnLayout {
         // 阶段 1：闭包外取出 overlay answer，让 `flush_final_answer_row` 双路读取。
         let overlay_answer = overlay_answer_for_loading_tail(stream_ctx, mid.as_str());
         let overlay_answer_str = overlay_answer.as_deref();
-        // 工具前的 segment_end sync 不得把旁白写入 turn-final-answer。
-        // 允许落盘：post-tool 门已开，或会话里已有工具行且工具相已结束。
-        let allow_final_answer = {
-            let post = stream_ctx.scratch.post_tool_final_answer_open()
-                || stream_ctx.scratch.post_tool_stream_tail_active();
-            let tools_done = !stream_ctx.scratch.tool_phase_open()
-                && stream_ctx
-                    .read_bound_session(|s| s.messages.iter().any(|m| m.is_tool))
-                    .unwrap_or(false);
-            post || tools_done
-        };
+        // 工具前 / 中间过程旁白仍在 overlay：仅形态 B 终答门或 on_done 投影窗口可写终答。
+        let allow_final_answer = Self::should_allow_final_answer_flush(
+            stream_ctx.scratch.post_tool_final_answer_open(),
+            stream_ctx.scratch.projecting_stream_end(),
+        );
         let handed_off = RefCell::new(false);
         stream_ctx.update_bound_session(|s| {
             s.layout_schema_version = crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION;
@@ -816,7 +826,7 @@ impl TurnLayout {
                 allow_final_answer,
             );
             // I14：flush 与清空 loading text 在同一 `update_bound_session` 内完成。
-            if loading_handoff::clear_loading_tail_text_if_commentary_owns(
+            if loading_handoff::clear_loading_tail_text_if_persisted_owns(
                 &mut s.messages,
                 Some(mid.as_str()),
                 overlay_answer_str,
@@ -844,7 +854,7 @@ impl TurnLayout {
 
 /// 说明块已落盘或无需 preview 时，可安全清空 loading 尾泡 overlay answer。
 ///
-/// 工具相：仅当 overlay 正文已由同文 `turn-commentary-*` 持有时清（I14）；
+/// 工具相：仅当 overlay 正文已由同文定稿助手行持有时清（I14）；
 /// 否则保留至移交完成，避免闪空。
 pub(super) fn should_clear_preview_overlay_answer(
     turn: &TurnCanonicalState,
@@ -853,7 +863,7 @@ pub(super) fn should_clear_preview_overlay_answer(
 ) -> bool {
     if turn.tool_phase_open() {
         return overlay_answer
-            .is_some_and(|t| loading_handoff::commentary_owns_live_text(messages, t));
+            .is_some_and(|t| loading_handoff::persisted_assistant_owns_live_text_any(messages, t));
     }
     BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }

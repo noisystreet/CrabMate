@@ -278,6 +278,51 @@ fn finalize_loading_drops_text_already_on_commentary_row() {
 }
 
 #[test]
+fn finalize_loading_drops_text_already_on_final_answer_row() {
+    let mut msgs = vec![
+        StoredMessage {
+            id: "turn-final-answer".into(),
+            role: "assistant".into(),
+            text: "中间旁白。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+        StoredMessage {
+            id: "a_load".into(),
+            role: "assistant".into(),
+            text: "中间旁白。".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        },
+    ];
+    finalize_loading_row_at(&mut msgs, 1);
+    assert_eq!(
+        msgs.len(),
+        1,
+        "loading must not duplicate turn-final-answer mid-process"
+    );
+    assert_eq!(msgs[0].id, "turn-final-answer");
+}
+
+#[test]
+fn allow_final_answer_flush_requires_gate_or_stream_end() {
+    assert!(!TurnLayout::should_allow_final_answer_flush(false, false));
+    assert!(TurnLayout::should_allow_final_answer_flush(true, false));
+    assert!(TurnLayout::should_allow_final_answer_flush(false, true));
+    assert!(TurnLayout::should_allow_final_answer_flush(true, true));
+}
+
+#[test]
 fn pin_loading_tail_in_messages_moves_loading_to_end() {
     let mut msgs = vec![
         empty_msg("t0", "system", "tool", true),

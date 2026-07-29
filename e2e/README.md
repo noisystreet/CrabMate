@@ -168,8 +168,20 @@ cd e2e && npx playwright test specs/real-llm-*.spec.ts
 - **TUI 流式闪烁**：`specs/mock-tui-stream-flicker.spec.ts` 用 8ms 采样 + `innerHTML` 钩子检测「正文首次出现后短暂消失」；含 delayed `conversation_saved` → `GET /conversation/messages`（revision+1）竞态。`specs/mock-ready-bubble-stability.spec.ts` 冻结已定稿 `section.chat-tui-turn` 的 `data-tui-msg-id`，断言流式中不消失。
 - **助手正文清空再出现**：`specs/mock-assistant-content-blank.spec.ts` 冻结首次出现旁白的 `data-tui-msg-id`；旧 mid 移交后变空可接受，但旁白标记不得整段消失再出现。
 - **工具前旁白恰好一条**：`specs/mock-commentary-no-duplicate.spec.ts` 断言流结束后旁白仍可见且 DOM/持久化恰好一条；并覆盖「上轮已有 commentary」时本轮不得被掏空。
+- **晚到旁注（形态 A）**：`specs/mock-late-commentary.spec.ts` 对齐金样 `late_commentary_delta_after_tool_call`：工具先于旁白 delta，断言旁白仍在锚定工具之前且恰好一条。
+- **中间过程旁白不双写**：`specs/mock-mid-process-commentary-duplicate.spec.ts` 按 `chat_export_20260729_210001.md` 多工具时序；**流中采样**（每段旁白出现后 + 工具可见后再断言 DOM 恰好 1）；**就绪瞬间**（不等 hydration）断言 DOM / 持久化 / 导出形段各恰好 1；**重载后再断言**恰好 1。共享断言见 `fixtures/session_assertions.ts`（`sampleCommentaryStepsDuringStream`）。
+- **真实 LLM 就绪瞬间成对双写**：`specs/real-llm-bubble-layout.spec.ts` 在 `waitForStableSessionMessages` **之前**检查相邻助手正文不得完全相同；其后仍比对重载前后 stored 一致（防 hydrate 拆合）。
 - **导出会话「分析当前项目」**：`specs/mock-export-analyze-project-flicker.spec.ts` 按 `chat_export_*.md` 时序重放意图分析 + 开场白 + `parsing_tool_calls` + 6× `read_file` + 分块长终答，断言助手正文气泡不归零。
 
+### 监控分层（旁白 / 导出）
+
+| 层 | 何时取样 | 查什么 | 主要用例 |
+|----|----------|--------|----------|
+| 0 流中 | 每段旁白出现后、工具可见后再采 | 已见旁白 DOM count===1；persist 不得 ≥2 | mid-process `sampleCommentaryStepsDuringStream` |
+| A 就绪瞬间 | status=就绪后立刻 | 同文旁白 count===1；相邻助手正文不重复 | mid-process、real-llm early |
+| B 重载后 | reload + 稳定 | 仍恰好 1；与 A 对比不得「水合才修好」 | mid-process reload |
+| C 重载前后一致 | stable → reload → stable | role/is_tool/text 对齐 | real-llm（旧 hydrate 拆合） |
+| D 写路径单测 | cargo test | `allow_final_answer` 门控；终答同文移交 | frontend `turn_layout` |
 ## CI 集成
 
 ```yaml
