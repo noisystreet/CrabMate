@@ -354,7 +354,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | `stream_text_overlay` 展示 | `loading` 且 `stored.text` **非空** → 只读 stored（边界已落盘）；**空** → 读 overlay preview |
 | `sync_turn_projection` | **仅** flush 旁注行 + relocate；**不**把 open 段 preview 写入 loading `stored.text` |
 | `demote_answer_before_tools` | peel + canonical ingest；**暂不清** overlay（旁注未 flush） |
-| 投影后 `release_loading_after_tool_projection` | commentary 行已落盘后清空 loading `text` + overlay（原子移交） |
+| 投影后 `release_loading_after_tool_projection` | **仅当** live 正文与某条 `turn-commentary-*` **同文** 时清空 loading/`overlay`（勿仅因会话里已有旧旁注就清） |
 | `finalize_loading_row_at` | 若正文与已有 `turn-commentary-*` 完全相同 → 删空壳，禁止升格双写 |
 | post-tool 工具边界 | 新 loading **空壳**；preview 仅 overlay |
 
