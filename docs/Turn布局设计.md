@@ -496,22 +496,32 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 
 ## 15. 已知过渡债（收敛中）
 
-v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 已收窄双写并显式化投影：观测基线、锚定旁白直写、Loading 纯句柄、`TurnProjection { finalized_rows, active_row }` + Web `projection_reconciler`。热路径仍可短暂持有 overlay 预览；完整 reconciler 收窄 `TurnLayout` 表面积见后续迭代。
+v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文所有权收口 / `TurnProjection` 金样已合入主线（PR [#723](https://github.com/noisystreet/CrabMate/pull/723)、[#724](https://github.com/noisystreet/CrabMate/pull/724)）。主路径：`TurnReducer` → `project_turn_projection` → `projection_reconciler` → `StoredMessage`；`TurnLayout` 管 scratch / overlay / loading 句柄。
 
-| 债 | 表现 | 收敛方向 |
-|----|------|----------|
-| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **Phase B/C** 已收窄；**2026-07-30**：`text_ownership` + handoff 仅兼容非空 `loading.text`；overlay ≡ active 收口不计 handoff |
-| 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | 顺序只认 `before_tool_call_id` + reconciler（Phase B） |
-| 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | 已对齐 `tui_should_render_message`；禁止新入口绕过 |
-| I1 演进 | 原「insert-once 不可移」→ 现允许同 key upsert / 纠错序 | **已定稿**：稳定 key + 工具前 + 禁止第二行（§12 I1 / Phase D） |
-| 投影类型曾隐式 | reconciler 散落在 `TurnLayout` / `BubbleOutputQueue` | **Phase D**：`project_turn_projection` + `projection_reconciler`（旁白 / 终答 / 工具占位）；`TurnLayout` 管 scratch、overlay、loading 句柄 |
+| 债 | 表现 | 状态 |
+|----|------|------|
+| 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **已收窄**：`text_ownership`；handoff 仅兼容非空 `loading.text`；overlay ≡ active 收口不计 handoff |
+| 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | **已收敛**：顺序只认 `before_tool_call_id` + reconciler |
+| 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | **已对齐** `tui_should_render_message`；禁止新入口绕过 |
+| I1 演进 | 原「insert-once 不可移」→ 同 key upsert / 纠错序 | **已定稿**（§12 I1 / Phase D） |
+| 投影类型曾隐式 | reconciler 散落在 `TurnLayout` | **已显式**：`project_turn_projection` + `projection_reconciler` |
 
-**实施规划**（agent 工作区，不入仓）：`agent_space/streaming-layout-convergence-plan.md`（Phase A 观测 → B 旁白直写 → C Loading 句柄 → D 投影类型 → E 协议）。待评审后可抽 ADR 挂本仓库 `docs/`。
+**残余 backlog**（正式规范以本节为准；勿再以 agent 草案为活规划）：
+
+| 项 | 说明 |
+|----|------|
+| 真实 LLM 冒烟 | 流中空壳 / 相邻同文 / 旁白在工具前；见 `e2e/specs/real-llm-bubble-layout.spec.ts` |
+| 削薄 `TurnLayout` | rotate / peel / demote / on_done 继续收进 reconciler，缩小公开入口 |
+| 旁白路径 ideal `handoff=0` | 兼容路径可留；主路径应接近零 `commentary_handoff` |
+| Phase E | 协议与 hydration（`RUN_FINISHED`、投影键权威）；草案见 `agent_space/sse-conversation-layout-future-plan.md` |
+
+历史 Phase A–D 实施草案已删除；正式规范与残余 backlog **仅以本节与 §12 为准**（勿再恢复「finalized 禁止改文」类过时 I1）。
 
 **回归基线（流中采样，勿只验就绪后）**：
 
 - `e2e/specs/mock-mid-process-commentary-duplicate.spec.ts`
 - `e2e/specs/mock-commentary-before-tool-order.spec.ts`
 - `e2e/specs/mock-empty-assistant-shell.spec.ts`
+- 金样：`fixtures/turn_project_projection_golden.jsonl`（`cargo test -p crabmate-turn-layout golden_turn_project_projection`）
 
 **Debug 观测**（仅 debug 构建）：`layout_debug_counters` 累计 `empty_shell_skip` / `commentary_handoff`，控制台 `[layout_debug]`。
