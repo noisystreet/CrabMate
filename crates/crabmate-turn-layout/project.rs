@@ -215,6 +215,65 @@ pub fn project_turn_web_v2(turn: &Turn) -> Vec<ProjectedRow> {
     out
 }
 
+/// 流式 active 行：至多一条；有文才出现。不进入 [`TurnProjection::finalized_rows`]。
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ActiveProjectedRow {
+    /// `assistant_commentary` | `assistant_answer`
+    pub kind: String,
+    pub text: String,
+    /// 锚定 open 旁白时的 `tool_call_id`；无锚点或终答为 `None`。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_tool_call_id: Option<String>,
+}
+
+/// Canonical → UI 的显式投影（Phase D）：定稿行 + 可选 active。
+///
+/// - `finalized_rows`：与 [`project_turn_web_v2`] 相同（已关闭旁注 + 工具 + 时间线）
+/// - `active_row`：当前 open commentary / open answer；Web reconciler 写入 commentary 行或 overlay
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TurnProjection {
+    pub finalized_rows: Vec<ProjectedRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_row: Option<ActiveProjectedRow>,
+}
+
+fn streaming_open_answer_text(turn: &Turn) -> Option<String> {
+    turn.segments
+        .iter()
+        .rev()
+        .find(|s| s.open && s.kind == SegmentKind::Answer && !s.text.trim().is_empty())
+        .map(|s| s.text.clone())
+}
+
+/// 定稿行 = [`project_turn_web_v2`]；active = open commentary 或 open answer（至多一条）。
+#[must_use]
+pub fn project_turn_projection(turn: &Turn) -> TurnProjection {
+    let finalized_rows = project_turn_web_v2(turn);
+    let active_row = if let Some((tcid, text)) = streaming_commentary_before_tool(turn) {
+        Some(ActiveProjectedRow {
+            kind: ASSISTANT_COMMENTARY.into(),
+            text,
+            before_tool_call_id: Some(tcid),
+        })
+    } else if let Some(text) = streaming_commentary_block_text(turn) {
+        Some(ActiveProjectedRow {
+            kind: ASSISTANT_COMMENTARY.into(),
+            text,
+            before_tool_call_id: None,
+        })
+    } else {
+        streaming_open_answer_text(turn).map(|text| ActiveProjectedRow {
+            kind: ASSISTANT_ANSWER.into(),
+            text,
+            before_tool_call_id: None,
+        })
+    };
+    TurnProjection {
+        finalized_rows,
+        active_row,
+    }
+}
+
 /// `project_turn_web` 中的批说明行（若有）。
 #[must_use]
 pub fn batch_narration_row(turn: &Turn) -> Option<ProjectedRow> {
@@ -445,5 +504,71 @@ mod tests {
         assert_eq!(full_projection[0].tool_call_id.as_deref(), Some("tc_a"));
         assert_eq!(full_projection[2].kind, ASSISTANT_COMMENTARY);
         assert_eq!(full_projection[2].tool_call_id.as_deref(), Some("tc_b"));
+    }
+
+    #[test]
+    fn project_turn_projection_keeps_finalized_prefix_when_active_grows() {
+        let mut turn = Turn {
+            tool_phase_open: true,
+            steps: vec![crate::model::ToolStep {
+                tool_call_id: "tc_a".into(),
+                name: "list_tree".into(),
+                summary: "list".into(),
+                before_commentary: Some("已关闭旁白。".into()),
+            }],
+            segments: vec![crate::model::TurnSegment {
+                segment_id: "seg-open".into(),
+                kind: SegmentKind::Commentary,
+                before_tool_call_id: Some("tc_b".into()),
+                text: "进行中。".into(),
+                open: true,
+            }],
+            ..Turn::default()
+        };
+
+        let first = project_turn_projection(&turn);
+        assert_eq!(first.finalized_rows.len(), 2);
+        assert_eq!(
+            first.active_row.as_ref().map(|a| a.text.as_str()),
+            Some("进行中。")
+        );
+        assert_eq!(
+            first
+                .active_row
+                .as_ref()
+                .and_then(|a| a.before_tool_call_id.as_deref()),
+            Some("tc_b")
+        );
+
+        turn.segments[0].text.push_str("续。");
+        let second = project_turn_projection(&turn);
+        assert_eq!(
+            first.finalized_rows, second.finalized_rows,
+            "active delta must not mutate finalized_rows"
+        );
+        assert_eq!(
+            second.active_row.as_ref().map(|a| a.text.as_str()),
+            Some("进行中。续。")
+        );
+    }
+
+    #[test]
+    fn project_turn_projection_active_open_answer() {
+        let turn = Turn {
+            segments: vec![crate::model::TurnSegment {
+                segment_id: "ans".into(),
+                kind: SegmentKind::Answer,
+                before_tool_call_id: None,
+                text: "终答增量。".into(),
+                open: true,
+            }],
+            ..Turn::default()
+        };
+        let proj = project_turn_projection(&turn);
+        assert!(proj.finalized_rows.is_empty());
+        let active = proj.active_row.expect("open answer");
+        assert_eq!(active.kind, ASSISTANT_ANSWER);
+        assert_eq!(active.text, "终答增量。");
+        assert!(active.before_tool_call_id.is_none());
     }
 }

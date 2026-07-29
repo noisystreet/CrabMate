@@ -1,13 +1,12 @@
 //! v2 布局：流式 delta → loading overlay preview；已关闭 commentary 按工具键不可变落盘。
 
-use crabmate_turn_layout::{
-    ASSISTANT_COMMENTARY, project_turn_web_v2, streaming_commentary_block_text,
-};
+use crabmate_turn_layout::{ASSISTANT_COMMENTARY, project_turn_projection};
 
 use crate::message_loading::is_loading_plain_assistant;
 use crate::storage::{V2_COMMENTARY_ROW_ID_PREFIX, V2_FINAL_ANSWER_ROW_ID};
 
 use super::super::super::turn_canonical::TurnCanonicalState;
+use super::projection_reconciler;
 
 /// 工具批结束后终答块的稳定 id（与 `project_turn_web` · `assistant_answer` 对应）。
 pub(crate) const FINAL_ANSWER_ROW_ID: &str = V2_FINAL_ANSWER_ROW_ID;
@@ -30,7 +29,8 @@ impl BubbleOutputQueue {
     fn commentary_rows_from_projection(
         turn: &TurnCanonicalState,
     ) -> Vec<crabmate_turn_layout::ProjectedRow> {
-        project_turn_web_v2(turn.turn_ref())
+        project_turn_projection(turn.turn_ref())
+            .finalized_rows
             .into_iter()
             .filter(|row| row.kind == PROJECT_KIND_COMMENTARY)
             .collect()
@@ -153,16 +153,19 @@ impl BubbleOutputQueue {
         _messages: Option<&[crate::storage::StoredMessage]>,
     ) -> String {
         if turn.tool_phase_open() {
-            if crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref()).is_some() {
-                return String::new();
+            let projection = project_turn_projection(turn.turn_ref());
+            match projection.active_row.as_ref() {
+                Some(active) if active.before_tool_call_id.is_some() => String::new(),
+                Some(active) if active.kind == ASSISTANT_COMMENTARY => active.text.clone(),
+                _ => String::new(),
             }
-            return streaming_commentary_block_text(turn.turn_ref()).unwrap_or_default();
+        } else {
+            overlay_answer
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .map(str::to_string)
+                .unwrap_or_default()
         }
-        overlay_answer
-            .map(str::trim)
-            .filter(|t| !t.is_empty())
-            .map(str::to_string)
-            .unwrap_or_default()
     }
 
     fn insert_index_before_loading_tail(
@@ -316,12 +319,8 @@ impl BubbleOutputQueue {
         turn: &TurnCanonicalState,
         _overlay_answer: Option<&str>,
     ) {
-        for commentary in Self::commentary_rows_from_projection(turn) {
-            let Some(tool_call_id) = commentary.tool_call_id.as_deref() else {
-                continue;
-            };
-            let _ = Self::upsert_commentary_before_tool(messages, tool_call_id, commentary.text);
-        }
+        let projection = project_turn_projection(turn.turn_ref());
+        projection_reconciler::reconcile_finalized_commentary(messages, &projection);
     }
 
     /// 工具相 open 锚定旁白：直接 upsert `turn-commentary-*`（工具可尚未存在）。
@@ -333,12 +332,12 @@ impl BubbleOutputQueue {
         if !turn.tool_phase_open() {
             return false;
         }
-        let Some((tcid, text)) =
-            crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref())
-        else {
-            return false;
-        };
-        Self::upsert_streaming_anchored_commentary(messages, tcid.as_str(), text, loading_tail_id)
+        let projection = project_turn_projection(turn.turn_ref());
+        projection_reconciler::try_reconcile_active_anchored_commentary(
+            messages,
+            &projection,
+            loading_tail_id,
+        )
     }
 
     /// 工具批结束后 upsert `turn-final-answer`（位于 loading 尾泡之前）。
