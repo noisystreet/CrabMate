@@ -460,9 +460,8 @@ mod tests {
         );
     }
 
-    /// 回归测试：零工具场景 overlay 已被清空（如 `already_visible=true` 跳过 final_response），
-    /// `drain` 后 loading 尾泡仍有正文时，`ensure_final_answer_row_from_text` 应补建
-    /// FINAL_ANSWER_ROW。
+    /// 回归测试：零工具场景 overlay 已被清空时，仍可从 loading 残留正文补建
+    /// FINAL_ANSWER_ROW（Phase C `drain` 兜底；随后须清空 loading 句柄）。
     #[test]
     fn zero_tool_ensure_final_answer_row_from_loading_tail_text() {
         let mut turn = TurnCanonicalState::new();
