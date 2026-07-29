@@ -199,3 +199,113 @@ fn insert_index_for_final_row(messages: &[StoredMessage], loading_tail_id: Optio
     }
     insert_idx
 }
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    use crate::app::chat::composer_stream::callbacks::turn_layout::bubble_queue::{
+        BubbleOutputQueue, FINAL_ANSWER_ROW_ID,
+    };
+    use crate::app::chat::composer_stream::callbacks::turn_layout::text_ownership;
+    use crate::app::chat::composer_stream::turn_canonical::TurnCanonicalState;
+    use crate::sse_dispatch::TurnSegmentStartInfo;
+    use crate::storage::StoredMessageState;
+
+    fn loading(id: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "assistant".into(),
+            text: String::new(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    fn tool(id: &str, tcid: &str) -> StoredMessage {
+        StoredMessage {
+            id: id.into(),
+            role: "system".into(),
+            text: "tool".into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: true,
+            tool_call_id: Some(tcid.into()),
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn anchored_commentary_reconcile_leaves_loading_text_empty() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_segment_start(TurnSegmentStartInfo {
+            segment_id: "seg".into(),
+            kind: "commentary".into(),
+            before_tool_call_id: Some("tc_a".into()),
+        });
+        assert!(turn.try_apply_commentary_delta("旁白。"));
+        turn.on_segment_end("seg".into());
+        turn.on_tool_call("tc_a", "t", "t");
+
+        let mut messages = vec![tool("t1", "tc_a"), loading("load")];
+        reconcile_web_projection(&mut messages, &turn, Some("load"), None, false);
+        assert!(
+            text_ownership::duplicate_commentary_row_ids(&messages).is_empty(),
+            "single commentary key"
+        );
+        assert!(
+            !text_ownership::loading_holds_duplicate_of_persisted(&messages, "load"),
+            "loading must not hold commentary text"
+        );
+        let load = messages.iter().find(|m| m.id == "load").expect("load");
+        assert!(load.text.is_empty());
+    }
+
+    #[test]
+    fn final_answer_reconcile_does_not_write_loading_text() {
+        let mut turn = TurnCanonicalState::new();
+        turn.on_tool_phase_end();
+        let mut messages = vec![loading("load")];
+        reconcile_web_projection(&mut messages, &turn, Some("load"), Some("终答正文。"), true);
+        assert_eq!(text_ownership::final_answer_row_count(&messages), 1);
+        assert!(
+            messages
+                .iter()
+                .any(|m| m.id == FINAL_ANSWER_ROW_ID && m.text == "终答正文。")
+        );
+        let load = messages.iter().find(|m| m.id == "load").expect("load");
+        assert!(
+            load.text.is_empty(),
+            "final must land on turn-final-answer, not loading.text"
+        );
+    }
+
+    #[test]
+    fn upsert_same_commentary_key_does_not_duplicate_row() {
+        let mut messages = vec![tool("t1", "tc_a"), loading("load")];
+        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+            &mut messages,
+            "tc_a",
+            "一。".into()
+        ));
+        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+            &mut messages,
+            "tc_a",
+            "一。二。".into()
+        ));
+        assert!(text_ownership::duplicate_commentary_row_ids(&messages).is_empty());
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|m| m.id == text_ownership::expected_commentary_id("tc_a"))
+                .count(),
+            1
+        );
+    }
+}

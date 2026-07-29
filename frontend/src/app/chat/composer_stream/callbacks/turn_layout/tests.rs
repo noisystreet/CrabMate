@@ -121,7 +121,8 @@ fn post_tool_tool_boundary_creates_empty_loading_tail() {
 }
 
 #[test]
-fn sync_loading_tail_block_writes_streaming_tail() {
+fn sync_loading_tail_block_is_test_only_legacy_helper() {
+    // 生产热路径禁止把旁白/终答写入 loading.text；本函数仅 cfg(test) 保留作表征。
     let mut msgs = vec![StoredMessage {
         id: "a_load".into(),
         role: "assistant".into(),

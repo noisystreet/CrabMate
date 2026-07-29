@@ -20,6 +20,7 @@ mod bubble_queue;
 mod loading_handoff;
 mod projection_reconciler;
 mod stream_done;
+mod text_ownership;
 #[cfg(test)]
 mod turn_web_contract;
 
@@ -732,7 +733,7 @@ impl TurnLayout {
                 overlay_answer_str,
                 allow_final_answer,
             );
-            // I14：flush 与清空 loading text 在同一 `update_bound_session` 内完成。
+            // I14 兼容：仅当 loading.text 残留与定稿同文时清空；主路径旁白不写 loading.text。
             if loading_handoff::clear_loading_tail_text_if_persisted_owns(
                 &mut s.messages,
                 Some(mid.as_str()),
@@ -740,6 +741,19 @@ impl TurnLayout {
             ) {
                 *handed_off.borrow_mut() = true;
             }
+            let dup_commentary = text_ownership::duplicate_commentary_row_ids(&s.messages);
+            let final_n = text_ownership::final_answer_row_count(&s.messages);
+            let load_dup =
+                text_ownership::loading_holds_duplicate_of_persisted(&s.messages, mid.as_str());
+            debug_assert!(
+                dup_commentary.is_empty(),
+                "duplicate commentary row ids after sync: {dup_commentary:?}"
+            );
+            debug_assert!(final_n <= 1, "at most one turn-final-answer row");
+            debug_assert!(
+                !load_dup,
+                "loading must not hold duplicate of persisted commentary/final"
+            );
         });
         let clear_overlay = handed_off.into_inner()
             || stream_ctx
@@ -775,7 +789,9 @@ pub(super) fn should_clear_preview_overlay_answer(
     BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }
 
-#[cfg_attr(not(test), expect(dead_code))]
+/// **禁止**生产路径把旁白/终答写入 loading `text`（见 [`text_ownership`]）。
+/// 仅保留表征测试：历史「尾泡承载正文」行为不得再被热路径调用。
+#[cfg(test)]
 fn sync_loading_tail_block_in_messages(
     messages: &mut [StoredMessage],
     streaming_assistant_id: &str,

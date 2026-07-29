@@ -1,10 +1,9 @@
 //! 流式布局过渡债观测计数（**仅 `debug_assertions`**；release 为空操作）。
 //!
-//! 对应 `agent_space/streaming-layout-convergence-plan.md` Phase A：
+//! 对应 `agent_space/streaming-layout-convergence-plan.md` Phase A / 所有权收口：
 //! - `empty_shell_skip`：本应挂载但因空助手壳被跳过的次数（读路径过滤生效）
-//! - `commentary_handoff`：I14 同文移交清空 loading / overlay 的次数
-//!
-//! WASM debug 构建下控制台周期性输出 `[layout_debug] …`。
+//! - `commentary_handoff`：**兼容路径**清空非空 `loading.text`（与定稿同文）的次数；
+//!   主路径旁白不写 loading，overlay 收口**不**计入此项。
 
 #[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -34,7 +33,7 @@ pub(crate) fn note_empty_shell_skip() {
     }
 }
 
-/// I14 旁注/终答同文移交成功时调用。
+/// I14 **兼容**：清空非空 `loading.text`（与定稿同文）时调用；overlay-only 收口不计。
 #[inline]
 pub(crate) fn note_commentary_handoff() {
     #[cfg(debug_assertions)]
