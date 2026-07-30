@@ -353,7 +353,7 @@ fn print_doctor_user_data_block() {
         }
     );
     println!(
-        "  secrets/web_api_bearer: {}",
+        "  system-keyring/web_api_bearer: {}",
         if st.web_api_bearer.set {
             "已设置（值已隐藏）"
         } else {

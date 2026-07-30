@@ -179,15 +179,15 @@ pub fn settings_mcp_bearer_label(l: Locale) -> &'static str {
 
 pub fn settings_mcp_bearer_hint_set(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "本机已保存 Bearer（不回显）。留空并保存可清除。",
-        Locale::En => "Bearer is saved locally (never echoed). Save empty to clear.",
+        Locale::ZhHans => "已写入系统钥匙串（不回显）。留空并保存可清除。",
+        Locale::En => "Stored in the system keyring (never echoed). Save empty to clear.",
     }
 }
 
 pub fn settings_mcp_bearer_hint_unset(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "可选。写入本机 secrets，探测/对话时作为 Authorization。",
-        Locale::En => "Optional. Stored in local secrets as Authorization for probe/chat.",
+        Locale::ZhHans => "可选。写入系统钥匙串，探测/对话时作为 Authorization。",
+        Locale::En => "Optional. Stored in the system keyring as Authorization for probe/chat.",
     }
 }
 

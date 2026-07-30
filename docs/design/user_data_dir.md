@@ -63,10 +63,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 │   └── <ws_sha256>/                  # SHA256(hex)，与 frontend sessions_json_storage_key 一致
 │       ├── manifest.json             # workspace_root 规范绝对路径
 │       └── web_sessions.json         # 侧栏 ChatSession[] + active_session_id
-└── secrets/                          # chmod 0700；文件 chmod 0600
-    ├── client_llm                    # 主模型 API Key（单行或极小 TOML）
-    ├── executor_llm                  # 可选：执行器 API Key
-    └── web_api_bearer                # 可选：访问 CrabMate HTTP API 的 Bearer
+└── secrets/                          # 仅遗留迁移用；新写入走系统钥匙串（见 §4.6）
 ```
 
 **`ws_sha256` 算法**：与 `frontend/src/storage.rs` 中 `normalize_workspace_partition_path` + SHA256 相同，便于从 `agent-demo-sessions-v1::ws::<hex>` 键名一对一迁移。
@@ -169,18 +166,23 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → `secrets/mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
+若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
 
 Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 
-### 4.6 `secrets/`（机密）
+### 4.6 系统钥匙串与遗留 `secrets/`
 
-| 文件 | 内容 |
+持久密钥写入系统钥匙串（服务名 **`com.crabmate.credentials`**；macOS Keychain / Windows Credential Manager / Linux Secret Service）。账户名：
+
+| 账户 | 内容 |
 |------|------|
-| `client_llm` | 云厂商 Bearer（现 `crabmate-client-llm-api-key`） |
-| `executor_llm` | 可选（现 `crabmate-executor-llm-api-key`） |
-| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate 鉴权 |
-| `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时 prune） |
+| `client_llm` | 云厂商 Bearer（主模型） |
+| `executor_llm` | 可选：执行器 API Key |
+| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets`；与 TOML/`CM_WEB_API_BEARER_TOKEN` 为同一共享密钥时由前端携带） |
+| `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
+| `saved_model_<sha256>` | 已保存模型的 API Key（`llm_overrides.json` 仅留 `has_api_key`） |
+
+旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：首次成功读/写钥匙串后自动迁移并删除；钥匙串不可用时保留旧文件并报错，避免丢失。
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 
@@ -254,15 +256,17 @@ flowchart TB
 
 ## 8. LLM 配置合并优先级（运行时）
 
-对单次 `POST /chat` / `POST /chat/stream`，建议合并顺序（后者覆盖前者）：
+对单次 `POST /chat` / `POST /chat/stream`：
 
-1. `AgentConfig` / TOML / 嵌入默认  
-2. 进程环境 **`API_KEY`**（`llm_http_auth_mode=bearer` 时）  
-3. **`~/.local/share/crabmate/llm_overrides.json`**  
-4. **系统钥匙串 `client_llm`**（仅 `api_key`；服务名 `com.crabmate.credentials`）
-5. 请求体 **`client_llm`**（Web 设置页当次提交，**不写盘**除非用户显式保存）
+**非密钥字段**（`api_base` / `model` / 上下文窗口等）：请求体优先；空缺由 **`llm_overrides.json`** 填补；再回落到 `AgentConfig` / TOML。
 
-与现文档一致：**`client_llm.api_key` 随请求发送**；持久化密钥只进系统钥匙串，**服务端 `serve` 进程不把 Web 密钥写入 `AppState` 持久字段**。旧 `secrets/client_llm` / `executor_llm` 与 `saved_models[*].api_key` 采用「先写钥匙串、成功后删明文」迁移；失败时保留旧数据。保存模型使用 `api_base + model` 的 SHA-256 派生钥匙串账户，`llm_overrides.json` 仅保留 `has_api_key`。
+**`api_key`（高 → 低，与 CLI 一致）**：
+
+1. 请求体 **`client_llm.api_key`**（Web 设置页当次提交，**不写盘**除非用户显式保存）  
+2. 进程环境 **`API_KEY`**（非空时**不**再注入钥匙串，便于临时覆盖）  
+3. 已保存模型钥匙串 → **`client_llm`** 钥匙串（服务名 `com.crabmate.credentials`）
+
+与现文档一致：持久化密钥只进系统钥匙串，**服务端 `serve` 进程不把 Web 密钥写入 `AppState` 持久字段**（启动时仍可读 env/`API_KEY`）。旧 `secrets/*` 与 `saved_models[*].api_key` 采用「先写钥匙串、成功后删明文」迁移；失败时保留旧数据。
 
 ---
 
@@ -277,7 +281,7 @@ flowchart TB
 - 创建目录 **`0700`**，`secrets/` 下文件 **`0600`**。
 - API 与 `/chat` 相同 Bearer；日志禁止打印 `secrets/` 与 `sessions` 全文。
 - `GET` 类接口**不得**返回完整 `api_key`（允许 `has_key`、`key_suffix` 等脱敏字段）。
-- 备份：复制 `~/.local/share/crabmate` 即备份侧栏会话与偏好（**含密钥**）；勿将目录提交到 git 或公开网盘。
+- 备份：复制 `~/.local/share/crabmate` 可备份侧栏会话与偏好；**系统钥匙串中的密钥需另行导出/备份**（目录内遗留 `secrets/` 明文若仍在则也含密钥）。勿将目录提交到 git 或公开网盘。
 - 多 `serve` 实例：对 `web_sessions.json` 使用文件锁或单写者，避免并发写坏。
 
 环境变量：
