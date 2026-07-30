@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use leptos::prelude::*;
 
-use super::super::turn_layout::TurnLayout;
+use super::super::turn_layout::{ResultOnlyToolStep, TurnLayout};
 use crate::api::OnToolCallFn;
 use crate::i18n;
 use crate::message_format::tool_stored_text_from_result_info;
@@ -140,7 +140,18 @@ pub(in super::super) fn make_on_tool_result(
             });
         }
         if inserted_new_tool {
-            TurnLayout::on_tool_result_inserted(&stream_ctx, id.as_str());
+            let tool_name = non_empty_trimmed_tool_name(&info.name).unwrap_or_default();
+            let declared = info
+                .tool_call_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|tid| !tid.is_empty())
+                .map(|tid| ResultOnlyToolStep {
+                    tool_call_id: tid,
+                    name: tool_name.as_str(),
+                    summary: t.as_str(),
+                });
+            TurnLayout::on_tool_result_inserted(&stream_ctx, id.as_str(), declared);
         } else {
             TurnLayout::pin_loading_tail(&stream_ctx);
         }

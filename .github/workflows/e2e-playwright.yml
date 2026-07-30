@@ -77,6 +77,7 @@ jobs:
             specs/mock-mid-process-commentary-duplicate.spec.ts \
             specs/mock-commentary-before-tool-order.spec.ts \
             specs/mock-empty-assistant-shell.spec.ts \
+            specs/mock-real-tool-bubble-vanish.spec.ts \
             --reporter=list
         working-directory: e2e
         env:

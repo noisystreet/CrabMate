@@ -276,14 +276,15 @@ impl BubbleOutputQueue {
     }
 
     /// 工具相 open 锚定旁白：直接 upsert `turn-commentary-*`（工具可尚未存在）。
+    ///
+    /// 不要求 `tool_phase_open`：`turn_segment_start` 声明锚点后、`TOOL_CALL_START` 到达前
+    /// 也须落出可见行，否则该窗口内 overlay 已清而 canonical 投影不出行（气泡闪没）。
+    /// 段带 `before_tool_call_id` 即表明是某工具前的旁白，不会与终答混淆。
     pub(super) fn try_upsert_open_anchored_commentary(
         messages: &mut Vec<crate::storage::StoredMessage>,
         turn: &TurnCanonicalState,
         loading_tail_id: Option<&str>,
     ) -> bool {
-        if !turn.tool_phase_open() {
-            return false;
-        }
         let projection = project_turn_projection(turn.turn_ref());
         projection_reconciler::try_reconcile_active_anchored_commentary(
             messages,
