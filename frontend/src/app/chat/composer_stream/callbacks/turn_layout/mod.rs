@@ -52,6 +52,16 @@ struct PeeledSummary {
     reasoning_text: String,
 }
 
+/// 未经 `tool_call` 声明便到达的 `tool_result` 所携工具标识。
+///
+/// 见 [`TurnLayout::on_tool_result_inserted`]：canonical 需补登记该步，旁注才有锚点。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ResultOnlyToolStep<'a> {
+    pub(crate) tool_call_id: &'a str,
+    pub(crate) name: &'a str,
+    pub(crate) summary: &'a str,
+}
+
 fn overlay_answer_for_loading_tail(
     stream_ctx: &ChatStreamCallbackCtx,
     loading_id: &str,
@@ -399,11 +409,24 @@ impl TurnLayout {
     }
 
     /// `tool_result` 在未命中占位时新建工具行后的布局收口。
+    ///
+    /// `declared`：该结果对应的工具标识；`tool_result` 未经 `tool_call` 声明时（无 START、
+    /// 或 START 晚到）canonical 尚无对应步，旁注便锚不到工具上，投影不出 `turn-commentary-*`
+    /// 行，而下方 `drain` 已清空 overlay 与 loading —— 用户会看到助手气泡整段消失。
+    /// 故此处在 `drain` 之后、投影之前补登记（幂等）。
     pub(crate) fn on_tool_result_inserted(
         stream_ctx: &ChatStreamCallbackCtx,
         tool_message_id: &str,
+        declared: Option<ResultOnlyToolStep<'_>>,
     ) {
         drain_loading_commentary_to_canonical(stream_ctx);
+        if let Some(step) = declared.filter(|s| !s.tool_call_id.trim().is_empty())
+            && !stream_ctx.scratch.has_turn_tool_step(step.tool_call_id)
+        {
+            stream_ctx
+                .scratch
+                .on_turn_tool_call(step.tool_call_id, step.name, step.summary);
+        }
         let mid = stream_ctx.scratch.clone_assistant_id();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {

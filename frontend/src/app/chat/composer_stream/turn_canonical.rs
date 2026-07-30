@@ -166,6 +166,11 @@ impl TurnCanonicalState {
         });
     }
 
+    /// canonical 是否已登记该 `tool_call_id` 的工具步（`tool_result` 补登记前的幂等判据）。
+    pub(super) fn has_tool_step(&self, tool_call_id: &str) -> bool {
+        self.turn.step_by_call_id(tool_call_id).is_some()
+    }
+
     /// 将 overlay / peel 正文归入 canonical commentary；不因已有 step 旁注而丢弃。
     pub(super) fn ingest_commentary_from_peel(&mut self, text: &str) {
         let t = text.trim();
@@ -398,6 +403,21 @@ mod tests {
         assert_eq!(
             turn.commentary_before_tool("tc_unpack").as_deref(),
             Some("好的，先解压。")
+        );
+    }
+
+    /// `tool_result` 未经 `tool_call` 声明时补登记的工具步：pending 旁注须锚上去，
+    /// 否则投影不出 `turn-commentary-*` 行，助手气泡在工具边界整段消失。
+    #[test]
+    fn result_only_tool_step_anchors_pending_commentary() {
+        let mut turn = TurnCanonicalState::new();
+        turn.absorb_pre_tool_narration_for_first_tool("我先看看当前目录的结构。");
+        assert!(!turn.has_tool_step("tc_list"));
+        turn.on_tool_call("tc_list", "list_tree", "list tree: .");
+        assert!(turn.has_tool_step("tc_list"));
+        assert_eq!(
+            turn.commentary_before_tool("tc_list").as_deref(),
+            Some("我先看看当前目录的结构。")
         );
     }
 

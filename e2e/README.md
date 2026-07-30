@@ -172,6 +172,10 @@ cd e2e && npx playwright test specs/real-llm-*.spec.ts
 - **中间过程旁白不双写**：`specs/mock-mid-process-commentary-duplicate.spec.ts` 按 `chat_export_20260729_210001.md` 多工具时序；**流中采样**（每段旁白出现后 + 工具可见后再断言 DOM 恰好 1）；**就绪瞬间**（不等 hydration）断言 DOM / 持久化 / 导出形段各恰好 1；**重载后再断言**恰好 1。共享断言见 `fixtures/session_assertions.ts`（`sampleCommentaryStepsDuringStream`）。
 - **真实 LLM 就绪瞬间成对双写**：`specs/real-llm-bubble-layout.spec.ts` 在 `waitForStableSessionMessages` **之前**检查相邻助手正文不得完全相同；其后仍比对重载前后 stored 一致（防 hydrate 拆合）。
 - **导出会话「分析当前项目」**：`specs/mock-export-analyze-project-flicker.spec.ts` 按 `chat_export_*.md` 时序重放意图分析 + 开场白 + `parsing_tool_calls` + 6× `read_file` + 分块长终答，断言助手正文气泡不归零。
+- **真实红测派生 mock**：`specs/mock-real-tool-bubble-vanish.spec.ts` 回放 `real-llm-tool-bubble-vanish` 的两条时序，共同根因是旁白离开 overlay 后在 canonical 里还没有工具锚点，`project_turn_web_v2` 便投影不出 `turn-commentary-*` 行（详见 `docs/Turn布局设计.md` §14 I15）：
+  - **无 START 的 `TOOL_CALL_RESULT`** —— `drain(clear=true)` 掏空 overlay，而 canonical 无该工具步；
+  - **`turn_segment_start{beforeToolCallId}` 先于 `TOOL_CALL_START`**（真实 SSE 的实际形态，两者相隔约 475ms）—— `reset_loading_tail_streaming_text` 已清 overlay，pending 旁白要等 `ToolCall` 才被吸收。
+- **真实 LLM 工具回合闪没**：`specs/real-llm-tool-bubble-vanish.spec.ts` 用导出同款提示「分析一下当前目录下的源码」+ 迷你 `cpp-demo` 工作区；流中采样正文助手不得归零/闪回。需 `API_KEY` 或本机钥匙串 `client_llm`。
 
 ### 监控分层（旁白 / 导出）
 
@@ -190,6 +194,7 @@ GitHub Actions：`.github/workflows/e2e-playwright.yml`（PR → `main`）。当
 - `specs/mock-mid-process-commentary-duplicate.spec.ts`
 - `specs/mock-commentary-before-tool-order.spec.ts`
 - `specs/mock-empty-assistant-shell.spec.ts`
+- `specs/mock-real-tool-bubble-vanish.spec.ts`
 
 本地全量 mock：先 `cd frontend && trunk build`，再 `cargo run -- serve`，然后：
 

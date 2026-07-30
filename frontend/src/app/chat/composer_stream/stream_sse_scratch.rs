@@ -134,6 +134,11 @@ impl StreamSseScratch {
             .on_tool_call(tool_call_id, name, summary);
     }
 
+    #[inline]
+    pub(super) fn has_turn_tool_step(&self, tool_call_id: &str) -> bool {
+        self.turn.borrow().has_tool_step(tool_call_id)
+    }
+
     /// 若 delta 写入 commentary 段（含晚于 `tool_call` 的 plain 增量）则返回 `true`。
     #[inline]
     pub(super) fn try_apply_commentary_delta(&self, delta: &str) -> bool {

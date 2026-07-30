@@ -140,11 +140,19 @@ fn reduce_segment_start(
     // 若步骤已有 before_commentary（来自早到的 fallback delta，即
     // segment_delta 先于 segment_start 到达），将其移入新段以保持文本完整。
     // 否则该文本与后续 delta 分别落在 step 和 segment，投影/导出时分裂为两条。
-    let initial_text = before_tool_call_id
+    let mut initial_text = before_tool_call_id
         .as_deref()
         .and_then(|tid| turn.step_by_call_id_mut(tid))
         .and_then(|s| s.before_commentary.take())
         .unwrap_or_default();
+    // 新段一旦声明锚点，先前无归属的 pending 旁白即归该工具：否则它要等到
+    // `ToolCall` 才被吸收，而这期间既无 step 可投影、overlay 又已被上游清空，
+    // 用户会看到助手气泡整段消失（工具边界闪没）。
+    if before_tool_call_id.is_some()
+        && let Some(pending) = take_pending_stream_commentary(turn)
+    {
+        initial_text.insert_str(0, &pending);
+    }
     turn.segments.push(TurnSegment {
         segment_id,
         kind,

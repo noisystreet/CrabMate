@@ -443,7 +443,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 |------|------|
 | canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs) |
 | 落盘 | `BubbleOutputQueue::upsert_commentary_before_tool` / `upsert_streaming_anchored_commentary`：按 `tool_call_id` upsert `turn-commentary-*`；工具未到时暂挂 loading 前，到达后锚定工具前 |
-| 流式 | 带 `before_tool_call_id` 的 open 旁白**不**写 loading overlay；无锚点的短暂段仍可走 overlay |
+| 流式 | 带 `before_tool_call_id` 的 open 旁白**不**写 loading overlay；无锚点的短暂段仍可走 overlay。锚定旁白在**工具尚未声明**时即落盘（见 §14 I15） |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
 | 可见性 | commentary 为普通 assistant 行；overlay 只从属于唯一 active 行 |
 | E2E | `mock-commentary-before-tool-order.spec.ts`（含晚到）；`mock-ready-bubble-stability.spec.ts` |
@@ -485,8 +485,11 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 | **I12 on_done** | 投影优先：`sync` 后 `drain` 仅补 `turn-final-answer` 并清空 overlay / loading 正文；**禁止** merge overlay 进 loading 再升格 |
 | **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前关闭 open 旁注，并按工具键发布 |
 | **I14 旁注所有权单写** | `sync_turn_projection` 同一次 `update_bound_session` 内：flush `turn-commentary-*` 后按同文清空 loading `text`，并清 overlay。见 **§12.10.1**、`loading_handoff.rs` |
+| **I15 旁注可见性不等工具** | 旁注一旦离开 overlay 进入 canonical，须**当帧**有可见落点：`project_turn_web_v2` 只从 `ToolStep` 出行，故 **pending 段必须尽早取得锚点**——`turn_segment_start{beforeToolCallId}` 吸收 pending（`reduce_segment_start`），`tool_result` 无 START 时补登记工具步（`on_tool_result_inserted`），且 `try_upsert_open_anchored_commentary` **不**以 `tool_phase_open` 为前提 |
 
 **顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
+
+**I15 的两条真实回归**（`real-llm-tool-bubble-vanish` 派生，见 `e2e/specs/mock-real-tool-bubble-vanish.spec.ts`）：真实 SSE 在 `parsing_tool_calls` 后**先**发 `turn_segment_start{beforeToolCallId}`、数百毫秒后才发 `TOOL_CALL_START`；而 `reset_loading_tail_streaming_text` 在段开始时已清 overlay。若 pending 段此刻仍无锚点，助手气泡会整段消失直到工具到达。`TOOL_CALL_RESULT` 未经 START 到达时同理（`drain(clear=true)` 已掏空 overlay，canonical 却无该工具步）。
 
 **`on_done`**：关 open 段 → `sync_turn_projection` → `drain_stream_tail_into_canonical_for_done`（补终答 + 清 loading 句柄）→ tail 决策。
 
