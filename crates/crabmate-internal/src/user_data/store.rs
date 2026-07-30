@@ -102,7 +102,7 @@ pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
     write_json_atomic(&mcp_servers_path(&r), file)
 }
 
-/// PUT 时保留磁盘上已有启动规格（Web 不往返 `command`/`args`/`env`/`cwd`）。
+/// PUT 时保留磁盘上已有启动规格（Web 不往返 `command`/`args`/`env`/`cwd`/`url`/`headers`）。
 pub fn merge_mcp_commands_from_stored(mut incoming: McpServersFile) -> McpServersFile {
     let existing = load_mcp_servers();
     let by_id: std::collections::HashMap<&str, &McpServerEntry> = existing
@@ -130,6 +130,17 @@ pub fn merge_mcp_commands_from_stored(mut incoming: McpServersFile) -> McpServer
             .unwrap_or(true)
         {
             srv.cwd = old.cwd.clone();
+        }
+        if srv
+            .url
+            .as_ref()
+            .map(|u| u.trim().is_empty())
+            .unwrap_or(true)
+        {
+            srv.url = old.url.clone();
+        }
+        if srv.headers.is_empty() {
+            srv.headers = old.headers.clone();
         }
     }
     incoming
@@ -183,8 +194,33 @@ pub fn normalize_mcp_servers_file(mut file: McpServersFile) -> Result<McpServers
             .take()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        if srv.enabled && srv.command.is_empty() {
-            return Err(format!("已启用的 MCP 服务器「{}」须填写 command", srv.name));
+        srv.url = srv
+            .url
+            .take()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+        srv.headers = srv
+            .headers
+            .iter()
+            .filter(|(k, _)| !k.trim().is_empty())
+            .map(|(k, v)| (k.trim().to_string(), v.clone()))
+            .collect();
+        let has_cmd = srv.has_stdio();
+        let has_url = srv.has_remote_url();
+        if has_cmd && has_url {
+            return Err(format!(
+                "MCP 服务器「{}」不能同时填写 command 与 url",
+                srv.name
+            ));
+        }
+        if srv.enabled && !has_cmd && !has_url {
+            return Err(format!(
+                "已启用的 MCP 服务器「{}」须填写 command 或 url",
+                srv.name
+            ));
+        }
+        if has_url {
+            crabmate_mcp::resolve::validate_mcp_remote_url(srv.url.as_deref().unwrap_or(""))?;
         }
         if srv.created_at_ms == 0 {
             srv.created_at_ms = now;
@@ -233,6 +269,8 @@ pub fn maybe_import_legacy_toml_mcp(
         args: Vec::new(),
         env: std::collections::BTreeMap::new(),
         cwd: None,
+        url: None,
+        headers: std::collections::BTreeMap::new(),
         enabled: true,
         created_at_ms: now,
         updated_at_ms: now,
@@ -433,6 +471,8 @@ mod tests {
                 args: Vec::new(),
                 env: std::collections::BTreeMap::new(),
                 cwd: None,
+                url: None,
+                headers: std::collections::BTreeMap::new(),
                 enabled: true,
                 created_at_ms: 0,
                 updated_at_ms: 0,
@@ -462,6 +502,8 @@ mod tests {
                 args: vec!["mcp".into(), "serve".into()],
                 env,
                 cwd: Some("/tmp/ws".into()),
+                url: None,
+                headers: BTreeMap::new(),
                 enabled: true,
                 created_at_ms: 1,
                 updated_at_ms: 1,
@@ -480,6 +522,8 @@ mod tests {
                 args: Vec::new(),
                 env: BTreeMap::new(),
                 cwd: None,
+                url: None,
+                headers: std::collections::BTreeMap::new(),
                 enabled: true,
                 created_at_ms: 1,
                 updated_at_ms: 1,

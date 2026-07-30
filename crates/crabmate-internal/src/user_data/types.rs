@@ -145,7 +145,8 @@ pub struct SecretsStatusResponse {
     pub web_api_bearer: SecretSlotStatus,
 }
 
-/// `mcp_servers.json` 单条 stdio MCP 服务器（用户数据目录，非 TOML）。
+/// `mcp_servers.json` 单条 MCP 服务器（用户数据目录，非 TOML）。
+/// stdio（`command`）或远程 Streamable HTTP（`url`）；二者勿同时用于同一条目。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerEntry {
     pub id: String,
@@ -160,12 +161,28 @@ pub struct McpServerEntry {
     pub env: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cwd: Option<String>,
+    /// Streamable HTTP MCP 端点（与非空 `command` 互斥）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// 远程请求头（如 `Authorization`）；GET 公开体仅暴露 `has_headers`。
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
     pub enabled: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
 
-/// Web `GET /user-data/mcp-servers`：不返回启动命令明文（仅 `has_*` 标志）。
+impl McpServerEntry {
+    pub fn has_stdio(&self) -> bool {
+        !self.command.trim().is_empty()
+    }
+
+    pub fn has_remote_url(&self) -> bool {
+        self.url.as_ref().is_some_and(|u| !u.trim().is_empty())
+    }
+}
+
+/// Web `GET /user-data/mcp-servers`：不返回启动命令/URL/头明文（仅 `has_*` 标志）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct McpServerEntryPublic {
     pub id: String,
@@ -179,6 +196,10 @@ pub struct McpServerEntryPublic {
     pub has_env: bool,
     #[serde(default)]
     pub has_cwd: bool,
+    #[serde(default)]
+    pub has_url: bool,
+    #[serde(default)]
+    pub has_headers: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -210,10 +231,12 @@ impl From<&McpServersFile> for McpServersFilePublic {
                     name: s.name.clone(),
                     slug: s.slug.clone(),
                     enabled: s.enabled,
-                    has_command: !s.command.trim().is_empty(),
+                    has_command: s.has_stdio(),
                     has_args: !s.args.is_empty(),
                     has_env: !s.env.is_empty(),
                     has_cwd: s.cwd.as_ref().is_some_and(|c| !c.trim().is_empty()),
+                    has_url: s.has_remote_url(),
+                    has_headers: !s.headers.is_empty(),
                     created_at_ms: s.created_at_ms,
                     updated_at_ms: s.updated_at_ms,
                 })

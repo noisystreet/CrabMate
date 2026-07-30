@@ -1,9 +1,9 @@
-//! [Model Context Protocol](https://modelcontextprotocol.io/)：**客户端**（stdio 子进程）与可选 **服务端**（`mcp serve`，stdio / TCP）。
+//! [Model Context Protocol](https://modelcontextprotocol.io/)：**客户端**（stdio 子进程 / Streamable HTTP）与可选 **服务端**（`mcp serve`，stdio / TCP）。
 //!
-//! - **客户端**：同一进程内按服务器 id + command **复用**连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
+//! - **客户端**：同一进程内按服务器 id + 指纹 **复用**连接，将远端 `tools/list` 合并进 OpenAI 兼容工具表，经 `tools/call` 执行。
 //! - **服务端**（[`server`]）：支持 stdio 与 TCP 两种传输模式，将 CrabMate 内置 `tools::run_tool` 暴露给外部 MCP 客户端；**无传输层鉴权**，与 `run_command` / 工作区策略一致。
 //!
-//! **安全**：`command` 由 user-data 显式指定，等效于允许启动任意子进程；仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
+//! **安全**：`command` 由 user-data 显式指定，等效于允许启动任意子进程；`url` 仅允许 HTTPS 或 loopback HTTP（见 `validate_mcp_remote_url`）。仅应在信任的配置源下启用。输出与错误信息经截断，避免过大响应撑爆上下文。
 
 pub mod server;
 
@@ -15,12 +15,14 @@ use std::time::Duration;
 
 use tokio::sync::Mutex as TokioMutex;
 
+use http::{HeaderName, HeaderValue};
 use rmcp::model::{
     CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientInfo, ContentBlock,
     ResourceContents,
 };
 use rmcp::service::{PeerRequestOptions, RequestHandle, RunningService, ServiceError};
-use rmcp::transport::{ConfigureCommandExt, TokioChildProcess};
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
+use rmcp::transport::{ConfigureCommandExt, StreamableHttpClientTransport, TokioChildProcess};
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::Value;
 use tokio::process::Command;
@@ -30,12 +32,12 @@ use crabmate_config::AgentConfig;
 use crabmate_types::McpRemoteToolSummary;
 use crabmate_types::{FunctionDef, Tool};
 
-use crate::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
+use crate::resolve::{ResolvedMcpConfig, ResolvedMcpServer, validate_mcp_remote_url};
 use crate::turn_handle::{McpTurnHandle, McpTurnSessions};
 
 pub use crabmate_tools::tool_naming::{MCP_PROXY_PREFIX, is_mcp_proxy_tool};
 
-/// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程）。
+/// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程 / HTTP 会话）。
 pub type McpClientSession = RunningService<RoleClient, ClientInfo>;
 
 pub fn mcp_tool_openai_name(server_slug: &str, tool_name: &str) -> String {
@@ -55,6 +57,13 @@ pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)>
     Some((slug.to_string(), remote.to_string()))
 }
 
+fn new_client_info() -> ClientInfo {
+    ClientInfo::new(
+        ClientCapabilities::default(),
+        rmcp::model::Implementation::new("crabmate", env!("CARGO_PKG_VERSION")),
+    )
+}
+
 /// 连接 MCP server（stdio，legacy 整行命令）。失败时返回 `Err`；调用方可降级为不启用 MCP。
 pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, String> {
     let server = ResolvedMcpServer {
@@ -65,6 +74,8 @@ pub async fn connect_stdio_client(cmdline: &str) -> Result<McpClientSession, Str
         args: Vec::new(),
         env: std::collections::BTreeMap::new(),
         cwd: None,
+        url: None,
+        headers: std::collections::BTreeMap::new(),
         enabled: true,
     };
     connect_stdio_client_launch(&server.stdio_launch()?).await
@@ -94,16 +105,52 @@ pub async fn connect_stdio_client_launch(
     }))
     .map_err(|e| format!("启动 MCP 子进程失败: {e}"))?;
 
-    let info = ClientInfo::new(
-        ClientCapabilities::default(),
-        rmcp::model::Implementation::new("crabmate", env!("CARGO_PKG_VERSION")),
-    );
-
-    let client = info
+    let client = new_client_info()
         .serve(transport)
         .await
         .map_err(|e| format!("MCP 握手失败: {e}"))?;
 
+    Ok(client)
+}
+
+/// 经 Streamable HTTP 连接远程 MCP。
+pub async fn connect_streamable_http_client(
+    url: &str,
+    headers: &std::collections::BTreeMap<String, String>,
+) -> Result<McpClientSession, String> {
+    validate_mcp_remote_url(url)?;
+    let mut config = StreamableHttpClientTransportConfig::with_uri(url.trim().to_string());
+    let mut custom = HashMap::new();
+    for (k, v) in headers {
+        let key = k.trim();
+        if key.is_empty() {
+            continue;
+        }
+        if key.eq_ignore_ascii_case("authorization") {
+            let token = v
+                .trim()
+                .strip_prefix("Bearer ")
+                .or_else(|| v.trim().strip_prefix("bearer "))
+                .unwrap_or(v.trim());
+            if !token.is_empty() {
+                config = config.auth_header(token.to_string());
+            }
+            continue;
+        }
+        let name = HeaderName::from_bytes(key.as_bytes())
+            .map_err(|e| format!("非法 header 名「{key}」: {e}"))?;
+        let value =
+            HeaderValue::from_str(v).map_err(|e| format!("非法 header 值「{key}」: {e}"))?;
+        custom.insert(name, value);
+    }
+    if !custom.is_empty() {
+        config = config.custom_headers(custom);
+    }
+    let transport = StreamableHttpClientTransport::from_config(config);
+    let client = new_client_info()
+        .serve(transport)
+        .await
+        .map_err(|e| format!("远程 MCP 握手失败: {e}"))?;
     Ok(client)
 }
 
@@ -310,13 +357,21 @@ fn server_fingerprint(server: &ResolvedMcpServer) -> String {
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join("\n");
+    let headers_part = server
+        .headers
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     format!(
-        "v3\0{}\0{}\0{}\0{}\0{}",
+        "v4\0{}\0{}\0{}\0{}\0{}\0{}\0{}",
         server.id,
         server.command.trim(),
         server.args.join("\0"),
         env_part,
-        server.cwd.as_deref().unwrap_or("").trim()
+        server.cwd.as_deref().unwrap_or("").trim(),
+        server.url.as_deref().unwrap_or("").trim(),
+        headers_part,
     )
 }
 
@@ -327,7 +382,7 @@ static MCP_MULTI_CACHE: LazyLock<TokioMutex<HashMap<String, McpServerCacheEntry>
 static MCP_LAST_ERRORS: LazyLock<TokioMutex<HashMap<String, String>>> =
     LazyLock::new(|| TokioMutex::new(HashMap::new()));
 
-/// 丢弃进程内 MCP stdio 缓存（user-data 变更或配置热重载后调用）。
+/// 丢弃进程内 MCP 连接缓存（user-data 变更或配置热重载后调用）。
 pub async fn clear_mcp_process_cache() {
     let mut guard = MCP_MULTI_CACHE.lock().await;
     guard.clear();
@@ -336,6 +391,22 @@ pub async fn clear_mcp_process_cache() {
 }
 
 fn launch_for_log(server: &ResolvedMcpServer) -> String {
+    if server.has_remote_url() {
+        let url = server.url.as_deref().unwrap_or("").trim();
+        let host = url
+            .split("://")
+            .nth(1)
+            .unwrap_or(url)
+            .split(['/', '?', '#'])
+            .next()
+            .unwrap_or("");
+        let hdr = if server.headers.is_empty() {
+            String::new()
+        } else {
+            format!(" headers={}", server.headers.len())
+        };
+        return format!("url=https?://{host}/…{hdr}");
+    }
     let Ok(launch) = server.stdio_launch() else {
         return crabmate_tools::redact::mcp_command_line_for_log(server.command.trim());
     };
@@ -356,7 +427,9 @@ fn launch_for_log(server: &ResolvedMcpServer) -> String {
 }
 
 async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheEntry, String> {
-    let launch = server.stdio_launch()?;
+    if server.has_stdio() && server.has_remote_url() {
+        return Err("不能同时配置 command 与 url".to_string());
+    }
     log::info!(
         target: "crabmate",
         "MCP 启动 id={} slug={} launch={}",
@@ -364,7 +437,13 @@ async fn open_server_fresh(server: &ResolvedMcpServer) -> Result<McpServerCacheE
         server.slug,
         launch_for_log(server),
     );
-    let client = connect_stdio_client_launch(&launch).await?;
+    let client = if server.has_remote_url() {
+        let url = server.url.as_deref().unwrap_or("").trim();
+        connect_streamable_http_client(url, &server.headers).await?
+    } else {
+        let launch = server.stdio_launch()?;
+        connect_stdio_client_launch(&launch).await?
+    };
     let list = client
         .list_all_tools()
         .await
@@ -642,6 +721,8 @@ mod tests {
             args: vec!["x".into()],
             env: env.clone(),
             cwd: Some("/tmp".into()),
+            url: None,
+            headers: std::collections::BTreeMap::new(),
             enabled: true,
         };
         let mut b = a.clone();

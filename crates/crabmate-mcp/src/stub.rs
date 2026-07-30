@@ -42,6 +42,13 @@ pub async fn connect_stdio_client_launch(
     Err("本 crabmate 二进制未启用 `mcp` Cargo feature，无法建立 MCP 连接".to_string())
 }
 
+pub async fn connect_streamable_http_client(
+    _url: &str,
+    _headers: &std::collections::BTreeMap<String, String>,
+) -> Result<McpClientSession, String> {
+    Err("本 crabmate 二进制未启用 `mcp` Cargo feature，无法建立远程 MCP 连接".to_string())
+}
+
 pub fn mcp_tools_as_openai(
     _server_slug: &str,
     _mcp_tools: &[std::convert::Infallible],

@@ -37,6 +37,7 @@ pub(crate) fn SettingsMcpServerRow(server_id: String, ctx: McpSettingsSignals) -
         ..
     } = ctx;
     let id_row = server_id.clone();
+    let id_hint = server_id.clone();
     let id_name_val = server_id.clone();
     let id_name_in = server_id.clone();
     let id_enabled_val = server_id.clone();
@@ -73,6 +74,19 @@ pub(crate) fn SettingsMcpServerRow(server_id: String, ctx: McpSettingsSignals) -
                 probing=probing
                 expanded=tools_expanded
             />
+            <p class="settings-muted" data-testid="mcp-server-transport-hint">
+                {move || {
+                    let f = file.get();
+                    let row = f.servers.iter().find(|s| s.id == id_hint);
+                    match row {
+                        Some(s) if s.has_url => i18n::settings_mcp_transport_remote(locale.get())
+                            .to_string(),
+                        Some(s) if s.has_command => i18n::settings_mcp_transport_stdio(locale.get())
+                            .to_string(),
+                        _ => String::new(),
+                    }
+                }}
+            </p>
             <SettingsToggleSwitch
                 test_id="settings-mcp-server-enabled"
                 checked=Signal::derive(move || {

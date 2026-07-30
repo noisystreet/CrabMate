@@ -521,10 +521,10 @@ pub fn settings_mcp_servers_via_json_hint(l: Locale) -> &'static str {
 pub fn settings_mcp_enabled_missing_command(l: Locale, name: &str) -> String {
     match l {
         Locale::ZhHans => {
-            format!("已启用的服务器「{name}」缺少启动命令，请用 JSON 导入或先禁用后再保存。")
+            format!("已启用的服务器「{name}」须含 command 或 url，请用 JSON 导入或先禁用后再保存。")
         }
         Locale::En => format!(
-            "Enabled server \"{name}\" has no start command; import via JSON or disable it before saving."
+            "Enabled server \"{name}\" needs a command or url; import via JSON or disable it before saving."
         ),
     }
 }
@@ -539,10 +539,10 @@ pub fn settings_mcp_import_title(l: Locale) -> &'static str {
 pub fn settings_mcp_import_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "粘贴 MCP 配置 JSON（含 mcpServers 对象，可为整份 mcp.json 或其中一段）。会从 command、args、cwd、env 解析服务器名称并写入配置；启动命令不在本页显示，连接时见服务端日志（target: crabmate）。粘贴完整 JSON 后会自动解析；也可点「解析并添加」或保存时合并。仅 stdio（有 command）；纯 url 远程 MCP 会跳过。"
+            "粘贴 MCP 配置 JSON（含 mcpServers 对象，可为整份 mcp.json 或其中一段）。会从 command、args、cwd、env 或 url、headers 解析并写入配置；启动明文不在本页显示，连接时见服务端日志（target: crabmate）。粘贴完整 JSON 后会自动解析；也可点「解析并添加」或保存时合并。支持 stdio（command）与远程 Streamable HTTP（url；非 HTTPS 仅 loopback）。"
         }
         Locale::En => {
-            "Paste MCP config JSON (an object with mcpServers—often a full mcp.json file or that section). Server names and stored start commands are built from command, args, cwd, and env—the command is not shown here; see server logs on connect (target: crabmate). A full JSON paste is parsed automatically; or use Parse & add, or Save to merge. Stdio only (command required); url-only remote servers are skipped."
+            "Paste MCP config JSON (an object with mcpServers—often a full mcp.json file or that section). Builds stored servers from command/args/cwd/env or url/headers—secrets are not shown here; see server logs on connect (target: crabmate). A full JSON paste is parsed automatically; or use Parse & add, or Save to merge. Supports stdio (command) and remote Streamable HTTP (url; non-HTTPS only on loopback)."
         }
     }
 }
@@ -626,6 +626,20 @@ pub fn settings_mcp_name_label(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "名称",
         Locale::En => "Name",
+    }
+}
+
+pub fn settings_mcp_transport_stdio(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "传输：本地 stdio（command）",
+        Locale::En => "Transport: local stdio (command)",
+    }
+}
+
+pub fn settings_mcp_transport_remote(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "传输：远程 Streamable HTTP（url）",
+        Locale::En => "Transport: remote Streamable HTTP (url)",
     }
 }
 
