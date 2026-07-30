@@ -74,11 +74,9 @@ test.describe("多轮对话回归", () => {
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText(turn2Answer, { timeout: 5000 });
 
-    // 至少两行 non-tool 消息（user + assistant 各一）
-    const nonToolRows = await page.evaluate(
-      () =>
-        document.querySelectorAll('[data-testid="chat-message-row"]').length,
+    // TUI：至少两轮助手 section（旧 chat-message-row 已随逐行渲染器退役）
+    await expect(page.locator("section.chat-tui-turn--assistant")).toHaveCount(
+      2,
     );
-    expect(nonToolRows).toBeGreaterThanOrEqual(2);
   });
 });

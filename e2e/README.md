@@ -195,6 +195,10 @@ GitHub Actions：`.github/workflows/e2e-playwright.yml`（PR → `main`）。当
 - `specs/mock-commentary-before-tool-order.spec.ts`
 - `specs/mock-empty-assistant-shell.spec.ts`
 - `specs/mock-real-tool-bubble-vanish.spec.ts`
+- `specs/mock-tool-call-scenarios.spec.ts`
+- `specs/mock-approval-scenarios.spec.ts`
+- `specs/mock-multi-turn.spec.ts`
+- `specs/mock-storage-consistency.spec.ts`
 
 本地全量 mock：先 `cd frontend && trunk build`，再 `cargo run -- serve`，然后：
 
