@@ -13,10 +13,11 @@ use crate::user_data::{
 };
 use crate::user_data::{
     append_mcp_json_import, ensure_user_data_tree, list_workspaces, load_llm_overrides,
-    load_mcp_servers_with_legacy_import, load_prefs, load_web_sessions,
+    load_mcp_servers_with_legacy_import, load_prefs, load_web_sessions, mcp_servers_file_public,
     merge_mcp_commands_from_stored, normalize_mcp_servers_file, save_llm_overrides,
-    save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_sessions_value,
-    write_secret_client_llm, write_secret_executor_llm, write_secret_web_api_bearer,
+    save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_mcp_secret_server_id,
+    validate_sessions_value, write_secret_client_llm, write_secret_executor_llm,
+    write_secret_mcp_bearer, write_secret_web_api_bearer,
 };
 use crate::web::app_state::AppStateHttpCore;
 
@@ -29,6 +30,13 @@ pub(crate) struct SecretWriteBody {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct McpRemoteAuthBody {
+    /// Bearer token；空字符串清除本机 secret。
+    #[serde(default)]
+    pub(crate) bearer_token: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct PutSessionsBody {
     #[serde(default)]
     pub(crate) sessions: Value,
@@ -38,6 +46,21 @@ pub(crate) struct PutSessionsBody {
 
 fn user_data_err(status: StatusCode, msg: impl Into<String>) -> (StatusCode, String) {
     (status, msg.into())
+}
+
+fn mcp_status_from_runtime(st: crate::mcp::McpServerRuntimeStatus) -> McpServerStatusEntry {
+    McpServerStatusEntry {
+        id: st.id,
+        name: st.name,
+        slug: st.slug,
+        enabled: st.enabled,
+        connected: st.connected,
+        transport: st.transport,
+        openai_tool_names: st.openai_tool_names,
+        remote_tools: st.remote_tools,
+        last_error: st.last_error,
+        last_error_kind: st.last_error_kind,
+    }
 }
 
 pub(crate) async fn get_prefs_handler() -> Json<UserPrefs> {
@@ -141,7 +164,7 @@ pub(crate) async fn get_mcp_servers_handler(
     let _ = ensure_user_data_tree();
     let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
     let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
-    Json(McpServersFilePublic::from(&file))
+    Json(mcp_servers_file_public(&file))
 }
 
 fn decode_mcp_servers_put(value: Value) -> Result<McpServersFile, String> {
@@ -221,24 +244,39 @@ pub(crate) async fn get_mcp_servers_status_handler(
     let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
-    let servers: Vec<McpServerStatusEntry> = runtime
-        .into_iter()
-        .map(|st| McpServerStatusEntry {
-            id: st.id,
-            name: st.name,
-            slug: st.slug,
-            enabled: st.enabled,
-            connected: st.connected,
-            openai_tool_names: st.openai_tool_names,
-            remote_tools: st.remote_tools,
-            last_error: st.last_error,
-        })
-        .collect();
+    let servers: Vec<McpServerStatusEntry> =
+        runtime.into_iter().map(mcp_status_from_runtime).collect();
     Json(McpServersStatusResponse {
         global_enabled: file.global_enabled,
         tool_timeout_secs: file.tool_timeout_secs,
         servers,
     })
+}
+
+pub(crate) async fn put_mcp_server_remote_auth_handler(
+    State(http): State<AppStateHttpCore>,
+    Path(server_id): Path<String>,
+    Json(body): Json<McpRemoteAuthBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let id = validate_mcp_secret_server_id(&server_id)
+        .map_err(|e| user_data_err(StatusCode::BAD_REQUEST, e))?
+        .to_string();
+    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
+    let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
+    let Some(srv) = file.servers.iter().find(|s| s.id == id) else {
+        return Err(user_data_err(StatusCode::NOT_FOUND, "未找到 MCP 服务器"));
+    };
+    if !srv.has_remote_url() {
+        return Err(user_data_err(
+            StatusCode::BAD_REQUEST,
+            "仅远程（url）MCP 服务器可设置 Bearer",
+        ));
+    }
+    let token = body.bearer_token.unwrap_or_default();
+    write_secret_mcp_bearer(&id, &token)
+        .map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    crate::mcp::clear_mcp_process_cache().await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn post_mcp_server_probe_handler(
@@ -253,16 +291,7 @@ pub(crate) async fn post_mcp_server_probe_handler(
         return Err(user_data_err(StatusCode::NOT_FOUND, "未找到 MCP 服务器"));
     };
     let st = crate::mcp::probe_mcp_server(server).await;
-    Ok(Json(McpServerStatusEntry {
-        id: st.id,
-        name: st.name,
-        slug: st.slug,
-        enabled: st.enabled,
-        connected: st.connected,
-        openai_tool_names: st.openai_tool_names,
-        remote_tools: st.remote_tools,
-        last_error: st.last_error,
-    }))
+    Ok(Json(mcp_status_from_runtime(st)))
 }
 
 pub(crate) async fn post_mcp_servers_probe_all_handler(
@@ -275,16 +304,7 @@ pub(crate) async fn post_mcp_servers_probe_all_handler(
     let mut out = Vec::new();
     for server in resolved.servers.iter().filter(|s| s.enabled) {
         let st = crate::mcp::probe_mcp_server(server).await;
-        out.push(McpServerStatusEntry {
-            id: st.id,
-            name: st.name,
-            slug: st.slug,
-            enabled: st.enabled,
-            connected: st.connected,
-            openai_tool_names: st.openai_tool_names,
-            remote_tools: st.remote_tools,
-            last_error: st.last_error,
-        });
+        out.push(mcp_status_from_runtime(st));
     }
     Json(out)
 }

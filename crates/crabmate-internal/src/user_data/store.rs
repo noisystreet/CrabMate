@@ -99,7 +99,10 @@ pub fn load_mcp_servers() -> McpServersFile {
 pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
     let r = root();
     ensure_tree(&r)?;
-    write_json_atomic(&mcp_servers_path(&r), file)
+    write_json_atomic(&mcp_servers_path(&r), file)?;
+    let ids: Vec<String> = file.servers.iter().map(|s| s.id.clone()).collect();
+    prune_mcp_bearer_secrets(&ids)?;
+    Ok(())
 }
 
 /// PUT 时保留磁盘上已有启动规格（Web 不往返 `command`/`args`/`env`/`cwd`/`url`/`headers`）。
@@ -157,7 +160,7 @@ pub fn append_mcp_json_import(value: &Value) -> Result<McpServersImportResponse,
     let file = normalize_mcp_servers_file(file)?;
     save_mcp_servers(&file)?;
     Ok(McpServersImportResponse {
-        file: McpServersFilePublic::from(&file),
+        file: mcp_servers_file_public(&file),
         imported_count,
         warnings,
         skipped_remote,
@@ -364,6 +367,75 @@ pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
     write_secret_line(&p, token)
 }
 
+/// 校验 MCP server id 是否可安全用作 secret 文件名片段。
+pub fn validate_mcp_secret_server_id(server_id: &str) -> Result<&str, String> {
+    let id = server_id.trim();
+    if id.is_empty() || id.len() > 128 {
+        return Err("MCP 服务器 id 无效".to_string());
+    }
+    if !id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return Err("MCP 服务器 id 含非法字符，无法写入 Bearer secret".to_string());
+    }
+    Ok(id)
+}
+
+fn mcp_bearer_secret_name(server_id: &str) -> Result<String, String> {
+    let id = validate_mcp_secret_server_id(server_id)?;
+    Ok(format!("mcp_bearer_{id}"))
+}
+
+/// 远程 MCP Bearer：`$XDG_DATA_HOME/crabmate/secrets/mcp_bearer_{id}`。
+pub fn write_secret_mcp_bearer(server_id: &str, token: &str) -> Result<(), String> {
+    let name = mcp_bearer_secret_name(server_id)?;
+    let p = secret_path(&root(), &name);
+    if token.trim().is_empty() {
+        let _ = std::fs::remove_file(&p);
+        return Ok(());
+    }
+    ensure_tree(&root())?;
+    write_secret_line(&p, token)
+}
+
+pub fn read_secret_mcp_bearer(server_id: &str) -> Option<String> {
+    let name = mcp_bearer_secret_name(server_id).ok()?;
+    read_secret_line(&secret_path(&root(), &name))
+}
+
+pub fn mcp_bearer_is_set(server_id: &str) -> bool {
+    read_secret_mcp_bearer(server_id).is_some_and(|s| !s.trim().is_empty())
+}
+
+/// 删除已不存在于配置中的 `mcp_bearer_*` orphan secrets。
+pub fn prune_mcp_bearer_secrets(keep_ids: &[String]) -> Result<(), String> {
+    let secrets_dir = root().join("secrets");
+    if !secrets_dir.is_dir() {
+        return Ok(());
+    }
+    let keep: std::collections::HashSet<&str> = keep_ids.iter().map(String::as_str).collect();
+    for entry in std::fs::read_dir(&secrets_dir).map_err(|e| format!("列举 secrets: {e}"))? {
+        let entry = entry.map_err(|e| format!("列举 secrets: {e}"))?;
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Some(id) = name.strip_prefix("mcp_bearer_") else {
+            continue;
+        };
+        if !keep.contains(id) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    Ok(())
+}
+
+/// 公开 MCP 配置体（含各 server `has_bearer`）。
+pub fn mcp_servers_file_public(file: &McpServersFile) -> McpServersFilePublic {
+    McpServersFilePublic::from_file_with_bearer(file, mcp_bearer_is_set)
+}
+
 fn slot_status(path: &Path) -> SecretSlotStatus {
     match read_secret_line(path) {
         Some(s) => {
@@ -537,5 +609,40 @@ mod tests {
             Some("warn")
         );
         assert_eq!(merged.servers[0].cwd.as_deref(), Some("/tmp/ws"));
+    }
+
+    #[test]
+    fn mcp_bearer_secret_roundtrip_and_public_flag() {
+        let _root = test_root();
+        write_secret_mcp_bearer("mcp_remote1", "tok-secret").expect("write");
+        assert!(mcp_bearer_is_set("mcp_remote1"));
+        assert_eq!(
+            read_secret_mcp_bearer("mcp_remote1").as_deref(),
+            Some("tok-secret")
+        );
+        let file = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers: vec![McpServerEntry {
+                id: "mcp_remote1".into(),
+                name: "R".into(),
+                slug: "r".into(),
+                command: String::new(),
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                cwd: None,
+                url: Some("https://example.com/mcp".into()),
+                headers: std::collections::BTreeMap::new(),
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+        };
+        let pub_file = mcp_servers_file_public(&file);
+        assert!(pub_file.servers[0].has_bearer);
+        assert!(pub_file.servers[0].has_url);
+        write_secret_mcp_bearer("mcp_remote1", "").expect("clear");
+        assert!(!mcp_bearer_is_set("mcp_remote1"));
     }
 }

@@ -94,6 +94,105 @@ fn tool_count_for_toggle(
     Some(n)
 }
 
+fn format_mcp_disconnect_message(row: &McpServerStatusEntryDto, loc: Locale) -> String {
+    let kind = row
+        .last_error_kind
+        .as_ref()
+        .filter(|k| !k.trim().is_empty())
+        .map(|k| format!("[{k}] "));
+    let transport = if row.transport.trim().is_empty() {
+        String::new()
+    } else {
+        format!("({}) ", row.transport.trim())
+    };
+    let msg = row
+        .last_error
+        .clone()
+        .filter(|e| !e.trim().is_empty())
+        .unwrap_or_else(|| i18n::settings_mcp_disconnected(loc).to_string());
+    match kind {
+        Some(k) => format!("{transport}{k}{msg}"),
+        None => format!("{transport}{msg}"),
+    }
+}
+
+fn tools_panel_body(loc: Locale, row: Option<McpServerStatusEntryDto>) -> AnyView {
+    match row {
+        Some(r) if !r.enabled => view! {
+            <p class="settings-intro settings-mcp-tools-hint">
+                {i18n::settings_mcp_tools_server_disabled(loc)}
+            </p>
+        }
+        .into_any(),
+        Some(r) if r.connected => connected_tools_panel(loc, &r),
+        Some(r) => {
+            let display = format_mcp_disconnect_message(&r, loc);
+            view! {
+                <p class="settings-intro settings-mcp-tools-error">{display}</p>
+            }
+            .into_any()
+        }
+        None => view! {
+            <p class="settings-intro settings-mcp-tools-hint">
+                {i18n::settings_mcp_tools_probe_hint(loc)}
+            </p>
+        }
+        .into_any(),
+    }
+}
+
+fn connected_tools_panel(loc: Locale, row: &McpServerStatusEntryDto) -> AnyView {
+    let tools = tools_to_display(row);
+    if tools.is_empty() {
+        return view! {
+            <p class="settings-intro settings-mcp-tools-hint">
+                {i18n::settings_mcp_tools_none(loc)}
+            </p>
+        }
+        .into_any();
+    }
+    view! {
+        <div class="settings-mcp-tools-table" data-testid="mcp-tools-list">
+            <div class="settings-mcp-tools-header">
+                <span class="settings-mcp-tools-col-name">
+                    {i18n::settings_mcp_tools_col_name(loc)}
+                </span>
+                <span class="settings-mcp-tools-col-desc">
+                    {i18n::settings_mcp_tools_col_description(loc)}
+                </span>
+            </div>
+            <ul class="settings-mcp-tools-list">
+                <For
+                    each=move || tools.clone()
+                    key=|t| t.name.clone()
+                    children=move |tool: McpToolDisplayRow| {
+                        let name = tool.name.clone();
+                        let desc = tool
+                            .description
+                            .filter(|d| !d.trim().is_empty())
+                            .unwrap_or_else(|| {
+                                i18n::settings_mcp_tools_desc_empty(loc).to_string()
+                            });
+                        let openai = tool.openai_name.clone();
+                        view! {
+                            <li class="settings-mcp-tool-item">
+                                <div class="settings-mcp-tool-col-name">
+                                    <span class="settings-mcp-tool-name">{name.clone()}</span>
+                                    {openai.filter(|o| label_from_openai_tool_name(o) != name).map(|o| view! {
+                                        <code class="settings-mcp-tool-openai">{o}</code>
+                                    })}
+                                </div>
+                                <span class="settings-mcp-tool-desc">{desc}</span>
+                            </li>
+                        }
+                    }
+                />
+            </ul>
+        </div>
+    }
+    .into_any()
+}
+
 #[component]
 pub(crate) fn SettingsMcpServerToolsList(
     locale: RwSignal<Locale>,
@@ -160,81 +259,7 @@ pub(crate) fn SettingsMcpServerToolsList(
                     }
                     let loc = locale.get_untracked();
                     let row = status_for_server(status.get().as_ref(), &sid).cloned();
-                    match row {
-                        Some(r) if !r.enabled => view! {
-                            <p class="settings-intro settings-mcp-tools-hint">
-                                {i18n::settings_mcp_tools_server_disabled(loc)}
-                            </p>
-                        }
-                        .into_any(),
-                        Some(r) if r.connected => {
-                            let tools = tools_to_display(&r);
-                            if tools.is_empty() {
-                                return view! {
-                                    <p class="settings-intro settings-mcp-tools-hint">
-                                        {i18n::settings_mcp_tools_none(loc)}
-                                    </p>
-                                }
-                                .into_any();
-                            }
-                            view! {
-                                <div class="settings-mcp-tools-table" data-testid="mcp-tools-list">
-                                    <div class="settings-mcp-tools-header">
-                                        <span class="settings-mcp-tools-col-name">
-                                            {i18n::settings_mcp_tools_col_name(loc)}
-                                        </span>
-                                        <span class="settings-mcp-tools-col-desc">
-                                            {i18n::settings_mcp_tools_col_description(loc)}
-                                        </span>
-                                    </div>
-                                    <ul class="settings-mcp-tools-list">
-                                        <For
-                                            each=move || tools.clone()
-                                            key=|t| t.name.clone()
-                                            children=move |tool: McpToolDisplayRow| {
-                                                let name = tool.name.clone();
-                                                let desc = tool
-                                                    .description
-                                                    .filter(|d| !d.trim().is_empty())
-                                                    .unwrap_or_else(|| {
-                                                        i18n::settings_mcp_tools_desc_empty(loc).to_string()
-                                                    });
-                                                let openai = tool.openai_name.clone();
-                                                view! {
-                                                    <li class="settings-mcp-tool-item">
-                                                        <div class="settings-mcp-tool-col-name">
-                                                            <span class="settings-mcp-tool-name">{name.clone()}</span>
-                                                            {openai.filter(|o| label_from_openai_tool_name(o) != name).map(|o| view! {
-                                                                <code class="settings-mcp-tool-openai">{o}</code>
-                                                            })}
-                                                        </div>
-                                                        <span class="settings-mcp-tool-desc">{desc}</span>
-                                                    </li>
-                                                }
-                                            }
-                                        />
-                                    </ul>
-                                </div>
-                            }
-                            .into_any()
-                        }
-                        Some(r) => {
-                            let msg = r
-                                .last_error
-                                .filter(|e| !e.trim().is_empty())
-                                .unwrap_or_else(|| i18n::settings_mcp_disconnected(loc).to_string());
-                            view! {
-                                <p class="settings-intro settings-mcp-tools-error">{msg}</p>
-                            }
-                            .into_any()
-                        }
-                        None => view! {
-                            <p class="settings-intro settings-mcp-tools-hint">
-                                {i18n::settings_mcp_tools_probe_hint(loc)}
-                            </p>
-                        }
-                        .into_any(),
-                    }
+                    tools_panel_body(loc, row)
                 }}
             </div>
         </div>

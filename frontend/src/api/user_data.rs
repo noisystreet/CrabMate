@@ -243,6 +243,8 @@ pub struct McpServerEntryDto {
     pub has_url: bool,
     #[serde(default)]
     pub has_headers: bool,
+    #[serde(default)]
+    pub has_bearer: bool,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]
@@ -287,11 +289,15 @@ pub struct McpServerStatusEntryDto {
     pub enabled: bool,
     pub connected: bool,
     #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
     pub openai_tool_names: Vec<String>,
     #[serde(default)]
     pub remote_tools: Vec<McpRemoteToolSummaryDto>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub last_error_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -406,6 +412,21 @@ pub async fn post_mcp_servers_probe_all(
     loc: Locale,
 ) -> Result<Vec<McpServerStatusEntryDto>, String> {
     post_json("/user-data/mcp-servers/probe-all", loc).await
+}
+
+/// 写入或清除远程 MCP Bearer（空串清除）；不经 GET 回显。
+pub async fn put_mcp_server_remote_auth(
+    server_id: &str,
+    bearer_token: &str,
+    loc: Locale,
+) -> Result<(), String> {
+    let body = serde_json::json!({ "bearer_token": bearer_token }).to_string();
+    put_json_no_content(
+        &format!("/user-data/mcp-servers/{server_id}/remote-auth"),
+        &body,
+        loc,
+    )
+    .await
 }
 
 pub async fn put_secret_executor_llm(api_key: &str, loc: Locale) -> Result<(), String> {

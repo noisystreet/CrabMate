@@ -59,7 +59,7 @@
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
 | **`save-session`** | 从磁盘会话文件导出到 **`<workspace>/.crabmate/exports/`**（别名 **`export-session`**）。 |
 | **`bench`** | 批量测评（JSONL）；用法见 [benchmark/README.md](benchmark/README.md)、[docs/基准测试规划.md](docs/基准测试规划.md)。 |
-| **`mcp`** | **`mcp list`** / **`mcp list --probe`**；**`mcp serve`** 对外暴露内置工具（stdio，无传输鉴权）。 |
+| **`mcp`** | **`mcp list`** / **`mcp list --probe`**（stdio 与远程 Streamable HTTP；输出含 `transport=`）；**`mcp serve`** 对外暴露内置工具（stdio，无传输鉴权）。设置页可为远程 MCP 保存 Bearer（本机 `secrets/`，不经 GET 回显）。 |
 | **`plugin`** | **`init`** / **`list`** / **`validate`**：工作区 **`plugins/*.json`** 动态工具（**`dyn__`** 前缀）。 |
 | **`workflow`** | **`compile`** / **`validate`** / **`run`**：工作区 YAML/Markdown 工作流（**不要**求 `API_KEY`）；见 [docs/工作流编写教程.md](docs/工作流编写教程.md)。 |
 | **`tool-replay`** | 从会话导出工具 fixture 或重放（**不要**求 `API_KEY`，须在可信工作区）。 |

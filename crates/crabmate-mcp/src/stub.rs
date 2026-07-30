@@ -148,41 +148,38 @@ pub struct McpServerRuntimeStatus {
     pub slug: String,
     pub enabled: bool,
     pub connected: bool,
+    pub transport: String,
     pub openai_tool_names: Vec<String>,
     pub remote_tools: Vec<McpRemoteToolSummary>,
     pub last_error: Option<String>,
+    pub last_error_kind: Option<String>,
 }
 
-pub async fn mcp_servers_runtime_status(
-    resolved: &ResolvedMcpConfig,
-) -> Vec<McpServerRuntimeStatus> {
-    resolved
-        .servers
-        .iter()
-        .map(|srv| McpServerRuntimeStatus {
-            id: srv.id.clone(),
-            name: srv.name.clone(),
-            slug: srv.slug.clone(),
-            enabled: srv.enabled,
-            connected: false,
-            openai_tool_names: Vec::new(),
-            remote_tools: Vec::new(),
-            last_error: Some("本构建未启用 `mcp` Cargo feature".to_string()),
-        })
-        .collect()
-}
-
-pub async fn probe_mcp_server(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
+fn stub_disabled_status(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
+    let msg = "本构建未启用 `mcp` Cargo feature".to_string();
+    let kind = crate::resolve::classify_mcp_connect_error(&msg).to_string();
     McpServerRuntimeStatus {
         id: server.id.clone(),
         name: server.name.clone(),
         slug: server.slug.clone(),
         enabled: server.enabled,
         connected: false,
+        transport: server.transport_label().to_string(),
         openai_tool_names: Vec::new(),
         remote_tools: Vec::new(),
-        last_error: Some("本构建未启用 `mcp` Cargo feature".to_string()),
+        last_error: Some(msg),
+        last_error_kind: Some(kind),
     }
+}
+
+pub async fn mcp_servers_runtime_status(
+    resolved: &ResolvedMcpConfig,
+) -> Vec<McpServerRuntimeStatus> {
+    resolved.servers.iter().map(stub_disabled_status).collect()
+}
+
+pub async fn probe_mcp_server(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
+    stub_disabled_status(server)
 }
 
 pub mod server {

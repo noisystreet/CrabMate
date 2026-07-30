@@ -605,9 +605,59 @@ pub struct McpServerRuntimeStatus {
     pub slug: String,
     pub enabled: bool,
     pub connected: bool,
+    /// `stdio` | `remote` | `none`
+    pub transport: String,
     pub openai_tool_names: Vec<String>,
     pub remote_tools: Vec<McpRemoteToolSummary>,
     pub last_error: Option<String>,
+    /// 稳定英文 kind（见 `classify_mcp_connect_error`）；无错误时为 `None`。
+    pub last_error_kind: Option<String>,
+}
+
+fn runtime_status_connected(
+    server: &ResolvedMcpServer,
+    entry: &McpServerCacheEntry,
+) -> McpServerRuntimeStatus {
+    McpServerRuntimeStatus {
+        id: server.id.clone(),
+        name: server.name.clone(),
+        slug: entry.slug.clone(),
+        enabled: server.enabled,
+        connected: true,
+        transport: server.transport_label().to_string(),
+        openai_tool_names: entry
+            .mcp_tools
+            .iter()
+            .map(|t| t.function.name.clone())
+            .collect(),
+        remote_tools: entry.remote_tools.clone(),
+        last_error: entry.last_error.clone(),
+        last_error_kind: entry
+            .last_error
+            .as_ref()
+            .map(|e| crate::resolve::classify_mcp_connect_error(e).to_string()),
+    }
+}
+
+fn runtime_status_disconnected(
+    server: &ResolvedMcpServer,
+    last_error: Option<String>,
+) -> McpServerRuntimeStatus {
+    let last_error_kind = last_error
+        .as_ref()
+        .map(|e| crate::resolve::classify_mcp_connect_error(e).to_string());
+    McpServerRuntimeStatus {
+        id: server.id.clone(),
+        name: server.name.clone(),
+        slug: server.slug.clone(),
+        enabled: server.enabled,
+        connected: false,
+        transport: server.transport_label().to_string(),
+        openai_tool_names: Vec::new(),
+        remote_tools: Vec::new(),
+        last_error,
+        last_error_kind,
+    }
 }
 
 pub async fn mcp_servers_runtime_status(
@@ -623,63 +673,18 @@ pub async fn mcp_servers_runtime_status(
             if let Some(cached) = guard.get(&srv.id)
                 && cached.fingerprint == fp
             {
-                return McpServerRuntimeStatus {
-                    id: srv.id.clone(),
-                    name: srv.name.clone(),
-                    slug: cached.slug.clone(),
-                    enabled: srv.enabled,
-                    connected: true,
-                    openai_tool_names: cached
-                        .mcp_tools
-                        .iter()
-                        .map(|t| t.function.name.clone())
-                        .collect(),
-                    remote_tools: cached.remote_tools.clone(),
-                    last_error: cached.last_error.clone(),
-                };
+                return runtime_status_connected(srv, cached);
             }
-            McpServerRuntimeStatus {
-                id: srv.id.clone(),
-                name: srv.name.clone(),
-                slug: srv.slug.clone(),
-                enabled: srv.enabled,
-                connected: false,
-                openai_tool_names: Vec::new(),
-                remote_tools: Vec::new(),
-                last_error: errs.get(&srv.id).cloned(),
-            }
+            runtime_status_disconnected(srv, errs.get(&srv.id).cloned())
         })
         .collect()
 }
 
 /// 探测单条 server（刷新缓存）；返回运行时状态。
 pub async fn probe_mcp_server(server: &ResolvedMcpServer) -> McpServerRuntimeStatus {
-    let result = get_or_open_cached(server).await;
-    match result {
-        Ok(entry) => McpServerRuntimeStatus {
-            id: server.id.clone(),
-            name: server.name.clone(),
-            slug: entry.slug,
-            enabled: server.enabled,
-            connected: true,
-            openai_tool_names: entry
-                .mcp_tools
-                .iter()
-                .map(|t| t.function.name.clone())
-                .collect(),
-            remote_tools: entry.remote_tools,
-            last_error: None,
-        },
-        Err(e) => McpServerRuntimeStatus {
-            id: server.id.clone(),
-            name: server.name.clone(),
-            slug: server.slug.clone(),
-            enabled: server.enabled,
-            connected: false,
-            openai_tool_names: Vec::new(),
-            remote_tools: Vec::new(),
-            last_error: Some(e),
-        },
+    match get_or_open_cached(server).await {
+        Ok(entry) => runtime_status_connected(server, &entry),
+        Err(e) => runtime_status_disconnected(server, Some(e)),
     }
 }
 
