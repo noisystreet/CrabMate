@@ -103,6 +103,8 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
         app.shell_ui.side_panel_view.set(side_panel_from_slug(sp));
     }
     if let Some(w) = dto.side_width {
+        // 保留磁盘原始宽度（不在加载时按视口夹取回写，避免启动瞬间窄视口把偏好改小）；
+        // 视口安全夹取只在渲染与拖拽时进行，窗口变宽后仍能恢复到原宽度。
         app.shell_ui.side_width.set(w);
     }
     if let Some(m) = dto.editor_layout_mode {

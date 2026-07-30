@@ -351,7 +351,9 @@ fn SideColumnShellColumn(
                 if matches!(side_panel_view.get(), SidePanelView::None) {
                     "0px".to_string()
                 } else {
-                    format!("{}px", side_width.get())
+                    // 渲染时按当前视口夹取：磁盘可能存较宽值或视口临时变窄，均不写回偏好。
+                    let w = crate::app_prefs::clamp_side_width_for_viewport(side_width.get());
+                    format!("{w}px")
                 }
             }
         >

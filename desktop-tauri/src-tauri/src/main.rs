@@ -11,9 +11,14 @@ use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 use url::Url;
 
 const STARTUP_ABORTED_BY_QUIT: &str = "desktop quit requested during startup";
+
+fn desktop_window_state_flags() -> StateFlags {
+    StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
+}
 
 /// 后端子进程的唯一持有者。壳进程一启动就 `manage` 它，因此握手期间的退出
 /// 也能回收子进程。
@@ -573,6 +578,15 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             desktop_lifecycle::focus_existing_instance(app);
         }))
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_denylist(&["splash"])
+                // 主窗口在 `web_ready` 后才建，几何恢复由 `create_main_window_from_url`
+                // 在 `show()` 前同步触发，避免插件异步 restore 造成默认尺寸闪一下。
+                .skip_initial_state("main")
+                .with_state_flags(desktop_window_state_flags())
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(feature = "victauri")]
@@ -692,31 +706,49 @@ fn create_main_window_from_url(
     let app_origin = parsed_url.origin();
     let app_handle_clone = app_handle.clone();
 
-    WebviewWindowBuilder::new(app_handle, "main", WebviewUrl::External(parsed_url.clone()))
-        .title("CrabMate Desktop")
-        .inner_size(1280.0, 840.0)
-        .resizable(true)
-        .decorations(false)
-        .visible(!e2e_hide_app_windows())
-        .theme(Some(Theme::Light))
-        .on_navigation(move |url| {
-            if should_open_link_externally(&app_origin, url) {
-                let _ = app_handle_clone
-                    .opener()
-                    .open_url(url.as_str(), None::<&str>);
-                return false;
-            }
-            true
-        })
-        .build()
-        .map_err(|e| format!("failed to create main window: {e}"))?;
+    let window =
+        WebviewWindowBuilder::new(app_handle, "main", WebviewUrl::External(parsed_url.clone()))
+            .title("CrabMate Desktop")
+            .inner_size(1280.0, 840.0)
+            .resizable(true)
+            .decorations(false)
+            // 窗口状态插件会在 ready 时恢复几何信息；先隐藏可避免默认尺寸闪烁。
+            .visible(false)
+            .theme(Some(Theme::Light))
+            .on_navigation(move |url| {
+                if should_open_link_externally(&app_origin, url) {
+                    let _ = app_handle_clone
+                        .opener()
+                        .open_url(url.as_str(), None::<&str>);
+                    return false;
+                }
+                true
+            })
+            .build()
+            .map_err(|e| format!("failed to create main window: {e}"))?;
+
+    // 先同步恢复几何，再显示：插件的自动 restore 走 `run_on_main_thread` 异步排队，
+    // 若直接 `show()` 会先按默认 1280×840 显示再跳变。恢复失败时退回默认尺寸。
+    if let Err(error) = window.restore_state(desktop_window_state_flags()) {
+        eprintln!("[crabmate-desktop] failed to restore window state: {error}");
+    }
+
+    if !e2e_hide_app_windows() {
+        window
+            .show()
+            .map_err(|e| format!("failed to show main window: {e}"))?;
+        window
+            .set_focus()
+            .map_err(|e| format!("failed to focus main window: {e}"))?;
+    }
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{BackendHandle, parse_web_ready_url};
+    use super::{BackendHandle, desktop_window_state_flags, parse_web_ready_url};
+    use tauri_plugin_window_state::StateFlags;
 
     #[cfg(unix)]
     fn spawn_sleeper() -> std::process::Child {
@@ -769,5 +801,15 @@ mod tests {
         );
         assert!(parse_web_ready_url(r#"{"event":"other","url":"http://x/"}"#).is_none());
         assert!(parse_web_ready_url("not json").is_none());
+    }
+
+    #[test]
+    fn window_state_restores_geometry_without_hidden_visibility() {
+        let flags = desktop_window_state_flags();
+        assert!(flags.contains(StateFlags::SIZE));
+        assert!(flags.contains(StateFlags::POSITION));
+        assert!(flags.contains(StateFlags::MAXIMIZED));
+        assert!(!flags.contains(StateFlags::VISIBLE));
+        assert!(!flags.contains(StateFlags::FULLSCREEN));
     }
 }
