@@ -4,28 +4,69 @@ mod desktop_lifecycle;
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
-#[derive(Debug)]
+const STARTUP_ABORTED_BY_QUIT: &str = "desktop quit requested during startup";
+
+/// 后端子进程的唯一持有者。壳进程一启动就 `manage` 它，因此握手期间的退出
+/// 也能回收子进程。
+#[derive(Debug, Default)]
 struct BackendHandle {
-    child: Arc<Mutex<Option<Child>>>,
+    child: Mutex<Option<Child>>,
+    shutdown: AtomicBool,
 }
 
 impl BackendHandle {
-    fn kill(&self) {
-        let mut guard = self.child.lock().expect("backend mutex poisoned");
-        if let Some(child) = guard.as_mut() {
-            let _ = child.kill();
-            let _ = child.wait();
+    /// 接管刚拉起的后端；若期间已请求退出则立即回收并返回 `false`。
+    fn adopt(&self, child: Child) -> bool {
+        let mut guard = self.lock();
+        *guard = Some(child);
+        if self.shutdown_requested() {
+            kill_locked(&mut guard);
+            return false;
         }
-        *guard = None;
+        true
     }
+
+    /// 请求退出：后续 `adopt` 不再保留子进程，握手线程也会中止。
+    fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.kill();
+    }
+
+    fn shutdown_requested(&self) -> bool {
+        self.shutdown.load(Ordering::SeqCst)
+    }
+
+    fn kill(&self) {
+        kill_locked(&mut self.lock());
+    }
+
+    fn try_wait(&self) -> std::io::Result<Option<ExitStatus>> {
+        match self.lock().as_mut() {
+            Some(child) => child.try_wait(),
+            None => Ok(None),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Option<Child>> {
+        self.child.lock().expect("backend mutex poisoned")
+    }
+}
+
+fn kill_locked(guard: &mut Option<Child>) {
+    if let Some(child) = guard.as_mut() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    *guard = None;
 }
 
 fn backend_binary_name() -> &'static str {
@@ -268,11 +309,15 @@ fn try_spawn_backend(backend_workdir: &std::path::Path) -> Result<Child, String>
 }
 
 fn spawn_backend_and_wait_ready(
+    backend: &BackendHandle,
     on_progress: impl Fn(&str, &str),
-) -> Result<(Child, String), String> {
+) -> Result<String, String> {
     let backend_workdir = resolve_backend_workdir();
     on_progress("正在拉起本地后端…", "解析可执行文件与配置");
 
+    if backend.shutdown_requested() {
+        return Err(STARTUP_ABORTED_BY_QUIT.to_string());
+    }
     let mut child = try_spawn_backend(&backend_workdir).map_err(|e| {
         format!(
             "failed to spawn backend in `{}`: {e}",
@@ -296,6 +341,9 @@ fn spawn_backend_and_wait_ready(
             return Err("backend stdout pipe unavailable".to_string());
         }
     };
+    if !backend.adopt(child) {
+        return Err(STARTUP_ABORTED_BY_QUIT.to_string());
+    }
 
     std::thread::spawn(move || {
         let reader = BufReader::new(stderr);
@@ -345,26 +393,27 @@ fn spawn_backend_and_wait_ready(
     });
 
     loop {
-        if let Some(status) = child.try_wait().map_err(|e| {
-            let _ = child.kill();
-            let _ = child.wait();
+        if backend.shutdown_requested() {
+            return Err(STARTUP_ABORTED_BY_QUIT.to_string());
+        }
+        if let Some(status) = backend.try_wait().map_err(|e| {
+            backend.kill();
             format!("backend wait failed: {e}")
         })? {
+            backend.kill();
             return Err(format!(
                 "backend exited before web_ready (status: {status}); rebuild crabmate and ensure frontend/dist exists"
             ));
         }
         match ready_rx.recv_timeout(Duration::from_millis(120)) {
-            Ok(Ok(url)) => return Ok((child, url)),
+            Ok(Ok(url)) => return Ok(url),
             Ok(Err(e)) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                backend.kill();
                 return Err(e);
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                backend.kill();
                 return Err("backend stdout reader thread exited unexpectedly".to_string());
             }
         }
@@ -444,8 +493,8 @@ fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
 
 /// 托盘「退出」与 splash/前端显式退出共用：先 kill 后端再结束壳进程。
 pub(crate) fn request_desktop_quit(app: &tauri::AppHandle) {
-    if let Some(state) = app.try_state::<BackendHandle>() {
-        state.kill();
+    if let Some(state) = app.try_state::<Arc<BackendHandle>>() {
+        state.shutdown();
     }
     app.exit(0);
 }
@@ -516,8 +565,8 @@ async fn confirm_delete_session_via_dialog(
 }
 
 fn main() {
-    let backend_state = Arc::new(Mutex::new(None::<Child>));
-    let backend_state_for_exit = Arc::clone(&backend_state);
+    let backend = Arc::new(BackendHandle::default());
+    let backend_for_exit = Arc::clone(&backend);
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -549,6 +598,8 @@ fn main() {
         ])
         .setup(move |app| {
             desktop_lifecycle::setup_tray(app);
+            // 握手开始前就登记后端槽位，启动中途退出同样能回收子进程。
+            app.manage(Arc::clone(&backend));
             let app_handle = app.handle().clone();
 
             // 启动画面先显示，后台启后端（E2E 下 visible(false) 防弹窗）
@@ -578,16 +629,19 @@ fn main() {
                         }
                     });
                 };
-                let outcome = spawn_backend_and_wait_ready(progress);
+                let outcome = spawn_backend_and_wait_ready(&backend, progress);
+                if backend.shutdown_requested() {
+                    eprintln!("[crabmate-desktop] {STARTUP_ABORTED_BY_QUIT}");
+                    return;
+                }
                 match outcome {
-                    Ok((child, ready_url)) => {
+                    Ok(ready_url) => {
                         update_splash_status(&handle, "正在打开界面…", "后端已就绪");
                         let create_result = {
                             let h = handle.clone();
-                            let state = Arc::clone(&backend_state);
                             let (tx, rx) = std::sync::mpsc::channel();
                             let _ = handle.run_on_main_thread(move || {
-                                let r = create_main_window_from_url(&h, ready_url, child, state);
+                                let r = create_main_window_from_url(&h, ready_url);
                                 let _ = tx.send(r);
                             });
                             rx.recv()
@@ -623,10 +677,7 @@ fn main() {
         .expect("failed to build tauri app")
         .run(move |_app_handle, event| {
             if matches!(event, RunEvent::Exit | RunEvent::ExitRequested { .. }) {
-                let handle = BackendHandle {
-                    child: Arc::clone(&backend_state_for_exit),
-                };
-                handle.kill();
+                backend_for_exit.shutdown();
             }
         });
 }
@@ -634,17 +685,7 @@ fn main() {
 fn create_main_window_from_url(
     app_handle: &tauri::AppHandle,
     ready_url: String,
-    child: std::process::Child,
-    backend_state: Arc<Mutex<Option<std::process::Child>>>,
 ) -> Result<(), String> {
-    {
-        let mut guard = backend_state.lock().expect("backend mutex poisoned");
-        *guard = Some(child);
-    }
-    app_handle.manage(BackendHandle {
-        child: backend_state,
-    });
-
     let parsed_url: Url = ready_url
         .parse()
         .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
@@ -675,7 +716,48 @@ fn create_main_window_from_url(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_web_ready_url;
+    use super::{BackendHandle, parse_web_ready_url};
+
+    #[cfg(unix)]
+    fn spawn_sleeper() -> std::process::Child {
+        std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn sleep")
+    }
+
+    /// 子进程已被 `wait` 回收，`/proc/<pid>` 也应随之消失。
+    #[cfg(target_os = "linux")]
+    fn process_alive(pid: u32) -> bool {
+        std::path::Path::new(&format!("/proc/{pid}")).exists()
+    }
+
+    #[cfg(all(unix, not(target_os = "linux")))]
+    fn process_alive(_pid: u32) -> bool {
+        false
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adopted_backend_is_reclaimed_by_kill() {
+        let backend = BackendHandle::default();
+        let child = spawn_sleeper();
+        let pid = child.id();
+        assert!(backend.adopt(child));
+        backend.kill();
+        assert!(backend.try_wait().expect("try_wait").is_none());
+        assert!(!process_alive(pid));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn adopt_after_shutdown_reclaims_child_immediately() {
+        let backend = BackendHandle::default();
+        backend.shutdown();
+        assert!(!backend.adopt(spawn_sleeper()));
+        assert!(backend.shutdown_requested());
+        assert!(backend.try_wait().expect("try_wait").is_none());
+    }
 
     #[test]
     fn parse_web_ready_url_extracts_url() {
