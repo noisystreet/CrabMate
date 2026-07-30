@@ -199,6 +199,7 @@ GitHub Actions：`.github/workflows/e2e-playwright.yml`（PR → `main`）。当
 - `specs/mock-approval-scenarios.spec.ts`
 - `specs/mock-multi-turn.spec.ts`
 - `specs/mock-storage-consistency.spec.ts`
+- `specs/mock-v2-multi-turn-boundaries.spec.ts`
 
 本地全量 mock：先 `cd frontend && trunk build`，再 `cargo run -- serve`，然后：
 
