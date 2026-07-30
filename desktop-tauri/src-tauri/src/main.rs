@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod desktop_lifecycle;
+
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
@@ -440,12 +442,17 @@ fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
-fn quit_desktop_app(app: tauri::AppHandle) {
+/// 托盘「退出」与 splash/前端显式退出共用：先 kill 后端再结束壳进程。
+pub(crate) fn request_desktop_quit(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<BackendHandle>() {
         state.kill();
     }
     app.exit(0);
+}
+
+#[tauri::command]
+fn quit_desktop_app(app: tauri::AppHandle) {
+    request_desktop_quit(&app);
 }
 
 fn main_webview_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
@@ -462,9 +469,12 @@ fn set_main_window_decorations(app: tauri::AppHandle, decorations: bool) -> Resu
 
 #[tauri::command]
 fn main_window_minimize(app: tauri::AppHandle) -> Result<(), String> {
-    main_webview_window(&app)?
-        .minimize()
-        .map_err(|e| e.to_string())
+    let window = main_webview_window(&app)?;
+    if desktop_lifecycle::tray_available(&app) {
+        window.hide().map_err(|e| e.to_string())
+    } else {
+        window.minimize().map_err(|e| e.to_string())
+    }
 }
 
 #[tauri::command]
@@ -511,6 +521,9 @@ fn main() {
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            desktop_lifecycle::focus_existing_instance(app);
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init());
     #[cfg(feature = "victauri")]
@@ -535,6 +548,7 @@ fn main() {
             quit_desktop_app
         ])
         .setup(move |app| {
+            desktop_lifecycle::setup_tray(app);
             let app_handle = app.handle().clone();
 
             // 启动画面先显示，后台启后端（E2E 下 visible(false) 防弹窗）
@@ -550,11 +564,7 @@ fn main() {
                     .build()
                     .map_err(|e| format!("failed to create splash window: {e}"))?;
 
-            update_splash_status(
-                &app_handle,
-                "正在启动…",
-                "准备本地后端服务",
-            );
+            update_splash_status(&app_handle, "正在启动…", "准备本地后端服务");
 
             std::thread::spawn(move || {
                 let handle = app_handle.clone();
@@ -669,7 +679,8 @@ mod tests {
 
     #[test]
     fn parse_web_ready_url_extracts_url() {
-        let line = r#"{"event":"web_ready","host":"127.0.0.1","port":9,"url":"http://127.0.0.1:9/"}"#;
+        let line =
+            r#"{"event":"web_ready","host":"127.0.0.1","port":9,"url":"http://127.0.0.1:9/"}"#;
         assert_eq!(
             parse_web_ready_url(line).as_deref(),
             Some("http://127.0.0.1:9/")

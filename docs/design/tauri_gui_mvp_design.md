@@ -12,8 +12,9 @@ MVP 验收标准：
 
 1. 启动桌面应用后自动拉起后端服务
 2. WebView 打开本地服务地址并可正常使用
-3. 关闭桌面应用时后端进程可回收
+3. 主窗口可最小化到系统托盘；关窗或显式退出时后端进程可回收
 4. 保持后端仅监听 loopback（`127.0.0.1`）
+5. 桌面应用保持单实例，重复启动只唤醒已有窗口
 
 ## 2. 架构方案
 
@@ -28,7 +29,7 @@ MVP 验收标准：
 
 - 复用最大化，落地快
 - 风险集中在启动握手与进程生命周期
-- 后续可逐步叠加桌面能力（托盘、通知、文件选择、自动更新、**启动闪屏进度/失败页**）
+- 后续可逐步叠加桌面能力（通知、文件选择、自动更新；托盘、单实例与**启动闪屏进度/失败页**已实现）
 
 ## 3. 代码落地范围
 
@@ -53,7 +54,8 @@ CLI `serve` 子命令桌面握手：
 
 `desktop-tauri/` 工程：
 
-- `desktop-tauri/src-tauri/src/main.rs` — 启动 **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`**，解析 **`web_ready`**，加载 WebView，退出时 kill 子进程
+- `desktop-tauri/src-tauri/src/main.rs` — 启动 **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`**，解析 **`web_ready`**，加载 WebView，显式退出时 kill 子进程
+- `desktop-tauri/src-tauri/src/desktop_lifecycle.rs` — 单实例唤醒、系统托盘、主窗口最小化隐藏；托盘不可用时保留普通最小化
 - `desktop-tauri/scripts/prepare-sidecar.sh` — 打包前复制 **`crabmate`** sidecar
 - **`desktop-tauri/README.md`**、**`desktop-tauri/DEVELOPMENT.md`** — 开发与故障排查
 
@@ -64,7 +66,8 @@ CLI `serve` 子命令桌面握手：
 1. ~~后端新增 `--desktop-ready-json` 参数与 ready 输出~~（已完成）
 2. ~~Tauri 启动 `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`~~（已完成）
 3. ~~解析 ready JSON、加载动态 URL、退出时回收子进程~~（已完成）
-4. 文档与 **`frontend/dist`** / sidecar 发版流程与代码同 PR 维护（见 **`desktop-tauri/DEVELOPMENT.md`** § 发布检查清单）
+4. ~~单实例保护、系统托盘与最小化隐藏~~（已完成）
+5. 文档与 **`frontend/dist`** / sidecar 发版流程与代码同 PR 维护（见 **`desktop-tauri/DEVELOPMENT.md`** § 发布检查清单）
 
 ### 开发启动命令（当前实现）
 
@@ -100,8 +103,10 @@ cargo install tauri-cli --version "^2"
 ## 6. 风险与缓解
 
 1. 进程管理复杂度提升：
-   - 缓解：统一由 Tauri 生命周期管理并在退出时强制回收
+   - 缓解：统一由 Tauri 生命周期管理；最小化隐藏不回收，关窗、显式退出或系统退出时强制回收
 2. 后端输出协议不稳定：
    - 缓解：ready JSON 固定字段，后续加版本号
 3. 端口冲突/竞争：
-   - 缓解：支持 `--port 0`，由系统分配并回传真实端口
+   - 缓解：支持 `--port 0`，由系统分配并回传真实端口；单实例插件避免同一桌面应用重复拉起后端
+4. 无系统托盘的桌面环境中窗口隐藏后不可恢复：
+   - 缓解：仅在托盘初始化成功时将最小化改为隐藏；初始化失败时保留普通最小化
