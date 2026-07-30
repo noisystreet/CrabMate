@@ -108,17 +108,23 @@ test("多轮助手正文不应合并为一条 stored_message", async ({ page, br
   await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
   await page.waitForSelector('[data-testid="chat-composer-input"]');
 
-  // ── DOM 快照：检查所有助手正文在独立气泡中 ──
+  // ── DOM 快照（TUI transcript section；旧 chat-message-row / chat-tool-card 已退役）──
   const domState = await page.evaluate(() => {
-    const rows = document.querySelectorAll('[data-testid="chat-message-row"]');
+    const sections = [
+      ...document.querySelectorAll<HTMLElement>(
+        "section.chat-tui-turn--user, section.chat-tui-turn--assistant, section.chat-tui-turn--tool",
+      ),
+    ];
     const texts: string[] = [];
-    for (const row of rows) {
-      texts.push(row.textContent?.trim() ?? "");
+    let toolCount = 0;
+    for (const el of sections) {
+      if (el.classList.contains("chat-tui-turn--tool")) {
+        toolCount += 1;
+        continue;
+      }
+      texts.push((el.innerText ?? "").replace(/\s+/g, " ").trim());
     }
-    const toolCards = document.querySelectorAll(
-      '[data-testid="chat-tool-card"]',
-    ).length;
-    return { nonToolCount: texts.length, toolCount: toolCards, texts };
+    return { nonToolCount: texts.length, toolCount, texts };
   });
 
   console.log("=== DOM 快照（流式结束后）===");
@@ -187,7 +193,7 @@ test("多轮助手正文不应合并为一条 stored_message", async ({ page, br
   await secondPage.waitForSelector('[data-testid="chat-composer-input"]');
   for (const signature of TEXT_SIGNATURES) {
     await expect(
-      secondPage.locator('[data-testid="chat-message-row"]').filter({
+      secondPage.locator("section.chat-tui-turn--assistant").filter({
         hasText: signature,
       }),
     ).toHaveCount(1);

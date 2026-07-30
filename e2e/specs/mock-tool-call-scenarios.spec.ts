@@ -64,11 +64,8 @@ test.describe("工具调用场景回归", () => {
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText(postToolAnswer, { timeout: 5000 });
 
-    // 应有 1 个工具卡
-    const toolCards = await page
-      .locator('[data-testid="chat-tool-card"]')
-      .count();
-    expect(toolCards).toBe(1);
+    // TUI transcript：工具回合为 section.chat-tui-turn--tool / chat-tui-tool-process
+    await expect(page.locator("section.chat-tui-turn--tool")).toHaveCount(1);
   });
 
   // ---------------------------------------------------------------------------
@@ -117,11 +114,7 @@ test.describe("工具调用场景回归", () => {
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText(answer, { timeout: 5000 });
 
-    // 应有 2 个工具卡
-    const toolCards = await page
-      .locator('[data-testid="chat-tool-card"]')
-      .count();
-    expect(toolCards).toBe(2);
+    await expect(page.locator("section.chat-tui-turn--tool")).toHaveCount(2);
   });
 
   // ---------------------------------------------------------------------------
@@ -158,10 +151,6 @@ test.describe("工具调用场景回归", () => {
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText(answer, { timeout: 5000 });
 
-    // 应有 1 个工具卡
-    const toolCards = await page
-      .locator('[data-testid="chat-tool-card"]')
-      .count();
-    expect(toolCards).toBe(1);
+    await expect(page.locator("section.chat-tui-turn--tool")).toHaveCount(1);
   });
 });

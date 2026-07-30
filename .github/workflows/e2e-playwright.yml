@@ -78,6 +78,10 @@ jobs:
             specs/mock-commentary-before-tool-order.spec.ts \
             specs/mock-empty-assistant-shell.spec.ts \
             specs/mock-real-tool-bubble-vanish.spec.ts \
+            specs/mock-tool-call-scenarios.spec.ts \
+            specs/mock-approval-scenarios.spec.ts \
+            specs/mock-multi-turn.spec.ts \
+            specs/mock-storage-consistency.spec.ts \
             --reporter=list
         working-directory: e2e
         env:
