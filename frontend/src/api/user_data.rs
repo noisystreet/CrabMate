@@ -239,6 +239,10 @@ pub struct McpServerEntryDto {
     pub has_env: bool,
     #[serde(default)]
     pub has_cwd: bool,
+    #[serde(default)]
+    pub has_url: bool,
+    #[serde(default)]
+    pub has_headers: bool,
     #[serde(default = "default_true")]
     pub enabled: bool,
     #[serde(default)]

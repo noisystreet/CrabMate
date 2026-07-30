@@ -7,13 +7,14 @@ description = "Model Context Protocol client/server for CrabMate"
 
 [features]
 default = []
-mcp = ["dep:rmcp"]
+mcp = ["dep:rmcp", "dep:http"]
 
 [dependencies]
 cmd_mate = { workspace = true }
 crabmate-config = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
+http = { version = "1", optional = true }
 log = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = [
@@ -32,4 +33,5 @@ rmcp = { version = "2.2", optional = true, default-features = false, features = 
     "server",
     "transport-child-process",
     "transport-io",
+    "transport-streamable-http-client-reqwest",
 ] }

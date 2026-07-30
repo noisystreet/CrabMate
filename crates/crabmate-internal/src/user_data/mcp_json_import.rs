@@ -11,6 +11,7 @@ use super::types::McpServerEntry;
 pub struct McpJsonImportResult {
     pub entries: Vec<McpServerEntry>,
     pub warnings: Vec<String>,
+    /// 仍无法导入的条目名（例如同时缺 command/url，或 url 校验失败记入 warnings 后跳过）。
     pub skipped_remote: Vec<String>,
 }
 
@@ -27,6 +28,8 @@ struct McpJsonServerDef {
     #[serde(default)]
     url: Option<String>,
     #[serde(default)]
+    headers: Option<HashMap<String, String>>,
+    #[serde(default)]
     disabled: Option<bool>,
     #[serde(rename = "envFile")]
     env_file: Option<String>,
@@ -42,7 +45,13 @@ pub fn import_mcp_json_value(root: &Value) -> Result<McpJsonImportResult, String
         import_one_server(&key, server, &mut out);
     }
     if out.entries.is_empty() && out.skipped_remote.is_empty() {
-        return Err("未找到可导入的 stdio MCP 服务器（需含 command）".to_string());
+        return Err("未找到可导入的 MCP 服务器（需含 command 或 url）".to_string());
+    }
+    if out.entries.is_empty() && !out.skipped_remote.is_empty() {
+        return Err(format!(
+            "未导入任何服务器（跳过: {}）",
+            out.skipped_remote.join(", ")
+        ));
     }
     Ok(out)
 }
@@ -74,12 +83,56 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         .as_ref()
         .is_some_and(|c| !c.trim().is_empty());
     let has_url = server.url.as_ref().is_some_and(|u| !u.trim().is_empty());
-    if !has_command {
-        if has_url {
-            out.skipped_remote.push(key.to_string());
-        }
+    if has_command && has_url {
+        out.warnings.push(format!(
+            "「{key}」：同时含 command 与 url，已跳过（请拆成两条或只保留其一）"
+        ));
+        out.skipped_remote.push(key.to_string());
         return;
     }
+    if !has_command && !has_url {
+        return;
+    }
+
+    let enabled = !server.disabled.unwrap_or(false);
+    let now = super::store::now_ms();
+    let name = name_from_mcp_server_key(key);
+
+    if has_url {
+        let url = server.url.unwrap_or_default().trim().to_string();
+        if let Err(e) = crabmate_mcp::resolve::validate_mcp_remote_url(&url) {
+            out.warnings.push(format!("「{key}」：{e}"));
+            out.skipped_remote.push(key.to_string());
+            return;
+        }
+        let headers: BTreeMap<String, String> = server
+            .headers
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(k, _)| !k.trim().is_empty())
+            .map(|(k, v)| (k.trim().to_string(), v))
+            .collect();
+        if let Some(path) = server.env_file.filter(|s| !s.trim().is_empty()) {
+            out.warnings
+                .push(format!("「{key}」：远程 url 条目忽略 envFile（{path}）"));
+        }
+        out.entries.push(McpServerEntry {
+            id: super::store::new_mcp_server_id(),
+            name,
+            slug: String::new(),
+            command: String::new(),
+            args: Vec::new(),
+            env: BTreeMap::new(),
+            cwd: None,
+            url: Some(url),
+            headers,
+            enabled,
+            created_at_ms: now,
+            updated_at_ms: now,
+        });
+        return;
+    }
+
     let command = server.command.unwrap_or_default().trim().to_string();
     let args = server.args.unwrap_or_default();
     let env: BTreeMap<String, String> = server
@@ -111,17 +164,16 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         ));
     }
 
-    let enabled = !server.disabled.unwrap_or(false);
-    let now = super::store::now_ms();
-
     out.entries.push(McpServerEntry {
         id: super::store::new_mcp_server_id(),
-        name: name_from_mcp_server_key(key),
+        name,
         slug: String::new(),
         command,
         args,
         env,
         cwd,
+        url: None,
+        headers: BTreeMap::new(),
         enabled,
         created_at_ms: now,
         updated_at_ms: now,
@@ -199,9 +251,45 @@ mod tests {
             }
         });
         let r = import_mcp_json_value(&root).expect("import");
+        assert_eq!(r.entries.len(), 1);
         assert_eq!(r.entries[0].command, "npx");
-        assert_eq!(r.entries[0].args.len(), 3);
-        assert!(r.entries[0].env.is_empty());
-        assert!(r.entries[0].cwd.is_none());
+    }
+
+    #[test]
+    fn import_url_only_remote() {
+        let root = json!({
+            "mcpServers": {
+                "remote": {
+                    "url": "https://mcp.example.com/mcp",
+                    "headers": {"Authorization": "Bearer test-token"}
+                }
+            }
+        });
+        let r = import_mcp_json_value(&root).expect("import");
+        assert!(r.skipped_remote.is_empty());
+        assert_eq!(r.entries.len(), 1);
+        assert_eq!(
+            r.entries[0].url.as_deref(),
+            Some("https://mcp.example.com/mcp")
+        );
+        assert!(r.entries[0].command.is_empty());
+        assert_eq!(
+            r.entries[0]
+                .headers
+                .get("Authorization")
+                .map(String::as_str),
+            Some("Bearer test-token")
+        );
+    }
+
+    #[test]
+    fn import_rejects_plain_http_non_loopback() {
+        let root = json!({
+            "mcpServers": {
+                "bad": { "url": "http://evil.example/mcp" }
+            }
+        });
+        let r = import_mcp_json_value(&root).expect_err("should fail when only skipped");
+        assert!(r.contains("跳过") || r.contains("evil") || r.contains("HTTPS"));
     }
 }

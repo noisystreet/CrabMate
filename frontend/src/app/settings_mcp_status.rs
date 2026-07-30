@@ -129,12 +129,16 @@ pub(crate) fn merge_probe_into_status(
 }
 
 fn should_auto_probe_mcp(file: &McpServersFileDto) -> bool {
-    file.global_enabled && file.servers.iter().any(|s| s.enabled && s.has_command)
+    file.global_enabled
+        && file
+            .servers
+            .iter()
+            .any(|s| s.enabled && (s.has_command || s.has_url))
 }
 
 fn validate_mcp_draft_for_save(file: &McpServersFileDto, loc: Locale) -> Result<(), String> {
     for s in &file.servers {
-        if s.enabled && !s.has_command {
+        if s.enabled && !s.has_command && !s.has_url {
             return Err(crate::i18n::settings_mcp_enabled_missing_command(
                 loc, &s.name,
             ));
