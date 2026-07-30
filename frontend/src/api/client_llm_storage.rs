@@ -1,4 +1,4 @@
-//! 侧栏「本机模型」：进程内缓存 + **`/user-data/llm-overrides`** / **`secrets/*`**。
+//! 侧栏「本机模型」：进程内缓存 + 非机密覆盖文件；API 密钥由服务端写系统钥匙串。
 
 use serde_json::Value;
 
@@ -56,7 +56,7 @@ fn sync_llm_to_server_async(loc: Locale) {
     });
 }
 
-/// 是否已配置主模型 API Key（磁盘或本进程内存）。
+/// 是否已配置主模型 API Key（系统钥匙串状态或本进程内存）。
 pub fn client_llm_storage_has_api_key() -> bool {
     with_mem(|m| m.client_key_on_server || !m.api_key.trim().is_empty())
 }

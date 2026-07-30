@@ -138,6 +138,6 @@ VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 cargo test --test victauri_real_
 
 CLI 子命令 `crabmate e2e` 自动通过 `load_config` + `read_llm_api_key_from_env_lenient` 加载密钥（环境变量 `API_KEY` 或配置路径）。
 
-集成测试通过 `REAL_LLM_E2E=1` 环境变量启用，密钥同样来自 `API_KEY` 或回退到 `~/.local/share/crabmate/secrets/client_llm`。
+集成测试通过 `REAL_LLM_E2E=1` 环境变量启用，密钥来自 `API_KEY`，未设置时由 Rust 测试进程读取 CrabMate 系统钥匙串；不再读取 XDG 明文密钥文件。
 
 ---

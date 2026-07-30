@@ -202,7 +202,7 @@ cargo tauri build
 
 | 变量 | 作用 |
 | --- | --- |
-| **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置。 |
+| **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置，持久化到系统钥匙串而非 XDG 明文文件。 |
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
 | **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（默认开发时为仓库 **`frontend/dist`**，桌面 **`.deb`** 为 **`/usr/share/crabmate/frontend/dist`**）。 |
@@ -213,6 +213,7 @@ cargo tauri build
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
+- **LLM API Key**：Web/桌面设置、默认 `/api-key set` 与已保存模型的密钥写入系统钥匙串（macOS Keychain、Windows Credential Manager、Linux Secret Service）。旧 XDG 明文密钥仅在迁移成功后删除；无可用钥匙串时可继续使用环境变量 `API_KEY`。
 - **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**）。密钥非空时会挂载 Bearer 层，请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。前端可将同一密钥写入本机 **`secrets/web_api_bearer`**（经 **`/user-data/secrets`**），并在本进程内存中携带请求头。对外或不可信网络建议 **`web_api_require_bearer = true`** 并配置密钥。
 - **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入浏览器（含 **MCP** 子页删除/改服务器草稿；页内另有「保存 MCP 配置」）；工作区须在允许根内（路径校验见 [docs/配置说明.md](docs/配置说明.md)）。调试变量与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。
 - **个人 VPS（反代 TLS）**：见 [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md)（**`127.0.0.1` + `CM_WEB_API_BEARER_TOKEN` + Caddy/Nginx**）。

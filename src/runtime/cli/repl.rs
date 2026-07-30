@@ -474,7 +474,7 @@ pub(crate) async fn repl_dispatch_chat_round(
             if k.trim().is_empty() {
                 drop(k);
                 let _ = style.eprint_error(
-                    "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）、设置环境变量 API_KEY，或在 Web 侧栏保存 secrets/client_llm 后重启。",
+                    "当前为 llm_http_auth_mode=bearer，但未配置 LLM API 密钥。请执行 /api-key set <密钥>（仅本进程）、设置环境变量 API_KEY，或在 Web/桌面侧栏保存到系统钥匙串后重启。",
                 );
                 return Ok(());
             }

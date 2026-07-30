@@ -83,13 +83,44 @@ pub fn save_prefs(prefs: &UserPrefs) -> Result<(), String> {
 }
 
 pub fn load_llm_overrides() -> LlmOverridesFile {
-    read_json_file_or_default(&llm_path(&root()))
+    let path = llm_path(&root());
+    let mut file: LlmOverridesFile = read_json_file_or_default(&path);
+    let before = file.saved_models.clone();
+    if let Err(error) =
+        super::saved_model_secrets::prepare_saved_model_secrets(&mut file.saved_models)
+    {
+        super::saved_model_secrets::scrub_saved_model_api_keys(&mut file.saved_models);
+        tracing::warn!(
+            target: "crabmate",
+            error = %error,
+            "迁移已保存模型 API 密钥到系统钥匙串失败；旧文件暂不改写"
+        );
+        return file;
+    }
+    if before != file.saved_models
+        && let Err(error) = write_json_atomic(&path, &file)
+    {
+        tracing::warn!(
+            target: "crabmate",
+            error = %error,
+            "清理 llm_overrides 中的旧 API 密钥字段失败"
+        );
+    }
+    file
 }
 
 pub fn save_llm_overrides(file: &LlmOverridesFile) -> Result<(), String> {
     let r = root();
     ensure_tree(&r)?;
-    write_json_atomic(&llm_path(&r), file)
+    let path = llm_path(&r);
+    let mut old: LlmOverridesFile = read_json_file_or_default(&path);
+    super::saved_model_secrets::prepare_saved_model_secrets(&mut old.saved_models)?;
+    let old_accounts = super::saved_model_secrets::saved_model_accounts(&old.saved_models);
+    let mut sanitized = file.clone();
+    super::saved_model_secrets::prepare_saved_model_secrets(&mut sanitized.saved_models)?;
+    let new_accounts = super::saved_model_secrets::saved_model_accounts(&sanitized.saved_models);
+    write_json_atomic(&path, &sanitized)?;
+    super::saved_model_secrets::delete_removed_saved_model_secrets(&old_accounts, &new_accounts)
 }
 
 pub fn load_mcp_servers() -> McpServersFile {
@@ -341,21 +372,19 @@ pub fn list_workspaces() -> Result<Vec<WorkspaceListEntry>, String> {
 }
 
 pub fn write_secret_client_llm(api_key: &str) -> Result<(), String> {
-    let p = secret_path(&root(), "client_llm");
-    if api_key.trim().is_empty() {
-        let _ = std::fs::remove_file(&p);
-        return Ok(());
-    }
-    write_secret_line(&p, api_key)
+    super::credential_store::write_llm_secret(
+        "client_llm",
+        &secret_path(&root(), "client_llm"),
+        api_key,
+    )
 }
 
 pub fn write_secret_executor_llm(api_key: &str) -> Result<(), String> {
-    let p = secret_path(&root(), "executor_llm");
-    if api_key.trim().is_empty() {
-        let _ = std::fs::remove_file(&p);
-        return Ok(());
-    }
-    write_secret_line(&p, api_key)
+    super::credential_store::write_llm_secret(
+        "executor_llm",
+        &secret_path(&root(), "executor_llm"),
+        api_key,
+    )
 }
 
 pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
@@ -436,8 +465,8 @@ pub fn mcp_servers_file_public(file: &McpServersFile) -> McpServersFilePublic {
     McpServersFilePublic::from_file_with_bearer(file, mcp_bearer_is_set)
 }
 
-fn slot_status(path: &Path) -> SecretSlotStatus {
-    match read_secret_line(path) {
+fn slot_status_from_secret(secret: Option<String>) -> SecretSlotStatus {
+    match secret {
         Some(s) => {
             let suffix = if s.chars().count() >= 4 {
                 let tail = s
@@ -461,19 +490,22 @@ fn slot_status(path: &Path) -> SecretSlotStatus {
 pub fn secrets_status() -> SecretsStatusResponse {
     let r = root();
     SecretsStatusResponse {
-        client_llm: slot_status(&secret_path(&r, "client_llm")),
-        executor_llm: slot_status(&secret_path(&r, "executor_llm")),
-        web_api_bearer: slot_status(&secret_path(&r, "web_api_bearer")),
+        client_llm: slot_status_from_secret(read_secret_client_llm()),
+        executor_llm: slot_status_from_secret(read_secret_executor_llm()),
+        web_api_bearer: slot_status_from_secret(read_secret_line(&secret_path(
+            &r,
+            "web_api_bearer",
+        ))),
     }
 }
 
 /// 供 `POST /chat` 合并：仅返回密钥明文（勿记录日志）。
 pub fn read_secret_client_llm() -> Option<String> {
-    read_secret_line(&secret_path(&root(), "client_llm"))
+    super::credential_store::read_llm_secret("client_llm", &secret_path(&root(), "client_llm"))
 }
 
 pub fn read_secret_executor_llm() -> Option<String> {
-    read_secret_line(&secret_path(&root(), "executor_llm"))
+    super::credential_store::read_llm_secret("executor_llm", &secret_path(&root(), "executor_llm"))
 }
 
 /// `web_sessions.json` 的 `sessions` 须为 JSON 数组。
@@ -524,6 +556,40 @@ mod tests {
             vec!["/tmp/a".to_string(), "/tmp/b".to_string()]
         );
         assert_eq!(loaded.last_workspace_root.as_deref(), Some("/tmp/a"));
+    }
+
+    #[test]
+    fn llm_overrides_migrates_saved_model_key_out_of_json() {
+        let root = test_root();
+        std::fs::create_dir_all(&root).expect("create user data root");
+        let path = llm_path(&root);
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "saved_models": [{
+                    "api_base": "https://store-test.invalid/v1",
+                    "model": "model-store-migration",
+                    "api_key": "example-token"
+                }]
+            })
+            .to_string(),
+        )
+        .expect("write old overrides");
+
+        let loaded = load_llm_overrides();
+
+        let saved = loaded.saved_models[0]
+            .as_object()
+            .expect("saved model object");
+        assert!(!saved.contains_key("api_key"));
+        assert_eq!(saved.get("has_api_key"), Some(&Value::Bool(true)));
+        let persisted: Value =
+            serde_json::from_str(&std::fs::read_to_string(path).expect("read overrides"))
+                .expect("parse overrides");
+        assert!(
+            persisted["saved_models"][0].get("api_key").is_none(),
+            "persisted llm_overrides must not contain API keys"
+        );
     }
 
     #[test]

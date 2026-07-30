@@ -46,8 +46,7 @@ npx playwright test --list
 # 运行 mock SSE 回归测试（CI 中的标准模式）
 npx playwright test specs/mock-overlay-timing.spec.ts
 
-# 运行真实 LLM 测试（需本地 Tauri 已配置 API 密钥）
-# 自动读取 ~/.local/share/crabmate/secrets/client_llm
+# 运行真实 LLM 测试（测试进程请显式设置 API_KEY；不会导出系统钥匙串明文）
 npx playwright test specs/real-llm-*.spec.ts
 
 # 运行单个用例（按名称过滤）
@@ -141,11 +140,7 @@ x-stream-job-id: 1
 
 ### 密钥解析
 
-自动读取 Tauri 本地配置（无需手动传 `API_KEY`）：
-
-1. 环境变量 `API_KEY`（最高优先级）
-2. `$XDG_DATA_HOME/crabmate/secrets/client_llm`
-3. `$HOME/.local/share/crabmate/secrets/client_llm`
+Playwright 测试进程不读取或导出 CrabMate 系统钥匙串。请通过环境变量 `API_KEY`（推荐）或仅用于本机测试且已忽略提交的配置提供密钥。
 
 无密钥时测试自动跳过。
 

@@ -73,7 +73,7 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {
-                        "description": "各 secrets 文件是否已设置",
+                        "description": "各密钥槽是否已设置（LLM 槽来自系统钥匙串）",
                         "content": {
                             "application/json": {
                                 "schema": { "$ref": "#/components/schemas/SecretsStatusResponse" }
@@ -86,7 +86,7 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
         "/user-data/secrets/client-llm": {
             "put": {
                 "tags": ["user_data"],
-                "summary": "写主模型 API Key（仅写；无 GET 明文）",
+                "summary": "写主模型 API Key 到系统钥匙串（仅写；无 GET 明文）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "requestBody": {
                     "content": {

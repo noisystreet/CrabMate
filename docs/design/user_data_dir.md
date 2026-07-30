@@ -228,7 +228,7 @@ flowchart TB
 |----|------|------|
 | **Web** | `GET/PUT /user-data/*` | WASM 无法直接读 `$HOME`；与现有 Bearer 鉴权一致 |
 | **Tauri** | 同 Web（`serve` 动态 loopback URL，见 **`web_ready` JSON**） | 业务数据不再依赖 `com.crabmate.desktop/localstorage/` |
-| **CLI** | `user_data` 直读；`doctor` 打印路径 | 启动**不**自动套用 `prefs.last_workspace_root`（须 `--workspace`）；`cm_role` 仍可回退；密钥优先 `API_KEY` env |
+| **CLI** | `user_data` 直读；`doctor` 打印路径与钥匙串脱敏状态 | 启动**不**自动套用 `prefs.last_workspace_root`（须 `--workspace`）；`cm_role` 仍可回退；密钥优先 `API_KEY` env，其次系统钥匙串 |
 | **TUI** | 直读 `prefs` + 可选 HTTP | 同 CLI：不自动打开上次工作区；会话链仍以 SQLite / `tui_session.json` 为主 |
 
 ---
@@ -243,7 +243,7 @@ flowchart TB
 | `PUT` | `/user-data/prefs` | 写回；可选 `If-Match` / revision |
 | `GET` | `/user-data/llm-overrides` | 读 `llm_overrides.json` |
 | `PUT` | `/user-data/llm-overrides` | 写回非机密 LLM 字段 |
-| `PUT` | `/user-data/secrets/client-llm` | 仅写密钥；**无**对应 GET 明文 |
+| `PUT` | `/user-data/secrets/client-llm` | 仅写系统钥匙串；**无**对应 GET 明文 |
 | `GET` | `/user-data/secrets/status` | `{ "client_llm": { "set": true }, ... }` 脱敏状态 |
 | `GET` | `/user-data/workspaces/current/sessions` | 按当前 `workspace_override` 解析桶 |
 | `PUT` | `/user-data/workspaces/current/sessions` | 写 `web_sessions.json` |
@@ -259,10 +259,10 @@ flowchart TB
 1. `AgentConfig` / TOML / 嵌入默认  
 2. 进程环境 **`API_KEY`**（`llm_http_auth_mode=bearer` 时）  
 3. **`~/.local/share/crabmate/llm_overrides.json`**  
-4. **`secrets/client_llm`**（仅 `api_key`）  
+4. **系统钥匙串 `client_llm`**（仅 `api_key`；服务名 `com.crabmate.credentials`）
 5. 请求体 **`client_llm`**（Web 设置页当次提交，**不写盘**除非用户显式保存）
 
-与现文档一致：**`client_llm.api_key` 随请求发送**；落盘仅为本机便利，**服务端 `serve` 进程不把 Web 密钥写入 `AppState` 持久字段**。
+与现文档一致：**`client_llm.api_key` 随请求发送**；持久化密钥只进系统钥匙串，**服务端 `serve` 进程不把 Web 密钥写入 `AppState` 持久字段**。旧 `secrets/client_llm` / `executor_llm` 与 `saved_models[*].api_key` 采用「先写钥匙串、成功后删明文」迁移；失败时保留旧数据。保存模型使用 `api_base + model` 的 SHA-256 派生钥匙串账户，`llm_overrides.json` 仅保留 `has_api_key`。
 
 ---
 

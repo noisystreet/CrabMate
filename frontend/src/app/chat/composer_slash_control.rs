@@ -383,7 +383,7 @@ fn handle_api_key(args: &[&str], shell: &ComposerStreamShell, loc: Locale) {
                 Some(secret),
                 loc,
             ) {
-                Ok(()) => set_ok(shell, "已写入 API 密钥（不进对话；已同步 user-data）"),
+                Ok(()) => set_ok(shell, "已写入 API 密钥（不进对话；已同步系统钥匙串）"),
                 Err(e) => set_ok(shell, format!("写入失败: {e}")),
             }
         }

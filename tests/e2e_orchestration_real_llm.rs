@@ -21,7 +21,7 @@
 //! - `summary.md`：简短摘要
 //! - `messages_final.md` / `messages_final.json`：完整消息记录
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod common;
 
@@ -46,27 +46,13 @@ fn test_e2e_config() -> E2eRunConfig {
     }
 }
 
-/// 优先从 `API_KEY` 环境变量读取；未设置时回退到 Tauri/Web 本地配置。
+/// 优先从 `API_KEY` 环境变量读取；未设置时回退到 CrabMate 系统钥匙串。
 fn resolve_test_api_key() -> String {
     let from_env = std::env::var("API_KEY").unwrap_or_default();
     if !from_env.trim().is_empty() {
         return from_env.trim().to_string();
     }
-    let home = std::env::var("HOME").unwrap_or_default();
-    let data_home = std::env::var("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| Path::new(&home).join(".local/share"));
-    let secret_path = data_home
-        .join("crabmate")
-        .join("secrets")
-        .join("client_llm");
-    if let Ok(content) = std::fs::read_to_string(&secret_path) {
-        let t = content.trim().to_string();
-        if !t.is_empty() {
-            return t;
-        }
-    }
-    String::new()
+    crabmate_internal::user_data::read_secret_client_llm().unwrap_or_default()
 }
 
 /// 单场景 smoke 测试：简单问候，验证一轮 LLM 调用后能正常结束。
