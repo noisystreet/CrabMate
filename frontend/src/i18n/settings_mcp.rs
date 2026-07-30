@@ -64,10 +64,10 @@ pub fn settings_mcp_import_title(l: Locale) -> &'static str {
 pub fn settings_mcp_import_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "粘贴 MCP 配置 JSON（含 mcpServers 对象，可为整份 mcp.json 或其中一段）。会从 command、args、cwd、env 或 url、headers 解析并写入配置；启动明文不在本页显示，连接时见服务端日志（target: crabmate）。粘贴完整 JSON 后会自动解析；也可点「解析并添加」或保存时合并。支持 stdio（command）与远程 Streamable HTTP（url；非 HTTPS 仅 loopback）。"
+            "粘贴 MCP 配置 JSON（含 mcpServers 对象，可为整份 mcp.json 或其中一段）。会从 command、args、cwd、env 或 url、headers 解析并写入配置；启动明文不在本页显示，连接时见服务端日志（target: crabmate）。粘贴不会自动导入：请点「解析并添加到列表」，或在保存时合并。支持 stdio（command）与远程 Streamable HTTP（url；非 HTTPS 仅 loopback）。"
         }
         Locale::En => {
-            "Paste MCP config JSON (an object with mcpServers—often a full mcp.json file or that section). Builds stored servers from command/args/cwd/env or url/headers—secrets are not shown here; see server logs on connect (target: crabmate). A full JSON paste is parsed automatically; or use Parse & add, or Save to merge. Supports stdio (command) and remote Streamable HTTP (url; non-HTTPS only on loopback)."
+            "Paste MCP config JSON (an object with mcpServers—often a full mcp.json file or that section). Builds stored servers from command/args/cwd/env or url/headers—secrets are not shown here; see server logs on connect (target: crabmate). Pasting never imports on its own: click Parse and add to list, or Save to merge. Supports stdio (command) and remote Streamable HTTP (url; non-HTTPS only on loopback)."
         }
     }
 }
@@ -83,10 +83,12 @@ pub fn settings_mcp_import_placeholder(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_mcp_import_auto_paste(l: Locale) -> &'static str {
+pub fn settings_mcp_import_paste_detected(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "（已根据粘贴的 JSON 解析服务器；启动命令已写入配置）",
-        Locale::En => "(Servers parsed from pasted JSON; start command stored in config)",
+        Locale::ZhHans => "已检测到 MCP 配置 JSON；确认内容无误后点「解析并添加到列表」再导入。",
+        Locale::En => {
+            "Detected MCP config JSON; review it, then click Parse and add to list to import."
+        }
     }
 }
 

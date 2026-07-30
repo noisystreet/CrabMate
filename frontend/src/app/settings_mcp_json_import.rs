@@ -74,31 +74,16 @@ pub(crate) fn SettingsMcpJsonImportPanel(
         });
     };
 
-    let auto_apply_after_paste = move |_| {
+    // 粘贴只提示，不落盘：导入会写入本机配置，须由用户显式确认。
+    let hint_after_paste = move |_| {
         spawn_local(async move {
             TimeoutFuture::new(0).await;
-            let text = import_json.get_untracked();
-            if !looks_like_mcp_json(&text) {
+            if !looks_like_mcp_json(&import_json.get_untracked()) {
                 return;
             }
-            let loc = locale.get_untracked();
-            match post_import_json(&text, loc).await {
-                Ok(outcome) => {
-                    let mut msg = format_import_feedback(
-                        loc,
-                        outcome.imported_count,
-                        &outcome.warnings,
-                        &outcome.skipped_remote,
-                    );
-                    msg.push('\n');
-                    msg.push_str(i18n::settings_mcp_import_auto_paste(loc));
-                    set_file.set(outcome.file.clone());
-                    baseline.set(outcome.file);
-                    set_feedback.set(Some(msg));
-                    import_json.set(String::new());
-                }
-                Err(e) => set_feedback.set(Some(e)),
-            }
+            set_feedback.set(Some(
+                i18n::settings_mcp_import_paste_detected(locale.get_untracked()).to_string(),
+            ));
         });
     };
 
@@ -117,7 +102,7 @@ pub(crate) fn SettingsMcpJsonImportPanel(
                         import_json.set(v);
                     }
                 }
-                on:paste=auto_apply_after_paste
+                on:paste=hint_after_paste
             ></textarea>
             <button
                 type="button"
