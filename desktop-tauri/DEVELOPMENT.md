@@ -68,6 +68,21 @@ CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev
 
 发布构建：**`cargo tauri build`**（**`beforeBuildCommand`** 会执行 **`prepare-sidecar.sh`**）。
 
+### 1.6 托盘、窗口与单实例
+
+- `tauri-plugin-single-instance` 必须在 Builder 插件序列最前注册。第二实例不会执行 `setup` 或拉起第二个后端，而是显示并聚焦已有 `main`；主窗口尚未创建时聚焦 `splash`。
+- `src/desktop_lifecycle.rs` 负责托盘和窗口生命周期。托盘菜单含「显示/隐藏」「退出」；Linux 下 Tauri 不派发托盘图标点击事件，因此须使用菜单，Windows/macOS 左键可切换。
+- 关闭 `main` 会正常退出并回收后端；托盘初始化成功时，前端最小化命令改为隐藏窗口，让后端继续运行。
+- 托盘「退出」与 `quit_desktop_app` 共用 `request_desktop_quit`（先 `BackendHandle::kill` 再 `app.exit(0)`），`RunEvent::Exit|ExitRequested` 再兜底一次。
+- 托盘初始化失败时，最小化命令保留普通窗口最小化。
+
+手动验收：
+
+1. 启动桌面应用，确认托盘菜单可显示/隐藏主窗口。
+2. 最小化主窗口后确认后端进程仍在；从托盘恢复窗口。
+3. 再次启动同一桌面二进制，确认没有第二个窗口/后端，原窗口被唤醒。
+4. 关闭主窗口，确认桌面进程和它管理的 `crabmate serve` 均退出；托盘「退出」应有相同行为。
+
 ## 2. 常见故障
 
 ### 2.1 启动时报 “failed to spawn backend”
@@ -227,13 +242,14 @@ export http_proxy=http://localhost:8118 && export https_proxy=http://localhost:8
 
 - 启动后端子进程（**`--port 0 --desktop-ready-json`**）
 - 解析 **`web_ready`** 并加载动态 URL
-- 打开 WebView、退出时回收后端进程
+- 单实例保护；第二次启动唤醒已有窗口
+- 系统托盘与最小化隐藏；托盘不可用时安全降级为普通最小化
+- 显式退出时回收后端进程
 - 启动失败时的阻塞错误对话框
 
 尚待完善：
 
 - 日志目录与诊断页
-- 单实例保护
 - sidecar 自动更新
 - **`web_ready` 与 `/health` 版本号交叉校验**（可选）
 
