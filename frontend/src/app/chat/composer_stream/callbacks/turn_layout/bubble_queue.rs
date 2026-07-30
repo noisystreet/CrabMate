@@ -19,6 +19,68 @@ pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
     message_id.starts_with(V2_COMMENTARY_ROW_ID_PREFIX)
 }
 
+/// 上一回合遗留的同键旁注行的归档后缀。
+///
+/// `turn-commentary-{tool_call_id}` 只在**本回合**内唯一：模型跨回合复用同一
+/// `tool_call_id` 时，直接 upsert 会把上一回合的旁注正文改写成本回合的。仿
+/// [`super::TurnLayout::detach_final_answer_projection`]，让历史行让出规范键；
+/// 仍保留 `turn-commentary-` 前缀，故 `is_commentary_row_id` 与 v2 缓存识别不受影响。
+const ARCHIVED_COMMENTARY_SUFFIX: &str = "#prev";
+
+/// 本回合起点（最后一条 user 行之后）。
+fn current_turn_start(messages: &[crate::storage::StoredMessage]) -> usize {
+    messages
+        .iter()
+        .rposition(|m| m.role == "user")
+        .map_or(0, |idx| idx + 1)
+}
+
+/// 本回合内 `row_id` 所在下标；上一回合的同键行不算命中。
+pub(super) fn current_turn_position(
+    messages: &[crate::storage::StoredMessage],
+    row_id: &str,
+) -> Option<usize> {
+    let start = current_turn_start(messages);
+    messages[start..]
+        .iter()
+        .position(|m| m.id == row_id)
+        .map(|idx| idx + start)
+}
+
+fn current_turn_tool_position(
+    messages: &[crate::storage::StoredMessage],
+    tool_call_id: &str,
+) -> Option<usize> {
+    let start = current_turn_start(messages);
+    messages[start..]
+        .iter()
+        .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
+        .map(|idx| idx + start)
+}
+
+/// 让上一回合遗留的同键旁注行让出规范键，避免本回合 upsert 覆盖其正文。
+fn archive_stale_commentary_rows(messages: &mut [crate::storage::StoredMessage], row_id: &str) {
+    let start = current_turn_start(messages);
+    let stale: Vec<usize> = (0..start)
+        .filter(|&idx| messages[idx].id == row_id)
+        .collect();
+    for idx in stale {
+        let archived = next_archived_commentary_id(messages, row_id);
+        messages[idx].id = archived;
+    }
+}
+
+fn next_archived_commentary_id(messages: &[crate::storage::StoredMessage], row_id: &str) -> String {
+    let mut seq = 1_usize;
+    loop {
+        let candidate = format!("{row_id}{ARCHIVED_COMMENTARY_SUFFIX}{seq}");
+        if messages.iter().all(|m| m.id != candidate) {
+            return candidate;
+        }
+        seq += 1;
+    }
+}
+
 /// 流式 preview / 边界 flush 队列。
 #[derive(Default, Debug)]
 pub(crate) struct BubbleOutputQueue;
@@ -37,23 +99,19 @@ impl BubbleOutputQueue {
         if trimmed.is_empty() {
             return false;
         }
-        let Some(tool_idx) = messages
-            .iter()
-            .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
-        else {
+        let Some(tool_idx) = current_turn_tool_position(messages, tool_call_id) else {
             return false;
         };
         let row_id = commentary_row_id(tool_call_id);
-        if let Some(idx) = messages.iter().position(|m| m.id == row_id) {
+        archive_stale_commentary_rows(messages, row_id.as_str());
+        if let Some(idx) = current_turn_position(messages, row_id.as_str()) {
             if messages[idx].text != text {
                 messages[idx].text = text;
             }
             if idx > tool_idx {
                 let row = messages.remove(idx);
-                let new_tool_idx = messages
-                    .iter()
-                    .position(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
-                    .unwrap_or(tool_idx);
+                let new_tool_idx =
+                    current_turn_tool_position(messages, tool_call_id).unwrap_or(tool_idx);
                 messages.insert(new_tool_idx, row);
             }
             return true;
@@ -99,15 +157,13 @@ impl BubbleOutputQueue {
         if text.trim().is_empty() {
             return false;
         }
-        if messages
-            .iter()
-            .any(|m| m.is_tool && m.tool_call_id.as_deref() == Some(tool_call_id))
-        {
+        if current_turn_tool_position(messages, tool_call_id).is_some() {
             return Self::upsert_commentary_before_tool(messages, tool_call_id, text);
         }
         let row_id = commentary_row_id(tool_call_id);
+        archive_stale_commentary_rows(messages, row_id.as_str());
         let insert_idx = Self::insert_index_before_loading_tail(messages, loading_tail_id);
-        if let Some(idx) = messages.iter().position(|m| m.id == row_id) {
+        if let Some(idx) = current_turn_position(messages, row_id.as_str()) {
             if messages[idx].text != text {
                 messages[idx].text = text;
             }

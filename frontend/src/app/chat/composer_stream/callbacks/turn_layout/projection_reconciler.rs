@@ -10,7 +10,8 @@ use crate::storage::StoredMessage;
 
 use super::super::super::turn_canonical::TurnCanonicalState;
 use super::bubble_queue::{
-    BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id, is_commentary_row_id,
+    BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id, current_turn_position,
+    is_commentary_row_id,
 };
 
 /// 段/工具边界：定稿旁白 +（可选）终答落盘。
@@ -182,7 +183,7 @@ fn commentary_projection_pending_in_messages(
         .filter(|row| row.kind == ASSISTANT_COMMENTARY)
         .filter_map(|row| row.tool_call_id)
         .map(|tool_call_id| commentary_row_id(tool_call_id.as_str()))
-        .any(|row_id| messages.iter().all(|message| message.id != row_id))
+        .any(|row_id| current_turn_position(messages, row_id.as_str()).is_none())
 }
 
 fn insert_index_for_final_row(messages: &[StoredMessage], loading_tail_id: Option<&str>) -> usize {

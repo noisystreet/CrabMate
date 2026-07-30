@@ -486,6 +486,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 | **I13 open 段关段** | `ToolPhaseEnd` / `on_done` 前关闭 open 旁注，并按工具键发布 |
 | **I14 旁注所有权单写** | `sync_turn_projection` 同一次 `update_bound_session` 内：flush `turn-commentary-*` 后按同文清空 loading `text`，并清 overlay。见 **§12.10.1**、`loading_handoff.rs` |
 | **I15 旁注可见性不等工具** | 旁注一旦离开 overlay 进入 canonical，须**当帧**有可见落点：`project_turn_web_v2` 只从 `ToolStep` 出行，故 **pending 段必须尽早取得锚点**——`turn_segment_start{beforeToolCallId}` 吸收 pending（`reduce_segment_start`），`tool_result` 无 START 时补登记工具步（`on_tool_result_inserted`），且 `try_upsert_open_anchored_commentary` **不**以 `tool_phase_open` 为前提 |
+| **I16 旁注键仅本回合唯一** | `turn-commentary-{tool_call_id}` 的 upsert 与工具行查找一律限定在**最后一条 user 行之后**；模型跨回合复用同一 `tool_call_id` 时，上一回合的同键行改名为 `…#prev{n}` 让出规范键（仿 `detach_final_answer_projection`，仍保留 `turn-commentary-` 前缀，故 `is_commentary_row_id` 与 v2 缓存识别不变）。见 `bubble_queue::archive_stale_commentary_rows`、`mock-v2-multi-turn-boundaries.spec.ts` |
 
 **顺序（`tool_call`）**：`demote`（keep-ui）→ `on_turn_tool_call`（canonical）→ `on_tool_call_declared`（布局）→ `sync_turn_projection` → `release_loading_after_tool_projection`（同文移交）→ `sync_stream_preview`。
 

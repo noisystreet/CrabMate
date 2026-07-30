@@ -387,6 +387,69 @@ fn flush_final_deferred_until_commentary_row_present() {
     );
 }
 
+/// 模型跨回合复用同一 `tool_call_id`：`turn-commentary-{tcid}` 只在本回合内唯一，
+/// 上一回合的同键行须让出规范键，否则本回合 upsert 会改写历史正文。
+#[test]
+fn reused_tool_call_id_across_turns_keeps_rows_independent() {
+    fn row(
+        id: &str,
+        role: &str,
+        text: &str,
+        tool_call_id: Option<&str>,
+    ) -> crate::storage::StoredMessage {
+        crate::storage::StoredMessage {
+            id: id.into(),
+            role: role.into(),
+            text: text.into(),
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: tool_call_id.is_some(),
+            tool_call_id: tool_call_id.map(Into::into),
+            tool_name: None,
+            created_at: 0,
+        }
+    }
+
+    let first_row_id = commentary_row_id("tc_reused");
+    let mut msgs = vec![
+        row("u1", "user", "读取 alpha", None),
+        row(first_row_id.as_str(), "assistant", "第一轮准备读取。", None),
+        row("t1", "system", "read alpha", Some("tc_reused")),
+        row("a1", "assistant", "第一轮完成。", None),
+        row("u2", "user", "读取 beta", None),
+        row("t2", "system", "read beta", Some("tc_reused")),
+    ];
+
+    assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+        &mut msgs,
+        "tc_reused",
+        "第二轮准备读取。".into(),
+    ));
+
+    let texts: Vec<&str> = msgs.iter().map(|m| m.text.as_str()).collect();
+    assert_eq!(
+        texts,
+        vec![
+            "读取 alpha",
+            "第一轮准备读取。",
+            "read alpha",
+            "第一轮完成。",
+            "读取 beta",
+            "第二轮准备读取。",
+            "read beta",
+        ],
+        "本回合旁注须落在本回合工具前，且不覆盖上一回合正文"
+    );
+    assert_eq!(msgs[1].id, format!("{first_row_id}#prev1"));
+    assert_eq!(msgs[5].id, first_row_id);
+    assert!(
+        is_commentary_row_id(msgs[1].id.as_str()),
+        "归档行须保留 turn-commentary- 前缀，v2 缓存识别才不受影响"
+    );
+    assert!(super::super::text_ownership::duplicate_commentary_row_ids(&msgs).is_empty());
+}
+
 #[test]
 fn flush_commentary_skips_without_tool_row() {
     let turn = make_turn_with_commentary();
