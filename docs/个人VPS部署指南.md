@@ -13,7 +13,7 @@
 ```
 
 - **TLS**：由反向代理处理；CrabMate 进程内**不提供**内置 HTTPS（见 **`README.md` → 部署与安全**）。
-- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。浏览器侧可将同一密钥经 **`/user-data/secrets`** 写入本机 **`secrets/web_api_bearer`**，与 Web UI 侧栏「设置」中的 API 共享密钥一致。
+- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。浏览器侧可将同一密钥经 **`/user-data/secrets`** 写入本机系统钥匙串账户 **`web_api_bearer`**，与 Web UI 侧栏「设置」中的 API 共享密钥一致。
 - **上游大模型**：调用厂商仍使用环境变量 **`API_KEY`**（或 Web 侧栏 `client_llm`，经 **`/user-data`** 落本机）；**勿**把真实密钥写入仓库或本文示例。
 
 ---

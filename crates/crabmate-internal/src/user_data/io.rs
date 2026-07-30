@@ -36,21 +36,6 @@ pub fn restrict_dir(p: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn restrict_secret_file(p: &Path) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if !p.exists() {
-            return Ok(());
-        }
-        let meta = fs::metadata(p).map_err(|e| format!("metadata {}: {e}", p.display()))?;
-        let mut perm = meta.permissions();
-        perm.set_mode(0o600);
-        fs::set_permissions(p, perm).map_err(|e| format!("chmod {}: {e}", p.display()))?;
-    }
-    Ok(())
-}
-
 pub fn read_json_file<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
     if !path.is_file() {
         return Err(format!("文件不存在: {}", path.display()));
@@ -82,17 +67,6 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Str
             .map_err(|e| format!("sync {}: {e}", tmp.display()))?;
     }
     fs::rename(&tmp, path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    Ok(())
-}
-
-pub fn write_secret_line(path: &Path, content: &str) -> Result<(), String> {
-    if let Some(parent) = path.parent() {
-        ensure_tree(parent)?;
-    }
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, content.trim()).map_err(|e| format!("写入 {}: {e}", tmp.display()))?;
-    fs::rename(&tmp, path).map_err(|e| format!("rename {}: {e}", path.display()))?;
-    restrict_secret_file(path)?;
     Ok(())
 }
 

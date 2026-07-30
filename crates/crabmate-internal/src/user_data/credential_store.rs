@@ -1,9 +1,10 @@
-//! LLM API 密钥的系统钥匙串适配与旧明文文件迁移。
+//! 持久密钥的系统钥匙串适配与旧明文文件迁移。
 
 use std::path::Path;
 #[cfg(test)]
 use std::sync::Mutex;
 
+#[cfg(not(test))]
 const KEYRING_SERVICE: &str = "com.crabmate.credentials";
 
 trait SecretEntry {
@@ -12,10 +13,12 @@ trait SecretEntry {
     fn delete_credential(&self) -> Result<(), String>;
 }
 
+#[cfg(not(test))]
 struct SystemSecretEntry {
     inner: keyring::Entry,
 }
 
+#[cfg(not(test))]
 impl SystemSecretEntry {
     fn new(account: &str) -> Result<Self, String> {
         keyring::Entry::new(KEYRING_SERVICE, account)
@@ -24,6 +27,7 @@ impl SystemSecretEntry {
     }
 }
 
+#[cfg(not(test))]
 impl SecretEntry for SystemSecretEntry {
     fn get_password(&self) -> Result<Option<String>, String> {
         match self.inner.get_password() {
@@ -45,6 +49,7 @@ impl SecretEntry for SystemSecretEntry {
     }
 }
 
+#[cfg(not(test))]
 fn keyring_error(error: keyring::Error) -> String {
     format!("系统钥匙串操作失败: {error}")
 }
@@ -85,7 +90,8 @@ fn write_secret(entry: &dyn SecretEntry, legacy_path: &Path, secret: &str) -> Re
     remove_legacy_file(legacy_path)
 }
 
-pub(super) fn read_llm_secret(account: &str, legacy_path: &Path) -> Option<String> {
+#[cfg(not(test))]
+pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option<String> {
     let result =
         SystemSecretEntry::new(account).and_then(|entry| read_or_migrate(&entry, legacy_path));
     match result {
@@ -95,6 +101,32 @@ pub(super) fn read_llm_secret(account: &str, legacy_path: &Path) -> Option<Strin
             None
         }
     }
+}
+
+#[cfg(test)]
+struct TestNamedSecretEntry<'a> {
+    account: &'a str,
+}
+
+#[cfg(test)]
+impl SecretEntry for TestNamedSecretEntry<'_> {
+    fn get_password(&self) -> Result<Option<String>, String> {
+        Ok(read_named_secret(self.account))
+    }
+
+    fn set_password(&self, password: &str) -> Result<(), String> {
+        write_named_secret(self.account, password)
+    }
+
+    fn delete_credential(&self) -> Result<(), String> {
+        write_named_secret(self.account, "")
+    }
+}
+
+#[cfg(test)]
+pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option<String> {
+    read_or_migrate(&TestNamedSecretEntry { account }, legacy_path)
+        .expect("test migrating secret read")
 }
 
 #[cfg(not(test))]
@@ -125,13 +157,23 @@ pub(super) fn read_named_secret(account: &str) -> Option<String> {
         .cloned()
 }
 
-pub(super) fn write_llm_secret(
+#[cfg(not(test))]
+pub(super) fn write_migrating_secret(
     account: &str,
     legacy_path: &Path,
     secret: &str,
 ) -> Result<(), String> {
     let entry = SystemSecretEntry::new(account)?;
     write_secret(&entry, legacy_path, secret)
+}
+
+#[cfg(test)]
+pub(super) fn write_migrating_secret(
+    account: &str,
+    legacy_path: &Path,
+    secret: &str,
+) -> Result<(), String> {
+    write_secret(&TestNamedSecretEntry { account }, legacy_path, secret)
 }
 
 #[cfg(not(test))]

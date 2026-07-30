@@ -4,10 +4,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
-use super::io::{
-    ensure_tree, read_json_file, read_json_file_or_default, read_secret_line, write_json_atomic,
-    write_secret_line,
-};
+use super::io::{ensure_tree, read_json_file, read_json_file_or_default, write_json_atomic};
 use super::mcp_slug::assign_slugs_from_names;
 use super::path::{
     global_sessions_path, normalize_workspace_partition_path, user_data_root,
@@ -130,8 +127,20 @@ pub fn load_mcp_servers() -> McpServersFile {
 pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
     let r = root();
     ensure_tree(&r)?;
-    write_json_atomic(&mcp_servers_path(&r), file)?;
+    let old_ids: std::collections::HashSet<String> = load_mcp_servers()
+        .servers
+        .into_iter()
+        .map(|server| server.id)
+        .collect();
     let ids: Vec<String> = file.servers.iter().map(|s| s.id.clone()).collect();
+    for id in &ids {
+        let _ = read_secret_mcp_bearer(id);
+    }
+    write_json_atomic(&mcp_servers_path(&r), file)?;
+    let keep: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
+    for removed_id in old_ids.iter().filter(|id| !keep.contains(id.as_str())) {
+        write_secret_mcp_bearer(removed_id, "")?;
+    }
     prune_mcp_bearer_secrets(&ids)?;
     Ok(())
 }
@@ -372,7 +381,7 @@ pub fn list_workspaces() -> Result<Vec<WorkspaceListEntry>, String> {
 }
 
 pub fn write_secret_client_llm(api_key: &str) -> Result<(), String> {
-    super::credential_store::write_llm_secret(
+    super::credential_store::write_migrating_secret(
         "client_llm",
         &secret_path(&root(), "client_llm"),
         api_key,
@@ -380,7 +389,7 @@ pub fn write_secret_client_llm(api_key: &str) -> Result<(), String> {
 }
 
 pub fn write_secret_executor_llm(api_key: &str) -> Result<(), String> {
-    super::credential_store::write_llm_secret(
+    super::credential_store::write_migrating_secret(
         "executor_llm",
         &secret_path(&root(), "executor_llm"),
         api_key,
@@ -388,12 +397,18 @@ pub fn write_secret_executor_llm(api_key: &str) -> Result<(), String> {
 }
 
 pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
-    let p = secret_path(&root(), "web_api_bearer");
-    if token.trim().is_empty() {
-        let _ = std::fs::remove_file(&p);
-        return Ok(());
-    }
-    write_secret_line(&p, token)
+    super::credential_store::write_migrating_secret(
+        "web_api_bearer",
+        &secret_path(&root(), "web_api_bearer"),
+        token,
+    )
+}
+
+pub fn read_secret_web_api_bearer() -> Option<String> {
+    super::credential_store::read_migrating_secret(
+        "web_api_bearer",
+        &secret_path(&root(), "web_api_bearer"),
+    )
 }
 
 /// 校验 MCP server id 是否可安全用作 secret 文件名片段。
@@ -416,21 +431,15 @@ fn mcp_bearer_secret_name(server_id: &str) -> Result<String, String> {
     Ok(format!("mcp_bearer_{id}"))
 }
 
-/// 远程 MCP Bearer：`$XDG_DATA_HOME/crabmate/secrets/mcp_bearer_{id}`。
+/// 远程 MCP Bearer：系统钥匙串账户 `mcp_bearer_{id}`。
 pub fn write_secret_mcp_bearer(server_id: &str, token: &str) -> Result<(), String> {
     let name = mcp_bearer_secret_name(server_id)?;
-    let p = secret_path(&root(), &name);
-    if token.trim().is_empty() {
-        let _ = std::fs::remove_file(&p);
-        return Ok(());
-    }
-    ensure_tree(&root())?;
-    write_secret_line(&p, token)
+    super::credential_store::write_migrating_secret(&name, &secret_path(&root(), &name), token)
 }
 
 pub fn read_secret_mcp_bearer(server_id: &str) -> Option<String> {
     let name = mcp_bearer_secret_name(server_id).ok()?;
-    read_secret_line(&secret_path(&root(), &name))
+    super::credential_store::read_migrating_secret(&name, &secret_path(&root(), &name))
 }
 
 pub fn mcp_bearer_is_set(server_id: &str) -> bool {
@@ -488,24 +497,26 @@ fn slot_status_from_secret(secret: Option<String>) -> SecretSlotStatus {
 }
 
 pub fn secrets_status() -> SecretsStatusResponse {
-    let r = root();
     SecretsStatusResponse {
         client_llm: slot_status_from_secret(read_secret_client_llm()),
         executor_llm: slot_status_from_secret(read_secret_executor_llm()),
-        web_api_bearer: slot_status_from_secret(read_secret_line(&secret_path(
-            &r,
-            "web_api_bearer",
-        ))),
+        web_api_bearer: slot_status_from_secret(read_secret_web_api_bearer()),
     }
 }
 
 /// 供 `POST /chat` 合并：仅返回密钥明文（勿记录日志）。
 pub fn read_secret_client_llm() -> Option<String> {
-    super::credential_store::read_llm_secret("client_llm", &secret_path(&root(), "client_llm"))
+    super::credential_store::read_migrating_secret(
+        "client_llm",
+        &secret_path(&root(), "client_llm"),
+    )
 }
 
 pub fn read_secret_executor_llm() -> Option<String> {
-    super::credential_store::read_llm_secret("executor_llm", &secret_path(&root(), "executor_llm"))
+    super::credential_store::read_migrating_secret(
+        "executor_llm",
+        &secret_path(&root(), "executor_llm"),
+    )
 }
 
 /// `web_sessions.json` 的 `sessions` 须为 JSON 数组。
@@ -520,7 +531,7 @@ pub fn validate_sessions_value(sessions: &Value) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Mutex, MutexGuard, OnceLock};
 
     fn test_root() -> PathBuf {
         static SLOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -537,6 +548,14 @@ mod tests {
             *g = Some(dir);
         }
         g.clone().unwrap()
+    }
+
+    /// 共享 `CM_CRABMATE_USER_DATA_DIR` 下的 `mcp_servers.json` 不可并行写。
+    fn lock_mcp_servers_tests() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     #[test]
@@ -623,6 +642,7 @@ mod tests {
     #[test]
     fn merge_preserves_structured_launch_fields() {
         let _root = test_root();
+        let _mcp_lock = lock_mcp_servers_tests();
         use crate::user_data::SCHEMA_VERSION;
         use crate::user_data::types::{McpServerEntry, McpServersFile};
         use std::collections::BTreeMap;
@@ -710,5 +730,79 @@ mod tests {
         assert!(pub_file.servers[0].has_url);
         write_secret_mcp_bearer("mcp_remote1", "").expect("clear");
         assert!(!mcp_bearer_is_set("mcp_remote1"));
+    }
+
+    #[test]
+    fn remaining_secret_files_migrate_to_keyring() {
+        let root = test_root();
+        let secrets = root.join("secrets");
+        std::fs::create_dir_all(&secrets).expect("create secrets dir");
+        let web_legacy = secrets.join("web_api_bearer");
+        let mcp_legacy = secrets.join("mcp_bearer_mcp_migration_test");
+        std::fs::write(&web_legacy, "web-example-token").expect("write web legacy");
+        std::fs::write(&mcp_legacy, "mcp-example-token").expect("write mcp legacy");
+
+        assert_eq!(
+            read_secret_web_api_bearer().as_deref(),
+            Some("web-example-token")
+        );
+        assert_eq!(
+            read_secret_mcp_bearer("mcp_migration_test").as_deref(),
+            Some("mcp-example-token")
+        );
+        assert!(!web_legacy.exists());
+        assert!(!mcp_legacy.exists());
+
+        write_secret_web_api_bearer("").expect("clear web");
+        write_secret_mcp_bearer("mcp_migration_test", "").expect("clear mcp");
+    }
+
+    #[test]
+    fn save_mcp_servers_clears_removed_server_bearer() {
+        let _root = test_root();
+        let _mcp_lock = lock_mcp_servers_tests();
+        write_secret_mcp_bearer("mcp_to_remove", "tok-remove-me").expect("write");
+        assert!(mcp_bearer_is_set("mcp_to_remove"));
+        let with_server = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers: vec![McpServerEntry {
+                id: "mcp_to_remove".into(),
+                name: "Temp".into(),
+                slug: "temp".into(),
+                command: String::new(),
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                cwd: None,
+                url: Some("https://example.com/mcp".into()),
+                headers: std::collections::BTreeMap::new(),
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+        };
+        save_mcp_servers(&with_server).expect("save with server");
+        let kept = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers: vec![McpServerEntry {
+                id: "mcp_kept".into(),
+                name: "Kept".into(),
+                slug: "kept".into(),
+                command: "true".into(),
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                cwd: None,
+                url: None,
+                headers: std::collections::BTreeMap::new(),
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+        };
+        save_mcp_servers(&kept).expect("save without removed id");
+        assert!(!mcp_bearer_is_set("mcp_to_remove"));
     }
 }

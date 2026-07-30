@@ -11,7 +11,7 @@ use crate::user_data::{load_mcp_servers_with_legacy_import, read_secret_mcp_bear
 
 /// 读取 user-data MCP 列表；空列表时尝试从 TOML `mcp_*` 一次性导入。
 ///
-/// 若存在 `secrets/mcp_bearer_{id}`，合并为 `Authorization: Bearer …`（覆盖条目内同名头）。
+/// 若系统钥匙串存在 `mcp_bearer_{id}`，合并为 `Authorization: Bearer …`（覆盖条目内同名头）。
 pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
     let file = load_mcp_servers_with_legacy_import(
         cfg.mcp_client.mcp_enabled,

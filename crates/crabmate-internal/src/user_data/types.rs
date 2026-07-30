@@ -200,7 +200,7 @@ pub struct McpServerEntryPublic {
     pub has_url: bool,
     #[serde(default)]
     pub has_headers: bool,
-    /// 本机 `secrets/mcp_bearer_{id}` 是否已设置（不回传明文）。
+    /// 本机系统钥匙串中 `mcp_bearer_{id}` 是否已设置（不回传明文）。
     #[serde(default)]
     pub has_bearer: bool,
     pub created_at_ms: i64,
