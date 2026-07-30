@@ -169,9 +169,9 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd`）、`POST …/import`（JSON 解析并追加）、`GET …/status`（含连接失败时的 `last_error`）、`POST …/{id}/probe`。
+若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → `secrets/mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
 
-Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**；`slug` 仍于保存时由 `name` 生成）。仅 **stdio**（含 `command`）；仅 `url` 的远程 MCP 会跳过。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。
+Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 
 ### 4.6 `secrets/`（机密）
 
@@ -180,6 +180,7 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 | `client_llm` | 云厂商 Bearer（现 `crabmate-client-llm-api-key`） |
 | `executor_llm` | 可选（现 `crabmate-executor-llm-api-key`） |
 | `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate 鉴权 |
+| `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时 prune） |
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 

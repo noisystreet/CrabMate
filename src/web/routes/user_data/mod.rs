@@ -13,8 +13,9 @@ use crate::web::user_data::{
     get_mcp_servers_status_handler, get_prefs_handler, get_secrets_status_handler,
     get_workspaces_handler, post_mcp_server_probe_handler, post_mcp_servers_import_handler,
     post_mcp_servers_probe_all_handler, put_current_sessions_handler, put_llm_overrides_handler,
-    put_mcp_servers_handler, put_prefs_handler, put_secret_client_llm_handler,
-    put_secret_executor_llm_handler, put_secret_web_api_bearer_handler,
+    put_mcp_server_remote_auth_handler, put_mcp_servers_handler, put_prefs_handler,
+    put_secret_client_llm_handler, put_secret_executor_llm_handler,
+    put_secret_web_api_bearer_handler,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -60,6 +61,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route(
             "/user-data/mcp-servers/probe-all",
             post(post_mcp_servers_probe_all_handler),
+        )
+        .route(
+            "/user-data/mcp-servers/{id}/remote-auth",
+            put(put_mcp_server_remote_auth_handler),
         )
         .route(
             "/user-data/mcp-servers/{id}/probe",

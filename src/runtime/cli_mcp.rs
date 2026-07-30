@@ -46,13 +46,7 @@ mod full {
     pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
         let resolved = crate::mcp::resolve_mcp_config(cfg);
         if probe {
-            let opened = crate::mcp::try_open_turn_handle(&resolved).await;
-            if !opened.skipped.is_empty() {
-                println!("MCP：部分服务器连接失败：");
-                for s in &opened.skipped {
-                    println!("  [{}] {} — {}", s.id, s.name, s.error);
-                }
-            }
+            print_mcp_probe_skips(&crate::mcp::try_open_turn_handle(&resolved).await);
         }
         if !resolved.global_enabled {
             println!("MCP：user-data 中 global_enabled=false，本进程无 MCP 工具。");
@@ -61,41 +55,15 @@ mod full {
         let enabled: Vec<_> = resolved.enabled_servers().collect();
         if enabled.is_empty() {
             println!(
-                "MCP：未配置已启用的 stdio 服务器（见 ~/.local/share/crabmate/mcp_servers.json 或 Web 设置 → MCP）。"
+                "MCP：未配置已启用的服务器（stdio 或远程 url；见 ~/.local/share/crabmate/mcp_servers.json 或 Web 设置 → MCP）。"
             );
             return;
         }
         let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
         let connected: Vec<_> = runtime.iter().filter(|s| s.connected).collect();
         if connected.is_empty() {
-            if probe {
-                println!(
-                    "MCP：已尝试连接，但无可用缓存会话（见日志 target=crabmate）。\
-                     常见原因：子进程启动失败、握手失败或 tools/list 为空。"
-                );
-            } else if repl_context {
-                println!(
-                    "MCP：本进程内尚无已缓存 stdio 会话。\
-                     可先输入任意用户消息跑一轮，或执行 **/mcp probe** 立即尝试连接。"
-                );
-            } else {
-                println!(
-                    "MCP：本进程内尚无已缓存 stdio 会话。\
-                     请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
-                     或使用 `crabmate mcp list --probe` 尝试立即连接。"
-                );
-            }
-            for st in &runtime {
-                if st.enabled {
-                    match &st.last_error {
-                        Some(err) => println!(
-                            "  [{}] {} (slug={}) — 未连接：{err}",
-                            st.id, st.name, st.slug
-                        ),
-                        None => println!("  [{}] {} (slug={}) — 未连接", st.id, st.name, st.slug),
-                    }
-                }
-            }
+            print_mcp_list_empty_hint(probe, repl_context);
+            print_mcp_disconnected_rows(&runtime);
             return;
         }
         println!(
@@ -104,16 +72,79 @@ mod full {
             enabled.len()
         );
         for st in connected {
+            print_mcp_connected_row(st);
+        }
+    }
+
+    fn print_mcp_probe_skips(opened: &crate::mcp::McpTurnOpenResult) {
+        if opened.skipped.is_empty() {
+            return;
+        }
+        println!("MCP：部分服务器连接失败：");
+        for s in &opened.skipped {
+            let kind = crate::mcp::classify_mcp_connect_error(&s.error);
+            println!("  [{}] {} — [{kind}] {}", s.id, s.name, s.error);
+        }
+    }
+
+    fn print_mcp_list_empty_hint(probe: bool, repl_context: bool) {
+        if probe {
             println!(
-                "  [{}] {} slug={} tools={}",
-                st.id,
-                st.name,
-                st.slug,
-                st.openai_tool_names.len()
+                "MCP：已尝试连接，但无可用缓存会话（见日志 target=crabmate）。\
+                 常见原因：stdio 子进程失败、远程 DNS/TLS/401、握手失败或 tools/list 为空。"
             );
-            for name in &st.openai_tool_names {
-                println!("    {name}");
+        } else if repl_context {
+            println!(
+                "MCP：本进程内尚无已缓存会话（stdio / 远程）。\
+                 可先输入任意用户消息跑一轮，或执行 **/mcp probe** 立即尝试连接。"
+            );
+        } else {
+            println!(
+                "MCP：本进程内尚无已缓存会话（stdio / 远程）。\
+                 请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
+                 或使用 `crabmate mcp list --probe` 尝试立即连接。"
+            );
+        }
+    }
+
+    fn transport_label(transport: &str) -> &str {
+        if transport.is_empty() { "?" } else { transport }
+    }
+
+    fn print_mcp_disconnected_rows(runtime: &[crate::mcp::McpServerRuntimeStatus]) {
+        for st in runtime {
+            if !st.enabled {
+                continue;
             }
+            let transport = transport_label(&st.transport);
+            match (&st.last_error, &st.last_error_kind) {
+                (Some(err), Some(kind)) => println!(
+                    "  [{}] {} (slug={} transport={transport}) — 未连接 [{kind}]：{err}",
+                    st.id, st.name, st.slug
+                ),
+                (Some(err), None) => println!(
+                    "  [{}] {} (slug={} transport={transport}) — 未连接：{err}",
+                    st.id, st.name, st.slug
+                ),
+                _ => println!(
+                    "  [{}] {} (slug={} transport={transport}) — 未连接",
+                    st.id, st.name, st.slug
+                ),
+            }
+        }
+    }
+
+    fn print_mcp_connected_row(st: &crate::mcp::McpServerRuntimeStatus) {
+        let transport = transport_label(&st.transport);
+        println!(
+            "  [{}] {} slug={} transport={transport} tools={}",
+            st.id,
+            st.name,
+            st.slug,
+            st.openai_tool_names.len()
+        );
+        for name in &st.openai_tool_names {
+            println!("    {name}");
         }
     }
 

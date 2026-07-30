@@ -41,6 +41,17 @@ impl ResolvedMcpServer {
         self.url.as_ref().is_some_and(|u| !u.trim().is_empty())
     }
 
+    /// CLI / status 用传输标签：`stdio` | `remote` | `none`。
+    pub fn transport_label(&self) -> &'static str {
+        if self.has_remote_url() {
+            "remote"
+        } else if self.has_stdio() {
+            "stdio"
+        } else {
+            "none"
+        }
+    }
+
     /// 是否含结构化启动字段（非空 `args` / `env` / `cwd`）。
     pub fn has_structured_launch(&self) -> bool {
         !self.args.is_empty()
@@ -155,9 +166,76 @@ pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
     }
 }
 
+/// 将连接/握手类错误文案归类，供 status / CLI 展示（稳定英文 kind）。
+pub fn classify_mcp_connect_error(msg: &str) -> &'static str {
+    let lower = msg.to_ascii_lowercase();
+    for (kind, needles) in MCP_CONNECT_ERROR_RULES {
+        if needles.iter().any(|n| lower.contains(n)) {
+            return kind;
+        }
+    }
+    if lower.contains("command") && lower.contains("url") && lower.contains("须") {
+        return "config";
+    }
+    "unknown"
+}
+
+const MCP_CONNECT_ERROR_RULES: &[(&str, &[&str])] = &[
+    ("config", &["不能同时"]),
+    (
+        "url_invalid",
+        &[
+            "url 为空",
+            "url 须含",
+            "url 无效",
+            "不支持的 url scheme",
+            "非 https 的远程",
+        ],
+    ),
+    ("header_invalid", &["非法 header"]),
+    (
+        "unauthorized",
+        &["401", "unauthorized", "authentication", "鉴权"],
+    ),
+    (
+        "dns",
+        &[
+            "name or service not known",
+            "nodename nor servname",
+            "dns",
+            "failed to lookup",
+            "no such host",
+        ],
+    ),
+    ("tls", &["certificate", "tls", "ssl", "handshake failure"]),
+    ("spawn", &["子进程", "启动 mcp", "no such file"]),
+    ("tools_list", &["tools/list"]),
+    ("handshake", &["握手", "handshake", "远程 mcp 握手"]),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn classifies_common_remote_errors() {
+        assert_eq!(
+            classify_mcp_connect_error("非 HTTPS 的远程 MCP 仅允许 http://127.0.0.1"),
+            "url_invalid"
+        );
+        assert_eq!(
+            classify_mcp_connect_error("远程 MCP 握手失败: error sending request for url"),
+            "handshake"
+        );
+        assert_eq!(
+            classify_mcp_connect_error("tools/list 失败: timeout"),
+            "tools_list"
+        );
+        assert_eq!(
+            classify_mcp_connect_error("error: 401 Unauthorized"),
+            "unauthorized"
+        );
+    }
 
     #[test]
     fn structured_launch_keeps_program_and_env() {

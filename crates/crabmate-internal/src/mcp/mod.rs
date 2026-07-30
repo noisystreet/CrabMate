@@ -6,6 +6,8 @@ mod resolve;
 
 pub use resolve::resolve_mcp_config;
 
+pub use crabmate_mcp::resolve::classify_mcp_connect_error;
+
 use crabmate_config::AgentConfig;
 
 // `crabmate-mcp` 在 `mcp` feature 关闭时只导出 stub 类型/函数；开启后才有完整实现。

@@ -200,6 +200,9 @@ pub struct McpServerEntryPublic {
     pub has_url: bool,
     #[serde(default)]
     pub has_headers: bool,
+    /// 本机 `secrets/mcp_bearer_{id}` 是否已设置（不回传明文）。
+    #[serde(default)]
+    pub has_bearer: bool,
     pub created_at_ms: i64,
     pub updated_at_ms: i64,
 }
@@ -217,8 +220,12 @@ pub struct McpServersFilePublic {
     pub servers: Vec<McpServerEntryPublic>,
 }
 
-impl From<&McpServersFile> for McpServersFilePublic {
-    fn from(file: &McpServersFile) -> Self {
+impl McpServersFilePublic {
+    /// 构造公开体；`has_bearer` 由调用方按 server id 查询 secrets。
+    pub fn from_file_with_bearer<F>(file: &McpServersFile, mut bearer_set: F) -> Self
+    where
+        F: FnMut(&str) -> bool,
+    {
         Self {
             schema_version: file.schema_version,
             global_enabled: file.global_enabled,
@@ -237,11 +244,18 @@ impl From<&McpServersFile> for McpServersFilePublic {
                     has_cwd: s.cwd.as_ref().is_some_and(|c| !c.trim().is_empty()),
                     has_url: s.has_remote_url(),
                     has_headers: !s.headers.is_empty(),
+                    has_bearer: bearer_set(&s.id),
                     created_at_ms: s.created_at_ms,
                     updated_at_ms: s.updated_at_ms,
                 })
                 .collect(),
         }
+    }
+}
+
+impl From<&McpServersFile> for McpServersFilePublic {
+    fn from(file: &McpServersFile) -> Self {
+        Self::from_file_with_bearer(file, |_| false)
     }
 }
 
@@ -293,10 +307,16 @@ pub struct McpServerStatusEntry {
     pub slug: String,
     pub enabled: bool,
     pub connected: bool,
+    /// `stdio` | `remote` | `none`
+    #[serde(default)]
+    pub transport: String,
     pub openai_tool_names: Vec<String>,
     pub remote_tools: Vec<McpRemoteToolSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// 连接失败分类（如 `dns` / `tls` / `unauthorized` / `handshake`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_error_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
