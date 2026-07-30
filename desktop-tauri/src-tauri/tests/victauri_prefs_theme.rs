@@ -75,17 +75,19 @@ e2e_test!(dark_theme_applies_data_theme_on_load, |client| async move {
 // ---------------------------------------------------------------------------
 // prefs-side-panel.spec.ts: workspace side panel opens on load
 // ---------------------------------------------------------------------------
-e2e_test!(workspace_panel_opens_on_load_when_prefs_say_workspace, |client| async move {
-    seed_and_reload(&mut client, "s_e2e_side", "light", "workspace", 320).await;
+e2e_test!(
+    workspace_panel_opens_on_load_when_prefs_say_workspace,
+    |client| async move {
+        seed_and_reload(&mut client, "s_e2e_side", "light", "workspace", 320).await;
 
-    // 等待主页面出现
-    client
-        .wait_for("text", Some("CrabMate"), Some(15000), Some(200))
-        .await
-        .unwrap();
+        // 等待主页面出现
+        client
+            .wait_for("text", Some("CrabMate"), Some(15000), Some(200))
+            .await
+            .unwrap();
 
-    // 验证工作区面板可见
-    let panel_visible: bool = client
+        // 验证工作区面板可见
+        let panel_visible: bool = client
         .eval_js(
             "(() => { const el = document.querySelector('[data-testid=\"workspace-panel\"]'); return el !== null && el.offsetParent !== null; })()",
         )
@@ -93,5 +95,20 @@ e2e_test!(workspace_panel_opens_on_load_when_prefs_say_workspace, |client| async
         .unwrap()
         .as_bool()
         .unwrap_or(false);
-    assert!(panel_visible, "workspace-panel should be visible when prefs say 'workspace'");
-});
+        assert!(
+            panel_visible,
+            "workspace-panel should be visible when prefs say 'workspace'"
+        );
+
+        let side_width = client
+            .eval_js("document.querySelector('.side-column')?.getBoundingClientRect().width || 0")
+            .await
+            .unwrap()
+            .as_f64()
+            .unwrap_or_default();
+        assert!(
+            (side_width - 320.0).abs() < 1.0,
+            "expected restored side width 320px, got {side_width}px"
+        );
+    }
+);

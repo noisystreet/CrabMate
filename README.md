@@ -122,7 +122,7 @@ trunk build              # 开发构建；发布用 trunk build --release
 
 ### 桌面 Tauri
 
-目录：**`desktop-tauri/`**。**WebView** 加载由壳进程拉起的 **`serve`**（**`--port 0 --desktop-ready-json`**，解析 stdout 中 **`web_ready`** 再打开 URL；见 [**desktop-tauri/README.md**](desktop-tauri/README.md)）。桌面壳为**单实例**：再次启动会唤醒已有窗口；关闭主窗口会退出应用并回收后端，最小化按钮会在系统托盘可用时**隐藏到托盘**，通过托盘「显示/隐藏」恢复。若桌面环境不支持托盘，则保留普通最小化。若 **`crabmate`** 不在 **`PATH`**，设置 **`CM_DESKTOP_BACKEND_BIN`** 指向已编译后端。
+目录：**`desktop-tauri/`**。**WebView** 加载由壳进程拉起的 **`serve`**（**`--port 0 --desktop-ready-json`**，解析 stdout 中 **`web_ready`** 再打开 URL；见 [**desktop-tauri/README.md**](desktop-tauri/README.md)）。桌面壳为**单实例**：再次启动会唤醒已有窗口；关闭主窗口会退出应用并回收后端，最小化按钮会在系统托盘可用时**隐藏到托盘**，通过托盘「显示/隐藏」恢复。主窗口的大小、位置、最大化状态及右侧可拖拽分栏宽度会在下次启动恢复。若桌面环境不支持托盘，则保留普通最小化。若 **`crabmate`** 不在 **`PATH`**，设置 **`CM_DESKTOP_BACKEND_BIN`** 指向已编译后端。
 
 ```bash
 cargo build

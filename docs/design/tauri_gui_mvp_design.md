@@ -56,6 +56,7 @@ CLI `serve` 子命令桌面握手：
 
 - `desktop-tauri/src-tauri/src/main.rs` — 启动 **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`**，解析 **`web_ready`**，加载 WebView，显式退出时 kill 子进程
 - `desktop-tauri/src-tauri/src/desktop_lifecycle.rs` — 单实例唤醒、系统托盘、主窗口最小化隐藏；托盘不可用时保留普通最小化
+- `tauri-plugin-window-state` — 按稳定标签 `main` 保存/恢复窗口大小、位置与最大化状态；排除启动闪屏且不恢复可见性，避免托盘退出后下次隐藏启动
 - `desktop-tauri/scripts/prepare-sidecar.sh` — 打包前复制 **`crabmate`** sidecar
 - **`desktop-tauri/README.md`**、**`desktop-tauri/DEVELOPMENT.md`** — 开发与故障排查
 
