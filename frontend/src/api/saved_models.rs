@@ -21,6 +21,9 @@ pub struct SavedModelPreset {
     pub llm_thinking_mode: String,
     #[serde(default)]
     pub api_key: String,
+    /// 密钥仅存在系统钥匙串；JSON/GET 不返回明文。
+    #[serde(default)]
+    pub has_api_key: bool,
     #[serde(default = "default_preset_enabled")]
     pub enabled: bool,
 }
@@ -48,7 +51,7 @@ pub fn persist_saved_model_presets_to_storage(
     Ok(())
 }
 
-/// 将一条已保存预设应用到「主 LLM」草稿（不含 API Key）。
+/// 将一条已保存预设应用到「主 LLM」草稿（密钥由服务端按模型从钥匙串解析）。
 pub fn apply_saved_model_preset_to_main_fields(
     preset: &SavedModelPreset,
     drafts: MainLlmDraftSignals,
@@ -79,7 +82,7 @@ pub struct MainLlmDraftSignals {
     pub llm_thinking_mode_draft: RwSignal<String>,
 }
 
-/// 将一条已保存预设应用到「执行器 LLM」草稿（网关与模型；不含 API Key）。
+/// 将一条已保存预设应用到「执行器 LLM」草稿（密钥由服务端按模型从钥匙串解析）。
 pub fn apply_saved_model_preset_to_executor_fields(
     preset: &SavedModelPreset,
     drafts: ExecutorLlmDraftSignals,

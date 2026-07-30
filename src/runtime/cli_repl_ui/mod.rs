@@ -361,7 +361,7 @@ impl CliReplStyle {
         if cfg.llm.llm_http_auth_mode == LlmHttpAuthMode::Bearer && !repl_llm_bearer_key_ready {
             self.write_banner_note_line(
                 w,
-                "    提示：未检测到 API_KEY 或本机 secrets/client_llm；对话前请 /api-key set <密钥>（仅本进程）、export API_KEY，或在 Web 侧栏保存密钥。",
+                "    提示：未检测到 API_KEY 或系统钥匙串密钥；对话前请 /api-key set <密钥>（仅本进程）、export API_KEY，或在 Web 侧栏保存密钥。",
             )?;
         }
         Ok(())

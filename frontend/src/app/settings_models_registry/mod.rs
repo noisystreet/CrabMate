@@ -166,6 +166,7 @@ fn try_build_manual_saved_preset(
         llm_context_tokens: d.ctx_tokens.trim().to_string(),
         llm_thinking_mode,
         api_key: d.api_key.clone(),
+        has_api_key: !d.api_key.trim().is_empty(),
         enabled,
     })
 }
@@ -410,7 +411,7 @@ fn SettingsModelsRegistryAddFormActions(s: RegistryAddFormActionSignals) -> impl
                             .with_untracked(|v| v.get(i).map(|p| p.enabled).unwrap_or(true)),
                         None => true,
                     };
-                    let preset = match try_build_manual_saved_preset(&d, enabled_for_preset) {
+                    let mut preset = match try_build_manual_saved_preset(&d, enabled_for_preset) {
                         Ok(p) => p,
                         Err(()) => {
                             form_error.set(Some(
@@ -419,6 +420,12 @@ fn SettingsModelsRegistryAddFormActions(s: RegistryAddFormActionSignals) -> impl
                             return;
                         }
                     };
+                    if let Some(RegistryPresetDialogKind::Edit(i)) = mode
+                        && preset.api_key.trim().is_empty()
+                    {
+                        preset.has_api_key = saved_model_presets
+                            .with_untracked(|v| v.get(i).is_some_and(|old| old.has_api_key));
+                    }
                     form_error.set(None);
                     let loc = locale.get_untracked();
                     let mut next = saved_model_presets.with_untracked(|v| v.clone());

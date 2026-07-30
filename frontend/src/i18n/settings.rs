@@ -619,8 +619,8 @@ pub fn settings_models_ph_model_id(l: Locale) -> &'static str {
 
 pub fn settings_models_label_api_key(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "API 密钥（可选，仅存本机列表）",
-        Locale::En => "API key (optional, stored in local list only)",
+        Locale::ZhHans => "API 密钥（可选，存入系统钥匙串）",
+        Locale::En => "API key (optional, stored in the system keyring)",
     }
 }
 

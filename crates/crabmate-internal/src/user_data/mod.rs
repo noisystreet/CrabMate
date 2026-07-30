@@ -2,10 +2,12 @@
 //!
 //! 设计说明：**`docs/design/user_data_dir.md`**。
 
+mod credential_store;
 mod io;
 pub mod mcp_json_import;
 mod mcp_slug;
 mod path;
+mod saved_model_secrets;
 mod store;
 mod types;
 
@@ -13,6 +15,7 @@ pub use path::{
     RECENT_WORKSPACE_ROOTS_MAX, normalize_workspace_partition_path, push_recent_workspace_root,
     user_data_root,
 };
+pub use saved_model_secrets::read_saved_model_secret;
 pub use store::{
     append_mcp_json_import, ensure_user_data_tree, list_workspaces, load_llm_overrides,
     load_mcp_servers_with_legacy_import, load_meta, load_prefs, load_web_sessions,

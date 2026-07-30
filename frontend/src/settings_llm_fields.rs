@@ -178,14 +178,14 @@ fn apply_saved_pick(target: LlmSavedPresetApplyTarget, preset: &crate::api::Save
     match target {
         LlmSavedPresetApplyTarget::Main(drafts, api_key, has_saved_key, clear_key_intent) => {
             apply_saved_model_preset_to_main_fields(preset, drafts);
-            api_key.set(preset.api_key.clone());
-            has_saved_key.set(!preset.api_key.trim().is_empty());
+            api_key.set(String::new());
+            has_saved_key.set(preset.has_api_key);
             clear_key_intent.set(false);
         }
         LlmSavedPresetApplyTarget::Executor(drafts, api_key, has_saved_key, clear_key_intent) => {
             apply_saved_model_preset_to_executor_fields(preset, drafts);
-            api_key.set(preset.api_key.clone());
-            has_saved_key.set(!preset.api_key.trim().is_empty());
+            api_key.set(String::new());
+            has_saved_key.set(preset.has_api_key);
             clear_key_intent.set(false);
         }
     }

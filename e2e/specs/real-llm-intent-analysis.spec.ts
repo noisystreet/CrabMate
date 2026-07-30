@@ -10,7 +10,7 @@
  *      - 环境变量 API_KEY
  *      - 项目根 config.toml（[agent] 节下的 api_key）
  *      - 项目根 .agent_demo.toml（同上）
- *      - ~/.local/share/crabmate/secrets/client_llm（Tauri 本地配置）
+ *      - 系统钥匙串（由已运行的 CrabMate 后端读取；测试进程本身不导出明文）
  *
  * 运行方式：
  *   cd e2e && npx playwright test specs/real-llm-intent-analysis.spec.ts
@@ -63,7 +63,7 @@ function readApiKeyFromToml(filePath: string): string {
   return "";
 }
 
-/** 读取 API 密钥：环境变量 → config.toml → .agent_demo.toml → Tauri secrets 文件。 */
+/** 测试请求显式携带的 API 密钥：环境变量 → 本地测试配置。 */
 function resolveApiKey(): string {
   const env = process.env.API_KEY;
   if (env && env.trim()) return env.trim();
@@ -77,15 +77,7 @@ function resolveApiKey(): string {
   );
   if (fromDemo) return fromDemo;
 
-  const dataHome =
-    process.env.XDG_DATA_HOME ||
-    path.join(process.env.HOME || "", ".local", "share");
-  const secretsPath = path.join(dataHome, "crabmate", "secrets", "client_llm");
-  try {
-    return fs.readFileSync(secretsPath, "utf8").trim();
-  } catch {
-    return "";
-  }
+  return "";
 }
 
 const API_KEY = resolveApiKey();

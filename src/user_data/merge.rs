@@ -3,8 +3,8 @@
 use crate::web::http_types::chat::ClientLlmBody;
 
 use crate::user_data::{
-    LlmEndpointOverride, LlmOverridesFile, load_llm_overrides, read_secret_client_llm,
-    read_secret_executor_llm,
+    LlmEndpointOverride, LlmOverridesFile, load_llm_overrides, read_saved_model_secret,
+    read_secret_client_llm, read_secret_executor_llm,
 };
 
 fn fill_optional(dst: &mut Option<String>, src: Option<&String>) {
@@ -47,9 +47,26 @@ fn merge_endpoint(
 #[must_use]
 pub fn merge_client_llm_body(raw: Option<ClientLlmBody>) -> Option<ClientLlmBody> {
     let disk = load_llm_overrides();
-    let secret = read_secret_client_llm();
     let mut body = raw.unwrap_or_default();
-    merge_endpoint(&mut body, &disk.client_llm, secret);
+    merge_endpoint(&mut body, &disk.client_llm, None);
+    if body
+        .api_key
+        .as_ref()
+        .is_none_or(|key| key.trim().is_empty())
+    {
+        body.api_key = read_saved_model_secret(
+            &disk.saved_models,
+            body.api_base.as_deref(),
+            body.model.as_deref(),
+        );
+    }
+    if body
+        .api_key
+        .as_ref()
+        .is_none_or(|key| key.trim().is_empty())
+    {
+        body.api_key = read_secret_client_llm();
+    }
     if body.api_base.is_none()
         && body.model.is_none()
         && body.api_key.is_none()
@@ -61,20 +78,32 @@ pub fn merge_client_llm_body(raw: Option<ClientLlmBody>) -> Option<ClientLlmBody
     Some(body)
 }
 
-/// Executor LLM：磁盘 `llm_overrides.executor_llm` + `secrets/executor_llm`。
+/// Executor LLM：磁盘 `llm_overrides.executor_llm` + 系统钥匙串 `executor_llm`。
 #[must_use]
 pub fn merge_executor_llm_body(
     raw: Option<crate::web::http_types::chat::ExecutorLlmBody>,
 ) -> Option<crate::web::http_types::chat::ExecutorLlmBody> {
     let disk: LlmOverridesFile = load_llm_overrides();
-    let secret = read_secret_executor_llm();
     let mut body = raw.unwrap_or_default();
     fill_optional(&mut body.api_base, disk.executor_llm.api_base.as_ref());
     fill_optional(&mut body.model, disk.executor_llm.model.as_ref());
-    if body.api_key.as_ref().is_none_or(|s| s.trim().is_empty())
-        && let Some(k) = secret.filter(|x| !x.trim().is_empty())
+    if body
+        .api_key
+        .as_ref()
+        .is_none_or(|key| key.trim().is_empty())
     {
-        body.api_key = Some(k);
+        body.api_key = read_saved_model_secret(
+            &disk.saved_models,
+            body.api_base.as_deref(),
+            body.model.as_deref(),
+        );
+    }
+    if body
+        .api_key
+        .as_ref()
+        .is_none_or(|key| key.trim().is_empty())
+    {
+        body.api_key = read_secret_executor_llm();
     }
     if body.api_base.is_none() && body.model.is_none() && body.api_key.is_none() {
         return None;

@@ -337,7 +337,7 @@ fn print_doctor_user_data_block() {
     }
     let st = secrets_status();
     println!(
-        "  secrets/client_llm: {}",
+        "  system-keyring/client_llm: {}",
         if st.client_llm.set {
             "已设置（值已隐藏）"
         } else {
@@ -345,7 +345,7 @@ fn print_doctor_user_data_block() {
         }
     );
     println!(
-        "  secrets/executor_llm: {}",
+        "  system-keyring/executor_llm: {}",
         if st.executor_llm.set {
             "已设置（值已隐藏）"
         } else {

@@ -67,7 +67,7 @@ fn apply_executor_endpoint(cfg: &mut AgentConfig, ep: &LlmEndpointOverride) {
 
 /// 用 **`$XDG_DATA_HOME/crabmate/llm_overrides.json`** 覆盖进程配置（非空字段才写入）。
 ///
-/// 与 Web `merge_client_llm_body` 同源磁盘；**不含** `api_key`（密钥走 `secrets/client_llm` / `API_KEY`）。
+/// 与 Web `merge_client_llm_body` 同源磁盘；**不含** `api_key`（密钥走系统钥匙串 / `API_KEY`）。
 pub fn apply_user_data_llm_overrides(cfg: &mut AgentConfig) {
     let disk = load_llm_overrides();
     apply_client_endpoint(cfg, &disk.client_llm);

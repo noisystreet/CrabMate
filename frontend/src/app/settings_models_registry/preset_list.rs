@@ -20,7 +20,7 @@ pub(super) fn saved_preset_row_key(p: &SavedModelPreset) -> String {
         p.temperature,
         p.llm_context_tokens,
         p.llm_thinking_mode,
-        p.api_key,
+        p.has_api_key,
         p.enabled
     )
 }

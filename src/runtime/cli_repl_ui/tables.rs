@@ -22,7 +22,7 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
     ),
     (
         "/api-key · /api-key status · /api-key set <密钥> [--no-persist] · /api-key clear [--no-persist]",
-        "本进程 LLM Bearer 密钥；默认同步 user-data secrets/client_llm（与 Web 同源）",
+        "本进程 LLM Bearer 密钥；默认同步系统钥匙串（与 Web/桌面同源）",
     ),
     (
         "/config",
