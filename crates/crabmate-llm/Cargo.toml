@@ -11,7 +11,7 @@ crabmate-sse-protocol = { workspace = true }
 crabmate-types = { workspace = true }
 futures-util = { workspace = true }
 log = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "stream", "rustls"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

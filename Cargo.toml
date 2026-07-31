@@ -70,7 +70,9 @@ termimad = "0.35"
 path-absolutize = "4"
 proptest = "1"
 regex = "1"
-reqwest = { version = "0.12", default-features = false }
+# 与 rmcp 2.x（^0.13.2）对齐，避免默认图同时编 0.12 + 0.13。
+# 启用 `fastembed` 时 hf-hub 仍可能再拉 reqwest 0.12（上游未升）；日常默认构建仅为 0.13。
+reqwest = { version = "0.13", default-features = false }
 rusqlite = { version = "0.40", features = ["bundled"] }
 schemars = { version = "1", features = ["derive"] }
 scraper = "0.27.0"
@@ -78,7 +80,8 @@ secrecy = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = { package = "yaml_serde", version = "0.10" }
-sha2 = "0.11"
+# 与 keyring→secret-service / leptos wasm_split 对齐，避免同时编 0.10 + 0.11。
+sha2 = "0.10"
 similar = "3.1"
 subtle = "2.6"
 tar = "0.4"
@@ -195,7 +198,7 @@ crabmate-runtime = { workspace = true }
 crabmate-workflow = { workspace = true }
 crabmate-internal = { workspace = true, default-features = false }
 crabmate-web-host = { workspace = true, optional = true }
-reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "stream", "blocking", "query", "rustls"] }
 futures-util = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
