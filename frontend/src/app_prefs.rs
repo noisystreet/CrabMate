@@ -1,15 +1,101 @@
 //! 壳布局常量、侧栏视图枚举与状态栏展示合并逻辑（持久化在 **`/user-data/prefs`**）。
 
+use std::sync::atomic::{AtomicI8, Ordering};
+
 use crate::api::StatusData;
 
-/// 合法 `data-theme` 取值（与 **`frontend/themes/*.css`**、`index.html` 链接顺序一致）。
-pub const THEME_SLUGS: &[&str] = &["dark", "light", "material", "high-contrast"];
+/// 偏好里可选的主题（含 **`system`**＝跟随 OS 明暗；解析到 CSS 见 [`resolve_data_theme_slug`]）。
+pub const THEME_SLUGS: &[&str] = &["system", "dark", "light", "material", "high-contrast"];
+
+/// 可写在 `<html data-theme>` 上的 CSS 预设（**不含** `system`）。
+pub const THEME_CSS_SLUGS: &[&str] = &["dark", "light", "material", "high-contrast"];
+
+pub const THEME_SYSTEM: &str = "system";
+
+/// Tauri 桌面侧 `os_prefers_dark_theme` 提示：`-1` 未知，`0` 浅，`1` 深。
+/// Linux WebKit 的 `matchMedia` 常忽略 GNOME `prefer-dark`，需以此覆盖。
+static TAURI_OS_DARK_HINT: AtomicI8 = AtomicI8::new(-1);
+
+/// 由桌面 invoke 结果写入；`None` 表示清除提示、回退 matchMedia。
+pub fn set_tauri_os_prefers_dark_hint(dark: Option<bool>) {
+    let v = match dark {
+        None => -1,
+        Some(false) => 0,
+        Some(true) => 1,
+    };
+    TAURI_OS_DARK_HINT.store(v, Ordering::Relaxed);
+}
 
 #[must_use]
 pub fn normalize_theme_slug(raw: &str) -> String {
     let t = raw.trim();
     if THEME_SLUGS.contains(&t) {
         t.to_string()
+    } else {
+        "light".to_string()
+    }
+}
+
+/// OS 是否偏好深色；无 `window` / `matchMedia` / Tauri 提示时返回 `None`。
+#[must_use]
+pub fn system_prefers_color_scheme_dark() -> Option<bool> {
+    match TAURI_OS_DARK_HINT.load(Ordering::Relaxed) {
+        0 => return Some(false),
+        1 => return Some(true),
+        _ => {}
+    }
+    let mql = match_media_list("(prefers-color-scheme: dark)")?;
+    Some(media_query_list_matches(&mql))
+}
+
+fn match_media_list(query: &str) -> Option<js_sys::Object> {
+    // 宿主 `cargo test` 非 wasm：js-sys Reflect 会 panic。
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let _ = query;
+        None
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        use wasm_bindgen::JsCast;
+        let window = web_sys::window()?;
+        let f = js_sys::Reflect::get(
+            window.as_ref(),
+            &wasm_bindgen::JsValue::from_str("matchMedia"),
+        )
+        .ok()?;
+        let f = f.dyn_into::<js_sys::Function>().ok()?;
+        let v = f
+            .call1(window.as_ref(), &wasm_bindgen::JsValue::from_str(query))
+            .ok()?;
+        if v.is_null() || v.is_undefined() {
+            return None;
+        }
+        v.dyn_into::<js_sys::Object>().ok()
+    }
+}
+
+fn media_query_list_matches(mql: &js_sys::Object) -> bool {
+    js_sys::Reflect::get(mql.as_ref(), &wasm_bindgen::JsValue::from_str("matches"))
+        .ok()
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// 将偏好 slug 解析为 CSS `data-theme`（`system` → `dark` / `light`）。
+#[must_use]
+pub fn resolve_data_theme_slug(pref: &str) -> String {
+    let pref = normalize_theme_slug(pref);
+    let css = if pref == THEME_SYSTEM {
+        match system_prefers_color_scheme_dark() {
+            Some(true) => "dark".to_string(),
+            Some(false) | None => "light".to_string(),
+        }
+    } else {
+        pref
+    };
+    if THEME_CSS_SLUGS.contains(&css.as_str()) {
+        css
     } else {
         "light".to_string()
     }
@@ -129,7 +215,7 @@ pub fn clamp_side_width_for_viewport(w: f64) -> f64 {
 
 #[cfg(test)]
 mod theme_slug_tests {
-    use super::normalize_theme_slug;
+    use super::{THEME_CSS_SLUGS, THEME_SYSTEM, normalize_theme_slug, resolve_data_theme_slug};
 
     #[test]
     fn unknown_theme_falls_back_to_light() {
@@ -149,6 +235,25 @@ mod theme_slug_tests {
     #[test]
     fn high_contrast_accepted() {
         assert_eq!(normalize_theme_slug("high-contrast"), "high-contrast");
+    }
+
+    #[test]
+    fn system_pref_accepted() {
+        assert_eq!(normalize_theme_slug("system"), THEME_SYSTEM);
+    }
+
+    #[test]
+    fn resolve_non_system_unchanged() {
+        assert_eq!(resolve_data_theme_slug("material"), "material");
+        assert!(THEME_CSS_SLUGS.contains(&"material"));
+    }
+
+    #[test]
+    fn resolve_system_is_css_dark_or_light() {
+        // 非 wasm 测到无 window → light；wasm 浏览器测可能为 dark/light。
+        let resolved = resolve_data_theme_slug("system");
+        assert!(resolved == "dark" || resolved == "light", "got {resolved}");
+        assert!(!THEME_CSS_SLUGS.contains(&THEME_SYSTEM));
     }
 }
 

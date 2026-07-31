@@ -11,7 +11,7 @@ Trunk 在 **`frontend/index.html`** 中于 **`styles/tokens.css` 之后** 链接
 
 1. **CSS**：在本目录新增 `your-slug.css`，内含完整的 `:root[data-theme="your-slug"] { … }` 色板与覆层变量（可复制 `light.css` 再改值）。
 2. **`index.html`**：追加一行 `<link data-trunk rel="css" href="themes/your-slug.css" />`（须在 `tokens.css` 之后）。
-3. **Rust 白名单**：`frontend/src/app_prefs.rs` 中 **`THEME_SLUGS`** 加入 slug；未知存储值会回退为 `light`。
+3. **Rust 白名单**：`frontend/src/app_prefs.rs` 中 **`THEME_SLUGS`**（偏好，可含 **`system`**）与 **`THEME_CSS_SLUGS`**（`data-theme` CSS）加入 slug；未知存储值会回退为 `light`。**`system` 无对应 CSS 文件**，由 **`resolve_data_theme_slug`** 映射到 `dark`/`light`。
 4. **文案**：`frontend/src/i18n/settings.rs` 中 **`settings_theme_preset_label`**（或等价函数）增加显示名。
 5. **文档**：`docs/design/web_theme_presets.md` 可作设计延伸参考。
 

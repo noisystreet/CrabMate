@@ -49,7 +49,7 @@
 
 ## 9. 主题与视觉增强
 
-- **跟随系统**：自动检测 OS 暗/亮偏好
+- **跟随系统**：设置「配色方案」可选 **跟随系统**（`prefs.theme = system`）；`<html data-theme>` 解析为 OS / WebView 的 `prefers-color-scheme`（**`dark` / `light`**），并监听切换（设置 UI 打开时不重刷，以免冲掉外观预览）。**桌面 Linux**：主窗按 **`gsettings` `color-scheme`** 显式 `Theme::Dark`/`Light`（GNOME `prefer-dark` + `Adwaita` 时 WebKit `matchMedia` 会误报浅色；`theme(None)` 不够）；前端可走 **`os_prefers_dark_theme`**。`material` / `high-contrast` 仍为手动预设。
 - **主题自定义**：提供配色面板，让用户覆盖 CSS 变量（品牌色、强调色）
 - **背景装饰**：当前有 bg_decor 开关，可扩展为更多背景样式（粒子、渐变图案）
 

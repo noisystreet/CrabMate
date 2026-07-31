@@ -42,6 +42,10 @@ export function invokeTauriOpenExternalUrl(url) {
   return tauriInvoke("open_external_url", { url });
 }
 
+export function invokeTauriOsPrefersDarkTheme() {
+  return tauriInvoke("os_prefers_dark_theme", {});
+}
+
 export function installChatExternalLinkHandler() {
   if (globalThis.__crabmateChatExternalLinkHandlerInstalled) {
     return;
@@ -97,6 +101,8 @@ extern "C" {
     fn invoke_tauri_main_window_close() -> js_sys::Promise;
     #[wasm_bindgen(js_name = invokeTauriOpenExternalUrl)]
     fn invoke_tauri_open_external_url(url: &str) -> js_sys::Promise;
+    #[wasm_bindgen(js_name = invokeTauriOsPrefersDarkTheme)]
+    fn invoke_tauri_os_prefers_dark_theme() -> js_sys::Promise;
     #[wasm_bindgen(js_name = installChatExternalLinkHandler)]
     fn install_chat_external_link_handler();
 }
@@ -127,6 +133,10 @@ fn invoke_tauri_main_window_close() -> js_sys::Promise {
 #[cfg(not(target_arch = "wasm32"))]
 fn invoke_tauri_open_external_url(_: &str) -> js_sys::Promise {
     js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_os_prefers_dark_theme() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL)
 }
 
 /// 是否在 Tauri 桌面 WebView 内运行。
@@ -193,4 +203,22 @@ pub fn tauri_open_external_url(url: &str) {
     spawn_local(async move {
         let _ = tauri_invoke_void(invoke_tauri_open_external_url(&url)).await;
     });
+}
+
+/// 拉取桌面侧 OS 明暗提示并写入 [`crate::app_prefs::set_tauri_os_prefers_dark_hint`]。
+/// 返回 `Some(dark)` 表示 Linux 侧有明确结果；非 Tauri / 非 Linux 为 `None`。
+pub async fn tauri_fetch_os_prefers_dark_hint() -> Option<bool> {
+    if !tauri_shell_available() {
+        return None;
+    }
+    let value = JsFuture::from(invoke_tauri_os_prefers_dark_theme())
+        .await
+        .ok()?;
+    if value.is_null() || value.is_undefined() {
+        crate::app_prefs::set_tauri_os_prefers_dark_hint(None);
+        return None;
+    }
+    let dark = value.as_bool()?;
+    crate::app_prefs::set_tauri_os_prefers_dark_hint(Some(dark));
+    Some(dark)
 }
