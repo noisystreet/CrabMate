@@ -49,7 +49,7 @@ jsonschema = { workspace = true, optional = true }
 log = { workspace = true }
 path-absolutize = { workspace = true }
 regex = { workspace = true }
-reqwest = { workspace = true, features = ["json", "stream", "blocking", "rustls-tls"] }
+reqwest = { workspace = true, features = ["json", "stream", "blocking", "query", "rustls"] }
 schemars = { workspace = true }
 scraper = { workspace = true, optional = true }
 serde = { workspace = true }
