@@ -2,7 +2,7 @@
 //!
 //! # 与其它模块分工
 //!
-//! - **主题 slug 白名单**：[`crate::app_prefs::THEME_SLUGS`] / [`normalize_theme_slug`]（加载偏好时在 [`crate::user_prefs_sync`] 中规范化）。
+//! - **主题 slug 白名单**：[`crate::app_prefs::THEME_SLUGS`] / [`normalize_theme_slug`]；DOM 用 [`resolve_data_theme_slug`]（`system` → `dark`/`light`）。加载偏好时在 [`crate::user_prefs_sync`] 中规范化。
 //! - **首屏壳 UI 快照**：[`read_shell_ui_initial_snapshot`] 聚合主题/语言/侧栏宽度等读路径，供 [`super::app_signals::ShellUISignals::new`] 单点消费。
 //! - **会话 JSON**：[`crate::storage`] / [`crate::app::chat::session_storage`]。
 //! - **`client_llm.*` / Bearer**：[`crate::api::client_llm_storage`]。
@@ -90,12 +90,13 @@ pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_
     }
 }
 
-/// 设置 `data-theme`（持久化由 [`crate::user_prefs_sync`] 负责）。
-pub(crate) fn persist_theme_to_storage_and_dom(theme: &str) {
+/// 设置 `data-theme` 为**解析后的 CSS slug**（`system` → `dark`/`light`；持久化由 [`crate::user_prefs_sync`] 负责）。
+pub(crate) fn persist_theme_to_storage_and_dom(theme_pref: &str) {
+    let css = crate::app_prefs::resolve_data_theme_slug(theme_pref);
     if let Some(doc) = web_sys::window().and_then(|w| w.document())
         && let Some(root) = doc.document_element()
     {
-        let _ = root.set_attribute("data-theme", theme);
+        let _ = root.set_attribute("data-theme", &css);
     }
 }
 

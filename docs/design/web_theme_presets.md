@@ -19,11 +19,11 @@
 
 | 层级 | 行为 |
 |------|------|
-| **持久化** | ``/user-data/prefs` 的 `theme`（历史键名 `crabmate-theme`）` 存字符串，默认读不到时用 **`light`**（见 `app_signals/shell_ui.rs`）。合法取值见 **`frontend/src/app_prefs.rs`** 中 **`THEME_SLUGS`**（与 CSS 预设一致）。 |
-| **DOM** | `<html data-theme="...">` 由 `wire_sync_theme_to_storage_and_dom` 写入，与 `RwSignal<String>` 同步。 |
+| **持久化** | ``/user-data/prefs` 的 `theme`（历史键名 `crabmate-theme`）` 存字符串，默认读不到时用 **`light`**（见 `app_signals/shell_ui.rs`）。合法取值见 **`frontend/src/app_prefs.rs`** 中 **`THEME_SLUGS`**（含 **`system`**；与 CSS 预设 + 跟随系统一致）。 |
+| **DOM** | `<html data-theme="...">` 由 `wire_sync_theme_to_storage_and_dom` 写入**解析后的 CSS slug**（`system` → `dark`/`light`，见 **`resolve_data_theme_slug`**），与偏好 `RwSignal` 同步；`system` 时监听 `prefers-color-scheme` 变化（**设置弹窗/页打开时跳过**，避免冲掉外观草稿预览）。**桌面 Linux**：GNOME `prefer-dark` 常配 `Adwaita`（无 `-dark` 后缀），WebKit `matchMedia` 不可靠——主窗按 **`gsettings color-scheme`** 设 **`Theme::Dark`/`Light`**（勿依赖 `theme(None)`），前端另用 **`os_prefers_dark_theme`** invoke 兜底。其它桌面平台可用 `theme(None)` 跟随 OS。 |
 | **色板** | **`tokens.css`** 中 `:root` 为默认深色语义；**`:root[data-theme="light"]`** 覆盖浅色变量（`--bg`、`--surface`、`--accent` 等）。 |
 | **局部补丁** | 多个样式文件中存在 **`:root[data-theme="light"]`** 下的组件级规则（如 `base.css`、`shell-ds.css`、`layout-chat.css`、`components.css`、`modal.css`、`status.css`），用于浅色下的细调。 |
-| **设置 UI** | 设置弹窗/设置页中主题下拉：**`dark`** / **`light`** / **`material`** / **`high-contrast`**（选项由 **`THEME_SLUGS`** 驱动），绑定 `appearance_theme`。 |
+| **设置 UI** | 设置弹窗/设置页中主题下拉：**`system`** / **`dark`** / **`light`** / **`material`** / **`high-contrast`**（选项由 **`THEME_SLUGS`** 驱动），绑定 `appearance_theme`。 |
 
 ### 1.2 问题
 

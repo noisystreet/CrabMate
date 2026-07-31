@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop_lifecycle;
+mod os_theme;
 
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -8,7 +9,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tauri::{Manager, RunEvent, Theme, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
 use tauri_plugin_window_state::{StateFlags, WindowExt};
@@ -509,6 +510,12 @@ fn quit_desktop_app(app: tauri::AppHandle) {
     request_desktop_quit(&app);
 }
 
+/// 与建窗逻辑一致：Linux 读 gsettings；其它平台 `None`（前端用 matchMedia）。
+#[tauri::command]
+fn os_prefers_dark_theme() -> Option<bool> {
+    os_theme::os_prefers_dark_theme()
+}
+
 fn main_webview_window(app: &tauri::AppHandle) -> Result<WebviewWindow, String> {
     app.get_webview_window("main")
         .ok_or_else(|| "main window not found".into())
@@ -608,10 +615,12 @@ fn main() {
             main_window_minimize,
             main_window_toggle_maximize,
             main_window_close,
-            quit_desktop_app
+            quit_desktop_app,
+            os_prefers_dark_theme
         ])
         .setup(move |app| {
             desktop_lifecycle::setup_tray(app);
+            os_theme::spawn_linux_color_scheme_watcher(app.handle().clone());
             // 握手开始前就登记后端槽位，启动中途退出同样能回收子进程。
             app.manage(Arc::clone(&backend));
             let app_handle = app.handle().clone();
@@ -714,7 +723,9 @@ fn create_main_window_from_url(
             .decorations(false)
             // 窗口状态插件会在 ready 时恢复几何信息；先隐藏可避免默认尺寸闪烁。
             .visible(false)
-            .theme(Some(Theme::Light))
+            // Linux：按 gsettings `color-scheme` 显式 Dark/Light（`None` 时 WebKit 常忽略
+            // GNOME prefer-dark 而只看 Adwaita 主题名）。其它平台 `None` 跟随 OS。
+            .theme(os_theme::initial_window_theme())
             .on_navigation(move |url| {
                 if should_open_link_externally(&app_origin, url) {
                     let _ = app_handle_clone

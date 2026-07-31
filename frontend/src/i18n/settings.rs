@@ -93,6 +93,13 @@ pub fn settings_block_theme(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_theme_system(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "跟随系统",
+        Locale::En => "System",
+    }
+}
+
 pub fn settings_theme_dark(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "深色",
@@ -123,6 +130,7 @@ pub fn settings_theme_high_contrast(l: Locale) -> &'static str {
 
 pub fn settings_theme_preset_label(l: Locale, slug: &str) -> &'static str {
     match slug {
+        "system" => settings_theme_system(l),
         "dark" => settings_theme_dark(l),
         "light" => settings_theme_light(l),
         "material" => settings_theme_material(l),
