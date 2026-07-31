@@ -1,4 +1,4 @@
-//! TUI transcript：每回合独立 wrap（section + 操作条）；工具为一行摘要；流式只对 live 按行 patch。
+//! TUI transcript：每回合独立 wrap（section + 操作条）；工具为一行摘要；流式只对 live 按行 patch（闭合冻结、活跃行内增强）。
 
 use std::collections::HashMap;
 

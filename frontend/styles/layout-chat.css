@@ -430,8 +430,14 @@
   margin: 0 0 0.35em;
 }
 
-.chat-tui-line--plain {
+.chat-tui-line--plain,
+.chat-tui-line--active {
   white-space: pre-wrap;
+}
+
+.chat-tui-line--active code {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
 }
 
 .chat-tui-turn--assistant .chat-tui-line pre,
