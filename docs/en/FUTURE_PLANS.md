@@ -33,4 +33,12 @@ This document holds **directional** product and deployment boundaries that are *
 
 ---
 
+## Built-in Web / desktop IDE mode
+
+**Consensus**: The in-app **Chat / Editor** toggle is a **visual editing surface for the agent workflow** (light edits, change review, alignment with SSE workspace writes)—**not** a second VS Code. Full IDE / multi-language LSP belongs in an external editor or the official extension.
+
+**Roadmap** (baseline, Phases 0–5, split vs extension): **`docs/design/ide_mode_roadmap.md`** (Chinese). Parallel track: **`docs/design/vscode_extension.md`**.
+
+---
+
 *Maintenance: user-visible deployment and security changes still belong in `README.md` / configuration docs; this file is planning narrative, not the source of truth for flags.*
