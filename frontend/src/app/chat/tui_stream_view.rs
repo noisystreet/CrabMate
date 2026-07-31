@@ -1,4 +1,4 @@
-//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按行局部更新。
+//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按行局部更新（活跃行流式行内 HTML）。
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -6,14 +6,14 @@ use wasm_bindgen::JsCast;
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
-use super::tui_line_markdown::TuiBodyPatch;
+use super::tui_line_markdown::{TuiBodyPatch, open_line_is_fence_buffer, render_open_active_html};
 use super::tui_transcript_sync::{TuiMountState, TuiSyncPlan, plan_tui_sync};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 
-fn ensure_plain_line(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement> {
+fn ensure_open_line(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement> {
     if let Some(existing) = body
-        .query_selector(".chat-tui-line--plain")
+        .query_selector(".chat-tui-line--plain, .chat-tui-line--active")
         .ok()
         .flatten()
         .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok())
@@ -21,20 +21,38 @@ fn ensure_plain_line(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement
         return Some(existing);
     }
     let document = body.owner_document()?;
-    let plain = document
+    let line = document
         .create_element("div")
         .ok()?
         .dyn_into::<web_sys::HtmlElement>()
         .ok()?;
-    plain.set_class_name("chat-tui-line chat-tui-line--plain");
-    let _ = body.append_child(&plain);
-    Some(plain)
+    line.set_class_name("chat-tui-line chat-tui-line--active");
+    let _ = body.append_child(&line);
+    Some(line)
 }
 
-fn remove_plain_line(body: &web_sys::HtmlElement) {
-    if let Some(plain) = body.query_selector(".chat-tui-line--plain").ok().flatten() {
-        plain.remove();
+fn remove_open_line(body: &web_sys::HtmlElement) {
+    if let Some(line) = body
+        .query_selector(".chat-tui-line--plain, .chat-tui-line--active")
+        .ok()
+        .flatten()
+    {
+        line.remove();
     }
+}
+
+fn apply_open_active_line(body: &web_sys::HtmlElement, text: &str) -> bool {
+    let Some(line) = ensure_open_line(body) else {
+        return false;
+    };
+    if open_line_is_fence_buffer(text) {
+        line.set_class_name("chat-tui-line chat-tui-line--plain");
+        line.set_text_content(Some(text));
+    } else {
+        line.set_class_name("chat-tui-line chat-tui-line--active");
+        line.set_inner_html(&render_open_active_html(text));
+    }
+    true
 }
 
 fn apply_tool_row_patch(
@@ -100,7 +118,7 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
             open_plain,
         } => {
             if !append_closed.is_empty() {
-                remove_plain_line(body);
+                remove_open_line(body);
                 for chunk in &append_closed {
                     if body.insert_adjacent_html("beforeend", chunk).is_err() {
                         return false;
@@ -108,15 +126,12 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
                 }
             }
             match open_plain {
-                Some(text) => {
-                    let Some(plain) = ensure_plain_line(body) else {
-                        return false;
-                    };
-                    plain.set_text_content(Some(&text));
+                Some(text) => apply_open_active_line(body, &text),
+                None => {
+                    remove_open_line(body);
+                    true
                 }
-                None => remove_plain_line(body),
             }
-            true
         }
         TuiBodyPatch::ToolRow {
             status,

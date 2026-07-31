@@ -54,7 +54,7 @@
 |------|------|
 | **默认视图** | `chat_column_view` → `ChatTuiStreamView`（无切换按钮） |
 | **数据** | 仍用 `ChatSessionSignals` + `stream_text_overlay`；发送/SSE 未分叉 |
-| **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；半行与未闭合围栏纯文本；回合带 `--user` / `--assistant` / `--tool` 等角色样式（对齐气泡） |
+| **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；活跃行 **`stream_inline_safe_html`**（成对行内标记）；未闭合围栏纯文本；回合带 `--user` / `--assistant` / `--tool` 等角色样式 |
 | **DOM 写入** | 按回合 `section`：append / live 行级 patch；会话切换或 id 前缀破坏时全量重建 |
 | **跟底** | 共用 `ChatMessagesScrollShell`；unpin **仅** wheel↑ / 指针离底 / Home / 查找；工具 live 用 `ToolRow` 改文案，折叠定高 |
 | **缺口** | 气泡路径 `allow(dead_code)` 保留 |
@@ -161,17 +161,24 @@ SSE / overlay / sessions（不变）
 
 ---
 
-### Phase 4 — 流式 Markdown 质量（可选增强）
+### Phase 4 — 流式 Markdown 质量（活跃增强 + 闭合冻结）
 
-在 Phase 2 稳定后，再考虑：
+**状态（已落地，选项 B 轻量版）**：
 
-| 选项 | 说明 | 建议 |
+- **闭合块冻结**：`plan_tui_body_patch` 在 closed 前缀不变时只 `Incremental` append；已挂载 closed DOM 不重渲。
+- **活跃块略增强**：未闭合末行（非围栏）经 **`stream_inline_safe_html`** 渲染成对的 `**` / `` ` `` / `~~`；半截标记保持字面量；DOM 类 **`chat-tui-line--active`**，用 `innerHTML` 更新。
+- **围栏缓冲**：未闭合 \`\`\` 仍 **`chat-tui-line--plain`** + `textContent`（禁止半截围栏当 code 块）。
+- **未做**：完整块级状态机（标题/列表跨行重组）、JS Markdown 库（选项 C）。
+
+| 选项 | 说明 | 状态 |
 |------|------|------|
-| A. 保持按行 | 现状增强（列表续行、引用） | 默认主路径 |
-| B. 块级状态机 | 仅「活跃块」重渲，闭合块冻结 | 中期；对齐 optimark/stream-md 思想，Rust 自研 |
-| C. JS 库 interop | generative-dom 等 | 仅实验分支；注意 CSP、包体、Leptos 边界 |
+| A. 保持按行 | 现状增强（列表续行、引用） | 闭合行仍 `to_safe_html` |
+| B. 活跃行内增强 | 仅活跃行流式安全行内 HTML，闭合冻结 | **已落地** |
+| C. JS 库 interop | generative-dom 等 | 仍不默认 |
 
 **原则**：流式期允许「好看一点」；**禁止**为完整 GFM 牺牲跟底与半截围栏稳定性。
+
+**验收**：单元见 `tui_line_markdown`（incomplete bold 无 strong、成对 bold 有 strong、closed 前缀冻结）；跟底 E2E 回归仍绿。
 
 ---
 
@@ -190,7 +197,7 @@ Phase 0（基线）
     → Phase 1（跟底 pin 收敛）     // 收益大、面可控
     → Phase 2（append-only DOM）   // 性能与稳跟底
     → Phase 3（复制/重试/工具行） // 产品完整度
-    → Phase 4（Markdown 增强）    // 可选
+    → Phase 4（Markdown 活跃增强） // **已落地**
     → Phase 5（清理）
 ```
 
