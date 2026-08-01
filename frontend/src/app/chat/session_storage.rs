@@ -14,7 +14,7 @@ use crate::chat_session_state::ChatSessionSignals;
 use super::session_hydrate::bump_session_hydrate_nonce;
 use crate::api::client_llm_storage::hydrate_client_llm_from_server;
 use crate::i18n::{self, Locale};
-use crate::storage::{clear_stale_assistant_loading_states, ensure_at_least_one};
+use crate::storage::{clear_stale_stream_loading_states, ensure_at_least_one};
 use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 use crate::user_data_bootstrap::load_web_sessions;
 use crate::user_prefs_sync::wire_load_user_prefs_from_server;
@@ -59,7 +59,7 @@ pub fn wire_initial_sessions_from_storage(app: crate::app::app_signals::AppSigna
                 ensure_at_least_one(list, i18n::default_session_title(loc).to_string());
             for s in &mut list {
                 s.normalize_layout_schema_version();
-                clear_stale_assistant_loading_states(&mut s.messages);
+                clear_stale_stream_loading_states(&mut s.messages, loc);
             }
             let pick = aid
                 .filter(|id| list.iter().any(|s| s.id == *id))

@@ -9,7 +9,7 @@ use crate::api::WorkspaceData;
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 use crate::storage::{
-    ChatSession, clear_stale_assistant_loading_states, ensure_at_least_one,
+    ChatSession, clear_stale_stream_loading_states, ensure_at_least_one,
     normalize_workspace_partition_path,
 };
 use crate::user_data_bootstrap::load_web_sessions;
@@ -105,7 +105,7 @@ pub fn wire_workspace_session_storage_partition(args: WireWorkspaceSessionPartit
 
             for s in list2.iter_mut() {
                 s.normalize_layout_schema_version();
-                clear_stale_assistant_loading_states(&mut s.messages);
+                clear_stale_stream_loading_states(&mut s.messages, loc);
             }
             let (list2, def_id) =
                 ensure_at_least_one(list2, crate::i18n::default_session_title(loc).to_string());

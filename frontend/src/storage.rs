@@ -252,6 +252,16 @@ pub fn clear_stale_assistant_loading_states(messages: &mut [StoredMessage]) {
     }
 }
 
+/// 从 `/user-data` 恢复会话时：清助手 `Loading`，并收口无 SSE 可配对的僵尸工具「执行中」。
+pub fn clear_stale_stream_loading_states(messages: &mut [StoredMessage], loc: crate::i18n::Locale) {
+    clear_stale_assistant_loading_states(messages);
+    crate::message_loading::finalize_loading_tool_placeholders(
+        messages,
+        loc,
+        crate::message_loading::ToolLoadingFinalizeKind::OrphanStale,
+    );
+}
+
 /// 与 `GET /workspace` 返回的 `path` 对齐的规范化字符串（与服务端分桶一致）。
 #[must_use]
 pub fn normalize_workspace_partition_path(path: &str) -> String {
@@ -357,6 +367,26 @@ mod tests {
         clear_stale_assistant_loading_states(&mut msgs);
         assert!(msgs[0].state.is_none());
         assert_eq!(msgs[1].state, Some(StoredMessageState::Loading));
+    }
+
+    #[test]
+    fn clear_stale_stream_loading_finalizes_orphan_tool() {
+        let mut msgs = vec![StoredMessage {
+            id: "t".into(),
+            role: "system".into(),
+            text: "工具：http_fetch".into(),
+            reasoning_text: "tool: http_fetch\nstatus: running".into(),
+            image_urls: vec![],
+            state: Some(StoredMessageState::Loading),
+            is_tool: true,
+            tool_call_id: Some("c1".into()),
+            tool_name: Some("http_fetch".into()),
+            created_at: 0,
+        }];
+        clear_stale_stream_loading_states(&mut msgs, crate::i18n::Locale::ZhHans);
+        assert!(msgs[0].state.is_none());
+        assert!(msgs[0].reasoning_text.contains("interrupted (stale)"));
+        assert!(msgs[0].text.contains("已中断"));
     }
 
     #[test]
