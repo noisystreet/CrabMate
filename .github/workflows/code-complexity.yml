@@ -1,4 +1,4 @@
-# 圈复杂度（lizard CCN）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_intent_regression`、`golden_turn_completion`、`golden_acceptance_regression`、`golden_turn_route_decision`、`golden_outer_loop_phase`、`golden_final_plan_gate`、`golden_workflow_reflection_regression`）。
+# 圈复杂度（lizard CCN）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_intent_regression`、`golden_turn_completion`、`golden_acceptance_regression`、`golden_turn_route_decision`、`golden_outer_loop_phase`、`golden_final_plan_gate`、`golden_workflow_to_plan_requirement`、`golden_workflow_reflection_regression`）。
 name: code-complexity
 
 on:
@@ -113,6 +113,9 @@ jobs:
 
       - name: Golden final plan gate (fixtures/final_plan_gate_golden.jsonl)
         run: cargo test golden_final_plan_gate --no-fail-fast
+
+      - name: Golden workflow→plan requirement (fixtures/workflow_to_plan_requirement_golden.jsonl)
+        run: cargo test -p crabmate-agent golden_workflow_to_plan_requirement --no-fail-fast
 
   workflow-reflection-golden:
     runs-on: ubuntu-latest

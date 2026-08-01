@@ -1,7 +1,9 @@
 //! 单轮 `run_agent_turn` 内与 PER 协调相关的**可变回合状态**，从 [`super::PerCoordinator`] 顶层字段拆出，
 //! 便于一眼区分：**配置镜像 / 策略来源** vs **本回合计数** vs **派生缓存** vs **工具失败短路表**。
 //!
-//! - **[`PerTurnCounters`]**：终答 `plan_rewrite` 已用次数。
+//! 归属总表见 **`docs/design/run_loop_state_ownership.md`**。
+//!
+//! - **[`PerTurnCounters`]**：终答 `plan_rewrite` 已用次数 + 暂住的 **[`OuterLoopReflectMemo`]**（R 轨 3）。
 //! - **[`WorkflowValidateLayerCache`]**：`last_workflow_validate_layer_count` 随 `messages.len()` 的缓存；上下文裁剪后必须失效。
 //! - **[`RepeatedToolFailureMemo`]**：同轮工具失败签名 / 族短路（只读查询 + 记录清除）。
 //! - **[`SuccessfulRunCommandDedupeMemo`]**：同轮已成功构建/运行命令的结果缓存（防重复 spawn）。
@@ -11,57 +13,94 @@ use std::collections::HashMap;
 
 use crate::plan_rewrite;
 
+/// 外循环 Gate **前**纠偏计数（R 轨 3：`OuterLoopReflectPreGateReason`）。
+///
+/// **语义归属**：外循环 / `outer_loop_reflect`，**不是**终答 Gate 或工作流反思 FSM。
+/// **物理位置**：暂住 [`PerTurnCounters`]（经 `PerCoordinator` 委托），便于单轮共享；勿与
+/// `plan_rewrite_attempts` 混读。见 **`docs/design/run_loop_state_ownership.md`**。
+#[derive(Debug, Clone, Default)]
+pub(crate) struct OuterLoopReflectMemo {
+    pub(crate) build_idle_streak: u32,
+    pub(crate) build_idle_feedback_injected: u32,
+    pub(crate) missing_final_answer_feedback_injected: u32,
+}
+
+impl OuterLoopReflectMemo {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn record_build_idle_round(&mut self) -> u32 {
+        self.build_idle_streak = self.build_idle_streak.saturating_add(1);
+        self.build_idle_streak
+    }
+
+    pub(crate) fn reset_build_idle_streak(&mut self) {
+        self.build_idle_streak = 0;
+    }
+
+    pub(crate) fn record_build_idle_feedback_injected(&mut self) {
+        self.build_idle_feedback_injected = self.build_idle_feedback_injected.saturating_add(1);
+    }
+
+    pub(crate) fn build_idle_feedback_injected(&self) -> u32 {
+        self.build_idle_feedback_injected
+    }
+
+    pub(crate) fn record_missing_final_answer_feedback_injected(&mut self) {
+        self.missing_final_answer_feedback_injected = self
+            .missing_final_answer_feedback_injected
+            .saturating_add(1);
+    }
+
+    pub(crate) fn missing_final_answer_feedback_injected(&self) -> u32 {
+        self.missing_final_answer_feedback_injected
+    }
+}
+
 /// 本 `run_agent_turn` 内、与配置上限对照的**正交**计数器。
 ///
 /// - **`plan_rewrite_attempts`**：终答路径 `agent_reply_plan` 不合格时追加重写 user 的已用次数（与 **`plan_rewrite_max_attempts`** 对照）。
-/// - **`outer_loop_build_idle_streak`**：L2 外循环连续「承诺构建但无 tool_calls」轮次（见 **`outer_loop_build_idle`**）。
-/// - **`outer_loop_build_idle_feedback_injected`**：已注入的构建空转纠偏 user 条数上限计数。
-/// - **`outer_loop_missing_final_answer_feedback_injected`**：已注入的终答缺失纠偏 user 条数上限计数。
+/// - **`outer_loop_reflect`**：外循环 pre-gate 纠偏（见 [`OuterLoopReflectMemo`]）。
 #[derive(Debug, Clone)]
 pub(crate) struct PerTurnCounters {
     pub(crate) plan_rewrite_attempts: usize,
-    pub(crate) outer_loop_build_idle_streak: u32,
-    pub(crate) outer_loop_build_idle_feedback_injected: u32,
-    pub(crate) outer_loop_missing_final_answer_feedback_injected: u32,
+    pub(crate) outer_loop_reflect: OuterLoopReflectMemo,
 }
 
 impl PerTurnCounters {
     pub(crate) fn new() -> Self {
         Self {
             plan_rewrite_attempts: 0,
-            outer_loop_build_idle_streak: 0,
-            outer_loop_build_idle_feedback_injected: 0,
-            outer_loop_missing_final_answer_feedback_injected: 0,
+            outer_loop_reflect: OuterLoopReflectMemo::new(),
         }
     }
 
     pub(crate) fn record_outer_loop_build_idle_round(&mut self) -> u32 {
-        self.outer_loop_build_idle_streak = self.outer_loop_build_idle_streak.saturating_add(1);
-        self.outer_loop_build_idle_streak
+        self.outer_loop_reflect.record_build_idle_round()
     }
 
     pub(crate) fn reset_outer_loop_build_idle_streak(&mut self) {
-        self.outer_loop_build_idle_streak = 0;
+        self.outer_loop_reflect.reset_build_idle_streak();
     }
 
     pub(crate) fn record_outer_loop_build_idle_feedback_injected(&mut self) {
-        self.outer_loop_build_idle_feedback_injected = self
-            .outer_loop_build_idle_feedback_injected
-            .saturating_add(1);
+        self.outer_loop_reflect
+            .record_build_idle_feedback_injected();
     }
 
     pub(crate) fn outer_loop_build_idle_feedback_injected(&self) -> u32 {
-        self.outer_loop_build_idle_feedback_injected
+        self.outer_loop_reflect.build_idle_feedback_injected()
     }
 
     pub(crate) fn record_outer_loop_missing_final_answer_feedback_injected(&mut self) {
-        self.outer_loop_missing_final_answer_feedback_injected = self
-            .outer_loop_missing_final_answer_feedback_injected
-            .saturating_add(1);
+        self.outer_loop_reflect
+            .record_missing_final_answer_feedback_injected();
     }
 
     pub(crate) fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
-        self.outer_loop_missing_final_answer_feedback_injected
+        self.outer_loop_reflect
+            .missing_final_answer_feedback_injected()
     }
 }
 

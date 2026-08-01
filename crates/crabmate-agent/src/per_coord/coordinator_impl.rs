@@ -50,6 +50,37 @@ impl PerCoordinator {
             .require_plan
     }
 
+    /// 测试 / 金样：`PlanRequirementSource` 稳定标签。
+    #[cfg(test)]
+    pub(crate) fn plan_requirement_source_label(&self) -> &'static str {
+        match self.plan_requirement_source {
+            PlanRequirementSource::None => "none",
+            PlanRequirementSource::ConfigAlways => "config_always",
+            PlanRequirementSource::WorkflowReflection => "workflow_reflection",
+        }
+    }
+
+    /// 测试 / 金样：Gate context 的 `require_plan_reason`。
+    #[cfg(test)]
+    pub(crate) fn require_plan_reason_label(&self) -> &'static str {
+        build_final_plan_gate_context(self.final_plan_policy, self.plan_requirement_source)
+            .require_plan_reason
+            .as_str()
+    }
+
+    /// 测试 / 金样：Gate 相位标签。
+    #[cfg(test)]
+    pub(crate) fn gate_phase_label(&self) -> &'static str {
+        use super::final_plan_gate::FinalPlanGatePhase;
+        match build_final_plan_gate_context(self.final_plan_policy, self.plan_requirement_source)
+            .phase
+        {
+            FinalPlanGatePhase::NoRequirement => "no_requirement",
+            FinalPlanGatePhase::CheckStructuredPlan => "check_structured_plan",
+            FinalPlanGatePhase::PendingSemanticLlm => "pending_semantic_llm",
+        }
+    }
+
     pub fn new(init: PerCoordinatorInit) -> Self {
         let initial_source = match init.final_plan_policy {
             FinalPlanRequirementMode::Always => PlanRequirementSource::ConfigAlways,
@@ -267,7 +298,7 @@ impl PerCoordinator {
                 FinalPlanRequirementMode::WorkflowReflection
             ) && let Some(t) = instruction.get("instruction_type").and_then(|x| x.as_str())
                 && (t == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_PLAN_NEXT
-                    || t == "workflow_reflection_next")
+                    || t == workflow_reflection_controller::INSTRUCTION_WORKFLOW_REFLECTION_NEXT)
             {
                 per_coord.plan_requirement_source = PlanRequirementSource::WorkflowReflection;
                 log::info!(
