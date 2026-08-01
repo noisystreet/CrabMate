@@ -17,8 +17,11 @@ use crate::process_handles::ProcessHandles;
 use crate::sse::SseStreamHub;
 use crate::web::async_chat_job::AsyncChatJobsMap;
 
+use crate::chat_job_queue::ChatJobQueue;
+use crate::memory::long_term_memory::LongTermMemoryRuntime;
+
 use super::app_state::{
-    AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
+    AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore,
     ApprovalSessionSlot, ConversationBacking, ConversationTurnSeed, WebChatJobAppFacet,
     effective_workspace_path_from_override, open_conversation_sqlite,
     workspace_is_set_from_override,
@@ -37,12 +40,15 @@ pub(crate) struct UploadsFacet {
     pub(crate) uploads_dir: PathBuf,
 }
 
-/// `GET|PUT /tasks`：工作区键 + 侧栏任务表（完整 [`ProcessHandles`]）。
+/// `GET|PUT /tasks` 与 `GET /workspace/changelog`：工作区键 + 完整 [`ProcessHandles`]。
 #[derive(Clone)]
 pub(crate) struct WebTasksAppFacet {
     pub(crate) http: AppStateHttpCore,
     pub(crate) process_handles: Arc<ProcessHandles>,
 }
+
+/// `GET /workspace/changelog` 与 tasks 同构（共用 [`FromRef`]）。
+pub(crate) type WebChangelogAppFacet = WebTasksAppFacet;
 
 /// `GET /health`：HTTP 核 + 模型探测缓存。
 #[derive(Clone)]
@@ -51,19 +57,13 @@ pub(crate) struct WebHealthAppFacet {
     pub(crate) llm_models_health_cache: Arc<std::sync::Mutex<Option<CachedLlmModelsHealthProbe>>>,
 }
 
-/// `GET /status`：配置/工具/队列/会话/LTM 等只读快照所需面。
+/// `GET /status`：配置/工具/队列/会话/LTM/工具统计（不含审批、SSE hub、async jobs）。
 #[derive(Clone)]
 pub(crate) struct WebStatusAppFacet {
     pub(crate) http: AppStateHttpCore,
     pub(crate) conversation: AppStateConversationRuntime,
-    pub(crate) chat: AppStateChatRuntime,
-    pub(crate) aux: AppStateWebAux,
-}
-
-/// `GET /workspace/changelog`：配置开关 + 变更集注册表。
-#[derive(Clone)]
-pub(crate) struct WebChangelogAppFacet {
-    pub(crate) http: AppStateHttpCore,
+    pub(crate) chat_queue: ChatJobQueue,
+    pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub(crate) process_handles: Arc<ProcessHandles>,
 }
 
@@ -268,16 +268,8 @@ impl FromRef<Arc<AppState>> for WebStatusAppFacet {
         Self {
             http: state.http.clone(),
             conversation: state.conversation.clone(),
-            chat: state.chat.clone(),
-            aux: state.aux.clone(),
-        }
-    }
-}
-
-impl FromRef<Arc<AppState>> for WebChangelogAppFacet {
-    fn from_ref(state: &Arc<AppState>) -> Self {
-        Self {
-            http: state.http.clone(),
+            chat_queue: state.chat.chat_queue.clone(),
+            long_term_memory: state.aux.long_term_memory.clone(),
             process_handles: Arc::clone(&state.aux.process_handles),
         }
     }

@@ -111,8 +111,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Golden final plan gate (fixtures/final_plan_gate_golden.jsonl)
-        run: cargo test golden_final_plan_gate --no-fail-fast
+      - name: Golden final plan gate (crates/crabmate-agent/fixtures/final_plan_gate_golden.jsonl)
+        run: cargo test -p crabmate-agent golden_final_plan_gate --no-fail-fast
 
       - name: Golden workflow→plan requirement (fixtures/workflow_to_plan_requirement_golden.jsonl)
         run: cargo test -p crabmate-agent golden_workflow_to_plan_requirement --no-fail-fast

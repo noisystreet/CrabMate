@@ -16,8 +16,6 @@ pub use crabmate_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（移入 `crabmate-agent` crate）。
 pub use crabmate_agent::per_coord;
 mod per_plan_semantic_check;
-/// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
-pub mod reflection;
 /// 步级 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
 pub(crate) mod step_executor_policy;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。

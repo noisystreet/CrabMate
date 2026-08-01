@@ -26,7 +26,6 @@ use crate::web::app_state::{
     purge_expired_approval_sessions,
 };
 use crate::web::app_state_facets::WebChatTurnAppFacet;
-use crate::web::audit;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
 use super::builtin_skills::run_web_builtin_command;
@@ -261,10 +260,7 @@ async fn chat_stream_try_enqueue_job(
         redact::preview_chars(msg, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
-    let request_audit = {
-        let cfg = state.cfg.read().await;
-        audit::web_request_audit_from_http(&cfg, headers, peer)
-    };
+    let request_audit = super::enqueue::web_request_audit_for_turn(state, headers, peer).await;
     if let Err(e) = state
         .chat
         .chat_queue

@@ -58,7 +58,7 @@ pub(crate) struct ConversationTurnSeed {
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
 ///
-/// 宿主侧亦见 **`crabmate_web_host::AppStateHttpCore`**（同构；根包保留本类型以满足 `FromRef` 孤儿规则）。
+/// 根包保留本类型以满足 axum `FromRef` 孤儿规则（**不**在 `crabmate-web-host` 镜像同名类型）。
 #[derive(Clone)]
 pub(crate) struct AppStateHttpCore {
     pub(crate) cfg: SharedAgentConfig,
@@ -223,11 +223,6 @@ impl AppState {
                 expected_revision,
             )
             .await
-    }
-
-    #[allow(dead_code)] // status 等已改走 WebStatusAppFacet；保留 AppState 薄委托对称面
-    pub(crate) async fn conversation_count(&self) -> usize {
-        self.conversation.conversation_count().await
     }
 
     /// 删除持久化会话行（仅 E2E 夹具 `replace` 等；不存在时视为成功）。

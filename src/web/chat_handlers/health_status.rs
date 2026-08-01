@@ -221,7 +221,7 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
         let b = state.conversation.conversation_backing.read().await;
         b.is_sqlite()
     };
-    let (ltm_ready, ltm_idx_err) = match state.aux.long_term_memory.as_ref() {
+    let (ltm_ready, ltm_idx_err) = match state.long_term_memory.as_ref() {
         Some(l) => (
             true,
             l.index_errors.load(std::sync::atomic::Ordering::Relaxed),
@@ -236,7 +236,7 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
         .collect();
     let mut agent_role_ids: Vec<String> = cfg.roles_prompts.agent_roles.keys().cloned().collect();
     agent_role_ids.sort();
-    let tool_recorder = &state.aux.process_handles.tool_outcome_recorder;
+    let tool_recorder = &state.process_handles.tool_outcome_recorder;
     let workspace_root = std::path::PathBuf::from(state.effective_workspace_path().await);
     let tiktoken_new_session_baseline_by_agent_role = tiktoken_new_session_baselines_by_role(
         &cfg,
@@ -306,16 +306,16 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
             ),
         tiktoken_new_session_baseline_by_agent_role,
         context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
-        chat_queue_max_concurrent: state.chat.chat_queue.max_concurrent(),
-        chat_queue_max_pending: state.chat.chat_queue.max_pending(),
+        chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
+        chat_queue_max_pending: state.chat_queue.max_pending(),
         parallel_readonly_tools_max: cfg.chat_queues_cache.parallel_readonly_tools_max,
         read_file_turn_cache_max_entries: cfg.chat_queues_cache.read_file_turn_cache_max_entries,
-        chat_queue_running: state.chat.chat_queue.running_count(),
-        chat_queue_completed_ok: state.chat.chat_queue.completed_ok(),
-        chat_queue_completed_cancelled: state.chat.chat_queue.completed_cancelled(),
-        chat_queue_completed_err: state.chat.chat_queue.completed_err(),
-        chat_queue_recent_jobs: state.chat.chat_queue.recent_jobs(),
-        per_active_jobs: state.chat.chat_queue.active_per_jobs(),
+        chat_queue_running: state.chat_queue.running_count(),
+        chat_queue_completed_ok: state.chat_queue.completed_ok(),
+        chat_queue_completed_cancelled: state.chat_queue.completed_cancelled(),
+        chat_queue_completed_err: state.chat_queue.completed_err(),
+        chat_queue_recent_jobs: state.chat_queue.recent_jobs(),
+        per_active_jobs: state.chat_queue.active_per_jobs(),
         workspace_allowed_roots_count: cfg.workspace_roots.workspace_allowed_roots.len(),
         conversation_store_entries,
         conversation_store_sqlite_path_configured,
