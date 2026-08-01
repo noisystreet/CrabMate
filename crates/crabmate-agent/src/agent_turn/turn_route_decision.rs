@@ -1,4 +1,8 @@
 //! 单轮编排路由决议快照（v1 JSON）：门控链结束后一次性记录，供 tracing / SSE / 金样回归。
+//!
+//! **入口契约**：意图门控（`intent_at_turn_start`）跑完后，**唯一**非早退决议函数是
+//! [`assess_turn_routing`]；根包 `run_dispatch` 只按 [`TurnRouteDriver`] 分支。
+//! 相位字段含义见 [`super::phase_vocabulary`]。
 
 use crabmate_config::{AgentConfig, FinalPlanRequirementMode};
 
@@ -192,7 +196,9 @@ pub fn intent_gate_is_early_exit(intent_gate: &IntentGateSnapshot) -> bool {
     matches!(intent_gate, IntentGateSnapshot::FinishedEarly { .. })
 }
 
-/// 非分层路由决议：intent 早退 → ReAct。
+/// 门控链结束后的**唯一**路由决议：`FinishedEarly` → 早退，否则 → ReAct 外循环。
+///
+/// 调用方（`run_dispatch`）不得在本函数之外再分支「是否进外循环」。
 pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnRoute {
     if intent_gate_is_early_exit(&params.intent_gate) {
         let decision = build_non_hierarchical_intent_finished_early_decision(

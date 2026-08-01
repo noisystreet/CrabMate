@@ -2,3 +2,5 @@
 # 运行：`cargo test golden_turn_route_decision`
 # 分阶段 staged / logical_dual 案例已随编排入口移除；现行仅意图早退与 ReAct。
 {"id":"nh_intent_finished_early","cfg_mode":"single_agent","intent_gate":{"outcome":"finished_early","kind":"greeting","primary_intent":"meta.greeting","action":"direct_reply"},"expect_early":true,"expect":{"top_level":"non_hierarchical","orchestration_mode":"intent_at_turn_start_finished","turn_phase":"intent_at_turn_start_finished"}}
+{"id":"nh_react_proceed_execute","cfg_mode":"single_agent","intent_gate":{"outcome":"proceed_execute","kind":"execute","primary_intent":"task.implement","action":"execute","confidence":0.9,"need_clarification":false},"expect_early":false,"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+{"id":"nh_react_gate_disabled","cfg_mode":"single_agent","intent_gate":{"outcome":"disabled"},"expect_early":false,"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
