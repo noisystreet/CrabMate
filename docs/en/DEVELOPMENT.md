@@ -2,35 +2,44 @@
 
 # Developer guide (architecture overview)
 
-For **contributors and maintainers**: **major modules and data flow** in CrabMate; **no** per-file source tree listing. End-user usage: **`README.md`**; configuration and environment variables: **`docs/en/CONFIGURATION.md`**; CLI and HTTP routes: **`docs/en/CLI.md`**; SSE contract: **`docs/en/SSE_PROTOCOL.md`**; built-in tools: **`docs/en/TOOLS.md`**.
+For **contributors and maintainers**: major modules and data flow. **No** per-file source tree (goes stale; use `src/lib.rs` and topic docs).
+
+| Topic | Doc |
+|-------|-----|
+| Usage / quick start | **`README.md`** |
+| Config / env | **`docs/en/CONFIGURATION.md`** |
+| CLI and HTTP routes | **`docs/en/CLI.md`** |
+| SSE / AG-UI | **`docs/en/SSE_PROTOCOL.md`** |
+| Built-in tools | **`docs/en/TOOLS.md`** |
+| Turn display order | **`docs/Turn布局设计.md`** (Chinese authoritative) |
+| Debug | **`docs/en/DEBUG.md`** |
+| Frontend layout | **`docs/frontend/ARCHITECTURE.md`**, **`frontend/README.md`** |
 
 ## Documentation and collaboration (summary)
 
-- **`docs/待办清单.md`** (**`docs/en/TODOLIST.md`**): open items only; remove entries when done; history lives in Git.
-- **User-visible changes**: update **`README.md`**; when protocol or architecture boundaries change, update this guide and **`docs/en/SSE_PROTOCOL.md`** (when relevant).
-- **Architecture-level changes**: if you add/remove top-level modules in **`src/lib.rs`** or change layering, update the **“Main modules”** section and the **Mermaid** diagram, and follow **`.cursor/rules/architecture-docs-sync.mdc`**.
-- **Commits and quality**: root **`.pre-commit-config.yaml`** (`cargo fmt`, root + conditional **`frontend/`** `cargo clippy -D warnings`, complexity ratchets, etc.); commit messages **Conventional Commits** — **`.cursor/rules/conventional-commits.mdc`**.
-- **Dependencies and licenses**: when changing **`Cargo.toml`** / **`Cargo.lock`**, align with **`deny.toml`** and CI — **`.cursor/rules/dependencies-licenses.mdc`**.
+- **TODOLIST**: open items only; remove when done; history in Git.
+- **User-visible changes**: update **`README.md`**; protocol boundaries → **SSE_PROTOCOL**.
+- **Architecture changes**: update **Main modules** + Mermaid below; see **`.cursor/rules/architecture-docs-sync.mdc`**. Keep this page an **overview**—put deep detail in design docs, not here.
+- **Quality**: `.pre-commit-config.yaml`; Conventional Commits (bilingual subject in this repo).
+- **Deps**: `deny.toml` + CI when touching manifests / lockfiles.
 
-## Overview: system composition
+## Overview
 
-- **Rust backend (`src/`)**: OpenAI-compatible **`chat/completions`**, Agent main loop, HTTP API (including SSE), tool execution, workspace and sessions.
-- **Web frontend (`frontend/`)**: Leptos + WASM, Trunk build; static assets served by the backend. Interaction and SSE consumption: **`frontend/README.md`**, **`docs/frontend/ARCHITECTURE.md`** (when present in the repo).
-- **CLI (`runtime/cli`, etc.)**: REPL / `chat` / `serve` and **`run_agent_turn`** share the same orchestration and tools.
+- **Backend** (`src/` + workspace crates): OpenAI-compatible chat, agent turns, HTTP/SSE, tools, workspace, sessions.
+- **Frontend** (`frontend/`): Leptos + WASM (Trunk); static assets from `serve`.
+- **CLI / TUI** (`runtime/`): share **`run_agent_turn`** and tool execution with Web.
 
 ## Architecture
 
 ### Process and layers
 
-Single **Tokio** process: **Axum** serves HTTP; **`runtime/`** powers the CLI; shared **`AgentConfig`**, **`tools`**, **`run_agent_turn`** (implementation mainly in **`agent::agent_turn`**).
+Single **Tokio** process: Axum HTTP + `runtime` CLI; shared `AgentConfig`, tools, `run_agent_turn`.
 
-**Outside → inside:**
-
-1. **Ingress**: HTTP routes and handlers (**`web/`**), **`serve`** / **`cli_run`**.
-2. **Orchestration**: chat queue (**`chat_job_queue`**), Agent turns (**`agent/`**: **`agent_turn`**, context and message pipeline, **`per_coord`**, optional layered **hierarchy**, **workflow**).
-3. **Model**: shared **`http_client`**, **`llm`** (**`complete_chat_retrying`** → default **`OpenAiCompatBackend`** → **`api::stream_chat`**), vendor adapters **vendor**.
-4. **Tools**: table-driven **tools**, dispatch by name **tool_registry**, optional Docker sandbox **tool_sandbox**, structured results **tool_result**.
-5. **Contracts**: **`crabmate-types`** (OpenAI-shaped messages; root re-exports as **`types`**), **sse** (control plane and version **`crabmate-sse-protocol`**), **config**.
+1. **Ingress**: `web/`, `serve` / `cli_run`
+2. **Orchestration**: `chat_job_queue`, `agent/` (`agent_turn`, pipelines, `per_coord`, workflow)
+3. **Model**: `llm` (`complete_chat_retrying` → backend → `api::stream_chat`), vendors
+4. **Tools**: table-driven tools, `tool_registry`, optional sandbox, `tool_result`
+5. **Contracts**: types / config / llm / agent crates, `crabmate-sse-protocol`, `crabmate-web-host` (HTTP DTOs)
 
 ```mermaid
 flowchart TB
@@ -38,7 +47,7 @@ flowchart TB
     WEB["HTTP · web/"]
     CLI["CLI · runtime"]
   end
-  subgraph agent [Agent · agent/]
+  subgraph agent [Agent]
     Q[chat_job_queue]
     AT[agent_turn]
     LL[llm]
@@ -55,74 +64,70 @@ flowchart TB
 
 ### Configuration
 
-Runtime **`AgentConfig`** merges TOML shards / environment variables and is validated in **`finalize`**; **`POST /config/reload`** hot-reloads most fields (exceptions such as session DB paths — see **`config/hot_reload`**).
+`AgentConfig`: TOML shards + `CM_*` → `finalize`. **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
 
 ### Agent main loop (mental model)
 
-- **Calling the model**: call **`llm::complete_chat_retrying`** from business code; **do not** bypass it with **`api::stream_chat`** from **`agent`** (except tests and **`llm`** internals).
-- **P / R / E**: **P** = one model round; **R** = reflection / final-answer gating after an assistant message (**`reflect`**, **`per_coord`**); **E** = **tool execution** (**`execute_tools`** → **tool_registry** / **workflow**).
-- **Message transforms**: stripping / normalization before the vendor body lives in **`message_pipeline`** / **`context_window`**, aligned with **`llm::api`** last-mile behavior.
+- Call **`llm::complete_chat_retrying`** from business code (do not bypass via `api::stream_chat` from `agent`).
+- **P / R / E**: plan → reflect / final-answer gate → tool execute.
+- Message transforms: `message_pipeline` / `context_window`.
+- Runtime path: **intent gate → `assess_turn_routing` → ReAct outer loop**; phase vocabulary in **`phase_vocabulary`**; design: **`docs/design/per_state_machine_consolidation.md`**.
 
-### Web streaming chat (summary)
+### Web streaming (summary)
 
-`POST /chat/stream` → **`ChatJobQueue`** → **`run_agent_turn`** → **`llm`** SSE → if **`tool_calls`**, run tools (**serial or parallel read-only batch**) → append **`role: tool`** → control-plane events via **`sse::protocol`**. Event keys and error codes are authoritative in **`docs/en/SSE_PROTOCOL.md`**; Rust / frontend / **`crabmate-sse-protocol`** must stay aligned.
+`POST /chat/stream` → queue → `TurnRunner` → LLM SSE → tools → SSE control plane. Authority: **SSE_PROTOCOL**; layout: **Turn布局设计** (§15 debt, §16 Phase E).
 
 ### Observability (summary)
 
-**`observability`**: tracing setup; default log timestamps use local timezone (RFC3339). Web jobs may use **`TracingChatTurn`** (**`chat_turn`** span: **`job_id`**, **`conversation_id`**, **`outer_loop_iteration`**, short **`tool_call_id`** labels for tools). JSON logs: **`CM_LOG_JSON`**.
+`observability` / tracing; optional `TracingChatTurn`; `CM_LOG_JSON`. Pipeline counters via **`GET /status`** (see OpenAPI / handlers—not enumerated here).
 
----
+## Main modules (by responsibility)
 
-## Main modules (by responsibility, not a file index)
+Update this table when top-level duties or crate boundaries change. **Do not** maintain per-file indexes here. Tools → **TOOLS.md**; HTTP → **CLI.md**.
 
 | Area | Responsibility |
 |------|----------------|
-| **`agent/`** | Single- and multi-turn orchestration: **`agent_turn`** (outer loop, intent gating, **`execute_tools`**), **`context_window`** / **`message_pipeline`**, **`per_coord`** (final answer and workflow coordination), **`workflow`** (DAG), optional **`hierarchy`** (layered Manager/Operator). |
-| **`llm/`** | **`complete_chat_retrying`**, request construction, **vendor** quirks, **`api`** HTTP/SSE. |
-| **`tools/`** | Function-calling implementations, **`run_tool`**, schemas and **tool_specs_registry**. |
-| **`tool_registry/`** | Dispatch by tool name, parallelism policy, Web/CLI approvals and timeouts. |
-| **`sse/`** | **`SsePayload`**, encoding, stream hub, control-plane classification aligned with the protocol crate. |
-| **`web/`** | Axum routes, **`AppState`**, chat / workspace / tasks / upload / status handlers. |
-| **`chat_job_queue/`** | Queue and worker for `/chat` and `/chat/stream`. |
-| **`config/`** | Load, merge, **finalize**, hot reload. |
-| **`workspace/`** | Workspace path policy and safe opens (consistent with tools and Web). |
-| **`memory/`** | Long-term memory, optional semantic index, etc. |
-| **`runtime/`** | REPL, one-shot `chat`, **`chat_export`**, TUI bridge, benchmark helpers, etc. |
-| **`tool_result/`** | Tool output envelopes, aligned with SSE **`tool_result`**. |
-| **`crabmate-types`** (`crates/crabmate-types`) | OpenAI-compatible messages; **`llm_gateway_presets`**; root **`pub use crabmate_types as types`**. |
-| **`crabmate-chat-export`** (`crates/crabmate-chat-export`) | Shared export envelope (`projection` raw｜display), `ChatSessionFile` / `DisplayChatSessionFile`, Markdown helpers. |
-| **`crabmate-config`** (`crates/crabmate-config`) | **`AgentConfig`** loading, `finalize`, hot reload, CLI definitions; root **`pub use crabmate_config as config`**. |
-| **`crabmate-llm`** (`crates/crabmate-llm`) | **`vendor`**, outbound **`vendor_messages`**, **`requests`** (`ChatRequest` builders), shared **`http_client`**, **`ChatCompletionsBackend`** trait, error types; root **`llm`** re-exports and hosts **`api::stream_chat`** / **`complete_chat_retrying`**. |
-| **`crabmate-agent`** (`crates/crabmate-agent`) | **`plan_artifact`**, **`intent_*`** / **`intent_routing`**, **`agent_turn::tool_execution`** (batch mode, **`ToolExecutionHost`**, early-deny), **`step_executor_policy`**, **`turn_budget`**, workflow reflection controller, etc.; root **`agent`** hosts **`tool_execution_host`**, SSE **`emit`**, **`hierarchy`** / workflow execution. |
-| **`types` (root re-export)** | Same as `crabmate-types`; in-repo code still commonly uses **`crate::types::`**. |
-| **`observability.rs`** | Tracing init and **`TracingChatTurn`**. |
+| **`agent/`** | Turn orchestration, pipelines, `per_coord`, workflow glue |
+| **`llm/`** | Retried completion, vendor, streaming API (`crabmate-llm`) |
+| **`tools/`** / **`tool_registry/`** | Implementations, dispatch, approval, timeouts |
+| **`sse/`** | Control-plane payloads (`crabmate-sse-protocol`) |
+| **`web/`** | Axum, `AppState`, domain routes; DTOs in **`crabmate-web-host`** |
+| **`chat_job_queue/`** | `/chat*` queue and workers |
+| **`config/`** | Load, finalize, hot reload (`crabmate-config`) |
+| **`workspace/`** | Path policy and safe opens |
+| **`memory/`** | Long-term memory / optional semantic index |
+| **`runtime/`** | REPL, chat, export, TUI, bench |
+| **`tool_result/`** | Tool output envelopes |
+| **`crabmate-types`** | Messages, tools, gateway presets |
+| **`crabmate-agent`** | Intent, outer-loop FSM, completion core; root hosts IO |
+| **`crabmate-turn-layout`** | Canonical Turn → Web/TUI projection |
+| **`crabmate-approval`** | Web tool approval + SSE |
+| **`crabmate-chat-export`** | Export envelope (raw / display) |
+| **`observability`** | Tracing init |
 
-For **sub-paths** (e.g. **`tools/file`**), browse or search the repo; this guide does **not** maintain a per-file index table (it duplicates **`lib.rs`** `mod` lists and goes stale).
+Implementations often live under `crates/*` with root re-exports. Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
 
----
+## Frontend (summary)
 
-## Frontend (`frontend/`)
+Leptos CSR: `api/` + `sse_dispatch`; UI in `app/`. Details: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd frontend && trunk build`.
 
-Leptos CSR: **`api`** / **`sse_dispatch`** consume SSE; **`app/`** chat and workspace UI; **`message_format`** and rendering pipeline. Component layout and dependencies: **`docs/frontend/ARCHITECTURE.md`** when present. Build: **`cd frontend && trunk build`**.
-
----
+Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 
 ## Data and persistence (summary)
 
-- **Sessions**: in-memory or SQLite (**`conversation_store`**); rules for omitting entries from vendor requests live in **`message_pipeline`**.
-- **Workspace**: tools and **`POST /workspace`** share the current working directory; **`.crabmate/`** may hold reminders, exports, etc. (see **`README`** / **`docs/en/CONFIGURATION.md`**).
-- **Browser**: **`localStorage`** for session list, theme, partial LLM drafts (not server-side secrets).
-
----
+- **Sessions**: default workspace SQLite; can disable.
+- **Workspace**: shared root with tools / `POST /workspace`; `.crabmate/` for reminders/exports.
+- **User data**: `/user-data/*` → `$XDG_DATA_HOME/crabmate` (**`docs/design/user_data_dir.md`**); **not** browser `localStorage` for sessions/prefs/LLM overrides.
+- **Desktop**: use local `serve` `/user-data`.
 
 ## Common extension points
 
-- **New tools**: register in the tools table + schema + **`docs/en/TOOLS.md`**; register execution policy in **tool_registry** when non-trivial; follow **`.cursor/rules/security-sensitive-surface.mdc`**.
-- **SSE / API changes**: keep Rust routes, **`crabmate-sse-protocol`**, frontend dispatch, and **`docs/en/SSE_PROTOCOL.md`** in sync — **`.cursor/rules/api-sse-chat-protocol.mdc`**.
-- **New HTTP routes or config keys**: update **`README.md`**, **`docs/en/CONFIGURATION.md`**, and this guide when architecture narrative is affected.
+- **New tools**: table + schema + **TOOLS.md**; non-trivial policy in `tool_registry`; **security-sensitive-surface**.
+- **SSE / HTTP**: sync Rust, protocol crate, frontend, docs (**api-sse-chat-protocol**).
+- **Config / routes**: README, CONFIGURATION, CLI.
+- **Side orchestration**: hang on existing P/R; see **`run_loop_state_ownership.md`**, **`audience_critic_role.md`**.
+- **System prompt assembly**: **`docs/design/system_prompt_assembly.md`** (L0–L8).
 
----
+## Further reading
 
-## Further reading (design notes and topics)
-
-Workflow orchestration, context trimming, Web theming, and other **topic designs** remain in **`docs/`** (and **`docs/en/`** where mirrored); this page is an **entry-level index**, not a full copy of those documents.
+`docs/design/` (agent_turn_split, turn_host_decouple, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.

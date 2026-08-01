@@ -185,7 +185,7 @@
 - [ ] 改 `turn_project` / 投影块格式 → 更新本文 Phase 状态 + Turn 布局文档交叉链接  
 - [ ] 改工具展示 → `message_display` + tool-card 金样 / hydrate fixture  
 - [ ] 改导出 projection → **`docs/命令行与路由.md`**、`crabmate-chat-export` 信封说明  
-- [ ] 改 TUI 模块边界 → **`docs/开发文档.md`** 模块索引（若增删 `mod`）  
+- [ ] 改 TUI 模块边界 → **`docs/开发文档.md`**「主要模块」（若增删顶层 `mod`）  
 - [ ] 改左右侧栏文案分区 → 本文 §9 + 相关 `/conv` / tasks / changelog 契约
 
 ---

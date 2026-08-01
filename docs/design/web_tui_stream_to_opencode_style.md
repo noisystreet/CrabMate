@@ -5,7 +5,7 @@
 **语言**：中文。  
 **关联**：
 
-- 模块索引：**`docs/开发文档.md`**（`column` / `tui_stream_view` / `tui_line_markdown` / `scroll_*` / `composer_stream`）
+- 前端模块：**`docs/frontend/ARCHITECTURE.md`**（`column` / `composer_stream` 等）
 - 前端架构：**`docs/frontend/ARCHITECTURE.md`**
 - SSE 契约：**`docs/SSE协议.md`**（展示层演进**不**改协议，除非另开 ADR）
 - 既有气泡路径（保留未挂载）：`message_row/`、`assistant_body/`、`messages_list.rs`

@@ -1,6 +1,6 @@
 # CrabMate Web 前端目标架构（Leptos / WASM）
 
-本文描述 **`frontend/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../DEVELOPMENT.md) 模块索引为准。
+本文描述 **`frontend/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../开发文档.md) 架构概要为准。
 
 ## 1. 文档目的
 
@@ -81,7 +81,7 @@
 
 ## 8. 与后端的契约边界
 
-- **路由与请求体**：变更须与后端 Axum handler 及 [`docs/开发文档.md`](../DEVELOPMENT.md) 中说明一致。
+- **路由与请求体**：变更须与后端 Axum handler 及 [`docs/命令行与路由.md`](../命令行与路由.md) / OpenAPI 一致。
 - **SSE**：行协议、错误码、控制面 JSON 以 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) 与 `crabmate-sse-protocol` 版本为准；前端解析集中在 **`sse_dispatch`**，**`app/` 只做回调挂载**。
 - **新增能力**：优先在后端与协议中落地字段，再更新前端类型与 `sse_dispatch`，避免「前端先写死字符串」。
 
@@ -106,11 +106,11 @@
 
 ## 11. 相关文档
 
-- [`docs/开发文档.md`](../DEVELOPMENT.md)：`frontend` 模块索引与维护约定。
+- [`docs/开发文档.md`](../开发文档.md)：仓库架构概要；前端细节以本文为准。
 - [`docs/SSE协议.md`](../SSE_PROTOCOL.md)：流式协议。
 - [`docs/测试指南.md`](../TESTING.md)：前端构建与测试命令。
 - [`frontend/VISUAL_REGRESSION_CHECKLIST.md`](VISUAL_REGRESSION_CHECKLIST.md)：视觉回归自检（若有 UI 大改）。
 
 ---
 
-**修订策略**：当目标目录结构或分层原则发生实质变化时，更新本文并同步 [`docs/开发文档.md`](../DEVELOPMENT.md) 中 `frontend` 小节或 [`README.md`](../README.md) 文档表（若需对外可见索引）。
+**修订策略**：当目标目录结构或分层原则发生实质变化时，更新本文；仓库级入口见 [`docs/开发文档.md`](../开发文档.md)「前端」摘要与 [`README.md`](../../README.md) 文档表（若需对外可见索引）。

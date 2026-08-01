@@ -9,7 +9,7 @@
 - HTTP / SSE 契约：**`docs/命令行与路由.md`**、**`docs/SSE协议.md`**、**`crates/crabmate-sse-protocol`**
 - Web 鉴权与健康：**`README.md`**、**`docs/配置说明.md`**（`CM_WEB_API_BEARER_TOKEN`、`web_api_require_bearer`、非 loopback 等）
 - 第三方 HTTP 集成总览：**`docs/design/web_api_integration.md`**
-- MCP（与扩展**并列**的能力面）：**`docs/开发文档.md`**（`mcp/mod.rs`）、**`docs/命令行与路由.md`**（`mcp serve` / `mcp list`）
+- MCP（与扩展**并列**的能力面）：**`docs/配置说明.md`**（MCP 相关节）、**`docs/命令行与路由.md`**（`mcp serve` / `mcp list`）
 - 密钥与日志：**`.cursor/rules/secrets-and-logging.mdc`**
 - 工作区安全叙事：**`README.md`**、**`docs/配置说明.md`**（工作区路径、`openat2` 等）
 
