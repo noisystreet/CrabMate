@@ -8,9 +8,21 @@
 **关联文档**：
 
 - **`docs/规划执行验证架构.md`**：P–E–V 与 **`plan_rewrite` / `workflow_reflection` / `final_plan_semantic_check`** 的职责边界。  
-- **`docs/开发文档.md`**：`agent_turn` / `per_coord` / `staged` / `llm::complete_chat_retrying` 调用约定。  
+- **`docs/开发文档.md`**：`agent_turn` / `per_coord` / `llm::complete_chat_retrying` 调用约定。  
+- **`docs/design/run_loop_state_ownership.md`**：可变状态归属；侧向调用挂现有 P/R，**不**新开并行阶段机。  
 - **`docs/SSE协议.md`**：若新增控制面事件，须与 **`frontend`** 及 **`crates/crabmate-sse-protocol`** 对齐。  
 - **`.cursor/rules/secrets-and-logging.mdc`**：侧向请求的摘要与日志脱敏为**硬性**约束。
+
+### 现行锚点（ReAct-only，2026-08）
+
+编排已收敛为 **意图门控 → ReAct 外循环**（`hierarchy` / `staged` 入口已移除）。首版观众实现只应挂：
+
+| 锚点 | 现行位置 | 说明 |
+|------|----------|------|
+| **C** | `final_plan_gate` 静态通过后 / `per_plan_semantic_check` 旁 | 与语义检查定义互斥或合并，避免双次侧向 |
+| **D** | `WorkflowReflectionController::decide` 之后 | 仅 `workflow_execute` 路径 |
+
+下文表中 **A/B/E**（分阶段步结束、补丁规划、分层验证失败）为**历史设想**；复活对应入口前勿实现。侧向须经 **`llm::complete_chat_retrying`**；默认**不**写入上送 `messages`；预算计入共享 **`TurnBudgetCounter`** 墙钟（观测类预留 **`LlmCallBudgetClass::SideCheck`**）。
 
 ---
 
@@ -51,7 +63,7 @@
 
 - **替代**确定性验收或 **`plan_rewrite`** 的静态规则。  
 - **保证**点评正确（LLM-as-judge 的误判需在 §9 缓解与评测中处理）。  
-- 在首版承诺**全路径**（分层 `hierarchy` + 非分层 `staged` + 纯 `outer_loop`）行为完全一致；允许分轨分阶段落地，但须在文档与 **`turn_orchestration_mode`** 可观测字段上写清覆盖范围。
+- 在首版承诺覆盖已删除的 `hierarchy` / `staged` 路径；现行仅 **ReAct + Gate + workflow 反思**（见上文「现行锚点」）。
 
 ---
 
@@ -140,10 +152,10 @@
 
 | 阶段 | 内容 |
 |------|------|
-| **MVP** | 单一锚点（例如「分阶段每步结束」）、仅 tracing + 可选文件日志、结构化 JSON、默认 fail-open、**不**改 SSE |  
-| **M2** | 可选 SSE 事件 + Web 时间线展示；配置键与 **`POST /config/reload`** 边界文档化 |  
-| **M3** | 可选联动 **`plan_rewrite`** 或补丁 user 注入；与 **`final_plan_semantic_check`** 合并或编排优化 |  
-| **M4** | 分层路径对齐；离线评测集与 CI 钩子等 |
+| **MVP** | 单一锚点 **C**（终答静态通过旁）、仅 tracing + 可选文件日志、结构化 JSON、默认 fail-open、**不**改 SSE |  
+| **M2** | 可选锚点 **D** + 可选 SSE；配置键与 **`POST /config/reload`** 边界文档化 |  
+| **M3** | 可选联动 **`plan_rewrite`**；与 **`final_plan_semantic_check`** 合并或编排优化 |  
+| **M4** | 离线评测集与 CI 钩子等（若产品复活多形态编排，再对齐入口） |
 
 ---
 

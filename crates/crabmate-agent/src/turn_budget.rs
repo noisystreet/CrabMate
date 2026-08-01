@@ -1,13 +1,38 @@
-//! 单轮墙钟、LLM 次数与 Token 粗估预算：**`AgentConfig::turn_budget`** 与各处编排共享同一判定与面向用户的文案，
-//! 避免 `agent_turn`、`staged/`、`hierarchy` Operator ReAct 各自分叉。
+//! 单轮墙钟、LLM 次数与 Token 粗估预算：**`AgentConfig::turn_budget`** 与 ReAct 外循环 /
+//! 侧向 LLM（语义检查等）共享同一判定与面向用户的文案。
 //!
 //! 会话侧 **messages 裁剪**仍由 **`context_window` / `message_pipeline`** 负责；本模块表达「本轮是否超墙钟 / 超 LLM 次数 / 超 Token 粗估」。
+//! 状态归属见 **`docs/design/run_loop_state_ownership.md`**。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use crabmate_config::TurnBudgetConfig;
+
+/// LLM 调用的**观测分类**（扩展点；**不**改变现有 deny / 计数逻辑）。
+///
+/// 现行 [`TurnBudgetCounter`] 为整轮共享计数；未来若拆 planner / executor / 侧向子预算，
+/// 可用本枚举作 tracing 标签。侧向（`final_plan_semantic_check`、未来 audience）计入共享墙钟。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LlmCallBudgetClass {
+    /// 外循环第 1 轮（及明确 planner 端点）模型调用。
+    Planner,
+    /// 外循环 ≥2 轮 executor 端点模型调用。
+    Executor,
+    /// 无工具侧向检查（语义一致性 / 预留观众角色）。
+    SideCheck,
+}
+
+impl LlmCallBudgetClass {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Planner => "planner",
+            Self::Executor => "executor",
+            Self::SideCheck => "side_check",
+        }
+    }
+}
 
 /// 与历史 `outer_loop` 安全上限一致；`0` 表示不限制 LLM 调用次数。
 pub const DEFAULT_MAX_LLM_CALLS_PER_TURN: u32 = 500;

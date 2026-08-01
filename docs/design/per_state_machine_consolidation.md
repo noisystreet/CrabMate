@@ -4,6 +4,8 @@
 
 **相位词汇真源**（对照表，非全局 FSM）：**`crates/crabmate-agent/src/agent_turn/phase_vocabulary.rs`**。外循环相位变更只经 **`OuterLoopDriver::record_*`**；金样 **`fixtures/outer_loop_phase_golden.jsonl`**（`cargo test golden_outer_loop_phase`）。
 
+**可变状态归属**：**`docs/design/run_loop_state_ownership.md`**（TurnState / PerCoord / OuterLoopReflectMemo / Budget）。workflow↔Gate 衔接金样：**`fixtures/workflow_to_plan_requirement_golden.jsonl`**。
+
 **受众**：维护 `agent_turn`、`per_coord`、外循环与工作流反思的开发者。  
 **语言**：中文。  
 **关联文档**：
@@ -11,6 +13,7 @@
 - **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、终答规划）
 - **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
+- **`docs/design/run_loop_state_ownership.md`**（回合可变状态四栏）
 - 源码：`src/agent/agent_turn/mod.rs`、`crates/crabmate-agent/src/agent_turn/{phase_vocabulary,outer_loop_*,turn_route_decision}`、`crates/crabmate-agent/src/per_coord/`（`final_plan_gate`）、`workflow_reflection_controller`
 
 ---
@@ -170,6 +173,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-08-01 | **状态归属与扩展点（P2）**：**`run_loop_state_ownership.md`**；**`OuterLoopReflectMemo`** 从扁平计数收拢；金样 **`workflow_to_plan_requirement_golden`**；观众 / 分预算扩展点挂现有 P/R（**`LlmCallBudgetClass`** 观测标签）。 |
 | 2026-08-01 | **词汇与入口硬化（P1）**：新增 **`phase_vocabulary`** 真源；**`assess_turn_routing`** 为门控后唯一非早退出口；**`OuterLoopDriver`** 相位私有 + 转移断言；金样 **`outer_loop_phase_golden`** / 扩 **`turn_route_decision_golden`**（含 ReAct）。 |
 | 2026-08-01 | **对齐现实（P0）**：标注 staged/hierarchy 已移除；保留三机（外循环 / 终答 Gate / 工作流反思）；删除悬空 `fsm_orchestrator` / `orchestration_sse` 金样与 CI。 |
 | 2026-05-02 | **`run_dispatch`**：**`execute_non_hierarchical_main_route`**；**`StagedPlanningDenyReason::as_str`** + **`staged_plan_intent_gate_deny_reason`**。**`outer_loop`**：**`OuterLoopIterationPhase`** + **`outer_loop_fsm`/`outer_loop_step`**（**`ReflectBranchCtl::as_trace_str`**）。**`agent_turn/errors`**：**`AgentTurnJobOutcomeKind`** + **`job_queue_*_outcome_kind`**；**`chat_job_queue`** 流式/JSON **`Err`** 分流。 |

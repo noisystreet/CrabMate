@@ -1,4 +1,6 @@
-//! 终答 Gate **只读 Context**：`require_plan` 与来源 reason 的单点解析（与 staged 轨边界分离）。
+//! 终答 Gate **只读 Context**：`require_plan` 与来源 reason 的单点解析。
+//! 与工作流反思的衔接见 **`docs/design/run_loop_state_ownership.md`** 与金样
+//! `workflow_to_plan_requirement_golden`。
 
 use super::final_plan_gate::FinalPlanGatePhase;
 use super::{FinalPlanRequirementMode, PlanRequirementSource};

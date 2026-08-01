@@ -1,12 +1,16 @@
-//! Web/CLI 共用：外层循环与分阶段规划的运行期参数。
+//! Web/CLI 共用：外层循环的运行期参数。
+//!
+//! 可变状态归属（TurnState / PerCoord / Budget / Flight）见
+//! **`docs/design/run_loop_state_ownership.md`**。
 //!
 //! **`RunLoopCtx`**：整场固定的输入上下文，按职责分为四块（降低扁平字段带来的隐式耦合）：
 //! - [`RunLoopCore`]：LLM 接入、配置快照、工具表与工作目录；
 //! - [`RunLoopIo`]：取消 / `no_stream`，以及嵌套的 [`super::TurnControlSink`] 与 [`super::TurnTerminalIo`]；
-//! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆、分阶段冻结开关；
+//! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆；
 //! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::TurnProcessHandles`]。
 //!
 //! **`RunLoopTurnState`**：可变会话状态与本回合决策覆盖（私有 **`messages_buf`**、**`messages()`** / **`messages_buffer_mut()`**、**`messages_revision`**、`sub_phase`、模型/温度覆盖、[`TurnPlannerHints`] 等）。
+//! **勿**在此袋存放终答 Gate / 工作流反思 / 外循环 pre-gate 计数（那些在 `PerCoordinator`）。
 //!
 //! **`messages_revision`**：在每次**就地**改写消息缓冲、以及每次 [`crate::agent::context_window::prepare_messages_for_model`] 完成后递增（单调；
 //! 可与 `PerCoordinator` 的 workflow_validate 层缓存失效语义对照排障）。

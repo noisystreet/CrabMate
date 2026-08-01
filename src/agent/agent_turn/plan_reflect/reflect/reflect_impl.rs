@@ -82,6 +82,9 @@ pub(crate) async fn per_reflect_after_assistant(
 
 /// **`PendingSemanticLlm`**：侧向一致性 LLM → [`final_plan_gate::run_final_plan_gate_semantic_completed`] →
 /// [`final_plan_gate::apply_plan_rewrite_count_from_gate`]（与静态终答路径一致）→ 映射为外环结果。
+///
+/// **扩展点（观众角色，未实现）**：锚点 C — 静态规划通过 / 本侧向检查旁；挂此处即可，勿新开阶段机。
+/// 见 `docs/design/audience_critic_role.md`、`docs/design/run_loop_state_ownership.md`。
 async fn reflect_pending_semantic_consistency_llm(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,

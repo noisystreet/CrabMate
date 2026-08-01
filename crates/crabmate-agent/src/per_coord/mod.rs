@@ -52,7 +52,7 @@ pub struct PerCoordinatorInit {
 }
 
 impl PerCoordinatorInit {
-    /// 与 [`AgentConfig`] 中 PER 协调相关字段对齐；供默认外循环与分层「话语型」回落路径共用，避免两处分叉漂移。
+    /// 与 [`AgentConfig`] 中 PER 协调相关字段对齐；供 `run_agent_turn` 外循环共用。
     pub fn from_agent_config(cfg: &AgentConfig) -> Self {
         Self {
             reflection_default_max_rounds: cfg.per_plan_policy.reflection_default_max_rounds,
@@ -118,6 +118,8 @@ mod coordinator_impl;
 
 #[cfg(test)]
 mod final_plan_gate_golden;
+#[cfg(test)]
+mod workflow_to_plan_requirement_golden;
 
 #[cfg(test)]
 impl PerCoordinator {
