@@ -32,7 +32,7 @@ pub use crabmate_llm::{
     kimi_k2_5_vendor_requires_tool_call_reasoning, llm_vendor_adapter,
     llm_vendor_adapter_for_model, no_tools_chat_request, no_tools_chat_request_from_messages,
     normalize_stripped_messages_for_vendor_body, stream_chat, tool_chat_request, vendor,
-    vendor_temperature_for_config, vendor_temperature_for_model,
+    vendor_temperature_for_config,
 };
 #[allow(unused_imports)]
 pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};

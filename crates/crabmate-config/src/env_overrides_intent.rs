@@ -7,7 +7,7 @@ pub(super) fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
     intent_override_turn_start_and_l2(b);
     intent_override_execute_thresholds(b);
     intent_override_non_hier_execute_thresholds(b);
-    intent_override_mode_bias(b);
+    // `CM_INTENT_MODE_BIAS_ENABLED`：历史键，故意不写入 builder（运行时已忽略）。
 }
 
 fn intent_override_turn_start_and_l2(b: &mut ConfigBuilder) {
@@ -61,13 +61,5 @@ fn intent_override_non_hier_execute_thresholds(b: &mut ConfigBuilder) {
         && let Ok(f) = v.trim().parse::<f64>()
     {
         b.intent_routing.intent_non_hier_execute_high_threshold = Some(f);
-    }
-}
-
-fn intent_override_mode_bias(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_INTENT_MODE_BIAS_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.intent_routing.intent_mode_bias_enabled = Some(val);
     }
 }

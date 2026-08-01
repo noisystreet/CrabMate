@@ -407,20 +407,22 @@ impl ChatJobQueue {
         v
     }
 
-    /// 触发队列关闭：禁止新任务入队，等待 dispatcher 处理完剩余任务后退出。
+    /// 触发队列关闭：拒绝新任务入队；已在途任务由 dispatcher 继续跑完。
     pub fn shutdown(&self) {
         self.inner.shutdown_triggered.store(true, Ordering::Release);
-        // 关闭 submit_tx，dispatcher_loop 处理完当前任务后会退出
-        // mpsc::Sender 被 drop 后，Receiver::recv() 返回 None
     }
 
-    /// 队列是否已关闭。
-    #[allow(dead_code)]
-    pub fn is_shutdown(&self) -> bool {
-        self.inner.shutdown_triggered.load(Ordering::Acquire)
+    fn reject_if_shutdown(&self) -> Result<(), ChatQueueFull> {
+        if self.inner.shutdown_triggered.load(Ordering::Acquire) {
+            return Err(ChatQueueFull {
+                max_pending: self.inner.max_pending,
+            });
+        }
+        Ok(())
     }
 
     pub fn try_submit_stream(&self, p: StreamSubmitParams) -> Result<(), ChatQueueFull> {
+        self.reject_if_shutdown()?;
         let StreamSubmitParams {
             envelope,
             stream_event_tx,
@@ -440,6 +442,7 @@ impl ChatJobQueue {
     }
 
     pub fn try_submit_json(&self, p: JsonSubmitParams) -> Result<(), ChatQueueFull> {
+        self.reject_if_shutdown()?;
         let JsonSubmitParams { envelope, reply_tx } = p;
         let job = QueuedChatJob::Json { envelope, reply_tx };
         self.inner

@@ -3,12 +3,12 @@ mod agent_config_sections;
 pub use agent_config_sections::{
     AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, CursorRulesConfigSection, HierarchyRoutingConfig,
-    HttpFetchConfigSection, IntentRoutingConfig, LongTermMemoryConfig, McpClientConfig,
-    PerPlanPolicyConfig, RolesPromptsConfig, SessionUiConfig, SessionWorkspaceChangelistConfig,
-    SkillsConfigSection, SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig,
-    ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig,
-    WebApiConfig, WebSearchConfigSection, WorkspaceRootsConfig,
+    ConversationPersistenceConfig, CursorRulesConfigSection, HttpFetchConfigSection,
+    IntentRoutingConfig, LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig,
+    RolesPromptsConfig, SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection,
+    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
+    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig,
+    WebSearchConfigSection, WorkspaceRootsConfig,
 };
 
 pub use crabmate_types::llm_config::{
@@ -327,7 +327,6 @@ pub struct AgentConfig {
     pub codebase_semantic: CodebaseSemanticConfig,
     pub tool_registry_policy: ToolRegistryPolicyConfig,
     pub turn_budget: TurnBudgetConfig,
-    pub hierarchy_routing: HierarchyRoutingConfig,
     pub intent_routing: IntentRoutingConfig,
 }
 

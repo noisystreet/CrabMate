@@ -267,7 +267,6 @@ pub struct TurnBudgetConfig {
     pub max_llm_calls_per_turn: u32,
     /// 单 Agent 外循环迭代上限；`0` 表示使用编排层默认（当前 500）。
     pub max_outer_loop_iterations: u32,
-    pub full_plan_rewrite_max_attempts: usize,
     /// 预算接近上限时启用降级策略（跳过分层非关键验收与 Manager 反思 LLM）；默认关闭。
     pub budget_degradation_enabled: bool,
     /// 触发降级的使用比例阈值（50–99）；与 LLM 次数 / Token 粗估取较高者。
@@ -275,13 +274,7 @@ pub struct TurnBudgetConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct HierarchyRoutingConfig {
-    pub enable_llm_routing: Option<bool>,
-}
-
-#[derive(Debug, Clone)]
 pub struct IntentRoutingConfig {
-    pub intent_mode_bias_enabled: bool,
     pub intent_l2_enabled: bool,
     pub intent_l2_min_confidence: f32,
     pub intent_l2_max_tokens: u32,

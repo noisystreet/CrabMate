@@ -195,7 +195,6 @@ pub async fn run_agent_turn<'a>(
             io: crate::agent::agent_turn::RunLoopIo {
                 no_stream,
                 cancel: cancel.as_deref(),
-                cancel_arc: cancel.clone(),
                 control: crate::agent::agent_turn::TurnControlSink {
                     out,
                     sse_encoder: crate::sse::default_encoder(),

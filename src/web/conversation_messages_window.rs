@@ -2,9 +2,6 @@
 
 use crate::types::Message;
 
-/// 默认每页条数（Web 首屏水合与尾部刷新；与 [`frontend::conversation_messages_page::CONVERSATION_MESSAGES_PAGE_LIMIT`] 对齐）。
-#[allow(dead_code)]
-pub const DEFAULT_CONVERSATION_MESSAGES_PAGE_LIMIT: u32 = 80;
 /// 单页上限（防止过大响应）。
 pub const MAX_CONVERSATION_MESSAGES_PAGE_LIMIT: u32 = 200;
 

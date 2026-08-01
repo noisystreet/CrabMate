@@ -84,7 +84,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | Deprecated-rule fallback "execute directly" high threshold, ≥ low (default 0.45). TOML: `intent_execute_high_threshold`. |
 | `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | Override for "confirm then execute" low; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
 | `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | Override for "execute directly" high, ≥ non-hier low; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
-| `CM_INTENT_MODE_BIAS_ENABLED` | Legacy key (hierarchical runner bias); hierarchical path removed; kept for old configs. TOML: `intent_mode_bias_enabled`. |
+| `CM_INTENT_MODE_BIAS_ENABLED` | **Ignored** legacy key (hierarchical runner bias; path removed). TOML `intent_mode_bias_enabled` still parses so old configs do not fail `deny_unknown_fields`, but has **no effect**. |
 | `CM_PLANNER_EXECUTOR_MODE` | Runtime is always **`single_agent`** (ReAct). `logical_dual_agent` / `hierarchical` are deprecated aliases. TOML: `planner_executor_mode`. |
 
 ### Intent gates vs `plan_rewrite` (quick reference)

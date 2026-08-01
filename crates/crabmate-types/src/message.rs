@@ -537,7 +537,7 @@ impl Message {
     }
 }
 
-/// 单条消息：发往供应商时默认去掉 `reasoning_content` / `reasoning_details`（与 [`messages_stripping_reasoning_for_api_request`] 单元素语义一致）。
+/// 单条消息：发往供应商时默认去掉 `reasoning_content` / `reasoning_details`。
 ///
 /// **`preserve_reasoning_on_assistant_tool_calls`**：Moonshot **kimi-k2.5** 在 **thinking 启用** 时要求含 **`tool_calls`** 的 assistant 必须带 **`reasoning_content`**；为真时对该类消息在合并 **`reasoning_details`** 后保留思维链，若仍为空则写入空串以便 JSON 带出该字段。
 ///
@@ -599,27 +599,7 @@ pub fn merge_reasoning_details_into_reasoning_content(msg: &mut Message) {
     }
 }
 
-/// 构造发往供应商的 `messages`：去掉助手 `reasoning_content`，避免多轮请求回传思维链。
-#[allow(dead_code)] // 公共 API；`tool_chat_request` 已用 `messages_for_api_stripping_reasoning_skip_ui_separators` 合并遍历；单测保留等价断言
-pub fn messages_stripping_reasoning_for_api_request(
-    messages: &[Message],
-    preserve_reasoning_on_assistant_tool_calls: bool,
-    preserve_deepseek_thinking_reasoning_roundtrip: bool,
-) -> Vec<Message> {
-    messages
-        .iter()
-        .map(|m| {
-            message_clone_stripping_reasoning_for_api(
-                m,
-                preserve_reasoning_on_assistant_tool_calls,
-                preserve_deepseek_thinking_reasoning_roundtrip,
-            )
-        })
-        .collect()
-}
-
 /// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`] 与 [`is_long_term_memory_injection`]，并按策略剥离 `reasoning_content`（见 [`message_clone_stripping_reasoning_for_api`]）。
-/// 单次遍历，避免先 `filter+clone` 再 [`messages_stripping_reasoning_for_api_request`] 的二次全量拷贝。
 pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
     messages: &[Message],
     preserve_reasoning_on_assistant_tool_calls: bool,

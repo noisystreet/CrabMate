@@ -136,11 +136,6 @@ pub async fn try_open_turn_handle(_resolved: &ResolvedMcpConfig) -> McpTurnOpenR
     McpTurnOpenResult::empty()
 }
 
-#[deprecated(note = "servers 恒空；请使用 crabmate_internal::mcp::try_open_session_and_tools")]
-pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> McpTurnOpenResult {
-    McpTurnOpenResult::empty()
-}
-
 #[derive(Debug, Clone)]
 pub struct McpServerRuntimeStatus {
     pub id: String,

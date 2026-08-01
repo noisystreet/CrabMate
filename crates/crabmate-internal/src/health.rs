@@ -371,66 +371,76 @@ fn startup_config_failure_line(check_key: &str, detail: &str) -> String {
     format!("{check_key}: {detail}")
 }
 
-/// 将未通过的检查项整理为可读摘要（供 `serve` 启动日志与测试复用）。
-pub fn format_startup_health_summary(report: &HealthReport) -> String {
-    let mut config: Vec<String> = Vec::new();
-    let mut workspace: Vec<String> = Vec::new();
-    let mut toolchain: Vec<String> = Vec::new();
-    let mut optional_missing: Vec<String> = Vec::new();
-    let mut other: Vec<String> = Vec::new();
+struct StartupHealthBuckets {
+    config: Vec<String>,
+    workspace: Vec<String>,
+    toolchain: Vec<String>,
+    optional_missing: Vec<String>,
+    other: Vec<String>,
+}
 
+fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBuckets {
+    let mut b = StartupHealthBuckets {
+        config: Vec::new(),
+        workspace: Vec::new(),
+        toolchain: Vec::new(),
+        optional_missing: Vec::new(),
+        other: Vec::new(),
+    };
     for (check_key, item) in &report.checks {
         if item.ok {
             continue;
         }
         let detail = item.detail.as_deref().unwrap_or("未通过");
         if check_key == "api_key" || check_key == "frontend_static_dir" {
-            config.push(startup_config_failure_line(check_key, detail));
-            continue;
-        }
-        if check_key == "workspace_writable" {
-            workspace.push(format!("{check_key}: {detail}"));
-            continue;
-        }
-        if check_key.starts_with("dep_toolchain_") {
-            toolchain.push(format!("{} — {detail}", dep_check_label(check_key)));
-            continue;
-        }
-        if check_key.starts_with("dep_") {
+            b.config
+                .push(startup_config_failure_line(check_key, detail));
+        } else if check_key == "workspace_writable" {
+            b.workspace.push(format!("{check_key}: {detail}"));
+        } else if check_key.starts_with("dep_toolchain_") {
+            b.toolchain
+                .push(format!("{} — {detail}", dep_check_label(check_key)));
+        } else if check_key.starts_with("dep_") {
             if is_version_incompat_detail(detail) {
-                toolchain.push(format!("{} — {detail}", dep_check_label(check_key)));
+                b.toolchain
+                    .push(format!("{} — {detail}", dep_check_label(check_key)));
             } else if is_missing_cli_detail(detail) {
-                optional_missing.push(dep_check_label(check_key));
+                b.optional_missing.push(dep_check_label(check_key));
             } else {
-                other.push(format!("{} — {detail}", dep_check_label(check_key)));
+                b.other
+                    .push(format!("{} — {detail}", dep_check_label(check_key)));
             }
-            continue;
+        } else {
+            b.other.push(format!("{check_key}: {detail}"));
         }
-        other.push(format!("{check_key}: {detail}"));
     }
+    b.optional_missing.sort_unstable();
+    b.optional_missing.dedup();
+    b
+}
 
-    optional_missing.sort_unstable();
-    optional_missing.dedup();
-
+/// 将未通过的检查项整理为可读摘要（供 `serve` 启动日志与测试复用）。
+pub fn format_startup_health_summary(report: &HealthReport) -> String {
+    let b = classify_startup_health_failures(report);
     let mut sections: Vec<String> = Vec::new();
-    if !config.is_empty() {
-        sections.push(format!("【配置】{}", config.join("；")));
+    if !b.config.is_empty() {
+        sections.push(format!("【配置】{}", b.config.join("；")));
     }
-    if !workspace.is_empty() {
-        sections.push(format!("【工作区】{}", workspace.join("；")));
+    if !b.workspace.is_empty() {
+        sections.push(format!("【工作区】{}", b.workspace.join("；")));
     }
-    if !toolchain.is_empty() {
-        sections.push(format!("【工具链】{}", toolchain.join("；")));
+    if !b.toolchain.is_empty() {
+        sections.push(format!("【工具链】{}", b.toolchain.join("；")));
     }
-    if !optional_missing.is_empty() {
+    if !b.optional_missing.is_empty() {
         sections.push(format!(
             "【可选 CLI 未安装 {} 项】{}",
-            optional_missing.len(),
-            optional_missing.join("、")
+            b.optional_missing.len(),
+            b.optional_missing.join("、")
         ));
     }
-    if !other.is_empty() {
-        sections.push(format!("【其他】{}", other.join("；")));
+    if !b.other.is_empty() {
+        sections.push(format!("【其他】{}", b.other.join("；")));
     }
 
     if sections.is_empty() {
@@ -452,29 +462,6 @@ pub fn log_startup_dep_compat_summary(report: &HealthReport) {
         status = %report.status,
         "启动健康检查未通过: {summary}（完整项见 GET /health）"
     );
-}
-
-/// 终端多行展示用（多行纯文本）；当前无调用方，保留供后续 CLI/TUI 复用。
-#[allow(dead_code)]
-pub fn format_health_report_terminal(report: &HealthReport) -> String {
-    let mut s = String::new();
-    s.push_str("与 GET /health 一致的本地检查\n");
-    s.push_str("status: ");
-    s.push_str(&report.status);
-    s.push_str("\n\n");
-    for (k, v) in &report.checks {
-        let mark = if v.ok { "ok" } else { "!!" };
-        s.push_str(&format!("[{}] {}\n", mark, k));
-        if let Some(ref d) = v.detail {
-            for line in d.lines() {
-                s.push_str("    ");
-                s.push_str(line);
-                s.push('\n');
-            }
-        }
-    }
-    s.push_str("\n按 Esc 或 F10 关闭");
-    s
 }
 
 #[cfg(test)]

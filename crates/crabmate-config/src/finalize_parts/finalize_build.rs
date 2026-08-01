@@ -35,7 +35,6 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         codebase_semantic: finalize_section_codebase_semantic(mid),
         tool_registry_policy: finalize_section_tool_registry_policy(mid),
         turn_budget: finalize_section_turn_budget(),
-        hierarchy_routing: finalize_section_hierarchy_routing(),
         intent_routing: finalize_section_intent_routing(mid),
     }
 }
@@ -359,7 +358,6 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
         max_turn_tokens: 0,
         max_llm_calls_per_turn: 0,
         max_outer_loop_iterations: 0,
-        full_plan_rewrite_max_attempts: 2,
         budget_degradation_enabled: false,
         budget_degradation_threshold_percent: 80,
     };
@@ -391,16 +389,9 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     cfg
 }
 
-fn finalize_section_hierarchy_routing() -> types::HierarchyRoutingConfig {
-    types::HierarchyRoutingConfig {
-        enable_llm_routing: Some(true), // 默认开启 LLM 智能路由
-    }
-}
-
 fn finalize_section_intent_routing(mid: &FinalizeAfterRoles) -> types::IntentRoutingConfig {
     let intent = &mid.intent;
     types::IntentRoutingConfig {
-        intent_mode_bias_enabled: intent.intent_mode_bias_enabled,
         intent_l2_enabled: intent.intent_l2_enabled,
         intent_l2_min_confidence: intent.intent_l2_min_confidence,
         intent_l2_max_tokens: intent.intent_l2_max_tokens,

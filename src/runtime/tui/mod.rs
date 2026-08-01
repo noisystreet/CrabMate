@@ -4,8 +4,7 @@
 //!
 //! **`/` 命令**与 REPL 对齐（捕获输出至 transcript）；**/doctor /probe /models /mcp** 会释放全屏写 stdout。敏感工具审批为全屏居中 Modal，不读 stdin。
 
-mod llm_stream_scratch;
 mod run_session;
 
-pub use llm_stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
+pub use crabmate_llm::stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 pub use run_session::run_tui_session;

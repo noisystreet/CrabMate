@@ -163,7 +163,6 @@ mod per_reflect_tests {
                 io: RunLoopIo {
                     no_stream: true,
                     cancel: None,
-                    cancel_arc: None,
                     control: crate::agent::agent_turn::TurnControlSink {
                         out: None,
                         sse_encoder: crate::sse::default_encoder(),

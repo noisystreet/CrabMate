@@ -28,7 +28,6 @@ use serde_json::Value;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
-use crabmate_config::AgentConfig;
 use crabmate_types::McpRemoteToolSummary;
 use crabmate_types::{FunctionDef, Tool};
 
@@ -583,18 +582,6 @@ pub async fn try_open_turn_handle(resolved: &ResolvedMcpConfig) -> McpTurnOpenRe
         tools: all_tools,
         skipped,
     }
-}
-
-/// **已封死**：仅按 TOML 基础字段打开（`servers` 恒空），对 agent 回合无用。
-///
-/// 请改用 `crabmate_internal::mcp::try_open_session_and_tools`（加载 user-data）。
-#[deprecated(note = "servers 恒空；请使用 crabmate_internal::mcp::try_open_session_and_tools")]
-pub async fn try_open_session_and_tools(_cfg: &AgentConfig) -> McpTurnOpenResult {
-    log::error!(
-        target: "crabmate",
-        "crabmate_mcp::try_open_session_and_tools 已废弃且恒返回空（不含 user-data）；请改用 crabmate_internal::mcp::try_open_session_and_tools"
-    );
-    McpTurnOpenResult::empty()
 }
 
 /// 运维用：单 server 缓存状态（不发起新连接）。

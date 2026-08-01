@@ -89,11 +89,6 @@ pub fn parse_agent_reply_plan_v1_from_assistant_message_with_validate_only_bindi
     parse_agent_reply_plan_v1_with_validate_only_binding_ids(&merged, validate_only_binding_ids)
 }
 
-#[allow(dead_code)] // `per_coord::content_has_plan` 等封装使用
-pub fn content_has_valid_agent_reply_plan_v1(content: &str) -> bool {
-    parse_agent_reply_plan_v1(content).is_ok()
-}
-
 /// 候选 JSON 字符串：每个 fenced \`\`\` 块（奇数段）去掉可选语言行（`json` / `markdown` / `md`，忽略大小写；可含前导空行）后尝试；再尝试整段 trim 后以 `{` 开头的全文。
 fn collect_json_candidates(content: &str) -> Vec<String> {
     let mut out = Vec::new();

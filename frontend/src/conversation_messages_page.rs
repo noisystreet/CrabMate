@@ -1,6 +1,6 @@
-//! `GET /conversation/messages` 分页参数（与后端 [`DEFAULT_CONVERSATION_MESSAGES_PAGE_LIMIT`] 对齐）。
+//! `GET /conversation/messages` 分页参数。
 
-/// 与 `src/web/conversation_messages_window.rs` 默认页大小一致。
+/// 前端默认页大小（与历史后端默认 80 对齐；上限见后端 `MAX_CONVERSATION_MESSAGES_PAGE_LIMIT`）。
 pub const CONVERSATION_MESSAGES_PAGE_LIMIT: u32 = 80;
 
 #[derive(Clone, Copy, Debug, Default)]
