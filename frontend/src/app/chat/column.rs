@@ -414,6 +414,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
         pending_images,
         pending_clarification,
         stream_turn_busy_ui,
+        composer_stop_enabled,
         status_err,
         run_send_message,
         run_send_clarify_sv,
@@ -476,7 +477,7 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                         <button
                             type="button"
                             class="btn btn-muted btn-sm"
-                            prop:disabled=move || !stream_turn_busy_ui.get()
+                            prop:disabled=move || !composer_stop_enabled.get()
                             on:click={
                                 let t = Arc::clone(&trigger_stop);
                                 move |_| t()

@@ -121,6 +121,8 @@ pub(crate) struct ChatComposerPaneSignals {
     pub pending_images: RwSignal<Vec<String>>,
     pub pending_clarification: RwSignal<Option<PendingClarificationForm>>,
     pub stream_turn_busy_ui: Memo<bool>,
+    /// 「停止」可点：在途流 **或** 僵尸工具 Loading（无 SSE 时仍可收口）。
+    pub composer_stop_enabled: Memo<bool>,
     pub status_err: RwSignal<Option<String>>,
     pub run_send_message: Arc<dyn Fn() + Send + Sync>,
     pub run_send_clarify_sv: StoredValue<Arc<dyn Fn() + Send + Sync>>,
@@ -178,11 +180,16 @@ impl ChatColumnShell {
     ) -> ChatComposerPaneSignals {
         let app = &self.app;
         let cc = app.chat_composer;
+        let stream_turn_busy_ui = self.stream_busy_memos.stream_turn_busy_ui;
+        let tool_timeline_busy_ui = self.stream_busy_memos.tool_timeline_busy_ui;
+        let composer_stop_enabled =
+            Memo::new(move |_| stream_turn_busy_ui.get() || tool_timeline_busy_ui.get());
         ChatComposerPaneSignals {
             locale: app.shell_ui.locale,
             pending_images: cc.pending_images,
             pending_clarification: self.stream_shell.approval.pending_clarification,
-            stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,
+            stream_turn_busy_ui,
+            composer_stop_enabled,
             status_err: self.stream_shell.stream.status_err,
             run_send_message: self.run_send_message.clone(),
             run_send_clarify_sv,

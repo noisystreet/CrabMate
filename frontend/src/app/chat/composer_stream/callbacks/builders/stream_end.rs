@@ -19,6 +19,7 @@ use super::super::done_session::apply_stream_done_to_loading_assistant;
 use super::super::error_session::apply_stream_error_on_messages;
 use super::super::helpers::build_stream_error_with_suggestion;
 use super::super::turn_layout::TurnLayout;
+use crate::message_loading::{ToolLoadingFinalizeKind, finalize_loading_tool_placeholders};
 
 pub(in super::super) fn chat_stream_on_done_builder(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
@@ -70,6 +71,12 @@ pub(in super::super) fn chat_stream_on_done_builder(
                     .current_output_lane()
                     .in_answer_body_lane(),
                 loc,
+            );
+            // 流正常结束但未配对 `tool_result` 时，勿把 Loading 工具卡持久化成僵尸「执行中」。
+            finalize_loading_tool_placeholders(
+                &mut s.messages,
+                loc,
+                ToolLoadingFinalizeKind::OrphanStale,
             );
         });
         // 将 `turn-final-answer` 脱钩为普通 assistant 行，

@@ -109,6 +109,14 @@ pub fn status_tool_stopped_user(l: Locale) -> &'static str {
     }
 }
 
+/// 无在途 SSE 时收口僵尸「执行中」工具卡（流已结束未收到 `tool_result`、或重启后从 user-data 恢复）。
+pub fn status_tool_interrupted_stale(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已中断",
+        Locale::En => "Interrupted",
+    }
+}
+
 pub fn status_model_running(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "生成中",

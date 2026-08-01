@@ -48,6 +48,16 @@ fn tool_status_label(message: &StoredMessage, locale: Locale) -> &'static str {
     {
         return i18n::chat_tui_tool_status_failed(locale);
     }
+    // 流结束/重启收口后 `state` 已清，靠 reasoning 保留的 status 行区分「完成」与中断。
+    if message.reasoning_text.contains("status: stopped (user)") {
+        return i18n::status_tool_stopped_user(locale);
+    }
+    if message
+        .reasoning_text
+        .contains("status: interrupted (stale)")
+    {
+        return i18n::status_tool_interrupted_stale(locale);
+    }
     i18n::chat_tui_tool_status_done(locale)
 }
 
@@ -206,6 +216,24 @@ mod tests {
         assert!(html.contains("read_file"), "{html}");
         assert!(html.contains("工具执行中"), "{html}");
         assert!(!html.contains("<details"), "{html}");
+    }
+
+    #[test]
+    fn interrupted_stale_status_label_not_done() {
+        let message = StoredMessage {
+            id: "t1".into(),
+            role: "system".into(),
+            text: "已中断 · 工具：http_fetch".into(),
+            reasoning_text: "tool: http_fetch\nstatus: interrupted (stale)".into(),
+            image_urls: vec![],
+            state: None,
+            is_tool: true,
+            tool_call_id: None,
+            tool_name: Some("http_fetch".into()),
+            created_at: 0,
+        };
+        let fields = tool_row_live_fields(&message, Locale::ZhHans, None);
+        assert_eq!(fields.status, "已中断");
     }
 
     #[test]
