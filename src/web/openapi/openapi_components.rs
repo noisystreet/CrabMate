@@ -94,10 +94,6 @@ fn openapi_components_schemas_chat_request() -> Value {
                     "seed_policy": { "type": "string", "description": "如 omit / none" },
                     "client_llm": { "$ref": "#/components/schemas/ClientLlmBody" },
                     "executor_llm": { "$ref": "#/components/schemas/ExecutorLlmBody" },
-                    "execution_mode": {
-                        "type": "string",
-                        "description": "可选；本回合执行模式覆盖：rolling_planning 或 hierarchical"
-                    },
                     "readonly_tool_ttl_cache_secs": {
                         "type": "integer",
                         "format": "int64",

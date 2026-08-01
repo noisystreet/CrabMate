@@ -27,15 +27,12 @@ impl OrchestrationProfile {
 
 /// 本进程有效编排路径摘要（`doctor` / `GET /status`）。
 pub fn effective_orchestration_path_summary(
-    planner_executor_mode: &str,
+    _planner_executor_mode: &str,
     _profile: OrchestrationProfile,
 ) -> String {
-    match planner_executor_mode {
-        "hierarchical" => {
-            "hierarchical (intent_gate → Manager/Operator 或 discourse fallback)".to_string()
-        }
-        _ => "non_hierarchical: react outer loop".to_string(),
-    }
+    // `planner_executor_mode` 历史值（hierarchical / logical_dual_agent）在 finalize / parse
+    // 后均为 single_agent；运行时只有 ReAct 外循环。
+    "non_hierarchical: react outer loop".to_string()
 }
 
 #[cfg(test)]

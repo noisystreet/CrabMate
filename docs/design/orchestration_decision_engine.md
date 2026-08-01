@@ -1,15 +1,13 @@
 # 编排决策引擎：从二元门控到多因子评分
 
-**状态**：设计稿（可分阶段落地）  
-**受众**：维护者、Agent 架构贡献者、意图管线开发者  
-**关联**：
-- `crates/crabmate-agent/src/agent_turn/staged_planning_gate.rs` — 当前核心门控逻辑
-- `crates/crabmate-agent/src/agent_turn/staged_planning_gate_types.rs` — 门控结果类型
+**状态（2026-08 对齐现实）**：**历史设计 / 归档**。文中 `staged_planning_gate` / 分阶段门控设想**未**作为现行路径保留；运行时为 **意图门控 → `assess_turn_routing` → ReAct 外循环**。下文算法与落地清单仅供考古，勿当实现索引。  
+**受众**：维护者、Agent 架构贡献者（对比用）  
+**关联（现行）**：
 - `crates/crabmate-agent/src/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
-- `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `NonHierarchicalTurnResolution`
-- `crates/crabmate-config/src/orchestration_profile.rs` — `OrchestrationProfile` 枚举
-- `src/agent/agent_turn/intent/staged_planning_gate.rs` — 根包 L0+L1+L2 管线入口
-- `src/agent/agent_turn/run_dispatch.rs` — 回合分发入口
+- `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `NonHierarchicalTurnResolution` / `TurnOrchestrationMode`
+- `crates/crabmate-config/src/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`）
+- `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点意图门控
+- `src/agent/agent_turn/loop/run_dispatch.rs` — 回合分发入口
 
 ---
 
@@ -71,7 +69,7 @@ pub fn staged_plan_eligibility_for_intent(
 ### 2.2 非目标
 
 - 首版不引入在线学习（Phase 4 之后考虑）。
-- 不改变分层（Hierarchical）路径的决策逻辑（分层有独立的路由器）。
+- 分层（Hierarchical）路径已移除；本引擎仅覆盖意图门控 → ReAct 路由决议。
 - 不要求实时调整权重（权重变更需要 reload 配置或重启）。
 
 ---

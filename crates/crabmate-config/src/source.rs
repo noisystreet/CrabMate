@@ -137,7 +137,7 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
-    /// `single_agent` / `logical_dual_agent` / `hierarchical`
+    /// `single_agent`（`logical_dual_agent` / `hierarchical` 为废弃别名，解析为 single_agent）
     pub(super) planner_executor_mode: Option<String>,
     /// `auto` / `scored`
     pub(super) orchestration_decision_mode: Option<String>,
@@ -263,11 +263,11 @@ pub(super) struct AgentSection {
     pub(super) intent_execute_low_threshold: Option<f64>,
     /// 首轮意图路由：执行意图高阈值（0.0..=1.0，建议 >= low）。
     pub(super) intent_execute_high_threshold: Option<f64>,
-    /// 非分层（`planner_executor_mode != hierarchical`）意图路由低阈值；省略则回退 `intent_execute_low_threshold`。
+    /// 意图路由「确认后执行」低阈值覆盖；省略则回退 `intent_execute_low_threshold`。
     pub(super) intent_non_hier_execute_low_threshold: Option<f64>,
-    /// 非分层（`planner_executor_mode != hierarchical`）意图路由高阈值；省略则回退 `intent_execute_high_threshold`。
+    /// 意图路由「直接执行」高阈值覆盖；省略则回退 `intent_execute_high_threshold`。
     pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
-    /// 是否启用基于 intent 标签的执行模式偏置（默认 true）。
+    /// 历史键：分层 runner 按 intent 偏置执行模式；分层路径已移除，保留解析以免旧配置失败。
     pub(super) intent_mode_bias_enabled: Option<bool>,
     /// 是否启用 L2 语义意图分类（默认 true）。
     pub(super) intent_l2_enabled: Option<bool>,

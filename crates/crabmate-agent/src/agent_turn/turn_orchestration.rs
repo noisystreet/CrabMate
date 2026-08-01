@@ -62,21 +62,18 @@ impl From<NonHierarchicalTurnPhase> for TurnOrchestrationMode {
     }
 }
 
-/// 本轮实际进入的主执行形态（在已知分支条件后记录；**不含**分层内 Manager/Operator 子阶段）。
+/// 本轮实际进入的主执行形态（在已知分支条件后记录）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnOrchestrationMode {
-    /// `planner_executor_mode == Hierarchical`，由 `hierarchy::run_hierarchical_agent` 驱动。
-    Hierarchical,
-    /// 非分层且 `intent_at_turn_start` 已写入终答并结束本回合。
+    /// `intent_at_turn_start` 已写入终答并结束本回合。
     IntentAtTurnStartFinished,
-    /// 非分层、门控未放行：整轮 `run_agent_outer_loop`（ReAct 循环）。
+    /// 门控未早退：整轮 `run_agent_outer_loop`（ReAct 循环）。
     ReAct,
 }
 
 impl TurnOrchestrationMode {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Hierarchical => "hierarchical",
             Self::IntentAtTurnStartFinished => "intent_at_turn_start_finished",
             Self::ReAct => "react",
         }

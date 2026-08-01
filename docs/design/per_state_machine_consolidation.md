@@ -1,14 +1,15 @@
 # PER 编排：用显式状态机收拢分支（设计）
 
-**状态**：**子 FSM + reduce/driver 体系已落地（阶段 A–H 及步队列/终答 Context 收拢）**；全局单表驱动与 `staged/mod.rs` 剩余 IO 瘦身仍属后续。**受众**：维护 `agent_turn`、`per_coord`、分阶段规划与分层 Agent 的开发者。  
+**状态（2026-08 对齐现实）**：运行时已收敛为 **意图门控 → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
+
+**受众**：维护 `agent_turn`、`per_coord`、外循环与工作流反思的开发者。  
 **语言**：中文。  
 **关联文档**：
 
-- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、**`staged_plan_*` / `final_plan_*`**）
+- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、终答规划）
 - **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
-- **`docs/HIERARCHICAL_MULTI_CM_ARCHITECTURE.md`**（分层模式与 Manager 反思）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
-- 源码：`src/agent/agent_turn/mod.rs`（P/E/R 定义）、`src/agent/per_coord/`（`mod.rs`、`final_plan_gate.rs`）、`src/agent/agent_turn/staged/mod.rs`、`src/agent/agent_turn/staged/orchestrator.rs`、`src/agent/workflow_reflection_controller.rs`
+- 源码：`src/agent/agent_turn/mod.rs`、`crates/crabmate-agent/src/agent_turn/outer_loop_*`、`crates/crabmate-agent/src/per_coord/`（`final_plan_gate`）、`workflow_reflection_controller`
 
 ---
 
@@ -152,6 +153,7 @@
 
 | 日期 | 说明 |
 |------|------|
+| 2026-08-01 | **对齐现实（P0）**：标注 staged/hierarchy 已移除；保留三机（外循环 / 终答 Gate / 工作流反思）；删除悬空 `fsm_orchestrator` / `orchestration_sse` 金样与 CI。 |
 | 2026-05-02 | **`run_dispatch`**：**`execute_non_hierarchical_main_route`**；**`StagedPlanningDenyReason::as_str`** + **`staged_plan_intent_gate_deny_reason`**。**`outer_loop`**：**`OuterLoopIterationPhase`** + **`outer_loop_fsm`/`outer_loop_step`**（**`ReflectBranchCtl::as_trace_str`**）。**`agent_turn/errors`**：**`AgentTurnJobOutcomeKind`** + **`job_queue_*_outcome_kind`**；**`chat_job_queue`** 流式/JSON **`Err`** 分流。 |
 | 2026-05-02 | **`workflow_reflection_controller`**：**`WorkflowReflectionFsmPhase`**、**`reflection_fsm_phase`**；`decide` 按相位分流；**`INSTRUCTION_WORKFLOW_REFLECTION_*`** 常量集中。 |
 | 2026-05-02 | **`staged/prepared_parse_fsm`**：**`PreparedPlannerRoute`**、**`resolve_prepared_planner_route`**；**`run_staged_plan_with_prepared_request`** 首轮出口表驱动 + **`crabmate::staged`** **`prepared_request`** 观测；**`continue_prepared_plan_after_first_round`** 抽离 post-parse 分支。 |

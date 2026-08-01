@@ -50,25 +50,22 @@ impl WebSearchProvider {
 }
 
 /// 规划器与执行器的运行模式。
+///
+/// 当前运行时**仅**单 agent ReAct 外循环；`logical_dual_agent` / `hierarchical`
+/// 仍可出现在旧 TOML / 环境变量中，解析时映射为 [`Self::SingleAgent`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlannerExecutorMode {
-    /// 单 agent 外层循环（历史行为）。
-    SingleAgent,
-    /// 同进程逻辑双 agent：规划轮与执行轮使用不同上下文视图。
-    LogicalDualAgent,
-    /// 分层多 Agent：Manager 分解任务 + Operator 执行子目标。
+    /// 单 agent 外层循环（ReAct）。
     #[default]
-    Hierarchical,
+    SingleAgent,
 }
 
 impl PlannerExecutorMode {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
-            "single_agent" => Ok(Self::SingleAgent),
-            "logical_dual_agent" => Ok(Self::LogicalDualAgent),
-            "hierarchical" => Ok(Self::Hierarchical),
+            "single_agent" | "logical_dual_agent" | "hierarchical" => Ok(Self::SingleAgent),
             _ => Err(format!(
-                "未知的 planner_executor_mode: {:?}（支持 single_agent、logical_dual_agent、hierarchical）",
+                "未知的 planner_executor_mode: {:?}（有效值为 single_agent；logical_dual_agent / hierarchical 已废弃并映射为 single_agent）",
                 s.trim()
             )),
         }
@@ -77,8 +74,6 @@ impl PlannerExecutorMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SingleAgent => "single_agent",
-            Self::LogicalDualAgent => "logical_dual_agent",
-            Self::Hierarchical => "hierarchical",
         }
     }
 }
