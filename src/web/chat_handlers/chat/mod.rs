@@ -22,6 +22,7 @@ use super::parse::{normalize_approval_session_id, normalize_client_conversation_
 use crate::conversation_store::SaveConversationOutcome;
 use crate::types::{CommandApprovalDecision, filter_messages_for_web_client_snapshot};
 use crate::web::app_state::AppState;
+use crate::web::app_state_facets::WebChatAppFacet;
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
     ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesHttpResponse,
@@ -64,7 +65,7 @@ pub(crate) async fn chat_handler(
 }
 
 pub(crate) async fn chat_approval_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatAppFacet>,
     Json(body): Json<ChatApprovalRequestBody>,
 ) -> Result<Json<ChatApprovalResponseBody>, (StatusCode, Json<ApiError>)> {
     let session_id = normalize_approval_session_id(&body.approval_session_id).ok_or((
@@ -91,7 +92,7 @@ pub(crate) async fn chat_approval_handler(
         }
     };
     let tx = {
-        let guard = state.aux.approval_sessions.read().await;
+        let guard = state.approval_sessions.read().await;
         guard.get(&session_id).map(|s| s.tx.clone())
     }
     .ok_or((
@@ -108,12 +109,7 @@ pub(crate) async fn chat_approval_handler(
             "approval decision mpsc send failed: session_id={} receiver dropped",
             session_id
         );
-        state
-            .aux
-            .approval_sessions
-            .write()
-            .await
-            .remove(&session_id);
+        state.approval_sessions.write().await.remove(&session_id);
         return Err((
             StatusCode::GONE,
             Json(ApiError {
@@ -128,7 +124,7 @@ pub(crate) async fn chat_approval_handler(
 
 /// 将会话历史截断到前 N 条消息（`keep_message_count`），**同一** `conversation_id` 下继续对话。
 pub(crate) async fn chat_branch_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatAppFacet>,
     Json(body): Json<ChatBranchRequestBody>,
 ) -> Result<Json<ChatBranchResponseBody>, (StatusCode, Json<ApiError>)> {
     let conversation_id =
@@ -217,7 +213,7 @@ pub(crate) async fn chat_branch_handler(
 
 /// 只读拉取服务端已持久化的会话消息与 revision（Web 刷新后与 `conversation_id` 对齐）。
 pub(crate) async fn conversation_messages_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatAppFacet>,
     Query(q): Query<ConversationMessagesQuery>,
 ) -> Result<Json<ConversationMessagesHttpResponse>, (StatusCode, Json<ApiError>)> {
     let conversation_id =
@@ -277,7 +273,7 @@ pub(crate) async fn conversation_messages_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    let cfg = state.http.cfg.read().await;
+    let cfg = state.cfg.read().await;
     let tiktoken_prompt_tokens =
         crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
             &cfg,

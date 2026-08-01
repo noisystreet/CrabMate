@@ -254,22 +254,6 @@ impl AppState {
             .await
     }
 
-    /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆/变更集/首轮工作区画像等注入），且仅当 `revision` 匹配时成功。
-    pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
-        &self,
-        conversation_id: String,
-        user_ordinal: usize,
-        expected_revision: u64,
-    ) -> SaveConversationOutcome {
-        self.conversation
-            .truncate_conversation_before_user_ordinal_if_revision(
-                conversation_id,
-                user_ordinal,
-                expected_revision,
-            )
-            .await
-    }
-
     #[allow(dead_code)] // status 等已改走 WebStatusAppFacet；保留 AppState 薄委托对称面
     pub(crate) async fn conversation_count(&self) -> usize {
         self.conversation.conversation_count().await
@@ -280,37 +264,6 @@ impl AppState {
         self.conversation
             .delete_conversation_record(conversation_id)
             .await
-    }
-
-    /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
-    pub(crate) async fn set_web_conversation_store_sqlite(
-        &self,
-        sqlite: bool,
-    ) -> Result<(), String> {
-        if sqlite {
-            let path = {
-                let g = self.http.cfg.read().await;
-                g.conversation_persistence
-                    .conversation_store_sqlite_path
-                    .clone()
-            };
-            if path.trim().is_empty() {
-                return Err(
-                    "未配置 conversation_store_sqlite_path，无法启用 SQLite 会话存储。".into(),
-                );
-            }
-            let new_backing = {
-                let conn =
-                    open_conversation_sqlite(Path::new(path.trim())).map_err(|e| e.to_string())?;
-                ConversationBacking::Sqlite(conn)
-            };
-            let mut w = self.conversation.conversation_backing.write().await;
-            *w = new_backing;
-        } else {
-            let mut w = self.conversation.conversation_backing.write().await;
-            *w = ConversationBacking::memory_default();
-        }
-        Ok(())
     }
 }
 
