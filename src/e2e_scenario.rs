@@ -50,8 +50,9 @@ use crate::context_bootstrap::prompt_compose::{
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend,
-    LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles, RunAgentTurnParams,
-    RunAgentTurnSharedInputs, build_tools, run_agent_turn,
+    LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles, RunAgentTurnAttach,
+    RunAgentTurnObs, RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
+    build_tools, run_agent_turn,
 };
 
 /// LLM-as-Judge 评分配置。
@@ -496,9 +497,11 @@ async fn run_single_agent_turn(
             cfg: args.cfg,
             tools: tools.as_slice(),
         },
-        messages: args.messages,
-        effective_working_dir: args.work_dir,
-        workspace_is_set: args.workspace_is_set,
+        session: RunAgentTurnSession {
+            messages: args.messages,
+            effective_working_dir: args.work_dir,
+            workspace_is_set: args.workspace_is_set,
+        },
         transport: AgentTurnTransport {
             out: None,
             render_to_terminal: false,
@@ -524,13 +527,17 @@ async fn run_single_agent_turn(
             executor_api_key: None,
             seed_override: LlmSeedOverride::default(),
         },
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-        turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
-        tracing_chat_turn: None,
-        request_audit: None,
-        process_handles: ProcessHandles::default_arc_process_handles().turn_handles_arc(),
+        attach: RunAgentTurnAttach {
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            read_file_turn_cache: None,
+            turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
+        },
+        obs: RunAgentTurnObs {
+            tracing_chat_turn: None,
+            request_audit: None,
+            process_handles: ProcessHandles::default_arc_process_handles().turn_handles_arc(),
+        },
     };
 
     let result = run_agent_turn(params).await;

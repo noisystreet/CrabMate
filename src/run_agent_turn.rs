@@ -6,7 +6,8 @@ use tracing::Instrument;
 
 use crate::llm as llm_mod;
 use crate::{
-    AgentTurnLlmOverrides, AgentTurnTransport, RunAgentTurnParams, RunAgentTurnSharedInputs,
+    AgentTurnLlmOverrides, AgentTurnTransport, RunAgentTurnAttach, RunAgentTurnObs,
+    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
 };
 
 fn resolved_turn_llm_backend<'a>(
@@ -79,18 +80,11 @@ pub async fn run_agent_turn<'a>(
 ) -> Result<(), crate::agent::agent_turn::RunAgentTurnError> {
     let RunAgentTurnParams {
         shared,
-        messages,
-        effective_working_dir,
-        workspace_is_set,
+        session,
         transport,
         llm,
-        long_term_memory,
-        long_term_memory_scope_id,
-        read_file_turn_cache,
-        turn_allowed_tool_names,
-        tracing_chat_turn,
-        request_audit,
-        process_handles,
+        attach,
+        obs,
     } = p;
     let RunAgentTurnSharedInputs {
         client,
@@ -98,6 +92,22 @@ pub async fn run_agent_turn<'a>(
         cfg,
         tools,
     } = shared;
+    let RunAgentTurnSession {
+        messages,
+        effective_working_dir,
+        workspace_is_set,
+    } = session;
+    let RunAgentTurnAttach {
+        long_term_memory,
+        long_term_memory_scope_id,
+        read_file_turn_cache,
+        turn_allowed_tool_names,
+    } = attach;
+    let RunAgentTurnObs {
+        tracing_chat_turn,
+        request_audit,
+        process_handles,
+    } = obs;
     let AgentTurnTransport {
         out,
         render_to_terminal,

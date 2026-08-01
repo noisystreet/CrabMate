@@ -92,7 +92,7 @@ pub(crate) struct RunLoopObs {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web：HTTP 审计；非 Web 为 `None`。
     pub request_audit: Option<Arc<WebRequestAudit>>,
-    /// 回合句柄：工具统计记录器等（[`TurnProcessHandles`](crate::process_handles::TurnProcessHandles)；与 [`crate::RunAgentTurnParams::process_handles`] 同源）。
+    /// 回合句柄：工具统计记录器等（[`TurnProcessHandles`](crate::process_handles::TurnProcessHandles)；与 [`crate::RunAgentTurnParams::obs`] 的 `process_handles` 同源）。
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// per-step trace sink（bench/e2e 注入；`None` 时零开销）。
     /// 由 [`crate::AgentTurnTransport::trace_sink`] 传入，供 LLM 请求/响应、工具调用前后 emit

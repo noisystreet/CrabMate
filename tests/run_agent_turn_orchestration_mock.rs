@@ -13,9 +13,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
-    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnParams,
-    RunAgentTurnSharedInputs, StreamChatParams, ToolCall, TurnProcessHandles, build_tools,
-    load_config, message_content_as_str, run_agent_turn,
+    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnAttach,
+    RunAgentTurnObs, RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
+    StreamChatParams, ToolCall, TurnProcessHandles, build_tools, load_config,
+    message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -106,9 +107,11 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             cfg: &cfg,
             tools: tools.as_slice(),
         },
-        messages: &mut messages,
-        effective_working_dir: work_dir,
-        workspace_is_set: true,
+        session: RunAgentTurnSession {
+            messages: &mut messages,
+            effective_working_dir: work_dir,
+            workspace_is_set: true,
+        },
         transport: AgentTurnTransport {
             out: None,
             render_to_terminal: false,
@@ -134,13 +137,17 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             executor_api_key: None,
             seed_override: LlmSeedOverride::default(),
         },
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-        turn_allowed_tool_names: None,
-        tracing_chat_turn: None,
-        request_audit: None,
-        process_handles: TurnProcessHandles::default_arc(),
+        attach: RunAgentTurnAttach {
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            read_file_turn_cache: None,
+            turn_allowed_tool_names: None,
+        },
+        obs: RunAgentTurnObs {
+            tracing_chat_turn: None,
+            request_audit: None,
+            process_handles: TurnProcessHandles::default_arc(),
+        },
     };
 
     run_agent_turn(params)
@@ -177,9 +184,11 @@ async fn run_mock_agent_turn(
             cfg: &cfg,
             tools: tools.as_slice(),
         },
-        messages,
-        effective_working_dir: work_dir,
-        workspace_is_set: true,
+        session: RunAgentTurnSession {
+            messages,
+            effective_working_dir: work_dir,
+            workspace_is_set: true,
+        },
         transport: AgentTurnTransport {
             out: None,
             render_to_terminal: false,
@@ -205,13 +214,17 @@ async fn run_mock_agent_turn(
             executor_api_key: None,
             seed_override: LlmSeedOverride::default(),
         },
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-        turn_allowed_tool_names: None,
-        tracing_chat_turn: None,
-        request_audit: None,
-        process_handles: TurnProcessHandles::default_arc(),
+        attach: RunAgentTurnAttach {
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            read_file_turn_cache: None,
+            turn_allowed_tool_names: None,
+        },
+        obs: RunAgentTurnObs {
+            tracing_chat_turn: None,
+            request_audit: None,
+            process_handles: TurnProcessHandles::default_arc(),
+        },
     };
     run_agent_turn(params)
         .await
@@ -248,9 +261,11 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             cfg: &cfg,
             tools: tools.as_slice(),
         },
-        messages: &mut messages,
-        effective_working_dir: work_dir,
-        workspace_is_set: true,
+        session: RunAgentTurnSession {
+            messages: &mut messages,
+            effective_working_dir: work_dir,
+            workspace_is_set: true,
+        },
         transport: AgentTurnTransport {
             out: None,
             render_to_terminal: false,
@@ -276,13 +291,17 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             executor_api_key: None,
             seed_override: LlmSeedOverride::default(),
         },
-        long_term_memory: None,
-        long_term_memory_scope_id: None,
-        read_file_turn_cache: None,
-        turn_allowed_tool_names: None,
-        tracing_chat_turn: None,
-        request_audit: None,
-        process_handles: TurnProcessHandles::default_arc(),
+        attach: RunAgentTurnAttach {
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            read_file_turn_cache: None,
+            turn_allowed_tool_names: None,
+        },
+        obs: RunAgentTurnObs {
+            tracing_chat_turn: None,
+            request_audit: None,
+            process_handles: TurnProcessHandles::default_arc(),
+        },
     };
 
     run_agent_turn(params)

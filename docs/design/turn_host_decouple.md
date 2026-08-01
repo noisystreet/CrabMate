@@ -7,7 +7,8 @@
 - **P1 / P2 / P3a**：已落地 `ToolDispatch`、`TurnRunner`，以及 `DispatchToolParams` 嵌套分组
 - **P3b**：窄控制面 `WebChatAppFacet`（approval / branch / messages / conversation-store）
 - **P3c**：回合面 `WebChatTurnAppFacet`；`POST /chat`、`/chat/stream`、`/chat/async`、job status 与 cron 入队已迁入
-- **未做**：P3d（`RunAgentTurnParams` 入口子集）、P4 执行面落点、P5 handler/queue 迁出评估
+- **P3d**：`RunAgentTurnParams` 顶层嵌套为 `shared` / `session` / `transport` / `llm` / `attach` / `obs`（字段不删；密封入口子集 / 强制 builder 留后续）
+- **未做**：P4 执行面落点、P5 handler/queue 迁出评估
 
 ## 目标
 
@@ -54,7 +55,7 @@ crabmate-internal / crabmate-tools
 | **P0** | 本文入库；禁边脚本进门禁 | **完成**（本文） |
 | **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
 | **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | **完成**（本分支） |
-| **P3** | 参数袋按片收窄：`DispatchToolParams` 嵌套（**P3a**）；窄 chat facet（**P3b**）；回合 Turn facet（**P3c**）；`RunAgentTurnParams` 入口子集（P3d） | 多 PR |
+| **P3** | 参数袋按片收窄：`DispatchToolParams` 嵌套（**P3a**）；窄 chat facet（**P3b**）；回合 Turn facet（**P3c**）；`RunAgentTurnParams` 入口嵌套（**P3d**） | **完成**（多 PR） |
 | **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
 | **P5** | 红利：更多 handler/queue 贴近 web-host；`tools` 拆子包等（另开 PR） | 后续 |
 
@@ -72,7 +73,7 @@ crabmate-internal / crabmate-tools
 **P3a（已完成）**：`DispatchToolParams` 顶层改为 `call` / `workspace` / `policy` / `obs` / `memory` 嵌套（字段不删）。  
 **P3b（已完成）**：`WebChatAppFacet`（`cfg` + `conversation` + `approval_sessions`）+ 窄控制面路由。  
 **P3c（已完成）**：`WebChatTurnAppFacet`（`cfg` / `api_key: Arc<str>` / `client` / workspace / `conversation` / `chat` queue / approval / `process_handles` / SSE hub / `async_chat_jobs`；**不含** `tools`/uploads）；`POST /chat`、`/chat/stream`、`/chat/async`；job status 用更窄的 `AsyncChatJobsFacet`；enqueue/turn_build/cron 经 Turn 面。  
-**P3d**：`RunAgentTurnParams` 入口强制子集 / 嵌套（勿静默改 HTTP/SSE 契约）。
+**P3d（已完成）**：`RunAgentTurnParams` 顶层嵌套 `session` / `attach` / `obs`（与既有 `shared` / `transport` / `llm`）；HTTP/SSE 契约不变。密封「仅经 builder 构造」留后续 PR。
 
 ## 建议 PR 切片
 
