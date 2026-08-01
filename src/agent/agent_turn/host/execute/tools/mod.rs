@@ -85,7 +85,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     /// Web 审计；与写工具日志配套。
     pub request_audit: Option<Arc<crate::WebRequestAudit>>,
-    /// 与 [`crate::RunAgentTurnParams::process_handles`] 同源。
+    /// 与 [`crate::RunAgentTurnParams::obs`] 的 `process_handles` 同源。
     pub tool_outcome_recorder: Arc<crate::tool_stats::ToolOutcomeRecorder>,
     /// 与 `process_handles.handler_lookup` 同源（随 `RunLoopCtx` 注入，避免在批处理中再借 `process_handles`）。
     pub handler_lookup: crate::tool_registry::HandlerLookupTable,

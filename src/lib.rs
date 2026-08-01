@@ -131,14 +131,15 @@ pub struct RunAgentTurnSharedInputs<'a> {
     pub tools: &'a [crate::types::Tool],
 }
 
-/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
-pub struct RunAgentTurnParams<'a> {
-    pub shared: RunAgentTurnSharedInputs<'a>,
+/// 会话消息与工作区（入口袋；与环内 `RunLoopCore` 工作区字段对应）。
+pub struct RunAgentTurnSession<'a> {
     pub messages: &'a mut Vec<types::Message>,
     pub effective_working_dir: &'a std::path::Path,
     pub workspace_is_set: bool,
-    pub transport: AgentTurnTransport<'a>,
-    pub llm: AgentTurnLlmOverrides,
+}
+
+/// 记忆 / 工具策略附件（入口袋；进环后映射到 `RunLoopAttach` 相关字段）。
+pub struct RunAgentTurnAttach {
     /// 长期记忆（可选）；与 `long_term_memory_scope_id` 配对使用。
     pub long_term_memory:
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
@@ -148,12 +149,28 @@ pub struct RunAgentTurnParams<'a> {
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
     /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+}
+
+/// 可观测与进程句柄（入口袋；与环内 `RunLoopObs` 对应，勿与之混淆）。
+pub struct RunAgentTurnObs {
     /// Web `/chat*`：与 **`x-stream-job-id`** / SSE **`sse_capabilities.job_id`** 对齐的结构化日志根 span；CLI 等为 `None`。
     pub tracing_chat_turn: Option<Arc<observability::TracingChatTurn>>,
     /// Web：HTTP 审计（客户端 IP、共享 Bearer 指纹）；CLI/定时任务等为 `None`。
     pub request_audit: Option<Arc<WebRequestAudit>>,
     /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::TurnProcessHandles::default_arc`]；完整袋见 [`ProcessHandles`]）。
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+}
+
+/// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
+///
+/// 顶层分组（turn_host **P3d**）：`shared` / `session` / `transport` / `llm` / `attach` / `obs`（字段不删，仅嵌套）。
+pub struct RunAgentTurnParams<'a> {
+    pub shared: RunAgentTurnSharedInputs<'a>,
+    pub session: RunAgentTurnSession<'a>,
+    pub transport: AgentTurnTransport<'a>,
+    pub llm: AgentTurnLlmOverrides,
+    pub attach: RunAgentTurnAttach,
+    pub obs: RunAgentTurnObs,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_stream`] 所需的参数包（避免长形参列表）。
@@ -267,18 +284,24 @@ impl<'a> RunAgentTurnParams<'a> {
         } = parts;
         Self {
             shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set,
+            session: RunAgentTurnSession {
+                messages,
+                effective_working_dir,
+                workspace_is_set,
+            },
             transport,
             llm,
-            long_term_memory,
-            long_term_memory_scope_id: Some(conversation_id.to_string()),
-            read_file_turn_cache: None,
-            turn_allowed_tool_names,
-            tracing_chat_turn: Some(tracing_chat_turn),
-            request_audit: Some(request_audit),
-            process_handles,
+            attach: RunAgentTurnAttach {
+                long_term_memory,
+                long_term_memory_scope_id: Some(conversation_id.to_string()),
+                read_file_turn_cache: None,
+                turn_allowed_tool_names,
+            },
+            obs: RunAgentTurnObs {
+                tracing_chat_turn: Some(tracing_chat_turn),
+                request_audit: Some(request_audit),
+                process_handles,
+            },
         }
     }
 
@@ -430,9 +453,11 @@ impl<'a> RunAgentTurnParams<'a> {
         let echo_stdout = !suppress_stdout_render;
         Self {
             shared,
-            messages,
-            effective_working_dir,
-            workspace_is_set: true,
+            session: RunAgentTurnSession {
+                messages,
+                effective_working_dir,
+                workspace_is_set: true,
+            },
             transport: AgentTurnTransport {
                 out: None,
                 render_to_terminal: echo_stdout,
@@ -458,13 +483,17 @@ impl<'a> RunAgentTurnParams<'a> {
                 executor_api_key: None,
                 seed_override: types::LlmSeedOverride::default(),
             },
-            long_term_memory,
-            long_term_memory_scope_id,
-            read_file_turn_cache: None,
-            turn_allowed_tool_names,
-            tracing_chat_turn: None,
-            request_audit: None,
-            process_handles,
+            attach: RunAgentTurnAttach {
+                long_term_memory,
+                long_term_memory_scope_id,
+                read_file_turn_cache: None,
+                turn_allowed_tool_names,
+            },
+            obs: RunAgentTurnObs {
+                tracing_chat_turn: None,
+                request_audit: None,
+                process_handles,
+            },
         }
     }
 
@@ -485,9 +514,11 @@ impl<'a> RunAgentTurnParams<'a> {
                 cfg,
                 tools,
             },
-            messages,
-            effective_working_dir,
-            workspace_is_set: true,
+            session: RunAgentTurnSession {
+                messages,
+                effective_working_dir,
+                workspace_is_set: true,
+            },
             transport: AgentTurnTransport {
                 out: None,
                 render_to_terminal: false,
@@ -513,13 +544,17 @@ impl<'a> RunAgentTurnParams<'a> {
                 executor_api_key: None,
                 seed_override: types::LlmSeedOverride::default(),
             },
-            long_term_memory: None,
-            long_term_memory_scope_id: None,
-            read_file_turn_cache: None,
-            turn_allowed_tool_names: None,
-            tracing_chat_turn: None,
-            request_audit: None,
-            process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
+            attach: RunAgentTurnAttach {
+                long_term_memory: None,
+                long_term_memory_scope_id: None,
+                read_file_turn_cache: None,
+                turn_allowed_tool_names: None,
+            },
+            obs: RunAgentTurnObs {
+                tracing_chat_turn: None,
+                request_audit: None,
+                process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
+            },
         }
     }
 }
