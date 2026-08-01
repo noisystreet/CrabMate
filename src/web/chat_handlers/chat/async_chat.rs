@@ -1,7 +1,6 @@
 //! Webhook 规范化、`POST /chat/async` 后台任务与任务状态查询。
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{ConnectInfo, Path, State};
@@ -17,7 +16,7 @@ use crate::web::http_types::chat::{
 use super::builtin_skills::run_web_builtin_command;
 use super::enqueue::parse_chat_request_for_enqueue;
 use super::enqueue::{PreparedJsonChatEnqueue, prepare_json_chat_enqueue};
-use crate::web::app_state::AppState;
+use crate::web::app_state_facets::{AsyncChatJobsFacet, WebChatTurnAppFacet};
 use crate::web::audit;
 
 fn normalize_optional_webhook_url(
@@ -107,7 +106,7 @@ async fn post_chat_job_webhook(
 }
 
 async fn run_async_chat_json_job(
-    state: Arc<AppState>,
+    state: WebChatTurnAppFacet,
     job_id: u64,
     reply_rx: tokio::sync::oneshot::Receiver<
         Result<Vec<Message>, chat_job_queue::ChatJsonJobFailure>,
@@ -117,7 +116,7 @@ async fn run_async_chat_json_job(
     webhook_secret: Option<String>,
 ) {
     {
-        let mut g = state.aux.async_chat_jobs.write().await;
+        let mut g = state.async_chat_jobs.write().await;
         if let Some(r) = g.get_mut(&job_id) {
             r.status = crate::web::async_chat_job::ChatAsyncJobStatus::Running;
         }
@@ -165,7 +164,7 @@ async fn run_async_chat_json_job(
     };
 
     {
-        let mut g = state.aux.async_chat_jobs.write().await;
+        let mut g = state.async_chat_jobs.write().await;
         if let Some(r) = g.get_mut(&job_id) {
             r.status = if status_str == "completed" {
                 crate::web::async_chat_job::ChatAsyncJobStatus::Completed
@@ -187,12 +186,12 @@ async fn run_async_chat_json_job(
             reply: reply.as_deref(),
             error: err_api.as_ref(),
         };
-        post_chat_job_webhook(&state.http.client, url, webhook_secret.as_deref(), &payload).await;
+        post_chat_job_webhook(&state.client, url, webhook_secret.as_deref(), &payload).await;
     }
 }
 
 pub(crate) async fn chat_async_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatTurnAppFacet>,
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatAsyncRequestBody>,
@@ -228,7 +227,7 @@ pub(crate) async fn chat_async_handler(
     let (reply_tx, reply_rx) = tokio::sync::oneshot::channel();
 
     {
-        let mut g = state.aux.async_chat_jobs.write().await;
+        let mut g = state.async_chat_jobs.write().await;
         g.insert(
             job_id,
             crate::web::async_chat_job::ChatAsyncJobRecord {
@@ -269,7 +268,7 @@ pub(crate) async fn chat_async_handler(
     );
     info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, &headers, peer)
     };
     let submit = state
@@ -299,7 +298,7 @@ pub(crate) async fn chat_async_handler(
         });
 
     if let Err(e) = submit {
-        let mut g = state.aux.async_chat_jobs.write().await;
+        let mut g = state.async_chat_jobs.write().await;
         g.remove(&job_id);
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -330,10 +329,10 @@ pub(crate) async fn chat_async_handler(
 }
 
 pub(crate) async fn chat_job_status_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<AsyncChatJobsFacet>,
     Path(job_id): Path<u64>,
 ) -> Result<Json<ChatJobStatusResponseBody>, (StatusCode, Json<ApiError>)> {
-    let g = state.aux.async_chat_jobs.read().await;
+    let g = state.async_chat_jobs.read().await;
     let Some(rec) = g.get(&job_id) else {
         return Err((
             StatusCode::NOT_FOUND,

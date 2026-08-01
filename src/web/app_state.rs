@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::AtomicU64;
 use std::time::Duration;
 
 use tokio::sync::mpsc;
@@ -64,7 +64,8 @@ pub(crate) struct AppStateHttpCore {
     pub(crate) cfg: SharedAgentConfig,
     /// 与启动时 `--config` / 默认探测一致，供 **`POST /config/reload`** 调用 [`load_config`]。
     pub(crate) config_path_for_reload: Option<String>,
-    pub(crate) api_key: String,
+    /// 进程级 Bearer 密钥快照（`Arc` 便于 handler facet 廉价共享，勿整串 `Clone`）。
+    pub(crate) api_key: Arc<str>,
     pub(crate) client: reqwest::Client,
     pub(crate) tools: Vec<crate::types::Tool>,
     /// 前端设置的工作区路径覆盖；为 None 时使用 cfg.command_exec.run_command_working_dir
@@ -72,24 +73,34 @@ pub(crate) struct AppStateHttpCore {
     pub(crate) uploads_dir: std::path::PathBuf,
 }
 
+/// 由工作区覆盖 + 共享配置解析当前有效工作区根（空串表示未设置）。
+pub(crate) async fn effective_workspace_path_from_override(
+    workspace_override: &tokio::sync::RwLock<Option<String>>,
+    cfg: &SharedAgentConfig,
+) -> String {
+    let guard = workspace_override.read().await;
+    match guard.as_deref() {
+        None => String::new(),
+        Some(s) if s.trim().is_empty() => {
+            let cfg = cfg.read().await;
+            cfg.command_exec.run_command_working_dir.clone()
+        }
+        Some(s) => s.to_string(),
+    }
+}
+
+/// 前端是否已经设置过明确工作区路径（`Some(non-empty)`）。
+pub(crate) async fn workspace_is_set_from_override(
+    workspace_override: &tokio::sync::RwLock<Option<String>>,
+) -> bool {
+    let guard = workspace_override.read().await;
+    guard.as_deref().is_some_and(|s| !s.trim().is_empty())
+}
+
 impl AppStateHttpCore {
     /// 当前 Web 会话选中的工作区根路径（**未**调用 `POST /workspace` 成功设置前返回空串）。
     pub(crate) async fn effective_workspace_path(&self) -> String {
-        let guard = self.workspace_override.read().await;
-        match guard.as_deref() {
-            None => String::new(),
-            Some(s) if s.trim().is_empty() => {
-                let cfg = self.cfg.read().await;
-                cfg.command_exec.run_command_working_dir.clone()
-            }
-            Some(s) => s.to_string(),
-        }
-    }
-
-    /// 前端是否已经“设置过明确工作区路径”（`Some(non-empty)`）。
-    pub(crate) async fn workspace_is_set(&self) -> bool {
-        let guard = self.workspace_override.read().await;
-        guard.as_deref().is_some_and(|s| !s.trim().is_empty())
+        effective_workspace_path_from_override(&self.workspace_override, &self.cfg).await
     }
 }
 
@@ -137,17 +148,6 @@ pub(crate) struct WebChatJobAppFacet {
     pub(crate) conversation: AppStateConversationRuntime,
     pub(crate) process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
-}
-
-impl AppState {
-    /// 入队时克隆出队列 worker 面，避免 [`WebChatJobEnvelope`](crate::chat_job_queue::WebChatJobEnvelope) 持有整包 [`AppState`]。
-    pub(crate) fn chat_job_app_facet(&self) -> WebChatJobAppFacet {
-        WebChatJobAppFacet {
-            conversation: self.conversation.clone(),
-            process_handles: self.aux.process_handles.turn_handles_arc(),
-            approval_sessions: Arc::clone(&self.aux.approval_sessions),
-        }
-    }
 }
 
 /// Web 会话存储后端。
@@ -208,35 +208,6 @@ async fn sqlite_conversation_store_op(
 }
 
 impl AppState {
-    pub(crate) async fn effective_workspace_path(&self) -> String {
-        self.http.effective_workspace_path().await
-    }
-
-    pub(crate) async fn workspace_is_set(&self) -> bool {
-        self.http.workspace_is_set().await
-    }
-
-    pub(crate) fn next_conversation_id(&self) -> String {
-        let n = self
-            .conversation
-            .conversation_id_counter
-            .fetch_add(1, Ordering::Relaxed);
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        format!("conv_{}_{}", ts, n)
-    }
-
-    pub(crate) async fn load_conversation_seed(
-        &self,
-        conversation_id: &str,
-    ) -> Option<ConversationTurnSeed> {
-        self.conversation
-            .load_conversation_seed(conversation_id)
-            .await
-    }
-
     pub(crate) async fn save_conversation_messages_if_revision(
         &self,
         conversation_id: String,
