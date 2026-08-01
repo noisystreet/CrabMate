@@ -38,98 +38,107 @@ enum RaLspOp {
 
 // ---------- cargo / rustc JSON（compiler-message）----------
 
-/// 运行 `cargo check --message-format=json`，解析 `compiler-message` 行并汇总为可读文本（不整段原始 JSON 灌给模型）。
-pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if !workspace_root.join("Cargo.toml").is_file() {
-        return "错误：工作区根目录未找到 Cargo.toml".to_string();
+struct CargoCheckArgs<'a> {
+    all_targets: bool,
+    package: Option<&'a str>,
+    features: Option<&'a str>,
+    all_features: bool,
+    max_diag: usize,
+    format_kind: &'a str,
+}
+
+fn parse_cargo_check_args(v: &Value) -> CargoCheckArgs<'_> {
+    CargoCheckArgs {
+        all_targets: v
+            .get("all_targets")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        package: v
+            .get("package")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        features: v
+            .get("features")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty()),
+        all_features: v
+            .get("all_features")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        max_diag: v
+            .get("max_diagnostics")
+            .and_then(|x| x.as_u64())
+            .map(|n| n.max(1) as usize)
+            .unwrap_or(DEFAULT_MAX_DIAGNOSTICS)
+            .min(500),
+        format_kind: v
+            .get("message_format")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("json"),
     }
+}
 
-    let all_targets = v
-        .get("all_targets")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let package = v
-        .get("package")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let features = v
-        .get("features")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let all_features = v
-        .get("all_features")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let max_diag = v
-        .get("max_diagnostics")
-        .and_then(|x| x.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(DEFAULT_MAX_DIAGNOSTICS)
-        .min(500);
-    let format_kind = v
-        .get("message_format")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("json");
-
+fn build_cargo_check_command(args: &CargoCheckArgs<'_>, workspace_root: &Path) -> Command {
     let mut cmd = Command::new("cargo");
     cmd.arg("check")
         .arg("--message-format")
-        .arg(format_kind)
+        .arg(args.format_kind)
         .current_dir(workspace_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-
-    if all_targets {
+    if args.all_targets {
         cmd.arg("--all-targets");
     }
-    if let Some(p) = package {
+    if let Some(p) = args.package {
         cmd.arg("--package").arg(p);
     }
-    if let Some(f) = features {
+    if let Some(f) = args.features {
         cmd.arg("--features").arg(f);
     }
-    if all_features {
+    if args.all_features {
         cmd.arg("--all-features");
     }
+    cmd
+}
 
-    let output = match cmd.output() {
-        Ok(o) => o,
-        Err(e) => return format!("无法执行 cargo check: {}", e),
-    };
+fn try_compiler_message_line(line: &str) -> Option<String> {
+    let line = line.trim();
+    if line.is_empty() {
+        return None;
+    }
+    let msg = serde_json::from_str::<Value>(line).ok()?;
+    if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-message") {
+        return None;
+    }
+    let inner = msg.get("message")?;
+    Some(format_compiler_message(inner))
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let exit = output.status.code().unwrap_or(-1);
-
+fn collect_compiler_messages(stdout: &str, max_diag: usize) -> Vec<String> {
     let mut diags: Vec<String> = Vec::new();
     for line in stdout.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(msg) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if msg.get("reason").and_then(|r| r.as_str()) != Some("compiler-message") {
-            continue;
-        }
-        let Some(inner) = msg.get("message") else {
-            continue;
-        };
         if diags.len() >= max_diag {
             break;
         }
-        diags.push(format_compiler_message(inner));
+        if let Some(d) = try_compiler_message_line(line) {
+            diags.push(d);
+        }
     }
+    diags
+}
 
+fn format_rust_compiler_json_report(
+    format_kind: &str,
+    exit: i32,
+    stderr: &str,
+    diags: &[String],
+    max_diag: usize,
+    max_output_len: usize,
+) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "rust_compiler_json: cargo check --message-format={} (exit={})\n",
@@ -155,8 +164,37 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
             out.push_str(&format!("--- [{}] ---\n{}\n", i + 1, d));
         }
     }
-
     lsp_response_format::truncate_str(&out, max_output_len).to_string()
+}
+
+/// 运行 `cargo check --message-format=json`，解析 `compiler-message` 行并汇总为可读文本（不整段原始 JSON 灌给模型）。
+pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "错误：工作区根目录未找到 Cargo.toml".to_string();
+    }
+
+    let args = parse_cargo_check_args(&v);
+    let output = match build_cargo_check_command(&args, workspace_root).output() {
+        Ok(o) => o,
+        Err(e) => return format!("无法执行 cargo check: {}", e),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit = output.status.code().unwrap_or(-1);
+    let diags = collect_compiler_messages(&stdout, args.max_diag);
+    format_rust_compiler_json_report(
+        args.format_kind,
+        exit,
+        &stderr,
+        &diags,
+        args.max_diag,
+        max_output_len,
+    )
 }
 
 fn format_compiler_message(m: &Value) -> String {

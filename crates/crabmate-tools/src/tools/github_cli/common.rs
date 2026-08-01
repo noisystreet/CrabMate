@@ -353,6 +353,21 @@ pub fn push_extra_args_from_json(v: &JsonValue, argv: &mut Vec<String>) -> Resul
     Ok(())
 }
 
+/// 若 JSON 含 `fields` 数组，追加 `--json <joined>`（经 [`join_json_fields`] 校验；空数组会报错）。
+pub fn push_json_fields_from_json(v: &JsonValue, argv: &mut Vec<String>) -> Result<(), String> {
+    let Some(arr) = v.get("fields").and_then(|x| x.as_array()) else {
+        return Ok(());
+    };
+    let fields: Vec<String> = arr
+        .iter()
+        .filter_map(|x| x.as_str().map(String::from))
+        .collect();
+    let joined = join_json_fields(&fields)?;
+    argv.push("--json".into());
+    argv.push(joined);
+    Ok(())
+}
+
 pub fn push_bool_flag(v: &JsonValue, key: &str, flag: &str, argv: &mut Vec<String>) {
     if v.get(key).and_then(|x| x.as_bool()) == Some(true) {
         argv.push(flag.into());
