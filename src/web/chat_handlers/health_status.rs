@@ -37,7 +37,7 @@ pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> im
             cache_cell: facet.llm_models_health_cache.as_ref(),
             client: &facet.http.client,
             api_base: api_base.as_str(),
-            api_key: facet.http.api_key.as_str(),
+            api_key: facet.http.api_key.as_ref(),
             auth_mode,
         },
     )

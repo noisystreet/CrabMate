@@ -11,7 +11,6 @@ pub(crate) use enqueue::prepare_json_chat_enqueue;
 pub(crate) use stream::chat_stream_handler;
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{ConnectInfo, Query, State};
@@ -21,8 +20,7 @@ use log::debug;
 use super::parse::{normalize_approval_session_id, normalize_client_conversation_id};
 use crate::conversation_store::SaveConversationOutcome;
 use crate::types::{CommandApprovalDecision, filter_messages_for_web_client_snapshot};
-use crate::web::app_state::AppState;
-use crate::web::app_state_facets::WebChatAppFacet;
+use crate::web::app_state_facets::{WebChatAppFacet, WebChatTurnAppFacet};
 use crate::web::http_types::chat::{
     ApiError, ChatApprovalRequestBody, ChatApprovalResponseBody, ChatBranchRequestBody,
     ChatBranchResponseBody, ChatRequestBody, ChatResponseBody, ConversationMessagesHttpResponse,
@@ -33,7 +31,7 @@ use builtin_skills::run_web_builtin_command;
 use enqueue::{enqueue_and_wait_json_chat, parse_chat_request_for_enqueue};
 
 pub(crate) async fn chat_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatTurnAppFacet>,
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatRequestBody>,

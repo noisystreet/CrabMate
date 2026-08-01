@@ -2,7 +2,6 @@
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use axum::Json;
 use axum::http::{HeaderMap, StatusCode};
@@ -23,7 +22,8 @@ use crate::clarification_questionnaire::{
 use crate::redact;
 use crate::types::Message;
 use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
-use crate::web::app_state::{AppState, ConversationTurnSeed};
+use crate::web::app_state::ConversationTurnSeed;
+use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::audit;
 use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
@@ -42,7 +42,7 @@ pub(crate) struct PreparedJsonChatEnqueue {
 }
 
 pub(crate) async fn prepare_json_chat_enqueue(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     user_trim: &str,
     clarify: Option<ClarifyAnswersNormalized>,
     image_urls: &[String],
@@ -59,7 +59,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());
     let msg = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         expand_at_file_refs_in_user_message(user_trim, work_dir_for_expand.as_path(), &cfg)
             .map_err(|e| bad_request("INVALID_AT_FILE_REF", e))?
     };
@@ -81,7 +81,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     })?;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
     } else {
         std::path::PathBuf::from(eff_ws.clone())
@@ -111,7 +111,7 @@ pub(crate) struct ParsedChatRequestForEnqueue {
 }
 
 pub(crate) async fn parse_chat_request_for_enqueue(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     body: &ChatRequestBody,
 ) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
     validate_chat_request_payload_limits(body)?;
@@ -137,7 +137,7 @@ pub(crate) async fn parse_chat_request_for_enqueue(
 }
 
 fn parse_chat_request_for_enqueue_tail(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     body: &ChatRequestBody,
     image_urls: Vec<String>,
     clarify: Option<ClarifyAnswersNormalized>,
@@ -179,7 +179,7 @@ fn parse_chat_request_for_enqueue_tail(
 }
 
 pub(crate) async fn enqueue_and_wait_json_chat(
-    state: Arc<AppState>,
+    state: WebChatTurnAppFacet,
     peer: SocketAddr,
     headers: &HeaderMap,
     parsed: ParsedChatRequestForEnqueue,
@@ -210,7 +210,7 @@ pub(crate) async fn enqueue_and_wait_json_chat(
     );
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, headers, peer)
     };
     state

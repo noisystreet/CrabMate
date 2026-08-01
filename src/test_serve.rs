@@ -60,10 +60,11 @@ pub async fn start_test_serve(
     };
     let chat_queue = ChatJobQueue::new(cq_conc, cq_pending);
 
+    let api_key: Arc<str> = Arc::from(api_key);
     let sse_stream_hub = Arc::new(SseStreamHub::new());
     let chat_queue_job_deps = Arc::new(WebChatQueueDeps {
         cfg: Arc::clone(&cfg_holder),
-        api_key: api_key.clone(),
+        api_key: api_key.to_string(),
         client: client.clone(),
         tools: tools.clone(),
         chat_queue: chat_queue.clone(),

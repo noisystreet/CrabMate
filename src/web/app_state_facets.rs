@@ -1,11 +1,12 @@
 //! Handler 侧 AppState 投影（axum `FromRef`），避免窄路由持有整包 [`AppState`]。
 //!
 //! 与队列侧 [`WebChatJobAppFacet`](super::app_state::WebChatJobAppFacet) 同族；见 `docs/design/web_host_extract.md`、
-//! `docs/design/turn_host_decouple.md`（P3b）。
+//! `docs/design/turn_host_decouple.md`（P3b / P3c）。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use axum::extract::FromRef;
 
@@ -13,10 +14,14 @@ use crate::config::SharedAgentConfig;
 use crate::conversation_store::SaveConversationOutcome;
 use crate::health::CachedLlmModelsHealthProbe;
 use crate::process_handles::ProcessHandles;
+use crate::sse::SseStreamHub;
+use crate::web::async_chat_job::AsyncChatJobsMap;
 
 use super::app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
-    ApprovalSessionSlot, ConversationBacking, ConversationTurnSeed, open_conversation_sqlite,
+    ApprovalSessionSlot, ConversationBacking, ConversationTurnSeed, WebChatJobAppFacet,
+    effective_workspace_path_from_override, open_conversation_sqlite,
+    workspace_is_set_from_override,
 };
 
 /// `POST /config/reload`：共享配置 + 重载路径。
@@ -64,8 +69,8 @@ pub(crate) struct WebChangelogAppFacet {
 
 /// 窄 chat 控制面：共享配置、会话读写、审批投递。
 ///
-/// **不含** 整份 [`AppStateHttpCore`]（避免每次 `FromRef` 克隆 `api_key` / `tools`）、
-/// 也不含 `chat_queue` / SSE hub / `async_chat_jobs`（留给 stream/async 的 P3c）。
+/// **不含** 整份 [`AppStateHttpCore`]（避免每次 `FromRef` 克隆 `tools`）、
+/// 也不含 queue / SSE hub / `async_chat_jobs`（回合入口见 [`WebChatTurnAppFacet`]）。
 /// 供 `POST /chat/approval`、`POST /chat/branch`、`GET /conversation/messages`、
 /// `POST /config/session/conversation-store` 等窄路由（turn_host **P3b**）。
 #[derive(Clone)]
@@ -73,6 +78,30 @@ pub(crate) struct WebChatAppFacet {
     pub(crate) cfg: SharedAgentConfig,
     pub(crate) conversation: AppStateConversationRuntime,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
+}
+
+/// 回合入队面：`POST /chat`、`/chat/stream`、`/chat/async`（及 job status）。
+///
+/// 含 queue、审批、会话、工作区覆盖、`api_key`、SSE hub、async jobs、HTTP client；
+/// **仍不含** `tools` / uploads / config reload 路径（turn_host **P3c**）。
+#[derive(Clone)]
+pub(crate) struct WebChatTurnAppFacet {
+    pub(crate) cfg: SharedAgentConfig,
+    pub(crate) api_key: Arc<str>,
+    pub(crate) client: reqwest::Client,
+    pub(crate) workspace_override: Arc<tokio::sync::RwLock<Option<String>>>,
+    pub(crate) conversation: AppStateConversationRuntime,
+    pub(crate) chat: AppStateChatRuntime,
+    pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
+    pub(crate) process_handles: Arc<ProcessHandles>,
+    pub(crate) sse_stream_hub: Arc<SseStreamHub>,
+    pub(crate) async_chat_jobs: AsyncChatJobsMap,
+}
+
+/// 仅 `GET` 异步任务状态：只持 `async_chat_jobs`。
+#[derive(Clone)]
+pub(crate) struct AsyncChatJobsFacet {
+    pub(crate) async_chat_jobs: AsyncChatJobsMap,
 }
 
 impl WebTasksAppFacet {
@@ -154,6 +183,45 @@ impl WebChatAppFacet {
     }
 }
 
+impl WebChatTurnAppFacet {
+    pub(crate) async fn effective_workspace_path(&self) -> String {
+        effective_workspace_path_from_override(&self.workspace_override, &self.cfg).await
+    }
+
+    pub(crate) async fn workspace_is_set(&self) -> bool {
+        workspace_is_set_from_override(&self.workspace_override).await
+    }
+
+    pub(crate) fn next_conversation_id(&self) -> String {
+        let n = self
+            .conversation
+            .conversation_id_counter
+            .fetch_add(1, Ordering::Relaxed);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        format!("conv_{}_{}", ts, n)
+    }
+
+    pub(crate) async fn load_conversation_seed(
+        &self,
+        conversation_id: &str,
+    ) -> Option<ConversationTurnSeed> {
+        self.conversation
+            .load_conversation_seed(conversation_id)
+            .await
+    }
+
+    pub(crate) fn chat_job_app_facet(&self) -> WebChatJobAppFacet {
+        WebChatJobAppFacet {
+            conversation: self.conversation.clone(),
+            process_handles: self.process_handles.turn_handles_arc(),
+            approval_sessions: Arc::clone(&self.approval_sessions),
+        }
+    }
+}
+
 impl FromRef<Arc<AppState>> for AppStateHttpCore {
     fn from_ref(state: &Arc<AppState>) -> Self {
         state.http.clone()
@@ -221,6 +289,31 @@ impl FromRef<Arc<AppState>> for WebChatAppFacet {
             cfg: Arc::clone(&state.http.cfg),
             conversation: state.conversation.clone(),
             approval_sessions: Arc::clone(&state.aux.approval_sessions),
+        }
+    }
+}
+
+impl FromRef<Arc<AppState>> for WebChatTurnAppFacet {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self {
+            cfg: Arc::clone(&state.http.cfg),
+            api_key: Arc::clone(&state.http.api_key),
+            client: state.http.client.clone(),
+            workspace_override: Arc::clone(&state.http.workspace_override),
+            conversation: state.conversation.clone(),
+            chat: state.chat.clone(),
+            approval_sessions: Arc::clone(&state.aux.approval_sessions),
+            process_handles: Arc::clone(&state.aux.process_handles),
+            sse_stream_hub: Arc::clone(&state.aux.sse_stream_hub),
+            async_chat_jobs: Arc::clone(&state.aux.async_chat_jobs),
+        }
+    }
+}
+
+impl FromRef<Arc<AppState>> for AsyncChatJobsFacet {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self {
+            async_chat_jobs: Arc::clone(&state.aux.async_chat_jobs),
         }
     }
 }

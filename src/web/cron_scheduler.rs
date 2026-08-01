@@ -9,7 +9,10 @@ use crate::chat_job_queue;
 use crate::config::ScheduledAgentTask;
 use crate::types::LlmSeedOverride;
 
+use axum::extract::FromRef;
+
 use super::app_state::AppState;
+use super::app_state_facets::WebChatTurnAppFacet;
 use super::chat_handlers::{normalize_agent_role, prepare_json_chat_enqueue};
 
 /// 启动 cron：按当前配置注册任务并 `tokio::spawn` 跑调度器主循环。
@@ -80,6 +83,7 @@ pub(crate) fn spawn_serve_cron_scheduler(state: Arc<AppState>, tasks: Vec<Schedu
 }
 
 async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask) {
+    let state = WebChatTurnAppFacet::from_ref(&state);
     let agent_role: Option<String> = match normalize_agent_role(task.agent_role.as_deref()) {
         Ok(r) => r,
         Err(e) => {

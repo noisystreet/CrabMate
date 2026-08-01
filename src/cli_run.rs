@@ -476,9 +476,10 @@ async fn build_serve_runtime_state(
         ltm_store_path.trim(),
     );
     let sse_stream_hub = std::sync::Arc::new(crate::sse::SseStreamHub::new());
+    let api_key: Arc<str> = Arc::from(api_key);
     let chat_queue_job_deps = std::sync::Arc::new(chat_job_queue::WebChatQueueDeps {
         cfg: Arc::clone(cfg_holder),
-        api_key: api_key.clone(),
+        api_key: api_key.to_string(),
         client: client.clone(),
         tools: tools.clone(),
         chat_queue: chat_queue.clone(),

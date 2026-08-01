@@ -1,11 +1,9 @@
 //! Web 内置 `/skills` 命令：扫描 skills 目录并生成回复文本。
 
-use std::sync::Arc;
-
-use super::super::super::app_state::AppState;
 use crate::config::skills::{SkillDoc, list_skills_from_base, skill_ui_description};
 use crate::config::skills_slash::skill_callable_id;
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
+use crate::web::app_state_facets::WebChatTurnAppFacet;
 
 fn classify_web_builtin_command(input: &str) -> Option<&'static str> {
     let s = input.trim();
@@ -58,12 +56,12 @@ fn split_loaded_skills_by_budget(
 }
 
 pub(super) async fn run_web_builtin_command(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     command: &str,
 ) -> Option<String> {
     match classify_web_builtin_command(command)? {
         "skills" => {
-            let cfg = state.http.cfg.read().await;
+            let cfg = state.cfg.read().await;
             if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
@@ -97,7 +95,7 @@ pub(super) async fn run_web_builtin_command(
             Some(text)
         }
         "skills_list" => {
-            let cfg = state.http.cfg.read().await;
+            let cfg = state.cfg.read().await;
             if !cfg.skills.skills_enabled {
                 return Some(
                     "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),

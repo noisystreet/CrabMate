@@ -3,9 +3,10 @@
 use axum::Json;
 use axum::http::StatusCode;
 
-use super::super::app_state::{AppState, CONVERSATION_ID_MAX_LEN};
+use super::super::app_state::CONVERSATION_ID_MAX_LEN;
 use crate::chat_job_queue::{self, WebClientLlmThinkingMode};
 use crate::config::LlmHttpAuthMode;
+use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::http_types::chat::{ApiError, ClientLlmBody, ExecutorLlmBody};
 
 /// Web 聊天附带的图片 URL：仅允许同源 **`/uploads/<文件名>`**（与 `upload_handler` 一致），防目录穿越与外链滥用。
@@ -213,7 +214,7 @@ pub(super) fn parse_readonly_tool_ttl_cache_secs(raw: Option<u64>) -> Result<Opt
 }
 
 fn effective_llm_api_key_for_web_chat(
-    state: &AppState,
+    state: &WebChatTurnAppFacet,
     ov: &Option<chat_job_queue::WebChatLlmOverride>,
 ) -> String {
     if let Some(o) = ov
@@ -222,15 +223,15 @@ fn effective_llm_api_key_for_web_chat(
     {
         return k.clone();
     }
-    state.http.api_key.clone()
+    state.api_key.to_string()
 }
 
 pub(super) async fn ensure_bearer_api_key_for_chat(
-    state: &AppState,
+    state: &WebChatTurnAppFacet,
     llm_override: &Option<chat_job_queue::WebChatLlmOverride>,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
     let auth = {
-        let g = state.http.cfg.read().await;
+        let g = state.cfg.read().await;
         g.llm.llm_http_auth_mode
     };
     if auth != LlmHttpAuthMode::Bearer {

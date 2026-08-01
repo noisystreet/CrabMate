@@ -2,7 +2,6 @@
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{ConnectInfo, State};
@@ -23,9 +22,10 @@ use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 use crate::clarification_questionnaire::merge_user_text_with_clarification_answers;
 use crate::redact;
 use crate::web::app_state::{
-    APPROVAL_SESSION_TTL, AppState, ApprovalSessionSlot, ConversationTurnSeed,
+    APPROVAL_SESSION_TTL, ApprovalSessionSlot, ConversationTurnSeed,
     purge_expired_approval_sessions,
 };
+use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::audit;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
@@ -40,7 +40,7 @@ pub(super) fn sse_event_with_id(seq: u64, data: String) -> Result<Event, Infalli
 }
 
 async fn chat_stream_resume_response(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     headers: &HeaderMap,
     p: &ChatStreamRequestParsed,
 ) -> Result<Option<Response>, (StatusCode, Json<ApiError>)> {
@@ -48,7 +48,7 @@ async fn chat_stream_resume_response(
         return Ok(None);
     };
     let job_id = sr.job_id;
-    if !state.aux.sse_stream_hub.has_job(job_id) {
+    if !state.sse_stream_hub.has_job(job_id) {
         return Err((
             StatusCode::GONE,
             Json(ApiError {
@@ -61,7 +61,7 @@ async fn chat_stream_resume_response(
     let after_header = parse_last_event_id(headers).unwrap_or(0);
     let after_body = sr.after_seq.unwrap_or(0);
     let after_seq = after_header.max(after_body);
-    let Some(sub) = state.aux.sse_stream_hub.subscribe(job_id) else {
+    let Some(sub) = state.sse_stream_hub.subscribe(job_id) else {
         return Err((
             StatusCode::GONE,
             Json(ApiError {
@@ -72,7 +72,6 @@ async fn chat_stream_resume_response(
         ));
     };
     let replay = state
-        .aux
         .sse_stream_hub
         .replay_after(job_id, after_seq)
         .unwrap_or_default();
@@ -116,7 +115,7 @@ async fn chat_stream_resume_response(
 type ChatStreamHttpError = (StatusCode, Json<ApiError>);
 
 async fn chat_stream_expand_at_files_and_clarify(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     p: &ChatStreamRequestParsed,
 ) -> Result<String, ChatStreamHttpError> {
     let eff_ws_raw = state.effective_workspace_path().await;
@@ -134,7 +133,7 @@ async fn chat_stream_expand_at_files_and_clarify(
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw);
     let msg = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         expand_at_file_refs_in_user_message(&p.user_trim, work_dir_for_expand.as_path(), &cfg)
             .map_err(|e| {
                 (
@@ -154,7 +153,7 @@ async fn chat_stream_expand_at_files_and_clarify(
 }
 
 async fn chat_stream_build_turn_seed(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     p: &ChatStreamRequestParsed,
     msg: &str,
 ) -> Result<ConversationTurnSeed, ChatStreamHttpError> {
@@ -185,7 +184,7 @@ async fn chat_stream_build_turn_seed(
 }
 
 async fn chat_stream_open_approval_session_if_requested(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     body: &ChatRequestBody,
 ) -> Result<(Option<String>, Option<chat_job_queue::WebApprovalSession>), ChatStreamHttpError> {
     let approval_session_id = match body.approval_session_id.as_deref() {
@@ -202,7 +201,7 @@ async fn chat_stream_open_approval_session_if_requested(
     let mut web_approval_session = None;
     if let Some(session_id) = approval_session_id.as_ref() {
         let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
-        let mut guard = state.aux.approval_sessions.write().await;
+        let mut guard = state.approval_sessions.write().await;
         purge_expired_approval_sessions(&mut guard, APPROVAL_SESSION_TTL);
         guard.insert(
             session_id.clone(),
@@ -220,7 +219,7 @@ async fn chat_stream_open_approval_session_if_requested(
 }
 
 struct ChatStreamEnqueueCtx<'a> {
-    state: &'a Arc<AppState>,
+    state: &'a WebChatTurnAppFacet,
     headers: &'a HeaderMap,
     peer: SocketAddr,
     p: &'a ChatStreamRequestParsed,
@@ -247,7 +246,7 @@ async fn chat_stream_try_enqueue_job(
     } = ctx;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
     } else {
         std::path::PathBuf::from(eff_ws.to_string())
@@ -263,7 +262,7 @@ async fn chat_stream_try_enqueue_job(
     );
     info!(target: "crabmate", "chat stream 任务入队 job_id={}", job_id);
     let request_audit = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         audit::web_request_audit_from_http(&cfg, headers, peer)
     };
     if let Err(e) = state
@@ -294,12 +293,7 @@ async fn chat_stream_try_enqueue_job(
         })
     {
         if let Some(session_id) = approval_session_id {
-            state
-                .aux
-                .approval_sessions
-                .write()
-                .await
-                .remove(&session_id);
+            state.approval_sessions.write().await.remove(&session_id);
         }
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
@@ -336,7 +330,7 @@ fn chat_stream_sse_response_with_meta(
 
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
 pub(crate) async fn chat_stream_handler(
-    State(state): State<Arc<AppState>>,
+    State(state): State<WebChatTurnAppFacet>,
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatRequestBody>,

@@ -6,7 +6,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use tracing::debug;
 
-use super::super::super::app_state::{AppState, ConversationTurnSeed};
+use super::super::super::app_state::ConversationTurnSeed;
 use super::super::parse::{
     normalize_agent_role, normalize_chat_image_urls, normalize_client_conversation_id,
     parse_client_llm_override, parse_executor_llm_override, parse_optional_chat_temperature,
@@ -20,6 +20,7 @@ use crate::context_bootstrap::conversation_turn_bootstrap::{
 };
 use crate::memory::agent_memory::load_memory_snippet;
 use crate::types::{Message, message_user_with_images};
+use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::http_types::chat::{ApiError, ChatRequestBody, StreamResumeBody};
 use crate::web::http_types::validation::validate_chat_request_payload_limits;
 
@@ -84,7 +85,7 @@ pub(super) struct ChatStreamRequestParsed {
 }
 
 pub(super) fn parse_chat_stream_request(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     body: &ChatRequestBody,
 ) -> Result<ChatStreamRequestParsed, ChatPayloadError> {
     validate_chat_request_payload_limits(body)?;
@@ -109,7 +110,7 @@ pub(super) fn parse_chat_stream_request(
 }
 
 fn parse_chat_stream_request_tail(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     body: &ChatRequestBody,
     resume: Option<StreamResumeBody>,
     image_urls: Vec<String>,
@@ -228,7 +229,7 @@ fn refresh_existing_turn_system(
 }
 
 pub(super) async fn build_messages_for_turn(
-    state: &Arc<AppState>,
+    state: &WebChatTurnAppFacet,
     conversation_id: &str,
     user_msg: &str,
     image_urls: &[String],
@@ -237,7 +238,7 @@ pub(super) async fn build_messages_for_turn(
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
     let (user_msg, forced_skill) = {
-        let cfg = state.http.cfg.read().await;
+        let cfg = state.cfg.read().await;
         prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)?
     };
     let last_user = if image_urls.is_empty() {
@@ -247,21 +248,21 @@ pub(super) async fn build_messages_for_turn(
     };
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         {
-            let cfg = state.http.cfg.read().await;
+            let cfg = state.cfg.read().await;
             refresh_existing_turn_system(
                 &cfg,
                 &mut seed,
                 agent_role,
                 user_msg.as_str(),
                 root.as_path(),
-                &state.aux.process_handles.tool_outcome_recorder,
+                &state.process_handles.tool_outcome_recorder,
                 forced_skill,
             )?;
         }
         seed.messages.push(last_user);
         return Ok(seed);
     }
-    let cfg = state.http.cfg.read().await;
+    let cfg = state.cfg.read().await;
     let role_for_turn =
         crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
             &cfg, agent_role, None,
@@ -269,7 +270,7 @@ pub(super) async fn build_messages_for_turn(
     let skills_base = resolve_skills_base_dir(root.as_path());
     let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         &cfg,
-        &state.aux.process_handles.tool_outcome_recorder,
+        &state.process_handles.tool_outcome_recorder,
         FirstSystemComposeOpts {
             agent_role: role_for_turn.as_deref(),
             user_msg_for_skills: Some(user_msg.as_str()),
