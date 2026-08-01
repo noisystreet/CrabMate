@@ -37,6 +37,9 @@ async fn execute_node_tool_phase(
     let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
     let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
     let ws_max = tool_exec_ctx.cfg_web_search_max_results;
+    let ws_provider =
+        crabmate_config::WebSearchProvider::parse(&tool_exec_ctx.cfg_web_search_provider)
+            .unwrap_or_default();
     let hf_to = tool_exec_ctx.cfg_http_fetch_timeout_secs;
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
@@ -53,7 +56,7 @@ async fn execute_node_tool_phase(
                 allowed_commands: &allowed,
                 working_dir: &working_dir,
                 web_search_timeout_secs: ws_timeout,
-                web_search_provider: crabmate_config::WebSearchProvider::Brave,
+                web_search_provider: ws_provider,
                 web_search_api_key: &web_search_api_key,
                 web_search_max_results: ws_max,
                 http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
@@ -423,7 +426,17 @@ fn resolve_workflow_node_timeout_secs(
         "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" | "docker_build"
         | "docker_compose_ps" | "podman_images" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
-        "web_search" => Some(tool_exec_ctx.cfg_web_search_timeout_secs),
+        "web_search" => {
+            let provider =
+                crabmate_config::WebSearchProvider::parse(&tool_exec_ctx.cfg_web_search_provider)
+                    .unwrap_or_default();
+            Some(
+                crabmate_tools::registry_policy::web_search_outer_wall_secs_for(
+                    provider,
+                    tool_exec_ctx.cfg_web_search_timeout_secs,
+                ),
+            )
+        }
         "http_fetch" | "http_request" => Some(
             tool_exec_ctx
                 .cfg_http_fetch_timeout_secs

@@ -461,7 +461,8 @@ fn derive_tail_storage_inject_net_scalars(
     };
     let web_search_api_key =
         types::SecretString::new(b.web_search.web_search_api_key.clone().unwrap_or_default().into());
-    let web_search_timeout_secs = b.web_search.web_search_timeout_secs.unwrap_or(30).max(1);
+    // 默认 worbrow（本机浏览器）通常需更长墙钟；Brave/Tavily 可自行调低
+    let web_search_timeout_secs = b.web_search.web_search_timeout_secs.unwrap_or(60).max(1);
     let web_search_max_results = b.web_search.web_search_max_results.unwrap_or(8).clamp(1, 20) as u32;
 
     let http_fetch_allowed_prefixes = b.http_fetch.http_fetch_allowed_prefixes.clone().unwrap_or_default();

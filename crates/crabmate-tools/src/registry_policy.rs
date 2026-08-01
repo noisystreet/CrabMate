@@ -3,13 +3,18 @@
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
-use crabmate_config::AgentConfig;
+use crabmate_config::{AgentConfig, WebSearchProvider};
 use crabmate_types::ToolCall;
 
 use crate::tool_dispatch::{
     HandlerId, HandlerLookupTable, ToolExecutionClass, execution_class_for_tool,
 };
 use crate::tool_naming::{is_dynamic_tool_name, is_mcp_proxy_tool};
+
+/// `web_search`（worbrow）外圈相对配置超时的额外等待秒数，供浏览器进程收尾。
+pub const WEB_SEARCH_WORBROW_OUTER_GRACE_SECS: u64 = 15;
+/// Brave/Tavily 外圈相对 reqwest 超时的少量缓冲。
+pub const WEB_SEARCH_API_OUTER_GRACE_SECS: u64 = 2;
 
 fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str {
     match class {
@@ -41,10 +46,31 @@ pub fn parallel_tool_wall_timeout_secs(cfg: &AgentConfig, tool_name: &str) -> u6
             .max(1)
             .max(cfg.command_exec.command_timeout_secs.max(1)),
         WeatherSpawnTimeout => cfg.weather_tool.weather_timeout_secs.max(1),
-        WebSearchSpawnTimeout => cfg.web_search.web_search_timeout_secs.max(1),
+        WebSearchSpawnTimeout => web_search_outer_wall_secs(cfg),
         CommandSpawnTimeout => cfg.command_exec.command_timeout_secs.max(1),
         Workflow | BlockingSync => cfg.command_exec.command_timeout_secs.max(1),
     }
+}
+
+/// `web_search`：`spawn_blocking` **外圈**墙钟（秒）= 配置超时 + 收尾宽限。
+///
+/// 内层（worbrow / reqwest）使用 [`AgentConfig::web_search`].`web_search_timeout_secs`；
+/// 外圈略长，避免外圈先到期后仍留下浏览器进程。
+pub fn web_search_outer_wall_secs(cfg: &AgentConfig) -> u64 {
+    web_search_outer_wall_secs_for(
+        cfg.web_search.web_search_provider,
+        cfg.web_search.web_search_timeout_secs,
+    )
+}
+
+/// 与 [`web_search_outer_wall_secs`] 相同算法，供 workflow 等仅持有拆开字段的路径使用。
+pub fn web_search_outer_wall_secs_for(provider: WebSearchProvider, timeout_secs: u64) -> u64 {
+    let inner = timeout_secs.max(1);
+    let grace = match provider {
+        WebSearchProvider::Worbrow => WEB_SEARCH_WORBROW_OUTER_GRACE_SECS,
+        WebSearchProvider::Brave | WebSearchProvider::Tavily => WEB_SEARCH_API_OUTER_GRACE_SECS,
+    };
+    inner.saturating_add(grace)
 }
 
 /// `http_fetch` / `http_request`：`spawn_blocking` **外圈** `tokio::time::timeout`。
@@ -269,5 +295,22 @@ pub fn sync_default_runs_inline(cfg: &AgentConfig, name: &str) -> bool {
     {
         None => builtin_sync_default_inline_tools().contains(name),
         Some(arc) => arc.contains(name),
+    }
+}
+
+#[cfg(test)]
+mod web_search_wall_tests {
+    use super::*;
+
+    #[test]
+    fn worbrow_outer_wall_adds_browser_grace() {
+        assert_eq!(
+            web_search_outer_wall_secs_for(WebSearchProvider::Worbrow, 60),
+            60 + WEB_SEARCH_WORBROW_OUTER_GRACE_SECS
+        );
+        assert_eq!(
+            web_search_outer_wall_secs_for(WebSearchProvider::Brave, 30),
+            30 + WEB_SEARCH_API_OUTER_GRACE_SECS
+        );
     }
 }

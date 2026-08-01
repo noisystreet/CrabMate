@@ -2,7 +2,8 @@ use crabmate_types::{FunctionCall, ToolCall};
 
 use super::meta::{HandlerId, ToolExecutionClass, execution_class_for_tool, try_dispatch_meta};
 use super::policy::{
-    parallel_tool_wall_timeout_secs, sync_default_runs_inline, tool_calls_allow_parallel_sync_batch,
+    parallel_tool_wall_timeout_secs, sync_default_runs_inline,
+    tool_calls_allow_parallel_sync_batch, web_search_outer_wall_secs,
 };
 
 fn tc(name: &str) -> ToolCall {
@@ -141,5 +142,14 @@ fn parallel_tool_wall_timeout_secs_smoke() {
     assert_eq!(
         parallel_tool_wall_timeout_secs(&cfg, "get_weather"),
         cfg.weather_tool.weather_timeout_secs.max(1)
+    );
+    // 默认 worbrow：外圈 = 内层超时 + 浏览器收尾宽限
+    assert_eq!(
+        parallel_tool_wall_timeout_secs(&cfg, "web_search"),
+        web_search_outer_wall_secs(&cfg)
+    );
+    assert!(
+        web_search_outer_wall_secs(&cfg) > cfg.web_search.web_search_timeout_secs.max(1),
+        "outer wall must exceed inner search timeout for teardown headroom"
     );
 }
