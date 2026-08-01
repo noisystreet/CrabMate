@@ -30,9 +30,7 @@ fn done_remove_completed_plain_empty(
     parsed: Option<StreamEndReason>,
     inp: &DoneBubbleDecisionInputs<'_>,
 ) -> bool {
-    parsed == Some(StreamEndReason::Completed)
-        && inp.diag_chars == 0
-        && !inp.has_hierarchical_or_tool
+    parsed == Some(StreamEndReason::Completed) && inp.diag_chars == 0 && !inp.has_tool
 }
 
 fn done_remove_empty_main_after_tool_like_turn(
@@ -48,7 +46,7 @@ fn done_remove_empty_main_after_tool_like_turn(
             | StreamEndReason::Fallback
             | StreamEndReason::Cancelled
             | StreamEndReason::NoOutput
-    ) && inp.has_hierarchical_or_tool
+    ) && inp.has_tool
         && (!inp.in_answer_body_lane || inp.diag_chars == 0)
 }
 
@@ -69,7 +67,7 @@ pub(super) struct DoneBubbleDecisionInputs<'a> {
     pub end_reason_raw: Option<&'a str>,
     pub in_answer_body_lane: bool,
     pub diag_chars: usize,
-    pub has_hierarchical_or_tool: bool,
+    pub has_tool: bool,
     pub saw_final_response_timeline: bool,
 }
 
@@ -103,7 +101,7 @@ pub(super) fn decide_done_bubble_action(inp: DoneBubbleDecisionInputs<'_>) -> Do
     if should_show_missing_final_summary_hint(
         inp.end_reason_raw,
         inp.in_answer_body_lane,
-        inp.has_hierarchical_or_tool,
+        inp.has_tool,
         inp.saw_final_response_timeline,
     ) {
         DoneBubbleAction::FillMissingFinalHint
@@ -123,7 +121,7 @@ mod tests {
             end_reason_raw: Some("completed"),
             in_answer_body_lane: true,
             diag_chars: 0,
-            has_hierarchical_or_tool: true,
+            has_tool: true,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::Keep);
@@ -136,7 +134,7 @@ mod tests {
             end_reason_raw: Some("completed"),
             in_answer_body_lane: true,
             diag_chars: 3,
-            has_hierarchical_or_tool: false,
+            has_tool: false,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);
@@ -149,7 +147,7 @@ mod tests {
             end_reason_raw: Some("fallback"),
             in_answer_body_lane: true,
             diag_chars: 192,
-            has_hierarchical_or_tool: true,
+            has_tool: true,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);
@@ -162,7 +160,7 @@ mod tests {
             end_reason_raw: Some("fallback"),
             in_answer_body_lane: true,
             diag_chars: 192,
-            has_hierarchical_or_tool: true,
+            has_tool: true,
             saw_final_response_timeline: true,
         });
         assert_eq!(a, DoneBubbleAction::Keep);
@@ -175,7 +173,7 @@ mod tests {
             end_reason_raw: Some("completed"),
             in_answer_body_lane: false,
             diag_chars: 0,
-            has_hierarchical_or_tool: true,
+            has_tool: true,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);
@@ -188,7 +186,7 @@ mod tests {
             end_reason_raw: Some("fallback"),
             in_answer_body_lane: true,
             diag_chars: 0,
-            has_hierarchical_or_tool: false,
+            has_tool: false,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);
@@ -201,7 +199,7 @@ mod tests {
             end_reason_raw: Some("unknown"),
             in_answer_body_lane: true,
             diag_chars: 0,
-            has_hierarchical_or_tool: true,
+            has_tool: true,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::FillDiagnostic);
@@ -214,7 +212,7 @@ mod tests {
             end_reason_raw: Some("completed"),
             in_answer_body_lane: true,
             diag_chars: 0,
-            has_hierarchical_or_tool: false,
+            has_tool: false,
             saw_final_response_timeline: false,
         });
         assert_eq!(a, DoneBubbleAction::RemoveBubble);

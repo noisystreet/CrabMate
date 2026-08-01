@@ -11,8 +11,6 @@ use super::super::plan_fence::{
 use super::super::thinking_strip::{
     assistant_thinking_body_and_answer_raw, filter_assistant_thinking_markers_for_display,
 };
-use super::parts::maybe_trim_hierarchical_subgoal_redundant_lines;
-
 pub(super) fn assistant_message_text_for_display_ex(
     m: &StoredMessage,
     loc: Locale,
@@ -64,21 +62,13 @@ pub(super) fn assistant_message_text_for_display_ex_with_body(
         apply_assistant_display_filters,
     );
     if apply_assistant_display_filters {
-        assistant_body_with_filters(
-            state,
-            loc,
-            is_streaming_last_assistant,
-            r_body,
-            t_body,
-            answer,
-        )
+        assistant_body_with_filters(loc, is_streaming_last_assistant, r_body, t_body, answer)
     } else {
-        assistant_body_without_filters(state, r_body, answer)
+        assistant_body_without_filters(r_body, answer)
     }
 }
 
 fn assistant_body_with_filters(
-    state: Option<&StoredMessageState>,
     loc: Locale,
     is_streaming_last_assistant: bool,
     r_body: &str,
@@ -105,34 +95,28 @@ fn assistant_body_with_filters(
             assistant_text_for_display(&merged, is_streaming_last_assistant, loc, true);
         let mv = merged_out.trim();
         if mv.is_empty() && !a.is_empty() {
-            return maybe_trim_hierarchical_subgoal_redundant_lines(state, answer, true);
+            return answer;
         }
-        return maybe_trim_hierarchical_subgoal_redundant_lines(state, merged_out, true);
+        return merged_out;
     }
 
-    let out = if r.is_empty() {
+    if r.is_empty() {
         answer
     } else if a.is_empty() {
         r.to_string()
     } else {
         format!("{r}\n\n{answer}")
-    };
-    maybe_trim_hierarchical_subgoal_redundant_lines(state, out, true)
+    }
 }
 
-fn assistant_body_without_filters(
-    state: Option<&StoredMessageState>,
-    r_body: &str,
-    answer: String,
-) -> String {
+fn assistant_body_without_filters(r_body: &str, answer: String) -> String {
     let r_empty = r_body.trim().is_empty();
     let a_empty = answer.trim().is_empty();
-    let out = if r_empty {
+    if r_empty {
         answer
     } else if a_empty {
         r_body.to_string()
     } else {
         format!("{r_body}\n\n{answer}")
-    };
-    maybe_trim_hierarchical_subgoal_redundant_lines(state, out, false)
+    }
 }

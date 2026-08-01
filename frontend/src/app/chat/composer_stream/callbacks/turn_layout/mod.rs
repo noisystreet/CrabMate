@@ -382,7 +382,6 @@ impl TurnLayout {
     pub(crate) fn on_tool_call_declared(
         stream_ctx: &ChatStreamCallbackCtx,
         tool_msg: StoredMessage,
-        subgoal_marker: Option<&str>,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         // 若此前已落盘终答行（模型在工具声明前预写了运行结果），将其降级为普通消息，
@@ -392,12 +391,7 @@ impl TurnLayout {
             // 仅 peel 已提前 finalize 的尾泡；loading 上仍有的旁白留给 projection 后再清，
             // 避免工具行出现前助手气泡被掏空。
             let _ = peel_premature_summary_from_messages(&mut s.messages, mid.as_str());
-            projection_reconciler::insert_declared_tool(
-                &mut s.messages,
-                tool_msg,
-                subgoal_marker,
-                mid.as_str(),
-            );
+            projection_reconciler::insert_declared_tool(&mut s.messages, tool_msg, mid.as_str());
         });
     }
 
@@ -829,15 +823,6 @@ fn sync_loading_tail_block_in_messages(
         }
         messages[idx].text = text.to_string();
     }
-}
-
-/// 供 [`super::callbacks::helpers::timeline_tail`] 子目标 upsert 使用。
-pub(crate) fn insert_assistant_before_loading_tail(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-    msg: StoredMessage,
-) {
-    insert_msg_before_loading_tail(messages, streaming_assistant_id, msg);
 }
 
 #[cfg(test)]

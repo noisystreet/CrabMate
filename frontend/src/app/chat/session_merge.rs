@@ -76,10 +76,6 @@ fn is_canonical_assistant_message(m: &StoredMessage) -> bool {
             .state
             .as_ref()
             .is_some_and(|s| s.is_local_timeline_snapshot_row())
-        && !m
-            .state
-            .as_ref()
-            .is_some_and(|s| s.looks_like_hierarchical_subgoal())
 }
 
 fn is_local_only_row_to_replay(
@@ -95,9 +91,6 @@ fn is_local_only_row_to_replay(
     if let Some(ref state) = m.state {
         if state.is_local_timeline_snapshot_row() && !server_msg_ids.contains(m.id.as_str()) {
             return crate::timeline_scan::should_preserve_local_timeline_on_hydrate(m, server_msgs);
-        }
-        if state.looks_like_hierarchical_subgoal() && !server_msg_ids.contains(m.id.as_str()) {
-            return true;
         }
     }
     false
@@ -451,38 +444,6 @@ mod golden {
         let merged = merge_session_tail(server, &local);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].id, "h_0_0");
-    }
-
-    #[test]
-    fn golden_hierarchical_subgoal_between_tool_and_answer() {
-        let subgoal = StoredMessage {
-            id: "sg-local".into(),
-            role: "assistant".into(),
-            text: "子目标执行中".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(StoredMessageState::HierarchicalSubgoal(
-                "hierarchical-subgoal:goal-1".into(),
-            )),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 2,
-        };
-        let local = vec![
-            user_msg("u1", "question"),
-            tool_msg("sse-tool"),
-            subgoal,
-            assistant_msg("a-local", "draft"),
-        ];
-        let server = vec![
-            user_msg("u1", "question"),
-            tool_msg("h_0_0"),
-            assistant_msg("a-srv", "final answer"),
-        ];
-        let merged = merge_session_tail(server, &local);
-        let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["u1", "h_0_0", "sg-local", "a-srv"]);
     }
 
     #[test]

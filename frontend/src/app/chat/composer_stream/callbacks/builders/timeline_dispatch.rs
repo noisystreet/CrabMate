@@ -100,34 +100,6 @@ fn timeline_log_dispatch_intent_analysis(
     push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), state);
 }
 
-fn timeline_log_dispatch_hierarchical_plan(
-    stream_ctx: &ChatStreamCallbackCtx,
-    accum: &PerStreamAccum,
-    info: &TimelineLogInfo,
-) {
-    let plan_text = build_hierarchical_plan_main_bubble_text(&info.title, info.detail.as_deref());
-    if plan_text.is_empty() {
-        return;
-    }
-    let state = Some(timeline_state_local_snapshot());
-    push_assistant_timeline_bubble(stream_ctx, plan_text.clone(), state);
-    accum.add_answer_delta_chars(plan_text.chars().count());
-}
-
-fn timeline_log_dispatch_hierarchical_subgoal(
-    stream_ctx: &ChatStreamCallbackCtx,
-    accum: &PerStreamAccum,
-    info: &TimelineLogInfo,
-) {
-    let text = build_hierarchical_subgoal_main_bubble_text(&info.title, info.detail.as_deref());
-    if text.is_empty() {
-        return;
-    }
-    accum.set_current_subgoal_marker(extract_subgoal_marker_from_title(&info.title));
-    upsert_hierarchical_subgoal_bubble(stream_ctx, text.clone(), &info.title);
-    accum.add_answer_delta_chars(text.chars().count());
-}
-
 fn timeline_log_dispatch_default_body(stream_ctx: &ChatStreamCallbackCtx, info: &TimelineLogInfo) {
     let mut body = info.title.trim().to_string();
     if let Some(detail) = info.detail.as_deref().map(str::trim)
@@ -152,10 +124,8 @@ fn timeline_log_dispatch_body(
     match info.kind.as_str() {
         "final_response" => timeline_log_dispatch_final_response(stream_ctx, accum, &info),
         "intent_analysis" => timeline_log_dispatch_intent_analysis(stream_ctx, accum, &info),
-        "hierarchical_plan" => timeline_log_dispatch_hierarchical_plan(stream_ctx, accum, &info),
-        "hierarchical_subgoal" | "hierarchical_subgoal_started" => {
-            timeline_log_dispatch_hierarchical_subgoal(stream_ctx, accum, &info);
-        }
+        // 分层编排已移除：忽略历史 kind，避免落入 default 再造气泡。
+        "hierarchical_plan" | "hierarchical_subgoal" | "hierarchical_subgoal_started" => {}
         "planner_tool_call_rejected" | "orchestration_route" => {}
         "tool_step_started" | "tool_step_finished" => {}
         _ => timeline_log_dispatch_default_body(stream_ctx, &info),

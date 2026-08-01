@@ -4,9 +4,7 @@ mod tests {
     use super::super::super::stream_turn_scratch_state::StreamTurnScratchState;
     use super::super::helpers::{
         build_empty_reply_with_diagnostic, build_final_response_text,
-        build_hierarchical_plan_main_bubble_text, build_hierarchical_subgoal_main_bubble_text,
         build_intent_analysis_main_bubble_text, build_stream_error_with_suggestion,
-        merge_subgoal_text_preserving_target,
     };
     use crate::i18n::{self, Locale};
 
@@ -75,23 +73,6 @@ mod tests {
     }
 
     #[test]
-    fn hierarchical_plan_text_adds_trailing_gap() {
-        let t =
-            build_hierarchical_plan_main_bubble_text("**Manager 规划**", Some("- [ ] g1: 写代码"));
-        assert_eq!(t, "**Manager 规划**\n- [ ] g1: 写代码\n\n");
-    }
-
-    #[test]
-    fn hierarchical_subgoal_text_keeps_phase_lines() {
-        let t = build_hierarchical_subgoal_main_bubble_text(
-            "子目标 `goal_2`",
-            Some("- 阶段：开始执行\n- 目标：创建 build 目录"),
-        );
-        assert!(t.contains("阶段：开始执行"));
-        assert!(t.contains("目标：创建 build 目录"));
-    }
-
-    #[test]
     fn stream_error_uses_standardized_sections() {
         let out = build_stream_error_with_suggestion("LLM_API_KEY_REQUIRED", Locale::ZhHans);
         assert!(out.contains("发生了什么"));
@@ -104,15 +85,6 @@ mod tests {
         let out = build_empty_reply_with_diagnostic(Locale::ZhHans, true, 128, Some("unknown"));
         assert!(out.contains("流式收尾信号缺失"));
         assert!(out.contains("stream_ended=unknown"));
-    }
-
-    #[test]
-    fn subgoal_update_preserves_target_line_when_new_payload_missing_target() {
-        let existing = "子目标 `goal_4`\n- 阶段：开始执行\n- 目标：创建 CMakeLists.txt\n\n";
-        let incoming = "子目标 `goal_4`\n- 结果：完成\n- 工具：create_file\n\n";
-        let out = merge_subgoal_text_preserving_target(existing, incoming);
-        assert!(out.contains("目标：创建 CMakeLists.txt"));
-        assert!(out.contains("结果：完成"));
     }
 
     #[test]

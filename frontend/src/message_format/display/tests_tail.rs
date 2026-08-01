@@ -2,7 +2,7 @@
 
 use super::message_text_for_display_ex;
 use crate::i18n::Locale;
-use crate::storage::{StoredMessage, StoredMessageState};
+use crate::storage::StoredMessage;
 
 #[test]
 fn no_task_plan_split_across_reasoning_and_text_hides_planner_prose() {
@@ -75,29 +75,6 @@ fn no_task_plan_whole_in_reasoning_text_still_hidden() {
         !out.contains("agent_reply_plan"),
         "json should not leak: {out}"
     );
-}
-
-#[test]
-fn hierarchical_subgoal_hides_redundant_header_and_phase_lines() {
-    let m = StoredMessage {
-        id: "x".into(),
-        role: "assistant".into(),
-        text: "子目标 `goal_2`\n- 阶段：开始执行\n- 目标：创建 build 目录\n- 计划工具：create_file"
-            .into(),
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: Some(StoredMessageState::HierarchicalSubgoal(
-            "hierarchical-subgoal:goal_2".into(),
-        )),
-        is_tool: false,
-        tool_call_id: None,
-        tool_name: None,
-        created_at: 0,
-    };
-    let out = message_text_for_display_ex(&m, Locale::ZhHans, true);
-    assert!(!out.contains("子目标 `goal_2`"));
-    assert!(!out.contains("阶段：开始执行"));
-    assert!(out.contains("目标：创建 build 目录"));
 }
 
 #[test]

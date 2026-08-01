@@ -112,20 +112,7 @@ pub(in super::super) fn make_on_tool_result(
                     tool_name: non_empty_trimmed_tool_name(&info.name),
                     created_at: message_created_ms(),
                 };
-                if let Some(goal_id) = info.goal_id.as_deref() {
-                    let marker = format!("hierarchical-subgoal:{goal_id}");
-                    if let Some(idx) = s.messages.iter().rposition(|m| {
-                        m.state
-                            .as_ref()
-                            .is_some_and(|st| st.matches_full_marker(marker.as_str()))
-                    }) {
-                        s.messages.insert(idx + 1, msg);
-                    } else {
-                        s.messages.push(msg);
-                    }
-                } else {
-                    s.messages.push(msg);
-                }
+                s.messages.push(msg);
                 inserted_new_tool = true;
             }
         });
@@ -178,7 +165,7 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 &stream_ctx.shell.stream,
                 StreamControlEvent::ToolCallDeclared,
             );
-            let _ = (preview, full);
+            let _ = (preview, full, goal_id);
             let loc = stream_ctx.locale.get_untracked();
             let core = if !summary.trim().is_empty() {
                 summary.trim().to_string()
@@ -194,10 +181,6 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 "status: running".to_string()
             };
             let id = make_message_id();
-            let subgoal_marker = goal_id
-                .as_deref()
-                .map(|g| format!("hierarchical-subgoal:{g}"))
-                .or_else(|| accum.current_subgoal_marker_cloned());
             let tcid = tool_call_id
                 .as_deref()
                 .map(str::trim)
@@ -219,20 +202,12 @@ pub(in super::super) fn chat_stream_on_tool_call_builder(
                 stream_ctx
                     .scratch
                     .on_turn_tool_call(tcid.as_str(), name.trim(), core.as_str());
-                TurnLayout::on_tool_call_declared(
-                    stream_ctx.as_ref(),
-                    tool_msg,
-                    subgoal_marker.as_deref(),
-                );
+                TurnLayout::on_tool_call_declared(stream_ctx.as_ref(), tool_msg);
                 stream_ctx.scratch.sync_turn_projection(stream_ctx.as_ref());
                 TurnLayout::release_loading_after_tool_projection(stream_ctx.as_ref());
                 stream_ctx.scratch.sync_stream_preview(stream_ctx.as_ref());
             } else {
-                TurnLayout::on_tool_call_declared(
-                    stream_ctx.as_ref(),
-                    tool_msg,
-                    subgoal_marker.as_deref(),
-                );
+                TurnLayout::on_tool_call_declared(stream_ctx.as_ref(), tool_msg);
                 stream_ctx.scratch.enqueue_pending_tool_message_id(id);
             }
         },
