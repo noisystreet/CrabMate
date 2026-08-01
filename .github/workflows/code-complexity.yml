@@ -21,7 +21,7 @@ jobs:
       - name: Install lizard
         run: pip install lizard
 
-      - name: Run lizard (Rust, CCN threshold from repo script)
+      - name: Run lizard (Rust CCN; per-module caps in lizard_module_ccn_caps.toml)
         run: bash scripts/lizard-rust.sh
 
       - name: Run fn-param cap (Rust max function params ≤ 9)
