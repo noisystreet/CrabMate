@@ -63,7 +63,8 @@
 
 1. **`MessagePipelineStage`** 枚举  
 2. **`message_pipeline/mod.rs` 模块文档**编号列表  
-3. **`docs/开发文档.md`**「上下文窗口策略」  
+3. **`src/agent/message_pipeline/`** 模块文档（阶段顺序真源）  
+
 
 当前顺序（与源码一致）：
 
@@ -162,7 +163,7 @@
 |------|------|
 | **`docs/design/context_window_management_react_pruning.md`** | 面向 **`hierarchy`** Operator **ReAct** 的长循环裁剪（**状态：待实现**）；与本文全局 **`message_pipeline`** 互补，落地时应复用 **`context_window`** / **`message_pipeline`** 能力，避免第二套条数字符逻辑。 |
 | **`docs/design/agent_state_management.md`** | 更广义的会话/产物状态；与裁剪正交。 |
-| **`docs/开发文档.md`** | 维护者索引与「上下文窗口策略」段落；本文展开设计要点，细节仍以源码为准。 |
+| **`docs/开发文档.md`** | 架构概要入口；管道细节以本文 + `message_pipeline` 源码为准。 |
 
 ---
 

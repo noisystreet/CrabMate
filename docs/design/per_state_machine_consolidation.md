@@ -128,7 +128,7 @@
 
 - **回合路由**：**`TurnRouteDecisionV1.orchestration_mode`**（及同字段的 **`turn_orchestration_mode`** `tracing`）描述整轮主执行面；话语型回落时可为 **`freeform`**，尽管配置为 **`planner_executor_mode = hierarchical`**。
 - **分层入口子阶段**：**`agent_turn/hierarchy.rs`** 的 **`hierarchical_phase`**（`intent_gate` / `discourse_fallback_outer` / `router_manager_runner` / …）仅在 **`run_hierarchical_agent`** 内出现，与 **`staged_turn_orchestrator_phase`**、外循环 **`outer_loop_iteration_phase`** 正交。
-- **Manager 反思（R 第四条路径）**：**`hierarchy/reflect_replan_reason::ManagerReflectReplanReason`** + **`tracing`** 字段 **`manager_reflect_replan_reason`**（`goal_verification_failed` / `needs_decomposition`）；**不**调用 **`final_plan_gate`**，与 **`OuterLoopReflectPreGateReason`** 词汇分离。对照表见 **`docs/开发文档.md`**「分层观测」小节。
+- **Manager 反思（历史）**：分层 **`hierarchy/`** 已移除；修订记录中的 **`ManagerReflectReplanReason`** / 「分层观测」仅作历史。现行 R 路径见终答 Gate 与外循环（**勿**再依赖已删的开发文档「分层观测」节）。
 
 ---
 
@@ -206,7 +206,7 @@
 | 2026-07-03 | **阶段 F（full-pipeline 段 reduce）**：**`full_pipeline_reduce`**（ensemble/optimizer/NL 段 Run/Skip）；**`mod.rs`** 段后相位推进收拢；金样 +6。 |
 | 2026-07-03 | **阶段 E（driver reduce 收拢）**：**`rolling_horizon_preflight_reduce`**；**`StagedTurnDriver`** 统一 **`record_*_reduce`**（prepared / step / rolling preflight）；**`turn_orchestrator_fsm`** 增补 reduce→顶层相位映射；金样 +9。 |
 | 2026-07-03 | **阶段 D（首轮解析 reduce + driver 全链路）**：**`prepared_route_reduce`**；**`turn_driver`** 接入 post-parse / full-pipeline / round orchestrator；**`patch_replanner_*`** → **`PatchReplanner`** 顶层相位。 |
-| 2026-07-03 | **阶段 C（分层观测）**：**`hierarchy/reflect_replan_reason`**（**`ManagerReflectReplanReason`** + **`manager_reflect_replan_reason`**）；**`docs/开发文档.md`** **`hierarchical_phase` ↔ `orchestration_mode`** 对照表；§3.2 分层观测说明。 |
+| 2026-07-03 | **阶段 C（分层观测，历史）**：曾写入开发文档对照表；**`hierarchy/`** 已移除，见文首状态与修订记录。 |
 | 2026-07-03 | **阶段 B（分阶段 driver）**：**`staged/turn_driver`** 运行时 **`StagedTurnOrchestratorPhase`**；**`staged_parse_terminal`** 解析终端两层化；**`step_iteration_reduce`** 步后 reduce 表；早停迁入 driver。 |
 | 2026-07-03 | **阶段 A（PER 收拢）**：删除未接线 **`plan_rewrite_controller`**；**`OuterLoopReflectPreGateReason`** 统一外循环 Gate 前纠偏 **`tracing`**；**`docs/开发文档.md`** 补充 R 三轨说明。 |
 | 2026-06-30 | **`staged/turn_orchestrator_fsm`**：**`StagedTurnOrchestratorPhase`**（§3.2 顶层）与子 FSM 映射；**`tracing`** 字段 **`staged_turn_orchestrator_phase`**。**`outer_loop_fsm`**：外循环迭代相位自 **`outer_loop.rs`** 抽出；反思映射迁至 **`outer_loop_reflect`**。**`steps_loop_route_fsm`**：步后 transition 之外的路由表。**`fixtures/fsm_orchestrator_golden.jsonl`** + **`golden_fsm_orchestrator`** 金样。 |

@@ -5,7 +5,7 @@
 **关联**：
 
 - 内置工具契约与信封：**`docs/工具说明.md`**
-- 模块索引与分发：**`docs/开发文档.md`**（`tool_registry`、`tools/`）
+- 工具与分发：**`docs/工具说明.md`**、`tool_registry` / `tools/` 源码；架构入口见 **`docs/开发文档.md`**
 - 待办跟踪：**`docs/待办清单.md`** → **`tools/` 与 `tool_registry.rs`** 小节（与本文件交叉维护：落地后删待办、本文件可增修订记录）
 - 安全面：**`.cursor/rules/security-sensitive-surface.mdc`**、**`docs/配置说明.md`**（`allowed_commands`、`http_fetch_*`、沙盒等）
 

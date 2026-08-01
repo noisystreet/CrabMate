@@ -48,7 +48,7 @@
 **目标**：可启动、可退出、resize 不崩，不占死终端。
 
 - 新增子命令，例如 **`crabmate tui`**（或与 **`repl --tui`** 二选一，需在 **`docs/命令行与路由.md`** 与 **`README.md`** 写明）。
-- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；合并后按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/开发文档.md`** 模块索引）。
+- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；合并后按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/开发文档.md`**「主要模块」）。
 - 实现：**raw mode**、**alt screen**（若使用）、**Drop 时恢复终端**、**Ctrl+Q / Ctrl+C** 退出策略。
 - 验收：TTY 下进入全屏占位 UI；非 TTY 直接报错退出或提示使用 **`repl`** / **`chat`**。
 
@@ -93,7 +93,7 @@
 - **键盘**：焦点在侧栏 / 主区 / 输入之间切换（**Tab** / **hjkl** 等），**`?` / F1** 帮助。
 - **大会话**：虚拟滚动或截断显示 + 「展开全文」。
 - **默认入口**：是否将 **`crabmate`** 无子命令时导向 TUI，属于产品决策；建议长期保留 **`repl`** 作为脚本与 SSH 友好默认。
-- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（模块索引与架构图）；若有新配置键或 **`CM_*`**，同步 **`docs/配置说明.md`**（见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
+- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（主要模块与架构图）；若有新配置键或 **`CM_*`**，同步 **`docs/配置说明.md`**（见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
 
 ---
 

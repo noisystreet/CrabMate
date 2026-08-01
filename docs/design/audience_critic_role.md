@@ -88,7 +88,7 @@
 1. **禁止**在侧向 `messages` 中放入完整 **`API_KEY`**、完整 **`Authorization`**、可复原的密钥片段或未脱敏的 tool 原始大段输出。  
 2. 摘要应复用或对齐 **`per_plan_semantic_check`** / **`summarize_messages_for_final_plan_semantic_check`** 的**信封化**思路：`summary`、`ok`、短预览、条数上限。  
 3. 与 **`message_pipeline` / `context_window`** 的关系：侧向请求的 token **不计入**主对话窗口的误解风险需在实现注释中说明；若共享同一 **`max_turn_duration_seconds`**，需明确是否单独子预算或并行（推荐：**串行**且占用墙钟，避免与取消语义冲突）。  
-4. **唯一入口**：侧向 HTTP 仍须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`」）。
+4. **唯一入口**：侧向 HTTP 仍须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「Agent 主循环」）。
 
 ---
 
