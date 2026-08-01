@@ -14,10 +14,11 @@ use crate::web::http_types::chat::{
 };
 
 use super::builtin_skills::run_web_builtin_command;
-use super::enqueue::parse_chat_request_for_enqueue;
-use super::enqueue::{PreparedJsonChatEnqueue, prepare_json_chat_enqueue};
+use super::enqueue::{
+    json_chat_job_envelope, parse_chat_request_for_enqueue, prepare_json_chat_enqueue,
+    web_request_audit_for_turn,
+};
 use crate::web::app_state_facets::{AsyncChatJobsFacet, WebChatTurnAppFacet};
-use crate::web::audit;
 
 fn normalize_optional_webhook_url(
     raw: Option<String>,
@@ -243,16 +244,10 @@ pub(crate) async fn chat_async_handler(
         );
     }
 
-    let PreparedJsonChatEnqueue {
-        conversation_id: cid_enqueue,
-        turn_seed,
-        work_dir: work_dir_for_job,
-        workspace_is_set,
-        msg_for_log: msg,
-    } = prepare_json_chat_enqueue(
+    let prepared = prepare_json_chat_enqueue(
         &state,
         parsed.user_trim.as_str(),
-        parsed.clarify,
+        parsed.clarify.clone(),
         &parsed.image_urls,
         parsed.agent_role.clone(),
         conversation_id.clone(),
@@ -263,39 +258,19 @@ pub(crate) async fn chat_async_handler(
         target: "crabmate",
         "chat async 请求摘要 job_id={} user_len={} user_preview={}",
         job_id,
-        msg.len(),
-        crate::redact::preview_chars(&msg, crate::redact::MESSAGE_LOG_PREVIEW_CHARS)
+        prepared.msg_for_log.len(),
+        crate::redact::preview_chars(
+            &prepared.msg_for_log,
+            crate::redact::MESSAGE_LOG_PREVIEW_CHARS
+        )
     );
     info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
-    let request_audit = {
-        let cfg = state.cfg.read().await;
-        audit::web_request_audit_from_http(&cfg, &headers, peer)
-    };
+    let request_audit = web_request_audit_for_turn(&state, &headers, peer).await;
+    let envelope = json_chat_job_envelope(&state, job_id, prepared, &parsed, request_audit);
     let submit = state
         .chat
         .chat_queue
-        .try_submit_json(chat_job_queue::JsonSubmitParams {
-            envelope: chat_job_queue::WebChatJobEnvelope {
-                job_id,
-                queue_deps: state.chat.chat_queue_job_deps.clone(),
-                app: state.chat_job_app_facet(),
-                conversation_id: cid_enqueue,
-                messages: turn_seed.messages,
-                expected_revision: turn_seed.expected_revision,
-                request_agent_role: parsed.agent_role.clone(),
-                persisted_active_agent_role: turn_seed.persisted_active_agent_role.clone(),
-                work_dir: work_dir_for_job,
-                workspace_is_set,
-                temperature_override: parsed.temperature_override,
-                seed_override: parsed.seed_override,
-                client_sse_protocol: parsed.client_sse_protocol,
-                llm_override: parsed.llm_override.clone(),
-                executor_llm_override: parsed.executor_llm_override.clone(),
-                readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,
-                request_audit,
-            },
-            reply_tx,
-        });
+        .try_submit_json(chat_job_queue::JsonSubmitParams { envelope, reply_tx });
 
     if let Err(e) = submit {
         let mut g = state.async_chat_jobs.write().await;

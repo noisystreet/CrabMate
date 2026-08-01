@@ -70,7 +70,7 @@ cargo test
 
 ```bash
 cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected
-cargo test tool_result_envelope_golden
+cargo test -p crabmate-tools tool_result_envelope_golden
 ```
 
 If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).

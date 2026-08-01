@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via **`frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via **`frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**).
 
 ## Protocol version `v` and negotiation
 
@@ -203,10 +203,10 @@ Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUE
 
 When changing any of:
 
-1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
+1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
 2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
 3. `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
-4. `src/sse/line.rs`: `classify_agent_sse_line`
+4. `crates/crabmate-sse-protocol/src/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI)
 5. New `encode_message(SsePayload::…)` call sites
 
 …keep Rust, Leptos, and this doc aligned.
@@ -289,10 +289,9 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 
 ### Switching mechanism
 
-- `POST /chat/stream` body: optional `client_sse_protocol`: `2` = AG-UI
-- Server selects `V1Encoder` or `V2Encoder` based on this field
-- Frontend selects `V1Parser` or `V2Parser` based on `sse_protocol_version`
-- Default is now v2 (`SSE_PROTOCOL_VERSION=2`); v1 retained for compatibility
+- `POST /chat/stream` body: optional `client_sse_protocol`; production default is **v2 (AG-UI)** with **`V2Encoder`**
+- Web UI consumes via **`parser_v2.rs`**; V1-shaped classification (`classify_sse_control_outcome`) remains for IM bridge etc.
+- Version constant: `SSE_PROTOCOL_VERSION=2`
 
 ### Golden test
 
@@ -300,8 +299,8 @@ AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golde
 
 ## Contract tests (`crabmate_tool` history envelope)
 
-- **`fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
-- **Rust**: `cargo test tool_result_envelope_golden`.
+- **`crates/crabmate-tools/fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
+- **Rust**: `cargo test -p crabmate-tools tool_result_envelope_golden`.
 
 ---
 

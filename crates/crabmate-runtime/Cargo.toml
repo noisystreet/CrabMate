@@ -5,11 +5,6 @@ edition = "2024"
 license = "Apache-2.0"
 description = "CrabMate CLI/TUI runtime utilities (display, spinner, exit codes, completion)"
 
-[features]
-## 历史保留：REPL 行编辑在根包 `src/runtime/repl_reedline.rs`，不经本 crate 依赖 reedline。
-repl = []
-tui = ["repl"]
-
 [dependencies]
 crabmate-agent = { workspace = true, default-features = false }
 crabmate-chat-export = { workspace = true }

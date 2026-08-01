@@ -2,7 +2,7 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**的单一事实来源为 Rust `src/sse/protocol.rs`；**协议版本号**与 Leptos 前端共用 workspace crate **`crabmate-sse-protocol`**（常量 **`SSE_PROTOCOL_VERSION`**，`protocol.rs` 再导出同名常量）。浏览器消费逻辑在 **`frontend/src/api/chat_stream/parser_v2.rs`**（AG-UI；回调形状见 **`frontend/src/sse_dispatch/types.rs`**）。Rust 侧行分类见 `src/sse/line.rs`（`classify_agent_sse_line`），须与本表语义一致。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 **`frontend/src/api/chat_stream/parser_v2.rs`**（AG-UI；回调形状见 **`frontend/src/sse_dispatch/types.rs`**）。
 
 ## 协议版本 `v` 与协商
 
@@ -205,10 +205,10 @@
 
 变更以下任一时，须同步另一方及本文档：
 
-1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`src/sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（版本常量由 crate 提供并在 `protocol` 再导出）
+1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（生产默认 **`V2Encoder`** / `default_encoder()`）
 2. **`crates/crabmate-sse-protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
 3. `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
-4. `src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致）
+4. `crates/crabmate-sse-protocol/src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）
 5. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
@@ -286,10 +286,9 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 
 ### 切换机制
 
-- `POST /chat/stream` 请求体可选字段 `client_sse_protocol`：`2` = AG-UI
-- 服务端根据此字段选择 V1Encoder 或 V2Encoder
-- 前端根据 `sse_protocol_version` 选择 `V1Parser` 或 `V2Parser`
-- 当前默认已切换为 v2（`SSE_PROTOCOL_VERSION=2`），v1 保留兼容
+- `POST /chat/stream` 请求体可选字段 `client_sse_protocol`：当前生产默认 **v2（AG-UI）**；服务端编码走 **`V2Encoder`**
+- Web 前端由 **`parser_v2.rs`** 消费；V1 形状分类（`classify_sse_control_outcome`）仍供 IM bridge 等使用
+- 版本常量：`SSE_PROTOCOL_VERSION=2`
 
 ### 金样测试
 
@@ -301,8 +300,8 @@ AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由
 
 ## 契约测试（`crabmate_tool` 历史信封）
 
-- **`fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
-- **Rust**：`cargo test tool_result_envelope_golden`。
+- **`crates/crabmate-tools/fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
+- **Rust**：`cargo test -p crabmate-tools tool_result_envelope_golden`。
 
 ---
 

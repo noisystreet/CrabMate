@@ -10,8 +10,3 @@ pub mod chat_export;
 pub mod message_display;
 pub mod message_display_parts;
 pub mod message_snapshot_display;
-
-// `repl_slash_complete` 与 `tables` 模块待后续步骤迁移
-// #[cfg(feature = "repl")]
-// pub mod repl_slash_complete;
-// pub mod tables;

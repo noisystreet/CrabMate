@@ -95,30 +95,47 @@ fn validate_optional_field_max_len(
     Ok(())
 }
 
+fn trim_nonempty_opt(s: &Option<String>) -> Option<String> {
+    s.as_ref()
+        .map(|v| v.trim())
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_string())
+}
+
+fn parse_llm_override_core(
+    prefix: &'static str,
+    api_base: Option<String>,
+    model: Option<String>,
+    api_key: Option<String>,
+    llm_context_tokens: Option<u32>,
+    llm_thinking_mode: Option<WebClientLlmThinkingMode>,
+) -> Result<Option<chat_job_queue::WebChatLlmOverride>, String> {
+    if api_base.is_none()
+        && model.is_none()
+        && api_key.is_none()
+        && llm_context_tokens.is_none()
+        && llm_thinking_mode.is_none()
+    {
+        return Ok(None);
+    }
+    validate_optional_web_api_base(&api_base, prefix)?;
+    validate_optional_field_max_len(&model, CLIENT_LLM_MODEL_MAX, prefix, "model")?;
+    validate_optional_field_max_len(&api_key, CLIENT_LLM_API_KEY_MAX, prefix, "api_key")?;
+    Ok(Some(chat_job_queue::WebChatLlmOverride {
+        api_base,
+        model,
+        api_key,
+        llm_context_tokens,
+        llm_thinking_mode,
+    }))
+}
+
 pub(super) fn parse_client_llm_override(
     raw: Option<ClientLlmBody>,
 ) -> Result<Option<chat_job_queue::WebChatLlmOverride>, String> {
     let Some(b) = raw else {
         return Ok(None);
     };
-    let api_base = b
-        .api_base
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let model = b
-        .model
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let api_key = b
-        .api_key
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
     let llm_context_tokens = match b.llm_context_tokens {
         None => None,
         Some(0) => None,
@@ -144,24 +161,14 @@ pub(super) fn parse_client_llm_override(
             ));
         }
     };
-    if api_base.is_none()
-        && model.is_none()
-        && api_key.is_none()
-        && llm_context_tokens.is_none()
-        && llm_thinking_mode.is_none()
-    {
-        return Ok(None);
-    }
-    validate_optional_web_api_base(&api_base, "client_llm")?;
-    validate_optional_field_max_len(&model, CLIENT_LLM_MODEL_MAX, "client_llm", "model")?;
-    validate_optional_field_max_len(&api_key, CLIENT_LLM_API_KEY_MAX, "client_llm", "api_key")?;
-    Ok(Some(chat_job_queue::WebChatLlmOverride {
-        api_base,
-        model,
-        api_key,
+    parse_llm_override_core(
+        "client_llm",
+        trim_nonempty_opt(&b.api_base),
+        trim_nonempty_opt(&b.model),
+        trim_nonempty_opt(&b.api_key),
         llm_context_tokens,
         llm_thinking_mode,
-    }))
+    )
 }
 
 pub(super) fn parse_executor_llm_override(
@@ -170,37 +177,14 @@ pub(super) fn parse_executor_llm_override(
     let Some(b) = raw else {
         return Ok(None);
     };
-    let api_base = b
-        .api_base
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let model = b
-        .model
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let api_key = b
-        .api_key
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    if api_base.is_none() && model.is_none() && api_key.is_none() {
-        return Ok(None);
-    }
-    validate_optional_web_api_base(&api_base, "executor_llm")?;
-    validate_optional_field_max_len(&model, CLIENT_LLM_MODEL_MAX, "executor_llm", "model")?;
-    validate_optional_field_max_len(&api_key, CLIENT_LLM_API_KEY_MAX, "executor_llm", "api_key")?;
-    Ok(Some(chat_job_queue::WebChatLlmOverride {
-        api_base,
-        model,
-        api_key,
-        llm_context_tokens: None,
-        llm_thinking_mode: None,
-    }))
+    parse_llm_override_core(
+        "executor_llm",
+        trim_nonempty_opt(&b.api_base),
+        trim_nonempty_opt(&b.model),
+        trim_nonempty_opt(&b.api_key),
+        None,
+        None,
+    )
 }
 
 pub(super) fn parse_readonly_tool_ttl_cache_secs(raw: Option<u64>) -> Result<Option<u64>, String> {
