@@ -370,9 +370,9 @@ record_decisions = true
 
 | 环境变量 | 说明 |
 |----------|------|
-| `CM_ORCHESTRATION_DECISION_MODE` | `auto` / `scored` |
-| `CM_ORCHESTRATION_DECISION_STAGED_THRESHOLD` | staged 路由阈值 |
-| `CM_ORCHESTRATION_DECISION_LEARNING_ENABLED` | 是否启用反馈学习 |
+| ~~`CM_ORCHESTRATION_DECISION_MODE`~~ | **未落地 / 已从配置管道移除**（设计稿残留） |
+| ~~`CM_ORCHESTRATION_DECISION_STAGED_THRESHOLD`~~ | **未落地**（staged 路径已移除） |
+| ~~`CM_ORCHESTRATION_DECISION_LEARNING_ENABLED`~~ | **未落地** |
 
 ---
 

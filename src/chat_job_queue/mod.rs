@@ -108,8 +108,7 @@ pub(super) fn resolve_web_llm_for_job(
             (Arc::new(c), key)
         }
     };
-    // 默认强制走 ReAct（单 Agent 外循环），不再暴露给前端选择。
-    // 服务端 TOML 配置的 planner_executor_mode / orchestration_profile 在非 Web 路径下仍可用。
+    // 与 finalize / CLI 一致：运行时固定 ReAct（单 Agent 外循环）；旧 TOML 别名不再生效。
     {
         let mut c = (*cfg).clone();
         c.per_plan_policy.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;

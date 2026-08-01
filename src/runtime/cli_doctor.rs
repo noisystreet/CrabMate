@@ -116,15 +116,15 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
         }
     );
     println!(
-        "  orchestration_profile: {}",
+        "  orchestration_profile: {}（运行时固定；旧 TOML 别名忽略）",
         cfg.per_plan_policy.orchestration_profile.as_str()
     );
     println!(
-        "  planner_executor_mode: {}",
+        "  planner_executor_mode: {}（运行时固定；旧 TOML 别名忽略）",
         cfg.per_plan_policy.planner_executor_mode.as_str()
     );
     println!(
-        "  有效编排路径（静态）: {}",
+        "  有效编排路径（静态）: {}（意图门控 → ReAct 外循环）",
         crabmate_config::effective_orchestration_path_summary(
             cfg.per_plan_policy.planner_executor_mode.as_str(),
             cfg.per_plan_policy.orchestration_profile,

@@ -167,16 +167,25 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
     );
     section_file(
         ctx.working_dir,
-        "Leptos SSE 控制面分发",
-        "frontend/src/sse_dispatch/dispatch.rs",
+        "Leptos SSE 控制面类型（SseControlSink）",
+        "frontend/src/sse_dispatch/types.rs",
         head_lines,
-        &["dispatch", "staged_plan", "Handled", "control"],
+        &["SseControlSink", "turn_phase", "Handled", "control"],
         keyword_hits,
         &mut out,
     );
     section_file(
         ctx.working_dir,
-        "Rust 控制面分类（与前端分支顺序同源）",
+        "Leptos AG-UI 解析分发（V2Parser）",
+        "frontend/src/api/chat_stream/parser_v2.rs",
+        head_lines,
+        &["V2Parser", "CUSTOM", "Handled", "parse"],
+        keyword_hits,
+        &mut out,
+    );
+    section_file(
+        ctx.working_dir,
+        "Rust 控制面分类（IM/V1 形状）",
         "crates/crabmate-sse-protocol/control_classify.rs",
         head_lines,
         &["classify", "handled", "plain", "stop"],
@@ -185,7 +194,16 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
     );
     section_file(
         ctx.working_dir,
-        "SSE 控制面金样（回归）",
+        "SSE AG-UI 金样（Web 回归）",
+        "fixtures/sse_ag_ui_golden.jsonl",
+        head_lines.min(40),
+        &["CUSTOM", "handled", "plain"],
+        20,
+        &mut out,
+    );
+    section_file(
+        ctx.working_dir,
+        "SSE 控制面金样（V1/IM 参考）",
         "fixtures/sse_control_golden.jsonl",
         head_lines.min(40),
         &["plain", "handled", "stop"],

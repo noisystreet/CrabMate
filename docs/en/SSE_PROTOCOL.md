@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via `frontend/src/sse_dispatch/dispatch.rs` (wired from **`frontend/src/api/chat_stream/`**). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** are defined in Rust `src/sse/protocol.rs`; the **numeric protocol version** is shared with the Leptos UI via workspace crate **`crabmate-sse-protocol`** (constant **`SSE_PROTOCOL_VERSION`**, re-exported from `sse::protocol`). The browser consumes via **`frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**). Rust line classification: `src/sse/line.rs` (`classify_agent_sse_line`), semantics must match this doc.
 
 ## Protocol version `v` and negotiation
 
@@ -205,7 +205,7 @@ When changing any of:
 
 1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `src/sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (version from the crate, re-exported in `protocol`)
 2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
-3. `frontend/src/sse_dispatch/dispatch.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
+3. `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
 4. `src/sse/line.rs`: `classify_agent_sse_line`
 5. New `encode_message(SsePayload::…)` call sites
 
@@ -213,11 +213,10 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-After parsing one merged `data:` string as JSON, the frontend applies a **fixed order** to decide `stop` / `handled` / `plain` (`frontend/src/sse_dispatch/dispatch.rs`). The **single source of truth** is **`classify_sse_control_outcome`** in workspace crate **`crates/crabmate-sse-protocol`** (`control_classify.rs`), aligned with the same golden file; Leptos also runs **`golden_sse_control_leptos_dispatch_matches_shared_classify`** to catch drift.
+Current Web (AG-UI) classifies via **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for IM bridge etc. uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
 
-- **`fixtures/sse_control_golden.jsonl`**: each line `description<TAB>JSON<TAB>expected-class` (`#` lines are comments).
-- **Rust**: `cargo test golden_sse_control` (runs **`crabmate-sse-protocol`** golden tests plus **frontend** alignment).
-When adding a new top-level key consumed by the Web UI: update `frontend/src/sse_dispatch/dispatch.rs`, **`crates/crabmate-sse-protocol/control_classify.rs`**, and golden lines.
+- **Web AG-UI**: `cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`.
+When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key, also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
 
 ---
 
@@ -301,4 +300,4 @@ AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golde
 
 ---
 
-Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend/src/sse_dispatch/dispatch.rs`** as authoritative and fix this doc.
+Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend/src/api/chat_stream/parser_v2.rs`** as authoritative and fix this doc.
