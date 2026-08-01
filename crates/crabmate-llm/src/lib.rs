@@ -44,9 +44,8 @@ pub use recording::{
 };
 pub use requests::{
     chat_request_vendor_extensions_for_agent, kimi_k2_5_vendor_requires_tool_call_reasoning,
-    no_tools_chat_request, no_tools_chat_request_for_hierarchical_manager,
-    no_tools_chat_request_from_messages, tool_chat_request, vendor_temperature_for_config,
-    vendor_temperature_for_model,
+    no_tools_chat_request, no_tools_chat_request_from_messages, tool_chat_request,
+    vendor_temperature_for_config, vendor_temperature_for_model,
 };
 pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
 pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
@@ -60,6 +59,3 @@ pub use vendor::{
 pub use vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
 };
-
-/// 分阶段规划轮（无工具 JSON）的 `max_tokens` 下限；推理字段易占满较小完成额度。
-pub const STAGED_PLANNER_MIN_COMPLETION_TOKENS: u32 = 3072;

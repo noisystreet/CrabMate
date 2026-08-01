@@ -98,7 +98,7 @@
 - 将会话同步管道的 **`context_char_budget`** 缩放至 **70%** / **50%**（下限 4096 字符）；
 - 将 LLM 摘要触发阈值上限压至 **12288** / **6144** 字符（在 **`effective_context_summary_trigger_chars`** 基线上取 `min`）。
 
-入口：**`prepare_messages_before_model_call_sync_with_budget`**、**`prepare_session_messages_shared`**（主路径与 **`prepare_messages_for_hierarchical_operator`** 均经此核心路径）。
+入口：**`prepare_messages_before_model_call_sync_with_budget`**、**`prepare_session_messages_shared`**（主路径；分层 Operator 入口已移除）。
 
 ---
 
@@ -128,7 +128,7 @@
 ### 6.5 多入口一致性
 
 - Web / CLI / 分阶段路径统一经 **`prepare_messages_for_model`**（会话同步 + 可选摘要等）。
-- **分层**（**`planner_executor_mode = hierarchical`**）：**Operator ReAct**（`hierarchy/operator`）每次 **`call_llm`** 前对 **[`ReactState::messages`]** 调用 **`prepare_messages_before_model_call_sync`**；**Manager** 分解/重规划/反思、**`manager_json_repair`**、**`dynamic_decomposer`**、**`hierarchy/router`** 的 LLM 路由等在发 **`no_tools_chat_request_for_hierarchical_manager`** 前对**临时** `Vec<Message>` 调用 **`prepare_messages_for_hierarchical_llm_sync`**（与上同属 **`apply_session_sync_pipeline`**，**`/status`** 的 **`message_pipeline_*_hits`** 同源累计）。上述分层路径**不**自动跑 **`maybe_summarize_with_llm`**、工作区变更集注入（与子目标/结构化 JSON 隔离上下文一致）。若将来在分层侧需要摘要，再评估是否复用异步 **`prepare_messages_for_model`** 或引入专用开关。
+- **分层（已移除）**：原 Manager/Operator 曾走独立 `prepare_messages_for_hierarchical_*`；现行仅 **ReAct 外循环** 经 **`prepare_messages_for_model`** / **`prepare_session_messages_shared`**。
 
 ### 6.6 可观测性
 

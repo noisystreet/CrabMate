@@ -1,12 +1,4 @@
-//! `ChatRequest` 惯用构造（工具轮 / 无工具轮 / 分层 Manager JSON 模式等）。
-
-use crabmate_types::llm_config::LlmConfig;
-use crabmate_types::{
-    ChatRequest, ChatRequestCore, ChatRequestVendorExtensions, LlmSeedOverride, Message, Tool,
-    is_long_term_memory_injection, messages_for_api_stripping_reasoning_skip_ui_separators,
-    resolved_llm_seed,
-};
-use log::debug;
+//! `ChatRequest` 惯用构造（工具轮 / 无工具轮等）。
 
 use crate::vendor::{
     api_base_looks_volcano_engine_openai_compat, deepseek_json_output_eligible,
@@ -16,8 +8,12 @@ use crate::vendor::{
 use crate::vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
 };
-
-const HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS: u32 = 6144;
+use crabmate_types::llm_config::LlmConfig;
+use crabmate_types::{
+    ChatRequest, ChatRequestCore, ChatRequestVendorExtensions, LlmSeedOverride, Message, Tool,
+    is_long_term_memory_injection, messages_for_api_stripping_reasoning_skip_ui_separators,
+    resolved_llm_seed,
+};
 
 /// **kimi-k2.5** 在**未**显式关闭思考时，服务端 **`thinking` 默认启用**；此时含 **`tool_calls`** 的 assistant 历史消息必须带 **`reasoning_content`**，否则返回 `invalid_request_error`（见 Moonshot [Chat API](https://platform.moonshot.cn/docs/api/chat) 与实测报错）。
 #[inline]
@@ -155,39 +151,6 @@ pub fn no_tools_chat_request_from_messages(
     }
 }
 
-/// 分层 **Manager** / 动态分解器等需解析 **结构化 JSON** 的无工具请求。
-///
-/// 当 **`api_base`** 指向 DeepSeek 官方兼容端点时，自动设置 **`response_format: {"type":"json_object"}`**（见 [DeepSeek JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）；其它网关行为不变。
-/// 仅以 hostname 判定，避免在 MiniMax 等使用 `deepseek-chat` 模型 ID 时误发不兼容字段。
-///
-/// **输出长度**：分解 JSON（含多条 `sub_goals` 长 `description`）易超过全局默认 `max_tokens`（嵌入默认现为 4096），仍可能触发 `finish_reason=length` 导致无法解析。本路径对 **`max_tokens` 设下限**（仍尊重用户配置的更大值）。
-pub fn no_tools_chat_request_for_hierarchical_manager(
-    cfg: &LlmConfig,
-    messages: &[Message],
-    temperature_override: Option<f32>,
-    model_override: Option<&str>,
-    seed_override: LlmSeedOverride,
-) -> ChatRequest {
-    let mut req = no_tools_chat_request(
-        cfg,
-        messages,
-        temperature_override,
-        model_override,
-        seed_override,
-    );
-    req.max_tokens = req
-        .max_tokens
-        .max(HIERARCHICAL_MANAGER_MIN_COMPLETION_TOKENS);
-    if deepseek_json_output_eligible(&cfg.llm.api_base) {
-        req.vendor.response_format = Some(serde_json::json!({ "type": "json_object" }));
-        debug!(
-            target: "crabmate",
-            "no_tools_chat_request_for_hierarchical_manager: response_format=json_object (DeepSeek JSON Output)"
-        );
-    }
-    req
-}
-
 #[cfg(test)]
 mod tests {
     use crabmate_config::load_config;
@@ -276,64 +239,6 @@ mod tests {
             LlmSeedOverride::FromConfig,
         );
         assert_eq!(req.temperature, 1.0);
-    }
-
-    #[test]
-    fn hierarchical_manager_json_mode_only_on_deepseek_api_base() {
-        let mut cfg = load_config(None).expect("default embedded config");
-        cfg.llm.api_base = "https://api.deepseek.com/v1".to_string();
-        let llm_cfg = agent_to_llm_cfg(&cfg);
-        let req = super::no_tools_chat_request_for_hierarchical_manager(
-            &llm_cfg,
-            &[Message::user_only("x")],
-            None,
-            None,
-            LlmSeedOverride::FromConfig,
-        );
-        assert_eq!(
-            req.vendor
-                .response_format
-                .as_ref()
-                .and_then(|v| v.get("type"))
-                .and_then(|t| t.as_str()),
-            Some("json_object")
-        );
-
-        cfg.llm.api_base = "http://127.0.0.1:11434/v1".to_string();
-        let llm_cfg2 = agent_to_llm_cfg(&cfg);
-        let req_local = super::no_tools_chat_request_for_hierarchical_manager(
-            &llm_cfg2,
-            &[Message::user_only("x")],
-            None,
-            None,
-            LlmSeedOverride::FromConfig,
-        );
-        assert!(req_local.vendor.response_format.is_none());
-    }
-
-    #[test]
-    fn hierarchical_manager_raises_max_tokens_floor_when_global_low() {
-        let mut cfg = load_config(None).expect("default embedded config");
-        cfg.llm_sampling.max_tokens = 2048;
-        let llm_cfg = agent_to_llm_cfg(&cfg);
-        let req = super::no_tools_chat_request_for_hierarchical_manager(
-            &llm_cfg,
-            &[Message::user_only("x")],
-            None,
-            None,
-            LlmSeedOverride::FromConfig,
-        );
-        assert_eq!(req.max_tokens, 6144);
-        cfg.llm_sampling.max_tokens = 8192;
-        let llm_cfg2 = agent_to_llm_cfg(&cfg);
-        let req_hi = super::no_tools_chat_request_for_hierarchical_manager(
-            &llm_cfg2,
-            &[Message::user_only("x")],
-            None,
-            None,
-            LlmSeedOverride::FromConfig,
-        );
-        assert_eq!(req_hi.max_tokens, 8192);
     }
 
     #[test]

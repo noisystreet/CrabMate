@@ -2,7 +2,7 @@
 //!
 //! **领域层**（规划产物、意图路由、墙钟预算等）见独立 crate **`crabmate-agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
 
-/// 分阶段与分层共用的验收规则内核（规范化 spec + 证据 → 判定）。
+/// 验收规则内核（规范化 spec + 证据 → 判定）。
 pub use crabmate_agent::acceptance;
 pub mod agent_turn;
 pub use crabmate_agent::context_budget_pressure;
@@ -16,11 +16,9 @@ pub use crabmate_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（移入 `crabmate-agent` crate）。
 pub use crabmate_agent::per_coord;
 mod per_plan_semantic_check;
-pub use crabmate_agent::plan_ensemble;
-mod plan_optimizer;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在 `per_plan_semantic_check`）。
 pub mod reflection;
-/// 分阶段 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
+/// 步级 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
 pub(crate) mod step_executor_policy;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
 pub mod tiktoken_prompt_tokens;
