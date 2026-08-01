@@ -19,11 +19,13 @@ pub use crabmate_types::llm_config::{
 /// 敏感字符串（`Debug` / 结构化日志默认脱敏）；取值请用 [`ExposeSecret::expose_secret`]。
 pub use secrecy::{ExposeSecret, SecretString};
 
-/// `web_search` 工具使用的第三方搜索 API 提供商
+/// `web_search` 工具使用的搜索提供商
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum WebSearchProvider {
-    /// [Brave Search API](https://brave.com/search/api/)
+    /// [worbrow](https://crates.io/crates/worbrow)：本机 headless 浏览器打开通用搜索引擎（默认；无需 API Key）
     #[default]
+    Worbrow,
+    /// [Brave Search API](https://brave.com/search/api/)
     Brave,
     /// [Tavily Search API](https://tavily.com/)
     Tavily,
@@ -32,10 +34,11 @@ pub enum WebSearchProvider {
 impl WebSearchProvider {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
+            "worbrow" | "browser" => Ok(Self::Worbrow),
             "brave" => Ok(Self::Brave),
             "tavily" => Ok(Self::Tavily),
             _ => Err(format!(
-                "未知的 web_search_provider: {:?}（支持 brave、tavily）",
+                "未知的 web_search_provider: {:?}（支持 worbrow、brave、tavily）",
                 s.trim()
             )),
         }
@@ -43,9 +46,30 @@ impl WebSearchProvider {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Worbrow => "worbrow",
             Self::Brave => "brave",
             Self::Tavily => "tavily",
         }
+    }
+
+    /// 是否需要配置 `web_search_api_key`。
+    pub fn requires_api_key(self) -> bool {
+        matches!(self, Self::Brave | Self::Tavily)
+    }
+}
+
+#[cfg(test)]
+mod web_search_provider_tests {
+    use super::WebSearchProvider;
+
+    #[test]
+    fn default_is_worbrow_without_api_key() {
+        assert_eq!(WebSearchProvider::default(), WebSearchProvider::Worbrow);
+        assert!(!WebSearchProvider::Worbrow.requires_api_key());
+        assert_eq!(
+            WebSearchProvider::parse("BROWSER").unwrap().as_str(),
+            "worbrow"
+        );
     }
 }
 

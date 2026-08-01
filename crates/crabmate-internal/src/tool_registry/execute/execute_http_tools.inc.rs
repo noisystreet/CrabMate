@@ -299,6 +299,8 @@ async fn execute_web_search_web(
     }
     let name_in = name.to_string();
     let search_timeout = cfg.web_search.web_search_timeout_secs;
+    // 外圈略长于内层（worbrow/reqwest）超时，给浏览器收尾留宽限，避免外圈先砍掉等待后残留进程。
+    let outer_wall = web_search_outer_wall_secs(cfg.as_ref());
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_owned = args.to_string();
@@ -310,7 +312,7 @@ async fn execute_web_search_web(
         );
         tools::run_tool(&name_in, &args_owned, &ctx)
     });
-    let s = match tokio::time::timeout(Duration::from_secs(search_timeout), handle).await {
+    let s = match tokio::time::timeout(Duration::from_secs(outer_wall), handle).await {
         Ok(Ok(s)) => s,
         Ok(Err(e)) => {
             error!(
@@ -322,7 +324,13 @@ async fn execute_web_search_web(
             format!("工具执行异常：{:?}", e)
         }
         Err(_) => {
-            error!(target: "crabmate", "联网搜索超时 tool={}", name);
+            error!(
+                target: "crabmate",
+                "联网搜索超时 tool={} configured_secs={} outer_wall_secs={}",
+                name,
+                search_timeout,
+                outer_wall
+            );
             format!("联网搜索超时（{} 秒）", search_timeout)
         }
     };

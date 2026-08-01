@@ -190,15 +190,19 @@ Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conve
 
 | Variable | Description |
 | --- | --- |
-| `CM_WEB_SEARCH_PROVIDER` | Provider id. |
-| `CM_WEB_SEARCH_API_KEY` | Search API key. |
-| `CM_WEB_SEARCH_TIMEOUT_SECS` | Timeout seconds. |
+| `CM_WEB_SEARCH_PROVIDER` | Provider: default **`worbrow`** (local browser; alias `browser`); optional **`brave`** / **`tavily`** (API key required). |
+| `CM_WEB_SEARCH_API_KEY` | Search API key (`brave` / `tavily` only). |
+| `CM_WEB_SEARCH_TIMEOUT_SECS` | **Inner** search timeout seconds; default **60** (for worbrow). |
 | `CM_WEB_SEARCH_MAX_RESULTS` | Max results. |
 | `CM_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
 | `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
 
-**Outer `tokio::time::timeout` around `spawn_blocking`**: besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
+**`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.1.1** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**; engine chain **`bing,duckduckgo`** (fallback on captcha/low yield); results include unwrapped landing URLs and `domain`. Without a browser, switch to `brave`/`tavily` or install one. Docker SyncDefault sandboxes usually lack a host browser—use an API provider or avoid web search in-sandbox.
+
+**`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**, brave/tavily **+2s**) so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
+
+**Outer `tokio::time::timeout` around `spawn_blocking`** (HTTP tools): besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
 
 ### `tool_registry` policy (`tools.toml` / main config)
 

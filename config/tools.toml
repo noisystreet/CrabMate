@@ -147,9 +147,9 @@ session_workspace_changelist_max_chars = 12000
 
 # --- 内置工具超时与联网（可选）---
 weather_timeout_secs = 15
-# web_search_provider = "brave"
-# web_search_api_key = ""
-# web_search_timeout_secs = 30
+# web_search_provider = "worbrow"   # 默认；免 Key，需本机 Firefox 或 Chrome/Edge。可选 brave / tavily
+# web_search_api_key = ""          # 仅 brave / tavily 需要；亦可用 CM_WEB_SEARCH_API_KEY
+# web_search_timeout_secs = 60     # worbrow 建议 ≥60；brave/tavily 可更短
 # web_search_max_results = 8
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/", "https://example.com/api/"]
 # http_fetch_timeout_secs = 30
