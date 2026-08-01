@@ -18,8 +18,6 @@ pub(crate) async fn record_and_emit_turn_route_decision(
         turn_route_orchestration_mode = decision.orchestration_mode.as_str(),
         turn_route_turn_phase = decision.turn_phase.as_str(),
         turn_route_freeform_because = decision.freeform_because.as_deref().unwrap_or(""),
-        turn_route_hierarchical_post_intent_route =
-            decision.hierarchical_post_intent_route.as_deref().unwrap_or(""),
         "turn_route_decision"
     );
     let detail = decision.to_json().ok();

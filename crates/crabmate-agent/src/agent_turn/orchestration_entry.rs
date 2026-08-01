@@ -40,7 +40,7 @@ pub fn resolve_turn_top_level_dispatch(_cfg: &AgentConfig) -> TurnTopLevelDispat
     TurnTopLevelDispatch::NonHierarchical
 }
 
-/// 统一 info 日志字段，减少 `mod.rs` / `run_dispatch` / `hierarchy` 散落叙述。
+/// 统一 info 日志字段，减少 `mod.rs` / `run_dispatch` 散落叙述。
 pub fn log_orchestration_transition(
     transition: TurnOrchestrationTransition,
     turn_orchestration_mode: Option<&str>,
@@ -86,11 +86,17 @@ mod tests {
     #[test]
     fn top_level_dispatch_always_non_hierarchical() {
         assert_eq!(
-            resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::Hierarchical)),
+            resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::SingleAgent)),
             TurnTopLevelDispatch::NonHierarchical
         );
         assert_eq!(
-            resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::SingleAgent)),
+            PlannerExecutorMode::parse("hierarchical").unwrap(),
+            PlannerExecutorMode::SingleAgent
+        );
+        assert_eq!(
+            resolve_turn_top_level_dispatch(&cfg_with(
+                PlannerExecutorMode::parse("logical_dual_agent").unwrap()
+            )),
             TurnTopLevelDispatch::NonHierarchical
         );
     }

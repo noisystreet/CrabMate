@@ -20,8 +20,6 @@ pub struct TurnRouteDecisionV1 {
     pub orchestration_mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freeform_because: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub hierarchical_post_intent_route: Option<String>,
     pub planner_executor_mode: String,
     pub plan_requirement_policy: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -121,7 +119,6 @@ pub fn build_non_hierarchical_turn_route_decision(
         turn_phase: entry.turn_phase.as_str().to_string(),
         orchestration_mode: entry.orchestration_mode.as_str().to_string(),
         freeform_because: entry.freeform_because.map(|b| b.as_str().to_string()),
-        hierarchical_post_intent_route: None,
         planner_executor_mode: cfg
             .per_plan_policy
             .planner_executor_mode
@@ -137,7 +134,7 @@ pub fn build_non_hierarchical_turn_route_decision(
     }
 }
 
-/// 非分层：**`intent_at_turn_start`** 已写入终答并结束本回合（未评估 staged 门控）。
+/// 非分层：**`intent_at_turn_start`** 已写入终答并结束本回合。
 pub fn build_non_hierarchical_intent_finished_early_decision(
     cfg: &AgentConfig,
     intent_gate: IntentGateSnapshot,
@@ -151,7 +148,6 @@ pub fn build_non_hierarchical_intent_finished_early_decision(
             .as_str()
             .to_string(),
         freeform_because: None,
-        hierarchical_post_intent_route: None,
         planner_executor_mode: cfg
             .per_plan_policy
             .planner_executor_mode
@@ -222,13 +218,12 @@ pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnR
 pub fn log_turn_route_decision(decision: &TurnRouteDecisionV1) {
     log::info!(
         target: "crabmate::agent_turn",
-        "turn_route_decision version={} top_level={} orchestration_mode={} turn_phase={} freeform_because={} hierarchical_post_intent_route={} planner_executor_mode={} plan_requirement_policy={}",
+        "turn_route_decision version={} top_level={} orchestration_mode={} turn_phase={} freeform_because={} planner_executor_mode={} plan_requirement_policy={}",
         decision.version,
         decision.top_level,
         decision.orchestration_mode,
         decision.turn_phase,
         decision.freeform_because.as_deref().unwrap_or(""),
-        decision.hierarchical_post_intent_route.as_deref().unwrap_or(""),
         decision.planner_executor_mode,
         decision.plan_requirement_policy,
     );

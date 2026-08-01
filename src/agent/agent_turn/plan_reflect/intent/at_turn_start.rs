@@ -1,4 +1,4 @@
-//! 在 `run_agent_turn` 起点（**非** Hierarchical 模式可选）与分层模式共用的**意图门控**：
+//! 在 `run_agent_turn` 起点的**意图门控**（可选；由 `intent_at_turn_start_enabled` 控制）：
 //! 默认 L2；旧 L0/L1 规则层仅在 L2 不可用时兜底。非「直接执行」时写入助手终答并结束本回合。
 //! `meta.greeting`、`qa.meta*`、`qa.explain`、`qa.readonly*`（只读 + hint）、`ClarifyThenExecute`、`ConfirmThenExecute` 等改入**主模型**；占位 canned 不终答（可配合 `intent_turn_gate_hint` 与 `system_intent_gate_hint`）。
 

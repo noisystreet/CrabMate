@@ -68,9 +68,9 @@ struct StatusResponse {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
-    /// 规划器/执行器模式：single_agent | logical_dual_agent | hierarchical。
+    /// 规划器/执行器模式（运行时恒 `single_agent`；旧 TOML 别名已映射）。
     planner_executor_mode: &'static str,
-    /// 编排档位：freeform | staged | auto。
+    /// 编排档位（运行时恒 `react`）。
     orchestration_profile: &'static str,
     /// 本进程有效编排路径摘要（不含用户任务级门控）。
     effective_orchestration_path: String,

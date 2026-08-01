@@ -82,16 +82,17 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | Conservative L0-feature boost for ambiguous sentences (default on). TOML: `intent_l0_routing_boost_enabled`. |
 | `CM_INTENT_EXECUTE_LOW_THRESHOLD` | Deprecated-rule fallback "confirm then execute" low threshold (0.0–1.0, default 0.2). TOML: `intent_execute_low_threshold`. |
 | `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | Deprecated-rule fallback "execute directly" high threshold, ≥ low (default 0.45). TOML: `intent_execute_high_threshold`. |
-| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | Non-hierarchical override for "confirm then execute" low; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
-| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | Non-hierarchical override for "execute directly" high, ≥ non-hier low; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
-| `CM_INTENT_MODE_BIAS_ENABLED` | Whether hierarchical `runner` lightly biases execution mode by `primary_intent` (default on). TOML: `intent_mode_bias_enabled`. |
+| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | Override for "confirm then execute" low; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
+| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | Override for "execute directly" high, ≥ non-hier low; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
+| `CM_INTENT_MODE_BIAS_ENABLED` | Legacy key (hierarchical runner bias); hierarchical path removed; kept for old configs. TOML: `intent_mode_bias_enabled`. |
+| `CM_PLANNER_EXECUTOR_MODE` | Runtime is always **`single_agent`** (ReAct). `logical_dual_agent` / `hierarchical` are deprecated aliases. TOML: `planner_executor_mode`. |
 
 ### Intent gates vs `plan_rewrite` (quick reference)
 
 | Mechanism | When it applies | Relation to **`plan_rewrite_max_attempts`** |
 | --- | --- | --- |
 | **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | Turn-start **`intent_at_turn_start`**: confidence bands for “confirm then execute” vs “execute directly”, etc. | **None** — does not consume rewrite budget |
-| **`intent_non_hier_execute_*`** | Same stack, but overrides the two thresholds when **`planner_executor_mode != hierarchical`**; falls back to **`intent_execute_*`** if unset | **None** |
+| **`intent_non_hier_execute_*`** | Same stack; overrides the two thresholds; falls back to **`intent_execute_*`** if unset | **None** |
 | **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of intent thresholds; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
@@ -341,7 +342,7 @@ If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.c
 - **`llm_kimi_thinking_disabled = true`** (Web **`llm_thinking_mode: off`** sets this) → **`thinking` disabled**; **`reasoning_effort`** omitted. If both flags apply, **disabled wins** (same precedence as Kimi).
 - Neither flag → omit both fields; gateway defaults apply (docs: thinking **enabled** by default).
 
-Hierarchical **Manager** JSON paths still strip **`thinking`**, **`reasoning_split`**, and **`reasoning_effort`**.
+Structured no-tools JSON paths (if any) still strip **`thinking`**, **`reasoning_split`**, and **`reasoning_effort`**.
 
 ## Sample `config.toml`
 
