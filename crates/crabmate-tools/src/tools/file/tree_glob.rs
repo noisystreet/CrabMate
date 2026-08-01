@@ -100,24 +100,24 @@ fn walk_glob_collect_walkdir(
     Ok(())
 }
 
-/// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
-/// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
-pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+struct GlobFilesArgs<'a> {
+    pattern_s: &'a str,
+    pattern: Pattern,
+    root: &'a str,
+    max_depth: usize,
+    max_results: usize,
+    include_hidden: bool,
+}
+
+fn parse_glob_files_args(v: &serde_json::Value) -> Result<GlobFilesArgs<'_>, String> {
     let pattern_s = match v.get("pattern").and_then(|p| p.as_str()).map(str::trim) {
         Some(p) if !p.is_empty() => p,
-        _ => return "错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string(),
+        _ => return Err("错误：缺少 pattern 参数（glob，如 **/*.rs）".to_string()),
     };
     if pattern_s.starts_with('/') || pattern_s.contains("..") {
-        return "错误：pattern 不能使用绝对路径或包含 ..".to_string();
+        return Err("错误：pattern 不能使用绝对路径或包含 ..".to_string());
     }
-    let pattern = match Pattern::new(pattern_s) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：glob 模式无效: {}", e),
-    };
+    let pattern = Pattern::new(pattern_s).map_err(|e| format!("错误：glob 模式无效: {}", e))?;
 
     let root = v
         .get("path")
@@ -126,7 +126,7 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or(".");
     if root.starts_with('/') || root.contains("..") {
-        return "错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string();
+        return Err("错误：path 必须是工作区内的相对路径，且不能包含 .. 或绝对路径".to_string());
     }
 
     let max_depth = v
@@ -146,14 +146,59 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
         .and_then(|b| b.as_bool())
         .unwrap_or(false);
 
-    let scan_root = match resolve_for_read(working_dir, root) {
+    Ok(GlobFilesArgs {
+        pattern_s,
+        pattern,
+        root,
+        max_depth,
+        max_results,
+        include_hidden,
+    })
+}
+
+fn format_glob_files_output(args: &GlobFilesArgs<'_>, results: &[String]) -> String {
+    let truncated = results.len() >= args.max_results;
+    let mut out = String::new();
+    out.push_str(&format!(
+        "起始目录（相对工作区）: {}\n模式: {}\nmax_depth={} max_results={} include_hidden={}\n---\n",
+        args.root, args.pattern_s, args.max_depth, args.max_results, args.include_hidden
+    ));
+    for r in results {
+        out.push_str(r);
+        out.push('\n');
+    }
+    out.push_str(&format!(
+        "---\n匹配 {} 条路径{}",
+        results.len(),
+        if truncated {
+            format!("（已达上限 {}，可能仍有未扫描到的匹配）", args.max_results)
+        } else {
+            String::new()
+        }
+    ));
+    out
+}
+
+/// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
+/// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
+pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args = match parse_glob_files_args(&v) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+
+    let scan_root = match resolve_for_read(working_dir, args.root) {
         Ok(p) => p,
         Err(e) => return format!("错误：无法解析起始目录：{}", e),
     };
     if !scan_root.is_dir() {
         return format!(
             "错误：path 不是目录：{}",
-            path_for_tool_display(working_dir, &scan_root, Some(root))
+            path_for_tool_display(working_dir, &scan_root, Some(args.root))
         );
     }
     let workspace_canonical = match canonical_workspace_root(working_dir) {
@@ -165,10 +210,10 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
     if let Err(e) = walk_glob_collect_walkdir(
         &scan_root,
         &workspace_canonical,
-        &pattern,
-        max_depth,
-        include_hidden,
-        max_results,
+        &args.pattern,
+        args.max_depth,
+        args.include_hidden,
+        args.max_results,
         &mut results,
     ) {
         return e;
@@ -176,30 +221,7 @@ pub fn glob_files(args_json: &str, working_dir: &Path) -> String {
 
     results.sort();
     results.dedup();
-    let truncated = results.len() >= max_results;
-    let mut out = String::new();
-    out.push_str(&format!(
-        "起始目录（相对工作区）: {}\n模式: {}\nmax_depth={} max_results={} include_hidden={}\n---\n",
-        root,
-        pattern_s,
-        max_depth,
-        max_results,
-        include_hidden
-    ));
-    for r in &results {
-        out.push_str(r);
-        out.push('\n');
-    }
-    out.push_str(&format!(
-        "---\n匹配 {} 条路径{}",
-        results.len(),
-        if truncated {
-            format!("（已达上限 {}，可能仍有未扫描到的匹配）", max_results)
-        } else {
-            String::new()
-        }
-    ));
-    out
+    format_glob_files_output(&args, &results)
 }
 
 fn walk_list_tree_walkdir(
