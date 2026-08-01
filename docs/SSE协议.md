@@ -236,8 +236,13 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 | 事件 | 含义 |
 |------|------|
 | `RUN_STARTED` | 回合开始（首帧） |
-| `RUN_FINISHED` | 回合正常结束 → 前端 `on_done` + `saw_stream_ended` |
+| `RUN_FINISHED` | 回合正常结束 → 前端进入收尾并最终 `on_done` + `saw_stream_ended`（见下「终态顺序」） |
 | `RUN_ERROR` | 回合出错 → 前端 `on_error` + `saw_stream_ended` |
+
+**终态顺序（现行 vs 目标）**
+
+- **现行（兼容）**：服务端可在 **`RUN_FINISHED` 之后**仍发送 **`conversation_saved`** 等业务控制面；官方 Web 在 `RUN_FINISHED` 后继续读 body（Draining），再执行一次性 `on_done`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
+- **目标（Phase E，未落地）**：`conversation_saved`（及可选快照）在成功终态**之前**；`RUN_FINISHED` / `RUN_ERROR` 为**最后一个**业务事件。规划与迁移步骤见 **`docs/Turn布局设计.md` §16**。
 
 ### 工具调用
 

@@ -239,8 +239,13 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 | Event | Meaning |
 |-------|---------|
 | `RUN_STARTED` | Turn started (first frame) |
-| `RUN_FINISHED` | Turn completed → frontend `on_done` + `saw_stream_ended` |
+| `RUN_FINISHED` | Turn completed → frontend drains then `on_done` + `saw_stream_ended` (see terminal order below) |
 | `RUN_ERROR` | Turn failed → frontend `on_error` + `saw_stream_ended` |
+
+**Terminal event order (current vs target)**
+
+- **Current (compat)**: the server may still emit business control frames such as **`conversation_saved` after `RUN_FINISHED`**; the official Web client keeps reading the body in a Draining state before a single `on_done` (see `frontend/src/api/chat_stream/sse_frame.rs`).
+- **Target (Phase E, not shipped)**: `conversation_saved` (and optional snapshots) come **before** a successful terminal event; `RUN_FINISHED` / `RUN_ERROR` are the **last** business events. Plan: **`docs/Turn布局设计.md` §16** (Chinese; authoritative for layout Phase E).
 
 ### Tool calls
 

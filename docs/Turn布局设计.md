@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E（终态协议 / hydration）** 规划见 **§16**（未落地）；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -510,16 +510,16 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 | I1 演进 | 原「insert-once 不可移」→ 同 key upsert / 纠错序 | **已定稿**（§12 I1 / Phase D） |
 | 投影类型曾隐式 | reconciler 散落在 `TurnLayout` | **已显式**：`project_turn_projection` + `projection_reconciler` |
 
-**残余 backlog**（正式规范以本节为准；勿再以 agent 草案为活规划）：
+**残余 backlog**（正式规范以本节与 **§16** 为准）：
 
 | 项 | 说明 |
 |----|------|
 | 真实 LLM 冒烟 | 流中空壳 / 相邻同文 / 旁白在工具前；见 `e2e/specs/real-llm-bubble-layout.spec.ts` |
 | 削薄 `TurnLayout` | rotate / peel / demote / on_done 继续收进 reconciler，缩小公开入口 |
 | 旁白路径 ideal `handoff=0` | 兼容路径可留；主路径应接近零 `commentary_handoff` |
-| Phase E | 协议与 hydration（`RUN_FINISHED`、投影键权威）；草案见 `agent_space/sse-conversation-layout-future-plan.md` |
+| Phase E | 终态协议与 hydration；见 **§16** |
 
-历史 Phase A–D 实施草案已删除；正式规范与残余 backlog **仅以本节与 §12 为准**（勿再恢复「finalized 禁止改文」类过时 I1）。
+历史 Phase A–D 实施草案已删除；正式规范与残余 backlog **仅以本节、§12 与 §16 为准**（勿再恢复「finalized 禁止改文」类过时 I1）。
 
 **回归基线（流中采样，勿只验就绪后）**：
 
@@ -529,3 +529,102 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 - 金样：`fixtures/turn_project_projection_golden.jsonl`（`cargo test -p crabmate-turn-layout golden_turn_project_projection`）
 
 **Debug 观测**（仅 debug 构建）：`layout_debug_counters` 累计 `empty_shell_skip` / `commentary_handoff`，控制台 `[layout_debug]`。
+
+---
+
+## 16. Phase E：终态协议与 hydration（规划，未落地）
+
+> 自原 `agent_space` 草稿吸收；**现行实现仍属兼容止血**，本节描述目标与迁移步骤，改协议时同步 **`docs/SSE协议.md`**（AG-UI 附录）与金样。
+
+### 16.1 现状（兼容层）
+
+- 后端可在 **`RUN_FINISHED` 之后**仍发送 **`conversation_saved`** 等业务控制面。
+- 前端：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body 直至尾部事件（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
+- hydration：same-revision 守卫保留本地投影，避免「流结束立刻重载布局跳变」。
+- Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`，hydration / 冷启动尚未完全同一投影键权威。
+
+长期方向：**不再堆 merge / dedupe / sleep**，而是统一终态顺序、canonical 事实来源与确定性投影。
+
+### 16.2 目标与非目标
+
+**目标**
+
+1. `RUN_FINISHED` / `RUN_ERROR` 成为**最后一个**业务 SSE 事件。
+2. 流式显示、落盘、重载 hydration、冷启动得到**相同**可见消息布局。
+3. 服务端 canonical 为事实来源；Web 行为是确定性投影，不靠本地到达顺序猜测。
+4. 旧前端 / 旧服务端短期共存，可安全回滚。
+5. 空助手行、重复终答、丢失 revision、重复 `on_done` 有自动化门禁。
+
+**非目标**
+
+- 不要求严格「助手—工具」逐行交替；Web 继续块布局（§13）。
+- 不在本阶段改 CLI/TUI 展示样式（TUI 已消费 `project_turn_web_v2` 则保持对齐，不另开布局体系）。
+- 不以固定 sleep 解决竞态。
+- 不一次性删除 legacy hydration；须经兼容窗口（expand → dual-read → switch → contract）。
+
+### 16.3 目标 SSE 生命周期
+
+```text
+内容与工具事件
+  → stream_draining（可选，非终态）
+  → 服务端保存会话
+  → conversation_saved(revision)
+  → final_state_snapshot（可选）
+  → RUN_FINISHED 或 RUN_ERROR（终态）
+  → HTTP body 关闭
+```
+
+约束：
+
+| 规则 | 说明 |
+|------|------|
+| 终态后无业务事件 | `RUN_FINISHED` / `RUN_ERROR` 之后禁止再发控制面业务帧 |
+| `stream_draining` | 仅表示模型/工具执行结束；可更新「收尾中」文案，**不**释放 stream context |
+| `conversation_saved` | 须在成功终态**之前**；保存失败 → 明确错误终态，不伪装成功 |
+| `on_done` | 至多一次；仅由终态或 body 正常结束驱动 |
+
+协议形状与 capability 变更须更新 **`docs/SSE协议.md`**、`crabmate-sse-protocol`、`parser_v2` / 金样（见 api-sse 清单）。
+
+### 16.4 Canonical + 投影键
+
+1. 服务端持久化 canonical messages，并逐步补充可选布局元数据（示例字段，落地时以 serde/OpenAPI 为准）：`turn_id`、`segment_id`、`segment_kind`、`before_tool_call_id`、`sequence`、与现有 **`layout_schema_version`**（Web 侧已用 **2**）对齐的服务端字段。
+2. **`crabmate-turn-layout`** 为 canonical → Web 行的唯一投影；流式与 hydration **同一**规则与同一组 golden（含 `turn_project_*` / `turn_project_projection_*`）。
+3. 浏览器 `/user-data` 只缓存投影；缓存身份至少含：`conversation_id`、`server_revision`、`layout_schema_version`、`projection_hash`。本地缓存可加速首屏，**不得**成为第二事实来源。
+
+**目标 hydration 决策**
+
+| 条件 | 动作 |
+|------|------|
+| 服务端 revision 更新 | 重新确定性投影 |
+| revision 相同且 projection hash/version 相同 | 跳过计算 |
+| revision 相同但 hash/version 不同 | 重新投影并记诊断 |
+| 旧会话缺布局元数据 | legacy merge，标记 `legacy_projection` |
+| 本地空 / 跨浏览器 / 缓存丢失 | 仅从 canonical 生成，与原浏览器一致 |
+
+### 16.5 迁移阶段（expand → contract）
+
+| 阶段 | 内容 | 备注 |
+|------|------|------|
+| **E0** | 固化现状：保留终态后读 body、same-revision 守卫（标明临时）；完善真实 LLM revision 等待；金样记录**现行**顺序 `RUN_FINISHED → conversation_saved → body close` | 文档即本节 + SSE 附录「现行 vs 目标」 |
+| **E1** | 修正终态顺序（expand-first）：前端先吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端改为先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；capability/version 标明新序 | 回滚：旧解析器 + 短期后端开关 |
+| **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | 流式与 hydration 投影幂等、逐字段一致 |
+| **E3** | 双读：新会话写元数据；hydration 优先确定性投影；无元数据走 legacy；差分模式只记行数/角色序/文本 hash（不记全文） | 稳定前**不**删 same-revision 守卫 |
+| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 删除条件见下 |
+
+**E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；线上无终态后业务事件；legacy 会话比例可接受。
+
+### 16.6 测试与可观测性（落地时）
+
+- **单元**：生命周期 Running → Draining → Persisted → Finished；`on_done` ≤ 1；投影幂等；hash 对 revision/version 敏感。
+- **协议金样**：`conversation_saved` 在终态前；终态后业务事件 → 违规；`golden_sse_control` / AG-UI 金样三方一致。
+- **E2E**：流结束立即重载；冷启动；第二浏览器；保存延迟/失败；resume；cancel / `RUN_ERROR`；多工具无空壳/无重复终答（现有 mock 基线见 §15）。
+- **指标（脱敏）**：`stream_draining_to_saved_ms`、`conversation_saved_to_finished_ms`、`event_after_terminal_count`、`hydration_projection_source`、`projection_hash_changed` 等；**禁止**记密钥与完整正文。告警：终态后事件、revision 久不到达、同 revision hash 抖动、hydration 后空壳增加、`on_done` 重复。
+
+### 16.7 验收
+
+1. `RUN_FINISHED` / `RUN_ERROR` 为最后一个业务事件。  
+2. 正常流、立即重载、冷启动、跨浏览器可见序列一致。  
+3. 同 revision + 同 layout version 的 projection hash 稳定。  
+4. 无空 finalized assistant；无重复终答 / 重复工具结果展示。  
+5. 保存失败有明确错误语义。  
+6. legacy 路径有可验证退出条件后再删。
