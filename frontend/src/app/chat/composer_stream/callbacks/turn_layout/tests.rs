@@ -91,11 +91,7 @@ fn post_tool_tool_boundary_creates_empty_loading_tail() {
         },
     ];
     let _peeled = extract_post_tool_tail_before_tool(&mut msgs, "a_load").expect("peeled");
-    insert_tool_row(
-        &mut msgs,
-        empty_msg("t1", "system", "next tool", true),
-        None,
-    );
+    insert_tool_row(&mut msgs, empty_msg("t1", "system", "next tool", true));
     msgs.insert(
         2,
         StoredMessage {

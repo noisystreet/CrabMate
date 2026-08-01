@@ -94,29 +94,3 @@ pub(super) fn user_text_for_chat_display(raw: &str) -> String {
     }
     raw.to_string()
 }
-
-pub(super) fn maybe_trim_hierarchical_subgoal_redundant_lines(
-    state: Option<&crate::storage::StoredMessageState>,
-    raw: String,
-    apply_assistant_display_filters: bool,
-) -> String {
-    if !apply_assistant_display_filters {
-        return raw;
-    }
-    let is_subgoal = state.is_some_and(|s| s.looks_like_hierarchical_subgoal());
-    if !is_subgoal {
-        return raw;
-    }
-    let kept = raw
-        .lines()
-        .filter(|line| {
-            let t = line.trim();
-            !(t.starts_with("子目标 `")
-                || t.starts_with("子目标 goal_")
-                || t.starts_with("- 阶段：")
-                || t.starts_with("阶段："))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    kept.trim().to_string()
-}

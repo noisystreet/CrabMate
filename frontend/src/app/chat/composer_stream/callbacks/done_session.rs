@@ -48,12 +48,7 @@ pub(super) fn apply_stream_done_to_loading_assistant(
     in_answer_body_lane: bool,
     locale: Locale,
 ) {
-    let has_hierarchical_or_tool = messages.iter().any(|x| {
-        x.is_tool
-            || x.state
-                .as_ref()
-                .is_some_and(|st| st.looks_like_hierarchical_subgoal())
-    });
+    let has_tool = messages.iter().any(|x| x.is_tool);
     let Some(idx) = messages.iter().position(|m| m.id == assistant_message_id) else {
         clear_residual_assistant_loading_placeholders(messages);
         clear_residual_empty_assistant_rows(messages);
@@ -79,7 +74,7 @@ pub(super) fn apply_stream_done_to_loading_assistant(
         end_reason_raw: end_reason,
         in_answer_body_lane,
         diag_chars,
-        has_hierarchical_or_tool,
+        has_tool,
         saw_final_response_timeline: turn.saw_final_response_timeline,
     }) {
         DoneBubbleAction::Keep => {}
@@ -157,7 +152,6 @@ mod tests {
                 answer_delta_chars: 0,
                 stream_end_reason: None,
                 saw_final_response_timeline: false,
-                current_subgoal_marker: None,
             },
             false,
             crate::i18n::Locale::ZhHans,
@@ -176,7 +170,6 @@ mod tests {
                 answer_delta_chars: 0,
                 stream_end_reason: Some("completed".into()),
                 saw_final_response_timeline: false,
-                current_subgoal_marker: None,
             },
             true,
             crate::i18n::Locale::ZhHans,

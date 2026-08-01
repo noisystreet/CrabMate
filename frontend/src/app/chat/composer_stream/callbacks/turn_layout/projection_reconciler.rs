@@ -137,29 +137,14 @@ pub(super) fn ensure_final_answer_row_from_text(
 pub(super) fn insert_declared_tool(
     messages: &mut Vec<StoredMessage>,
     tool_msg: StoredMessage,
-    subgoal_marker: Option<&str>,
     loading_tail_id: &str,
 ) {
-    insert_tool_row(messages, tool_msg, subgoal_marker);
+    insert_tool_row(messages, tool_msg);
     pin_loading_tail_in_messages(messages, loading_tail_id);
 }
 
-pub(super) fn insert_tool_row(
-    messages: &mut Vec<StoredMessage>,
-    tool_msg: StoredMessage,
-    subgoal_marker: Option<&str>,
-) {
-    if let Some(mk) = subgoal_marker
-        && let Some(idx) = messages.iter().rposition(|m| {
-            m.state
-                .as_ref()
-                .is_some_and(|st| st.matches_full_marker(mk))
-        })
-    {
-        messages.insert(idx + 1, tool_msg);
-    } else {
-        messages.push(tool_msg);
-    }
+pub(super) fn insert_tool_row(messages: &mut Vec<StoredMessage>, tool_msg: StoredMessage) {
+    messages.push(tool_msg);
 }
 
 pub(super) fn pin_loading_tail_in_messages(messages: &mut Vec<StoredMessage>, loading_id: &str) {

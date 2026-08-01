@@ -13,8 +13,7 @@ use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
 
-use super::helpers::{hierarchical_subgoal_banner_is_active, message_row_prefixed_class};
-use super::views::chat_message_row_subgoal_exec_banner_view;
+use super::helpers::message_row_prefixed_class;
 
 pub(super) fn arc_retry_visible_for_message(
     row_state_map: Memo<HashMap<String, (bool, bool)>>,
@@ -152,47 +151,6 @@ pub(super) fn message_row_inline_copy_button(
                 />
             </svg>
         </button>
-    }
-}
-
-pub(super) struct SubgoalBannerReactiveCtx {
-    pub locale: RwSignal<Locale>,
-    pub sessions: RwSignal<Vec<ChatSession>>,
-    pub active_id: RwSignal<String>,
-    pub mid_subgoal: String,
-    pub phase_for_run_owned: Option<String>,
-    pub subgoal_exec_banner: Option<String>,
-    pub subgoal_exec_banner_icon_key: Option<&'static str>,
-}
-
-pub(super) fn subgoal_exec_banner_reactive_view(ctx: SubgoalBannerReactiveCtx) -> impl IntoView {
-    let SubgoalBannerReactiveCtx {
-        locale,
-        sessions,
-        active_id,
-        mid_subgoal,
-        phase_for_run_owned,
-        subgoal_exec_banner,
-        subgoal_exec_banner_icon_key,
-    } = ctx;
-    move || {
-        let loc = locale.get();
-        let phase_sl = phase_for_run_owned.as_deref();
-        let active = sessions.with(|list| {
-            hierarchical_subgoal_banner_is_active(
-                list,
-                active_id.get_untracked().as_str(),
-                mid_subgoal.as_str(),
-                subgoal_exec_banner.as_ref(),
-                phase_sl,
-                loc,
-            )
-        });
-        chat_message_row_subgoal_exec_banner_view(
-            subgoal_exec_banner.clone(),
-            subgoal_exec_banner_icon_key,
-            active,
-        )
     }
 }
 

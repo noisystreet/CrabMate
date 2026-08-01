@@ -25,8 +25,6 @@ pub enum StoredMessageState {
     Error,
     /// 同一模型轮次在 `tool_calls` 之前流出的正文旁注（不进主气泡/导出）。
     CommentaryBeforeTools,
-    /// `hierarchical-subgoal:…` 完整标记。
-    HierarchicalSubgoal(String),
     /// 侧栏时间线：`k` 为 [`TIMELINE_UI_STATE_KEY`] 的 JSON。
     TimelineUiJson(String),
     /// 未能归入已知变体的字符串（兼容往返）。
@@ -41,9 +39,6 @@ impl StoredMessageState {
             "commentary_before_tools" => return Self::CommentaryBeforeTools,
             _ => {}
         }
-        if s.starts_with("hierarchical-subgoal:") {
-            return Self::HierarchicalSubgoal(s);
-        }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s)
             && v.get("k").and_then(|x| x.as_str()) == Some(TIMELINE_UI_STATE_KEY)
         {
@@ -57,7 +52,7 @@ impl StoredMessageState {
             Self::Loading => "loading".to_string(),
             Self::Error => "error".to_string(),
             Self::CommentaryBeforeTools => "commentary_before_tools".to_string(),
-            Self::HierarchicalSubgoal(s) | Self::TimelineUiJson(s) | Self::Opaque(s) => s.clone(),
+            Self::TimelineUiJson(s) | Self::Opaque(s) => s.clone(),
         }
     }
 
@@ -69,21 +64,6 @@ impl StoredMessageState {
     #[inline]
     pub fn is_error(&self) -> bool {
         matches!(self, Self::Error)
-    }
-
-    pub fn matches_full_marker(&self, marker: &str) -> bool {
-        match self {
-            Self::HierarchicalSubgoal(s) | Self::Opaque(s) => s == marker,
-            _ => false,
-        }
-    }
-
-    pub fn looks_like_hierarchical_subgoal(&self) -> bool {
-        match self {
-            Self::HierarchicalSubgoal(_) => true,
-            Self::Opaque(s) => s.starts_with("hierarchical-subgoal:"),
-            _ => false,
-        }
     }
 
     /// 若非空则交给 [`crate::timeline_scan::timeline_entry_for_message`] 内的 JSON 解析（校验 `k`）。

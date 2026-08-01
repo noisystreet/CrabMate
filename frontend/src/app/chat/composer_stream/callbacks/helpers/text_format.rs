@@ -62,50 +62,6 @@ pub(crate) fn build_intent_analysis_main_bubble_text(title: &str, detail: Option
     }
 }
 
-pub(crate) fn build_hierarchical_plan_main_bubble_text(
-    title: &str,
-    detail: Option<&str>,
-) -> String {
-    let mut out = String::new();
-    let title = title.trim();
-    if !title.is_empty() {
-        out.push_str(title);
-    }
-    if let Some(detail) = detail.map(str::trim)
-        && !detail.is_empty()
-    {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(detail);
-    }
-    if out.is_empty() {
-        String::new()
-    } else {
-        format!("{out}\n\n")
-    }
-}
-
-pub(crate) fn build_hierarchical_subgoal_main_bubble_text(
-    title: &str,
-    detail: Option<&str>,
-) -> String {
-    let mut out = title.trim().to_string();
-    if let Some(detail) = detail.map(str::trim)
-        && !detail.is_empty()
-    {
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        out.push_str(detail);
-    }
-    if out.is_empty() {
-        String::new()
-    } else {
-        format!("{out}\n\n")
-    }
-}
-
 pub(crate) fn to_single_line(s: &str, max_chars: usize) -> String {
     let compact = s
         .split_whitespace()
