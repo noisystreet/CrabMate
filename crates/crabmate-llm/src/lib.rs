@@ -45,7 +45,7 @@ pub use recording::{
 pub use requests::{
     chat_request_vendor_extensions_for_agent, kimi_k2_5_vendor_requires_tool_call_reasoning,
     no_tools_chat_request, no_tools_chat_request_from_messages, tool_chat_request,
-    vendor_temperature_for_config, vendor_temperature_for_model,
+    vendor_temperature_for_config,
 };
 pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
 pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};

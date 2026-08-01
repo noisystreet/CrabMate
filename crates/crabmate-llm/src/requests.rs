@@ -3,7 +3,6 @@
 use crate::vendor::{
     api_base_looks_volcano_engine_openai_compat, deepseek_json_output_eligible,
     deepseek_reasoning_effort_for_request, fold_system_into_user_for_config, llm_vendor_adapter,
-    llm_vendor_adapter_for_model,
 };
 use crate::vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
@@ -20,13 +19,6 @@ use crabmate_types::{
 pub fn kimi_k2_5_vendor_requires_tool_call_reasoning(cfg: &LlmConfig) -> bool {
     llm_vendor_adapter(&cfg.llm.model, &cfg.llm.api_base)
         .preserve_assistant_tool_call_reasoning(cfg)
-}
-
-/// 按模型 ID 将出站 **`temperature`** 钳到当前 [`crate::vendor::LlmVendorAdapter`] 允许值（见 [`llm_vendor_adapter_for_model`]；有完整配置时请用 [`vendor_temperature_for_config`] / [`llm_vendor_adapter`]）。
-#[inline]
-#[allow(dead_code)] // 嵌入方与单测使用；默认 `cargo build --lib` 无库内调用
-pub fn vendor_temperature_for_model(model: &str, temperature: f32) -> f32 {
-    llm_vendor_adapter_for_model(model).coerce_temperature(model, temperature)
 }
 
 /// 按 **`AgentConfig`**（**`model` + `api_base`**）钳制温度（摘要等路径与 [`llm_vendor_adapter`] 一致）。

@@ -12,7 +12,7 @@ use crabmate_config::AgentConfig;
 
 // `crabmate-mcp` 在 `mcp` feature 关闭时只导出 stub 类型/函数；开启后才有完整实现。
 // 此处显式列出导出项，避免 `pub use crabmate_mcp::*` 的 resolve 模块与外层冲突。
-// 注意：不直接再导出 `try_open_session_and_tools`——`crabmate-mcp` 内实现已封死（恒空）；
+// MCP 回合打开入口在本模块（加载 user-data）；勿使用已删除的 `crabmate_mcp` 恒空桩。
 // agent 回合必须走本模块的 user-data 感知版本。
 #[cfg(feature = "mcp")]
 pub use crabmate_mcp::{
@@ -33,8 +33,6 @@ pub use crabmate_mcp::{
 };
 
 /// 按当前 `AgentConfig` **与 user-data `mcp_servers.json`** 解析并打开 MCP 回合句柄。
-///
-/// 与已封死的 `crabmate_mcp::try_open_session_and_tools` 不同：此处会加载 Web/CLI 设置页落盘的多服务器配置。
 pub async fn try_open_session_and_tools(cfg: &AgentConfig) -> McpTurnOpenResult {
     let resolved = resolve_mcp_config(cfg);
     try_open_turn_handle(&resolved).await

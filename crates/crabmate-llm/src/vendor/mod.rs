@@ -320,7 +320,7 @@ pub fn llm_vendor_adapter(model: &str, api_base: &str) -> &'static dyn LlmVendor
 
 /// 仅按 **`model`** ID 选择适配器（无 `AgentConfig` 时用于温度等逻辑；**不含** `api_base` 回退）。
 #[inline]
-#[allow(dead_code)] // 对外 API + `vendor_temperature_for_model`；默认 lib 构建可能无其它调用
+#[allow(dead_code)] // 对外 API：仅按 model ID 选型（无 api_base）；库内主路径用 `llm_vendor_adapter`
 pub fn llm_vendor_adapter_for_model(model: &str) -> &'static dyn LlmVendorAdapter {
     if is_moonshot_kimi_family_model_id(model) {
         &KIMI

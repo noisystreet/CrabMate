@@ -221,9 +221,9 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let v = vec![Message::user_only("u"), assistant];
-        let a = messages_stripping_reasoning_for_api_request(&v, false, false);
         let b = messages_for_api_stripping_reasoning_skip_ui_separators(&v, false, false);
-        assert_eq!(a, b);
+        assert_eq!(b.len(), 2);
+        assert!(b[1].reasoning_content.is_none());
     }
 
     #[test]

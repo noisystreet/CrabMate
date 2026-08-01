@@ -58,9 +58,6 @@ pub(crate) struct RunLoopCore<'a> {
 pub(crate) struct RunLoopIo<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
-    /// 与 [`cancel`] 同源；供分层并行 `spawn` 共享。
-    #[allow(dead_code)]
-    pub cancel_arc: Option<Arc<AtomicBool>>,
     pub control: TurnControlSink<'a>,
     pub terminal: TurnTerminalIo,
 }

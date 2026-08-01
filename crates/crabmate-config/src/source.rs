@@ -265,7 +265,8 @@ pub(super) struct AgentSection {
     pub(super) intent_non_hier_execute_low_threshold: Option<f64>,
     /// 意图路由「直接执行」高阈值覆盖；省略则回退 `intent_execute_high_threshold`。
     pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
-    /// 历史键：分层 runner 按 intent 偏置执行模式；分层路径已移除，保留解析以免旧配置失败。
+    /// 历史键：分层 runner 偏置；保留解析以免 `deny_unknown_fields` 拒旧 TOML（运行时忽略）。
+    #[allow(dead_code)]
     pub(super) intent_mode_bias_enabled: Option<bool>,
     /// 是否启用 L2 语义意图分类（默认 true）。
     pub(super) intent_l2_enabled: Option<bool>,

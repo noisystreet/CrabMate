@@ -267,6 +267,8 @@ pub(crate) struct ConfigBuilderIntentRouting {
     pub(crate) intent_execute_high_threshold: Option<f64>,
     pub(crate) intent_non_hier_execute_low_threshold: Option<f64>,
     pub(crate) intent_non_hier_execute_high_threshold: Option<f64>,
+    /// 历史键占位：finalize 忽略，仅避免旧环境变量/误写入污染其它字段。
+    #[allow(dead_code)]
     pub(crate) intent_mode_bias_enabled: Option<bool>,
     pub(crate) intent_l2_enabled: Option<bool>,
     pub(crate) intent_l2_min_confidence: Option<f64>,

@@ -8,7 +8,7 @@ use super::{
     AfterFinalAssistant, FinalPlanRequirementMode, PLAN_REWRITE_EXHAUSTED_SSE, PerCoordinator,
     PerCoordinatorInit, PlanRequirementSource, PreparedWorkflowExecute,
 };
-use super::{final_plan_gate, plan_artifact, plan_rewrite};
+use super::{final_plan_gate, plan_rewrite};
 
 fn stop_output_to_string(stop_output: Option<Value>) -> String {
     let stop_v = stop_output.unwrap_or_else(|| {
@@ -208,12 +208,6 @@ impl PerCoordinator {
     pub(super) fn workflow_validate_layer_need(&mut self, messages: &[Message]) -> Option<usize> {
         self.workflow_validate_cache
             .workflow_validate_layer_need(messages)
-    }
-
-    /// 是否包含可解析的 `agent_reply_plan` v1 JSON（见 `plan_artifact`）。
-    #[allow(dead_code)] // 供外部集成或调试保留；主路径用 `parse_agent_reply_plan_v1`
-    pub fn content_has_plan(content: &str) -> bool {
-        plan_artifact::content_has_valid_agent_reply_plan_v1(content)
     }
 
     /// 在已将 assistant 消息推入 `messages` 之后调用，根据是否需要「规划」段落决定下一步。

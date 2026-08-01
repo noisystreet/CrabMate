@@ -48,7 +48,6 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.tool_registry_policy
         .clone_from(&src.tool_registry_policy);
     dst.turn_budget.clone_from(&src.turn_budget);
-    dst.hierarchy_routing.clone_from(&src.hierarchy_routing);
     dst.intent_routing.clone_from(&src.intent_routing);
 
     dst.conversation_persistence.scheduled_agent_tasks =
