@@ -1,0 +1,56 @@
+# 各模块单函数 CCN 硬上限（lizard）。与 scripts/lizard_rust_metrics.py 配套。
+# - global_ccn_ceiling：任一模块的 cap 不得超过此值（仓库全局天花板）
+# - default_ccn_max：未在 [modules] 登记的新模块回退值
+# 收紧：重构后把对应模块数值调低；升高须有意为之（勿默认放宽）。
+# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测 max 重写 [modules]
+
+global_ccn_ceiling = 15
+default_ccn_max = 15
+
+[modules]
+"crates/cmd_mate" = 13
+"crates/crabmate-agent" = 15
+"crates/crabmate-approval" = 3
+"crates/crabmate-benchmark" = 10
+"crates/crabmate-chat-export" = 4
+"crates/crabmate-config" = 15
+"crates/crabmate-display-rules" = 7
+"crates/crabmate-im-bridge" = 13
+"crates/crabmate-internal" = 15
+"crates/crabmate-llm" = 14
+"crates/crabmate-mcp" = 12
+"crates/crabmate-memory" = 15
+"crates/crabmate-runtime" = 12
+"crates/crabmate-sse-protocol" = 10
+"crates/crabmate-tool-card" = 13
+"crates/crabmate-tools" = 15
+"crates/crabmate-turn-layout" = 11
+"crates/crabmate-types" = 10
+"crates/crabmate-web-host" = 8
+"crates/crabmate-workflow" = 15
+"frontend" = 15
+"src/agent" = 15
+"src/bin" = 5
+"src/chat_job_queue" = 11
+"src/cli_run.rs" = 15
+"src/cli_run_serve.rs" = 5
+"src/cli_run_session.rs" = 9
+"src/conversation_store.rs" = 12
+"src/e2e_scenario.rs" = 12
+"src/env_flags.rs" = 2
+"src/lib" = 1
+"src/lib.rs" = 1
+"src/llm" = 14
+"src/main.rs" = 8
+"src/meta_dialogue.rs" = 11
+"src/per_turn_flight.rs" = 1
+"src/request_audit.rs" = 3
+"src/run_agent_turn.rs" = 5
+"src/runtime" = 15
+"src/session_title.rs" = 4
+"src/shutdown.rs" = 1
+"src/test_serve.rs" = 1
+"src/turn_replay_dump.rs" = 15
+"src/turn_runner.rs" = 2
+"src/user_data" = 9
+"src/web" = 15
