@@ -1390,7 +1390,6 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
 ]
 

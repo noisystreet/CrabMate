@@ -32,7 +32,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 tracing = { workspace = true }
-tracing-log = "0.2"
 tracing-subscriber = { workspace = true, features = [
     "ansi",
     "env-filter",
@@ -40,6 +39,8 @@ tracing-subscriber = { workspace = true, features = [
     "json",
     "local-time",
     "time",
+    # SubscriberInitExt::init 安装 log 桥；勿再单独 LogTracer::init（见 observability.rs）
+    "tracing-log",
 ] }
 tokio = { workspace = true, features = [
     "macros",

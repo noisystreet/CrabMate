@@ -6,7 +6,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::Span;
-use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::time::LocalTime;
 use tracing_subscriber::layer::SubscriberExt;
@@ -101,7 +100,11 @@ fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Strin
     )
 }
 
-/// 初始化 **`tracing` subscriber** + **`tracing-log`**（桥接既有 `log::` 调用）。
+/// 初始化 **`tracing` subscriber**，并经 **`tracing-subscriber`/`tracing-log`** 桥接既有 `log::` 调用。
+///
+/// **`SubscriberInitExt::init`**（启用 feature **`tracing-log`** 时）会安装 `log` 兼容层；勿再单独调用
+/// **`LogTracer::init`**，否则在依赖树统一打开该 feature（例如 **`worbrow`** 启用
+/// `tracing-subscriber` default）时会报 *logger already initialized* 并导致 **`serve`** 立刻退出。
 ///
 /// 与历史 `init_logging` 行为对齐：**`RUST_LOG`** 优先；未设置时按 `quiet_cli_default` / `--log` 给默认过滤器；启用 **`project_metrics`** 时默认另带 **`tokei=error`**。
 ///
@@ -188,7 +191,6 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
             }
         }
 
-        LogTracer::init().map_err(|e| e.to_string())?;
         Ok(())
     });
 
