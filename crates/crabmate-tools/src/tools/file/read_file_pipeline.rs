@@ -416,16 +416,43 @@ fn read_file_utf8_lines(
     })
 }
 
-#[allow(clippy::too_many_arguments)] // 与 UTF-8 路径分支共享上层 `read_file` 管线，参数略多
-fn read_file_decoded_lines(
+/// 对落在 `[start_line, end_line]` 内的行决定是否收集 / 是否因 max_lines 截断。
+fn decoded_line_collect_flow(
+    ln: usize,
+    line: &str,
+    start_line: usize,
+    end_line: usize,
+    max_lines: usize,
+    collected: &mut Vec<(usize, String)>,
+    has_more: &mut bool,
+) -> std::ops::ControlFlow<()> {
+    if ln < start_line {
+        return std::ops::ControlFlow::Continue(());
+    }
+    if ln > end_line {
+        *has_more = true;
+        return std::ops::ControlFlow::Break(());
+    }
+    if collected.len() < max_lines {
+        collected.push((ln, format!("{}\n", line)));
+    }
+    if collected.len() >= max_lines && ln < end_line {
+        *has_more = true;
+        return std::ops::ControlFlow::Break(());
+    }
+    std::ops::ControlFlow::Continue(())
+}
+
+#[allow(clippy::too_many_arguments)] // 收口解码收集后的区间校验与正文组装
+fn finalize_decoded_line_collection(
     working_dir: &Path,
     target: &Path,
     path: &str,
-    enc_name: TextEncodingName,
     spec: &ReadFileLinesSpec<'_>,
     enc_header: &str,
-    file: File,
-    head: Vec<u8>,
+    collected: &[(usize, String)],
+    last_line_no: usize,
+    has_more: bool,
 ) -> Result<ReadFileLinesResult, ReadFileBodyError> {
     let ReadFileLinesSpec {
         start_line,
@@ -434,44 +461,8 @@ fn read_file_decoded_lines(
         total_lines,
         truncated_by_max,
     } = *spec;
-    let mut collected: Vec<(usize, String)> = Vec::new();
-    let mut last_line_no = 0usize;
-    let mut eof_before_start = false;
-    let mut has_more = false;
-    let (resolved, _) = resolve_text_encoding(&head, enc_name)
-        .map_err(read_file_body_error_from_pipeline_string)?;
-    let ResolvedTextEncoding::Decoder { .. } = resolved else {
-        return Err(ReadFileBodyError::Internal(
-            "内部错误：read_file_decoded_lines 需要解码器路径".to_string(),
-        ));
-    };
-    for_each_decoded_line_from_file_with_head(file, head, enc_name, |ln, line| {
-        last_line_no = ln;
-        if ln < start_line {
-            return std::ops::ControlFlow::Continue(());
-        }
-        if ln > end_line {
-            has_more = true;
-            return std::ops::ControlFlow::Break(());
-        }
-        if ln >= start_line && ln <= end_line {
-            if collected.len() < max_lines {
-                collected.push((ln, format!("{}\n", line)));
-            }
-            if collected.len() >= max_lines && ln < end_line {
-                has_more = true;
-                return std::ops::ControlFlow::Break(());
-            }
-        }
-        std::ops::ControlFlow::Continue(())
-    })
-    .map_err(read_file_body_error_from_pipeline_string)?;
 
     if last_line_no < start_line && collected.is_empty() {
-        eof_before_start = true;
-    }
-
-    if eof_before_start {
         let hint = total_lines
             .map(|t| t.to_string())
             .unwrap_or_else(|| "未知（未请求 count_total_lines）".to_string());
@@ -494,7 +485,7 @@ fn read_file_decoded_lines(
         working_dir,
         target,
         path,
-        collected: &collected,
+        collected,
         start_line,
         end_line,
         max_lines,
@@ -509,6 +500,59 @@ fn read_file_decoded_lines(
         line_count_returned,
         has_more,
     })
+}
+
+#[allow(clippy::too_many_arguments)] // 与 UTF-8 路径分支共享上层 `read_file` 管线，参数略多
+fn read_file_decoded_lines(
+    working_dir: &Path,
+    target: &Path,
+    path: &str,
+    enc_name: TextEncodingName,
+    spec: &ReadFileLinesSpec<'_>,
+    enc_header: &str,
+    file: File,
+    head: Vec<u8>,
+) -> Result<ReadFileLinesResult, ReadFileBodyError> {
+    let ReadFileLinesSpec {
+        start_line,
+        end_line,
+        max_lines,
+        ..
+    } = *spec;
+    let mut collected: Vec<(usize, String)> = Vec::new();
+    let mut last_line_no = 0usize;
+    let mut has_more = false;
+    let (resolved, _) = resolve_text_encoding(&head, enc_name)
+        .map_err(read_file_body_error_from_pipeline_string)?;
+    let ResolvedTextEncoding::Decoder { .. } = resolved else {
+        return Err(ReadFileBodyError::Internal(
+            "内部错误：read_file_decoded_lines 需要解码器路径".to_string(),
+        ));
+    };
+    for_each_decoded_line_from_file_with_head(file, head, enc_name, |ln, line| {
+        last_line_no = ln;
+        decoded_line_collect_flow(
+            ln,
+            line,
+            start_line,
+            end_line,
+            max_lines,
+            &mut collected,
+            &mut has_more,
+        )
+    })
+    .map_err(read_file_body_error_from_pipeline_string)?;
+
+    finalize_decoded_line_collection(
+        working_dir,
+        target,
+        path,
+        spec,
+        enc_header,
+        &collected,
+        last_line_no,
+        has_more,
+    )
 }
 
 fn assemble_read_output(p: AssembleReadOutputParams<'_>) -> String {

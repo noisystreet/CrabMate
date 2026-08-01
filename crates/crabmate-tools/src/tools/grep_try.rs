@@ -124,6 +124,62 @@ fn parse_params(args_json: &str) -> Result<SearchParams, ToolError> {
     })
 }
 
+fn load_searchable_file_text(path: &Path) -> Option<String> {
+    let mut f = fs::File::open(path).ok()?;
+    let mut buf = String::new();
+    f.read_to_string(&mut buf).ok()?;
+    if buf.len() > MAX_FILE_SIZE_BYTES {
+        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
+    }
+    Some(buf)
+}
+
+fn push_plain_match(
+    path: &Path,
+    line_no: usize,
+    line: &str,
+    results: &mut Vec<(PathBuf, usize, String)>,
+    max_results: usize,
+) -> bool {
+    results.push((path.to_path_buf(), line_no, line.to_string()));
+    results.len() >= max_results
+}
+
+/// 推入带上下文的命中；若已达 `max_results` 返回 `true`。
+#[allow(clippy::too_many_arguments)] // 单文件上下文命中：路径、行缓冲、窗口与结果累加器
+fn push_match_with_context(
+    path: &Path,
+    lines: &[&str],
+    match_idx: usize,
+    ctx_before: usize,
+    ctx_after: usize,
+    last_ctx_end: &mut usize,
+    results: &mut Vec<(PathBuf, usize, String)>,
+    max_results: usize,
+) -> bool {
+    let ctx_start = match_idx.saturating_sub(ctx_before);
+    let ctx_end = (match_idx + ctx_after + 1).min(lines.len());
+    if ctx_start > *last_ctx_end && *last_ctx_end > 0 {
+        results.push((path.to_path_buf(), 0, "---".to_string()));
+    }
+    for (ci, ctx_line) in lines.iter().enumerate().take(ctx_end).skip(ctx_start) {
+        if ci < *last_ctx_end {
+            continue;
+        }
+        let prefix = if ci == match_idx { ">" } else { " " };
+        results.push((
+            path.to_path_buf(),
+            ci + 1,
+            format!("{} {}", prefix, ctx_line),
+        ));
+        if results.len() >= max_results {
+            return true;
+        }
+    }
+    *last_ctx_end = ctx_end;
+    false
+}
+
 fn search_in_file(
     path: &Path,
     re: &regex::Regex,
@@ -134,17 +190,9 @@ fn search_in_file(
     ctx_after: usize,
 ) {
     *visited_files += 1;
-    let mut f = match fs::File::open(path) {
-        Ok(f) => f,
-        Err(_) => return,
-    };
-    let mut buf = String::new();
-    if f.read_to_string(&mut buf).is_err() {
+    let Some(buf) = load_searchable_file_text(path) else {
         return;
-    }
-    if buf.len() > MAX_FILE_SIZE_BYTES {
-        buf = super::output_util::truncate_to_char_boundary(&buf, MAX_FILE_SIZE_BYTES);
-    }
+    };
     let lines: Vec<&str> = buf.lines().collect();
     let has_context = ctx_before > 0 || ctx_after > 0;
     let mut last_ctx_end: usize = 0;
@@ -153,32 +201,22 @@ fn search_in_file(
         if !re.is_match(line) {
             continue;
         }
-        if has_context {
-            let ctx_start = idx.saturating_sub(ctx_before);
-            let ctx_end = (idx + ctx_after + 1).min(lines.len());
-            if ctx_start > last_ctx_end && last_ctx_end > 0 {
-                results.push((path.to_path_buf(), 0, "---".to_string()));
-            }
-            for (ci, ctx_line) in lines.iter().enumerate().take(ctx_end).skip(ctx_start) {
-                if ci < last_ctx_end {
-                    continue;
-                }
-                let prefix = if ci == idx { ">" } else { " " };
-                results.push((
-                    path.to_path_buf(),
-                    ci + 1,
-                    format!("{} {}", prefix, ctx_line),
-                ));
-                if results.len() >= max_results {
-                    return;
-                }
-            }
-            last_ctx_end = ctx_end;
+        let full = if has_context {
+            push_match_with_context(
+                path,
+                &lines,
+                idx,
+                ctx_before,
+                ctx_after,
+                &mut last_ctx_end,
+                results,
+                max_results,
+            )
         } else {
-            results.push((path.to_path_buf(), idx + 1, line.to_string()));
-            if results.len() >= max_results {
-                return;
-            }
+            push_plain_match(path, idx + 1, line, results, max_results)
+        };
+        if full {
+            return;
         }
     }
 }
@@ -403,4 +441,62 @@ pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<Str
             truncated,
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::search_in_files_try;
+
+    #[test]
+    fn search_in_files_context_marks_match_and_neighbors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(
+            dir.path().join("sample.txt"),
+            "alpha\nbeta\nTARGET\ngamma\ndelta\n",
+        )
+        .expect("write");
+
+        let out = search_in_files_try(
+            r#"{"pattern":"TARGET","context_before":1,"context_after":1,"file_glob":"*.txt"}"#,
+            dir.path(),
+        )
+        .expect("search");
+
+        assert!(out.contains("> TARGET"), "命中行应带 > 前缀: {out}");
+        assert!(out.contains("  beta"), "应含 context_before: {out}");
+        assert!(out.contains("  gamma"), "应含 context_after: {out}");
+        assert!(
+            !out.contains("alpha") && !out.contains("delta"),
+            "窗口外行不应出现: {out}"
+        );
+    }
+
+    #[test]
+    fn search_in_files_context_respects_max_results_and_separator() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // 两处命中相隔较远，上下文之间应插入 ---；max_results 限制结果行数并标记 truncated。
+        std::fs::write(
+            dir.path().join("sample.txt"),
+            "a\nHIT_ONE\nb\nc\nd\ne\nf\ng\nHIT_TWO\nh\n",
+        )
+        .expect("write");
+
+        let out = search_in_files_try(
+            r#"{"pattern":"HIT_","context_before":1,"context_after":1,"max_results":5,"file_glob":"*.txt"}"#,
+            dir.path(),
+        )
+        .expect("search");
+
+        let header = out.lines().next().expect("header");
+        let v: serde_json::Value = serde_json::from_str(header).expect("header json");
+        assert_eq!(v["tool"], "search_in_files");
+        assert_eq!(v["truncated"], true);
+        assert_eq!(v["max_results"], 5);
+        assert!(
+            v["match_count"].as_u64().unwrap_or(0) <= 5,
+            "match_count 不应超过 max_results: {v}"
+        );
+        assert!(out.contains("---"), "不相邻上下文块之间应有分隔符: {out}");
+        assert!(out.contains("> HIT_ONE"), "应含第一处命中: {out}");
+    }
 }

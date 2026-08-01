@@ -158,74 +158,74 @@ fn read_file_build_empty_response(
     )
 }
 
-/// 读取文件：按行**流式**读取，不把整文件载入内存。
-///
-/// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
-/// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
-/// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）；超过 32MiB 会拒绝（见 `read_file_count_total_too_large`）。
-/// - `anchor_line` + `context_lines`（可选，默认每侧 120 行）：以锚点行为中心对称取上下文，仍受 `max_lines` 封顶；适合 `search_in_files` / `codebase_semantic_search` 命中行号后直接精读。**不要**与 `start_line`/`end_line` 同传。
-/// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
 #[allow(clippy::result_large_err)]
-pub fn read_file_try(
-    args_json: &str,
-    working_dir: &Path,
+fn read_file_require_regular_file(
+    meta: &std::fs::Metadata,
+) -> Result<(), crate::tool_result::ToolError> {
+    if meta.is_file() {
+        return Ok(());
+    }
+    let msg = if meta.is_dir() {
+        "错误：路径指向目录而非文件，read_file 无法读取目录；请对该路径使用 read_dir，或读取目录内的具体文件（例如某个 .rs 文件或常见入口 mod.rs）。"
+            .to_string()
+    } else {
+        "错误：路径不是文件或不存在，无法读取".to_string()
+    };
+    Err(crate::tool_result::ToolError::external_code(
+        "read_file_not_file",
+        msg,
+    ))
+}
+
+fn read_file_turn_cache_get(
     ctx: &super::super::ToolContext<'_>,
+    cache_key: &str,
+    meta: &std::fs::Metadata,
+) -> Option<String> {
+    let cache = ctx.read_file_turn_cache?;
+    let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+    cache.try_get(cache_key, modified, meta.len())
+}
+
+fn read_file_turn_cache_put(
+    ctx: &super::super::ToolContext<'_>,
+    cache_key: String,
+    meta: &std::fs::Metadata,
+    out: &str,
+) {
+    let Some(cache) = ctx.read_file_turn_cache else {
+        return;
+    };
+    let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
+    cache.insert(cache_key, modified, meta.len(), out.to_string());
+}
+
+#[allow(clippy::result_large_err)]
+fn read_file_pipeline_body(
+    working_dir: &Path,
+    target: &Path,
+    path: &str,
+    parsed: &ReadFileParsedArgs,
+    file: std::fs::File,
 ) -> Result<String, crate::tool_result::ToolError> {
-    let v = crate::tools::parse_args_json(args_json)
-        .map_err(crate::tool_result::ToolError::invalid_args)?;
     let ReadFileParsedArgs {
-        path,
         enc_name,
         start_line,
         end_line_opt,
         max_lines,
         count_total,
-    } = parse_read_file_args(&v)?;
+        ..
+    } = parsed;
 
-    let opened = resolve_for_read_open(working_dir, &path)
-        .map_err(read_file_workspace_tool_error_maybe_hint)?;
-    if !opened.metadata.is_file() {
-        let msg = if opened.metadata.is_dir() {
-            "错误：路径指向目录而非文件，read_file 无法读取目录；请对该路径使用 read_dir，或读取目录内的具体文件（例如某个 .rs 文件或常见入口 mod.rs）。"
-                .to_string()
-        } else {
-            "错误：路径不是文件或不存在，无法读取".to_string()
-        };
-        return Err(crate::tool_result::ToolError::external_code(
-            "read_file_not_file",
-            msg,
-        ));
-    }
-
-    let target = opened.resolved_path;
-    let meta = opened.metadata;
-    let cache_key = read_file_logical_cache_key(&target, &v);
-    if let Some(cache) = ctx.read_file_turn_cache {
-        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-        let len = meta.len();
-        if let Some(hit) = cache.try_get(&cache_key, modified, len) {
-            return Ok(hit);
-        }
-    }
-    if meta.len() == 0 {
-        let out = read_file_build_empty_response(working_dir, &target, path.as_str(), start_line);
-        if let Some(cache) = ctx.read_file_turn_cache {
-            let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-            cache.insert(cache_key, modified, meta.len(), out.clone());
-        }
-        return Ok(out);
-    }
-
-    guard_read_file_count_total_size(meta.len(), count_total)?;
-
-    let (resolved, decode_note, file, head) = sniff_opened_file_encoding(opened.file, enc_name)?;
-    let total_lines = maybe_count_total_lines_for_read(count_total, &target, enc_name)?;
-    let (end_line, truncated_by_max) = resolve_read_end_line(start_line, end_line_opt, max_lines);
+    let (resolved, decode_note, file, head) = sniff_opened_file_encoding(file, *enc_name)?;
+    let total_lines = maybe_count_total_lines_for_read(*count_total, target, *enc_name)?;
+    let (end_line, truncated_by_max) =
+        resolve_read_end_line(*start_line, *end_line_opt, *max_lines);
     let enc_header = format_encoding_header(&decode_note);
     let line_spec = ReadFileLinesSpec {
-        start_line,
+        start_line: *start_line,
         end_line,
-        max_lines,
+        max_lines: *max_lines,
         total_lines: total_lines.as_ref(),
         truncated_by_max,
     };
@@ -234,9 +234,9 @@ pub fn read_file_try(
         resolved,
         ReadFileLinesDispatch {
             working_dir,
-            target: &target,
-            path: path.as_str(),
-            enc_name,
+            target,
+            path,
+            enc_name: *enc_name,
             line_spec: &line_spec,
             enc_header: enc_header.as_str(),
         },
@@ -252,13 +252,13 @@ pub fn read_file_try(
         has_more,
     } = lines_result;
 
-    let out = prepend_read_file_output_header(
+    Ok(prepend_read_file_output_header(
         &raw_body,
         &ReadFileOutputMeta {
             working_dir,
-            target: &target,
-            user_path: path.as_str(),
-            start_line,
+            target,
+            user_path: path,
+            start_line: *start_line,
             end_line_shown,
             line_count_returned,
             total_lines,
@@ -266,12 +266,48 @@ pub fn read_file_try(
             has_more,
             file_empty: false,
         },
-    );
+    ))
+}
 
-    if let Some(cache) = ctx.read_file_turn_cache {
-        let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-        cache.insert(cache_key, modified, meta.len(), out.clone());
+/// 读取文件：按行**流式**读取，不把整文件载入内存。
+///
+/// - `max_lines`：单次最多返回行数（默认 500，上限 8000）。若未指定 `end_line`，则读到 `start_line + max_lines - 1` 或 EOF。
+/// - 若同时指定 `end_line` 与 `max_lines`，实际返回行数不超过 `max_lines`；若区间更宽会截断并提示 `has_more`。
+/// - `count_total_lines=true` 时会再扫描一遍文件统计总行数（大文件较慢）；超过 32MiB 会拒绝（见 `read_file_count_total_too_large`）。
+/// - `anchor_line` + `context_lines`（可选，默认每侧 120 行）：以锚点行为中心对称取上下文，仍受 `max_lines` 封顶；适合 `search_in_files` / `codebase_semantic_search` 命中行号后直接精读。**不要**与 `start_line`/`end_line` 同传。
+/// - 若同时指定 `end_line` 与 `start_line` 且 **end_line 小于 start_line**（模型偶发起止写反），**自动交换**后再读，与单轮缓存键一致。
+#[allow(clippy::result_large_err)]
+pub fn read_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &super::super::ToolContext<'_>,
+) -> Result<String, crate::tool_result::ToolError> {
+    let v = crate::tools::parse_args_json(args_json)
+        .map_err(crate::tool_result::ToolError::invalid_args)?;
+    let parsed = parse_read_file_args(&v)?;
+    let path = parsed.path.as_str();
+
+    let opened = resolve_for_read_open(working_dir, path)
+        .map_err(read_file_workspace_tool_error_maybe_hint)?;
+    read_file_require_regular_file(&opened.metadata)?;
+
+    let target = opened.resolved_path;
+    let meta = opened.metadata;
+    let cache_key = read_file_logical_cache_key(&target, &v);
+    if let Some(hit) = read_file_turn_cache_get(ctx, &cache_key, &meta) {
+        return Ok(hit);
     }
+    if meta.len() == 0 {
+        let out = read_file_build_empty_response(working_dir, &target, path, parsed.start_line);
+        read_file_turn_cache_put(ctx, cache_key, &meta, &out);
+        return Ok(out);
+    }
+
+    // 与原先一致：在 sniff 前用已知长度做 count_total 体积守卫。
+    guard_read_file_count_total_size(meta.len(), parsed.count_total)?;
+
+    let out = read_file_pipeline_body(working_dir, &target, path, &parsed, opened.file)?;
+    read_file_turn_cache_put(ctx, cache_key, &meta, &out);
     Ok(out)
 }
 
