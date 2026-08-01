@@ -30,8 +30,7 @@ pub use crabmate_llm::{
     chat_request_vendor_extensions_for_agent, conversation_messages_to_vendor_body,
     fetch_models_report, fold_system_into_user_for_config,
     kimi_k2_5_vendor_requires_tool_call_reasoning, llm_vendor_adapter,
-    llm_vendor_adapter_for_model, no_tools_chat_request,
-    no_tools_chat_request_for_hierarchical_manager, no_tools_chat_request_from_messages,
+    llm_vendor_adapter_for_model, no_tools_chat_request, no_tools_chat_request_from_messages,
     normalize_stripped_messages_for_vendor_body, stream_chat, tool_chat_request, vendor,
     vendor_temperature_for_config, vendor_temperature_for_model,
 };
@@ -39,9 +38,6 @@ pub use crabmate_llm::{
 pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};
 #[allow(unused_imports)]
 pub use terminal_render::terminal_render_agent_markdown;
-
-#[allow(unused_imports)]
-pub(crate) use crabmate_llm::STAGED_PLANNER_MIN_COMPLETION_TOKENS;
 
 use crabmate_types::{ChatRequest, Message};
 

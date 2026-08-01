@@ -5,7 +5,6 @@
 pub mod cli_exit;
 pub mod cli_wait_spinner;
 pub mod latex_unicode;
-pub mod plan_section;
 
 pub mod chat_export;
 pub mod message_display;

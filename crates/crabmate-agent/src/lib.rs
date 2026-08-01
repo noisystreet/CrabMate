@@ -1,6 +1,6 @@
 //! CrabMate Agent **领域层**：规划产物解析、意图路由、反思控制器等（与 HTTP / 工具执行编排解耦）。
 //!
-//! 完整回合编排（`agent_turn` 执行面、`hierarchy`、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
+//! 完整回合编排（`agent_turn` 执行面、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
 //! 外循环 FSM / reduce / driver / pre-gate reason、完成判定核（`turn_completion_decision` /
 //! `completion_suppression` / `task_level_evidence`）已落在本 crate **`agent_turn`**（根包再导出）。
 //!
@@ -18,7 +18,6 @@ mod log_preview;
 pub mod message_pipeline;
 pub mod per_coord;
 pub mod plan_artifact;
-pub mod plan_ensemble;
 /// 终答规划重写与历史扫描等纯逻辑（侧向 LLM 调用仍在根包 `per_plan_semantic_check`）。
 pub mod plan_rewrite;
 /// PER 侧向语义校验结果类型（侧向 LLM 调用本身仍在根包）。
