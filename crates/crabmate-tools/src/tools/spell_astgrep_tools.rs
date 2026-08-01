@@ -2,7 +2,7 @@
 //!
 //! 均在**工作区根**执行，路径参数须为相对路径且不含 `..`；不传入写文件类参数（如 codespell 的 `-w`）。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::output_util;
@@ -304,114 +304,119 @@ fn ast_grep_append_custom_globs(v: &serde_json::Value, cmd: &mut Command) -> Res
     Ok(())
 }
 
-/// `ast-grep run`：结构化搜索。默认路径 `["src"]`；内置排除 `target`、`node_modules` 等 glob。
-pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let parsed = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: AstGrepRunArgs = match serde_json::from_value(parsed) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
-    let (pattern, lang) = match extract_ast_pattern_and_lang(&v) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+fn typed_args_json_to_value<T>(args_json: &str) -> Result<serde_json::Value, String>
+where
+    T: serde::de::DeserializeOwned + serde::Serialize,
+{
+    let parsed = crate::tools::parse_args_json(args_json)?;
+    let args: T = serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))
+}
 
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-    let paths = match parse_rel_paths_limited(&v, "paths", &["src"], MAX_AST_PATHS) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+struct AstGrepPrepared {
+    v: serde_json::Value,
+    pattern: String,
+    lang: &'static str,
+    base: PathBuf,
+    paths: Vec<String>,
+}
+
+fn prepare_ast_grep(
+    v: serde_json::Value,
+    workspace_root: &Path,
+) -> Result<AstGrepPrepared, String> {
+    let (pattern, lang) = extract_ast_pattern_and_lang(&v)?;
+    let base = workspace_root
+        .canonicalize()
+        .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
+    let paths = parse_rel_paths_limited(&v, "paths", &["src"], MAX_AST_PATHS)?;
     let paths = filter_existing(&base, &paths);
+    Ok(AstGrepPrepared {
+        v,
+        pattern,
+        lang,
+        base,
+        paths,
+    })
+}
 
+/// `rewrite`：可选；`update_all`：写盘时加 `--update-all`。
+fn build_ast_grep_cmd(
+    prep: &AstGrepPrepared,
+    rewrite: Option<&str>,
+    update_all: bool,
+) -> Result<Command, String> {
     let mut cmd = Command::new("ast-grep");
     cmd.args(["run", "--color", "never"])
         .arg("-p")
-        .arg(&pattern)
-        .arg("-l")
-        .arg(lang)
-        .current_dir(&base);
-
-    ast_grep_append_default_globs(&mut cmd);
-    if let Err(e) = ast_grep_append_custom_globs(&v, &mut cmd) {
-        return e;
+        .arg(&prep.pattern);
+    if let Some(r) = rewrite {
+        cmd.arg("-r").arg(r);
     }
-
-    for p in &paths {
+    cmd.arg("-l").arg(prep.lang).current_dir(&prep.base);
+    ast_grep_append_default_globs(&mut cmd);
+    ast_grep_append_custom_globs(&prep.v, &mut cmd)?;
+    if update_all {
+        cmd.arg("--update-all");
+    }
+    for p in &prep.paths {
         cmd.arg(p);
     }
+    Ok(cmd)
+}
 
+fn extract_rewrite_policy(v: &serde_json::Value) -> Result<(String, bool), String> {
+    let rewrite = match v.get("rewrite").and_then(|x| x.as_str()) {
+        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
+        Some(_) => return Err("错误：rewrite 为空或过长或含非法字符".to_string()),
+        None => return Err("错误：缺少 rewrite（目标替换模板）".to_string()),
+    };
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
+    if !dry_run && !confirm {
+        return Err(
+            "错误：ast_grep_rewrite 写盘需 confirm=true；建议先 dry_run=true 预览".to_string(),
+        );
+    }
+    Ok((rewrite, dry_run))
+}
+
+/// `ast-grep run`：结构化搜索。默认路径 `["src"]`；内置排除 `target`、`node_modules` 等 glob。
+pub fn ast_grep_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v = match typed_args_json_to_value::<AstGrepRunArgs>(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let prep = match prepare_ast_grep(v, workspace_root) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let cmd = match build_ast_grep_cmd(&prep, None, false) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
     run_and_format(cmd, max_output_len, "ast-grep run")
 }
 
 /// `ast-grep run --rewrite`：结构化改写。默认 dry-run；写盘需 `confirm=true`。
 pub fn ast_grep_rewrite(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let parsed = match crate::tools::parse_args_json(args_json) {
+    let v = match typed_args_json_to_value::<AstGrepRewriteArgs>(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let args: AstGrepRewriteArgs = match serde_json::from_value(parsed) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+    // 与历史一致：先 pattern/lang 与路径，再 rewrite/confirm 门闩。
+    let prep = match prepare_ast_grep(v, workspace_root) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
-    let (pattern, lang) = match extract_ast_pattern_and_lang(&v) {
+    let (rewrite, dry_run) = match extract_rewrite_policy(&prep.v) {
         Ok(x) => x,
         Err(e) => return e,
     };
-    let rewrite = match v.get("rewrite").and_then(|x| x.as_str()) {
-        Some(s) if is_safe_ast_pattern(s) => s.to_string(),
-        Some(_) => return "错误：rewrite 为空或过长或含非法字符".to_string(),
-        None => return "错误：缺少 rewrite（目标替换模板）".to_string(),
-    };
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !dry_run && !confirm {
-        return "错误：ast_grep_rewrite 写盘需 confirm=true；建议先 dry_run=true 预览".to_string();
-    }
-
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-    let paths = match parse_rel_paths_limited(&v, "paths", &["src"], MAX_AST_PATHS) {
-        Ok(p) => p,
+    let cmd = match build_ast_grep_cmd(&prep, Some(&rewrite), !dry_run) {
+        Ok(c) => c,
         Err(e) => return e,
     };
-    let paths = filter_existing(&base, &paths);
-
-    let mut cmd = Command::new("ast-grep");
-    cmd.args(["run", "--color", "never"])
-        .arg("-p")
-        .arg(&pattern)
-        .arg("-r")
-        .arg(&rewrite)
-        .arg("-l")
-        .arg(lang)
-        .current_dir(&base);
-
-    ast_grep_append_default_globs(&mut cmd);
-    if let Err(e) = ast_grep_append_custom_globs(&v, &mut cmd) {
-        return e;
-    }
-    if !dry_run {
-        cmd.arg("--update-all");
-    }
-    for p in &paths {
-        cmd.arg(p);
-    }
     let title = if dry_run {
         "ast-grep rewrite (dry-run)"
     } else {

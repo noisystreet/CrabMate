@@ -88,6 +88,68 @@ fn run_and_format(mut cmd: Command, max_output_len: usize, title: &str) -> Strin
 
 // ── cppcheck ────────────────────────────────────────────────
 
+fn cppcheck_enable_arg(enable: &str) -> Result<String, String> {
+    match enable {
+        "all" | "style" | "performance" | "portability" | "information" | "warning"
+        | "unusedFunction" | "missingInclude" => Ok(format!("--enable={enable}")),
+        _ => Err(format!(
+            "错误：enable 须为 all/style/performance/portability/information/warning/unusedFunction/missingInclude，收到 {enable}"
+        )),
+    }
+}
+
+fn cppcheck_platform_arg(platform: CppcheckPlatform) -> &'static str {
+    match platform {
+        CppcheckPlatform::Unix32 => "unix32",
+        CppcheckPlatform::Unix64 => "unix64",
+        CppcheckPlatform::Win32a => "win32A",
+        CppcheckPlatform::Win32w => "win32W",
+        CppcheckPlatform::Win64 => "win64",
+        CppcheckPlatform::Native => "native",
+    }
+}
+
+fn append_cppcheck_std_flag(cmd: &mut Command, std_opt: Option<&str>) -> Result<(), String> {
+    let Some(std_val) = std_opt.map(str::trim).filter(|s| !s.is_empty()) else {
+        return Ok(());
+    };
+    if std_val.len() > 20
+        || std_val
+            .chars()
+            .any(|c| !c.is_alphanumeric() && c != '+' && c != '-')
+    {
+        return Err(format!("错误：std 值非法：{std_val}"));
+    }
+    cmd.arg(format!("--std={std_val}"));
+    Ok(())
+}
+
+fn build_cppcheck_command(
+    args: &CppcheckAnalyzeArgs,
+    base: &Path,
+    paths: &[String],
+) -> Result<Command, String> {
+    let mut cmd = Command::new("cppcheck");
+    cmd.current_dir(base);
+
+    let enable = args
+        .enable
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("all");
+    cmd.arg(cppcheck_enable_arg(enable)?);
+    append_cppcheck_std_flag(&mut cmd, args.std.as_deref())?;
+    if let Some(platform) = args.platform {
+        cmd.arg(format!("--platform={}", cppcheck_platform_arg(platform)));
+    }
+    cmd.arg("--quiet");
+    for p in paths {
+        cmd.arg(p);
+    }
+    Ok(cmd)
+}
+
 pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -106,60 +168,79 @@ pub fn cppcheck_analyze(args_json: &str, workspace_root: &Path, max_output_len: 
         Err(e) => return e,
     };
     let paths = filter_existing(&base, &paths);
-
-    let mut cmd = Command::new("cppcheck");
-    cmd.current_dir(&base);
-
-    let enable = args
-        .enable
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("all");
-    match enable {
-        "all" | "style" | "performance" | "portability" | "information" | "warning"
-        | "unusedFunction" | "missingInclude" => {
-            cmd.arg(format!("--enable={enable}"));
-        }
-        _ => {
-            return format!(
-                "错误：enable 须为 all/style/performance/portability/information/warning/unusedFunction/missingInclude，收到 {enable}"
-            );
-        }
-    }
-
-    if let Some(std_val) = args.std.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-        if std_val.len() > 20
-            || std_val
-                .chars()
-                .any(|c| !c.is_alphanumeric() && c != '+' && c != '-')
-        {
-            return format!("错误：std 值非法：{std_val}");
-        }
-        cmd.arg(format!("--std={std_val}"));
-    }
-
-    if let Some(platform) = args.platform {
-        let s = match platform {
-            CppcheckPlatform::Unix32 => "unix32",
-            CppcheckPlatform::Unix64 => "unix64",
-            CppcheckPlatform::Win32a => "win32A",
-            CppcheckPlatform::Win32w => "win32W",
-            CppcheckPlatform::Win64 => "win64",
-            CppcheckPlatform::Native => "native",
-        };
-        cmd.arg(format!("--platform={s}"));
-    }
-
-    cmd.arg("--quiet");
-
-    for p in &paths {
-        cmd.arg(p);
-    }
+    let cmd = match build_cppcheck_command(&args, &base, &paths) {
+        Ok(c) => c,
+        Err(e) => return e,
+    };
     run_and_format(cmd, max_output_len, "cppcheck")
 }
 
 // ── Hadolint ────────────────────────────────────────────────
+
+fn hadolint_format_cli(fmt: HadolintOutputFormat) -> &'static str {
+    match fmt {
+        HadolintOutputFormat::Tty => "tty",
+        HadolintOutputFormat::Json => "json",
+        HadolintOutputFormat::Checkstyle => "checkstyle",
+        HadolintOutputFormat::Codeclimate => "codeclimate",
+        HadolintOutputFormat::GitlabCodeclimate => "gitlab_codeclimate",
+        HadolintOutputFormat::Gnu => "gnu",
+        HadolintOutputFormat::Codacy => "codacy",
+        HadolintOutputFormat::Sonarqube => "sonarqube",
+        HadolintOutputFormat::Sarif => "sarif",
+    }
+}
+
+fn resolve_hadolint_dockerfile<'a>(
+    args: &'a HadolintCheckArgs,
+    base: &Path,
+) -> Result<&'a str, String> {
+    let path_raw = args
+        .path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Dockerfile");
+    if !is_safe_rel_path(path_raw) {
+        return Err(format!("错误：path 须为相对路径且不含 ..：{path_raw}"));
+    }
+    if !base.join(path_raw).is_file() {
+        return Err(format!("错误：文件不存在：{path_raw}"));
+    }
+    Ok(path_raw)
+}
+
+fn append_hadolint_ignore_flags(cmd: &mut Command, ignore: &[String]) {
+    for rule in ignore {
+        let rule = rule.trim();
+        if rule.is_empty() || rule.len() > 20 {
+            continue;
+        }
+        cmd.arg("--ignore").arg(rule);
+    }
+}
+
+fn append_hadolint_trusted_registries(cmd: &mut Command, regs: &[String]) {
+    for reg in regs {
+        let reg = reg.trim();
+        if reg.is_empty() || reg.len() > 200 || reg.contains("..") {
+            continue;
+        }
+        cmd.arg("--trusted-registry").arg(reg);
+    }
+}
+
+fn build_hadolint_command(args: &HadolintCheckArgs, base: &Path, path_raw: &str) -> Command {
+    let mut cmd = Command::new("hadolint");
+    cmd.current_dir(base);
+    if let Some(fmt) = args.format {
+        cmd.arg("--format").arg(hadolint_format_cli(fmt));
+    }
+    append_hadolint_ignore_flags(&mut cmd, &args.ignore);
+    append_hadolint_trusted_registries(&mut cmd, &args.trusted_registries);
+    cmd.arg(path_raw);
+    cmd
+}
 
 pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
@@ -174,55 +255,11 @@ pub fn hadolint_check(args_json: &str, workspace_root: &Path, max_output_len: us
         Ok(p) => p,
         Err(e) => return format!("工作区根目录无法解析: {e}"),
     };
-    let path_raw = args
-        .path
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Dockerfile");
-    if !is_safe_rel_path(path_raw) {
-        return format!("错误：path 须为相对路径且不含 ..：{path_raw}");
-    }
-    let full = base.join(path_raw);
-    if !full.is_file() {
-        return format!("错误：文件不存在：{path_raw}");
-    }
-
-    let mut cmd = Command::new("hadolint");
-    cmd.current_dir(&base);
-
-    if let Some(fmt) = args.format {
-        let s = match fmt {
-            HadolintOutputFormat::Tty => "tty",
-            HadolintOutputFormat::Json => "json",
-            HadolintOutputFormat::Checkstyle => "checkstyle",
-            HadolintOutputFormat::Codeclimate => "codeclimate",
-            HadolintOutputFormat::GitlabCodeclimate => "gitlab_codeclimate",
-            HadolintOutputFormat::Gnu => "gnu",
-            HadolintOutputFormat::Codacy => "codacy",
-            HadolintOutputFormat::Sonarqube => "sonarqube",
-            HadolintOutputFormat::Sarif => "sarif",
-        };
-        cmd.arg("--format").arg(s);
-    }
-
-    for rule in &args.ignore {
-        let rule = rule.trim();
-        if rule.is_empty() || rule.len() > 20 {
-            continue;
-        }
-        cmd.arg("--ignore").arg(rule);
-    }
-
-    for reg in &args.trusted_registries {
-        let reg = reg.trim();
-        if reg.is_empty() || reg.len() > 200 || reg.contains("..") {
-            continue;
-        }
-        cmd.arg("--trusted-registry").arg(reg);
-    }
-
-    cmd.arg(path_raw);
+    let path_raw = match resolve_hadolint_dockerfile(&args, &base) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
+    let cmd = build_hadolint_command(&args, &base, path_raw);
     run_and_format(cmd, max_output_len, "hadolint")
 }
 
