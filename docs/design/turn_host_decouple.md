@@ -4,8 +4,9 @@
 
 - **规划入库**：本文（PR-T0）
 - **相关已合**：agent_turn FSM / Sink（#696）、web-host A/B/C（#697）
-- **P1 / P2 / P3a**：本分支已落地 `ToolDispatch`、`TurnRunner`，以及 `DispatchToolParams` 嵌套分组
-- **未做**：P3b–P3d、P4 执行面落点、P5 handler/queue 迁出评估
+- **P1 / P2 / P3a**：已落地 `ToolDispatch`、`TurnRunner`，以及 `DispatchToolParams` 嵌套分组
+- **P3b（部分）**：handler 侧 `WebChatAppFacet`；窄路由 `approval` / `branch` / `messages` / `conversation-store` 已迁入（**未**含 stream/async）
+- **未做**：P3c（stream/async facet）、P3d（`RunAgentTurnParams` 入口子集）、P4 执行面落点、P5 handler/queue 迁出评估
 
 ## 目标
 
@@ -52,7 +53,7 @@ crabmate-internal / crabmate-tools
 | **P0** | 本文入库；禁边脚本进门禁 | **完成**（本文） |
 | **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
 | **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | **完成**（本分支） |
-| **P3** | 参数袋按片收窄：先 `DispatchToolParams` 嵌套（**P3a 完成**）；再入口子集 / chat facet（P3b–d） | 多 PR |
+| **P3** | 参数袋按片收窄：`DispatchToolParams` 嵌套（**P3a**）；窄 chat facet（**P3b 部分完成**）；stream/async facet（P3c）；`RunAgentTurnParams` 入口子集（P3d） | 多 PR |
 | **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
 | **P5** | 红利：更多 handler/queue 贴近 web-host；`tools` 拆子包等（另开 PR） | 后续 |
 
@@ -68,7 +69,9 @@ crabmate-internal / crabmate-tools
 
 `RunLoopParams` 已拆 `Core` / `Io` / `Attach` / `Obs`（见 `host/params.rs`）。  
 **P3a（已完成）**：`DispatchToolParams` 顶层改为 `call` / `workspace` / `policy` / `obs` / `memory` 嵌套（字段不删）。  
-后续 P3 重点是入口强制子集与 chat facet，而非再拆同级分组。
+**P3b（部分完成）**：`WebChatAppFacet`（`cfg` + `conversation` + `approval_sessions`，**不含**整份 HTTP 核 / queue/SSE hub/async jobs）+ `FromRef`；已迁 `POST /chat/approval`、`POST /chat/branch`、会话 messages 拉取、`POST /config/session/conversation-store`。  
+**P3c**：将 `POST /chat/stream`、`/chat/async`（及必要时 `POST /chat`）迁到扩展 facet（可加 queue/SSE/async jobs）。  
+**P3d**：`RunAgentTurnParams` 入口强制子集 / 嵌套（勿静默改 HTTP/SSE 契约）。
 
 ## 建议 PR 切片
 
@@ -102,7 +105,7 @@ crabmate-internal / crabmate-tools
 | `src/agent/agent_turn/host/execute/tool_execution_trait.rs` | `ToolExecutionHost` |
 | `crates/crabmate-internal/src/tool_registry/` | `dispatch_tool` / `DispatchToolParams` |
 | `src/chat_job_queue/worker/` | Web 异步回合消费者 |
-| `src/web/app_state.rs` / `app_state_facets.rs` | Web 状态与 facet |
+| `src/web/app_state.rs` / `app_state_facets.rs` | Web 状态与 facet（含 **`WebChatAppFacet`**） |
 | `scripts/check-crate-deps.sh` | 禁边门禁 |
 
 ## 与既有文档
