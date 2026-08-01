@@ -467,8 +467,7 @@ pub(crate) async fn run_agent_outer_loop(
             outer_loop_fsm = "single_agent_outer",
             outer_loop_iteration_exit = exit.as_trace_str(),
             outer_loop_last_reflect = driver
-                .last_reflect
-                .as_ref()
+                .last_reflect_branch()
                 .map(|c| c.as_trace_str())
                 .unwrap_or("none"),
             iteration = iteration_count,

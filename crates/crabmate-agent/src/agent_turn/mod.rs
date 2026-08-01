@@ -1,4 +1,7 @@
 //! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析、外循环 FSM、完成判定）。
+//!
+//! **相位词汇真源**：见 [`phase_vocabulary`]（`turn_orchestration_mode` / `outer_loop_step` / `sub_phase` / Gate 对照）。
+//! **路由入口**：意图门控之后唯一决议函数为 [`assess_turn_routing`]；根包 `run_dispatch` 只消费 [`TurnRouteDriver`]。
 
 pub mod completion_suppression;
 pub mod intent;
@@ -8,7 +11,10 @@ pub mod orchestration_entry;
 pub mod outer_loop_driver;
 pub mod outer_loop_fsm;
 pub mod outer_loop_iteration_reduce;
+#[cfg(test)]
+mod outer_loop_phase_golden;
 pub mod outer_loop_reflect_reason;
+pub mod phase_vocabulary;
 pub mod run_command_dedupe;
 pub mod task_level_evidence;
 pub mod tool_execution;
@@ -37,6 +43,12 @@ pub use outer_loop_iteration_reduce::{
     reduce_outer_loop_post_tools_exit, reduce_outer_loop_reflect_branch,
 };
 pub use outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
+pub use phase_vocabulary::{
+    OUTER_LOOP_STEP_AFTER_PLANNER_MODEL, OUTER_LOOP_STEP_ITERATION_ENTER,
+    OUTER_LOOP_STEP_PREPARE_CONTEXT_DONE, OUTER_LOOP_STEP_REFLECT_DECIDED,
+    OUTER_LOOP_STEP_TOOLS_EXECUTE, TURN_ORCHESTRATION_MODE_INTENT_FINISHED,
+    TURN_ORCHESTRATION_MODE_REACT,
+};
 pub use task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
     generic_task_intent_implies_build_or_test,
