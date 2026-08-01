@@ -5,7 +5,7 @@ use crabmate_sse_protocol::{
 
 use crate::i18n::Locale;
 use crate::sse_dispatch::{
-    SseClarifyTraceHooks, SseControlSink, SseNoticeTimelineHooks, SseStagedPlanHooks,
+    SseClarifyTraceHooks, SseControlSink, SseNoticeTimelineHooks, SseTurnPhaseHooks,
     SseWorkspaceToolHooks,
 };
 
@@ -225,7 +225,7 @@ pub(super) fn handle_sse_block(
             on_tool_result: Some(&mut on_tool_res),
             on_command_approval_request: Some(&mut on_appr),
         },
-        staged_plan: SseStagedPlanHooks {
+        turn_phase: SseTurnPhaseHooks {
             on_assistant_answer_phase: Some(&mut on_phase),
             on_turn_segment_start: Some(&mut on_turn_seg_start),
             on_turn_segment_end: Some(&mut on_turn_seg_end),

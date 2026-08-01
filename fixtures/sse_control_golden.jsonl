@@ -1,45 +1,39 @@
-# SSE 控制面契约金样：每行 `描述<TAB>JSON<TAB>期望分类`（stop|handled|plain）
-# 分类须与 crates/crabmate-sse-protocol/control_classify.rs（`classify_sse_control_outcome`）及
-# frontend/src/sse_dispatch/dispatch.rs（`try_dispatch_sse_control_payload`）同序。
+# SSE 控制面契约金样（V1 JSON 形状）：每行 `描述<TAB>JSON<TAB>期望分类`（stop|handled|plain）
+# 分类须与 crates/crabmate-sse-protocol/control_classify.rs（`classify_sse_control_outcome`）一致；
+# 现行 Web 消费为 AG-UI（见 fixtures/sse_ag_ui_golden.jsonl + frontend/src/api/chat_stream/parser_v2.rs）。
 
 protocol v only	{"v":1}	handled
 error+code 流错误	{"v":1,"error":"x","code":"E"}	stop
 error+code+reason_code 仍为 stop	{"v":1,"error":"x","code":"E","reason_code":"plan_missing"}	stop
-error 无 code 当正文	{"error":"division by zero"}	plain
-error+空白 code 当正文	{"error":"x","code":"  "}	plain
+error 无 code（classify：非 null error → stop）	{"error":"division by zero"}	stop
+error+空白 code（classify：非 null error → stop）	{"error":"x","code":"  "}	stop
 plan_required	{"v":1,"plan_required":true}	handled
 assistant_answer_phase	{"v":1,"assistant_answer_phase":true}	handled
-staged_plan_started	{"v":1,"staged_plan_started":{"plan_id":"p1","total_steps":3}}	handled
-staged_plan_step_started	{"v":1,"staged_plan_step_started":{"plan_id":"p1","step_id":"s1","step_index":1,"total_steps":3,"description":"d","executor_kind":"review_readonly"}}	handled
-staged_plan_step_finished	{"v":1,"staged_plan_step_finished":{"plan_id":"p1","step_id":"s1","step_index":1,"total_steps":3,"status":"ok","executor_kind":"review_readonly"}}	handled
-staged_plan_finished	{"v":1,"staged_plan_finished":{"plan_id":"p1","total_steps":3,"completed_steps":3,"status":"ok"}}	handled
 clarification_questionnaire	{"v":1,"clarification_questionnaire":{"questionnaire_id":"q1","intro":"请补充","questions":[{"id":"a","label":"A?","required":true}]}}	handled
 thinking_trace 有 op	{"v":1,"thinking_trace":{"op":"reasoning_delta","chunk":"x"}}	handled
 workspace_changed	{"v":1,"workspace_changed":true}	handled
 tool_call 有 summary	{"v":1,"tool_call":{"name":"read_file","summary":"读：a.rs"}}	handled
 tool_call 仅有 arguments_preview	{"v":1,"tool_call":{"name":"read_file","summary":"","arguments_preview":"{\"path\":\"a.rs\"}"}}	handled
 tool_call 仅有 arguments（脱敏后）	{"v":1,"tool_call":{"name":"http_fetch","summary":"","arguments":"{\"url\":\"https://x\"}"}}	handled
-tool_call 无 summary 当正文	{"v":1,"tool_call":{"name":"read_file"}}	plain
+tool_call 无 summary（classify：键存在 → handled）	{"v":1,"tool_call":{"name":"read_file"}}	handled
 parsing_tool_calls	{"v":1,"parsing_tool_calls":true}	handled
 tool_running	{"v":1,"tool_running":false}	handled
 tool_output_chunk	{"v":1,"tool_output_chunk":{"tool_call_id":"tc1","seq":1,"chunk":"hi","name":"terminal_session","stream":"combined"}}	handled
-tool_output_chunk 缺 seq 当正文	{"v":1,"tool_output_chunk":{"tool_call_id":"tc1","chunk":"x"}}	plain
-tool_output_chunk 缺 tool_call_id 当正文	{"v":1,"tool_output_chunk":{"seq":1,"chunk":"x"}}	plain
+tool_output_chunk 缺 seq（classify：键存在 → handled）	{"v":1,"tool_output_chunk":{"tool_call_id":"tc1","chunk":"x"}}	handled
+tool_output_chunk 缺 tool_call_id（classify：键存在 → handled）	{"v":1,"tool_output_chunk":{"seq":1,"chunk":"x"}}	handled
 tool_result	{"v":1,"tool_result":{"name":"run_command","result_version":1,"summary":"ls","output":"退出码：0","ok":true,"retryable":false,"tool_call_id":"tc1","execution_mode":"serial","stdout":"","stderr":""}}	handled
 tool_result 仅有 structured_preview（无 output）	{"v":1,"tool_result":{"name":"read_file","result_version":1,"structured_preview":{"kind":"crabmate_tool_output","tool":"read_file","version":1,"path":"a.rs"}}}	handled
 command_approval_request	{"v":1,"command_approval_request":{"command":"git","args":"status","allowlist_key":"git"}}	handled
 turn_segment_start	{"v":1,"turn_segment_start":{"segment_id":"seg-before-tc1","kind":"commentary","before_tool_call_id":"tc1"}}	handled
 turn_segment_end	{"v":1,"turn_segment_end":{"segment_id":"seg-before-tc1"}}	handled
 turn_tool_phase_end	{"v":1,"turn_tool_phase_end":true}	handled
-staged_plan_notice 字符串	{"v":1,"staged_plan_notice":"line1\nline2"}	handled
-staged_plan_notice_clear	{"v":1,"staged_plan_notice_clear":true}	handled
 chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled
-未知键当正文	{"v":1,"unknown_future_key":true}	plain
+未知键仍有 v → handled（IM/classify；Web 现行走 AG-UI 金样）	{"v":1,"unknown_future_key":true}	handled
 conversation_saved 前端消费并静默处理	{"v":1,"conversation_saved":{"revision":42}}	handled
 sse_capabilities	{"v":1,"sse_capabilities":{"supported_sse_v":2,"resume_ring_cap":512,"job_id":99}}	handled
 stream_ended	{"v":1,"stream_ended":{"job_id":99,"reason":"completed"}}	handled
 timeline_log	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	handled
-tool_result 无 output 且无 structured_preview 当正文	{"v":1,"tool_result":{"name":"read_file","result_version":1,"summary":"x"}}	plain
+tool_result 无 output（classify：键存在 → handled）	{"v":1,"tool_result":{"name":"read_file","result_version":1,"summary":"x"}}	handled
 tool_result output 空串仍 handled	{"v":1,"tool_result":{"name":"read_file","result_version":1,"summary":"x","output":""}}	handled
-thinking_trace op 仅空白当正文	{"v":1,"thinking_trace":{"op":"   ","chunk":"x"}}	plain
-error 为 null 有 code 当正文	{"v":1,"error":null,"code":"E"}	plain
+thinking_trace op 仅空白（classify：键存在 → handled）	{"v":1,"thinking_trace":{"op":"   ","chunk":"x"}}	handled
+error 为 null 有 code（classify：经 v → handled）	{"v":1,"error":null,"code":"E"}	handled

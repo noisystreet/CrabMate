@@ -324,7 +324,7 @@ fn dispatch_tool_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
 fn dispatch_plan_custom(custom_type: &str, val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
     match custom_type {
         "assistant_answer_phase" => {
-            if let Some(hook) = sink.staged_plan.on_assistant_answer_phase.as_mut() {
+            if let Some(hook) = sink.turn_phase.on_assistant_answer_phase.as_mut() {
                 hook();
             }
         }
@@ -346,7 +346,7 @@ fn dispatch_plan_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
                         .and_then(|v| v.as_str())
                         .map(str::to_string),
                 };
-                if let Some(hook) = sink.staged_plan.on_turn_segment_start.as_mut() {
+                if let Some(hook) = sink.turn_phase.on_turn_segment_start.as_mut() {
                     hook(info);
                 }
             }
@@ -358,12 +358,12 @@ fn dispatch_plan_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
                 .and_then(|v| v.as_str())
                 .unwrap_or("")
                 .to_string();
-            if let Some(hook) = sink.staged_plan.on_turn_segment_end.as_mut() {
+            if let Some(hook) = sink.turn_phase.on_turn_segment_end.as_mut() {
                 hook(segment_id);
             }
         }
         "turn_tool_phase_end" => {
-            if let Some(hook) = sink.staged_plan.on_turn_tool_phase_end.as_mut() {
+            if let Some(hook) = sink.turn_phase.on_turn_tool_phase_end.as_mut() {
                 hook();
             }
         }
@@ -487,7 +487,7 @@ fn dispatch_info_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
 mod tests {
     use super::*;
     use crate::sse_dispatch::{
-        SseClarifyTraceHooks, SseNoticeTimelineHooks, SseStagedPlanHooks, SseWorkspaceToolHooks,
+        SseClarifyTraceHooks, SseNoticeTimelineHooks, SseTurnPhaseHooks, SseWorkspaceToolHooks,
     };
     use std::cell::RefCell;
     use std::path::PathBuf;
@@ -500,7 +500,7 @@ mod tests {
             on_error: on_err,
             on_delta: None,
             workspace_tool: SseWorkspaceToolHooks::default(),
-            staged_plan: SseStagedPlanHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
             clarify_trace: SseClarifyTraceHooks::default(),
             notice_timeline: SseNoticeTimelineHooks::default(),
         }
@@ -587,7 +587,7 @@ mod tests {
                 on_tool_status_change: Some(&mut on_tool),
                 ..SseWorkspaceToolHooks::default()
             },
-            staged_plan: SseStagedPlanHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
             clarify_trace: SseClarifyTraceHooks::default(),
             notice_timeline: SseNoticeTimelineHooks::default(),
         };
@@ -635,7 +635,7 @@ mod tests {
                 on_tool_call: Some(&mut on_tc),
                 ..SseWorkspaceToolHooks::default()
             },
-            staged_plan: SseStagedPlanHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
             clarify_trace: SseClarifyTraceHooks::default(),
             notice_timeline: SseNoticeTimelineHooks::default(),
         };

@@ -62,8 +62,6 @@ pub struct PerPlanPolicyConfig {
     pub planner_executor_mode: PlannerExecutorMode,
     /// 编排档位（当前始终为 `ReAct`，保留用于展示）。
     pub orchestration_profile: crate::OrchestrationProfile,
-    /// 决策引擎模式：`auto` / `scored`（默认 `auto`）。
-    pub orchestration_decision_mode: String,
 }
 
 #[derive(Debug, Clone)]

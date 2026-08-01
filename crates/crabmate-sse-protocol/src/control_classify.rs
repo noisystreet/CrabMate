@@ -74,3 +74,50 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
 
     "plain"
 }
+
+#[cfg(test)]
+mod tests {
+    use super::classify_sse_control_outcome;
+    use serde_json::Value;
+    use std::path::PathBuf;
+
+    #[test]
+    fn golden_sse_control() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/sse_control_golden.jsonl");
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        for (line_no, line) in raw.lines().enumerate() {
+            let t = line.trim();
+            if t.is_empty() || t.starts_with('#') {
+                continue;
+            }
+            let parts: Vec<&str> = t.splitn(3, '\t').collect();
+            assert_eq!(
+                parts.len(),
+                3,
+                "{}:{}: expected 3 tab columns",
+                path.display(),
+                line_no + 1
+            );
+            let json_line = parts[1].trim();
+            let want = parts[2].trim();
+            let v: Value = serde_json::from_str(json_line).unwrap_or_else(|e| {
+                panic!(
+                    "{}:{}: invalid JSON ({e}): {json_line}",
+                    path.display(),
+                    line_no + 1
+                )
+            });
+            let got = classify_sse_control_outcome(&v);
+            assert_eq!(
+                got,
+                want,
+                "{}:{}: classify mismatch\n  desc: {}\n  json: {json_line}\n  want: {want}\n  got:  {got}",
+                path.display(),
+                line_no + 1,
+                parts[0],
+            );
+        }
+    }
+}

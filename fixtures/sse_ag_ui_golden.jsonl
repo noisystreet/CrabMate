@@ -24,8 +24,6 @@ CUSTOM tool_running	{"type":"CUSTOM","customType":"tool_running","data":{"runnin
 CUSTOM parsing_tool_calls	{"type":"CUSTOM","customType":"parsing_tool_calls","data":{"parsing":true}}	handled
 CUSTOM assistant_answer_phase	{"type":"CUSTOM","customType":"assistant_answer_phase","data":{"phase":"answer"}}	handled
 CUSTOM timeline_log	{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"k","title":"t"}}	handled
-CUSTOM staged_plan_step_started	{"type":"CUSTOM","customType":"staged_plan_step_started","data":{"stepIndex":1,"totalSteps":3,"description":"d","executorKind":"review_readonly"}}	handled
-CUSTOM staged_plan_step_finished	{"type":"CUSTOM","customType":"staged_plan_step_finished","data":{"stepIndex":1,"totalSteps":3,"status":"ok","executorKind":"review_readonly"}}	handled
 CUSTOM thinking_trace	{"type":"CUSTOM","customType":"thinking_trace","data":{"op":"reasoning_delta","chunk":"x"}}	handled
 CUSTOM workspace_changed	{"type":"CUSTOM","customType":"workspace_changed","data":{"changed":true}}	handled
 CUSTOM command_approval	{"type":"CUSTOM","customType":"command_approval","data":{"command":"git","args":"status"}}	handled
@@ -34,9 +32,6 @@ CUSTOM conversation_saved	{"type":"CUSTOM","customType":"conversation_saved","da
 CUSTOM turn_segment_start	{"type":"CUSTOM","customType":"turn_segment_start","data":{"segmentId":"s1","kind":"commentary","beforeToolCallId":"tc1"}}	handled
 CUSTOM turn_segment_end	{"type":"CUSTOM","customType":"turn_segment_end","data":{"segmentId":"s1"}}	handled
 CUSTOM turn_tool_phase_end	{"type":"CUSTOM","customType":"turn_tool_phase_end","data":{"phase":"tool_end"}}	handled
-CUSTOM staged_plan_notice	{"type":"CUSTOM","customType":"staged_plan_notice","data":{"text":"line1\nline2","clearBefore":false}}	handled
-CUSTOM staged_plan_started	{"type":"CUSTOM","customType":"staged_plan_started","data":{"planId":"p1","totalSteps":3}}	handled
-CUSTOM staged_plan_finished	{"type":"CUSTOM","customType":"staged_plan_finished","data":{"planId":"p1","totalSteps":3,"completedSteps":3,"status":"ok"}}	handled
 CUSTOM chat_ui_separator	{"type":"CUSTOM","customType":"chat_ui_separator","data":{"short":true}}	handled
 CUSTOM sse_capabilities	{"type":"CUSTOM","customType":"sse_capabilities","data":{"supportedSseV":2,"resumeRingCap":512,"jobId":99}}	handled
 未知 type 当 plain	{"type":"UNKNOWN_FUTURE_EVENT","foo":"bar"}	plain

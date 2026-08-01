@@ -35,7 +35,7 @@ Includes (non-exhaustive):
 - **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**; hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
-- **`cargo test golden_sse_control`** (conditional hook when `fixtures/sse_control_golden.jsonl`, `crates/crabmate-sse-protocol/control_classify.rs`, or any file under `frontend/src/sse_dispatch/` change)
+- **`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`** (when changing AG-UI dispatch / `fixtures/sse_ag_ui_golden.jsonl`)
 
 Without pre-commit installed, run at least:
 
@@ -69,12 +69,11 @@ cargo test
 ### Filter by test name (examples)
 
 ```bash
-cargo test golden_sse_control
-cargo test -p crabmate-sse-protocol golden_sse_control
+cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected
 cargo test tool_result_envelope_golden
 ```
 
-If you change SSE **control-plane** branch ordering, update the golden fixture and run `golden_sse_control` (see [`SSE_PROTOCOL.md`](../SSE协议.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).
+If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).
 
 ### Optional: nightly
 

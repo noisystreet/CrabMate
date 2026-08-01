@@ -1,17 +1,19 @@
 # CrabMate 意图识别能力增强设计
 
-**状态**：设计稿（可分阶段落地）  
+**状态（2026-08 对齐现实）**：**历史设计 / 部分设想未落地**。运行时主路径为 **意图门控 → `assess_turn_routing` → ReAct 外循环**；文中 **`hierarchy/router`**、分层模式选择等**已移除**，勿当现行实现索引。仍有效的是意图门控与细粒度意图增强方向（若继续推进须对照现行 `intent` / `turn_route_decision`）。
+
 **受众**：维护者、Agent 架构贡献者、质量与运营同学  
-**关联**：`src/agent/intent_router.rs`、`src/agent/hierarchy/router.rs`、`docs/开发文档.md`
+**关联（现行）**：`src/agent/intent_router.rs`、意图门控 / `turn_route_decision`、`docs/开发文档.md`  
+**关联（历史）**：已删 `src/agent/hierarchy/router.rs`
 
 ---
 
 ## 1. 背景与问题
 
-CrabMate 当前已经具备两层“路由/意图”能力：
+CrabMate **当时**具备两层“路由/意图”能力（第二层已随分层路径移除）：
 
 - **首轮快路径意图路由**：`src/agent/intent_router.rs` 将输入分类为 `Greeting` / `Qa` / `Execute` / `Ambiguous`，并基于阈值决定 `DirectReply`、`ConfirmThenExecute`、`Execute`。
-- **任务复杂度路由**：`src/agent/hierarchy/router.rs` 根据规则或 LLM 判断任务复杂度，选择 `single/react/hierarchical/multi_agent` 执行模式。
+- **任务复杂度路由（已移除）**：原 `src/agent/hierarchy/router.rs` 曾按规则或 LLM 选择 `single/react/hierarchical/multi_agent`；现行固定 ReAct。
 
 现状能够覆盖基础场景，但在以下方面存在明显提升空间：
 

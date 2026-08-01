@@ -123,7 +123,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 | `composer_stream/callbacks/delta_apply.rs` | plain delta：工具相/尾泡 active 时 **优先** canonical 路由，避免写入错误尾泡 |
 | `composer_stream/callbacks/builders/tool_callbacks.rs` | `on_tool_call` → `TurnLayout` + `on_turn_tool_call` + `sync_commentary_before_tool` |
 | `composer_stream/callbacks/builders/turn_layout_callbacks.rs` | `turn_segment_*` / `turn_tool_phase_end` 回调 |
-| `frontend/src/sse_dispatch/dispatch.rs` | 控制面分支（与 **`crabmate-sse-protocol`** 同序） |
+| `frontend/src/api/chat_stream/parser_v2.rs` | 控制面分支（与 **`crabmate-sse-protocol`** 同序） |
 
 **`StreamModelOutputLane`**（`stream_turn_state.rs`）与 **`TurnLayout`** 分工：lane 决定 delta 写 reasoning 还是 answer；布局决定 **消息在列表中的位置**。
 
@@ -188,7 +188,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 | `tool_call` | 工具占位 | `TurnLayout::on_tool_call_declared` |
 | plain delta | LLM 流 | `try_apply_commentary_delta` 或 lane 写入 |
 
-分类金样：**`fixtures/sse_control_golden.jsonl`**；`cargo test golden_sse_control -p crabmate-sse-protocol`。
+分类金样：**`fixtures/sse_ag_ui_golden.jsonl`**；`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
 
 ---
 
@@ -198,7 +198,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 |------|------|
 | `cargo test -p crabmate-turn-layout` | reducer + `golden_turn_project` + `golden_turn_project_web` |
 | `cd frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
-| `cargo test -p crabmate-sse-protocol golden_sse_control` | 控制面 `handled` 分类 |
+| `cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected` | AG-UI 控制面分类 |
 | `cd frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
 | `cd frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
 
@@ -218,7 +218,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 
 ## 10. 变更检查清单
 
-- [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_control_golden.jsonl`、`dispatch.rs`、`control_classify.rs`
+- [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、`parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
 - [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` + `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` + `cd frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测

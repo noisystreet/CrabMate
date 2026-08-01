@@ -139,8 +139,6 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
     /// `single_agent`（`logical_dual_agent` / `hierarchical` 为废弃别名，解析为 single_agent）
     pub(super) planner_executor_mode: Option<String>,
-    /// `auto` / `scored`
-    pub(super) orchestration_decision_mode: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）

@@ -12,7 +12,10 @@ set -euo pipefail
 echo "[sse-check] cargo test -p crabmate sse::protocol::tests"
 cargo test -p crabmate sse::protocol::tests -- --nocapture
 
-echo "[sse-check] cargo test -p crabmate-sse-protocol control_classify"
-cargo test -p crabmate-sse-protocol control_classify -- --nocapture
+echo "[sse-check] cargo test -p crabmate-sse-protocol golden_sse_control"
+cargo test -p crabmate-sse-protocol golden_sse_control -- --nocapture
+
+echo "[sse-check] cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected"
+(cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected -- --nocapture)
 
 echo "[sse-check] done"

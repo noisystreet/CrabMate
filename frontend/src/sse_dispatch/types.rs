@@ -36,9 +36,9 @@ pub struct SseWorkspaceToolHooks<'a> {
     pub on_command_approval_request: Option<&'a mut dyn FnMut(CommandApprovalRequest)>,
 }
 
-/// `assistant_answer_phase` 与回合约边界事件。
+/// `assistant_answer_phase` 与回合约边界事件（终答相位 / 段落锚点；非已删 staged 编排）。
 #[derive(Default)]
-pub struct SseStagedPlanHooks<'a> {
+pub struct SseTurnPhaseHooks<'a> {
     /// 后续 `on_delta` 为终答正文（此前为思维链）；无链时也会在首段正文前下发。
     pub on_assistant_answer_phase: Option<&'a mut dyn FnMut()>,
     pub on_turn_segment_start: Option<&'a mut dyn FnMut(TurnSegmentStartInfo)>,
@@ -83,7 +83,7 @@ pub struct SseControlSink<'a> {
     /// V1 路径不经此回调。
     pub on_delta: Option<&'a mut dyn FnMut(String)>,
     pub workspace_tool: SseWorkspaceToolHooks<'a>,
-    pub staged_plan: SseStagedPlanHooks<'a>,
+    pub turn_phase: SseTurnPhaseHooks<'a>,
     pub clarify_trace: SseClarifyTraceHooks<'a>,
     pub notice_timeline: SseNoticeTimelineHooks<'a>,
 }
