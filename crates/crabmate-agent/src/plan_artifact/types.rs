@@ -446,7 +446,8 @@ pub fn plan_artifact_error_log_summary(e: &PlanArtifactError) -> String {
     }
 }
 
-/// Plan v1 的 schema 规则描述（中文），供提示词引用。
+/// Plan v1 的完整 schema 规则长文（中文）：供维护者对照 / 文档摘录。
+/// 运行时校验走类型化逻辑，**不**读取本字符串；**不要**整段注入模型「规划重写」user（见 [`PLAN_V1_REWRITE_BRIEF_RULES`]）。
 pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - 顶层 \"type\" 为字符串 \"agent_reply_plan\"
 - \"version\" 为数字 1
@@ -465,8 +466,19 @@ pub const PLAN_V1_SCHEMA_RULES: &str = "\
 - **强约束（分阶段 + 验收）**：当 `executor_kind` 为 `test_runner` 且本步将跑构建/测试/静态检查时，**应**填写 `acceptance`：至少 `expect_exit_code`（多为 0），并**推荐**增加与真实 CLI 输出一致的短锚点 `expect_stdout_contains` 或 `expect_stderr_contains`，便于失败时补丁规划收到可执行反馈；纯 `review_readonly` 可省略；写后验收可配 `expect_file_exists`
 - **咨询/架构类**（用户主要求分析与建议、未授权写仓库）：若仍产出可执行步，应优先 `review_readonly`；避免在单步中混用写文件意图而未设 `patch_write`（执行层会拒识越权工具）";
 
-/// Plan v1 的 JSON 示例。
+/// 注入模型「规划重写」user 的**短**必填说明（细则靠校验错误码回灌，勿复制 [`PLAN_V1_SCHEMA_RULES`] 全文）。
+pub const PLAN_V1_REWRITE_BRIEF_RULES: &str = "\
+- 顶层：`type`=\"agent_reply_plan\"，`version`=1
+- 默认：`steps` 恰好 1 项，每项含非空 `id`、`description`（`id`：字母/数字开头，仅含 -_./，≤128，无首尾空白）
+- 无具体任务：可设 `no_task`=true 且 `steps`=[]
+- 可选：`executor_kind`（`review_readonly`|`patch_write`|`test_runner`）、`step_kind`、`acceptance`、`workflow_node_id`、`max_step_retries`、`transitions`
+- `workflow_validate_only` 绑定等多步细则：见本消息中的**校验反馈**与「补充」段（勿臆造节点 id）";
+
+/// Plan v1 的 JSON 示例（校验/文档；重写提示优先用 [`PLAN_V1_REWRITE_EXAMPLE_JSON`]）。
 pub const PLAN_V1_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"verify-cargo-check","description":"在本工作区运行 cargo check 并确认通过","executor_kind":"test_runner","step_kind":"verify","max_step_retries":2,"acceptance":{"expect_exit_code":0,"expect_stdout_contains":"Finished"}}]}"#;
+
+/// 重写提示用的最短合法示例（单步，无验收细节）。
+pub const PLAN_V1_REWRITE_EXAMPLE_JSON: &str = r#"{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"完成用户请求的一步并核对结果"}]}"#;
 
 /// 将合法 v1 规划序列化为单行 JSON（供补丁助手消息写入历史）。
 pub fn agent_reply_plan_v1_to_json_string(

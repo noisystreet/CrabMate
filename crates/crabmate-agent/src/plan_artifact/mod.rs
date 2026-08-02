@@ -7,11 +7,12 @@ mod types;
 mod validate;
 
 pub use types::{
-    AgentReplyPlanV1, JsonPathEqualsRule, PLAN_V1_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES,
-    PlanArtifactError, PlanStepAcceptance, PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1,
-    agent_reply_plan_v1_to_json_string, plan_acceptance_path_looks_like_build_artifact,
-    plan_artifact_error_log_summary, plan_step_acceptance_implies_build_progress,
-    plan_step_description_implies_build_execution, plan_steps_fingerprint,
+    AgentReplyPlanV1, JsonPathEqualsRule, PLAN_V1_EXAMPLE_JSON, PLAN_V1_REWRITE_BRIEF_RULES,
+    PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, PlanArtifactError, PlanStepAcceptance,
+    PlanStepControlFlow, PlanStepExecutorKind, PlanStepV1, agent_reply_plan_v1_to_json_string,
+    plan_acceptance_path_looks_like_build_artifact, plan_artifact_error_log_summary,
+    plan_step_acceptance_implies_build_progress, plan_step_description_implies_build_execution,
+    plan_steps_fingerprint,
 };
 
 pub use display::{augment_agent_reply_plan_goal_for_display, prose_before_first_fence};

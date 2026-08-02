@@ -372,7 +372,7 @@ With `workflow_validate_only` results, **`spec.layer_count`** constrains step co
 
 ## Plan rewrite (`plan_rewrite_max_attempts`)
 
-Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**, see **`docs/en/SSE_PROTOCOL.md`**).
+Max “please rewrite” user injections when the plan is invalid; when exhausted, stream may emit **`code: plan_rewrite_exhausted`** (optional sibling **`reason_code`**, see **`docs/en/SSE_PROTOCOL.md`**). The rewrite user carries a **short** required-field brief plus a minimal JSON example; full schema rules stay on the validator side, with failure **feedback codes** (and workflow “supplement” lines) injected instead of the long rule dump.
 
 ## SyncDefault Docker sandbox (`sync_default_tool_sandbox_mode`)
 
