@@ -14,7 +14,7 @@
  *      - 项目根 config.toml（[agent] 节下的 api_key）
  *      - 项目根 .agent_demo.toml（同上）
  *      - 系统钥匙串（由已运行的 CrabMate 后端读取；测试进程本身不导出明文）
- *   3. 目录工具用例须通过 POST /workspace 预先设置有效工作区；未设置时前置检查立即失败
+ *   3. 「工具卡可见」用例会自建临时工作区并 POST /workspace；勿依赖全局残留路径
  *
  * 运行方式：
  *   cd e2e && npx playwright test specs/real-llm-tool-call.spec.ts
@@ -87,31 +87,47 @@ function resolveApiKey(): string {
 const API_KEY = resolveApiKey();
 const SID_BASE = "s_e2e_real_tool_call";
 
-async function requireConfiguredWorkspace(page: Page): Promise<void> {
-  const workspace = await page.evaluate(async () => {
-    const response = await fetch("/workspace");
-    if (!response.ok) {
-      return {
-        path: "",
-        error: `GET /workspace returned HTTP ${response.status}`,
-      };
-    }
-    const data = (await response.json()) as {
+/** 自建临时工作区并绑定到当前服务，避免依赖前序用例留下的失效路径。 */
+async function ensureTempWorkspace(page: Page): Promise<string> {
+  const wsDir = path.resolve(
+    process.cwd(),
+    "..",
+    `.e2e_tmp_tool_call_${Date.now()}`,
+  );
+  fs.mkdirSync(wsDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(wsDir, "README.md"),
+    "# e2e tool-call workspace\n",
+  );
+
+  const result = await page.evaluate(async (dir: string) => {
+    const response = await fetch("/workspace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: dir }),
+    });
+    const data = (await response.json().catch(() => ({}))) as {
       path?: unknown;
       error?: unknown;
     };
     return {
+      ok: response.ok,
       path: typeof data.path === "string" ? data.path.trim() : "",
       error: typeof data.error === "string" ? data.error.trim() : "",
     };
-  });
+  }, wsDir);
 
-  if (!workspace.path || workspace.error) {
+  if (!result.ok || result.error || !result.path) {
     throw new Error(
-      `真实工具调用 E2E 需要预先设置有效工作区；请先通过 POST /workspace 配置目录。` +
-        ` 当前状态：${workspace.error || "workspace path is empty"}`,
+      `POST /workspace 失败：${result.error || `HTTP ok=${result.ok}`}`,
     );
   }
+
+  await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
+  await page.waitForSelector('[data-testid="chat-composer-input"]', {
+    timeout: 15_000,
+  });
+  return wsDir;
 }
 
 test.describe("真实 LLM：工具调用场景", () => {
@@ -122,7 +138,33 @@ test.describe("真实 LLM：工具调用场景", () => {
 
   runTest("工具卡 + 工具结果 + 终答在 UI 中可见", async ({ page }) => {
     await setupRealLLMSession(page, uniqueSid, API_KEY);
-    await requireConfiguredWorkspace(page);
+    await ensureTempWorkspace(page);
+    // 工作区切换后会话可能不在新根下：重建空会话
+    await page.evaluate((s: string) => {
+      const body = JSON.stringify({
+        sessions: [
+          {
+            id: s,
+            title: "e2e-real-tool-call",
+            draft: "",
+            messages: [],
+            updated_at: Date.now(),
+            pinned: false,
+            starred: false,
+          },
+        ],
+        active_session_id: s,
+      });
+      return fetch("/user-data/workspaces/current/sessions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+    }, uniqueSid);
+    await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
+    await page.waitForSelector('[data-testid="chat-composer-input"]', {
+      timeout: 15_000,
+    });
     // 要求列出文件结构，模型必然会调用 list_tree 工具
     await sendMessage(page, "列出当前工作区目录结构，用列表工具。");
 
@@ -134,10 +176,8 @@ test.describe("真实 LLM：工具调用场景", () => {
       { timeout: 5_000 },
     );
 
-    // 至少有一个工具卡
-    const toolCards = await page
-      .locator('[data-testid="chat-tool-card"]')
-      .count();
+    // 默认主列为 TUI：工具回合为 section.chat-tui-turn--tool
+    const toolCards = await page.locator("section.chat-tui-turn--tool").count();
     expect(toolCards).toBeGreaterThanOrEqual(1);
 
     // 终答可见

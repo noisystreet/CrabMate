@@ -87,7 +87,10 @@ async function waitForTurnComplete(
       continue;
     }
     const ready = (await statusBar.textContent())?.includes("就绪");
-    const assistantCount = await page.locator(".msg-assistant").count();
+    // 默认主列为 TUI；旧气泡类名 .msg-assistant 不再出现
+    const assistantCount = await page
+      .locator("section.chat-tui-turn--assistant")
+      .count();
     if (ready && assistantCount > assistantCountBefore) return;
     await page.waitForTimeout(250);
   }
@@ -108,7 +111,7 @@ test.describe("真实 LLM：三轮对话滚动跟随", () => {
 
       for (const prompt of PROMPTS) {
         const assistantCountBefore = await page
-          .locator(".msg-assistant")
+          .locator("section.chat-tui-turn--assistant")
           .count();
         await sendMessage(page, prompt);
         await waitForTurnComplete(page, assistantCountBefore);
@@ -117,9 +120,11 @@ test.describe("真实 LLM：三轮对话滚动跟随", () => {
           .toBeLessThanOrEqual(4);
       }
 
-      await expect(page.locator(".msg-user")).toHaveCount(PROMPTS.length);
+      await expect(page.locator("section.chat-tui-turn--user")).toHaveCount(
+        PROMPTS.length,
+      );
       expect(
-        await page.locator(".msg-assistant").count(),
+        await page.locator("section.chat-tui-turn--assistant").count(),
       ).toBeGreaterThanOrEqual(PROMPTS.length);
       for (const prompt of PROMPTS) {
         await expect(

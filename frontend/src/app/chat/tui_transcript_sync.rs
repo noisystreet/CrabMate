@@ -1,4 +1,4 @@
-//! TUI transcript：每回合独立 wrap（section + 操作条）；工具为一行摘要；流式只对 live 按行 patch（闭合冻结、活跃行内增强）。
+//! TUI transcript：每回合独立 wrap（section + 操作条）；工具为一行摘要；流式只对 live 按块 patch（闭合冻结、活跃块行内增强）。
 
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ use crate::stream_text_overlay::{
 
 use super::tui_actions_bar::turn_actions_bar_html;
 use super::tui_line_markdown::{
-    TuiBodyChunks, TuiBodyPatch, parse_tui_body_chunks, plan_tui_body_patch,
+    TuiBodyChunks, TuiBodyPatch, parse_tui_body_chunks_with, plan_tui_body_patch,
 };
 use super::tui_tool_process::{tool_process_body_html, tool_row_live_fields};
 use crate::visible_messages::tui_should_render_message;
@@ -177,63 +177,46 @@ fn message_display_text(
     )
 }
 
-fn message_body_chunks(
-    message: &StoredMessage,
-    session_id: &str,
-    overlay: Option<&StreamTextOverlay>,
-    locale: Locale,
-    apply_assistant_display_filters: bool,
-    tool_chunks: &HashMap<String, String>,
-) -> TuiBodyChunks {
+fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBodyChunks {
     if message.is_tool {
-        let live = tool_live_overlay(message, tool_chunks);
+        let live = tool_live_overlay(message, ctx.tool_chunks);
         return TuiBodyChunks {
-            closed: vec![tool_process_body_html(message, locale, live)],
+            closed: vec![tool_process_body_html(message, ctx.locale, live)],
             open_plain: None,
+            markdown_render: true,
         };
     }
     let text = message_display_text(
         message,
-        session_id,
-        overlay,
-        locale,
-        apply_assistant_display_filters,
+        ctx.session_id,
+        ctx.overlay,
+        ctx.locale,
+        ctx.apply_filters,
     );
-    parse_tui_body_chunks(&text, message_finalize_open_line(message))
+    parse_tui_body_chunks_with(
+        &text,
+        message_finalize_open_line(message),
+        ctx.markdown_render,
+    )
 }
 
 struct TurnSectionArgs<'a> {
     message: &'a StoredMessage,
     msg_idx: usize,
-    session_id: &'a str,
-    overlay: Option<&'a StreamTextOverlay>,
-    locale: Locale,
-    apply_filters: bool,
     is_live: bool,
-    tool_chunks: &'a HashMap<String, String>,
+    ctx: &'a TuiRenderCtx<'a>,
 }
 
 fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
     let TurnSectionArgs {
         message,
         msg_idx,
-        session_id,
-        overlay,
-        locale,
-        apply_filters,
         is_live,
-        tool_chunks,
+        ctx,
     } = args;
+    let locale = ctx.locale;
     let role = tui_role_label(message, locale);
-    let body = message_body_chunks(
-        message,
-        session_id,
-        overlay,
-        locale,
-        apply_filters,
-        tool_chunks,
-    )
-    .to_inner_html();
+    let body = message_body_chunks(message, ctx).to_inner_html();
     let role_class = tui_turn_role_class(message);
     let live_class = if is_live { " chat-tui-turn--live" } else { "" };
     let loading_class = if message
@@ -279,12 +262,21 @@ pub(crate) fn build_tui_transcript_html(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    markdown_render: bool,
     tool_chunks: &HashMap<String, String>,
 ) -> String {
     let turns = mountable_turns(messages, session_id, overlay);
     if turns.is_empty() {
         return empty_transcript_html(locale);
     }
+    let ctx = TuiRenderCtx {
+        session_id,
+        overlay,
+        locale,
+        apply_filters: apply_assistant_display_filters,
+        markdown_render,
+        tool_chunks,
+    };
     let live_id = live_message_id(messages, overlay);
     let mut html = String::new();
     for &(msg_idx, message) in &turns {
@@ -292,12 +284,8 @@ pub(crate) fn build_tui_transcript_html(
         html.push_str(&turn_section_html(TurnSectionArgs {
             message,
             msg_idx,
-            session_id,
-            overlay,
-            locale,
-            apply_filters: apply_assistant_display_filters,
             is_live,
-            tool_chunks,
+            ctx: &ctx,
         }));
     }
     html
@@ -341,24 +329,27 @@ fn full_rebuild_plan(
     overlay: Option<&StreamTextOverlay>,
     locale: Locale,
     apply_assistant_display_filters: bool,
+    markdown_render: bool,
     tool_chunks: &HashMap<String, String>,
 ) -> TuiSyncPlan {
     let turns = mountable_turns(messages, session_id, overlay);
     let live_id = live_message_id(messages, overlay);
     let committed_key = committed_fingerprint(&turns, live_id.as_deref());
     let mounted_ids: Vec<String> = turns.iter().map(|(_, m)| m.id.clone()).collect();
+    let ctx = TuiRenderCtx {
+        session_id,
+        overlay,
+        locale,
+        apply_filters: apply_assistant_display_filters,
+        markdown_render,
+        tool_chunks,
+    };
     let live_body = live_id.as_ref().and_then(|id| {
         // 仅当 live 已可挂载时缓存 body（空壳未挂载则无 live_body）
-        turns.iter().find(|(_, m)| m.id == *id).map(|(_, m)| {
-            message_body_chunks(
-                m,
-                session_id,
-                overlay,
-                locale,
-                apply_assistant_display_filters,
-                tool_chunks,
-            )
-        })
+        turns
+            .iter()
+            .find(|(_, m)| m.id == *id)
+            .map(|(_, m)| message_body_chunks(m, &ctx))
     });
     let live_tool_has_details =
         live_tool_has_details_flag(messages, live_id.as_deref(), locale, tool_chunks);
@@ -377,6 +368,7 @@ fn full_rebuild_plan(
             overlay,
             locale,
             apply_assistant_display_filters,
+            markdown_render,
             tool_chunks,
         )),
         promote_id: None,
@@ -412,6 +404,7 @@ struct TuiRenderCtx<'a> {
     overlay: Option<&'a StreamTextOverlay>,
     locale: Locale,
     apply_filters: bool,
+    markdown_render: bool,
     tool_chunks: &'a HashMap<String, String>,
 }
 
@@ -428,12 +421,8 @@ fn append_new_turn_sections(
             turn_section_html(TurnSectionArgs {
                 message,
                 msg_idx,
-                session_id: ctx.session_id,
-                overlay: ctx.overlay,
-                locale: ctx.locale,
-                apply_filters: ctx.apply_filters,
                 is_live: live_id == Some(message.id.as_str()),
-                tool_chunks: ctx.tool_chunks,
+                ctx,
             })
         })
         .collect()
@@ -458,14 +447,7 @@ fn plan_live_patch(
         if !prev.mounted_ids.iter().any(|mid| mid == id) {
             return None;
         }
-        let next_chunks = message_body_chunks(
-            message,
-            ctx.session_id,
-            ctx.overlay,
-            ctx.locale,
-            ctx.apply_filters,
-            ctx.tool_chunks,
-        );
+        let next_chunks = message_body_chunks(message, ctx);
         if message.is_tool && prev.live_id.as_deref() == Some(id) {
             let live = tool_live_overlay(message, ctx.tool_chunks);
             let fields = tool_row_live_fields(message, ctx.locale, live);
@@ -499,17 +481,15 @@ fn plan_live_patch(
     }
     let pid = promote_id?;
     let message = messages.iter().find(|m| m.id == pid)?;
-    let chunks = message_body_chunks(
-        message,
-        ctx.session_id,
-        ctx.overlay,
-        ctx.locale,
-        ctx.apply_filters,
-        ctx.tool_chunks,
-    );
+    let chunks = message_body_chunks(message, ctx);
+    // 结束回合时用增量收口末块，避免整 body ReplaceAll 抖动。
+    let prev_chunks = prev
+        .live_body
+        .as_ref()
+        .filter(|_| prev.live_id.as_deref() == Some(pid));
     Some(LiveBodyPlan {
         message_id: pid.to_string(),
-        patch: TuiBodyPatch::ReplaceAll { chunks },
+        patch: plan_tui_body_patch(prev_chunks, &chunks),
     })
 }
 
@@ -524,14 +504,7 @@ fn plan_refresh_bodies(
         .filter(|message| live_id != Some(message.id.as_str()))
         .filter(|message| promote_id != Some(message.id.as_str()))
         .map(|message| {
-            let chunks = message_body_chunks(
-                message,
-                ctx.session_id,
-                ctx.overlay,
-                ctx.locale,
-                ctx.apply_filters,
-                ctx.tool_chunks,
-            );
+            let chunks = message_body_chunks(message, ctx);
             LiveBodyPlan {
                 message_id: message.id.clone(),
                 patch: TuiBodyPatch::ReplaceAll { chunks },
@@ -584,16 +557,10 @@ fn next_mount_state(
     ctx: &TuiRenderCtx<'_>,
 ) -> TuiMountState {
     let live_body = live_id.as_ref().and_then(|id| {
-        turns.iter().find(|(_, m)| m.id == *id).map(|(_, m)| {
-            message_body_chunks(
-                m,
-                ctx.session_id,
-                ctx.overlay,
-                ctx.locale,
-                ctx.apply_filters,
-                ctx.tool_chunks,
-            )
-        })
+        turns
+            .iter()
+            .find(|(_, m)| m.id == *id)
+            .map(|(_, m)| message_body_chunks(m, ctx))
     });
     let live_tool_has_details =
         live_tool_has_details_flag(messages, live_id.as_deref(), ctx.locale, ctx.tool_chunks);
@@ -607,17 +574,31 @@ fn next_mount_state(
     }
 }
 
+/// [`plan_tui_sync`] 入参袋（避免形参超 frontend clippy 上限）。
+pub(crate) struct PlanTuiSyncArgs<'a> {
+    pub prev: Option<&'a TuiMountState>,
+    pub messages: &'a [StoredMessage],
+    pub session_id: &'a str,
+    pub overlay: Option<&'a StreamTextOverlay>,
+    pub locale: Locale,
+    pub apply_assistant_display_filters: bool,
+    pub markdown_render: bool,
+    pub tool_chunks: &'a HashMap<String, String>,
+}
+
 /// 规划 transcript DOM 更新。
 #[must_use]
-pub(crate) fn plan_tui_sync(
-    prev: Option<&TuiMountState>,
-    messages: &[StoredMessage],
-    session_id: &str,
-    overlay: Option<&StreamTextOverlay>,
-    locale: Locale,
-    apply_assistant_display_filters: bool,
-    tool_chunks: &HashMap<String, String>,
-) -> TuiSyncPlan {
+pub(crate) fn plan_tui_sync(args: PlanTuiSyncArgs<'_>) -> TuiSyncPlan {
+    let PlanTuiSyncArgs {
+        prev,
+        messages,
+        session_id,
+        overlay,
+        locale,
+        apply_assistant_display_filters,
+        markdown_render,
+        tool_chunks,
+    } = args;
     let turns = mountable_turns(messages, session_id, overlay);
     let Some(prev) = prev else {
         return full_rebuild_plan(
@@ -626,6 +607,7 @@ pub(crate) fn plan_tui_sync(
             overlay,
             locale,
             apply_assistant_display_filters,
+            markdown_render,
             tool_chunks,
         );
     };
@@ -636,6 +618,7 @@ pub(crate) fn plan_tui_sync(
             overlay,
             locale,
             apply_assistant_display_filters,
+            markdown_render,
             tool_chunks,
         );
     }
@@ -645,6 +628,7 @@ pub(crate) fn plan_tui_sync(
         overlay,
         locale,
         apply_filters: apply_assistant_display_filters,
+        markdown_render,
         tool_chunks,
     };
     let live_id = live_message_id(messages, overlay);

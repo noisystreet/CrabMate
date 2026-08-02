@@ -1,4 +1,4 @@
-//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按行局部更新（活跃行流式行内 HTML）。
+//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按块局部更新（活跃块流式行内 HTML）。
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -7,7 +7,7 @@ use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
 use super::tui_line_markdown::{TuiBodyPatch, open_line_is_fence_buffer, render_open_active_html};
-use super::tui_transcript_sync::{TuiMountState, TuiSyncPlan, plan_tui_sync};
+use super::tui_transcript_sync::{PlanTuiSyncArgs, TuiMountState, TuiSyncPlan, plan_tui_sync};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
 
@@ -41,16 +41,21 @@ fn remove_open_line(body: &web_sys::HtmlElement) {
     }
 }
 
-fn apply_open_active_line(body: &web_sys::HtmlElement, text: &str) -> bool {
+fn apply_open_active_line(body: &web_sys::HtmlElement, text: &str, markdown_render: bool) -> bool {
     let Some(line) = ensure_open_line(body) else {
         return false;
     };
-    if open_line_is_fence_buffer(text) {
-        line.set_class_name("chat-tui-line chat-tui-line--plain");
+    let plain_mode = !markdown_render || open_line_is_fence_buffer(text);
+    line.set_class_name(if plain_mode {
+        "chat-tui-line chat-tui-line--plain"
+    } else {
+        "chat-tui-line chat-tui-line--active"
+    });
+    // 未闭合围栏：textContent 避免半截 HTML；关 MD / 行内增强走统一入口。
+    if markdown_render && open_line_is_fence_buffer(text) {
         line.set_text_content(Some(text));
     } else {
-        line.set_class_name("chat-tui-line chat-tui-line--active");
-        line.set_inner_html(&render_open_active_html(text));
+        line.set_inner_html(&render_open_active_html(text, markdown_render));
     }
     true
 }
@@ -116,6 +121,7 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
         TuiBodyPatch::Incremental {
             append_closed,
             open_plain,
+            markdown_render,
         } => {
             if !append_closed.is_empty() {
                 remove_open_line(body);
@@ -126,7 +132,7 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
                 }
             }
             match open_plain {
-                Some(text) => apply_open_active_line(body, &text),
+                Some(text) => apply_open_active_line(body, &text, markdown_render),
                 None => {
                     remove_open_line(body);
                     true
@@ -267,6 +273,7 @@ pub(crate) fn ChatTuiStreamView(
     chat: ChatSessionSignals,
     locale: RwSignal<Locale>,
     apply_assistant_display_filters: RwSignal<bool>,
+    markdown_render: RwSignal<bool>,
     scroll_shell: ChatScrollShellSignals,
     action_handlers: TuiTurnActionHandlers,
 ) -> impl IntoView {
@@ -279,29 +286,32 @@ pub(crate) fn ChatTuiStreamView(
         let active_id = chat.active_id.get();
         let locale = locale.get();
         let apply_filters = apply_assistant_display_filters.get();
+        let md_on = markdown_render.get();
         let overlay = chat.stream_text_overlay.get();
         let prev = mount_state.get_untracked();
         let plan = chat.sessions.with(|sessions| {
             let session = sessions.iter().find(|session| session.id == active_id);
             match session {
-                None => plan_tui_sync(
-                    prev.as_ref(),
-                    &[],
-                    &active_id,
-                    None,
+                None => plan_tui_sync(PlanTuiSyncArgs {
+                    prev: prev.as_ref(),
+                    messages: &[],
+                    session_id: &active_id,
+                    overlay: None,
                     locale,
-                    apply_filters,
-                    &tool_chunks,
-                ),
-                Some(session) => plan_tui_sync(
-                    prev.as_ref(),
-                    &session.messages,
-                    &session.id,
-                    overlay.as_ref(),
+                    apply_assistant_display_filters: apply_filters,
+                    markdown_render: md_on,
+                    tool_chunks: &tool_chunks,
+                }),
+                Some(session) => plan_tui_sync(PlanTuiSyncArgs {
+                    prev: prev.as_ref(),
+                    messages: &session.messages,
+                    session_id: &session.id,
+                    overlay: overlay.as_ref(),
                     locale,
-                    apply_filters,
-                    &tool_chunks,
-                ),
+                    apply_assistant_display_filters: apply_filters,
+                    markdown_render: md_on,
+                    tool_chunks: &tool_chunks,
+                }),
             }
         });
 
@@ -319,24 +329,26 @@ pub(crate) fn ChatTuiStreamView(
             let forced = chat.sessions.with(|sessions| {
                 let session = sessions.iter().find(|session| session.id == active_id);
                 match session {
-                    None => plan_tui_sync(
-                        None,
-                        &[],
-                        &active_id,
-                        None,
+                    None => plan_tui_sync(PlanTuiSyncArgs {
+                        prev: None,
+                        messages: &[],
+                        session_id: &active_id,
+                        overlay: None,
                         locale,
-                        apply_filters,
-                        &tool_chunks,
-                    ),
-                    Some(session) => plan_tui_sync(
-                        None,
-                        &session.messages,
-                        &session.id,
-                        overlay.as_ref(),
+                        apply_assistant_display_filters: apply_filters,
+                        markdown_render: md_on,
+                        tool_chunks: &tool_chunks,
+                    }),
+                    Some(session) => plan_tui_sync(PlanTuiSyncArgs {
+                        prev: None,
+                        messages: &session.messages,
+                        session_id: &session.id,
+                        overlay: overlay.as_ref(),
                         locale,
-                        apply_filters,
-                        &tool_chunks,
-                    ),
+                        apply_assistant_display_filters: apply_filters,
+                        markdown_render: md_on,
+                        tool_chunks: &tool_chunks,
+                    }),
                 }
             });
             let _ = apply_tui_sync_plan(el, &forced);

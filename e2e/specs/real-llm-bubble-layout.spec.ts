@@ -280,17 +280,16 @@ test.describe("真实 LLM：流式后消息结构", () => {
     // 基础校验：至少有若干条消息
     expect(messages.length).toBeGreaterThanOrEqual(3);
 
-    // 统计 DOM 中实际渲染的非工具气泡数
+    // 默认主列为 TUI transcript（无 chat-message-row）；统计已落盘的 turn 节
     const renderedBubbleCount = await page.evaluate(
-      () =>
-        document.querySelectorAll('[data-testid="chat-message-row"]').length,
+      () => document.querySelectorAll("section.chat-tui-turn").length,
     );
 
     let analysis = analyzeMessages(messages);
 
     // ── 终端输出调试信息（必须在断言之前，断言失败后不会执行到此处）──
     console.log(`消息总数: ${messages.length}`);
-    console.log(`DOM 气泡数 (chat-message-row): ${renderedBubbleCount}`);
+    console.log(`DOM turn 数 (chat-tui-turn): ${renderedBubbleCount}`);
     console.log(`助手消息数: ${analysis.assistantIndices.length}`);
     console.log(`工具消息数: ${analysis.toolIndices.length}`);
     console.log(`助手间最大连续工具数: ${analysis.maxToolsBetweenAssistants}`);
@@ -354,9 +353,9 @@ test.describe("真实 LLM：流式后消息结构", () => {
     // Bug：旋转后无 delta 跟进会产生空气泡（如 [N] role=assistant text=""）
     expect(analysis.emptyAssistantMessages).toEqual([]);
 
-    // DOM 中至少 3 个气泡行（用户 + 至少 2 个助手气泡）
-    // 单轮正文：用户 + 意图 + 正文 = 3 行
-    // 多轮交替：用户 + N 个助手 = 3+ 行
+    // DOM 中至少 3 个 TUI turn（用户 + 至少 2 个助手；工具节另计亦可）
+    // 单轮正文：用户 + 意图 + 正文 = 3 节
+    // 多轮交替：用户 + N 个助手 = 3+ 节
     expect(renderedBubbleCount).toBeGreaterThanOrEqual(3);
 
     // 不应出现错误提示

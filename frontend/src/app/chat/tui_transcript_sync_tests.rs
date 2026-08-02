@@ -3,6 +3,25 @@ use crate::storage::StoredMessageState;
 use crate::stream_text_overlay::StreamTextOverlay;
 use std::collections::HashMap;
 
+fn sync(
+    prev: Option<&TuiMountState>,
+    messages: &[StoredMessage],
+    session_id: &str,
+    overlay: Option<&StreamTextOverlay>,
+    tool_chunks: &HashMap<String, String>,
+) -> TuiSyncPlan {
+    plan_tui_sync(PlanTuiSyncArgs {
+        prev,
+        messages,
+        session_id,
+        overlay,
+        locale: Locale::ZhHans,
+        apply_assistant_display_filters: false,
+        markdown_render: true,
+        tool_chunks,
+    })
+}
+
 fn message(id: &str, role: &str, text: &str) -> StoredMessage {
     StoredMessage {
         id: id.to_string(),
@@ -30,15 +49,8 @@ fn streaming_tokens_incremental_open_plain() {
         answer: "**a".to_string(),
         reasoning: String::new(),
     };
-    let plan1 = plan_tui_sync(
-        None,
-        &messages,
-        "s1",
-        Some(&overlay1),
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
+    let empty = HashMap::new();
+    let plan1 = sync(None, &messages, "s1", Some(&overlay1), &empty);
     assert!(plan1.full_html.is_some());
 
     let overlay2 = StreamTextOverlay {
@@ -47,15 +59,7 @@ fn streaming_tokens_incremental_open_plain() {
         answer: "**ab".to_string(),
         reasoning: String::new(),
     };
-    let plan2 = plan_tui_sync(
-        Some(&plan1.next),
-        &messages,
-        "s1",
-        Some(&overlay2),
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
+    let plan2 = sync(Some(&plan1.next), &messages, "s1", Some(&overlay2), &empty);
     assert!(plan2.full_html.is_none());
     assert!(plan2.append_sections.is_empty());
     let live = plan2.live.expect("live patch");
@@ -64,6 +68,7 @@ fn streaming_tokens_incremental_open_plain() {
         TuiBodyPatch::Incremental {
             append_closed,
             open_plain,
+            markdown_render: _,
         } => {
             assert!(append_closed.is_empty());
             assert_eq!(open_plain.as_deref(), Some("**ab"));
@@ -75,15 +80,8 @@ fn streaming_tokens_incremental_open_plain() {
 #[test]
 fn empty_loading_shell_not_appended_until_overlay_has_text() {
     let user = message("u1", "user", "hi");
-    let plan1 = plan_tui_sync(
-        None,
-        std::slice::from_ref(&user),
-        "s1",
-        None,
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
+    let empty = HashMap::new();
+    let plan1 = sync(None, std::slice::from_ref(&user), "s1", None, &empty);
     assert!(plan1.full_html.is_some());
     assert_eq!(plan1.next.mounted_ids, vec!["u1".to_string()]);
 
@@ -96,14 +94,12 @@ fn empty_loading_shell_not_appended_until_overlay_has_text() {
         answer: String::new(),
         reasoning: String::new(),
     };
-    let plan2 = plan_tui_sync(
+    let plan2 = sync(
         Some(&plan1.next),
         &messages,
         "s1",
         Some(&empty_overlay),
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
+        &empty,
     );
     assert!(plan2.full_html.is_none());
     assert!(
@@ -118,15 +114,7 @@ fn empty_loading_shell_not_appended_until_overlay_has_text() {
         answer: "你好".to_string(),
         reasoning: String::new(),
     };
-    let plan3 = plan_tui_sync(
-        Some(&plan2.next),
-        &messages,
-        "s1",
-        Some(&with_text),
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
+    let plan3 = sync(Some(&plan2.next), &messages, "s1", Some(&with_text), &empty);
     assert!(plan3.full_html.is_none());
     assert_eq!(plan3.append_sections.len(), 1);
     assert!(plan3.append_sections[0].contains("data-tui-live=\"1\""));
@@ -140,24 +128,9 @@ fn empty_loading_shell_not_appended_until_overlay_has_text() {
 #[test]
 fn session_switch_forces_full_rebuild() {
     let messages = vec![message("u1", "user", "hi")];
-    let plan1 = plan_tui_sync(
-        None,
-        &messages,
-        "s1",
-        None,
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
-    let plan2 = plan_tui_sync(
-        Some(&plan1.next),
-        &messages,
-        "s2",
-        None,
-        Locale::ZhHans,
-        false,
-        &HashMap::new(),
-    );
+    let empty = HashMap::new();
+    let plan1 = sync(None, &messages, "s1", None, &empty);
+    let plan2 = sync(Some(&plan1.next), &messages, "s2", None, &empty);
     assert!(plan2.full_html.is_some());
 }
 
@@ -173,6 +146,7 @@ fn finished_assistant_bold_becomes_strong() {
         None,
         Locale::ZhHans,
         false,
+        true,
         &HashMap::new(),
     );
     assert!(output.contains("data-tui-msg-id"), "got {output}");
@@ -201,12 +175,51 @@ fn tool_turn_uses_tool_modifier_without_generic_role_word() {
     let mut tool = message("t1", "assistant", "ok");
     tool.is_tool = true;
     tool.tool_name = Some("read_file".to_string());
-    let output =
-        build_tui_transcript_html(&[tool], "s1", None, Locale::ZhHans, false, &HashMap::new());
+    let output = build_tui_transcript_html(
+        &[tool],
+        "s1",
+        None,
+        Locale::ZhHans,
+        false,
+        true,
+        &HashMap::new(),
+    );
     assert!(output.contains("chat-tui-turn--tool"), "got {output}");
     assert!(output.contains("chat-tui-tool-process"), "got {output}");
     assert!(output.contains("read_file"), "got {output}");
     assert!(!output.contains("工具:"), "got {output}");
+}
+
+#[test]
+fn promote_finished_assistant_uses_incremental_not_replace_all() {
+    let user = message("u1", "user", "hi");
+    let mut assistant = message("a1", "assistant", "");
+    assistant.state = Some(StoredMessageState::Loading);
+    let messages_loading = vec![user.clone(), assistant.clone()];
+    let overlay = StreamTextOverlay {
+        session_id: "s1".to_string(),
+        message_id: "a1".to_string(),
+        answer: "hello\n\n**tail**".to_string(),
+        reasoning: String::new(),
+    };
+    let empty = HashMap::new();
+    let plan1 = sync(None, &messages_loading, "s1", Some(&overlay), &empty);
+    assert!(plan1.next.live_id.as_deref() == Some("a1"));
+
+    assistant.state = None;
+    assistant.text = "hello\n\n**tail**".to_string();
+    let messages_done = vec![user, assistant];
+    let plan2 = sync(Some(&plan1.next), &messages_done, "s1", None, &empty);
+    assert!(plan2.next.live_id.is_none());
+    let live = plan2.live.expect("promote patch");
+    assert_eq!(live.message_id, "a1");
+    match live.patch {
+        TuiBodyPatch::Incremental { .. } => {}
+        TuiBodyPatch::ReplaceAll { .. } => {
+            panic!("promote must not ReplaceAll whole body (jitter)")
+        }
+        other => panic!("unexpected patch {other:?}"),
+    }
 }
 
 #[test]
@@ -220,20 +233,12 @@ fn live_tool_chunk_uses_tool_row_patch_not_replace_all() {
     let messages = vec![user, tool];
     let mut chunks = HashMap::new();
     chunks.insert("tc1".to_string(), "part-a".to_string());
-    let plan1 = plan_tui_sync(None, &messages, "s1", None, Locale::ZhHans, false, &chunks);
+    let plan1 = sync(None, &messages, "s1", None, &chunks);
     assert!(plan1.full_html.is_some());
     assert_eq!(plan1.next.live_tool_has_details, Some(false));
 
     chunks.insert("tc1".to_string(), "part-a part-b".to_string());
-    let plan2 = plan_tui_sync(
-        Some(&plan1.next),
-        &messages,
-        "s1",
-        None,
-        Locale::ZhHans,
-        false,
-        &chunks,
-    );
+    let plan2 = sync(Some(&plan1.next), &messages, "s1", None, &chunks);
     assert!(plan2.full_html.is_none());
     let live = plan2.live.expect("tool live patch");
     assert_eq!(live.message_id, "t1");
