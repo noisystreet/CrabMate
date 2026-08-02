@@ -1,6 +1,6 @@
-//! 终端流按行 Markdown：已闭合行做安全 HTML（冻结，增量只 append）；
-//! 活跃末行做**流式安全**行内增强（成对 `**` / `` ` `` / `~~` 才着色；半截标记保持字面量）；
-//! 未闭合围栏仍纯文本。提供 chunk 解析与增量 patch，供按回合局部 DOM 更新。
+//! 终端流按**块** Markdown：已闭合块做安全 HTML（冻结，增量只 append）；
+//! 活跃末块做**流式安全**行内增强（成对 `**` / `` ` `` / `~~` 才着色；半截标记保持字面量）；
+//! 未闭合围栏仍纯文本。段落/表格/列表在空行或块类型切换时才冻结，避免终态全文重渲抖动。
 
 use crate::markdown::{plaintext_to_safe_html, to_safe_html};
 
@@ -50,7 +50,7 @@ fn find_closing_delim(s: &str, from: usize, delim: &str) -> Option<usize> {
 }
 
 /// 流式活跃行：仅渲染**已成对**的行内标记，半截 `**` / `` ` `` 保持转义字面量。
-/// 不做标题/列表/围栏（那些等换行进 closed 块后再 `to_safe_html`）。
+/// 不做标题/列表/围栏（那些等块闭合后再 `to_safe_html`）。
 #[must_use]
 pub fn stream_inline_safe_html(text: &str) -> String {
     if text.is_empty() {
@@ -74,7 +74,6 @@ pub fn stream_inline_safe_html(text: &str) -> String {
         if text[i..].starts_with("**") {
             if let Some(end) = find_closing_delim(text, i + 2, "**") {
                 out.push_str("<strong>");
-                // 粗体内允许嵌套行内 code；其余转义
                 out.push_str(&stream_inline_safe_html_no_strong(&text[i + 2..end]));
                 out.push_str("</strong>");
                 i = end + 2;
@@ -127,14 +126,25 @@ fn stream_inline_safe_html_no_strong(text: &str) -> String {
     out
 }
 
-/// 活跃行写入 DOM / `to_inner_html`：围栏缓冲纯文本，否则流式行内 HTML。
+/// 活跃块写入 DOM / `to_inner_html`。
+///
+/// `markdown_render=false` 时全程纯文本转义（含活跃行，对齐 `CM_WEB_DISABLE_MARKDOWN`）。
 #[must_use]
-pub fn render_open_active_html(text: &str) -> String {
-    if open_line_is_fence_buffer(text) {
-        plaintext_to_safe_html(text)
-    } else {
-        stream_inline_safe_html(text)
+pub fn render_open_active_html(text: &str, markdown_render: bool) -> String {
+    if !markdown_render || open_line_is_fence_buffer(text) {
+        return plaintext_to_safe_html(text);
     }
+    if !text.contains('\n') {
+        return stream_inline_safe_html(text);
+    }
+    let mut out = String::with_capacity(text.len().saturating_mul(2));
+    for (i, line) in text.split('\n').enumerate() {
+        if i > 0 {
+            out.push_str("<br />");
+        }
+        out.push_str(&stream_inline_safe_html(line));
+    }
+    out
 }
 
 fn is_fence_marker(line: &str) -> bool {
@@ -148,19 +158,27 @@ fn fence_info(line: &str) -> &str {
         .unwrap_or("")
 }
 
-fn md_line_html(line: &str) -> String {
-    if line.is_empty() {
-        return "<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>".to_string();
-    }
-    let html = to_safe_html(line);
-    if html.is_empty() {
-        "<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>".to_string()
-    } else {
-        format!("<div class=\"chat-tui-line\">{html}</div>")
-    }
+fn blank_line_html() -> String {
+    "<div class=\"chat-tui-line chat-tui-line--blank\"><br /></div>".to_string()
 }
 
-fn fence_html(lang: &str, body: &str) -> String {
+fn wrap_closed_html(inner: &str) -> String {
+    if inner.is_empty() {
+        return blank_line_html();
+    }
+    format!("<div class=\"chat-tui-line chat-tui-line--block\">{inner}</div>")
+}
+
+fn closed_md_html(src: &str, markdown_render: bool) -> String {
+    let html = if markdown_render {
+        to_safe_html(src)
+    } else {
+        plaintext_to_safe_html(src)
+    };
+    wrap_closed_html(&html)
+}
+
+fn fence_html(lang: &str, body: &str, markdown_render: bool) -> String {
     let mut fenced = String::with_capacity(body.len() + lang.len() + 16);
     fenced.push_str("```");
     fenced.push_str(lang);
@@ -170,7 +188,11 @@ fn fence_html(lang: &str, body: &str) -> String {
         fenced.push('\n');
     }
     fenced.push_str("```");
-    let html = to_safe_html(&fenced);
+    let html = if markdown_render {
+        to_safe_html(&fenced)
+    } else {
+        plaintext_to_safe_html(&fenced)
+    };
     format!("<div class=\"chat-tui-line chat-tui-line--fence\">{html}</div>")
 }
 
@@ -184,16 +206,118 @@ fn open_fence_plain_text(lang: &str, body: &str, open_tail: &str) -> String {
     plain
 }
 
-/// 按行解析结果：闭合块 HTML 列表（冻结）+ 可选活跃行**源文本**（渲染见 [`render_open_active_html`]）。
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct TuiBodyChunks {
-    pub closed: Vec<String>,
-    /// 活跃行源文本；围栏缓冲以 \`\`\` 开头。DOM 用 [`render_open_active_html`] 写入。
-    pub open_plain: Option<String>,
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BlockKind {
+    Paragraph,
+    Table,
+    List,
 }
 
-fn open_active_line_class(text: &str) -> &'static str {
-    if open_line_is_fence_buffer(text) {
+fn is_table_line(line: &str) -> bool {
+    // 仅 GFM 管道表常见形态，避免「a | b」散文误判为表格。
+    line.trim_start().starts_with('|')
+}
+
+fn is_list_line(line: &str) -> bool {
+    let t = line.trim_start();
+    if t.starts_with("- ") || t.starts_with("* ") || t.starts_with("+ ") {
+        return true;
+    }
+    let mut chars = t.chars().peekable();
+    let mut saw_digit = false;
+    while let Some(&c) = chars.peek() {
+        if c.is_ascii_digit() {
+            saw_digit = true;
+            chars.next();
+            continue;
+        }
+        break;
+    }
+    if !saw_digit {
+        return false;
+    }
+    match chars.next() {
+        Some('.') | Some(')') => chars.next() == Some(' '),
+        _ => false,
+    }
+}
+
+fn is_atx_heading_line(line: &str) -> bool {
+    let t = line.trim_start();
+    let n = t.chars().take_while(|c| *c == '#').count();
+    (1..=6).contains(&n) && t.as_bytes().get(n) == Some(&b' ')
+}
+
+fn is_thematic_break_line(line: &str) -> bool {
+    let t = line.trim();
+    if t.len() < 3 {
+        return false;
+    }
+    let b = t.as_bytes()[0];
+    if b != b'-' && b != b'*' && b != b'_' {
+        return false;
+    }
+    t.bytes().all(|c| c == b || c == b' ')
+}
+
+fn is_block_continuation(line: &str) -> bool {
+    line.starts_with("    ") || line.starts_with('\t')
+}
+
+fn classify_block_line(line: &str) -> BlockKind {
+    if is_table_line(line) {
+        BlockKind::Table
+    } else if is_list_line(line) {
+        BlockKind::List
+    } else {
+        BlockKind::Paragraph
+    }
+}
+
+fn push_pending_line(pending: &mut String, line: &str) {
+    if !pending.is_empty() {
+        pending.push('\n');
+    }
+    pending.push_str(line);
+}
+
+fn flush_pending(
+    closed: &mut Vec<String>,
+    pending: &mut String,
+    pending_kind: &mut Option<BlockKind>,
+    markdown_render: bool,
+) {
+    if pending.is_empty() {
+        *pending_kind = None;
+        return;
+    }
+    closed.push(closed_md_html(pending, markdown_render));
+    pending.clear();
+    *pending_kind = None;
+}
+
+/// 按块解析结果：闭合块 HTML 列表（冻结）+ 可选活跃块**源文本**（渲染见 [`render_open_active_html`]）。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TuiBodyChunks {
+    pub closed: Vec<String>,
+    /// 活跃块源文本；围栏缓冲以 \`\`\` 开头。DOM 用 [`render_open_active_html`] 写入。
+    pub open_plain: Option<String>,
+    /// 与解析时 `markdown_render` 一致；活跃行渲染须读取此标志。
+    pub markdown_render: bool,
+}
+
+impl Default for TuiBodyChunks {
+    fn default() -> Self {
+        Self {
+            closed: Vec::new(),
+            open_plain: None,
+            markdown_render: true,
+        }
+    }
+}
+
+fn open_active_line_class(text: &str, markdown_render: bool) -> &'static str {
+    if !markdown_render || open_line_is_fence_buffer(text) {
         "chat-tui-line chat-tui-line--plain"
     } else {
         "chat-tui-line chat-tui-line--active"
@@ -209,16 +333,16 @@ impl TuiBodyChunks {
         }
         if let Some(plain) = &self.open_plain {
             out.push_str("<div class=\"");
-            out.push_str(open_active_line_class(plain));
+            out.push_str(open_active_line_class(plain, self.markdown_render));
             out.push_str("\">");
-            out.push_str(&render_open_active_html(plain));
+            out.push_str(&render_open_active_html(plain, self.markdown_render));
             out.push_str("</div>");
         }
         out
     }
 }
 
-/// live body 增量：优先 append **冻结**闭合行 + 只改活跃行；工具行改 status/one-line；否则整 body 替换。
+/// live body 增量：优先 append **冻结**闭合块 + 只改活跃块；工具行改 status/one-line；否则整 body 替换。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TuiBodyPatch {
     ReplaceAll {
@@ -226,8 +350,9 @@ pub enum TuiBodyPatch {
     },
     Incremental {
         append_closed: Vec<String>,
-        /// 活跃行源文本（非 HTML）；`None` 表示移除活跃行节点。
+        /// 活跃块源文本（非 HTML）；`None` 表示移除活跃行节点。
         open_plain: Option<String>,
+        markdown_render: bool,
     },
     /// 工具折叠行：只改文案，不重写 HTML（高度与结构保持不变）。
     ToolRow {
@@ -238,9 +363,103 @@ pub enum TuiBodyPatch {
     },
 }
 
+struct BlockAbsorbState {
+    closed: Vec<String>,
+    pending: String,
+    pending_kind: Option<BlockKind>,
+    in_fence: bool,
+    fence_lang: String,
+    fence_body: String,
+    markdown_render: bool,
+}
+
+impl BlockAbsorbState {
+    fn new(markdown_render: bool) -> Self {
+        Self {
+            closed: Vec::new(),
+            pending: String::new(),
+            pending_kind: None,
+            in_fence: false,
+            fence_lang: String::new(),
+            fence_body: String::new(),
+            markdown_render,
+        }
+    }
+
+    fn flush_pending(&mut self) {
+        flush_pending(
+            &mut self.closed,
+            &mut self.pending,
+            &mut self.pending_kind,
+            self.markdown_render,
+        );
+    }
+
+    fn absorb_complete_line(&mut self, line: &str) {
+        if is_fence_marker(line) {
+            self.flush_pending();
+            if self.in_fence {
+                self.closed.push(fence_html(
+                    &self.fence_lang,
+                    &self.fence_body,
+                    self.markdown_render,
+                ));
+                self.in_fence = false;
+                self.fence_lang.clear();
+                self.fence_body.clear();
+            } else {
+                self.in_fence = true;
+                self.fence_lang = fence_info(line).to_string();
+                self.fence_body.clear();
+            }
+            return;
+        }
+        if self.in_fence {
+            self.fence_body.push_str(line);
+            self.fence_body.push('\n');
+            return;
+        }
+        if line.trim().is_empty() {
+            self.flush_pending();
+            self.closed.push(blank_line_html());
+            return;
+        }
+        if is_atx_heading_line(line) || is_thematic_break_line(line) {
+            self.flush_pending();
+            self.closed.push(closed_md_html(line, self.markdown_render));
+            return;
+        }
+        let kind = classify_block_line(line);
+        match self.pending_kind {
+            None => {
+                push_pending_line(&mut self.pending, line);
+                self.pending_kind = Some(kind);
+            }
+            Some(prev)
+                if prev == kind
+                    || (prev == BlockKind::List && is_block_continuation(line))
+                    || (prev == BlockKind::Paragraph && is_block_continuation(line)) =>
+            {
+                push_pending_line(&mut self.pending, line);
+            }
+            Some(_) => {
+                self.flush_pending();
+                push_pending_line(&mut self.pending, line);
+                self.pending_kind = Some(kind);
+            }
+        }
+    }
+}
+
 /// 将正文解析为可挂载的 closed / open 块。
+///
+/// `markdown_render=false` 时闭合块与围栏均走纯文本转义（对齐 `CM_WEB_DISABLE_MARKDOWN`）。
 #[must_use]
-pub fn parse_tui_body_chunks(text: &str, finalize_open_line: bool) -> TuiBodyChunks {
+pub fn parse_tui_body_chunks_with(
+    text: &str,
+    finalize_open_line: bool,
+    markdown_render: bool,
+) -> TuiBodyChunks {
     if text.is_empty() {
         return TuiBodyChunks::default();
     }
@@ -257,45 +476,52 @@ pub fn parse_tui_body_chunks(text: &str, finalize_open_line: bool) -> TuiBodyChu
         (&raw[..last], Some(raw[last]))
     };
 
-    let mut closed = Vec::new();
-    let mut in_fence = false;
-    let mut fence_lang = String::new();
-    let mut fence_body = String::new();
-
+    let mut state = BlockAbsorbState::new(markdown_render);
     for line in complete {
-        if is_fence_marker(line) {
-            if in_fence {
-                closed.push(fence_html(&fence_lang, &fence_body));
-                in_fence = false;
-                fence_lang.clear();
-                fence_body.clear();
-            } else {
-                in_fence = true;
-                fence_lang = fence_info(line).to_string();
-                fence_body.clear();
-            }
-            continue;
-        }
-        if in_fence {
-            fence_body.push_str(line);
-            fence_body.push('\n');
-        } else {
-            closed.push(md_line_html(line));
-        }
+        state.absorb_complete_line(line);
     }
 
     let open_plain = match open_line {
-        Some(open) if in_fence => Some(open_fence_plain_text(&fence_lang, &fence_body, open)),
+        Some(open) if state.in_fence => Some(open_fence_plain_text(
+            &state.fence_lang,
+            &state.fence_body,
+            open,
+        )),
         Some(open) if finalize_open_line => {
-            closed.push(md_line_html(open));
+            if is_fence_marker(open) {
+                push_pending_line(&mut state.pending, open);
+            } else if open.trim().is_empty() {
+                state.flush_pending();
+                state.closed.push(blank_line_html());
+            } else {
+                push_pending_line(&mut state.pending, open);
+            }
+            state.flush_pending();
             None
         }
-        Some(open) => Some(open.to_string()),
-        None if in_fence => Some(open_fence_plain_text(&fence_lang, &fence_body, "")),
+        Some(open) => {
+            let mut open_buf = std::mem::take(&mut state.pending);
+            let _ = state.pending_kind.take();
+            push_pending_line(&mut open_buf, open);
+            Some(open_buf)
+        }
+        None if state.in_fence => Some(open_fence_plain_text(
+            &state.fence_lang,
+            &state.fence_body,
+            "",
+        )),
+        None if !state.pending.is_empty() => {
+            // 完整行已到、尚无空行收束：留在 open，避免提前冻结导致后续同段续写时 ReplaceAll。
+            Some(std::mem::take(&mut state.pending))
+        }
         None => None,
     };
 
-    TuiBodyChunks { closed, open_plain }
+    TuiBodyChunks {
+        closed: state.closed,
+        open_plain,
+        markdown_render,
+    }
 }
 
 /// 对比上一帧 closed 前缀：可增量则 append，否则整段替换。
@@ -306,11 +532,14 @@ pub fn plan_tui_body_patch(prev: Option<&TuiBodyChunks>, next: &TuiBodyChunks) -
             chunks: next.clone(),
         };
     };
-    if next.closed.len() >= prev.closed.len() && next.closed[..prev.closed.len()] == prev.closed[..]
+    if next.markdown_render == prev.markdown_render
+        && next.closed.len() >= prev.closed.len()
+        && next.closed[..prev.closed.len()] == prev.closed[..]
     {
         return TuiBodyPatch::Incremental {
             append_closed: next.closed[prev.closed.len()..].to_vec(),
             open_plain: next.open_plain.clone(),
+            markdown_render: next.markdown_render,
         };
     }
     TuiBodyPatch::ReplaceAll {
@@ -318,11 +547,16 @@ pub fn plan_tui_body_patch(prev: Option<&TuiBodyChunks>, next: &TuiBodyChunks) -
     }
 }
 
-/// 将助手/用户正文转为可写入 `innerHTML` 的按行流式 HTML。
+/// 将助手/用户正文转为可写入 `innerHTML` 的按块流式 HTML。
 #[must_use]
 #[cfg(test)]
 pub fn render_tui_line_markdown(text: &str, finalize_open_line: bool) -> String {
-    parse_tui_body_chunks(text, finalize_open_line).to_inner_html()
+    parse_tui_body_chunks_with(text, finalize_open_line, true).to_inner_html()
+}
+
+#[cfg(test)]
+fn parse_tui_body_chunks(text: &str, finalize_open_line: bool) -> TuiBodyChunks {
+    parse_tui_body_chunks_with(text, finalize_open_line, true)
 }
 
 #[cfg(test)]
@@ -398,13 +632,15 @@ mod tests {
 
     #[test]
     fn closed_prefix_frozen_when_active_grows() {
-        let a = parse_tui_body_chunks("done\n**a", false);
-        let b = parse_tui_body_chunks("done\n**ab", false);
+        let a = parse_tui_body_chunks("done\n\n**a", false);
+        let b = parse_tui_body_chunks("done\n\n**ab", false);
         assert_eq!(a.closed, b.closed, "closed chunks must stay identical");
+        assert!(!a.closed.is_empty(), "blank should freeze prior paragraph");
         match plan_tui_body_patch(Some(&a), &b) {
             TuiBodyPatch::Incremental {
                 append_closed,
                 open_plain,
+                markdown_render: _,
             } => {
                 assert!(append_closed.is_empty());
                 assert_eq!(open_plain.as_deref(), Some("**ab"));
@@ -421,6 +657,7 @@ mod tests {
             TuiBodyPatch::Incremental {
                 append_closed,
                 open_plain,
+                markdown_render: _,
             } => {
                 assert!(append_closed.is_empty());
                 assert_eq!(open_plain.as_deref(), Some("**ab"));
@@ -430,23 +667,96 @@ mod tests {
     }
 
     #[test]
-    fn newline_promotes_open_to_closed_chunk() {
+    fn prose_newline_stays_in_open_until_blank() {
         let a = parse_tui_body_chunks("hello", false);
         let b = parse_tui_body_chunks("hello\nworld", false);
+        assert!(a.closed.is_empty());
+        assert!(b.closed.is_empty(), "no blank yet, got {:?}", b.closed);
+        assert_eq!(b.open_plain.as_deref(), Some("hello\nworld"));
         match plan_tui_body_patch(Some(&a), &b) {
             TuiBodyPatch::Incremental {
                 append_closed,
                 open_plain,
+                markdown_render: _,
             } => {
-                assert_eq!(append_closed.len(), 1);
-                assert!(
-                    append_closed[0].contains("hello"),
-                    "got {}",
-                    append_closed[0]
-                );
-                assert_eq!(open_plain.as_deref(), Some("world"));
+                assert!(append_closed.is_empty());
+                assert_eq!(open_plain.as_deref(), Some("hello\nworld"));
             }
             other => panic!("expected Incremental, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn blank_line_freezes_paragraph_block() {
+        let a = parse_tui_body_chunks("hello\nworld", false);
+        let b = parse_tui_body_chunks("hello\nworld\n\nnext", false);
+        match plan_tui_body_patch(Some(&a), &b) {
+            TuiBodyPatch::Incremental {
+                append_closed,
+                open_plain,
+                markdown_render: _,
+            } => {
+                assert!(
+                    append_closed.iter().any(|c| c.contains("hello")),
+                    "got {append_closed:?}"
+                );
+                assert_eq!(open_plain.as_deref(), Some("next"));
+            }
+            other => panic!("expected Incremental, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn table_block_freezes_as_one_chunk() {
+        let src = "|a|b|\n|---|---|\n|1|2|\n\n";
+        let chunks = parse_tui_body_chunks(src, false);
+        assert!(
+            chunks
+                .closed
+                .iter()
+                .any(|c| c.contains("<table") || c.contains("<th") || c.contains("<td")),
+            "got {:?}",
+            chunks.closed
+        );
+        assert!(chunks.open_plain.is_none());
+    }
+
+    #[test]
+    fn markdown_off_escapes_instead_of_strong() {
+        let chunks = parse_tui_body_chunks_with("**x**\n\n", true, false);
+        let html = chunks.to_inner_html();
+        assert!(!html.contains("<strong>"), "got {html}");
+        assert!(
+            html.contains("**x**") || html.contains("&#42;"),
+            "got {html}"
+        );
+    }
+
+    #[test]
+    fn markdown_off_active_open_line_skips_inline_strong() {
+        let h = render_open_active_html("见 **粗体**", false);
+        assert!(!h.contains("<strong>"), "got {h}");
+        assert!(h.contains("**粗体**") || h.contains("&#42;"), "got {h}");
+    }
+
+    #[test]
+    fn prose_pipe_is_not_table_block() {
+        let chunks = parse_tui_body_chunks("use a | b as or\n\n", false);
+        assert!(
+            chunks.closed.iter().all(|c| !c.contains("<table")),
+            "got {:?}",
+            chunks.closed
+        );
+    }
+
+    #[test]
+    fn heading_line_freezes_immediately() {
+        let a = parse_tui_body_chunks("# Title\nmore", false);
+        assert!(
+            a.closed.iter().any(|c| c.contains("Title")),
+            "heading should freeze, got {:?}",
+            a.closed
+        );
+        assert_eq!(a.open_plain.as_deref(), Some("more"));
     }
 }

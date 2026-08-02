@@ -162,6 +162,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
         chat,
         locale,
         apply_assistant_display_filters,
+        markdown_render,
         stream_follow_up,
         stream_turn_busy_ui,
         status_err,
@@ -181,6 +182,7 @@ fn ChatMessagesPane(signals: ChatMessagesPaneSignals) -> impl IntoView {
                 chat=chat
                 locale=locale
                 apply_assistant_display_filters=apply_assistant_display_filters
+                markdown_render=markdown_render
                 scroll_shell=scroll_shell
                 action_handlers=action_handlers
             />

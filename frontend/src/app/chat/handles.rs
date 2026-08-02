@@ -108,6 +108,8 @@ pub(crate) struct ChatMessagesPaneSignals {
     pub locale: RwSignal<crate::i18n::Locale>,
     pub chat: ChatSessionSignals,
     pub apply_assistant_display_filters: RwSignal<bool>,
+    /// 与 `GET /web-ui` 的 `markdown_render` / `CM_WEB_DISABLE_MARKDOWN` 对齐（主列 TUI 流亦须尊重）。
+    pub markdown_render: RwSignal<bool>,
     pub scroll_shell: ChatScrollShellSignals,
     pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
     pub stream_turn_busy_ui: Memo<bool>,
@@ -165,6 +167,7 @@ impl ChatColumnShell {
             locale: su.locale,
             chat: app.chat,
             apply_assistant_display_filters: su.apply_assistant_display_filters,
+            markdown_render: su.markdown_render,
             scroll_shell: ChatScrollShellSignals::from_composer(&cc),
             stream_follow_up: self.stream_follow_up,
             stream_turn_busy_ui: self.stream_busy_memos.stream_turn_busy_ui,

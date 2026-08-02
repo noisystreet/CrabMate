@@ -411,6 +411,11 @@
   animation: msg-tool-exec-border-breathe 2.2s ease-in-out infinite;
 }
 
+.chat-tui-line {
+  /* 冻结块 append 时减少牵连已滚过区域的布局抖动（勿用 size，避免无显式尺寸时塌缩） */
+  contain: layout;
+}
+
 .chat-tui-line > :first-child {
   margin-top: 0;
 }
