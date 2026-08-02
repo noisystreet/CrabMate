@@ -66,6 +66,7 @@ struct StatusResponse {
     plan_rewrite_max_attempts: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
     final_plan_semantic_check_enabled: bool,
+    final_plan_semantic_check_accept_legacy_text: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     /// 规划器/执行器模式（仅 `single_agent`）。
@@ -266,6 +267,9 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
             .per_plan_policy
             .final_plan_require_strict_workflow_node_coverage,
         final_plan_semantic_check_enabled: cfg.per_plan_policy.final_plan_semantic_check_enabled,
+        final_plan_semantic_check_accept_legacy_text: cfg
+            .per_plan_policy
+            .final_plan_semantic_check_accept_legacy_text,
         final_plan_semantic_check_max_non_readonly_tools: cfg
             .per_plan_policy
             .final_plan_semantic_check_max_non_readonly_tools,

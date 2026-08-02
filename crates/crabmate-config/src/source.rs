@@ -132,6 +132,7 @@ pub(super) struct AgentSection {
     pub(super) plan_rewrite_max_attempts: Option<u64>,
     pub(super) final_plan_require_strict_workflow_node_coverage: Option<bool>,
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
+    pub(super) final_plan_semantic_check_accept_legacy_text: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
     /// 仅 `single_agent`（运行时亦强制 SingleAgent；其它值在 `PlannerExecutorMode::parse` 拒绝）

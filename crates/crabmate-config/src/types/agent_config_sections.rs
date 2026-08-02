@@ -57,6 +57,8 @@ pub struct PerPlanPolicyConfig {
     pub plan_rewrite_max_attempts: usize,
     pub final_plan_require_strict_workflow_node_coverage: bool,
     pub final_plan_semantic_check_enabled: bool,
+    /// 是否接受侧向模型旧式单行 `CONSISTENT`/`INCONSISTENT`（默认 `false`，仅 JSON）。
+    pub final_plan_semantic_check_accept_legacy_text: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
     pub planner_executor_mode: PlannerExecutorMode,

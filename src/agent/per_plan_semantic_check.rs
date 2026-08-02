@@ -25,12 +25,21 @@ fn truncate_unicode(s: &str, max_chars: usize) -> String {
     out
 }
 
-const SIDE_SYSTEM: &str = "你是 CrabMate 的**规划一致性审计员**。只根据给定的「最近工具结果摘要」与「模型输出的 agent_reply_plan JSON」判断是否明显矛盾（例如计划声称成功但工具报错、计划步骤与工具输出冲突）。\n\
+const SIDE_SYSTEM_JSON_ONLY: &str = "你是 CrabMate 的**规划一致性审计员**。只根据给定的「最近工具结果摘要」与「模型输出的 agent_reply_plan JSON」判断是否明显矛盾（例如计划声称成功但工具报错、计划步骤与工具输出冲突）。\n\
 你必须**只输出一个 JSON 对象**（不要 Markdown 代码围栏、不要前后缀说明）。字段要求：\n\
 - 若**无法判断**或**无明显矛盾**：{\"consistent\":true}\n\
 - 若**明确矛盾**：{\"consistent\":false,\"violation_codes\":[\"…\"],\"rationale\":\"不超过 80 字的中文理由\"}\n\
-其中 **violation_codes** 为字符串数组：1–8 个元素，每项仅含小写字母、数字、下划线，长度 1–64。建议码：`tool_outcome_contradiction`（与工具成功/失败状态冲突）、`plan_step_tool_mismatch`（步骤与工具输出明显不符）、`claim_not_supported_by_tools`（断言缺乏工具证据）、`semantic_mismatch_other`（其它明确矛盾）。\n\
-**兼容**：若你只能输出纯文本，可在一行内写 INCONSISTENT 或 CONSISTENT（将按旧规则解析，但优先使用 JSON）。";
+其中 **violation_codes** 为字符串数组：1–8 个元素，每项仅含小写字母、数字、下划线，长度 1–64。建议码：`tool_outcome_contradiction`（与工具成功/失败状态冲突）、`plan_step_tool_mismatch`（步骤与工具输出明显不符）、`claim_not_supported_by_tools`（断言缺乏工具证据）、`semantic_mismatch_other`（其它明确矛盾）。";
+
+const SIDE_SYSTEM_LEGACY_APPENDIX: &str = "\n**兼容**：若你只能输出纯文本，可在一行内写 INCONSISTENT 或 CONSISTENT（将按旧规则解析，但优先使用 JSON）。";
+
+fn side_system_prompt(accept_legacy_text: bool) -> String {
+    if accept_legacy_text {
+        format!("{SIDE_SYSTEM_JSON_ONLY}{SIDE_SYSTEM_LEGACY_APPENDIX}")
+    } else {
+        SIDE_SYSTEM_JSON_ONLY.to_string()
+    }
+}
 
 const MAX_VIOLATION_CODES: usize = 8;
 const MAX_CODE_LEN: usize = 64;
@@ -108,7 +117,12 @@ fn extract_json_object_slice(s: &str) -> Option<&str> {
 }
 
 /// 从侧向模型正文中解析 [`PlanSemanticLlmOutcome`]；无法识别时 **fail-open**（视为一致）。
-pub(crate) fn parse_plan_semantic_side_reply(text: &str) -> PlanSemanticLlmOutcome {
+///
+/// `accept_legacy_text`：为真时接受旧式单行 `CONSISTENT`/`INCONSISTENT`；默认配置为假（仅 JSON）。
+pub(crate) fn parse_plan_semantic_side_reply(
+    text: &str,
+    accept_legacy_text: bool,
+) -> PlanSemanticLlmOutcome {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return PlanSemanticLlmOutcome::consistent_ok();
@@ -127,17 +141,27 @@ pub(crate) fn parse_plan_semantic_side_reply(text: &str) -> PlanSemanticLlmOutco
         return o;
     }
 
-    let upper = trimmed.to_uppercase();
-    if upper.contains("INCONSISTENT") {
-        return PlanSemanticLlmOutcome {
-            consistent: false,
-            violation_codes: vec!["semantic_mismatch_legacy".to_string()],
-            rationale: None,
-            user_cancelled: false,
-        };
-    }
-    if upper.contains("CONSISTENT") {
-        return PlanSemanticLlmOutcome::consistent_ok();
+    if accept_legacy_text {
+        let upper = trimmed.to_uppercase();
+        if upper.contains("INCONSISTENT") {
+            log::debug!(
+                target: "crabmate::per",
+                "final_plan_semantic_check parse_path=legacy_text outcome=inconsistent"
+            );
+            return PlanSemanticLlmOutcome {
+                consistent: false,
+                violation_codes: vec!["semantic_mismatch_legacy".to_string()],
+                rationale: None,
+                user_cancelled: false,
+            };
+        }
+        if upper.contains("CONSISTENT") {
+            log::debug!(
+                target: "crabmate::per",
+                "final_plan_semantic_check parse_path=legacy_text outcome=consistent"
+            );
+            return PlanSemanticLlmOutcome::consistent_ok();
+        }
     }
 
     PlanSemanticLlmOutcome::consistent_ok()
@@ -176,13 +200,17 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         return PlanSemanticLlmOutcome::consistent_ok();
     }
 
+    let accept_legacy = ctx
+        .cfg
+        .per_plan_policy
+        .final_plan_semantic_check_accept_legacy_text;
     let user_body = format!(
         "### 最近工具结果摘要（截断）\n{}\n\n### agent_reply_plan JSON\n{}",
         truncate_unicode(digest, 6000),
         truncate_unicode(plan_trim, 8000)
     );
     let side_messages = vec![
-        Message::system_only(SIDE_SYSTEM),
+        Message::system_only(side_system_prompt(accept_legacy)),
         Message::user_only(user_body),
     ];
     let model_override = ctx
@@ -239,7 +267,7 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
     let text = crate::types::message_content_as_str(&reply.content)
         .unwrap_or("")
         .trim();
-    let outcome = parse_plan_semantic_side_reply(text);
+    let outcome = parse_plan_semantic_side_reply(text, accept_legacy);
     if outcome.consistent {
         log::debug!(target: "crabmate::per", "final_plan_semantic_check outcome=consistent");
     } else {
@@ -271,7 +299,7 @@ mod tests {
 
     #[test]
     fn parse_json_consistent_minimal() {
-        let o = parse_plan_semantic_side_reply(r#"{"consistent":true}"#);
+        let o = parse_plan_semantic_side_reply(r#"{"consistent":true}"#, false);
         assert!(o.consistent);
         assert!(o.violation_codes.is_empty());
         assert!(o.rationale.is_none());
@@ -281,6 +309,7 @@ mod tests {
     fn parse_json_inconsistent_with_codes() {
         let o = parse_plan_semantic_side_reply(
             r#"{"consistent":false,"violation_codes":["tool_outcome_contradiction"],"rationale":"工具报错但计划写成功"}"#,
+            false,
         );
         assert!(!o.consistent);
         assert_eq!(
@@ -292,7 +321,7 @@ mod tests {
 
     #[test]
     fn parse_json_inconsistent_empty_codes_gets_fallback() {
-        let o = parse_plan_semantic_side_reply(r#"{"consistent":false}"#);
+        let o = parse_plan_semantic_side_reply(r#"{"consistent":false}"#, false);
         assert!(!o.consistent);
         assert_eq!(
             o.violation_codes,
@@ -304,6 +333,7 @@ mod tests {
     fn parse_embedded_json_object() {
         let o = parse_plan_semantic_side_reply(
             "here is {\"consistent\":false,\"violation_codes\":[\"plan_step_tool_mismatch\"]}",
+            false,
         );
         assert!(!o.consistent);
         assert_eq!(
@@ -313,8 +343,8 @@ mod tests {
     }
 
     #[test]
-    fn parse_legacy_inconsistent_line() {
-        let o = parse_plan_semantic_side_reply("INCONSISTENT 与工具结果矛盾");
+    fn parse_legacy_inconsistent_line_when_enabled() {
+        let o = parse_plan_semantic_side_reply("INCONSISTENT 与工具结果矛盾", true);
         assert!(!o.consistent);
         assert_eq!(
             o.violation_codes,
@@ -323,9 +353,27 @@ mod tests {
     }
 
     #[test]
+    fn parse_legacy_consistent_line_when_enabled() {
+        let o = parse_plan_semantic_side_reply("CONSISTENT", true);
+        assert!(o.consistent);
+    }
+
+    #[test]
+    fn parse_legacy_text_ignored_by_default() {
+        let o = parse_plan_semantic_side_reply("INCONSISTENT 与工具结果矛盾", false);
+        assert!(
+            o.consistent,
+            "default JSON-only: legacy INCONSISTENT must fail-open"
+        );
+        let o2 = parse_plan_semantic_side_reply("CONSISTENT", false);
+        assert!(o2.consistent);
+    }
+
+    #[test]
     fn parse_invalid_code_tokens_dropped() {
         let o = parse_plan_semantic_side_reply(
             r#"{"consistent":false,"violation_codes":["ok_code","Bad-Code","also bad"]}"#,
+            false,
         );
         assert!(!o.consistent);
         assert_eq!(o.violation_codes, vec!["ok_code".to_string()]);

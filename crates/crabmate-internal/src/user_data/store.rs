@@ -197,6 +197,8 @@ pub fn append_mcp_json_import(value: &Value) -> Result<McpServersImportResponse,
     let skipped_remote = imported.skipped_remote;
     let mut file = load_mcp_servers();
     file.servers.extend(imported.entries);
+    // Web/JSON 导入已进入 user-data，关闭 TOML/`CM_MCP_COMMAND` 一次性窗口。
+    file.toml_legacy_imported = true;
     let file = normalize_mcp_servers_file(file)?;
     save_mcp_servers(&file)?;
     Ok(McpServersImportResponse {
@@ -288,13 +290,21 @@ fn legacy_mcp_display_name(command: &str) -> String {
 }
 
 /// 若 user-data 尚无 MCP 配置且 TOML 启用了单条 `mcp_command`，一次性导入并落盘。
+///
+/// 导入成功或已有非空 `servers` 时写入 [`McpServersFile::toml_legacy_imported`]，之后不再重导。
 pub fn maybe_import_legacy_toml_mcp(
     mcp_enabled: bool,
     mcp_command: &str,
     mcp_tool_timeout_secs: u64,
 ) -> Result<bool, String> {
     let mut file = load_mcp_servers();
+    if file.toml_legacy_imported {
+        return Ok(false);
+    }
     if !file.servers.is_empty() {
+        // 存量列表：视为已越过一次性导入窗口，落标记以免清空后再次导入。
+        file.toml_legacy_imported = true;
+        save_mcp_servers(&file)?;
         return Ok(false);
     }
     let cmd = mcp_command.trim();
@@ -304,6 +314,7 @@ pub fn maybe_import_legacy_toml_mcp(
     let now = now_ms();
     file.global_enabled = true;
     file.tool_timeout_secs = mcp_tool_timeout_secs.max(1);
+    file.toml_legacy_imported = true;
     file.servers.push(McpServerEntry {
         id: new_mcp_server_id(),
         name: legacy_mcp_display_name(cmd),
@@ -558,6 +569,14 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    /// 测试用命名钥匙串（`credential_store` 进程内 HashMap）不可并行读写。
+    fn lock_named_secret_tests() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn prefs_roundtrip() {
         let _root = test_root();
@@ -634,6 +653,7 @@ mod tests {
                 created_at_ms: 0,
                 updated_at_ms: 0,
             }],
+            toml_legacy_imported: false,
         })
         .expect("normalize");
         assert_eq!(file.servers[0].slug, "my_server");
@@ -666,6 +686,7 @@ mod tests {
                 created_at_ms: 1,
                 updated_at_ms: 1,
             }],
+            toml_legacy_imported: false,
         };
         save_mcp_servers(&stored).expect("save");
         let incoming = McpServersFile {
@@ -686,6 +707,7 @@ mod tests {
                 created_at_ms: 1,
                 updated_at_ms: 1,
             }],
+            toml_legacy_imported: false,
         };
         let merged = merge_mcp_commands_from_stored(incoming);
         assert_eq!(merged.servers[0].command, "fanalyzer");
@@ -700,6 +722,7 @@ mod tests {
     #[test]
     fn mcp_bearer_secret_roundtrip_and_public_flag() {
         let _root = test_root();
+        let _secrets = lock_named_secret_tests();
         write_secret_mcp_bearer("mcp_remote1", "tok-secret").expect("write");
         assert!(mcp_bearer_is_set("mcp_remote1"));
         assert_eq!(
@@ -724,6 +747,7 @@ mod tests {
                 created_at_ms: 1,
                 updated_at_ms: 1,
             }],
+            toml_legacy_imported: false,
         };
         let pub_file = mcp_servers_file_public(&file);
         assert!(pub_file.servers[0].has_bearer);
@@ -735,6 +759,7 @@ mod tests {
     #[test]
     fn remaining_secret_files_migrate_to_keyring() {
         let root = test_root();
+        let _secrets_lock = lock_named_secret_tests();
         let secrets = root.join("secrets");
         std::fs::create_dir_all(&secrets).expect("create secrets dir");
         let web_legacy = secrets.join("web_api_bearer");
@@ -761,6 +786,7 @@ mod tests {
     fn save_mcp_servers_clears_removed_server_bearer() {
         let _root = test_root();
         let _mcp_lock = lock_mcp_servers_tests();
+        let _secrets = lock_named_secret_tests();
         write_secret_mcp_bearer("mcp_to_remove", "tok-remove-me").expect("write");
         assert!(mcp_bearer_is_set("mcp_to_remove"));
         let with_server = McpServersFile {
@@ -781,6 +807,7 @@ mod tests {
                 created_at_ms: 1,
                 updated_at_ms: 1,
             }],
+            toml_legacy_imported: false,
         };
         save_mcp_servers(&with_server).expect("save with server");
         let kept = McpServersFile {
@@ -801,8 +828,82 @@ mod tests {
                 created_at_ms: 1,
                 updated_at_ms: 1,
             }],
+            toml_legacy_imported: false,
         };
         save_mcp_servers(&kept).expect("save without removed id");
         assert!(!mcp_bearer_is_set("mcp_to_remove"));
+    }
+
+    #[test]
+    fn legacy_toml_mcp_imports_once_and_sets_marker() {
+        let _root = test_root();
+        let _mcp_lock = lock_mcp_servers_tests();
+        save_mcp_servers(&McpServersFile::default()).expect("reset");
+
+        assert!(
+            maybe_import_legacy_toml_mcp(true, "echo mcp-legacy", 60).expect("import"),
+            "first import should write a server"
+        );
+        let after = load_mcp_servers();
+        assert!(after.toml_legacy_imported);
+        assert_eq!(after.servers.len(), 1);
+        assert!(after.servers[0].command.contains("echo"));
+
+        assert!(
+            !maybe_import_legacy_toml_mcp(true, "echo other", 60).expect("second"),
+            "marker blocks re-import"
+        );
+        assert_eq!(load_mcp_servers().servers.len(), 1);
+    }
+
+    #[test]
+    fn legacy_toml_mcp_marker_blocks_reimport_after_clear() {
+        let _root = test_root();
+        let _mcp_lock = lock_mcp_servers_tests();
+        save_mcp_servers(&McpServersFile::default()).expect("reset");
+        assert!(maybe_import_legacy_toml_mcp(true, "echo once", 60).expect("import"));
+
+        let mut cleared = load_mcp_servers();
+        cleared.servers.clear();
+        // 保留 toml_legacy_imported=true
+        save_mcp_servers(&cleared).expect("clear servers");
+
+        assert!(!maybe_import_legacy_toml_mcp(true, "echo again", 60).expect("no reimport"));
+        assert!(load_mcp_servers().servers.is_empty());
+        assert!(load_mcp_servers().toml_legacy_imported);
+    }
+
+    #[test]
+    fn existing_servers_set_legacy_marker_without_reimport() {
+        let _root = test_root();
+        let _mcp_lock = lock_mcp_servers_tests();
+        use crate::user_data::SCHEMA_VERSION;
+        let existing = McpServersFile {
+            schema_version: SCHEMA_VERSION,
+            global_enabled: true,
+            tool_timeout_secs: 60,
+            servers: vec![McpServerEntry {
+                id: "mcp_existing".into(),
+                name: "Existing".into(),
+                slug: "existing".into(),
+                command: "true".into(),
+                args: Vec::new(),
+                env: std::collections::BTreeMap::new(),
+                cwd: None,
+                url: None,
+                headers: std::collections::BTreeMap::new(),
+                enabled: true,
+                created_at_ms: 1,
+                updated_at_ms: 1,
+            }],
+            toml_legacy_imported: false,
+        };
+        save_mcp_servers(&existing).expect("save existing");
+
+        assert!(!maybe_import_legacy_toml_mcp(true, "echo should-not-import", 60).expect("skip"));
+        let after = load_mcp_servers();
+        assert!(after.toml_legacy_imported);
+        assert_eq!(after.servers.len(), 1);
+        assert_eq!(after.servers[0].command, "true");
     }
 }

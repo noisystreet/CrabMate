@@ -66,17 +66,36 @@ fn read_or_migrate(entry: &dyn SecretEntry, legacy_path: &Path) -> Result<Option
     if let Some(secret) = entry.get_password()? {
         let secret = secret.trim();
         if !secret.is_empty() {
-            remove_legacy_file(legacy_path)?;
+            // 热路径：钥匙串已有值时仅在遗留文件仍存在时清理，避免每次读盘。
+            if legacy_path.exists() {
+                remove_legacy_file(legacy_path)?;
+                tracing::debug!(
+                    target: "crabmate",
+                    legacy = %legacy_path.display(),
+                    "removed leftover legacy secret file (keyring already had value)"
+                );
+            }
             return Ok(Some(secret.to_string()));
         }
     }
 
     let Some(secret) = super::io::read_secret_line(legacy_path) else {
-        remove_legacy_file(legacy_path)?;
+        if legacy_path.exists() {
+            remove_legacy_file(legacy_path)?;
+        }
         return Ok(None);
     };
     entry.set_password(&secret)?;
     remove_legacy_file(legacy_path)?;
+    let account_hint = legacy_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("secret");
+    tracing::info!(
+        target: "crabmate",
+        account = account_hint,
+        "migrated legacy secret file to system keyring"
+    );
     Ok(Some(secret))
 }
 
@@ -97,7 +116,12 @@ pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option
     match result {
         Ok(secret) => secret,
         Err(error) => {
-            tracing::warn!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
+            // 无遗留文件时降为 debug，避免钥匙串短暂不可用时刷屏；有文件时 warn（迁移可能受阻）。
+            if legacy_path.exists() {
+                tracing::warn!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
+            } else {
+                tracing::debug!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
+            }
             None
         }
     }
@@ -275,6 +299,22 @@ mod tests {
         let loaded = read_or_migrate(&entry, &legacy).expect("read");
 
         assert_eq!(loaded.as_deref(), Some("keyring-example"));
+        assert!(!legacy.exists());
+    }
+
+    #[test]
+    fn keyring_hit_skips_when_legacy_file_absent() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let legacy = dir.path().join("client_llm");
+        assert!(!legacy.exists());
+        let entry = FakeEntry {
+            secret: Mutex::new(Some("keyring-only".to_string())),
+            fail_set: false,
+        };
+
+        let loaded = read_or_migrate(&entry, &legacy).expect("read");
+
+        assert_eq!(loaded.as_deref(), Some("keyring-only"));
         assert!(!legacy.exists());
     }
 

@@ -8,6 +8,8 @@ final_plan_requirement = "workflow_reflection"
 plan_rewrite_max_attempts = 2
 final_plan_require_strict_workflow_node_coverage = false
 final_plan_semantic_check_enabled = false
+# 侧向模型默认仅收 JSON；true 时额外接受旧式单行 CONSISTENT/INCONSISTENT（CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT）
+final_plan_semantic_check_accept_legacy_text = false
 final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 planner_executor_mode = "single_agent"

@@ -90,6 +90,7 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) plan_rewrite_max_attempts: Option<u64>,
     pub(crate) final_plan_require_strict_workflow_node_coverage: Option<bool>,
     pub(crate) final_plan_semantic_check_enabled: Option<bool>,
+    pub(crate) final_plan_semantic_check_accept_legacy_text: Option<bool>,
     pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
     pub(crate) planner_executor_mode_str: Option<String>,
