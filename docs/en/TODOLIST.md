@@ -32,6 +32,16 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 - [ ] **Rate limits / quotas**: For `/chat`, `/chat/stream` by IP or token (often aligned with gateway-side identity and quotas; no per-user accounts in-process—see **`docs/en/FUTURE_PLANS.md`**).
 - [ ] **Log correlation**: Unify `request_id` / `conversation_id` once session model lands; per-user audit belongs in the gateway (**`docs/en/FUTURE_PLANS.md`**).
 
+### Compat-layer shrink (follow-ups)
+
+> Plan draft: workspace **`agent_space/compat-layer-shrink-plan.md`** (gitignored). **A1/A2** (removed dead keys; `planner_executor_mode` = `single_agent` only) are done; items below need a compatibility window or are optional.
+
+- [ ] **B1 (Turn §16 E1)**: SSE terminal order: save → `conversation_saved` → last `RUN_FINISHED`; frontend dual-order; protocol/parser/goldens.
+- [ ] **B2 (E2)**: Optional server layout metadata + shared projection goldens.
+- [ ] **B3 (E3)**: Hydration dual-read (metadata first; legacy when absent).
+- [ ] **B4 (E4)**: Contract: drop post-terminal business frames, same-revision bandage, legacy merge/dedupe (only after E4 exit criteria).
+- [ ] **C (optional)**: Weaken plaintext secret migration reads; sunset MCP TOML one-shot import; semantic side-check JSON-only by default.
+
 ---
 
 ## Roadmap reference (vs mainstream open-source agents)

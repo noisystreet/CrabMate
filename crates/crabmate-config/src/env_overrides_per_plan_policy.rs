@@ -1,6 +1,7 @@
-//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` 等 per-plan 策略环境覆盖（从 `env_overrides.rs` 拆分以降低圈复杂度）。
+//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` / `CM_PLANNER_EXECUTOR_MODE` 等 per-plan 策略环境覆盖。
 //!
-//! 注意：`CM_PLANNER_EXECUTOR_MODE` 与 `CM_ORCHESTRATION_PROFILE` 不再生效——统一强制走 ReAct。
+//! `CM_ORCHESTRATION_PROFILE` 仍忽略（运行时固定 ReAct）。`CM_PLANNER_EXECUTOR_MODE` 若设置则须为
+//! `single_agent`，由 finalize 校验。
 
 use crate::builder::ConfigBuilder;
 use crate::source::parse_bool_like;
@@ -8,6 +9,16 @@ use crate::source::parse_bool_like;
 pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);
     env_override_final_plan_flags(b);
+    env_override_planner_executor_mode(b);
+}
+
+fn env_override_planner_executor_mode(b: &mut ConfigBuilder) {
+    if let Ok(s) = std::env::var("CM_PLANNER_EXECUTOR_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.per_plan_policy.planner_executor_mode_str = Some(s);
+        }
+    }
 }
 
 fn env_override_reflection_rounds_and_rewrite(b: &mut ConfigBuilder) {

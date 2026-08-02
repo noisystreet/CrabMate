@@ -129,9 +129,13 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_semantic_check_max_tokens
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
-    // 统一强制走 ReAct（单 Agent 外循环），不再暴露给用户选择。
-    // `planner_executor_mode` 与 `orchestration_profile` 的 TOML/环境变量配置不再生效。
-    let planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    // 运行时固定 ReAct；若 TOML/覆盖显式给出 `planner_executor_mode`，仅允许 `single_agent`
+    //（拒绝已移除的 logical_dual_agent / hierarchical）。
+    let planner_executor_mode = match b.per_plan_policy.planner_executor_mode_str.as_deref() {
+        Some(s) => PlannerExecutorMode::parse(s)?,
+        None => PlannerExecutorMode::SingleAgent,
+    };
+    // `orchestration_profile` 覆盖键不再生效，统一 ReAct。
     let orchestration_profile = crate::OrchestrationProfile::ReAct;
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars

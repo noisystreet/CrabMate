@@ -108,7 +108,7 @@ pub(super) fn resolve_web_llm_for_job(
             (Arc::new(c), key)
         }
     };
-    // 与 finalize / CLI 一致：运行时固定 ReAct（单 Agent 外循环）；旧 TOML 别名不再生效。
+    // 与 finalize / CLI 一致：运行时固定 ReAct（单 Agent 外循环）。
     {
         let mut c = (*cfg).clone();
         c.per_plan_policy.planner_executor_mode = crate::config::PlannerExecutorMode::SingleAgent;

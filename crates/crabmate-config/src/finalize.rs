@@ -345,8 +345,6 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         .clamp(0.0, 1.0) as f32;
     let intent_non_hier_execute_high_threshold =
         intent_non_hier_execute_high_threshold.max(intent_non_hier_execute_low_threshold);
-    // 历史键 `intent_mode_bias_enabled` / `CM_INTENT_MODE_BIAS_ENABLED`：仍可出现在 TOML/环境中（deny_unknown），但运行时忽略。
-    let _ = b.intent_routing.intent_mode_bias_enabled;
     Ok(IntentDerived {
         llm_http_auth_mode,
         llm_reasoning_split,

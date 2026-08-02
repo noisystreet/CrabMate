@@ -162,6 +162,108 @@ web_api_require_bearer = true
 }
 
 #[cfg(test)]
+mod planner_executor_mode_load_tests {
+    use super::load_config;
+    use std::fs;
+    use std::sync::Mutex;
+
+    /// `load_config` 现会读 `CM_PLANNER_EXECUTOR_MODE`；本机若仍导出废弃值会导致无关用例失败。
+    static CM_PLANNER_EXECUTOR_MODE_LOCK: Mutex<()> = Mutex::new(());
+
+    fn without_cm_planner_executor_mode_env<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_PLANNER_EXECUTOR_MODE_LOCK
+            .lock()
+            .expect("planner_executor_mode load tests must run serialized");
+        let prev = std::env::var("CM_PLANNER_EXECUTOR_MODE").ok();
+        // SAFETY: serialized by mutex for this env key only.
+        unsafe {
+            std::env::remove_var("CM_PLANNER_EXECUTOR_MODE");
+        }
+        let out = f();
+        unsafe {
+            match prev.as_ref() {
+                Some(v) => std::env::set_var("CM_PLANNER_EXECUTOR_MODE", v),
+                None => std::env::remove_var("CM_PLANNER_EXECUTOR_MODE"),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn load_rejects_removed_planner_executor_mode_aliases() {
+        without_cm_planner_executor_mode_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("legacy_mode.toml");
+            fs::write(
+                &path,
+                r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+planner_executor_mode = "hierarchical"
+"#,
+            )
+            .expect("write");
+            let err = load_config(Some(path.to_str().unwrap())).expect_err("legacy mode must fail");
+            assert!(
+                err.contains("planner_executor_mode") || err.contains("single_agent"),
+                "unexpected error: {err}"
+            );
+        });
+    }
+
+    #[test]
+    fn load_accepts_explicit_single_agent() {
+        without_cm_planner_executor_mode_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("ok_mode.toml");
+            fs::write(
+                &path,
+                r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+planner_executor_mode = "single_agent"
+"#,
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert_eq!(
+                cfg.per_plan_policy.planner_executor_mode.as_str(),
+                "single_agent"
+            );
+        });
+    }
+
+    #[test]
+    fn load_rejects_removed_mode_from_env() {
+        without_cm_planner_executor_mode_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("env_mode.toml");
+            fs::write(
+                &path,
+                r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+"#,
+            )
+            .expect("write");
+            // SAFETY: mutex held for this key.
+            unsafe {
+                std::env::set_var("CM_PLANNER_EXECUTOR_MODE", "logical_dual_agent");
+            }
+            let err =
+                load_config(Some(path.to_str().unwrap())).expect_err("legacy env mode must fail");
+            assert!(
+                err.contains("planner_executor_mode") || err.contains("single_agent"),
+                "unexpected error: {err}"
+            );
+        });
+    }
+}
+
+#[cfg(test)]
 mod llm_reasoning_split_default_tests {
     use super::load_config;
     use std::fs;

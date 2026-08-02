@@ -30,8 +30,7 @@ pub fn effective_orchestration_path_summary(
     _planner_executor_mode: &str,
     _profile: OrchestrationProfile,
 ) -> String {
-    // `planner_executor_mode` 历史值（hierarchical / logical_dual_agent）在 finalize / parse
-    // 后均为 single_agent；运行时只有 ReAct 外循环。
+    // 运行时只有 ReAct 外循环（`planner_executor_mode` 仅允许 single_agent）。
     "non_hierarchical: react outer loop".to_string()
 }
 
