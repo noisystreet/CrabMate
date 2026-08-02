@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use tokio::sync::Mutex;
 
-use crabmate_config::AgentConfig;
 use crabmate_types::McpRemoteToolSummary;
 use crabmate_types::Tool;
 

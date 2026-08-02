@@ -60,6 +60,7 @@ pub(crate) struct RunAgentTurnForCliParams<'a> {
     pub active_agent_role: Option<&'a str>,
     pub process_handles: Arc<ProcessHandles>,
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    pub session_mode: crate::types::SessionMode,
 }
 
 pub(crate) async fn run_agent_turn_for_cli(
@@ -81,6 +82,7 @@ pub(crate) async fn run_agent_turn_for_cli(
         active_agent_role,
         process_handles,
         sse_control_mirror,
+        session_mode,
     } = p;
     let (ltm, scope) = process_handles
         .cli_long_term_memory_handles_with_stderr_notice(cfg, &CLI_LTM_OPEN_FAILURE_NOTIFIED);
@@ -105,6 +107,7 @@ pub(crate) async fn run_agent_turn_for_cli(
             long_term_memory: ltm.clone(),
             long_term_memory_scope_id: scope.clone(),
             turn_allowed_tool_names: turn_allow,
+            session_mode,
             process_handles: process_handles.turn_handles_arc(),
             sse_control_mirror,
         },
@@ -229,6 +232,7 @@ fn resolve_system_prompt_for_chat(
             skills_base_dir: Some(work_dir.to_path_buf()),
             forced_skill: forced_skill.cloned(),
             role_resolution: crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
+            session_mode: None,
         },
     )
     .map_err(|e| CliExitError::new(EXIT_USAGE, e).into())
@@ -521,6 +525,7 @@ async fn run_chat_batch_jsonl(
             active_agent_role: agent_role,
             process_handles: Arc::clone(&process_handles),
             sse_control_mirror: None,
+            session_mode: cfg_snap.roles_prompts.default_session_mode,
         })
         .await
         .map_err(map_turn_err)?;
@@ -597,6 +602,7 @@ async fn chat_invocation_via_messages_json_file(
         active_agent_role: ctx.agent_role,
         process_handles: Arc::clone(&ctx.process_handles),
         sse_control_mirror: None,
+        session_mode: cfg_snap.roles_prompts.default_session_mode,
     })
     .await
     .map_err(map_turn_err)?;
@@ -662,6 +668,7 @@ async fn chat_invocation_via_cli_query(
         active_agent_role: ctx.agent_role,
         process_handles: ctx.process_handles,
         sse_control_mirror: None,
+        session_mode: cfg_snap.roles_prompts.default_session_mode,
     })
     .await
     .map_err(map_turn_err)?;

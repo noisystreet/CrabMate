@@ -117,6 +117,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
         None,
         &[],
         agent_role.clone(),
+        None,
         conversation_id.clone(),
     )
     .await
@@ -160,6 +161,8 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 expected_revision: prepared.turn_seed.expected_revision,
                 request_agent_role: agent_role,
                 persisted_active_agent_role: prepared.turn_seed.persisted_active_agent_role,
+                request_session_mode: None,
+                persisted_active_session_mode: prepared.turn_seed.persisted_active_session_mode,
                 work_dir: prepared.work_dir,
                 workspace_is_set: prepared.workspace_is_set,
                 temperature_override: None,

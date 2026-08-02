@@ -76,6 +76,7 @@ pub(super) struct ChatStreamRequestParsed {
     pub(super) user_trim: String,
     pub(super) conversation_id: String,
     pub(super) agent_role: Option<String>,
+    pub(super) session_mode: Option<String>,
     pub(super) temperature_override: Option<f32>,
     pub(super) seed_override: crate::types::LlmSeedOverride,
     pub(super) client_sse_protocol: Option<u8>,
@@ -122,6 +123,9 @@ fn parse_chat_stream_request_tail(
         .unwrap_or_else(|| state.next_conversation_id());
     let agent_role = normalize_agent_role(body.agent_role.as_deref())
         .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
+    let session_mode = crate::types::parse_optional_session_mode(body.session_mode.as_deref())
+        .map_err(|e| bad_request("INVALID_SESSION_MODE", e))?
+        .map(|m| m.as_str().to_string());
     let temperature_override = parse_optional_chat_temperature(body.temperature)
         .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
@@ -144,6 +148,7 @@ fn parse_chat_stream_request_tail(
         user_trim,
         conversation_id,
         agent_role,
+        session_mode,
         temperature_override,
         seed_override,
         client_sse_protocol: body.client_sse_protocol,
@@ -168,10 +173,12 @@ fn prepare_turn_user_and_forced_skill(
     Ok((prepared.user_message, prepared.forced_skill))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn refresh_existing_turn_system(
     cfg: &crate::config::AgentConfig,
     seed: &mut ConversationTurnSeed,
     agent_role: Option<&str>,
+    session_mode: Option<crate::types::SessionMode>,
     user_msg: &str,
     workspace_root: &std::path::Path,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
@@ -182,6 +189,11 @@ fn refresh_existing_turn_system(
         cfg.system_prompt_for_new_conversation(Some(id))
             .map_err(|e| e.to_string())?;
     }
+    let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
+        session_mode.map(|m| m.as_str()),
+        seed.persisted_active_session_mode.as_deref(),
+        cfg.roles_prompts.default_session_mode,
+    )?;
     maybe_apply_mid_session_agent_role_switch(
         cfg,
         &mut seed.messages,
@@ -190,6 +202,7 @@ fn refresh_existing_turn_system(
         tool_recorder,
         Some(workspace_root),
         user_msg,
+        Some(mode),
     )?;
     let role_for_turn =
         crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
@@ -207,6 +220,7 @@ fn refresh_existing_turn_system(
             skills_base_dir: Some(skills_base),
             forced_skill,
             role_resolution: RoleSystemResolution::Strict,
+            session_mode: Some(mode),
         },
     )?;
     debug!(
@@ -233,6 +247,7 @@ pub(super) async fn build_messages_for_turn(
     user_msg: &str,
     image_urls: &[String],
     agent_role: Option<&str>,
+    session_mode: Option<&str>,
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
@@ -245,6 +260,7 @@ pub(super) async fn build_messages_for_turn(
     } else {
         message_user_with_images(&user_msg, image_urls)
     };
+    let mode_opt = crate::types::parse_optional_session_mode(session_mode)?;
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
         {
             let cfg = state.cfg.read().await;
@@ -252,11 +268,15 @@ pub(super) async fn build_messages_for_turn(
                 &cfg,
                 &mut seed,
                 agent_role,
+                mode_opt,
                 user_msg.as_str(),
                 root.as_path(),
                 &state.process_handles.tool_outcome_recorder,
                 forced_skill,
             )?;
+        }
+        if let Some(m) = mode_opt {
+            seed.persisted_active_session_mode = Some(m.as_str().to_string());
         }
         seed.messages.push(last_user);
         return Ok(seed);
@@ -266,6 +286,11 @@ pub(super) async fn build_messages_for_turn(
         crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
             &cfg, agent_role, None,
         )?;
+    let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
+        mode_opt.map(|m| m.as_str()),
+        None,
+        cfg.roles_prompts.default_session_mode,
+    )?;
     let skills_base = resolve_skills_base_dir(root.as_path());
     let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
         &cfg,
@@ -276,6 +301,7 @@ pub(super) async fn build_messages_for_turn(
             skills_base_dir: Some(skills_base),
             forced_skill,
             role_resolution: RoleSystemResolution::Strict,
+            session_mode: Some(mode),
         },
     )?;
     debug!(
@@ -305,5 +331,6 @@ pub(super) async fn build_messages_for_turn(
         messages,
         expected_revision: None,
         persisted_active_agent_role: None,
+        persisted_active_session_mode: Some(mode.as_str().to_string()),
     })
 }

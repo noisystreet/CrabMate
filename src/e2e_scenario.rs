@@ -213,6 +213,7 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
         recordings_dir: &e2e_cfg.recordings_dir,
         mode: e2e_cfg.mode,
         turn_allowed_tool_names,
+        session_mode: crate::types::SessionMode::Act,
     })
     .await;
 
@@ -455,6 +456,7 @@ fn build_turn_messages(cfg: &AgentConfig, user_text: &str) -> Vec<Message> {
             skills_base_dir: None,
             forced_skill: None,
             role_resolution: RoleSystemResolution::Strict,
+            session_mode: None,
         },
     )
     .expect("compose_first_system_for_turn 应成功");
@@ -473,6 +475,7 @@ struct SingleAgentTurnCfg<'a> {
     recordings_dir: &'a Path,
     mode: E2eMode,
     turn_allowed_tool_names: Option<std::collections::HashSet<String>>,
+    session_mode: crate::types::SessionMode,
 }
 
 /// 构造 e2e 后端并注入 `RunAgentTurnParams`，执行单轮 agent turn。
@@ -532,6 +535,7 @@ async fn run_single_agent_turn(
             long_term_memory_scope_id: None,
             read_file_turn_cache: None,
             turn_allowed_tool_names: args.turn_allowed_tool_names.map(std::sync::Arc::new),
+            session_mode: args.session_mode,
         },
         obs: RunAgentTurnObs {
             tracing_chat_turn: None,

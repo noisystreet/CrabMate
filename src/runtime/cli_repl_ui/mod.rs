@@ -351,7 +351,7 @@ impl CliReplStyle {
         self.write_banner_subheading(w, "内建命令")?;
         self.write_banner_note_line(
             w,
-            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /skills（list） /<skill-id>（强制技能） /tools  /export  /save-session  /help  /?  · Tab 补全",
+            "    /clear  /model（·set） /api-base（·set） /models（list·choose） /api-key  /agent（list·set） /mode（ask·plan·act） /config  /doctor  /probe  /mcp  /version  /workspace（/cd） /skills（list） /<skill-id>（强制技能） /tools  /export  /save-session  /help  /?  · Tab 补全",
         )?;
         self.write_banner_note_line(
             w,

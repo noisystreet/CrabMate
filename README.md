@@ -71,7 +71,7 @@
 **`crabmate tui`** 为实验性**全屏**界面，与 **`repl`** 共用 Agent/工具编排；适合在终端里查看**工作区路径与会话**而不开浏览器。
 
 - **环境**：须真实 **TTY**；否则请用 **`repl`** / **`chat`**。
-- **交互**：撰写区 **Enter** 发送；右栏 **「工作区」** 聚焦时 **Enter** 打开路径浏览（与 Web **`/workspace`**、REPL **`/workspace`** 同源）。**`q`** / **Ctrl+C** 退出。**`/api-key`** 等 **`/`** 命令与 **`repl`** 同源。
+- **交互**：撰写区 **Enter** 发送；右栏 **「工作区」** 聚焦时 **Enter** 打开路径浏览（与 Web **`/workspace`**、REPL **`/workspace`** 同源）。**`q`** / **Ctrl+C** 退出。**`/api-key`**、**`/mode`**（Ask/Plan/Act）等 **`/`** 命令与 **`repl`** 同源。
 - **流式**：不在 **stdout** 刷助手流式正文；细节与 **`--no-stream`** 见 **`crabmate tui --help`**。
 - **其它**：可选 SQLite 多会话（**`/conv`**、**`/branch`**）、澄清问卷、环境变量 **`CM_TUI_CONVERSATION_ID`**、退出会话文件等见 **[docs/命令行与路由.md](docs/命令行与路由.md)**。
 

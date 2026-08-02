@@ -88,6 +88,11 @@ fn openapi_components_schemas_chat_request() -> Value {
                         "type": "string",
                         "description": "Named role id; new session seeds first system; existing session refreshes first system if changed. See docs/配置说明.md § multi-role."
                     },
+                    "session_mode": {
+                        "type": "string",
+                        "enum": ["ask", "plan", "act"],
+                        "description": "Session capability mode (orthogonal to agent_role). ask/plan → readonly tools; act → full tools ∩ role allowlist. Default from config default_session_mode."
+                    },
                     "approval_session_id": { "type": "string" },
                     "temperature": { "type": "number", "format": "double" },
                     "seed": { "type": "integer", "format": "int64" },

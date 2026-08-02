@@ -125,6 +125,10 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
         }
         ReplBuiltIn::AgentList => slash_agent_list(cfg_holder, agent_role, style).await,
         ReplBuiltIn::AgentSet(id) => {
+            let mode = *handles
+                .session_mode
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             slash_agent_set(
                 id,
                 cfg_holder,
@@ -133,6 +137,7 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
                 style,
                 &handles.process_handles.tool_outcome_recorder,
                 work_dir.as_path(),
+                mode,
             )
             .await
         }
@@ -140,6 +145,23 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
             let _ = style.eprint_error(
                 "用法: /agent · /agent list（列角色 id，含内建 default）· /agent set <id> | /agent set default（default=清除显式角色，回到与 Web 默认相同逻辑）",
             );
+            ReplSlashHandled::Handled
+        }
+        ReplBuiltIn::ModeShow => slash_mode_show(handles, style),
+        ReplBuiltIn::ModeSet(mode) => {
+            slash_mode_set(
+                mode,
+                cfg_holder,
+                messages,
+                agent_role.as_deref(),
+                style,
+                handles,
+                work_dir.as_path(),
+            )
+            .await
+        }
+        ReplBuiltIn::ModeUsage => {
+            let _ = style.eprint_error("用法: /mode · /mode ask|plan|act");
             ReplSlashHandled::Handled
         }
         ReplBuiltIn::Version => {
@@ -156,6 +178,90 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
         }
         ReplBuiltIn::ApiKeySet(secret) => slash_api_key_set(secret, &handles.api_key_holder, style),
     }
+}
+
+fn slash_mode_show(handles: &ReplSlashSharedHandles, style: &CliReplStyle) -> ReplSlashHandled {
+    let mode = handles
+        .session_mode
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let _ = style.print_line(&format!(
+        "当前会话模式: {} — {}",
+        mode.as_str(),
+        mode.display_title_zh()
+    ));
+    ReplSlashHandled::Handled
+}
+
+async fn slash_mode_set(
+    mode: crate::types::SessionMode,
+    cfg_holder: &SharedAgentConfig,
+    messages: &mut [Message],
+    agent_role: Option<&str>,
+    style: &CliReplStyle,
+    handles: &ReplSlashSharedHandles,
+    work_dir: &Path,
+) -> ReplSlashHandled {
+    {
+        let mut g = handles
+            .session_mode
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        *g = mode;
+    }
+    let cfg = cfg_holder.read().await.clone();
+    let role_id =
+        match crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
+            &cfg, agent_role, None,
+        ) {
+            Ok(id) => id,
+            Err(e) => {
+                let _ = style.eprint_error(&format!("解析角色失败: {e}"));
+                return ReplSlashHandled::Handled;
+            }
+        };
+    match crate::context_bootstrap::prompt_compose::compose_first_system_for_turn(
+        &cfg,
+        &handles.process_handles.tool_outcome_recorder,
+        crate::context_bootstrap::prompt_compose::FirstSystemComposeOpts {
+            agent_role: role_id.as_deref(),
+            user_msg_for_skills: None,
+            skills_base_dir: Some(work_dir.to_path_buf()),
+            forced_skill: None,
+            role_resolution: crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
+            session_mode: Some(mode),
+        },
+    ) {
+        Ok(sys) => {
+            let refreshed = if let Some(first) = messages.first_mut()
+                && first.role == "system"
+            {
+                first.content = Some(crate::types::MessageContent::Text(sys));
+                true
+            } else {
+                false
+            };
+            if refreshed {
+                let _ = style.print_success(&format!(
+                    "已切换会话模式为 {}（{}）；对话历史已保留。",
+                    mode.as_str(),
+                    mode.display_title_zh()
+                ));
+            } else {
+                let _ = style.print_success(&format!(
+                    "已切换会话模式为 {}（{}）。",
+                    mode.as_str(),
+                    mode.display_title_zh()
+                ));
+                let _ = style
+                    .eprint_error("会话缺少首条 system，模式附录未刷新；下轮对话会带上新模式。");
+            }
+        }
+        Err(e) => {
+            let _ = style.eprint_error(&format!("切换 mode 后刷新 system 失败: {e}"));
+        }
+    }
+    ReplSlashHandled::Handled
 }
 
 async fn slash_context(
@@ -583,6 +689,7 @@ async fn slash_agent_list(
     ReplSlashHandled::Handled
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn slash_agent_set(
     id: String,
     cfg_holder: &SharedAgentConfig,
@@ -591,6 +698,7 @@ async fn slash_agent_set(
     style: &CliReplStyle,
     tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
     work_dir: &std::path::Path,
+    session_mode: crate::types::SessionMode,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     if cfg.roles_prompts.agent_roles.is_empty() {
@@ -608,6 +716,7 @@ async fn slash_agent_set(
             tool_recorder,
             Some(work_dir),
             None,
+            Some(session_mode),
         ) {
             let _ = style.eprint_error(&e);
         } else {
@@ -630,6 +739,7 @@ async fn slash_agent_set(
             tool_recorder,
             Some(work_dir),
             None,
+            Some(session_mode),
         ) {
             let _ = style.eprint_error(&e);
         } else {

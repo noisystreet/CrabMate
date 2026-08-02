@@ -33,6 +33,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         expected_revision,
         request_agent_role,
         persisted_active_agent_role,
+        request_session_mode,
+        persisted_active_session_mode,
         work_dir,
         workspace_is_set,
         temperature_override,
@@ -63,6 +65,11 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
     };
+    let session_mode = resolve_job_session_mode(
+        request_session_mode.as_deref(),
+        persisted_active_session_mode.as_deref(),
+        cfg_snap.roles_prompts.default_session_mode,
+    );
     let (mut cfg_turn, api_key_turn) =
         resolve_web_llm_for_job(queue_deps.as_ref(), cfg_snap.clone(), llm_override.as_ref());
     if let Some(secs) = readonly_tool_ttl_cache_secs {
@@ -82,23 +89,8 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         Arc::clone(&cfg_turn),
         executor_llm_override.as_ref(),
     );
-    let (executor_api_base, executor_api_key, executor_model_override) = match executor_override {
-        Some((executor_cfg, executor_key)) => {
-            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
-                Some(executor_cfg.llm.api_base.clone())
-            } else {
-                None
-            };
-            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
-                Some(executor_cfg.llm.model.clone())
-            } else {
-                None
-            };
-            (base, Some(executor_key), model)
-        }
-        None => (None, None, None),
-    };
-    // 提取 client_llm.model 覆盖值，单独传递给 model_override 而非写入 cfg.llm.model
+    let (executor_api_base, executor_api_key, executor_model_override) =
+        executor_llm_triple(executor_override.as_ref(), &cfg_turn);
     let client_model_override = llm_override.as_ref().and_then(|o| o.model.clone());
     let r = queue_deps
         .turn_runner
@@ -125,50 +117,127 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 job_id,
                 conversation_id: conversation_id.as_str(),
                 turn_allowed_tool_names: turn_allow,
+                session_mode,
                 request_audit: std::sync::Arc::new(request_audit),
                 process_handles: Arc::clone(&app.process_handles),
             },
         ))
         .await;
-    let (ok, cancelled, err) = match r {
-        Ok(()) => {
-            match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
-                app: &app,
-                queue_deps: queue_deps.as_ref(),
-                cfg_snap: &cfg_snap,
-                conversation_id: &conversation_id,
-                messages: &mut messages,
-                expected_revision,
-                request_agent_role: request_agent_role.as_deref(),
-                persisted_active_agent_role: persisted_active_agent_role.as_deref(),
-            })
-            .await
-            {
-                crate::SaveConversationOutcome::Saved => {
-                    if reply_tx.send(Ok(messages)).is_err() {
-                        debug!(
-                            target: "crabmate::sse_mpsc",
-                            "chat json oneshot reply failed (Ok): job_id={} receiver dropped",
-                            job_id
-                        );
-                    }
-                    (true, false, None)
-                }
-                crate::SaveConversationOutcome::Conflict => {
-                    if reply_tx
-                        .send(Err(ChatJsonJobFailure::ConversationConflict))
-                        .is_err()
-                    {
-                        debug!(
-                            target: "crabmate::sse_mpsc",
-                            "chat json oneshot reply failed (CONVERSATION_CONFLICT): job_id={} receiver dropped",
-                            job_id
-                        );
-                    }
-                    (false, false, Some("conversation_conflict".to_string()))
-                }
-            }
+    let (ok, cancelled, err) = finish_json_queued_job_after_turn(
+        r,
+        JsonTurnFinishParams {
+            reply_tx,
+            job_id,
+            app: &app,
+            queue_deps: queue_deps.as_ref(),
+            cfg_snap: &cfg_snap,
+            conversation_id: &conversation_id,
+            messages: &mut messages,
+            expected_revision,
+            request_agent_role: request_agent_role.as_deref(),
+            persisted_active_agent_role: persisted_active_agent_role.as_deref(),
+            request_session_mode: request_session_mode.as_deref(),
+            persisted_active_session_mode: persisted_active_session_mode.as_deref(),
+        },
+    )
+    .await;
+    JobOutcome::Json { ok, cancelled, err }
+}
+
+fn resolve_job_session_mode(
+    request: Option<&str>,
+    persisted: Option<&str>,
+    default: crate::types::SessionMode,
+) -> crate::types::SessionMode {
+    match crate::session_mode_turn::resolve_session_mode_for_turn(request, persisted, default) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!(target: "crabmate", "session_mode resolve failed: {e}; using act");
+            crate::types::SessionMode::Act
         }
+    }
+}
+
+fn executor_llm_triple(
+    executor_override: Option<&(Arc<crate::config::AgentConfig>, String)>,
+    cfg_turn: &crate::config::AgentConfig,
+) -> (Option<String>, Option<String>, Option<String>) {
+    match executor_override {
+        Some((executor_cfg, executor_key)) => {
+            let base = if executor_cfg.llm.api_base != cfg_turn.llm.api_base {
+                Some(executor_cfg.llm.api_base.clone())
+            } else {
+                None
+            };
+            let model = if executor_cfg.llm.model != cfg_turn.llm.model {
+                Some(executor_cfg.llm.model.clone())
+            } else {
+                None
+            };
+            (base, Some(executor_key.clone()), model)
+        }
+        None => (None, None, None),
+    }
+}
+
+struct JsonTurnFinishParams<'a> {
+    reply_tx: oneshot::Sender<Result<Vec<Message>, ChatJsonJobFailure>>,
+    job_id: u64,
+    app: &'a crate::web::WebChatJobAppFacet,
+    queue_deps: &'a super::super::WebChatQueueDeps,
+    cfg_snap: &'a Arc<crate::config::AgentConfig>,
+    conversation_id: &'a str,
+    messages: &'a mut Vec<Message>,
+    expected_revision: Option<u64>,
+    request_agent_role: Option<&'a str>,
+    persisted_active_agent_role: Option<&'a str>,
+    request_session_mode: Option<&'a str>,
+    persisted_active_session_mode: Option<&'a str>,
+}
+
+async fn finish_json_queued_job_after_turn(
+    r: Result<(), crate::agent::agent_turn::RunAgentTurnError>,
+    p: JsonTurnFinishParams<'_>,
+) -> (bool, bool, Option<String>) {
+    match r {
+        Ok(()) => match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
+            app: p.app,
+            queue_deps: p.queue_deps,
+            cfg_snap: p.cfg_snap,
+            conversation_id: p.conversation_id,
+            messages: p.messages,
+            expected_revision: p.expected_revision,
+            request_agent_role: p.request_agent_role,
+            persisted_active_agent_role: p.persisted_active_agent_role,
+            request_session_mode: p.request_session_mode,
+            persisted_active_session_mode: p.persisted_active_session_mode,
+        })
+        .await
+        {
+            crate::SaveConversationOutcome::Saved => {
+                if p.reply_tx.send(Ok(std::mem::take(p.messages))).is_err() {
+                    debug!(
+                        target: "crabmate::sse_mpsc",
+                        "chat json oneshot reply failed (Ok): job_id={} receiver dropped",
+                        p.job_id
+                    );
+                }
+                (true, false, None)
+            }
+            crate::SaveConversationOutcome::Conflict => {
+                if p.reply_tx
+                    .send(Err(ChatJsonJobFailure::ConversationConflict))
+                    .is_err()
+                {
+                    debug!(
+                        target: "crabmate::sse_mpsc",
+                        "chat json oneshot reply failed (CONVERSATION_CONFLICT): job_id={} receiver dropped",
+                        p.job_id
+                    );
+                }
+                (false, false, Some("conversation_conflict".to_string()))
+            }
+        },
         Err(e) => {
             let jq_outcome = e.job_queue_json_outcome_kind();
             let cancelled = matches!(jq_outcome, AgentTurnJobOutcomeKind::UserCancelled);
@@ -177,7 +246,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                     info!(
                         target: "crabmate",
                         "chat json 任务已取消 job_id={} err_kind=cancelled {}",
-                        job_id,
+                        p.job_id,
                         e.diag_log_kv(),
                     );
                 }
@@ -185,21 +254,20 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                     error!(
                         target: "crabmate",
                         "chat json 任务失败 job_id={} err_kind=agent_turn {}",
-                        job_id,
+                        p.job_id,
                         e.diag_log_kv(),
                     );
                 }
             }
             let prev = e.short_detail_for_job_log();
-            if reply_tx.send(Err(ChatJsonJobFailure::Agent(e))).is_err() {
+            if p.reply_tx.send(Err(ChatJsonJobFailure::Agent(e))).is_err() {
                 debug!(
                     target: "crabmate::sse_mpsc",
                     "chat json oneshot reply failed (Err): job_id={} receiver dropped",
-                    job_id
+                    p.job_id
                 );
             }
             (false, cancelled, prev)
         }
-    };
-    JobOutcome::Json { ok, cancelled, err }
+    }
 }

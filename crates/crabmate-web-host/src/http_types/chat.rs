@@ -21,6 +21,8 @@ pub struct ChatRequestBody {
     pub message: String,
     pub conversation_id: Option<String>,
     pub agent_role: Option<String>,
+    /// 本回合会话工作模式：`ask` / `plan` / `act`。
+    pub session_mode: Option<String>,
     pub approval_session_id: Option<String>,
     pub temperature: Option<f64>,
     pub seed: Option<i64>,
@@ -112,6 +114,8 @@ struct ChatRequestBodySerde {
     #[serde(default, rename = "agent_role")]
     agent_role: Option<String>,
     #[serde(default)]
+    session_mode: Option<String>,
+    #[serde(default)]
     approval_session_id: Option<String>,
     #[serde(default)]
     temperature: Option<f64>,
@@ -141,6 +145,7 @@ impl From<ChatRequestBodySerde> for ChatRequestBody {
             message: s.message,
             conversation_id: s.conversation_id,
             agent_role: s.agent_role,
+            session_mode: s.session_mode,
             approval_session_id: s.approval_session_id,
             temperature: s.temperature,
             seed: s.seed,

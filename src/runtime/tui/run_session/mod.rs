@@ -437,9 +437,14 @@ pub async fn run_tui_session(
         CliToolRuntime::new_interactive_default().with_tui_blocking_approval(tui_approval_tx);
     let style = CliReplStyle::new();
     let api_key_holder = Arc::new(std::sync::Mutex::new(api_key.to_string()));
+    let default_session_mode = {
+        let g = cfg_holder.read().await;
+        g.roles_prompts.default_session_mode
+    };
     let slash_handles = ReplSlashSharedHandles {
         api_key_holder: Arc::clone(&api_key_holder),
         process_handles: Arc::clone(&process_handles),
+        session_mode: Arc::new(std::sync::Mutex::new(default_session_mode)),
     };
 
     {

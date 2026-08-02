@@ -26,6 +26,8 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
     pub(super) persisted_active_agent_role: Option<&'a str>,
+    pub(super) request_session_mode: Option<&'a str>,
+    pub(super) persisted_active_session_mode: Option<&'a str>,
 }
 
 /// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
@@ -41,6 +43,8 @@ pub(super) async fn post_turn_web_prepare_and_save(
         expected_revision,
         request_agent_role,
         persisted_active_agent_role,
+        request_session_mode,
+        persisted_active_session_mode,
     } = p;
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
@@ -56,11 +60,16 @@ pub(super) async fn post_turn_web_prepare_and_save(
     crate::types::strip_orchestration_injected_users_for_conversation_store(messages);
     let active_save =
         persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
+    let mode_save = crate::session_mode_turn::persisted_session_mode_after_turn(
+        persisted_active_session_mode,
+        request_session_mode,
+    );
     app.conversation
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
             messages.clone(),
             active_save.as_deref(),
+            mode_save.as_deref(),
             expected_revision,
         )
         .await
@@ -265,6 +274,8 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) expected_revision: Option<u64>,
     pub(super) request_agent_role: Option<&'a str>,
     pub(super) persisted_active_agent_role: Option<&'a str>,
+    pub(super) request_session_mode: Option<&'a str>,
+    pub(super) persisted_active_session_mode: Option<&'a str>,
     pub(super) stream_ended_sent: &'a mut bool,
 }
 
@@ -284,6 +295,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         expected_revision,
         request_agent_role,
         persisted_active_agent_role,
+        request_session_mode,
+        persisted_active_session_mode,
         stream_ended_sent,
     } = ctx;
     match r {
@@ -323,6 +336,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 expected_revision,
                 request_agent_role,
                 persisted_active_agent_role,
+                request_session_mode,
+                persisted_active_session_mode,
             })
             .await
             {

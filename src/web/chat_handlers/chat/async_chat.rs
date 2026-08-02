@@ -250,6 +250,7 @@ pub(crate) async fn chat_async_handler(
         parsed.clarify.clone(),
         &parsed.image_urls,
         parsed.agent_role.clone(),
+        parsed.session_mode.clone(),
         conversation_id.clone(),
     )
     .await?;

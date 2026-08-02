@@ -64,6 +64,10 @@ pub(super) const REPL_HELP_ROWS: &[(&str, &str)] = &[
         "/agent set <id> | /agent set default",
         "set <id>：须存在于角色表；**set default**：清除显式角色，与 Web 未选角色及「默认」逻辑一致（default_agent_role_id 或全局 system）",
     ),
+    (
+        "/mode · /mode ask|plan|act",
+        "查看或切换会话工作模式（Ask 只读 / Plan 只读规划 / Act 执行）；仅刷新首条 system 附录，保留对话",
+    ),
     ("/workspace", "显示当前工作区"),
     (
         "/workspace <路径>",

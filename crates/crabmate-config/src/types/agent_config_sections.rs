@@ -75,6 +75,8 @@ pub struct RolesPromptsConfig {
     pub coding_workbench_enabled: bool,
     /// 编程层 Markdown 路径（与 `system_prompt_file` 相同解析规则）；`finalize` 读盘。
     pub coding_workbench_increment_file: String,
+    /// 未指定请求/会话 `session_mode` 时的默认工作模式（ask / plan / act）。
+    pub default_session_mode: crabmate_types::SessionMode,
 }
 
 #[derive(Debug, Clone)]
