@@ -120,7 +120,7 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
         cfg.per_plan_policy.orchestration_profile.as_str()
     );
     println!(
-        "  planner_executor_mode: {}（运行时固定；旧 TOML 别名忽略）",
+        "  planner_executor_mode: {}（仅 single_agent）",
         cfg.per_plan_policy.planner_executor_mode.as_str()
     );
     println!(

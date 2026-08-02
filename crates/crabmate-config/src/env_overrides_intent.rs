@@ -7,7 +7,6 @@ pub(super) fn env_override_intent_thresholds(b: &mut ConfigBuilder) {
     intent_override_turn_start_and_l2(b);
     intent_override_execute_thresholds(b);
     intent_override_non_hier_execute_thresholds(b);
-    // `CM_INTENT_MODE_BIAS_ENABLED`：历史键，故意不写入 builder（运行时已忽略）。
 }
 
 fn intent_override_turn_start_and_l2(b: &mut ConfigBuilder) {

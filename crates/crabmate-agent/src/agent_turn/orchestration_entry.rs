@@ -89,16 +89,8 @@ mod tests {
             resolve_turn_top_level_dispatch(&cfg_with(PlannerExecutorMode::SingleAgent)),
             TurnTopLevelDispatch::NonHierarchical
         );
-        assert_eq!(
-            PlannerExecutorMode::parse("hierarchical").unwrap(),
-            PlannerExecutorMode::SingleAgent
-        );
-        assert_eq!(
-            resolve_turn_top_level_dispatch(&cfg_with(
-                PlannerExecutorMode::parse("logical_dual_agent").unwrap()
-            )),
-            TurnTopLevelDispatch::NonHierarchical
-        );
+        assert!(PlannerExecutorMode::parse("hierarchical").is_err());
+        assert!(PlannerExecutorMode::parse("logical_dual_agent").is_err());
     }
 
     #[test]

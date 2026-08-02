@@ -115,9 +115,6 @@ pub(super) struct AgentSection {
     pub(super) llm_bigmodel_thinking: Option<bool>,
     /// Moonshot **kimi-k2.5**：为真时请求体带 **`thinking: { "type": "disabled" }`**（文档默认服务端为 enabled，见 Kimi Chat API）。
     pub(super) llm_kimi_thinking_disabled: Option<bool>,
-    /// 已废弃：仍解析以兼容旧 `[agent]` 配置，**运行时已忽略**。MiniMax 由源码按 **`model` / `api_base`** 自动折叠 **`system`→`user`**（见 [`crate::llm::vendor::fold_system_into_user_for_config`]）。
-    #[allow(dead_code)]
-    pub(super) llm_fold_system_into_user: Option<bool>,
     pub(super) api_timeout_secs: Option<u64>,
     pub(super) api_max_retries: Option<u64>,
     pub(super) api_retry_delay_secs: Option<u64>,
@@ -137,7 +134,7 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
-    /// `single_agent`（`logical_dual_agent` / `hierarchical` 为废弃别名，解析为 single_agent）
+    /// 仅 `single_agent`（运行时亦强制 SingleAgent；其它值在 `PlannerExecutorMode::parse` 拒绝）
     pub(super) planner_executor_mode: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
@@ -265,9 +262,6 @@ pub(super) struct AgentSection {
     pub(super) intent_non_hier_execute_low_threshold: Option<f64>,
     /// 意图路由「直接执行」高阈值覆盖；省略则回退 `intent_execute_high_threshold`。
     pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
-    /// 历史键：分层 runner 偏置；保留解析以免 `deny_unknown_fields` 拒旧 TOML（运行时忽略）。
-    #[allow(dead_code)]
-    pub(super) intent_mode_bias_enabled: Option<bool>,
     /// 是否启用 L2 语义意图分类（默认 true）。
     pub(super) intent_l2_enabled: Option<bool>,
     /// L2 语义分类观测阈值（0.0..=1.0，默认 0.7）；不再控制是否回退规则层。
@@ -389,6 +383,30 @@ typo_unknown_key = 1
             msg.contains("unknown field") || msg.contains("unknown"),
             "expected serde unknown field error, got: {msg}"
         );
+    }
+
+    #[test]
+    fn parse_rejects_removed_compat_keys_in_agent_section() {
+        for key in [
+            "llm_fold_system_into_user = true",
+            "intent_mode_bias_enabled = false",
+        ] {
+            let toml = format!(
+                r#"
+[agent]
+api_base = "https://api.example.com"
+model = "m"
+{key}
+"#
+            );
+            let err = parse_agent_section(&toml)
+                .expect_err("removed compat key should fail deny_unknown_fields");
+            let msg = err.to_string();
+            assert!(
+                msg.contains("unknown field") || msg.contains("unknown"),
+                "expected unknown field for `{key}`, got: {msg}"
+            );
+        }
     }
 
     #[test]

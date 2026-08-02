@@ -494,8 +494,6 @@ impl ConfigBuilder {
         ir.intent_non_hier_execute_high_threshold = agent
             .intent_non_hier_execute_high_threshold
             .or(ir.intent_non_hier_execute_high_threshold);
-        // `intent_mode_bias_enabled`：历史 TOML 键，仅解析不入运行时配置。
-        let _ = agent.intent_mode_bias_enabled;
         ir.intent_l2_enabled = agent.intent_l2_enabled.or(ir.intent_l2_enabled);
         ir.intent_l2_min_confidence = agent
             .intent_l2_min_confidence

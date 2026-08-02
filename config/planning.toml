@@ -19,4 +19,4 @@ planner_executor_mode = "single_agent"
 # 可单独覆盖执行阈值；省略时回退 intent_execute_*。
 # intent_non_hier_execute_low_threshold = 0.2
 # intent_non_hier_execute_high_threshold = 0.45
-# planner_executor_mode：运行时固定 single_agent（ReAct）；logical_dual_agent / hierarchical 为废弃别名。
+# planner_executor_mode：仅 single_agent（ReAct）；logical_dual_agent / hierarchical 已移除。

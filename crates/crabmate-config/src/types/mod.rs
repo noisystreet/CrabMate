@@ -75,8 +75,7 @@ mod web_search_provider_tests {
 
 /// 规划器与执行器的运行模式。
 ///
-/// 当前运行时**仅**单 agent ReAct 外循环；`logical_dual_agent` / `hierarchical`
-/// 仍可出现在旧 TOML / 环境变量中，解析时映射为 [`Self::SingleAgent`]。
+/// 当前运行时**仅**单 agent ReAct 外循环；仅接受 [`Self::SingleAgent`]（`single_agent`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PlannerExecutorMode {
     /// 单 agent 外层循环（ReAct）。
@@ -87,9 +86,9 @@ pub enum PlannerExecutorMode {
 impl PlannerExecutorMode {
     pub fn parse(s: &str) -> Result<Self, String> {
         match s.trim().to_ascii_lowercase().as_str() {
-            "single_agent" | "logical_dual_agent" | "hierarchical" => Ok(Self::SingleAgent),
+            "single_agent" => Ok(Self::SingleAgent),
             _ => Err(format!(
-                "未知的 planner_executor_mode: {:?}（有效值为 single_agent；logical_dual_agent / hierarchical 已废弃并映射为 single_agent）",
+                "未知的 planner_executor_mode: {:?}（有效值仅为 single_agent；logical_dual_agent / hierarchical 已移除）",
                 s.trim()
             )),
         }
@@ -98,6 +97,30 @@ impl PlannerExecutorMode {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SingleAgent => "single_agent",
+        }
+    }
+}
+
+#[cfg(test)]
+mod planner_executor_mode_tests {
+    use super::PlannerExecutorMode;
+
+    #[test]
+    fn parse_accepts_single_agent_only() {
+        assert_eq!(
+            PlannerExecutorMode::parse("single_agent").unwrap(),
+            PlannerExecutorMode::SingleAgent
+        );
+        assert_eq!(
+            PlannerExecutorMode::parse(" Single_Agent ").unwrap(),
+            PlannerExecutorMode::SingleAgent
+        );
+        for legacy in ["logical_dual_agent", "hierarchical", "staged"] {
+            let err = PlannerExecutorMode::parse(legacy).unwrap_err();
+            assert!(
+                err.contains("single_agent"),
+                "expected rejection mentioning single_agent, got: {err}"
+            );
         }
     }
 }
