@@ -7,7 +7,7 @@ use crate::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crabmate_config::WebSearchProvider;
 use log::warn;
 use serde::Deserialize;
-use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, search};
+use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind, search};
 
 use super::ToolContext;
 
@@ -99,14 +99,16 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
     truncate_output(&raw, ctx.command_max_output_len)
 }
 
-/// 首选 Bing，验证码/低产时降级 DuckDuckGo（worbrow 0.1.1 引擎链）。
+/// 首选 Bing，验证码/低质低产时降级 DuckDuckGo（worbrow 引擎链）。
 const WORBROW_ENGINE_CHAIN: &str = "bing,duckduckgo";
 
 fn search_worbrow(query: &str, max_results: u32, timeout_secs: u64) -> Result<String, String> {
     let browser = resolve_worbrow_browser()?;
     let cfg = WorbrowConfig::new(query, WORBROW_ENGINE_CHAIN, browser)
         .with_max_results(max_results as usize)
-        .with_timeout(Duration::from_secs(timeout_secs.max(1)));
+        .with_timeout(Duration::from_secs(timeout_secs.max(1)))
+        // 瞬时网络错误退避重试（验证码/超时不重试）；计入全局超时预算。
+        .with_retry(1);
     let outcome = search(cfg).map_err(|e| format_worbrow_error(&e))?;
     Ok(format_worbrow_outcome(&outcome, browser))
 }
@@ -156,18 +158,51 @@ fn format_worbrow_outcome(outcome: &Outcome, browser: BrowserKind) -> String {
         } else {
             format!(" ({scheme}://{})", r.domain)
         };
+        let mut flags: Vec<&str> = Vec::new();
+        if r.is_ad {
+            flags.push("ad");
+        }
+        match r.result_kind {
+            ResultKind::Web => {}
+            ResultKind::Dictionary => flags.push("dictionary"),
+            ResultKind::Translation => flags.push("translation"),
+        }
+        // `url_resolved=false` 含「本就是直链、无需解包」（Bing 常见），不能一律当失败。
+        // 仅当仍像跟踪跳转链且未解出时提示。
+        if !r.url_resolved && url_looks_like_search_redirect(&r.url) {
+            flags.push("url_unresolved");
+        }
+        let flag_suffix = if flags.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", flags.join(", "))
+        };
+        let published = r
+            .published_at
+            .as_deref()
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| format!("\n   发布: {s}"))
+            .unwrap_or_default();
         out.push_str(&format!(
-            "{}. {}{}\n   URL: {}\n   {}\n\n",
+            "{}. {}{}{}\n   URL: {}{}\n   {}\n\n",
             r.rank,
             r.title,
             domain,
+            flag_suffix,
             r.url,
+            published,
             r.snippet.trim()
         ));
     }
     let mut s = out.trim_end().to_string();
     append_worbrow_meta_notes(&mut s, outcome);
     s
+}
+
+/// 是否仍像搜索引擎跟踪跳转 URL（解包失败时才值得标 `url_unresolved`）。
+fn url_looks_like_search_redirect(url: &str) -> bool {
+    let u = url.to_ascii_lowercase();
+    u.contains("bing.com/ck/") || u.contains("duckduckgo.com/l/?") || u.contains("uddg=")
 }
 
 fn append_worbrow_meta_notes(out: &mut String, outcome: &Outcome) {
@@ -182,7 +217,10 @@ fn append_worbrow_meta_notes(out: &mut String, outcome: &Outcome) {
         notes.push("检测到验证码，结果可能不完整".to_string());
     }
     if outcome.meta.low_yield {
-        notes.push("结果条数偏少（low_yield）".to_string());
+        notes.push("内容型结果不足（low_yield）".to_string());
+    }
+    if outcome.meta.retries > 0 {
+        notes.push(format!("网络重试 {} 次", outcome.meta.retries));
     }
     if let Some(ref e) = outcome.meta.engine_error {
         notes.push("引擎侧异常".to_string());
@@ -341,6 +379,24 @@ mod tests {
         let text = format_worbrow_outcome(&outcome, BrowserKind::Fake);
         assert!(text.contains("联网搜索（worbrow"));
         assert!(text.contains("URL:"));
+        // Fake/直链结果多为 url_resolved=false，不应刷屏 url_unresolved。
+        assert!(
+            !text.contains("url_unresolved"),
+            "unexpected redirect flag on direct/fake URLs: {text}"
+        );
+    }
+
+    #[test]
+    fn search_redirect_heuristic_matches_tracker_urls_only() {
+        assert!(url_looks_like_search_redirect(
+            "https://www.bing.com/ck/a?!&&u=a1aHR0cHM6Ly9leGFtcGxlLmNvbS8"
+        ));
+        assert!(url_looks_like_search_redirect(
+            "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com"
+        ));
+        assert!(!url_looks_like_search_redirect(
+            "https://doc.rust-lang.org/book/"
+        ));
     }
 
     #[test]
