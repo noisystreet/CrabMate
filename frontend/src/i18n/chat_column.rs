@@ -26,10 +26,10 @@ pub fn chat_tui_tool_status_failed(l: Locale) -> &'static str {
 pub fn composer_ph(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "输入消息，Enter 发送 / Shift+Enter 换行；/ 选用技能；file:/// 或 @相对路径 展开文件…"
+            "输入消息，Enter 发送 / Shift+Enter 换行；/ 选用技能；@相对路径 展开文件…"
         }
         Locale::En => {
-            "Message: Enter send / Shift+Enter newline; / for skills; file:/// or @rel/path expands file…"
+            "Message: Enter send / Shift+Enter newline; / for skills; @rel/path expands file…"
         }
     }
 }
@@ -37,9 +37,9 @@ pub fn composer_ph(l: Locale) -> &'static str {
 /// 工作区树双击插入文件引用时路径含空白。
 pub fn composer_ws_path_whitespace_err(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "该文件路径含空格，无法自动生成 file:/// 引用，请手动输入相对路径。",
+        Locale::ZhHans => "该文件路径含空格，无法自动生成 @ 引用，请手动输入相对路径。",
         Locale::En => {
-            "This path contains spaces; cannot auto-insert file:/// ref — type the relative path manually."
+            "This path contains spaces; cannot auto-insert @ ref — type the relative path manually."
         }
     }
 }
@@ -47,9 +47,11 @@ pub fn composer_ws_path_whitespace_err(l: Locale) -> &'static str {
 /// 侧栏工作区文件行：双击 / 拖放到输入框的提示。
 pub fn workspace_tree_insert_file_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "双击或拖放到输入框：插入 file:///相对路径（发送时由服务端展开）",
+        Locale::ZhHans => {
+            "双击或拖放到输入框：插入 @相对路径（发送时由服务端展开；气泡只显示路径）"
+        }
         Locale::En => {
-            "Double-click or drag onto composer to insert file:///relative-path (expanded server-side on send)"
+            "Double-click or drag onto composer to insert @relative-path (expanded server-side; bubble shows path only)"
         }
     }
 }
@@ -58,10 +60,10 @@ pub fn workspace_tree_insert_file_title(l: Locale) -> &'static str {
 pub fn composer_drop_need_workspace_tree(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "无法从系统拖放解析工作区路径；请从侧栏工作区树拖入文件，或双击插入 file:/// 引用。"
+            "无法从系统拖放解析工作区路径；请从侧栏工作区树拖入文件，或双击插入 @ 引用。"
         }
         Locale::En => {
-            "Cannot map OS drop to a workspace path — drag from the workspace tree, or double-click to insert a file:/// ref."
+            "Cannot map OS drop to a workspace path — drag from the workspace tree, or double-click to insert an @ ref."
         }
     }
 }

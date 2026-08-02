@@ -1200,6 +1200,10 @@
 }
 
 /* 显式 `/<skill-id>`：内联「使用 xxx skill」 */
+.msg-skill-slash-body {
+  white-space: normal;
+}
+
 .msg-skill-invoke {
   display: inline-flex;
   align-items: baseline;
@@ -1227,13 +1231,26 @@
 
 .msg-skill-invoke-task {
   display: inline;
+  white-space: pre-wrap;
 }
 
 .chat-tui-turn--user .msg-skill-invoke {
   margin-inline-end: 0.4em;
 }
 
-/* 用户气泡 / TUI：file:/// 与 @相对路径 内联引用（展示统一为 file:///） */
+/* TUI：chip 与同段任务正文同一行时，避免首个 <p> 把 chip 顶到上一行视觉上「多一换行」 */
+.chat-tui-line .msg-skill-invoke,
+.chat-tui-line .msg-file-ref {
+  margin-block: 0;
+}
+
+.chat-tui-line > p:has(> .msg-skill-invoke:first-child),
+.chat-tui-line > p:has(> .msg-file-ref:first-child) {
+  display: inline;
+  margin: 0;
+}
+
+/* 用户气泡 / TUI：file:/// / @相对路径 内联引用（链接文字只显示相对路径） */
 .msg-file-ref {
   display: inline;
   padding: 0.05em 0.35em;
