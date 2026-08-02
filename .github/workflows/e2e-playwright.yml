@@ -86,8 +86,8 @@ jobs:
             --reporter=list
         working-directory: e2e
         env:
+          # GitHub Actions 对环境键大小写不敏感；no_proxy/NO_PROXY 不能同时写。
           no_proxy: 127.0.0.1,localhost
-          NO_PROXY: 127.0.0.1,localhost
 
       - name: Upload Playwright report
         if: always()
