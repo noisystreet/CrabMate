@@ -315,7 +315,6 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
 struct IntentDerived {
     llm_http_auth_mode: types::LlmHttpAuthMode,
     llm_reasoning_split: bool,
-    intent_at_turn_start_enabled: bool,
 }
 
 fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
@@ -329,10 +328,6 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
     Ok(IntentDerived {
         llm_http_auth_mode,
         llm_reasoning_split,
-        intent_at_turn_start_enabled: b
-            .intent_routing
-            .intent_at_turn_start_enabled
-            .unwrap_or(false),
     })
 }
 

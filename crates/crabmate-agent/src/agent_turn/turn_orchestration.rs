@@ -19,7 +19,7 @@ impl NonHierarchicalTurnPhase {
     }
 }
 
-/// 非分层、**`intent_at_turn_start` 已继续** 时：聚合门控、配置与 [`NonHierarchicalTurnPhase`]。
+/// 非分层、启发式已跑完时：聚合配置与 [`NonHierarchicalTurnPhase`]。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NonHierarchicalTurnResolution {
     pub turn_phase: NonHierarchicalTurnPhase,
@@ -65,16 +65,13 @@ impl From<NonHierarchicalTurnPhase> for TurnOrchestrationMode {
 /// 本轮实际进入的主执行形态（在已知分支条件后记录）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnOrchestrationMode {
-    /// `intent_at_turn_start` 已写入终答并结束本回合。
-    IntentAtTurnStartFinished,
-    /// 门控未早退：整轮 `run_agent_outer_loop`（ReAct 循环）。
+    /// 整轮 `run_agent_outer_loop`（ReAct 循环）。
     ReAct,
 }
 
 impl TurnOrchestrationMode {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::IntentAtTurnStartFinished => "intent_at_turn_start_finished",
             Self::ReAct => "react",
         }
     }

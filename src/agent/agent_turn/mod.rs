@@ -100,7 +100,7 @@ pub(crate) async fn run_agent_turn_common(
     info!(
         target: "crabmate::agent_turn",
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
-        intent_at_turn_start_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled,
+        session_mode = %p.ctx.attach.session_mode,
         top_level_dispatch = top_dispatch.as_str(),
         "run_agent_turn_common enter"
     );

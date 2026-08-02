@@ -1,78 +1,8 @@
-//! L0 预处理与特征：多轮续接合并、文本启发式、近期 **tool** 条成败（不记录参数正文）。
+//! 多轮续接辅助：工具失败后续跑短句识别、近期 tool 失败探测。
 //!
-//! 与 `docs/design/intent_recognition_enhancement.md` 的 L0 节对齐（轻量实现，无独立 ML）。
+//! 有效用户任务抽取见 `agent_turn::intent::user`（确认流 / 失败续跑）。
 
-const SHORT_UTTERANCE_MAX_CHARS: usize = 40;
-const MERGED_MAX_CHARS: usize = 2000;
-
-/// 可观测的 L0 特征，供续接合并观测与 `IntentMergeMeta`。
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
-pub struct IntentL0Snapshot {
-    /// 出现路径/工作区/文件或 `@` 引用等信号。
-    pub has_file_path_like: bool,
-    /// 出现报错、trace、panic 等信号。
-    pub has_error_signal: bool,
-    /// 近邻（当前 user 前）存在 `role: tool` 且非成功态。
-    pub has_recent_tool_failure: bool,
-    /// 是否偏短、可能指代不足（启发式，非严格「字数」产品定义）。
-    pub is_short: bool,
-    /// 出现 `git` / 分支 / 提交 等（大小写不敏感，git 为 ASCII）。
-    pub has_git_keyword: bool,
-    /// 出现 `cargo` / `npm` / `pnpm` 等包管理器命令痕迹。
-    pub has_command_cargo: bool,
-}
-
-/// 在「续接短句 + 前序在澄清/确认」或「失败后续跑短句 + 近期 tool 失败」时，将最近用户句与当前句拼成**路由用**文本。
-/// 返回 `(路由文本, 是否发生了续接合并)`；不修改原始 `current_task`。
-pub fn effective_intent_routing_text(
-    current_task: &str,
-    in_clarification_flow: bool,
-    recent_user_messages: &[String],
-    has_recent_tool_failure: bool,
-) -> (String, bool) {
-    let t = current_task.trim();
-    if t.is_empty() {
-        return (String::new(), false);
-    }
-    if t.chars().count() > SHORT_UTTERANCE_MAX_CHARS {
-        return (t.to_string(), false);
-    }
-    if has_substantive_execute_leverage(t) {
-        return (t.to_string(), false);
-    }
-    let resume_after_failure = has_recent_tool_failure && is_resume_after_failure_utterance(t);
-    if !in_clarification_flow && !resume_after_failure {
-        return (t.to_string(), false);
-    }
-    if recent_user_messages.is_empty() {
-        return (t.to_string(), false);
-    }
-    let prior: String = recent_user_messages
-        .iter()
-        .take(2)
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-    if prior.is_empty() {
-        return (t.to_string(), false);
-    }
-    let label = if resume_after_failure {
-        "[前序用户·失败续跑]"
-    } else {
-        "[前序用户]"
-    };
-    let mut merged = format!("{label}\n{prior}\n[当前续接]\n{t}");
-    if merged.chars().count() > MERGED_MAX_CHARS {
-        let tail: String = merged
-            .chars()
-            .rev()
-            .take(MERGED_MAX_CHARS)
-            .collect::<String>();
-        merged = tail.chars().rev().collect();
-    }
-    (merged, true)
-}
+use crabmate_types::Message;
 
 /// 用户在上轮工具失败后发送的短续跑句（不含单独「继续执行」类确认词，见 [`crate::intent_router::is_explicit_execute_confirmation`]）。
 pub fn is_resume_after_failure_utterance(s: &str) -> bool {
@@ -83,103 +13,8 @@ pub fn is_resume_after_failure_utterance(s: &str) -> bool {
     )
 }
 
-/// 有路径、扩展名、明确改动动词等，视为无需与前句拼接。
-fn has_substantive_execute_leverage(s: &str) -> bool {
-    let n = s.to_lowercase();
-    n.contains('/')
-        || n.contains('@')
-        || n.contains(".rs")
-        || n.contains(".ts")
-        || n.contains(".md")
-        || n.contains("改")
-        || n.contains("修")
-        || n.contains("实现")
-        || n.contains("删除")
-        || n.contains("重构")
-        || n.contains("commit")
-        || n.contains("cargo")
-        || n.contains("test")
-        || n.contains("npm")
-        || n.contains("pnpm")
-}
-
-/// 为合并后的 `routing` 文本计算 L0 信号（**不含** tool 位，等价于 `l0_snapshot_merged(routing, false)`）。
-pub fn l0_snapshot_from_merged_routing(routing: &str) -> IntentL0Snapshot {
-    l0_snapshot_merged(routing, false)
-}
-
-fn l0_has_file_path_like(n: &str) -> bool {
-    n.contains('/')
-        || n.contains('@')
-        || n.contains("src/")
-        || n.contains(".rs")
-        || n.contains(".ts")
-        || n.contains(".md")
-        || n.contains("目录")
-        || n.contains("文件")
-}
-
-fn l0_has_error_signal(n: &str) -> bool {
-    n.contains("error")
-        || n.contains("panic")
-        || n.contains("traceback")
-        || n.contains("stack")
-        || n.contains("失败")
-        || n.contains("异常")
-        || n.contains("报了")
-        || n.contains("bug")
-}
-
-fn l0_is_short_routing(routing: &str, n: &str) -> bool {
-    routing.chars().count() <= SHORT_UTTERANCE_MAX_CHARS && !n.contains("前序用户")
-}
-
-fn l0_has_git_keyword(n: &str) -> bool {
-    n.contains("git")
-        || n.contains("pr")
-        || n.contains("rebase")
-        || n.contains("cherry")
-        || n.contains("commit")
-        || n.contains("分支")
-        || n.contains("合并")
-}
-
-fn l0_has_command_cargo(n: &str) -> bool {
-    n.contains("cargo")
-        || n.contains("npm")
-        || n.contains("pnpm")
-        || n.contains("pytest")
-        || n.contains("cmake")
-}
-
-/// 对合并/当前路由正文的**文本**子串特征（不含 tool 位）。
-fn text_flags_from_routing(routing: &str) -> IntentL0Snapshot {
-    let n = routing.to_lowercase();
-    IntentL0Snapshot {
-        has_file_path_like: l0_has_file_path_like(&n),
-        has_error_signal: l0_has_error_signal(&n),
-        has_recent_tool_failure: false,
-        is_short: l0_is_short_routing(routing, &n),
-        has_git_keyword: l0_has_git_keyword(&n),
-        has_command_cargo: l0_has_command_cargo(&n),
-    }
-}
-
-/// 合并**路由文本**子串 + **近期 tool 是否失败**（不解析完整 JSON 正文，依赖 normalize）。
-pub fn l0_snapshot_merged(merged_routing: &str, has_recent_tool_failure: bool) -> IntentL0Snapshot {
-    let mut s = text_flags_from_routing(merged_routing);
-    s.has_recent_tool_failure = has_recent_tool_failure;
-    if has_recent_tool_failure {
-        s.has_error_signal = true;
-    }
-    s
-}
-
-/// 自当前 user 条**之前**、自尾向前，若存在 `ok: false` 的 `crabmate_tool` 则视为需跟进。最多扫 `max_tail` 条 `Message`。
-pub fn messages_have_recent_tool_failure(
-    messages: &[crabmate_types::Message],
-    max_tail: usize,
-) -> bool {
+/// 在 `messages` 尾部窗口内是否存在失败态的 `role: tool`（不读参数正文）。
+pub fn messages_have_recent_tool_failure(messages: &[Message], max_tail: usize) -> bool {
     for m in messages.iter().rev().take(max_tail) {
         if m.role != "tool" {
             continue;
@@ -206,50 +41,32 @@ pub fn messages_have_recent_tool_failure(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crabmate_types::Message;
+
     #[test]
-    fn merged_continuation_includes_prior_in_clarification() {
-        let (s, merged) = super::effective_intent_routing_text(
-            "好的，就这样做",
-            true,
-            &["在 src/foo.rs 里加日志".to_string()],
-            false,
-        );
-        assert!(merged);
-        assert!(s.contains("src/foo"));
-        assert!(s.contains("好的，就这样做"));
+    fn resume_utterances() {
+        assert!(is_resume_after_failure_utterance("继续"));
+        assert!(is_resume_after_failure_utterance("retry"));
+        assert!(!is_resume_after_failure_utterance("继续执行这个大任务"));
     }
 
     #[test]
-    fn no_merge_without_clarification_flag() {
-        let (s, merged) =
-            super::effective_intent_routing_text("短", false, &["上文".to_string()], false);
-        assert!(!merged);
-        assert_eq!(s, "短");
-    }
-
-    #[test]
-    fn l0_detects_error_signal() {
-        let s = super::l0_snapshot_from_merged_routing("cargo test 报 error: 找不到模块");
-        assert!(s.has_error_signal);
-    }
-
-    #[test]
-    fn l0_merged_sets_tool_flag() {
-        let s = super::l0_snapshot_merged("继续改", true);
-        assert!(s.has_recent_tool_failure);
-        assert!(s.has_error_signal);
-    }
-
-    #[test]
-    fn resume_after_failure_merges_prior_user() {
-        let (s, merged) = super::effective_intent_routing_text(
-            "继续",
-            false,
-            &["编写 c++ 并用 cmake 编译".to_string()],
-            true,
-        );
-        assert!(merged);
-        assert!(s.contains("cmake"));
-        assert!(s.contains("继续"));
+    fn detects_recent_tool_failure_envelope() {
+        let messages = vec![
+            Message::user_only("x".to_string()),
+            Message {
+                role: "tool".into(),
+                content: Some(crabmate_types::MessageContent::Text(
+                    r#"{"crabmate_tool":{"ok":false,"summary":"boom"}}"#.into(),
+                )),
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: None,
+                name: None,
+                tool_call_id: Some("tc1".into()),
+            },
+        ];
+        assert!(messages_have_recent_tool_failure(&messages, 8));
     }
 }

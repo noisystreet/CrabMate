@@ -266,11 +266,6 @@ pub(crate) struct ConfigBuilderCodebaseSemantic {
 }
 
 #[derive(Default)]
-pub(crate) struct ConfigBuilderIntentRouting {
-    pub(crate) intent_at_turn_start_enabled: Option<bool>,
-}
-
-#[derive(Default)]
 pub(crate) struct ConfigBuilderToolRegistryPolicy {
     pub(crate) tool_registry_http_fetch_wall_timeout_secs: Option<u64>,
     pub(crate) tool_registry_http_request_wall_timeout_secs: Option<u64>,
@@ -316,7 +311,6 @@ pub(crate) struct ConfigBuilder {
     pub(crate) long_term_memory: ConfigBuilderLongTermMemory,
     pub(crate) mcp_client: ConfigBuilderMcpClient,
     pub(crate) codebase_semantic: ConfigBuilderCodebaseSemantic,
-    pub(crate) intent_routing: ConfigBuilderIntentRouting,
     pub(crate) tool_registry_policy: ConfigBuilderToolRegistryPolicy,
     /// `id -> 未合并条目`；在 [`crate::config::finalize`] 中与全局 cursor rules 设置一并落成 `AgentConfig.roles_prompts.agent_roles`。
     pub(crate) agent_role_entries: HashMap<String, agent_roles::AgentRoleEntryBuilder>,

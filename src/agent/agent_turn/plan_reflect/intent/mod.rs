@@ -1,6 +1,6 @@
-//! 回合起点意图门控：从用户消息抽取任务与廉价启发式（L2 已退役）。
+//! 回合起点 Act 句启发式：从用户消息抽取任务与关键词执行约束。
 //!
-//! 文件拆为 `user`（用户消息侧辅助）与 `at_turn_start`（门控主逻辑）。
+//! 文件拆为 `user`（用户消息侧辅助）与 `at_turn_start`（启发式主逻辑）。
 
 pub(crate) mod at_turn_start;
 pub(crate) mod user {

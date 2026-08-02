@@ -14,8 +14,6 @@ struct GoldenLine {
     id: String,
     cfg_mode: String,
     intent_gate: Value,
-    #[serde(default)]
-    expect_early: bool,
     expect: GoldenExpect,
 }
 
@@ -44,21 +42,9 @@ fn parse_intent_gate(v: &Value) -> IntentGateSnapshot {
     match outcome {
         "disabled" => IntentGateSnapshot::Disabled,
         "empty_task" => IntentGateSnapshot::EmptyTask,
-        "finished_early" => IntentGateSnapshot::FinishedEarly {
-            kind: v.get("kind").and_then(|x| x.as_str()).map(str::to_string),
-            primary_intent: v
-                .get("primary_intent")
-                .and_then(|x| x.as_str())
-                .map(str::to_string),
-            action: v.get("action").and_then(|x| x.as_str()).map(str::to_string),
-        },
-        "proceed_execute" => IntentGateSnapshot::ProceedExecute {
-            kind: v["kind"].as_str().expect("kind").to_string(),
-            primary_intent: v["primary_intent"].as_str().expect("primary").to_string(),
-            action: v["action"].as_str().expect("action").to_string(),
-            confidence: v["confidence"].as_f64().expect("confidence") as f32,
-            need_clarification: v
-                .get("need_clarification")
+        "act_heuristics" => IntentGateSnapshot::ActHeuristics {
+            review_readonly: v
+                .get("review_readonly")
                 .and_then(|x| x.as_bool())
                 .unwrap_or(false),
         },
@@ -119,9 +105,7 @@ fn golden_turn_route_decision() {
             &row.expect.react_because.clone().unwrap_or(Value::Null),
             &ctx,
         );
-        if row.expect_early {
-            assert_eq!(assessed.driver, TurnRouteDriver::IntentEarlyExit, "{ctx}");
-        } else if let Some(driver) = &row.expect.driver {
+        if let Some(driver) = &row.expect.driver {
             match driver.as_str() {
                 "non_hierarchical_freeform" => assert!(
                     matches!(assessed.driver, TurnRouteDriver::NonHierarchical(_)),

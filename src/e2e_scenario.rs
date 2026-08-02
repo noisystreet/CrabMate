@@ -435,11 +435,10 @@ fn setup_workspace(scenario: &TestScenario) -> (PathBuf, tempfile::TempDir) {
     (work_dir, tmp)
 }
 
-/// 构造 SingleAgent 配置（禁用 intent routing）。
+/// 构造 SingleAgent 配置。
 fn cfg_single_agent() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-    cfg.intent_routing.intent_at_turn_start_enabled = false;
     Arc::new(cfg)
 }
 

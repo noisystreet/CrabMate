@@ -1,6 +1,6 @@
 # PER 编排：用显式状态机收拢分支（设计）
 
-**状态（2026-08 对齐现实 + 词汇硬化）**：运行时已收敛为 **意图门控 → `assess_turn_routing` → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
+**状态（2026-08 对齐现实 + 词汇硬化；L2 退役 R4）**：运行时已收敛为 **session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct 外循环**；另保留 **终答 Gate** 与 **工作流反思** 两台正交机。**`src/agent/hierarchy/`**、分阶段 **`staged/`** 编排入口与金样 **`fsm_orchestrator_golden`** 已移除；意图早退 / `intent_at_turn_start_finished` 亦已拆除。下文 §3.2「分阶段回合 FSM」与修订记录中的 staged/hierarchy 条目仅作**历史设计**，勿当现行实现索引。全局单表驱动 **不做**。
 
 **相位词汇真源**（对照表，非全局 FSM）：**`crates/crabmate-agent/src/agent_turn/phase_vocabulary.rs`**。外循环相位变更只经 **`OuterLoopDriver::record_*`**；金样 **`fixtures/outer_loop_phase_golden.jsonl`**（`cargo test golden_outer_loop_phase`）。
 
@@ -22,8 +22,8 @@
 
 | tracing / 概念 | 权威类型 | 取值（现行） | 记账入口 |
 |---|---|---|---|
-| `turn_orchestration_mode` | `TurnOrchestrationMode` | `react` · `intent_at_turn_start_finished` | `assess_turn_routing` → `run_dispatch` |
-| 路由快照 | `TurnRouteDecisionV1` | 金样 `turn_route_decision_golden` | **唯一**非早退决议：`assess_turn_routing` |
+| `turn_orchestration_mode` | `TurnOrchestrationMode` | `react` | `assess_turn_routing` → `run_dispatch` |
+| 路由快照 | `TurnRouteDecisionV1` | 金样 `turn_route_decision_golden`（Act 启发式 / disabled / empty_task） | **唯一**主路径决议：`assess_turn_routing` |
 | `outer_loop_step` | `OuterLoopIterationPhase` | `iteration_enter` … `tools_execute` | **仅** `OuterLoopDriver::record_phase` |
 | `sub_phase` | `AgentTurnSubPhase` | `planner` · `executor` · `reflect` | 错误/SSE 观测（非转移表） |
 | Gate | `FinalPlanGatePhase` 等 | 见 `final_plan_gate` | 终答无 `tool_calls` 时 |

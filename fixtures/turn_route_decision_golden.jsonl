@@ -1,6 +1,7 @@
 # TurnRouteDecision v1 金样：经 assess_turn_routing 的 JSON 形状回归（零 IO）。
 # 运行：`cargo test golden_turn_route_decision`
-# 分阶段 staged / logical_dual 案例已随编排入口移除；现行仅意图早退与 ReAct。
-{"id":"nh_intent_finished_early","cfg_mode":"single_agent","intent_gate":{"outcome":"finished_early","kind":"greeting","primary_intent":"meta.greeting","action":"direct_reply"},"expect_early":true,"expect":{"top_level":"non_hierarchical","orchestration_mode":"intent_at_turn_start_finished","turn_phase":"intent_at_turn_start_finished"}}
-{"id":"nh_react_proceed_execute","cfg_mode":"single_agent","intent_gate":{"outcome":"proceed_execute","kind":"execute","primary_intent":"task.implement","action":"execute","confidence":0.9,"need_clarification":false},"expect_early":false,"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
-{"id":"nh_react_gate_disabled","cfg_mode":"single_agent","intent_gate":{"outcome":"disabled"},"expect_early":false,"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+# R4：无意图早退；现行仅 ReAct（session_mode + Act 句启发式快照）。
+{"id":"nh_react_act_heuristics","cfg_mode":"single_agent","intent_gate":{"outcome":"act_heuristics","review_readonly":false},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+{"id":"nh_react_act_heuristics_readonly","cfg_mode":"single_agent","intent_gate":{"outcome":"act_heuristics","review_readonly":true},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+{"id":"nh_react_gate_disabled","cfg_mode":"single_agent","intent_gate":{"outcome":"disabled"},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+{"id":"nh_react_empty_task","cfg_mode":"single_agent","intent_gate":{"outcome":"empty_task"},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}

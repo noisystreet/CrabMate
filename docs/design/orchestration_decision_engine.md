@@ -1,6 +1,6 @@
 # 编排决策引擎：从二元门控到多因子评分
 
-**状态（2026-08 对齐现实）**：**历史设计 / 归档**。文中 `staged_planning_gate` / 分阶段门控设想**未**作为现行路径保留；运行时为 **意图门控 → `assess_turn_routing` → ReAct 外循环**。下文算法与落地清单仅供考古，勿当实现索引。  
+**状态（2026-08 对齐现实）**：**历史设计 / 归档**。文中 `staged_planning_gate` / 分阶段门控设想**未**作为现行路径保留；运行时为 **session_mode →（Act 句启发式）→ `assess_turn_routing` → ReAct 外循环**。下文算法与落地清单仅供考古，勿当实现索引。  
 **受众**：维护者、Agent 架构贡献者（对比用）  
 **关联（现行）**：
 - `crates/crabmate-agent/src/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`

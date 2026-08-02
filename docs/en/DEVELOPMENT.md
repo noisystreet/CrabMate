@@ -71,7 +71,7 @@ flowchart TB
 - Call **`llm::complete_chat_retrying`** from business code (do not bypass via `api::stream_chat` from `agent`).
 - **P / R / E**: plan → reflect / final-answer gate → tool execute.
 - Message transforms: `message_pipeline` / `context_window`.
-- Runtime path: **intent gate → `assess_turn_routing` → ReAct outer loop**; phase vocabulary in **`phase_vocabulary`**; design: **`docs/design/per_state_machine_consolidation.md`**.
+- Runtime path: **session_mode → (Act utterance keyword heuristics) → `assess_turn_routing` → ReAct outer loop**; phase vocabulary in **`phase_vocabulary`**; design: **`docs/design/per_state_machine_consolidation.md`**.
 
 ### Web streaming (summary)
 

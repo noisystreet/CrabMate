@@ -5,8 +5,6 @@ use super::source::parse_bool_like;
 
 #[path = "env_overrides_chat_queue.rs"]
 mod env_overrides_chat_queue;
-#[path = "env_overrides_intent.rs"]
-mod env_overrides_intent;
 #[path = "env_overrides_mcp_codebase.rs"]
 mod env_overrides_mcp_codebase;
 #[path = "env_overrides_part9.rs"]
@@ -264,7 +262,6 @@ fn env_override_http_fetch_limits(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {
-    env_overrides_intent::env_override_intent(b);
     env_override_system_prompt_and_default_role(b);
 }
 

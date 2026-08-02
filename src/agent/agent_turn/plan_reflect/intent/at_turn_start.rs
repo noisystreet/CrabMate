@@ -1,6 +1,5 @@
-//! 在 `run_agent_turn` 起点的**意图门控**（可选；由 `intent_at_turn_start_enabled` 控制）：
-//! 门控开启且会话为 Act 时仅跑**廉价启发式**（用户句执行约束关键词）；**不再**调用 L2 LLM，
-//! **不再**发送 `intent_analysis` SSE。门控关闭或 Ask/Plan 时早退（只读由 `run_dispatch` / mode 决定）。
+//! 在 `run_agent_turn` 起点的 **Act 句关键词启发式**（无额外 LLM）：
+//! Ask/Plan 跳过（只读由 `run_dispatch` / session_mode 决定）；Act 常跑执行约束关键词收窄。
 
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crabmate_agent::agent_turn::IntentGateSnapshot;
@@ -9,73 +8,58 @@ use crabmate_types::SessionMode;
 use super::intent_user;
 use crate::agent::agent_turn::params::RunLoopParams;
 
-/// 门控关，或 Ask/Plan（能力档已由 mode 决定）时跳过门控启发式。
+/// Ask/Plan 由 mode 决定只读档，跳过 Act 句启发式。
 #[must_use]
-fn should_skip_turn_start_heuristics(gate_enabled: bool, session_mode: SessionMode) -> bool {
-    !gate_enabled || crate::session_mode_turn::session_mode_requires_readonly_tools(session_mode)
+fn should_skip_act_utterance_heuristics(session_mode: SessionMode) -> bool {
+    crate::session_mode_turn::session_mode_requires_readonly_tools(session_mode)
 }
 
-/// `false` 表示本回合已写入助手终答，调用方应结束本回合。
-/// R2 起门控路径恒为继续主执行（仅可能挂只读约束），故恒返回 `true`（空任务 / 跳过亦同）。
-pub(crate) fn run_intent_at_turn_start_if_configured(
-    p: &mut RunLoopParams<'_>,
-) -> Result<bool, crate::agent::agent_turn::errors::RunAgentTurnError> {
+/// 回合起点启发式：恒继续主执行（仅可能挂只读约束）。
+pub(crate) fn run_act_turn_start_heuristics(p: &mut RunLoopParams<'_>) {
     let in_clarification_flow =
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.trim().is_empty() {
         p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::EmptyTask);
-        return Ok(true);
+        return;
     }
 
-    let gate_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled;
-    let session_mode = p.ctx.attach.session_mode;
-    if should_skip_turn_start_heuristics(gate_enabled, session_mode) {
+    if should_skip_act_utterance_heuristics(p.ctx.attach.session_mode) {
         p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
-        return Ok(true);
+        return;
     }
 
-    apply_gate_on_act_heuristics(p, &task);
-    Ok(true)
+    apply_act_utterance_heuristics(p, &task);
 }
 
-/// 门控开 + Act：关键词执行约束；观测快照为固定 `ProceedExecute`（无 L2 / 无旁注 SSE）。
-fn apply_gate_on_act_heuristics(p: &mut RunLoopParams<'_>, task: &str) {
+fn apply_act_utterance_heuristics(p: &mut RunLoopParams<'_>, task: &str) {
+    let mut review_readonly = false;
     if let Some(constraints) = infer_turn_execution_constraints(task)
         && constraints.requires_review_readonly()
     {
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(PlanStepExecutorKind::ReviewReadonly);
         p.turn.turn_planner_hints.intent_turn_gate_hint = Some(constraints.intent_gate_hint_zh());
+        review_readonly = true;
     }
-    p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::ProceedExecute {
-        kind: "execute".to_string(),
-        primary_intent: "gate.heuristics".to_string(),
-        action: "execute".to_string(),
-        confidence: 1.0,
-        need_clarification: false,
-    });
+    p.turn.turn_planner_hints.intent_gate_snapshot =
+        Some(IntentGateSnapshot::ActHeuristics { review_readonly });
 }
 
 #[cfg(test)]
 mod skip_heuristics_tests {
-    use super::should_skip_turn_start_heuristics;
+    use super::should_skip_act_utterance_heuristics;
     use crabmate_types::SessionMode;
 
     #[test]
-    fn skips_when_gate_off() {
-        assert!(should_skip_turn_start_heuristics(false, SessionMode::Act));
+    fn skips_ask_plan() {
+        assert!(should_skip_act_utterance_heuristics(SessionMode::Ask));
+        assert!(should_skip_act_utterance_heuristics(SessionMode::Plan));
     }
 
     #[test]
-    fn skips_ask_plan_even_when_gate_on() {
-        assert!(should_skip_turn_start_heuristics(true, SessionMode::Ask));
-        assert!(should_skip_turn_start_heuristics(true, SessionMode::Plan));
-    }
-
-    #[test]
-    fn runs_heuristics_for_act_when_gate_on() {
-        assert!(!should_skip_turn_start_heuristics(true, SessionMode::Act));
+    fn runs_for_act() {
+        assert!(!should_skip_act_utterance_heuristics(SessionMode::Act));
     }
 }
 
@@ -107,7 +91,7 @@ impl TurnExecutionConstraints {
             limits.push("如需再次执行或修改，必须先说明原因并取得用户确认");
         }
         format!(
-            "【意图门控】用户本轮给出了执行约束：{}。当前回合按只读诊断处理：可以读取/列目录/解释失败原因，但不要越过上述约束。",
+            "【执行约束】用户本轮给出了限制：{}。当前回合按只读诊断处理：可以读取/列目录/解释失败原因，但不要越过上述约束。",
             limits.join("；")
         )
     }
@@ -226,7 +210,6 @@ mod tests {
         assert!(c.requires_review_readonly());
     }
 
-    /// R2 表征：开门控 + Act 时，普通写/修请求**不**因「无 L2」挂只读。
     #[test]
     fn plain_act_style_requests_do_not_force_review_readonly() {
         for task in [
@@ -239,12 +222,11 @@ mod tests {
                 .is_some_and(|c| c.requires_review_readonly());
             assert!(
                 !readonly,
-                "gate ON + Act must not blanket-narrow for task={task:?}"
+                "Act heuristics must not blanket-narrow for task={task:?}"
             );
         }
     }
 
-    /// 仅「不要修改」而无分析/解释类词时，不满足 `requires_review_readonly`（覆盖面窄于旧 fail-open）。
     #[test]
     fn no_write_alone_does_not_require_review_readonly() {
         let c = infer_turn_execution_constraints("不要修改文件").expect("constraints");
