@@ -166,7 +166,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-若文件为空且 TOML 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器；之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
+若文件为空、**`toml_legacy_imported` 未置位**，且 TOML/`CM_MCP_COMMAND` 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器并置 **`toml_legacy_imported: true`**；已有非空 `servers` 时也会落该标记（清空列表后不再重导）。之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
 
 Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 
@@ -182,7 +182,7 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 | `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
 | `saved_model_<sha256>` | 已保存模型的 API Key（`llm_overrides.json` 仅留 `has_api_key`） |
 
-旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：首次成功读/写钥匙串后自动迁移并删除；钥匙串不可用时保留旧文件并报错，避免丢失。
+旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：首次成功读/写钥匙串后自动迁移并删除；钥匙串已有值时仅在遗留文件仍存在时清理。钥匙串不可用时：有遗留文件则保留并报错；无遗留文件则降噪（debug），避免刷屏。
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 

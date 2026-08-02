@@ -126,6 +126,8 @@ fn finalize_section_per_plan_policy(
         final_plan_require_strict_workflow_node_coverage: tail
             .final_plan_require_strict_workflow_node_coverage,
         final_plan_semantic_check_enabled: tail.final_plan_semantic_check_enabled,
+        final_plan_semantic_check_accept_legacy_text: tail
+            .final_plan_semantic_check_accept_legacy_text,
         final_plan_semantic_check_max_non_readonly_tools: tail
             .final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens: tail.final_plan_semantic_check_max_tokens,

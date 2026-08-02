@@ -189,6 +189,8 @@ fn decode_mcp_servers_put(value: Value) -> Result<McpServersFile, String> {
             global_enabled,
             tool_timeout_secs,
             servers: imported.entries,
+            // 经 Web PUT 写入 user-data 后关闭 TOML/`CM_MCP_COMMAND` 一次性导入窗口。
+            toml_legacy_imported: true,
         });
     }
     serde_json::from_value::<McpServersFile>(value).map_err(|e| {

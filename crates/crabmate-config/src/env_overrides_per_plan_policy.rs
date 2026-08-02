@@ -52,6 +52,12 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
     {
         b.per_plan_policy.final_plan_semantic_check_enabled = Some(val);
     }
+    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT")
+        && let Some(val) = parse_bool_like(&v)
+    {
+        b.per_plan_policy
+            .final_plan_semantic_check_accept_legacy_text = Some(val);
+    }
     if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS")
         && let Ok(n) = v.trim().parse::<u64>()
     {

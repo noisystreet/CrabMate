@@ -279,6 +279,10 @@ pub struct McpServersFile {
     pub tool_timeout_secs: u64,
     #[serde(default)]
     pub servers: Vec<McpServerEntry>,
+    /// 曾处理过 TOML/`CM_MCP_COMMAND` 一次性导入窗口（导入成功或已有 servers 时置位）。
+    /// 为真后即使清空 `servers` 也不再从 TOML 重导。
+    #[serde(default)]
+    pub toml_legacy_imported: bool,
 }
 
 fn default_mcp_global_enabled() -> bool {
@@ -296,6 +300,7 @@ impl Default for McpServersFile {
             global_enabled: default_mcp_global_enabled(),
             tool_timeout_secs: default_mcp_tool_timeout_secs(),
             servers: Vec::new(),
+            toml_legacy_imported: false,
         }
     }
 }

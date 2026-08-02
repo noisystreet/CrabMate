@@ -13,6 +13,7 @@ struct FinalizeTailScalars {
     plan_rewrite_max_attempts: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
     final_plan_semantic_check_enabled: bool,
+    final_plan_semantic_check_accept_legacy_text: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
@@ -90,6 +91,7 @@ struct TailPlanToolThinkingScalars {
     plan_rewrite_max_attempts: usize,
     final_plan_require_strict_workflow_node_coverage: bool,
     final_plan_semantic_check_enabled: bool,
+    final_plan_semantic_check_accept_legacy_text: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
     planner_executor_mode: PlannerExecutorMode,
@@ -121,6 +123,10 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_require_strict_workflow_node_coverage
         .unwrap_or(false);
     let final_plan_semantic_check_enabled = b.per_plan_policy.final_plan_semantic_check_enabled.unwrap_or(false);
+    let final_plan_semantic_check_accept_legacy_text = b
+        .per_plan_policy
+        .final_plan_semantic_check_accept_legacy_text
+        .unwrap_or(false);
     let final_plan_semantic_check_max_non_readonly_tools = b
         .per_plan_policy.final_plan_semantic_check_max_non_readonly_tools
         .unwrap_or(0)
@@ -173,6 +179,7 @@ fn derive_tail_plan_tool_thinking_scalars(
         plan_rewrite_max_attempts,
         final_plan_require_strict_workflow_node_coverage,
         final_plan_semantic_check_enabled,
+        final_plan_semantic_check_accept_legacy_text,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
@@ -560,6 +567,7 @@ fn assemble_finalize_tail_scalars(
         plan_rewrite_max_attempts,
         final_plan_require_strict_workflow_node_coverage,
         final_plan_semantic_check_enabled,
+        final_plan_semantic_check_accept_legacy_text,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,
@@ -610,6 +618,7 @@ fn assemble_finalize_tail_scalars(
         plan_rewrite_max_attempts,
         final_plan_require_strict_workflow_node_coverage,
         final_plan_semantic_check_enabled,
+        final_plan_semantic_check_accept_legacy_text,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
         planner_executor_mode,

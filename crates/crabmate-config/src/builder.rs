@@ -188,6 +188,9 @@ impl ConfigBuilder {
         pp.final_plan_semantic_check_enabled = agent
             .final_plan_semantic_check_enabled
             .or(pp.final_plan_semantic_check_enabled);
+        pp.final_plan_semantic_check_accept_legacy_text = agent
+            .final_plan_semantic_check_accept_legacy_text
+            .or(pp.final_plan_semantic_check_accept_legacy_text);
         pp.final_plan_semantic_check_max_non_readonly_tools = agent
             .final_plan_semantic_check_max_non_readonly_tools
             .or(pp.final_plan_semantic_check_max_non_readonly_tools);

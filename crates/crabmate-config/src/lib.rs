@@ -91,6 +91,7 @@ mod embedded_shard_parse_tests {
 #[cfg(test)]
 mod web_api_require_bearer_defaults_tests {
     use super::load_config;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
     use std::sync::Mutex;
 
@@ -122,75 +123,89 @@ mod web_api_require_bearer_defaults_tests {
 
     #[test]
     fn embedded_default_does_not_require_bearer_without_env_override() {
-        without_cm_web_api_require_bearer_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("minimal.toml");
-            fs::write(
-                &path,
-                r#"[agent]
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_web_api_require_bearer_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("minimal.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 "#,
-            )
-            .expect("write");
-            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert!(
-                !cfg.web_api.web_api_require_bearer,
-                "embedded default should allow serve without forcing non-empty web_api_bearer_token"
-            );
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(
+                    !cfg.web_api.web_api_require_bearer,
+                    "embedded default should allow serve without forcing non-empty web_api_bearer_token"
+                );
+            });
         });
     }
 
     #[test]
     fn explicit_true_requires_bearer_secret_at_serve() {
-        without_cm_web_api_require_bearer_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("minimal.toml");
-            fs::write(
-                &path,
-                r#"[agent]
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_web_api_require_bearer_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("minimal.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 web_api_require_bearer = true
 "#,
-            )
-            .expect("write");
-            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert!(cfg.web_api.web_api_require_bearer);
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(cfg.web_api.web_api_require_bearer);
+            });
         });
+    }
+}
+
+#[cfg(test)]
+mod load_config_test_env {
+    use std::sync::Mutex;
+
+    /// `load_config` 会读 `CM_PLANNER_EXECUTOR_MODE`；并行用例若短暂写入废弃值会污染其它 `load_config` 测试。
+    static CM_PLANNER_EXECUTOR_MODE_LOCK: Mutex<()> = Mutex::new(());
+
+    pub(super) fn without_cm_planner_executor_mode_env<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_PLANNER_EXECUTOR_MODE_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("CM_PLANNER_EXECUTOR_MODE").ok();
+        // SAFETY: serialized by mutex for this env key only.
+        unsafe {
+            std::env::remove_var("CM_PLANNER_EXECUTOR_MODE");
+        }
+        struct RestoreEnv(Option<String>);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                unsafe {
+                    match self.0.take() {
+                        Some(v) => std::env::set_var("CM_PLANNER_EXECUTOR_MODE", v),
+                        None => std::env::remove_var("CM_PLANNER_EXECUTOR_MODE"),
+                    }
+                }
+            }
+        }
+        let _restore = RestoreEnv(prev);
+        f()
     }
 }
 
 #[cfg(test)]
 mod planner_executor_mode_load_tests {
     use super::load_config;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
-    use std::sync::Mutex;
-
-    /// `load_config` 现会读 `CM_PLANNER_EXECUTOR_MODE`；本机若仍导出废弃值会导致无关用例失败。
-    static CM_PLANNER_EXECUTOR_MODE_LOCK: Mutex<()> = Mutex::new(());
-
-    fn without_cm_planner_executor_mode_env<F, R>(f: F) -> R
-    where
-        F: FnOnce() -> R,
-    {
-        let _g = CM_PLANNER_EXECUTOR_MODE_LOCK
-            .lock()
-            .expect("planner_executor_mode load tests must run serialized");
-        let prev = std::env::var("CM_PLANNER_EXECUTOR_MODE").ok();
-        // SAFETY: serialized by mutex for this env key only.
-        unsafe {
-            std::env::remove_var("CM_PLANNER_EXECUTOR_MODE");
-        }
-        let out = f();
-        unsafe {
-            match prev.as_ref() {
-                Some(v) => std::env::set_var("CM_PLANNER_EXECUTOR_MODE", v),
-                None => std::env::remove_var("CM_PLANNER_EXECUTOR_MODE"),
-            }
-        }
-        out
-    }
 
     #[test]
     fn load_rejects_removed_planner_executor_mode_aliases() {
@@ -266,6 +281,7 @@ model = "deepseek-chat"
 #[cfg(test)]
 mod llm_reasoning_split_default_tests {
     use super::load_config;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
     use std::sync::Mutex;
 
@@ -327,48 +343,53 @@ mod llm_reasoning_split_default_tests {
 
     #[test]
     fn minimax_user_toml_without_key_defaults_true() {
-        without_cm_llm_reasoning_split_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("agent.toml");
-            fs::write(
-                &path,
-                r#"[agent]
+        // 先拿 planner-mode 锁，避免与 `load_rejects_removed_mode_from_env` 并行污染。
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_llm_reasoning_split_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("agent.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 "#,
-            )
-            .expect("write");
-            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert!(
-                cfg.llm_vendor_flags.llm_reasoning_split,
-                "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
-            );
-            assert!(
-                crate::gateway_hints::fold_system_into_user_for_config(
-                    &cfg.llm.model,
-                    &cfg.llm.api_base
-                ),
-                "MiniMax 应自动折叠 system→user"
-            );
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(
+                    cfg.llm_vendor_flags.llm_reasoning_split,
+                    "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
+                );
+                assert!(
+                    crate::gateway_hints::fold_system_into_user_for_config(
+                        &cfg.llm.model,
+                        &cfg.llm.api_base
+                    ),
+                    "MiniMax 应自动折叠 system→user"
+                );
+            });
         });
     }
 
     #[test]
     fn minimax_user_toml_explicit_false() {
-        without_cm_llm_reasoning_split_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("agent.toml");
-            fs::write(
-                &path,
-                r#"[agent]
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_llm_reasoning_split_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("agent.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 llm_reasoning_split = false
 "#,
-            )
-            .expect("write");
-            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
+            });
         });
     }
 }
@@ -376,11 +397,13 @@ llm_reasoning_split = false
 #[cfg(test)]
 mod hot_reload_tests {
     use super::ScheduledAgentTask;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use super::{apply_hot_reload_config_subset, load_config};
 
     #[test]
     fn apply_hot_reload_keeps_conversation_store_path() {
-        let base = load_config(None).expect("default config");
+        let base =
+            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
         let mut dst = base.clone();
         let frozen = dst
             .conversation_persistence
@@ -399,7 +422,8 @@ mod hot_reload_tests {
     /// 组合式配置下：各子结构应从 `src` 整段替换；仅会话库路径保留 `dst` 原值。
     #[test]
     fn apply_hot_reload_updates_sections_but_not_sqlite_path() {
-        let mut dst = load_config(None).expect("default config");
+        let mut dst =
+            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
         let frozen_store = dst
             .conversation_persistence
             .conversation_store_sqlite_path
@@ -429,7 +453,8 @@ mod hot_reload_tests {
 
     #[test]
     fn apply_hot_reload_updates_scheduled_tasks_from_src() {
-        let mut dst = load_config(None).expect("default config");
+        let mut dst =
+            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
         dst.conversation_persistence.scheduled_agent_tasks.clear();
         let mut src = dst.clone();
         src.conversation_persistence.scheduled_agent_tasks = vec![ScheduledAgentTask {
