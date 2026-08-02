@@ -66,6 +66,9 @@ pub struct UserPrefs {
     pub status_bar_visible: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cm_role: Option<String>,
+    /// 上次选用的会话工作模式（`ask` / `plan` / `act`）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_mode: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disable_readonly_tool_ttl_cache: Option<bool>,
 }

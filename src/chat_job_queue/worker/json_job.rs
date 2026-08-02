@@ -66,9 +66,11 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         std::sync::Arc::new(g.clone())
     };
     let session_mode = resolve_job_session_mode(
+        cfg_snap.as_ref(),
         request_session_mode.as_deref(),
         persisted_active_session_mode.as_deref(),
-        cfg_snap.roles_prompts.default_session_mode,
+        request_agent_role.as_deref(),
+        persisted_active_agent_role.as_deref(),
     );
     let (mut cfg_turn, api_key_turn) =
         resolve_web_llm_for_job(queue_deps.as_ref(), cfg_snap.clone(), llm_override.as_ref());
@@ -145,11 +147,23 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
 }
 
 fn resolve_job_session_mode(
+    cfg: &crate::config::AgentConfig,
     request: Option<&str>,
     persisted: Option<&str>,
-    default: crate::types::SessionMode,
+    request_agent_role: Option<&str>,
+    persisted_agent_role: Option<&str>,
 ) -> crate::types::SessionMode {
-    match crate::session_mode_turn::resolve_session_mode_for_turn(request, persisted, default) {
+    let role_default = crate::session_mode_turn::role_default_session_mode_for_turn(
+        cfg,
+        persisted_agent_role,
+        request_agent_role,
+    );
+    match crate::session_mode_turn::resolve_session_mode_for_turn(
+        request,
+        persisted,
+        role_default,
+        cfg.roles_prompts.default_session_mode,
+    ) {
         Ok(m) => m,
         Err(e) => {
             log::warn!(target: "crabmate", "session_mode resolve failed: {e}; using act");

@@ -271,6 +271,12 @@ pub(crate) async fn conversation_messages_handler(
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
+    let active_session_mode = seed
+        .persisted_active_session_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
     let cfg = state.cfg.read().await;
     let tiktoken_prompt_tokens =
         crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
@@ -281,6 +287,7 @@ pub(crate) async fn conversation_messages_handler(
         conversation_id: cid,
         revision,
         active_agent_role,
+        active_session_mode,
         tiktoken_prompt_tokens,
         messages,
         total_count: window.meta.total_count,

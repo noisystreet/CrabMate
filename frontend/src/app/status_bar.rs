@@ -16,6 +16,7 @@ use super::app_shell_ctx::StatusBarFooterSignals;
 use super::shell_runtime_context::expect_chat_shell_ctx;
 use super::status_agent_role_menu::{AgentRoleMenuProps, StatusAgentRoleMenu};
 use super::status_fetch_state::status_bar_should_show_skeleton;
+use super::status_session_mode_seg::{SessionModeSegProps, StatusSessionModeSeg};
 use super::status_tasks_state::StatusTasksSignals;
 
 #[component]
@@ -52,6 +53,8 @@ struct StatusBarChipsSignals {
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
 }
 
@@ -248,6 +251,8 @@ fn StatusBarChipsLoaded(
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
     role_menu_open: RwSignal<bool>,
 ) -> impl IntoView {
@@ -295,7 +300,23 @@ fn StatusBarChipsLoaded(
                     chat,
                     selected_agent_role,
                     agent_role_user_override,
+                    selected_session_mode,
+                    session_mode_user_override,
                     menu_open: role_menu_open,
+                } />
+            </span>
+            <span
+                class="status-chip status-chip-mode"
+                prop:title=move || i18n::status_mode_label(locale.get())
+            >
+                <span class="status-chip-label">
+                    {move || i18n::status_mode_label(locale.get())}
+                </span>
+                <StatusSessionModeSeg props=SessionModeSegProps {
+                    locale,
+                    chat,
+                    selected_session_mode,
+                    session_mode_user_override,
                 } />
             </span>
             <StatusBarContextChip
@@ -319,6 +340,8 @@ fn StatusBarChipsRow(
         client_llm_storage_tick,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         locale,
     } = chips;
     let role_menu_open = RwSignal::new(false);
@@ -349,6 +372,8 @@ fn StatusBarChipsRow(
                             client_llm_storage_tick=client_llm_storage_tick
                             selected_agent_role=selected_agent_role
                             agent_role_user_override=agent_role_user_override
+                            selected_session_mode=selected_session_mode
+                            session_mode_user_override=session_mode_user_override
                             locale=locale
                             role_menu_open=role_menu_open
                         />
@@ -407,6 +432,8 @@ fn StatusBarFooterBody(
     client_llm_storage_tick: RwSignal<u64>,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
 ) -> impl IntoView {
     let locale = expect_chat_shell_ctx().locale;
@@ -415,6 +442,8 @@ fn StatusBarFooterBody(
         client_llm_storage_tick,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         locale,
     };
     view! {
@@ -447,6 +476,8 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
         client_llm_storage_tick,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         refresh_status,
     } = signals;
     view! {
@@ -458,6 +489,8 @@ pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView 
                 client_llm_storage_tick=client_llm_storage_tick
                 selected_agent_role=selected_agent_role
                 agent_role_user_override=agent_role_user_override
+                selected_session_mode=selected_session_mode
+                session_mode_user_override=session_mode_user_override
                 refresh_status=refresh_status.clone()
             />
         </Show>

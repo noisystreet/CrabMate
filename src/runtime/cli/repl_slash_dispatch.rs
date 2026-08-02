@@ -125,19 +125,14 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
         }
         ReplBuiltIn::AgentList => slash_agent_list(cfg_holder, agent_role, style).await,
         ReplBuiltIn::AgentSet(id) => {
-            let mode = *handles
-                .session_mode
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
             slash_agent_set(
                 id,
                 cfg_holder,
                 messages,
                 agent_role,
                 style,
-                &handles.process_handles.tool_outcome_recorder,
+                handles,
                 work_dir.as_path(),
-                mode,
             )
             .await
         }
@@ -689,16 +684,14 @@ async fn slash_agent_list(
     ReplSlashHandled::Handled
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn slash_agent_set(
     id: String,
     cfg_holder: &SharedAgentConfig,
     messages: &mut [Message],
     agent_role: &mut Option<String>,
     style: &CliReplStyle,
-    tool_recorder: &Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    handles: &ReplSlashSharedHandles,
     work_dir: &std::path::Path,
-    session_mode: crate::types::SessionMode,
 ) -> ReplSlashHandled {
     let cfg = cfg_holder.read().await;
     if cfg.roles_prompts.agent_roles.is_empty() {
@@ -709,11 +702,19 @@ async fn slash_agent_set(
         drop(cfg);
         *agent_role = None;
         let cfg = cfg_holder.read().await.clone();
+        let session_mode = cfg.roles_prompts.default_session_mode;
+        {
+            let mut g = handles
+                .session_mode
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *g = session_mode;
+        }
         if let Err(e) = apply_agent_role_switch_to_messages(
             &cfg,
             messages,
             None,
-            tool_recorder,
+            &handles.process_handles.tool_outcome_recorder,
             Some(work_dir),
             None,
             Some(session_mode),
@@ -721,7 +722,8 @@ async fn slash_agent_set(
             let _ = style.eprint_error(&e);
         } else {
             let _ = style.print_success(&format!(
-                "已设回 default（清除显式命名角色），已更新首条 system（保留对话 {} 条）。",
+                "已设回 default（清除显式命名角色），会话模式 {}，已更新首条 system（保留对话 {} 条）。",
+                session_mode.as_str(),
                 messages.len()
             ));
         }
@@ -729,14 +731,23 @@ async fn slash_agent_set(
         let _ = style.eprint_error(&e);
     } else {
         let role_label = id.clone();
+        let session_mode =
+            crate::session_mode_turn::resolve_initial_session_mode(&cfg, Some(role_label.as_str()));
         drop(cfg);
         *agent_role = Some(id);
+        {
+            let mut g = handles
+                .session_mode
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            *g = session_mode;
+        }
         let cfg = cfg_holder.read().await.clone();
         if let Err(e) = apply_agent_role_switch_to_messages(
             &cfg,
             messages,
             Some(role_label.as_str()),
-            tool_recorder,
+            &handles.process_handles.tool_outcome_recorder,
             Some(work_dir),
             None,
             Some(session_mode),
@@ -744,7 +755,8 @@ async fn slash_agent_set(
             let _ = style.eprint_error(&e);
         } else {
             let _ = style.print_success(&format!(
-                "已设当前角色为 \"{role_label}\"，已更新首条 system（保留对话 {} 条）。",
+                "已设当前角色为 \"{role_label}\"，会话模式 {}，已更新首条 system（保留对话 {} 条）。",
+                session_mode.as_str(),
                 messages.len()
             ));
         }

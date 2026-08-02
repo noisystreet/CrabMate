@@ -70,6 +70,19 @@ pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
             .selected_agent_role
             .get_untracked()
             .filter(|s| !s.trim().is_empty()),
+        session_mode: {
+            let m = app
+                .llm_settings
+                .selected_session_mode
+                .get_untracked()
+                .trim()
+                .to_ascii_lowercase();
+            if matches!(m.as_str(), "ask" | "plan" | "act") {
+                Some(m)
+            } else {
+                None
+            }
+        },
         disable_readonly_tool_ttl_cache: Some(
             !crate::api::client_llm_storage::load_readonly_tool_ttl_cache_follow_server_from_memory(
             ),
@@ -131,7 +144,11 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
         .set(crate::user_data_bootstrap::recent_roots_from_prefs(dto));
 }
 
-fn apply_ide_and_llm_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
+fn apply_ide_and_llm_prefs_dto(
+    app: &AppSignals,
+    dto: &UserPrefsDto,
+    prefs_session_mode_present: StoredValue<bool>,
+) {
     if let Some(ref f) = dto.ide_editor_font {
         app.ide_editor
             .font_slug
@@ -161,34 +178,85 @@ fn apply_ide_and_llm_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
             });
         }
     }
+    let mut prefs_had_session_mode = false;
+    if let Some(ref m) = dto.session_mode {
+        let t = m.trim().to_ascii_lowercase();
+        if matches!(t.as_str(), "ask" | "plan" | "act") {
+            prefs_had_session_mode = true;
+            if !app.llm_settings.session_mode_user_override.get_untracked() {
+                app.llm_settings.selected_session_mode.set(t);
+            }
+        }
+    }
+    prefs_session_mode_present.set_value(prefs_had_session_mode);
     if let Some(d) = dto.disable_readonly_tool_ttl_cache {
         crate::api::client_llm_storage::set_readonly_tool_ttl_cache_follow_server_in_memory(!d);
     }
 }
 
-fn apply_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
+fn apply_prefs_dto(
+    app: &AppSignals,
+    dto: &UserPrefsDto,
+    prefs_session_mode_present: StoredValue<bool>,
+) {
     apply_shell_prefs_dto(app, dto);
-    apply_ide_and_llm_prefs_dto(app, dto);
+    apply_ide_and_llm_prefs_dto(app, dto, prefs_session_mode_present);
 }
 
 /// 首启从服务端加载偏好并写入信号（随后由 DOM sync Effect 反映到页面）。
 pub fn wire_load_user_prefs_from_server(app: AppSignals) {
     let loaded = RwSignal::new(false);
+    let prefs_session_mode_present = StoredValue::new(false);
+    Effect::new({
+        let app = app.clone();
+        move |_| {
+            if loaded.get() {
+                return;
+            }
+            loaded.set(true);
+            let app = app.clone();
+            let prefs_session_mode_present = prefs_session_mode_present;
+            spawn_local(async move {
+                let loc = app.shell_ui.locale.get_untracked();
+                if let Ok(dto) = fetch_user_data_prefs(loc).await {
+                    apply_prefs_dto(&app, &dto, prefs_session_mode_present);
+                    crate::app::shell_prefs_storage::apply_loaded_prefs_to_dom(&app);
+                }
+                // 无论成功失败都置位，避免永久阻塞壳偏好落盘；失败时最近列表可能为空。
+                app.workspace.user_prefs_hydrated.set(true);
+            });
+        }
+    });
+    wire_role_default_session_mode_when_status_ready(app, prefs_session_mode_present);
+}
+
+/// prefs 未记忆 mode 时，待 `/status` 就绪后按当前角色补默认一次（companion → ask 等）。
+fn wire_role_default_session_mode_when_status_ready(
+    app: AppSignals,
+    prefs_session_mode_present: StoredValue<bool>,
+) {
+    let applied = StoredValue::new(false);
     Effect::new(move |_| {
-        if loaded.get() {
+        if !app.workspace.user_prefs_hydrated.get() {
             return;
         }
-        loaded.set(true);
-        let app = app.clone();
-        spawn_local(async move {
-            let loc = app.shell_ui.locale.get_untracked();
-            if let Ok(dto) = fetch_user_data_prefs(loc).await {
-                apply_prefs_dto(&app, &dto);
-                crate::app::shell_prefs_storage::apply_loaded_prefs_to_dom(&app);
-            }
-            // 无论成功失败都置位，避免永久阻塞壳偏好落盘；失败时最近列表可能为空。
-            app.workspace.user_prefs_hydrated.set(true);
-        });
+        let Some(status) = app.status.status_data.get() else {
+            return;
+        };
+        if applied.get_value() || prefs_session_mode_present.get_value() {
+            return;
+        }
+        if app.llm_settings.session_mode_user_override.get_untracked() {
+            return;
+        }
+        let role = app.llm_settings.selected_agent_role.get_untracked();
+        if let Some(m) = crate::app::session_mode_defaults::default_session_mode_for_agent_role(
+            &status,
+            role.as_deref(),
+        ) {
+            app.llm_settings.selected_session_mode.set(m);
+            applied.set_value(true);
+        }
     });
 }
 
@@ -217,6 +285,7 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
         let _ = app.ide_editor.word_wrap.get();
         let _ = app.ide_editor.tab_size.get();
         let _ = app.llm_settings.selected_agent_role.get();
+        let _ = app.llm_settings.selected_session_mode.get();
         let _ = app.workspace.recent_workspace_roots.get();
 
         let ctr = debounce_tick.get_value();

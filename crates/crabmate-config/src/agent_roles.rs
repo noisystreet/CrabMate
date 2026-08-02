@@ -21,6 +21,8 @@ pub(super) struct AgentRoleEntryBuilder {
     pub(super) prepend_coding_workbench: Option<bool>,
     /// 非空：仅允许列出的工具；含字面量 **`mcp`** 表示允许所有 `mcp__*`，亦可写完整 `mcp__…` 名。空数组表示不允许任何内置工具（仍可按上条规则放行 MCP）。
     pub(super) allowed_tools: Option<Vec<String>>,
+    /// 角色默认会话模式（`ask` / `plan` / `act`）；省略则用全局 `default_session_mode`。
+    pub(super) default_session_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,6 +47,8 @@ struct AgentRoleEntryToml {
     allowed_tools: Option<Vec<String>>,
     #[serde(default)]
     prepend_coding_workbench: Option<bool>,
+    #[serde(default)]
+    default_session_mode: Option<String>,
 }
 
 /// 将 `config/agent_roles.toml` 合并进 [`super::builder::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
@@ -89,6 +93,12 @@ pub(super) fn merge_agent_roles_file_into_builder(
             if let Some(v) = row.prepend_coding_workbench {
                 slot.prepend_coding_workbench = Some(v);
             }
+            if let Some(m) = row.default_session_mode {
+                let m = m.trim().to_string();
+                if !m.is_empty() {
+                    slot.default_session_mode = Some(m);
+                }
+            }
         }
     }
     Ok(())
@@ -111,6 +121,107 @@ fn normalize_allowed_tools(
     } else {
         Some(std::sync::Arc::new(set))
     }
+}
+
+fn parse_role_default_session_mode(
+    role_id: &str,
+    raw: Option<&str>,
+) -> Result<Option<crabmate_types::SessionMode>, String> {
+    match raw.map(str::trim).filter(|s| !s.is_empty()) {
+        None => Ok(None),
+        Some(s) => crabmate_types::parse_session_mode(s)
+            .map(Some)
+            .map_err(|e| format!("配置错误：角色 \"{role_id}\" 的 default_session_mode：{e}")),
+    }
+}
+
+struct RoleSystemMergeCtx<'a> {
+    global_effective_system_prompt: &'a str,
+    universal_l0_system_prompt: &'a str,
+    coding_workbench_increment: &'a str,
+    coding_workbench_enabled: bool,
+    system_prompt_search_bases: &'a [PathBuf],
+    run_command_working_dir: &'a Path,
+    cursor_rules_enabled: bool,
+    cursor_rules_dir: &'a str,
+    cursor_rules_include_agents_md: bool,
+    cursor_rules_max_chars: usize,
+    skills_enabled: bool,
+    skills_list_opts: skills::SkillsListOpts<'a>,
+    skills_max_chars: usize,
+    skills_top_k: usize,
+}
+
+fn merge_role_system_prompt(
+    role_id: &str,
+    b: &AgentRoleEntryBuilder,
+    ctx: &RoleSystemMergeCtx<'_>,
+) -> Result<String, String> {
+    let merged = if let Some(ref path) = b.system_prompt_file {
+        let raw = read_system_prompt_file_resolved(
+            path,
+            ctx.system_prompt_search_bases,
+            ctx.run_command_working_dir,
+        )?;
+        if raw.trim().is_empty() {
+            return Err(format!(
+                "配置错误：角色 \"{role_id}\" 的 system_prompt_file 加载后为空"
+            ));
+        }
+        let combined = l0_stack_before_role_delta(
+            ctx.universal_l0_system_prompt,
+            ctx.coding_workbench_increment,
+            b.prepend_coding_workbench,
+            ctx.coding_workbench_enabled,
+            raw.trim(),
+        );
+        let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
+            combined,
+            ctx.cursor_rules_enabled,
+            ctx.cursor_rules_dir,
+            ctx.cursor_rules_include_agents_md,
+            ctx.cursor_rules_max_chars,
+        )?;
+        skills::merge_system_prompt_with_skills_index(
+            with_rules,
+            ctx.skills_list_opts,
+            ctx.skills_enabled,
+            ctx.skills_max_chars,
+            ctx.skills_top_k,
+        )?
+    } else if let Some(ref s) = b.system_prompt {
+        if s.trim().is_empty() {
+            ctx.global_effective_system_prompt.to_string()
+        } else {
+            let combined = l0_stack_before_role_delta(
+                ctx.universal_l0_system_prompt,
+                ctx.coding_workbench_increment,
+                b.prepend_coding_workbench,
+                ctx.coding_workbench_enabled,
+                s.trim(),
+            );
+            let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
+                combined,
+                ctx.cursor_rules_enabled,
+                ctx.cursor_rules_dir,
+                ctx.cursor_rules_include_agents_md,
+                ctx.cursor_rules_max_chars,
+            )?;
+            skills::merge_system_prompt_with_skills_index(
+                with_rules,
+                ctx.skills_list_opts,
+                ctx.skills_enabled,
+                ctx.skills_max_chars,
+                ctx.skills_top_k,
+            )?
+        }
+    } else {
+        ctx.global_effective_system_prompt.to_string()
+    };
+    if merged.trim().is_empty() {
+        return Err(format!("配置错误：角色 \"{role_id}\" 合并后 system 为空"));
+    }
+    Ok(merged)
 }
 
 fn read_system_prompt_file_resolved(
@@ -255,78 +366,34 @@ pub(super) fn finalize_agent_role_catalog(
         skills_user_dir,
         skills_system_dir,
     };
+    let merge_ctx = RoleSystemMergeCtx {
+        global_effective_system_prompt,
+        universal_l0_system_prompt,
+        coding_workbench_increment,
+        coding_workbench_enabled,
+        system_prompt_search_bases,
+        run_command_working_dir,
+        cursor_rules_enabled,
+        cursor_rules_dir,
+        cursor_rules_include_agents_md,
+        cursor_rules_max_chars,
+        skills_enabled,
+        skills_list_opts,
+        skills_max_chars,
+        skills_top_k,
+    };
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {
+        let merged = merge_role_system_prompt(id.as_str(), &b, &merge_ctx)?;
+        let default_session_mode =
+            parse_role_default_session_mode(id.as_str(), b.default_session_mode.as_deref())?;
         let allowed_tools = normalize_allowed_tools(b.allowed_tools);
-        let merged = if let Some(ref path) = b.system_prompt_file {
-            let raw = read_system_prompt_file_resolved(
-                path,
-                system_prompt_search_bases,
-                run_command_working_dir,
-            )?;
-            if raw.trim().is_empty() {
-                return Err(format!(
-                    "配置错误：角色 \"{id}\" 的 system_prompt_file 加载后为空"
-                ));
-            }
-            let combined = l0_stack_before_role_delta(
-                universal_l0_system_prompt,
-                coding_workbench_increment,
-                b.prepend_coding_workbench,
-                coding_workbench_enabled,
-                raw.trim(),
-            );
-            let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-                combined,
-                cursor_rules_enabled,
-                cursor_rules_dir,
-                cursor_rules_include_agents_md,
-                cursor_rules_max_chars,
-            )?;
-            skills::merge_system_prompt_with_skills_index(
-                with_rules,
-                skills_list_opts,
-                skills_enabled,
-                skills_max_chars,
-                skills_top_k,
-            )?
-        } else if let Some(ref s) = b.system_prompt {
-            if s.trim().is_empty() {
-                global_effective_system_prompt.to_string()
-            } else {
-                let combined = l0_stack_before_role_delta(
-                    universal_l0_system_prompt,
-                    coding_workbench_increment,
-                    b.prepend_coding_workbench,
-                    coding_workbench_enabled,
-                    s.trim(),
-                );
-                let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-                    combined,
-                    cursor_rules_enabled,
-                    cursor_rules_dir,
-                    cursor_rules_include_agents_md,
-                    cursor_rules_max_chars,
-                )?;
-                skills::merge_system_prompt_with_skills_index(
-                    with_rules,
-                    skills_list_opts,
-                    skills_enabled,
-                    skills_max_chars,
-                    skills_top_k,
-                )?
-            }
-        } else {
-            global_effective_system_prompt.to_string()
-        };
-        if merged.trim().is_empty() {
-            return Err(format!("配置错误：角色 \"{id}\" 合并后 system 为空"));
-        }
         out.insert(
             id,
             AgentRoleSpec {
                 system_prompt: merged,
                 allowed_tools,
+                default_session_mode,
             },
         );
     }

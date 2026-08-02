@@ -150,6 +150,11 @@ struct StatusResponse {
     /// Web/CLI 未指定 `agent_role` 时使用的默认角色 id（`null` 表示用全局 `system_prompt`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     default_agent_role_id: Option<String>,
+    /// 全局默认会话工作模式（`ask` / `plan` / `act`）。
+    default_session_mode: String,
+    /// 各命名角色的默认会话模式（仅含配置了 `default_session_mode` 的角色）。
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    agent_role_default_session_modes: std::collections::BTreeMap<String, String>,
 }
 
 fn tiktoken_new_session_baselines_by_role(
@@ -352,5 +357,15 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
         llm_http_auth_mode: cfg.llm.llm_http_auth_mode.as_str(),
         agent_role_ids,
         default_agent_role_id: cfg.roles_prompts.default_agent_role_id.clone(),
+        default_session_mode: cfg.roles_prompts.default_session_mode.as_str().to_string(),
+        agent_role_default_session_modes: {
+            let mut m = std::collections::BTreeMap::new();
+            for (id, spec) in cfg.roles_prompts.agent_roles.iter() {
+                if let Some(mode) = spec.default_session_mode {
+                    m.insert(id.clone(), mode.as_str().to_string());
+                }
+            }
+            m
+        },
     })
 }

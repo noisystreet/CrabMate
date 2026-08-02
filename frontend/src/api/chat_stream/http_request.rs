@@ -18,6 +18,7 @@ pub(super) struct ChatStreamPostBodyParts<'a> {
     pub(super) image_urls: &'a [String],
     pub(super) conversation_id: &'a Option<String>,
     pub(super) agent_role: &'a Option<String>,
+    pub(super) session_mode: &'a Option<String>,
     pub(super) approval_session_id: &'a Option<String>,
     pub(super) stream_resume_job_id: Option<u64>,
     pub(super) last_event_id: u64,
@@ -32,6 +33,7 @@ pub(super) fn build_chat_stream_post_body(
         image_urls,
         conversation_id,
         agent_role,
+        session_mode,
         approval_session_id,
         stream_resume_job_id,
         last_event_id,
@@ -44,6 +46,13 @@ pub(super) fn build_chat_stream_post_body(
         "approval_session_id": approval_session_id,
         "client_sse_protocol": SSE_PROTOCOL_VERSION,
     });
+    if let Some(mode) = session_mode
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        body["session_mode"] = serde_json::json!(mode);
+    }
     if !image_urls.is_empty() {
         body["image_urls"] = serde_json::json!(image_urls);
     }

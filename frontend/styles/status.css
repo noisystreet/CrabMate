@@ -70,6 +70,49 @@
   z-index: 45;
 }
 
+.status-chip-mode {
+  padding: 0 4px 0 8px;
+  gap: 4px;
+  overflow: visible;
+}
+
+.status-session-mode-seg {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 6px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+}
+
+.status-session-mode-btn {
+  appearance: none;
+  border: none;
+  margin: 0;
+  padding: 2px 8px;
+  font: inherit;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+
+.status-session-mode-btn + .status-session-mode-btn {
+  border-left: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+.status-session-mode-btn.active {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--accent, #3b82f6) 18%, transparent);
+  font-weight: 600;
+}
+
+.status-session-mode-btn:hover:not(.active) {
+  color: var(--fg);
+  background: color-mix(in srgb, var(--fg) 6%, transparent);
+}
+
 .status-agent-role-wrap {
   position: relative;
   display: inline-flex;

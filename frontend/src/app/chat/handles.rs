@@ -228,6 +228,8 @@ pub struct WireComposerStreamsSessionSlice {
     pub draft: RwSignal<String>,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
     pub apply_assistant_display_filters: RwSignal<bool>,
 }
 

@@ -548,6 +548,12 @@ impl ConfigBuilder {
             if let Some(v) = row.prepend_coding_workbench {
                 slot.prepend_coding_workbench = Some(v);
             }
+            if let Some(ref m) = row.default_session_mode {
+                let m = m.trim().to_string();
+                if !m.is_empty() {
+                    slot.default_session_mode = Some(m);
+                }
+            }
         }
     }
 

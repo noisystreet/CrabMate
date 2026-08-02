@@ -44,6 +44,8 @@ pub(super) struct ComposerStreamHandles {
     pub locale: RwSignal<Locale>,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
     pub shell: ComposerStreamShell,
 }
 
@@ -58,6 +60,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
         locale: locale_sig,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         shell,
     } = h;
 
@@ -67,6 +71,8 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
         let locale_sig = locale_sig;
         let selected_agent_role = selected_agent_role;
         let agent_role_user_override = agent_role_user_override;
+        let selected_session_mode = selected_session_mode;
+        let session_mode_user_override = session_mode_user_override;
         move |user_text: String,
               image_urls: Vec<String>,
               asst_id: String,
@@ -75,6 +81,15 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
             let prepared = prepare_stream_attach(chat, &shell_outer, locale_sig, asst_id.clone());
             let agent_role = selected_agent_role.get();
             agent_role_user_override.set(false);
+            let session_mode = {
+                let m = selected_session_mode.get().trim().to_ascii_lowercase();
+                if matches!(m.as_str(), "ask" | "plan" | "act") {
+                    Some(m)
+                } else {
+                    None
+                }
+            };
+            session_mode_user_override.set(false);
             let cbs = callbacks::build_chat_stream_callbacks(Rc::clone(&prepared.stream_ctx));
 
             let gen_snapshot = prepared.attach_generation;
@@ -92,6 +107,7 @@ pub(super) fn make_attach_chat_stream(h: ComposerStreamHandles) -> AttachChatStr
                     image_urls,
                     conversation_id: conv,
                     agent_role,
+                    session_mode,
                     approval_session_id: Some(appr),
                     stream_resume_job_id: None,
                     stream_resume_after_seq: None,

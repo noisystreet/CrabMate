@@ -143,6 +143,8 @@ pub struct StatusBarFooterSignals {
     pub client_llm_storage_tick: RwSignal<u64>,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
 }
 
@@ -265,6 +267,8 @@ impl AppShellCtx {
             client_llm_storage_tick: self.signals.llm_settings.client_llm_storage_tick,
             selected_agent_role: self.signals.llm_settings.selected_agent_role,
             agent_role_user_override: self.signals.llm_settings.agent_role_user_override,
+            selected_session_mode: self.signals.llm_settings.selected_session_mode,
+            session_mode_user_override: self.signals.llm_settings.session_mode_user_override,
             refresh_status: Arc::clone(&self.refresh_status),
         }
     }

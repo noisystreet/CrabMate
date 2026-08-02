@@ -21,6 +21,8 @@ pub struct ConversationMessagesResponse {
     #[serde(default)]
     pub active_agent_role: Option<String>,
     #[serde(default)]
+    pub active_session_mode: Option<String>,
+    #[serde(default)]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensSnapshot>,
     pub messages: Vec<Value>,
     /// 过滤后可见消息总数。

@@ -60,6 +60,34 @@ pub fn status_role_label(l: Locale) -> &'static str {
     }
 }
 
+pub fn status_mode_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "模式",
+        Locale::En => "Mode",
+    }
+}
+
+pub fn status_session_mode_title(l: Locale, mode: &str) -> String {
+    match (l, mode) {
+        (Locale::ZhHans, "ask") => "Ask（只读）".into(),
+        (Locale::ZhHans, "plan") => "Plan（只读规划）".into(),
+        (Locale::ZhHans, "act") => "Act（执行）".into(),
+        (Locale::En, "ask") => "Ask (read-only)".into(),
+        (Locale::En, "plan") => "Plan (read-only)".into(),
+        (Locale::En, "act") => "Act (execute)".into(),
+        (Locale::ZhHans, _) => format!("模式：{mode}"),
+        (Locale::En, _) => format!("Mode: {mode}"),
+    }
+}
+
+pub fn status_session_mode_switched(l: Locale, mode: &str) -> String {
+    let title = status_session_mode_title(l, mode);
+    match l {
+        Locale::ZhHans => format!("已切换会话模式为 {title}"),
+        Locale::En => format!("Switched session mode to {title}"),
+    }
+}
+
 pub fn status_role_title_attr(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "Agent 角色（对标 CLI /agent set）",

@@ -192,6 +192,11 @@ fn refresh_existing_turn_system(
     let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
         session_mode.map(|m| m.as_str()),
         seed.persisted_active_session_mode.as_deref(),
+        crate::session_mode_turn::role_default_session_mode_for_turn(
+            cfg,
+            persisted.as_deref(),
+            agent_role,
+        ),
         cfg.roles_prompts.default_session_mode,
     )?;
     maybe_apply_mid_session_agent_role_switch(
@@ -289,6 +294,7 @@ pub(super) async fn build_messages_for_turn(
     let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
         mode_opt.map(|m| m.as_str()),
         None,
+        crate::session_mode_turn::role_default_session_mode_for_turn(&cfg, None, agent_role),
         cfg.roles_prompts.default_session_mode,
     )?;
     let skills_base = resolve_skills_base_dir(root.as_path());
