@@ -15,9 +15,9 @@ pub(crate) use crabmate_internal::{
     agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire,
     clarification_questionnaire_body_if_tool_ok, context_bootstrap, health, mcp, memory,
     memory_tool_hosts, observability, process_handles, read_file_turn_cache,
-    readonly_tool_ttl_cache, redact, request_chrome_trace, text_encoding, text_util, tool_approval,
-    tool_call_explain, tool_registry, tool_result, tool_stats, tools, user_message_file_refs,
-    web_static_dir, workspace,
+    readonly_tool_ttl_cache, redact, request_chrome_trace, session_mode_turn, text_encoding,
+    text_util, tool_approval, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
+    user_message_file_refs, web_static_dir, workspace,
 };
 /// SSE 控制面协议与运行时（原 `crabmate_internal::sse`，已迁移至 `crabmate-sse-protocol`）。
 pub use crabmate_sse_protocol::sse;
@@ -149,6 +149,8 @@ pub struct RunAgentTurnAttach {
     pub read_file_turn_cache: Option<std::sync::Arc<ReadFileTurnCache>>,
     /// 多角色工作台：本回合允许的工具名；`None` 表示不额外限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    /// 本回合会话工作模式（Ask/Plan/Act）。
+    pub session_mode: types::SessionMode,
 }
 
 /// 可观测与进程句柄（入口袋；与环内 `RunLoopObs` 对应，勿与之混淆）。
@@ -198,6 +200,7 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    pub session_mode: types::SessionMode,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
@@ -222,6 +225,7 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    pub session_mode: types::SessionMode,
 }
 pub struct CliTerminalChatBuildArgs<'a> {
     pub shared: RunAgentTurnSharedInputs<'a>,
@@ -245,6 +249,7 @@ pub struct CliTerminalChatBuildArgs<'a> {
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     /// TUI：SSE 控制面镜像（与 Web `SsePayload` 对齐）；`repl` / `chat` 为 `None`。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    pub session_mode: types::SessionMode,
 }
 
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
@@ -260,6 +265,7 @@ struct WebChatJobCommonParts<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     conversation_id: &'a str,
     turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    session_mode: types::SessionMode,
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
@@ -278,6 +284,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
+            session_mode,
             tracing_chat_turn,
             request_audit,
             process_handles,
@@ -296,6 +303,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 long_term_memory_scope_id: Some(conversation_id.to_string()),
                 read_file_turn_cache: None,
                 turn_allowed_tool_names,
+                session_mode,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: Some(tracing_chat_turn),
@@ -330,6 +338,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             request_audit,
             process_handles,
+            session_mode,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -364,6 +373,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
+            session_mode,
             tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
             request_audit,
             process_handles,
@@ -392,6 +402,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             request_audit,
             process_handles,
+            session_mode,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -426,6 +437,7 @@ impl<'a> RunAgentTurnParams<'a> {
             long_term_memory,
             conversation_id,
             turn_allowed_tool_names,
+            session_mode,
             tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
             request_audit,
             process_handles,
@@ -449,6 +461,7 @@ impl<'a> RunAgentTurnParams<'a> {
             turn_allowed_tool_names,
             process_handles,
             sse_control_mirror,
+            session_mode,
         } = args;
         let echo_stdout = !suppress_stdout_render;
         Self {
@@ -488,6 +501,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 long_term_memory_scope_id,
                 read_file_turn_cache: None,
                 turn_allowed_tool_names,
+                session_mode,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: None,
@@ -549,6 +563,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 long_term_memory_scope_id: None,
                 read_file_turn_cache: None,
                 turn_allowed_tool_names: None,
+                session_mode: types::SessionMode::Act,
             },
             obs: RunAgentTurnObs {
                 tracing_chat_turn: None,

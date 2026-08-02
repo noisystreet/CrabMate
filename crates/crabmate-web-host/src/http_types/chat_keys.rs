@@ -16,6 +16,7 @@ pub const CHAT_REQUEST_BODY_ALLOWED_KEYS: &[&str] = &[
     "readonly_tool_ttl_cache_secs",
     "seed",
     "seed_policy",
+    "session_mode",
     "stream_resume",
     "temperature",
 ];

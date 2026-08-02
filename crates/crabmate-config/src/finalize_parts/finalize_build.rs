@@ -143,6 +143,7 @@ fn finalize_section_roles_prompts(mid: &FinalizeAfterRoles) -> types::RolesPromp
         agent_roles: mid.agent_roles.clone(),
         coding_workbench_enabled: mid.coding_workbench_enabled,
         coding_workbench_increment_file: mid.coding_workbench_increment_file.clone(),
+        default_session_mode: mid.default_session_mode,
     }
 }
 

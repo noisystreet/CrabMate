@@ -57,7 +57,7 @@ impl CliSqliteSessionState {
         let active = agent_role_label.map(str::trim).filter(|s| !s.is_empty());
 
         let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
-        if let Some((msgs, rev, role)) =
+        if let Some((msgs, rev, role, _mode)) =
             conversation_store::load(&g, conversation_id.as_str(), CONVERSATION_STORE_TTL_SECS)?
         {
             drop(g);
@@ -77,6 +77,7 @@ impl CliSqliteSessionState {
             conversation_id.as_str(),
             bootstrap_messages.clone(),
             active,
+            None,
             None,
         )?;
         drop(g);
@@ -116,6 +117,7 @@ impl CliSqliteSessionState {
             self.conversation_id.as_str(),
             messages.to_vec(),
             active,
+            None,
             Some(exp),
         )
         .map_err(|e| e.to_string())?;
@@ -212,7 +214,7 @@ impl CliSqliteSessionState {
         let active = agent_role_label.map(str::trim).filter(|s| !s.is_empty());
         let g = self.conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
         let outcome =
-            conversation_store::save_if_revision(&g, id.as_str(), bootstrap, active, None)
+            conversation_store::save_if_revision(&g, id.as_str(), bootstrap, active, None, None)
                 .map_err(|e| e.to_string())?;
         drop(g);
         if outcome != SaveConversationOutcome::Saved {

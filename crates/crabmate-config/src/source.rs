@@ -145,6 +145,8 @@ pub(super) struct AgentSection {
     pub(super) coding_workbench_enabled: Option<bool>,
     /// 编程工作台增量 Markdown 路径；`CM_CODING_WORKBENCH_INCREMENT_FILE`
     pub(super) coding_workbench_increment_file: Option<String>,
+    /// 默认会话模式 ask / plan / act；`CM_DEFAULT_SESSION_MODE`
+    pub(super) default_session_mode: Option<String>,
     pub(super) cursor_rules_enabled: Option<bool>,
     pub(super) cursor_rules_dir: Option<String>,
     pub(super) cursor_rules_include_agents_md: Option<bool>,

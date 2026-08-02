@@ -157,6 +157,7 @@ pub(super) async fn tui_run_submit_ev(
         clarify_answers_for_next_user_message: Some(&ctx.clarify_shared.answers_merge),
         clarification_questionnaire_hook: Some(Arc::clone(&ctx.clarification_questionnaire_hook)),
         sse_control_mirror: Some(sse_mirror_hook),
+        session_mode: &ctx.slash_handles.session_mode,
     })
     .await?;
     {

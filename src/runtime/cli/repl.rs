@@ -348,6 +348,8 @@ pub(crate) struct ReplDispatchChatRoundParams<'a> {
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// TUI：SSE 控制面镜像；`repl` 为 `None`。
     pub(crate) sse_control_mirror: Option<crate::sse::SseControlMirror>,
+    /// 与 `/mode` 共用的会话工作模式。
+    pub(crate) session_mode: &'a Arc<StdMutex<crate::types::SessionMode>>,
 }
 
 pub(crate) async fn repl_dispatch_chat_round(
@@ -374,7 +376,9 @@ pub(crate) async fn repl_dispatch_chat_round(
         clarify_answers_for_next_user_message,
         clarification_questionnaire_hook,
         sse_control_mirror,
+        session_mode,
     } = p;
+    let session_mode_now = *session_mode.lock().unwrap_or_else(|e| e.into_inner());
     crate::runtime::workspace_session::try_merge_background_initial_workspace(
         messages,
         initial_pending,
@@ -434,6 +438,7 @@ pub(crate) async fn repl_dispatch_chat_round(
                         forced_skill: prepared.forced_skill,
                         role_resolution:
                             crate::context_bootstrap::prompt_compose::RoleSystemResolution::Strict,
+                        session_mode: Some(session_mode_now),
                     },
                 ) {
                     Ok(v) => v,
@@ -504,6 +509,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         active_agent_role: agent_role_owned.as_deref(),
         process_handles: Arc::clone(&process_handles),
         sse_control_mirror,
+        session_mode: session_mode_now,
     })
     .await
     {
@@ -689,6 +695,7 @@ async fn repl_iteration_reply_to_read_line(
                 clarify_answers_for_next_user_message: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
+                session_mode: &ctx.slash_handles.session_mode,
             })
             .await?;
             if let Some(sess) = ctx.sqlite_sess.as_mut()
@@ -729,9 +736,14 @@ pub async fn run_repl(
     let cli_rt = CliToolRuntime::new_interactive_default();
     let style = CliReplStyle::new();
     let api_key_holder = Arc::new(StdMutex::new(api_key.to_string()));
+    let default_session_mode = {
+        let g = cfg_holder.read().await;
+        g.roles_prompts.default_session_mode
+    };
     let slash_handles = ReplSlashSharedHandles {
         api_key_holder: Arc::clone(&api_key_holder),
         process_handles: Arc::clone(&process_handles),
+        session_mode: Arc::new(StdMutex::new(default_session_mode)),
     };
 
     {

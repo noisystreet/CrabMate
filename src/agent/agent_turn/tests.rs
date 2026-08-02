@@ -186,6 +186,7 @@ mod per_reflect_tests {
                     read_file_turn_cache: None,
                     workspace_changelist: None,
                     turn_allowed_tool_names: None,
+                    session_mode: crate::types::SessionMode::Act,
                 },
                 obs: RunLoopObs {
                     request_chrome_trace: None,

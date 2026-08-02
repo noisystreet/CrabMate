@@ -101,7 +101,7 @@ async fn seed_conversation_handler(
         state.delete_conversation_record(&cid).await;
     }
     let outcome = state
-        .save_conversation_messages_if_revision(cid.clone(), messages, None, None)
+        .save_conversation_messages_if_revision(cid.clone(), messages, None, None, None)
         .await;
     match outcome {
         crate::SaveConversationOutcome::Saved => Ok(StatusCode::NO_CONTENT),

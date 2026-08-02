@@ -45,6 +45,8 @@ pub(crate) struct MemoryConversationEntry {
     messages: Vec<Message>,
     /// 当前多角色工作台选用的命名角色 id；`None` 表示默认人格（与 Web 未持久化选用一致）。
     active_agent_role: Option<String>,
+    /// 当前会话工作模式；`None` 表示未显式设置（回落配置默认）。
+    active_session_mode: Option<String>,
     revision: u64,
     updated_at: std::time::Instant,
 }
@@ -54,6 +56,8 @@ pub(crate) struct ConversationTurnSeed {
     pub messages: Vec<Message>,
     pub expected_revision: Option<u64>,
     pub persisted_active_agent_role: Option<String>,
+    /// 持久化的会话工作模式（ask/plan/act）；`None` 表示未设置。
+    pub persisted_active_session_mode: Option<String>,
 }
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
@@ -213,6 +217,7 @@ impl AppState {
         conversation_id: String,
         messages: Vec<Message>,
         active_agent_role: Option<&str>,
+        active_session_mode: Option<&str>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
         self.conversation
@@ -220,6 +225,7 @@ impl AppState {
                 conversation_id,
                 messages,
                 active_agent_role,
+                active_session_mode,
                 expected_revision,
             )
             .await
@@ -252,6 +258,7 @@ impl AppStateConversationRuntime {
                     messages: entry.messages.clone(),
                     expected_revision: Some(entry.revision),
                     persisted_active_agent_role: entry.active_agent_role.clone(),
+                    persisted_active_session_mode: entry.active_session_mode.clone(),
                 })
             }
             ConversationBacking::Sqlite(conn) => {
@@ -285,11 +292,19 @@ impl AppStateConversationRuntime {
                 .await
                 .ok()
                 .flatten();
-                loaded.map(|(messages, revision, active)| ConversationTurnSeed {
+                loaded.map(|(messages, revision, active, mode)| ConversationTurnSeed {
                     messages,
                     expected_revision: Some(revision),
                     persisted_active_agent_role: {
                         let t = active.trim();
+                        if t.is_empty() {
+                            None
+                        } else {
+                            Some(t.to_string())
+                        }
+                    },
+                    persisted_active_session_mode: {
+                        let t = mode.trim();
                         if t.is_empty() {
                             None
                         } else {
@@ -325,6 +340,7 @@ impl AppStateConversationRuntime {
         conversation_id: String,
         messages: Vec<Message>,
         active_agent_role: Option<&str>,
+        active_session_mode: Option<&str>,
         expected_revision: Option<u64>,
     ) -> SaveConversationOutcome {
         let backing = self.conversation_backing.read().await;
@@ -332,14 +348,20 @@ impl AppStateConversationRuntime {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let now = std::time::Instant::now();
+                let role_owned = active_agent_role
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
+                let mode_owned = active_session_mode
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string);
                 if let Some(entry) = guard.get_mut(&conversation_id) {
                     match expected_revision {
                         Some(exp) if entry.revision == exp => {
                             entry.messages = messages;
-                            entry.active_agent_role = active_agent_role
-                                .map(str::trim)
-                                .filter(|s| !s.is_empty())
-                                .map(str::to_string);
+                            entry.active_agent_role = role_owned;
+                            entry.active_session_mode = mode_owned;
                             entry.revision = entry.revision.saturating_add(1);
                             entry.updated_at = now;
                         }
@@ -352,10 +374,8 @@ impl AppStateConversationRuntime {
                         conversation_id,
                         MemoryConversationEntry {
                             messages,
-                            active_agent_role: active_agent_role
-                                .map(str::trim)
-                                .filter(|s| !s.is_empty())
-                                .map(str::to_string),
+                            active_agent_role: role_owned,
+                            active_session_mode: mode_owned,
                             revision: 1,
                             updated_at: now,
                         },
@@ -370,12 +390,14 @@ impl AppStateConversationRuntime {
                 let c = Arc::clone(conn);
                 let exp = expected_revision;
                 let active_for_sql = active_agent_role.map(|s| s.to_string());
+                let mode_for_sql = active_session_mode.map(|s| s.to_string());
                 sqlite_conversation_store_op(c, id_log, "保存", move |g| {
                     conversation_store::save_if_revision(
                         g,
                         &id,
                         messages,
                         active_for_sql.as_deref(),
+                        mode_for_sql.as_deref(),
                         exp,
                     )
                 })

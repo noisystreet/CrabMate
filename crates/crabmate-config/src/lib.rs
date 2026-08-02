@@ -44,7 +44,7 @@ pub use xdg::{
     user_cache_dir,
 };
 
-pub use finalize::embedded_thinking_avoid_echo_appendix;
+pub use finalize::{embedded_session_mode_appendix, embedded_thinking_avoid_echo_appendix};
 
 #[allow(unused_imports)] // 部分类型仅对外再导出，本文件内不直接使用
 pub use agent_role_spec::AgentRoleSpec;

@@ -24,6 +24,8 @@ pub(super) const REPL_LLM_MODEL_MAX: usize = 512;
 pub(crate) struct ReplSlashSharedHandles {
     pub api_key_holder: Arc<StdMutex<String>>,
     pub process_handles: Arc<ProcessHandles>,
+    /// REPL 当前会话工作模式（Ask/Plan/Act）；`/mode` 与本轮 turn 共用。
+    pub session_mode: Arc<StdMutex<crate::types::SessionMode>>,
 }
 
 /// [`try_handle_repl_slash_command`] 的返回值：`RunProbe` / `RunModels` / `RunModelsChoose` 需在异步上下文中分别调用

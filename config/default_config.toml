@@ -81,6 +81,8 @@ system_prompt_file = "config/prompts/base_system_prompt.md"
 # 编程工作台层（叠加在通用 L0 之后、cursor rules 之前）；陪聊/哲学/文学角色可在 agent_roles.toml 设 prepend_coding_workbench = false
 coding_workbench_enabled = true
 coding_workbench_increment_file = "config/prompts/coding_workbench_increment.md"
+# 默认会话工作模式：ask（只读）| plan（只读规划）| act（执行）。可被 Web/CLI 请求与会话持久化覆盖。CM_DEFAULT_SESSION_MODE
+default_session_mode = "act"
 # 新会话首条 system 末附「思考纪律」附录（减轻模型在 thinking 中复述系统提示）；软性约束。CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT
 thinking_avoid_echo_system_prompt = true
 # 附录正文默认文件（与 system_prompt_file 相同路径解析）；亦可 thinking_avoid_echo_appendix 内联。CM_THINKING_AVOID_ECHO_APPENDIX_FILE

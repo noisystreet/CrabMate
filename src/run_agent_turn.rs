@@ -102,6 +102,7 @@ pub async fn run_agent_turn<'a>(
         long_term_memory_scope_id,
         read_file_turn_cache,
         turn_allowed_tool_names,
+        session_mode,
     } = attach;
     let RunAgentTurnObs {
         tracing_chat_turn,
@@ -218,6 +219,7 @@ pub async fn run_agent_turn<'a>(
                 read_file_turn_cache,
                 workspace_changelist,
                 turn_allowed_tool_names: turn_allowed_tool_names.clone(),
+                session_mode,
             },
             obs: crate::agent::agent_turn::RunLoopObs {
                 request_chrome_trace: request_chrome_trace.clone(),

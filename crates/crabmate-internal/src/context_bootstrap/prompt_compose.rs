@@ -9,11 +9,20 @@ use tracing::warn;
 
 use crate::tool_stats::ToolOutcomeRecorder;
 use crabmate_config::AgentConfig;
+use crabmate_types::SessionMode;
 
 /// 保留占位：组装路径恒为 Strict；角色容错见 [`resolve_agent_role_for_prompt_compose`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RoleSystemResolution {
     Strict,
+}
+
+fn append_session_mode_appendix(system: String, mode: SessionMode) -> String {
+    let body = crabmate_config::embedded_session_mode_appendix(mode);
+    if body.is_empty() {
+        return system;
+    }
+    format!("{}\n\n{}", system.trim_end(), body)
 }
 
 fn resolve_role_system_base(cfg: &AgentConfig, agent_role: Option<&str>) -> Result<String, String> {
@@ -101,7 +110,7 @@ pub fn compose_system_for_turn(
     Ok(compose_system_from_base(&base, cfg, tool_recorder, skills))
 }
 
-/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5）。`agent_role` 须经 [`resolve_agent_role_for_prompt_compose`] 解析后再传入。
+/// 首条 `system` 组装参数（L3 基底 + L4 + 可选 L5 + 会话模式附录）。`agent_role` 须经 [`resolve_agent_role_for_prompt_compose`] 解析后再传入。
 pub struct FirstSystemComposeOpts<'a> {
     pub agent_role: Option<&'a str>,
     pub user_msg_for_skills: Option<&'a str>,
@@ -110,6 +119,8 @@ pub struct FirstSystemComposeOpts<'a> {
     pub forced_skill: Option<crabmate_config::skills::SkillDoc>,
     /// 保留字段；实现恒按 [`RoleSystemResolution::Strict`] 解析已传入的 `agent_role`。
     pub role_resolution: RoleSystemResolution,
+    /// 会话工作模式附录；`None` 时用配置 `default_session_mode`。
+    pub session_mode: Option<SessionMode>,
 }
 
 /// Web / CLI 续聊刷新首条 `system` 的统一入口（L3 + L4 + 可选 L5）。
@@ -138,6 +149,7 @@ pub fn compose_first_system_for_turn_with_diagnostics(
         skills_base_dir,
         forced_skill,
         role_resolution: _,
+        session_mode,
     } = opts;
     let skills_ctx = skills_base_dir
         .as_ref()
@@ -151,11 +163,14 @@ pub fn compose_first_system_for_turn_with_diagnostics(
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
     let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, skills_ctx);
+    let mode = session_mode.unwrap_or(cfg.roles_prompts.default_session_mode);
+    let merged = append_session_mode_appendix(merged, mode);
     let chars_final = merged.chars().count();
     let mut layers = vec!["L3".to_string(), "L4".to_string()];
     if !skills_meta.selected_labels.is_empty() {
         layers.push("L5".to_string());
     }
+    layers.push("mode".to_string());
     Ok((
         merged,
         FirstSystemComposeDiagnostics {
@@ -303,12 +318,13 @@ mod tests {
                 skills_base_dir: None,
                 forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
+                session_mode: None,
             },
         )
         .expect("compose");
         assert_eq!(
             diag.layers_applied,
-            vec!["L3".to_string(), "L4".to_string()]
+            vec!["L3".to_string(), "L4".to_string(), "mode".to_string()]
         );
         assert!(diag.chars_l3_base > 0);
         assert!(diag.chars_l4_augmented >= diag.chars_l3_base);
@@ -342,6 +358,7 @@ mod tests {
                 skills_base_dir: Some(tmp.path().to_path_buf()),
                 forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
+                session_mode: None,
             },
         )
         .expect("compose");
@@ -392,6 +409,7 @@ mod tests {
                 skills_base_dir: Some(tmp.path().to_path_buf()),
                 forced_skill: Some(forced),
                 role_resolution: RoleSystemResolution::Strict,
+                session_mode: None,
             },
         )
         .expect("compose");

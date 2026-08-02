@@ -47,6 +47,7 @@ pub(crate) async fn prepare_json_chat_enqueue(
     clarify: Option<ClarifyAnswersNormalized>,
     image_urls: &[String],
     agent_role: Option<String>,
+    session_mode: Option<String>,
     conversation_id: String,
 ) -> Result<PreparedJsonChatEnqueue, (StatusCode, Json<ApiError>)> {
     let eff_ws_raw = state.effective_workspace_path().await;
@@ -70,11 +71,14 @@ pub(crate) async fn prepare_json_chat_enqueue(
         &msg,
         image_urls,
         agent_role.as_deref(),
+        session_mode.as_deref(),
     )
     .await
     .map_err(|e| {
         if let Some(msg) = crate::config::skills_slash::SkillSlashError::strip_turn_err(&e) {
             bad_request("SKILL_INVOKE_FAILED", msg)
+        } else if e.contains("session_mode") {
+            bad_request("INVALID_SESSION_MODE", e)
         } else {
             bad_request("INVALID_AGENT_ROLE", e)
         }
@@ -102,6 +106,7 @@ pub(crate) struct ParsedChatRequestForEnqueue {
     pub(crate) user_trim: String,
     pub(crate) conversation_id: String,
     pub(crate) agent_role: Option<String>,
+    pub(crate) session_mode: Option<String>,
     pub(crate) temperature_override: Option<f32>,
     pub(crate) seed_override: crate::types::LlmSeedOverride,
     pub(crate) client_sse_protocol: Option<u8>,
@@ -148,6 +153,9 @@ fn parse_chat_request_for_enqueue_tail(
         .unwrap_or_else(|| state.next_conversation_id());
     let agent_role = normalize_agent_role(body.agent_role.as_deref())
         .map_err(|e| bad_request("INVALID_AGENT_ROLE", e))?;
+    let session_mode = crate::types::parse_optional_session_mode(body.session_mode.as_deref())
+        .map_err(|e| bad_request("INVALID_SESSION_MODE", e))?
+        .map(|m| m.as_str().to_string());
     let temperature_override = parse_optional_chat_temperature(body.temperature)
         .map_err(|e| bad_request("INVALID_TEMPERATURE", e))?;
     let seed_override = parse_seed_override_from_body(body.seed, body.seed_policy.clone())
@@ -169,6 +177,7 @@ fn parse_chat_request_for_enqueue_tail(
         user_trim: user_trim.to_string(),
         conversation_id,
         agent_role,
+        session_mode,
         temperature_override,
         seed_override,
         client_sse_protocol: body.client_sse_protocol,
@@ -204,6 +213,8 @@ pub(crate) fn json_chat_job_envelope(
         expected_revision: prepared.turn_seed.expected_revision,
         request_agent_role: parsed.agent_role.clone(),
         persisted_active_agent_role: prepared.turn_seed.persisted_active_agent_role.clone(),
+        request_session_mode: parsed.session_mode.clone(),
+        persisted_active_session_mode: prepared.turn_seed.persisted_active_session_mode.clone(),
         work_dir: prepared.work_dir,
         workspace_is_set: prepared.workspace_is_set,
         temperature_override: parsed.temperature_override,
@@ -228,6 +239,7 @@ pub(crate) async fn enqueue_and_wait_json_chat(
         parsed.clarify.clone(),
         &parsed.image_urls,
         parsed.agent_role.clone(),
+        parsed.session_mode.clone(),
         parsed.conversation_id.clone(),
     )
     .await?;

@@ -446,6 +446,21 @@ Env: `CM_SYNC_DEFAULT_TOOL_SANDBOX_MODE`, `CM_SYNC_DEFAULT_TOOL_SANDBOX_DOCKER_I
 - **Shipped default body**: **`config/prompts/base_system_prompt.md`** (L0) plus **`coding_workbench_increment.md`** (L0b for dev workflows). Instruction precedence, tool discipline, and communication norms are split across these files and optional **`.cursor/rules`**. Fully custom: replace those files or set `system_prompt_file`.
 - **Embedded defaults** (`config/default_config.toml`): **`thinking_avoid_echo_system_prompt = true`** with **`thinking_avoid_echo_appendix_file = "config/prompts/thinking_avoid_echo_appendix.md"`** (override via inline **`thinking_avoid_echo_appendix`** or **`CM_THINKING_AVOID_ECHO_APPENDIX*`**); see § *Reduce system-prompt echo in thinking chains* above.
 
+## Session mode (Ask / Plan / Act)
+
+Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appendix on the first `system` (`config/prompts/mode_{ask,plan,act}.md`).
+
+| Mode | Tools | Notes |
+|------|-------|-------|
+| **ask** | `ReviewReadonly` | Read-only Q&A |
+| **plan** | same as ask | Read-only planning |
+| **act** | full ∩ role `allowed_tools` | Default |
+
+- **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
+- **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** (memory and SQLite) → config default.
+- **Web**: optional **`session_mode`** on **`POST /chat*`**. Ask/Plan apply readonly **after** intent gate (even when the gate is disabled). Successful turns save/keep **`active_session_mode`** on the same revision path as **`agent_role`**.
+- **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
+
 ## Multi-role (agent_roles)
 
 Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with **`cursor_rules_*`** and a lightweight skills index at finalize; full skills bodies are injected per-turn by L5).

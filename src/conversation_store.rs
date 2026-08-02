@@ -42,23 +42,32 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         "#
     ))?;
     ensure_active_agent_role_column(conn)?;
+    ensure_active_session_mode_column(conn)?;
     Ok(())
 }
 
 fn ensure_active_agent_role_column(conn: &Connection) -> Result<(), rusqlite::Error> {
+    ensure_text_column(conn, "active_agent_role")
+}
+
+fn ensure_active_session_mode_column(conn: &Connection) -> Result<(), rusqlite::Error> {
+    ensure_text_column(conn, "active_session_mode")
+}
+
+fn ensure_text_column(conn: &Connection, column: &str) -> Result<(), rusqlite::Error> {
     let mut stmt = conn.prepare(&format!("PRAGMA table_info({TABLE})"))?;
     let mut has = false;
     let mut rows = stmt.query([])?;
     while let Some(row) = rows.next()? {
         let name: String = row.get(1)?;
-        if name == "active_agent_role" {
+        if name == column {
             has = true;
             break;
         }
     }
     if !has {
         conn.execute(
-            &format!("ALTER TABLE {TABLE} ADD COLUMN active_agent_role TEXT NOT NULL DEFAULT ''"),
+            &format!("ALTER TABLE {TABLE} ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"),
             [],
         )?;
     }
@@ -98,25 +107,51 @@ fn messages_from_json(s: &str) -> Result<Vec<Message>, String> {
 }
 
 /// 读取会话；不存在、或超过 TTL 视为无（并删除过期行）。
-/// 第三元组为持久化的当前多角色 id（空串视为未设置）。
+/// 返回：`(messages, revision, active_agent_role, active_session_mode)`；后两列空串视为未设置。
+#[allow(clippy::type_complexity)]
 pub fn load(
     conn: &Connection,
     id: &str,
     ttl_secs: u64,
-) -> Result<Option<(Vec<Message>, u64, String)>, rusqlite::Error> {
+) -> Result<Option<(Vec<Message>, u64, String, String)>, rusqlite::Error> {
     let now = now_unix();
-    let row: Option<(String, i64, i64, String)> = conn
+    let row: Option<(String, i64, i64, String, String)> = conn
         .query_row(
             &format!(
-                "SELECT messages_json, revision, updated_at_unix, active_agent_role FROM {TABLE} WHERE id = ?1"
+                "SELECT messages_json, revision, updated_at_unix, active_agent_role, active_session_mode FROM {TABLE} WHERE id = ?1"
             ),
             params![id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )
         .optional()?;
-    let Some((json, revision, updated, active_role)) = row else {
+    let Some((json, revision, updated, active_role, active_mode)) = row else {
         return Ok(None);
     };
+    load_row_after_fetch(
+        conn,
+        id,
+        ttl_secs,
+        now,
+        json,
+        revision,
+        updated,
+        active_role,
+        active_mode,
+    )
+}
+
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+fn load_row_after_fetch(
+    conn: &Connection,
+    id: &str,
+    ttl_secs: u64,
+    now: i64,
+    json: String,
+    revision: i64,
+    updated: i64,
+    active_role: String,
+    active_mode: String,
+) -> Result<Option<(Vec<Message>, u64, String, String)>, rusqlite::Error> {
     if ttl_secs > 0 && now.saturating_sub(updated) > ttl_secs as i64 {
         conn.execute(&format!("DELETE FROM {TABLE} WHERE id = ?1"), params![id])?;
         return Ok(None);
@@ -135,12 +170,11 @@ pub fn load(
         }
     };
     let rev = u64::try_from(revision).unwrap_or(0);
-    // 刷新访问时间，与内存态「touch」一致
     conn.execute(
         &format!("UPDATE {TABLE} SET updated_at_unix = ?1 WHERE id = ?2"),
         params![now, id],
     )?;
-    Ok(Some((messages, rev, active_role)))
+    Ok(Some((messages, rev, active_role, active_mode)))
 }
 
 /// 与 `AppState::save_conversation_messages_if_revision` 语义一致。
@@ -149,10 +183,15 @@ pub fn save_if_revision(
     id: &str,
     messages: Vec<Message>,
     active_agent_role: Option<&str>,
+    active_session_mode: Option<&str>,
     expected_revision: Option<u64>,
 ) -> Result<SaveConversationOutcome, rusqlite::Error> {
     let now = now_unix();
     let active_col = active_agent_role
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("");
+    let mode_col = active_session_mode
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .unwrap_or("");
@@ -172,9 +211,9 @@ pub fn save_if_revision(
     if let Some(exp) = expected_revision {
         let n = conn.execute(
             &format!(
-                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, revision = revision + 1, updated_at_unix = ?3 WHERE id = ?4 AND revision = ?5"
+                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, revision = revision + 1, updated_at_unix = ?4 WHERE id = ?5 AND revision = ?6"
             ),
-            params![json, active_col, now, id, exp as i64],
+            params![json, active_col, mode_col, now, id, exp as i64],
         )?;
         if n == 0 {
             return Ok(SaveConversationOutcome::Conflict);
@@ -190,9 +229,9 @@ pub fn save_if_revision(
         }
         conn.execute(
             &format!(
-                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, revision, updated_at_unix) VALUES (?1, ?2, ?3, 1, ?4)"
+                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, 1, ?5)"
             ),
-            params![id, json, active_col, now],
+            params![id, json, active_col, mode_col, now],
         )?;
     }
     prune(
@@ -440,7 +479,7 @@ mod tests {
             Message::user_only("hi".to_string()),
         ];
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs, None, None).unwrap(),
+            save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -468,14 +507,14 @@ mod tests {
             Message::user_only("hi".to_string()),
         ];
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), None, None).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded.1, 1);
         assert_eq!(loaded.0.len(), 2);
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), None, Some(1)).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
@@ -488,25 +527,52 @@ mod tests {
         migrate(&conn).unwrap();
         let msgs = vec![Message::system_only("s".to_string())];
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), None, None).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded.2, "");
 
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), Some(1)).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded2.2, "reviewer");
 
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs.clone(), None, Some(2)).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded3.2, "");
+    }
+
+    #[test]
+    fn save_load_active_session_mode_roundtrip() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![Message::system_only("s".to_string())];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, Some("ask"), None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded.3, "ask");
+
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, Some("plan"), Some(1)).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded2.3, "plan");
+
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded3.3, "");
     }
 
     #[test]
@@ -517,7 +583,7 @@ mod tests {
             Message::system_only("s".to_string()),
             Message::user_only("分析项目结构".to_string()),
         ];
-        save_if_revision(&conn, "c1", msgs, None, None).unwrap();
+        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap();
         let entries = list_conversations_recent_first(&conn, 10).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, "c1");
@@ -538,7 +604,7 @@ mod tests {
             mem,
             Message::user_only("真正的问题".to_string()),
         ];
-        save_if_revision(&conn, "c2", msgs, None, None).unwrap();
+        save_if_revision(&conn, "c2", msgs, None, None, None).unwrap();
         let entries = list_conversations_recent_first(&conn, 10).unwrap();
         assert_eq!(entries[0].title, "真正的问题");
     }
@@ -548,8 +614,8 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
         let m = vec![Message::system_only("s".to_string())];
-        save_if_revision(&conn, "older", m.clone(), None, None).unwrap();
-        save_if_revision(&conn, "newer", m.clone(), None, None).unwrap();
+        save_if_revision(&conn, "older", m.clone(), None, None, None).unwrap();
+        save_if_revision(&conn, "newer", m.clone(), None, None, None).unwrap();
         conn.execute(
             &format!(
                 "UPDATE {} SET updated_at_unix = updated_at_unix - 999 WHERE id = 'older'",

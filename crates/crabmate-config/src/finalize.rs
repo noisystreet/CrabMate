@@ -71,9 +71,22 @@ const EMBEDDED_THINKING_AVOID_ECHO_APPENDIX: &str =
 const EMBEDDED_CODING_WORKBENCH_INCREMENT: &str =
     include_str!("../../../config/prompts/coding_workbench_increment.md");
 
+const EMBEDDED_MODE_ASK: &str = include_str!("../../../config/prompts/mode_ask.md");
+const EMBEDDED_MODE_PLAN: &str = include_str!("../../../config/prompts/mode_plan.md");
+const EMBEDDED_MODE_ACT: &str = include_str!("../../../config/prompts/mode_act.md");
+
 /// 与 [`resolve_thinking_avoid_echo_appendix`] 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
 pub fn embedded_thinking_avoid_echo_appendix() -> &'static str {
     EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
+}
+
+/// 会话模式附录（Ask / Plan / Act）；供首条 system 组装。
+pub fn embedded_session_mode_appendix(mode: crabmate_types::SessionMode) -> &'static str {
+    match mode {
+        crabmate_types::SessionMode::Ask => EMBEDDED_MODE_ASK.trim(),
+        crabmate_types::SessionMode::Plan => EMBEDDED_MODE_PLAN.trim(),
+        crabmate_types::SessionMode::Act => EMBEDDED_MODE_ACT.trim(),
+    }
 }
 
 /// 默认全局会话与工程向角色共用的编程层增量正文。
@@ -589,6 +602,7 @@ struct FinalizeAfterRoles {
     agent_roles: agent_roles::AgentRoleCatalogBuilt,
     coding_workbench_enabled: bool,
     coding_workbench_increment_file: String,
+    default_session_mode: crabmate_types::SessionMode,
     system_prompt_search_bases: Vec<PathBuf>,
     run_command_working_dir: PathBuf,
     scheduled_agent_tasks: Vec<ScheduledAgentTask>,
@@ -687,6 +701,18 @@ fn finalize_agent_config(
             skills_top_k: pm.skills_top_k,
         })?;
 
+    let default_session_mode = match b
+        .roles_prompts
+        .default_session_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => crabmate_types::SessionMode::Act,
+        Some(s) => crabmate_types::parse_session_mode(s)
+            .map_err(|e| format!("配置错误：default_session_mode：{e}"))?,
+    };
+
     let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
         std::mem::take(&mut b.scheduled_agent_task_rows),
         agent_roles.as_ref(),
@@ -719,6 +745,7 @@ fn finalize_agent_config(
         agent_roles,
         coding_workbench_enabled: pm.coding_workbench_enabled,
         coding_workbench_increment_file: pm.coding_workbench_increment_file,
+        default_session_mode,
         system_prompt_search_bases,
         run_command_working_dir,
         scheduled_agent_tasks,

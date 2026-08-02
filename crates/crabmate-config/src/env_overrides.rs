@@ -299,6 +299,12 @@ fn env_override_system_prompt_and_default_role(b: &mut ConfigBuilder) {
             b.roles_prompts.coding_workbench_increment_file = Some(p);
         }
     }
+    if let Ok(s) = std::env::var("CM_DEFAULT_SESSION_MODE") {
+        let s = s.trim().to_string();
+        if !s.is_empty() {
+            b.roles_prompts.default_session_mode = Some(s);
+        }
+    }
 }
 
 fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {

@@ -65,6 +65,12 @@ pub(crate) enum ReplBuiltIn<'a> {
     AgentSet(String),
     /// `/agent …` 用法错误
     AgentUsage,
+    /// `/mode`：显示当前会话工作模式
+    ModeShow,
+    /// `/mode ask|plan|act`：切换会话工作模式并刷新首条 system 附录
+    ModeSet(crate::types::SessionMode),
+    /// `/mode …` 用法错误
+    ModeUsage,
     Unknown(&'a str),
     BareSlash,
 }
@@ -311,6 +317,17 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
             }
         }
         "agent" => classify_agent_slash_command(arg),
+        "mode" => {
+            let a = arg.trim();
+            if a.is_empty() {
+                ReplBuiltIn::ModeShow
+            } else {
+                match crate::types::parse_session_mode(a) {
+                    Ok(m) => ReplBuiltIn::ModeSet(m),
+                    Err(_) => ReplBuiltIn::ModeUsage,
+                }
+            }
+        }
         "version" => ReplBuiltIn::Version,
         "context" => ReplBuiltIn::Context,
         _ => ReplBuiltIn::Unknown(head),
@@ -573,6 +590,30 @@ mod repl_slash_tests {
         assert_eq!(
             classify_repl_slash_command("/agent bogus"),
             Some(ReplBuiltIn::AgentUsage)
+        );
+    }
+
+    #[test]
+    fn mode_slash_variants() {
+        assert_eq!(
+            classify_repl_slash_command("/mode"),
+            Some(ReplBuiltIn::ModeShow)
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mode ask"),
+            Some(ReplBuiltIn::ModeSet(crate::types::SessionMode::Ask))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mode plan"),
+            Some(ReplBuiltIn::ModeSet(crate::types::SessionMode::Plan))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/MODE ACT"),
+            Some(ReplBuiltIn::ModeSet(crate::types::SessionMode::Act))
+        );
+        assert_eq!(
+            classify_repl_slash_command("/mode bogus"),
+            Some(ReplBuiltIn::ModeUsage)
         );
     }
 

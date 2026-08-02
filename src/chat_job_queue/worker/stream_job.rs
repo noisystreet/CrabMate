@@ -48,6 +48,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         expected_revision,
         request_agent_role,
         persisted_active_agent_role,
+        request_session_mode,
+        persisted_active_session_mode,
         work_dir,
         workspace_is_set,
         temperature_override,
@@ -59,6 +61,17 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     let cfg_snap = {
         let g = queue_deps.cfg.read().await;
         std::sync::Arc::new(g.clone())
+    };
+    let session_mode = match crate::session_mode_turn::resolve_session_mode_for_turn(
+        request_session_mode.as_deref(),
+        persisted_active_session_mode.as_deref(),
+        cfg_snap.roles_prompts.default_session_mode,
+    ) {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!(target: "crabmate", "session_mode resolve failed: {e}; using act");
+            crate::types::SessionMode::Act
+        }
     };
 
     let mut params = crate::RunAgentTurnParams::web_chat_stream(crate::WebChatStreamBuildArgs {
@@ -86,6 +99,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         conversation_id: conversation_id.as_str(),
         out: &rt.sse_tx,
         turn_allowed_tool_names: rt.turn_allow,
+        session_mode,
         request_audit: std::sync::Arc::new(request_audit),
         process_handles: std::sync::Arc::clone(&app.process_handles),
     });
@@ -114,6 +128,8 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             expected_revision,
             request_agent_role: request_agent_role.as_deref(),
             persisted_active_agent_role: persisted_active_agent_role.as_deref(),
+            request_session_mode: request_session_mode.as_deref(),
+            persisted_active_session_mode: persisted_active_session_mode.as_deref(),
             stream_ended_sent: &mut stream_ended_sent,
         })
         .await;

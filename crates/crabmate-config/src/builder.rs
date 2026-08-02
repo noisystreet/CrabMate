@@ -86,6 +86,10 @@ impl ConfigBuilder {
             &mut rp.coding_workbench_increment_file,
             agent.coding_workbench_increment_file.clone(),
         );
+        override_opt_string_non_empty(
+            &mut rp.default_session_mode,
+            agent.default_session_mode.clone(),
+        );
         if no_system_prompt_file_in_section && inline_system_prompt_nonempty {
             rp.system_prompt_file = None;
         }

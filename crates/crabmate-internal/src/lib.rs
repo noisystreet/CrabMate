@@ -24,6 +24,7 @@ pub mod observability;
 pub mod process_handles;
 pub mod readonly_tool_ttl_cache;
 pub mod request_chrome_trace;
+pub mod session_mode_turn;
 pub mod terminal_session;
 pub mod text_util;
 pub mod tool_approval;

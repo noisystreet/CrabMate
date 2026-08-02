@@ -79,6 +79,8 @@ pub(crate) struct RunLoopAttach<'a> {
     pub workspace_changelist: Option<Arc<WorkspaceChangelist>>,
     /// 多角色工作台：本回合工具白名单；`None` 不限制。
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
+    /// 本回合会话工作模式（Ask/Plan/Act）；门控之后挂只读约束。
+    pub session_mode: crabmate_types::SessionMode,
 }
 
 /// Chrome trace、结构化 tracing、HTTP 审计与进程级句柄。

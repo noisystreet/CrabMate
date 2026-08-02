@@ -195,6 +195,10 @@ pub struct WebChatJobEnvelope {
     pub request_agent_role: Option<String>,
     /// 回合开始前服务端已持久化的当前角色（仅已有会话；新会话为 `None`）。
     pub persisted_active_agent_role: Option<String>,
+    /// 本请求 JSON 中的 `session_mode`（若有）。
+    pub request_session_mode: Option<String>,
+    /// 回合开始前持久化的会话模式（空串/`None` 表示未设置）。
+    pub persisted_active_session_mode: Option<String>,
     pub work_dir: PathBuf,
     pub workspace_is_set: bool,
     pub temperature_override: Option<f32>,
