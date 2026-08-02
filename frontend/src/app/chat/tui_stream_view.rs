@@ -6,12 +6,63 @@ use wasm_bindgen::JsCast;
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
-use super::tui_line_markdown::{TuiBodyPatch, open_line_is_fence_buffer, render_open_active_html};
+use super::tui_line_markdown::{
+    TuiBodyPatch, open_active_block_class, open_block_is_fence_buffer, render_open_active_html,
+};
 use super::tui_transcript_sync::{PlanTuiSyncArgs, TuiMountState, TuiSyncPlan, plan_tui_sync};
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::Locale;
+use crate::storage::ChatSession;
+use crate::stream_text_overlay::StreamTextOverlay;
+use std::collections::HashMap;
 
-fn ensure_open_line(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement> {
+struct PlanActiveSessionArgs<'a> {
+    sessions: &'a [ChatSession],
+    active_id: &'a str,
+    prev: Option<&'a TuiMountState>,
+    overlay: Option<&'a StreamTextOverlay>,
+    locale: Locale,
+    apply_filters: bool,
+    markdown_render: bool,
+    tool_chunks: &'a HashMap<String, String>,
+}
+
+fn plan_for_active_session(args: PlanActiveSessionArgs<'_>) -> TuiSyncPlan {
+    let PlanActiveSessionArgs {
+        sessions,
+        active_id,
+        prev,
+        overlay,
+        locale,
+        apply_filters,
+        markdown_render,
+        tool_chunks,
+    } = args;
+    match sessions.iter().find(|session| session.id == active_id) {
+        None => plan_tui_sync(PlanTuiSyncArgs {
+            prev,
+            messages: &[],
+            session_id: active_id,
+            overlay: None,
+            locale,
+            apply_assistant_display_filters: apply_filters,
+            markdown_render,
+            tool_chunks,
+        }),
+        Some(session) => plan_tui_sync(PlanTuiSyncArgs {
+            prev,
+            messages: &session.messages,
+            session_id: &session.id,
+            overlay,
+            locale,
+            apply_assistant_display_filters: apply_filters,
+            markdown_render,
+            tool_chunks,
+        }),
+    }
+}
+
+fn ensure_open_block(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement> {
     if let Some(existing) = body
         .query_selector(".chat-tui-line--plain, .chat-tui-line--active")
         .ok()
@@ -21,41 +72,36 @@ fn ensure_open_line(body: &web_sys::HtmlElement) -> Option<web_sys::HtmlElement>
         return Some(existing);
     }
     let document = body.owner_document()?;
-    let line = document
+    let block = document
         .create_element("div")
         .ok()?
         .dyn_into::<web_sys::HtmlElement>()
         .ok()?;
-    line.set_class_name("chat-tui-line chat-tui-line--active");
-    let _ = body.append_child(&line);
-    Some(line)
+    block.set_class_name("chat-tui-line chat-tui-line--active");
+    let _ = body.append_child(&block);
+    Some(block)
 }
 
-fn remove_open_line(body: &web_sys::HtmlElement) {
-    if let Some(line) = body
+fn remove_open_block(body: &web_sys::HtmlElement) {
+    if let Some(block) = body
         .query_selector(".chat-tui-line--plain, .chat-tui-line--active")
         .ok()
         .flatten()
     {
-        line.remove();
+        block.remove();
     }
 }
 
-fn apply_open_active_line(body: &web_sys::HtmlElement, text: &str, markdown_render: bool) -> bool {
-    let Some(line) = ensure_open_line(body) else {
+fn apply_open_active_block(body: &web_sys::HtmlElement, text: &str, markdown_render: bool) -> bool {
+    let Some(block) = ensure_open_block(body) else {
         return false;
     };
-    let plain_mode = !markdown_render || open_line_is_fence_buffer(text);
-    line.set_class_name(if plain_mode {
-        "chat-tui-line chat-tui-line--plain"
-    } else {
-        "chat-tui-line chat-tui-line--active"
-    });
+    block.set_class_name(open_active_block_class(text, markdown_render));
     // 未闭合围栏：textContent 避免半截 HTML；关 MD / 行内增强走统一入口。
-    if markdown_render && open_line_is_fence_buffer(text) {
-        line.set_text_content(Some(text));
+    if markdown_render && open_block_is_fence_buffer(text) {
+        block.set_text_content(Some(text));
     } else {
-        line.set_inner_html(&render_open_active_html(text, markdown_render));
+        block.set_inner_html(&render_open_active_html(text, markdown_render));
     }
     true
 }
@@ -112,7 +158,11 @@ fn apply_tool_row_patch(
     true
 }
 
-fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
+fn apply_body_patch(
+    body: &web_sys::HtmlElement,
+    patch: TuiBodyPatch,
+    markdown_render: bool,
+) -> bool {
     match patch {
         TuiBodyPatch::ReplaceAll { chunks } => {
             body.set_inner_html(&chunks.to_inner_html());
@@ -121,10 +171,9 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
         TuiBodyPatch::Incremental {
             append_closed,
             open_plain,
-            markdown_render,
         } => {
             if !append_closed.is_empty() {
-                remove_open_line(body);
+                remove_open_block(body);
                 for chunk in &append_closed {
                     if body.insert_adjacent_html("beforeend", chunk).is_err() {
                         return false;
@@ -132,9 +181,9 @@ fn apply_body_patch(body: &web_sys::HtmlElement, patch: TuiBodyPatch) -> bool {
                 }
             }
             match open_plain {
-                Some(text) => apply_open_active_line(body, &text, markdown_render),
+                Some(text) => apply_open_active_block(body, &text, markdown_render),
                 None => {
-                    remove_open_line(body);
+                    remove_open_block(body);
                     true
                 }
             }
@@ -228,7 +277,7 @@ fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) ->
         let Some(body) = find_turn_body(transcript, &live.message_id) else {
             return false;
         };
-        if !apply_body_patch(&body, live.patch.clone()) {
+        if !apply_body_patch(&body, live.patch.clone(), live.markdown_render) {
             return false;
         }
     }
@@ -237,7 +286,7 @@ fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) ->
         let Some(body) = find_turn_body(transcript, &refresh.message_id) else {
             return false;
         };
-        if !apply_body_patch(&body, refresh.patch.clone()) {
+        if !apply_body_patch(&body, refresh.patch.clone(), refresh.markdown_render) {
             return false;
         }
     }
@@ -290,29 +339,16 @@ pub(crate) fn ChatTuiStreamView(
         let overlay = chat.stream_text_overlay.get();
         let prev = mount_state.get_untracked();
         let plan = chat.sessions.with(|sessions| {
-            let session = sessions.iter().find(|session| session.id == active_id);
-            match session {
-                None => plan_tui_sync(PlanTuiSyncArgs {
-                    prev: prev.as_ref(),
-                    messages: &[],
-                    session_id: &active_id,
-                    overlay: None,
-                    locale,
-                    apply_assistant_display_filters: apply_filters,
-                    markdown_render: md_on,
-                    tool_chunks: &tool_chunks,
-                }),
-                Some(session) => plan_tui_sync(PlanTuiSyncArgs {
-                    prev: prev.as_ref(),
-                    messages: &session.messages,
-                    session_id: &session.id,
-                    overlay: overlay.as_ref(),
-                    locale,
-                    apply_assistant_display_filters: apply_filters,
-                    markdown_render: md_on,
-                    tool_chunks: &tool_chunks,
-                }),
-            }
+            plan_for_active_session(PlanActiveSessionArgs {
+                sessions,
+                active_id: &active_id,
+                prev: prev.as_ref(),
+                overlay: overlay.as_ref(),
+                locale,
+                apply_filters,
+                markdown_render: md_on,
+                tool_chunks: &tool_chunks,
+            })
         });
 
         let Some(node) = transcript_ref.get() else {
@@ -327,32 +363,24 @@ pub(crate) fn ChatTuiStreamView(
             mount_state.set(Some(plan.next));
         } else {
             let forced = chat.sessions.with(|sessions| {
-                let session = sessions.iter().find(|session| session.id == active_id);
-                match session {
-                    None => plan_tui_sync(PlanTuiSyncArgs {
-                        prev: None,
-                        messages: &[],
-                        session_id: &active_id,
-                        overlay: None,
-                        locale,
-                        apply_assistant_display_filters: apply_filters,
-                        markdown_render: md_on,
-                        tool_chunks: &tool_chunks,
-                    }),
-                    Some(session) => plan_tui_sync(PlanTuiSyncArgs {
-                        prev: None,
-                        messages: &session.messages,
-                        session_id: &session.id,
-                        overlay: overlay.as_ref(),
-                        locale,
-                        apply_assistant_display_filters: apply_filters,
-                        markdown_render: md_on,
-                        tool_chunks: &tool_chunks,
-                    }),
-                }
+                plan_for_active_session(PlanActiveSessionArgs {
+                    sessions,
+                    active_id: &active_id,
+                    prev: None,
+                    overlay: overlay.as_ref(),
+                    locale,
+                    apply_filters,
+                    markdown_render: md_on,
+                    tool_chunks: &tool_chunks,
+                })
             });
-            let _ = apply_tui_sync_plan(el, &forced);
-            mount_state.set(Some(forced.next));
+            if apply_tui_sync_plan(el, &forced) {
+                mount_state.set(Some(forced.next));
+            } else {
+                web_sys::console::warn_1(
+                    &"chat-tui: forced rebuild failed; keeping previous mount_state".into(),
+                );
+            }
         }
         follow_after_content_paint(scroll_shell);
     });

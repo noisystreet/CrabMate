@@ -68,7 +68,6 @@ fn streaming_tokens_incremental_open_plain() {
         TuiBodyPatch::Incremental {
             append_closed,
             open_plain,
-            markdown_render: _,
         } => {
             assert!(append_closed.is_empty());
             assert_eq!(open_plain.as_deref(), Some("**ab"));
