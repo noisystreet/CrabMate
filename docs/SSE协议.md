@@ -64,7 +64,7 @@
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`） | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
-**`timeline_log.kind` 常用值**：`final_response`（终答标记）；`intent_analysis`（意图门控旁注，服务端仍可发出；**Web UI 不渲染、水合/导出亦不保留**）。
+**`timeline_log.kind` 常用值**：`final_response`（终答标记）；`intent_analysis`（历史意图门控旁注；**R2 起服务端不再发出**；Web UI 不渲染、水合/导出亦不保留）。
 
 ### `tool_result` 常用字段
 

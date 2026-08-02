@@ -79,7 +79,7 @@ pub fn intent_action_label(action: &IntentAction) -> &'static str {
     }
 }
 
-/// 由 L2 / 意图管线产出构造 **`ProceedExecute`** 快照。
+/// 由意图门控 / 启发式产出构造 **`ProceedExecute`** 快照。
 pub fn intent_gate_snapshot_from_decision(decision: &IntentDecision) -> IntentGateSnapshot {
     IntentGateSnapshot::ProceedExecute {
         kind: intent_kind_label(decision.kind).to_string(),

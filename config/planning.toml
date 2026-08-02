@@ -14,9 +14,8 @@ final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 planner_executor_mode = "single_agent"
 
-# 意图管线（L2 额外 chat：**默认关**，退役中；仅显式 intent_l2_enabled=true 且门控开且 session_mode=act 时调用；
-# 输出 suggested_mode + confidence，不自动改用户 mode；不可用/低置信 fail-open；见配置说明）
+# 意图管线 L2 键（历史；R2 起生产路径已拆除，不再发起额外 chat；R3 清扫）。
 # intent_l2_enabled = false
-# intent_l2_min_confidence = 0.7   # 低于该值不采纳 L2，改为 fail-open（仍可带 suggested_mode）
+# intent_l2_min_confidence = 0.7
 # intent_l0_routing_boost_enabled / intent_execute_*_threshold：历史键，已无决策作用
 # planner_executor_mode：仅 single_agent（ReAct）；logical_dual_agent / hierarchical 已移除。

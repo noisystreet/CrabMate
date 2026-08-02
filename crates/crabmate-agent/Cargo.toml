@@ -13,7 +13,6 @@ crabmate-config = { workspace = true, default-features = false }
 crabmate-llm = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
-async-trait = { workspace = true }
 log = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }

@@ -34,8 +34,8 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
-    let intent_continued = intent_at_turn_start::run_intent_at_turn_start_if_configured(p).await?;
-    // 会话 Ask/Plan：须在意图门控之后挂只读（门控关/Ask/Plan 现已跳过 L2，不再 clear 管线副作用）。
+    let intent_continued = intent_at_turn_start::run_intent_at_turn_start_if_configured(p)?;
+    // 会话 Ask/Plan：须在意图门控之后挂只读（门控关 / Ask/Plan 跳过门控启发式；只读由本处 mode 挂载）。
     if crate::session_mode_turn::session_mode_requires_readonly_tools(p.ctx.attach.session_mode) {
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(crabmate_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
