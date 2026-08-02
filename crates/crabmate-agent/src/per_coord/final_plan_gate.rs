@@ -221,7 +221,10 @@ enum StaticSemanticsOutcome {
         plan: AgentReplyPlanV1,
         tool_digest: Option<String>,
     },
-    Fail,
+    Fail {
+        /// 机器可读短反馈，注入重写 user（错误码风格）。
+        feedback: String,
+    },
 }
 
 fn static_semantics_layers_ok(
@@ -235,11 +238,12 @@ fn static_semantics_layers_ok(
     }
 }
 
-fn static_semantics_workflow_ids_ok(
+/// 返回 `(workflow_node_ids 子集合法, 严格覆盖合法)`。
+fn static_semantics_workflow_id_checks(
     plan: &AgentReplyPlanV1,
     args: &FinalPlanGateArgs<'_>,
     wf_ids: &Option<Vec<String>>,
-) -> bool {
+) -> (bool, bool) {
     let workflow_subset_ok = match wf_ids.as_ref() {
         Some(ids) => plan_artifact::validate_plan_workflow_node_ids_subset(plan, ids).is_ok(),
         None => true,
@@ -254,7 +258,7 @@ fn static_semantics_workflow_ids_ok(
     } else {
         true
     };
-    workflow_subset_ok && workflow_cover_ok
+    (workflow_subset_ok, workflow_cover_ok)
 }
 
 fn static_semantics_validate_only_binding_ok(
@@ -283,24 +287,45 @@ fn evaluate_static_semantics(
 ) -> StaticSemanticsOutcome {
     let layers_ok = static_semantics_layers_ok(plan, apply_layer_semantics, layer_need);
     let wf_ids = plan_rewrite::last_workflow_tool_node_ids(args.messages);
-    let workflow_ids_ok = static_semantics_workflow_ids_ok(plan, args, &wf_ids);
+    let (workflow_subset_ok, workflow_cover_ok) =
+        static_semantics_workflow_id_checks(plan, args, &wf_ids);
+    let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
     let validate_only_binding_ok = static_semantics_validate_only_binding_ok(
         plan,
         apply_layer_semantics,
         validate_only_binding_ids,
     );
     if !(layers_ok && workflow_ids_ok && validate_only_binding_ok) {
+        let mut codes: Vec<String> = Vec::new();
+        if !layers_ok {
+            let got = plan.steps.len();
+            let need = layer_need.unwrap_or(0);
+            codes.push(format!("plan_layer_count_mismatch need={need} got={got}"));
+        }
+        if !workflow_subset_ok {
+            codes.push("plan_workflow_node_ids_invalid".to_string());
+        }
+        if !workflow_cover_ok {
+            codes.push("plan_workflow_node_coverage_incomplete".to_string());
+        }
+        if !validate_only_binding_ok {
+            codes.push("plan_validate_only_node_binding_mismatch".to_string());
+        }
         tracing::info!(
             target: "crabmate::per",
             outcome = "plan_schema_ok_semantics_fail",
             plan_steps = plan.steps.len(),
             layer_need = ?layer_need,
-            workflow_node_ids_ok = workflow_ids_ok,
+            workflow_subset_ok,
+            workflow_cover_ok,
             validate_only_binding_ok = validate_only_binding_ok,
+            feedback = %codes.join(";"),
             sub_phase = "reflect",
             "after_final_assistant static semantics failed"
         );
-        return StaticSemanticsOutcome::Fail;
+        return StaticSemanticsOutcome::Fail {
+            feedback: codes.join("; "),
+        };
     }
 
     let digest = plan_rewrite::summarize_messages_for_final_plan_semantic_check(
@@ -337,7 +362,10 @@ fn evaluate_static_semantics(
     }
 }
 
-fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGateStepOutcome {
+fn outcome_after_semantics_failure(
+    args: FinalPlanGateArgs<'_>,
+    issue: Option<&str>,
+) -> FinalPlanGateStepOutcome {
     let apply_layer_semantics = args.apply_layer_semantics();
     let layer_need = args.layer_need;
     let validate_only_binding_ids = &args.validate_only_binding_ids;
@@ -370,6 +398,10 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
     let bind_suffix = validate_only_bind_ids
         .map(|ids| plan_rewrite::validate_only_plan_binding_rewrite_suffix(ids.as_slice()))
         .unwrap_or_default();
+    let base = match issue.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(s) => plan_rewrite::plan_rewrite_user_text_with_issue(s),
+        None => plan_rewrite::plan_rewrite_user_text_base(),
+    };
     let rewrite_text = match (
         layer_need.filter(|&n| n > 0 && apply_layer_semantics),
         plan_rewrite::last_workflow_tool_node_ids(args.messages),
@@ -384,15 +416,12 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
                 String::new()
             };
             format!(
-                "{}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。{}",
-                plan_rewrite::plan_rewrite_user_text_base(),
+                "{base}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。{strict}",
                 ids.join(", "),
-                strict
             )
         }
         (Some(n), _) => format!(
-            "{}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。",
-            plan_rewrite::plan_rewrite_user_text_base()
+            "{base}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。"
         ),
         (None, Some(ids)) if !ids.is_empty() => {
             let strict = if args.final_plan_require_strict_workflow_node_coverage {
@@ -404,13 +433,11 @@ fn outcome_after_semantics_failure(args: FinalPlanGateArgs<'_>) -> FinalPlanGate
                 String::new()
             };
             format!(
-                "{}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。{}",
-                plan_rewrite::plan_rewrite_user_text_base(),
+                "{base}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。{strict}",
                 ids.join(", "),
-                strict
             )
         }
-        (None, _) => plan_rewrite::plan_rewrite_user_text_base(),
+        (None, _) => base,
     };
     let rewrite_text = format!("{rewrite_text}{bind_suffix}");
     tracing::info!(
@@ -447,11 +474,11 @@ pub fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateS
     let validate_only_binding_ids = args.validate_only_binding_ids.as_ref();
 
     let content = crabmate_types::message_content_as_str(&args.msg.content).unwrap_or("");
-    if let Ok(plan) = plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids(
+    match plan_artifact::parse_agent_reply_plan_v1_with_validate_only_binding_ids(
         content,
         validate_only_binding_ids.map(|v| v.as_slice()),
     ) {
-        match evaluate_static_semantics(
+        Ok(plan) => match evaluate_static_semantics(
             &plan,
             &args,
             apply_layer_semantics,
@@ -475,17 +502,21 @@ pub fn step_check_structured_plan(args: FinalPlanGateArgs<'_>) -> FinalPlanGateS
                     next_plan_rewrite_count: None,
                 }
             }
-            StaticSemanticsOutcome::Fail => outcome_after_semantics_failure(args),
+            StaticSemanticsOutcome::Fail { feedback } => {
+                outcome_after_semantics_failure(args, Some(feedback.as_str()))
+            }
+        },
+        Err(e) => {
+            let parse_err = plan_artifact::plan_artifact_error_log_summary(&e);
+            let mut outcome = outcome_after_semantics_failure(args, Some(parse_err.as_str()));
+            if matches!(
+                outcome.route,
+                FinalPlanGateRoute::SemanticsFailedRequestRewrite
+            ) {
+                outcome.decision_reason = FinalPlanGateDecisionReason::PlanParseFailed;
+            }
+            outcome
         }
-    } else {
-        let mut outcome = outcome_after_semantics_failure(args);
-        if matches!(
-            outcome.route,
-            FinalPlanGateRoute::SemanticsFailedRequestRewrite
-        ) {
-            outcome.decision_reason = FinalPlanGateDecisionReason::PlanParseFailed;
-        }
-        outcome
     }
 }
 
@@ -559,313 +590,5 @@ pub fn after_final_assistant(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::plan_rewrite::PlanRewriteExhaustedReason;
-    use crate::plan_semantic::PlanSemanticLlmOutcome;
-    use crabmate_types::{FunctionCall, MessageContent, ToolCall};
-
-    fn minimal_cfg() -> AgentConfig {
-        crabmate_config::load_config(None).expect("embed default config")
-    }
-
-    fn gate_args<'a>(
-        msg: &'a Message,
-        messages: &'a [Message],
-        cfg: &'a AgentConfig,
-        policy: FinalPlanRequirementMode,
-        source: PlanRequirementSource,
-        attempts: usize,
-        max_attempts: usize,
-    ) -> FinalPlanGateArgs<'a> {
-        FinalPlanGateArgs {
-            msg,
-            messages,
-            cfg,
-            workspace_is_set: false,
-            gate_context: build_final_plan_gate_context(policy, source),
-            final_plan_require_strict_workflow_node_coverage: false,
-            final_plan_semantic_check_enabled: false,
-            final_plan_semantic_check_max_non_readonly_tools: 0,
-            layer_need: None,
-            validate_only_binding_ids: None,
-            plan_rewrite_attempts: attempts,
-            plan_rewrite_max_attempts: max_attempts,
-        }
-    }
-
-    #[test]
-    fn gate_route_accept_ok_when_plan_valid() {
-        let cfg = minimal_cfg();
-        let ok = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"x"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
-        let hist: Vec<Message> = vec![];
-        let o = step_check_structured_plan(gate_args(
-            &ok,
-            &hist,
-            &cfg,
-            FinalPlanRequirementMode::WorkflowReflection,
-            PlanRequirementSource::WorkflowReflection,
-            0,
-            2,
-        ));
-        assert_eq!(o.route, FinalPlanGateRoute::AcceptStructuredPlanOk);
-        assert_eq!(
-            o.decision_reason,
-            FinalPlanGateDecisionReason::StructuredPlanAccepted
-        );
-        assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
-    }
-
-    #[test]
-    fn gate_route_rewrite_when_parse_fails() {
-        let cfg = minimal_cfg();
-        let bad = Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text("no json plan".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
-        let hist: Vec<Message> = vec![];
-        let o = step_check_structured_plan(gate_args(
-            &bad,
-            &hist,
-            &cfg,
-            FinalPlanRequirementMode::WorkflowReflection,
-            PlanRequirementSource::WorkflowReflection,
-            0,
-            2,
-        ));
-        assert_eq!(o.route, FinalPlanGateRoute::SemanticsFailedRequestRewrite);
-        assert_eq!(
-            o.decision_reason,
-            FinalPlanGateDecisionReason::PlanParseFailed
-        );
-        assert!(matches!(
-            o.after,
-            AfterFinalAssistant::RequestPlanRewrite(_)
-        ));
-        assert_eq!(o.next_plan_rewrite_count, Some(1));
-    }
-
-    #[test]
-    fn gate_route_exhausted_when_attempts_maxed() {
-        let cfg = minimal_cfg();
-        let bad = Message {
-            role: "assistant".to_string(),
-            content: Some(MessageContent::Text("no json plan".to_string())),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
-        let hist: Vec<Message> = vec![];
-        let o = step_check_structured_plan(gate_args(
-            &bad,
-            &hist,
-            &cfg,
-            FinalPlanRequirementMode::WorkflowReflection,
-            PlanRequirementSource::WorkflowReflection,
-            2,
-            2,
-        ));
-        assert_eq!(o.route, FinalPlanGateRoute::SemanticsFailedRewriteExhausted);
-        assert!(matches!(
-            o.after,
-            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
-                reason: PlanRewriteExhaustedReason::PlanMissing
-            }
-        ));
-    }
-
-    #[test]
-    fn resolve_phase_never_is_no_requirement() {
-        let ctx = build_final_plan_gate_context(
-            FinalPlanRequirementMode::Never,
-            PlanRequirementSource::WorkflowReflection,
-        );
-        assert_eq!(ctx.phase, FinalPlanGatePhase::NoRequirement);
-    }
-
-    #[test]
-    fn run_gate_no_requirement_returns_stop_turn() {
-        let cfg = minimal_cfg();
-        let msg = Message {
-            role: "assistant".to_string(),
-            content: Some("x".into()),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
-        let o = run_final_plan_gate(
-            FinalPlanGatePhase::NoRequirement,
-            FinalPlanGateEvent::FinalAssistantArrived,
-            gate_args(
-                &msg,
-                &[],
-                &cfg,
-                FinalPlanRequirementMode::Never,
-                PlanRequirementSource::None,
-                0,
-                2,
-            ),
-        );
-        assert_eq!(o.route, FinalPlanGateRoute::StopNoRequirement);
-        assert_eq!(
-            o.decision_reason,
-            FinalPlanGateDecisionReason::PolicyNoRequirement
-        );
-        assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
-    }
-
-    #[test]
-    fn gate_route_pending_semantic_when_digest_present() {
-        let cfg = minimal_cfg();
-        let ok = Message {
-            role: "assistant".to_string(),
-            content: Some(
-                r#"```json
-{"type":"agent_reply_plan","version":1,"steps":[{"id":"s1","description":"x"}]}
-```"#
-                    .into(),
-            ),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: None,
-        };
-        let hist = vec![
-            Message {
-                role: "assistant".to_string(),
-                content: None,
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: Some(vec![ToolCall {
-                    id: "tc0".to_string(),
-                    typ: "function".to_string(),
-                    function: FunctionCall {
-                        name: "read_file".to_string(),
-                        arguments: r#"{"path":"a.rs"}"#.to_string(),
-                    },
-                }]),
-                name: None,
-                tool_call_id: None,
-            },
-            Message {
-                role: "tool".to_string(),
-                content: Some("file contents".into()),
-                reasoning_content: None,
-                reasoning_details: None,
-                tool_calls: None,
-                name: None,
-                tool_call_id: Some("tc0".to_string()),
-            },
-        ];
-        let o = step_check_structured_plan(FinalPlanGateArgs {
-            msg: &ok,
-            messages: &hist,
-            cfg: &cfg,
-            workspace_is_set: false,
-            gate_context: build_final_plan_gate_context(
-                FinalPlanRequirementMode::WorkflowReflection,
-                PlanRequirementSource::WorkflowReflection,
-            ),
-            final_plan_require_strict_workflow_node_coverage: false,
-            final_plan_semantic_check_enabled: true,
-            final_plan_semantic_check_max_non_readonly_tools: 4,
-            layer_need: None,
-            validate_only_binding_ids: None,
-            plan_rewrite_attempts: 0,
-            plan_rewrite_max_attempts: 2,
-        });
-        assert_eq!(o.route, FinalPlanGateRoute::PendingSemanticConsistencyLlm);
-        assert_eq!(
-            o.decision_reason,
-            FinalPlanGateDecisionReason::PendingSemanticConsistencyLlm
-        );
-        assert!(matches!(
-            o.after,
-            AfterFinalAssistant::StopTurnPendingPlanConsistencyLlm { .. }
-        ));
-    }
-
-    #[test]
-    fn semantic_completed_consistent_stops() {
-        let o = run_final_plan_gate_semantic_completed(
-            &PlanSemanticLlmOutcome {
-                consistent: true,
-                violation_codes: vec![],
-                rationale: None,
-                user_cancelled: false,
-            },
-            0,
-            3,
-        );
-        assert_eq!(o.route, FinalPlanGateRoute::SemanticConsistencyAcceptedStop);
-        assert!(matches!(o.after, AfterFinalAssistant::StopTurn));
-        assert_eq!(o.next_plan_rewrite_count, None);
-    }
-
-    #[test]
-    fn semantic_completed_inconsistent_rewrites() {
-        let o = run_final_plan_gate_semantic_completed(
-            &PlanSemanticLlmOutcome {
-                consistent: false,
-                violation_codes: vec!["x".into()],
-                rationale: Some("r".into()),
-                user_cancelled: false,
-            },
-            1,
-            3,
-        );
-        assert_eq!(o.route, FinalPlanGateRoute::SemanticMismatchRequestRewrite);
-        assert!(matches!(
-            o.after,
-            AfterFinalAssistant::RequestPlanRewrite(_)
-        ));
-        assert_eq!(o.next_plan_rewrite_count, Some(2));
-    }
-
-    #[test]
-    fn semantic_completed_inconsistent_exhausted() {
-        let o = run_final_plan_gate_semantic_completed(
-            &PlanSemanticLlmOutcome {
-                consistent: false,
-                violation_codes: vec!["x".into()],
-                rationale: None,
-                user_cancelled: false,
-            },
-            3,
-            3,
-        );
-        assert_eq!(
-            o.route,
-            FinalPlanGateRoute::SemanticMismatchRewriteExhausted
-        );
-        assert!(matches!(
-            o.after,
-            AfterFinalAssistant::StopTurnPlanRewriteExhausted {
-                reason: PlanRewriteExhaustedReason::PlanSemanticInconsistent
-            }
-        ));
-    }
-}
+#[path = "final_plan_gate_tests.rs"]
+mod tests;

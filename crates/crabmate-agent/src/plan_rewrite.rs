@@ -73,11 +73,24 @@ pub fn user_text_semantic_mismatch_with_feedback(
     )
 }
 
+/// 规划重写 user 的短底座：必填字段 + 最短示例（**不含**完整 [`plan_artifact::PLAN_V1_SCHEMA_RULES`]）。
 pub fn plan_rewrite_user_text_base() -> String {
     format!(
-        "你的最终回答缺少**结构化规划**。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：\n{}\n\n示例：\n```json\n{}\n```\n\n请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。",
-        plan_artifact::PLAN_V1_SCHEMA_RULES,
-        plan_artifact::PLAN_V1_EXAMPLE_JSON
+        "你的最终回答缺少或未通过**结构化规划**校验。请在 content 中加入一段 Markdown 代码围栏（语言标记为 json），其内为合法 JSON，且必须满足：\n{}\n\n示例：\n```json\n{}\n```\n\n请直接重写本轮最终回答（可有其它说明文字，但须包含上述 JSON 围栏）。",
+        plan_artifact::PLAN_V1_REWRITE_BRIEF_RULES,
+        plan_artifact::PLAN_V1_REWRITE_EXAMPLE_JSON
+    )
+}
+
+/// 在短底座前附加校验反馈（错误码 / 缺字段说明），供解析失败或静态语义失败回灌。
+pub fn plan_rewrite_user_text_with_issue(issue: &str) -> String {
+    let issue = issue.trim();
+    if issue.is_empty() {
+        return plan_rewrite_user_text_base();
+    }
+    format!(
+        "**校验反馈**（请针对修正，勿忽略）：`{issue}`\n\n{}",
+        plan_rewrite_user_text_base()
     )
 }
 
@@ -455,4 +468,45 @@ fn assistant_index_for_tool_call(
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::plan_artifact::{
+        PLAN_V1_REWRITE_EXAMPLE_JSON, PLAN_V1_SCHEMA_RULES, parse_agent_reply_plan_v1,
+    };
+
+    #[test]
+    fn rewrite_user_base_is_much_shorter_than_full_schema_rules() {
+        let base = plan_rewrite_user_text_base();
+        let rules_len = PLAN_V1_SCHEMA_RULES.chars().count();
+        let base_len = base.chars().count();
+        assert!(
+            base_len * 2 < rules_len,
+            "rewrite user should omit full SCHEMA_RULES: base_len={base_len} rules_len={rules_len}"
+        );
+        // 长文细则中的标志性字段名不应出现在短重写底座里
+        assert!(
+            !base.contains("expect_json_path_equals"),
+            "rewrite user must not embed full acceptance schema rules"
+        );
+        assert!(base.contains(PLAN_V1_REWRITE_EXAMPLE_JSON));
+        assert!(base.contains("agent_reply_plan"));
+    }
+
+    #[test]
+    fn rewrite_example_json_parses_as_v1() {
+        parse_agent_reply_plan_v1(PLAN_V1_REWRITE_EXAMPLE_JSON)
+            .expect("PLAN_V1_REWRITE_EXAMPLE_JSON must parse");
+    }
+
+    #[test]
+    fn rewrite_user_with_issue_prefixes_feedback() {
+        let text = plan_rewrite_user_text_with_issue("not_found");
+        assert!(text.contains("校验反馈"));
+        assert!(text.contains("not_found"));
+        assert!(text.contains("agent_reply_plan"));
+        assert!(!text.contains("expect_json_path_equals"));
+    }
 }
