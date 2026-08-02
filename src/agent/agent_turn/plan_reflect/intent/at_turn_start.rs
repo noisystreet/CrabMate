@@ -1,11 +1,12 @@
 //! 在 `run_agent_turn` 起点的 **Act 句关键词启发式**（无额外 LLM）：
 //! Ask/Plan 跳过（只读由 `run_dispatch` / session_mode 决定）；Act 常跑执行约束关键词收窄。
+//!
+//! 启发式直接看最新真实 user 句（不改写「继续」/确认续接为前序任务）。
 
 use crate::agent::plan_artifact::PlanStepExecutorKind;
 use crabmate_agent::agent_turn::TurnStartSnapshot;
 use crabmate_types::SessionMode;
 
-use super::intent_user;
 use crate::agent::agent_turn::params::RunLoopParams;
 
 /// Ask/Plan 由 mode 决定只读档，跳过 Act 句启发式。
@@ -14,11 +15,16 @@ fn should_skip_act_utterance_heuristics(session_mode: SessionMode) -> bool {
     crate::session_mode_turn::session_mode_requires_readonly_tools(session_mode)
 }
 
+/// 最新真实用户任务句（跳过编排注入）；供 Act 关键词启发式使用。
+fn latest_user_task_for_heuristics(messages: &[crabmate_types::Message]) -> String {
+    crabmate_types::last_real_user_task_content(messages, false)
+        .unwrap_or_default()
+        .to_string()
+}
+
 /// 回合起点启发式：恒继续主执行（仅可能挂只读约束）。
 pub(crate) fn run_act_turn_start_heuristics(p: &mut RunLoopParams<'_>) {
-    let in_clarification_flow =
-        intent_user::recently_waiting_execute_confirmation(p.turn.messages());
-    let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
+    let task = latest_user_task_for_heuristics(p.turn.messages());
     if task.trim().is_empty() {
         p.turn.turn_planner_hints.turn_start_snapshot = Some(TurnStartSnapshot::EmptyTask);
         return;
@@ -233,5 +239,15 @@ mod tests {
         let c = infer_turn_execution_constraints("不要修改文件").expect("constraints");
         assert!(c.no_write);
         assert!(!c.requires_review_readonly());
+    }
+
+    #[test]
+    fn latest_user_task_skips_orchestration_injection() {
+        use super::latest_user_task_for_heuristics;
+        let messages = vec![
+            crabmate_types::Message::user_only("编译 hpcg"),
+            crabmate_types::Message::user_only("【编排纠偏】继续构建"),
+        ];
+        assert_eq!(latest_user_task_for_heuristics(&messages), "编译 hpcg");
     }
 }
