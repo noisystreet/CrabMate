@@ -210,7 +210,7 @@ mod tests {
     #[test]
     fn markdown_reorders_tool_after_assistant() {
         let messages = vec![
-            msg("assistant", "意图分析：执行类"),
+            msg("assistant", "开始执行"),
             msg("tool", "解压缩结果"),
             msg("tool", "list_tree 结果"),
             msg("assistant", "已解压。看看目录结构..."),
@@ -264,10 +264,6 @@ mod tests {
     fn golden_compile_hpcg_fine_grained_bubbles() {
         let messages = vec![
             msg("user", "编译hpcg"),
-            msg(
-                "assistant",
-                "意图分析：执行类（直接执行）\n综合置信度：0.95\n主意图：execute.run_test_build",
-            ),
             msg("assistant", "先了解工作区中的 HPCG 源码包情况。"),
             msg(
                 "tool",
@@ -347,8 +343,8 @@ mod tests {
 
         let first_assistant = sections.first().unwrap();
         assert!(
-            first_assistant.contains("意图分析") || first_assistant.contains("执行类"),
-            "首条助手应为意图分析"
+            first_assistant.contains("HPCG") || first_assistant.contains("源码"),
+            "首条助手应为开场调研"
         );
 
         let last_assistant = sections.last().unwrap();

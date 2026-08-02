@@ -53,53 +53,6 @@ struct TurnReplayLine {
     replay_turn_seq: u64,
 }
 
-/// 去掉 markdown code fence 包裹（```json ... ``` / ``` ... ```）。
-fn strip_code_fence(text: &str) -> String {
-    let trimmed = text.trim();
-    if trimmed.starts_with("```json") {
-        trimmed
-            .strip_prefix("```json")
-            .unwrap_or(trimmed)
-            .trim_end_matches('`')
-            .trim()
-            .to_string()
-    } else if trimmed.starts_with("```") {
-        trimmed
-            .strip_prefix("```")
-            .unwrap_or(trimmed)
-            .trim_end_matches('`')
-            .trim()
-            .to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-/// 判断 `assistant_content` 是否为意图分析 JSON。
-fn is_intent_analysis_json(text: &str) -> bool {
-    let stripped = strip_code_fence(text);
-    !stripped.is_empty()
-        && stripped.starts_with('{')
-        && stripped.contains("\"kind\"")
-        && stripped.contains("\"primary_intent\"")
-}
-
-/// 从 `assistant_content` 提取 TurnEvent（意图分析 → TimelineAssistant；其他忽略）。
-/// 非意图分析的 assistant_content 不再产生事件
-/// （终答由 overlay 承载，不经过 canonical reducer）。
-fn assistant_content_to_events(text: &str) -> Vec<TurnEvent> {
-    if text.trim().is_empty() {
-        return Vec::new();
-    }
-    if is_intent_analysis_json(text) {
-        vec![TurnEvent::TimelineAssistant {
-            text: text.to_string(),
-        }]
-    } else {
-        Vec::new()
-    }
-}
-
 /// 将后端 turn-replay 事件映射为 0 或多个 [`TurnEvent`]。
 fn map_turn_replay_event_to_turn_events(line: &TurnReplayLine) -> Vec<TurnEvent> {
     match line.event.as_str() {
@@ -143,11 +96,8 @@ fn map_llm_response_done(det: &serde_json::Value) -> Vec<TurnEvent> {
         out.push(TurnEvent::ToolPhaseEnd);
     }
 
-    // assistant_content → TimelineAssistant（意图分析时）
-    // 非意图分析的正文不再产生 canonical 事件
-    if let Some(text) = det.get("assistant_content").and_then(|v| v.as_str()) {
-        out.extend(assistant_content_to_events(text));
-    }
+    // assistant_content 不再映射为 canonical TimelineAssistant（终答由 overlay 承载）
+    let _ = det.get("assistant_content");
 
     out
 }
@@ -195,7 +145,7 @@ fn parse_segment_end(data: &serde_json::Value) -> Option<TurnEvent> {
 fn parse_timeline_log(data: &serde_json::Value) -> Option<TurnEvent> {
     let kind = data.get("kind").and_then(|v| v.as_str()).unwrap_or("");
     match kind {
-        "intent_analysis" | "approval_decision" | "tool_result_summary" => {
+        "approval_decision" | "tool_result_summary" => {
             let text = data
                 .get("title")
                 .and_then(|v| v.as_str())

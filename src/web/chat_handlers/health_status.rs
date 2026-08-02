@@ -73,7 +73,7 @@ struct StatusResponse {
     planner_executor_mode: &'static str,
     /// 编排档位（运行时恒 `react`）。
     orchestration_profile: &'static str,
-    /// 本进程有效编排路径摘要（固定意图门控 → ReAct；不含用户任务级门控）。
+    /// 本进程有效编排路径摘要（固定 session_mode / Act 句启发式 → ReAct；不含用户任务级门控）。
     effective_orchestration_path: String,
     /// SyncDefault 工具沙盒：`none` | `docker`。
     sync_default_tool_sandbox_mode: String,

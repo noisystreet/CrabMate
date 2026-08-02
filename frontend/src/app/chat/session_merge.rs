@@ -203,24 +203,15 @@ pub(crate) fn merge_session_tail(
     server_hydrated: Vec<StoredMessage>,
     local_tail: &[StoredMessage],
 ) -> Vec<StoredMessage> {
-    let server_hydrated: Vec<_> = server_hydrated
-        .into_iter()
-        .filter(|m| !crate::timeline_scan::is_intent_analysis_assistant_message(m))
-        .collect();
-    let local_tail: Vec<_> = local_tail
-        .iter()
-        .filter(|m| !crate::timeline_scan::is_intent_analysis_assistant_message(m))
-        .cloned()
-        .collect();
-    let server = inject_preserved_plain_users(server_hydrated, &local_tail);
-    replay_local_order_against_server(server, &local_tail)
+    let server = inject_preserved_plain_users(server_hydrated, local_tail);
+    replay_local_order_against_server(server, local_tail)
 }
 
 #[cfg(test)]
 mod golden {
     use super::*;
     use crate::storage::{StoredMessage, StoredMessageState};
-    use crate::timeline_scan::{timeline_state_intent_analysis_snapshot, timeline_state_tool};
+    use crate::timeline_scan::timeline_state_tool;
 
     fn user_msg(id: &str, text: &str) -> StoredMessage {
         StoredMessage {
@@ -249,21 +240,6 @@ mod golden {
             tool_call_id: None,
             tool_name: None,
             created_at: 2,
-        }
-    }
-
-    fn intent_msg(id: &str, text: &str) -> StoredMessage {
-        StoredMessage {
-            id: id.into(),
-            role: "assistant".into(),
-            text: text.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_intent_analysis_snapshot()),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
         }
     }
 
@@ -311,41 +287,17 @@ mod golden {
     #[test]
     fn golden_user_before_assistants_when_server_omits_user() {
         let local = vec![user_msg("local-u", "你好")];
-        let server = vec![
-            assistant_msg("intent", "意图分析：问候类\n\n"),
-            assistant_msg("a1", "你好！"),
-        ];
+        let server = vec![assistant_msg("a1", "你好！")];
         let merged = merge_session_tail(server, &local);
         assert_eq!(roles(&merged), vec!["user", "assistant"]);
         assert_eq!(merged[0].text, "你好");
-        assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
+        assert_eq!(merged[1].id, "a1");
     }
 
     #[test]
-    fn golden_greeting_turn_drops_local_intent() {
-        let local = vec![
-            user_msg("u1", "你好"),
-            intent_msg("tl-intent", "意图分析：问候类\n\n"),
-            assistant_msg("a-local", "你好！"),
-        ];
+    fn golden_greeting_turn_merges_server_answer() {
+        let local = vec![user_msg("u1", "你好"), assistant_msg("a-local", "你好！")];
         let server = vec![user_msg("u1", "你好"), assistant_msg("a-srv", "你好！")];
-        let merged = merge_session_tail(server, &local);
-        assert_eq!(roles(&merged), vec!["user", "assistant"]);
-        assert_eq!(merged[0].text, "你好");
-        assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
-    }
-
-    #[test]
-    fn golden_server_omits_user_keeps_local_user_before_answer() {
-        let local = vec![
-            user_msg("u-local", "你好"),
-            intent_msg("tl-intent", "意图分析：问候类\n\n"),
-            assistant_msg("a-local", "你好！"),
-        ];
-        let server = vec![
-            intent_msg("tl-intent-srv", "意图分析：问候类\n\n"),
-            assistant_msg("a-srv", "你好！我是 CrabMate 的 AI 助手。"),
-        ];
         let merged = merge_session_tail(server, &local);
         assert_eq!(roles(&merged), vec!["user", "assistant"]);
         assert_eq!(merged[0].text, "你好");
@@ -353,10 +305,22 @@ mod golden {
     }
 
     #[test]
-    fn golden_drops_local_intent_before_answer() {
+    fn golden_server_omits_user_keeps_local_user_before_answer() {
+        let local = vec![
+            user_msg("u-local", "你好"),
+            assistant_msg("a-local", "你好！"),
+        ];
+        let server = vec![assistant_msg("a-srv", "你好！我是 CrabMate 的 AI 助手。")];
+        let merged = merge_session_tail(server, &local);
+        assert_eq!(roles(&merged), vec!["user", "assistant"]);
+        assert_eq!(merged[0].text, "你好");
+        assert_eq!(merged[1].id, "a-srv");
+    }
+
+    #[test]
+    fn golden_replays_server_answer_over_local_draft() {
         let local = vec![
             user_msg("u1", "question"),
-            intent_msg("tl-intent", "意图分析：执行类\n\n"),
             assistant_msg("a-local", "stream draft"),
         ];
         let server = vec![
@@ -370,19 +334,16 @@ mod golden {
 
     #[test]
     fn golden_two_turn_skills_idempotent() {
-        let intent_text = "意图分析：问答类（直接回复）\n\n";
         let local = vec![
             user_msg("u1", "你好"),
             assistant_msg("a1", "你好！"),
             user_msg("u2", "你有哪些技能"),
-            intent_msg("local-intent", intent_text),
             assistant_msg("a2-local", ""),
         ];
         let server = vec![
             user_msg("u1", "你好"),
             assistant_msg("a1", "你好！"),
             user_msg("u2", "你有哪些技能"),
-            assistant_msg("srv-intent", intent_text),
             assistant_msg("a2-srv", "技能列表…"),
         ];
         let once = merge_session_tail(server.clone(), &local);
@@ -394,15 +355,14 @@ mod golden {
             once.iter().map(|m| &m.id).collect::<Vec<_>>()
         );
         assert_eq!(once.len(), twice.len());
-        assert!(!once.iter().any(|m| m.text.contains("意图分析")));
         assert_eq!(roles(&once), vec!["user", "assistant", "user", "assistant"]);
+        assert_eq!(once[3].id, "a2-srv");
     }
 
     #[test]
     fn golden_skips_loading_and_replays_server_answer() {
         let local = vec![
             user_msg("u1", "question"),
-            intent_msg("tl-intent", "意图分析：执行类\n\n"),
             StoredMessage {
                 id: "a-local".into(),
                 role: "assistant".into(),

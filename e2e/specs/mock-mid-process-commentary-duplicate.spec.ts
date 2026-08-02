@@ -33,8 +33,6 @@ import { seedSession, sendMessage } from "../fixtures/helpers";
 const STREAM_DELAY_MS = 55;
 const CONV_ID = "e2e-mid-process-commentary-dup";
 
-const INTENT_TITLE = "意图分析：执行类（直接执行）";
-
 /** 与导出一致的各段工具前旁白（用于「恰好一条」断言）。 */
 const STEP_COMMENTARIES = [
   "我先看一下工作区当前的结构，确认没有现有项目干扰。",
@@ -122,22 +120,6 @@ function toolPair(
 function buildExportLikeSse(): string[] {
   const state = { id: 1 };
   const events: string[] = [];
-
-  events.push(
-    nextId(
-      state,
-      JSON.stringify({
-        type: "CUSTOM",
-        customType: "timeline_log",
-        data: {
-          kind: "intent_analysis",
-          title: INTENT_TITLE,
-          detail:
-            "综合置信度：1.00\n主意图：execute.run_test_build\n需要澄清：false",
-        },
-      }),
-    ),
-  );
 
   const steps: Array<{
     commentary: string;
@@ -374,7 +356,6 @@ test("export-shaped multi-step commentaries must each appear exactly once", asyn
   await sendMessage(page, "编写一个简单c++程序，使用cmake编译执行");
 
   const transcript = page.getByTestId("chat-tui-transcript");
-  await expect(transcript).not.toContainText(INTENT_TITLE, { timeout: 5_000 });
 
   // ⓪ 流中采样（delayed SSE）：每步旁白 / 工具边界立刻查 DOM 双写
   await sampleCommentaryStepsDuringStream({

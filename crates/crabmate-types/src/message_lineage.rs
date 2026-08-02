@@ -10,7 +10,7 @@ pub enum ContextInjectionKind {
     LongTermMemory,
     WorkspaceChangelist,
     FirstTurnWorkspaceContext,
-    IntentGateEphemeral,
+    ExecutionConstraintEphemeral,
     /// 其它带 `user.name` / `system.name` 的注入（未来扩展）。
     Other,
 }
@@ -34,8 +34,8 @@ pub enum MessageLineage {
 #[must_use]
 pub fn message_lineage(m: &super::Message) -> MessageLineage {
     use super::{
-        is_chat_timeline_marker, is_chat_ui_separator, is_first_turn_workspace_context_injection,
-        is_intent_gate_ephemeral_system, is_long_term_memory_injection,
+        is_chat_timeline_marker, is_chat_ui_separator, is_execution_constraint_ephemeral_system,
+        is_first_turn_workspace_context_injection, is_long_term_memory_injection,
         is_workspace_changelist_injection,
     };
 
@@ -57,8 +57,10 @@ pub fn message_lineage(m: &super::Message) -> MessageLineage {
     if is_first_turn_workspace_context_injection(m) {
         return MessageLineage::ContextInjection(ContextInjectionKind::FirstTurnWorkspaceContext);
     }
-    if is_intent_gate_ephemeral_system(m) {
-        return MessageLineage::ContextInjection(ContextInjectionKind::IntentGateEphemeral);
+    if is_execution_constraint_ephemeral_system(m) {
+        return MessageLineage::ContextInjection(
+            ContextInjectionKind::ExecutionConstraintEphemeral,
+        );
     }
     match m.role.as_str() {
         "user" => {

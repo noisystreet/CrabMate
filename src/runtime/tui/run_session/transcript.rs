@@ -432,7 +432,7 @@ mod tests {
         proj.apply_sse(
             &SsePayload::TimelineLog {
                 log: crate::sse::protocol::TimelineLogBody {
-                    kind: "intent_analysis".into(),
+                    kind: "tool_result_summary".into(),
                     title: "直接执行".into(),
                     detail: None,
                 },

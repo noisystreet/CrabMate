@@ -226,7 +226,7 @@ function assistantSectionsWithText(page: Page, text: string) {
     ];
     return sections
       .map((el) => (el.innerText ?? "").replace(/\s+/g, " ").trim())
-      .filter((t) => t.includes(needle) && !t.includes("意图分析"));
+      .filter((t) => t.includes(needle));
   }, text);
 }
 

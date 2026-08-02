@@ -699,7 +699,7 @@ mod tests {
     #[test]
     fn chat_line_headers_get_distinct_styles_when_color_on() {
         assert!(chat_line_header_style("▸ read_file  README.md").is_some());
-        assert!(chat_line_header_style("· 意图分析").is_some());
+        assert!(chat_line_header_style("· 工具摘要").is_some());
         assert!(chat_line_header_style("[SSE 控制面]").is_some());
         assert!(chat_line_header_style("普通正文").is_none());
         assert!(chat_line_header_style("[旁白]").is_none());

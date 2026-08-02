@@ -148,36 +148,6 @@ pub fn timeline_state_local_snapshot() -> StoredMessageState {
     )
 }
 
-/// 意图分析旁注（流式已不再 push；旧本地/导出行统一丢弃，不做旧会话兼容）。
-#[must_use]
-pub fn is_intent_analysis_assistant_message(m: &StoredMessage) -> bool {
-    if m.is_tool || m.role != "assistant" {
-        return false;
-    }
-    if m.state
-        .as_ref()
-        .and_then(timeline_ui_snapshot_type)
-        .as_deref()
-        == Some("intent_analysis")
-    {
-        return true;
-    }
-    let t = m.text.trim_start();
-    t.starts_with("意图分析：") || t.starts_with("Intent analysis:")
-}
-
-/// 意图分析旁注 state 构造器（仅单测）。
-#[cfg(test)]
-pub fn timeline_state_intent_analysis_snapshot() -> StoredMessageState {
-    StoredMessageState::TimelineUiJson(
-        json!({
-            "k": TIMELINE_UI_STATE_KEY,
-            "t": "intent_analysis",
-        })
-        .to_string(),
-    )
-}
-
 /// `final_response` 时间线补偿旁注：Phase 4 起不再 push 新行；保留供导出/水合单测与旧会话 state 解析。
 #[allow(dead_code)]
 pub fn timeline_state_final_response_snapshot() -> StoredMessageState {
@@ -199,7 +169,7 @@ fn parse_timeline_ui_snapshot_type(raw: &str) -> Option<String> {
     Some(v.t)
 }
 
-/// 从 [`StoredMessageState`] 读取时间线快照 `t`（如 `intent_analysis`）。
+/// 从 [`StoredMessageState`] 读取时间线快照 `t`（如 `final_response_snapshot`、`local_snapshot`）。
 pub fn timeline_ui_snapshot_type(state: &StoredMessageState) -> Option<String> {
     state
         .as_timeline_parse_candidate()
@@ -259,8 +229,6 @@ pub fn should_preserve_local_timeline_on_hydrate(
     }
     match timeline_ui_snapshot_type(state).as_deref() {
         Some("final_response_snapshot") => !server_assistant_has_trimmed_text(server_msgs, &m.text),
-        // 不再保留旧意图分析旁注。
-        Some("intent_analysis") => false,
         Some("local_snapshot") | None => {
             !server_assistant_has_trimmed_text(server_msgs, &m.text)
                 && !is_timeline_snapshot_duplicate_of_canonical_assistant(m, server_msgs)
@@ -282,9 +250,6 @@ pub fn is_ephemeral_timeline_assistant_for_export(
         .and_then(timeline_ui_snapshot_type)
         .is_some_and(|t| t == "final_response_snapshot")
     {
-        return true;
-    }
-    if is_intent_analysis_assistant_message(m) {
         return true;
     }
     if is_planner_tool_call_rejected_timeline_text(&m.text) {
@@ -315,61 +280,6 @@ pub fn is_ephemeral_timeline_assistant_for_export(
 mod tests {
     use super::*;
     use crate::storage::{StoredMessage, StoredMessageState};
-
-    #[test]
-    fn intent_analysis_dropped_for_export_and_hydrate() {
-        let m = StoredMessage {
-            id: "i1".into(),
-            role: "assistant".into(),
-            text: "意图分析：执行类\n\n".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_intent_analysis_snapshot()),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        };
-        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
-        assert!(!should_preserve_local_timeline_on_hydrate(&m, &[]));
-        assert!(is_intent_analysis_assistant_message(&m));
-    }
-
-    #[test]
-    fn intent_analysis_plain_text_without_state_also_dropped() {
-        let m = StoredMessage {
-            id: "plain".into(),
-            role: "assistant".into(),
-            text: "意图分析：问答类（直接回复）\n\n".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
-        };
-        assert!(is_intent_analysis_assistant_message(&m));
-        assert!(is_ephemeral_timeline_assistant_for_export(&m, &[]));
-    }
-
-    #[test]
-    fn intent_analysis_not_preserved_even_when_server_lacks_same_text() {
-        let intent_text = "意图分析：问答类（直接回复）\n\n";
-        let local = StoredMessage {
-            id: "local-intent".into(),
-            role: "assistant".into(),
-            text: intent_text.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(timeline_state_intent_analysis_snapshot()),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 1,
-        };
-        assert!(!should_preserve_local_timeline_on_hydrate(&local, &[]));
-    }
 
     #[test]
     fn legacy_local_snapshot_dropped_when_server_has_same_assistant_text() {

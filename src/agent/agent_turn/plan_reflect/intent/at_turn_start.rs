@@ -2,7 +2,7 @@
 //! Ask/Plan 跳过（只读由 `run_dispatch` / session_mode 决定）；Act 常跑执行约束关键词收窄。
 
 use crate::agent::plan_artifact::PlanStepExecutorKind;
-use crabmate_agent::agent_turn::IntentGateSnapshot;
+use crabmate_agent::agent_turn::TurnStartSnapshot;
 use crabmate_types::SessionMode;
 
 use super::intent_user;
@@ -20,12 +20,12 @@ pub(crate) fn run_act_turn_start_heuristics(p: &mut RunLoopParams<'_>) {
         intent_user::recently_waiting_execute_confirmation(p.turn.messages());
     let task = intent_user::extract_effective_user_task(p.turn.messages(), in_clarification_flow);
     if task.trim().is_empty() {
-        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::EmptyTask);
+        p.turn.turn_planner_hints.turn_start_snapshot = Some(TurnStartSnapshot::EmptyTask);
         return;
     }
 
     if should_skip_act_utterance_heuristics(p.ctx.attach.session_mode) {
-        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
+        p.turn.turn_planner_hints.turn_start_snapshot = Some(TurnStartSnapshot::Disabled);
         return;
     }
 
@@ -39,11 +39,12 @@ fn apply_act_utterance_heuristics(p: &mut RunLoopParams<'_>, task: &str) {
     {
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(PlanStepExecutorKind::ReviewReadonly);
-        p.turn.turn_planner_hints.intent_turn_gate_hint = Some(constraints.intent_gate_hint_zh());
+        p.turn.turn_planner_hints.execution_constraint_hint =
+            Some(constraints.execution_constraint_hint_zh());
         review_readonly = true;
     }
-    p.turn.turn_planner_hints.intent_gate_snapshot =
-        Some(IntentGateSnapshot::ActHeuristics { review_readonly });
+    p.turn.turn_planner_hints.turn_start_snapshot =
+        Some(TurnStartSnapshot::ActHeuristics { review_readonly });
 }
 
 #[cfg(test)]
@@ -76,7 +77,7 @@ impl TurnExecutionConstraints {
         self.analysis_only && (self.no_write || self.no_command_execution)
     }
 
-    fn intent_gate_hint_zh(self) -> String {
+    fn execution_constraint_hint_zh(self) -> String {
         let mut limits = Vec::new();
         if self.no_write {
             limits.push("不得修改文件、不得继续 patch");

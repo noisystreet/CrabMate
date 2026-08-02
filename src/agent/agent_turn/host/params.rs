@@ -107,16 +107,16 @@ pub(crate) struct RunLoopCtx<'a> {
     pub obs: RunLoopObs,
 }
 
-/// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
+/// 单轮 planner / Act 句执行约束相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
 ///
-/// - **执行约束临时 system**：Act 句启发式命中只读约束时，在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
+/// - **执行约束临时 system**：Act 句启发式命中只读约束时，在首轮 P 前注入（见 [`crate::types::Message::system_execution_constraint_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
-    pub(crate) intent_turn_gate_hint: Option<String>,
+    pub(crate) execution_constraint_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
     /// 本回合起点启发式快照（供 [`TurnRouteDecisionV1`] 组装）。
-    pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
+    pub(crate) turn_start_snapshot: Option<crabmate_agent::agent_turn::TurnStartSnapshot>,
 }
 
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
@@ -157,9 +157,9 @@ impl OuterLoopPlanCallModelRole {
 }
 
 impl TurnPlannerHints {
-    /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
-    pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
-        self.intent_turn_gate_hint.take()
+    /// 首轮 P 前注入的执行约束临时 system（消费后即清空）。
+    pub(crate) fn take_execution_constraint_hint(&mut self) -> Option<String> {
+        self.execution_constraint_hint.take()
     }
 }
 
@@ -171,7 +171,7 @@ pub(crate) struct RunLoopTurnState<'a> {
     pub(crate) messages_revision: u64,
     /// 当前编排子阶段（供失败时 SSE `sub_phase` 与日志）；由 `outer_loop` / 分阶段路径在调用模型或执行工具前更新。
     pub sub_phase: AgentTurnSubPhase,
-    /// 意图门控与分步子代理约束（见 [`TurnPlannerHints`]）。
+    /// Act 句执行约束与分步子代理约束（见 [`TurnPlannerHints`]）。
     pub(crate) turn_planner_hints: TurnPlannerHints,
     /// `None` 时使用 `cfg.llm_sampling.temperature`。
     pub temperature_override: Option<f32>,
@@ -260,9 +260,9 @@ impl<'a> RunLoopTurnState<'a> {
         }
     }
 
-    /// 首轮 P 前注入的意图门控临时 system（消费后即清空）。
-    pub(crate) fn take_intent_turn_gate_hint(&mut self) -> Option<String> {
-        self.turn_planner_hints.take_intent_turn_gate_hint()
+    /// 首轮 P 前注入的执行约束临时 system（消费后即清空）。
+    pub(crate) fn take_execution_constraint_hint(&mut self) -> Option<String> {
+        self.turn_planner_hints.take_execution_constraint_hint()
     }
 }
 
@@ -346,13 +346,13 @@ mod turn_planner_hints_tests {
     use super::{OuterLoopPlanCallModelRole, TurnPlannerHints};
 
     #[test]
-    fn take_intent_gate_hint_drains_once() {
+    fn take_execution_constraint_hint_drains_once() {
         let mut h = TurnPlannerHints {
-            intent_turn_gate_hint: Some("hint".into()),
+            execution_constraint_hint: Some("hint".into()),
             ..Default::default()
         };
-        assert_eq!(h.take_intent_turn_gate_hint().as_deref(), Some("hint"));
-        assert!(h.take_intent_turn_gate_hint().is_none());
+        assert_eq!(h.take_execution_constraint_hint().as_deref(), Some("hint"));
+        assert!(h.take_execution_constraint_hint().is_none());
     }
 
     #[test]

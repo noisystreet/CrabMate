@@ -264,7 +264,7 @@ async function installOrderSampler(
             return false;
           }
           const text = el.innerText ?? "";
-          return text.includes(commentaryText) && !text.includes("意图分析");
+          return text.includes(commentaryText);
         });
         const toolIdx = turns.findIndex((el) => {
           if (!el.classList.contains("chat-tui-turn--tool")) {
@@ -336,7 +336,7 @@ async function readCommentaryToolDomOrder(
           return false;
         }
         const text = el.innerText ?? "";
-        return text.includes(commentaryText) && !text.includes("意图分析");
+        return text.includes(commentaryText);
       });
       const toolIdx = turns.findIndex((el) => {
         if (!el.classList.contains("chat-tui-turn--tool")) {

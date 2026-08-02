@@ -7,7 +7,6 @@ use crate::conversation_hydrate::ConversationMessagesResponse;
 use crate::storage::{
     CURRENT_LAYOUT_SCHEMA_VERSION, ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage,
 };
-use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
 
 fn revision_session(messages: Vec<StoredMessage>, revision: Option<u64>) -> ChatSession {
     ChatSession {
@@ -183,7 +182,7 @@ fn v1_history_still_uses_legacy_adapter() {
 }
 
 #[test]
-fn merge_tail_page_drops_intent_before_server_answer() {
+fn merge_tail_page_replays_server_answer_over_local_draft() {
     let session = ChatSession {
         id: "sid".into(),
         layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
@@ -191,11 +190,6 @@ fn merge_tail_page_drops_intent_before_server_answer() {
         draft: String::new(),
         messages: vec![
             plain_message("u1", "user", "question"),
-            StoredMessage {
-                state: Some(timeline_state_intent_analysis_snapshot()),
-                created_at: 1,
-                ..plain_message("tl-intent", "assistant", "意图分析：执行类\n\n")
-            },
             StoredMessage {
                 created_at: 2,
                 ..plain_message("a-local", "assistant", "stream draft")
@@ -235,7 +229,7 @@ fn merge_tail_page_drops_intent_before_server_answer() {
 }
 
 #[test]
-fn merge_tail_page_keeps_user_when_server_omits_user_and_drops_intent() {
+fn merge_tail_page_keeps_user_when_server_omits_user() {
     let session = ChatSession {
         id: "sid".into(),
         layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
@@ -243,11 +237,6 @@ fn merge_tail_page_keeps_user_when_server_omits_user_and_drops_intent() {
         draft: String::new(),
         messages: vec![
             plain_message("u-local", "user", "你好"),
-            StoredMessage {
-                state: Some(timeline_state_intent_analysis_snapshot()),
-                created_at: 1,
-                ..plain_message("tl-intent", "assistant", "意图分析：问候类\n\n")
-            },
             StoredMessage {
                 created_at: 2,
                 ..plain_message("a-local", "assistant", "你好！")
@@ -263,22 +252,15 @@ fn merge_tail_page_keeps_user_when_server_omits_user_and_drops_intent() {
         history_window_start: Some(0),
         history_has_older: None,
     };
-    let hydrated = vec![
-        StoredMessage {
-            state: Some(timeline_state_intent_analysis_snapshot()),
-            created_at: 1,
-            ..plain_message("tl-intent-srv", "assistant", "意图分析：问候类\n\n")
-        },
-        StoredMessage {
-            created_at: 2,
-            ..plain_message("a-srv", "assistant", "你好！我是 CrabMate 的 AI 助手。")
-        },
-    ];
+    let hydrated = vec![StoredMessage {
+        created_at: 2,
+        ..plain_message("a-srv", "assistant", "你好！我是 CrabMate 的 AI 助手。")
+    }];
     let resp = ConversationMessagesResponse {
         conversation_id: "cid".into(),
         messages: vec![],
         revision: 1,
-        total_count: 2,
+        total_count: 1,
         window_start_index: 0,
         has_older: false,
         active_agent_role: None,
@@ -289,5 +271,5 @@ fn merge_tail_page_keeps_user_when_server_omits_user_and_drops_intent() {
     let roles: Vec<_> = merged.iter().map(|m| m.role.as_str()).collect();
     assert_eq!(roles, vec!["user", "assistant"]);
     assert_eq!(merged[0].text, "你好");
-    assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
+    assert_eq!(merged[1].id, "a-srv");
 }

@@ -1,7 +1,7 @@
 //! `TurnRouteDecision` v1 金样：`fixtures/turn_route_decision_golden.jsonl`（经 [`assess_turn_routing`]）。
 
 use crabmate_agent::agent_turn::{
-    AssessTurnRoutingParams, IntentGateSnapshot, TurnRouteDecisionV1, TurnRouteDriver,
+    AssessTurnRoutingParams, TurnRouteDecisionV1, TurnRouteDriver, TurnStartSnapshot,
     TurnTopLevelDispatch, assess_turn_routing,
 };
 use serde::Deserialize;
@@ -13,7 +13,7 @@ use std::path::PathBuf;
 struct GoldenLine {
     id: String,
     cfg_mode: String,
-    intent_gate: Value,
+    turn_start: Value,
     expect: GoldenExpect,
 }
 
@@ -37,18 +37,18 @@ fn cfg_with(mode: &str) -> crabmate_config::AgentConfig {
     c
 }
 
-fn parse_intent_gate(v: &Value) -> IntentGateSnapshot {
-    let outcome = v["outcome"].as_str().expect("intent_gate.outcome");
+fn parse_turn_start(v: &Value) -> TurnStartSnapshot {
+    let outcome = v["outcome"].as_str().expect("turn_start.outcome");
     match outcome {
-        "disabled" => IntentGateSnapshot::Disabled,
-        "empty_task" => IntentGateSnapshot::EmptyTask,
-        "act_heuristics" => IntentGateSnapshot::ActHeuristics {
+        "disabled" => TurnStartSnapshot::Disabled,
+        "empty_task" => TurnStartSnapshot::EmptyTask,
+        "act_heuristics" => TurnStartSnapshot::ActHeuristics {
             review_readonly: v
                 .get("review_readonly")
                 .and_then(|x| x.as_bool())
                 .unwrap_or(false),
         },
-        other => panic!("unknown intent_gate outcome {other}"),
+        other => panic!("unknown turn_start outcome {other}"),
     }
 }
 
@@ -82,12 +82,12 @@ fn golden_turn_route_decision() {
         });
         let ctx = format!("{}:{} ({})", path.display(), line_no + 1, row.id);
         let cfg = cfg_with(&row.cfg_mode);
-        let intent_gate = parse_intent_gate(&row.intent_gate);
+        let turn_start = parse_turn_start(&row.turn_start);
 
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: &cfg,
             top_level: TurnTopLevelDispatch::NonHierarchical,
-            intent_gate: intent_gate.clone(),
+            turn_start: turn_start.clone(),
         });
         let decision = &assessed.decision;
 

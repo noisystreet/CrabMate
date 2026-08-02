@@ -14,7 +14,9 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{
     SsePayload, TurnSegmentEndBody, TurnSegmentStartBody, send_sse_control_payload_optional,
 };
-use crate::types::{Message, USER_CANCELLED_FINISH_REASON, is_intent_gate_ephemeral_system};
+use crate::types::{
+    Message, USER_CANCELLED_FINISH_REASON, is_execution_constraint_ephemeral_system,
+};
 
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
 use super::outer_loop_driver::OuterLoopDriver;
@@ -115,13 +117,14 @@ async fn outer_loop_prepare_planner_context(
 ) -> Result<(), RunAgentTurnError> {
     {
         let turn = &mut p.turn;
-        crate::meta_dialogue::merge_meta_dialogue_into_intent_gate_hint(
+        crate::meta_dialogue::merge_meta_dialogue_into_execution_constraint_hint(
             &mut turn.turn_planner_hints,
             turn.messages_buf.as_slice(),
         );
     }
-    if let Some(hint) = p.turn.take_intent_turn_gate_hint() {
-        p.turn.push_message(Message::system_intent_gate_hint(hint));
+    if let Some(hint) = p.turn.take_execution_constraint_hint() {
+        p.turn
+            .push_message(Message::system_execution_constraint_hint(hint));
     }
     if let Some(ref ltm) = p.ctx.attach.long_term_memory {
         ltm.prepare_messages(
@@ -134,7 +137,7 @@ async fn outer_loop_prepare_planner_context(
         .await
         .map_err(|e| {
             p.turn
-                .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
+                .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
             RunAgentTurnError::Other {
                 phase: AgentTurnSubPhase::Planner,
                 message: e.to_string(),
@@ -353,11 +356,11 @@ async fn run_outer_loop_single_iteration(
     .await
     .map_err(|e| {
         p.turn
-            .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
+            .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
         RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e)
     })?;
     p.turn
-        .retain_messages(|m| !is_intent_gate_ephemeral_system(m));
+        .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
     if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.awaiting_plan_rewrite_model
             .store(false, Ordering::Relaxed);

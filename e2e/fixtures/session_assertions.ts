@@ -36,7 +36,7 @@ export async function fetchPersistedSession(
   }, sid);
 }
 
-/** DOM：含 needle 的助手气泡（排除意图分析）。 */
+/** DOM：含 needle 的助手气泡。 */
 export async function assistantDomHitsWithNeedle(
   page: Page,
   needle: string,
@@ -48,7 +48,7 @@ export async function assistantDomHitsWithNeedle(
       ),
     ]
       .map((el) => (el.innerText ?? "").replace(/\s+/g, " ").trim())
-      .filter((t) => t.includes(text) && !t.includes("意图分析"));
+      .filter((t) => t.includes(text));
   }, needle);
 }
 

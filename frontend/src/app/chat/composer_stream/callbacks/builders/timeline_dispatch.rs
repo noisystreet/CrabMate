@@ -108,8 +108,6 @@ fn timeline_log_dispatch_body(
     web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
     match info.kind.as_str() {
         "final_response" => timeline_log_dispatch_final_response(stream_ctx, accum, &info),
-        // 会话 mode 落地后不再把意图门控旁注推成聊天气泡（服务端仍可发 SSE 供观测）。
-        "intent_analysis" => {}
         // 分层编排已移除：忽略历史 kind，避免落入 default 再造气泡。
         "hierarchical_plan" | "hierarchical_subgoal" | "hierarchical_subgoal_started" => {}
         "planner_tool_call_rejected" | "orchestration_route" => {}

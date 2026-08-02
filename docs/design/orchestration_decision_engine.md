@@ -6,7 +6,7 @@
 - `crates/crabmate-agent/src/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
 - `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `NonHierarchicalTurnResolution` / `TurnOrchestrationMode`
 - `crates/crabmate-config/src/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`）
-- `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点意图门控
+- `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点 Act 句启发式
 - `src/agent/agent_turn/loop/run_dispatch.rs` — 回合分发入口
 
 ---
@@ -69,7 +69,7 @@ pub fn staged_plan_eligibility_for_intent(
 ### 2.2 非目标
 
 - 首版不引入在线学习（Phase 4 之后考虑）。
-- 分层（Hierarchical）路径已移除；本引擎仅覆盖意图门控 → ReAct 路由决议。
+- 分层（Hierarchical）路径已移除；本引擎仅覆盖回合起点启发式 → ReAct 路由决议。
 - 不要求实时调整权重（权重变更需要 reload 配置或重启）。
 
 ---
@@ -567,7 +567,7 @@ pub fn staged_plan_eligibility_for_intent(
 // crates/crabmate-agent/src/agent_turn/turn_route_decision.rs:302
 pub fn apply_orchestration_profile_to_staged_gate(
     profile: OrchestrationProfile,
-    intent_gate: &IntentGateSnapshot,
+    turn_start: &TurnStartSnapshot,
     gate: &StagedPlanningGateOutcome,
 ) -> StagedPlanningGateOutcome { ... }
 ```

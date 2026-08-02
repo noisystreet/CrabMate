@@ -194,7 +194,7 @@ mod tests {
     #[test]
     fn markdown_reorders_tool_after_assistant() {
         let messages = vec![
-            msg("assistant", "意图分析：执行类"),
+            msg("assistant", "开始执行"),
             msg("tool", "解压缩结果"),
             msg("tool", "list_tree 结果"),
             msg("assistant", "已解压。看看目录结构..."),

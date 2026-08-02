@@ -222,9 +222,7 @@ test("late commentary after tool_call still sits before its tool exactly once", 
       ),
     ]
       .map((el) => (el.innerText ?? "").replace(/\s+/g, " ").trim())
-      .filter(
-        (text) => text.includes(commentary) && !text.includes("意图分析"),
-      );
+      .filter((text) => text.includes(commentary));
   }, LATE_COMMENTARY);
   expect(
     assistantHits,

@@ -145,7 +145,7 @@ mod tests {
         projection.apply_sse(
             &crate::sse::SsePayload::TimelineLog {
                 log: crate::sse::protocol::TimelineLogBody {
-                    kind: "intent_analysis".into(),
+                    kind: "tool_result_summary".into(),
                     title: "直接执行".into(),
                     detail: None,
                 },
@@ -198,7 +198,7 @@ mod tests {
         projection.apply_sse(
             &crate::sse::SsePayload::TimelineLog {
                 log: crate::sse::protocol::TimelineLogBody {
-                    kind: "intent_analysis".into(),
+                    kind: "tool_result_summary".into(),
                     title: "直接执行".into(),
                     detail: None,
                 },
