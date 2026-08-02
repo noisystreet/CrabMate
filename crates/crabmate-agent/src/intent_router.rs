@@ -1,16 +1,4 @@
-//! 意图类型与确认流辅助。
-//!
-//! 旧 L1 关键词路由与 L2 映射已移除；金样 fail-open 恒为 Execute。
-//! 本模块保留 `IntentKind` 与多轮「确认执行」识别。
-
-/// 意图类别（观测 / 金样兼容；现行 fail-open 恒为 [`IntentKind::Execute`]）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IntentKind {
-    Greeting,
-    Qa,
-    Execute,
-    Ambiguous,
-}
+//! 多轮「确认执行」识别（无意图分类）。
 
 /// 助手等待用户确认执行时的参考文案（多轮识别用）。
 pub const EXECUTE_CONFIRM: &str =

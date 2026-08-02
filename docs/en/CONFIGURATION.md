@@ -83,17 +83,16 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- |
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `CM_INTENT_AT_TURN_START_ENABLED` | Turn-start intent gate (default matches TOML **`intent_at_turn_start_enabled=false`**). **`false`**: skip gate heuristics. **`true`** and session **Act**: only cheap user-utterance **keyword execution constraints** (see “Gate tool narrowing” below); **no** extra `chat`, **no** `intent_analysis` SSE. Ask/Plan skips gate heuristics (mode applies readonly after the gate). |
-| `CM_PLANNER_EXECUTOR_MODE` | Only **`single_agent`** (ReAct) is valid; omit for the same default. TOML: `planner_executor_mode`. **Removed (TOML)**: `logical_dual_agent` / `hierarchical`, `intent_mode_bias_enabled`, `llm_fold_system_into_user`, **`intent_l2_*`**, **`intent_execute_*_threshold`**, **`intent_non_hier_execute_*`**, **`intent_l0_routing_boost_enabled`** — writing them under `[agent]` fails load via **`deny_unknown_fields`**. Matching legacy env vars (**`CM_INTENT_L2_*` / `CM_INTENT_EXECUTE_*` / `CM_INTENT_NON_HIER_*` / `CM_INTENT_L0_ROUTING_BOOST_ENABLED` / `CM_INTENT_MODE_BIAS_ENABLED`**, etc.) are **no longer read** (silently ignored; do not fail startup). |
+| `CM_PLANNER_EXECUTOR_MODE` | Only **`single_agent`** (ReAct) is valid; omit for the same default. TOML: `planner_executor_mode`. **Removed (TOML)**: `logical_dual_agent` / `hierarchical`, `intent_mode_bias_enabled`, `llm_fold_system_into_user`, **`intent_at_turn_start_enabled`**, **`intent_l2_*`**, **`intent_execute_*_threshold`**, **`intent_non_hier_execute_*`**, **`intent_l0_routing_boost_enabled`** — writing them under `[agent]` fails load via **`deny_unknown_fields`**. Matching legacy env vars (**`CM_INTENT_AT_TURN_START_ENABLED` / `CM_INTENT_L2_*` / `CM_INTENT_EXECUTE_*` / `CM_INTENT_NON_HIER_*` / `CM_INTENT_L0_ROUTING_BOOST_ENABLED` / `CM_INTENT_MODE_BIAS_ENABLED`**, etc.) are **no longer read** (silently ignored; do not fail startup). |
 
-### Intent gates vs `plan_rewrite` (quick reference)
+### Act utterance heuristics vs `plan_rewrite` (quick reference)
 
 | Mechanism | When it applies | Relation to **`plan_rewrite_max_attempts`** |
 | --- | --- | --- |
-| **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; gate ON + Act runs keyword heuristics only (may set hints / `ReviewReadonly`); **does not** end the turn early | **None** |
-| **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of the intent gate; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
+| **Act utterance keyword heuristics** | First in non-hierarchical dispatch; **always on for Act** (may set hints / `ReviewReadonly`); skipped for Ask/Plan (mode applies readonly); **does not** end the turn early | **None** |
+| **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of utterance heuristics; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
-**Gate tool narrowing (L2 retirement R2/R3)**: With the gate ON and **Act**, **`ReviewReadonly`** + a short hint apply only when the user utterance matches both “don’t modify / don’t run”-style markers **and** analysis/explain-style markers. L2 classification, threshold keys, and Clarify/Confirm early-exit paths are **removed** (legacy TOML keys fail config load). Prefer **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches).
+**Act utterance tool narrowing (L2 retirement R4)**: Under **Act**, **`ReviewReadonly`** + a short hint apply when the user utterance matches both “don’t modify / don’t run”-style markers **and** analysis/explain-style markers (no extra chat). Intent-gate keys / L2 / Clarify early-exit are **removed**. Prefer **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches).
 
 ### Queue, parallelism, cache
 
@@ -449,8 +448,8 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 
 - **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
 - **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
-- **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly after intent gate. Successful turns save/keep **`active_session_mode`**.
-- **vs intent classification**: L2 and related config keys removed (retirement **R3**); capability bounds come from Ask/Plan/Act.
+- **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly in `run_dispatch`. Successful turns save/keep **`active_session_mode`**.
+- **vs intent classification**: L2 and intent-gate config keys removed (retirement **R4**); capability bounds come from Ask/Plan/Act; Act also runs utterance keyword readonly heuristics.
 - **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 

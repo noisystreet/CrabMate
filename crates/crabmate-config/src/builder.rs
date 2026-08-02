@@ -497,10 +497,6 @@ impl ConfigBuilder {
         cs.codebase_semantic_hybrid_semantic_pool = agent
             .codebase_semantic_hybrid_semantic_pool
             .or(cs.codebase_semantic_hybrid_semantic_pool);
-        let ir = &mut self.intent_routing;
-        ir.intent_at_turn_start_enabled = agent
-            .intent_at_turn_start_enabled
-            .or(ir.intent_at_turn_start_enabled);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {

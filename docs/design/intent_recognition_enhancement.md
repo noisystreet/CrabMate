@@ -1,16 +1,18 @@
 # CrabMate 意图识别能力增强设计
 
-**状态（2026-08 对齐现实）**：**历史设计 / 部分设想未落地**。运行时主路径为 **意图门控 → `assess_turn_routing` → ReAct 外循环**；文中 **`hierarchy/router`**、分层模式选择等**已移除**，勿当现行实现索引。仍有效的是意图门控与细粒度意图增强方向（若继续推进须对照现行 `intent` / `turn_route_decision`）。
+> **ARCHIVED（2026-08，L2 退役 R4）**：本文档为历史设计，**勿当现行实现索引**。  
+> 现行主路径：**session_mode →（Act 句关键词启发式）→ `assess_turn_routing` → ReAct**。  
+> L2 / 意图管线 / `IntentDecision` 早退 / `intent_at_turn_start_enabled` 均已拆除。确认续接与失败续跑见 `intent_router` / `intent_l0` / `agent_turn::intent::user`。
 
-**现行（L2 退役 R3）**：生产路径**不再**调用 L2；`intent_l2_*` / 阈值键已从配置**硬删**（写入则加载失败）。门控开 + Act 时仅廉价关键词启发式。下文旧 schema 与 Phase C `suggested_mode` 均为历史设想。
+**状态（历史）**：下文 L2 schema、`DirectReply` / `ClarifyThenExecute`、`MultiIntentInfo`、分层 SmartRouter 等均为**已删除或未落地**设想。
 
-**受众**：维护者、Agent 架构贡献者、质量与运营同学  
-**关联（现行）**：`src/agent/intent_router.rs`、意图门控 / `turn_route_decision`、`docs/开发文档.md`  
-**关联（历史）**：已删 `src/agent/hierarchy/router.rs`
+**受众**：维护者追溯用  
+**关联（现行）**：`docs/开发文档.md`、`docs/配置说明.md`（Act 句启发式）、`agent_space/l2-retirement-plan.md`  
+**关联（历史）**：已删 `intent_pipeline` / `intent_l2_classifier` / `hierarchy/router`
 
 ---
 
-## 1. 背景与问题
+## 1. 背景与问题（历史）
 
 CrabMate **当时**具备两层“路由/意图”能力（第二层已随分层路径移除）：
 

@@ -40,8 +40,7 @@ pub use outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
 pub use phase_vocabulary::{
     OUTER_LOOP_STEP_AFTER_PLANNER_MODEL, OUTER_LOOP_STEP_ITERATION_ENTER,
     OUTER_LOOP_STEP_PREPARE_CONTEXT_DONE, OUTER_LOOP_STEP_REFLECT_DECIDED,
-    OUTER_LOOP_STEP_TOOLS_EXECUTE, TURN_ORCHESTRATION_MODE_INTENT_FINISHED,
-    TURN_ORCHESTRATION_MODE_REACT,
+    OUTER_LOOP_STEP_TOOLS_EXECUTE, TURN_ORCHESTRATION_MODE_REACT,
 };
 pub use task_level_evidence::{
     GoalCompletionEvidenceCheck, check_active_user_goal_completion_evidence,
@@ -61,7 +60,6 @@ pub use turn_orchestration::{
 };
 pub use turn_route_decision::{
     AssessTurnRoutingParams, AssessedTurnRoute, IntentGateSnapshot, TurnRouteDecisionV1,
-    TurnRouteDriver, assess_turn_routing, build_non_hierarchical_intent_finished_early_decision,
-    build_non_hierarchical_turn_route_decision, intent_action_label, intent_gate_is_early_exit,
-    intent_kind_label, log_turn_route_decision,
+    TurnRouteDriver, assess_turn_routing, build_non_hierarchical_turn_route_decision,
+    log_turn_route_decision,
 };

@@ -12,7 +12,6 @@ pub mod agent_turn;
 pub mod context_budget_pressure;
 pub mod evolution;
 pub mod intent_l0;
-pub mod intent_pipeline;
 pub mod intent_router;
 mod log_preview;
 pub mod message_pipeline;

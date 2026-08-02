@@ -109,13 +109,13 @@ pub(crate) struct RunLoopCtx<'a> {
 
 /// 单轮 planner / 意图门控相关的**附加约束**（与 `messages` 正交），集中存放以避免 `RunLoopTurnState` 顶层散落布尔与 `Option`。
 ///
-/// - **门控临时 system**：开门控 + Act 命中关键词只读约束时，在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
+/// - **执行约束临时 system**：Act 句启发式命中只读约束时，在首轮 P 前注入（见 [`crate::types::Message::system_intent_gate_hint`]）。
 /// - **分步子代理**：当前步 `executor_kind` 收窄可见工具（常规外环为 `None`）。
 #[derive(Debug, Clone, Default)]
 pub(crate) struct TurnPlannerHints {
     pub(crate) intent_turn_gate_hint: Option<String>,
     pub(crate) step_executor_constraint: Option<PlanStepExecutorKind>,
-    /// 本回合 **`intent_at_turn_start`** 门控快照（供 [`TurnRouteDecisionV1`] 组装）。
+    /// 本回合起点启发式快照（供 [`TurnRouteDecisionV1`] 组装）。
     pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
 }
 

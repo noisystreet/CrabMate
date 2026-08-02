@@ -7,9 +7,6 @@ pub use crabmate_agent::acceptance;
 pub mod agent_turn;
 pub use crabmate_agent::context_budget_pressure;
 pub mod context_window;
-pub use crabmate_agent::intent_pipeline;
-#[cfg(test)]
-mod intent_regression_golden;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crabmate_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（移入 `crabmate-agent` crate）。

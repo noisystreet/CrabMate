@@ -262,8 +262,6 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_hybrid_alpha: Option<f64>,
     pub(super) codebase_semantic_fts_top_n: Option<u64>,
     pub(super) codebase_semantic_hybrid_semantic_pool: Option<u64>,
-    /// 是否在主循环前跑意图门控（缺省为 false，与 `finalize` 一致）。
-    pub(super) intent_at_turn_start_enabled: Option<bool>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。
@@ -390,6 +388,7 @@ typo_unknown_key = 1
             "intent_non_hier_execute_low_threshold = 0.2",
             "intent_non_hier_execute_high_threshold = 0.45",
             "intent_l0_routing_boost_enabled = true",
+            "intent_at_turn_start_enabled = false",
         ] {
             let toml = format!(
                 r#"

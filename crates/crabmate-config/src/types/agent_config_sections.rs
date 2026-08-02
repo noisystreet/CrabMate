@@ -281,9 +281,3 @@ pub struct TurnBudgetConfig {
     /// 触发降级的使用比例阈值（50–99）；与 LLM 次数 / Token 粗估取较高者。
     pub budget_degradation_threshold_percent: u8,
 }
-
-#[derive(Debug, Clone)]
-pub struct IntentRoutingConfig {
-    /// 是否在主循环前跑意图门控（缺省为 false，与 `finalize` 一致）。
-    pub intent_at_turn_start_enabled: bool,
-}

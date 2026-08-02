@@ -35,7 +35,6 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         codebase_semantic: finalize_section_codebase_semantic(mid),
         tool_registry_policy: finalize_section_tool_registry_policy(mid),
         turn_budget: finalize_section_turn_budget(),
-        intent_routing: finalize_section_intent_routing(mid),
     }
 }
 
@@ -392,12 +391,6 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
         cfg.budget_degradation_threshold_percent = n.clamp(50, 99);
     }
     cfg
-}
-
-fn finalize_section_intent_routing(mid: &FinalizeAfterRoles) -> types::IntentRoutingConfig {
-    types::IntentRoutingConfig {
-        intent_at_turn_start_enabled: mid.intent.intent_at_turn_start_enabled,
-    }
 }
 
 fn finalize_agent_config_tail(mid: FinalizeAfterRoles) -> Result<AgentConfig, String> {
