@@ -4,7 +4,7 @@ mod tests {
     use super::super::super::stream_turn_scratch_state::StreamTurnScratchState;
     use super::super::helpers::{
         build_empty_reply_with_diagnostic, build_final_response_text,
-        build_intent_analysis_main_bubble_text, build_stream_error_with_suggestion,
+        build_stream_error_with_suggestion,
     };
     use crate::i18n::{self, Locale};
 
@@ -37,39 +37,6 @@ mod tests {
     fn final_response_text_ignores_empty_detail() {
         let merged = build_final_response_text("  你好  ", Some("   "));
         assert_eq!(merged, "你好");
-    }
-
-    #[test]
-    fn intent_analysis_text_adds_trailing_gap() {
-        let detail = "主意图：execute.run_test_build\n综合置信度：0.61\n需要澄清：false\n决策来源：L2（置信度 0.61）\n来源原因：l2_primary_below_observation_threshold";
-        let t =
-            build_intent_analysis_main_bubble_text("意图分析：执行类（直接执行）", Some(detail));
-        assert_eq!(
-            t,
-            "意图分析：执行类（直接执行）\n综合置信度：0.61\n主意图：execute.run_test_build\n需要澄清：false\n决策来源：L2（置信度 0.61）\n\n"
-        );
-    }
-
-    #[test]
-    fn intent_analysis_text_accepts_english_detail_keys() {
-        let detail = concat!(
-            "Primary intent: execute.run_test_build\n",
-            "Overall confidence: 0.61\n",
-            "Needs clarification: false\n",
-            "L2 result: not triggered\n",
-            "override: none\n",
-        );
-        let t = build_intent_analysis_main_bubble_text("Intent: execute", Some(detail));
-        assert!(t.contains("Overall confidence: 0.61"));
-        assert!(t.contains("Primary intent: execute.run_test_build"));
-        assert!(t.contains("Needs clarification: false"));
-        assert!(t.contains("L2 result: not triggered"));
-    }
-
-    #[test]
-    fn intent_analysis_text_empty_when_no_content() {
-        let t = build_intent_analysis_main_bubble_text("   ", Some(" "));
-        assert!(t.is_empty());
     }
 
     #[test]

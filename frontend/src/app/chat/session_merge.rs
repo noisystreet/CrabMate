@@ -203,8 +203,17 @@ pub(crate) fn merge_session_tail(
     server_hydrated: Vec<StoredMessage>,
     local_tail: &[StoredMessage],
 ) -> Vec<StoredMessage> {
-    let server = inject_preserved_plain_users(server_hydrated, local_tail);
-    replay_local_order_against_server(server, local_tail)
+    let server_hydrated: Vec<_> = server_hydrated
+        .into_iter()
+        .filter(|m| !crate::timeline_scan::is_intent_analysis_assistant_message(m))
+        .collect();
+    let local_tail: Vec<_> = local_tail
+        .iter()
+        .filter(|m| !crate::timeline_scan::is_intent_analysis_assistant_message(m))
+        .cloned()
+        .collect();
+    let server = inject_preserved_plain_users(server_hydrated, &local_tail);
+    replay_local_order_against_server(server, &local_tail)
 }
 
 #[cfg(test)]
@@ -307,12 +316,13 @@ mod golden {
             assistant_msg("a1", "你好！"),
         ];
         let merged = merge_session_tail(server, &local);
-        assert_eq!(roles(&merged), vec!["user", "assistant", "assistant"]);
+        assert_eq!(roles(&merged), vec!["user", "assistant"]);
         assert_eq!(merged[0].text, "你好");
+        assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
     }
 
     #[test]
-    fn golden_greeting_turn_user_intent_answer() {
+    fn golden_greeting_turn_drops_local_intent() {
         let local = vec![
             user_msg("u1", "你好"),
             intent_msg("tl-intent", "意图分析：问候类\n\n"),
@@ -320,13 +330,13 @@ mod golden {
         ];
         let server = vec![user_msg("u1", "你好"), assistant_msg("a-srv", "你好！")];
         let merged = merge_session_tail(server, &local);
-        assert_eq!(roles(&merged), vec!["user", "assistant", "assistant"]);
+        assert_eq!(roles(&merged), vec!["user", "assistant"]);
         assert_eq!(merged[0].text, "你好");
-        assert!(merged[1].text.contains("意图分析"));
+        assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
     }
 
     #[test]
-    fn golden_server_omits_user_keeps_local_before_intent() {
+    fn golden_server_omits_user_keeps_local_user_before_answer() {
         let local = vec![
             user_msg("u-local", "你好"),
             intent_msg("tl-intent", "意图分析：问候类\n\n"),
@@ -337,12 +347,13 @@ mod golden {
             assistant_msg("a-srv", "你好！我是 CrabMate 的 AI 助手。"),
         ];
         let merged = merge_session_tail(server, &local);
-        assert_eq!(roles(&merged), vec!["user", "assistant", "assistant"]);
+        assert_eq!(roles(&merged), vec!["user", "assistant"]);
         assert_eq!(merged[0].text, "你好");
+        assert_eq!(merged[1].id, "a-srv");
     }
 
     #[test]
-    fn golden_intent_before_answer_when_local_has_timeline() {
+    fn golden_drops_local_intent_before_answer() {
         let local = vec![
             user_msg("u1", "question"),
             intent_msg("tl-intent", "意图分析：执行类\n\n"),
@@ -354,7 +365,7 @@ mod golden {
         ];
         let merged = merge_session_tail(server, &local);
         let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["u1", "tl-intent", "a-srv"]);
+        assert_eq!(ids, vec!["u1", "a-srv"]);
     }
 
     #[test]
@@ -378,19 +389,13 @@ mod golden {
         let twice = merge_session_tail(once.clone(), &local);
         assert_eq!(
             once.len(),
-            5,
+            4,
             "{:?}",
             once.iter().map(|m| &m.id).collect::<Vec<_>>()
         );
         assert_eq!(once.len(), twice.len());
-        assert_eq!(
-            once.iter().filter(|m| m.text.contains("意图分析")).count(),
-            1
-        );
-        assert_eq!(
-            roles(&once),
-            vec!["user", "assistant", "user", "assistant", "assistant"]
-        );
+        assert!(!once.iter().any(|m| m.text.contains("意图分析")));
+        assert_eq!(roles(&once), vec!["user", "assistant", "user", "assistant"]);
     }
 
     #[test]
@@ -417,7 +422,7 @@ mod golden {
         ];
         let merged = merge_session_tail(server, &local);
         let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(ids, vec!["u1", "tl-intent", "a-srv"]);
+        assert_eq!(ids, vec!["u1", "a-srv"]);
     }
 
     #[test]

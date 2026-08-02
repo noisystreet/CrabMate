@@ -489,7 +489,7 @@ mod tests {
     }
 
     #[test]
-    fn export_keeps_intent_analysis_assistant() {
+    fn export_drops_intent_analysis_assistant() {
         use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
 
         let session = ChatSession {
@@ -524,7 +524,7 @@ mod tests {
             history_has_older: None,
         };
         let md = session_to_markdown(&session, Locale::ZhHans, true);
-        assert!(md.contains("意图分析"));
+        assert!(!md.contains("意图分析"));
         assert!(md.contains("ok"));
     }
 

@@ -9,9 +9,7 @@ use crate::sse_dispatch::TimelineLogInfo;
 use crate::stream_text_overlay::{
     stream_overlay_answer_for_message, stream_overlay_replace_answer_for_message,
 };
-use crate::timeline_scan::{
-    timeline_state_intent_analysis_snapshot, timeline_state_local_snapshot,
-};
+use crate::timeline_scan::timeline_state_local_snapshot;
 
 use super::super::super::context::ChatStreamCallbackCtx;
 use super::super::super::per_stream_accum::PerStreamAccum;
@@ -87,19 +85,6 @@ fn timeline_log_dispatch_final_response(
     }
 }
 
-fn timeline_log_dispatch_intent_analysis(
-    stream_ctx: &ChatStreamCallbackCtx,
-    _accum: &PerStreamAccum,
-    info: &TimelineLogInfo,
-) {
-    let intent_text = build_intent_analysis_main_bubble_text(&info.title, info.detail.as_deref());
-    if intent_text.is_empty() {
-        return;
-    }
-    let state = Some(timeline_state_intent_analysis_snapshot());
-    push_assistant_timeline_bubble(stream_ctx, intent_text.clone(), state);
-}
-
 fn timeline_log_dispatch_default_body(stream_ctx: &ChatStreamCallbackCtx, info: &TimelineLogInfo) {
     let mut body = info.title.trim().to_string();
     if let Some(detail) = info.detail.as_deref().map(str::trim)
@@ -123,7 +108,8 @@ fn timeline_log_dispatch_body(
     web_sys::console::log_1(&format!("[TL] kind={} title={}", info.kind, info.title).into());
     match info.kind.as_str() {
         "final_response" => timeline_log_dispatch_final_response(stream_ctx, accum, &info),
-        "intent_analysis" => timeline_log_dispatch_intent_analysis(stream_ctx, accum, &info),
+        // 会话 mode 落地后不再把意图门控旁注推成聊天气泡（服务端仍可发 SSE 供观测）。
+        "intent_analysis" => {}
         // 分层编排已移除：忽略历史 kind，避免落入 default 再造气泡。
         "hierarchical_plan" | "hierarchical_subgoal" | "hierarchical_subgoal_started" => {}
         "planner_tool_call_rejected" | "orchestration_route" => {}

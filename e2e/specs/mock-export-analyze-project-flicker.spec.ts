@@ -378,7 +378,7 @@ test("export-shaped stream: assistant bubble must not vanish after commentary", 
   await sendMessage(page, "分析当前项目");
 
   const transcript = page.getByTestId("chat-tui-transcript");
-  await expect(transcript).toContainText(INTENT_TITLE, { timeout: 20_000 });
+  await expect(transcript).not.toContainText(INTENT_TITLE, { timeout: 5_000 });
   await expect(transcript).toContainText(COMMENTARY, { timeout: 20_000 });
   await expect(transcript).toContainText("README.md", { timeout: 20_000 });
   await expect(page.getByTestId("status-bar")).toContainText("就绪", {

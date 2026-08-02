@@ -7,7 +7,8 @@ use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
 use crate::storage::StoredMessage;
 use crate::timeline_scan::{
     is_commentary_before_tools_assistant, is_ephemeral_timeline_assistant_for_export,
-    is_orchestration_route_timeline_message, timeline_ui_snapshot_type,
+    is_intent_analysis_assistant_message, is_orchestration_route_timeline_message,
+    timeline_ui_snapshot_type,
 };
 
 /// 可见消息筛选范围（聊天列 / 导出均隐藏空助手壳；TUI 主列另见 [`tui_should_render_message`]）。
@@ -53,6 +54,9 @@ pub fn is_message_hidden_from_view(
     match scope {
         VisibleMessageScope::ChatColumn => {
             if is_orchestration_route_timeline_message(m) {
+                return true;
+            }
+            if is_intent_analysis_assistant_message(m) {
                 return true;
             }
             if is_commentary_before_tools_assistant(m) {
