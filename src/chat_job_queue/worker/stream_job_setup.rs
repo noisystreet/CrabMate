@@ -61,6 +61,9 @@ pub(super) async fn stream_job_setup_runtime(
             supported_sse_v: crate::sse::protocol::SSE_PROTOCOL_VERSION,
             resume_ring_cap: crate::sse::protocol::SSE_RESUME_RING_CAP,
             job_id,
+            terminal_order: Some(
+                crabmate_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED.to_string(),
+            ),
         },
     });
     let _ = crate::sse::send_string_logged(

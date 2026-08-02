@@ -50,6 +50,21 @@ pub(in super::super) fn make_on_stream_ended_with_stream_phase(
     )
 }
 
+/// 非终态 `stream_draining`：只进 Draining 文案，保留 abort / resume / 终态 reason。
+pub(in super::super) fn make_on_stream_draining_with_stream_phase(
+    stream_ctx: Rc<ChatStreamCallbackCtx>,
+) -> Rc<dyn Fn()> {
+    Rc::new(move || {
+        if stream_ctx.is_stale() {
+            return;
+        }
+        stream_ctx.scratch.apply_stream_control_event(
+            &stream_ctx.shell.stream,
+            StreamControlEvent::StreamDraining,
+        );
+    })
+}
+
 pub(in super::super) fn make_on_assistant_answer_phase_with_stream_phase(
     stream_ctx: Rc<ChatStreamCallbackCtx>,
 ) -> Rc<dyn Fn()> {

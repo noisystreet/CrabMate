@@ -121,6 +121,15 @@ pub(crate) async fn emit_stream_ended_once(
     *stream_ended_sent = true;
 }
 
+/// 非终态：模型/工具已结束、正在落盘；官方 Web 可提前进入 Draining 文案。
+pub(crate) async fn emit_stream_draining(sse_tx: &mpsc::Sender<String>, job_id: u64) {
+    let line = crate::sse::encode_message(crate::sse::SsePayload::StreamDraining {
+        draining: crate::sse::StreamDrainingBody { job_id },
+    });
+    let _ = crate::sse::send_string_logged(sse_tx, line, "chat_job_queue::stream stream_draining")
+        .await;
+}
+
 pub(crate) fn sse_payload_has_final_response_timeline(payload: &str) -> bool {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(payload) else {
         return false;
@@ -302,30 +311,9 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,
                 );
-            // 发送状态快照，包含完整消息列表
-            let snapshot_state = serde_json::json!({
-                "phase": "stream_ended",
-                "messages": messages.iter().map(|m| {
-                    serde_json::json!({
-                        "role": m.role,
-                        "content": crate::types::message_content_as_str(&m.content),
-                        "reasoning": m.reasoning_content,
-                        "tool_calls": m.tool_calls,
-                    })
-                }).collect::<Vec<_>>(),
-            });
-            crate::sse::send_state_snapshot_sse(sse_tx, snapshot_state).await;
-            // 先发 stream_ended 解除前端 busy，再做可能耗时的落盘/revision 同步，
-            // 避免后处理阶段卡住导致 Web 长时间停在“模型生成中”。
-            emit_stream_ended_once(
-                sse_tx,
-                job_id,
-                end_reason,
-                stream_ended_sent,
-                "chat_job_queue::stream stream_ended_early",
-                tiktoken_prompt_tokens.clone(),
-            )
-            .await;
+            // Phase E1：先发非终态 `stream_draining`（解除「模型生成中」），再落盘 →
+            // `conversation_saved` → 可选 snapshot → **最后** `RUN_FINISHED`。
+            emit_stream_draining(sse_tx, job_id).await;
             match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
                 app,
                 queue_deps,
@@ -359,9 +347,32 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         )
                         .await;
                     }
+                    // 落盘之后：已 strip 注入，形状贴近会话 store（非流式中途视图）。
+                    let snapshot_state = serde_json::json!({
+                        "phase": "stream_ended",
+                        "messages": messages.iter().map(|m| {
+                            serde_json::json!({
+                                "role": m.role,
+                                "content": crate::types::message_content_as_str(&m.content),
+                                "reasoning": m.reasoning_content,
+                                "tool_calls": m.tool_calls,
+                            })
+                        }).collect::<Vec<_>>(),
+                    });
+                    crate::sse::send_state_snapshot_sse(sse_tx, snapshot_state).await;
+                    emit_stream_ended_once(
+                        sse_tx,
+                        job_id,
+                        end_reason,
+                        stream_ended_sent,
+                        "chat_job_queue::stream stream_ended",
+                        tiktoken_prompt_tokens.clone(),
+                    )
+                    .await;
                     (true, false, None, end_reason)
                 }
                 crate::SaveConversationOutcome::Conflict => {
+                    // 勿先发成功终态：冲突错误在前，worker 再发 `RUN_FINISHED`(conflict)。
                     let err_line = crate::conversation_conflict_sse_line();
                     let _ = crate::sse::send_string_logged(
                         sse_tx,

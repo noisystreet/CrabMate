@@ -10,8 +10,8 @@ pub(super) use stream_end::{
     chat_stream_on_done_builder, chat_stream_on_error_builder, chat_stream_on_ws_builder,
 };
 pub(super) use stream_phase_hooks::{
-    make_on_assistant_answer_phase_with_stream_phase, make_on_stream_ended_with_stream_phase,
-    make_on_tool_status_with_stream_phase,
+    make_on_assistant_answer_phase_with_stream_phase, make_on_stream_draining_with_stream_phase,
+    make_on_stream_ended_with_stream_phase, make_on_tool_status_with_stream_phase,
 };
 pub(super) use timeline_dispatch::make_on_timeline_log;
 pub(super) use tool_callbacks::{

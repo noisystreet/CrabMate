@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E（终态协议 / hydration）** 规划见 **§16**（未落地）；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；E2–E4 未落地；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
 
 ---
@@ -532,15 +532,15 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 ---
 
-## 16. Phase E：终态协议与 hydration（规划，未落地）
+## 16. Phase E：终态协议与 hydration（E1 已落地；E2–E4 进行中）
 
-> 自原 `agent_space` 草稿吸收；**现行实现仍属兼容止血**，本节描述目标与迁移步骤，改协议时同步 **`docs/SSE协议.md`**（AG-UI 附录）与金样。
+> 自原 `agent_space` 草稿吸收；改协议时同步 **`docs/SSE协议.md`**（AG-UI 附录）与金样。切片跟踪见工作区 **`agent_space/compat-layer-shrink-plan.md`**（B1=E1）。
 
-### 16.1 现状（兼容层）
+### 16.1 现状
 
-- 后端可在 **`RUN_FINISHED` 之后**仍发送 **`conversation_saved`** 等业务控制面。
-- 前端：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body 直至尾部事件（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
-- hydration：same-revision 守卫保留本地投影，避免「流结束立刻重载布局跳变」。
+- **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。软能力 `sse_capabilities.terminal_order=saved_before_finished`。
+- **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；`stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
+- hydration：same-revision 守卫仍保留（E4 前不删）。
 - Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`，hydration / 冷启动尚未完全同一投影键权威。
 
 长期方向：**不再堆 merge / dedupe / sleep**，而是统一终态顺序、canonical 事实来源与确定性投影。
@@ -605,11 +605,11 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 | 阶段 | 内容 | 备注 |
 |------|------|------|
-| **E0** | 固化现状：保留终态后读 body、same-revision 守卫（标明临时）；完善真实 LLM revision 等待；金样记录**现行**顺序 `RUN_FINISHED → conversation_saved → body close` | 文档即本节 + SSE 附录「现行 vs 目标」 |
-| **E1** | 修正终态顺序（expand-first）：前端先吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端改为先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；capability/version 标明新序 | 回滚：旧解析器 + 短期后端开关 |
-| **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | 流式与 hydration 投影幂等、逐字段一致 |
-| **E3** | 双读：新会话写元数据；hydration 优先确定性投影；无元数据走 legacy；差分模式只记行数/角色序/文本 hash（不记全文） | 稳定前**不**删 same-revision 守卫 |
-| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | 删除条件见下 |
+| **E0** | 固化现状：保留终态后读 body、same-revision 守卫（标明临时）；文档记录旧序 vs 目标 | ✅ 文档 |
+| **E1** | 修正终态顺序（expand-first）：前端吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；`terminal_order` 软能力 | ✅ 已落地（兼容层 B1） |
+| **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | ⬜ 流式与 hydration 投影幂等、逐字段一致 |
+| **E3** | 双读：新会话写元数据；hydration 优先确定性投影；无元数据走 legacy；差分模式只记行数/角色序/文本 hash（不记全文） | ⬜ 稳定前**不**删 same-revision 守卫 |
+| **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | ⬜ 删除条件见下 |
 
 **E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；线上无终态后业务事件；legacy 会话比例可接受。
 

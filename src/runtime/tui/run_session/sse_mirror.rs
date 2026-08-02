@@ -55,6 +55,7 @@ fn format_sse_payload_one_line(p: &SsePayload) -> Option<String> {
         | SsePayload::WorkspaceChanged { .. }
         | SsePayload::PlanRequired { .. }
         | SsePayload::ConversationSaved { .. }
+        | SsePayload::StreamDraining { .. }
         | SsePayload::SseCapabilities { .. }
         | SsePayload::StreamEnded { .. }
         | SsePayload::ClarificationQuestionnaire { .. }

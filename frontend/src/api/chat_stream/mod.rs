@@ -40,6 +40,8 @@ pub struct ChatStreamCallbacks {
     pub on_stream_ended: std::rc::Rc<
         dyn Fn(String, Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>),
     >,
+    /// 非终态 `CUSTOM stream_draining`：仅推进 Draining 文案；**不得**清 abort / resume / 终态 reason。
+    pub on_stream_draining: std::rc::Rc<dyn Fn()>,
     /// 响应头 **`x-stream-job-id`**（新流首包；用于断线重连）。
     pub on_stream_job_id: std::rc::Rc<dyn Fn(u64)>,
     /// 每条 SSE 事件的 **`id:`**（单调序号），供断线后 `stream_resume.after_seq` / `Last-Event-ID`。
@@ -77,6 +79,7 @@ impl Clone for ChatStreamCallbacks {
             on_conversation_id: std::rc::Rc::clone(&self.on_conversation_id),
             on_conversation_revision: std::rc::Rc::clone(&self.on_conversation_revision),
             on_stream_ended: std::rc::Rc::clone(&self.on_stream_ended),
+            on_stream_draining: std::rc::Rc::clone(&self.on_stream_draining),
             on_stream_job_id: std::rc::Rc::clone(&self.on_stream_job_id),
             on_last_sse_event_id: std::rc::Rc::clone(&self.on_last_sse_event_id),
             on_assistant_answer_phase: std::rc::Rc::clone(&self.on_assistant_answer_phase),

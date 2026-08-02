@@ -137,6 +137,7 @@ pub fn classify_agent_sse_line(s: &str) -> AgentLineKind {
                 return AgentLineKind::Ignore;
             }
             super::protocol::SsePayload::ConversationSaved { .. }
+            | super::protocol::SsePayload::StreamDraining { .. }
             | super::protocol::SsePayload::TimelineLog { .. }
             | super::protocol::SsePayload::ThinkingTrace { .. }
             | super::protocol::SsePayload::SseCapabilities { .. }

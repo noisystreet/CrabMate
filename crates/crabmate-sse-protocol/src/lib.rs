@@ -17,6 +17,11 @@ pub use stream_end_reason::StreamEndReason;
 /// 当前控制面版本：信封顶层 **`v`**，以及首帧 **`sse_capabilities.supported_sse_v`**。
 pub const SSE_PROTOCOL_VERSION: u8 = 2;
 
+/// 软能力：`sse_capabilities.terminal_order` 取值——`conversation_saved` 在成功 `RUN_FINISHED` 之前。
+///
+/// 旧客户端可忽略该字段；**不** bump [`SSE_PROTOCOL_VERSION`]。
+pub const SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED: &str = "saved_before_finished";
+
 #[cfg(test)]
 mod tests {
     use super::SSE_PROTOCOL_VERSION;

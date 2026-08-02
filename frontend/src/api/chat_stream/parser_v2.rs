@@ -255,6 +255,12 @@ fn dispatch_custom(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
         | "turn_tool_phase_end" => {
             dispatch_plan_custom(custom_type, val, sink);
         }
+        "stream_draining" => {
+            // 非终态：进入收尾文案；`on_done` / `saw_stream_ended` 仍由 RUN_FINISHED 与 body 完成驱动。
+            if let Some(hook) = sink.notice_timeline.on_stream_draining.as_mut() {
+                hook();
+            }
+        }
         "clarification_questionnaire"
         | "thinking_trace"
         | "timeline_log"
