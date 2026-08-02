@@ -83,26 +83,26 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- |
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `CM_INTENT_L2_ENABLED` | Enable default L2 no-tools semantic intent classification (extra `chat`; falls back to deprecated rules on failure; **default on**). TOML: `intent_l2_enabled`. |
-| `CM_INTENT_L2_MIN_CONFIDENCE` | Observation threshold for L2 `confidence` (0.0–1.0, default 0.7); below still uses L2, only flags in log/timeline. TOML: `intent_l2_min_confidence`. |
+| `CM_INTENT_L2_ENABLED` | Enable default L2 no-tools semantic intent classification (extra `chat`; on miss **fail-open to main model** with **readonly tool narrowing** when the turn-start gate is on; **default on**). TOML: `intent_l2_enabled`. |
+| `CM_INTENT_L2_MIN_CONFIDENCE` | L2 `confidence` threshold (0.0–1.0, default 0.7). Below threshold: still accept Greeting / Qa / Ambiguous (and clarify-style Execute); **low-confidence direct Execute** fail-opens conservatively. TOML: `intent_l2_min_confidence`. |
 | `CM_INTENT_L2_MAX_TOKENS` | L2 classification `max_tokens` (32–1024, default 384). TOML: `intent_l2_max_tokens`. |
-| `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | Conservative L0-feature boost for ambiguous sentences (default on). TOML: `intent_l0_routing_boost_enabled`. |
-| `CM_INTENT_EXECUTE_LOW_THRESHOLD` | Deprecated-rule fallback "confirm then execute" low threshold (0.0–1.0, default 0.2). TOML: `intent_execute_low_threshold`. |
-| `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | Deprecated-rule fallback "execute directly" high threshold, ≥ low (default 0.45). TOML: `intent_execute_high_threshold`. |
-| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | Override for "confirm then execute" low; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
-| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | Override for "execute directly" high, ≥ non-hier low; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
+| `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | **No longer affects decisions** (L1 boost removed); kept for config compat. TOML: `intent_l0_routing_boost_enabled`. |
+| `CM_INTENT_EXECUTE_LOW_THRESHOLD` | **No longer affects decisions** (L1 keyword router removed); kept for compat. TOML: `intent_execute_low_threshold`. |
+| `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | **No longer affects decisions**; still ≥ low in finalize. TOML: `intent_execute_high_threshold`. |
+| `CM_INTENT_NON_HIER_EXECUTE_LOW_THRESHOLD` | **No longer affects decisions**; falls back to `CM_INTENT_EXECUTE_LOW_THRESHOLD`. TOML: `intent_non_hier_execute_low_threshold`. |
+| `CM_INTENT_NON_HIER_EXECUTE_HIGH_THRESHOLD` | **No longer affects decisions**; falls back to `CM_INTENT_EXECUTE_HIGH_THRESHOLD`. TOML: `intent_non_hier_execute_high_threshold`. |
 | `CM_PLANNER_EXECUTOR_MODE` | Only **`single_agent`** (ReAct) is valid; omit for the same default. TOML: `planner_executor_mode`. **Removed**: `logical_dual_agent` / `hierarchical` (config load fails). Also removed: `intent_mode_bias_enabled` / `CM_INTENT_MODE_BIAS_ENABLED`, `llm_fold_system_into_user` (`deny_unknown_fields`). |
 
 ### Intent gates vs `plan_rewrite` (quick reference)
 
 | Mechanism | When it applies | Relation to **`plan_rewrite_max_attempts`** |
 | --- | --- | --- |
-| **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | Turn-start **`intent_at_turn_start`**: confidence bands for “confirm then execute” vs “execute directly”, etc. | **None** — does not consume rewrite budget |
-| **`intent_non_hier_execute_*`** | Same stack; overrides the two thresholds; falls back to **`intent_execute_*`** if unset | **None** |
+| **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | **Legacy**; L1 router removed — no longer bands confirm vs execute; L2 miss → fail-open | **None** |
+| **`intent_non_hier_execute_*`** | Same; overrides unused thresholds; falls back to **`intent_execute_*`** if unset | **None** |
 | **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of intent thresholds; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
-**Clarify / confirm and tool narrowing**: **`ClarifyThenExecute`** / **`ConfirmThenExecute`** set **`step_executor_constraint = ReviewReadonly`** before the main loop (same idea as **`qa.readonly`** narrowing). **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches). When **`intent_at_turn_start_enabled=false`**, the intent pipeline may still emit timeline events but **clears** that tool-narrowing side effect.
+**Clarify / confirm and tool narrowing**: **`ClarifyThenExecute`** / **`ConfirmThenExecute`** set **`step_executor_constraint = ReviewReadonly`** before the main loop (same idea as **`qa.readonly`** narrowing). **L2 miss or low-confidence Execute fail-open** likewise narrows to readonly (except explicit confirm / resume-after-tool-failure baselines). **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches). When **`intent_at_turn_start_enabled=false`**, the intent pipeline may still emit timeline events but **clears** that tool-narrowing side effect.
 
 ### Queue, parallelism, cache
 

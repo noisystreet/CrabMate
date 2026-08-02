@@ -14,11 +14,8 @@ final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
 planner_executor_mode = "single_agent"
 
-# 意图管线（默认 L2 无工具 LLM；旧 L0/L1 规则层仅作 L2 不可用时兜底；见配置说明/开发文档）
+# 意图管线（默认 L2 无工具 LLM；不可用/低置信 fail-open 进主路径；见配置说明）
 # intent_l2_enabled = true
-# intent_l2_min_confidence = 0.7   # 观测阈值；不再控制是否回退 L1
-# intent_l0_routing_boost_enabled = true   # 仅影响弃用 L1 兜底路径
-# 可单独覆盖执行阈值；省略时回退 intent_execute_*。
-# intent_non_hier_execute_low_threshold = 0.2
-# intent_non_hier_execute_high_threshold = 0.45
+# intent_l2_min_confidence = 0.7   # 低于该值不采纳 L2，改为 fail-open
+# intent_l0_routing_boost_enabled / intent_execute_*_threshold：历史键，已无决策作用
 # planner_executor_mode：仅 single_agent（ReAct）；logical_dual_agent / hierarchical 已移除。

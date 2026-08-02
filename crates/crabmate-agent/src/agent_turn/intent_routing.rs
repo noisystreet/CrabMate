@@ -1,5 +1,5 @@
 //! 默认 L2 意图管线（纯决策 + 观测日志）；L2 LLM 调用经 [`IntentL2ClassifierHost`] 注入。
-//! 旧 L0/L1 规则层暂保留为 L2 不可用时的弃用兜底。
+//! L2 不可用或低于阈值时 **fail-open 进 Execute**（L1 关键词路由已移除）。
 
 use async_trait::async_trait;
 use crabmate_config::AgentConfig;
@@ -29,7 +29,7 @@ pub struct IntentRoutingPipelineParams<'a> {
     pub sse_log_tag: &'a str,
 }
 
-/// 根包实现的 L2 语义分类（无工具 LLM）；失败时在 attempt 中写入原因，由弃用规则层兜底。
+/// 根包实现的 L2 语义分类（无工具 LLM）；失败时在 attempt 中写入原因，由管线 fail-open。
 #[async_trait]
 pub trait IntentL2ClassifierHost: Send + Sync {
     async fn classify_l2_attempt(
@@ -39,7 +39,7 @@ pub trait IntentL2ClassifierHost: Send + Sync {
     ) -> L2IntentAttempt;
 }
 
-/// 在已有 L2 候选（或 `None`）时跑 L2 优先决策；`None` 时使用弃用 L0/L1 兜底。
+/// 在已有 L2 候选（或 `None`）时跑 L2 优先决策；`None` 或低置信时 fail-open。
 pub fn assess_intent_routing_with_optional_l2(
     task: &str,
     messages: &[Message],
@@ -64,7 +64,7 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
     } = outcome;
     log::info!(
         target: "crabmate",
-        "[INTENT_PIPELINE] {sse_log_tag} deprecated_l1_kind={:?} deprecated_l1_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} l2_unavailable_reason={:?} source={:?} final_kind={:?} primary={} conf={:.2} abstain={} need_clarif={} action={:?} merged_continuation={}",
+        "[INTENT_PIPELINE] {sse_log_tag} baseline_kind={:?} baseline_confidence={:.2} l2_present={} l2_applied={} l2_confidence={:?} l2_unavailable_reason={:?} source={:?} final_kind={:?} primary={} conf={:.2} abstain={} need_clarif={} action={:?} merged_continuation={}",
         merge_meta.l1_kind,
         merge_meta.l1_confidence,
         merge_meta.l2_present,
@@ -82,7 +82,7 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
     );
 }
 
-/// L2 优先管线：L2 经宿主注入；不可用时回退弃用 L0/L1 规则层。
+/// L2 优先管线：L2 经宿主注入；不可用或低置信时 fail-open 进 Execute。
 pub async fn assess_intent_routing_full_pipeline<H: IntentL2ClassifierHost>(
     host: &H,
     params: &IntentRoutingPipelineParams<'_>,
