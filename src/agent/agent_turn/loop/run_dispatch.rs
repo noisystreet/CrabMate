@@ -3,7 +3,7 @@
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 
 use crabmate_agent::agent_turn::{
-    AssessTurnRoutingParams, IntentGateSnapshot, TurnRouteDriver, TurnTopLevelDispatch,
+    AssessTurnRoutingParams, TurnRouteDriver, TurnStartSnapshot, TurnTopLevelDispatch,
     assess_turn_routing,
 };
 
@@ -17,12 +17,12 @@ use super::orchestration_route::record_and_emit_turn_route_decision;
 use crate::agent::agent_turn::intent_at_turn_start;
 use crate::agent::agent_turn::params::RunLoopParams;
 
-fn intent_gate_snapshot_or_unknown(p: &RunLoopParams<'_>) -> IntentGateSnapshot {
+fn turn_start_snapshot_or_unknown(p: &RunLoopParams<'_>) -> TurnStartSnapshot {
     p.turn
         .turn_planner_hints
-        .intent_gate_snapshot
+        .turn_start_snapshot
         .clone()
-        .unwrap_or(IntentGateSnapshot::Disabled)
+        .unwrap_or(TurnStartSnapshot::Disabled)
 }
 
 /// 非分层：Act 句启发式 → [`assess_turn_routing`] → ReAct 外循环。
@@ -44,7 +44,7 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     let assessed = assess_turn_routing(AssessTurnRoutingParams {
         cfg: p.ctx.core.cfg.as_ref(),
         top_level: TurnTopLevelDispatch::NonHierarchical,
-        intent_gate: intent_gate_snapshot_or_unknown(p),
+        turn_start: turn_start_snapshot_or_unknown(p),
     });
     record_and_emit_turn_route_decision(p, &assessed.decision).await;
 

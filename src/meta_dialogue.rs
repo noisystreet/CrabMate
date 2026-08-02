@@ -1,4 +1,4 @@
-//! 元对话：用户追问「我刚才问了什么」等时，向意图门控补充说明，引导模型先复述上一条真实 user 原文。
+//! 元对话：用户追问「我刚才问了什么」等时，向执行约束 hint 补充说明，引导模型先复述上一条真实 user 原文。
 
 use crate::agent::agent_turn::TurnPlannerHints;
 use crate::types::{
@@ -7,7 +7,7 @@ use crate::types::{
 
 const META_DIALOGUE_PREFIX: &str = "【元对话】";
 
-pub(crate) fn merge_meta_dialogue_into_intent_gate_hint(
+pub(crate) fn merge_meta_dialogue_into_execution_constraint_hint(
     hints: &mut TurnPlannerHints,
     messages: &[Message],
 ) {
@@ -24,12 +24,12 @@ pub(crate) fn merge_meta_dialogue_into_intent_gate_hint(
          {prior}\n\
          ---",
     );
-    match &mut hints.intent_turn_gate_hint {
+    match &mut hints.execution_constraint_hint {
         Some(existing) => {
             existing.push('\n');
             existing.push_str(&block);
         }
-        None => hints.intent_turn_gate_hint = Some(block),
+        None => hints.execution_constraint_hint = Some(block),
     }
 }
 
@@ -96,8 +96,8 @@ mod tests {
             user_text("请解释 Rust 所有权"),
             user_text("我刚才的提问是什么？"),
         ];
-        merge_meta_dialogue_into_intent_gate_hint(&mut hints, &messages);
-        let h = hints.intent_turn_gate_hint.expect("hint");
+        merge_meta_dialogue_into_execution_constraint_hint(&mut hints, &messages);
+        let h = hints.execution_constraint_hint.expect("hint");
         assert!(h.contains(META_DIALOGUE_PREFIX));
         assert!(h.contains("请解释 Rust 所有权"));
     }
@@ -105,13 +105,13 @@ mod tests {
     #[test]
     fn meta_recall_merges_with_existing_gate_hint() {
         let mut hints = TurnPlannerHints {
-            intent_turn_gate_hint: Some("【意图门控】已有说明".into()),
+            execution_constraint_hint: Some("【执行约束】已有说明".into()),
             ..Default::default()
         };
         let messages = vec![user_text("A"), user_text("我刚才问了什么")];
-        merge_meta_dialogue_into_intent_gate_hint(&mut hints, &messages);
-        let h = hints.intent_turn_gate_hint.unwrap();
-        assert!(h.contains("【意图门控】已有说明"));
+        merge_meta_dialogue_into_execution_constraint_hint(&mut hints, &messages);
+        let h = hints.execution_constraint_hint.unwrap();
+        assert!(h.contains("【执行约束】已有说明"));
         assert!(h.contains("A"));
     }
 
@@ -119,7 +119,7 @@ mod tests {
     fn single_user_turn_does_not_inject() {
         let mut hints = TurnPlannerHints::default();
         let messages = vec![user_text("我刚才的提问是什么？")];
-        merge_meta_dialogue_into_intent_gate_hint(&mut hints, &messages);
-        assert!(hints.intent_turn_gate_hint.is_none());
+        merge_meta_dialogue_into_execution_constraint_hint(&mut hints, &messages);
+        assert!(hints.execution_constraint_hint.is_none());
     }
 }

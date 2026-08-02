@@ -274,12 +274,12 @@ pub const CRABMATE_PLAN_REWRITE_NAME: &str = "crabmate_plan_rewrite";
 pub const STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX: &str =
     "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）";
 
-/// 意图门控将 canned 改为走主模型时，首轮 P 前临时插入的 `system.name`；调用后须从会话中剔除，避免落盘污染。
-pub const CRABMATE_INTENT_GATE_HINT_NAME: &str = "crabmate_intent_gate_hint";
+/// Act 句执行约束启发式命中时，首轮 P 前临时插入的 `system.name`；调用后须从会话中剔除，避免落盘污染。
+pub const CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME: &str = "crabmate_execution_constraint_hint";
 
 #[inline]
-pub fn is_intent_gate_ephemeral_system(m: &Message) -> bool {
-    m.role == "system" && m.name.as_deref() == Some(CRABMATE_INTENT_GATE_HINT_NAME)
+pub fn is_execution_constraint_ephemeral_system(m: &Message) -> bool {
+    m.role == "system" && m.name.as_deref() == Some(CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME)
 }
 
 #[inline]
@@ -461,15 +461,15 @@ impl Message {
         }
     }
 
-    /// 意图门控注入的临时 system（[`CRABMATE_INTENT_GATE_HINT_NAME`]）；**不得**长期留在 `messages` 中。
-    pub fn system_intent_gate_hint(content: impl Into<String>) -> Self {
+    /// Act 执行约束启发式注入的临时 system（[`CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME`]）；**不得**长期留在 `messages` 中。
+    pub fn system_execution_constraint_hint(content: impl Into<String>) -> Self {
         Self {
             role: "system".to_string(),
             content: Some(MessageContent::Text(content.into())),
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
-            name: Some(CRABMATE_INTENT_GATE_HINT_NAME.to_string()),
+            name: Some(CRABMATE_EXECUTION_CONSTRAINT_HINT_NAME.to_string()),
             tool_call_id: None,
         }
     }

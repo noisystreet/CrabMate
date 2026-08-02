@@ -350,9 +350,7 @@ test.describe("真实 LLM：工具回合气泡闪没", () => {
           ];
           const bodyAssistants = assistants.filter((el) => {
             const text = (el.innerText ?? "").replace(/\s+/g, " ").trim();
-            if (!text) return false;
-            if (text.includes("意图分析")) return false;
-            return true;
+            return Boolean(text);
           });
           maxBodyCount = Math.max(maxBodyCount, bodyAssistants.length);
           const transcriptText = (

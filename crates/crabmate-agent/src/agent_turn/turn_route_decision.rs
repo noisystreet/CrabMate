@@ -13,7 +13,7 @@ use super::turn_orchestration::{NonHierarchicalTurnPhase, NonHierarchicalTurnRes
 pub struct TurnRouteDecisionV1 {
     pub version: u8,
     pub top_level: String,
-    pub intent_gate: IntentGateSnapshot,
+    pub turn_start: TurnStartSnapshot,
     pub turn_phase: String,
     pub orchestration_mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +27,7 @@ pub struct TurnRouteDecisionV1 {
 /// 回合起点启发式快照（Ask/Plan 跳过；Act 可挂只读约束）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
-pub enum IntentGateSnapshot {
+pub enum TurnStartSnapshot {
     /// Ask/Plan：不跑 Act 句启发式（只读由 session_mode 挂载）。
     Disabled,
     EmptyTask,
@@ -58,13 +58,13 @@ fn top_level_label(top: TurnTopLevelDispatch) -> String {
 /// 非分层：启发式结束后组装决议。
 pub fn build_non_hierarchical_turn_route_decision(
     cfg: &AgentConfig,
-    intent_gate: IntentGateSnapshot,
+    turn_start: TurnStartSnapshot,
     entry: &NonHierarchicalTurnResolution,
 ) -> TurnRouteDecisionV1 {
     TurnRouteDecisionV1 {
         version: 1,
         top_level: top_level_label(TurnTopLevelDispatch::NonHierarchical),
-        intent_gate,
+        turn_start,
         turn_phase: entry.turn_phase.as_str().to_string(),
         orchestration_mode: entry.orchestration_mode.as_str().to_string(),
         freeform_because: entry.freeform_because.map(|b| b.as_str().to_string()),
@@ -102,7 +102,7 @@ pub struct AssessedTurnRoute {
 pub struct AssessTurnRoutingParams<'a> {
     pub cfg: &'a AgentConfig,
     pub top_level: TurnTopLevelDispatch,
-    pub intent_gate: IntentGateSnapshot,
+    pub turn_start: TurnStartSnapshot,
 }
 
 /// 回合起点启发式结束后的**唯一**路由决议：恒进 ReAct 外循环。
@@ -112,7 +112,7 @@ pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnR
     let _ = params.top_level;
     let entry = NonHierarchicalTurnResolution::resolve_react(params.cfg);
     let decision =
-        build_non_hierarchical_turn_route_decision(params.cfg, params.intent_gate.clone(), &entry);
+        build_non_hierarchical_turn_route_decision(params.cfg, params.turn_start.clone(), &entry);
     AssessedTurnRoute {
         decision,
         driver: TurnRouteDriver::NonHierarchical(entry.turn_phase),

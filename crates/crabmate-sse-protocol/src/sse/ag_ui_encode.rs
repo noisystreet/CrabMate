@@ -80,13 +80,16 @@ mod tests {
     #[test]
     fn custom_event_preserves_type_and_data() {
         let event = AgUiEvent::Custom {
-            custom_type: "intent_analysis".into(),
-            data: serde_json::json!({"intent": "execute.code_change", "confidence": 0.95}),
+            custom_type: "orchestration_route".into(),
+            data: serde_json::json!({"turn_phase": "react", "orchestration_mode": "react"}),
         };
         let s = encode_ag_ui_event(&event);
         assert!(s.contains(r#""type":"CUSTOM""#), "got: {s}");
-        assert!(s.contains(r#""customType":"intent_analysis""#), "got: {s}");
-        assert!(s.contains(r#""intent":"execute.code_change""#), "got: {s}");
+        assert!(
+            s.contains(r#""customType":"orchestration_route""#),
+            "got: {s}"
+        );
+        assert!(s.contains(r#""turn_phase":"react""#), "got: {s}");
     }
 
     #[test]

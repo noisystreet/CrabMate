@@ -347,7 +347,7 @@ async function installVanishHarness(
             ),
           ].filter((el) => {
             const text = (el.innerText ?? "").replace(/\s+/g, " ").trim();
-            return text.length > 0 && !text.includes("意图分析");
+            return text.length > 0;
           });
           maxBodyCount = Math.max(maxBodyCount, bodyAssistants.length);
           const transcriptText = (

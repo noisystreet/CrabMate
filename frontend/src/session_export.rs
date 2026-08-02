@@ -489,46 +489,6 @@ mod tests {
     }
 
     #[test]
-    fn export_drops_intent_analysis_assistant() {
-        use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
-
-        let session = ChatSession {
-            id: "s1".to_string(),
-            layout_schema_version: crate::storage::CURRENT_LAYOUT_SCHEMA_VERSION,
-            title: "t".to_string(),
-            draft: String::new(),
-            messages: vec![
-                msg("1", "user", "hi", false),
-                StoredMessage {
-                    id: "intent".to_string(),
-                    role: "assistant".to_string(),
-                    text: "意图分析：执行类\n\n".to_string(),
-                    reasoning_text: String::new(),
-                    image_urls: vec![],
-                    state: Some(timeline_state_intent_analysis_snapshot()),
-                    is_tool: false,
-                    tool_call_id: None,
-                    tool_name: None,
-                    created_at: 1,
-                },
-                msg("4", "assistant", "ok", false),
-            ],
-            updated_at: 0,
-            pinned: false,
-            starred: false,
-            server_conversation_id: None,
-            server_revision: None,
-            workspace_root: None,
-            history_total: None,
-            history_window_start: None,
-            history_has_older: None,
-        };
-        let md = session_to_markdown(&session, Locale::ZhHans, true);
-        assert!(!md.contains("意图分析"));
-        assert!(md.contains("ok"));
-    }
-
-    #[test]
     fn export_tool_message_prefers_reasoning_full_card_over_compact_text() {
         let mut tool_msg = msg("3", "system", "读取目录 . 0 项", true);
         tool_msg.reasoning_text =

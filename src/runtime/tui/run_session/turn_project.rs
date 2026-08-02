@@ -101,10 +101,8 @@ impl TuiTurnProjection {
             }
             SsePayload::TimelineLog { log } => {
                 let kind = log.kind.as_str();
-                if matches!(
-                    kind,
-                    "intent_analysis" | "approval_decision" | "tool_result_summary"
-                ) && !log.title.trim().is_empty()
+                if matches!(kind, "approval_decision" | "tool_result_summary")
+                    && !log.title.trim().is_empty()
                 {
                     TurnReducer.apply(
                         &mut self.turn,
@@ -141,7 +139,7 @@ impl TuiTurnProjection {
 
     /// 是否具备可写入定稿的 turn 布局正文（旁白 / 工具步 / 终答）。
     ///
-    /// 仅有 `assistant_timeline`（如 intent_analysis）时返回 false：定稿应走 Message[]，
+    /// 仅有 `assistant_timeline`（如 tool_result_summary）时返回 false：定稿应走 Message[]，
     /// 避免「投影非空 → 跳过全部 assistant」丢掉真正回答。
     pub(super) fn has_flushable_turn_layout(&self) -> bool {
         if !self.turn.steps.is_empty() {
@@ -696,7 +694,7 @@ mod tests {
         proj.apply_sse(
             &SsePayload::TimelineLog {
                 log: crate::sse::protocol::TimelineLogBody {
-                    kind: "intent_analysis".into(),
+                    kind: "tool_result_summary".into(),
                     title: "直接执行".into(),
                     detail: None,
                 },

@@ -1,6 +1,6 @@
 /**
  * 基于导出会话 `chat_export_20260727_214636.md` 的高保真 mock SSE：
- *   意图分析（qa.codebase / 需澄清）→ 开场白 → 6× 并行 read_file → 长终答（分块流式）
+ *   开场白 → 6× 并行 read_file → 长终答（分块流式）
  * 并监控 **助手消息气泡**（section.chat-tui-turn--assistant）不得在旁白出现后归零。
  *
  * 运行：
@@ -12,7 +12,6 @@ import { seedSession, sendMessage } from "../fixtures/helpers";
 const STREAM_DELAY_MS = 90;
 const CONV_ID = "e2e-export-analyze-project";
 
-const INTENT_TITLE = "意图分析：问答类（直接回复）";
 const COMMENTARY =
   "好的，这是一个 C++ 项目，结构简洁。让我先快速浏览关键文件，了解项目全貌。";
 // TUI 行级 Markdown 会吃掉标题行 / fence / 部分粗体前后缀；断言用最终 DOM 仍保留的纯文本。
@@ -82,20 +81,6 @@ function buildExportLikeSse(): string[] {
   };
 
   const events: string[] = [];
-  events.push(
-    next(
-      JSON.stringify({
-        type: "CUSTOM",
-        customType: "timeline_log",
-        data: {
-          kind: "intent_analysis",
-          title: INTENT_TITLE,
-          detail:
-            "综合置信度：0.60\n主意图：qa.codebase\n需要澄清：true\n决策来源：L2（置信度 0.60）",
-        },
-      }),
-    ),
-  );
   events.push(
     next(
       JSON.stringify({
@@ -304,12 +289,10 @@ test("export-shaped stream: assistant bubble must not vanish after commentary", 
               "section.chat-tui-turn--assistant",
             ),
           ];
-          // 只关心正文助手气泡：含旁白片段，或非空非意图卡
+          // 只关心正文助手气泡：非空
           const bodyAssistants = assistants.filter((el) => {
             const text = (el.innerText ?? "").replace(/\s+/g, " ");
-            if (!text.trim()) return false;
-            if (text.includes("意图分析")) return false;
-            return true;
+            return Boolean(text.trim());
           });
           const commentaryVisible = bodyAssistants.some((el) =>
             (el.innerText ?? "").includes(commentary.slice(0, 12)),
@@ -378,7 +361,6 @@ test("export-shaped stream: assistant bubble must not vanish after commentary", 
   await sendMessage(page, "分析当前项目");
 
   const transcript = page.getByTestId("chat-tui-transcript");
-  await expect(transcript).not.toContainText(INTENT_TITLE, { timeout: 5_000 });
   await expect(transcript).toContainText(COMMENTARY, { timeout: 20_000 });
   await expect(transcript).toContainText("README.md", { timeout: 20_000 });
   await expect(page.getByTestId("status-bar")).toContainText("就绪", {

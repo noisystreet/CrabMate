@@ -7,7 +7,7 @@
 //!
 //! **目录分组（T4）**：
 //! - [`turn_loop`]（目录 `loop/`）：外循环 IO、分发、完成纠偏包装
-//! - [`plan_reflect`]：P / R / 意图门控
+//! - [`plan_reflect`]：P / R / 回合起点 Act 启发式
 //! - [`host`]：工具执行宿主、`RunLoopParams`、TurnSink、错误类型
 //!
 //! 外循环 FSM / 完成判定核等纯逻辑已下沉 **`crabmate-agent::agent_turn`**；本目录再导出。

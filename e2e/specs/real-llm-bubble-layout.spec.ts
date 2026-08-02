@@ -340,11 +340,11 @@ test.describe("真实 LLM：流式后消息结构", () => {
     analysis = analyzeMessages(messagesAfter);
 
     // ── 核心断言 ──
-    // 注意：LLM 可能将所有正文输出在单次响应中（仅产生 2 条助手消息：意图 + 正文），
-    // 也可能多轮交替（意图 + 预工具说明 + 工具后说明 + 终答 → 4+ 条）。
+    // 注意：LLM 可能将所有正文输出在单次响应中，也可能多轮交替
+    //（预工具说明 + 工具后说明 + 终答 → 多条）。
     // 以下断言检测前端存储/渲染的严重结构问题，而非 LLM 输出模式。
 
-    // 至少 1 条独立的非工具助手正文（意图分析气泡已移除）
+    // 至少 1 条独立的非工具助手正文
     // Bug（极端情况）：所有文本合并为 1 条以外的结构异常另测
     expect(analysis.assistantIndices.length).toBeGreaterThanOrEqual(1);
     expect(analysis.toolIndices.length).toBeGreaterThan(0);
