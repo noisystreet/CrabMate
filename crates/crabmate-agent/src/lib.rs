@@ -1,4 +1,4 @@
-//! CrabMate Agent **领域层**：规划产物解析、意图路由、反思控制器等（与 HTTP / 工具执行编排解耦）。
+//! CrabMate Agent **领域层**：规划产物解析、回合启发式、反思控制器等（与 HTTP / 工具执行编排解耦）。
 //!
 //! 完整回合编排（`agent_turn` 执行面、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
 //! 外循环 FSM / reduce / driver / pre-gate reason、完成判定核（`turn_completion_decision` /
@@ -11,8 +11,6 @@ pub mod agent_turn;
 /// 单轮 `TurnBudgetCounter` 与 `message_pipeline` / 上下文摘要的联动策略。
 pub mod context_budget_pressure;
 pub mod evolution;
-pub mod intent_l0;
-pub mod intent_router;
 mod log_preview;
 pub mod message_pipeline;
 pub mod per_coord;

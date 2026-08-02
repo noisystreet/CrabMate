@@ -4,7 +4,6 @@
 //! **路由入口**：回合起点启发式（session_mode / Act 句）之后唯一决议函数为 [`assess_turn_routing`]；根包 `run_dispatch` 只消费 [`TurnRouteDriver`]。
 
 pub mod completion_suppression;
-pub mod intent;
 pub mod messages;
 pub mod orchestration_entry;
 pub mod outer_loop_driver;

@@ -1,6 +1,6 @@
 //! Agent 回合、上下文裁剪/摘要、PER、工作流与终答规划解析（与 `lib` 中 HTTP 路由、`tools` 实现解耦）。
 //!
-//! **领域层**（规划产物、意图路由、墙钟预算等）见独立 crate **`crabmate-agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
+//! **领域层**（规划产物、墙钟预算等）见独立 crate **`crabmate-agent`**，经本模块再导出以保持 `crate::agent::` 路径稳定。
 
 /// 验收规则内核（规范化 spec + 证据 → 判定）。
 pub use crabmate_agent::acceptance;
@@ -25,6 +25,6 @@ mod workflow_reflection_golden;
 pub mod workflow_tool_dispatch;
 
 pub use crabmate_agent::{
-    evolution, intent_l0, intent_router, plan_artifact, text_sanitize, turn_budget,
-    workflow_reflection_controller, workspace_snapshot,
+    evolution, plan_artifact, text_sanitize, turn_budget, workflow_reflection_controller,
+    workspace_snapshot,
 };
