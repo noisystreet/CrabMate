@@ -28,7 +28,7 @@ tokio = { workspace = true, features = [
 ] }
 
 # MCP protocol (optional, feature-gated)
-rmcp = { version = "2.2", optional = true, default-features = false, features = [
+rmcp = { version = "3.0", optional = true, default-features = false, features = [
     "client",
     "server",
     "transport-child-process",
