@@ -4,7 +4,7 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OrchestrationProfile {
-    /// 非分层下强制走外循环 ReAct（推理-行动-观察）。
+    /// 强制走外循环 ReAct（推理-行动-观察）。
     #[default]
     ReAct,
 }
@@ -31,7 +31,7 @@ pub fn effective_orchestration_path_summary(
     _profile: OrchestrationProfile,
 ) -> String {
     // 运行时只有 ReAct 外循环（`planner_executor_mode` 仅允许 single_agent）。
-    "non_hierarchical: react outer loop".to_string()
+    "react outer loop".to_string()
 }
 
 #[cfg(test)]

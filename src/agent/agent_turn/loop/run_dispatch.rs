@@ -1,19 +1,18 @@
-//! 非分层回合入口：session_mode + Act 句启发式 → **`assess_turn_routing`** → ReAct。
+//! ReAct 回合入口：session_mode + Act 句启发式 → **`assess_turn_routing`** → 外循环。
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 
 use crabmate_agent::agent_turn::{
-    AssessTurnRoutingParams, TurnRouteDriver, TurnStartSnapshot, TurnTopLevelDispatch,
-    assess_turn_routing,
+    AssessTurnRoutingParams, TurnRouteDriver, TurnStartSnapshot, assess_turn_routing,
 };
 
 use crate::agent::per_coord::PerCoordinator;
 
 use crate::agent::agent_turn::errors::RunAgentTurnError;
 
-use super::non_hierarchical_turn::run_non_hierarchical_turn;
 use super::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_transition};
 use super::orchestration_route::record_and_emit_turn_route_decision;
+use super::react_turn::run_react_turn;
 use crate::agent::agent_turn::intent_at_turn_start;
 use crate::agent::agent_turn::params::RunLoopParams;
 
@@ -25,8 +24,8 @@ fn turn_start_snapshot_or_unknown(p: &RunLoopParams<'_>) -> TurnStartSnapshot {
         .unwrap_or(TurnStartSnapshot::Disabled)
 }
 
-/// 非分层：Act 句启发式 → [`assess_turn_routing`] → ReAct 外循环。
-pub(crate) async fn dispatch_non_hierarchical_turn(
+/// Act 句启发式 → [`assess_turn_routing`] → ReAct 外循环。
+pub(crate) async fn dispatch_react_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {
@@ -43,28 +42,26 @@ pub(crate) async fn dispatch_non_hierarchical_turn(
     }
     let assessed = assess_turn_routing(AssessTurnRoutingParams {
         cfg: p.ctx.core.cfg.as_ref(),
-        top_level: TurnTopLevelDispatch::NonHierarchical,
         turn_start: turn_start_snapshot_or_unknown(p),
     });
     record_and_emit_turn_route_decision(p, &assessed.decision).await;
 
     match assessed.driver {
-        TurnRouteDriver::NonHierarchical(entry_phase) => {
+        TurnRouteDriver::ReAct => {
             let mode = assessed.decision.orchestration_mode.as_str();
             log_orchestration_transition(
-                TurnOrchestrationTransition::NonHierarchicalEntryResolved,
+                TurnOrchestrationTransition::ReActEntryResolved,
                 Some(mode),
-                &[("non_hierarchical_turn_phase", entry_phase.as_str())],
+                &[],
             );
             tracing::info!(
                 target: "crabmate::agent_turn",
                 turn_orchestration_mode = mode,
-                non_hierarchical_turn_phase = entry_phase.as_str(),
                 freeform_because = assessed.decision.freeform_because.as_deref(),
                 planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
-                "dispatch_non_hierarchical_turn"
+                "dispatch_react_turn"
             );
-            run_non_hierarchical_turn(entry_phase, p, per_coord).await
+            run_react_turn(p, per_coord).await
         }
     }
 }

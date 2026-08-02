@@ -117,7 +117,7 @@ mod tests {
             format_sse_payload_one_line(&SsePayload::TimelineLog {
                 log: crate::sse::protocol::TimelineLogBody {
                     kind: "orchestration_route".into(),
-                    title: "hierarchical".into(),
+                    title: "react".into(),
                     detail: None,
                 },
             })

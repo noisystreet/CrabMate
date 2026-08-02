@@ -14,17 +14,14 @@
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!
-//! **编排接线**：回合模式分发见 **`run_dispatch`**；非分层 driver 见 **`non_hierarchical_turn`**；主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
+//! **编排接线**：回合模式分发见 **`run_dispatch`**；ReAct driver 见 **`react_turn`**；主文件保留入口日志、分隔线、`PerCoordinator` 构造与分支调用。
 
 use log::debug;
 use tracing::info;
 
 use crate::agent::per_coord::{PerCoordinator, PerCoordinatorInit};
 
-use self::orchestration_entry::{
-    TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
-    resolve_turn_top_level_dispatch,
-};
+use self::orchestration_entry::{TurnOrchestrationTransition, log_orchestration_transition};
 
 pub(crate) mod host;
 pub(crate) mod plan_reflect;
@@ -38,7 +35,7 @@ pub(crate) use host::{
 pub(crate) use plan_reflect::{intent, plan, reflect};
 #[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
 pub(crate) use turn_loop::turn_completion;
-pub(crate) use turn_loop::{orchestration_entry, run_dispatch, turn_orchestration};
+pub(crate) use turn_loop::{orchestration_entry, run_dispatch};
 
 pub(crate) mod messages {
     pub(crate) use crabmate_agent::agent_turn::messages::*;
@@ -91,17 +88,11 @@ pub(crate) async fn run_agent_turn_common(
     );
     p.turn.insert_separator_after_last_user_for_turn();
 
-    let top_dispatch = resolve_turn_top_level_dispatch(p.ctx.core.cfg.as_ref());
-    log_orchestration_transition(
-        TurnOrchestrationTransition::EnterCommon,
-        None,
-        &[("top_level_dispatch", top_dispatch.as_str())],
-    );
+    log_orchestration_transition(TurnOrchestrationTransition::EnterCommon, None, &[]);
     info!(
         target: "crabmate::agent_turn",
         planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         session_mode = %p.ctx.attach.session_mode,
-        top_level_dispatch = top_dispatch.as_str(),
         "run_agent_turn_common enter"
     );
 
@@ -109,14 +100,6 @@ pub(crate) async fn run_agent_turn_common(
         p.ctx.core.cfg.as_ref(),
     ));
 
-    match top_dispatch {
-        TurnTopLevelDispatch::NonHierarchical => {
-            log_orchestration_transition(
-                TurnOrchestrationTransition::DispatchNonHierarchical,
-                None,
-                &[],
-            );
-            run_dispatch::dispatch_non_hierarchical_turn(p, &mut per_coord).await
-        }
-    }
+    log_orchestration_transition(TurnOrchestrationTransition::DispatchReAct, None, &[]);
+    run_dispatch::dispatch_react_turn(p, &mut per_coord).await
 }

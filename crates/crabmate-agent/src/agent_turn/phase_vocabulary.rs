@@ -5,7 +5,7 @@
 //! | tracing / SSE 字段 | 权威类型 | 取值（现行） | 职责 |
 //! |---|---|---|---|
 //! | `turn_orchestration_mode` | [`TurnOrchestrationMode`](super::TurnOrchestrationMode) | `react` | 整轮主执行面 |
-//! | `turn_route_*` / `orchestration_route` | [`TurnRouteDecisionV1`](super::TurnRouteDecisionV1) | 见金样 `turn_route_decision_golden` | 启发式后一次性路由快照 |
+//! | `turn_route_*` / `orchestration_route` | [`TurnRouteDecisionV1`](super::TurnRouteDecisionV1) | 见金样 `turn_route_decision_golden`（主字段 `orchestration_mode`） | 启发式后一次性路由快照 |
 //! | `outer_loop_step` | [`OuterLoopIterationPhase`](super::OuterLoopIterationPhase) | `iteration_enter` … `tools_execute` | 单次外循环迭代粗相位（经 [`OuterLoopDriver`](super::OuterLoopDriver)） |
 //! | `sub_phase` | 根包 `AgentTurnSubPhase` | `planner` · `executor` · `reflect` | 错误/SSE **观测**标注（非转移表） |
 //! | `gate_phase` / `gate_decision_reason` | `FinalPlanGatePhase` 等 | 见 `per_coord/final_plan_gate` | 终答 `agent_reply_plan` 门控 |

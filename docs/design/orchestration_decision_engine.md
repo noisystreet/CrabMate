@@ -4,7 +4,7 @@
 **受众**：维护者、Agent 架构贡献者（对比用）  
 **关联（现行）**：
 - `crates/crabmate-agent/src/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
-- `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `NonHierarchicalTurnResolution` / `TurnOrchestrationMode`
+- `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `TurnResolution` / `TurnOrchestrationMode`
 - `crates/crabmate-config/src/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`）
 - `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点 Act 句启发式
 - `src/agent/agent_turn/loop/run_dispatch.rs` — 回合分发入口

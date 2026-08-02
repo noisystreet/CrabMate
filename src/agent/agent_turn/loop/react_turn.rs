@@ -1,15 +1,13 @@
-//! 非分层统一 driver：[`NonHierarchicalTurnPhase`] → 外循环。
+//! ReAct 统一 driver：直接进入外循环。
 
-use crate::agent::agent_turn::turn_orchestration::NonHierarchicalTurnPhase;
 use crate::agent::per_coord::PerCoordinator;
 
 use super::outer_loop::run_agent_outer_loop;
 use crate::agent::agent_turn::errors::RunAgentTurnError;
 use crate::agent::agent_turn::params::RunLoopParams;
 
-/// 非分层回合统一入口（`ReAct` 外循环）。
-pub(crate) async fn run_non_hierarchical_turn(
-    _phase: NonHierarchicalTurnPhase,
+/// ReAct 回合统一入口（外循环）。
+pub(crate) async fn run_react_turn(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
 ) -> Result<(), RunAgentTurnError> {

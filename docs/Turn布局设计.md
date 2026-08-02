@@ -305,7 +305,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 **仍走 overlay（非 assistant 正文真源）**：纯 reasoning 车道（非 commentary canonical 路径）的思维链增量。
 
-**仍独立 push 的时间线**：历史分层规划等旁注已忽略；审批 / 工具摘要等 `timeline_log` 旁注按 kind 分发（Web 对 `orchestration_route` 等不造气泡）。
+**仍独立 push 的时间线**：审批 / 工具摘要等 `timeline_log` 旁注按 kind 分发（Web 对 `orchestration_route` 等不造气泡）。
 
 ### 12.8 单一读路径（Phase 5）
 
