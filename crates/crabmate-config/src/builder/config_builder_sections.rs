@@ -267,15 +267,7 @@ pub(crate) struct ConfigBuilderCodebaseSemantic {
 
 #[derive(Default)]
 pub(crate) struct ConfigBuilderIntentRouting {
-    pub(crate) intent_execute_low_threshold: Option<f64>,
-    pub(crate) intent_execute_high_threshold: Option<f64>,
-    pub(crate) intent_non_hier_execute_low_threshold: Option<f64>,
-    pub(crate) intent_non_hier_execute_high_threshold: Option<f64>,
-    pub(crate) intent_l2_enabled: Option<bool>,
-    pub(crate) intent_l2_min_confidence: Option<f64>,
-    pub(crate) intent_l2_max_tokens: Option<u64>,
     pub(crate) intent_at_turn_start_enabled: Option<bool>,
-    pub(crate) intent_l0_routing_boost_enabled: Option<bool>,
 }
 
 #[derive(Default)]

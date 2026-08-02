@@ -1,6 +1,5 @@
-# 意图识别回归金样：无 L2 时 fail-open 为 Execute（`assess_and_route`）。
+# 意图识别回归金样：fail-open 为 Execute（`assess_and_route`；L2 已退役）。
 # 运行：`cargo test golden_intent_regression -p crabmate`
-# L2 调用已退役（R2）；本夹具锁 fail-open / 确认续接契约。
 # 字段：`id`、`task`、可选 `ctx`、`expect`（kind / primary_intent / action / …）。
 {"id":"execute_debug","task":"帮我修复这个报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
 {"id":"qa_error_meaning_fail_open","task":"这个错误是什么意思？","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}

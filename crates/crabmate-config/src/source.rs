@@ -262,24 +262,8 @@ pub(super) struct AgentSection {
     pub(super) codebase_semantic_hybrid_alpha: Option<f64>,
     pub(super) codebase_semantic_fts_top_n: Option<u64>,
     pub(super) codebase_semantic_hybrid_semantic_pool: Option<u64>,
-    /// 首轮意图路由：执行意图低阈值（0.0..=1.0）。
-    pub(super) intent_execute_low_threshold: Option<f64>,
-    /// 首轮意图路由：执行意图高阈值（0.0..=1.0，建议 >= low）。
-    pub(super) intent_execute_high_threshold: Option<f64>,
-    /// 意图路由「确认后执行」低阈值覆盖；省略则回退 `intent_execute_low_threshold`。
-    pub(super) intent_non_hier_execute_low_threshold: Option<f64>,
-    /// 意图路由「直接执行」高阈值覆盖；省略则回退 `intent_execute_high_threshold`。
-    pub(super) intent_non_hier_execute_high_threshold: Option<f64>,
-    /// 是否启用 L2 语义意图分类（默认 true）。
-    pub(super) intent_l2_enabled: Option<bool>,
-    /// L2 语义分类观测阈值（0.0..=1.0，默认 0.7）；不再控制是否回退规则层。
-    pub(super) intent_l2_min_confidence: Option<f64>,
-    /// L2 语义分类请求 `max_tokens`（默认 384）。
-    pub(super) intent_l2_max_tokens: Option<u64>,
-    /// 非分层路径是否在主循环前跑 L2 优先门控（缺省为 false，与 `finalize` 一致）。
+    /// 是否在主循环前跑意图门控（缺省为 false，与 `finalize` 一致）。
     pub(super) intent_at_turn_start_enabled: Option<bool>,
-    /// 是否根据 L0 对弃用 L1 兜底做保守提级（缺省为 true，与 `finalize` 一致）。
-    pub(super) intent_l0_routing_boost_enabled: Option<bool>,
 }
 
 /// 读取 [agent] 段，缺失字段保持为 None。
@@ -398,6 +382,14 @@ typo_unknown_key = 1
         for key in [
             "llm_fold_system_into_user = true",
             "intent_mode_bias_enabled = false",
+            "intent_l2_enabled = false",
+            "intent_l2_min_confidence = 0.7",
+            "intent_l2_max_tokens = 384",
+            "intent_execute_low_threshold = 0.2",
+            "intent_execute_high_threshold = 0.45",
+            "intent_non_hier_execute_low_threshold = 0.2",
+            "intent_non_hier_execute_high_threshold = 0.45",
+            "intent_l0_routing_boost_enabled = true",
         ] {
             let toml = format!(
                 r#"

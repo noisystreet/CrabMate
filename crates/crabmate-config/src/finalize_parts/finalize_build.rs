@@ -395,17 +395,8 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
 }
 
 fn finalize_section_intent_routing(mid: &FinalizeAfterRoles) -> types::IntentRoutingConfig {
-    let intent = &mid.intent;
     types::IntentRoutingConfig {
-        intent_l2_enabled: intent.intent_l2_enabled,
-        intent_l2_min_confidence: intent.intent_l2_min_confidence,
-        intent_l2_max_tokens: intent.intent_l2_max_tokens,
-        intent_execute_low_threshold: intent.intent_execute_low_threshold,
-        intent_execute_high_threshold: intent.intent_execute_high_threshold,
-        intent_non_hier_execute_low_threshold: intent.intent_non_hier_execute_low_threshold,
-        intent_non_hier_execute_high_threshold: intent.intent_non_hier_execute_high_threshold,
-        intent_at_turn_start_enabled: intent.intent_at_turn_start_enabled,
-        intent_l0_routing_boost_enabled: intent.intent_l0_routing_boost_enabled,
+        intent_at_turn_start_enabled: mid.intent.intent_at_turn_start_enabled,
     }
 }
 

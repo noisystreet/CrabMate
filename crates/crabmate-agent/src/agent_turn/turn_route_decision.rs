@@ -6,7 +6,7 @@
 
 use crabmate_config::{AgentConfig, FinalPlanRequirementMode};
 
-use crate::intent_pipeline::{IntentAction, IntentDecision};
+use crate::intent_pipeline::IntentAction;
 use crate::intent_router::IntentKind;
 
 use super::orchestration_entry::TurnTopLevelDispatch;
@@ -73,28 +73,6 @@ pub fn intent_kind_label(kind: IntentKind) -> &'static str {
 pub fn intent_action_label(action: &IntentAction) -> &'static str {
     match action {
         IntentAction::Execute => "execute",
-        IntentAction::ConfirmThenExecute(_) => "confirm_then_execute",
-        IntentAction::ClarifyThenExecute(_) => "clarify_then_execute",
-        IntentAction::DirectReply(_) => "direct_reply",
-    }
-}
-
-/// 由意图门控 / 启发式产出构造 **`ProceedExecute`** 快照。
-pub fn intent_gate_snapshot_from_decision(decision: &IntentDecision) -> IntentGateSnapshot {
-    IntentGateSnapshot::ProceedExecute {
-        kind: intent_kind_label(decision.kind).to_string(),
-        primary_intent: decision.primary_intent.clone(),
-        action: intent_action_label(&decision.action).to_string(),
-        confidence: decision.confidence,
-        need_clarification: decision.need_clarification,
-    }
-}
-
-pub fn intent_gate_snapshot_finished_early(decision: &IntentDecision) -> IntentGateSnapshot {
-    IntentGateSnapshot::FinishedEarly {
-        kind: Some(intent_kind_label(decision.kind).to_string()),
-        primary_intent: Some(decision.primary_intent.clone()),
-        action: Some(intent_action_label(&decision.action).to_string()),
     }
 }
 

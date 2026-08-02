@@ -2,7 +2,7 @@
 
 **状态（2026-08 对齐现实）**：**历史设计 / 部分设想未落地**。运行时主路径为 **意图门控 → `assess_turn_routing` → ReAct 外循环**；文中 **`hierarchy/router`**、分层模式选择等**已移除**，勿当现行实现索引。仍有效的是意图门控与细粒度意图增强方向（若继续推进须对照现行 `intent` / `turn_route_decision`）。
 
-**现行（L2 退役 R2）**：生产路径**不再**调用 L2 额外 `chat`；门控开 + Act 时仅廉价关键词启发式。配置键 `intent_l2_*` 仍可读入，待 R3 清扫。下文 §4.3 旧 schema（`primary_intent` / `slots` 等）与 Phase C `suggested_mode` 均为历史设想。
+**现行（L2 退役 R3）**：生产路径**不再**调用 L2；`intent_l2_*` / 阈值键已从配置**硬删**（写入则加载失败）。门控开 + Act 时仅廉价关键词启发式。下文旧 schema 与 Phase C `suggested_mode` 均为历史设想。
 
 **受众**：维护者、Agent 架构贡献者、质量与运营同学  
 **关联（现行）**：`src/agent/intent_router.rs`、意图门控 / `turn_route_decision`、`docs/开发文档.md`  

@@ -1,7 +1,7 @@
 //! 意图识别金样回归：`fixtures/intent_regression.jsonl`。
 
 use crate::agent::intent_pipeline::{IntentAction, IntentContext, assess_and_route};
-use crate::agent::intent_router::{ExecuteIntentThresholds, IntentKind};
+use crate::agent::intent_router::IntentKind;
 use serde::Deserialize;
 use std::collections::HashSet;
 use std::fs;
@@ -24,18 +24,6 @@ struct GoldenCtx {
     recent_user_messages: Vec<String>,
     #[serde(default)]
     has_recent_tool_failure: bool,
-    #[serde(default)]
-    l0_routing_boost_enabled: bool,
-    #[serde(default)]
-    l2_min_confidence: Option<f32>,
-    #[serde(default)]
-    thresholds: Option<GoldenThresholds>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoldenThresholds {
-    low: f32,
-    high: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,23 +42,11 @@ struct GoldenExpect {
 }
 
 fn build_context(c: GoldenCtx) -> IntentContext {
-    let mut ctx = IntentContext {
+    IntentContext {
         in_clarification_flow: c.in_clarification_flow,
         recent_user_messages: c.recent_user_messages,
         has_recent_tool_failure: c.has_recent_tool_failure,
-        l0_routing_boost_enabled: c.l0_routing_boost_enabled,
-        ..Default::default()
-    };
-    if let Some(v) = c.l2_min_confidence {
-        ctx.l2_min_confidence = v;
     }
-    if let Some(t) = c.thresholds {
-        ctx.thresholds = ExecuteIntentThresholds {
-            low: t.low,
-            high: t.high,
-        };
-    }
-    ctx
 }
 
 fn parse_kind(s: &str) -> IntentKind {
@@ -86,9 +62,6 @@ fn parse_kind(s: &str) -> IntentKind {
 fn action_tag(a: &IntentAction) -> &'static str {
     match a {
         IntentAction::Execute => "Execute",
-        IntentAction::DirectReply(_) => "DirectReply",
-        IntentAction::ClarifyThenExecute(_) => "ClarifyThenExecute",
-        IntentAction::ConfirmThenExecute(_) => "ConfirmThenExecute",
     }
 }
 

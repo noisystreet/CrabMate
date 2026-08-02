@@ -498,29 +498,9 @@ impl ConfigBuilder {
             .codebase_semantic_hybrid_semantic_pool
             .or(cs.codebase_semantic_hybrid_semantic_pool);
         let ir = &mut self.intent_routing;
-        ir.intent_execute_low_threshold = agent
-            .intent_execute_low_threshold
-            .or(ir.intent_execute_low_threshold);
-        ir.intent_execute_high_threshold = agent
-            .intent_execute_high_threshold
-            .or(ir.intent_execute_high_threshold);
-        ir.intent_non_hier_execute_low_threshold = agent
-            .intent_non_hier_execute_low_threshold
-            .or(ir.intent_non_hier_execute_low_threshold);
-        ir.intent_non_hier_execute_high_threshold = agent
-            .intent_non_hier_execute_high_threshold
-            .or(ir.intent_non_hier_execute_high_threshold);
-        ir.intent_l2_enabled = agent.intent_l2_enabled.or(ir.intent_l2_enabled);
-        ir.intent_l2_min_confidence = agent
-            .intent_l2_min_confidence
-            .or(ir.intent_l2_min_confidence);
-        ir.intent_l2_max_tokens = agent.intent_l2_max_tokens.or(ir.intent_l2_max_tokens);
         ir.intent_at_turn_start_enabled = agent
             .intent_at_turn_start_enabled
             .or(ir.intent_at_turn_start_enabled);
-        ir.intent_l0_routing_boost_enabled = agent
-            .intent_l0_routing_boost_enabled
-            .or(ir.intent_l0_routing_boost_enabled);
     }
 
     pub(super) fn merge_agent_role_rows(&mut self, rows: &[AgentRoleRow]) {

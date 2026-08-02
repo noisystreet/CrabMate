@@ -284,13 +284,6 @@ pub struct TurnBudgetConfig {
 
 #[derive(Debug, Clone)]
 pub struct IntentRoutingConfig {
-    pub intent_l2_enabled: bool,
-    pub intent_l2_min_confidence: f32,
-    pub intent_l2_max_tokens: u32,
-    pub intent_execute_low_threshold: f32,
-    pub intent_execute_high_threshold: f32,
-    pub intent_non_hier_execute_low_threshold: f32,
-    pub intent_non_hier_execute_high_threshold: f32,
+    /// 是否在主循环前跑意图门控（缺省为 false，与 `finalize` 一致）。
     pub intent_at_turn_start_enabled: bool,
-    pub intent_l0_routing_boost_enabled: bool,
 }
