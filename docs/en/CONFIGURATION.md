@@ -83,7 +83,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- |
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `CM_INTENT_L2_ENABLED` | Enable L2 (extra no-tools `chat`). Actually invoked only when **`intent_at_turn_start_enabled=true`** and **`session_mode=act`**; JSON **`suggested_mode`** (`ask`/`plan`/`act`, timeline/UI hint only — does **not** auto-change user mode). On miss/low confidence: **fail-open** to main model with **temporary readonly** when the gate is on. **Default on**. TOML: `intent_l2_enabled`. |
+| `CM_INTENT_L2_ENABLED` | Enable L2 (extra no-tools `chat`). **Default off** (L2 retirement R1; see `agent_space/l2-retirement-plan.md`). Actually invoked only when this is **`true`**, **`intent_at_turn_start_enabled=true`**, and **`session_mode=act`**; JSON **`suggested_mode`** (timeline/obs only — does **not** auto-change user mode; Web no longer renders the bubble). On miss/low confidence: **fail-open** to main model with **temporary readonly** when the gate is on. TOML: `intent_l2_enabled`. |
 | `CM_INTENT_L2_MIN_CONFIDENCE` | L2 `confidence` threshold (0.0–1.0, default 0.7). **≥ threshold**: accept suggestion (main path, no L2 narrowing). **Below** or L2 unavailable: fail-open + conservative readonly (Act copy mentions `/mode act` to confirm writes). TOML: `intent_l2_min_confidence`. |
 | `CM_INTENT_L2_MAX_TOKENS` | L2 classification `max_tokens` (32–1024, default 384). TOML: `intent_l2_max_tokens`. |
 | `CM_INTENT_AT_TURN_START_ENABLED` | Turn-start intent gate (default matches TOML **`intent_at_turn_start_enabled=false`**). When **`false`**, **L2 is not called**. When **`true`** and session is Ask/Plan, L2 is also skipped (mode already sets readonly). |
@@ -460,7 +460,7 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 - **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
 - **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
 - **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly after intent gate. Successful turns save/keep **`active_session_mode`**.
-- **vs L2**: with the gate off (default), L2 is not called; with the gate on and Act, L2 only suggests `suggested_mode` (timeline; does not auto-change mode). Act fail-open temporary readonly mentions `/mode act` before writes.
+- **vs L2**: L2 is **off by default** (retirement R1). With the gate off or without explicit `intent_l2_enabled=true`, L2 is not called; only when explicitly enabled and Act does L2 suggest `suggested_mode` (obs only; Web does not render the bubble).
 - **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 

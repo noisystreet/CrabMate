@@ -365,7 +365,7 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
         intent_execute_high_threshold,
         intent_non_hier_execute_low_threshold,
         intent_non_hier_execute_high_threshold,
-        intent_l2_enabled: b.intent_routing.intent_l2_enabled.unwrap_or(true),
+        intent_l2_enabled: b.intent_routing.intent_l2_enabled.unwrap_or(false),
         intent_l2_min_confidence: b
             .intent_routing
             .intent_l2_min_confidence

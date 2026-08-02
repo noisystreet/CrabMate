@@ -167,6 +167,82 @@ web_api_require_bearer = true
 }
 
 #[cfg(test)]
+mod intent_l2_enabled_defaults_tests {
+    use super::load_config;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
+    use std::fs;
+    use std::sync::Mutex;
+
+    static CM_INTENT_L2_ENABLED_LOCK: Mutex<()> = Mutex::new(());
+
+    fn without_cm_intent_l2_enabled_env<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_INTENT_L2_ENABLED_LOCK
+            .lock()
+            .expect("intent_l2_enabled defaults tests must run serialized");
+        let prev = std::env::var("CM_INTENT_L2_ENABLED").ok();
+        // SAFETY: mutex serializes this env key for the duration of `f()`.
+        unsafe {
+            std::env::remove_var("CM_INTENT_L2_ENABLED");
+        }
+        let out = f();
+        unsafe {
+            match prev.as_ref() {
+                Some(v) => std::env::set_var("CM_INTENT_L2_ENABLED", v),
+                None => std::env::remove_var("CM_INTENT_L2_ENABLED"),
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn embedded_default_disables_intent_l2_without_env_override() {
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_intent_l2_enabled_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("minimal.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+"#,
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(
+                    !cfg.intent_routing.intent_l2_enabled,
+                    "L2 retirement R1: intent_l2_enabled defaults to false"
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn explicit_true_enables_intent_l2() {
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_intent_l2_enabled_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("minimal.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+intent_l2_enabled = true
+"#,
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert!(cfg.intent_routing.intent_l2_enabled);
+            });
+        });
+    }
+}
+
+#[cfg(test)]
 mod load_config_test_env {
     use std::sync::Mutex;
 
