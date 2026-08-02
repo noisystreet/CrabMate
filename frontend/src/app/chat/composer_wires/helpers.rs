@@ -94,6 +94,6 @@ pub(super) fn push_user_and_loading_assistant(
 }
 
 pub(super) fn begin_stream_shell_turn(shell: &ComposerStreamShell) {
-    shell.stream.status_err.set(None);
+    shell.stream.clear_status_banners();
     shell.approval.clear_pending_user_interactions();
 }
