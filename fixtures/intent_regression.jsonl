@@ -1,6 +1,6 @@
 # 意图识别回归金样：无 L2 时 fail-open 为 Execute（`assess_and_route`）。
 # 运行：`cargo test golden_intent_regression -p crabmate`
-# L2 采纳路径由 `crates/crabmate-agent` 内 `intent_pipeline` 单测覆盖。
+# L2（`suggested_mode`）路径由 `crates/crabmate-agent` 内 `intent_pipeline` 单测覆盖。
 # 字段：`id`、`task`、可选 `ctx`、`expect`（kind / primary_intent / action / …）。
 {"id":"execute_debug","task":"帮我修复这个报错","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}
 {"id":"qa_error_meaning_fail_open","task":"这个错误是什么意思？","expect":{"kind":"Execute","primary_intent":"execute.debug_diagnose","action":"Execute"}}

@@ -119,14 +119,6 @@ pub(crate) struct TurnPlannerHints {
     pub(crate) intent_gate_snapshot: Option<crabmate_agent::agent_turn::IntentGateSnapshot>,
 }
 
-impl TurnPlannerHints {
-    /// `intent_at_turn_start_enabled=false` 时清除管线附带的工具收窄（保留时间线副作用由调用方处理）。
-    pub(crate) fn clear_tool_narrowing_side_effects(&mut self) {
-        self.step_executor_constraint = None;
-        self.intent_turn_gate_hint = None;
-    }
-}
-
 /// 单 Agent [`super::outer_loop::run_agent_outer_loop`] 内每次 **P** 调用对应的模型端点角色。
 ///
 /// 将「第几轮用 planner vs executor」从隐式 `iteration_count >= 2` 收拢为显式枚举，便于 tracing 与文档对齐。
@@ -361,19 +353,6 @@ mod turn_planner_hints_tests {
         };
         assert_eq!(h.take_intent_turn_gate_hint().as_deref(), Some("hint"));
         assert!(h.take_intent_turn_gate_hint().is_none());
-    }
-
-    #[test]
-    fn clear_tool_narrowing_side_effects_resets_constraint_and_hint() {
-        use crate::agent::plan_artifact::PlanStepExecutorKind;
-        let mut h = TurnPlannerHints {
-            intent_turn_gate_hint: Some("hint".into()),
-            step_executor_constraint: Some(PlanStepExecutorKind::ReviewReadonly),
-            ..Default::default()
-        };
-        h.clear_tool_narrowing_side_effects();
-        assert!(h.intent_turn_gate_hint.is_none());
-        assert!(h.step_executor_constraint.is_none());
     }
 
     #[test]

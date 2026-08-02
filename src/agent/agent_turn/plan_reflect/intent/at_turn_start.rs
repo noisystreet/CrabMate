@@ -1,6 +1,6 @@
 //! 在 `run_agent_turn` 起点的**意图门控**（可选；由 `intent_at_turn_start_enabled` 控制）：
-//! 默认 L2；L2 不可用时 fail-open 进主路径（已移除 L1 关键词兜底）。非「直接执行」时写入助手终答并结束本回合。
-//! `meta.greeting`、`qa.meta*`、`qa.explain`、`qa.readonly*`（只读 + hint）、`ClarifyThenExecute`、`ConfirmThenExecute` 等改入**主模型**；占位 canned 不终答（可配合 `intent_turn_gate_hint` 与 `system_intent_gate_hint`）。
+//! 门控开启且会话为 Act 时跑 L2（仅建议 `suggested_mode`）；L2 不可用时 fail-open 进主路径。
+//! 门控关闭或 Ask/Plan 时**跳过 L2**（无额外 chat）。非「直接执行」路径写入助手终答并结束本回合。
 
 use crate::agent::intent_pipeline::IntentAction;
 use crate::agent::intent_router::{
@@ -12,6 +12,7 @@ use crabmate_agent::agent_turn::{
     IntentGateSnapshot, IntentRoutingPipelineParams, assess_intent_routing_full_pipeline,
     intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision,
 };
+use crabmate_types::SessionMode;
 
 use super::intent_user;
 use super::l2_classifier_host::CrabmateIntentL2ClassifierHost;
@@ -23,8 +24,23 @@ const GATE_HINT_READONLY_ZH: &str = "【意图门控】当前回合应只读理�
 const GATE_HINT_CLARIFY_ZH: &str = "【意图门控】用户目标可能不够明确。请用简短自然的中文追问：尽量请用户补充文件路径、报错原文、拟运行命令或期望结果；不要编造未提供的信息；追问勿预设对方只想修某一个文件。此轮不要执行会修改仓库或长耗时构建的操作，除非用户已明确授权。";
 /// 待确认执行：主模型说明 + 保留可识别的确认措辞（见 `intent_router::is_waiting_execute_confirmation_prompt`）。
 const GATE_HINT_CONFIRM_ZH: &str = "【意图门控】你判断用户可能想让你执行具体改动或命令，但需要先确认。请简短说明你的理解（与用户原文目标粒度保持一致，勿擅自替换为更小范围任务除非用户已表态）；并在回复最后一段包含可被识别的确认句式，例如同时包含「请确认是否」与「开始执行」或「直接开始执行」（可与历史文案「请确认是否「直接开始执行」」同义），以便多轮对话继续识别确认流。";
-/// L2 不可用或低置信 Execute fail-open：进主循环但工具保守（对齐开源「权限先收窄」）。
-const GATE_HINT_FAIL_OPEN_CONSERVATIVE_ZH: &str = "【意图门控】本轮意图分类不可用或置信不足，先按只读理解处理（可列目录/读文件/解释）；确需改文件或跑构建/测试时请用户明确授权后再做。";
+/// Act 下 L2 不可用或低置信 fail-open：临时只读，提示用 `/mode act` 确认后再写。
+const GATE_HINT_FAIL_OPEN_ACT_ZH: &str = "【意图门控】当前为 Act 且意图分类不足，已临时只读（可列目录/读文件/解释）；确需改文件或跑构建/测试时，请用 `/mode act`（或底栏切 Act）确认后重试写操作。";
+/// 非 Act（少见）下的保守 fail-open 提示。
+const GATE_HINT_FAIL_OPEN_READONLY_ZH: &str = "【意图门控】本轮意图分类不可用或置信不足，先按只读理解处理（可列目录/读文件/解释）；确需改文件或跑构建/测试时请先切换到 Act 模式后再试。";
+
+fn fail_open_conservative_hint(session_mode: SessionMode) -> &'static str {
+    match session_mode {
+        SessionMode::Act => GATE_HINT_FAIL_OPEN_ACT_ZH,
+        SessionMode::Ask | SessionMode::Plan => GATE_HINT_FAIL_OPEN_READONLY_ZH,
+    }
+}
+
+/// 门控关，或 Ask/Plan（能力档已由 mode 决定）时跳过 L2 LLM。
+#[must_use]
+fn should_skip_intent_l2(gate_enabled: bool, session_mode: SessionMode) -> bool {
+    !gate_enabled || crate::session_mode_turn::session_mode_requires_readonly_tools(session_mode)
+}
 
 /// 意图门控的聚合结果：终答结束本回合，或进入主执行路径（**Execute**、`qa.readonly` 续接、以及委托主模型的 **`DirectReply`** 等会进入主路径）。
 pub(crate) enum IntentGateResult {
@@ -45,6 +61,15 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::EmptyTask);
         return Ok(true);
     }
+
+    let gate_enabled = p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled;
+    let session_mode = p.ctx.attach.session_mode;
+    if should_skip_intent_l2(gate_enabled, session_mode) {
+        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
+        // 未跑管线，无需 clear；Ask/Plan 只读由 run_dispatch 在门控之后挂载。
+        return Ok(true);
+    }
+
     let out = run_intent_l0_l1_l2_gate(
         p,
         &task,
@@ -66,17 +91,30 @@ pub(crate) async fn run_intent_at_turn_start_if_configured(
         "intent_at_turn",
     )
     .await?;
-    // 始终运行意图管线 & 发射时间线。intent_at_turn_start_enabled 仅控制门控是否提前终答；
-    // 关闭时清除管线附带的工具约束，避免「门控关闭」仍把回合收窄为 ReviewReadonly（进而滤掉 MCP）。
-    if !p.ctx.core.cfg.intent_routing.intent_at_turn_start_enabled {
-        p.turn.turn_planner_hints.intent_gate_snapshot = Some(IntentGateSnapshot::Disabled);
-        p.turn
-            .turn_planner_hints
-            .clear_tool_narrowing_side_effects();
-        return Ok(true);
-    }
     let proceed = matches!(out, IntentGateResult::ProceedExecute);
     Ok(proceed)
+}
+
+#[cfg(test)]
+mod skip_l2_tests {
+    use super::should_skip_intent_l2;
+    use crabmate_types::SessionMode;
+
+    #[test]
+    fn skips_when_gate_off() {
+        assert!(should_skip_intent_l2(false, SessionMode::Act));
+    }
+
+    #[test]
+    fn skips_ask_plan_even_when_gate_on() {
+        assert!(should_skip_intent_l2(true, SessionMode::Ask));
+        assert!(should_skip_intent_l2(true, SessionMode::Plan));
+    }
+
+    #[test]
+    fn runs_l2_for_act_when_gate_on() {
+        assert!(!should_skip_intent_l2(true, SessionMode::Act));
+    }
 }
 
 fn format_intent_title(assessment: &crate::agent::intent_pipeline::IntentDecision) -> String {
@@ -121,15 +159,21 @@ fn format_intent_detail(
         .as_deref()
         .unwrap_or("无")
         .to_string();
+    let suggested = merge_meta
+        .suggested_mode
+        .as_deref()
+        .unwrap_or("无")
+        .to_string();
     let secondary = if assessment.secondary_intents.is_empty() {
         "无".to_string()
     } else {
         assessment.secondary_intents.join("、")
     };
     format!(
-        "主意图：{}\n次意图：{}\n综合置信度：{:.2}\n需要澄清：{}\n是否保守拒识：{}\n基线判定：{:?}（{:.2}）\n决策来源：{}\n来源原因：{}\n是否命中续接合并：{}\nL0 信号：路径={}，报错={}，短句={}，Git关键词={}，命令词={}，近期工具失败={}",
+        "主意图：{}\n次意图：{}\n建议会话模式：{}\n综合置信度：{:.2}\n需要澄清：{}\n是否保守拒识：{}\n基线判定：{:?}（{:.2}）\n决策来源：{}\n来源原因：{}\n是否命中续接合并：{}\nL0 信号：路径={}，报错={}，短句={}，Git关键词={}，命令词={}，近期工具失败={}",
         assessment.primary_intent,
         secondary,
+        suggested,
         assessment.confidence,
         assessment.need_clarification,
         assessment.abstain,
@@ -255,7 +299,7 @@ async fn run_intent_l0_l1_l2_gate(
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(PlanStepExecutorKind::ReviewReadonly);
         p.turn.turn_planner_hints.intent_turn_gate_hint =
-            Some(GATE_HINT_FAIL_OPEN_CONSERVATIVE_ZH.to_string());
+            Some(fail_open_conservative_hint(p.ctx.attach.session_mode).to_string());
         p.turn.turn_planner_hints.intent_gate_snapshot =
             Some(intent_gate_snapshot_from_decision(&assessment));
         return Ok(IntentGateResult::ProceedExecute);
