@@ -1,4 +1,4 @@
-//! 将工作区文件拖放到 composer：插入 `file:///{rel}`；亦可落盘图片附件。
+//! 将工作区文件拖放到 composer：插入 `@{rel}`；亦可落盘图片附件。
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;

@@ -1,8 +1,8 @@
 //! 输入框镜像层：将工作区文件引用渲染为与正文区分的 HTML（仅用于 composer 高亮层）。
 //!
 //! 约定 token（与插入 / 服务端展开一致）：
-//! - **`file:///{相对路径}`**（首选，双击工作区树插入）
-//! - **`@{相对路径}`**（兼容手输）
+//! - **`@{相对路径}`**（首选，双击工作区树插入；气泡链接文字只显示路径）
+//! - **`file:///{相对路径}`** / **`file://./{相对路径}`**（兼容手输；镜像须与草稿同字以免错位）
 
 fn push_escaped(out: &mut String, s: &str) {
     for c in s.chars() {
@@ -23,25 +23,38 @@ fn take_path_token_len(rest: &str) -> usize {
         .sum()
 }
 
-/// 将草稿中的 `file:///` / `@` 文件引用包在 `<span class="composer-ws-ref">` 内；其余字符 HTML 转义。
-/// 与 [`super::workspace_panel::make_insert_workspace_path_into_composer`] 插入的 `file:///{rel}` 约定一致。
+fn push_ws_ref_span(out: &mut String, full: &str) {
+    out.push_str(r#"<span class="composer-ws-ref" title=""#);
+    push_escaped(out, full);
+    out.push_str(r#"">"#);
+    push_escaped(out, full);
+    out.push_str("</span>");
+}
+
+/// 将草稿中的文件引用包在 `<span class="composer-ws-ref">` 内；其余字符 HTML 转义。
+/// 镜像正文必须与 textarea 草稿同字（光标对齐）。
 pub fn composer_workspace_at_refs_html(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len().saturating_mul(2));
     let mut i = 0usize;
     while i < raw.len() {
         let ch = raw[i..].chars().next().unwrap();
         let clen = ch.len_utf8();
+        if raw[i..].starts_with("file://./") {
+            let prefix_len = "file://./".len();
+            let rest = &raw[i + prefix_len..];
+            let path_len = take_path_token_len(rest);
+            if path_len > 0 {
+                push_ws_ref_span(&mut out, &raw[i..i + prefix_len + path_len]);
+                i += prefix_len + path_len;
+                continue;
+            }
+        }
         if raw[i..].starts_with("file:///") {
             let prefix_len = "file:///".len();
             let rest = &raw[i + prefix_len..];
             let path_len = take_path_token_len(rest);
             if path_len > 0 {
-                let full = &raw[i..i + prefix_len + path_len];
-                out.push_str(r#"<span class="composer-ws-ref" title=""#);
-                push_escaped(&mut out, full);
-                out.push_str(r#"">"#);
-                push_escaped(&mut out, full);
-                out.push_str("</span>");
+                push_ws_ref_span(&mut out, &raw[i..i + prefix_len + path_len]);
                 i += prefix_len + path_len;
                 continue;
             }
@@ -50,12 +63,7 @@ pub fn composer_workspace_at_refs_html(raw: &str) -> String {
             let rest = &raw[i + clen..];
             let path_len = take_path_token_len(rest);
             if path_len > 0 {
-                let full = &raw[i..i + clen + path_len];
-                out.push_str(r#"<span class="composer-ws-ref" title=""#);
-                push_escaped(&mut out, full);
-                out.push_str(r#"">"#);
-                push_escaped(&mut out, full);
-                out.push_str("</span>");
+                push_ws_ref_span(&mut out, &raw[i..i + clen + path_len]);
                 i += clen + path_len;
                 continue;
             }

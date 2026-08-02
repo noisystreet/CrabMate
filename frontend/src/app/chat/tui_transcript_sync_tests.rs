@@ -254,3 +254,67 @@ fn live_tool_chunk_uses_tool_row_patch_not_replace_all() {
         other => panic!("expected ToolRow, got {other:?}"),
     }
 }
+
+#[test]
+fn skill_slash_chip_stays_on_same_line_as_task() {
+    let user = message("u1", "user", "/rust-style 分析一下");
+    let empty = HashMap::new();
+    let html = build_tui_transcript_html(
+        std::slice::from_ref(&user),
+        "s1",
+        None,
+        Locale::ZhHans,
+        false,
+        true,
+        &empty,
+    );
+    assert!(html.contains("msg-skill-invoke"), "{html}");
+    assert!(html.contains("rust-style"), "{html}");
+    assert!(html.contains("分析一下"), "{html}");
+    // 旧实现：裸 chip 后再跟独立 chat-tui-line，视觉上多一换行。
+    assert!(
+        !html.contains("</span> <div class=\"chat-tui-line"),
+        "chip must not sit outside the first line block: {html}"
+    );
+    assert!(
+        html.contains("msg-skill-invoke") && html.contains("chat-tui-line"),
+        "{html}"
+    );
+    let chip_at = html.find("msg-skill-invoke").expect("chip");
+    let line_at = html.find("chat-tui-line").expect("line");
+    assert!(
+        line_at < chip_at,
+        "chip should be inside a line wrapper: {html}"
+    );
+}
+
+#[test]
+fn file_ref_chip_stays_on_same_line_as_following_text() {
+    let user = message("u1", "user", "@.gitignore 这个文件是什么");
+    let empty = HashMap::new();
+    let html = build_tui_transcript_html(
+        std::slice::from_ref(&user),
+        "s1",
+        None,
+        Locale::ZhHans,
+        false,
+        true,
+        &empty,
+    );
+    assert!(html.contains("msg-file-ref"), "{html}");
+    assert!(html.contains(".gitignore"), "{html}");
+    assert!(html.contains("这个文件是什么"), "{html}");
+    assert!(
+        !html.contains("</span><div class=\"chat-tui-line")
+            && !html.contains("</span> <div class=\"chat-tui-line"),
+        "file-ref chip must not sit outside the line block: {html}"
+    );
+    let chip_at = html.find("msg-file-ref").expect("chip");
+    let line_at = html.find("chat-tui-line").expect("line");
+    assert!(
+        line_at < chip_at,
+        "file-ref chip should be inside a line wrapper: {html}"
+    );
+    // 占位符不得泄漏到最终 HTML。
+    assert!(!html.contains("CMFR"), "{html}");
+}

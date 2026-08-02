@@ -54,7 +54,7 @@ fn try_commit_inline_create_row(
 /// 工作区树拖放到 composer 的自定义 MIME（相对路径，POSIX，无前导 `/`）。
 pub(crate) const CRABMATE_WS_REL_MIME: &str = "application/x-crabmate-ws-rel";
 
-/// 文件行 `dragstart`：写入相对路径 MIME 与可读 `text/plain`（`file:///{rel}`）。
+/// 文件行 `dragstart`：写入相对路径 MIME 与可读 `text/plain`（`@{rel}`）。
 pub(crate) fn workspace_file_row_drag_start(ev: &web_sys::DragEvent, rel: &str) {
     let Some(dt) = ev.data_transfer() else {
         return;
@@ -65,7 +65,7 @@ pub(crate) fn workspace_file_row_drag_start(ev: &web_sys::DragEvent, rel: &str) 
     }
     dt.set_effect_allowed("copy");
     let _ = dt.set_data(CRABMATE_WS_REL_MIME, &rel);
-    let _ = dt.set_data("text/plain", &format!("file:///{rel}"));
+    let _ = dt.set_data("text/plain", &format!("@{rel}"));
 }
 
 /// 相对工作区根的路径片段拼接（POSIX 风格，与后端 `path` 查询一致）。

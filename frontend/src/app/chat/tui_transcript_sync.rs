@@ -11,7 +11,8 @@ use crate::stream_text_overlay::{
 
 use super::tui_actions_bar::turn_actions_bar_html;
 use super::tui_line_markdown::{
-    TuiBodyChunks, TuiBodyPatch, parse_tui_body_chunks_with, plan_tui_body_patch,
+    TuiBodyChunks, TuiBodyPatch, open_active_block_class, parse_tui_body_chunks_with,
+    plan_tui_body_patch, render_open_active_html,
 };
 use super::tui_tool_process::{tool_process_body_html, tool_row_live_fields};
 use crate::visible_messages::tui_should_render_message;
@@ -180,13 +181,77 @@ fn message_display_text(
 }
 
 fn file_ref_chip_html(token: &str) -> String {
-    let display = token
-        .strip_prefix('@')
-        .map(|rel| format!("file:///{rel}"))
-        .unwrap_or_else(|| token.to_string());
+    let display = crate::message_format::file_ref_display::file_ref_visible_label(token);
     let title_esc = plaintext_to_safe_html(token);
-    let display_esc = plaintext_to_safe_html(&display);
+    let display_esc = plaintext_to_safe_html(display);
     format!("<span class=\"msg-file-ref\" title=\"{title_esc}\">{display_esc}</span>")
+}
+
+/// 将内联 HTML 插入首个正文容器内（优先 `<p>` 内），避免 chip 与块级段落上下叠成两行。
+fn prepend_inline_html_to_first_tui_line(line_html: &mut String, prefix: &str) {
+    const P_OPEN: &str = "<p>";
+    if let Some(i) = line_html.find(P_OPEN) {
+        line_html.insert_str(i + P_OPEN.len(), prefix);
+        return;
+    }
+    if let Some(p0) = line_html.find("<p ") {
+        if let Some(gt) = line_html[p0..].find('>') {
+            line_html.insert_str(p0 + gt + 1, prefix);
+            return;
+        }
+    }
+    if let Some(i) = line_html.find('>') {
+        line_html.insert_str(i + 1, prefix);
+    } else {
+        line_html.insert_str(0, prefix);
+    }
+}
+
+/// skill chip + 任务正文：chip 必须与首行同块，不能先单独塞一个裸 span 再跟 `div.chat-tui-line`。
+fn skill_slash_body_chunks(
+    skill_id: &str,
+    task: &str,
+    finalize_open_block: bool,
+    markdown_render: bool,
+    locale: Locale,
+) -> TuiBodyChunks {
+    let prefix = crate::i18n::msg_skill_invoke_prefix(locale);
+    let suffix = crate::i18n::msg_skill_invoke_suffix(locale);
+    let id_esc = plaintext_to_safe_html(skill_id);
+    let title_esc = plaintext_to_safe_html(&format!("/{skill_id}"));
+    let chip = format!(
+        "<span class=\"msg-skill-invoke\" title=\"{title_esc}\">{prefix} <span class=\"msg-skill-invoke-id\">{id_esc}</span> {suffix}</span>"
+    );
+    if task.is_empty() {
+        return TuiBodyChunks {
+            closed: vec![format!(
+                "<div class=\"chat-tui-line chat-tui-line--block\">{chip}</div>"
+            )],
+            open_plain: None,
+            markdown_render,
+        };
+    }
+    let mut task_chunks = user_text_body_chunks(task, finalize_open_block, markdown_render);
+    let chip_prefix = format!("{chip} ");
+    if let Some(first) = task_chunks.closed.first_mut() {
+        prepend_inline_html_to_first_tui_line(first, &chip_prefix);
+        return task_chunks;
+    }
+    if let Some(plain) = task_chunks.open_plain.take() {
+        let class = open_active_block_class(&plain, markdown_render);
+        let body = render_open_active_html(&plain, markdown_render);
+        task_chunks
+            .closed
+            .push(format!("<div class=\"{class}\">{chip_prefix}{body}</div>"));
+        return task_chunks;
+    }
+    TuiBodyChunks {
+        closed: vec![format!(
+            "<div class=\"chat-tui-line chat-tui-line--block\">{chip}</div>"
+        )],
+        open_plain: None,
+        markdown_render,
+    }
 }
 
 fn user_text_body_chunks(
@@ -199,30 +264,52 @@ fn user_text_body_chunks(
     if segs.iter().all(|s| matches!(s, UserTextSeg::Plain(_))) {
         return parse_tui_body_chunks_with(text, finalize_open_block, markdown_render);
     }
-    let last = segs.len().saturating_sub(1);
-    let mut closed = Vec::new();
-    let mut open_plain = None;
-    for (idx, seg) in segs.into_iter().enumerate() {
+
+    // 占位符整段解析后再换回 chip，避免裸 span 落在 `chat-tui-line` 外造成额外换行。
+    const MARK_L: &str = "\u{2060}⟦CMFR";
+    const MARK_R: &str = "⟧\u{2060}";
+    let mut rebuilt = String::with_capacity(text.len());
+    let mut chips: Vec<String> = Vec::new();
+    for seg in segs {
         match seg {
+            UserTextSeg::Plain(p) => rebuilt.push_str(&p),
             UserTextSeg::FileRef(tok) => {
-                closed.push(file_ref_chip_html(&tok));
-            }
-            UserTextSeg::Plain(p) if p.is_empty() => {}
-            UserTextSeg::Plain(p) => {
-                let finalize = finalize_open_block && idx == last;
-                let chunks = parse_tui_body_chunks_with(&p, finalize, markdown_render);
-                closed.extend(chunks.closed);
-                if let Some(o) = chunks.open_plain {
-                    open_plain = Some(o);
-                }
+                let i = chips.len();
+                chips.push(file_ref_chip_html(&tok));
+                rebuilt.push_str(MARK_L);
+                rebuilt.push_str(&i.to_string());
+                rebuilt.push_str(MARK_R);
             }
         }
     }
-    TuiBodyChunks {
-        closed,
-        open_plain,
-        markdown_render,
+
+    let mut chunks = parse_tui_body_chunks_with(&rebuilt, finalize_open_block, markdown_render);
+    let replace_marks = |s: &mut String| {
+        for (i, chip) in chips.iter().enumerate() {
+            let mark = format!("{MARK_L}{i}{MARK_R}");
+            if s.contains(&mark) {
+                *s = s.replace(&mark, chip);
+                continue;
+            }
+            let esc = plaintext_to_safe_html(&mark);
+            if esc != mark {
+                *s = s.replace(&esc, chip);
+            }
+        }
+    };
+    for c in &mut chunks.closed {
+        replace_marks(c);
     }
+    // open_plain 是源文本不能嵌 HTML：有引用时折成闭合行并替换占位符。
+    if let Some(plain) = chunks.open_plain.take() {
+        let class = open_active_block_class(&plain, markdown_render);
+        let mut body = render_open_active_html(&plain, markdown_render);
+        replace_marks(&mut body);
+        chunks
+            .closed
+            .push(format!("<div class=\"{class}\">{body}</div>"));
+    }
+    chunks
 }
 
 fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBodyChunks {
@@ -245,33 +332,13 @@ fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBo
     if message.role == "user"
         && let Some((skill_id, task)) = crate::message_format::parse_user_skill_slash(&text)
     {
-        let prefix = crate::i18n::msg_skill_invoke_prefix(ctx.locale);
-        let suffix = crate::i18n::msg_skill_invoke_suffix(ctx.locale);
-        let id_esc = plaintext_to_safe_html(&skill_id);
-        let title_esc = plaintext_to_safe_html(&format!("/{skill_id}"));
-        let chip = format!(
-            "<span class=\"msg-skill-invoke\" title=\"{title_esc}\">{prefix} <span class=\"msg-skill-invoke-id\">{id_esc}</span> {suffix}</span>"
+        return skill_slash_body_chunks(
+            &skill_id,
+            &task,
+            message_finalize_open_block(message),
+            ctx.markdown_render,
+            ctx.locale,
         );
-        let mut closed = vec![chip];
-        if !task.is_empty() {
-            closed.push(" ".to_string());
-            let task_chunks = user_text_body_chunks(
-                &task,
-                message_finalize_open_block(message),
-                ctx.markdown_render,
-            );
-            closed.extend(task_chunks.closed);
-            return TuiBodyChunks {
-                closed,
-                open_plain: task_chunks.open_plain,
-                markdown_render: ctx.markdown_render,
-            };
-        }
-        return TuiBodyChunks {
-            closed,
-            open_plain: None,
-            markdown_render: ctx.markdown_render,
-        };
     }
     if message.role == "user" {
         return user_text_body_chunks(

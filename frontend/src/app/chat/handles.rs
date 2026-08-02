@@ -156,7 +156,7 @@ pub struct ChatColumnShell {
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
     /// 与 [`ChatComposerWires::stream_follow_up`] 同源。
     pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
-    /// 工作区相对路径 → composer `file:///`（树双击 / 拖放）。
+    /// 工作区相对路径 → composer `@rel`（树双击 / 拖放）。
     pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 }
 

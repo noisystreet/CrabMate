@@ -39,26 +39,25 @@ fn render_highlighted_message_text(
         if let Some((skill_id, task)) = parse_user_skill_slash(&disp) {
             let prefix = i18n::msg_skill_invoke_prefix(loc);
             let suffix = i18n::msg_skill_invoke_suffix(loc);
-            let chip = view! {
-                <span class="msg-skill-invoke" title=format!("/{skill_id}")>
-                    {prefix}
-                    " "
-                    <span class="msg-skill-invoke-id">{skill_id.clone()}</span>
-                    " "
-                    {suffix}
-                </span>
-            };
+            let title = format!("/{skill_id}");
+            let id_label = skill_id;
             if task.is_empty() {
-                return chip.into_any();
-            }
-            return view! {
-                <>
-                    {chip}
-                    " "
-                    <span class="msg-skill-invoke-task">
-                        {render_user_text_with_file_refs(&task, query)}
+                return view! {
+                    <span class="msg-skill-invoke" title=title.clone()>
+                        {prefix}{" "}<span class="msg-skill-invoke-id">{id_label}</span>{" "}{suffix}
                     </span>
-                </>
+                }
+                .into_any();
+            }
+            // 单行模板，避免 fragment 空白文本节点在 `white-space: pre-wrap` 下变成额外换行。
+            return view! {
+                <span class="msg-skill-slash-body">
+                    <span class="msg-skill-invoke" title=title>
+                        {prefix}{" "}<span class="msg-skill-invoke-id">{id_label}</span>{" "}{suffix}
+                    </span>
+                    {" "}
+                    <span class="msg-skill-invoke-task">{render_user_text_with_file_refs(&task, query)}</span>
+                </span>
             }
             .into_any();
         }
