@@ -73,6 +73,31 @@ fn openapi_components_schemas_chat_llm_webui() -> Value {
                     }
                 }
             },
+            "StatusResponseBody": {
+                "type": "object",
+                "description": "GET /status 摘要字段（完整对象以后端实现为准）",
+                "properties": {
+                    "model": { "type": "string" },
+                    "default_session_mode": {
+                        "type": "string",
+                        "enum": ["ask", "plan", "act"],
+                        "description": "全局默认会话工作模式"
+                    },
+                    "agent_role_default_session_modes": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "string",
+                            "enum": ["ask", "plan", "act"]
+                        },
+                        "description": "各命名角色配置的默认会话模式（仅含显式配置的角色）"
+                    },
+                    "agent_role_ids": {
+                        "type": "array",
+                        "items": { "type": "string" }
+                    },
+                    "default_agent_role_id": { "type": "string", "nullable": true }
+                }
+            },
     })
 }
 
@@ -225,6 +250,7 @@ fn openapi_components_schemas_chat_messages_uploads() -> Value {
                     "conversation_id": { "type": "string" },
                     "revision": { "type": "integer", "format": "int64" },
                     "active_agent_role": { "type": "string", "description": "非空时与配置中 agent_roles 对齐" },
+                    "active_session_mode": { "type": "string", "enum": ["ask", "plan", "act"], "description": "会话持久化的工作模式" },
                     "tiktoken_prompt_tokens": {
                         "type": "object",
                         "description": "与会话落盘消息经出站规则后的 tiktoken prompt 粗估；不含 tools JSON",

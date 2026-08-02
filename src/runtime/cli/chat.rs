@@ -525,7 +525,9 @@ async fn run_chat_batch_jsonl(
             active_agent_role: agent_role,
             process_handles: Arc::clone(&process_handles),
             sse_control_mirror: None,
-            session_mode: cfg_snap.roles_prompts.default_session_mode,
+            session_mode: crate::session_mode_turn::resolve_initial_session_mode(
+                &cfg_snap, agent_role,
+            ),
         })
         .await
         .map_err(map_turn_err)?;
@@ -602,7 +604,10 @@ async fn chat_invocation_via_messages_json_file(
         active_agent_role: ctx.agent_role,
         process_handles: Arc::clone(&ctx.process_handles),
         sse_control_mirror: None,
-        session_mode: cfg_snap.roles_prompts.default_session_mode,
+        session_mode: crate::session_mode_turn::resolve_initial_session_mode(
+            &cfg_snap,
+            ctx.agent_role,
+        ),
     })
     .await
     .map_err(map_turn_err)?;
@@ -668,7 +673,10 @@ async fn chat_invocation_via_cli_query(
         active_agent_role: ctx.agent_role,
         process_handles: ctx.process_handles,
         sse_control_mirror: None,
-        session_mode: cfg_snap.roles_prompts.default_session_mode,
+        session_mode: crate::session_mode_turn::resolve_initial_session_mode(
+            &cfg_snap,
+            ctx.agent_role,
+        ),
     })
     .await
     .map_err(map_turn_err)?;

@@ -65,6 +65,11 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     let session_mode = match crate::session_mode_turn::resolve_session_mode_for_turn(
         request_session_mode.as_deref(),
         persisted_active_session_mode.as_deref(),
+        crate::session_mode_turn::role_default_session_mode_for_turn(
+            cfg_snap.as_ref(),
+            persisted_active_agent_role.as_deref(),
+            request_agent_role.as_deref(),
+        ),
         cfg_snap.roles_prompts.default_session_mode,
     ) {
         Ok(m) => m,

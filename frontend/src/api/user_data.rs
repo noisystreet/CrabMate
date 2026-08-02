@@ -51,6 +51,8 @@ pub struct UserPrefsDto {
     #[serde(default)]
     pub cm_role: Option<String>,
     #[serde(default)]
+    pub session_mode: Option<String>,
+    #[serde(default)]
     pub disable_readonly_tool_ttl_cache: Option<bool>,
 }
 

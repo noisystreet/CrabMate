@@ -219,6 +219,8 @@ pub struct ConversationMessagesResponseBody<M> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_agent_role: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_session_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crabmate_types::TiktokenPromptTokensSnapshot>,
     pub messages: Vec<M>,
     #[serde(default)]

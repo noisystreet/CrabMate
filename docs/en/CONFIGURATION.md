@@ -457,9 +457,10 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 | **act** | full ∩ role `allowed_tools` | Default |
 
 - **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
-- **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** (memory and SQLite) → config default.
-- **Web**: optional **`session_mode`** on **`POST /chat*`**. Ask/Plan apply readonly **after** intent gate (even when the gate is disabled). Successful turns save/keep **`active_session_mode`** on the same revision path as **`agent_role`**.
+- **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
+- **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly after intent gate. Successful turns save/keep **`active_session_mode`**.
 - **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
+- **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 
 ## Multi-role (agent_roles)
 

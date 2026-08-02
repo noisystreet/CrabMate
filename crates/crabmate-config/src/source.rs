@@ -84,6 +84,9 @@ pub(super) struct AgentRoleRow {
     /// 为 false 时不叠加编程工作台层；省略时默认 true（仍受全局 `coding_workbench_enabled` 约束）。
     #[serde(default)]
     pub(super) prepend_coding_workbench: Option<bool>,
+    /// 角色默认会话模式（`ask` / `plan` / `act`）。
+    #[serde(default)]
+    pub(super) default_session_mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

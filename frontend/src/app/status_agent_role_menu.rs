@@ -21,6 +21,8 @@ pub struct AgentRoleMenuProps {
     pub chat: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
     pub menu_open: RwSignal<bool>,
 }
 
@@ -31,19 +33,35 @@ struct AgentRoleMenuPortalProps {
     chat: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     menu_open: RwSignal<bool>,
     menu_fixed_style: RwSignal<Option<String>>,
 }
 
 fn apply_agent_role_selection(
     chat: ChatSessionSignals,
+    st: StatusTasksSignals,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     role_id: Option<String>,
 ) {
-    selected_agent_role.set(role_id);
+    selected_agent_role.set(role_id.clone());
     agent_role_user_override.set(true);
     chat.clear_stream_resume_handles();
+    if session_mode_user_override.get_untracked() {
+        return;
+    }
+    if let Some(m) = st.status_data.get_untracked().and_then(|d| {
+        crate::app::session_mode_defaults::default_session_mode_for_agent_role(
+            &d,
+            role_id.as_deref(),
+        )
+    }) {
+        selected_session_mode.set(m);
+    }
 }
 
 fn menu_fixed_style_for_trigger(trigger: &web_sys::HtmlElement) -> String {
@@ -133,6 +151,8 @@ fn StatusAgentRoleMenuPortal(props: AgentRoleMenuPortalProps) -> impl IntoView {
         chat,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         menu_open,
         menu_fixed_style,
     } = props;
@@ -163,8 +183,11 @@ fn StatusAgentRoleMenuPortal(props: AgentRoleMenuPortalProps) -> impl IntoView {
                     on:click=move |_| {
                         apply_agent_role_selection(
                             chat,
+                            st,
                             selected_agent_role,
                             agent_role_user_override,
+                            selected_session_mode,
+                            session_mode_user_override,
                             None,
                         );
                         close_role_menu(menu_open, menu_fixed_style);
@@ -204,8 +227,11 @@ fn StatusAgentRoleMenuPortal(props: AgentRoleMenuPortalProps) -> impl IntoView {
                                     on:click=move |_| {
                                         apply_agent_role_selection(
                                             chat,
+                                            st,
                                             selected_agent_role,
                                             agent_role_user_override,
+                                            selected_session_mode,
+                                            session_mode_user_override,
                                             Some(id_pick.clone()),
                                         );
                                         close_role_menu(menu_open, menu_fixed_style);
@@ -230,6 +256,8 @@ pub fn StatusAgentRoleMenu(props: AgentRoleMenuProps) -> impl IntoView {
         chat,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         menu_open,
     } = props;
 
@@ -284,6 +312,8 @@ pub fn StatusAgentRoleMenu(props: AgentRoleMenuProps) -> impl IntoView {
                     chat,
                     selected_agent_role,
                     agent_role_user_override,
+                    selected_session_mode,
+                    session_mode_user_override,
                     menu_open,
                     menu_fixed_style,
                 } />

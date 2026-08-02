@@ -75,6 +75,8 @@ struct MergeHydrationIntoActiveSessionArgs<'a> {
     active_id: &'a str,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     default_agent_role_id: Option<&'a str>,
 }
 
@@ -125,7 +127,7 @@ fn apply_history_meta_from_response(
 }
 
 /// 尾部水合：保留已加载的更早前缀，仅替换与服务器尾部重叠段。
-fn merge_tail_page_into_session_messages(
+pub(crate) fn merge_tail_page_into_session_messages(
     session: &ChatSession,
     hydrated: Vec<StoredMessage>,
     resp: &ConversationMessagesResponse,
@@ -177,7 +179,7 @@ fn append_server_only_turns_to_v2_projection(
     combined
 }
 
-fn should_merge_hydrated_messages(
+pub(crate) fn should_merge_hydrated_messages(
     session: &ChatSession,
     resp: &ConversationMessagesResponse,
 ) -> bool {
@@ -187,11 +189,23 @@ fn should_merge_hydrated_messages(
             .is_none_or(|local_revision| local_revision < resp.revision)
 }
 
-fn hydration_revision_after_response(local_revision: Option<u64>, response_revision: u64) -> u64 {
+pub(crate) fn hydration_revision_after_response(
+    local_revision: Option<u64>,
+    response_revision: u64,
+) -> u64 {
     local_revision.unwrap_or_default().max(response_revision)
 }
 
-fn apply_hydrated_tail_if_newer(
+/// 响应 revision 不低于本地时，才可把 `active_*` 元数据写回底栏（同 revision 重开仍同步）。
+#[must_use]
+pub(crate) fn hydration_response_meta_is_fresh(
+    local_revision: Option<u64>,
+    response_revision: u64,
+) -> bool {
+    response_revision >= local_revision.unwrap_or(0)
+}
+
+pub(crate) fn apply_hydrated_tail_if_newer(
     session: &mut ChatSession,
     hydrated: Vec<StoredMessage>,
     resp: &ConversationMessagesResponse,
@@ -238,6 +252,8 @@ fn merge_hydration_into_active_session(
         active_id,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         default_agent_role_id,
     } = args;
     if let Err(out) = try_hydration_merge_precheck(
@@ -253,21 +269,38 @@ fn merge_hydration_into_active_session(
     }
     apply_hydrated_tail_if_newer(session, hydrated, resp);
     apply_history_meta_from_response(session, resp);
+    // 过期响应（revision 低于本地）仍可能通过 nonce 门闸；勿用其 role/mode 覆盖底栏。
+    let apply_persisted_meta =
+        hydration_response_meta_is_fresh(session.server_revision, resp.revision);
     session.server_revision = Some(hydration_revision_after_response(
         session.server_revision,
         resp.revision,
     ));
-    if !agent_role_user_override.get_untracked()
-        && let Some(role) = resp
-            .active_agent_role
-            .as_deref()
-            .map(str::trim)
-            .filter(|r| !r.is_empty())
-    {
-        selected_agent_role.set(status_bar_selected_agent_role_from_persisted(
-            Some(role),
-            default_agent_role_id,
-        ));
+    if apply_persisted_meta {
+        if !agent_role_user_override.get_untracked()
+            && let Some(role) = resp
+                .active_agent_role
+                .as_deref()
+                .map(str::trim)
+                .filter(|r| !r.is_empty())
+        {
+            selected_agent_role.set(status_bar_selected_agent_role_from_persisted(
+                Some(role),
+                default_agent_role_id,
+            ));
+        }
+        if !session_mode_user_override.get_untracked()
+            && let Some(mode) = resp
+                .active_session_mode
+                .as_deref()
+                .map(str::trim)
+                .filter(|m| !m.is_empty())
+        {
+            let m = mode.to_ascii_lowercase();
+            if matches!(m.as_str(), "ask" | "plan" | "act") {
+                selected_session_mode.set(m);
+            }
+        }
     }
     let user_count = session.messages.iter().filter(|m| m.role == "user").count();
     if user_count == 1 && i18n::is_default_session_title(&session.title) {
@@ -377,6 +410,8 @@ pub(crate) mod conversation_hydration_cycle {
         chat: ChatSessionSignals,
         selected_agent_role: RwSignal<Option<String>>,
         agent_role_user_override: RwSignal<bool>,
+        selected_session_mode: RwSignal<String>,
+        session_mode_user_override: RwSignal<bool>,
         default_agent_role_id: Option<String>,
     ) {
         let HydrationWireSnapshot {
@@ -429,6 +464,8 @@ pub(crate) mod conversation_hydration_cycle {
                     active_id: &active,
                     selected_agent_role,
                     agent_role_user_override,
+                    selected_session_mode,
+                    session_mode_user_override,
                     default_agent_role_id: default_agent_role_id.as_deref(),
                 });
             applied_hydration |= merge_outcome.is_applied();
@@ -465,6 +502,8 @@ async fn run_conversation_hydration_cycle(
     chat: ChatSessionSignals,
     selected_agent_role: RwSignal<Option<String>>,
     agent_role_user_override: RwSignal<bool>,
+    selected_session_mode: RwSignal<String>,
+    session_mode_user_override: RwSignal<bool>,
     default_agent_role_id: Option<String>,
 ) {
     let _stream_lane = chat.stream_lane_overlay_phase_untracked();
@@ -473,6 +512,8 @@ async fn run_conversation_hydration_cycle(
         chat,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         default_agent_role_id,
     )
     .await;
@@ -567,25 +608,44 @@ pub(crate) fn bump_session_hydrate_nonce(chat: ChatSessionSignals) {
         .update(|n| *n = n.wrapping_add(1));
 }
 
+/// `wire_session_hydration` 入参（避免超长形参列表）。
+#[derive(Clone, Copy)]
+pub struct WireSessionHydrationArgs {
+    pub initialized: RwSignal<bool>,
+    pub web_ui_config_loaded: RwSignal<bool>,
+    pub chat: ChatSessionSignals,
+    pub locale: RwSignal<Locale>,
+    pub selected_agent_role: RwSignal<Option<String>>,
+    pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
+    pub status_tasks: StatusTasksSignals,
+}
+
 /// 订阅 `session_hydrate_nonce` 与 `active_id`：拉取服务端快照并写回当前会话（含 tiktoken 用量）。
 ///
 /// **勿**订阅 `sessions`：水合写回会更新消息列表，若再触发本 Effect 会在每轮生成新 `h_*` id 并重复追加工具行。
 ///
 /// 门闸与 [`crate::app::app_bootstrap_phase::AppBootstrapPhase::hydration_effects_enabled`] 一致（`initialized` + `web_ui_config_loaded`）。
-pub fn wire_session_hydration(
-    initialized: RwSignal<bool>,
-    web_ui_config_loaded: RwSignal<bool>,
-    chat: ChatSessionSignals,
-    locale: RwSignal<Locale>,
-    selected_agent_role: RwSignal<Option<String>>,
-    agent_role_user_override: RwSignal<bool>,
-    status_tasks: StatusTasksSignals,
-) {
+pub fn wire_session_hydration(args: WireSessionHydrationArgs) {
+    let WireSessionHydrationArgs {
+        initialized,
+        web_ui_config_loaded,
+        chat,
+        locale,
+        selected_agent_role,
+        agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
+        status_tasks,
+    } = args;
     Effect::new({
         let chat = chat;
         let locale_sig = locale;
         let selected_agent_role = selected_agent_role;
         let agent_role_user_override = agent_role_user_override;
+        let selected_session_mode = selected_session_mode;
+        let session_mode_user_override = session_mode_user_override;
         let status_tasks = status_tasks;
         move |_| {
             if !AppBootstrapPhase::derive(initialized.get(), web_ui_config_loaded.get())
@@ -609,6 +669,8 @@ pub fn wire_session_hydration(
                 chat,
                 selected_agent_role,
                 agent_role_user_override,
+                selected_session_mode,
+                session_mode_user_override,
                 default_agent_role_id,
             ));
         }
@@ -616,292 +678,8 @@ pub fn wire_session_hydration(
 }
 
 #[cfg(test)]
-mod merge_tail_page_order_tests {
-    use super::{
-        apply_hydrated_tail_if_newer, hydration_revision_after_response,
-        merge_tail_page_into_session_messages, should_merge_hydrated_messages,
-    };
-    use crate::conversation_hydrate::ConversationMessagesResponse;
-    use crate::storage::{
-        CURRENT_LAYOUT_SCHEMA_VERSION, ChatSession, LEGACY_LAYOUT_SCHEMA_VERSION, StoredMessage,
-    };
-    use crate::timeline_scan::timeline_state_intent_analysis_snapshot;
-
-    fn revision_session(messages: Vec<StoredMessage>, revision: Option<u64>) -> ChatSession {
-        ChatSession {
-            id: "sid".into(),
-            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
-            title: "t".into(),
-            draft: String::new(),
-            messages,
-            updated_at: 0,
-            pinned: false,
-            starred: false,
-            server_conversation_id: Some("cid".into()),
-            server_revision: revision,
-            workspace_root: None,
-            history_total: None,
-            history_window_start: Some(0),
-            history_has_older: None,
-        }
-    }
-
-    fn revision_response(revision: u64) -> ConversationMessagesResponse {
-        ConversationMessagesResponse {
-            conversation_id: "cid".into(),
-            messages: vec![],
-            revision,
-            total_count: 1,
-            window_start_index: 0,
-            has_older: false,
-            active_agent_role: None,
-            tiktoken_prompt_tokens: None,
-        }
-    }
-
-    fn plain_message(id: &str, role: &str, text: &str) -> StoredMessage {
-        StoredMessage {
-            id: id.into(),
-            role: role.into(),
-            text: text.into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        }
-    }
-
-    #[test]
-    fn same_revision_keeps_nonempty_local_projection() {
-        let local = plain_message("turn-commentary-tc_read", "assistant", "已关闭的本地旁注");
-        let session = revision_session(vec![local], Some(7));
-        assert!(!should_merge_hydrated_messages(
-            &session,
-            &revision_response(7)
-        ));
-        assert!(!should_merge_hydrated_messages(
-            &session,
-            &revision_response(6)
-        ));
-        assert!(should_merge_hydrated_messages(
-            &session,
-            &revision_response(8)
-        ));
-        assert!(should_merge_hydrated_messages(
-            &revision_session(vec![], Some(7)),
-            &revision_response(7)
-        ));
-    }
-
-    #[test]
-    fn stale_hydration_response_neither_merges_nor_downgrades_revision() {
-        let local = plain_message("turn-final-answer", "assistant", "本地较新终答");
-        let session = revision_session(vec![local], Some(9));
-        let stale_response = revision_response(7);
-        assert!(!should_merge_hydrated_messages(&session, &stale_response));
-        assert_eq!(
-            hydration_revision_after_response(session.server_revision, stale_response.revision),
-            9
-        );
-    }
-
-    #[test]
-    fn newer_same_turn_hydration_keeps_v2_projection_without_legacy_pool_merge() {
-        let local = vec![
-            plain_message("u-local", "user", "question"),
-            plain_message("turn-commentary-tc_read", "assistant", "不可变 commentary"),
-            plain_message("turn-final-answer", "assistant", "本地终答"),
-        ];
-        let mut session = revision_session(local.clone(), Some(7));
-        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
-        let hydrated = vec![
-            plain_message("h-user", "user", "question"),
-            plain_message("h-assistant", "assistant", "服务端 canonical 快照"),
-        ];
-
-        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(8));
-
-        assert_eq!(
-            session
-                .messages
-                .iter()
-                .map(|m| m.id.as_str())
-                .collect::<Vec<_>>(),
-            local.iter().map(|m| m.id.as_str()).collect::<Vec<_>>()
-        );
-        assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn newer_hydration_appends_server_only_turn_after_v2_projection() {
-        let local = vec![
-            plain_message("u-local", "user", "question"),
-            plain_message("turn-final-answer", "assistant", "本地终答"),
-        ];
-        let mut session = revision_session(local, Some(7));
-        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
-        let hydrated = vec![
-            plain_message("h-user-1", "user", "question"),
-            plain_message("h-answer-1", "assistant", "服务端旧终答"),
-            plain_message("h-user-2", "user", "new question"),
-            plain_message("h-answer-2", "assistant", "服务端新增终答"),
-        ];
-
-        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(8));
-
-        assert_eq!(
-            session
-                .messages
-                .iter()
-                .map(|message| message.id.as_str())
-                .collect::<Vec<_>>(),
-            ["u-local", "turn-final-answer", "h-user-2", "h-answer-2"]
-        );
-        assert_eq!(session.layout_schema_version, CURRENT_LAYOUT_SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn empty_v2_cache_uses_legacy_adapter_for_canonical_hydration() {
-        let mut session = revision_session(vec![], Some(7));
-        session.layout_schema_version = CURRENT_LAYOUT_SCHEMA_VERSION;
-        let hydrated = vec![plain_message("h-assistant", "assistant", "服务端终答")];
-
-        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(7));
-
-        assert_eq!(session.messages.len(), 1);
-        assert_eq!(session.messages[0].id, "h-assistant");
-        assert_eq!(session.layout_schema_version, LEGACY_LAYOUT_SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn v1_history_still_uses_legacy_adapter() {
-        let mut session = revision_session(
-            vec![plain_message("local-assistant", "assistant", "本地旧投影")],
-            Some(1),
-        );
-        let hydrated = vec![plain_message("h-assistant", "assistant", "服务端旧会话")];
-
-        apply_hydrated_tail_if_newer(&mut session, hydrated, &revision_response(2));
-
-        assert_eq!(session.messages.len(), 1);
-        assert_eq!(session.messages[0].id, "h-assistant");
-        assert_eq!(session.layout_schema_version, LEGACY_LAYOUT_SCHEMA_VERSION);
-    }
-
-    #[test]
-    fn merge_tail_page_keeps_intent_before_server_answer() {
-        let session = ChatSession {
-            id: "sid".into(),
-            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
-            title: "t".into(),
-            draft: String::new(),
-            messages: vec![
-                plain_message("u1", "user", "question"),
-                StoredMessage {
-                    state: Some(timeline_state_intent_analysis_snapshot()),
-                    created_at: 1,
-                    ..plain_message("tl-intent", "assistant", "意图分析：执行类\n\n")
-                },
-                StoredMessage {
-                    created_at: 2,
-                    ..plain_message("a-local", "assistant", "stream draft")
-                },
-            ],
-            updated_at: 0,
-            pinned: false,
-            starred: false,
-            server_conversation_id: Some("cid".into()),
-            server_revision: None,
-            workspace_root: None,
-            history_total: None,
-            history_window_start: Some(0),
-            history_has_older: None,
-        };
-        let hydrated = vec![
-            plain_message("u1", "user", "question"),
-            StoredMessage {
-                created_at: 2,
-                ..plain_message("a-srv", "assistant", "final answer")
-            },
-        ];
-        let resp = ConversationMessagesResponse {
-            conversation_id: "cid".into(),
-            messages: vec![],
-            revision: 1,
-            total_count: 2,
-            window_start_index: 0,
-            has_older: false,
-            active_agent_role: None,
-            tiktoken_prompt_tokens: None,
-        };
-        let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
-        let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
-        assert_eq!(
-            ids,
-            vec!["u1", "tl-intent", "a-srv"],
-            "intent should precede canonical answer"
-        );
-    }
-
-    #[test]
-    fn merge_tail_page_keeps_user_before_intent_when_server_omits_user() {
-        let session = ChatSession {
-            id: "sid".into(),
-            layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
-            title: "t".into(),
-            draft: String::new(),
-            messages: vec![
-                plain_message("u-local", "user", "你好"),
-                StoredMessage {
-                    state: Some(timeline_state_intent_analysis_snapshot()),
-                    created_at: 1,
-                    ..plain_message("tl-intent", "assistant", "意图分析：问候类\n\n")
-                },
-                StoredMessage {
-                    created_at: 2,
-                    ..plain_message("a-local", "assistant", "你好！")
-                },
-            ],
-            updated_at: 0,
-            pinned: false,
-            starred: false,
-            server_conversation_id: Some("cid".into()),
-            server_revision: None,
-            workspace_root: None,
-            history_total: None,
-            history_window_start: Some(0),
-            history_has_older: None,
-        };
-        let hydrated = vec![
-            StoredMessage {
-                state: Some(timeline_state_intent_analysis_snapshot()),
-                created_at: 1,
-                ..plain_message("tl-intent-srv", "assistant", "意图分析：问候类\n\n")
-            },
-            StoredMessage {
-                created_at: 2,
-                ..plain_message("a-srv", "assistant", "你好！我是 CrabMate 的 AI 助手。")
-            },
-        ];
-        let resp = ConversationMessagesResponse {
-            conversation_id: "cid".into(),
-            messages: vec![],
-            revision: 1,
-            total_count: 2,
-            window_start_index: 0,
-            has_older: false,
-            active_agent_role: None,
-            tiktoken_prompt_tokens: None,
-        };
-        let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
-        let roles: Vec<_> = merged.iter().map(|m| m.role.as_str()).collect();
-        assert_eq!(roles, vec!["user", "assistant", "assistant"]);
-        assert_eq!(merged[0].text, "你好");
-    }
-}
+#[path = "session_hydrate_merge_tests.rs"]
+mod merge_tail_page_order_tests;
 
 #[cfg(test)]
 #[path = "session_hydrate_conversation_id_tests.rs"]

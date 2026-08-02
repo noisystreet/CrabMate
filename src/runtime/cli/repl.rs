@@ -738,7 +738,7 @@ pub async fn run_repl(
     let api_key_holder = Arc::new(StdMutex::new(api_key.to_string()));
     let default_session_mode = {
         let g = cfg_holder.read().await;
-        g.roles_prompts.default_session_mode
+        crate::session_mode_turn::resolve_initial_session_mode(&g, agent_role)
     };
     let slash_handles = ReplSlashSharedHandles {
         api_key_holder: Arc::clone(&api_key_holder),

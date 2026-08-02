@@ -56,6 +56,12 @@ pub struct StatusData {
     pub agent_role_ids: Vec<String>,
     #[serde(default)]
     pub default_agent_role_id: Option<String>,
+    /// 全局默认会话工作模式。
+    #[serde(default = "default_session_mode_act")]
+    pub default_session_mode: String,
+    /// 各角色配置的默认会话模式。
+    #[serde(default)]
+    pub agent_role_default_session_modes: std::collections::BTreeMap<String, String>,
     /// 与后端 `message_pipeline` 按字符删旧一致；`0` 表示未启用预算（进度条仅展示字符数）。
     #[serde(default)]
     #[allow(dead_code)]
@@ -85,6 +91,10 @@ pub struct StatusData {
     /// 当前进程是否使用 SQLite 作为 Web 会话后端。
     #[serde(default)]
     pub conversation_store_sqlite_active: bool,
+}
+
+fn default_session_mode_act() -> String {
+    "act".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]

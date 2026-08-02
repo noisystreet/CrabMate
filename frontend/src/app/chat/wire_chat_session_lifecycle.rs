@@ -22,6 +22,8 @@ pub(crate) struct WireChatSessionLifecycleEffectsArgs {
     pub chat_session: ChatSessionSignals,
     pub selected_agent_role: RwSignal<Option<String>>,
     pub agent_role_user_override: RwSignal<bool>,
+    pub selected_session_mode: RwSignal<String>,
+    pub session_mode_user_override: RwSignal<bool>,
     pub status_tasks: StatusTasksSignals,
     pub app: crate::app::app_signals::AppSignals,
 }
@@ -39,6 +41,8 @@ impl WireChatSessionLifecycleEffectsArgs {
             chat_session: app.chat,
             selected_agent_role: app.llm_settings.selected_agent_role,
             agent_role_user_override: app.llm_settings.agent_role_user_override,
+            selected_session_mode: app.llm_settings.selected_session_mode,
+            session_mode_user_override: app.llm_settings.session_mode_user_override,
             status_tasks: app.to_status_tasks(),
             app: app.clone(),
         }
@@ -56,6 +60,8 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         chat_session,
         selected_agent_role,
         agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
         status_tasks,
         app,
     } = args;
@@ -70,13 +76,17 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
     );
 
     wire_session_hydration(
-        initialized,
-        web_ui_config_loaded,
-        chat_session,
-        locale,
-        selected_agent_role,
-        agent_role_user_override,
-        status_tasks,
+        crate::app::chat::session_hydrate::WireSessionHydrationArgs {
+            initialized,
+            web_ui_config_loaded,
+            chat: chat_session,
+            locale,
+            selected_agent_role,
+            agent_role_user_override,
+            selected_session_mode,
+            session_mode_user_override,
+            status_tasks,
+        },
     );
 
     let last_active_id = StoredValue::new(None::<String>);
@@ -85,6 +95,7 @@ pub(crate) fn wire_chat_session_lifecycle_effects(args: WireChatSessionLifecycle
         let prev = last_active_id.get_value();
         if prev.as_deref().is_some_and(|p| p != id.as_str()) {
             agent_role_user_override.set(false);
+            session_mode_user_override.set(false);
         }
         last_active_id.set_value(Some(id));
     });

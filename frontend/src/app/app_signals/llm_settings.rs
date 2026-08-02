@@ -28,6 +28,10 @@ pub struct LLMSettingsSignals {
     pub selected_agent_role: RwSignal<Option<String>>,
     /// 用户已在底栏改选角色、尚未随下一条聊天提交；水合勿用服务端 `active_agent_role` 覆盖。
     pub agent_role_user_override: RwSignal<bool>,
+    /// 当前会话工作模式（`ask` / `plan` / `act`）。
+    pub selected_session_mode: RwSignal<String>,
+    /// 用户已在底栏改选 mode；水合勿用服务端 `active_session_mode` 覆盖。
+    pub session_mode_user_override: RwSignal<bool>,
     /// 本机已保存的多条模型预设（与扁平 `client_llm` 并存；用于设置页下拉选用）。
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
 }
@@ -56,6 +60,8 @@ impl LLMSettingsSignals {
             ),
             selected_agent_role: RwSignal::new(shell_prefs_storage::read_agent_role_initial()),
             agent_role_user_override: RwSignal::new(false),
+            selected_session_mode: RwSignal::new("act".to_string()),
+            session_mode_user_override: RwSignal::new(false),
             saved_model_presets: RwSignal::new(load_saved_model_presets_from_storage()),
         }
     }

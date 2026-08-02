@@ -50,11 +50,15 @@ fn openapi_paths_fragment_system() -> Value {
         "/status": {
             "get": {
                 "tags": ["system"],
-                "summary": "运行状态（模型、工具数、规划配置等）",
+                "summary": "运行状态（模型、工具数、会话模式默认、规划配置等）",
                 "responses": {
                     "200": {
                         "description": "状态 JSON",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/StatusResponseBody" }
+                            }
+                        }
                     }
                 }
             }

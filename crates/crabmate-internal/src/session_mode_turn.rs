@@ -1,13 +1,17 @@
 //! 会话模式（Ask / Plan / Act）解析与回合解析优先级。
 
+use crabmate_config::AgentConfig;
 use crabmate_types::{SessionMode, parse_optional_session_mode, parse_session_mode};
 
-/// 解析请求 / 会话中的模式；空则回落到配置默认。
+use crate::agent_role_turn::named_agent_role_for_tool_policy;
+
+/// 解析请求 / 会话中的模式；空则回落到角色默认或配置默认。
 ///
-/// 优先级：本轮请求 → 会话持久化 → 配置默认。
+/// 优先级：本轮请求 → 会话持久化 → 当前命名角色 `default_session_mode` → 配置默认。
 pub fn resolve_session_mode_for_turn(
     request_mode: Option<&str>,
     persisted_mode: Option<&str>,
+    role_default_mode: Option<SessionMode>,
     default_mode: SessionMode,
 ) -> Result<SessionMode, String> {
     if let Some(m) = parse_optional_session_mode(request_mode)? {
@@ -16,7 +20,41 @@ pub fn resolve_session_mode_for_turn(
     if let Some(m) = parse_optional_session_mode(persisted_mode)? {
         return Ok(m);
     }
+    if let Some(m) = role_default_mode {
+        return Ok(m);
+    }
     Ok(default_mode)
+}
+
+/// 按当前回合命名角色读取可选的角色默认 mode。
+#[must_use]
+pub fn role_default_session_mode_for_turn(
+    cfg: &AgentConfig,
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<SessionMode> {
+    let id = named_agent_role_for_tool_policy(cfg, persisted_active, request_agent_role)?;
+    cfg.roles_prompts
+        .agent_roles
+        .get(id.as_str())
+        .and_then(|spec| spec.default_session_mode)
+}
+
+/// 按命名角色解析初始会话模式（无请求 / 无持久化时）：角色默认 → 全局默认。
+#[must_use]
+pub fn resolve_initial_session_mode(
+    cfg: &AgentConfig,
+    request_agent_role: Option<&str>,
+) -> SessionMode {
+    match resolve_session_mode_for_turn(
+        None,
+        None,
+        role_default_session_mode_for_turn(cfg, None, request_agent_role),
+        cfg.roles_prompts.default_session_mode,
+    ) {
+        Ok(m) => m,
+        Err(_) => SessionMode::Act,
+    }
 }
 
 /// 配置串 → [`SessionMode`]；非法时 warn 并回退 Act。
@@ -73,19 +111,38 @@ mod tests {
 
     #[test]
     fn resolve_prefers_request_over_persisted() {
-        let m = resolve_session_mode_for_turn(Some("ask"), Some("act"), SessionMode::Act).unwrap();
+        let m = resolve_session_mode_for_turn(
+            Some("ask"),
+            Some("act"),
+            Some(SessionMode::Plan),
+            SessionMode::Act,
+        )
+        .unwrap();
         assert_eq!(m, SessionMode::Ask);
     }
 
     #[test]
     fn resolve_falls_back_to_persisted() {
-        let m = resolve_session_mode_for_turn(None, Some("plan"), SessionMode::Act).unwrap();
+        let m = resolve_session_mode_for_turn(
+            None,
+            Some("plan"),
+            Some(SessionMode::Ask),
+            SessionMode::Act,
+        )
+        .unwrap();
         assert_eq!(m, SessionMode::Plan);
     }
 
     #[test]
+    fn resolve_falls_back_to_role_default() {
+        let m = resolve_session_mode_for_turn(None, None, Some(SessionMode::Ask), SessionMode::Act)
+            .unwrap();
+        assert_eq!(m, SessionMode::Ask);
+    }
+
+    #[test]
     fn resolve_falls_back_to_default() {
-        let m = resolve_session_mode_for_turn(None, None, SessionMode::Ask).unwrap();
+        let m = resolve_session_mode_for_turn(None, None, None, SessionMode::Ask).unwrap();
         assert_eq!(m, SessionMode::Ask);
     }
 
@@ -109,7 +166,6 @@ mod tests {
     /// 门控关闭会 clear 工具收窄；Ask 必须在其后仍能挂上只读（与 `run_dispatch` 顺序一致）。
     #[test]
     fn ask_mode_readonly_survives_gate_clear_ordering() {
-        // 模拟门控关闭：`clear_tool_narrowing_side_effects` 后约束为空。
         let mut step_constraint: Option<&'static str> = None;
         if session_mode_requires_readonly_tools(SessionMode::Ask) {
             step_constraint = Some("ReviewReadonly");
