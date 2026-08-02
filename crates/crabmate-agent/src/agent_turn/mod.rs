@@ -5,7 +5,6 @@
 
 pub mod completion_suppression;
 pub mod intent;
-pub mod intent_routing;
 pub mod messages;
 pub mod orchestration_entry;
 pub mod outer_loop_driver;
@@ -26,10 +25,6 @@ pub use completion_suppression::{
     plan_steps_are_redundant_after_completion, plan_steps_require_formal_execution,
     redundant_tool_names_for_log, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion, tool_calls_are_redundant_when_goal_satisfied,
-};
-pub use intent_routing::{
-    IntentRoutingOutcome, IntentRoutingPipelineParams, assess_intent_routing_pipeline,
-    log_intent_pipeline_assessment,
 };
 pub use orchestration_entry::{
     TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
@@ -68,6 +63,5 @@ pub use turn_route_decision::{
     AssessTurnRoutingParams, AssessedTurnRoute, IntentGateSnapshot, TurnRouteDecisionV1,
     TurnRouteDriver, assess_turn_routing, build_non_hierarchical_intent_finished_early_decision,
     build_non_hierarchical_turn_route_decision, intent_action_label, intent_gate_is_early_exit,
-    intent_gate_snapshot_finished_early, intent_gate_snapshot_from_decision, intent_kind_label,
-    log_turn_route_decision,
+    intent_kind_label, log_turn_route_decision,
 };

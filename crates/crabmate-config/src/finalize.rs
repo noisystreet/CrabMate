@@ -315,15 +315,7 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
 struct IntentDerived {
     llm_http_auth_mode: types::LlmHttpAuthMode,
     llm_reasoning_split: bool,
-    intent_execute_low_threshold: f32,
-    intent_execute_high_threshold: f32,
-    intent_non_hier_execute_low_threshold: f32,
-    intent_non_hier_execute_high_threshold: f32,
-    intent_l2_enabled: bool,
-    intent_l2_min_confidence: f32,
-    intent_l2_max_tokens: u32,
     intent_at_turn_start_enabled: bool,
-    intent_l0_routing_boost_enabled: bool,
 }
 
 fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
@@ -334,56 +326,13 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
     let llm_reasoning_split = b.llm_vendor.llm_reasoning_split.unwrap_or_else(|| {
         crate::gateway_hints::default_llm_reasoning_split_for_gateway(&b.llm.model, &b.llm.api_base)
     });
-    let intent_execute_low_threshold = b
-        .intent_routing
-        .intent_execute_low_threshold
-        .unwrap_or(0.2)
-        .clamp(0.0, 1.0) as f32;
-    let intent_execute_high_threshold = b
-        .intent_routing
-        .intent_execute_high_threshold
-        .unwrap_or(0.45)
-        .clamp(0.0, 1.0) as f32;
-    let intent_execute_high_threshold =
-        intent_execute_high_threshold.max(intent_execute_low_threshold);
-    let intent_non_hier_execute_low_threshold = b
-        .intent_routing
-        .intent_non_hier_execute_low_threshold
-        .unwrap_or(intent_execute_low_threshold as f64)
-        .clamp(0.0, 1.0) as f32;
-    let intent_non_hier_execute_high_threshold = b
-        .intent_routing
-        .intent_non_hier_execute_high_threshold
-        .unwrap_or(intent_execute_high_threshold as f64)
-        .clamp(0.0, 1.0) as f32;
-    let intent_non_hier_execute_high_threshold =
-        intent_non_hier_execute_high_threshold.max(intent_non_hier_execute_low_threshold);
     Ok(IntentDerived {
         llm_http_auth_mode,
         llm_reasoning_split,
-        intent_execute_low_threshold,
-        intent_execute_high_threshold,
-        intent_non_hier_execute_low_threshold,
-        intent_non_hier_execute_high_threshold,
-        intent_l2_enabled: b.intent_routing.intent_l2_enabled.unwrap_or(false),
-        intent_l2_min_confidence: b
-            .intent_routing
-            .intent_l2_min_confidence
-            .unwrap_or(0.7)
-            .clamp(0.0, 1.0) as f32,
-        intent_l2_max_tokens: b
-            .intent_routing
-            .intent_l2_max_tokens
-            .unwrap_or(384)
-            .clamp(32, 1024) as u32,
         intent_at_turn_start_enabled: b
             .intent_routing
             .intent_at_turn_start_enabled
             .unwrap_or(false),
-        intent_l0_routing_boost_enabled: b
-            .intent_routing
-            .intent_l0_routing_boost_enabled
-            .unwrap_or(true),
     })
 }
 

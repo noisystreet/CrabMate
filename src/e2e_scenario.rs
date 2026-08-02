@@ -440,7 +440,6 @@ fn cfg_single_agent() -> Arc<AgentConfig> {
     let mut cfg = load_config(None).expect("embedded default config must load");
     cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
     cfg.intent_routing.intent_at_turn_start_enabled = false;
-    cfg.intent_routing.intent_l2_enabled = false;
     Arc::new(cfg)
 }
 
