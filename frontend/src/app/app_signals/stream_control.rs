@@ -29,6 +29,14 @@ impl StreamControlSignals {
         }
     }
 
+    pub fn set_error(&self, msg: impl Into<String>) {
+        self.status_err.set(Some(msg.into()));
+    }
+
+    pub fn clear_status_banners(&self) {
+        self.status_err.set(None);
+    }
+
     pub(crate) fn dispatch_turn_lifecycle(&self, ev: TurnLifecycleEvent) {
         self.turn_lifecycle
             .update(|st| apply_turn_lifecycle(st, ev));
