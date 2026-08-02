@@ -21,7 +21,7 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         agent_thinking_trace: finalize_section_agent_thinking_trace(tail),
         agent_tool_stats: finalize_section_agent_tool_stats(tail),
         thinking_echo: finalize_section_thinking_echo(tail),
-        context_pipeline: finalize_section_context_pipeline(tail),
+        context_pipeline: finalize_section_context_pipeline(mid, tail),
         workspace_roots: finalize_section_workspace_roots(mid),
         web_api: finalize_section_web_api(tail),
         chat_queues_cache: finalize_section_chat_queues_cache(tail),
@@ -197,7 +197,16 @@ fn finalize_section_thinking_echo(tail: &FinalizeTailScalars) -> types::Thinking
     }
 }
 
-fn finalize_section_context_pipeline(tail: &FinalizeTailScalars) -> types::ContextPipelineConfig {
+fn finalize_section_context_pipeline(
+    mid: &FinalizeAfterRoles,
+    tail: &FinalizeTailScalars,
+) -> types::ContextPipelineConfig {
+    let (context_summary_system, context_summary_user_template) = resolve_context_summary_prompts(
+        mid.b.context_pipeline.context_summary_system_file.as_deref(),
+        mid.b.context_pipeline.context_summary_user_file.as_deref(),
+        &mid.system_prompt_search_bases,
+        mid.run_command_working_dir.as_path(),
+    );
     types::ContextPipelineConfig {
         context_char_budget: tail.context_char_budget,
         context_min_messages_after_system: tail.context_min_messages_after_system,
@@ -205,6 +214,8 @@ fn finalize_section_context_pipeline(tail: &FinalizeTailScalars) -> types::Conte
         context_summary_tail_messages: tail.context_summary_tail_messages,
         context_summary_max_tokens: tail.context_summary_max_tokens,
         context_summary_transcript_max_chars: tail.context_summary_transcript_max_chars,
+        context_summary_system,
+        context_summary_user_template,
     }
 }
 

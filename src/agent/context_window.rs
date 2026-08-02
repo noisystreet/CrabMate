@@ -19,7 +19,60 @@ use crabmate_agent::context_budget_pressure::{
 use log::{info, warn};
 use reqwest::Client;
 
-const SUMMARY_SYSTEM: &str = "你只负责压缩对话历史。使用简洁中文要点列表，保留：用户目标、关键路径/命令、错误信息、未决问题。不要编造事实。";
+/// 用已解析的 user 模板填充占位符。
+///
+/// 支持 **`{max_tokens}`**（首选）与 **`{max_chars}`**（别名，同填 `context_summary_max_tokens`），
+/// 以及 **`{transcript}`**。若模板缺少 `{transcript}`，告警并在末尾追加对话记录，避免空摘要请求。
+pub(crate) fn format_context_summary_user(
+    template: &str,
+    max_tokens: u32,
+    transcript: &str,
+) -> String {
+    let limit = max_tokens.to_string();
+    let mut out = template
+        .replace("{max_tokens}", &limit)
+        .replace("{max_chars}", &limit);
+    if out.contains("{transcript}") {
+        out = out.replace("{transcript}", transcript);
+    } else {
+        warn!(
+            target: "crabmate",
+            "context_summary_user 模板缺少 {{transcript}} 占位符，已在末尾追加对话记录"
+        );
+        out.push_str("\n\n对话记录：\n\n");
+        out.push_str(transcript);
+    }
+    out
+}
+
+/// 组装侧向摘要调用的 system + user（便于单测，不发起 LLM）。
+pub(crate) fn build_context_summary_side_messages(
+    cfg: &AgentConfig,
+    transcript: &str,
+) -> Vec<Message> {
+    let system = {
+        let s = cfg.context_pipeline.context_summary_system.trim();
+        if s.is_empty() {
+            crabmate_config::embedded_context_summary_system().to_string()
+        } else {
+            s.to_string()
+        }
+    };
+    let template = {
+        let t = cfg.context_pipeline.context_summary_user_template.trim();
+        if t.is_empty() {
+            crabmate_config::embedded_context_summary_user_template()
+        } else {
+            t
+        }
+    };
+    let user = format_context_summary_user(
+        template,
+        cfg.context_pipeline.context_summary_max_tokens,
+        transcript,
+    );
+    vec![Message::system_only(system), Message::user_only(user)]
+}
 
 fn format_message_for_transcript(m: &Message) -> String {
     let role = m.role.as_str();
@@ -202,13 +255,7 @@ pub async fn maybe_summarize_with_llm(
         return Ok(());
     }
 
-    let sum_messages = vec![
-        Message::system_only(SUMMARY_SYSTEM.to_string()),
-        Message::user_only(format!(
-            "请将下列对话压缩为要点（不超过约 {} 字）。保留技术细节与待办：\n\n{}",
-            cfg.context_pipeline.context_summary_max_tokens, transcript
-        )),
-    ];
+    let sum_messages = build_context_summary_side_messages(cfg, &transcript);
     let req = ChatRequest {
         core: crate::types::ChatRequestCore {
             model: cfg.llm.model.clone(),
@@ -341,6 +388,13 @@ pub async fn prepare_messages_for_model(
 mod tests {
     use super::*;
 
+    /// 验收辅助：摘要正文是否覆盖给定锚点（路径/错误串等）。
+    fn context_summary_covers_anchors(summary: &str, anchors: &[&str]) -> bool {
+        anchors
+            .iter()
+            .all(|a| !a.is_empty() && summary.contains(*a))
+    }
+
     #[test]
     fn budget_pressure_tightens_sync_pipeline_char_budget() {
         let mut cfg = crate::config::load_config(None).expect("embed default");
@@ -365,5 +419,110 @@ mod tests {
             tight.len() <= loose.len(),
             "budget pressure should trim at least as aggressively"
         );
+    }
+
+    #[test]
+    fn format_context_summary_user_replaces_placeholders() {
+        let out = format_context_summary_user(
+            "上限 {max_tokens}\n---\n{transcript}\n---",
+            512,
+            "user: 修 src/foo.rs\nerror: E0308",
+        );
+        assert!(out.contains("512"));
+        assert!(out.contains("src/foo.rs"));
+        assert!(out.contains("E0308"));
+        assert!(!out.contains("{max_tokens}"));
+        assert!(!out.contains("{transcript}"));
+    }
+
+    #[test]
+    fn format_context_summary_user_accepts_max_chars_alias() {
+        let out = format_context_summary_user("n={max_chars}\n{transcript}", 256, "path.rs");
+        assert!(out.contains("n=256"));
+        assert!(out.contains("path.rs"));
+    }
+
+    #[test]
+    fn format_context_summary_user_appends_when_transcript_placeholder_missing() {
+        let out = format_context_summary_user("只有骨架无占位", 128, "crates/demo/src/path_bug.rs");
+        assert!(out.contains("只有骨架无占位"));
+        assert!(out.contains("crates/demo/src/path_bug.rs"));
+        assert!(out.contains("对话记录："));
+    }
+
+    #[test]
+    fn loaded_summary_prompts_require_retention_and_structure() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let sys = &cfg.context_pipeline.context_summary_system;
+        for needle in ["必须保留", "禁止编造", "关键路径", "错误信息", "未决"] {
+            assert!(
+                sys.contains(needle),
+                "context_summary_system missing `{needle}`"
+            );
+        }
+        let user_t = &cfg.context_pipeline.context_summary_user_template;
+        for needle in [
+            "## 目标",
+            "## 已完成",
+            "## 未决",
+            "## 关键路径与错误",
+            "{transcript}",
+        ] {
+            assert!(
+                user_t.contains(needle),
+                "context_summary_user_template missing `{needle}`"
+            );
+        }
+        assert!(
+            user_t.contains("{max_tokens}") || user_t.contains("{max_chars}"),
+            "user template should mention a length placeholder"
+        );
+    }
+
+    #[test]
+    fn side_messages_embed_fixture_transcript_anchors() {
+        let cfg = crate::config::load_config(None).expect("embed default");
+        let transcript = concat!(
+            "user: 修复 crates/demo/src/path_bug.rs 的类型错误\n",
+            "assistant: [tool_calls] read_file({\"path\":\"crates/demo/src/path_bug.rs\"})\n",
+            "tool: error[E0308]: mismatched types in path_bug.rs\n",
+        );
+        let msgs = build_context_summary_side_messages(&cfg, transcript);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0].role, "system");
+        assert_eq!(msgs[1].role, "user");
+        let user = crate::types::message_content_as_str(&msgs[1].content).unwrap_or("");
+        assert!(
+            context_summary_covers_anchors(
+                user,
+                &[
+                    "crates/demo/src/path_bug.rs",
+                    "error[E0308]",
+                    "## 目标",
+                    "## 关键路径与错误",
+                ]
+            ),
+            "summary side user must carry transcript anchors and skeleton; got:\n{user}"
+        );
+    }
+
+    #[test]
+    fn fixture_good_summary_covers_path_and_error() {
+        // 文档化验收：合格摘要须保留路径与错误锚点（供日后接 mock LLM 评测复用）。
+        let good = concat!(
+            "## 目标\n修复 path_bug 类型错误\n\n",
+            "## 已完成\nread_file crates/demo/src/path_bug.rs\n\n",
+            "## 未决\n尚未 patch\n\n",
+            "## 关键路径与错误\ncrates/demo/src/path_bug.rs；error[E0308]: mismatched types\n",
+        );
+        assert!(context_summary_covers_anchors(
+            good,
+            &["crates/demo/src/path_bug.rs", "error[E0308]"]
+        ));
+        let bad = "## 目标\n修个文件\n\n## 关键路径与错误\n某个源码里类型不对\n";
+        assert!(!context_summary_covers_anchors(
+            bad,
+            &["crates/demo/src/path_bug.rs", "error[E0308]"]
+        ));
     }
 }

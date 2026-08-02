@@ -36,6 +36,10 @@ context_summary_trigger_chars = 0
 context_summary_tail_messages = 12
 context_summary_max_tokens = 1024
 context_summary_transcript_max_chars = 120000
+# LLM 摘要提示词（读盘优先；失败/空则用编译嵌入）。可直接改 Markdown 无需重编。
+# CM_CONTEXT_SUMMARY_SYSTEM_FILE / CM_CONTEXT_SUMMARY_USER_FILE
+context_summary_system_file = "config/prompts/context_summary_system.md"
+context_summary_user_file = "config/prompts/context_summary_user.md"
 
 # 3. 内置工具（run_command、工具入模、缓存、联网工具、MCP、解释卡等）
 # 默认见 **`config/tools.toml`**

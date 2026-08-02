@@ -135,6 +135,10 @@ pub struct ContextPipelineConfig {
     pub context_summary_tail_messages: usize,
     pub context_summary_max_tokens: u32,
     pub context_summary_transcript_max_chars: usize,
+    /// 已解析的上下文 LLM 摘要 system（读盘 + 嵌入回退）。
+    pub context_summary_system: String,
+    /// 已解析的摘要 user 模板；占位符 `{max_tokens}`（或别名 `{max_chars}`）与 `{transcript}`。
+    pub context_summary_user_template: String,
 }
 
 #[derive(Debug, Clone)]
