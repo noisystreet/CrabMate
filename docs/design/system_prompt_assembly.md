@@ -20,10 +20,10 @@
 | **L0** | `system_prompt` / `base_system_prompt.md` | `finalize` |
 | **L0b** | `coding_workbench_increment*`（可按角色跳过） | `finalize` |
 | **L1** | `.cursor/rules`、可选 `AGENTS.md` | `finalize` |
-| **L2** | Skills **索引**（非全文） | `finalize` |
+| **L2** | Skills **索引**（非全文；工作区 + 用户级 + 系统级合并） | `finalize` |
 | **L3** | `agent_roles` 每角色正文后再跑 L1+L2 | `finalize_agent_role_catalog` |
 | **L4** | thinking 附录、工具统计等运行时附录 | 首条 `system` 构建 |
-| **L5** | 按轮 Skills top-k 或 `/<skill-id>` | Web `build_messages_for_turn` / CLI 刷新首条 |
+| **L5** | 按轮 Skills top-k 或 `/<skill-id>`（同源三层合并） | Web `build_messages_for_turn` / CLI 刷新首条 |
 | **L6** | 首轮工作区画像等（专用 **user**） | `compose_new_conversation_messages` |
 | **L7** | 意图门控 hint | 外循环 P 步前 |
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |

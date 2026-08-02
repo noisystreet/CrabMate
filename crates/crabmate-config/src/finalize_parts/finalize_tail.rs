@@ -7,6 +7,8 @@ struct FinalizeTailScalars {
     cursor_rules_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
+    skills_user_dir: String,
+    skills_system_dir: String,
     skills_max_chars: u64,
     skills_top_k: usize,
     final_plan_requirement: FinalPlanRequirementMode,
@@ -520,6 +522,8 @@ struct TailCursorSkillsPack {
     cursor_rules_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
+    skills_user_dir: String,
+    skills_system_dir: String,
     skills_max_chars: u64,
     skills_top_k: usize,
 }
@@ -540,6 +544,14 @@ fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPac
         .skills.skills_dir
         .clone()
         .unwrap_or_else(|| ".crabmate/skills".to_string());
+    let skills_user_dir =
+        skills::resolve_skills_layer_dir_setting(b.skills.skills_user_dir.as_ref(), || {
+            skills::default_skills_user_dir()
+        });
+    let skills_system_dir =
+        skills::resolve_skills_layer_dir_setting(b.skills.skills_system_dir.as_ref(), || {
+            skills::default_skills_system_dir()
+        });
     let skills_max_chars = b.skills.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
     let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     TailCursorSkillsPack {
@@ -549,6 +561,8 @@ fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPac
         cursor_rules_max_chars,
         skills_enabled,
         skills_dir,
+        skills_user_dir,
+        skills_system_dir,
         skills_max_chars,
         skills_top_k,
     }
@@ -612,6 +626,8 @@ fn assemble_finalize_tail_scalars(
         cursor_rules_max_chars: pack.cursor_rules_max_chars,
         skills_enabled: pack.skills_enabled,
         skills_dir: pack.skills_dir,
+        skills_user_dir: pack.skills_user_dir,
+        skills_system_dir: pack.skills_system_dir,
         skills_max_chars: pack.skills_max_chars,
         skills_top_k: pack.skills_top_k,
         final_plan_requirement,

@@ -1,6 +1,6 @@
 //! Web 内置 `/skills` 命令：扫描 skills 目录并生成回复文本。
 
-use crate::config::skills::{SkillDoc, list_skills_from_base, skill_ui_description};
+use crate::config::skills::{SkillDoc, list_skills, skill_ui_description};
 use crate::config::skills_slash::skill_callable_id;
 use crate::context_bootstrap::prompt_compose::resolve_skills_base_dir;
 use crate::web::app_state_facets::WebChatTurnAppFacet;
@@ -14,6 +14,17 @@ fn classify_web_builtin_command(input: &str) -> Option<&'static str> {
         return Some("skills_list");
     }
     None
+}
+
+fn format_skills_layer_dirs(workspace: &str, user: &str, system: &str) -> String {
+    let mut parts = vec![format!("workspace=`{workspace}`")];
+    if !user.trim().is_empty() {
+        parts.push(format!("user=`{user}`"));
+    }
+    if !system.trim().is_empty() {
+        parts.push(format!("system=`{system}`"));
+    }
+    parts.join(" · ")
 }
 
 fn format_skill_list_line(doc: &SkillDoc) -> String {
@@ -69,24 +80,33 @@ pub(super) async fn run_web_builtin_command(
             }
             let max_chars = cfg.skills.skills_max_chars;
             let dir = cfg.skills.skills_dir.clone();
+            let user_dir = cfg.skills.skills_user_dir.clone();
+            let system_dir = cfg.skills.skills_system_dir.clone();
             drop(cfg);
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());
+            let opts = crate::config::skills::SkillsListOpts {
+                workspace_base_dir: base_dir.as_path(),
+                skills_dir: dir.as_str(),
+                skills_user_dir: user_dir.as_str(),
+                skills_system_dir: system_dir.as_str(),
+            };
+            let layers = format_skills_layer_dirs(&dir, &user_dir, &system_dir);
 
-            let text = match list_skills_from_base(base_dir.as_path(), &dir) {
+            let text = match list_skills(opts) {
                 Ok(files) if files.is_empty() => {
                     format!(
-                        "当前未发现 skills。\n目录：`{dir}`\n上限：skills_max_chars={max_chars}"
+                        "当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}"
                     )
                 }
                 Ok(files) => {
                     let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
                     format!(
-                        "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：`{}`\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看可 `/<id>` 调用的技能；对话中发送 `/<id> [任务]` 可强制选用。",
+                        "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：{}\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看可 `/<id>` 调用的技能；对话中发送 `/<id> [任务]` 可强制选用。",
                         files.len(),
                         loaded.len(),
                         skipped.len(),
-                        dir,
+                        layers,
                         max_chars
                     )
                 }
@@ -103,13 +123,22 @@ pub(super) async fn run_web_builtin_command(
             }
             let max_chars = cfg.skills.skills_max_chars;
             let dir = cfg.skills.skills_dir.clone();
+            let user_dir = cfg.skills.skills_user_dir.clone();
+            let system_dir = cfg.skills.skills_system_dir.clone();
             drop(cfg);
             let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
             let base_dir = resolve_skills_base_dir(ws.as_path());
-            let text = match list_skills_from_base(base_dir.as_path(), &dir) {
+            let opts = crate::config::skills::SkillsListOpts {
+                workspace_base_dir: base_dir.as_path(),
+                skills_dir: dir.as_str(),
+                skills_user_dir: user_dir.as_str(),
+                skills_system_dir: system_dir.as_str(),
+            };
+            let layers = format_skills_layer_dirs(&dir, &user_dir, &system_dir);
+            let text = match list_skills(opts) {
                 Ok(files) if files.is_empty() => {
                     format!(
-                        "当前未发现 skills。\n目录：`{dir}`\n上限：skills_max_chars={max_chars}"
+                        "当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}"
                     )
                 }
                 Ok(files) => {
@@ -133,10 +162,10 @@ pub(super) async fn run_web_builtin_command(
                             .join("\n")
                     };
                     format!(
-                        "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n对话中可用 `/<id> [任务]` 强制选用某一技能（跳过 Top-K）。\n目录：`{}`\n上限：skills_max_chars={}（扫描总数：{}）",
+                        "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n对话中可用 `/<id> [任务]` 强制选用某一技能（跳过 Top-K）。\n目录：{}\n上限：skills_max_chars={}（扫描总数：{}）",
                         loaded_lines,
                         skipped_lines,
-                        dir,
+                        layers,
                         max_chars,
                         files.len()
                     )

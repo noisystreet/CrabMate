@@ -364,6 +364,8 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                 "properties": {
                     "enabled": { "type": "boolean" },
                     "skills_dir": { "type": "string" },
+                    "skills_user_dir": { "type": "string" },
+                    "skills_system_dir": { "type": "string" },
                     "skills": {
                         "type": "array",
                         "items": { "$ref": "#/components/schemas/SkillListItem" }

@@ -480,6 +480,10 @@ pub struct SkillsListData {
     #[serde(default)]
     pub skills_dir: String,
     #[serde(default)]
+    pub skills_user_dir: String,
+    #[serde(default)]
+    pub skills_system_dir: String,
+    #[serde(default)]
     pub skills: Vec<SkillListItem>,
     #[serde(default)]
     pub error: Option<String>,

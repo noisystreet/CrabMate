@@ -11,12 +11,21 @@ pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<S
     let cfg = http.cfg.read().await;
     let enabled = cfg.skills.skills_enabled;
     let skills_dir = cfg.skills.skills_dir.clone();
+    let skills_user_dir = cfg.skills.skills_user_dir.clone();
+    let skills_system_dir = cfg.skills.skills_system_dir.clone();
+    let list_opts_dirs = (
+        skills_dir.clone(),
+        skills_user_dir.clone(),
+        skills_system_dir.clone(),
+    );
     drop(cfg);
 
     if !enabled {
         return Json(SkillsListResponse {
             enabled: false,
             skills_dir,
+            skills_user_dir,
+            skills_system_dir,
             skills: Vec::new(),
             error: None,
         });
@@ -24,10 +33,18 @@ pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<S
 
     let ws = std::path::PathBuf::from(http.effective_workspace_path().await);
     let base_dir = resolve_skills_base_dir(ws.as_path());
-    match crate::config::skills_slash::list_skill_catalog_entries(base_dir.as_path(), &skills_dir) {
+    let opts = crate::config::skills::SkillsListOpts {
+        workspace_base_dir: base_dir.as_path(),
+        skills_dir: list_opts_dirs.0.as_str(),
+        skills_user_dir: list_opts_dirs.1.as_str(),
+        skills_system_dir: list_opts_dirs.2.as_str(),
+    };
+    match crate::config::skills_slash::list_skill_catalog_entries(opts) {
         Ok(entries) => Json(SkillsListResponse {
             enabled: true,
             skills_dir,
+            skills_user_dir,
+            skills_system_dir,
             skills: entries
                 .into_iter()
                 .map(|e| SkillListItem {
@@ -42,6 +59,8 @@ pub async fn skills_list_handler(State(http): State<AppStateHttpCore>) -> Json<S
         Err(e) => Json(SkillsListResponse {
             enabled: true,
             skills_dir,
+            skills_user_dir,
+            skills_system_dir,
             skills: Vec::new(),
             error: Some(sanitize_skills_list_error(&e)),
         }),

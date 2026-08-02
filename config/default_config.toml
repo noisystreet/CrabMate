@@ -66,9 +66,13 @@ cursor_rules_enabled = true
 cursor_rules_dir = ".cursor/rules"
 cursor_rules_include_agents_md = true
 cursor_rules_max_chars = 48000
-# 项目级 skills（CrabMate 约定目录）。读取 `skills_dir/*.md` 与 `skills_dir/<id>/SKILL.md`（Cursor 同形），并附加到 system prompt。
+# Skills：工作区 / 用户级 / 系统级三层合并（同 id：工作区 > 用户 > 系统）。读取 `*.md` 与 `<id>/SKILL.md`（Cursor 同形）。
 skills_enabled = true
 skills_dir = ".crabmate/skills"
+# 用户级 / 系统级：省略则用约定路径（`$XDG_CONFIG_HOME/crabmate/skills`、`/etc/crabmate/skills`；目录不存在则跳过）。
+# 设为 `-` / `none` / 空串可关闭该层；测试/CI 也可用环境变量 CM_SKILLS_DISABLE_HOST_LAYERS=1。
+# skills_user_dir = "-"
+# skills_system_dir = "-"
 skills_max_chars = 32000
 skills_top_k = 4
 # 系统提示词：默认 L0 正文在 **`config/prompts/base_system_prompt.md`**（改文件无需重编二进制）。相对路径依次尝试：进程当前目录、各覆盖配置文件所在目录（后加载的优先）、run_command_working_dir。

@@ -1,4 +1,7 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+
+use crate::types::SkillsConfigSection;
 
 #[derive(Debug, Clone)]
 pub struct SkillDoc {
@@ -15,16 +18,53 @@ pub struct SkillsSelectionMeta {
     pub selected_labels: Vec<String>,
 }
 
+/// 三层 skills 扫描选项：系统 → 用户 → 工作区；同 id 后者覆盖前者。
+#[derive(Debug, Clone, Copy)]
+pub struct SkillsListOpts<'a> {
+    pub workspace_base_dir: &'a Path,
+    pub skills_dir: &'a str,
+    /// 空串表示关闭该层。
+    pub skills_user_dir: &'a str,
+    /// 空串表示关闭该层。
+    pub skills_system_dir: &'a str,
+}
+
+impl SkillsConfigSection {
+    /// 从已 finalize 的配置构造列表选项（相对 `skills_dir` 相对工作区根解析）。
+    #[must_use]
+    pub fn list_opts<'a>(&'a self, workspace_base_dir: &'a Path) -> SkillsListOpts<'a> {
+        SkillsListOpts {
+            workspace_base_dir,
+            skills_dir: self.skills_dir.as_str(),
+            skills_user_dir: self.skills_user_dir.as_str(),
+            skills_system_dir: self.skills_system_dir.as_str(),
+        }
+    }
+}
+
 /// Options for [`merge_system_prompt_with_skills_selected_with_meta`].
 #[derive(Debug, Clone, Copy)]
 pub struct SkillsSelectedMergeOpts<'a> {
     pub skills_enabled: bool,
     pub skills_dir: &'a str,
+    pub skills_user_dir: &'a str,
+    pub skills_system_dir: &'a str,
     pub skills_max_chars: usize,
     pub base_dir: &'a Path,
     pub user_text: &'a str,
     pub top_k: usize,
     pub forced_skill: Option<&'a SkillDoc>,
+}
+
+impl SkillsSelectedMergeOpts<'_> {
+    fn list_opts(&self) -> SkillsListOpts<'_> {
+        SkillsListOpts {
+            workspace_base_dir: self.base_dir,
+            skills_dir: self.skills_dir,
+            skills_user_dir: self.skills_user_dir,
+            skills_system_dir: self.skills_system_dir,
+        }
+    }
 }
 
 fn is_markdown_file(path: &Path) -> bool {
@@ -172,6 +212,54 @@ fn resolve_skills_dir(base_dir: &Path, skills_dir: &str) -> Result<PathBuf, Stri
     Ok(dir_path)
 }
 
+/// 用户/系统层：空串关闭；相对路径相对 `workspace_base_dir`（通常应写绝对路径）。
+fn resolve_optional_layer_dir(
+    base_dir: &Path,
+    configured: &str,
+) -> Result<Option<PathBuf>, String> {
+    let configured = configured.trim();
+    if configured.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(resolve_skills_dir(base_dir, configured)?))
+}
+
+/// Finalize：省略 → 约定路径；空串 / `-` / `none` → 关闭该层。
+pub(crate) fn resolve_skills_layer_dir_setting(
+    configured: Option<&String>,
+    default_path: impl FnOnce() -> PathBuf,
+) -> String {
+    match configured.map(|s| s.trim()) {
+        None => default_path().to_string_lossy().into_owned(),
+        Some(t) if t.is_empty() || t == "-" || t.eq_ignore_ascii_case("none") => String::new(),
+        Some(t) => t.to_string(),
+    }
+}
+
+/// 默认用户级 skills 目录（`$XDG_CONFIG_HOME/crabmate/skills`）。
+///
+/// 与「源码树是否自动加载 XDG `config.toml`」解耦：skills 是跨工作区附加能力，
+/// 目录不存在即为空；测试/CI 需要隔离时用 **`CM_SKILLS_USER_DIR=-`**（或空串）。
+pub(crate) fn default_skills_user_dir() -> PathBuf {
+    crate::user_config_xdg::user_config_dir().join("skills")
+}
+
+/// 默认系统级 skills 目录（`/etc/crabmate/skills`）。
+///
+/// 目录不存在即为空；测试/CI 需要隔离时用 **`CM_SKILLS_SYSTEM_DIR=-`**（或空串）。
+pub(crate) fn default_skills_system_dir() -> PathBuf {
+    PathBuf::from(crate::user_config_xdg::SYSTEM_CONFIG_DIR).join("skills")
+}
+
+fn skill_merge_key(doc: &SkillDoc) -> String {
+    if let Some(n) = doc.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        return n.to_ascii_lowercase();
+    }
+    skill_path_stem(&doc.display_path)
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_else(|| doc.display_path.to_ascii_lowercase())
+}
+
 /// Cursor 同形：`<id>/SKILL.md`（同目录多个大小写变体时取排序后第一个）。
 fn find_nested_skill_md(skill_dir: &Path) -> Option<PathBuf> {
     let Ok(sub_entries) = std::fs::read_dir(skill_dir) else {
@@ -231,8 +319,10 @@ fn skill_doc_from_path(base_dir: &Path, path: &Path) -> Result<Option<SkillDoc>,
     }))
 }
 
-pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<SkillDoc>, String> {
-    let dir_path = resolve_skills_dir(base_dir, skills_dir)?;
+fn list_skills_in_resolved_dir(
+    dir_path: &Path,
+    display_strip_base: &Path,
+) -> Result<Vec<SkillDoc>, String> {
     if dir_path.exists() && !dir_path.is_dir() {
         return Err(format!(
             "配置错误：skills_dir \"{}\" 不是目录",
@@ -242,15 +332,81 @@ pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<Sk
     if !dir_path.is_dir() {
         return Ok(Vec::new());
     }
-
-    let skill_files = collect_skill_file_paths(&dir_path)?;
+    let skill_files = collect_skill_file_paths(dir_path)?;
     let mut out: Vec<SkillDoc> = Vec::new();
     for path in skill_files {
-        if let Some(doc) = skill_doc_from_path(base_dir, &path)? {
+        if let Some(doc) = skill_doc_from_path(display_strip_base, &path)? {
             out.push(doc);
         }
     }
     Ok(out)
+}
+
+/// 仅扫描工作区层（测试与兼容入口）；不含用户/系统层。
+pub fn list_skills_from_base(base_dir: &Path, skills_dir: &str) -> Result<Vec<SkillDoc>, String> {
+    list_skills(SkillsListOpts {
+        workspace_base_dir: base_dir,
+        skills_dir,
+        skills_user_dir: "",
+        skills_system_dir: "",
+    })
+}
+
+/// 合并系统 / 用户 / 工作区三层 skills；同 callable id **工作区 > 用户 > 系统**。
+///
+/// - **跨层**：较高优先级层中出现的 merge key 会移除较低层的全部同名条目。
+/// - **同层**：保留全部条目（同 id 仍可由 `/id` 解析为歧义，与单层行为一致）。
+/// - **单层 IO 失败**：跳过该层并 `warn`，不拖垮其余层（工作区层失败仍返回 Err）。
+pub fn list_skills(opts: SkillsListOpts<'_>) -> Result<Vec<SkillDoc>, String> {
+    let mut out: Vec<SkillDoc> = Vec::new();
+
+    if let Some(system_dir) =
+        resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_system_dir)?
+    {
+        let layer = list_skills_layer_lenient(&system_dir, &system_dir, "system");
+        merge_skills_layer(&mut out, layer);
+    }
+    if let Some(user_dir) =
+        resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_user_dir)?
+    {
+        let layer = list_skills_layer_lenient(&user_dir, &user_dir, "user");
+        merge_skills_layer(&mut out, layer);
+    }
+
+    let workspace_dir = resolve_skills_dir(opts.workspace_base_dir, opts.skills_dir)?;
+    // 工作区层失败仍上抛：相对路径配置错误应可见。
+    let workspace_layer = list_skills_in_resolved_dir(&workspace_dir, opts.workspace_base_dir)?;
+    merge_skills_layer(&mut out, workspace_layer);
+
+    out.sort_by(|a, b| a.display_path.cmp(&b.display_path));
+    Ok(out)
+}
+
+fn list_skills_layer_lenient(
+    dir_path: &Path,
+    display_strip_base: &Path,
+    layer_label: &str,
+) -> Vec<SkillDoc> {
+    match list_skills_in_resolved_dir(dir_path, display_strip_base) {
+        Ok(docs) => docs,
+        Err(e) => {
+            log::warn!(
+                "skills {layer_label} layer skipped ({}): {e}",
+                dir_path.display()
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// 用 `layer` 覆盖 `out` 中相同 merge key 的条目；同层多份同 key 全部保留。
+fn merge_skills_layer(out: &mut Vec<SkillDoc>, layer: Vec<SkillDoc>) {
+    if layer.is_empty() {
+        return;
+    }
+    let keys: HashSet<String> = layer.iter().map(skill_merge_key).collect();
+    out.retain(|d| !keys.contains(&skill_merge_key(d)));
+    out.extend(layer);
 }
 
 fn render_skills_appendix(docs: &[SkillDoc], max_chars: usize) -> String {
@@ -430,7 +586,7 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
             meta,
         ));
     }
-    let docs = list_skills_from_base(opts.base_dir, opts.skills_dir)?;
+    let docs = list_skills(opts.list_opts())?;
     if docs.is_empty() {
         return Ok((system_prompt, SkillsSelectionMeta::default()));
     }
@@ -465,16 +621,15 @@ pub fn merge_system_prompt_with_skills_selected_with_meta(
 
 pub(crate) fn merge_system_prompt_with_skills_index(
     system_prompt: String,
+    list_opts: SkillsListOpts<'_>,
     skills_enabled: bool,
-    skills_dir: &str,
     skills_max_chars: usize,
-    base_dir: &Path,
     max_entries: usize,
 ) -> Result<String, String> {
     if !skills_enabled {
         return Ok(system_prompt);
     }
-    let docs = list_skills_from_base(base_dir, skills_dir)?;
+    let docs = list_skills(list_opts)?;
     if docs.is_empty() {
         return Ok(system_prompt);
     }
@@ -483,4 +638,106 @@ pub(crate) fn merge_system_prompt_with_skills_index(
         return Ok(system_prompt);
     }
     Ok(format!("{}\n\n{}", system_prompt.trim_end(), appendix))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn write_skill(dir: &Path, file: &str, body: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        let mut f = std::fs::File::create(dir.join(file)).unwrap();
+        f.write_all(body.as_bytes()).unwrap();
+    }
+
+    #[test]
+    fn layered_merge_workspace_overrides_user_and_system() {
+        let tmp = tempfile::tempdir().unwrap();
+        let system = tmp.path().join("system");
+        let user = tmp.path().join("user");
+        let workspace = tmp.path().join("ws");
+        let ws_skills = workspace.join(".crabmate/skills");
+        write_skill(
+            &system,
+            "shared.md",
+            "---\nname: shared\n---\nfrom system\n",
+        );
+        write_skill(&system, "sys-only.md", "---\nname: sys-only\n---\nsys\n");
+        write_skill(&user, "shared.md", "---\nname: shared\n---\nfrom user\n");
+        write_skill(&user, "user-only.md", "---\nname: user-only\n---\nuser\n");
+        write_skill(
+            &ws_skills,
+            "shared.md",
+            "---\nname: shared\n---\nfrom workspace\n",
+        );
+
+        let docs = list_skills(SkillsListOpts {
+            workspace_base_dir: &workspace,
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: user.to_str().unwrap(),
+            skills_system_dir: system.to_str().unwrap(),
+        })
+        .unwrap();
+        let shared: Vec<_> = docs
+            .iter()
+            .filter(|d| d.name.as_deref() == Some("shared"))
+            .collect();
+        assert_eq!(shared.len(), 1);
+        assert!(shared[0].content.contains("from workspace"));
+        assert!(
+            docs.iter()
+                .any(|d| d.name.as_deref() == Some("user-only") && d.content.contains("user"))
+        );
+        assert!(
+            docs.iter()
+                .any(|d| d.name.as_deref() == Some("sys-only") && d.content.contains("sys"))
+        );
+        assert_eq!(docs.len(), 3);
+    }
+
+    #[test]
+    fn same_layer_duplicate_ids_are_kept() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws_skills = tmp.path().join(".crabmate/skills");
+        write_skill(&ws_skills, "a.md", "---\nname: dup\n---\nfrom a\n");
+        write_skill(&ws_skills, "b.md", "---\nname: dup\n---\nfrom b\n");
+        let docs = list_skills(SkillsListOpts {
+            workspace_base_dir: tmp.path(),
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: "",
+            skills_system_dir: "",
+        })
+        .unwrap();
+        assert_eq!(docs.len(), 2);
+        let err = crate::skills_slash::resolve_skill_by_id(
+            SkillsListOpts {
+                workspace_base_dir: tmp.path(),
+                skills_dir: ".crabmate/skills",
+                skills_user_dir: "",
+                skills_system_dir: "",
+            },
+            "dup",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("匹配多条"));
+    }
+
+    #[test]
+    fn broken_system_layer_does_not_block_workspace() {
+        let tmp = tempfile::tempdir().unwrap();
+        let system_file = tmp.path().join("system-not-a-dir");
+        std::fs::write(&system_file, b"x").unwrap();
+        let ws_skills = tmp.path().join(".crabmate/skills");
+        write_skill(&ws_skills, "ok.md", "---\nname: ok\n---\nbody\n");
+        let docs = list_skills(SkillsListOpts {
+            workspace_base_dir: tmp.path(),
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: "",
+            skills_system_dir: system_file.to_str().unwrap(),
+        })
+        .unwrap();
+        assert_eq!(docs.len(), 1);
+        assert_eq!(docs[0].name.as_deref(), Some("ok"));
+    }
 }

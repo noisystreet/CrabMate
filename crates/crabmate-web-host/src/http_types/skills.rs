@@ -15,6 +15,10 @@ pub struct SkillListItem {
 pub struct SkillsListResponse {
     pub enabled: bool,
     pub skills_dir: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub skills_user_dir: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub skills_system_dir: String,
     pub skills: Vec<SkillListItem>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,

@@ -220,6 +220,8 @@ pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub cursor_rules_max_chars: usize,
     pub skills_enabled: bool,
     pub skills_dir: &'a str,
+    pub skills_user_dir: &'a str,
+    pub skills_system_dir: &'a str,
     pub skills_max_chars: usize,
     pub skills_top_k: usize,
 }
@@ -242,9 +244,17 @@ pub(super) fn finalize_agent_role_catalog(
         cursor_rules_max_chars,
         skills_enabled,
         skills_dir,
+        skills_user_dir,
+        skills_system_dir,
         skills_max_chars,
         skills_top_k,
     } = p;
+    let skills_list_opts = skills::SkillsListOpts {
+        workspace_base_dir: run_command_working_dir,
+        skills_dir,
+        skills_user_dir,
+        skills_system_dir,
+    };
     let mut out: HashMap<String, AgentRoleSpec> = HashMap::with_capacity(entries.len());
     for (id, b) in entries {
         let allowed_tools = normalize_allowed_tools(b.allowed_tools);
@@ -275,10 +285,9 @@ pub(super) fn finalize_agent_role_catalog(
             )?;
             skills::merge_system_prompt_with_skills_index(
                 with_rules,
+                skills_list_opts,
                 skills_enabled,
-                skills_dir,
                 skills_max_chars,
-                run_command_working_dir,
                 skills_top_k,
             )?
         } else if let Some(ref s) = b.system_prompt {
@@ -301,10 +310,9 @@ pub(super) fn finalize_agent_role_catalog(
                 )?;
                 skills::merge_system_prompt_with_skills_index(
                     with_rules,
+                    skills_list_opts,
                     skills_enabled,
-                    skills_dir,
                     skills_max_chars,
-                    run_command_working_dir,
                     skills_top_k,
                 )?
             }

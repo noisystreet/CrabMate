@@ -151,6 +151,8 @@ pub(super) struct AgentSection {
     pub(super) cursor_rules_max_chars: Option<u64>,
     pub(super) skills_enabled: Option<bool>,
     pub(super) skills_dir: Option<String>,
+    pub(super) skills_user_dir: Option<String>,
+    pub(super) skills_system_dir: Option<String>,
     pub(super) skills_max_chars: Option<u64>,
     pub(super) skills_top_k: Option<u64>,
     pub(super) tool_message_max_chars: Option<u64>,

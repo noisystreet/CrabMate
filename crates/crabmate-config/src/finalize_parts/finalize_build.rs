@@ -159,6 +159,8 @@ fn finalize_section_skills(tail: &FinalizeTailScalars) -> types::SkillsConfigSec
     types::SkillsConfigSection {
         skills_enabled: tail.skills_enabled,
         skills_dir: tail.skills_dir.clone(),
+        skills_user_dir: tail.skills_user_dir.clone(),
+        skills_system_dir: tail.skills_system_dir.clone(),
         skills_max_chars: tail.skills_max_chars as usize,
         skills_top_k: tail.skills_top_k,
     }

@@ -161,8 +161,7 @@ fn prepare_turn_user_and_forced_skill(
     let skills_base = resolve_skills_base_dir(workspace_root);
     let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
         user_msg,
-        skills_base.as_path(),
-        cfg.skills.skills_dir.as_str(),
+        cfg.skills.list_opts(skills_base.as_path()),
         cfg.skills.skills_enabled,
     )
     .map_err(crate::config::skills_slash::SkillSlashError::into_turn_err)?;

@@ -110,6 +110,15 @@ impl ConfigBuilder {
             agent.cursor_rules_dir.clone(),
         );
         override_opt_string_non_empty(&mut self.skills.skills_dir, agent.skills_dir.clone());
+        // 允许空串 / `-`：finalize 时关闭用户/系统层。
+        override_opt_string_trimmed(
+            &mut self.skills.skills_user_dir,
+            agent.skills_user_dir.as_ref(),
+        );
+        override_opt_string_trimmed(
+            &mut self.skills.skills_system_dir,
+            agent.skills_system_dir.as_ref(),
+        );
 
         override_opt_string_trimmed(
             &mut self.web_api.web_api_bearer_token,
