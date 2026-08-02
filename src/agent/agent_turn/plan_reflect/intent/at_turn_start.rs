@@ -83,24 +83,22 @@ impl TurnExecutionConstraints {
         self.analysis_only && (self.no_write || self.no_command_execution)
     }
 
+    /// 本轮短约束（L7）：只列用户句命中的限制，勿复述 mode / base 的全局原则。
     fn execution_constraint_hint_zh(self) -> String {
         let mut limits = Vec::new();
         if self.no_write {
-            limits.push("不得修改文件、不得继续 patch");
+            limits.push("不得改文件/patch");
         }
         if self.no_command_execution {
-            limits.push("不得运行构建/测试/执行类命令");
+            limits.push("不得跑构建/测试/执行类命令");
         }
         if self.analysis_only {
-            limits.push("以只读诊断、原因分析和操作说明为主");
+            limits.push("只读诊断");
         }
         if self.ask_before_mutation {
-            limits.push("如需再次执行或修改，必须先说明原因并取得用户确认");
+            limits.push("再改须先征得确认");
         }
-        format!(
-            "【执行约束】用户本轮给出了限制：{}。当前回合按只读诊断处理：可以读取/列目录/解释失败原因，但不要越过上述约束。",
-            limits.join("；")
-        )
+        format!("【执行约束】本轮：{}。勿越过。", limits.join("；"))
     }
 }
 
@@ -239,6 +237,33 @@ mod tests {
         let c = infer_turn_execution_constraints("不要修改文件").expect("constraints");
         assert!(c.no_write);
         assert!(!c.requires_review_readonly());
+    }
+
+    #[test]
+    fn execution_constraint_hint_is_short_and_turn_scoped() {
+        use super::TurnExecutionConstraints;
+        let hint = TurnExecutionConstraints {
+            no_write: true,
+            no_command_execution: true,
+            analysis_only: true,
+            ask_before_mutation: true,
+        }
+        .execution_constraint_hint_zh();
+        assert!(hint.starts_with("【执行约束】本轮："));
+        assert!(hint.contains("不得改文件/patch"));
+        assert!(hint.contains("不得跑构建/测试/执行类命令"));
+        assert!(hint.contains("只读诊断"));
+        assert!(hint.contains("再改须先征得确认"));
+        assert!(hint.ends_with("勿越过。"));
+        // 勿复述 mode_act / 旧模板中的全局只读叙事
+        assert!(!hint.contains("可以读取"));
+        assert!(!hint.contains("列目录"));
+        assert!(!hint.contains("用户本轮给出了限制"));
+        assert!(
+            hint.chars().count() <= 120,
+            "hint should stay short, got {} chars: {hint}",
+            hint.chars().count()
+        );
     }
 
     #[test]
