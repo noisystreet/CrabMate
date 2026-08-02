@@ -5,7 +5,7 @@
 const SHORT_UTTERANCE_MAX_CHARS: usize = 40;
 const MERGED_MAX_CHARS: usize = 2000;
 
-/// 可观测的 L0 特征，供 L1 提级与 `IntentMergeMeta`。
+/// 可观测的 L0 特征，供续接合并观测与 `IntentMergeMeta`。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct IntentL0Snapshot {
     /// 出现路径/工作区/文件或 `@` 引用等信号。
