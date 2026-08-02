@@ -1,62 +1,53 @@
-//! 默认 L2 意图管线（纯决策 + 观测日志）；L2 LLM 调用经 [`IntentL2ClassifierHost`] 注入。
-//! L2 不可用或低于阈值时 **fail-open 进 Execute**（L1 关键词路由已移除）。
+//! 意图管线同步入口（无 L2 LLM）：fail-open / 确认续接 / L0 观测；供金样与可选调用方。
 
-use async_trait::async_trait;
 use crabmate_config::AgentConfig;
 use crabmate_types::Message;
 
 use crate::agent_turn::intent::context::build_intent_routing_context;
-use crate::intent_pipeline::{
-    IntentDecision, IntentMergeMeta, L2IntentAttempt, assess_and_route_with_l2_attempt,
-};
+use crate::intent_pipeline::{IntentDecision, IntentMergeMeta, assess_and_route_with_meta};
 use crate::intent_router::ExecuteIntentThresholds;
 
-/// L2 优先意图判定与观测元数据。
+/// 意图判定与观测元数据。
 #[derive(Debug, Clone)]
 pub struct IntentRoutingOutcome {
     pub decision: IntentDecision,
     pub merge_meta: IntentMergeMeta,
 }
 
-/// [`assess_intent_routing_full_pipeline`] 入参（避免过多函数形参）。
+/// [`assess_intent_routing_pipeline`] 入参（避免过多函数形参）。
 pub struct IntentRoutingPipelineParams<'a> {
     pub task: &'a str,
     pub messages: &'a [Message],
     pub cfg: &'a AgentConfig,
     pub in_clarification_flow: bool,
     pub thresholds: ExecuteIntentThresholds,
-    pub l2_enabled: bool,
     pub sse_log_tag: &'a str,
 }
 
-/// 根包实现的 L2 语义分类（无工具 LLM）；失败时在 attempt 中写入原因，由管线 fail-open。
-#[async_trait]
-pub trait IntentL2ClassifierHost: Send + Sync {
-    async fn classify_l2_attempt(
-        &self,
-        routing_for_l1: &str,
-        current_task: &str,
-    ) -> L2IntentAttempt;
-}
-
-/// 在已有 L2 候选（或 `None`）时跑 L2 优先决策；`None` 或低置信时 fail-open。
-pub fn assess_intent_routing_with_optional_l2(
-    task: &str,
-    messages: &[Message],
-    cfg: &AgentConfig,
-    in_clarification_flow: bool,
-    thresholds: ExecuteIntentThresholds,
-    l2_attempt: L2IntentAttempt,
+/// 同步跑 fail-open / 确认续接管线并记结构化日志（无额外 chat）。
+pub fn assess_intent_routing_pipeline(
+    params: &IntentRoutingPipelineParams<'_>,
 ) -> IntentRoutingOutcome {
-    let intent_ctx = build_intent_routing_context(messages, cfg, in_clarification_flow, thresholds);
-    let (decision, merge_meta) = assess_and_route_with_l2_attempt(task, &intent_ctx, l2_attempt);
-    IntentRoutingOutcome {
+    let IntentRoutingPipelineParams {
+        task,
+        messages,
+        cfg,
+        in_clarification_flow,
+        thresholds,
+        sse_log_tag,
+    } = params;
+    let intent_ctx =
+        build_intent_routing_context(messages, cfg, *in_clarification_flow, *thresholds);
+    let (decision, merge_meta) = assess_and_route_with_meta(task, &intent_ctx);
+    let outcome = IntentRoutingOutcome {
         decision,
         merge_meta,
-    }
+    };
+    log_intent_pipeline_assessment(sse_log_tag, &outcome);
+    outcome
 }
 
-/// 结构化 info 日志（与根包 `at_turn_start` / `staged_planning_gate` 对齐）。
+/// 结构化 info 日志（与根包 `at_turn_start` 历史字段对齐，便于观测）。
 pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRoutingOutcome) {
     let IntentRoutingOutcome {
         decision,
@@ -80,38 +71,4 @@ pub fn log_intent_pipeline_assessment(sse_log_tag: &str, outcome: &IntentRouting
         decision.action,
         merge_meta.used_merged_continuation,
     );
-}
-
-/// L2 优先管线：L2 经宿主注入；不可用或低置信时 fail-open 进 Execute。
-pub async fn assess_intent_routing_full_pipeline<H: IntentL2ClassifierHost>(
-    host: &H,
-    params: &IntentRoutingPipelineParams<'_>,
-) -> IntentRoutingOutcome {
-    let IntentRoutingPipelineParams {
-        task,
-        messages,
-        cfg,
-        in_clarification_flow,
-        thresholds,
-        l2_enabled,
-        sse_log_tag,
-    } = params;
-    let intent_ctx =
-        build_intent_routing_context(messages, cfg, *in_clarification_flow, *thresholds);
-    let (routing_for_l1, _, _) = crate::intent_pipeline::prepare_intent_routing(task, &intent_ctx);
-    let l2_attempt = if *l2_enabled {
-        host.classify_l2_attempt(&routing_for_l1, task).await
-    } else {
-        L2IntentAttempt::unavailable("disabled_by_config")
-    };
-    let outcome = assess_intent_routing_with_optional_l2(
-        task,
-        messages,
-        cfg,
-        *in_clarification_flow,
-        *thresholds,
-        l2_attempt,
-    );
-    log_intent_pipeline_assessment(sse_log_tag, &outcome);
-    outcome
 }

@@ -83,10 +83,10 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | --- | --- |
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
-| `CM_INTENT_L2_ENABLED` | Enable L2 (extra no-tools `chat`). **Default off** (L2 retirement R1; see `agent_space/l2-retirement-plan.md`). Actually invoked only when this is **`true`**, **`intent_at_turn_start_enabled=true`**, and **`session_mode=act`**; JSON **`suggested_mode`** (timeline/obs only — does **not** auto-change user mode; Web no longer renders the bubble). On miss/low confidence: **fail-open** to main model with **temporary readonly** when the gate is on. TOML: `intent_l2_enabled`. |
-| `CM_INTENT_L2_MIN_CONFIDENCE` | L2 `confidence` threshold (0.0–1.0, default 0.7). **≥ threshold**: accept suggestion (main path, no L2 narrowing). **Below** or L2 unavailable: fail-open + conservative readonly (Act copy mentions `/mode act` to confirm writes). TOML: `intent_l2_min_confidence`. |
-| `CM_INTENT_L2_MAX_TOKENS` | L2 classification `max_tokens` (32–1024, default 384). TOML: `intent_l2_max_tokens`. |
-| `CM_INTENT_AT_TURN_START_ENABLED` | Turn-start intent gate (default matches TOML **`intent_at_turn_start_enabled=false`**). When **`false`**, **L2 is not called**. When **`true`** and session is Ask/Plan, L2 is also skipped (mode already sets readonly). |
+| `CM_INTENT_L2_ENABLED` | **Legacy** (L2 retirement **R2**: production call path removed; **no** extra `chat`). Still parsed; deprecate/remove in R3. TOML: `intent_l2_enabled` (default `false`). See `agent_space/l2-retirement-plan.md`. |
+| `CM_INTENT_L2_MIN_CONFIDENCE` | **Legacy** (no decision effect after R2). TOML: `intent_l2_min_confidence`. |
+| `CM_INTENT_L2_MAX_TOKENS` | **Legacy** (no L2 request after R2). TOML: `intent_l2_max_tokens`. |
+| `CM_INTENT_AT_TURN_START_ENABLED` | Turn-start intent gate (default matches TOML **`intent_at_turn_start_enabled=false`**). **`false`**: skip gate heuristics. **`true`** and session **Act**: only cheap user-utterance **keyword execution constraints** (see “Gate tool narrowing” below); **no** extra `chat`, **no** `intent_analysis` SSE, **no** blanket temporary readonly for “missing L2”. Ask/Plan skips gate heuristics (mode applies readonly after the gate). |
 | `CM_INTENT_L0_ROUTING_BOOST_ENABLED` | **No longer affects decisions** (L1 boost removed); kept for config compat. TOML: `intent_l0_routing_boost_enabled`. |
 | `CM_INTENT_EXECUTE_LOW_THRESHOLD` | **No longer affects decisions** (L1 keyword router removed); kept for compat. TOML: `intent_execute_low_threshold`. |
 | `CM_INTENT_EXECUTE_HIGH_THRESHOLD` | **No longer affects decisions**; still ≥ low in finalize. TOML: `intent_execute_high_threshold`. |
@@ -98,12 +98,12 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 
 | Mechanism | When it applies | Relation to **`plan_rewrite_max_attempts`** |
 | --- | --- | --- |
-| **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | **Legacy**; L1 router removed — no longer bands confirm vs execute; L2 miss → fail-open | **None** |
+| **`intent_execute_low_threshold` / `intent_execute_high_threshold`** | **Legacy**; L1 router removed — no longer bands confirm vs execute (library fail-open path still readable) | **None** |
 | **`intent_non_hier_execute_*`** | Same; overrides unused thresholds; falls back to **`intent_execute_*`** if unset | **None** |
-| **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; may end the turn early (clarify / confirm / QA, …) or set hints | **None** |
+| **`intent_at_turn_start` (gate)** | First in non-hierarchical dispatch; gate ON + Act runs keyword heuristics only (may set hints / `ReviewReadonly`); **does not** end the turn early | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of intent thresholds; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
-**Clarify / confirm and tool narrowing**: **`ClarifyThenExecute`** / **`ConfirmThenExecute`** set **`step_executor_constraint = ReviewReadonly`** before the main loop (same idea as **`qa.readonly`** narrowing). **L2 miss or low-confidence fail-open** likewise narrows to readonly (except explicit confirm / resume-after-tool-failure baselines; Act copy mentions **`/mode act`** to confirm writes). **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches). When **`intent_at_turn_start_enabled=false`** (default) or the turn is **Ask/Plan**, **L2 is not called**.
+**Gate tool narrowing (L2 retirement R2)**: With the gate ON and **Act**, **`ReviewReadonly`** + a short hint apply only when the user utterance matches both “don’t modify / don’t run”-style markers **and** analysis/explain-style markers. Ordinary fix/build/write requests are **not** blanket-narrowed for “missing L2”. Old Clarify / Confirm / DirectReply early-exit and L2 fail-open readonly paths are removed. Prefer **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches).
 
 ### Queue, parallelism, cache
 
@@ -460,7 +460,7 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 - **Default**: **`[agent] default_session_mode = "act"`**; **`CM_DEFAULT_SESSION_MODE`**.
 - **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
 - **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly after intent gate. Successful turns save/keep **`active_session_mode`**.
-- **vs L2**: L2 is **off by default** (retirement R1). With the gate off or without explicit `intent_l2_enabled=true`, L2 is not called; only when explicitly enabled and Act does L2 suggest `suggested_mode` (obs only; Web does not render the bubble).
+- **vs L2**: L2 call path removed (retirement **R2**); capability bounds come from Ask/Plan/Act. `intent_l2_*` keys are legacy until R3 cleanup.
 - **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 

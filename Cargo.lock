@@ -1275,7 +1275,6 @@ dependencies = [
 name = "crabmate-agent"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "crabmate-config",
  "crabmate-llm",
  "crabmate-tools",

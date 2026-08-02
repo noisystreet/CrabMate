@@ -305,7 +305,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 **仍走 overlay（非 assistant 正文真源）**：纯 reasoning 车道（非 commentary canonical 路径）的思维链增量。
 
-**仍独立 push 的时间线**：历史分层规划等旁注已忽略；`intent_analysis` **不**推成气泡，水合/导出亦丢弃（不做旧会话兼容）。
+**仍独立 push 的时间线**：历史分层规划等旁注已忽略；`intent_analysis` **R2 起服务端不再发出**（水合/导出仍丢弃旧会话残留，不做兼容渲染）。
 
 ### 12.8 单一读路径（Phase 5）
 

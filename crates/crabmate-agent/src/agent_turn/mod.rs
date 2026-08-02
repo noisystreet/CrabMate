@@ -28,8 +28,7 @@ pub use completion_suppression::{
     tool_calls_are_redundant_after_completion, tool_calls_are_redundant_when_goal_satisfied,
 };
 pub use intent_routing::{
-    IntentL2ClassifierHost, IntentRoutingOutcome, IntentRoutingPipelineParams,
-    assess_intent_routing_full_pipeline, assess_intent_routing_with_optional_l2,
+    IntentRoutingOutcome, IntentRoutingPipelineParams, assess_intent_routing_pipeline,
     log_intent_pipeline_assessment,
 };
 pub use orchestration_entry::{
