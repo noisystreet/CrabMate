@@ -1,12 +1,10 @@
 //! 意图识别管线。
 //!
-//! L2 语义分类是默认决策来源；旧 L0/L1 规则层暂保留为 L2 不可用时的弃用兜底。
+//! L2 语义分类是默认决策来源；L2 不可用或低于观测阈值时 **fail-open 为 Execute**（进主模型），
+//! 不再走已移除的 L1 关键词路由。L0 仅负责续接合并与可观测特征。
 
 use crate::intent_l0::{self, IntentL0Snapshot};
-use crate::intent_router::{
-    ExecuteIntentThresholds, IntentAssessment, IntentKind, IntentRoute,
-    is_explicit_execute_confirmation, route_user_task_with_thresholds,
-};
+use crate::intent_router::{ExecuteIntentThresholds, IntentKind, is_explicit_execute_confirmation};
 
 /// 意图管线上下文；`recent_user_messages` 为**当前** user 条**之前**的近期 user 正文（**新在前**）；
 /// 澄清续接时与 `intent_l0::effective_intent_routing_text` 拼成路由文本。
@@ -14,11 +12,12 @@ use crate::intent_router::{
 pub struct IntentContext {
     pub recent_user_messages: Vec<String>,
     pub in_clarification_flow: bool,
+    /// 历史字段：L1 阈值已不再驱动决策，保留以免破坏调用方构造。
     pub thresholds: ExecuteIntentThresholds,
     pub l2_min_confidence: f32,
     /// 当前 user 前消息尾部是否存在失败 `role: tool`；见 `intent_l0::messages_have_recent_tool_failure`。
     pub has_recent_tool_failure: bool,
-    /// 为 false 时跳过 L0 对 L1 的**保守提级/抬档**（仍保留续接合并与 L0 观测）。
+    /// 历史字段：L0→L1 提级已移除；保留以免破坏调用方构造。
     pub l0_routing_boost_enabled: bool,
 }
 
@@ -50,7 +49,7 @@ pub struct L2IntentCandidate {
     pub relation: Option<IntentRelation>,
 }
 
-/// L2 分类尝试结果；`candidate=None` 时 `unavailable_reason` 说明为何回退弃用规则层。
+/// L2 分类尝试结果；`candidate=None` 时 `unavailable_reason` 说明为何 fail-open。
 #[derive(Debug, Clone, PartialEq)]
 pub struct L2IntentAttempt {
     pub candidate: Option<L2IntentCandidate>,
@@ -76,19 +75,29 @@ impl L2IntentAttempt {
 /// 意图决策元数据（用于观测与回归）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct IntentMergeMeta {
-    /// 弃用规则层的判定，仅用于 L2 不可用时兜底与观测。
+    /// 基线决策（fail-open / 确认续接）；历史字段名 `l1_*`。
     pub l1_kind: IntentKind,
-    /// 弃用规则层的置信度，仅用于 L2 不可用时兜底与观测。
+    /// 基线置信度；历史字段名 `l1_confidence`。
     pub l1_confidence: f32,
     pub l2_present: bool,
     pub l2_applied: bool,
     pub l2_confidence: Option<f32>,
     pub l2_unavailable_reason: Option<String>,
     pub override_reason: Option<String>,
-    /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L2 与弃用 L1 兜底使用。
+    /// 澄清流程下是否将前序 user 与当前短句拼成**路由**文本供 L2 使用。
     pub used_merged_continuation: bool,
     /// 对合并/当前路由文本的 L0 可观测特征（含 `has_recent_tool_failure` 等）。
     pub l0: IntentL0Snapshot,
+    /// fail-open 进主循环时采用保守工具策略（门控侧应收窄为只读）；确认续接/失败续跑为 false。
+    pub fail_open_conservative: bool,
+}
+
+impl IntentMergeMeta {
+    /// 是否应对本轮 Apply **ReviewReadonly**（L2 缺失/低置信 Execute fail-open）。
+    #[must_use]
+    pub fn should_apply_conservative_tool_policy(&self) -> bool {
+        self.fail_open_conservative
+    }
 }
 
 /// L3 决策动作：执行、直接回复、先澄清或先确认。
@@ -100,7 +109,7 @@ pub enum IntentAction {
     ConfirmThenExecute(String),
 }
 
-/// 多意图信息（仅 L2 填充，L0/L1 不做改造）。
+/// 多意图信息（仅 L2 填充）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MultiIntentInfo {
     pub item_count: usize,
@@ -131,11 +140,11 @@ pub struct IntentDecision {
     pub need_clarification: bool,
     /// 动作决策。
     pub action: IntentAction,
-    /// 多意图解析结果（仅 L2 填充，L0/L1 不做改造）。
+    /// 多意图解析结果（仅 L2 填充）。
     pub multi_intent: Option<MultiIntentInfo>,
 }
 
-/// 意图管线入口：L2 stub 无结果时使用弃用 L0/L1 规则兜底。
+/// 意图管线入口：无 L2 stub 时 fail-open 为 Execute（供金样 / 单测）。
 pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
     let (routing, used_merge, l0) = prepare_intent_routing(task, ctx);
     assess_and_route_with_l2_inner(
@@ -149,7 +158,7 @@ pub fn assess_and_route(task: &str, ctx: &IntentContext) -> IntentDecision {
     .0
 }
 
-/// 对当前 `task` 与 `ctx` 做续接合并与 L0 快照，供 L2、弃用 L1 兜底与观测共用（含 `has_recent_tool_failure`）。
+/// 对当前 `task` 与 `ctx` 做续接合并与 L0 快照，供 L2 与观测共用（含 `has_recent_tool_failure`）。
 pub fn prepare_intent_routing(
     current_task: &str,
     ctx: &IntentContext,
@@ -164,7 +173,7 @@ pub fn prepare_intent_routing(
     (routing, used_merge, l0)
 }
 
-/// 评估意图并返回观测元数据；有 L2 结果时直接采纳，规则层只做弃用兜底。
+/// 评估意图并返回观测元数据；有足够置信的 L2 结果时采纳，否则 fail-open。
 pub fn assess_and_route_with_l2(
     current_task: &str,
     ctx: &IntentContext,
@@ -177,7 +186,7 @@ pub fn assess_and_route_with_l2(
     )
 }
 
-/// 评估意图并携带 L2 不可用原因；有 L2 结果时直接采纳，规则层只做弃用兜底。
+/// 评估意图并携带 L2 不可用原因；有足够置信的 L2 结果时采纳，否则 fail-open。
 pub fn assess_and_route_with_l2_attempt(
     current_task: &str,
     ctx: &IntentContext,
@@ -187,7 +196,7 @@ pub fn assess_and_route_with_l2_attempt(
     assess_and_route_with_l2_inner(&routing, current_task, &l0, used_merge, ctx, l2_attempt)
 }
 
-/// `routing` 为 L2 合并上下文及弃用 L1 兜底输入；`primary_task` 为当前用户句原文。
+/// `routing` 为 L2 合并上下文；`primary_task` 为当前用户句原文。
 fn assess_and_route_with_l2_inner(
     routing: &str,
     primary_task: &str,
@@ -196,31 +205,24 @@ fn assess_and_route_with_l2_inner(
     ctx: &IntentContext,
     l2_attempt: L2IntentAttempt,
 ) -> (IntentDecision, IntentMergeMeta) {
-    let mut l1_assessment = route_user_task_with_thresholds(routing, ctx.thresholds);
-    if ctx.l0_routing_boost_enabled {
-        maybe_boost_execute_from_l0(&mut l1_assessment, ctx.thresholds, l0);
-    }
+    let mut decision = fail_open_execute_decision(primary_task);
+    let mut baseline_reason = "fail_open_execute";
+    let mut baseline_conservative = true;
     let normalized = routing.trim().to_lowercase();
     if ctx.in_clarification_flow && is_explicit_execute_confirmation(&normalized) {
-        l1_assessment = IntentAssessment {
-            kind: IntentKind::Execute,
-            confidence: 0.96,
-            route: IntentRoute::Execute,
-        };
-    }
-    if used_merged_continuation
+        decision = fail_open_execute_decision_with_confidence(primary_task, 0.96);
+        baseline_reason = "explicit_execute_confirmation";
+        baseline_conservative = false;
+    } else if used_merged_continuation
         && ctx.has_recent_tool_failure
         && intent_l0::is_resume_after_failure_utterance(primary_task.trim())
     {
-        l1_assessment = IntentAssessment {
-            kind: IntentKind::Execute,
-            confidence: 0.94,
-            route: IntentRoute::Execute,
-        };
+        decision = fail_open_execute_decision_with_confidence(primary_task, 0.94);
+        baseline_reason = "resume_after_tool_failure";
+        baseline_conservative = false;
     }
-    let l1_kind = l1_assessment.kind;
-    let l1_confidence = l1_assessment.confidence;
-    let mut decision = map_assessment_to_decision(primary_task, l1_assessment);
+    let l1_kind = decision.kind;
+    let l1_confidence = decision.confidence;
     let l2_confidence = l2_attempt.candidate.as_ref().map(|x| x.confidence);
     let mut meta = IntentMergeMeta {
         l1_kind,
@@ -232,36 +234,76 @@ fn assess_and_route_with_l2_inner(
         override_reason: None,
         used_merged_continuation,
         l0: *l0,
+        fail_open_conservative: false,
     };
     if let Some(l2) = l2_attempt.candidate {
         let l2_confidence = l2.confidence;
-        decision = map_l2_candidate_to_decision(l2);
-        meta.l2_applied = true;
-        meta.override_reason = Some(if l2_confidence >= ctx.l2_min_confidence {
-            "l2_primary".to_string()
+        let accept_below = l2_accept_below_threshold(&l2);
+        if l2_confidence >= ctx.l2_min_confidence || accept_below {
+            decision = map_l2_candidate_to_decision(l2);
+            meta.l2_applied = true;
+            meta.override_reason = Some(if l2_confidence >= ctx.l2_min_confidence {
+                "l2_primary".to_string()
+            } else {
+                "l2_below_threshold_non_execute_accepted".to_string()
+            });
+            meta.fail_open_conservative = false;
         } else {
-            "l2_primary_below_observation_threshold".to_string()
-        });
+            // 低置信 Execute：fail-open 进主循环，工具策略保守（只读）。
+            meta.override_reason = Some(format!(
+                "l2_below_threshold_fail_open;baseline={baseline_reason}"
+            ));
+            meta.fail_open_conservative = baseline_conservative;
+        }
     } else {
         meta.override_reason = Some(match meta.l2_unavailable_reason.as_deref() {
-            Some("disabled_by_config") => "deprecated_l1_fallback_l2_disabled".to_string(),
-            Some(_) => "deprecated_l1_fallback_l2_unavailable".to_string(),
-            None => "deprecated_l1_fallback_no_l2".to_string(),
+            Some("disabled_by_config") => {
+                format!("fail_open_l2_disabled;baseline={baseline_reason}")
+            }
+            Some(_) => format!("fail_open_l2_unavailable;baseline={baseline_reason}"),
+            None => format!("fail_open_no_l2;baseline={baseline_reason}"),
         });
+        meta.fail_open_conservative = baseline_conservative;
     }
     log::info!(
         target: "crabmate_intent",
-        "intent_classification primary={:?} action={:?} l1_conf={:.3} l2_conf={:?} l2_applied={} override={} l0_kind={:?} subtasks={}",
+        "intent_classification primary={:?} action={:?} baseline_conf={:.3} l2_conf={:?} l2_applied={} fail_open_conservative={} override={} l0_kind={:?} subtasks={}",
         decision.primary_intent,
         decision.action,
         l1_confidence,
         l2_confidence,
         meta.l2_applied,
+        meta.fail_open_conservative,
         meta.override_reason.as_deref().unwrap_or("none"),
         l0,
         decision.multi_intent.as_ref().map_or(0, |mi| mi.item_count),
     );
     (decision, meta)
+}
+
+/// 低于观测阈值时仍采纳：寒暄 / QA / 模糊（及带澄清的 Execute），避免误打成宽权限 Execute。
+fn l2_accept_below_threshold(l2: &L2IntentCandidate) -> bool {
+    match l2.kind {
+        IntentKind::Greeting | IntentKind::Qa | IntentKind::Ambiguous => true,
+        IntentKind::Execute => l2.need_clarification || l2.abstain,
+    }
+}
+
+fn fail_open_execute_decision(task: &str) -> IntentDecision {
+    fail_open_execute_decision_with_confidence(task, 0.5)
+}
+
+fn fail_open_execute_decision_with_confidence(task: &str, confidence: f32) -> IntentDecision {
+    IntentDecision {
+        kind: IntentKind::Execute,
+        primary_intent: map_execute_primary_intent(task).to_string(),
+        secondary_intents: Vec::new(),
+        confidence,
+        abstain: false,
+        need_clarification: false,
+        action: IntentAction::Execute,
+        multi_intent: None,
+    }
 }
 
 fn map_l2_candidate_to_decision(l2: L2IntentCandidate) -> IntentDecision {
@@ -316,168 +358,28 @@ fn build_multi_intent_info(
     })
 }
 
-/// L0 为「路径/错误/构建/近期 tool 失败」等时，将偏 Ambiguous 的**合并路由**提级为可执行，减少无意义追问。
-fn maybe_boost_execute_from_l0(
-    a: &mut IntentAssessment,
-    thresholds: ExecuteIntentThresholds,
-    l0: &IntentL0Snapshot,
-) {
-    if a.kind == IntentKind::Ambiguous
-        && l0.has_file_path_like
-        && (l0.has_error_signal
-            || l0.has_command_cargo
-            || l0.has_git_keyword
-            || l0.has_recent_tool_failure)
-    {
-        let conf = 0.62_f32.max(a.confidence);
-        *a = IntentAssessment {
-            kind: IntentKind::Execute,
-            confidence: conf,
-            route: if conf >= thresholds.high {
-                IntentRoute::Execute
-            } else {
-                IntentRoute::ConfirmThenExecute(crate::intent_router::EXECUTE_CONFIRM.to_string())
-            },
-        };
-        return;
-    }
-    if a.kind == IntentKind::Execute
-        && matches!(&a.route, IntentRoute::ConfirmThenExecute(_))
-        && l0.has_file_path_like
-        && (l0.has_error_signal || l0.has_command_cargo)
-        && a.confidence + 0.12 >= thresholds.high
-    {
-        let c = (a.confidence + 0.12).min(1.0);
-        a.confidence = c;
-        a.route = IntentRoute::Execute;
-    }
-}
-
-fn map_assessment_to_decision(task: &str, assessment: IntentAssessment) -> IntentDecision {
-    let primary_intent = map_primary_intent(task, assessment.kind).to_string();
-    let secondary_intents = map_secondary_intents(task, assessment.kind, &primary_intent);
-    match &assessment.route {
-        IntentRoute::Execute => IntentDecision {
-            kind: assessment.kind,
-            primary_intent,
-            secondary_intents,
-            confidence: assessment.confidence,
-            abstain: false,
-            need_clarification: false,
-            action: IntentAction::Execute,
-            multi_intent: None,
-        },
-        IntentRoute::DirectReply(reply) => {
-            let body = if assessment.kind == IntentKind::Qa {
-                if reply.starts_with("收到，我先不执行") {
-                    reply.clone()
-                } else {
-                    crate::intent_router::qa_direct_reply_for_primary(&primary_intent)
-                }
-            } else {
-                reply.clone()
-            };
-            IntentDecision {
-                kind: assessment.kind,
-                primary_intent,
-                secondary_intents,
-                confidence: assessment.confidence,
-                abstain: false,
-                need_clarification: false,
-                action: IntentAction::DirectReply(body),
-                multi_intent: None,
-            }
-        }
-        IntentRoute::AskThenExecute(reply) => IntentDecision {
-            kind: assessment.kind,
-            primary_intent,
-            secondary_intents,
-            confidence: assessment.confidence,
-            abstain: assessment.kind == IntentKind::Ambiguous,
-            need_clarification: true,
-            action: IntentAction::ClarifyThenExecute(reply.clone()),
-            multi_intent: None,
-        },
-        IntentRoute::ConfirmThenExecute(reply) => IntentDecision {
-            kind: assessment.kind,
-            primary_intent,
-            secondary_intents,
-            confidence: assessment.confidence,
-            abstain: false,
-            need_clarification: true,
-            action: IntentAction::ConfirmThenExecute(reply.clone()),
-            multi_intent: None,
-        },
-    }
-}
-
-fn map_primary_intent(task: &str, kind: IntentKind) -> &'static str {
-    match kind {
-        IntentKind::Greeting => "meta.greeting",
-        IntentKind::Qa => map_qa_primary_intent(task),
-        IntentKind::Execute => map_execute_primary_intent(task),
-        IntentKind::Ambiguous => "unknown",
-    }
-}
-
-fn map_qa_primary_intent(task: &str) -> &'static str {
-    let n = task.to_lowercase();
-    let raw = task.trim();
-    if (raw.contains("我刚才")
-        || raw.contains("我上一条")
-        || raw.contains("上一句")
-        || raw.contains("上一条"))
-        && (raw.contains("什么")
-            || raw.contains("问了")
-            || raw.contains("说的")
-            || raw.contains("提问")
-            || raw.contains("问题")
-            || raw.contains("原文"))
-    {
-        return "qa.meta";
-    }
-    if raw.contains("你会") && raw.contains('吗') && !raw.contains("帮我") {
-        return "qa.meta";
-    }
-    if n.contains("介绍") && (n.contains('你') || n.contains("自己")) {
-        return "qa.meta";
-    }
-    if n.contains("你是谁")
-        || n.contains("你叫什么")
-        || n.contains("自我介绍一下")
-        || n.contains("技能")
-        || n.contains("你能做什么")
-        || n.contains("你能帮我")
-        || n.contains("你有哪些")
-        || n.contains("能力范围")
-    {
-        return "qa.meta";
-    }
-    "qa.explain"
-}
-
+/// fail-open 观测用的粗粒度 execute 子类标签（不驱动路由）。
 fn map_execute_primary_intent(task: &str) -> &'static str {
     let normalized = task.to_lowercase();
     let has_any = |keywords: &[&str]| keywords.iter().any(|k| normalized.contains(k));
 
-    if has_any(&[
-        "当前目录",
-        "有哪些",
-        "有什么",
-        "有没有",
-        "有无",
-        "在不在",
-        "是否有",
-        "是否存在",
-        "列出",
-        "查看",
-        "清单",
-        "文件列表",
-        "源文件",
-        "源码",
-        "list",
-        "show files",
-    ]) {
+    if has_any(&["当前目录", "文件列表", "源文件", "list", "show files"])
+        || ((has_any(&[
+            "有哪些",
+            "有什么",
+            "有没有",
+            "有无",
+            "在不在",
+            "是否有",
+            "是否存在",
+            "列出",
+            "查看",
+            "清单",
+        ]) && has_any(&["目录", "文件", "源码", "源文件", "仓库", "项目"]))
+            || (normalized.contains('有')
+                && (normalized.contains("源码") || normalized.contains("文件"))
+                && normalized.contains('吗')))
+    {
         return "execute.read_inspect";
     }
     if has_any(&[
@@ -509,8 +411,8 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
         return "execute.run_test_build";
     }
     if has_any(&[
-        "报错", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复", "bug",
-        "分析",
+        "报错", "错误", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复",
+        "bug", "分析",
     ]) {
         return "execute.debug_diagnose";
     }
@@ -518,164 +420,6 @@ fn map_execute_primary_intent(task: &str) -> &'static str {
         return "execute.docs_ops";
     }
     "execute.code_change"
-}
-
-fn push_secondary_keyword_hit(
-    intents: &mut Vec<String>,
-    normalized: &str,
-    keywords: &[&str],
-    id: &str,
-) {
-    if keywords.iter().any(|k| normalized.contains(k)) {
-        push_secondary_unique(intents, id);
-    }
-}
-
-fn push_secondary_unique(buf: &mut Vec<String>, v: &str) {
-    if !buf.iter().any(|x| x == v) {
-        buf.push(v.to_string());
-    }
-}
-
-fn push_secondary_dual_keyword_hit(
-    intents: &mut Vec<String>,
-    normalized: &str,
-    a: &[&str],
-    b: &[&str],
-    id: &str,
-) {
-    if a.iter().any(|k| normalized.contains(k)) && b.iter().any(|k| normalized.contains(k)) {
-        push_secondary_unique(intents, id);
-    }
-}
-
-fn map_secondary_intents(task: &str, kind: IntentKind, primary_intent: &str) -> Vec<String> {
-    if kind != IntentKind::Execute {
-        return Vec::new();
-    }
-    let normalized = task.to_lowercase();
-    let mut intents = Vec::new();
-
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &[
-            "commit",
-            "提交",
-            "pr",
-            "pull request",
-            "cherry-pick",
-            "rebase",
-            "merge",
-            "branch",
-        ],
-        "execute.git_ops",
-    );
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &[
-            "测试",
-            "test",
-            "cargo test",
-            "cargo build",
-            "构建",
-            "编译",
-            "build",
-            "run",
-            "运行",
-            "clippy",
-            "fmt",
-        ],
-        "execute.run_test_build",
-    );
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &[
-            "报错", "error", "panic", "异常", "失败", "定位", "排查", "调试", "诊断", "修复", "bug",
-        ],
-        "execute.debug_diagnose",
-    );
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &["文档", "readme", "docs/", "注释", "说明", "md"],
-        "execute.docs_ops",
-    );
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &[
-            "改", "修改", "实现", "重构", "新增", "删除", ".rs", ".ts", ".tsx", ".py",
-        ],
-        "execute.code_change",
-    );
-
-    push_secondary_dual_keyword_hit(
-        &mut intents,
-        &normalized,
-        &["跑", "执行"],
-        &["test", "pytest", "cargo", "构建", "编译"],
-        "execute.run_test_build",
-    );
-    push_secondary_dual_keyword_hit(
-        &mut intents,
-        &normalized,
-        &["定位", "排查", "分析"],
-        &["报错", "异常", "panic", "error", "bug"],
-        "execute.debug_diagnose",
-    );
-    push_secondary_dual_keyword_hit(
-        &mut intents,
-        &normalized,
-        &["改", "修改", "重构", "实现"],
-        &["函数", "文件", "模块", "代码"],
-        "execute.code_change",
-    );
-    push_secondary_dual_keyword_hit(
-        &mut intents,
-        &normalized,
-        &["更新", "补充", "完善", "编写"],
-        &["readme", "文档", "docs", "注释", ".md"],
-        "execute.docs_ops",
-    );
-
-    push_secondary_keyword_hit(
-        &mut intents,
-        &normalized,
-        &[
-            "当前目录",
-            "有哪些",
-            "有什么",
-            "有没有",
-            "有无",
-            "在不在",
-            "是否有",
-            "是否存在",
-            "列出",
-            "查看",
-            "清单",
-            "文件列表",
-            "源文件",
-            "源码",
-            "list",
-            "show files",
-        ],
-        "execute.read_inspect",
-    );
-
-    intents.retain(|it| it != primary_intent);
-    if intents.is_empty()
-        && (normalized.contains("先")
-            || normalized.contains("再")
-            || normalized.contains("然后")
-            || normalized.contains("并且"))
-    {
-        intents.push("execute.code_change".to_string());
-        intents.retain(|it| it != primary_intent);
-    }
-    intents
 }
 
 fn classify_with_l2_stub(_task: &str, _ctx: &IntentContext) -> Option<L2IntentCandidate> {
@@ -693,7 +437,7 @@ mod tests {
     /// 细粒度断言见 `fixtures/intent_regression.jsonl`（`cargo test golden_intent_regression`）。
 
     #[test]
-    fn l2_high_confidence_overrides_l1() {
+    fn l2_high_confidence_overrides_fail_open_baseline() {
         let l2 = L2IntentCandidate {
             kind: IntentKind::Execute,
             primary_intent: "execute.docs_ops".to_string(),
@@ -713,9 +457,9 @@ mod tests {
         assert!(meta.l2_applied);
     }
 
-    /// L2 是默认决策来源；`l2_min_confidence` 仅保留为观测阈值，不再把决策回退给 L1。
+    /// 低置信 **Execute** → fail-open（保守）；低于阈值的 Greeting/Qa 仍采纳。
     #[test]
-    fn l2_below_threshold_still_drives_decision() {
+    fn l2_below_threshold_execute_fail_opens_conservative() {
         let ctx = IntentContext {
             l2_min_confidence: 0.75,
             ..Default::default()
@@ -731,31 +475,91 @@ mod tests {
             relation: None,
         };
         let (decision, meta) = assess_and_route_with_l2("当前目录下有哪些源文件", &ctx, Some(l2));
-        assert!(meta.l2_applied);
-        assert_eq!(
-            meta.override_reason.as_deref(),
-            Some("l2_primary_below_observation_threshold")
+        assert!(!meta.l2_applied);
+        assert!(meta.fail_open_conservative);
+        assert!(
+            meta.override_reason
+                .as_deref()
+                .is_some_and(|s| s.starts_with("l2_below_threshold_fail_open")),
+            "override={:?}",
+            meta.override_reason
         );
-        assert_eq!(decision.primary_intent, "execute.code_change");
+        assert_eq!(decision.primary_intent, "execute.read_inspect");
         assert!(matches!(decision.action, super::IntentAction::Execute));
     }
 
     #[test]
-    fn l2_unavailable_reason_is_preserved_for_fallback() {
-        let (_decision, meta) = assess_and_route_with_l2_attempt(
+    fn l2_below_threshold_greeting_still_applied() {
+        let ctx = IntentContext {
+            l2_min_confidence: 0.75,
+            ..Default::default()
+        };
+        let l2 = L2IntentCandidate {
+            kind: IntentKind::Greeting,
+            primary_intent: "meta.greeting".to_string(),
+            secondary_intents: Vec::new(),
+            confidence: 0.55,
+            need_clarification: false,
+            abstain: false,
+            subtasks: vec![],
+            relation: None,
+        };
+        let (decision, meta) = assess_and_route_with_l2("你好", &ctx, Some(l2));
+        assert!(meta.l2_applied);
+        assert!(!meta.fail_open_conservative);
+        assert_eq!(
+            meta.override_reason.as_deref(),
+            Some("l2_below_threshold_non_execute_accepted")
+        );
+        assert!(matches!(
+            decision.action,
+            super::IntentAction::DirectReply(_)
+        ));
+    }
+
+    #[test]
+    fn l2_unavailable_reason_is_preserved_for_fail_open() {
+        let (decision, meta) = assess_and_route_with_l2_attempt(
             "帮我编写一个简单c++程序，然后使用cmake编译执行",
             &IntentContext::default(),
             L2IntentAttempt::unavailable("api_key_missing"),
         );
         assert!(!meta.l2_present);
         assert!(!meta.l2_applied);
+        assert!(meta.fail_open_conservative);
         assert_eq!(
             meta.l2_unavailable_reason.as_deref(),
             Some("api_key_missing")
         );
-        assert_eq!(
-            meta.override_reason.as_deref(),
-            Some("deprecated_l1_fallback_l2_unavailable")
+        assert!(
+            meta.override_reason
+                .as_deref()
+                .is_some_and(|s| s.starts_with("fail_open_l2_unavailable")),
+            "override={:?}",
+            meta.override_reason
+        );
+        assert!(matches!(decision.action, super::IntentAction::Execute));
+    }
+
+    #[test]
+    fn explicit_confirm_fail_open_is_not_conservative() {
+        let ctx = IntentContext {
+            in_clarification_flow: true,
+            ..Default::default()
+        };
+        let (decision, meta) = assess_and_route_with_l2_attempt(
+            "直接开始执行",
+            &ctx,
+            L2IntentAttempt::unavailable("api_key_missing"),
+        );
+        assert!(!meta.fail_open_conservative);
+        assert!(matches!(decision.action, super::IntentAction::Execute));
+        assert!(
+            meta.override_reason
+                .as_deref()
+                .is_some_and(|s| s.contains("baseline=explicit_execute_confirmation")),
+            "override={:?}",
+            meta.override_reason
         );
     }
 

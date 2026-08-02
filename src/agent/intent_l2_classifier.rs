@@ -1,7 +1,7 @@
 //! L2 语义意图分类器。
 //!
 //! 当前实现为额外一次无工具 LLM 调用，输出结构化 JSON。
-//! 调用失败或解析失败时返回脱敏原因，由上层走弃用规则层兜底。
+//! 调用失败或解析失败时返回脱敏原因，由上层 **fail-open 进 Execute / 主模型**。
 
 use crate::agent::intent_pipeline::{IntentRelation, L2IntentCandidate};
 use crate::agent::intent_router::IntentKind;
