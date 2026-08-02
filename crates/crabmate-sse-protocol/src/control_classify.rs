@@ -32,6 +32,7 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         "thinking_trace",
         "conversation_saved",
         "sse_capabilities",
+        "stream_draining",
     ];
     for key in NON_NULL_KEYS {
         if key_present_non_null(obj, key) {

@@ -1,6 +1,6 @@
 //! `SsePayload` → `AgUiEvent` 转换映射。
 //!
-//! 覆盖所有 22 个 `SsePayload` 变体到 AG-UI 标准事件的完整映射。
+//! 覆盖所有 `SsePayload` 变体到 AG-UI 标准事件的完整映射。
 //! `ToolCall` 拆分为 `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` 三事件。
 
 use super::ag_ui_event::{AgUiErrorBody, AgUiEvent};
@@ -162,6 +162,10 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
                 "tiktokenPromptTokens": saved.tiktoken_prompt_tokens,
             }),
         },
+        SsePayload::StreamDraining { draining } => AgUiEvent::Custom {
+            custom_type: "stream_draining".into(),
+            data: serde_json::json!({"jobId": draining.job_id}),
+        },
         SsePayload::TimelineLog { log } => AgUiEvent::Custom {
             custom_type: "timeline_log".into(),
             data: serde_json::json!({"kind": log.kind, "title": log.title, "detail": log.detail}),
@@ -179,11 +183,17 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
         },
         SsePayload::SseCapabilities { caps } => AgUiEvent::Custom {
             custom_type: "sse_capabilities".into(),
-            data: serde_json::json!({
-                "supportedSseV": caps.supported_sse_v,
-                "resumeRingCap": caps.resume_ring_cap,
-                "jobId": caps.job_id,
-            }),
+            data: {
+                let mut data = serde_json::json!({
+                    "supportedSseV": caps.supported_sse_v,
+                    "resumeRingCap": caps.resume_ring_cap,
+                    "jobId": caps.job_id,
+                });
+                if let Some(order) = &caps.terminal_order {
+                    data["terminalOrder"] = serde_json::json!(order);
+                }
+                data
+            },
         },
         // 前 5 个变体已在 `convert_sse_payload_to_ag_ui` 中处理，不应到达这里
         SsePayload::StreamEnded { .. }
@@ -375,9 +385,16 @@ mod tests {
                         supported_sse_v: 2,
                         resume_ring_cap: 512,
                         job_id: 1,
+                        terminal_order: None,
                     },
                 },
                 "sse_capabilities",
+            ),
+            (
+                SsePayload::StreamDraining {
+                    draining: crate::sse::protocol::StreamDrainingBody { job_id: 9 },
+                },
+                "stream_draining",
             ),
         ];
         for (payload, expected_type) in test_cases {
@@ -562,7 +579,16 @@ mod golden_tests {
                         supported_sse_v: 2,
                         resume_ring_cap: 512,
                         job_id: 1,
+                        terminal_order: Some(
+                            crate::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED.to_string(),
+                        ),
                     },
+                },
+                "CUSTOM",
+            ),
+            (
+                SsePayload::StreamDraining {
+                    draining: crate::sse::protocol::StreamDrainingBody { job_id: 1 },
                 },
                 "CUSTOM",
             ),

@@ -30,6 +30,7 @@ turn_tool_phase_end	{"v":1,"turn_tool_phase_end":true}	handled
 chat_ui_separator	{"v":1,"chat_ui_separator":true}	handled
 未知键仍有 v → handled（IM/classify；Web 现行走 AG-UI 金样）	{"v":1,"unknown_future_key":true}	handled
 conversation_saved 前端消费并静默处理	{"v":1,"conversation_saved":{"revision":42}}	handled
+stream_draining 非终态收尾	{"v":1,"stream_draining":{"job_id":99}}	handled
 sse_capabilities	{"v":1,"sse_capabilities":{"supported_sse_v":2,"resume_ring_cap":512,"job_id":99}}	handled
 stream_ended	{"v":1,"stream_ended":{"job_id":99,"reason":"completed"}}	handled
 timeline_log	{"v":1,"timeline_log":{"kind":"k","title":"t"}}	handled

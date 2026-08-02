@@ -71,6 +71,8 @@ pub struct SseNoticeTimelineHooks<'a> {
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
     /// AG-UI `RUN_FINISHED` / `RUN_ERROR` 触发流结束时的回调（V2Parser 使用）。
     pub on_run_finished: Option<&'a mut dyn FnMut()>,
+    /// 非终态 `CUSTOM stream_draining`：可提前进入 Draining 文案；**不**标记 `saw_stream_ended`。
+    pub on_stream_draining: Option<&'a mut dyn FnMut()>,
     /// AG-UI `STATE_SNAPSHOT`：后端在工具批结束/终答写盘等边界发送的完整状态快照，
     /// 前端可用于断线重连恢复 overlay 与时间线。
     pub on_state_snapshot: Option<&'a mut dyn FnMut(serde_json::Value)>,

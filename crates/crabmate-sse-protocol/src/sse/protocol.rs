@@ -109,6 +109,11 @@ pub enum SsePayload {
         #[serde(rename = "sse_capabilities")]
         caps: SseCapabilitiesBody,
     },
+    /// 模型/工具执行已结束，正在落盘等收尾；**非**终态。官方 Web 可进入 Draining 文案，仍须读完 body。
+    StreamDraining {
+        #[serde(rename = "stream_draining")]
+        draining: StreamDrainingBody,
+    },
     /// 流正常结束（任务完成或已从 hub 注销）；客户端可停止重连。
     StreamEnded {
         #[serde(rename = "stream_ended")]
@@ -270,6 +275,14 @@ pub struct SseCapabilitiesBody {
     pub resume_ring_cap: usize,
     /// 本流在队列与 hub 中的 `job_id`；断线重连时填入 `stream_resume.job_id`。
     pub job_id: u64,
+    /// 软能力：终态业务序。当前服务端为 [`crate::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED`]；旧客户端忽略即可。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_order: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct StreamDrainingBody {
+    pub job_id: u64,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -277,7 +290,7 @@ pub struct StreamEndedBody {
     pub job_id: u64,
     /// `completed` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
     pub reason: StreamEndReason,
-    /// 回合结束时的 prompt token 粗估（先于或并行于 `conversation_saved`；便于底栏即时更新）。
+    /// 回合结束时的 prompt token 粗估（成功路径通常已先发 `conversation_saved`；便于底栏即时更新）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crabmate_types::TiktokenPromptTokensSnapshot>,
 }

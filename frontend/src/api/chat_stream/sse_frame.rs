@@ -207,6 +207,11 @@ pub(super) fn handle_sse_block(
         *saw_stream_ended = true;
         (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
     };
+    // 双序兼容：新序在落盘前发 stream_draining；旧序仅有 RUN_FINISHED 后尾部 saved。
+    // draining 只推进 UI（Draining），不置 saw_stream_ended，也不清 abort/resume。
+    let mut on_stream_draining = || {
+        (cbs.on_stream_draining)();
+    };
     let mut on_state_snapshot = |_state: serde_json::Value| {
         // STATE_SNAPSHOT 由上层应用层注册回调处理；此处为占位桥接。
         // 应用层可在 ChatStreamCallbacks 的 on_timeline_log 等路径中注册专用处理。
@@ -239,6 +244,7 @@ pub(super) fn handle_sse_block(
             on_conversation_saved_revision: Some(&mut on_conv_rev),
             on_timeline_log: Some(&mut on_timeline_log),
             on_run_finished: Some(&mut on_run_finished),
+            on_stream_draining: Some(&mut on_stream_draining),
             on_state_snapshot: Some(&mut on_state_snapshot),
         },
     };
@@ -258,8 +264,8 @@ pub(super) fn handle_sse_block(
             Ok(SseFrameKind::TextDelta)
         }
         crate::sse_dispatch::SseDispatch::StreamEnded => {
-            // RUN_FINISHED 只进入 Draining；响应体可能还有 conversation_saved 等尾部控制面。
-            // `on_done` 由 body 消费完成后的 send_helpers 统一调用。
+            // RUN_FINISHED / RUN_ERROR 进入 Draining；旧序下 body 尾部仍可能有 conversation_saved。
+            // 新序下 saved 已在终态前到达。`on_done` 由 body 消费完成后的 send_helpers 统一调用。
             if stop {
                 return Err(crate::i18n::api_err_stream_stopped(loc).to_string());
             }
@@ -291,6 +297,7 @@ mod tests {
             on_stream_ended: Rc::new(move |reason, _tik| {
                 *ended.borrow_mut() = Some(reason);
             }),
+            on_stream_draining: Rc::new(|| {}),
             on_stream_job_id: Rc::new(|_jid| {}),
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),
@@ -397,6 +404,58 @@ mod tests {
         assert_eq!(done_count.get(), 0, "done belongs to body completion");
     }
 
+    /// Phase E1 新序：draining → saved → RUN_FINISHED；draining 不经 `on_stream_ended`、不置 saw。
+    #[test]
+    fn saved_before_run_finished_dual_order_and_draining() {
+        let ended = Rc::new(RefCell::new(Vec::<String>::new()));
+        let ended_for_cb = Rc::clone(&ended);
+        let draining_hits = Rc::new(Cell::new(0u32));
+        let draining_for_cb = Rc::clone(&draining_hits);
+        let revision = Rc::new(Cell::new(0u64));
+        let revision_for_cb = Rc::clone(&revision);
+        let cbs = ChatStreamCallbacks {
+            on_stream_ended: Rc::new(move |reason, _| {
+                ended_for_cb.borrow_mut().push(reason);
+            }),
+            on_stream_draining: Rc::new(move || {
+                draining_for_cb.set(draining_for_cb.get() + 1);
+            }),
+            on_conversation_revision: Rc::new(move |rev, _| revision_for_cb.set(rev)),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buffer = concat!(
+            "id: 10\ndata: {\"type\":\"CUSTOM\",\"customType\":\"stream_draining\",",
+            "\"data\":{\"jobId\":1}}\n\n",
+            "id: 11\ndata: {\"type\":\"CUSTOM\",\"customType\":\"conversation_saved\",",
+            "\"data\":{\"revision\":7}}\n\n",
+            "id: 12\ndata: {\"type\":\"RUN_FINISHED\",\"threadId\":\"\",\"runId\":\"1\"}\n\n"
+        )
+        .to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        process_sse_buffer(
+            &mut buffer,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .expect("new terminal order frames should be consumed");
+        assert_eq!(revision.get(), 7);
+        assert_eq!(
+            draining_hits.get(),
+            1,
+            "stream_draining must use dedicated hook"
+        );
+        assert!(saw_stream_ended, "RUN_FINISHED must set saw_stream_ended");
+        assert_eq!(
+            ended.borrow().as_slice(),
+            ["completed"],
+            "draining must not call on_stream_ended: {:?}",
+            ended.borrow()
+        );
+    }
+
     /// `data: ` 后仅空格的增量不得被 `trim_start` 吞掉，否则英文词会粘在一起。
     #[test]
     fn handle_block_preserves_whitespace_only_delta() {
@@ -414,6 +473,7 @@ mod tests {
             on_conversation_id: Rc::new(|_id| {}),
             on_conversation_revision: Rc::new(|_rev, _tik| {}),
             on_stream_ended: Rc::new(|_reason, _tik| {}),
+            on_stream_draining: Rc::new(|| {}),
             on_stream_job_id: Rc::new(|_jid| {}),
             on_last_sse_event_id: Rc::new(|_seq| {}),
             on_assistant_answer_phase: Rc::new(|| {}),

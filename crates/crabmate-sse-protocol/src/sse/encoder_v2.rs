@@ -104,6 +104,7 @@ mod tests {
                 supported_sse_v: 2,
                 resume_ring_cap: 512,
                 job_id: 1,
+                terminal_order: None,
             },
         });
         assert!(s.contains(r#""type":"CUSTOM""#), "got: {s}");

@@ -127,6 +127,8 @@ pub(crate) fn build_chat_stream_callbacks(
     let on_stream_ended =
         make_on_stream_ended_with_stream_phase(Rc::clone(&stream_ctx), Rc::clone(&accum));
 
+    let on_stream_draining = make_on_stream_draining_with_stream_phase(Rc::clone(&stream_ctx));
+
     let on_stream_job_id: Rc<dyn Fn(u64)> = {
         let stream_ctx = Rc::clone(&stream_ctx);
         Rc::new(move |jid: u64| {
@@ -216,6 +218,7 @@ pub(crate) fn build_chat_stream_callbacks(
         on_conversation_id: on_cid,
         on_conversation_revision: on_conv_rev,
         on_stream_ended,
+        on_stream_draining,
         on_stream_job_id,
         on_last_sse_event_id,
         on_assistant_answer_phase,

@@ -59,8 +59,9 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `command_approval_request` | Approval for `run_command` / workflow | `onCommandApprovalRequest` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
 | `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** | Updates `revision` and context meter |
-| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
-| `stream_ended` | End of stream; `job_id`, `reason`; optional **`tiktoken_prompt_tokens`** | Web: extract first; update context meter; stop auto-reconnect |
+| `stream_draining` | Non-terminal wrap-up: model/tools done, persisting; `job_id` | Web: may enter Draining UI early; does **not** set `saw_stream_ended` |
+| `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`); optional soft **`terminal_order`** (currently **`saved_before_finished`**; older clients ignore) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
+| `stream_ended` | End of stream; `job_id`, `reason`; optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`) | Web: extract first; update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 ### `tool_result` common fields
@@ -242,10 +243,13 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 | `RUN_FINISHED` | Turn completed → frontend drains then `on_done` + `saw_stream_ended` (see terminal order below) |
 | `RUN_ERROR` | Turn failed → frontend `on_error` + `saw_stream_ended` |
 
-**Terminal event order (current vs target)**
+**CUSTOM `stream_draining`**: model/tools finished; persistence in progress; **not** terminal. Official Web may enter Draining UI early without setting `saw_stream_ended`; body must still be fully read.
 
-- **Current (compat)**: the server may still emit business control frames such as **`conversation_saved` after `RUN_FINISHED`**; the official Web client keeps reading the body in a Draining state before a single `on_done` (see `frontend/src/api/chat_stream/sse_frame.rs`).
-- **Target (Phase E, not shipped)**: `conversation_saved` (and optional snapshots) come **before** a successful terminal event; `RUN_FINISHED` / `RUN_ERROR` are the **last** business events. Plan: **`docs/Turn布局设计.md` §16** (Chinese; authoritative for layout Phase E).
+**Terminal event order (Phase E1, current server)**
+
+- **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`) → **last** `RUN_FINISHED` / `RUN_ERROR`. First-frame `sse_capabilities.terminal_order = saved_before_finished` (soft field; does **not** bump `SSE_PROTOCOL_VERSION`).
+- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`; also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`, driven by body completion (`frontend/src/api/chat_stream/sse_frame.rs`).
+- **Later contract (E4)**: drop post-terminal business-frame compat; see **`docs/Turn布局设计.md` §16**.
 
 ### Tool calls
 
@@ -277,6 +281,7 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 | `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
 | `timeline_log` | `timeline_log` | `on_timeline_log` |
 | `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
+| `stream_draining` | `stream_draining` | `on_stream_draining` → Draining UI (keeps abort/resume; does not set `saw_stream_ended`) |
 | `chat_ui_separator` | `chat_ui_separator` | Ignored |
 | `sse_capabilities` | `sse_capabilities` | Ignored |
 

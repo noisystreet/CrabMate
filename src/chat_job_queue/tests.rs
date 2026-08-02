@@ -7,7 +7,7 @@ use crate::types::Message;
 
 use super::ChatJobQueue;
 use super::stream_finish::{
-    emit_missing_final_response_fallback_if_needed, emit_stream_ended_once,
+    emit_missing_final_response_fallback_if_needed, emit_stream_draining, emit_stream_ended_once,
     sse_payload_has_final_response_timeline,
 };
 
@@ -146,18 +146,9 @@ async fn fallback_skips_when_turn_has_no_new_assistant() {
 }
 
 #[tokio::test]
-async fn stream_ended_emits_before_followup_saved_event() {
+async fn conversation_saved_emits_before_stream_ended() {
     let (tx, mut rx) = mpsc::channel::<String>(8);
-    let mut sent = false;
-    emit_stream_ended_once(
-        &tx,
-        99,
-        StreamEndReason::Completed,
-        &mut sent,
-        "chat_job_queue::tests stream_ended_first",
-        None,
-    )
-    .await;
+    emit_stream_draining(&tx, 99).await;
     let saved = crate::sse::encode_message(crate::sse::SsePayload::ConversationSaved {
         saved: crate::sse::ConversationSavedBody {
             revision: 7,
@@ -167,7 +158,17 @@ async fn stream_ended_emits_before_followup_saved_event() {
     let _ = crate::sse::send_string_logged(
         &tx,
         saved,
-        "chat_job_queue::tests conversation_saved_after_end",
+        "chat_job_queue::tests conversation_saved_before_end",
+    )
+    .await;
+    let mut sent = false;
+    emit_stream_ended_once(
+        &tx,
+        99,
+        StreamEndReason::Completed,
+        &mut sent,
+        "chat_job_queue::tests stream_ended_last",
+        None,
     )
     .await;
 
@@ -179,10 +180,18 @@ async fn stream_ended_emits_before_followup_saved_event() {
         .await
         .expect("recv second")
         .expect("second payload");
+    let third = timeout(Duration::from_millis(200), rx.recv())
+        .await
+        .expect("recv third")
+        .expect("third payload");
 
-    assert!(first.contains("\"type\":\"RUN_FINISHED\"") || first.contains("\"stream_ended\""));
+    assert!(
+        first.contains("\"customType\":\"stream_draining\"")
+            || first.contains("\"stream_draining\"")
+    );
     assert!(
         second.contains("\"customType\":\"conversation_saved\"")
             || second.contains("\"conversation_saved\"")
     );
+    assert!(third.contains("\"type\":\"RUN_FINISHED\"") || third.contains("\"stream_ended\""));
 }

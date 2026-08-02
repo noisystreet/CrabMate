@@ -245,7 +245,7 @@ fn apply_sse_event(state: &mut TurnLifecycleState, ev: StreamControlEvent) {
         StreamControlEvent::ToolResult => {
             state.tool_depth = state.tool_depth.saturating_sub(1);
         }
-        StreamControlEvent::StreamEnded => {
+        StreamControlEvent::StreamDraining | StreamControlEvent::StreamEnded => {
             state.stream_ended_seen = true;
         }
         StreamControlEvent::StreamDone => {

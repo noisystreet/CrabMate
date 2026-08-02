@@ -30,6 +30,8 @@ pub(crate) enum StreamControlEvent {
     ToolRunning(bool),
     ToolOutputChunk,
     ToolResult,
+    /// 非终态收尾（`stream_draining`）：进入 Draining 文案，**不**释放 abort/resume。
+    StreamDraining,
     StreamEnded,
     /// 正常 `on_done` 走完（含尾泡决策后）。
     StreamDone,
@@ -112,7 +114,7 @@ impl StreamControlReducerState {
             StreamControlEvent::ToolResult => {
                 self.tool_depth = self.tool_depth.saturating_sub(1);
             }
-            StreamControlEvent::StreamEnded => {
+            StreamControlEvent::StreamDraining | StreamControlEvent::StreamEnded => {
                 self.stream_ended_seen = true;
             }
             StreamControlEvent::StreamDone
@@ -173,6 +175,14 @@ mod tests {
                 StreamControlEvent::StreamEnded,
             ],
         );
+        assert_eq!(s.phase(), StreamControlPhase::Draining);
+    }
+
+    #[test]
+    fn stream_draining_enters_draining_like_stream_ended() {
+        let mut s = StreamControlReducerState::new();
+        s.apply(StreamControlEvent::AssistantAnswerPhase);
+        s.apply(StreamControlEvent::StreamDraining);
         assert_eq!(s.phase(), StreamControlPhase::Draining);
     }
 
