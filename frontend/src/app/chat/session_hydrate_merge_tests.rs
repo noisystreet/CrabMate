@@ -183,7 +183,7 @@ fn v1_history_still_uses_legacy_adapter() {
 }
 
 #[test]
-fn merge_tail_page_keeps_intent_before_server_answer() {
+fn merge_tail_page_drops_intent_before_server_answer() {
     let session = ChatSession {
         id: "sid".into(),
         layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
@@ -231,15 +231,11 @@ fn merge_tail_page_keeps_intent_before_server_answer() {
     };
     let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
     let ids: Vec<_> = merged.iter().map(|m| m.id.as_str()).collect();
-    assert_eq!(
-        ids,
-        vec!["u1", "tl-intent", "a-srv"],
-        "intent should precede canonical answer"
-    );
+    assert_eq!(ids, vec!["u1", "a-srv"]);
 }
 
 #[test]
-fn merge_tail_page_keeps_user_before_intent_when_server_omits_user() {
+fn merge_tail_page_keeps_user_when_server_omits_user_and_drops_intent() {
     let session = ChatSession {
         id: "sid".into(),
         layout_schema_version: LEGACY_LAYOUT_SCHEMA_VERSION,
@@ -291,6 +287,7 @@ fn merge_tail_page_keeps_user_before_intent_when_server_omits_user() {
     };
     let merged = merge_tail_page_into_session_messages(&session, hydrated, &resp);
     let roles: Vec<_> = merged.iter().map(|m| m.role.as_str()).collect();
-    assert_eq!(roles, vec!["user", "assistant", "assistant"]);
+    assert_eq!(roles, vec!["user", "assistant"]);
     assert_eq!(merged[0].text, "你好");
+    assert!(!merged.iter().any(|m| m.text.contains("意图分析")));
 }

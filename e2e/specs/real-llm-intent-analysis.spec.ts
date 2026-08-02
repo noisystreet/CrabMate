@@ -1,22 +1,14 @@
 /**
- * 真实 LLM 端到端测试：意图分析消息卡片可见性
- *
- * 复现 Bug：分阶段规划（staged_plan）移除后，后端不再发射 intent_analysis
- * timeline_log SSE 事件，导致前端不渲染意图分析消息卡片。
+ * 真实 LLM 端到端：意图分析旁注不出现在聊天气泡。
  *
  * 前置条件：
  *   1. `cargo run -- serve` 在 127.0.0.1:8080 运行
- *   2. 通过以下方式之一配置 API 密钥（优先级递减）：
- *      - 环境变量 API_KEY
- *      - 项目根 config.toml（[agent] 节下的 api_key）
- *      - 项目根 .agent_demo.toml（同上）
- *      - 系统钥匙串（由已运行的 CrabMate 后端读取；测试进程本身不导出明文）
+ *   2. API 密钥：环境变量 API_KEY / 本地 config / 钥匙串
  *
  * 运行方式：
  *   cd e2e && npx playwright test specs/real-llm-intent-analysis.spec.ts
  *
- * 注意：
- *   - 无密钥时测试自动跳过
+ * 注意：无密钥时测试自动跳过。
  */
 
 import { test, expect } from "@playwright/test";
@@ -68,7 +60,6 @@ function resolveApiKey(): string {
   const env = process.env.API_KEY;
   if (env && env.trim()) return env.trim();
 
-  // 从项目配置文件读取
   const projectRoot = path.resolve(process.cwd(), "..");
   const fromConfig = readApiKeyFromToml(path.join(projectRoot, "config.toml"));
   if (fromConfig) return fromConfig;
@@ -86,28 +77,16 @@ const SID = "s_e2e_real_intent_analysis";
 test.describe("真实 LLM：意图分析卡片场景", () => {
   const runTest = API_KEY ? test : test.skip;
 
-  runTest("意图分析消息卡片在聊天区可见", async ({ page }) => {
+  runTest("聊天区不出现意图分析气泡", async ({ page }) => {
     await setupRealLLMSession(page, SID, API_KEY);
     await sendMessage(page, "读取当前目录下的所有 Rust 源文件");
 
     await waitForReady(page, 180_000);
 
-    // 验证意图分析卡片出现（包含 "意图分析：" 前缀）
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("意图分析：", { timeout: 5_000 });
+    const scroller = page.locator('[data-testid="chat-messages-scroller"]');
+    await expect(scroller).not.toBeEmpty({ timeout: 5_000 });
+    await expect(scroller).not.toContainText("意图分析：");
 
-    // 验证卡片包含分析结果中的关键行
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("主意图：", { timeout: 3_000 });
-
-    // 终答复应也可见
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).not.toBeEmpty({ timeout: 5_000 });
-
-    // 不应出现错误提示
     const errorToasts = await page
       .locator('[data-testid="error-toast"]')
       .count();

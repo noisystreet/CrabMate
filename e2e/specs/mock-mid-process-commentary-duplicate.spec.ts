@@ -374,7 +374,7 @@ test("export-shaped multi-step commentaries must each appear exactly once", asyn
   await sendMessage(page, "编写一个简单c++程序，使用cmake编译执行");
 
   const transcript = page.getByTestId("chat-tui-transcript");
-  await expect(transcript).toContainText(INTENT_TITLE, { timeout: 20_000 });
+  await expect(transcript).not.toContainText(INTENT_TITLE, { timeout: 5_000 });
 
   // ⓪ 流中采样（delayed SSE）：每步旁白 / 工具边界立刻查 DOM 双写
   await sampleCommentaryStepsDuringStream({

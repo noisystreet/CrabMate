@@ -344,19 +344,17 @@ test.describe("真实 LLM：流式后消息结构", () => {
     // 也可能多轮交替（意图 + 预工具说明 + 工具后说明 + 终答 → 4+ 条）。
     // 以下断言检测前端存储/渲染的严重结构问题，而非 LLM 输出模式。
 
-    // 至少 2 条独立的非工具助手消息（意图分析 + 至少 1 轮正文）
-    // Bug（极端情况）：所有文本合并为 1 条（只有 1 条非工具助手）
-    expect(analysis.assistantIndices.length).toBeGreaterThanOrEqual(2);
+    // 至少 1 条独立的非工具助手正文（意图分析气泡已移除）
+    // Bug（极端情况）：所有文本合并为 1 条以外的结构异常另测
+    expect(analysis.assistantIndices.length).toBeGreaterThanOrEqual(1);
     expect(analysis.toolIndices.length).toBeGreaterThan(0);
 
     // 没有空的助手消息
     // Bug：旋转后无 delta 跟进会产生空气泡（如 [N] role=assistant text=""）
     expect(analysis.emptyAssistantMessages).toEqual([]);
 
-    // DOM 中至少 3 个 TUI turn（用户 + 至少 2 个助手；工具节另计亦可）
-    // 单轮正文：用户 + 意图 + 正文 = 3 节
-    // 多轮交替：用户 + N 个助手 = 3+ 节
-    expect(renderedBubbleCount).toBeGreaterThanOrEqual(3);
+    // DOM 中至少 2 个 TUI turn（用户 + 至少 1 个助手；工具节另计亦可）
+    expect(renderedBubbleCount).toBeGreaterThanOrEqual(2);
 
     // 不应出现错误提示
     const errorToasts = await page

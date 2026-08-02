@@ -1,12 +1,5 @@
 /**
- * Mock SSE 回归测试：意图分析消息卡片
- *
- * 复现 Bug：分阶段规划（staged_plan）移除后，后端不再发射 intent_analysis
- * timeline_log SSE 事件，导致前端不渲染意图分析消息卡片。
- *
- * 测试矩阵：
- *   1. 正向测试：SSE 含 intent_analysis → 卡片可见（前端能力验证）
- *   2. 意图分析始终执行 → 负向测试不再适用（staged plan 移除后 intent_analysis 是标准流程）
+ * Mock SSE 回归：意图分析旁注不再渲染为聊天气泡。
  *
  * 运行方式（前置：`cargo run -- serve` 在 127.0.0.1:8080 运行）：
  *   cd e2e && npx playwright test specs/mock-intent-analysis.spec.ts
@@ -17,7 +10,7 @@ import { seedSession, sendMessage } from "../fixtures/helpers";
 
 const SID = "s_e2e_mock_intent";
 
-/** 构造含 intent_analysis 的 SSE 流（通过=正向测试，修复后后端应与此一致）。 */
+/** 构造含 intent_analysis 的 SSE 流（前端应忽略该 timeline_log）。 */
 function sseWithIntent(): string {
   const intentLogLine = JSON.stringify({
     type: "CUSTOM",
@@ -54,7 +47,7 @@ function installSseRoute(page: import("@playwright/test").Page, body: string) {
 }
 
 test.describe("意图分析卡片回归", () => {
-  test("正向：SSE 含 intent_analysis → 卡片可见", async ({ page }) => {
+  test("SSE 含 intent_analysis → 聊天区不出现意图气泡", async ({ page }) => {
     await installSseRoute(page, sseWithIntent());
     await seedSession(page, SID);
     await sendMessage(page, "测试");
@@ -64,20 +57,11 @@ test.describe("意图分析卡片回归", () => {
       { timeout: 25000 },
     );
 
-    // 卡片标题
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("意图分析：执行类（直接执行）", { timeout: 5000 });
-    // 卡片细节
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("主意图：execute.run_test_build", { timeout: 3000 });
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("综合置信度：0.61", { timeout: 3000 });
-    // 终答正常
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).toContainText("这是带意图分析的测试回复。", { timeout: 3000 });
+    const scroller = page.locator('[data-testid="chat-messages-scroller"]');
+    await expect(scroller).toContainText("这是带意图分析的测试回复。", {
+      timeout: 3000,
+    });
+    await expect(scroller).not.toContainText("意图分析：执行类（直接执行）");
+    await expect(scroller).not.toContainText("主意图：execute.run_test_build");
   });
 });
