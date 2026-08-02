@@ -198,7 +198,7 @@ Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conve
 | `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
 
-**`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.1.1** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**; engine chain **`bing,duckduckgo`** (fallback on captcha/low yield); results include unwrapped landing URLs and `domain`. Without a browser, switch to `brave`/`tavily` or install one. Docker SyncDefault sandboxes usually lack a host browser—use an API provider or avoid web search in-sandbox.
+**`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.2.0** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**; engine chain **`bing,duckduckgo`** (fallback on captcha/low-quality yield); results include unwrapped landing URLs, `domain`, and quality signals (`result_kind` / `is_ad` / `published_at`, …). The crate also exposes page fetch **`fetch`/`fetch_page`** (CrabMate still uses its own **`http_fetch`**). Without a browser, switch to `brave`/`tavily` or install one. Docker SyncDefault sandboxes usually lack a host browser—use an API provider or avoid web search in-sandbox.
 
 **`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**, brave/tavily **+2s**) so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
 
