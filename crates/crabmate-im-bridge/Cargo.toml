@@ -16,7 +16,7 @@ path = "src/main.rs"
 [dependencies]
 crabmate-sse-protocol = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1", "json", "tokio", "macros"] }
-aes = "0.8"
+aes = "0.9"
 base64 = { workspace = true }
 # 与 keyring→secret-service 同代，避免 workspace 同时编 aes 0.8/0.9、cbc 0.1/0.2。
 cbc = { version = "0.1", features = ["block-padding", "alloc"] }
