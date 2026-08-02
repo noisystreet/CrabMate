@@ -3,7 +3,7 @@
 use std::fmt;
 use std::path::Path;
 
-use super::skills::{SkillDoc, list_skills_from_base, skill_ui_description};
+use super::skills::{SkillDoc, SkillsListOpts, list_skills, skill_ui_description};
 
 /// 嵌入 turn-build `String` 错误中的标记，供 Web 映射为 `SKILL_INVOKE_FAILED`。
 const TURN_ERR_TAG: &str = "__crabmate_skill_slash__";
@@ -135,11 +135,10 @@ fn hints_from_docs(docs: &[SkillDoc]) -> String {
 /// 优先精确匹配 [`skill_callable_id`]；若无命中，再允许用**文件 stem** 作为别名（且仅当唯一）。
 /// 避免「A 的 stem = B 的 name」时 catalog 列出的 id 在发送时歧义失败。
 pub fn resolve_skill_by_id(
-    base_dir: &Path,
-    skills_dir: &str,
+    list_opts: SkillsListOpts<'_>,
     id: &str,
 ) -> Result<SkillDoc, SkillSlashError> {
-    let docs = list_skills_from_base(base_dir, skills_dir).map_err(SkillSlashError::Io)?;
+    let docs = list_skills(list_opts).map_err(SkillSlashError::Io)?;
     resolve_skill_in_docs(&docs, id)
 }
 
@@ -204,8 +203,8 @@ fn resolve_skill_in_docs(docs: &[SkillDoc], id: &str) -> Result<SkillDoc, SkillS
 }
 
 /// 列出可用于 `/id` 补全的 callable id（已排序去重）。
-pub fn list_skill_callable_ids(base_dir: &Path, skills_dir: &str) -> Result<Vec<String>, String> {
-    Ok(list_skill_catalog_entries(base_dir, skills_dir)?
+pub fn list_skill_callable_ids(list_opts: SkillsListOpts<'_>) -> Result<Vec<String>, String> {
+    Ok(list_skill_catalog_entries(list_opts)?
         .into_iter()
         .map(|e| e.id)
         .collect())
@@ -222,10 +221,9 @@ pub struct SkillCatalogEntry {
 
 /// 列出 skill 目录条目：仅含 **resolve 唯一成功** 且非保留词的 callable id。
 pub fn list_skill_catalog_entries(
-    base_dir: &Path,
-    skills_dir: &str,
+    list_opts: SkillsListOpts<'_>,
 ) -> Result<Vec<SkillCatalogEntry>, String> {
-    let docs = list_skills_from_base(base_dir, skills_dir)?;
+    let docs = list_skills(list_opts)?;
     let mut out: Vec<SkillCatalogEntry> = Vec::new();
     for doc in &docs {
         let id = skill_callable_id(doc);
@@ -272,8 +270,7 @@ pub struct PreparedUserSkills {
 /// - `/<未知内建且像 skill>`：解析成功则剥离；失败返回 `Err`（调用方应提示用户）。
 pub fn prepare_user_message_for_skills(
     raw_user: &str,
-    base_dir: &Path,
-    skills_dir: &str,
+    list_opts: SkillsListOpts<'_>,
     skills_enabled: bool,
 ) -> Result<PreparedUserSkills, SkillSlashError> {
     let raw = raw_user.trim();
@@ -307,7 +304,7 @@ pub fn prepare_user_message_for_skills(
             head: head.to_string(),
         });
     }
-    let doc = resolve_skill_by_id(base_dir, skills_dir, head)?;
+    let doc = resolve_skill_by_id(list_opts, head)?;
     let invoked = skill_callable_id(&doc);
     let user_message = if task.is_empty() {
         default_skill_user_task().to_string()
@@ -332,6 +329,15 @@ mod tests {
         f.write_all(body.as_bytes()).unwrap();
     }
 
+    fn ws_opts(base: &Path) -> SkillsListOpts<'_> {
+        SkillsListOpts {
+            workspace_base_dir: base,
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: "",
+            skills_system_dir: "",
+        }
+    }
+
     #[test]
     fn resolve_by_frontmatter_name_and_stem() {
         let tmp = tempfile::tempdir().unwrap();
@@ -341,9 +347,9 @@ mod tests {
             "review.md",
             "---\nname: code-review\n---\n# Review\nDo review.\n",
         );
-        let by_name = resolve_skill_by_id(tmp.path(), ".crabmate/skills", "code-review").unwrap();
+        let by_name = resolve_skill_by_id(ws_opts(tmp.path()), "code-review").unwrap();
         assert!(by_name.content.contains("Do review"));
-        let by_stem = resolve_skill_by_id(tmp.path(), ".crabmate/skills", "review").unwrap();
+        let by_stem = resolve_skill_by_id(ws_opts(tmp.path()), "review").unwrap();
         assert_eq!(by_stem.display_path, by_name.display_path);
     }
 
@@ -361,14 +367,14 @@ mod tests {
             "other.md",
             "---\nname: review\n---\nfrom other.md\n",
         );
-        let doc = resolve_skill_by_id(tmp.path(), ".crabmate/skills", "review").unwrap();
+        let doc = resolve_skill_by_id(ws_opts(tmp.path()), "review").unwrap();
         assert!(doc.content.contains("from other.md"));
-        let entries = list_skill_catalog_entries(tmp.path(), ".crabmate/skills").unwrap();
+        let entries = list_skill_catalog_entries(ws_opts(tmp.path())).unwrap();
         let ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
         assert!(ids.contains(&"review"));
         assert!(ids.contains(&"code-review"));
         for e in &entries {
-            assert!(resolve_skill_by_id(tmp.path(), ".crabmate/skills", &e.id).is_ok());
+            assert!(resolve_skill_by_id(ws_opts(tmp.path()), &e.id).is_ok());
         }
     }
 
@@ -378,7 +384,7 @@ mod tests {
         let skills = tmp.path().join(".crabmate/skills");
         write_skill(&skills, "x.md", "---\nname: help\n---\nbody\n");
         write_skill(&skills, "ok.md", "---\nname: ok-skill\n---\nbody\n");
-        let entries = list_skill_catalog_entries(tmp.path(), ".crabmate/skills").unwrap();
+        let entries = list_skill_catalog_entries(ws_opts(tmp.path())).unwrap();
         assert!(entries.iter().all(|e| e.id != "help"));
         assert!(entries.iter().any(|e| e.id == "ok-skill"));
     }
@@ -388,13 +394,9 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let skills = tmp.path().join(".crabmate/skills");
         write_skill(&skills, "cr.md", "---\nname: code-review\n---\nbody\n");
-        let p = prepare_user_message_for_skills(
-            "/code-review 看看 diff",
-            tmp.path(),
-            ".crabmate/skills",
-            true,
-        )
-        .unwrap();
+        let p =
+            prepare_user_message_for_skills("/code-review 看看 diff", ws_opts(tmp.path()), true)
+                .unwrap();
         assert_eq!(p.user_message, "看看 diff");
         assert!(p.forced_skill.is_some());
         assert_eq!(p.invoked_id.as_deref(), Some("code-review"));
@@ -403,9 +405,7 @@ mod tests {
     #[test]
     fn prepare_reserved_leaves_raw() {
         let tmp = tempfile::tempdir().unwrap();
-        let p =
-            prepare_user_message_for_skills("/skills list", tmp.path(), ".crabmate/skills", true)
-                .unwrap();
+        let p = prepare_user_message_for_skills("/skills list", ws_opts(tmp.path()), true).unwrap();
         assert!(p.forced_skill.is_none());
         assert_eq!(p.user_message.trim(), "/skills list");
     }
@@ -415,8 +415,7 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let skills = tmp.path().join(".crabmate/skills");
         write_skill(&skills, "a.md", "---\nname: alpha\n---\nx\n");
-        let err = prepare_user_message_for_skills("/nope", tmp.path(), ".crabmate/skills", true)
-            .unwrap_err();
+        let err = prepare_user_message_for_skills("/nope", ws_opts(tmp.path()), true).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("未找到"));
         assert!(msg.contains("/alpha"));
@@ -430,7 +429,7 @@ mod tests {
         let skills = tmp.path().join(".crabmate/skills");
         write_skill(&skills, "a.md", "---\nname: alpha\n---\nx\n");
         write_skill(&skills, "b.md", "plain\n");
-        let ids = list_skill_callable_ids(tmp.path(), ".crabmate/skills").unwrap();
+        let ids = list_skill_callable_ids(ws_opts(tmp.path())).unwrap();
         assert!(ids.iter().any(|i| i == "alpha"));
         assert!(ids.iter().any(|i| i == "b"));
     }
@@ -444,7 +443,7 @@ mod tests {
             "a.md",
             "---\nname: alpha\ndescription: Alpha skill for tests\n---\n# Title\nBody\n",
         );
-        let entries = list_skill_catalog_entries(tmp.path(), ".crabmate/skills").unwrap();
+        let entries = list_skill_catalog_entries(ws_opts(tmp.path())).unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].id, "alpha");
         assert!(entries[0].description.contains("Alpha skill"));
@@ -465,15 +464,14 @@ mod tests {
             "flat.md",
             "---\nname: flat-skill\n---\nflat body\n",
         );
-        let docs = crate::skills::list_skills_from_base(tmp.path(), ".crabmate/skills").unwrap();
+        let docs = crate::skills::list_skills(ws_opts(tmp.path())).unwrap();
         assert_eq!(docs.len(), 2);
 
-        let by_dir =
-            resolve_skill_by_id(tmp.path(), ".crabmate/skills", "cpp-programming").unwrap();
+        let by_dir = resolve_skill_by_id(ws_opts(tmp.path()), "cpp-programming").unwrap();
         assert!(by_dir.content.contains("C++"));
         assert_eq!(skill_callable_id(&by_dir), "cpp-programming");
 
-        let entries = list_skill_catalog_entries(tmp.path(), ".crabmate/skills").unwrap();
+        let entries = list_skill_catalog_entries(ws_opts(tmp.path())).unwrap();
         let ids: Vec<_> = entries.iter().map(|e| e.id.as_str()).collect();
         assert!(ids.contains(&"cpp-programming"));
         assert!(ids.contains(&"flat-skill"));
@@ -482,5 +480,26 @@ mod tests {
                 .iter()
                 .any(|e| e.id == "cpp-programming" && e.description.contains("C++"))
         );
+    }
+
+    #[test]
+    fn slash_resolve_sees_user_layer() {
+        let tmp = tempfile::tempdir().unwrap();
+        let user = tmp.path().join("user-skills");
+        let ws = tmp.path().join("ws");
+        std::fs::create_dir_all(ws.join(".crabmate/skills")).unwrap();
+        write_skill(
+            &user,
+            "from-user.md",
+            "---\nname: from-user\n---\nuser body\n",
+        );
+        let opts = SkillsListOpts {
+            workspace_base_dir: &ws,
+            skills_dir: ".crabmate/skills",
+            skills_user_dir: user.to_str().unwrap(),
+            skills_system_dir: "",
+        };
+        let doc = resolve_skill_by_id(opts, "from-user").unwrap();
+        assert!(doc.content.contains("user body"));
     }
 }

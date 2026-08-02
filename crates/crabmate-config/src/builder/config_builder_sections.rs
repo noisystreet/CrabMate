@@ -108,6 +108,8 @@ pub(crate) struct ConfigBuilderCursorRules {
 pub(crate) struct ConfigBuilderSkills {
     pub(crate) skills_enabled: Option<bool>,
     pub(crate) skills_dir: Option<String>,
+    pub(crate) skills_user_dir: Option<String>,
+    pub(crate) skills_system_dir: Option<String>,
     pub(crate) skills_max_chars: Option<u64>,
     pub(crate) skills_top_k: Option<u64>,
 }

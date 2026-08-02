@@ -73,8 +73,9 @@ pub fn should_resolve_xdg_user_config() -> bool {
 }
 
 /// 运行时实际会加载的用户级文件（种子时只拷这些；其余 `/etc` 分片仍由嵌入默认提供）。
+/// `skills/`：系统包可选自带技能，种子到用户 XDG 后由 `skills_user_dir` 扫描。
 const SEED_ROOT_FILES: &[&str] = &["config.toml", "agent_roles.toml"];
-const SEED_ROOT_DIRS: &[&str] = &["prompts", "config"];
+const SEED_ROOT_DIRS: &[&str] = &["prompts", "config", "skills"];
 
 /// 若用户 `config.toml` 尚不存在，且 `system_dir/config.toml` 存在，则拷贝运行时所需子集到 `user_dir`（**不覆盖**已有文件）。
 ///
@@ -235,6 +236,12 @@ mod tests {
         fs::write(system.join("agent_roles.toml"), b"roles-v1\n").unwrap();
         fs::write(system.join("prompts/a.md"), b"prompt\n").unwrap();
         fs::write(system.join("config/prompts/role.md"), b"role\n").unwrap();
+        fs::create_dir_all(system.join("skills/packaged")).unwrap();
+        fs::write(
+            system.join("skills/packaged/SKILL.md"),
+            b"---\nname: packaged\n---\nbody\n",
+        )
+        .unwrap();
         fs::write(system.join("tools.toml"), b"should-not-copy\n").unwrap();
         fs::write(system.join("default_config.toml"), b"should-not-copy\n").unwrap();
 
@@ -254,6 +261,10 @@ mod tests {
         assert_eq!(
             fs::read_to_string(user.join("config/prompts/role.md")).unwrap(),
             "role\n"
+        );
+        assert_eq!(
+            fs::read_to_string(user.join("skills/packaged/SKILL.md")).unwrap(),
+            "---\nname: packaged\n---\nbody\n"
         );
         assert!(!user.join("tools.toml").exists());
         assert!(!user.join("default_config.toml").exists());

@@ -181,6 +181,8 @@ fn resolve_system_prompt_for_chat(
                 crate::config::skills::SkillsSelectedMergeOpts {
                     skills_enabled: cfg.skills.skills_enabled,
                     skills_dir: cfg.skills.skills_dir.as_str(),
+                    skills_user_dir: cfg.skills.skills_user_dir.as_str(),
+                    skills_system_dir: cfg.skills.skills_system_dir.as_str(),
                     skills_max_chars: cfg.skills.skills_max_chars,
                     base_dir: work_dir,
                     user_text: user_text_for_skills.unwrap_or(""),
@@ -400,8 +402,7 @@ async fn chat_batch_jsonl_merge_line_value(
             .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
         let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
             &u_exp,
-            work_dir,
-            cfg_snap.skills.skills_dir.as_str(),
+            cfg_snap.skills.list_opts(work_dir),
             cfg_snap.skills.skills_enabled,
         )
         .map_err(|e| CliExitError::new(EXIT_USAGE, e.to_string()))?;
@@ -618,8 +619,7 @@ async fn chat_invocation_via_cli_query(
         .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
     let prepared = crate::config::skills_slash::prepare_user_message_for_skills(
         &user,
-        ctx.work_dir,
-        cfg_for_expand.skills.skills_dir.as_str(),
+        cfg_for_expand.skills.list_opts(ctx.work_dir),
         cfg_for_expand.skills.skills_enabled,
     )
     .map_err(|e| CliExitError::new(EXIT_USAGE, e.to_string()))?;

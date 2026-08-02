@@ -343,6 +343,19 @@ fn env_override_skills_part_5(b: &mut ConfigBuilder) {
             b.skills.skills_dir = Some(v);
         }
     }
+    // `CM_SKILLS_DISABLE_HOST_LAYERS=1`：测试/CI 一次关掉用户+系统层（仍可用下面两个变量单独覆盖）。
+    if let Ok(v) = std::env::var("CM_SKILLS_DISABLE_HOST_LAYERS")
+        && parse_bool_like(&v) == Some(true)
+    {
+        b.skills.skills_user_dir = Some(String::new());
+        b.skills.skills_system_dir = Some(String::new());
+    }
+    if let Ok(v) = std::env::var("CM_SKILLS_USER_DIR") {
+        b.skills.skills_user_dir = Some(v.trim().to_string());
+    }
+    if let Ok(v) = std::env::var("CM_SKILLS_SYSTEM_DIR") {
+        b.skills.skills_system_dir = Some(v.trim().to_string());
+    }
     if let Ok(v) = std::env::var("CM_SKILLS_MAX_CHARS")
         && let Ok(n) = v.trim().parse::<u64>()
     {

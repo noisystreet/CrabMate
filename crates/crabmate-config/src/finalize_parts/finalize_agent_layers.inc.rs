@@ -170,6 +170,8 @@ struct PromptMergeForRoles {
     cursor_rules_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
+    skills_user_dir: String,
+    skills_system_dir: String,
     skills_max_chars: u64,
     skills_top_k: usize,
 }
@@ -244,6 +246,14 @@ fn merge_system_prompt_layers_for_finalize(
         .skills_dir
         .clone()
         .unwrap_or_else(|| ".crabmate/skills".to_string());
+    let skills_user_dir =
+        skills::resolve_skills_layer_dir_setting(b.skills.skills_user_dir.as_ref(), || {
+            skills::default_skills_user_dir()
+        });
+    let skills_system_dir =
+        skills::resolve_skills_layer_dir_setting(b.skills.skills_system_dir.as_ref(), || {
+            skills::default_skills_system_dir()
+        });
     let skills_max_chars = b
         .skills
         .skills_max_chars
@@ -252,10 +262,14 @@ fn merge_system_prompt_layers_for_finalize(
     let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
     let system_prompt = skills::merge_system_prompt_with_skills_index(
         system_prompt,
+        skills::SkillsListOpts {
+            workspace_base_dir: run_command_working_dir,
+            skills_dir: &skills_dir,
+            skills_user_dir: &skills_user_dir,
+            skills_system_dir: &skills_system_dir,
+        },
         skills_enabled,
-        &skills_dir,
         skills_max_chars as usize,
-        run_command_working_dir,
         skills_top_k,
     )?;
     Ok(PromptMergeForRoles {
@@ -270,6 +284,8 @@ fn merge_system_prompt_layers_for_finalize(
         cursor_rules_max_chars,
         skills_enabled,
         skills_dir,
+        skills_user_dir,
+        skills_system_dir,
         skills_max_chars,
         skills_top_k,
     })

@@ -210,6 +210,8 @@ fn merge_skills_into_system_with_meta(
         crabmate_config::skills::SkillsSelectedMergeOpts {
             skills_enabled: cfg.skills.skills_enabled,
             skills_dir: cfg.skills.skills_dir.as_str(),
+            skills_user_dir: cfg.skills.skills_user_dir.as_str(),
+            skills_system_dir: cfg.skills.skills_system_dir.as_str(),
             skills_max_chars: cfg.skills.skills_max_chars,
             base_dir: sk.base_dir,
             user_text: sk.user_text,
@@ -365,14 +367,20 @@ mod tests {
         )
         .expect("write b");
         let forced = crabmate_config::skills_slash::resolve_skill_by_id(
-            tmp.path(),
-            ".crabmate/skills",
+            crabmate_config::skills::SkillsListOpts {
+                workspace_base_dir: tmp.path(),
+                skills_dir: ".crabmate/skills",
+                skills_user_dir: "",
+                skills_system_dir: "",
+            },
             "alpha",
         )
         .expect("resolve");
         let mut cfg = crabmate_config::load_config(None).expect("embed default");
         cfg.skills.skills_enabled = true;
         cfg.skills.skills_dir = ".crabmate/skills".to_string();
+        cfg.skills.skills_user_dir.clear();
+        cfg.skills.skills_system_dir.clear();
         cfg.skills.skills_top_k = 4;
         let rec = Arc::new(ToolOutcomeRecorder::new());
         let (system, diag) = compose_first_system_for_turn_with_diagnostics(

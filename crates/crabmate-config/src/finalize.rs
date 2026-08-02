@@ -681,6 +681,8 @@ fn finalize_agent_config(
             cursor_rules_max_chars: pm.cursor_rules_max_chars as usize,
             skills_enabled: pm.skills_enabled,
             skills_dir: &pm.skills_dir,
+            skills_user_dir: &pm.skills_user_dir,
+            skills_system_dir: &pm.skills_system_dir,
             skills_max_chars: pm.skills_max_chars as usize,
             skills_top_k: pm.skills_top_k,
         })?;

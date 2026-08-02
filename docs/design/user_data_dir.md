@@ -6,7 +6,7 @@
 
 **工作区内**数据（`conversations.db`、导出、`repl_history.txt` 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
 
-**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。见 **`docs/配置说明.md`**。
+**用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
 
 **可清理缓存**：默认 **`$XDG_CACHE_HOME/crabmate/`**（**`CM_CRABMATE_CACHE_DIR`**）；含 **`fastembed/`** ONNX 模型。**不要**把会话/密钥放进 cache。
 

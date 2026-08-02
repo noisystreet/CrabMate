@@ -46,8 +46,7 @@ pub(super) async fn dispatch_repl_slash_builtin<'a>(
                 // 整行由外层传入；此处仅用 head 探测——实际用 messages 路径会再 prepare。
                 // 用假输入 /head 探测是否为 skill。
                 &format!("/{head}"),
-                work_dir.as_path(),
-                cfg.skills.skills_dir.as_str(),
+                cfg.skills.list_opts(work_dir.as_path()),
                 cfg.skills.skills_enabled,
             ) {
                 Ok(p) if p.forced_skill.is_some() => ReplSlashHandled::NotSlash,
@@ -445,7 +444,7 @@ async fn slash_skills_list(
         let _ = style.print_line("skills 已关闭（skills_enabled=false）。");
         return ReplSlashHandled::Handled;
     }
-    match crate::config::skills::list_skills_from_base(work_dir, &cfg.skills.skills_dir) {
+    match crate::config::skills::list_skills(cfg.skills.list_opts(work_dir)) {
         Ok(files) if files.is_empty() => {
             let _ = style.print_line("当前未发现 skills。");
         }

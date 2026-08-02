@@ -396,8 +396,7 @@ pub(crate) async fn repl_dispatch_chat_round(
         let g = cfg_holder.read().await;
         match crate::config::skills_slash::prepare_user_message_for_skills(
             &user_body,
-            work_dir,
-            g.skills.skills_dir.as_str(),
+            g.skills.list_opts(work_dir),
             g.skills.skills_enabled,
         ) {
             Ok(p) => p,
@@ -800,8 +799,7 @@ pub async fn run_repl(
             let g = cfg_holder.read().await;
             let items = if g.skills.skills_enabled {
                 crate::config::skills_slash::list_skill_catalog_entries(
-                    work_dir.as_path(),
-                    g.skills.skills_dir.as_str(),
+                    g.skills.list_opts(work_dir.as_path()),
                 )
                 .unwrap_or_default()
                 .into_iter()

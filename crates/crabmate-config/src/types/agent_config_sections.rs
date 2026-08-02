@@ -88,7 +88,12 @@ pub struct CursorRulesConfigSection {
 #[derive(Debug, Clone)]
 pub struct SkillsConfigSection {
     pub skills_enabled: bool,
+    /// 工作区层（相对路径相对工作区根；默认同 `.crabmate/skills`）。
     pub skills_dir: String,
+    /// 用户级层（跨工作区）。空串表示关闭；默认约定路径见 finalize。
+    pub skills_user_dir: String,
+    /// 系统级层（如 `/etc/crabmate/skills`）。空串表示关闭；默认约定路径见 finalize。
+    pub skills_system_dir: String,
     pub skills_max_chars: usize,
     pub skills_top_k: usize,
 }

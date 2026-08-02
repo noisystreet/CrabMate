@@ -541,6 +541,8 @@ mod tests {
         let cache = SkillsListData {
             enabled: true,
             skills_dir: ".crabmate/skills".into(),
+            skills_user_dir: String::new(),
+            skills_system_dir: String::new(),
             skills: vec![SkillListItem {
                 id: "cpp-programming".into(),
                 name: None,
@@ -564,6 +566,8 @@ mod tests {
         let cache = SkillsListData {
             enabled: false,
             skills_dir: ".crabmate/skills".into(),
+            skills_user_dir: String::new(),
+            skills_system_dir: String::new(),
             skills: vec![SkillListItem {
                 id: "x".into(),
                 name: None,
