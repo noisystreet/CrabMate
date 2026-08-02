@@ -75,9 +75,27 @@ const EMBEDDED_MODE_ASK: &str = include_str!("../../../config/prompts/mode_ask.m
 const EMBEDDED_MODE_PLAN: &str = include_str!("../../../config/prompts/mode_plan.md");
 const EMBEDDED_MODE_ACT: &str = include_str!("../../../config/prompts/mode_act.md");
 
+/// 上下文 LLM 摘要 system（与 **`config/prompts/context_summary_system.md`** 一致）。
+const EMBEDDED_CONTEXT_SUMMARY_SYSTEM: &str =
+    include_str!("../../../config/prompts/context_summary_system.md");
+
+/// 上下文 LLM 摘要 user 模板（占位符 `{max_tokens}` / `{transcript}`；`{max_chars}` 为别名）。
+const EMBEDDED_CONTEXT_SUMMARY_USER: &str =
+    include_str!("../../../config/prompts/context_summary_user.md");
+
 /// 与 [`resolve_thinking_avoid_echo_appendix`] 使用的内置正文一致；供 `augment_system_prompt` 等在运行时附录字段为空时回退。
 pub fn embedded_thinking_avoid_echo_appendix() -> &'static str {
     EMBEDDED_THINKING_AVOID_ECHO_APPENDIX.trim()
+}
+
+/// 内置上下文摘要 system；读盘失败或空文件时回退。
+pub fn embedded_context_summary_system() -> &'static str {
+    EMBEDDED_CONTEXT_SUMMARY_SYSTEM.trim()
+}
+
+/// 内置上下文摘要 user 模板；读盘失败或空文件时回退。
+pub fn embedded_context_summary_user_template() -> &'static str {
+    EMBEDDED_CONTEXT_SUMMARY_USER.trim()
 }
 
 /// 会话模式附录（Ask / Plan / Act）；供首条 system 组装。
@@ -121,6 +139,79 @@ pub(crate) fn resolve_coding_workbench_increment(
         }
         Err(_) => Ok(embedded_coding_workbench_increment().to_string()),
     }
+}
+
+const DEFAULT_CONTEXT_SUMMARY_SYSTEM_FILE: &str = "config/prompts/context_summary_system.md";
+const DEFAULT_CONTEXT_SUMMARY_USER_FILE: &str = "config/prompts/context_summary_user.md";
+const CONTEXT_SUMMARY_PROMPT_MAX_CHARS: usize = 32_768;
+
+fn resolve_prompt_file_or_embedded(
+    file: Option<&str>,
+    default_file: &str,
+    embedded: &str,
+    label: &str,
+    config_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> String {
+    let path = file
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_file);
+    let body = match read_system_prompt_file_resolved(path, config_bases, run_command_working_dir) {
+        Ok(raw) => {
+            let t = raw.trim().to_string();
+            if t.is_empty() {
+                log::warn!(
+                    target: "crabmate",
+                    "{label} 读盘为空（{path}），使用内置正文"
+                );
+                embedded.to_string()
+            } else {
+                t
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "{e}，使用内置 {label}"
+            );
+            embedded.to_string()
+        }
+    };
+    if body.chars().count() > CONTEXT_SUMMARY_PROMPT_MAX_CHARS {
+        log::warn!(
+            target: "crabmate",
+            "{label} 超过 {CONTEXT_SUMMARY_PROMPT_MAX_CHARS} 字符，改用内置正文"
+        );
+        return embedded.to_string();
+    }
+    body
+}
+
+/// 解析上下文摘要 system / user 模板（读盘优先，失败回退嵌入）。
+pub(crate) fn resolve_context_summary_prompts(
+    system_file: Option<&str>,
+    user_file: Option<&str>,
+    config_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> (String, String) {
+    let system = resolve_prompt_file_or_embedded(
+        system_file,
+        DEFAULT_CONTEXT_SUMMARY_SYSTEM_FILE,
+        embedded_context_summary_system(),
+        "context_summary_system",
+        config_bases,
+        run_command_working_dir,
+    );
+    let user = resolve_prompt_file_or_embedded(
+        user_file,
+        DEFAULT_CONTEXT_SUMMARY_USER_FILE,
+        embedded_context_summary_user_template(),
+        "context_summary_user",
+        config_bases,
+        run_command_working_dir,
+    );
+    (system, user)
 }
 
 fn resolve_thinking_avoid_echo_appendix(

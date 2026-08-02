@@ -180,6 +180,10 @@ pub(super) struct AgentSection {
     pub(super) context_summary_tail_messages: Option<u64>,
     pub(super) context_summary_max_tokens: Option<u64>,
     pub(super) context_summary_transcript_max_chars: Option<u64>,
+    /// 上下文 LLM 摘要 system 文件（与 `system_prompt_file` 相同路径解析）；省略则用默认路径/嵌入。
+    pub(super) context_summary_system_file: Option<String>,
+    /// 上下文 LLM 摘要 user 模板文件；占位符 `{max_tokens}`（或 `{max_chars}`）与 `{transcript}`。
+    pub(super) context_summary_user_file: Option<String>,
     pub(super) health_llm_models_probe: Option<bool>,
     pub(super) health_llm_models_probe_cache_secs: Option<u64>,
     pub(super) chat_queue_max_concurrent: Option<u64>,

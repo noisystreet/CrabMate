@@ -476,6 +476,8 @@ When **`cursor_rules_enabled`** (**default `true`**), append sorted **`cursor_ru
 
 Before each model call: trim by count, **`context_char_budget`**, optional LLM summary. **`tool_message_max_chars`**: compress long **`role: tool`**; with **`tool_result_envelope_v1`**, head/tail sample **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**). Details: **`config/tools.toml`**.
 
+Optional LLM summary prompts (when **`context_summary_trigger_chars > 0`**) default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**, **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**, both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env: **`CM_CONTEXT_SUMMARY_SYSTEM_FILE`**, **`CM_CONTEXT_SUMMARY_USER_FILE`**.
+
 ## Web chat queue (`chat_queue_*`)
 
 `/chat` and `/chat/stream` use a bounded queue; full → **503** **`QUEUE_FULL`**. **`/status`** exposes queue and **`per_active_jobs`**.

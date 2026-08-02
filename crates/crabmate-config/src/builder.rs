@@ -281,6 +281,12 @@ impl ConfigBuilder {
         cp.context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
             .or(cp.context_summary_transcript_max_chars);
+        if let Some(ref p) = agent.context_summary_system_file {
+            cp.context_summary_system_file = Some(p.clone());
+        }
+        if let Some(ref p) = agent.context_summary_user_file {
+            cp.context_summary_user_file = Some(p.clone());
+        }
         let wa = &mut self.web_api;
         wa.health_llm_models_probe = agent.health_llm_models_probe.or(wa.health_llm_models_probe);
         wa.health_llm_models_probe_cache_secs = agent

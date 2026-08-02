@@ -489,6 +489,18 @@ fn env_override_context_transcript_and_health_probe(b: &mut ConfigBuilder) {
     {
         b.context_pipeline.context_summary_transcript_max_chars = Some(n);
     }
+    if let Ok(v) = std::env::var("CM_CONTEXT_SUMMARY_SYSTEM_FILE") {
+        let p = v.trim().to_string();
+        if !p.is_empty() {
+            b.context_pipeline.context_summary_system_file = Some(p);
+        }
+    }
+    if let Ok(v) = std::env::var("CM_CONTEXT_SUMMARY_USER_FILE") {
+        let p = v.trim().to_string();
+        if !p.is_empty() {
+            b.context_pipeline.context_summary_user_file = Some(p);
+        }
+    }
     if let Ok(v) = std::env::var("CM_HEALTH_LLM_MODELS_PROBE")
         && let Some(val) = parse_bool_like(&v)
     {
