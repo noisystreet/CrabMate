@@ -5,16 +5,16 @@
 
 use crabmate_config::{AgentConfig, FinalPlanRequirementMode};
 
-use super::orchestration_entry::TurnTopLevelDispatch;
-use super::turn_orchestration::{NonHierarchicalTurnPhase, NonHierarchicalTurnResolution};
+use super::turn_orchestration::TurnResolution;
 
 /// 路由决议 JSON 根（`version` 固定为 1）。
+///
+/// 主执行面只记 [`orchestration_mode`](TurnRouteDecisionV1::orchestration_mode)
+///（勿再拆 `top_level` / `turn_phase` 镜像字段）。
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TurnRouteDecisionV1 {
     pub version: u8,
-    pub top_level: String,
     pub turn_start: TurnStartSnapshot,
-    pub turn_phase: String,
     pub orchestration_mode: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub freeform_because: Option<String>,
@@ -51,21 +51,15 @@ fn plan_requirement_policy_label(cfg: &AgentConfig) -> String {
     }
 }
 
-fn top_level_label(top: TurnTopLevelDispatch) -> String {
-    top.as_str().to_string()
-}
-
-/// 非分层：启发式结束后组装决议。
-pub fn build_non_hierarchical_turn_route_decision(
+/// 启发式结束后组装决议。
+pub fn build_turn_route_decision(
     cfg: &AgentConfig,
     turn_start: TurnStartSnapshot,
-    entry: &NonHierarchicalTurnResolution,
+    entry: &TurnResolution,
 ) -> TurnRouteDecisionV1 {
     TurnRouteDecisionV1 {
         version: 1,
-        top_level: top_level_label(TurnTopLevelDispatch::NonHierarchical),
         turn_start,
-        turn_phase: entry.turn_phase.as_str().to_string(),
         orchestration_mode: entry.orchestration_mode.as_str().to_string(),
         freeform_because: entry.freeform_because.map(|b| b.as_str().to_string()),
         planner_executor_mode: cfg
@@ -84,10 +78,10 @@ pub fn build_non_hierarchical_turn_route_decision(
 }
 
 /// 启发式之后的下一执行 driver（纯数据；IO 由 `run_dispatch` 执行）。
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TurnRouteDriver {
-    /// 非分层：外循环（ReAct）。
-    NonHierarchical(NonHierarchicalTurnPhase),
+    /// 外循环（ReAct）。
+    ReAct,
 }
 
 /// [`assess_turn_routing`] 聚合输出：决议快照 + driver。
@@ -101,7 +95,6 @@ pub struct AssessedTurnRoute {
 #[derive(Debug)]
 pub struct AssessTurnRoutingParams<'a> {
     pub cfg: &'a AgentConfig,
-    pub top_level: TurnTopLevelDispatch,
     pub turn_start: TurnStartSnapshot,
 }
 
@@ -109,13 +102,11 @@ pub struct AssessTurnRoutingParams<'a> {
 ///
 /// 调用方（`run_dispatch`）不得在本函数之外再分支「是否进外循环」。
 pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnRoute {
-    let _ = params.top_level;
-    let entry = NonHierarchicalTurnResolution::resolve_react(params.cfg);
-    let decision =
-        build_non_hierarchical_turn_route_decision(params.cfg, params.turn_start.clone(), &entry);
+    let entry = TurnResolution::resolve_react(params.cfg);
+    let decision = build_turn_route_decision(params.cfg, params.turn_start.clone(), &entry);
     AssessedTurnRoute {
         decision,
-        driver: TurnRouteDriver::NonHierarchical(entry.turn_phase),
+        driver: TurnRouteDriver::ReAct,
     }
 }
 
@@ -123,11 +114,9 @@ pub fn assess_turn_routing(params: AssessTurnRoutingParams<'_>) -> AssessedTurnR
 pub fn log_turn_route_decision(decision: &TurnRouteDecisionV1) {
     log::info!(
         target: "crabmate::agent_turn",
-        "turn_route_decision version={} top_level={} orchestration_mode={} turn_phase={} freeform_because={} planner_executor_mode={} plan_requirement_policy={}",
+        "turn_route_decision version={} orchestration_mode={} freeform_because={} planner_executor_mode={} plan_requirement_policy={}",
         decision.version,
-        decision.top_level,
         decision.orchestration_mode,
-        decision.turn_phase,
         decision.freeform_because.as_deref().unwrap_or(""),
         decision.planner_executor_mode,
         decision.plan_requirement_policy,

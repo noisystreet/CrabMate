@@ -1,4 +1,4 @@
-//! Agent 回合编排中的**纯领域**片段（消息合并、意图后路由、非分层主路径解析、外循环 FSM、完成判定）。
+//! Agent 回合编排中的**纯领域**片段（消息合并、路由决议、外循环 FSM、完成判定）。
 //!
 //! **相位词汇真源**：见 [`phase_vocabulary`]（`turn_orchestration_mode` / `outer_loop_step` / `sub_phase` / Gate 对照）。
 //! **路由入口**：回合起点启发式（session_mode / Act 句）之后唯一决议函数为 [`assess_turn_routing`]；根包 `run_dispatch` 只消费 [`TurnRouteDriver`]。
@@ -25,10 +25,7 @@ pub use completion_suppression::{
     redundant_tool_names_for_log, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion, tool_calls_are_redundant_when_goal_satisfied,
 };
-pub use orchestration_entry::{
-    TurnOrchestrationTransition, TurnTopLevelDispatch, log_orchestration_transition,
-    resolve_turn_top_level_dispatch,
-};
+pub use orchestration_entry::{TurnOrchestrationTransition, log_orchestration_transition};
 pub use outer_loop_driver::OuterLoopDriver;
 pub use outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
 pub use outer_loop_iteration_reduce::{
@@ -54,11 +51,8 @@ pub use turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     evaluate_turn_suppress_replanning, log_turn_completion_decision,
 };
-pub use turn_orchestration::{
-    NonHierarchicalTurnPhase, NonHierarchicalTurnResolution, ReActBecause, TurnOrchestrationMode,
-};
+pub use turn_orchestration::{ReActBecause, TurnOrchestrationMode, TurnResolution};
 pub use turn_route_decision::{
     AssessTurnRoutingParams, AssessedTurnRoute, TurnRouteDecisionV1, TurnRouteDriver,
-    TurnStartSnapshot, assess_turn_routing, build_non_hierarchical_turn_route_decision,
-    log_turn_route_decision,
+    TurnStartSnapshot, assess_turn_routing, build_turn_route_decision, log_turn_route_decision,
 };

@@ -2,7 +2,7 @@
 
 use crabmate_agent::agent_turn::{
     AssessTurnRoutingParams, TurnRouteDecisionV1, TurnRouteDriver, TurnStartSnapshot,
-    TurnTopLevelDispatch, assess_turn_routing,
+    assess_turn_routing,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,10 +19,7 @@ struct GoldenLine {
 
 #[derive(Debug, Deserialize)]
 struct GoldenExpect {
-    top_level: String,
     orchestration_mode: String,
-    #[serde(default)]
-    turn_phase: Option<String>,
     #[serde(default, alias = "freeform_because")]
     react_because: Option<Value>,
     #[serde(default)]
@@ -86,20 +83,15 @@ fn golden_turn_route_decision() {
 
         let assessed = assess_turn_routing(AssessTurnRoutingParams {
             cfg: &cfg,
-            top_level: TurnTopLevelDispatch::NonHierarchical,
             turn_start: turn_start.clone(),
         });
         let decision = &assessed.decision;
 
         assert_eq!(decision.version, 1, "{ctx}");
-        assert_eq!(decision.top_level, row.expect.top_level, "{ctx}");
         assert_eq!(
             decision.orchestration_mode, row.expect.orchestration_mode,
             "{ctx}"
         );
-        if let Some(phase) = &row.expect.turn_phase {
-            assert_eq!(decision.turn_phase, *phase, "{ctx}");
-        }
         assert_freeform_because(
             decision,
             &row.expect.react_because.clone().unwrap_or(Value::Null),
@@ -107,10 +99,7 @@ fn golden_turn_route_decision() {
         );
         if let Some(driver) = &row.expect.driver {
             match driver.as_str() {
-                "non_hierarchical_freeform" => assert!(
-                    matches!(assessed.driver, TurnRouteDriver::NonHierarchical(_)),
-                    "{ctx}"
-                ),
+                "react" => assert!(matches!(assessed.driver, TurnRouteDriver::ReAct), "{ctx}"),
                 other => panic!("{ctx}: unknown driver expect {other}"),
             }
         }

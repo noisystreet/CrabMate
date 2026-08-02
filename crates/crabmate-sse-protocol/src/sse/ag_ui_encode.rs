@@ -81,7 +81,7 @@ mod tests {
     fn custom_event_preserves_type_and_data() {
         let event = AgUiEvent::Custom {
             custom_type: "orchestration_route".into(),
-            data: serde_json::json!({"turn_phase": "react", "orchestration_mode": "react"}),
+            data: serde_json::json!({"orchestration_mode": "react"}),
         };
         let s = encode_ag_ui_event(&event);
         assert!(s.contains(r#""type":"CUSTOM""#), "got: {s}");
@@ -89,7 +89,7 @@ mod tests {
             s.contains(r#""customType":"orchestration_route""#),
             "got: {s}"
         );
-        assert!(s.contains(r#""turn_phase":"react""#), "got: {s}");
+        assert!(s.contains(r#""orchestration_mode":"react""#), "got: {s}");
     }
 
     #[test]

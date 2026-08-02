@@ -14,9 +14,7 @@ pub(crate) async fn record_and_emit_turn_route_decision(
     tracing::info!(
         target: "crabmate::agent_turn",
         turn_route_decision_version = decision.version,
-        turn_route_top_level = decision.top_level.as_str(),
         turn_route_orchestration_mode = decision.orchestration_mode.as_str(),
-        turn_route_turn_phase = decision.turn_phase.as_str(),
         turn_route_freeform_because = decision.freeform_because.as_deref().unwrap_or(""),
         "turn_route_decision"
     );

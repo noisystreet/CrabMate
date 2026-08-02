@@ -89,7 +89,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 
 | Mechanism | When it applies | Relation to **`plan_rewrite_max_attempts`** |
 | --- | --- | --- |
-| **Act utterance keyword heuristics** | First in non-hierarchical dispatch; **always on for Act** (may set `execution_constraint_hint` / `ReviewReadonly`); skipped for Ask/Plan (mode applies readonly); **does not** end the turn early | **None** |
+| **Act utterance keyword heuristics** | First in ReAct dispatch; **always on for Act** (may set `execution_constraint_hint` / `ReviewReadonly`); skipped for Ask/Plan (mode applies readonly); **does not** end the turn early | **None** |
 | **`plan_rewrite_max_attempts`** | After an **`agent_reply_plan` v1** (or equivalent final-plan artifact) exists: invalid plan, semantic side-check feedback, … | Independent of utterance heuristics; exhaustion → SSE **`plan_rewrite_exhausted`** (**`docs/en/SSE_PROTOCOL.md`**) |
 
 **Act utterance tool narrowing (L2 retirement R4)**: Under **Act**, **`ReviewReadonly`** + a short hint apply when the user utterance matches both “don’t modify / don’t run”-style markers **and** analysis/explain-style markers (no extra chat). Intent-gate keys / L2 / Clarify early-exit are **removed**. Prefer **Ask/Plan** for default readonly. **`ReviewReadonly` / `PatchWrite` / `TestRunner` all allow user-enabled `mcp__*` proxies** (still excluded from parallel read-only batches).

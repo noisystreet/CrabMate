@@ -1,7 +1,7 @@
 # TurnRouteDecision v1 金样：经 assess_turn_routing 的 JSON 形状回归（零 IO）。
-# 运行：`cargo test golden_turn_route_decision`
-# R4：无意图早退；现行仅 ReAct（session_mode + Act 句启发式快照）。
-{"id":"nh_react_act_heuristics","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":false},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
-{"id":"nh_react_act_heuristics_readonly","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":true},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
-{"id":"nh_react_gate_disabled","cfg_mode":"single_agent","turn_start":{"outcome":"disabled"},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
-{"id":"nh_react_empty_task","cfg_mode":"single_agent","turn_start":{"outcome":"empty_task"},"expect":{"top_level":"non_hierarchical","orchestration_mode":"react","turn_phase":"react","freeform_because":"freeform","driver":"non_hierarchical_freeform"}}
+# 字段：id, cfg_mode (planner_executor_mode), turn_start, expect
+# expect.driver: react（TurnRouteDriver::ReAct）
+{"id":"react_act_heuristics","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":false},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_act_heuristics_readonly","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":true},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_gate_disabled","cfg_mode":"single_agent","turn_start":{"outcome":"disabled"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_empty_task","cfg_mode":"single_agent","turn_start":{"outcome":"empty_task"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
