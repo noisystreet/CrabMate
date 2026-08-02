@@ -61,6 +61,8 @@ pub(crate) struct TuiSyncPlan {
 pub(crate) struct LiveBodyPlan {
     pub message_id: String,
     pub patch: TuiBodyPatch,
+    /// Incremental 应用时读取（与 [`TuiBodyChunks::markdown_render`] 同源，不放在 patch 里重复）。
+    pub markdown_render: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,7 +71,7 @@ pub(crate) struct TurnActionsPlan {
     pub html: String,
 }
 
-fn message_finalize_open_line(message: &StoredMessage) -> bool {
+fn message_finalize_open_block(message: &StoredMessage) -> bool {
     !message
         .state
         .as_ref()
@@ -183,7 +185,8 @@ fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBo
         return TuiBodyChunks {
             closed: vec![tool_process_body_html(message, ctx.locale, live)],
             open_plain: None,
-            markdown_render: true,
+            // 工具 HTML 不走 MD，仍记录全局开关以免与 Incremental 前缀比较漂移。
+            markdown_render: ctx.markdown_render,
         };
     }
     let text = message_display_text(
@@ -195,7 +198,7 @@ fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBo
     );
     parse_tui_body_chunks_with(
         &text,
-        message_finalize_open_line(message),
+        message_finalize_open_block(message),
         ctx.markdown_render,
     )
 }
@@ -435,6 +438,78 @@ fn promote_id_from(prev: &TuiMountState, live_id: Option<&str>) -> Option<String
         .cloned()
 }
 
+fn live_body_plan(message_id: &str, markdown_render: bool, patch: TuiBodyPatch) -> LiveBodyPlan {
+    LiveBodyPlan {
+        message_id: message_id.to_string(),
+        patch,
+        markdown_render,
+    }
+}
+
+fn plan_live_tool_patch(
+    prev: &TuiMountState,
+    message: &StoredMessage,
+    id: &str,
+    next_chunks: TuiBodyChunks,
+    ctx: &TuiRenderCtx<'_>,
+) -> LiveBodyPlan {
+    let live = tool_live_overlay(message, ctx.tool_chunks);
+    let fields = tool_row_live_fields(message, ctx.locale, live);
+    let prev_has = prev.live_tool_has_details.unwrap_or(false);
+    // 结构未变：只改 status / one-line 文案，避免 ReplaceAll 抖高。
+    let md = next_chunks.markdown_render;
+    if prev_has == fields.wants_details() {
+        return live_body_plan(
+            id,
+            md,
+            TuiBodyPatch::ToolRow {
+                status: fields.status,
+                one_line: fields.one_line,
+                detail: fields.detail,
+            },
+        );
+    }
+    live_body_plan(
+        id,
+        md,
+        TuiBodyPatch::ReplaceAll {
+            chunks: next_chunks,
+        },
+    )
+}
+
+fn plan_live_text_patch(
+    prev: &TuiMountState,
+    id: &str,
+    next_chunks: TuiBodyChunks,
+) -> LiveBodyPlan {
+    let prev_chunks = prev
+        .live_body
+        .as_ref()
+        .filter(|_| prev.live_id.as_deref() == Some(id));
+    let md = next_chunks.markdown_render;
+    let patch = plan_tui_body_patch(prev_chunks, &next_chunks);
+    live_body_plan(id, md, patch)
+}
+
+fn plan_promote_body_patch(
+    prev: &TuiMountState,
+    messages: &[StoredMessage],
+    promote_id: &str,
+    ctx: &TuiRenderCtx<'_>,
+) -> Option<LiveBodyPlan> {
+    let message = messages.iter().find(|m| m.id == promote_id)?;
+    let chunks = message_body_chunks(message, ctx);
+    // 结束回合时用增量收口末块，避免整 body ReplaceAll 抖动。
+    let prev_chunks = prev
+        .live_body
+        .as_ref()
+        .filter(|_| prev.live_id.as_deref() == Some(promote_id));
+    let md = chunks.markdown_render;
+    let patch = plan_tui_body_patch(prev_chunks, &chunks);
+    Some(live_body_plan(promote_id, md, patch))
+}
+
 fn plan_live_patch(
     prev: &TuiMountState,
     messages: &[StoredMessage],
@@ -449,48 +524,11 @@ fn plan_live_patch(
         }
         let next_chunks = message_body_chunks(message, ctx);
         if message.is_tool && prev.live_id.as_deref() == Some(id) {
-            let live = tool_live_overlay(message, ctx.tool_chunks);
-            let fields = tool_row_live_fields(message, ctx.locale, live);
-            let prev_has = prev.live_tool_has_details.unwrap_or(false);
-            // 结构未变：只改 status / one-line 文案，避免 ReplaceAll 抖高。
-            if prev_has == fields.wants_details() {
-                return Some(LiveBodyPlan {
-                    message_id: id.to_string(),
-                    patch: TuiBodyPatch::ToolRow {
-                        status: fields.status,
-                        one_line: fields.one_line,
-                        detail: fields.detail,
-                    },
-                });
-            }
-            return Some(LiveBodyPlan {
-                message_id: id.to_string(),
-                patch: TuiBodyPatch::ReplaceAll {
-                    chunks: next_chunks,
-                },
-            });
+            return Some(plan_live_tool_patch(prev, message, id, next_chunks, ctx));
         }
-        let prev_chunks = prev
-            .live_body
-            .as_ref()
-            .filter(|_| prev.live_id.as_deref() == Some(id));
-        return Some(LiveBodyPlan {
-            message_id: id.to_string(),
-            patch: plan_tui_body_patch(prev_chunks, &next_chunks),
-        });
+        return Some(plan_live_text_patch(prev, id, next_chunks));
     }
-    let pid = promote_id?;
-    let message = messages.iter().find(|m| m.id == pid)?;
-    let chunks = message_body_chunks(message, ctx);
-    // 结束回合时用增量收口末块，避免整 body ReplaceAll 抖动。
-    let prev_chunks = prev
-        .live_body
-        .as_ref()
-        .filter(|_| prev.live_id.as_deref() == Some(pid));
-    Some(LiveBodyPlan {
-        message_id: pid.to_string(),
-        patch: plan_tui_body_patch(prev_chunks, &chunks),
-    })
+    plan_promote_body_patch(prev, messages, promote_id?, ctx)
 }
 
 fn plan_refresh_bodies(
@@ -505,10 +543,8 @@ fn plan_refresh_bodies(
         .filter(|message| promote_id != Some(message.id.as_str()))
         .map(|message| {
             let chunks = message_body_chunks(message, ctx);
-            LiveBodyPlan {
-                message_id: message.id.clone(),
-                patch: TuiBodyPatch::ReplaceAll { chunks },
-            }
+            let md = chunks.markdown_render;
+            live_body_plan(&message.id, md, TuiBodyPatch::ReplaceAll { chunks })
         })
         .collect()
 }

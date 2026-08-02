@@ -138,58 +138,68 @@ test.describe("真实 LLM：工具调用场景", () => {
 
   runTest("工具卡 + 工具结果 + 终答在 UI 中可见", async ({ page }) => {
     await setupRealLLMSession(page, uniqueSid, API_KEY);
-    await ensureTempWorkspace(page);
-    // 工作区切换后会话可能不在新根下：重建空会话
-    await page.evaluate((s: string) => {
-      const body = JSON.stringify({
-        sessions: [
-          {
-            id: s,
-            title: "e2e-real-tool-call",
-            draft: "",
-            messages: [],
-            updated_at: Date.now(),
-            pinned: false,
-            starred: false,
-          },
-        ],
-        active_session_id: s,
+    const wsDir = await ensureTempWorkspace(page);
+    try {
+      // 工作区切换后会话可能不在新根下：重建空会话
+      const putOk = await page.evaluate(async (s: string) => {
+        const body = JSON.stringify({
+          sessions: [
+            {
+              id: s,
+              title: "e2e-real-tool-call",
+              draft: "",
+              messages: [],
+              updated_at: Date.now(),
+              pinned: false,
+              starred: false,
+            },
+          ],
+          active_session_id: s,
+        });
+        const response = await fetch("/user-data/workspaces/current/sessions", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        return response.ok;
+      }, uniqueSid);
+      if (!putOk) {
+        throw new Error("PUT /user-data/workspaces/current/sessions 失败");
+      }
+      await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
+      await page.waitForSelector('[data-testid="chat-composer-input"]', {
+        timeout: 15_000,
       });
-      return fetch("/user-data/workspaces/current/sessions", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body,
-      });
-    }, uniqueSid);
-    await page.reload({ waitUntil: "networkidle", timeout: 20_000 });
-    await page.waitForSelector('[data-testid="chat-composer-input"]', {
-      timeout: 15_000,
-    });
-    // 要求列出文件结构，模型必然会调用 list_tree 工具
-    await sendMessage(page, "列出当前工作区目录结构，用列表工具。");
+      // 要求列出文件结构，模型必然会调用 list_tree 工具
+      await sendMessage(page, "列出当前工作区目录结构，用列表工具。");
 
-    await waitForReady(page, 180_000);
+      await waitForReady(page, 180_000);
 
-    // 状态栏显示就绪
-    await expect(page.locator('[data-testid="status-bar"]')).toContainText(
-      "就绪",
-      { timeout: 5_000 },
-    );
+      // 状态栏显示就绪
+      await expect(page.locator('[data-testid="status-bar"]')).toContainText(
+        "就绪",
+        { timeout: 5_000 },
+      );
 
-    // 默认主列为 TUI：工具回合为 section.chat-tui-turn--tool
-    const toolCards = await page.locator("section.chat-tui-turn--tool").count();
-    expect(toolCards).toBeGreaterThanOrEqual(1);
+      // 默认主列为 TUI：工具回合为 section.chat-tui-turn--tool
+      const toolCards = await page
+        .locator("section.chat-tui-turn--tool")
+        .count();
+      expect(toolCards).toBeGreaterThanOrEqual(1);
 
-    // 终答可见
-    await expect(
-      page.locator('[data-testid="chat-messages-scroller"]'),
-    ).not.toBeEmpty({ timeout: 5_000 });
+      // 终答可见
+      await expect(
+        page.locator('[data-testid="chat-messages-scroller"]'),
+      ).not.toBeEmpty({ timeout: 5_000 });
 
-    // 不应出现错误提示
-    const errorToasts = await page
-      .locator('[data-testid="error-toast"]')
-      .count();
-    expect(errorToasts).toBe(0);
+      // 不应出现错误提示
+      const errorToasts = await page
+        .locator('[data-testid="error-toast"]')
+        .count();
+      expect(errorToasts).toBe(0);
+    } finally {
+      fs.rmSync(wsDir, { recursive: true, force: true });
+    }
   });
 
   runTest("会话消息持久化包含助手终答内容", async ({ page }) => {
