@@ -5,21 +5,17 @@ use std::collections::{HashMap, HashSet};
 use leptos::prelude::*;
 
 use crate::i18n::{self, Locale};
-use crate::message_format::message_text_for_display_ex;
+use crate::message_format::{
+    message_text_for_display_ex, parse_user_skill_slash, render_user_text_with_file_refs,
+};
 use crate::session_search::{normalize_search_query, split_for_find_highlight};
 use crate::storage::{ChatSession, StoredMessage};
 
 use super::super::message_row_actions::spawn_scroll_to_linked_user_message;
 use super::helpers::{tool_bubble_emoji, tool_detail_drawer_body, tool_drawer_has_visible_body};
 
-fn render_highlighted_message_text(
-    msg: &StoredMessage,
-    loc: Locale,
-    apply_filters: bool,
-    query: &str,
-) -> AnyView {
-    let disp = message_text_for_display_ex(msg, loc, apply_filters);
-    let segs = split_for_find_highlight(&disp, query);
+fn render_find_segments(text: &str, query: &str) -> AnyView {
+    let segs = split_for_find_highlight(text, query);
     segs.into_iter()
         .map(|(s, hl)| {
             if hl {
@@ -30,6 +26,45 @@ fn render_highlighted_message_text(
         })
         .collect_view()
         .into_any()
+}
+
+fn render_highlighted_message_text(
+    msg: &StoredMessage,
+    loc: Locale,
+    apply_filters: bool,
+    query: &str,
+) -> AnyView {
+    let disp = message_text_for_display_ex(msg, loc, apply_filters);
+    if msg.role == "user" && !msg.is_tool {
+        if let Some((skill_id, task)) = parse_user_skill_slash(&disp) {
+            let prefix = i18n::msg_skill_invoke_prefix(loc);
+            let suffix = i18n::msg_skill_invoke_suffix(loc);
+            let chip = view! {
+                <span class="msg-skill-invoke" title=format!("/{skill_id}")>
+                    {prefix}
+                    " "
+                    <span class="msg-skill-invoke-id">{skill_id.clone()}</span>
+                    " "
+                    {suffix}
+                </span>
+            };
+            if task.is_empty() {
+                return chip.into_any();
+            }
+            return view! {
+                <>
+                    {chip}
+                    " "
+                    <span class="msg-skill-invoke-task">
+                        {render_user_text_with_file_refs(&task, query)}
+                    </span>
+                </>
+            }
+            .into_any();
+        }
+        return render_user_text_with_file_refs(&disp, query);
+    }
+    render_find_segments(&disp, query)
 }
 
 fn highlighted_body_span(

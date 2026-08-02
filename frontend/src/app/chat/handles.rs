@@ -136,6 +136,8 @@ pub(crate) struct ChatComposerPaneSignals {
     pub composer_mirror_scroll_top: RwSignal<f64>,
     /// 当前已生效工作区路径（`workspace_data.path`；用于 `/` skill 浮层缓存失效）。
     pub workspace_path: Memo<String>,
+    /// 将工作区相对路径插入 composer（双击树 / 拖放到输入区共用）。
+    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 /// 中部聊天列：`messages` 滚动区、时间线、消息列表与输入区所需的信号与闭包。
@@ -154,6 +156,8 @@ pub struct ChatColumnShell {
     pub trigger_stop: Arc<dyn Fn() + Send + Sync>,
     /// 与 [`ChatComposerWires::stream_follow_up`] 同源。
     pub stream_follow_up: RwSignal<super::composer_follow_up::ComposerStreamFollowUp>,
+    /// 工作区相对路径 → composer `file:///`（树双击 / 拖放）。
+    pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
 }
 
 impl ChatColumnShell {
@@ -206,6 +210,7 @@ impl ChatColumnShell {
                 let wd = app.workspace.workspace_data;
                 Memo::new(move |_| wd.get().map(|d| d.path).unwrap_or_default())
             },
+            insert_workspace_file_ref: self.insert_workspace_file_ref,
         }
     }
 }

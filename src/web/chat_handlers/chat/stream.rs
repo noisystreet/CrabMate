@@ -16,7 +16,9 @@ use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 
 use crate::chat_job_queue;
 use crate::types::CommandApprovalDecision;
-use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
+use crate::user_message_file_refs::{
+    expand_at_file_refs_in_user_message, user_message_has_workspace_file_ref_syntax,
+};
 use crate::web::http_types::chat::{ApiError, ChatRequestBody};
 
 use crate::clarification_questionnaire::merge_user_text_with_clarification_answers;
@@ -119,12 +121,12 @@ async fn chat_stream_expand_at_files_and_clarify(
 ) -> Result<String, ChatStreamHttpError> {
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
-    if eff_ws.is_empty() && p.user_trim.contains('@') {
+    if eff_ws.is_empty() && user_message_has_workspace_file_ref_syntax(&p.user_trim) {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError {
                 code: "WORKSPACE_NOT_SET",
-                message: "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
+                message: "未设置工作区：无法在消息中使用 `file:///` / `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
                     .to_string(),
                 reason_code: None,
             }),

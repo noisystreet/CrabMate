@@ -9,6 +9,9 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::Closure;
 
 use super::column_keyboard::ChatColumnHomeEndNav;
+use super::composer_file_drop::{
+    ComposerDropHighlight, composer_accept_drag_over, handle_composer_file_drop,
+};
 use super::composer_input_stack::ComposerInputStack;
 use super::handles::{ChatColumnShell, ChatComposerPaneSignals, ChatMessagesPaneSignals};
 use super::scroll_follow::on_content_resize_if_pinned;
@@ -427,10 +430,38 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
         composer_mirror_html,
         composer_mirror_scroll_top,
         workspace_path,
+        insert_workspace_file_ref,
     } = signals;
 
+    let drop_hl = ComposerDropHighlight::new();
+
     view! {
-        <div class="composer composer-ds">
+        <div
+            class="composer composer-ds"
+            class:composer-drop-active=move || drop_hl.is_active()
+            on:dragenter=move |ev: web_sys::DragEvent| {
+                drop_hl.on_drag_enter(&ev);
+            }
+            on:dragover=move |ev: web_sys::DragEvent| {
+                composer_accept_drag_over(&ev);
+            }
+            on:dragleave=move |ev: web_sys::DragEvent| {
+                drop_hl.on_drag_leave(&ev);
+            }
+            on:drop=move |ev: web_sys::DragEvent| {
+                drop_hl.clear();
+                let root = workspace_path.get_untracked();
+                let insert = insert_workspace_file_ref.get_value();
+                handle_composer_file_drop(
+                    ev,
+                    &root,
+                    insert.as_ref(),
+                    locale,
+                    pending_images,
+                    status_err,
+                );
+            }
+        >
             <div class="composer-inner-ds">
                 <ComposerImageInput
                     locale=locale

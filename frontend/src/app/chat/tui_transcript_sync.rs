@@ -179,6 +179,52 @@ fn message_display_text(
     )
 }
 
+fn file_ref_chip_html(token: &str) -> String {
+    let display = token
+        .strip_prefix('@')
+        .map(|rel| format!("file:///{rel}"))
+        .unwrap_or_else(|| token.to_string());
+    let title_esc = plaintext_to_safe_html(token);
+    let display_esc = plaintext_to_safe_html(&display);
+    format!("<span class=\"msg-file-ref\" title=\"{title_esc}\">{display_esc}</span>")
+}
+
+fn user_text_body_chunks(
+    text: &str,
+    finalize_open_block: bool,
+    markdown_render: bool,
+) -> TuiBodyChunks {
+    use crate::message_format::file_ref_display::{UserTextSeg, split_user_file_ref_segs};
+    let segs = split_user_file_ref_segs(text);
+    if segs.iter().all(|s| matches!(s, UserTextSeg::Plain(_))) {
+        return parse_tui_body_chunks_with(text, finalize_open_block, markdown_render);
+    }
+    let last = segs.len().saturating_sub(1);
+    let mut closed = Vec::new();
+    let mut open_plain = None;
+    for (idx, seg) in segs.into_iter().enumerate() {
+        match seg {
+            UserTextSeg::FileRef(tok) => {
+                closed.push(file_ref_chip_html(&tok));
+            }
+            UserTextSeg::Plain(p) if p.is_empty() => {}
+            UserTextSeg::Plain(p) => {
+                let finalize = finalize_open_block && idx == last;
+                let chunks = parse_tui_body_chunks_with(&p, finalize, markdown_render);
+                closed.extend(chunks.closed);
+                if let Some(o) = chunks.open_plain {
+                    open_plain = Some(o);
+                }
+            }
+        }
+    }
+    TuiBodyChunks {
+        closed,
+        open_plain,
+        markdown_render,
+    }
+}
+
 fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBodyChunks {
     if message.is_tool {
         let live = tool_live_overlay(message, ctx.tool_chunks);
@@ -196,6 +242,44 @@ fn message_body_chunks(message: &StoredMessage, ctx: &TuiRenderCtx<'_>) -> TuiBo
         ctx.locale,
         ctx.apply_filters,
     );
+    if message.role == "user"
+        && let Some((skill_id, task)) = crate::message_format::parse_user_skill_slash(&text)
+    {
+        let prefix = crate::i18n::msg_skill_invoke_prefix(ctx.locale);
+        let suffix = crate::i18n::msg_skill_invoke_suffix(ctx.locale);
+        let id_esc = plaintext_to_safe_html(&skill_id);
+        let title_esc = plaintext_to_safe_html(&format!("/{skill_id}"));
+        let chip = format!(
+            "<span class=\"msg-skill-invoke\" title=\"{title_esc}\">{prefix} <span class=\"msg-skill-invoke-id\">{id_esc}</span> {suffix}</span>"
+        );
+        let mut closed = vec![chip];
+        if !task.is_empty() {
+            closed.push(" ".to_string());
+            let task_chunks = user_text_body_chunks(
+                &task,
+                message_finalize_open_block(message),
+                ctx.markdown_render,
+            );
+            closed.extend(task_chunks.closed);
+            return TuiBodyChunks {
+                closed,
+                open_plain: task_chunks.open_plain,
+                markdown_render: ctx.markdown_render,
+            };
+        }
+        return TuiBodyChunks {
+            closed,
+            open_plain: None,
+            markdown_render: ctx.markdown_render,
+        };
+    }
+    if message.role == "user" {
+        return user_text_body_chunks(
+            &text,
+            message_finalize_open_block(message),
+            ctx.markdown_render,
+        );
+    }
     parse_tui_body_chunks_with(
         &text,
         message_finalize_open_block(message),

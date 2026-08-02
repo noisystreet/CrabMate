@@ -5,10 +5,15 @@
 //! - [`display`]：助手/用户/系统正文管道（内分 `plan_fence` / `thinking_strip` / `message_ex`）
 
 mod display;
+pub(crate) mod file_ref_display;
 mod plain;
+mod skill_slash_display;
 mod stored_message;
 mod tool_card;
 mod tool_envelope;
+
+pub(crate) use file_ref_display::render_user_text_with_file_refs;
+pub(crate) use skill_slash_display::parse_user_skill_slash;
 
 pub(crate) use crabmate_tool_card::strip_ansi_codes;
 #[cfg(test)]

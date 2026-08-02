@@ -1199,6 +1199,63 @@
   word-break: normal;
 }
 
+/* 显式 `/<skill-id>`：内联「使用 xxx skill」 */
+.msg-skill-invoke {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15em;
+  max-width: 100%;
+  padding: 0.12em 0.55em;
+  margin-inline-end: 0.35em;
+  border-radius: 999px;
+  font-size: 0.86em;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  vertical-align: baseline;
+  color: color-mix(in srgb, var(--accent) 88%, var(--text));
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  box-shadow: 0 1px 0 color-mix(in srgb, #fff 10%, transparent) inset;
+}
+
+.msg-skill-invoke-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.msg-skill-invoke-task {
+  display: inline;
+}
+
+.chat-tui-turn--user .msg-skill-invoke {
+  margin-inline-end: 0.4em;
+}
+
+/* 用户气泡 / TUI：file:/// 与 @相对路径 内联引用（展示统一为 file:///） */
+.msg-file-ref {
+  display: inline;
+  padding: 0.05em 0.35em;
+  margin: 0 0.05em;
+  border-radius: var(--radius-input, 4px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  font-weight: 600;
+  line-height: inherit;
+  vertical-align: baseline;
+  color: color-mix(in srgb, var(--accent) 82%, var(--text));
+  background: var(--composer-ws-ref-bg);
+  box-shadow: var(--composer-ws-ref-box-shadow);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  word-break: break-all;
+}
+
+.chat-tui-turn--user .msg-file-ref {
+  margin-inline: 0.08em;
+}
+
 /* 助手气泡：中性灰阶渐变 + 轮廓，避免与用户侧 accent 渐变同色同质 */
 /* 勿用 width:fit-content；且勿 align-self:flex-start（在 .msg-stack 纵 flex 下会按内容收宽 → 流式首字极窄 + anywhere 似竖排） */
 .msg-assistant {

@@ -21,7 +21,9 @@ use crate::clarification_questionnaire::{
 };
 use crate::redact;
 use crate::types::Message;
-use crate::user_message_file_refs::expand_at_file_refs_in_user_message;
+use crate::user_message_file_refs::{
+    expand_at_file_refs_in_user_message, user_message_has_workspace_file_ref_syntax,
+};
 use crate::web::app_state::ConversationTurnSeed;
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 use crate::web::audit;
@@ -52,10 +54,10 @@ pub(crate) async fn prepare_json_chat_enqueue(
 ) -> Result<PreparedJsonChatEnqueue, (StatusCode, Json<ApiError>)> {
     let eff_ws_raw = state.effective_workspace_path().await;
     let eff_ws = eff_ws_raw.trim().to_string();
-    if eff_ws.is_empty() && user_trim.contains('@') {
+    if eff_ws.is_empty() && user_message_has_workspace_file_ref_syntax(user_trim) {
         return Err(bad_request(
             "WORKSPACE_NOT_SET",
-            "未设置工作区：无法在消息中使用 `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。",
+            "未设置工作区：无法在消息中使用 `file:///` / `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。",
         ));
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw.clone());

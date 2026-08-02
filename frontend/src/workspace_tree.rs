@@ -51,6 +51,23 @@ fn try_commit_inline_create_row(
     );
 }
 
+/// 工作区树拖放到 composer 的自定义 MIME（相对路径，POSIX，无前导 `/`）。
+pub(crate) const CRABMATE_WS_REL_MIME: &str = "application/x-crabmate-ws-rel";
+
+/// 文件行 `dragstart`：写入相对路径 MIME 与可读 `text/plain`（`file:///{rel}`）。
+pub(crate) fn workspace_file_row_drag_start(ev: &web_sys::DragEvent, rel: &str) {
+    let Some(dt) = ev.data_transfer() else {
+        return;
+    };
+    let rel = rel.trim().trim_start_matches('/').replace('\\', "/");
+    if rel.is_empty() {
+        return;
+    }
+    dt.set_effect_allowed("copy");
+    let _ = dt.set_data(CRABMATE_WS_REL_MIME, &rel);
+    let _ = dt.set_data("text/plain", &format!("file:///{rel}"));
+}
+
 /// 相对工作区根的路径片段拼接（POSIX 风格，与后端 `path` 查询一致）。
 pub fn workspace_child_rel(parent: &str, name: &str) -> String {
     if parent.is_empty() {
@@ -457,10 +474,15 @@ fn WorkspaceTreeFileRow(
     let rel_dbl = rel.clone();
     let rel_click = rel.clone();
     let rel_ctx = rel.clone();
+    let rel_drag = rel.clone();
     view! {
         <li
             class=row_class
             style=format!("--list-stagger: {stagger}")
+            draggable="true"
+            on:dragstart=move |ev: web_sys::DragEvent| {
+                workspace_file_row_drag_start(&ev, rel_drag.as_str());
+            }
             on:click=move |_| {
                 (on_file_single_click.get_value())(rel_click.clone());
             }
