@@ -2,7 +2,4 @@
 
 pub mod user;
 
-pub use user::{
-    collect_recent_user_messages, extract_effective_user_task,
-    recently_waiting_execute_confirmation,
-};
+pub use user::{extract_effective_user_task, recently_waiting_execute_confirmation};
