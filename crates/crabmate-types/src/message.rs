@@ -600,6 +600,8 @@ pub fn merge_reasoning_details_into_reasoning_content(msg: &mut Message) {
 }
 
 /// 会话切片 → API 消息：**跳过** [`is_chat_ui_separator`] 与 [`is_long_term_memory_injection`]，并按策略剥离 `reasoning_content`（见 [`message_clone_stripping_reasoning_for_api`]）。
+///
+/// 另：普通 **user** 正文中的显式 `/<skill-id>` 前缀在出站时剥离（存盘可保留原文供 UI；见 [`crate::strip_explicit_skill_slash_prefix_for_model`]）。
 pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
     messages: &[Message],
     preserve_reasoning_on_assistant_tool_calls: bool,
@@ -613,13 +615,56 @@ pub fn messages_for_api_stripping_reasoning_skip_ui_separators(
                 && !is_workspace_changelist_injection(m)
         })
         .map(|m| {
-            message_clone_stripping_reasoning_for_api(
+            let mut out = message_clone_stripping_reasoning_for_api(
                 m,
                 preserve_reasoning_on_assistant_tool_calls,
                 preserve_deepseek_thinking_reasoning_roundtrip,
-            )
+            );
+            strip_user_skill_slash_in_message_for_api(&mut out);
+            out
         })
         .collect()
+}
+
+/// 出站用：剥离普通 user 消息上的 `/<skill-id>`（服务端注入 user 不动）。
+fn strip_user_skill_slash_in_message_for_api(m: &mut Message) {
+    if !m.role.trim().eq_ignore_ascii_case("user") {
+        return;
+    }
+    if crate::server_injected_user::is_server_injected_user_message(m) {
+        return;
+    }
+    match m.content.as_mut() {
+        Some(MessageContent::Text(s)) => {
+            let stripped = crate::strip_explicit_skill_slash_prefix_for_model(s);
+            if stripped != *s {
+                *s = stripped;
+            }
+        }
+        Some(MessageContent::Parts(parts)) => {
+            for part in parts.iter_mut() {
+                let Some(obj) = part.as_object_mut() else {
+                    continue;
+                };
+                let is_text = obj
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|t| t == "text");
+                if !is_text {
+                    continue;
+                }
+                let Some(serde_json::Value::String(text)) = obj.get_mut("text") else {
+                    continue;
+                };
+                let stripped = crate::strip_explicit_skill_slash_prefix_for_model(text);
+                if stripped != *text {
+                    *text = stripped;
+                }
+                break;
+            }
+        }
+        None => {}
+    }
 }
 
 #[inline]

@@ -10,32 +10,7 @@ const TURN_ERR_TAG: &str = "__crabmate_skill_slash__";
 
 /// REPL / Web / TUI 内建斜杠命令词头（小写、无 `/`），不可当作 skill id。
 pub fn is_reserved_slash_head(head: &str) -> bool {
-    matches!(
-        head.to_ascii_lowercase().as_str(),
-        "?" | "agent"
-            | "api-base"
-            | "api-key"
-            | "apikey"
-            | "apibase"
-            | "branch"
-            | "cd"
-            | "clear"
-            | "config"
-            | "conv"
-            | "doctor"
-            | "export"
-            | "help"
-            | "mcp"
-            | "model"
-            | "models"
-            | "probe"
-            | "save-session"
-            | "skill"
-            | "skills"
-            | "tools"
-            | "version"
-            | "workspace"
-    )
+    crabmate_types::is_reserved_slash_head(head)
 }
 
 /// 可供 `/<id>` 调用的标识：优先 frontmatter `name`，否则路径 stem

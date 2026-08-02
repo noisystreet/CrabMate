@@ -363,6 +363,14 @@
   white-space: nowrap;
 }
 
+.workspace-list li.file[draggable="true"] {
+  cursor: grab;
+}
+
+.workspace-list li.file[draggable="true"]:active {
+  cursor: grabbing;
+}
+
 .workspace-tree-inline-create {
   padding: 4px 8px;
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));

@@ -32,6 +32,7 @@ pub fn bootstrap_app_shell() -> AppShellCtx {
             run_send_message: wiring.chat_wires.run_send_message.clone(),
             trigger_stop: Arc::clone(&wiring.chat_wires.cancel_stream),
             stream_follow_up: wiring.chat_wires.stream_follow_up,
+            insert_workspace_file_ref: wiring.insert_workspace_file_ref,
         },
     }
 }

@@ -5,6 +5,7 @@
 mod column;
 mod column_keyboard;
 mod composer;
+pub(crate) mod composer_file_drop;
 mod composer_follow_up;
 mod composer_input_stack;
 mod composer_mirror;

@@ -1,4 +1,4 @@
-//! Workspace 侧栏：拉取目录树与在切换到 Workspace 视图时自动刷新；以及树双击插入 **`@路径`** 到输入框。
+//! Workspace 侧栏：拉取目录树与在切换到 Workspace 视图时自动刷新；以及树双击 / 拖放插入 **`file:///`** 到输入框。
 
 use std::sync::Arc;
 
@@ -58,7 +58,7 @@ pub(super) fn make_refresh_workspace_after_mutation(
     })
 }
 
-/// 工作区树双击文件时，将 **`@{rel}`** 插入 composer 草稿并聚焦输入框。
+/// 工作区树双击文件时，将 **`file:///{rel}`** 插入 composer 草稿并聚焦输入框。
 pub(super) fn make_insert_workspace_path_into_composer(
     draft: RwSignal<String>,
     status_err: RwSignal<Option<String>>,
@@ -72,7 +72,12 @@ pub(super) fn make_insert_workspace_path_into_composer(
             ));
             return;
         }
-        let token = format!("@{rel}");
+        let rel = rel.trim().trim_start_matches('/').replace('\\', "/");
+        if rel.is_empty() {
+            return;
+        }
+        // 与镜像高亮 / 服务端 `user_message_file_refs` 约定：file:/// + 工作区相对路径（无前导 /）。
+        let token = format!("file:///{rel}");
         let mut guard = draft.get_untracked();
         let needs_space = guard
             .chars()

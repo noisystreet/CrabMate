@@ -65,6 +65,7 @@ mod message_lineage;
 mod real_user_message;
 pub mod server_injected_user;
 pub mod session_mode;
+mod skill_slash_strip;
 mod tiktoken_snapshot;
 
 pub mod path_utils;
@@ -81,6 +82,7 @@ pub use server_injected_user::{
     is_server_injected_user_message, strip_orchestration_injected_users_for_conversation_store,
 };
 pub use session_mode::{SessionMode, parse_optional_session_mode, parse_session_mode};
+pub use skill_slash_strip::{is_reserved_slash_head, strip_explicit_skill_slash_prefix_for_model};
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
 // 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
 #[allow(unused_imports)]
@@ -314,6 +316,29 @@ mod api_messages_strip_tests {
         };
         let out = message_clone_stripping_reasoning_for_api(&asst, false, true);
         assert_eq!(out.reasoning_content.as_deref(), Some("chain"));
+    }
+
+    #[test]
+    fn api_strip_removes_explicit_skill_slash_from_user() {
+        let msgs = vec![
+            Message::system_only("sys"),
+            Message::user_only("/rust-style 分析 crate"),
+            Message::user_only("普通问题"),
+        ];
+        let out = messages_for_api_stripping_reasoning_skip_ui_separators(&msgs, false, false);
+        let users: Vec<_> = out
+            .iter()
+            .filter(|m| m.role == "user")
+            .map(|m| message_content_plain_for_chat_display(&m.content))
+            .collect();
+        assert_eq!(
+            users,
+            vec!["分析 crate".to_string(), "普通问题".to_string()]
+        );
+        // 存盘侧原文不受影响
+        assert!(
+            message_content_plain_for_chat_display(&msgs[1].content).starts_with("/rust-style")
+        );
     }
 }
 

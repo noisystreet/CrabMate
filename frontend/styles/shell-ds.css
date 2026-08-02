@@ -863,6 +863,18 @@
   min-width: 0;
 }
 
+/* 从工作区树（或可解析路径）拖放到输入区时的高亮 */
+.composer.composer-ds.composer-drop-active {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, var(--border));
+  outline-offset: 2px;
+  border-radius: var(--radius-panel, 10px);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
+
+.composer.composer-ds.composer-drop-active .composer-input-stack {
+  box-shadow: var(--composer-ws-ref-box-shadow);
+}
+
 .composer-attach-label {
   display: inline-flex;
   align-items: center;

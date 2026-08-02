@@ -256,14 +256,18 @@ pub(super) async fn build_messages_for_turn(
 ) -> Result<ConversationTurnSeed, String> {
     let root_str = state.effective_workspace_path().await;
     let root = std::path::PathBuf::from(root_str);
+    // 存盘 / 水合 / UI：`last_user` 保留含 `/<skill-id>` 的原文（及上游已展开的 file 附录）。
+    // 送模型：`prepare_turn_user_and_forced_skill` 的剥离结果只用于本轮 system（forced skill / 选用）；
+    // 出站 `messages_for_api_*` 会对普通 user 再剥 `/<skill-id>`，避免与 L5 附录重复，且多轮历史亦不把斜杠带回供应商。
+    let raw_user_for_store = user_msg.to_string();
     let (user_msg, forced_skill) = {
         let cfg = state.cfg.read().await;
         prepare_turn_user_and_forced_skill(&cfg, root.as_path(), user_msg)?
     };
     let last_user = if image_urls.is_empty() {
-        Message::user_only(user_msg.clone())
+        Message::user_only(raw_user_for_store)
     } else {
-        message_user_with_images(&user_msg, image_urls)
+        message_user_with_images(&raw_user_for_store, image_urls)
     };
     let mode_opt = crate::types::parse_optional_session_mode(session_mode)?;
     if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
