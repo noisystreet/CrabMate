@@ -35,6 +35,8 @@ pub struct UserPrefsDto {
     #[serde(default)]
     pub session_chat_font: Option<String>,
     #[serde(default)]
+    pub session_chat_font_size: Option<u32>,
+    #[serde(default)]
     pub ide_editor_font: Option<String>,
     #[serde(default)]
     pub ide_editor_font_size: Option<u32>,

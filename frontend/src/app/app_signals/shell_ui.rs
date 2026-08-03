@@ -35,6 +35,8 @@ pub struct ShellUISignals {
     pub session_ui_font: RwSignal<String>,
     /// 聊天列消息与输入框正文字体 slug（`code`/`pre` 仍用 `--font-mono`）。
     pub session_chat_font: RwSignal<String>,
+    /// 聊天列消息与输入框正文字号（px）。
+    pub session_chat_font_size: RwSignal<f64>,
 }
 
 impl ShellUISignals {
@@ -59,6 +61,7 @@ impl ShellUISignals {
             ide_sync_disk_nonce: RwSignal::new(0),
             session_ui_font: RwSignal::new(s.session_ui_font),
             session_chat_font: RwSignal::new(s.session_chat_font),
+            session_chat_font_size: RwSignal::new(s.session_chat_font_size),
         }
     }
 }

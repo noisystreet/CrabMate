@@ -95,7 +95,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 | `editor_layout_mode` | `crabmate-editor-layout-mode` | |
 | `timeline_panel_expanded` | `crabmate-timeline-panel-expanded` | |
 | `sidebar_rail_collapsed` | `crabmate-sidebar-rail-collapsed` | |
-| `session_ui_font` / `session_chat_font` | `crabmate-session-*-font` | |
+| `session_ui_font` / `session_chat_font` / `session_chat_font_size` | `crabmate-session-*-font`（字号无历史键） | 会话模式 UI/聊天气泡字体族与聊天区字号（px） |
 | `ide_editor_*` | `crabmate-ide-editor-*` | |
 
 **不含**：`api_key`、完整 `web_api_bearer_token`（见 §4.4）。

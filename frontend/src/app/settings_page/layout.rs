@@ -122,6 +122,7 @@ pub(super) struct SettingsPagePanelDrafts {
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub session_ui_font: RwSignal<String>,
     pub session_chat_font: RwSignal<String>,
+    pub session_chat_font_size: RwSignal<f64>,
 }
 
 /// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈 + 会话存储切换句柄（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
@@ -174,6 +175,7 @@ pub(super) fn SettingsPageContentPanels(
         saved_model_presets,
         session_ui_font,
         session_chat_font,
+        session_chat_font_size,
     } = drafts;
 
     let sync_saved_presets_line = StoredValue::new(sync_saved_presets_baseline);
@@ -267,8 +269,10 @@ pub(super) fn SettingsPageContentPanels(
                     typography=SettingsSessionTypographyBundle {
                         session_ui_font,
                         session_chat_font,
+                        session_chat_font_size,
                         ui_select_id: "settings-page-session-ui-font",
                         chat_select_id: "settings-page-session-chat-font",
+                        chat_size_value_id: "settings-page-session-chat-font-size",
                     }
                 />
             </Show>

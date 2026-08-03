@@ -30,6 +30,7 @@ pub struct SettingsPageFormSignals {
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub session_ui_font: RwSignal<String>,
     pub session_chat_font: RwSignal<String>,
+    pub session_chat_font_size: RwSignal<f64>,
 }
 
 impl SettingsPageFormSignals {
@@ -64,6 +65,7 @@ impl SettingsPageFormSignals {
             saved_model_presets: app.llm_settings.saved_model_presets,
             session_ui_font: app.shell_ui.session_ui_font,
             session_chat_font: app.shell_ui.session_chat_font,
+            session_chat_font_size: app.shell_ui.session_chat_font_size,
         }
     }
 }

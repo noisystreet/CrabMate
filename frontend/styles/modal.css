@@ -463,6 +463,26 @@
   box-shadow: 0 0 0 var(--focus-ring-width) color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
+.settings-font-size-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.settings-font-size-stepper-btn {
+  min-width: 2rem;
+  justify-content: center;
+}
+
+.settings-font-size-stepper-value {
+  display: inline-block;
+  min-width: 3.75rem;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
 .settings-actions-row {
   display: flex;
   flex-wrap: wrap;

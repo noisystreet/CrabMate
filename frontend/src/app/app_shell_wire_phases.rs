@@ -144,6 +144,7 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_sync_session_typography_to_storage_and_dom(
         app.shell_ui.session_ui_font,
         app.shell_ui.session_chat_font,
+        app.shell_ui.session_chat_font_size,
     );
     wire_sync_tauri_shell_dom(app.shell_ui.editor_layout_mode);
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {

@@ -29,6 +29,7 @@ pub(crate) struct ShellUiInitialSnapshot {
     pub editor_layout_mode: bool,
     pub session_ui_font: String,
     pub session_chat_font: String,
+    pub session_chat_font_size: f64,
 }
 
 #[must_use]
@@ -43,6 +44,7 @@ pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
         editor_layout_mode: false,
         session_ui_font: "default".to_string(),
         session_chat_font: "default".to_string(),
+        session_chat_font_size: crate::session_typography_prefs::DEFAULT_SESSION_CHAT_FONT_SIZE,
     }
 }
 
@@ -54,14 +56,21 @@ pub(crate) fn apply_loaded_prefs_to_dom(app: &AppSignals) {
     persist_session_typography_to_storage_and_dom(
         &app.shell_ui.session_ui_font.get_untracked(),
         &app.shell_ui.session_chat_font.get_untracked(),
+        app.shell_ui.session_chat_font_size.get_untracked(),
     );
     apply_shell_layout_dom_flags(app.shell_ui.editor_layout_mode.get_untracked());
 }
 
-/// 会话模式界面 / 聊天列字体：在 `<html>` 上维护 `--crabmate-ui-font-family` / `--crabmate-chat-font-family`。
-pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_slug: &str) {
+/// 会话模式界面 / 聊天列字体与字号：在 `<html>` 上维护 `--crabmate-ui-font-family` /
+/// `--crabmate-chat-font-family` / `--crabmate-chat-font-size`。
+pub(crate) fn persist_session_typography_to_storage_and_dom(
+    ui_slug: &str,
+    chat_slug: &str,
+    chat_font_size_px: f64,
+) {
     let ui = crate::session_typography_prefs::normalize_session_ui_font(ui_slug);
     let chat = crate::session_typography_prefs::normalize_session_chat_font(chat_slug);
+    let size = crate::session_typography_prefs::clamp_session_chat_font_size(chat_font_size_px);
     let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
         return;
     };
@@ -88,6 +97,8 @@ pub(crate) fn persist_session_typography_to_storage_and_dom(ui_slug: &str, chat_
             let _ = style.remove_property("--crabmate-chat-font-family");
         }
     }
+    let size_css = format!("{size}px");
+    let _ = style.set_property("--crabmate-chat-font-size", &size_css);
 }
 
 /// 设置 `data-theme` 为**解析后的 CSS slug**（`system` → `dark`/`light`；持久化由 [`crate::user_prefs_sync`] 负责）。
