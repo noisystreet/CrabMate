@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use rmcp::ServerHandler;
 use rmcp::model::{
-    CallToolRequestParams, CallToolResult, ContentBlock, ErrorData as McpError, Implementation,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData as McpError,
+    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
 };
 use rmcp::service::{RequestContext, RoleServer, serve_server};
 use serde_json::Value;
@@ -128,7 +128,7 @@ impl ServerHandler for CrabmateMcpServer {
         &self,
         request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl std::future::Future<Output = Result<CallToolResult, McpError>>
+    ) -> impl std::future::Future<Output = Result<CallToolResponse, McpError>>
     + rmcp::service::MaybeSendFuture
     + '_ {
         let name = request.name.to_string();
@@ -149,8 +149,8 @@ impl ServerHandler for CrabmateMcpServer {
             };
 
             match (callbacks.run_tool)(&name, &args_json, &work_dir, &cfg) {
-                Ok(output) => Ok(CallToolResult::success(vec![ContentBlock::text(output)])),
-                Err(msg) => Ok(CallToolResult::error(vec![ContentBlock::text(msg)])),
+                Ok(output) => Ok(CallToolResult::success(vec![ContentBlock::text(output)]).into()),
+                Err(msg) => Ok(CallToolResult::error(vec![ContentBlock::text(msg)]).into()),
             }
         }
     }
