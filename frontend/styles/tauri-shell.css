@@ -33,19 +33,73 @@ html[data-tauri-shell] .app-root.app-shell-ds.app-root--tauri-topbar {
   background: var(--surface-hover, rgba(0, 0, 0, 0.06));
 }
 
-.tauri-win-ctrl-close:hover {
-  background: #c42b1c;
-  color: #fff;
+.tauri-win-ctrl-trigger-open {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
 }
 
 .tauri-win-ctrl-glyph {
   font-size: 0.85rem;
   line-height: 1;
   pointer-events: none;
+  letter-spacing: 0.05em;
 }
 
-.tauri-win-ctrl-close .tauri-win-ctrl-glyph {
-  font-size: 1rem;
+/* 下拉子菜单：遮罩 + 菜单（Portal 挂到 body，position:fixed 锚定触发按钮） */
+.tauri-win-ctrl-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+}
+
+.tauri-win-ctrl-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.12));
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  color: var(--text, inherit);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+  z-index: 201;
+}
+
+.tauri-win-ctrl-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.tauri-win-ctrl-menu-item:hover {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.tauri-win-ctrl-menu-item--close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.tauri-win-ctrl-menu-glyph {
+  font-size: 0.9rem;
+  line-height: 1;
+  width: 1rem;
+  text-align: center;
+  flex-shrink: 0;
+  pointer-events: none;
 }
 
 /* 顶栏共用：Tauri 无边框窗口拖拽 */
@@ -113,16 +167,22 @@ html[data-tauri-shell] .sidebar-rail-reveal-btn {
   top: calc(var(--shell-topbar-h) + (100vh - var(--shell-topbar-h)) / 2);
 }
 
-/* 底栏角色上拉菜单：勿被窗口拖拽区吞点击 */
+/* 底栏角色/模式上拉菜单：勿被窗口拖拽区吞点击 */
 html[data-tauri-shell] .status-chip-role,
 html[data-tauri-shell] .status-agent-role-wrap,
 html[data-tauri-shell] .status-agent-role-trigger,
 html[data-tauri-shell] .status-agent-role-menu,
-html[data-tauri-shell] .status-agent-role-backdrop {
+html[data-tauri-shell] .status-agent-role-backdrop,
+html[data-tauri-shell] .status-mode-wrap,
+html[data-tauri-shell] .status-mode-trigger,
+html[data-tauri-shell] .status-mode-menu,
+html[data-tauri-shell] .status-mode-backdrop {
   -webkit-app-region: no-drag;
 }
 
 html[data-tauri-shell] .status-chips:has(.status-agent-role-trigger-open),
-html[data-tauri-shell] .status-chips.status-chips--role-menu-open {
+html[data-tauri-shell] .status-chips.status-chips--role-menu-open,
+html[data-tauri-shell] .status-chips:has(.status-mode-trigger-open),
+html[data-tauri-shell] .status-chips.status-chips--mode-menu-open {
   overflow-y: visible;
 }
