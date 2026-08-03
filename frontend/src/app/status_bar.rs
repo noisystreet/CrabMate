@@ -255,6 +255,7 @@ fn StatusBarChipsLoaded(
     session_mode_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
     role_menu_open: RwSignal<bool>,
+    mode_menu_open: RwSignal<bool>,
 ) -> impl IntoView {
     let chat = expect_chat_shell_ctx().chat;
     view! {
@@ -317,6 +318,7 @@ fn StatusBarChipsLoaded(
                     chat,
                     selected_session_mode,
                     session_mode_user_override,
+                    menu_open: mode_menu_open,
                 } />
             </span>
             <StatusBarContextChip
@@ -345,10 +347,12 @@ fn StatusBarChipsRow(
         locale,
     } = chips;
     let role_menu_open = RwSignal::new(false);
+    let mode_menu_open = RwSignal::new(false);
     view! {
         <div
             class="status-chips"
             class:status-chips--role-menu-open=move || role_menu_open.get()
+            class:status-chips--mode-menu-open=move || mode_menu_open.get()
         >
             {move || {
                 let phase = st.status_fetch_phase.get();
@@ -376,6 +380,7 @@ fn StatusBarChipsRow(
                             session_mode_user_override=session_mode_user_override
                             locale=locale
                             role_menu_open=role_menu_open
+                            mode_menu_open=mode_menu_open
                         />
                     }
                     .into_any()
