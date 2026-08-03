@@ -3,9 +3,10 @@
 use crate::tools::tool_json_schema::tool_parameters_schema_value;
 use crate::tools::tool_param_types::{
     GhApiArgs, GhIssueCreateArgs, GhIssueListArgs, GhIssueViewArgs, GhPrBodyDraftArgs,
-    GhPrChecksArgs, GhPrCommentArgs, GhPrCreateArgs, GhPrDiffArgs, GhPrListArgs, GhPrMergeArgs,
-    GhPrReviewArgs, GhPrViewArgs, GhReleaseCreateArgs, GhReleaseListArgs, GhReleaseViewArgs,
-    GhRunFailureSummaryArgs, GhRunListArgs, GhRunRerunArgs, GhRunViewArgs, GhSearchArgs,
+    GhPrChecksArgs, GhPrCommentArgs, GhPrCreateArgs, GhPrDiffArgs, GhPrEditArgs, GhPrListArgs,
+    GhPrMergeArgs, GhPrReviewArgs, GhPrViewArgs, GhReleaseCreateArgs, GhReleaseListArgs,
+    GhReleaseViewArgs, GhRunFailureSummaryArgs, GhRunListArgs, GhRunRerunArgs, GhRunViewArgs,
+    GhSearchArgs,
 };
 
 pub(in crate::tools) fn params_gh_pr_list() -> serde_json::Value {
@@ -31,9 +32,12 @@ pub(in crate::tools) fn params_gh_pr_merge() -> serde_json::Value {
 pub(in crate::tools) fn params_gh_pr_review() -> serde_json::Value {
     tool_parameters_schema_value::<GhPrReviewArgs>()
 }
-
 pub(in crate::tools) fn params_gh_pr_comment() -> serde_json::Value {
     tool_parameters_schema_value::<GhPrCommentArgs>()
+}
+
+pub(in crate::tools) fn params_gh_pr_edit() -> serde_json::Value {
+    tool_parameters_schema_value::<GhPrEditArgs>()
 }
 
 pub(in crate::tools) fn params_gh_pr_body_draft() -> serde_json::Value {

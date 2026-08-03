@@ -2,7 +2,10 @@
 
 use std::path::Path;
 
-use super::common::{gh_allowed, run_gh_vec, validate_extra_args, validate_pr_body, validate_repo};
+use super::common::{
+    gh_allowed, run_gh_vec, validate_extra_args, validate_pr_body, validate_pr_ref_token,
+    validate_pr_title, validate_repo, write_workspace_temp_markdown,
+};
 
 fn parse_optional_pr_number(v: &serde_json::Value) -> Result<Option<String>, String> {
     match v.get("number") {
@@ -173,4 +176,244 @@ pub fn gh_pr_comment(
         return e;
     }
     run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
+}
+
+/// `gh pr edit`（写远端：编辑 PR 标题 / 正文 / 标签 / reviewer / assignee / 基线分支 / 草稿状态）。
+pub fn gh_pr_edit(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    if let Err(e) = gh_allowed(allowed_commands) {
+        return e;
+    }
+    let v = match crate::tools::parse_args_json(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
+
+    // 若提供 body，先写入工作区内临时文件（与 `gh_pr_create` 一致），
+    // 再统一构建 argv，使 body 可与标签 / base / draft 等编辑项组合，避免提前返回丢弃其余编辑项。
+    let mut body_opt: Option<(tempfile::TempDir, String)> = None;
+    if let Some(b) = v.get("body").and_then(|x| x.as_str()) {
+        if let Err(e) = validate_pr_body(b) {
+            return e;
+        }
+        let (dir, body_path) = match write_workspace_temp_markdown(
+            working_dir,
+            "crabmate_pr_body.md",
+            b.as_bytes(),
+            "PR 正文",
+        ) {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
+        body_opt = Some((dir, body_path.clone()));
+    }
+    let argv = match build_gh_pr_edit_argv(&v, body_opt.as_ref().map(|(_, p)| p.clone())) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    if let Some((dir, _)) = body_opt {
+        drop(dir);
+    }
+    out
+}
+
+/// 构建 `gh pr edit` 的 argv。`body_path_opt` 为调用方已写入的临时正文文件路径
+/// （`None` 表示本次不编辑正文）；校验所有编辑项至少提供其一。
+fn build_gh_pr_edit_argv(
+    v: &serde_json::Value,
+    body_path_opt: Option<String>,
+) -> Result<Vec<String>, String> {
+    let mut argv = vec!["pr".into(), "edit".into()];
+    if let Ok(Some(num)) = parse_optional_pr_number(v) {
+        argv.push(num);
+    }
+    push_repo(v, &mut argv)?;
+
+    let mut has_edit = false;
+    has_edit |= push_scalar_edits(v, body_path_opt, &mut argv)?;
+    has_edit |= push_multi_edit_items(v, &mut argv)?;
+    if !has_edit {
+        return Err(
+            "错误：gh pr edit 至少需要 title / body / add_label / remove_label / add_reviewer / remove_reviewer / add_assignee / remove_assignee / base / draft / undraft 之一"
+                .to_string(),
+        );
+    }
+    push_extra(v, &mut argv)?;
+    Ok(argv)
+}
+
+/// 处理标量编辑项：title、body、base、draft/undraft。返回是否产生了任何编辑。
+fn push_scalar_edits(
+    v: &serde_json::Value,
+    body_path_opt: Option<String>,
+    argv: &mut Vec<String>,
+) -> Result<bool, String> {
+    let mut has_edit = false;
+    if let Some(t) = v.get("title").and_then(|x| x.as_str()) {
+        validate_pr_title(t)?;
+        let tt = t.trim();
+        if !tt.is_empty() {
+            argv.push("--title".into());
+            argv.push(tt.to_string());
+            has_edit = true;
+        }
+    }
+    if let Some(path) = body_path_opt {
+        argv.push("--body-file".into());
+        argv.push(path);
+        has_edit = true;
+    }
+    if let Some(b) = v.get("base").and_then(|x| x.as_str()) {
+        validate_pr_ref_token(b)?;
+        let bb = b.trim();
+        if !bb.is_empty() {
+            argv.push("--base".into());
+            argv.push(bb.to_string());
+            has_edit = true;
+        }
+    }
+    if v.get("draft").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--draft".into());
+        has_edit = true;
+    }
+    if v.get("undraft").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--undraft".into());
+        has_edit = true;
+    }
+    Ok(has_edit)
+}
+
+/// 处理可重复的标签 / reviewer / assignee 编辑项。返回是否产生了任何编辑。
+fn push_multi_edit_items(v: &serde_json::Value, argv: &mut Vec<String>) -> Result<bool, String> {
+    let mut has_edit = false;
+    for (key, flag) in [
+        ("add_label", "--add-label"),
+        ("remove_label", "--remove-label"),
+        ("add_reviewer", "--add-reviewer"),
+        ("remove_reviewer", "--remove-reviewer"),
+        ("add_assignee", "--add-assignee"),
+        ("remove_assignee", "--remove-assignee"),
+    ] {
+        if let Some(arr) = v.get(key).and_then(|x| x.as_array()) {
+            for item in arr.iter().filter_map(|x| x.as_str()) {
+                let t = item.trim();
+                if t.is_empty() {
+                    continue;
+                }
+                if !is_safe_token_item(t) {
+                    return Err(format!(
+                        "错误：{key} 中含非法值 {t:?}（不得含 \"..\" 或以 \"/\" 开头）"
+                    ));
+                }
+                argv.push(flag.into());
+                argv.push(t.to_string());
+                has_edit = true;
+            }
+        }
+    }
+    Ok(has_edit)
+}
+
+/// 校验 `gh pr edit` 多值参数项（标签 / reviewer / assignee 等）：不允许 `..` 或以 `/` 开头。
+fn is_safe_token_item(s: &str) -> bool {
+    !s.contains("..") && !s.starts_with('/')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{build_gh_pr_edit_argv, is_safe_token_item};
+
+    fn allowed() -> Vec<String> {
+        vec!["gh".into()]
+    }
+
+    #[test]
+    fn gh_pr_edit_requires_gh_in_allowlist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = super::gh_pr_edit(r#"{"title":"t"}"#, 4096, &[], dir.path());
+        assert!(out.contains("未包含 gh"), "{}", out);
+    }
+
+    #[test]
+    fn gh_pr_edit_invokes_gh_or_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = super::gh_pr_edit(r#"{"title":"t"}"#, 8192, &allowed(), dir.path());
+        assert!(
+            out.contains("退出码") || out.contains("错误"),
+            "未预期的输出：{}",
+            out
+        );
+    }
+
+    #[test]
+    fn build_argv_title_and_body() {
+        let v = serde_json::json!({"title": " 新标题 ", "body": "正文"});
+        let argv = build_gh_pr_edit_argv(&v, Some("tmp/body.md".into())).expect("ok");
+        assert_eq!(argv[0], "pr");
+        assert_eq!(argv[1], "edit");
+        assert!(argv.iter().any(|a| a == "--title"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "新标题"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "--body-file"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "tmp/body.md"), "{argv:?}");
+    }
+
+    #[test]
+    fn build_argv_body_combines_with_labels_and_base() {
+        let v = serde_json::json!({
+            "body": "正文",
+            "add_label": ["bug", "enh"],
+            "base": "main",
+            "draft": true
+        });
+        let argv = build_gh_pr_edit_argv(&v, Some("tmp/body.md".into())).expect("ok");
+        assert!(argv.iter().any(|a| a == "--body-file"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "--add-label"), "{argv:?}");
+        assert!(argv.iter().any(|a| a == "bug"), "{argv:?}");
+        assert!(
+            argv.iter().any(|a| a == "--base") && argv.iter().any(|a| a == "main"),
+            "{argv:?}"
+        );
+        assert!(argv.iter().any(|a| a == "--draft"), "{argv:?}");
+    }
+
+    #[test]
+    fn build_argv_rejects_no_edit() {
+        let v = serde_json::json!({});
+        let err = build_gh_pr_edit_argv(&v, None).expect_err("should err");
+        assert!(err.contains("至少需要"), "{}", err);
+    }
+
+    #[test]
+    fn build_argv_rejects_unsafe_label() {
+        let v = serde_json::json!({"add_label": ["../x"]});
+        let err = build_gh_pr_edit_argv(&v, None).expect_err("should err");
+        assert!(err.contains("非法值"), "{}", err);
+    }
+
+    #[test]
+    fn build_argv_rejects_bad_title() {
+        let v = serde_json::json!({"title": "a\nb"});
+        let err = build_gh_pr_edit_argv(&v, None).expect_err("should err");
+        assert!(err.contains("title"), "{}", err);
+    }
+
+    #[test]
+    fn build_argv_rejects_bad_base() {
+        let v = serde_json::json!({"base": "main..x"});
+        let err = build_gh_pr_edit_argv(&v, None).expect_err("should err");
+        assert!(err.contains("base"), "{}", err);
+    }
+
+    #[test]
+    fn is_safe_token_item_cases() {
+        assert!(!is_safe_token_item("../x"));
+        assert!(!is_safe_token_item("/abs"));
+        assert!(is_safe_token_item("bug"));
+        assert!(is_safe_token_item("feat/x"));
+    }
 }
