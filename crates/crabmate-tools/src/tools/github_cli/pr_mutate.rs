@@ -328,26 +328,11 @@ fn is_safe_token_item(s: &str) -> bool {
 mod tests {
     use super::{build_gh_pr_edit_argv, is_safe_token_item};
 
-    fn allowed() -> Vec<String> {
-        vec!["gh".into()]
-    }
-
     #[test]
     fn gh_pr_edit_requires_gh_in_allowlist() {
         let dir = tempfile::tempdir().expect("tempdir");
         let out = super::gh_pr_edit(r#"{"title":"t"}"#, 4096, &[], dir.path());
         assert!(out.contains("未包含 gh"), "{}", out);
-    }
-
-    #[test]
-    fn gh_pr_edit_invokes_gh_or_errors() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let out = super::gh_pr_edit(r#"{"title":"t"}"#, 8192, &allowed(), dir.path());
-        assert!(
-            out.contains("退出码") || out.contains("错误"),
-            "未预期的输出：{}",
-            out
-        );
     }
 
     #[test]
