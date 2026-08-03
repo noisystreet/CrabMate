@@ -50,6 +50,9 @@ pub struct UserPrefs {
     pub session_ui_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session_chat_font: Option<String>,
+    /// 聊天气泡与输入框正文字号（px）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_chat_font_size: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ide_editor_font: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

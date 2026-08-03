@@ -357,18 +357,18 @@ pub fn settings_block_session_storage(l: Locale) -> &'static str {
 
 pub fn settings_block_session_typography(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "界面与聊天字体",
-        Locale::En => "UI & chat fonts",
+        Locale::ZhHans => "界面与聊天排版",
+        Locale::En => "UI & chat typography",
     }
 }
 
 pub fn settings_session_typography_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "以下选项仅存于本机浏览器并立即生效；代码块与行内代码仍使用主题的等宽字体。"
+            "以下选项存于本机用户偏好并立即生效；代码块与行内代码仍使用主题的等宽字体。"
         }
         Locale::En => {
-            "These choices are stored in this browser only and apply immediately; code blocks still use the theme monospace stack."
+            "These choices are stored in local user prefs and apply immediately; code blocks still use the theme monospace stack."
         }
     }
 }
@@ -384,6 +384,27 @@ pub fn settings_session_chat_font_label(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "聊天消息与输入框字体",
         Locale::En => "Chat message & composer font",
+    }
+}
+
+pub fn settings_session_chat_font_size_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "聊天区字号",
+        Locale::En => "Chat font size",
+    }
+}
+
+pub fn settings_session_chat_font_size_decrease(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "减小聊天区字号",
+        Locale::En => "Decrease chat font size",
+    }
+}
+
+pub fn settings_session_chat_font_size_increase(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "增大聊天区字号",
+        Locale::En => "Increase chat font size",
     }
 }
 
@@ -425,10 +446,10 @@ pub fn settings_section_session_title(l: Locale) -> &'static str {
 pub fn settings_section_session_desc(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "控制当前浏览器连接到的服务端进程是否把 Web 会话写入 SQLite（仅本进程；重启 serve 后仍以配置文件为准）。界面与聊天字体可在下方单独设置，仅存本机并即时生效。"
+            "控制当前浏览器连接到的服务端进程是否把 Web 会话写入 SQLite（仅本进程；重启 serve 后仍以配置文件为准）。界面与聊天字体、聊天区字号可在下方单独设置，存本机偏好并即时生效。"
         }
         Locale::En => {
-            "Control whether this server process persists Web chat to SQLite (this process only; restart serve still follows config files). UI and chat fonts below are browser-only and apply immediately."
+            "Control whether this server process persists Web chat to SQLite (this process only; restart serve still follows config files). UI/chat fonts and chat font size below are local prefs and apply immediately."
         }
     }
 }

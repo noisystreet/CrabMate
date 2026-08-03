@@ -107,11 +107,13 @@ pub fn wire_sync_bg_decor_to_storage_and_dom(bg_decor: RwSignal<bool>) {
 pub fn wire_sync_session_typography_to_storage_and_dom(
     session_ui_font: RwSignal<String>,
     session_chat_font: RwSignal<String>,
+    session_chat_font_size: RwSignal<f64>,
 ) {
     Effect::new(move |_| {
         shell_prefs_storage::persist_session_typography_to_storage_and_dom(
             &session_ui_font.get(),
             &session_chat_font.get(),
+            session_chat_font_size.get(),
         );
     });
 }

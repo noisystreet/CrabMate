@@ -230,8 +230,11 @@ pub(crate) fn SettingsToolsBlock(
 pub(crate) struct SettingsSessionTypographyBundle {
     pub session_ui_font: RwSignal<String>,
     pub session_chat_font: RwSignal<String>,
+    pub session_chat_font_size: RwSignal<f64>,
     pub ui_select_id: &'static str,
     pub chat_select_id: &'static str,
+    /// 字号数值展示节点 id（供 label `for` 关联）。
+    pub chat_size_value_id: &'static str,
 }
 
 fn spawn_session_sqlite_toggle(
@@ -386,9 +389,13 @@ fn SettingsSessionTypographyBlock(
     let SettingsSessionTypographyBundle {
         session_ui_font,
         session_chat_font,
+        session_chat_font_size,
         ui_select_id,
         chat_select_id,
+        chat_size_value_id,
     } = typography;
+    let size_label_id = format!("{chat_size_value_id}-label");
+    let size_label_id_for_group = size_label_id.clone();
     view! {
         <div class="settings-block">
             <h3 class="settings-block-title">{move || i18n::settings_block_session_typography(locale.get())}</h3>
@@ -405,6 +412,64 @@ fn SettingsSessionTypographyBlock(
                 value=session_chat_font
                 select_id=chat_select_id
             />
+            <div class="settings-field">
+                <span class="settings-field-label" id=size_label_id>
+                    {move || i18n::settings_session_chat_font_size_label(locale.get())}
+                </span>
+                <div
+                    class="settings-font-size-stepper"
+                    role="group"
+                    prop:aria-labelledby=size_label_id_for_group
+                >
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm settings-font-size-stepper-btn"
+                        prop:disabled=move || {
+                            session_chat_font_size.get()
+                                <= crate::session_typography_prefs::SESSION_CHAT_FONT_SIZE_MIN
+                        }
+                        prop:aria-label=move || {
+                            i18n::settings_session_chat_font_size_decrease(locale.get())
+                        }
+                        on:click=move |_| {
+                            let next = session_chat_font_size.get_untracked() - 1.0;
+                            session_chat_font_size.set(
+                                crate::session_typography_prefs::clamp_session_chat_font_size(next),
+                            );
+                        }
+                    >
+                        "−"
+                    </button>
+                    <output
+                        id=chat_size_value_id
+                        class="settings-font-size-stepper-value"
+                        prop:aria-live="polite"
+                    >
+                        {move || {
+                            format!("{} px", session_chat_font_size.get().round() as i32)
+                        }}
+                    </output>
+                    <button
+                        type="button"
+                        class="btn btn-secondary btn-sm settings-font-size-stepper-btn"
+                        prop:disabled=move || {
+                            session_chat_font_size.get()
+                                >= crate::session_typography_prefs::SESSION_CHAT_FONT_SIZE_MAX
+                        }
+                        prop:aria-label=move || {
+                            i18n::settings_session_chat_font_size_increase(locale.get())
+                        }
+                        on:click=move |_| {
+                            let next = session_chat_font_size.get_untracked() + 1.0;
+                            session_chat_font_size.set(
+                                crate::session_typography_prefs::clamp_session_chat_font_size(next),
+                            );
+                        }
+                    >
+                        "+"
+                    </button>
+                </div>
+            </div>
         </div>
     }
 }

@@ -58,6 +58,11 @@ pub fn build_prefs_dto(app: &AppSignals) -> UserPrefsDto {
         sidebar_rail_collapsed: Some(effective_sidebar_rail_collapsed_for_persist(app)),
         session_ui_font: Some(app.shell_ui.session_ui_font.get_untracked()),
         session_chat_font: Some(app.shell_ui.session_chat_font.get_untracked()),
+        session_chat_font_size: Some(
+            crate::session_typography_prefs::clamp_session_chat_font_size(
+                app.shell_ui.session_chat_font_size.get_untracked(),
+            ) as u32,
+        ),
         ide_editor_font: Some(app.ide_editor.font_slug.get_untracked()),
         ide_editor_font_size: Some(app.ide_editor.font_size_px.get_untracked().round() as u32),
         ide_editor_line_numbers: Some(app.ide_editor.line_numbers.get_untracked()),
@@ -138,6 +143,11 @@ fn apply_shell_prefs_dto(app: &AppSignals, dto: &UserPrefsDto) {
         app.shell_ui
             .session_chat_font
             .set(crate::session_typography_prefs::normalize_session_chat_font(f));
+    }
+    if let Some(n) = dto.session_chat_font_size {
+        app.shell_ui
+            .session_chat_font_size
+            .set(crate::session_typography_prefs::clamp_session_chat_font_size(n as f64));
     }
     app.workspace
         .recent_workspace_roots
@@ -279,6 +289,7 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
         let _ = app.sidebar.sidebar_rail_collapsed.get();
         let _ = app.shell_ui.session_ui_font.get();
         let _ = app.shell_ui.session_chat_font.get();
+        let _ = app.shell_ui.session_chat_font_size.get();
         let _ = app.ide_editor.font_slug.get();
         let _ = app.ide_editor.font_size_px.get();
         let _ = app.ide_editor.line_numbers.get();

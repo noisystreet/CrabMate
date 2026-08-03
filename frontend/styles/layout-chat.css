@@ -254,7 +254,8 @@
   background: transparent;
   color: inherit;
   font-family: inherit;
-  font-size: var(--text-sm, 0.875rem);
+  /* 字号由 `.chat-column .chat-tui-transcript` 的 `--crabmate-chat-font-size` 覆盖；此处作无聊天列场景回退 */
+  font-size: var(--crabmate-chat-font-size, var(--text-sm, 0.875rem));
   line-height: 1.65;
   overflow-wrap: anywhere;
   tab-size: 2;
@@ -798,7 +799,7 @@
   min-width: 0;
   flex-shrink: 0;
   box-sizing: border-box;
-  font-size: 14px;
+  font-size: var(--crabmate-chat-font-size, 14px);
   line-height: 1.6;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border-subtle);
@@ -850,11 +851,19 @@
   max-width: 100%;
 }
 
-/* 会话模式：聊天列正文字体（Markdown 关闭为纯文本时由下方规则覆盖为等宽） */
+/* 会话模式：聊天列正文字体与字号（含默认终端流 transcript；Markdown 关闭为纯文本时由下方规则覆盖为等宽） */
 .chat-column .msg-body,
 .chat-column .msg-md-prose,
-.chat-column .composer-input {
+.chat-column .composer-input,
+.chat-column .chat-tui-transcript {
   font-family: var(--crabmate-chat-font-family, inherit);
+}
+
+.chat-column .chat-tui-transcript,
+.chat-column .composer-input,
+.chat-column .composer-input-stack .composer-input-fake-ph,
+.chat-column .composer-input-stack .composer-input-highlight-inner {
+  font-size: var(--crabmate-chat-font-size, 14px);
 }
 
 /* 纯文本气泡 / 关闭 Markdown（CM_WEB_DISABLE_MARKDOWN）：等宽，覆盖上一段 chat 字体 */
