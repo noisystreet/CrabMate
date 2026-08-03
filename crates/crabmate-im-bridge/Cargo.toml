@@ -18,8 +18,9 @@ crabmate-sse-protocol = { workspace = true }
 axum = { workspace = true, default-features = false, features = ["http1", "json", "tokio", "macros"] }
 aes = "0.8"
 base64 = { workspace = true }
-# 与 keyring→secret-service 同代，避免 workspace 同时编 aes 0.8/0.9、cbc 0.1/0.2。
-cbc = { version = "0.2", features = ["block-padding", "alloc"] }
+# 与 keyring→secret-service 同代（aes 0.8 + cbc 0.1，均 cipher 0.4），
+# 避免 workspace 同时编 aes 0.8/0.9、cbc 0.1/0.2。
+cbc = { version = "0.1", features = ["block-padding", "alloc"] }
 dashmap = "6"
 hex = "0.4"
 reqwest = { workspace = true, features = ["json", "rustls", "stream"] }
