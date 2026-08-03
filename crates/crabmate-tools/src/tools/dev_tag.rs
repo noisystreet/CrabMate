@@ -88,6 +88,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "gh_pr_merge"
         | "gh_pr_review"
         | "gh_pr_comment"
+        | "gh_pr_edit"
         | "gh_pr_body_draft"
         | "gh_pr_diff"
         | "gh_issue_list"

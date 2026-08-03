@@ -326,6 +326,32 @@ pub struct GhPrCommentArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
+pub struct GhPrEditArgs {
+    pub number: Option<u32>,
+    pub repo: Option<String>,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    /// 编辑 PR 时新增/替换的标签（`--add-label`，可多个）。
+    pub add_label: Option<Vec<String>>,
+    /// 编辑 PR 时移除的标签（`--remove-label`，可多个）。
+    pub remove_label: Option<Vec<String>>,
+    /// 编辑 PR 时新增的 reviewer（`--add-reviewer`，可多个）。
+    pub add_reviewer: Option<Vec<String>>,
+    /// 编辑 PR 时移除的 reviewer（`--remove-reviewer`，可多个）。
+    pub remove_reviewer: Option<Vec<String>>,
+    /// 编辑 PR 时新增的 assignee（`--add-assignee`，可多个）。
+    pub add_assignee: Option<Vec<String>>,
+    /// 编辑 PR 时移除的 assignee（`--remove-assignee`，可多个）。
+    pub remove_assignee: Option<Vec<String>>,
+    pub base: Option<String>,
+    /// 置为草稿（`--draft`）。
+    pub draft: Option<bool>,
+    /// 取消草稿（`--undraft`）。
+    pub undraft: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
 pub struct GhPrBodyDraftArgs {
     pub base: Option<String>,
     #[schemars(range(min = 1, max = 200))]

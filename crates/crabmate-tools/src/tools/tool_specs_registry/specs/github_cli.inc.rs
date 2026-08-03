@@ -56,6 +56,14 @@
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_comment),
     },
     ToolSpec {
+        name: "gh_pr_edit",
+        description: "编辑 PR（封装 **`gh pr edit`**；**写远端**）。可选 `number`、`repo`、`title`、`body`、`base`、`draft`/`undraft`、`add_label`/`remove_label`、`add_reviewer`/`remove_reviewer`、`add_assignee`/`remove_assignee`、`extra_args`。",
+        category: ToolCategory::Development,
+        parameters: tool_params::params_gh_pr_edit,
+        runner: runner_gh_pr_edit,
+        summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_edit),
+    },
+    ToolSpec {
         name: "gh_pr_body_draft",
         description: "生成 **PR 正文 Markdown 草稿**（只读、不写盘）：读取 `.github/pull_request_template.md` 等模板，并可选附加相对 **`base`**（默认 `main`）的 `git log` 摘要。供人工审阅或传入 **`gh_pr_create`**。",
         category: ToolCategory::Development,

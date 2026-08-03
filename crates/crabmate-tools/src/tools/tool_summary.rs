@@ -331,6 +331,10 @@ pub(super) fn summary_gh_pr_body_draft(v: &serde_json::Value) -> Option<String> 
     summarize_from_value::<GhPrBodyDraftSummaryArgs>(v)
 }
 
+pub(super) fn summary_gh_pr_edit(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<GhPrEditSummaryArgs>(v)
+}
+
 pub(super) fn summary_gh_issue_list(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GhIssueListSummaryArgs>(v)
 }

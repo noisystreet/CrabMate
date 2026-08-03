@@ -166,6 +166,33 @@ impl ToolSummaryLine for GhPrBodyDraftSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
+pub(super) struct GhPrEditSummaryArgs {
+    #[serde(default)]
+    number: Option<u64>,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+impl ToolSummaryLine for GhPrEditSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let num = match self.number {
+            Some(n) if n > 0 => format!("#{n}"),
+            _ => String::new(),
+        };
+        let t = self.title.unwrap_or_default();
+        let t = t.trim();
+        if t.is_empty() {
+            return Some(format!("gh pr edit {num}").trim_end().to_string());
+        }
+        let mut head: String = t.chars().take(40).collect();
+        if t.chars().count() > 40 {
+            head.push('…');
+        }
+        Some(format!("gh pr edit {num}: {head}").trim_end().to_string())
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub(super) struct GhIssueListSummaryArgs {
     #[serde(default)]
     repo: Option<String>,

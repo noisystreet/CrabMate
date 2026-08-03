@@ -22,6 +22,7 @@ gh_runner!(runner_gh_pr_create, github_cli::gh_pr_create);
 gh_runner!(runner_gh_pr_merge, github_cli::gh_pr_merge);
 gh_runner!(runner_gh_pr_review, github_cli::gh_pr_review);
 gh_runner!(runner_gh_pr_comment, github_cli::gh_pr_comment);
+gh_runner!(runner_gh_pr_edit, github_cli::gh_pr_edit);
 gh_runner!(runner_gh_issue_list, github_cli::gh_issue_list);
 gh_runner!(runner_gh_issue_view, github_cli::gh_issue_view);
 gh_runner!(runner_gh_issue_create, github_cli::gh_issue_create);
