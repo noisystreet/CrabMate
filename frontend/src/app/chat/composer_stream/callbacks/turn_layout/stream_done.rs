@@ -7,7 +7,7 @@ use crate::stream_text_overlay::{
 };
 
 use super::super::super::context::ChatStreamCallbackCtx;
-use super::bubble_queue::{BubbleOutputQueue, FINAL_ANSWER_ROW_ID};
+use super::turn_row_queue::{FINAL_ANSWER_ROW_ID, TurnRowQueue};
 
 /// `on_done` 前收口（Phase C：Loading 纯句柄）。
 ///
@@ -40,7 +40,7 @@ pub(super) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamC
                 .map(|m| m.text.clone())
                 .filter(|t| !t.trim().is_empty());
             if let Some(text) = from_overlay.or(from_loading) {
-                BubbleOutputQueue::ensure_final_answer_row_from_text(
+                TurnRowQueue::ensure_final_answer_row_from_text(
                     &mut s.messages,
                     &text,
                     Some(mid.as_str()),

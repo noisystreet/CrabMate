@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::sse_dispatch::TurnSegmentStartInfo;
 
-use super::super::turn_layout::{BubbleRotationSemantics, TurnLayout};
+use super::super::turn_layout::{LoadingRotationSemantics, TurnLayout};
 
 use super::super::super::context::ChatStreamCallbackCtx;
 
@@ -25,7 +25,10 @@ pub(in super::super) fn make_on_turn_segment_start(
         //   2. 随后 assistant_answer_phase 事件将 lane 推进到 AnsweringPendingFollowupBubble
         //   3. 导致下一个 on_delta 触发第二次不必要的轮换
         if info.kind == "answer" {
-            TurnLayout::rotate_bubble(stream_ctx.as_ref(), BubbleRotationSemantics::Cleanup);
+            TurnLayout::rotate_loading_segment(
+                stream_ctx.as_ref(),
+                LoadingRotationSemantics::Cleanup,
+            );
             stream_ctx.scratch.reset_answer_state_for_new_round();
         }
         stream_ctx.scratch.on_turn_segment_start(info);

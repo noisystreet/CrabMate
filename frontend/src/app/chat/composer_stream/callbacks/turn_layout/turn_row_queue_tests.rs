@@ -43,7 +43,7 @@ fn loading_preview_during_tool_phase_skips_anchored_open_commentary() {
         Some("步骤 A。")
     );
     assert!(
-        BubbleOutputQueue::loading_preview_text(&turn, None, None).is_empty(),
+        TurnRowQueue::loading_preview_text(&turn, None, None).is_empty(),
         "Phase B: anchored open commentary must not paint on loading overlay"
     );
 }
@@ -76,7 +76,7 @@ fn upsert_parks_anchored_commentary_before_loading_until_tool_exists() {
             created_at: 0,
         },
     ];
-    assert!(BubbleOutputQueue::upsert_streaming_anchored_commentary(
+    assert!(TurnRowQueue::upsert_streaming_anchored_commentary(
         &mut msgs,
         "tc_list",
         "先看目录。".into(),
@@ -104,7 +104,7 @@ fn upsert_parks_anchored_commentary_before_loading_until_tool_exists() {
     // commentary still before tool
     assert_eq!(msgs[1].id, commentary_row_id("tc_list"));
     assert_eq!(msgs[2].id, "t");
-    assert!(BubbleOutputQueue::upsert_streaming_anchored_commentary(
+    assert!(TurnRowQueue::upsert_streaming_anchored_commentary(
         &mut msgs,
         "tc_list",
         "先看目录。继续。".into(),
@@ -167,7 +167,7 @@ fn upsert_late_streaming_commentary_before_existing_tool() {
             created_at: 0,
         },
     ];
-    assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+    assert!(TurnRowQueue::upsert_commentary_before_tool(
         &mut msgs,
         "tc_create",
         "工作区是空的。".into(),
@@ -175,7 +175,7 @@ fn upsert_late_streaming_commentary_before_existing_tool() {
     assert_eq!(msgs[0].id, commentary_row_id("tc_create"));
     assert_eq!(msgs[0].text, "工作区是空的。");
     assert_eq!(msgs[1].id, "t");
-    assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+    assert!(TurnRowQueue::upsert_commentary_before_tool(
         &mut msgs,
         "tc_create",
         "工作区是空的。继续。".into(),
@@ -195,7 +195,7 @@ fn loading_preview_empty_for_anchored_open_commentary_even_without_tool_row() {
     });
     assert!(turn.try_apply_commentary_delta("晚到旁白。"));
     assert!(
-        BubbleOutputQueue::loading_preview_text(&turn, None, None).is_empty(),
+        TurnRowQueue::loading_preview_text(&turn, None, None).is_empty(),
         "anchored open commentary never uses loading overlay (Phase B)"
     );
     let msgs = vec![crate::storage::StoredMessage {
@@ -210,7 +210,7 @@ fn loading_preview_empty_for_anchored_open_commentary_even_without_tool_row() {
         tool_name: None,
         created_at: 0,
     }];
-    assert!(BubbleOutputQueue::loading_preview_text(&turn, None, Some(&msgs)).is_empty());
+    assert!(TurnRowQueue::loading_preview_text(&turn, None, Some(&msgs)).is_empty());
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn sync_web_projection_keeps_loading_body() {
     let mut turn = TurnCanonicalState::new();
     assert!(turn.try_apply_answer_state_transition("完成。"));
     turn.on_tool_phase_end();
-    let queue = BubbleOutputQueue;
+    let queue = TurnRowQueue;
     let mut msgs = vec![
         crate::storage::StoredMessage {
             id: commentary_row_id("tc_existing"),
@@ -421,7 +421,7 @@ fn reused_tool_call_id_across_turns_keeps_rows_independent() {
         row("t2", "system", "read beta", Some("tc_reused")),
     ];
 
-    assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+    assert!(TurnRowQueue::upsert_commentary_before_tool(
         &mut msgs,
         "tc_reused",
         "第二轮准备读取。".into(),
@@ -462,7 +462,7 @@ fn flush_commentary_skips_without_tool_row() {
 #[test]
 fn pre_tool_sync_skips_final_answer_when_not_allowed() {
     let turn = TurnCanonicalState::new();
-    let queue = BubbleOutputQueue;
+    let queue = TurnRowQueue;
     let mut msgs = vec![crate::storage::StoredMessage {
         id: "load".into(),
         role: "assistant".into(),
@@ -493,7 +493,7 @@ fn pre_tool_sync_skips_final_answer_when_not_allowed() {
 #[test]
 fn mid_process_overlay_skips_final_answer_when_not_allowed() {
     let turn = TurnCanonicalState::new();
-    let queue = BubbleOutputQueue;
+    let queue = TurnRowQueue;
     let mut msgs = vec![
         crate::storage::StoredMessage {
             id: "tc_list".into(),
@@ -540,7 +540,7 @@ fn mid_process_overlay_skips_final_answer_when_not_allowed() {
 #[test]
 fn no_tool_flush_final_creates_row_from_overlay() {
     let turn = TurnCanonicalState::new();
-    let queue = BubbleOutputQueue;
+    let queue = TurnRowQueue;
     let mut msgs = vec![crate::storage::StoredMessage {
         id: "load".into(),
         role: "assistant".into(),
@@ -575,7 +575,7 @@ fn no_tool_flush_final_creates_row_from_overlay() {
 #[test]
 fn no_tool_flush_final_skips_when_overlay_empty() {
     let turn = TurnCanonicalState::new();
-    let queue = BubbleOutputQueue;
+    let queue = TurnRowQueue;
     let mut msgs = vec![crate::storage::StoredMessage {
         id: "load".into(),
         role: "assistant".into(),

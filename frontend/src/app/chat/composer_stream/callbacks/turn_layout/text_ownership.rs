@@ -19,7 +19,7 @@
 
 use crate::storage::StoredMessage;
 
-use super::bubble_queue::{FINAL_ANSWER_ROW_ID, is_commentary_row_id};
+use super::turn_row_queue::{FINAL_ANSWER_ROW_ID, is_commentary_row_id};
 
 /// 同一 `tool_call_id` 不得出现两条 commentary 行。
 #[must_use]
@@ -74,7 +74,7 @@ pub(super) fn loading_holds_duplicate_of_persisted(
 #[cfg(test)]
 #[must_use]
 pub(super) fn expected_commentary_id(tool_call_id: &str) -> String {
-    super::bubble_queue::commentary_row_id(tool_call_id)
+    super::turn_row_queue::commentary_row_id(tool_call_id)
 }
 
 #[cfg(test)]

@@ -10,16 +10,16 @@
 //! | `tool_call` 占位落盘 | [`TurnLayout::on_tool_call_declared`] → reconciler |
 //! | `tool_result` 新建行 | [`TurnLayout::on_tool_result_inserted`] |
 //! | 时间线 / 意图 / 规划旁注 | [`TurnLayout::push_assistant_timeline`] |
-//! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_bubble`]（`ContinueAnswering`）|
+//! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_loading_segment`]（`ContinueAnswering`）|
 //! | `final_response` 撤 loading | [`TurnLayout::remove_loading_placeholder_or_rotate`] |
 //!
 //! 原先分散在 `timeline_tail` 的 `peel` / `finalize` / `ensure_tail` / `restore` 均收拢为本模块私有步骤。
 
-mod bubble_queue;
 mod loading_handoff;
 mod projection_reconciler;
 mod stream_done;
 mod text_ownership;
+mod turn_row_queue;
 #[cfg(test)]
 mod turn_web_contract;
 
@@ -42,7 +42,7 @@ use super::super::context::ChatStreamCallbackCtx;
 use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
-pub(crate) use bubble_queue::BubbleOutputQueue;
+pub(crate) use turn_row_queue::TurnRowQueue;
 
 /// post-tool 尾泡被提前 finalize 时暂存的总结正文。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -307,9 +307,9 @@ fn insert_post_tool_loading_after_tool(
     Some(new_asst_id)
 }
 
-/// 气泡轮换的语义：旋转后是否继续接收正文 delta。
+/// loading 段轮换的语义：旋转后是否继续接收正文 delta。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum BubbleRotationSemantics {
+pub(crate) enum LoadingRotationSemantics {
     /// 旋转后需要接收正文 delta（lane 推进到 Answering）。
     /// 用于：`turn_segment_start(kind="answer")`、`on_delta` 时 followup 待轮换。
     ContinueAnswering,
@@ -334,7 +334,7 @@ impl TurnLayout {
             if let Some(idx) = s
                 .messages
                 .iter()
-                .position(|m| m.id == bubble_queue::FINAL_ANSWER_ROW_ID)
+                .position(|m| m.id == turn_row_queue::FINAL_ANSWER_ROW_ID)
             {
                 // 生成一个新的 id 使该行脱离投影别名
                 s.messages[idx].id = make_message_id();
@@ -500,14 +500,14 @@ impl TurnLayout {
         });
     }
 
-    /// 统一的气泡轮换入口：finalize 当前段 → 新 loading 尾泡 → 按语义管理 lane。
+    /// 统一的 loading 段轮换入口：finalize 当前段 → 新 loading 尾行 → 按语义管理 lane。
     ///
-    /// - [`BubbleRotationSemantics::ContinueAnswering`]：旋转后补调 `on_assistant_answer_phase()`
+    /// - [`LoadingRotationSemantics::ContinueAnswering`]：旋转后补调 `on_assistant_answer_phase()`
     ///   将 lane 推进到 `Answering`。
-    /// - [`BubbleRotationSemantics::Cleanup`]：旋转后 lane 保持 `Reasoning`（adopt 重置后的默认值）。
-    pub(crate) fn rotate_bubble(
+    /// - [`LoadingRotationSemantics::Cleanup`]：旋转后 lane 保持 `Reasoning`（adopt 重置后的默认值）。
+    pub(crate) fn rotate_loading_segment(
         stream_ctx: &ChatStreamCallbackCtx,
-        semantics: BubbleRotationSemantics,
+        semantics: LoadingRotationSemantics,
     ) {
         Self::finalize_loading_segment(stream_ctx);
         Self::detach_final_answer_projection(stream_ctx);
@@ -537,7 +537,7 @@ impl TurnLayout {
         }
         Self::pin_loading_tail(stream_ctx);
 
-        if matches!(semantics, BubbleRotationSemantics::ContinueAnswering) {
+        if matches!(semantics, LoadingRotationSemantics::ContinueAnswering) {
             stream_ctx.scratch.on_assistant_answer_phase();
         }
     }
@@ -567,7 +567,7 @@ impl TurnLayout {
             })
             .unwrap_or(false);
         if !tail_still_present {
-            Self::rotate_bubble(stream_ctx, BubbleRotationSemantics::Cleanup);
+            Self::rotate_loading_segment(stream_ctx, LoadingRotationSemantics::Cleanup);
         }
     }
 
@@ -580,7 +580,7 @@ impl TurnLayout {
         let sid = stream_ctx.bound_stream_session_id.as_str();
         let placed = RefCell::new(false);
         stream_ctx.update_bound_session(|s| {
-            *placed.borrow_mut() = BubbleOutputQueue::try_upsert_open_anchored_commentary(
+            *placed.borrow_mut() = TurnRowQueue::try_upsert_open_anchored_commentary(
                 &mut s.messages,
                 turn,
                 Some(mid.as_str()),
@@ -605,11 +605,7 @@ impl TurnLayout {
         let overlay_answer_str = overlay_answer.as_deref();
         let preview = stream_ctx
             .read_bound_session(|s| {
-                BubbleOutputQueue::loading_preview_for_messages(
-                    turn,
-                    &s.messages,
-                    overlay_answer_str,
-                )
+                TurnRowQueue::loading_preview_for_messages(turn, &s.messages, overlay_answer_str)
             })
             .unwrap_or_default();
         // 工具相：旁白段已关闭后 `loading_preview_text` 为空。仅当 overlay 正文尚未由
@@ -685,7 +681,7 @@ impl TurnLayout {
         loading_id: &str,
     ) {
         let has_commentary = messages.iter().any(|message| {
-            bubble_queue::is_commentary_row_id(message.id.as_str())
+            turn_row_queue::is_commentary_row_id(message.id.as_str())
                 && !message.text.trim().is_empty()
         });
         if !has_commentary {
@@ -718,7 +714,7 @@ impl TurnLayout {
     pub(crate) fn sync_turn_projection(
         stream_ctx: &ChatStreamCallbackCtx,
         turn: &TurnCanonicalState,
-        queue: &mut BubbleOutputQueue,
+        queue: &mut TurnRowQueue,
     ) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let pin_active = stream_ctx.scratch.post_tool_stream_tail_active();
@@ -796,7 +792,7 @@ pub(super) fn should_clear_preview_overlay_answer(
         return overlay_answer
             .is_some_and(|t| loading_handoff::persisted_assistant_owns_live_text_any(messages, t));
     }
-    BubbleOutputQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
+    TurnRowQueue::loading_preview_for_messages(turn, messages, overlay_answer).is_empty()
 }
 
 /// **禁止**生产路径把旁白/终答写入 loading `text`（见 [`text_ownership`]）。

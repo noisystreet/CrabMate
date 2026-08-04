@@ -1,4 +1,4 @@
-//! Web 块布局契约：`project_turn_web` → `BubbleOutputQueue` flush → `StoredMessage` 顺序。
+//! Web 块布局契约：`project_turn_web` → `TurnRowQueue` flush → `StoredMessage` 顺序。
 
 #[cfg(test)]
 mod tests {
@@ -15,8 +15,8 @@ mod tests {
     use crate::storage::StoredMessage;
     use crate::storage::StoredMessageState;
 
-    use super::super::bubble_queue::{
-        BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id, is_commentary_row_id,
+    use super::super::turn_row_queue::{
+        FINAL_ANSWER_ROW_ID, TurnRowQueue, commentary_row_id, is_commentary_row_id,
     };
 
     #[derive(Debug, Deserialize)]
@@ -154,7 +154,7 @@ mod tests {
             }
 
             let mut messages = tool_messages_from_projection(&turn);
-            BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None, true);
+            TurnRowQueue.sync_web_projection(&mut messages, &turn, None, None, true);
 
             assert_v2_commentary_rows(&turn, &messages);
 
@@ -170,13 +170,13 @@ mod tests {
                 if crabmate_turn_layout::streaming_commentary_before_tool(turn.turn_ref()).is_some()
                 {
                     assert!(
-                        BubbleOutputQueue::loading_preview_text(&turn, None, None).is_empty(),
+                        TurnRowQueue::loading_preview_text(&turn, None, None).is_empty(),
                         "case {}: anchored open preview must not use loading overlay",
                         case.id
                     );
                 } else {
                     assert_eq!(
-                        BubbleOutputQueue::loading_preview_text(&turn, None, None),
+                        TurnRowQueue::loading_preview_text(&turn, None, None),
                         preview.as_str(),
                         "case {} open preview",
                         case.id
@@ -200,7 +200,7 @@ mod tests {
         assert!(turn.try_apply_answer_state_transition("HPCG 编译完成。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        let queue = BubbleOutputQueue;
+        let queue = TurnRowQueue;
         queue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"), true);
 
         assert_v2_commentary_rows(&turn, &messages);
@@ -240,7 +240,7 @@ mod tests {
         );
 
         let mut messages = tool_messages_from_projection(&turn);
-        let queue = BubbleOutputQueue;
+        let queue = TurnRowQueue;
         queue.sync_web_projection(&mut messages, &turn, None, None, true);
 
         assert_v2_commentary_rows(&turn, &messages);
@@ -267,13 +267,7 @@ mod tests {
         assert!(turn.try_apply_answer_state_transition("HPCG 编译完成。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(
-            &mut messages,
-            &turn,
-            None,
-            Some("HPCG 编译完成。"),
-            true,
-        );
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, Some("HPCG 编译完成。"), true);
 
         assert_v2_commentary_rows(&turn, &messages);
         let final_idx = messages
@@ -310,7 +304,7 @@ mod tests {
         assert!(turn.try_apply_answer_state_transition("当前工作区是一个空目录。"));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(
+        TurnRowQueue.sync_web_projection(
             &mut messages,
             &turn,
             None,
@@ -350,7 +344,7 @@ mod tests {
         }
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
 
         // 不应有 tool 行
         assert!(
@@ -400,7 +394,7 @@ mod tests {
         assert!(turn.try_apply_answer_state_transition(full_answer));
 
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
 
         let final_text = messages
             .iter()
@@ -427,7 +421,7 @@ mod tests {
         // 先正常投影，创建完整的 FINAL_ANSWER_ROW
         let mut messages = tool_messages_from_projection(&turn);
         let full_answer = "完整终答。";
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
         assert!(
             messages
                 .iter()
@@ -442,7 +436,7 @@ mod tests {
             .unwrap()
             .text
             .clone();
-        BubbleOutputQueue.sync_web_projection(
+        TurnRowQueue.sync_web_projection(
             &mut messages,
             &turn,
             None,
@@ -489,7 +483,7 @@ mod tests {
             "FINAL_ANSWER_ROW must not exist before ensure"
         );
 
-        BubbleOutputQueue::ensure_final_answer_row_from_text(
+        TurnRowQueue::ensure_final_answer_row_from_text(
             &mut messages,
             "终答正文。",
             Some("loading-tail"),
@@ -506,7 +500,7 @@ mod tests {
             .iter()
             .filter(|m| m.id == FINAL_ANSWER_ROW_ID)
             .count();
-        BubbleOutputQueue::ensure_final_answer_row_from_text(
+        TurnRowQueue::ensure_final_answer_row_from_text(
             &mut messages,
             "终答正文。",
             Some("loading-tail"),
@@ -527,11 +521,7 @@ mod tests {
     fn zero_tool_ensure_skips_on_empty_text() {
         let mut messages: Vec<StoredMessage> =
             tool_messages_from_projection(&TurnCanonicalState::new());
-        BubbleOutputQueue::ensure_final_answer_row_from_text(
-            &mut messages,
-            "",
-            Some("loading-tail"),
-        );
+        TurnRowQueue::ensure_final_answer_row_from_text(&mut messages, "", Some("loading-tail"));
         assert!(
             !messages.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
             "empty text must not create FINAL_ANSWER_ROW"
@@ -571,7 +561,7 @@ mod tests {
 
         // sync_web_projection 仍能从原 overlay 创建完整 FINAL_ANSWER_ROW
         let mut messages = tool_messages_from_projection(&turn);
-        BubbleOutputQueue.sync_web_projection(
+        TurnRowQueue.sync_web_projection(
             &mut messages,
             &turn,
             None,
@@ -606,7 +596,7 @@ mod tests {
         let mut messages = tool_messages_from_projection(&turn);
 
         // 正确顺序（修复后）：先 sync（overlay 有内容）→ 创建 FINAL_ANSWER_ROW
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, Some(full_answer), true);
         let final_row = messages
             .iter()
             .find(|m| m.id == FINAL_ANSWER_ROW_ID)
@@ -619,7 +609,7 @@ mod tests {
         // 之后统一收尾会 take overlay（drain）。
         // 模拟 drain：第二次 sync 时 overlay 已空（None）。
         // FINAL_ANSWER_ROW 必须保留，不被空 overlay 覆盖。
-        BubbleOutputQueue.sync_web_projection(&mut messages, &turn, None, None, true);
+        TurnRowQueue.sync_web_projection(&mut messages, &turn, None, None, true);
         let final_row_after_drain = messages
             .iter()
             .find(|m| m.id == FINAL_ANSWER_ROW_ID)
