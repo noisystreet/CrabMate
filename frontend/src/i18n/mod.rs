@@ -6,7 +6,6 @@ mod locale_storage;
 
 mod api_errors;
 mod approval;
-mod assistant_md;
 mod changelist;
 mod chat_column;
 mod clipboard_and_session;
@@ -31,7 +30,6 @@ mod workspace_tree;
 
 pub use api_errors::*;
 pub use approval::*;
-pub use assistant_md::*;
 pub use changelist::*;
 pub use chat_column::*;
 pub use clipboard_and_session::*;

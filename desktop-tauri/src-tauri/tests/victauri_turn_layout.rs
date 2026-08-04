@@ -48,8 +48,8 @@ e2e_test!(multi_tool_interleaved_layout, |client| async move {
     // 终答应可见
     client.wait_for("text", Some("编译流程结束"), Some(20000), Some(200)).await.unwrap();
 
-    // 工具卡应出现
-    Locator::test_id("chat-tool-card").expect(&mut client).to_be_visible().await.unwrap();
+    // 工具过程行应出现（TUI）
+    Locator::test_id("chat-tui-tool-process").expect(&mut client).to_be_visible().await.unwrap();
 });
 
 // ---------------------------------------------------------------------------

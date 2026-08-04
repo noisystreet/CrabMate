@@ -98,9 +98,9 @@ e2e_test!(message_bubble_layout, |client| async move {
     client.press_key("Enter").await.ok();
     client.wait_for("network_idle", Some(""), Some(10000), Some(200)).await.ok();
 
-    // 至少有一条消息行
-    let msg_rows = count_elements(&mut client, "[data-testid=\"chat-message-row\"]").await;
-    assert!(msg_rows > 0, "should render at least one message row");
+    // 至少有一条 TUI 回合
+    let msg_rows = count_elements(&mut client, "section.chat-tui-turn[data-tui-msg-id]").await;
+    assert!(msg_rows > 0, "should render at least one chat-tui-turn");
 
     // 助手响应到达
     client.wait_for("text", Some("sse_capabilities"), Some(10000), Some(200)).await.unwrap();

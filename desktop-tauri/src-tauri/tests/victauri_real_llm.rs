@@ -81,14 +81,14 @@ e2e_test!(real_llm_skills_prompt_reply_no_errors, |client| async move {
     // 等待真实 LLM 流式完成
     wait_for_stream_end(&mut client).await;
 
-    // 验证至少有一条 assistant 消息行出现
+    // 验证至少有一条 assistant 回合出现（TUI）
     let rows: f64 = client
-        .eval_js("document.querySelectorAll('[data-testid=\"chat-message-row\"]').length")
+        .eval_js("document.querySelectorAll('section.chat-tui-turn[data-tui-msg-id]').length")
         .await
         .unwrap()
         .as_f64()
         .unwrap_or(0.0);
-    assert!(rows > 1.0, "expected at least 2 message rows (user + assistant), got {rows}");
+    assert!(rows > 1.0, "expected at least 2 chat-tui-turn (user + assistant), got {rows}");
 
     // 验证无错误提示
     let has_error: bool = client

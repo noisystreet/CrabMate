@@ -1,8 +1,4 @@
-//! 用户气泡：将 `file:///{rel}` / `file://./{rel}` / `@{rel}` 展示为内联文件引用样式（链接文字仅显示相对路径）。
-
-use leptos::prelude::*;
-
-use crate::session_search::split_for_find_highlight;
+//! 用户消息：将 `file:///{rel}` / `file://./{rel}` / `@{rel}` 切成可展示的文件引用段（链接文字仅显示相对路径）。
 
 /// 一段用户正文：普通文字或文件引用 token。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,44 +83,6 @@ pub fn split_user_file_ref_segs(raw: &str) -> Vec<UserTextSeg> {
     out
 }
 
-fn render_find_segments(text: &str, query: &str) -> AnyView {
-    let segs = split_for_find_highlight(text, query);
-    segs.into_iter()
-        .map(|(s, hl)| {
-            if hl {
-                view! { <mark class="msg-find-inline">{s}</mark> }.into_any()
-            } else {
-                view! { {s} }.into_any()
-            }
-        })
-        .collect_view()
-        .into_any()
-}
-
-/// 渲染可能含文件引用的用户正文（查找高亮仍作用在各段上）。
-#[must_use]
-pub fn render_user_text_with_file_refs(text: &str, query: &str) -> AnyView {
-    let segs = split_user_file_ref_segs(text);
-    if segs.iter().all(|s| matches!(s, UserTextSeg::Plain(_))) {
-        return render_find_segments(text, query);
-    }
-    segs.into_iter()
-        .map(|seg| match seg {
-            UserTextSeg::Plain(p) => render_find_segments(&p, query),
-            UserTextSeg::FileRef(tok) => {
-                let display = file_ref_visible_label(&tok).to_string();
-                view! {
-                    <span class="msg-file-ref" title=tok.clone()>
-                        {display}
-                    </span>
-                }
-                .into_any()
-            }
-        })
-        .collect_view()
-        .into_any()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,25 +100,7 @@ mod tests {
                 UserTextSeg::Plain(" z".into()),
             ]
         );
-    }
-
-    #[test]
-    fn splits_file_dot_slash_uri() {
-        let segs = split_user_file_ref_segs("x file://./.gitignore y");
-        assert_eq!(
-            segs,
-            vec![
-                UserTextSeg::Plain("x ".into()),
-                UserTextSeg::FileRef("file://./.gitignore".into()),
-                UserTextSeg::Plain(" y".into()),
-            ]
-        );
-    }
-
-    #[test]
-    fn visible_label_strips_scheme() {
-        assert_eq!(file_ref_visible_label("file://./.gitignore"), ".gitignore");
-        assert_eq!(file_ref_visible_label("file:///.gitignore"), ".gitignore");
-        assert_eq!(file_ref_visible_label("@src/main.rs"), "src/main.rs");
+        assert_eq!(file_ref_visible_label("file:///src/a.rs"), "src/a.rs");
+        assert_eq!(file_ref_visible_label("@b.rs"), "b.rs");
     }
 }

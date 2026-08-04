@@ -45,11 +45,11 @@ async fn seed_messages_and_goto(
         .ok();
 }
 
-/// 获取聊天层中可见的 assistant 气泡数量。
+/// 获取聊天层中可见的 assistant 回合数量（TUI `section.chat-tui-turn--assistant`）。
 async fn visible_assistant_count(client: &mut victauri_test::VictauriClient) -> usize {
     client
         .eval_js(
-            "(()=>{const rows=document.querySelectorAll('.msg-stack');let c=0;for(const r of rows){{const role=r.querySelector('.msg-meta-role');if(role&&/^助手$|^Assistant$/.test(role.textContent||'')){{if(r.offsetParent!==null)c++;}}}}return c;})()"
+            "(()=>{const rows=document.querySelectorAll('section.chat-tui-turn--assistant');let c=0;for(const r of rows){if(r.offsetParent!==null)c++;}return c;})()"
         )
         .await
         .unwrap()

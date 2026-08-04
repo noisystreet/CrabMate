@@ -337,7 +337,6 @@ test.describe("真实 LLM：工具回合气泡闪没", () => {
           samples += 1;
           const tMs = nowMs();
           if (
-            document.querySelector('[data-testid="chat-tool-card"]') ||
             document.querySelector('[data-testid="chat-tui-tool-process"]') ||
             document.querySelector("section.chat-tui-turn--tool")
           ) {

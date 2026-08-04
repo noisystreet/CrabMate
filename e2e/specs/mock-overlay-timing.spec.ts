@@ -88,11 +88,9 @@ test.describe("overlay 消费时序回归", () => {
       page.locator('[data-testid="chat-messages-scroller"]'),
     ).toContainText(answerTail, { timeout: 5000 });
 
-    // 纯问答不应有工具卡
-    const toolCards = await page
-      .locator('[data-testid="chat-tool-card"]')
-      .count();
-    expect(toolCards).toBe(0);
+    // 纯问答不应有工具回合
+    const toolTurns = await page.locator("section.chat-tui-turn--tool").count();
+    expect(toolTurns).toBe(0);
   });
 
   // ---------------------------------------------------------------------------

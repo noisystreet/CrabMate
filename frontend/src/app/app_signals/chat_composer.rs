@@ -1,7 +1,5 @@
 //! 聊天输入区、查找、滚底与镜像层等。
 
-use std::collections::HashSet;
-
 use leptos::html::Div;
 use leptos::prelude::*;
 
@@ -13,13 +11,6 @@ pub struct ChatComposerSignals {
     pub composer_mirror_html: RwSignal<String>,
     pub composer_mirror_scroll_top: RwSignal<f64>,
     pub composer_input_ref: NodeRef<leptos::html::Textarea>,
-    pub collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    /// 连续工具组中用户手动**收起**为仅显示最后一条的分组 head（message id）；默认空 = 全部展开。
-    /// 主列当前默认终端流，气泡列表未挂载时此信号暂无读取方。
-    #[allow(dead_code)]
-    pub collapsed_tool_run_heads: RwSignal<HashSet<String>>,
-    /// 工具气泡「详情抽屉」展开中的消息 id（与 `StoredMessage::id` 一致）；避免 `For` 重挂行时丢失本地 `RwSignal<bool>`。
-    pub tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     pub auto_scroll_chat: RwSignal<bool>,
     pub messages_pointer_scroll_active: RwSignal<bool>,
     pub messages_scroller: NodeRef<Div>,
@@ -38,9 +29,6 @@ impl ChatComposerSignals {
             composer_mirror_html: RwSignal::new(String::new()),
             composer_mirror_scroll_top: RwSignal::new(0.0),
             composer_input_ref: NodeRef::new(),
-            collapsed_long_assistant_ids: RwSignal::new(Vec::new()),
-            collapsed_tool_run_heads: RwSignal::new(HashSet::new()),
-            tool_detail_expanded_ids: RwSignal::new(HashSet::new()),
             auto_scroll_chat: RwSignal::new(true),
             messages_pointer_scroll_active: RwSignal::new(false),
             messages_scroller: NodeRef::new(),

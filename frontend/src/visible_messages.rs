@@ -10,9 +10,10 @@ use crate::timeline_scan::{
     is_orchestration_route_timeline_message, timeline_ui_snapshot_type,
 };
 
-/// 可见消息筛选范围（聊天列 / 导出均隐藏空助手壳；TUI 主列另见 [`tui_should_render_message`]）。
+/// 可见消息筛选范围（导出用 [`Export`]；[`ChatColumn`] 保留气泡列过滤语义供单测对照）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisibleMessageScope {
+    #[allow(dead_code)]
     ChatColumn,
     Export,
 }
