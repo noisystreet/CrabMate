@@ -25,6 +25,8 @@ const TOOL_SUMMARY = "列出目录";
 const TOOL_NAME = "list_tree";
 const TOOL_CALL_ID = "tc_list";
 const FINAL_ANSWER = "工作区为空，可以开始创建项目。";
+/** TUI 工具行 declutter 后 `.chat-tui-tool-one-line` 信号（human 名在旁，勿用 SSE summary 整句）。 */
+const CREATE_HELLO_CPP_SIGNAL = "hello.cpp";
 
 type DomOrder = {
   commentaryIdx: number;
@@ -484,23 +486,24 @@ test("mid-process second commentary must stay above its create tool during strea
   page,
 }) => {
   const secondCommentary = "目录是空的，接下来创建 hello.cpp。";
-  const createSummary = "创建文件 hello.cpp";
   const chunks = buildMidProcessSecondToolSse();
   const sid = `s_e2e_mid_commentary_order_${Date.now()}`;
 
   await installDelayedSse(page, chunks, `${CONV_ID}-mid`);
   await seedSession(page, sid);
-  await installOrderSampler(page, secondCommentary, createSummary);
+  await installOrderSampler(page, secondCommentary, CREATE_HELLO_CPP_SIGNAL);
   await sendMessage(page, "创建简单 c++ 文件");
 
   const transcript = page.getByTestId("chat-tui-transcript");
   await expect(transcript).toContainText(secondCommentary, { timeout: 30_000 });
-  await expect(transcript).toContainText(createSummary, { timeout: 20_000 });
+  await expect(transcript).toContainText(CREATE_HELLO_CPP_SIGNAL, {
+    timeout: 20_000,
+  });
 
   const atToolVisible = await readCommentaryToolDomOrder(
     page,
     secondCommentary,
-    createSummary,
+    CREATE_HELLO_CPP_SIGNAL,
   );
   expect(atToolVisible.commentaryIdx).toBeGreaterThanOrEqual(0);
   expect(atToolVisible.toolIdx).toBeGreaterThanOrEqual(0);
