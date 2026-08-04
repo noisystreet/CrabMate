@@ -29,11 +29,11 @@ pub use http::{
     WorkspaceEntry, WorkspaceFileReadData, delete_workspace_dir, delete_workspace_file,
     fetch_conversation_messages, fetch_github_repo_context, fetch_skills, fetch_status,
     fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
-    fetch_workspace_file, post_chat_branch, post_config_reload,
-    post_workspace_dir, post_workspace_file_write, post_workspace_file_write_opts,
-    post_workspace_set, save_tasks,
+    fetch_workspace_file, post_chat_branch, post_config_reload, post_workspace_dir,
+    post_workspace_file_write, post_workspace_file_write_opts, post_workspace_set, save_tasks,
     submit_chat_approval, upload_files_multipart,
 };
+pub use http_workspace_projects::{fetch_workspace_projects, post_workspace_project};
 pub use saved_models::{
     ExecutorLlmDraftSignals, MainLlmDraftSignals, SavedModelPreset,
     apply_saved_model_preset_to_executor_fields, apply_saved_model_preset_to_main_fields,
@@ -41,4 +41,3 @@ pub use saved_models::{
     persist_saved_model_presets_to_storage,
 };
 pub use session_store::post_session_conversation_store;
-pub use http_workspace_projects::{fetch_workspace_projects, post_workspace_project};

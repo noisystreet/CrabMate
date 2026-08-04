@@ -37,6 +37,8 @@ struct WorkspaceProjectPostBody {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WorkspaceProjectPostResponse {
     pub ok: bool,
+    /// 服务端校验后的项目名（成功路径当前仅用 `path` 更新 UI）。
+    #[allow(dead_code)]
     pub name: String,
     pub path: String,
     #[serde(default)]

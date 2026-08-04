@@ -104,8 +104,9 @@ web_api_require_bearer = false
 # web_audit_trust_x_forwarded_for = false
 # allow_insecure_no_auth_for_non_loopback = false
 # workspace_allowed_roots = []
-# Web 远程浏览器「项目池」：配置后用户可用项目名切换/新建子工作区（须配合 workspace_allowed_roots 收窄范围，见 docs/配置说明.md）
+# Web 远程浏览器「项目池」：配置后用户可用项目名切换/新建子工作区（须同时配置非空 workspace_allowed_roots，见 docs/配置说明.md）
 # web_workspace_pool = "/workspace"
+# workspace_allowed_roots = ["/workspace"]
 
 # 9. 首轮上下文注入：备忘、项目画像、依赖摘要
 # 默认见 **`config/context_inject.toml`**

@@ -17,6 +17,7 @@ pub(crate) fn WorkspaceProjectModalBody(
     pool_path: RwSignal<Option<String>>,
     loading: RwSignal<bool>,
     load_err: RwSignal<Option<String>>,
+    action_err: RwSignal<Option<String>>,
     on_open: Arc<dyn Fn(String) + Send + Sync>,
 ) -> impl IntoView {
     view! {
@@ -27,8 +28,13 @@ pub(crate) fn WorkspaceProjectModalBody(
             </p>
         </Show>
         <Show when=move || load_err.get().is_some()>
-            <p class="shell-topbar-workspace-error" role="alert">
+            <p class="workspace-project-error" role="alert" data-testid="workspace-project-load-err">
                 {move || load_err.get().unwrap_or_default()}
+            </p>
+        </Show>
+        <Show when=move || action_err.get().is_some()>
+            <p class="workspace-project-error" role="alert" data-testid="workspace-project-action-err">
+                {move || action_err.get().unwrap_or_default()}
             </p>
         </Show>
         <Show when=move || loading.get()>

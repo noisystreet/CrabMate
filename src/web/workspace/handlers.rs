@@ -785,7 +785,10 @@ pub async fn workspace_dir_create_handler(
     }
 }
 
-pub(crate) fn workspace_dir_create_sync(canonical: std::path::PathBuf, parents: bool) -> Result<(), String> {
+pub(crate) fn workspace_dir_create_sync(
+    canonical: std::path::PathBuf,
+    parents: bool,
+) -> Result<(), String> {
     if canonical.exists() {
         if canonical.is_dir() {
             return Err("目录已存在".to_string());

@@ -147,6 +147,7 @@ pub struct ContextPipelineConfig {
 pub struct WorkspaceRootsConfig {
     pub workspace_allowed_roots: Vec<PathBuf>,
     /// 非空时启用 Web「项目池」：浏览器可用项目名切换/新建子目录，无需手输绝对路径。
+    /// 配置时 finalize 要求非空 `workspace_allowed_roots`，且池根落在白名单内、非敏感前缀。
     pub web_workspace_pool: Option<PathBuf>,
 }
 
