@@ -30,10 +30,6 @@ pub fn status_chip_model(l: Locale) -> &'static str {
     }
 }
 
-pub fn status_chip_base_url(_l: Locale) -> &'static str {
-    "base_url"
-}
-
 pub fn status_chip_context(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "上下文",

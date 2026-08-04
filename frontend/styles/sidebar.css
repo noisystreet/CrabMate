@@ -685,11 +685,6 @@
   width: 76px;
 }
 
-.skeleton-chip-url-bar {
-  width: min(220px, 32vw);
-  max-width: 100%;
-}
-
 .skeleton-chip-role-select {
   width: 96px;
 }

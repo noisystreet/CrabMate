@@ -60,10 +60,6 @@
   text-overflow: ellipsis;
 }
 
-.status-chip-url .status-chip-value {
-  max-width: 420px;
-}
-
 .status-chip-role {
   padding: 0 4px 0 8px;
   gap: 4px;

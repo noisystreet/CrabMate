@@ -1,4 +1,4 @@
-//! 底栏状态：模型、base_url、角色、运行态。
+//! 底栏状态：模型、角色、运行态。
 
 use std::sync::Arc;
 
@@ -6,8 +6,8 @@ use leptos::prelude::*;
 
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{
-    status_bar_effective_api_base, status_bar_effective_llm_context_tokens,
-    status_bar_effective_model, status_bar_new_session_baseline_prompt_tokens,
+    status_bar_effective_llm_context_tokens, status_bar_effective_model,
+    status_bar_new_session_baseline_prompt_tokens,
 };
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::i18n::{self, Locale};
@@ -229,10 +229,6 @@ fn StatusBarChipsSkeleton(locale: RwSignal<Locale>) -> impl IntoView {
                 <span class="skeleton skeleton-chip-label"></span>
                 <span class="skeleton skeleton-chip-value skeleton-chip-model"></span>
             </span>
-            <span class="status-chip status-chip-skeleton status-chip-url">
-                <span class="skeleton skeleton-chip-label"></span>
-                <span class="skeleton skeleton-chip-value skeleton-chip-url-bar"></span>
-            </span>
             <span class="status-chip status-chip-skeleton status-chip-role">
                 <span class="skeleton skeleton-chip-label"></span>
                 <span class="skeleton skeleton-chip-value skeleton-chip-role-select"></span>
@@ -269,23 +265,6 @@ fn StatusBarChipsLoaded(
                     let sd = st.status_data.get();
                     let (_, stored_model, _, _, _) = load_client_llm_text_fields_from_storage();
                     status_bar_effective_model(sd.as_ref(), stored_model.as_str())
-                }}</span>
-            </span>
-            <span class="status-chip status-chip-url" title=move || {
-                let _tick = client_llm_storage_tick.get();
-                let sd = st.status_data.get();
-                let (stored_base, _, _, _, _) = load_client_llm_text_fields_from_storage();
-                status_bar_effective_api_base(sd.as_ref(), stored_base.as_str())
-            }>
-                <span class="status-chip-label">
-                    {move || i18n::status_chip_base_url(locale.get())}
-                </span>
-                <span class="status-chip-value">{move || {
-                    let _tick = client_llm_storage_tick.get();
-                    let sd = st.status_data.get();
-                    let (stored_base, _stored_model, _, _, _) =
-                        load_client_llm_text_fields_from_storage();
-                    status_bar_effective_api_base(sd.as_ref(), stored_base.as_str())
                 }}</span>
             </span>
             <span
