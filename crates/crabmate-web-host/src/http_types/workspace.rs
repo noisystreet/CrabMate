@@ -32,6 +32,35 @@ pub struct WorkspaceResponse {
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceSetBody {
     pub path: Option<String>,
+    /// 项目池模式：按项目名切换（与 `path` 二选一，优先 `project`）。
+    pub project: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceProjectsListResponse {
+    pub enabled: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pool_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceProjectPostBody {
+    pub name: String,
+    /// 为 true 且目录不存在时创建；默认 false（仅切换到已存在项目）。
+    #[serde(default)]
+    pub create: bool,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceProjectPostResponse {
+    pub ok: bool,
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize)]

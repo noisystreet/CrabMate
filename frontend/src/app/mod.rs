@@ -59,6 +59,9 @@ mod tauri_window_controls;
 mod wire_workspace_domain;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;
+mod workspace_project_modal;
+mod workspace_project_modal_body;
+mod workspace_project_modal_parts;
 mod workspace_root_actions;
 
 use crate::i18n::{self, Locale};
@@ -81,6 +84,7 @@ use shell_runtime_context::ChatShellLeptosContext;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
+use workspace_project_modal::workspace_project_modal_view;
 
 use leptos::prelude::*;
 
@@ -119,6 +123,7 @@ pub fn App() -> impl IntoView {
     let changelist_modal_signals = app_ctx.changelist_modal_signals();
     let settings_modal_signals = app_ctx.settings_modal_signals();
     let session_list_modal_signals = app_ctx.session_list_modal_signals();
+    let workspace_project_modal_signals = app_ctx.workspace_project_modal_signals();
     let status_bar_footer_signals = app_ctx.status_bar_footer_signals();
     let sidebar_nav_signals = app_ctx.sidebar_nav_signals();
     let side_column_view_signals = app_ctx.side_column_view_signals();
@@ -198,6 +203,8 @@ pub fn App() -> impl IntoView {
             </div>
 
             {session_list_modal_view(session_list_modal_signals)}
+
+            {workspace_project_modal_view(workspace_project_modal_signals)}
 
             {settings_modal_view(settings_modal_signals)}
 

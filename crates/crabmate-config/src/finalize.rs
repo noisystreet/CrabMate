@@ -633,6 +633,7 @@ struct FinalizeAfterRoles {
     reflection_default_max_rounds: usize,
     allowed_commands: Arc<[String]>,
     workspace_allowed_roots: Vec<PathBuf>,
+    web_workspace_pool: Option<PathBuf>,
     system_prompt: String,
     default_agent_role_id: Option<String>,
     agent_roles: agent_roles::AgentRoleCatalogBuilt,
@@ -701,6 +702,10 @@ fn finalize_agent_config(
     let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
         b.workspace_roots.workspace_allowed_roots.clone(),
         run_command_working_dir.as_path(),
+    )?;
+    let web_workspace_pool = workspace_roots::resolve_web_workspace_pool(
+        b.workspace_roots.web_workspace_pool.clone(),
+        workspace_allowed_roots.as_slice(),
     )?;
 
     let pm = merge_system_prompt_layers_for_finalize(
@@ -777,6 +782,7 @@ fn finalize_agent_config(
         reflection_default_max_rounds: mid.reflection_default_max_rounds,
         allowed_commands,
         workspace_allowed_roots,
+        web_workspace_pool,
         system_prompt: pm.system_prompt,
         default_agent_role_id,
         agent_roles,

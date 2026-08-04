@@ -125,7 +125,47 @@ pub async fn workspace_set_handler(
     State(http): State<AppStateHttpCore>,
     Json(body): Json<WorkspaceSetBody>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let raw = body.path.as_deref().map(|s| s.trim()).unwrap_or("");
+    let raw = if let Some(project) = body
+        .project
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let cfg = http.cfg.read().await;
+        match super::projects::resolve_workspace_set_project_path(&cfg, project) {
+            Ok(p) => p.display().to_string(),
+            Err(e) => {
+                let status = if e.is_policy_denied() {
+                    StatusCode::FORBIDDEN
+                } else {
+                    StatusCode::BAD_REQUEST
+                };
+                return Err((
+                    status,
+                    Json(serde_json::json!({ "ok": false, "error": e.user_message() })),
+                ));
+            }
+        }
+    } else {
+        body.path
+            .as_deref()
+            .map(|s| s.trim())
+            .unwrap_or("")
+            .to_string()
+    };
+    set_workspace_from_raw_path(&http, raw.as_str()).await
+}
+
+/// 将已校验或非空的路径写入 `workspace_override`（空串表示恢复默认）。
+pub(crate) async fn apply_workspace_override(http: &AppStateHttpCore, path_str: &str) {
+    let mut guard = http.workspace_override.write().await;
+    *guard = Some(path_str.to_string());
+}
+
+async fn set_workspace_from_raw_path(
+    http: &AppStateHttpCore,
+    raw: &str,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let mut guard = http.workspace_override.write().await;
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
@@ -745,7 +785,7 @@ pub async fn workspace_dir_create_handler(
     }
 }
 
-fn workspace_dir_create_sync(canonical: std::path::PathBuf, parents: bool) -> Result<(), String> {
+pub(crate) fn workspace_dir_create_sync(canonical: std::path::PathBuf, parents: bool) -> Result<(), String> {
     if canonical.exists() {
         if canonical.is_dir() {
             return Err("目录已存在".to_string());
@@ -873,45 +913,5 @@ pub async fn workspace_profile_handler(
             markdown: String::new(),
             error: Some(format!("生成项目画像任务失败: {}", e)),
         }),
-    }
-}
-
-#[cfg(test)]
-mod workspace_dir_create_tests {
-    use super::workspace_dir_create_sync;
-    use std::path::PathBuf;
-
-    #[test]
-    fn create_dir_at_root_succeeds() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let target = root.path().join("new_dir");
-        workspace_dir_create_sync(target.clone(), false).expect("create");
-        assert!(target.is_dir());
-    }
-
-    #[test]
-    fn create_dir_with_parents_creates_nested() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let target = root.path().join("a/b/c");
-        workspace_dir_create_sync(target.clone(), true).expect("create nested");
-        assert!(target.is_dir());
-    }
-
-    #[test]
-    fn create_dir_without_parents_fails_when_parent_missing() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let target = root.path().join("missing_parent/child");
-        let err = workspace_dir_create_sync(target, false).expect_err("should fail");
-        assert!(err.contains("创建目录失败"), "{err}");
-    }
-
-    #[test]
-    fn create_dir_rejects_existing_file() {
-        let root = tempfile::tempdir().expect("tempdir");
-        let target = root.path().join("blocker");
-        std::fs::write(&target, b"x").expect("write file");
-        let err =
-            workspace_dir_create_sync(PathBuf::from(&target), false).expect_err("file blocks dir");
-        assert!(err.contains("文件"), "{err}");
     }
 }

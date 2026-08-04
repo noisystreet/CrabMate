@@ -144,6 +144,9 @@ impl ConfigBuilder {
             &mut self.workspace_roots.workspace_allowed_roots,
             &agent.workspace_allowed_roots,
         );
+        if let Some(ref v) = agent.web_workspace_pool {
+            self.workspace_roots.web_workspace_pool = Some(v.clone());
+        }
     }
 
     /// `Option` 数值与布尔合并（至上下文摘要与健康探测）。

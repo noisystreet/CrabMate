@@ -160,6 +160,8 @@ pub(crate) struct ConfigBuilderContextPipeline {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderWorkspaceRoots {
     pub(crate) workspace_allowed_roots: Option<Vec<String>>,
+    /// `CM_WEB_WORKSPACE_POOL` / TOML `web_workspace_pool`
+    pub(crate) web_workspace_pool: Option<String>,
 }
 
 #[derive(Default)]

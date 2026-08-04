@@ -214,6 +214,8 @@ pub(super) struct AgentSection {
     pub(super) sync_default_tool_sandbox_docker_user: Option<String>,
     /// Web 工作区可选根目录；省略或空则仅允许 `run_command_working_dir` 及其子目录
     pub(super) workspace_allowed_roots: Option<Vec<String>>,
+    /// Web 项目池根目录；配置后浏览器可用项目名切换/新建子工作区。`CM_WEB_WORKSPACE_POOL`
+    pub(super) web_workspace_pool: Option<String>,
     pub(super) web_api_bearer_token: Option<String>,
     /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **false**（允许无密钥启动 `serve`）；显式 **`true`** 时须配非空 `web_api_bearer_token` 后 `serve` 才启动。
     pub(super) web_api_require_bearer: Option<bool>,
