@@ -244,10 +244,15 @@ fn live_tool_chunk_uses_tool_row_patch_not_replace_all() {
     match live.patch {
         TuiBodyPatch::ToolRow {
             status,
+            status_label,
             one_line,
             detail,
         } => {
-            assert!(status.contains("执行") || status.contains("running") || !status.is_empty());
+            assert_eq!(status, "⏳");
+            assert!(
+                status_label.contains("执行") || status_label.contains("Running"),
+                "{status_label}"
+            );
             assert!(one_line.contains("part-b"), "{one_line}");
             assert!(detail.is_none());
         }

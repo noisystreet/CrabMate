@@ -615,6 +615,7 @@ fn plan_live_tool_patch(
             md,
             TuiBodyPatch::ToolRow {
                 status: fields.status,
+                status_label: fields.status_label,
                 one_line: fields.one_line,
                 detail: fields.detail,
             },

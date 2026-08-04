@@ -11,9 +11,32 @@ use serde_json::Value;
 mod compact_key;
 mod title_signal_dedup;
 
+pub use title_signal_dedup::tool_signal_beside_title;
 use title_signal_dedup::{
-    tool_compact_signal_paren_suffix_after_redundant_head, tool_compact_signal_redundant_with_title,
+    tool_compact_signal_paren_suffix_after_redundant_head,
+    tool_compact_signal_redundant_with_title, tool_signal_beside_titles,
 };
+
+/// TUI 等已单独展示工具 id 时：从 compact 去掉 id / 人类名 / 失败标题前缀。
+#[must_use]
+pub fn tool_signal_beside_tool(
+    tool_id: &str,
+    compact: &str,
+    loc: ToolCardLocale,
+) -> Option<String> {
+    let id = tool_id.trim();
+    if id.is_empty() {
+        return tool_signal_beside_title("", compact);
+    }
+    let human = locale::tool_human_name(loc, id);
+    let failed = locale::tool_title_failed(loc, &human);
+    // 更长的失败标题须先于 id / 人类名，否则 `cargo_check失败 …` 会先被剥成 `失败 …`。
+    if human.as_str() == id {
+        tool_signal_beside_titles(&[failed.as_str(), id], compact)
+    } else {
+        tool_signal_beside_titles(&[failed.as_str(), id, human.as_str()], compact)
+    }
+}
 
 const COMPACT_SEPARATOR: &str = " ";
 
