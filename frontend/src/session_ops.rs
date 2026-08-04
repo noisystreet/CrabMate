@@ -118,8 +118,7 @@ pub fn user_ordinal_for_message_index(messages: &[StoredMessage], idx: usize) ->
 }
 
 /// 在 `msg_index` 之前（不含本条）最近一条 **普通用户** 消息（`role == user` 且非工具卡）的 id。
-///
-/// 用于工具结果气泡「↑」跳转到本回合对应的用户提问；若无则返回 `None`。
+#[cfg_attr(not(test), expect(dead_code))]
 pub fn preceding_plain_user_message_id(
     messages: &[StoredMessage],
     msg_index: usize,
@@ -232,16 +231,6 @@ pub fn prepare_retry_failed_assistant_turn(
 
 pub fn message_created_ms() -> i64 {
     js_sys::Date::now() as i64
-}
-
-pub fn format_msg_time_label(ms: i64) -> Option<String> {
-    if ms <= 0 {
-        return None;
-    }
-    let d = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(ms as f64));
-    let h = d.get_hours();
-    let m = d.get_minutes();
-    Some(format!("{h:02}:{m:02}"))
 }
 
 pub fn message_role_label(m: &StoredMessage, locale: crate::i18n::Locale) -> &'static str {

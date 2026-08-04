@@ -61,17 +61,14 @@ test("delayed multi-tool stream reuses each active row without overlap", async (
     const inspect = () => {
       const rows = [
         ...document.querySelectorAll<HTMLElement>(
-          ".messages-inner .msg-with-select",
+          "section.chat-tui-turn[data-tui-msg-id]",
         ),
       ]
         .filter((element) => element.offsetParent !== null)
         .map((element) => {
           const rect = element.getBoundingClientRect();
           return {
-            id:
-              element.querySelector<HTMLElement>(".msg")?.id ||
-              element.textContent?.slice(0, 32) ||
-              "",
+            id: element.getAttribute("data-tui-msg-id") ?? "",
             text: element.textContent ?? "",
             top: rect.top,
             bottom: rect.bottom,
@@ -84,8 +81,9 @@ test("delayed multi-tool stream reuses each active row without overlap", async (
         chunkIndex: state.__cmChunkIndex ?? -1,
         rowIds: rows.map((row) => row.id),
         rowTexts: rows.map((row) => row.text),
-        toolCount: document.querySelectorAll('[data-testid="chat-tool-card"]')
-          .length,
+        toolCount: document.querySelectorAll(
+          'section.chat-tui-turn--tool, [data-testid="chat-tui-tool-process"]',
+        ).length,
       });
 
       for (let firstIndex = 0; firstIndex < rows.length; firstIndex += 1) {

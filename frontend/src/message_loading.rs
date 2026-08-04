@@ -117,6 +117,7 @@ pub fn messages_have_loading_tool(messages: &[StoredMessage]) -> bool {
 }
 
 #[must_use]
+#[cfg_attr(not(test), expect(dead_code))]
 pub fn last_plain_assistant(messages: &[StoredMessage]) -> Option<&StoredMessage> {
     messages
         .iter()
@@ -125,6 +126,7 @@ pub fn last_plain_assistant(messages: &[StoredMessage]) -> Option<&StoredMessage
 }
 
 #[must_use]
+#[cfg_attr(not(test), expect(dead_code))]
 pub fn tail_loading_plain_assistant_id(messages: &[StoredMessage]) -> Option<String> {
     last_plain_assistant(messages)
         .filter(|m| stored_message_is_loading(m))
@@ -140,17 +142,6 @@ pub fn is_loading_streaming_assistant_id(m: &StoredMessage, streaming_assistant_
 #[must_use]
 pub fn is_finalized_plain_assistant(m: &StoredMessage) -> bool {
     is_plain_assistant_message(m) && !stored_message_is_loading(m)
-}
-
-/// 消息行 CSS「loading」：普通助手或工具时间线行且 state 为 Loading。
-#[inline]
-#[must_use]
-pub fn message_row_shows_loading(
-    is_tool: bool,
-    role: &str,
-    state: Option<&StoredMessageState>,
-) -> bool {
-    state.is_some_and(StoredMessageState::is_loading) && (role == "assistant" || is_tool)
 }
 
 #[cfg(test)]

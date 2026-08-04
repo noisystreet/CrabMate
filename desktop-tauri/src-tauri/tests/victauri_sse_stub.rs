@@ -100,8 +100,8 @@ e2e_test!(send_message_shows_assistant_reply_and_tool_card, |client| async move 
         .await
         .unwrap();
 
-    // 验证工具卡出现
-    Locator::test_id("chat-tool-card")
+    // 验证工具过程行出现（TUI）
+    Locator::test_id("chat-tui-tool-process")
         .expect(&mut client)
         .to_be_visible()
         .await

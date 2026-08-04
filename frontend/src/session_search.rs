@@ -22,6 +22,7 @@ pub fn normalize_search_query(raw: &str) -> String {
 ///
 /// `needle_lower` 须为 [`normalize_search_query`] 的结果。按 Unicode 标量值窗口做大小写不敏感比较；
 /// 命中区间合并（重叠子串并集）。
+#[cfg_attr(not(test), expect(dead_code))]
 pub fn split_for_find_highlight(haystack: &str, needle_lower: &str) -> Vec<(String, bool)> {
     if needle_lower.is_empty() {
         return vec![(haystack.to_string(), false)];
@@ -170,7 +171,9 @@ pub fn is_safe_dom_token(s: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':'))
 }
 
-/// 将 `id="msg-{msg_id}"` 的气泡滚入主消息区可视范围（仅 WASM）。
+/// 将消息滚入主消息区可视范围（仅 WASM）。
+///
+/// 优先匹配 TUI 主列 `section.chat-tui-turn[data-tui-msg-id]`；兼容旧气泡 `id="msg-{id}"`。
 #[cfg(target_arch = "wasm32")]
 pub fn scroll_message_into_view(msg_id: &str) {
     if !is_safe_dom_token(msg_id) {
@@ -182,8 +185,13 @@ pub fn scroll_message_into_view(msg_id: &str) {
     let Some(doc) = win.document() else {
         return;
     };
-    let eid = format!("msg-{msg_id}");
-    let Some(el) = doc.get_element_by_id(&eid) else {
+    let tui_sel = format!("section.chat-tui-turn[data-tui-msg-id=\"{msg_id}\"]");
+    let el = doc
+        .query_selector(&tui_sel)
+        .ok()
+        .flatten()
+        .or_else(|| doc.get_element_by_id(&format!("msg-{msg_id}")));
+    let Some(el) = el else {
         return;
     };
     if let Ok(he) = el.dyn_into::<web_sys::HtmlElement>() {

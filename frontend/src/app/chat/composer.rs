@@ -7,7 +7,6 @@ use leptos::prelude::*;
 use leptos::task::spawn_local;
 
 use gloo_timers::future::TimeoutFuture;
-use std::collections::HashSet;
 use web_sys::HtmlTextAreaElement;
 
 use crate::chat_session_state::ChatSessionSignals;
@@ -29,8 +28,6 @@ struct ApplyShellAfterActiveSessionChanged<'a> {
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    tool_detail_expanded_ids: RwSignal<HashSet<String>>,
     sessions_snapshot: &'a [ChatSession],
     active_id: &'a str,
 }
@@ -41,8 +38,6 @@ fn apply_shell_after_active_session_changed(arg: ApplyShellAfterActiveSessionCha
         draft,
         pending_images,
         pending_clarification,
-        collapsed_long_assistant_ids,
-        tool_detail_expanded_ids,
         sessions_snapshot,
         active_id,
     } = arg;
@@ -67,8 +62,6 @@ fn apply_shell_after_active_session_changed(arg: ApplyShellAfterActiveSessionCha
     chat.session_sync
         .set(st.unwrap_or_else(SessionSyncState::local_only));
     chat.clear_stream_resume_handles();
-    collapsed_long_assistant_ids.set(Vec::new());
-    tool_detail_expanded_ids.set(HashSet::new());
 }
 
 /// 切换会话时重置会话级 UI 状态并加载该会话草稿。
@@ -81,8 +74,6 @@ pub(crate) fn wire_session_switch_clears_chat_state(
     draft: RwSignal<String>,
     pending_images: RwSignal<Vec<String>>,
     pending_clarification: RwSignal<Option<PendingClarificationForm>>,
-    collapsed_long_assistant_ids: RwSignal<Vec<String>>,
-    tool_detail_expanded_ids: RwSignal<HashSet<String>>,
 ) {
     Effect::new(move |_| {
         let id = chat.active_id.get();
@@ -95,8 +86,6 @@ pub(crate) fn wire_session_switch_clears_chat_state(
             draft,
             pending_images,
             pending_clarification,
-            collapsed_long_assistant_ids,
-            tool_detail_expanded_ids,
             sessions_snapshot: list.as_slice(),
             active_id: id.as_str(),
         });

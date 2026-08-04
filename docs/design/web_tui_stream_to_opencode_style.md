@@ -8,7 +8,7 @@
 - 前端模块：**`docs/frontend/ARCHITECTURE.md`**（`column` / `composer_stream` 等）
 - 前端架构：**`docs/frontend/ARCHITECTURE.md`**
 - SSE 契约：**`docs/SSE协议.md`**（展示层演进**不**改协议，除非另开 ADR）
-- 既有气泡路径（保留未挂载）：`message_row/`、`assistant_body/`、`messages_list.rs`
+- 主列默认路径：`ChatTuiStreamView`（终端流）；旧气泡列表已于 Phase 5 删除
 
 ---
 
@@ -28,7 +28,7 @@
 - 复刻对方 UI 视觉或品牌。  
 - 引入 React/Vue 流式 Markdown 库作为默认运行时依赖（Leptos/WASM 栈优先自研或薄封装）。  
 - 用展示层演进绑架 SSE / `StoredMessage` / turn-layout v2 协议破坏性变更。  
-- 立刻删除气泡 / Markdown / 工具卡全部代码（可阶段性「默认路径不用」，再决定删除）。
+- 立刻删除气泡 / Markdown / 工具卡全部代码（~~可阶段性「默认路径不用」~~ → **气泡 UI 已删**；Markdown/工具展示仍由 TUI 路径承接）。
 
 ---
 
@@ -57,7 +57,7 @@
 | **渲染** | `tui_line_markdown`：闭合行 / 落定后 `to_safe_html`；活跃行 **`stream_inline_safe_html`**（成对行内标记）；未闭合围栏纯文本；回合带 `--user` / `--assistant` / `--tool` 等角色样式 |
 | **DOM 写入** | 按回合 `section`：append / live 行级 patch；会话切换或 id 前缀破坏时全量重建 |
 | **跟底** | 共用 `ChatMessagesScrollShell`；unpin **仅** wheel↑ / 指针离底 / Home / 查找；工具 live 用 `ToolRow` 改文案，折叠定高 |
-| **缺口** | 气泡路径 `allow(dead_code)` 保留 |
+| **缺口** | 旧气泡路径已删除；长会话虚拟化等仍待做 |
 
 ---
 
@@ -99,7 +99,7 @@ SSE / overlay / sessions（不变）
 - [x] 按行轻量 Markdown  
 - [x] 滚动 E2E + 终端流 E2E  
 - [ ] 文档与待办交叉引用本文件（本条）  
-- [ ] 明确「气泡路径」保留策略：默认不挂载，删除门槛另议
+- [x] 明确「气泡路径」保留策略：默认不挂载 → **已删除**（Phase 5）
 
 **验收**：冷启动即终端流；长流式跟底 E2E 绿；按行粗体流式中不闪、落定后生效。
 
@@ -184,9 +184,9 @@ SSE / overlay / sessions（不变）
 
 ### Phase 5 — 清理与双路径决策
 
-1. 评估气泡路径：无产品需求则删除或移入 `examples/` / feature flag；有需求则「高级视图」二次挂载且**不得**夺回默认。  
-2. 删除仅服务气泡的死信号/CSS；保留 `message_format` / overlay 等共享层。  
-3. 更新 **`docs/frontend/ARCHITECTURE.md`** 数据流图。
+1. **已完成**：删除未挂载气泡簇（`messages_list` / `message_row/` / `assistant_body/` 等）与仅服务气泡的信号/i18n；「加载更早」迁入 `ChatTuiStreamView`；查找滚动改为 `data-tui-msg-id`。  
+2. 保留 `message_format` / overlay / `message_row_actions` 等共享层。  
+3. 更新 **`docs/frontend/ARCHITECTURE.md`** 数据流图（模块表已同步）。
 
 ---
 
@@ -223,7 +223,7 @@ Phase 0（基线）
 | 跟底与查找跳转冲突 | 跳转显式 unpin；跳转完成不自动 pin，除非目标已在底部 |
 | 全量 HTML → 增量迁移引入双写 bug | feature 或内部开关；先 shadow 对比再切默认 |
 | 工具行刷屏 | 同 tool_call_id 更新同一行；结束态替换开始态 |
-| 过早删除气泡代码 | Phase 5 前只 `allow(dead_code)` / 不挂载 |
+| 过早删除气泡代码 | ~~Phase 5 前只 `allow(dead_code)`~~ → **已删除**；能力由 TUI 承接 |
 | 引入 JS Markdown 库 | Phase 4 默认不选；若试点须过 CSP 与体积评审 |
 
 ---
@@ -244,4 +244,4 @@ Phase 0（基线）
 |------|------|
 | 2026-07-25 | 初稿：自当前终端流 + 按行 Markdown 向 OpenCode/OpenClaw 式 append-only + 简单 pin 演进 |
 | 2026-07-25 | Phase 1：跟底状态机收敛（pin/unpin、去掉 IO 双重真相、盯 transcript） |
-| 2026-07-25 | Phase 2：每回合 section + live 按行 textContent/append（非整 body innerHTML） |
+| 2026-08-04 | Phase 5：删除气泡死代码；「加载更早」与滚动选择器迁到 TUI |

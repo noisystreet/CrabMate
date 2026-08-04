@@ -5,13 +5,14 @@ use wasm_bindgen::JsCast;
 
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
+use super::session_hydrate::try_load_older_messages_for_active_session;
 use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
 use super::tui_line_markdown::{
     TuiBodyPatch, open_active_block_class, open_block_is_fence_buffer, render_open_active_html,
 };
 use super::tui_transcript_sync::{PlanTuiSyncArgs, TuiMountState, TuiSyncPlan, plan_tui_sync};
 use crate::chat_session_state::ChatSessionSignals;
-use crate::i18n::Locale;
+use crate::i18n::{self, Locale};
 use crate::storage::ChatSession;
 use crate::stream_text_overlay::StreamTextOverlay;
 use std::collections::HashMap;
@@ -385,11 +386,53 @@ pub(crate) fn ChatTuiStreamView(
         follow_after_content_paint(scroll_shell);
     });
 
+    let history_flags = Memo::new(move |_| {
+        let id = chat.active_id.get();
+        chat.sessions.with(|list| {
+            list.iter()
+                .find(|s| s.id == id)
+                .map(|s| (s.history_has_older_flag(), chat.history_loading_older.get()))
+                .unwrap_or((false, false))
+        })
+    });
+
     view! {
         <div
             class="messages-inner chat-tui-inner"
             data-testid="chat-tui-stream-view"
         >
+            <Show when=move || {
+                let (has_older, loading_older) = history_flags.get();
+                has_older || loading_older
+            }>
+                <div class="messages-history-load" role="status">
+                    <Show
+                        when=move || history_flags.get().1
+                        fallback=move || {
+                            view! {
+                                <button
+                                    type="button"
+                                    class="btn btn-ghost btn-sm"
+                                    data-testid="chat-load-older"
+                                    on:click=move |_| {
+                                        try_load_older_messages_for_active_session(
+                                            chat,
+                                            locale.get_untracked(),
+                                            scroll_shell,
+                                        );
+                                    }
+                                >
+                                    {move || i18n::chat_history_load_older(locale.get())}
+                                </button>
+                            }
+                        }
+                    >
+                        <span class="messages-history-load-busy">
+                            {move || i18n::chat_history_loading_older(locale.get())}
+                        </span>
+                    </Show>
+                </div>
+            </Show>
             <div
                 class="chat-tui-transcript"
                 data-testid="chat-tui-transcript"

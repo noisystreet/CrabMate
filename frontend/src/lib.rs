@@ -10,7 +10,6 @@ mod a11y;
 mod api;
 mod app;
 mod app_prefs;
-mod assistant_body;
 mod chat_actions;
 mod chat_session_state;
 mod clarification_form;

@@ -1,8 +1,5 @@
-//! 消息行上的**副作用动作**（分支 API、本地截断后再流式）：从 `message_row` 视图拆出，降低视图文件与 `api`/`session_ops` 的纠缠。
-//!
-//! TUI 动作条与气泡行共用；气泡列表本身仍可能整体未挂载。
+//! 消息行上的**副作用动作**（分支 API、本地截断后再流式）：供 TUI 动作条调用。
 
-use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
@@ -25,23 +22,13 @@ fn dbg_log_with(msg: &str, val: &str) {
     web_sys::console::log_2(&format!("[regen] {}: {}", msg, val).into(), &val.into());
 }
 
-/// 用户消息上「再生 / 分支」按钮所需的信号子集（[`Copy`]，便于在 `view!` 闭包中捕获）。
+/// 用户消息上「再生 / 分支」按钮所需的信号子集（[`Copy`]，便于在闭包中捕获）。
 #[derive(Clone, Copy)]
 pub(crate) struct MessageRowActionSignals {
     pub chat: ChatSessionSignals,
     pub stream_follow_up: RwSignal<ComposerStreamFollowUp>,
     pub status_err: RwSignal<Option<String>>,
     pub locale: RwSignal<Locale>,
-}
-
-/// 工具卡「跳转到本回合用户提问」：关自动跟底并滚到锚点。
-pub(crate) fn spawn_scroll_to_linked_user_message(uid: &str, auto_scroll_chat: RwSignal<bool>) {
-    auto_scroll_chat.set(false);
-    let u = uid.to_string();
-    spawn_local(async move {
-        TimeoutFuture::new(32).await;
-        crate::session_search::scroll_message_into_view(&u);
-    });
 }
 
 impl MessageRowActionSignals {
