@@ -133,26 +133,6 @@
   min-width: 2rem;
 }
 
-.msg-find-match {
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--accent) 11%, transparent);
-}
-
-.msg-find-highlight {
-  box-shadow:
-    0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent),
-    var(--shadow-sm);
-}
-
-.msg-find-inline {
-  padding: 0 0.15em;
-  margin: 0 -0.02em;
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--accent) 28%, transparent);
-  color: inherit;
-  font: inherit;
-}
-
 /* 调试台内容在右列 side-card-body 内复用工作区窗格宽度 */
 .debug-console-body {
   flex: 1;
@@ -215,7 +195,7 @@
   transition: border-color 0.22s ease;
 }
 
-/* 仅作滚动容器：勿对 .msg 做纵 flex 子项，否则 flex-shrink + overflow 会把气泡压成一行高 */
+/* 仅作滚动容器：勿对 transcript 子项做纵 flex 压缩，否则 overflow 会把回合压成一行高 */
 .messages {
   flex: 1;
   min-height: 0;
@@ -284,7 +264,7 @@
   margin-top: 0;
 }
 
-/* 角色元信息：在卡片外（wrap 内、section 上），对齐气泡 .msg-meta */
+/* 角色元信息：在卡片外（wrap 内、section 上） */
 .chat-tui-role {
   display: flex;
   align-items: baseline;
@@ -383,7 +363,7 @@
   border-radius: var(--radius-md);
 }
 
-/* —— 工具：扁平 mono，对齐 .msg-tool —— */
+/* —— 工具回合：扁平 mono —— */
 .chat-tui-turn--tool {
   align-self: stretch;
   width: auto;
@@ -410,6 +390,24 @@
     0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent),
     0 2px 10px color-mix(in srgb, var(--success) 10%, transparent);
   animation: msg-tool-exec-border-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes msg-tool-exec-border-breathe {
+  0%,
+  100% {
+    border-color: color-mix(in srgb, var(--success) 26%, var(--border-subtle));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--success) 8%, transparent),
+      0 1px 6px color-mix(in srgb, var(--success) 6%, transparent);
+  }
+
+  50% {
+    border-color: color-mix(in srgb, var(--success) 52%, var(--border-subtle));
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--success) 28%, transparent),
+      0 0 16px color-mix(in srgb, var(--success) 22%, transparent),
+      0 2px 12px color-mix(in srgb, var(--success) 14%, transparent);
+  }
 }
 
 .chat-tui-line {
@@ -723,136 +721,9 @@
   background: color-mix(in srgb, var(--muted) 88%, var(--accent));
 }
 
-/* —— 消息气泡 —— */
-.msg-meta {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: 6px;
-  font-size: var(--text-2xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: color-mix(in srgb, var(--muted) 88%, transparent);
-  font-weight: var(--font-weight-label);
-  line-height: var(--line-tight);
-  /* 中文角色名（如「助手」）在极窄气泡内会逐字换行呈竖排；与英文标签共用一行 meta，禁止该行内折行 */
-  white-space: nowrap;
-}
+/* —— 消息正文 / 操作条（TUI transcript + 共用 chip） —— */
 
-.msg-meta-primary {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-}
-
-.msg-planner-round-badge {
-  flex-shrink: 0;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  color: color-mix(in srgb, var(--accent) 82%, var(--text));
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.35;
-  text-transform: none;
-}
-
-.msg-meta-role:empty {
-  display: none;
-}
-
-.msg-meta-time:empty {
-  display: none;
-}
-
-.msg-meta-time {
-  font-variant-numeric: tabular-nums;
-  text-transform: none;
-  letter-spacing: 0;
-  font-weight: 500;
-  opacity: 0.88;
-}
-
-.msg-with-select.msg-row-user .msg-meta {
-  flex-direction: row-reverse;
-  justify-content: flex-start;
-}
-
-.msg-with-select:has(.msg-assistant) .msg-meta,
-.msg-with-select:has(.msg-system) .msg-meta {
-  justify-content: flex-start;
-}
-
-.msg-with-select:has(.msg-tool) .msg-meta {
-  justify-content: space-between;
-}
-
-.msg {
-  border-radius: 12px;
-  padding: var(--space-2) var(--space-inset-msg);
-  min-width: 0;
-  flex-shrink: 0;
-  box-sizing: border-box;
-  font-size: var(--crabmate-chat-font-size, 14px);
-  line-height: 1.6;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-subtle);
-  position: relative;
-  overflow-x: hidden;
-  overflow-y: visible;
-}
-
-.msg-has-inline-copy {
-  padding-right: calc(var(--space-inset-msg) + 28px);
-}
-
-.msg-copy-inside-btn {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
-  min-width: 20px;
-  padding: 0;
-  border-radius: var(--radius-btn);
-  opacity: 0.9;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.msg-copy-inside-btn:hover {
-  opacity: 1;
-}
-
-/* 正文单独一层：loading 时与 typing 同行 flex，避免匿名 flex 项 min-width:auto 撑破 */
-.msg-body {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  /* 流式增量换行后增高；勿用 overflow-x:auto 把超长行收成横向条滚动 */
-  overflow-x: hidden;
-  overflow-y: visible;
-}
-
-/* 助手 Markdown（.msg-md-prose）：块级排版，避免 pre-wrap 与标题/列表冲突 */
-.msg-md-wrap {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* 会话模式：聊天列正文字体与字号（含默认终端流 transcript；Markdown 关闭为纯文本时由下方规则覆盖为等宽） */
-.chat-column .msg-body,
+/* 会话模式：聊天列正文字体与字号 */
 .chat-column .msg-md-prose,
 .chat-column .composer-input,
 .chat-column .chat-tui-transcript {
@@ -866,138 +737,10 @@
   font-size: var(--crabmate-chat-font-size, 14px);
 }
 
-/* 纯文本气泡 / 关闭 Markdown（CM_WEB_DISABLE_MARKDOWN）：等宽，覆盖上一段 chat 字体 */
-.chat-column .msg-md-wrap--plaintext .msg-md-prose,
-.msg-md-wrap--plaintext .msg-md-prose {
-  font-family: var(--font-mono);
-  font-size: 0.92em;
-}
-
-/* 思维链 + 终答：折叠高度作用于整块 */
-.msg-md-split {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* 勿用 mask-image 做淡出：部分引擎下会干扰气泡内文本拖动选区；用 pointer-events:none 的叠层近似底部渐隐 */
-.msg-md-split.msg-md-prose-collapsed,
-.msg-md-prose-collapsed {
-  max-height: 18rem;
-  overflow: hidden;
-  position: relative;
-}
-
-.msg-md-split.msg-md-prose-collapsed::after,
-.msg-md-prose-collapsed::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 5rem;
-  z-index: 1;
-  pointer-events: none;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in srgb, var(--surface) 88%, var(--border-subtle) 12%)
-  );
-}
-
-/* 助手正文区（含原思维链 + 终答合并渲染） */
-.msg-assistant .msg-md-answer.msg-md-prose {
-  color: var(--text);
-}
-
 .msg-md-prose {
   white-space: normal;
   /* 勿用 contain：layout/style；部分环境下会恶化选区命中与复制体验 */
   user-select: text;
-}
-
-/* 助手正文：在已定宽的父级内优先按词/语义断行，避免继承 .msg-body 的 overflow-wrap:anywhere 在窄容器外仍过碎 */
-.msg-assistant .msg-body.msg-md-prose {
-  overflow-wrap: break-word;
-  word-break: normal;
-}
-
-.msg-md-toggle {
-  margin-top: var(--space-2);
-  align-self: flex-start;
-}
-
-/* 思考区 */
-.msg-md-thinking {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  margin-bottom: var(--space-2);
-  border-radius: var(--radius-sm);
-  border-left: 2px solid var(--accent-dim);
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
-}
-
-.msg-md-thinking-header {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-1) var(--space-3);
-  border-bottom: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
-}
-
-.msg-md-thinking-label {
-  font-size: var(--text-xs);
-  color: var(--accent);
-  font-weight: var(--font-weight-label);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.msg-md-thinking-toggle {
-  font-size: var(--text-xs);
-  padding: 2px 6px;
-}
-
-.msg-md-thinking-body {
-  padding: var(--space-2) var(--space-3);
-}
-
-.msg-md-thinking .msg-md-prose {
-  font-size: 0.88em;
-  color: var(--muted);
-  font-style: italic;
-}
-
-.msg-md-thinking .msg-md-prose p:first-child {
-  margin-top: 0;
-}
-.msg-md-thinking .msg-md-prose p:last-child {
-  margin-bottom: 0;
-}
-
-/* 思考区收起状态：只显示头部 */
-.msg-md-thinking--collapsed .msg-md-thinking-body {
-  display: none;
-}
-
-/* 流式中思考阶段：左边框呼吸动画 */
-.msg-md-thinking.streaming {
-  border-left-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  animation: thinking-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes thinking-pulse {
-  0%, 100% { border-left-color: var(--accent); }
-  50% { border-left-color: color-mix(in srgb, var(--accent) 50%, transparent); }
-}
-
-/* 回答区 */
-.msg-md-answer {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
 }
 
 .msg-actions {
@@ -1010,7 +753,7 @@
   opacity: 0.92;
 }
 
-/* 气泡外的工具条：紧贴气泡下沿，不占气泡内边距 */
+/* 气泡外的操作条：紧贴回合下沿 */
 .msg-actions.msg-actions-below {
   margin-top: 6px;
   width: max-content;
@@ -1018,12 +761,11 @@
   box-sizing: border-box;
 }
 
-/* 与 .msg-stack 的 align-items 配合，整行图标仍可用 justify 控制间距 */
-.msg-with-select.msg-row-user .msg-actions-below {
+.chat-tui-turn-wrap--user .msg-actions-below {
   justify-content: flex-end;
 }
 
-.msg-with-select:has(.msg-assistant) .msg-actions-below {
+.chat-tui-turn-wrap:not(.chat-tui-turn-wrap--user) .msg-actions-below {
   justify-content: flex-start;
 }
 
@@ -1184,29 +926,6 @@
 }
 
 /* 勿用 fit-content/max-content：部分引擎会收成窄条；用列宽百分比给出确定宽度 */
-.msg-user {
-  align-self: flex-end;
-  width: fit-content;
-  max-width: min(92%, 100%);
-  box-sizing: border-box;
-  background: linear-gradient(
-    160deg,
-    color-mix(in srgb, var(--accent) 26%, var(--surface)) 0%,
-    color-mix(in srgb, var(--accent) 15%, var(--surface)) 58%,
-    color-mix(in srgb, var(--accent) 10%, var(--surface)) 100%
-  );
-  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
-    0 2px 8px color-mix(in srgb, var(--accent) 10%, transparent);
-}
-
-.msg-user .msg-body {
-  text-align: right;
-  max-width: 100%;
-  overflow-wrap: break-word;
-  word-break: normal;
-}
 
 /* 显式 `/<skill-id>`：内联「使用 xxx skill」 */
 .msg-skill-slash-body {
@@ -1282,522 +1001,10 @@
   margin-inline: 0.08em;
 }
 
-/* 助手气泡：中性灰阶渐变 + 轮廓，避免与用户侧 accent 渐变同色同质 */
-/* 勿用 width:fit-content；且勿 align-self:flex-start（在 .msg-stack 纵 flex 下会按内容收宽 → 流式首字极窄 + anywhere 似竖排） */
-.msg-assistant {
-  align-self: stretch;
-  width: 100%;
-  max-width: min(92%, 100%);
-  box-sizing: border-box;
-  background: linear-gradient(
-    168deg,
-    color-mix(in srgb, var(--surface) 96%, var(--muted)) 0%,
-    color-mix(in srgb, var(--surface) 97%, var(--bg-elevated)) 55%,
-    color-mix(in srgb, var(--surface) 95%, var(--bg-elevated)) 100%
-  );
-  border-color: color-mix(in srgb, var(--border) 42%, var(--muted));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 6%, transparent) inset,
-    0 2px 10px color-mix(in srgb, var(--bg) 38%, transparent);
-  transition:
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
-}
-
-.msg-system {
-  align-self: stretch;
-  width: auto;
-  max-width: none;
-  background: var(--bg-elevated);
-  font-size: 12px;
-  color: var(--muted);
-  border: 1px solid var(--border-subtle);
-  border-left: 3px solid color-mix(in srgb, var(--muted) 65%, var(--border));
-  box-shadow: none;
-}
-
-
-/* 连续多条工具输出：组内旧→新，最新一条在最下；标题栏在组内底部 */
-.msg-tool-run {
-  align-self: stretch;
-  width: 100%;
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.msg-tool-run-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-self: flex-start;
-  width: auto;
-  max-width: 100%;
-  font-size: 11px;
-  color: var(--muted);
-  /* 标题在气泡下方：上留白略大 */
-  padding: 6px 0 2px 2px;
-  box-sizing: border-box;
-}
-
-.msg-tool-run-count {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.msg-tool-run-toggle {
-  flex-shrink: 0;
-  font-size: 11px;
-}
-
-/* 可跳转的工具摘要：点击正文跳转到对应用户消息 */
-.msg-tool .msg-tool-body-jump {
-  cursor: pointer;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--success) 45%, transparent);
-  text-underline-offset: 3px;
-}
-
-.msg-tool .msg-tool-body-jump:hover {
-  text-decoration-color: color-mix(in srgb, var(--success) 75%, var(--text));
-}
-
-.msg-tool .msg-tool-body-jump:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--success) 55%, var(--border));
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-
-.msg-tool-run-empty {
-  display: none;
-}
-
-/* 连续多条分阶段时间线旁注：聚合为单卡片内待办列表（与 .msg-tool-run 同宽拉伸） */
-.msg-staged-timeline-run {
-  align-self: stretch;
-  width: 100%;
-  max-width: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* 分阶段规划：单条系统气泡内待办列表 */
-.msg-staged-todo-wrap {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-  padding: 8px 10px 10px;
-  box-sizing: border-box;
-}
-
-.msg-staged-todo-card-title {
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.msg-staged-todo-list {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.msg-staged-todo-li {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  margin: 0;
-  padding: 4px 2px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text);
-}
-
-.msg-staged-todo-glyph {
-  flex-shrink: 0;
-  width: 1.1em;
-  text-align: center;
-  font-weight: 700;
-  line-height: 1.35;
-}
-
-.msg-staged-todo-li-done .msg-staged-todo-glyph {
-  color: color-mix(in srgb, var(--success) 82%, var(--muted));
-}
-
-.msg-staged-todo-li-progress .msg-staged-todo-glyph {
-  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
-}
-
-.msg-staged-todo-li-pending .msg-staged-todo-glyph {
-  color: var(--muted);
-}
-
-.msg-staged-todo-li-failed .msg-staged-todo-glyph {
-  color: color-mix(in srgb, var(--danger) 78%, var(--muted));
-}
-
-.msg-staged-todo-li-cancelled .msg-staged-todo-glyph {
-  color: var(--muted);
-}
-
-.msg-staged-todo-label {
-  flex: 1;
-  min-width: 0;
-  word-break: break-word;
-}
-
-.msg-staged-todo-legacy {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border-subtle);
-  font-size: 11px;
-  color: var(--muted);
-}
-
-.msg-staged-todo-legacy-label {
-  display: block;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.msg-staged-todo-legacy-list {
-  list-style: disc;
-  margin: 0;
-  padding-left: 1.2rem;
-}
-
-.msg-staged-todo-legacy-li {
-  margin: 2px 0;
-}
-
-.msg-staged-timeline-run-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-self: flex-start;
-  width: auto;
-  max-width: 100%;
-  font-size: 11px;
-  color: var(--muted);
-  padding: 2px 0 6px 2px;
-  box-sizing: border-box;
-}
-
-.msg-staged-timeline-run-count {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-
-.msg-staged-timeline-run-toggle {
-  flex-shrink: 0;
-  font-size: 11px;
-}
-
-.msg-staged-timeline-run-empty {
-  display: none;
-}
-
-/* 工具结果：扁平文本样式（无背景/边框/阴影）。 */
-.msg-tool {
-  align-self: stretch;
-  width: auto;
-  max-width: none;
-  border-radius: calc(var(--radius-md) / 2);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--text) 88%, var(--muted));
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  padding: 4px var(--space-inset-msg) 6px;
-}
-
-.msg-tool.msg-error {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  color: var(--error);
-}
-
-/* 工具执行中：浅绿边框 + 外晕呼吸灯（气泡内不再显示三点动画） */
-.msg-tool.msg-loading {
-  border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--success) 34%, var(--border-subtle));
-  background: color-mix(in srgb, var(--surface) 93%, var(--success) 7%);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--success) 12%, transparent),
-    0 2px 10px color-mix(in srgb, var(--success) 10%, transparent);
-  animation: msg-tool-exec-border-breathe 2.2s ease-in-out infinite;
-}
-
-@keyframes msg-tool-exec-border-breathe {
-  0%,
-  100% {
-    border-color: color-mix(in srgb, var(--success) 26%, var(--border-subtle));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--success) 8%, transparent),
-      0 1px 6px color-mix(in srgb, var(--success) 6%, transparent);
-  }
-
-  50% {
-    border-color: color-mix(in srgb, var(--success) 52%, var(--border-subtle));
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--success) 28%, transparent),
-      0 0 16px color-mix(in srgb, var(--success) 22%, transparent),
-      0 2px 12px color-mix(in srgb, var(--success) 14%, transparent);
-  }
-}
-
-.msg-with-select:has(.msg-assistant) > .msg-stack > .msg-assistant:hover,
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:not(.msg-loading):hover {
-  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
-  box-shadow:
-    0 1px 0 color-mix(in srgb, #fff 8%, transparent) inset,
-    0 6px 18px color-mix(in srgb, var(--bg) 42%, transparent);
-}
-
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool:not(.msg-loading):hover {
-  border-color: transparent;
-  box-shadow: none;
-}
-
-.msg-tool .msg-find-inline {
-  font-family: inherit;
-}
-
-/* 工具气泡：时间与摘要从同一行起排；窄宽时正文折到下一行。loading 仍用纵向布局（见 .msg-loading） */
-.msg-tool:not(.msg-loading) {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.msg-tool:not(.msg-loading) .msg-body {
-  flex: 1 1 auto;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.msg-tool-compact {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: max-content;
-  grid-template-columns: auto auto minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 100%;
-  width: 100%;
-  min-width: 0;
-}
-
-.msg-tool-emoji {
-  flex-shrink: 0;
-  line-height: 1;
-  font-size: 1.05em;
-  user-select: none;
-}
-
-.msg-tool-summary {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.msg-tool-drawer-btn {
-  flex-shrink: 0;
-  border: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface) 92%, var(--bg));
-  color: var(--muted);
-  border-radius: var(--radius-btn);
-  font-size: 11px;
-  line-height: 1.2;
-  padding: 2px 6px;
-  cursor: pointer;
-}
-
-.msg-tool-drawer-icon-btn {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.msg-tool-drawer-icon {
-  width: 14px;
-  height: 14px;
-  transition: transform 0.15s ease;
-}
-
-.msg-tool-drawer-icon.is-open {
-  transform: rotate(180deg);
-}
-
-.msg-tool-drawer-btn:hover {
-  color: var(--text);
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
-}
-
-.msg-tool-drawer-icon-btn:hover {
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent) inset;
-}
-
-.msg-tool-drawer-icon-btn:active {
-  transform: translateY(0.5px);
-  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
-}
-
-.msg-tool-drawer-icon-btn:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
-  outline-offset: 1px;
-}
-
-.msg-tool-drawer {
-  flex-basis: 100%;
-  width: 100%;
-  margin-top: 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--bg) 86%, var(--surface));
-  max-height: 10rem;
-  overflow: auto;
-}
-
-.msg-tool-drawer-below-card {
-  margin-top: 6px;
-}
-
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg-tool-drawer-below-card {
-  margin-left: var(--space-inset-msg);
-  margin-right: var(--space-inset-msg);
-  width: calc(100% - (var(--space-inset-msg) * 2));
-  box-sizing: border-box;
-}
-
-.msg-tool-drawer-pre {
-  margin: 0;
-  padding: 8px;
-  font-size: 11px;
-  line-height: 1.35;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-/* terminal_session：类 IDE 嵌入终端（Cursor / Trae 式深色块 + 等宽 scrollback） */
-.msg-tool-drawer-terminal {
-  max-height: min(50vh, 420px);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--terminal-panel-border);
-  background: var(--terminal-panel-bg);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.35) inset,
-    0 4px 18px rgba(0, 0, 0, 0.28);
-}
-
-.msg-tool-drawer-pre-terminal {
-  padding: 10px 12px;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--terminal-panel-fg);
-  tab-size: 4;
-  -moz-tab-size: 4;
-}
-
-.msg-tool-drawer-pre-terminal::selection {
-  background: var(--terminal-panel-selection-bg);
-  color: var(--terminal-panel-selection-fg);
-}
-
-.msg-tool-drawer-pre-terminal::-moz-selection {
-  background: var(--terminal-panel-selection-bg);
-  color: var(--terminal-panel-selection-fg);
-}
-
 .msg-error {
   border-color: var(--error);
   color: var(--error);
   background: var(--error-bg);
-}
-
-/* 生成中：纵向排布，正文占满气泡宽度，高度随流式文本换行持续增长（避免横向 flex 卡死高度） */
-.msg-loading {
-  min-height: 2.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 8px;
-  will-change: height;
-}
-
-.msg-loading .msg-body {
-  flex: 0 0 auto;
-  width: 100%;
-  min-width: 0;
-}
-
-.msg-loading .typing-dots {
-  flex-shrink: 0;
-  align-self: flex-start;
-  padding-left: 0;
-}
-
-.typing-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding-left: 4px;
-  vertical-align: middle;
-}
-
-.typing-dots span {
-  display: inline-block;
-  flex-shrink: 0;
-}
-
-/* 模型加载：圆点 + 纵向弹跳 + accent */
-.typing-dots--model span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--accent);
-  opacity: 0.35;
-  animation: typing-bounce-model 1.2s ease-in-out infinite;
-}
-
-.typing-dots--model span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.typing-dots--model span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes typing-bounce-model {
-  0%,
-  80%,
-  100% {
-    opacity: 0.3;
-    transform: translateY(0);
-  }
-  40% {
-    opacity: 1;
-    transform: translateY(-3px);
-  }
 }
 
 /* —— 输入区 —— */
@@ -2057,70 +1264,3 @@
   min-width: 76px;
 }
 
-/* 消息行包装：用户行主轴对齐见 `message_row.rs` 内联 style；此处仅兜底非用户行与其它列 */
-.msg-with-select {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-}
-
-@media print {
-  .msg-with-select {
-    content-visibility: visible;
-    contain-intrinsic-size: none;
-  }
-}
-
-/* 气泡 + 其下工具条纵向成组 */
-.msg-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  min-width: 0;
-  max-width: 100%;
-  box-sizing: border-box;
-  /* 离屏消息跳过 layout/paint，浏览器自动在进入视口前 ~250px 时渲染；
-     contain-intrinsic-size 在离屏时保留估算高度，避免滚动条跳动。 */
-  content-visibility: auto;
-  contain-intrinsic-size: 80px;
-}
-
-/* stretch：纵轴 flex 下让 .msg 在横向上拉满栈宽；flex-start 会使子项宽度=内容宽（流式初期塌条） */
-.msg-with-select:has(.msg-assistant) > .msg-stack {
-  align-items: stretch;
-  flex: 1;
-  min-width: 0;
-}
-
-.msg-with-select:has(.msg-tool) > .msg-stack {
-  align-items: stretch;
-  flex: 1;
-  min-width: 0;
-}
-
-/* 助手整行占满聊天列 */
-.msg-with-select:has(.msg-assistant) {
-  align-self: stretch;
-  width: 100%;
-  max-width: 100%;
-}
-
-.msg-with-select:has(.msg-assistant) > .msg-stack > .msg {
-  flex: 0 1 auto;
-  min-width: 0;
-}
-
-.msg-with-select:has(.msg-system),
-.msg-with-select:has(.msg-tool) {
-  align-self: stretch;
-  width: 100%;
-}
-
-.msg-with-select:has(.msg-system) > .msg-stack > .msg,
-.msg-with-select:has(.msg-tool) > .msg-stack > .msg {
-  flex: 1;
-  min-width: 0;
-}

@@ -15,7 +15,7 @@ use wasm_bindgen_futures::{JsFuture, spawn_local};
 use crate::i18n::Locale;
 use crate::message_format::{message_text_for_display_ex, stored_tool_message_detail_text};
 use crate::storage::{ChatSession, StoredMessage};
-use crate::visible_messages::{VisibleMessageScope, visible_message_indices};
+use crate::visible_messages::visible_message_indices_for_export;
 
 pub use crabmate_chat_export::display_session_to_json_pretty;
 
@@ -97,7 +97,7 @@ fn stored_messages_to_export(
     loc: Locale,
     apply_assistant_display_filters: bool,
 ) -> Vec<DisplayExportMessage> {
-    let indices = visible_message_indices(messages, VisibleMessageScope::Export);
+    let indices = visible_message_indices_for_export(messages);
     let mut out = Vec::new();
     for &idx in &indices {
         let m = &messages[idx];

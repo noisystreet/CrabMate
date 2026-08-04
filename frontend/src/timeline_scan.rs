@@ -237,8 +237,10 @@ pub fn should_preserve_local_timeline_on_hydrate(
     }
 }
 
-/// 会话导出时跳过仅用于流式 UI 的助手旁注（`final_response` 补偿、重复旧快照等）。
-pub fn is_ephemeral_timeline_assistant_for_export(
+/// 主列（TUI）应跳过的助手旁注：编排路由、工具前旁注状态、终答 snapshot、规划拒绝旁注、
+/// 与正式助手行重复的本地 snapshot。**不含**导出专用的规划轮 JSON / 工具参数残留启发式。
+#[must_use]
+pub fn is_ephemeral_timeline_assistant_for_chat_ui(
     m: &StoredMessage,
     session_messages: &[StoredMessage],
 ) -> bool {
@@ -261,6 +263,20 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if is_commentary_before_tools_assistant(m) {
         return true;
     }
+    is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
+}
+
+/// 会话导出时跳过仅用于流式 UI 的助手旁注（在主列过滤之上，另含规划轮 JSON 与工具参数残留）。
+pub fn is_ephemeral_timeline_assistant_for_export(
+    m: &StoredMessage,
+    session_messages: &[StoredMessage],
+) -> bool {
+    if is_ephemeral_timeline_assistant_for_chat_ui(m, session_messages) {
+        return true;
+    }
+    if m.role != "assistant" || m.is_tool {
+        return false;
+    }
     if crate::message_format::stored_message_is_staged_planner_round(m) {
         return true;
     }
@@ -270,10 +286,7 @@ pub fn is_ephemeral_timeline_assistant_for_export(
     if is_bare_shell_command_residue(&m.text) {
         return true;
     }
-    if is_bare_tool_path_arg_residue(&m.text) {
-        return true;
-    }
-    is_timeline_snapshot_duplicate_of_canonical_assistant(m, session_messages)
+    is_bare_tool_path_arg_residue(&m.text)
 }
 
 #[cfg(test)]

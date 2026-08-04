@@ -117,23 +117,6 @@ pub fn user_ordinal_for_message_index(messages: &[StoredMessage], idx: usize) ->
     Some(ord)
 }
 
-/// 在 `msg_index` 之前（不含本条）最近一条 **普通用户** 消息（`role == user` 且非工具卡）的 id。
-#[cfg_attr(not(test), expect(dead_code))]
-pub fn preceding_plain_user_message_id(
-    messages: &[StoredMessage],
-    msg_index: usize,
-) -> Option<String> {
-    let mut j = msg_index;
-    while j > 0 {
-        j -= 1;
-        let m = messages.get(j)?;
-        if m.role == "user" && !m.is_tool {
-            return Some(m.id.clone());
-        }
-    }
-    None
-}
-
 /// 保留指定用户气泡（同 id），删除其后的消息，并挂上新的 loading 助手泡；返回用户原文与新助手 id。
 pub fn truncate_at_user_message_and_prepare_regenerate(
     sessions: &mut [ChatSession],
@@ -578,115 +561,6 @@ mod message_branch_tests {
         assert_eq!(user_ordinal_for_message_index(&messages, 0), Some(0));
         assert_eq!(user_ordinal_for_message_index(&messages, 2), Some(1));
         assert!(user_ordinal_for_message_index(&messages, 1).is_none());
-    }
-
-    #[test]
-    fn preceding_plain_user_finds_latest_user_before_tool() {
-        let messages = vec![
-            StoredMessage {
-                id: "u0".into(),
-                role: "user".into(),
-                text: "first".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            StoredMessage {
-                id: "a0".into(),
-                role: "assistant".into(),
-                text: "ok".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            StoredMessage {
-                id: "t0".into(),
-                role: "system".into(),
-                text: "tool".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: true,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-        ];
-        assert_eq!(
-            preceding_plain_user_message_id(&messages, 2).as_deref(),
-            Some("u0")
-        );
-    }
-
-    #[test]
-    fn preceding_plain_user_skips_tool_user_role() {
-        let messages = vec![
-            StoredMessage {
-                id: "u0".into(),
-                role: "user".into(),
-                text: "q".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            StoredMessage {
-                id: "t0".into(),
-                role: "user".into(),
-                text: "tool card".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: true,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-            StoredMessage {
-                id: "t1".into(),
-                role: "system".into(),
-                text: "tool".into(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: None,
-                is_tool: true,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: 0,
-            },
-        ];
-        assert_eq!(
-            preceding_plain_user_message_id(&messages, 2).as_deref(),
-            Some("u0")
-        );
-    }
-
-    #[test]
-    fn preceding_plain_user_none_at_start() {
-        let messages = vec![StoredMessage {
-            id: "t0".into(),
-            role: "system".into(),
-            text: "tool".into(),
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: None,
-            is_tool: true,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: 0,
-        }];
-        assert!(preceding_plain_user_message_id(&messages, 0).is_none());
     }
 
     #[test]

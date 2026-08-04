@@ -670,51 +670,6 @@
   padding: 0 2px;
 }
 
-/* DeepSeek 风：用户为轻量卡片；助手为独立卡片（中性色，与用户 accent 气泡区分） */
-.app-shell-ds .msg-assistant {
-  background: linear-gradient(
-    168deg,
-    color-mix(in srgb, var(--surface) 96%, var(--bg)) 0%,
-    color-mix(in srgb, var(--surface) 98%, var(--bg-elevated)) 100%
-  );
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 72%, var(--surface));
-  box-shadow: var(--shadow-sm);
-}
-
-.app-shell-ds .msg-user {
-  background: color-mix(in srgb, var(--surface) 90%, var(--bg));
-  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--surface));
-  box-shadow: none;
-}
-
-.msg-user-with-images {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
-  max-width: 100%;
-}
-
-.msg-user-images {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.msg-user-img {
-  max-width: min(220px, 100%);
-  max-height: 160px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-subtle);
-  object-fit: contain;
-  background: var(--bg);
-}
-
-.app-shell-ds .msg-system {
-  border-radius: var(--radius-md);
-}
-
 /* —— 底部一体输入条 —— */
 .composer-ds {
   border-top: 1px solid var(--border-subtle);

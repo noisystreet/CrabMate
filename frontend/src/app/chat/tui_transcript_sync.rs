@@ -26,7 +26,7 @@ fn mountable_turns<'a>(
     messages
         .iter()
         .enumerate()
-        .filter(|(_, m)| tui_should_render_message(m, session_id, overlay))
+        .filter(|(_, m)| tui_should_render_message(m, messages, session_id, overlay))
         .collect()
 }
 

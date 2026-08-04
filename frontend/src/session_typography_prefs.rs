@@ -16,7 +16,7 @@ pub const SESSION_CHAT_FONT_SLUGS: &[&str] = &[
 
 pub const DEFAULT_SESSION_UI_FONT: &str = "default";
 pub const DEFAULT_SESSION_CHAT_FONT: &str = "default";
-/// 聊天气泡与输入框正文字号默认（px），与 `.msg` 历史基准一致。
+/// 聊天气泡与输入框正文字号默认（px），与 transcript / composer 历史基准一致。
 pub const DEFAULT_SESSION_CHAT_FONT_SIZE: f64 = 14.0;
 pub const SESSION_CHAT_FONT_SIZE_MIN: f64 = 10.0;
 pub const SESSION_CHAT_FONT_SIZE_MAX: f64 = 28.0;
