@@ -13,7 +13,7 @@
 //! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_loading_segment`]（`ContinueAnswering`）|
 //! | `final_response` 撤 loading | [`TurnLayout::remove_loading_placeholder_or_rotate`] |
 //!
-//! 原先分散在 `timeline_tail` 的 `peel` / `finalize` / `ensure_tail` / `restore` 均收拢为本模块私有步骤。
+//! 消息列表上的 peel / finalize / rotate 壳等由 [`projection_reconciler`] 执行；本模块编排 scratch / overlay / lane。
 
 mod loading_handoff;
 mod projection_reconciler;
@@ -27,12 +27,8 @@ use std::cell::RefCell;
 
 use leptos::prelude::GetUntracked;
 
-use crate::message_loading::{
-    is_finalized_plain_assistant, is_loading_plain_assistant, is_loading_streaming_assistant_id,
-    is_plain_assistant_message,
-};
-use crate::session_ops::{make_message_id, message_created_ms};
-use crate::storage::{StoredMessage, StoredMessageState};
+use crate::message_loading::is_loading_plain_assistant;
+use crate::storage::StoredMessage;
 use crate::stream_text_overlay::{
     stream_overlay_answer_for_message, stream_overlay_clear_answer_for_message,
     stream_overlay_replace_answer_for_message, stream_overlay_take_into_stored_message,
@@ -43,13 +39,6 @@ use super::super::per_stream_accum::PerStreamAccum;
 use super::super::turn_canonical::TurnCanonicalState;
 
 pub(crate) use turn_row_queue::TurnRowQueue;
-
-/// post-tool 尾泡被提前 finalize 时暂存的总结正文。
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct PeeledSummary {
-    text: String,
-    reasoning_text: String,
-}
 
 /// 未经 `tool_call` 声明便到达的 `tool_result` 所携工具标识。
 ///
@@ -172,141 +161,6 @@ fn drain_loading_commentary_to_canonical_ex(
     }
 }
 
-fn discard_premature_assistant_tail(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-) {
-    if peel_premature_summary_from_messages(messages, streaming_assistant_id).is_some() {
-        return;
-    }
-    let Some(idx) = messages.iter().position(|m| m.id == streaming_assistant_id) else {
-        return;
-    };
-    let m = &messages[idx];
-    if !is_loading_streaming_assistant_id(m, streaming_assistant_id) {
-        return;
-    }
-    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
-        return;
-    }
-    messages[idx].text.clear();
-    messages[idx].reasoning_text.clear();
-}
-
-fn is_premature_finalized_post_tool_tail(m: &StoredMessage) -> bool {
-    is_finalized_plain_assistant(m)
-}
-
-fn insert_msg_before_loading_tail(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-    msg: StoredMessage,
-) {
-    if let Some(idx) = messages
-        .iter()
-        .position(|m| is_loading_streaming_assistant_id(m, streaming_assistant_id))
-    {
-        messages.insert(idx, msg);
-    } else {
-        messages.push(msg);
-    }
-}
-
-fn peel_premature_summary_from_messages(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-) -> Option<PeeledSummary> {
-    let idx = messages
-        .iter()
-        .position(|m| m.id == streaming_assistant_id)?;
-    if !is_premature_finalized_post_tool_tail(&messages[idx]) {
-        return None;
-    }
-    let removed = messages.remove(idx);
-    Some(PeeledSummary {
-        text: removed.text,
-        reasoning_text: removed.reasoning_text,
-    })
-}
-
-/// 下一工具边界前摘下 post-tool 尾泡正文：过早 finalize 行，或延迟 finalize 下仍 loading 的正文尾泡。
-/// Phase 7 遗留：单测仍覆盖 peel 语义；生产路径 Phase 9 用 [`discard_premature_assistant_tail`]。
-#[cfg(test)]
-fn extract_post_tool_tail_before_tool(
-    messages: &mut Vec<StoredMessage>,
-    streaming_assistant_id: &str,
-) -> Option<PeeledSummary> {
-    if let Some(peeled) = peel_premature_summary_from_messages(messages, streaming_assistant_id) {
-        return Some(peeled);
-    }
-    let idx = messages
-        .iter()
-        .position(|m| m.id == streaming_assistant_id)?;
-    let m = &messages[idx];
-    if m.role != "assistant" || m.is_tool {
-        return None;
-    }
-    if !crate::message_loading::stored_message_is_loading(m) {
-        return None;
-    }
-    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
-        return None;
-    }
-    let removed = messages.remove(idx);
-    Some(PeeledSummary {
-        text: removed.text,
-        reasoning_text: removed.reasoning_text,
-    })
-}
-
-fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
-    if idx >= messages.len() {
-        return;
-    }
-    let m = &messages[idx];
-    if m.role != "assistant" || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
-        return;
-    }
-    let text_trim = m.text.trim().to_string();
-    if !text_trim.is_empty()
-        && loading_handoff::persisted_assistant_owns_live_text(messages, idx, text_trim.as_str())
-    {
-        messages[idx].text.clear();
-    }
-    let content_saved =
-        !messages[idx].text.trim().is_empty() || !messages[idx].reasoning_text.trim().is_empty();
-    if content_saved {
-        // 有实际内容：保留行，仅清除 loading 状态
-        messages[idx].state = None;
-    } else {
-        // 空 loading 行：直接移除（正常工具场景 / 旁注已移交）
-        messages.remove(idx);
-    }
-}
-
-fn insert_post_tool_loading_after_tool(
-    messages: &mut Vec<StoredMessage>,
-    tool_message_id: &str,
-) -> Option<String> {
-    let tidx = messages.iter().position(|m| m.id == tool_message_id)?;
-    let new_asst_id = make_message_id();
-    let row = StoredMessage {
-        id: new_asst_id.clone(),
-        role: "assistant".to_string(),
-        text: String::new(),
-        reasoning_text: String::new(),
-        image_urls: vec![],
-        state: Some(StoredMessageState::Loading),
-        is_tool: false,
-        tool_call_id: None,
-        tool_name: None,
-        created_at: message_created_ms(),
-    };
-    messages.insert(tidx + 1, row);
-    projection_reconciler::pin_loading_tail_in_messages(messages, new_asst_id.as_str());
-    Some(new_asst_id)
-}
-
 /// loading 段轮换的语义：旋转后是否继续接收正文 delta。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum LoadingRotationSemantics {
@@ -331,14 +185,7 @@ impl TurnLayout {
     /// 防止下一轮 `sync_turn_projection` 覆盖时挤掉已显示的旧文本。
     pub(crate) fn detach_final_answer_projection(stream_ctx: &ChatStreamCallbackCtx) {
         stream_ctx.update_bound_session(|s| {
-            if let Some(idx) = s
-                .messages
-                .iter()
-                .position(|m| m.id == turn_row_queue::FINAL_ANSWER_ROW_ID)
-            {
-                // 生成一个新的 id 使该行脱离投影别名
-                s.messages[idx].id = make_message_id();
-            }
+            projection_reconciler::detach_final_answer_row_in_messages(&mut s.messages);
         });
     }
 
@@ -389,7 +236,10 @@ impl TurnLayout {
         stream_ctx.update_bound_session(|s| {
             // 仅 peel 已提前 finalize 的尾泡；loading 上仍有的旁白留给 projection 后再清，
             // 避免工具行出现前助手气泡被掏空。
-            let _ = peel_premature_summary_from_messages(&mut s.messages, mid.as_str());
+            let _ = projection_reconciler::peel_premature_summary_from_messages(
+                &mut s.messages,
+                mid.as_str(),
+            );
             projection_reconciler::insert_declared_tool(&mut s.messages, tool_msg, mid.as_str());
         });
     }
@@ -423,15 +273,17 @@ impl TurnLayout {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
-            discard_premature_assistant_tail(&mut s.messages, mid.as_str());
+            projection_reconciler::discard_premature_assistant_tail(&mut s.messages, mid.as_str());
             if s.messages.iter().all(|m| m.id != mid) {
                 return;
             }
             if let Some(load_idx) = s.messages.iter().position(|m| m.id == mid) {
-                finalize_loading_row_at(&mut s.messages, load_idx);
+                projection_reconciler::finalize_loading_row_at(&mut s.messages, load_idx);
             }
-            if let Some(id) = insert_post_tool_loading_after_tool(&mut s.messages, tool_message_id)
-            {
+            if let Some(id) = projection_reconciler::insert_post_tool_loading_after_tool(
+                &mut s.messages,
+                tool_message_id,
+            ) {
                 *new_tail_id.borrow_mut() = Some(id);
             }
         });
@@ -451,9 +303,7 @@ impl TurnLayout {
         let mid = stream_ctx.scratch.clone_assistant_id();
         let sid = stream_ctx.bound_stream_session_id.clone();
         stream_ctx.update_bound_session(|s| {
-            if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-                s.messages[idx].text.clear();
-            }
+            projection_reconciler::clear_assistant_row_text(&mut s.messages, mid.as_str());
         });
         stream_overlay_clear_answer_for_message(
             stream_ctx.chat.stream_text_overlay,
@@ -478,7 +328,11 @@ impl TurnLayout {
     pub(crate) fn push_assistant_timeline(stream_ctx: &ChatStreamCallbackCtx, msg: StoredMessage) {
         let mid = stream_ctx.scratch.clone_assistant_id();
         stream_ctx.update_bound_session(|s| {
-            insert_msg_before_loading_tail(&mut s.messages, mid.as_str(), msg);
+            projection_reconciler::insert_msg_before_loading_tail(
+                &mut s.messages,
+                mid.as_str(),
+                msg,
+            );
         });
         Self::pin_loading_tail(stream_ctx);
     }
@@ -495,7 +349,7 @@ impl TurnLayout {
                     mid_owned.as_str(),
                     &mut s.messages[idx],
                 );
-                finalize_loading_row_at(&mut s.messages, idx);
+                projection_reconciler::finalize_loading_row_at(&mut s.messages, idx);
             }
         });
     }
@@ -511,23 +365,10 @@ impl TurnLayout {
     ) {
         Self::finalize_loading_segment(stream_ctx);
         Self::detach_final_answer_projection(stream_ctx);
-        let now = message_created_ms();
         let new_tail_id = RefCell::new(None::<String>);
         stream_ctx.update_bound_session(|s| {
-            let new_asst_id = make_message_id();
-            s.messages.push(StoredMessage {
-                id: new_asst_id.clone(),
-                role: "assistant".to_string(),
-                text: String::new(),
-                reasoning_text: String::new(),
-                image_urls: vec![],
-                state: Some(StoredMessageState::Loading),
-                is_tool: false,
-                tool_call_id: None,
-                tool_name: None,
-                created_at: now,
-            });
-            *new_tail_id.borrow_mut() = Some(new_asst_id);
+            let id = projection_reconciler::append_empty_loading_assistant(&mut s.messages);
+            *new_tail_id.borrow_mut() = Some(id);
         });
         if let Some(id) = new_tail_id.into_inner() {
             stream_ctx
@@ -556,14 +397,15 @@ impl TurnLayout {
                     mid_owned.as_str(),
                     &mut s.messages[idx],
                 );
-                s.messages.remove(idx);
+                let _ = projection_reconciler::remove_loading_plain_assistant_by_id(
+                    &mut s.messages,
+                    mid_owned.as_str(),
+                );
             }
         });
         let tail_still_present = stream_ctx
             .read_bound_session(|s| {
-                s.messages
-                    .iter()
-                    .any(|m| m.id == mid_owned.as_str() && is_plain_assistant_message(m))
+                projection_reconciler::plain_assistant_id_present(&s.messages, mid_owned.as_str())
             })
             .unwrap_or(false);
         if !tail_still_present {
@@ -650,29 +492,7 @@ impl TurnLayout {
         messages: &mut Vec<StoredMessage>,
         loading_id: &str,
     ) {
-        use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
-
-        let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
-            return;
-        };
-        let load_text = &messages[load_idx].text;
-        if load_text.trim().is_empty() && messages[load_idx].reasoning_text.trim().is_empty() {
-            messages.remove(load_idx);
-            return;
-        }
-        // 检查 FINAL_ANSWER_ROW 以及已被 detach 的旧投影行（已变为普通 assistant）
-        let duplicate_found = messages.iter().any(|m| {
-            if m.id == loading_id {
-                return false;
-            }
-            if m.role != "assistant" || m.is_tool {
-                return false;
-            }
-            assistant_texts_fuzzy_duplicate(load_text.as_str(), m.text.as_str())
-        });
-        if duplicate_found {
-            messages.remove(load_idx);
-        }
+        projection_reconciler::dedupe_loading_tail_against_final_answer_row(messages, loading_id);
     }
 
     /// 流结束：commentary 已落盘时去掉仍含正文的 loading 尾泡（真实 LLM 形态 B 巨泡兜底）。
@@ -680,22 +500,7 @@ impl TurnLayout {
         messages: &mut Vec<StoredMessage>,
         loading_id: &str,
     ) {
-        let has_commentary = messages.iter().any(|message| {
-            turn_row_queue::is_commentary_row_id(message.id.as_str())
-                && !message.text.trim().is_empty()
-        });
-        if !has_commentary {
-            return;
-        }
-        let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
-            return;
-        };
-        let load = &messages[load_idx];
-        if load.text.trim().is_empty() && load.reasoning_text.trim().is_empty() {
-            messages.remove(load_idx);
-            return;
-        }
-        messages.remove(load_idx);
+        projection_reconciler::dedupe_loading_tail_against_commentary_rows(messages, loading_id);
     }
 
     /// 是否允许将 overlay 刷进 `turn-final-answer`。

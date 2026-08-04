@@ -1,18 +1,31 @@
-//! 将 [`crabmate_turn_layout::TurnProjection`] 落到 `StoredMessage`。
+//! 将 [`crabmate_turn_layout::TurnProjection`] 落到 `StoredMessage`，并承接 loading 行生命周期
+//! （peel / finalize / rotate / 工具后新壳）的纯消息列表操作。
 //!
 //! Phase D：定稿旁白、锚定 active、终答 flush、工具占位插入均经本模块；
-//! [`super::TurnLayout`] 只做 scratch / overlay 编排。Loading 句柄不承载旁白/终答正文。
+//! [`super::TurnLayout`] 只做 scratch / overlay / lane 编排。Loading 句柄不承载旁白/终答正文。
 
 use crabmate_turn_layout::{ASSISTANT_COMMENTARY, TurnProjection, project_turn_projection};
 
-use crate::message_loading::stored_message_is_loading;
-use crate::storage::StoredMessage;
+use crate::message_loading::{
+    is_finalized_plain_assistant, is_loading_plain_assistant, is_loading_streaming_assistant_id,
+    is_plain_assistant_message, stored_message_is_loading,
+};
+use crate::session_ops::{make_message_id, message_created_ms};
+use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::super::turn_canonical::TurnCanonicalState;
+use super::loading_handoff;
 use super::turn_row_queue::{
     FINAL_ANSWER_ROW_ID, TurnRowQueue, commentary_row_id, current_turn_position,
     is_commentary_row_id,
 };
+
+/// peel 下来的过早 finalize / loading 尾泡正文（表征测试用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct PeeledSummary {
+    pub text: String,
+    pub reasoning_text: String,
+}
 
 /// 段/工具边界：定稿旁白 +（可选）终答落盘。
 pub(super) fn reconcile_web_projection(
@@ -180,6 +193,246 @@ fn insert_index_for_final_row(messages: &[StoredMessage], loading_tail_id: Optio
         insert_idx = insert_idx.max(commentary_idx + 1);
     }
     insert_idx
+}
+
+// —— loading 行生命周期（原 TurnLayout 内联，收口到 reconciler）——
+
+/// 将 `turn-final-answer` 投影行脱钩为普通 assistant 行。
+pub(super) fn detach_final_answer_row_in_messages(messages: &mut [StoredMessage]) {
+    if let Some(idx) = messages.iter().position(|m| m.id == FINAL_ANSWER_ROW_ID) {
+        messages[idx].id = make_message_id();
+    }
+}
+
+/// 在 loading 尾泡之前插入消息（时间线旁注等）。
+pub(super) fn insert_msg_before_loading_tail(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+    msg: StoredMessage,
+) {
+    if let Some(idx) = messages
+        .iter()
+        .position(|m| is_loading_streaming_assistant_id(m, streaming_assistant_id))
+    {
+        messages.insert(idx, msg);
+    } else {
+        messages.push(msg);
+    }
+}
+
+/// 摘下已提前 finalize 的 post-tool 尾泡。
+pub(super) fn peel_premature_summary_from_messages(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+) -> Option<PeeledSummary> {
+    let idx = messages
+        .iter()
+        .position(|m| m.id == streaming_assistant_id)?;
+    if !is_finalized_plain_assistant(&messages[idx]) {
+        return None;
+    }
+    let removed = messages.remove(idx);
+    Some(PeeledSummary {
+        text: removed.text,
+        reasoning_text: removed.reasoning_text,
+    })
+}
+
+/// 仅 peel 过早 finalize；否则清空仍 loading 且有正文的尾泡（不删行）。
+pub(super) fn discard_premature_assistant_tail(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+) {
+    if peel_premature_summary_from_messages(messages, streaming_assistant_id).is_some() {
+        return;
+    }
+    let Some(idx) = messages.iter().position(|m| m.id == streaming_assistant_id) else {
+        return;
+    };
+    let m = &messages[idx];
+    if !is_loading_streaming_assistant_id(m, streaming_assistant_id) {
+        return;
+    }
+    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
+        return;
+    }
+    messages[idx].text.clear();
+    messages[idx].reasoning_text.clear();
+}
+
+/// 下一工具边界前摘下 post-tool 尾泡正文（表征测试 / Phase 7 遗留）。
+#[cfg(test)]
+pub(super) fn extract_post_tool_tail_before_tool(
+    messages: &mut Vec<StoredMessage>,
+    streaming_assistant_id: &str,
+) -> Option<PeeledSummary> {
+    if let Some(peeled) = peel_premature_summary_from_messages(messages, streaming_assistant_id) {
+        return Some(peeled);
+    }
+    let idx = messages
+        .iter()
+        .position(|m| m.id == streaming_assistant_id)?;
+    let m = &messages[idx];
+    if m.role != "assistant" || m.is_tool {
+        return None;
+    }
+    if !stored_message_is_loading(m) {
+        return None;
+    }
+    if m.text.trim().is_empty() && m.reasoning_text.trim().is_empty() {
+        return None;
+    }
+    let removed = messages.remove(idx);
+    Some(PeeledSummary {
+        text: removed.text,
+        reasoning_text: removed.reasoning_text,
+    })
+}
+
+/// 结束指定下标的 loading 助手行：空壳删除，有正文则去 `Loading`。
+pub(super) fn finalize_loading_row_at(messages: &mut Vec<StoredMessage>, idx: usize) {
+    if idx >= messages.len() {
+        return;
+    }
+    let m = &messages[idx];
+    if m.role != "assistant" || !m.state.as_ref().is_some_and(|st| st.is_loading()) {
+        return;
+    }
+    let text_trim = m.text.trim().to_string();
+    if !text_trim.is_empty()
+        && loading_handoff::persisted_assistant_owns_live_text(messages, idx, text_trim.as_str())
+    {
+        messages[idx].text.clear();
+    }
+    let content_saved =
+        !messages[idx].text.trim().is_empty() || !messages[idx].reasoning_text.trim().is_empty();
+    if content_saved {
+        messages[idx].state = None;
+    } else {
+        messages.remove(idx);
+    }
+}
+
+/// 在工具行后插入空 loading 壳，并 pin 到末尾。
+pub(super) fn insert_post_tool_loading_after_tool(
+    messages: &mut Vec<StoredMessage>,
+    tool_message_id: &str,
+) -> Option<String> {
+    let tidx = messages.iter().position(|m| m.id == tool_message_id)?;
+    let new_asst_id = make_message_id();
+    let row = StoredMessage {
+        id: new_asst_id.clone(),
+        role: "assistant".to_string(),
+        text: String::new(),
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state: Some(StoredMessageState::Loading),
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: message_created_ms(),
+    };
+    messages.insert(tidx + 1, row);
+    pin_loading_tail_in_messages(messages, new_asst_id.as_str());
+    Some(new_asst_id)
+}
+
+/// 追加空 loading 助手行（rotate）。
+pub(super) fn append_empty_loading_assistant(messages: &mut Vec<StoredMessage>) -> String {
+    let new_asst_id = make_message_id();
+    messages.push(StoredMessage {
+        id: new_asst_id.clone(),
+        role: "assistant".to_string(),
+        text: String::new(),
+        reasoning_text: String::new(),
+        image_urls: vec![],
+        state: Some(StoredMessageState::Loading),
+        is_tool: false,
+        tool_call_id: None,
+        tool_name: None,
+        created_at: message_created_ms(),
+    });
+    new_asst_id
+}
+
+/// 移除仍处于 Loading 的普通助手行（`final_response` 提前撤壳）。
+pub(super) fn remove_loading_plain_assistant_by_id(
+    messages: &mut Vec<StoredMessage>,
+    assistant_id: &str,
+) -> bool {
+    let Some(idx) = messages.iter().position(|m| m.id == assistant_id) else {
+        return false;
+    };
+    if !is_loading_plain_assistant(&messages[idx]) {
+        return false;
+    }
+    messages.remove(idx);
+    true
+}
+
+/// 是否仍存在同 id 的普通助手行（非工具）。
+pub(super) fn plain_assistant_id_present(messages: &[StoredMessage], assistant_id: &str) -> bool {
+    messages
+        .iter()
+        .any(|m| m.id == assistant_id && is_plain_assistant_message(m))
+}
+
+/// 清空指定 loading 尾泡 stored 正文（`on_done` drain / reset）。
+pub(super) fn clear_assistant_row_text(messages: &mut [StoredMessage], assistant_id: &str) {
+    if let Some(idx) = messages.iter().position(|m| m.id == assistant_id) {
+        messages[idx].text.clear();
+    }
+}
+
+/// 流结束：若终答行已落盘且 loading 尾泡与任意助手行模糊重复，去掉尾泡。
+pub(super) fn dedupe_loading_tail_against_final_answer_row(
+    messages: &mut Vec<StoredMessage>,
+    loading_id: &str,
+) {
+    use crate::message_dedupe::assistant_texts_fuzzy_duplicate;
+
+    let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
+        return;
+    };
+    let load_text = &messages[load_idx].text;
+    if load_text.trim().is_empty() && messages[load_idx].reasoning_text.trim().is_empty() {
+        messages.remove(load_idx);
+        return;
+    }
+    let duplicate_found = messages.iter().any(|m| {
+        if m.id == loading_id {
+            return false;
+        }
+        if m.role != "assistant" || m.is_tool {
+            return false;
+        }
+        assistant_texts_fuzzy_duplicate(load_text.as_str(), m.text.as_str())
+    });
+    if duplicate_found {
+        messages.remove(load_idx);
+    }
+}
+
+/// 流结束：已有 commentary 行时去掉仍含正文的 loading 尾泡。
+pub(super) fn dedupe_loading_tail_against_commentary_rows(
+    messages: &mut Vec<StoredMessage>,
+    loading_id: &str,
+) {
+    let has_commentary = messages.iter().any(|message| {
+        is_commentary_row_id(message.id.as_str()) && !message.text.trim().is_empty()
+    });
+    if !has_commentary {
+        return;
+    }
+    let Some(load_idx) = messages.iter().position(|m| m.id == loading_id) else {
+        return;
+    };
+    let load = &messages[load_idx];
+    if load.text.trim().is_empty() && load.reasoning_text.trim().is_empty() {
+        messages.remove(load_idx);
+        return;
+    }
+    messages.remove(load_idx);
 }
 
 #[cfg(test)]

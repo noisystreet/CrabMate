@@ -15,6 +15,7 @@ mod tests {
     use crate::storage::StoredMessage;
     use crate::storage::StoredMessageState;
 
+    use super::super::projection_reconciler;
     use super::super::turn_row_queue::{
         FINAL_ANSWER_ROW_ID, TurnRowQueue, commentary_row_id, is_commentary_row_id,
     };
@@ -483,7 +484,7 @@ mod tests {
             "FINAL_ANSWER_ROW must not exist before ensure"
         );
 
-        TurnRowQueue::ensure_final_answer_row_from_text(
+        projection_reconciler::ensure_final_answer_row_from_text(
             &mut messages,
             "终答正文。",
             Some("loading-tail"),
@@ -500,7 +501,7 @@ mod tests {
             .iter()
             .filter(|m| m.id == FINAL_ANSWER_ROW_ID)
             .count();
-        TurnRowQueue::ensure_final_answer_row_from_text(
+        projection_reconciler::ensure_final_answer_row_from_text(
             &mut messages,
             "终答正文。",
             Some("loading-tail"),
@@ -521,7 +522,11 @@ mod tests {
     fn zero_tool_ensure_skips_on_empty_text() {
         let mut messages: Vec<StoredMessage> =
             tool_messages_from_projection(&TurnCanonicalState::new());
-        TurnRowQueue::ensure_final_answer_row_from_text(&mut messages, "", Some("loading-tail"));
+        projection_reconciler::ensure_final_answer_row_from_text(
+            &mut messages,
+            "",
+            Some("loading-tail"),
+        );
         assert!(
             !messages.iter().any(|m| m.id == FINAL_ANSWER_ROW_ID),
             "empty text must not create FINAL_ANSWER_ROW"

@@ -7,7 +7,8 @@ use crate::stream_text_overlay::{
 };
 
 use super::super::super::context::ChatStreamCallbackCtx;
-use super::turn_row_queue::{FINAL_ANSWER_ROW_ID, TurnRowQueue};
+use super::projection_reconciler;
+use super::turn_row_queue::FINAL_ANSWER_ROW_ID;
 
 /// `on_done` 前收口（Phase C：Loading 纯句柄）。
 ///
@@ -40,7 +41,7 @@ pub(super) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamC
                 .map(|m| m.text.clone())
                 .filter(|t| !t.trim().is_empty());
             if let Some(text) = from_overlay.or(from_loading) {
-                TurnRowQueue::ensure_final_answer_row_from_text(
+                projection_reconciler::ensure_final_answer_row_from_text(
                     &mut s.messages,
                     &text,
                     Some(mid.as_str()),
@@ -53,9 +54,7 @@ pub(super) fn drain_stream_tail_into_canonical_for_done(stream_ctx: &ChatStreamC
             mid.as_str(),
             Some(stream_ctx.chat.stream_overlay_revision),
         );
-        if let Some(idx) = s.messages.iter().position(|m| m.id == mid.as_str()) {
-            s.messages[idx].text.clear();
-        }
+        projection_reconciler::clear_assistant_row_text(&mut s.messages, mid.as_str());
     });
 }
 

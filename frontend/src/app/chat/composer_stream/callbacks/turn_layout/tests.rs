@@ -1,4 +1,7 @@
-use super::projection_reconciler::{insert_tool_row, pin_loading_tail_in_messages};
+use super::projection_reconciler::{
+    PeeledSummary, extract_post_tool_tail_before_tool, finalize_loading_row_at, insert_tool_row,
+    peel_premature_summary_from_messages, pin_loading_tail_in_messages,
+};
 use super::*;
 use crate::storage::{StoredMessage, StoredMessageState};
 
