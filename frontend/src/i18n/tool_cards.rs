@@ -49,27 +49,14 @@ pub fn plan_step_line(l: Locale, idx: usize, id: &str, desc: &str) -> String {
     }
 }
 
-fn tool_kind_emoji_hashed(name: &str) -> &'static str {
-    const PALETTE: &[&str] = &[
-        "🛠️", "⚙️", "🔩", "🧰", "📎", "🗂️", "📌", "🧲", "🔑", "🪛", "⚗️", "🧪", "📡", "🛰️", "🗃️",
-        "📇", "🔖", "🏷️", "🪄", "✨", "🔔", "📯", "🧿", "🔮", "🎲", "🧩", "🎁", "🧱", "🪢", "📮",
-        "🧬", "🦾", "🖇️", "🗝️", "🪁", "🎪", "💠", "🔷", "🔶", "🟣", "🦀", "🐙", "🐳", "🐍", "🐹",
-        "☕", "🔀",
-    ];
-    let mut h: u32 = 2_166_136_261;
-    for b in name.bytes() {
-        h ^= u32::from(b);
-        h = h.wrapping_mul(16_777_619);
-    }
-    PALETTE[(h as usize) % PALETTE.len()]
-}
-
-pub fn tool_kind_emoji(name: &str) -> &'static str {
+/// 内置工具的固定种类符；长尾/MCP 名不返回（避免与行首状态符抢戏的随机哈希图标）。
+#[must_use]
+pub fn tool_kind_emoji_curated(name: &str) -> Option<&'static str> {
     let n = name.trim();
     if n.is_empty() {
-        return "🔧";
+        return None;
     }
-    match n {
+    Some(match n {
         "run_command" => "⚡",
         "playbook_run_commands" => "📜",
         "read_file" => "📄",
@@ -147,6 +134,6 @@ pub fn tool_kind_emoji(name: &str) -> &'static str {
         "ci_pipeline_local" => "🛤️",
         "release_ready_check" => "🚀",
         "terminal_session" => "⌨️",
-        _ => tool_kind_emoji_hashed(n),
-    }
+        _ => return None,
+    })
 }

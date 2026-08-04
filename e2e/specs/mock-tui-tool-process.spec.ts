@@ -35,7 +35,11 @@ test("终端流工具过程：一行摘要 + 可展开详情", async ({ page }) 
 
   const process = page.getByTestId("chat-tui-tool-process");
   await expect(process).toHaveCount(1, { timeout: 10_000 });
-  await expect(process).toContainText("read_file");
+  await expect(process).toContainText("读取文件");
+  await expect(process.locator(".chat-tui-tool-name")).toHaveAttribute(
+    "title",
+    "read_file",
+  );
   await expect(process.locator(".chat-tui-tool-one-line")).toBeVisible();
   await expect(process.locator(".chat-tui-tool-row")).toBeVisible();
   // 折叠态固定单行高度，避免流式 ReplaceAll 抖高

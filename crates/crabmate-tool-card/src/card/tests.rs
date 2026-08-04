@@ -1,5 +1,6 @@
 use super::{
-    tool_card_compact_text, tool_card_text, tool_signal_beside_title, tool_signal_beside_tool,
+    tool_card_compact_text, tool_card_text, tool_detail_scrub_row_redundancy,
+    tool_signal_beside_title, tool_signal_beside_tool,
 };
 use crate::ToolCardInput;
 use crate::locale::ToolCardLocale;
@@ -426,4 +427,23 @@ fn signal_beside_tool_strips_id_failed_before_bare_id() {
         .starts_with("失败"),
         "不应留下裸「失败」前缀"
     );
+}
+
+#[test]
+fn detail_scrub_drops_title_and_matching_one_line() {
+    let scrubbed = tool_detail_scrub_row_redundancy(
+        "run_command",
+        "命令执行\n\ncargo check --workspace\n\nstderr here",
+        "cargo check --workspace",
+        ToolCardLocale::ZhHans,
+    );
+    assert!(!scrubbed.contains("命令执行"), "{scrubbed}");
+    assert!(
+        !scrubbed
+            .lines()
+            .next()
+            .is_some_and(|l| l.trim() == "cargo check --workspace"),
+        "{scrubbed}"
+    );
+    assert!(scrubbed.contains("stderr here"), "{scrubbed}");
 }

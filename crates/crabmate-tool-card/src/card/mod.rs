@@ -38,6 +38,94 @@ pub fn tool_signal_beside_tool(
     }
 }
 
+fn detail_line_matches_tool_titles(
+    first: &str,
+    id: &str,
+    human: &str,
+    failed: &str,
+    completed: &str,
+) -> bool {
+    first == id
+        || first == human
+        || first == failed
+        || first == completed
+        || tool_compact_signal_redundant_with_title(id, first)
+        || tool_compact_signal_redundant_with_title(human, first)
+}
+
+fn detail_line_matches_one_line(first: &str, one: &str) -> bool {
+    !one.is_empty()
+        && (first == one
+            || tool_compact_signal_redundant_with_title(one, first)
+            || tool_compact_signal_redundant_with_title(first, one))
+}
+
+fn detail_line_is_shell_echo_of_one_line(first: &str, one: &str) -> bool {
+    first.strip_prefix("$ ").is_some_and(|cmd| {
+        !one.is_empty() && (cmd == one || cmd.starts_with(one) || one.starts_with(cmd))
+    })
+}
+
+fn pop_leading_detail_line(text: &str) -> String {
+    match text.trim_start().split_once('\n') {
+        Some((_, rest)) => rest.trim_start().to_string(),
+        None => String::new(),
+    }
+}
+
+fn strip_leading_one_line_prefix(text: &str, one: &str) -> String {
+    if one.is_empty() {
+        return text.to_string();
+    }
+    if text.trim() == one {
+        return String::new();
+    }
+    for sep in ["\n\n", "\n"] {
+        let prefix = format!("{one}{sep}");
+        if let Some(rest) = text.strip_prefix(&prefix) {
+            return rest.trim_start().to_string();
+        }
+    }
+    text.to_string()
+}
+
+/// 展开详情去掉与工具行标题/旁侧摘要重复的前缀段。
+#[must_use]
+pub fn tool_detail_scrub_row_redundancy(
+    tool_id: &str,
+    detail: &str,
+    one_line: &str,
+    loc: ToolCardLocale,
+) -> String {
+    let id = tool_id.trim();
+    let human = locale::tool_human_name(loc, id);
+    let failed = locale::tool_title_failed(loc, &human);
+    let completed = locale::tool_title_completed(loc, &human);
+    let one = one_line.trim();
+    let mut text = detail.trim().to_string();
+
+    loop {
+        let first = text.trim_start().lines().next().unwrap_or("").trim();
+        if first.is_empty() {
+            break;
+        }
+        let drop_it = detail_line_matches_tool_titles(
+            first,
+            id,
+            human.as_str(),
+            failed.as_str(),
+            completed.as_str(),
+        ) || detail_line_matches_one_line(first, one)
+            || detail_line_is_shell_echo_of_one_line(first, one);
+        if !drop_it {
+            break;
+        }
+        text = pop_leading_detail_line(&text);
+    }
+
+    strip_leading_one_line_prefix(&text, one)
+}
+
 const COMPACT_SEPARATOR: &str = " ";
 
 fn strip_leading_workspace_write_json_header(raw: &str) -> String {
