@@ -18,6 +18,7 @@ pub async fn execute_terminal_session(
     _sse_control_mirror: Option<&crabmate_sse_protocol::sse::SseControlMirror>,
     _allowed_commands: &[String],
     _encoder: Option<&dyn crabmate_sse_protocol::sse::SseEncoder>,
+    _skip_arg_safety: bool,
 ) -> String {
     "错误：terminal_session 仅支持 Linux。".to_string()
 }

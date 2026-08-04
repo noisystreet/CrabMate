@@ -44,3 +44,75 @@ async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_withou
         .expect("missing failure for external read_dir");
     assert!(msg.contains("需要审批通道"));
 }
+
+#[tokio::test]
+async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
+    let mut cfg = crabmate_config::load_config(None).expect("embed default");
+    let allowed = cfg.command_exec.allowed_commands.to_vec();
+    let wd = std::path::Path::new(".");
+
+    cfg.command_exec.allow_external_path_with_approval = false;
+    let g = approve_external_run_command_paths_if_needed(
+        &cfg,
+        r#"{"command":"cat","args":["/etc/passwd"]}"#,
+        wd,
+        &allowed,
+        None,
+        None,
+        "run_command",
+    )
+    .await
+    .expect("disabled → NotNeeded");
+    assert_eq!(g, ExternalPathGate::NotNeeded);
+
+    cfg.command_exec.allow_external_path_with_approval = true;
+    let g = approve_external_run_command_paths_if_needed(
+        &cfg,
+        r#"{"command":"git","args":["log","main..HEAD"]}"#,
+        wd,
+        &allowed,
+        None,
+        None,
+        "run_command",
+    )
+    .await
+    .expect("git range → NotNeeded");
+    assert_eq!(g, ExternalPathGate::NotNeeded);
+}
+
+#[tokio::test]
+async fn external_run_command_gate_errs_without_channel_or_in_docker() {
+    let mut cfg = crabmate_config::load_config(None).expect("embed default");
+    cfg.command_exec.allow_external_path_with_approval = true;
+    let allowed = cfg.command_exec.allowed_commands.to_vec();
+    let wd = std::path::Path::new(".");
+    let abs = r#"{"command":"cat","args":["/etc/passwd"]}"#;
+
+    let err = approve_external_run_command_paths_if_needed(
+        &cfg,
+        abs,
+        wd,
+        &allowed,
+        None,
+        None,
+        "run_command",
+    )
+    .await
+    .expect_err("no channel");
+    assert!(err.contains("需要审批通道"), "{err}");
+
+    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
+        crabmate_config::SyncDefaultToolSandboxMode::Docker;
+    let err = approve_external_run_command_paths_if_needed(
+        &cfg,
+        abs,
+        wd,
+        &allowed,
+        None,
+        None,
+        "run_command",
+    )
+    .await
+    .expect_err("docker");
+    assert!(err.contains("Docker"), "{err}");
+}

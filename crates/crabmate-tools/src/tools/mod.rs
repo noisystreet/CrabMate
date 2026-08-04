@@ -13,6 +13,7 @@ mod code_nav;
 mod command;
 pub use command::{
     PreparedRunCommand, RunCommandError, prepare_run_command_for_pty_spawn, run_checked,
+    scan_run_command_unsafe_args_json,
 };
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
@@ -407,6 +408,7 @@ fn run_tool_dispatch(
                 ctx.allowed_commands,
                 ctx.working_dir,
                 test_cache,
+                false,
             ) {
                 Ok(output) => {
                     let parsed = crate::tool_result::parse_legacy_output(name, &output);

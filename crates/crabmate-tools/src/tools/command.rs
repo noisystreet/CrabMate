@@ -19,7 +19,7 @@ use super::command_line_prepare::CdPeelError;
 
 #[path = "command_prepare_invocation.rs"]
 mod prepare_invocation;
-use prepare_invocation::prepare_run_command_invocation;
+use prepare_invocation::{prepare_run_command_invocation, scan_run_command_unsafe_args};
 
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
 #[derive(Debug, Error)]
@@ -32,7 +32,7 @@ pub enum RunCommandError {
     DisallowedCommand { attempted: String, allowed: String },
     #[error("错误：args 必须是字符串数组")]
     ArgsNotArray,
-    #[error("错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）")]
+    #[error("错误：参数不允许包含父目录穿越（如 ..、../）或绝对路径（以 / 开头）")]
     UnsafeArg,
     /// 参数含 Shell 变量引用（`$(…)`、`${…}`、`` `…` ``），这些不会被 `run_command` 展开。
     /// 请使用具体值代替（如 `4` 代替 `$(nproc)`）。
@@ -262,15 +262,27 @@ pub struct PreparedRunCommand {
 }
 
 /// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
+/// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
 pub fn prepare_run_command_for_pty_spawn(
     args_json: &str,
     working_dir: &Path,
     allowed_commands: &[String],
+    skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
     let args = parse_run_command_args_with_repair(args_json)?;
-    let p = prepare_run_command_invocation(&args, working_dir, allowed_commands)?;
+    let p = prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
     Ok(p)
+}
+
+/// 与 [`prepare_run_command_invocation`] 同源：列出 argv 级不安全参数（空 = 无需外部路径审批）。
+pub fn scan_run_command_unsafe_args_json(
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<Vec<String>, RunCommandError> {
+    let args = parse_run_command_args_with_repair(args_json)?;
+    scan_run_command_unsafe_args(&args, working_dir, allowed_commands)
 }
 
 fn run_command_execute_workspace_binary(
@@ -330,12 +342,14 @@ fn run_cargo_test_with_optional_cache(
 
 /// 在指定工作目录下执行白名单内的 Linux 命令，不经过 shell，输出截断。
 /// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
+/// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
 pub fn run(
     args_json: &str,
     max_output_len: usize,
     allowed_commands: &[String],
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
 ) -> String {
     run_impl(
         args_json,
@@ -343,6 +357,7 @@ pub fn run(
         allowed_commands,
         working_dir,
         test_cache,
+        skip_arg_safety,
     )
     .unwrap_or_else(|e| e.extended_user_message())
 }
@@ -355,6 +370,7 @@ pub fn run_try(
     allowed_commands: &[String],
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
 ) -> Result<String, ToolError> {
     run_impl(
         args_json,
@@ -362,6 +378,7 @@ pub fn run_try(
         allowed_commands,
         working_dir,
         test_cache,
+        skip_arg_safety,
     )
     .map_err(RunCommandError::into_tool_error)
 }
@@ -373,6 +390,7 @@ pub fn run_checked(
     allowed_commands: &[String],
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
 ) -> Result<String, RunCommandError> {
     run_impl(
         args_json,
@@ -380,6 +398,7 @@ pub fn run_checked(
         allowed_commands,
         working_dir,
         test_cache,
+        skip_arg_safety,
     )
 }
 
@@ -389,9 +408,11 @@ fn run_impl(
     allowed_commands: &[String],
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
 ) -> Result<String, RunCommandError> {
     let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
-    let prepared = prepare_run_command_invocation(&args, working_dir, allowed_commands)?;
+    let prepared =
+        prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
 
     let invocation = format_invocation_for_display(&prepared.cmd_raw, &prepared.cmd_args);
@@ -605,6 +626,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.starts_with("参数解析错误"));
     }
@@ -617,6 +639,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         )
         .expect_err("missing command");
         assert_eq!(e.kind(), "missing_command");
@@ -630,6 +653,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert_eq!(out, "错误：缺少 command 参数");
     }
@@ -642,6 +666,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         )
         .expect_err("disallowed");
         assert_eq!(e.kind(), "disallowed_command");
@@ -658,6 +683,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("不允许的命令"));
         assert!(out.contains("rm"));
@@ -671,6 +697,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("args 必须是字符串数组"));
     }
@@ -683,6 +710,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("参数不允许"));
     }
@@ -695,6 +723,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("参数不允许"));
     }
@@ -709,6 +738,7 @@ mod tests {
             &test_allowed(),
             &wd,
             None,
+            false,
         );
         assert!(out.contains("退出码：0"), "{out}");
     }
@@ -718,7 +748,8 @@ mod tests {
         let v: serde_json::Value =
             serde_json::from_str(r#"{"command":"cd","args":["src","&&","echo","peeled"]}"#)
                 .expect("json");
-        let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed()).expect("prep");
+        let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+            .expect("prep");
         assert_eq!(p.cmd_name, "echo");
         assert_eq!(p.cmd_args, vec!["peeled".to_string()]);
         assert!(
@@ -732,7 +763,7 @@ mod tests {
     fn prepare_cd_without_and_is_rejected() {
         let v: serde_json::Value =
             serde_json::from_str(r#"{"command":"cd","args":["src"]}"#).expect("json");
-        let e = prepare_run_command_invocation(&v, Path::new("."), &test_allowed())
+        let e = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
             .err()
             .expect("cd alone");
         assert_eq!(e.kind(), "cd_prefix_invalid");
@@ -744,8 +775,9 @@ mod tests {
             r#"{"command":"pre-commit run --all-files","args":[]}"#,
         )
         .expect("json");
-        let p = prepare_run_command_invocation(&v, Path::new("."), &["pre-commit".to_string()])
-            .expect("prep");
+        let p =
+            prepare_run_command_invocation(&v, Path::new("."), &["pre-commit".to_string()], false)
+                .expect("prep");
         assert_eq!(p.cmd_name, "pre-commit");
         assert_eq!(
             p.cmd_args,
@@ -768,7 +800,7 @@ mod tests {
 
         let v: serde_json::Value =
             serde_json::from_str(r#"{"command":"./","args":["hello/build/hello"]}"#).expect("json");
-        let p = prepare_run_command_invocation(&v, dir.path(), &[]).expect("prep");
+        let p = prepare_run_command_invocation(&v, dir.path(), &[], false).expect("prep");
         assert_eq!(p.cmd_raw, "./hello/build/hello");
         assert!(p.cmd_args.is_empty());
         assert!(
@@ -785,6 +817,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("退出码：0"), "{out}");
         assert!(out.contains("hello world"), "{out}");
@@ -798,6 +831,7 @@ mod tests {
             &test_allowed(),
             test_work_dir(),
             None,
+            false,
         );
         assert!(out.contains("退出码：0"), "{out}");
         assert!(out.contains("a b"), "{out}");
@@ -824,5 +858,35 @@ mod tests {
         };
         let s = e.extended_user_message();
         assert!(!s.contains("安装提示"), "{s}");
+    }
+
+    #[test]
+    fn skip_arg_safety_allows_external_absolute_path() {
+        let out = run(
+            r#"{"command":"ls","args":["/tmp"]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+            true,
+        );
+        assert!(
+            out.contains("退出码：") || out.contains("标准输出"),
+            "approved external path should reach exec: {out}"
+        );
+    }
+
+    #[test]
+    fn skip_arg_safety_false_still_rejects_external_path() {
+        let e = run_checked(
+            r#"{"command":"ls","args":["/tmp"]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+            false,
+        )
+        .expect_err("unsafe");
+        assert_eq!(e.kind(), "unsafe_arg");
     }
 }

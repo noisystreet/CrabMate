@@ -107,6 +107,8 @@ pub(super) struct AgentSection {
     pub(super) command_max_output_len: Option<u64>,
     pub(super) allowed_commands: Option<Vec<String>>,
     pub(super) run_command_working_dir: Option<String>,
+    /// 为 `true` 时 `run_command`/`terminal_session` 的工作区外路径 / `..` 可人工审批后执行；默认 `true`。
+    pub(super) allow_external_path_with_approval: Option<bool>,
     pub(super) max_tokens: Option<u64>,
     /// 模型上下文窗口 token 上限（输入+输出）；用于推导会话裁剪近似字符预算。`CM_LLM_CONTEXT_TOKENS`
     pub(super) llm_context_tokens: Option<u64>,

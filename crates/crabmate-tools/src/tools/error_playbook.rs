@@ -474,6 +474,7 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
             ctx.allowed_commands,
             ctx.working_dir,
             None,
+            false,
         ) {
             Ok(s) => s,
             Err(e) => {
