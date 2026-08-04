@@ -49,18 +49,20 @@ pub fn is_arg_safe(cmd_name: &str, arg: &str) -> bool {
     !arg_has_parent_dir_ref(a) && !a.starts_with('/')
 }
 
-/// 将 `command: "./"` + 单个相对路径 `args`（模型按 shell 习惯误拆）合并为 `command: "./path"`。
+/// 将 `command: "./"` + 首个相对路径 `args[0]`（模型按 shell 习惯误拆）合并为 `command: "./path"`，
+/// 其余参数保留给程序。
 ///
-/// 仅当 `command` 恰为 `./`、且唯一参数为不含 `..`/绝对路径的相对路径时生效；多参数或其它命令名不动。
+/// 仅当 `command` 恰为 `./`、且首个参数为不含 `..`/绝对路径、且不以 `-` 开头（避免误把选项当成路径）的相对路径时生效。
 pub fn merge_dot_slash_with_single_relative_path(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
     if cmd_raw.trim() != "./" {
         return;
     }
-    if cmd_args.len() != 1 {
+    let Some(first) = cmd_args.first() else {
         return;
-    }
-    let arg = cmd_args[0].trim();
-    if arg.is_empty() || arg_has_parent_dir_ref(arg) || arg.starts_with('/') {
+    };
+    let arg = first.trim();
+    if arg.is_empty() || arg.starts_with('-') || arg_has_parent_dir_ref(arg) || arg.starts_with('/')
+    {
         return;
     }
     *cmd_raw = if arg.starts_with("./") {
@@ -68,7 +70,7 @@ pub fn merge_dot_slash_with_single_relative_path(cmd_raw: &mut String, cmd_args:
     } else {
         format!("./{arg}")
     };
-    cmd_args.clear();
+    cmd_args.remove(0);
 }
 
 /// 将 `command` 写成 `prog arg1 arg2` 整段而 `args` 为空（或需前缀拼接）的常见误用，规范为
@@ -208,12 +210,37 @@ mod tests {
     }
 
     #[test]
-    fn merge_dot_slash_skips_multiple_args() {
+    fn merge_dot_slash_merges_leading_path_keeps_rest_args() {
         let mut cmd = "./".to_string();
-        let mut args = vec!["a".to_string(), "b".to_string()];
+        let mut args = vec![
+            "build/hello".to_string(),
+            "-g".to_string(),
+            "Hi".to_string(),
+            "-n".to_string(),
+            "2".to_string(),
+            "Alice".to_string(),
+        ];
+        merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
+        assert_eq!(cmd, "./build/hello");
+        assert_eq!(
+            args,
+            vec![
+                "-g".to_string(),
+                "Hi".to_string(),
+                "-n".to_string(),
+                "2".to_string(),
+                "Alice".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn merge_dot_slash_skips_when_first_arg_is_flag() {
+        let mut cmd = "./".to_string();
+        let mut args = vec!["-g".to_string(), "Hi".to_string()];
         merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
         assert_eq!(cmd, "./");
-        assert_eq!(args.len(), 2);
+        assert_eq!(args, vec!["-g".to_string(), "Hi".to_string()]);
     }
 
     #[test]
