@@ -240,7 +240,7 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 | Event | Meaning |
 |-------|---------|
 | `RUN_STARTED` | Turn started (first frame) |
-| `RUN_FINISHED` | Turn completed → frontend drains then `on_done` + `saw_stream_ended` (see terminal order below) |
+| `RUN_FINISHED` | Turn completed → frontend drains then `on_done` + `saw_stream_ended` (see terminal order below). Optional CrabMate field **`tiktokenPromptTokens`** (same shape as v1 `stream_ended.tiktoken_prompt_tokens`; usually already sent via `conversation_saved`, kept as fallback) |
 | `RUN_ERROR` | Turn failed → frontend `on_error` + `saw_stream_ended` |
 
 **CUSTOM `stream_draining`**: model/tools finished; persistence in progress; **not** terminal. Official Web may enter Draining UI early without setting `saw_stream_ended`; body must still be fully read.
@@ -280,7 +280,7 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 | `clarification_questionnaire` | `clarification_questionnaire` | `on_clarification_questionnaire` |
 | `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
 | `timeline_log` | `timeline_log` | `on_timeline_log` |
-| `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
+| `conversation_saved` | `conversation_saved` | `on_conversation_revision` (`data.revision`; optional **`data.tiktokenPromptTokens`** → status-bar context meter) |
 | `stream_draining` | `stream_draining` | `on_stream_draining` → Draining UI (keeps abort/resume; does not set `saw_stream_ended`) |
 | `chat_ui_separator` | `chat_ui_separator` | Ignored |
 | `sse_capabilities` | `sse_capabilities` | Ignored |

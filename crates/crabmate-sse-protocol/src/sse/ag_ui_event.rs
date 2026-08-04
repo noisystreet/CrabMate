@@ -25,6 +25,13 @@ pub(crate) enum AgUiEvent {
         thread_id: String,
         #[serde(rename = "runId")]
         run_id: String,
+        /// CrabMate 扩展：与 v1 `stream_ended.tiktoken_prompt_tokens` 同源；成功路径通常已先发
+        /// `CUSTOM conversation_saved`，本字段作后备。
+        #[serde(
+            rename = "tiktokenPromptTokens",
+            skip_serializing_if = "Option::is_none"
+        )]
+        tiktoken_prompt_tokens: Option<crabmate_types::TiktokenPromptTokensSnapshot>,
     },
     RunError {
         #[serde(rename = "threadId")]

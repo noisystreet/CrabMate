@@ -70,7 +70,8 @@ pub struct SseNoticeTimelineHooks<'a> {
     /// `timeline_log` 事件：审批结果等旁注，写入时间线（不进聊天正文）。
     pub on_timeline_log: Option<&'a mut dyn FnMut(TimelineLogInfo)>,
     /// AG-UI `RUN_FINISHED` / `RUN_ERROR` 触发流结束时的回调（V2Parser 使用）。
-    pub on_run_finished: Option<&'a mut dyn FnMut()>,
+    /// 参数为可选 tiktoken（来自 `RUN_FINISHED.tiktokenPromptTokens`；`RUN_ERROR` 为 `None`）。
+    pub on_run_finished: Option<&'a mut dyn FnMut(Option<TiktokenPromptTokensSnapshot>)>,
     /// 非终态 `CUSTOM stream_draining`：可提前进入 Draining 文案；**不**标记 `saw_stream_ended`。
     pub on_stream_draining: Option<&'a mut dyn FnMut()>,
     /// AG-UI `STATE_SNAPSHOT`：后端在工具批结束/终答写盘等边界发送的完整状态快照，
