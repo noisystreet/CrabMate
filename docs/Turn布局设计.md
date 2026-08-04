@@ -514,7 +514,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 | 项 | 说明 |
 |----|------|
 | 真实 LLM 冒烟 | 流中空壳 / 相邻同文 / 旁白在工具前；见 `e2e/specs/real-llm-bubble-layout.spec.ts` |
-| 削薄 `TurnLayout` | rotate / peel / demote / on_done 继续收进 reconciler，缩小公开入口 |
+| 削薄 `TurnLayout` | rotate / peel / demote / on_done 的**消息列表**操作已收进 `projection_reconciler`；`TurnLayout` 保留 scratch / overlay / lane 编排。继续：更多编排入口可再下沉 |
 | 旁白路径 ideal `handoff=0` | 兼容路径可留；主路径应接近零 `commentary_handoff` |
 | Phase E | 终态协议与 hydration；见 **§16** |
 

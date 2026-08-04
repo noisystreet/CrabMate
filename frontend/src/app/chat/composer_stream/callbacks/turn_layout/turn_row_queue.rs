@@ -23,7 +23,7 @@ pub(crate) fn is_commentary_row_id(message_id: &str) -> bool {
 ///
 /// `turn-commentary-{tool_call_id}` 只在**本回合**内唯一：模型跨回合复用同一
 /// `tool_call_id` 时，直接 upsert 会把上一回合的旁注正文改写成本回合的。仿
-/// [`super::TurnLayout::detach_final_answer_projection`]，让历史行让出规范键；
+/// [`super::TurnLayout::detach_final_answer_projection`] / [`super::projection_reconciler::detach_final_answer_row_in_messages`]，让历史行让出规范键；
 /// 仍保留 `turn-commentary-` 前缀，故 `is_commentary_row_id` 与 v2 缓存识别不受影响。
 const ARCHIVED_COMMENTARY_SUFFIX: &str = "#prev";
 
@@ -347,15 +347,6 @@ impl TurnRowQueue {
             &projection,
             loading_tail_id,
         )
-    }
-
-    /// 若 FINAL_ANSWER_ROW 缺失，从给定正文补建。
-    pub(super) fn ensure_final_answer_row_from_text(
-        messages: &mut Vec<crate::storage::StoredMessage>,
-        text: &str,
-        loading_tail_id: Option<&str>,
-    ) {
-        projection_reconciler::ensure_final_answer_row_from_text(messages, text, loading_tail_id);
     }
 
     /// preview 是否应写入 loading 尾泡（与 stored 一致则不再 duplicate）。
