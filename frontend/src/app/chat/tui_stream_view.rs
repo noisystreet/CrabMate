@@ -110,6 +110,7 @@ fn apply_open_active_block(body: &web_sys::HtmlElement, text: &str, markdown_ren
 fn apply_tool_row_patch(
     body: &web_sys::HtmlElement,
     status: &str,
+    status_label: &str,
     one_line: &str,
     detail: Option<&str>,
 ) -> bool {
@@ -130,6 +131,8 @@ fn apply_tool_row_patch(
         return false;
     };
     status_el.set_text_content(Some(status));
+    let _ = status_el.set_attribute("aria-label", status_label);
+    let _ = status_el.set_attribute("title", status_label);
     one_el.set_text_content(Some(one_line));
     match detail {
         Some(text) => {
@@ -191,9 +194,10 @@ fn apply_body_patch(
         }
         TuiBodyPatch::ToolRow {
             status,
+            status_label,
             one_line,
             detail,
-        } => apply_tool_row_patch(body, &status, &one_line, detail.as_deref()),
+        } => apply_tool_row_patch(body, &status, &status_label, &one_line, detail.as_deref()),
     }
 }
 

@@ -350,6 +350,7 @@ pub enum TuiBodyPatch {
     /// 工具折叠行：只改文案，不重写 HTML（高度与结构保持不变）。
     ToolRow {
         status: String,
+        status_label: String,
         one_line: String,
         /// 若 DOM 已有 details，同步更新详情正文；`None` 表示无详情块。
         detail: Option<String>,

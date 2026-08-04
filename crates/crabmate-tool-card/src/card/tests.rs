@@ -1,4 +1,6 @@
-use super::{tool_card_compact_text, tool_card_text};
+use super::{
+    tool_card_compact_text, tool_card_text, tool_signal_beside_title, tool_signal_beside_tool,
+};
 use crate::ToolCardInput;
 use crate::locale::ToolCardLocale;
 use serde_json::json;
@@ -330,5 +332,98 @@ fn compact_strips_stream_placeholder_running_suffix_en() {
     assert!(
         !out.contains("Running tools"),
         "should not keep stream placeholder suffix: {out:?}"
+    );
+}
+
+#[test]
+fn signal_beside_title_keeps_paren_mode_drops_dup_name() {
+    assert_eq!(
+        tool_signal_beside_title("git_diff_stat", "git_diff_stat (working)").as_deref(),
+        Some("(working)")
+    );
+    assert_eq!(
+        tool_signal_beside_title("git_diff_stat", "git diff --stat (working)").as_deref(),
+        Some("(working)")
+    );
+    assert_eq!(
+        tool_signal_beside_title("git_status", "git_status").as_deref(),
+        None
+    );
+    assert_eq!(
+        tool_signal_beside_title("git_status", "git_status · git status").as_deref(),
+        None
+    );
+    assert_eq!(
+        tool_signal_beside_title("read_file", "read_file README.md 12 行").as_deref(),
+        Some("README.md 12 行")
+    );
+}
+
+#[test]
+fn signal_beside_tool_strips_human_title_for_run_command() {
+    let compact = "命令执行 cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings";
+    assert_eq!(
+        tool_signal_beside_tool("run_command", compact, ToolCardLocale::ZhHans).as_deref(),
+        Some(
+            "cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings"
+        )
+    );
+    assert_eq!(
+        tool_signal_beside_tool("run_command", "命令执行", ToolCardLocale::ZhHans).as_deref(),
+        None
+    );
+    assert_eq!(
+        tool_signal_beside_tool(
+            "run_command",
+            "Command run cargo check --workspace",
+            ToolCardLocale::En
+        )
+        .as_deref(),
+        Some("cargo check --workspace")
+    );
+}
+
+#[test]
+fn signal_beside_tool_strips_failed_title_before_human_prefix() {
+    assert_eq!(
+        tool_signal_beside_tool(
+            "run_command",
+            "命令执行失败 cargo clippy --workspace",
+            ToolCardLocale::ZhHans
+        )
+        .as_deref(),
+        Some("cargo clippy --workspace")
+    );
+    assert_eq!(
+        tool_signal_beside_tool(
+            "run_command",
+            "Command run failed cargo check",
+            ToolCardLocale::En
+        )
+        .as_deref(),
+        Some("cargo check")
+    );
+}
+
+#[test]
+fn signal_beside_tool_strips_id_failed_before_bare_id() {
+    assert_eq!(
+        tool_signal_beside_tool(
+            "cargo_check",
+            "cargo_check失败 cargo check (exit=101)",
+            ToolCardLocale::ZhHans
+        )
+        .as_deref(),
+        Some("cargo check (exit=101)")
+    );
+    assert!(
+        !tool_signal_beside_tool(
+            "cargo_check",
+            "cargo_check失败 cargo check (exit=101)",
+            ToolCardLocale::ZhHans
+        )
+        .unwrap()
+        .starts_with("失败"),
+        "不应留下裸「失败」前缀"
     );
 }

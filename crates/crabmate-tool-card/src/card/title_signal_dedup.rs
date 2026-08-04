@@ -67,3 +67,71 @@ pub(super) fn tool_compact_signal_paren_suffix_after_redundant_head(
     let tail = s[i..].trim_start();
     (!tail.is_empty()).then(|| tail.to_string())
 }
+
+/// 去掉紧凑串开头的工具 id / 标题及常见分隔符（空格、`·`、`｜`）。
+fn strip_leading_tool_title<'a>(title: &str, compact: &'a str) -> &'a str {
+    let t = title.trim();
+    let s = compact.trim();
+    if t.is_empty() {
+        return s;
+    }
+    let Some(rest) = s.strip_prefix(t) else {
+        return s;
+    };
+    rest.trim_start_matches(|c: char| c.is_whitespace() || c == '·' || c == '｜' || c == '|')
+        .trim()
+}
+
+/// 标题栏已展示工具名时，按候选标题剥掉 compact 前缀后的旁侧信号。
+pub(super) fn tool_signal_beside_titles(titles: &[&str], compact: &str) -> Option<String> {
+    let compact = compact.trim();
+    if compact.is_empty() {
+        return None;
+    }
+    let mut signal = compact.to_string();
+    loop {
+        let before = signal.clone();
+        for t in titles {
+            let t = t.trim();
+            if t.is_empty() {
+                continue;
+            }
+            signal = strip_leading_tool_title(t, &signal).to_string();
+        }
+        if signal == before {
+            break;
+        }
+    }
+    if signal.is_empty() {
+        return None;
+    }
+    for t in titles {
+        let t = t.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if let Some(tail) = tool_compact_signal_paren_suffix_after_redundant_head(t, &signal) {
+            // `(exit=N)` 是结果元数据，不是 git `(working)` 这类模式后缀；保留完整 CLI 信号。
+            if tail.starts_with("(exit=") {
+                continue;
+            }
+            return Some(tail);
+        }
+        if tool_compact_signal_redundant_with_title(t, &signal) {
+            // `cargo check (exit=101)` 与 `cargo_check` 头同义，但不能整段丢掉。
+            if signal.contains("(exit=") {
+                continue;
+            }
+            return None;
+        }
+    }
+    Some(signal)
+}
+
+/// 标题栏已展示工具名时，旁侧应显示的信号（去掉同义标题；保留 `(working)` 等后缀）。
+///
+/// 整段与标题同义、或去掉标题后为空 → [`None`]（调用方勿再回退成工具名，以免 `git_diff_stat 完成 git_diff_stat`）。
+#[must_use]
+pub fn tool_signal_beside_title(title: &str, compact: &str) -> Option<String> {
+    tool_signal_beside_titles(&[title], compact)
+}

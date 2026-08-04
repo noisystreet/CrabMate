@@ -137,6 +137,20 @@ pub fn timeline_state_tool(msg_id: &str, ok: bool) -> StoredMessageState {
     )
 }
 
+/// 工具时间线状态中的 `ok`（非 tool 快照或缺字段 → [`None`]）。
+#[must_use]
+pub fn timeline_tool_ok(state: &StoredMessageState) -> Option<bool> {
+    let raw = state.as_timeline_parse_candidate()?;
+    let v: serde_json::Value = serde_json::from_str(raw).ok()?;
+    if v.get("k").and_then(|x| x.as_str()) != Some(TIMELINE_UI_STATE_KEY) {
+        return None;
+    }
+    if v.get("t").and_then(|x| x.as_str()) != Some("tool") {
+        return None;
+    }
+    v.get("ok").and_then(|x| x.as_bool())
+}
+
 /// 本地时间线快照（仅用于 hydrate 保留；不会进入侧栏时间线条目）。
 pub fn timeline_state_local_snapshot() -> StoredMessageState {
     StoredMessageState::TimelineUiJson(

@@ -9,7 +9,9 @@ mod plain;
 mod stored;
 mod strip_ansi;
 
-pub use card::{tool_card_compact_text, tool_card_text};
+pub use card::{
+    tool_card_compact_text, tool_card_text, tool_signal_beside_title, tool_signal_beside_tool,
+};
 pub use input::{NormalizedToolSnapshotFields, ToolCardInput};
 pub use locale::ToolCardLocale;
 pub use parse::{looks_like_crabmate_tool_envelope, parse_tool_envelope};
