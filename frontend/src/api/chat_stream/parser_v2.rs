@@ -87,10 +87,12 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
 
 // ── 生命周期 ──
 
-fn dispatch_run_finished(_val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
+fn dispatch_run_finished(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
     // RUN_FINISHED → 进入 Draining；on_done 由响应体消费完成后统一触发。
+    // 可选 `tiktokenPromptTokens`：成功路径通常已由 conversation_saved 更新底栏，此处作后备。
+    let tiktoken = crate::conversation_prompt_tokens_apply::tiktoken_from_ag_ui_object(val);
     if let Some(hook) = sink.notice_timeline.on_run_finished.as_mut() {
-        hook();
+        hook(tiktoken);
     }
 }
 
@@ -110,7 +112,7 @@ fn dispatch_run_error(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
     };
     (sink.on_error)(line);
     if let Some(hook) = sink.notice_timeline.on_run_finished.as_mut() {
-        hook();
+        hook(None);
     }
 }
 
@@ -479,7 +481,8 @@ fn dispatch_info_custom(custom_type: &str, val: &serde_json::Value, sink: &mut S
         "conversation_saved" => {
             if let Some(data) = val.get("data") {
                 let revision = data.get("revision").and_then(|v| v.as_u64()).unwrap_or(0);
-                let tiktoken = None;
+                let tiktoken =
+                    crate::conversation_prompt_tokens_apply::tiktoken_from_ag_ui_object(data);
                 if let Some(hook) = sink.notice_timeline.on_conversation_saved_revision.as_mut() {
                     hook(revision, tiktoken);
                 }
@@ -560,6 +563,66 @@ mod tests {
         let data = r#"{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-1"}"#;
         let dispatch = parser.parse(data, &mut sink);
         assert_eq!(dispatch, SseDispatch::StreamEnded);
+    }
+
+    #[test]
+    fn conversation_saved_forwards_tiktoken_prompt_tokens() {
+        let parser = V2Parser;
+        let got = Rc::new(RefCell::new(None::<(u64, Option<u32>)>));
+        let got2 = Rc::clone(&got);
+        let mut on_saved = move |rev: u64,
+                                 tik: Option<
+            crate::conversation_hydrate::TiktokenPromptTokensSnapshot,
+        >| {
+            *got2.borrow_mut() = Some((rev, tik.map(|t| t.prompt_tokens)));
+        };
+        let mut sink = SseControlSink {
+            on_error: &mut |_| {},
+            on_delta: None,
+            workspace_tool: SseWorkspaceToolHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
+            clarify_trace: SseClarifyTraceHooks::default(),
+            notice_timeline: SseNoticeTimelineHooks {
+                on_conversation_saved_revision: Some(&mut on_saved),
+                ..SseNoticeTimelineHooks::default()
+            },
+        };
+        let data = concat!(
+            r#"{"type":"CUSTOM","customType":"conversation_saved","data":{"revision":11,"#,
+            r#""tiktokenPromptTokens":{"prompt_tokens":1500,"tiktoken_model":"gpt-4o"}}}"#
+        );
+        let dispatch = parser.parse(data, &mut sink);
+        assert_eq!(dispatch, SseDispatch::Handled);
+        assert_eq!(*got.borrow(), Some((11, Some(1500))));
+    }
+
+    #[test]
+    fn run_finished_forwards_tiktoken_prompt_tokens() {
+        let parser = V2Parser;
+        let got = Rc::new(RefCell::new(None::<Option<u32>>));
+        let got2 = Rc::clone(&got);
+        let mut on_fin =
+            move |tik: Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>| {
+                *got2.borrow_mut() = Some(tik.map(|t| t.prompt_tokens));
+            };
+        let mut sink = SseControlSink {
+            on_error: &mut |_| {},
+            on_delta: None,
+            workspace_tool: SseWorkspaceToolHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
+            clarify_trace: SseClarifyTraceHooks::default(),
+            notice_timeline: SseNoticeTimelineHooks {
+                on_run_finished: Some(&mut on_fin),
+                ..SseNoticeTimelineHooks::default()
+            },
+        };
+        let data = concat!(
+            r#"{"type":"RUN_FINISHED","threadId":"","runId":"3","#,
+            r#""tiktokenPromptTokens":{"prompt_tokens":88,"tiktoken_model":"gpt-4"}}"#
+        );
+        let dispatch = parser.parse(data, &mut sink);
+        assert_eq!(dispatch, SseDispatch::StreamEnded);
+        assert_eq!(*got.borrow(), Some(Some(88)));
     }
 
     #[test]

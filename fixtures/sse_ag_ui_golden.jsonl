@@ -29,7 +29,9 @@ CUSTOM workspace_changed	{"type":"CUSTOM","customType":"workspace_changed","data
 CUSTOM command_approval	{"type":"CUSTOM","customType":"command_approval","data":{"command":"git","args":"status"}}	handled
 CUSTOM clarification_questionnaire	{"type":"CUSTOM","customType":"clarification_questionnaire","data":{"questionnaireId":"q1","intro":"请补充","questions":[{"id":"a","label":"A?","required":true}]}}	handled
 CUSTOM conversation_saved	{"type":"CUSTOM","customType":"conversation_saved","data":{"revision":42}}	handled
+CUSTOM conversation_saved with tiktoken	{"type":"CUSTOM","customType":"conversation_saved","data":{"revision":43,"tiktokenPromptTokens":{"prompt_tokens":1200,"tiktoken_model":"gpt-4o"}}}	handled
 CUSTOM stream_draining	{"type":"CUSTOM","customType":"stream_draining","data":{"jobId":1}}	handled
+RUN_FINISHED with tiktoken	{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-2","tiktokenPromptTokens":{"prompt_tokens":900,"tiktoken_model":"gpt-4o"}}	stream_ended
 CUSTOM turn_segment_start	{"type":"CUSTOM","customType":"turn_segment_start","data":{"segmentId":"s1","kind":"commentary","beforeToolCallId":"tc1"}}	handled
 CUSTOM turn_segment_end	{"type":"CUSTOM","customType":"turn_segment_end","data":{"segmentId":"s1"}}	handled
 CUSTOM turn_tool_phase_end	{"type":"CUSTOM","customType":"turn_tool_phase_end","data":{"phase":"tool_end"}}	handled

@@ -203,10 +203,11 @@ pub(super) fn handle_sse_block(
     let mut on_turn_phase_end = || (cbs.on_turn_tool_phase_end)();
     let mut on_thinking_trace = |info| (cbs.on_thinking_trace)(info);
     let mut on_timeline_log = |info| (cbs.on_timeline_log)(info);
-    let mut on_run_finished = || {
-        *saw_stream_ended = true;
-        (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), None);
-    };
+    let mut on_run_finished =
+        |tiktoken: Option<crate::conversation_hydrate::TiktokenPromptTokensSnapshot>| {
+            *saw_stream_ended = true;
+            (cbs.on_stream_ended)(StreamEndReason::Completed.to_string(), tiktoken);
+        };
     // 双序兼容：新序在落盘前发 stream_draining；旧序仅有 RUN_FINISHED 后尾部 saved。
     // draining 只推进 UI（Draining），不置 saw_stream_ended，也不清 abort/resume。
     let mut on_stream_draining = || {
@@ -402,6 +403,44 @@ mod tests {
         assert!(saw_stream_ended);
         assert_eq!(revision.get(), 7);
         assert_eq!(done_count.get(), 0, "done belongs to body completion");
+    }
+
+    #[test]
+    fn conversation_saved_and_run_finished_forward_tiktoken() {
+        let saved_tokens = Rc::new(Cell::new(None::<u32>));
+        let ended_tokens = Rc::new(Cell::new(None::<u32>));
+        let saved_tokens_cb = Rc::clone(&saved_tokens);
+        let ended_tokens_cb = Rc::clone(&ended_tokens);
+        let cbs = ChatStreamCallbacks {
+            on_conversation_revision: Rc::new(move |_rev, tik| {
+                saved_tokens_cb.set(tik.map(|t| t.prompt_tokens));
+            }),
+            on_stream_ended: Rc::new(move |_reason, tik| {
+                ended_tokens_cb.set(tik.map(|t| t.prompt_tokens));
+            }),
+            ..callbacks_with_end_capture(Rc::new(RefCell::new(None)))
+        };
+        let mut buffer = concat!(
+            "id: 20\ndata: {\"type\":\"CUSTOM\",\"customType\":\"conversation_saved\",",
+            "\"data\":{\"revision\":3,\"tiktokenPromptTokens\":{",
+            "\"prompt_tokens\":1111,\"tiktoken_model\":\"gpt-4o\"}}}\n\n",
+            "id: 21\ndata: {\"type\":\"RUN_FINISHED\",\"threadId\":\"\",\"runId\":\"9\",",
+            "\"tiktokenPromptTokens\":{\"prompt_tokens\":1111,\"tiktoken_model\":\"gpt-4o\"}}\n\n"
+        )
+        .to_string();
+        let mut last_event_id = 0u64;
+        let mut saw_stream_ended = false;
+        process_sse_buffer(
+            &mut buffer,
+            &mut last_event_id,
+            &mut saw_stream_ended,
+            &cbs,
+            Locale::ZhHans,
+        )
+        .expect("tiktoken frames");
+        assert!(saw_stream_ended);
+        assert_eq!(saved_tokens.get(), Some(1111));
+        assert_eq!(ended_tokens.get(), Some(1111));
     }
 
     /// Phase E1 新序：draining → saved → RUN_FINISHED；draining 不经 `on_stream_ended`、不置 saw。

@@ -15,6 +15,7 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
         SsePayload::StreamEnded { ended } => vec![AgUiEvent::RunFinished {
             thread_id: String::new(),
             run_id: ended.job_id.to_string(),
+            tiktoken_prompt_tokens: ended.tiktoken_prompt_tokens.clone(),
         }],
 
         // ── 错误 → RunError ──
@@ -237,9 +238,38 @@ mod tests {
         });
         assert_eq!(events.len(), 1);
         match &events[0] {
-            AgUiEvent::RunFinished { thread_id, run_id } => {
+            AgUiEvent::RunFinished {
+                thread_id,
+                run_id,
+                tiktoken_prompt_tokens,
+            } => {
                 assert_eq!(run_id, "42");
                 assert_eq!(thread_id, "");
+                assert!(tiktoken_prompt_tokens.is_none());
+            }
+            other => panic!("expected RunFinished, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn convert_stream_ended_carries_tiktoken_on_run_finished() {
+        let snap = crabmate_types::TiktokenPromptTokensSnapshot {
+            prompt_tokens: 2048,
+            tiktoken_model: "gpt-4o".into(),
+        };
+        let events = convert_sse_payload_to_ag_ui(&SsePayload::StreamEnded {
+            ended: StreamEndedBody {
+                job_id: 7,
+                reason: StreamEndReason::Completed,
+                tiktoken_prompt_tokens: Some(snap.clone()),
+            },
+        });
+        match &events[0] {
+            AgUiEvent::RunFinished {
+                tiktoken_prompt_tokens,
+                ..
+            } => {
+                assert_eq!(tiktoken_prompt_tokens.as_ref(), Some(&snap));
             }
             other => panic!("expected RunFinished, got {other:?}"),
         }
@@ -422,6 +452,29 @@ mod tests {
             AgUiEvent::Custom { custom_type, data } => {
                 assert_eq!(custom_type, "conversation_saved");
                 assert_eq!(data["revision"], 3);
+            }
+            other => panic!("expected Custom, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn convert_conversation_saved_includes_tiktoken_camel_case() {
+        let snap = crabmate_types::TiktokenPromptTokensSnapshot {
+            prompt_tokens: 512,
+            tiktoken_model: "gpt-4".into(),
+        };
+        let events = convert_sse_payload_to_ag_ui(&SsePayload::ConversationSaved {
+            saved: crate::sse::protocol::ConversationSavedBody {
+                revision: 9,
+                tiktoken_prompt_tokens: Some(snap),
+            },
+        });
+        match &events[0] {
+            AgUiEvent::Custom { custom_type, data } => {
+                assert_eq!(custom_type, "conversation_saved");
+                assert_eq!(data["revision"], 9);
+                assert_eq!(data["tiktokenPromptTokens"]["prompt_tokens"], 512);
+                assert_eq!(data["tiktokenPromptTokens"]["tiktoken_model"], "gpt-4");
             }
             other => panic!("expected Custom, got {other:?}"),
         }

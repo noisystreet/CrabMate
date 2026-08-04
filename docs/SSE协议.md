@@ -237,7 +237,7 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 | 事件 | 含义 |
 |------|------|
 | `RUN_STARTED` | 回合开始（首帧） |
-| `RUN_FINISHED` | 回合正常结束 → 前端进入收尾并最终 `on_done` + `saw_stream_ended`（见下「终态顺序」） |
+| `RUN_FINISHED` | 回合正常结束 → 前端进入收尾并最终 `on_done` + `saw_stream_ended`（见下「终态顺序」）。可选 CrabMate 扩展字段 **`tiktokenPromptTokens`**（与 v1 `stream_ended.tiktoken_prompt_tokens` 同源；成功路径通常已先发 `conversation_saved`，本字段作后备） |
 | `RUN_ERROR` | 回合出错 → 前端 `on_error` + `saw_stream_ended` |
 
 **CUSTOM `stream_draining`**：模型/工具执行已结束、正在落盘等收尾；**非**终态。官方 Web 可提前进入 Draining 文案，**不**置 `saw_stream_ended`；仍须读完 body。
@@ -277,7 +277,7 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 | `clarification_questionnaire` | `clarification_questionnaire` | `on_clarification_questionnaire` |
 | `thinking_trace` | `thinking_trace` | `on_thinking_trace` |
 | `timeline_log` | `timeline_log` | `on_timeline_log` |
-| `conversation_saved` | `conversation_saved` | `on_conversation_revision` |
+| `conversation_saved` | `conversation_saved` | `on_conversation_revision`（`data.revision`；可选 **`data.tiktokenPromptTokens`** → 底栏上下文用量） |
 | `stream_draining` | `stream_draining` | `on_stream_draining` → Draining 文案（不清 abort/resume；不置 `saw_stream_ended`） |
 | `chat_ui_separator` | `chat_ui_separator` | 忽略 |
 | `sse_capabilities` | `sse_capabilities` | 忽略 |
