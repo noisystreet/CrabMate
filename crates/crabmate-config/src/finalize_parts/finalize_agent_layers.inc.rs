@@ -104,6 +104,7 @@ struct FinalizeMidLayerScalars {
     repl_initial_workspace_messages_enabled: bool,
     command_timeout_secs: u64,
     command_max_output_len: usize,
+    allow_external_path_with_approval: bool,
     max_tokens: u32,
     llm_context_tokens: u32,
     temperature: f32,
@@ -137,6 +138,10 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
             .command_max_output_len
             .unwrap_or(8192)
             .clamp(1024, 8 * 1024 * 1024) as usize,
+        allow_external_path_with_approval: b
+            .command_exec
+            .allow_external_path_with_approval
+            .unwrap_or(true),
         max_tokens: b.llm_sampling.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32,
         llm_context_tokens: b
             .llm_sampling

@@ -87,6 +87,7 @@ pub fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
         ctx.allowed_commands,
         ctx.working_dir,
         test_cache,
+        false,
     )
 }
 

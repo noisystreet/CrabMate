@@ -162,6 +162,9 @@ impl ConfigBuilder {
         let ce = &mut self.command_exec;
         ce.command_timeout_secs = agent.command_timeout_secs.or(ce.command_timeout_secs);
         ce.command_max_output_len = agent.command_max_output_len.or(ce.command_max_output_len);
+        ce.allow_external_path_with_approval = agent
+            .allow_external_path_with_approval
+            .or(ce.allow_external_path_with_approval);
         let samp = &mut self.llm_sampling;
         samp.max_tokens = agent.max_tokens.or(samp.max_tokens);
         samp.llm_context_tokens = agent.llm_context_tokens.or(samp.llm_context_tokens);

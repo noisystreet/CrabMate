@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use super::super::command_line_prepare::{
-    is_arg_safe, merge_dot_slash_with_single_relative_path, peel_workspace_cd_prefix,
-    split_command_prefix_if_embedded,
+    arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
+    peel_workspace_cd_prefix, split_command_prefix_if_embedded,
 };
 use super::{PreparedRunCommand, RunCommandError, check_shell_variable_references};
 
@@ -79,31 +79,145 @@ fn resolve_run_command_exec_path(
     Ok((cmd_name, exec_path))
 }
 
+fn arg_is_unsafe_for_cmd(cmd_name: &str, arg: &str, has_workspace_exec: bool) -> bool {
+    if has_workspace_exec {
+        arg_has_parent_dir_ref(arg) || arg.trim_start().starts_with('/')
+    } else {
+        !is_arg_safe(cmd_name, arg)
+    }
+}
+
 fn validate_run_command_args_safety(
     cmd_name: &str,
     cmd_args: &[String],
     has_workspace_exec: bool,
 ) -> Result<(), RunCommandError> {
-    if has_workspace_exec {
-        for a in cmd_args {
-            if a.contains("..") || a.trim_start().starts_with('/') {
-                return Err(RunCommandError::UnsafeArg);
-            }
-        }
-    } else {
-        for a in cmd_args {
-            if !is_arg_safe(cmd_name, a) {
-                return Err(RunCommandError::UnsafeArg);
-            }
+    for a in cmd_args {
+        if arg_is_unsafe_for_cmd(cmd_name, a, has_workspace_exec) {
+            return Err(RunCommandError::UnsafeArg);
         }
     }
     Ok(())
+}
+
+fn collect_unsafe_cmd_args(
+    cmd_name: &str,
+    cmd_args: &[String],
+    has_workspace_exec: bool,
+) -> Vec<String> {
+    cmd_args
+        .iter()
+        .filter(|a| arg_is_unsafe_for_cmd(cmd_name, a, has_workspace_exec))
+        .cloned()
+        .collect()
+}
+
+/// 扫描用：推进 `cd … &&` 前缀；不安全的 `cd` 目录记入 `unsafe_out` 后仍合成推进以便继续扫后续 argv。
+fn advance_cd_prefixes_collecting_unsafe(
+    workspace_root: &Path,
+    effective_working_dir: &mut PathBuf,
+    cmd_raw: &mut String,
+    cmd_args: &mut Vec<String>,
+    unsafe_out: &mut Vec<String>,
+) -> Result<(), RunCommandError> {
+    let anchor = workspace_root
+        .canonicalize()
+        .map_err(|e| RunCommandError::SpawnOther {
+            cmd: "canonicalize(workspace)".to_string(),
+            source: e,
+        })?;
+    loop {
+        if !cmd_raw.eq_ignore_ascii_case("cd") {
+            break;
+        }
+        if cmd_args.len() < 3 || cmd_args[1] != "&&" {
+            // 与 peel 一致：交给后续 peel/prepare 报 CdPrefixInvalid
+            break;
+        }
+        let dir = cmd_args[0].trim().to_string();
+        let pattern_unsafe = !is_arg_safe("cd", &dir);
+        let candidate = effective_working_dir.join(&dir);
+        let mut escape_unsafe = false;
+        if candidate.is_dir() {
+            match candidate.canonicalize() {
+                Ok(canon_cand) => {
+                    if !canon_cand.starts_with(&anchor) {
+                        escape_unsafe = true;
+                    } else if !pattern_unsafe {
+                        *effective_working_dir = canon_cand;
+                    }
+                }
+                Err(e) => {
+                    return Err(RunCommandError::SpawnOther {
+                        cmd: format!("canonicalize({})", candidate.display()),
+                        source: e,
+                    });
+                }
+            }
+        }
+        if (pattern_unsafe || escape_unsafe) && !unsafe_out.iter().any(|u| u == &dir) {
+            unsafe_out.push(dir);
+        }
+        *cmd_args = cmd_args[2..].to_vec();
+        if cmd_args.is_empty() {
+            return Err(RunCommandError::MissingCommand);
+        }
+        *cmd_raw = cmd_args[0].clone();
+        let rest: Vec<String> = cmd_args[1..].to_vec();
+        *cmd_args = rest;
+        split_command_prefix_if_embedded(cmd_raw, cmd_args);
+    }
+    Ok(())
+}
+
+/// 与 [`prepare_run_command_invocation`] 同源解析后，返回按 validate 规则判定为不安全的参数。
+/// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 [`is_arg_safe`] 一致）。
+pub fn scan_run_command_unsafe_args(
+    args: &serde_json::Value,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<Vec<String>, RunCommandError> {
+    let (mut cmd_raw, mut cmd_args) = extract_run_command_name_and_args(args, working_dir)?;
+    let mut effective_working_dir = working_dir.to_path_buf();
+    let mut unsafe_args = Vec::new();
+    advance_cd_prefixes_collecting_unsafe(
+        working_dir,
+        &mut effective_working_dir,
+        &mut cmd_raw,
+        &mut cmd_args,
+        &mut unsafe_args,
+    )?;
+    check_shell_variable_references(&cmd_raw, &cmd_args)?;
+
+    // 扫描阶段：命令未在白名单时仍收集 argv 危险参数（调用方通常已先做命令名审批）。
+    let cmd_name = cmd_raw.to_lowercase();
+    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
+    let has_workspace_exec = if is_workspace_executable {
+        crate::tools::resolve_workspace_executable(effective_working_dir.as_path(), &cmd_raw)
+            .is_ok()
+    } else {
+        false
+    };
+    let (cmd_name, has_exec) =
+        match resolve_run_command_exec_path(&cmd_raw, &effective_working_dir, allowed_commands) {
+            Ok((name, exec)) => (name, exec.is_some()),
+            Err(RunCommandError::DisallowedCommand { .. }) => (cmd_name, has_workspace_exec),
+            Err(e) => return Err(e),
+        };
+    let more = collect_unsafe_cmd_args(&cmd_name, &cmd_args, has_exec);
+    for a in more {
+        if !unsafe_args.iter().any(|u| u == &a) {
+            unsafe_args.push(a);
+        }
+    }
+    Ok(unsafe_args)
 }
 
 pub(super) fn prepare_run_command_invocation(
     args: &serde_json::Value,
     working_dir: &Path,
     allowed_commands: &[String],
+    skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
     let (mut cmd_raw, mut cmd_args) = extract_run_command_name_and_args(args, working_dir)?;
 
@@ -113,13 +227,16 @@ pub(super) fn prepare_run_command_invocation(
         &mut effective_working_dir,
         &mut cmd_raw,
         &mut cmd_args,
+        skip_arg_safety,
     )?;
 
     check_shell_variable_references(&cmd_raw, &cmd_args)?;
 
     let (cmd_name, exec_path) =
         resolve_run_command_exec_path(&cmd_raw, &effective_working_dir, allowed_commands)?;
-    validate_run_command_args_safety(&cmd_name, &cmd_args, exec_path.is_some())?;
+    if !skip_arg_safety {
+        validate_run_command_args_safety(&cmd_name, &cmd_args, exec_path.is_some())?;
+    }
 
     Ok(PreparedRunCommand {
         cmd_raw,
@@ -128,4 +245,52 @@ pub(super) fn prepare_run_command_invocation(
         cmd_args,
         effective_working_dir,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::scan_run_command_unsafe_args;
+
+    fn test_allowed() -> Vec<String> {
+        vec![
+            "cat".into(),
+            "cmake".into(),
+            "git".into(),
+            "cd".into(),
+            "ls".into(),
+        ]
+    }
+
+    #[test]
+    fn scan_lists_external_absolute_path_not_cmake_dotdot() {
+        let abs: serde_json::Value =
+            serde_json::from_str(r#"{"command":"cat","args":["/etc/passwd"]}"#).expect("json");
+        let u = scan_run_command_unsafe_args(&abs, Path::new("."), &test_allowed()).expect("scan");
+        assert_eq!(u, vec!["/etc/passwd".to_string()]);
+
+        let cmake: serde_json::Value =
+            serde_json::from_str(r#"{"command":"cmake","args":[".."]}"#).expect("json");
+        let u =
+            scan_run_command_unsafe_args(&cmake, Path::new("."), &test_allowed()).expect("scan");
+        assert!(u.is_empty(), "{u:?}");
+
+        let git_range: serde_json::Value =
+            serde_json::from_str(r#"{"command":"git","args":["log","main..HEAD"]}"#).expect("json");
+        let u = scan_run_command_unsafe_args(&git_range, Path::new("."), &test_allowed())
+            .expect("scan");
+        assert!(
+            u.is_empty(),
+            "git A..B must not look like path traversal: {u:?}"
+        );
+    }
+
+    #[test]
+    fn scan_lists_cd_parent_dir_prefix() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"command":"cd","args":["..","&&","ls"]}"#).expect("json");
+        let u = scan_run_command_unsafe_args(&v, Path::new("."), &test_allowed()).expect("scan");
+        assert!(u.iter().any(|a| a == ".."), "{u:?}");
+    }
 }

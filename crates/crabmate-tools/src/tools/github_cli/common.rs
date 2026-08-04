@@ -170,6 +170,7 @@ pub fn run_gh_vec(
         allowed_commands,
         working_dir,
         None,
+        false,
     );
     let stdout = extract_stdout_from_formatted(&out).to_string();
     attach_json_if_exit_zero(out, stdout.as_str())

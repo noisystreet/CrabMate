@@ -56,41 +56,61 @@ async fn execute_terminal_session_impl(
         .trim()
         .to_ascii_lowercase();
 
-    let effective_allowed: Arc<[String]> = if action_raw == "exec" {
-        let sid_nonempty = v
+    let exec_new_session = action_raw == "exec"
+        && !v
             .get("session_id")
             .and_then(|x| x.as_str())
             .map(|s| !s.trim().is_empty())
             .unwrap_or(false);
-        if !sid_nonempty {
-            if let Some(ctx) = cli_ctx {
-                ctx.record_run_command_attempt();
-            }
-            let rc = serde_json::json!({
-                "command": v.get("command"),
-                "args": v.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
-            })
-            .to_string();
-            let (cmd, command_raw, arg_preview) = parse_run_command_json(&rc);
-            match run_command_resolve_effective_allowlist(
-                cfg,
-                effective_working_dir,
-                web_ctx,
-                cli_ctx,
-                cmd.as_str(),
-                command_raw.as_str(),
-                arg_preview.as_str(),
-            )
-            .await
-            {
-                Ok(a) => a,
-                Err(e) => return e,
-            }
-        } else {
-            Arc::clone(&cfg.command_exec.allowed_commands)
+    let exec_rc_json = exec_new_session.then(|| {
+        serde_json::json!({
+            "command": v.get("command"),
+            "args": v.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
+        })
+        .to_string()
+    });
+
+    let effective_allowed: Arc<[String]> = if let Some(rc) = exec_rc_json.as_ref() {
+        if let Some(ctx) = cli_ctx {
+            ctx.record_run_command_attempt();
+        }
+        let (cmd, command_raw, arg_preview) = parse_run_command_json(rc);
+        match run_command_resolve_effective_allowlist(
+            cfg,
+            effective_working_dir,
+            web_ctx,
+            cli_ctx,
+            cmd.as_str(),
+            command_raw.as_str(),
+            arg_preview.as_str(),
+        )
+        .await
+        {
+            Ok(a) => a,
+            Err(e) => return e,
         }
     } else {
         Arc::clone(&cfg.command_exec.allowed_commands)
+    };
+
+    let skip_arg_safety = if let Some(rc) = exec_rc_json.as_ref() {
+        match approve_external_run_command_paths_if_needed(
+            cfg.as_ref(),
+            rc,
+            effective_working_dir,
+            effective_allowed.as_ref(),
+            web_ctx,
+            cli_ctx,
+            "terminal_session",
+        )
+        .await
+        {
+            Ok(ExternalPathGate::Approved) => true,
+            Ok(ExternalPathGate::NotNeeded) => false,
+            Err(e) => return (e, None),
+        }
+    } else {
+        false
     };
 
     let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), "terminal_session");
@@ -103,6 +123,7 @@ async fn execute_terminal_session_impl(
         sse_control_mirror,
         effective_allowed.as_ref(),
         sse_encoder,
+        skip_arg_safety,
     );
 
     let result =
@@ -111,22 +132,10 @@ async fn execute_terminal_session_impl(
             Err(_) => format!("terminal_session 执行超时（{} 秒）", wall_secs),
         };
 
-    if action_raw == "exec" {
-        let sid_nonempty = v
-            .get("session_id")
-            .and_then(|x| x.as_str())
-            .map(|s| !s.trim().is_empty())
-            .unwrap_or(false);
-        if !sid_nonempty {
-            let rc_line = serde_json::json!({
-                "command": v.get("command"),
-                "args": v.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
-            })
-            .to_string();
-            if tools::is_compile_command_success(rc_line.as_str(), &result) {
-                *workspace_changed = true;
-            }
-        }
+    if let Some(rc_line) = exec_rc_json.as_ref()
+        && tools::is_compile_command_success(rc_line.as_str(), &result)
+    {
+        *workspace_changed = true;
     }
 
     (result, None)

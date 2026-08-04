@@ -28,6 +28,8 @@ pub struct CommandExecConfig {
     pub command_max_output_len: usize,
     pub allowed_commands: Arc<[String]>,
     pub run_command_working_dir: String,
+    /// 为 `true` 时，argv 含工作区外绝对路径 / `..` 可经人工审批后执行；默认 `true`。
+    pub allow_external_path_with_approval: bool,
 }
 
 #[derive(Debug, Clone)]

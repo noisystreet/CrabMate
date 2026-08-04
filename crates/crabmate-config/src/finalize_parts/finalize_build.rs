@@ -63,6 +63,7 @@ fn finalize_section_command_exec(mid: &FinalizeAfterRoles) -> types::CommandExec
         command_max_output_len: mid.command_max_output_len,
         allowed_commands: mid.allowed_commands.clone(),
         run_command_working_dir: mid.run_command_working_dir.display().to_string(),
+        allow_external_path_with_approval: mid.allow_external_path_with_approval,
     }
 }
 

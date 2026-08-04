@@ -653,6 +653,7 @@ async fn terminal_exec_spawn_new(
     cols: u16,
     rows: u16,
     allowed_commands: &[String],
+    skip_arg_safety: bool,
     ctx: &mut TerminalStreamCtx<'_>,
 ) -> String {
     let cmd = match a
@@ -666,7 +667,12 @@ async fn terminal_exec_spawn_new(
     };
     let args_vec = a.args.clone().unwrap_or_default();
     let rc_json = run_command_json_from_exec_fields(&cmd, &args_vec);
-    let prepared = match prepare_run_command_for_pty_spawn(&rc_json, workspace, allowed_commands) {
+    let prepared = match prepare_run_command_for_pty_spawn(
+        &rc_json,
+        workspace,
+        allowed_commands,
+        skip_arg_safety,
+    ) {
         Ok(p) => p,
         Err(e) => return e.extended_user_message(),
     };
@@ -738,6 +744,7 @@ struct TerminalActionExecArgs<'a> {
     sse_out_tx: Option<&'a Sender<String>>,
     sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
     allowed_commands: &'a [String],
+    skip_arg_safety: bool,
     encoder: Option<&'a dyn SseEncoder>,
 }
 
@@ -752,6 +759,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
         sse_out_tx,
         sse_control_mirror,
         allowed_commands,
+        skip_arg_safety,
         encoder,
     } = args;
     let cols = a.cols.unwrap_or(80);
@@ -772,7 +780,16 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
     if let Some(sid) = session_id_trimmed(a) {
         terminal_exec_resume_existing(sid, a, &mut ctx).await
     } else {
-        terminal_exec_spawn_new(workspace, a, cols, rows, allowed_commands, &mut ctx).await
+        terminal_exec_spawn_new(
+            workspace,
+            a,
+            cols,
+            rows,
+            allowed_commands,
+            skip_arg_safety,
+            &mut ctx,
+        )
+        .await
     }
 }
 
@@ -787,6 +804,7 @@ pub async fn execute_terminal_session(
     sse_control_mirror: Option<&crabmate_sse_protocol::sse::SseControlMirror>,
     allowed_commands: &[String],
     encoder: Option<&dyn SseEncoder>,
+    skip_arg_safety: bool,
 ) -> String {
     let a: TerminalSessionArgs = match serde_json::from_str(args_json) {
         Ok(v) => v,
@@ -813,6 +831,7 @@ pub async fn execute_terminal_session(
                 sse_out_tx,
                 sse_control_mirror,
                 allowed_commands,
+                skip_arg_safety,
                 encoder,
             })
             .await

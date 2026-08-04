@@ -40,6 +40,7 @@ pub(crate) struct ConfigBuilderCommandExec {
     pub(crate) command_max_output_len: Option<u64>,
     pub(crate) allowed_commands: Option<Vec<String>>,
     pub(crate) run_command_working_dir: Option<String>,
+    pub(crate) allow_external_path_with_approval: Option<bool>,
 }
 
 #[derive(Default)]

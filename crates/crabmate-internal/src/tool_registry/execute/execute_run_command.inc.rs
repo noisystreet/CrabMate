@@ -186,6 +186,89 @@ async fn run_command_resolve_effective_allowlist(
     Ok(effective_allowed_arc)
 }
 
+/// 工作区外路径 / `..` 预检三态：仅 [`ExternalPathGate::Approved`] 可置 `skip_arg_safety`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExternalPathGate {
+    NotNeeded,
+    Approved,
+}
+
+/// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
+async fn approve_external_run_command_paths_if_needed(
+    cfg: &AgentConfig,
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+    web_ctx: Option<&WebToolRuntime>,
+    cli_ctx: Option<&CliToolRuntime>,
+    sse_command: &str,
+) -> Result<ExternalPathGate, String> {
+    if !cfg.command_exec.allow_external_path_with_approval {
+        return Ok(ExternalPathGate::NotNeeded);
+    }
+    let unsafe_args = match tools::scan_run_command_unsafe_args_json(
+        args_json,
+        working_dir,
+        allowed_commands,
+    ) {
+        Ok(v) => v,
+        Err(e) => return Err(e.extended_user_message()),
+    };
+    if unsafe_args.is_empty() {
+        return Ok(ExternalPathGate::NotNeeded);
+    }
+    if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+        return Err(format!(
+            "错误：Docker 同步工具沙盒模式下不支持工作区外路径参数（{}）。请改用宿主模式或去掉外部路径 / 路径穿越形 \"..\"。",
+            unsafe_args.join(", ")
+        ));
+    }
+    if web_ctx.is_none() && cli_ctx.is_none() {
+        return Err(format!(
+            "错误：{sse_command} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
+            unsafe_args.join(", ")
+        ));
+    }
+    let detail_paths = unsafe_args.join(", ");
+    let spec = ApprovalRequestSpec {
+        capability: SensitiveCapability::WorkspaceExternalPath,
+        sse_command: sse_command.to_string(),
+        sse_args: format!("external_paths={detail_paths}"),
+        allowlist_key: None,
+        cli_title: if sse_command == "terminal_session" {
+            "terminal_session 工作区外路径审批"
+        } else {
+            "run_command 工作区外路径审批"
+        },
+        cli_detail: format!(
+            "{sse_command} 请求使用工作区外路径或 \"..\"：{detail_paths}\n仅在可信环境下批准。\n（不审计 bash/sh -c 脚本字符串内部路径。）"
+        ),
+        web_timeline_prefix_zh: "工作区外路径审批：",
+    };
+    let allow_handles = SharedAllowlistHandles {
+        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+        cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
+    };
+    match tool_approval::interactive_gate_after_whitelist_miss(
+        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        cli_ctx.map(|c| CliApprovalInput {
+            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
+            tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
+        }),
+        &spec,
+        "tool_registry::run_command external path approval",
+        &allow_handles,
+    )
+    .await
+    {
+        Ok(InteractiveGateOutcome::Allowed) => Ok(ExternalPathGate::Approved),
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
+        Err(ToolApprovalWebError::ChannelUnavailable) => {
+            Err("错误：审批通道不可用，请重试。".to_string())
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // Web + CLI 双路径审批共享实现
 async fn execute_run_command_impl(
     env: &ToolExecEnv<'_>,
@@ -220,6 +303,22 @@ async fn execute_run_command_impl(
         Err(e) => return e,
     };
 
+    let gate = match approve_external_run_command_paths_if_needed(
+        cfg.as_ref(),
+        args,
+        effective_working_dir,
+        effective_allowed_arc.as_ref(),
+        web_ctx,
+        cli_ctx,
+        "run_command",
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(e) => return (e, None),
+    };
+    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
+
     if let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
         env,
         effective_working_dir,
@@ -244,13 +343,29 @@ async fn execute_run_command_impl(
     let cfg = Arc::clone(cfg);
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
+    let allowed_for_run = Arc::clone(&effective_allowed_arc);
     let handle = tokio::task::spawn_blocking(move || {
-        let ctx = tools::tool_context_for(
-            cfg.as_ref(),
-            effective_allowed_arc.as_ref(),
-            work_dir.as_path(),
-        );
-        tools::run_tool(&name_in, &args_cloned, &ctx)
+        if skip_arg_safety {
+            // 审批放行路径：直接带 skip_arg_safety 调用（不经 ToolContext）。
+            match tools::run_checked(
+                &args_cloned,
+                cfg.command_exec.command_max_output_len,
+                allowed_for_run.as_ref(),
+                work_dir.as_path(),
+                None,
+                true,
+            ) {
+                Ok(s) => s,
+                Err(e) => e.extended_user_message(),
+            }
+        } else {
+            let ctx = tools::tool_context_for(
+                cfg.as_ref(),
+                allowed_for_run.as_ref(),
+                work_dir.as_path(),
+            );
+            tools::run_tool(&name_in, &args_cloned, &ctx)
+        }
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,
