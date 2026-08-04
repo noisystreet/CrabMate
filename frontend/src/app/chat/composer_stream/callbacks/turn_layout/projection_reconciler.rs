@@ -9,8 +9,8 @@ use crate::message_loading::stored_message_is_loading;
 use crate::storage::StoredMessage;
 
 use super::super::super::turn_canonical::TurnCanonicalState;
-use super::bubble_queue::{
-    BubbleOutputQueue, FINAL_ANSWER_ROW_ID, commentary_row_id, current_turn_position,
+use super::turn_row_queue::{
+    FINAL_ANSWER_ROW_ID, TurnRowQueue, commentary_row_id, current_turn_position,
     is_commentary_row_id,
 };
 
@@ -41,11 +41,8 @@ pub(super) fn reconcile_finalized_commentary(
         let Some(tool_call_id) = row.tool_call_id.as_deref() else {
             continue;
         };
-        let _ = BubbleOutputQueue::upsert_commentary_before_tool(
-            messages,
-            tool_call_id,
-            row.text.clone(),
-        );
+        let _ =
+            TurnRowQueue::upsert_commentary_before_tool(messages, tool_call_id, row.text.clone());
     }
 }
 
@@ -64,7 +61,7 @@ pub(super) fn try_reconcile_active_anchored_commentary(
     let Some(tcid) = active.before_tool_call_id.as_deref() else {
         return false;
     };
-    BubbleOutputQueue::upsert_streaming_anchored_commentary(
+    TurnRowQueue::upsert_streaming_anchored_commentary(
         messages,
         tcid,
         active.text.clone(),
@@ -105,7 +102,7 @@ pub(super) fn reconcile_final_answer_from_overlay(
         return;
     }
     let insert_idx = insert_index_for_final_row(messages, loading_tail_id);
-    BubbleOutputQueue::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
+    TurnRowQueue::upsert_assistant_row(messages, FINAL_ANSWER_ROW_ID, text, insert_idx);
 }
 
 /// 若 FINAL_ANSWER_ROW 缺失，从给定正文补建（Phase C `drain` 兜底）。
@@ -125,7 +122,7 @@ pub(super) fn ensure_final_answer_row_from_text(
         return;
     }
     let insert_idx = insert_index_for_final_row(messages, loading_tail_id);
-    BubbleOutputQueue::upsert_assistant_row(
+    TurnRowQueue::upsert_assistant_row(
         messages,
         FINAL_ANSWER_ROW_ID,
         trimmed.to_string(),
@@ -172,8 +169,7 @@ fn commentary_projection_pending_in_messages(
 }
 
 fn insert_index_for_final_row(messages: &[StoredMessage], loading_tail_id: Option<&str>) -> usize {
-    let mut insert_idx =
-        BubbleOutputQueue::insert_index_before_loading_tail(messages, loading_tail_id);
+    let mut insert_idx = TurnRowQueue::insert_index_before_loading_tail(messages, loading_tail_id);
     if let Some(commentary_idx) = messages
         .iter()
         .enumerate()
@@ -189,10 +185,10 @@ fn insert_index_for_final_row(messages: &[StoredMessage], loading_tail_id: Optio
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
-    use crate::app::chat::composer_stream::callbacks::turn_layout::bubble_queue::{
-        BubbleOutputQueue, FINAL_ANSWER_ROW_ID,
-    };
     use crate::app::chat::composer_stream::callbacks::turn_layout::text_ownership;
+    use crate::app::chat::composer_stream::callbacks::turn_layout::turn_row_queue::{
+        FINAL_ANSWER_ROW_ID, TurnRowQueue,
+    };
     use crate::app::chat::composer_stream::turn_canonical::TurnCanonicalState;
     use crate::sse_dispatch::TurnSegmentStartInfo;
     use crate::storage::StoredMessageState;
@@ -275,12 +271,12 @@ mod ownership_tests {
     #[test]
     fn upsert_same_commentary_key_does_not_duplicate_row() {
         let mut messages = vec![tool("t1", "tc_a"), loading("load")];
-        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+        assert!(TurnRowQueue::upsert_commentary_before_tool(
             &mut messages,
             "tc_a",
             "一。".into()
         ));
-        assert!(BubbleOutputQueue::upsert_commentary_before_tool(
+        assert!(TurnRowQueue::upsert_commentary_before_tool(
             &mut messages,
             "tc_a",
             "一。二。".into()

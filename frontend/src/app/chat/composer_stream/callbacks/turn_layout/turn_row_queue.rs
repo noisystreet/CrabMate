@@ -83,9 +83,9 @@ fn next_archived_commentary_id(messages: &[crate::storage::StoredMessage], row_i
 
 /// 流式 preview / 边界 flush 队列。
 #[derive(Default, Debug)]
-pub(crate) struct BubbleOutputQueue;
+pub(crate) struct TurnRowQueue;
 
-impl BubbleOutputQueue {
+impl TurnRowQueue {
     /// 将旁注 upsert 到锚定工具行之前（可更新正文；若误落在工具后则搬回）。
     ///
     /// 用于：已关闭旁注 flush，以及晚到 open 旁注在工具行已存在时的流式预览。
@@ -386,5 +386,5 @@ impl BubbleOutputQueue {
 }
 
 #[cfg(test)]
-#[path = "bubble_queue_tests.rs"]
+#[path = "turn_row_queue_tests.rs"]
 mod tests;

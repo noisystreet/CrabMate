@@ -8,7 +8,7 @@
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
-use super::callbacks::BubbleOutputQueue;
+use super::callbacks::TurnRowQueue;
 use super::per_stream_accum::PerStreamAccum;
 use super::stream_control_reducer::{StreamControlEvent, StreamControlReducerState};
 use super::stream_turn_scratch_state::StreamTurnScratchState;
@@ -26,7 +26,7 @@ pub(super) struct StreamSseScratch {
     state: Rc<StreamTurnScratchState>,
     control: Rc<RefCell<StreamControlReducerState>>,
     turn: Rc<RefCell<TurnCanonicalState>>,
-    bubble_queue: Rc<RefCell<BubbleOutputQueue>>,
+    turn_row_queue: Rc<RefCell<TurnRowQueue>>,
 }
 
 impl StreamSseScratch {
@@ -36,7 +36,7 @@ impl StreamSseScratch {
             state: Rc::new(StreamTurnScratchState::new(initial_asst_id)),
             control: Rc::new(RefCell::new(StreamControlReducerState::new())),
             turn: make_turn_canonical_cell(),
-            bubble_queue: Rc::new(RefCell::new(BubbleOutputQueue)),
+            turn_row_queue: Rc::new(RefCell::new(TurnRowQueue)),
         }
     }
 
@@ -235,7 +235,7 @@ impl StreamSseScratch {
     /// 段/工具边界：flush 工具批说明块到 stored。
     pub(super) fn sync_turn_projection(&self, stream_ctx: &super::context::ChatStreamCallbackCtx) {
         let turn = self.turn.borrow();
-        let mut queue = self.bubble_queue.borrow_mut();
+        let mut queue = self.turn_row_queue.borrow_mut();
         super::callbacks::TurnLayout::sync_turn_projection(stream_ctx, &turn, &mut queue);
     }
 
