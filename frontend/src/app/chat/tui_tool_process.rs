@@ -7,7 +7,9 @@ use crate::message_format::{
 };
 use crate::storage::{StoredMessage, StoredMessageState};
 use crate::timeline_scan::timeline_tool_ok;
-use crabmate_tool_card::{ToolCardLocale, tool_signal_beside_tool};
+use crabmate_tool_card::{
+    ToolCardLocale, tool_detail_scrub_row_redundancy, tool_human_name, tool_signal_beside_tool,
+};
 
 const LIVE_TAIL_MAX_CHARS: usize = 120;
 
@@ -25,7 +27,7 @@ fn truncate_one_line(s: &str, max_chars: usize) -> String {
     out
 }
 
-fn tool_display_name(message: &StoredMessage) -> String {
+fn tool_id(message: &StoredMessage) -> String {
     message
         .tool_name
         .as_deref()
@@ -33,6 +35,11 @@ fn tool_display_name(message: &StoredMessage) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("tool")
         .to_string()
+}
+
+/// 工具行左侧标签：与 compact 标题同源的人类名（无映射时回退 id）。
+fn tool_row_label(message: &StoredMessage, locale: Locale) -> String {
+    tool_human_name(tool_card_locale(locale), &tool_id(message))
 }
 
 fn tool_row_outcome(message: &StoredMessage) -> ToolRowOutcome {
@@ -81,7 +88,7 @@ fn tool_compact_looks_failed(message: &StoredMessage) -> bool {
     if text.is_empty() {
         return false;
     }
-    let name = tool_display_name(message);
+    let name = tool_id(message);
     if text.starts_with(&format!("{name}失败"))
         || text.starts_with(&format!("{name} failed"))
         || text.starts_with("命令执行失败")
@@ -133,6 +140,13 @@ impl ToolRowOutcome {
     }
 }
 
+fn tool_card_locale(locale: Locale) -> ToolCardLocale {
+    match locale {
+        Locale::ZhHans => ToolCardLocale::ZhHans,
+        Locale::En => ToolCardLocale::En,
+    }
+}
+
 fn prepare_overlay_text(message: &StoredMessage, overlay: &str) -> String {
     if message.tool_name.as_deref() == Some("terminal_session") {
         strip_ansi_codes(overlay)
@@ -141,19 +155,12 @@ fn prepare_overlay_text(message: &StoredMessage, overlay: &str) -> String {
     }
 }
 
-fn tool_card_locale(locale: Locale) -> ToolCardLocale {
-    match locale {
-        Locale::ZhHans => ToolCardLocale::ZhHans,
-        Locale::En => ToolCardLocale::En,
-    }
-}
-
 fn tool_summary_line(
     message: &StoredMessage,
     locale: Locale,
     live_output_overlay: Option<&str>,
 ) -> String {
-    let name = tool_display_name(message);
+    let id = tool_id(message);
     let mut compact = stored_tool_message_compact_text(message, locale);
     if compact.trim().is_empty()
         && let Some(overlay) = live_output_overlay.filter(|s| !s.is_empty())
@@ -161,7 +168,7 @@ fn tool_summary_line(
         compact = truncate_one_line(&prepare_overlay_text(message, overlay), LIVE_TAIL_MAX_CHARS);
     }
     // 工具名已在 `.chat-tui-tool-name`；勿把 compact 里的 id / 人类名再拼进 one-line。
-    tool_signal_beside_tool(&name, &compact, tool_card_locale(locale))
+    tool_signal_beside_tool(&id, &compact, tool_card_locale(locale))
         .map(|s| truncate_one_line(&s, 180))
         .unwrap_or_default()
 }
@@ -170,6 +177,7 @@ fn tool_detail_body(
     message: &StoredMessage,
     locale: Locale,
     live_output_overlay: Option<&str>,
+    one_line: &str,
 ) -> String {
     let mut detail = stored_tool_message_detail_text(message, locale);
     if let Some(overlay) = live_output_overlay.filter(|s| !s.is_empty()) {
@@ -180,7 +188,12 @@ fn tool_detail_body(
             detail = format!("{detail}\n{chunk}");
         }
     }
-    detail
+    tool_detail_scrub_row_redundancy(
+        &tool_id(message),
+        &detail,
+        one_line,
+        tool_card_locale(locale),
+    )
 }
 
 /// 工具折叠行可增量更新的字段（与 DOM `.chat-tui-tool-status` / `.chat-tui-tool-one-line` 对应）。
@@ -210,7 +223,7 @@ pub(crate) fn tool_row_live_fields(
     live_output_overlay: Option<&str>,
 ) -> ToolRowLiveFields {
     let summary = tool_summary_line(message, locale, live_output_overlay);
-    let detail = tool_detail_body(message, locale, live_output_overlay);
+    let detail = tool_detail_body(message, locale, live_output_overlay, &summary);
     let detail_trim = detail.trim();
     let detail = if !detail_trim.is_empty() && detail_trim != summary.trim() {
         Some(detail_trim.to_string())
@@ -233,18 +246,22 @@ pub(crate) fn tool_process_body_html(
     locale: Locale,
     live_output_overlay: Option<&str>,
 ) -> String {
-    let name = tool_display_name(message);
-    let emoji = i18n::tool_kind_emoji(&name);
+    let id = tool_id(message);
+    let label = tool_row_label(message, locale);
     let fields = tool_row_live_fields(message, locale, live_output_overlay);
+    let emoji = i18n::tool_kind_emoji_curated(&id)
+        .map(|e| format!("<span class=\"chat-tui-tool-emoji\" aria-hidden=\"true\">{e}</span>"))
+        .unwrap_or_default();
     let row_inner = format!(
-        "<span class=\"chat-tui-tool-status\" aria-label=\"{label}\" title=\"{label}\">{status}</span>\
-         <span class=\"chat-tui-tool-emoji\" aria-hidden=\"true\">{emoji}</span>\
-         <span class=\"chat-tui-tool-name\">{name}</span>\
+        "<span class=\"chat-tui-tool-status\" aria-label=\"{aria}\" title=\"{aria}\">{status}</span>\
+         {emoji}\
+         <span class=\"chat-tui-tool-name\" title=\"{id}\">{name}</span>\
          <span class=\"chat-tui-tool-one-line\">{one}</span>",
-        label = plaintext_to_safe_html(&fields.status_label),
+        aria = plaintext_to_safe_html(&fields.status_label),
         status = plaintext_to_safe_html(&fields.status),
         emoji = emoji,
-        name = plaintext_to_safe_html(&name),
+        id = plaintext_to_safe_html(&id),
+        name = plaintext_to_safe_html(&label),
         one = plaintext_to_safe_html(&fields.one_line),
     );
     let mut html = String::new();
@@ -305,7 +322,8 @@ mod tests {
         let html = tool_process_body_html(&m, Locale::ZhHans, None);
         assert!(html.contains("chat-tui-tool-process"), "{html}");
         assert!(html.contains("chat-tui-tool-row"), "{html}");
-        assert!(html.contains("read_file"), "{html}");
+        assert!(html.contains("读取文件"), "{html}");
+        assert!(html.contains("title=\"read_file\""), "{html}");
         assert!(html.contains("⏳"), "{html}");
         assert!(html.contains("工具执行中"), "{html}");
         assert!(!html.contains("<details"), "{html}");
@@ -399,27 +417,6 @@ mod tests {
     }
 
     #[test]
-    fn one_line_strips_redundant_tool_name_keeps_paren_mode() {
-        let m = tool_msg(
-            "git_diff_stat",
-            "git_diff_stat (working)",
-            "stat output",
-            false,
-        );
-        let fields = tool_row_live_fields(&m, Locale::ZhHans, None);
-        assert_eq!(fields.one_line, "(working)");
-        let html = tool_process_body_html(&m, Locale::ZhHans, None);
-        let name_count = html.matches("git_diff_stat").count();
-        assert_eq!(
-            name_count, 1,
-            "工具名只应出现在 name 槽，不应再进 one-line: {html}"
-        );
-        assert!(html.contains("(working)"), "{html}");
-        assert!(html.contains("✅"), "{html}");
-        assert!(html.contains("aria-label=\"完成\""), "{html}");
-    }
-
-    #[test]
     fn empty_compact_does_not_echo_tool_name_in_one_line() {
         let m = tool_msg("git_status", "", "", true);
         let fields = tool_row_live_fields(&m, Locale::ZhHans, None);
@@ -431,29 +428,61 @@ mod tests {
     }
 
     #[test]
-    fn run_command_one_line_strips_human_title() {
+    fn one_line_strips_redundant_tool_name_keeps_paren_mode() {
         let m = tool_msg(
-            "run_command",
-            "命令执行 cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings",
-            "ok",
+            "git_diff_stat",
+            "git_diff_stat (working)",
+            "stat output",
             false,
         );
         let fields = tool_row_live_fields(&m, Locale::ZhHans, None);
-        assert_eq!(
-            fields.one_line,
-            "cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings"
-        );
+        assert_eq!(fields.one_line, "(working)");
+        let html = tool_process_body_html(&m, Locale::ZhHans, None);
+        assert!(html.contains("title=\"git_diff_stat\""), "{html}");
+        // 长尾工具无 curated emoji，避免随机哈希图标。
         assert!(
-            !fields.one_line.contains("命令执行"),
-            "{:?}",
-            fields.one_line
+            !html.contains("chat-tui-tool-emoji"),
+            "hashed emoji should be omitted: {html}"
+        );
+        assert!(html.contains("(working)"), "{html}");
+        assert!(html.contains("✅"), "{html}");
+        assert!(html.contains("aria-label=\"完成\""), "{html}");
+    }
+
+    #[test]
+    fn row_label_uses_human_name_with_id_title() {
+        let m = tool_msg(
+            "run_command",
+            "命令执行 cargo clippy --workspace",
+            "ok",
+            false,
         );
         let html = tool_process_body_html(&m, Locale::ZhHans, None);
-        // 冒号由 CSS `:has(+ .chat-tui-tool-one-line:not(:empty))::after` 在有摘要时加上。
-        assert!(
-            html.contains("chat-tui-tool-name") && html.contains("chat-tui-tool-one-line"),
-            "{html}"
+        assert!(html.contains(">命令执行<"), "{html}");
+        assert!(html.contains("title=\"run_command\""), "{html}");
+        assert!(html.contains("chat-tui-tool-emoji"), "{html}");
+        assert!(html.contains("⚡"), "{html}");
+    }
+
+    #[test]
+    fn detail_scrubs_redundant_title_and_one_line() {
+        let m = tool_msg(
+            "run_command",
+            "命令执行 cargo check",
+            "命令执行\n\ncargo check\n\nextra detail line",
+            false,
         );
-        assert!(html.contains("cargo clippy"), "{html}");
+        let fields = tool_row_live_fields(&m, Locale::ZhHans, None);
+        assert_eq!(fields.one_line, "cargo check");
+        let detail = fields.detail.expect("should keep unique detail");
+        assert!(!detail.contains("命令执行"), "{detail}");
+        assert!(
+            !detail
+                .lines()
+                .next()
+                .is_some_and(|l| l.trim() == "cargo check"),
+            "{detail}"
+        );
+        assert!(detail.contains("extra detail line"), "{detail}");
     }
 }

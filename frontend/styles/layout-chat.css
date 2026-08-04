@@ -478,6 +478,9 @@
 
 .chat-tui-tool-emoji {
   flex: 0 0 auto;
+  opacity: 0.72;
+  font-size: 0.95em;
+  line-height: 1;
 }
 
 .chat-tui-tool-name {
