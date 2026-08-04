@@ -8,44 +8,14 @@ use crate::api::ChatStreamCallbacks;
 use crate::clarification_form::PendingClarificationForm;
 use crate::conversation_hydrate::TiktokenPromptTokensSnapshot;
 use crate::conversation_prompt_tokens_apply::apply_conversation_prompt_tokens_from_sse;
-use crate::session_ops::message_created_ms;
 use crate::sse_dispatch::{
     ClarificationQuestionnaireInfo, CommandApprovalRequest, ThinkingTraceInfo,
 };
-use crate::storage::{StoredMessage, StoredMessageState};
 
 use super::super::context::ChatStreamCallbackCtx;
 use super::builders::*;
 use super::delta_apply::chat_stream_on_delta_builder;
 use super::turn_layout::TurnLayout;
-
-#[expect(dead_code)]
-fn push_timeline_system_bubble_with_tail(
-    stream_ctx: &ChatStreamCallbackCtx,
-    msg_id: String,
-    text: String,
-    state: StoredMessageState,
-) {
-    if stream_ctx.is_stale() {
-        return;
-    }
-    let now = message_created_ms();
-    stream_ctx.update_bound_session(|s| {
-        s.messages.push(StoredMessage {
-            id: msg_id,
-            role: "system".to_string(),
-            text,
-            reasoning_text: String::new(),
-            image_urls: vec![],
-            state: Some(state),
-            is_tool: false,
-            tool_call_id: None,
-            tool_name: None,
-            created_at: now,
-        });
-    });
-    TurnLayout::after_auxiliary_system_push(stream_ctx);
-}
 
 /// 由 [`super::super::make_attach_chat_stream`](super::super::make_attach_chat_stream) 调用；集中所有 `on_*` 闭包，降低父模块维护面。
 pub(crate) fn build_chat_stream_callbacks(

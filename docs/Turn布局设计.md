@@ -210,7 +210,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 
 - **终端 TUI** 已将本轮 `Turn` 经 `project_turn_web_v2` 投影到中区 `[Turn 投影]`（`turn_project.rs`）；历史消息仍按 `Message[]` 序；**CLI** 尚未将 `Turn` 投影到 stdout transcript。金样：`cargo test --lib golden_web_v2_row_order_preserved_in_tui_projection_block`（复用 `fixtures/turn_project_golden.jsonl`）。
 - **服务端 `Message` 列表**顺序仍按 OpenAI 工具协议；本设计主要修正 **Web `StoredMessage` 展示/导出** 与终端 TUI 本轮投影。
-- **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**（与 `message_chunks` 跳过 `CommentaryBeforeTools` 的策略并存，后续可统一）。
+- **`CommentaryBeforeTools` 状态**仍用于 demote 路径的部分旁注；canonical sync 使用 **可见 assistant + `tool_call_id` 锚点**；读侧经 `is_ephemeral_timeline_assistant_for_chat_ui` 对主列与导出一并跳过。
 - **多 create 工具共享一段旁注**时， reducer 默认挂到 **首个仍空** `before_commentary` 的 step；更细粒度需模型或后端显式多段 `turn_segment_start`。
 - **Phase 0 未覆盖的错位形态**（导出样例、`chat_export_*` 手测）见 **§12**；勿将「仅 reducer 金样通过」等同于「多工具长回合 UI/导出已正确」。
 
@@ -287,7 +287,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **3（已落地，P1 退役）** | 形态 C I4 | ~~`dedupe_redundant_loading_tail` 于 `on_done`~~ → P1 删除 | 曾：`turn_layout.rs`、`stream_end.rs` |
 | **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_golden.jsonl` |
 | **4（已落地）** | **收敛写入 I6–I8** | plain delta / `final_response` 仅经 canonical 投影写正文；`final_response` 不 push 新泡；overlay 与投影互斥 | `delta_apply.rs`、`timeline_dispatch.rs`、`turn_layout.rs`、`stream_text_overlay.rs` |
-| **5（已落地）** | **单一读路径** | 聊天列与导出共用 `visible_message_indices`；scope 过滤统一（P1 起无 assistant fuzzy dedupe） | `visible_messages.rs`、`message_chunks.rs`、`session_export.rs` |
+| **5（已落地）** | **单一读路径** | 导出与 TUI 共用 ephemeral / 空壳过滤（P1 起无 assistant fuzzy dedupe） | `visible_messages.rs`、`session_export.rs`、`tui_transcript_sync.rs` |
 
 **不建议** 用纯文本启发式（按「现在」「接下来」分句）拆分已聚合长泡；优先 **SSE 段边界前移** + **布局状态机**。
 
@@ -309,20 +309,19 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 12.8 单一读路径（Phase 5）
 
-**目标**：UI 聊天列与 JSON/Markdown 导出 **不再** 各自维护 skip + fuzzy dedupe；读侧统一经 `frontend/src/visible_messages.rs`。
+**目标**：主列 TUI 与 JSON/Markdown 导出 **不再** 各自维护 skip + fuzzy dedupe；读侧统一经 `frontend/src/visible_messages.rs`（与 `timeline_scan` 的 ephemeral 谓词）。
 
 | API | 说明 |
 |-----|------|
-| `VisibleMessageScope::ChatColumn` | 隐藏编排路由、pre-tool 旁注、`final_response_snapshot` 重复行，以及**空助手壳**（含空 Loading） |
-| `VisibleMessageScope::Export` | 隐藏 ephemeral 助手行（含 snapshot、编排、pre-tool 等，见 `is_ephemeral_timeline_assistant_for_export`）与空 loading 壳 |
-| `visible_message_indices(messages, scope)` | 按 scope 过滤隐藏规则；**不**对 assistant 正文 fuzzy dedupe（Phase 7 P1） |
-| `tui_should_render_message` | TUI 主列：空助手仅在有 stream overlay 正文时挂载；与 ChatColumn 空壳规则对齐 |
+| `is_ephemeral_timeline_assistant_for_chat_ui` | 主列噪声：`final_response_snapshot`、编排路由、`CommentaryBeforeTools`、规划拒绝旁注、与正式助手重复的本地 snapshot |
+| `is_ephemeral_timeline_assistant_for_export` | **包含**上表，另藏规划轮 `agent_reply_plan` JSON 与工具参数残留启发式 |
+| `visible_message_indices_for_export(messages)` | 经 export ephemeral + 空助手壳；**不**对 assistant 正文 fuzzy dedupe（Phase 7 P1） |
+| `tui_should_render_message(m, messages, session_id, overlay)` | 经 **chat_ui** ephemeral；空助手壳仅在有 stream overlay 正文时挂载（规划轮仍可在主列展示） |
 
 **消费方**：
 
-- `message_chunks::chunk_messages` — 仅 chunk 折叠，可见下标来自 `ChatColumn`
-- `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `Export`
-- `tui_transcript_sync::{build_tui_transcript_html,plan_tui_sync}` — 经 `tui_should_render_message` 跳过空壳；首 token / overlay 有文后再 append
+- `session_export::stored_messages_to_export` — 仅格式转换，可见下标来自 `visible_message_indices_for_export`
+- `tui_transcript_sync::{build_tui_transcript_html,plan_tui_sync}` — 经 `tui_should_render_message` 跳过主列噪声 / 空壳；首 token / overlay 有文后再 append
 
 **E2E（Victauri）**：`victauri_visible_messages.rs`（snapshot / ephemeral 隐藏）；`victauri_turn_layout.rs`（块布局：说明块在工具组前、segment_end 早于 tool_call）。
 
@@ -506,7 +505,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 |----|------|------|
 | 三真源 | overlay / loading.text / `turn-commentary-*` 可同文 | **已收窄**：`text_ownership`；handoff 仅兼容非空 `loading.text`；overlay ≡ active 收口不计 handoff |
 | 尾泡决定视觉序 | pin loading 到工具后 → 晚到旁白曾错位 | **已收敛**：顺序只认 `before_tool_call_id` + reconciler |
-| 读路径曾分叉 | ChatColumn 藏空壳、TUI 曾画出空卡 | **已对齐** `tui_should_render_message`；禁止新入口绕过 |
+| 读路径曾分叉 | 旧气泡列 / 导出 / TUI 过滤不一致 | **已对齐**：主列与导出共用 `is_ephemeral_timeline_assistant_for_chat_ui`；导出另叠 export-only 启发式；TUI 空壳允许 overlay；禁止新入口绕过 |
 | I1 演进 | 原「insert-once 不可移」→ 同 key upsert / 纠错序 | **已定稿**（§12 I1 / Phase D） |
 | 投影类型曾隐式 | reconciler 散落在 `TurnLayout` | **已显式**：`project_turn_projection` + `projection_reconciler` |
 

@@ -10,7 +10,6 @@
 //! | `tool_call` 占位落盘 | [`TurnLayout::on_tool_call_declared`] → reconciler |
 //! | `tool_result` 新建行 | [`TurnLayout::on_tool_result_inserted`] |
 //! | 时间线 / 意图 / 规划旁注 | [`TurnLayout::push_assistant_timeline`] |
-//! | 分阶段 system 时间线 push | [`TurnLayout::after_auxiliary_system_push`] |
 //! | 无工具的多轮 `assistant_answer_phase` | [`TurnLayout::rotate_bubble`]（`ContinueAnswering`）|
 //! | `final_response` 撤 loading | [`TurnLayout::remove_loading_placeholder_or_rotate`] |
 //!
@@ -481,12 +480,6 @@ impl TurnLayout {
         stream_ctx.update_bound_session(|s| {
             insert_msg_before_loading_tail(&mut s.messages, mid.as_str(), msg);
         });
-        Self::pin_loading_tail(stream_ctx);
-    }
-
-    /// 分阶段 system 时间线 `push` 到末尾后 pin loading 尾泡。
-    #[expect(dead_code)]
-    pub(crate) fn after_auxiliary_system_push(stream_ctx: &ChatStreamCallbackCtx) {
         Self::pin_loading_tail(stream_ctx);
     }
 

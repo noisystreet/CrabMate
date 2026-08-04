@@ -117,23 +117,6 @@ pub fn messages_have_loading_tool(messages: &[StoredMessage]) -> bool {
 }
 
 #[must_use]
-#[cfg_attr(not(test), expect(dead_code))]
-pub fn last_plain_assistant(messages: &[StoredMessage]) -> Option<&StoredMessage> {
-    messages
-        .iter()
-        .rev()
-        .find(|m| is_plain_assistant_message(m))
-}
-
-#[must_use]
-#[cfg_attr(not(test), expect(dead_code))]
-pub fn tail_loading_plain_assistant_id(messages: &[StoredMessage]) -> Option<String> {
-    last_plain_assistant(messages)
-        .filter(|m| stored_message_is_loading(m))
-        .map(|m| m.id.clone())
-}
-
-#[must_use]
 pub fn is_loading_streaming_assistant_id(m: &StoredMessage, streaming_assistant_id: &str) -> bool {
     m.id == streaming_assistant_id && is_loading_plain_assistant(m)
 }
@@ -205,19 +188,6 @@ mod tests {
                 .contains("status: interrupted (stale)"),
             "{}",
             messages[0].reasoning_text
-        );
-    }
-
-    #[test]
-    fn tail_loading_plain_assistant_from_rev_scan() {
-        let messages = vec![msg("assistant", false, None), {
-            let mut tail = msg("assistant", false, Some(StoredMessageState::Loading));
-            tail.id = "tail".into();
-            tail
-        }];
-        assert_eq!(
-            tail_loading_plain_assistant_id(&messages).as_deref(),
-            Some("tail")
         );
     }
 }
