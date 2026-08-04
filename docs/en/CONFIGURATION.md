@@ -63,6 +63,7 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | Variable | Description |
 | --- | --- |
 | `CM_WORKSPACE_ALLOWED_ROOTS` | Comma-separated; same as `[agent] workspace_allowed_roots`. |
+| `CM_WEB_WORKSPACE_POOL` | Web remote project-pool root (e.g. `/workspace`). When set, the browser can open/create named workspaces without typing absolute paths. **Requires** a non-empty `workspace_allowed_roots` / `CM_WORKSPACE_ALLOWED_ROOTS`, and the pool must lie under that allowlist (sensitive prefixes like `/etc` are rejected at startup). |
 | `CM_CURSOR_RULES_ENABLED` | Enable rule file injection (default **true**; set `0`/`false` to disable). |
 | `CM_CURSOR_RULES_DIR` | Directory of `*.mdc`. |
 | `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
@@ -74,6 +75,10 @@ The shell spawns **`crabmate serve --desktop-ready-json`**. Besides **`CM_DESKTO
 | `CM_SKILLS_DISABLE_HOST_LAYERS` | When **`1`** / **`true`**, disable user+system layers (for tests/CI). Can still be overridden by **`CM_SKILLS_USER_DIR`** / **`CM_SKILLS_SYSTEM_DIR`**. |
 | `CM_SKILLS_MAX_CHARS` | Max injected skills chars (Top-K and `/id` force). |
 | `CM_SKILLS_TOP_K` | Max skills selected per turn from the user message (default `4`). **`/<id> [task]`** skips Top-K and forces that skill. |
+
+**Web workspace**: After **`serve`** starts, until the sidebar sets a root via **`POST /workspace`**, the server does **not** treat **`run_command_working_dir`** (often `"."`) as a selected workspace: workspace-root first-turn context is not injected, **`@path`** refs return **`WORKSPACE_NOT_SET`**, and SyncDefault built-ins stay unavailable; enqueue still normalizes the process cwd to **`run_command_working_dir`**, and **`GET /health`** probes that directory. Explicitly setting the workspace to a path equivalent to **`run_command_working_dir`** restores the older “default cwd is workspace” behavior.
+
+**Web project pool (`web_workspace_pool` / `CM_WEB_WORKSPACE_POOL`)**: For VPS / remote browsers. Point a fixed directory (e.g. **`/workspace`**) at the pool; users open or create child dirs by **project name** via **`GET/POST /workspace/projects`** or the Web **File → Open workspace** modal (names: alphanumeric plus `._-`). When the pool is configured you **must** also set a non-empty **`workspace_allowed_roots`** (or **`CM_WORKSPACE_ALLOWED_ROOTS`**), with the pool under that allowlist; sensitive system prefixes are rejected at finalize. Prefer **Web Bearer** auth. If the pool path is missing, finalize tries **`mkdir -p`**.
 
 **Path safety (matches implementation)**: `workspace_allowed_roots` and per-request revalidation catch `..` escapes and symlinks that already point outside roots **at check time**. On **Unix**, **`read_file`** (`resolve_for_read_open`) and Web workspace list/read/write/delete go through **`src/workspace/fs.rs`**: on Linux, **`openat2` + `RESOLVE_IN_ROOT`** opens paths relative to an already-open workspace-root fd, narrowing the race between policy checks and `open`; symlinks inside the tree may still be followed, but resolution cannot escape the root. **Residual risk**: checks still depend on `canonicalize` at check time; non-Linux paths and code that does not use `workspace_fs` may still be TOCTOU-prone; **`create_dir_all`** + opens are not fully atomic. This is **not** a kernel sandbox; use **Web auth** on open networks. See **`src/workspace/path.rs`**.
 

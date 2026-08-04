@@ -6,8 +6,8 @@ use leptos::html::Input;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 
-use crate::api::user_data::put_current_web_sessions;
 use crate::api::post_workspace_project;
+use crate::api::user_data::put_current_web_sessions;
 use crate::app::workspace_panel_state::WorkspacePanelSignals;
 use crate::app::workspace_root_actions::finish_workspace_root_ui;
 use crate::app_prefs::SidePanelView;
@@ -15,25 +15,40 @@ use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n::{self, Locale};
 use crate::stream_text_overlay::sessions_snapshot_with_stream_overlay_merged;
 
+#[derive(Clone, Copy)]
+pub(crate) struct WorkspaceProjectOpenArgs {
+    pub open: RwSignal<bool>,
+    pub locale: RwSignal<Locale>,
+    pub chat: ChatSessionSignals,
+    pub ws: WorkspacePanelSignals,
+    pub side_panel_view: RwSignal<SidePanelView>,
+    pub action_err: RwSignal<Option<String>>,
+}
+
 pub(crate) fn spawn_workspace_project_open(
-    open: RwSignal<bool>,
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    ws: WorkspacePanelSignals,
-    side_panel_view: RwSignal<SidePanelView>,
+    args: WorkspaceProjectOpenArgs,
     name: String,
     create: bool,
 ) {
+    let WorkspaceProjectOpenArgs {
+        open,
+        locale,
+        chat,
+        ws,
+        side_panel_view,
+        action_err,
+    } = args;
     if ws.workspace_set_busy.get() || ws.workspace_pick_busy.get() {
         return;
     }
     let name = name.trim().to_string();
     if name.is_empty() {
-        ws.workspace_set_err.set(Some(
+        action_err.set(Some(
             i18n::ws_path_required(locale.get_untracked()).to_string(),
         ));
         return;
     }
+    action_err.set(None);
     ws.workspace_set_err.set(None);
     ws.workspace_set_busy.set(true);
     side_panel_view.set(SidePanelView::Workspace);
@@ -51,22 +66,21 @@ pub(crate) fn spawn_workspace_project_open(
         match post_workspace_project(&name, create, loc).await {
             Ok(resp) if resp.ok => {
                 ws.workspace_path_draft.set(resp.path.clone());
-                if !resp.name.is_empty() {
-                    ws.workspace_set_err.set(None);
-                }
+                action_err.set(None);
+                ws.workspace_set_err.set(None);
                 finish_workspace_root_ui(chat, ws, resp.path, loc).await;
                 ws.workspace_set_busy.set(false);
                 open.set(false);
             }
             Ok(resp) => {
-                ws.workspace_set_err.set(
+                action_err.set(
                     resp.error
                         .or(Some(i18n::api_err_workspace_set_failed(loc).to_string())),
                 );
                 ws.workspace_set_busy.set(false);
             }
             Err(e) => {
-                ws.workspace_set_err.set(Some(e));
+                action_err.set(Some(e));
                 ws.workspace_set_busy.set(false);
             }
         }

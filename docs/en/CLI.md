@@ -198,8 +198,10 @@ Static assets are served from `frontend/dist`.
 | POST | `/chat/branch` | Branch/truncate: JSON `conversation_id`, `before_user_ordinal` (0-based plain user index), `expected_revision`; server truncates **before** that user message (same as Web “regenerate from here”: resend the user text via `/chat/stream`). Requires persisted conversation and matching `revision` |
 | GET | `/status` | Backend status |
 | GET | `/workspace` | Workspace list |
-| POST | `/workspace` | Set Web workspace root: JSON `{"path":"/abs/dir"}`; omit `path` or use empty string to reset to default (`run_command_working_dir`); path must exist and lie under `workspace_allowed_roots` |
-| GET | `/workspace/pick` | Native folder picker on the **server host** (`rfd`), JSON `{"path":null}` or `{"path":"/chosen"}`; often `null` without GUI or if cancelled; desktop shell uses **File → Open workspace folder** (Tauri) then **`POST /workspace`** |
+| POST | `/workspace` | Set Web workspace root: JSON `{"path":"/abs/dir"}` or project-pool mode `{"project":"my-app"}`; omit `path` or use empty string to reset to default (`run_command_working_dir`); path must exist and lie under `workspace_allowed_roots` |
+| GET | `/workspace/projects` | Whether the project pool is enabled and the list of project names (`enabled`, `pool_path`, `projects`); `enabled=false` when `web_workspace_pool` is unset |
+| POST | `/workspace/projects` | Open or create a named project workspace: JSON `{"name":"my-app","create":true}`; on success switches the current session workspace and returns `path` |
+| GET | `/workspace/pick` | Legacy stub: always `{"path":null}`; Web **File** menu opens the project picker when `web_workspace_pool` is set, otherwise browser `prompt` for an absolute path; Tauri uses a native folder dialog |
 | GET | `/workspace/profile` | Project profile Markdown |
 | GET | `/workspace/changelog` | Session workspace changelist Markdown (optional `conversation_id` query; same body as **`session_workspace_changelist`** model injection, read-only) |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |

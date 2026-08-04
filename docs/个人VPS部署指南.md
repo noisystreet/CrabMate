@@ -180,7 +180,7 @@ sudo systemctl status crabmate.service
 - **云安全组 / 本机 `ufw`**：仅允许 **22**（SSH，若需要）、**443**（HTTPS）。**禁止**从公网访问 **8080**。
 - **SSH**：优先密钥登录，关闭密码登录（按发行版文档配置）。
 - **信任模型**：Bearer 为**共享密钥**，泄露即等同他人可调用你的 API；与 **`docs/待办清单.md`** 中「HTTP 身份模型」说明一致。
-- **工作区**：仅挂载你愿意让 Agent 读写的目录；工具链仍可能执行 **`run_command`** 等能力，参见 **`README.md`**、**`docs/工具说明.md`**。远程 Web 推荐 **`CM_WEB_WORKSPACE_POOL=/workspace`** + **`CM_WORKSPACE_ALLOWED_ROOTS=/workspace`**：用户在浏览器按项目名新建/打开子目录，无需手输服务器路径。
+- **工作区**：仅挂载你愿意让 Agent 读写的目录；工具链仍可能执行 **`run_command`** 等能力，参见 **`README.md`**、**`docs/工具说明.md`**。远程 Web **须**同时设置 **`CM_WEB_WORKSPACE_POOL=/workspace`** 与 **`CM_WORKSPACE_ALLOWED_ROOTS=/workspace`**：用户在浏览器按项目名新建/打开子目录，无需手输服务器路径。
 
 ---
 

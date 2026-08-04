@@ -124,6 +124,56 @@
   color: var(--muted);
 }
 
+.workspace-project-pool-path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  word-break: break-all;
+}
+
+.workspace-project-error {
+  margin: 0 14px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--danger, #c0392b);
+}
+
+.workspace-project-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 14px 12px;
+}
+
+.workspace-project-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+.workspace-project-open-label {
+  flex-shrink: 0;
+  opacity: 0.75;
+  font-size: 11px;
+}
+
+.workspace-project-new {
+  margin: 0 14px 8px;
+}
+
+.workspace-project-new-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.workspace-project-new-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
 /* —— 设置弹窗 —— */
 .settings-block {
   margin-bottom: var(--space-5);

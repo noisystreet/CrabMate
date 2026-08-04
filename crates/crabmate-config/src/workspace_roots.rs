@@ -1,5 +1,17 @@
 use std::path::{Path, PathBuf};
 
+/// 与 `crabmate_tools::workspace::path::is_sensitive_workspace_path` 保持一致（config 不能依赖 tools）。
+const SENSITIVE_WORKSPACE_PREFIXES: &[&str] = &[
+    "/proc", "/sys", "/dev", "/etc", "/boot", "/root", "/bin", "/sbin", "/usr",
+];
+
+fn is_sensitive_workspace_path(path: &Path) -> bool {
+    SENSITIVE_WORKSPACE_PREFIXES.iter().any(|prefix| {
+        let p = Path::new(prefix);
+        path == p || path.starts_with(p)
+    })
+}
+
 /// 解析 Web 工作区白名单：未配置或空列表时允许任意路径（返回空列表）；
 /// 否则每项须为已存在目录的绝对或相对路径（相对路径相对**进程当前目录**）。
 pub(super) fn resolve_workspace_allowed_roots(
@@ -45,7 +57,8 @@ pub(super) fn resolve_workspace_allowed_roots(
     Ok(out)
 }
 
-/// 解析 Web 项目池根目录；若路径不存在则创建（`mkdir -p`）。须落在 `workspace_allowed_roots` 内（未配置白名单时不校验）。
+/// 解析 Web 项目池根目录；若路径不存在则创建（`mkdir -p`）。
+/// 配置了池根时**必须**同时配置非空 `workspace_allowed_roots`，且池根须落在白名单内、不得命中敏感前缀。
 pub(super) fn resolve_web_workspace_pool(
     pool_opt: Option<String>,
     allowed_roots: &[PathBuf],
@@ -54,6 +67,12 @@ pub(super) fn resolve_web_workspace_pool(
         return Ok(None);
     };
     let raw = raw.trim();
+    if allowed_roots.is_empty() {
+        return Err(
+            "配置 web_workspace_pool 时必须同时设置非空的 workspace_allowed_roots（或 CM_WORKSPACE_ALLOWED_ROOTS）"
+                .to_string(),
+        );
+    }
     let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前工作目录: {}", e))?;
     let p = Path::new(raw);
     let joined = if p.is_absolute() {
@@ -61,6 +80,12 @@ pub(super) fn resolve_web_workspace_pool(
     } else {
         cwd.join(p)
     };
+    if is_sensitive_workspace_path(&joined) {
+        return Err(format!(
+            "web_workspace_pool {} 命中敏感系统路径前缀，已拒绝",
+            joined.display()
+        ));
+    }
     if !joined.exists() {
         std::fs::create_dir_all(&joined)
             .map_err(|e| format!("web_workspace_pool {:?} 无法创建: {}", raw, e))?;
@@ -71,7 +96,13 @@ pub(super) fn resolve_web_workspace_pool(
     if !canon.is_dir() {
         return Err(format!("web_workspace_pool {} 不是目录", canon.display()));
     }
-    if !allowed_roots.is_empty() && !is_within_allowed_roots(&canon, allowed_roots) {
+    if is_sensitive_workspace_path(&canon) {
+        return Err(format!(
+            "web_workspace_pool {} 命中敏感系统路径前缀，已拒绝",
+            canon.display()
+        ));
+    }
+    if !is_within_allowed_roots(&canon, allowed_roots) {
         let roots_display = allowed_roots
             .iter()
             .map(|p| p.display().to_string())
@@ -93,4 +124,38 @@ pub fn is_within_allowed_roots(candidate: &Path, allowed_roots: &[PathBuf]) -> b
     allowed_roots
         .iter()
         .any(|root| candidate == root.as_path() || candidate.starts_with(root))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn pool_requires_allowed_roots() {
+        let err = resolve_web_workspace_pool(Some("/tmp/unused".into()), &[])
+            .expect_err("must require roots");
+        assert!(err.contains("workspace_allowed_roots"), "{err}");
+    }
+
+    #[test]
+    fn pool_rejects_sensitive_prefix() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let allowed = vec![root.path().to_path_buf()];
+        let err = resolve_web_workspace_pool(Some("/etc".into()), &allowed).expect_err("sensitive");
+        assert!(err.contains("敏感"), "{err}");
+    }
+
+    #[test]
+    fn pool_creates_and_accepts_under_allowed() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let pool = root.path().join("pool");
+        let allowed = vec![root.path().canonicalize().expect("canon root")];
+        let got = resolve_web_workspace_pool(Some(pool.display().to_string()), &allowed)
+            .expect("ok")
+            .expect("some");
+        assert!(got.is_dir());
+        assert!(got.starts_with(&allowed[0]));
+        assert!(fs::metadata(&got).expect("meta").is_dir());
+    }
 }
