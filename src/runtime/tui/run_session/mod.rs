@@ -239,7 +239,7 @@ fn composer_visible_and_cursor_rel(
 }
 
 struct TuiModel {
-    /// 顶栏一行：`CrabMate · 工作目录`（模型 / `base_url` 见底栏 chips）
+    /// 顶栏一行：`CrabMate · 工作目录`（模型见底栏 chips）
     header_line: String,
     /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
     nav_summary: String,
@@ -258,7 +258,7 @@ struct TuiModel {
     /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
     chat_scrollbar_dragging: bool,
     input: String,
-    /// 与 Web 底栏 chips 同源快照（`模型 · … · base_url · … · 角色 · …`），左对齐。
+    /// 与 Web 底栏 chips 同源快照（`模型 · … · 角色 · …`），左对齐。
     status_chips: String,
     /// 与 Web / Tauri `StatusBarRunIndicator` 同源（就绪 / 模型生成中… / 工具执行中… / 错误），底栏最右。
     status_run: String,

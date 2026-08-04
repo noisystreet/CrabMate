@@ -111,9 +111,8 @@ pub(in crate::runtime::tui::run_session) async fn tui_status_chips_line(
 ) -> String {
     let g = cfg_holder.read().await;
     let model_id = g.llm.model.as_str();
-    let base = truncate_chars_with_ellipsis(g.llm.api_base.trim(), 44);
     let role = tui_status_role_label(agent_role_owned, &g);
-    format!("模型 · {model_id} · base_url · {base} · 角色 · {role}")
+    format!("模型 · {model_id} · 角色 · {role}")
 }
 
 /// 带会话消息粗估的底栏 chips（与 Web 上下文芯片对齐）。

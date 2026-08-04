@@ -302,7 +302,7 @@ pub(super) fn render_full(
     color: bool,
 ) {
     let area = frame.area();
-    // 顶栏仅 CrabMate · 工作目录；模型/base_url 在底栏；三列 + 底栏
+    // 顶栏仅 CrabMate · 工作目录；模型等在底栏；三列 + 底栏
     let vertical = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

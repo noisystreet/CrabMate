@@ -128,18 +128,6 @@ pub fn status_bar_effective_model(server: Option<&StatusData>, stored_model: &st
     }
 }
 
-/// 状态栏「base_url」：本机 `client_llm.api_base` 非空时优先，否则用 `/status`。
-pub fn status_bar_effective_api_base(server: Option<&StatusData>, stored_api_base: &str) -> String {
-    let t = stored_api_base.trim();
-    if !t.is_empty() {
-        t.to_string()
-    } else {
-        server
-            .map(|d| d.api_base.clone())
-            .unwrap_or_else(|| "-".to_string())
-    }
-}
-
 /// 状态栏「上下文窗口 token 上限」：本机 `client_llm.llm_context_tokens` 非空且可解析为正数时优先，否则用 `/status`。
 #[must_use]
 pub fn status_bar_effective_llm_context_tokens(
