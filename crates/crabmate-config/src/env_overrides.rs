@@ -141,6 +141,12 @@ fn env_override_workspace_allowed_roots(b: &mut ConfigBuilder) {
             b.workspace_roots.workspace_allowed_roots = Some(list);
         }
     }
+    if let Ok(s) = std::env::var("CM_WEB_WORKSPACE_POOL") {
+        let t = s.trim().to_string();
+        if !t.is_empty() {
+            b.workspace_roots.web_workspace_pool = Some(t);
+        }
+    }
 }
 
 fn env_override_max_tokens_llm_numeric(b: &mut ConfigBuilder) {

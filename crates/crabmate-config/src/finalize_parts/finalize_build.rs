@@ -223,6 +223,7 @@ fn finalize_section_context_pipeline(
 fn finalize_section_workspace_roots(mid: &FinalizeAfterRoles) -> types::WorkspaceRootsConfig {
     types::WorkspaceRootsConfig {
         workspace_allowed_roots: mid.workspace_allowed_roots.clone(),
+        web_workspace_pool: mid.web_workspace_pool.clone(),
     }
 }
 

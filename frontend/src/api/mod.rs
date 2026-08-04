@@ -9,6 +9,7 @@ mod chat_stream;
 pub(crate) mod client_llm_cache;
 pub(crate) mod client_llm_storage;
 mod http;
+mod http_workspace_projects;
 mod saved_models;
 mod session_store;
 pub mod user_data;
@@ -28,8 +29,9 @@ pub use http::{
     WorkspaceEntry, WorkspaceFileReadData, delete_workspace_dir, delete_workspace_file,
     fetch_conversation_messages, fetch_github_repo_context, fetch_skills, fetch_status,
     fetch_tasks, fetch_web_ui_config, fetch_workspace, fetch_workspace_changelog,
-    fetch_workspace_file, post_chat_branch, post_config_reload, post_workspace_dir,
-    post_workspace_file_write, post_workspace_file_write_opts, post_workspace_set, save_tasks,
+    fetch_workspace_file, post_chat_branch, post_config_reload,
+    post_workspace_dir, post_workspace_file_write, post_workspace_file_write_opts,
+    post_workspace_set, save_tasks,
     submit_chat_approval, upload_files_multipart,
 };
 pub use saved_models::{
@@ -39,3 +41,4 @@ pub use saved_models::{
     persist_saved_model_presets_to_storage,
 };
 pub use session_store::post_session_conversation_store;
+pub use http_workspace_projects::{fetch_workspace_projects, post_workspace_project};

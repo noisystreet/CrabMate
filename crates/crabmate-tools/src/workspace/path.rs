@@ -52,6 +52,12 @@ pub enum WorkspacePathError {
     /// Web 尚未通过 `POST /workspace` 选择工作区（`effective_workspace_path` 为空，**不要**对空路径 `canonicalize`）。
     #[error("请先设置工作区")]
     WebEffectiveWorkspaceUnset,
+    /// 未配置 `web_workspace_pool`，无法按项目名切换工作区。
+    #[error("未配置 Web 工作区项目池（web_workspace_pool）")]
+    WebWorkspacePoolDisabled,
+    /// 项目名不合法。
+    #[error("项目名无效: {0}")]
+    InvalidProjectName(String),
     /// 路径存在但不是目录。
     #[error("工作区路径必须是已存在的目录")]
     NotADirectory,
@@ -94,6 +100,8 @@ impl WorkspacePathError {
             WorkspacePathError::PathResolveFailed(_) => "path_resolve_failed",
             WorkspacePathError::WorkspaceResolveFailed(_) => "workspace_resolve_failed",
             WorkspacePathError::WebEffectiveWorkspaceUnset => "web_effective_workspace_unset",
+            WorkspacePathError::WebWorkspacePoolDisabled => "web_workspace_pool_disabled",
+            WorkspacePathError::InvalidProjectName(_) => "invalid_project_name",
             WorkspacePathError::NotADirectory => "not_a_directory",
             WorkspacePathError::SensitivePathDenied => "sensitive_path_denied",
             WorkspacePathError::EffectiveRootSensitive => "effective_root_sensitive",
@@ -168,6 +176,21 @@ pub fn validate_workspace_set_path(
         return Err(WorkspacePathError::OutsideAllowedRoots { roots_display });
     }
     Ok(canon)
+}
+
+/// 将项目池中的项目名解析为绝对路径并校验（目录须已存在，规则同 [`validate_workspace_set_path`]）。
+pub fn validate_workspace_project_set_path(
+    cfg: &AgentConfig,
+    raw_name: &str,
+) -> Result<PathBuf, WorkspacePathError> {
+    let pool = cfg
+        .workspace_roots
+        .web_workspace_pool
+        .as_ref()
+        .ok_or(WorkspacePathError::WebWorkspacePoolDisabled)?;
+    let dir = super::project::workspace_project_dir(pool.as_path(), raw_name)
+        .map_err(|e| WorkspacePathError::InvalidProjectName(e.to_string()))?;
+    validate_workspace_set_path(cfg, &dir.display().to_string())
 }
 
 /// Web `POST /workspace` 与「当前会话工作区根」校验共用的敏感路径前缀（canonical 后命中即拒绝）。

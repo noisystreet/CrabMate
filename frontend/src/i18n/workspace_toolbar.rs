@@ -154,8 +154,64 @@ pub fn ws_path_empty(l: Locale) -> &'static str {
 
 pub fn ws_path_title_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "用「文件 → 选择工作区目录」或「最近的工作区」设置",
-        Locale::En => "Set via File → Open workspace folder or Recent workspaces",
+        Locale::ZhHans => "用「文件 → 选择工作区」、项目列表或「最近的工作区」设置",
+        Locale::En => "Set via File → Open workspace, project list, or Recent workspaces",
+    }
+}
+
+pub fn ws_project_modal_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "选择或新建项目",
+        Locale::En => "Open or create project",
+    }
+}
+
+pub fn ws_project_modal_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "项目目录位于服务器项目池内；名称仅可含字母、数字及 . _ -",
+        Locale::En => "Projects live in the server pool; names may use letters, digits, and . _ -",
+    }
+}
+
+pub fn ws_project_new_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "新建项目",
+        Locale::En => "New project",
+    }
+}
+
+pub fn ws_project_new_placeholder(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "例如 my-app",
+        Locale::En => "e.g. my-app",
+    }
+}
+
+pub fn ws_project_create_open(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "创建并打开",
+        Locale::En => "Create & open",
+    }
+}
+
+pub fn ws_project_open(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "打开",
+        Locale::En => "Open",
+    }
+}
+
+pub fn ws_project_empty(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "尚无项目，请在下方输入名称创建。",
+        Locale::En => "No projects yet. Enter a name below to create one.",
+    }
+}
+
+pub fn ws_project_loading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "正在加载项目列表…",
+        Locale::En => "Loading projects…",
     }
 }
 

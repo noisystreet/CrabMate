@@ -258,6 +258,20 @@ impl AppShellCtx {
         SessionListModalSignals::from_app_signals(&self.signals)
     }
 
+    pub fn workspace_project_modal_signals(
+        &self,
+    ) -> super::workspace_project_modal::WorkspaceProjectModalSignals {
+        super::workspace_project_modal::WorkspaceProjectModalSignals {
+            open: self.signals.workspace.workspace_project_modal_open,
+            workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle {
+                locale: self.signals.shell_ui.locale,
+                chat: self.signals.chat,
+                ws: self.signals.to_workspace_panel(),
+                side_panel_view: self.signals.shell_ui.side_panel_view,
+            },
+        }
+    }
+
     pub fn status_bar_footer_signals(&self) -> StatusBarFooterSignals {
         StatusBarFooterSignals {
             status_bar_visible: self.signals.shell_ui.status_bar_visible,
