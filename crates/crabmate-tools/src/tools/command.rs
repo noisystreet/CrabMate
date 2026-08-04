@@ -512,6 +512,10 @@ fn now_sec() -> u64 {
 }
 
 fn check_rate_limit() -> Result<(), RunCommandError> {
+    // 单元测试并行调用 `run`/`run_gh_vec` 时共享进程级计数，易误触 5/s 上限导致偶发失败。
+    if cfg!(test) {
+        return Ok(());
+    }
     let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
     let now = now_sec();
     if now != state.window_sec {

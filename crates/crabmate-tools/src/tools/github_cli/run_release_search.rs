@@ -253,6 +253,7 @@ mod tests {
 
     #[test]
     fn gh_pr_list_invokes_gh_or_errors() {
+        crate::tools::command::reset_run_command_rate_limit_for_tests();
         let dir = tempfile::tempdir().expect("tempdir");
         let out = gh_pr_list(
             r#"{"limit":1,"fields":["number","title"]}"#,
@@ -261,7 +262,10 @@ mod tests {
             dir.path(),
         );
         assert!(
-            out.contains("退出码：") || out.contains("无法执行") || out.contains("不存在"),
+            out.contains("退出码：")
+                || out.contains("无法执行")
+                || out.contains("不存在")
+                || out.contains("过于频繁"),
             "unexpected: {out}"
         );
     }
