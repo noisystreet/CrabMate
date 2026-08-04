@@ -268,55 +268,6 @@ pub fn try_split_combined_post_tool_answer(combined: &str) -> Option<(String, St
     Some((head.to_string(), tail.to_string()))
 }
 
-/// 形态 B 巨泡：短终答开头、后接 batch 旁注（纯函数，保留供未来复用）。
-#[allow(dead_code)]
-#[must_use]
-fn try_split_leading_final_sentence(combined: &str) -> Option<(String, String)> {
-    let trimmed = combined.trim();
-    let (final_body, rest) = trimmed.split_once('。')?;
-    let final_sent = format!("{}。", final_body.trim());
-    let rest = rest.trim();
-    let final_len = final_sent.chars().count();
-    let looks_terminal = final_sent.contains("完成")
-        || final_sent.contains("总结")
-        || final_sent.contains("完毕")
-        || final_len <= 16;
-    if !(4..=32).contains(&final_len) || !looks_terminal || rest.len() < 12 || !rest.contains('。')
-    {
-        return None;
-    }
-    Some((rest.to_string(), final_sent))
-}
-
-/// 无「总结：」等标记时：将末尾一句短终答从 batch 中剥离（纯函数，保留供未来复用）。
-#[allow(dead_code)]
-#[must_use]
-fn try_peel_trailing_final_sentence(combined: &str) -> Option<(String, String)> {
-    let trimmed = combined.trim().trim_end_matches('。');
-    let (head, tail_body) = trimmed.rsplit_once('。')?;
-    let head = format!("{}。", head.trim());
-    let tail = format!("{}。", tail_body.trim());
-    if head.len() < 12 || tail.len() < 4 || tail.len() > 240 {
-        return None;
-    }
-    if !head.contains('。') || head.len() <= tail.len() {
-        return None;
-    }
-    // tail 以 em-dash 署名行开头时不拆分
-    // （如 "...复杂。 — 列奥纳多·达·芬奇。" 不应把 "— 列奥纳多·达·芬奇。" 拆为终答）
-    if looks_like_blockquote_attribution(&tail) {
-        return None;
-    }
-    Some((head, tail))
-}
-
-/// 判断文本是否像 markdown blockquote 的署名行（纯函数，保留供未来复用）。
-#[allow(dead_code)]
-fn looks_like_blockquote_attribution(text: &str) -> bool {
-    let t = text.trim();
-    t.starts_with("— ") || t.starts_with("-- ") || (t.starts_with('—') && !t.contains('。'))
-}
-
 impl TurnReducer {
     pub fn apply(&self, turn: &mut Turn, event: TurnEvent) {
         reduce_event(turn, event);
@@ -493,34 +444,6 @@ mod tests {
         );
         let batch = crate::batch_narration_text(&turn).expect("batch");
         assert!(batch.contains("先看安装说明。") && batch.contains("继续读 Makefile。"));
-    }
-
-    #[test]
-    fn leading_final_split_fixes_prepended_mega_bubble() {
-        let combined = "HPCG 编译完成。好的，先解压 HPCG 看看结构。HPCG 源码已解压。开始编译。";
-        let (batch, fin) = try_split_leading_final_sentence(combined).expect("split");
-        assert!(batch.contains("先解压"));
-        assert_eq!(fin, "HPCG 编译完成。");
-    }
-
-    #[test]
-    fn peel_trailing_does_not_split_blockquote_attribution() {
-        let combined = "已在 `agent_space/quote.md` 中写入：\n\n> **\"Simplicity is the ultimate sophistication.\"** — Leonardo da Vinci\n>\n> 简洁是终极的复杂。 — 列奥纳多·达·芬奇。";
-        assert_eq!(try_peel_trailing_final_sentence(combined), None);
-    }
-
-    #[test]
-    fn peel_trailing_does_not_split_em_dash_attribution() {
-        let combined = "好的，先看看结构。读取了 INSTALL 文件。 — Albert Einstein。";
-        assert_eq!(try_peel_trailing_final_sentence(combined), None);
-    }
-
-    #[test]
-    fn peel_trailing_still_splits_normal_terminal_sentence() {
-        let combined = "好的，先解压 HPCG 看看结构。HPCG 源码已解压。读取 INSTALL 与 Makefile。开始编译。HPCG 编译完成。";
-        let (batch, fin) = try_peel_trailing_final_sentence(combined).expect("should split");
-        assert!(batch.contains("开始编译"));
-        assert_eq!(fin, "HPCG 编译完成。");
     }
 
     #[test]

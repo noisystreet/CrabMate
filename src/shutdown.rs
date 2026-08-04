@@ -24,12 +24,6 @@ impl GracefulShutdown {
         }
     }
 
-    /// 是否已触发关闭。
-    #[allow(dead_code)]
-    pub fn is_triggered(&self) -> bool {
-        self.triggered.load(Ordering::Acquire)
-    }
-
     /// 触发关闭：标记状态并通知所有等待者。
     pub fn trigger(&self) {
         self.triggered.store(true, Ordering::Release);

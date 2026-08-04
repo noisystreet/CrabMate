@@ -61,7 +61,6 @@ mod llm_seed_tests {
 mod chat_api;
 mod mcp_types;
 mod message;
-mod message_lineage;
 mod real_user_message;
 pub mod server_injected_user;
 pub mod session_mode;
@@ -84,9 +83,6 @@ pub use server_injected_user::{
 pub use session_mode::{SessionMode, parse_optional_session_mode, parse_session_mode};
 pub use skill_slash_strip::{is_reserved_slash_head, strip_explicit_skill_slash_prefix_for_model};
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
-// 供宿主/调试引用 [`message_lineage`]；库内尚未全覆盖调用点，`cargo check` 下会呈现未使用。
-#[allow(unused_imports)]
-pub use message_lineage::{ContextInjectionKind, MessageLineage, message_lineage};
 #[cfg(test)]
 mod server_injected_user_store_tests {
     use super::*;
@@ -687,19 +683,5 @@ mod sanitize_tool_call_arguments_tests {
         let out = sanitize_tool_call_arguments_for_openai_compat(raw);
         let v: serde_json::Value = serde_json::from_str(&out).expect("sanitized must parse");
         assert_eq!(v["code"], "partial");
-    }
-}
-
-#[cfg(test)]
-mod message_lineage_pub_smoke {
-    use crate::Message;
-    use crate::message_lineage::{MessageLineage, message_lineage};
-
-    #[test]
-    fn pub_exports_resolve_for_embedding_hosts() {
-        assert!(matches!(
-            message_lineage(&Message::user_only("x")),
-            MessageLineage::UserNatural
-        ));
     }
 }

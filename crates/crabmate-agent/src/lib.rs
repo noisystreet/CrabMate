@@ -10,7 +10,6 @@ pub mod acceptance;
 pub mod agent_turn;
 /// 单轮 `TurnBudgetCounter` 与 `message_pipeline` / 上下文摘要的联动策略。
 pub mod context_budget_pressure;
-pub mod evolution;
 mod log_preview;
 pub mod message_pipeline;
 pub mod per_coord;
