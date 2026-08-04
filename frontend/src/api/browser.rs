@@ -12,13 +12,6 @@ pub fn window() -> Option<Window> {
     web_sys::window()
 }
 
-/// 设置本进程内访问 CrabMate HTTP API 的 Bearer（配合 `PUT /user-data/secrets/web-api-bearer`）。
-/// 设置页写入路径尚未接线；保留供后续侧栏密钥 UI 调用。
-#[allow(dead_code)]
-pub fn set_web_api_bearer_token(token: &str) {
-    WEB_API_BEARER.with(|c| *c.borrow_mut() = token.trim().to_string());
-}
-
 #[must_use]
 pub fn web_api_bearer_token() -> String {
     WEB_API_BEARER.with(|c| c.borrow().clone())

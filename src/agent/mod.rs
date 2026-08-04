@@ -25,6 +25,5 @@ mod workflow_reflection_golden;
 pub mod workflow_tool_dispatch;
 
 pub use crabmate_agent::{
-    evolution, plan_artifact, text_sanitize, turn_budget, workflow_reflection_controller,
-    workspace_snapshot,
+    plan_artifact, text_sanitize, turn_budget, workflow_reflection_controller, workspace_snapshot,
 };
