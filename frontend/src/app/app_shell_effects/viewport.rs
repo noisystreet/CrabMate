@@ -1,11 +1,11 @@
 //! 窄屏视口检测：维护 `is_narrow_viewport`、DOM `data-narrow-viewport`，进入窄屏时暂存并收起右侧面板。
 
 use leptos::prelude::*;
-use wasm_bindgen::closure::Closure;
 use wasm_bindgen::JsCast;
+use wasm_bindgen::closure::Closure;
 
 use crate::app::shell_prefs_storage;
-use crate::app_prefs::{mobile_layout_media_query, SidePanelView};
+use crate::app_prefs::{SidePanelView, mobile_layout_media_query};
 
 pub struct WireNarrowViewportSignals {
     pub is_narrow_viewport: RwSignal<bool>,
