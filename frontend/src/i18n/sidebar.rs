@@ -195,3 +195,17 @@ pub fn mobile_open_menu(l: Locale) -> &'static str {
         Locale::En => "Open menu",
     }
 }
+
+pub fn mobile_disconnect_server(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "断开连接",
+        Locale::En => "Disconnect",
+    }
+}
+
+pub fn mobile_disconnect_server_aria(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "断开远程服务器并返回连接页",
+        Locale::En => "Disconnect from remote server and return to connect page",
+    }
+}

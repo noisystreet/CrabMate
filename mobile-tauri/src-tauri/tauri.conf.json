@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "CrabMate",
+  "productName": "crabmate",
   "version": "0.1.0",
-  "identifier": "com.crabmate.android",
+  "identifier": "edu.crabmate",
   "build": {
     "frontendDist": "../dist"
   },
@@ -10,7 +10,7 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "CrabMate",
+        "title": "crabmate",
         "width": 390,
         "height": 844,
         "resizable": true

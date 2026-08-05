@@ -13,6 +13,7 @@
 mod approval_follow;
 mod escape;
 mod ide_hotkeys;
+mod keyboard_inset;
 mod persist_prefs;
 mod session_delete_hotkey;
 mod settings_llm_open;
@@ -22,6 +23,7 @@ mod viewport;
 pub use approval_follow::wire_approval_expanded_follows_pending;
 pub use escape::{ShellEscapeSignals, wire_escape_key_layered_dismiss};
 pub use ide_hotkeys::{IdeEditorHotkeySignals, wire_ide_editor_hotkeys};
+pub use keyboard_inset::wire_visual_viewport_keyboard_inset;
 pub use persist_prefs::{
     wire_close_shell_chrome_when_ide_layout, wire_sidebar_rail_when_ide_layout,
 };

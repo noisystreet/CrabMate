@@ -6,7 +6,7 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>CrabMate</title>
+    <title>crabmate</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -102,7 +102,7 @@
     </style>
   </head>
   <body>
-    <h1>CrabMate</h1>
+    <h1>crabmate</h1>
     <p class="lead">
       远程连接到已有的 <code>crabmate serve</code>（电脑 / 服务器）。工具与工作区在那台机器上执行；本机不运行 Agent 后端。
     </p>
@@ -130,7 +130,8 @@
       <button type="submit" id="submit">连接</button>
     </form>
     <p class="hint">
-      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。仅记住服务器地址；密钥不落盘（每次需填写）。系统返回键可退回本页。
+      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。仅记住服务器地址；密钥不落盘（每次需填写）。
+      连上后可用系统返回键或顶栏「断开连接」回到本页以更换服务器。
     </p>
     <script>
       const URL_KEY = "crabmate.mobile.serverUrl";

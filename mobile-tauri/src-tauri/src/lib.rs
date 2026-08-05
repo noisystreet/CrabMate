@@ -6,7 +6,10 @@ mod connect;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![connect::connect_remote])
+        .invoke_handler(tauri::generate_handler![
+            connect::connect_remote,
+            connect::disconnect_remote
+        ])
         .run(tauri::generate_context!())
         .expect("error while running CrabMate mobile");
 }

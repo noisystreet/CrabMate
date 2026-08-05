@@ -42,11 +42,18 @@
   }
 }
 
-/* —— Phase 2：safe-area 底部 + 触摸目标 —— */
+/* —— Phase 2：safe-area 底部 + 触摸目标 + 软键盘避让 —— */
 @media (max-width: 768px) {
   .composer-ds,
   .composer.composer-ds {
     padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* visualViewport 键盘高度（见 wire_visual_viewport_keyboard_inset）：压缩壳高度，顶起底栏输入 */
+  .app-root.app-shell-ds {
+    padding-bottom: var(--vv-keyboard-inset, 0px);
+    box-sizing: border-box;
+    transition: padding-bottom 0.12s ease-out;
   }
 
   .status-bar-footer,
@@ -62,6 +69,13 @@
   .chat-tui-turn-actions .btn {
     min-width: 44px;
     min-height: 44px;
+  }
+
+  .shell-topbar-disconnect {
+    flex-shrink: 0;
+    font-size: 12px;
+    padding-inline: 0.55rem;
+    white-space: nowrap;
   }
 
   .composer-ds .composer-input-stack {
