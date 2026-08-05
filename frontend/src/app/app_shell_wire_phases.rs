@@ -26,7 +26,8 @@ use super::app_shell_effects::{
     wire_settings_modal_llm_drafts_on_open, wire_sidebar_rail_when_ide_layout,
     wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
     wire_sync_session_typography_to_storage_and_dom, wire_sync_tauri_shell_dom,
-    wire_sync_theme_to_storage_and_dom,
+    wire_sync_theme_to_storage_and_dom, wire_narrow_viewport_layout,
+    WireNarrowViewportSignals,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -148,6 +149,10 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
         app.shell_ui.session_chat_font_size,
     );
     wire_sync_tauri_shell_dom(app.shell_ui.editor_layout_mode);
+    wire_narrow_viewport_layout(WireNarrowViewportSignals {
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
+        side_panel_view: app.shell_ui.side_panel_view,
+    });
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,

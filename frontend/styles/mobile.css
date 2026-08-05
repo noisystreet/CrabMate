@@ -1,0 +1,43 @@
+/* 移动端 Web 优化（断点与 app_prefs::MOBILE_LAYOUT_BREAKPOINT_PX 对齐：768px） */
+
+/* —— Phase 1：主区单栏 + 侧栏全屏 Sheet —— */
+@media (max-width: 768px) {
+  .main-row {
+    flex-direction: column;
+    position: relative;
+  }
+
+  .chat-column {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .column-resize-handle {
+    display: none !important;
+  }
+
+  /* 打开侧栏时全屏覆盖，避免与聊天列并排挤压 */
+  .side-column:not(.side-column-rail-only) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: var(--shell-topbar-h, 52px);
+    width: 100% !important;
+    max-width: none;
+    z-index: 90;
+    border-left: none;
+    box-shadow: var(--shadow-md);
+  }
+
+  .side-column.side-column-rail-only {
+    position: static;
+    width: 0 !important;
+  }
+
+  /* 浮动工具栏在窄屏仍贴右，但避开顶栏 */
+  .shell-main-toolbar--rail-float {
+    top: calc(var(--shell-topbar-h, 52px) + max(8px, env(safe-area-inset-top, 0px)));
+  }
+}
