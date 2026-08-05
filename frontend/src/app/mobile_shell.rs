@@ -26,7 +26,7 @@ pub struct WireMobileShellSyncSignals {
     pub editor_layout_mode: RwSignal<bool>,
 }
 
-/// 侧栏视图变化时同步底部 Tab；打开侧栏时关闭左侧抽屉。
+/// 窄屏下侧栏关闭时回到 Chat Tab；打开侧栏时关闭左侧抽屉（不自动把侧栏视图同步到底部 Tab，避免默认 Workspace 遮住聊天列）。
 pub fn wire_mobile_shell_tab_sync(sig: WireMobileShellSyncSignals) {
     let is_narrow_viewport = sig.is_narrow_viewport;
     let mobile_shell_tab = sig.mobile_shell_tab;
@@ -38,9 +38,10 @@ pub fn wire_mobile_shell_tab_sync(sig: WireMobileShellSyncSignals) {
             return;
         }
         let view = side_panel_view.get();
-        let tab = MobileShellTab::from_side_panel(view);
-        if mobile_shell_tab.get_untracked() != tab {
-            mobile_shell_tab.set(tab);
+        if matches!(view, SidePanelView::None)
+            && mobile_shell_tab.get_untracked() != MobileShellTab::Chat
+        {
+            mobile_shell_tab.set(MobileShellTab::Chat);
         }
         if !matches!(view, SidePanelView::None) {
             mobile_nav_open.set(false);

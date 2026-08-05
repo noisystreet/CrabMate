@@ -138,16 +138,6 @@ pub enum MobileShellTab {
 
 impl MobileShellTab {
     #[must_use]
-    pub fn from_side_panel(view: SidePanelView) -> Self {
-        match view {
-            SidePanelView::None => Self::Chat,
-            SidePanelView::Workspace => Self::Workspace,
-            SidePanelView::Tasks => Self::Tasks,
-            SidePanelView::DebugConsole => Self::More,
-        }
-    }
-
-    #[must_use]
     pub fn to_side_panel(self) -> SidePanelView {
         match self {
             Self::Chat => SidePanelView::None,
