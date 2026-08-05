@@ -614,7 +614,7 @@ pub(super) async fn run_serve_branch(
     }
     if bind_ip.is_loopback() && !auth_enabled {
         eprintln!(
-            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器可存 localStorage「crabmate-api-bearer-token」。"
+            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
         );
     }
     if bind_ip.is_unspecified() && auth_enabled {

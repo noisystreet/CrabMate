@@ -13,6 +13,7 @@ use super::super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
     SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock,
     SettingsSessionTypographyBundle, SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsWebApiBearerBlock,
 };
 use super::hash_routing::{SettingsSection, write_settings_section_to_hash};
 use super::section_copy::{section_desc, section_title};
@@ -193,6 +194,10 @@ pub(super) fn SettingsPageContentPanels(
                 </Show>
             </header>
             <Show when=move || active_section.get() == SettingsSection::Appearance>
+                <SettingsWebApiBearerBlock
+                    locale=appearance_locale
+                    input_id="settings-page-web-api-bearer"
+                />
                 <SettingsAppearanceBlock
                     locale=appearance_locale
                     appearance_locale=appearance_locale

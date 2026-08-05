@@ -160,6 +160,66 @@ pub fn settings_bg_glow(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_block_web_api_bearer(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Web API 共享密钥（Bearer）",
+        Locale::En => "Web API shared secret (Bearer)",
+    }
+}
+
+pub fn settings_web_api_bearer_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "须与启动 serve 时的 CM_WEB_API_BEARER_TOKEN 完全一致。这不是模型 API_KEY。保存后写入本页请求头；局域网访问 401 时请先填此项。"
+        }
+        Locale::En => {
+            "Must match CM_WEB_API_BEARER_TOKEN used when starting serve. Not the LLM API_KEY. Saved into this page’s request headers; fill this first if you see 401 on LAN."
+        }
+    }
+}
+
+pub fn settings_web_api_bearer_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "共享密钥",
+        Locale::En => "Shared secret",
+    }
+}
+
+pub fn settings_web_api_bearer_save(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "保存 Web Bearer",
+        Locale::En => "Save Web Bearer",
+    }
+}
+
+pub fn settings_web_api_bearer_saved(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已保存到本浏览器（请求将携带 Authorization）",
+        Locale::En => "Saved in this browser (requests will send Authorization)",
+    }
+}
+
+pub fn settings_web_api_bearer_cleared(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "已清除本浏览器中的 Web Bearer",
+        Locale::En => "Cleared Web Bearer in this browser",
+    }
+}
+
+pub fn settings_web_api_bearer_status_set(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "本页已配置 Web Bearer",
+        Locale::En => "Web Bearer is set for this page",
+    }
+}
+
+pub fn settings_web_api_bearer_status_unset(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "本页尚未配置 Web Bearer（若服务端启用了鉴权会出现 401）",
+        Locale::En => "Web Bearer not set on this page (401 if the server requires auth)",
+    }
+}
+
 pub fn settings_block_llm(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "模型网关（可选覆盖）",
