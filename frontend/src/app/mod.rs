@@ -66,7 +66,6 @@ mod workspace_project_modal_parts;
 mod workspace_root_actions;
 
 use crate::i18n::{self, Locale};
-use crate::tauri_shell::tauri_shell_available;
 use app_shell_init::init_app_shell;
 use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
@@ -135,7 +134,6 @@ pub fn App() -> impl IntoView {
             class:sidebar-rail-collapsed=move || app_ctx.signals.sidebar.sidebar_rail_collapsed.get()
             class:sidebar-rail-snap=move || app_ctx.signals.sidebar.sidebar_rail_snap.get()
             class:app-root--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
-            class:app-root--tauri-topbar=move || tauri_shell_available()
         >
             {sidebar_nav_view(sidebar_nav_signals)}
 

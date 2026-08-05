@@ -7,6 +7,9 @@
 .app-root.app-shell-ds {
   flex-direction: row;
   align-items: stretch;
+  box-sizing: border-box;
+  /* 为固定全宽顶栏让出高度（会话 / IDE 一致；见 shell-topbar.css） */
+  padding-top: var(--shell-topbar-h);
 }
 
 /* —— 左侧导航 —— */
@@ -958,7 +961,6 @@
 
   .shell-main-header-mobile.shell-topbar {
     display: flex;
-    --shell-topbar-h: 52px;
     padding-right: 10px;
   }
 

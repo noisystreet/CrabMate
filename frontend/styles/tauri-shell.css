@@ -4,11 +4,6 @@ html[data-tauri-shell] {
   --shell-topbar-h: 2.75rem;
 }
 
-html[data-tauri-shell] .app-root.app-shell-ds.app-root--tauri-topbar {
-  box-sizing: border-box;
-  padding-top: var(--shell-topbar-h);
-}
-
 .tauri-window-controls {
   display: flex;
   align-items: stretch;
@@ -55,8 +50,12 @@ html[data-tauri-shell] .shell-topbar {
 }
 
 html[data-tauri-shell] .shell-topbar button,
+html[data-tauri-shell] .shell-topbar .shell-topbar-leading,
+html[data-tauri-shell] .shell-topbar .shell-topbar-trailing,
 html[data-tauri-shell] .shell-topbar .shell-topbar-end,
 html[data-tauri-shell] .shell-topbar .shell-topbar-start,
+html[data-tauri-shell] .shell-topbar .shell-topbar-file-status,
+html[data-tauri-shell] .shell-topbar .shell-topbar-file-path,
 html[data-tauri-shell] .shell-topbar .tauri-window-controls,
 html[data-tauri-shell] .shell-topbar .ide-menu-dropdown,
 html[data-tauri-shell] .shell-topbar .ide-menu-item {

@@ -1,4 +1,4 @@
-/* 主区顶栏：会话模式与 IDE 模式共用 */
+/* 主区顶栏：会话模式与 IDE 模式共用；固定横穿整页（含会话侧栏上方） */
 
 :root {
   --shell-topbar-h: 2.5rem;
@@ -15,23 +15,45 @@
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface) 55%, transparent);
   backdrop-filter: blur(10px);
-  position: relative;
-  z-index: 5;
+  -webkit-backdrop-filter: blur(10px);
   box-sizing: border-box;
   width: 100%;
-}
-
-/* Tauri：固定于窗口最顶，横跨侧栏 + 主区 */
-.shell-topbar--app {
+  /* 横穿视口：会话侧栏之上，与 IDE 全宽一致 */
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
-  width: 100%;
   z-index: 90;
 }
 
+.shell-topbar-leading {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.shell-topbar-trailing {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  margin-left: auto;
+  min-width: 0;
+}
+
 .shell-topbar-start {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  flex-shrink: 0;
+  min-width: max-content;
+}
+
+/* 会话 / IDE 菜单条（历史类名 ide-menu-bar-menus 作别名） */
+.shell-topbar-menus,
+.ide-menu-bar-menus {
   display: flex;
   align-items: center;
   gap: 0.1rem;
@@ -90,9 +112,12 @@
   text-align: center;
 }
 
+/* 会话模式保持占位节点但不占宽；IDE 有路径时再放开上限 */
 .shell-topbar-file-status {
-  flex: 0 1 14rem;
+  flex: 0 0 auto;
+  width: 0;
   min-width: 0;
+  min-height: 1.25rem;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -102,12 +127,24 @@
   color: var(--muted);
 }
 
+.shell-topbar-file-status.shell-topbar-file-status--active {
+  flex: 0 1 14rem;
+  width: auto;
+}
+
+.shell-topbar-file-path,
+.ide-menu-bar-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
 .shell-topbar-end {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  margin-left: auto;
 }
 
 .shell-topbar-end .btn-sm {
@@ -136,7 +173,14 @@
   border-left: 1px solid var(--shell-border, rgba(0, 0, 0, 0.08));
 }
 
-.shell-topbar .ide-menu-trigger {
+/* —— 下拉菜单（会话 / IDE 共用；类名保留 ide-menu-* 以免大范围改 DOM） —— */
+
+.ide-menu-wrap {
+  position: relative;
+}
+
+.shell-topbar .ide-menu-trigger,
+.ide-menu-trigger {
   font: inherit;
   font-size: 0.8125rem;
   line-height: 1.25;
@@ -149,8 +193,135 @@
 }
 
 .shell-topbar .ide-menu-trigger:hover,
-.shell-topbar .ide-menu-trigger-open {
+.shell-topbar .ide-menu-trigger-open,
+.ide-menu-trigger:hover,
+.ide-menu-trigger-open {
   background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-menu-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  min-width: 11rem;
+  max-width: min(22rem, 90vw);
+  margin-top: 2px;
+  padding: 0.25rem 0;
+  border: 1px solid var(--shell-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.ide-menu-separator {
+  height: 1px;
+  margin: 0.25rem 0.5rem;
+  background: var(--shell-border, rgba(0, 0, 0, 0.1));
+}
+
+.ide-menu-submenu {
+  position: relative;
+}
+
+.ide-menu-submenu-trigger {
+  justify-content: space-between;
+}
+
+.ide-menu-submenu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-menu-submenu-chevron {
+  flex-shrink: 0;
+  margin-left: 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1;
+  color: var(--muted, #6b7280);
+}
+
+.ide-menu-submenu-open > .ide-menu-submenu-trigger,
+.ide-menu-submenu:hover > .ide-menu-submenu-trigger {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-menu-submenu-flyout {
+  position: absolute;
+  left: calc(100% - 2px);
+  top: -0.25rem;
+  z-index: 32;
+  min-width: 12rem;
+  max-width: min(24rem, 70vw);
+  max-height: min(20rem, 60vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0.25rem 0;
+  border: 1px solid var(--shell-border, rgba(0, 0, 0, 0.1));
+  border-radius: 6px;
+  background: var(--bg, #fff);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.ide-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ide-menu-item-recent {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ide-menu-item:hover:not(:disabled) {
+  background: var(--surface-hover, rgba(0, 0, 0, 0.06));
+}
+
+.ide-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ide-menu-item-check {
+  padding-left: 0.5rem;
+}
+
+.ide-menu-check {
+  display: inline-block;
+  width: 1rem;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 0.75rem;
+}
+
+.ide-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.ide-dirty-dot {
+  color: var(--accent-warn, #c27a00);
+  font-size: 0.75rem;
+  line-height: 1;
 }
 
 /* Web 桌面 / 移动端 / IDE：统一显示顶栏（布局切换固定于最左侧） */
@@ -165,6 +336,8 @@
   }
 }
 
-.app-root.app-root--ide-layout .shell-main-header-mobile.shell-topbar {
-  display: flex !important;
+@media (max-width: 768px) {
+  .app-root.app-shell-ds {
+    --shell-topbar-h: 52px;
+  }
 }
