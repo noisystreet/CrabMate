@@ -116,13 +116,56 @@ pub fn mobile_layout_media_query() -> String {
     format!("(max-width: {MOBILE_LAYOUT_BREAKPOINT_PX}px)")
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum SidePanelView {
+    #[default]
     None,
     Workspace,
     Tasks,
     /// 思维与工具调试台（与工作区共用右列宽度与 `side-pane` 布局）。
     DebugConsole,
+}
+
+/// 窄屏底部 Tab（与 [`SidePanelView`] 一一对应，Chat ↔ None）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum MobileShellTab {
+    #[default]
+    Chat,
+    Workspace,
+    Tasks,
+    More,
+}
+
+impl MobileShellTab {
+    #[must_use]
+    pub fn from_side_panel(view: SidePanelView) -> Self {
+        match view {
+            SidePanelView::None => Self::Chat,
+            SidePanelView::Workspace => Self::Workspace,
+            SidePanelView::Tasks => Self::Tasks,
+            SidePanelView::DebugConsole => Self::More,
+        }
+    }
+
+    #[must_use]
+    pub fn to_side_panel(self) -> SidePanelView {
+        match self {
+            Self::Chat => SidePanelView::None,
+            Self::Workspace => SidePanelView::Workspace,
+            Self::Tasks => SidePanelView::Tasks,
+            Self::More => SidePanelView::DebugConsole,
+        }
+    }
+
+    #[must_use]
+    pub fn dom_slug(self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Workspace => "workspace",
+            Self::Tasks => "tasks",
+            Self::More => "more",
+        }
+    }
 }
 
 /// 状态栏「模型」：本机保存的 `client_llm.model` 非空时优先，否则用 `/status`。

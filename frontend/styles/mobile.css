@@ -17,36 +17,97 @@
     display: none !important;
   }
 
-  /* 打开侧栏时全屏覆盖，避免与聊天列并排挤压 */
-  .side-column:not(.side-column-rail-only) {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    top: var(--shell-topbar-h, 52px);
-    width: 100% !important;
-    max-width: none;
-    z-index: 90;
-    border-left: none;
-    box-shadow: var(--shadow-md);
-  }
-
-  .side-column.side-column-rail-only {
-    position: static;
-    width: 0 !important;
-  }
-
   /* 浮动工具栏在窄屏仍贴右，但避开顶栏 */
   .shell-main-toolbar--rail-float {
     top: calc(var(--shell-topbar-h, 52px) + max(8px, env(safe-area-inset-top, 0px)));
   }
 }
 
+/* 聊天 Tab：侧栏以 Sheet 覆盖；其它 Tab：侧栏占满主区 */
+html[data-narrow-viewport] .shell-main[data-mobile-tab="chat"] .side-column:not(.side-column-rail-only) {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: var(--shell-topbar-h, 52px);
+  width: 100% !important;
+  max-width: none;
+  z-index: 90;
+  border-left: none;
+  box-shadow: var(--shadow-md);
+}
+
+html[data-narrow-viewport] .shell-main[data-mobile-tab="workspace"] .chat-column,
+html[data-narrow-viewport] .shell-main[data-mobile-tab="tasks"] .chat-column,
+html[data-narrow-viewport] .shell-main[data-mobile-tab="more"] .chat-column {
+  display: none;
+}
+
+html[data-narrow-viewport] .shell-main[data-mobile-tab="workspace"] .side-column:not(.side-column-rail-only),
+html[data-narrow-viewport] .shell-main[data-mobile-tab="tasks"] .side-column:not(.side-column-rail-only),
+html[data-narrow-viewport] .shell-main[data-mobile-tab="more"] .side-column:not(.side-column-rail-only) {
+  position: static;
+  width: 100% !important;
+  max-width: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  z-index: 1;
+  box-shadow: none;
+  top: auto;
+  bottom: auto;
+}
+
+@media (max-width: 768px) {
+  .side-column.side-column-rail-only {
+    position: static;
+    width: 0 !important;
+  }
+}
+
+/* PR-A：Sheet 遮罩与关闭条 */
+.side-panel-sheet-backdrop {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: var(--shell-topbar-h, 52px);
+  z-index: 85;
+  border: none;
+  padding: 0;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.48);
+  backdrop-filter: blur(2px);
+  cursor: default;
+}
+
+.side-panel-sheet-header {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--bg) 92%, var(--bg-elevated));
+}
+
+/* PR-B：窄屏顶栏精简 */
+html[data-narrow-viewport] .shell-topbar-layout-start,
+html[data-narrow-viewport] .shell-topbar-workspace {
+  display: none;
+}
+
+html[data-narrow-viewport] .shell-topbar-menus {
+  display: none;
+}
+
 /* —— Phase 2：safe-area 底部 + 触摸目标 —— */
 @media (max-width: 768px) {
   .composer-ds,
   .composer.composer-ds {
-    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    padding-bottom: max(
+      10px,
+      env(safe-area-inset-bottom, 0px),
+      var(--keyboard-inset-bottom, 0px)
+    );
   }
 
   .status-bar-footer,
@@ -146,4 +207,68 @@ html[data-narrow-viewport] .status-chips {
     mask-image: none;
     -webkit-mask-image: none;
   }
+}
+
+/* PR-D：底部 Tab 栏 */
+.mobile-bottom-tab-bar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  justify-content: space-around;
+  gap: 2px;
+  padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 94%, var(--bg));
+  z-index: 40;
+}
+
+.mobile-bottom-tab {
+  flex: 1 1 0;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-btn);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.mobile-bottom-tab.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+html[data-narrow-viewport] .shell-main-toolbar--rail-float {
+  bottom: calc(52px + env(safe-area-inset-bottom, 0px));
+  top: auto;
+}
+
+/* 状态栏溢出菜单 */
+.status-chip-overflow-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.status-chip-overflow-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 50;
+  min-width: 200px;
+  max-width: min(280px, 80vw);
+  padding: 8px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.status-chip-overflow-menu .status-chip {
+  display: flex !important;
+  width: 100%;
 }

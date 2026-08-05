@@ -149,6 +149,7 @@ pub struct StatusBarFooterSignals {
     pub session_mode_user_override: RwSignal<bool>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
     pub settings_page: RwSignal<bool>,
+    pub is_narrow_viewport: RwSignal<bool>,
 }
 
 type SideResizeHandlesCell = Rc<
@@ -181,6 +182,8 @@ pub struct SidebarNavSignals {
 #[derive(Clone)]
 pub struct SideColumnViewSignals {
     pub locale: RwSignal<Locale>,
+    pub is_narrow_viewport: RwSignal<bool>,
+    pub mobile_shell_tab: RwSignal<crate::app_prefs::MobileShellTab>,
     pub side_resize_dragging: RwSignal<bool>,
     pub side_panel_view: RwSignal<SidePanelView>,
     pub side_width: RwSignal<f64>,
@@ -237,6 +240,8 @@ impl AppShellCtx {
     pub fn side_column_view_signals(&self) -> SideColumnViewSignals {
         SideColumnViewSignals {
             locale: self.signals.shell_ui.locale,
+            is_narrow_viewport: self.signals.shell_ui.is_narrow_viewport,
+            mobile_shell_tab: self.signals.shell_ui.mobile_shell_tab,
             side_resize_dragging: self.signals.resize.side_resize_dragging,
             side_panel_view: self.signals.shell_ui.side_panel_view,
             side_width: self.signals.shell_ui.side_width,
@@ -288,6 +293,7 @@ impl AppShellCtx {
             session_mode_user_override: self.signals.llm_settings.session_mode_user_override,
             refresh_status: Arc::clone(&self.refresh_status),
             settings_page: self.signals.modal.settings_page,
+            is_narrow_viewport: self.signals.shell_ui.is_narrow_viewport,
         }
     }
 

@@ -31,6 +31,8 @@ pub(super) type SideResizeHandlesCell = Rc<
 #[derive(Clone)]
 pub(super) struct SideColumnResizeToolbarSignals {
     pub locale: RwSignal<Locale>,
+    pub is_narrow_viewport: RwSignal<bool>,
+    pub mobile_shell_tab: RwSignal<crate::app_prefs::MobileShellTab>,
     pub side_resize_dragging: RwSignal<bool>,
     pub side_panel_view: RwSignal<SidePanelView>,
     pub side_width: RwSignal<f64>,
@@ -331,7 +333,38 @@ fn SideColumnShellToolbarIcons(
 }
 
 #[component]
+fn SideColumnSheetCloseBar(
+    locale: RwSignal<Locale>,
+    is_narrow_viewport: RwSignal<bool>,
+    mobile_shell_tab: RwSignal<crate::app_prefs::MobileShellTab>,
+    side_panel_view: RwSignal<SidePanelView>,
+) -> impl IntoView {
+    view! {
+        <Show when=move || {
+            is_narrow_viewport.get()
+                && matches!(mobile_shell_tab.get(), crate::app_prefs::MobileShellTab::Chat)
+                && !matches!(side_panel_view.get(), SidePanelView::None)
+        }>
+            <div class="side-panel-sheet-header">
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm side-panel-sheet-close"
+                    data-testid="side-panel-sheet-close"
+                    prop:aria-label=move || i18n::mobile_side_sheet_close(locale.get())
+                    on:click=move |_| side_panel_view.set(SidePanelView::None)
+                >
+                    {move || i18n::mobile_side_sheet_close(locale.get())}
+                </button>
+            </div>
+        </Show>
+    }
+}
+
+#[component]
 fn SideColumnShellColumn(
+    locale: RwSignal<Locale>,
+    is_narrow_viewport: RwSignal<bool>,
+    mobile_shell_tab: RwSignal<crate::app_prefs::MobileShellTab>,
     side_resize_dragging: RwSignal<bool>,
     side_panel_view: RwSignal<SidePanelView>,
     side_width: RwSignal<f64>,
@@ -351,12 +384,17 @@ fn SideColumnShellColumn(
                 if matches!(side_panel_view.get(), SidePanelView::None) {
                     "0px".to_string()
                 } else {
-                    // 渲染时按当前视口夹取：磁盘可能存较宽值或视口临时变窄，均不写回偏好。
                     let w = crate::app_prefs::clamp_side_width_for_viewport(side_width.get());
                     format!("{w}px")
                 }
             }
         >
+            <SideColumnSheetCloseBar
+                locale=locale
+                is_narrow_viewport=is_narrow_viewport
+                mobile_shell_tab=mobile_shell_tab
+                side_panel_view=side_panel_view
+            />
             {children()}
         </div>
     }
@@ -369,6 +407,8 @@ pub(super) fn SideColumnResizeAndShellToolbar(
 ) -> impl IntoView {
     let SideColumnResizeToolbarSignals {
         locale,
+        is_narrow_viewport,
+        mobile_shell_tab,
         side_resize_dragging,
         side_panel_view,
         side_width,
@@ -400,6 +440,9 @@ pub(super) fn SideColumnResizeAndShellToolbar(
             />
         </Show>
         <SideColumnShellColumn
+            locale
+            is_narrow_viewport
+            mobile_shell_tab
             side_resize_dragging
             side_panel_view
             side_width

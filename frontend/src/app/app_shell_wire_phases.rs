@@ -27,6 +27,7 @@ use super::app_shell_effects::{
     wire_sidebar_rail_when_ide_layout, wire_sync_bg_decor_to_storage_and_dom,
     wire_sync_locale_html_lang, wire_sync_session_typography_to_storage_and_dom,
     wire_sync_tauri_shell_dom, wire_sync_theme_to_storage_and_dom,
+    wire_visual_viewport_keyboard_inset,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -152,6 +153,25 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
         is_narrow_viewport: app.shell_ui.is_narrow_viewport,
         side_panel_view: app.shell_ui.side_panel_view,
     });
+    use crate::app::mobile_shell::{
+        WireMobileShellSyncSignals, wire_mobile_shell_dom_and_scroll_lock,
+        wire_mobile_shell_tab_sync,
+    };
+    wire_mobile_shell_tab_sync(WireMobileShellSyncSignals {
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
+        mobile_shell_tab: app.shell_ui.mobile_shell_tab,
+        side_panel_view: app.shell_ui.side_panel_view,
+        mobile_nav_open: app.sidebar.mobile_nav_open,
+        editor_layout_mode: app.shell_ui.editor_layout_mode,
+    });
+    wire_mobile_shell_dom_and_scroll_lock(WireMobileShellSyncSignals {
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
+        mobile_shell_tab: app.shell_ui.mobile_shell_tab,
+        side_panel_view: app.shell_ui.side_panel_view,
+        mobile_nav_open: app.sidebar.mobile_nav_open,
+        editor_layout_mode: app.shell_ui.editor_layout_mode,
+    });
+    wire_visual_viewport_keyboard_inset();
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,
@@ -173,6 +193,8 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         view_menu_open: app.shell_ui.view_menu_open,
         ide_menubar_dropdown_open: app.shell_ui.ide_menubar_dropdown_open,
         mobile_nav_open: app.sidebar.mobile_nav_open,
+        side_panel_view: app.shell_ui.side_panel_view,
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
         changelist_modal_open: app.modal.changelist_modal_open,
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,

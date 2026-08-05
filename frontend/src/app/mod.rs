@@ -25,6 +25,7 @@ mod ide_new_file_modal;
 mod ide_settings_page;
 mod ide_tabs_bar;
 mod layout_mode_segment;
+mod mobile_shell;
 mod mobile_shell_header;
 mod session_list_modal;
 pub(crate) mod session_mode_defaults;
@@ -76,6 +77,10 @@ use ide_confirm_dialog::IdeConfirmDialog;
 use ide_layout::{IdeLayoutShellSignals, IdeLayoutView};
 use ide_layout_switch::IdeLayoutToggleSignals;
 use ide_settings_page::IdeSettingsPageView;
+use mobile_shell::{
+    MobileBottomTabBar, MobileBottomTabBarSignals, MobileSideSheetBackdrop,
+    MobileSideSheetBackdropSignals,
+};
 use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
@@ -199,6 +204,22 @@ pub fn App() -> impl IntoView {
                 <Show when=move || !app_ctx.signals.shell_ui.editor_layout_mode.get()>
                     {status_bar_footer_view(status_bar_footer_signals.clone())}
                 </Show>
+
+                <MobileBottomTabBar signals=MobileBottomTabBarSignals {
+                    locale: app_ctx.signals.shell_ui.locale,
+                    is_narrow_viewport: app_ctx.signals.shell_ui.is_narrow_viewport,
+                    mobile_shell_tab: app_ctx.signals.shell_ui.mobile_shell_tab,
+                    side_panel_view: app_ctx.signals.shell_ui.side_panel_view,
+                    mobile_nav_open: app_ctx.signals.sidebar.mobile_nav_open,
+                    editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
+                } />
+
+                <MobileSideSheetBackdrop signals=MobileSideSheetBackdropSignals {
+                    is_narrow_viewport: app_ctx.signals.shell_ui.is_narrow_viewport,
+                    mobile_shell_tab: app_ctx.signals.shell_ui.mobile_shell_tab,
+                    side_panel_view: app_ctx.signals.shell_ui.side_panel_view,
+                    editor_layout_mode: app_ctx.signals.shell_ui.editor_layout_mode,
+                } />
             </div>
 
             {session_list_modal_view(session_list_modal_signals)}

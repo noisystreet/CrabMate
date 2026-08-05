@@ -477,10 +477,10 @@ mod tests {
         let detail = fields.detail.expect("should keep unique detail");
         assert!(!detail.contains("命令执行"), "{detail}");
         assert!(
-            !detail
+            detail
                 .lines()
                 .next()
-                .is_some_and(|l| l.trim() == "cargo check"),
+                .is_none_or(|l| l.trim() != "cargo check"),
             "{detail}"
         );
         assert!(detail.contains("extra detail line"), "{detail}");

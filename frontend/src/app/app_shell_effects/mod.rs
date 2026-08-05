@@ -18,6 +18,7 @@ mod session_delete_hotkey;
 mod settings_llm_open;
 mod sync_dom;
 mod viewport;
+mod visual_viewport;
 
 pub use approval_follow::wire_approval_expanded_follows_pending;
 pub use escape::{ShellEscapeSignals, wire_escape_key_layered_dismiss};
@@ -35,3 +36,4 @@ pub use sync_dom::{
     wire_sync_theme_to_storage_and_dom,
 };
 pub use viewport::{WireNarrowViewportSignals, wire_narrow_viewport_layout};
+pub use visual_viewport::wire_visual_viewport_keyboard_inset;

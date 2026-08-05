@@ -4,7 +4,7 @@ use leptos::prelude::*;
 
 use crate::app::ide_menu_bar::IdeMenuBarBridge;
 use crate::app::shell_prefs_storage;
-use crate::app_prefs::SidePanelView;
+use crate::app_prefs::{MobileShellTab, SidePanelView};
 use crate::i18n::Locale;
 
 #[derive(Clone, Copy)]
@@ -41,6 +41,8 @@ pub struct ShellUISignals {
     pub session_chat_font_size: RwSignal<f64>,
     /// 视口宽度 ≤ [`crate::app_prefs::MOBILE_LAYOUT_BREAKPOINT_PX`]（由 `matchMedia` 维护）。
     pub is_narrow_viewport: RwSignal<bool>,
+    /// 窄屏底部 Tab（聊天 / 工作区 / 任务 / 更多）。
+    pub mobile_shell_tab: RwSignal<MobileShellTab>,
 }
 
 impl ShellUISignals {
@@ -68,6 +70,7 @@ impl ShellUISignals {
             session_chat_font: RwSignal::new(s.session_chat_font),
             session_chat_font_size: RwSignal::new(s.session_chat_font_size),
             is_narrow_viewport: RwSignal::new(false),
+            mobile_shell_tab: RwSignal::new(MobileShellTab::Chat),
         }
     }
 }

@@ -293,12 +293,15 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         changelist_fetch_nonce,
         insert_workspace_file_ref,
         thinking_trace_log,
+        ..
     } = signals;
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
     let tasks_loading = status_tasks.tasks_loading;
     let resize_toolbar = SideColumnResizeToolbarSignals {
         locale,
+        is_narrow_viewport: signals.is_narrow_viewport,
+        mobile_shell_tab: signals.mobile_shell_tab,
         side_resize_dragging,
         side_panel_view,
         side_width,

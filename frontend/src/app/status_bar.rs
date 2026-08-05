@@ -72,6 +72,53 @@ struct StatusBarChipsSignals {
     session_mode_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
     settings_page: RwSignal<bool>,
+    is_narrow_viewport: RwSignal<bool>,
+}
+
+#[component]
+fn StatusBarNarrowOverflow(
+    locale: RwSignal<Locale>,
+    is_narrow_viewport: RwSignal<bool>,
+    model_label: Signal<String>,
+    mode_label: Signal<String>,
+) -> impl IntoView {
+    let open = RwSignal::new(false);
+    view! {
+        <Show when=move || is_narrow_viewport.get()>
+            <div class="status-chip-overflow-wrap">
+                <button
+                    type="button"
+                    class="btn btn-muted btn-sm status-chip-overflow-trigger"
+                    data-testid="status-chip-overflow-trigger"
+                    prop:aria-label=move || i18n::mobile_status_overflow_aria(locale.get())
+                    prop:aria-expanded=move || open.get()
+                    on:click=move |_| open.update(|v| *v = !*v)
+                >
+                    "⋯"
+                </button>
+                <Show when=move || open.get()>
+                    <div
+                        class="status-chip-overflow-menu"
+                        role="dialog"
+                        prop:aria-label=move || i18n::mobile_status_overflow_title(locale.get())
+                    >
+                        <span class="status-chip status-chip-model">
+                            <span class="status-chip-label">
+                                {move || i18n::status_chip_model(locale.get())}
+                            </span>
+                            <span class="status-chip-value">{move || model_label.get()}</span>
+                        </span>
+                        <span class="status-chip status-chip-mode">
+                            <span class="status-chip-label">
+                                {move || i18n::status_mode_label(locale.get())}
+                            </span>
+                            <span class="status-chip-value">{move || mode_label.get()}</span>
+                        </span>
+                    </div>
+                </Show>
+            </div>
+        </Show>
+    }
 }
 
 /// 有活动会话即展示「上下文」芯片；用量在水合完成前显示 `— / 上限`。
@@ -272,7 +319,7 @@ fn StatusBarChipsLoaded(
     let chat = expect_chat_shell_ctx().chat;
     view! {
         <>
-            <span class="status-chip">
+            <span class="status-chip status-chip-model">
                 <span class="status-chip-label">
                     {move || i18n::status_chip_model(locale.get())}
                 </span>
@@ -341,9 +388,25 @@ fn StatusBarChipsRow(
         session_mode_user_override,
         locale,
         settings_page,
+        is_narrow_viewport,
     } = chips;
     let role_menu_open = RwSignal::new(false);
     let mode_menu_open = RwSignal::new(false);
+    let model_label = Signal::derive(move || {
+        let _tick = client_llm_storage_tick.get();
+        let sd = st.status_data.get();
+        let (_, stored_model, _, _, _) = load_client_llm_text_fields_from_storage();
+        status_bar_effective_model(sd.as_ref(), stored_model.as_str())
+    });
+    let mode_label = Signal::derive(move || {
+        let mode = selected_session_mode.get();
+        match mode.as_str() {
+            "ask" => "Ask".to_string(),
+            "plan" => "Plan".to_string(),
+            "act" => "Act".to_string(),
+            _ => mode,
+        }
+    });
     view! {
         <div
             class="status-chips"
@@ -368,17 +431,25 @@ fn StatusBarChipsRow(
                     .into_any()
                 } else {
                     view! {
-                        <StatusBarChipsLoaded
-                            st=st
-                            client_llm_storage_tick=client_llm_storage_tick
-                            selected_agent_role=selected_agent_role
-                            agent_role_user_override=agent_role_user_override
-                            selected_session_mode=selected_session_mode
-                            session_mode_user_override=session_mode_user_override
-                            locale=locale
-                            role_menu_open=role_menu_open
-                            mode_menu_open=mode_menu_open
-                        />
+                        <>
+                            <StatusBarChipsLoaded
+                                st=st
+                                client_llm_storage_tick=client_llm_storage_tick
+                                selected_agent_role=selected_agent_role
+                                agent_role_user_override=agent_role_user_override
+                                selected_session_mode=selected_session_mode
+                                session_mode_user_override=session_mode_user_override
+                                locale=locale
+                                role_menu_open=role_menu_open
+                                mode_menu_open=mode_menu_open
+                            />
+                            <StatusBarNarrowOverflow
+                                locale=locale
+                                is_narrow_viewport=is_narrow_viewport
+                                model_label=model_label
+                                mode_label=mode_label
+                            />
+                        </>
                     }
                     .into_any()
                 }
@@ -439,6 +510,7 @@ fn StatusBarFooterBody(signals: StatusBarFooterSignals) -> impl IntoView {
         session_mode_user_override,
         refresh_status,
         settings_page,
+        is_narrow_viewport,
         ..
     } = signals;
     let locale = expect_chat_shell_ctx().locale;
@@ -451,6 +523,7 @@ fn StatusBarFooterBody(signals: StatusBarFooterSignals) -> impl IntoView {
         session_mode_user_override,
         locale,
         settings_page,
+        is_narrow_viewport,
     };
     view! {
         <footer
