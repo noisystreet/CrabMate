@@ -53,8 +53,14 @@ pub(crate) fn build_stream_error_with_suggestion(raw: &str, loc: Locale) -> Stri
         return raw.to_string();
     }
     let low = msg.to_lowercase();
-    let (impact, hint) = if low.contains("llm_api_key_required")
+    let (impact, hint) = if crate::api::is_web_api_credential_error(msg) {
+        (
+            i18n::stream_err_impact_web_api_bearer(loc),
+            i18n::stream_err_hint_web_api_bearer(loc),
+        )
+    } else if low.contains("llm_api_key_required")
         || low.contains("api key")
+        || low.contains("api_key")
         || low.contains("unauthorized")
         || low.contains("401")
     {

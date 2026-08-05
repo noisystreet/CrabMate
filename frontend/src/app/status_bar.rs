@@ -13,6 +13,7 @@ use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::i18n::{self, Locale};
 
 use super::app_shell_ctx::StatusBarFooterSignals;
+use super::settings_page::{SettingsSection, navigate_to_settings};
 use super::shell_runtime_context::expect_chat_shell_ctx;
 use super::status_agent_role_menu::{AgentRoleMenuProps, StatusAgentRoleMenu};
 use super::status_fetch_state::status_bar_should_show_skeleton;
@@ -23,10 +24,12 @@ use super::status_tasks_state::StatusTasksSignals;
 fn StatusFetchErrorPanel(
     fetch_err: String,
     refresh_status: Arc<dyn Fn() + Send + Sync>,
+    settings_page: RwSignal<bool>,
     locale: RwSignal<Locale>,
 ) -> impl IntoView {
     let fetch_err_for_title = fetch_err.clone();
-    let fetch_err_for_body = fetch_err;
+    let fetch_err_for_body = fetch_err.clone();
+    let show_web_bearer_cta = crate::api::is_web_api_credential_error(&fetch_err);
     view! {
         <div
             class="status-fetch-error"
@@ -36,6 +39,18 @@ fn StatusFetchErrorPanel(
             <span class="status-fetch-error-text" title=fetch_err_for_title.clone()>
                 {move || i18n::status_fetch_error(locale.get(), fetch_err_for_body.as_str())}
             </span>
+            <Show when=move || show_web_bearer_cta>
+                <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    data-testid="status-open-web-api-settings"
+                    on:click=move |_| {
+                        navigate_to_settings(settings_page, SettingsSection::Appearance);
+                    }
+                >
+                    {move || i18n::status_open_web_api_settings(locale.get())}
+                </button>
+            </Show>
             <button
                 type="button"
                 class="btn btn-secondary btn-sm"
@@ -56,6 +71,7 @@ struct StatusBarChipsSignals {
     selected_session_mode: RwSignal<String>,
     session_mode_user_override: RwSignal<bool>,
     locale: RwSignal<Locale>,
+    settings_page: RwSignal<bool>,
 }
 
 /// 有活动会话即展示「上下文」芯片；用量在水合完成前显示 `— / 上限`。
@@ -324,6 +340,7 @@ fn StatusBarChipsRow(
         selected_session_mode,
         session_mode_user_override,
         locale,
+        settings_page,
     } = chips;
     let role_menu_open = RwSignal::new(false);
     let mode_menu_open = RwSignal::new(false);
@@ -344,6 +361,7 @@ fn StatusBarChipsRow(
                         <StatusFetchErrorPanel
                             fetch_err=fetch_err
                             refresh_status=refresh_status.clone()
+                            settings_page=settings_page
                             locale=locale
                         />
                     }
@@ -409,17 +427,20 @@ fn StatusBarRunIndicator(
 }
 
 #[component]
-fn StatusBarFooterBody(
-    st: StatusTasksSignals,
-    status_err: RwSignal<Option<String>>,
-    stream_busy_memos: ChatStreamBusyMemos,
-    client_llm_storage_tick: RwSignal<u64>,
-    selected_agent_role: RwSignal<Option<String>>,
-    agent_role_user_override: RwSignal<bool>,
-    selected_session_mode: RwSignal<String>,
-    session_mode_user_override: RwSignal<bool>,
-    refresh_status: Arc<dyn Fn() + Send + Sync>,
-) -> impl IntoView {
+fn StatusBarFooterBody(signals: StatusBarFooterSignals) -> impl IntoView {
+    let StatusBarFooterSignals {
+        status_tasks: st,
+        status_err,
+        stream_busy_memos,
+        client_llm_storage_tick,
+        selected_agent_role,
+        agent_role_user_override,
+        selected_session_mode,
+        session_mode_user_override,
+        refresh_status,
+        settings_page,
+        ..
+    } = signals;
     let locale = expect_chat_shell_ctx().locale;
     let chips = StatusBarChipsSignals {
         st,
@@ -429,6 +450,7 @@ fn StatusBarFooterBody(
         selected_session_mode,
         session_mode_user_override,
         locale,
+        settings_page,
     };
     view! {
         <footer
@@ -452,31 +474,10 @@ fn StatusBarFooterBody(
 }
 
 pub fn status_bar_footer_view(signals: StatusBarFooterSignals) -> impl IntoView {
-    let StatusBarFooterSignals {
-        status_bar_visible,
-        status_tasks: st,
-        status_err,
-        stream_busy_memos,
-        client_llm_storage_tick,
-        selected_agent_role,
-        agent_role_user_override,
-        selected_session_mode,
-        session_mode_user_override,
-        refresh_status,
-    } = signals;
+    let status_bar_visible = signals.status_bar_visible;
     view! {
         <Show when=move || status_bar_visible.get()>
-            <StatusBarFooterBody
-                st=st
-                status_err=status_err
-                stream_busy_memos=stream_busy_memos
-                client_llm_storage_tick=client_llm_storage_tick
-                selected_agent_role=selected_agent_role
-                agent_role_user_override=agent_role_user_override
-                selected_session_mode=selected_session_mode
-                session_mode_user_override=session_mode_user_override
-                refresh_status=refresh_status.clone()
-            />
+            <StatusBarFooterBody signals=signals.clone() />
         </Show>
     }
 }

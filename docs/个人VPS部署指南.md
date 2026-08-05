@@ -189,7 +189,7 @@ sudo systemctl status crabmate.service
 | 现象 | 建议 |
 |------|------|
 | **`serve` 启动失败** | 检查 **`CM_WEB_API_REQUIRE_BEARER=1`** 时是否已设置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML 等价项）。 |
-| **浏览器 401 / 无法加载会话** | 是否已在 **设置 → Web API 共享密钥** 保存与 **`CM_WEB_API_BEARER_TOKEN` 完全一致** 的值（前端键 **`crabmate-api-bearer-token`**）；勿只填模型 API_KEY；XDG 配置**不会**自动带上头。保存后可刷新页面再试。**本机临时跳过鉴权**：`unset CM_WEB_API_BEARER_TOKEN` 后仅听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`（仅可信环境，见 **`docs/配置说明.md`**）。 |
+| **浏览器 401 / 无法加载会话** | 是否已在 **设置 → Web API 共享密钥** 保存与 **`CM_WEB_API_BEARER_TOKEN` 完全一致** 的值（前端键 **`crabmate-api-bearer-token`**）；勿只填模型 API_KEY；XDG 配置**不会**自动带上头。状态栏可点 **「填写 Web Bearer」**；保存后会自动重试 `/status`。**本机临时跳过鉴权**：`unset CM_WEB_API_BEARER_TOKEN` 后仅听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`（仅可信环境，见 **`docs/配置说明.md`**）。 |
 | **流式对话中断** | 检查反代 **`flush_interval` / `proxy_buffering` / `proxy_read_timeout`**；中间设备超时。 |
 | **上传失败** | 调大 Caddy **`request_body`** 或 Nginx **`client_max_body_size`**（建议与上节 **256MB** 量级一致，且不超过你信任的磁盘与带宽）。 |
 | **证书失败** | 域名 DNS 是否指向本机；80/443 是否对 ACME 开放；查看 Caddy 日志。 |

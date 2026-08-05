@@ -56,6 +56,7 @@ mod status_session_mode_seg;
 mod status_tasks_state;
 mod status_tasks_wiring;
 mod tauri_window_controls;
+mod web_api_bearer_recovery;
 mod wire_workspace_domain;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;

@@ -108,8 +108,30 @@ pub fn stream_err_impact_api_key(l: Locale) -> &'static str {
 
 pub fn stream_err_hint_api_key(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "检查右侧设置中的 API Key 是否已填写且有效，然后点击“重试”。",
-        Locale::En => "Verify API key in Settings is present and valid, then click Retry.",
+        Locale::ZhHans => {
+            "检查设置中「模型」分区的 API 密钥（client_llm）是否已填写且有效，然后点击“重试”。勿与「Web API 共享密钥」混淆。"
+        }
+        Locale::En => {
+            "Verify the model API key (client_llm) under Settings → Model, then click Retry. Do not confuse it with the Web API shared secret."
+        }
+    }
+}
+
+pub fn stream_err_impact_web_api_bearer(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "浏览器未通过 CrabMate Web API 鉴权，受保护接口被拒绝。",
+        Locale::En => "The browser failed CrabMate Web API auth; protected routes were rejected.",
+    }
+}
+
+pub fn stream_err_hint_web_api_bearer(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "打开设置 →「Web API 共享密钥」，填入与 CM_WEB_API_BEARER_TOKEN 相同的值并保存（不是模型 API_KEY），然后重试。"
+        }
+        Locale::En => {
+            "Open Settings → “Web API shared secret”, enter the same value as CM_WEB_API_BEARER_TOKEN (not the LLM API_KEY), save, then retry."
+        }
     }
 }
 

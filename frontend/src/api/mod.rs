@@ -14,7 +14,9 @@ mod saved_models;
 mod session_store;
 pub mod user_data;
 
-pub use browser::{set_web_api_bearer_token, web_api_bearer_token_is_set};
+pub use browser::{
+    is_web_api_credential_error, set_web_api_bearer_token, web_api_bearer_token_is_set,
+};
 pub use chat_stream::{ChatStreamCallbacks, OnToolCallFn, SendChatStreamParams, send_chat_stream};
 pub use client_llm_storage::{
     clear_client_llm_api_key_storage, clear_executor_llm_api_key_storage,

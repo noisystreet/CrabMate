@@ -107,13 +107,18 @@ pub(crate) fn SettingsWebApiBearerBlock(
     locale: RwSignal<Locale>,
     /// `<input id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
     input_id: &'static str,
+    /// 保存后递增，触发壳层重新拉取 `/status` 等。
+    save_nonce: RwSignal<u64>,
 ) -> impl IntoView {
     let draft = RwSignal::new(String::new());
     let feedback = RwSignal::new(None::<String>);
     let present = RwSignal::new(crate::api::web_api_bearer_token_is_set());
 
     view! {
-        <div class="settings-block" data-testid="settings-web-api-bearer-block">
+        <div
+            class="settings-block settings-block--web-api-auth"
+            data-testid="settings-web-api-bearer-block"
+        >
             <h3 class="settings-block-title">
                 {move || i18n::settings_block_web_api_bearer(locale.get())}
             </h3>
@@ -164,6 +169,10 @@ pub(crate) fn SettingsWebApiBearerBlock(
                     } else {
                         i18n::settings_web_api_bearer_saved(loc).to_string()
                     }));
+                    // 仅非空保存后触发壳层恢复（重试 /status、水合）；清空时不乐观清错、不拉水合。
+                    if !cleared {
+                        save_nonce.update(|n| *n = n.saturating_add(1));
+                    }
                     // 本页请求头已可用；不再 PUT 服务端钥匙串——远程浏览器写入的是
                     // **serve 主机**上的 keyring，与 CM_WEB_API_BEARER_TOKEN 校验无关，且空串会误清主机槽位。
                 }
@@ -205,7 +214,7 @@ pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView 
         llm_thinking_mode_draft,
     };
     view! {
-        <div class="settings-block">
+        <div class="settings-block settings-block--llm-cloud">
             <h3 class="settings-block-title">{move || i18n::settings_block_llm(locale.get())}</h3>
             <LlmSavedPresetPicker
                 locale

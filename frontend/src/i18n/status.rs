@@ -16,6 +16,13 @@ pub fn status_retry(l: Locale) -> &'static str {
     }
 }
 
+pub fn status_open_web_api_settings(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "填写 Web Bearer",
+        Locale::En => "Set Web Bearer",
+    }
+}
+
 pub fn status_loading_aria(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "加载状态",
