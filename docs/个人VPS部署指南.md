@@ -13,7 +13,7 @@
 ```
 
 - **TLS**：由反向代理处理；CrabMate 进程内**不提供**内置 HTTPS（见 **`README.md` → 部署与安全**）。
-- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。浏览器侧可将同一密钥经 **`/user-data/secrets`** 写入本机系统钥匙串账户 **`web_api_bearer`**，与 Web UI 侧栏「设置」中的 API 共享密钥一致。
+- **鉴权**：受保护路由需携带与配置一致的 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**（与 **`docs/配置说明.md`**「Web API 鉴权层」一致）。浏览器须在 Web **设置 →「Web API 共享密钥（Bearer）」** 填入与 **`CM_WEB_API_BEARER_TOKEN` 相同** 的值并保存（本页内存 + **`localStorage`** 键 **`crabmate-api-bearer-token`**）。**不要**与模型 **`API_KEY`** 混淆。
 - **上游大模型**：调用厂商仍使用环境变量 **`API_KEY`**（或 Web 侧栏 `client_llm`，经 **`/user-data`** 落本机）；**勿**把真实密钥写入仓库或本文示例。
 
 ---
@@ -107,7 +107,7 @@ sudo caddy validate --config /etc/caddy/Caddyfile
 sudo systemctl reload caddy
 ```
 
-浏览器访问 **`https://crab.example.com`** 即可打开 Web UI；首次需在侧栏填写 **与 `CM_WEB_API_BEARER_TOKEN` 相同** 的共享密钥并保存（或依赖已写入的 **`localStorage`**）。
+浏览器访问 **`https://crab.example.com`** 即可打开 Web UI；首次须在 **设置 →「Web API 共享密钥（Bearer）」** 填写 **与 `CM_WEB_API_BEARER_TOKEN` 相同** 的共享密钥并保存（写入 **`localStorage`** 键 **`crabmate-api-bearer-token`**）。这不是模型 API 密钥。
 
 ### 4.3 可选：Nginx 要点
 
@@ -189,7 +189,7 @@ sudo systemctl status crabmate.service
 | 现象 | 建议 |
 |------|------|
 | **`serve` 启动失败** | 检查 **`CM_WEB_API_REQUIRE_BEARER=1`** 时是否已设置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML 等价项）。 |
-| **浏览器 401 / 无法加载会话** | 侧栏密钥是否与服务器一致；是否带 **`Authorization`/`X-API-Key`**（前端存 **`crabmate-api-bearer-token`**）。 |
+| **浏览器 401 / 无法加载会话** | 是否已在 **设置 → Web API 共享密钥** 保存与 **`CM_WEB_API_BEARER_TOKEN` 完全一致** 的值（前端键 **`crabmate-api-bearer-token`**）；勿只填模型 API_KEY；XDG 配置**不会**自动带上头。保存后可刷新页面再试。**本机临时跳过鉴权**：`unset CM_WEB_API_BEARER_TOKEN` 后仅听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`（仅可信环境，见 **`docs/配置说明.md`**）。 |
 | **流式对话中断** | 检查反代 **`flush_interval` / `proxy_buffering` / `proxy_read_timeout`**；中间设备超时。 |
 | **上传失败** | 调大 Caddy **`request_body`** 或 Nginx **`client_max_body_size`**（建议与上节 **256MB** 量级一致，且不超过你信任的磁盘与带宽）。 |
 | **证书失败** | 域名 DNS 是否指向本机；80/443 是否对 ACME 开放；查看 Caddy 日志。 |

@@ -13,6 +13,7 @@ use super::settings_models_registry::{SettingsModelsRegistryBundle, SettingsMode
 use super::settings_sections::{
     SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
     SettingsLlmBlock, SettingsLlmBlockBundle, SettingsShortcutsBlock, SettingsToolsBlock,
+    SettingsWebApiBearerBlock,
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
@@ -127,6 +128,10 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                     llm_settings_feedback.get().unwrap_or_default()
                 }}</p>
             </Show>
+            <SettingsWebApiBearerBlock
+                locale=appearance_locale
+                input_id="settings-modal-web-api-bearer"
+            />
             <SettingsAppearanceBlock
                 locale=appearance_locale
                 appearance_locale=appearance_locale

@@ -101,6 +101,84 @@ pub(crate) fn SettingsAppearanceBlock(
     }
 }
 
+/// 局域网 / 非回环 `serve`：把与 `CM_WEB_API_BEARER_TOKEN` 相同的共享密钥写入本页请求头。
+#[component]
+pub(crate) fn SettingsWebApiBearerBlock(
+    locale: RwSignal<Locale>,
+    /// `<input id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
+    input_id: &'static str,
+) -> impl IntoView {
+    let draft = RwSignal::new(String::new());
+    let feedback = RwSignal::new(None::<String>);
+    let present = RwSignal::new(crate::api::web_api_bearer_token_is_set());
+
+    view! {
+        <div class="settings-block" data-testid="settings-web-api-bearer-block">
+            <h3 class="settings-block-title">
+                {move || i18n::settings_block_web_api_bearer(locale.get())}
+            </h3>
+            <p class="settings-muted">{move || i18n::settings_web_api_bearer_hint(locale.get())}</p>
+            <p class="settings-muted" data-testid="settings-web-api-bearer-status">
+                {move || {
+                    if present.get() {
+                        i18n::settings_web_api_bearer_status_set(locale.get())
+                    } else {
+                        i18n::settings_web_api_bearer_status_unset(locale.get())
+                    }
+                }}
+            </p>
+            <div class="settings-field">
+                <label class="settings-field-label" for=input_id>
+                    {move || i18n::settings_web_api_bearer_label(locale.get())}
+                </label>
+                <input
+                    id=input_id
+                    class="input"
+                    type="password"
+                    autocomplete="off"
+                    data-testid="settings-web-api-bearer-input"
+                    prop:value=move || draft.get()
+                    prop:placeholder=move || {
+                        if present.get() {
+                            "••••••••"
+                        } else {
+                            ""
+                        }
+                    }
+                    on:input=move |ev| draft.set(event_target_value(&ev))
+                />
+            </div>
+            <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                data-testid="settings-web-api-bearer-save"
+                on:click=move |_| {
+                    let loc = locale.get_untracked();
+                    let token = draft.get_untracked();
+                    crate::api::set_web_api_bearer_token(&token);
+                    present.set(crate::api::web_api_bearer_token_is_set());
+                    draft.set(String::new());
+                    let cleared = token.trim().is_empty();
+                    feedback.set(Some(if cleared {
+                        i18n::settings_web_api_bearer_cleared(loc).to_string()
+                    } else {
+                        i18n::settings_web_api_bearer_saved(loc).to_string()
+                    }));
+                    // 本页请求头已可用；不再 PUT 服务端钥匙串——远程浏览器写入的是
+                    // **serve 主机**上的 keyring，与 CM_WEB_API_BEARER_TOKEN 校验无关，且空串会误清主机槽位。
+                }
+            >
+                {move || i18n::settings_web_api_bearer_save(locale.get())}
+            </button>
+            <Show when=move || feedback.get().is_some()>
+                <p class="settings-muted" role="status" data-testid="settings-web-api-bearer-feedback">
+                    {move || feedback.get().unwrap_or_default()}
+                </p>
+            </Show>
+        </div>
+    }
+}
+
 #[component]
 pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView {
     let SettingsLlmBlockBundle {
