@@ -87,3 +87,10 @@ pub fn msg_retry_title(l: Locale) -> &'static str {
         Locale::En => "Retry assistant generation",
     }
 }
+
+pub fn msg_toggle_expand_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开或收起长消息",
+        Locale::En => "Expand or collapse long message",
+    }
+}

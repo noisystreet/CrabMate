@@ -83,6 +83,7 @@ jobs:
             specs/mock-multi-turn.spec.ts \
             specs/mock-storage-consistency.spec.ts \
             specs/mock-v2-multi-turn-boundaries.spec.ts \
+            specs/mock-mobile-shell.spec.ts \
             --reporter=list
         working-directory: e2e
         env:

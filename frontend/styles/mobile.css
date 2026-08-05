@@ -120,3 +120,30 @@
     display: flex;
   }
 }
+
+/* —— Phase 4：状态栏收敛 + 长消息折叠 —— */
+html[data-narrow-viewport] .status-chip:not(.status-chip-role):not(.status-chip-context) {
+  display: none;
+}
+
+html[data-narrow-viewport] .status-chips {
+  gap: 6px;
+}
+
+@media (max-width: 768px) {
+  .chat-tui-turn--assistant.chat-tui-turn--long:not(.chat-tui-turn--expanded):not(.is-loading)
+    .chat-tui-body {
+    max-height: 280px;
+    overflow: hidden;
+    position: relative;
+    mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+  }
+
+  .chat-tui-turn--assistant.chat-tui-turn--long.chat-tui-turn--expanded .chat-tui-body {
+    max-height: none;
+    overflow: visible;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+}
