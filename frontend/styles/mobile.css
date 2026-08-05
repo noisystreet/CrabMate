@@ -83,15 +83,9 @@
   }
 }
 
-/* —— Phase 2：safe-area 底部 + 触摸目标 + 软键盘避让 —— */
+/* —— Phase 2：safe-area 底部 + 紧凑输入条 / 状态栏 + 软键盘避让 —— */
 @media (max-width: 768px) {
-  .composer-ds,
-  .composer.composer-ds {
-    /* 有底栏状态条时，系统导航让位交给 .status-bar；此处只留常规内边距 */
-    padding-bottom: 10px;
-  }
-
-  /* visualViewport 键盘高度 + 移动壳导航安全区 */
+  /* visualViewport 键盘高度 + 底栏安全区统一由 app-root 承担（勿再给 status-bar 叠一层） */
   .app-root.app-shell-ds {
     padding-bottom: calc(
       var(--vv-keyboard-inset, 0px) + max(0px, env(safe-area-inset-bottom, 0px))
@@ -101,28 +95,147 @@
   }
 
   html[data-cm-mobile-shell] .app-root.app-shell-ds {
-    /* 整壳抬高，底栏状态条离开系统导航/手势条 */
     padding-bottom: calc(
       var(--vv-keyboard-inset, 0px) +
         max(var(--cm-safe-bottom, 24px), env(safe-area-inset-bottom, 0px))
     );
   }
 
+  /* —— 状态栏：单行紧凑，去掉上下大空隙 —— */
   .status-bar-footer,
   .status-bar {
-    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+    padding: 2px 8px;
+    gap: 6px;
+    min-height: 0;
+    font-size: 11px;
   }
 
-  /* 移动壳已由 app-root 让出导航高度，状态条只需常规内边距，避免加倍 */
   html[data-cm-mobile-shell] .status-bar,
   html[data-cm-mobile-shell] .status-bar-footer {
-    padding-bottom: 8px;
+    padding: 2px 8px 4px;
+  }
+
+  .status-chip,
+  .status-run {
+    height: 20px;
+    padding: 0 6px;
+    gap: 4px;
+    font-size: 11px;
+  }
+
+  .status-chip-label {
+    font-size: 9px;
+  }
+
+  .status-chip-value {
+    max-width: 42vw;
+  }
+
+  .status-run-dot {
+    width: 6px;
+    height: 6px;
+  }
+
+  .status-session-mode-btn {
+    padding: 1px 6px;
+    font-size: 0.72rem;
+    line-height: 1.25;
+  }
+
+  /* —— Composer：聊天 App 式圆角输入条 —— */
+  .composer-ds,
+  .composer.composer-ds {
+    padding: 0;
+    background: color-mix(in srgb, var(--bg) 96%, var(--surface));
+  }
+
+  .composer-inner-ds {
+    padding: 6px 8px 8px;
+    gap: 6px;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+
+  .composer-inner-ds:focus-within {
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .composer-input-row {
+    gap: 6px;
+  }
+
+  .composer-ds .composer-input-stack {
+    min-height: 36px;
+    border-radius: 18px;
+    border: 1px solid var(--border-subtle);
+    background: var(--surface);
+    /* 勿给 stack 左右 padding：镜像高亮 / fake-ph 为 inset:0，与 textarea 必须同盒对齐 */
+    padding: 0;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .composer-ds .composer-input-stack:focus-within {
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  }
+
+  .composer-ds textarea,
+  .composer-ds .composer-input,
+  .app-shell-ds .composer-ds .composer-input {
+    font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
+    line-height: 1.35;
+    min-height: 36px;
+    max-height: 140px;
+    max-height: min(140px, 28dvh);
+    padding: 8px 12px;
+  }
+
+  .composer-ds .composer-input-stack .composer-input-fake-ph,
+  .composer-ds .composer-input-stack .composer-input-highlight-inner {
+    padding: 8px 12px;
+  }
+
+  .composer-bar-actions {
+    gap: 4px;
+    padding-bottom: 0;
+  }
+
+  /* 排除附件标签：其亦带 .btn，勿套用文字按钮的横向 padding */
+  .composer-bar-actions .btn:not(.btn-send-icon):not(.composer-attach-label) {
+    min-width: auto;
+    min-height: 36px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .composer-ds .composer-attach-label {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0;
+  }
+
+  /* 圆形发送钮（聊天 App 常见）；触控约 36–40，不与顶栏 44 强绑 */
+  .composer-ds .btn-send-icon {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 50%;
+    padding: 0;
+  }
+
+  .composer-ds .btn-send-icon-svg {
+    width: 1rem;
+    height: 1rem;
   }
 
   .shell-topbar .btn-icon,
   .shell-topbar .btn,
-  .composer-ds .btn-send,
-  .composer-ds .btn-send-icon,
   .msg-action-btn,
   .chat-tui-turn-actions .btn,
   .nav-rail-brand-actions .btn {
@@ -135,18 +248,6 @@
     font-size: 12px;
     padding-inline: 0.55rem;
     white-space: nowrap;
-  }
-
-  .composer-ds .composer-input-stack {
-    min-height: 44px;
-  }
-
-  .composer-ds textarea,
-  .composer-ds .composer-input {
-    font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
-    line-height: 1.45;
-    padding-top: 10px;
-    padding-bottom: 10px;
   }
 }
 
@@ -226,7 +327,7 @@ html[data-narrow-viewport] .status-chip:not(.status-chip-role):not(.status-chip-
 }
 
 html[data-narrow-viewport] .status-chips {
-  gap: 6px;
+  gap: 4px;
 }
 
 @media (max-width: 768px) {
