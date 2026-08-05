@@ -118,11 +118,13 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
         mobile_nav_open,
         locale,
         editor_layout_mode,
+        is_narrow_viewport,
         ide_menu_bar_bridge,
         layout_toggle,
         workspace_pick,
         ide_menubar_dropdown_open,
     } = signals;
+    let show_layout_toggle = move || !is_narrow_viewport.get() && !mobile_remote_client();
     view! {
         <header
             class="shell-main-header-mobile shell-topbar"
@@ -132,13 +134,15 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
             prop:aria-label=move || shell_topbar_a11y(editor_layout_mode.get(), locale.get()).2
         >
             <div class="shell-topbar-leading">
-                <div class="shell-topbar-start shell-topbar-layout-start">
-                    <LayoutModeSegment
-                        locale=locale
-                        layout_toggle=layout_toggle
-                        extra_class="shell-topbar-layout-toggle"
-                    />
-                </div>
+                <Show when=show_layout_toggle>
+                    <div class="shell-topbar-start shell-topbar-layout-start">
+                        <LayoutModeSegment
+                            locale=locale
+                            layout_toggle=layout_toggle
+                            extra_class="shell-topbar-layout-toggle"
+                        />
+                    </div>
+                </Show>
                 <Show
                     when=move || editor_layout_mode.get()
                     fallback=move || {

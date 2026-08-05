@@ -119,6 +119,11 @@
     font-size: 11px;
   }
 
+  /* 窄屏：隐藏会话/IDE 切换，固定会话模式 */
+  .shell-topbar-layout-start {
+    display: none !important;
+  }
+
   /* 窄屏弹窗居中，避开底部系统导航/返回键（勿再贴底） */
   .modal-backdrop {
     align-items: center;

@@ -41,6 +41,7 @@ pub struct MobileShellHeaderSignals {
     pub mobile_nav_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub editor_layout_mode: RwSignal<bool>,
+    pub is_narrow_viewport: RwSignal<bool>,
     pub ide_menu_bar_bridge: RwSignal<Option<super::ide_menu_bar::IdeMenuBarBridge>>,
     pub layout_toggle: IdeLayoutToggleSignals,
     pub workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle,
@@ -310,6 +311,7 @@ impl AppShellCtx {
             mobile_nav_open: self.signals.sidebar.mobile_nav_open,
             locale: self.signals.shell_ui.locale,
             editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
+            is_narrow_viewport: self.signals.shell_ui.is_narrow_viewport,
             ide_menu_bar_bridge: self.signals.shell_ui.ide_menu_bar_bridge,
             layout_toggle: IdeLayoutToggleSignals::from_app_signals(&self.signals),
             workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle {
