@@ -23,7 +23,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    top: var(--shell-topbar-h, 52px);
+    top: var(--shell-chrome-top, var(--shell-topbar-h, 52px));
     width: 100% !important;
     max-width: none;
     z-index: 90;
@@ -38,7 +38,7 @@
 
   /* 浮动工具栏在窄屏仍贴右，但避开顶栏 */
   .shell-main-toolbar--rail-float {
-    top: calc(var(--shell-topbar-h, 52px) + max(8px, env(safe-area-inset-top, 0px)));
+    top: calc(var(--shell-chrome-top, var(--shell-topbar-h, 52px)) + 8px);
   }
 }
 
@@ -91,7 +91,7 @@
   }
 }
 
-/* —— Phase 3：顶栏精简 + 审批弹窗全宽 —— */
+/* —— Phase 3：顶栏精简 + 窄屏弹窗居中 —— */
 @media (max-width: 768px) {
   .shell-topbar-workspace-title {
     max-width: min(120px, 28vw);
@@ -102,17 +102,24 @@
     font-size: 11px;
   }
 
+  /* 窄屏弹窗居中，避开底部系统导航/返回键（勿再贴底） */
   .modal-backdrop {
-    padding: 12px;
-    align-items: flex-end;
+    align-items: center;
+    justify-content: center;
+    padding: max(12px, env(safe-area-inset-top, 0px)) 16px
+      max(24px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal-backdrop > .modal {
+    width: 100%;
+    max-width: min(720px, 100%);
+    margin: 0;
+    border-radius: var(--radius-lg);
+    max-height: min(85vh, 85dvh);
   }
 
   .modal.approval-modal {
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
+    max-width: min(560px, 100%);
   }
 
   .approval-modal-actions .btn {
@@ -124,6 +131,20 @@
   .approval-modal-command {
     max-height: min(40vh, 280px);
     font-size: 12px;
+  }
+
+  .modal-footer.actions .btn {
+    min-height: 44px;
+  }
+
+  /* 变更集预览层：同样避开底部系统区 */
+  .changelist-modal-layer {
+    padding: max(16px, env(safe-area-inset-top, 0px)) 16px
+      max(24px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .changelist-modal {
+    max-height: min(85vh, 85dvh);
   }
 
   .topbar-cluster-wide {

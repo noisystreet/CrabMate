@@ -67,7 +67,7 @@ pub fn ApprovalModal(signals: ApprovalModalSignals) -> impl IntoView {
 
     view! {
         <Show when=move || pending_approval.get().is_some()>
-            <div class="modal-backdrop">
+            <div class="modal-backdrop approval-modal-backdrop">
                 <div
                     class="modal approval-modal"
                     role="dialog"

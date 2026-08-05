@@ -12,6 +12,8 @@ CARGO ?= cargo
 MOBILE_ANDROID_TARGET ?= aarch64
 # 1=构建前 ./gradlew --stop（换 JDK 后若报 JAVA_COMPILER 可开）
 CM_MOBILE_GRADLE_STOP ?= 0
+# 1=apk 跳过 trunk build（仅重打壳）
+CM_MOBILE_SKIP_FRONTEND ?= 0
 
 # RELEASE=1 时使用 --release（make all 默认开启）
 RELEASE ?= 0
@@ -44,7 +46,7 @@ help:
 	@echo "  make frontend-release 前端 release（供 serve / 打包）"
 	@echo "  make desktop          桌面 debug（需已装 cargo-tauri ^2）"
 	@echo "  make desktop-release  桌面 release 安装包"
-	@echo "  make apk              Android APK（mobile-tauri 远程薄客户端）"
+	@echo "  make apk              Android APK（先 trunk build 前端，再打 mobile-tauri 包）"
 	@echo "  make workspace        工作区全部 Rust crate（debug）"
 	@echo "  make workspace-release 工作区全部 Rust crate（release）"
 	@echo "  make all-dev          后端 + 前端（debug）"
@@ -64,8 +66,9 @@ help:
 	@echo "  make clean-mobile     清理 mobile-tauri Tauri target"
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
-	@echo "变量：RELEASE=1 作用于 backend / frontend / desktop / workspace"
+	@echo "变量：RELEASE=1 作用于 backend / frontend / desktop / workspace / apk 的前端步骤"
 	@echo "      MOBILE_ANDROID_TARGET=aarch64（apk） CM_MOBILE_GRADLE_STOP=1（apk 前停 Gradle）"
+	@echo "      CM_MOBILE_SKIP_FRONTEND=1（apk 跳过 trunk build，仅打壳）"
 
 # --- 聚合 ---
 
@@ -130,10 +133,15 @@ desktop-dev: backend
 	cd "$(TAURI_DIR)" && CM_DESKTOP_BACKEND_BIN="$(BACKEND_BIN_DEBUG)" $(CARGO) tauri dev
 
 # --- Android（mobile-tauri 远程薄客户端；不依赖本机 sidecar）---
+# 先编 frontend/dist：手机连的是本机 serve，需用新前端；壳本身不内嵌该 dist。
+# CM_MOBILE_SKIP_FRONTEND=1 可跳过（仅重打壳）。
 
-apk mobile-apk:
+apk_frontend_dep := $(if $(filter 1 true yes,$(CM_MOBILE_SKIP_FRONTEND)),,frontend)
+
+apk mobile-apk: $(apk_frontend_dep)
 	MOBILE_ANDROID_TARGET="$(MOBILE_ANDROID_TARGET)" \
 		CM_MOBILE_GRADLE_STOP="$(CM_MOBILE_GRADLE_STOP)" \
+		CM_MOBILE_SKIP_FRONTEND=1 \
 		bash "$(MOBILE_ROOT)/scripts/build-apk.sh"
 
 # --- 工作区 Rust ---

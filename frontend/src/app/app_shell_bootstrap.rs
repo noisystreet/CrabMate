@@ -14,6 +14,8 @@ use super::chat::ChatColumnShell;
 pub fn bootstrap_app_shell() -> AppShellCtx {
     // 移动薄客户端：先消费 URL hash 中的 Web API Bearer，再挂接会打 `/status` 的 Effect。
     crate::api::consume_mobile_connect_handoff();
+    // Android 壳：尽早写入 --cm-safe-top，避免顶栏贴系统状态栏难点选。
+    crate::mobile_remote::apply_mobile_remote_safe_top();
 
     let app_signals = AppSignals::new();
     let wiring = run_shell_wiring_in_order(&app_signals);
