@@ -148,16 +148,24 @@
       const statusEl = document.getElementById("status");
       const submitBtn = document.getElementById("submit");
 
-      (function applySafeTop() {
+      (function applySafeInsets() {
         function run() {
           try {
             const b = window.CrabMateMobile;
             if (!b || typeof b.getStatusBarInsetPx !== "function") return false;
-            let px = Number(b.getStatusBarInsetPx());
-            if (!Number.isFinite(px) || px < 0) px = 52;
-            px = Math.max(px, 52);
-            document.documentElement.style.setProperty("--cm-safe-top", px + "px");
-            document.documentElement.setAttribute("data-cm-mobile-shell", "");
+            let top = Number(b.getStatusBarInsetPx());
+            if (!Number.isFinite(top) || top < 0) top = 52;
+            top = Math.max(top, 52);
+            let bottom = 24;
+            if (typeof b.getNavBarInsetPx === "function") {
+              bottom = Number(b.getNavBarInsetPx());
+              if (!Number.isFinite(bottom) || bottom < 0) bottom = 24;
+              bottom = Math.max(bottom, 24);
+            }
+            const root = document.documentElement;
+            root.style.setProperty("--cm-safe-top", top + "px");
+            root.style.setProperty("--cm-safe-bottom", bottom + "px");
+            root.setAttribute("data-cm-mobile-shell", "");
             return true;
           } catch (_) {
             return false;

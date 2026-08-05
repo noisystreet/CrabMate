@@ -58,19 +58,23 @@ class MainActivity : TauriActivity() {
       webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
     }
     webView.addJavascriptInterface(MobileBridge(), "CrabMateMobile")
-    // 页面加载后注入 CSS 变量（远程 WASM 启动前也能先下移顶栏）
-    webView.post { injectSafeTopCss(webView) }
+    // 页面加载后注入上下安全区 CSS 变量
+    webView.post { injectSafeInsetsCss(webView) }
     ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-      injectSafeTopCss(v as? WebView ?: webView)
+      injectSafeInsetsCss(v as? WebView ?: webView)
       insets
     }
     webView.post { rememberConnectHomeIfAppOrigin(webView.url) }
   }
 
-  private fun injectSafeTopCss(webView: WebView) {
-    val px = statusBarInsetCssPx()
+  private fun injectSafeInsetsCss(webView: WebView) {
+    val topPx = statusBarInsetCssPx()
+    val bottomPx = navBarInsetCssPx()
     val js =
-      "(function(){try{var r=document.documentElement;r.style.setProperty('--cm-safe-top','${px}px');r.setAttribute('data-cm-mobile-shell','');}catch(e){}})();"
+      "(function(){try{var r=document.documentElement;" +
+        "r.style.setProperty('--cm-safe-top','${topPx}px');" +
+        "r.style.setProperty('--cm-safe-bottom','${bottomPx}px');" +
+        "r.setAttribute('data-cm-mobile-shell','');}catch(e){}})();"
     webView.evaluateJavascript(js, null)
   }
 
@@ -113,6 +117,17 @@ class MainActivity : TauriActivity() {
     return (css + 28).coerceAtLeast(52)
   }
 
+  /** 系统导航栏/手势条高度（CSS px），供底栏状态条避开。 */
+  private fun navBarInsetCssPx(): Int {
+    val density = resources.displayMetrics.density.coerceAtLeast(0.5f)
+    var bottomPx = 0
+    ViewCompat.getRootWindowInsets(window.decorView)?.let { insets ->
+      bottomPx = insets.getInsetsIgnoringVisibility(WindowInsetsCompat.Type.navigationBars()).bottom
+    }
+    val css = (bottomPx / density).roundToInt()
+    return (css + 8).coerceAtLeast(24)
+  }
+
   /** 供连接页 / 远程 Web 调用。 */
   inner class MobileBridge {
     @JavascriptInterface
@@ -123,9 +138,13 @@ class MainActivity : TauriActivity() {
     @JavascriptInterface
     fun isRemoteClient(): Boolean = true
 
-    /** 顶栏 / 连接页顶部安全区（CSS 像素）。 */
+    /** 顶栏安全区（CSS 像素）。 */
     @JavascriptInterface
     fun getStatusBarInsetPx(): Int = statusBarInsetCssPx()
+
+    /** 底栏 / 系统导航安全区（CSS 像素）。 */
+    @JavascriptInterface
+    fun getNavBarInsetPx(): Int = navBarInsetCssPx()
 
     /** 连接探测成功后调用，提示系统密码管理器保存 URL+Bearer。 */
     @JavascriptInterface

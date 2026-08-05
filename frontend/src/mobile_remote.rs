@@ -41,20 +41,29 @@ export function invokeCrabMateMobileDisconnect() {
   globalThis.CrabMateMobile.disconnect();
 }
 
-/** 从原生读取顶栏安全区并写入 `--cm-safe-top`（CSS px）。可多次调用。 */
+/** 从原生读取顶栏/底栏安全区并写入 CSS 变量。可多次调用。 */
 export function applyCrabMateMobileSafeTop() {
   try {
     const b = globalThis.CrabMateMobile;
     if (!b || typeof b.getStatusBarInsetPx !== "function") {
       return false;
     }
-    let px = Number(b.getStatusBarInsetPx());
-    if (!Number.isFinite(px) || px < 0) {
-      px = 52;
+    let top = Number(b.getStatusBarInsetPx());
+    if (!Number.isFinite(top) || top < 0) {
+      top = 52;
     }
-    px = Math.max(px, 52);
+    top = Math.max(top, 52);
+    let bottom = 24;
+    if (typeof b.getNavBarInsetPx === "function") {
+      bottom = Number(b.getNavBarInsetPx());
+      if (!Number.isFinite(bottom) || bottom < 0) {
+        bottom = 24;
+      }
+      bottom = Math.max(bottom, 24);
+    }
     const root = document.documentElement;
-    root.style.setProperty("--cm-safe-top", px + "px");
+    root.style.setProperty("--cm-safe-top", top + "px");
+    root.style.setProperty("--cm-safe-bottom", bottom + "px");
     root.setAttribute("data-cm-mobile-shell", "");
     return true;
   } catch (_) {

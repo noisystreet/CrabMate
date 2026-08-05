@@ -46,19 +46,36 @@
 @media (max-width: 768px) {
   .composer-ds,
   .composer.composer-ds {
-    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+    /* 有底栏状态条时，系统导航让位交给 .status-bar；此处只留常规内边距 */
+    padding-bottom: 10px;
   }
 
-  /* visualViewport 键盘高度（见 wire_visual_viewport_keyboard_inset）：压缩壳高度，顶起底栏输入 */
+  /* visualViewport 键盘高度 + 移动壳导航安全区 */
   .app-root.app-shell-ds {
-    padding-bottom: var(--vv-keyboard-inset, 0px);
+    padding-bottom: calc(
+      var(--vv-keyboard-inset, 0px) + max(0px, env(safe-area-inset-bottom, 0px))
+    );
     box-sizing: border-box;
     transition: padding-bottom 0.12s ease-out;
+  }
+
+  html[data-cm-mobile-shell] .app-root.app-shell-ds {
+    /* 整壳抬高，底栏状态条离开系统导航/手势条 */
+    padding-bottom: calc(
+      var(--vv-keyboard-inset, 0px) +
+        max(var(--cm-safe-bottom, 24px), env(safe-area-inset-bottom, 0px))
+    );
   }
 
   .status-bar-footer,
   .status-bar {
     padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 移动壳已由 app-root 让出导航高度，状态条只需常规内边距，避免加倍 */
+  html[data-cm-mobile-shell] .status-bar,
+  html[data-cm-mobile-shell] .status-bar-footer {
+    padding-bottom: 8px;
   }
 
   .shell-topbar .btn-icon,
