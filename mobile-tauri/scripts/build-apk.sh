@@ -78,4 +78,8 @@ for apk in "${apks[@]}"; do
   echo "  ${apk}"
 done
 echo ""
-echo "提示: release 包可能未签名；真机调试可用: cd ${tauri_dir} && cargo tauri android dev"
+if [[ -f "${android_dir}/app/key.properties" ]]; then
+  echo "提示: 已检测到 key.properties，release 应已签名。真机调试可用: cd ${tauri_dir} && cargo tauri android dev"
+else
+  echo "提示: 未找到 key.properties，release 可能为 unsigned。真机调试可用: cd ${tauri_dir} && cargo tauri android dev"
+fi

@@ -1,11 +1,19 @@
 //! 探测远程 `crabmate serve` 并导航主 WebView（Bearer 经 URL hash 交给前端消费）。
+//!
+//! 回到连接页：Android 真机主路径是 `MainActivity` 的 `CrabMateMobile.disconnect()` /
+//! 系统返回键（远程源无 Tauri IPC）。本模块的 [`disconnect_remote`] 供资产源内调用或测试。
 
+use std::sync::Mutex;
 use std::time::Duration;
 
 use tauri::{AppHandle, Manager, Url};
 
 const BEARER_HASH_KEY: &str = "cm_web_api_bearer";
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+/// Android 默认资产源（`useHttpsScheme=false`）。
+const DEFAULT_CONNECT_HOME: &str = "http://tauri.localhost/";
+
+static CONNECT_HOME: Mutex<Option<Url>> = Mutex::new(None);
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +48,33 @@ fn normalize_base_url(raw: &str) -> Result<Url, String> {
         u.set_path(&p);
     }
     Ok(u)
+}
+
+fn is_app_origin(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or("");
+    matches!(url.scheme(), "tauri" | "asset")
+        || host.eq_ignore_ascii_case("tauri.localhost")
+        || host.eq_ignore_ascii_case("localhost") && url.path().contains("index")
+}
+
+fn remember_connect_home(url: &Url) {
+    if !is_app_origin(url) {
+        return;
+    }
+    let mut home = url.clone();
+    home.set_fragment(None);
+    home.set_query(None);
+    if let Ok(mut g) = CONNECT_HOME.lock() {
+        *g = Some(home);
+    }
+}
+
+fn connect_home_url() -> Url {
+    CONNECT_HOME
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .unwrap_or_else(|| Url::parse(DEFAULT_CONNECT_HOME).expect("DEFAULT_CONNECT_HOME"))
 }
 
 /// 仅在 Bearer 非空时写入 hash，避免空交接清掉远程源已有凭证。
@@ -92,19 +127,47 @@ async fn probe_server(base: &Url, bearer: &str) -> Result<(), String> {
     ))
 }
 
+fn main_window(app: &AppHandle) -> Result<tauri::WebviewWindow, String> {
+    app.get_webview_window("main")
+        .ok_or_else(|| "主窗口未就绪".to_string())
+}
+
 /// 探测 `/health` 后导航到远程 UI；非空 Bearer 经 URL hash 交接。
+///
+/// 参数须与连接页 `invoke("connect_remote", { url, bearer })` 顶层键一致
+///（勿再包一层 `args`，否则会报 missing required key args）。
 #[tauri::command]
-pub async fn connect_remote(app: AppHandle, args: ConnectArgs) -> Result<(), String> {
+pub async fn connect_remote(
+    app: AppHandle,
+    url: String,
+    bearer: Option<String>,
+) -> Result<(), String> {
+    let args = ConnectArgs {
+        url,
+        bearer: bearer.unwrap_or_default(),
+    };
     let base = normalize_base_url(&args.url)?;
     probe_server(&base, &args.bearer).await?;
     let target = build_handoff_url(base, &args.bearer);
 
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "主窗口未就绪".to_string())?;
+    let window = main_window(&app)?;
+    if let Ok(current) = window.url() {
+        remember_connect_home(&current);
+    }
     window
         .navigate(target)
         .map_err(|e| format!("无法打开远程界面: {e}"))?;
+    Ok(())
+}
+
+/// 导航回 App 内连接页（资产源）。远程页请用 `CrabMateMobile.disconnect()`。
+#[tauri::command]
+pub async fn disconnect_remote(app: AppHandle) -> Result<(), String> {
+    let window = main_window(&app)?;
+    let home = connect_home_url();
+    window
+        .navigate(home)
+        .map_err(|e| format!("无法返回连接页: {e}"))?;
     Ok(())
 }
 
@@ -132,5 +195,13 @@ mod tests {
         let base = normalize_base_url("http://127.0.0.1:8080").unwrap();
         let u = build_handoff_url(base, "  ");
         assert!(u.fragment().is_none());
+    }
+
+    #[test]
+    fn app_origin_detects_tauri_localhost() {
+        let u = Url::parse("http://tauri.localhost/").unwrap();
+        assert!(is_app_origin(&u));
+        let remote = Url::parse("http://192.168.1.10:8080/").unwrap();
+        assert!(!is_app_origin(&remote));
     }
 }

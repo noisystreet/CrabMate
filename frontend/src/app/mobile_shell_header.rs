@@ -4,6 +4,7 @@
 use leptos::prelude::*;
 
 use crate::i18n::{self, Locale};
+use crate::mobile_remote::{mobile_remote_disconnect, mobile_remote_disconnect_available};
 use crate::tauri_shell::tauri_shell_available;
 
 use super::app_shell_ctx::MobileShellHeaderSignals;
@@ -159,6 +160,18 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                     ide_menu_bar_bridge=ide_menu_bar_bridge
                 />
                 <div class="shell-topbar-end">
+                    <Show when=move || mobile_remote_disconnect_available()>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-secondary shell-topbar-disconnect"
+                            data-testid="shell-topbar-disconnect"
+                            prop:aria-label=move || i18n::mobile_disconnect_server_aria(locale.get())
+                            prop:title=move || i18n::mobile_disconnect_server(locale.get())
+                            on:click=move |_| mobile_remote_disconnect()
+                        >
+                            {move || i18n::mobile_disconnect_server(locale.get())}
+                        </button>
+                    </Show>
                     <Show when=move || tauri_shell_available()>
                         <TauriWindowControls locale=locale />
                     </Show>

@@ -1,6 +1,7 @@
-# CrabMate Mobile（Android 远程薄客户端）
+# crabmate Mobile（Android 远程薄客户端）
 
 Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。  
+包名 **`edu.crabmate`**，桌面显示名 **`crabmate`**。  
 产品定位见仓库 `agent_space/tauri-android-build-plan.md`（远程方案 B）。
 
 ## Phase 1 行为
@@ -14,7 +15,20 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 
 连接页只持久化服务器 URL；Web API Bearer **不落盘**（每次填写）。空 Bearer 不会写 hash，以免清掉远程源已有凭证。
 
-`gen/android/app/build.gradle.kts` 中 release 的 `usesCleartextTraffic=true` 为局域网明文 HTTP 而设；若重新执行 `tauri android init`，需再确认该补丁仍在。公网请用 HTTPS。
+`gen/android/app/build.gradle.kts` 中 release 的 `usesCleartextTraffic=true` 为局域网明文 HTTP 而设；若重新执行 `tauri android init`，需再确认该补丁与下方签名配置仍在。公网请用 HTTPS。
+
+`MainActivity` **不**调用 `enableEdgeToEdge()`，避免 WebView 内容画进系统状态栏后与壳顶栏按钮重叠（Android WebView 一般不提供可用的 `safe-area-inset-*`）。
+
+连上远程后：**系统返回键**或顶栏 **「断开连接」**（`window.CrabMateMobile.disconnect`）回到本地连接页；连接页再按返回则退出 App。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。
+
+### Release 签名（可选）
+
+本地创建（已 gitignore，勿提交）：
+
+- `gen/android/app/key.properties`（`storePassword` / `keyPassword` / `keyAlias` / `storeFile`）
+- 对应 `.jks` 密钥库（路径写在 `storeFile`）
+
+存在 `key.properties` 时，`make apk` / `cargo tauri android build --apk` 的 release 会用该配置签名，产物一般为 `app-universal-release.apk`（无 `-unsigned`）。无该文件时仍可打出 unsigned 包。
 
 ## 前置
 
@@ -52,6 +66,8 @@ CM_WEB_API_BEARER_TOKEN='your-shared-secret' cargo run -- serve --host 0.0.0.0 -
 
 ## APK 产物
 
-`gen/android/app/build/outputs/apk/universal/release/app-universal-release-unsigned.apk`
+有 `key.properties` 时：
 
-（未签名；`android dev` 可装 debug。release 已允许明文 HTTP 以便局域网；公网请用 HTTPS。）
+`gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk`
+
+无签名配置时文件名可能带 `-unsigned`。`android dev` 可装 debug。release 已允许明文 HTTP 以便局域网；公网请用 HTTPS。
