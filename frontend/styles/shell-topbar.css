@@ -2,6 +2,30 @@
 
 :root {
   --shell-topbar-h: 2.5rem;
+  /* Android 壳经 CrabMateMobile 注入；其它环境靠 safe-area */
+  --cm-safe-top: 0px;
+  --shell-chrome-top: calc(
+    var(--shell-topbar-h) + max(var(--cm-safe-top), env(safe-area-inset-top, 0px))
+  );
+}
+
+/* 移动壳：顶栏内容至少再下移，避免与系统状态栏重叠（变量未注入时也有保底） */
+html[data-cm-mobile-shell] {
+  --cm-safe-top-floor: 52px;
+  --shell-chrome-top: calc(
+    var(--shell-topbar-h) +
+      max(var(--cm-safe-top), var(--cm-safe-top-floor), env(safe-area-inset-top, 0px))
+  );
+}
+
+html[data-cm-mobile-shell] .shell-topbar {
+  padding-top: max(
+    var(--cm-safe-top),
+    var(--cm-safe-top-floor),
+    env(safe-area-inset-top, 0px)
+  );
+  min-height: var(--shell-chrome-top);
+  height: var(--shell-chrome-top);
 }
 
 .shell-topbar {
@@ -9,13 +33,6 @@
   align-items: center;
   gap: 0.5rem;
   flex-shrink: 0;
-  min-height: var(--shell-topbar-h);
-  height: var(--shell-topbar-h);
-  padding: 0 0.5rem 0 12px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--surface) 55%, transparent);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
   box-sizing: border-box;
   width: 100%;
   /* 横穿视口：会话侧栏之上，与 IDE 全宽一致 */
@@ -24,6 +41,14 @@
   left: 0;
   right: 0;
   z-index: 90;
+  /* 内容区高度 + 顶部安全区（状态栏 / 刘海 / 触控余量） */
+  padding: max(var(--cm-safe-top), env(safe-area-inset-top, 0px)) 0.5rem 0 12px;
+  min-height: var(--shell-chrome-top);
+  height: var(--shell-chrome-top);
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
 }
 
 .shell-topbar-leading {

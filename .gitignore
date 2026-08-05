@@ -70,6 +70,8 @@ env/
 # Tauri 子工程构建产物
 desktop-tauri/src-tauri/target/
 mobile-tauri/src-tauri/target/
+# make apk 稳定产物名（Gradle 原始 APK 在 gen/android/…）
+mobile-tauri/crabmate.apk
 # Tauri 构建生成的 ACL Schema（从源码自动生成，无需提交）
 desktop-tauri/src-tauri/gen/
 # Android 工程 gen/android 需提交；仅忽略 ACL schema 生成物时用下方规则（与 desktop 对齐可整目录忽略后手工保留 android）

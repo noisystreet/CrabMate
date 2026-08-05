@@ -79,6 +79,18 @@ rust {
     rootDirRel = "../../../"
 }
 
+// 产物文件名：crabmate.apk（勿用默认 app-universal-release.apk）
+android.applicationVariants.configureEach {
+    outputs.configureEach {
+        (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
+            if (buildType.name == "release") {
+                "crabmate.apk"
+            } else {
+                "crabmate-${buildType.name}.apk"
+            }
+    }
+}
+
 dependencies {
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("androidx.appcompat:appcompat:1.7.1")

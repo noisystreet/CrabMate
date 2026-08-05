@@ -29,7 +29,7 @@
         display: flex;
         flex-direction: column;
         padding: 1.5rem 1.25rem calc(2rem + env(safe-area-inset-bottom, 0px));
-        padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
+        padding-top: calc(1.5rem + var(--cm-safe-top, env(safe-area-inset-top, 0px)));
       }
       h1 {
         margin: 1.5rem 0 0.35rem;
@@ -106,23 +106,29 @@
     <p class="lead">
       远程连接到已有的 <code>crabmate serve</code>（电脑 / 服务器）。工具与工作区在那台机器上执行；本机不运行 Agent 后端。
     </p>
-    <form id="connect-form">
+    <form id="connect-form" method="post" action="#" autocomplete="on">
       <label for="url">服务器地址</label>
       <input
         id="url"
-        name="url"
+        name="username"
         type="url"
         inputmode="url"
-        autocomplete="url"
+        autocomplete="username"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
         placeholder="http://192.168.1.10:8080/"
         required
       />
       <label for="bearer">Web API 共享密钥（可选）</label>
       <input
         id="bearer"
-        name="bearer"
+        name="password"
         type="password"
         autocomplete="current-password"
+        autocapitalize="off"
+        autocorrect="off"
+        spellcheck="false"
         placeholder="与 CM_WEB_API_BEARER_TOKEN 相同（不是模型 API_KEY）"
       />
       <p class="status" id="status" aria-live="polite"></p>
@@ -130,8 +136,8 @@
       <button type="submit" id="submit">连接</button>
     </form>
     <p class="hint">
-      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。仅记住服务器地址；密钥不落盘（每次需填写）。
-      连上后可用系统返回键或顶栏「断开连接」回到本页以更换服务器。
+      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。服务器地址会记在本机；共享密钥交给系统自动填充 /
+      密码管理器（不写入 App 本地存储）。首次成功连接后可按系统提示保存。连上后可用系统返回键或顶栏「断开连接」回到本页以更换服务器。
     </p>
     <script>
       const URL_KEY = "crabmate.mobile.serverUrl";
@@ -142,6 +148,28 @@
       const statusEl = document.getElementById("status");
       const submitBtn = document.getElementById("submit");
 
+      (function applySafeTop() {
+        function run() {
+          try {
+            const b = window.CrabMateMobile;
+            if (!b || typeof b.getStatusBarInsetPx !== "function") return false;
+            let px = Number(b.getStatusBarInsetPx());
+            if (!Number.isFinite(px) || px < 0) px = 52;
+            px = Math.max(px, 52);
+            document.documentElement.style.setProperty("--cm-safe-top", px + "px");
+            document.documentElement.setAttribute("data-cm-mobile-shell", "");
+            return true;
+          } catch (_) {
+            return false;
+          }
+        }
+        if (!run()) {
+          [50, 200, 600].forEach(function (ms) {
+            setTimeout(run, ms);
+          });
+        }
+      })();
+
       try {
         const savedUrl = localStorage.getItem(URL_KEY);
         if (savedUrl) urlInput.value = savedUrl;
@@ -150,6 +178,28 @@
       function setBusy(busy, msg) {
         submitBtn.disabled = !!busy;
         statusEl.textContent = msg || "";
+      }
+
+      function mobileBridge() {
+        return window.CrabMateMobile || null;
+      }
+
+      function notifyAutofillSuccess() {
+        try {
+          const b = mobileBridge();
+          if (b && typeof b.notifyLoginSuccess === "function") {
+            b.notifyLoginSuccess();
+          }
+        } catch (_) {}
+      }
+
+      function notifyAutofillFailure() {
+        try {
+          const b = mobileBridge();
+          if (b && typeof b.notifyLoginFailure === "function") {
+            b.notifyLoginFailure();
+          }
+        } catch (_) {}
       }
 
       function invokeConnect(url, bearer) {
@@ -194,15 +244,17 @@
         const bearer = bearerInput.value;
         try {
           localStorage.setItem(URL_KEY, u.href);
-          // 不落盘 Bearer（Phase 1）；避免明文残留在 App WebView storage
+          // Bearer 不落 App 盘：交给系统 Autofill / 密码管理器
           localStorage.removeItem("crabmate.mobile.webApiBearer");
         } catch (_) {}
 
         setBusy(true, "正在探测服务器…");
         try {
           await invokeConnect(u.href, bearer);
+          notifyAutofillSuccess();
           setBusy(true, "已连接，正在打开界面…");
         } catch (ex) {
+          notifyAutofillFailure();
           const msg =
             typeof ex === "string"
               ? ex

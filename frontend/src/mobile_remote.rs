@@ -26,12 +26,43 @@ export function invokeCrabMateMobileDisconnect() {
   }
   globalThis.CrabMateMobile.disconnect();
 }
+
+/** 从原生读取顶栏安全区并写入 `--cm-safe-top`（CSS px）。可多次调用。 */
+export function applyCrabMateMobileSafeTop() {
+  try {
+    const b = globalThis.CrabMateMobile;
+    if (!b || typeof b.getStatusBarInsetPx !== "function") {
+      return false;
+    }
+    let px = Number(b.getStatusBarInsetPx());
+    if (!Number.isFinite(px) || px < 0) {
+      px = 52;
+    }
+    px = Math.max(px, 52);
+    const root = document.documentElement;
+    root.style.setProperty("--cm-safe-top", px + "px");
+    root.setAttribute("data-cm-mobile-shell", "");
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** 启动时重试：桥或 insets 可能晚于 WASM bootstrap。 */
+export function scheduleCrabMateMobileSafeTop() {
+  const run = () => applyCrabMateMobileSafeTop();
+  if (run()) return true;
+  [50, 200, 600, 1500].forEach((ms) => setTimeout(run, ms));
+  return false;
+}
 "#)]
 extern "C" {
     #[wasm_bindgen(js_name = hasCrabMateMobileDisconnect)]
     fn has_crabmate_mobile_disconnect() -> bool;
     #[wasm_bindgen(js_name = invokeCrabMateMobileDisconnect)]
     fn invoke_crabmate_mobile_disconnect();
+    #[wasm_bindgen(js_name = scheduleCrabMateMobileSafeTop)]
+    fn schedule_crabmate_mobile_safe_top() -> bool;
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -41,6 +72,11 @@ fn has_crabmate_mobile_disconnect() -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn invoke_crabmate_mobile_disconnect() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn schedule_crabmate_mobile_safe_top() -> bool {
+    false
+}
 
 /// 是否在 Android 壳内浏览远程 UI（可断开回连接页）。
 #[must_use]
@@ -54,4 +90,9 @@ pub fn mobile_remote_disconnect() {
         return;
     }
     invoke_crabmate_mobile_disconnect();
+}
+
+/// 应用 Android 顶栏安全区 CSS 变量（尽早调用，并安排短延迟重试）。
+pub fn apply_mobile_remote_safe_top() {
+    let _ = schedule_crabmate_mobile_safe_top();
 }

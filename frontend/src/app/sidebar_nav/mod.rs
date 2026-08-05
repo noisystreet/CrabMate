@@ -134,6 +134,14 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
             chat_find_panel_open=chat_find_panel_open
         />
 
+        <Show when=move || !mobile_nav_open.get()>
+            <div
+                class="nav-rail-edge-hit"
+                aria-hidden="true"
+                data-testid="nav-rail-edge-hit"
+            ></div>
+        </Show>
+
         <Show when=move || mobile_nav_open.get()>
             <div
                 class="nav-rail-backdrop"
