@@ -181,6 +181,34 @@
   border-radius: var(--radius-btn);
 }
 
+.btn-nav-toggle-search {
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  min-height: 2rem;
+  margin: 0;
+  padding: 0;
+  font-size: 1rem;
+  line-height: 1;
+  justify-content: center;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-btn);
+}
+
+.btn-nav-toggle-search:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface-hover);
+  border-color: var(--border-subtle);
+}
+
+.btn-nav-toggle-search.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+}
+
 .layout-mode-toggle-btn {
   display: inline-flex;
   align-items: center;

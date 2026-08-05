@@ -118,11 +118,29 @@ pub fn nav_hide_search_panel_aria(l: Locale) -> &'static str {
     nav_hide_search_panel(l)
 }
 
+/// 品牌行「筛选」按钮：打开筛选与搜索面板。
+pub fn nav_show_search_panel(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "筛选与搜索",
+        Locale::En => "Filter & search",
+    }
+}
+
+pub fn nav_toggle_search_panel_aria(l: Locale, open: bool) -> &'static str {
+    if open {
+        nav_hide_search_panel(l)
+    } else {
+        nav_show_search_panel(l)
+    }
+}
+
 /// 悬停于会话列表区时的提示：如何打开管理会话 / 筛选 / 搜索。
 pub fn nav_rail_scroll_search_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "在列表空白处右键可管理会话、筛选与搜索",
-        Locale::En => "Right-click empty area here for manage sessions, filter & search",
+        Locale::ZhHans => "点顶部筛选按钮，或在列表空白处右键可管理会话、筛选与搜索",
+        Locale::En => {
+            "Use the filter button above, or right-click empty area for manage / filter / search"
+        }
     }
 }
 

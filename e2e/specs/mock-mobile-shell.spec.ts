@@ -55,4 +55,26 @@ test.describe("移动端壳层", () => {
 
     expect(chatWidth).toBeGreaterThan(0.92);
   });
+
+  test("nav toggle search opens filter panel from drawer", async ({ page }) => {
+    const sid = `s_e2e_mobile_search_btn_${Date.now()}`;
+    await seedSession(page, sid);
+
+    const hamburger = page.locator(".shell-topbar-nav .btn-icon").first();
+    await hamburger.click();
+    await expect(page.locator(".nav-rail")).toHaveClass(/nav-rail-mobile-open/);
+
+    const filter = page.locator("#nav-session-filter");
+    await expect(filter).toBeHidden();
+
+    await page.getByTestId("nav-toggle-search").click();
+    await expect(filter).toBeVisible();
+    await expect(page.getByTestId("nav-toggle-search")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+
+    await page.getByTestId("nav-toggle-search").click();
+    await expect(filter).toBeHidden();
+  });
 });

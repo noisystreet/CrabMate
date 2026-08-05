@@ -12,7 +12,7 @@ pub(super) fn nav_rail_search_panel(
 ) -> impl IntoView {
     view! {
         <Show when=move || sidebar_search_panel_open.get()>
-            <div class="nav-rail-search">
+            <div class="nav-rail-search" id="nav-rail-search-panel">
                 <div class="nav-rail-search-header">
                     <button
                         type="button"

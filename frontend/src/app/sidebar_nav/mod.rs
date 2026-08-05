@@ -80,6 +80,7 @@ pub fn sidebar_nav_view(signals: SidebarNavSignals) -> impl IntoView {
                     new_session=new_session.clone()
                     mobile_nav_open=mobile_nav_open
                     sidebar_rail_collapsed=sidebar_rail_collapsed
+                    sidebar_search_panel_open=sidebar_search_panel_open
                 />
             </div>
             {nav_rail_search_panel(
