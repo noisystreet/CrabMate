@@ -8,6 +8,7 @@ mod browser;
 mod chat_stream;
 pub(crate) mod client_llm_cache;
 pub(crate) mod client_llm_storage;
+mod connect_handoff;
 mod http;
 mod http_workspace_projects;
 mod saved_models;
@@ -25,6 +26,7 @@ pub use client_llm_storage::{
     load_readonly_tool_ttl_cache_follow_server_from_storage, persist_client_llm_to_storage,
     persist_executor_llm_to_storage, persist_readonly_tool_ttl_cache_follow_server,
 };
+pub use connect_handoff::consume_mobile_connect_handoff;
 #[allow(unused_imports)]
 pub use http::{
     ChatBranchError, GithubRepoContextData, SkillListItem, SkillsListData, StatusData, TaskItem,
