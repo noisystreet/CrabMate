@@ -15,6 +15,7 @@ mod escape;
 mod ide_hotkeys;
 mod keyboard_inset;
 mod mobile_nav_swipe;
+mod mobile_side_swipe;
 mod persist_prefs;
 mod session_delete_hotkey;
 mod settings_llm_open;
@@ -26,6 +27,7 @@ pub use escape::{ShellEscapeSignals, wire_escape_key_layered_dismiss};
 pub use ide_hotkeys::{IdeEditorHotkeySignals, wire_ide_editor_hotkeys};
 pub use keyboard_inset::wire_visual_viewport_keyboard_inset;
 pub use mobile_nav_swipe::{WireMobileNavEdgeSwipeSignals, wire_mobile_nav_edge_swipe};
+pub use mobile_side_swipe::{WireMobileSideEdgeSwipeSignals, wire_mobile_side_edge_swipe};
 pub use persist_prefs::{
     wire_close_shell_chrome_when_ide_layout, wire_sidebar_rail_when_ide_layout,
 };

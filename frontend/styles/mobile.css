@@ -1,6 +1,12 @@
 /* 移动端 Web 优化（断点与 app_prefs::MOBILE_LAYOUT_BREAKPOINT_PX 对齐：768px） */
 
-/* —— Phase 1：主区单栏 + 侧栏全屏 Sheet —— */
+/* 桌面默认隐藏；窄屏再显示 */
+.side-column-edge-hit,
+.side-column-backdrop {
+  display: none;
+}
+
+/* —— Phase 1：主区单栏 + 右侧半屏抽屉 —— */
 @media (max-width: 768px) {
   .main-row {
     flex-direction: column;
@@ -17,18 +23,20 @@
     display: none !important;
   }
 
-  /* 打开侧栏时全屏覆盖，避免与聊天列并排挤压 */
+  /* 打开侧栏：右侧半屏抽屉（Material 式，约 85vw / 22rem），自右侧滑入 */
   .side-column:not(.side-column-rail-only) {
     position: fixed;
-    left: 0;
+    left: auto;
     right: 0;
     bottom: 0;
     top: var(--shell-chrome-top, var(--shell-topbar-h, 52px));
-    width: 100% !important;
+    width: min(85vw, 22rem) !important;
     max-width: none;
     z-index: 90;
-    border-left: none;
+    border-left: 1px solid var(--border-subtle, var(--border));
+    border-right: none;
     box-shadow: var(--shadow-md);
+    animation: cm-side-drawer-in 0.22s var(--ease-out-soft, ease-out);
   }
 
   .side-column.side-column-rail-only {
@@ -36,9 +44,42 @@
     width: 0 !important;
   }
 
-  /* 浮动工具栏在窄屏仍贴右，但避开顶栏 */
+  /* 右缘感应条：仅作视觉/触控提示；pointer-events:none，避免盖住右侧浮动工具栏（z-index 50）点击。滑动由 document 级 pointer 监听按 clientX 判定。 */
+  .side-column-edge-hit {
+    display: block;
+    position: fixed;
+    right: 0;
+    top: var(--shell-chrome-top, var(--shell-topbar-h, 52px));
+    bottom: 0;
+    width: 20px;
+    z-index: 40;
+    touch-action: pan-y;
+    pointer-events: none;
+  }
+
+  .side-column-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 89;
+    background: rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(2px);
+    animation: fade-in 0.2s ease;
+  }
+
+  /* 浮动工具栏在窄屏仍贴右，但避开顶栏；略左移以免完全挡住右缘感应 */
   .shell-main-toolbar--rail-float {
     top: calc(var(--shell-chrome-top, var(--shell-topbar-h, 52px)) + 8px);
+    right: max(10px, env(safe-area-inset-right, 0px));
+  }
+}
+
+@keyframes cm-side-drawer-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
   }
 }
 

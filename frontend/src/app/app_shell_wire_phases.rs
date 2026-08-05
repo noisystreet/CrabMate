@@ -20,15 +20,15 @@ use leptos::prelude::*;
 
 use super::app_shell_effects::{
     IdeEditorHotkeySignals, SessionDeleteHotkeySignals, ShellEscapeSignals,
-    WireMobileNavEdgeSwipeSignals, WireNarrowViewportSignals, WireSettingsModalLlmDraftsSignals,
-    WireSyncThemeSignals, wire_approval_expanded_follows_pending,
-    wire_close_shell_chrome_when_ide_layout, wire_escape_key_layered_dismiss,
-    wire_ide_editor_hotkeys, wire_mobile_nav_edge_swipe, wire_narrow_viewport_layout,
-    wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
-    wire_sidebar_rail_when_ide_layout, wire_sync_bg_decor_to_storage_and_dom,
-    wire_sync_locale_html_lang, wire_sync_session_typography_to_storage_and_dom,
-    wire_sync_tauri_shell_dom, wire_sync_theme_to_storage_and_dom,
-    wire_visual_viewport_keyboard_inset,
+    WireMobileNavEdgeSwipeSignals, WireMobileSideEdgeSwipeSignals, WireNarrowViewportSignals,
+    WireSettingsModalLlmDraftsSignals, WireSyncThemeSignals,
+    wire_approval_expanded_follows_pending, wire_close_shell_chrome_when_ide_layout,
+    wire_escape_key_layered_dismiss, wire_ide_editor_hotkeys, wire_mobile_nav_edge_swipe,
+    wire_mobile_side_edge_swipe, wire_narrow_viewport_layout, wire_session_delete_hotkey,
+    wire_settings_modal_llm_drafts_on_open, wire_sidebar_rail_when_ide_layout,
+    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
+    wire_sync_session_typography_to_storage_and_dom, wire_sync_tauri_shell_dom,
+    wire_sync_theme_to_storage_and_dom, wire_visual_viewport_keyboard_inset,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
@@ -158,6 +158,12 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_mobile_nav_edge_swipe(WireMobileNavEdgeSwipeSignals {
         is_narrow_viewport: app.shell_ui.is_narrow_viewport,
         mobile_nav_open: app.sidebar.mobile_nav_open,
+        side_panel_view: app.shell_ui.side_panel_view,
+    });
+    wire_mobile_side_edge_swipe(WireMobileSideEdgeSwipeSignals {
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
+        side_panel_view: app.shell_ui.side_panel_view,
+        mobile_nav_open: app.sidebar.mobile_nav_open,
     });
     wire_visual_viewport_keyboard_inset();
     wire_settings_modal_llm_drafts_on_open(WireSettingsModalLlmDraftsSignals {
@@ -181,6 +187,8 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         view_menu_open: app.shell_ui.view_menu_open,
         ide_menubar_dropdown_open: app.shell_ui.ide_menubar_dropdown_open,
         mobile_nav_open: app.sidebar.mobile_nav_open,
+        side_panel_view: app.shell_ui.side_panel_view,
+        is_narrow_viewport: app.shell_ui.is_narrow_viewport,
         changelist_modal_open: app.modal.changelist_modal_open,
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,

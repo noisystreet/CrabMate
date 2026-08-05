@@ -7,6 +7,8 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
+use crate::app_prefs::SidePanelView;
+
 /// 左缘感应宽度（CSS px）。
 const EDGE_ZONE_PX: f64 = 28.0;
 /// 水平位移超过此值才判定为开/关手势。
@@ -18,6 +20,8 @@ const HORIZ_DOMINANCE: f64 = 1.15;
 pub struct WireMobileNavEdgeSwipeSignals {
     pub is_narrow_viewport: RwSignal<bool>,
     pub mobile_nav_open: RwSignal<bool>,
+    /// 打开会话栏时关闭右侧抽屉（互斥）。
+    pub side_panel_view: RwSignal<SidePanelView>,
 }
 
 #[derive(Clone, Copy)]
@@ -54,10 +58,15 @@ fn target_is_text_field(ev: &web_sys::PointerEvent) -> bool {
         .is_some()
 }
 
+fn side_drawer_open(view: SidePanelView) -> bool {
+    !matches!(view, SidePanelView::None)
+}
+
 fn maybe_complete_swipe(
     origin: &Cell<Option<TouchOrigin>>,
     narrow: RwSignal<bool>,
     nav_open: RwSignal<bool>,
+    side_panel_view: RwSignal<SidePanelView>,
     ev: &web_sys::PointerEvent,
 ) {
     let Some(start) = origin.take() else {
@@ -79,6 +88,7 @@ fn maybe_complete_swipe(
             nav_open.set(false);
         }
     } else if dx >= SWIPE_THRESHOLD_PX {
+        side_panel_view.set(SidePanelView::None);
         nav_open.set(true);
     }
 }
@@ -96,6 +106,7 @@ pub fn wire_mobile_nav_edge_swipe(sig: WireMobileNavEdgeSwipeSignals) {
         let origin: Rc<Cell<Option<TouchOrigin>>> = Rc::new(Cell::new(None));
         let narrow = sig.is_narrow_viewport;
         let nav_open = sig.mobile_nav_open;
+        let side_panel_view = sig.side_panel_view;
 
         let origin_down = Rc::clone(&origin);
         let on_down = Closure::<dyn FnMut(web_sys::PointerEvent)>::new({
@@ -112,9 +123,14 @@ pub fn wire_mobile_nav_edge_swipe(sig: WireMobileNavEdgeSwipeSignals) {
                     origin_down.set(None);
                     return;
                 }
+                // 右侧抽屉打开时不抢左缘开启手势（仍允许在已开会话栏上左划关闭）
+                let open = nav_open.get_untracked();
+                if !open && side_drawer_open(side_panel_view.get_untracked()) {
+                    origin_down.set(None);
+                    return;
+                }
                 let x = f64::from(ev.client_x());
                 let y = f64::from(ev.client_y());
-                let open = nav_open.get_untracked();
                 if open {
                     origin_down.set(Some(TouchOrigin {
                         x,
@@ -136,13 +152,13 @@ pub fn wire_mobile_nav_edge_swipe(sig: WireMobileNavEdgeSwipeSignals) {
         let origin_up = Rc::clone(&origin);
         let on_up =
             Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |ev: web_sys::PointerEvent| {
-                maybe_complete_swipe(&origin_up, narrow, nav_open, &ev);
+                maybe_complete_swipe(&origin_up, narrow, nav_open, side_panel_view, &ev);
             });
 
         let origin_cancel = Rc::clone(&origin);
         let on_cancel =
             Closure::<dyn FnMut(web_sys::PointerEvent)>::new(move |ev: web_sys::PointerEvent| {
-                maybe_complete_swipe(&origin_cancel, narrow, nav_open, &ev);
+                maybe_complete_swipe(&origin_cancel, narrow, nav_open, side_panel_view, &ev);
             });
 
         let _ =

@@ -25,6 +25,9 @@ pub struct ShellEscapeSignals {
     pub view_menu_open: RwSignal<bool>,
     pub ide_menubar_dropdown_open: RwSignal<bool>,
     pub mobile_nav_open: RwSignal<bool>,
+    /// 窄屏右侧工作区抽屉；宽屏 Escape 不关。
+    pub side_panel_view: RwSignal<crate::app_prefs::SidePanelView>,
+    pub is_narrow_viewport: RwSignal<bool>,
     pub changelist_modal_open: RwSignal<bool>,
     pub settings_modal: RwSignal<bool>,
     pub settings_page: RwSignal<bool>,
@@ -112,6 +115,17 @@ fn dismiss_shell_escape_layers(shell: ShellEscapeSignals) -> bool {
     }
     if shell.mobile_nav_open.get_untracked() {
         shell.mobile_nav_open.set(false);
+        return true;
+    }
+    if shell.is_narrow_viewport.get_untracked()
+        && !matches!(
+            shell.side_panel_view.get_untracked(),
+            crate::app_prefs::SidePanelView::None
+        )
+    {
+        shell
+            .side_panel_view
+            .set(crate::app_prefs::SidePanelView::None);
         return true;
     }
     false
