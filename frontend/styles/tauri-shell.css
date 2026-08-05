@@ -10,6 +10,11 @@ html[data-tauri-shell] {
   flex-shrink: 0;
 }
 
+/* Android 远程壳：不显示桌面窗口控制 */
+html[data-cm-mobile-shell] .tauri-window-controls {
+  display: none !important;
+}
+
 .tauri-win-ctrl {
   display: inline-flex;
   align-items: center;

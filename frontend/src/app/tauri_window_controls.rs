@@ -5,13 +5,15 @@ use leptos::prelude::*;
 use crate::i18n::{self, Locale};
 use crate::tauri_shell::{
     tauri_main_window_close, tauri_main_window_minimize, tauri_main_window_toggle_maximize,
-    tauri_shell_available,
 };
 
 #[component]
 pub fn TauriWindowControls(locale: RwSignal<Locale>) -> impl IntoView {
     view! {
-        <Show when=move || tauri_shell_available()>
+        <Show when=move || {
+            crate::tauri_shell::tauri_shell_available()
+                && !crate::mobile_remote::mobile_remote_client()
+        }>
             <div
                 class="tauri-window-controls"
                 role="group"
