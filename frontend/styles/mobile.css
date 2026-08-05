@@ -83,7 +83,8 @@
   .composer-ds .btn-send,
   .composer-ds .btn-send-icon,
   .msg-action-btn,
-  .chat-tui-turn-actions .btn {
+  .chat-tui-turn-actions .btn,
+  .nav-rail-brand-actions .btn {
     min-width: 44px;
     min-height: 44px;
   }
@@ -190,7 +191,9 @@ html[data-narrow-viewport] .status-chips {
 @media (max-width: 768px) {
   .chat-tui-turn--assistant.chat-tui-turn--long:not(.chat-tui-turn--expanded):not(.is-loading)
     .chat-tui-body {
+    /* 矮视口 / 软键盘下用 dvh 收紧；无 dvh 时回退固定 280px */
     max-height: 280px;
+    max-height: min(280px, 35dvh);
     overflow: hidden;
     position: relative;
     mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
