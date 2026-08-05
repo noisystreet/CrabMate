@@ -8,7 +8,7 @@ mod view_menu;
 
 pub use props::{IdeMenuBarBridge, IdeMenuBarSignals};
 
-pub(crate) use file_menu::ChatShellFileMenu;
+pub(crate) use file_menu::{ShellTopbarFileMenu, ShellTopbarMenuBackdrop};
 pub(crate) use menu_id::IdeMenuId;
 
 use edit_menu::IdeMenuEditSection;
@@ -33,7 +33,7 @@ pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
     } = signals;
 
     view! {
-        <div class="shell-topbar-start ide-menu-bar-menus">
+        <div class="shell-topbar-start shell-topbar-menus">
             <IdeMenuFileSection
                 signals=signals
                 open_menu=open_menu
@@ -52,18 +52,10 @@ pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
                 ide_menubar_dropdown_open=signals.ide_menubar_dropdown_open
             />
         </div>
-        <Show when=move || open_menu.get().is_some()>
-            <button
-                type="button"
-                class="ide-menu-backdrop"
-                tabindex="-1"
-                aria-hidden="true"
-                on:click=move |_| {
-                    open_menu.set(None);
-                    ide_menubar_dropdown_open.set(false);
-                }
-            />
-        </Show>
+        <ShellTopbarMenuBackdrop
+            open_menu=open_menu
+            menubar_dropdown_open=ide_menubar_dropdown_open
+        />
     }
 }
 

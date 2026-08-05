@@ -1,5 +1,5 @@
-//! 统一壳顶栏：会话模式（☰ + 文件菜单）与 IDE 模式（文件 / 编辑 / 视图）共用同一 DOM；
-//! 工作区根路径固定于顶栏正中；对话 / 编辑器切换控件固定于最左侧。
+//! 统一壳顶栏：会话与 IDE 共用 leading / center / trailing 三槽；
+//! 菜单下拉与遮罩走 [`ShellTopbarFileMenu`] / [`ShellTopbarMenuBackdrop`]。
 
 use leptos::prelude::*;
 
@@ -8,7 +8,8 @@ use crate::tauri_shell::tauri_shell_available;
 
 use super::app_shell_ctx::MobileShellHeaderSignals;
 use super::ide_menu_bar::{
-    ChatShellFileMenu, IdeMenuBarBridge, IdeMenuBarTopbarContent, IdeMenuId,
+    IdeMenuBarBridge, IdeMenuBarTopbarContent, IdeMenuId, ShellTopbarFileMenu,
+    ShellTopbarMenuBackdrop,
 };
 use super::layout_mode_segment::LayoutModeSegment;
 use super::tauri_window_controls::TauriWindowControls;
@@ -51,9 +52,15 @@ fn ShellTopbarChatMenus(
                     "☰"
                 </button>
             </div>
-            <ChatShellFileMenu
-                locale=locale
-                workspace_pick=workspace_pick
+            <div class="shell-topbar-start shell-topbar-menus">
+                <ShellTopbarFileMenu
+                    locale=locale
+                    workspace_pick=workspace_pick
+                    open_menu=open_menu
+                    menubar_dropdown_open=menubar_dropdown_open
+                />
+            </div>
+            <ShellTopbarMenuBackdrop
                 open_menu=open_menu
                 menubar_dropdown_open=menubar_dropdown_open
             />
@@ -70,25 +77,36 @@ fn ShellTopbarIdeMenus(ide_menu_bar_bridge: RwSignal<Option<IdeMenuBarBridge>>) 
 }
 
 #[component]
-fn ShellTopbarIdeFileStatus(
+fn ShellTopbarFileStatusSlot(
+    editor_layout_mode: RwSignal<bool>,
     ide_menu_bar_bridge: RwSignal<Option<IdeMenuBarBridge>>,
 ) -> impl IntoView {
-    move || match ide_menu_bar_bridge.get() {
-        Some(bridge) => {
-            let ide_path = bridge.signals.ide_path;
-            let ide_text = bridge.signals.ide_text;
-            let ide_baseline = bridge.signals.ide_baseline;
-            view! {
-                <div class="shell-topbar-file-status" data-testid="shell-topbar-file-status">
-                    <Show when=move || ide_text.get() != ide_baseline.get()>
-                        <span class="ide-dirty-dot" aria-hidden="true">"●"</span>
-                    </Show>
-                    <span class="ide-menu-bar-path">{move || ide_path.get().unwrap_or_default()}</span>
-                </div>
-            }
-            .into_any()
-        }
-        None => ().into_any(),
+    view! {
+        <div
+            class="shell-topbar-file-status"
+            class:shell-topbar-file-status--active=move || editor_layout_mode.get()
+            data-testid="shell-topbar-file-status"
+        >
+            <Show when=move || editor_layout_mode.get()>
+                {move || match ide_menu_bar_bridge.get() {
+                    Some(bridge) => {
+                        let ide_path = bridge.signals.ide_path;
+                        let ide_text = bridge.signals.ide_text;
+                        let ide_baseline = bridge.signals.ide_baseline;
+                        view! {
+                            <Show when=move || ide_text.get() != ide_baseline.get()>
+                                <span class="ide-dirty-dot" aria-hidden="true">"●"</span>
+                            </Show>
+                            <span class="shell-topbar-file-path">
+                                {move || ide_path.get().unwrap_or_default()}
+                            </span>
+                        }
+                        .into_any()
+                    }
+                    None => ().into_any(),
+                }}
+            </Show>
+        </div>
     }
 }
 
@@ -105,42 +123,46 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
     view! {
         <header
             class="shell-main-header-mobile shell-topbar"
-            class:shell-topbar--app=move || tauri_shell_available()
             class:ide-menu-bar=move || editor_layout_mode.get()
             role=move || shell_topbar_a11y(editor_layout_mode.get(), locale.get()).0
             data-testid=move || shell_topbar_a11y(editor_layout_mode.get(), locale.get()).1
             prop:aria-label=move || shell_topbar_a11y(editor_layout_mode.get(), locale.get()).2
         >
-            <div class="shell-topbar-start shell-topbar-layout-start">
-                <LayoutModeSegment
-                    locale=locale
-                    layout_toggle=layout_toggle
-                    extra_class="shell-topbar-layout-toggle"
-                />
-            </div>
-            <Show
-                when=move || editor_layout_mode.get()
-                fallback=move || {
-                    view! {
-                        <ShellTopbarChatMenus
-                            locale=locale
-                            mobile_nav_open=mobile_nav_open
-                            workspace_pick=workspace_pick
-                            menubar_dropdown_open=ide_menubar_dropdown_open
-                        />
+            <div class="shell-topbar-leading">
+                <div class="shell-topbar-start shell-topbar-layout-start">
+                    <LayoutModeSegment
+                        locale=locale
+                        layout_toggle=layout_toggle
+                        extra_class="shell-topbar-layout-toggle"
+                    />
+                </div>
+                <Show
+                    when=move || editor_layout_mode.get()
+                    fallback=move || {
+                        view! {
+                            <ShellTopbarChatMenus
+                                locale=locale
+                                mobile_nav_open=mobile_nav_open
+                                workspace_pick=workspace_pick
+                                menubar_dropdown_open=ide_menubar_dropdown_open
+                            />
+                        }
                     }
-                }
-            >
-                <ShellTopbarIdeMenus ide_menu_bar_bridge=ide_menu_bar_bridge />
-            </Show>
-            <ShellTopbarWorkspaceRoot pick=workspace_pick />
-            <Show when=move || editor_layout_mode.get()>
-                <ShellTopbarIdeFileStatus ide_menu_bar_bridge=ide_menu_bar_bridge />
-            </Show>
-            <div class="shell-topbar-end">
-                <Show when=move || tauri_shell_available()>
-                    <TauriWindowControls locale=locale />
+                >
+                    <ShellTopbarIdeMenus ide_menu_bar_bridge=ide_menu_bar_bridge />
                 </Show>
+            </div>
+            <ShellTopbarWorkspaceRoot pick=workspace_pick />
+            <div class="shell-topbar-trailing">
+                <ShellTopbarFileStatusSlot
+                    editor_layout_mode=editor_layout_mode
+                    ide_menu_bar_bridge=ide_menu_bar_bridge
+                />
+                <div class="shell-topbar-end">
+                    <Show when=move || tauri_shell_available()>
+                        <TauriWindowControls locale=locale />
+                    </Show>
+                </div>
             </div>
         </header>
     }
