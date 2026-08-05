@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>CrabMate</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #0f1419;
+        --fg: #e7ecf1;
+        --muted: #9aa7b5;
+        --accent: #3d8bfd;
+        --field: #1a222c;
+        --border: #2a3542;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
+        background: radial-gradient(120% 80% at 50% 0%, #1a2838 0%, var(--bg) 55%);
+        color: var(--fg);
+        display: flex;
+        flex-direction: column;
+        padding: 1.5rem 1.25rem calc(2rem + env(safe-area-inset-bottom, 0px));
+        padding-top: calc(1.5rem + env(safe-area-inset-top, 0px));
+      }
+      h1 {
+        margin: 1.5rem 0 0.35rem;
+        font-size: 1.75rem;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+      }
+      p.lead {
+        margin: 0 0 1.5rem;
+        color: var(--muted);
+        line-height: 1.45;
+        max-width: 28rem;
+      }
+      label {
+        display: block;
+        font-size: 0.85rem;
+        color: var(--muted);
+        margin-bottom: 0.35rem;
+      }
+      input {
+        width: 100%;
+        padding: 0.85rem 0.9rem;
+        border-radius: 0.55rem;
+        border: 1px solid var(--border);
+        background: var(--field);
+        color: var(--fg);
+        font-size: 1rem;
+        margin-bottom: 1rem;
+      }
+      button {
+        width: 100%;
+        padding: 0.95rem 1rem;
+        border: 0;
+        border-radius: 0.55rem;
+        background: var(--accent);
+        color: #fff;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      button:active:not(:disabled) {
+        filter: brightness(0.92);
+      }
+      .hint {
+        margin-top: 1.25rem;
+        font-size: 0.8rem;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+      .err {
+        color: #ff8e8e;
+        font-size: 0.9rem;
+        min-height: 1.25rem;
+        margin: 0 0 0.75rem;
+        white-space: pre-wrap;
+      }
+      .status {
+        color: var(--muted);
+        font-size: 0.9rem;
+        min-height: 1.25rem;
+        margin: 0 0 0.5rem;
+      }
+      code {
+        font-size: 0.85em;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>CrabMate</h1>
+    <p class="lead">
+      远程连接到已有的 <code>crabmate serve</code>（电脑 / 服务器）。工具与工作区在那台机器上执行；本机不运行 Agent 后端。
+    </p>
+    <form id="connect-form">
+      <label for="url">服务器地址</label>
+      <input
+        id="url"
+        name="url"
+        type="url"
+        inputmode="url"
+        autocomplete="url"
+        placeholder="http://192.168.1.10:8080/"
+        required
+      />
+      <label for="bearer">Web API 共享密钥（可选）</label>
+      <input
+        id="bearer"
+        name="bearer"
+        type="password"
+        autocomplete="current-password"
+        placeholder="与 CM_WEB_API_BEARER_TOKEN 相同（不是模型 API_KEY）"
+      />
+      <p class="status" id="status" aria-live="polite"></p>
+      <p class="err" id="err" aria-live="assertive"></p>
+      <button type="submit" id="submit">连接</button>
+    </form>
+    <p class="hint">
+      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。仅记住服务器地址；密钥不落盘（每次需填写）。系统返回键可退回本页。
+    </p>
+    <script>
+      const URL_KEY = "crabmate.mobile.serverUrl";
+      const form = document.getElementById("connect-form");
+      const urlInput = document.getElementById("url");
+      const bearerInput = document.getElementById("bearer");
+      const err = document.getElementById("err");
+      const statusEl = document.getElementById("status");
+      const submitBtn = document.getElementById("submit");
+
+      try {
+        const savedUrl = localStorage.getItem(URL_KEY);
+        if (savedUrl) urlInput.value = savedUrl;
+      } catch (_) {}
+
+      function setBusy(busy, msg) {
+        submitBtn.disabled = !!busy;
+        statusEl.textContent = msg || "";
+      }
+
+      function invokeConnect(url, bearer) {
+        const core = window.__TAURI__ && window.__TAURI__.core;
+        if (!core || typeof core.invoke !== "function") {
+          // 非 Tauri 环境：直接跳转（开发用）；仅非空 Bearer 写 hash
+          const u = new URL(url);
+          const b = (bearer || "").trim();
+          if (b) {
+            u.hash = "cm_web_api_bearer=" + encodeURIComponent(b);
+          } else {
+            u.hash = "";
+          }
+          window.location.href = u.href;
+          return Promise.resolve();
+        }
+        return core.invoke("connect_remote", { url, bearer: bearer || "" });
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        err.textContent = "";
+        let raw = urlInput.value.trim();
+        if (!raw) {
+          err.textContent = "请填写服务器地址";
+          return;
+        }
+        if (!/^https?:\/\//i.test(raw)) {
+          raw = "http://" + raw;
+        }
+        let u;
+        try {
+          u = new URL(raw);
+        } catch (_) {
+          err.textContent = "地址无效";
+          return;
+        }
+        if (u.protocol !== "http:" && u.protocol !== "https:") {
+          err.textContent = "仅支持 http/https";
+          return;
+        }
+        const bearer = bearerInput.value;
+        try {
+          localStorage.setItem(URL_KEY, u.href);
+          // 不落盘 Bearer（Phase 1）；避免明文残留在 App WebView storage
+          localStorage.removeItem("crabmate.mobile.webApiBearer");
+        } catch (_) {}
+
+        setBusy(true, "正在探测服务器…");
+        try {
+          await invokeConnect(u.href, bearer);
+          setBusy(true, "已连接，正在打开界面…");
+        } catch (ex) {
+          const msg =
+            typeof ex === "string"
+              ? ex
+              : ex && ex.message
+                ? ex.message
+                : String(ex);
+          err.textContent = msg;
+          setBusy(false, "");
+        }
+      });
+    </script>
+  </body>
+</html>

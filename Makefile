@@ -5,7 +5,13 @@ ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 FRONTEND_DIR := $(ROOT)/frontend
 DESKTOP_ROOT := $(ROOT)/desktop-tauri
 TAURI_DIR := $(DESKTOP_ROOT)/src-tauri
+MOBILE_ROOT := $(ROOT)/mobile-tauri
+MOBILE_TAURI_DIR := $(MOBILE_ROOT)/src-tauri
 CARGO ?= cargo
+# Android ABI：aarch64 | armv7 | i686 | x86_64（传给 build-apk.sh）
+MOBILE_ANDROID_TARGET ?= aarch64
+# 1=构建前 ./gradlew --stop（换 JDK 后若报 JAVA_COMPILER 可开）
+CM_MOBILE_GRADLE_STOP ?= 0
 
 # RELEASE=1 时使用 --release（make all 默认开启）
 RELEASE ?= 0
@@ -23,9 +29,10 @@ TRUNK_BUILD_FLAGS := $(if $(filter 1 true yes,$(RELEASE)),--release,)
 	backend backend-release \
 	frontend frontend-release \
 	desktop desktop-release desktop-dev \
+	apk mobile-apk \
 	workspace workspace-release \
 	test check fmt clippy \
-	clean clean-backend clean-frontend clean-desktop clean-dist
+	clean clean-backend clean-frontend clean-desktop clean-mobile clean-dist
 
 help:
 	@echo "CrabMate Makefile（仓库根目录执行）"
@@ -37,10 +44,11 @@ help:
 	@echo "  make frontend-release 前端 release（供 serve / 打包）"
 	@echo "  make desktop          桌面 debug（需已装 cargo-tauri ^2）"
 	@echo "  make desktop-release  桌面 release 安装包"
+	@echo "  make apk              Android APK（mobile-tauri 远程薄客户端）"
 	@echo "  make workspace        工作区全部 Rust crate（debug）"
 	@echo "  make workspace-release 工作区全部 Rust crate（release）"
 	@echo "  make all-dev          后端 + 前端（debug）"
-	@echo "  make all              后端 + 前端 + 桌面（均为 release）"
+	@echo "  make all              后端 + 前端 + 桌面（均为 release；不含 apk）"
 	@echo ""
 	@echo "质检："
 	@echo "  make test             cargo test --workspace"
@@ -49,13 +57,15 @@ help:
 	@echo "  make clippy           cargo clippy --workspace --all-targets --all-features -- -D warnings"
 	@echo ""
 	@echo "清理："
-	@echo "  make clean            清理后端 target、前端 dist、桌面产物"
+	@echo "  make clean            清理后端 target、前端 dist、桌面/移动产物"
 	@echo "  make clean-backend    cargo clean（仓库根）"
 	@echo "  make clean-frontend   删除 frontend/dist"
 	@echo "  make clean-desktop    删除 desktop-tauri/dist、binaries 与 Tauri target"
+	@echo "  make clean-mobile     清理 mobile-tauri Tauri target"
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
 	@echo "变量：RELEASE=1 作用于 backend / frontend / desktop / workspace"
+	@echo "      MOBILE_ANDROID_TARGET=aarch64（apk） CM_MOBILE_GRADLE_STOP=1（apk 前停 Gradle）"
 
 # --- 聚合 ---
 
@@ -119,6 +129,13 @@ desktop-dev: backend
 	}
 	cd "$(TAURI_DIR)" && CM_DESKTOP_BACKEND_BIN="$(BACKEND_BIN_DEBUG)" $(CARGO) tauri dev
 
+# --- Android（mobile-tauri 远程薄客户端；不依赖本机 sidecar）---
+
+apk mobile-apk:
+	MOBILE_ANDROID_TARGET="$(MOBILE_ANDROID_TARGET)" \
+		CM_MOBILE_GRADLE_STOP="$(CM_MOBILE_GRADLE_STOP)" \
+		bash "$(MOBILE_ROOT)/scripts/build-apk.sh"
+
 # --- 工作区 Rust ---
 
 workspace:
@@ -151,7 +168,7 @@ clippy:
 
 # --- 清理 ---
 
-clean: clean-backend clean-frontend clean-desktop clean-dist
+clean: clean-backend clean-frontend clean-desktop clean-mobile clean-dist
 
 clean-backend:
 	$(CARGO) clean
@@ -162,6 +179,9 @@ clean-frontend:
 clean-desktop:
 	rm -rf "$(DESKTOP_ROOT)/dist" "$(DESKTOP_ROOT)/binaries"
 	$(CARGO) clean --manifest-path "$(TAURI_DIR)/Cargo.toml"
+
+clean-mobile:
+	$(CARGO) clean --manifest-path "$(MOBILE_TAURI_DIR)/Cargo.toml"
 
 clean-dist:
 	rm -rf "$(ROOT)/dist"

@@ -27,7 +27,9 @@ pnpm-debug.log*
 .yarn/build-state.yml
 .yarn/install-state.gz
 .turbo/
-dist/
+# 仅忽略仓库根与桌面同步产物；mobile-tauri/dist 为连接页源码须提交
+/dist/
+desktop-tauri/dist/
 build/
 coverage/
 
@@ -67,8 +69,11 @@ env/
 /target/
 # Tauri 子工程构建产物
 desktop-tauri/src-tauri/target/
+mobile-tauri/src-tauri/target/
 # Tauri 构建生成的 ACL Schema（从源码自动生成，无需提交）
 desktop-tauri/src-tauri/gen/
+# Android 工程 gen/android 需提交；仅忽略 ACL schema 生成物时用下方规则（与 desktop 对齐可整目录忽略后手工保留 android）
+mobile-tauri/src-tauri/gen/schemas/
 # Tauri sidecar：由 `desktop-tauri/scripts/prepare-sidecar.sh` 从仓库根 `target/` 复制
 desktop-tauri/binaries/
 # 若使用 cargo vendor 或 path 依赖到 vendor/，忽略其 target

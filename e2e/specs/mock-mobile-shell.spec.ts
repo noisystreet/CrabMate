@@ -48,7 +48,9 @@ test.describe("移动端壳层", () => {
       const chat = document.querySelector<HTMLElement>(".chat-column");
       const main = document.querySelector<HTMLElement>(".main-row");
       if (!chat || !main) return 0;
-      return chat.getBoundingClientRect().width / main.getBoundingClientRect().width;
+      return (
+        chat.getBoundingClientRect().width / main.getBoundingClientRect().width
+      );
     });
 
     expect(chatWidth).toBeGreaterThan(0.92);

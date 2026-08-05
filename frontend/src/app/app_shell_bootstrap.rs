@@ -12,6 +12,9 @@ use super::chat::ChatColumnShell;
 
 /// 执行所有 `wire_*` 注册、闭包构建与 [`AppShellCtx`] 组装（推荐新代码直接调用本函数）。
 pub fn bootstrap_app_shell() -> AppShellCtx {
+    // 移动薄客户端：先消费 URL hash 中的 Web API Bearer，再挂接会打 `/status` 的 Effect。
+    crate::api::consume_mobile_connect_handoff();
+
     let app_signals = AppSignals::new();
     let wiring = run_shell_wiring_in_order(&app_signals);
 
