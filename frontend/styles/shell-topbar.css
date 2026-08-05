@@ -9,13 +9,17 @@
   );
 }
 
-/* 移动壳：顶栏内容至少再下移，避免与系统状态栏重叠（变量未注入时也有保底） */
+/* 移动壳：顶栏安全区保底；隐藏会话/IDE 切换 */
 html[data-cm-mobile-shell] {
   --cm-safe-top-floor: 52px;
   --shell-chrome-top: calc(
     var(--shell-topbar-h) +
       max(var(--cm-safe-top), var(--cm-safe-top-floor), env(safe-area-inset-top, 0px))
   );
+}
+
+html[data-cm-mobile-shell] .shell-topbar-layout-start {
+  display: none !important;
 }
 
 html[data-cm-mobile-shell] .shell-topbar {

@@ -4,12 +4,24 @@ use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::closure::Closure;
 
+use crate::app::ide_layout_switch::{IdeLayoutToggleSignals, exit_editor_layout};
 use crate::app::shell_prefs_storage;
 use crate::app_prefs::{SidePanelView, mobile_layout_media_query};
+use crate::mobile_remote::mobile_remote_client;
 
 pub struct WireNarrowViewportSignals {
     pub is_narrow_viewport: RwSignal<bool>,
     pub side_panel_view: RwSignal<SidePanelView>,
+    pub layout_toggle: IdeLayoutToggleSignals,
+}
+
+fn force_session_layout_if_mobile(layout_toggle: IdeLayoutToggleSignals, narrow: bool) {
+    if !layout_toggle.editor_layout_mode.get_untracked() {
+        return;
+    }
+    if narrow || mobile_remote_client() {
+        exit_editor_layout(layout_toggle);
+    }
 }
 
 fn media_query_matches(query: &str) -> Option<bool> {
@@ -37,6 +49,7 @@ fn on_viewport_narrow_change(
     is_narrow_viewport: RwSignal<bool>,
     side_panel_view: RwSignal<SidePanelView>,
     stashed_panel: StoredValue<Option<SidePanelView>>,
+    layout_toggle: IdeLayoutToggleSignals,
 ) {
     let was_narrow = is_narrow_viewport.get_untracked();
     if matches == was_narrow {
@@ -45,6 +58,7 @@ fn on_viewport_narrow_change(
     is_narrow_viewport.set(matches);
     shell_prefs_storage::apply_narrow_viewport_dom_flag(matches);
     if matches {
+        force_session_layout_if_mobile(layout_toggle, true);
         let current = side_panel_view.get_untracked();
         if !matches!(current, SidePanelView::None) {
             stashed_panel.set_value(Some(current));
@@ -59,7 +73,15 @@ fn on_viewport_narrow_change(
 pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
     let is_narrow_viewport = sig.is_narrow_viewport;
     let side_panel_view = sig.side_panel_view;
+    let layout_toggle = sig.layout_toggle;
     let stashed_panel = StoredValue::new(None::<SidePanelView>);
+
+    // 窄屏 / Android 壳：锁定会话布局（偏好水合后若仍为 IDE 也会被拉回）
+    Effect::new(move |_| {
+        let narrow = is_narrow_viewport.get();
+        let _in_ide = layout_toggle.editor_layout_mode.get();
+        force_session_layout_if_mobile(layout_toggle, narrow);
+    });
 
     Effect::new(move |_| {
         let Some(window) = web_sys::window() else {
@@ -68,6 +90,7 @@ pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
         let query = mobile_layout_media_query();
         if let Some(initial) = media_query_matches(query.as_str()) {
             if initial {
+                force_session_layout_if_mobile(layout_toggle, true);
                 let current = side_panel_view.get_untracked();
                 if !matches!(current, SidePanelView::None) {
                     stashed_panel.set_value(Some(current));
@@ -107,6 +130,7 @@ pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
                     is_narrow_viewport,
                     side_panel_view,
                     stashed_panel,
+                    layout_toggle,
                 );
             }
         });

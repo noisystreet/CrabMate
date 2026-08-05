@@ -153,6 +153,7 @@ fn wire_phase2_persisted_prefs_dom_and_settings_hooks(app: &AppSignals) {
     wire_narrow_viewport_layout(WireNarrowViewportSignals {
         is_narrow_viewport: app.shell_ui.is_narrow_viewport,
         side_panel_view: app.shell_ui.side_panel_view,
+        layout_toggle: IdeLayoutToggleSignals::from_app_signals(app),
     });
     wire_mobile_nav_edge_swipe(WireMobileNavEdgeSwipeSignals {
         is_narrow_viewport: app.shell_ui.is_narrow_viewport,
