@@ -139,9 +139,13 @@ fn invoke_tauri_os_prefers_dark_theme() -> js_sys::Promise {
     js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL)
 }
 
-/// 是否在 Tauri 桌面 WebView 内运行。
+/// 是否在 **桌面** Tauri WebView 内运行。
+/// Android 远程薄客户端虽可能注入 `__TAURI__`，但无本机选目录等桌面命令，须视为非桌面壳。
 #[must_use]
 pub fn tauri_shell_available() -> bool {
+    if crate::mobile_remote::mobile_remote_client() {
+        return false;
+    }
     has_tauri_invoke()
 }
 

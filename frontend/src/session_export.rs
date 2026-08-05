@@ -69,8 +69,21 @@ pub(crate) async fn tauri_pick_workspace_folder() -> Result<Option<String>, Stri
                 .map(Some)
                 .ok_or_else(|| "unexpected folder picker result".to_string())
         }
-        Err(e) => Err(format!("{e:?}")),
+        Err(e) => Err(js_err_user_message(&e)),
     }
+}
+
+fn js_err_user_message(e: &wasm_bindgen::JsValue) -> String {
+    if let Some(s) = e.as_string() {
+        return s;
+    }
+    if let Some(err) = e.dyn_ref::<js_sys::Error>() {
+        let msg: String = err.message().into();
+        if !msg.is_empty() {
+            return msg;
+        }
+    }
+    "native folder picker unavailable".to_string()
 }
 
 fn export_md_locale(loc: Locale) -> ExportMdLocale {
