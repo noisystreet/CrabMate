@@ -41,3 +41,38 @@
     top: calc(var(--shell-topbar-h, 52px) + max(8px, env(safe-area-inset-top, 0px)));
   }
 }
+
+/* —— Phase 2：safe-area 底部 + 触摸目标 —— */
+@media (max-width: 768px) {
+  .composer-ds,
+  .composer.composer-ds {
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .status-bar-footer,
+  .status-bar {
+    padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .shell-topbar .btn-icon,
+  .shell-topbar .btn,
+  .composer-ds .btn-send,
+  .composer-ds .btn-send-icon,
+  .msg-action-btn,
+  .chat-tui-turn-actions .btn {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .composer-ds .composer-input-stack {
+    min-height: 44px;
+  }
+
+  .composer-ds textarea,
+  .composer-ds .composer-input {
+    font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
+    line-height: 1.45;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+}
