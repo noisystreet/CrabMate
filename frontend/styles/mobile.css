@@ -76,3 +76,47 @@
     padding-bottom: 10px;
   }
 }
+
+/* —— Phase 3：顶栏精简 + 审批弹窗全宽 —— */
+@media (max-width: 768px) {
+  .shell-topbar-workspace-title {
+    max-width: min(120px, 28vw);
+    font-size: 12px;
+  }
+
+  .shell-topbar-layout-start .layout-mode-segment {
+    font-size: 11px;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
+    align-items: flex-end;
+  }
+
+  .modal.approval-modal {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+
+  .approval-modal-actions .btn {
+    flex: 1 1 auto;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .approval-modal-command {
+    max-height: min(40vh, 280px);
+    font-size: 12px;
+  }
+
+  .topbar-cluster-wide {
+    display: none;
+  }
+
+  .topbar-cluster-narrow {
+    display: flex;
+  }
+}
