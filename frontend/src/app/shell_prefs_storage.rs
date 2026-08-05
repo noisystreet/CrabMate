@@ -158,3 +158,18 @@ pub(crate) fn apply_shell_layout_dom_flags(editor_layout_mode: bool) {
         let _ = root.remove_attribute("data-ide-layout");
     }
 }
+
+/// 窄屏布局标记（`data-narrow-viewport`：供 `mobile.css` 与状态栏收敛选择器使用）。
+pub(crate) fn apply_narrow_viewport_dom_flag(narrow: bool) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let Some(root) = doc.document_element() else {
+        return;
+    };
+    if narrow {
+        let _ = root.set_attribute("data-narrow-viewport", "");
+    } else {
+        let _ = root.remove_attribute("data-narrow-viewport");
+    }
+}

@@ -1,0 +1,116 @@
+//! 窄屏视口检测：维护 `is_narrow_viewport`、DOM `data-narrow-viewport`，进入窄屏时暂存并收起右侧面板。
+
+use leptos::prelude::*;
+use wasm_bindgen::closure::Closure;
+use wasm_bindgen::JsCast;
+
+use crate::app::shell_prefs_storage;
+use crate::app_prefs::{mobile_layout_media_query, SidePanelView};
+
+pub struct WireNarrowViewportSignals {
+    pub is_narrow_viewport: RwSignal<bool>,
+    pub side_panel_view: RwSignal<SidePanelView>,
+}
+
+fn media_query_matches(query: &str) -> Option<bool> {
+    let window = web_sys::window()?;
+    let f = js_sys::Reflect::get(
+        window.as_ref(),
+        &wasm_bindgen::JsValue::from_str("matchMedia"),
+    )
+    .ok()?;
+    let f = f.dyn_into::<js_sys::Function>().ok()?;
+    let mql_v = f
+        .call1(window.as_ref(), &wasm_bindgen::JsValue::from_str(query))
+        .ok()?;
+    if mql_v.is_null() || mql_v.is_undefined() {
+        return None;
+    }
+    let mql = mql_v.dyn_into::<js_sys::Object>().ok()?;
+    js_sys::Reflect::get(&mql, &wasm_bindgen::JsValue::from_str("matches"))
+        .ok()
+        .and_then(|v| v.as_bool())
+}
+
+fn on_viewport_narrow_change(
+    matches: bool,
+    is_narrow_viewport: RwSignal<bool>,
+    side_panel_view: RwSignal<SidePanelView>,
+    stashed_panel: StoredValue<Option<SidePanelView>>,
+) {
+    let was_narrow = is_narrow_viewport.get_untracked();
+    if matches == was_narrow {
+        return;
+    }
+    is_narrow_viewport.set(matches);
+    shell_prefs_storage::apply_narrow_viewport_dom_flag(matches);
+    if matches {
+        let current = side_panel_view.get_untracked();
+        if !matches!(current, SidePanelView::None) {
+            stashed_panel.set_value(Some(current));
+            side_panel_view.set(SidePanelView::None);
+        }
+    } else if let Some(prev) = stashed_panel.get_value() {
+        side_panel_view.set(prev);
+        stashed_panel.set_value(None);
+    }
+}
+
+pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
+    let is_narrow_viewport = sig.is_narrow_viewport;
+    let side_panel_view = sig.side_panel_view;
+    let stashed_panel = StoredValue::new(None::<SidePanelView>);
+
+    Effect::new(move |_| {
+        let Some(window) = web_sys::window() else {
+            return;
+        };
+        let query = mobile_layout_media_query();
+        if let Some(initial) = media_query_matches(query.as_str()) {
+            if initial {
+                let current = side_panel_view.get_untracked();
+                if !matches!(current, SidePanelView::None) {
+                    stashed_panel.set_value(Some(current));
+                    side_panel_view.set(SidePanelView::None);
+                }
+            }
+            is_narrow_viewport.set(initial);
+            shell_prefs_storage::apply_narrow_viewport_dom_flag(initial);
+        }
+
+        let Ok(f) = js_sys::Reflect::get(
+            window.as_ref(),
+            &wasm_bindgen::JsValue::from_str("matchMedia"),
+        ) else {
+            return;
+        };
+        let Ok(f) = f.dyn_into::<js_sys::Function>() else {
+            return;
+        };
+        let Ok(mql_v) = f.call1(
+            window.as_ref(),
+            &wasm_bindgen::JsValue::from_str(query.as_str()),
+        ) else {
+            return;
+        };
+        if mql_v.is_null() || mql_v.is_undefined() {
+            return;
+        }
+        let Ok(mql) = mql_v.dyn_into::<web_sys::EventTarget>() else {
+            return;
+        };
+
+        let cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |_| {
+            if let Some(matches) = media_query_matches(query.as_str()) {
+                on_viewport_narrow_change(
+                    matches,
+                    is_narrow_viewport,
+                    side_panel_view,
+                    stashed_panel,
+                );
+            }
+        });
+        let _ = mql.add_event_listener_with_callback("change", cb.as_ref().unchecked_ref());
+        cb.forget();
+    });
+}

@@ -39,6 +39,8 @@ pub struct ShellUISignals {
     pub session_chat_font: RwSignal<String>,
     /// 聊天列消息与输入框正文字号（px）。
     pub session_chat_font_size: RwSignal<f64>,
+    /// 视口宽度 ≤ [`crate::app_prefs::MOBILE_LAYOUT_BREAKPOINT_PX`]（由 `matchMedia` 维护）。
+    pub is_narrow_viewport: RwSignal<bool>,
 }
 
 impl ShellUISignals {
@@ -65,6 +67,7 @@ impl ShellUISignals {
             session_ui_font: RwSignal::new(s.session_ui_font),
             session_chat_font: RwSignal::new(s.session_chat_font),
             session_chat_font_size: RwSignal::new(s.session_chat_font_size),
+            is_narrow_viewport: RwSignal::new(false),
         }
     }
 }

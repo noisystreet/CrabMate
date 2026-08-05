@@ -107,6 +107,15 @@ pub const MAX_SIDE_WIDTH: f64 = 560.0;
 /// 为左侧对话列预留的最小宽度（视口过窄时仍允许侧栏拖到 `MIN_SIDE_WIDTH`，由 flex 挤压主列）。
 pub const MIN_CHAT_RESERVE_PX: f64 = 240.0;
 
+/// 移动端布局断点（与 `styles/mobile.css` 中 `@media (max-width: …)` 一致）。
+pub const MOBILE_LAYOUT_BREAKPOINT_PX: u32 = 768;
+
+/// `matchMedia` 查询串，供壳层窄屏检测与 DOM `data-narrow-viewport` 同步。
+#[must_use]
+pub fn mobile_layout_media_query() -> String {
+    format!("(max-width: {MOBILE_LAYOUT_BREAKPOINT_PX}px)")
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum SidePanelView {
     None,
