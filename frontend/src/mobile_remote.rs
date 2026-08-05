@@ -6,6 +6,20 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen(inline_js = r#"
+/** 是否在 Android 远程薄客户端 WebView（含已导航到远程 serve 的页面）。 */
+export function isCrabMateMobileRemoteClient() {
+  try {
+    const b = globalThis.CrabMateMobile;
+    if (!b) return false;
+    if (typeof b.isRemoteClient === "function") {
+      return !!b.isRemoteClient();
+    }
+    return typeof b.disconnect === "function";
+  } catch (_) {
+    return false;
+  }
+}
+
 export function hasCrabMateMobileDisconnect() {
   try {
     return !!(
@@ -57,12 +71,19 @@ export function scheduleCrabMateMobileSafeTop() {
 }
 "#)]
 extern "C" {
+    #[wasm_bindgen(js_name = isCrabMateMobileRemoteClient)]
+    fn is_crabmate_mobile_remote_client() -> bool;
     #[wasm_bindgen(js_name = hasCrabMateMobileDisconnect)]
     fn has_crabmate_mobile_disconnect() -> bool;
     #[wasm_bindgen(js_name = invokeCrabMateMobileDisconnect)]
     fn invoke_crabmate_mobile_disconnect();
     #[wasm_bindgen(js_name = scheduleCrabMateMobileSafeTop)]
     fn schedule_crabmate_mobile_safe_top() -> bool;
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn is_crabmate_mobile_remote_client() -> bool {
+    false
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -78,7 +99,13 @@ fn schedule_crabmate_mobile_safe_top() -> bool {
     false
 }
 
-/// 是否在 Android 壳内浏览远程 UI（可断开回连接页）。
+/// 是否在 Android 远程薄客户端 WebView 内（`CrabMateMobile`）。
+#[must_use]
+pub fn mobile_remote_client() -> bool {
+    is_crabmate_mobile_remote_client()
+}
+
+/// 是否可断开回连接页（同 [`mobile_remote_client`] 的常见能力探测）。
 #[must_use]
 pub fn mobile_remote_disconnect_available() -> bool {
     has_crabmate_mobile_disconnect()

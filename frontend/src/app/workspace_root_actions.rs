@@ -129,8 +129,12 @@ impl WorkspaceRootPickHandle {
                     Ok(resp) if resp.enabled => {
                         ws.workspace_project_modal_open.set(true);
                     }
-                    _ => {
+                    Ok(_) => {
+                        // 未配置项目池：浏览器 prompt（Android WebView 常不可用）
                         browser_prompt_workspace_path(locale, chat, ws, loc);
+                    }
+                    Err(e) => {
+                        ws.workspace_set_err.set(Some(e));
                     }
                 }
                 ws.workspace_pick_busy.set(false);
