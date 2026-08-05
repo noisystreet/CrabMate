@@ -145,7 +145,7 @@
   outline-offset: var(--focus-ring-offset);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .topbar-cluster-wide {
     display: none;
   }

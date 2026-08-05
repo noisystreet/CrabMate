@@ -20,14 +20,13 @@ use leptos::prelude::*;
 
 use super::app_shell_effects::{
     IdeEditorHotkeySignals, SessionDeleteHotkeySignals, ShellEscapeSignals,
-    WireSettingsModalLlmDraftsSignals, WireSyncThemeSignals,
+    WireNarrowViewportSignals, WireSettingsModalLlmDraftsSignals, WireSyncThemeSignals,
     wire_approval_expanded_follows_pending, wire_close_shell_chrome_when_ide_layout,
-    wire_escape_key_layered_dismiss, wire_ide_editor_hotkeys, wire_session_delete_hotkey,
-    wire_settings_modal_llm_drafts_on_open, wire_sidebar_rail_when_ide_layout,
-    wire_sync_bg_decor_to_storage_and_dom, wire_sync_locale_html_lang,
-    wire_sync_session_typography_to_storage_and_dom, wire_sync_tauri_shell_dom,
-    wire_sync_theme_to_storage_and_dom, wire_narrow_viewport_layout,
-    WireNarrowViewportSignals,
+    wire_escape_key_layered_dismiss, wire_ide_editor_hotkeys, wire_narrow_viewport_layout,
+    wire_session_delete_hotkey, wire_settings_modal_llm_drafts_on_open,
+    wire_sidebar_rail_when_ide_layout, wire_sync_bg_decor_to_storage_and_dom,
+    wire_sync_locale_html_lang, wire_sync_session_typography_to_storage_and_dom,
+    wire_sync_tauri_shell_dom, wire_sync_theme_to_storage_and_dom,
 };
 use super::app_signals::AppSignals;
 use super::chat::ChatComposerWires;
