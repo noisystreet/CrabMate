@@ -80,6 +80,13 @@ html[data-narrow-viewport] .shell-main[data-mobile-tab="more"] .side-column:not(
   cursor: default;
 }
 
+/* 底栏 Tab / 状态栏须高于 Sheet 遮罩，保证可点击切换 */
+html[data-narrow-viewport] .status-bar,
+html[data-narrow-viewport] .status-bar-footer {
+  position: relative;
+  z-index: 95;
+}
+
 .side-panel-sheet-header {
   flex-shrink: 0;
   display: flex;
@@ -219,7 +226,8 @@ html[data-narrow-viewport] .status-chips {
   padding: 6px 8px max(6px, env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--surface) 94%, var(--bg));
-  z-index: 40;
+  position: relative;
+  z-index: 95;
 }
 
 .mobile-bottom-tab {

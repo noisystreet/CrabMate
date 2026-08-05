@@ -15,9 +15,9 @@ const PERSIST_DEBOUNCE_MS: u32 = 400;
 
 fn side_panel_from_slug(s: &str) -> SidePanelView {
     match s.trim() {
-        "none" => SidePanelView::None,
+        "none" | "hidden" => SidePanelView::None,
+        "workspace" | "pull_requests" | "github" => SidePanelView::Workspace,
         "tasks" => SidePanelView::Tasks,
-        "pull_requests" | "github" => SidePanelView::Workspace,
         "debug" => SidePanelView::DebugConsole,
         _ => SidePanelView::Workspace,
     }
@@ -317,4 +317,22 @@ pub fn wire_persist_user_prefs_to_server(app: AppSignals) {
             let _ = put_user_data_prefs(&dto, loc).await;
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_prefs::SidePanelView;
+
+    #[test]
+    fn side_panel_from_slug_hidden_means_none() {
+        assert_eq!(side_panel_from_slug("hidden"), SidePanelView::None);
+        assert_eq!(side_panel_from_slug("none"), SidePanelView::None);
+    }
+
+    #[test]
+    fn side_panel_from_slug_workspace_aliases() {
+        assert_eq!(side_panel_from_slug("workspace"), SidePanelView::Workspace);
+        assert_eq!(side_panel_from_slug("github"), SidePanelView::Workspace);
+    }
 }
