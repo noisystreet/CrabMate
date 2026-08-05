@@ -92,3 +92,44 @@ pub fn auth_headers() -> Headers {
     }
     h
 }
+
+/// 错误串是否像 **Web API 共享密钥** 校验失败（非模型 `API_KEY`）。
+#[must_use]
+pub fn is_web_api_credential_error(err: &str) -> bool {
+    let low = err.to_ascii_lowercase();
+    if low.contains("llm_api_key_required") {
+        return false;
+    }
+    low.contains("web api")
+        || low.contains("x-api-key")
+        || low.contains("web bearer")
+        || low.contains("web_api")
+        || (low.contains("缺少或无效") && low.contains("凭证"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_server_web_api_credential_message() {
+        assert!(is_web_api_credential_error(
+            "请求失败 (401): 缺少或无效的 Web API 凭证（Authorization: Bearer 或 X-API-Key）"
+        ));
+        assert!(is_web_api_credential_error(
+            "Request failed (401): missing or invalid Web API credentials"
+        ));
+    }
+
+    #[test]
+    fn detects_http_401_guide_from_api_err() {
+        let zh = crate::i18n::api_err_http_status(
+            crate::i18n::Locale::ZhHans,
+            401,
+            "缺少或无效的 Web API 凭证（Authorization: Bearer 或 X-API-Key）",
+        );
+        assert!(is_web_api_credential_error(&zh));
+        let en = crate::i18n::api_err_http_status(crate::i18n::Locale::En, 401, "");
+        assert!(is_web_api_credential_error(&en));
+    }
+}

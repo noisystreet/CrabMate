@@ -16,10 +16,28 @@ pub fn api_err_request_failed(l: Locale) -> &'static str {
     }
 }
 
-/// HTTP 非 2xx 时的回显：`detail` 为空且为 404 时提示重启 `serve`。
+fn api_err_http_401_guide(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "请在设置 →「Web API 共享密钥」填入与 CM_WEB_API_BEARER_TOKEN 相同的值（不是模型 API_KEY）"
+        }
+        Locale::En => {
+            "Open Settings → “Web API shared secret” and enter the same value as CM_WEB_API_BEARER_TOKEN (not the LLM API_KEY)"
+        }
+    }
+}
+
+/// HTTP 非 2xx 时的回显：`detail` 为空且为 404 时提示重启 `serve`；401 引导 Web Bearer。
 pub fn api_err_http_status(l: Locale, status: u16, detail: &str) -> String {
     let base = api_err_request_failed(l);
     let detail = detail.trim();
+    if status == 401 {
+        let guide = api_err_http_401_guide(l);
+        if detail.is_empty() {
+            return format!("{base} (401): {guide}");
+        }
+        return format!("{base} (401): {detail} — {guide}");
+    }
     if detail.is_empty() {
         if status == 404 {
             return match l {

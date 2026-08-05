@@ -162,26 +162,26 @@ pub fn settings_bg_glow(l: Locale) -> &'static str {
 
 pub fn settings_block_web_api_bearer(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "Web API 共享密钥（Bearer）",
-        Locale::En => "Web API shared secret (Bearer)",
+        Locale::ZhHans => "Web API 共享密钥（访问本服务）",
+        Locale::En => "Web API shared secret (this server)",
     }
 }
 
 pub fn settings_web_api_bearer_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "须与启动 serve 时的 CM_WEB_API_BEARER_TOKEN 完全一致。这不是模型 API_KEY。保存后写入本页请求头；局域网访问 401 时请先填此项。"
+            "保护 CrabMate HTTP API：须与 serve 的 CM_WEB_API_BEARER_TOKEN 完全一致。保存后写入本浏览器请求头。这不是下方「模型」里的云端 API_KEY。"
         }
         Locale::En => {
-            "Must match CM_WEB_API_BEARER_TOKEN used when starting serve. Not the LLM API_KEY. Saved into this page’s request headers; fill this first if you see 401 on LAN."
+            "Protects CrabMate HTTP APIs: must match CM_WEB_API_BEARER_TOKEN on serve. Saved into this browser’s request headers. Not the cloud API_KEY under Model below."
         }
     }
 }
 
 pub fn settings_web_api_bearer_label(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "共享密钥",
-        Locale::En => "Shared secret",
+        Locale::ZhHans => "共享密钥（Bearer）",
+        Locale::En => "Shared secret (Bearer)",
     }
 }
 
@@ -194,8 +194,8 @@ pub fn settings_web_api_bearer_save(l: Locale) -> &'static str {
 
 pub fn settings_web_api_bearer_saved(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "已保存到本浏览器（请求将携带 Authorization）",
-        Locale::En => "Saved in this browser (requests will send Authorization)",
+        Locale::ZhHans => "已保存；正在重新拉取状态…",
+        Locale::En => "Saved; refreshing status…",
     }
 }
 
@@ -222,8 +222,8 @@ pub fn settings_web_api_bearer_status_unset(l: Locale) -> &'static str {
 
 pub fn settings_block_llm(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "模型网关（可选覆盖）",
-        Locale::En => "Model endpoint (optional override)",
+        Locale::ZhHans => "模型网关与云端 API 密钥",
+        Locale::En => "Model gateway and cloud API key",
     }
 }
 
@@ -708,8 +708,8 @@ pub fn settings_models_ph_model_id(l: Locale) -> &'static str {
 
 pub fn settings_models_label_api_key(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "API 密钥（可选，存入系统钥匙串）",
-        Locale::En => "API key (optional, stored in the system keyring)",
+        Locale::ZhHans => "模型 API 密钥（云端，可选；存钥匙串）",
+        Locale::En => "Model API key (cloud, optional; keyring)",
     }
 }
 

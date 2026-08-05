@@ -82,6 +82,7 @@ pub struct SettingsModalSignals {
     pub client_llm_storage_tick: RwSignal<u64>,
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
+    pub web_api_bearer_save_nonce: RwSignal<u64>,
 }
 
 impl SettingsModalSignals {
@@ -112,6 +113,7 @@ impl SettingsModalSignals {
             client_llm_storage_tick: form.client_llm_storage_tick,
             readonly_tool_ttl_cache_follow_server: form.readonly_tool_ttl_cache_follow_server,
             saved_model_presets: form.saved_model_presets,
+            web_api_bearer_save_nonce: form.web_api_bearer_save_nonce,
         }
     }
 }
@@ -146,6 +148,7 @@ pub struct StatusBarFooterSignals {
     pub selected_session_mode: RwSignal<String>,
     pub session_mode_user_override: RwSignal<bool>,
     pub refresh_status: Arc<dyn Fn() + Send + Sync>,
+    pub settings_page: RwSignal<bool>,
 }
 
 type SideResizeHandlesCell = Rc<
@@ -284,6 +287,7 @@ impl AppShellCtx {
             selected_session_mode: self.signals.llm_settings.selected_session_mode,
             session_mode_user_override: self.signals.llm_settings.session_mode_user_override,
             refresh_status: Arc::clone(&self.refresh_status),
+            settings_page: self.signals.modal.settings_page,
         }
     }
 

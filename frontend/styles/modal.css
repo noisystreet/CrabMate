@@ -183,6 +183,22 @@
   margin-bottom: 0;
 }
 
+.settings-block--web-api-auth {
+  padding: var(--space-3) var(--space-3) var(--space-4);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-md, 8px);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.settings-block--web-api-auth .settings-block-title {
+  color: var(--accent);
+}
+
+.settings-block--llm-cloud {
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+}
+
 .settings-block-title {
   margin: 0 0 var(--space-2);
   font-size: 11px;

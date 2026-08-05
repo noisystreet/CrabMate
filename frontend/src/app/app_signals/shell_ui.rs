@@ -31,6 +31,8 @@ pub struct ShellUISignals {
     pub ide_save_all_nonce: RwSignal<u64>,
     /// 递增时 IDE 布局从磁盘重载已打开文件（`workspace_changed` 等）。
     pub ide_sync_disk_nonce: RwSignal<u64>,
+    /// 设置中保存/清除 Web API Bearer 后递增，触发 `/status` 等恢复拉取。
+    pub web_api_bearer_save_nonce: RwSignal<u64>,
     /// 会话模式壳层 UI 字体 slug（`default` 表示随主题 `--font-sans`）。
     pub session_ui_font: RwSignal<String>,
     /// 聊天列消息与输入框正文字体 slug（`code`/`pre` 仍用 `--font-mono`）。
@@ -59,6 +61,7 @@ impl ShellUISignals {
             ide_save_active_nonce: RwSignal::new(0),
             ide_save_all_nonce: RwSignal::new(0),
             ide_sync_disk_nonce: RwSignal::new(0),
+            web_api_bearer_save_nonce: RwSignal::new(0),
             session_ui_font: RwSignal::new(s.session_ui_font),
             session_chat_font: RwSignal::new(s.session_chat_font),
             session_chat_font_size: RwSignal::new(s.session_chat_font_size),

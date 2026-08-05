@@ -45,6 +45,7 @@ use super::ide_layout_switch::IdeLayoutToggleSignals;
 use super::status_tasks_wiring::{
     make_refresh_status, make_refresh_tasks, make_toggle_task, wire_status_tasks_domain_effects,
 };
+use super::web_api_bearer_recovery::wire_web_api_bearer_save_recovery;
 use super::wire_workspace_domain::{WireWorkspaceDomainEffectsArgs, wire_workspace_domain_effects};
 use super::workspace_panel::{make_insert_workspace_path_into_composer, make_refresh_workspace};
 use crate::chat_session_state::ChatStreamBusyMemos;
@@ -227,6 +228,14 @@ fn wire_phase4b_status_tasks_domain(app: &AppSignals) -> StatusTasksSpawn {
         Arc::clone(&refresh_status),
         app.shell_ui.side_panel_view,
         Arc::clone(&refresh_tasks),
+    );
+    wire_web_api_bearer_save_recovery(
+        app.shell_ui.web_api_bearer_save_nonce,
+        Arc::clone(&refresh_status),
+        app.stream.status_err,
+        app.chat,
+        app.shell_ui.locale,
+        app.llm_settings.client_llm_storage_tick,
     );
     wire_github_repo_after_init(app.initialized, Arc::clone(&refresh_github_repo));
     wire_github_refresh_when_workspace_changes(

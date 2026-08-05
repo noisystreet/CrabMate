@@ -47,6 +47,7 @@ pub struct SettingsModalDialogInput {
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
+    pub web_api_bearer_save_nonce: RwSignal<u64>,
 }
 
 #[component]
@@ -118,6 +119,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
         readonly_tool_ttl_cache_follow_server,
         saved_model_presets,
         sync_saved_presets_baseline,
+        web_api_bearer_save_nonce,
         ..
     } = input;
 
@@ -131,6 +133,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
             <SettingsWebApiBearerBlock
                 locale=appearance_locale
                 input_id="settings-modal-web-api-bearer"
+                save_nonce=web_api_bearer_save_nonce
             />
             <SettingsAppearanceBlock
                 locale=appearance_locale

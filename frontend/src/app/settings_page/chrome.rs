@@ -88,6 +88,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
         session_ui_font,
         session_chat_font,
         session_chat_font_size,
+        web_api_bearer_save_nonce,
     } = form;
 
     let dirty = Memo::new(move |_| {
@@ -183,6 +184,7 @@ pub(super) fn SettingsPageChrome(ctx: SettingsPageChromeCtx) -> impl IntoView {
                             session_ui_font,
                             session_chat_font,
                             session_chat_font_size,
+                            web_api_bearer_save_nonce,
                         }
                         clear_client_key_intent=clear_client_key_intent
                         clear_executor_key_intent=clear_executor_key_intent
