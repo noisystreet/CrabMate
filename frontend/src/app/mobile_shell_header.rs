@@ -4,7 +4,9 @@
 use leptos::prelude::*;
 
 use crate::i18n::{self, Locale};
-use crate::mobile_remote::{mobile_remote_disconnect, mobile_remote_disconnect_available};
+use crate::mobile_remote::{
+    mobile_remote_client, mobile_remote_disconnect, mobile_remote_disconnect_available,
+};
 use crate::tauri_shell::tauri_shell_available;
 
 use super::app_shell_ctx::MobileShellHeaderSignals;
@@ -172,7 +174,10 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                             {move || i18n::mobile_disconnect_server(locale.get())}
                         </button>
                     </Show>
-                    <Show when=move || tauri_shell_available()>
+                    <Show when=move || {
+                        // 桌面无边框壳才要最小化/最大化/关闭；Android 远程壳不显示
+                        tauri_shell_available() && !mobile_remote_client()
+                    }>
                         <TauriWindowControls locale=locale />
                     </Show>
                 </div>
