@@ -11,6 +11,9 @@ use crate::session_ops::write_clipboard_text;
 use crate::storage::StoredMessage;
 use crate::stream_text_overlay::message_text_for_display_including_stream_overlay;
 
+/// 窄屏长 assistant 消息默认折叠阈值（与 `mobile.css` 渐变遮罩配合）。
+pub(crate) const LONG_ASSISTANT_COLLAPSE_CHARS: usize = 480;
+
 /// 是否渲染该回合下方操作条（工具卡无；用户/助手有复制等）。
 #[must_use]
 pub(crate) fn turn_actions_visible(message: &StoredMessage) -> bool {
@@ -25,6 +28,30 @@ fn is_failed_assistant(message: &StoredMessage) -> bool {
     message.role == "assistant"
         && !message.is_tool
         && message.state.as_ref().is_some_and(|s| s.is_error())
+}
+
+fn is_long_collapsible_assistant(message: &StoredMessage) -> bool {
+    message.role == "assistant"
+        && !message.is_tool
+        && !message
+            .state
+            .as_ref()
+            .is_some_and(crate::storage::StoredMessageState::is_loading)
+        && message.text.chars().count() >= LONG_ASSISTANT_COLLAPSE_CHARS
+}
+
+/// 供 [`super::tui_transcript_sync`] 在 section 上附加 `chat-tui-turn--long`。
+#[must_use]
+pub(crate) fn long_assistant_turn_class_suffix(message: &StoredMessage) -> &'static str {
+    if is_long_collapsible_assistant(message) {
+        " chat-tui-turn--long"
+    } else {
+        ""
+    }
+}
+
+fn svg_chevron_expand() -> &'static str {
+    r#"<svg class="msg-action-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>"#
 }
 
 fn svg_copy() -> &'static str {
@@ -107,6 +134,16 @@ pub(crate) fn turn_actions_bar_html(
             svg_regen_retry(),
         ));
     }
+    if is_long_collapsible_assistant(message) {
+        buttons.push_str(&action_icon_btn(
+            "toggle-expand",
+            id,
+            msg_idx,
+            i18n::msg_toggle_expand_title(locale),
+            secondary,
+            svg_chevron_expand(),
+        ));
+    }
     format!(
         "<div class=\"msg-actions msg-actions-below chat-tui-turn-actions\" \
          data-testid=\"chat-tui-turn-actions\" data-tui-actions-for=\"{id}\" \
@@ -148,6 +185,22 @@ fn copy_message_by_id(handlers: TuiTurnActionHandlers, message_id: &str) {
             .unwrap_or_default()
     });
     write_clipboard_text(&text, loc);
+}
+
+fn toggle_long_message_expanded(message_id: &str) {
+    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
+        return;
+    };
+    let selector = format!("section.chat-tui-turn[data-tui-msg-id=\"{message_id}\"]");
+    let Ok(Some(section)) = doc.query_selector(selector.as_str()) else {
+        return;
+    };
+    let class_list = section.class_list();
+    if class_list.contains("chat-tui-turn--expanded") {
+        let _ = class_list.remove_1("chat-tui-turn--expanded");
+    } else {
+        let _ = class_list.add_1("chat-tui-turn--expanded");
+    }
 }
 
 /// 处理 `data-tui-action` 按钮点击；返回是否已消费事件。
@@ -197,6 +250,10 @@ pub(crate) fn dispatch_tui_turn_action(
                 locale: handlers.locale,
             };
             row_actions.spawn_branch_at_user_line(msg_idx, message_id.to_string());
+            true
+        }
+        "toggle-expand" => {
+            toggle_long_message_expanded(message_id);
             true
         }
         _ => false,
@@ -250,5 +307,25 @@ mod tests {
         let mut t = msg("t1", "assistant");
         t.is_tool = true;
         assert!(turn_actions_bar_html(&t, 0, Locale::ZhHans).is_empty());
+    }
+
+    #[test]
+    fn long_assistant_gets_toggle_expand_action() {
+        let long_text = "x".repeat(500);
+        let m = StoredMessage {
+            id: "a2".into(),
+            role: "assistant".into(),
+            text: long_text,
+            reasoning_text: String::new(),
+            image_urls: vec![],
+            state: None,
+            is_tool: false,
+            tool_call_id: None,
+            tool_name: None,
+            created_at: 0,
+        };
+        let html = turn_actions_bar_html(&m, 0, Locale::ZhHans);
+        assert!(html.contains("data-tui-action=\"toggle-expand\""), "{html}");
+        assert_eq!(long_assistant_turn_class_suffix(&m), " chat-tui-turn--long");
     }
 }

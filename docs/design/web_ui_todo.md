@@ -55,12 +55,12 @@
 
 ## 10. 移动端适配
 
-当前主面向桌面端，移动端体验有提升空间。
+当前主面向桌面端；窄屏优化见 `frontend/styles/mobile.css` 与 `app_shell_effects/viewport.rs`（`data-narrow-viewport`、侧栏 Sheet、safe-area、长消息折叠）。
 
-- 侧边栏默认收起，顶部汉堡菜单触发
-- 触摸友好的按钮尺寸和间距
-- 长消息默认折叠，减少滚动
-- 审批弹窗在移动端更宽大
+- [x] 侧边栏默认收起，顶部汉堡菜单触发（`≤768px` 抽屉 + 进入窄屏自动收起右侧面板）
+- [x] 触摸友好的按钮尺寸和间距（`mobile.css` 44px 最小点击区）
+- [x] 长消息默认折叠，减少滚动（`chat-tui-turn--long` + 操作条「展开」）
+- [x] 审批弹窗在移动端更宽大（`mobile.css` 全宽底 sheet）
 
 ## 11. 会话元数据管理
 
