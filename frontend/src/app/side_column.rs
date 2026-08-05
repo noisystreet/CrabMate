@@ -310,6 +310,22 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         status_tasks,
     };
     view! {
+        <>
+        <Show when=move || matches!(side_panel_view.get(), SidePanelView::None)>
+            <div
+                class="side-column-edge-hit"
+                aria-hidden="true"
+                data-testid="side-column-edge-hit"
+            ></div>
+        </Show>
+        <Show when=move || !matches!(side_panel_view.get(), SidePanelView::None)>
+            <div
+                class="side-column-backdrop"
+                aria-hidden="true"
+                data-testid="side-column-backdrop"
+                on:click=move |_| side_panel_view.set(SidePanelView::None)
+            ></div>
+        </Show>
         <SideColumnResizeAndShellToolbar toolbar=resize_toolbar>
             <div class="side-body" data-testid="side-panel">
                 <Show when=move || matches!(side_panel_view.get(), SidePanelView::Workspace)>
@@ -337,5 +353,6 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
                 </Show>
             </div>
         </SideColumnResizeAndShellToolbar>
+        </>
     }
 }

@@ -77,4 +77,35 @@ test.describe("移动端壳层", () => {
     await page.getByTestId("nav-toggle-search").click();
     await expect(filter).toBeHidden();
   });
+
+  test("side panel opens as right drawer with backdrop", async ({ page }) => {
+    const sid = `s_e2e_mobile_side_drawer_${Date.now()}`;
+    await seedSession(page, sid);
+
+    await expect(page.getByTestId("side-column-backdrop")).toBeHidden();
+    await expect(page.locator(".side-column")).toHaveClass(
+      /side-column-rail-only/,
+    );
+
+    await page.getByTestId("side-view-trigger").click();
+    await page.getByTestId("side-panel-workspace-menu").click();
+
+    const side = page.locator(".side-column");
+    await expect(side).not.toHaveClass(/side-column-rail-only/);
+    await expect(page.getByTestId("side-column-backdrop")).toBeVisible();
+    await expect(page.getByTestId("side-panel")).toBeVisible();
+
+    const box = await side.boundingBox();
+    expect(box).toBeTruthy();
+    if (box) {
+      expect(box.width).toBeLessThan(MOBILE_VIEWPORT.width * 0.95);
+      expect(box.x + box.width).toBeGreaterThan(MOBILE_VIEWPORT.width - 8);
+    }
+
+    await page.getByTestId("side-column-backdrop").click();
+    await expect(page.locator(".side-column")).toHaveClass(
+      /side-column-rail-only/,
+    );
+    await expect(page.getByTestId("side-column-backdrop")).toBeHidden();
+  });
 });
