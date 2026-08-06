@@ -27,13 +27,13 @@ use crate::workspace::fs::{
     open_directory_under_root, open_existing_file_under_root, unlink_file_under_root,
 };
 
+use super::handlers_sync::workspace_dir_create_sync;
+#[cfg(unix)]
+use super::handlers_sync::workspace_file_write_sync_unix;
 use crate::workspace::path::{
     WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
     validate_effective_workspace_base, validate_workspace_set_path,
 };
-use handlers_sync::workspace_dir_create_sync;
-#[cfg(unix)]
-use handlers_sync::workspace_file_write_sync_unix;
 #[cfg(unix)]
 use libc;
 #[cfg(unix)]
