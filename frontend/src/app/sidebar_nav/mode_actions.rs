@@ -60,7 +60,13 @@ pub(super) fn NavRailBrandActions(
                         sidebar_search_panel_open.get(),
                     )
                 }
-                aria-expanded=move || sidebar_search_panel_open.get()
+                aria-expanded=move || {
+                    if sidebar_search_panel_open.get() {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                }
                 prop:aria-controls="nav-rail-search-panel"
                 on:click=move |_| {
                     let opening = !sidebar_search_panel_open.get_untracked();
@@ -86,7 +92,7 @@ pub(super) fn NavRailBrandActions(
                 type="button"
                 class="btn btn-icon btn-nav-rail-collapse"
                 prop:aria-label=move || crate::i18n::nav_sidebar_collapse_aria(locale.get())
-                aria-expanded=move || !sidebar_rail_collapsed.get()
+                aria-expanded=move || if !sidebar_rail_collapsed.get() { "true" } else { "false" }
                 on:click=move |_| sidebar_rail_collapsed.set(true)
             >
                 "‹"
