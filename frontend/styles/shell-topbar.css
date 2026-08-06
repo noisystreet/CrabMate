@@ -358,13 +358,6 @@ html[data-cm-mobile-shell] .shell-topbar {
   display: flex;
 }
 
-/* Web 桌面：对话模式顶栏隐藏窄屏 ☰（侧栏已有品牌）；保留文件菜单与工作区路径 */
-@media (min-width: 769px) {
-  .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-topbar-nav {
-    display: none;
-  }
-}
-
 @media (max-width: 768px) {
   .app-root.app-shell-ds {
     --shell-topbar-h: 52px;

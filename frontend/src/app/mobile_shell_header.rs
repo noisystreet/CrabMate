@@ -31,7 +31,6 @@ fn shell_topbar_a11y(ide: bool, locale: Locale) -> (&'static str, &'static str, 
 #[component]
 fn ShellTopbarChatMenus(
     locale: RwSignal<Locale>,
-    mobile_nav_open: RwSignal<bool>,
     workspace_pick: WorkspaceRootPickHandle,
     menubar_dropdown_open: RwSignal<bool>,
 ) -> impl IntoView {
@@ -43,16 +42,6 @@ fn ShellTopbarChatMenus(
     });
     view! {
         <>
-            <div class="shell-topbar-start shell-topbar-nav">
-                <button
-                    type="button"
-                    class="btn btn-icon"
-                    prop:aria-label=move || i18n::mobile_open_menu(locale.get())
-                    on:click=move |_| mobile_nav_open.update(|o| *o = !*o)
-                >
-                    "☰"
-                </button>
-            </div>
             <div class="shell-topbar-start shell-topbar-menus">
                 <ShellTopbarFileMenu
                     locale=locale
@@ -113,7 +102,6 @@ fn ShellTopbarFileStatusSlot(
 
 pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoView {
     let MobileShellHeaderSignals {
-        mobile_nav_open,
         locale,
         editor_layout_mode,
         is_narrow_viewport,
@@ -147,7 +135,6 @@ pub fn mobile_shell_header_view(signals: MobileShellHeaderSignals) -> impl IntoV
                         view! {
                             <ShellTopbarChatMenus
                                 locale=locale
-                                mobile_nav_open=mobile_nav_open
                                 workspace_pick=workspace_pick
                                 menubar_dropdown_open=ide_menubar_dropdown_open
                             />

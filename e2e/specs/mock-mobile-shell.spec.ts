@@ -3,15 +3,28 @@
  *
  * 运行：cd e2e && no_proxy=127.0.0.1,localhost npx playwright test specs/mock-mobile-shell.spec.ts
  */
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { seedSession } from "../fixtures/helpers";
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 };
 
+/** 左缘右划打开会话抽屉（顶栏汉堡已移除）。 */
+async function openNavDrawerBySwipe(page: Page) {
+  const vp = page.viewportSize()!;
+  const y = Math.floor(vp.height / 2);
+  await page.mouse.move(8, y);
+  await page.mouse.down();
+  await page.mouse.move(100, y, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.locator(".nav-rail")).toHaveClass(/nav-rail-mobile-open/, {
+    timeout: 5_000,
+  });
+}
+
 test.describe("移动端壳层", () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
-  test("narrow viewport sets data-narrow-viewport and hamburger opens nav drawer", async ({
+  test("narrow viewport sets data-narrow-viewport and edge swipe opens nav drawer", async ({
     page,
   }) => {
     const sid = `s_e2e_mobile_shell_${Date.now()}`;
@@ -27,12 +40,9 @@ test.describe("移动端壳层", () => {
 
     const navRail = page.locator(".nav-rail");
     await expect(navRail).not.toHaveClass(/nav-rail-mobile-open/);
+    await expect(page.locator(".shell-topbar-nav")).toHaveCount(0);
 
-    const hamburger = page.locator(".shell-topbar-nav .btn-icon").first();
-    await expect(hamburger).toBeVisible();
-    await hamburger.click();
-
-    await expect(navRail).toHaveClass(/nav-rail-mobile-open/);
+    await openNavDrawerBySwipe(page);
 
     await page.locator(".nav-rail-backdrop").click();
     await expect(navRail).not.toHaveClass(/nav-rail-mobile-open/);
@@ -60,9 +70,7 @@ test.describe("移动端壳层", () => {
     const sid = `s_e2e_mobile_search_btn_${Date.now()}`;
     await seedSession(page, sid);
 
-    const hamburger = page.locator(".shell-topbar-nav .btn-icon").first();
-    await hamburger.click();
-    await expect(page.locator(".nav-rail")).toHaveClass(/nav-rail-mobile-open/);
+    await openNavDrawerBySwipe(page);
 
     const filter = page.locator("#nav-session-filter");
     await expect(filter).toBeHidden();
@@ -135,9 +143,7 @@ test.describe("移动端壳层", () => {
     const sid = `s_e2e_mobile_del_confirm_${Date.now()}`;
     await seedSession(page, sid);
 
-    const hamburger = page.locator(".shell-topbar-nav .btn-icon").first();
-    await hamburger.click();
-    await expect(page.locator(".nav-rail")).toHaveClass(/nav-rail-mobile-open/);
+    await openNavDrawerBySwipe(page);
 
     const row = page.getByTestId(`nav-session-${sid}`);
     await expect(row).toBeVisible();

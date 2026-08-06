@@ -72,16 +72,6 @@ html[data-tauri-shell] .shell-main-header-mobile.shell-topbar {
   display: flex !important;
 }
 
-@media (min-width: 769px) {
-  html[data-tauri-shell]:not([data-ide-layout]) .shell-topbar-nav > .btn.btn-icon:first-child {
-    display: none;
-  }
-
-  .app-root.app-shell-ds:not(.app-root--ide-layout) .shell-topbar-nav > .btn.btn-icon:first-child {
-    display: none;
-  }
-}
-
 /* 会话模式：侧栏品牌区不再承担窗口拖拽（全宽顶栏已覆盖） */
 html[data-tauri-shell]:not([data-ide-layout]) .nav-rail-brand {
   -webkit-app-region: no-drag;

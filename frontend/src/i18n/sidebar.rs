@@ -207,13 +207,6 @@ pub fn session_badge_pin_aria(l: Locale) -> &'static str {
     }
 }
 
-pub fn mobile_open_menu(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "打开菜单",
-        Locale::En => "Open menu",
-    }
-}
-
 pub fn mobile_disconnect_server(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "断开连接",

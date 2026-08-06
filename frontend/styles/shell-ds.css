@@ -48,7 +48,7 @@
   flex-shrink: 0;
 }
 
-/* 桌面端收起会话栏；窄屏仍用顶栏 ☰ 抽屉，隐藏此钮 */
+/* 桌面端收起会话栏；窄屏改用左缘右划打开会话抽屉，隐藏此钮 */
 .btn-nav-rail-collapse {
   flex-shrink: 0;
 }
@@ -984,7 +984,7 @@
     transform: translateX(0);
   }
 
-  /* 左缘滑动感应条：便于右划打开会话列表（不挡顶栏按钮） */
+  /* 左缘滑动感应条：便于右划打开会话列表 */
   .nav-rail-edge-hit {
     position: fixed;
     left: 0;
