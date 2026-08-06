@@ -289,7 +289,7 @@
     display: none !important;
   }
 
-  /* 窄屏通用弹窗居中，避开底部系统导航 */
+  /* 窄屏通用弹窗居中，避开底部系统导航（审批同此，勿贴底以免被手势条/底栏遮挡） */
   .modal-backdrop {
     align-items: center;
     justify-content: center;
@@ -305,30 +305,15 @@
     max-height: min(85vh, 85dvh);
   }
 
-  /* 审批：全宽底 sheet（拇指区操作；safe-area 垫底） */
-  .modal-backdrop.approval-modal-backdrop {
-    align-items: flex-end;
-    justify-content: stretch;
-    padding: 0;
-    padding-top: max(12px, env(safe-area-inset-top, 0px));
+  .modal.approval-modal {
+    max-width: min(560px, 100%);
   }
 
-  .modal-backdrop.approval-modal-backdrop > .modal.approval-modal {
-    width: 100%;
-    max-width: none;
-    margin: 0;
-    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    max-height: min(88vh, 88dvh);
-    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
-    animation: cm-approval-sheet-in 0.22s var(--ease-out-soft, ease-out);
-  }
-
-  /* 纵向：拒绝 → 允许一次 → 总是允许（主操作贴底，靠近拇指） */
+  /* 审批操作钮：纵向全宽，便于拇指点按 */
   .approval-modal-actions {
     flex-direction: column;
     flex-wrap: nowrap;
     gap: 8px;
-    padding: 12px 16px 0;
   }
 
   .approval-modal-actions .btn {
@@ -339,7 +324,7 @@
   }
 
   .approval-modal-command {
-    max-height: min(36vh, 240px);
+    max-height: min(40vh, 280px);
     font-size: 12px;
   }
 
@@ -430,23 +415,6 @@
     align-items: center;
     padding: 8px 4px;
     box-sizing: border-box;
-  }
-}
-
-@keyframes cm-approval-sheet-in {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .modal-backdrop.approval-modal-backdrop > .modal.approval-modal {
-    animation: none;
   }
 }
 
