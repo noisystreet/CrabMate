@@ -157,7 +157,7 @@ e2e_test!(hydrate_tail_page_shows_latest_and_load_older, |client| async move {
     // 绑定会话到分页对话
     let _ = client
         .eval_js(
-            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})"
+            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})})"
         )
         .await;
 

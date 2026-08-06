@@ -31,7 +31,7 @@ async fn seed_sessions_with_messages(
         .eval_js(r#"fetch('/user-data/prefs', {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})
+                body: JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})
             })"#)
         .await;
 

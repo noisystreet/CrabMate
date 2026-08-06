@@ -55,15 +55,17 @@
 
 ## 10. 移动端适配
 
-当前主面向桌面端；窄屏优化见 `frontend/styles/mobile.css` 与 `app_shell_effects/viewport.rs`（`data-narrow-viewport`、侧栏 Sheet、safe-area、长消息折叠）。
+当前主面向桌面端；窄屏优化见 `frontend/styles/mobile.css` 与 `app_shell_effects/viewport.rs`（`data-narrow-viewport`、侧栏 Sheet、safe-area）。
 
 - [x] 侧边栏默认收起，窄屏左缘右划打开会话抽屉（`≤768px` + 进入窄屏自动收起右侧面板）
 - [x] 触摸友好的按钮尺寸和间距（`mobile.css` 顶栏/消息操作/composer 附件左置、发送/停止同槽均 ≥44px）
-- [x] 长消息默认折叠，减少滚动（`chat-tui-turn--long` + 菜单「展开/收起」；折叠高度 `min(280px, 35dvh)`）
+- [x] 长消息**默认完整展示**（不再默认折叠截断；曾用 `chat-tui-turn--long` 方案已移除）
 - [x] 审批弹窗在移动端居中加宽（与通用窄屏 modal 一致，避开底栏遮挡；操作钮纵向 ≥44px）
 - [x] 会话抽屉品牌行显式「筛选」按钮（不必依赖右键打开搜索面板）
 - [x] 右缘左划打开工作区半屏抽屉（与左栏互斥；工具栏含状态/设置；点遮罩或右划关闭）
 - [x] 窄屏输入条仿聊天 App（圆角胶囊 + 圆形发送）；状态栏去叠 safe-area、收紧上下间距
+- [x] 底栏状态条（模型/角色等）**默认隐藏**（`prefs.status_bar_visible` 缺省为 false；侧栏工具栏可开）
+- [x] 窄屏消息左右边距收紧（`chat-thread` / `transcript`；用户气泡约 98% 宽）
 - [x] 浏览器无项目池时用「最近列表 + 路径输入」弹窗选工作区（`workspace_browser_pick_modal`；不用 `window.prompt`）
 - [x] 右抽屉内容触控化（`mobile.css`：树/任务行 ≥44px；目录整行展开；长按菜单；窄屏单击文件插入 `@`）
 

@@ -21,6 +21,7 @@ export async function seedSession(page: Page, sid: string) {
         side_panel_view: "hidden",
         side_width: 280,
         editor_layout_mode: false,
+        status_bar_visible: true,
       }),
     }).catch(() => {}),
   );
@@ -258,6 +259,7 @@ export async function setupRealLLMSession(
         side_panel_view: "hidden",
         side_width: 280,
         editor_layout_mode: false,
+        status_bar_visible: true,
       }),
     }).catch(() => {}),
   );

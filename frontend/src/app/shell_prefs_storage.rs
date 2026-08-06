@@ -38,7 +38,7 @@ pub(crate) fn read_shell_ui_initial_snapshot() -> ShellUiInitialSnapshot {
         theme: "light".to_string(),
         bg_decor: true,
         locale: Locale::ZhHans,
-        status_bar_visible: true,
+        status_bar_visible: false,
         side_panel_view: SidePanelView::Workspace,
         side_width: DEFAULT_SIDE_WIDTH,
         editor_layout_mode: false,

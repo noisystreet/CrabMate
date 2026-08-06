@@ -1,7 +1,6 @@
 //! 终端流回合操作：可用动作列表与点击分发（UI 为右键 / 长按菜单，见 `message_turn_menu`）。
 
 use leptos::prelude::*;
-use wasm_bindgen::JsCast;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use super::message_row_actions::MessageRowActionSignals;
@@ -10,9 +9,6 @@ use crate::i18n::Locale;
 use crate::session_ops::write_clipboard_text;
 use crate::storage::StoredMessage;
 use crate::stream_text_overlay::message_text_for_display_including_stream_overlay;
-
-/// 窄屏长 assistant 消息默认折叠阈值（与 `mobile.css` 渐变遮罩配合）。
-pub(crate) const LONG_ASSISTANT_COLLAPSE_CHARS: usize = 480;
 
 /// 是否可对该回合打开操作菜单（工具卡无）。
 #[must_use]
@@ -30,26 +26,6 @@ fn is_failed_assistant(message: &StoredMessage) -> bool {
         && message.state.as_ref().is_some_and(|s| s.is_error())
 }
 
-fn is_long_collapsible_assistant(message: &StoredMessage) -> bool {
-    message.role == "assistant"
-        && !message.is_tool
-        && !message
-            .state
-            .as_ref()
-            .is_some_and(crate::storage::StoredMessageState::is_loading)
-        && message.text.chars().count() >= LONG_ASSISTANT_COLLAPSE_CHARS
-}
-
-/// 供 [`super::tui_transcript_sync`] 在 section 上附加 `chat-tui-turn--long`。
-#[must_use]
-pub(crate) fn long_assistant_turn_class_suffix(message: &StoredMessage) -> &'static str {
-    if is_long_collapsible_assistant(message) {
-        " chat-tui-turn--long"
-    } else {
-        ""
-    }
-}
-
 /// 该回合菜单可展示的动作键（顺序即菜单顺序）。
 #[must_use]
 pub(crate) fn turn_menu_action_keys(message: &StoredMessage) -> Vec<&'static str> {
@@ -63,9 +39,6 @@ pub(crate) fn turn_menu_action_keys(message: &StoredMessage) -> Vec<&'static str
     }
     if is_failed_assistant(message) {
         keys.push("retry");
-    }
-    if is_long_collapsible_assistant(message) {
-        keys.push("toggle-expand");
     }
     keys
 }
@@ -102,61 +75,6 @@ fn copy_message_by_id(handlers: TuiTurnActionHandlers, message_id: &str) {
             .unwrap_or_default()
     });
     write_clipboard_text(&text, loc);
-}
-
-fn toggle_long_message_expanded(message_id: &str) {
-    let Some(doc) = web_sys::window().and_then(|w| w.document()) else {
-        return;
-    };
-    let selector = format!("section.chat-tui-turn[data-tui-msg-id=\"{message_id}\"]");
-    let Ok(Some(section)) = doc.query_selector(selector.as_str()) else {
-        return;
-    };
-    let class_list = section.class_list();
-    if class_list.contains("chat-tui-turn--expanded") {
-        let _ = class_list.remove_1("chat-tui-turn--expanded");
-    } else {
-        let _ = class_list.add_1("chat-tui-turn--expanded");
-    }
-}
-
-/// 点击折叠中的长消息时展开（仅展开，不切换收起；收起仍走右键/长按菜单）。
-pub(crate) fn expand_collapsed_long_turn_on_click(ev: &web_sys::MouseEvent) {
-    let Some(target) = ev.target() else {
-        return;
-    };
-    // 少数引擎可能把 target 落在 #text：升到父 Element 再 closest。
-    let Some(el) = target.dyn_ref::<web_sys::Element>().cloned().or_else(|| {
-        target
-            .dyn_ref::<web_sys::Node>()
-            .and_then(|n| n.parent_element())
-    }) else {
-        return;
-    };
-    // 链接 / 按钮 / 工具 details 等保持原交互，不抢展开。
-    if el
-        .closest("a, button, summary, input, textarea, select, label, .session-ctx-layer")
-        .ok()
-        .flatten()
-        .is_some()
-    {
-        return;
-    }
-    // 正在选中文本时不展开，避免拖选结束后误触。
-    if web_sys::window()
-        .and_then(|w| w.get_selection().ok().flatten())
-        .is_some_and(|s| !s.is_collapsed() && !String::from(s.to_string()).trim().is_empty())
-    {
-        return;
-    }
-    let Ok(Some(section)) = el.closest("section.chat-tui-turn.chat-tui-turn--long") else {
-        return;
-    };
-    let class_list = section.class_list();
-    if class_list.contains("chat-tui-turn--expanded") || class_list.contains("is-loading") {
-        return;
-    }
-    let _ = class_list.add_1("chat-tui-turn--expanded");
 }
 
 /// 处理回合动作；返回是否已消费。
@@ -208,10 +126,6 @@ pub(crate) fn dispatch_tui_turn_action(
             row_actions.spawn_branch_at_user_line(msg_idx, message_id.to_string());
             true
         }
-        "toggle-expand" => {
-            toggle_long_message_expanded(message_id);
-            true
-        }
         _ => false,
     }
 }
@@ -258,7 +172,7 @@ mod tests {
     }
 
     #[test]
-    fn long_assistant_gets_toggle_expand() {
+    fn long_assistant_menu_is_copy_only() {
         let long_text = "x".repeat(500);
         let m = StoredMessage {
             id: "a2".into(),
@@ -272,8 +186,6 @@ mod tests {
             tool_name: None,
             created_at: 0,
         };
-        let keys = turn_menu_action_keys(&m);
-        assert!(keys.contains(&"toggle-expand"), "{keys:?}");
-        assert_eq!(long_assistant_turn_class_suffix(&m), " chat-tui-turn--long");
+        assert_eq!(turn_menu_action_keys(&m), ["copy"]);
     }
 }

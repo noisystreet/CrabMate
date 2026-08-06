@@ -11,7 +11,7 @@
 
 /* 移动壳：顶栏安全区保底；隐藏会话/IDE 切换 */
 html[data-cm-mobile-shell] {
-  --cm-safe-top-floor: 52px;
+  --cm-safe-top-floor: 24px;
   --shell-chrome-top: calc(
     var(--shell-topbar-h) +
       max(var(--cm-safe-top), var(--cm-safe-top-floor), env(safe-area-inset-top, 0px))

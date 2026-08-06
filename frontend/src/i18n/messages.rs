@@ -81,13 +81,6 @@ pub fn msg_retry_title(l: Locale) -> &'static str {
     }
 }
 
-pub fn msg_toggle_expand_title(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "展开或收起长消息",
-        Locale::En => "Expand or collapse long message",
-    }
-}
-
 /// 右键 / 长按菜单短标签（勿用 title 长句）。
 pub fn msg_menu_copy(l: Locale) -> &'static str {
     match l {
@@ -114,12 +107,5 @@ pub fn msg_menu_retry(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "重试",
         Locale::En => "Retry",
-    }
-}
-
-pub fn msg_menu_toggle_expand(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "展开/收起",
-        Locale::En => "Expand/Collapse",
     }
 }

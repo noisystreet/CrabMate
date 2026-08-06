@@ -12,7 +12,7 @@ use victauri_test::e2e_test;
 /// 注入基本 SSE stub（空技能列表 + 空会话）。
 async fn stub_basic_routes(client: &mut victauri_test::VictauriClient) {
     let _ = client.eval_js("(()=>{window.__origFetch=window.fetch;window.fetch=(u,o)=>{if(typeof u!=='string')return window.__origFetch(u,o);if(u.includes('/chat/stream')&&o&&o.method==='POST')return Promise.resolve(new Response('data:{\"sse_capabilities\":{\"supported_sse_v\":1}}\n\ndata:{\"stream_ended\":{\"reason\":\"completed\"}}\n',{status:200,headers:{'content-type':'text/event-stream','x-conversation-id':'e2e-layout','x-stream-job-id':'1'}}));return window.__origFetch(u,o);};}})()").await;
-    let _ = client.eval_js("fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})").await;
+    let _ = client.eval_js("fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})})").await;
     let _ = client.eval_js("fetch('/user-data/workspaces/current/sessions',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessions:[{id:'s_layout',title:'Layout E2E',draft:'',messages:[],updated_at:1,pinned:false,starred:false}],active_session_id:'s_layout'})})").await;
     let _ = client.eval_js("location.reload()").await;
     client.wait_for("network_idle", Some(""), Some(10000), Some(500)).await.ok();
