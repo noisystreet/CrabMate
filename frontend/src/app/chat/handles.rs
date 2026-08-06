@@ -245,6 +245,8 @@ pub struct WireComposerStreamsStreamSlice {
     pub stream_shell: ComposerStreamShell,
     /// 见 [`ChatStreamBusyMemos::stream_turn_busy_ui`]。
     pub stream_turn_busy_ui: Memo<bool>,
+    /// 见 [`ChatStreamBusyMemos::tool_timeline_busy_ui`]；与流式 busy 合成为发送门闩。
+    pub tool_timeline_busy_ui: Memo<bool>,
     pub scroll_shell: ChatScrollShellSignals,
     pub pending_images: RwSignal<Vec<String>>,
 }

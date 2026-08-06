@@ -52,16 +52,17 @@ impl RegenAttachGate {
     }
 }
 
-/// 主发送路径：初始化完成、回合不忙、且输入（正文 / 附图 / 澄清答案）至少有一项。
+/// 主发送路径：初始化完成、合成器不忙（与输入区「停止」同槽门闩一致：流式 ∨ 工具时间线 busy）、
+/// 且输入（正文 / 附图 / 澄清答案）至少有一项。
 #[must_use]
 pub(crate) const fn compose_user_send_allowed(
     initialized: bool,
-    stream_turn_busy_ui: bool,
+    composer_busy_ui: bool,
     user_line_empty: bool,
     imgs_empty: bool,
     clarify_json_none: bool,
 ) -> bool {
-    initialized && !stream_turn_busy_ui && !(user_line_empty && imgs_empty && clarify_json_none)
+    initialized && !composer_busy_ui && !(user_line_empty && imgs_empty && clarify_json_none)
 }
 
 #[cfg(test)]

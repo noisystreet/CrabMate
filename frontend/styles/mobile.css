@@ -228,16 +228,8 @@
   }
 
   .composer-bar-actions {
-    gap: 4px;
+    gap: 0;
     padding-bottom: 0;
-  }
-
-  /* 排除附件标签：其亦带 .btn，勿套用文字按钮的横向 padding */
-  .composer-bar-actions .btn:not(.btn-send-icon):not(.composer-attach-label) {
-    min-width: auto;
-    min-height: 44px;
-    padding: 0 12px;
-    font-size: 12px;
   }
 
   .composer-ds .composer-attach-label {
@@ -246,9 +238,10 @@
     min-width: 44px;
     min-height: 44px;
     padding: 0;
+    margin-bottom: 0;
   }
 
-  /* 圆形发送钮：与顶栏/消息操作一致，最小触控 44px */
+  /* 圆形发送/停止同槽：最小触控 44px */
   .composer-ds .btn-send-icon {
     width: 44px;
     height: 44px;

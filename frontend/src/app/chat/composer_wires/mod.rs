@@ -44,6 +44,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
     let WireComposerStreamsStreamSlice {
         stream_shell,
         stream_turn_busy_ui,
+        tool_timeline_busy_ui,
         scroll_shell,
         pending_images,
     } = stream;
@@ -92,7 +93,7 @@ pub(crate) fn wire_chat_composer_streams(args: WireComposerStreamsArgs) -> ChatC
             };
             if !compose_user_send_allowed(
                 initialized.get(),
-                stream_turn_busy_ui.get(),
+                stream_turn_busy_ui.get() || tool_timeline_busy_ui.get(),
                 user_line.is_empty(),
                 imgs.is_empty(),
                 clarify_json.is_none(),
