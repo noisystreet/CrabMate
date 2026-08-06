@@ -1,6 +1,7 @@
 //! 终端流回合操作：可用动作列表与点击分发（UI 为右键 / 长按菜单，见 `message_turn_menu`）。
 
 use leptos::prelude::*;
+use wasm_bindgen::JsCast;
 
 use super::composer_follow_up::ComposerStreamFollowUp;
 use super::message_row_actions::MessageRowActionSignals;
@@ -117,6 +118,45 @@ fn toggle_long_message_expanded(message_id: &str) {
     } else {
         let _ = class_list.add_1("chat-tui-turn--expanded");
     }
+}
+
+/// 点击折叠中的长消息时展开（仅展开，不切换收起；收起仍走右键/长按菜单）。
+pub(crate) fn expand_collapsed_long_turn_on_click(ev: &web_sys::MouseEvent) {
+    let Some(target) = ev.target() else {
+        return;
+    };
+    // 少数引擎可能把 target 落在 #text：升到父 Element 再 closest。
+    let Some(el) = target.dyn_ref::<web_sys::Element>().cloned().or_else(|| {
+        target
+            .dyn_ref::<web_sys::Node>()
+            .and_then(|n| n.parent_element())
+    }) else {
+        return;
+    };
+    // 链接 / 按钮 / 工具 details 等保持原交互，不抢展开。
+    if el
+        .closest("a, button, summary, input, textarea, select, label, .session-ctx-layer")
+        .ok()
+        .flatten()
+        .is_some()
+    {
+        return;
+    }
+    // 正在选中文本时不展开，避免拖选结束后误触。
+    if web_sys::window()
+        .and_then(|w| w.get_selection().ok().flatten())
+        .is_some_and(|s| !s.is_collapsed() && !String::from(s.to_string()).trim().is_empty())
+    {
+        return;
+    }
+    let Ok(Some(section)) = el.closest("section.chat-tui-turn.chat-tui-turn--long") else {
+        return;
+    };
+    let class_list = section.class_list();
+    if class_list.contains("chat-tui-turn--expanded") || class_list.contains("is-loading") {
+        return;
+    }
+    let _ = class_list.add_1("chat-tui-turn--expanded");
 }
 
 /// 处理回合动作；返回是否已消费。
