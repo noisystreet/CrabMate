@@ -1,7 +1,7 @@
 /* CrabMate Desktop（Tauri）：无边框窗口与自定义标题栏控件 */
 
 html[data-tauri-shell] {
-  --shell-topbar-h: 2.75rem;
+  --shell-topbar-h: 2.5rem;
 }
 
 .tauri-window-controls {
@@ -57,6 +57,7 @@ html[data-tauri-shell] .shell-topbar {
 html[data-tauri-shell] .shell-topbar button,
 html[data-tauri-shell] .shell-topbar .shell-topbar-leading,
 html[data-tauri-shell] .shell-topbar .shell-topbar-trailing,
+html[data-tauri-shell] .shell-topbar .shell-topbar-workspace,
 html[data-tauri-shell] .shell-topbar .shell-topbar-end,
 html[data-tauri-shell] .shell-topbar .shell-topbar-start,
 html[data-tauri-shell] .shell-topbar .shell-topbar-file-status,
@@ -67,9 +68,9 @@ html[data-tauri-shell] .shell-topbar .ide-menu-item {
   -webkit-app-region: no-drag;
 }
 
-/* 全宽顶栏：会话与 IDE 模式共用同一 DOM */
+/* 全宽顶栏：会话与 IDE 模式共用同一 DOM（与 shell-topbar 三栏网格一致） */
 html[data-tauri-shell] .shell-main-header-mobile.shell-topbar {
-  display: flex !important;
+  display: grid !important;
 }
 
 /* 会话模式：侧栏品牌区不再承担窗口拖拽（全宽顶栏已覆盖） */

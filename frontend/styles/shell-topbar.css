@@ -1,7 +1,7 @@
 /* 主区顶栏：会话模式与 IDE 模式共用；固定横穿整页（含会话侧栏上方） */
 
 :root {
-  --shell-topbar-h: 2.5rem;
+  --shell-topbar-h: 2.25rem;
   /* Android 壳经 CrabMateMobile 注入；其它环境靠 safe-area */
   --cm-safe-top: 0px;
   --shell-chrome-top: calc(
@@ -33,9 +33,11 @@ html[data-cm-mobile-shell] .shell-topbar {
 }
 
 .shell-topbar {
-  display: flex;
+  /* 三栏等分：路径相对视口几何居中，不受左右不对称影响 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) minmax(0, 1fr);
   align-items: center;
-  gap: 0.5rem;
+  column-gap: 0.5rem;
   flex-shrink: 0;
   box-sizing: border-box;
   width: 100%;
@@ -59,17 +61,18 @@ html[data-cm-mobile-shell] .shell-topbar {
   display: flex;
   align-items: center;
   gap: 0.1rem;
-  flex-shrink: 0;
+  justify-self: start;
   min-width: 0;
+  z-index: 1;
 }
 
 .shell-topbar-trailing {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  flex-shrink: 0;
-  margin-left: auto;
+  justify-self: end;
   min-width: 0;
+  z-index: 1;
 }
 
 .shell-topbar-start {
@@ -94,22 +97,23 @@ html[data-cm-mobile-shell] .shell-topbar {
   padding-right: 0.15rem;
 }
 
-/* 顶栏正中：工作区根路径（只读标题） */
+/* 顶栏正中：工作区根路径（只读标题；相对视口居中） */
 .shell-topbar-workspace {
-  flex: 1 1 auto;
   min-width: 0;
+  max-width: min(42rem, 100%);
+  width: max-content;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
+  align-items: center;
   justify-content: center;
+  justify-self: center;
   gap: 0;
-  max-width: min(42rem, 100%);
-  margin: 0 auto;
+  z-index: 0;
 }
 
 .shell-topbar-workspace-title {
   display: block;
-  width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   margin: 0;
   padding: 0.2rem 0.5rem;
@@ -355,11 +359,11 @@ html[data-cm-mobile-shell] .shell-topbar {
 
 /* Web 桌面 / 移动端 / IDE：统一显示顶栏（布局切换固定于最左侧） */
 .shell-main-header-mobile.shell-topbar {
-  display: flex;
+  display: grid;
 }
 
 @media (max-width: 768px) {
   .app-root.app-shell-ds {
-    --shell-topbar-h: 52px;
+    --shell-topbar-h: 44px;
   }
 }

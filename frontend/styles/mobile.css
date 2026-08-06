@@ -174,6 +174,7 @@
   /* —— Composer：聊天 App 式圆角输入条 —— */
   .composer-ds,
   .composer.composer-ds {
+    --composer-control-h: 44px;
     padding: 0;
     background: color-mix(in srgb, var(--bg) 96%, var(--surface));
   }
@@ -194,11 +195,13 @@
 
   .composer-input-row {
     gap: 6px;
+    align-items: flex-end;
   }
 
   .composer-ds .composer-input-stack {
-    min-height: 44px;
-    border-radius: 22px;
+    min-height: var(--composer-control-h);
+    height: auto;
+    border-radius: calc(var(--composer-control-h) / 2);
     border: 1px solid var(--border-subtle);
     background: var(--surface);
     /* 勿给 stack 左右 padding：镜像高亮 / fake-ph 为 inset:0，与 textarea 必须同盒对齐 */
@@ -216,37 +219,40 @@
   .app-shell-ds .composer-ds .composer-input {
     font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
     line-height: 1.35;
-    min-height: 44px;
+    /* 栈有 1px 边框：内高 = 控制高 - 2，使外缘与发送钮齐平 */
+    min-height: calc(var(--composer-control-h) - 2px);
     max-height: 140px;
     max-height: min(140px, 28dvh);
-    padding: 10px 14px;
+    padding: 9px 14px;
+    box-sizing: border-box;
   }
 
   .composer-ds .composer-input-stack .composer-input-fake-ph,
   .composer-ds .composer-input-stack .composer-input-highlight-inner {
-    padding: 10px 14px;
+    padding: 9px 14px;
   }
 
   .composer-bar-actions {
     gap: 0;
     padding-bottom: 0;
+    height: var(--composer-control-h);
   }
 
   .composer-ds .composer-attach-label {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--composer-control-h);
+    height: var(--composer-control-h);
+    min-width: var(--composer-control-h);
+    min-height: var(--composer-control-h);
     padding: 0;
-    margin-bottom: 0;
+    margin: 0;
   }
 
-  /* 圆形发送/停止同槽：最小触控 44px */
+  /* 圆形发送/停止同槽：与输入外缘同高 */
   .composer-ds .btn-send-icon {
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--composer-control-h);
+    height: var(--composer-control-h);
+    min-width: var(--composer-control-h);
+    min-height: var(--composer-control-h);
     border-radius: 50%;
     padding: 0;
   }
@@ -269,8 +275,11 @@
 
 /* —— Phase 3：顶栏精简 + 窄屏弹窗 —— */
 @media (max-width: 768px) {
+  .shell-topbar-workspace {
+    max-width: min(16rem, 46vw);
+  }
+
   .shell-topbar-workspace-title {
-    max-width: min(120px, 28vw);
     font-size: 12px;
   }
 

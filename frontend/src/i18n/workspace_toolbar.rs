@@ -154,8 +154,8 @@ pub fn ws_path_empty(l: Locale) -> &'static str {
 
 pub fn ws_path_title_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "用「文件 → 选择工作区」、项目列表或最近列表设置",
-        Locale::En => "Set via File → Open workspace, project list, or Recent",
+        Locale::ZhHans => "用「项目 → 选择工作区」、项目列表或最近列表设置",
+        Locale::En => "Set via Project → Open workspace, project list, or Recent",
     }
 }
 

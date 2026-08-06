@@ -1,4 +1,4 @@
-//! IDE 顶栏菜单（文件 / 编辑 / 视图），渲染于统一壳顶栏。
+//! IDE 顶栏菜单（项目 / 编辑 / 视图），渲染于统一壳顶栏。
 
 mod edit_menu;
 mod file_menu;
@@ -17,7 +17,7 @@ use leptos::prelude::*;
 use menu_id::IdeMenuId as MenuId;
 use view_menu::IdeMenuViewSection;
 
-/// IDE 模式顶栏菜单：文件 / 编辑 / 视图（工作区根与当前文件路径由统一壳顶栏渲染）。
+/// IDE 模式顶栏菜单：项目 / 编辑 / 视图（工作区根与当前文件路径由统一壳顶栏渲染）。
 #[component]
 pub fn IdeMenuBarTopbarContent(bridge: IdeMenuBarBridge) -> impl IntoView {
     let IdeMenuBarBridge {

@@ -1,9 +1,10 @@
 use super::Locale;
 
-pub fn ide_menu_file(l: Locale) -> &'static str {
+/// 顶栏一级菜单：工作区/项目（非单文件编辑语义）。
+pub fn ide_menu_project(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "文件",
-        Locale::En => "File",
+        Locale::ZhHans => "项目",
+        Locale::En => "Project",
     }
 }
 
