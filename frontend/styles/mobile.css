@@ -197,8 +197,8 @@
   }
 
   .composer-ds .composer-input-stack {
-    min-height: 36px;
-    border-radius: 18px;
+    min-height: 44px;
+    border-radius: 22px;
     border: 1px solid var(--border-subtle);
     background: var(--surface);
     /* 勿给 stack 左右 padding：镜像高亮 / fake-ph 为 inset:0，与 textarea 必须同盒对齐 */
@@ -216,15 +216,15 @@
   .app-shell-ds .composer-ds .composer-input {
     font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
     line-height: 1.35;
-    min-height: 36px;
+    min-height: 44px;
     max-height: 140px;
     max-height: min(140px, 28dvh);
-    padding: 8px 12px;
+    padding: 10px 14px;
   }
 
   .composer-ds .composer-input-stack .composer-input-fake-ph,
   .composer-ds .composer-input-stack .composer-input-highlight-inner {
-    padding: 8px 12px;
+    padding: 10px 14px;
   }
 
   .composer-bar-actions {
@@ -235,32 +235,32 @@
   /* 排除附件标签：其亦带 .btn，勿套用文字按钮的横向 padding */
   .composer-bar-actions .btn:not(.btn-send-icon):not(.composer-attach-label) {
     min-width: auto;
-    min-height: 36px;
-    padding: 0 10px;
+    min-height: 44px;
+    padding: 0 12px;
     font-size: 12px;
   }
 
   .composer-ds .composer-attach-label {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    min-height: 36px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     padding: 0;
   }
 
-  /* 圆形发送钮（聊天 App 常见）；触控约 36–40，不与顶栏 44 强绑 */
+  /* 圆形发送钮：与顶栏/消息操作一致，最小触控 44px */
   .composer-ds .btn-send-icon {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    min-height: 36px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
     border-radius: 50%;
     padding: 0;
   }
 
   .composer-ds .btn-send-icon-svg {
-    width: 1rem;
-    height: 1rem;
+    width: 1.125rem;
+    height: 1.125rem;
   }
 
   .shell-topbar .btn-icon,
@@ -273,7 +273,7 @@
   }
 }
 
-/* —— Phase 3：顶栏精简 + 窄屏弹窗居中 —— */
+/* —— Phase 3：顶栏精简 + 窄屏弹窗 —— */
 @media (max-width: 768px) {
   .shell-topbar-workspace-title {
     max-width: min(120px, 28vw);
@@ -289,7 +289,7 @@
     display: none !important;
   }
 
-  /* 窄屏弹窗居中，避开底部系统导航/返回键（勿再贴底） */
+  /* 窄屏通用弹窗居中，避开底部系统导航 */
   .modal-backdrop {
     align-items: center;
     justify-content: center;
@@ -305,18 +305,41 @@
     max-height: min(85vh, 85dvh);
   }
 
-  .modal.approval-modal {
-    max-width: min(560px, 100%);
+  /* 审批：全宽底 sheet（拇指区操作；safe-area 垫底） */
+  .modal-backdrop.approval-modal-backdrop {
+    align-items: flex-end;
+    justify-content: stretch;
+    padding: 0;
+    padding-top: max(12px, env(safe-area-inset-top, 0px));
+  }
+
+  .modal-backdrop.approval-modal-backdrop > .modal.approval-modal {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    max-height: min(88vh, 88dvh);
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    animation: cm-approval-sheet-in 0.22s var(--ease-out-soft, ease-out);
+  }
+
+  /* 纵向：拒绝 → 允许一次 → 总是允许（主操作贴底，靠近拇指） */
+  .approval-modal-actions {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 12px 16px 0;
   }
 
   .approval-modal-actions .btn {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    width: 100%;
     min-height: 44px;
     justify-content: center;
   }
 
   .approval-modal-command {
-    max-height: min(40vh, 280px);
+    max-height: min(36vh, 240px);
     font-size: 12px;
   }
 
@@ -334,12 +357,32 @@
     max-height: min(85vh, 85dvh);
   }
 
-  .topbar-cluster-wide {
-    display: none;
+  /* 浏览器选工作区：列表行 ≥44px；路径输入 16px 防 iOS 聚焦缩放 */
+  .workspace-browser-pick-recent .workspace-project-row,
+  .workspace-browser-pick-submit {
+    min-height: 44px;
   }
 
-  .topbar-cluster-narrow {
-    display: flex;
+  #workspace-browser-pick-path,
+  .workspace-browser-pick-path-row .settings-text-input {
+    font-size: 16px;
+  }
+}
+
+@keyframes cm-approval-sheet-in {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop.approval-modal-backdrop > .modal.approval-modal {
+    animation: none;
   }
 }
 

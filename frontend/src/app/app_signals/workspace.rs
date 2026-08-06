@@ -20,6 +20,8 @@ pub struct WorkspaceSignals {
     pub workspace_pick_busy: RwSignal<bool>,
     /// 项目池模式：选择/新建项目弹窗。
     pub workspace_project_modal_open: RwSignal<bool>,
+    /// 浏览器无项目池时：最近列表 + 路径输入弹窗（替代 `window.prompt`）。
+    pub workspace_browser_pick_modal_open: RwSignal<bool>,
     /// 最近打开的工作区根（新在前；来自 `prefs.recent_workspace_roots`）。
     pub recent_workspace_roots: RwSignal<Vec<String>>,
     /// 首启 `GET /user-data/prefs` 已结束（成功或失败）；为 false 时勿 PUT prefs。
@@ -44,6 +46,7 @@ impl WorkspaceSignals {
             workspace_set_busy: RwSignal::new(false),
             workspace_pick_busy: RwSignal::new(false),
             workspace_project_modal_open: RwSignal::new(false),
+            workspace_browser_pick_modal_open: RwSignal::new(false),
             recent_workspace_roots: RwSignal::new(Vec::new()),
             user_prefs_hydrated: RwSignal::new(false),
             workspace_context_menu: RwSignal::new(None),

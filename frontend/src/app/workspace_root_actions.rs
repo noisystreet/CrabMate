@@ -30,12 +30,13 @@ pub(crate) fn workspace_inputs_blocked(ws: WorkspacePanelSignals) -> bool {
     ws.workspace_set_busy.get() || ws.workspace_pick_busy.get() || ws.workspace_loading.get()
 }
 
+/// 提交工作区根；成功返回 `true`（调用方可用于关闭弹窗）。
 pub(crate) async fn commit_workspace_root(
     chat: ChatSessionSignals,
     ws: WorkspacePanelSignals,
     path: String,
     loc: Locale,
-) {
+) -> bool {
     let path = path.clone();
     let aid = chat.active_id.get_untracked();
     if !aid.is_empty() {
@@ -46,15 +47,18 @@ pub(crate) async fn commit_workspace_root(
         );
         let _ = put_current_web_sessions(&merged, Some(aid.as_str()), loc).await;
     }
-    match post_workspace_set(Some(path.clone()), loc).await {
+    let ok = match post_workspace_set(Some(path.clone()), loc).await {
         Ok(_) => {
             finish_workspace_root_ui(chat, ws, path, loc).await;
+            true
         }
         Err(e) => {
             ws.workspace_set_err.set(Some(e));
+            false
         }
-    }
+    };
     ws.workspace_set_busy.set(false);
+    ok
 }
 
 pub(crate) async fn finish_workspace_root_ui(
@@ -79,36 +83,8 @@ pub(crate) async fn finish_workspace_root_ui(
     .await;
 }
 
-fn browser_prompt_workspace_path(
-    locale: RwSignal<Locale>,
-    chat: ChatSessionSignals,
-    ws: WorkspacePanelSignals,
-    loc: Locale,
-) {
-    let _ = locale;
-    let current = ws.workspace_path_draft.get_untracked();
-    let Some(w) = web_sys::window() else {
-        return;
-    };
-    let Ok(Some(raw)) = w.prompt_with_message_and_default(i18n::ws_path_prompt(loc), &current)
-    else {
-        return;
-    };
-    let p = raw.trim().to_string();
-    if p.is_empty() {
-        ws.workspace_set_err
-            .set(Some(i18n::ws_path_required(loc).to_string()));
-        return;
-    }
-    ws.workspace_path_draft.set(p.clone());
-    ws.workspace_set_busy.set(true);
-    spawn_local(async move {
-        commit_workspace_root(chat, ws, p, loc).await;
-    });
-}
-
 impl WorkspaceRootPickHandle {
-    /// 桌面壳：系统文件夹对话框并提交；浏览器：提示输入绝对路径后提交。
+    /// 桌面壳：系统文件夹对话框并提交；浏览器：项目池弹窗，或最近列表 + 路径输入弹窗。
     pub fn spawn_pick_or_reveal(self) {
         let Self {
             locale,
@@ -121,17 +97,17 @@ impl WorkspaceRootPickHandle {
             return;
         }
         if !tauri_shell_available() {
-            side_panel_view.set(SidePanelView::Workspace);
             ws.workspace_pick_busy.set(true);
             let loc = locale.get_untracked();
             spawn_local(async move {
                 match crate::api::fetch_workspace_projects(loc).await {
                     Ok(resp) if resp.enabled => {
+                        side_panel_view.set(SidePanelView::Workspace);
                         ws.workspace_project_modal_open.set(true);
                     }
                     Ok(_) => {
-                        // 未配置项目池：浏览器 prompt（Android WebView 常不可用）
-                        browser_prompt_workspace_path(locale, chat, ws, loc);
+                        // 未配置项目池：最近列表 + 路径输入（勿用 window.prompt，移动端常不可用）
+                        ws.workspace_browser_pick_modal_open.set(true);
                     }
                     Err(e) => {
                         ws.workspace_set_err.set(Some(e));
@@ -151,7 +127,7 @@ impl WorkspaceRootPickHandle {
                     if !p.is_empty() {
                         ws.workspace_path_draft.set(p.clone());
                         ws.workspace_set_busy.set(true);
-                        commit_workspace_root(chat, ws, p, loc).await;
+                        let _ = commit_workspace_root(chat, ws, p, loc).await;
                     }
                 }
                 Err(e) => {
@@ -191,7 +167,7 @@ impl WorkspaceRootPickHandle {
         ws.workspace_set_busy.set(true);
         let loc = locale.get_untracked();
         spawn_local(async move {
-            commit_workspace_root(chat, ws, p, loc).await;
+            let _ = commit_workspace_root(chat, ws, p, loc).await;
         });
     }
 }

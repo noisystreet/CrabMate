@@ -58,13 +58,15 @@
 当前主面向桌面端；窄屏优化见 `frontend/styles/mobile.css` 与 `app_shell_effects/viewport.rs`（`data-narrow-viewport`、侧栏 Sheet、safe-area、长消息折叠）。
 
 - [x] 侧边栏默认收起，顶部汉堡菜单触发（`≤768px` 抽屉 + 进入窄屏自动收起右侧面板）
-- [x] 触摸友好的按钮尺寸和间距（`mobile.css` 44px 最小点击区）
+- [x] 触摸友好的按钮尺寸和间距（`mobile.css` 顶栏/消息操作/composer 发送与附件均 ≥44px）
 - [x] 长消息默认折叠，减少滚动（`chat-tui-turn--long` + 操作条「展开」；折叠高度 `min(280px, 35dvh)`）
-- [x] 审批弹窗在移动端更宽大（`mobile.css` 全宽底 sheet）
+- [x] 审批弹窗在移动端为全宽底 sheet（`approval-modal-backdrop` + safe-area；操作钮纵向排列 ≥44px）
 - [x] 会话抽屉品牌行显式「筛选」按钮（不必依赖右键打开搜索面板）
 - [x] 右缘左划打开工作区半屏抽屉（与左栏互斥；工具栏含状态/设置；点遮罩或右划关闭）
 - [x] 窄屏输入条仿聊天 App（圆角胶囊 + 圆形发送）；状态栏去叠 safe-area、收紧上下间距
+- [x] 浏览器无项目池时用「最近列表 + 路径输入」弹窗选工作区（`workspace_browser_pick_modal`；不用 `window.prompt`）
 
+窄屏次要入口：右缘抽屉顶部工具栏（工作区/任务/状态/设置），**不是**顶栏「更多」溢出菜单。
 ## 11. 会话元数据管理
 
 - 会话创建时间、最后活跃时间显示

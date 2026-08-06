@@ -278,6 +278,20 @@ impl AppShellCtx {
         }
     }
 
+    pub fn workspace_browser_pick_modal_signals(
+        &self,
+    ) -> super::workspace_browser_pick_modal::WorkspaceBrowserPickModalSignals {
+        super::workspace_browser_pick_modal::WorkspaceBrowserPickModalSignals {
+            open: self.signals.workspace.workspace_browser_pick_modal_open,
+            workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle {
+                locale: self.signals.shell_ui.locale,
+                chat: self.signals.chat,
+                ws: self.signals.to_workspace_panel(),
+                side_panel_view: self.signals.shell_ui.side_panel_view,
+            },
+        }
+    }
+
     pub fn status_bar_footer_signals(&self) -> StatusBarFooterSignals {
         StatusBarFooterSignals {
             status_bar_visible: self.signals.shell_ui.status_bar_visible,
