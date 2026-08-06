@@ -160,8 +160,9 @@ fn finished_assistant_bold_becomes_strong() {
             );
         }
     }
-    assert!(output.contains("chat-tui-turn-actions"), "got {output}");
-    assert!(output.contains("data-tui-action=\"copy\""), "got {output}");
+    assert!(!output.contains("chat-tui-turn-actions"), "got {output}");
+    assert!(!output.contains("data-tui-action=\"copy\""), "got {output}");
+    assert!(output.contains("data-tui-msg-idx"), "got {output}");
     assert!(!output.contains('❯'), "got {output}");
     assert!(
         output.contains("<strong>") || output.contains("<b>"),

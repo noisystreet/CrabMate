@@ -258,6 +258,7 @@
 
   .shell-topbar .btn-icon,
   .shell-topbar .btn,
+  /* 消息操作已改右键/长按菜单；保留触控尺寸以防残留 DOM */
   .msg-action-btn,
   .chat-tui-turn-actions .btn,
   .nav-rail-brand-actions .btn {

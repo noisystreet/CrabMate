@@ -7,7 +7,20 @@ import {
 
 const SID = "e2e-tui-actions";
 
-test("终端流：复制/重试挂在对应消息下方", async ({ page, context }) => {
+async function openTurnMenu(
+  page: import("@playwright/test").Page,
+  wrap: import("@playwright/test").Locator,
+) {
+  await wrap.click({ button: "right" });
+  await expect(page.getByTestId("message-turn-ctx-menu")).toBeVisible({
+    timeout: 5_000,
+  });
+}
+
+test("终端流：右键菜单含复制/再生/分支并可复制助手正文", async ({
+  page,
+  context,
+}) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await seedSession(page, SID);
   await expect(page.getByTestId("chat-tui-turn-actions")).toHaveCount(0);
@@ -25,41 +38,34 @@ test("终端流：复制/重试挂在对应消息下方", async ({ page, context
     120,
   );
 
-  await sendMessage(page, "触发操作条");
+  await sendMessage(page, "触发操作菜单");
   await expect(page.getByTestId("chat-tui-transcript")).toContainText(
     "可复制正文",
     { timeout: 10_000 },
   );
 
-  // 用户消息与助手消息各有一条下方操作条
-  await expect(page.getByTestId("chat-tui-turn-actions")).toHaveCount(2, {
-    timeout: 10_000,
-  });
+  // 下方常驻操作条已移除
+  await expect(page.getByTestId("chat-tui-turn-actions")).toHaveCount(0);
 
   const userWrap = page.locator(".chat-tui-turn-wrap--user").first();
-  const userCopy = userWrap.getByTestId("chat-tui-action-copy");
-  const userRegen = userWrap.getByTestId("chat-tui-action-regen");
-  const userBranch = userWrap.getByTestId("chat-tui-action-branch");
-  await expect(userCopy).toBeVisible();
-  await expect(userRegen).toBeVisible();
-  await expect(userBranch).toBeVisible();
-  await expect(userCopy).toHaveClass(/msg-action-icon-btn/);
-  await expect(userRegen).toHaveClass(/msg-action-icon-btn/);
-  await expect(userBranch).toHaveClass(/msg-action-icon-btn/);
-  await expect(userCopy.locator("svg.msg-action-icon")).toBeVisible();
+  await openTurnMenu(page, userWrap);
+  await expect(page.getByTestId("message-turn-ctx-copy")).toBeVisible();
+  await expect(page.getByTestId("message-turn-ctx-regen")).toBeVisible();
+  await expect(page.getByTestId("message-turn-ctx-branch")).toBeVisible();
+  await page
+    .getByTestId("message-turn-ctx-menu")
+    .locator(".session-ctx-backdrop")
+    .click();
+  await expect(page.getByTestId("message-turn-ctx-menu")).toHaveCount(0);
 
-  const assistantActions = page
+  const assistantWrap = page
     .locator(".chat-tui-turn-wrap:not(.chat-tui-turn-wrap--user)")
-    .last()
-    .getByTestId("chat-tui-turn-actions");
-  const asstCopy = assistantActions.getByTestId("chat-tui-action-copy");
-  await expect(asstCopy).toBeVisible();
-  await expect(asstCopy).toHaveClass(/msg-action-icon-btn/);
-  await expect(
-    assistantActions.getByTestId("chat-tui-action-retry"),
-  ).toHaveCount(0);
+    .last();
+  await openTurnMenu(page, assistantWrap);
+  await expect(page.getByTestId("message-turn-ctx-copy")).toBeVisible();
+  await expect(page.getByTestId("message-turn-ctx-retry")).toHaveCount(0);
 
-  await asstCopy.click();
+  await page.getByTestId("message-turn-ctx-copy").click();
   await expect
     .poll(async () => page.evaluate(() => navigator.clipboard.readText()), {
       timeout: 5_000,
@@ -67,7 +73,7 @@ test("终端流：复制/重试挂在对应消息下方", async ({ page, context
     .toContain("可复制正文");
 });
 
-test("终端流：失败助手消息下方可点重试", async ({ page }) => {
+test("终端流：失败助手右键菜单可点重试", async ({ page }) => {
   await page.goto("/", { waitUntil: "networkidle", timeout: 20_000 });
   await page.waitForSelector('[data-testid="chat-composer-input"]', {
     timeout: 15_000,
@@ -121,12 +127,13 @@ test("终端流：失败助手消息下方可点重试", async ({ page }) => {
     timeout: 15_000,
   });
 
-  const retry = page
-    .locator('.chat-tui-turn-wrap[data-tui-wrap-id="a-fail"]')
-    .getByTestId("chat-tui-action-retry");
-  await expect(retry).toBeVisible({ timeout: 10_000 });
-  await expect(retry).toHaveClass(/msg-action-icon-btn/);
-  await expect(retry.locator("svg.msg-action-icon")).toBeVisible();
+  const failWrap = page.locator(
+    '.chat-tui-turn-wrap[data-tui-wrap-id="a-fail"]',
+  );
+  await expect(failWrap).toBeVisible({ timeout: 10_000 });
+  await openTurnMenu(page, failWrap);
+  const retry = page.getByTestId("message-turn-ctx-retry");
+  await expect(retry).toBeVisible();
 
   let streamHits = 0;
   await page.route("**/chat/stream", async (route) => {

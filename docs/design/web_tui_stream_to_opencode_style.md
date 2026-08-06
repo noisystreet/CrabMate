@@ -153,7 +153,7 @@ SSE / overlay / sessions（不变）
 
 **状态（部分落地）**：
 
-1. **操作条**（每回合 `section` 下方，对齐气泡 `msg-actions-below` 图标行）：复制本条、失败助手重试、自该用户消息再生/分支（`msg-action-icon-btn` + SVG；复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
+1. **操作菜单**（每回合右键 / 长按，对齐会话/工作区 `session-ctx-menu`）：复制本条、失败助手重试、自该用户消息再生/分支（复用 `ComposerStreamFollowUp` / `MessageRowActionSignals`）。
 2. **工具过程**（已落地）：工具回合折叠态为**固定单行高度**；live 输出用 `TuiBodyPatch::ToolRow` 只改 status/one-line（结构变化才 ReplaceAll）；详情默认折叠，展开后才增高。
 3. **不做**：流式期完整工具卡网格、多级折叠组（除非用户显式打开调试台）。
 
