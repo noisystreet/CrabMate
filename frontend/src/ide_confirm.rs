@@ -17,11 +17,13 @@ fn next_confirm_id() -> u64 {
     })
 }
 
-/// 待展示的确认请求。
+/// 待展示的确认请求（按钮文案由调用方按场景传入，保持短词）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdeConfirmPrompt {
     pub id: u64,
     pub message: String,
+    pub ok_label: String,
+    pub cancel_label: String,
 }
 
 /// 用户对某次请求的应答。
@@ -39,11 +41,18 @@ pub struct IdeConfirmSignals {
 }
 
 /// 展示确认框并异步等待用户选择；取消或关闭返回 `false`。
-pub async fn ide_confirm_user(signals: IdeConfirmSignals, message: String) -> bool {
+pub async fn ide_confirm_user(
+    signals: IdeConfirmSignals,
+    message: String,
+    ok_label: String,
+    cancel_label: String,
+) -> bool {
     let id = next_confirm_id();
     signals.pending.set(Some(IdeConfirmPrompt {
         id,
-        message: message.clone(),
+        message,
+        ok_label,
+        cancel_label,
     }));
     loop {
         TimeoutFuture::new(16).await;

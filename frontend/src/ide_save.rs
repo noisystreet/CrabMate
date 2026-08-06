@@ -158,7 +158,14 @@ pub fn spawn_create_and_open_file(
             .active_editor_is_dirty(ctx.ide_text, ctx.ide_baseline)
         {
             let loc = locale.get_untracked();
-            if !ide_confirm_user(confirm, i18n::ide_dirty_confirm(loc).to_string()).await {
+            if !ide_confirm_user(
+                confirm,
+                i18n::ide_dirty_confirm(loc).to_string(),
+                i18n::ide_confirm_ok(loc).to_string(),
+                i18n::ide_confirm_cancel(loc).to_string(),
+            )
+            .await
+            {
                 return;
             }
         }

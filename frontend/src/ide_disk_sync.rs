@@ -48,7 +48,13 @@ pub fn spawn_sync_ide_tabs_from_disk(
             }
             let dirty = text != baseline;
             if dirty
-                && !ide_confirm_user(confirm, i18n::ide_disk_reload_confirm(loc).to_string()).await
+                && !ide_confirm_user(
+                    confirm,
+                    i18n::ide_disk_reload_confirm(loc).to_string(),
+                    i18n::ide_confirm_reload_ok(loc).to_string(),
+                    i18n::ide_confirm_cancel(loc).to_string(),
+                )
+                .await
             {
                 continue;
             }
