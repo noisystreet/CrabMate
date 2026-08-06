@@ -7,7 +7,7 @@ use wasm_bindgen::JsCast;
 use crate::app::app_signals::IdeChromeSignals;
 use crate::app::github_embed_page::{GithubEmbedSignals, close_github_embed_page};
 use crate::app::settings_page::navigate_to_chat;
-use crate::ide_confirm::dismiss_ide_confirm;
+use crate::ide_confirm::{IdeConfirmSignals, dismiss_ide_confirm};
 use crate::session_ops::SessionContextAnchor;
 
 /// 供全局 **`Escape`** 处理器按固定顺序关闭的模态/抽屉句柄。
@@ -21,6 +21,8 @@ pub struct ShellEscapeSignals {
     pub sidebar_rail_ctx_menu: RwSignal<Option<(f64, f64)>>,
     pub chat_find_panel_open: RwSignal<bool>,
     pub ide_chrome: IdeChromeSignals,
+    /// 壳层确认框（会话删除等）。
+    pub shell_confirm: IdeConfirmSignals,
     pub sidebar_search_panel_open: RwSignal<bool>,
     pub view_menu_open: RwSignal<bool>,
     pub ide_menubar_dropdown_open: RwSignal<bool>,
@@ -160,6 +162,10 @@ fn dismiss_modal_escape_layers(shell: ShellEscapeSignals) -> bool {
 }
 
 fn dismiss_one_escape_layer(shell: ShellEscapeSignals) {
+    if shell.shell_confirm.pending.get_untracked().is_some() {
+        dismiss_ide_confirm(shell.shell_confirm);
+        return;
+    }
     if dismiss_ide_escape_layers(shell.ide_chrome) {
         return;
     }

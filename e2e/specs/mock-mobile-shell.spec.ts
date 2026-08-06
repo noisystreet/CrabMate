@@ -108,4 +108,33 @@ test.describe("移动端壳层", () => {
     );
     await expect(page.getByTestId("side-column-backdrop")).toBeHidden();
   });
+
+  test("session context menu delete opens in-app shell confirm", async ({
+    page,
+  }) => {
+    const sid = `s_e2e_mobile_del_confirm_${Date.now()}`;
+    await seedSession(page, sid);
+
+    const hamburger = page.locator(".shell-topbar-nav .btn-icon").first();
+    await hamburger.click();
+    await expect(page.locator(".nav-rail")).toHaveClass(/nav-rail-mobile-open/);
+
+    const row = page.getByTestId(`nav-session-${sid}`);
+    await expect(row).toBeVisible();
+    await row.dispatchEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 80,
+      clientY: 200,
+    });
+
+    await expect(page.getByTestId("session-ctx-delete")).toBeVisible();
+    await page.getByTestId("session-ctx-delete").click();
+
+    const confirm = page.getByTestId("shell-confirm-dialog");
+    await expect(confirm).toBeVisible();
+    await page.getByTestId("shell-confirm-cancel").click();
+    await expect(confirm).toBeHidden();
+    await expect(row).toBeVisible();
+  });
 });

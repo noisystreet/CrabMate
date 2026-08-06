@@ -183,6 +183,7 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         sidebar_rail_ctx_menu: app.sidebar.sidebar_rail_ctx_menu,
         chat_find_panel_open: app.chat_composer.chat_find_panel_open,
         ide_chrome: app.ide_chrome,
+        shell_confirm: app.modal.confirm_signals(),
         sidebar_search_panel_open: app.sidebar.sidebar_search_panel_open,
         view_menu_open: app.shell_ui.view_menu_open,
         ide_menubar_dropdown_open: app.shell_ui.ide_menubar_dropdown_open,

@@ -49,6 +49,11 @@
   z-index: 55;
 }
 
+/* 会话删除等：须高于移动端 nav-rail(100) 与 session-ctx(125/126) */
+.shell-confirm-backdrop.modal-backdrop {
+  z-index: 140;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
