@@ -277,6 +277,20 @@ impl AppShellCtx {
         }
     }
 
+    pub fn workspace_clone_modal_signals(
+        &self,
+    ) -> super::workspace_clone_modal::WorkspaceCloneModalSignals {
+        super::workspace_clone_modal::WorkspaceCloneModalSignals {
+            open: self.signals.workspace.workspace_clone_modal_open,
+            workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle {
+                locale: self.signals.shell_ui.locale,
+                chat: self.signals.chat,
+                ws: self.signals.to_workspace_panel(),
+                side_panel_view: self.signals.shell_ui.side_panel_view,
+            },
+        }
+    }
+
     pub fn workspace_browser_pick_modal_signals(
         &self,
     ) -> super::workspace_browser_pick_modal::WorkspaceBrowserPickModalSignals {

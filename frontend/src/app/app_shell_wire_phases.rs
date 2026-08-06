@@ -225,6 +225,24 @@ fn wire_phase4a_workspace_domain(app: &AppSignals, refresh_workspace: &RefreshWo
         initialized: app.initialized,
         refresh_workspace: Arc::clone(refresh_workspace),
     });
+    // 项目池启用态：控制「Clone 远程仓库」菜单是否显示。
+    let pool_enabled = app.workspace.workspace_pool_enabled;
+    let locale = app.shell_ui.locale;
+    let initialized = app.initialized;
+    let bearer_nonce = app.shell_ui.web_api_bearer_save_nonce;
+    Effect::new(move |_| {
+        if !initialized.get() {
+            return;
+        }
+        super::workspace_clone_modal::spawn_refresh_workspace_pool_enabled(pool_enabled, locale);
+    });
+    Effect::new(move |_| {
+        let n = bearer_nonce.get();
+        if n == 0 {
+            return;
+        }
+        super::workspace_clone_modal::spawn_refresh_workspace_pool_enabled(pool_enabled, locale);
+    });
 }
 
 /// 阶段 4b：`/status`、`/tasks` 与侧栏任务面可见时的 `Effect`（须在 4a 之后，以便与初始化顺序一致）。

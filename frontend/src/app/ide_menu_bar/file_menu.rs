@@ -14,11 +14,16 @@ use crate::user_data_bootstrap::workspace_recent_menu_label;
 fn toggle_file_menu(
     open_menu: RwSignal<Option<IdeMenuId>>,
     ide_menubar_dropdown_open: RwSignal<bool>,
+    workspace_pick: WorkspaceRootPickHandle,
 ) {
     if open_menu.get_untracked() == Some(IdeMenuId::File) {
         open_menu.set(None);
         ide_menubar_dropdown_open.set(false);
     } else {
+        crate::app::workspace_clone_modal::spawn_refresh_workspace_pool_enabled(
+            workspace_pick.ws.workspace_pool_enabled,
+            workspace_pick.locale,
+        );
         open_menu.set(Some(IdeMenuId::File));
         ide_menubar_dropdown_open.set(true);
     }
@@ -79,6 +84,34 @@ pub(crate) fn ShellMenuOpenWorkspaceItem(
         >
             {move || workspace_pick.menu_label()}
         </button>
+    }
+}
+
+/// 「Clone 远程仓库…」（仅项目池启用时显示）。
+#[component]
+pub(crate) fn ShellMenuCloneRepoItem(
+    locale: RwSignal<Locale>,
+    workspace_pick: WorkspaceRootPickHandle,
+    open_menu: RwSignal<Option<IdeMenuId>>,
+    menubar_dropdown_open: RwSignal<bool>,
+) -> impl IntoView {
+    let pool_ok = workspace_pick.ws.workspace_pool_enabled;
+    view! {
+        <Show when=move || pool_ok.get()>
+            <button
+                type="button"
+                class="ide-menu-item"
+                role="menuitem"
+                data-testid="shell-menu-clone-repo"
+                prop:disabled=move || workspace_pick.pick_busy_tracked()
+                on:click=move |_| {
+                    workspace_pick.ws.workspace_clone_modal_open.set(true);
+                    close_menus(open_menu, menubar_dropdown_open);
+                }
+            >
+                {move || i18n::ide_menu_clone_repo(locale.get())}
+            </button>
+        </Show>
     }
 }
 
@@ -272,13 +305,19 @@ pub(crate) fn ShellTopbarFileMenu(
                 aria-haspopup="true"
                 data-testid=trigger_testid
                 prop:aria-expanded=move || (open_menu.get() == Some(IdeMenuId::File)).to_string()
-                on:click=move |_| toggle_file_menu(open_menu, menubar_dropdown_open)
+                on:click=move |_| toggle_file_menu(open_menu, menubar_dropdown_open, workspace_pick)
             >
                 {move || i18n::ide_menu_project(locale.get())}
             </button>
             <Show when=move || open_menu.get() == Some(IdeMenuId::File)>
                 <div class="ide-menu-dropdown" role="menu">
                     <ShellMenuOpenWorkspaceItem
+                        workspace_pick=workspace_pick
+                        open_menu=open_menu
+                        menubar_dropdown_open=menubar_dropdown_open
+                    />
+                    <ShellMenuCloneRepoItem
+                        locale=locale
                         workspace_pick=workspace_pick
                         open_menu=open_menu
                         menubar_dropdown_open=menubar_dropdown_open

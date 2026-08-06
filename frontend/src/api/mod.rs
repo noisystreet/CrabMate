@@ -10,6 +10,7 @@ pub(crate) mod client_llm_cache;
 pub(crate) mod client_llm_storage;
 mod connect_handoff;
 mod http;
+mod http_workspace_clone;
 mod http_workspace_projects;
 mod saved_models;
 mod session_store;
@@ -37,6 +38,10 @@ pub use http::{
     fetch_workspace_file, post_chat_branch, post_config_reload, post_workspace_dir,
     post_workspace_file_write, post_workspace_file_write_opts, post_workspace_set, save_tasks,
     submit_chat_approval, upload_files_multipart,
+};
+pub use http_workspace_clone::{
+    WorkspaceCloneRequest, WorkspaceCloneSseEvent, infer_project_name_from_clone_url,
+    post_workspace_clone_stream,
 };
 pub use http_workspace_projects::{fetch_workspace_projects, post_workspace_project};
 pub use saved_models::{
