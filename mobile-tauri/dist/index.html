@@ -136,17 +136,27 @@
       <button type="submit" id="submit">连接</button>
     </form>
     <p class="hint">
-      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。服务器地址会记在本机；共享密钥交给系统自动填充 /
-      密码管理器（不写入 App 本地存储）。首次成功连接后可按系统提示保存。连上后可用系统返回键或顶栏「断开连接」回到本页以更换服务器。
+      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。成功连接后会记住服务器地址与共享密钥，下次启动自动登录；也可用系统密码管理器保存。连上后可用系统返回键，或右缘左划打开侧栏后点断开图标回到本页以更换服务器（不会自动重连）。
     </p>
     <script>
       const URL_KEY = "crabmate.mobile.serverUrl";
+      const BEARER_KEY = "crabmate.mobile.webApiBearer";
       const form = document.getElementById("connect-form");
       const urlInput = document.getElementById("url");
       const bearerInput = document.getElementById("bearer");
       const err = document.getElementById("err");
       const statusEl = document.getElementById("status");
       const submitBtn = document.getElementById("submit");
+      /** 防止自动登录与手动提交并发探测 */
+      let connectInFlight = false;
+
+      function wantsManualConnect() {
+        try {
+          return new URLSearchParams(location.search).get("manual") === "1";
+        } catch (_) {
+          return false;
+        }
+      }
 
       (function applySafeInsets() {
         function run() {
@@ -181,6 +191,8 @@
       try {
         const savedUrl = localStorage.getItem(URL_KEY);
         if (savedUrl) urlInput.value = savedUrl;
+        const savedBearer = localStorage.getItem(BEARER_KEY);
+        if (savedBearer) bearerInput.value = savedBearer;
       } catch (_) {}
 
       function setBusy(busy, msg) {
@@ -227,13 +239,28 @@
         return core.invoke("connect_remote", { url, bearer: bearer || "" });
       }
 
-      form.addEventListener("submit", async (e) => {
-        e.preventDefault();
+      function persistCredentials(href, bearer) {
+        try {
+          localStorage.setItem(URL_KEY, href);
+          const b = (bearer || "").trim();
+          if (b) {
+            localStorage.setItem(BEARER_KEY, b);
+          } else {
+            localStorage.removeItem(BEARER_KEY);
+          }
+        } catch (_) {}
+      }
+
+      async function connectWithValues(rawUrl, bearer, opts) {
+        if (connectInFlight) {
+          return false;
+        }
+        const fromAuto = !!(opts && opts.fromAuto);
         err.textContent = "";
-        let raw = urlInput.value.trim();
+        let raw = (rawUrl || "").trim();
         if (!raw) {
           err.textContent = "请填写服务器地址";
-          return;
+          return false;
         }
         if (!/^https?:\/\//i.test(raw)) {
           raw = "http://" + raw;
@@ -243,36 +270,65 @@
           u = new URL(raw);
         } catch (_) {
           err.textContent = "地址无效";
-          return;
+          return false;
         }
         if (u.protocol !== "http:" && u.protocol !== "https:") {
           err.textContent = "仅支持 http/https";
-          return;
+          return false;
         }
-        const bearer = bearerInput.value;
-        try {
-          localStorage.setItem(URL_KEY, u.href);
-          // Bearer 不落 App 盘：交给系统 Autofill / 密码管理器
-          localStorage.removeItem("crabmate.mobile.webApiBearer");
-        } catch (_) {}
-
-        setBusy(true, "正在探测服务器…");
+        connectInFlight = true;
+        persistCredentials(u.href, bearer);
+        setBusy(true, fromAuto ? "已记住连接，正在自动登录…" : "正在探测服务器…");
         try {
           await invokeConnect(u.href, bearer);
-          notifyAutofillSuccess();
+          if (!fromAuto) {
+            notifyAutofillSuccess();
+          }
           setBusy(true, "已连接，正在打开界面…");
+          return true;
         } catch (ex) {
-          notifyAutofillFailure();
+          connectInFlight = false;
+          if (!fromAuto) {
+            notifyAutofillFailure();
+          }
           const msg =
             typeof ex === "string"
               ? ex
               : ex && ex.message
                 ? ex.message
                 : String(ex);
-          err.textContent = msg;
+          err.textContent = fromAuto
+            ? "自动登录失败：" + msg + "\n请核对地址与共享密钥后重试。"
+            : msg;
           setBusy(false, "");
+          return false;
         }
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        await connectWithValues(urlInput.value, bearerInput.value, {
+          fromAuto: false,
+        });
       });
+
+      // 冷启动：本地已有服务器地址则自动连接（断开回本页带 ?manual=1 时跳过）
+      (function maybeAutoConnect() {
+        if (wantsManualConnect()) {
+          return;
+        }
+        let saved = "";
+        try {
+          saved = localStorage.getItem(URL_KEY) || "";
+        } catch (_) {}
+        if (!saved) {
+          return;
+        }
+        const bearer = bearerInput.value || "";
+        setTimeout(function () {
+          connectWithValues(saved, bearer, { fromAuto: true });
+        }, 80);
+      })();
     </script>
   </body>
 </html>

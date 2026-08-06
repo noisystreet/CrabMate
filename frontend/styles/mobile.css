@@ -267,13 +267,6 @@
     min-width: 44px;
     min-height: 44px;
   }
-
-  .shell-topbar-disconnect {
-    flex-shrink: 0;
-    font-size: 12px;
-    padding-inline: 0.55rem;
-    white-space: nowrap;
-  }
 }
 
 /* —— Phase 3：顶栏精简 + 窄屏弹窗居中 —— */
