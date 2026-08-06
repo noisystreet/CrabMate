@@ -1,4 +1,4 @@
-//! 「文件」菜单（对话顶栏与 IDE 顶栏共用：打开工作区、最近；IDE 另附保存/新建/回会话）。
+//! 「项目」菜单（对话顶栏与 IDE 顶栏共用：打开工作区、最近；IDE 另附保存/新建/回会话）。
 
 use leptos::prelude::*;
 
@@ -39,7 +39,7 @@ fn on_ide_new_file_click(
     close_menus(open_menu, ide_menubar_dropdown_open);
 }
 
-/// IDE「文件」菜单额外项所需信号（会话模式不传）。
+/// IDE「项目」菜单额外项所需信号（会话模式不传）。
 #[derive(Clone, Copy)]
 pub(crate) struct ShellTopbarFileMenuIde {
     pub chrome: IdeChromeSignals,
@@ -246,7 +246,7 @@ fn ShellTopbarFileMenuIdeItems(
     }
 }
 
-/// 会话 / IDE 共用的「文件」下拉（工作区项 + 可选 IDE 动作）。
+/// 会话 / IDE 共用的「项目」下拉（工作区项 + 可选 IDE 动作）。
 #[component]
 pub(crate) fn ShellTopbarFileMenu(
     locale: RwSignal<Locale>,
@@ -274,7 +274,7 @@ pub(crate) fn ShellTopbarFileMenu(
                 prop:aria-expanded=move || (open_menu.get() == Some(IdeMenuId::File)).to_string()
                 on:click=move |_| toggle_file_menu(open_menu, menubar_dropdown_open)
             >
-                {move || i18n::ide_menu_file(locale.get())}
+                {move || i18n::ide_menu_project(locale.get())}
             </button>
             <Show when=move || open_menu.get() == Some(IdeMenuId::File)>
                 <div class="ide-menu-dropdown" role="menu">

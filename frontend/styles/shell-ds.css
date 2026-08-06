@@ -708,6 +708,7 @@
 
 /* —— 底部一体输入条 —— */
 .composer-ds {
+  --composer-control-h: 40px;
   border-top: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg) 92%, var(--surface));
   /* 四周不留空隙；消息区底距仍由 .messages padding-bottom 承担 */
@@ -872,10 +873,12 @@
   justify-content: center;
   flex-shrink: 0;
   align-self: flex-end;
-  width: 40px;
-  height: 40px;
+  width: var(--composer-control-h, 40px);
+  height: var(--composer-control-h, 40px);
+  min-width: var(--composer-control-h, 40px);
+  min-height: var(--composer-control-h, 40px);
   padding: 0;
-  margin: 0 0 2px;
+  margin: 0;
   cursor: pointer;
 }
 
@@ -888,16 +891,24 @@
 .app-shell-ds .composer-input {
   flex: 1 1 auto;
   min-width: 0;
-  min-height: 44px;
+  min-height: var(--composer-control-h, 40px);
   max-height: 200px;
   max-width: 100%;
   resize: none;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: none;
   background: transparent;
-  padding: 6px 4px;
+  padding: 8px 4px;
   border-radius: 0;
   text-align: left;
   direction: ltr;
+  box-sizing: border-box;
+  line-height: 1.35;
+}
+
+.app-shell-ds .composer-input-stack {
+  min-height: var(--composer-control-h, 40px);
 }
 
 .app-shell-ds .composer-input:focus {
@@ -909,11 +920,11 @@
 }
 
 .app-shell-ds .composer-input-stack .composer-input-fake-ph {
-  padding: 6px 4px;
+  padding: 8px 4px;
 }
 
 .app-shell-ds .composer-input-stack .composer-input-highlight-inner {
-  padding: 6px 4px;
+  padding: 8px 4px;
   text-align: left;
   direction: ltr;
 }
@@ -933,9 +944,11 @@
   display: flex;
   flex-direction: row;
   align-items: center;
+  align-self: flex-end;
   gap: 6px;
   flex-shrink: 0;
-  padding-bottom: 2px;
+  padding-bottom: 0;
+  height: var(--composer-control-h, 40px);
 }
 
 .composer-bar-actions .btn-send-icon {
@@ -948,11 +961,14 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: var(--composer-control-h, 40px);
+  height: var(--composer-control-h, 40px);
+  min-width: var(--composer-control-h, 40px);
+  min-height: var(--composer-control-h, 40px);
   padding: 0;
   border-radius: var(--radius-btn);
   line-height: 0;
+  box-sizing: border-box;
 }
 
 .btn-send-icon-svg {
@@ -1007,7 +1023,7 @@
   }
 
   .shell-main-header-mobile.shell-topbar {
-    display: flex;
+    display: grid;
     padding-right: 10px;
   }
 

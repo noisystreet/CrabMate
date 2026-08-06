@@ -14,6 +14,7 @@ use crate::clarification_form::PendingClarificationForm;
 use crate::session_sync::SessionSyncState;
 use crate::storage::ChatSession;
 
+use super::composer_input_stack::autosize_composer_textarea;
 use super::composer_mirror::composer_workspace_at_refs_html;
 
 pub(crate) use super::composer_wires::wire_chat_composer_streams;
@@ -165,6 +166,7 @@ pub(crate) fn wire_draft_sync_to_mirror_and_textarea(
                     return;
                 }
                 sync_textarea_dom_from_draft_if_still_stale(&el, &d_for_dom);
+                autosize_composer_textarea(&el);
             });
         }
     });

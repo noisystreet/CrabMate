@@ -1,4 +1,4 @@
-//! 工作区根目录选择 / 提交（顶栏只读路径与「文件」菜单共用）。
+//! 工作区根目录选择 / 提交（顶栏只读路径与「项目」菜单共用）。
 
 use leptos::prelude::*;
 use leptos::task::spawn_local;
@@ -172,7 +172,7 @@ impl WorkspaceRootPickHandle {
     }
 }
 
-/// 顶栏正中：工作区根路径只读标题（切换目录见「文件」菜单）。
+/// 顶栏正中：工作区根路径只读标题（切换目录见「项目」菜单）。
 #[component]
 pub(crate) fn ShellTopbarWorkspaceRoot(pick: WorkspaceRootPickHandle) -> impl IntoView {
     let WorkspaceRootPickHandle { locale, ws, .. } = pick;

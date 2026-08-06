@@ -49,7 +49,7 @@
 | 能力 | 现状 |
 |------|------|
 | 布局切换 | **`editor_layout_mode`**；对话层与 IDE 层**互斥**（`main-row-chat-layer` / `main-row-ide-layer`） |
-| 布局结构 | 左工作区树 + 右多标签编辑器 + 顶栏菜单（文件 / 编辑 / 视图） |
+| 布局结构 | 左工作区树 + 右多标签编辑器 + 顶栏菜单（项目 / 编辑 / 视图） |
 | 编辑器 | CodeMirror 6（**`frontend/vendor/ide-codemirror.js`**，由 **`scripts/ide-codemirror-entry.mjs`** 构建）；语法高亮、折行、行号、字体等本机偏好 |
 | 读写 | **`GET`/`POST /workspace/file`**；Ctrl/Cmd+S、全部保存、新建文件、关闭标签确认 |
 | 查找 | 当前文件查找、跳转行（**无**替换、**无**工作区搜索结果面板） |

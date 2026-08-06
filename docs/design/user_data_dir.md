@@ -87,7 +87,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 | 字段 | 历史 localStorage 键（参考） | 说明 |
 |------|---------------------------|------|
 | `last_workspace_root` | （计划键 `crabmate-last-workspace-root`） | 上次手动 `POST /workspace` 成功的规范路径（与 `recent_workspace_roots[0]` 同步）；供「最近的工作区」菜单；**启动时不**自动打开 |
-| `recent_workspace_roots` | — | 最近打开的工作区根列表（**新在前**，最多 **10** 项）；Web/Tauri **「文件 → 最近的工作区」** 级联子菜单读取此列表 |
+| `recent_workspace_roots` | — | 最近打开的工作区根列表（**新在前**，最多 **10** 项）；Web/Tauri **「项目 → 最近的工作区」** 级联子菜单读取此列表 |
 | `locale` | `crabmate-locale` | |
 | `theme` | `crabmate-theme` | 含 **`system`**（跟随 OS；DOM 解析为 `dark`/`light`） |
 | `side_panel_view` | `agent-demo-side-panel-view` | |

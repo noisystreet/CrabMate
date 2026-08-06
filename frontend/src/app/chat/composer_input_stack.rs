@@ -6,12 +6,26 @@ use leptos::html::Textarea;
 use leptos::prelude::*;
 use leptos_dom::helpers::event_target_value;
 use wasm_bindgen::JsCast;
+use web_sys::HtmlTextAreaElement;
 
 use super::composer_slash_menu::{
     ComposerSlashMenu, handle_slash_menu_keydown, install_slash_menu_effects,
     keydown_is_ime_composing,
 };
 use crate::i18n::{self, Locale};
+
+/// 按内容增高，单行时回落到 CSS `min-height`（与发送钮同高）。
+///
+/// 会话切换等「非 input」路径须在 DOM `set_value` **之后**调用，避免按旧正文测高。
+pub(crate) fn autosize_composer_textarea(ta: &HtmlTextAreaElement) {
+    let el: &web_sys::HtmlElement = ta.as_ref();
+    let style = el.style();
+    let _ = style.set_property("height", "auto");
+    let sh = ta.scroll_height();
+    if sh > 0 {
+        let _ = style.set_property("height", &format!("{sh}px"));
+    }
+}
 
 #[component]
 pub fn ComposerInputStack(
@@ -71,6 +85,11 @@ pub fn ComposerInputStack(
                 node_ref=composer_input_ref
                 on:input=move |ev| {
                     let v = event_target_value(&ev);
+                    if let Some(t) = ev.target() {
+                        if let Ok(ta) = t.dyn_into::<HtmlTextAreaElement>() {
+                            autosize_composer_textarea(&ta);
+                        }
+                    }
                     draft.set(v);
                 }
                 on:keydown={
@@ -98,7 +117,7 @@ pub fn ComposerInputStack(
                     };
                     composer_mirror_scroll_top.set(ta.scroll_top() as f64);
                 }
-                rows="3"
+                rows="1"
             ></textarea>
         </div>
     }
