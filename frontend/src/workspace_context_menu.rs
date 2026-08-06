@@ -198,7 +198,13 @@ pub fn WorkspaceContextMenuLayer(
                                 let is_dir = anchor.target_is_dir;
                                 let actions = actions.get_value();
                                 spawn_local(async move {
-                                    if !confirm_user_message(&msg).await {
+                                    if !confirm_user_message(
+                                        &msg,
+                                        crate::i18n::confirm_delete_ok(loc),
+                                        crate::i18n::ide_confirm_cancel(loc),
+                                    )
+                                    .await
+                                    {
                                         return;
                                     }
                                     crate::workspace_fs_ops::spawn_delete_workspace_entry(

@@ -341,3 +341,18 @@
   margin: 0;
   white-space: pre-wrap;
 }
+
+.ide-confirm-modal .modal-head {
+  justify-content: center;
+  text-align: center;
+}
+
+.ide-confirm-modal .modal-footer.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2, 8px);
+  justify-content: center;
+  align-items: center;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--border-subtle);
+}

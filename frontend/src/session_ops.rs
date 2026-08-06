@@ -422,7 +422,13 @@ pub fn delete_session_after_confirm(
     let session_sync_c = session_sync;
     let id_s = id.to_string();
     spawn_local(async move {
-        if !crate::confirm_dialog::confirm_user_message(&confirm_msg).await {
+        if !crate::confirm_dialog::confirm_user_message(
+            &confirm_msg,
+            crate::i18n::confirm_delete_ok(locale),
+            crate::i18n::ide_confirm_cancel(locale),
+        )
+        .await
+        {
             return;
         }
         apply_delete_session(

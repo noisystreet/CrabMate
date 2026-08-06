@@ -42,7 +42,15 @@ pub fn IdeConfirmDialog(locale: RwSignal<Locale>, chrome: IdeChromeSignals) -> i
                             data-testid="ide-confirm-cancel"
                             on:click=move |_| resolve_ide_confirm(confirm, false)
                         >
-                            {move || i18n::ide_confirm_cancel(locale.get())}
+                            {move || {
+                                chrome
+                                    .confirm_pending
+                                    .get()
+                                    .map(|p| p.cancel_label)
+                                    .unwrap_or_else(|| {
+                                        i18n::ide_confirm_cancel(locale.get()).to_string()
+                                    })
+                            }}
                         </button>
                         <button
                             type="button"
@@ -50,7 +58,15 @@ pub fn IdeConfirmDialog(locale: RwSignal<Locale>, chrome: IdeChromeSignals) -> i
                             data-testid="ide-confirm-ok"
                             on:click=move |_| resolve_ide_confirm(confirm, true)
                         >
-                            {move || i18n::ide_confirm_ok(locale.get())}
+                            {move || {
+                                chrome
+                                    .confirm_pending
+                                    .get()
+                                    .map(|p| p.ok_label)
+                                    .unwrap_or_else(|| {
+                                        i18n::ide_confirm_ok(locale.get()).to_string()
+                                    })
+                            }}
                         </button>
                     </div>
                 </div>

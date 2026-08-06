@@ -94,10 +94,27 @@ pub fn ide_confirm_title(l: Locale) -> &'static str {
     }
 }
 
+/// IDE 脏文件 / 放弃类确认：短词按钮（勿写成长句）。
 pub fn ide_confirm_ok(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "放弃并继续",
-        Locale::En => "Discard and continue",
+        Locale::ZhHans => "放弃",
+        Locale::En => "Discard",
+    }
+}
+
+/// 磁盘内容变更后重载确认。
+pub fn ide_confirm_reload_ok(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "重载",
+        Locale::En => "Reload",
+    }
+}
+
+/// 删除会话 / 工作区条目等破坏性确认。
+pub fn confirm_delete_ok(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "删除",
+        Locale::En => "Delete",
     }
 }
 

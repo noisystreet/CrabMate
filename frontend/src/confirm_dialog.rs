@@ -57,9 +57,15 @@ pub fn register_shell_confirm(signals: IdeConfirmSignals) {
     SHELL_CONFIRM.set(Some(signals));
 }
 
-async fn confirm_via_shell_or_window(message: &str) -> bool {
+async fn confirm_via_shell_or_window(message: &str, ok_label: &str, cancel_label: &str) -> bool {
     if let Some(signals) = SHELL_CONFIRM.get() {
-        return ide_confirm_user(signals, message.to_string()).await;
+        return ide_confirm_user(
+            signals,
+            message.to_string(),
+            ok_label.to_string(),
+            cancel_label.to_string(),
+        )
+        .await;
     }
     web_sys::window()
         .and_then(|w| w.confirm_with_message(message).ok())
@@ -67,13 +73,17 @@ async fn confirm_via_shell_or_window(message: &str) -> bool {
 }
 
 /// 用户确认返回 `true`；取消或对话框不可用返回 `false`。
-pub async fn confirm_user_message(message: &str) -> bool {
+///
+/// `ok_label` / `cancel_label` 仅用于壳层内嵌确认框；Tauri 原生对话框仍用系统默认按钮。
+pub async fn confirm_user_message(message: &str, ok_label: &str, cancel_label: &str) -> bool {
     if running_in_tauri_webview() && has_tauri_invoke_for_confirm() {
         match JsFuture::from(invoke_tauri_confirm_dialog(message)).await {
             Ok(v) => return v.as_bool().unwrap_or(false),
             // 桥接/命令失败时回退壳层确认，避免删除静默无响应
-            Err(_) => return confirm_via_shell_or_window(message).await,
+            Err(_) => {
+                return confirm_via_shell_or_window(message, ok_label, cancel_label).await;
+            }
         }
     }
-    confirm_via_shell_or_window(message).await
+    confirm_via_shell_or_window(message, ok_label, cancel_label).await
 }

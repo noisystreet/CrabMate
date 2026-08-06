@@ -136,7 +136,13 @@ pub fn ide_tab_basename(path: &str) -> String {
 }
 
 async fn confirm_discard(locale: Locale, confirm: IdeConfirmSignals) -> bool {
-    ide_confirm_user(confirm, i18n::ide_dirty_confirm(locale).to_string()).await
+    ide_confirm_user(
+        confirm,
+        i18n::ide_dirty_confirm(locale).to_string(),
+        i18n::ide_confirm_ok(locale).to_string(),
+        i18n::ide_confirm_cancel(locale).to_string(),
+    )
+    .await
 }
 
 fn tab_is_dirty(
