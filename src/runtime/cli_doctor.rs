@@ -132,6 +132,43 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
     );
 }
 
+fn print_doctor_serve_deployment_block(cfg: &AgentConfig) {
+    println!("【serve 单独部署（安全）】");
+    let bearer_set = !cfg
+        .web_api
+        .web_api_bearer_token
+        .expose_secret()
+        .trim()
+        .is_empty();
+    let require = cfg.web_api.web_api_require_bearer;
+    let audit = cfg.web_api.web_audit_log_write_tools;
+    println!(
+        "  web_api_bearer_token: {}",
+        if bearer_set {
+            "已配置（值已隐藏）"
+        } else {
+            "未配置"
+        }
+    );
+    println!("  web_api_require_bearer: {}", require);
+    println!("  web_audit_log_write_tools: {}", audit);
+    if !bearer_set {
+        println!(
+            "  [!] 非本机部署：须配置 CM_WEB_API_BEARER_TOKEN，并建议 web_api_require_bearer=true"
+        );
+        println!(
+            "  [!] TLS 反代 + systemd 示例：docs/个人VPS部署指南.md；按用户账号/配额在网关/BFF（docs/未来规划功能.md）"
+        );
+    } else if !require {
+        println!("  [i] 已配共享密钥但未强制 require_bearer；生产建议 CM_WEB_API_REQUIRE_BEARER=1");
+    } else {
+        println!("  OK  Bearer 启动校验已启用（进程内为共享密钥，非按用户账号）");
+    }
+    if !audit {
+        println!("  [!] 建议开启 web_audit_log_write_tools 记录写副作用工具");
+    }
+}
+
 fn print_doctor_workspace_block(ws: &Path) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
@@ -294,6 +331,8 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     println!("版本: {}", env!("CARGO_PKG_VERSION"));
     println!();
     print_doctor_config_block(cfg);
+    println!();
+    print_doctor_serve_deployment_block(cfg);
     println!();
     println!("【密钥状态】");
     println!("  {}", api_key_line(cfg));

@@ -18,6 +18,10 @@ use crate::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::workspace::changelist::record_file_state_after_write;
+use crate::workspace::fs::{
+    create_directory_under_root, open_file_append_under_root, unlink_file_under_root,
+    write_bytes_under_root,
+};
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
     let v = crate::tools::parse_args_json(args_json)?;
@@ -87,14 +91,20 @@ fn append_resolve_target_path(
     }
 }
 
-fn append_create_parent_if_needed(create_if_missing: bool, target: &Path) -> Result<(), String> {
+fn append_create_parent_if_needed(
+    base: &Path,
+    create_if_missing: bool,
+    target: &Path,
+) -> Result<(), String> {
     if !create_if_missing {
         return Ok(());
     }
     if let Some(parent) = target.parent()
+        && !parent.as_os_str().is_empty()
         && !parent.exists()
     {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建父目录失败：{}", e))?;
+        create_directory_under_root(base, parent, true)
+            .map_err(|e| format!("创建父目录失败：{}", e))?;
     }
     Ok(())
 }
@@ -128,7 +138,15 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         );
     }
     let before = std::fs::read_to_string(&target).ok();
-    match std::fs::remove_file(&target) {
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
+    #[cfg(unix)]
+    let remove_result = unlink_file_under_root(&base, &target);
+    #[cfg(not(unix))]
+    let remove_result = std::fs::remove_file(&target);
+    match remove_result {
         Ok(()) => {
             let body = format!(
                 "已删除文件：{}",
@@ -202,16 +220,17 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Err(e) => return e,
     };
 
-    if let Err(e) = append_create_parent_if_needed(create_if_missing, &target) {
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
+
+    if let Err(e) = append_create_parent_if_needed(&base, create_if_missing, &target) {
         return e;
     }
 
     let before = std::fs::read_to_string(&target).ok();
-    let mut file = match std::fs::OpenOptions::new()
-        .append(true)
-        .create(create_if_missing)
-        .open(&target)
-    {
+    let mut file = match open_file_append_under_root(&base, &target, create_if_missing) {
         Ok(f) => f,
         Err(e) => return format!("打开文件失败：{}", e),
     };
@@ -274,11 +293,11 @@ pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
             path_for_tool_display(working_dir, &target, Some(&path))
         );
     }
-    let result = if parents {
-        std::fs::create_dir_all(&target)
-    } else {
-        std::fs::create_dir(&target)
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
     };
+    let result = create_directory_under_root(&base, &target, parents);
     match result {
         Ok(()) => format!(
             "已创建目录：{}",
@@ -452,7 +471,11 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
     }
 
     let before = content.clone();
-    match std::fs::write(&target, new_content.as_bytes()) {
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
+    match write_bytes_under_root(&base, &target, new_content.as_bytes(), false, true) {
         Ok(()) => {
             record_file_state_after_write(
                 ctx.workspace_changelist,

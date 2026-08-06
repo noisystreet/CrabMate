@@ -617,7 +617,8 @@ fn workspace_file_write_sync_unix(
     if let Some(parent) = normalized.parent()
         && !parent.as_os_str().is_empty()
     {
-        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+        crate::workspace::fs::ensure_parent_dirs_under_root(&base, &normalized)
+            .map_err(|e| format!("创建目录失败: {e}"))?;
     }
     let mut f = match open_file_write_under_root(&base, &normalized, create_only, update_only) {
         Ok(f) => f,
@@ -636,10 +637,15 @@ fn workspace_file_write_sync_unix(
 }
 
 async fn workspace_dir_create_response(
+    base_canonical: std::path::PathBuf,
     canonical: std::path::PathBuf,
     parents: bool,
 ) -> Json<WorkspaceFileWriteResponse> {
-    match tokio::task::spawn_blocking(move || workspace_dir_create_sync(canonical, parents)).await {
+    match tokio::task::spawn_blocking(move || {
+        workspace_dir_create_sync(base_canonical, canonical, parents)
+    })
+    .await
+    {
         Ok(Ok(())) => Json(WorkspaceFileWriteResponse { error: None }),
         Ok(Err(msg)) => Json(WorkspaceFileWriteResponse { error: Some(msg) }),
         Err(e) => Json(WorkspaceFileWriteResponse {
@@ -654,7 +660,7 @@ async fn workspace_file_write_resolved(
     body: WorkspaceFileWriteBody,
 ) -> Json<WorkspaceFileWriteResponse> {
     if body.create_directory {
-        return workspace_dir_create_response(canonical, body.parents).await;
+        return workspace_dir_create_response(base_canonical, canonical, body.parents).await;
     }
 
     #[cfg(unix)]
@@ -776,7 +782,11 @@ pub async fn workspace_dir_create_handler(
         }
     };
     let parents = body.parents;
-    match tokio::task::spawn_blocking(move || workspace_dir_create_sync(canonical, parents)).await {
+    match tokio::task::spawn_blocking(move || {
+        workspace_dir_create_sync(base_canonical, canonical, parents)
+    })
+    .await
+    {
         Ok(Ok(())) => Json(WorkspaceDirCreateResponse { error: None }),
         Ok(Err(msg)) => Json(WorkspaceDirCreateResponse { error: Some(msg) }),
         Err(e) => Json(WorkspaceDirCreateResponse {
@@ -786,6 +796,7 @@ pub async fn workspace_dir_create_handler(
 }
 
 pub(crate) fn workspace_dir_create_sync(
+    base_canonical: std::path::PathBuf,
     canonical: std::path::PathBuf,
     parents: bool,
 ) -> Result<(), String> {
@@ -795,12 +806,8 @@ pub(crate) fn workspace_dir_create_sync(
         }
         return Err("路径已存在且为文件".to_string());
     }
-    let result = if parents {
-        std::fs::create_dir_all(&canonical)
-    } else {
-        std::fs::create_dir(&canonical)
-    };
-    result.map_err(|e| format!("创建目录失败: {e}"))
+    crate::workspace::fs::create_directory_under_root(&base_canonical, &canonical, parents)
+        .map_err(|e| format!("创建目录失败: {e}"))
 }
 
 /// 删除工作区内的目录：`confirm=true` 必填；非空目录须 `recursive=true`。
