@@ -179,6 +179,43 @@
   min-width: 0;
 }
 
+/* —— 浏览器选工作区（非项目池；优先最近列表 + 路径输入）—— */
+.workspace-browser-pick-section {
+  margin: 0 14px 12px;
+}
+
+.workspace-browser-pick-heading {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.workspace-browser-pick-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+
+.workspace-browser-pick-path-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.workspace-browser-pick-path-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.workspace-browser-pick-submit {
+  flex-shrink: 0;
+}
+
 /* —— 设置弹窗 —— */
 .settings-block {
   margin-bottom: var(--space-5);

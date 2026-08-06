@@ -22,6 +22,8 @@ pub struct WorkspacePanelSignals {
     pub workspace_set_busy: RwSignal<bool>,
     pub workspace_pick_busy: RwSignal<bool>,
     pub workspace_project_modal_open: RwSignal<bool>,
+    /// 浏览器无项目池时：最近列表 + 路径输入弹窗。
+    pub workspace_browser_pick_modal_open: RwSignal<bool>,
     /// 最近打开的工作区根（新在前；来自 `prefs.recent_workspace_roots`）。
     pub recent_workspace_roots: RwSignal<Vec<String>>,
     pub workspace_context_menu:

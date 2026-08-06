@@ -154,8 +154,8 @@ pub fn ws_path_empty(l: Locale) -> &'static str {
 
 pub fn ws_path_title_hint(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "用「文件 → 选择工作区」、项目列表或「最近的工作区」设置",
-        Locale::En => "Set via File → Open workspace, project list, or Recent workspaces",
+        Locale::ZhHans => "用「文件 → 选择工作区」、项目列表或最近列表设置",
+        Locale::En => "Set via File → Open workspace, project list, or Recent",
     }
 }
 
@@ -215,11 +215,57 @@ pub fn ws_project_loading(l: Locale) -> &'static str {
     }
 }
 
-/// 浏览器（非 Tauri）下手输绝对路径的 `window.prompt` 文案。
+/// 浏览器（非 Tauri）下手输绝对路径的输入框标签（原 `window.prompt` 文案）。
 pub fn ws_path_prompt(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "请输入工作区根目录的绝对路径",
-        Locale::En => "Enter the absolute path of the workspace root",
+        Locale::ZhHans => "服务器上的工作区绝对路径",
+        Locale::En => "Absolute workspace path on the server",
+    }
+}
+
+pub fn ws_browser_pick_modal_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "选择工作区",
+        Locale::En => "Choose workspace",
+    }
+}
+
+pub fn ws_browser_pick_modal_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "手机浏览器无法打开系统目录对话框。请从最近列表选择，或输入远程服务器上的绝对路径。"
+        }
+        Locale::En => {
+            "Mobile browsers cannot open a folder picker. Pick a recent root, or enter an absolute path on the remote server."
+        }
+    }
+}
+
+pub fn ws_browser_pick_recent_heading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "最近打开",
+        Locale::En => "Recent",
+    }
+}
+
+pub fn ws_browser_pick_recent_empty(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "暂无最近工作区。",
+        Locale::En => "No recent workspaces yet.",
+    }
+}
+
+pub fn ws_browser_pick_path_heading(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "输入路径",
+        Locale::En => "Enter path",
+    }
+}
+
+pub fn ws_browser_pick_submit(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "打开",
+        Locale::En => "Open",
     }
 }
 
