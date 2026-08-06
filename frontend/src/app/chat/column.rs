@@ -476,6 +476,27 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                     run_send_clarify_sv=run_send_clarify_sv
                 />
                 <div class="composer-input-row">
+                    <label
+                        class="btn btn-muted btn-sm composer-attach-label"
+                        for="composer-image-input"
+                        prop:title=move || i18n::composer_attach_image_aria(locale.get())
+                        prop:aria-label=move || i18n::composer_attach_image_aria(locale.get())
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            class="composer-attach-icon"
+                            aria-hidden="true"
+                        >
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                            <circle cx="8.5" cy="8.5" r="1.5" />
+                            <path d="m21 15-3.5-3.5a2 2 0 0 0-2.83 0L6 21" />
+                        </svg>
+                    </label>
                     <ComposerInputStack
                         composer_input_ref=composer_input_ref
                         draft=draft
@@ -486,63 +507,65 @@ fn ChatComposerPane(signals: ChatComposerPaneSignals) -> impl IntoView {
                         workspace_path=workspace_path
                     />
                     <div class="composer-bar-actions">
-                        <label
-                            class="btn btn-muted btn-sm composer-attach-label"
-                            for="composer-image-input"
-                            prop:title=move || i18n::composer_attach_image_aria(locale.get())
-                            prop:aria-label=move || i18n::composer_attach_image_aria(locale.get())
-                        >
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                class="composer-attach-icon"
-                                aria-hidden="true"
-                            >
-                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-                                <circle cx="8.5" cy="8.5" r="1.5" />
-                                <path d="m21 15-3.5-3.5a2 2 0 0 0-2.83 0L6 21" />
-                            </svg>
-                        </label>
-                        <button
-                            type="button"
-                            class="btn btn-muted btn-sm"
-                            prop:disabled=move || !composer_stop_enabled.get()
-                            on:click={
-                                let t = Arc::clone(&trigger_stop);
-                                move |_| t()
+                        <Show
+                            when=move || composer_stop_enabled.get()
+                            fallback=move || {
+                                view! {
+                                    <button
+                                        type="button"
+                                        class="btn btn-primary btn-send-icon"
+                                        data-testid="chat-send-button"
+                                        prop:disabled=move || !initialized.get()
+                                        on:click={
+                                            let r = Arc::clone(&run_send_message);
+                                            move |_| r()
+                                        }
+                                        prop:title=move || i18n::composer_send_aria(locale.get())
+                                        prop:aria-label=move || {
+                                            i18n::composer_send_aria(locale.get())
+                                        }
+                                    >
+                                        <svg
+                                            class="btn-send-icon-svg"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            stroke-width="2"
+                                            stroke-linecap="round"
+                                            stroke-linejoin="round"
+                                            xmlns="http://www.w3.org/2000/svg"
+                                            aria-hidden="true"
+                                        >
+                                            <path d="M22 2 11 13" />
+                                            <path d="M22 2 15 22 11 13 2 9 22 2Z" />
+                                        </svg>
+                                    </button>
+                                }
+                                .into_any()
                             }
-                        >{move || i18n::composer_stop(locale.get())}</button>
-                        <button
-                            type="button"
-                            class="btn btn-primary btn-send-icon"
-                            data-testid="chat-send-button"
-                            prop:disabled=move || stream_turn_busy_ui.get() || !initialized.get()
-                            on:click={
-                                let r = Arc::clone(&run_send_message);
-                                move |_| r()
-                            }
-                            prop:title=move || i18n::composer_send_aria(locale.get())
-                            prop:aria-label=move || i18n::composer_send_aria(locale.get())
                         >
-                            <svg
-                                class="btn-send-icon-svg"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                                xmlns="http://www.w3.org/2000/svg"
-                                aria-hidden="true"
+                            <button
+                                type="button"
+                                class="btn btn-muted btn-send-icon"
+                                data-testid="chat-stop-button"
+                                on:click={
+                                    let t = Arc::clone(&trigger_stop);
+                                    move |_| t()
+                                }
+                                prop:title=move || i18n::composer_stop(locale.get())
+                                prop:aria-label=move || i18n::composer_stop(locale.get())
                             >
-                                <path d="M22 2 11 13" />
-                                <path d="M22 2 15 22 11 13 2 9 22 2Z" />
-                            </svg>
-                        </button>
+                                <svg
+                                    class="btn-send-icon-svg"
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    xmlns="http://www.w3.org/2000/svg"
+                                    aria-hidden="true"
+                                >
+                                    <rect x="6" y="6" width="12" height="12" rx="2" />
+                                </svg>
+                            </button>
+                        </Show>
                     </div>
                 </div>
             </div>

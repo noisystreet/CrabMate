@@ -115,6 +115,7 @@ pub(crate) fn wire_chat_domain_effects(
         stream: WireComposerStreamsStreamSlice {
             stream_shell: args.stream_shell,
             stream_turn_busy_ui: stream_busy_memos.stream_turn_busy_ui,
+            tool_timeline_busy_ui: stream_busy_memos.tool_timeline_busy_ui,
             scroll_shell: ChatScrollShellSignals::from_composer(&d.composer),
             pending_images: d.composer.pending_images,
         },

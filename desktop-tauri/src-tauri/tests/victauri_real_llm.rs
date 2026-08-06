@@ -50,7 +50,7 @@ async fn wait_for_stream_end(client: &mut victauri_test::VictauriClient) {
     loop {
         let done: bool = client
             .eval_js(
-                "(()=>{const send=document.querySelector('[data-testid=\"chat-send-button\"]');const stop=document.querySelector('[role=\"button\"][name=\"停止\"]');return (!send||!send.disabled)&&(!stop||stop.disabled);})()"
+                "(()=>{const send=document.querySelector('[data-testid=\"chat-send-button\"]');const stop=document.querySelector('[data-testid=\"chat-stop-button\"]');return !!send&&!send.disabled&&!stop;})()"
             )
             .await
             .unwrap()
