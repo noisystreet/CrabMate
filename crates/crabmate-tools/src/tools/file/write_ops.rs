@@ -4,8 +4,8 @@
 use std::path::Path;
 
 use super::path::{
-    parse_path_content, path_for_tool_display, resolve_for_read, resolve_for_write,
-    tool_user_error_from_workspace_path,
+    canonical_workspace_root, parse_path_content, path_for_tool_display, resolve_for_read,
+    resolve_for_read_open, resolve_for_write, tool_user_error_from_workspace_path,
 };
 use crate::tools::ToolContext;
 use crate::tools::write_sse_preview::{
@@ -13,6 +13,9 @@ use crate::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::workspace::changelist::record_file_state_after_write;
+use crate::workspace::fs::{
+    copy_opened_file_under_root, rename_file_under_root, write_bytes_under_root,
+};
 
 /// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
 #[inline]
@@ -38,6 +41,10 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(pc) => pc,
         Err(e) => return e,
     };
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
     let target = match resolve_for_write(working_dir, &path) {
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
@@ -45,13 +52,7 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     if target.exists() {
         return "错误：文件已存在，无法仅创建".to_string();
     }
-    if let Some(parent) = target.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return format!("创建目录失败: {}", e);
-    }
-    match std::fs::write(&target, content.as_bytes()) {
+    match write_bytes_under_root(&base, &target, content.as_bytes(), true, false) {
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
             let disp = path_for_tool_display(working_dir, &target, Some(&path));
@@ -69,21 +70,6 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         }
         Err(e) => format!("写入文件失败: {}", e),
     }
-}
-
-#[cfg(unix)]
-fn is_cross_device_rename(err: &std::io::Error) -> bool {
-    err.raw_os_error() == Some(18) // EXDEV
-}
-
-#[cfg(windows)]
-fn is_cross_device_rename(err: &std::io::Error) -> bool {
-    err.raw_os_error() == Some(17) // ERROR_NOT_SAME_DEVICE
-}
-
-#[cfg(not(any(unix, windows)))]
-fn is_cross_device_rename(_: &std::io::Error) -> bool {
-    false
 }
 
 fn parse_from_to_overwrite(args_json: &str) -> Result<(String, String, bool), String> {
@@ -121,21 +107,6 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
     Ok(())
 }
 
-fn try_rename_or_move_file(src: &Path, dst: &Path) -> std::io::Result<()> {
-    match std::fs::rename(src, dst) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            if is_cross_device_rename(&e) {
-                std::fs::copy(src, dst)?;
-                std::fs::remove_file(src)?;
-                Ok(())
-            } else {
-                Err(e)
-            }
-        }
-    }
-}
-
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
 /// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -143,30 +114,28 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
         Ok(x) => x,
         Err(e) => return e,
     };
-    let src = match resolve_for_read(working_dir, &from) {
+    let base = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
     };
-    if !src.is_file() {
+    let opened = match resolve_for_read_open(working_dir, &from) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
+    if !opened.file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string();
     }
     let dst = match resolve_for_write(working_dir, &to) {
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
     };
-    if src == dst {
+    if opened.resolved_path == dst {
         return "错误：源与目标解析后相同，无需复制".to_string();
     }
     if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
         return e;
     }
-    if let Some(parent) = dst.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return format!("创建目标父目录失败: {}", e);
-    }
-    match std::fs::copy(&src, &dst) {
+    match copy_opened_file_under_root(&base, &opened, &dst, overwrite) {
         Ok(n) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
             let body = tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n));
@@ -193,6 +162,10 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
         Ok(x) => x,
         Err(e) => return e,
     };
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
     let src = match resolve_for_read(working_dir, &from) {
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
@@ -210,13 +183,7 @@ pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
     if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
         return e;
     }
-    if let Some(parent) = dst.parent()
-        && !parent.as_os_str().is_empty()
-        && let Err(e) = std::fs::create_dir_all(parent)
-    {
-        return format!("创建目标父目录失败: {}", e);
-    }
-    match try_rename_or_move_file(&src, &dst) {
+    match rename_file_under_root(&base, &src, &dst) {
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &from, None);
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
@@ -287,7 +254,11 @@ fn modify_file_write_full_overwrite(
             .to_string();
     }
 
-    match std::fs::write(target, content.as_bytes()) {
+    let base = match canonical_workspace_root(working_dir) {
+        Ok(p) => p,
+        Err(e) => return tool_user_error_from_workspace_path(e),
+    };
+    match write_bytes_under_root(&base, target, content.as_bytes(), false, true) {
         Ok(()) => {
             let before_preview = before.clone();
             record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);
