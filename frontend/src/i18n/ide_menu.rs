@@ -57,6 +57,97 @@ pub fn ide_menu_recent_workspaces(l: Locale) -> &'static str {
     }
 }
 
+pub fn ide_menu_clone_repo(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Clone 远程仓库…",
+        Locale::En => "Clone remote repository…",
+    }
+}
+
+pub fn ws_clone_modal_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Clone 远程仓库",
+        Locale::En => "Clone remote repository",
+    }
+}
+
+pub fn ws_clone_url_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "仓库 URL",
+        Locale::En => "Repository URL",
+    }
+}
+
+pub fn ws_clone_name_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "项目名",
+        Locale::En => "Project name",
+    }
+}
+
+pub fn ws_clone_shallow_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "浅克隆（--depth 1）",
+        Locale::En => "Shallow clone (--depth 1)",
+    }
+}
+
+pub fn ws_clone_branch_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "分支（可选）",
+        Locale::En => "Branch (optional)",
+    }
+}
+
+pub fn ws_clone_submit(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "开始 Clone",
+        Locale::En => "Start clone",
+    }
+}
+
+pub fn ws_clone_need_fields(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "请填写仓库 URL 与项目名",
+        Locale::En => "Enter repository URL and project name",
+    }
+}
+
+pub fn ws_clone_back(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "返回修改",
+        Locale::En => "Back to form",
+    }
+}
+
+pub fn ws_clone_phase_validate(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "校验参数…",
+        Locale::En => "Validating…",
+    }
+}
+
+pub fn ws_clone_phase_clone(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "正在克隆…",
+        Locale::En => "Cloning…",
+    }
+}
+
+pub fn ws_clone_phase_activate(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "切换工作区…",
+        Locale::En => "Switching workspace…",
+    }
+}
+
+pub fn ws_clone_done(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "完成",
+        Locale::En => "Done",
+    }
+}
+
 pub fn ide_new_file_prompt(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "相对工作区的文件路径（例如 src/main.rs）",

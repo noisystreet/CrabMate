@@ -147,6 +147,8 @@ impl AppSignals {
             workspace_set_busy: self.workspace.workspace_set_busy,
             workspace_pick_busy: self.workspace.workspace_pick_busy,
             workspace_project_modal_open: self.workspace.workspace_project_modal_open,
+            workspace_clone_modal_open: self.workspace.workspace_clone_modal_open,
+            workspace_pool_enabled: self.workspace.workspace_pool_enabled,
             workspace_browser_pick_modal_open: self.workspace.workspace_browser_pick_modal_open,
             recent_workspace_roots: self.workspace.recent_workspace_roots,
             workspace_context_menu: self.workspace.workspace_context_menu,

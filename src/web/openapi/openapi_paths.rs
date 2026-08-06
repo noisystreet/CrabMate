@@ -409,6 +409,61 @@ fn openapi_paths_fragment_workspace_list() -> Value {
                 }
             }
         },
+        "/workspace/projects": {
+            "get": {
+                "tags": ["workspace"],
+                "summary": "列出 Web 项目池状态与项目名",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "enabled / pool_path / projects"
+                    }
+                }
+            },
+            "post": {
+                "tags": ["workspace"],
+                "summary": "按名称打开或新建项目池工作区",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": { "description": "切换结果（含 path）" }
+                }
+            }
+        },
+        "/workspace/clone/stream": {
+            "post": {
+                "tags": ["workspace"],
+                "summary": "在项目池内 git clone（SSE 进度；成功后切换当前工作区）",
+                "description": "仅当已配置 web_workspace_pool。请求 JSON：url、name，可选 depth、branch。成功路径：phase → log/progress → phase=activate → done(name,path)。墙钟超时 20 分钟。",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["url", "name"],
+                                "properties": {
+                                    "url": { "type": "string" },
+                                    "name": { "type": "string" },
+                                    "depth": { "type": "integer", "minimum": 1 },
+                                    "branch": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "text/event-stream（phase/log/progress/done/error）"
+                    },
+                    "400": { "description": "CLONE_BAD_URL / CLONE_BAD_NAME / CLONE_BAD_DEPTH 等" },
+                    "404": { "description": "CLONE_NO_POOL" },
+                    "409": { "description": "CLONE_DIR_EXISTS" },
+                    "429": { "description": "CLONE_BUSY（并发上限）" },
+                    "503": { "description": "CLONE_NO_GIT" }
+                }
+            }
+        },
         "/workspace/search": {
             "post": {
                 "tags": ["workspace"],

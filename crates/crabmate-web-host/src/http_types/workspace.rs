@@ -63,6 +63,20 @@ pub struct WorkspaceProjectPostResponse {
     pub error: Option<String>,
 }
 
+/// `POST /workspace/clone/stream` 请求体。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceCloneStreamBody {
+    pub url: String,
+    pub name: String,
+    /// 可选浅克隆深度（`>=1` 时传 `git clone --depth`）。
+    #[serde(default)]
+    pub depth: Option<u32>,
+    /// 可选分支（非空时 `--branch` + `--single-branch`）。
+    #[serde(default)]
+    pub branch: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceSearchBody {

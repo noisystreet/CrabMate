@@ -10,10 +10,11 @@ use axum::{
 use crate::AppState;
 use crate::web::chat_handlers::workspace_changelog_handler;
 use crate::web::workspace::{
-    workspace_dir_create_handler, workspace_dir_delete_handler, workspace_file_delete_handler,
-    workspace_file_read_handler, workspace_file_write_handler, workspace_handler,
-    workspace_pick_handler, workspace_profile_handler, workspace_projects_list_handler,
-    workspace_projects_post_handler, workspace_search_handler, workspace_set_handler,
+    workspace_clone_stream_handler, workspace_dir_create_handler, workspace_dir_delete_handler,
+    workspace_file_delete_handler, workspace_file_read_handler, workspace_file_write_handler,
+    workspace_handler, workspace_pick_handler, workspace_profile_handler,
+    workspace_projects_list_handler, workspace_projects_post_handler, workspace_search_handler,
+    workspace_set_handler,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -26,6 +27,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route(
             "/workspace/projects",
             get(workspace_projects_list_handler).post(workspace_projects_post_handler),
+        )
+        .route(
+            "/workspace/clone/stream",
+            post(workspace_clone_stream_handler),
         )
         .route("/workspace/search", post(workspace_search_handler))
         .route(

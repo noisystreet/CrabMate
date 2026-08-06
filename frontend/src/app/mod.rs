@@ -60,6 +60,7 @@ mod tauri_window_controls;
 mod web_api_bearer_recovery;
 mod wire_workspace_domain;
 mod workspace_browser_pick_modal;
+mod workspace_clone_modal;
 mod workspace_panel;
 pub(crate) mod workspace_panel_state;
 mod workspace_project_modal;
@@ -88,6 +89,7 @@ use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
 use status_bar::status_bar_footer_view;
 use workspace_browser_pick_modal::workspace_browser_pick_modal_view;
+use workspace_clone_modal::workspace_clone_modal_view;
 use workspace_project_modal::workspace_project_modal_view;
 
 use leptos::prelude::*;
@@ -128,6 +130,7 @@ pub fn App() -> impl IntoView {
     let settings_modal_signals = app_ctx.settings_modal_signals();
     let session_list_modal_signals = app_ctx.session_list_modal_signals();
     let workspace_project_modal_signals = app_ctx.workspace_project_modal_signals();
+    let workspace_clone_modal_signals = app_ctx.workspace_clone_modal_signals();
     let workspace_browser_pick_modal_signals = app_ctx.workspace_browser_pick_modal_signals();
     let status_bar_footer_signals = app_ctx.status_bar_footer_signals();
     let sidebar_nav_signals = app_ctx.sidebar_nav_signals();
@@ -209,6 +212,8 @@ pub fn App() -> impl IntoView {
             {session_list_modal_view(session_list_modal_signals)}
 
             {workspace_project_modal_view(workspace_project_modal_signals)}
+
+            {workspace_clone_modal_view(workspace_clone_modal_signals)}
 
             {workspace_browser_pick_modal_view(workspace_browser_pick_modal_signals)}
 
