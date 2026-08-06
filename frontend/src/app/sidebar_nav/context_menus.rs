@@ -170,6 +170,7 @@ pub(super) fn SessionContextMenuLayer(
                         type="button"
                         class="session-ctx-item session-ctx-item-danger"
                         role="menuitem"
+                        data-testid="session-ctx-delete"
                         on:click=move |_| {
                             let Some(a) = session_context_menu.get() else {
                                 return;

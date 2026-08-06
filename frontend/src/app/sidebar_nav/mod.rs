@@ -9,6 +9,7 @@ mod debounce;
 mod mode_actions;
 mod search_panel;
 mod session_rail;
+mod session_row_press;
 
 use leptos::prelude::*;
 

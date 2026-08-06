@@ -1,7 +1,14 @@
-//! 浏览器 / Tauri 通用确认框（桌面 WebView 下 `window.confirm` 常无效）。
+//! 浏览器 / Tauri / 移动 WebView 通用确认框。
+//!
+//! 桌面与 Android WebView 上 `window.confirm` 常无效或恒为 false；优先 Tauri 原生对话框，
+//! 否则使用壳层内嵌确认框（由 [`register_shell_confirm`] 在启动时挂接）。
+
+use std::cell::Cell;
 
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen_futures::JsFuture;
+
+use crate::ide_confirm::{IdeConfirmSignals, ide_confirm_user};
 
 #[wasm_bindgen(inline_js = r#"
 export function hasTauriInvokeForConfirm() {
@@ -27,6 +34,10 @@ extern "C" {
     fn invoke_tauri_confirm_dialog(message: &str) -> js_sys::Promise;
 }
 
+thread_local! {
+    static SHELL_CONFIRM: Cell<Option<IdeConfirmSignals>> = const { Cell::new(None) };
+}
+
 fn running_in_tauri_webview() -> bool {
     let Some(w) = web_sys::window() else {
         return false;
@@ -41,15 +52,28 @@ fn running_in_tauri_webview() -> bool {
     has_tauri || has_internals
 }
 
-/// 用户确认返回 `true`；取消或对话框不可用返回 `false`。
-pub async fn confirm_user_message(message: &str) -> bool {
-    if running_in_tauri_webview() && has_tauri_invoke_for_confirm() {
-        return match JsFuture::from(invoke_tauri_confirm_dialog(message)).await {
-            Ok(v) => v.as_bool().unwrap_or(false),
-            Err(_) => false,
-        };
+/// 在 App 启动时注册壳层确认框信号（可重复调用以覆盖）。
+pub fn register_shell_confirm(signals: IdeConfirmSignals) {
+    SHELL_CONFIRM.set(Some(signals));
+}
+
+async fn confirm_via_shell_or_window(message: &str) -> bool {
+    if let Some(signals) = SHELL_CONFIRM.get() {
+        return ide_confirm_user(signals, message.to_string()).await;
     }
     web_sys::window()
         .and_then(|w| w.confirm_with_message(message).ok())
         .unwrap_or(false)
+}
+
+/// 用户确认返回 `true`；取消或对话框不可用返回 `false`。
+pub async fn confirm_user_message(message: &str) -> bool {
+    if running_in_tauri_webview() && has_tauri_invoke_for_confirm() {
+        match JsFuture::from(invoke_tauri_confirm_dialog(message)).await {
+            Ok(v) => return v.as_bool().unwrap_or(false),
+            // 桥接/命令失败时回退壳层确认，避免删除静默无响应
+            Err(_) => return confirm_via_shell_or_window(message).await,
+        }
+    }
+    confirm_via_shell_or_window(message).await
 }

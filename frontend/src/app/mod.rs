@@ -43,6 +43,7 @@ mod settings_models_registry;
 mod settings_page;
 mod settings_sections;
 mod settings_toggle_switch;
+mod shell_confirm_dialog;
 pub(crate) mod shell_prefs_storage;
 mod shell_runtime_context;
 mod side_column;
@@ -80,6 +81,7 @@ use mobile_shell_header::mobile_shell_header_view;
 use session_list_modal::session_list_modal_view;
 use settings_modal::settings_modal_view;
 use settings_page::SettingsPageView;
+use shell_confirm_dialog::ShellConfirmDialog;
 use shell_runtime_context::ChatShellLeptosContext;
 use side_column::side_column_view;
 use sidebar_nav::sidebar_nav_view;
@@ -220,6 +222,10 @@ pub fn App() -> impl IntoView {
             <IdeConfirmDialog
                 locale=app_ctx.signals.shell_ui.locale
                 chrome=app_ctx.signals.ide_chrome
+            />
+            <ShellConfirmDialog
+                locale=app_ctx.signals.shell_ui.locale
+                modal=app_ctx.signals.modal
             />
         </div>
     }

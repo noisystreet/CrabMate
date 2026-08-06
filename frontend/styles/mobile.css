@@ -8,6 +8,25 @@
 
 /* —— Phase 1：主区单栏 + 右侧半屏抽屉 —— */
 @media (max-width: 768px) {
+  /* 会话抽屉品牌行与主屏顶栏同高：避开系统状态栏 / 刘海 */
+  .nav-rail-brand {
+    box-sizing: border-box;
+    min-height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
+    height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
+    padding: max(var(--cm-safe-top), env(safe-area-inset-top, 0px)) 12px 0;
+    align-items: center;
+  }
+
+  html[data-cm-mobile-shell] .nav-rail-brand {
+    padding-top: max(
+      var(--cm-safe-top),
+      var(--cm-safe-top-floor, 52px),
+      env(safe-area-inset-top, 0px)
+    );
+    min-height: var(--shell-chrome-top);
+    height: var(--shell-chrome-top);
+  }
+
   .main-row {
     flex-direction: column;
     position: relative;

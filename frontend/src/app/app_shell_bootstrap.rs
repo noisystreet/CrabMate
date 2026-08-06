@@ -18,6 +18,7 @@ pub fn bootstrap_app_shell() -> AppShellCtx {
     crate::mobile_remote::apply_mobile_remote_safe_top();
 
     let app_signals = AppSignals::new();
+    crate::confirm_dialog::register_shell_confirm(app_signals.modal.confirm_signals());
     let wiring = run_shell_wiring_in_order(&app_signals);
 
     let new_session = Rc::clone(&wiring.chat_wires.new_session);

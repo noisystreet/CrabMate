@@ -2,9 +2,7 @@ use leptos::prelude::*;
 
 use crate::chat_session_state::ChatSessionSignals;
 use crate::i18n;
-use crate::session_ops::{
-    SessionContextAnchor, clamp_session_ctx_menu_pos, switch_active_session_after_composer_flush,
-};
+use crate::session_ops::{SessionContextAnchor, switch_active_session_after_composer_flush};
 use crate::session_search::{
     MESSAGE_SEARCH_MAX_HITS, MessageSearchHit, collect_message_search_hits, normalize_search_query,
     session_title_matches,
@@ -165,6 +163,10 @@ fn nav_search_hit_button(h: MessageSearchHit, nav: NavRailHitRowNavSignals) -> i
 }
 
 fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl IntoView {
+    use std::rc::Rc;
+
+    use super::session_row_press::{build_session_row_press_handlers, session_row_item_class};
+
     let NavRailHitRowNavSignals {
         chat,
         draft,
@@ -178,50 +180,46 @@ fn nav_session_row_button(s: ChatSession, nav: NavRailHitRowNavSignals) -> impl 
     let session_id_class = s.id.clone();
     let session_id_testid = s.id.clone();
     let session_id_click = s.id.clone();
-    let session_id_ctx = s.id.clone();
     let title = s.title.clone();
     let n = s.messages.len();
     let is_pinned = s.pinned;
     let is_starred = s.starred;
+
+    let press =
+        build_session_row_press_handlers(s.id.clone(), session_context_menu, sidebar_rail_ctx_menu);
+    let on_contextmenu = Rc::clone(&press.on_contextmenu);
+    let on_pointerdown = Rc::clone(&press.on_pointerdown);
+    let on_pointermove = Rc::clone(&press.on_pointermove);
+    let on_pointer_end = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_cancel = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_leave = Rc::clone(&press.on_pointer_end);
+    let try_consume_suppress_click = Rc::clone(&press.try_consume_suppress_click);
+
     view! {
         <button
             type="button"
             data-testid=format!("nav-session-{session_id_testid}")
             class=move || {
-                let mut c = String::from("nav-session-item");
-                if active_id.get() == session_id_class {
-                    c.push_str(" is-active");
-                }
-                if is_pinned {
-                    c.push_str(" is-pinned");
-                }
-                if is_starred {
-                    c.push_str(" is-starred");
-                }
-                c
+                session_row_item_class(
+                    active_id.get() == session_id_class,
+                    is_pinned,
+                    is_starred,
+                )
             }
-            on:contextmenu=move |ev: web_sys::MouseEvent| {
-                ev.prevent_default();
-                ev.stop_propagation();
+            on:contextmenu=move |ev| on_contextmenu(ev)
+            on:pointerdown=move |ev| on_pointerdown(ev)
+            on:pointermove=move |ev| on_pointermove(ev)
+            on:pointerup=move |_| on_pointer_end()
+            on:pointercancel=move |_| on_pointer_end_cancel()
+            on:pointerleave=move |_| on_pointer_end_leave()
+            on:click=move |_| {
+                if try_consume_suppress_click() {
+                    return;
+                }
+                session_context_menu.set(None);
                 sidebar_rail_ctx_menu.set(None);
-                let (x, y) = clamp_session_ctx_menu_pos(
-                    ev.client_x(),
-                    ev.client_y(),
-                );
-                session_context_menu.set(Some(SessionContextAnchor {
-                    session_id: session_id_ctx.clone(),
-                    x,
-                    y,
-                }));
-            }
-            on:click={
-                let id = session_id_click;
-                move |_| {
-                    session_context_menu.set(None);
-                    sidebar_rail_ctx_menu.set(None);
-                    switch_active_session_after_composer_flush(chat, draft, &id, true);
-                    mobile_nav_open.set(false);
-                }
+                switch_active_session_after_composer_flush(chat, draft, &session_id_click, true);
+                mobile_nav_open.set(false);
             }
         >
             <span class="nav-session-title-row">
