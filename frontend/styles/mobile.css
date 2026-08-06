@@ -63,7 +63,12 @@
     width: 0 !important;
   }
 
-  /* 右缘感应条：仅作视觉/触控提示；pointer-events:none，避免盖住右侧浮动工具栏（z-index 50）点击。滑动由 document 级 pointer 监听按 clientX 判定。 */
+  /* 主屏不显示浮动工具栏；GitHub/工作区/状态栏/设置改在右侧抽屉顶部 */
+  .shell-main-toolbar--rail-float {
+    display: none !important;
+  }
+
+  /* 右缘感应条：仅作视觉/触控提示；pointer-events:none。滑动由 document 级 pointer 监听按 clientX 判定。 */
   .side-column-edge-hit {
     display: block;
     position: fixed;
@@ -86,10 +91,11 @@
     animation: fade-in 0.2s ease;
   }
 
-  /* 浮动工具栏在窄屏仍贴右，但避开顶栏；略左移以免完全挡住右缘感应 */
-  .shell-main-toolbar--rail-float {
-    top: calc(var(--shell-chrome-top, var(--shell-topbar-h, 52px)) + 8px);
-    right: max(10px, env(safe-area-inset-right, 0px));
+  /* 右侧抽屉内工具栏：横排、可换行，避开底栏安全区由抽屉自身承担 */
+  .side-column .shell-main-toolbar {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 10px;
   }
 }
 
