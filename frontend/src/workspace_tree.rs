@@ -1,6 +1,7 @@
 //! 工作区侧栏：可展开/折叠的子目录树（默认折叠，按需 `GET /workspace?path=` 拉取）。
 
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use gloo_timers::future::TimeoutFuture;
@@ -8,7 +9,6 @@ use leptos::html::Input;
 use leptos::prelude::*;
 use leptos::task::spawn_local;
 use leptos_dom::helpers::event_target_value;
-use wasm_bindgen::JsCast;
 
 use crate::api::{WorkspaceData, WorkspaceEntry, fetch_workspace};
 use crate::i18n::{self, Locale};
@@ -198,59 +198,6 @@ fn workspace_filesystem_ul_class(entries_empty: bool, show_inline: bool) -> &'st
     } else {
         "workspace-list list-stagger"
     }
-}
-
-fn open_workspace_context_menu(
-    ev: web_sys::MouseEvent,
-    workspace_context_menu: RwSignal<Option<crate::workspace_context_menu::WorkspaceContextAnchor>>,
-    target_rel: Option<String>,
-    target_is_dir: bool,
-    parent_rel: String,
-) {
-    ev.prevent_default();
-    workspace_context_menu.set(Some(
-        crate::workspace_context_menu::WorkspaceContextAnchor {
-            x: ev.client_x() as f64,
-            y: ev.client_y() as f64,
-            target_rel,
-            target_is_dir,
-            parent_rel,
-        },
-    ));
-}
-
-fn context_menu_target_is_tree_row(ev: &web_sys::MouseEvent) -> bool {
-    let Some(t) = ev.target() else {
-        return false;
-    };
-    let Ok(el) = t.dyn_into::<web_sys::HtmlElement>() else {
-        return false;
-    };
-    el.closest("li").ok().flatten().is_some()
-}
-
-fn context_menu_target_is_workspace_chrome(ev: &web_sys::MouseEvent) -> bool {
-    let Some(t) = ev.target() else {
-        return false;
-    };
-    let Ok(el) = t.dyn_into::<web_sys::HtmlElement>() else {
-        return false;
-    };
-    el.closest(".shell-topbar-workspace")
-        .ok()
-        .flatten()
-        .is_some()
-}
-
-/// 工作区树面板空白处（含列表下方留白）右键：在根目录新建。
-pub(crate) fn handle_workspace_tree_panel_context_menu(
-    ev: web_sys::MouseEvent,
-    workspace_context_menu: RwSignal<Option<crate::workspace_context_menu::WorkspaceContextAnchor>>,
-) {
-    if context_menu_target_is_tree_row(&ev) || context_menu_target_is_workspace_chrome(&ev) {
-        return;
-    }
-    open_workspace_context_menu(ev, workspace_context_menu, None, false, String::new());
 }
 
 #[derive(Clone, Copy)]
@@ -473,8 +420,22 @@ fn WorkspaceTreeFileRow(
 ) -> impl IntoView {
     let rel_dbl = rel.clone();
     let rel_click = rel.clone();
-    let rel_ctx = rel.clone();
     let rel_drag = rel.clone();
+    let press = crate::workspace_tree_press::build_workspace_row_press_handlers(
+        chrome.context_menu,
+        crate::workspace_tree_press::WorkspaceRowPressTarget {
+            target_rel: Some(rel),
+            target_is_dir: false,
+            parent_rel,
+        },
+    );
+    let on_contextmenu = press.on_contextmenu;
+    let on_pointerdown = press.on_pointerdown;
+    let on_pointermove = press.on_pointermove;
+    let on_pointer_end = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_cancel = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_leave = Rc::clone(&press.on_pointer_end);
+    let try_consume_suppress_click = press.try_consume_suppress_click;
     view! {
         <li
             class=row_class
@@ -484,25 +445,179 @@ fn WorkspaceTreeFileRow(
                 workspace_file_row_drag_start(&ev, rel_drag.as_str());
             }
             on:click=move |_| {
+                if try_consume_suppress_click() {
+                    return;
+                }
                 (on_file_single_click.get_value())(rel_click.clone());
             }
             on:dblclick=move |_| {
                 (on_file_double_click.get_value())(rel_dbl.clone());
             }
-            on:contextmenu=move |ev: web_sys::MouseEvent| {
-                open_workspace_context_menu(
-                    ev,
-                    chrome.context_menu,
-                    Some(rel_ctx.clone()),
-                    false,
-                    parent_rel.clone(),
-                );
-            }
+            on:contextmenu=move |ev| on_contextmenu(ev)
+            on:pointerdown=move |ev| on_pointerdown(ev)
+            on:pointermove=move |ev| on_pointermove(ev)
+            on:pointerup=move |_| on_pointer_end()
+            on:pointercancel=move |_| on_pointer_end_cancel()
+            on:pointerleave=move |_| on_pointer_end_leave()
         >
             {workspace_list_row_icon(false, name.as_str())}
             <span class="workspace-entry-name">{name}</span>
         </li>
     }
+}
+
+#[component]
+fn WorkspaceTreeDirHead(
+    name: String,
+    rel: String,
+    subtree: WorkspaceSubtreeSignals,
+    chrome: WorkspaceTreeChromeSignals,
+) -> impl IntoView {
+    let WorkspaceSubtreeSignals {
+        subtree_expanded,
+        subtree_cache,
+        subtree_loading,
+        locale,
+    } = subtree;
+    let rel_aria = rel.clone();
+    let rel_aria_label = rel.clone();
+    let rel_head = rel.clone();
+    let rel_glyph = rel.clone();
+    let name_for_aria = name.clone();
+    let press = crate::workspace_tree_press::build_workspace_row_press_handlers(
+        chrome.context_menu,
+        crate::workspace_tree_press::WorkspaceRowPressTarget {
+            target_rel: Some(rel),
+            target_is_dir: true,
+            parent_rel: rel_aria_label.clone(),
+        },
+    );
+    let on_contextmenu = press.on_contextmenu;
+    let on_pointerdown = press.on_pointerdown;
+    let on_pointermove = press.on_pointermove;
+    let on_pointer_end = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_cancel = Rc::clone(&press.on_pointer_end);
+    let on_pointer_end_leave = Rc::clone(&press.on_pointer_end);
+    let try_consume_suppress_click = press.try_consume_suppress_click;
+    let rel_keydown = rel_head.clone();
+    view! {
+        <div
+            class="workspace-dir-head"
+            role="button"
+            tabindex="0"
+            prop:aria-expanded=move || {
+                subtree_expanded.get().contains(&rel_aria).to_string()
+            }
+            prop:aria-label=move || {
+                let loc = locale.get();
+                if subtree_expanded.get().contains(&rel_aria_label) {
+                    i18n::workspace_tree_collapse_folder(loc, name_for_aria.as_str())
+                } else {
+                    i18n::workspace_tree_expand_folder(loc, name_for_aria.as_str())
+                }
+            }
+            prop:title=move || i18n::workspace_tree_toggle_dir_title(locale.get())
+            on:click=move |_| {
+                if try_consume_suppress_click() {
+                    return;
+                }
+                toggle_workspace_dir(
+                    rel_head.clone(),
+                    subtree_expanded,
+                    subtree_cache,
+                    subtree_loading,
+                    locale,
+                );
+            }
+            on:keydown=move |ev: web_sys::KeyboardEvent| {
+                if ev.key() == "Enter" || ev.key() == " " {
+                    ev.prevent_default();
+                    toggle_workspace_dir(
+                        rel_keydown.clone(),
+                        subtree_expanded,
+                        subtree_cache,
+                        subtree_loading,
+                        locale,
+                    );
+                }
+            }
+            on:contextmenu=move |ev| on_contextmenu(ev)
+            on:pointerdown=move |ev| on_pointerdown(ev)
+            on:pointermove=move |ev| on_pointermove(ev)
+            on:pointerup=move |_| on_pointer_end()
+            on:pointercancel=move |_| on_pointer_end_cancel()
+            on:pointerleave=move |_| on_pointer_end_leave()
+        >
+            <span class="workspace-tree-chevron" aria-hidden="true">
+                {move || {
+                    if subtree_expanded.get().contains(&rel_glyph) {
+                        "▾"
+                    } else {
+                        "▸"
+                    }
+                }}
+            </span>
+            {workspace_list_row_icon(true, name.as_str())}
+            <span class="workspace-entry-name">{name}</span>
+        </div>
+    }
+}
+
+fn workspace_tree_dir_children_view(rel: String, env: WorkspaceTreeEnv) -> AnyView {
+    let WorkspaceSubtreeSignals {
+        subtree_cache,
+        subtree_loading,
+        locale,
+        ..
+    } = env.subtree;
+    let loading = subtree_loading.get().contains(&rel);
+    let cached = subtree_cache.get().get(&rel).cloned();
+    let pending_here = env
+        .chrome
+        .pending_create
+        .get()
+        .is_some_and(|pc| pc.parent_rel == rel);
+    if loading && cached.is_none() && !pending_here {
+        return view! {
+            <p class="workspace-tree-loading" role="status">
+                {move || i18n::changelist_loading(locale.get())}
+            </p>
+        }
+        .into_any();
+    }
+    if cached.as_ref().and_then(|d| d.error.as_ref()).is_some() {
+        let err = cached
+            .as_ref()
+            .and_then(|d| d.error.clone())
+            .unwrap_or_default();
+        return view! {
+            <ul class="workspace-list workspace-list-nested" role="group">
+                <li class="msg-error workspace-tree-err">{err}</li>
+                <WorkspaceTreeNodes
+                    parent_rel=rel.clone()
+                    entries=Vec::new()
+                    base_stagger=0
+                    env=env
+                />
+            </ul>
+        }
+        .into_any();
+    }
+    let nested = cached
+        .as_ref()
+        .map(|d| d.entries.clone())
+        .unwrap_or_default();
+    view! {
+        <ul class="workspace-list workspace-list-nested" role="group">
+            <WorkspaceTreeNodes
+                parent_rel=rel
+                entries=nested
+                base_stagger=0
+                env=env
+            />
+        </ul>
+    }
+    .into_any()
 }
 
 #[component]
@@ -513,132 +628,24 @@ fn WorkspaceTreeDirectoryNode(
     rel: String,
     env: WorkspaceTreeEnv,
 ) -> impl IntoView {
-    let WorkspaceTreeEnv {
-        subtree:
-            WorkspaceSubtreeSignals {
-                subtree_expanded,
-                subtree_cache,
-                subtree_loading,
-                locale,
-            },
-        chrome,
-        ..
-    } = env;
-    let rel_aria = rel.clone();
-    let rel_aria_label = rel.clone();
-    let rel_click = rel.clone();
-    let rel_glyph = rel.clone();
+    let subtree = env.subtree;
+    let chrome = env.chrome;
     let rel_show = rel.clone();
-    let rel_inner = StoredValue::new(rel);
-    let rel_ctx = rel_aria_label.clone();
-    let name_for_aria = name.clone();
+    let rel_for_children = StoredValue::new(rel.clone());
     let env_nested = env;
     view! {
         <li
             class=format!("{row_class} workspace-dir-node")
             style=format!("--list-stagger: {stagger}")
         >
-            <div
-                class="workspace-dir-head"
-                on:contextmenu=move |ev: web_sys::MouseEvent| {
-                    open_workspace_context_menu(
-                        ev,
-                        chrome.context_menu,
-                        Some(rel_ctx.clone()),
-                        true,
-                        rel_ctx.clone(),
-                    );
-                }
-            >
-                <button
-                    type="button"
-                    class="workspace-tree-chevron"
-                    aria-expanded=move || subtree_expanded.get().contains(&rel_aria)
-                    prop:aria-label=move || {
-                        let loc = locale.get();
-                        if subtree_expanded.get().contains(&rel_aria_label) {
-                            i18n::workspace_tree_collapse_folder(loc, name_for_aria.as_str())
-                        } else {
-                            i18n::workspace_tree_expand_folder(loc, name_for_aria.as_str())
-                        }
-                    }
-                    prop:title=move || i18n::workspace_tree_toggle_dir_title(locale.get())
-                    on:click=move |_| {
-                        toggle_workspace_dir(
-                            rel_click.clone(),
-                            subtree_expanded,
-                            subtree_cache,
-                            subtree_loading,
-                            locale,
-                        );
-                    }
-                >
-                    {move || {
-                        if subtree_expanded.get().contains(&rel_glyph) {
-                            "▾"
-                        } else {
-                            "▸"
-                        }
-                    }}
-                </button>
-                {workspace_list_row_icon(true, name.as_str())}
-                <span class="workspace-entry-name">{name}</span>
-            </div>
-            <Show when=move || subtree_expanded.get().contains(&rel_show)>
-                {move || {
-                    let p = rel_inner.get_value();
-                    let loading = subtree_loading.get().contains(&p);
-                    let cached = subtree_cache.get().get(&p).cloned();
-                    let pending_here = env_nested
-                        .chrome
-                        .pending_create
-                        .get()
-                        .is_some_and(|pc| pc.parent_rel == p);
-                    if loading && cached.is_none() && !pending_here {
-                        view! {
-                            <p class="workspace-tree-loading" role="status">
-                                {move || i18n::changelist_loading(locale.get())}
-                            </p>
-                        }
-                        .into_any()
-                    } else if cached.as_ref().and_then(|d| d.error.as_ref()).is_some() {
-                        let err = cached
-                            .as_ref()
-                            .and_then(|d| d.error.clone())
-                            .unwrap_or_default();
-                        view! {
-                            <ul class="workspace-list workspace-list-nested" role="group">
-                                <li class="msg-error workspace-tree-err">{err}</li>
-                                <WorkspaceTreeNodes
-                                    parent_rel=p.clone()
-                                    entries=Vec::new()
-                                    base_stagger=0
-                                    env=env_nested
-                                />
-                            </ul>
-                        }
-                        .into_any()
-                    } else {
-                        let nested = cached
-                            .as_ref()
-                            .map(|d| d.entries.clone())
-                            .unwrap_or_default();
-                        view! {
-                            <ul
-                                class="workspace-list workspace-list-nested"
-                                role="group"
-                            >
-                                <WorkspaceTreeNodes
-                                    parent_rel=p.clone()
-                                    entries=nested
-                                    base_stagger=0
-                                    env=env_nested
-                                />
-                            </ul>
-                        }
-                        .into_any()
-                    }
-                }}
+            <WorkspaceTreeDirHead
+                name=name
+                rel=rel
+                subtree=subtree
+                chrome=chrome
+            />
+            <Show when=move || subtree.subtree_expanded.get().contains(&rel_show)>
+                {move || workspace_tree_dir_children_view(rel_for_children.get_value(), env_nested)}
             </Show>
         </li>
     }

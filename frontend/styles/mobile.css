@@ -367,6 +367,70 @@
   .workspace-browser-pick-path-row .settings-text-input {
     font-size: 16px;
   }
+
+  /* —— 右抽屉内容触控化：工作区树 / 任务 / Debug —— */
+  .side-column .workspace-list {
+    font-size: 13px;
+  }
+
+  .side-column .workspace-list li.file,
+  .side-column .workspace-dir-head {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 10px 8px;
+  }
+
+  /* 与放大后的 chevron 列对齐 */
+  .side-column .workspace-list li.file::before {
+    width: 44px;
+    height: 44px;
+  }
+
+  .side-column .workspace-tree-chevron {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 0.75rem;
+  }
+
+  .side-column .tasks-list li {
+    min-height: 44px;
+    align-items: center;
+    padding: 10px 8px;
+    box-sizing: border-box;
+  }
+
+  .side-column .tasks-list input[type="checkbox"] {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+  }
+
+  .side-column .side-head-action.btn-sm,
+  .side-column .workspace-list-refresh-btn,
+  .side-column .workspace-changelog-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .side-column .session-ctx-item,
+  .workspace-tree-shell .session-ctx-item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    box-sizing: border-box;
+  }
+
+  .side-column .debug-trace-summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 8px 4px;
+    box-sizing: border-box;
+  }
 }
 
 @keyframes cm-approval-sheet-in {

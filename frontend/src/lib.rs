@@ -58,6 +58,7 @@ mod workspace_context_menu;
 mod workspace_fs_ops;
 mod workspace_shell;
 mod workspace_tree;
+mod workspace_tree_press;
 
 use app::App;
 use leptos::mount::mount_to_body;

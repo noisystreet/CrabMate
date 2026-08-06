@@ -201,9 +201,15 @@ fn SideColumnWorkspaceCard(
     changelist_modal_open: RwSignal<bool>,
     changelist_fetch_nonce: RwSignal<u64>,
     insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
+    is_narrow_viewport: RwSignal<bool>,
 ) -> impl IntoView {
-    let ws_file_single_noop =
-        StoredValue::new(Arc::new(|_: String| {}) as Arc<dyn Fn(String) + Send + Sync>);
+    let insert_sv = insert_workspace_file_ref;
+    let on_file_single_click = StoredValue::new(Arc::new(move |rel: String| {
+        // 窄屏无可靠双击：单击插入 @ 引用；宽屏仍靠双击，避免误触。
+        if is_narrow_viewport.get_untracked() {
+            (insert_sv.get_value())(rel);
+        }
+    }) as Arc<dyn Fn(String) + Send + Sync>);
     let refresh_after_mutation = make_refresh_workspace_after_mutation(ws, locale.get_untracked());
     let ctx_actions = StoredValue::new(WorkspaceContextMenuActions {
         refresh_after_mutation,
@@ -239,7 +245,7 @@ fn SideColumnWorkspaceCard(
                             locale=locale
                             ws=ws
                             insert_workspace_file_ref=insert_workspace_file_ref
-                            on_file_single_click=ws_file_single_noop
+                            on_file_single_click=on_file_single_click
                             ctx_actions=ctx_actions
                         />
                     </div>
@@ -338,6 +344,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
                         changelist_modal_open=changelist_modal_open
                         changelist_fetch_nonce=changelist_fetch_nonce
                         insert_workspace_file_ref=insert_workspace_file_ref
+                        is_narrow_viewport=is_narrow_viewport
                     />
                 </Show>
                 <Show when=move || matches!(side_panel_view.get(), SidePanelView::Tasks)>
