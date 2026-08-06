@@ -475,7 +475,7 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
     };
-    match write_bytes_under_root(&base, &target, new_content.as_bytes(), false, true) {
+    match write_bytes_under_root(&base, &target, new_content.as_bytes(), false, false) {
         Ok(()) => {
             record_file_state_after_write(
                 ctx.workspace_changelist,

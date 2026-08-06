@@ -258,7 +258,7 @@ fn modify_file_write_full_overwrite(
         Ok(p) => p,
         Err(e) => return tool_user_error_from_workspace_path(e),
     };
-    match write_bytes_under_root(&base, target, content.as_bytes(), false, true) {
+    match write_bytes_under_root(&base, target, content.as_bytes(), false, false) {
         Ok(()) => {
             let before_preview = before.clone();
             record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);

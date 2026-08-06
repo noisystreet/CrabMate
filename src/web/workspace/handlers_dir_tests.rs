@@ -1,6 +1,8 @@
+//! 工作区目录创建同步路径单元测试。
+
 #[cfg(test)]
 mod workspace_dir_create_tests {
-    use super::super::handlers::workspace_dir_create_sync;
+    use super::super::handlers_sync::workspace_dir_create_sync;
     use std::path::PathBuf;
 
     fn workspace_base(root: &tempfile::TempDir) -> PathBuf {

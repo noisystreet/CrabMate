@@ -2,6 +2,7 @@
 
 mod handlers;
 mod handlers_dir_tests;
+mod handlers_sync;
 mod projects;
 
 pub use handlers::*;
