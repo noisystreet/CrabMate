@@ -1,12 +1,16 @@
-//! TUI 风格聊天视图：每回合独立 wrap（section + 下方操作条）；live 按块局部更新（活跃块流式行内 HTML）。
+//! TUI 风格聊天视图：每回合独立 wrap；操作经右键 / 长按菜单；live 按块局部更新。
 
+use leptos::ev;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
+use super::message_turn_menu::{
+    MessageTurnContextMenuLayer, MessageTurnMenuAnchor, build_message_turn_press_handlers,
+};
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
 use super::session_hydrate::try_load_older_messages_for_active_session;
-use super::tui_actions_bar::{TuiTurnActionHandlers, dispatch_tui_turn_action};
+use super::tui_actions_bar::TuiTurnActionHandlers;
 use super::tui_line_markdown::{
     TuiBodyPatch, open_active_block_class, open_block_is_fence_buffer, render_open_active_html,
 };
@@ -305,23 +309,6 @@ fn apply_tui_sync_plan(transcript: &web_sys::HtmlElement, plan: &TuiSyncPlan) ->
     true
 }
 
-fn action_click_from_event(ev: &web_sys::MouseEvent) -> Option<(String, String, usize)> {
-    let target = ev.target()?.dyn_into::<web_sys::Element>().ok()?;
-    let btn = target
-        .closest("[data-tui-action]")
-        .ok()
-        .flatten()?
-        .dyn_into::<web_sys::HtmlElement>()
-        .ok()?;
-    let action = btn.get_attribute("data-tui-action")?;
-    let message_id = btn.get_attribute("data-tui-msg-id")?;
-    let msg_idx = btn
-        .get_attribute("data-tui-msg-idx")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    Some((action, message_id, msg_idx))
-}
-
 #[component]
 pub(crate) fn ChatTuiStreamView(
     chat: ChatSessionSignals,
@@ -333,6 +320,20 @@ pub(crate) fn ChatTuiStreamView(
 ) -> impl IntoView {
     let transcript_ref = NodeRef::<leptos::html::Div>::new();
     let mount_state = RwSignal::new(None::<TuiMountState>);
+    let turn_menu = RwSignal::new(None::<MessageTurnMenuAnchor>);
+    let press = build_message_turn_press_handlers(chat, turn_menu);
+    let on_contextmenu = press.on_contextmenu.clone();
+    let on_pointerdown = press.on_pointerdown.clone();
+    let on_pointermove = press.on_pointermove.clone();
+    let on_pointer_end = press.on_pointer_end.clone();
+    let on_pointer_end_cancel = press.on_pointer_end.clone();
+    let try_consume_suppress_click = press.try_consume_suppress_click.clone();
+
+    window_event_listener(ev::keydown, move |ev| {
+        if ev.key() == "Escape" && turn_menu.get_untracked().is_some() {
+            turn_menu.set(None);
+        }
+    });
 
     Effect::new(move |_| {
         let _ = chat.stream_overlay_revision.get();
@@ -443,12 +444,19 @@ pub(crate) fn ChatTuiStreamView(
                 node_ref=transcript_ref
                 aria-live="polite"
                 aria-atomic="false"
-                on:click=move |ev| {
-                    let Some((action, message_id, msg_idx)) = action_click_from_event(&ev) else {
-                        return;
-                    };
-                    let _ = dispatch_tui_turn_action(action_handlers, &action, &message_id, msg_idx);
+                on:contextmenu=move |ev| on_contextmenu(ev)
+                on:pointerdown=move |ev| on_pointerdown(ev)
+                on:pointermove=move |ev| on_pointermove(ev)
+                on:pointerup=move |_| on_pointer_end()
+                on:pointercancel=move |_| on_pointer_end_cancel()
+                on:click=move |_| {
+                    let _ = try_consume_suppress_click();
                 }
+            />
+            <MessageTurnContextMenuLayer
+                locale=locale
+                menu=turn_menu
+                action_handlers=action_handlers
             />
         </div>
     }

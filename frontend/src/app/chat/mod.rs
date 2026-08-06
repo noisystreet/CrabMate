@@ -17,6 +17,7 @@ mod find;
 mod find_bar;
 mod handles;
 mod message_row_actions;
+mod message_turn_menu;
 mod scroll;
 mod scroll_follow;
 mod scroll_shell;

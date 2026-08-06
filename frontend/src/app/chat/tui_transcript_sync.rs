@@ -9,7 +9,7 @@ use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
 
-use super::tui_actions_bar::{long_assistant_turn_class_suffix, turn_actions_bar_html};
+use super::tui_actions_bar::long_assistant_turn_class_suffix;
 use super::tui_line_markdown::{
     TuiBodyChunks, TuiBodyPatch, open_active_block_class, parse_tui_body_chunks_with,
     plan_tui_body_patch, render_open_active_html,
@@ -399,14 +399,15 @@ fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
          <div class=\"chat-tui-body\">{body}</div>\
          </section>"
     );
-    let actions = turn_actions_bar_html(message, msg_idx, locale);
     let wrap_align = if role_class == "chat-tui-turn--user" {
         " chat-tui-turn-wrap--user"
     } else {
         ""
     };
+    // 操作改为右键 / 长按菜单；idx 供菜单分发 regen/branch。
     format!(
-        "<div class=\"chat-tui-turn-wrap{wrap_align}\" data-tui-wrap-id=\"{id_esc}\">{role_block}{section}{actions}</div>"
+        "<div class=\"chat-tui-turn-wrap{wrap_align}\" data-tui-wrap-id=\"{id_esc}\" \
+         data-tui-msg-idx=\"{msg_idx}\">{role_block}{section}</div>"
     )
 }
 
@@ -703,39 +704,20 @@ fn plan_refresh_bodies(
 }
 
 fn plan_refresh_actions(
-    messages: &[StoredMessage],
-    live_id: Option<&str>,
-    locale: Locale,
+    _messages: &[StoredMessage],
+    _live_id: Option<&str>,
+    _locale: Locale,
 ) -> Vec<TurnActionsPlan> {
-    messages
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| live_id != Some(message.id.as_str()))
-        .map(|(msg_idx, message)| TurnActionsPlan {
-            message_id: message.id.clone(),
-            html: turn_actions_bar_html(message, msg_idx, locale),
-        })
-        .collect()
+    // 操作已迁至右键/长按菜单，不再刷新下方操作条 DOM。
+    Vec::new()
 }
 
 fn actions_for_promote(
-    messages: &[StoredMessage],
-    promote_id: Option<&str>,
-    locale: Locale,
+    _messages: &[StoredMessage],
+    _promote_id: Option<&str>,
+    _locale: Locale,
 ) -> Vec<TurnActionsPlan> {
-    let Some(pid) = promote_id else {
-        return Vec::new();
-    };
-    messages
-        .iter()
-        .enumerate()
-        .find(|(_, m)| m.id == pid)
-        .map(|(msg_idx, message)| TurnActionsPlan {
-            message_id: message.id.clone(),
-            html: turn_actions_bar_html(message, msg_idx, locale),
-        })
-        .into_iter()
-        .collect()
+    Vec::new()
 }
 
 fn next_mount_state(

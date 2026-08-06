@@ -53,13 +53,6 @@ pub fn staged_coach_injection_fallback(l: Locale, ordinal: usize) -> &'static st
     }
 }
 
-pub fn msg_actions_group_aria(l: Locale) -> &'static str {
-    match l {
-        Locale::ZhHans => "消息操作",
-        Locale::En => "Message actions",
-    }
-}
-
 pub fn msg_copy_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "复制本条展示文本",
@@ -92,5 +85,41 @@ pub fn msg_toggle_expand_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "展开或收起长消息",
         Locale::En => "Expand or collapse long message",
+    }
+}
+
+/// 右键 / 长按菜单短标签（勿用 title 长句）。
+pub fn msg_menu_copy(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "复制",
+        Locale::En => "Copy",
+    }
+}
+
+pub fn msg_menu_regen(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "重新生成",
+        Locale::En => "Regenerate",
+    }
+}
+
+pub fn msg_menu_branch(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "删除此后",
+        Locale::En => "Delete after",
+    }
+}
+
+pub fn msg_menu_retry(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "重试",
+        Locale::En => "Retry",
+    }
+}
+
+pub fn msg_menu_toggle_expand(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "展开/收起",
+        Locale::En => "Expand/Collapse",
     }
 }
