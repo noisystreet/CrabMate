@@ -38,7 +38,6 @@ use super::changelist_modal::ChangelistModalBodyState;
 /// 壳顶栏所需句柄（阶段 B：避免向 `mobile_shell_header_view` 传递整份 [`AppShellCtx`]）。
 #[derive(Clone, Copy)]
 pub struct MobileShellHeaderSignals {
-    pub mobile_nav_open: RwSignal<bool>,
     pub locale: RwSignal<Locale>,
     pub editor_layout_mode: RwSignal<bool>,
     pub is_narrow_viewport: RwSignal<bool>,
@@ -324,7 +323,6 @@ impl AppShellCtx {
 
     pub fn mobile_shell_header_signals(&self) -> MobileShellHeaderSignals {
         MobileShellHeaderSignals {
-            mobile_nav_open: self.signals.sidebar.mobile_nav_open,
             locale: self.signals.shell_ui.locale,
             editor_layout_mode: self.signals.shell_ui.editor_layout_mode,
             is_narrow_viewport: self.signals.shell_ui.is_narrow_viewport,

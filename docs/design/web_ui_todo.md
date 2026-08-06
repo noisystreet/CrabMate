@@ -57,7 +57,7 @@
 
 当前主面向桌面端；窄屏优化见 `frontend/styles/mobile.css` 与 `app_shell_effects/viewport.rs`（`data-narrow-viewport`、侧栏 Sheet、safe-area、长消息折叠）。
 
-- [x] 侧边栏默认收起，顶部汉堡菜单触发（`≤768px` 抽屉 + 进入窄屏自动收起右侧面板）
+- [x] 侧边栏默认收起，窄屏左缘右划打开会话抽屉（`≤768px` + 进入窄屏自动收起右侧面板）
 - [x] 触摸友好的按钮尺寸和间距（`mobile.css` 顶栏/消息操作/composer 附件左置、发送/停止同槽均 ≥44px）
 - [x] 长消息默认折叠，减少滚动（`chat-tui-turn--long` + 菜单「展开/收起」；折叠高度 `min(280px, 35dvh)`）
 - [x] 审批弹窗在移动端居中加宽（与通用窄屏 modal 一致，避开底栏遮挡；操作钮纵向 ≥44px）
