@@ -729,8 +729,12 @@
 .settings-page-header {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4) var(--space-5);
+  gap: 0.5rem;
+  box-sizing: border-box;
+  /* 与主屏 `.shell-topbar` 同高（含顶部安全区） */
+  padding: max(var(--cm-safe-top, 0px), env(safe-area-inset-top, 0px)) 0.5rem 0 12px;
+  min-height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
+  height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg) 96%, var(--surface));
   position: sticky;
@@ -739,15 +743,26 @@
   flex-shrink: 0;
 }
 
+/* 与 `shell-topbar.css` 中 `html[data-cm-mobile-shell] .shell-topbar` 同一套安全区保底 */
+html[data-cm-mobile-shell] .settings-page-header {
+  padding-top: max(
+    var(--cm-safe-top),
+    var(--cm-safe-top-floor),
+    env(safe-area-inset-top, 0px)
+  );
+}
+
 .settings-page-back {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--muted);
   flex-shrink: 0;
-  padding: 8px 12px;
+  padding: 4px 8px;
   border-radius: var(--radius-btn);
   font-size: 13px;
+  min-height: 0;
+  line-height: 1.2;
 }
 
 .settings-page-back:hover {
@@ -756,16 +771,21 @@
 }
 
 .settings-page-back svg {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 
 .settings-page-title {
-  font-size: 1.05rem;
-  font-weight: 700;
+  font-size: 0.95rem;
+  font-weight: 650;
   margin: 0;
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
 }
 
 .settings-page-badge {
@@ -787,10 +807,17 @@
 
 .settings-page-header-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.settings-page-header-actions .btn {
+  min-height: 0;
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 
 .settings-unsaved-pill {
@@ -845,7 +872,7 @@
 
 .github-embed-browser-fallback {
   position: absolute;
-  top: var(--github-embed-header-h, 3.25rem);
+  top: var(--github-embed-header-h, var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem)));
   left: 0;
   right: 0;
   z-index: 1;
