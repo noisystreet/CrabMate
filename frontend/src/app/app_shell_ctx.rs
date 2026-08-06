@@ -199,6 +199,7 @@ pub struct SideColumnViewSignals {
     pub changelist_fetch_nonce: RwSignal<u64>,
     pub insert_workspace_file_ref: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     pub thinking_trace_log: RwSignal<Vec<ThinkingTraceInfo>>,
+    pub is_narrow_viewport: RwSignal<bool>,
 }
 
 /// 根壳 `App` 与侧栏、底栏、各模态之间共享的一组句柄（由 `App` 构造一次，按需 `clone()`）。
@@ -255,6 +256,7 @@ impl AppShellCtx {
             changelist_fetch_nonce: self.signals.modal.changelist_fetch_nonce,
             insert_workspace_file_ref: self.insert_workspace_file_ref,
             thinking_trace_log: self.signals.approval.thinking_trace_log,
+            is_narrow_viewport: self.signals.shell_ui.is_narrow_viewport,
         }
     }
 

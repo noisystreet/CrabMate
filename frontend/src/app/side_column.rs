@@ -293,6 +293,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         changelist_fetch_nonce,
         insert_workspace_file_ref,
         thinking_trace_log,
+        is_narrow_viewport,
     } = signals;
     let tasks_data = status_tasks.tasks_data;
     let tasks_err = status_tasks.tasks_err;
@@ -308,6 +309,7 @@ pub fn side_column_view(signals: SideColumnViewSignals) -> impl IntoView {
         status_bar_visible,
         settings_page,
         status_tasks,
+        is_narrow_viewport,
     };
     view! {
         <>

@@ -15,8 +15,14 @@ use crate::workspace_shell::begin_side_column_resize;
 use super::status_tasks_state::StatusTasksSignals;
 
 /// 侧栏隐藏时工具栏是否以浮动条渲染（须脱出 `side-column-rail-only` 父节点）。
-pub(crate) fn side_toolbar_rail_float(view: SidePanelView) -> bool {
-    matches!(view, SidePanelView::None)
+/// 窄屏主屏不展示浮动条（入口改在右侧工作区抽屉顶部）。
+pub(crate) fn side_toolbar_rail_float(view: SidePanelView, is_narrow_viewport: bool) -> bool {
+    matches!(view, SidePanelView::None) && !is_narrow_viewport
+}
+
+/// 右列内嵌工具栏：侧栏打开时展示（含窄屏右侧抽屉）。
+pub(crate) fn side_toolbar_in_side_column(view: SidePanelView) -> bool {
+    !matches!(view, SidePanelView::None)
 }
 
 pub(super) type SideResizeHandlesCell = Rc<
@@ -36,6 +42,17 @@ pub(super) struct SideColumnResizeToolbarSignals {
     pub side_width: RwSignal<f64>,
     pub side_resize_session: Rc<RefCell<Option<(f64, f64)>>>,
     pub side_resize_handles: SideResizeHandlesCell,
+    pub view_menu_open: RwSignal<bool>,
+    pub status_bar_visible: RwSignal<bool>,
+    pub settings_page: RwSignal<bool>,
+    pub status_tasks: StatusTasksSignals,
+    pub is_narrow_viewport: RwSignal<bool>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct ShellToolbarSharedSignals {
+    pub locale: RwSignal<Locale>,
+    pub side_panel_view: RwSignal<SidePanelView>,
     pub view_menu_open: RwSignal<bool>,
     pub status_bar_visible: RwSignal<bool>,
     pub settings_page: RwSignal<bool>,
@@ -96,6 +113,15 @@ fn SidePanelViewPickerTrigger(props: SidePanelViewPickerProps) -> impl IntoView 
     }
 }
 
+fn pick_side_panel_view(
+    side_panel_view: RwSignal<SidePanelView>,
+    view_menu_open: RwSignal<bool>,
+    next: SidePanelView,
+) {
+    side_panel_view.set(next);
+    view_menu_open.set(false);
+}
+
 #[component]
 fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
     let SidePanelViewPickerProps {
@@ -111,8 +137,7 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
                 class:active=move || matches!(side_panel_view.get(), SidePanelView::None)
                 role="menuitem"
                 on:click=move |_| {
-                    side_panel_view.set(SidePanelView::None);
-                    view_menu_open.set(false);
+                    pick_side_panel_view(side_panel_view, view_menu_open, SidePanelView::None);
                 }
             >
                 {move || i18n::side_panel_hide(locale.get())}
@@ -124,8 +149,7 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
                 class:active=move || matches!(side_panel_view.get(), SidePanelView::Workspace)
                 role="menuitem"
                 on:click=move |_| {
-                    side_panel_view.set(SidePanelView::Workspace);
-                    view_menu_open.set(false);
+                    pick_side_panel_view(side_panel_view, view_menu_open, SidePanelView::Workspace);
                 }
             >
                 {move || i18n::side_panel_workspace(locale.get())}
@@ -136,8 +160,7 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
                 class:active=move || matches!(side_panel_view.get(), SidePanelView::Tasks)
                 role="menuitem"
                 on:click=move |_| {
-                    side_panel_view.set(SidePanelView::Tasks);
-                    view_menu_open.set(false);
+                    pick_side_panel_view(side_panel_view, view_menu_open, SidePanelView::Tasks);
                 }
             >
                 {move || i18n::side_panel_tasks(locale.get())}
@@ -149,8 +172,11 @@ fn SidePanelViewPickerMenu(props: SidePanelViewPickerProps) -> impl IntoView {
                 role="menuitem"
                 prop:title=move || i18n::side_debug_console_title(locale.get())
                 on:click=move |_| {
-                    side_panel_view.set(SidePanelView::DebugConsole);
-                    view_menu_open.set(false);
+                    pick_side_panel_view(
+                        side_panel_view,
+                        view_menu_open,
+                        SidePanelView::DebugConsole,
+                    );
                 }
             >
                 {move || i18n::side_debug_console_btn(locale.get())}
@@ -242,16 +268,25 @@ fn SideToolbarGithubRepoBtn(
     }
 }
 
+/// GitHub / 工作区视图 / 状态栏 / 设置：桌面贴右浮动；窄屏仅在右侧抽屉顶部。
 #[component]
-fn SideColumnShellToolbarIcons(
-    rail_float: bool,
-    locale: RwSignal<Locale>,
-    side_panel_view: RwSignal<SidePanelView>,
-    view_menu_open: RwSignal<bool>,
-    status_bar_visible: RwSignal<bool>,
-    settings_page: RwSignal<bool>,
-    status_tasks: StatusTasksSignals,
+pub(crate) fn ShellToolbarIcons(
+    #[prop(into)] rail_float: bool,
+    shared: ShellToolbarSharedSignals,
 ) -> impl IntoView {
+    let ShellToolbarSharedSignals {
+        locale,
+        side_panel_view,
+        view_menu_open,
+        status_bar_visible,
+        settings_page,
+        status_tasks,
+    } = shared;
+    let picker = SidePanelViewPickerProps {
+        locale,
+        side_panel_view,
+        view_menu_open,
+    };
     view! {
         <div
             class="shell-main-toolbar"
@@ -260,7 +295,11 @@ fn SideColumnShellToolbarIcons(
             role="toolbar"
             prop:aria-label=move || i18n::side_toolbar_aria(locale.get())
         >
-            <SideToolbarGithubRepoBtn locale=locale view_menu_open=view_menu_open status_tasks=status_tasks />
+            <SideToolbarGithubRepoBtn
+                locale=locale
+                view_menu_open=view_menu_open
+                status_tasks=status_tasks
+            />
             <div class="toolbar-view-wrap">
                 <Show when=move || view_menu_open.get()>
                     <div
@@ -268,17 +307,9 @@ fn SideColumnShellToolbarIcons(
                         on:click=move |_| view_menu_open.set(false)
                     ></div>
                 </Show>
-                <SidePanelViewPickerTrigger props=SidePanelViewPickerProps {
-                    locale,
-                    side_panel_view,
-                    view_menu_open,
-                } />
+                <SidePanelViewPickerTrigger props=picker />
                 <Show when=move || view_menu_open.get()>
-                    <SidePanelViewPickerMenu props=SidePanelViewPickerProps {
-                        locale,
-                        side_panel_view,
-                        view_menu_open,
-                    } />
+                    <SidePanelViewPickerMenu props=picker />
                 </Show>
             </div>
             <button
@@ -378,7 +409,16 @@ pub(super) fn SideColumnResizeAndShellToolbar(
         status_bar_visible,
         settings_page,
         status_tasks,
+        is_narrow_viewport,
     } = toolbar;
+    let icons = ShellToolbarSharedSignals {
+        locale,
+        side_panel_view,
+        view_menu_open,
+        status_bar_visible,
+        settings_page,
+        status_tasks,
+    };
     view! {
         <SideColumnResizeDragHandle
             locale
@@ -388,32 +428,18 @@ pub(super) fn SideColumnResizeAndShellToolbar(
             side_resize_session
             side_resize_handles
         />
-        <Show when=move || side_toolbar_rail_float(side_panel_view.get())>
-            <SideColumnShellToolbarIcons
-                rail_float=true
-                locale
-                side_panel_view
-                view_menu_open
-                status_bar_visible
-                settings_page
-                status_tasks
-            />
+        <Show when=move || {
+            side_toolbar_rail_float(side_panel_view.get(), is_narrow_viewport.get())
+        }>
+            <ShellToolbarIcons rail_float=true shared=icons />
         </Show>
         <SideColumnShellColumn
             side_resize_dragging
             side_panel_view
             side_width
         >
-            <Show when=move || !side_toolbar_rail_float(side_panel_view.get())>
-                <SideColumnShellToolbarIcons
-                    rail_float=false
-                    locale
-                    side_panel_view
-                    view_menu_open
-                    status_bar_visible
-                    settings_page
-                    status_tasks
-                />
+            <Show when=move || side_toolbar_in_side_column(side_panel_view.get())>
+                <ShellToolbarIcons rail_float=false shared=icons />
             </Show>
             {children()}
         </SideColumnShellColumn>
@@ -426,10 +452,18 @@ mod tests {
     use crate::app_prefs::SidePanelView;
 
     #[test]
-    fn side_toolbar_rail_float_only_when_panel_hidden() {
-        assert!(side_toolbar_rail_float(SidePanelView::None));
-        assert!(!side_toolbar_rail_float(SidePanelView::Workspace));
-        assert!(!side_toolbar_rail_float(SidePanelView::Tasks));
-        assert!(!side_toolbar_rail_float(SidePanelView::DebugConsole));
+    fn side_toolbar_rail_float_desktop_only_when_panel_hidden() {
+        assert!(side_toolbar_rail_float(SidePanelView::None, false));
+        assert!(!side_toolbar_rail_float(SidePanelView::None, true));
+        assert!(!side_toolbar_rail_float(SidePanelView::Workspace, false));
+        assert!(!side_toolbar_rail_float(SidePanelView::Tasks, false));
+        assert!(!side_toolbar_rail_float(SidePanelView::DebugConsole, false));
+    }
+
+    #[test]
+    fn side_toolbar_in_side_column_when_panel_open() {
+        assert!(side_toolbar_in_side_column(SidePanelView::Workspace));
+        assert!(side_toolbar_in_side_column(SidePanelView::Tasks));
+        assert!(!side_toolbar_in_side_column(SidePanelView::None));
     }
 }

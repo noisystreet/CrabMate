@@ -1009,9 +1009,9 @@
     padding-right: 10px;
   }
 
-  /* 浮动工具栏避开移动端顶栏（☰ / 标题 / 新对话） */
+  /* 浮动工具栏在窄屏由右侧抽屉承载（见 mobile.css）；主屏不贴右 */
   .shell-main-toolbar--rail-float {
-    top: calc(var(--shell-chrome-top, var(--shell-topbar-h)) + 8px);
+    display: none !important;
   }
 
   .app-root.app-shell-ds {

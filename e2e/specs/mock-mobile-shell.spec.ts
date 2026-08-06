@@ -87,13 +87,22 @@ test.describe("移动端壳层", () => {
       /side-column-rail-only/,
     );
 
-    await page.getByTestId("side-view-trigger").click();
-    await page.getByTestId("side-panel-workspace-menu").click();
+    // 窄屏主屏无浮动工具栏；自右缘左划打开右侧抽屉
+    const vp = page.viewportSize()!;
+    const y = Math.floor(vp.height / 2);
+    const startX = vp.width - 8;
+    await page.mouse.move(startX, y);
+    await page.mouse.down();
+    await page.mouse.move(startX - 90, y, { steps: 8 });
+    await page.mouse.up();
 
     const side = page.locator(".side-column");
     await expect(side).not.toHaveClass(/side-column-rail-only/);
     await expect(page.getByTestId("side-column-backdrop")).toBeVisible();
     await expect(page.getByTestId("side-panel")).toBeVisible();
+    await expect(page.getByTestId("side-shell-toolbar")).toBeVisible();
+    await expect(page.getByTestId("settings-open")).toBeVisible();
+    await expect(page.getByTestId("side-view-trigger")).toBeVisible();
 
     const box = await side.boundingBox();
     expect(box).toBeTruthy();
@@ -107,6 +116,17 @@ test.describe("移动端壳层", () => {
       /side-column-rail-only/,
     );
     await expect(page.getByTestId("side-column-backdrop")).toBeHidden();
+  });
+
+  test("main chat hides floating shell toolbar on mobile", async ({ page }) => {
+    const sid = `s_e2e_mobile_no_float_tb_${Date.now()}`;
+    await seedSession(page, sid);
+
+    await expect(page.locator(".shell-main-toolbar--rail-float")).toHaveCount(
+      0,
+    );
+    await expect(page.getByTestId("side-shell-toolbar")).toHaveCount(0);
+    await expect(page.getByTestId("settings-open")).toHaveCount(0);
   });
 
   test("session context menu delete opens in-app shell confirm", async ({
