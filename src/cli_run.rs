@@ -660,7 +660,7 @@ pub(super) async fn run_serve_branch(
     Ok(())
 }
 
-/// 构建 axum graceful shutdown 信号：监听 SIGTERM/SIGINT → 关闭 ChatJobQueue → 等待 in-flight 完成（最多 30 秒）。
+/// 构建 axum graceful shutdown 信号：监听 SIGTERM/SIGINT（第二次 SIGINT 强退）→ 关闭 ChatJobQueue → 等待 in-flight 完成（最多 30 秒）。
 #[cfg(feature = "web")]
 fn build_serve_shutdown_signal(
     state: Arc<crate::AppState>,
