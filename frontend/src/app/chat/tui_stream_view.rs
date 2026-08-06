@@ -10,7 +10,7 @@ use super::message_turn_menu::{
 use super::scroll_follow::follow_after_content_paint;
 use super::scroll_shell::ChatScrollShellSignals;
 use super::session_hydrate::try_load_older_messages_for_active_session;
-use super::tui_actions_bar::TuiTurnActionHandlers;
+use super::tui_actions_bar::{TuiTurnActionHandlers, expand_collapsed_long_turn_on_click};
 use super::tui_line_markdown::{
     TuiBodyPatch, open_active_block_class, open_block_is_fence_buffer, render_open_active_html,
 };
@@ -449,8 +449,11 @@ pub(crate) fn ChatTuiStreamView(
                 on:pointermove=move |ev| on_pointermove(ev)
                 on:pointerup=move |_| on_pointer_end()
                 on:pointercancel=move |_| on_pointer_end_cancel()
-                on:click=move |_| {
-                    let _ = try_consume_suppress_click();
+                on:click=move |ev| {
+                    if try_consume_suppress_click() {
+                        return;
+                    }
+                    expand_collapsed_long_turn_on_click(&ev);
                 }
             />
             <MessageTurnContextMenuLayer

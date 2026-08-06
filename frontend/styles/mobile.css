@@ -6,6 +6,11 @@
   display: none;
 }
 
+/* Android 远程壳：输入框不显示假占位背景文字（与窄屏媒体查询内规则一致） */
+html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fake-ph {
+  display: none;
+}
+
 /* —— Phase 1：主区单栏 + 右侧半屏抽屉 —— */
 @media (max-width: 768px) {
   /* 会话抽屉品牌行与主屏顶栏同高：避开系统状态栏 / 刘海 */
@@ -171,7 +176,7 @@
     line-height: 1.25;
   }
 
-  /* —— Composer：聊天 App 式圆角输入条 —— */
+  /* —— Composer：紧凑输入条（圆角对齐 --radius-btn，勿用半高胶囊） —— */
   .composer-ds,
   .composer.composer-ds {
     --composer-control-h: 44px;
@@ -201,7 +206,8 @@
   .composer-ds .composer-input-stack {
     min-height: var(--composer-control-h);
     height: auto;
-    border-radius: calc(var(--composer-control-h) / 2);
+    /* 与左侧 .composer-attach-label（.btn → --radius-btn）同圆角 */
+    border-radius: var(--radius-btn);
     border: 1px solid var(--border-subtle);
     background: var(--surface);
     /* 勿给 stack 左右 padding：镜像高亮 / fake-ph 为 inset:0，与 textarea 必须同盒对齐 */
@@ -227,7 +233,11 @@
     box-sizing: border-box;
   }
 
-  .composer-ds .composer-input-stack .composer-input-fake-ph,
+  /* 移动端不展示输入框背景占位文案（桌面仍用假占位；无障碍靠 textarea aria-label） */
+  .composer-ds .composer-input-stack .composer-input-fake-ph {
+    display: none;
+  }
+
   .composer-ds .composer-input-stack .composer-input-highlight-inner {
     padding: 9px 14px;
   }
@@ -245,15 +255,16 @@
     min-height: var(--composer-control-h);
     padding: 0;
     margin: 0;
+    border-radius: var(--radius-btn);
   }
 
-  /* 圆形发送/停止同槽：与输入外缘同高 */
+  /* 发送/停止：尺寸与圆角与左侧上传钮一致 */
   .composer-ds .btn-send-icon {
     width: var(--composer-control-h);
     height: var(--composer-control-h);
     min-width: var(--composer-control-h);
     min-height: var(--composer-control-h);
-    border-radius: 50%;
+    border-radius: var(--radius-btn);
     padding: 0;
   }
 
@@ -440,6 +451,11 @@ html[data-narrow-viewport] .status-chips {
     position: relative;
     mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
     -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
+  }
+
+  /* 折叠态可点展开 */
+  .chat-tui-turn--assistant.chat-tui-turn--long:not(.chat-tui-turn--expanded):not(.is-loading) {
+    cursor: pointer;
   }
 
   .chat-tui-turn--assistant.chat-tui-turn--long.chat-tui-turn--expanded .chat-tui-body {
