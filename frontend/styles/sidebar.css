@@ -422,6 +422,7 @@
   padding: 6px 8px;
   border-radius: var(--radius-sm);
   transition: background 0.12s ease;
+  cursor: pointer;
 }
 
 .workspace-list li.workspace-dir-node .workspace-dir-head:hover {
@@ -444,6 +445,7 @@
   font-size: 0.65rem;
   line-height: 1;
   cursor: pointer;
+  user-select: none;
 }
 
 .workspace-tree-chevron:hover {

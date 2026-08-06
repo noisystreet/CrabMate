@@ -35,6 +35,14 @@ fn WorkspaceSideCardLoaded(
     on_file_single_click: StoredValue<Arc<dyn Fn(String) + Send + Sync>>,
     ctx_actions: StoredValue<WorkspaceContextMenuActions>,
 ) -> impl IntoView {
+    let blank_press = crate::workspace_tree_press::build_workspace_blank_press_handlers(
+        ws.workspace_context_menu,
+    );
+    let on_contextmenu = blank_press.on_contextmenu;
+    let on_pointerdown = blank_press.on_pointerdown;
+    let on_pointermove = blank_press.on_pointermove;
+    let on_pointer_end = std::rc::Rc::clone(&blank_press.on_pointer_end);
+    let on_pointer_end_cancel = std::rc::Rc::clone(&blank_press.on_pointer_end);
     view! {
         <div class="workspace-side-card-loaded">
             <Show when=move || {
@@ -50,12 +58,11 @@ fn WorkspaceSideCardLoaded(
             </Show>
             <div
                 class="workspace-tree-shell"
-                on:contextmenu=move |ev: web_sys::MouseEvent| {
-                    crate::workspace_tree::handle_workspace_tree_panel_context_menu(
-                        ev,
-                        ws.workspace_context_menu,
-                    );
-                }
+                on:contextmenu=move |ev| on_contextmenu(ev)
+                on:pointerdown=move |ev| on_pointerdown(ev)
+                on:pointermove=move |ev| on_pointermove(ev)
+                on:pointerup=move |_| on_pointer_end()
+                on:pointercancel=move |_| on_pointer_end_cancel()
             >
                 <WorkspaceFilesystemTree input=WorkspaceFilesystemTreeInput {
                     workspace_data: ws.workspace_data,
