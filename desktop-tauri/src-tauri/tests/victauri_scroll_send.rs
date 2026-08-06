@@ -45,7 +45,7 @@ async fn seed_scrollable_session(
             r#"fetch('/user-data/prefs', {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})
+                body: JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})
             })"#,
         )
         .await;
@@ -215,7 +215,7 @@ async fn poll_streaming_stays_at_live_edge(
 async fn seed_empty_session(client: &mut victauri_test::VictauriClient, session_id: &str) {
     let _ = client
         .eval_js(
-            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})",
+            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})})",
         )
         .await;
     let _ = client
@@ -337,7 +337,7 @@ e2e_test!(send_first_message_scrolls_to_bottom, |client| async move {
     // 播种空会话
     let _ = client
         .eval_js(
-            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false})})",
+            "fetch('/user-data/prefs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({locale:'zh',theme:'light',side_panel_view:'hidden',side_width:280,editor_layout_mode:false,status_bar_visible:true})})",
         )
         .await;
     let _ = client

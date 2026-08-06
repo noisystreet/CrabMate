@@ -50,9 +50,9 @@ export function applyCrabMateMobileSafeTop() {
     }
     let top = Number(b.getStatusBarInsetPx());
     if (!Number.isFinite(top) || top < 0) {
-      top = 52;
+      top = 24;
     }
-    top = Math.max(top, 52);
+    top = Math.max(top, 24);
     let bottom = 24;
     if (typeof b.getNavBarInsetPx === "function") {
       bottom = Number(b.getNavBarInsetPx());

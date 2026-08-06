@@ -22,7 +22,7 @@ async fn seed_and_reload(
             r#"fetch('/user-data/prefs', {{
                 method: 'PUT',
                 headers: {{'Content-Type': 'application/json'}},
-                body: JSON.stringify({{locale:'zh',theme:'{theme}',side_panel_view:'{side_panel}',side_width:{side_width},editor_layout_mode:false}})
+                body: JSON.stringify({{locale:'zh',theme:'{theme}',side_panel_view:'{side_panel}',side_width:{side_width},editor_layout_mode:false,status_bar_visible:true}})
             }})"#
         ))
         .await;

@@ -101,7 +101,7 @@ class MainActivity : TauriActivity() {
     return getSystemService(AutofillManager::class.java)
   }
 
-  /** 状态栏/刘海高度（CSS px）+ 触控余量，供 Web 顶栏把按钮压到系统区下方。 */
+  /** 顶栏安全区（CSS px）：状态栏/刘海高度 + 少量触控余量，供 Web `--cm-safe-top`。 */
   private fun statusBarInsetCssPx(): Int {
     val density = resources.displayMetrics.density.coerceAtLeast(0.5f)
     var topPx = 0
@@ -116,8 +116,9 @@ class MainActivity : TauriActivity() {
       }
     }
     val css = (topPx / density).roundToInt()
-    // 状态栏高度 + 较大触控余量；即使读到 0 也至少 52，避免按钮贴系统区
-    return (css + 28).coerceAtLeast(52)
+    // 已 setDecorFitsSystemWindows(true) 时 WebView 多数已避开状态栏；仅保留小余量与保底，
+    // 避免再叠一层过大 padding（旧：+28 且至少 52）。
+    return (css + 4).coerceAtLeast(24)
   }
 
   /** 系统导航栏/手势条高度（CSS px），供底栏状态条避开。 */

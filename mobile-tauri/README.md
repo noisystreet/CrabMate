@@ -21,7 +21,7 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 
 连上远程后：系统返回键，或右缘左划打开侧栏后点工具栏 **断开** 图标（`CrabMateMobile.disconnect`）回到本地连接页；连接页再按返回则退出 App。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。
 
-顶栏安全区：`CrabMateMobile.getStatusBarInsetPx()` 写入 CSS `--cm-safe-top`（状态栏/刘海 + 触控余量，至少约 52px）；原生还会在页面侧注入该变量。远程前端与连接页共用。
+顶栏安全区：`CrabMateMobile.getStatusBarInsetPx()` 写入 CSS `--cm-safe-top`（状态栏/刘海 + 少量触控余量，至少约 24px；Web 侧 `--cm-safe-top-floor` 同保底）；原生还会在页面侧注入该变量。远程前端与连接页共用。
 
 ### Release 签名（可选）
 

@@ -25,7 +25,7 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
   html[data-cm-mobile-shell] .nav-rail-brand {
     padding-top: max(
       var(--cm-safe-top),
-      var(--cm-safe-top-floor, 52px),
+      var(--cm-safe-top-floor, 24px),
       env(safe-area-inset-top, 0px)
     );
     min-height: var(--shell-chrome-top);
@@ -174,6 +174,26 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     padding: 1px 6px;
     font-size: 0.72rem;
     line-height: 1.25;
+  }
+
+  /* 消息贴近屏缘：收紧 thread / transcript 左右空隙（仍尊重 safe-area） */
+  .chat-thread {
+    padding-left: max(var(--space-2), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--space-2), env(safe-area-inset-right, 0px));
+  }
+
+  .chat-tui-transcript {
+    padding-left: var(--space-1);
+    padding-right: var(--space-1);
+  }
+
+  .app-shell-ds .messages-inner {
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .chat-tui-turn-wrap--user {
+    max-width: min(98%, 100%);
   }
 
   /* —— Composer：紧凑输入条（圆角对齐 --radius-btn，勿用半高胶囊） —— */
@@ -432,36 +452,11 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
   }
 }
 
-/* —— Phase 4：状态栏收敛 + 长消息折叠 —— */
+/* —— Phase 4：状态栏收敛 —— */
 html[data-narrow-viewport] .status-chip:not(.status-chip-role):not(.status-chip-context) {
   display: none;
 }
 
 html[data-narrow-viewport] .status-chips {
   gap: 4px;
-}
-
-@media (max-width: 768px) {
-  .chat-tui-turn--assistant.chat-tui-turn--long:not(.chat-tui-turn--expanded):not(.is-loading)
-    .chat-tui-body {
-    /* 矮视口 / 软键盘下用 dvh 收紧；无 dvh 时回退固定 280px */
-    max-height: 280px;
-    max-height: min(280px, 35dvh);
-    overflow: hidden;
-    position: relative;
-    mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to bottom, #000 70%, transparent 100%);
-  }
-
-  /* 折叠态可点展开 */
-  .chat-tui-turn--assistant.chat-tui-turn--long:not(.chat-tui-turn--expanded):not(.is-loading) {
-    cursor: pointer;
-  }
-
-  .chat-tui-turn--assistant.chat-tui-turn--long.chat-tui-turn--expanded .chat-tui-body {
-    max-height: none;
-    overflow: visible;
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
 }

@@ -9,7 +9,6 @@ use crate::stream_text_overlay::{
     StreamTextOverlay, message_text_for_display_including_stream_overlay,
 };
 
-use super::tui_actions_bar::long_assistant_turn_class_suffix;
 use super::tui_line_markdown::{
     TuiBodyChunks, TuiBodyPatch, open_active_block_class, parse_tui_body_chunks_with,
     plan_tui_body_patch, render_open_active_html,
@@ -382,7 +381,6 @@ fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
     } else {
         ""
     };
-    let long_class = long_assistant_turn_class_suffix(message);
     let live_attr = if is_live { " data-tui-live=\"1\"" } else { "" };
     let role_block = if role.is_empty() {
         String::new()
@@ -395,7 +393,7 @@ fn turn_section_html(args: TurnSectionArgs<'_>) -> String {
     let id_esc = plaintext_to_safe_html(&message.id);
     // 角色字样在卡片外（wrap 内、section 上），与气泡 msg-meta 外置一致。
     let section = format!(
-        "<section class=\"chat-tui-turn {role_class}{live_class}{loading_class}{long_class}\" data-tui-msg-id=\"{id_esc}\"{live_attr}>\
+        "<section class=\"chat-tui-turn {role_class}{live_class}{loading_class}\" data-tui-msg-id=\"{id_esc}\"{live_attr}>\
          <div class=\"chat-tui-body\">{body}</div>\
          </section>"
     );

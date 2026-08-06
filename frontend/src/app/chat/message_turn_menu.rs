@@ -39,7 +39,6 @@ fn menu_label(locale: Locale, action: &str) -> &'static str {
         "regen" => i18n::msg_menu_regen(locale),
         "branch" => i18n::msg_menu_branch(locale),
         "retry" => i18n::msg_menu_retry(locale),
-        "toggle-expand" => i18n::msg_menu_toggle_expand(locale),
         _ => "?",
     }
 }
@@ -50,7 +49,6 @@ fn menu_title(locale: Locale, action: &str) -> &'static str {
         "regen" => i18n::msg_regen_title(locale),
         "branch" => i18n::msg_branch_title(locale),
         "retry" => i18n::msg_retry_title(locale),
-        "toggle-expand" => i18n::msg_toggle_expand_title(locale),
         _ => menu_label(locale, action),
     }
 }
