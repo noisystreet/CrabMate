@@ -88,7 +88,10 @@ class MainActivity : TauriActivity() {
   private fun loadConnectPage() {
     val view = appWebView ?: return
     rememberConnectHomeIfAppOrigin(view.url)
-    view.loadUrl(connectHomeUrl.ifBlank { "http://tauri.localhost/" })
+    val base = connectHomeUrl.ifBlank { "http://tauri.localhost/" }
+    // ?manual=1：跳过连接页冷启动自动登录，便于更换服务器
+    val sep = if (base.contains('?')) '&' else '?'
+    view.loadUrl("$base${sep}manual=1")
   }
 
   private fun autofillManager(): AutofillManager? {

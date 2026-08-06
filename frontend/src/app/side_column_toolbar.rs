@@ -268,7 +268,7 @@ fn SideToolbarGithubRepoBtn(
     }
 }
 
-/// GitHub / 工作区视图 / 状态栏 / 设置：桌面贴右浮动；窄屏仅在右侧抽屉顶部。
+/// GitHub / 工作区视图 / 状态栏 / 设置（及远程断开）：桌面贴右浮动；窄屏仅在右侧抽屉顶部。
 #[component]
 pub(crate) fn ShellToolbarIcons(
     #[prop(into)] rail_float: bool,
@@ -357,6 +357,34 @@ pub(crate) fn ShellToolbarIcons(
                     <circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
+            <Show when=move || crate::mobile_remote::mobile_remote_disconnect_available()>
+                <button
+                    type="button"
+                    class="btn btn-secondary btn-sm shell-toolbar-icon-btn shell-toolbar-disconnect-btn"
+                    data-testid="side-toolbar-disconnect"
+                    on:click=move |_| {
+                        view_menu_open.set(false);
+                        crate::mobile_remote::mobile_remote_disconnect();
+                    }
+                    prop:title=move || i18n::mobile_disconnect_server(locale.get())
+                    prop:aria-label=move || i18n::mobile_disconnect_server_aria(locale.get())
+                >
+                    <svg
+                        class="shell-toolbar-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                    >
+                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                        <polyline points="16 17 21 12 16 7" />
+                        <line x1="21" x2="9" y1="12" y2="12" />
+                    </svg>
+                </button>
+            </Show>
         </div>
     }
 }

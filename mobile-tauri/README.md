@@ -13,13 +13,13 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 
 **注意**：远程主机须使用已包含 `consume_mobile_connect_handoff` 的前端构建（`cd frontend && trunk build` 后重启 `serve`）。
 
-连接页持久化服务器 URL；Web API Bearer **不写入 App 本地存储**，改由 **系统 Autofill / 密码管理器**（表单 `username`=`服务器地址`，`password`=`Bearer`；成功连接后 `AutofillManager.commit()`）。请在系统设置中启用自动填充服务。空 Bearer 不会写 hash，以免清掉远程源已有凭证。
+连接页将 **服务器 URL** 与 **Web API Bearer**（若填写）写入 `localStorage`，下次冷启动自动探测并登录。也可配合系统 Autofill / 密码管理器（表单 `username`=`服务器地址`，`password`=`Bearer`；手动连接成功后 `AutofillManager.commit()`）。侧栏工具栏 **断开** 图标或系统返回键回到连接页时带 `?manual=1`，**不会**立刻自动重连，便于更换服务器。空 Bearer 不会写 hash，以免清掉远程源已有凭证。
 
 `gen/android/app/build.gradle.kts` 中 release 的 `usesCleartextTraffic=true` 为局域网明文 HTTP 而设；若重新执行 `tauri android init`，需再确认该补丁与下方签名配置仍在。公网请用 HTTPS。
 
 `MainActivity` **不**调用 `enableEdgeToEdge()`，避免 WebView 内容画进系统状态栏后与壳顶栏按钮重叠（Android WebView 一般不提供可用的 `safe-area-inset-*`）。
 
-连上远程后：**系统返回键**或顶栏 **「断开连接」**（`window.CrabMateMobile.disconnect`）回到本地连接页；连接页再按返回则退出 App。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。
+连上远程后：系统返回键，或右缘左划打开侧栏后点工具栏 **断开** 图标（`CrabMateMobile.disconnect`）回到本地连接页；连接页再按返回则退出 App。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。
 
 顶栏安全区：`CrabMateMobile.getStatusBarInsetPx()` 写入 CSS `--cm-safe-top`（状态栏/刘海 + 触控余量，至少约 52px）；原生还会在页面侧注入该变量。远程前端与连接页共用。
 

@@ -161,10 +161,12 @@ pub async fn connect_remote(
 }
 
 /// 导航回 App 内连接页（资产源）。远程页请用 `CrabMateMobile.disconnect()`。
+/// 带 `manual=1`，避免连接页冷启动自动登录立刻再次连上。
 #[tauri::command]
 pub async fn disconnect_remote(app: AppHandle) -> Result<(), String> {
     let window = main_window(&app)?;
-    let home = connect_home_url();
+    let mut home = connect_home_url();
+    home.set_query(Some("manual=1"));
     window
         .navigate(home)
         .map_err(|e| format!("无法返回连接页: {e}"))?;
