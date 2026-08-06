@@ -515,11 +515,26 @@ pub fn open_file_append_under_root(
 
 /// 在工作区根内移动常规文件（`renameat`；跨设备时复制后删除源）。
 #[cfg(all(unix, target_os = "linux"))]
+fn rename_file_cross_device_copy(
+    root_canonical: &Path,
+    src_logical: &Path,
+    dst_logical: &Path,
+) -> io::Result<()> {
+    let opened = open_existing_file_under_root(root_canonical, src_logical)?;
+    let bytes = read_opened_file_bytes(&opened)?;
+    write_bytes_under_root(root_canonical, dst_logical, &bytes, false, false)?;
+    unlink_file_under_root(root_canonical, src_logical)?;
+    Ok(())
+}
+
+/// 在工作区根内移动常规文件（`renameat`；跨设备时复制后删除源）。
+#[cfg(all(unix, target_os = "linux"))]
 pub fn rename_file_under_root(
     root_canonical: &Path,
     src_logical: &Path,
     dst_logical: &Path,
 ) -> io::Result<()> {
+    use nix::errno::Errno;
     use nix::fcntl::renameat;
 
     ensure_parent_dirs_under_root(root_canonical, dst_logical)?;
@@ -540,12 +555,8 @@ pub fn rename_file_under_root(
     let (dst_dir, _) = open_directory_under_root(root_canonical, dst_parent)?;
     match renameat(&src_dir, src_name, &dst_dir, dst_name) {
         Ok(()) => Ok(()),
-        Err(nix::errno::Errno::EXDEV) => {
-            let opened = open_existing_file_under_root(root_canonical, src_logical)?;
-            let bytes = read_opened_file_bytes(&opened)?;
-            write_bytes_under_root(root_canonical, dst_logical, &bytes, false, false)?;
-            unlink_file_under_root(root_canonical, src_logical)?;
-            Ok(())
+        Err(Errno::EXDEV) => {
+            rename_file_cross_device_copy(root_canonical, src_logical, dst_logical)
         }
         Err(e) => Err(io::Error::from(e)),
     }
