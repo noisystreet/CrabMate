@@ -3,6 +3,7 @@ members = [
     ".",
     "frontend",
     "crates/cmd_mate",
+    "crates/crabmate-api-contract",
     "crates/crabmate-display-rules",
     "crates/crabmate-mcp",
     "crates/crabmate-tool-card",
@@ -29,6 +30,7 @@ resolver = "2"
 # Workspace crates
 cmd_mate = { path = "crates/cmd_mate" }
 crabmate-agent = { path = "crates/crabmate-agent", default-features = false }
+crabmate-api-contract = { path = "crates/crabmate-api-contract" }
 crabmate-approval = { path = "crates/crabmate-approval" }
 crabmate-web-host = { path = "crates/crabmate-web-host" }
 crabmate-benchmark = { path = "crates/crabmate-benchmark" }
@@ -197,6 +199,7 @@ crabmate-types = { workspace = true }
 crabmate-config = { workspace = true, default-features = false }
 crabmate-llm = { workspace = true }
 crabmate-agent = { workspace = true, default-features = false }
+crabmate-api-contract = { workspace = true }
 crabmate-benchmark = { workspace = true }
 crabmate-runtime = { workspace = true }
 crabmate-workflow = { workspace = true }
