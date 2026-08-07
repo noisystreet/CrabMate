@@ -25,6 +25,7 @@ fn apply_keyboard_inset_css() {
         let vv_h = vv.height();
         let vv_top = vv.offset_top();
         // 键盘弹出时 visualViewport 变矮；offsetTop 可能上移。
+        // 若 Activity 已 adjustResize，innerHeight 与 vv 同步缩小 → inset≈0（由窗口变矮抬起 composer）。
         Some((layout_h - vv_h - vv_top).max(0.0))
     })()
     .unwrap_or(0.0);
@@ -39,7 +40,7 @@ pub(crate) fn refresh_keyboard_inset() {
     apply_keyboard_inset_css();
 }
 
-fn is_narrow_viewport() -> bool {
+fn root_has_attr(name: &str) -> bool {
     let Some(window) = web_sys::window() else {
         return false;
     };
@@ -49,7 +50,12 @@ fn is_narrow_viewport() -> bool {
     let Some(root) = doc.document_element() else {
         return false;
     };
-    root.has_attribute("data-narrow-viewport")
+    root.has_attribute(name)
+}
+
+fn should_keep_composer_visible() -> bool {
+    // 窄屏媒体查询，或 Android 远程壳（横屏可能 >768px）。
+    root_has_attr("data-narrow-viewport") || root_has_attr("data-cm-mobile-shell")
 }
 
 fn composer_bar_element(ta: &web_sys::HtmlTextAreaElement) -> web_sys::HtmlElement {
@@ -67,12 +73,13 @@ fn composer_bar_element(ta: &web_sys::HtmlTextAreaElement) -> web_sys::HtmlEleme
 
 fn scroll_composer_into_view(ta: &web_sys::HtmlTextAreaElement) {
     let bar = composer_bar_element(ta);
-    bar.scroll_into_view();
+    // false：尽量贴齐视口底边，避免软键盘动画期间把输入条滚出可见区上方。
+    bar.scroll_into_view_with_bool(false);
 }
 
-/// 窄屏聚焦聊天输入时：立刻滚动 composer 入视口并重算键盘 inset（软键盘动画期间多次重试）。
+/// 窄屏 / 移动壳聚焦聊天输入时：立刻滚动 composer 入视口并重算键盘 inset（软键盘动画期间多次重试）。
 pub(crate) fn on_composer_focus_keep_visible(ta: &web_sys::HtmlTextAreaElement) {
-    if !is_narrow_viewport() {
+    if !should_keep_composer_visible() {
         return;
     }
     scroll_composer_into_view(ta);
@@ -80,7 +87,7 @@ pub(crate) fn on_composer_focus_keep_visible(ta: &web_sys::HtmlTextAreaElement) 
 
     let ta = ta.clone();
     spawn_local(async move {
-        for delay_ms in [50_u32, 150, 300] {
+        for delay_ms in [50_u32, 150, 300, 500] {
             gloo_timers::future::TimeoutFuture::new(delay_ms).await;
             scroll_composer_into_view(&ta);
             refresh_keyboard_inset();

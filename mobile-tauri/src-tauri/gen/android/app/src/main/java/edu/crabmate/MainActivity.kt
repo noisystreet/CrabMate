@@ -3,6 +3,7 @@ package edu.crabmate
 import android.os.Build
 import android.os.Bundle
 import android.view.View
+import android.view.WindowManager
 import android.view.autofill.AutofillManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -23,9 +24,12 @@ class MainActivity : TauriActivity() {
     // 不要 enableEdgeToEdge()：Android WebView 通常不提供 CSS safe-area-inset-*，
     // 铺满状态栏后会与远程 Web 顶栏按钮重叠、无法点击。
     WindowCompat.setDecorFitsSystemWindows(window, true)
+    // 键盘弹出时缩小窗口，避免盖住底部 composer（仅靠 visualViewport CSS 在系统 WebView 上常失效）。
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     super.onCreate(savedInstanceState)
     // Tauri / Activity 基类可能在 super 里改回 edge-to-edge，再强制一次。
     WindowCompat.setDecorFitsSystemWindows(window, true)
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
 
     onBackPressedDispatcher.addCallback(
       this,
@@ -74,12 +78,14 @@ class MainActivity : TauriActivity() {
   override fun onStart() {
     super.onStart()
     WindowCompat.setDecorFitsSystemWindows(window, true)
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
   }
 
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     appWebView = webView
     WindowCompat.setDecorFitsSystemWindows(window, true)
+    window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
     // 与前端 `--bg` 对齐：远程 HTML/WASM 未就绪前避免系统默认纯黑空页。
     webView.setBackgroundColor(android.graphics.Color.parseColor("#0A0D12"))
     // 允许系统 Autofill / 密码管理器填充连接页的 URL+Bearer
@@ -87,24 +93,41 @@ class MainActivity : TauriActivity() {
       webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
     }
     webView.addJavascriptInterface(MobileBridge(), "CrabMateMobile")
-    // 页面加载后注入上下安全区 CSS 变量
-    webView.post { injectSafeInsetsCss(webView) }
+    // 页面加载后注入上下安全区 / IME CSS 变量
+    webView.post { injectSafeInsetsCss(webView, null) }
     ViewCompat.setOnApplyWindowInsetsListener(webView) { v, insets ->
-      injectSafeInsetsCss(v as? WebView ?: webView)
+      injectSafeInsetsCss(v as? WebView ?: webView, insets)
+      // 勿 CONSUMED：让 WebView/Chromium 仍能收到 insets（visualViewport / safe-area）。
       insets
     }
     webView.post { rememberConnectHomeIfAppOrigin(webView.url) }
   }
 
-  private fun injectSafeInsetsCss(webView: WebView) {
+  /**
+   * 写入远程 Web 的安全区与软键盘 inset。
+   * `--cm-ime-inset`：IME 相对导航栏多出的高度（targetSdk 35+ 上 adjustResize 常不缩小窗口时的兜底）。
+   */
+  private fun injectSafeInsetsCss(webView: WebView, insets: WindowInsetsCompat?) {
     val topPx = statusBarInsetCssPx()
     val bottomPx = navBarInsetCssPx()
+    val imePx = imeInsetCssPx(insets)
     val js =
       "(function(){try{var r=document.documentElement;" +
         "r.style.setProperty('--cm-safe-top','${topPx}px');" +
         "r.style.setProperty('--cm-safe-bottom','${bottomPx}px');" +
+        "r.style.setProperty('--cm-ime-inset','${imePx}px');" +
         "r.setAttribute('data-cm-mobile-shell','');}catch(e){}})();"
     webView.evaluateJavascript(js, null)
+  }
+
+  /** 软键盘相对导航栏的额外高度（CSS px）；无键盘时为 0。 */
+  private fun imeInsetCssPx(insets: WindowInsetsCompat?): Int {
+    val density = resources.displayMetrics.density.coerceAtLeast(0.5f)
+    val src = insets ?: ViewCompat.getRootWindowInsets(window.decorView) ?: return 0
+    val ime = src.getInsets(WindowInsetsCompat.Type.ime()).bottom
+    val nav = src.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+    // ime 通常含导航区；与 `--cm-safe-bottom` 分工，避免导航高度算两次。
+    return ((ime - nav).coerceAtLeast(0) / density).roundToInt()
   }
 
   private fun rememberConnectHomeIfAppOrigin(url: String?) {
