@@ -33,7 +33,7 @@
     },
     ToolSpec {
         name: "gh_pr_merge",
-        description: "合并 Pull Request（封装 **`gh pr merge`**；**写远端**）。可选 **`number`**（省略则按当前分支）；**`merge_method`**：`merge` / `squash` / `rebase`（默认 merge）；可选 **`auto`**、**`delete_branch`**、**`admin`**、**`repo`**、**`extra_args`**。",
+        description: "合并 Pull Request（封装 **`gh pr merge`**；**写远端**）。可选 **`number`**（省略则按当前分支）；**`merge_method`**：`merge` / `squash` / `rebase`（默认 rebase）；可选 **`auto`**、**`delete_branch`**、**`admin`**、**`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_merge,
         runner: runner_gh_pr_merge,
