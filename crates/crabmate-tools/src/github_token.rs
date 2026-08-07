@@ -4,10 +4,14 @@
 //! 可选 [`set_token_provider`]（由宿主注册钥匙串读取）→ 否则依赖本机 `gh auth`。
 //!
 //! **勿**在日志中输出 token 明文。Git HTTPS 使用子进程环境变量
-//! **`GIT_CONFIG_*`** 注入 `http.extraHeader`（避免把 Bearer 写进 argv）。
+//! **`GIT_CONFIG_*`** 注入 `http.extraHeader`（避免把凭据写进 argv）。
+//! GitHub App user token（`ghu_`）等对 smart HTTP **不接受** `Authorization: Bearer`，
+//! 须用 **`Basic` + 用户名 `x-access-token`**（PAT / `gho_` 同样可用）。
 
 use std::process::Command;
 use std::sync::{Arc, OnceLock};
+
+use base64::Engine;
 
 type TokenProvider = Arc<dyn Fn() -> Option<String> + Send + Sync>;
 
@@ -87,6 +91,15 @@ pub fn is_github_https_url(url: &str) -> bool {
     lower.starts_with("https://github.com/") || lower.starts_with("https://www.github.com/")
 }
 
+/// Git HTTPS：`Authorization: Basic base64(x-access-token:<token>)`。
+///
+/// Device Flow / GitHub App 的 **`ghu_`** user token 对 git smart HTTP 拒绝 Bearer；
+/// 官方推荐用户名 **`x-access-token`**、密码为 token（Basic）。
+pub fn github_https_authorization_header(token: &str) -> String {
+    let basic = base64::engine::general_purpose::STANDARD.encode(format!("x-access-token:{token}"));
+    format!("Authorization: Basic {basic}")
+}
+
 /// 为 Git 子进程准备的环境键值（含 `GIT_TERMINAL_PROMPT=0` 与 `http.extraHeader`）。
 /// 仅当 URL 命中 GitHub HTTPS 且能解析到 token 时返回 `Some`。
 pub fn github_https_auth_envs(remote_url: &str) -> Option<Vec<(String, String)>> {
@@ -100,7 +113,7 @@ pub fn github_https_auth_envs(remote_url: &str) -> Option<Vec<(String, String)>>
         ("GIT_CONFIG_KEY_0".into(), "http.extraHeader".into()),
         (
             "GIT_CONFIG_VALUE_0".into(),
-            format!("Authorization: Bearer {token}"),
+            github_https_authorization_header(&token),
         ),
     ])
 }
@@ -158,5 +171,21 @@ mod tests {
         // 无 provider 且通常无环境时返回 None；非 github URL 必为 None。
         assert!(github_https_auth_envs("https://gitlab.com/a/b.git").is_none());
         assert!(github_https_auth_envs("git@github.com:a/b.git").is_none());
+    }
+
+    #[test]
+    fn github_https_authorization_header_is_basic_x_access_token() {
+        let h = github_https_authorization_header("ghu_test_token");
+        assert!(h.starts_with("Authorization: Basic "));
+        let b64 = h.strip_prefix("Authorization: Basic ").expect("prefix");
+        let raw = String::from_utf8(
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .expect("b64"),
+        )
+        .expect("utf8");
+        assert_eq!(raw, "x-access-token:ghu_test_token");
+        assert!(!h.contains("Bearer"));
+        assert!(!h.contains("ghu_test_token"));
     }
 }

@@ -19,6 +19,8 @@ static RE_CRED_URL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(https?://)([^/@\s]+):([^/@\s]+)@").expect("regex"));
 static RE_BEARER: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\bBearer\s+[A-Za-z0-9._\-+/=]{8,}\b").expect("regex"));
+static RE_BASIC_AUTH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)\bBasic\s+[A-Za-z0-9+/=]{8,}\b").expect("regex"));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CloneUrlError {
@@ -112,10 +114,11 @@ pub fn parse_clone_progress_percent(line: &str) -> Option<(u8, &'static str)> {
     None
 }
 
-/// 脱敏：去掉 URL 内嵌 `user:pass@`、Bearer 形态，并截断过长行。
+/// 脱敏：去掉 URL 内嵌 `user:pass@`、Bearer / Basic 形态，并截断过长行。
 pub fn redact_clone_log_line(line: &str) -> String {
     let cleaned = RE_CRED_URL.replace_all(line.trim(), "${1}***:***@");
     let cleaned = RE_BEARER.replace_all(cleaned.as_ref(), "Bearer <redacted>");
+    let cleaned = RE_BASIC_AUTH.replace_all(cleaned.as_ref(), "Basic <redacted>");
     let s = cleaned.as_ref();
     if s.chars().count() <= CLONE_LOG_LINE_MAX_CHARS {
         return s.to_string();
@@ -190,6 +193,15 @@ mod tests {
         let s = redact_clone_log_line("header Authorization: Bearer ghp_abcdefghijklmnop");
         assert!(s.contains("Bearer <redacted>"));
         assert!(!s.contains("ghp_"));
+    }
+
+    #[test]
+    fn redacts_basic_auth() {
+        let s = redact_clone_log_line(
+            "header Authorization: Basic eC1hY2Nlc3MtdG9rZW46Z2h1X3Rlc3RfdG9rZW4=",
+        );
+        assert!(s.contains("Basic <redacted>"));
+        assert!(!s.contains("eC1hY2Nlc3M"));
     }
 
     #[test]
