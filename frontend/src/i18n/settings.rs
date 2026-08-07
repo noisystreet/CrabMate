@@ -565,11 +565,71 @@ pub fn settings_github_block_title(l: Locale) -> &'static str {
 pub fn settings_github_block_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "通过 Device Flow 授权后，token 保存在 serve 主机钥匙串，供 gh 工具与 GitHub HTTPS clone/push/fetch 注入（SSH remote 不使用 OAuth）。须配置 CM_GITHUB_OAUTH_CLIENT_ID；GitHub App 一般无需 scope，OAuth App 可设 CM_GITHUB_OAUTH_SCOPES（如 repo）。"
+            "通过 Device Flow 授权后，user token 保存在 serve 主机钥匙串，供 gh 与 GitHub HTTPS clone/push/fetch（SSH remote 不用 OAuth）。须先配置 Client ID（下方写入钥匙串，或环境变量 CM_GITHUB_OAUTH_CLIENT_ID，env 优先）。GitHub App 一般无需 scope；OAuth App 可设 CM_GITHUB_OAUTH_SCOPES（如 repo）。"
         }
         Locale::En => {
-            "After Device Flow, the token is stored on the serve host keychain for gh tools and GitHub HTTPS clone/push/fetch (SSH remotes do not use OAuth). Requires CM_GITHUB_OAUTH_CLIENT_ID; GitHub Apps usually omit scopes—set CM_GITHUB_OAUTH_SCOPES (e.g. repo) for OAuth Apps."
+            "After Device Flow, the user token is stored on the serve host keychain for gh and GitHub HTTPS clone/push/fetch (SSH remotes do not use OAuth). Configure a Client ID first (save below to the keychain, or set CM_GITHUB_OAUTH_CLIENT_ID; env wins). GitHub Apps usually omit scopes—set CM_GITHUB_OAUTH_SCOPES (e.g. repo) for OAuth Apps."
         }
+    }
+}
+
+pub fn settings_github_client_id_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "OAuth / App Client ID",
+        Locale::En => "OAuth / App Client ID",
+    }
+}
+
+pub fn settings_github_client_id_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "写入 serve 主机钥匙串（账户 github_oauth_client_id），不落明文 prefs；界面不回显全文。非 Client Secret。"
+        }
+        Locale::En => {
+            "Stored on the serve host keychain (account github_oauth_client_id), not in plain prefs; the UI never shows the full value. Not a Client Secret."
+        }
+    }
+}
+
+pub fn settings_github_client_id_unset(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Client ID：未设置",
+        Locale::En => "Client ID: not set",
+    }
+}
+
+pub fn settings_github_client_id_set(l: Locale, suffix: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("Client ID：已设置（…{suffix}）"),
+        Locale::En => format!("Client ID: set (…{suffix})"),
+    }
+}
+
+pub fn settings_github_client_id_save(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "保存 Client ID",
+        Locale::En => "Save Client ID",
+    }
+}
+
+pub fn settings_github_client_id_clear(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "清除 Client ID",
+        Locale::En => "Clear Client ID",
+    }
+}
+
+pub fn settings_github_client_id_saved(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Client ID 已保存到钥匙串",
+        Locale::En => "Client ID saved to keychain",
+    }
+}
+
+pub fn settings_github_client_id_cleared(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "Client ID 已清除",
+        Locale::En => "Client ID cleared",
     }
 }
 

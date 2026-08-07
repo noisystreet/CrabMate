@@ -119,6 +119,27 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
                 "responses": { "204": { "description": "已清除" } }
             }
         },
+        "/user-data/secrets/github-oauth-client-id": {
+            "put": {
+                "tags": ["user_data"],
+                "summary": "写 GitHub App/OAuth Client ID 到钥匙串账户 github_oauth_client_id（body.token；无 GET 明文）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/SecretWriteBody" }
+                        }
+                    }
+                },
+                "responses": { "204": { "description": "已保存或已清除（空 token）" } }
+            },
+            "delete": {
+                "tags": ["user_data"],
+                "summary": "清除钥匙串 GitHub OAuth Client ID",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": { "204": { "description": "已清除" } }
+            }
+        },
         "/user-data/workspaces/current/sessions": {
             "get": {
                 "tags": ["user_data"],

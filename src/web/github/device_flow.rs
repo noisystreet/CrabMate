@@ -53,6 +53,15 @@ fn oauth_client_id_from_env() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// 优先级：环境变量 **`CM_GITHUB_OAUTH_CLIENT_ID`** → 钥匙串账户 **`github_oauth_client_id`**。
+fn resolve_oauth_client_id() -> Option<String> {
+    oauth_client_id_from_env().or_else(|| {
+        crate::user_data::read_secret_github_oauth_client_id()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    })
+}
+
 /// OAuth App 可用 `repo` 等；GitHub App Device Flow 通常**省略** scope（靠 App 权限）。
 /// 环境变量 **`CM_GITHUB_OAUTH_SCOPES`**：未设置或空 → 不传 `scope`；非空则原样提交（空格分隔）。
 fn oauth_scopes_from_env() -> Option<String> {
@@ -134,11 +143,11 @@ fn form_body(pairs: &[(&str, &str)]) -> String {
 pub(crate) async fn github_oauth_device_start_handler(
     State(http): State<AppStateHttpCore>,
 ) -> Result<Json<DeviceStartResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let Some(client_id) = oauth_client_id_from_env() else {
+    let Some(client_id) = resolve_oauth_client_id() else {
         return Err(err_json(
             StatusCode::SERVICE_UNAVAILABLE,
             "GITHUB_OAUTH_NOT_CONFIGURED",
-            "未配置 CM_GITHUB_OAUTH_CLIENT_ID，无法启动 GitHub Device Flow",
+            "未配置 GitHub OAuth Client ID：请设置环境变量 CM_GITHUB_OAUTH_CLIENT_ID，或在「设置 → 工具 → GitHub」写入钥匙串",
         ));
     };
 

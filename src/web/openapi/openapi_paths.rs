@@ -811,7 +811,7 @@ fn openapi_paths_fragment_github() -> Value {
         "/github/oauth/device/start": {
             "post": {
                 "tags": ["github"],
-                "summary": "启动 GitHub Device Flow（须 CM_GITHUB_OAUTH_CLIENT_ID；不返回 device_code/token）",
+                "summary": "启动 GitHub Device Flow（须 CM_GITHUB_OAUTH_CLIENT_ID 或钥匙串 github_oauth_client_id；不返回 device_code/token）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {
