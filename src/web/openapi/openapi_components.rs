@@ -45,20 +45,6 @@ fn openapi_components_security_schemes() -> Value {
 
 fn openapi_components_schemas_chat_llm_webui() -> Value {
     json!({
-            "WebUiConfigResponse": {
-                "type": "object",
-                "required": ["markdown_render", "apply_assistant_display_filters"],
-                "properties": {
-                    "markdown_render": {
-                        "type": "boolean",
-                        "description": "为 false 时 CSR 跳过聊天气泡 Markdown（纯文本 HTML 转义）；由环境变量 CM_WEB_DISABLE_MARKDOWN 控制"
-                    },
-                    "apply_assistant_display_filters": {
-                        "type": "boolean",
-                        "description": "为 false 时不对助手消息做展示过滤（agent_reply_plan 剥离、内联思维链拆分等），且分阶段无工具规划轮可向浏览器 SSE 流式下发原文；为 true（默认）时对该轮做门控：解析自正文+思维链的规划 JSON 为 no_task 则整轮 SSE 不下发且不写入会话 assistant 列表，否则仅不下发 assistant_answer_phase 信封之前的流式增量。由环境变量 CM_WEB_RAW_ASSISTANT_OUTPUT 控制"
-                    }
-                }
-            },
             "StatusResponseBody": {
                 "type": "object",
                 "description": "GET /status（无 view 参数）完整运行状态；字段集以后端实现为准，此处不逐项枚举",
@@ -67,159 +53,8 @@ fn openapi_components_schemas_chat_llm_webui() -> Value {
     })
 }
 
-fn openapi_components_schemas_chat_request() -> Value {
-    json!({
-            "ChatRequestBody": {
-                "type": "object",
-                "required": ["message"],
-                "properties": {
-                    "message": { "type": "string" },
-                    "conversation_id": { "type": "string" },
-                    "agent_role": {
-                        "type": "string",
-                        "description": "Named role id; new session seeds first system; existing session refreshes first system if changed. See docs/配置说明.md § multi-role."
-                    },
-                    "session_mode": {
-                        "type": "string",
-                        "enum": ["ask", "plan", "act"],
-                        "description": "Session capability mode (orthogonal to agent_role). ask/plan → readonly tools; act → full tools ∩ role allowlist. Default from config default_session_mode."
-                    },
-                    "approval_session_id": { "type": "string" },
-                    "temperature": { "type": "number", "format": "double" },
-                    "seed": { "type": "integer", "format": "int64" },
-                    "seed_policy": { "type": "string", "description": "如 omit / none" },
-                    "client_llm": { "$ref": "#/components/schemas/ClientLlmBody" },
-                    "executor_llm": { "$ref": "#/components/schemas/ExecutorLlmBody" },
-                    "readonly_tool_ttl_cache_secs": {
-                        "type": "integer",
-                        "format": "int64",
-                        "description": "可选；本回合覆盖只读 run_command 进程内 TTL 缓存秒数；0 关闭；上限 3600；省略则跟随服务端配置"
-                    },
-                    "client_sse_protocol": {
-                        "type": "integer",
-                        "format": "int32",
-                        "description": "可选；客户端 SSE 控制面版本。须与服务端 SSE_PROTOCOL_VERSION（当前 2）一致，否则 400（SSE_PROTOCOL_MISMATCH）。"
-                    },
-                    "image_urls": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "可选；须为先前 POST /upload 返回的 /uploads/... 相对路径（最多 6 条）；与 message 一并组装多模态 user 消息"
-                    },
-                    "clarify_questionnaire_answers": {
-                        "type": "object",
-                        "description": "可选；回应 SSE clarification_questionnaire；可与空 message 单独提交",
-                        "properties": {
-                            "questionnaire_id": {
-                                "type": "string",
-                                "description": "与 SSE 中 questionnaire_id 一致"
-                            },
-                            "answers": {
-                                "type": "object",
-                                "additionalProperties": true,
-                                "description": "键为题 id；值多为字符串"
-                            }
-                        }
-                    }
-                }
-            },
-    })
-}
-
-fn openapi_components_schemas_chat_response_approval_branch() -> Value {
-    json!({
-            "ChatAsyncRequestBody": {
-                "allOf": [
-                    { "$ref": "#/components/schemas/ChatRequestBody" },
-                    {
-                        "type": "object",
-                        "properties": {
-                            "webhook_url": {
-                                "type": "string",
-                                "description": "可选；http/https；任务 completed/failed 后 POST JSON 回调"
-                            },
-                            "webhook_secret": {
-                                "type": "string",
-                                "description": "可选；随回调发送请求头 X-Crabmate-Webhook-Secret（最多 256 字符）"
-                            }
-                        }
-                    }
-                ]
-            },
-    })
-}
-
-fn openapi_components_schemas_chat_messages_uploads() -> Value {
-    json!({
-            "ConversationMessagesResponseBody": {
-                "type": "object",
-                "required": ["conversation_id", "revision", "messages"],
-                "properties": {
-                    "conversation_id": { "type": "string" },
-                    "revision": { "type": "integer", "format": "int64" },
-                    "active_agent_role": { "type": "string", "description": "非空时与配置中 agent_roles 对齐" },
-                    "active_session_mode": { "type": "string", "enum": ["ask", "plan", "act"], "description": "会话持久化的工作模式" },
-                    "tiktoken_prompt_tokens": {
-                        "type": "object",
-                        "description": "与会话落盘消息经出站规则后的 tiktoken prompt 粗估；不含 tools JSON",
-                        "properties": {
-                            "prompt_tokens": { "type": "integer", "format": "int64" },
-                            "tiktoken_model": { "type": "string" }
-                        }
-                    },
-                    "messages": {
-                        "type": "array",
-                        "description": "OpenAI 兼容 Message 数组（已剔除长期记忆/变更集注入、普通 system 系统提示与 UI 分隔；保留 name=crabmate_timeline 时间线旁注）",
-                        "items": { "type": "object", "additionalProperties": true }
-                    },
-                    "total_count": {
-                        "type": "integer",
-                        "format": "int32",
-                        "description": "过滤后可见消息总数；全量模式与 messages.len 一致"
-                    },
-                    "window_start_index": {
-                        "type": "integer",
-                        "format": "int32",
-                        "description": "本页第一条在过滤后数组中的下标"
-                    },
-                    "has_older": {
-                        "type": "boolean",
-                        "description": "是否还有更早消息可拉取"
-                    }
-                }
-            },
-            "UploadedFileInfo": {
-                "type": "object",
-                "properties": {
-                    "url": { "type": "string" },
-                    "filename": { "type": "string" },
-                    "mime": { "type": "string" },
-                    "size": { "type": "integer", "format": "int64" }
-                }
-            },
-            "DeleteUploadsBody": {
-                "type": "object",
-                "required": ["urls"],
-                "properties": {
-                    "urls": { "type": "array", "items": { "type": "string" } }
-                }
-            },
-            "DeleteUploadsResponseBody": {
-                "type": "object",
-                "properties": {
-                    "deleted": { "type": "array", "items": { "type": "string" } },
-                    "skipped": { "type": "array", "items": { "type": "string" } }
-                }
-            },
-    })
-}
-
 fn openapi_components_schemas_chat_core() -> Value {
-    merge_component_objects(&[
-        openapi_components_schemas_chat_llm_webui(),
-        openapi_components_schemas_chat_request(),
-        openapi_components_schemas_chat_response_approval_branch(),
-        openapi_components_schemas_chat_messages_uploads(),
-    ])
+    merge_component_objects(&[openapi_components_schemas_chat_llm_webui()])
 }
 
 fn openapi_components_schemas_workspace_tasks_config() -> Value {
@@ -374,16 +209,6 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     "items": {
                         "type": "array",
                         "items": { "$ref": "#/components/schemas/TaskItem" }
-                    }
-                }
-            },
-            "SessionConversationStoreRequestBody": {
-                "type": "object",
-                "required": ["sqlite"],
-                "properties": {
-                    "sqlite": {
-                        "type": "boolean",
-                        "description": "true：使用配置中的 SQLite 路径；false：本进程改用内存会话存储"
                     }
                 }
             },

@@ -64,5 +64,16 @@ mod tests {
         assert!(paths.contains_key("/user-data/workspaces/current/sessions"));
         assert!(v["components"]["securitySchemes"]["bearerAuth"].is_object());
         assert!(v["components"]["securitySchemes"]["apiKeyAuth"].is_object());
+        let schemas = v["components"]["schemas"]
+            .as_object()
+            .expect("schemas object");
+        assert!(
+            schemas.contains_key("ChatRequestBody"),
+            "ChatRequestBody from contract"
+        );
+        assert!(
+            schemas.contains_key("WebUiConfigResponse"),
+            "WebUiConfigResponse from contract"
+        );
     }
 }

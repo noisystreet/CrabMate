@@ -50,16 +50,16 @@ pub struct UploadResponseBody {
     pub files: Vec<UploadedFileInfo>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct DeleteUploadsBody {
-    pub urls: Vec<String>,
-}
-
-#[derive(Serialize)]
+#[derive(Serialize, JsonSchema)]
 pub struct DeleteUploadsResponseBody {
     pub deleted: Vec<String>,
     pub skipped: Vec<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteUploadsBody {
+    pub urls: Vec<String>,
 }
 
 #[derive(Serialize, JsonSchema)]
@@ -68,7 +68,7 @@ pub struct ConfigReloadResponseBody {
     pub message: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SessionConversationStoreRequestBody {
     pub sqlite: bool,
