@@ -3,13 +3,18 @@
 use schemars::JsonSchema;
 use serde_json::{Map, Value};
 
-use crate::api::{ApiError, ConfigReloadResponseBody, UploadResponseBody};
+use crate::api::{
+    ApiError, ConfigReloadResponseBody, DeleteUploadsBody, DeleteUploadsResponseBody,
+    SessionConversationStoreRequestBody, UploadResponseBody, UploadedFileInfo,
+};
 use crate::chat::{
-    ChatApprovalRequestBody, ChatApprovalResponseBody, ChatAsyncSubmitResponseBody,
-    ChatBranchRequestBody, ChatBranchResponseBody, ChatJobStatusResponseBody, ChatResponseBody,
-    ClientLlmBody, ExecutorLlmBody, StreamResumeBody,
+    ChatApprovalRequestBody, ChatApprovalResponseBody, ChatAsyncRequestBodyOpenApi,
+    ChatAsyncSubmitResponseBody, ChatBranchRequestBody, ChatBranchResponseBody,
+    ChatJobStatusResponseBody, ChatRequestBodyWire, ChatResponseBody, ClientLlmBody,
+    ConversationMessagesResponseBodyOpenApi, ExecutorLlmBody, StreamResumeBody,
 };
 use crate::status::StatusShellView;
+use crate::web_ui::WebUiConfigResponse;
 
 fn schema_value<T: JsonSchema>() -> Value {
     let root = schemars::schema_for!(T);
@@ -22,6 +27,14 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
     map.insert("ApiError".into(), schema_value::<ApiError>());
     map.insert("ClientLlmBody".into(), schema_value::<ClientLlmBody>());
     map.insert("ExecutorLlmBody".into(), schema_value::<ExecutorLlmBody>());
+    map.insert(
+        "ChatRequestBody".into(),
+        schema_value::<ChatRequestBodyWire>(),
+    );
+    map.insert(
+        "ChatAsyncRequestBody".into(),
+        schema_value::<ChatAsyncRequestBodyOpenApi>(),
+    );
     map.insert(
         "ChatResponseBody".into(),
         schema_value::<ChatResponseBody>(),
@@ -55,12 +68,36 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
         schema_value::<StreamResumeBody>(),
     );
     map.insert(
+        "ConversationMessagesResponseBody".into(),
+        schema_value::<ConversationMessagesResponseBodyOpenApi>(),
+    );
+    map.insert(
         "ConfigReloadResponseBody".into(),
         schema_value::<ConfigReloadResponseBody>(),
     );
     map.insert(
+        "UploadedFileInfo".into(),
+        schema_value::<UploadedFileInfo>(),
+    );
+    map.insert(
         "UploadResponseBody".into(),
         schema_value::<UploadResponseBody>(),
+    );
+    map.insert(
+        "DeleteUploadsBody".into(),
+        schema_value::<DeleteUploadsBody>(),
+    );
+    map.insert(
+        "DeleteUploadsResponseBody".into(),
+        schema_value::<DeleteUploadsResponseBody>(),
+    );
+    map.insert(
+        "SessionConversationStoreRequestBody".into(),
+        schema_value::<SessionConversationStoreRequestBody>(),
+    );
+    map.insert(
+        "WebUiConfigResponse".into(),
+        schema_value::<WebUiConfigResponse>(),
     );
     map.insert("StatusShellView".into(), schema_value::<StatusShellView>());
     map
@@ -71,10 +108,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn openapi_schemas_include_status_shell_view() {
+    fn openapi_schemas_include_core_chat_and_status() {
         let schemas = openapi_component_schemas();
-        assert!(schemas.contains_key("StatusShellView"));
-        assert!(schemas.contains_key("ApiError"));
-        assert!(schemas.contains_key("ClientLlmBody"));
+        for key in [
+            "StatusShellView",
+            "ApiError",
+            "ClientLlmBody",
+            "ChatRequestBody",
+            "ChatAsyncRequestBody",
+            "ConversationMessagesResponseBody",
+            "WebUiConfigResponse",
+            "DeleteUploadsBody",
+        ] {
+            assert!(schemas.contains_key(key), "missing schema {key}");
+        }
+    }
+
+    #[test]
+    fn chat_request_body_schema_requires_message() {
+        let schemas = openapi_component_schemas();
+        let chat = schemas
+            .get("ChatRequestBody")
+            .expect("ChatRequestBody schema");
+        let required = chat
+            .pointer("/required")
+            .and_then(|v| v.as_array())
+            .expect("required array");
+        assert!(
+            required.iter().any(|v| v.as_str() == Some("message")),
+            "ChatRequestBody must require message"
+        );
     }
 }

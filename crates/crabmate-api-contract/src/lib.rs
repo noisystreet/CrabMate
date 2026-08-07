@@ -10,6 +10,8 @@ pub mod chat_keys;
 pub mod error_codes;
 pub mod openapi;
 pub mod status;
+pub mod web_ui;
 
 pub use api::ApiError;
 pub use status::StatusShellView;
+pub use web_ui::WebUiConfigResponse;

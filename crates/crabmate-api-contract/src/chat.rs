@@ -7,7 +7,7 @@ use crate::api::ApiError;
 use crate::chat_keys::{reject_unknown_async_chat_body_keys, reject_unknown_chat_body_keys};
 
 /// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClarifyQuestionnaireAnswersBody {
     pub questionnaire_id: String,
@@ -106,42 +106,80 @@ pub struct ExecutorLlmBody {
     pub api_key: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ChatRequestBodySerde {
-    message: String,
-    #[serde(default)]
-    conversation_id: Option<String>,
-    #[serde(default, rename = "agent_role")]
-    agent_role: Option<String>,
-    #[serde(default)]
-    session_mode: Option<String>,
-    #[serde(default)]
-    approval_session_id: Option<String>,
-    #[serde(default)]
-    temperature: Option<f64>,
-    #[serde(default)]
-    seed: Option<i64>,
-    #[serde(default)]
-    seed_policy: Option<String>,
-    #[serde(default)]
-    client_llm: Option<ClientLlmBody>,
-    #[serde(default)]
-    executor_llm: Option<ExecutorLlmBody>,
-    #[serde(default)]
-    readonly_tool_ttl_cache_secs: Option<u64>,
-    #[serde(default)]
-    stream_resume: Option<StreamResumeBody>,
-    #[serde(default, rename = "client_sse_protocol")]
-    client_sse_protocol: Option<u8>,
-    #[serde(default)]
-    image_urls: Vec<String>,
-    #[serde(default)]
-    clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
+/// `GET /conversation/messages` 响应中的 tiktoken 快照（OpenAPI / HTTP 契约）。
+#[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct TiktokenPromptTokensOpenApi {
+    pub prompt_tokens: u32,
+    pub tiktoken_model: String,
 }
 
-impl From<ChatRequestBodySerde> for ChatRequestBody {
-    fn from(s: ChatRequestBodySerde) -> Self {
+/// `GET /conversation/messages` 响应 OpenAPI 形状（`messages` 为 OpenAI 兼容对象数组）。
+#[derive(Serialize, JsonSchema)]
+pub struct ConversationMessagesResponseBodyOpenApi {
+    pub conversation_id: String,
+    pub revision: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_agent_role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_session_mode: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
+    pub messages: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub total_count: u32,
+    #[serde(default)]
+    pub window_start_index: u32,
+    #[serde(default)]
+    pub has_older: bool,
+}
+
+/// `POST /chat/async` OpenAPI 形状：与 [`ChatRequestBodyWire`] 同形扁平 JSON + 可选 webhook 字段。
+#[derive(JsonSchema)]
+#[allow(dead_code)]
+pub struct ChatAsyncRequestBodyOpenApi {
+    #[schemars(flatten)]
+    chat: ChatRequestBodyWire,
+    webhook_url: Option<String>,
+    webhook_secret: Option<String>,
+}
+
+/// `POST /chat` / `POST /chat/stream` 请求的 JSON 线型（OpenAPI 与 [`ChatRequestBody`] 反序列化同源）。
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChatRequestBodyWire {
+    pub message: String,
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+    #[serde(default, rename = "agent_role")]
+    pub agent_role: Option<String>,
+    #[serde(default)]
+    pub session_mode: Option<String>,
+    #[serde(default)]
+    pub approval_session_id: Option<String>,
+    #[serde(default)]
+    pub temperature: Option<f64>,
+    #[serde(default)]
+    pub seed: Option<i64>,
+    #[serde(default)]
+    pub seed_policy: Option<String>,
+    #[serde(default)]
+    pub client_llm: Option<ClientLlmBody>,
+    #[serde(default)]
+    pub executor_llm: Option<ExecutorLlmBody>,
+    #[serde(default)]
+    pub readonly_tool_ttl_cache_secs: Option<u64>,
+    #[serde(default)]
+    pub stream_resume: Option<StreamResumeBody>,
+    #[serde(default, rename = "client_sse_protocol")]
+    pub client_sse_protocol: Option<u8>,
+    #[serde(default)]
+    pub image_urls: Vec<String>,
+    #[serde(default)]
+    pub clarify_questionnaire_answers: Option<ClarifyQuestionnaireAnswersBody>,
+}
+
+impl From<ChatRequestBodyWire> for ChatRequestBody {
+    fn from(s: ChatRequestBodyWire) -> Self {
         ChatRequestBody {
             message: s.message,
             conversation_id: s.conversation_id,
@@ -237,7 +275,7 @@ fn chat_request_body_from_json(v: serde_json::Value) -> Result<ChatRequestBody, 
         .as_object()
         .ok_or_else(|| "expected JSON object".to_string())?;
     reject_unknown_chat_body_keys(obj)?;
-    let inner: ChatRequestBodySerde = serde_json::from_value(v).map_err(|e| e.to_string())?;
+    let inner: ChatRequestBodyWire = serde_json::from_value(v).map_err(|e| e.to_string())?;
     Ok(inner.into())
 }
 
@@ -250,8 +288,7 @@ fn chat_async_request_body_from_json(v: serde_json::Value) -> Result<ChatAsyncRe
     let webhook_url = take_async_webhook_string(&mut map, "webhook_url")?;
     let webhook_secret = take_async_webhook_string(&mut map, "webhook_secret")?;
     let chat_val = serde_json::Value::Object(map);
-    let inner: ChatRequestBodySerde =
-        serde_json::from_value(chat_val).map_err(|e| e.to_string())?;
+    let inner: ChatRequestBodyWire = serde_json::from_value(chat_val).map_err(|e| e.to_string())?;
     Ok(ChatAsyncRequestBody {
         chat: inner.into(),
         webhook_url,
