@@ -53,13 +53,27 @@ fn oauth_client_id_from_env() -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// 优先级：环境变量 → 钥匙串；两侧均 `trim`，空串视为未设置。
+pub(crate) fn resolve_oauth_client_id_sources(
+    from_env: Option<String>,
+    from_keychain: Option<String>,
+) -> Option<String> {
+    from_env
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            from_keychain
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+        })
+}
+
 /// 优先级：环境变量 **`CM_GITHUB_OAUTH_CLIENT_ID`** → 钥匙串账户 **`github_oauth_client_id`**。
 fn resolve_oauth_client_id() -> Option<String> {
-    oauth_client_id_from_env().or_else(|| {
-        crate::user_data::read_secret_github_oauth_client_id()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-    })
+    resolve_oauth_client_id_sources(
+        oauth_client_id_from_env(),
+        crate::user_data::read_secret_github_oauth_client_id(),
+    )
 }
 
 /// OAuth App 可用 `repo` 等；GitHub App Device Flow 通常**省略** scope（靠 App 权限）。
@@ -550,5 +564,20 @@ mod tests {
             )
             .contains("ABCD-1234")
         );
+    }
+
+    #[test]
+    fn resolve_oauth_client_id_prefers_env_over_keychain() {
+        assert_eq!(
+            resolve_oauth_client_id_sources(Some("  env-id  ".into()), Some("keychain-id".into()))
+                .as_deref(),
+            Some("env-id")
+        );
+        assert_eq!(
+            resolve_oauth_client_id_sources(Some("   ".into()), Some(" key-id ".into())).as_deref(),
+            Some("key-id")
+        );
+        assert_eq!(resolve_oauth_client_id_sources(None, Some("".into())), None);
+        assert_eq!(resolve_oauth_client_id_sources(None, None), None);
     }
 }

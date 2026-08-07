@@ -19,7 +19,8 @@ pub(super) fn openapi_components_schemas_user_data() -> Value {
                     "executor_llm": { "$ref": "#/components/schemas/SecretSlotStatus" },
                     "web_api_bearer": { "$ref": "#/components/schemas/SecretSlotStatus" },
                     "github": { "$ref": "#/components/schemas/SecretSlotStatus" },
-                    "github_oauth_client_id": { "$ref": "#/components/schemas/SecretSlotStatus" }
+                    "github_oauth_client_id": { "$ref": "#/components/schemas/SecretSlotStatus" },
+                    "github_oauth_client_id_env": { "type": "boolean" }
                 }
             },
             "SecretSlotStatus": {

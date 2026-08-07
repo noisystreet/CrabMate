@@ -516,6 +516,7 @@ pub fn secrets_status() -> SecretsStatusResponse {
         github_oauth_client_id: slot_status_from_secret(
             super::github_secret::read_secret_github_oauth_client_id(),
         ),
+        github_oauth_client_id_env: super::github_secret::github_oauth_client_id_env_is_set(),
     }
 }
 
@@ -549,20 +550,7 @@ mod tests {
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     fn test_root() -> PathBuf {
-        static SLOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
-        let slot = SLOT.get_or_init(|| Mutex::new(None));
-        let mut g = slot.lock().unwrap();
-        if g.is_none() {
-            let dir = std::env::temp_dir()
-                .join(format!("crabmate-user-data-test-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
-            // SAFETY: 测试进程内独占临时目录，无并发读写该环境变量。
-            unsafe {
-                std::env::set_var("CM_CRABMATE_USER_DATA_DIR", dir.display().to_string());
-            }
-            *g = Some(dir);
-        }
-        g.clone().unwrap()
+        super::super::path::ensure_test_user_data_root()
     }
 
     /// 共享 `CM_CRABMATE_USER_DATA_DIR` 下的 `mcp_servers.json` 不可并行写。
@@ -575,10 +563,7 @@ mod tests {
 
     /// 测试用命名钥匙串（`credential_store` 进程内 HashMap）不可并行读写。
     fn lock_named_secret_tests() -> MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+        super::super::credential_store::lock_test_named_secret_suite()
     }
 
     #[test]

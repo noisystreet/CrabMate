@@ -172,6 +172,15 @@ fn test_named_secrets() -> &'static Mutex<std::collections::HashMap<String, Stri
     SECRETS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 
+/// 序列化所有「命名钥匙串账户」相关单测（与 `store` / `github_secret` 共用）。
+#[cfg(test)]
+pub(super) fn lock_test_named_secret_suite() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| std::sync::Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 #[cfg(test)]
 pub(super) fn read_named_secret(account: &str) -> Option<String> {
     test_named_secrets()
