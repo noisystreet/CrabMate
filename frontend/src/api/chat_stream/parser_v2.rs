@@ -9,6 +9,8 @@ use crate::sse_dispatch::{
     TurnSegmentStartInfo,
 };
 
+use crabmate_sse_protocol::{AgUiParseDispatch, classify_ag_ui_sse_data};
+
 use super::sse_parser::SseParser;
 
 /// V2 解析器（AG-UI 协议）。
@@ -20,10 +22,17 @@ impl SseParser for V2Parser {
     }
 }
 
+fn ag_ui_dispatch_to_sse(dispatch: AgUiParseDispatch) -> SseDispatch {
+    match dispatch {
+        AgUiParseDispatch::Handled => SseDispatch::Handled,
+        AgUiParseDispatch::Plain => SseDispatch::Plain,
+        AgUiParseDispatch::StreamEnded => SseDispatch::StreamEnded,
+    }
+}
+
 /// 解析单行 AG-UI JSON 事件并分发到 `SseControlSink` 回调。
 fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
     // 先尝试 AG-UI 格式解析：逐行处理 JSON，按 type 字段分发
-    let mut handled_any = false;
     for line in data.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -37,7 +46,6 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
             // 无 type 字段 → Plain 回落（AG-UI 协议依赖 type 字段区分类别）
             return SseDispatch::Plain;
         };
-        handled_any = true;
         match type_str {
             // ── 生命周期 ──
             "RUN_FINISHED" => {
@@ -74,15 +82,10 @@ fn parse_ag_ui_line(data: &str, sink: &mut SseControlSink<'_>) -> SseDispatch {
             "STATE_DELTA" => {} // STATE_DELTA 预留，当前不处理
 
             // 未知 type → Plain 回落（可能是纯文本增量）
-            _ => return SseDispatch::Plain,
+            _ => return ag_ui_dispatch_to_sse(classify_ag_ui_sse_data(data)),
         }
     }
-    if handled_any {
-        SseDispatch::Handled
-    } else {
-        // 全为空行 → Plain 回落（纯空格增量等）
-        SseDispatch::Plain
-    }
+    ag_ui_dispatch_to_sse(classify_ag_ui_sse_data(data))
 }
 
 // ── 生命周期 ──
@@ -515,7 +518,7 @@ mod tests {
         }
     }
 
-    /// AG-UI 金样验证：V2Parser 对每行 JSON 的分类须与 `fixtures/sse_ag_ui_golden.jsonl` 一致。
+    /// AG-UI 金样在 [`crabmate_sse_protocol::ag_ui_classify`] 单测中维护；此处保留行为回归用例。
     #[test]
     fn golden_ag_ui_v2_parser_matches_expected() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));

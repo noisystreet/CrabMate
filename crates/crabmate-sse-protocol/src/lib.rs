@@ -3,11 +3,13 @@
 //! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
 //! - **`sse`**：控制面 JSON 协议、SSE 编码器、广播中枢与审批桥（原 `crabmate-internal::sse`，已迁移合并）。
 
+mod ag_ui_classify;
 mod control_classify;
 pub mod sse;
 mod sse_frame;
 mod stream_end_reason;
 
+pub use ag_ui_classify::{AgUiParseDispatch, classify_ag_ui_sse_data};
 pub use control_classify::{classify_sse_control_outcome, key_present_non_null};
 pub use sse_frame::{
     extract_stream_ended_reason, is_sse_done_sentinel, join_sse_data_lines, parse_sse_event_id,
