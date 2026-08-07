@@ -1,10 +1,37 @@
 //! `POST /chat*` 等 JSON 体（不含依赖运行时快照类型的会话消息响应）。
 
-use schemars::JsonSchema;
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
 use serde::{Deserialize, Serialize};
 
 use crate::api::ApiError;
 use crate::chat_keys::{reject_unknown_async_chat_body_keys, reject_unknown_chat_body_keys};
+
+fn schema_open_json_object(_gen: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "object",
+        "additionalProperties": true,
+        "description": "键为题目的 id，值为字符串（或 JSON 数字/布尔，服务端会规范为字符串）。"
+    })
+}
+
+fn schema_session_mode(_gen: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": ["string", "null"],
+        "enum": ["ask", "plan", "act"],
+        "description": "Session capability mode (orthogonal to agent_role). ask/plan → readonly tools; act → full tools ∩ role allowlist. Default from config default_session_mode."
+    })
+}
+
+fn schema_open_object_array(_gen: &mut SchemaGenerator) -> Schema {
+    json_schema!({
+        "type": "array",
+        "items": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "description": "OpenAI 兼容 chat messages 对象数组"
+    })
+}
 
 /// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
 #[derive(Deserialize, Clone, JsonSchema)]
@@ -13,6 +40,7 @@ pub struct ClarifyQuestionnaireAnswersBody {
     pub questionnaire_id: String,
     /// 键为题目的 `id`，值为字符串（或 JSON 数字/布尔，服务端会规范为字符串）。
     #[serde(default)]
+    #[schemars(schema_with = "schema_open_json_object")]
     pub answers: serde_json::Value,
 }
 
@@ -124,6 +152,7 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub active_session_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
+    #[schemars(schema_with = "schema_open_object_array")]
     pub messages: Vec<serde_json::Value>,
     #[serde(default)]
     pub total_count: u32,
@@ -139,7 +168,9 @@ pub struct ConversationMessagesResponseBodyOpenApi {
 pub struct ChatAsyncRequestBodyOpenApi {
     #[schemars(flatten)]
     chat: ChatRequestBodyWire,
+    /// 非空时：任务进入 `completed` / `failed` 后向该 URL POST JSON（须 http/https）。
     webhook_url: Option<String>,
+    /// 可选：Webhook 请求头 `X-Crabmate-Webhook-Secret`（勿在日志输出完整值）。
     webhook_secret: Option<String>,
 }
 
@@ -153,6 +184,7 @@ pub struct ChatRequestBodyWire {
     #[serde(default, rename = "agent_role")]
     pub agent_role: Option<String>,
     #[serde(default)]
+    #[schemars(schema_with = "schema_session_mode")]
     pub session_mode: Option<String>,
     #[serde(default)]
     pub approval_session_id: Option<String>,
