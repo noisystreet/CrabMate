@@ -40,7 +40,7 @@ pub use clarification_sse_bridge::clarification_questionnaire_body_if_tool_ok;
 pub use crabmate_memory::memory;
 pub use crabmate_tools::clarification_questionnaire;
 pub use crabmate_tools::{
-    cargo_metadata, health_dep_compat, project_metrics, read_file_turn_cache, redact,
+    cargo_metadata, github_token, health_dep_compat, project_metrics, read_file_turn_cache, redact,
     text_encoding, tool_result, tools, workspace,
 };
 

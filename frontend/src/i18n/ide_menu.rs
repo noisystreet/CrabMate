@@ -120,6 +120,13 @@ pub fn ws_clone_back(l: Locale) -> &'static str {
     }
 }
 
+pub fn ws_clone_connect_github(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "连接 GitHub",
+        Locale::En => "Connect GitHub",
+    }
+}
+
 pub fn ws_clone_phase_validate(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "校验参数…",

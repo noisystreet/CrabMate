@@ -2,7 +2,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::helpers::{
-    ensure_git_repo, parse_args, require_confirm, require_string_field, run_and_format,
+    ensure_git_repo, git_remote_url, parse_args, require_confirm, require_string_field,
+    run_and_format,
 };
 
 pub fn checkout(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
@@ -135,6 +136,9 @@ pub fn push(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
         cmd.arg(b);
     }
     cmd.current_dir(working_dir);
+    if let Some(url) = git_remote_url(working_dir, remote) {
+        crate::github_token::apply_github_https_auth(&mut cmd, &url);
+    }
     run_and_format(cmd, max_output_len, "git push")
 }
 

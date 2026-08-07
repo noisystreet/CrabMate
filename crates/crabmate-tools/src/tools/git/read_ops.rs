@@ -2,8 +2,9 @@ use std::path::Path;
 use std::process::Command;
 
 use super::helpers::{
-    MAX_OUTPUT_LINES, ensure_git_repo, is_safe_rel_path, parse_args, require_confirm,
-    require_safe_path, require_string_field, run_and_format, run_diff_mode, section_failed,
+    MAX_OUTPUT_LINES, ensure_git_repo, git_remote_url, is_safe_rel_path, parse_args,
+    require_confirm, require_safe_path, require_string_field, run_and_format, run_diff_mode,
+    section_failed,
 };
 use crate::tools::output_util;
 
@@ -333,13 +334,18 @@ pub fn fetch(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
     if prune {
         cmd.arg("--prune");
     }
-    if let Some(r) = remote.filter(|s| !s.is_empty()) {
-        cmd.arg(r);
+    let remote_name = remote.filter(|s| !s.is_empty()).unwrap_or("origin");
+    if remote.filter(|s| !s.is_empty()).is_some() {
+        cmd.arg(remote_name);
         if let Some(b) = branch.filter(|s| !s.is_empty()) {
             cmd.arg(b);
         }
     }
     cmd.current_dir(working_dir);
+    // 未指定 remote 时仍按 origin URL 判断是否注入（与常见单远程工作流一致）。
+    if let Some(url) = git_remote_url(working_dir, remote_name) {
+        crate::github_token::apply_github_https_auth(&mut cmd, &url);
+    }
     run_and_format(cmd, max_output_len, "git fetch")
 }
 
@@ -407,6 +413,7 @@ pub fn clone_repo(args_json: &str, max_output_len: usize, working_dir: &Path) ->
         cmd.arg("--depth").arg(d.to_string());
     }
     cmd.arg(repo_url).arg(target_dir).current_dir(&base);
+    crate::github_token::apply_github_https_auth(&mut cmd, repo_url);
     run_and_format(cmd, max_output_len, "git clone")
 }
 

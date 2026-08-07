@@ -146,7 +146,15 @@ pub(super) fn WorkspaceCloneProgressBody(
     log_lines: RwSignal<Vec<String>>,
     percent: RwSignal<Option<u8>>,
     form_err: RwSignal<Option<String>>,
+    clone_open: RwSignal<bool>,
+    settings_page: RwSignal<bool>,
 ) -> impl IntoView {
+    let show_github_cta = move || {
+        form_err
+            .get()
+            .as_deref()
+            .is_some_and(|e| e.starts_with("CLONE_AUTH_REQUIRED"))
+    };
     view! {
         <div class="modal-body workspace-clone-progress" data-testid="workspace-clone-progress">
             <p class="workspace-clone-status" data-testid="workspace-clone-status">
@@ -189,6 +197,22 @@ pub(super) fn WorkspaceCloneProgressBody(
                     >
                         {move || i18n::ws_clone_back(locale.get())}
                     </button>
+                    <Show when=show_github_cta>
+                        <button
+                            type="button"
+                            class="btn btn-primary"
+                            data-testid="workspace-clone-connect-github"
+                            on:click=move |_| {
+                                clone_open.set(false);
+                                crate::app::settings_page::navigate_to_settings(
+                                    settings_page,
+                                    crate::app::settings_page::SettingsSection::Tools,
+                                );
+                            }
+                        >
+                            {move || i18n::ws_clone_connect_github(locale.get())}
+                        </button>
+                    </Show>
                 </div>
             </Show>
         </div>

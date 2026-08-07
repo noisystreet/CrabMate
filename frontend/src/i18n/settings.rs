@@ -565,10 +565,10 @@ pub fn settings_github_block_title(l: Locale) -> &'static str {
 pub fn settings_github_block_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "通过 Device Flow 授权后，token 保存在 serve 主机钥匙串，供 gh 工具使用（git HTTPS clone/push 注入尚未接入）。须配置 CM_GITHUB_OAUTH_CLIENT_ID；GitHub App 一般无需 scope，OAuth App 可设 CM_GITHUB_OAUTH_SCOPES（如 repo）。"
+            "通过 Device Flow 授权后，token 保存在 serve 主机钥匙串，供 gh 工具与 GitHub HTTPS clone/push/fetch 注入（SSH remote 不使用 OAuth）。须配置 CM_GITHUB_OAUTH_CLIENT_ID；GitHub App 一般无需 scope，OAuth App 可设 CM_GITHUB_OAUTH_SCOPES（如 repo）。"
         }
         Locale::En => {
-            "After Device Flow, the token is stored on the serve host keychain for gh tools (git HTTPS clone/push injection is not wired yet). Requires CM_GITHUB_OAUTH_CLIENT_ID; GitHub Apps usually omit scopes—set CM_GITHUB_OAUTH_SCOPES (e.g. repo) for OAuth Apps."
+            "After Device Flow, the token is stored on the serve host keychain for gh tools and GitHub HTTPS clone/push/fetch (SSH remotes do not use OAuth). Requires CM_GITHUB_OAUTH_CLIENT_ID; GitHub Apps usually omit scopes—set CM_GITHUB_OAUTH_SCOPES (e.g. repo) for OAuth Apps."
         }
     }
 }

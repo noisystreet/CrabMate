@@ -282,6 +282,7 @@ impl AppShellCtx {
     ) -> super::workspace_clone_modal::WorkspaceCloneModalSignals {
         super::workspace_clone_modal::WorkspaceCloneModalSignals {
             open: self.signals.workspace.workspace_clone_modal_open,
+            settings_page: self.signals.modal.settings_page,
             workspace_pick: super::workspace_root_actions::WorkspaceRootPickHandle {
                 locale: self.signals.shell_ui.locale,
                 chat: self.signals.chat,

@@ -132,6 +132,20 @@ pub(super) fn is_safe_rel_path(path: &str) -> bool {
     !p.is_empty() && !p.starts_with('/') && !p.contains("..")
 }
 
+/// `git remote get-url <name>`；失败或不存在时返回 `None`。
+pub(super) fn git_remote_url(working_dir: &Path, remote: &str) -> Option<String> {
+    let out = Command::new("git")
+        .args(["remote", "get-url", remote])
+        .current_dir(working_dir)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
 pub(super) fn section_failed(s: &str) -> bool {
     let first = s.lines().next().unwrap_or("");
     let Some(idx) = first.find("(exit=") else {
