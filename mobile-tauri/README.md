@@ -19,7 +19,7 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 
 `MainActivity` **不**调用 `enableEdgeToEdge()`，避免 WebView 内容画进系统状态栏后与壳顶栏按钮重叠（Android WebView 一般不提供可用的 `safe-area-inset-*`）。
 
-连上远程后：系统返回键，或右缘左划打开侧栏后点工具栏 **断开** 图标（`CrabMateMobile.disconnect`）回到本地连接页；连接页再按返回则退出 App。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。侧栏 GitHub / Device Flow 授权页经 **`CrabMateMobile.openExternalUrl`** 打开系统浏览器（WebView 内 `window.open` 通常无效）。
+连上远程后：系统返回键会弹出确认框（可 **退出应用**，或 **返回连接页** 换服务器）；侧栏工具栏 **断开** 图标同样回到连接页。连接页再按返回亦会确认后退出。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。侧栏 GitHub / Device Flow 授权页经 **`CrabMateMobile.openExternalUrl`** 打开系统浏览器（WebView 内 `window.open` 通常无效）。
 
 顶栏安全区：`CrabMateMobile.getStatusBarInsetPx()` 写入 CSS `--cm-safe-top`（状态栏/刘海 + 少量触控余量，至少约 24px；Web 侧 `--cm-safe-top-floor` 同保底）；原生还会在页面侧注入该变量。远程前端与连接页共用。
 

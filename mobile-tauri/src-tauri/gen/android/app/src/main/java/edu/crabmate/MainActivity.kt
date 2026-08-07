@@ -7,6 +7,7 @@ import android.view.autofill.AutofillManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
+import androidx.appcompat.app.AlertDialog
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -16,6 +17,7 @@ class MainActivity : TauriActivity() {
   /** 与 Tauri Android 默认资产源一致（`useHttpsScheme=false` → http）。 */
   private var connectHomeUrl: String = "http://tauri.localhost/"
   private var appWebView: WebView? = null
+  private var exitConfirmDialog: AlertDialog? = null
 
   override fun onCreate(savedInstanceState: Bundle?) {
     // 不要 enableEdgeToEdge()：Android WebView 通常不提供 CSS safe-area-inset-*，
@@ -31,17 +33,42 @@ class MainActivity : TauriActivity() {
         override fun handleOnBackPressed() {
           val url = appWebView?.url
           if (isAppOrigin(url)) {
-            // 已在连接页：退出 App
-            isEnabled = false
-            onBackPressedDispatcher.onBackPressed()
-            isEnabled = true
+            // 连接页：确认后退出
+            showExitConfirmDialog(fromRemote = false)
           } else {
-            // 远程 UI：回到本地连接页（可改服务器 / Bearer）
-            loadConnectPage()
+            // 远程主界面：可退出 App，或回到连接页换服务器
+            showExitConfirmDialog(fromRemote = true)
           }
         }
       },
     )
+  }
+
+  /**
+   * 系统返回键确认框。
+   * @param fromRemote 远程主界面时额外提供「返回连接页」。
+   */
+  private fun showExitConfirmDialog(fromRemote: Boolean) {
+    if (exitConfirmDialog?.isShowing == true) {
+      return
+    }
+    val builder =
+      AlertDialog.Builder(this)
+        .setTitle(R.string.exit_confirm_title)
+        .setMessage(
+          if (fromRemote) {
+            R.string.exit_confirm_message_remote
+          } else {
+            R.string.exit_confirm_message
+          },
+        )
+        .setNegativeButton(R.string.exit_confirm_cancel, null)
+        .setPositiveButton(R.string.exit_confirm_ok) { _, _ -> finishAffinity() }
+        .setOnDismissListener { exitConfirmDialog = null }
+    if (fromRemote) {
+      builder.setNeutralButton(R.string.exit_confirm_to_connect) { _, _ -> loadConnectPage() }
+    }
+    exitConfirmDialog = builder.show()
   }
 
   override fun onStart() {
