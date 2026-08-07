@@ -51,12 +51,26 @@ fn openapi_paths_fragment_system() -> Value {
             "get": {
                 "tags": ["system"],
                 "summary": "运行状态（模型、工具数、会话模式默认、规划配置等）",
+                "parameters": [
+                    {
+                        "name": "view",
+                        "in": "query",
+                        "required": false,
+                        "schema": { "type": "string", "enum": ["shell"] },
+                        "description": "为 shell 时返回 Web 壳层稳定子集 StatusShellView；省略则返回完整运行状态（StatusResponseBody）"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "状态 JSON",
                         "content": {
                             "application/json": {
-                                "schema": { "$ref": "#/components/schemas/StatusResponseBody" }
+                                "schema": {
+                                    "oneOf": [
+                                        { "$ref": "#/components/schemas/StatusShellView" },
+                                        { "$ref": "#/components/schemas/StatusResponseBody" }
+                                    ]
+                                }
                             }
                         }
                     }
