@@ -7,6 +7,7 @@ description = "CrabMate Axum Web host surface (HTTP DTOs, web-ui, serve shell); 
 
 [dependencies]
 axum = { workspace = true, default-features = false, features = ["json", "tokio"] }
+crabmate-api-contract = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 serde = { workspace = true }

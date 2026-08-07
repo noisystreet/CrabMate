@@ -1277,6 +1277,7 @@ dependencies = [
  "chrono",
  "clap_mangen",
  "crabmate-agent",
+ "crabmate-api-contract",
  "crabmate-benchmark",
  "crabmate-config",
  "crabmate-internal",
@@ -1330,6 +1331,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tracing",
+]
+
+[[package]]
+name = "crabmate-api-contract"
+version = "0.1.0"
+dependencies = [
+ "crabmate-types",
+ "schemars",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1599,6 +1610,7 @@ version = "0.1.0"
 dependencies = [
  "ammonia",
  "console_error_panic_hook",
+ "crabmate-api-contract",
  "crabmate-chat-export",
  "crabmate-display-rules",
  "crabmate-sse-protocol",
@@ -1625,6 +1637,7 @@ name = "crabmate-web-host"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "crabmate-api-contract",
  "crabmate-tools",
  "crabmate-types",
  "serde",

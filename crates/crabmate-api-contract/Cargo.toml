@@ -1,0 +1,15 @@
+[package]
+name = "crabmate-api-contract"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "CrabMate HTTP JSON contract (wasm + native); shared by web-host, frontend, and OpenAPI"
+
+[dependencies]
+crabmate-types = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+default = []
