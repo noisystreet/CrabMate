@@ -1,8 +1,10 @@
 //! `GET /health`、`GET /status`。
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::IntoResponse;
+use crabmate_api_contract::StatusShellView;
+use serde::Deserialize;
 
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
 use crate::chat_job_queue;
@@ -157,6 +159,60 @@ struct StatusResponse {
     agent_role_default_session_modes: std::collections::BTreeMap<String, String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct StatusQuery {
+    #[serde(default)]
+    view: Option<String>,
+}
+
+struct StatusShellBuildInput<'a> {
+    cfg: &'a crate::AgentConfig,
+    conversation_store_sqlite_path_configured: bool,
+    conversation_store_sqlite_active: bool,
+    agent_role_ids: &'a [String],
+    tiktoken_new_session_baseline_by_agent_role: std::collections::BTreeMap<String, u32>,
+}
+
+fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView {
+    let StatusShellBuildInput {
+        cfg,
+        conversation_store_sqlite_path_configured,
+        conversation_store_sqlite_active,
+        agent_role_ids,
+        tiktoken_new_session_baseline_by_agent_role,
+    } = input;
+    StatusShellView {
+        status: StatusShellView::ok_prefix().to_string(),
+        model: cfg.llm.model.clone(),
+        api_base: cfg.llm.api_base.clone(),
+        agent_role_ids: agent_role_ids.to_vec(),
+        default_agent_role_id: cfg.roles_prompts.default_agent_role_id.clone(),
+        default_session_mode: cfg.roles_prompts.default_session_mode.as_str().to_string(),
+        agent_role_default_session_modes: {
+            let mut m = std::collections::BTreeMap::new();
+            for (id, spec) in cfg.roles_prompts.agent_roles.iter() {
+                if let Some(mode) = spec.default_session_mode {
+                    m.insert(id.clone(), mode.as_str().to_string());
+                }
+            }
+            m
+        },
+        context_char_budget: cfg.context_pipeline.context_char_budget,
+        llm_context_tokens: cfg.llm_sampling.llm_context_tokens,
+        effective_context_char_budget: cfg.effective_context_char_budget_for_pipeline(),
+        tiktoken_prompt_counting_model:
+            crate::agent::tiktoken_prompt_tokens::tiktoken_model_id_for_config_model(
+                cfg.llm.model.as_str(),
+            ),
+        tiktoken_new_session_baseline_by_agent_role,
+        executor_model: cfg.llm.executor_model.clone().unwrap_or_default(),
+        executor_api_base: String::new(),
+        planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str().to_string(),
+        conversation_store_sqlite_path_configured,
+        conversation_store_sqlite_active,
+    }
+}
+
 fn tiktoken_new_session_baselines_by_role(
     cfg: &crate::AgentConfig,
     tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
@@ -214,7 +270,10 @@ fn tiktoken_new_session_baselines_by_role(
     tiktoken_new_session_baseline_by_agent_role
 }
 
-pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> impl IntoResponse {
+pub(crate) async fn status_handler(
+    State(state): State<WebStatusAppFacet>,
+    Query(query): Query<StatusQuery>,
+) -> impl IntoResponse {
     let cfg = state.http.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
@@ -254,6 +313,15 @@ pub(crate) async fn status_handler(State(state): State<WebStatusAppFacet>) -> im
         cfg.per_plan_policy.planner_executor_mode.as_str(),
         cfg.per_plan_policy.orchestration_profile,
     );
+    if query.view.as_deref() == Some("shell") {
+        return Json(build_status_shell_view(StatusShellBuildInput {
+            cfg: &cfg,
+            conversation_store_sqlite_path_configured,
+            conversation_store_sqlite_active,
+            agent_role_ids: &agent_role_ids,
+            tiktoken_new_session_baseline_by_agent_role,
+        }));
+    }
     Json(StatusResponse {
         status: "ok",
         model: cfg.llm.model.clone(),
