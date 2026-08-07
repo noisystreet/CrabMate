@@ -69,4 +69,18 @@ use wasm_bindgen::prelude::*;
 pub fn main() {
     console_error_panic_hook::set_once();
     mount_to_body(|| view! { <App /> });
+    // WASM 已就绪并完成挂载：去掉 HTML 内联启动页，避免与 App 叠两层。
+    remove_boot_splash();
+}
+
+fn remove_boot_splash() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(doc) = window.document() else {
+        return;
+    };
+    if let Some(el) = doc.get_element_by_id("cm-boot-splash") {
+        el.remove();
+    }
 }

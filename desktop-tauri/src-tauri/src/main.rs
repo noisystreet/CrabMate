@@ -9,6 +9,7 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
+use tauri::webview::{Color, PageLoadEvent};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
@@ -659,7 +660,7 @@ fn main() {
                 }
                 match outcome {
                     Ok(ready_url) => {
-                        update_splash_status(&handle, "正在打开界面…", "后端已就绪");
+                        update_splash_status(&handle, "正在打开界面…", "加载 Web UI（请稍候）");
                         let create_result = {
                             let h = handle.clone();
                             let (tx, rx) = std::sync::mpsc::channel();
@@ -671,7 +672,8 @@ fn main() {
                                 .unwrap_or_else(|_| Err("main window create channel failed".into()))
                         };
                         match create_result {
-                            Ok(()) => close_splash_window(&handle),
+                            // 闪屏在主窗首屏 page load（或超时）后再关，避免空 WebView 黑屏。
+                            Ok(()) => {}
                             Err(e) => {
                                 show_splash_error(&handle, e);
                                 if !e2e_hide_app_windows() {
@@ -714,6 +716,9 @@ fn create_main_window_from_url(
         .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
     let app_origin = parsed_url.origin();
     let app_handle_clone = app_handle.clone();
+    let revealed = Arc::new(AtomicBool::new(false));
+    let revealed_on_load = Arc::clone(&revealed);
+    let app_on_load = app_handle.clone();
 
     let window =
         WebviewWindowBuilder::new(app_handle, "main", WebviewUrl::External(parsed_url.clone()))
@@ -721,6 +726,8 @@ fn create_main_window_from_url(
             .inner_size(1280.0, 840.0)
             .resizable(true)
             .decorations(false)
+            // 与前端 `--bg` / 启动页一致，避免未绘页面前的系统默认黑底。
+            .background_color(Color(0x0A, 0x0D, 0x12, 0xFF))
             // 窗口状态插件会在 ready 时恢复几何信息；先隐藏可避免默认尺寸闪烁。
             .visible(false)
             // Linux：按 gsettings `color-scheme` 显式 Dark/Light（`None` 时 WebKit 常忽略
@@ -735,6 +742,12 @@ fn create_main_window_from_url(
                 }
                 true
             })
+            .on_page_load(move |window, payload| {
+                if !matches!(payload.event(), PageLoadEvent::Finished) {
+                    return;
+                }
+                reveal_main_window_once(&window, &app_on_load, &revealed_on_load);
+            })
             .build()
             .map_err(|e| format!("failed to create main window: {e}"))?;
 
@@ -744,16 +757,42 @@ fn create_main_window_from_url(
         eprintln!("[crabmate-desktop] failed to restore window state: {error}");
     }
 
-    if !e2e_hide_app_windows() {
-        window
-            .show()
-            .map_err(|e| format!("failed to show main window: {e}"))?;
-        window
-            .set_focus()
-            .map_err(|e| format!("failed to focus main window: {e}"))?;
-    }
+    // page load 未回调时的兜底（例如异常导航），避免闪屏永久卡住。
+    let app_fallback = app_handle.clone();
+    let revealed_fallback = Arc::clone(&revealed);
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(20));
+        let revealed = Arc::clone(&revealed_fallback);
+        let app = app_fallback.clone();
+        let _ = app_fallback.run_on_main_thread(move || {
+            if let Some(main) = app.get_webview_window("main") {
+                reveal_main_window_once(&main, &app, &revealed);
+            } else {
+                close_splash_window(&app);
+            }
+        });
+    });
 
     Ok(())
+}
+
+fn reveal_main_window_once(
+    window: &WebviewWindow,
+    app: &tauri::AppHandle,
+    revealed: &AtomicBool,
+) {
+    if revealed.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    if !e2e_hide_app_windows() {
+        if let Err(e) = window.show() {
+            eprintln!("[crabmate-desktop] failed to show main window: {e}");
+        }
+        if let Err(e) = window.set_focus() {
+            eprintln!("[crabmate-desktop] failed to focus main window: {e}");
+        }
+    }
+    close_splash_window(app);
 }
 
 #[cfg(test)]

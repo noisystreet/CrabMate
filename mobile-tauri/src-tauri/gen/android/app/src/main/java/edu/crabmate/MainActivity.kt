@@ -80,6 +80,8 @@ class MainActivity : TauriActivity() {
     super.onWebViewCreate(webView)
     appWebView = webView
     WindowCompat.setDecorFitsSystemWindows(window, true)
+    // 与前端 `--bg` 对齐：远程 HTML/WASM 未就绪前避免系统默认纯黑空页。
+    webView.setBackgroundColor(android.graphics.Color.parseColor("#0A0D12"))
     // 允许系统 Autofill / 密码管理器填充连接页的 URL+Bearer
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_YES
