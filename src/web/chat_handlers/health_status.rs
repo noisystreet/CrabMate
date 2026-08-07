@@ -160,7 +160,7 @@ struct StatusResponse {
 }
 
 #[derive(Debug, Deserialize)]
-struct StatusQuery {
+pub(crate) struct StatusQuery {
     #[serde(default)]
     view: Option<String>,
 }
