@@ -57,4 +57,7 @@ pub use saved_models::{
     persist_saved_model_presets_to_storage,
 };
 pub use session_store::post_session_conversation_store;
-pub use user_data::{delete_secret_github, fetch_secrets_status};
+pub use user_data::{
+    delete_secret_github, delete_secret_github_oauth_client_id, fetch_secrets_status,
+    put_secret_github_oauth_client_id,
+};

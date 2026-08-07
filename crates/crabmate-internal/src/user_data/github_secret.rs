@@ -1,4 +1,4 @@
-//! GitHub OAuth / PAT：系统钥匙串账户 **`github`**。
+//! GitHub OAuth / PAT：系统钥匙串账户 **`github`**（user token）与 **`github_oauth_client_id`**（App Client ID）。
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,13 +9,36 @@ fn secret_path() -> PathBuf {
     user_data_root().join("secrets").join("github")
 }
 
-/// 写入或清除（空串）GitHub token。
+fn oauth_client_id_secret_path() -> PathBuf {
+    user_data_root()
+        .join("secrets")
+        .join("github_oauth_client_id")
+}
+
+/// 写入或清除（空串）GitHub user access token / PAT。
 pub fn write_secret_github(token: &str) -> Result<(), String> {
     super::credential_store::write_migrating_secret("github", &secret_path(), token)
 }
 
 pub fn read_secret_github() -> Option<String> {
     super::credential_store::read_migrating_secret("github", &secret_path())
+}
+
+/// 写入或清除 GitHub App / OAuth App **Client ID**（账户 `github_oauth_client_id`）。
+/// 非 Client Secret；仍走钥匙串以免出现在明文 prefs / status 全文。
+pub fn write_secret_github_oauth_client_id(client_id: &str) -> Result<(), String> {
+    super::credential_store::write_migrating_secret(
+        "github_oauth_client_id",
+        &oauth_client_id_secret_path(),
+        client_id,
+    )
+}
+
+pub fn read_secret_github_oauth_client_id() -> Option<String> {
+    super::credential_store::read_migrating_secret(
+        "github_oauth_client_id",
+        &oauth_client_id_secret_path(),
+    )
 }
 
 /// 将钥匙串 `github` 注册为 `crabmate_tools::github_token` 回退源（进程内一次）。

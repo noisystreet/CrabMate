@@ -119,6 +119,8 @@ pub struct SecretsStatusDto {
     #[serde(default)]
     #[allow(dead_code)]
     pub github: SecretSlotStatusDto,
+    #[serde(default)]
+    pub github_oauth_client_id: SecretSlotStatusDto,
 }
 
 pub async fn fetch_secrets_status(loc: Locale) -> Result<SecretsStatusDto, String> {
@@ -454,13 +456,26 @@ pub async fn put_secret_github(token: &str, loc: Locale) -> Result<(), String> {
 }
 
 pub async fn delete_secret_github(loc: Locale) -> Result<(), String> {
+    delete_json_no_content("/user-data/secrets/github", loc).await
+}
+
+/// 写入或清除 GitHub OAuth/App Client ID（空串清除）；不经 GET 回显全文。
+pub async fn put_secret_github_oauth_client_id(client_id: &str, loc: Locale) -> Result<(), String> {
+    let body = serde_json::json!({ "token": client_id }).to_string();
+    put_json_no_content("/user-data/secrets/github-oauth-client-id", &body, loc).await
+}
+
+pub async fn delete_secret_github_oauth_client_id(loc: Locale) -> Result<(), String> {
+    delete_json_no_content("/user-data/secrets/github-oauth-client-id", loc).await
+}
+
+async fn delete_json_no_content(url: &str, loc: Locale) -> Result<(), String> {
     let init = RequestInit::new();
     init.set_method("DELETE");
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init("/user-data/secrets/github", &init)
-        .map_err(|e| format!("request: {e:?}"))?;
+    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await

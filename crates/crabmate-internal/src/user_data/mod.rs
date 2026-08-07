@@ -13,7 +13,8 @@ mod store;
 mod types;
 
 pub use github_secret::{
-    install_github_cli_token_provider, read_secret_github, write_secret_github,
+    install_github_cli_token_provider, read_secret_github, read_secret_github_oauth_client_id,
+    write_secret_github, write_secret_github_oauth_client_id,
 };
 pub use path::{
     RECENT_WORKSPACE_ROOTS_MAX, normalize_workspace_partition_path, push_recent_workspace_root,

@@ -17,7 +17,8 @@ use crate::user_data::{
     merge_mcp_commands_from_stored, normalize_mcp_servers_file, save_llm_overrides,
     save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_mcp_secret_server_id,
     validate_sessions_value, write_secret_client_llm, write_secret_executor_llm,
-    write_secret_github, write_secret_mcp_bearer, write_secret_web_api_bearer,
+    write_secret_github, write_secret_github_oauth_client_id, write_secret_mcp_bearer,
+    write_secret_web_api_bearer,
 };
 use crate::web::app_state::AppStateHttpCore;
 
@@ -128,6 +129,22 @@ pub(crate) async fn put_secret_github_handler(
 
 pub(crate) async fn delete_secret_github_handler() -> Result<StatusCode, (StatusCode, String)> {
     write_secret_github("").map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn put_secret_github_oauth_client_id_handler(
+    Json(body): Json<SecretWriteBody>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let client_id = body.token.or(body.api_key).unwrap_or_default();
+    write_secret_github_oauth_client_id(&client_id)
+        .map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(crate) async fn delete_secret_github_oauth_client_id_handler()
+-> Result<StatusCode, (StatusCode, String)> {
+    write_secret_github_oauth_client_id("")
+        .map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
     Ok(StatusCode::NO_CONTENT)
 }
 
