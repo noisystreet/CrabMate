@@ -50,7 +50,10 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
         "ChatBranchResponseBody".into(),
         schema_value::<ChatBranchResponseBody>(),
     );
-    map.insert("StreamResumeBody".into(), schema_value::<StreamResumeBody>());
+    map.insert(
+        "StreamResumeBody".into(),
+        schema_value::<StreamResumeBody>(),
+    );
     map.insert(
         "ConfigReloadResponseBody".into(),
         schema_value::<ConfigReloadResponseBody>(),
