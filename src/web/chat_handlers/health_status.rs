@@ -2,7 +2,7 @@
 
 use axum::Json;
 use axum::extract::{Query, State};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use crabmate_api_contract::StatusShellView;
 use serde::Deserialize;
 
@@ -277,7 +277,7 @@ fn tiktoken_new_session_baselines_by_role(
 pub(crate) async fn status_handler(
     State(state): State<WebStatusAppFacet>,
     Query(query): Query<StatusQuery>,
-) -> impl IntoResponse {
+) -> Response {
     let cfg = state.http.cfg.read().await;
     let mp = MESSAGE_PIPELINE_COUNTERS.snapshot();
     let conversation_store_entries = state.conversation_count().await;
@@ -324,7 +324,8 @@ pub(crate) async fn status_handler(
             conversation_store_sqlite_active,
             agent_role_ids: &agent_role_ids,
             tiktoken_new_session_baseline_by_agent_role,
-        }));
+        }))
+        .into_response();
     }
     Json(StatusResponse {
         status: "ok",
@@ -440,4 +441,5 @@ pub(crate) async fn status_handler(
             m
         },
     })
+    .into_response()
 }
