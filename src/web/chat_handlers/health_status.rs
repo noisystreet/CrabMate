@@ -207,7 +207,11 @@ fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView 
         tiktoken_new_session_baseline_by_agent_role,
         executor_model: cfg.llm.executor_model.clone().unwrap_or_default(),
         executor_api_base: String::new(),
-        planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str().to_string(),
+        planner_executor_mode: cfg
+            .per_plan_policy
+            .planner_executor_mode
+            .as_str()
+            .to_string(),
         conversation_store_sqlite_path_configured,
         conversation_store_sqlite_active,
     }
