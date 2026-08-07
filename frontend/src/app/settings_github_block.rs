@@ -1,4 +1,4 @@
-//! 设置页「工具」分区内的 GitHub Device Flow 连接块（含钥匙串 Client ID）。
+//! 设置页「GitHub」分区：Device Flow 连接与钥匙串 Client ID。
 
 use gloo_timers::future::TimeoutFuture;
 use leptos::prelude::*;
@@ -61,16 +61,22 @@ fn refresh_github_secret_slots(loc: Locale, ui: GithubUiSignals, report_err: boo
     });
 }
 
+fn bump_auth_refresh_nonce(nonce: RwSignal<u64>) {
+    nonce.update(|n| *n = n.saturating_add(1));
+}
+
 fn apply_terminal_device_state(
     loc: Locale,
     state: &str,
     error: Option<String>,
     ui: GithubUiSignals,
+    auth_refresh_nonce: RwSignal<u64>,
 ) {
     match state {
         "success" => {
             ui.err.set(None);
             refresh_github_secret_slots(loc, ui, true);
+            bump_auth_refresh_nonce(auth_refresh_nonce);
             ui.busy.set(false);
         }
         "denied" | "expired" | "cancelled" | "error" => {
@@ -90,7 +96,12 @@ fn is_device_terminal(state: &str) -> bool {
     )
 }
 
-async fn poll_until_device_done(loc: Locale, start: GithubDeviceStartDto, ui: GithubUiSignals) {
+async fn poll_until_device_done(
+    loc: Locale,
+    start: GithubDeviceStartDto,
+    ui: GithubUiSignals,
+    auth_refresh_nonce: RwSignal<u64>,
+) {
     let interval_ms = u32::try_from(start.interval.max(1).saturating_mul(1000)).unwrap_or(5000);
     let expires = start.expires_in.max(60);
     let mut waited = 0u64;
@@ -102,7 +113,7 @@ async fn poll_until_device_done(loc: Locale, start: GithubDeviceStartDto, ui: Gi
                 ui.status_line
                     .set(Some(i18n::settings_github_device_state(loc, &st.state)));
                 if is_device_terminal(&st.state) {
-                    apply_terminal_device_state(loc, &st.state, st.error, ui);
+                    apply_terminal_device_state(loc, &st.state, st.error, ui, auth_refresh_nonce);
                     return;
                 }
             }
@@ -121,7 +132,7 @@ async fn poll_until_device_done(loc: Locale, start: GithubDeviceStartDto, ui: Gi
     }
 }
 
-fn spawn_device_connect(loc: Locale, ui: GithubUiSignals) {
+fn spawn_device_connect(loc: Locale, ui: GithubUiSignals, auth_refresh_nonce: RwSignal<u64>) {
     if ui.busy.get_untracked() {
         return;
     }
@@ -137,7 +148,7 @@ fn spawn_device_connect(loc: Locale, ui: GithubUiSignals) {
                 ui.verify_url
                     .set(Some(start.verification_uri_complete.clone()));
                 tauri_open_external_url(&start.verification_uri_complete);
-                poll_until_device_done(loc, start, ui).await;
+                poll_until_device_done(loc, start, ui, auth_refresh_nonce).await;
             }
             Err(e) => {
                 ui.err.set(Some(e));
@@ -147,7 +158,7 @@ fn spawn_device_connect(loc: Locale, ui: GithubUiSignals) {
     });
 }
 
-fn spawn_device_disconnect(loc: Locale, ui: GithubUiSignals) {
+fn spawn_device_disconnect(loc: Locale, ui: GithubUiSignals, auth_refresh_nonce: RwSignal<u64>) {
     if ui.busy.get_untracked() {
         return;
     }
@@ -160,6 +171,7 @@ fn spawn_device_disconnect(loc: Locale, ui: GithubUiSignals) {
         ui.user_code.set(None);
         ui.verify_url.set(None);
         ui.status_line.set(None);
+        bump_auth_refresh_nonce(auth_refresh_nonce);
         ui.busy.set(false);
     });
 }
@@ -428,6 +440,8 @@ pub(crate) fn SettingsGithubBlock(
     /// 全屏设置页已有分区标题时可关掉块内标题，避免与侧栏「GitHub」重复。
     #[prop(default = true)]
     show_title: bool,
+    /// Device Flow 成功或断开后递增，供壳层刷新 `GET /github/repo-context`。
+    auth_refresh_nonce: RwSignal<u64>,
 ) -> impl IntoView {
     let ui = GithubUiSignals {
         github_set: RwSignal::new(false),
@@ -450,10 +464,10 @@ pub(crate) fn SettingsGithubBlock(
     });
 
     let on_connect = Callback::new(move |_| {
-        spawn_device_connect(locale.get_untracked(), ui);
+        spawn_device_connect(locale.get_untracked(), ui, auth_refresh_nonce);
     });
     let on_disconnect = Callback::new(move |_| {
-        spawn_device_disconnect(locale.get_untracked(), ui);
+        spawn_device_disconnect(locale.get_untracked(), ui, auth_refresh_nonce);
     });
     let on_reopen = Callback::new(move |_| {
         if let Some(url) = ui.verify_url.get_untracked() {

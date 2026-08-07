@@ -32,6 +32,7 @@ pub struct SettingsPageFormSignals {
     pub session_chat_font: RwSignal<String>,
     pub session_chat_font_size: RwSignal<f64>,
     pub web_api_bearer_save_nonce: RwSignal<u64>,
+    pub github_auth_refresh_nonce: RwSignal<u64>,
 }
 
 impl SettingsPageFormSignals {
@@ -68,6 +69,7 @@ impl SettingsPageFormSignals {
             session_chat_font: app.shell_ui.session_chat_font,
             session_chat_font_size: app.shell_ui.session_chat_font_size,
             web_api_bearer_save_nonce: app.shell_ui.web_api_bearer_save_nonce,
+            github_auth_refresh_nonce: app.shell_ui.github_auth_refresh_nonce,
         }
     }
 }

@@ -83,6 +83,7 @@ pub struct SettingsModalSignals {
     pub readonly_tool_ttl_cache_follow_server: RwSignal<bool>,
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub web_api_bearer_save_nonce: RwSignal<u64>,
+    pub github_auth_refresh_nonce: RwSignal<u64>,
 }
 
 impl SettingsModalSignals {
@@ -114,6 +115,7 @@ impl SettingsModalSignals {
             readonly_tool_ttl_cache_follow_server: form.readonly_tool_ttl_cache_follow_server,
             saved_model_presets: form.saved_model_presets,
             web_api_bearer_save_nonce: form.web_api_bearer_save_nonce,
+            github_auth_refresh_nonce: form.github_auth_refresh_nonce,
         }
     }
 }

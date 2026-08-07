@@ -61,3 +61,17 @@ pub fn wire_github_refresh_when_workspace_changes(
         }
     });
 }
+
+/// Device Flow 授权成功 / 断开后递增 nonce，刷新侧栏仓库上下文。
+pub fn wire_github_refresh_on_auth_nonce(
+    auth_refresh_nonce: RwSignal<u64>,
+    refresh_github_repo: Arc<dyn Fn() + Send + Sync>,
+) {
+    Effect::new(move |_| {
+        let n = auth_refresh_nonce.get();
+        if n == 0 {
+            return;
+        }
+        refresh_github_repo();
+    });
+}

@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::app::github_embed_page::{
-    github_repo_btn_disabled, try_open_github_embed_from_repo, use_github_embed_signals,
+    github_repo_can_open, try_open_github_embed_from_repo, use_github_embed_signals,
 };
 use crate::app::settings_page::{SettingsSection, navigate_to_settings};
 use crate::app_prefs::SidePanelView;
@@ -226,6 +226,7 @@ fn SideToolbarGithubRepoBtn(
     locale: RwSignal<Locale>,
     view_menu_open: RwSignal<bool>,
     status_tasks: StatusTasksSignals,
+    settings_page: RwSignal<bool>,
 ) -> impl IntoView {
     let embed = use_github_embed_signals();
     view! {
@@ -233,23 +234,32 @@ fn SideToolbarGithubRepoBtn(
             type="button"
             class="btn btn-secondary btn-sm shell-toolbar-icon-btn shell-toolbar-github-btn"
             data-testid="side-toolbar-github-repo"
-            prop:disabled=move || github_repo_btn_disabled(status_tasks.github_repo.get().as_ref())
             on:click=move |_| {
                 view_menu_open.set(false);
-                let _ = try_open_github_embed_from_repo(
-                    status_tasks.github_repo.get_untracked(),
-                    locale.get_untracked(),
-                    embed,
-                );
+                let repo = status_tasks.github_repo.get_untracked();
+                if github_repo_can_open(repo.as_ref()) {
+                    let _ = try_open_github_embed_from_repo(repo, locale.get_untracked(), embed);
+                } else {
+                    navigate_to_settings(settings_page, SettingsSection::Github);
+                }
             }
-            prop:title=move || i18n::side_github_repo_btn_title(locale.get())
+            prop:title=move || {
+                if github_repo_can_open(status_tasks.github_repo.get().as_ref()) {
+                    i18n::side_github_repo_btn_title(locale.get())
+                } else {
+                    i18n::side_github_connect_btn_title(locale.get())
+                }
+            }
             prop:aria-label=move || {
-                status_tasks
-                    .github_repo
-                    .get()
-                    .and_then(|r| r.repo)
-                    .map(|name| i18n::side_github_repo_btn_aria(locale.get(), &name))
-                    .unwrap_or_else(|| i18n::side_github_repo_btn_title(locale.get()).to_string())
+                let loc = locale.get();
+                let repo = status_tasks.github_repo.get();
+                if github_repo_can_open(repo.as_ref()) {
+                    repo.and_then(|r| r.repo)
+                        .map(|name| i18n::side_github_repo_btn_aria(loc, &name))
+                        .unwrap_or_else(|| i18n::side_github_repo_btn_title(loc).to_string())
+                } else {
+                    i18n::side_github_connect_btn_title(loc).to_string()
+                }
             }
         >
             <svg
@@ -299,6 +309,7 @@ pub(crate) fn ShellToolbarIcons(
                 locale=locale
                 view_menu_open=view_menu_open
                 status_tasks=status_tasks
+                settings_page=settings_page
             />
             <div class="toolbar-view-wrap">
                 <Show when=move || view_menu_open.get()>

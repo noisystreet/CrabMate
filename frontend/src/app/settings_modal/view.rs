@@ -46,6 +46,7 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         readonly_tool_ttl_cache_follow_server,
         saved_model_presets,
         web_api_bearer_save_nonce,
+        github_auth_refresh_nonce,
     } = signals;
 
     let settings_dialog_ref = NodeRef::<Div>::new();
@@ -189,5 +190,6 @@ pub fn settings_modal_view(signals: SettingsModalSignals) -> impl IntoView {
         saved_model_presets,
         sync_saved_presets_baseline: sync_saved_presets_baseline.clone(),
         web_api_bearer_save_nonce,
+        github_auth_refresh_nonce,
     })
 }

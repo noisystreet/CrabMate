@@ -26,18 +26,18 @@ pub fn use_github_embed_signals() -> GithubEmbedSignals {
     use_context::<GithubEmbedSignals>().expect("GithubEmbedSignals context")
 }
 
-/// 侧栏 GitHub 仓库按钮是否应禁用（与 `SideToolbarGithubRepoBtn` 的 `prop:disabled` 一致）。
-pub fn github_repo_btn_disabled(repo: Option<&crate::api::GithubRepoContextData>) -> bool {
+/// 侧栏按钮能否直接打开仓库（已连接且有 URL）；否则点击应跳转设置连接。
+pub fn github_repo_can_open(repo: Option<&crate::api::GithubRepoContextData>) -> bool {
     let Some(r) = repo else {
-        return true;
+        return false;
     };
-    let no_url = r
-        .url
+    if !r.connected {
+        return false;
+    }
+    r.url
         .as_deref()
         .map(str::trim)
-        .filter(|u| !u.is_empty())
-        .is_none();
-    no_url || !r.connected
+        .is_some_and(|u| !u.is_empty())
 }
 
 /// 所有平台均通过系统浏览器打开 GitHub 仓库页。
@@ -143,21 +143,17 @@ mod tests {
     }
 
     #[test]
-    fn github_repo_btn_disabled_when_missing_or_not_connected() {
-        assert!(github_repo_btn_disabled(None));
-        assert!(github_repo_btn_disabled(Some(&repo(
+    fn github_repo_can_open_requires_connected_and_url() {
+        assert!(!github_repo_can_open(None));
+        assert!(!github_repo_can_open(Some(&repo(
             false,
-            Some("https://github.com/octocat/Hello-World",)
+            Some("https://github.com/octocat/Hello-World")
         ))));
-        assert!(github_repo_btn_disabled(Some(&repo(true, None))));
-        assert!(github_repo_btn_disabled(Some(&repo(true, Some("  ")))));
-    }
-
-    #[test]
-    fn github_repo_btn_enabled_when_connected_with_url() {
-        assert!(!github_repo_btn_disabled(Some(&repo(
+        assert!(!github_repo_can_open(Some(&repo(true, None))));
+        assert!(!github_repo_can_open(Some(&repo(true, Some("  ")))));
+        assert!(github_repo_can_open(Some(&repo(
             true,
-            Some("https://github.com/octocat/Hello-World"),
+            Some("https://github.com/octocat/Hello-World")
         ))));
     }
 

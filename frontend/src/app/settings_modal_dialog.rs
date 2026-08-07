@@ -48,6 +48,7 @@ pub struct SettingsModalDialogInput {
     pub saved_model_presets: RwSignal<Vec<crate::api::SavedModelPreset>>,
     pub sync_saved_presets_baseline: Arc<dyn Fn() + Send + Sync>,
     pub web_api_bearer_save_nonce: RwSignal<u64>,
+    pub github_auth_refresh_nonce: RwSignal<u64>,
 }
 
 #[component]
@@ -120,6 +121,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
         saved_model_presets,
         sync_saved_presets_baseline,
         web_api_bearer_save_nonce,
+        github_auth_refresh_nonce,
         ..
     } = input;
 
@@ -183,6 +185,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
             <crate::app::settings_github_block::SettingsGithubBlock
                 locale=appearance_locale
                 input_id="settings-modal-github-oauth-client-id"
+                auth_refresh_nonce=github_auth_refresh_nonce
             />
             <SettingsShortcutsBlock
                 locale=appearance_locale

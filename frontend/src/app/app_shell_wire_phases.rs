@@ -40,8 +40,8 @@ use super::chat::{
     },
 };
 use super::github_wiring::{
-    make_refresh_github_repo_context, wire_github_refresh_when_workspace_changes,
-    wire_github_repo_after_init,
+    make_refresh_github_repo_context, wire_github_refresh_on_auth_nonce,
+    wire_github_refresh_when_workspace_changes, wire_github_repo_after_init,
 };
 use super::ide_layout_switch::IdeLayoutToggleSignals;
 use super::status_tasks_wiring::{
@@ -280,8 +280,9 @@ fn wire_phase4b_status_tasks_domain(app: &AppSignals) -> StatusTasksSpawn {
     wire_github_refresh_when_workspace_changes(
         app.workspace.workspace_data,
         app.initialized,
-        refresh_github_repo,
+        Arc::clone(&refresh_github_repo),
     );
+    wire_github_refresh_on_auth_nonce(app.shell_ui.github_auth_refresh_nonce, refresh_github_repo);
 
     StatusTasksSpawn {
         refresh_status,
