@@ -25,6 +25,7 @@ mod viewport;
 pub use approval_follow::wire_approval_expanded_follows_pending;
 pub use escape::{ShellEscapeSignals, wire_escape_key_layered_dismiss};
 pub use ide_hotkeys::{IdeEditorHotkeySignals, wire_ide_editor_hotkeys};
+pub(crate) use keyboard_inset::on_composer_focus_keep_visible;
 pub use keyboard_inset::wire_visual_viewport_keyboard_inset;
 pub use mobile_nav_swipe::{WireMobileNavEdgeSwipeSignals, wire_mobile_nav_edge_swipe};
 pub use mobile_side_swipe::{WireMobileSideEdgeSwipeSignals, wire_mobile_side_edge_swipe};
