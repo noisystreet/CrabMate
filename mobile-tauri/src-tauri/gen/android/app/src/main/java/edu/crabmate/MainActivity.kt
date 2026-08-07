@@ -165,6 +165,22 @@ class MainActivity : TauriActivity() {
         autofillManager()?.cancel()
       }
     }
+    /** 在系统浏览器中打开 http(s)/mailto（远程 WebView 内 `window.open` 通常无效）。 */
+    @JavascriptInterface
+    fun openExternalUrl(url: String) {
+      runOnUiThread {
+        try {
+          val uri = android.net.Uri.parse(url.trim())
+          val scheme = uri.scheme?.lowercase()
+          if (scheme != "http" && scheme != "https" && scheme != "mailto") {
+            return@runOnUiThread
+          }
+          startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, uri))
+        } catch (_: Exception) {
+          // 无浏览器或非法 URL：静默忽略
+        }
+      }
+    }
   }
 
   companion object {

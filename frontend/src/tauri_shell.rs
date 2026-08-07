@@ -39,7 +39,20 @@ export function invokeTauriMainWindowClose() {
 }
 
 export function invokeTauriOpenExternalUrl(url) {
-  return tauriInvoke("open_external_url", { url });
+  try {
+    const b = globalThis.CrabMateMobile;
+    if (b && typeof b.openExternalUrl === "function") {
+      b.openExternalUrl(String(url || ""));
+      return Promise.resolve();
+    }
+  } catch (_) {}
+  try {
+    return tauriInvoke("open_external_url", { url });
+  } catch (_) {}
+  try {
+    window.open(String(url || ""), "_blank");
+  } catch (_) {}
+  return Promise.resolve();
 }
 
 export function invokeTauriOsPrefersDarkTheme() {
@@ -172,6 +185,11 @@ pub fn tauri_apply_frameless_window_chrome() {
     });
 }
 
+/// 安装聊天区外链点击处理（桌面 Tauri / 移动端原生桥均可；幂等）。
+pub fn ensure_external_link_handler() {
+    install_chat_external_link_handler();
+}
+
 fn tauri_spawn_window_action(f: fn() -> js_sys::Promise) {
     if !tauri_shell_available() {
         return;
@@ -196,11 +214,21 @@ pub fn tauri_main_window_close() {
     tauri_spawn_window_action(invoke_tauri_main_window_close);
 }
 
-/// 在系统默认浏览器中打开 URL（Tauri）。
+/// 在系统默认浏览器中打开 URL。
+///
+/// 优先级：Android `CrabMateMobile.openExternalUrl` → 桌面 Tauri `open_external_url` → `window.open`。
 pub fn tauri_open_external_url(url: &str) {
+    let url = url.trim();
+    if url.is_empty() {
+        return;
+    }
+    if crate::mobile_remote::mobile_remote_open_external_url(url) {
+        return;
+    }
     if !tauri_shell_available() {
-        let window = web_sys::window().expect("window");
-        let _ = window.open_with_url_and_target(url, "_blank");
+        if let Some(window) = web_sys::window() {
+            let _ = window.open_with_url_and_target(url, "_blank");
+        }
         return;
     }
     let url = url.to_string();
