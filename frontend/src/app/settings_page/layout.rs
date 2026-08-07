@@ -132,6 +132,7 @@ pub(super) struct SettingsPagePanelDrafts {
     pub session_chat_font: RwSignal<String>,
     pub session_chat_font_size: RwSignal<f64>,
     pub web_api_bearer_save_nonce: RwSignal<u64>,
+    pub github_auth_refresh_nonce: RwSignal<u64>,
 }
 
 /// 已保存模型列表与本机持久化回调 + 顶栏 LLM 反馈 + 会话存储切换句柄（缩短 `SettingsPageContentPanels` 形参，满足 fn-param 棘轮）。
@@ -186,6 +187,7 @@ pub(super) fn SettingsPageContentPanels(
         session_chat_font,
         session_chat_font_size,
         web_api_bearer_save_nonce,
+        github_auth_refresh_nonce,
     } = drafts;
 
     let sync_saved_presets_line = StoredValue::new(sync_saved_presets_baseline);
@@ -275,6 +277,7 @@ pub(super) fn SettingsPageContentPanels(
                     locale=appearance_locale
                     input_id="settings-page-github-oauth-client-id"
                     show_title=false
+                    auth_refresh_nonce=github_auth_refresh_nonce
                 />
             </Show>
 

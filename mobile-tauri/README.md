@@ -69,6 +69,16 @@ CM_WEB_API_BEARER_TOKEN='your-shared-secret' cargo run -- serve --host 0.0.0.0 -
 
 手机连接页填写 `http://<电脑局域网IP>:8080/` 与同一共享密钥。
 
+## GitHub（Device Flow）
+
+移动端是**远程薄客户端**：GitHub 授权走远程 UI 的 **设置 → GitHub**（`#/settings/github`），token 写入 **serve 所在主机** 钥匙串，**不**落在手机本机。
+
+1. 在运行 `serve` 的机器上配置 Client ID：环境变量 **`CM_GITHUB_OAUTH_CLIENT_ID`**，或在设置页写入钥匙串（详见仓库根 **`docs/配置说明.md`**「`CM_GITHUB_OAUTH_*`」与 **`docs/命令行与路由.md`** Device Flow 路由）。
+2. 手机连上远程 UI 后打开 **设置 → GitHub**，点「连接 GitHub」；系统浏览器完成授权。
+3. 侧栏 GitHub 图标在未连接时可点，会跳转到上述设置页；授权成功后侧栏会刷新仓库上下文。
+
+Clone 私有仓、`gh` / HTTPS push 等也在 **serve 主机** 执行，与本机 `gh auth login` 无关。
+
 ## APK 产物
 
 主产物文件名：**`crabmate.apk`**
