@@ -12,6 +12,7 @@ use super::composer_slash_menu::{
     ComposerSlashMenu, handle_slash_menu_keydown, install_slash_menu_effects,
     keydown_is_ime_composing,
 };
+use crate::app::app_shell_effects::on_composer_focus_keep_visible;
 use crate::i18n::{self, Locale};
 
 /// 按内容增高，单行时回落到 CSS `min-height`（与发送钮同高）。
@@ -91,6 +92,13 @@ pub fn ComposerInputStack(
                         }
                     }
                     draft.set(v);
+                }
+                on:focus=move |ev: web_sys::FocusEvent| {
+                    if let Some(t) = ev.target() {
+                        if let Ok(ta) = t.dyn_into::<HtmlTextAreaElement>() {
+                            on_composer_focus_keep_visible(&ta);
+                        }
+                    }
                 }
                 on:keydown={
                     let r = Arc::clone(&run_send_message);
