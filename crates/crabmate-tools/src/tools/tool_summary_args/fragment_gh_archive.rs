@@ -109,7 +109,7 @@ pub(super) struct GhPrMergeSummaryArgs {
 
 impl ToolSummaryLine for GhPrMergeSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        let method = self.merge_method.as_deref().unwrap_or("merge");
+        let method = self.merge_method.as_deref().unwrap_or("rebase");
         match self.number {
             Some(n) if n > 0 => Some(format!("gh pr merge #{n} ({method})")),
             _ => Some(format!("gh pr merge ({method})")),

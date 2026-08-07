@@ -67,7 +67,7 @@ pub fn gh_pr_merge(
     let method = v
         .get("merge_method")
         .and_then(|x| x.as_str())
-        .unwrap_or("merge")
+        .unwrap_or("rebase")
         .trim()
         .to_ascii_lowercase();
     match method.as_str() {

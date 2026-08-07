@@ -144,6 +144,10 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```
 - `gh_pr_merge` / `gh_pr_review` / `gh_pr_comment` (**write to GitHub**):
   ```json
+  {"number":42,"delete_branch":true}
+  ```
+  (Omit **`merge_method`** to default to **`rebase`**; or set `merge` / `squash` / `rebase` explicitly.)
+  ```json
   {"number":42,"merge_method":"squash","delete_branch":true}
   ```
   ```json
