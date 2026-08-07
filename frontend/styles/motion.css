@@ -79,9 +79,17 @@
       opacity: 1;
     }
 
+    .side-column {
+      transition: none;
+    }
+
+    .side-column.side-column-rail-only {
+      transform: translateX(100%);
+    }
+
     .side-column:not(.side-column-rail-only) {
       animation: none;
-      transform: none;
+      transform: translateX(0);
     }
 
     .side-column-backdrop {

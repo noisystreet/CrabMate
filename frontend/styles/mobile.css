@@ -47,8 +47,9 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     display: none !important;
   }
 
-  /* 打开侧栏：右侧半屏抽屉（Material 式，约 85vw / 22rem），自右侧滑入 */
-  .side-column:not(.side-column-rail-only) {
+  /* 右侧抽屉：始终 fixed（与会话 nav-rail 一致），仅用 transform 进出。
+     若关闭时改回 static + width:0，会短暂回到 flex 流挤压聊天列，造成文字重排跳动。 */
+  .side-column {
     position: fixed;
     left: auto;
     right: 0;
@@ -60,12 +61,27 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     border-left: 1px solid var(--border-subtle, var(--border));
     border-right: none;
     box-shadow: var(--shadow-md);
-    animation: cm-side-drawer-in 0.22s var(--ease-out-soft, ease-out);
+    transform: translateX(100%);
+    transition: transform 0.22s var(--ease-out-soft, ease-out);
+    will-change: transform;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--bg) 78%, var(--bg-elevated));
+    overflow: hidden;
+  }
+
+  .side-column:not(.side-column-rail-only) {
+    transform: translateX(0);
+    pointer-events: auto;
   }
 
   .side-column.side-column-rail-only {
-    position: static;
-    width: 0 !important;
+    /* 保持 fixed 离场；勿 static/width:0，否则关抽屉时聊天区布局会跳 */
+    position: fixed;
+    width: min(85vw, 22rem) !important;
+    overflow: hidden;
+    z-index: 90;
+    border-left: 1px solid var(--border-subtle, var(--border));
+    background: color-mix(in srgb, var(--bg) 78%, var(--bg-elevated));
   }
 
   /* 主屏不显示浮动工具栏；GitHub/工作区/状态栏/设置改在右侧抽屉顶部 */
@@ -108,6 +124,7 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
   }
 }
 
+/* 入场改为 transform 过渡；保留 keyframes 以免旧引用报错，实际不再使用 */
 @keyframes cm-side-drawer-in {
   from {
     transform: translateX(100%);
@@ -351,18 +368,25 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     max-width: min(560px, 100%);
   }
 
-  /* 审批操作钮：纵向全宽，便于拇指点按 */
+  /* 审批操作钮：三钮并排同一行（仍保持 ≥44px 触控高度） */
   .approval-modal-actions {
-    flex-direction: column;
+    flex-direction: row;
     flex-wrap: nowrap;
+    align-items: stretch;
     gap: 8px;
   }
 
   .approval-modal-actions .btn {
-    flex: 0 0 auto;
-    width: 100%;
+    flex: 1 1 0;
+    min-width: 0;
+    width: auto;
     min-height: 44px;
     justify-content: center;
+    padding-inline: 6px;
+    font-size: 13px;
+    white-space: normal;
+    text-align: center;
+    line-height: 1.25;
   }
 
   .approval-modal-command {

@@ -41,6 +41,27 @@ export function invokeCrabMateMobileDisconnect() {
   globalThis.CrabMateMobile.disconnect();
 }
 
+export function hasCrabMateMobileOpenExternalUrl() {
+  try {
+    return !!(
+      globalThis.CrabMateMobile &&
+      typeof globalThis.CrabMateMobile.openExternalUrl === "function"
+    );
+  } catch (_) {
+    return false;
+  }
+}
+
+export function invokeCrabMateMobileOpenExternalUrl(url) {
+  if (
+    !globalThis.CrabMateMobile ||
+    typeof globalThis.CrabMateMobile.openExternalUrl !== "function"
+  ) {
+    throw new Error("CrabMateMobile.openExternalUrl unavailable");
+  }
+  globalThis.CrabMateMobile.openExternalUrl(String(url || ""));
+}
+
 /** 从原生读取顶栏/底栏安全区并写入 CSS 变量。可多次调用。 */
 export function applyCrabMateMobileSafeTop() {
   try {
@@ -86,6 +107,10 @@ extern "C" {
     fn has_crabmate_mobile_disconnect() -> bool;
     #[wasm_bindgen(js_name = invokeCrabMateMobileDisconnect)]
     fn invoke_crabmate_mobile_disconnect();
+    #[wasm_bindgen(js_name = hasCrabMateMobileOpenExternalUrl)]
+    fn has_crabmate_mobile_open_external_url() -> bool;
+    #[wasm_bindgen(js_name = invokeCrabMateMobileOpenExternalUrl)]
+    fn invoke_crabmate_mobile_open_external_url(url: &str);
     #[wasm_bindgen(js_name = scheduleCrabMateMobileSafeTop)]
     fn schedule_crabmate_mobile_safe_top() -> bool;
 }
@@ -102,6 +127,14 @@ fn has_crabmate_mobile_disconnect() -> bool {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn invoke_crabmate_mobile_disconnect() {}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn has_crabmate_mobile_open_external_url() -> bool {
+    false
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_crabmate_mobile_open_external_url(_: &str) {}
 
 #[cfg(not(target_arch = "wasm32"))]
 fn schedule_crabmate_mobile_safe_top() -> bool {
@@ -126,6 +159,17 @@ pub fn mobile_remote_disconnect() {
         return;
     }
     invoke_crabmate_mobile_disconnect();
+}
+
+/// 经原生桥在系统浏览器打开 URL；不可用时返回 `false`。
+#[must_use]
+pub fn mobile_remote_open_external_url(url: &str) -> bool {
+    let u = url.trim();
+    if u.is_empty() || !has_crabmate_mobile_open_external_url() {
+        return false;
+    }
+    invoke_crabmate_mobile_open_external_url(u);
+    true
 }
 
 /// 应用 Android 顶栏安全区 CSS 变量（尽早调用，并安排短延迟重试）。

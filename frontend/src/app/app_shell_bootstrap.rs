@@ -16,6 +16,10 @@ pub fn bootstrap_app_shell() -> AppShellCtx {
     crate::api::consume_mobile_connect_handoff();
     // Android 壳：尽早写入 --cm-safe-top，避免顶栏贴系统状态栏难点选。
     crate::mobile_remote::apply_mobile_remote_safe_top();
+    // 仅移动远程壳需要在此安装外链桥；桌面 Tauri 仍由 frameless chrome 安装。
+    if crate::mobile_remote::mobile_remote_client() {
+        crate::tauri_shell::ensure_external_link_handler();
+    }
 
     let app_signals = AppSignals::new();
     crate::confirm_dialog::register_shell_confirm(app_signals.modal.confirm_signals());
