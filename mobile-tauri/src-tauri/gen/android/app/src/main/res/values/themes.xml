@@ -1,6 +1,10 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
     <style name="Theme.crabmate_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <!-- Customize your theme here. -->
+        <!-- 与 Web `--bg` 对齐，冷启动 / 导航间隙不闪系统白/黑默认底 -->
+        <item name="android:windowBackground">#0A0D12</item>
+        <item name="android:colorBackground">#0A0D12</item>
+        <item name="android:statusBarColor">#0A0D12</item>
+        <item name="android:navigationBarColor">#0A0D12</item>
     </style>
 </resources>
