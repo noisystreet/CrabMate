@@ -31,7 +31,7 @@ pub(super) enum CloneUiPhase {
 pub struct WorkspaceCloneModalSignals {
     pub open: RwSignal<bool>,
     pub workspace_pick: WorkspaceRootPickHandle,
-    /// 跳转「设置 → 工具」（GitHub 连接）用。
+    /// 跳转「设置 → GitHub」连接用。
     pub settings_page: RwSignal<bool>,
 }
 

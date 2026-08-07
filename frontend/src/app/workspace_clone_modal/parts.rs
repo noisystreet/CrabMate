@@ -206,7 +206,7 @@ pub(super) fn WorkspaceCloneProgressBody(
                                 clone_open.set(false);
                                 crate::app::settings_page::navigate_to_settings(
                                     settings_page,
-                                    crate::app::settings_page::SettingsSection::Tools,
+                                    crate::app::settings_page::SettingsSection::Github,
                                 );
                             }
                         >

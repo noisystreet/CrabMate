@@ -11,6 +11,7 @@ pub(crate) enum SettingsSection {
     Llm,
     ExecutorLlm,
     Tools,
+    Github,
     Mcp,
     Session,
     Shortcuts,
@@ -23,6 +24,7 @@ impl SettingsSection {
             Self::Llm => "llm",
             Self::ExecutorLlm => "executor-llm",
             Self::Tools => "tools",
+            Self::Github => "github",
             Self::Mcp => "mcp",
             Self::Session => "session",
             Self::Shortcuts => "shortcuts",
@@ -35,6 +37,7 @@ impl SettingsSection {
             "llm" => Some(Self::Llm),
             "executor-llm" => Some(Self::ExecutorLlm),
             "tools" => Some(Self::Tools),
+            "github" => Some(Self::Github),
             "mcp" => Some(Self::Mcp),
             "session" => Some(Self::Session),
             "shortcuts" => Some(Self::Shortcuts),
@@ -191,6 +194,10 @@ mod tests {
         assert_eq!(
             parse_settings_route("#/settings/executor-llm"),
             Some(SettingsSection::ExecutorLlm)
+        );
+        assert_eq!(
+            parse_settings_route("#/settings/github"),
+            Some(SettingsSection::Github)
         );
         assert!(parse_settings_route("#/").is_none());
         assert!(parse_settings_route("").is_none());

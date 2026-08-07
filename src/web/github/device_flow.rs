@@ -161,7 +161,7 @@ pub(crate) async fn github_oauth_device_start_handler(
         return Err(err_json(
             StatusCode::SERVICE_UNAVAILABLE,
             "GITHUB_OAUTH_NOT_CONFIGURED",
-            "未配置 GitHub OAuth Client ID：请设置环境变量 CM_GITHUB_OAUTH_CLIENT_ID，或在「设置 → 工具 → GitHub」写入钥匙串",
+            "未配置 GitHub OAuth Client ID：请设置环境变量 CM_GITHUB_OAUTH_CLIENT_ID，或在「设置 → GitHub」写入钥匙串",
         ));
     };
 
