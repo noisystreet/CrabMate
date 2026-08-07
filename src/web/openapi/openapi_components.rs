@@ -6,6 +6,10 @@ use serde_json::{Map, Value, json};
 
 use super::openapi_components_user_data;
 
+fn openapi_components_schemas_from_contract() -> Value {
+    Value::Object(crabmate_api_contract::openapi::openapi_component_schemas())
+}
+
 fn merge_component_objects(fragments: &[Value]) -> Value {
     let mut map = Map::new();
     for fragment in fragments {
@@ -41,24 +45,6 @@ fn openapi_components_security_schemes() -> Value {
 
 fn openapi_components_schemas_chat_llm_webui() -> Value {
     json!({
-            "ClientLlmBody": {
-                "type": "object",
-                "properties": {
-                    "api_base": { "type": "string" },
-                    "model": { "type": "string" },
-                    "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" },
-                    "llm_context_tokens": { "type": "integer", "format": "int64", "description": "可选；本回合上下文窗口 token 上限覆盖" },
-                    "llm_thinking_mode": { "type": "string", "enum": ["server", "on", "off"], "description": "可选；本回合 thinking 策略：server 跟随服务端；on 开启（智谱 thinking enabled；DeepSeek 官方 api_base 时 thinking enabled + reasoning_effort high；Kimi k2.5 不发送 disabled）；off 关闭（智谱不写 thinking；DeepSeek 写 thinking disabled；Kimi k2.5 发送 thinking disabled）" }
-                }
-            },
-            "ExecutorLlmBody": {
-                "type": "object",
-                "properties": {
-                    "api_base": { "type": "string" },
-                    "model": { "type": "string" },
-                    "api_key": { "type": "string", "description": "浏览器侧覆盖，勿记录到服务端日志" }
-                }
-            },
             "WebUiConfigResponse": {
                 "type": "object",
                 "required": ["markdown_render", "apply_assistant_display_filters"],
@@ -75,28 +61,8 @@ fn openapi_components_schemas_chat_llm_webui() -> Value {
             },
             "StatusResponseBody": {
                 "type": "object",
-                "description": "GET /status 摘要字段（完整对象以后端实现为准）",
-                "properties": {
-                    "model": { "type": "string" },
-                    "default_session_mode": {
-                        "type": "string",
-                        "enum": ["ask", "plan", "act"],
-                        "description": "全局默认会话工作模式"
-                    },
-                    "agent_role_default_session_modes": {
-                        "type": "object",
-                        "additionalProperties": {
-                            "type": "string",
-                            "enum": ["ask", "plan", "act"]
-                        },
-                        "description": "各命名角色配置的默认会话模式（仅含显式配置的角色）"
-                    },
-                    "agent_role_ids": {
-                        "type": "array",
-                        "items": { "type": "string" }
-                    },
-                    "default_agent_role_id": { "type": "string", "nullable": true }
-                }
+                "description": "GET /status（无 view 参数）完整运行状态；字段集以后端实现为准，此处不逐项枚举",
+                "additionalProperties": true
             },
     })
 }
@@ -161,44 +127,6 @@ fn openapi_components_schemas_chat_request() -> Value {
 
 fn openapi_components_schemas_chat_response_approval_branch() -> Value {
     json!({
-            "ChatResponseBody": {
-                "type": "object",
-                "properties": {
-                    "reply": { "type": "string" },
-                    "conversation_id": { "type": "string" },
-                    "conversation_revision": { "type": "integer", "format": "int64", "nullable": true }
-                }
-            },
-            "ChatApprovalRequestBody": {
-                "type": "object",
-                "required": ["approval_session_id", "decision"],
-                "properties": {
-                    "approval_session_id": { "type": "string" },
-                    "decision": { "type": "string" }
-                }
-            },
-            "ChatApprovalResponseBody": {
-                "type": "object",
-                "properties": {
-                    "ok": { "type": "boolean" }
-                }
-            },
-            "ChatBranchRequestBody": {
-                "type": "object",
-                "required": ["conversation_id", "before_user_ordinal", "expected_revision"],
-                "properties": {
-                    "conversation_id": { "type": "string" },
-                    "before_user_ordinal": { "type": "integer", "format": "int64" },
-                    "expected_revision": { "type": "integer", "format": "int64" }
-                }
-            },
-            "ChatBranchResponseBody": {
-                "type": "object",
-                "properties": {
-                    "ok": { "type": "boolean" },
-                    "revision": { "type": "integer", "format": "int64" }
-                }
-            },
             "ChatAsyncRequestBody": {
                 "allOf": [
                     { "$ref": "#/components/schemas/ChatRequestBody" },
@@ -216,27 +144,6 @@ fn openapi_components_schemas_chat_response_approval_branch() -> Value {
                         }
                     }
                 ]
-            },
-            "ChatAsyncSubmitResponseBody": {
-                "type": "object",
-                "required": ["job_id", "status", "conversation_id"],
-                "properties": {
-                    "job_id": { "type": "integer", "format": "int64" },
-                    "status": { "type": "string", "description": "初始为 pending" },
-                    "conversation_id": { "type": "string" }
-                }
-            },
-            "ChatJobStatusResponseBody": {
-                "type": "object",
-                "required": ["job_id", "status", "conversation_id"],
-                "properties": {
-                    "job_id": { "type": "integer", "format": "int64" },
-                    "status": { "type": "string", "enum": ["pending", "running", "completed", "failed"] },
-                    "conversation_id": { "type": "string" },
-                    "reply": { "type": "string", "nullable": true },
-                    "conversation_revision": { "type": "integer", "format": "int64", "nullable": true },
-                    "error": { "$ref": "#/components/schemas/ApiError", "nullable": true }
-                }
             },
     })
 }
@@ -287,15 +194,6 @@ fn openapi_components_schemas_chat_messages_uploads() -> Value {
                     "filename": { "type": "string" },
                     "mime": { "type": "string" },
                     "size": { "type": "integer", "format": "int64" }
-                }
-            },
-            "UploadResponseBody": {
-                "type": "object",
-                "properties": {
-                    "files": {
-                        "type": "array",
-                        "items": { "$ref": "#/components/schemas/UploadedFileInfo" }
-                    }
                 }
             },
             "DeleteUploadsBody": {
@@ -479,13 +377,6 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     }
                 }
             },
-            "ConfigReloadResponseBody": {
-                "type": "object",
-                "properties": {
-                    "ok": { "type": "boolean" },
-                    "message": { "type": "string" }
-                }
-            },
             "SessionConversationStoreRequestBody": {
                 "type": "object",
                 "required": ["sqlite"],
@@ -496,23 +387,12 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     }
                 }
             },
-            "ApiError": {
-                "type": "object",
-                "properties": {
-                    "code": { "type": "string" },
-                    "message": { "type": "string" },
-                    "reason_code": {
-                        "type": "string",
-                        "nullable": true,
-                        "description": "When present: truncated internal detail for `INTERNAL_ERROR` on `POST /chat` JSON only; SSE may use `reason_code` more broadly (see docs/SSE协议.md)"
-                    }
-                }
-            },
     })
 }
 
 pub(super) fn openapi_components_value() -> Value {
     let schemas_merged = merge_component_objects(&[
+        openapi_components_schemas_from_contract(),
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),
         openapi_components_user_data::openapi_components_schemas_user_data(),
