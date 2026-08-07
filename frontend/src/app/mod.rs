@@ -30,6 +30,7 @@ mod session_list_modal;
 pub(crate) mod session_mode_defaults;
 mod settings_commit;
 mod settings_form_state;
+mod settings_github_block;
 mod settings_mcp_block;
 mod settings_mcp_block_toolbar;
 mod settings_mcp_json_import;

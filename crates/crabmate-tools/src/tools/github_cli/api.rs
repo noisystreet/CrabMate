@@ -114,6 +114,7 @@ pub fn gh_api(
     let extra = gh_api_extra_args(&v);
 
     let mut cmd = Command::new("gh");
+    crate::github_token::apply_gh_token_env(&mut cmd);
     cmd.arg("api");
     if method != "GET" {
         cmd.arg("--method").arg(&method);

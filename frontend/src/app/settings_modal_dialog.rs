@@ -180,6 +180,7 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
                 locale=appearance_locale
                 readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
             />
+            <crate::app::settings_github_block::SettingsGithubBlock locale=appearance_locale />
             <SettingsShortcutsBlock
                 locale=appearance_locale
                 body_class="modal-hint"

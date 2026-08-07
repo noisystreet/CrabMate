@@ -555,6 +555,97 @@ pub fn settings_tools_readonly_ttl_cache_label(l: Locale) -> &'static str {
     }
 }
 
+pub fn settings_github_block_title(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "GitHub",
+        Locale::En => "GitHub",
+    }
+}
+
+pub fn settings_github_block_hint(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "通过 Device Flow 授权后，token 保存在 serve 主机钥匙串，供 gh 工具使用（git HTTPS clone/push 注入尚未接入）。须配置 CM_GITHUB_OAUTH_CLIENT_ID；GitHub App 一般无需 scope，OAuth App 可设 CM_GITHUB_OAUTH_SCOPES（如 repo）。"
+        }
+        Locale::En => {
+            "After Device Flow, the token is stored on the serve host keychain for gh tools (git HTTPS clone/push injection is not wired yet). Requires CM_GITHUB_OAUTH_CLIENT_ID; GitHub Apps usually omit scopes—set CM_GITHUB_OAUTH_SCOPES (e.g. repo) for OAuth Apps."
+        }
+    }
+}
+
+pub fn settings_github_disconnected(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "未连接",
+        Locale::En => "Not connected",
+    }
+}
+
+pub fn settings_github_connected(l: Locale, suffix: &str) -> String {
+    match l {
+        Locale::ZhHans => format!("已连接（…{suffix}）"),
+        Locale::En => format!("Connected (…{suffix})"),
+    }
+}
+
+pub fn settings_github_connect(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "连接 GitHub",
+        Locale::En => "Connect GitHub",
+    }
+}
+
+pub fn settings_github_disconnect(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "断开",
+        Locale::En => "Disconnect",
+    }
+}
+
+pub fn settings_github_reopen(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "再次打开授权页",
+        Locale::En => "Reopen authorization page",
+    }
+}
+
+pub fn settings_github_device_expired(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "授权码已过期，请重新连接",
+        Locale::En => "Device code expired; please connect again",
+    }
+}
+
+pub fn settings_github_device_state(l: Locale, state: &str) -> String {
+    match state {
+        "pending" => match l {
+            Locale::ZhHans => "等待在浏览器中完成授权…".into(),
+            Locale::En => "Waiting for browser authorization…".into(),
+        },
+        "slow_down" => match l {
+            Locale::ZhHans => "轮询过快，已自动降速…".into(),
+            Locale::En => "Polling too fast; slowing down…".into(),
+        },
+        "success" => match l {
+            Locale::ZhHans => "已授权".into(),
+            Locale::En => "Authorized".into(),
+        },
+        "denied" => match l {
+            Locale::ZhHans => "已拒绝授权".into(),
+            Locale::En => "Authorization denied".into(),
+        },
+        "expired" => settings_github_device_expired(l).to_string(),
+        "cancelled" => match l {
+            Locale::ZhHans => "已取消".into(),
+            Locale::En => "Cancelled".into(),
+        },
+        "error" => match l {
+            Locale::ZhHans => "授权出错".into(),
+            Locale::En => "Authorization error".into(),
+        },
+        other => other.to_string(),
+    }
+}
+
 pub fn settings_section_shortcuts_title(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => "快捷键",

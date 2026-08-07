@@ -3,6 +3,7 @@
 //! 设计说明：**`docs/design/user_data_dir.md`**。
 
 mod credential_store;
+mod github_secret;
 mod io;
 pub mod mcp_json_import;
 mod mcp_slug;
@@ -11,6 +12,9 @@ mod saved_model_secrets;
 mod store;
 mod types;
 
+pub use github_secret::{
+    install_github_cli_token_provider, read_secret_github, write_secret_github,
+};
 pub use path::{
     RECENT_WORKSPACE_ROOTS_MAX, normalize_workspace_partition_path, push_recent_workspace_root,
     user_data_root,

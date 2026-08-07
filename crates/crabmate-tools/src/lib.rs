@@ -7,6 +7,7 @@ pub use crabmate_types as types;
 
 pub mod cargo_metadata;
 pub mod clarification_questionnaire;
+pub mod github_token;
 pub mod health_dep_compat;
 pub mod memory_tool_host;
 pub mod project_metrics;
