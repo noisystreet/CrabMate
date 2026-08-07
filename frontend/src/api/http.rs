@@ -8,6 +8,8 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 
 use crate::i18n::Locale;
 
+use crabmate_api_contract::StatusShellView;
+
 use super::browser::{auth_headers, window};
 
 fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
@@ -47,54 +49,8 @@ pub struct TasksData {
     pub items: Vec<TaskItem>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct StatusData {
-    pub model: String,
-    pub api_base: String,
-    #[serde(default)]
-    pub agent_role_ids: Vec<String>,
-    #[serde(default)]
-    pub default_agent_role_id: Option<String>,
-    /// 全局默认会话工作模式。
-    #[serde(default = "default_session_mode_act")]
-    pub default_session_mode: String,
-    /// 各角色配置的默认会话模式。
-    #[serde(default)]
-    pub agent_role_default_session_modes: std::collections::BTreeMap<String, String>,
-    /// 与后端 `message_pipeline` 按字符删旧一致；`0` 表示未启用预算（进度条仅展示字符数）。
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub context_char_budget: usize,
-    #[serde(default)]
-    pub llm_context_tokens: u32,
-    /// 会话同步管道实际采用的近似字符预算（与后端 `AgentConfig::effective_context_char_budget_for_pipeline` 一致）。
-    #[serde(default)]
-    pub effective_context_char_budget: usize,
-    /// 与后端 `GET /status` 的 `tiktoken_prompt_counting_model` 一致。
-    #[serde(default)]
-    pub tiktoken_prompt_counting_model: String,
-    /// 新会话仅 `system` 时的 prompt token 粗估（键为角色 id，空串为默认）。
-    #[serde(default)]
-    pub tiktoken_new_session_baseline_by_agent_role: std::collections::BTreeMap<String, u32>,
-    #[serde(default)]
-    pub executor_model: String,
-    #[serde(default)]
-    pub executor_api_base: String,
-    /// 服务端当前 `planner_executor_mode` 配置值（前端不再用于决策，仅调试参考）。
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub planner_executor_mode: String,
-    /// 服务端是否配置了非空的 `conversation_store_sqlite_path`。
-    #[serde(default)]
-    pub conversation_store_sqlite_path_configured: bool,
-    /// 当前进程是否使用 SQLite 作为 Web 会话后端。
-    #[serde(default)]
-    pub conversation_store_sqlite_active: bool,
-}
-
-fn default_session_mode_act() -> String {
-    "act".to_string()
-}
+/// `GET /status?view=shell` 响应（与 [`crabmate_api_contract::StatusShellView`] 一致）。
+pub type StatusData = StatusShellView;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GithubRepoContextData {
@@ -457,7 +413,7 @@ pub async fn fetch_tasks(loc: Locale) -> Result<TasksData, String> {
 }
 
 pub async fn fetch_status(loc: Locale) -> Result<StatusData, String> {
-    fetch_json("GET", "/status", None, loc).await
+    fetch_json("GET", "/status?view=shell", None, loc).await
 }
 
 /// `POST /config/reload`：热重载服务端 `AgentConfig`（与 REPL `/config reload` 同源）。
