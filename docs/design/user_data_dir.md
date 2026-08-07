@@ -179,6 +179,7 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 | `client_llm` | 云厂商 Bearer（主模型） |
 | `executor_llm` | 可选：执行器 API Key |
 | `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets`；与 TOML/`CM_WEB_API_BEARER_TOKEN` 为同一共享密钥时由前端携带） |
+| `github` | GitHub user access token / PAT（经 `/user-data/secrets/github`；供子进程 `gh` 注入 `GH_TOKEN`，后续亦用于 git HTTPS） |
 | `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
 | `saved_model_<sha256>` | 已保存模型的 API Key（`llm_overrides.json` 仅留 `has_api_key`） |
 

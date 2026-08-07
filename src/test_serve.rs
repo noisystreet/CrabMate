@@ -51,6 +51,8 @@ pub async fn start_test_serve(
     let uploads_dir = std::env::temp_dir().join("crabmate_e2e_uploads");
     let _ = std::fs::create_dir_all(&uploads_dir);
 
+    crate::user_data::install_github_cli_token_provider();
+
     let (cq_conc, cq_pending) = {
         let g = cfg_holder.read().await;
         (

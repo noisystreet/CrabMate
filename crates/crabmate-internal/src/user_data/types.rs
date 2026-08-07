@@ -149,6 +149,9 @@ pub struct SecretsStatusResponse {
     pub client_llm: SecretSlotStatus,
     pub executor_llm: SecretSlotStatus,
     pub web_api_bearer: SecretSlotStatus,
+    /// GitHub user access token / PAT（Device Flow 或手动写入；账户名 `github`）。
+    #[serde(default)]
+    pub github: SecretSlotStatus,
 }
 
 /// `mcp_servers.json` 单条 MCP 服务器（用户数据目录，非 TOML）。

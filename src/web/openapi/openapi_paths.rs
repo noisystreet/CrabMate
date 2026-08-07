@@ -794,6 +794,41 @@ fn openapi_paths_fragment_github() -> Value {
                 }
             }
         },
+        "/github/oauth/device/start": {
+            "post": {
+                "tags": ["github"],
+                "summary": "启动 GitHub Device Flow（须 CM_GITHUB_OAUTH_CLIENT_ID；不返回 device_code/token）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "user_code 与 verification_uri_complete 等",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    },
+                    "503": { "description": "GITHUB_OAUTH_NOT_CONFIGURED" }
+                }
+            }
+        },
+        "/github/oauth/device/status": {
+            "get": {
+                "tags": ["github"],
+                "summary": "Device Flow 轮询状态（pending/success/denied/…）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "state / login / error",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    }
+                }
+            }
+        },
+        "/github/oauth/device/cancel": {
+            "post": {
+                "tags": ["github"],
+                "summary": "取消当前 Device 会话（不删已落盘 token）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": { "204": { "description": "已取消" } }
+            }
+        },
     })
 }
 

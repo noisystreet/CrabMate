@@ -437,17 +437,17 @@ fn run_impl(
         return Ok(cached);
     }
 
-    let output = Command::new(&prepared.cmd_name)
-        .args(&prepared.cmd_args)
-        .current_dir(&prepared.effective_working_dir)
-        .output()
-        .map_err(|e| {
-            map_spawn_error(
-                &prepared.cmd_name,
-                prepared.effective_working_dir.as_path(),
-                e,
-            )
-        })?;
+    let mut cmd = Command::new(&prepared.cmd_name);
+    cmd.args(&prepared.cmd_args)
+        .current_dir(&prepared.effective_working_dir);
+    crate::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+    let output = cmd.output().map_err(|e| {
+        map_spawn_error(
+            &prepared.cmd_name,
+            prepared.effective_working_dir.as_path(),
+            e,
+        )
+    })?;
     Ok(format_command_output(&invocation, output, max_output_len))
 }
 

@@ -9,12 +9,18 @@ mod chat_stream;
 pub(crate) mod client_llm_cache;
 pub(crate) mod client_llm_storage;
 mod connect_handoff;
+mod github_oauth;
 mod http;
 mod http_workspace_clone;
 mod http_workspace_projects;
 mod saved_models;
 mod session_store;
 pub mod user_data;
+
+pub use github_oauth::{
+    GithubDeviceStartDto, fetch_github_oauth_device_status, post_github_oauth_device_cancel,
+    post_github_oauth_device_start,
+};
 
 pub use browser::{
     is_web_api_credential_error, set_web_api_bearer_token, web_api_bearer_token_is_set,
@@ -51,3 +57,4 @@ pub use saved_models::{
     persist_saved_model_presets_to_storage,
 };
 pub use session_store::post_session_conversation_store;
+pub use user_data::{delete_secret_github, fetch_secrets_status};
