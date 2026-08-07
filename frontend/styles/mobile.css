@@ -240,11 +240,19 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   }
 
+  /* 透明 textarea 与镜像高亮必须同字号/行高；仅放大 textarea 会导致 caret 随输入逐渐领先可见文字 */
+  .composer-ds textarea,
+  .composer-ds .composer-input,
+  .app-shell-ds .composer-ds .composer-input,
+  .composer-ds .composer-input-stack .composer-input-fake-ph,
+  .composer-ds .composer-input-stack .composer-input-highlight-inner {
+    font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
+    line-height: 1.35;
+  }
+
   .composer-ds textarea,
   .composer-ds .composer-input,
   .app-shell-ds .composer-ds .composer-input {
-    font-size: 16px; /* 避免 iOS 聚焦时自动缩放 */
-    line-height: 1.35;
     /* 栈有 1px 边框：内高 = 控制高 - 2，使外缘与发送钮齐平 */
     min-height: calc(var(--composer-control-h) - 2px);
     max-height: 140px;
