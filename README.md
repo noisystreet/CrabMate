@@ -220,6 +220,6 @@ cargo tauri build
 
 ## 项目结构
 
-架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 等观测见 [docs/调试指南.md](docs/调试指南.md)。
+架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态（调试/运维）；Web 壳层请用 **`GET /status?view=shell`**（稳定子集 **`StatusShellView`**，与前端底栏/设置同源，见 [docs/命令行与路由.md](docs/命令行与路由.md)）。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
 - **Workspace 成员**：`crates/crabmate-sse-protocol`（SSE 控制面契约）；**`crates/crabmate-im-bridge`**（可选 **IM 桥**：飞书 Webhook → **`POST /chat`** → 回复）。说明见 [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md)。

@@ -6,8 +6,8 @@ use leptos::prelude::*;
 
 use crate::api::load_client_llm_text_fields_from_storage;
 use crate::app_prefs::{
-    status_bar_effective_llm_context_tokens, status_bar_effective_model,
-    status_bar_new_session_baseline_prompt_tokens,
+    status_bar_context_used_tokens_without_hydrate, status_bar_effective_llm_context_tokens,
+    status_bar_effective_model,
 };
 use crate::chat_session_state::{ChatSessionSignals, ChatStreamBusyMemos};
 use crate::i18n::{self, Locale};
@@ -112,11 +112,12 @@ fn status_bar_context_effective_used(
     if let Some(n) = status_bar_context_used_for_active_session(chat) {
         return Some(n);
     }
-    if active_session_has_server_conversation_id(chat) {
-        return None;
-    }
     let role = selected_agent_role.map(str::trim).filter(|s| !s.is_empty());
-    status_bar_new_session_baseline_prompt_tokens(st.status_data.get().as_ref(), role)
+    status_bar_context_used_tokens_without_hydrate(
+        active_session_has_server_conversation_id(chat),
+        st.status_data.get().as_ref(),
+        role,
+    )
 }
 
 /// 新会话、尚无服务端实测 tiktoken 时，展示 `GET /status` 的 system 基线（带 `~` 前缀）。
