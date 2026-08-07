@@ -316,7 +316,6 @@ fn SettingsGithubClientIdBlock(
             <label class="settings-field-label" for=input_id>
                 {move || i18n::settings_github_client_id_label(locale.get())}
             </label>
-            <p class="settings-hint">{move || i18n::settings_github_client_id_hint(locale.get())}</p>
             <SettingsGithubClientIdStatus locale=locale ui=ui />
             <input
                 id=input_id
@@ -381,14 +380,16 @@ fn SettingsGithubBlockView(
     locale: RwSignal<Locale>,
     ui: GithubUiSignals,
     input_id: &'static str,
+    show_title: bool,
     on_connect: Callback<()>,
     on_disconnect: Callback<()>,
     on_reopen: Callback<()>,
 ) -> impl IntoView {
     view! {
         <div class="settings-block" data-testid="settings-github-block">
-            <h3 class="settings-block-title">{move || i18n::settings_github_block_title(locale.get())}</h3>
-            <p class="settings-hint">{move || i18n::settings_github_block_hint(locale.get())}</p>
+            <Show when=move || show_title>
+                <h3 class="settings-block-title">{move || i18n::settings_github_block_title(locale.get())}</h3>
+            </Show>
             <SettingsGithubClientIdBlock locale=locale ui=ui input_id=input_id />
             <p class="settings-hint">
                 {move || connection_label(locale.get(), ui.github_set.get(), ui.github_suffix.get())}
@@ -424,6 +425,9 @@ pub(crate) fn SettingsGithubBlock(
     locale: RwSignal<Locale>,
     /// `<input id=…>`：设置页与弹窗可能同时挂载，须用不同 id。
     input_id: &'static str,
+    /// 全屏设置页已有分区标题时可关掉块内标题，避免与侧栏「GitHub」重复。
+    #[prop(default = true)]
+    show_title: bool,
 ) -> impl IntoView {
     let ui = GithubUiSignals {
         github_set: RwSignal::new(false),
@@ -462,6 +466,7 @@ pub(crate) fn SettingsGithubBlock(
             locale=locale
             ui=ui
             input_id=input_id
+            show_title=show_title
             on_connect=on_connect
             on_disconnect=on_disconnect
             on_reopen=on_reopen

@@ -256,7 +256,7 @@ fn clone_fail_code_and_message(
     if github && (!has_token || auth_hint) {
         (
             "CLONE_AUTH_REQUIRED",
-            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → 工具 → GitHub」连接，或配置服务端 GH_TOKEN / 钥匙串；SSH remote 不使用 OAuth token。"
+            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → GitHub」连接，或配置服务端 GH_TOKEN / 钥匙串；SSH remote 不使用 OAuth token。"
                 .into(),
         )
     } else {

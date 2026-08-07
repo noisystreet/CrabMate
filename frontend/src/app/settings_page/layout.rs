@@ -79,6 +79,13 @@ pub(super) fn SettingsPageNavRail(
             </SettingsNavItem>
             <SettingsNavItem
                 active_section=active_section
+                section=SettingsSection::Github
+                testid=Some("settings-nav-github")
+            >
+                {move || i18n::settings_section_github_title(appearance_locale.get())}
+            </SettingsNavItem>
+            <SettingsNavItem
+                active_section=active_section
                 section=SettingsSection::Mcp
                 testid=Some("settings-nav-mcp")
             >
@@ -261,9 +268,13 @@ pub(super) fn SettingsPageContentPanels(
                     locale=appearance_locale
                     readonly_tool_ttl_cache_follow_server=readonly_tool_ttl_cache_follow_server
                 />
+            </Show>
+
+            <Show when=move || active_section.get() == SettingsSection::Github>
                 <crate::app::settings_github_block::SettingsGithubBlock
                     locale=appearance_locale
                     input_id="settings-page-github-oauth-client-id"
+                    show_title=false
                 />
             </Show>
 
