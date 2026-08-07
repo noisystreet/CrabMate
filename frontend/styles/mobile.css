@@ -11,6 +11,41 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
   display: none;
 }
 
+/*
+ * 软键盘避让：窄屏浏览器 + Android 壳（横屏可能 >768px）都要抬高底部。
+ * `--vv-keyboard-inset`：visualViewport；`--cm-ime-inset`：Android 壳 WindowInsets IME（targetSdk 35+ 兜底）。
+ * `max` 取较大值，避免两侧同时报高度时叠双倍（同为键盘高度时结果仍为一份）。
+ */
+.app-root.app-shell-ds {
+  --cm-keyboard-pad: max(var(--vv-keyboard-inset, 0px), var(--cm-ime-inset, 0px));
+}
+
+@media (max-width: 768px) {
+  .app-root.app-shell-ds {
+    padding-bottom: calc(
+      var(--cm-keyboard-pad, 0px) + max(0px, env(safe-area-inset-bottom, 0px))
+    );
+    box-sizing: border-box;
+    transition: padding-bottom 0.12s ease-out;
+  }
+}
+
+html[data-cm-mobile-shell] .app-root.app-shell-ds {
+  padding-bottom: calc(
+    var(--cm-keyboard-pad, 0px) +
+      max(var(--cm-safe-bottom, 24px), env(safe-area-inset-bottom, 0px))
+  );
+  box-sizing: border-box;
+  transition: padding-bottom 0.12s ease-out;
+}
+
+/* 仅 Android 壳：color:transparent 常导致 caret 不可见；用 text-fill 藏字（勿用于 Firefox 等窄屏浏览器） */
+html[data-cm-mobile-shell] .composer-input--mirror-overlay {
+  color: var(--text);
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+}
+
 /* —— Phase 1：主区单栏 + 右侧半屏抽屉 —— */
 @media (max-width: 768px) {
   /* 会话抽屉品牌行与主屏顶栏同高：避开系统状态栏 / 刘海 */
@@ -18,6 +53,7 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
     box-sizing: border-box;
     min-height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
     height: var(--shell-chrome-top, var(--shell-topbar-h, 2.5rem));
+
     padding: max(var(--cm-safe-top), env(safe-area-inset-top, 0px)) 12px 0;
     align-items: center;
   }
@@ -136,22 +172,6 @@ html[data-cm-mobile-shell] .composer-ds .composer-input-stack .composer-input-fa
 
 /* —— Phase 2：safe-area 底部 + 紧凑输入条 / 状态栏 + 软键盘避让 —— */
 @media (max-width: 768px) {
-  /* visualViewport 键盘高度 + 底栏安全区统一由 app-root 承担（勿再给 status-bar 叠一层） */
-  .app-root.app-shell-ds {
-    padding-bottom: calc(
-      var(--vv-keyboard-inset, 0px) + max(0px, env(safe-area-inset-bottom, 0px))
-    );
-    box-sizing: border-box;
-    transition: padding-bottom 0.12s ease-out;
-  }
-
-  html[data-cm-mobile-shell] .app-root.app-shell-ds {
-    padding-bottom: calc(
-      var(--vv-keyboard-inset, 0px) +
-        max(var(--cm-safe-bottom, 24px), env(safe-area-inset-bottom, 0px))
-    );
-  }
-
   /* —— 状态栏：单行紧凑，去掉上下大空隙 —— */
   .status-bar-footer,
   .status-bar {

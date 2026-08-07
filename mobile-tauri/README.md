@@ -17,7 +17,7 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 
 `gen/android/app/build.gradle.kts` 中 release 的 `usesCleartextTraffic=true` 为局域网明文 HTTP 而设；若重新执行 `tauri android init`，需再确认该补丁与下方签名配置仍在。公网请用 HTTPS。
 
-`MainActivity` **不**调用 `enableEdgeToEdge()`，避免 WebView 内容画进系统状态栏后与壳顶栏按钮重叠（Android WebView 一般不提供可用的 `safe-area-inset-*`）。
+`MainActivity` **不**调用 `enableEdgeToEdge()`，避免 WebView 内容画进系统状态栏后与壳顶栏按钮重叠（Android WebView 一般不提供可用的 `safe-area-inset-*`）。软键盘：manifest / `onCreate` / `onStart` / `onWebViewCreate` 设置 **`windowSoftInputMode=adjustResize`**；在 **targetSdk 35+** 上 resize 常不可靠，故 `OnApplyWindowInsetsListener` 另将 **IME 相对导航栏高度** 写入 CSS **`--cm-ime-inset`**，与前端 **`--vv-keyboard-inset`** 取 `max` 抬高底部 composer。
 
 连上远程后：系统返回键会弹出确认框（可 **退出应用**，或 **返回连接页** 换服务器）；侧栏工具栏 **断开** 图标同样回到连接页。连接页再按返回亦会确认后退出。远程源无 Tauri IPC，故断开走原生桥而非 `invoke`。侧栏 GitHub / Device Flow 授权页经 **`CrabMateMobile.openExternalUrl`** 打开系统浏览器（WebView 内 `window.open` 通常无效）。
 
