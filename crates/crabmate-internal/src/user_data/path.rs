@@ -25,6 +25,27 @@ pub fn user_data_root() -> PathBuf {
     base.join("crabmate")
 }
 
+/// 测试用：进程内固定临时 `CM_CRABMATE_USER_DATA_DIR`（与 `store` / secrets 单测共用）。
+#[cfg(test)]
+#[must_use]
+pub(crate) fn ensure_test_user_data_root() -> PathBuf {
+    use std::sync::{Mutex, OnceLock};
+    static SLOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+    let slot = SLOT.get_or_init(|| Mutex::new(None));
+    let mut g = slot.lock().unwrap();
+    if g.is_none() {
+        let dir =
+            std::env::temp_dir().join(format!("crabmate-user-data-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        // SAFETY: 测试进程内独占临时目录，无并发读写该环境变量。
+        unsafe {
+            std::env::set_var("CM_CRABMATE_USER_DATA_DIR", dir.display().to_string());
+        }
+        *g = Some(dir);
+    }
+    g.clone().unwrap()
+}
+
 /// 与前端 `normalize_workspace_partition_path` 一致。
 #[must_use]
 pub fn normalize_workspace_partition_path(path: &str) -> String {

@@ -180,7 +180,7 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 | `executor_llm` | 可选：执行器 API Key |
 | `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets`；与 TOML/`CM_WEB_API_BEARER_TOKEN` 为同一共享密钥时由前端携带） |
 | `github` | GitHub user access token / PAT（经 `/user-data/secrets/github` 或 Device Flow；供子进程 `gh` 注入 `GH_TOKEN`，并对 `https://github.com/` 的 clone/push/fetch 注入 HTTPS Bearer） |
-| `github_oauth_client_id` | GitHub App / OAuth App **Client ID**（经 `/user-data/secrets/github-oauth-client-id`；供 Device Flow；**非** Client Secret；status 仅 `set`/后缀） |
+| `github_oauth_client_id` | GitHub App / OAuth App **Client ID**（经 `/user-data/secrets/github-oauth-client-id`；供 Device Flow；**非** Client Secret；status 仅 `set`/后缀；另有布尔 **`github_oauth_client_id_env`** 表示 `CM_GITHUB_OAUTH_CLIENT_ID` 是否非空，env 优先） |
 | `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
 | `saved_model_<sha256>` | 已保存模型的 API Key（`llm_overrides.json` 仅留 `has_api_key`） |
 

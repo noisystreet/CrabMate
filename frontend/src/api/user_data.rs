@@ -121,6 +121,9 @@ pub struct SecretsStatusDto {
     pub github: SecretSlotStatusDto,
     #[serde(default)]
     pub github_oauth_client_id: SecretSlotStatusDto,
+    /// 环境变量 `CM_GITHUB_OAUTH_CLIENT_ID` 是否非空（不回显值）。
+    #[serde(default)]
+    pub github_oauth_client_id_env: bool,
 }
 
 pub async fn fetch_secrets_status(loc: Locale) -> Result<SecretsStatusDto, String> {

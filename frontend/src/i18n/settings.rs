@@ -583,25 +583,36 @@ pub fn settings_github_client_id_label(l: Locale) -> &'static str {
 pub fn settings_github_client_id_hint(l: Locale) -> &'static str {
     match l {
         Locale::ZhHans => {
-            "写入 serve 主机钥匙串（账户 github_oauth_client_id），不落明文 prefs；界面不回显全文。非 Client Secret。"
+            "下方写入 serve 主机钥匙串（账户 github_oauth_client_id），不落明文 prefs；界面不回显全文。非 Client Secret。若已设环境变量 CM_GITHUB_OAUTH_CLIENT_ID，Device Flow 优先用 env（与下方钥匙串无关）。"
         }
         Locale::En => {
-            "Stored on the serve host keychain (account github_oauth_client_id), not in plain prefs; the UI never shows the full value. Not a Client Secret."
+            "Saved below to the serve host keychain (account github_oauth_client_id), not plain prefs; the UI never shows the full value. Not a Client Secret. If CM_GITHUB_OAUTH_CLIENT_ID is set, Device Flow prefers env over the keychain value below."
         }
     }
 }
 
 pub fn settings_github_client_id_unset(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "Client ID：未设置",
-        Locale::En => "Client ID: not set",
+        Locale::ZhHans => "钥匙串 Client ID：未设置",
+        Locale::En => "Keychain Client ID: not set",
     }
 }
 
 pub fn settings_github_client_id_set(l: Locale, suffix: &str) -> String {
     match l {
-        Locale::ZhHans => format!("Client ID：已设置（…{suffix}）"),
-        Locale::En => format!("Client ID: set (…{suffix})"),
+        Locale::ZhHans => format!("钥匙串 Client ID：已设置（…{suffix}）"),
+        Locale::En => format!("Keychain Client ID: set (…{suffix})"),
+    }
+}
+
+pub fn settings_github_client_id_env_overrides(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => {
+            "环境变量 CM_GITHUB_OAUTH_CLIENT_ID 已设置（优先于钥匙串；Device Flow 使用 env）"
+        }
+        Locale::En => {
+            "Environment CM_GITHUB_OAUTH_CLIENT_ID is set (takes priority over keychain; Device Flow uses env)"
+        }
     }
 }
 
