@@ -50,3 +50,59 @@ impl StatusShellView {
         "ok"
     }
 }
+
+#[cfg(test)]
+mod golden {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn fixture_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../fixtures/status_shell_view_golden.json")
+    }
+
+    #[test]
+    fn golden_status_shell_view_matches_fixture() {
+        let path = fixture_path();
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let view: StatusShellView =
+            serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        assert_eq!(view.status, "ok");
+        assert_eq!(view.model, "deepseek-chat");
+        assert_eq!(view.default_session_mode, "act");
+        assert_eq!(view.llm_context_tokens, 64_000);
+        assert_eq!(
+            view.tiktoken_new_session_baseline_by_agent_role
+                .get("coder"),
+            Some(&1500)
+        );
+        assert_eq!(
+            view.tiktoken_new_session_baseline_by_agent_role.get(""),
+            Some(&1200)
+        );
+        let round = serde_json::to_value(&view).expect("serialize");
+        let again: StatusShellView = serde_json::from_value(round).expect("round-trip");
+        assert_eq!(again.model, view.model);
+        assert_eq!(
+            again.tiktoken_new_session_baseline_by_agent_role,
+            view.tiktoken_new_session_baseline_by_agent_role
+        );
+    }
+
+    #[test]
+    fn golden_status_shell_view_rejects_unknown_fields() {
+        let path = fixture_path();
+        let raw = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let mut v: serde_json::Value =
+            serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()));
+        v.as_object_mut()
+            .expect("object")
+            .insert("unexpected_field".into(), serde_json::json!(1));
+        assert!(
+            serde_json::from_value::<StatusShellView>(v).is_err(),
+            "StatusShellView must deny unknown fields"
+        );
+    }
+}

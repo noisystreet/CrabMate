@@ -1,0 +1,25 @@
+{
+  "status": "ok",
+  "model": "deepseek-chat",
+  "api_base": "https://api.deepseek.com/v1",
+  "agent_role_ids": ["coder", "default"],
+  "default_agent_role_id": "default",
+  "default_session_mode": "act",
+  "agent_role_default_session_modes": {
+    "coder": "plan"
+  },
+  "context_char_budget": 32000,
+  "llm_context_tokens": 64000,
+  "effective_context_char_budget": 32000,
+  "tiktoken_prompt_counting_model": "gpt-4",
+  "tiktoken_new_session_baseline_by_agent_role": {
+    "": 1200,
+    "coder": 1500,
+    "default": 1180
+  },
+  "executor_model": "",
+  "executor_api_base": "",
+  "planner_executor_mode": "single_agent",
+  "conversation_store_sqlite_path_configured": true,
+  "conversation_store_sqlite_active": true
+}

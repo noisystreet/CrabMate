@@ -183,6 +183,20 @@ pub fn status_bar_new_session_baseline_prompt_tokens(
     map.get("").copied()
 }
 
+/// 尚无服务端水合 tiktoken 时底栏「上下文」用量：有 `server_conversation_id` 则等待水合（`None`），否则回落 `GET /status` 基线。
+#[must_use]
+pub fn status_bar_context_used_tokens_without_hydrate(
+    has_server_conversation_id: bool,
+    server: Option<&StatusData>,
+    selected_agent_role: Option<&str>,
+) -> Option<u32> {
+    if has_server_conversation_id {
+        None
+    } else {
+        status_bar_new_session_baseline_prompt_tokens(server, selected_agent_role)
+    }
+}
+
 /// Web 状态栏「default」选项对应 `None`。
 ///
 /// 服务端 `active_agent_role` 与配置 `default_agent_role_id` 相同时，语义上是默认档而非用户显式点选的下拉项。
@@ -251,6 +265,90 @@ mod theme_slug_tests {
         let resolved = resolve_data_theme_slug("system");
         assert!(resolved == "dark" || resolved == "light", "got {resolved}");
         assert!(!THEME_CSS_SLUGS.contains(&THEME_SYSTEM));
+    }
+}
+
+#[cfg(test)]
+mod status_baseline_prompt_tokens_tests {
+    use std::collections::BTreeMap;
+
+    use crabmate_api_contract::StatusShellView;
+
+    use super::{
+        status_bar_context_used_tokens_without_hydrate,
+        status_bar_new_session_baseline_prompt_tokens,
+    };
+
+    fn sample_status() -> StatusShellView {
+        let mut baselines = BTreeMap::new();
+        baselines.insert(String::new(), 1200);
+        baselines.insert("coder".into(), 1500);
+        baselines.insert("default".into(), 1180);
+        StatusShellView {
+            status: "ok".into(),
+            model: "deepseek-chat".into(),
+            api_base: "https://api.deepseek.com/v1".into(),
+            agent_role_ids: vec!["coder".into(), "default".into()],
+            default_agent_role_id: Some("default".into()),
+            default_session_mode: "act".into(),
+            agent_role_default_session_modes: BTreeMap::new(),
+            context_char_budget: 32_000,
+            llm_context_tokens: 64_000,
+            effective_context_char_budget: 32_000,
+            tiktoken_prompt_counting_model: "gpt-4".into(),
+            tiktoken_new_session_baseline_by_agent_role: baselines,
+            executor_model: String::new(),
+            executor_api_base: String::new(),
+            planner_executor_mode: "single_agent".into(),
+            conversation_store_sqlite_path_configured: true,
+            conversation_store_sqlite_active: true,
+        }
+    }
+
+    #[test]
+    fn baseline_lookup_by_selected_role() {
+        let sd = sample_status();
+        assert_eq!(
+            status_bar_new_session_baseline_prompt_tokens(Some(&sd), Some("coder")),
+            Some(1500)
+        );
+    }
+
+    #[test]
+    fn baseline_falls_back_to_default_agent_role_id() {
+        let sd = sample_status();
+        assert_eq!(
+            status_bar_new_session_baseline_prompt_tokens(Some(&sd), None),
+            Some(1180)
+        );
+    }
+
+    #[test]
+    fn baseline_falls_back_to_empty_role_key() {
+        let mut sd = sample_status();
+        sd.default_agent_role_id = None;
+        assert_eq!(
+            status_bar_new_session_baseline_prompt_tokens(Some(&sd), None),
+            Some(1200)
+        );
+    }
+
+    #[test]
+    fn without_server_conversation_id_uses_status_baseline() {
+        let sd = sample_status();
+        assert_eq!(
+            status_bar_context_used_tokens_without_hydrate(false, Some(&sd), Some("coder")),
+            Some(1500)
+        );
+    }
+
+    #[test]
+    fn with_server_conversation_id_waits_for_hydrate_not_baseline() {
+        let sd = sample_status();
+        assert_eq!(
+            status_bar_context_used_tokens_without_hydrate(true, Some(&sd), Some("coder")),
+            None
+        );
     }
 }
 
