@@ -31,6 +31,8 @@ pub(super) enum CloneUiPhase {
 pub struct WorkspaceCloneModalSignals {
     pub open: RwSignal<bool>,
     pub workspace_pick: WorkspaceRootPickHandle,
+    /// 跳转「设置 → 工具」（GitHub 连接）用。
+    pub settings_page: RwSignal<bool>,
 }
 
 fn phase_label(locale: Locale, phase: &str) -> &'static str {
@@ -166,6 +168,7 @@ fn WorkspaceCloneModalPanel(signals: WorkspaceCloneModalSignals) -> impl IntoVie
     let WorkspaceCloneModalSignals {
         open,
         workspace_pick,
+        settings_page,
     } = signals;
     let locale = workspace_pick.locale;
     let url = RwSignal::new(String::new());
@@ -276,6 +279,8 @@ fn WorkspaceCloneModalPanel(signals: WorkspaceCloneModalSignals) -> impl IntoVie
                     log_lines=log_lines
                     percent=percent
                     form_err=form_err
+                    clone_open=open
+                    settings_page=settings_page
                 />
             </Show>
         </div>

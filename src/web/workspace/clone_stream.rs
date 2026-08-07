@@ -4,6 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll};
 
@@ -183,6 +184,7 @@ async fn cleanup_partial_clone(pool: &Path, dir: &Path) {
 async fn pump_git_stderr_lines(
     stderr: tokio::process::ChildStderr,
     tx: mpsc::Sender<Result<Event, axum::Error>>,
+    auth_hint: Arc<AtomicBool>,
 ) {
     let mut reader = BufReader::new(stderr);
     let mut raw_buf = [0u8; 4096];
@@ -193,6 +195,9 @@ async fn pump_git_stderr_lines(
             Ok(n) => {
                 let chunk = String::from_utf8_lossy(&raw_buf[..n]);
                 for line in split_progress_chunks(&mut line_buf, &chunk) {
+                    if line_suggests_git_auth_failure(&line) {
+                        auth_hint.store(true, Ordering::Relaxed);
+                    }
                     let redacted = redact_clone_log_line(&line);
                     if redacted.is_empty() {
                         continue;
@@ -218,10 +223,47 @@ async fn pump_git_stderr_lines(
         }
     }
     if !line_buf.trim().is_empty() {
+        if line_suggests_git_auth_failure(&line_buf) {
+            auth_hint.store(true, Ordering::Relaxed);
+        }
         let redacted = redact_clone_log_line(&line_buf);
         let _ = tx
             .send(sse_data(json!({ "type": "log", "line": redacted })))
             .await;
+    }
+}
+
+/// 较强的鉴权失败信号（已有 token 时才用于 `CLONE_AUTH_REQUIRED`）。
+/// 不含「could not read from remote repository」等泛化 fatal（网络/DNS 也会出现）。
+fn line_suggests_git_auth_failure(line: &str) -> bool {
+    let l = line.to_ascii_lowercase();
+    l.contains("authentication failed")
+        || l.contains("could not read username")
+        || l.contains("invalid username or password")
+        || l.contains("support for password authentication was removed")
+        || l.contains("the requested url returned error: 401")
+        || l.contains("the requested url returned error: 403")
+}
+
+fn clone_fail_code_and_message(
+    url: &str,
+    auth_hint: bool,
+    exit_code: Option<i32>,
+) -> (&'static str, String) {
+    let github = crate::github_token::is_github_https_url(url);
+    let has_token = crate::github_token::resolve_token_plaintext().is_some();
+    // 无 token：GitHub HTTPS 失败一律引导连接；有 token：仅强鉴权信号才引导重连。
+    if github && (!has_token || auth_hint) {
+        (
+            "CLONE_AUTH_REQUIRED",
+            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → 工具 → GitHub」连接，或配置服务端 GH_TOKEN / 钥匙串；SSH remote 不使用 OAuth token。"
+                .into(),
+        )
+    } else {
+        (
+            "CLONE_GIT_FAILED",
+            format!("git clone 失败（退出码 {exit_code:?}）"),
+        )
     }
 }
 
@@ -312,6 +354,9 @@ async fn run_clone_and_stream(job: CloneJob) {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    let _ = crate::github_token::apply_github_https_auth_pairs(&url, |k, v| {
+        cmd.env(k, v);
+    });
 
     let mut child = match cmd.spawn() {
         Ok(c) => c,
@@ -322,12 +367,14 @@ async fn run_clone_and_stream(job: CloneJob) {
         }
     };
 
+    let auth_hint = Arc::new(AtomicBool::new(false));
     let stderr = child.stderr.take();
     let stdout = child.stdout.take();
     let tx_err = tx.clone();
+    let auth_hint_pump = Arc::clone(&auth_hint);
     let stderr_task = tokio::spawn(async move {
         if let Some(err) = stderr {
-            pump_git_stderr_lines(err, tx_err).await;
+            pump_git_stderr_lines(err, tx_err, auth_hint_pump).await;
         }
     });
     let stdout_task = tokio::spawn(async move {
@@ -375,12 +422,9 @@ async fn run_clone_and_stream(job: CloneJob) {
 
     if !status.success() {
         cleanup_partial_clone(&pool, &target).await;
-        send_err(
-            &tx,
-            "CLONE_GIT_FAILED",
-            &format!("git clone 失败（退出码 {:?}）", status.code()),
-        )
-        .await;
+        let (code, msg) =
+            clone_fail_code_and_message(&url, auth_hint.load(Ordering::Relaxed), status.code());
+        send_err(&tx, code, &msg).await;
         return;
     }
 

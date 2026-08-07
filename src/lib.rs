@@ -13,8 +13,8 @@ pub use crabmate_internal::tool_sandbox;
 /// 稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
 pub(crate) use crabmate_internal::{
     agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire,
-    clarification_questionnaire_body_if_tool_ok, context_bootstrap, health, mcp, memory,
-    memory_tool_hosts, observability, process_handles, read_file_turn_cache,
+    clarification_questionnaire_body_if_tool_ok, context_bootstrap, github_token, health, mcp,
+    memory, memory_tool_hosts, observability, process_handles, read_file_turn_cache,
     readonly_tool_ttl_cache, redact, request_chrome_trace, session_mode_turn, text_encoding,
     text_util, tool_approval, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
     user_message_file_refs, web_static_dir, workspace,
