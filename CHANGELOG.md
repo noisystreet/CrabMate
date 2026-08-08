@@ -11,8 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- GitHub Actions **Release** workflow (`.github/workflows/release.yml`): tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) → `make package` + GitHub Release with tar.gz/deb; notes from this file’s core `X.Y.Z` section; re-run updates the same Release.
-- CLI **`web-bearer status|set|clear`**: persist the Web API shared secret in the system keyring (same slot as Web Settings); **`serve`** falls back when TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty. Prefer **`set --stdin`** / **`set --from-env`** / interactive hidden input to avoid putting the secret on argv.
+- (none yet)
 
 ### Changed
 
@@ -34,8 +33,10 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - HTTP **`serve`**: `/chat`, `/chat/stream` (SSE / AG-UI), workspace APIs, conversation SQLite under `.crabmate/`, optional Web API Bearer.
 - Built-in tool registry (`run_command` allowlist, file tools, fetch, cargo/npm stacks, workflows, optional MCP / Docker sandbox / fastembed via Cargo features).
 - CLI: `serve`, `repl`, `tui`, `chat`, `doctor`, `models` / `probe`, `save-session`, `mcp`, packaging helpers.
+- CLI **`web-bearer status|set|clear`**: persist the Web API shared secret in the system keyring (same slot as Web Settings); **`serve`** falls back when TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty. Prefer **`set --stdin`** / **`set --from-env`** / interactive hidden input to avoid putting the secret on argv.
 - Client contract versioning gates (`client-contract-v*`) and CI smoke for SSE / OpenAPI / consumer pins.
 - Release packaging: `make package` → server-only **tar.gz** + **`.deb`**; **systemd** unit (`crabmate.service`), `/etc/crabmate/config.toml` + `config/prompts/`, env example (`KEY=value` only).
+- GitHub Actions **Release** workflow (`.github/workflows/release.yml`): tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) → `make package` + GitHub Release with tar.gz/deb; notes from this file’s core `X.Y.Z` section; re-run updates the same Release.
 - Default English [`README.md`](README.md) with Chinese companion [`README.zh.md`](README.zh.md).
 
 ### Changed
