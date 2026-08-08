@@ -53,7 +53,7 @@ Standard commands from `README.md`:
 | 依赖许可证/来源（需安装 `cargo-deny`） | `cargo deny check licenses bans sources`（配置见根目录 `deny.toml`；CI 见 `.github/workflows/dependency-security.yml`） |
 | Rust format check | `cargo fmt --check` |
 | Leptos frontend build | Client 仓：`cd ../crabmate-client && make frontend`（契约钉 `client-contract-v*`） |
-| Regenerate `man` page (troff) | `cargo run --bin crabmate-gen-man`（写入 `man/crabmate.1`） |
+| Regenerate `man` page (troff) | `cargo run --features gen-man --bin crabmate-gen-man`（写入 `man/crabmate.1`） |
 
 ### Gotchas
 

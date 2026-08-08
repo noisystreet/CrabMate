@@ -156,7 +156,7 @@ assets = [
     ["config/prompts/context_summary_user.md", "usr/share/doc/crabmate/config/prompts/context_summary_user.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
-    # man page（troff；由 `cargo run --bin crabmate-gen-man` 再生成）
+    # man page（troff；由 `cargo run --features gen-man --bin crabmate-gen-man` 再生成）
     ["man/crabmate.1", "usr/share/man/man1/crabmate.1", "644"],
 ]
 
