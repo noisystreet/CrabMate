@@ -503,7 +503,9 @@ fn http_error_detail_from_body(body: &str) -> String {
             .map(str::trim)
             .filter(|s| !s.is_empty())
         {
-            return msg.to_string();
+            let code = v.get("code").and_then(|x| x.as_str());
+            let request_id = v.get("request_id").and_then(|x| x.as_str());
+            return format_api_error_detail(msg, code, request_id);
         }
     }
     if trimmed.len() <= 240 {
@@ -511,6 +513,17 @@ fn http_error_detail_from_body(body: &str) -> String {
     } else {
         format!("{}…", truncate_to_char_boundary(trimmed, 240))
     }
+}
+
+fn format_api_error_detail(message: &str, code: Option<&str>, request_id: Option<&str>) -> String {
+    let mut out = message.to_string();
+    if let Some(c) = code.map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!(" ({c})"));
+    }
+    if let Some(r) = request_id.map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!(" [request_id={r}]"));
+    }
+    out
 }
 
 async fn do_fetch_json<T: for<'de> Deserialize<'de>>(

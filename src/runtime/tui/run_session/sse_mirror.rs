@@ -133,6 +133,7 @@ mod tests {
             reason_code: None,
             turn_id: None,
             sub_phase: None,
+            request_id: None,
         }))
         .expect("error line");
         assert!(line.contains("错误"), "{line}");

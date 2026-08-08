@@ -100,23 +100,36 @@ fn dispatch_run_finished(val: &serde_json::Value, sink: &mut SseControlSink<'_>)
 }
 
 fn dispatch_run_error(val: &serde_json::Value, sink: &mut SseControlSink<'_>) {
-    let msg = val
-        .get("error")
+    let err = val.get("error");
+    let msg = err
         .and_then(|e| e.get("message"))
         .and_then(|m| m.as_str())
         .unwrap_or("AG-UI run error");
-    let code = val
-        .get("error")
-        .and_then(|e| e.get("code"))
-        .and_then(|c| c.as_str());
-    let line = match code {
-        Some(c) => format!("{} ({})", msg, c),
-        None => msg.to_string(),
-    };
+    let code = err.and_then(|e| e.get("code")).and_then(|c| c.as_str());
+    let request_id = err
+        .and_then(|e| e.get("requestId").or_else(|| e.get("request_id")))
+        .and_then(|r| r.as_str());
+    let line = format_user_error_with_meta(msg, code, request_id);
     (sink.on_error)(line);
     if let Some(hook) = sink.notice_timeline.on_run_finished.as_mut() {
         hook(None);
     }
+}
+
+/// 用户可读错误：`message (CODE) [request_id=…]`（缺省字段省略）。
+pub(crate) fn format_user_error_with_meta(
+    message: &str,
+    code: Option<&str>,
+    request_id: Option<&str>,
+) -> String {
+    let mut out = message.trim().to_string();
+    if let Some(c) = code.map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!(" ({c})"));
+    }
+    if let Some(r) = request_id.map(str::trim).filter(|s| !s.is_empty()) {
+        out.push_str(&format!(" [request_id={r}]"));
+    }
+    out
 }
 
 // ── 状态同步 ──
@@ -635,6 +648,27 @@ mod tests {
         let data = r#"{"type":"RUN_ERROR","error":{"message":"fail","code":"ERR"}}"#;
         let dispatch = parser.parse(data, &mut sink);
         assert_eq!(dispatch, SseDispatch::StreamEnded);
+    }
+
+    #[test]
+    fn run_error_formats_request_id() {
+        let parser = V2Parser;
+        let got = Rc::new(RefCell::new(String::new()));
+        let got2 = Rc::clone(&got);
+        let mut on_error = move |s: String| *got2.borrow_mut() = s;
+        let mut sink = SseControlSink {
+            on_error: &mut on_error,
+            on_delta: None,
+            workspace_tool: SseWorkspaceToolHooks::default(),
+            turn_phase: SseTurnPhaseHooks::default(),
+            clarify_trace: SseClarifyTraceHooks::default(),
+            notice_timeline: SseNoticeTimelineHooks::default(),
+        };
+        let data =
+            r#"{"type":"RUN_ERROR","error":{"message":"fail","code":"ERR","requestId":"cm-1"}}"#;
+        let dispatch = parser.parse(data, &mut sink);
+        assert_eq!(dispatch, SseDispatch::StreamEnded);
+        assert_eq!(*got.borrow(), "fail (ERR) [request_id=cm-1]");
     }
 
     #[test]

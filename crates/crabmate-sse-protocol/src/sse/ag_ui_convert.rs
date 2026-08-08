@@ -25,6 +25,7 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
             error: AgUiErrorBody {
                 message: body.error.clone(),
                 code: body.code.clone(),
+                request_id: body.request_id.clone(),
             },
         }],
 
@@ -283,6 +284,7 @@ mod tests {
             reason_code: None,
             turn_id: None,
             sub_phase: None,
+            request_id: None,
         }));
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -662,6 +664,7 @@ mod golden_tests {
                     reason_code: None,
                     sub_phase: None,
                     turn_id: None,
+                    request_id: None,
                 }),
                 "RUN_ERROR",
             ),

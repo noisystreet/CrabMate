@@ -201,6 +201,7 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
 }
 
 /// Web 单条 `/chat*` 任务根 span：**`job_id`** 与 HTTP **`x-stream-job-id`** / SSE **`job_id`** 一致；**`conversation_id`** 为截断预览（完整 id 仍由业务层与会话存储持有）。
+/// **`request_id`** 字段预留；有值时由 [`TracingChatTurn::new`] 写入（与 HTTP **`x-request-id`** 同值）。
 pub fn chat_turn_span(job_id: u64, conversation_id: &str) -> Span {
     let conversation_id_field = crate::redact::preview_chars(
         conversation_id.trim(),
@@ -211,6 +212,7 @@ pub fn chat_turn_span(job_id: u64, conversation_id: &str) -> Span {
         job_id = job_id,
         conversation_id = %conversation_id_field,
         conversation_id_len = conversation_id.trim().chars().count(),
+        request_id = tracing::field::Empty,
         outer_loop_iteration = tracing::field::Empty,
         tool_call_seq = tracing::field::Empty,
         tool_call_id = tracing::field::Empty,
@@ -249,16 +251,24 @@ pub fn record_tool_call_seq_and_label(span: &Span, seq: u32, raw_tool_call_id: &
 pub struct TracingChatTurn {
     /// 与 HTTP **`x-stream-job-id`**、SSE **`sse_capabilities.job_id`** 一致（CLI 等无 Web 任务时为占位，通常不用于观测）。
     pub job_id: u64,
+    /// 与当次 HTTP **`x-request-id`** / SSE **`SseErrorBody.request_id`** 同值；无则 `None`。
+    pub request_id: Option<String>,
     pub span: Span,
     outer_iteration: AtomicU32,
     tool_call_seq: AtomicU32,
 }
 
 impl TracingChatTurn {
-    pub fn new(job_id: u64, conversation_id: &str) -> Arc<Self> {
+    pub fn new(job_id: u64, conversation_id: &str, request_id: Option<String>) -> Arc<Self> {
+        let request_id = request_id.filter(|s| !s.trim().is_empty());
+        let span = chat_turn_span(job_id, conversation_id);
+        if let Some(ref rid) = request_id {
+            span.record("request_id", tracing::field::display(rid.clone()));
+        }
         Arc::new(Self {
             job_id,
-            span: chat_turn_span(job_id, conversation_id),
+            request_id,
+            span,
             outer_iteration: AtomicU32::new(0),
             tool_call_seq: AtomicU32::new(0),
         })

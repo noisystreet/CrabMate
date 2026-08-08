@@ -196,6 +196,8 @@ pub struct WebChatStreamBuildArgs<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub job_id: u64,
     pub conversation_id: &'a str,
+    /// 与 HTTP **`x-request-id`** 同值；写入 [`observability::TracingChatTurn`] 供回合内 SSE 错误带回。
+    pub request_id: Option<String>,
     pub out: &'a mpsc::Sender<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
@@ -222,6 +224,8 @@ pub struct WebChatJsonBuildArgs<'a> {
         Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
     pub job_id: u64,
     pub conversation_id: &'a str,
+    /// 与 HTTP **`x-request-id`** 同值（JSON 路径当前多为 `None`；与 stream 字段形状对齐）。
+    pub request_id: Option<String>,
     pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
@@ -339,6 +343,7 @@ impl<'a> RunAgentTurnParams<'a> {
             request_audit,
             process_handles,
             session_mode,
+            request_id,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -374,7 +379,11 @@ impl<'a> RunAgentTurnParams<'a> {
             conversation_id,
             turn_allowed_tool_names,
             session_mode,
-            tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
+            tracing_chat_turn: observability::TracingChatTurn::new(
+                job_id,
+                conversation_id,
+                request_id,
+            ),
             request_audit,
             process_handles,
         })
@@ -403,6 +412,7 @@ impl<'a> RunAgentTurnParams<'a> {
             request_audit,
             process_handles,
             session_mode,
+            request_id,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -438,7 +448,11 @@ impl<'a> RunAgentTurnParams<'a> {
             conversation_id,
             turn_allowed_tool_names,
             session_mode,
-            tracing_chat_turn: observability::TracingChatTurn::new(job_id, conversation_id),
+            tracing_chat_turn: observability::TracingChatTurn::new(
+                job_id,
+                conversation_id,
+                request_id,
+            ),
             request_audit,
             process_handles,
         })

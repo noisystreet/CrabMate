@@ -121,4 +121,7 @@ pub(crate) struct AgUiErrorBody {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code: Option<String>,
+    /// 与 HTTP `x-request-id` 对齐；旧客户端忽略。
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }

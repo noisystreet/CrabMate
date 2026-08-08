@@ -21,14 +21,18 @@ pub(crate) fn conversation_conflict_http_response() -> (StatusCode, Json<ApiErro
     )
 }
 
-pub(crate) fn conversation_conflict_sse_line() -> String {
-    crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
-        error: CONVERSATION_CONFLICT_MESSAGE.to_string(),
-        code: Some(CONVERSATION_CONFLICT_CODE.to_string()),
-        reason_code: None,
-        turn_id: None,
-        sub_phase: None,
-    }))
+pub(crate) fn conversation_conflict_sse_line(request_id: Option<String>) -> String {
+    crate::sse::encode_message(crate::sse::SsePayload::Error(
+        crate::sse::SseErrorBody {
+            error: CONVERSATION_CONFLICT_MESSAGE.to_string(),
+            code: Some(CONVERSATION_CONFLICT_CODE.to_string()),
+            reason_code: None,
+            turn_id: None,
+            sub_phase: None,
+            request_id: None,
+        }
+        .with_request_id(request_id),
+    ))
 }
 
 pub(super) fn conversation_conflict_api_error() -> (StatusCode, Json<ApiError>) {

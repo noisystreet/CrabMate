@@ -22,11 +22,25 @@ pub(super) async fn chat_stream_http_error_message(
     loc: Locale,
 ) -> Result<String, String> {
     let msg = http_request::chat_stream_read_error_body(resp, loc).await?;
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg)
-        && let Some(m) = v.get("message").and_then(|x| x.as_str())
-        && !m.trim().is_empty()
-    {
-        return Ok(m.to_string());
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&msg) {
+        let text = v
+            .get("message")
+            .or_else(|| v.get("error"))
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        if let Some(m) = text {
+            let code = v.get("code").and_then(|x| x.as_str());
+            let request_id = v.get("request_id").and_then(|x| x.as_str());
+            let mut out = m.to_string();
+            if let Some(c) = code.map(str::trim).filter(|s| !s.is_empty()) {
+                out.push_str(&format!(" ({c})"));
+            }
+            if let Some(r) = request_id.map(str::trim).filter(|s| !s.is_empty()) {
+                out.push_str(&format!(" [request_id={r}]"));
+            }
+            return Ok(out);
+        }
     }
     Ok(msg)
 }

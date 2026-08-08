@@ -6,6 +6,7 @@
 
 RUN_FINISHED	{"type":"RUN_FINISHED","threadId":"th-1","runId":"run-1"}	stream_ended
 RUN_ERROR	{"type":"RUN_ERROR","threadId":"th-1","runId":"run-1","error":{"message":"fail","code":"ERR"}}	stream_ended
+RUN_ERROR	{"type":"RUN_ERROR","threadId":"th-1","runId":"run-1","error":{"message":"fail","code":"ERR","requestId":"cm-test-1"}}	stream_ended
 RUN_STARTED	{"type":"RUN_STARTED","threadId":"th-1","runId":"run-1"}	handled
 TEXT_MESSAGE_START	{"type":"TEXT_MESSAGE_START","messageId":"msg-1","role":"assistant"}	handled
 TEXT_MESSAGE_CONTENT	{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"hello"}	handled

@@ -226,6 +226,7 @@ pub(crate) fn json_chat_job_envelope(
         executor_llm_override: parsed.executor_llm_override.clone(),
         readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,
         request_audit,
+        request_id: None,
     }
 }
 

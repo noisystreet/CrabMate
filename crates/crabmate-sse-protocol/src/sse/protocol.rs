@@ -135,6 +135,18 @@ pub struct SseErrorBody {
     /// 失败时所处的编排子阶段：`planner` \| `executor` \| `reflect`（与 `agent_turn` PER 命名对齐）；旧客户端忽略即可。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sub_phase: Option<String>,
+    /// 与当次 HTTP **`x-request-id`** / `ApiError.request_id` 同值；旧客户端忽略即可（**不** bump 协议版本）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
+impl SseErrorBody {
+    /// 附带排障关联 id（空串视为未设置）。
+    #[must_use]
+    pub fn with_request_id(mut self, request_id: Option<String>) -> Self {
+        self.request_id = request_id.filter(|s| !s.trim().is_empty());
+        self
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -460,6 +472,7 @@ mod tests {
             reason_code: None,
             turn_id: None,
             sub_phase: None,
+            request_id: None,
         }));
         assert!(s.contains(&format!("\"v\":{}", SSE_PROTOCOL_VERSION)));
         assert!(s.contains("\"code\":\"E\""));
@@ -473,6 +486,7 @@ mod tests {
             reason_code: Some("plan_missing".into()),
             turn_id: None,
             sub_phase: Some("reflect".into()),
+            request_id: None,
         }));
         assert!(s.contains("\"reason_code\":\"plan_missing\""));
     }
@@ -566,6 +580,7 @@ mod tests {
                 reason_code,
                 turn_id,
                 sub_phase,
+                request_id: None,
             });
             let encoded = encode_message_v1(&payload);
             let parsed: SseMessage = serde_json::from_str(&encoded).unwrap();
@@ -577,6 +592,7 @@ mod tests {
                     prop_assert_eq!(got.reason_code, expect.reason_code);
                     prop_assert_eq!(got.turn_id, expect.turn_id);
                     prop_assert_eq!(got.sub_phase, expect.sub_phase);
+                    prop_assert_eq!(got.request_id, expect.request_id);
                 }
                 (_, other) => prop_assert!(false, "unexpected payload: {:?}", other),
             }
