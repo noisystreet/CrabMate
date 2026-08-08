@@ -38,7 +38,7 @@
 |------|-------------|-------------------|
 | 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** CLI 宿主面；**不**覆盖 TUI UI / 壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
-| Playwright mock | `e2e/specs/mock-*.spec.ts` | **不**替代（无真模型 / 无壳生命周期） |
+| Playwright mock | `../crabmate-client/e2e/specs/mock-*.spec.ts` | **不**替代（无真模型 / 无壳生命周期） |
 | Victauri 真 LLM | **仅** Client 仓：`cd ../crabmate-client && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
 
 本 runbook 的价值是：**跨入口人工勾选 + 协议错位 + 远程壳**，补自动化盲区。
@@ -195,7 +195,7 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 | `../crabmate-client/docs/TESTING.md` | Victauri / Client pre-commit |
 | `../crabmate-client/scripts/victauri-e2e.sh` | Victauri 一键脚本（本仓已无） |
 | `docs/SSE协议.md`、`docs/命令行与路由.md` | 契约真源 |
-| `docs/真实LLM-E2E.md`、`docs/测试指南.md` | 自动化入口（Server / Playwright） |
+| `docs/真实LLM-E2E.md`、`docs/测试指南.md`；Client `e2e/` | 自动化入口（Server 编排 / Client Playwright） |
 | `docs/design/client_contract_versioning.md` | 契约 semver / git tag |
 | `docs/配置说明.md` | `CM_WEB_CORS_ALLOWED_ORIGINS` / API 基址（浏览器） |
 
