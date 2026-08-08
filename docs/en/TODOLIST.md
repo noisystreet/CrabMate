@@ -33,7 +33,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### Compat-layer shrink (follow-ups)
 
-> Plan draft: workspace **`agent_space/compat-layer-shrink-plan.md`** (gitignored).  
+> Compat-layer shrink **todos in this section are authoritative** (local drafts are gitignored and must not be cited as docs).  
 > **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (this branch: `stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
 > **Next**: **B2**. Items below need a compatibility window.
 
@@ -133,6 +133,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: `api.rs`, `sse_dispatch/dispatch.rs`, panels, session state, `session_export`.
 
+- [ ] **Official Client / server-only monorepo (path A)**: phased work in **`docs/design/client_shell_split_todo.md`** (ADR: **`docs/design/client_shell_split.md`**). **Next: Phase 1 contract publishability**.
 - [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
