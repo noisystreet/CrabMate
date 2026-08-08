@@ -78,8 +78,9 @@ jobs:
       - name: check-client-contract.sh
         run: bash scripts/check-client-contract.sh
 
+  # server-only 发布冒烟：tar.gz + .deb（不附带 frontend；对齐 make package）
   build-release:
-    name: release build (package test)
+    name: package (tar.gz · deb)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,11 +97,38 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build backend binary (release)
-        run: make backend-release
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
 
-      - name: Verify release build artifacts
+      - name: make package (server-only)
+        run: make package
+
+      - name: Verify package artifacts
         run: |
-          test -x target/release/crabmate
-          BIN_SIZE=$(stat --format=%s target/release/crabmate)
-          echo "crabmate release binary: $BIN_SIZE bytes ($(( BIN_SIZE / 1048576 )) MiB)"
+          set -euo pipefail
+          shopt -s nullglob
+          tars=(dist/crabmate_*.tar.gz)
+          debs=(dist/crabmate_*.deb)
+          [[ ${#tars[@]} -ge 1 ]] || { echo "missing dist/*.tar.gz" >&2; ls -la dist || true; exit 1; }
+          [[ ${#debs[@]} -ge 1 ]] || { echo "missing dist/*.deb (cargo-deb)" >&2; ls -la dist || true; exit 1; }
+          TAR="${tars[0]}"
+          DEB="${debs[0]}"
+          echo "tar: $TAR ($(stat --format=%s "$TAR") bytes)"
+          echo "deb: $DEB ($(stat --format=%s "$DEB") bytes)"
+          # tar 含 release 二进制与 man；不得含 frontend/dist（server-only）
+          tar -tzf "$TAR" | tee /tmp/package-tar.list
+          grep -E '/crabmate$' /tmp/package-tar.list
+          grep -E '/man/crabmate\.1$' /tmp/package-tar.list
+          if grep -E '/frontend/dist/' /tmp/package-tar.list; then
+            echo "unexpected frontend/dist in server-only tarball" >&2
+            exit 1
+          fi
+          # deb 含 /usr/bin/crabmate
+          dpkg-deb -c "$DEB" | tee /tmp/package-deb.list
+          grep -E ' usr/bin/crabmate$' /tmp/package-deb.list
+          if grep -E ' usr/share/crabmate/frontend/' /tmp/package-deb.list; then
+            echo "unexpected UI path in server .deb" >&2
+            exit 1
+          fi
+          echo "package smoke ok"

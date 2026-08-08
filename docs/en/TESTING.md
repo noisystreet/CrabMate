@@ -14,7 +14,9 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
-- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`** (this repo has **no** Tauri/GTK desktop job; shell CI lives in the Client repo)
+- **`workspace`** (check · clippy · test): **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`** (this repo has **no** Tauri/GTK desktop job; shell CI lives in the Client repo)
+- **`client-contract`**: contract / SSE golden / OpenAPI gate (**`scripts/check-client-contract.sh`**)
+- **`build-release`** (package): **`make package`** (server-only **`tar.gz` + `.deb`**, no frontend; needs **`cargo-deb`**)
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 

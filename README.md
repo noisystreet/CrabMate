@@ -87,10 +87,11 @@
 make help              # 列出全部目标
 make all / all-dev     # backend-release / backend
 make backend           # cargo build -p crabmate
+make package           # server-only tar.gz + 可选 .deb → dist/（不附带 UI）
 make clean             # 清理 target 与 dist/
 ```
 
-业务 UI：`cd ../crabmate-client && make frontend`。一键 tar.gz：`./scripts/package-release.sh`（可选 `--frontend-dist`）。Desktop / Android：同级 **[`../crabmate-client`](../crabmate-client/)**。
+业务 UI：`cd ../crabmate-client && make frontend`。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 默认 **不**打包 frontend（`--no-web` 或运行时设 `CM_WEB_STATIC_DIR`）。Desktop / Android：同级 **[`../crabmate-client`](../crabmate-client/)**。
 
 ### 后端
 
@@ -138,8 +139,8 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | 方式 | 命令 / 说明 |
 | --- | --- |
 | **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
-| **一键 tar.gz** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、man；默认 **server-only**）。附带 UI：`--frontend-dist /path/to/dist`（如 Client `make frontend` 产物）。若已装 **`cargo-deb`** 可同时收录 **`.deb`**。 |
-| **Debian 包** | **`cargo deb`**（本仓不强制 UI）；产物默认在 **`target/debian/`**。含官方 UI 时于 Client 构建 dist 后用 **`--frontend-dist`** 打 tar，或见 Client 仓桌面/APK 打包。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
+| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
+| **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
 | **同步 man 页** | **`cargo run --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
 
