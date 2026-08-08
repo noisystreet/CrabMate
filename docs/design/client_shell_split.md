@@ -24,15 +24,15 @@ CrabMate 执行权威在单机 **`serve`**（或同进程 CLI/TUI）。桌面 / 
 |----|------|
 | 业务 UI | 由 Client / 可选独立 UI 仓构建与发版；经可配置 **API 基址** 连接兼容的 `serve` |
 | 路径 B（UI 永远随 server 托管） | **不作终点**；不得用 B 宣称「只维护 server」已完成 |
-| 本仓终点 | `serve` + 契约 crate +（可选）CLI/TUI；`frontend/` 源码迁出（过渡期可短期双轨，不得无限期） |
+| 本仓终点 | `serve` + 契约 crate +（可选）CLI/TUI；`frontend/` 源码迁出（壳已于 Phase 4.1 仅留 Client 仓；UI 源码至 Phase 4.2） |
 | 拆壳仓门槛 | **须先**完成契约可发布 + 前端 API 基址/CORS（见 todo Phase 1–2）；禁止跳过 Phase 2 |
 
 ### 2.2 官方 Client 矩阵
 
 | 入口 | 形态 | 备注 |
 |------|------|------|
-| **Desktop Linux** | Tauri 壳（现 `desktop-tauri/`） | 回环可保留有限 IPC；非回环 IPC 降级可接受 |
-| **Android** | Tauri 壳（现 `mobile-tauri/`） | 不 spawn 本机 Agent |
+| **Desktop Linux** | Tauri 壳（**`../crabmate-client/desktop-tauri/`**） | 回环可保留有限 IPC；非回环 IPC 降级可接受 |
+| **Android** | Tauri 壳（**`../crabmate-client/mobile-tauri/`**） | 不 spawn 本机 Agent |
 | **浏览器直连** | 静态托管官方 WASM/UI | 与壳共用同一套 UI 产物或同源构建 |
 
 **不在官方矩阵**（可存在但不承诺一等公民）：macOS/Windows 桌面、iOS、IDE 扩展、IM 桥等——另开产品切片，仍只认同一契约。
@@ -65,7 +65,7 @@ CrabMate 执行权威在单机 **`serve`**（或同进程 CLI/TUI）。桌面 / 
 
 1. **契约优先**：不新开会话 API；Client 只认现有 HTTP + SSE（见 `docs/SSE协议.md`）。
 2. **与宿主解耦正交**：`turn_runtime_placement` / `web_host_p5_placement` **不阻塞**本决策；拆壳优先传输与发版边界。
-3. **现状差距（过渡）**：今日 `desktop-tauri` / `mobile-tauri` README 仍描述「加载 serve 的 UI」——属路径 B 现状；须在 todo Phase 2/4 改齐，不得与终点混淆。Phase 2 已提供 **API 基址 + CORS**，浏览器可静态托管 UI 直连远程 `serve`。
+3. **现状差距**：壳目录仅在 **`../crabmate-client`**（Phase 4.1）；本仓仍保留 `frontend/` 源码至 Phase 4.2。Phase 2 已提供 **API 基址 + CORS**，浏览器可静态托管 UI 直连远程 `serve`。兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
 4. **安全**：CORS 默认保守（空白名单=不挂层；启用时精确 Origin）；非回环须 Bearer。
 
 ---

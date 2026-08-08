@@ -91,7 +91,7 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 
 ## Layer 3：Tauri/WebView 级（Victauri）
 
-**`REAL_LLM_E2E=1`** 时才会执行；用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
+**仅 Client 仓** `../crabmate-client/desktop-tauri/src-tauri/tests/`。**`REAL_LLM_E2E=1`** 时才会执行；用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
 
 | 文件 | 场景 | 超时（约） | 断言要点 |
 |------|------|------------|----------|
@@ -109,19 +109,18 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 运行
 
 ```bash
-# 终端 1：后端
+# 终端 1：后端（本仓）
 cargo run -- serve --host 127.0.0.1 --port 18080
 
-# 终端 2：启动 Tauri 桌面应用（跳过连接页）
-cd desktop-tauri/src-tauri
+# 终端 2：启动 Tauri 桌面应用（Client 仓；跳过连接页）
+cd ../crabmate-client/desktop-tauri/src-tauri
 CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
-# 终端 3：运行真实 LLM 测试
-cd desktop-tauri/src-tauri
+# 终端 3：运行真实 LLM 测试（同上 src-tauri）
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 cargo test --test victauri_real_llm -- --nocapture
 ```
 
-或使用 **`./scripts/victauri-e2e.sh real_llm`**（脚本会自行拉起 `serve`）。
+或在 Client 仓根使用 **`./scripts/victauri-e2e.sh real_llm`**（脚本会自行拉起 `serve`）。
 
 ---
 

@@ -1,10 +1,8 @@
 # 主 CI：编译检查、Clippy（-D warnings）与工作区测试，防止错误合入 main。
 # 与 pre-commit 的 cargo clippy / frontend-wasm-check 对齐；cargo test 仅在本 workflow（及 code-complexity 金样）跑。
 #
-# desktop-tauri 是独立 workspace（含 Victauri E2E 测试），与主 workspace 并行执行。
-# 官方 Client 仓权威 CI：同级 crabmate-client/.github/workflows/ci.yml（路径 A）。
-# Phase 3 起 Server 产品门禁可不强制本 GTK job；过渡期仍跑双轨副本至 Phase 4，
-# 避免主仓 PR 漏检尚未删除的壳改动（去双轨后删除本 job）。
+# 官方 Client（Desktop/Android 壳）CI：同级 crabmate-client/.github/workflows/ci.yml（路径 A Phase 4）。
+# 本仓不再跑 Tauri/GTK desktop job。
 name: CI
 
 on:
@@ -88,52 +86,6 @@ jobs:
 
       - name: check-client-contract.sh
         run: bash scripts/check-client-contract.sh
-
-  desktop:
-    name: desktop (check · clippy · test)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force 2>/dev/null || true
-
-      - name: Install system deps (OpenSSL / libssh2 / libgtk-3 / libwebkit2gtk / libappindicator)
-        run: |
-          sudo apt-get update && sudo apt-get install -y \
-            libssl-dev libssh2-1-dev \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      # desktop-tauri 是独立 workspace，须指定 workspaces 以便 rust-cache 用正确的 Cargo.lock
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop-tauri/src-tauri
-
-      # tauri-build 需要 frontendDist；壳不再依赖 externalBin/sidecar
-      - name: Create dummy frontendDist for tauri-build
-        run: |
-          mkdir -p desktop-tauri/dist
-          echo '<html></html>' > desktop-tauri/dist/index.html
-          echo '<html></html>' > desktop-tauri/dist/splash.html
-          echo '<html></html>' > desktop-tauri/dist/connect.html
-
-      - name: cargo check (all targets)
-        run: cargo check --tests
-        working-directory: desktop-tauri/src-tauri
-
-      - name: cargo clippy (-D warnings)
-        run: cargo clippy --all-targets -- -D warnings
-        working-directory: desktop-tauri/src-tauri
-
-      - name: cargo test (Victauri auto-skip)
-        run: cargo test --no-fail-fast
-        working-directory: desktop-tauri/src-tauri
 
   build-release:
     name: release build (package test)

@@ -4,7 +4,7 @@
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **日期**：2026-08-08  
 > **约定**：完成某阶段后更新本文件勾选；**勿**把本地草稿目录当作本计划的引用源（见根目录 `AGENTS.md`）。  
-> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、`docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟：**`../crabmate-client`**（过渡期本仓仍有 `desktop-tauri/` / `mobile-tauri/` 副本）
+> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`client_compat_matrix.md`](./client_compat_matrix.md)、`docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟 / Victauri：**仅** **`../crabmate-client`**（Phase 4.1 起本仓已无壳目录）
 
 ---
 
@@ -16,10 +16,10 @@
 | Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
 | Phase 2 | 前端可远程（API 基址 + CORS） | ✅ 完成（2026-08-08） |
 | Phase 3 | connect + 壳仓拆出 | ✅ 完成（2026-08-08；见下方总验收） |
-| Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ⬜ 未开始 |
+| Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | 🚧 **P4.1 完成**；**P4.2 待做**（`frontend/` 仍在本仓） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 4（去双轨：`desktop-tauri` / `mobile-tauri` / `crabmate-connect`；迁 `frontend`）。
+**下一执行**：Phase 4.2（迁出 `frontend/` 源码；评估 `serve` 默认 `--no-web` / 最小占位）。
 
 ---
 
@@ -34,7 +34,7 @@
 | K5 | E2E 假设 monorepo 同树 | ✅ Phase 3（外仓脚本 + 外部 `serve`；Victauri DOM 稳定性另跟） |
 | K6 | 桌面非回环无完整 IPC | 文档化即可（非硬阻塞） |
 
-**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外；Phase 1 契约发版；**Phase 2**：API 基址 + 保守 CORS + runbook §9。
+**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；**`crabmate-connect` 仅在 Client 仓**（Phase 4.1）；Phase 1 契约发版；**Phase 2**：API 基址 + 保守 CORS + runbook §9。
 
 ---
 
@@ -43,7 +43,7 @@
 - [x] 选定路径 **A**（见 ADR §2.1）
 - [x] 官方 Client 矩阵：Desktop Linux、Android、浏览器直连（ADR §2.2）
 - [x] 密钥边界不变（ADR §2.3）
-- [ ] `desktop-tauri` / `mobile-tauri` README 与路径 A 终点对齐（**延后到 Phase 2/4**；Phase 1 仅补充契约钉版本链接）
+- [x] 壳 README 与路径 A 终点对齐（权威在 **`../crabmate-client`**；Phase 4.1 本仓已移除壳副本）
 
 ---
 
@@ -57,7 +57,7 @@
 | P1.1 | `crabmate-api-contract`、`crabmate-sse-protocol`：**semver** + 破坏性变更策略（含 `SSE_PROTOCOL_VERSION`） | [`client_contract_versioning.md`](./client_contract_versioning.md) + `docs/SSE协议.md` / `docs/命令行契约.md` |
 | P1.2 | CI：金样 + OpenAPI 漂移保持绿；文档写清 N / N-1 兼容窗口（若有） | `scripts/check-client-contract.sh`；CI job **`client-contract`**；文档 §3 写明线协议**当前无** N−1 解码窗口 |
 | P1.3 | crate：`cargo publish` **或** 固定 git tag 依赖说明；文档化壳仓如何钉版本 | **默认 git tag** `client-contract-vX.Y.Z`（暂不强制 crates.io）；脚本内 path 消费冒烟 |
-| P1.4 | `crabmate-connect`：同样 semver/tag；与 Tauri 2 兼容说明 | `crates/crabmate-connect/README.md` + versioning §5 |
+| P1.4 | `crabmate-connect`：同样 semver/tag；与 Tauri 2 兼容说明 | Client 仓 `crates/crabmate-connect/README.md` + versioning §5 |
 
 **PR 建议**：① docs 发版策略 ② chore 版本/门禁 ③ 不改壳业务行为
 
@@ -105,32 +105,36 @@
 | P3.5 | 主仓 README 指向外仓；目录删除或短期 submodule（见 Phase 4） |
 
 - [x] P3.1：本地外仓 **`../crabmate-client`**（相对本仓；2026-08-08）
-- [x] P3.2（部分）：已迁入 `desktop-tauri` / `mobile-tauri` / `crates/crabmate-connect`；**业务 UI 仍主仓过渡**（壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`）
+- [x] P3.2（部分）：已迁入 Client 仓 `desktop-tauri` / `mobile-tauri` / `crates/crabmate-connect`；**业务 UI 仍主仓**（至 P4.2；壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`）
 - [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓 `tauri_gui_mvp_design.md` 为指针
-- [x] P3.3：壳对 connect 为本仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
+- [x] P3.3：壳对 connect 为 Client 仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
 - [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
-- [x] P3.5：主仓 README / 壳 README 指向外仓；双轨目录保留至 Phase 4
+- [x] P3.5：主仓 README / 壳 README 指向外仓；壳目录于 Phase 4.1 从主仓移除
 - [x] 验收（2026-08-08）：
   - **干净克隆 release**：`git clone` → `/tmp/crabmate-client-p3-accept`（分支 `ci/makefile-and-deb-package`）→ `make desktop-release` → `crabmate_0.1.0_amd64.deb`；`dpkg-deb` 含 `usr/bin/crabmate-desktop`、**无** `usr/bin/crabmate` sidecar
   - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=frontend/dist`，`:18080`）托管 UI；干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：`client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
-  - **主仓可不强制 desktop GTK job**：路径 A 下 Server CI **不必**以 GTK/桌面为硬门禁；过渡期本仓 `desktop` job 仍跑双轨副本至 Phase 4（见 `.github/workflows/ci.yml` 注释），**非**产品验收阻塞
+  - **主仓可不强制 desktop GTK job**：路径 A 下 Server CI **不必**以 GTK/桌面为硬门禁（Phase 4.1 起本仓已无 desktop job）
 
 ---
 
-## Phase 4 — 本仓收尾
+## Phase 4 — 本仓收尾 🚧
 
 **入口**：Phase 3；且 Phase 2 已验收。
 
-| ID | 动作 |
-|----|------|
-| P4.1 | 主仓移除 `desktop-tauri/`、`mobile-tauri/` 及无用打包脚本 |
-| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 |
-| P4.3 | （可选）release asset 附带推荐 UI 包，**源码**不在主仓 |
-| P4.4 | 兼容表：Server ↔ 协议版 ↔ 最低 Client（写入 `docs/`） |
-| P4.5 | 评估 `serve --desktop-ready-json` 改名/废弃 |
+| ID | 动作 | 状态 |
+|----|------|------|
+| P4.1 | 主仓移除 `desktop-tauri/`、`mobile-tauri/`、`crates/crabmate-connect/` 及无用打包脚本（含 `scripts/victauri-e2e.sh`、`scripts/sync-tauri-connect-page.sh`） | ✅ 完成 |
+| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | ⬜ 待做（源码仍在本仓） |
+| P4.3 | （可选）release asset 附带推荐 UI 包，**源码**不在主仓 | ⬜ 待做 |
+| P4.4 | 兼容表：Server ↔ 协议版 ↔ 最低 Client | ✅ 初稿 [`client_compat_matrix.md`](./client_compat_matrix.md) |
+| P4.5 | `serve --desktop-ready-json`：保留旗标；新增别名 **`--web-ready-json`**；壳不依赖；文档标注弃用命名 | ✅ 完成 |
 
-- [ ] P4.1–P4.5  
-- [ ] 验收：主仓构建无强制 Tauri/GTK；官方安装包来自壳仓；兼容表齐套；壳 README 与路径 A 一致  
+- [x] P4.1  
+- [ ] P4.2  
+- [ ] P4.3  
+- [x] P4.4（初稿）  
+- [x] P4.5  
+- [ ] 验收：主仓构建无强制 Tauri/GTK；官方安装包来自壳仓；兼容表齐套；壳 README 与路径 A 一致；**P4.2 完成后** `frontend/` 源码不在本仓  
 
 ---
 
@@ -183,3 +187,5 @@
 | 2026-08-08 | Phase 3 文档：壳专题 / 冒烟 / Victauri / AGENTS+pre-commit 迁入 `crabmate-client`；主仓 `tauri_gui_mvp` 改指针 |
 | 2026-08-08 | Phase 3 P3.3–P3.5：外仓 CI + `check-no-main-path` + contract_pin；主仓 README/壳 README 指向外仓 |
 | 2026-08-08 | Phase 3 总验收：干净克隆 `.deb` + Desktop release 壳对接本仓 UI/`serve` 真实 SSE 回合；下一刀 Phase 4 |
+| 2026-08-08 | Phase 4.1：移除主仓壳/`connect`/Victauri 脚本与 desktop CI；P4.4 兼容表初稿；P4.5 `--web-ready-json`；下一刀 P4.2 迁 `frontend` |
+| 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |

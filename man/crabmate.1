@@ -10,7 +10,7 @@ crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek /
 .SH OPTIONS
 .TP
 \fB\-\-config\fR \fI<CONFIG>\fR
-显式指定配置文件路径（覆盖默认的 cwd / XDG config.toml 搜索）
+显式指定配置文件路径（覆盖默认的 cwd / XDG `config.toml` 搜索）
 .TP
 \fB\-\-workspace\fR \fI<WORKSPACE>\fR
 启动时指定初始工作区路径（覆盖配置中的 run_command_working_dir，仅当前进程生效）
@@ -67,6 +67,9 @@ crabmate\-tui(1)
 crabmate\-tool\-replay(1)
 工具调用时间线导出与重放（fixture / 回归；**不要**求 `API_KEY`）
 .TP
+crabmate\-sse\-replay(1)
+从 SSE 事件录制文件回放 AG\-UI 事件到 TurnLayout 投影（**不要**求 API_KEY）
+.TP
 crabmate\-mcp(1)
 MCP stdio 客户端运维：列出本进程内已缓存会话（**不要**求 API_KEY）
 .TP
@@ -75,6 +78,9 @@ crabmate\-plugin(1)
 .TP
 crabmate\-workflow(1)
 工作流作者层 YAML/Markdown 编译与校验（**不要**求 API_KEY）
+.TP
+crabmate\-e2e(1)
+真实 LLM e2e 端到端测试（需 API_KEY）
 .PP
 Use \fBcrabmate \-\-help\fR or \fBcrabmate \fIsubcommand\fR \fB\-\-help\fR.
 .SH EXTRA

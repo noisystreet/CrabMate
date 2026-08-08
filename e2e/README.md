@@ -4,7 +4,7 @@
 
 ## 定位
 
-与 `desktop-tauri/src-tauri/tests/` 中 victauri_test 的分工：
+与 Client 仓 `../crabmate-client/desktop-tauri/src-tauri/tests/` 中 victauri_test 的分工：
 
 | 维度 | 本目录（Playwright） | victauri_test（Rust） |
 |------|---------------------|----------------------|

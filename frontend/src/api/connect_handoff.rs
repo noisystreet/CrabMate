@@ -7,7 +7,7 @@
 
 use super::browser::{set_web_api_bearer_token, window};
 
-/// Hash 参数名（与 `mobile-tauri/dist/index.html` 一致）。
+/// Hash 参数名（与 Client 仓 connect 页 / `crabmate-connect` 一致）。
 pub const CM_WEB_API_BEARER_HASH_KEY: &str = "cm_web_api_bearer";
 
 /// 从 `location.hash`（`#a=1&b=2`）解析键值；值已做 URL 解码。

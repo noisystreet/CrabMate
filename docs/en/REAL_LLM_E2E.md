@@ -4,31 +4,32 @@ Runs only when **`REAL_LLM_E2E=1`**. Default **`cargo test`** / CI use SSE stubs
 
 Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
+Victauri lives **only** in the Client repo (`../crabmate-client`).
+
 ## Specs
 
 | File | Purpose |
 |------|---------|
-| `desktop-tauri/src-tauri/tests/victauri_real_llm.rs` | Real vendor streaming (e.g. skills smoke, compile turn) |
+| `../crabmate-client/desktop-tauri/src-tauri/tests/victauri_real_llm.rs` | Real vendor streaming (e.g. skills smoke, compile turn) |
 
 ## Quick start
 
 ```bash
-unset NO_COLOR && cd frontend && trunk build
+unset NO_COLOR && cd frontend && trunk build && cd ..
 
-# Terminal 1: backend
+# Terminal 1: backend (this repo)
 cargo run -- serve --host 127.0.0.1 --port 18080
 
-# Terminal 2: Tauri app (skip connect page)
-cd desktop-tauri/src-tauri
+# Terminal 2: Tauri app (Client repo; skip connect page)
+cd ../crabmate-client/desktop-tauri/src-tauri
 CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
-# Terminal 3: real LLM tests
-cd desktop-tauri/src-tauri
+# Terminal 3: real LLM tests (same src-tauri)
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
   cargo test --test victauri_real_llm -- --nocapture
 ```
 
-Or: `./scripts/victauri-e2e.sh real_llm` (with **`REAL_LLM_E2E=1`** and **`API_KEY`** set; script starts **`serve`**).
+Or from the Client repo root: `./scripts/victauri-e2e.sh real_llm` (with **`REAL_LLM_E2E=1`** and **`API_KEY`** set; script starts **`serve`**).
 
 ## Environment
 

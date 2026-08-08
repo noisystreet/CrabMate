@@ -1,9 +1,0 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.crabmate_mobile" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="android:windowBackground">#0A0D12</item>
-        <item name="android:colorBackground">#0A0D12</item>
-        <item name="android:statusBarColor">#0A0D12</item>
-        <item name="android:navigationBarColor">#0A0D12</item>
-    </style>
-</resources>

@@ -24,8 +24,7 @@ members = [
     "crates/crabmate-runtime",
     "crates/crabmate-internal",
 ]
-# crabmate-connect 依赖 tauri/GTK，仅由 desktop-tauri / mobile-tauri（或外仓 git+path）引用；勿加入 members。
-exclude = ["crates/crabmate-connect"]
+# 壳专用 crabmate-connect 已迁至 Client 仓（路径 A Phase 4）；本仓不再 exclude 副本路径。
 resolver = "2"
 
 [workspace.dependencies]

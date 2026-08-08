@@ -81,19 +81,18 @@
 
 ### Makefile（推荐）
 
-仓库根目录提供 **`Makefile`**，可统一构建后端、前端、桌面与工作区，并支持清理：
+仓库根目录提供 **`Makefile`**，可统一构建后端、前端与工作区，并支持清理：
 
 ```bash
 make help              # 列出全部目标
 make all-dev           # 后端 + 前端（debug，本地 serve 常用）
-make all               # 后端 + 前端 + 桌面（均为 release）
+make all               # 后端 + 前端（均为 release）
 make backend           # cargo build -p crabmate
 make frontend-release  # cd frontend && trunk build --release
-make desktop-dev       # Tauri 开发（需 cargo install tauri-cli --version "^2"）
-make clean             # 清理 target、frontend/dist、桌面产物与 dist/
+make clean             # 清理 target、frontend/dist 与 dist/
 ```
 
-桌面构建会将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**（壳静态资源与可选 UI 资产）。发布用 **`make all`** 与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。
+发布用 **`make all`**（后端 + 前端 release）与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。Desktop / Android 壳请到同级 **[`../crabmate-client`](../crabmate-client/)**。
 
 ### 后端
 
@@ -111,39 +110,29 @@ cargo build --release
 
 ### 前端 Web
 
-静态资源由 **`crabmate serve`** 从 **`frontend/dist`** 提供，无需单独起前端进程。
+静态资源由 **`crabmate serve`** 从 **`frontend/dist`** 提供，无需单独起前端进程（路径 A Phase 4.2 将迁出源码；过渡期仍在本仓）。
 
 ```bash
 cd frontend
 trunk build              # 开发构建；发布用 trunk build --release
 ```
 
-然后回到仓库根目录执行 **`crabmate serve`**（或 **`cargo run -- serve`**）。开发细节见 **`frontend/README.md`**。
+然后回到仓库根目录执行 **`crabmate serve`**（或 **`cargo run -- serve`**）。开发细节见 **`frontend/README.md`**。纯 API：`serve --no-web`。
 
-### 桌面 Tauri
+### 官方 Client（Desktop / Android）
 
-> **官方 Client 仓（权威）**：同级检出 **[`../crabmate-client`](../crabmate-client/)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)）。  
-> 本仓 **`desktop-tauri/`** / **`mobile-tauri/`** / **`crates/crabmate-connect`** 为 **Phase 4 前双轨副本**；新改动请优先落到 Client 仓。
+> **权威仓**：同级 **[`../crabmate-client`](../crabmate-client/)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)）。  
+> 本仓 **已移除** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect`（Phase 4.1；权威仅在 Client 仓）。
 
-目录（过渡副本）：**`desktop-tauri/`**。桌面壳**不**拉起 `serve`：请先本机或远程启动 **`crabmate serve`**，再用 WebView 打开与移动端共用的**连接页**填写服务器与 Web API Bearer（默认预填 `http://127.0.0.1:8080/`；首次非空 Bearer 写入系统钥匙串；见 Client 仓 [**desktop-tauri/README.md**](../crabmate-client/desktop-tauri/README.md)、**`crabmate-connect`**）。**`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** 可跳过连接页，但须设 **`CM_DESKTOP_SERVE_URL`**。桌面壳为**单实例**：再次启动会唤醒已有窗口；关闭主窗口会退出应用（**不**结束用户自行启动的 `serve`）；最小化按钮会在系统托盘可用时**隐藏到托盘**。主窗口的大小、位置、最大化状态及右侧可拖拽分栏宽度会在下次启动恢复。
+壳**不**拉起 `serve`：先本机或远程启动 **`crabmate serve`**，再在 Client 仓连接页填写服务器与 Web API Bearer。构建与打包：
 
 ```bash
-# 推荐：在 Client 仓开发壳
-cd ../crabmate-client/desktop-tauri/src-tauri
-cargo tauri dev
-
-# 或过渡期本仓副本（同上流程）
-cargo build
-cd frontend && trunk build && cd ..
-# 终端 A：后端
-cargo run -- serve
-# 终端 B：桌面壳
-cargo install tauri-cli --version "^2"   # 仅需一次
-cd desktop-tauri/src-tauri
-cargo tauri dev
+cd ../crabmate-client
+make desktop-release    # Linux .deb（无 serve sidecar）
+# 或 make apk / cargo tauri dev — 见 Client 仓 README
 ```
 
-发布：**`cargo tauri build`**（优先在 Client 仓）。代理与故障排查见 Client 仓 [**desktop-tauri/DEVELOPMENT.md**](../crabmate-client/desktop-tauri/DEVELOPMENT.md)。无边框窗口下：**会话模式**与**编辑器模式**共用全宽顶栏（约 **44px** 高；最左侧为布局切换，会话模式含标题与窗口按钮，编辑器为文件/编辑/视图菜单 + 路径 + 窗口按钮；**+ 新建对话**在左侧会话栏）。
+兼容矩阵见 [`docs/design/client_compat_matrix.md`](docs/design/client_compat_matrix.md)。
 
 ### 安装与发行包
 
@@ -152,22 +141,8 @@ cargo tauri dev
 | **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
 | **一键 tar.gz** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend/dist`、man）；若已装 **`cargo-deb`** 可同时收录 **`.deb`**。 |
 | **Debian 包** | 前端 **`trunk build --release`** 后 **`cargo deb`**，产物默认在 **`target/debian/`**。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
-| **桌面（Tauri）** | **权威**在 Client 仓；过渡期本仓副本亦可打 **Linux `.deb`**（见 **`desktop-tauri/src-tauri/tauri.conf.json`**）。 |
+| **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
 | **同步 man 页** | **`cargo run --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
-
-**Tauri 桌面打包（示例；优先在 `../crabmate-client`，或过渡期本仓根目录）：**
-
-```bash
-cargo build --release
-cd frontend && trunk build --release && cd ..
-rm -rf desktop-tauri/dist && cp -r frontend/dist desktop-tauri/dist
-
-cd desktop-tauri/src-tauri
-# beforeBuildCommand 会运行 ../scripts/prepare-sidecar.sh；也可手动：bash ../scripts/prepare-sidecar.sh
-cargo tauri build
-```
-
-说明：**`prepare-sidecar.sh`**（历史名）同步 **`connect.html` / `splash.html`** 与可选 **`frontend/dist` → `desktop-tauri/dist`**，打进 deb 的 **`/usr/share/crabmate/frontend/dist/`**（供本机另装的 **`serve`** 经 **`CM_WEB_STATIC_DIR`** 使用）。**桌面 `.deb` 不再内嵌 `crabmate` sidecar**；须另装 CLI 或连接远程 `serve`。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml`、**`/etc/crabmate/agent_roles.toml`** 与配套 prompts（系统模板）；**`serve`** 首次启动时可从 **`/etc/crabmate`** 种子到用户 XDG（见配置说明）。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 Client 仓 [**desktop-tauri/DEVELOPMENT.md**](../crabmate-client/desktop-tauri/DEVELOPMENT.md)。
 
 ### 开发与质检（维护者）
 
@@ -189,6 +164,7 @@ cargo tauri build
 | [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | 个人自用：本机 `serve` + TLS 反代 + Bearer | — |
 | [docs/测试指南.md](docs/测试指南.md) | 测试、pre-commit、审计命令 | [en](docs/en/TESTING.md) |
 | [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | 官方 Client 拆分（路径 A）；壳仓 [`../crabmate-client`](../crabmate-client/) | — |
+| [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ 协议版 ↔ 最低 Client 兼容表 | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** 规划与开源基准衔接 | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval 转换、执行与冒烟 | — |
 

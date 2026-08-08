@@ -13,7 +13,7 @@
 - Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`rust_compiler_json`**、**`rust_analyzer_*`**）；实现 **`crates/crabmate-tools/src/tools/rust_ide.rs`**
 - 并行产品路线（外部编辑器壳）：**`docs/design/vscode_extension.md`**
 - 用户数据偏好：**`docs/design/user_data_dir.md`**（**`editor_layout_mode`**、**`ide_editor_*`**）
-- E2E：**`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`**
+- E2E：Client 仓 **`../crabmate-client/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`**
 - CLI / TUI / Web 复用原则：**.cursor/rules/cli-tui-web-shared-logic.mdc**（IDE UI 不必三端复刻；路径/事件契约宜共享）
 
 ---
