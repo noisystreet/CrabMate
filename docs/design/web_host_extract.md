@@ -12,9 +12,11 @@
 - 改 SSE 行协议或对外 HTTP 契约字段
 - 在**无**清晰依赖注入时把带状态 handler / 整包 `AppState` 硬迁入 web-host（孤儿规则仍适用）
 
-## 可评估（P2 后）
+## P5 评估结论（2026-08-08）
 
-- **`chat_job_queue`（或 worker）迁出根包 / 贴近 web-host**：`WebChatQueueDeps` 已注入 [`TurnRunner`](./turn_host_decouple.md)，queue **不再**硬连 `run_agent_turn`。迁模块时仍须处理：`AppState` / Facet 与 handler 同 crate（孤儿规则）、以及避免 web-host → internal。**尚未迁**；仅解除「必然循环」的调用边障碍。
+- **`chat_job_queue` / 带状态 chat handler**：**暂不**整包迁入 `crabmate-web-host`。  
+- 调用边已解（`TurnRunner` 注入）；模块边仍受 **根包 ↔ web-host 循环风险**、**`web-host ↛ internal`**、**`FromRef` 孤儿规则** 阻挡。  
+- 「贴近」= 契约/无状态壳继续进 web-host + 根包内 facet 收窄；详见 **[`web_host_p5_placement.md`](./web_host_p5_placement.md)**。
 
 ## 阶段
 
