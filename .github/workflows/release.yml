@@ -1,0 +1,159 @@
+# Publish GitHub Release artifacts for CrabMate server (tar.gz + .deb).
+# Trigger: push tag vX.Y.Z (e.g. v0.1.0), or workflow_dispatch for a manual rebuild.
+#
+# Local equivalent: make package  →  dist/crabmate_*.{tar.gz,deb}
+# Release body: CHANGELOG.md section for the tag's core X.Y.Z; stub if missing.
+# Re-running for the same tag updates the existing GitHub Release (softprops).
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to attach the release to (e.g. v0.1.0 or v0.1.0-rc.1). Must already exist."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package-and-release:
+    name: package · GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # workflow_dispatch: check out the requested tag
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-].*)?$ ]]; then
+            echo "Tag must look like v0.1.0 or v0.1.0-rc.1 (got: $TAG)" >&2
+            exit 1
+          fi
+          # Full semver after "v" (may include -rc.1); core X.Y.Z for Cargo + CHANGELOG lookup
+          FULL_VER="${TAG#v}"
+          CORE_VER="$(echo "$FULL_VER" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
+          CARGO_VER="$(sed -n '/^\[package\]/,/^\[/{s/^version = "\([^"]*\)"/\1/p;}' Cargo.toml | head -1)"
+          if [[ -z "$CARGO_VER" ]]; then
+            echo "Could not read package.version from Cargo.toml" >&2
+            exit 1
+          fi
+          # Allow prerelease tags (v0.1.0-rc.1) while Cargo.toml stays at 0.1.0
+          if [[ "$CARGO_VER" != "$CORE_VER" && "$CARGO_VER" != "$FULL_VER" ]]; then
+            echo "Tag $TAG (core $CORE_VER / full $FULL_VER) does not match Cargo.toml package version $CARGO_VER" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$CORE_VER" >> "$GITHUB_OUTPUT"
+          echo "full_version=$FULL_VER" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$TAG core=$CORE_VER full=$FULL_VER cargo=$CARGO_VER"
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force 2>/dev/null || true
+
+      - name: Install system deps
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev libwayland-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+
+      - name: make package (server-only)
+        run: make package
+
+      - name: Verify package artifacts
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          tars=(dist/crabmate_*.tar.gz)
+          debs=(dist/crabmate_*.deb)
+          [[ ${#tars[@]} -ge 1 ]] || { echo "missing dist/*.tar.gz" >&2; ls -la dist || true; exit 1; }
+          [[ ${#debs[@]} -ge 1 ]] || { echo "missing dist/*.deb (cargo-deb)" >&2; ls -la dist || true; exit 1; }
+          echo "artifacts:"
+          ls -la dist/
+
+      - name: Extract CHANGELOG section
+        id: notes
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.version }}"
+          TAG="${{ steps.ver.outputs.tag }}"
+          OUT="${RUNNER_TEMP}/release-notes.md"
+          python3 - "$VER" "$TAG" "$GITHUB_REPOSITORY" "$OUT" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          ver, tag, repo, out_s = sys.argv[1:5]
+          out = Path(out_s)
+          text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          pat = rf"(?ms)^## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=^## \[|\Z)"
+          m = re.search(pat, text)
+          if m and m.group(1).strip():
+              body = m.group(1).strip() + "\n"
+              out.write_text(body, encoding="utf-8")
+              print(f"extracted {len(body)} bytes for {ver}")
+          else:
+              body = (
+                  f"CrabMate server **{ver}** (server-only: tar.gz + .deb).\n\n"
+                  f"Full notes: https://github.com/{repo}/blob/{tag}/CHANGELOG.md\n"
+                  f"UI / desktop shells: sibling **crabmate-client** (path A).\n"
+              )
+              out.write_text(body, encoding="utf-8")
+              print(f"warning: no CHANGELOG section for {ver}; wrote stub")
+          PY
+          echo "file=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: crabmate-${{ steps.ver.outputs.full_version }}-dist
+          path: |
+            dist/crabmate_*.tar.gz
+            dist/crabmate_*.deb
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: CrabMate ${{ steps.ver.outputs.full_version }}
+          body_path: ${{ steps.notes.outputs.file }}
+          files: |
+            dist/crabmate_*.tar.gz
+            dist/crabmate_*.deb
+          fail_on_unmatched_files: true
+          draft: false
+          # v0.1.0-rc.1 → prerelease; plain v0.1.0 → full release
+          prerelease: ${{ contains(steps.ver.outputs.tag, '-') }}
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

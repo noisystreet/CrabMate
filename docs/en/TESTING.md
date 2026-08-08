@@ -20,6 +20,10 @@ Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.githu
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 
+### GitHub Release (tags only)
+
+[`.github/workflows/release.yml`](../../.github/workflows/release.yml) does **not** run on PR/`main` pushes. It runs when you push tag **`vX.Y.Z`** (or **`workflow_dispatch`** with an existing tag): **`make package`**, create/update a GitHub Release, attach artifacts. Body comes from **`CHANGELOG.md`** for the tag’s core **`X.Y.Z`** (so **`v0.1.0-rc.1`** still uses the **`[0.1.0]`** section while **`Cargo.toml`** may stay **`0.1.0`**). Re-running for the same tag updates that Release.
+
 ## Pre-commit
 
 Aligned with [`.pre-commit-config.yaml`](../../.pre-commit-config.yaml):
