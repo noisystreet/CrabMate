@@ -56,8 +56,15 @@ jobs:
 
       - name: cargo test (workspace)
         run: |
-          # check/clippy 已验证编译；清理 dev 产物为 test 链接腾出空间（避免 No space left on device）。
-          cargo clean
+          # Reuse check/clippy artifacts (do not `cargo clean` — it wiped rust-cache gains).
+          # If the runner is still tight after Free disk space, drop incremental only.
+          FREE_KB="$(df -Pk . | awk 'NR==2 {print $4}')"
+          echo "free disk before test: ${FREE_KB} KiB"
+          if [ "${FREE_KB}" -lt 5242880 ]; then
+            echo "low disk (<5 GiB free); removing target/*/incremental only"
+            rm -rf target/*/incremental
+            df -h
+          fi
           cargo test --workspace --all-features --no-fail-fast
 
   # 路径 A Phase 1：契约可发布门禁（SSE 金样 + OpenAPI + 外仓风格 path 消费）。
