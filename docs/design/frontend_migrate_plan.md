@@ -1,6 +1,6 @@
 # Frontend 迁出实施计划（路径 A · Phase 4.2）
 
-> **状态**：草案（2026-08-08）  
+> **状态**：P4.2 / Phase A–C′ **已完成**（2026-08-08；主仓 #795、Client #2/#3）  
 > **权威决策**：[`client_shell_split.md`](./client_shell_split.md)  
 > **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 4 · P4.2  
 > **契约钉法**：[`client_contract_versioning.md`](./client_contract_versioning.md)、兼容表 [`client_compat_matrix.md`](./client_compat_matrix.md)  
@@ -83,18 +83,18 @@
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| C1 | 根 `Cargo.toml` 去掉 `frontend` member；删除 `frontend/` 源码 | ✅ 本地 `chore/frontend-phase-c` |
+| C1 | 根 `Cargo.toml` 去掉 `frontend` member；删除 `frontend/` 源码 | ✅ [#795](https://github.com/noisystreet/CrabMate/pull/795) |
 | C2 | 去掉 pre-commit `frontend-wasm-check` / `frontend-clippy`；CI 去掉 wasm32 frontend 步骤 | ✅ |
 | C3 | `Makefile`：`all` 仅为 `backend-release`；frontend 目标改为 Client 指针 | ✅ |
 | C4 | `package-release.sh`：可选 UI dist；Playwright **迁 Client** | ✅ |
 | C5 | `web_static_dir` / 文档：`CM_WEB_STATIC_DIR` / `--no-web` | ✅ |
-| C6 | 更新 todo / 兼容表；勾选 P4.2 | 🚧 文档已改；P4.2 勾选待 PR 合入 |
+| C6 | 更新 todo / 兼容表；勾选 P4.2 | ✅ |
 
 ### Phase C′ — Playwright 迁 Client（随 Phase C）
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| C7 | `e2e/` + workflow 迁 `crabmate-client`；主仓删除 Playwright 目录与 CI | ✅ 本地 |
+| C7 | `e2e/` + workflow 迁 `crabmate-client`；主仓删除 Playwright 目录与 CI | ✅ Client [#3](https://github.com/noisystreet/crabmate-client/pull/3) + [#795](https://github.com/noisystreet/CrabMate/pull/795) |
 
 ### Phase D — 可选（P4.3 / Phase 5）
 
@@ -132,12 +132,12 @@
 
 ## 7. 验收清单（P4.2 总验收）
 
-- [ ] Client 仓可 `trunk build`（仅 git tag/rev，无 path 回主仓）
-- [ ] Desktop/浏览器：静态 UI + 远程或本机 `serve` 一轮对话（Bearer + SSE v2）
-- [ ] 主仓无 `frontend/` 源码；CI 无强制 wasm UI
-- [ ] `serve --no-web` 或 `CM_WEB_STATIC_DIR` 文档可跟随操作
-- [ ] [`client_compat_matrix.md`](./client_compat_matrix.md) 补一行：Server 契约 tag ↔ 最低 UI
-- [ ] todo P4.2 勾选
+- [x] Client 仓可 `trunk build`（仅 git tag/rev，无 path 回主仓）
+- [x] Desktop/浏览器：静态 UI + 远程或本机 `serve` 一轮对话（Bearer + SSE v2）（冒烟 runbook / 人工验收）
+- [x] 主仓无 `frontend/` 源码；CI 无强制 wasm UI
+- [x] `serve --no-web` 或 `CM_WEB_STATIC_DIR` 文档可跟随操作
+- [x] [`client_compat_matrix.md`](./client_compat_matrix.md) 补一行：Server 契约 tag ↔ 最低 UI
+- [x] todo P4.2 勾选
 
 ---
 
@@ -146,7 +146,9 @@
 1. 推送并合入 **P4.1**（`chore/client-shell-phase4`）。
 2. 开 **Phase A** PR（本文档可随 A1 入库）。
 3. 打 **`client-contract-v0.1.0`**（或先 `rev` 联调）。
-4. Client **Phase B** → 主仓 **Phase C**。
+4. Client **Phase B** → 主仓 **Phase C** → Client Playwright。
+
+**已完成**（2026-08-08）：上列 1–4 均已合入 `main`。
 
 ---
 
@@ -156,4 +158,5 @@
 |------|------|
 | 2026-08-08 | 初稿：落点 Client 仓；先契约 tag/rev，不强制产品发版；A/B/C/D 阶段与 PR 切片 |
 | 2026-08-08 | Phase A 落地：扩钉清单、门禁 smoke、Client `contract_pin`；A4 待合 main 后打 tag |
-| 2026-08-08 | Playwright E2E 迁 Client；主仓仅保留转发脚本与指针 README |
+| 2026-08-08 | Playwright E2E 迁 Client；主仓仅保留转发脚本 |
+| 2026-08-08 | P4.2 / Phase B+C+C′ 合入完成；勾选总验收 |
