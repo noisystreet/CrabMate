@@ -14,6 +14,7 @@ use serde::Deserialize;
 
 use crate::AppState;
 use crate::types::{Message, MessageContent};
+use crate::web::app_state_facets::E2eConversationFixtureFacet;
 use crate::web::http_types::chat::ApiError;
 use crate::web::normalize_client_conversation_id;
 
@@ -50,7 +51,7 @@ pub(crate) fn router() -> Option<Router<Arc<AppState>>> {
 }
 
 async fn seed_conversation_handler(
-    State(state): State<Arc<AppState>>,
+    State(facet): State<E2eConversationFixtureFacet>,
     Json(body): Json<E2eSeedConversationBody>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ApiError>)> {
     let conversation_id =
@@ -92,9 +93,9 @@ async fn seed_conversation_handler(
         })
         .collect();
     if body.replace {
-        state.delete_conversation_record(&cid).await;
+        facet.delete_conversation_record(&cid).await;
     }
-    let outcome = state
+    let outcome = facet
         .save_conversation_messages_if_revision(cid.clone(), messages, None, None, None)
         .await;
     match outcome {

@@ -44,7 +44,7 @@ fn env_frontend_dist() -> Option<PathBuf> {
     if !is_frontend_dist(&path) {
         return None;
     }
-    // 开发机已装 deb 时，shell/旧 sidecar 可能仍导出安装路径；cwd 在源码树且本地 dist 已构建则优先本地。
+    // 开发机已装 deb 时，环境可能仍导出安装路径；cwd 在源码树且本地 dist 已构建则优先本地。
     if path.as_path() == Path::new(INSTALLED_FRONTEND_DIST)
         && let Some(dev) = frontend_dist_from_cwd_if_built()
     {

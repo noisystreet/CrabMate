@@ -10,7 +10,7 @@
 //! | [`user_data`] | `/user-data/*` | 本机用户数据（prefs、会话桶、LLM 覆盖、secrets） |
 //! | [`github`] | `/github/*` | GitHub 在线模式（PR 列表、checks、合并） |
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
-//! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`** 时挂载（Victauri E2E 种子会话） |
+//! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`**；[`E2eConversationFixtureFacet`](crate::web::app_state_facets::E2eConversationFixtureFacet) |
 
 pub(crate) mod chat;
 pub(crate) mod config;

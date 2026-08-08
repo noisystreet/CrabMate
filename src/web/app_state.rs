@@ -211,34 +211,6 @@ async fn sqlite_conversation_store_op(
     }
 }
 
-impl AppState {
-    pub(crate) async fn save_conversation_messages_if_revision(
-        &self,
-        conversation_id: String,
-        messages: Vec<Message>,
-        active_agent_role: Option<&str>,
-        active_session_mode: Option<&str>,
-        expected_revision: Option<u64>,
-    ) -> SaveConversationOutcome {
-        self.conversation
-            .save_conversation_messages_if_revision(
-                conversation_id,
-                messages,
-                active_agent_role,
-                active_session_mode,
-                expected_revision,
-            )
-            .await
-    }
-
-    /// 删除持久化会话行（仅 E2E 夹具 `replace` 等；不存在时视为成功）。
-    pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
-        self.conversation
-            .delete_conversation_record(conversation_id)
-            .await
-    }
-}
-
 impl AppStateConversationRuntime {
     pub(crate) async fn load_conversation_seed(
         &self,

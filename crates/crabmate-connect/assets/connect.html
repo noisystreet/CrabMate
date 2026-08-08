@@ -308,7 +308,7 @@
         suggestedServerUrl = (suggested || "").trim();
         if (suggestedServerUrl) {
           leadEl.innerHTML =
-            "连接到 <code>crabmate serve</code>。桌面已拉起本机后端时，地址会预填；也可改为局域网/远程服务器。连接成功的非空 Bearer 写入系统钥匙串。";
+            "连接到 <code>crabmate serve</code>。若壳提供建议地址则预填；也可改为局域网/远程服务器。连接成功的非空 Bearer 写入系统钥匙串。";
         }
 
         const savedUrl = readLegacyUrl();
