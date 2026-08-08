@@ -3,6 +3,8 @@
 //! - **服务端**：[`crabmate-web-host`] 再导出本 crate 类型供 handler 使用。
 //! - **前端 WASM**：[`crabmate-web`] 直接依赖本 crate，避免手写重复 DTO。
 //! - **OpenAPI**：[`openapi_component_schemas`] 从本 crate 的 `schemars` 定义生成。
+//!
+//! Semver / 外仓 git tag 钉法：仓库 **`docs/design/client_contract_versioning.md`**。
 
 pub mod api;
 pub mod chat;

@@ -2,6 +2,8 @@
 //!
 //! - **`SSE_PROTOCOL_VERSION`**：与 `docs/SSE协议.md` 中的 **`v`** / `sse_capabilities.supported_sse_v` 一致。
 //! - **`sse`**：控制面 JSON 协议、SSE 编码器、广播中枢与审批桥（原 `crabmate-internal::sse`，已迁移合并）。
+//!
+//! 与 Cargo semver、发版标签的关系：见 **`docs/design/client_contract_versioning.md`**。
 
 mod ag_ui_classify;
 mod control_classify;

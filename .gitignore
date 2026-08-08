@@ -114,3 +114,6 @@ sse-replay-events.jsonl
 # proptest 回归测试缓存（本机产物，勿提交）
 proptest-regressions/
 .playwright-mcp/
+
+# Standalone connect package; lock owned by desktop/mobile workspaces.
+/crates/crabmate-connect/Cargo.lock

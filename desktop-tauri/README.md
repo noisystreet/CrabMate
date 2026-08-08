@@ -54,6 +54,7 @@ cargo tauri dev
 - 故障排查、代理、Wayland IME：**`DEVELOPMENT.md`**
 - 架构：**`docs/design/tauri_gui_mvp_design.md`**
 - 用户数据 HTTP 契约：**`docs/design/user_data_dir.md`**
-- 共用连接逻辑：**`crates/crabmate-connect`**（与 **`mobile-tauri`** 对齐）
+- 共用连接逻辑：**`crates/crabmate-connect`**（与 **`mobile-tauri`** 对齐；crate README 与 **`docs/design/client_contract_versioning.md`** 说明 **git tag / Tauri 2** 钉法）
+- 官方 Client 拆分（路径 A）：**`docs/design/client_shell_split.md`**
 
 主 Web 前端仍在 **`frontend/`**，桌面端只提供壳层与连接页。

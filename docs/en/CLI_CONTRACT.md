@@ -60,6 +60,12 @@ Prefer response header **`x-request-id`** for correlation. Common stable codes (
 
 Constants: **`crates/crabmate-api-contract/src/error_codes.rs`**. Full streaming error table: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
 
+### HTTP / OpenAPI contract semver and external pins
+
+- DTOs and schemars live in **`crabmate-api-contract`**; machine-readable **`GET /openapi.json`**.
+- Crate semver vs SSE wire protocol, compatibility window, and git tag **`client-contract-vX.Y.Z`**: **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**.
+- Gate: `bash scripts/check-client-contract.sh` (OpenAPI smoke + external-style path consumer).
+
 ## `chat --output json` one JSON line per turn (stable shape)
 
 After each turn, **stdout** prints **one** UTF-8 JSON line for `jq` / scripts.

@@ -1,6 +1,7 @@
 # 官方 Client 拆分 — 执行计划（路径 A）
 
 > **权威决策**：[`client_shell_split.md`](./client_shell_split.md)（ADR）  
+> **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **日期**：2026-08-08  
 > **约定**：完成某阶段后更新本文件勾选；**勿**把本地草稿目录当作本计划的引用源（见根目录 `AGENTS.md`）。  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、`docs/SSE协议.md`、`docs/配置说明.md`、`desktop-tauri/README.md`、`mobile-tauri/README.md`
@@ -12,13 +13,13 @@
 | 阶段 | 主题 | 状态 |
 |------|------|------|
 | Phase 0 | 决策与基线 | ✅ 完成（2026-08-08） |
-| Phase 1 | 契约可发布 | ⬜ 未开始 |
+| Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
 | Phase 2 | 前端可远程（API 基址 + CORS） | ⬜ 未开始 |
 | Phase 3 | connect + 壳仓拆出 | ⬜ 未开始（须 Phase 1+2） |
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ⬜ 未开始 |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 1。
+**下一执行**：Phase 2。
 
 ---
 
@@ -28,12 +29,12 @@
 |----|------|----------|
 | K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | Phase 2–4 |
 | K2 | 前端相对路径、假定同 Origin | Phase 2 |
-| K3 | 壳 → `crabmate-connect` path | Phase 1+3 |
-| K4 | 缺可独立发版的 semver/兼容表 | Phase 1 |
+| K3 | 壳 → `crabmate-connect` path | Phase 1+3（Phase 1：钉法已文档化；Phase 3：外仓改 tag） |
+| K4 | 缺可独立发版的 semver/兼容表 | ✅ Phase 1（见 `client_contract_versioning.md`） |
 | K5 | E2E 假设 monorepo 同树 | Phase 3 |
 | K6 | 桌面非回环无完整 IPC | 文档化即可（非硬阻塞） |
 
-**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外。
+**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外；**Phase 1**：semver/线协议策略、git tag 钉法、`scripts/check-client-contract.sh` + CI job `client-contract`。
 
 ---
 
@@ -42,29 +43,29 @@
 - [x] 选定路径 **A**（见 ADR §2.1）
 - [x] 官方 Client 矩阵：Desktop Linux、Android、浏览器直连（ADR §2.2）
 - [x] 密钥边界不变（ADR §2.3）
-- [ ] `desktop-tauri` / `mobile-tauri` README 与路径 A 终点对齐（**延后到 Phase 2/4**）
+- [ ] `desktop-tauri` / `mobile-tauri` README 与路径 A 终点对齐（**延后到 Phase 2/4**；Phase 1 仅补充契约钉版本链接）
 
 ---
 
-## Phase 1 — 契约可发布
+## Phase 1 — 契约可发布 ✅
 
 **入口**：Phase 0 决策项完成。  
-**解开**：K3/K4 准备。
+**解开**：K4；K3 钉法准备（拆仓改 tag 仍属 Phase 3）。
 
 | ID | 动作 | 验收提示 |
 |----|------|----------|
-| P1.1 | `crabmate-api-contract`、`crabmate-sse-protocol`：**semver** + 破坏性变更策略（含 `SSE_PROTOCOL_VERSION`） | 版本策略写进 `docs/SSE协议.md` / 命令行契约 |
-| P1.2 | CI：金样 + OpenAPI 漂移保持绿；文档写清 N / N-1 兼容窗口（若有） | CI 绿 |
-| P1.3 | crate：`cargo publish` **或** 固定 git tag 依赖说明；文档化壳仓如何钉版本 | 外仓可不经 monorepo path 依赖（试验仓或 CI job） |
-| P1.4 | `crabmate-connect`：同样 semver/tag；与 Tauri 2 兼容说明 | 同上 |
+| P1.1 | `crabmate-api-contract`、`crabmate-sse-protocol`：**semver** + 破坏性变更策略（含 `SSE_PROTOCOL_VERSION`） | [`client_contract_versioning.md`](./client_contract_versioning.md) + `docs/SSE协议.md` / `docs/命令行契约.md` |
+| P1.2 | CI：金样 + OpenAPI 漂移保持绿；文档写清 N / N-1 兼容窗口（若有） | `scripts/check-client-contract.sh`；CI job **`client-contract`**；文档 §3 写明线协议**当前无** N−1 解码窗口 |
+| P1.3 | crate：`cargo publish` **或** 固定 git tag 依赖说明；文档化壳仓如何钉版本 | **默认 git tag** `client-contract-vX.Y.Z`（暂不强制 crates.io）；脚本内 path 消费冒烟 |
+| P1.4 | `crabmate-connect`：同样 semver/tag；与 Tauri 2 兼容说明 | `crates/crabmate-connect/README.md` + versioning §5 |
 
-**PR 建议**：① docs 发版策略 ② chore 版本/（可选）publish ③ 不改壳业务行为
+**PR 建议**：① docs 发版策略 ② chore 版本/门禁 ③ 不改壳业务行为
 
-- [ ] P1.1  
-- [ ] P1.2  
-- [ ] P1.3  
-- [ ] P1.4  
-- [ ] Phase 1 总验收：外仓钉版本依赖契约 crate；协议错位错误码仍可预期  
+- [x] P1.1  
+- [x] P1.2  
+- [x] P1.3  
+- [x] P1.4  
+- [x] Phase 1 总验收：外仓可按文档钉 git tag（或 `rev`）依赖契约 crate；协议错位错误码仍可预期；`bash scripts/check-client-contract.sh` 绿  
 
 ---
 
@@ -167,3 +168,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-08-08 | 自中间稿升格；路径 A / Client 矩阵 / 密钥边界已决；Phase 0 完成 |
+| 2026-08-08 | Phase 1：`client_contract_versioning.md`、门禁脚本与 CI job `client-contract`；下一刀 Phase 2 |

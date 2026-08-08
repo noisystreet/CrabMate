@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Shared SSE control-plane protocol and runtime for CrabMate (Rust server + Leptos WASM)"
+repository = "https://github.com/noisystreet/CrabMate"
+readme = "../../docs/design/client_contract_versioning.md"
 
 [dependencies]
 crabmate-types = { workspace = true }
