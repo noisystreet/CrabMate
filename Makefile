@@ -1,19 +1,10 @@
-# CrabMate 构建入口：后端、前端、桌面与清理。
+# CrabMate 构建入口：后端、前端与清理。
+# 桌面 / Android 壳：同级 Client 仓 ../crabmate-client（路径 A Phase 4）。
 # 用法：make help
 
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 FRONTEND_DIR := $(ROOT)/frontend
-DESKTOP_ROOT := $(ROOT)/desktop-tauri
-TAURI_DIR := $(DESKTOP_ROOT)/src-tauri
-MOBILE_ROOT := $(ROOT)/mobile-tauri
-MOBILE_TAURI_DIR := $(MOBILE_ROOT)/src-tauri
 CARGO ?= cargo
-# Android ABI：aarch64 | armv7 | i686 | x86_64（传给 build-apk.sh）
-MOBILE_ANDROID_TARGET ?= aarch64
-# 1=构建前 ./gradlew --stop（换 JDK 后若报 JAVA_COMPILER 可开）
-CM_MOBILE_GRADLE_STOP ?= 0
-# 1=apk 跳过 trunk build（仅重打壳）
-CM_MOBILE_SKIP_FRONTEND ?= 0
 
 # RELEASE=1 时使用 --release（make all 默认开启）
 RELEASE ?= 0
@@ -30,11 +21,9 @@ TRUNK_BUILD_FLAGS := $(if $(filter 1 true yes,$(RELEASE)),--release,)
 .PHONY: help all all-dev \
 	backend backend-release \
 	frontend frontend-release \
-	desktop desktop-release desktop-dev \
-	apk mobile-apk \
 	workspace workspace-release \
 	test check fmt clippy \
-	clean clean-backend clean-frontend clean-desktop clean-mobile clean-dist
+	clean clean-backend clean-frontend clean-dist
 
 help:
 	@echo "CrabMate Makefile（仓库根目录执行）"
@@ -43,14 +32,12 @@ help:
 	@echo "  make backend          后端 debug（cargo build -p crabmate）"
 	@echo "  make backend-release  后端 release"
 	@echo "  make frontend         前端 debug（cd frontend && trunk build）"
-	@echo "  make frontend-release 前端 release（供 serve / 打包）"
-	@echo "  make desktop          桌面 debug（需已装 cargo-tauri ^2）"
-	@echo "  make desktop-release  桌面 release 安装包"
-	@echo "  make apk              Android APK（先 trunk build 前端，再打 mobile-tauri 包）"
+	@echo "  make frontend-release 前端 release（供 serve / 打包；源码迁出见 Phase 4.2）"
 	@echo "  make workspace        工作区全部 Rust crate（debug）"
 	@echo "  make workspace-release 工作区全部 Rust crate（release）"
 	@echo "  make all-dev          后端 + 前端（debug）"
-	@echo "  make all              后端 + 前端 + 桌面（均为 release；不含 apk）"
+	@echo "  make all              后端 + 前端（均为 release）"
+	@echo "  桌面/Android 壳：cd ../crabmate-client && make help"
 	@echo ""
 	@echo "质检："
 	@echo "  make test             cargo test --workspace"
@@ -59,20 +46,16 @@ help:
 	@echo "  make clippy           cargo clippy --workspace --all-targets --all-features -- -D warnings"
 	@echo ""
 	@echo "清理："
-	@echo "  make clean            清理后端 target、前端 dist、桌面/移动产物"
+	@echo "  make clean            清理后端 target、前端 dist、dist/"
 	@echo "  make clean-backend    cargo clean（仓库根）"
 	@echo "  make clean-frontend   删除 frontend/dist"
-	@echo "  make clean-desktop    删除 desktop-tauri/dist、binaries 与 Tauri target"
-	@echo "  make clean-mobile     清理 mobile-tauri Tauri target"
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
-	@echo "变量：RELEASE=1 作用于 backend / frontend / desktop / workspace / apk 的前端步骤"
-	@echo "      MOBILE_ANDROID_TARGET=aarch64（apk） CM_MOBILE_GRADLE_STOP=1（apk 前停 Gradle）"
-	@echo "      CM_MOBILE_SKIP_FRONTEND=1（apk 跳过 trunk build，仅打壳）"
+	@echo "变量：RELEASE=1 作用于 backend / frontend / workspace"
 
 # --- 聚合 ---
 
-all: backend-release frontend-release desktop-release
+all: backend-release frontend-release
 
 all-dev: backend frontend
 
@@ -100,52 +83,6 @@ frontend-release:
 	}
 	$(MAKE) frontend RELEASE=1
 
-# --- 桌面（Tauri）---
-
-# 将 frontend/dist 同步到 desktop-tauri/dist（tauri.conf.json frontendDist）
-desktop-sync-ui: frontend
-	rm -rf "$(DESKTOP_ROOT)/dist"
-	cp -a "$(FRONTEND_DIR)/dist" "$(DESKTOP_ROOT)/dist"
-
-desktop-sync-ui-release: frontend-release
-	rm -rf "$(DESKTOP_ROOT)/dist"
-	cp -a "$(FRONTEND_DIR)/dist" "$(DESKTOP_ROOT)/dist"
-
-desktop: desktop-sync-ui
-	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
-		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
-		exit 1; \
-	}
-	cd "$(TAURI_DIR)" && $(CARGO) tauri build --debug
-
-desktop-release: desktop-sync-ui-release
-	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
-		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
-		exit 1; \
-	}
-	cd "$(TAURI_DIR)" && $(CARGO) tauri build
-
-# 壳不拉起 serve：请另开终端 `cargo run -- serve`（或连远程）后再 desktop-dev
-desktop-dev:
-	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
-		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
-		exit 1; \
-	}
-	cd "$(TAURI_DIR)" && $(CARGO) tauri dev
-
-# --- Android（mobile-tauri 远程薄客户端；与桌面一样不 spawn serve）---
-# 先编 frontend/dist：手机连的是本机 serve，需用新前端；壳本身不内嵌该 dist。
-# CM_MOBILE_SKIP_FRONTEND=1 可跳过（仅重打壳）。
-
-apk_frontend_dep := $(if $(filter 1 true yes,$(CM_MOBILE_SKIP_FRONTEND)),,frontend)
-
-apk mobile-apk: $(apk_frontend_dep)
-	bash "$(ROOT)/scripts/sync-tauri-connect-page.sh"
-	MOBILE_ANDROID_TARGET="$(MOBILE_ANDROID_TARGET)" \
-		CM_MOBILE_GRADLE_STOP="$(CM_MOBILE_GRADLE_STOP)" \
-		CM_MOBILE_SKIP_FRONTEND=1 \
-		bash "$(MOBILE_ROOT)/scripts/build-apk.sh"
-
 # --- 工作区 Rust ---
 
 workspace:
@@ -158,12 +95,6 @@ workspace-release:
 
 test:
 	$(CARGO) test --workspace
-
-victauri-e2e:
-	./scripts/victauri-e2e.sh all
-
-victauri-e2e-real:
-	REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm
 
 check:
 	$(CARGO) check --workspace --all-targets
@@ -178,20 +109,13 @@ clippy:
 
 # --- 清理 ---
 
-clean: clean-backend clean-frontend clean-desktop clean-mobile clean-dist
+clean: clean-backend clean-frontend clean-dist
 
 clean-backend:
 	$(CARGO) clean
 
 clean-frontend:
 	rm -rf "$(FRONTEND_DIR)/dist"
-
-clean-desktop:
-	rm -rf "$(DESKTOP_ROOT)/dist" "$(DESKTOP_ROOT)/binaries"
-	$(CARGO) clean --manifest-path "$(TAURI_DIR)/Cargo.toml"
-
-clean-mobile:
-	$(CARGO) clean --manifest-path "$(MOBILE_TAURI_DIR)/Cargo.toml"
 
 clean-dist:
 	rm -rf "$(ROOT)/dist"

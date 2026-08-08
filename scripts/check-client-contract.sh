@@ -56,14 +56,6 @@ EOF
 
 cargo test --manifest-path "$TMP/consumer/Cargo.toml" -- --nocapture
 
-echo "[client-contract] crabmate-connect standalone metadata (git+path 可解析)"
-test -f "$ROOT/crates/crabmate-connect/Cargo.toml"
-grep -q '^name = "crabmate-connect"$' "$ROOT/crates/crabmate-connect/Cargo.toml"
-grep -q '^version = "' "$ROOT/crates/crabmate-connect/Cargo.toml"
-grep -q 'tauri = "2"' "$ROOT/crates/crabmate-connect/Cargo.toml"
-grep -q '^publish = false$' "$ROOT/crates/crabmate-connect/Cargo.toml"
-# 须带空 [workspace] + 根 exclude；--no-deps 避免在本目录生成巨型 Cargo.lock
-grep -q '^\[workspace\]$' "$ROOT/crates/crabmate-connect/Cargo.toml"
-cargo metadata --manifest-path "$ROOT/crates/crabmate-connect/Cargo.toml" --format-version 1 --no-deps >/dev/null
+# crabmate-connect 仅在 Client 仓（路径 A Phase 4）；本门禁不再校验主仓副本。
 
 echo "[client-contract] ok"

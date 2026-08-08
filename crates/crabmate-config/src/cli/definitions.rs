@@ -49,8 +49,9 @@ pub struct ServeCmd {
     #[arg(long, alias = "cli-only")]
     pub no_web: bool,
 
-    /// 桌面壳握手：监听成功后向 stdout 输出一行 `{"event":"web_ready",...}` JSON
-    #[arg(long = "desktop-ready-json")]
+    /// 监听成功后向 stdout 输出一行 `{"event":"web_ready",...}` JSON；壳不再依赖，仅脚本/工具。
+    /// 旗标名 `--desktop-ready-json` 已弃用命名，请优先使用可见别名 `--web-ready-json`。
+    #[arg(long = "desktop-ready-json", visible_alias = "web-ready-json")]
     pub desktop_ready_json: bool,
 }
 
@@ -548,7 +549,7 @@ pub struct ParsedCliArgs {
     pub agent_role_cli: Option<String>,
     pub chat_cli: ChatCliArgs,
     pub serve_port: Option<u16>,
-    /// `serve --desktop-ready-json`：监听成功后打印 `web_ready` 行供 Tauri 解析。
+    /// `serve --desktop-ready-json` / `--web-ready-json`：监听成功后打印 `web_ready`（已弃用命名；壳不依赖）
     pub serve_desktop_ready_json: bool,
     /// `serve` 时使用；来自 `serve --host`、`CM_HTTP_HOST` 或默认 `127.0.0.1`。
     pub http_bind_host: String,

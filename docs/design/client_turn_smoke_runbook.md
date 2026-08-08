@@ -39,7 +39,7 @@
 | 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** CLI 宿主面；**不**覆盖 TUI UI / 壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
 | Playwright mock | `e2e/specs/mock-*.spec.ts` | **不**替代（无真模型 / 无壳生命周期） |
-| Victauri 真 LLM | Client 仓 `../crabmate-client` + `REAL_LLM_E2E=1`；`./scripts/victauri-e2e.sh` 另起 `serve` | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
+| Victauri 真 LLM | **仅** Client 仓：`cd ../crabmate-client && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
 
 本 runbook 的价值是：**跨入口人工勾选 + 协议错位 + 远程壳**，补自动化盲区。
 
@@ -89,9 +89,9 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 
 ### 4.4 Client：Desktop（薄壳 + 本机已启动的 serve）
 
-**权威步骤在 Client 仓**：同级 [`../crabmate-client/docs/design/shell_smoke_runbook.md`](../../../crabmate-client/docs/design/shell_smoke_runbook.md) §2（过渡期主仓仍有 `desktop-tauri/` 副本时亦可按其 README）。
+**权威步骤在 Client 仓**：同级 [`../crabmate-client/docs/design/shell_smoke_runbook.md`](../../../crabmate-client/docs/design/shell_smoke_runbook.md) §2。
 
-壳**不再** spawn `serve`；先起后端，再开** Client 仓**桌面壳（或用 `CM_DESKTOP_SERVE_URL` 跳过连接页）。
+壳**不再** spawn `serve`；先起后端，再开 **Client 仓**桌面壳（或用 `CM_DESKTOP_SERVE_URL` 跳过连接页）。
 
 ```bash
 # 终端 A：本仓 serve
@@ -189,10 +189,11 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 | `src/turn_runner.rs` | Web 队列注入面 |
 | `src/runtime/cli/` | CLI / repl / chat |
 | `src/runtime/tui/` | TUI |
-| `crates/crabmate-connect/` | （过渡）本仓副本；**权威在** `../crabmate-client/crates/crabmate-connect` |
-| `desktop-tauri/`、`mobile-tauri/` | （过渡）本仓副本；**权威在** `../crabmate-client` |
+| `../crabmate-client/crates/crabmate-connect/` | 桌面/移动共用连接页（**仅** Client 仓） |
+| `../crabmate-client/desktop-tauri/`、`mobile-tauri/` | 官方 Desktop / Android 壳（**仅** Client 仓） |
 | `../crabmate-client/docs/design/shell_smoke_runbook.md` | 壳人工冒烟 |
 | `../crabmate-client/docs/TESTING.md` | Victauri / Client pre-commit |
+| `../crabmate-client/scripts/victauri-e2e.sh` | Victauri 一键脚本（本仓已无） |
 | `docs/SSE协议.md`、`docs/命令行与路由.md` | 契约真源 |
 | `docs/真实LLM-E2E.md`、`docs/测试指南.md` | 自动化入口（Server / Playwright） |
 | `docs/design/client_contract_versioning.md` | 契约 semver / git tag |

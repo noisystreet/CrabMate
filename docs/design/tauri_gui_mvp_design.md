@@ -4,7 +4,7 @@
 > **`crabmate-client`**：[`docs/design/tauri_gui_mvp_design.md`](../../../crabmate-client/docs/design/tauri_gui_mvp_design.md)  
 > 远程（发版后）：[noisystreet/crabmate-client（待推）](https://github.com/noisystreet) — 以本地同级 `../crabmate-client` 为准。
 >
-> Server 侧仍相关：`--desktop-ready-json`（工具/脚本；壳不再依赖）、HTTP/SSE/CORS。路径 A 见 [`client_shell_split.md`](./client_shell_split.md)。  
+> Server 侧仍相关：`--desktop-ready-json`（**已弃用命名**；别名 **`--web-ready-json`**；工具/脚本可用，壳不再依赖）、HTTP/SSE/CORS。路径 A 见 [`client_shell_split.md`](./client_shell_split.md)。  
 > 壳人工冒烟步骤：Client 仓 [`shell_smoke_runbook.md`](../../../crabmate-client/docs/design/shell_smoke_runbook.md)。
 
 本文不再维护正文，避免与 Client 仓双源。

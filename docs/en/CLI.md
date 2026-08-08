@@ -16,7 +16,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see **`desktop-tauri/DEVELOPMENT.md`**). |
+| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client repo **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**). |
 | `repl` | Interactive chat; **default when no subcommand**. With **`bearer`** and no env **`API_KEY`**, use **`/api-key set <secret>`** before sending messages. |
 | `tui` | Full-screen terminal UI (**experimental**); phase B/C: layout + minimal chat loop sharing **`repl_dispatch_chat_round`** with **`repl`**. **Requires an interactive TTY for stdin and stdout**. Assistant output is **not rendered to stdout** (alternate-screen safe); respects global **`--no-stream`** for SSE vs JSON. **`Enter`** sends the line; **`/api-key`** / **`/apikey`** supported (feedback in the transcript); slash commands match **`repl`**; with **`conversation_store_sqlite_path`** set, **`/conv`** / **`/branch`** manage SQLite sessions like Web. **`q`/`Q` with empty input** or **Ctrl+C** exits. Loads **`AgentConfig`** like **`repl`**. See **`runtime/tui`**. |
 | `chat` | One-shot / scripted chat: `--query` / `--stdin` / `--user-prompt-file`, `--system-prompt-file`, `--messages-json-file`, `--message-file` (JSONL), `--yes` / `--approve-commands`, `--output json`, `--no-stream`. With **`bearer`** and no **`API_KEY`**, the first turn fails unless you export **`API_KEY`** or use **`repl`** / **`serve`** as above. |
@@ -53,7 +53,8 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 | `--serve [port]` | Same as `serve` |
 | `--host <ADDR>` | With `serve` |
 | `--port 0` | With `serve`: OS-assigned free port; startup log and **`web_ready`** **`port`/`url`** use **`local_addr()`** after bind |
-| `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for scripts/tools; the desktop shell **no longer** depends on it) |
+| `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for scripts/tools; the desktop shell **no longer** depends on it). **Deprecated name**; prefer alias **`--web-ready-json`** (same behavior) |
+| `--web-ready-json` | Alias of `--desktop-ready-json` |
 | `--query` / `--stdin` | Same as `chat` |
 | `--workspace <path>` | Override initial workspace |
 | `--agent-role <id>` | First-turn `system` for new `repl` / `chat` session (must exist in config; mutually exclusive with `chat --system-prompt-file`) |
@@ -97,7 +98,7 @@ cargo run -- serve 3000
 cargo run -- serve --port 3000               # same as above
 cargo run -- --workspace /path/to/project serve 8080
 cargo run -- serve --host 0.0.0.0            # mind auth & safety
-cargo run -- serve --host 127.0.0.1 --port 0 --desktop-ready-json   # optional: print web_ready for scripts
+cargo run -- serve --host 127.0.0.1 --port 0 --web-ready-json   # optional: print web_ready for scripts (legacy alias: --desktop-ready-json)
 cargo run -- chat --query "What's the weather in Beijing?"
 cargo run -- chat --output json --query "…"
 echo "1+1?" | cargo run -- chat --stdin

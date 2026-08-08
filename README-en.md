@@ -26,7 +26,7 @@ It includes **function calling**, workspace command and file tools, plus a **Web
 - [Build, run, and packaging](#build-run-and-packaging)
   - [Backend](#backend)
   - [Web frontend](#web-frontend)
-  - [Desktop Tauri](#desktop-tauri)
+  - [Official Client (Desktop / Android)](#official-client-desktop--android)
   - [Install and release artifacts](#install-and-release-artifacts)
   - [Maintainer QA](#maintainer-qa)
 - [Documentation index](#documentation-index)
@@ -102,22 +102,20 @@ trunk build              # dev; release: trunk build --release
 
 Then from the repo root: **`crabmate serve`** (or **`cargo run -- serve`**). Details: **`frontend/README.md`**.
 
-### Desktop Tauri
+### Official Client (Desktop / Android)
 
-Tree: **`desktop-tauri/`**. Thin client: start **`crabmate serve`** yourself (local or remote), then open the shared **connect page** in the WebView (default suggested URL `http://127.0.0.1:8080/`; see [**desktop-tauri/README.md**](desktop-tauri/README.md)). Skip connect with **`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** only if **`CM_DESKTOP_SERVE_URL`** is set.
+> **Canonical repo**: sibling **[`../crabmate-client`](../crabmate-client/)** (path A; see [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)).  
+> This repo **removed** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect` (Phase 4.1; canonical only in the Client repo).
+
+The shell **does not** spawn `serve`: start **`crabmate serve`** locally or remotely, then fill server URL + Web API Bearer on the Client connect page. Build / package:
 
 ```bash
-cargo build
-cd frontend && trunk build && cd ..
-# terminal A
-cargo run -- serve
-# terminal B
-cargo install tauri-cli --version "^2"   # once
-cd desktop-tauri/src-tauri
-cargo tauri dev
+cd ../crabmate-client
+make desktop-release    # Linux .deb (no serve sidecar)
+# or make apk / cargo tauri dev — see Client README
 ```
 
-Release: **`cargo tauri build`**. Proxies and troubleshooting: [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md).
+Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat_matrix.md).
 
 ### Install and release artifacts
 
@@ -126,22 +124,8 @@ Release: **`cargo tauri build`**. Proxies and troubleshooting: [**desktop-tauri/
 | **Install to PATH** | **`cargo install --path .`** (**does not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed). |
 | **Tarball** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend/dist`, man); with **`cargo-deb`**, may also collect **`.deb`**. |
 | **Debian (.deb)** | After **`trunk build --release`** in **`frontend`**, **`cargo deb`** → **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md). |
-| **Desktop (Tauri)** | Desktop bundles (current config defaults to **Linux `.deb`**—see **`bundle.targets`** in **`desktop-tauri/src-tauri/tauri.conf.json`**); steps below. |
+| **Desktop / APK** | **Only** the Client repo ([`../crabmate-client`](../crabmate-client/)). |
 | **Regenerate man** | **`cargo run --bin crabmate-gen-man`**. |
-
-**Tauri desktop packaging (example, repo root):**
-
-```bash
-cargo build --release
-cd frontend && trunk build --release && cd ..
-rm -rf desktop-tauri/dist && cp -r frontend/dist desktop-tauri/dist
-
-cd desktop-tauri/src-tauri
-# beforeBuildCommand runs ../scripts/prepare-sidecar.sh; or run manually: bash ../scripts/prepare-sidecar.sh
-cargo tauri build
-```
-
-**`prepare-sidecar.sh`** (legacy name) syncs **`connect.html` / `splash.html`** and optional **`frontend/dist`** into **`desktop-tauri/dist`** for the deb. The desktop **`.deb` no longer embeds** a `crabmate` sidecar; install the CLI separately or connect to a remote **`serve`**. Bundles usually land under **`desktop-tauri/src-tauri/target/release/bundle/deb/`**. **`bundle.targets`**, **`GDK_BACKEND`**, etc.: [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md).
 
 ### Maintainer QA
 
@@ -161,6 +145,8 @@ cargo tauri build
 | [docs/en/DEBUG.md](docs/en/DEBUG.md) | Logging, `doctor`, `GET /web-ui`, … | [zh](docs/调试指南.md) |
 | [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | Personal VPS: loopback `serve` + TLS reverse proxy + Bearer (Chinese) | — |
 | [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits | [zh](docs/测试指南.md) |
+| [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | Official Client split (path A); Client repo [`../crabmate-client`](../crabmate-client/) | — |
+| [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ protocol ↔ minimum Client compat matrix | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap & benchmarks | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
 

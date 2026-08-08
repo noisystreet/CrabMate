@@ -7,14 +7,14 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 ## Prerequisites
 
 - **Rust**: 1.85+ (edition 2024); see [`README-en.md`](../../README-en.md).
-- **E2E**: Tauri system libraries (e.g. libgtk-3-dev, libwebkit2gtk-4.1-dev); see CI `.github/workflows/ci.yml`.
+- **E2E**: Playwright in this repo (below). **Victauri** (Tauri WebView) is **only** in the Client repo and needs GTK/WebKit libs — see `../crabmate-client` CI.
 - **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build with **`cd frontend && trunk build`** (use **`trunk build --release`** for production-sized WASM).
 
 ## GitHub Actions (main CI)
 
 Push / pull request to **`main`** runs [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml):
 
-- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`**; **desktop-tauri** workspace **`cargo check --tests`**, **`cargo clippy`**, **`cargo test`** (Victauri tests auto-skip without **`VICTAURI_E2E=1`**)
+- **`check-clippy-test`**: **`cargo check`**, **`cargo clippy`** (**`-D warnings`**), **`cargo test --workspace --all-features`** (this repo has **no** Tauri/GTK desktop job; shell CI lives in the Client repo)
 
 Complexity, dependency security, and coverage use separate workflows (**`code-complexity.yml`**, **`dependency-security.yml`**, **`code-coverage.yml`**).
 
@@ -129,7 +129,9 @@ cd frontend && trunk build
 
 ## Desktop E2E (Victauri)
 
-Directory: **`desktop-tauri/src-tauri/tests/`**. Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
+> **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md) there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
+
+Directory: **`../crabmate-client/desktop-tauri/src-tauri/tests/`**. Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
 
 | Phase | Examples | Notes |
 | --- | --- | --- |
@@ -140,26 +142,26 @@ Directory: **`desktop-tauri/src-tauri/tests/`**. Runs inside the **Tauri WebView
 
 ### Local run
 
-**One-shot (recommended)** — **`exec xvfb-run`** relaunches the script so the window never lands on your Wayland/X desktop (default **`VICTAURI_USE_XVFB=1`**):
+**One-shot (recommended)** — from the Client repo root (**`exec xvfb-run`** relaunches the script so the window never lands on your Wayland/X desktop; default **`VICTAURI_USE_XVFB=1`**):
 
 ```bash
-cd frontend && trunk build   # first time only; script also checks dist/
+cd ../crabmate-client
+# optional: CM_DESKTOP_BACKEND_BIN=/path/to/crabmate
 ./scripts/victauri-e2e.sh victauri_scroll_send
 ./scripts/victauri-e2e.sh all
 ```
 
-**Manual** (native display; start `serve` first):
+**Manual** (native display; start this repo's `serve` first):
 
 ```bash
-# terminal A
+# terminal A (this repo)
 cargo run -- serve --host 127.0.0.1 --port 18080
 
-# terminal B
-cd frontend && trunk build
-cd desktop-tauri/src-tauri
+# terminal B (Client repo)
+cd ../crabmate-client/desktop-tauri/src-tauri
 CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
-# terminal C
+# terminal C (same src-tauri)
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 cargo test --no-fail-fast
 ```
 
@@ -176,20 +178,21 @@ The one-shot script starts **`serve`** itself (default port **18080**) before th
 
 Install **`xvfb`** on Debian/Ubuntu: **`sudo apt install xvfb`**.
 
-Force headless on a machine with **`DISPLAY`**:
+Force headless on a machine with **`DISPLAY`** (Client repo root):
 
 ```bash
+cd ../crabmate-client
 VICTAURI_USE_XVFB=1 ./scripts/victauri-e2e.sh victauri_scroll_send
 ```
 
-Without **`VICTAURI_E2E=1`**, Victauri tests **skip** so **`cargo test`** in the main CI job stays headless-friendly; the dedicated **`victauri-e2e`** job runs full suites via **`./scripts/victauri-e2e.sh all`**.
+Without **`VICTAURI_E2E=1`**, Victauri tests **skip**. Full suites: Client repo **`./scripts/victauri-e2e.sh all`** (not this repo's CI).
 
 **Real-model E2E** (e.g. DeepSeek) is manual opt-in (**`REAL_LLM_E2E=1`**, not default CI). Full steps: [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md) · summary [`REAL_LLM_E2E.md`](REAL_LLM_E2E.md).
 
-Quick smoke:
+Quick smoke (Client repo):
 
 ```bash
-cd desktop-tauri/src-tauri
+cd ../crabmate-client/desktop-tauri/src-tauri
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
   cargo test --test victauri_real_llm -- --nocapture
 ```
