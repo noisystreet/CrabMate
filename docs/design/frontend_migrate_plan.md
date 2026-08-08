@@ -62,14 +62,14 @@
 
 ### Phase A — 契约可钉（主仓，阻塞迁目录）
 
-**入口**：P4.1 已合入 `main`（壳双轨已删）。
+**入口**：P4.1 合入中/已合（壳双轨已删或本分支含 P4.1）。
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| A1 | 更新 [`client_contract_versioning.md`](./client_contract_versioning.md)：钉清单含 §3 表中全部 UI 依赖 crate | 文档与 `frontend/Cargo.toml` 对齐 |
-| A2 | 更新 Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md) 示例 | 外仓可复制粘贴 |
-| A3 | （可选）扩展 `check-client-contract.sh`：对 `turn-layout` / `tool-card` / `chat-export` 做 metadata 或最小 compile smoke | CI `client-contract` 绿 |
-| A4 | `main` 上打注释标签 **`client-contract-v0.1.0`**（或开发期约定 `rev`） | `git ls-remote --tags` 可见；外仓 `cargo check` 能解析 |
+| A1 | 更新 [`client_contract_versioning.md`](./client_contract_versioning.md)：钉清单含 §3 表中全部 UI 依赖 crate | ✅ 文档与 `frontend/Cargo.toml` 对齐 |
+| A2 | 更新 Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md) 示例 | ✅ 外仓可复制粘贴（随 Client 仓提交） |
+| A3 | 扩展 `check-client-contract.sh`：钉清单 manifest + UI crate path 消费 smoke | ✅ 本地/CI `client-contract` 绿 |
+| A4 | `main` 上打注释标签 **`client-contract-v0.1.0`**（或开发期约定 `rev`） | ⬜ **合入 `main` 后执行**（见 versioning §4.1 命令）；合入前可用 `rev` |
 
 **不需要**：crates.io、`v0.1.0` 产品 Release、改用户安装包版本号。
 
@@ -153,3 +153,4 @@
 | 日期 | 说明 |
 |------|------|
 | 2026-08-08 | 初稿：落点 Client 仓；先契约 tag/rev，不强制产品发版；A/B/C/D 阶段与 PR 切片 |
+| 2026-08-08 | Phase A 落地：扩钉清单、门禁 smoke、Client `contract_pin`；A4 待合 main 后打 tag |
