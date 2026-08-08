@@ -4,7 +4,7 @@
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **日期**：2026-08-08  
 > **约定**：完成某阶段后更新本文件勾选；**勿**把本地草稿目录当作本计划的引用源（见根目录 `AGENTS.md`）。  
-> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、`docs/SSE协议.md`、`docs/配置说明.md`、`desktop-tauri/README.md`、`mobile-tauri/README.md`
+> **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、`docs/SSE协议.md`、`docs/配置说明.md`；壳 README / 冒烟：**`../crabmate-client`**（过渡期本仓仍有 `desktop-tauri/` / `mobile-tauri/` 副本）
 
 ---
 
@@ -15,11 +15,11 @@
 | Phase 0 | 决策与基线 | ✅ 完成（2026-08-08） |
 | Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
 | Phase 2 | 前端可远程（API 基址 + CORS） | ✅ 完成（2026-08-08） |
-| Phase 3 | connect + 壳仓拆出 | ⬜ 未开始（须 Phase 1+2） |
+| Phase 3 | connect + 壳仓拆出 | 🚧 进行中（P3.1–P3.5 交付；总验收：release + 真实对话仍待） |
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ⬜ 未开始 |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 3。
+**下一执行**：Phase 3 收尾验收（干净克隆 release + 一端真实对话）；其后 Phase 4 去双轨 / 迁 `frontend`。
 
 ---
 
@@ -29,9 +29,9 @@
 |----|------|----------|
 | K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | Phase 2–4（Phase 2：可远程；源码仍可在本仓） |
 | K2 | 前端相对路径、假定同 Origin | ✅ Phase 2（可配 API 基址；默认同 Origin） |
-| K3 | 壳 → `crabmate-connect` path | Phase 1+3（Phase 1：钉法已文档化；Phase 3：外仓改 tag） |
+| K3 | 壳 → `crabmate-connect` path | ✅ Phase 3（connect 在外仓 path；契约钉 tag 文档+门禁） |
 | K4 | 缺可独立发版的 semver/兼容表 | ✅ Phase 1（见 `client_contract_versioning.md`） |
-| K5 | E2E 假设 monorepo 同树 | Phase 3 |
+| K5 | E2E 假设 monorepo 同树 | ✅ Phase 3（外仓脚本 + 外部 `serve`；Victauri DOM 稳定性另跟） |
 | K6 | 桌面非回环无完整 IPC | 文档化即可（非硬阻塞） |
 
 **已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外；Phase 1 契约发版；**Phase 2**：API 基址 + 保守 CORS + runbook §9。
@@ -104,7 +104,12 @@
 | P3.4 | 壳仓 CI；E2E 对已发布/已安装的 `serve`（钉协议版本） |
 | P3.5 | 主仓 README 指向外仓；目录删除或短期 submodule（见 Phase 4） |
 
-- [ ] P3.1–P3.5  
+- [x] P3.1：本地外仓 **`../crabmate-client`**（相对本仓；2026-08-08）
+- [x] P3.2（部分）：已迁入 `desktop-tauri` / `mobile-tauri` / `crates/crabmate-connect`；**业务 UI 仍主仓过渡**（壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`）
+- [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓 `tauri_gui_mvp_design.md` 为指针
+- [x] P3.3：壳对 connect 为本仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
+- [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
+- [x] P3.5：主仓 README / 壳 README 指向外仓；双轨目录保留至 Phase 4
 - [ ] 验收：干净克隆壳仓可 release；连本仓 `serve` 一轮对话（Desktop 与 Android 至少一端）；主仓可不强制 desktop GTK job  
 
 ---
@@ -171,3 +176,6 @@
 | 2026-08-08 | Phase 1：`client_contract_versioning.md`、门禁脚本与 CI job `client-contract`；下一刀 Phase 2 |
 | 2026-08-08 | Phase 2：API 基址 + `web_cors_allowed_origins` + runbook §9；下一刀 Phase 3 |
 | 2026-08-08 | Phase 2 补丁：CORS **expose** 会话头；`/uploads` CORP 仅 CORS 启用时放宽；API 基址显式清空不回落 `CRABMATE_API_BASE` |
+| 2026-08-08 | Phase 3 开工：本地外仓 `../crabmate-client`（壳 + connect）；主仓目录暂保留双轨 |
+| 2026-08-08 | Phase 3 文档：壳专题 / 冒烟 / Victauri / AGENTS+pre-commit 迁入 `crabmate-client`；主仓 `tauri_gui_mvp` 改指针 |
+| 2026-08-08 | Phase 3 P3.3–P3.5：外仓 CI + `check-no-main-path` + contract_pin；主仓 README/壳 README 指向外仓 |

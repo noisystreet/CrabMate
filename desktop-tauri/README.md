@@ -1,5 +1,7 @@
 # desktop-tauri
 
+> **权威维护**：同级 Client 仓 [`../crabmate-client/desktop-tauri`](../../crabmate-client/desktop-tauri/)。本目录为路径 A **Phase 4 前双轨副本**。
+
 基于 Tauri 2 的 CrabMate 桌面壳：**WebView** 加载已运行的 **`serve`**（本机或远程）提供的 Web UI，业务逻辑不重复实现。**壳不拉起** `crabmate serve`（与移动端同模型）。
 
 ## 启动流程（与代码一致）
