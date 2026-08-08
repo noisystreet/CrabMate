@@ -315,7 +315,7 @@ flowchart TB
 当前 `desktop-tauri` **不**再 spawn `serve`。请自行启动 **`crabmate serve`**（开发时 cwd 多为仓库根；安装后可用 **`CM_WEB_STATIC_DIR=/usr/share/crabmate/frontend/dist`** 指向 deb 内静态资源）。壳通过连接页或 **`CM_DESKTOP_SERVE_URL`** 加载 WebView（**勿**假设固定端口如 3000，除非你自己用该端口启动）。  
 WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
 
-详见 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层）与 **`desktop-tauri/DEVELOPMENT.md`**（开发与故障排查）；本文件负责**数据落盘**。
+详见 Client 仓 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层；主仓本路径为指针）与 **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**（开发与故障排查）；本文件负责**数据落盘**。
 
 ---
 

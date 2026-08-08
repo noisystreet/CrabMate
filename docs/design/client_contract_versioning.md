@@ -128,19 +128,23 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 
 | 项 | 约定 |
 |----|------|
-| 位置 | `crates/crabmate-connect/`；**不是**根 `[workspace].members`（根另设 `exclude = ["crates/crabmate-connect"]`）；本包带空 **`[workspace]`**，以便 `--manifest-path` / 外仓 `git`+`path` 可解析（根含 `members = ["."]` 时仅 exclude 不够） |
-| `publish` | `publish = false`（默认走 git，不进 crates.io） |
+| 位置（路径 A） | **权威**在 Client 仓 `crabmate-client/crates/crabmate-connect/`；主仓同路径为 Phase 4 前双轨副本 |
+| 主仓历史约定 | 曾位于 `crates/crabmate-connect/` 且 **不是**根 `[workspace].members`（`exclude` + 空 `[workspace]`）；外仓曾可用 `git`+`path` 钉主仓 tag |
+| `publish` | `publish = false`（默认走 git / 本仓 path，不进 crates.io） |
 | Tauri | **`tauri = "2"`**（与 `desktop-tauri` / `mobile-tauri` 一致；升级 major 须壳仓同步） |
-| 钉法 | 因非根 workspace 成员，外仓须 **`git` + `path`**： |
+| 钉法（拆壳后） | Client 仓内：`crabmate-connect = { path = "../../crates/crabmate-connect" }` |
+| 钉法（旧：从第三方仓钉主仓 tag） | 仍可用： |
 
 ```toml
 [dependencies]
 crabmate-connect = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", path = "crates/crabmate-connect" }
 ```
 
-过渡期本仓壳仍可用 path：`crabmate-connect = { path = "../../crates/crabmate-connect" }`（Phase 3 拆壳后改为 tag）。
+过渡期主仓壳副本仍可用 path：`crabmate-connect = { path = "../../crates/crabmate-connect" }`。
 
 兼容说明：connect 只做探测与 Bearer 交接，**不** embed `SSE_PROTOCOL_VERSION`；协议错位仍由 UI/`serve` 按 §2.1 报错。
+
+壳仓禁止 path 回主开发树的检查：Client 仓 `scripts/check-no-main-path.sh`。
 
 ---
 
