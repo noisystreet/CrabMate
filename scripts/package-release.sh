@@ -18,8 +18,8 @@ usage() {
   -h, --help            显示本说明
 
 产物目录: dist/
-  - crabmate_<version>_<os>_<arch>.tar.gz
-  - crabmate_<version>_<arch>.deb（仅 Linux 且未 --skip-deb、且已安装 cargo-deb）
+  - crabmate_<version>_<os>_<arch>.tar.gz（含 systemd/ 与 etc/crabmate/ 布局）
+  - crabmate_<version>_<arch>.deb（仅 Linux；含 crabmate.service，默认不 enable）
 
 依赖: Rust；.deb 需 cargo install cargo-deb
 业务 UI：在 ../crabmate-client 执行 make frontend，再传 --frontend-dist 或 CM_WEB_STATIC_DIR
@@ -124,6 +124,15 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   cp -R config "$STAGE_DIR/"
   mkdir -p "$STAGE_DIR/man"
   cp man/crabmate.1 "$STAGE_DIR/man/"
+  mkdir -p "$STAGE_DIR/systemd"
+  cp packaging/systemd/crabmate.service "$STAGE_DIR/systemd/"
+  cp packaging/systemd/crabmate.env.example "$STAGE_DIR/systemd/"
+  # Deb-compatible /etc layout for systemd unit (--config /etc/crabmate/config.toml)
+  mkdir -p "$STAGE_DIR/etc/crabmate/config/prompts"
+  cp packaging/etc/config.toml "$STAGE_DIR/etc/crabmate/config.toml"
+  cp packaging/systemd/crabmate.env.example "$STAGE_DIR/etc/crabmate/crabmate.env.example"
+  [[ -f config/agent_roles.toml ]] && cp config/agent_roles.toml "$STAGE_DIR/etc/crabmate/"
+  cp config/prompts/*.md "$STAGE_DIR/etc/crabmate/config/prompts/"
   if [[ "$INCLUDE_UI" -eq 1 ]]; then
     mkdir -p "$STAGE_DIR/frontend"
     cp -R "${FRONTEND_DIST}" "$STAGE_DIR/frontend/dist"

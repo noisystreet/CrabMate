@@ -261,4 +261,21 @@ Server **`make package*`** / `.deb` does **not** embed UI. Use **`--no-web`** or
 
 After install: `export API_KEY=… && crabmate serve --no-web` (or set **`CM_WEB_STATIC_DIR`**). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
 
+### systemd (`.deb` / tarball)
+
+- **`.deb`**: installs **`/usr/lib/systemd/system/crabmate.service`**, **`/etc/crabmate/config.toml`** (path anchor), **`/etc/crabmate/config/prompts/`**, and **`crabmate.env.example`**; `postinst` creates system user **`crabmate`** and **`/var/lib/crabmate`**. **Does not** `enable` / `start` by default.
+- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. **No** default **`--no-web`**, so **`CM_WEB_STATIC_DIR`** can mount UI; without a dist, **`/`** is 404 while APIs (e.g. **`/health`**) work.
+- **Environment file**: **`KEY=value` only** (no **`export`**); set **`API_KEY`**, and extend **`PATH`** if the system user needs cargo/rustc.
+- Before enabling:
+
+```bash
+sudo cp /etc/crabmate/crabmate.env.example /etc/crabmate/crabmate.env
+sudo chmod 600 /etc/crabmate/crabmate.env   # fill placeholders
+sudo systemctl daemon-reload
+sudo systemctl enable --now crabmate.service
+sudo systemctl status crabmate.service
+```
+
+- **tar.gz**: ships **`systemd/`** and **`etc/crabmate/`** (`config.toml`, prompts, env example). Copy **`etc/crabmate`** to **`/etc/crabmate`** and the unit under **`/usr/lib/systemd/system/`** (adjust `ExecStart` if needed). Broader reverse-proxy notes: **[docs/个人VPS部署指南.md](../个人VPS部署指南.md)**.
+
 Preview from tree: `man -l man/crabmate.1` (path relative to repo root).

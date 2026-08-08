@@ -1,0 +1,4 @@
+# System package overlay for `crabmate serve` (Debian/systemd).
+# Embedded defaults still apply; this file mainly anchors relative paths such as
+# `system_prompt_file = "config/prompts/….md"` to `/etc/crabmate/config/prompts/`.
+# Override keys here or via `/etc/crabmate/crabmate.env` / drop-ins as needed.

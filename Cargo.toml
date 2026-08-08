@@ -139,6 +139,9 @@ is TOML plus environment variables; see /usr/share/doc/crabmate/ after install."
 depends = "libc6 (>= 2.31)"
 section = "utils"
 priority = "optional"
+# systemd 单元 + postinst（#DEBHELPER#）；默认不 enable / 不 start，需管理员显式 systemctl enable。
+maintainer-scripts = "packaging/debian"
+systemd-units = { unit-scripts = "packaging/systemd", enable = false, start = false }
 assets = [
     # 二进制：安装到 /usr/bin
     ["target/release/crabmate", "usr/bin/crabmate", "755"],
@@ -150,10 +153,24 @@ assets = [
     ["config/sandbox.toml", "etc/crabmate/sandbox.toml", "644"],
     ["config/planning.toml", "etc/crabmate/planning.toml", "644"],
     ["config/memory.toml", "etc/crabmate/memory.toml", "644"],
-    ["config/prompts/base_system_prompt.md", "usr/share/doc/crabmate/config/prompts/base_system_prompt.md", "644"],
-    ["config/prompts/coding_workbench_increment.md", "usr/share/doc/crabmate/config/prompts/coding_workbench_increment.md", "644"],
-    ["config/prompts/context_summary_system.md", "usr/share/doc/crabmate/config/prompts/context_summary_system.md", "644"],
-    ["config/prompts/context_summary_user.md", "usr/share/doc/crabmate/config/prompts/context_summary_user.md", "644"],
+    ["packaging/systemd/crabmate.env.example", "etc/crabmate/crabmate.env.example", "644"],
+    # 系统级主配置：锚定相对路径 `config/prompts/…` → `/etc/crabmate/config/prompts/`
+    ["packaging/etc/config.toml", "etc/crabmate/config.toml", "644"],
+    ["config/agent_roles.toml", "etc/crabmate/agent_roles.toml", "644"],
+    ["config/prompts/base_system_prompt.md", "etc/crabmate/config/prompts/base_system_prompt.md", "644"],
+    ["config/prompts/coding_workbench_increment.md", "etc/crabmate/config/prompts/coding_workbench_increment.md", "644"],
+    ["config/prompts/thinking_avoid_echo_appendix.md", "etc/crabmate/config/prompts/thinking_avoid_echo_appendix.md", "644"],
+    ["config/prompts/context_summary_system.md", "etc/crabmate/config/prompts/context_summary_system.md", "644"],
+    ["config/prompts/context_summary_user.md", "etc/crabmate/config/prompts/context_summary_user.md", "644"],
+    ["config/prompts/mode_ask.md", "etc/crabmate/config/prompts/mode_ask.md", "644"],
+    ["config/prompts/mode_plan.md", "etc/crabmate/config/prompts/mode_plan.md", "644"],
+    ["config/prompts/mode_act.md", "etc/crabmate/config/prompts/mode_act.md", "644"],
+    ["config/prompts/companion_system_prompt.md", "etc/crabmate/config/prompts/companion_system_prompt.md", "644"],
+    ["config/prompts/scientist_system_prompt.md", "etc/crabmate/config/prompts/scientist_system_prompt.md", "644"],
+    ["config/prompts/engineer_system_prompt.md", "etc/crabmate/config/prompts/engineer_system_prompt.md", "644"],
+    ["config/prompts/philosopher_system_prompt.md", "etc/crabmate/config/prompts/philosopher_system_prompt.md", "644"],
+    ["config/prompts/literary_system_prompt.md", "etc/crabmate/config/prompts/literary_system_prompt.md", "644"],
+    ["config/prompts/code_reviewer_system_prompt.md", "etc/crabmate/config/prompts/code_reviewer_system_prompt.md", "644"],
     # 文档
     ["README.md", "usr/share/doc/crabmate/README.md", "644"],
     # man page（troff；由 `cargo run --features gen-man --bin crabmate-gen-man` 再生成）

@@ -130,6 +130,28 @@ client_max_body_size 256m;
 
 ## 5. 使用 systemd 托管 `serve`（推荐）
 
+### 5.1 发行包自带单元（`.deb` / tar）
+
+若通过 **`make package`** / **`dpkg -i`** 安装：
+
+- 单元：**`/usr/lib/systemd/system/crabmate.service`**（默认 **`127.0.0.1:8080`**、**`--config /etc/crabmate/config.toml`**；**不**默认 **`--no-web`**；**不会**在安装时自动 enable/start）
+- 提示词与锚定配置：**`/etc/crabmate/config.toml`** + **`/etc/crabmate/config/prompts/`**
+- 环境文件：**`/etc/crabmate/crabmate.env`** 仅 **`KEY=value`**（**不要** `export`）；可设 **`API_KEY`**、**`CM_WEB_STATIC_DIR`**、扩展 **`PATH`**
+- `postinst` 会创建系统用户 **`crabmate`** 与家目录 **`/var/lib/crabmate`**
+
+```bash
+sudo cp /etc/crabmate/crabmate.env.example /etc/crabmate/crabmate.env
+sudo chmod 600 /etc/crabmate/crabmate.env
+# 按需填写 API_KEY / CM_WEB_API_BEARER_TOKEN / CM_WEB_STATIC_DIR / PATH 等
+sudo systemctl daemon-reload
+sudo systemctl enable --now crabmate.service
+sudo systemctl status crabmate.service
+```
+
+tar 包内另有 **`systemd/`** 与 **`etc/crabmate/`**，可安装到对应系统路径（并改 `ExecStart` 路径）。
+
+### 5.2 手工单元（源码 / 自定义路径）
+
 以 **非 root** 用户 **`crabmate`** 为例（请按需替换路径与用户）：
 
 `/etc/systemd/system/crabmate.service`：

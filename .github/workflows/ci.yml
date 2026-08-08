@@ -127,13 +127,31 @@ jobs:
           tar -tzf "$TAR" | tee /tmp/package-tar.list
           grep -E '/crabmate$' /tmp/package-tar.list
           grep -E '/man/crabmate\.1$' /tmp/package-tar.list
+          grep -E '/systemd/crabmate\.service$' /tmp/package-tar.list
+          grep -E '/systemd/crabmate\.env\.example$' /tmp/package-tar.list
+          grep -E '/etc/crabmate/config\.toml$' /tmp/package-tar.list
+          grep -E '/etc/crabmate/config/prompts/base_system_prompt\.md$' /tmp/package-tar.list
           if grep -E '/frontend/dist/' /tmp/package-tar.list; then
             echo "unexpected frontend/dist in server-only tarball" >&2
             exit 1
           fi
-          # deb 含 /usr/bin/crabmate（dpkg-deb -c 行尾为 ./usr/bin/crabmate）
+          # deb 含 /usr/bin/crabmate + systemd unit（默认不 enable）
+          # dpkg-deb -c 行尾为 ./usr/bin/crabmate
           dpkg-deb -c "$DEB" | tee /tmp/package-deb.list
           grep -E '/usr/bin/crabmate$' /tmp/package-deb.list
+          grep -E '/usr/lib/systemd/system/crabmate\.service$' /tmp/package-deb.list
+          grep -E '/etc/crabmate/crabmate\.env\.example$' /tmp/package-deb.list
+          grep -E '/etc/crabmate/config\.toml$' /tmp/package-deb.list
+          grep -E '/etc/crabmate/config/prompts/base_system_prompt\.md$' /tmp/package-deb.list
+          rm -rf /tmp/package-deb-root
+          dpkg-deb -x "$DEB" /tmp/package-deb-root
+          grep -F -- '--config /etc/crabmate/config.toml' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service
+          # packaged unit must not force --no-web (blocks CM_WEB_STATIC_DIR)
+          if grep -E -- '--no-web' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service; then
+            echo "unexpected --no-web in packaged unit" >&2
+            exit 1
+          fi
+          grep -E '^StartLimitBurst=' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service
           if grep -E '/usr/share/crabmate/frontend/' /tmp/package-deb.list; then
             echo "unexpected UI path in server .deb" >&2
             exit 1
