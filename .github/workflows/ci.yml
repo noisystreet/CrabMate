@@ -2,8 +2,9 @@
 # 与 pre-commit 的 cargo clippy / frontend-wasm-check 对齐；cargo test 仅在本 workflow（及 code-complexity 金样）跑。
 #
 # desktop-tauri 是独立 workspace（含 Victauri E2E 测试），与主 workspace 并行执行。
-# 官方 Client 仓权威 CI：同级 crabmate-client/.github/workflows/ci.yml（路径 A）；
-# 本 job 在 Phase 4 去双轨前仍跑本仓副本，避免过渡期主仓 PR 漏检壳改动。
+# 官方 Client 仓权威 CI：同级 crabmate-client/.github/workflows/ci.yml（路径 A）。
+# Phase 3 起 Server 产品门禁可不强制本 GTK job；过渡期仍跑双轨副本至 Phase 4，
+# 避免主仓 PR 漏检尚未删除的壳改动（去双轨后删除本 job）。
 name: CI
 
 on:
