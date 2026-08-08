@@ -94,7 +94,7 @@
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| C7 | `e2e/` + workflow 迁 `crabmate-client`；主仓删 Playwright CI | ✅ 本地 |
+| C7 | `e2e/` + workflow 迁 `crabmate-client`；主仓删除 Playwright 目录与 CI | ✅ 本地 |
 
 ### Phase D — 可选（P4.3 / Phase 5）
 
