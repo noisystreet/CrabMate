@@ -209,7 +209,7 @@
       const leadEl = document.getElementById("lead");
       /** 防止自动登录与手动提交并发探测 */
       let connectInFlight = false;
-      /** 桌面 sidecar 本轮 `web_ready` URL；端口每次启动会变 */
+      /** 壳预填的建议服务器 URL（桌面多为本机 8080）；无则留空 */
       let suggestedServerUrl = "";
 
       function wantsManualConnect() {
@@ -312,7 +312,7 @@
         }
 
         const savedUrl = readLegacyUrl();
-        // 桌面 sidecar 使用 --port 0：勿用上次记住的 127.0.0.1:旧端口覆盖本轮建议地址。
+        // 有建议地址且已存为回环（或尚无已存）时用建议值，避免旧端口残留。
         if (suggestedServerUrl && (!savedUrl || isLoopbackUrl(savedUrl))) {
           urlInput.value = suggestedServerUrl;
         } else if (savedUrl) {
@@ -463,7 +463,7 @@
         let target = "";
         let shouldAuto = false;
         if (suggestedServerUrl) {
-          // 桌面：优先本轮 sidecar 建议地址；已存远程地址则沿用。
+          // 桌面：优先建议/输入框；已存远程地址则沿用。
           target = urlInput.value || suggestedServerUrl;
           shouldAuto = !!target;
         } else if (saved) {

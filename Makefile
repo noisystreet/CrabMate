@@ -111,28 +111,29 @@ desktop-sync-ui-release: frontend-release
 	rm -rf "$(DESKTOP_ROOT)/dist"
 	cp -a "$(FRONTEND_DIR)/dist" "$(DESKTOP_ROOT)/dist"
 
-desktop: backend desktop-sync-ui
+desktop: desktop-sync-ui
 	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
 		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
 		exit 1; \
 	}
-	cd "$(TAURI_DIR)" && CM_DESKTOP_BACKEND_BIN="$(BACKEND_BIN)" $(CARGO) tauri build --debug
+	cd "$(TAURI_DIR)" && $(CARGO) tauri build --debug
 
-desktop-release: backend-release desktop-sync-ui-release
+desktop-release: desktop-sync-ui-release
 	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
 		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
 		exit 1; \
 	}
-	cd "$(TAURI_DIR)" && CM_DESKTOP_BACKEND_BIN="$(BACKEND_BIN_RELEASE)" $(CARGO) tauri build
+	cd "$(TAURI_DIR)" && $(CARGO) tauri build
 
-desktop-dev: backend
+# 壳不拉起 serve：请另开终端 `cargo run -- serve`（或连远程）后再 desktop-dev
+desktop-dev:
 	@command -v cargo-tauri >/dev/null 2>&1 || command -v tauri >/dev/null 2>&1 || { \
 		echo "错误: 未找到 Tauri CLI。请执行: cargo install tauri-cli --version \"^2\"" >&2; \
 		exit 1; \
 	}
-	cd "$(TAURI_DIR)" && CM_DESKTOP_BACKEND_BIN="$(BACKEND_BIN_DEBUG)" $(CARGO) tauri dev
+	cd "$(TAURI_DIR)" && $(CARGO) tauri dev
 
-# --- Android（mobile-tauri 远程薄客户端；不依赖本机 sidecar）---
+# --- Android（mobile-tauri 远程薄客户端；与桌面一样不 spawn serve）---
 # 先编 frontend/dist：手机连的是本机 serve，需用新前端；壳本身不内嵌该 dist。
 # CM_MOBILE_SKIP_FRONTEND=1 可跳过（仅重打壳）。
 

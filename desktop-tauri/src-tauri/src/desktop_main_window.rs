@@ -1,4 +1,6 @@
-//! 主窗口创建：直连 `web_ready` URL，或先打开共用连接页。
+//! 主窗口创建：打开共用连接页，或（E2E）直连已运行的 `serve` URL。
+//!
+//! 桌面壳**不**拉起 `crabmate serve`；用户须自行启动后端或连接远程。
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -28,17 +30,18 @@ pub(crate) const BOOT_SHELL_BG: Color = Color(0x0A, 0x0D, 0x12, 0xFF);
 enum MainWindowMode {
     /// 先打开连接页（与闪屏同尺寸小窗）；导航到 `serve` 后再放大并恢复几何。
     ConnectPage,
-    /// E2E / 跳过连接页：直接全尺寸 UI。
+    /// E2E / 跳过连接页：直接全尺寸 UI（须已有可连的 `serve`）。
     DirectUi,
 }
 
+/// E2E / `CM_DESKTOP_SKIP_CONNECT`：直接打开已运行的 `serve` URL。
 pub(crate) fn create_main_window_from_url(
     app_handle: &tauri::AppHandle,
     ready_url: String,
 ) -> Result<(), String> {
     let parsed_url: Url = ready_url
         .parse()
-        .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
+        .map_err(|e| format!("invalid serve url `{ready_url}`: {e}"))?;
     let backend_origin = parsed_url.origin();
     if let Some(allowed) = app_handle.try_state::<crabmate_connect::AllowedServeOrigin>() {
         allowed.set_from_url(&parsed_url);
@@ -52,18 +55,22 @@ pub(crate) fn create_main_window_from_url(
     .map(|_| ())
 }
 
-/// 展示共用连接页；本机 `web_ready` URL 经 `get_suggested_server_url` 预填。
+/// 展示共用连接页；可选预填建议服务器 URL（经 `get_suggested_server_url`）。
+///
+/// 初始导航白名单不含任何 `serve` Origin；探测成功后由 `connect_remote` 写入
+/// [`AllowedServeOrigin`](crabmate_connect::AllowedServeOrigin)。
 pub(crate) fn create_main_window_connect_page(
     app_handle: &tauri::AppHandle,
-    ready_url: String,
+    suggested_url: Option<String>,
 ) -> Result<(), String> {
-    let parsed_backend: Url = ready_url
-        .parse()
-        .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
-    let backend_origin = parsed_backend.origin();
-    app_handle
-        .state::<crabmate_connect::SuggestedServerUrl>()
-        .set(Some(ready_url));
+    if let Some(url) = suggested_url.filter(|s| !s.trim().is_empty()) {
+        app_handle
+            .state::<crabmate_connect::SuggestedServerUrl>()
+            .set(Some(url.trim().to_string()));
+    }
+    let placeholder = Url::parse("http://tauri.localhost/connect.html")
+        .map_err(|e| format!("invalid connect placeholder url: {e}"))?;
+    let backend_origin = placeholder.origin();
     let window = finish_create_main_window(
         app_handle,
         WebviewUrl::App("connect.html".into()),
@@ -72,9 +79,8 @@ pub(crate) fn create_main_window_connect_page(
     )?;
     if let Ok(current) = window.url() {
         crabmate_connect::seed_connect_home(&current);
-    } else if let Ok(home) = Url::parse("http://tauri.localhost/connect.html") {
-        // 窗口 URL 尚未就绪时，仍按约定资产路径播种，便于日后 disconnect。
-        crabmate_connect::seed_connect_home(&home);
+    } else {
+        crabmate_connect::seed_connect_home(&placeholder);
     }
     Ok(())
 }
@@ -141,7 +147,7 @@ fn finish_create_main_window(
     }
     let window = builder
         .on_navigation(move |url| {
-            // 连接页 → 仅本机 sidecar 或已探测通过的 AllowedServeOrigin；会话内跨源外开。
+            // 连接页 → 仅已探测通过的 AllowedServeOrigin；会话内跨源外开。
             match url.scheme() {
                 "tauri" | "asset" => true,
                 "mailto" => {
@@ -185,7 +191,7 @@ fn finish_create_main_window(
                             return false;
                         }
                     }
-                    // 程序化 navigate / 尚无 current URL：仅放行 sidecar 或已允许 Origin。
+                    // 程序化 navigate / 尚无 current URL：仅放行已允许 Origin。
                     if is_backend || allowed {
                         return true;
                     }

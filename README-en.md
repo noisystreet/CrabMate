@@ -104,14 +104,17 @@ Then from the repo root: **`crabmate serve`** (or **`cargo run -- serve`**). Det
 
 ### Desktop Tauri
 
-Tree: **`desktop-tauri/`**. The **WebView** loads **`serve`** spawned as **`--host 127.0.0.1 --port 0 --desktop-ready-json`**; the shell parses the **`web_ready`** JSON on stdout (see [**desktop-tauri/README.md**](desktop-tauri/README.md)). If **`crabmate`** is not on **`PATH`**, set **`CM_DESKTOP_BACKEND_BIN`** to the built binary.
+Tree: **`desktop-tauri/`**. Thin client: start **`crabmate serve`** yourself (local or remote), then open the shared **connect page** in the WebView (default suggested URL `http://127.0.0.1:8080/`; see [**desktop-tauri/README.md**](desktop-tauri/README.md)). Skip connect with **`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** only if **`CM_DESKTOP_SERVE_URL`** is set.
 
 ```bash
 cargo build
 cd frontend && trunk build && cd ..
+# terminal A
+cargo run -- serve
+# terminal B
 cargo install tauri-cli --version "^2"   # once
 cd desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev
+cargo tauri dev
 ```
 
 Release: **`cargo tauri build`**. Proxies and troubleshooting: [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md).
@@ -138,7 +141,7 @@ cd desktop-tauri/src-tauri
 cargo tauri build
 ```
 
-**`prepare-sidecar.sh`** copies **`target/release/crabmate`** (or **`CM_DESKTOP_BACKEND_BIN`**) into **`desktop-tauri/binaries/`** as the backend **sidecar**. Bundles usually land under **`desktop-tauri/src-tauri/target/release/bundle/deb/`** (exact names depend on **`productName`** / version). **`bundle.targets`**, **`GDK_BACKEND`**, etc.: [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md).
+**`prepare-sidecar.sh`** (legacy name) syncs **`connect.html` / `splash.html`** and optional **`frontend/dist`** into **`desktop-tauri/dist`** for the deb. The desktop **`.deb` no longer embeds** a `crabmate` sidecar; install the CLI separately or connect to a remote **`serve`**. Bundles usually land under **`desktop-tauri/src-tauri/target/release/bundle/deb/`**. **`bundle.targets`**, **`GDK_BACKEND`**, etc.: [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md).
 
 ### Maintainer QA
 
