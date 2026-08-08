@@ -159,6 +159,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 | Document | Contents | 中文 |
 | --- | --- | --- |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes (Keep a Changelog) | — |
 | [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture overview, main modules, data flow | [zh](docs/开发文档.md) |
 | [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, Web/TOML | [zh](docs/配置说明.md) |
 | [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and examples | [zh](docs/工具说明.md) |
