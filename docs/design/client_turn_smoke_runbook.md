@@ -23,7 +23,7 @@
 | 项 | 说明 |
 |----|------|
 | 密钥 | 默认 `llm_http_auth_mode=bearer` 时须有可用 **`API_KEY`**（或钥匙串 / 侧栏已存）；**勿**把真密钥写进本文件或 commit |
-| 前端静态包 | Web / Desktop / Mobile 远程 UI：`cd frontend && trunk build`，再启动或重启 `serve` |
+| 前端静态包 | Web / Desktop / Mobile 远程 UI：`cd ../crabmate-client && make frontend`，再启动或重启 `serve` |
 | 工作区 | 选一可信本地目录作 `--workspace` / Web 当前工作区 |
 | 代理 | Playwright / 本机 `127.0.0.1` 时注意 `no_proxy=127.0.0.1,localhost`（见 `AGENTS.md`） |
 | Bearer | 若启用 Web API 共享密钥：侧栏 / 连接页填的是 **`CM_WEB_API_BEARER_TOKEN`**，**不是**模型 `API_KEY` |
@@ -62,7 +62,7 @@ API_KEY='…' cargo run -- --workspace /path/to/ws chat -- "用一句话介绍�
 ### 4.2 宿主：Web（浏览器本机）
 
 ```bash
-cd frontend && trunk build && cd ..
+cd ../crabmate-client && make frontend
 API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1
 # 浏览器打开打印的 URL；若配置了 Web Bearer，侧栏先保存同一共享密钥
 ```
@@ -208,7 +208,7 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 ### 9.1 服务端
 
 ```bash
-cd frontend && trunk build && cd ..
+cd ../crabmate-client && make frontend
 # 将 UI Origin 加入白名单（示例：静态站在 :8081，API 在 :8080）
 CM_WEB_API_BEARER_TOKEN='…shared…' \
 CM_WEB_CORS_ALLOWED_ORIGINS='http://127.0.0.1:8081' \

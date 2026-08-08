@@ -5,16 +5,16 @@ alwaysApply: true
 
 # 聊天与 SSE 协议（双端一致）
 
-以下路径或概念变更时，**必须**同时核对 **Rust 路由/handler**、**前端解析** 与（若对外）**文档**：
+以下路径或概念变更时，**必须**同时核对 **Rust 路由/handler**、**Client 前端解析** 与（若对外）**文档**：
 
 - **路由与请求体**：`src/lib.rs` 中 **`/chat`**、**`/chat/stream`** 等；请求/响应 JSON 字段。
-- **SSE 行协议**：`src/sse/protocol.rs`（及 `sse/mod.rs` 再导出）；**版本号**：`crates/crabmate-sse-protocol`（`SSE_PROTOCOL_VERSION`）。流式 payload 类型、错误码、`data:` 行格式。**权威说明与错误码表**：`docs/SSE协议.md`（与 **`frontend/src/api/chat_stream/parser_v2.rs`**、`frontend/src/sse_dispatch/types.rs`、**`frontend/src/api/`** 对齐）。
+- **SSE 行协议**：`src/sse/protocol.rs`（及 `sse/mod.rs` 再导出）；**版本号**：`crates/crabmate-sse-protocol`（`SSE_PROTOCOL_VERSION`）。流式 payload 类型、错误码、`data:` 行格式。**权威说明与错误码表**：`docs/SSE协议.md`（与 Client **`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`**、`frontend/src/sse_dispatch/types.rs`、**`frontend/src/api/`** 对齐）。
 - **Rust 侧行分类（可选/未来 TUI）**：`src/sse/line.rs`（`classify_agent_sse_line` 等；**不再**经 `sse/mod.rs` 再导出）是否与 Web 消费语义一致或刻意分叉（若分叉须在注释与 DEVELOPMENT 中说明）。
-- **前端**：**`frontend/src/api/`**（**`chat_stream/`** SSE 读取，**`parser_v2.rs`** 分发到 **`SseControlSink`**）与 **`frontend/src/sse_dispatch/types.rs`**（回调分组形状）。
+- **前端（仅 Client 仓）**：**`../crabmate-client/frontend/src/api/`**（**`chat_stream/`** SSE 读取，**`parser_v2.rs`** 分发到 **`SseControlSink`**）与 **`frontend/src/sse_dispatch/types.rs`**（回调分组形状）。本仓无 `frontend/` 源码。
 
 ## 清单
 
-- [ ] 字段增删改名 → **serde 类型**、**Leptos 前端解析**（**`frontend/src/api/chat_stream/parser_v2.rs`**、**`frontend/src/sse_dispatch/types.rs`**、**`frontend/src/api/`** 请求体/流式路径）、**可选 README / DEVELOPMENT** 协议说明一致。
-- [ ] 若改动 **Web 控制面分发分支顺序或新顶层键**：同步 **`crates/crabmate-sse-protocol/control_classify.rs`**（`classify_sse_control_outcome`，IM/V1 形状）、**`fixtures/sse_control_golden.jsonl`**（若仍维护 V1 向量）、以及 **`fixtures/sse_ag_ui_golden.jsonl`** + **`parser_v2.rs`**；本地跑 **`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`**。
+- [ ] 字段增删改名 → **serde 类型**、**Client Leptos 解析**（**`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`**、**`sse_dispatch/types.rs`**、**`api/`**）、**可选 README / DEVELOPMENT** 协议说明一致。
+- [ ] 若改动 **Web 控制面分发分支顺序或新顶层键**：同步 **`crates/crabmate-sse-protocol/control_classify.rs`**（`classify_sse_control_outcome`，IM/V1 形状）、**`fixtures/sse_control_golden.jsonl`**（若仍维护 V1 向量）、以及 **`fixtures/sse_ag_ui_golden.jsonl`** + Client **`parser_v2.rs`**；本仓跑 **`cargo test -p crabmate-sse-protocol golden_ag_ui_classify_matches_expected`**（若适用）；Client 跑 **`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`**。
 - [ ] 新错误码或 `code:` → 前端是否展示/重试；**勿**在响应体中泄露密钥或完整鉴权头（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
-- [ ] 准备提交 → **`cd frontend && cargo check --target wasm32-unknown-unknown`**；大改时 **`cd frontend && trunk build`**（或与生产一致 **`trunk build --release`**）。
+- [ ] 准备提交（若动到 UI 契约消费）→ Client：**`cd ../crabmate-client && make frontend-check`**；大改时 **`make frontend`**（或 `trunk build --release`）。

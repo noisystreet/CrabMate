@@ -1,18 +1,20 @@
 # CrabMate Web 前端目标架构（Leptos / WASM）
 
-本文描述 **`frontend/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../开发文档.md) 架构概要为准。
+> **源码位置**：官方 UI 在 Client 仓 **`../crabmate-client/frontend`**（路径 A）。下文路径如 `frontend/src/...` 均相对该仓，**不**在本 Server 仓。构建：`cd ../crabmate-client && make frontend`。
+
+本文描述 **Client `frontend/`** 期望演进的**页面与模块架构**，用于指导后续重构；**当前代码未必已完全实现**下文目标形态，以 Git 历史与 [`docs/开发文档.md`](../开发文档.md) 架构概要为准。
 
 ## 1. 文档目的
 
 - **统一语言**：命名「域 / 功能 / 接线 / 端口」时的约定，减少 `App` 与子模块之间的随意耦合。
 - **约束依赖方向**：视图 → 功能状态 → 共享领域逻辑 → `api` / 浏览器 API，避免反向依赖与循环模块。
-- **可渐进迁移**：允许与现有 `src/*.rs`、`app/*.rs` 并存，按阶段搬迁而非一次性重写。
+- **可渐进迁移**：允许与现有 Client `frontend/src/*.rs`、`app/*.rs` 并存，按阶段搬迁而非一次性重写。
 
 ## 2. 技术栈约束（不可回避）
 
-- **Leptos CSR**：入口为单根 [`App`](../../frontend/src/app/mod.rs)，**细粒度响应式**（`RwSignal` / `Effect`）是状态主模型。
+- **Leptos CSR**：入口为单根 `App`（Client `frontend/src/app/mod.rs`），**细粒度响应式**（`RwSignal` / `Effect`）是状态主模型。
 - **WASM**：无传统「多线程共享可变状态」；跨异步边界用 `spawn_local`、共享句柄多为 `Rc` / `Arc` + 内部可变性。
-- **与后端契约**：HTTP / SSE 形状以 Rust 后端与 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) 为权威；前端**不**私自发明事件名或字段语义（见 §8）。单轮工具回合 **消息展示顺序**见 [`docs/Turn布局设计.md`](../Turn布局设计.md)。
+- **与后端契约**：HTTP / SSE 形状以 Rust 后端与 [`docs/SSE协议.md`](../SSE协议.md) 为权威；前端**不**私自发明事件名或字段语义（见 §8）。单轮工具回合 **消息展示顺序**见 [`docs/Turn布局设计.md`](../Turn布局设计.md)。
 
 ## 3. 设计原则
 
@@ -82,7 +84,7 @@
 ## 8. 与后端的契约边界
 
 - **路由与请求体**：变更须与后端 Axum handler 及 [`docs/命令行与路由.md`](../命令行与路由.md) / OpenAPI 一致。
-- **SSE**：行协议、错误码、控制面 JSON 以 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) 与 `crabmate-sse-protocol` 版本为准；前端解析集中在 **`sse_dispatch`**，**`app/` 只做回调挂载**。
+- **SSE**：行协议、错误码、控制面 JSON 以 [`docs/SSE协议.md`](../SSE协议.md) 与 `crabmate-sse-protocol` 版本为准；前端解析集中在 **`sse_dispatch`**，**`app/` 只做回调挂载**。
 - **新增能力**：优先在后端与协议中落地字段，再更新前端类型与 `sse_dispatch`，避免「前端先写死字符串」。
 
 ## 9. 分阶段重构路线（建议）
@@ -94,7 +96,7 @@
 **C. 功能子目录** | `chat` 相关文件物理上归入 `app/chat/`（或等价命名），`mod` 再导出 | **已落地** `app/chat/`；`docs/开发文档.md` 已同步 |
 **D. 端口清晰** | **`api/`**（`mod.rs` 聚合）保持最薄；如需 mock，对 `fetch_*` 层包一层 trait 或测试桩（按需） | 关键 `fetch` 在 `wasm-bindgen-test` 或集成测试可替换
 
-**注意**：每一阶段完成后应 **`cd frontend && cargo check --target wasm32-unknown-unknown`**，并与 [`docs/SSE协议.md`](../SSE_PROTOCOL.md) / 前端解析路径交叉检查。
+**注意**：每一阶段完成后应 **`cd ../crabmate-client && make frontend-check`**，并与 [`docs/SSE协议.md`](../SSE协议.md) / 前端解析路径交叉检查。
 
 ## 10. 反模式（应主动纠正）
 
@@ -107,7 +109,7 @@
 ## 11. 相关文档
 
 - [`docs/开发文档.md`](../开发文档.md)：仓库架构概要；前端细节以本文为准。
-- [`docs/SSE协议.md`](../SSE_PROTOCOL.md)：流式协议。
+- [`docs/SSE协议.md`](../SSE协议.md)：流式协议。
 - [`docs/测试指南.md`](../TESTING.md)：前端构建与测试命令。
 - [`frontend/VISUAL_REGRESSION_CHECKLIST.md`](VISUAL_REGRESSION_CHECKLIST.md)：视觉回归自检（若有 UI 大改）。
 

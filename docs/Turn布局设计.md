@@ -1,7 +1,7 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
 **状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；E2–E4 未落地；终端 TUI 已接入 **`crabmate-turn-layout`**（`src/runtime/tui/run_session/turn_project.rs`，`project_turn_web_v2` 中区块）；CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
-**目标读者**：维护者；变更 **`turn_segment_*`**、**`frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。
+**目标读者**：维护者；变更 **`turn_segment_*`**、Client **`../crabmate-client/frontend/src/app/chat/composer_stream/`** 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 Client 仓路径。
 
 ---
 
@@ -102,7 +102,7 @@ flowchart TB
 | `project.rs` | `project_turn` → `Vec<ProjectedRow>` |
 
 **金样**：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 事件形状 + v2 stored sync）
-**测试**：`cargo test -p crabmate-turn-layout golden_turn_project` · `golden_turn_project_web` · `cd frontend && cargo test --lib golden_turn_web_stored_sync`
+**测试**：`cargo test -p crabmate-turn-layout golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
 
@@ -188,7 +188,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 | `tool_call` | 工具占位 | `TurnLayout::on_tool_call_declared` |
 | plain delta | LLM 流 | `try_apply_commentary_delta` 或 lane 写入 |
 
-分类金样：**`fixtures/sse_ag_ui_golden.jsonl`**；`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
+分类金样：**`fixtures/sse_ag_ui_golden.jsonl`**；`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
 
 ---
 
@@ -197,10 +197,10 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 | 命令 | 覆盖 |
 |------|------|
 | `cargo test -p crabmate-turn-layout` | reducer + `golden_turn_project` + `golden_turn_project_web` |
-| `cd frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
-| `cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected` | AG-UI 控制面分类 |
-| `cd frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
-| `cd frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
+| `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync` | `project_turn_web_v2` 逐旁注不可变落盘 |
+| `cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected` | AG-UI 控制面分类 |
+| `cd ../crabmate-client/frontend && cargo test --lib turn_layout` | peel/尾泡单测 |
+| `cd ../crabmate-client/frontend && cargo test --lib turn_canonical` | 晚到 delta attach |
 
 **手动**：`trunk build` 后重启 `serve`，跑含多工具（read_dir → create → cmake）的任务，导出 Markdown 核对旁注是否在对应工具 **之前**。
 
@@ -219,7 +219,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 ## 10. 变更检查清单
 
 - [ ] 新增/修改 **`turn_segment_*`** → `sse/protocol.rs`、`emit.rs`、`docs/SSE协议.md`、中英文 SSE 文档、`sse_ag_ui_golden.jsonl`、`parser_v2.rs`（必要时 `control_classify.rs` / `sse_control_golden.jsonl`）
-- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` + `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` + `cd frontend && cargo test --lib golden_turn_web_stored_sync`
+- [ ] 修改 reducer / Web 投影语义 → `fixtures/turn_project_golden.jsonl` 与/或 `fixtures/turn_project_web_golden.jsonl` + `cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` + `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 - [ ] 修改 **`TurnLayout` 分支顺序** → `turn_layout.rs` 单测 + 导出场景手测
 - [ ] 修改 plain delta 路由 → `delta_apply.rs` + `turn_canonical` 单测
 - [ ] 实现 §12 某 Phase → 同步本节金样 + 手测导出场景

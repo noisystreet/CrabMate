@@ -13,7 +13,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 | Built-in tools | **`docs/en/TOOLS.md`** |
 | Turn display order | **`docs/Turn布局设计.md`** (Chinese authoritative) |
 | Debug | **`docs/en/DEBUG.md`** |
-| Frontend layout | **`docs/frontend/ARCHITECTURE.md`**, **`frontend/README.md`** |
+| Frontend layout | **`docs/frontend/`** (pointers in this repo) · source **`../crabmate-client/frontend`** |
 
 ## Documentation and collaboration (summary)
 
@@ -26,7 +26,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 ## Overview
 
 - **Backend** (`src/` + workspace crates): OpenAI-compatible chat, agent turns, HTTP/SSE, tools, workspace, sessions.
-- **Frontend** (`frontend/`): Leptos + WASM (Trunk); static assets from `serve`.
+- **Official UI** (Client repo `../crabmate-client/frontend`): Leptos + WASM (Trunk); this repo’s `serve` may host its `dist` via **`CM_WEB_STATIC_DIR`**, or **`--no-web`** for API-only.
 - **CLI / TUI** (`runtime/`): share **`run_agent_turn`** and tool execution with Web.
 
 ## Architecture
@@ -109,7 +109,7 @@ Implementations often live under `crates/*` with root re-exports. Forbidden edge
 
 ## Frontend (summary)
 
-Leptos CSR: `api/` + `sse_dispatch`; UI in `app/`. Details: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd ../crabmate-client && make frontend`.
+UI **source is not in this repo** (path A). Leptos CSR lives under Client `frontend/src/api/` + `sse_dispatch`; design notes: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 

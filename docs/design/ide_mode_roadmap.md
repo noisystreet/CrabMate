@@ -211,7 +211,7 @@ Leptos + CM，同进程 Web UI      Extension Host + Webview 客户端
 
 每期合并前建议：
 
-- [ ] `cd frontend && cargo check --target wasm32-unknown-unknown`（及必要的 `trunk build`）
+- [ ] `cd ../crabmate-client && make frontend-check`（及必要的 `trunk build`）
 - [ ] 相关 Victauri 用例更新或新增（IDE 布局套件）
 - [ ] 若改 SSE 控制面：同步 **`docs/SSE协议.md`**、**`classify_sse_control_outcome`** / 金测、前端 dispatch
 - [ ] 用户可见行为：更新 **`README.md`**；维护者模块说明：按需更新 **`docs/开发文档.md`**

@@ -93,14 +93,15 @@ cargo build --release
 
 ### Web frontend
 
-**`crabmate serve`** serves static files from **`frontend/dist`**; no separate frontend process.
+Official UI source lives in the Client repo **[`../crabmate-client/frontend`](../crabmate-client/frontend)** (path A Phase 4.2).
 
 ```bash
-cd frontend
-trunk build              # dev; release: trunk build --release
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent && cargo run -- serve
 ```
 
-Then from the repo root: **`crabmate serve`** (or **`cargo run -- serve`**). Details: **`frontend/README.md`**.
+API-only: `serve --no-web`. Design notes remain in this repo under [`docs/frontend/`](docs/frontend/).
 
 ### Official Client (Desktop / Android)
 

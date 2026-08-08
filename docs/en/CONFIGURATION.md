@@ -54,7 +54,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 | `CM_WEB_AUDIT_LOG_WRITE_TOOLS` | Overrides **`web_audit_log_write_tools`**; default **on**—structured audit for write-side-effect tools (**`target=crabmate::audit_write_tool`**). |
 | `CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR` | Overrides **`web_audit_trust_x_forwarded_for`**; default **off**—whether audit **`client_ip`** trusts the first **`X-Forwarded-For`** hop. |
 | `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK` | When binding non-loopback (e.g. `0.0.0.0`) **without** a non-empty `web_api_bearer_token`, allow startup (default: refuse). Set `true` / `1` for **temporary** unauthenticated LAN/local debug (**high risk**). **Does not** disable checks if the secret is still set—`unset CM_WEB_API_BEARER_TOKEN` and clear the TOML key first. |
-| `CM_WEB_STATIC_DIR` | Override **`serve`** static root (must contain **`index.html`**, **`vendor/ide-codemirror.js`**, etc.). **No** TOML key; read when **`serve`** starts—restart after change. Default resolution: **`crates/crabmate-internal/src/web_static_dir.rs`** (dev: usually repo **`frontend/dist`**; desktop **`.deb`** layout may be **`/usr/share/crabmate/frontend/dist`**—set by **`serve`**, not injected by the shell). If the env still points at the install path but **`serve` cwd** is a built source tree, resolution **prefers local dist**. |
+| `CM_WEB_STATIC_DIR` | Override **`serve`** static root (must contain **`index.html`**, **`vendor/ide-codemirror.js`**, etc.). **No** TOML key; read when **`serve`** starts—restart after change. Default resolution: **`crates/crabmate-internal/src/web_static_dir.rs`** (dev: sibling Client / local **`frontend/dist`**; install layout may be **`/usr/share/crabmate/frontend/dist`**—set by **`serve`**, not injected by the shell). If the env still points at the install path but **`serve` cwd** is a built source tree, resolution **prefers local dist**. Official UI source is in the Client repo; use **`--no-web`** when none. |
 | `CM_DESKTOP_SUGGESTED_URL` | **Desktop shell**: connect-page suggested URL (default **`http://127.0.0.1:8080/`**). **No** TOML key. |
 | `CM_DESKTOP_SERVE_URL` | **Desktop shell**: required when skipping the connect page; URL of an already-running **`serve`**. **No** TOML key. |
 | `CM_DESKTOP_SKIP_CONNECT` | **Desktop shell**: skip connect page when set (must also set **`CM_DESKTOP_SERVE_URL`**). |
@@ -159,7 +159,7 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_PROJECT_PROFILE_INJECT_ENABLED` | Project profile injection. |
 | `CM_PROJECT_PROFILE_INJECT_MAX_CHARS` | Profile max chars. |
 | `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_ENABLED` | Dependency brief (merged with profile/memo). |
-| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **`package.json` name excerpts** under the **workspace root or a `frontend/` subdirectory** (common npm layout). **Only paths that actually contain `package.json`** contribute; this does not collide with this repo’s Leptos **`frontend/`** tree (usually no `package.json`); `0` disables segment. |
+| `CM_PROJECT_DEPENDENCY_BRIEF_INJECT_MAX_CHARS` | From `cargo metadata` edges + Mermaid + **`package.json` name excerpts** under the **workspace root or a `frontend/` subdirectory** (common npm layout). **Only paths that actually contain `package.json`** contribute; this does not collide with the official Client Leptos tree (usually no `package.json`); `0` disables segment. |
 
 ### Tool explain card
 
