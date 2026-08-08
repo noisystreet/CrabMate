@@ -1,7 +1,7 @@
 # 三端真实回合冒烟（B3 Runbook）
 
 > **状态**：清单已入库（2026-08-08）；**执行靠人工勾选**，默认不进 CI。  
-> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；Server/Client 解耦规划阶段 **B3**；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。  
+> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；Server/Client 解耦阶段 **B3**（三端冒烟）；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。  
 > **非目标**：改 SSE/HTTP 字段；把本清单做成强制 CI 门禁；拆 Desktop/Mobile 仓库。
 
 ---
@@ -174,7 +174,7 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 
 | 状态 | 含义 |
 |------|------|
-| **清单完成** | 本文存在且被 `turn_host_decouple` / 开发文档索引；解耦规划 B3 可标「runbook 已交付」 |
+| **清单完成** | 本文存在且被 `turn_host_decouple` / 开发文档索引；B3 冒烟清单已交付 |
 | **冒烟通过** | 某人按 §4（或 §5）勾选并留下 §6 记录；可将 `turn_host_decouple` 中「各端一次真实回合」改为已勾 |
 
 后续若要把最小集自动化：优先扩展现有 `e2e_http_` / `crabmate e2e`，而不是把人工壳步骤硬塞进 pre-commit。

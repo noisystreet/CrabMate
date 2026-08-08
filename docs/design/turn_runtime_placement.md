@@ -1,7 +1,7 @@
 # ADR：回合执行面落点（`crabmate-turn-runtime`）
 
 > **状态**：**已采纳（2026-08-08）** — **暂不**新建 `crabmate-turn-runtime` / 薄接口 crate；默认实现继续留在**根包 composition root**。  
-> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) **P4**；宿主解耦规划阶段 B1（`agent_space/server-client-decouple-plan.md`）。  
+> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) **P4**；与 Server/Client 解耦阶段 B1 对应（中间稿已收工，结论以本文为准）。  
 > **非目标**：本 ADR **不**改 SSE/HTTP 字段，**不**搬迁 `chat_job_queue`（属 P5）。
 
 ---
