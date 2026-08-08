@@ -123,8 +123,8 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | Method | Command / notes |
 | --- | --- |
 | **Install to PATH** | **`cargo install --path .`** (**does not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed). |
-| **Tarball** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`** (binary, `config/`, `frontend/dist`, man); with **`cargo-deb`**, may also collect **`.deb`**. |
-| **Debian (.deb)** | After **`trunk build --release`** in **`frontend`**, **`cargo deb`** → **`target/debian/`**. Details: [docs/en/CLI.md](docs/en/CLI.md). |
+| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** remains on the script only. |
+| **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); artifacts under **`dist/`** or **`target/debian/`**. Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
 | **Desktop / APK** | **Only** the Client repo ([`../crabmate-client`](../crabmate-client/)). |
 | **Regenerate man** | **`cargo run --bin crabmate-gen-man`**. |
 

@@ -237,22 +237,27 @@ SSE control-plane fields: **`docs/SSE协议.md`**.
 
 ## One-shot packaging (tar.gz + optional .deb)
 
+Default is **server-only** (**no** frontend):
+
 ```bash
-./scripts/package-release.sh
+make package           # tar.gz + optional .deb → dist/
+make package-tar       # tar.gz only
+make package-deb       # .deb only (Linux + cargo-deb)
+# equivalent: ./scripts/package-release.sh --skip-frontend
 ```
 
-Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produced (unless **`--skip-tar`**); **`.deb`** is copied from **`target/debian/`** only on **Linux** with **`cargo-deb`** installed (use **`--skip-deb`** to skip). Run **`--help`** for all flags.
+Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produced (unless **`--skip-tar`**); **`.deb`** is copied from **`target/debian/`** only on **Linux** with **`cargo-deb`** installed (use **`--skip-deb`** to skip). Run **`./scripts/package-release.sh --help`** for all flags.
 
 ## Debian `.deb` package
 
 ```bash
 cargo install cargo-deb
-cargo build --release
-cargo deb
-sudo dpkg -i target/debian/crabmate_*.deb
+make package-deb
+# or: cargo build --release && cargo deb
+sudo dpkg -i dist/crabmate_*.deb   # or target/debian/crabmate_*.deb
 ```
 
-Server `.deb` does not require UI. To bundle UI in a tarball, build Client dist then run `./scripts/package-release.sh --frontend-dist …/frontend/dist`.
+Server **`make package*`** / `.deb` does **not** embed UI. Use **`--no-web`** or **`CM_WEB_STATIC_DIR`** at runtime. To optionally bundle UI in a tarball, run **`./scripts/package-release.sh --frontend-dist …/frontend/dist`** (Makefile targets do not take that path).
 
 After install: `export API_KEY=… && crabmate serve --no-web` (or set **`CM_WEB_STATIC_DIR`**). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
 

@@ -1,9 +1,10 @@
-# CrabMate 构建入口：后端（serve / CLI）与清理。
-# 业务 UI：同级 Client 仓 ../crabmate-client（路径 A Phase 4.2）。
+# CrabMate 构建入口：后端（serve / CLI）、发布打包与清理。
+# 业务 UI：同级 Client 仓 ../crabmate-client（路径 A Phase 4.2）；本仓打包默认不附带 UI。
 # 用法：make help
 
 ROOT := $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
 CARGO ?= cargo
+PACKAGE_RELEASE := $(ROOT)/scripts/package-release.sh
 
 # RELEASE=1 时使用 --release（make all 默认开启）
 RELEASE ?= 0
@@ -18,6 +19,7 @@ BACKEND_BIN := $(if $(filter 1 true yes,$(RELEASE)),$(BACKEND_BIN_RELEASE),$(BAC
 .PHONY: help all all-dev \
 	backend backend-release \
 	workspace workspace-release \
+	package package-tar package-deb \
 	test check fmt clippy \
 	clean clean-backend clean-dist
 
@@ -32,6 +34,11 @@ help:
 	@echo "  make all / all-dev    同 backend-release / backend"
 	@echo "  业务 UI：cd ../crabmate-client && make frontend"
 	@echo "  桌面/Android 壳：cd ../crabmate-client && make help"
+	@echo ""
+	@echo "发布打包（server-only，不附带 frontend）："
+	@echo "  make package          tar.gz + 可选 .deb → dist/（需 cargo-deb 才出 deb）"
+	@echo "  make package-tar      仅 tar.gz"
+	@echo "  make package-deb      仅 .deb（Linux + cargo-deb）"
 	@echo ""
 	@echo "质检："
 	@echo "  make test             cargo test --workspace"
@@ -68,6 +75,20 @@ workspace:
 
 workspace-release:
 	$(MAKE) workspace RELEASE=1
+
+# --- 发布打包（默认不附带 UI；运行时 --no-web 或 CM_WEB_STATIC_DIR）---
+
+package:
+	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
+	"$(PACKAGE_RELEASE)" --skip-frontend
+
+package-tar:
+	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
+	"$(PACKAGE_RELEASE)" --skip-frontend --skip-deb
+
+package-deb:
+	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
+	"$(PACKAGE_RELEASE)" --skip-frontend --skip-tar
 
 # --- 质检（可选）---
 
