@@ -4,7 +4,6 @@
 **日期**：2026-07-09  
 **受众**：维护者、架构决策者  
 **关联**：
-- `agent_space/open_source_agent_comparison.md` — 对比分析（P0: Prompt 缓存）
 - `crates/crabmate-types/src/chat_api.rs` — ChatResponse / StreamChunk 类型定义
 - `crates/crabmate-llm/src/api/mod.rs` — HTTP 调用入口（流式+非流式）
 - `crates/crabmate-llm/src/api/sse_parser.rs` — SSE 解析（usage 在最后一帧）

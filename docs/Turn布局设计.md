@@ -533,7 +533,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 ## 16. Phase E：终态协议与 hydration（E1 已落地；E2–E4 进行中）
 
-> 自原 `agent_space` 草稿吸收；改协议时同步 **`docs/SSE协议.md`**（AG-UI 附录）与金样。切片跟踪见工作区 **`agent_space/compat-layer-shrink-plan.md`**（B1=E1）。
+> 自原草稿吸收；改协议时同步 **`docs/SSE协议.md`**（AG-UI 附录）与金样。切片跟踪以 **`docs/待办清单.md`**「兼容层收缩」为准（B1=E1 已完成）。
 
 ### 16.1 现状
 

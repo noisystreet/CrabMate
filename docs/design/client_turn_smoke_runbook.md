@@ -1,7 +1,7 @@
 # 三端真实回合冒烟（B3 Runbook）
 
 > **状态**：清单已入库（2026-08-08）；**执行靠人工勾选**，默认不进 CI。  
-> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；Server/Client 解耦阶段 **B3**（三端冒烟）；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。  
+> **关联**：[`turn_host_decouple.md`](./turn_host_decouple.md) 验收项；官方 Client 拆分见 [`client_shell_split.md`](./client_shell_split.md) / [`client_shell_split_todo.md`](./client_shell_split_todo.md)；自动化真 LLM 见 [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md)。  
 > **非目标**：改 SSE/HTTP 字段；把本清单做成强制 CI 门禁；拆 Desktop/Mobile 仓库。
 
 ---
