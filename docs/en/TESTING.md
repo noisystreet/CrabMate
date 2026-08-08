@@ -6,7 +6,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 ## Prerequisites
 
-- **Rust**: 1.85+ (edition 2024); see [`README-en.md`](../../README-en.md).
+- **Rust**: 1.85+ (edition 2024); see [`README.md`](../../README.md).
 - **E2E**: **Playwright** and **Victauri** live in the Client repo (`../crabmate-client`). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
 - **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`** (or use **`serve --no-web`** for API-only).
 
