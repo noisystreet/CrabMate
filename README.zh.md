@@ -159,6 +159,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 文档 | 内容 | English |
 | --- | --- | --- |
+| [CHANGELOG.md](CHANGELOG.md) | 发版说明（Keep a Changelog） | — |
 | [docs/开发文档.md](docs/开发文档.md) | 架构概要、主要模块与数据流 | [en](docs/en/DEVELOPMENT.md) |
 | [docs/配置说明.md](docs/配置说明.md) | 环境变量、`CM_*`、Web/TOML 详解 | [en](docs/en/CONFIGURATION.md) |
 | [docs/工具说明.md](docs/工具说明.md) | 内置工具与调用示例 | [en](docs/en/TOOLS.md) |
