@@ -89,7 +89,7 @@ echo "==> 版本: ${VERSION} (${OS_RAW}-${ARCH_RAW})"
 
 if [[ "$SKIP_MAN" -eq 0 ]]; then
   echo "==> 生成 man 页 (crabmate-gen-man)"
-  cargo run --quiet --bin crabmate-gen-man
+  cargo run --quiet --features gen-man --bin crabmate-gen-man
 else
   echo "==> 跳过 man 生成"
 fi

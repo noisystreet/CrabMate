@@ -126,7 +126,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** remains on the script only. |
 | **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); artifacts under **`dist/`** or **`target/debian/`**. Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
 | **Desktop / APK** | **Only** the Client repo ([`../crabmate-client`](../crabmate-client/)). |
-| **Regenerate man** | **`cargo run --bin crabmate-gen-man`**. |
+| **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
 
 ### Maintainer QA
 

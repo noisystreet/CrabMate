@@ -9,7 +9,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 ## Man page (troff / `man`)
 
 - **Source tree**: Pre-generated **`man/crabmate.1`** (troff), aligned with current `clap`; **Debian `.deb`** installs to **`/usr/share/man/man1/crabmate.1`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
-- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --bin crabmate-gen-man`, then commit the updated `man/crabmate.1`.
+- **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1`.
 - **`cargo install`**: Does **not** install man into `MANPATH` by default; copy `man/crabmate.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
 
 ## Subcommand overview
