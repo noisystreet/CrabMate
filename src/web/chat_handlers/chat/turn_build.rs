@@ -42,17 +42,23 @@ pub(super) fn reject_if_client_sse_protocol_invalid(
     let Some(v) = client_sse_protocol else {
         return Ok(());
     };
-    if v != crate::sse::protocol::SSE_PROTOCOL_VERSION {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ApiError::new(
-                "SSE_PROTOCOL_MISMATCH",
-                format!(
-                    "仅支持 SSE 协议版本 {}（收到 v{}）",
-                    crate::sse::protocol::SSE_PROTOCOL_VERSION,
-                    v,
-                ),
-            )),
+    let supported = crate::sse::protocol::SSE_PROTOCOL_VERSION;
+    if v == 0 {
+        return Err(bad_request(
+            crabmate_api_contract::error_codes::INVALID_SSE_CLIENT_PROTOCOL,
+            "client_sse_protocol 不能为 0",
+        ));
+    }
+    if v > supported {
+        return Err(bad_request(
+            crabmate_api_contract::error_codes::SSE_CLIENT_TOO_NEW,
+            format!("客户端 SSE 协议版本 v{v} 高于服务端 v{supported}"),
+        ));
+    }
+    if v < supported {
+        return Err(bad_request(
+            crabmate_api_contract::error_codes::SSE_PROTOCOL_MISMATCH,
+            format!("仅支持 SSE 协议版本 {supported}（收到 v{v}）"),
         ));
     }
     Ok(())
@@ -342,4 +348,45 @@ pub(super) async fn build_messages_for_turn(
         persisted_active_agent_role: None,
         persisted_active_session_mode: Some(mode.as_str().to_string()),
     })
+}
+
+#[cfg(test)]
+mod client_sse_protocol_tests {
+    use super::reject_if_client_sse_protocol_invalid;
+    use crabmate_api_contract::error_codes;
+
+    #[test]
+    fn omits_ok() {
+        assert!(reject_if_client_sse_protocol_invalid(None).is_ok());
+    }
+
+    #[test]
+    fn matching_version_ok() {
+        let v = crate::sse::protocol::SSE_PROTOCOL_VERSION;
+        assert!(reject_if_client_sse_protocol_invalid(Some(v)).is_ok());
+    }
+
+    #[test]
+    fn zero_is_invalid() {
+        let err = reject_if_client_sse_protocol_invalid(Some(0)).unwrap_err();
+        assert_eq!(err.0, axum::http::StatusCode::BAD_REQUEST);
+        assert_eq!(err.1.0.code, error_codes::INVALID_SSE_CLIENT_PROTOCOL);
+    }
+
+    #[test]
+    fn newer_client_rejected() {
+        let v = crate::sse::protocol::SSE_PROTOCOL_VERSION.saturating_add(1);
+        let err = reject_if_client_sse_protocol_invalid(Some(v)).unwrap_err();
+        assert_eq!(err.1.0.code, error_codes::SSE_CLIENT_TOO_NEW);
+    }
+
+    #[test]
+    fn older_declared_version_mismatch() {
+        let supported = crate::sse::protocol::SSE_PROTOCOL_VERSION;
+        if supported <= 1 {
+            return;
+        }
+        let err = reject_if_client_sse_protocol_invalid(Some(supported - 1)).unwrap_err();
+        assert_eq!(err.1.0.code, error_codes::SSE_PROTOCOL_MISMATCH);
+    }
 }

@@ -10,6 +10,7 @@
 - **P3d**：`RunAgentTurnParams` 顶层嵌套为 `shared` / `session` / `transport` / `llm` / `attach` / `obs`（字段不删；密封入口子集 / 强制 builder 留后续）
 - **P4**：已决策 — **暂不**建 `crabmate-turn-runtime`；默认执行面留根包（见 [`turn_runtime_placement.md`](./turn_runtime_placement.md)，2026-08-08）
 - **P5**：已评估 — **暂不**整包迁 queue/带状态 handler 入 web-host（见 [`web_host_p5_placement.md`](./web_host_p5_placement.md)，2026-08-08）
+- **B3 冒烟清单**：已入库 [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)；验收勾选需执行记录（默认不进 CI）
 
 ## 目标
 
@@ -87,6 +88,7 @@ crabmate-internal / crabmate-tools
 | T3… | 参数袋 / chat facet | T2a |
 | T4 | P4 ADR：执行面落点（**已采纳：不建 runtime crate**） | T3 后 → [`turn_runtime_placement.md`](./turn_runtime_placement.md) |
 | T5 | P5 评估：queue/handler 是否迁 web-host（**暂不整包迁**） | T4 后 → [`web_host_p5_placement.md`](./web_host_p5_placement.md) |
+| T6 | B3 冒烟 runbook（CLI/TUI/Web + 壳 + 协议错位） | → [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md) |
 
 ## 验收清单（规划级）
 
@@ -95,7 +97,7 @@ crabmate-internal / crabmate-tools
 - [x] 存在 mock `ToolDispatch` 最小分发测试（外循环 mock 留待后续）
 - [x] 禁边脚本在 pre-commit 与 CI 中执行
 - [ ] 对外 SSE / HTTP 字段无静默变更
-- [ ] CLI / TUI / Web 各至少一次真实回合冒烟
+- [ ] CLI / TUI / Web 各至少一次真实回合冒烟（清单与步骤见 [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)；勾选需留下该文 §6 执行记录）
 
 ## 关键路径
 
@@ -119,6 +121,7 @@ crabmate-internal / crabmate-tools
 | [`agent_turn_split.md`](./agent_turn_split.md) | 已完成 FSM / Sink；本文接执行面 |
 | [`crate_dep_policy.md`](./crate_dep_policy.md) | 禁边与 facet；本文实现其「后续」中的 runner 注入 |
 | [`web_host_extract.md`](./web_host_extract.md) | A/B/C 已完成；本文解除**调用边**焊死；整包迁 handler 仍受 `FromRef`/禁边约束（见 P5 ADR） |
+| [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md) | B3：CLI/TUI/Web 与壳端真实回合 / 协议错位冒烟清单 |
 
 ## 成功一句话
 

@@ -8,7 +8,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 
 - Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
-- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**.
+- **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
 - **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
 - **Evolution**: Bump **`crates/crabmate-sse-protocol`**, this doc and the Chinese twin, and run **`cargo test -p crabmate-sse-protocol`** (doc marker self-check).
 
@@ -147,6 +147,7 @@ Approximate category of the **last** failed final answer when the rewrite budget
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+| `SSE_PROTOCOL_MISMATCH` | 400 | **`client_sse_protocol`** positive and **below** server version |
 | `INVALID_AT_FILE_REF` | 400 | User message contains an invalid **`@…`** file reference; same rules as **`read_file`** |
 | `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | Invalid **`clarify_questionnaire_answers`** payload; see `clarification_questionnaire` |
 | `LLM_RATE_LIMIT` | 429 | **`POST /chat`** rate limit / quota (same mapping as SSE) |

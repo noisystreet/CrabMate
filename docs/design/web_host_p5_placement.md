@@ -95,7 +95,7 @@ web-host 只应拿注入句柄，不应承载默认实现。
 | Server/Client 解耦 | 远程 Client 不依赖本 P5；继续守 HTTP/SSE 契约即可 |
 | 新 chat 路由 | 默认仍落 `src/web/`；仅无状态壳可进 web-host |
 | P4 | 不冲突：执行面留根包；P5 搬家另需 §5 前置 |
-| 冒烟 / runbook | 仍属 B3；与模块搬家正交 |
+| 冒烟 / runbook | B3 清单见 [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)；与模块搬家正交 |
 
 ---
 

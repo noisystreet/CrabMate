@@ -32,7 +32,7 @@ Control-plane JSON with **`error` + non-empty `code`** signals stream-level fail
 
 **`INTERNAL_ERROR`** and related codes may appear on **SSE** and on **`POST /chat` JSON** from the same `RunAgentTurnError` mapping; `chat` subprocesses still use `classify_model_error_message` on error strings.
 
-**HTTP JSON (not SSE `data:`)**: failed responses use **`ApiError`** with **`code`**, **`message`** (user-facing); optional **`reason_code`** (often a truncated internal summary for **`INTERNAL_ERROR`**); optional **`request_id`** (same value as response header **`x-request-id`**, rolled out gradually); optional **`details[]`** (field-level subcodes; old clients may ignore). **SSE** may still attach **`reason_code`** under multiple stream `code` values (see **`docs/en/SSE_PROTOCOL.md`**). Handshake-stage codes: **`web/chat_handlers`** and OpenAPI.
+**HTTP JSON (not SSE `data:`)**: failed responses use **`ApiError`** with **`code`**, **`message`** (user-facing); optional **`reason_code`** (often a truncated internal summary for **`INTERNAL_ERROR`**); optional **`request_id`** (same value as response header **`x-request-id`**; filled by middleware for **4xx/5xx** `application/json` **`ApiError`** bodies when missing); optional **`details[]`** (field-level subcodes; old clients may ignore). **SSE** may still attach **`reason_code`** under multiple stream `code` values (see **`docs/en/SSE_PROTOCOL.md`**). Handshake-stage codes: **`web/chat_handlers`** and OpenAPI.
 
 ### HTTP `ApiError.code` table (non-SSE)
 

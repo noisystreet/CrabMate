@@ -198,7 +198,7 @@ Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEA
 | Static | `/`, SPA, `/uploads/*` files | **No** | |
 | E2E | `/e2e/...` | Conditional | **`CM_E2E_FIXTURES=1` only** |
 
-Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation; JSON **`ApiError.request_id`** may match when populated. See **`docs/en/CLI_CONTRACT.md`**.
+Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation; **4xx/5xx** JSON **`ApiError.request_id`** matches the header (middleware fills when missing). See **`docs/en/CLI_CONTRACT.md`**.
 
 | Method | Path | Description |
 |--------|------|-------------|
