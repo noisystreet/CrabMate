@@ -3,7 +3,8 @@
 use super::definitions::{
     BenchmarkCliArgs, ChatCliArgs, Commands, E2eCliArgs, ExtraCliCommand, GlobalOpts, McpSubCmd,
     ParsedCliArgs, PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli,
-    SaveSessionCli, SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WorkflowFileCli, WorkflowSubCmd,
+    SaveSessionCli, SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WebBearerCli, WebBearerSubCmd,
+    WorkflowFileCli, WorkflowSubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
@@ -92,6 +93,7 @@ impl CliParseCtx {
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
             save_session: None,
+            web_bearer: None,
             tool_replay: None,
             sse_replay: None,
             plugin_init: None,
@@ -106,7 +108,7 @@ impl CliParseCtx {
     }
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `tui` / `chat` / `bench` / `config` / `doctor` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
+/// 解析命令行：支持 **`serve` / `repl` / `tui` / `chat` / `bench` / `config` / `doctor` / `web-bearer` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
 ///
 /// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
 ///
@@ -198,6 +200,17 @@ fn build_parsed_cli_args(
         }
         Commands::Doctor => {
             b.extra_cli = ExtraCliCommand::Doctor;
+        }
+        Commands::WebBearer(w) => {
+            b.web_bearer = Some(match w.sub {
+                WebBearerSubCmd::Status => WebBearerCli::Status,
+                WebBearerSubCmd::Set(s) => WebBearerCli::Set {
+                    token: s.token,
+                    stdin: s.stdin,
+                    from_env: s.from_env,
+                },
+                WebBearerSubCmd::Clear => WebBearerCli::Clear,
+            });
         }
         Commands::Models => {
             b.extra_cli = ExtraCliCommand::Models;

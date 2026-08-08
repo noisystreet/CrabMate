@@ -12,6 +12,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - GitHub Actions **Release** workflow (`.github/workflows/release.yml`): tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) → `make package` + GitHub Release with tar.gz/deb; notes from this file’s core `X.Y.Z` section; re-run updates the same Release.
+- CLI **`web-bearer status|set|clear`**: persist the Web API shared secret in the system keyring (same slot as Web Settings); **`serve`** falls back when TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty. Prefer **`set --stdin`** / **`set --from-env`** / interactive hidden input to avoid putting the secret on argv.
 
 ### Changed
 

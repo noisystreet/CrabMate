@@ -69,7 +69,8 @@ pub use request_audit::WebRequestAudit;
 
 pub use config::cli::{
     ChatCliArgs, E2eCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
-    normalize_legacy_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
+    WebBearerCli, normalize_legacy_argv, parse_args, parse_args_from_argv,
+    root_clap_command_for_man_page,
 };
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
 pub use run_agent_turn::run_agent_turn;

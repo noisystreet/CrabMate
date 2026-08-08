@@ -11,6 +11,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "bench"
             | "config"
             | "doctor"
+            | "web-bearer"
             | "models"
             | "probe"
             | "mcp"
@@ -218,6 +219,12 @@ mod legacy_argv_tests {
     fn explicit_doctor_subcommand_not_prefixed_with_repl() {
         let v = norm(&["crabmate", "doctor"]);
         assert_eq!(v, vec!["crabmate", "doctor"]);
+    }
+
+    #[test]
+    fn explicit_web_bearer_subcommand_not_prefixed_with_repl() {
+        let v = norm(&["crabmate", "web-bearer", "status"]);
+        assert_eq!(v, vec!["crabmate", "web-bearer", "status"]);
     }
 
     #[test]

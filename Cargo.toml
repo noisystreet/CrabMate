@@ -248,6 +248,7 @@ sha2 = { workspace = true }
 subtle = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
+dialoguer = { workspace = true }
 tokio-stream = { workspace = true }
 async-trait = { workspace = true }
 libc = { workspace = true }

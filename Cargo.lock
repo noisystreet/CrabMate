@@ -1113,6 +1113,7 @@ dependencies = [
  "crabmate-web-host",
  "crabmate-workflow",
  "crossterm",
+ "dialoguer",
  "futures-util",
  "indicatif",
  "libc",

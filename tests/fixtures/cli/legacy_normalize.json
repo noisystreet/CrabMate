@@ -60,6 +60,11 @@
     "normalized": ["crabmate", "--workspace", "/tmp/ws", "doctor"]
   },
   {
+    "name": "explicit_web_bearer_unchanged",
+    "argv": ["crabmate", "web-bearer", "status"],
+    "normalized": ["crabmate", "web-bearer", "status"]
+  },
+  {
     "name": "explicit_tool_replay_unchanged",
     "argv": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"],
     "normalized": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"]
