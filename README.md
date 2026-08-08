@@ -1,4 +1,4 @@
-**语言 / Languages:** 中文（本页）· [English](README-en.md)
+**Languages / 语言:** English (this page) · [中文](README.zh.md)
 
 # CrabMate
 
@@ -7,110 +7,115 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg" alt="code-complexity" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg" alt="Dependency security" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg?branch=main" alt="code-complexity" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
+  <br />
+  <a href="https://github.com/noisystreet/CrabMate/stargazers"><img src="https://img.shields.io/github/stars/noisystreet/CrabMate?style=flat&logo=github" alt="GitHub stars" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/commits/main"><img src="https://img.shields.io/github/last-commit/noisystreet/CrabMate?logo=github" alt="Last commit" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/issues"><img src="https://img.shields.io/github/issues/noisystreet/CrabMate" alt="Issues" /></a>
+  <a href="https://github.com/noisystreet/CrabMate/pulls"><img src="https://img.shields.io/github/issues-pr/noisystreet/CrabMate" alt="Pull requests" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
 </p>
 
-**CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
+**CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
-内置 **Function Calling** 与工作区内的命令、文件等工具，并提供 **Web UI** 与 **CLI**。
+It includes **function calling**, workspace command and file tools, plus **HTTP `serve`**, **CLI**, and an experimental **TUI**.
 
-## 目录
+**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, CLI/TUI). Official Web UI and Desktop/Android shells live in sibling **[`crabmate-client`](../crabmate-client/)** ([ADR](docs/design/client_shell_split.md)).
 
-- [功能概览](#功能概览)
-- [常用子命令](#常用子命令)
-  - [TUI（全屏终端）](#tui全屏终端)
-- [编译运行与打包](#编译运行与打包)
-  - [Makefile（推荐）](#makefile推荐)
-  - [后端](#后端)
-  - [前端 Web](#前端-web)
-  - [桌面 Tauri](#桌面-tauri)
-  - [安装与发行包](#安装与发行包)
-  - [开发与质检（维护者）](#开发与质检维护者)
-- [文档索引](#文档索引)
-- [后端模型支持](#后端模型支持)
-- [环境变量提示](#环境变量提示)
-- [部署与安全](#部署与安全)
-- [项目结构](#项目结构)
+## Contents
 
-## 功能概览
+- [Overview](#overview)
+- [Common subcommands](#common-subcommands)
+  - [TUI (full-screen terminal)](#tui-full-screen-terminal)
+- [Build, run, and packaging](#build-run-and-packaging)
+  - [Makefile (recommended)](#makefile-recommended)
+  - [Backend](#backend)
+  - [Web frontend](#web-frontend)
+  - [Official Client (Desktop / Android)](#official-client-desktop-android)
+  - [Install and release artifacts](#install-and-release-artifacts)
+  - [Maintainer QA](#maintainer-qa)
+- [Documentation index](#documentation-index)
+- [Backend models](#backend-models)
+- [Environment variables](#environment-variables)
+- [Deployment and security](#deployment-and-security)
+- [Project structure](#project-structure)
 
-- **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**，复合命令用 **`bash -c`/`sh -c`**；argv 含工作区外绝对路径或路径穿越形 `..`/`../` 时默认经 **`allow_external_path_with_approval`** 人工审批后放行，可关；**git** `A..B` 不算穿越）、HTTP、**联网搜索**（默认 **worbrow** 本机浏览器，免 API Key；可选 Brave/Tavily）、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。**`run_command`** 等子进程工具输出默认按 **`command_max_output_len`**（嵌入默认 **512KiB**，`CM_COMMAND_MAX_OUTPUT_LEN` 可覆盖）做字节截断，详见 **`config/tools.toml`** 与 [docs/配置说明.md](docs/配置说明.md)。
-- **Web UI**：侧栏会话与工作区；右栏视图可选 **Pull Requests**（GitHub 在线模式：open PR 列表、当前分支 CI checks，列表内可对每条 PR 执行 **Merge / Squash / Rebase and merge**（二次确认；写远端），依赖本机 **`gh`** 与已授权仓库）；**主区顶栏左侧**可切换 **「对话 / 编辑器」**（编辑器模式为左侧工作区树 + 右侧文本编辑，单击打开、**双击将 `@相对路径` 插入对话并切回对话布局**；支持 **Ctrl/Cmd+S 保存**、**全部保存**、**新建文件**；Agent 改盘后可通过 SSE 触发已打开文件的磁盘同步提示；偏好经 **`/user-data/prefs`** 落在本机 **`$XDG_DATA_HOME/crabmate`**）；须**显式选择工作区**后工具与 **`file:///` / `@相对路径`** 才生效（顶栏正中只读显示当前根路径；用 **「项目 → 选择工作区目录」** / **「Clone 远程仓库…」（仅项目池）** / **「最近的工作区」** 切换——桌面壳为原生选目录；浏览器在配置了 `web_workspace_pool`/`CM_WEB_WORKSPACE_POOL`（须同时配置 `workspace_allowed_roots`）时弹出项目选择窗，否则可提示手输绝对路径；最近列表存用户数据 `prefs.recent_workspace_roots`，最多 10 项）；会话列表按**当前工作区根路径**分桶保存在 **`$XDG_DATA_HOME/crabmate`**（经 **`/user-data`**），切换工作区会加载该路径下曾保存的会话（未设置工作区前使用全局桶）。聊天列默认以 **终端流**（按行轻量 Markdown；用户/助手/工具角色样式对齐原气泡）展示同一会话的 SSE 增量：流式未闭合行保持纯文本，行闭合或回合落定后再解析；工具显示**一行摘要**（可展开详情）；每条用户/助手消息下方提供 **复制 / 失败重试 / 从此处重试**；支持 **`file:///` / `@` 文件引用**（气泡链接文字只显示相对路径；输入框镜像高亮；侧栏树双击/拖放插入 `@相对路径`）、图片附件（须视觉模型）、会话导出等。与服务器会话同步后，底栏可显示当前消息的 **prompt** tiktoken 粗估用量及相对 **`llm_context_tokens`** 上限的占比（详见 `title` 提示）；亦可切换 **Ask / Plan / Act** 会话工作模式（与 `agent_role` 正交，偏好可记忆，见 [docs/配置说明.md](docs/配置说明.md)）。全屏「设置」中 **「会话」** 页可切换本进程是否将服务端会话写入 SQLite（与配置文件中 **`conversation_store_sqlite_path`** 是否可启用一致；**重启 `serve`** 后仍以配置文件为准），并可设置界面与聊天正文字体及聊天区字号（存本机 **`prefs`**、即时生效）。详细路由与行为见 [docs/命令行与路由.md](docs/命令行与路由.md)。
-- **终端**：**`repl`**（交互）、**`chat`**（单次）、**`serve`**（HTTP + 静态 UI）、**`tui`**（实验性**全屏**，须真实 TTY，见下文）。流式 **SSE**、工具审批与取消约定见 [docs/SSE协议.md](docs/SSE协议.md)。
-- **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**（及配置了同路径的 **`tui`**）对话，**`serve` 重启**后仍可按 **`conversation_id`** 续聊；不需要时在配置里将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
-- **进阶（默认不必读）**：分阶段规划时间线、澄清问卷、调试台 **`thinking_trace`**、长期记忆、活文档注入、**MCP**、工作区 **`plugins/*.json`** 等见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)。
+## Overview
 
-## 常用子命令
+- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`** for **`bash -c`/`sh -c`**; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+- **Web UI (Client)**: built and shipped from **[`crabmate-client`](../crabmate-client/)**; this repo’s **`serve`** may host its `dist` via **`CM_WEB_STATIC_DIR`** or run **`--no-web`**. Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected.
+- **Terminal**: **`repl`** (interactive), **`chat`** (one-shot), **`serve`** (HTTP API + optional static UI), **`tui`** (experimental **full-screen**, real TTY—see below). Streaming **SSE**, tool approval/cancel: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
+- **Sessions and export**: by default **Web `serve`** (and **`tui`** with the same path) persist under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
+- **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
-不写子命令时默认进入 **`repl`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--agent-role`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
+## Common subcommands
 
-| 子命令 | 说明 |
+With no subcommand, **`repl`** runs. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--agent-role`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
+
+| Subcommand | Summary |
 | --- | --- |
-| **`serve`** | 启动 HTTP API；可选挂载 Web UI 静态资源（**`CM_WEB_STATIC_DIR`**，默认探测 Client/`frontend/dist` / 安装路径）。无 UI 时用 **`--no-web`**。默认端口 **8080**，绑定 **127.0.0.1**。 |
-| **`repl`** | 交互式终端对话；**`/`** 斜杠命令与 **`/api-key set`** 等见 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
-| **`chat`** | 单次提问后退出（**`--query`** / **`--stdin`** / 文件等），适合脚本；**`--output json`** 见 [docs/命令行契约.md](docs/命令行契约.md)。 |
-| **`tui`** | 实验性**全屏**终端 UI；须**交互式 TTY**（管道或非 TTY 请用 **`repl`** / **`chat`**）。行为摘要见 **[TUI（全屏终端）](#tui全屏终端)**。 |
-| **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
-| **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
-| **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
-| **`save-session`** | 从磁盘会话文件导出到 **`<workspace>/.crabmate/exports/`**（别名 **`export-session`**）。 |
-| **`bench`** | 批量测评（JSONL）；用法见 [benchmark/README.md](benchmark/README.md)、[docs/基准测试规划.md](docs/基准测试规划.md)。 |
-| **`mcp`** | **`mcp list`** / **`mcp list --probe`**（stdio 与远程 Streamable HTTP；输出含 `transport=`）；**`mcp serve`** 对外暴露内置工具（stdio，无传输鉴权）。设置页可为远程 MCP 保存 Bearer（本机 `secrets/`，不经 GET 回显）。 |
-| **`plugin`** | **`init`** / **`list`** / **`validate`**：工作区 **`plugins/*.json`** 动态工具（**`dyn__`** 前缀）。 |
-| **`workflow`** | **`compile`** / **`validate`** / **`run`**：工作区 YAML/Markdown 工作流（**不要**求 `API_KEY`）；见 [docs/工作流编写教程.md](docs/工作流编写教程.md)。 |
-| **`tool-replay`** | 从会话导出工具 fixture 或重放（**不要**求 `API_KEY`，须在可信工作区）。 |
+| **`serve`** | HTTP API; optional static UI (**`CM_WEB_STATIC_DIR`**, default probes Client/`frontend/dist` / install path). Use **`--no-web`** for API-only. Default port **8080**, bind **127.0.0.1**. |
+| **`repl`** | Interactive terminal; **`/`** commands and **`/api-key set`**: [docs/en/CLI.md](docs/en/CLI.md). |
+| **`chat`** | One-shot then exit (**`--query`** / **`--stdin`** / files); **`--output json`**: [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md). |
+| **`tui`** | Experimental **full-screen** terminal UI; needs an **interactive TTY** (otherwise use **`repl`** / **`chat`**). Summary: **[TUI (full-screen terminal)](#tui-full-screen-terminal)**. |
+| **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
+| **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
+| **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
+| **`save-session`** | Export session file to **`<workspace>/.crabmate/exports/`** (alias **`export-session`**). |
+| **`bench`** | Batch evaluation (JSONL): [benchmark/README.md](benchmark/README.md), [docs/基准测试规划.md](docs/基准测试规划.md). |
+| **`mcp`** | **`mcp list`** / **`mcp list --probe`**; **`mcp serve`** exposes built-in tools over stdio (**no** transport auth). |
+| **`plugin`** | **`init`** / **`list`** / **`validate`**: workspace **`plugins/*.json`** (**`dyn__`** prefix). |
+| **`workflow`** | **`compile`** / **`validate`** / **`run`**: workspace YAML/Markdown workflows (**no** `API_KEY`); [docs/工作流编写教程.md](docs/工作流编写教程.md). |
+| **`tool-replay`** | Export or replay tool fixtures (**no** `API_KEY`; trusted workspace only). |
 
-完整参数、HTTP 路由与 **`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
+Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
-### TUI（全屏终端）
+### TUI (full-screen terminal)
 
-**`crabmate tui`** 为实验性**全屏**界面，与 **`repl`** 共用 Agent/工具编排；适合在终端里查看**工作区路径与会话**而不开浏览器。
+**`crabmate tui`** is an experimental **full-screen** UI sharing the same agent/tool stack as **`repl`**.
 
-- **环境**：须真实 **TTY**；否则请用 **`repl`** / **`chat`**。
-- **交互**：撰写区 **Enter** 发送；右栏 **「工作区」** 聚焦时 **Enter** 打开路径浏览（与 Web **`/workspace`**、REPL **`/workspace`** 同源）。**`q`** / **Ctrl+C** 退出。**`/api-key`**、**`/mode`**（Ask/Plan/Act）等 **`/`** 命令与 **`repl`** 同源。
-- **流式**：不在 **stdout** 刷助手流式正文；细节与 **`--no-stream`** 见 **`crabmate tui --help`**。
-- **其它**：可选 SQLite 多会话（**`/conv`**、**`/branch`**）、澄清问卷、环境变量 **`CM_TUI_CONVERSATION_ID`**、退出会话文件等见 **[docs/命令行与路由.md](docs/命令行与路由.md)**。
+- **Environment**: real **TTY** required; otherwise use **`repl`** / **`chat`**.
+- **Interaction**: **Enter** sends from the composer; with focus on the right **Workspace** pane, **Enter** opens path browse (same as Web **`/workspace`** / REPL **`/workspace`**). **`q`** / **Ctrl+C** to quit. **`/api-key`**, **`/mode`** (Ask/Plan/Act), and other **`/`** commands match **`repl`**.
+- **Streaming**: assistant stream is not painted on **stdout**; see **`--no-stream`** in **`crabmate tui --help`**.
+- **More**: optional SQLite multi-session (**`/conv`**, **`/branch`**), clarification, **`CM_TUI_CONVERSATION_ID`**—[docs/en/CLI.md](docs/en/CLI.md).
 
-## 编译运行与打包
+## Build, run, and packaging
 
-**前置**：**Rust 1.85+**（edition 2024）。业务 UI 在 Client 仓（Trunk / wasm32）。更多环境说明见 [AGENTS.md](AGENTS.md)。
+**Prerequisites**: **Rust 1.85+** (edition 2024). Official UI is in the Client repo (Trunk / wasm32). More: [AGENTS.md](AGENTS.md).
 
-### Makefile（推荐）
-
-仓库根目录提供 **`Makefile`**，构建后端与工作区：
+### Makefile (recommended)
 
 ```bash
-make help              # 列出全部目标
+make help              # list targets
 make all / all-dev     # backend-release / backend
 make backend           # cargo build -p crabmate
-make package           # server-only tar.gz + 可选 .deb → dist/（不附带 UI）
-make clean             # 清理 target 与 dist/
+make package           # server-only tar.gz + optional .deb → dist/ (no UI)
+make clean             # clean target and dist/
 ```
 
-业务 UI：`cd ../crabmate-client && make frontend`。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 默认 **不**打包 frontend（`--no-web` 或运行时设 `CM_WEB_STATIC_DIR`）。Desktop / Android：同级 **[`../crabmate-client`](../crabmate-client/)**。
+UI: `cd ../crabmate-client && make frontend`. **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (use **`--no-web`** or **`CM_WEB_STATIC_DIR`** at runtime). Desktop / Android: sibling **[`../crabmate-client`](../crabmate-client/)**.
 
-### 后端
+### Backend
 
 ```bash
-# 开发调试二进制
+# Debug
 cargo build
-./target/debug/crabmate serve --no-web    # 纯 API；或设 CM_WEB_STATIC_DIR 挂 UI
-# 或: API_KEY=… ./target/debug/crabmate serve
+./target/debug/crabmate serve --no-web    # API-only; or set CM_WEB_STATIC_DIR for UI
+# or: API_KEY=… ./target/debug/crabmate serve
 
-# 发布用优化二进制
+# Release
 cargo build --release
 ./target/release/crabmate serve
 ```
 
-**`serve`** 的 Web API 鉴权（**`CM_WEB_API_BEARER_TOKEN`** 等）见 **[部署与安全](#部署与安全)**。调用云端模型所需的 **`API_KEY`** 见 **[环境变量提示](#环境变量提示)**（或通过 Web「设置」、REPL **`/api-key set`**）。
+**`serve`** Web API auth (**`CM_WEB_API_BEARER_TOKEN`**, etc.): **[Deployment and security](#deployment-and-security)**. Cloud **`API_KEY`**: **[Environment variables](#environment-variables)** (or Web Settings / REPL **`/api-key set`**).
 
-### 前端 Web
+### Web frontend
 
-业务 UI 源码在官方 Client 仓 **[`../crabmate-client/frontend`](../crabmate-client/frontend)**（路径 A Phase 4.2）。
+Official UI source: **[`../crabmate-client/frontend`](../crabmate-client/frontend)** (path A Phase 4.2).
 
 ```bash
 cd ../crabmate-client && make frontend
@@ -118,99 +123,100 @@ export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
 cd ../crabmate_agent && cargo run -- serve
 ```
 
-纯 API：`serve --no-web`。设计笔记仍见本仓 [`docs/frontend/`](docs/frontend/)。
-### 官方 Client（Desktop / Android）
+API-only: `serve --no-web`. Design notes in this repo: [`docs/frontend/`](docs/frontend/).
 
-> **权威仓**：同级 **[`../crabmate-client`](../crabmate-client/)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)）。  
-> 本仓 **已移除** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect`（Phase 4.1；权威仅在 Client 仓）。
+### Official Client (Desktop / Android)
 
-壳**不**拉起 `serve`：先本机或远程启动 **`crabmate serve`**，再在 Client 仓连接页填写服务器与 Web API Bearer。构建与打包：
+> **Canonical repo**: sibling **[`../crabmate-client`](../crabmate-client/)** (path A; [ADR](docs/design/client_shell_split.md)).  
+> This repo **removed** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect` (Phase 4.1).
+
+The shell **does not** spawn `serve`: start **`crabmate serve`**, then enter URL + Web API Bearer on the Client connect page.
 
 ```bash
 cd ../crabmate-client
-make desktop-release    # Linux .deb（无 serve sidecar）
-# 或 make apk / cargo tauri dev — 见 Client 仓 README
+make desktop-release    # Linux .deb (no serve sidecar)
+# or make apk / cargo tauri dev — see Client README
 ```
 
-兼容矩阵见 [`docs/design/client_compat_matrix.md`](docs/design/client_compat_matrix.md)。
+Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat_matrix.md).
 
-### 安装与发行包
+### Install and release artifacts
 
-| 方式 | 命令 / 说明 |
+| Method | Command / notes |
 | --- | --- |
-| **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
-| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
-| **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
-| **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
-| **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
+| **Install to PATH** | **`cargo install --path .`** (**does not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed). |
+| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** is script-only. |
+| **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); under **`dist/`** or **`target/debian/`**. Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
+| **Desktop / APK** | **Only** the Client repo ([`../crabmate-client`](../crabmate-client/)). |
+| **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
 
-### 开发与质检（维护者）
+### Maintainer QA
 
-- **Cargo features / 裁剪二进制**：默认 **`web` + `repl` + `tui`**（**`mcp`**、**`fastembed`**、**`project_metrics`**（tokei 代码统计 / 项目画像）、`docker_sandbox` / `gen-man` 按需开启）。MCP：`cargo build --features mcp`；语义检索与向量长期记忆：`cargo build --features fastembed`；tokei 统计：`cargo build --features project_metrics`（未启用时 `code_stats` / 项目画像走内置扩展名 walk）。可组合，如 `--features 'web,mcp,fastembed,project_metrics'`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
-- **fmt / clippy / test、pre-commit、SSE 回归脚本、E2E**：命令汇总见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。
+- **Cargo features**: defaults **`web` + `repl` + `tui`**; opt-in **`mcp`**, **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features mcp`, `--features fastembed`, `--features project_metrics`, or `--all-features`. See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
+- **fmt / clippy / test, pre-commit, SSE, E2E**: [docs/en/TESTING.md](docs/en/TESTING.md) (includes **`./scripts/check-sse-protocol.sh`**). CI also runs **`make package`** (server-only tar.gz + `.deb` smoke).
 
-## 文档索引
+## Documentation index
 
-| 文档 | 内容 | English |
+| Document | Contents | 中文 |
 | --- | --- | --- |
-| [docs/开发文档.md](docs/开发文档.md) | 架构概要、主要模块与数据流 | [en](docs/en/DEVELOPMENT.md) |
-| [docs/配置说明.md](docs/配置说明.md) | 环境变量、`CM_*`、Web/TOML 详解 | [en](docs/en/CONFIGURATION.md) |
-| [docs/工具说明.md](docs/工具说明.md) | 内置工具与调用示例 | [en](docs/en/TOOLS.md) |
-| [docs/工作流编写教程.md](docs/工作流编写教程.md) | 工作流 YAML/steps 编写与示例 | — |
-| [docs/SSE协议.md](docs/SSE协议.md) | `/chat/stream` 控制面 JSON | [en](docs/en/SSE_PROTOCOL.md) |
-| [docs/命令行与路由.md](docs/命令行与路由.md) | 子命令、HTTP 路由、deb 打包 | [en](docs/en/CLI.md) |
-| [docs/命令行契约.md](docs/命令行契约.md) | `chat` 退出码与 **`--output json`** | [en](docs/en/CLI_CONTRACT.md) |
-| [docs/调试指南.md](docs/调试指南.md) | 日志、`doctor`、`GET /web-ui` 等 | [en](docs/en/DEBUG.md) |
-| [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | 个人自用：本机 `serve` + TLS 反代 + Bearer | — |
-| [docs/测试指南.md](docs/测试指南.md) | 测试、pre-commit、审计命令 | [en](docs/en/TESTING.md) |
-| [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | 官方 Client 拆分（路径 A）；壳仓 [`../crabmate-client`](../crabmate-client/) | — |
-| [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2：`frontend/` 迁出实施计划 | — |
-| [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ 协议版 ↔ 最低 Client 兼容表 | — |
-| [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** 规划与开源基准衔接 | — |
-| [benchmark/README.md](benchmark/README.md) | HumanEval 转换、执行与冒烟 | — |
+| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture overview, main modules, data flow | [zh](docs/开发文档.md) |
+| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, Web/TOML | [zh](docs/配置说明.md) |
+| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and examples | [zh](docs/工具说明.md) |
+| [docs/工作流编写教程.md](docs/工作流编写教程.md) | Workflow YAML/steps (Chinese) | — |
+| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control JSON | [zh](docs/SSE协议.md) |
+| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, packaging | [zh](docs/命令行与路由.md) |
+| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, **`--output json`** | [zh](docs/命令行契约.md) |
+| [docs/en/DEBUG.md](docs/en/DEBUG.md) | Logging, `doctor`, `GET /web-ui`, … | [zh](docs/调试指南.md) |
+| [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | Personal VPS: loopback `serve` + TLS + Bearer (Chinese) | — |
+| [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits | [zh](docs/测试指南.md) |
+| [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | Official Client split (path A) | — |
+| [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2 UI migrate plan | — |
+| [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ protocol ↔ Client compat | — |
+| [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap | — |
+| [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
 
-**更多**：维护待办、路线图、前端架构草案、中英文文档索引等见 **`docs/`**（一览：[docs/中英文文档对照.md](docs/中英文文档对照.md)）。
+**More**: backlog, roadmap, frontend drafts—under **`docs/`** ([docs/中英文文档对照.md](docs/中英文文档对照.md)).
 
-**维护约定**：用户可见变更需同步 README 与相关文档，细则见 [docs/开发文档.md](docs/开发文档.md)。
+**Maintenance**: keep user-visible docs in sync; conventions in [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 
-## 后端模型支持
+## Backend models
 
-`POST {api_base}/chat/completions`（OpenAI 兼容）。`[agent]` 里配置 **`api_base`**、**`model`**、**`max_tokens`**（嵌入默认 **4096**）、**`llm_http_auth_mode`**；**`bearer`** 时 **`API_KEY`** 走环境变量，**勿**写入仓库配置。
+`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **4096**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys.
 
-| 场景 | 配置要点 |
+| Scenario | Notes |
 | --- | --- |
-| **DeepSeek** | `api_base`：`https://api.deepseek.com/v1`；`model` 如 `deepseek-chat` / `deepseek-reasoner`。[官网](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
-| **MiniMax** | `api_base`：`https://api.minimaxi.com/v1`；`model` 如 `MiniMax-M2.7`。[配置说明](docs/配置说明.md) · [厂商 OpenAI 兼容](https://platform.minimaxi.com/docs/api-reference/text-openai-api) |
-| **智谱 GLM** | `api_base`：`https://open.bigmodel.cn/api/paas/v4`；`model` 如 `glm-5`。[配置说明](docs/配置说明.md) · [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5) |
-| **Moonshot Kimi** | `api_base`：`https://api.moonshot.cn/v1`；`model` 如 `kimi-k2.5`。[配置说明](docs/配置说明.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
-| **本地 Ollama 等** | `llm_http_auth_mode = "none"`，`api_base` 如 `http://127.0.0.1:11434/v1`；可不设 `API_KEY`。 |
+| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; `model` e.g. `deepseek-chat` / `deepseek-reasoner`. [Platform](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
+| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; `model` e.g. `MiniMax-M2.7`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Vendor OpenAI-compatible API](https://platform.minimaxi.com/docs/api-reference/text-openai-api) |
+| **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; `model` e.g. `glm-5`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5) |
+| **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k2.5`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
+| **Local Ollama** | `llm_http_auth_mode = "none"`; `api_base` e.g. `http://127.0.0.1:11434/v1`; **`API_KEY`** optional. |
 
-本机诊断：**`crabmate doctor`**（无需 `API_KEY`）、**`probe`** / **`models`**。各厂商特有选项（thinking、temperature 钳制等）见 [docs/配置说明.md](docs/配置说明.md)。**厂商能力以供应商文档为准**。
+Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Vendor knobs: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor behavior is defined by provider docs.**
 
-## 环境变量提示
+## Environment variables
 
-| 变量 | 作用 |
+| Variable | Role |
 | --- | --- |
-| **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置，持久化到系统钥匙串而非 XDG 明文文件。 |
-| **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
-| **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
-| **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 跨 Origin 浏览器访问时的 Origin 白名单（逗号分隔）；空=不挂 CORS。静态托管 UI 时见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
-| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（Client `frontend/dist` / 安装路径；无 UI 用 **`--no-web`**）。 |
-| **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
-| **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
+| **`API_KEY`** | Cloud bearer (**`llm_http_auth_mode=bearer`**); `serve` / `repl` / `chat` can start first, then set via UI or **`/api-key`** (keychain, not XDG plaintext). |
+| **`CM_API_BASE`** / **`CM_MODEL`** | Override gateway and model from config. |
+| **`CM_WEB_API_BEARER_TOKEN`** | Protects Web APIs (with **`web_api_require_bearer`**); [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). |
+| **`CM_WEB_CORS_ALLOWED_ORIGINS`** | Comma-separated Origin allowlist for cross-origin browsers; empty = no CORS layer. Static UI: Settings **API base** (`localStorage` **`crabmate-api-base-url`**). |
+| **`CM_WEB_STATIC_DIR`** | Override **`serve`** static root (Client `frontend/dist` / install path; use **`--no-web`** without UI). |
+| **`CM_DESKTOP_SUGGESTED_URL`** | Optional connect-page suggested `serve` URL (default `http://127.0.0.1:8080/`). |
+| **`CM_DESKTOP_SERVE_URL`** | Required when skipping connect page (with **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**). |
 
-其它 **`CM_*`**（含 **`CM_TUI_CONVERSATION_ID`**、skills、分阶段规划等）见 [docs/配置说明.md](docs/配置说明.md)。
+Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged planning): [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
-## 部署与安全
+## Deployment and security
 
-- **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
-- **LLM API Key**：Web/桌面设置、默认 `/api-key set` 与已保存模型的密钥写入系统钥匙串（macOS Keychain、Windows Credential Manager、Linux Secret Service）。旧 XDG 明文密钥仅在迁移成功后删除；无可用钥匙串时可继续使用环境变量 `API_KEY`。
-- **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**）。密钥非空时会挂载 Bearer 层，请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。**浏览器不会自动使用环境变量 / XDG**：须在 Web **设置 →「Web API 共享密钥（Bearer）」** 填入与服务端**相同**的值并保存（写入本页内存与 **`localStorage`** 键 **`crabmate-api-bearer-token`**，刷新后仍可用）。**不要**与模型 **`API_KEY`** / 侧栏「API 密钥」混淆。保存后若首屏仍显示 401，刷新页面或再试一次请求。**跨 Origin 静态 UI**：设置页另填 **API 基址**（`crabmate-api-base-url`；空=同 Origin），并在 serve 配置 **`CM_WEB_CORS_ALLOWED_ORIGINS`** / **`web_cors_allowed_origins`**（精确白名单；默认不挂 CORS）。冒烟见 **`docs/design/client_turn_smoke_runbook.md`** §9。**本机临时跳过**：`unset CM_WEB_API_BEARER_TOKEN`（并清空 TOML 同名键）后听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`（仅可信环境）。对外或不可信网络建议 **`web_api_require_bearer = true`** 并配置密钥。详见 [docs/配置说明.md](docs/配置说明.md)。
-- **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入浏览器（含 **MCP** 子页删除/改服务器草稿；页内另有「保存 MCP 配置」）；工作区须在允许根内（路径校验见 [docs/配置说明.md](docs/配置说明.md)）。调试变量与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。
-- **个人 VPS（反代 TLS）**：见 [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md)（**`127.0.0.1` + `CM_WEB_API_BEARER_TOKEN` + Caddy/Nginx**）。
+- **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs **`web_api_bearer_token`** or an explicit insecure switch ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
+- **LLM API Key**: Web/desktop settings and default **`/api-key set`** use the OS keychain; env **`API_KEY`** remains a fallback.
+- **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, require non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML). When the token is set, send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**)—**not** the LLM **`API_KEY`**. Cross-origin static UI: set **API base** + **`CM_WEB_CORS_ALLOWED_ORIGINS`**. Smoke: **`docs/design/client_turn_smoke_runbook.md`** §9. Temporary local skip: unset the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`**. Prefer **`web_api_require_bearer = true`** on exposed networks. Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+- **Other**: Web **Settings → Save all** persists via **`/user-data`**; workspace must stay under allowed roots. Debug / **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
+- **Personal VPS (TLS reverse proxy)**: [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (Chinese; **`127.0.0.1` + Bearer + Caddy/Nginx**).
 
-## 项目结构
+## Project structure
 
-架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态（调试/运维）；Web 壳层请用 **`GET /status?view=shell`**（稳定子集 **`StatusShellView`**，与前端底栏/设置同源，见 [docs/命令行与路由.md](docs/命令行与路由.md)）。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
+Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Workspace 成员**：`crates/crabmate-sse-protocol`（SSE 控制面契约）；**`crates/crabmate-im-bridge`**（可选 **IM 桥**：飞书 Webhook → **`POST /chat`** → 回复）。说明见 [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md)。
+- **Workspace crates**: `crates/crabmate-sse-protocol` (SSE control-plane contract); **`crates/crabmate-im-bridge`** (optional Feishu webhook → **`POST /chat`**). See [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md).
