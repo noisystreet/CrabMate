@@ -19,7 +19,7 @@
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | 🚧 **P4.1 完成**；**P4.2 待做**（`frontend/` 仍在本仓） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 4.2（见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md)：先契约钉清单/tag，再迁 `frontend` 至 Client 仓）。
+**下一执行**：Phase 4.2 Phase A 合入后打 `client-contract-v0.1.0`；再 Phase B 迁 `frontend` 至 Client 仓（见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md)）。
 
 ---
 
@@ -189,4 +189,5 @@
 | 2026-08-08 | Phase 3 总验收：干净克隆 `.deb` + Desktop release 壳对接本仓 UI/`serve` 真实 SSE 回合；下一刀 Phase 4 |
 | 2026-08-08 | Phase 4.1：移除主仓壳/`connect`/Victauri 脚本与 desktop CI；P4.4 兼容表初稿；P4.5 `--web-ready-json`；下一刀 P4.2 迁 `frontend` |
 | 2026-08-08 | P4.2 实施计划草案：[`frontend_migrate_plan.md`](./frontend_migrate_plan.md)（Client 仓落点；先 `client-contract-v*`，不强制产品发版） |
+| 2026-08-08 | Phase A：扩契约钉清单 + `check-client-contract` UI smoke；Client `contract_pin`；tag 待合 main |
 | 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |
