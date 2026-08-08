@@ -1,7 +1,8 @@
 //! 可注入的回合执行面：打断 Web 队列对 [`crate::run_agent_turn`] 的硬连。
 //!
 //! 入口（`chat_job_queue` worker）只依赖 [`TurnRunner`]；默认实现仍转发到根包
-//! [`crate::run_agent_turn`]。见 **`docs/design/turn_host_decouple.md`** P2。
+//! [`crate::run_agent_turn`]。见 **`docs/design/turn_host_decouple.md`** P2；
+//! 执行面落点（暂不拆 `crabmate-turn-runtime`）见 **`docs/design/turn_runtime_placement.md`**。
 
 use async_trait::async_trait;
 

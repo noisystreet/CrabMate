@@ -8,7 +8,8 @@
 - **P3b**：窄控制面 `WebChatAppFacet`（approval / branch / messages / conversation-store）
 - **P3c**：回合面 `WebChatTurnAppFacet`；`POST /chat`、`/chat/stream`、`/chat/async`、job status 与 cron 入队已迁入
 - **P3d**：`RunAgentTurnParams` 顶层嵌套为 `shared` / `session` / `transport` / `llm` / `attach` / `obs`（字段不删；密封入口子集 / 强制 builder 留后续）
-- **未做**：P4 执行面落点、P5 handler/queue 迁出评估
+- **P4**：已决策 — **暂不**建 `crabmate-turn-runtime`；默认执行面留根包（见 [`turn_runtime_placement.md`](./turn_runtime_placement.md)，2026-08-08）
+- **P5**：已评估 — **暂不**整包迁 queue/带状态 handler 入 web-host（见 [`web_host_p5_placement.md`](./web_host_p5_placement.md)，2026-08-08）
 
 ## 目标
 
@@ -56,8 +57,8 @@ crabmate-internal / crabmate-tools
 | **P1** | 根包 `ToolDispatch` + 默认 adapter；`ToolExecutionHost` 间接调 registry；补 mock Dispatch 测 | **完成**（本分支） |
 | **P2** | `TurnRunner`；`WebChatQueueDeps` 注入；queue **禁止**直接 `run_agent_turn` | **完成**（本分支） |
 | **P3** | 参数袋按片收窄：`DispatchToolParams` 嵌套（**P3a**）；窄 chat facet（**P3b**）；回合 Turn facet（**P3c**）；`RunAgentTurnParams` 入口嵌套（**P3d**） | **完成**（多 PR） |
-| **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | 设计决策 |
-| **P5** | 红利：更多 handler/queue 贴近 web-host；`tools` 拆子包等（另开 PR） | 后续 |
+| **P4** | 评估执行面落点：默认根包 composition root；条件成熟再 `crabmate-turn-runtime` / 薄接口 crate | **已决策（选根包）** → [`turn_runtime_placement.md`](./turn_runtime_placement.md) |
+| **P5** | 评估 handler/queue 贴近 web-host（调用边已解；模块边受循环/禁边/`FromRef` 约束） | **已评估（暂不整包迁）** → [`web_host_p5_placement.md`](./web_host_p5_placement.md) |
 
 ### P1 注意
 
@@ -84,7 +85,8 @@ crabmate-internal / crabmate-tools
 | T2a | `TurnRunner` + queue 注入 | T1 |
 | T2b | 更新 `web_host_extract` / `crate_dep_policy` 文案 | T2a |
 | T3… | 参数袋 / chat facet | T2a |
-| T4 | （可选）接口 crate / turn-runtime | T3 后 |
+| T4 | P4 ADR：执行面落点（**已采纳：不建 runtime crate**） | T3 后 → [`turn_runtime_placement.md`](./turn_runtime_placement.md) |
+| T5 | P5 评估：queue/handler 是否迁 web-host（**暂不整包迁**） | T4 后 → [`web_host_p5_placement.md`](./web_host_p5_placement.md) |
 
 ## 验收清单（规划级）
 
@@ -116,7 +118,7 @@ crabmate-internal / crabmate-tools
 |------|------|
 | [`agent_turn_split.md`](./agent_turn_split.md) | 已完成 FSM / Sink；本文接执行面 |
 | [`crate_dep_policy.md`](./crate_dep_policy.md) | 禁边与 facet；本文实现其「后续」中的 runner 注入 |
-| [`web_host_extract.md`](./web_host_extract.md) | A/B/C 已完成；本文解除「handler 不能迁」的根因 |
+| [`web_host_extract.md`](./web_host_extract.md) | A/B/C 已完成；本文解除**调用边**焊死；整包迁 handler 仍受 `FromRef`/禁边约束（见 P5 ADR） |
 
 ## 成功一句话
 
