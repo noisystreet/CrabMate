@@ -128,6 +128,8 @@
 
 **可选字段 `sub_phase`**：失败时所处的编排子阶段，与 PER 心智模型对齐：`planner` \| `executor` \| `reflect`；旧客户端可忽略。
 
+**可选字段 `request_id`**：与当次 HTTP 响应头 **`x-request-id`** / JSON **`ApiError.request_id`** 同值；Web 流任务经 **`TracingChatTurn`** / 队列信封带回（含回合内 `plan_rewrite_exhausted` 与终态失败帧），便于排障复制；**不** bump `SSE_PROTOCOL_VERSION`（软字段）。AG-UI `RUN_ERROR.error` 中序列化为 **`requestId`**（camelCase）。
+
 #### `plan_rewrite_exhausted` 的 `reason_code`
 
 表示用尽重写次数时**最后一轮**终答仍不满足规划规则的大致类别。

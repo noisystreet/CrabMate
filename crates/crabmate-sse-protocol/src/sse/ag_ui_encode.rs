@@ -66,6 +66,7 @@ mod tests {
             error: AgUiErrorBody {
                 message: "something went wrong".into(),
                 code: Some("ERR_1".into()),
+                request_id: None,
             },
         };
         let s = encode_ag_ui_event(&event);

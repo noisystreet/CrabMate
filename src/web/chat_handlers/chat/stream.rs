@@ -4,7 +4,7 @@ use std::convert::Infallible;
 use std::net::SocketAddr;
 
 use axum::Json;
-use axum::extract::{ConnectInfo, State};
+use axum::extract::{ConnectInfo, Extension, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
@@ -214,6 +214,7 @@ struct ChatStreamEnqueueCtx<'a> {
     eff_ws: &'a str,
     approval_session_id: Option<String>,
     web_approval_session: Option<chat_job_queue::WebApprovalSession>,
+    request_id: Option<String>,
 }
 
 async fn chat_stream_try_enqueue_job(
@@ -229,6 +230,7 @@ async fn chat_stream_try_enqueue_job(
         eff_ws,
         approval_session_id,
         web_approval_session,
+        request_id,
     } = ctx;
     let workspace_is_set = state.workspace_is_set().await;
     let work_dir_for_job = if eff_ws.is_empty() {
@@ -272,6 +274,7 @@ async fn chat_stream_try_enqueue_job(
                 executor_llm_override: p.executor_llm_override.clone(),
                 readonly_tool_ttl_cache_secs: p.readonly_tool_ttl_cache_secs,
                 request_audit,
+                request_id,
             },
             stream_event_tx: tx,
             web_approval_session,
@@ -315,6 +318,7 @@ fn chat_stream_sse_response_with_meta(
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
 pub(crate) async fn chat_stream_handler(
     State(state): State<WebChatTurnAppFacet>,
+    Extension(request_id): Extension<crate::web::request_id::RequestId>,
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(body): Json<ChatRequestBody>,
@@ -353,6 +357,7 @@ pub(crate) async fn chat_stream_handler(
         eff_ws,
         approval_session_id,
         web_approval_session,
+        request_id: Some(request_id.0),
     })
     .await?;
     Ok(chat_stream_sse_response_with_meta(rx, &p, job_id))

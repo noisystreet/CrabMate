@@ -44,6 +44,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         readonly_tool_ttl_cache_secs,
         request_audit,
         client_sse_protocol: _,
+        request_id,
     } = envelope;
     info!(
         target: "crabmate",
@@ -118,6 +119,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
                 long_term_memory: queue_deps.long_term_memory.clone(),
                 job_id,
                 conversation_id: conversation_id.as_str(),
+                request_id,
                 turn_allowed_tool_names: turn_allow,
                 session_mode,
                 request_audit: std::sync::Arc::new(request_audit),

@@ -55,6 +55,7 @@ mod tests {
             reason_code: None,
             turn_id: None,
             sub_phase: None,
+            request_id: None,
         }));
         assert!(s.contains(r#""type":"RUN_ERROR""#), "got: {s}");
     }

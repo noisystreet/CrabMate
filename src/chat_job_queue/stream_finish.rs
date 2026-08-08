@@ -76,7 +76,11 @@ pub(super) async fn post_turn_web_prepare_and_save(
 }
 
 /// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
-pub(crate) async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>, job_id: u64) {
+pub(crate) async fn emit_stream_cancelled_terminal(
+    sse_tx: &mpsc::Sender<String>,
+    job_id: u64,
+    request_id: Option<String>,
+) {
     if sse_tx.is_closed() {
         debug!(
             target: "crabmate",
@@ -85,14 +89,17 @@ pub(crate) async fn emit_stream_cancelled_terminal(sse_tx: &mpsc::Sender<String>
         );
         return;
     }
-    let line =
-        crate::sse::encode_message(crate::sse::SsePayload::Error(crate::sse::SseErrorBody {
+    let line = crate::sse::encode_message(crate::sse::SsePayload::Error(
+        crate::sse::SseErrorBody {
             error: "流已取消".to_string(),
             code: Some(crate::types::SSE_STREAM_CANCELLED_CODE.to_string()),
             reason_code: None,
             turn_id: Some(job_id),
             sub_phase: None,
-        }));
+            request_id: None,
+        }
+        .with_request_id(request_id),
+    ));
     if crate::sse::send_string_logged(
         sse_tx,
         line,
@@ -267,6 +274,7 @@ pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) queue_deps: &'a WebChatQueueDeps,
     pub(super) sse_tx: &'a mpsc::Sender<String>,
     pub(super) job_id: u64,
+    pub(super) request_id: Option<String>,
     pub(super) messages: &'a mut Vec<Message>,
     pub(super) cfg_snap: &'a Arc<AgentConfig>,
     pub(super) app: &'a WebChatJobAppFacet,
@@ -288,6 +296,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         queue_deps,
         sse_tx,
         job_id,
+        request_id,
         messages,
         cfg_snap,
         app,
@@ -388,7 +397,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 }
                 crate::SaveConversationOutcome::Conflict => {
                     // 勿先发成功终态：冲突错误在前，worker 再发 `RUN_FINISHED`(conflict)。
-                    let err_line = crate::conversation_conflict_sse_line();
+                    let err_line = crate::conversation_conflict_sse_line(request_id.clone());
                     let _ = crate::sse::send_string_logged(
                         sse_tx,
                         err_line,
@@ -423,7 +432,8 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         job_id,
                         e.diag_log_kv(),
                     );
-                    let err_body = e.sse_error_payload(Some(job_id));
+                    let err_body =
+                        e.sse_error_payload_with_request_id(Some(job_id), request_id.clone());
                     let err_line =
                         crate::sse::encode_message(crate::sse::SsePayload::Error(err_body));
                     let _ = crate::sse::send_string_logged(

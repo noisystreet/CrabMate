@@ -34,7 +34,7 @@ impl AgentTurnSubPhase {
     }
 }
 
-/// `plan_rewrite_exhausted` 控制面（与 `reason_code` 表一致）；带 `turn_id` / `sub_phase=reflect`。
+/// `plan_rewrite_exhausted` 控制面（与 `reason_code` 表一致）；带 `turn_id` / `sub_phase=reflect` / `request_id`。
 pub(crate) fn sse_plan_rewrite_exhausted_body(
     tracing: Option<&std::sync::Arc<crate::observability::TracingChatTurn>>,
     reason: &str,
@@ -45,7 +45,9 @@ pub(crate) fn sse_plan_rewrite_exhausted_body(
         reason_code: Some(reason.to_string()),
         turn_id: tracing.map(|t| t.job_id),
         sub_phase: Some(AgentTurnSubPhase::Reflect.as_str().to_string()),
+        request_id: None,
     }
+    .with_request_id(tracing.and_then(|t| t.request_id.clone()))
 }
 
 /// SSE/客户端断开等导致的早停（非模型 HTTP 错误）。
@@ -287,8 +289,17 @@ impl RunAgentTurnError {
     }
 
     pub fn sse_error_payload(&self, turn_id: Option<u64>) -> SseErrorBody {
+        self.sse_error_payload_with_request_id(turn_id, None)
+    }
+
+    /// 与 [`Self::sse_error_payload`] 相同，并附带可选 **`request_id`**（Web 流任务与 `x-request-id` 对齐）。
+    pub fn sse_error_payload_with_request_id(
+        &self,
+        turn_id: Option<u64>,
+        request_id: Option<String>,
+    ) -> SseErrorBody {
         let sub_phase = Some(self.sub_phase().as_str().to_string());
-        match self {
+        let body = match self {
             Self::Llm { kind, .. } => {
                 let (code, user_msg, reason_code) = match kind {
                     LlmCompleteError::Cancelled => (
@@ -319,6 +330,7 @@ impl RunAgentTurnError {
                     reason_code,
                     turn_id,
                     sub_phase,
+                    request_id: None,
                 }
             }
             Self::TurnAborted { reason, .. } => {
@@ -337,6 +349,7 @@ impl RunAgentTurnError {
                     reason_code: None,
                     turn_id,
                     sub_phase,
+                    request_id: None,
                 }
             }
             Self::Other { message, .. } => SseErrorBody {
@@ -345,6 +358,7 @@ impl RunAgentTurnError {
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
+                request_id: None,
             },
             Self::StepRetryExhausted { message, .. } => SseErrorBody {
                 error: self.public_user_message(),
@@ -352,6 +366,7 @@ impl RunAgentTurnError {
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
+                request_id: None,
             },
             Self::ReplanExhausted { message, .. } => SseErrorBody {
                 error: self.public_user_message(),
@@ -359,6 +374,7 @@ impl RunAgentTurnError {
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
+                request_id: None,
             },
             Self::TimeLimitExhausted { message, .. } => SseErrorBody {
                 error: self.public_user_message(),
@@ -366,6 +382,7 @@ impl RunAgentTurnError {
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
+                request_id: None,
             },
             Self::TokenLimitExhausted { message, .. } => SseErrorBody {
                 error: self.public_user_message(),
@@ -373,8 +390,10 @@ impl RunAgentTurnError {
                 reason_code: Some(truncate_reason(message.clone())),
                 turn_id,
                 sub_phase,
+                request_id: None,
             },
-        }
+        };
+        body.with_request_id(request_id)
     }
 
     /// 协作取消或用户显式取消：与 `cancel` 标志、`LLM_CANCELLED_ERROR` 对齐。
@@ -528,6 +547,20 @@ mod tests {
             e.job_queue_json_outcome_kind(),
             AgentTurnJobOutcomeKind::UserCancelled
         );
+    }
+
+    #[test]
+    fn plan_rewrite_exhausted_carries_tracing_request_id() {
+        let tracing =
+            crate::observability::TracingChatTurn::new(42, "conv-1", Some("cm-req-xyz".into()));
+        let body = sse_plan_rewrite_exhausted_body(
+            Some(&tracing),
+            "plan_validate_only_node_binding_mismatch",
+        );
+        assert_eq!(body.code.as_deref(), Some("plan_rewrite_exhausted"));
+        assert_eq!(body.turn_id, Some(42));
+        assert_eq!(body.request_id.as_deref(), Some("cm-req-xyz"));
+        assert_eq!(body.sub_phase.as_deref(), Some("reflect"));
     }
 
     #[test]

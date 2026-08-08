@@ -126,6 +126,8 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 
 **Optional `sub_phase`**: orchestration sub-phase at failure, aligned with PER: `planner` \| `executor` \| `reflect`; older clients may ignore it.
 
+**Optional `request_id`**: same value as HTTP **`x-request-id`** / JSON **`ApiError.request_id`** for the turn; Web stream jobs carry it via **`TracingChatTurn`** / the queue envelope (including in-turn `plan_rewrite_exhausted` and terminal failure frames) for support triage; does **not** bump `SSE_PROTOCOL_VERSION` (soft field). On AG-UI `RUN_ERROR.error` it is serialized as **`requestId`** (camelCase).
+
 #### `reason_code` for `plan_rewrite_exhausted`
 
 Approximate category of the **last** failed final answer when the rewrite budget is exhausted.

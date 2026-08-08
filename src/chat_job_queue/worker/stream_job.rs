@@ -55,6 +55,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         temperature_override,
         seed_override,
         request_audit,
+        request_id,
         ..
     } = p.envelope;
 
@@ -102,6 +103,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         long_term_memory: queue_deps.long_term_memory.clone(),
         job_id,
         conversation_id: conversation_id.as_str(),
+        request_id: request_id.clone(),
         out: &rt.sse_tx,
         turn_allowed_tool_names: rt.turn_allow,
         session_mode,
@@ -126,6 +128,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
             queue_deps: queue_deps.as_ref(),
             sse_tx: &rt.sse_tx,
             job_id,
+            request_id: request_id.clone(),
             messages: &mut messages,
             cfg_snap: &cfg_snap,
             app: &app,
@@ -140,7 +143,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .await;
 
     if cancelled {
-        emit_stream_cancelled_terminal(&rt.sse_tx, job_id).await;
+        emit_stream_cancelled_terminal(&rt.sse_tx, job_id, request_id.clone()).await;
     }
     if !stream_ended_sent {
         let tiktoken_prompt_tokens =
