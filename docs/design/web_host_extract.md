@@ -22,7 +22,7 @@
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| **A** | handler `FromRef` + 更细 facet；`AppStateHttpCore` 工作区路径解析 | **完成**（控制面 `WebChatAppFacet`；回合 `WebChatTurnAppFacet`；见 turn_host P3b/P3c） |
+| **A** | handler `FromRef` + 更细 facet；`AppStateHttpCore` 工作区路径解析 | **完成**（控制面 `WebChatAppFacet`；回合 `WebChatTurnAppFacet`；E2E `E2eConversationFixtureFacet`；见 turn_host P3b/P3c） |
 | **B** | **`crabmate-web-host`**：HTTP DTO、`chat_keys`、`limits`、`GET /web-ui` | **完成** |
 | **C** | 根包 `build_app` 只装配路由/`AppState`；体积分层与静态挂载走 `web-host::serve` | **完成** |
 

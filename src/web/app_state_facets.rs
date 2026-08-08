@@ -104,6 +104,41 @@ pub(crate) struct AsyncChatJobsFacet {
     pub(crate) async_chat_jobs: AsyncChatJobsMap,
 }
 
+/// E2E 夹具 `POST /e2e/fixtures/conversation`：仅会话读写（**不含** HTTP/queue/tools）。
+///
+/// 仅在 **`CM_E2E_FIXTURES=1`** 时挂载；生产勿启用。
+#[derive(Clone)]
+pub(crate) struct E2eConversationFixtureFacet {
+    pub(crate) conversation: AppStateConversationRuntime,
+}
+
+impl E2eConversationFixtureFacet {
+    pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
+        self.conversation
+            .delete_conversation_record(conversation_id)
+            .await
+    }
+
+    pub(crate) async fn save_conversation_messages_if_revision(
+        &self,
+        conversation_id: String,
+        messages: Vec<crate::types::Message>,
+        active_agent_role: Option<&str>,
+        active_session_mode: Option<&str>,
+        expected_revision: Option<u64>,
+    ) -> SaveConversationOutcome {
+        self.conversation
+            .save_conversation_messages_if_revision(
+                conversation_id,
+                messages,
+                active_agent_role,
+                active_session_mode,
+                expected_revision,
+            )
+            .await
+    }
+}
+
 impl WebTasksAppFacet {
     pub(crate) async fn effective_workspace_path(&self) -> String {
         self.http.effective_workspace_path().await
@@ -306,6 +341,14 @@ impl FromRef<Arc<AppState>> for AsyncChatJobsFacet {
     fn from_ref(state: &Arc<AppState>) -> Self {
         Self {
             async_chat_jobs: Arc::clone(&state.aux.async_chat_jobs),
+        }
+    }
+}
+
+impl FromRef<Arc<AppState>> for E2eConversationFixtureFacet {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self {
+            conversation: state.conversation.clone(),
         }
     }
 }

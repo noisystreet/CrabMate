@@ -209,7 +209,7 @@
       const leadEl = document.getElementById("lead");
       /** 防止自动登录与手动提交并发探测 */
       let connectInFlight = false;
-      /** 桌面 sidecar 本轮 `web_ready` URL；端口每次启动会变 */
+      /** 壳预填的建议 serve URL（桌面默认 127.0.0.1:8080；可由 invoke 覆盖） */
       let suggestedServerUrl = "";
 
       function wantsManualConnect() {
@@ -308,11 +308,11 @@
         suggestedServerUrl = (suggested || "").trim();
         if (suggestedServerUrl) {
           leadEl.innerHTML =
-            "连接到 <code>crabmate serve</code>。桌面已拉起本机后端时，地址会预填；也可改为局域网/远程服务器。连接成功的非空 Bearer 写入系统钥匙串。";
+            "连接到 <code>crabmate serve</code>。若壳提供建议地址则预填；也可改为局域网/远程服务器。连接成功的非空 Bearer 写入系统钥匙串。";
         }
 
         const savedUrl = readLegacyUrl();
-        // 桌面 sidecar 使用 --port 0：勿用上次记住的 127.0.0.1:旧端口覆盖本轮建议地址。
+        // 有建议地址且已存为回环（或尚无已存）时用建议值，避免旧端口残留。
         if (suggestedServerUrl && (!savedUrl || isLoopbackUrl(savedUrl))) {
           urlInput.value = suggestedServerUrl;
         } else if (savedUrl) {
@@ -463,7 +463,7 @@
         let target = "";
         let shouldAuto = false;
         if (suggestedServerUrl) {
-          // 桌面：优先本轮 sidecar 建议地址；已存远程地址则沿用。
+          // 桌面：优先建议/输入框；已存远程地址则沿用。
           target = urlInput.value || suggestedServerUrl;
           shouldAuto = !!target;
         } else if (saved) {

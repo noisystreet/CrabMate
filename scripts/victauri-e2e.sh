@@ -25,6 +25,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TAURI_DIR="$ROOT/desktop-tauri/src-tauri"
 DESKTOP_ROOT="$ROOT/desktop-tauri"
 BACKEND_BIN="${CM_DESKTOP_BACKEND_BIN:-$ROOT/target/debug/crabmate}"
+# ^ 测试编排用：脚本**自行**拉起 serve 的 crabmate 路径（壳不再 spawn；非 sidecar）
 DESKTOP_BIN="$TAURI_DIR/target/debug/crabmate-desktop"
 SERVE_PORT="${CM_DESKTOP_SERVE_PORT:-18080}"
 SERVE_URL="${CM_DESKTOP_SERVE_URL:-http://127.0.0.1:${SERVE_PORT}/}"

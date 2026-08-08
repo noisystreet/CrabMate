@@ -39,7 +39,7 @@
 | 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** CLI 宿主面；**不**覆盖 TUI UI / 壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
 | Playwright mock | `e2e/specs/mock-*.spec.ts` | **不**替代（无真模型 / 无壳生命周期） |
-| Victauri 真 LLM | `desktop-tauri` + `REAL_LLM_E2E=1` | **可选替代** Desktop 本机 sidecar 路径 |
+| Victauri 真 LLM | `desktop-tauri` + `REAL_LLM_E2E=1`；脚本另起 `serve` | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
 
 本 runbook 的价值是：**跨入口人工勾选 + 协议错位 + 远程壳**，补自动化盲区。
 
@@ -87,15 +87,19 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 - [ ] （可选）`client_sse_protocol: 0` → **`INVALID_SSE_CLIENT_PROTOCOL`**；低于服务端的正整数 → **`SSE_PROTOCOL_MISMATCH`**  
 - [ ] 未配置 Bearer 且服务端亦无密钥时，可去掉 `Authorization`；若服务端要求 Bearer 则先配对再测
 
-### 4.4 Client：Desktop（本机 sidecar + 连接页）
+### 4.4 Client：Desktop（薄壳 + 本机已启动的 serve）
 
-见 [`desktop-tauri/README.md`](../../desktop-tauri/README.md)：
+见 [`desktop-tauri/README.md`](../../desktop-tauri/README.md)。壳**不再** spawn `serve`；先起后端，再开桌面（或用 `CM_DESKTOP_SERVE_URL` 跳过连接页）。
 
 ```bash
 cargo build
 cd frontend && trunk build && cd ..
+# 终端 A：本机 serve（端口可自定）
+cargo run -- serve --host 127.0.0.1 --port 8080
+# 终端 B：桌面壳
 cd desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/绝对路径/target/debug/crabmate cargo tauri dev
+# 可选：CM_DESKTOP_SUGGESTED_URL=http://127.0.0.1:8080/
+cargo tauri dev
 ```
 
 - [ ] 闪屏 → 连接页预填本机 URL → 探测成功进入 UI  
@@ -135,7 +139,7 @@ CM_DESKTOP_BACKEND_BIN=/绝对路径/target/debug/crabmate cargo tauri dev
 |----|------|------|----------|------|
 | C1 | 浏览器 → 本机 serve | §4.2 | 一轮对话 | [ ] |
 | C2 | 浏览器 → LAN/VPS serve | 同左，换 URL + Bearer | 一轮对话 | [ ] |
-| C3 | Desktop 本机 sidecar | §4.4 | 一轮对话 | [ ] |
+| C3 | Desktop 薄壳 → 本机 serve | §4.4 | 一轮对话 | [ ] |
 | C4 | Desktop → 远程 serve | 连接页改远程 URL | 一轮对话；IPC 预期 | [ ] |
 | C5 | Mobile → 远程 serve | §4.5 A | 一轮对话 | [ ] |
 
