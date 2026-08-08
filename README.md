@@ -164,6 +164,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | 个人自用：本机 `serve` + TLS 反代 + Bearer | — |
 | [docs/测试指南.md](docs/测试指南.md) | 测试、pre-commit、审计命令 | [en](docs/en/TESTING.md) |
 | [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | 官方 Client 拆分（路径 A）；壳仓 [`../crabmate-client`](../crabmate-client/) | — |
+| [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2：`frontend/` 迁出实施计划 | — |
 | [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ 协议版 ↔ 最低 Client 兼容表 | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** 规划与开源基准衔接 | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval 转换、执行与冒烟 | — |

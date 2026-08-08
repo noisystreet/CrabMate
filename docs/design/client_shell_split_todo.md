@@ -19,7 +19,7 @@
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | 🚧 **P4.1 完成**；**P4.2 待做**（`frontend/` 仍在本仓） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 4.2（迁出 `frontend/` 源码；评估 `serve` 默认 `--no-web` / 最小占位）。
+**下一执行**：Phase 4.2（见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md)：先契约钉清单/tag，再迁 `frontend` 至 Client 仓）。
 
 ---
 
@@ -124,7 +124,7 @@
 | ID | 动作 | 状态 |
 |----|------|------|
 | P4.1 | 主仓移除 `desktop-tauri/`、`mobile-tauri/`、`crates/crabmate-connect/` 及无用打包脚本（含 `scripts/victauri-e2e.sh`、`scripts/sync-tauri-connect-page.sh`） | ✅ 完成 |
-| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | ⬜ 待做（源码仍在本仓） |
+| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | ⬜ 待做（源码仍在本仓）；**实施计划** [`frontend_migrate_plan.md`](./frontend_migrate_plan.md) |
 | P4.3 | （可选）release asset 附带推荐 UI 包，**源码**不在主仓 | ⬜ 待做 |
 | P4.4 | 兼容表：Server ↔ 协议版 ↔ 最低 Client | ✅ 初稿 [`client_compat_matrix.md`](./client_compat_matrix.md) |
 | P4.5 | `serve --desktop-ready-json`：保留旗标；新增别名 **`--web-ready-json`**；壳不依赖；文档标注弃用命名 | ✅ 完成 |
@@ -188,4 +188,5 @@
 | 2026-08-08 | Phase 3 P3.3–P3.5：外仓 CI + `check-no-main-path` + contract_pin；主仓 README/壳 README 指向外仓 |
 | 2026-08-08 | Phase 3 总验收：干净克隆 `.deb` + Desktop release 壳对接本仓 UI/`serve` 真实 SSE 回合；下一刀 Phase 4 |
 | 2026-08-08 | Phase 4.1：移除主仓壳/`connect`/Victauri 脚本与 desktop CI；P4.4 兼容表初稿；P4.5 `--web-ready-json`；下一刀 P4.2 迁 `frontend` |
+| 2026-08-08 | P4.2 实施计划草案：[`frontend_migrate_plan.md`](./frontend_migrate_plan.md)（Client 仓落点；先 `client-contract-v*`，不强制产品发版） |
 | 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |
