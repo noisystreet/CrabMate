@@ -11,7 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- GitHub Actions **Release** workflow (`.github/workflows/release.yml`): tag `vX.Y.Z` (or `vX.Y.Z-rc.N`) → `make package` + GitHub Release with tar.gz/deb; notes from this file’s core `X.Y.Z` section; re-run updates the same Release.
 
 ### Changed
 
