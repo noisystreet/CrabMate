@@ -237,8 +237,8 @@ fn show_splash_error(app: &tauri::AppHandle, message: String) {
         if let Some(splash) = handle.get_webview_window("splash") {
             splash_eval_error(&splash, &message);
             let _ = splash.set_size(tauri::Size::Logical(tauri::LogicalSize {
-                width: 480.0,
-                height: 420.0,
+                width: desktop_main_window::BOOT_SHELL_WIDTH,
+                height: desktop_main_window::BOOT_SHELL_HEIGHT,
             }));
             let _ = splash.center();
         }
@@ -631,16 +631,26 @@ fn main() {
 
             // 启动画面先显示，后台启后端（E2E 下 visible(false) 防弹窗）
             let show_window = !e2e_hide_app_windows();
-            let _splash =
+            let splash =
                 WebviewWindowBuilder::new(app, "splash", WebviewUrl::App("splash.html".into()))
                     .title("CrabMate")
-                    .inner_size(440.0, 340.0)
+                    .inner_size(
+                        desktop_main_window::BOOT_SHELL_WIDTH,
+                        desktop_main_window::BOOT_SHELL_HEIGHT,
+                    )
                     .resizable(false)
                     .decorations(false)
-                    .visible(show_window)
+                    .background_color(desktop_main_window::BOOT_SHELL_BG)
+                    .visible(false)
                     .center()
                     .build()
                     .map_err(|e| format!("failed to create splash window: {e}"))?;
+            if show_window {
+                let _ = splash.show();
+                // 与连接页一致：show 后再居中（Wayland 上 builder.center 常无效）。
+                let _ = splash.center();
+                let _ = splash.set_focus();
+            }
 
             update_splash_status(&app_handle, "正在启动…", "准备本地后端服务");
 

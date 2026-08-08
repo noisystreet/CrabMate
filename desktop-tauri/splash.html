@@ -6,43 +6,50 @@
 <title>CrabMate</title>
 <style>
   :root {
-    --bg0: #12151a;
-    --bg1: #1a1f27;
-    --fg: #e8eaed;
-    --muted: #8b939e;
-    --accent: #3d9a8b;
-    --accent-dim: rgba(61, 154, 139, 0.35);
-    --danger: #e07a6a;
-    --danger-bg: rgba(224, 122, 106, 0.12);
+    --bg0: #0a0d12;
+    --bg1: #121820;
+    --fg: #e8ecf1;
+    --muted: #909dad;
+    --accent: #7b90c4;
+    --accent-dim: rgba(123, 144, 196, 0.3);
+    --border: #2a3340;
+    --danger: #c98c9b;
+    --danger-bg: rgba(201, 140, 155, 0.14);
+    --radius-btn: 5px;
+    --font: "DM Sans", "Segoe UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body {
     margin: 0;
     height: 100%;
-    background: radial-gradient(120% 80% at 50% 0%, #1e2630 0%, var(--bg0) 55%);
+    background: radial-gradient(120% 80% at 50% 0%, #1a222d 0%, var(--bg0) 55%);
     color: var(--fg);
-    font-family: "Segoe UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+    font-family: var(--font);
     -webkit-user-select: none;
     user-select: none;
   }
-  .splash {
+  body {
+    position: relative;
+  }
+  .shell {
+    position: relative;
     height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 1.75rem 1.5rem 1.5rem;
+    padding: 1.25rem 1.35rem 1.5rem;
     text-align: center;
   }
   .mark {
     width: 48px;
     height: 48px;
     border-radius: 12px;
-    background: linear-gradient(145deg, #2a3340, #161b22);
-    border: 1px solid #2f3845;
+    background: linear-gradient(145deg, #232c38, #121820);
+    border: 1px solid var(--border);
     display: grid;
     place-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0.85rem;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   }
   .mark span {
@@ -53,12 +60,12 @@
   }
   h1 {
     margin: 0;
-    font-size: 1.55rem;
+    font-size: 1.45rem;
     font-weight: 650;
     letter-spacing: 0.02em;
   }
   .tagline {
-    margin: 0.4rem 0 1.5rem;
+    margin: 0.35rem 0 1.25rem;
     font-size: 0.88rem;
     color: var(--muted);
   }
@@ -75,13 +82,13 @@
     to { transform: rotate(360deg); }
   }
   .status {
-    margin: 1.1rem 0 0;
+    margin: 1rem 0 0;
     font-size: 0.92rem;
     color: var(--fg);
     min-height: 1.35em;
   }
   .detail {
-    margin: 0.35rem 0 0;
+    margin: 0.3rem 0 0;
     font-size: 0.78rem;
     color: var(--muted);
     max-width: 22rem;
@@ -90,19 +97,19 @@
   }
   .error-box {
     display: none;
-    margin-top: 1rem;
+    margin-top: 0.85rem;
     width: min(100%, 22rem);
     text-align: left;
-    padding: 0.75rem 0.85rem;
+    padding: 0.7rem 0.8rem;
     border-radius: 8px;
     background: var(--danger-bg);
-    border: 1px solid rgba(224, 122, 106, 0.35);
-    color: #f0c4bc;
+    border: 1px solid rgba(201, 140, 155, 0.35);
+    color: #e8c4cc;
     font-size: 0.8rem;
     line-height: 1.45;
     white-space: pre-wrap;
     word-break: break-word;
-    max-height: 8.5rem;
+    max-height: 7.5rem;
     overflow: auto;
     -webkit-user-select: text;
     user-select: text;
@@ -110,28 +117,30 @@
   .error-box.is-visible { display: block; }
   .actions {
     display: none;
-    margin-top: 1.15rem;
+    margin-top: 1rem;
     gap: 0.6rem;
   }
   .actions.is-visible { display: flex; }
   button {
     appearance: none;
-    border: 1px solid #3a4452;
+    border: 1px solid var(--border);
     background: var(--bg1);
     color: var(--fg);
-    border-radius: 6px;
+    border-radius: var(--radius-btn);
     padding: 0.45rem 1rem;
     font-size: 0.85rem;
+    font-family: inherit;
     cursor: pointer;
   }
   button:hover { border-color: var(--accent); }
   button.primary {
-    background: #244843;
-    border-color: var(--accent);
+    background: rgb(47, 58, 78);
+    border-color: rgb(78, 93, 123);
+    color: var(--fg);
   }
   .hint {
     position: absolute;
-    bottom: 0.75rem;
+    bottom: 0.7rem;
     left: 0;
     right: 0;
     text-align: center;
@@ -142,7 +151,7 @@
 </style>
 </head>
 <body>
-<div class="splash">
+<div class="shell">
   <div class="mark" aria-hidden="true"><span>C</span></div>
   <h1>CrabMate</h1>
   <p class="tagline">本地 AI 编程助手</p>

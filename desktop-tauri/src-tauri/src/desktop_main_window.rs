@@ -16,13 +16,17 @@ use crate::{close_splash_window, desktop_window_state_flags, e2e_hide_app_window
 /// 主 UI（连上 `serve` 后）默认逻辑尺寸。
 const MAIN_UI_WIDTH: f64 = 1280.0;
 const MAIN_UI_HEIGHT: f64 = 840.0;
-/// 连接页：比主窗约一半宽；高度贴合表单（避免底部大块空白）。
-const CONNECT_PAGE_WIDTH: f64 = 520.0;
-const CONNECT_PAGE_HEIGHT: f64 = 440.0;
+
+/// 启动闪屏与连接页共用逻辑尺寸（居中小窗，视觉一致）。
+pub(crate) const BOOT_SHELL_WIDTH: f64 = 480.0;
+pub(crate) const BOOT_SHELL_HEIGHT: f64 = 420.0;
+
+/// WebView / 闪屏底色（与前端深色壳一致）。
+pub(crate) const BOOT_SHELL_BG: Color = Color(0x0A, 0x0D, 0x12, 0xFF);
 
 #[derive(Clone, Copy)]
 enum MainWindowMode {
-    /// 先打开连接页（小窗）；导航到 `serve` 后再放大并恢复几何。
+    /// 先打开连接页（与闪屏同尺寸小窗）；导航到 `serve` 后再放大并恢复几何。
     ConnectPage,
     /// E2E / 跳过连接页：直接全尺寸 UI。
     DirectUi,
@@ -85,9 +89,10 @@ fn is_connect_page_url(url: &Url) -> bool {
 fn apply_connect_page_geometry(window: &WebviewWindow) {
     // 会话窗可能处于最大化；不先取消则 set_size 无效，连接页会仍占满屏。
     let _ = window.unmaximize();
+    let _ = window.set_resizable(false);
     let _ = window.set_size(tauri::Size::Logical(tauri::LogicalSize {
-        width: CONNECT_PAGE_WIDTH,
-        height: CONNECT_PAGE_HEIGHT,
+        width: BOOT_SHELL_WIDTH,
+        height: BOOT_SHELL_HEIGHT,
     }));
     let _ = window.center();
 }
@@ -95,6 +100,7 @@ fn apply_connect_page_geometry(window: &WebviewWindow) {
 fn apply_main_ui_geometry(window: &WebviewWindow) {
     // 连接页小尺寸可能已写入 window-state；连上后恢复显示器位置，再最大化会话窗。
     // 不 restore SIZE/MAXIMIZED（连接页会把「未最大化」写脏）。
+    let _ = window.set_resizable(true);
     let _ = window.restore_state(StateFlags::POSITION);
     if let Err(e) = window.maximize() {
         eprintln!("[crabmate-desktop] maximize after connect failed: {e}");
@@ -116,7 +122,7 @@ fn finish_create_main_window(
     let revealed_on_load = Arc::clone(&revealed);
     let app_on_load = app_handle.clone();
     let (width, height) = match mode {
-        MainWindowMode::ConnectPage => (CONNECT_PAGE_WIDTH, CONNECT_PAGE_HEIGHT),
+        MainWindowMode::ConnectPage => (BOOT_SHELL_WIDTH, BOOT_SHELL_HEIGHT),
         MainWindowMode::DirectUi => (MAIN_UI_WIDTH, MAIN_UI_HEIGHT),
     };
 
@@ -125,9 +131,9 @@ fn finish_create_main_window(
     let mut builder = WebviewWindowBuilder::new(app_handle, "main", webview_url)
         .title("CrabMate Desktop")
         .inner_size(width, height)
-        .resizable(true)
+        .resizable(matches!(mode, MainWindowMode::DirectUi))
         .decorations(false)
-        .background_color(Color(0x0A, 0x0D, 0x12, 0xFF))
+        .background_color(BOOT_SHELL_BG)
         .visible(false)
         .theme(os_theme::initial_window_theme());
     if matches!(mode, MainWindowMode::ConnectPage) {

@@ -76,7 +76,7 @@ CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev
 - `src/desktop_lifecycle.rs` 负责托盘和窗口生命周期。托盘菜单含「显示/隐藏」「退出」；Linux 下 Tauri 不派发托盘图标点击事件，因此须使用菜单，Windows/macOS 左键可切换。
 - 关闭 `main` 会正常退出并回收后端；托盘初始化成功时，前端最小化命令改为隐藏窗口，让后端继续运行。
 - `tauri-plugin-window-state` 仅跟踪稳定标签 `main`，保存/恢复大小、位置和最大化状态；`splash` 在 denylist 中。刻意不恢复 `VISIBLE`，避免从托盘隐藏状态退出后下次冷启动仍不可见。
-- 主窗口先以 `visible(false)` 创建，再在 `show()` 前显式处理几何：连接页默认 **520×440**（贴合表单、减少底部空白；`show()` 后再居中，且不 `restore` 以免被撑大）；连上 `serve` 后恢复位置并 **maximize** 会话窗（不 restore 连接页写脏的 SIZE）。E2E 直连用完整 `restore_state`。并对 `main` 使用 `skip_initial_state`，避免插件异步恢复造成默认尺寸闪一下。右侧分栏宽度由 Web `/user-data/prefs` 的 `side_width` 继续持久化；渲染/拖拽时按当前视口夹取，加载时不把夹取结果写回磁盘。
+- 主窗口先以 `visible(false)` 创建，再在 `show()` 前显式处理几何：闪屏与连接页共用 **480×420**（同底色、居中；连接页 `show()` 后再居中，且不 `restore` 以免被撑大）；连上 `serve` 后恢复位置并 **maximize** 会话窗（不 restore 连接页写脏的 SIZE）。E2E 直连用完整 `restore_state`。并对 `main` 使用 `skip_initial_state`，避免插件异步恢复造成默认尺寸闪一下。右侧分栏宽度由 Web `/user-data/prefs` 的 `side_width` 继续持久化；渲染/拖拽时按当前视口夹取，加载时不把夹取结果写回磁盘。
 - 托盘「退出」与 `quit_desktop_app` 共用 `request_desktop_quit`（先 `BackendHandle::shutdown` 再 `app.exit(0)`），`RunEvent::Exit|ExitRequested` 再兜底一次。
 - `BackendHandle` 在 `setup` 阶段就被 `manage`，握手线程 spawn 出子进程后立刻 `adopt` 到同一槽位；`shutdown` 会置位退出标记并 kill，因此在 `web_ready` 之前退出也不会留下孤儿 `crabmate serve`。标记置位后握手线程不再拉起或保留子进程，也不会再创建主窗口。
 - 托盘初始化失败时，最小化命令保留普通窗口最小化。

@@ -1,76 +1,121 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-Hans">
   <head>
     <meta charset="utf-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
-    <title>crabmate</title>
+    <title>CrabMate</title>
     <style>
       :root {
-        color-scheme: light dark;
-        --bg: #0f1419;
-        --fg: #e7ecf1;
-        --muted: #9aa7b5;
-        --accent: #3d8bfd;
-        --field: #1a222c;
-        --border: #2a3542;
+        --bg0: #0a0d12;
+        --bg1: #121820;
+        --fg: #e8ecf1;
+        --muted: #909dad;
+        --accent: #7b90c4;
+        --field: #1a222d;
+        --border: #2a3340;
+        --danger: #c98c9b;
+        --radius-btn: 5px;
+        --font: "DM Sans", "Segoe UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
       }
-      * {
-        box-sizing: border-box;
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        /* 桌面小窗用 100%；移动 WebView 保留 100dvh，避免地址栏伸缩撑不满。 */
+        min-height: 100%;
+        min-height: 100dvh;
+        height: 100%;
+        font-family: var(--font);
+        background: radial-gradient(120% 80% at 50% 0%, #1a222d 0%, var(--bg0) 55%);
+        color: var(--fg);
       }
       body {
-        margin: 0;
-        min-height: 100dvh;
-        font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", sans-serif;
-        background: radial-gradient(120% 80% at 50% 0%, #1a2838 0%, var(--bg) 55%);
-        color: var(--fg);
         display: flex;
         flex-direction: column;
-        justify-content: flex-start;
-        padding: 0.85rem 1.05rem
-          calc(0.85rem + max(var(--cm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
-        padding-top: calc(0.85rem + var(--cm-safe-top, env(safe-area-inset-top, 0px)));
+        align-items: center;
+        justify-content: center;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding: 0.9rem 1.15rem
+          calc(0.9rem + max(var(--cm-safe-bottom, 0px), env(safe-area-inset-bottom, 0px)));
+        padding-top: calc(0.9rem + var(--cm-safe-top, env(safe-area-inset-top, 0px)));
+      }
+      .shell {
+        width: min(100%, 26rem);
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        margin-bottom: 0.7rem;
+      }
+      .mark {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(145deg, #232c38, #121820);
+        border: 1px solid var(--border);
+        display: grid;
+        place-items: center;
+        margin-bottom: 0.5rem;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+      }
+      .mark span {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--accent);
+        letter-spacing: -0.04em;
       }
       h1 {
-        margin: 0.15rem 0 0.2rem;
-        font-size: 1.4rem;
+        margin: 0;
+        font-size: 1.35rem;
         font-weight: 650;
         letter-spacing: 0.02em;
       }
       p.lead {
-        margin: 0 0 0.75rem;
+        margin: 0.35rem 0 0;
         color: var(--muted);
         line-height: 1.35;
-        max-width: 28rem;
-        font-size: 0.88rem;
+        font-size: 0.84rem;
+        text-align: center;
       }
       label {
         display: block;
-        font-size: 0.82rem;
+        font-size: 0.8rem;
         color: var(--muted);
-        margin-bottom: 0.25rem;
+        margin-bottom: 0.22rem;
       }
       input {
         width: 100%;
-        padding: 0.6rem 0.75rem;
-        border-radius: 0.55rem;
+        padding: 0.55rem 0.7rem;
+        border-radius: var(--radius-btn);
         border: 1px solid var(--border);
         background: var(--field);
         color: var(--fg);
-        font-size: 0.95rem;
-        margin-bottom: 0.55rem;
+        font-size: 0.92rem;
+        font-family: inherit;
+        margin-bottom: 0.5rem;
+      }
+      input:focus {
+        outline: 2px solid rgba(123, 144, 196, 0.4);
+        outline-offset: 1px;
       }
       button {
         width: 100%;
-        padding: 0.7rem 1rem;
-        border: 0;
-        border-radius: 0.55rem;
-        background: var(--accent);
-        color: #fff;
-        font-size: 0.95rem;
+        padding: 0.65rem 1rem;
+        border: 1px solid rgba(78, 93, 123, 1);
+        border-radius: var(--radius-btn);
+        background: rgb(47, 58, 78);
+        color: var(--fg);
+        font-size: 0.92rem;
         font-weight: 600;
+        font-family: inherit;
         cursor: pointer;
       }
       button:disabled {
@@ -78,77 +123,79 @@
         cursor: wait;
       }
       button:active:not(:disabled) {
-        filter: brightness(0.92);
+        filter: brightness(0.94);
       }
       .hint {
-        margin-top: 0.65rem;
-        font-size: 0.75rem;
+        margin-top: 0.55rem;
+        font-size: 0.72rem;
         color: var(--muted);
         line-height: 1.35;
+        text-align: center;
       }
       .err {
-        color: #ff8e8e;
-        font-size: 0.85rem;
-        min-height: 0;
-        margin: 0 0 0.4rem;
+        color: #e8c4cc;
+        font-size: 0.82rem;
+        margin: 0 0 0.35rem;
         white-space: pre-wrap;
       }
-      .err:empty {
-        display: none;
-      }
+      .err:empty { display: none; }
       .status {
         color: var(--muted);
-        font-size: 0.85rem;
-        min-height: 0;
+        font-size: 0.82rem;
         margin: 0 0 0.25rem;
+        text-align: center;
       }
-      .status:empty {
-        display: none;
-      }
-      code {
-        font-size: 0.85em;
+      .status:empty { display: none; }
+      code { font-size: 0.85em; }
+      html[data-cm-mobile-shell] body {
+        justify-content: flex-start;
+        padding-top: calc(1rem + var(--cm-safe-top, 0px));
       }
     </style>
   </head>
   <body>
-    <h1>crabmate</h1>
-    <p class="lead" id="lead">
-      连接到已有的 <code>crabmate serve</code>。填写服务器地址与 Web API 共享密钥（与
-      <code>CM_WEB_API_BEARER_TOKEN</code> 一致；不是模型 API_KEY）。
-    </p>
-    <form id="connect-form" method="post" action="#" autocomplete="on">
-      <label for="url">服务器地址</label>
-      <input
-        id="url"
-        name="username"
-        type="url"
-        inputmode="url"
-        autocomplete="username"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="http://192.168.1.10:8080/"
-        required
-      />
-      <label for="bearer">Web API 共享密钥（可选）</label>
-      <input
-        id="bearer"
-        name="password"
-        type="password"
-        autocomplete="current-password"
-        autocapitalize="off"
-        autocorrect="off"
-        spellcheck="false"
-        placeholder="与 CM_WEB_API_BEARER_TOKEN 相同（不是模型 API_KEY）"
-      />
-      <p class="status" id="status" aria-live="polite"></p>
-      <p class="err" id="err" aria-live="assertive"></p>
-      <button type="submit" id="submit">连接</button>
-    </form>
-    <p class="hint">
-      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。成功连接后会记住服务器地址；连接成功的非空
-      Bearer 会写入本机系统钥匙串（覆盖旧值），下次启动自动填充。也可用系统密码管理器保存。
-    </p>
+    <div class="shell">
+      <div class="brand">
+        <div class="mark" aria-hidden="true"><span>C</span></div>
+        <h1>CrabMate</h1>
+        <p class="lead" id="lead">
+          连接到已有的 <code>crabmate serve</code>。填写服务器地址与 Web API 共享密钥（与
+          <code>CM_WEB_API_BEARER_TOKEN</code> 一致；不是模型 API_KEY）。
+        </p>
+      </div>
+      <form id="connect-form" method="post" action="#" autocomplete="on">
+        <label for="url">服务器地址</label>
+        <input
+          id="url"
+          name="username"
+          type="url"
+          inputmode="url"
+          autocomplete="username"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="http://192.168.1.10:8080/"
+          required
+        />
+        <label for="bearer">Web API 共享密钥（可选）</label>
+        <input
+          id="bearer"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          autocapitalize="off"
+          autocorrect="off"
+          spellcheck="false"
+          placeholder="与 CM_WEB_API_BEARER_TOKEN 相同（不是模型 API_KEY）"
+        />
+        <p class="status" id="status" aria-live="polite"></p>
+        <p class="err" id="err" aria-live="assertive"></p>
+        <button type="submit" id="submit">连接</button>
+      </form>
+      <p class="hint">
+        局域网可用明文 HTTP；公网请用 HTTPS + Bearer。成功后会记住地址；非空 Bearer 写入系统钥匙串。
+      </p>
+    </div>
     <script>
       const URL_KEY = "crabmate.connect.serverUrl";
       const BEARER_KEY_LEGACY_MOBILE = "crabmate.mobile.webApiBearer";
