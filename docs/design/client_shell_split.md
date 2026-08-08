@@ -2,6 +2,7 @@
 
 > **状态**：**已采纳（2026-08-08）** — 官方业务 UI 由 **Client 侧**构建与发版；本仓终点态以 **`serve` + 契约 +（可选）CLI/TUI** 为主，**不**以维护 `frontend/` 源码为产品职责。  
 > **执行清单**：[`client_shell_split_todo.md`](./client_shell_split_todo.md)  
+> **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`crate_dep_policy.md`](./crate_dep_policy.md)、[`web_host_extract.md`](./web_host_extract.md)、[`turn_runtime_placement.md`](./turn_runtime_placement.md)、[`web_host_p5_placement.md`](./web_host_p5_placement.md)；契约见 **`docs/SSE协议.md`**、**`docs/命令行与路由.md`**、**`docs/配置说明.md`**。  
 > **非目标**：拆 Agent 微服务；另开第二套会话 API；强制 CLI/TUI 走 HTTP；多租户账号体系；以本 ADR 替代 turn-runtime / queue 搬家决策。
 

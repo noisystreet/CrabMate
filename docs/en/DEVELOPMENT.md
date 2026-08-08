@@ -130,4 +130,4 @@ Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace 
 
 ## Further reading
 
-`docs/design/` (agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.
+`docs/design/` (agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.

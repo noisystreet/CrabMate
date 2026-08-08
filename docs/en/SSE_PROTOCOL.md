@@ -11,6 +11,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 - **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
 - **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
 - **Evolution**: Bump **`crates/crabmate-sse-protocol`**, this doc and the Chinese twin, and run **`cargo test -p crabmate-sse-protocol`** (doc marker self-check).
+- **Semver / publishing / external pins**: Wire `SSE_PROTOCOL_VERSION` and Cargo crate semver are separate axes; breaking vs soft fields, **no N−1 wire decoder window today**, and git tag `client-contract-vX.Y.Z` pinning are in **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**. Gate: `bash scripts/check-client-contract.sh`.
 
 ## Transport and framing
 

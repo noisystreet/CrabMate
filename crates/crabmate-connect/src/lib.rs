@@ -5,6 +5,8 @@
 //! - 成功连接时将非空 Bearer **覆盖写入**本机系统钥匙串（账户 `tauri_connect_web_api_bearer`）
 //!
 //! 连接页静态资源见本 crate 的 `assets/connect.html`（由各壳同步进 `dist/`）。
+//!
+//! 发版与外仓钉版本（git tag + `path`、Tauri 2）：见仓库 **`docs/design/client_contract_versioning.md`** 与本目录 **`README.md`**。
 
 mod allowed_origin;
 mod commands;

@@ -11,6 +11,7 @@
 - **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
 - **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
 - **演进**：递增 `v` 时须同步：**`crates/crabmate-sse-protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、**`cargo test -p crabmate-sse-protocol`**（文档内版本标记自检）。
+- **Semver / 发版 / 外仓钉版本**：线协议 `SSE_PROTOCOL_VERSION` 与 Cargo crate semver 是两套轴；破坏性变更、软字段、**当前无 N−1 线协议解码窗口**、git 标签 `client-contract-vX.Y.Z` 钉法见 **[`docs/design/client_contract_versioning.md`](design/client_contract_versioning.md)**。本地/CI 门禁：`bash scripts/check-client-contract.sh`。
 
 ## 传输与分帧
 
