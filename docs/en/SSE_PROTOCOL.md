@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via **`frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**).
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client **`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**).
 
 ## Protocol version `v` and negotiation
 
@@ -210,7 +210,7 @@ When changing any of:
 
 1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
 2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
-3. `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
+3. Client `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
 4. `crates/crabmate-sse-protocol/src/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI)
 5. New `encode_message(SsePayload::…)` call sites
 
@@ -218,7 +218,7 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-Current Web (AG-UI) classifies via **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for IM bridge etc. uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
+Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for IM bridge etc. uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
 
 - **SSE golden**: `./scripts/check-sse-protocol.sh` (server-side classify). Client AG-UI parser tests live in the Client repo.
 When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key, also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
@@ -252,7 +252,7 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 **Terminal event order (Phase E1, current server)**
 
 - **Server (new order)**: optional **`stream_draining`** → persist → **`conversation_saved`** → (optional `STATE_SNAPSHOT`) → **last** `RUN_FINISHED` / `RUN_ERROR`. First-frame `sse_capabilities.terminal_order = saved_before_finished` (soft field; does **not** bump `SSE_PROTOCOL_VERSION`).
-- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`; also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`, driven by body completion (`frontend/src/api/chat_stream/sse_frame.rs`).
+- **Official Web (dual-order)**: still keeps reading after `RUN_FINISHED`; also accepts the legacy order (`conversation_saved` after `RUN_FINISHED`). At most one `on_done`, driven by body completion (Client `frontend/src/api/chat_stream/sse_frame.rs`).
 - **Later contract (E4)**: drop post-terminal business-frame compat; see **`docs/Turn布局设计.md` §16**.
 
 ### Tool calls
@@ -304,7 +304,7 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 
 ### Golden test
 
-AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golden.jsonl`, driven by the `golden_ag_ui_v2_parser_matches_expected` test in `frontend/src/api/chat_stream/parser_v2.rs`.
+AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golden.jsonl`, driven by the `golden_ag_ui_v2_parser_matches_expected` test in Client `frontend/src/api/chat_stream/parser_v2.rs`.
 
 ## Contract tests (`crabmate_tool` history envelope)
 
@@ -313,4 +313,4 @@ AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golde
 
 ---
 
-Maintainers: tables should match code; if they drift, treat **`protocol.rs` + `frontend/src/api/chat_stream/parser_v2.rs`** as authoritative and fix this doc.
+Maintainers: tables should match code; if they drift, treat **`protocol.rs` + Client `frontend/src/api/chat_stream/parser_v2.rs`** as authoritative and fix this doc.

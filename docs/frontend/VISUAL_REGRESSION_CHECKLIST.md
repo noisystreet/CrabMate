@@ -40,4 +40,4 @@
 
 ## 构建
 
-- [ ] `cd frontend && trunk build` 成功（确认 `@import` 子样式被打包）。
+- [ ] `cd ../crabmate-client && make frontend` 成功（确认 `@import` 子样式被打包）。

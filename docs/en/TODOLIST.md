@@ -129,12 +129,12 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ---
 
-## `frontend/`
+## Client `frontend/` (UI in `crabmate-client`)
 
-**Summary**: `api.rs`, `sse_dispatch/dispatch.rs`, panels, session state, `session_export`.
+**Summary**: Official UI lives in **`../crabmate-client/frontend`** (path A). This repo keeps contracts / `serve` only. Build: Client `make frontend`. Design notes: **`docs/frontend/`**.
 
-- [ ] **Official Client / server-only monorepo (path A)**: phased work in **`docs/design/client_shell_split_todo.md`** (ADR: **`docs/design/client_shell_split.md`**). **Next: Phase 1 contract publishability**.
-- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains **`frontend/src/session_sync.rs`** (`SessionSyncState`).
+- [ ] **Official Client / server-only (path A)**: main path done (**`docs/design/client_shell_split_todo.md`**); optional **P4.3** / **Phase 5**. Ship against **`docs/design/client_compat_matrix.md`**.
+- [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains Client **`frontend/src/session_sync.rs`** (`SessionSyncState`).
 - [ ] Virtualize long chat lists.
 - [ ] i18n, a11y, keyboard navigation.
 - [ ] Future voice (STT/TTS); align with gateway identity policy (**`docs/en/FUTURE_PLANS.md`**).

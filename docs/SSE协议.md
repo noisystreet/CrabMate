@@ -2,7 +2,7 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 **`frontend/src/api/chat_stream/parser_v2.rs`**（AG-UI；回调形状见 **`frontend/src/sse_dispatch/types.rs`**）。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client **`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`**（AG-UI；回调形状见 **`frontend/src/sse_dispatch/types.rs`**）。
 
 ## 协议版本 `v` 与协商
 
@@ -212,13 +212,13 @@
 
 1. **`crates/crabmate-sse-protocol`**：`SSE_PROTOCOL_VERSION`；`sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（生产默认 **`V2Encoder`** / `default_encoder()`）
 2. **`crates/crabmate-sse-protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
-3. `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
+3. Client `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
 4. `crates/crabmate-sse-protocol/src/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）
 5. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
 
-现行 Web（AG-UI）由 **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，金样 **`fixtures/sse_ag_ui_golden.jsonl`**。V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供 IM bridge 等使用，参考向量见 **`fixtures/sse_control_golden.jsonl`**。
+现行 Web（AG-UI）由 Client **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，金样 **`fixtures/sse_ag_ui_golden.jsonl`**。V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供 IM bridge 等使用，参考向量见 **`fixtures/sse_control_golden.jsonl`**。
 
 ---
 
@@ -249,7 +249,7 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 **终态顺序（Phase E1，服务端现行）**
 
 - **服务端（新序）**：可选 **`stream_draining`** → 落盘 → **`conversation_saved`** →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED` / `RUN_ERROR`。首帧 `sse_capabilities.terminal_order = saved_before_finished`（软字段，**不** bump `SSE_PROTOCOL_VERSION`）。
-- **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，由 body 消费完成驱动（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
+- **官方 Web（双序）**：仍在 `RUN_FINISHED` 后继续读 body；亦接受旧序（`RUN_FINISHED` 后再来 `conversation_saved`）。`on_done` 至多一次，由 body 消费完成驱动（见 Client `frontend/src/api/chat_stream/sse_frame.rs`）。
 - **后续收缩（E4）**：待删除「终态后业务帧」兼容等；见 **`docs/Turn布局设计.md` §16**。
 
 ### 工具调用
@@ -301,10 +301,10 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 
 ### 金样测试
 
-AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由 `frontend/src/api/chat_stream/parser_v2.rs` 的 `golden_ag_ui_v2_parser_matches_expected` 测试驱动。
+AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由 Client `frontend/src/api/chat_stream/parser_v2.rs` 的 `golden_ag_ui_v2_parser_matches_expected` 测试驱动。
 
 - **`fixtures/sse_control_golden.jsonl`**：V1 JSON 形状参考向量（每行 `描述<TAB>JSON<TAB>期望分类`；`#` 开头行为注释），与 **`classify_sse_control_outcome`** 对齐维护。
-- **Web AG-UI**：`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
+- **Web AG-UI**：`cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`。
 若新增控制面顶层键且 Web 应消费：在 **`parser_v2.rs`** 增加分支后，同步 **`fixtures/sse_ag_ui_golden.jsonl`**；若 IM/V1 仍需识别，再改 **`control_classify.rs`** 与 **`sse_control_golden.jsonl`**。
 
 ## 契约测试（`crabmate_tool` 历史信封）
@@ -314,4 +314,4 @@ AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由
 
 ---
 
-维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + `frontend/src/api/chat_stream/parser_v2.rs`** 为准并修正本文档。
+维护者备注：表格与枚举力求与代码一致；若发现漂移，以 **`protocol.rs` + Client `frontend/src/api/chat_stream/parser_v2.rs`** 为准并修正本文档。

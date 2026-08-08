@@ -24,7 +24,7 @@
 |----|------|
 | 操作系统 | 常见 Linux（Debian/Ubuntu 等）；下文以 **systemd** + **Caddy** 为例。 |
 | 域名（推荐） | 将 **A 记录** 指向 VPS 公网 IP，便于 **Let’s Encrypt** 自动证书。仅用 IP 访问时，自动公网证书不便签发，需自签或云厂商证书，浏览器会告警。 |
-| 二进制与前端 | 已 **`cargo build --release`**，且 **`cd frontend && trunk build --release`** 后存在 **`frontend/dist`**（与 **`README.md` → 编译运行与打包** 一致）。 |
+| 二进制与前端 | 已 **`cargo build --release`**，且在 Client 仓 **`cd ../crabmate-client && make frontend`**（发版可用 release 构建）后存在 **`frontend/dist`**（与 **`README.md` → 编译运行与打包** 一致）。 |
 | 防火墙 | 计划只对外开放 **443**（及你管理用的 **22** SSH）；**不要**把 CrabMate 的 **8080** 直接暴露到公网。 |
 
 ---

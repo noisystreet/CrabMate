@@ -9,7 +9,7 @@ alwaysApply: true
 
 ## 必须执行的命令
 
-1. **优先**（仓库根目录；**`cargo-clippy` / `frontend-wasm-check` / `frontend-clippy` 对工作区全量执行，不依赖暂存区**）：
+1. **优先**（仓库根目录；**`cargo-clippy` 对工作区全量执行，不依赖暂存区**）：
    ```bash
    pre-commit run --all-files
    ```
@@ -21,12 +21,12 @@ alwaysApply: true
    ```bash
    cargo fmt --all
    cargo clippy --all-targets --all-features -- -D warnings
-   cd frontend && cargo clippy --all-targets --all-features -- -D warnings
    bash scripts/lizard-rust.sh
    bash scripts/fn-param-ratchet.sh  # 单函数形参 ≤ 9
    bash scripts/fn-nloc-ratchet.sh  # 最大函数 nloc ≤ 200、单文件行数 ≤ 920
    ```
    若改动 **`src/`** 或共享契约，另按 **`.trae/rules/rust-clippy-and-tests.mdc`** 决定是否跑 **`cargo test`**（全量或增量）。
+   若改动影响 Client UI / 契约消费，在 **`../crabmate-client`** 另跑 `make frontend-check`（或该仓 pre-commit）；本仓 **不**含 frontend wasm 钩子。
    若 `pre-commit` 已配置但首次未装钩子，可提示用户执行：`pip install pre-commit && pre-commit install`（或 `uv tool install pre-commit` 等）。
 
 ## 流程要求
@@ -37,5 +37,5 @@ alwaysApply: true
 
 ## 与本仓库的对应关系
 
-- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**（工作区全量）、**`frontend-wasm-check`**、**`frontend-clippy`**、**`lizard-rust`**、**`fn-param-ratchet`**、**`fn-nloc-ratchet`**、**`commit-msg`：Conventional Commits** 等）；**`cargo test` 不在 pre-commit 中**（全量与金样见 **`.github/workflows/ci.yml`**、**`code-complexity.yml`**）。新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
+- 钩子定义见仓库根目录 **`.pre-commit-config.yaml`**（含 **`cargo fmt`**、**`cargo clippy -D warnings`**（工作区全量）、**`check-crate-deps`**、**`lizard-rust`**、**`fn-param-ratchet`**、**`fn-nloc-ratchet`**、**`commit-msg`：Conventional Commits** 等）。业务 UI wasm/clippy 在 **Client 仓**（路径 A）；**`cargo test` 不在 pre-commit 中**（全量与金样见 **`.github/workflows/ci.yml`**、**`code-complexity.yml`**）。新增语言/工具时同步更新该文件与本规则中的说明（若有必要）。
 - 安装后须能拦截非法提交说明：若 `git commit` 未触发说明校验，执行 **`pre-commit install --hook-type commit-msg`**（或重新 **`pre-commit install`**）。

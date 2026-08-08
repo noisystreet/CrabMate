@@ -1,24 +1,30 @@
 ---
-description: 修改 frontend 时跑 wasm 检查与构建；与后端 API/SSE 契约对齐
-globs: frontend/**/*
+description: 业务 UI 已迁 Client 仓；本仓仅契约/文档指针
+globs:
 alwaysApply: false
 ---
 
 # 前端（Leptos + WASM）
 
-## 自检命令（仓库根目录）
+官方 UI 源码在 **`../crabmate-client/frontend`**（路径 A Phase 4.2）。本仓无 `frontend/` 源码。
 
-- wasm 检查：`cd frontend && cargo check --target wasm32-unknown-unknown`
-- 与生产一致构建：`cd frontend && trunk build --release`（默认启用 `wasm-opt`）；日常开发可用 **`trunk build`**（较快，不跑 `wasm-opt`）。
+## 自检（Client 仓）
 
-大改组件、SSE 分发或打包配置后至少执行其一；准备合并或发版前建议执行 **`trunk build --release`**。
+```bash
+cd ../crabmate-client
+make frontend-check    # wasm32 cargo check
+make frontend          # trunk build
+```
+
+契约钉：`client-contract-v*`（见 Client `docs/design/contract_pin.md`）。
 
 ## 与后端一致
 
-- 变更 **`POST /chat`**、**`/chat/stream`**、SSE `data:` JSON 形状、错误码时：同步 **`frontend/src/api/chat_stream/parser_v2.rs`**、**`frontend/src/sse_dispatch/types.rs`** 与 **`frontend/src/api/`**（尤其 **`chat_stream/`**、`http.rs`；及消费 SSE 的组件）。若改动 AG-UI 控制分发：同步 **`fixtures/sse_ag_ui_golden.jsonl`**，并跑 **`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`**；V1/`classify_sse_control_outcome` 向量见 **`fixtures/sse_control_golden.jsonl`**。
-- 新增/改名用户可见文案或行为时，按 **`.trae/rules/todolist-and-documentation.mdc`** 评估是否更新 **`README.md`**。
+- 变更 **`POST /chat`**、**`/chat/stream`**、SSE 形状、错误码时：同步 Client `frontend/src/api/` 与本仓 `crabmate-sse-protocol` / fixtures。
+- AG-UI classify 金样：`cargo test -p crabmate-sse-protocol golden_ag_ui_classify_matches_expected`；V2 parser 金样在 Client。
+- 新增/改名用户可见文案或行为时，按 **`.trae/rules/todolist-and-documentation.mdc`** 评估是否更新 **`README.md`**（及 Client 仓文档）。
 
 ## 其它
 
 - 勿将真实 **API Key**、token 写入前端源码或提交到仓库；环境变量示例用占位符（见 **`.trae/rules/secrets-and-logging.mdc`**）。
-- 样式与结构尽量沿用 **`frontend/styles/*.css`**、**`frontend/themes/*.css`** 与 **`frontend/index.html`** 中的 `data-trunk` CSS 链；新增全局样式时同步在 `index.html` 增加对应 `link`，避免无关大重构。
+- 样式与结构在 Client **`frontend/styles/`**、**`frontend/themes/`**、**`frontend/index.html`**；勿在本仓假造 `frontend/` 目录。
