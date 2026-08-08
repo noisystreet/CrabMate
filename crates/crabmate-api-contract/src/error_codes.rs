@@ -6,8 +6,12 @@ pub const UNAUTHORIZED: &str = "UNAUTHORIZED";
 pub const QUEUE_FULL: &str = "QUEUE_FULL";
 /// 流式任务已结束或不可恢复。
 pub const STREAM_JOB_GONE: &str = "STREAM_JOB_GONE";
-/// 客户端 SSE 协议版本与服务端不兼容。
+/// 客户端声明的 SSE 协议版本低于服务端（非 0）。
 pub const SSE_PROTOCOL_MISMATCH: &str = "SSE_PROTOCOL_MISMATCH";
+/// 客户端声明的 SSE 协议版本高于服务端。
+pub const SSE_CLIENT_TOO_NEW: &str = "SSE_CLIENT_TOO_NEW";
+/// 客户端声明的 SSE 协议版本为 0（非法）。
+pub const INVALID_SSE_CLIENT_PROTOCOL: &str = "INVALID_SSE_CLIENT_PROTOCOL";
 /// 调用 LLM 前缺少 API 密钥。
 pub const LLM_API_KEY_REQUIRED: &str = "LLM_API_KEY_REQUIRED";
 /// 工作区未设置。

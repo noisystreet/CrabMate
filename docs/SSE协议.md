@@ -8,7 +8,7 @@
 
 - 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**（及 `sse::protocol::SSE_PROTOCOL_VERSION`）一致。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
-- **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**。
+- **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
 - **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
 - **演进**：递增 `v` 时须同步：**`crates/crabmate-sse-protocol`**、本文档与中英 **`docs/en/SSE_PROTOCOL.md`**、**`cargo test -p crabmate-sse-protocol`**（文档内版本标记自检）。
 
@@ -149,6 +149,7 @@
 | `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`） |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** 高于服务端 **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
+| `SSE_PROTOCOL_MISMATCH` | 400 | **`client_sse_protocol`** 为正整数且**低于**服务端版本 |
 | `INVALID_AT_FILE_REF` | 400 | 用户消息含非法 **`@…`** 文件引用（与 **`read_file`** 规则一致） |
 | `INVALID_CLARIFY_QUESTIONNAIRE_ANSWERS` | 400 | 澄清问卷作答体非法（见 `clarification_questionnaire`） |
 | `LLM_RATE_LIMIT` | 429 | **`POST /chat`** 模型限流/配额类（与 SSE 同源码） |
