@@ -86,9 +86,15 @@
 | C1 | 根 `Cargo.toml` 去掉 `frontend` member；删除 `frontend/` 源码 | ✅ 本地 `chore/frontend-phase-c` |
 | C2 | 去掉 pre-commit `frontend-wasm-check` / `frontend-clippy`；CI 去掉 wasm32 frontend 步骤 | ✅ |
 | C3 | `Makefile`：`all` 仅为 `backend-release`；frontend 目标改为 Client 指针 | ✅ |
-| C4 | `package-release.sh` / Playwright：可选 UI dist / checkout Client | ✅ |
+| C4 | `package-release.sh`：可选 UI dist；Playwright **迁 Client** | ✅ |
 | C5 | `web_static_dir` / 文档：`CM_WEB_STATIC_DIR` / `--no-web` | ✅ |
 | C6 | 更新 todo / 兼容表；勾选 P4.2 | 🚧 文档已改；P4.2 勾选待 PR 合入 |
+
+### Phase C′ — Playwright 迁 Client（随 Phase C）
+
+| ID | 动作 | 验收 |
+|----|------|------|
+| C7 | `e2e/` + workflow 迁 `crabmate-client`；主仓删 Playwright CI | ✅ 本地 |
 
 ### Phase D — 可选（P4.3 / Phase 5）
 
@@ -118,7 +124,7 @@
 |------|------|
 | git tag 拉取 workspace 慢 / 解析失败 | 先用 `rev` 验证；tag 仅钉契约相关 crate 所在提交 |
 | `sse-protocol` 编译进 WASM 过重 | 后续 `client` feature；首迁可接受若 CI 能编过 |
-| Playwright 仍假设 monorepo `frontend/dist` | Phase C 改 workflow：artifact 或 skip |
+| Playwright 曾假设 monorepo `frontend/dist` | ✅ 已迁 Client `e2e/` + checkout Server 编 serve |
 | 双仓短暂双份 frontend | 主仓删源码前冻结主仓 frontend 改动；或主仓改 README「只读指向 Client」 |
 | 契约 crate 破坏性变更 | 走 `SSE_PROTOCOL_VERSION` / semver 与兼容表；外仓 bump tag |
 
@@ -150,3 +156,4 @@
 |------|------|
 | 2026-08-08 | 初稿：落点 Client 仓；先契约 tag/rev，不强制产品发版；A/B/C/D 阶段与 PR 切片 |
 | 2026-08-08 | Phase A 落地：扩钉清单、门禁 smoke、Client `contract_pin`；A4 待合 main 后打 tag |
+| 2026-08-08 | Playwright E2E 迁 Client；主仓仅保留转发脚本与指针 README |
