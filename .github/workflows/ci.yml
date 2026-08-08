@@ -124,10 +124,10 @@ jobs:
             echo "unexpected frontend/dist in server-only tarball" >&2
             exit 1
           fi
-          # deb 含 /usr/bin/crabmate
+          # deb 含 /usr/bin/crabmate（dpkg-deb -c 行尾为 ./usr/bin/crabmate）
           dpkg-deb -c "$DEB" | tee /tmp/package-deb.list
-          grep -E ' usr/bin/crabmate$' /tmp/package-deb.list
-          if grep -E ' usr/share/crabmate/frontend/' /tmp/package-deb.list; then
+          grep -E '/usr/bin/crabmate$' /tmp/package-deb.list
+          if grep -E '/usr/share/crabmate/frontend/' /tmp/package-deb.list; then
             echo "unexpected UI path in server .deb" >&2
             exit 1
           fi
