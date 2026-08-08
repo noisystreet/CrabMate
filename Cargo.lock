@@ -7557,9 +7557,9 @@ dependencies = [
 
 [[package]]
 name = "worbrow"
-version = "0.2.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22e765b1b78e3ea809e66071a54140c90bd33f5202fe021c23468980a1bd86cb"
+checksum = "7fcfd6241f7e7e834db4aed018a6aa7c6a8eb88e7ecc74fae0eed591cc0909e6"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
