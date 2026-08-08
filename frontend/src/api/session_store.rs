@@ -9,7 +9,7 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 
 use crate::i18n::Locale;
 
-use super::browser::{auth_headers, window};
+use super::browser::{api_url, auth_headers, window};
 
 /// `POST /config/session/conversation-store` 成功体。
 #[derive(Debug, Clone, Deserialize)]
@@ -26,7 +26,7 @@ async fn session_store_post_json_value(body: &str, loc: Locale) -> Result<(u16, 
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&JsValue::from_str(body));
-    let req = Request::new_with_str_and_init("/config/session/conversation-store", &init)
+    let req = Request::new_with_str_and_init(&api_url("/config/session/conversation-store"), &init)
         .map_err(|e| format!("request: {:?}", e))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))

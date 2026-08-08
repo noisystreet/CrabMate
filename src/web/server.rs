@@ -5,12 +5,14 @@ use axum::middleware;
 use axum::routing::get;
 
 /// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件。
+/// `cors_allowed_origins`：非空时在最外层挂 CORS 白名单（启动时装配，热更不改层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     no_web: bool,
     static_dir: std::path::PathBuf,
     uploads_dir_for_static: std::path::PathBuf,
     web_api_bearer_layer_enabled: bool,
+    cors_allowed_origins: Vec<String>,
 ) -> Router {
     let mut protected_api = Router::new()
         .merge(super::routes::chat::router())
@@ -34,13 +36,19 @@ pub(crate) fn build_app(
     if let Some(e2e) = super::routes::e2e_fixtures::router() {
         app = app.merge(e2e);
     }
+    let cors_layer = crabmate_web_host::try_cors_layer(&cors_allowed_origins);
+    let allow_cross_origin_uploads = cors_layer.is_some();
     app = crabmate_web_host::serve::mount_uploads_and_spa(
         app,
         uploads_dir_for_static,
         static_dir,
         no_web,
+        allow_cross_origin_uploads,
     );
-    // 最外层：所有响应带 `x-request-id`（含 401）；handler 可从 Extensions 取同值写入 ApiError。
-    app.layer(middleware::from_fn(super::request_id::attach_request_id))
-        .with_state(state)
+    // 外层：`x-request-id`；再外层 CORS（若启用），以便预检 OPTIONS 不被其它层挡住。
+    app = app.layer(middleware::from_fn(super::request_id::attach_request_id));
+    if let Some(cors) = cors_layer {
+        app = app.layer(cors);
+    }
+    app.with_state(state)
 }

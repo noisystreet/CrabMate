@@ -276,7 +276,7 @@ fn ComposerPendingImagesRow(
                 }
                 imgs.iter()
                     .map(|url| {
-                        let u = url.clone();
+                        let u = crate::api::api_url(url);
                         let u_rm = url.clone();
                         view! {
                             <div class="composer-pending-img-wrap">

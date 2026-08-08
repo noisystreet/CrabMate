@@ -231,6 +231,7 @@ fn finalize_section_web_api(tail: &FinalizeTailScalars) -> types::WebApiConfig {
     types::WebApiConfig {
         web_api_bearer_token: tail.web_api_bearer_token.clone(),
         web_api_require_bearer: tail.web_api_require_bearer,
+        web_cors_allowed_origins: tail.web_cors_allowed_origins.clone(),
         web_audit_log_write_tools: tail.web_audit_log_write_tools,
         web_audit_trust_x_forwarded_for: tail.web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback: tail.allow_insecure_no_auth_for_non_loopback,

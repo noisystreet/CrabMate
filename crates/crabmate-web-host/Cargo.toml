@@ -13,4 +13,4 @@ crabmate-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tower = { workspace = true }
-tower-http = { workspace = true, features = ["fs", "set-header"] }
+tower-http = { workspace = true, features = ["fs", "set-header", "cors"] }

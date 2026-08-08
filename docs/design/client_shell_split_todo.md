@@ -14,12 +14,12 @@
 |------|------|------|
 | Phase 0 | 决策与基线 | ✅ 完成（2026-08-08） |
 | Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
-| Phase 2 | 前端可远程（API 基址 + CORS） | ⬜ 未开始 |
+| Phase 2 | 前端可远程（API 基址 + CORS） | ✅ 完成（2026-08-08） |
 | Phase 3 | connect + 壳仓拆出 | ⬜ 未开始（须 Phase 1+2） |
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ⬜ 未开始 |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 2。
+**下一执行**：Phase 3。
 
 ---
 
@@ -27,14 +27,14 @@
 
 | ID | 阻塞 | 解除阶段 |
 |----|------|----------|
-| K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | Phase 2–4 |
-| K2 | 前端相对路径、假定同 Origin | Phase 2 |
+| K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | Phase 2–4（Phase 2：可远程；源码仍可在本仓） |
+| K2 | 前端相对路径、假定同 Origin | ✅ Phase 2（可配 API 基址；默认同 Origin） |
 | K3 | 壳 → `crabmate-connect` path | Phase 1+3（Phase 1：钉法已文档化；Phase 3：外仓改 tag） |
 | K4 | 缺可独立发版的 semver/兼容表 | ✅ Phase 1（见 `client_contract_versioning.md`） |
 | K5 | E2E 假设 monorepo 同树 | Phase 3 |
 | K6 | 桌面非回环无完整 IPC | 文档化即可（非硬阻塞） |
 
-**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外；**Phase 1**：semver/线协议策略、git tag 钉法、`scripts/check-client-contract.sh` + CI job `client-contract`。
+**已具备**：壳不 spawn `serve`；契约 crate 与金样；`request_id` / 可读错误；`crabmate-connect` 在主 workspace 外；Phase 1 契约发版；**Phase 2**：API 基址 + 保守 CORS + runbook §9。
 
 ---
 
@@ -69,25 +69,25 @@
 
 ---
 
-## Phase 2 — 前端可远程（路径 A 关键）
+## Phase 2 — 前端可远程（路径 A 关键） ✅
 
 **入口**：Phase 1 验收。  
-**解开**：K1/K2。
+**解开**：K2；K1 部分（可远程消费，源码迁出仍属 Phase 4）。
 
 | ID | 动作 | 验收提示 |
 |----|------|----------|
-| P2.1 | 前端可配置 **API 基址**（构建期 env 或运行时；默认空 = 同 Origin） | 默认同 Origin 零回归 |
-| P2.2 | `frontend/src/api/**` 与 SSE 走基址；`serve` 可配 **CORS**（保守默认） | 跨 Origin 手工或 runbook 勾选 |
+| P2.1 | 前端可配置 **API 基址**（构建期 `CRABMATE_API_BASE` 或运行时 localStorage；默认空 = 同 Origin） | 默认同 Origin 零回归 |
+| P2.2 | `frontend/src/api/**` 与 SSE 走基址；`serve` 可配 **CORS**（`web_cors_allowed_origins` / `CM_WEB_CORS_ALLOWED_ORIGINS`；空=不挂） | 跨 Origin：runbook §9 |
 | P2.3 | 跨 Origin 仅 Web Bearer；不引入模型密钥鉴权 Web | 与 ADR §2.3 一致 |
-| P2.4 | 文档：静态托管 UI + 远程 serve；非回环须 Bearer | `docs/` + README |
-| P2.5 | 跨 Origin 冒烟写入 [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md) 可选节 | 浏览器直连一轮对话 |
+| P2.4 | 文档：静态托管 UI + 远程 serve；非回环须 Bearer | `docs/配置说明.md`、README、命令行与路由 |
+| P2.5 | 跨 Origin 冒烟写入 [`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md) §9 | 浏览器直连一轮对话 |
 
-**风险**：CORS 过宽 → 默认拒绝或 Origin 白名单。
+**风险**：CORS 过宽 → 默认拒绝（空白名单）；仅精确 Origin。
 
 **PR 建议**：① feat(frontend) API base ② feat(api) CORS ③ docs/runbook ④ 测试
 
-- [ ] P2.1–P2.5  
-- [ ] Phase 2 总验收：静态 UI + 远程 serve + Bearer 可聊；`serve` 托管 dist 默认行为不变  
+- [x] P2.1–P2.5  
+- [x] Phase 2 总验收：静态 UI + 远程 serve + Bearer 可聊（runbook §9）；`serve` 托管 dist 且 API 基址空时默认行为不变  
 
 ---
 
@@ -169,3 +169,5 @@
 |------|------|
 | 2026-08-08 | 自中间稿升格；路径 A / Client 矩阵 / 密钥边界已决；Phase 0 完成 |
 | 2026-08-08 | Phase 1：`client_contract_versioning.md`、门禁脚本与 CI job `client-contract`；下一刀 Phase 2 |
+| 2026-08-08 | Phase 2：API 基址 + `web_cors_allowed_origins` + runbook §9；下一刀 Phase 3 |
+| 2026-08-08 | Phase 2 补丁：CORS **expose** 会话头；`/uploads` CORP 仅 CORS 启用时放宽；API 基址显式清空不回落 `CRABMATE_API_BASE` |

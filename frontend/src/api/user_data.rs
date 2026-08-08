@@ -9,7 +9,7 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 use crate::i18n::Locale;
 use crate::storage::ChatSession;
 
-use super::browser::{auth_headers, window};
+use super::browser::{api_url, auth_headers, window};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UserPrefsDto {
@@ -140,7 +140,8 @@ async fn fetch_json<T: for<'de> Deserialize<'de>>(
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
+    let url = api_url(url);
+    let req = Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -181,7 +182,8 @@ async fn put_json_no_content_with_keepalive(
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(body));
-    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
+    let url = api_url(url);
+    let req = Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -363,7 +365,8 @@ async fn post_json_body<T: for<'de> Deserialize<'de>>(
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(body));
-    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
+    let url = api_url(url);
+    let req = Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -393,7 +396,8 @@ async fn post_json<T: for<'de> Deserialize<'de>>(url: &str, loc: Locale) -> Resu
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
+    let url = api_url(url);
+    let req = Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -478,7 +482,8 @@ async fn delete_json_no_content(url: &str, loc: Locale) -> Result<(), String> {
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {e:?}"))?;
+    let url = api_url(url);
+    let req = Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await

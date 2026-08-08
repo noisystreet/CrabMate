@@ -143,6 +143,10 @@ model = "deepseek-chat"
                     !cfg.web_api.web_api_require_bearer,
                     "embedded default should allow serve without forcing non-empty web_api_bearer_token"
                 );
+                assert!(
+                    cfg.web_api.web_cors_allowed_origins.is_empty(),
+                    "embedded default should not enable CORS"
+                );
             });
         });
     }
@@ -164,6 +168,33 @@ web_api_require_bearer = true
                 .expect("write");
                 let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
                 assert!(cfg.web_api.web_api_require_bearer);
+            });
+        });
+    }
+
+    #[test]
+    fn toml_web_cors_allowed_origins_are_loaded() {
+        without_cm_planner_executor_mode_env(|| {
+            without_cm_web_api_require_bearer_env(|| {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let path = dir.path().join("cors.toml");
+                fs::write(
+                    &path,
+                    r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+web_cors_allowed_origins = ["http://127.0.0.1:8081", "https://ui.example.com"]
+"#,
+                )
+                .expect("write");
+                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+                assert_eq!(
+                    cfg.web_api.web_cors_allowed_origins,
+                    vec![
+                        "http://127.0.0.1:8081".to_string(),
+                        "https://ui.example.com".to_string()
+                    ]
+                );
             });
         });
     }

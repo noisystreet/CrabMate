@@ -10,8 +10,8 @@ use super::super::settings_models_registry::{
     SettingsModelsRegistryBundle, SettingsModelsRegistryPanel,
 };
 use super::super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
-    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock,
+    SettingsApiBaseBlock, SettingsAppearanceBlock, SettingsExecutorLlmBlock,
+    SettingsExecutorLlmBlockBundle, SettingsLlmBlock, SettingsLlmBlockBundle, SettingsSessionBlock,
     SettingsSessionTypographyBundle, SettingsShortcutsBlock, SettingsToolsBlock,
     SettingsWebApiBearerBlock,
 };
@@ -208,6 +208,11 @@ pub(super) fn SettingsPageContentPanels(
                 <SettingsWebApiBearerBlock
                     locale=appearance_locale
                     input_id="settings-page-web-api-bearer"
+                    save_nonce=web_api_bearer_save_nonce
+                />
+                <SettingsApiBaseBlock
+                    locale=appearance_locale
+                    input_id="settings-page-api-base"
                     save_nonce=web_api_bearer_save_nonce
                 />
                 <SettingsAppearanceBlock

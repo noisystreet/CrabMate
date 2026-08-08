@@ -65,8 +65,8 @@ CrabMate 执行权威在单机 **`serve`**（或同进程 CLI/TUI）。桌面 / 
 
 1. **契约优先**：不新开会话 API；Client 只认现有 HTTP + SSE（见 `docs/SSE协议.md`）。
 2. **与宿主解耦正交**：`turn_runtime_placement` / `web_host_p5_placement` **不阻塞**本决策；拆壳优先传输与发版边界。
-3. **现状差距（过渡）**：今日 `desktop-tauri` / `mobile-tauri` README 仍描述「加载 serve 的 UI」——属路径 B 现状；须在 todo Phase 2/4 改齐，不得与终点混淆。
-4. **安全**：CORS 默认保守（回环或显式 Origin 白名单）；非回环须 Bearer。
+3. **现状差距（过渡）**：今日 `desktop-tauri` / `mobile-tauri` README 仍描述「加载 serve 的 UI」——属路径 B 现状；须在 todo Phase 2/4 改齐，不得与终点混淆。Phase 2 已提供 **API 基址 + CORS**，浏览器可静态托管 UI 直连远程 `serve`。
+4. **安全**：CORS 默认保守（空白名单=不挂层；启用时精确 Origin）；非回环须 Bearer。
 
 ---
 

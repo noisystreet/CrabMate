@@ -11,9 +11,9 @@ use crate::i18n::{self, Locale};
 
 use super::settings_models_registry::{SettingsModelsRegistryBundle, SettingsModelsRegistryPanel};
 use super::settings_sections::{
-    SettingsAppearanceBlock, SettingsExecutorLlmBlock, SettingsExecutorLlmBlockBundle,
-    SettingsLlmBlock, SettingsLlmBlockBundle, SettingsShortcutsBlock, SettingsToolsBlock,
-    SettingsWebApiBearerBlock,
+    SettingsApiBaseBlock, SettingsAppearanceBlock, SettingsExecutorLlmBlock,
+    SettingsExecutorLlmBlockBundle, SettingsLlmBlock, SettingsLlmBlockBundle,
+    SettingsShortcutsBlock, SettingsToolsBlock, SettingsWebApiBearerBlock,
 };
 
 /// 设置弹窗 `view!` 所需的信号与回调（单参数入口，满足 fn-param 棘轮）。
@@ -135,6 +135,11 @@ fn SettingsModalDialogBody(input: SettingsModalDialogInput) -> impl IntoView {
             <SettingsWebApiBearerBlock
                 locale=appearance_locale
                 input_id="settings-modal-web-api-bearer"
+                save_nonce=web_api_bearer_save_nonce
+            />
+            <SettingsApiBaseBlock
+                locale=appearance_locale
+                input_id="settings-modal-api-base"
                 save_nonce=web_api_bearer_save_nonce
             />
             <SettingsAppearanceBlock

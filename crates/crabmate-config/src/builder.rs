@@ -144,6 +144,10 @@ impl ConfigBuilder {
             &mut self.workspace_roots.workspace_allowed_roots,
             &agent.workspace_allowed_roots,
         );
+        override_opt_vec(
+            &mut self.web_api.web_cors_allowed_origins,
+            &agent.web_cors_allowed_origins,
+        );
         if let Some(ref v) = agent.web_workspace_pool {
             self.workspace_roots.web_workspace_pool = Some(v.clone());
         }

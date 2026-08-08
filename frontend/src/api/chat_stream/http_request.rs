@@ -96,7 +96,8 @@ pub(super) fn build_chat_stream_fetch_request(
     }
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(body_json));
-    Request::new_with_str_and_init("/chat/stream", &init).map_err(|e| format!("req: {:?}", e))
+    Request::new_with_str_and_init(&browser::api_url("/chat/stream"), &init)
+        .map_err(|e| format!("req: {:?}", e))
 }
 
 pub(super) fn apply_chat_stream_response_headers(

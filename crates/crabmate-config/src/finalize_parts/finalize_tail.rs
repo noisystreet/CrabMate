@@ -56,6 +56,7 @@ struct FinalizeTailScalars {
     sync_default_tool_sandbox_docker_user: types::SandboxDockerContainerUser,
     web_api_bearer_token: types::SecretString,
     web_api_require_bearer: bool,
+    web_cors_allowed_origins: Vec<String>,
     web_audit_log_write_tools: bool,
     web_audit_trust_x_forwarded_for: bool,
     allow_insecure_no_auth_for_non_loopback: bool,
@@ -323,6 +324,7 @@ struct TailSandboxWebScalars {
     sync_default_tool_sandbox_docker_user: types::SandboxDockerContainerUser,
     web_api_bearer_token: types::SecretString,
     web_api_require_bearer: bool,
+    web_cors_allowed_origins: Vec<String>,
     web_audit_log_write_tools: bool,
     web_audit_trust_x_forwarded_for: bool,
     allow_insecure_no_auth_for_non_loopback: bool,
@@ -368,6 +370,7 @@ fn derive_tail_sandbox_web_scalars(
         types::SecretString::new(b.web_api.web_api_bearer_token.clone().unwrap_or_default().into());
     // 默认 **false**：允许无密钥启动 `serve`；生产环境请显式 `web_api_require_bearer = true` 并配置非空密钥。
     let web_api_require_bearer = b.web_api.web_api_require_bearer.unwrap_or(false);
+    let web_cors_allowed_origins = b.web_api.web_cors_allowed_origins.clone().unwrap_or_default();
     let web_audit_log_write_tools = b.web_api.web_audit_log_write_tools.unwrap_or(true);
     let web_audit_trust_x_forwarded_for = b.web_api.web_audit_trust_x_forwarded_for.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
@@ -380,6 +383,7 @@ fn derive_tail_sandbox_web_scalars(
         sync_default_tool_sandbox_docker_user,
         web_api_bearer_token,
         web_api_require_bearer,
+        web_cors_allowed_origins,
         web_audit_log_write_tools,
         web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback,
@@ -675,6 +679,7 @@ fn assemble_finalize_tail_scalars(
         sync_default_tool_sandbox_docker_user: ssw.sync_default_tool_sandbox_docker_user,
         web_api_bearer_token: ssw.web_api_bearer_token.clone(),
         web_api_require_bearer: ssw.web_api_require_bearer,
+        web_cors_allowed_origins: ssw.web_cors_allowed_origins.clone(),
         web_audit_log_write_tools: ssw.web_audit_log_write_tools,
         web_audit_trust_x_forwarded_for: ssw.web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback: ssw.allow_insecure_no_auth_for_non_loopback,

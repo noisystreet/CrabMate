@@ -9,11 +9,13 @@
 //! - **C**：根包 `build_app` 只装配路由与 `AppState`，静态挂载与体积分层调用 [`serve`]。
 //! - 回合队列 / `run_agent_turn` 留在根包，避免 `web-host ↔ crabmate` 循环依赖。
 
+pub mod cors;
 pub mod http_types;
 pub mod routes;
 pub mod serve;
 pub mod web_ui;
 
+pub use cors::{CORS_EXPOSE_RESPONSE_HEADERS, parse_cors_origin_header_values, try_cors_layer};
 pub use serve::{
     PROTECTED_API_BODY_LIMIT_BYTES, layer_protected_body_limit, mount_uploads_and_spa,
 };

@@ -5,7 +5,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 use web_sys::{Request, RequestInit, RequestMode, Response};
 
-use super::browser::{auth_headers, window};
+use super::browser::{api_url, auth_headers, window};
 use crate::i18n::Locale;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -38,7 +38,7 @@ pub async fn post_github_oauth_device_start(loc: Locale) -> Result<GithubDeviceS
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init("/github/oauth/device/start", &init)
+    let req = Request::new_with_str_and_init(&api_url("/github/oauth/device/start"), &init)
         .map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
@@ -72,7 +72,7 @@ pub async fn fetch_github_oauth_device_status(
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init("/github/oauth/device/status", &init)
+    let req = Request::new_with_str_and_init(&api_url("/github/oauth/device/status"), &init)
         .map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
@@ -99,7 +99,7 @@ pub async fn post_github_oauth_device_cancel(loc: Locale) -> Result<(), String> 
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init("/github/oauth/device/cancel", &init)
+    let req = Request::new_with_str_and_init(&api_url("/github/oauth/device/cancel"), &init)
         .map_err(|e| format!("request: {e:?}"))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
