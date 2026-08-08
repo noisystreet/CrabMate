@@ -23,7 +23,7 @@ members = [
     "crates/crabmate-benchmark",
     "crates/crabmate-runtime",
     "crates/crabmate-internal",
-    "crates/crabmate-connect",
+    # crabmate-connect 依赖 tauri/GTK，仅由 desktop-tauri / mobile-tauri 独立 workspace 引用；勿加入主 workspace。
 ]
 resolver = "2"
 
