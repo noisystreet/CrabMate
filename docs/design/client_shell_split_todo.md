@@ -15,11 +15,11 @@
 | Phase 0 | 决策与基线 | ✅ 完成（2026-08-08） |
 | Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
 | Phase 2 | 前端可远程（API 基址 + CORS） | ✅ 完成（2026-08-08） |
-| Phase 3 | connect + 壳仓拆出 | 🚧 进行中（P3.1–P3.5 交付；总验收：release + 真实对话仍待） |
+| Phase 3 | connect + 壳仓拆出 | ✅ 完成（2026-08-08；见下方总验收） |
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ⬜ 未开始 |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 3 收尾验收（干净克隆 release + 一端真实对话）；其后 Phase 4 去双轨 / 迁 `frontend`。
+**下一执行**：Phase 4（去双轨：`desktop-tauri` / `mobile-tauri` / `crabmate-connect`；迁 `frontend`）。
 
 ---
 
@@ -110,7 +110,10 @@
 - [x] P3.3：壳对 connect 为本仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
 - [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
 - [x] P3.5：主仓 README / 壳 README 指向外仓；双轨目录保留至 Phase 4
-- [ ] 验收：干净克隆壳仓可 release；连本仓 `serve` 一轮对话（Desktop 与 Android 至少一端）；主仓可不强制 desktop GTK job  
+- [x] 验收（2026-08-08）：
+  - **干净克隆 release**：`git clone` → `/tmp/crabmate-client-p3-accept`（分支 `ci/makefile-and-deb-package`）→ `make desktop-release` → `crabmate_0.1.0_amd64.deb`；`dpkg-deb` 含 `usr/bin/crabmate-desktop`、**无** `usr/bin/crabmate` sidecar
+  - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=frontend/dist`，`:18080`）托管 UI；干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：`client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
+  - **主仓可不强制 desktop GTK job**：路径 A 下 Server CI **不必**以 GTK/桌面为硬门禁；过渡期本仓 `desktop` job 仍跑双轨副本至 Phase 4（见 `.github/workflows/ci.yml` 注释），**非**产品验收阻塞
 
 ---
 
@@ -179,3 +182,4 @@
 | 2026-08-08 | Phase 3 开工：本地外仓 `../crabmate-client`（壳 + connect）；主仓目录暂保留双轨 |
 | 2026-08-08 | Phase 3 文档：壳专题 / 冒烟 / Victauri / AGENTS+pre-commit 迁入 `crabmate-client`；主仓 `tauri_gui_mvp` 改指针 |
 | 2026-08-08 | Phase 3 P3.3–P3.5：外仓 CI + `check-no-main-path` + contract_pin；主仓 README/壳 README 指向外仓 |
+| 2026-08-08 | Phase 3 总验收：干净克隆 `.deb` + Desktop release 壳对接本仓 UI/`serve` 真实 SSE 回合；下一刀 Phase 4 |
