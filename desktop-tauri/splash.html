@@ -157,7 +157,7 @@
   <p class="tagline">本地 AI 编程助手</p>
   <div id="loader" class="loader" role="status" aria-label="加载中"></div>
   <p id="status" class="status">正在启动…</p>
-  <p id="detail" class="detail">准备本地后端服务</p>
+  <p id="detail" class="detail">打开连接页（请先自行启动 serve）</p>
   <div id="error" class="error-box" role="alert"></div>
   <div id="actions" class="actions">
     <button type="button" class="primary" id="btn-quit">退出</button>
@@ -184,7 +184,7 @@
     document.body.classList.add("is-error");
     loaderEl.classList.add("is-hidden");
     statusEl.textContent = "启动失败";
-    detailEl.textContent = "本地后端未能就绪。可复制下方信息排查后重试。";
+    detailEl.textContent = "未能打开界面。请确认已启动 crabmate serve，并检查下方信息。";
     errorEl.textContent = message || "未知错误";
     errorEl.classList.add("is-visible");
     actionsEl.classList.add("is-visible");

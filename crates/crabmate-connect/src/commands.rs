@@ -14,7 +14,7 @@ const DEFAULT_CONNECT_HOME: &str = "http://tauri.localhost/";
 
 static CONNECT_HOME: Mutex<Option<Url>> = Mutex::new(None);
 
-/// 桌面 sidecar 就绪后的本机 `web_ready` URL；移动端保持 `None`。
+/// 连接页预填的建议服务器 URL；桌面默认本机 `8080`，移动端保持 `None` 直至用户填写。
 #[derive(Debug, Default)]
 pub struct SuggestedServerUrl(pub Mutex<Option<String>>);
 
@@ -116,7 +116,7 @@ pub async fn disconnect_remote(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// 桌面本机 sidecar 建议地址；移动端通常为 `null`。
+/// 连接页预填建议地址（桌面默认本机 `8080`）；移动端通常为 `null`。
 #[tauri::command]
 pub fn get_suggested_server_url(state: State<'_, SuggestedServerUrl>) -> Option<String> {
     state.0.lock().ok().and_then(|g| g.clone())

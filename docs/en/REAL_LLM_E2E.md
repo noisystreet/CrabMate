@@ -15,20 +15,23 @@ Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 ```bash
 unset NO_COLOR && cd frontend && trunk build
 
-# Terminal 1: Tauri app
-cd desktop-tauri/src-tauri
-CM_E2E_FIXTURES=1 CM_DESKTOP_BACKEND_BIN=/path/to/target/debug/crabmate cargo tauri dev
+# Terminal 1: backend
+cargo run -- serve --host 127.0.0.1 --port 18080
 
-# Terminal 2: real LLM tests
+# Terminal 2: Tauri app (skip connect page)
+cd desktop-tauri/src-tauri
+CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
+
+# Terminal 3: real LLM tests
 cd desktop-tauri/src-tauri
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 API_KEY=YOUR_API_KEY \
   cargo test --test victauri_real_llm -- --nocapture
 ```
 
-Or: `./scripts/victauri-e2e.sh real_llm` (with **`REAL_LLM_E2E=1`** and **`API_KEY`** set).
+Or: `./scripts/victauri-e2e.sh real_llm` (with **`REAL_LLM_E2E=1`** and **`API_KEY`** set; script starts **`serve`**).
 
 ## Environment
 
-**`REAL_LLM_E2E=1`**, **`VICTAURI_E2E=1`**, **`CM_E2E_FIXTURES=1`**, **`API_KEY`**, optional **`CM_DESKTOP_BACKEND_BIN`**.
+**`REAL_LLM_E2E=1`**, **`VICTAURI_E2E=1`**, **`CM_E2E_FIXTURES=1`**, **`API_KEY`**, **`CM_DESKTOP_SERVE_URL`** (when not using the one-shot script).
 
 Not run in default CI. Do not commit API keys or raw artifacts with secrets.

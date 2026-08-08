@@ -11,7 +11,8 @@
 #   VICTAURI_MAIN_WINDOW_WAIT  health 后主窗口额外等待秒数（默认 15）
 #   VICTAURI_E2E_LOG      桌面应用日志路径（默认 /tmp/crabmate-desktop-e2e.log）
 #   CM_E2E_FIXTURES       默认 1
-#   CM_DESKTOP_BACKEND_BIN  后端 crabmate 二进制路径
+#   CM_DESKTOP_SERVE_PORT 本脚本拉起的 serve 端口（默认 18080）
+#   CM_DESKTOP_SERVE_URL  可覆盖（默认 http://127.0.0.1:$CM_DESKTOP_SERVE_PORT/）
 #   REAL_LLM_E2E          仅 real_llm 套件需要
 #   VICTAURI_INSIDE_XVFB  内部：已由 xvfb-run 重入，勿手动设置
 
@@ -25,6 +26,9 @@ TAURI_DIR="$ROOT/desktop-tauri/src-tauri"
 DESKTOP_ROOT="$ROOT/desktop-tauri"
 BACKEND_BIN="${CM_DESKTOP_BACKEND_BIN:-$ROOT/target/debug/crabmate}"
 DESKTOP_BIN="$TAURI_DIR/target/debug/crabmate-desktop"
+SERVE_PORT="${CM_DESKTOP_SERVE_PORT:-18080}"
+SERVE_URL="${CM_DESKTOP_SERVE_URL:-http://127.0.0.1:${SERVE_PORT}/}"
+SERVE_LOG="${VICTAURI_SERVE_LOG:-/tmp/crabmate-serve-e2e.log}"
 
 TEST="${1:-all}"
 TEST_FILTER="${2:-}"
@@ -73,6 +77,8 @@ maybe_reexec_under_xvfb() {
         LIBGL_ALWAYS_SOFTWARE=1 \
         CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}" \
         CM_DESKTOP_BACKEND_BIN="${CM_DESKTOP_BACKEND_BIN:-$BACKEND_BIN}" \
+        CM_DESKTOP_SERVE_PORT="${SERVE_PORT}" \
+        CM_DESKTOP_SERVE_URL="${SERVE_URL}" \
         REAL_LLM_E2E="${REAL_LLM_E2E:-}" \
         VICTAURI_PORT="${VICTAURI_PORT}" \
         VICTAURI_START_TIMEOUT="${VICTAURI_START_TIMEOUT}" \
@@ -82,6 +88,34 @@ maybe_reexec_under_xvfb() {
 }
 
 maybe_reexec_under_xvfb
+
+wait_http_health() {
+    local url="$1"
+    local label="$2"
+    local timeout="$3"
+    for i in $(seq 1 "$timeout"); do
+        if curl --noproxy '*' --connect-timeout 1 --max-time 2 -sf "$url" >/dev/null 2>&1; then
+            echo "   ${label} OK after ${i}s"
+            return 0
+        fi
+        if [ "$i" -eq "$timeout" ]; then
+            echo "   FAILED: ${label} not healthy within ${timeout}s ($url)" >&2
+            return 1
+        fi
+        sleep 1
+    done
+}
+
+# 独立启动 serve（壳不再 spawn）
+start_serve_background() {
+    : >"$SERVE_LOG"
+    env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY \
+        no_proxy=127.0.0.1,localhost \
+        CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}" \
+        "$BACKEND_BIN" serve --host 127.0.0.1 --port "$SERVE_PORT" \
+        >>"$SERVE_LOG" 2>&1 &
+    echo $!
+}
 
 # 启动桌面端：剥离 Wayland；CM_E2E_FIXTURES 令 splash/main 为 visible(false)
 start_desktop_background() {
@@ -94,7 +128,7 @@ start_desktop_background() {
         WINIT_UNIX_BACKEND=x11 \
         LIBGL_ALWAYS_SOFTWARE=1 \
         CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}" \
-        CM_DESKTOP_BACKEND_BIN="$BACKEND_BIN" \
+        CM_DESKTOP_SERVE_URL="$SERVE_URL" \
         "$DESKTOP_BIN" >>"$VICTAURI_E2E_LOG" 2>&1 &
     echo $!
 }
@@ -115,6 +149,8 @@ wait_for_victauri_health() {
             echo "   FAILED: desktop process exited before Victauri ready"
             echo "   --- last 40 lines of ${VICTAURI_E2E_LOG} ---"
             tail -40 "$VICTAURI_E2E_LOG" 2>/dev/null || true
+            echo "   --- last 40 lines of ${SERVE_LOG} ---"
+            tail -40 "$SERVE_LOG" 2>/dev/null || true
             return 1
         fi
         if [ "$i" -eq "$VICTAURI_START_TIMEOUT" ]; then
@@ -132,6 +168,7 @@ echo "  test: $TEST"
 echo "  real_llm: ${REAL_LLM:-no}"
 echo "  xvfb: ${VICTAURI_USE_XVFB:-1}$([ -n "${VICTAURI_INSIDE_XVFB:-}" ] && echo ' (inside xvfb-run)')"
 echo "  port: $VICTAURI_PORT"
+echo "  serve: $SERVE_URL"
 
 # ── Phase 1: Build ──────────────────────────────────────────
 echo ""
@@ -150,7 +187,7 @@ if [ ! -f "$ROOT/frontend/dist/index.html" ]; then
     (cd "$ROOT/frontend" && trunk build)
 fi
 
-CM_DESKTOP_BACKEND_BIN="$BACKEND_BIN" bash "$DESKTOP_ROOT/scripts/prepare-sidecar.sh"
+bash "$DESKTOP_ROOT/scripts/prepare-sidecar.sh"
 
 cd "$TAURI_DIR"
 cargo build --tests --features victauri 2>&1 | tail -3
@@ -166,7 +203,19 @@ sleep 2
 rm -rf /tmp/victauri/*/
 echo "   done."
 
-# ── Phase 3: Start app in background ────────────────────────
+# ── Phase 3: Start serve, then desktop ──────────────────────
+echo ""
+echo ">>> Starting crabmate serve on ${SERVE_URL} ..."
+SERVE_PID=$(start_serve_background) || exit 1
+echo "   serve PID: $SERVE_PID"
+echo "   serve log: $SERVE_LOG"
+if ! wait_http_health "http://127.0.0.1:${SERVE_PORT}/health" "serve /health" 60; then
+    echo "   --- last 40 lines of ${SERVE_LOG} ---"
+    tail -40 "$SERVE_LOG" 2>/dev/null || true
+    kill "$SERVE_PID" 2>/dev/null || true
+    exit 1
+fi
+
 echo ""
 echo ">>> Starting app (Tauri + WebView required for Victauri; xvfb keeps it off-screen) ..."
 cd "$TAURI_DIR"
@@ -179,7 +228,7 @@ echo "   log: $VICTAURI_E2E_LOG"
 echo ">>> Waiting for Victauri server (http://127.0.0.1:${VICTAURI_PORT}/health) ..."
 wait_for_victauri_health "$APP_PID"
 
-echo ">>> Waiting for main window (backend startup + page load, ${VICTAURI_MAIN_WINDOW_WAIT}s) ..."
+echo ">>> Waiting for main window (page load, ${VICTAURI_MAIN_WINDOW_WAIT}s) ..."
 sleep "$VICTAURI_MAIN_WINDOW_WAIT"
 
 # ── Phase 5: Clean stale discovery dirs ────────────────────
@@ -198,6 +247,7 @@ echo ">>> Running tests ..."
 cd "$TAURI_DIR"
 export VICTAURI_E2E=1
 export CM_E2E_FIXTURES="${CM_E2E_FIXTURES:-1}"
+export CM_DESKTOP_SERVE_URL="$SERVE_URL"
 export VICTAURI_PORT
 unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY
 
@@ -235,9 +285,11 @@ fi
 
 # ── Phase 7: Cleanup ────────────────────────────────────────
 echo ""
-echo ">>> Stopping app ..."
+echo ">>> Stopping app + serve ..."
 kill "$APP_PID" 2>/dev/null || true
+kill "$SERVE_PID" 2>/dev/null || true
 pkill -f 'target/debug/crabmate-desktop' 2>/dev/null || true
+pkill -f "crabmate serve --host 127.0.0.1 --port ${SERVE_PORT}" 2>/dev/null || true
 wait 2>/dev/null || true
 
 echo ""

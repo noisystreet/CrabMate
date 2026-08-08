@@ -148,16 +148,22 @@ cd frontend && trunk build   # first time only; script also checks dist/
 ./scripts/victauri-e2e.sh all
 ```
 
-**Manual two-terminal** (native display, e.g. desktop session):
+**Manual** (native display; start `serve` first):
 
 ```bash
+# terminal A
+cargo run -- serve --host 127.0.0.1 --port 18080
+
+# terminal B
 cd frontend && trunk build
 cd desktop-tauri/src-tauri
-CM_E2E_FIXTURES=1 CM_DESKTOP_BACKEND_BIN=/path/to/target/debug/crabmate cargo tauri dev
+CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
 
-# another terminal
+# terminal C
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 cargo test --no-fail-fast
 ```
+
+The one-shot script starts **`serve`** itself (default port **18080**) before the desktop shell.
 
 ### xvfb / headless (Linux)
 

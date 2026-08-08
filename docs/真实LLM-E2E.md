@@ -109,14 +109,19 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 运行
 
 ```bash
-# 终端 1：启动 Tauri 桌面应用
-cd desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/path/to/target/debug/crabmate cargo tauri dev
+# 终端 1：后端
+cargo run -- serve --host 127.0.0.1 --port 18080
 
-# 终端 2：运行真实 LLM 测试
+# 终端 2：启动 Tauri 桌面应用（跳过连接页）
+cd desktop-tauri/src-tauri
+CM_E2E_FIXTURES=1 CM_DESKTOP_SERVE_URL=http://127.0.0.1:18080/ cargo tauri dev
+
+# 终端 3：运行真实 LLM 测试
 cd desktop-tauri/src-tauri
 VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 cargo test --test victauri_real_llm -- --nocapture
 ```
+
+或使用 **`./scripts/victauri-e2e.sh real_llm`**（脚本会自行拉起 `serve`）。
 
 ---
 

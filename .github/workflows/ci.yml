@@ -95,12 +95,13 @@ jobs:
         with:
           workspaces: desktop-tauri/src-tauri
 
-      # tauri-build 校验 externalBin 存在性；CI 中 only check/test，创建 dummy sidecar
-      - name: Create dummy files for tauri-build
+      # tauri-build 需要 frontendDist；壳不再依赖 externalBin/sidecar
+      - name: Create dummy frontendDist for tauri-build
         run: |
-          mkdir -p desktop-tauri/binaries desktop-tauri/dist
-          touch desktop-tauri/binaries/crabmate-x86_64-unknown-linux-gnu
+          mkdir -p desktop-tauri/dist
           echo '<html></html>' > desktop-tauri/dist/index.html
+          echo '<html></html>' > desktop-tauri/dist/splash.html
+          echo '<html></html>' > desktop-tauri/dist/connect.html
 
       - name: cargo check (all targets)
         run: cargo check --tests

@@ -54,46 +54,40 @@ CLI `serve` 子命令桌面握手：
 
 `desktop-tauri/` 工程：
 
-- `desktop-tauri/src-tauri/src/main.rs` — 启动 **`serve --host 127.0.0.1 --port 0 --desktop-ready-json`**，解析 **`web_ready`**，加载 WebView，显式退出时 kill 子进程
+- `desktop-tauri/src-tauri/src/main.rs` — **不** spawn `serve`；打开连接页（预填建议 URL）或（E2E）直连 **`CM_DESKTOP_SERVE_URL`**
 - `desktop-tauri/src-tauri/src/desktop_lifecycle.rs` — 单实例唤醒、系统托盘、主窗口最小化隐藏；托盘不可用时保留普通最小化
-- `tauri-plugin-window-state` — 按稳定标签 `main` 保存/恢复窗口大小、位置与最大化状态；排除启动闪屏且不恢复可见性，避免托盘退出后下次隐藏启动
-- `desktop-tauri/scripts/prepare-sidecar.sh` — 打包前复制 **`crabmate`** sidecar
+- `tauri-plugin-window-state` — 按稳定标签 `main` 保存/恢复窗口大小、位置与最大化状态；排除启动闪屏且不恢复可见性
+- `desktop-tauri/scripts/prepare-sidecar.sh` — 打包前同步连接页/闪屏与可选 **`frontend/dist`**（**不再**复制 sidecar 二进制）
 - **`desktop-tauri/README.md`**、**`desktop-tauri/DEVELOPMENT.md`** — 开发与故障排查
 
-**勿**再使用「固定 **3000** + TCP 探测」作为就绪条件（会误连本机其它旧 **`serve`** 进程，导致 API 405/404）。
+后端仍支持 **`--desktop-ready-json`**（工具/脚本可解析 `web_ready`）；桌面壳**不再**依赖该握手。
 
 ## 4. 实施步骤（MVP）
 
 1. ~~后端新增 `--desktop-ready-json` 参数与 ready 输出~~（已完成）
-2. ~~Tauri 启动 `crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`~~（已完成）
-3. ~~解析 ready JSON、加载动态 URL、退出时回收子进程~~（已完成）
+2. ~~Tauri 曾 spawn `serve --desktop-ready-json`~~ → **已改为薄客户端**：用户自行启动 `serve`，壳只负责连接页 / WebView
+3. ~~解析 ready JSON、加载动态 URL、退出时回收子进程~~ → 退出仅结束壳进程
 4. ~~单实例保护、系统托盘与最小化隐藏~~（已完成）
-5. 文档与 **`frontend/dist`** / sidecar 发版流程与代码同 PR 维护（见 **`desktop-tauri/DEVELOPMENT.md`** § 发布检查清单）
+5. 文档与 **`frontend/dist`** 发版流程与代码同 PR 维护（见 **`desktop-tauri/DEVELOPMENT.md`**）
 
 ### 开发启动命令（当前实现）
-
-1. 在仓库根目录编译后端并构建前端（Tauri WebView 由 **`serve`** 提供 **`frontend/dist`**）：
 
 ```bash
 cd /path/to/crabmate_agent
 cargo build
 cd frontend && trunk build && cd ..
+# 终端 A
+cargo run -- serve
+# 终端 B
+cd desktop-tauri/src-tauri
+cargo tauri dev
 ```
 
-2. 启动 Tauri 开发界面（显式指定后端可执行文件路径）：
-
-```bash
-cd /path/to/crabmate_agent/desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/path/to/crabmate_agent/target/debug/crabmate cargo tauri dev
-```
-
-3. 若未安装 Tauri CLI，先安装：
+若未安装 Tauri CLI：
 
 ```bash
 cargo install tauri-cli --version "^2"
 ```
-
-启动日志中应出现 **`{"event":"web_ready",…}`**；WebView URL 须与该 JSON 的 **`url`** 一致。
 
 ## 5. 安全基线
 

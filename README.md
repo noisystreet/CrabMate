@@ -93,7 +93,7 @@ make desktop-dev       # Tauri 开发（需 cargo install tauri-cli --version "^
 make clean             # 清理 target、frontend/dist、桌面产物与 dist/
 ```
 
-桌面构建会自动设置 **`CM_DESKTOP_BACKEND_BIN`**，并将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**。发布用 **`make all`** 与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。
+桌面构建会将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**（壳静态资源与可选 UI 资产）。发布用 **`make all`** 与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。
 
 ### 后端
 
@@ -122,14 +122,17 @@ trunk build              # 开发构建；发布用 trunk build --release
 
 ### 桌面 Tauri
 
-目录：**`desktop-tauri/`**。**WebView** 由壳进程拉起本机 **`serve`**（**`--port 0 --desktop-ready-json`**），再打开与移动端共用的**连接页**填写服务器与 Web API Bearer（本机 URL 预填；首次非空 Bearer 写入系统钥匙串；见 [**desktop-tauri/README.md**](desktop-tauri/README.md)、**`crates/crabmate-connect`**）。**`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** 可跳过连接页直连本机 UI。桌面壳为**单实例**：再次启动会唤醒已有窗口；关闭主窗口会退出应用并回收后端，最小化按钮会在系统托盘可用时**隐藏到托盘**，通过托盘「显示/隐藏」恢复。主窗口的大小、位置、最大化状态及右侧可拖拽分栏宽度会在下次启动恢复。若桌面环境不支持托盘，则保留普通最小化。若 **`crabmate`** 不在 **`PATH`**，设置 **`CM_DESKTOP_BACKEND_BIN`** 指向已编译后端。
+目录：**`desktop-tauri/`**。桌面壳**不**拉起 `serve`：请先本机或远程启动 **`crabmate serve`**，再用 WebView 打开与移动端共用的**连接页**填写服务器与 Web API Bearer（默认预填 `http://127.0.0.1:8080/`；首次非空 Bearer 写入系统钥匙串；见 [**desktop-tauri/README.md**](desktop-tauri/README.md)、**`crates/crabmate-connect`**）。**`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** 可跳过连接页，但须设 **`CM_DESKTOP_SERVE_URL`**。桌面壳为**单实例**：再次启动会唤醒已有窗口；关闭主窗口会退出应用（**不**结束用户自行启动的 `serve`）；最小化按钮会在系统托盘可用时**隐藏到托盘**。主窗口的大小、位置、最大化状态及右侧可拖拽分栏宽度会在下次启动恢复。
 
 ```bash
 cargo build
 cd frontend && trunk build && cd ..
+# 终端 A：后端
+cargo run -- serve
+# 终端 B：桌面壳
 cargo install tauri-cli --version "^2"   # 仅需一次
 cd desktop-tauri/src-tauri
-CM_DESKTOP_BACKEND_BIN=/绝对路径/到/target/debug/crabmate cargo tauri dev
+cargo tauri dev
 ```
 
 发布：**`cargo tauri build`**。代理与故障排查见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。无边框窗口下：**会话模式**与**编辑器模式**共用全宽顶栏（约 **44px** 高；最左侧为布局切换，会话模式含标题与窗口按钮，编辑器为文件/编辑/视图菜单 + 路径 + 窗口按钮；**+ 新建对话**在左侧会话栏）。
@@ -156,7 +159,7 @@ cd desktop-tauri/src-tauri
 cargo tauri build
 ```
 
-说明：**`prepare-sidecar.sh`** 会把 **`target/release/crabmate`**（或环境变量 **`CM_DESKTOP_BACKEND_BIN`**）复制到 **`desktop-tauri/binaries/`**，供应用作为 **sidecar** 启动后端；并将 **`frontend/dist`** 同步到 **`desktop-tauri/dist`**，打进 deb 的 **`/usr/share/crabmate/frontend/dist/`**（sidecar **`serve`** 提供 Web UI 与 IDE 编辑器静态资源，**无需**安装机上的源码树）。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml`、**`/etc/crabmate/agent_roles.toml`**（多角色）与配套 **`/etc/crabmate/prompts/*.md`**、**`/etc/crabmate/config/prompts/*.md`**（仅作系统模板）；首次启动若用户尚无 **`$XDG_CONFIG_HOME/crabmate/config.toml`**，会从 **`/etc/crabmate`** 种子拷贝运行时子集到该目录（不覆盖已有文件），后端 **`--config`** 优先指向用户副本（种子失败时才只读回退 `/etc`）。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**（具体文件名随 **`productName`** / 版本变化）。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
+说明：**`prepare-sidecar.sh`**（历史名）同步 **`connect.html` / `splash.html`** 与可选 **`frontend/dist` → `desktop-tauri/dist`**，打进 deb 的 **`/usr/share/crabmate/frontend/dist/`**（供本机另装的 **`serve`** 经 **`CM_WEB_STATIC_DIR`** 使用）。**桌面 `.deb` 不再内嵌 `crabmate` sidecar**；须另装 CLI 或连接远程 `serve`。桌面 `.deb` 还会安装 `/etc/crabmate/config.toml`、**`/etc/crabmate/agent_roles.toml`** 与配套 prompts（系统模板）；**`serve`** 首次启动时可从 **`/etc/crabmate`** 种子到用户 XDG（见配置说明）。构建完成后安装包一般在 **`desktop-tauri/src-tauri/target/release/bundle/deb/`**。跨平台 **`bundle.targets`**、代理与 **`GDK_BACKEND`** 等见 [**desktop-tauri/DEVELOPMENT.md**](desktop-tauri/DEVELOPMENT.md)。
 
 ### 开发与质检（维护者）
 
@@ -205,8 +208,9 @@ cargo tauri build
 | **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置，持久化到系统钥匙串而非 XDG 明文文件。 |
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
-| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（默认开发时为仓库 **`frontend/dist`**，桌面 **`.deb`** 为 **`/usr/share/crabmate/frontend/dist`**）。 |
-| **`CM_DESKTOP_WORKDIR`** | 可选：覆盖桌面 sidecar **`serve`** 进程工作目录（默认可写 **`$HOME`**；**`.deb`** 静态 UI 由 sidecar 自动设 **`CM_WEB_STATIC_DIR=/usr/share/crabmate/frontend/dist`**，**勿**将工作目录指到 **`/usr/share/crabmate`**） |
+| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（默认开发时为仓库 **`frontend/dist`**；安装布局可为 **`/usr/share/crabmate/frontend/dist`**）。 |
+| **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
+| **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
 
 其它 **`CM_*`**（含 **`CM_TUI_CONVERSATION_ID`**、skills、分阶段规划等）见 [docs/配置说明.md](docs/配置说明.md)。
 
