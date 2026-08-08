@@ -13,6 +13,22 @@ pub struct ApiError {
     /// 与 `code` 配套的细分子码（如 `INTERNAL_ERROR` 时的截断内部摘要）；旧客户端可忽略。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
+    /// 与响应头 `x-request-id` 同值（有则填）；旧客户端可忽略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+    /// 字段级 / 约束级细节；旧客户端可忽略。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub details: Option<Vec<ApiErrorDetail>>,
+}
+
+/// 字段级或约束级错误细节（与顶层 `code` 同风格的大写蛇形子码）。
+#[derive(Serialize, Clone, JsonSchema)]
+pub struct ApiErrorDetail {
+    /// 稳定机器可读子码（建议 `INVALID_*` 等，与顶层 `code` 一致风格）。
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub field: Option<String>,
 }
 
 impl ApiError {
@@ -21,6 +37,8 @@ impl ApiError {
             code,
             message: message.into(),
             reason_code: None,
+            request_id: None,
+            details: None,
         }
     }
 
@@ -33,6 +51,22 @@ impl ApiError {
             code,
             message: message.into(),
             reason_code: Some(reason_code.into()),
+            request_id: None,
+            details: None,
+        }
+    }
+
+    /// 附带与响应头 `x-request-id` 对齐的关联 id。
+    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
+        self.request_id = Some(request_id.into());
+        self
+    }
+
+    /// 有则写入 `request_id`，无则保持不变。
+    pub fn with_request_id_opt(self, request_id: Option<String>) -> Self {
+        match request_id {
+            Some(id) => self.with_request_id(id),
+            None => self,
         }
     }
 }

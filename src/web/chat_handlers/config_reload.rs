@@ -19,11 +19,7 @@ pub(crate) async fn config_reload_handler(
         })),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "CONFIG_RELOAD_FAILED",
-                message: e,
-                reason_code: None,
-            }),
+            Json(ApiError::new("CONFIG_RELOAD_FAILED", e)),
         )),
     }
 }

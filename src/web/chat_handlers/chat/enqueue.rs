@@ -264,14 +264,13 @@ pub(crate) async fn enqueue_and_wait_json_chat(
         .map_err(|e| {
             (
                 StatusCode::SERVICE_UNAVAILABLE,
-                Json(ApiError {
-                    code: "QUEUE_FULL",
-                    message: format!(
+                Json(ApiError::new(
+                    "QUEUE_FULL",
+                    format!(
                         "对话任务队列已满（最多等待 {} 个），请稍后重试",
                         e.max_pending
                     ),
-                    reason_code: None,
-                }),
+                )),
             )
         })?;
     let messages = reply_rx
@@ -279,11 +278,10 @@ pub(crate) async fn enqueue_and_wait_json_chat(
         .map_err(|_| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiError {
-                    code: "INTERNAL_ERROR",
-                    message: "对话任务被取消或内部错误".to_string(),
-                    reason_code: None,
-                }),
+                Json(ApiError::new(
+                    "INTERNAL_ERROR",
+                    "对话任务被取消或内部错误".to_string(),
+                )),
             )
         })?
         .map_err(|e| match e {

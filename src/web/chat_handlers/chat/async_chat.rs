@@ -139,11 +139,10 @@ async fn run_async_chat_json_job(
             ("completed", Some(reply), revision, None)
         }
         Some(Err(chat_job_queue::ChatJsonJobFailure::ConversationConflict)) => {
-            let e = ApiError {
-                code: super::super::conflict::CONVERSATION_CONFLICT_CODE,
-                message: super::super::conflict::CONVERSATION_CONFLICT_MESSAGE.to_string(),
-                reason_code: None,
-            };
+            let e = ApiError::new(
+                super::super::conflict::CONVERSATION_CONFLICT_CODE,
+                super::super::conflict::CONVERSATION_CONFLICT_MESSAGE,
+            );
             ("failed", None, None, Some(e))
         }
         Some(Err(chat_job_queue::ChatJsonJobFailure::Agent(err))) => {
@@ -278,14 +277,13 @@ pub(crate) async fn chat_async_handler(
         g.remove(&job_id);
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(ApiError {
-                code: "QUEUE_FULL",
-                message: format!(
+            Json(ApiError::new(
+                "QUEUE_FULL",
+                format!(
                     "对话任务队列已满（最多等待 {} 个），请稍后重试",
                     e.max_pending
                 ),
-                reason_code: None,
-            }),
+            )),
         ));
     }
 

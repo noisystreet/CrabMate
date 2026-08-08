@@ -89,13 +89,19 @@ pub(crate) async fn require_web_api_bearer_auth(
     if is_authorized_for_web_api_secret(auth, x_key, token.as_str()) {
         return next.run(req).await;
     }
+    let request_id = req
+        .extensions()
+        .get::<crate::web::request_id::RequestId>()
+        .map(|r| r.0.clone());
     (
         StatusCode::UNAUTHORIZED,
-        Json(ApiError {
-            code: "UNAUTHORIZED",
-            message: "缺少或无效的 Web API 凭证（Authorization: Bearer 或 X-API-Key）".to_string(),
-            reason_code: None,
-        }),
+        Json(
+            ApiError::new(
+                "UNAUTHORIZED",
+                "缺少或无效的 Web API 凭证（Authorization: Bearer 或 X-API-Key）",
+            )
+            .with_request_id_opt(request_id),
+        ),
     )
         .into_response()
 }

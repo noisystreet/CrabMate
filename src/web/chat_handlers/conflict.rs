@@ -14,11 +14,10 @@ pub(crate) const CONVERSATION_CONFLICT_MESSAGE: &str = "会话已被其他请求
 pub(crate) fn conversation_conflict_http_response() -> (StatusCode, Json<ApiError>) {
     (
         StatusCode::CONFLICT,
-        Json(ApiError {
-            code: CONVERSATION_CONFLICT_CODE,
-            message: CONVERSATION_CONFLICT_MESSAGE.to_string(),
-            reason_code: None,
-        }),
+        Json(ApiError::new(
+            CONVERSATION_CONFLICT_CODE,
+            CONVERSATION_CONFLICT_MESSAGE.to_string(),
+        )),
     )
 }
 

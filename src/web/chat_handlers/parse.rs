@@ -225,12 +225,10 @@ pub(super) async fn ensure_bearer_api_key_for_chat(
     if k.trim().is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "LLM_API_KEY_REQUIRED",
-                message: "当前为 bearer 鉴权但未配置 LLM API 密钥：请在侧栏「设置」中填写「API 密钥」（仅存本机浏览器），或设置环境变量 API_KEY 后重启服务。"
-                    .to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "LLM_API_KEY_REQUIRED",
+                "当前为 bearer 鉴权但未配置 LLM API 密钥：请在侧栏「设置」中填写「API 密钥」（仅存本机浏览器），或设置环境变量 API_KEY 后重启服务。",
+            )),
         ));
     }
     Ok(())

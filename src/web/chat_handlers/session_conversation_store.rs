@@ -27,11 +27,7 @@ pub(crate) async fn session_conversation_store_handler(
         }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "SESSION_STORE_SWITCH_FAILED",
-                message: e,
-                reason_code: None,
-            }),
+            Json(ApiError::new("SESSION_STORE_SWITCH_FAILED", e)),
         )),
     }
 }
