@@ -16,10 +16,10 @@
 | Phase 1 | 契约可发布 | ✅ 完成（2026-08-08） |
 | Phase 2 | 前端可远程（API 基址 + CORS） | ✅ 完成（2026-08-08） |
 | Phase 3 | connect + 壳仓拆出 | ✅ 完成（2026-08-08；见下方总验收） |
-| Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | 🚧 **P4.1 完成**；**P4.2 待做**（`frontend/` 仍在本仓） |
+| Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ✅ **完成**（P4.1–P4.2、P4.4–P4.5；可选 P4.3） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Client Phase B PR 合入后，合入主仓 Phase C（`chore/frontend-phase-c`）；可选 P4.3。
+**下一执行**：可选 P4.3（release 附 UI 包）或 Phase 5；日常按兼容表发版。
 
 ---
 
@@ -27,7 +27,7 @@
 
 | ID | 阻塞 | 解除阶段 |
 |----|------|----------|
-| K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | Phase 2–4（Phase 2：可远程；源码仍可在本仓） |
+| K1 | `frontend` 与协议/契约 crate 同仓 path 编译 | ✅ Phase 4.2（UI 在 Client，仅 git tag/rev） |
 | K2 | 前端相对路径、假定同 Origin | ✅ Phase 2（可配 API 基址；默认同 Origin） |
 | K3 | 壳 → `crabmate-connect` path | ✅ Phase 3（connect 在外仓 path；契约钉 tag 文档+门禁） |
 | K4 | 缺可独立发版的 semver/兼容表 | ✅ Phase 1（见 `client_contract_versioning.md`） |
@@ -105,7 +105,7 @@
 | P3.5 | 主仓 README 指向外仓；目录删除或短期 submodule（见 Phase 4） |
 
 - [x] P3.1：本地外仓 **`../crabmate-client`**（相对本仓；2026-08-08）
-- [x] P3.2（部分）：已迁入 Client 仓 `desktop-tauri` / `mobile-tauri` / `crates/crabmate-connect`；**业务 UI 仍主仓**（至 P4.2；壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`）
+- [x] P3.2：壳 + connect + 业务 UI 均在 Client 仓；壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`
 - [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓 `tauri_gui_mvp_design.md` 为指针
 - [x] P3.3：壳对 connect 为 Client 仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
 - [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
@@ -117,24 +117,24 @@
 
 ---
 
-## Phase 4 — 本仓收尾 🚧
+## Phase 4 — 本仓收尾 ✅
 
 **入口**：Phase 3；且 Phase 2 已验收。
 
 | ID | 动作 | 状态 |
 |----|------|------|
 | P4.1 | 主仓移除 `desktop-tauri/`、`mobile-tauri/`、`crates/crabmate-connect/` 及无用打包脚本（含 `scripts/victauri-e2e.sh`、`scripts/sync-tauri-connect-page.sh`） | ✅ 完成 |
-| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | 🚧 **Phase C**（`chore/frontend-phase-c`）；Client [#2](https://github.com/noisystreet/crabmate-client/pull/2) 已合入 |
+| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | ✅ [CrabMate#795](https://github.com/noisystreet/CrabMate/pull/795) + Client [#2](https://github.com/noisystreet/crabmate-client/pull/2) / [#3](https://github.com/noisystreet/crabmate-client/pull/3) |
 | P4.3 | （可选）release asset 附带推荐 UI 包，**源码**不在主仓 | ⬜ 待做 |
 | P4.4 | 兼容表：Server ↔ 协议版 ↔ 最低 Client | ✅ 初稿 [`client_compat_matrix.md`](./client_compat_matrix.md) |
 | P4.5 | `serve --desktop-ready-json`：保留旗标；新增别名 **`--web-ready-json`**；壳不依赖；文档标注弃用命名 | ✅ 完成 |
 
 - [x] P4.1  
-- [ ] P4.2  
+- [x] P4.2  
 - [ ] P4.3  
 - [x] P4.4（初稿）  
 - [x] P4.5  
-- [ ] 验收：主仓构建无强制 Tauri/GTK；官方安装包来自壳仓；兼容表齐套；壳 README 与路径 A 一致；**P4.2 完成后** `frontend/` 源码不在本仓  
+- [x] 验收：主仓构建无强制 Tauri/GTK；官方安装包来自壳仓；兼容表齐套；壳 README 与路径 A 一致；**`frontend/` 源码不在本仓**；Playwright 在 Client  
 
 ---
 
@@ -191,3 +191,4 @@
 | 2026-08-08 | P4.2 实施计划草案：[`frontend_migrate_plan.md`](./frontend_migrate_plan.md)（Client 仓落点；先 `client-contract-v*`，不强制产品发版） |
 | 2026-08-08 | Phase A：扩契约钉清单 + `check-client-contract` UI smoke；Client `contract_pin`；tag 待合 main |
 | 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |
+| 2026-08-08 | **P4.2 完成**：Client #2（UI）+ #3（Playwright）与主仓 #795（删 frontend / e2e）已合 `main`；路径 A 分离终点达成（可选 P4.3 / Phase 5） |

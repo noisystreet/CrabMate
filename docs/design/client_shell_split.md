@@ -65,7 +65,7 @@ CrabMate 执行权威在单机 **`serve`**（或同进程 CLI/TUI）。桌面 / 
 
 1. **契约优先**：不新开会话 API；Client 只认现有 HTTP + SSE（见 `docs/SSE协议.md`）。
 2. **与宿主解耦正交**：`turn_runtime_placement` / `web_host_p5_placement` **不阻塞**本决策；拆壳优先传输与发版边界。
-3. **现状差距**：壳目录仅在 **`../crabmate-client`**（Phase 4.1）；本仓仍保留 `frontend/` 源码至 Phase 4.2。Phase 2 已提供 **API 基址 + CORS**，浏览器可静态托管 UI 直连远程 `serve`。兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
+3. **现状**：壳目录仅在 **`../crabmate-client`**（Phase 4.1）；业务 UI 与 Playwright 亦在 Client（Phase 4.2 / [#795](https://github.com/noisystreet/CrabMate/pull/795)、Client [#2](https://github.com/noisystreet/crabmate-client/pull/2)/[#3](https://github.com/noisystreet/crabmate-client/pull/3)）。Phase 2 已提供 **API 基址 + CORS**。兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
 4. **安全**：CORS 默认保守（空白名单=不挂层；启用时精确 Origin）；非回环须 Bearer。
 
 ---
