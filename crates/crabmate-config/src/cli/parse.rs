@@ -192,8 +192,9 @@ fn build_parsed_cli_args(
                 system_prompt_file: be.bench_system_prompt,
             };
         }
-        Commands::Config(_) => {
+        Commands::Config(c) => {
             b.dry_run = true;
+            b.no_web = c.no_web;
         }
         Commands::Doctor => {
             b.extra_cli = ExtraCliCommand::Doctor;

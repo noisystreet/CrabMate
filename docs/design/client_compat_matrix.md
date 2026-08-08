@@ -10,7 +10,7 @@
 | 轴 | 当前值 | 权威位置 |
 |----|--------|----------|
 | 线协议 `SSE_PROTOCOL_VERSION` | **2** | `crabmate-sse-protocol` / `docs/SSE协议.md` |
-| 契约 git tag（计划） | `client-contract-vX.Y.Z` | [`client_contract_versioning.md`](./client_contract_versioning.md) |
+| 契约 git tag | `client-contract-v0.1.0`（及后续） | [`client_contract_versioning.md`](./client_contract_versioning.md) |
 | 官方 Client 仓 | `noisystreet/crabmate-client` | 同级 `../crabmate-client` |
 | N−1 线协议解码窗口 | **无**（错位即失败可预期） | versioning §3 |
 
@@ -18,8 +18,7 @@
 
 | Server / 契约 | 最低 Client（壳） | 最低 UI（WASM/dist） | 备注 |
 |---------------|-------------------|----------------------|------|
-| 本仓 `main` + SSE v2 | Client 仓与本表同日基线；须能发 `client_sse_protocol: 2` | 与 Server 同协议版本构建的 `frontend/dist`（过渡期仍可由本仓 `trunk build`） | 跨 Origin 须 CORS + Web Bearer |
-| 未来 `client-contract-v*` | 钉该 tag 的壳 / connect | 钉同协议版本的 UI 产物 | 首枚 tag 打出后补一行 |
+| 本仓 `main` + SSE v2 + `client-contract-v0.1.0` | Client 仓钉同 tag；须能发 `client_sse_protocol: 2` | Client `frontend/dist`（`make frontend`） | 跨 Origin 须 CORS + Web Bearer |
 
 **最低 Client** 含义：连接页 + WebView 能完成一轮对话，且协议错位返回 `SSE_CLIENT_TOO_NEW` / `SSE_PROTOCOL_MISMATCH` 可预期。
 
@@ -27,9 +26,9 @@
 
 | 产物 | 来源仓 | 含什么 |
 |------|--------|--------|
-| `crabmate` CLI / `serve`（tar.gz / server `.deb`） | **本仓** | 二进制 + 配置模板；可选附带 `frontend/dist`（至 Phase 4.2/4.3） |
+| `crabmate` CLI / `serve`（tar.gz / server `.deb`） | **本仓** | 二进制 + 配置模板；可选 `--frontend-dist` 附带 UI |
 | Desktop Linux `.deb` / Android APK | **`crabmate-client`** | 壳 + connect；**不**内嵌 `serve` sidecar |
-| 业务 UI 静态包 | 过渡：本仓 `frontend/`；终点：Client 或独立 UI 仓（Phase 5） | `index.html` + wasm 等 |
+| 业务 UI 静态包 | **`crabmate-client/frontend`** | `index.html` + wasm 等 |
 
 ## 4. 弃用
 

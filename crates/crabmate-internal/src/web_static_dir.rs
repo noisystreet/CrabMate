@@ -1,8 +1,8 @@
-//! Web 静态资源目录：仓库内 **`frontend/dist`**（Leptos + Trunk），或安装布局
-//! **`/usr/share/crabmate/frontend/dist`**（桌面 `.deb` 等）。
+//! Web 静态资源目录：可选 SPA `dist`（官方 UI 在 Client 仓 `crabmate-client/frontend`）。
 //!
-//! 自 `crabmate-internal` 拆出后，`CARGO_MANIFEST_DIR` 指向子 crate；自该路径、可执行文件目录与
-//! 当前工作目录向上查找含 **`frontend/Trunk.toml`** 或 **`frontend/dist/index.html`** 的工作区根。
+//! 解析顺序：`CM_WEB_STATIC_DIR` → 自 crate/可执行文件/cwd 向上查找已构建的
+//! `frontend/dist` 或同级 `crabmate-client/frontend/dist` → 安装布局
+//! [`INSTALLED_FRONTEND_DIST`] → 约定路径（可能尚不存在，供错误提示）。
 
 use std::path::{Path, PathBuf};
 
@@ -14,24 +14,24 @@ pub fn resolve_web_static_dir() -> PathBuf {
     if let Some(dist) = env_frontend_dist() {
         return dist;
     }
-    if let Some(dist) = find_frontend_dist_from(Path::new(env!("CARGO_MANIFEST_DIR"))) {
+    if let Some(dist) = find_built_frontend_dist_from(Path::new(env!("CARGO_MANIFEST_DIR"))) {
         return dist;
     }
     if let Ok(exe) = std::env::current_exe()
         && let Some(parent) = exe.parent()
-        && let Some(dist) = find_frontend_dist_from(parent)
+        && let Some(dist) = find_built_frontend_dist_from(parent)
     {
         return dist;
     }
     if let Ok(cwd) = std::env::current_dir()
-        && let Some(dist) = find_frontend_dist_from(&cwd)
+        && let Some(dist) = find_built_frontend_dist_from(&cwd)
     {
         return dist;
     }
     if let Some(dist) = installed_frontend_dist() {
         return dist;
     }
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("frontend/dist")
+    conventional_frontend_dist_hint()
 }
 
 fn env_frontend_dist() -> Option<PathBuf> {
@@ -44,7 +44,7 @@ fn env_frontend_dist() -> Option<PathBuf> {
     if !is_frontend_dist(&path) {
         return None;
     }
-    // 开发机已装 deb 时，环境可能仍导出安装路径；cwd 在源码树且本地 dist 已构建则优先本地。
+    // 开发机已装 deb 时，环境可能仍导出安装路径；cwd 在源码树且本地/Client dist 已构建则优先本地。
     if path.as_path() == Path::new(INSTALLED_FRONTEND_DIST)
         && let Some(dev) = frontend_dist_from_cwd_if_built()
     {
@@ -53,11 +53,10 @@ fn env_frontend_dist() -> Option<PathBuf> {
     Some(path)
 }
 
-/// 自进程 `current_dir` 向上查找已构建的 `frontend/dist`（须含 `index.html`）。
+/// 自进程 `current_dir` 向上查找已构建的 UI dist（须含 `index.html`）。
 fn frontend_dist_from_cwd_if_built() -> Option<PathBuf> {
     let cwd = std::env::current_dir().ok()?;
-    let dist = find_frontend_dist_from(&cwd)?;
-    is_frontend_dist(&dist).then_some(dist)
+    find_built_frontend_dist_from(&cwd)
 }
 
 fn installed_frontend_dist() -> Option<PathBuf> {
@@ -69,12 +68,44 @@ fn is_frontend_dist(path: &Path) -> bool {
     path.join("index.html").is_file()
 }
 
-fn find_frontend_dist_from(start: &Path) -> Option<PathBuf> {
+fn candidate_dist_dirs(dir: &Path) -> [PathBuf; 2] {
+    [
+        dir.join("frontend/dist"),
+        dir.join("crabmate-client/frontend/dist"),
+    ]
+}
+
+fn find_built_frontend_dist_from(start: &Path) -> Option<PathBuf> {
     let mut dir = start.to_path_buf();
     loop {
-        let dist = dir.join("frontend/dist");
-        if is_frontend_dist(&dist) || dir.join("frontend/Trunk.toml").is_file() {
-            return Some(dist);
+        for cand in candidate_dist_dirs(&dir) {
+            if is_frontend_dist(&cand) {
+                return Some(cand);
+            }
+        }
+        if !dir.pop() {
+            break;
+        }
+    }
+    None
+}
+
+/// 无已构建 dist 时的约定提示路径（相对本 workspace 根的 `frontend/dist`）。
+fn conventional_frontend_dist_hint() -> PathBuf {
+    find_workspace_root(Path::new(env!("CARGO_MANIFEST_DIR")))
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")))
+        .join("frontend/dist")
+}
+
+fn find_workspace_root(start: &Path) -> Option<PathBuf> {
+    let mut dir = start.to_path_buf();
+    loop {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.is_file()
+            && let Ok(text) = std::fs::read_to_string(&manifest)
+            && text.contains("[workspace]")
+        {
+            return Some(dir);
         }
         if !dir.pop() {
             break;
@@ -88,18 +119,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_workspace_frontend_dist_from_internal_crate() {
+    fn resolve_returns_path_ending_with_frontend_dist() {
         let dist = resolve_web_static_dir();
         assert!(dist.ends_with("frontend/dist"), "got {}", dist.display());
-        let workspace = dist
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("workspace root");
-        assert!(
-            workspace.join("frontend/Trunk.toml").is_file(),
-            "missing Trunk.toml under {}",
-            workspace.display()
-        );
     }
 
     #[test]
@@ -120,15 +142,22 @@ mod tests {
     }
 
     #[test]
-    fn installed_env_defers_to_built_cwd_dist_when_in_repo() {
-        let dist = resolve_web_static_dir();
-        let workspace = dist
-            .parent()
-            .and_then(|p| p.parent())
-            .expect("workspace root");
-        if !workspace.join("frontend/Trunk.toml").is_file() || !is_frontend_dist(&dist) {
+    fn workspace_root_detection_from_internal_crate() {
+        let root = find_workspace_root(Path::new(env!("CARGO_MANIFEST_DIR")))
+            .expect("workspace root from crabmate-internal");
+        assert!(root.join("Cargo.toml").is_file());
+        assert!(
+            std::fs::read_to_string(root.join("Cargo.toml"))
+                .expect("read")
+                .contains("[workspace]")
+        );
+    }
+
+    #[test]
+    fn installed_env_defers_to_built_cwd_dist_when_available() {
+        let Some(dev) = frontend_dist_from_cwd_if_built() else {
             return;
-        }
+        };
         let installed = PathBuf::from(INSTALLED_FRONTEND_DIST);
         if !is_frontend_dist(&installed) {
             return;
@@ -140,8 +169,8 @@ mod tests {
         let resolved = super::env_frontend_dist().expect("env dist");
         assert_eq!(
             resolved,
-            dist,
-            "expected repo frontend/dist, got {}",
+            dev,
+            "expected built cwd/client dist, got {}",
             resolved.display()
         );
         unsafe {

@@ -1,8 +1,8 @@
 # 主 CI：编译检查、Clippy（-D warnings）与工作区测试，防止错误合入 main。
-# 与 pre-commit 的 cargo clippy / frontend-wasm-check 对齐；cargo test 仅在本 workflow（及 code-complexity 金样）跑。
+# 与 pre-commit 的 cargo clippy 对齐；cargo test 仅在本 workflow（及 code-complexity）跑。
 #
-# 官方 Client（Desktop/Android 壳）CI：同级 crabmate-client/.github/workflows/ci.yml（路径 A Phase 4）。
-# 本仓不再跑 Tauri/GTK desktop job。
+# 官方 Client（业务 UI + Desktop/Android 壳）CI：同级 crabmate-client/.github/workflows/ci.yml。
+# 本仓不再跑 Tauri/GTK / frontend wasm。
 name: CI
 
 on:
@@ -40,9 +40,6 @@ jobs:
         with:
           components: clippy
 
-      - name: Add wasm32 target (frontend)
-        run: rustup target add wasm32-unknown-unknown
-
       - uses: Swatinem/rust-cache@v2
 
       - name: cargo check (workspace, all targets)
@@ -54,14 +51,8 @@ jobs:
       - name: cargo check (crabmate default features)
         run: cargo check -p crabmate
 
-      - name: cargo check (frontend wasm32)
-        run: cargo check --manifest-path frontend/Cargo.toml --target wasm32-unknown-unknown --all-targets
-
       - name: cargo clippy (workspace, -D warnings)
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
-
-      - name: cargo clippy (frontend, -D warnings)
-        run: cargo clippy --manifest-path frontend/Cargo.toml --all-targets --all-features -- -D warnings
 
       - name: cargo test (workspace)
         run: |
@@ -103,19 +94,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Add wasm32 target & install trunk
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo install trunk --locked
-
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build frontend WASM + backend binary (release)
-        run: make backend-release frontend-release
+      - name: Build backend binary (release)
+        run: make backend-release
 
       - name: Verify release build artifacts
         run: |
           test -x target/release/crabmate
-          test -f frontend/dist/index.html
           BIN_SIZE=$(stat --format=%s target/release/crabmate)
           echo "crabmate release binary: $BIN_SIZE bytes ($(( BIN_SIZE / 1048576 )) MiB)"

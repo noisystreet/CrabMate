@@ -50,7 +50,7 @@
 
 | 子命令 | 说明 |
 | --- | --- |
-| **`serve`** | 启动 HTTP API + 挂载 **`frontend/dist`** Web UI（默认端口 **8080**，绑定 **127.0.0.1**）。**Ctrl+C** 优雅关闭；关闭过程中再次 **Ctrl+C** 立即退出。 |
+| **`serve`** | 启动 HTTP API；可选挂载 Web UI 静态资源（**`CM_WEB_STATIC_DIR`**，默认探测 Client/`frontend/dist` / 安装路径）。无 UI 时用 **`--no-web`**。默认端口 **8080**，绑定 **127.0.0.1**。 |
 | **`repl`** | 交互式终端对话；**`/`** 斜杠命令与 **`/api-key set`** 等见 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **`chat`** | 单次提问后退出（**`--query`** / **`--stdin`** / 文件等），适合脚本；**`--output json`** 见 [docs/命令行契约.md](docs/命令行契约.md)。 |
 | **`tui`** | 实验性**全屏**终端 UI；须**交互式 TTY**（管道或非 TTY 请用 **`repl`** / **`chat`**）。行为摘要见 **[TUI（全屏终端）](#tui全屏终端)**。 |
@@ -77,29 +77,28 @@
 
 ## 编译运行与打包
 
-**前置**：**Rust 1.85+**（edition 2024）；带 Web 时需安装 [**Trunk**](https://trunkrs.dev/) 并添加目标 **`wasm32-unknown-unknown`**（**`rustup target add wasm32-unknown-unknown`**）。更多环境说明见 [AGENTS.md](AGENTS.md)。
+**前置**：**Rust 1.85+**（edition 2024）。业务 UI 在 Client 仓（Trunk / wasm32）。更多环境说明见 [AGENTS.md](AGENTS.md)。
 
 ### Makefile（推荐）
 
-仓库根目录提供 **`Makefile`**，可统一构建后端、前端与工作区，并支持清理：
+仓库根目录提供 **`Makefile`**，构建后端与工作区：
 
 ```bash
 make help              # 列出全部目标
-make all-dev           # 后端 + 前端（debug，本地 serve 常用）
-make all               # 后端 + 前端（均为 release）
+make all / all-dev     # backend-release / backend
 make backend           # cargo build -p crabmate
-make frontend-release  # cd frontend && trunk build --release
-make clean             # 清理 target、frontend/dist 与 dist/
+make clean             # 清理 target 与 dist/
 ```
 
-发布用 **`make all`**（后端 + 前端 release）与下文分步命令等价；一键 tar.gz 仍可用 **`./scripts/package-release.sh`**。Desktop / Android 壳请到同级 **[`../crabmate-client`](../crabmate-client/)**。
+业务 UI：`cd ../crabmate-client && make frontend`。一键 tar.gz：`./scripts/package-release.sh`（可选 `--frontend-dist`）。Desktop / Android：同级 **[`../crabmate-client`](../crabmate-client/)**。
 
 ### 后端
 
 ```bash
 # 开发调试二进制
 cargo build
-./target/debug/crabmate serve    # 或 repl / chat …
+./target/debug/crabmate serve --no-web    # 纯 API；或设 CM_WEB_STATIC_DIR 挂 UI
+# 或: API_KEY=… ./target/debug/crabmate serve
 
 # 发布用优化二进制
 cargo build --release
@@ -110,15 +109,15 @@ cargo build --release
 
 ### 前端 Web
 
-静态资源由 **`crabmate serve`** 从 **`frontend/dist`** 提供，无需单独起前端进程（路径 A Phase 4.2 将迁出源码；过渡期仍在本仓）。
+业务 UI 源码在官方 Client 仓 **[`../crabmate-client/frontend`](../crabmate-client/frontend)**（路径 A Phase 4.2）。
 
 ```bash
-cd frontend
-trunk build              # 开发构建；发布用 trunk build --release
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent && cargo run -- serve
 ```
 
-然后回到仓库根目录执行 **`crabmate serve`**（或 **`cargo run -- serve`**）。开发细节见 **`frontend/README.md`**。纯 API：`serve --no-web`。
-
+纯 API：`serve --no-web`。设计笔记仍见本仓 [`docs/frontend/`](docs/frontend/)。
 ### 官方 Client（Desktop / Android）
 
 > **权威仓**：同级 **[`../crabmate-client`](../crabmate-client/)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)）。  
@@ -139,8 +138,8 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | 方式 | 命令 / 说明 |
 | --- | --- |
 | **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
-| **一键 tar.gz** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、`frontend/dist`、man）；若已装 **`cargo-deb`** 可同时收录 **`.deb`**。 |
-| **Debian 包** | 前端 **`trunk build --release`** 后 **`cargo deb`**，产物默认在 **`target/debian/`**。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
+| **一键 tar.gz** | **`./scripts/package-release.sh`** → **`dist/crabmate_<version>_<os>_<arch>.tar.gz`**（含二进制、`config/`、man；默认 **server-only**）。附带 UI：`--frontend-dist /path/to/dist`（如 Client `make frontend` 产物）。若已装 **`cargo-deb`** 可同时收录 **`.deb`**。 |
+| **Debian 包** | **`cargo deb`**（本仓不强制 UI）；产物默认在 **`target/debian/`**。含官方 UI 时于 Client 构建 dist 后用 **`--frontend-dist`** 打 tar，或见 Client 仓桌面/APK 打包。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
 | **同步 man 页** | **`cargo run --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
 
@@ -195,7 +194,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
 | **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 跨 Origin 浏览器访问时的 Origin 白名单（逗号分隔）；空=不挂 CORS。静态托管 UI 时见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
-| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（默认开发时为仓库 **`frontend/dist`**；安装布局可为 **`/usr/share/crabmate/frontend/dist`**）。 |
+| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve`** 静态资源根（Client `frontend/dist` / 安装路径；无 UI 用 **`--no-web`**）。 |
 | **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
 | **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
 

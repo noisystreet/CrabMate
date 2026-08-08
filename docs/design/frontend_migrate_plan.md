@@ -69,7 +69,7 @@
 | A1 | 更新 [`client_contract_versioning.md`](./client_contract_versioning.md)：钉清单含 §3 表中全部 UI 依赖 crate | ✅ 文档与 `frontend/Cargo.toml` 对齐 |
 | A2 | 更新 Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md) 示例 | ✅ 外仓可复制粘贴（随 Client 仓提交） |
 | A3 | 扩展 `check-client-contract.sh`：钉清单 manifest + UI crate path 消费 smoke | ✅ 本地/CI `client-contract` 绿 |
-| A4 | `main` 上打注释标签 **`client-contract-v0.1.0`**（或开发期约定 `rev`） | ⬜ **合入 `main` 后执行**（见 versioning §4.1 命令）；合入前可用 `rev` |
+| A4 | `main` 上打注释标签 **`client-contract-v0.1.0`**（或开发期约定 `rev`） | ✅ `client-contract-v0.1.0` → `c244ebb1` |
 
 **不需要**：crates.io、`v0.1.0` 产品 Release、改用户安装包版本号。
 
@@ -77,22 +77,18 @@
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| B1 | 将主仓 `frontend/` 迁入 `crabmate-client/frontend/`（含 `Trunk.toml`、静态资源、README） | 目录完整；历史可用 `git subtree`/`filter` 或干净复制 + 注明来源 commit |
-| B2 | 重写 `frontend/Cargo.toml`：全部 `crabmate-*` 改为 **git `tag`/`rev`**；外仓根或 frontend 自有 lock | `check-no-main-path.sh` 绿 |
-| B3 | Client：`make frontend` / `trunk build`；CI 增加 wasm check/clippy（可对齐主仓旧钩子） | PR CI 绿 |
-| B4 | 壳打包：`CRABMATE_FRONTEND_DIST` / `prepare-sidecar` 默认指向本仓 `frontend/dist` | `make desktop-release` 仍可带 UI 资产 |
-| B5 | 更新 Client README / TESTING / contract_pin | 构建 UI → 起外部 `serve` → 壳或浏览器一轮对话 |
+| B1–B5 | 见 Client [`feat/frontend-phase-b`](https://github.com/noisystreet/crabmate-client/pull/2) | ✅ 已合入 `main`（`b6f5dcc`，钉 `tag=client-contract-v0.1.0`） |
 
 ### Phase C — 主仓收尾（Server）
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| C1 | 根 `Cargo.toml` 去掉 `frontend` member；删除 `frontend/` 源码 | workspace 无 frontend |
-| C2 | 去掉 pre-commit `frontend-wasm-check` / `frontend-clippy`；CI 去掉 wasm32 frontend 步骤 | CI 无 trunk/wasm UI 编译 |
-| C3 | `Makefile`：`all` 可仅为 `backend-release`；frontend 目标改为文档指针或删除 | `make help` 与路径 A 一致 |
-| C4 | `package-release.sh` / Playwright：改为可选跳过 UI，或下载 Client 构建产物 / 要求 `CM_WEB_STATIC_DIR` | 发行与 e2e 有明确说明 |
-| C5 | `web_static_dir` / 文档：默认叙事「无本地 dist 时用 `--no-web` 或设 `CM_WEB_STATIC_DIR`」 | 配置说明、README、AGENTS 已改 |
-| C6 | 更新 todo / 兼容表；勾选 P4.2 | [`client_shell_split_todo.md`](./client_shell_split_todo.md) |
+| C1 | 根 `Cargo.toml` 去掉 `frontend` member；删除 `frontend/` 源码 | ✅ 本地 `chore/frontend-phase-c` |
+| C2 | 去掉 pre-commit `frontend-wasm-check` / `frontend-clippy`；CI 去掉 wasm32 frontend 步骤 | ✅ |
+| C3 | `Makefile`：`all` 仅为 `backend-release`；frontend 目标改为 Client 指针 | ✅ |
+| C4 | `package-release.sh` / Playwright：可选 UI dist / checkout Client | ✅ |
+| C5 | `web_static_dir` / 文档：`CM_WEB_STATIC_DIR` / `--no-web` | ✅ |
+| C6 | 更新 todo / 兼容表；勾选 P4.2 | 🚧 文档已改；P4.2 勾选待 PR 合入 |
 
 ### Phase D — 可选（P4.3 / Phase 5）
 

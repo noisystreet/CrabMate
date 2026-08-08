@@ -142,7 +142,7 @@ async fn probe_llm_models_endpoint(
 
 /// 构建健康报告（阻塞工作放在 `spawn_blocking` 内）。
 ///
-/// `include_frontend_static`：为 true 时检查 `frontend/dist`（与 Web 服务模式一致）；TUI 也可为 true 以便本地开发时看到前端构建是否缺失。
+/// `include_frontend_static`：为 true 时检查 UI 静态根（`CM_WEB_STATIC_DIR` / Client `frontend/dist` 等，与挂载 SPA 一致）；`serve --no-web` 应为 false。
 pub async fn build_health_report(
     workspace_dir: &Path,
     api_key: &str,

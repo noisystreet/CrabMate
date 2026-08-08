@@ -178,12 +178,14 @@ Keep this section in sync with `README.md` when export behavior changes.
 ## Frontend build and Web
 
 ```bash
-cd frontend && trunk build && cd ..   # dev (faster, no wasm-opt)
-# For production WASM size: cd frontend && trunk build --release && cd ..
-cargo run -- serve
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent && cargo run -- serve
 ```
 
-Static assets are served from `frontend/dist`.
+Pure API: `cargo run -- serve --no-web`. Config check: `cargo run -- --dry-run --no-web`.
+
+Static assets come from `CM_WEB_STATIC_DIR` (or sibling Client `frontend/dist`).
 
 ## Main HTTP routes (`serve`)
 
@@ -245,12 +247,13 @@ Artifacts land in **`dist/`** at the repo root: a **`tar.gz`** is always produce
 
 ```bash
 cargo install cargo-deb
-cd frontend && trunk build --release && cd ..
 cargo build --release
 cargo deb
 sudo dpkg -i target/debian/crabmate_*.deb
 ```
 
-After install: `export API_KEY=… && crabmate serve 8080`. Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
+Server `.deb` does not require UI. To bundle UI in a tarball, build Client dist then run `./scripts/package-release.sh --frontend-dist …/frontend/dist`.
+
+After install: `export API_KEY=… && crabmate serve --no-web` (or set **`CM_WEB_STATIC_DIR`**). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
 
 Preview from tree: `man -l man/crabmate.1` (path relative to repo root).

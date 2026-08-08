@@ -311,6 +311,10 @@ pub struct ConfigCmd {
     /// 可选；与不带本参数相同，均为一次配置检查后退出（供脚本显式标注）
     #[arg(long)]
     pub dry_run: bool,
+
+    /// 纯 API：跳过 UI 静态目录检查（与 `serve --no-web` 同语义）
+    #[arg(long, alias = "cli-only")]
+    pub no_web: bool,
 }
 
 /// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Playwright E2E 一键脚本
 #
-# 自动构建前端 → 启动后端 → 运行 Playwright 测试 → 停止后端
-# 透传所有参数给 `npx playwright test`。
+# 启动后端 → 运行 Playwright 测试 → 停止后端。
+# 业务 UI 须已构建：设 CM_WEB_STATIC_DIR，或同级 ../crabmate-client/frontend/dist。
 #
 # 用法:
 #   ./scripts/e2e-playwright.sh                          # 全部测试
@@ -13,7 +13,7 @@
 # 环境变量:
 #   CRABMATE_PORT          后端绑定端口（默认 8080）
 #   CRABMATE_BIN           crabmate 二进制路径（默认 cargo run）
-#   SKIP_FRONTEND_BUILD    1 跳过前端构建
+#   CM_WEB_STATIC_DIR      UI dist（默认尝试 ../crabmate-client/frontend/dist）
 #   E2E_DIR                Playwright 项目目录（默认 e2e/）
 
 set -euo pipefail
@@ -21,9 +21,23 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PORT="${CRABMATE_PORT:-8080}"
 E2E_DIR="${E2E_DIR:-$ROOT/e2e}"
-FRONTEND_DIR="$ROOT/frontend"
 BACKEND_PID=""
 EXIT_CODE=0
+
+if [[ -z "${CM_WEB_STATIC_DIR:-}" ]]; then
+  if [[ -f "${ROOT}/../crabmate-client/frontend/dist/index.html" ]]; then
+    export CM_WEB_STATIC_DIR="${ROOT}/../crabmate-client/frontend/dist"
+  elif [[ -f "${ROOT}/crabmate-client/frontend/dist/index.html" ]]; then
+    export CM_WEB_STATIC_DIR="${ROOT}/crabmate-client/frontend/dist"
+  fi
+fi
+
+if [[ -z "${CM_WEB_STATIC_DIR:-}" || ! -f "${CM_WEB_STATIC_DIR}/index.html" ]]; then
+  echo "错误: 未找到 UI dist。请先: cd ../crabmate-client && make frontend" >&2
+  echo "      然后: export CM_WEB_STATIC_DIR=\"\$(cd ../crabmate-client && pwd)/frontend/dist\"" >&2
+  exit 1
+fi
+echo ">>> UI dist: ${CM_WEB_STATIC_DIR}"
 
 # ---------------------------------------------------------------------------
 # 清理：停后端
@@ -40,21 +54,7 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------------------------------------------------------
-# 1. 前端构建
-# ---------------------------------------------------------------------------
-if [[ -z "${SKIP_FRONTEND_BUILD:-}" ]]; then
-    if [[ ! -f "$FRONTEND_DIR/dist/index.html" ]]; then
-        echo ">>> 构建前端 (frontend/dist 不存在)..."
-        (cd "$FRONTEND_DIR" && trunk build)
-    else
-        echo ">>> 前端已构建，跳过（设 SKIP_FRONTEND_BUILD=1 强制跳过）"
-    fi
-else
-    echo ">>> SKIP_FRONTEND_BUILD=1，跳过前端构建"
-fi
-
-# ---------------------------------------------------------------------------
-# 2. 端口检查
+# 端口检查
 # ---------------------------------------------------------------------------
 if command -v lsof &>/dev/null; then
     if lsof -ti ":$PORT" >/dev/null 2>&1; then
@@ -66,7 +66,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 3. 启动后端
+# 启动后端
 # ---------------------------------------------------------------------------
 # E2E 测试时只输出 WARN/ERROR，避免 INFO 日志刷屏
 export RUST_LOG="${CM_E2E_RUST_LOG:-warn}"
@@ -93,7 +93,7 @@ for i in $(seq 1 30); do
 done
 
 # ---------------------------------------------------------------------------
-# 4. 运行 Playwright 测试
+# 运行 Playwright 测试
 # ---------------------------------------------------------------------------
 echo ">>> 运行 Playwright 测试..."
 echo "    参数: $*"

@@ -387,7 +387,7 @@ mod tests {
 
     #[test]
     fn github_repo_context_treats_subdir_as_git_repo() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates");
         if !dir.is_dir() {
             return;
         }
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn github_checks_from_git_subdir_parses_structured_json() {
-        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../frontend");
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../crates");
         if !dir.is_dir() {
             return;
         }

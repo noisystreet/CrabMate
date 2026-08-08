@@ -8,7 +8,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 - **Rust**: 1.85+ (edition 2024); see [`README-en.md`](../../README-en.md).
 - **E2E**: Playwright in this repo (below). **Victauri** (Tauri WebView) is **only** in the Client repo and needs GTK/WebKit libs — see `../crabmate-client` CI.
-- **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build with **`cd frontend && trunk build`** (use **`trunk build --release`** for production-sized WASM).
+- **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`** (or use **`serve --no-web`** for API-only).
 
 ## GitHub Actions (main CI)
 
@@ -30,19 +30,17 @@ Includes (non-exhaustive):
 
 - **`cargo fmt --all`**
 - **`cargo clippy --all-targets --all-features -- -D warnings`**
-- **`frontend-wasm-check`** / **`frontend-clippy`**: when the staged set includes **`frontend/`**, run **`cd frontend && cargo check --target wasm32-unknown-unknown`** and **`cd frontend && cargo clippy --all-targets --all-features -- -D warnings`** respectively
 - **`lizard-rust`**: Rust cyclomatic complexity (requires **`pip install lizard`**; **`scripts/lizard-rust.sh`** / **`scripts/lizard_rust_metrics.py`**: per-module summary; per-module **`ccn_max`** in **`scripts/lizard_module_ccn_caps.toml`**, global ceiling **`global_ccn_ceiling`** (default **15**)). Optional **`--module`**, **`--list-modules`**, **`--list-above N`**, **`--write-caps`**
 - **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**; hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
-- **`cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected`** (when changing AG-UI dispatch / `fixtures/sse_ag_ui_golden.jsonl`)
+- **`./scripts/check-sse-protocol.sh`** (when changing SSE / `fixtures/sse_ag_ui_golden.jsonl`)
 
 Without pre-commit installed, run at least:
 
 ```bash
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
-cd frontend && cargo clippy --all-targets --all-features -- -D warnings
 bash scripts/lizard-rust.sh
 bash scripts/fn-param-ratchet.sh
 bash scripts/fn-nloc-ratchet.sh
@@ -69,7 +67,7 @@ cargo test
 ### Filter by test name (examples)
 
 ```bash
-cd frontend && cargo test golden_ag_ui_v2_parser_matches_expected
+./scripts/check-sse-protocol.sh
 cargo test -p crabmate-tools tool_result_envelope_golden
 ```
 
@@ -94,7 +92,7 @@ cargo test -p crabmate-web
 Or:
 
 ```bash
-cd frontend && cargo test
+# UI tests: cd ../crabmate-client/frontend && cargo test
 ```
 
 Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no browser).
@@ -116,15 +114,15 @@ If `wasm-bindgen` is bumped in the lockfile, use that version in the install com
 After protocol or large UI changes, at least:
 
 ```bash
-cd frontend && cargo check --target wasm32-unknown-unknown
+cd ../crabmate-client && cargo check -p crabmate-web --target wasm32-unknown-unknown
 ```
 
 ### Static bundle build (required for E2E / `serve`)
 
 ```bash
-cd frontend && trunk build
+cd ../crabmate-client && make frontend
 # Production-sized WASM:
-# cd frontend && trunk build --release
+# cd ../crabmate-client && make frontend --release
 ```
 
 ## Desktop E2E (Victauri)

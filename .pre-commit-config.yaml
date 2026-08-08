@@ -1,7 +1,8 @@
 # https://pre-commit.com
 # 安装：pip install pre-commit && pre-commit install
 #   （本配置含 default_install_hook_types，会同时安装 pre-commit + commit-msg；旧环境可补：pre-commit install --hook-type commit-msg）
-# 手动跑检查：pre-commit run --all-files（不含 commit-msg；说明校验见 conventional-commits 规则中的手动命令）。workspace / frontend 的 clippy 与 wasm check 为全量，不依赖暂存区。
+# 手动跑检查：pre-commit run --all-files（不含 commit-msg；说明校验见 conventional-commits 规则中的手动命令）。workspace clippy 为全量，不依赖暂存区。
+# 业务 UI wasm/clippy：Client 仓 crabmate-client（路径 A Phase 4.2）。
 default_install_hook_types:
   - pre-commit
   - commit-msg
@@ -50,22 +51,8 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [pre-commit]
-      - id: frontend-wasm-check
-        name: frontend wasm check
-        entry: bash -c 'cd frontend && cargo check --target wasm32-unknown-unknown'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
-      - id: frontend-clippy
-        name: frontend clippy (-D warnings)
-        entry: bash -c 'cd frontend && cargo clippy --all-targets --all-features -- -D warnings'
-        language: system
-        pass_filenames: false
-        always_run: true
-        stages: [pre-commit]
       # cargo test（含 golden_sse_control / golden_turn_route_decision 等）仅在 CI 跑，见 .github/workflows/ci.yml 与 code-complexity.yml
-      # Desktop/Android 壳 clippy：Client 仓 crabmate-client（路径 A Phase 4）
+      # Desktop/Android / 业务 UI：Client 仓 crabmate-client（路径 A Phase 4）
       - id: taplo-format
         name: taplo format (check)
         entry: >-

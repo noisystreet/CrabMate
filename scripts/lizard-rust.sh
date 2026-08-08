@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 对 `src/`、`crates/` 与 `frontend/src/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
+# 对 `src/` 与 `crates/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
+# 业务 UI 复杂度门禁在 Client 仓 crabmate-client。
 # 未安装时：pip install lizard
 #
 # 规则（与 scripts/lizard_rust_metrics.py 一致）：按模块分别汇总；各模块独立 ccn_max

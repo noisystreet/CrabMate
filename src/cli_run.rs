@@ -366,17 +366,9 @@ async fn run_early_commands(
 async fn run_dry_run(
     config_path: &Option<String>,
     llm_context_tokens_cli: Option<u32>,
+    no_web: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
-    let static_dir = web_static_dir::resolve_web_static_dir();
-    if !static_dir.is_dir() {
-        let msg = format!(
-            "dry-run 失败：前端静态目录不存在：{}（请先构建：cd frontend && trunk build）",
-            static_dir.display()
-        );
-        eprintln!("{msg}");
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
-    }
     let key_note = match cfg.llm.llm_http_auth_mode {
         config::LlmHttpAuthMode::None => "llm_http_auth_mode=none（API_KEY 可选）".to_string(),
         config::LlmHttpAuthMode::Bearer => {
@@ -396,6 +388,19 @@ async fn run_dry_run(
             }
         }
     };
+    if no_web {
+        println!("配置检查通过：{}（--no-web，跳过 UI 静态目录）", key_note);
+        return Ok(());
+    }
+    let static_dir = web_static_dir::resolve_web_static_dir();
+    if !static_dir.is_dir() {
+        let msg = format!(
+            "dry-run 失败：前端静态目录不存在：{}（请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend；纯 API 请加 --no-web）",
+            static_dir.display()
+        );
+        eprintln!("{msg}");
+        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
+    }
     println!(
         "配置检查通过：{}，前端静态目录存在：{}",
         key_note,
@@ -442,15 +447,31 @@ struct ServeRuntimeBuilt {
 }
 
 #[cfg(feature = "web")]
-async fn build_serve_runtime_state(
-    cfg_holder: &config::SharedAgentConfig,
-    config_path: &Option<String>,
+struct ServeRuntimeBuildInput<'a> {
+    cfg_holder: &'a config::SharedAgentConfig,
+    config_path: &'a Option<String>,
     client: reqwest::Client,
     tools: Vec<crate::types::Tool>,
     api_key: String,
     initial_workspace: Option<String>,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
+    mount_web_ui: bool,
+}
+
+#[cfg(feature = "web")]
+async fn build_serve_runtime_state(
+    input: ServeRuntimeBuildInput<'_>,
 ) -> Result<ServeRuntimeBuilt, Box<dyn std::error::Error>> {
+    let ServeRuntimeBuildInput {
+        cfg_holder,
+        config_path,
+        client,
+        tools,
+        api_key,
+        initial_workspace,
+        process_handles,
+        mount_web_ui,
+    } = input;
     let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
     std::fs::create_dir_all(&uploads_dir).ok();
     let (cq_conc, cq_pending, conv_sqlite, ltm_enabled, ltm_store_path) = {
@@ -519,6 +540,7 @@ async fn build_serve_runtime_state(
                 sse_stream_hub,
                 process_handles: Arc::clone(&process_handles),
                 async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+                mount_web_ui,
             },
         }),
     })
@@ -570,15 +592,16 @@ pub(super) async fn run_serve_branch(
         no_web,
         process_handles,
     } = args;
-    let runtime = build_serve_runtime_state(
+    let runtime = build_serve_runtime_state(ServeRuntimeBuildInput {
         cfg_holder,
         config_path,
         client,
         tools,
-        api_key.clone(),
-        workspace_cli.clone(),
+        api_key: api_key.clone(),
+        initial_workspace: workspace_cli.clone(),
         process_handles,
-    )
+        mount_web_ui: !no_web,
+    })
     .await?;
     let state = runtime.state;
     let uploads_dir = runtime.uploads_dir;
@@ -606,7 +629,7 @@ pub(super) async fn run_serve_branch(
     let bind_ip = parse_bind_ip(http_bind_host)?;
     let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
     let addr = std::net::SocketAddr::from((bind_ip, port));
-    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key).await;
+    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key, !no_web).await;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");
@@ -815,7 +838,7 @@ pub(super) async fn run_cli_from_parsed(
 /// 默认主路径：`--dry-run`、`models`/`probe`，或 `serve` / `repl` / `chat` / `tui`。
 async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
     if args.dry_run {
-        run_dry_run(&args.config_path, args.llm_context_tokens_cli).await?;
+        run_dry_run(&args.config_path, args.llm_context_tokens_cli, args.no_web).await?;
         return Ok(());
     }
 

@@ -101,7 +101,7 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 前置条件
 
 1. **Rust 工具链**与仓库依赖可正常 `cargo build`。
-2. **前端静态包**：`frontend/dist/index.html` 存在（须先 `trunk build`）。
+2. **前端静态包**（可选）：Client `frontend/dist/index.html`（`cd ../crabmate-client && make frontend`），并设 `CM_WEB_STATIC_DIR`。
 3. **Tauri CLI**：`cargo install tauri-cli --version "^2"`。
 4. **模型密钥**：设置 `API_KEY` 环境变量（Tauri WebView 无 localStorage，密钥需由后端进程继承）。
 5. **`NO_COLOR`**：执行前 `unset NO_COLOR`。

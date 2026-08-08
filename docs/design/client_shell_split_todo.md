@@ -19,7 +19,7 @@
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | 🚧 **P4.1 完成**；**P4.2 待做**（`frontend/` 仍在本仓） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 
-**下一执行**：Phase 4.2 Phase A 合入后打 `client-contract-v0.1.0`；再 Phase B 迁 `frontend` 至 Client 仓（见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md)）。
+**下一执行**：Client Phase B PR 合入后，合入主仓 Phase C（`chore/frontend-phase-c`）；可选 P4.3。
 
 ---
 
@@ -112,7 +112,7 @@
 - [x] P3.5：主仓 README / 壳 README 指向外仓；壳目录于 Phase 4.1 从主仓移除
 - [x] 验收（2026-08-08）：
   - **干净克隆 release**：`git clone` → `/tmp/crabmate-client-p3-accept`（分支 `ci/makefile-and-deb-package`）→ `make desktop-release` → `crabmate_0.1.0_amd64.deb`；`dpkg-deb` 含 `usr/bin/crabmate-desktop`、**无** `usr/bin/crabmate` sidecar
-  - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=frontend/dist`，`:18080`）托管 UI；干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：`client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
+  - **Desktop + 本仓 serve 一轮对话**：主仓 `serve`（`CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist`，`:18080`）托管 UI；干净克隆 **release** `crabmate-desktop` 以 `CM_DESKTOP_SKIP_CONNECT` + `#cm_web_api_bearer=` 打开该 URL；同进程 `POST /chat/stream`（`client_sse_protocol=2`）提示词「用一句话介绍你自己」→ HTTP 200 + SSE 助手正文。协议错位：`client_sse_protocol=99` → `SSE_CLIENT_TOO_NEW`
   - **主仓可不强制 desktop GTK job**：路径 A 下 Server CI **不必**以 GTK/桌面为硬门禁（Phase 4.1 起本仓已无 desktop job）
 
 ---
@@ -124,7 +124,7 @@
 | ID | 动作 | 状态 |
 |----|------|------|
 | P4.1 | 主仓移除 `desktop-tauri/`、`mobile-tauri/`、`crates/crabmate-connect/` 及无用打包脚本（含 `scripts/victauri-e2e.sh`、`scripts/sync-tauri-connect-page.sh`） | ✅ 完成 |
-| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | ⬜ 待做（源码仍在本仓）；**实施计划** [`frontend_migrate_plan.md`](./frontend_migrate_plan.md) |
+| P4.2 | `frontend/` 源码迁出到壳仓或 UI 仓；`serve` 默认 `--no-web` 或最小占位 / 文档链到 UI 发版物 | 🚧 **Phase C**（`chore/frontend-phase-c`）；Client [#2](https://github.com/noisystreet/crabmate-client/pull/2) 已合入 |
 | P4.3 | （可选）release asset 附带推荐 UI 包，**源码**不在主仓 | ⬜ 待做 |
 | P4.4 | 兼容表：Server ↔ 协议版 ↔ 最低 Client | ✅ 初稿 [`client_compat_matrix.md`](./client_compat_matrix.md) |
 | P4.5 | `serve --desktop-ready-json`：保留旗标；新增别名 **`--web-ready-json`**；壳不依赖；文档标注弃用命名 | ✅ 完成 |

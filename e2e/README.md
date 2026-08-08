@@ -24,9 +24,9 @@
 # 1. 后端运行（默认 127.0.0.1:8080）
 cargo run -- serve
 
-# 2. 前端已构建（Web 服务自动 serve frontend/dist/）
+# 2. 前端已构建（Web 服务自动 serve Client frontend/dist（CM_WEB_STATIC_DIR）/）
 #    若首次运行或前端有改动，先构建：
-cd frontend && trunk build && cd ..
+cd ../crabmate-client && make frontend && export CM_WEB_STATIC_DIR=$PWD/frontend/dist
 ```
 
 ## 快速开始
@@ -201,7 +201,7 @@ GitHub Actions：`.github/workflows/e2e-playwright.yml`（PR → `main`）。当
 - `specs/mock-storage-consistency.spec.ts`
 - `specs/mock-v2-multi-turn-boundaries.spec.ts`
 
-本地全量 mock：先 `cd frontend && trunk build`，再 `cargo run -- serve`，然后：
+本地全量 mock：先 `cd ../crabmate-client && make frontend`，再 `cargo run -- serve`，然后：
 
 `cd e2e && no_proxy=127.0.0.1,localhost npx playwright test`
 
@@ -218,7 +218,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Build frontend
-        run: cd frontend && trunk build
+        run: cd ../crabmate-client && make frontend
       - name: Start backend
         run: cargo run -- serve &
       - name: Run Playwright tests
@@ -240,4 +240,4 @@ jobs:
 | `waitForFunction` timeout | 终答内容未出现 | 确认 SSE 使用 AG-UI V2 格式 |
 | proxy 干扰（浏览器） | 环境变量 `http_proxy` 使浏览器无法访问本地后端 | `no_proxy=127.0.0.1,localhost` |
 | proxy 干扰（后端 LLM） | 环境变量 `http_proxy` 使后端调用 LLM API 走代理超时 | 启动后端时设置 `no_proxy=api.deepseek.com,localhost,127.0.0.1`（替换为实际 `api_base` 域名） |
-| 前端 WASM 未加载 | `frontend/dist/` 未构建 | `cd frontend && trunk build` |
+| 前端 WASM 未加载 | `Client frontend/dist（CM_WEB_STATIC_DIR）/` 未构建 | `cd ../crabmate-client && make frontend` |

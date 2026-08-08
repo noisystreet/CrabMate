@@ -173,8 +173,14 @@ fn print_doctor_workspace_block(ws: &Path) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
     path_status_line("Cargo.toml", &ws.join("Cargo.toml"));
-    path_status_line("frontend/Trunk.toml", &ws.join("frontend/Trunk.toml"));
-    path_status_line("frontend/dist", &ws.join("frontend/dist"));
+    path_status_line(
+        "UI dist (optional)",
+        &std::env::var("CM_WEB_STATIC_DIR")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| ws.join("frontend/dist")),
+    );
     path_status_line("target", &ws.join("target"));
     path_status_line(".crabmate/workflows", &ws.join(".crabmate/workflows"));
     if let Ok(root) = canonical_workspace_root(ws)
@@ -276,16 +282,15 @@ fn print_doctor_rust_toolchain_block() {
     }
 }
 
-fn print_doctor_frontend_block(ws: &Path) {
-    println!("【Web 前端构建（frontend）】");
-    if ws.join("frontend/Trunk.toml").is_file() {
-        if let Some(s) = capture_trimmed("trunk", &["--version"]) {
-            println!("  trunk --version: {}", s);
-        } else {
-            println!("  trunk: 未找到或执行失败");
+fn print_doctor_frontend_block(_ws: &Path) {
+    println!("【Web UI（可选静态资源）】");
+    println!("  官方 UI：同级 crabmate-client（cd ../crabmate-client && make frontend）");
+    println!("  serve：CM_WEB_STATIC_DIR=…/frontend/dist 或 --no-web（纯 API）");
+    if let Ok(dir) = std::env::var("CM_WEB_STATIC_DIR") {
+        let trimmed = dir.trim();
+        if !trimmed.is_empty() {
+            path_status_line("CM_WEB_STATIC_DIR", Path::new(trimmed));
         }
-    } else {
-        println!("  （跳过：无 frontend/Trunk.toml）");
     }
 }
 

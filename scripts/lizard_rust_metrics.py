@@ -4,7 +4,6 @@
 模块划分：
   - crates/<crate>
   - src/<顶层目录或文件>
-  - frontend（全部 frontend/src）
 
 各模块上限见 **`scripts/lizard_module_ccn_caps.toml`**（`[modules]` + `default_ccn_max`）。
 全局天花板 **`global_ccn_ceiling`**（默认 15）：配置中的模块 cap 不得高于此值。
@@ -32,7 +31,7 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUST_ROOTS = [ROOT / "src", ROOT / "crates", ROOT / "frontend" / "src"]
+RUST_ROOTS = [ROOT / "src", ROOT / "crates"]
 CAPS_PATH = ROOT / "scripts" / "lizard_module_ccn_caps.toml"
 
 
@@ -75,8 +74,6 @@ def module_id_for(path: Path) -> str:
         if len(parts) == 1:
             return "src"
         return f"src/{parts[1]}"
-    if parts[0] == "frontend":
-        return "frontend"
     return str(Path(*parts[:2]) if len(parts) >= 2 else rel)
 
 
@@ -272,7 +269,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument(
         "--module",
         metavar="ID",
-        help="只检查一个模块，如 crates/crabmate-tools、src/runtime、frontend",
+        help="只检查一个模块，如 crates/crabmate-tools、src/runtime",
     )
     p.add_argument(
         "--list-modules",
