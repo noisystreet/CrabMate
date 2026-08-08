@@ -109,7 +109,7 @@ Implementations often live under `crates/*` with root re-exports. Forbidden edge
 
 ## Frontend (summary)
 
-Leptos CSR: `api/` + `sse_dispatch`; UI in `app/`. Details: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd frontend && trunk build`.
+Leptos CSR: `api/` + `sse_dispatch`; UI in `app/`. Details: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 

@@ -14,7 +14,7 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUST_ROOTS = (ROOT / "src", ROOT / "crates", ROOT / "frontend" / "src")
+RUST_ROOTS = (ROOT / "src", ROOT / "crates")
 MAX_NLOC_CAP = 200
 MAX_FILE_LINES_CAP = 920
 

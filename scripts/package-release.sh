@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 一键发布打包：release 构建 + 前端 trunk --release + man + tar.gz；在 Linux 上另生成 .deb（需 cargo-deb）。
+# 一键发布打包：release 构建 + man + tar.gz；在 Linux 上另生成 .deb（需 cargo-deb）。
+# 业务 UI 源码已迁 Client 仓；可选随包附带已构建 dist（CM_WEB_STATIC_DIR 或 --frontend-dist）。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -9,17 +10,19 @@ usage() {
   cat <<'EOF'
 用法: scripts/package-release.sh [选项]
 
-  --skip-frontend   跳过 frontend 的 trunk build（需已有 dist/）
-  --skip-man        跳过 crabmate-gen-man
-  --skip-tar        不生成 tar.gz
-  --skip-deb        不生成 .deb
-  -h, --help        显示本说明
+  --frontend-dist DIR   将已构建 UI dist 打入包内 frontend/dist（默认读 CM_WEB_STATIC_DIR）
+  --skip-frontend       不附带 UI 产物（server-only；与未设置 dist 相同）
+  --skip-man            跳过 crabmate-gen-man
+  --skip-tar            不生成 tar.gz
+  --skip-deb            不生成 .deb
+  -h, --help            显示本说明
 
 产物目录: dist/
   - crabmate_<version>_<os>_<arch>.tar.gz
   - crabmate_<version>_<arch>.deb（仅 Linux 且未 --skip-deb、且已安装 cargo-deb）
 
-依赖: Rust、trunk、wasm32 目标；.deb 需 cargo install cargo-deb
+依赖: Rust；.deb 需 cargo install cargo-deb
+业务 UI：在 ../crabmate-client 执行 make frontend，再传 --frontend-dist 或 CM_WEB_STATIC_DIR
 EOF
 }
 
@@ -27,9 +30,15 @@ SKIP_FRONTEND=0
 SKIP_MAN=0
 SKIP_TAR=0
 SKIP_DEB=0
+FRONTEND_DIST="${CM_WEB_STATIC_DIR:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --frontend-dist)
+      shift
+      FRONTEND_DIST="${1:-}"
+      [[ -n "${FRONTEND_DIST}" ]] || { echo "错误: --frontend-dist 需要目录参数" >&2; exit 2; }
+      ;;
     --skip-frontend) SKIP_FRONTEND=1 ;;
     --skip-man) SKIP_MAN=1 ;;
     --skip-tar) SKIP_TAR=1 ;;
@@ -85,19 +94,15 @@ else
   echo "==> 跳过 man 生成"
 fi
 
-if [[ "$SKIP_FRONTEND" -eq 0 ]]; then
-  echo "==> 前端 trunk build --release"
-  if ! command -v trunk >/dev/null 2>&1; then
-    echo "错误: 未找到 trunk。请安装: https://trunkrs.dev/ 或 cargo install trunk" >&2
-    exit 1
-  fi
-  (cd frontend && trunk build --release)
+INCLUDE_UI=0
+if [[ "$SKIP_FRONTEND" -eq 0 && -n "${FRONTEND_DIST}" && -f "${FRONTEND_DIST}/index.html" ]]; then
+  INCLUDE_UI=1
+  echo "==> 将附带 UI dist: ${FRONTEND_DIST}"
+elif [[ "$SKIP_FRONTEND" -eq 0 && -n "${FRONTEND_DIST}" ]]; then
+  echo "错误: FRONTEND_DIST/CM_WEB_STATIC_DIR 无效（缺 index.html）: ${FRONTEND_DIST}" >&2
+  exit 1
 else
-  echo "==> 跳过前端构建"
-  if [[ ! -d frontend/dist ]]; then
-    echo "错误: frontend/dist 不存在，请去掉 --skip-frontend 或先手动 trunk build。" >&2
-    exit 1
-  fi
+  echo "==> server-only（未附带 UI；运行时用 --no-web 或 CM_WEB_STATIC_DIR）"
 fi
 
 echo "==> cargo build --release -p crabmate"
@@ -119,8 +124,10 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   cp -R config "$STAGE_DIR/"
   mkdir -p "$STAGE_DIR/man"
   cp man/crabmate.1 "$STAGE_DIR/man/"
-  mkdir -p "$STAGE_DIR/frontend"
-  cp -R frontend/dist "$STAGE_DIR/frontend/"
+  if [[ "$INCLUDE_UI" -eq 1 ]]; then
+    mkdir -p "$STAGE_DIR/frontend"
+    cp -R "${FRONTEND_DIST}" "$STAGE_DIR/frontend/dist"
+  fi
 
   TAR_NAME="crabmate_${VERSION}_${OS_RAW}_${ARCH_RAW}.tar.gz"
   TAR_PATH="dist/${TAR_NAME}"

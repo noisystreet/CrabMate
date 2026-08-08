@@ -28,7 +28,6 @@ default_ccn_max = 15
 "crates/crabmate-types" = 10
 "crates/crabmate-web-host" = 8
 "crates/crabmate-workflow" = 15
-"frontend" = 15
 "src/agent" = 15
 "src/bin" = 5
 "src/chat_job_queue" = 11

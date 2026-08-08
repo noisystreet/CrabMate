@@ -120,10 +120,13 @@ pub(super) fn serve_log_cors_startup(cors_allowed_origins: &[String]) {
 }
 
 /// `serve` 启动前：与 `GET /health` 同源的可选依赖与工具链检查，并写启动日志。
+///
+/// `include_frontend_static`：与是否挂载 UI 一致（`--no-web` 时为 false）。
 pub(super) async fn serve_log_startup_health(
     cfg_holder: &SharedAgentConfig,
     workspace_cli: &Option<String>,
     api_key: &str,
+    include_frontend_static: bool,
 ) {
     let (work_dir, auth_mode) = {
         let g = cfg_holder.read().await;
@@ -136,6 +139,8 @@ pub(super) async fn serve_log_startup_health(
             });
         (wd, g.llm.llm_http_auth_mode)
     };
-    let report = crate::health::build_health_report(&work_dir, api_key, auth_mode, true).await;
+    let report =
+        crate::health::build_health_report(&work_dir, api_key, auth_mode, include_frontend_static)
+            .await;
     crate::health::log_startup_dep_compat_summary(&report);
 }

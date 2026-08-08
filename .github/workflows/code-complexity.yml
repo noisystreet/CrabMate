@@ -45,9 +45,6 @@ jobs:
       - name: Golden turn project web (fixtures/turn_project_web_golden.jsonl)
         run: cargo test -p crabmate-turn-layout golden_turn_project_web --no-fail-fast
 
-      - name: Golden turn web stored sync (frontend)
-        run: cargo test --manifest-path frontend/Cargo.toml --lib golden_turn_web_stored_sync --no-fail-fast
-
       - name: Golden turn route decision (fixtures/turn_route_decision_golden.jsonl)
         run: cargo test golden_turn_route_decision --no-fail-fast
 

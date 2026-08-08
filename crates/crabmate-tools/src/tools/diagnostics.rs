@@ -173,7 +173,7 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[St
                         "不存在或非目录"
                     }
                 ));
-                for rel in ["Cargo.toml", "frontend/Trunk.toml", "frontend/dist"] {
+                for rel in ["Cargo.toml", "crates", "target"] {
                     let p = base.join(rel);
                     let st = if p.is_file() {
                         "文件存在"
@@ -184,6 +184,9 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[St
                     };
                     out.push_str(&format!("  {}: {}\n", rel, st));
                 }
+                out.push_str(
+                    "  业务 UI：见 Client 仓 crabmate-client（CM_WEB_STATIC_DIR / --no-web）\n",
+                );
             }
             Err(e) => {
                 out.push_str(&format!("  无法解析工作区根: {}\n", e));

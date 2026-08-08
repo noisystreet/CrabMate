@@ -103,6 +103,7 @@ pub async fn start_test_serve(
             sse_stream_hub,
             process_handles: ProcessHandles::default_arc_process_handles(),
             async_chat_jobs: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            mount_web_ui: true,
         },
     });
 

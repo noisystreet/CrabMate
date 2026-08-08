@@ -29,8 +29,13 @@ pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> im
             g.llm.api_base.clone(),
         )
     };
-    let mut report =
-        health::build_health_report(&work_dir, &facet.http.api_key, auth_mode, true).await;
+    let mut report = health::build_health_report(
+        &work_dir,
+        &facet.http.api_key,
+        auth_mode,
+        facet.mount_web_ui,
+    )
+    .await;
     health::append_llm_models_endpoint_probe(
         &mut report,
         health::LlmModelsEndpointProbeParams {

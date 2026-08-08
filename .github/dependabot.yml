@@ -12,19 +12,6 @@ updates:
       - dependencies
       - rust
 
-  - package-ecosystem: cargo
-    directory: /frontend
-    schedule:
-      interval: weekly
-      day: monday
-      time: "02:10"
-      timezone: Asia/Shanghai
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-      - rust
-      - frontend
-
   - package-ecosystem: npm
     directory: /e2e
     schedule:

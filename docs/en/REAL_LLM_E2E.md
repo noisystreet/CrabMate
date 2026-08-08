@@ -15,7 +15,7 @@ Victauri lives **only** in the Client repo (`../crabmate-client`).
 ## Quick start
 
 ```bash
-unset NO_COLOR && cd frontend && trunk build && cd ..
+unset NO_COLOR && cd ../crabmate-client && make frontend
 
 # Terminal 1: backend (this repo)
 cargo run -- serve --host 127.0.0.1 --port 18080

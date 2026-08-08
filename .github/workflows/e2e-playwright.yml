@@ -4,7 +4,7 @@
 # 真实 LLM 测试仅在本地手动运行（自动读取 Tauri secrets 文件）：
 #   cd e2e && npx playwright test specs/real-llm-*.spec.ts
 #
-# 前置：后端 `cargo run -- serve` 启动后，Playwright 测试以 headless Chromium 访问。
+# 业务 UI 来自官方 Client 仓（路径 A Phase 4.2）；本仓 serve 经 CM_WEB_STATIC_DIR 托管。
 
 name: E2E Playwright
 
@@ -26,25 +26,39 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout crabmate-client (official UI)
+        uses: actions/checkout@v4
+        with:
+          repository: noisystreet/crabmate-client
+          path: crabmate-client
+
       - name: Install system deps (OpenSSL / libssh2)
         run: sudo apt-get update && sudo apt-get install -y libssl-dev libssh2-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            .
+            crabmate-client/frontend
 
-      - name: Install wasm target & trunk
+      - name: Install trunk
+        run: cargo install trunk --locked
+
+      - name: Build Client frontend WASM
         run: |
-          rustup target add wasm32-unknown-unknown
-          cargo install trunk --locked
-
-      - name: Build frontend WASM
-        run: cd frontend && trunk build
+          unset NO_COLOR
+          cd crabmate-client && make frontend
 
       - name: Build backend (serve)
         run: cargo build -p crabmate --features web
 
       - name: Start backend server
+        env:
+          CM_WEB_STATIC_DIR: ${{ github.workspace }}/crabmate-client/frontend/dist
         run: |
           cargo run -- serve &
           sleep 5
