@@ -9,7 +9,7 @@ use web_sys::{Request, RequestInit, RequestMode, Response};
 
 use crate::i18n::Locale;
 
-use super::browser::{auth_headers, window};
+use super::browser::{api_url, auth_headers, window};
 
 #[derive(Debug, Clone)]
 pub struct WorkspaceCloneRequest {
@@ -194,7 +194,7 @@ async fn open_clone_sse_response(
     init.set_headers(&h);
     init.set_body(&JsValue::from_str(&body_s));
 
-    let request = Request::new_with_str_and_init("/workspace/clone/stream", &init)
+    let request = Request::new_with_str_and_init(&api_url("/workspace/clone/stream"), &init)
         .map_err(|e| format!("request: {:?}", e))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&request))

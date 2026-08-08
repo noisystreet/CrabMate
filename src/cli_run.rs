@@ -591,12 +591,17 @@ pub(super) async fn run_serve_branch(
     cli_run_serve::serve_require_web_api_bearer_when_enabled(cfg_holder).await?;
     let web_api_bearer_layer_enabled =
         cli_run_serve::serve_web_api_bearer_layer_enabled(cfg_holder).await;
+    let cors_allowed_origins = {
+        let g = cfg_holder.read().await;
+        g.web_api.web_cors_allowed_origins.clone()
+    };
     let app = web::server::build_app(
         state.clone(),
         no_web,
         static_dir,
         uploads_dir.clone(),
         web_api_bearer_layer_enabled,
+        cors_allowed_origins.clone(),
     );
     let bind_ip = parse_bind_ip(http_bind_host)?;
     let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
@@ -620,6 +625,7 @@ pub(super) async fn run_serve_branch(
     if bind_ip.is_unspecified() && auth_enabled {
         println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
     }
+    cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {
         let ready = serde_json::json!({
             "event": "web_ready",

@@ -192,3 +192,46 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 | `desktop-tauri/`、`mobile-tauri/` | 壳 |
 | `docs/SSE协议.md`、`docs/命令行与路由.md` | 契约真源 |
 | `docs/真实LLM-E2E.md`、`docs/测试指南.md` | 自动化入口 |
+| `docs/design/client_contract_versioning.md` | 契约 semver / git tag |
+| `docs/配置说明.md` | `CM_WEB_CORS_ALLOWED_ORIGINS` / API 基址（浏览器） |
+
+---
+
+## 9. 可选：跨 Origin 浏览器直连（路径 A Phase 2）
+
+静态托管官方 UI（或任意 Origin 的 `frontend/dist`），API 指向另一 Origin 的 `serve`。
+
+### 9.1 服务端
+
+```bash
+cd frontend && trunk build && cd ..
+# 将 UI Origin 加入白名单（示例：静态站在 :8081，API 在 :8080）
+CM_WEB_API_BEARER_TOKEN='…shared…' \
+CM_WEB_CORS_ALLOWED_ORIGINS='http://127.0.0.1:8081' \
+API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1 --port 8080
+```
+
+- CORS **默认关闭**（空白名单）；非空为**精确 Origin**（无 `*`）；改白名单须**重启 serve**。
+- 跨 Origin 仍只认 **Web Bearer**（不是模型 `API_KEY`）。
+- 启用 CORS 时服务端会 **expose** **`x-conversation-id` / `x-stream-job-id` / `x-request-id`**（否则浏览器 JS 读不到，会话绑定与断线重连会 silently 失效）。
+
+### 9.2 浏览器（静态 UI）
+
+另开静态托管（示例）：
+
+```bash
+# 任意静态服务器指向 frontend/dist；Origin 须在上表白名单内
+python3 -m http.server 8081 --directory frontend/dist
+```
+
+打开 `http://127.0.0.1:8081/` → **设置**：
+
+1. **Web API 共享密钥** = 与 `CM_WEB_API_BEARER_TOKEN` 相同  
+2. **API 基址** = `http://127.0.0.1:8080`（留空则同 Origin）  
+3. 保存后发送 §2 提示词  
+
+- [ ] 一轮对话流式完成  
+- [ ] **同会话第二轮**：再发一句短消息，确认仍落在同一 `conversation_id`（DevTools → Network → `/chat/stream` 响应头，JS 可读 `x-conversation-id` / `x-stream-job-id`）  
+- [ ] 故意错位 API 基址或 Bearer 时失败可预期（非模糊 500）  
+
+**对照**：§4.2 同 Origin（`serve` 托管 dist、API 基址留空）行为不变。

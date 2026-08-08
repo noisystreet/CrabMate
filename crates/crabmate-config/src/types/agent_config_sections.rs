@@ -155,6 +155,8 @@ pub struct WorkspaceRootsConfig {
 pub struct WebApiConfig {
     pub web_api_bearer_token: SecretString,
     pub web_api_require_bearer: bool,
+    /// 非空时 `serve` 挂载 CORS 白名单（精确 Origin）；空则不挂层（默认同源）。启动时装配，改后须重启。
+    pub web_cors_allowed_origins: Vec<String>,
     pub web_audit_log_write_tools: bool,
     pub web_audit_trust_x_forwarded_for: bool,
     pub allow_insecure_no_auth_for_non_loopback: bool,

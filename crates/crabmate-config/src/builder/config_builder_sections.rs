@@ -168,6 +168,7 @@ pub(crate) struct ConfigBuilderWorkspaceRoots {
 pub(crate) struct ConfigBuilderWebApi {
     pub(crate) web_api_bearer_token: Option<String>,
     pub(crate) web_api_require_bearer: Option<bool>,
+    pub(crate) web_cors_allowed_origins: Option<Vec<String>>,
     pub(crate) web_audit_log_write_tools: Option<bool>,
     pub(crate) web_audit_trust_x_forwarded_for: Option<bool>,
     pub(crate) allow_insecure_no_auth_for_non_loopback: Option<bool>,

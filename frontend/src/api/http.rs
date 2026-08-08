@@ -10,7 +10,7 @@ use crate::i18n::Locale;
 
 use crabmate_api_contract::StatusShellView;
 
-use super::browser::{auth_headers, window};
+use super::browser::{api_url, auth_headers, window};
 
 fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -467,8 +467,9 @@ pub(crate) async fn fetch_json<T: for<'de> Deserialize<'de>>(
     init.set_mode(RequestMode::Cors);
     let h = auth_headers();
     init.set_headers(&h);
+    let url = api_url(url);
     let req =
-        Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {:?}", e))?;
+        Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {:?}", e))?;
     do_fetch_json(req, loc).await
 }
 
@@ -485,8 +486,9 @@ pub(crate) async fn fetch_json_with_body<T: for<'de> Deserialize<'de>>(
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(body));
+    let url = api_url(url);
     let req =
-        Request::new_with_str_and_init(url, &init).map_err(|e| format!("request: {:?}", e))?;
+        Request::new_with_str_and_init(&url, &init).map_err(|e| format!("request: {:?}", e))?;
     do_fetch_json(req, loc).await
 }
 
@@ -595,7 +597,7 @@ pub async fn upload_files_multipart_raw(
     init.set_body(form);
     let h = auth_headers();
     init.set_headers(&h);
-    let req = Request::new_with_str_and_init("/upload", &init)
+    let req = Request::new_with_str_and_init(&api_url("/upload"), &init)
         .map_err(|e| format!("request: {:?}", e))?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -716,7 +718,7 @@ pub async fn post_chat_branch(
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(&body));
-    let req = Request::new_with_str_and_init("/chat/branch", &init)
+    let req = Request::new_with_str_and_init(&api_url("/chat/branch"), &init)
         .map_err(|e| ChatBranchError::Other(format!("req: {:?}", e)))?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))
         .await
@@ -763,7 +765,7 @@ pub async fn submit_chat_approval(
     let _ = h.set("Content-Type", "application/json");
     init.set_headers(&h);
     init.set_body(&wasm_bindgen::JsValue::from_str(&body));
-    let req = Request::new_with_str_and_init("/chat/approval", &init)
+    let req = Request::new_with_str_and_init(&api_url("/chat/approval"), &init)
         .map_err(|e| format!("req: {:?}", e))?;
     let w = window().ok_or_else(|| crate::i18n::api_err_no_window(loc).to_string())?;
     let resp_val = JsFuture::from(w.fetch_with_request(&req))

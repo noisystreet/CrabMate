@@ -111,7 +111,8 @@ pub async fn start_test_serve(
         false,
         resolve_web_static_dir(),
         uploads_dir,
-        false, /* web_api_bearer_layer_enabled */
+        false,      /* web_api_bearer_layer_enabled */
+        Vec::new(), /* cors_allowed_origins */
     );
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

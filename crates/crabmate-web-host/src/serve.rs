@@ -22,15 +22,25 @@ where
 }
 
 /// 挂载 `/uploads` 与（可选）SPA `fallback`（Leptos `dist`）。
+///
+/// `allow_cross_origin_uploads`：仅在启用 CORS 白名单（远程 UI）时为 `true`，
+/// 将 `/uploads` 的 **`Cross-Origin-Resource-Policy`** 设为 **`cross-origin`**；
+/// 默认同源部署保持 **`same-site`**，避免无故放宽嵌入面。
 pub fn mount_uploads_and_spa<S>(
     mut app: Router<S>,
     uploads_dir: PathBuf,
     static_dir: PathBuf,
     no_web: bool,
+    allow_cross_origin_uploads: bool,
 ) -> Router<S>
 where
     S: Clone + Send + Sync + 'static,
 {
+    let corp = if allow_cross_origin_uploads {
+        HeaderValue::from_static("cross-origin")
+    } else {
+        HeaderValue::from_static("same-site")
+    };
     app = app.nest_service(
         "/uploads",
         ServiceBuilder::new()
@@ -44,7 +54,7 @@ where
             ))
             .layer(SetResponseHeaderLayer::if_not_present(
                 header::HeaderName::from_static("cross-origin-resource-policy"),
-                HeaderValue::from_static("same-site"),
+                corp,
             ))
             .service(ServeDir::new(uploads_dir)),
     );

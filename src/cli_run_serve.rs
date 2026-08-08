@@ -103,6 +103,22 @@ pub(super) async fn serve_bind_auth_flags(cfg_holder: &SharedAgentConfig) -> (bo
     )
 }
 
+/// 启动日志：CORS 白名单非空时提示（改白名单须重启）。
+pub(super) fn serve_log_cors_startup(cors_allowed_origins: &[String]) {
+    if cors_allowed_origins.is_empty() {
+        return;
+    }
+    println!(
+        "  CORS: 已启用（{} 个 Origin）；改白名单须重启 serve",
+        cors_allowed_origins.len()
+    );
+    info!(
+        target: "crabmate",
+        "CORS 已启用 allowed_origins_count={}",
+        cors_allowed_origins.len()
+    );
+}
+
 /// `serve` 启动前：与 `GET /health` 同源的可选依赖与工具链检查，并写启动日志。
 pub(super) async fn serve_log_startup_health(
     cfg_holder: &SharedAgentConfig,

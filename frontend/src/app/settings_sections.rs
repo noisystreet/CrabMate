@@ -188,6 +188,77 @@ pub(crate) fn SettingsWebApiBearerBlock(
     }
 }
 
+/// 跨 Origin：指向远程 `serve` 的 API 基址（空 = 同 Origin）。
+#[component]
+pub(crate) fn SettingsApiBaseBlock(
+    locale: RwSignal<Locale>,
+    input_id: &'static str,
+    save_nonce: RwSignal<u64>,
+) -> impl IntoView {
+    let draft = RwSignal::new(crate::api::api_base_url());
+    let feedback = RwSignal::new(None::<String>);
+
+    view! {
+        <div
+            class="settings-block settings-block--api-base"
+            data-testid="settings-api-base-block"
+        >
+            <h3 class="settings-block-title">
+                {move || i18n::settings_block_api_base(locale.get())}
+            </h3>
+            <p class="settings-muted">{move || i18n::settings_api_base_hint(locale.get())}</p>
+            <div class="settings-field">
+                <label class="settings-field-label" for=input_id>
+                    {move || i18n::settings_api_base_label(locale.get())}
+                </label>
+                <input
+                    id=input_id
+                    class="input"
+                    type="url"
+                    autocomplete="off"
+                    placeholder="http://127.0.0.1:8080"
+                    data-testid="settings-api-base-input"
+                    prop:value=move || draft.get()
+                    on:input=move |ev| draft.set(event_target_value(&ev))
+                />
+            </div>
+            <button
+                type="button"
+                class="btn btn-primary btn-sm"
+                data-testid="settings-api-base-save"
+                on:click=move |_| {
+                    let loc = locale.get_untracked();
+                    let raw = draft.get_untracked();
+                    let trimmed = raw.trim();
+                    if !trimmed.is_empty()
+                        && !(trimmed.starts_with("http://") || trimmed.starts_with("https://"))
+                    {
+                        feedback.set(Some(i18n::settings_api_base_invalid(loc).to_string()));
+                        return;
+                    }
+                    crate::api::set_api_base_url(trimmed);
+                    let normalized = crate::api::api_base_url();
+                    draft.set(normalized.clone());
+                    let cleared = normalized.is_empty();
+                    feedback.set(Some(if cleared {
+                        i18n::settings_api_base_cleared(loc).to_string()
+                    } else {
+                        i18n::settings_api_base_saved(loc).to_string()
+                    }));
+                    save_nonce.update(|n| *n = n.saturating_add(1));
+                }
+            >
+                {move || i18n::settings_api_base_save(locale.get())}
+            </button>
+            <Show when=move || feedback.get().is_some()>
+                <p class="settings-muted" role="status" data-testid="settings-api-base-feedback">
+                    {move || feedback.get().unwrap_or_default()}
+                </p>
+            </Show>
+        </div>
+    }
+}
+
 #[component]
 pub(crate) fn SettingsLlmBlock(bundle: SettingsLlmBlockBundle) -> impl IntoView {
     let SettingsLlmBlockBundle {
