@@ -146,8 +146,8 @@ jobs:
           rm -rf /tmp/package-deb-root
           dpkg-deb -x "$DEB" /tmp/package-deb-root
           grep -F -- '--config /etc/crabmate/config.toml' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service
-          # packaged unit must not force --no-web (blocks CM_WEB_STATIC_DIR)
-          if grep -E -- '--no-web' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service; then
+          # packaged unit must not force --no-web on ExecStart (blocks CM_WEB_STATIC_DIR)
+          if grep -E '^ExecStart=.*--no-web' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service; then
             echo "unexpected --no-web in packaged unit" >&2
             exit 1
           fi
