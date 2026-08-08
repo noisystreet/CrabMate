@@ -40,5 +40,7 @@ pub(crate) fn build_app(
         static_dir,
         no_web,
     );
-    app.with_state(state)
+    // 最外层：所有响应带 `x-request-id`（含 401）；handler 可从 Extensions 取同值写入 ApiError。
+    app.layer(middleware::from_fn(super::request_id::attach_request_id))
+        .with_state(state)
 }

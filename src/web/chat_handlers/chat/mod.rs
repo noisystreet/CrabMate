@@ -68,11 +68,10 @@ pub(crate) async fn chat_approval_handler(
 ) -> Result<Json<ChatApprovalResponseBody>, (StatusCode, Json<ApiError>)> {
     let session_id = normalize_approval_session_id(&body.approval_session_id).ok_or((
         StatusCode::BAD_REQUEST,
-        Json(ApiError {
-            code: "INVALID_APPROVAL_SESSION_ID",
-            message: "approval_session_id 非法或为空".to_string(),
-            reason_code: None,
-        }),
+        Json(ApiError::new(
+            "INVALID_APPROVAL_SESSION_ID",
+            "approval_session_id 非法或为空".to_string(),
+        )),
     ))?;
     let decision = match body.decision.trim().to_ascii_lowercase().as_str() {
         "deny" => CommandApprovalDecision::Deny,
@@ -81,11 +80,10 @@ pub(crate) async fn chat_approval_handler(
         _ => {
             return Err((
                 StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_APPROVAL_DECISION",
-                    message: "decision 仅支持 deny / allow_once / allow_always".to_string(),
-                    reason_code: None,
-                }),
+                Json(ApiError::new(
+                    "INVALID_APPROVAL_DECISION",
+                    "decision 仅支持 deny / allow_once / allow_always".to_string(),
+                )),
             ));
         }
     };
@@ -95,11 +93,10 @@ pub(crate) async fn chat_approval_handler(
     }
     .ok_or((
         StatusCode::NOT_FOUND,
-        Json(ApiError {
-            code: "APPROVAL_SESSION_NOT_FOUND",
-            message: "审批会话不存在或已结束".to_string(),
-            reason_code: None,
-        }),
+        Json(ApiError::new(
+            "APPROVAL_SESSION_NOT_FOUND",
+            "审批会话不存在或已结束".to_string(),
+        )),
     ))?;
     if tx.send(decision).await.is_err() {
         debug!(
@@ -110,11 +107,10 @@ pub(crate) async fn chat_approval_handler(
         state.approval_sessions.write().await.remove(&session_id);
         return Err((
             StatusCode::GONE,
-            Json(ApiError {
-                code: "APPROVAL_SESSION_CLOSED",
-                message: "审批会话已关闭".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "APPROVAL_SESSION_CLOSED",
+                "审批会话已关闭".to_string(),
+            )),
         ));
     }
     Ok(Json(ChatApprovalResponseBody { ok: true }))
@@ -129,21 +125,16 @@ pub(crate) async fn chat_branch_handler(
         normalize_client_conversation_id(Some(&body.conversation_id)).map_err(|msg| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: msg,
-                    reason_code: None,
-                }),
+                Json(ApiError::new("INVALID_CONVERSATION_ID", msg)),
             )
         })?;
     let Some(cid) = conversation_id else {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CONVERSATION_ID",
-                message: "conversation_id 不能为空".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "INVALID_CONVERSATION_ID",
+                "conversation_id 不能为空".to_string(),
+            )),
         ));
     };
     let ord = usize::try_from(body.before_user_ordinal).unwrap_or(usize::MAX);
@@ -151,31 +142,28 @@ pub(crate) async fn chat_branch_handler(
     let Some(seed) = seed else {
         return Err((
             StatusCode::NOT_FOUND,
-            Json(ApiError {
-                code: "CONVERSATION_NOT_FOUND",
-                message: "会话不存在或已过期".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_NOT_FOUND",
+                "会话不存在或已过期".to_string(),
+            )),
         ));
     };
     let Some(exp) = seed.expected_revision else {
         return Err((
             StatusCode::CONFLICT,
-            Json(ApiError {
-                code: "CONVERSATION_REVISION_UNKNOWN",
-                message: "无法分支：缺少 revision 信息".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_REVISION_UNKNOWN",
+                "无法分支：缺少 revision 信息".to_string(),
+            )),
         ));
     };
     if exp != body.expected_revision {
         return Err((
             StatusCode::CONFLICT,
-            Json(ApiError {
-                code: "CONVERSATION_CONFLICT",
-                message: "revision 不匹配，请刷新后重试".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_CONFLICT",
+                "revision 不匹配，请刷新后重试".to_string(),
+            )),
         ));
     }
     match state
@@ -190,11 +178,10 @@ pub(crate) async fn chat_branch_handler(
         SaveConversationOutcome::Conflict => {
             return Err((
                 StatusCode::CONFLICT,
-                Json(ApiError {
-                    code: "CONVERSATION_CONFLICT",
-                    message: "会话已被其他请求更新或 revision 不匹配".to_string(),
-                    reason_code: None,
-                }),
+                Json(ApiError::new(
+                    "CONVERSATION_CONFLICT",
+                    "会话已被其他请求更新或 revision 不匹配".to_string(),
+                )),
             ));
         }
     }
@@ -218,41 +205,34 @@ pub(crate) async fn conversation_messages_handler(
         normalize_client_conversation_id(Some(&q.conversation_id)).map_err(|msg| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: msg,
-                    reason_code: None,
-                }),
+                Json(ApiError::new("INVALID_CONVERSATION_ID", msg)),
             )
         })?;
     let Some(cid) = conversation_id else {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CONVERSATION_ID",
-                message: "conversation_id 不能为空".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "INVALID_CONVERSATION_ID",
+                "conversation_id 不能为空".to_string(),
+            )),
         ));
     };
     let Some(seed) = state.load_conversation_seed(&cid).await else {
         return Err((
             StatusCode::NOT_FOUND,
-            Json(ApiError {
-                code: "CONVERSATION_NOT_FOUND",
-                message: "会话不存在或已过期".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_NOT_FOUND",
+                "会话不存在或已过期".to_string(),
+            )),
         ));
     };
     let Some(revision) = seed.expected_revision else {
         return Err((
             StatusCode::NOT_FOUND,
-            Json(ApiError {
-                code: "CONVERSATION_NOT_FOUND",
-                message: "会话不存在或已过期".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_NOT_FOUND",
+                "会话不存在或已过期".to_string(),
+            )),
         ));
     };
     let filtered = filter_messages_for_web_client_snapshot(&seed.messages);

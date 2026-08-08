@@ -19,6 +19,7 @@ pub(crate) use chat_handlers::normalize_client_conversation_id;
 
 pub mod github;
 pub mod openapi;
+pub(crate) mod request_id;
 pub mod routes;
 pub mod server;
 pub(crate) mod skills_handlers;

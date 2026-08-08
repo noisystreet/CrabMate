@@ -57,31 +57,25 @@ async fn seed_conversation_handler(
         normalize_client_conversation_id(Some(&body.conversation_id)).map_err(|msg| {
             (
                 StatusCode::BAD_REQUEST,
-                Json(ApiError {
-                    code: "INVALID_CONVERSATION_ID",
-                    message: msg,
-                    reason_code: None,
-                }),
+                Json(ApiError::new("INVALID_CONVERSATION_ID", msg)),
             )
         })?;
     let Some(cid) = conversation_id else {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_CONVERSATION_ID",
-                message: "conversation_id 不能为空".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "INVALID_CONVERSATION_ID",
+                "conversation_id 不能为空".to_string(),
+            )),
         ));
     };
     if body.messages.is_empty() {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_BODY",
-                message: "messages 不能为空".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "INVALID_BODY",
+                "messages 不能为空".to_string(),
+            )),
         ));
     }
     let messages: Vec<Message> = body
@@ -107,11 +101,10 @@ async fn seed_conversation_handler(
         crate::SaveConversationOutcome::Saved => Ok(StatusCode::NO_CONTENT),
         crate::SaveConversationOutcome::Conflict => Err((
             StatusCode::CONFLICT,
-            Json(ApiError {
-                code: "CONVERSATION_EXISTS",
-                message: "会话已存在；可设 replace=true".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "CONVERSATION_EXISTS",
+                "会话已存在；可设 replace=true".to_string(),
+            )),
         )),
     }
 }

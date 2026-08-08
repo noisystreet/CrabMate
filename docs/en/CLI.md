@@ -186,6 +186,20 @@ Static assets are served from `frontend/dist`.
 
 ## Main HTTP routes (`serve`)
 
+### HTTP auth matrix
+
+Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEARER_TOKEN`** is non-empty at startup, protected routes get the Bearer layer (`Authorization: Bearer` **or** `X-API-Key`). Empty secret → no layer (trusted environments only).
+
+| Class | Paths | Bearer layer | Notes |
+|-------|-------|--------------|-------|
+| Protected API | `/chat*`, `/conversation/*`, `/workspace*`, `/skills`, `/tasks`, `/github/*`, `/config/*`, `/user-data/*`, `/upload`, `/uploads/delete` | **Yes** (if token non-empty at start) | See configuration docs |
+| Public system | `GET /health`, `GET /status` | **No** | **Not** behind Bearer even when configured; isolate via bind/`127.0.0.1`/firewall/proxy |
+| Spec / shell | `GET /openapi.json`, `GET /web-ui` | **No** | |
+| Static | `/`, SPA, `/uploads/*` files | **No** | |
+| E2E | `/e2e/...` | Conditional | **`CM_E2E_FIXTURES=1` only** |
+
+Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation; JSON **`ApiError.request_id`** may match when populated. See **`docs/en/CLI_CONTRACT.md`**.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | GET | `/openapi.json` | OpenAPI 3.0 spec (`application/json`); aligns with routes below; SSE line semantics in **`docs/SSE协议.md`** |
@@ -196,6 +210,10 @@ Static assets are served from `frontend/dist`.
 | POST | `/chat/stream` | SSE; each event has **`id:`**; headers **`x-conversation-id`**, **`x-stream-job-id`**; optional JSON **`stream_resume`** (`job_id`, `after_seq`) and **`Last-Event-ID`** for reconnect; **410** `STREAM_JOB_GONE` if the job is gone; optional `approval_session_id`, `agent_role` (same) |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
 | POST | `/chat/branch` | Branch/truncate: JSON `conversation_id`, `before_user_ordinal` (0-based plain user index), `expected_revision`; server truncates **before** that user message (same as Web “regenerate from here”: resend the user text via `/chat/stream`). Requires persisted conversation and matching `revision` |
+| POST | `/upload` | Multipart upload (protected); returns file URL list (`UploadResponseBody`) |
+| POST | `/uploads/delete` | Delete uploaded files by URL list; JSON **`urls`** (only `/uploads/<filename>` shapes) |
+| GET | `/tasks` | Sidebar tasks for current workspace (**in-process memory**, not on-disk workspace files); protected |
+| POST | `/tasks` | Replace task list and echo (refreshes **`updated_at`**); protected |
 | GET | `/status` | Backend status |
 | GET | `/workspace` | Workspace list |
 | POST | `/workspace` | Set Web workspace root: JSON `{"path":"/abs/dir"}` or project-pool mode `{"project":"my-app"}`; omit `path` or use empty string to reset to default (`run_command_working_dir`); path must exist and lie under `workspace_allowed_roots` |
@@ -204,6 +222,7 @@ Static assets are served from `frontend/dist`.
 | GET | `/workspace/pick` | Legacy stub: always `{"path":null}`; Web **File** menu opens the project picker when `web_workspace_pool` is set, otherwise browser `prompt` for an absolute path; Tauri uses a native folder dialog |
 | GET | `/workspace/profile` | Project profile Markdown |
 | GET | `/workspace/changelog` | Session workspace changelist Markdown (optional `conversation_id` query; same body as **`session_workspace_changelist`** model injection, read-only) |
+| POST | `/workspace/search` | In-workspace text search; JSON **`pattern`** (required), optional **`path`**, **`max_results`**, **`case_insensitive`**, **`ignore_hidden`** (see OpenAPI **`WorkspaceSearchBody`**); response **`output`**, may stay **200** with **`error`** on tool failure |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
 | POST | `/workspace/file` | Write file (JSON `path`, `content`; optional **`create_only`** / **`update_only`**) |
 | DELETE | `/workspace/file` | Delete file (`path` required; not directories) |

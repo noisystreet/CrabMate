@@ -52,11 +52,10 @@ async fn chat_stream_resume_response(
     if !state.sse_stream_hub.has_job(job_id) {
         return Err((
             StatusCode::GONE,
-            Json(ApiError {
-                code: "STREAM_JOB_GONE",
-                message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "STREAM_JOB_GONE",
+                "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+            )),
         ));
     }
     let after_header = parse_last_event_id(headers).unwrap_or(0);
@@ -65,11 +64,10 @@ async fn chat_stream_resume_response(
     let Some(sub) = state.sse_stream_hub.subscribe(job_id) else {
         return Err((
             StatusCode::GONE,
-            Json(ApiError {
-                code: "STREAM_JOB_GONE",
-                message: "流式任务已结束或不在本进程内存中，无法重连".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "STREAM_JOB_GONE",
+                "流式任务已结束或不在本进程内存中，无法重连".to_string(),
+            )),
         ));
     };
     let replay = state
@@ -124,12 +122,10 @@ async fn chat_stream_expand_at_files_and_clarify(
     if eff_ws.is_empty() && user_message_has_workspace_file_ref_syntax(&p.user_trim) {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "WORKSPACE_NOT_SET",
-                message: "未设置工作区：无法在消息中使用 `file:///` / `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
-                    .to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "WORKSPACE_NOT_SET",
+                "未设置工作区：无法在消息中使用 `file:///` / `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。",
+            )),
         ));
     }
     let work_dir_for_expand = std::path::PathBuf::from(eff_ws_raw);
@@ -139,11 +135,7 @@ async fn chat_stream_expand_at_files_and_clarify(
             .map_err(|e| {
                 (
                     StatusCode::BAD_REQUEST,
-                    Json(ApiError {
-                        code: "INVALID_AT_FILE_REF",
-                        message: e,
-                        reason_code: None,
-                    }),
+                    Json(ApiError::new("INVALID_AT_FILE_REF", e)),
                 )
             })?
     };
@@ -174,14 +166,7 @@ async fn chat_stream_build_turn_seed(
             } else {
                 ("INVALID_AGENT_ROLE", e)
             };
-        (
-            StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code,
-                message,
-                reason_code: None,
-            }),
-        )
+        (StatusCode::BAD_REQUEST, Json(ApiError::new(code, message)))
     })
 }
 
@@ -192,11 +177,10 @@ async fn chat_stream_open_approval_session_if_requested(
     let approval_session_id = match body.approval_session_id.as_deref() {
         Some(v) => Some(normalize_approval_session_id(v).ok_or((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "INVALID_APPROVAL_SESSION_ID",
-                message: "approval_session_id 非法或为空".to_string(),
-                reason_code: None,
-            }),
+            Json(ApiError::new(
+                "INVALID_APPROVAL_SESSION_ID",
+                "approval_session_id 非法或为空".to_string(),
+            )),
         ))?),
         None => None,
     };
@@ -298,14 +282,13 @@ async fn chat_stream_try_enqueue_job(
         }
         return Err((
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(ApiError {
-                code: "QUEUE_FULL",
-                message: format!(
+            Json(ApiError::new(
+                "QUEUE_FULL",
+                format!(
                     "对话任务队列已满（最多等待 {} 个），请稍后重试",
                     e.max_pending
                 ),
-                reason_code: None,
-            }),
+            )),
         ));
     }
     Ok((job_id, rx))

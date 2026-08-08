@@ -45,15 +45,14 @@ pub(super) fn reject_if_client_sse_protocol_invalid(
     if v != crate::sse::protocol::SSE_PROTOCOL_VERSION {
         return Err((
             StatusCode::BAD_REQUEST,
-            Json(ApiError {
-                code: "SSE_PROTOCOL_MISMATCH",
-                message: format!(
+            Json(ApiError::new(
+                "SSE_PROTOCOL_MISMATCH",
+                format!(
                     "仅支持 SSE 协议版本 {}（收到 v{}）",
                     crate::sse::protocol::SSE_PROTOCOL_VERSION,
                     v,
                 ),
-                reason_code: None,
-            }),
+            )),
         ));
     }
     Ok(())
