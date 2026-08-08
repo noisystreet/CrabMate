@@ -80,7 +80,7 @@ pub(super) async fn serve_require_web_api_bearer_when_enabled(
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
-            "已启用 web_api_require_bearer（或 CM_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / CM_WEB_API_BEARER_TOKEN；请设置共享密钥后再启动 serve，或在配置中关闭 web_api_require_bearer。",
+            "已启用 web_api_require_bearer（或 CM_WEB_API_REQUIRE_BEARER），但未配置非空的 web_api_bearer_token / CM_WEB_API_BEARER_TOKEN（系统钥匙串 web_api_bearer 亦空）；请设置共享密钥（含 `crabmate web-bearer set`）后再启动 serve，或在配置中关闭 web_api_require_bearer。",
         ));
     }
     Ok(())

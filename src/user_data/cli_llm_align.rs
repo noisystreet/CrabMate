@@ -1,8 +1,9 @@
 //! 将本机 user-data（`llm_overrides.json`）合并进进程 [`AgentConfig`]（对齐 Web/桌面侧栏）。
 
-use crabmate_config::AgentConfig;
+use crabmate_config::{AgentConfig, ExposeSecret};
+use secrecy::SecretString;
 
-use super::{LlmEndpointOverride, load_llm_overrides};
+use super::{LlmEndpointOverride, load_llm_overrides, read_secret_web_api_bearer};
 
 fn fill_nonempty_string(dst: &mut String, src: Option<&String>) {
     if let Some(s) = src.map(|x| x.trim()).filter(|x| !x.is_empty()) {
@@ -72,4 +73,29 @@ pub fn apply_user_data_llm_overrides(cfg: &mut AgentConfig) {
     let disk = load_llm_overrides();
     apply_client_endpoint(cfg, &disk.client_llm);
     apply_executor_endpoint(cfg, &disk.executor_llm);
+}
+
+/// 当 TOML / **`CM_WEB_API_BEARER_TOKEN`** 均为空时，从系统钥匙串填入 **`web_api_bearer_token`**
+///（与 Web `/user-data/secrets/web-api-bearer`、`crabmate web-bearer set` 同源）。
+///
+/// 优先级：**环境变量 / TOML（已 finalize）** → **钥匙串**。已有非空配置时不覆盖。
+pub fn apply_user_data_web_api_bearer(cfg: &mut AgentConfig) {
+    if !ExposeSecret::expose_secret(&cfg.web_api.web_api_bearer_token)
+        .trim()
+        .is_empty()
+    {
+        return;
+    }
+    let Some(from_keyring) = read_secret_web_api_bearer() else {
+        return;
+    };
+    let trimmed = from_keyring.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    cfg.web_api.web_api_bearer_token = SecretString::new(trimmed.to_string().into());
+    tracing::info!(
+        target: "crabmate",
+        "web_api_bearer_token 未在 TOML/环境变量中设置：已从系统钥匙串加载（与 Web/桌面同源）"
+    );
 }

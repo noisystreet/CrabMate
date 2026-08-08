@@ -5,8 +5,8 @@
 use crabmate::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
     EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand,
-    SaveSessionFormat, ToolReplayCli, classify_model_error_message, normalize_legacy_argv,
-    parse_args_from_argv,
+    SaveSessionFormat, ToolReplayCli, WebBearerCli, classify_model_error_message,
+    normalize_legacy_argv, parse_args_from_argv,
 };
 use std::sync::Mutex;
 
@@ -165,6 +165,29 @@ fn fixture_parse_args_from_argv_contract() {
                 assert!(
                     p.save_session.is_none(),
                     "{name}: save_session should be absent"
+                );
+            }
+
+            if let Some(wb) = case.get("web_bearer").and_then(|v| v.as_str()) {
+                let got = p
+                    .web_bearer
+                    .as_ref()
+                    .unwrap_or_else(|| panic!("{name}: expected web_bearer"));
+                match wb {
+                    "Status" => assert!(
+                        matches!(got, WebBearerCli::Status),
+                        "{name} web_bearer Status"
+                    ),
+                    "Clear" => assert!(
+                        matches!(got, WebBearerCli::Clear),
+                        "{name} web_bearer Clear"
+                    ),
+                    other => panic!("{name}: unknown web_bearer fixture {other}"),
+                }
+            } else {
+                assert!(
+                    p.web_bearer.is_none(),
+                    "{name}: web_bearer should be absent"
                 );
             }
 

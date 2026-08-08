@@ -193,7 +193,7 @@ sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service
 ```
 
-> **不要把 `CM_WEB_API_BEARER_TOKEN` 写进世界可读的文件**若无法接受：改用 **`systemd` 的 `EnvironmentFile=`** 指向 **`chmod 600`** 的文件，或发行版提供的 **secrets** 机制。
+> **不要把 `CM_WEB_API_BEARER_TOKEN` 写进世界可读的文件**若无法接受：改用 **`systemd` 的 `EnvironmentFile=`** 指向 **`chmod 600`** 的文件，或发行版提供的 **secrets** 机制。交互式登录用户亦可 **`crabmate web-bearer set <token>`** 写入系统钥匙串（须与 **`serve`** 同用户、且钥匙串可用）；无头 systemd 用户（无 Secret Service 会话）仍优先 EnvironmentFile / TOML。
 
 ---
 

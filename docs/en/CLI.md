@@ -23,6 +23,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
 | `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
 | `doctor` | Local diagnostics (**no** `API_KEY`). |
+| `web-bearer` | **`status` / `set` / `clear`**: system keyring Web API shared secret (same slot as Web **`/user-data/secrets/web-api-bearer`**; **no** `API_KEY`). Prefer **`set --stdin`**, **`set --from-env`** (reads **`CM_WEB_API_BEARER_TOKEN`**), or interactive hidden prompt (no args); a positional `TOKEN` lands in shell history/`ps` (compat only). When TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty, **`serve`** loads from here; toggling empty↔non-empty still requires a **`serve` restart** to mount/unmount the auth middleware. Browsers must still save the **same** string under **Settings → Web API shared secret**. |
 | `models` | `GET …/models` (needs `API_KEY`). |
 | `probe` | Probe models endpoint (needs `API_KEY`). |
 | `save-session` | Export JSON/Markdown from session file to workspace **`.crabmate/exports/`** (same shape as Web; **no** `API_KEY`). `--format json|markdown|both` (default `both`), optional `--session-file`. Alias **`export-session`**. |

@@ -175,6 +175,52 @@ pub struct BenchCmd {
     pub bench_system_prompt: Option<String>,
 }
 
+/// Web API Bearer：写入/查询/清除系统钥匙串（与 Web「Web API 共享密钥」同源；**不要**求 `API_KEY`）
+#[derive(Parser, Debug, Clone)]
+#[command(name = "web-bearer")]
+pub struct WebBearerCmd {
+    #[command(subcommand)]
+    pub sub: WebBearerSubCmd,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum WebBearerSubCmd {
+    /// 是否已在系统钥匙串设置 Web API Bearer（不打印明文）
+    Status,
+    /// 写入系统钥匙串（与 `CM_WEB_API_BEARER_TOKEN` / TOML 为空时 `serve` 回退同源）
+    Set(WebBearerSetCmd),
+    /// 清除系统钥匙串中的 Web API Bearer
+    Clear,
+}
+
+#[derive(Parser, Debug, Clone)]
+pub struct WebBearerSetCmd {
+    /// 共享密钥（会出现在 shell 历史 / `ps`；推荐改用 **`--stdin`** / **`--from-env`**，或无参数时交互隐藏输入）
+    #[arg(value_name = "TOKEN")]
+    pub token: Option<String>,
+
+    /// 从标准输入读取密钥（一行；适合 `printf '%s' "$TOKEN" | crabmate web-bearer set --stdin`）
+    #[arg(long)]
+    pub stdin: bool,
+
+    /// 从环境变量 **`CM_WEB_API_BEARER_TOKEN`** 读取并写入钥匙串（不经 argv）
+    #[arg(long)]
+    pub from_env: bool,
+}
+
+/// `web-bearer` 解析结果（供 `runtime` 执行；**不要**求 `API_KEY`）
+#[derive(Debug, Clone)]
+pub enum WebBearerCli {
+    Status,
+    /// `token` 仅在解析到位置参数时有值；`--stdin` / `--from-env` / 交互提示在运行时解析
+    Set {
+        token: Option<String>,
+        stdin: bool,
+        from_env: bool,
+    },
+    Clear,
+}
+
 /// MCP 运维子命令（只读列出本进程内 stdio 会话缓存）
 #[derive(Parser, Debug, Clone)]
 pub struct McpCmd {
@@ -489,6 +535,9 @@ pub enum Commands {
     Config(ConfigCmd),
     /// 一页本地诊断（Rust/npm/前端路径、白名单条数等；人读，脱敏；**不要**求 API_KEY）
     Doctor,
+    /// 设置/查询/清除 Web API Bearer（系统钥匙串；**不要**求 API_KEY）
+    #[command(name = "web-bearer")]
+    WebBearer(WebBearerCmd),
     /// 列出兼容网关 `GET …/models` 的模型 id（`llm_http_auth_mode=bearer` 时需 API_KEY；部分网关无此端点）
     Models,
     /// 探测 api_base 上 models 端点连通性与 HTTP 状态（`llm_http_auth_mode=bearer` 时需 API_KEY）
@@ -567,6 +616,8 @@ pub struct ParsedCliArgs {
     pub extra_cli: ExtraCliCommand,
     /// `Some` 时执行导出后退出（与 `doctor` 一样不要求 API_KEY）
     pub save_session: Option<SaveSessionCli>,
+    /// `Some` 时执行 `web-bearer` 后退出（不要求 API_KEY）
+    pub web_bearer: Option<WebBearerCli>,
     /// `Some` 时执行工具重放子命令后退出（不要求 API_KEY）
     pub tool_replay: Option<ToolReplayCli>,
     /// `Some` 时执行 SSE replay 回放后退出（不要求 API_KEY）

@@ -10,6 +10,17 @@
     "save_session_format": null
   },
   {
+    "name": "web_bearer_status",
+    "argv": ["crabmate", "web-bearer", "status"],
+    "extra_cli": "None",
+    "web_bearer": "Status",
+    "dry_run": false,
+    "serve_port": null,
+    "no_stream": false,
+    "chat_wants": false,
+    "save_session_format": null
+  },
+  {
     "name": "config_implicit_dry_run",
     "argv": ["crabmate", "config"],
     "extra_cli": "None",

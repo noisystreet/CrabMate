@@ -24,7 +24,7 @@ use crate::chat_job_queue;
 use crate::config;
 use crate::config::cli::{
     E2eCliArgs, ExtraCliCommand, ParsedCliArgs, PluginInitCli, PluginListCli, PluginValidateCli,
-    SaveSessionCli, WorkflowFileCli, parse_args,
+    SaveSessionCli, WebBearerCli, WorkflowFileCli, parse_args,
 };
 use crate::http_client;
 use crate::observability;
@@ -118,6 +118,7 @@ fn load_cli_agent_config(
         llm_context_tokens_cli,
     );
     crate::user_data::apply_user_data_llm_overrides(&mut cfg);
+    crate::user_data::apply_user_data_web_api_bearer(&mut cfg);
     Ok(cfg)
 }
 
@@ -126,6 +127,7 @@ struct EarlyCliDispatch<'a> {
     workspace_cli: &'a Option<String>,
     extra_cli: ExtraCliCommand,
     save_session: Option<SaveSessionCli>,
+    web_bearer: Option<WebBearerCli>,
     tool_replay: Option<crate::config::cli::ToolReplayCli>,
     sse_replay: Option<crate::config::cli::SseReplayCli>,
     plugin_init: Option<PluginInitCli>,
@@ -135,6 +137,14 @@ struct EarlyCliDispatch<'a> {
     workflow_compile: Option<WorkflowFileCli>,
     workflow_run: Option<WorkflowFileCli>,
     e2e: Option<E2eCliArgs>,
+}
+
+fn try_early_web_bearer(d: &EarlyCliDispatch<'_>) -> Result<bool, Box<dyn std::error::Error>> {
+    let Some(cmd) = d.web_bearer.clone() else {
+        return Ok(false);
+    };
+    crate::runtime::cli_web_bearer::run_web_bearer_command(cmd)?;
+    Ok(true)
 }
 
 fn try_early_save_session(
@@ -332,6 +342,7 @@ fn try_dispatch_early_workspace_commands(
     }
     // 不含 tokens 的子命令
     let no_tokens: &[DispatchFnNoTokens] = &[
+        try_early_web_bearer,
         try_early_sse_replay,
         try_early_workflow_validate,
         try_early_workflow_compile,
@@ -568,7 +579,7 @@ async fn validate_bind_auth(
     if !bind_ip.is_loopback() && !auth_enabled && !allow_insec {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
-            "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / CM_WEB_API_BEARER_TOKEN，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
+            "当前监听地址为非 loopback（如 0.0.0.0），但未配置 web_api_bearer_token；请设置 [agent].web_api_bearer_token / CM_WEB_API_BEARER_TOKEN、`crabmate web-bearer set`，或显式设置 allow_insecure_no_auth_for_non_loopback=true（不安全）",
         )
         .into());
     }
@@ -642,7 +653,7 @@ pub(super) async fn run_serve_branch(
     }
     if bind_ip.is_loopback() && !auth_enabled {
         eprintln!(
-            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
+            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token / `crabmate web-bearer set`，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
         );
     }
     if bind_ip.is_unspecified() && auth_enabled {
@@ -815,6 +826,7 @@ pub(super) async fn run_cli_from_parsed(
             workspace_cli: &args.workspace_cli,
             extra_cli: args.extra_cli,
             save_session: args.save_session.clone(),
+            web_bearer: args.web_bearer.clone(),
             tool_replay: args.tool_replay.clone(),
             sse_replay: args.sse_replay.clone(),
             plugin_init: args.plugin_init.clone(),
