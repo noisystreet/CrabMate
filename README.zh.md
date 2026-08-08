@@ -145,8 +145,8 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | 方式 | 命令 / 说明 |
 | --- | --- |
 | **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
-| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
-| **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
+| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
+| **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（默认 **127.0.0.1:8080**，**不**自动 enable；UI 用 **`CM_WEB_STATIC_DIR`**）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
 | **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
 
