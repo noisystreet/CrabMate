@@ -587,17 +587,17 @@ pub fn settings_github_client_id_unset(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_github_client_id_set(l: Locale, suffix: &str) -> String {
+pub fn settings_github_client_id_set(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => format!("已设置（…{suffix}）"),
-        Locale::En => format!("Set (…{suffix})"),
+        Locale::ZhHans => "已设置",
+        Locale::En => "Set",
     }
 }
 
 pub fn settings_github_client_id_env_overrides(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "环境变量已设置（优先）",
-        Locale::En => "Env var set (takes priority)",
+        Locale::ZhHans => "环境变量优先",
+        Locale::En => "Env overrides",
     }
 }
 
@@ -636,10 +636,17 @@ pub fn settings_github_disconnected(l: Locale) -> &'static str {
     }
 }
 
-pub fn settings_github_connected(l: Locale, suffix: &str) -> String {
+pub fn settings_github_connected(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => format!("已连接（…{suffix}）"),
-        Locale::En => format!("Connected (…{suffix})"),
+        Locale::ZhHans => "已连接",
+        Locale::En => "Connected",
+    }
+}
+
+pub fn settings_github_connection_label(l: Locale) -> &'static str {
+    match l {
+        Locale::ZhHans => "连接状态",
+        Locale::En => "Connection",
     }
 }
 

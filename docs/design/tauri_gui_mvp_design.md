@@ -11,7 +11,7 @@
 MVP 验收标准：
 
 1. 启动桌面应用后自动拉起后端服务
-2. WebView 打开本地服务地址并可正常使用
+2. WebView 先展示连接页（服务器 + Bearer；与移动端共用 `crabmate-connect`），确认后打开 `serve` UI；E2E/`CM_DESKTOP_SKIP_CONNECT` 可跳过
 3. 主窗口可最小化到系统托盘；关窗或显式退出时后端进程可回收
 4. 保持后端仅监听 loopback（`127.0.0.1`）
 5. 桌面应用保持单实例，重复启动只唤醒已有窗口
@@ -22,8 +22,8 @@ MVP 验收标准：
 
 1. Tauri 启动后端进程（`crabmate serve`）
 2. 后端在 ready 后输出一行机器可读 JSON（包含端口）
-3. Tauri 解析该 JSON 并加载 `http://127.0.0.1:<port>`
-4. 前端继续沿用现有 SSE/HTTP API
+3. Tauri 解析该 JSON，打开连接页并预填该 URL；用户确认（或自动重连）后再加载 `http://127.0.0.1:<port>`（亦可改填远程 `serve`）
+4. 前端继续沿用现有 SSE/HTTP API；首次非空 Bearer 写入本机钥匙串 `tauri_connect_web_api_bearer`
 
 该方案的核心优点：
 

@@ -194,7 +194,6 @@ fn wire_phase3_escape_layered_dismiss(app: &AppSignals) {
         settings_modal: app.modal.settings_modal,
         settings_page: app.modal.settings_page,
         ide_settings_page: app.modal.ide_settings_page,
-        github_embed: crate::app::github_embed_page::GithubEmbedSignals::from_modal(app.modal),
         session_modal: app.modal.session_modal,
     };
     wire_escape_key_layered_dismiss(shell_escape);

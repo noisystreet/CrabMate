@@ -75,7 +75,6 @@ use approval_modal::ApprovalModal;
 use changelist_modal::changelist_modal_view;
 use chat::ChatFindBar;
 use chat::chat_column_view;
-use github_embed_page::{GithubEmbedPageView, GithubEmbedSignals};
 use ide_confirm_dialog::IdeConfirmDialog;
 use ide_layout::{IdeLayoutShellSignals, IdeLayoutView};
 use ide_layout_switch::IdeLayoutToggleSignals;
@@ -119,8 +118,6 @@ fn SidebarRailRevealBtn(
 pub fn App() -> impl IntoView {
     let app_ctx = init_app_shell();
     provide_context(ChatShellLeptosContext::from_app_signals(&app_ctx.signals));
-    let github_embed_signals = GithubEmbedSignals::from_modal(app_ctx.signals.modal);
-    provide_context(github_embed_signals);
 
     // `AppShellCtx` 含 `Rc` 等，不满足 `Send`；子组件闭包不得捕获整 ctx（见 Leptos `ToChildren` 约束）。
     let approval_modal_signals = app_ctx.approval_modal_signals();
@@ -158,7 +155,6 @@ pub fn App() -> impl IntoView {
                 class:settings-page-hidden=move || {
                     app_ctx.signals.modal.settings_page.get()
                         || app_ctx.signals.modal.ide_settings_page.get()
-                        || app_ctx.signals.modal.github_embed_open.get()
                 }
                 class:shell-main--ide-layout=move || app_ctx.signals.shell_ui.editor_layout_mode.get()
             >
@@ -226,10 +222,6 @@ pub fn App() -> impl IntoView {
 
             <SettingsPageView input=settings_page_view_input />
             <IdeSettingsPageView input=ide_settings_page_view_input />
-            <GithubEmbedPageView
-                locale=app_ctx.signals.shell_ui.locale
-                signals=github_embed_signals
-            />
             <IdeConfirmDialog
                 locale=app_ctx.signals.shell_ui.locale
                 chrome=app_ctx.signals.ide_chrome

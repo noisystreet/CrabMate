@@ -19,7 +19,7 @@ async fn seed_side_toolbar_e2e(client: &mut victauri_test::VictauriClient) {
     if(typeof u!=='string')return window.__origFetchSideTb(u,o);
     if(u.includes('/github/repo-context')){
       return Promise.resolve(new Response(JSON.stringify({
-        connected:true,
+        connected:false,
         url:'https://github.com/octocat/Hello-World',
         repo:'octocat/Hello-World'
       }),{status:200,headers:{'content-type':'application/json'}}));
@@ -168,11 +168,11 @@ e2e_test!(view_toolbar_button_opens_menu, |client| async move {
 });
 
 // ---------------------------------------------------------------------------
-// 测试 4：GitHub 仓库按钮在 mock 连接后启用。
-// Linux 使用独立 WebViewWindow；其它平台打开嵌入页并可返回。
+// 测试 4：GitHub 仓库按钮在有 URL 时可点（不依赖 connected）。
+// 打开路径为系统浏览器；确认不出现已废弃的嵌入页。
 // ---------------------------------------------------------------------------
 e2e_test!(
-    github_repo_button_opens_and_closes_embed_page,
+    github_repo_button_opens_system_browser_path,
     |client| async move {
         seed_side_toolbar_e2e(&mut client).await;
         wait_github_repo_btn_enabled(&mut client).await;
@@ -182,32 +182,17 @@ e2e_test!(
             .await
             .unwrap();
 
-        #[cfg(not(target_os = "linux"))]
-        {
-            client
-                .wait_for(
-                    "selector",
-                    Some("[data-testid=\"github-embed-page\"]"),
-                    Some(10000),
-                    Some(300),
-                )
-                .await
-                .unwrap();
-
-            Locator::test_id("github-embed-back")
-                .click(&mut client)
-                .await
-                .unwrap();
-        }
-
-        client
-            .wait_for(
-                "selector_gone",
-                Some("[data-testid=\"github-embed-page\"]"),
-                Some(10000),
-                Some(300),
+        let embed_visible = client
+            .eval_js(
+                "(()=>!!document.querySelector('[data-testid=\"github-embed-page\"]'))()",
             )
             .await
-            .unwrap();
+            .ok()
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        assert!(
+            !embed_visible,
+            "github embed page must stay closed (system browser path)"
+        );
     }
 );

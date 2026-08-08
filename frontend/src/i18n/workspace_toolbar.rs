@@ -60,17 +60,17 @@ pub fn side_github_repo_btn_title(l: Locale) -> &'static str {
     }
 }
 
-pub fn side_github_connect_btn_title(l: Locale) -> &'static str {
+pub fn side_github_no_url_btn_title(l: Locale) -> &'static str {
     match l {
-        Locale::ZhHans => "连接 GitHub（设置）",
-        Locale::En => "Connect GitHub (Settings)",
+        Locale::ZhHans => "未解析到 GitHub 仓库 URL",
+        Locale::En => "No GitHub repository URL",
     }
 }
 
 pub fn side_github_repo_btn_aria(l: Locale, repo: &str) -> String {
     match l {
-        Locale::ZhHans => format!("在应用内打开 GitHub 仓库 {repo}"),
-        Locale::En => format!("Open GitHub repository {repo} in app"),
+        Locale::ZhHans => format!("打开 GitHub 仓库 {repo}"),
+        Locale::En => format!("Open GitHub repository {repo}"),
     }
 }
 

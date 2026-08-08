@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod desktop_lifecycle;
+mod desktop_main_window;
 mod os_theme;
 
 use std::io::{BufRead, BufReader};
@@ -9,16 +10,15 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
-use tauri::webview::{Color, PageLoadEvent};
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_dialog::{DialogExt, FilePath, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_opener::OpenerExt;
-use tauri_plugin_window_state::{StateFlags, WindowExt};
+use tauri_plugin_window_state::StateFlags;
 use url::Url;
 
 const STARTUP_ABORTED_BY_QUIT: &str = "desktop quit requested during startup";
 
-fn desktop_window_state_flags() -> StateFlags {
+pub(crate) fn desktop_window_state_flags() -> StateFlags {
     StateFlags::SIZE | StateFlags::POSITION | StateFlags::MAXIMIZED
 }
 
@@ -101,8 +101,14 @@ fn user_home_workdir() -> PathBuf {
 }
 
 /// `CM_E2E_FIXTURES=1` 时隐藏 splash/main，避免 Wayland 桌面在 xvfb 外仍弹窗。
-fn e2e_hide_app_windows() -> bool {
+pub(crate) fn e2e_hide_app_windows() -> bool {
     std::env::var("CM_E2E_FIXTURES").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// E2E 或显式跳过时：不展示连接页，直接打开本机 `web_ready` URL（旧行为）。
+pub(crate) fn skip_connect_page() -> bool {
+    e2e_hide_app_windows()
+        || std::env::var("CM_DESKTOP_SKIP_CONNECT").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 fn dev_repo_root() -> Option<PathBuf> {
@@ -239,7 +245,7 @@ fn show_splash_error(app: &tauri::AppHandle, message: String) {
     });
 }
 
-fn close_splash_window(app: &tauri::AppHandle) {
+pub(crate) fn close_splash_window(app: &tauri::AppHandle) {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || {
         if let Some(splash) = handle.get_webview_window("splash") {
@@ -481,15 +487,6 @@ async fn pick_workspace_folder_via_dialog(app: tauri::AppHandle) -> Result<Optio
     })
 }
 
-/// 是否在系统默认浏览器中打开（不留在 WebView 内导航）。
-fn should_open_link_externally(app_origin: &url::Origin, target: &Url) -> bool {
-    match target.scheme() {
-        "http" | "https" | "mailto" => {}
-        _ => return false,
-    }
-    target.origin() != *app_origin
-}
-
 #[tauri::command]
 fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let parsed = Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
@@ -617,13 +614,19 @@ fn main() {
             main_window_toggle_maximize,
             main_window_close,
             quit_desktop_app,
-            os_prefers_dark_theme
+            os_prefers_dark_theme,
+            crabmate_connect::connect_remote,
+            crabmate_connect::disconnect_remote,
+            crabmate_connect::get_suggested_server_url,
+            crabmate_connect::get_connect_bearer,
         ])
         .setup(move |app| {
             desktop_lifecycle::setup_tray(app);
             os_theme::spawn_linux_color_scheme_watcher(app.handle().clone());
             // 握手开始前就登记后端槽位，启动中途退出同样能回收子进程。
             app.manage(Arc::clone(&backend));
+            app.manage(crabmate_connect::SuggestedServerUrl::default());
+            app.manage(crabmate_connect::AllowedServeOrigin::default());
             let app_handle = app.handle().clone();
 
             // 启动画面先显示，后台启后端（E2E 下 visible(false) 防弹窗）
@@ -660,12 +663,18 @@ fn main() {
                 }
                 match outcome {
                     Ok(ready_url) => {
-                        update_splash_status(&handle, "正在打开界面…", "加载 Web UI（请稍候）");
+                        update_splash_status(&handle, "正在打开界面…", "加载连接页（请稍候）");
                         let create_result = {
                             let h = handle.clone();
                             let (tx, rx) = std::sync::mpsc::channel();
                             let _ = handle.run_on_main_thread(move || {
-                                let r = create_main_window_from_url(&h, ready_url);
+                                let r = if skip_connect_page() {
+                                    desktop_main_window::create_main_window_from_url(&h, ready_url)
+                                } else {
+                                    desktop_main_window::create_main_window_connect_page(
+                                        &h, ready_url,
+                                    )
+                                };
                                 let _ = tx.send(r);
                             });
                             rx.recv()
@@ -705,94 +714,6 @@ fn main() {
                 backend_for_exit.shutdown();
             }
         });
-}
-
-fn create_main_window_from_url(
-    app_handle: &tauri::AppHandle,
-    ready_url: String,
-) -> Result<(), String> {
-    let parsed_url: Url = ready_url
-        .parse()
-        .map_err(|e| format!("invalid backend ready url `{ready_url}`: {e}"))?;
-    let app_origin = parsed_url.origin();
-    let app_handle_clone = app_handle.clone();
-    let revealed = Arc::new(AtomicBool::new(false));
-    let revealed_on_load = Arc::clone(&revealed);
-    let app_on_load = app_handle.clone();
-
-    let window =
-        WebviewWindowBuilder::new(app_handle, "main", WebviewUrl::External(parsed_url.clone()))
-            .title("CrabMate Desktop")
-            .inner_size(1280.0, 840.0)
-            .resizable(true)
-            .decorations(false)
-            // 与前端 `--bg` / 启动页一致，避免未绘页面前的系统默认黑底。
-            .background_color(Color(0x0A, 0x0D, 0x12, 0xFF))
-            // 窗口状态插件会在 ready 时恢复几何信息；先隐藏可避免默认尺寸闪烁。
-            .visible(false)
-            // Linux：按 gsettings `color-scheme` 显式 Dark/Light（`None` 时 WebKit 常忽略
-            // GNOME prefer-dark 而只看 Adwaita 主题名）。其它平台 `None` 跟随 OS。
-            .theme(os_theme::initial_window_theme())
-            .on_navigation(move |url| {
-                if should_open_link_externally(&app_origin, url) {
-                    let _ = app_handle_clone
-                        .opener()
-                        .open_url(url.as_str(), None::<&str>);
-                    return false;
-                }
-                true
-            })
-            .on_page_load(move |window, payload| {
-                if !matches!(payload.event(), PageLoadEvent::Finished) {
-                    return;
-                }
-                reveal_main_window_once(&window, &app_on_load, &revealed_on_load);
-            })
-            .build()
-            .map_err(|e| format!("failed to create main window: {e}"))?;
-
-    // 先同步恢复几何，再显示：插件的自动 restore 走 `run_on_main_thread` 异步排队，
-    // 若直接 `show()` 会先按默认 1280×840 显示再跳变。恢复失败时退回默认尺寸。
-    if let Err(error) = window.restore_state(desktop_window_state_flags()) {
-        eprintln!("[crabmate-desktop] failed to restore window state: {error}");
-    }
-
-    // page load 未回调时的兜底（例如异常导航），避免闪屏永久卡住。
-    let app_fallback = app_handle.clone();
-    let revealed_fallback = Arc::clone(&revealed);
-    std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_secs(20));
-        let revealed = Arc::clone(&revealed_fallback);
-        let app = app_fallback.clone();
-        let _ = app_fallback.run_on_main_thread(move || {
-            if let Some(main) = app.get_webview_window("main") {
-                reveal_main_window_once(&main, &app, &revealed);
-            } else {
-                close_splash_window(&app);
-            }
-        });
-    });
-
-    Ok(())
-}
-
-fn reveal_main_window_once(
-    window: &WebviewWindow,
-    app: &tauri::AppHandle,
-    revealed: &AtomicBool,
-) {
-    if revealed.swap(true, Ordering::SeqCst) {
-        return;
-    }
-    if !e2e_hide_app_windows() {
-        if let Err(e) = window.show() {
-            eprintln!("[crabmate-desktop] failed to show main window: {e}");
-        }
-        if let Err(e) = window.set_focus() {
-            eprintln!("[crabmate-desktop] failed to focus main window: {e}");
-        }
-    }
-    close_splash_window(app);
 }
 
 #[cfg(test)]

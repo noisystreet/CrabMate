@@ -54,7 +54,9 @@ pub type StatusData = StatusShellView;
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct GithubRepoContextData {
+    /// `gh repo view` 是否成功（CLI 已认证）；打开仓库页只依赖 `url`。
     #[serde(default)]
+    #[allow(dead_code)]
     pub connected: bool,
     #[serde(default)]
     #[allow(dead_code)]

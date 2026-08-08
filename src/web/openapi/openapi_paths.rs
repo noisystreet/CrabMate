@@ -785,7 +785,7 @@ fn openapi_paths_fragment_github() -> Value {
         "/github/repo-context": {
             "get": {
                 "tags": ["github"],
-                "summary": "GitHub 仓库上下文（只读；依赖 gh CLI 与本机 git 工作区）",
+                "summary": "GitHub 仓库上下文（只读；优先 gh，失败时从 git remote 解析 URL）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {

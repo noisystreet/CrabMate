@@ -16,9 +16,7 @@ use crate::tauri_shell::tauri_open_external_url;
 #[derive(Clone, Copy)]
 struct GithubUiSignals {
     github_set: RwSignal<bool>,
-    github_suffix: RwSignal<Option<String>>,
     client_id_set: RwSignal<bool>,
-    client_id_suffix: RwSignal<Option<String>>,
     client_id_env: RwSignal<bool>,
     client_id_draft: RwSignal<String>,
     client_id_feedback: RwSignal<Option<String>>,
@@ -29,30 +27,12 @@ struct GithubUiSignals {
     err: RwSignal<Option<String>>,
 }
 
-fn secret_suffix_preview(raw: &str) -> String {
-    let s = raw.trim();
-    if s.chars().count() >= 4 {
-        s.chars()
-            .rev()
-            .take(4)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect()
-    } else {
-        "****".into()
-    }
-}
-
 fn refresh_github_secret_slots(loc: Locale, ui: GithubUiSignals, report_err: bool) {
     spawn_local(async move {
         match fetch_secrets_status(loc).await {
             Ok(st) => {
                 ui.github_set.set(st.github.set);
-                ui.github_suffix.set(st.github.suffix.clone());
                 ui.client_id_set.set(st.github_oauth_client_id.set);
-                ui.client_id_suffix
-                    .set(st.github_oauth_client_id.suffix.clone());
                 ui.client_id_env.set(st.github_oauth_client_id_env);
             }
             Err(e) if report_err => ui.err.set(Some(e)),
@@ -167,7 +147,6 @@ fn spawn_device_disconnect(loc: Locale, ui: GithubUiSignals, auth_refresh_nonce:
         let _ = post_github_oauth_device_cancel(loc).await;
         let _ = delete_secret_github(loc).await;
         ui.github_set.set(false);
-        ui.github_suffix.set(None);
         ui.user_code.set(None);
         ui.verify_url.set(None);
         ui.status_line.set(None);
@@ -190,12 +169,10 @@ fn spawn_save_client_id(loc: Locale, ui: GithubUiSignals) {
                 ui.client_id_draft.set(String::new());
                 if draft.trim().is_empty() {
                     ui.client_id_set.set(false);
-                    ui.client_id_suffix.set(None);
                     ui.client_id_feedback
                         .set(Some(i18n::settings_github_client_id_cleared(loc).into()));
                 } else {
                     ui.client_id_set.set(true);
-                    ui.client_id_suffix.set(Some(secret_suffix_preview(&draft)));
                     ui.client_id_feedback
                         .set(Some(i18n::settings_github_client_id_saved(loc).into()));
                 }
@@ -219,7 +196,6 @@ fn spawn_clear_client_id(loc: Locale, ui: GithubUiSignals) {
             Ok(()) => {
                 ui.client_id_draft.set(String::new());
                 ui.client_id_set.set(false);
-                ui.client_id_suffix.set(None);
                 ui.client_id_feedback
                     .set(Some(i18n::settings_github_client_id_cleared(loc).into()));
                 refresh_github_secret_slots(loc, ui, true);
@@ -230,21 +206,27 @@ fn spawn_clear_client_id(loc: Locale, ui: GithubUiSignals) {
     });
 }
 
-fn connection_label(loc: Locale, set: bool, suffix: Option<String>) -> String {
+fn connection_label(loc: Locale, set: bool) -> &'static str {
     if set {
-        let suf = suffix.unwrap_or_else(|| "****".into());
-        i18n::settings_github_connected(loc, &suf)
+        i18n::settings_github_connected(loc)
     } else {
-        i18n::settings_github_disconnected(loc).to_string()
+        i18n::settings_github_disconnected(loc)
     }
 }
 
-fn client_id_keychain_label(loc: Locale, set: bool, suffix: Option<String>) -> String {
+fn client_id_keychain_label(loc: Locale, set: bool) -> &'static str {
     if set {
-        let suf = suffix.unwrap_or_else(|| "****".into());
-        i18n::settings_github_client_id_set(loc, &suf)
+        i18n::settings_github_client_id_set(loc)
     } else {
-        i18n::settings_github_client_id_unset(loc).to_string()
+        i18n::settings_github_client_id_unset(loc)
+    }
+}
+
+fn status_pill_class(ok: bool) -> &'static str {
+    if ok {
+        "settings-status-pill settings-status-pill--ok"
+    } else {
+        "settings-status-pill settings-status-pill--muted"
     }
 }
 
@@ -267,20 +249,22 @@ fn client_id_input_placeholder(set: bool) -> &'static str {
 #[component]
 fn SettingsGithubClientIdStatus(locale: RwSignal<Locale>, ui: GithubUiSignals) -> impl IntoView {
     view! {
-        <Show when=move || ui.client_id_env.get()>
-            <p class="settings-hint" data-testid="settings-github-client-id-env">
-                {move || i18n::settings_github_client_id_env_overrides(locale.get())}
-            </p>
-        </Show>
-        <p class="settings-hint" data-testid="settings-github-client-id-status">
-            {move || {
-                client_id_keychain_label(
-                    locale.get(),
-                    ui.client_id_set.get(),
-                    ui.client_id_suffix.get(),
-                )
-            }}
-        </p>
+        <div class="settings-status-line" data-testid="settings-github-client-id-status">
+            <span
+                class=move || status_pill_class(ui.client_id_set.get())
+                role="status"
+            >
+                {move || client_id_keychain_label(locale.get(), ui.client_id_set.get())}
+            </span>
+            <Show when=move || ui.client_id_env.get()>
+                <span
+                    class="settings-status-pill settings-status-pill--info"
+                    data-testid="settings-github-client-id-env"
+                >
+                    {move || i18n::settings_github_client_id_env_overrides(locale.get())}
+                </span>
+            </Show>
+        </div>
     }
 }
 
@@ -403,31 +387,42 @@ fn SettingsGithubBlockView(
                 <h3 class="settings-block-title">{move || i18n::settings_github_block_title(locale.get())}</h3>
             </Show>
             <SettingsGithubClientIdBlock locale=locale ui=ui input_id=input_id />
-            <p class="settings-hint">
-                {move || connection_label(locale.get(), ui.github_set.get(), ui.github_suffix.get())}
-            </p>
-            <Show when=move || ui.user_code.get().is_some()>
-                <p class="settings-github-user-code" data-testid="settings-github-user-code">
-                    {move || ui.user_code.get().unwrap_or_default()}
-                </p>
-            </Show>
-            <Show when=move || ui.status_line.get().is_some()>
-                <p class="settings-hint" data-testid="settings-github-status">
-                    {move || ui.status_line.get().unwrap_or_default()}
-                </p>
-            </Show>
-            <Show when=move || ui.err.get().is_some()>
-                <p class="settings-error" data-testid="settings-github-error">
-                    {move || ui.err.get().unwrap_or_default()}
-                </p>
-            </Show>
-            <SettingsGithubBlockActions
-                locale=locale
-                ui=ui
-                on_connect=on_connect
-                on_disconnect=on_disconnect
-                on_reopen=on_reopen
-            />
+            <div class="settings-field" data-testid="settings-github-connection">
+                <div class="settings-field-label">
+                    {move || i18n::settings_github_connection_label(locale.get())}
+                </div>
+                <div class="settings-status-line">
+                    <span
+                        class=move || status_pill_class(ui.github_set.get())
+                        role="status"
+                        data-testid="settings-github-connection-status"
+                    >
+                        {move || connection_label(locale.get(), ui.github_set.get())}
+                    </span>
+                </div>
+                <Show when=move || ui.user_code.get().is_some()>
+                    <p class="settings-github-user-code" data-testid="settings-github-user-code">
+                        {move || ui.user_code.get().unwrap_or_default()}
+                    </p>
+                </Show>
+                <Show when=move || ui.status_line.get().is_some()>
+                    <p class="settings-hint" data-testid="settings-github-status">
+                        {move || ui.status_line.get().unwrap_or_default()}
+                    </p>
+                </Show>
+                <Show when=move || ui.err.get().is_some()>
+                    <p class="settings-error" data-testid="settings-github-error">
+                        {move || ui.err.get().unwrap_or_default()}
+                    </p>
+                </Show>
+                <SettingsGithubBlockActions
+                    locale=locale
+                    ui=ui
+                    on_connect=on_connect
+                    on_disconnect=on_disconnect
+                    on_reopen=on_reopen
+                />
+            </div>
         </div>
     }
 }
@@ -445,9 +440,7 @@ pub(crate) fn SettingsGithubBlock(
 ) -> impl IntoView {
     let ui = GithubUiSignals {
         github_set: RwSignal::new(false),
-        github_suffix: RwSignal::new(None),
         client_id_set: RwSignal::new(false),
-        client_id_suffix: RwSignal::new(None),
         client_id_env: RwSignal::new(false),
         client_id_draft: RwSignal::new(String::new()),
         client_id_feedback: RwSignal::new(None),
