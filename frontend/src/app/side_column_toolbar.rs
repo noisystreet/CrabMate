@@ -4,9 +4,7 @@ use leptos::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::app::github_embed_page::{
-    github_repo_can_open, try_open_github_embed_from_repo, use_github_embed_signals,
-};
+use crate::app::github_embed_page::{github_repo_can_open, try_open_github_embed_from_repo};
 use crate::app::settings_page::{SettingsSection, navigate_to_settings};
 use crate::app_prefs::SidePanelView;
 use crate::i18n::{self, Locale};
@@ -226,28 +224,23 @@ fn SideToolbarGithubRepoBtn(
     locale: RwSignal<Locale>,
     view_menu_open: RwSignal<bool>,
     status_tasks: StatusTasksSignals,
-    settings_page: RwSignal<bool>,
 ) -> impl IntoView {
-    let embed = use_github_embed_signals();
     view! {
         <button
             type="button"
             class="btn btn-secondary btn-sm shell-toolbar-icon-btn shell-toolbar-github-btn"
             data-testid="side-toolbar-github-repo"
+            prop:disabled=move || !github_repo_can_open(status_tasks.github_repo.get().as_ref())
             on:click=move |_| {
                 view_menu_open.set(false);
                 let repo = status_tasks.github_repo.get_untracked();
-                if github_repo_can_open(repo.as_ref()) {
-                    let _ = try_open_github_embed_from_repo(repo, locale.get_untracked(), embed);
-                } else {
-                    navigate_to_settings(settings_page, SettingsSection::Github);
-                }
+                let _ = try_open_github_embed_from_repo(repo, locale.get_untracked());
             }
             prop:title=move || {
                 if github_repo_can_open(status_tasks.github_repo.get().as_ref()) {
                     i18n::side_github_repo_btn_title(locale.get())
                 } else {
-                    i18n::side_github_connect_btn_title(locale.get())
+                    i18n::side_github_no_url_btn_title(locale.get())
                 }
             }
             prop:aria-label=move || {
@@ -258,7 +251,7 @@ fn SideToolbarGithubRepoBtn(
                         .map(|name| i18n::side_github_repo_btn_aria(loc, &name))
                         .unwrap_or_else(|| i18n::side_github_repo_btn_title(loc).to_string())
                 } else {
-                    i18n::side_github_connect_btn_title(loc).to_string()
+                    i18n::side_github_no_url_btn_title(loc).to_string()
                 }
             }
         >
@@ -309,7 +302,6 @@ pub(crate) fn ShellToolbarIcons(
                 locale=locale
                 view_menu_open=view_menu_open
                 status_tasks=status_tasks
-                settings_page=settings_page
             />
             <div class="toolbar-view-wrap">
                 <Show when=move || view_menu_open.get()>
@@ -368,14 +360,21 @@ pub(crate) fn ShellToolbarIcons(
                     <circle cx="12" cy="12" r="3" />
                 </svg>
             </button>
-            <Show when=move || crate::mobile_remote::mobile_remote_disconnect_available()>
+            <Show when=move || {
+                crate::mobile_remote::mobile_remote_disconnect_available()
+                    || crate::tauri_shell::tauri_shell_available()
+            }>
                 <button
                     type="button"
                     class="btn btn-secondary btn-sm shell-toolbar-icon-btn shell-toolbar-disconnect-btn"
                     data-testid="side-toolbar-disconnect"
                     on:click=move |_| {
                         view_menu_open.set(false);
-                        crate::mobile_remote::mobile_remote_disconnect();
+                        if crate::mobile_remote::mobile_remote_disconnect_available() {
+                            crate::mobile_remote::mobile_remote_disconnect();
+                        } else {
+                            crate::tauri_shell::tauri_disconnect_remote();
+                        }
                     }
                     prop:title=move || i18n::mobile_disconnect_server(locale.get())
                     prop:aria-label=move || i18n::mobile_disconnect_server_aria(locale.get())

@@ -73,3 +73,13 @@ if [[ -f "${splash_src}" ]]; then
   cp "${splash_src}" "${dist_dest}/splash.html"
   echo "copied splash.html -> ${dist_dest}"
 fi
+
+# 桌面/移动共用连接页（源：crates/crabmate-connect/assets）
+connect_src="${repo_root}/crates/crabmate-connect/assets/connect.html"
+if [[ -f "${connect_src}" ]]; then
+  cp "${connect_src}" "${dist_dest}/connect.html"
+  echo "copied connect.html -> ${dist_dest}"
+else
+  echo "error: missing ${connect_src}" >&2
+  exit 1
+fi

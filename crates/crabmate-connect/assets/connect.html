@@ -146,8 +146,7 @@
       <button type="submit" id="submit">连接</button>
     </form>
     <p class="hint">
-      局域网常用明文 HTTP；公网请用 HTTPS + Bearer。成功连接后会记住服务器地址；连接成功的非空
-      Bearer 会写入本机系统钥匙串（覆盖旧值），下次启动自动填充。也可用系统密码管理器保存。
+      局域网可用明文 HTTP；公网请用 HTTPS + Bearer。成功后会记住地址；非空 Bearer 写入系统钥匙串。
     </p>
     <script>
       const URL_KEY = "crabmate.connect.serverUrl";

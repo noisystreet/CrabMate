@@ -57,17 +57,20 @@ fn on_viewport_narrow_change(
     }
     is_narrow_viewport.set(matches);
     shell_prefs_storage::apply_narrow_viewport_dom_flag(matches);
-    if matches {
+    if matches || mobile_remote_client() {
         force_session_layout_if_mobile(layout_toggle, true);
         let current = side_panel_view.get_untracked();
         if !matches!(current, SidePanelView::None) {
-            stashed_panel.set_value(Some(current));
+            if !mobile_remote_client() {
+                stashed_panel.set_value(Some(current));
+            }
             side_panel_view.set(SidePanelView::None);
         }
     } else if let Some(prev) = stashed_panel.get_value() {
         side_panel_view.set(prev);
         stashed_panel.set_value(None);
     }
+    // 无暂存时保留当前 prefs（勿强制 Workspace，以免覆盖用户隐藏）。
 }
 
 pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
@@ -89,16 +92,26 @@ pub fn wire_narrow_viewport_layout(sig: WireNarrowViewportSignals) {
         };
         let query = mobile_layout_media_query();
         if let Some(initial) = media_query_matches(query.as_str()) {
-            if initial {
+            let collapse = initial || mobile_remote_client();
+            if collapse {
                 force_session_layout_if_mobile(layout_toggle, true);
                 let current = side_panel_view.get_untracked();
                 if !matches!(current, SidePanelView::None) {
-                    stashed_panel.set_value(Some(current));
+                    if !mobile_remote_client() {
+                        stashed_panel.set_value(Some(current));
+                    }
                     side_panel_view.set(SidePanelView::None);
+                }
+            } else {
+                // 桌面宽屏首屏：工作区展开（prefs 水合后还会再按端覆盖一次）
+                if matches!(side_panel_view.get_untracked(), SidePanelView::None) {
+                    side_panel_view.set(SidePanelView::Workspace);
                 }
             }
             is_narrow_viewport.set(initial);
             shell_prefs_storage::apply_narrow_viewport_dom_flag(initial);
+        } else if mobile_remote_client() {
+            side_panel_view.set(SidePanelView::None);
         }
 
         let Ok(f) = js_sys::Reflect::get(

@@ -4,16 +4,19 @@ Tauri 2 壳 + 连接页，**不**拉起本机 `crabmate serve` sidecar。
 包名 **`edu.crabmate`**，桌面显示名 **`crabmate`**。  
 产品定位见仓库 `agent_space/tauri-android-build-plan.md`（远程方案 B）。
 
+连接页与桌面壳共用 **`crates/crabmate-connect`**（探测、`#cm_web_api_bearer=` 交接、首次 Bearer 写钥匙串）。静态页源文件为 **`crates/crabmate-connect/assets/connect.html`**；同步到本目录：`bash scripts/sync-tauri-connect-page.sh`（写入 **`mobile-tauri/dist/index.html`**）。
+
 ## Phase 1 行为
 
 1. App 打开本地连接页：填写 **服务器 URL** + 可选 **Web API 共享密钥**（`CM_WEB_API_BEARER_TOKEN`，不是模型 `API_KEY`）。
 2. 壳进程探测远程 `GET /health`（带 Bearer），失败时在连接页显示错误。
 3. 成功后导航到远程 UI，并用 URL hash `#cm_web_api_bearer=…` 一次性交接密钥；远程前端启动时写入本页凭证并 `replaceState` 清掉 hash。
-4. 聊天 / SSE / 工具审批均在远程 `serve` 上执行；手机侧只记住连接配置。
+4. **首次**成功连接且 Bearer 非空、本机钥匙串尚无值时，写入系统钥匙串（账户 `tauri_connect_web_api_bearer`；Android 若无钥匙串后端则跳过，仍可用 localStorage / Autofill）。
+5. 聊天 / SSE / 工具审批均在远程 `serve` 上执行；手机侧只记住连接配置。
 
 **注意**：远程主机须使用已包含 `consume_mobile_connect_handoff` 的前端构建（`cd frontend && trunk build` 后重启 `serve`）。
 
-连接页将 **服务器 URL** 与 **Web API Bearer**（若填写）写入 `localStorage`，下次冷启动自动探测并登录。也可配合系统 Autofill / 密码管理器（表单 `username`=`服务器地址`，`password`=`Bearer`；手动连接成功后 `AutofillManager.commit()`）。侧栏工具栏 **断开** 图标或系统返回键回到连接页时带 `?manual=1`，**不会**立刻自动重连，便于更换服务器。空 Bearer 不会写 hash，以免清掉远程源已有凭证。
+连接页将 **服务器 URL** 写入 `localStorage`（`crabmate.connect.serverUrl`，并兼容旧键 `crabmate.mobile.*`），下次冷启动自动探测并登录。也可配合系统 Autofill / 密码管理器（表单 `username`=`服务器地址`，`password`=`Bearer`；手动连接成功后 `AutofillManager.commit()`）。侧栏工具栏 **断开** 图标或系统返回键回到连接页时带 `?manual=1`，**不会**立刻自动重连，便于更换服务器。空 Bearer 不会写 hash，以免清掉远程源已有凭证。
 
 `gen/android/app/build.gradle.kts` 中 release 的 `usesCleartextTraffic=true` 为局域网明文 HTTP 而设；若重新执行 `tauri android init`，需再确认该补丁与下方签名配置仍在。公网请用 HTTPS。
 

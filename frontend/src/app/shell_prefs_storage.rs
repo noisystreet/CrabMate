@@ -9,7 +9,7 @@
 //!
 //! 新增「首屏就读 / Effect 里写磁盘或改 DOM」的壳偏好时，优先在本模块加函数，避免在多个 `wire_*` 文件里散落写偏好逻辑。
 
-use leptos::prelude::GetUntracked;
+use leptos::prelude::*;
 use wasm_bindgen::JsCast;
 
 use crate::app::app_signals::AppSignals;
@@ -30,6 +30,16 @@ pub(crate) struct ShellUiInitialSnapshot {
     pub session_ui_font: String,
     pub session_chat_font: String,
     pub session_chat_font_size: f64,
+}
+
+/// 进入壳层后按端调整工作区侧栏：移动/窄屏折叠；桌面保留服务端 prefs（含用户主动隐藏）。
+///
+/// 桌面与移动共用 `/user-data/prefs`：移动端写入的 `none` 可能带到桌面，用户可在桌面再展开并持久化。
+pub(crate) fn apply_platform_side_panel_on_entry(app: &AppSignals) {
+    let narrow = app.shell_ui.is_narrow_viewport.get_untracked();
+    if crate::mobile_remote::mobile_remote_client() || narrow {
+        app.shell_ui.side_panel_view.set(SidePanelView::None);
+    }
 }
 
 #[must_use]

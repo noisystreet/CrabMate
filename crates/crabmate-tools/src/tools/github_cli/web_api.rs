@@ -83,6 +83,90 @@ fn is_git_repo(working_dir: &Path) -> bool {
         .is_some_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "true")
 }
 
+fn git_remote_get_url(working_dir: &Path, remote: &str) -> Option<String> {
+    let out = std::process::Command::new("git")
+        .args(["remote", "get-url", remote])
+        .current_dir(working_dir)
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
+}
+
+/// 将常见 GitHub remote 转为浏览器可打开的 HTTPS 页与 `owner/repo`。
+///
+/// 支持 `https://github.com/…`、`git@github.com:…`、`ssh://git@github.com/…`。
+/// 路径大小写保留自原始 remote（仅对 scheme/host 做大小写不敏感匹配）。
+fn github_web_from_remote_url(raw: &str) -> Option<(String, String)> {
+    let s = raw.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let lower = s.to_ascii_lowercase();
+    let prefix_len = if lower.starts_with("https://github.com/") {
+        "https://github.com/".len()
+    } else if lower.starts_with("https://www.github.com/") {
+        "https://www.github.com/".len()
+    } else if lower.starts_with("git@github.com:") {
+        "git@github.com:".len()
+    } else if lower.starts_with("ssh://git@github.com/") {
+        "ssh://git@github.com/".len()
+    } else if lower.starts_with("ssh://github.com/") {
+        "ssh://github.com/".len()
+    } else {
+        return None;
+    };
+    // 上述前缀均为 ASCII，字节长度与原串一致。
+    let path = s.get(prefix_len..)?;
+    let path = path
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(path)
+        .trim_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let mut parts = path.split('/');
+    let owner = parts.next()?.trim();
+    let repo = parts.next()?.trim();
+    if owner.is_empty() || repo.is_empty() || parts.next().is_some() {
+        return None;
+    }
+    let name = format!("{owner}/{repo}");
+    let url = format!("https://github.com/{name}");
+    Some((name, url))
+}
+
+fn fill_repo_from_git_remotes(working_dir: &Path, out: &mut GithubRepoContextData) {
+    if out
+        .url
+        .as_deref()
+        .map(str::trim)
+        .is_some_and(|u| !u.is_empty())
+    {
+        return;
+    }
+    for remote in ["origin", "upstream"] {
+        let Some(raw) = git_remote_get_url(working_dir, remote) else {
+            continue;
+        };
+        let Some((repo, url)) = github_web_from_remote_url(&raw) else {
+            continue;
+        };
+        if out
+            .repo
+            .as_deref()
+            .map(str::trim)
+            .is_none_or(|r| r.is_empty())
+        {
+            out.repo = Some(repo);
+        }
+        out.url = Some(url);
+        return;
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GithubRepoContextData {
     pub connected: bool,
@@ -175,6 +259,9 @@ fn parse_check_items(v: &JsonValue) -> Vec<GithubPrCheckItemData> {
 }
 
 /// 解析当前工作区的 GitHub 仓库上下文（只读）。
+///
+/// `connected` 表示本机 `gh repo view` 成功（CLI 已认证）。即使未连接，仍可能从
+/// `git remote`（`origin` / `upstream`）解析出可打开的仓库 HTTPS URL。
 pub fn github_repo_context(
     max_output_len: usize,
     allowed_commands: &[String],
@@ -193,21 +280,22 @@ pub fn github_repo_context(
     if !is_git_repo {
         return Ok(out);
     }
-    if !gh_available {
-        return Ok(out);
+    if gh_available {
+        let argv = vec![
+            "repo".into(),
+            "view".into(),
+            "--json".into(),
+            REPO_VIEW_FIELDS.into(),
+        ];
+        let formatted = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+        if let Ok(v) = parse_gh_json_stdout(&formatted) {
+            out.connected = true;
+            out.repo = json_str(&v, "nameWithOwner");
+            out.url = json_str(&v, "url");
+            out.default_branch = v.get("defaultBranchRef").and_then(|b| json_str(b, "name"));
+        }
     }
-    let argv = vec![
-        "repo".into(),
-        "view".into(),
-        "--json".into(),
-        REPO_VIEW_FIELDS.into(),
-    ];
-    let formatted = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
-    let v = parse_gh_json_stdout(&formatted)?;
-    out.connected = true;
-    out.repo = json_str(&v, "nameWithOwner");
-    out.url = json_str(&v, "url");
-    out.default_branch = v.get("defaultBranchRef").and_then(|b| json_str(b, "name"));
+    fill_repo_from_git_remotes(working_dir, &mut out);
     Ok(out)
 }
 
@@ -268,6 +356,34 @@ pub fn github_pr_current_checks(
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn github_web_from_remote_url_parses_common_forms() {
+        let cases = [
+            (
+                "https://github.com/octocat/Hello-World.git",
+                "octocat/Hello-World",
+                "https://github.com/octocat/Hello-World",
+            ),
+            (
+                "git@github.com:octocat/Hello-World.git",
+                "octocat/Hello-World",
+                "https://github.com/octocat/Hello-World",
+            ),
+            (
+                "ssh://git@github.com/octocat/Hello-World",
+                "octocat/Hello-World",
+                "https://github.com/octocat/Hello-World",
+            ),
+        ];
+        for (raw, repo, url) in cases {
+            let got = github_web_from_remote_url(raw).expect(raw);
+            assert_eq!(got.0, repo, "repo for {raw}");
+            assert_eq!(got.1, url, "url for {raw}");
+        }
+        assert!(github_web_from_remote_url("https://gitlab.com/a/b").is_none());
+        assert!(github_web_from_remote_url("").is_none());
+    }
 
     #[test]
     fn github_repo_context_treats_subdir_as_git_repo() {

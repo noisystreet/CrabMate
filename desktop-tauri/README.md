@@ -6,10 +6,14 @@
 
 1. `src-tauri/src/main.rs` 按优先级解析后端二进制（**`CM_DESKTOP_BACKEND_BIN`** → sidecar → **`PATH`**）。
 2. 子进程命令：**`crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json`**（若存在 **`$XDG_CONFIG_HOME/crabmate/config.toml`** 则追加 **`--config`**；可由 **`/etc/crabmate`** 首次种子；种子失败且尚无用户副本时只读回退 **`/etc`**）。
-3. 读取 stdout 中 **`{"event":"web_ready",…}`**，取 **`url`** 打开主窗口。
-4. 桌面应用保持单实例：再次启动会显示并聚焦已有主窗口（启动中则聚焦闪屏）。
-5. 关闭主窗口会结束应用并 kill 子进程；系统托盘可用时，最小化按钮会隐藏主窗口，托盘「显示/隐藏」可恢复。托盘初始化失败时保留普通最小化。
-6. 主窗口退出时保存大小、位置与最大化状态，下次启动恢复；启动闪屏不参与状态保存。右侧可拖拽分栏宽度沿用 Web 偏好持久化，恢复时会按当前视口安全夹取。
+3. 读取 stdout 中 **`{"event":"web_ready",…}`**，取 **`url`** 记为建议服务器地址。
+4. 打开主窗口展示**连接页**（与移动端共用 **`crates/crabmate-connect/assets/connect.html`**）：填写 **服务器地址** + 可选 **Web API Bearer**；本机 sidecar URL 会预填。探测 `GET /health` 成功后导航到该 `serve` UI，并用 hash 交接 Bearer。
+5. **首次**成功连接且 Bearer 非空、本机钥匙串尚无对应条目时，写入系统钥匙串（账户 `tauri_connect_web_api_bearer`）；下次启动自动填充。
+6. 桌面应用保持单实例：再次启动会显示并聚焦已有主窗口（启动中则聚焦闪屏）。
+7. 关闭主窗口会结束应用并 kill 子进程；系统托盘可用时，最小化按钮会隐藏主窗口，托盘「显示/隐藏」可恢复。托盘初始化失败时保留普通最小化。
+8. 主窗口退出时保存大小、位置与最大化状态，下次启动恢复；启动闪屏不参与状态保存。右侧可拖拽分栏宽度沿用 Web 偏好持久化，恢复时会按当前视口安全夹取。
+
+**跳过连接页**（直接打开本机 `web_ready` URL，旧行为）：**`CM_E2E_FIXTURES=1`**（Victauri E2E）或 **`CM_DESKTOP_SKIP_CONNECT=1`**。
 
 启动过程中会先显示无边框 **闪屏**（`splash.html`）：进度文案随后端拉起 / `web_ready` 更新；失败时在闪屏内展示错误与「退出」，避免空白窗口。后端就绪后创建主窗（先隐藏），**主窗首屏 page load 完成**（或约 20s 超时兜底）后再显示主窗并关闭闪屏；主窗与 WebView 底色为 `#0A0D12`，与前端启动页一致。远程 HTML 在 WASM 挂载前由 **`frontend/index.html`** 内联 **`#cm-boot-splash`** 占位。
 
@@ -40,6 +44,7 @@ CM_DESKTOP_BACKEND_BIN=/绝对路径/到/crabmate_agent/target/debug/crabmate ca
 ```
 
 - **`frontend/dist`** 须已构建；**`serve`** 从仓库根解析该目录（桌面 **`.deb`** 安装后从 **`/usr/share/crabmate/frontend/dist`**，见 **`prepare-sidecar.sh`**）。
+- **`prepare-sidecar.sh`** 会把共用 **`connect.html`** 与 **`splash.html`** 拷进 **`desktop-tauri/dist/`**。
 - 开发时**务必**用 **`CM_DESKTOP_BACKEND_BIN`** 指向刚编译的 **`target/debug/crabmate`**，避免 PATH / 旧 sidecar 版本不一致。
 
 ## 打包
@@ -51,5 +56,6 @@ CM_DESKTOP_BACKEND_BIN=/绝对路径/到/crabmate_agent/target/debug/crabmate ca
 - 故障排查、代理、Wayland IME：**`DEVELOPMENT.md`**
 - 架构与 **`web_ready` 字段：** **`docs/design/tauri_gui_mvp_design.md`**
 - 用户数据 HTTP 契约（Tauri 与 Web 共用）：**`docs/design/user_data_dir.md`**
+- 共用连接逻辑：**`crates/crabmate-connect`**（与 **`mobile-tauri`** 对齐）
 
 主 Web 前端仍在 **`frontend/`**，桌面端只提供壳层与进程管理。

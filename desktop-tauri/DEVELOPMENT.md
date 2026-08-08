@@ -22,7 +22,9 @@
 - 若存在 **`/etc/crabmate/config.toml`** 且用户尚无 XDG 配置：首次启动**种子拷贝**运行时子集（**`config.toml`**、**`agent_roles.toml`**、**`prompts/`**、**`config/`**、可选 **`skills/`**）到 **`$XDG_CONFIG_HOME/crabmate/`**（不覆盖已有文件；嵌入分片如 **`tools.toml`** 不拷贝）
 - 若存在用户级 **`$XDG_CONFIG_HOME/crabmate/config.toml`**，追加 **`--config`** 指向该文件；仅当种子失败且尚无用户副本时，才只读回退 **`/etc/crabmate/config.toml`**
 
-并等待后端输出 `web_ready` JSON，再加载 WebView URL。
+并等待后端输出 `web_ready` JSON，再打开共用**连接页**（预填该 URL；用户确认后导航到 `serve` UI）。**`CM_E2E_FIXTURES=1`** / **`CM_DESKTOP_SKIP_CONNECT=1`** 时跳过连接页直连。
+
+主 UI 加载在 **`http(s)://…`**（本机 sidecar 或用户填的远程 `serve`），不是 `tauri://` 资产页。桌面 **`capabilities/default.json`** 的 **`remote.urls` 仅回环**（`127.0.0.1` / `localhost`），以便本机 UI 可 `invoke`；**远程非回环 serve 无桌面 IPC**（外链等走前端 `window.open` 回退）。连接页导航仅放行本机 sidecar Origin 或 `connect_remote` 探测成功后的 **`AllowedServeOrigin`**，避免任意站点留在 WebView 并拿到钥匙串等命令。
 
 ### 1.3 指定后端可执行文件路径
 
@@ -74,7 +76,7 @@ CM_DESKTOP_BACKEND_BIN=/absolute/path/to/target/debug/crabmate cargo tauri dev
 - `src/desktop_lifecycle.rs` 负责托盘和窗口生命周期。托盘菜单含「显示/隐藏」「退出」；Linux 下 Tauri 不派发托盘图标点击事件，因此须使用菜单，Windows/macOS 左键可切换。
 - 关闭 `main` 会正常退出并回收后端；托盘初始化成功时，前端最小化命令改为隐藏窗口，让后端继续运行。
 - `tauri-plugin-window-state` 仅跟踪稳定标签 `main`，保存/恢复大小、位置和最大化状态；`splash` 在 denylist 中。刻意不恢复 `VISIBLE`，避免从托盘隐藏状态退出后下次冷启动仍不可见。
-- 主窗口先以 `visible(false)` 创建，再在 `show()` 前显式 `restore_state`（并对 `main` 使用 `skip_initial_state`），避免插件异步恢复造成默认 **1280×840** 闪一下。右侧分栏宽度由 Web `/user-data/prefs` 的 `side_width` 继续持久化；渲染/拖拽时按当前视口夹取，加载时不把夹取结果写回磁盘。
+- 主窗口先以 `visible(false)` 创建，再在 `show()` 前显式处理几何：连接页默认 **520×440**（贴合表单、减少底部空白；`show()` 后再居中，且不 `restore` 以免被撑大）；连上 `serve` 后恢复位置并 **maximize** 会话窗（不 restore 连接页写脏的 SIZE）。E2E 直连用完整 `restore_state`。并对 `main` 使用 `skip_initial_state`，避免插件异步恢复造成默认尺寸闪一下。右侧分栏宽度由 Web `/user-data/prefs` 的 `side_width` 继续持久化；渲染/拖拽时按当前视口夹取，加载时不把夹取结果写回磁盘。
 - 托盘「退出」与 `quit_desktop_app` 共用 `request_desktop_quit`（先 `BackendHandle::shutdown` 再 `app.exit(0)`），`RunEvent::Exit|ExitRequested` 再兜底一次。
 - `BackendHandle` 在 `setup` 阶段就被 `manage`，握手线程 spawn 出子进程后立刻 `adopt` 到同一槽位；`shutdown` 会置位退出标记并 kill，因此在 `web_ready` 之前退出也不会留下孤儿 `crabmate serve`。标记置位后握手线程不再拉起或保留子进程，也不会再创建主窗口。
 - 托盘初始化失败时，最小化命令保留普通窗口最小化。
@@ -114,7 +116,7 @@ ls -l /absolute/path/to/crabmate
 
 ### 2.2 一直等待 ready 或超时 / 启动闪屏
 
-启动时会先显示 **`splash.html`**（无边框小窗）：文案阶段为「正在启动 → 拉起后端 → 等待 web_ready → 打开界面」。后端就绪后关闭闪屏并打开主窗口。
+启动时会先显示 **`splash.html`**（无边框小窗）：文案阶段为「正在启动 → 拉起后端 → 等待 web_ready → 打开连接页」。后端就绪后关闭闪屏并打开主窗口（连接页或 E2E 直连 UI）。
 
 若失败：**闪屏保留**并展示错误详情与「退出」按钮（不再立刻关掉闪屏只弹系统对话框）。排查：
 
@@ -139,7 +141,7 @@ crabmate serve --host 127.0.0.1 --port 0 --desktop-ready-json
 
 若 stderr/日志为 **`unexpected argument '--desktop-ready-json' found`**：deb 或 sidecar 里的 **`crabmate` 过旧**，与当前桌面壳不匹配。**无**旧版回退；须按 §6 重编后端并重打 **`cargo tauri build`** 后再 **`dpkg -i`**。
 
-闪屏静态页由 **`prepare-sidecar.sh`** 复制到 **`desktop-tauri/dist/splash.html`**（与 `frontendDist` 一致）。
+闪屏与连接页静态资源由 **`prepare-sidecar.sh`** 复制到 **`desktop-tauri/dist/splash.html`**、**`connect.html`**（与 `frontendDist` 一致；连接页源在 **`crates/crabmate-connect/assets/`**）。
 
 ### 2.3 Web API 405（如「删除文件夹」）或接口版本不一致
 

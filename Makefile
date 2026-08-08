@@ -139,6 +139,7 @@ desktop-dev: backend
 apk_frontend_dep := $(if $(filter 1 true yes,$(CM_MOBILE_SKIP_FRONTEND)),,frontend)
 
 apk mobile-apk: $(apk_frontend_dep)
+	bash "$(ROOT)/scripts/sync-tauri-connect-page.sh"
 	MOBILE_ANDROID_TARGET="$(MOBILE_ANDROID_TARGET)" \
 		CM_MOBILE_GRADLE_STOP="$(CM_MOBILE_GRADLE_STOP)" \
 		CM_MOBILE_SKIP_FRONTEND=1 \

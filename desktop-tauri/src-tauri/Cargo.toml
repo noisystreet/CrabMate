@@ -18,6 +18,7 @@ tokio = { version = "1", features = ["sync"] }
 url = "2"
 serde_json = "1"
 crabmate-config = { path = "../../crates/crabmate-config", default-features = false }
+crabmate-connect = { path = "../../crates/crabmate-connect" }
 tauri-plugin-single-instance = "2.4.3"
 tauri-plugin-window-state = "2.4.1"
 

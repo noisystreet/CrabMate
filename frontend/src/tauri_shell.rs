@@ -39,24 +39,35 @@ export function invokeTauriMainWindowClose() {
 }
 
 export function invokeTauriOpenExternalUrl(url) {
+  const href = String(url || "");
+  const fallbackOpen = () => {
+    try {
+      window.open(href, "_blank");
+    } catch (_) {}
+  };
   try {
     const b = globalThis.CrabMateMobile;
     if (b && typeof b.openExternalUrl === "function") {
-      b.openExternalUrl(String(url || ""));
+      b.openExternalUrl(href);
       return Promise.resolve();
     }
   } catch (_) {}
   try {
-    return tauriInvoke("open_external_url", { url });
-  } catch (_) {}
-  try {
-    window.open(String(url || ""), "_blank");
-  } catch (_) {}
-  return Promise.resolve();
+    return Promise.resolve(tauriInvoke("open_external_url", { url: href })).catch(() => {
+      fallbackOpen();
+    });
+  } catch (_) {
+    fallbackOpen();
+    return Promise.resolve();
+  }
 }
 
 export function invokeTauriOsPrefersDarkTheme() {
   return tauriInvoke("os_prefers_dark_theme", {});
+}
+
+export function invokeTauriDisconnectRemote() {
+  return tauriInvoke("disconnect_remote", {});
 }
 
 export function installChatExternalLinkHandler() {
@@ -116,6 +127,8 @@ extern "C" {
     fn invoke_tauri_open_external_url(url: &str) -> js_sys::Promise;
     #[wasm_bindgen(js_name = invokeTauriOsPrefersDarkTheme)]
     fn invoke_tauri_os_prefers_dark_theme() -> js_sys::Promise;
+    #[wasm_bindgen(js_name = invokeTauriDisconnectRemote)]
+    fn invoke_tauri_disconnect_remote() -> js_sys::Promise;
     #[wasm_bindgen(js_name = installChatExternalLinkHandler)]
     fn install_chat_external_link_handler();
 }
@@ -150,6 +163,10 @@ fn invoke_tauri_open_external_url(_: &str) -> js_sys::Promise {
 #[cfg(not(target_arch = "wasm32"))]
 fn invoke_tauri_os_prefers_dark_theme() -> js_sys::Promise {
     js_sys::Promise::resolve(&wasm_bindgen::JsValue::NULL)
+}
+#[cfg(not(target_arch = "wasm32"))]
+fn invoke_tauri_disconnect_remote() -> js_sys::Promise {
+    js_sys::Promise::resolve(&wasm_bindgen::JsValue::UNDEFINED)
 }
 
 /// 是否在 **桌面** Tauri WebView 内运行。
@@ -214,6 +231,16 @@ pub fn tauri_main_window_close() {
     tauri_spawn_window_action(invoke_tauri_main_window_close);
 }
 
+/// 导航回连接页（桌面 `disconnect_remote`）。
+pub fn tauri_disconnect_remote() {
+    if !tauri_shell_available() {
+        return;
+    }
+    spawn_local(async move {
+        let _ = tauri_invoke_void(invoke_tauri_disconnect_remote()).await;
+    });
+}
+
 /// 在系统默认浏览器中打开 URL。
 ///
 /// 优先级：Android `CrabMateMobile.openExternalUrl` → 桌面 Tauri `open_external_url` → `window.open`。
@@ -233,7 +260,15 @@ pub fn tauri_open_external_url(url: &str) {
     }
     let url = url.to_string();
     spawn_local(async move {
-        let _ = tauri_invoke_void(invoke_tauri_open_external_url(&url)).await;
+        // JS 桥已在 invoke 失败时 `window.open`；此处再兜底一次，避免 Promise 被吞掉。
+        if tauri_invoke_void(invoke_tauri_open_external_url(&url))
+            .await
+            .is_err()
+        {
+            if let Some(window) = web_sys::window() {
+                let _ = window.open_with_url_and_target(&url, "_blank");
+            }
+        }
     });
 }
 

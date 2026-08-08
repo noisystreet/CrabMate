@@ -23,6 +23,7 @@ members = [
     "crates/crabmate-benchmark",
     "crates/crabmate-runtime",
     "crates/crabmate-internal",
+    "crates/crabmate-connect",
 ]
 resolver = "2"
 
