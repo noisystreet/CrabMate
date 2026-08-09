@@ -11,11 +11,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- Dev/package **Dockerfile** (Ubuntu **24.04** toolchain + `cargo-deb`) and **`make package-docker`** to produce host `dist/*.tar.gz` / `dist/*.deb` (not a runtime image; UI/Trunk stays in Client).
 
 ### Changed
 
-- (none yet)
+- Deb `depends` → **`libc6 (>= 2.39)`** to match binaries built on Ubuntu 24.04 / current CI (`ubuntu-latest`).
 
 ### Fixed
 

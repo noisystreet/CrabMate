@@ -1,0 +1,11 @@
+# Dev image context only (Dockerfile does not COPY sources today; keep lean if that changes).
+.git
+.github
+**/target
+**/target-*
+dist
+agent_space
+**/.crabmate
+**/*.deb
+**/*.tar.gz
+**/.DS_Store
