@@ -116,21 +116,11 @@ fn messages_to_transcript_range(messages: &[Message], start: usize, end: usize) 
     out
 }
 
-/// 有**可定稿的 turn 布局**（旁白/工具/终答）：user 前缀 → 投影块 → 投影未覆盖的 assistant 后缀。
-/// 仅 timeline 或无布局：回退整段 Message[]。
-fn format_completed_turn_for_past_display(
+fn collect_turn_prefix_and_uncovered(
     messages: &[Message],
     turn_start: usize,
     projection: &TuiTurnProjection,
-) -> String {
-    if !projection.has_flushable_turn_layout() {
-        return messages_to_transcript_range(messages, turn_start, messages.len());
-    }
-    let block = projection.format_projection_block(None);
-    if block.is_empty() {
-        return messages_to_transcript_range(messages, turn_start, messages.len());
-    }
-
+) -> (String, String) {
     let mut prefix = String::new();
     let mut uncovered_assistants = String::new();
     let end = messages.len();
@@ -159,6 +149,26 @@ fn format_completed_turn_for_past_display(
         }
         prefix.push_str(&format!("[{role}]\n{body}\n\n"));
     }
+    (prefix, uncovered_assistants)
+}
+
+/// 有**可定稿的 turn 布局**（旁白/工具/终答）：user 前缀 → 投影块 → 投影未覆盖的 assistant 后缀。
+/// 仅 timeline 或无布局：回退整段 Message[]。
+fn format_completed_turn_for_past_display(
+    messages: &[Message],
+    turn_start: usize,
+    projection: &TuiTurnProjection,
+) -> String {
+    if !projection.has_flushable_turn_layout() {
+        return messages_to_transcript_range(messages, turn_start, messages.len());
+    }
+    let block = projection.format_projection_block(None);
+    if block.is_empty() {
+        return messages_to_transcript_range(messages, turn_start, messages.len());
+    }
+
+    let (prefix, uncovered_assistants) =
+        collect_turn_prefix_and_uncovered(messages, turn_start, projection);
 
     let mut out = prefix;
     if !out.is_empty() && !out.ends_with('\n') {

@@ -30,6 +30,136 @@ fn help_lines() -> Vec<String> {
     ]
 }
 
+fn handle_branch_slash(
+    parts: &[&str],
+    sess: &mut CliSqliteSessionState,
+    messages: &mut Vec<Message>,
+    agent_role_owned: &mut Option<String>,
+) -> CliSqliteSlashResult {
+    let ord_s = parts.get(1).copied().unwrap_or("");
+    let Ok(ord) = ord_s.parse::<usize>() else {
+        return CliSqliteSlashResult::Handled {
+            lines: vec![
+                "用法: /branch <before_user_ordinal>".into(),
+                "ordinal 为 0-based，语义与 Web POST /chat/branch 一致。".into(),
+            ],
+        };
+    };
+    match sess.branch_before_user_ordinal(ord, messages, agent_role_owned) {
+        Ok(()) => CliSqliteSlashResult::Handled {
+            lines: vec![format!(
+                "已分支：截断到第 {ord} 条用户消息之前（revision 已递增）。"
+            )],
+        },
+        Err(e) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("分支失败: {e}")],
+        },
+    }
+}
+
+fn handle_conv_list(sess: &CliSqliteSessionState) -> CliSqliteSlashResult {
+    match sess.list_recent_ids(24) {
+        Ok(ids) if ids.is_empty() => CliSqliteSlashResult::Handled {
+            lines: vec!["（库中暂无会话）".into()],
+        },
+        Ok(ids) => {
+            let mut lines: Vec<String> = vec!["最近会话 id（updated 倒序）：".into()];
+            for id in ids {
+                lines.push(format!("  · {id}"));
+            }
+            CliSqliteSlashResult::Handled { lines }
+        }
+        Err(e) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("列出失败: {e}")],
+        },
+    }
+}
+
+fn handle_conv_open(
+    parts: &[&str],
+    sess: &mut CliSqliteSessionState,
+    messages: &mut Vec<Message>,
+    agent_role_owned: &mut Option<String>,
+) -> CliSqliteSlashResult {
+    let target = parts.get(2).copied().unwrap_or("");
+    if target.is_empty() {
+        return CliSqliteSlashResult::Handled {
+            lines: vec!["用法: /conv open <id> 或 /conv open last".into()],
+        };
+    }
+    let open_res = if target == "last" {
+        match sess.list_recent_ids(1) {
+            Ok(ids) => {
+                let Some(id) = ids.into_iter().next() else {
+                    return CliSqliteSlashResult::Handled {
+                        lines: vec!["库中暂无会话。".into()],
+                    };
+                };
+                sess.switch_conversation(id.as_str(), messages, agent_role_owned)
+            }
+            Err(e) => {
+                return CliSqliteSlashResult::Handled {
+                    lines: vec![format!("列出失败: {e}")],
+                };
+            }
+        }
+    } else {
+        sess.switch_conversation(target, messages, agent_role_owned)
+    };
+    match open_res {
+        Ok(()) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("已打开会话 {}", sess.conversation_id)],
+        },
+        Err(e) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("打开失败: {e}")],
+        },
+    }
+}
+
+fn handle_conv_new(
+    bootstrap_for_new: Option<Vec<Message>>,
+    sess: &mut CliSqliteSessionState,
+    messages: &mut Vec<Message>,
+    agent_role_owned: &mut Option<String>,
+) -> CliSqliteSlashResult {
+    let Some(bootstrap) = bootstrap_for_new else {
+        return CliSqliteSlashResult::Handled {
+            lines: vec!["内部错误：缺少新建会话引导消息。".into()],
+        };
+    };
+    let role_snap = agent_role_owned.clone();
+    match sess.start_fresh_conversation(bootstrap, role_snap.as_deref(), messages, agent_role_owned)
+    {
+        Ok(()) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("新建会话 {}", sess.conversation_id)],
+        },
+        Err(e) => CliSqliteSlashResult::Handled {
+            lines: vec![format!("新建失败: {e}")],
+        },
+    }
+}
+
+fn handle_conv_subcommand(
+    sub: &str,
+    parts: &[&str],
+    sess: &mut CliSqliteSessionState,
+    messages: &mut Vec<Message>,
+    agent_role_owned: &mut Option<String>,
+    bootstrap_for_new: Option<Vec<Message>>,
+) -> CliSqliteSlashResult {
+    match sub {
+        "help" | "?" => CliSqliteSlashResult::Handled {
+            lines: help_lines(),
+        },
+        "list" => handle_conv_list(sess),
+        "open" => handle_conv_open(parts, sess, messages, agent_role_owned),
+        "new" => handle_conv_new(bootstrap_for_new, sess, messages, agent_role_owned),
+        _ => CliSqliteSlashResult::Handled {
+            lines: vec![format!("未知子命令 `{sub}`，输入 /conv help")],
+        },
+    }
+}
+
 /// 处理 `/conv` / `/branch`。`bootstrap_for_new` 在 `/conv new` 时提供新会话消息。
 pub(crate) fn try_apply_cli_sqlite_slash(
     trimmed: &str,
@@ -51,105 +181,16 @@ pub(crate) fn try_apply_cli_sqlite_slash(
     };
 
     if cmd == "/branch" {
-        let ord_s = parts.get(1).copied().unwrap_or("");
-        let Ok(ord) = ord_s.parse::<usize>() else {
-            return CliSqliteSlashResult::Handled {
-                lines: vec![
-                    "用法: /branch <before_user_ordinal>".into(),
-                    "ordinal 为 0-based，语义与 Web POST /chat/branch 一致。".into(),
-                ],
-            };
-        };
-        return match sess.branch_before_user_ordinal(ord, messages, agent_role_owned) {
-            Ok(()) => CliSqliteSlashResult::Handled {
-                lines: vec![format!(
-                    "已分支：截断到第 {ord} 条用户消息之前（revision 已递增）。"
-                )],
-            },
-            Err(e) => CliSqliteSlashResult::Handled {
-                lines: vec![format!("分支失败: {e}")],
-            },
-        };
+        return handle_branch_slash(&parts, sess, messages, agent_role_owned);
     }
 
     let sub = parts.get(1).copied().unwrap_or("help");
-    match sub {
-        "help" | "?" => CliSqliteSlashResult::Handled {
-            lines: help_lines(),
-        },
-        "list" => match sess.list_recent_ids(24) {
-            Ok(ids) if ids.is_empty() => CliSqliteSlashResult::Handled {
-                lines: vec!["（库中暂无会话）".into()],
-            },
-            Ok(ids) => {
-                let mut lines: Vec<String> = vec!["最近会话 id（updated 倒序）：".into()];
-                for id in ids {
-                    lines.push(format!("  · {id}"));
-                }
-                CliSqliteSlashResult::Handled { lines }
-            }
-            Err(e) => CliSqliteSlashResult::Handled {
-                lines: vec![format!("列出失败: {e}")],
-            },
-        },
-        "open" => {
-            let target = parts.get(2).copied().unwrap_or("");
-            if target.is_empty() {
-                return CliSqliteSlashResult::Handled {
-                    lines: vec!["用法: /conv open <id> 或 /conv open last".into()],
-                };
-            }
-            let open_res = if target == "last" {
-                match sess.list_recent_ids(1) {
-                    Ok(ids) => {
-                        let Some(id) = ids.into_iter().next() else {
-                            return CliSqliteSlashResult::Handled {
-                                lines: vec!["库中暂无会话。".into()],
-                            };
-                        };
-                        sess.switch_conversation(id.as_str(), messages, agent_role_owned)
-                    }
-                    Err(e) => {
-                        return CliSqliteSlashResult::Handled {
-                            lines: vec![format!("列出失败: {e}")],
-                        };
-                    }
-                }
-            } else {
-                sess.switch_conversation(target, messages, agent_role_owned)
-            };
-            match open_res {
-                Ok(()) => CliSqliteSlashResult::Handled {
-                    lines: vec![format!("已打开会话 {}", sess.conversation_id)],
-                },
-                Err(e) => CliSqliteSlashResult::Handled {
-                    lines: vec![format!("打开失败: {e}")],
-                },
-            }
-        }
-        "new" => {
-            let Some(bootstrap) = bootstrap_for_new else {
-                return CliSqliteSlashResult::Handled {
-                    lines: vec!["内部错误：缺少新建会话引导消息。".into()],
-                };
-            };
-            let role_snap = agent_role_owned.clone();
-            match sess.start_fresh_conversation(
-                bootstrap,
-                role_snap.as_deref(),
-                messages,
-                agent_role_owned,
-            ) {
-                Ok(()) => CliSqliteSlashResult::Handled {
-                    lines: vec![format!("新建会话 {}", sess.conversation_id)],
-                },
-                Err(e) => CliSqliteSlashResult::Handled {
-                    lines: vec![format!("新建失败: {e}")],
-                },
-            }
-        }
-        _ => CliSqliteSlashResult::Handled {
-            lines: vec![format!("未知子命令 `{sub}`，输入 /conv help")],
-        },
-    }
+    handle_conv_subcommand(
+        sub,
+        &parts,
+        sess,
+        messages,
+        agent_role_owned,
+        bootstrap_for_new,
+    )
 }

@@ -257,6 +257,52 @@ fn classify_api_base_slash_command(arg: &str) -> ReplBuiltIn<'static> {
     }
 }
 
+fn classify_api_key_slash_command(arg: &str) -> ReplBuiltIn<'static> {
+    let a = arg.trim();
+    if a.is_empty() {
+        return ReplBuiltIn::ApiKeyUsage;
+    }
+    if a.eq_ignore_ascii_case("status") {
+        return ReplBuiltIn::ApiKeyStatus;
+    }
+    if a.eq_ignore_ascii_case("clear") || a.eq_ignore_ascii_case("clear --no-persist") {
+        return ReplBuiltIn::ApiKeyClear {
+            persist: !a.to_ascii_lowercase().contains("--no-persist"),
+        };
+    }
+    match parse_repl_set_tail(a) {
+        ReplSetTail::Value(s) => ReplBuiltIn::ApiKeySet(s.to_string()),
+        ReplSetTail::MissingValue | ReplSetTail::NotSet => ReplBuiltIn::ApiKeyUsage,
+    }
+}
+
+fn classify_workspace_slash_command(arg: &str) -> ReplBuiltIn<'_> {
+    if arg.is_empty() {
+        ReplBuiltIn::WorkspaceShow
+    } else {
+        ReplBuiltIn::WorkspaceSet(arg)
+    }
+}
+
+fn classify_skills_slash_command<'a>(arg: &str, head: &'a str) -> ReplBuiltIn<'a> {
+    if arg.is_empty() || arg.eq_ignore_ascii_case("list") {
+        ReplBuiltIn::SkillsList
+    } else {
+        ReplBuiltIn::Unknown(head)
+    }
+}
+
+fn classify_mode_slash_command(arg: &str) -> ReplBuiltIn<'static> {
+    let a = arg.trim();
+    if a.is_empty() {
+        return ReplBuiltIn::ModeShow;
+    }
+    match crate::types::parse_session_mode(a) {
+        Ok(m) => ReplBuiltIn::ModeSet(m),
+        Err(_) => ReplBuiltIn::ModeUsage,
+    }
+}
+
 /// 解析 REPL 行首 `/` 内建命令；非内建前缀返回 `None`。
 pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>> {
     let s = input.trim();
@@ -278,56 +324,16 @@ pub(crate) fn classify_repl_slash_command(input: &str) -> Option<ReplBuiltIn<'_>
         "doctor" => ReplBuiltIn::Doctor(arg),
         "probe" => ReplBuiltIn::Probe(arg),
         "models" => classify_models_slash_command(arg),
-        "workspace" | "cd" => {
-            if arg.is_empty() {
-                ReplBuiltIn::WorkspaceShow
-            } else {
-                ReplBuiltIn::WorkspaceSet(arg)
-            }
-        }
-        "skills" => {
-            if arg.is_empty() || arg.eq_ignore_ascii_case("list") {
-                ReplBuiltIn::SkillsList
-            } else {
-                ReplBuiltIn::Unknown(head)
-            }
-        }
+        "workspace" | "cd" => classify_workspace_slash_command(arg),
+        "skills" => classify_skills_slash_command(arg, head),
         "tools" => ReplBuiltIn::Tools,
         "help" | "?" => ReplBuiltIn::Help,
         "export" => ReplBuiltIn::Export(arg),
         "save-session" => ReplBuiltIn::SaveSession(arg),
         "mcp" => classify_mcp_slash_command(arg),
-        "api-key" | "apikey" => {
-            let a = arg.trim();
-            if a.is_empty() {
-                ReplBuiltIn::ApiKeyUsage
-            } else if a.eq_ignore_ascii_case("status") {
-                ReplBuiltIn::ApiKeyStatus
-            } else if a.eq_ignore_ascii_case("clear")
-                || a.eq_ignore_ascii_case("clear --no-persist")
-            {
-                ReplBuiltIn::ApiKeyClear {
-                    persist: !a.to_ascii_lowercase().contains("--no-persist"),
-                }
-            } else {
-                match parse_repl_set_tail(a) {
-                    ReplSetTail::Value(s) => ReplBuiltIn::ApiKeySet(s.to_string()),
-                    ReplSetTail::MissingValue | ReplSetTail::NotSet => ReplBuiltIn::ApiKeyUsage,
-                }
-            }
-        }
+        "api-key" | "apikey" => classify_api_key_slash_command(arg),
         "agent" => classify_agent_slash_command(arg),
-        "mode" => {
-            let a = arg.trim();
-            if a.is_empty() {
-                ReplBuiltIn::ModeShow
-            } else {
-                match crate::types::parse_session_mode(a) {
-                    Ok(m) => ReplBuiltIn::ModeSet(m),
-                    Err(_) => ReplBuiltIn::ModeUsage,
-                }
-            }
-        }
+        "mode" => classify_mode_slash_command(arg),
         "version" => ReplBuiltIn::Version,
         "context" => ReplBuiltIn::Context,
         _ => ReplBuiltIn::Unknown(head),

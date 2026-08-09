@@ -20,6 +20,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - **`lizard-rust`**: also ratchets **`global_over_ccn_sum_cap`** — the sum of CCN across all functions with CCN>threshold (full-repo scans).
 - Refactor small modules that had 1–2 functions with CCN>10 (meta dialogue, chat job queue, MCP, CLI serve, turn replay dump, e2e dump/judge, terminal render, runtime display/LaTeX, turn-layout, `cmd_mate`) so those module caps are **0**.
 - Refactor `src/agent` outer-loop / reflect / serial early-emit / context summary helpers so its CCN>10 count is **0**.
+- Refactor `src/runtime` (REPL/TUI/CLI helpers) so its CCN>10 count is **0**; full-repo over-threshold CCN sum ratchet lowered accordingly.
 
 ### Fixed
 

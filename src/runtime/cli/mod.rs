@@ -5,11 +5,19 @@ mod commands;
 #[cfg(feature = "repl")]
 mod repl;
 #[cfg(feature = "repl")]
+mod repl_bootstrap;
+#[cfg(feature = "repl")]
+mod repl_chat_round;
+#[cfg(feature = "repl")]
 mod repl_extras;
+#[cfg(feature = "repl")]
+mod repl_iteration;
 #[cfg(feature = "repl")]
 pub(crate) mod repl_parse;
 #[cfg(feature = "repl")]
 mod repl_slash_dispatch;
+#[cfg(feature = "repl")]
+mod repl_slash_followup;
 
 pub use chat::{CliMainInvocationCommon, run_chat_invocation};
 pub use commands::{

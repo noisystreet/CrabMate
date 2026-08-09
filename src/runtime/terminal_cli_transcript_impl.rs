@@ -151,6 +151,16 @@ fn tool_cli_compact_title_rest(name: &str, args: &str, summary: Option<&str>) ->
     })
 }
 
+fn format_tool_cli_heading_line(name: &str, title_rest: Option<&str>) -> String {
+    match title_rest {
+        Some(rest) => match terminal_tool_title_suffix_after_name(rest) {
+            Some(suffix) => format!("\n### 工具 · {name}{suffix}"),
+            None => format!("\n### 工具 · {name}"),
+        },
+        None => format!("\n### 工具 · {name}"),
+    }
+}
+
 fn write_tool_cli_heading_line(
     w: &mut io::Stdout,
     color: bool,
@@ -164,13 +174,7 @@ fn write_tool_cli_heading_line(
             SetForegroundColor(CLI_REPL_HELP_CMD_FG)
         )?;
     }
-    match title_rest {
-        Some(rest) => match terminal_tool_title_suffix_after_name(rest) {
-            Some(suffix) => writeln!(w, "\n### 工具 · {name}{suffix}")?,
-            None => writeln!(w, "\n### 工具 · {name}")?,
-        },
-        None => writeln!(w, "\n### 工具 · {name}")?,
-    }
+    writeln!(w, "{}", format_tool_cli_heading_line(name, title_rest))?;
     if color {
         queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
         queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
@@ -237,6 +241,28 @@ pub(crate) fn print_tool_result_terminal(
     w.flush()
 }
 
+fn read_file_summary_passthrough_error(raw: &str) -> bool {
+    raw.starts_with("错误：")
+        || raw.starts_with("参数 JSON 无效")
+        || raw.starts_with("缺少 path")
+        || raw.starts_with("读取元数据失败")
+        || raw.starts_with("打开文件失败")
+        || raw.starts_with("文件为空:")
+}
+
+fn read_file_summary_numbered_content_start(lines: &[&str]) -> Option<usize> {
+    for (i, line) in lines.iter().enumerate() {
+        let t = line.trim_start();
+        let Some((prefix, _rest)) = t.split_once('|') else {
+            continue;
+        };
+        if prefix.trim().chars().all(|c| c.is_ascii_digit()) && !prefix.trim().is_empty() {
+            return Some(i);
+        }
+    }
+    None
+}
+
 /// CLI 下 `read_file` 终端展示：仅保留编码/行范围等元数据块，**不**列出 `行号|正文`；完整串仍写入对话历史。
 #[must_use]
 pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
@@ -245,28 +271,11 @@ pub(crate) fn read_file_result_terminal_summary(raw: &str) -> String {
         return String::new();
     }
     // 短错误、参数问题：原样展示
-    if raw.starts_with("错误：")
-        || raw.starts_with("参数 JSON 无效")
-        || raw.starts_with("缺少 path")
-        || raw.starts_with("读取元数据失败")
-        || raw.starts_with("打开文件失败")
-        || raw.starts_with("文件为空:")
-    {
+    if read_file_summary_passthrough_error(raw) {
         return raw.to_string();
     }
     let lines: Vec<&str> = raw.lines().collect();
-    let mut content_start: Option<usize> = None;
-    for (i, line) in lines.iter().enumerate() {
-        let t = line.trim_start();
-        let Some((prefix, _rest)) = t.split_once('|') else {
-            continue;
-        };
-        if prefix.trim().chars().all(|c| c.is_ascii_digit()) && !prefix.trim().is_empty() {
-            content_start = Some(i);
-            break;
-        }
-    }
-    let Some(cs) = content_start else {
+    let Some(cs) = read_file_summary_numbered_content_start(&lines) else {
         return truncate_tool_output_with_note(raw, TERMINAL_TOOL_SUMMARY_FALLBACK_CHARS);
     };
     let header = lines[..cs].join("\n");

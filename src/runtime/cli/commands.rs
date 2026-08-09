@@ -92,6 +92,35 @@ pub fn run_tool_replay_command(
 }
 
 /// `crabmate save-session`：从磁盘会话文件读取并写入导出目录（兼容别名 `export-session`）。
+fn write_save_session_export(
+    workspace: &std::path::Path,
+    messages: &[crate::types::Message],
+    fmt: ReplExportKind,
+    projection: crate::runtime::chat_export::JsonExportProjection,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match fmt {
+        ReplExportKind::Json => {
+            let p = crate::runtime::workspace_session::export_json_with_projection(
+                workspace, messages, projection,
+            )?;
+            println!("{}", p.display());
+        }
+        ReplExportKind::Markdown => {
+            let p = crate::runtime::workspace_session::export_markdown(workspace, messages)?;
+            println!("{}", p.display());
+        }
+        ReplExportKind::Both => {
+            let pj = crate::runtime::workspace_session::export_json_with_projection(
+                workspace, messages, projection,
+            )?;
+            let pm = crate::runtime::workspace_session::export_markdown(workspace, messages)?;
+            println!("{}", pj.display());
+            println!("{}", pm.display());
+        }
+    }
+    Ok(())
+}
+
 pub fn run_save_session_command(
     cfg: &AgentConfig,
     workspace_cli: &Option<String>,
@@ -126,33 +155,7 @@ pub fn run_save_session_command(
             crate::runtime::chat_export::JsonExportProjection::Display
         }
     };
-    match fmt {
-        ReplExportKind::Json => {
-            let p = crate::runtime::workspace_session::export_json_with_projection(
-                &workspace,
-                &parsed.messages,
-                projection,
-            )?;
-            println!("{}", p.display());
-        }
-        ReplExportKind::Markdown => {
-            let p =
-                crate::runtime::workspace_session::export_markdown(&workspace, &parsed.messages)?;
-            println!("{}", p.display());
-        }
-        ReplExportKind::Both => {
-            let pj = crate::runtime::workspace_session::export_json_with_projection(
-                &workspace,
-                &parsed.messages,
-                projection,
-            )?;
-            let pm =
-                crate::runtime::workspace_session::export_markdown(&workspace, &parsed.messages)?;
-            println!("{}", pj.display());
-            println!("{}", pm.display());
-        }
-    }
-    Ok(())
+    write_save_session_export(&workspace, &parsed.messages, fmt, projection)
 }
 
 fn plugin_default_output_path(workspace: &std::path::Path, name: &str) -> PathBuf {
@@ -362,6 +365,38 @@ pub fn run_plugin_init_command(
     Ok(())
 }
 
+fn record_plugin_validate_file(
+    cli: &PluginValidateCli,
+    checked: PluginCheckResult,
+    ok_count: &mut usize,
+    fail_count: &mut usize,
+    rows: &mut Vec<PluginCheckJsonRow>,
+) {
+    let ok = checked.errors.is_empty();
+    if ok {
+        *ok_count += 1;
+        if !cli.json && !cli.jsonl {
+            println!("OK  {}", checked.path.display());
+        }
+    } else {
+        *fail_count += 1;
+        if !cli.json && !cli.jsonl {
+            eprintln!(
+                "FAIL {}: {}",
+                checked.path.display(),
+                checked.errors.join("; ")
+            );
+        }
+    }
+    rows.push(PluginCheckJsonRow {
+        path: checked.path.display().to_string(),
+        name: checked.name,
+        command: checked.command,
+        ok,
+        errors: checked.errors,
+    });
+}
+
 /// `crabmate plugin validate`：校验 `plugins/*.json` 动态工具定义与白名单命令。
 pub fn run_plugin_validate_command(
     cfg: &AgentConfig,
@@ -381,31 +416,57 @@ pub fn run_plugin_validate_command(
     let mut rows: Vec<PluginCheckJsonRow> = Vec::new();
     for p in paths {
         let checked = validate_plugin_file(&p, cfg);
-        let ok = checked.errors.is_empty();
-        if ok {
-            ok_count += 1;
-            if !cli.json && !cli.jsonl {
-                println!("OK  {}", p.display());
-            }
-        } else {
-            fail_count += 1;
-            if !cli.json && !cli.jsonl {
-                eprintln!("FAIL {}: {}", p.display(), checked.errors.join("; "));
-            }
-        }
-        rows.push(PluginCheckJsonRow {
-            path: checked.path.display().to_string(),
-            name: checked.name,
-            command: checked.command,
-            ok,
-            errors: checked.errors,
-        });
+        record_plugin_validate_file(&cli, checked, &mut ok_count, &mut fail_count, &mut rows);
     }
     print_plugin_validate_machine_output(&cli, &rows, ok_count, fail_count)?;
     if fail_count > 0 {
         return Err(CliExitError::new(EXIT_USAGE, "存在动态工具校验失败").into());
     }
     Ok(())
+}
+
+fn print_plugin_list_machine_output(
+    cli: &PluginListCli,
+    rows: &[PluginCheckJsonRow],
+    ok_count: usize,
+    fail_count: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if cli.jsonl {
+        for row in rows {
+            println!("{}", serde_json::to_string(row)?);
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "type": "crabmate_plugin_list_summary",
+                "ok_count": ok_count,
+                "failed_count": fail_count,
+            }))?
+        );
+    } else if cli.json {
+        let payload = serde_json::json!({
+            "type": "crabmate_plugin_list_result",
+            "ok_count": ok_count,
+            "failed_count": fail_count,
+            "rows": rows,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("汇总：ok={ok_count}, failed={fail_count}");
+    }
+    Ok(())
+}
+
+fn print_plugin_list_human_row(checked: &PluginCheckResult, status: &str) {
+    let name = checked.name.as_deref().unwrap_or("-");
+    let cmd = checked.command.as_deref().unwrap_or("-");
+    println!(
+        "{status}\t{}\tname={name}\tcommand={cmd}",
+        checked.path.display()
+    );
+    if !checked.errors.is_empty() {
+        println!("  errors: {}", checked.errors.join("; "));
+    }
 }
 
 /// `crabmate plugin list`：列出动态工具及校验状态。
@@ -434,15 +495,7 @@ pub fn run_plugin_list_command(
             "FAIL"
         };
         if !cli.json && !cli.jsonl {
-            let name = checked.name.as_deref().unwrap_or("-");
-            let cmd = checked.command.as_deref().unwrap_or("-");
-            println!(
-                "{status}\t{}\tname={name}\tcommand={cmd}",
-                checked.path.display()
-            );
-            if !checked.errors.is_empty() {
-                println!("  errors: {}", checked.errors.join("; "));
-            }
+            print_plugin_list_human_row(&checked, status);
         }
         rows.push(PluginCheckJsonRow {
             path: checked.path.display().to_string(),
@@ -452,33 +505,38 @@ pub fn run_plugin_list_command(
             errors: checked.errors,
         });
     }
-    if cli.jsonl {
-        for row in &rows {
-            println!("{}", serde_json::to_string(row)?);
-        }
-        println!(
-            "{}",
-            serde_json::to_string(&serde_json::json!({
-                "type": "crabmate_plugin_list_summary",
-                "ok_count": ok_count,
-                "failed_count": fail_count,
-            }))?
-        );
-    } else if cli.json {
-        let payload = serde_json::json!({
-            "type": "crabmate_plugin_list_result",
-            "ok_count": ok_count,
-            "failed_count": fail_count,
-            "rows": rows,
-        });
-        println!("{}", serde_json::to_string_pretty(&payload)?);
-    } else {
-        println!("汇总：ok={ok_count}, failed={fail_count}");
-    }
+    print_plugin_list_machine_output(&cli, &rows, ok_count, fail_count)?;
     Ok(())
 }
 
 /// `crabmate sse-replay`：从 `sse-replay-events.jsonl` 回放 AG-UI 事件到 TurnLayout 投影（不要求 API_KEY）。
+fn print_sse_replay_rows(rows: &[crabmate_turn_layout::ProjectedRow]) {
+    if rows.is_empty() {
+        println!("（无投影行）");
+    }
+    for (i, row) in rows.iter().enumerate() {
+        let preview: String = row.text.chars().take(120).collect();
+        println!(
+            "[{}/{}] kind={} text={}{}",
+            i + 1,
+            rows.len(),
+            row.kind,
+            preview,
+            if row.text.chars().count() > 120 {
+                "…"
+            } else {
+                ""
+            }
+        );
+        if let Some(ref name) = row.tool_name {
+            println!("       tool_name={name}");
+        }
+        if let Some(ref tcid) = row.tool_call_id {
+            println!("       tool_call_id={tcid}");
+        }
+    }
+}
+
 pub fn run_sse_replay_command(cli: SseReplayCli) -> Result<(), Box<dyn std::error::Error>> {
     let path = PathBuf::from(cli.file.trim());
     if !path.is_file() {
@@ -488,30 +546,7 @@ pub fn run_sse_replay_command(cli: SseReplayCli) -> Result<(), Box<dyn std::erro
     match cli.format.as_str() {
         "rows" => {
             let rows = crabmate_turn_layout::replay::replay_sse_events_to_web_rows(&path)?;
-            if rows.is_empty() {
-                println!("（无投影行）");
-            }
-            for (i, row) in rows.iter().enumerate() {
-                let preview: String = row.text.chars().take(120).collect();
-                println!(
-                    "[{}/{}] kind={} text={}{}",
-                    i + 1,
-                    rows.len(),
-                    row.kind,
-                    preview,
-                    if row.text.chars().count() > 120 {
-                        "…"
-                    } else {
-                        ""
-                    }
-                );
-                if let Some(ref name) = row.tool_name {
-                    println!("       tool_name={name}");
-                }
-                if let Some(ref tcid) = row.tool_call_id {
-                    println!("       tool_call_id={tcid}");
-                }
-            }
+            print_sse_replay_rows(&rows);
         }
         "canonical" => {
             let turn = crabmate_turn_layout::replay::replay_sse_events_to_turn(&path)?;

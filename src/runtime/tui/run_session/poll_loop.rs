@@ -126,6 +126,41 @@ pub(super) fn run_tui_ui_thread(
     r
 }
 
+enum TuiPollLoopIterationCtl {
+    Continue,
+    Break,
+}
+
+fn handle_tui_polled_event(
+    ctx: &TuiPollLoopCtx<'_>,
+    ev: Event,
+) -> io::Result<TuiPollLoopIterationCtl> {
+    match ev {
+        Event::Mouse(mouse) => {
+            tui_dispatch_mouse(ctx.model, mouse, ctx.llm_scratch);
+            Ok(TuiPollLoopIterationCtl::Continue)
+        }
+        Event::Key(key) if key.kind == KeyEventKind::Press => {
+            match clarify_modal::handle_clarification_modal_keys(
+                ctx.model,
+                &ctx.clarify.answers_merge,
+                ctx.ev_tx,
+                &key,
+            ) {
+                clarify_modal::ClarificationModalKeyOutcome::NotApplicable => {}
+                clarify_modal::ClarificationModalKeyOutcome::Consumed => {
+                    return Ok(TuiPollLoopIterationCtl::Continue);
+                }
+            }
+            Ok(match tui_dispatch_key_press(ctx.model, ctx.ev_tx, &key) {
+                super::TuiPollKeyFlow::BreakLoop => TuiPollLoopIterationCtl::Break,
+                super::TuiPollKeyFlow::ContinueOuter => TuiPollLoopIterationCtl::Continue,
+            })
+        }
+        _ => Ok(TuiPollLoopIterationCtl::Continue),
+    }
+}
+
 fn run_tui_poll_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     ctx: &TuiPollLoopCtx<'_>,
@@ -143,24 +178,10 @@ fn run_tui_poll_loop(
         }
 
         if event::poll(Duration::from_millis(120))? {
-            match event::read()? {
-                Event::Mouse(mouse) => tui_dispatch_mouse(ctx.model, mouse, ctx.llm_scratch),
-                Event::Key(key) if key.kind == KeyEventKind::Press => {
-                    match clarify_modal::handle_clarification_modal_keys(
-                        ctx.model,
-                        &ctx.clarify.answers_merge,
-                        ctx.ev_tx,
-                        &key,
-                    ) {
-                        clarify_modal::ClarificationModalKeyOutcome::NotApplicable => {}
-                        clarify_modal::ClarificationModalKeyOutcome::Consumed => continue,
-                    }
-                    match tui_dispatch_key_press(ctx.model, ctx.ev_tx, &key) {
-                        super::TuiPollKeyFlow::BreakLoop => break,
-                        super::TuiPollKeyFlow::ContinueOuter => continue,
-                    }
-                }
-                _ => {}
+            match handle_tui_polled_event(ctx, event::read()?) {
+                Ok(TuiPollLoopIterationCtl::Continue) => {}
+                Ok(TuiPollLoopIterationCtl::Break) => break,
+                Err(e) => return Err(e),
             }
         }
     }
