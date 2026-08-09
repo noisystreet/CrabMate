@@ -1,55 +1,60 @@
-# 各模块单函数 CCN 硬上限（lizard）。与 scripts/lizard_rust_metrics.py 配套。
-# - global_ccn_ceiling：任一模块的 cap 不得超过此值（仓库全局天花板）
-# - default_ccn_max：未在 [modules] 登记的新模块回退值
-# 收紧：重构后把对应模块数值调低；升高须有意为之（勿默认放宽）。
-# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测 max 重写 [modules]
+# 各模块「CCN > high_ccn_threshold」函数个数上限（lizard）。
+# 与 scripts/lizard_rust_metrics.py 配套。
+# - high_ccn_threshold：计入超标的 CCN 下限（默认 10，即统计 CCN>10）
+# - default_over_max：未在 [modules] 登记的新模块回退个数上限
+# - global_over_ceiling：任一模块配置的个数上限不得超过此值
+# - frozen_modules：禁止抬高 cap；实测变小时仍须下调（--write-caps 只降不升）
+# 棘轮：实测个数必须与 cap 一致；变小则 pre-commit / lizard 失败，须调低 cap。
+# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测个数重写
 
-global_ccn_ceiling = 15
-default_ccn_max = 15
+high_ccn_threshold = 10
+default_over_max = 0
+global_over_ceiling = 10000
 
 [modules]
-"crates/cmd_mate" = 13
-"crates/crabmate-agent" = 15
-"crates/crabmate-approval" = 3
-"crates/crabmate-benchmark" = 10
-"crates/crabmate-chat-export" = 4
-"crates/crabmate-config" = 15
-"crates/crabmate-display-rules" = 7
-"crates/crabmate-im-bridge" = 13
+"crates/cmd_mate" = 1
+"crates/crabmate-agent" = 16
+"crates/crabmate-api-contract" = 0
+"crates/crabmate-approval" = 0
+"crates/crabmate-benchmark" = 0
+"crates/crabmate-chat-export" = 0
+"crates/crabmate-config" = 26
+"crates/crabmate-display-rules" = 0
+"crates/crabmate-im-bridge" = 8
 "crates/crabmate-internal" = 15
-"crates/crabmate-llm" = 14
-"crates/crabmate-mcp" = 12
-"crates/crabmate-memory" = 15
-"crates/crabmate-runtime" = 12
-"crates/crabmate-sse-protocol" = 10
-"crates/crabmate-tool-card" = 13
-"crates/crabmate-tools" = 15
-"crates/crabmate-turn-layout" = 11
-"crates/crabmate-types" = 10
-"crates/crabmate-web-host" = 8
+"crates/crabmate-llm" = 5
+"crates/crabmate-mcp" = 2
+"crates/crabmate-memory" = 13
+"crates/crabmate-runtime" = 2
+"crates/crabmate-sse-protocol" = 0
+"crates/crabmate-tool-card" = 5
+"crates/crabmate-tools" = 95
+"crates/crabmate-turn-layout" = 2
+"crates/crabmate-types" = 0
+"crates/crabmate-web-host" = 0
 "crates/crabmate-workflow" = 15
-"src/agent" = 15
-"src/bin" = 5
-"src/chat_job_queue" = 11
-"src/cli_run.rs" = 15
-"src/cli_run_serve.rs" = 5
-"src/cli_run_session.rs" = 9
-"src/conversation_store.rs" = 12
-"src/e2e_scenario.rs" = 12
-"src/env_flags.rs" = 2
-"src/lib" = 1
-"src/lib.rs" = 1
-"src/llm" = 14
-"src/main.rs" = 8
-"src/meta_dialogue.rs" = 11
-"src/per_turn_flight.rs" = 1
-"src/request_audit.rs" = 3
-"src/run_agent_turn.rs" = 5
-"src/runtime" = 15
-"src/session_title.rs" = 4
-"src/shutdown" = 5
-"src/test_serve.rs" = 1
-"src/turn_replay_dump.rs" = 15
-"src/turn_runner.rs" = 2
-"src/user_data" = 9
-"src/web" = 15
+"src/agent" = 4
+"src/bin" = 0
+"src/chat_job_queue" = 1
+"src/cli_run.rs" = 1
+"src/cli_run_serve.rs" = 0
+"src/cli_run_session.rs" = 0
+"src/conversation_store.rs" = 0
+"src/e2e_scenario.rs" = 2
+"src/env_flags.rs" = 0
+"src/lib" = 0
+"src/lib.rs" = 0
+"src/llm" = 2
+"src/main.rs" = 0
+"src/meta_dialogue.rs" = 1
+"src/per_turn_flight.rs" = 0
+"src/request_audit.rs" = 0
+"src/run_agent_turn.rs" = 0
+"src/runtime" = 29
+"src/session_title.rs" = 0
+"src/shutdown" = 0
+"src/test_serve.rs" = 0
+"src/turn_replay_dump.rs" = 1
+"src/turn_runner.rs" = 0
+"src/user_data" = 0
+"src/web" = 13
