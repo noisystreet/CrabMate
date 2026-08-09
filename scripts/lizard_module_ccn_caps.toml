@@ -3,13 +3,16 @@
 # - high_ccn_threshold：计入超标的 CCN 下限（默认 10，即统计 CCN>10）
 # - default_over_max：未在 [modules] 登记的新模块回退个数上限
 # - global_over_ceiling：任一模块配置的个数上限不得超过此值
-# - frozen_modules：禁止抬高 cap；实测变小时仍须下调（--write-caps 只降不升）
-# 棘轮：实测个数必须与 cap 一致；变小则 pre-commit / lizard 失败，须调低 cap。
-# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测个数重写
+# - global_over_ccn_sum_cap：全仓「CCN>阈值」函数的 CCN 之和棘轮（须恰好相等）
+# - frozen_over_ccn_sum：为 true 时 --write-caps 对之和只降不升
+# - frozen_modules：禁止抬高模块个数 cap；实测变小时仍须下调（--write-caps 只降不升）
+# 棘轮：实测个数/之和必须与 cap 一致；变小则 pre-commit / lizard 失败，须调低 cap。
+# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测重写
 
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
+global_over_ccn_sum_cap = 2989
 
 [modules]
 "crates/cmd_mate" = 0
