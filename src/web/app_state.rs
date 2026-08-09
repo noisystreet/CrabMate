@@ -134,7 +134,7 @@ pub(crate) struct AppStateWebAux {
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
-    /// 是否挂载业务 UI 静态资源（`serve` 未传 `--no-web`）。为 false 时 `/health` 不检查静态目录。
+    /// 是否挂载业务 UI 静态资源（`serve --with-web`）。为 false（默认）时 `/health` 不检查静态目录。
     pub(crate) mount_web_ui: bool,
 }
 

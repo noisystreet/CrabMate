@@ -23,7 +23,7 @@
 | 项 | 说明 |
 |----|------|
 | 密钥 | 默认 `llm_http_auth_mode=bearer` 时须有可用 **`API_KEY`**（或钥匙串 / 侧栏已存）；**勿**把真密钥写进本文件或 commit |
-| 前端静态包 | Web / Desktop / Mobile 远程 UI：`cd ../crabmate-client && make frontend`，再启动或重启 `serve` |
+| 前端静态包 | 同机托管 SPA：`cd ../crabmate-client && make frontend`，设 **`CM_WEB_STATIC_DIR`**，并以 **`serve --with-web`** 启动（默认 `serve` 为纯 API） |
 | 工作区 | 选一可信本地目录作 `--workspace` / Web 当前工作区 |
 | 代理 | Playwright / 本机 `127.0.0.1` 时注意 `no_proxy=127.0.0.1,localhost`（见 `AGENTS.md`） |
 | Bearer | 若启用 Web API 共享密钥：侧栏 / 连接页填的是 **`CM_WEB_API_BEARER_TOKEN`**，**不是**模型 `API_KEY` |
@@ -63,7 +63,9 @@ API_KEY='…' cargo run -- --workspace /path/to/ws chat -- "用一句话介绍�
 
 ```bash
 cd ../crabmate-client && make frontend
-API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent
+API_KEY='…' cargo run -- --workspace /path/to/ws serve --with-web --host 127.0.0.1
 # 浏览器打开打印的 URL；若配置了 Web Bearer，侧栏先保存同一共享密钥
 ```
 
@@ -94,8 +96,11 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 壳**不再** spawn `serve`；先起后端，再开 **Client 仓**桌面壳（或用 `CM_DESKTOP_SERVE_URL` 跳过连接页）。
 
 ```bash
-# 终端 A：本仓 serve
-cargo run -- serve --host 127.0.0.1 --port 8080
+# 终端 A：本仓 serve（过渡期壳仍导航到 serve 托管的 UI，须 --with-web）
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent
+cargo run -- serve --with-web --host 127.0.0.1 --port 8080
 # 终端 B：Client 仓
 cd ../crabmate-client/desktop-tauri/src-tauri
 cargo tauri dev
@@ -209,7 +214,7 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 
 ```bash
 cd ../crabmate-client && make frontend
-# 将 UI Origin 加入白名单（示例：静态站在 :8081，API 在 :8080）
+# 跨 Origin：serve 保持纯 API（不必 --with-web）；将 UI Origin 加入白名单（示例：静态站 :8081，API :8080）
 CM_WEB_API_BEARER_TOKEN='…shared…' \
 CM_WEB_CORS_ALLOWED_ORIGINS='http://127.0.0.1:8081' \
 API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1 --port 8080

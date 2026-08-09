@@ -185,7 +185,7 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[St
                     out.push_str(&format!("  {}: {}\n", rel, st));
                 }
                 out.push_str(
-                    "  业务 UI：见 Client 仓 crabmate-client（CM_WEB_STATIC_DIR / --no-web）\n",
+                    "  业务 UI：见 Client 仓 crabmate-client（默认纯 API；--with-web + CM_WEB_STATIC_DIR）\n",
                 );
             }
             Err(e) => {

@@ -8,7 +8,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 - **Rust**: 1.85+ (edition 2024); see [`README.md`](../../README.md).
 - **E2E**: **Playwright** and **Victauri** live in the Client repo (`../crabmate-client`). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
-- **Web assets**: E2E and `serve` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`** (or use **`serve --no-web`** for API-only).
+- **Web assets**: E2E and `serve --with-web` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`**. API-only: default **`serve`** (no `--no-web` needed).
 
 ## GitHub Actions (main CI)
 
@@ -158,8 +158,11 @@ cd ../crabmate-client
 **Manual** (native display; start this repo's `serve` first):
 
 ```bash
-# terminal A (this repo)
-cargo run -- serve --host 127.0.0.1 --port 18080
+# terminal A (this repo; transitional SPA hosting)
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent
+cargo run -- serve --with-web --host 127.0.0.1 --port 18080
 
 # terminal B (Client repo)
 cd ../crabmate-client/desktop-tauri/src-tauri

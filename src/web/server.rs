@@ -8,7 +8,7 @@ use axum::routing::get;
 /// `cors_allowed_origins`：非空时在最外层挂 CORS 白名单（启动时装配，热更不改层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
-    no_web: bool,
+    mount_web_ui: bool,
     static_dir: std::path::PathBuf,
     uploads_dir_for_static: std::path::PathBuf,
     web_api_bearer_layer_enabled: bool,
@@ -42,7 +42,7 @@ pub(crate) fn build_app(
         app,
         uploads_dir_for_static,
         static_dir,
-        no_web,
+        mount_web_ui,
         allow_cross_origin_uploads,
     );
     // 外层：`x-request-id`；再外层 CORS（若启用），以便预检 OPTIONS 不被其它层挡住。

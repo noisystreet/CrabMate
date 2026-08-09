@@ -61,7 +61,8 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 | `--agent-role <id>` | First-turn `system` for new `repl` / `chat` session (must exist in config; mutually exclusive with `chat --system-prompt-file`) |
 | `--output` | With `chat`: `plain` or `json` |
 | `--no-tools` | Disable tools |
-| `--no-web` / `--cli-only` | API only |
+| `--no-web` / `--cli-only` | Compat no-op (API-only is default) |
+| `--with-web` / `--web` | Explicitly mount business UI static assets (needs `CM_WEB_STATIC_DIR` or probed dist) |
 | `--dry-run` | Maps to `config` |
 | `--no-stream` | With `repl` / `chat` |
 | `--log <FILE>` | Log file + stderr mirror |
@@ -181,12 +182,12 @@ Keep this section in sync with `README.md` when export behavior changes.
 ```bash
 cd ../crabmate-client && make frontend
 export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
-cd ../crabmate_agent && cargo run -- serve
+cd ../crabmate_agent && cargo run -- serve --with-web
 ```
 
-Pure API: `cargo run -- serve --no-web`. Config check: `cargo run -- --dry-run --no-web`.
+API-only (default): `cargo run -- serve` (**`--no-web`** is a compat no-op). Config check: `cargo run -- config` (skips UI dist by default; add **`--with-web`** to require static root).
 
-Static assets come from `CM_WEB_STATIC_DIR` (or sibling Client `frontend/dist`).
+Static assets are served only with **`--with-web`**, via **`CM_WEB_STATIC_DIR`** (or sibling Client `frontend/dist`).
 
 ## Main HTTP routes (`serve`)
 
@@ -258,14 +259,14 @@ make package-deb
 sudo dpkg -i dist/crabmate_*.deb   # or target/debian/crabmate_*.deb
 ```
 
-Server **`make package*`** / `.deb` does **not** embed UI. Use **`--no-web`** or **`CM_WEB_STATIC_DIR`** at runtime. To optionally bundle UI in a tarball, run **`./scripts/package-release.sh --frontend-dist …/frontend/dist`** (Makefile targets do not take that path).
+Server **`make package*`** / `.deb` does **not** embed UI. Runtime is **API-only by default**; host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**. To optionally bundle UI in a tarball, run **`./scripts/package-release.sh --frontend-dist …/frontend/dist`** (Makefile targets do not take that path).
 
-After install: `export API_KEY=… && crabmate serve --no-web` (or set **`CM_WEB_STATIC_DIR`**). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
+After install: `export API_KEY=… && crabmate serve` (API-only); or **`crabmate serve --with-web`** with **`CM_WEB_STATIC_DIR`**. Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
 
 ### systemd (`.deb` / tarball)
 
 - **`.deb`**: installs **`/usr/lib/systemd/system/crabmate.service`**, **`/etc/crabmate/config.toml`** (path anchor), **`/etc/crabmate/config/prompts/`**, and **`crabmate.env.example`**; `postinst` creates system user **`crabmate`** and **`/var/lib/crabmate`**. **Does not** `enable` / `start` by default.
-- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. **No** default **`--no-web`**, so **`CM_WEB_STATIC_DIR`** can mount UI; without a dist, **`/`** is 404 while APIs (e.g. **`/health`**) work.
+- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. **API-only by default** (no SPA); add **`--with-web`** and set **`CM_WEB_STATIC_DIR`** to host UI. Without UI, **`/`** is 404 while APIs (e.g. **`/health`**) work.
 - **Environment file**: **`KEY=value` only** (no **`export`**); set **`API_KEY`**, and extend **`PATH`** if the system user needs cargo/rustc.
 - Before enabling:
 

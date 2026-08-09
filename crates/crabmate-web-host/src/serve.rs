@@ -30,7 +30,7 @@ pub fn mount_uploads_and_spa<S>(
     mut app: Router<S>,
     uploads_dir: PathBuf,
     static_dir: PathBuf,
-    no_web: bool,
+    mount_web_ui: bool,
     allow_cross_origin_uploads: bool,
 ) -> Router<S>
 where
@@ -58,7 +58,7 @@ where
             ))
             .service(ServeDir::new(uploads_dir)),
     );
-    if !no_web {
+    if mount_web_ui {
         // axum 0.8+：禁止 `nest_service("/", …)`，未匹配 API/静态前缀的请求走 fallback。
         app = app.fallback_service(ServeDir::new(static_dir));
     }

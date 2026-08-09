@@ -377,7 +377,7 @@ async fn run_early_commands(
 async fn run_dry_run(
     config_path: &Option<String>,
     llm_context_tokens_cli: Option<u32>,
-    no_web: bool,
+    with_web: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
     let key_note = match cfg.llm.llm_http_auth_mode {
@@ -399,14 +399,14 @@ async fn run_dry_run(
             }
         }
     };
-    if no_web {
-        println!("配置检查通过：{}（--no-web，跳过 UI 静态目录）", key_note);
+    if !with_web {
+        println!("配置检查通过：{}（默认纯 API，跳过 UI 静态目录）", key_note);
         return Ok(());
     }
     let static_dir = web_static_dir::resolve_web_static_dir();
     if !static_dir.is_dir() {
         let msg = format!(
-            "dry-run 失败：前端静态目录不存在：{}（请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend；纯 API 请加 --no-web）",
+            "dry-run 失败：前端静态目录不存在：{}（请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend；纯 API 请省略 --with-web）",
             static_dir.display()
         );
         eprintln!("{msg}");
@@ -447,7 +447,7 @@ pub(super) struct ServeBranchArgs<'a> {
     port: u16,
     desktop_ready_json: bool,
     http_bind_host: &'a str,
-    no_web: bool,
+    with_web: bool,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
@@ -647,7 +647,7 @@ pub(super) async fn run_serve_branch(
         port,
         desktop_ready_json,
         http_bind_host,
-        no_web,
+        with_web,
         process_handles,
     } = args;
     let runtime = build_serve_runtime_state(ServeRuntimeBuildInput {
@@ -658,7 +658,7 @@ pub(super) async fn run_serve_branch(
         api_key: api_key.clone(),
         initial_workspace: workspace_cli.clone(),
         process_handles,
-        mount_web_ui: !no_web,
+        mount_web_ui: with_web,
     })
     .await?;
     let state = runtime.state;
@@ -678,8 +678,8 @@ pub(super) async fn run_serve_branch(
     };
     let app = web::server::build_app(
         state.clone(),
-        no_web,
-        static_dir,
+        with_web,
+        static_dir.clone(),
         uploads_dir.clone(),
         web_api_bearer_layer_enabled,
         cors_allowed_origins.clone(),
@@ -687,11 +687,12 @@ pub(super) async fn run_serve_branch(
     let bind_ip = parse_bind_ip(http_bind_host)?;
     let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
     let addr = std::net::SocketAddr::from((bind_ip, port));
-    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key, !no_web).await;
+    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key, with_web).await;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");
     println!("  监听: http://{}/", actual_addr);
+    cli_run_serve::serve_log_ui_mount_status(with_web, &static_dir);
     serve_log_bind_warnings(bind_ip, auth_enabled, actual_addr);
     cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {
@@ -756,7 +757,7 @@ pub(super) struct ServeBranchArgs<'a> {
     pub port: u16,
     pub desktop_ready_json: bool,
     pub http_bind_host: &'a str,
-    pub no_web: bool,
+    pub with_web: bool,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
@@ -862,7 +863,12 @@ pub(super) async fn run_cli_from_parsed(
 /// 默认主路径：`--dry-run`、`models`/`probe`，或 `serve` / `repl` / `chat` / `tui`。
 async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
     if args.dry_run {
-        run_dry_run(&args.config_path, args.llm_context_tokens_cli, args.no_web).await?;
+        run_dry_run(
+            &args.config_path,
+            args.llm_context_tokens_cli,
+            args.with_web,
+        )
+        .await?;
         return Ok(());
     }
 
@@ -899,7 +905,7 @@ async fn run_cli_interactive_session(
             serve_desktop_ready_json: args.serve_desktop_ready_json,
             http_bind_host: args.http_bind_host,
             workspace_cli: args.workspace_cli,
-            no_web: args.no_web,
+            with_web: args.with_web,
             bench_args: args.bench_args,
             chat_cli: args.chat_cli,
             tui: args.tui,

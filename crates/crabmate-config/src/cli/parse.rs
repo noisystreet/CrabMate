@@ -86,7 +86,7 @@ impl CliParseCtx {
             http_bind_host: resolve_http_bind_host(None),
             workspace_cli: self.workspace_cli.clone(),
             no_tools: self.no_tools,
-            no_web: false,
+            with_web: false,
             dry_run: false,
             no_stream: false,
             log_file: self.log_file.clone(),
@@ -150,7 +150,8 @@ fn build_parsed_cli_args(
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
             b.serve_desktop_ready_json = s.desktop_ready_json;
             b.http_bind_host = resolve_http_bind_host(s.host);
-            b.no_web = s.no_web;
+            // `--no-web` 为兼容无操作；仅 `--with-web` 开启挂载。
+            b.with_web = s.with_web;
         }
         Commands::Repl(r) => {
             b.no_stream = r.no_stream;
@@ -196,7 +197,7 @@ fn build_parsed_cli_args(
         }
         Commands::Config(c) => {
             b.dry_run = true;
-            b.no_web = c.no_web;
+            b.with_web = c.with_web;
         }
         Commands::Doctor => {
             b.extra_cli = ExtraCliCommand::Doctor;

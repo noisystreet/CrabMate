@@ -101,7 +101,7 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 前置条件
 
 1. **Rust 工具链**与仓库依赖可正常 `cargo build`。
-2. **前端静态包**（可选）：Client `frontend/dist/index.html`（`cd ../crabmate-client && make frontend`），并设 `CM_WEB_STATIC_DIR`。
+2. **前端静态包**（壳仍加载 `serve` 托管 UI 时需要）：Client `frontend/dist/index.html`（`cd ../crabmate-client && make frontend`），设 **`CM_WEB_STATIC_DIR`**，并以 **`serve --with-web`** 启动（默认纯 API 不会挂 SPA）。
 3. **Tauri CLI**：`cargo install tauri-cli --version "^2"`。
 4. **模型密钥**：设置 `API_KEY` 环境变量（Tauri WebView 无 localStorage，密钥需由后端进程继承）。
 5. **`NO_COLOR`**：执行前 `unset NO_COLOR`。
@@ -109,8 +109,11 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 ### 运行
 
 ```bash
-# 终端 1：后端（本仓）
-cargo run -- serve --host 127.0.0.1 --port 18080
+# 终端 1：后端（本仓；过渡期须托管 SPA）
+cd ../crabmate-client && make frontend
+export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
+cd ../crabmate_agent
+cargo run -- serve --with-web --host 127.0.0.1 --port 18080
 
 # 终端 2：启动 Tauri 桌面应用（Client 仓；跳过连接页）
 cd ../crabmate-client/desktop-tauri/src-tauri
