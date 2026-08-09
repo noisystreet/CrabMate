@@ -58,10 +58,7 @@ fn row(kind: &str, text: impl Into<String>) -> ProjectedRow {
     }
 }
 
-/// 块布局：合并 **已关闭** pending / 锚点段 + 各 step `before_commentary`（open 段仅 overlay）。
-#[must_use]
-pub fn batch_narration_text(turn: &Turn) -> Option<String> {
-    let mut out = String::new();
+fn append_closed_batch_commentary(out: &mut String, turn: &Turn) {
     for seg in &turn.segments {
         if seg.kind != SegmentKind::Commentary || seg.open || seg.text.trim().is_empty() {
             continue;
@@ -72,6 +69,9 @@ pub fn batch_narration_text(turn: &Turn) -> Option<String> {
             out.push_str(&seg.text);
         }
     }
+}
+
+fn append_step_before_commentary(out: &mut String, turn: &Turn) {
     for step in &turn.steps {
         if let Some(ref c) = step.before_commentary
             && !c.trim().is_empty()
@@ -79,6 +79,14 @@ pub fn batch_narration_text(turn: &Turn) -> Option<String> {
             out.push_str(c);
         }
     }
+}
+
+/// 块布局：合并 **已关闭** pending / 锚点段 + 各 step `before_commentary`（open 段仅 overlay）。
+#[must_use]
+pub fn batch_narration_text(turn: &Turn) -> Option<String> {
+    let mut out = String::new();
+    append_closed_batch_commentary(&mut out, turn);
+    append_step_before_commentary(&mut out, turn);
     if out.trim().is_empty() {
         None
     } else {

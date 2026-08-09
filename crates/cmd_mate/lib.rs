@@ -12,6 +12,129 @@ enum Phase {
     EscapeDouble,
 }
 
+struct SplitState {
+    words: Vec<String>,
+    buf: String,
+    /// 当前词是否包含「实质」：非空缓冲，或出现过非空的引号内字符，或出现过空的 `""`/`''` 对。
+    word_nonempty: bool,
+    phase: Phase,
+    double_inner_char: bool,
+    single_inner_char: bool,
+}
+
+impl SplitState {
+    fn new() -> Self {
+        Self {
+            words: Vec::new(),
+            buf: String::new(),
+            word_nonempty: false,
+            phase: Phase::Outside,
+            double_inner_char: false,
+            single_inner_char: false,
+        }
+    }
+
+    fn flush_word(&mut self) {
+        if !self.buf.is_empty() || self.word_nonempty {
+            self.words.push(std::mem::take(&mut self.buf));
+            self.word_nonempty = false;
+        }
+    }
+
+    fn push_literal(&mut self, ch: char) {
+        self.buf.push(ch);
+        self.word_nonempty = true;
+    }
+
+    fn feed_outside(&mut self, ch: char) {
+        match ch {
+            c if c.is_whitespace() => self.flush_word(),
+            '\'' => {
+                self.phase = Phase::Single;
+                self.single_inner_char = false;
+            }
+            '"' => {
+                self.phase = Phase::Double;
+                self.double_inner_char = false;
+            }
+            '\\' => self.phase = Phase::EscapeOutside,
+            c => self.push_literal(c),
+        }
+    }
+
+    fn feed_single(&mut self, ch: char) {
+        if ch == '\'' {
+            if !self.single_inner_char {
+                self.word_nonempty = true;
+            }
+            self.phase = Phase::Outside;
+        } else {
+            self.buf.push(ch);
+            self.single_inner_char = true;
+            self.word_nonempty = true;
+        }
+    }
+
+    fn feed_double(&mut self, ch: char) {
+        match ch {
+            '"' => {
+                if !self.double_inner_char {
+                    self.word_nonempty = true;
+                }
+                self.phase = Phase::Outside;
+            }
+            '\\' => self.phase = Phase::EscapeDouble,
+            c => {
+                self.buf.push(c);
+                self.double_inner_char = true;
+                self.word_nonempty = true;
+            }
+        }
+    }
+
+    fn feed_escape_double(&mut self, ch: char) {
+        match ch {
+            '"' | '\\' | '$' | '`' => {
+                self.buf.push(ch);
+                self.double_inner_char = true;
+                self.word_nonempty = true;
+            }
+            '\n' => {}
+            c => {
+                self.buf.push(c);
+                self.double_inner_char = true;
+                self.word_nonempty = true;
+            }
+        }
+        self.phase = Phase::Double;
+    }
+
+    fn feed(&mut self, ch: char) {
+        match self.phase {
+            Phase::Outside => self.feed_outside(ch),
+            Phase::EscapeOutside => {
+                self.push_literal(ch);
+                self.phase = Phase::Outside;
+            }
+            Phase::Single => self.feed_single(ch),
+            Phase::Double => self.feed_double(ch),
+            Phase::EscapeDouble => self.feed_escape_double(ch),
+        }
+    }
+
+    fn finish(mut self) -> Vec<String> {
+        match self.phase {
+            Phase::EscapeOutside | Phase::EscapeDouble => {
+                self.buf.push('\\');
+                self.word_nonempty = true;
+            }
+            _ => {}
+        }
+        self.flush_word();
+        self.words
+    }
+}
+
 /// 将 `input` 拆成若干词（每个词对应一个 `argv` 元素）。
 ///
 /// - 外侧空白：结束当前词（若该词「有内容」——见下）。
@@ -22,106 +145,11 @@ enum Phase {
 /// - 全空白：返回空 `Vec`。
 #[must_use]
 pub fn split_command_line(input: &str) -> Vec<String> {
-    let mut words: Vec<String> = Vec::new();
-    let mut buf = String::new();
-    // 当前词是否包含「实质」：非空缓冲，或出现过非空的引号内字符，或出现过空的 `""`/`''` 对。
-    let mut word_nonempty = false;
-    let mut phase = Phase::Outside;
-    let mut double_inner_char = false;
-    let mut single_inner_char = false;
-
-    let flush_word = |words: &mut Vec<String>, buf: &mut String, word_nonempty: &mut bool| {
-        if !buf.is_empty() || *word_nonempty {
-            words.push(std::mem::take(buf));
-            *word_nonempty = false;
-        }
-    };
-
+    let mut state = SplitState::new();
     for ch in input.chars() {
-        match phase {
-            Phase::Outside => match ch {
-                c if c.is_whitespace() => {
-                    flush_word(&mut words, &mut buf, &mut word_nonempty);
-                }
-                '\'' => {
-                    phase = Phase::Single;
-                    single_inner_char = false;
-                }
-                '"' => {
-                    phase = Phase::Double;
-                    double_inner_char = false;
-                }
-                '\\' => phase = Phase::EscapeOutside,
-                c => {
-                    buf.push(c);
-                    word_nonempty = true;
-                }
-            },
-            Phase::EscapeOutside => {
-                buf.push(ch);
-                word_nonempty = true;
-                phase = Phase::Outside;
-            }
-            Phase::Single => match ch {
-                '\'' => {
-                    if !single_inner_char {
-                        word_nonempty = true;
-                    }
-                    phase = Phase::Outside;
-                }
-                c => {
-                    buf.push(c);
-                    single_inner_char = true;
-                    word_nonempty = true;
-                }
-            },
-            Phase::Double => match ch {
-                '"' => {
-                    if !double_inner_char {
-                        word_nonempty = true;
-                    }
-                    phase = Phase::Outside;
-                }
-                '\\' => phase = Phase::EscapeDouble,
-                c => {
-                    buf.push(c);
-                    double_inner_char = true;
-                    word_nonempty = true;
-                }
-            },
-            Phase::EscapeDouble => {
-                match ch {
-                    '"' | '\\' | '$' | '`' => {
-                        buf.push(ch);
-                        double_inner_char = true;
-                        word_nonempty = true;
-                    }
-                    '\n' => {}
-                    c => {
-                        buf.push(c);
-                        double_inner_char = true;
-                        word_nonempty = true;
-                    }
-                }
-                phase = Phase::Double;
-            }
-        }
+        state.feed(ch);
     }
-
-    match phase {
-        Phase::EscapeOutside => {
-            buf.push('\\');
-            word_nonempty = true;
-        }
-        Phase::EscapeDouble => {
-            buf.push('\\');
-            word_nonempty = true;
-        }
-        _ => {}
-    }
-
-    flush_word(&mut words, &mut buf, &mut word_nonempty);
-    words
+    state.finish()
 }
 
 #[cfg(test)]

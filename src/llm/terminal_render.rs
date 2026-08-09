@@ -31,6 +31,27 @@ fn count_display_lines(content: &str, term_width: usize) -> usize {
         .sum()
 }
 
+fn apply_reasoning_style_transition(
+    stdout: &mut impl Write,
+    is_reasoning: bool,
+    reasoning_style_active: &mut bool,
+    use_color: bool,
+) -> io::Result<()> {
+    if is_reasoning && !*reasoning_style_active {
+        if use_color {
+            crate::runtime::terminal_labels::queue_cli_reasoning_body_style(stdout)?;
+        }
+        *reasoning_style_active = true;
+    } else if !is_reasoning && *reasoning_style_active {
+        if use_color {
+            crate::runtime::terminal_labels::queue_cli_plain_body_reset(stdout)?;
+        }
+        stdout.write_all(b"\n")?;
+        *reasoning_style_active = false;
+    }
+    Ok(())
+}
+
 /// CLI（`render_to_terminal && out.is_none()`）：首个非空 delta 前打 `Agent:` 前缀；**`reasoning_content`** 与 **`content`** 分色（见 [`crate::runtime::terminal_labels`]）；从思考切到终答前多写一个换行（含 **`NO_COLOR`** 时仅换行、不着色）。
 pub(crate) fn cli_terminal_write_plain_fragment(
     fragment: &str,
@@ -48,18 +69,7 @@ pub(crate) fn cli_terminal_write_plain_fragment(
         crate::runtime::terminal_labels::write_agent_message_prefix(&mut stdout)?;
         *prefix_emitted = true;
     }
-    if is_reasoning && !*reasoning_style_active {
-        if use_color {
-            crate::runtime::terminal_labels::queue_cli_reasoning_body_style(&mut stdout)?;
-        }
-        *reasoning_style_active = true;
-    } else if !is_reasoning && *reasoning_style_active {
-        if use_color {
-            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut stdout)?;
-        }
-        stdout.write_all(b"\n")?;
-        *reasoning_style_active = false;
-    }
+    apply_reasoning_style_transition(&mut stdout, is_reasoning, reasoning_style_active, use_color)?;
     stdout.write_all(fragment.as_bytes())?;
     stdout.flush()
 }
@@ -98,6 +108,24 @@ fn non_stream_plain_tail_has_newline(msg: &Message) -> bool {
             .unwrap_or(false)
 }
 
+fn finish_non_stream_plain_tail(
+    msg: &Message,
+    prefix_emitted: bool,
+    reasoning_style_active: bool,
+) -> io::Result<()> {
+    if !prefix_emitted {
+        return Ok(());
+    }
+    let mut lock = io::stdout().lock();
+    if reasoning_style_active {
+        crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
+    }
+    if !non_stream_plain_tail_has_newline(msg) {
+        writeln!(lock)?;
+    }
+    lock.flush()
+}
+
 fn render_non_stream_assistant_plain(msg: &Message) -> io::Result<()> {
     let mut prefix_emitted = false;
     let mut reasoning_style_active = false;
@@ -117,17 +145,7 @@ fn render_non_stream_assistant_plain(msg: &Message) -> io::Result<()> {
             &mut reasoning_style_active,
         )?;
     }
-    if prefix_emitted {
-        let mut lock = io::stdout().lock();
-        if reasoning_style_active {
-            crate::runtime::terminal_labels::queue_cli_plain_body_reset(&mut lock)?;
-        }
-        if !non_stream_plain_tail_has_newline(msg) {
-            writeln!(lock)?;
-        }
-        lock.flush()?;
-    }
-    Ok(())
+    finish_non_stream_plain_tail(msg, prefix_emitted, reasoning_style_active)
 }
 
 fn render_non_stream_assistant_markdown_path(msg: &Message) -> io::Result<()> {

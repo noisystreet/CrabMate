@@ -325,6 +325,22 @@ fn process_replay_line(
     Ok(count)
 }
 
+fn detect_format_from_peekable_lines(
+    lines: &mut std::iter::Peekable<std::io::Lines<BufReader<File>>>,
+) -> Result<JsonlFormat, String> {
+    let first = lines.peek().ok_or_else(|| "JSONL 文件为空".to_string())?;
+    let first_line = first.as_ref().map_err(|e| format!("读取首行失败: {e}"))?;
+    detect_format(first_line.trim())
+}
+
+fn finalize_last_replay_turn(event_count: usize, current_turn: Turn, turns: &mut Vec<Turn>) {
+    if event_count > 0 {
+        let mut current_turn = current_turn;
+        crate::close_open_commentary_segments(&mut current_turn);
+        turns.push(current_turn);
+    }
+}
+
 /// 从 JSONL 事件文件读取事件，回放所有 Turn，按 `replay_turn_seq` 分裂。
 ///
 /// 对于 SSE replay 格式（无 `replay_turn_seq`），所有事件归入单个 Turn。
@@ -332,13 +348,7 @@ pub fn replay_all_turns(path: &Path) -> Result<Vec<Turn>, String> {
     let file = File::open(path).map_err(|e| format!("无法打开 {}: {e}", path.display()))?;
     let reader = BufReader::new(file);
     let mut lines = reader.lines().peekable();
-
-    // 用首行检测格式
-    let format = {
-        let first = lines.peek().ok_or_else(|| "JSONL 文件为空".to_string())?;
-        let first_line = first.as_ref().map_err(|e| format!("读取首行失败: {e}"))?;
-        detect_format(first_line.trim())?
-    };
+    let format = detect_format_from_peekable_lines(&mut lines)?;
 
     let mut turns: Vec<Turn> = Vec::new();
     let mut current_turn = Turn::default();
@@ -362,11 +372,7 @@ pub fn replay_all_turns(path: &Path) -> Result<Vec<Turn>, String> {
         )?;
     }
 
-    // 最后一个 Turn
-    if event_count > 0 {
-        crate::close_open_commentary_segments(&mut current_turn);
-        turns.push(current_turn);
-    }
+    finalize_last_replay_turn(event_count, current_turn, &mut turns);
 
     log::info!(
         target: "crabmate-turn-layout",

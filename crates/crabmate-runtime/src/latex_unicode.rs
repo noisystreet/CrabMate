@@ -157,8 +157,8 @@ fn sqrt_unicode_from_root_index(n_opt: Option<&str>, body_out: &str) -> String {
     }
 }
 
-/// 解析 `\sqrt[n]{body}`（`n` 段无 `{`）或 `\sqrt{body}`。`body` 内仍含 `\sqrt` 时不处理（留给更内层）。
-fn try_parse_sqrt(s: &str, pos: usize) -> Option<(String, usize, usize)> {
+/// 确认 `pos` 处为独立 `\sqrt` 命令，并跳过其后空白；返回 `(bytes, body 起点下标)`。
+fn sqrt_command_body_start(s: &str, pos: usize) -> Option<(&[u8], usize)> {
     let rest = s.get(pos..)?;
     if !rest.starts_with("\\sqrt") {
         return None;
@@ -175,7 +175,12 @@ fn try_parse_sqrt(s: &str, pos: usize) -> Option<(String, usize, usize)> {
     if j >= bytes.len() {
         return None;
     }
+    Some((bytes, j))
+}
 
+/// 解析 `\sqrt[n]{body}`（`n` 段无 `{`）或 `\sqrt{body}`。`body` 内仍含 `\sqrt` 时不处理（留给更内层）。
+fn try_parse_sqrt(s: &str, pos: usize) -> Option<(String, usize, usize)> {
+    let (bytes, j) = sqrt_command_body_start(s, pos)?;
     let (n_opt, k) = parse_sqrt_optional_root_index(s, bytes, j)?;
     let (body, end) = parse_balanced_brace(s, k)?;
     if body.contains("\\sqrt") {

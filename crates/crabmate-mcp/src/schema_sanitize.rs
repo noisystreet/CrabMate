@@ -17,6 +17,14 @@ pub fn sanitize_mcp_json_schema(schema: &Map<String, Value>) -> Value {
     root
 }
 
+fn sanitize_schema_array_field(obj: &mut Map<String, Value>, key: &str) {
+    if let Some(Value::Array(arr)) = obj.get_mut(key) {
+        for item in arr {
+            sanitize_schema_value(item);
+        }
+    }
+}
+
 fn sanitize_schema_value(v: &mut Value) {
     let Value::Object(obj) = v else {
         return;
@@ -30,20 +38,8 @@ fn sanitize_schema_value(v: &mut Value) {
     if let Some(items) = obj.get_mut("items") {
         sanitize_schema_value(items);
     }
-    if let Some(Value::Array(arr)) = obj.get_mut("anyOf") {
-        for item in arr {
-            sanitize_schema_value(item);
-        }
-    }
-    if let Some(Value::Array(arr)) = obj.get_mut("oneOf") {
-        for item in arr {
-            sanitize_schema_value(item);
-        }
-    }
-    if let Some(Value::Array(arr)) = obj.get_mut("allOf") {
-        for item in arr {
-            sanitize_schema_value(item);
-        }
+    for key in ["anyOf", "oneOf", "allOf"] {
+        sanitize_schema_array_field(obj, key);
     }
     if let Some(addl) = obj.get_mut("additionalProperties")
         && addl.is_object()

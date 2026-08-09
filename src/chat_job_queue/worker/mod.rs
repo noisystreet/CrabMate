@@ -19,6 +19,23 @@ pub(super) enum JobOutcome {
     },
 }
 
+impl JobOutcome {
+    pub(super) fn kind_label(&self) -> &'static str {
+        match self {
+            Self::Stream { .. } => "stream",
+            Self::Json { .. } => "json",
+        }
+    }
+
+    pub(super) fn fields(self) -> (bool, bool, Option<String>) {
+        match self {
+            Self::Stream { ok, cancelled, err } | Self::Json { ok, cancelled, err } => {
+                (ok, cancelled, err)
+            }
+        }
+    }
+}
+
 pub(super) async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
     match job {
         QueuedChatJob::Stream {
