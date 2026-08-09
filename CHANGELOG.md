@@ -11,6 +11,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- (none yet)
+
+### Changed
+
+- (none yet)
+
+### Fixed
+
+- (none yet)
+
+## [0.2.0] - 2026-08-09
+
+Server cut after path-A Client split follow-ups: API-only `serve` by default, `--with-web`, and default CORS for official shells.
+
+### Added
+
 - Dev/package **Dockerfile** (Ubuntu **24.04** toolchain + `cargo-deb`) and **`make package-docker`** to produce host `dist/*.tar.gz` / `dist/*.deb` (not a runtime image; UI/Trunk stays in Client).
 
 ### Changed
@@ -27,7 +43,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- (none yet)
+- (none)
 
 ## [0.1.0] - 2026-08-08
 
@@ -67,5 +83,6 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
 [0.1.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.1.0
