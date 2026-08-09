@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 2989
+global_over_ccn_sum_cap = 2623
 
 [modules]
 "crates/cmd_mate" = 0
@@ -53,7 +53,7 @@ global_over_ccn_sum_cap = 2989
 "src/per_turn_flight.rs" = 0
 "src/request_audit.rs" = 0
 "src/run_agent_turn.rs" = 0
-"src/runtime" = 29
+"src/runtime" = 0
 "src/session_title.rs" = 0
 "src/shutdown" = 0
 "src/test_serve.rs" = 0

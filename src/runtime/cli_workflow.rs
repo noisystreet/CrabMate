@@ -36,6 +36,69 @@ pub fn run_workflow_compile_command(cli: &WorkflowFileCli) -> Result<(), String>
     Ok(())
 }
 
+fn print_workflow_validate_json(
+    path: &Path,
+    author_mode: &str,
+    spec: &crabmate_workflow::model::WorkflowSpec,
+    layers: &[Vec<String>],
+) -> Result<(), String> {
+    let payload = serde_json::json!({
+        "ok": true,
+        "source": path.display().to_string(),
+        "author_spec_version": crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
+        "author_mode": author_mode,
+        "nodes_count": spec.nodes.len(),
+        "layer_count": layers.len(),
+        "execution_layers": layers,
+        "fail_fast": spec.fail_fast,
+        "max_parallelism": spec.max_parallelism,
+    });
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?
+    );
+    Ok(())
+}
+
+fn print_workflow_validate_human(
+    path: &Path,
+    author_mode: &str,
+    spec: &crabmate_workflow::model::WorkflowSpec,
+    layers: &[Vec<String>],
+) {
+    println!("workflow validate: OK");
+    println!("  source: {}", path.display());
+    println!(
+        "  author: version {} mode {}",
+        crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
+        author_mode
+    );
+    println!("  nodes: {}", spec.nodes.len());
+    if !spec.for_each_pending.is_empty() {
+        println!("  for_each_pending: {}", spec.for_each_pending.len());
+        for p in &spec.for_each_pending {
+            println!(
+                "    - {} (from={}, json_path={})",
+                p.base_id,
+                p.from,
+                p.json_path.as_deref().unwrap_or("-")
+            );
+        }
+    }
+    println!("  layers: {}", layers.len());
+    for (i, layer) in layers.iter().enumerate() {
+        println!("  layer {i}: {}", layer.join(", "));
+    }
+    for n in &spec.nodes {
+        let deps = if n.deps.is_empty() {
+            String::new()
+        } else {
+            format!(" deps={}", n.deps.join(","))
+        };
+        println!("  - {} ({}){deps}", n.id, n.tool_name);
+    }
+}
+
 /// `workflow validate`：编译 + `parse_workflow_spec` + 拓扑层（等同 validate_only 核心检查）。
 pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String> {
     let path = Path::new(&cli.file);
@@ -52,53 +115,9 @@ pub fn run_workflow_validate_command(cli: &WorkflowFileCli) -> Result<(), String
     let layers = workflow_topo_layers(&spec.nodes)?;
 
     if cli.json {
-        let payload = serde_json::json!({
-            "ok": true,
-            "source": path.display().to_string(),
-            "author_spec_version": crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
-            "author_mode": author_mode,
-            "nodes_count": spec.nodes.len(),
-            "layer_count": layers.len(),
-            "execution_layers": layers,
-            "fail_fast": spec.fail_fast,
-            "max_parallelism": spec.max_parallelism,
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&payload).map_err(|e| e.to_string())?
-        );
+        print_workflow_validate_json(path, &author_mode, &spec, &layers)?;
     } else {
-        println!("workflow validate: OK");
-        println!("  source: {}", path.display());
-        println!(
-            "  author: version {} mode {}",
-            crate::agent::workflow::WORKFLOW_AUTHOR_SPEC_VERSION,
-            author_mode
-        );
-        println!("  nodes: {}", spec.nodes.len());
-        if !spec.for_each_pending.is_empty() {
-            println!("  for_each_pending: {}", spec.for_each_pending.len());
-            for p in &spec.for_each_pending {
-                println!(
-                    "    - {} (from={}, json_path={})",
-                    p.base_id,
-                    p.from,
-                    p.json_path.as_deref().unwrap_or("-")
-                );
-            }
-        }
-        println!("  layers: {}", layers.len());
-        for (i, layer) in layers.iter().enumerate() {
-            println!("  layer {i}: {}", layer.join(", "));
-        }
-        for n in &spec.nodes {
-            let deps = if n.deps.is_empty() {
-                String::new()
-            } else {
-                format!(" deps={}", n.deps.join(","))
-            };
-            println!("  - {} ({}){deps}", n.id, n.tool_name);
-        }
+        print_workflow_validate_human(path, &author_mode, &spec, &layers);
     }
     Ok(())
 }

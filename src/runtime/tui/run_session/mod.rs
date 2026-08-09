@@ -40,372 +40,41 @@ mod workspace_modal;
 
 mod workspace_switch;
 
+mod model;
+mod mouse_key;
+mod session_setup;
+mod slash_submit;
+
+pub(crate) use model::{
+    TuiClarificationShared, TuiFocus, TuiModel, UiEvent, composer_visible_and_cursor_rel,
+    compute_tui_pane_layout,
+};
+pub(crate) use mouse_key::{TuiPollKeyFlow, tui_dispatch_key_press, tui_dispatch_mouse};
+pub(crate) use session_setup::tui_header_summary;
+pub(crate) use slash_submit::{TuiSlashSubmit, tui_try_consume_slash_submit};
+
+use session_setup::{
+    tui_session_build_chrome, tui_session_join_ui_thread, tui_session_new_model,
+    tui_session_save_json_session_if_enabled, tui_session_validate_agent_role,
+};
+
 use std::collections::VecDeque;
 use std::io;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
-use crossterm::event::{self, KeyCode, KeyModifiers, MouseButton, MouseEventKind};
-use crossterm::terminal::size as terminal_size;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::text::{Line, Text};
-use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use tokio::sync::mpsc::unbounded_channel;
 
-use crate::config::SharedAgentConfig;
 use crate::runtime::cli::{
-    CliMainInvocationCommon, ReplSlashFollowupCtx, ReplSlashHandled, ReplSlashSharedHandles,
-    cli_effective_work_dir, repl_prepare_messages_and_editor, repl_slash_handled_followup,
-    try_handle_repl_slash_command,
+    CliMainInvocationCommon, ReplSlashSharedHandles, cli_effective_work_dir,
+    repl_prepare_messages_and_editor,
 };
-use crate::runtime::cli_exit::{CliExitError, EXIT_USAGE};
 use crate::runtime::cli_repl_ui::CliReplStyle;
 use crate::runtime::tui::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 use crate::runtime::tui_terminal_bridge::TuiTerminalHandoffOp;
-use crate::runtime::workspace_session;
-use crate::text_util::truncate_chars_with_ellipsis;
 use crate::tool_approval::TuiApprovalRequest;
 use crate::tool_registry::CliToolRuntime;
-use crate::types::Message;
-
-/// 撰写区行首提示符（与 [`composer_wrap_lines`] 起始列一致）。
-const COMPOSER_PROMPT_PREFIX: &str = "› ";
-
-/// Agent 异步侧与 UI 线程共享：澄清问卷 inbox + 待并入下一条用户消息的答案。
-#[derive(Clone)]
-pub(super) struct TuiClarificationShared {
-    inbox: Arc<Mutex<VecDeque<crate::sse::ClarificationQuestionnaireBody>>>,
-    answers_merge: Arc<Mutex<Option<crate::clarification_questionnaire::ClarifyAnswersNormalized>>>,
-}
-
-enum UiEvent {
-    Quit,
-    Submit(String),
-    /// 工作区路径原始输入（由 Modal 或后续扩展提交）。
-    WorkspaceSwitch(String),
-}
-
-/// 可聚焦面板（鼠标点击 / Tab 切换）；用于边框高亮。
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-enum TuiFocus {
-    NavLeft,
-    Chat,
-    #[default]
-    Composer,
-    SideRight,
-}
-
-impl TuiFocus {
-    fn cycle_next(self) -> Self {
-        match self {
-            Self::NavLeft => Self::Chat,
-            Self::Chat => Self::Composer,
-            Self::Composer => Self::SideRight,
-            Self::SideRight => Self::NavLeft,
-        }
-    }
-
-    fn cycle_prev(self) -> Self {
-        match self {
-            Self::NavLeft => Self::SideRight,
-            Self::Chat => Self::NavLeft,
-            Self::Composer => Self::Chat,
-            Self::SideRight => Self::Composer,
-        }
-    }
-}
-
-/// 与 [`render::render_full`] 一致的分区，供鼠标命中与绘制共用。
-struct TuiPaneLayout {
-    nav_left: Rect,
-    chat: Rect,
-    composer: Rect,
-    side_right: Rect,
-}
-
-fn compute_tui_pane_layout(area: Rect) -> TuiPaneLayout {
-    let vertical = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(4),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    let horizontal = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(23),
-            Constraint::Percentage(54),
-            Constraint::Percentage(23),
-        ])
-        .split(vertical[1]);
-
-    // 撰写区固定高度，避免随终端拉高占用过多；聊天区吃掉剩余空间。
-    let center_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(2), Constraint::Length(4)])
-        .split(horizontal[1]);
-
-    TuiPaneLayout {
-        nav_left: horizontal[0],
-        chat: center_chunks[0],
-        composer: center_chunks[1],
-        side_right: horizontal[2],
-    }
-}
-
-fn rect_contains(r: Rect, col: u16, row: u16) -> bool {
-    let cx = r.x <= col && col < r.x.saturating_add(r.width);
-    let cy = r.y <= row && row < r.y.saturating_add(r.height);
-    cx && cy
-}
-
-fn focus_at_point(layout: &TuiPaneLayout, col: u16, row: u16) -> Option<TuiFocus> {
-    if rect_contains(layout.nav_left, col, row) {
-        return Some(TuiFocus::NavLeft);
-    }
-    if rect_contains(layout.chat, col, row) {
-        return Some(TuiFocus::Chat);
-    }
-    if rect_contains(layout.composer, col, row) {
-        return Some(TuiFocus::Composer);
-    }
-    if rect_contains(layout.side_right, col, row) {
-        return Some(TuiFocus::SideRight);
-    }
-    None
-}
-
-/// 按显示宽度折行，返回每一行文本及逻辑光标所在行、列（列宽为单元格，`>= max_width` 时表示换行后的「下一行首」）。
-fn composer_wrap_lines(max_width: usize, input: &str) -> (Vec<String>, usize, usize) {
-    let mut lines = vec![String::from(COMPOSER_PROMPT_PREFIX)];
-    let mut row = 0usize;
-    let mut col = COMPOSER_PROMPT_PREFIX.width();
-
-    for ch in input.chars() {
-        let mut w = UnicodeWidthChar::width(ch).unwrap_or(0);
-        if w == 0 {
-            lines[row].push(ch);
-            continue;
-        }
-        w = w.max(1);
-        if col + w > max_width {
-            lines.push(String::new());
-            row += 1;
-            col = 0;
-        }
-        lines[row].push(ch);
-        col += w;
-    }
-
-    let mut cur_row = row;
-    let mut cur_col = col;
-    if cur_col >= max_width {
-        cur_row += 1;
-        cur_col = 0;
-    }
-    while lines.len() <= cur_row {
-        lines.push(String::new());
-    }
-
-    (lines, cur_row, cur_col)
-}
-
-/// 生成撰写区可见行（底部对齐滚动）及相对于 inner 左上角的光标坐标。
-fn composer_visible_and_cursor_rel(
-    inner: Rect,
-    input: &str,
-) -> (Text<'static>, Option<(u16, u16)>) {
-    let mw = inner.width as usize;
-    let mh = inner.height as usize;
-    if mw == 0 || mh == 0 {
-        return (Text::from(Line::from(COMPOSER_PROMPT_PREFIX)), None);
-    }
-    if COMPOSER_PROMPT_PREFIX.width() > mw {
-        let clipped = truncate_chars_with_ellipsis(COMPOSER_PROMPT_PREFIX, mw);
-        return (Text::from(Line::from(clipped)), Some((0u16, 0u16)));
-    }
-
-    let (lines, cur_row, cur_col) = composer_wrap_lines(mw, input);
-    let scroll = lines.len().saturating_sub(mh);
-    let visible: Vec<Line<'static>> = lines.into_iter().skip(scroll).map(Line::from).collect();
-    let cursor_row = cur_row.saturating_sub(scroll);
-    let cy = cursor_row.min(mh.saturating_sub(1));
-    let cx = cur_col.min(mw.saturating_sub(1));
-    (Text::from(visible), Some((cx as u16, cy as u16)))
-}
-
-struct TuiModel {
-    /// 顶栏一行：`CrabMate · 工作目录`（模型见底栏 chips）
-    header_line: String,
-    /// 左栏：会话文件、`tui_session.json` 与加载开关等（对齐 Web 左侧会话）
-    nav_summary: String,
-    /// 右栏：当前工作区路径（仅路径；无任务清单 / 变更预览）。
-    right_summary: String,
-    transcript: String,
-    /// 聊天区垂直滚动（`Paragraph::scroll` 的 y）；须与 [`render::clamped_chat_vertical_scroll`] 一致地 clamp，避免 ratatui `scroll_y` 过大导致溢出 panic。
-    /// 流式生成时由 [`render::render_full`] 写回贴底偏移；**勿**用远大于 `max_scroll` 的哨兵值（否则滚轮每次 `-3` 需很久才生效，表现为卡顿）。
-    chat_scroll_y: u16,
-    /// 回合刷新 transcript 后下一帧按当前布局写入真实贴底 `chat_scroll_y`（见 [`render::render_full`]）。
-    chat_snap_bottom_next_draw: bool,
-    /// 与 Web `auto_scroll_chat` 同源：`true` = 流式/增高时贴底；上滑 unpin，近底 / 下滑回阈值 re-pin。
-    chat_follow_bottom: bool,
-    /// 用户主动下滑（滚轮↓ / PgDn）：下一帧按 gap 判定是否 re-pin（对齐 Web `scrolled_down`）。
-    chat_user_scroll_down: bool,
-    /// 左键在聊天区纵向滚动条上按下后拖动（[`tui_dispatch_mouse`]）。
-    chat_scrollbar_dragging: bool,
-    input: String,
-    /// 与 Web 底栏 chips 同源快照（`模型 · … · 角色 · …`），左对齐。
-    status_chips: String,
-    /// 与 Web / Tauri `StatusBarRunIndicator` 同源（就绪 / 模型生成中… / 工具执行中… / 错误），底栏最右。
-    status_run: String,
-    focus: TuiFocus,
-    /// 敏感工具审批 Modal（单条）；多条时先入队。
-    approval_modal: Option<approval::TuiApprovalModalState>,
-    approval_backlog: VecDeque<TuiApprovalRequest>,
-    /// 澄清问卷（与 Web SSE `clarification_questionnaire` 对齐）。
-    clarification_modal: Option<clarify_modal::TuiClarificationModalState>,
-    clarification_backlog: VecDeque<crate::sse::ClarificationQuestionnaireBody>,
-    /// 与异步侧 `work_dir` 同步，供 UI 打开工作区 Modal。
-    workspace_path_buf: std::path::PathBuf,
-    /// 工作区切换（目录浏览 + 手动路径，对齐 Web `POST /workspace` / REPL `/workspace`）。
-    workspace_modal: Option<workspace_modal::TuiWorkspaceModalState>,
-    /// 已启用 **`conversation_store_sqlite_path`** 时当前 **`conversation_id`**（左栏与会话命令同源）。
-    sqlite_conversation_id: Option<String>,
-    /// 最近会话缓存（左栏「最近会话」；有 SQLite 时刷新；含与 Tauri 同源标题）。
-    recent_conversations: Vec<crate::conversation_store::ConversationListEntry>,
-    /// 本轮 SSE 控制面镜像（无 HTTP 通道时与 Web `SsePayload` 对齐）。
-    control_plane_tail: String,
-    /// 本轮 canonical Turn 投影（与 Web/Tauri `project_turn_web_v2` 同行序）。
-    turn_projection: turn_project::TuiTurnProjection,
-    /// 已定稿回合展示（含 flush 后的投影行序，无 `[Turn 投影]` 元标签）；`msg_len` 与 `messages` 前缀对齐。
-    committed_turns: transcript::CommittedTurns,
-}
-
-struct TuiSlashUiRefresh<'a> {
-    model: &'a Arc<Mutex<TuiModel>>,
-    cfg_holder: &'a SharedAgentConfig,
-    work_dir: &'a std::path::Path,
-    agent_role_owned: &'a Option<String>,
-    message_count: usize,
-    captured: Vec<String>,
-}
-
-pub(super) struct TuiSlashSubmit<'a> {
-    cfg_holder: &'a SharedAgentConfig,
-    config_path: Option<&'a str>,
-    client: &'a reqwest::Client,
-    tools: &'a [crate::types::Tool],
-    messages: &'a mut Vec<Message>,
-    work_dir: &'a mut std::path::PathBuf,
-    cli_no_stream: bool,
-    agent_role_owned: &'a mut Option<String>,
-    slash_handles: &'a ReplSlashSharedHandles,
-    model: &'a Arc<Mutex<TuiModel>>,
-    handoff_tx: &'a std::sync::mpsc::Sender<TuiTerminalHandoffOp>,
-}
-
-pub(super) async fn tui_try_consume_slash_submit(
-    trimmed: &str,
-    ctx: TuiSlashSubmit<'_>,
-) -> Result<bool, Box<dyn std::error::Error>> {
-    if !trimmed.starts_with('/') {
-        return Ok(false);
-    }
-    let cap = Arc::new(Mutex::new(Vec::<String>::new()));
-    let style_cap = CliReplStyle::new_tui_capture(Arc::clone(&cap));
-    let handled = try_handle_repl_slash_command(
-        trimmed,
-        ctx.cfg_holder,
-        ctx.tools,
-        ctx.messages,
-        ctx.work_dir,
-        &style_cap,
-        ctx.cli_no_stream,
-        ctx.agent_role_owned,
-        ctx.slash_handles,
-    )
-    .await;
-    if matches!(handled, ReplSlashHandled::NotSlash) {
-        let mut g = ctx.model.lock().unwrap_or_else(|e| e.into_inner());
-        g.status_run = sidebar_text::tui_status_run_error(
-            "输入以 / 开头但未识别为内建命令（不应发生）；请报告 issue",
-        );
-        return Ok(true);
-    }
-    repl_slash_handled_followup(
-        handled,
-        ReplSlashFollowupCtx {
-            cfg_holder: ctx.cfg_holder,
-            config_path: ctx.config_path,
-            client: ctx.client,
-            slash_handles: ctx.slash_handles,
-            style: &style_cap,
-            work_dir: ctx.work_dir.as_path(),
-            tui_terminal_tx: Some(ctx.handoff_tx),
-        },
-    )
-    .await?;
-    let captured = cap.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    tui_refresh_after_slash_capture(TuiSlashUiRefresh {
-        model: ctx.model,
-        cfg_holder: ctx.cfg_holder,
-        work_dir: ctx.work_dir.as_path(),
-        agent_role_owned: ctx.agent_role_owned,
-        message_count: ctx.messages.len(),
-        captured,
-    })
-    .await;
-    Ok(true)
-}
-
-async fn tui_refresh_after_slash_capture(p: TuiSlashUiRefresh<'_>) {
-    let TuiSlashUiRefresh {
-        model,
-        cfg_holder,
-        work_dir,
-        agent_role_owned,
-        message_count,
-        captured,
-    } = p;
-    let new_header = tui_header_summary(work_dir);
-    let tui_load_nav = cfg_holder.read().await.session_ui.tui_load_session_on_start;
-    let (sqlite_nav, recent_ids) = {
-        let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        (
-            g.sqlite_conversation_id.as_deref().map(|s| s.to_string()),
-            g.recent_conversations.clone(),
-        )
-    };
-    let nav = sidebar_text::build_tui_session_sidebar(
-        tui_load_nav,
-        workspace_session::session_file_path(work_dir).exists(),
-        message_count,
-        sqlite_nav.as_deref(),
-        &recent_ids,
-    );
-    let right = sidebar_text::build_tui_workspace_sidebar(work_dir);
-    let chips = sidebar_text::tui_status_chips_line(cfg_holder, agent_role_owned).await;
-
-    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-    if !captured.is_empty() {
-        g.transcript.push_str("\n[/]\n");
-        for ln in captured {
-            g.transcript.push_str(&ln);
-            g.transcript.push('\n');
-        }
-        g.transcript.push('\n');
-    }
-    g.header_line = new_header;
-    g.nav_summary = nav;
-    g.right_summary = right;
-    g.workspace_path_buf = work_dir.to_path_buf();
-    g.status_chips = chips;
-    g.status_run = sidebar_text::tui_status_run_ready().to_string();
-}
 
 /// 进入全屏 TUI 并跑对话循环（须 TTY）。**`cli_no_stream`** 对应全局 **`--no-stream`**；助手正文不因流式写入 stdout（保护 alternate screen）。
 pub async fn run_tui_session(
@@ -447,13 +116,7 @@ pub async fn run_tui_session(
         session_mode: Arc::new(std::sync::Mutex::new(default_session_mode)),
     };
 
-    {
-        let g = cfg_holder.read().await;
-        if let Some(r) = agent_role.map(str::trim).filter(|s| !s.is_empty()) {
-            g.system_prompt_for_new_conversation(Some(r))
-                .map_err(|e| CliExitError::new(EXIT_USAGE, e))?;
-        }
-    }
+    tui_session_validate_agent_role(cfg_holder, agent_role).await?;
 
     let agent_role_owned = agent_role
         .map(str::trim)
@@ -480,53 +143,21 @@ pub async fn run_tui_session(
     let mut sqlite_sess = sqlite_sess;
     let mut messages = messages;
 
-    let header_line = tui_header_summary(work_dir.as_path());
-    let sqlite_id_nav = sqlite_sess.as_ref().map(|s| s.conversation_id.as_str());
-    let recent_conversations = sidebar_text::tui_recent_conversations(sqlite_sess.as_ref());
-    let nav_summary = sidebar_text::build_tui_session_sidebar(
+    let chrome = tui_session_build_chrome(
+        cfg_holder,
         tui_load,
-        workspace_session::session_file_path(work_dir.as_path()).exists(),
-        messages.len(),
-        sqlite_id_nav,
-        &recent_conversations,
-    );
-    let right_summary = sidebar_text::build_tui_workspace_sidebar(work_dir.as_path());
-    let status_chips =
-        sidebar_text::tui_status_chips_line_with_messages(cfg_holder, &agent_role_owned, &messages)
-            .await;
-    let status_run = sidebar_text::tui_status_run_ready().to_string();
+        work_dir.as_path(),
+        &messages,
+        &agent_role_owned,
+        &sqlite_sess,
+    )
+    .await;
 
     let llm_scratch: TuiLlmStreamScratchArc = Arc::new(Mutex::new(TuiLlmStreamScratch::default()));
 
-    let committed_turns = transcript::CommittedTurns::reseed_from_messages(&messages);
     let (ev_tx, mut ev_rx) = unbounded_channel::<UiEvent>();
     let shutdown = Arc::new(AtomicBool::new(false));
-    let model = Arc::new(Mutex::new(TuiModel {
-        header_line,
-        nav_summary,
-        right_summary,
-        transcript: committed_turns.display.clone(),
-        chat_scroll_y: 0,
-        chat_snap_bottom_next_draw: false,
-        chat_follow_bottom: true,
-        chat_user_scroll_down: false,
-        chat_scrollbar_dragging: false,
-        input: String::new(),
-        status_chips,
-        status_run,
-        focus: TuiFocus::default(),
-        approval_modal: None,
-        approval_backlog: VecDeque::new(),
-        clarification_modal: None,
-        clarification_backlog: VecDeque::new(),
-        workspace_path_buf: work_dir.clone(),
-        workspace_modal: None,
-        sqlite_conversation_id: sqlite_sess.as_ref().map(|s| s.conversation_id.clone()),
-        recent_conversations,
-        control_plane_tail: String::new(),
-        turn_projection: turn_project::TuiTurnProjection::default(),
-        committed_turns,
-    }));
+    let model = tui_session_new_model(chrome, work_dir.clone(), &messages, &sqlite_sess);
 
     let clarify_shared = TuiClarificationShared {
         inbox: Arc::new(Mutex::new(VecDeque::<
@@ -585,260 +216,9 @@ pub async fn run_tui_session(
     })
     .await?;
 
-    if tui_load
-        && sqlite_sess.is_none()
-        && let Err(e) = workspace_session::save_workspace_session(work_dir.as_path(), &messages)
-    {
-        eprintln!(
-            "写入 {} 失败: {e}",
-            workspace_session::session_file_path(work_dir.as_path()).display()
-        );
-    }
+    tui_session_save_json_session_if_enabled(tui_load, &sqlite_sess, work_dir.as_path(), &messages);
 
-    shutdown.store(true, Ordering::SeqCst);
-    let join_out = tokio::task::spawn_blocking(move || ui_handle.join())
-        .await
-        .map_err(|e| io::Error::other(format!("join tui task: {e:?}")))?
-        .map_err(|e| io::Error::other(format!("tui thread join: {e:?}")))?;
-    join_out?;
+    tui_session_join_ui_thread(shutdown, ui_handle).await?;
 
     Ok(())
-}
-
-pub(super) fn tui_header_summary(work_dir: &std::path::Path) -> String {
-    let wd = work_dir.display().to_string();
-    let wd_short = truncate_chars_with_ellipsis(&wd, 72);
-    format!("CrabMate · {wd_short}")
-}
-
-enum TuiPollKeyFlow {
-    BreakLoop,
-    ContinueOuter,
-}
-
-fn open_workspace_modal(model: &Arc<Mutex<TuiModel>>) {
-    let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-    let initial = g.workspace_path_buf.clone();
-    g.workspace_modal = Some(workspace_modal::TuiWorkspaceModalState::open(initial));
-}
-
-fn tui_dispatch_mouse(
-    model: &Arc<Mutex<TuiModel>>,
-    mouse: event::MouseEvent,
-    llm_scratch: &TuiLlmStreamScratchArc,
-) {
-    let modal_open = {
-        let g = model.lock().unwrap_or_else(|e| e.into_inner());
-        g.approval_modal.is_some() || g.clarification_modal.is_some() || g.workspace_modal.is_some()
-    };
-    if modal_open {
-        return;
-    }
-    let Ok((w, h)) = terminal_size() else {
-        return;
-    };
-    let layout = compute_tui_pane_layout(Rect::new(0, 0, w, h));
-    match mouse.kind {
-        MouseEventKind::ScrollUp | MouseEventKind::ScrollDown
-            if rect_contains(layout.chat, mouse.column, mouse.row) =>
-        {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            g.chat_scrollbar_dragging = false;
-            g.focus = TuiFocus::Chat;
-            match mouse.kind {
-                MouseEventKind::ScrollUp => {
-                    render::note_chat_user_scroll_up(&mut g);
-                    g.chat_scroll_y = g.chat_scroll_y.saturating_sub(3);
-                }
-                MouseEventKind::ScrollDown => {
-                    render::note_chat_user_scroll_down(&mut g);
-                    g.chat_scroll_y = g.chat_scroll_y.saturating_add(3);
-                }
-                _ => {}
-            }
-        }
-        MouseEventKind::Up(_) => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            g.chat_scrollbar_dragging = false;
-        }
-        MouseEventKind::Drag(MouseButton::Left) => {
-            let dragging = {
-                let g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.chat_scrollbar_dragging
-            };
-            if !dragging {
-                return;
-            }
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(hit) = render::chat_scrollbar_hit(
-                layout.chat,
-                g.transcript.as_str(),
-                &g.turn_projection,
-                g.control_plane_tail.as_str(),
-                &scratch,
-            ) {
-                g.focus = TuiFocus::Chat;
-                let y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
-                render::apply_chat_scrollbar_follow_intent(&mut g, y, hit.max_scroll);
-            }
-        }
-        MouseEventKind::Down(MouseButton::Left) => {
-            let consumed_by_scrollbar = {
-                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                let scratch = llm_scratch.lock().unwrap_or_else(|e| e.into_inner());
-                if let Some(hit) = render::chat_scrollbar_hit(
-                    layout.chat,
-                    g.transcript.as_str(),
-                    &g.turn_projection,
-                    g.control_plane_tail.as_str(),
-                    &scratch,
-                ) {
-                    if rect_contains(hit.rect, mouse.column, mouse.row) {
-                        g.chat_scrollbar_dragging = true;
-                        g.focus = TuiFocus::Chat;
-                        let y = render::scrollbar_row_to_scroll_y(mouse.row, &hit);
-                        render::apply_chat_scrollbar_follow_intent(&mut g, y, hit.max_scroll);
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    false
-                }
-            };
-            if consumed_by_scrollbar {
-                return;
-            }
-            if let Some(f) = focus_at_point(&layout, mouse.column, mouse.row) {
-                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.focus = f;
-                g.chat_scrollbar_dragging = false;
-            }
-        }
-        _ => {}
-    }
-}
-
-fn tui_dispatch_key_press(
-    model: &Arc<Mutex<TuiModel>>,
-    ev_tx: &UnboundedSender<UiEvent>,
-    key: &event::KeyEvent,
-) -> TuiPollKeyFlow {
-    match workspace_modal::handle_workspace_modal_keys(model, ev_tx, key) {
-        workspace_modal::WorkspaceModalKeyOutcome::NotApplicable => {}
-        workspace_modal::WorkspaceModalKeyOutcome::Consumed => {
-            return TuiPollKeyFlow::ContinueOuter;
-        }
-    }
-    match approval::handle_approval_modal_keys(model, ev_tx, key) {
-        approval::ApprovalModalKeyOutcome::QuitApp => return TuiPollKeyFlow::BreakLoop,
-        approval::ApprovalModalKeyOutcome::Consumed => return TuiPollKeyFlow::ContinueOuter,
-        approval::ApprovalModalKeyOutcome::NotApplicable => {}
-    }
-    match key.code {
-        KeyCode::Char('c') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            approval::deny_all_pending_approvals(&mut g);
-            let _ = ev_tx.send(UiEvent::Quit);
-            TuiPollKeyFlow::BreakLoop
-        }
-        KeyCode::Char(ch @ ('q' | 'Q')) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let input_empty = {
-                let g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.input.is_empty()
-            };
-            if input_empty {
-                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                approval::deny_all_pending_approvals(&mut g);
-                let _ = ev_tx.send(UiEvent::Quit);
-                return TuiPollKeyFlow::BreakLoop;
-            }
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            g.input.push(ch);
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::BackTab => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            g.focus = g.focus.cycle_prev();
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::Tab => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            g.focus = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                g.focus.cycle_prev()
-            } else {
-                g.focus.cycle_next()
-            };
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::PageUp => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Chat {
-                render::note_chat_user_scroll_up(&mut g);
-                g.chat_scroll_y = g.chat_scroll_y.saturating_sub(8);
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::PageDown => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Chat {
-                render::note_chat_user_scroll_down(&mut g);
-                g.chat_scroll_y = g.chat_scroll_y.saturating_add(8);
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::Home => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Chat {
-                render::note_chat_user_scroll_up(&mut g);
-                g.chat_scroll_y = 0;
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::End => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Chat {
-                g.chat_follow_bottom = true;
-                g.chat_snap_bottom_next_draw = true;
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::Enter => {
-            let workspace_enter = {
-                let g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.focus == TuiFocus::SideRight
-            };
-            if workspace_enter {
-                open_workspace_modal(model);
-                return TuiPollKeyFlow::ContinueOuter;
-            }
-            let line = {
-                let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-                g.chat_follow_bottom = true;
-                g.chat_snap_bottom_next_draw = true;
-                std::mem::take(&mut g.input)
-            };
-            let _ = ev_tx.send(UiEvent::Submit(line));
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::Backspace => {
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Composer {
-                g.input.pop();
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        KeyCode::Char(ch) => {
-            if key.modifiers.contains(KeyModifiers::CONTROL) {
-                return TuiPollKeyFlow::ContinueOuter;
-            }
-            let mut g = model.lock().unwrap_or_else(|e| e.into_inner());
-            if g.focus == TuiFocus::Composer {
-                g.input.push(ch);
-            }
-            TuiPollKeyFlow::ContinueOuter
-        }
-        _ => TuiPollKeyFlow::ContinueOuter,
-    }
 }

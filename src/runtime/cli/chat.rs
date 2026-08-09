@@ -453,24 +453,49 @@ async fn chat_batch_jsonl_merge_line_value(
     .into())
 }
 
+async fn run_chat_batch_jsonl_turn(
+    p: &RunChatBatchJsonlParams<'_>,
+    messages: &mut Vec<Message>,
+    line_no: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cfg_snap = {
+        let g = p.cfg_holder.read().await;
+        Arc::new(g.clone())
+    };
+    run_agent_turn_for_cli(RunAgentTurnForCliParams {
+        client: p.client,
+        api_key: p.api_key,
+        cfg: &cfg_snap,
+        tools: p.tools,
+        messages,
+        work_dir: p.work_dir,
+        no_stream: p.no_stream,
+        suppress_stdout_render: false,
+        tui_llm_stream_scratch: None,
+        tool_running_hook: None,
+        clarification_questionnaire_hook: None,
+        cli_tool_ctx: Some(p.cli_rt),
+        active_agent_role: p.agent_role,
+        process_handles: Arc::clone(&p.process_handles),
+        sse_control_mirror: None,
+        session_mode: crate::session_mode_turn::resolve_initial_session_mode(
+            &cfg_snap,
+            p.agent_role,
+        ),
+    })
+    .await
+    .map_err(map_turn_err)?;
+    ensure_all_run_commands_not_denied(p.cli_rt)?;
+    if p.json_out {
+        print_json_reply_line(&cfg_snap, messages, Some(line_no));
+    }
+    Ok(())
+}
+
 async fn run_chat_batch_jsonl(
     p: RunChatBatchJsonlParams<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let RunChatBatchJsonlParams {
-        cfg_holder,
-        _config_path,
-        client,
-        api_key,
-        tools,
-        work_dir,
-        no_stream,
-        cli_rt,
-        json_out,
-        path,
-        chat,
-        agent_role,
-        process_handles,
-    } = p;
+    let path = p.path;
     let file = std::fs::File::open(path).map_err(|e| {
         CliExitError::new(EXIT_GENERAL, format!("无法打开 --message-file {path}: {e}"))
     })?;
@@ -478,11 +503,11 @@ async fn run_chat_batch_jsonl(
     let mut messages: Vec<Message> = Vec::new();
     let mut line_no: usize = 0;
     let merge_ctx = ChatBatchLineMergeCtx {
-        cfg_holder,
-        chat,
-        agent_role,
-        process_handles: process_handles.as_ref(),
-        work_dir,
+        cfg_holder: p.cfg_holder,
+        chat: p.chat,
+        agent_role: p.agent_role,
+        process_handles: p.process_handles.as_ref(),
+        work_dir: p.work_dir,
         path,
     };
     for line in reader.lines() {
@@ -504,37 +529,7 @@ async fn run_chat_batch_jsonl(
             )
         })?;
         chat_batch_jsonl_merge_line_value(&merge_ctx, &mut messages, line_no, &v).await?;
-
-        let cfg_snap = {
-            let g = cfg_holder.read().await;
-            Arc::new(g.clone())
-        };
-        run_agent_turn_for_cli(RunAgentTurnForCliParams {
-            client,
-            api_key,
-            cfg: &cfg_snap,
-            tools,
-            messages: &mut messages,
-            work_dir,
-            no_stream,
-            suppress_stdout_render: false,
-            tui_llm_stream_scratch: None,
-            tool_running_hook: None,
-            clarification_questionnaire_hook: None,
-            cli_tool_ctx: Some(cli_rt),
-            active_agent_role: agent_role,
-            process_handles: Arc::clone(&process_handles),
-            sse_control_mirror: None,
-            session_mode: crate::session_mode_turn::resolve_initial_session_mode(
-                &cfg_snap, agent_role,
-            ),
-        })
-        .await
-        .map_err(map_turn_err)?;
-        ensure_all_run_commands_not_denied(cli_rt)?;
-        if json_out {
-            print_json_reply_line(&cfg_snap, &messages, Some(line_no));
-        }
+        run_chat_batch_jsonl_turn(&p, &mut messages, line_no).await?;
     }
     Ok(())
 }

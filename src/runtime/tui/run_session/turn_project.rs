@@ -224,25 +224,10 @@ impl TuiTurnProjection {
         if !final_t.is_empty() && projection_text_covers(b, final_t) {
             return true;
         }
-        for row in project_turn_web_v2(&self.turn) {
-            if !matches!(
-                row.kind.as_str(),
-                "assistant_commentary" | "assistant_batch_narration" | "assistant_answer"
-            ) {
-                continue;
-            }
-            let t = row.text.trim();
-            if !t.is_empty() && projection_text_covers(b, t) {
-                return true;
-            }
+        if projection_rows_cover_assistant_body(b, &self.turn) {
+            return true;
         }
-        for seg in &self.turn.segments {
-            let t = seg.text.trim();
-            if !t.is_empty() && projection_text_covers(b, t) {
-                return true;
-            }
-        }
-        false
+        turn_segments_cover_assistant_body(b, &self.turn)
     }
 
     /// open 旁白 + 自 `scratch_cursor` 起尚未写入 reducer 的 scratch 切片（供绘制即时跟底）。
@@ -448,6 +433,32 @@ pub(super) fn format_projected_rows_for_tui(rows: &[ProjectedRow]) -> String {
         }
     }
     out
+}
+
+fn projection_rows_cover_assistant_body(body: &str, turn: &Turn) -> bool {
+    for row in project_turn_web_v2(turn) {
+        if !matches!(
+            row.kind.as_str(),
+            "assistant_commentary" | "assistant_batch_narration" | "assistant_answer"
+        ) {
+            continue;
+        }
+        let t = row.text.trim();
+        if !t.is_empty() && projection_text_covers(body, t) {
+            return true;
+        }
+    }
+    false
+}
+
+fn turn_segments_cover_assistant_body(body: &str, turn: &Turn) -> bool {
+    for seg in &turn.segments {
+        let t = seg.text.trim();
+        if !t.is_empty() && projection_text_covers(body, t) {
+            return true;
+        }
+    }
+    false
 }
 
 /// 投影旁白是否已覆盖（或领先于）scratch：相等、投影为前缀扩张、或 scratch 仍是投影前缀。

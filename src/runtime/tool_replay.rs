@@ -171,6 +171,42 @@ pub fn export_tool_replay_fixture(
     Ok(dest)
 }
 
+fn compare_replay_step_output(
+    out: &mut impl Write,
+    compare_recorded: bool,
+    recorded_output: &Option<String>,
+    fresh: &str,
+) -> io::Result<bool> {
+    if !compare_recorded {
+        return Ok(false);
+    }
+    match recorded_output {
+        Some(recorded) if recorded == fresh => {
+            writeln!(out, "—— compare-recorded: 与录制一致 ——")?;
+            Ok(false)
+        }
+        Some(recorded) => {
+            writeln!(
+                out,
+                "—— compare-recorded: 不一致（录制长度 {}，本次长度 {}）——",
+                recorded.len(),
+                fresh.len()
+            )?;
+            let rec_preview: String = recorded.lines().take(3).collect::<Vec<_>>().join("\n");
+            let fresh_preview: String = fresh.lines().take(3).collect::<Vec<_>>().join("\n");
+            writeln!(
+                out,
+                "录制预览:\n{rec_preview}\n…\n本次预览:\n{fresh_preview}\n…"
+            )?;
+            Ok(true)
+        }
+        None => {
+            writeln!(out, "—— compare-recorded: 跳过（无 recorded_output）——")?;
+            Ok(false)
+        }
+    }
+}
+
 /// 重放 fixture；若 `compare_recorded` 为 true，对含 `recorded_output` 的步骤做字符串全等比较。
 /// 返回 (执行步数, 比较不匹配数)。
 pub fn run_tool_replay_fixture(
@@ -198,32 +234,9 @@ pub fn run_tool_replay_fixture(
             step.index, step.name, step.tool_call_id, step.arguments
         )?;
         let fresh = run_tool(&step.name, &step.arguments, &ctx);
-        writeln!(out, "—— 本次输出 ——\n{}", fresh)?;
-        if compare_recorded {
-            match &step.recorded_output {
-                Some(recorded) if recorded == &fresh => {
-                    writeln!(out, "—— compare-recorded: 与录制一致 ——")?;
-                }
-                Some(recorded) => {
-                    mismatches += 1;
-                    writeln!(
-                        out,
-                        "—— compare-recorded: 不一致（录制长度 {}，本次长度 {}）——",
-                        recorded.len(),
-                        fresh.len()
-                    )?;
-                    // 避免巨屏：仅预览前几行
-                    let rec_preview: String =
-                        recorded.lines().take(3).collect::<Vec<_>>().join("\n");
-                    let fresh_preview: String =
-                        fresh.lines().take(3).collect::<Vec<_>>().join("\n");
-                    writeln!(
-                        out,
-                        "录制预览:\n{rec_preview}\n…\n本次预览:\n{fresh_preview}\n…"
-                    )?;
-                }
-                None => writeln!(out, "—— compare-recorded: 跳过（无 recorded_output）——")?,
-            }
+        writeln!(out, "—— 本次输出 ——\n{fresh}")?;
+        if compare_replay_step_output(&mut out, compare_recorded, &step.recorded_output, &fresh)? {
+            mismatches += 1;
         }
     }
     Ok((file.steps.len(), mismatches))

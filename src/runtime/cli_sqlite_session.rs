@@ -29,6 +29,58 @@ fn open_db(
     Ok(Arc::new(Mutex::new(conn)))
 }
 
+fn resolve_bootstrap_conversation_id(
+    preferred_id: Option<&str>,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    match preferred_id.map(str::trim).filter(|s| !s.is_empty()) {
+        Some(id) => {
+            validate_conversation_id_chars(id)?;
+            Ok(id.to_string())
+        }
+        None => Ok(new_conversation_id()),
+    }
+}
+
+type BootstrapLoadedSession = (Vec<Message>, u64, String);
+
+fn bootstrap_try_load_existing(
+    conn: &Arc<Mutex<Connection>>,
+    conversation_id: &str,
+) -> Result<Option<BootstrapLoadedSession>, Box<dyn std::error::Error + Send + Sync>> {
+    let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
+    Ok(
+        conversation_store::load(&g, conversation_id, CONVERSATION_STORE_TTL_SECS)?
+            .map(|(msgs, rev, role, _mode)| (msgs, rev, role)),
+    )
+}
+
+fn bootstrap_insert_and_reload(
+    conn: &Arc<Mutex<Connection>>,
+    conversation_id: &str,
+    bootstrap_messages: Vec<Message>,
+    active: Option<&str>,
+) -> Result<BootstrapLoadedSession, Box<dyn std::error::Error + Send + Sync>> {
+    let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
+    let outcome = conversation_store::save_if_revision(
+        &g,
+        conversation_id,
+        bootstrap_messages,
+        active,
+        None,
+        None,
+    )?;
+    drop(g);
+    if outcome != SaveConversationOutcome::Saved {
+        return Err("新建会话写入 SQLite 失败（冲突）".into());
+    }
+
+    let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
+    let loaded = conversation_store::load(&g, conversation_id, CONVERSATION_STORE_TTL_SECS)?
+        .ok_or_else(|| "新建会话读回失败".to_string())?;
+    drop(g);
+    Ok((loaded.0, loaded.1, loaded.2))
+}
+
 /// 终端侧（REPL / TUI）SQLite 会话状态。
 pub(crate) struct CliSqliteSessionState {
     conn: Arc<Mutex<Connection>>,
@@ -46,21 +98,12 @@ impl CliSqliteSessionState {
         agent_role_label: Option<&str>,
     ) -> Result<(Self, Vec<Message>), Box<dyn std::error::Error + Send + Sync>> {
         let conn = open_db(db_path)?;
-        let conversation_id = match preferred_id.map(str::trim).filter(|s| !s.is_empty()) {
-            Some(id) => {
-                validate_conversation_id_chars(id)?;
-                id.to_string()
-            }
-            None => new_conversation_id(),
-        };
-
+        let conversation_id = resolve_bootstrap_conversation_id(preferred_id)?;
         let active = agent_role_label.map(str::trim).filter(|s| !s.is_empty());
 
-        let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
-        if let Some((msgs, rev, role, _mode)) =
-            conversation_store::load(&g, conversation_id.as_str(), CONVERSATION_STORE_TTL_SECS)?
+        if let Some((msgs, rev, role)) =
+            bootstrap_try_load_existing(&conn, conversation_id.as_str())?
         {
-            drop(g);
             return Ok((
                 Self {
                     conn,
@@ -72,33 +115,21 @@ impl CliSqliteSessionState {
             ));
         }
 
-        let outcome = conversation_store::save_if_revision(
-            &g,
+        let (msgs, rev, role) = bootstrap_insert_and_reload(
+            &conn,
             conversation_id.as_str(),
-            bootstrap_messages.clone(),
+            bootstrap_messages,
             active,
-            None,
-            None,
         )?;
-        drop(g);
-        if outcome != SaveConversationOutcome::Saved {
-            return Err("新建会话写入 SQLite 失败（冲突）".into());
-        }
-
-        let g = conn.lock().map_err(|e| format!("会话库锁: {e}"))?;
-        let loaded =
-            conversation_store::load(&g, conversation_id.as_str(), CONVERSATION_STORE_TTL_SECS)?
-                .ok_or_else(|| "新建会话读回失败".to_string())?;
-        drop(g);
 
         Ok((
             Self {
                 conn,
                 conversation_id,
-                revision: Some(loaded.1),
-                persisted_role: loaded.2.clone(),
+                revision: Some(rev),
+                persisted_role: role,
             },
-            loaded.0,
+            msgs,
         ))
     }
 

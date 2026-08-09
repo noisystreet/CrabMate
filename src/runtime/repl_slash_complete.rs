@@ -119,64 +119,90 @@ fn suggestions_session_export_formats(span: Span, prefix: &str) -> Vec<Suggestio
         .collect()
 }
 
-/// `tail` = `line[slash_idx+1..pos]`，且尚未出现空白（即仍在「第一个 token」上）。
-pub(super) fn complete_slash_no_whitespace_tail(span: Span, tail: &str) -> Vec<Suggestion> {
+fn suggestions_slash_subcommands(span: Span, prefix: &str, subcmds: &[&str]) -> Vec<Suggestion> {
+    subcmds
+        .iter()
+        .map(|a| Suggestion {
+            value: format!("{prefix} {a}"),
+            span,
+            append_whitespace: false,
+            ..Default::default()
+        })
+        .collect()
+}
+
+fn suggestions_slash_subcommands_trailing_space_on(
+    span: Span,
+    prefix: &str,
+    subcmds: &[&str],
+    trailing_space_on: &str,
+) -> Vec<Suggestion> {
+    subcmds
+        .iter()
+        .map(|a| {
+            let value = if *a == trailing_space_on {
+                format!("{prefix} {a} ")
+            } else {
+                format!("{prefix} {a}")
+            };
+            Suggestion {
+                value,
+                span,
+                append_whitespace: false,
+                ..Default::default()
+            }
+        })
+        .collect()
+}
+
+fn complete_slash_no_ws_export_or_save(span: Span, tail: &str) -> Option<Vec<Suggestion>> {
     if tail.eq_ignore_ascii_case("export") {
-        return suggestions_session_export_formats(span, "/export");
+        return Some(suggestions_session_export_formats(span, "/export"));
     }
     if tail.eq_ignore_ascii_case("save-session") {
-        return suggestions_session_export_formats(span, "/save-session");
+        return Some(suggestions_session_export_formats(span, "/save-session"));
     }
+    None
+}
+
+fn complete_slash_no_ws_simple_subcmds(span: Span, tail: &str) -> Option<Vec<Suggestion>> {
     if tail.eq_ignore_ascii_case("config") {
-        return ["reload"]
-            .iter()
-            .map(|a| Suggestion {
-                value: format!("/config {a}"),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
+        return Some(suggestions_slash_subcommands(span, "/config", &["reload"]));
     }
     if tail.eq_ignore_ascii_case("mcp") {
-        return ["list", "probe"]
-            .iter()
-            .map(|a| Suggestion {
-                value: format!("/mcp {a}"),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
-    }
-    if tail.eq_ignore_ascii_case("models") {
-        return ["list", "choose"]
-            .iter()
-            .map(|a| {
-                let value = if *a == "choose" {
-                    format!("/models {a} ")
-                } else {
-                    format!("/models {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+        return Some(suggestions_slash_subcommands(
+            span,
+            "/mcp",
+            &["list", "probe"],
+        ));
     }
     if tail.eq_ignore_ascii_case("model") {
-        return ["set"]
-            .iter()
-            .map(|a| Suggestion {
-                value: format!("/model {a} "),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
+        return Some(suggestions_slash_subcommands_trailing_space_on(
+            span,
+            "/model",
+            &["set"],
+            "set",
+        ));
+    }
+    None
+}
+
+fn complete_slash_no_ws_models_agent_api(span: Span, tail: &str) -> Option<Vec<Suggestion>> {
+    if tail.eq_ignore_ascii_case("models") {
+        return Some(suggestions_slash_subcommands_trailing_space_on(
+            span,
+            "/models",
+            &["list", "choose"],
+            "choose",
+        ));
+    }
+    if tail.eq_ignore_ascii_case("agent") {
+        return Some(suggestions_slash_subcommands_trailing_space_on(
+            span,
+            "/agent",
+            &["list", "set"],
+            "set",
+        ));
     }
     if tail.eq_ignore_ascii_case("api-base") || tail.eq_ignore_ascii_case("apibase") {
         let p = if tail.eq_ignore_ascii_case("apibase") {
@@ -184,33 +210,26 @@ pub(super) fn complete_slash_no_whitespace_tail(span: Span, tail: &str) -> Vec<S
         } else {
             "/api-base"
         };
-        return ["set"]
-            .iter()
-            .map(|a| Suggestion {
-                value: format!("{p} {a} "),
-                span,
-                append_whitespace: false,
-                ..Default::default()
-            })
-            .collect();
+        return Some(suggestions_slash_subcommands_trailing_space_on(
+            span,
+            p,
+            &["set"],
+            "set",
+        ));
     }
-    if tail.eq_ignore_ascii_case("agent") {
-        return ["list", "set"]
-            .iter()
-            .map(|a| {
-                let value = if *a == "set" {
-                    format!("/agent {a} ")
-                } else {
-                    format!("/agent {a}")
-                };
-                Suggestion {
-                    value,
-                    span,
-                    append_whitespace: false,
-                    ..Default::default()
-                }
-            })
-            .collect();
+    None
+}
+
+/// `tail` = `line[slash_idx+1..pos]`，且尚未出现空白（即仍在「第一个 token」上）。
+pub(super) fn complete_slash_no_whitespace_tail(span: Span, tail: &str) -> Vec<Suggestion> {
+    if let Some(s) = complete_slash_no_ws_export_or_save(span, tail) {
+        return s;
+    }
+    if let Some(s) = complete_slash_no_ws_simple_subcmds(span, tail) {
+        return s;
+    }
+    if let Some(s) = complete_slash_no_ws_models_agent_api(span, tail) {
+        return s;
     }
     suggestions_first_token(span, tail)
 }
@@ -401,30 +420,33 @@ fn complete_slash_api_base_second(span: Span, cmd: &str, after_ws: &str) -> Vec<
         .collect()
 }
 
-/// `cmd` = 第一个 token（已 trim），`after_ws` = 其后的原文（可含前导空白）。
-pub(super) fn complete_slash_after_whitespace(
+fn complete_slash_builtin_second_token(
     span: Span,
     cmd: &str,
     after_ws: &str,
-) -> Vec<Suggestion> {
+) -> Option<Vec<Suggestion>> {
     if cmd.eq_ignore_ascii_case("config") {
-        return complete_slash_config_second(span, after_ws);
+        return Some(complete_slash_config_second(span, after_ws));
     }
     if cmd.eq_ignore_ascii_case("mcp") {
-        return complete_slash_mcp_second(span, after_ws);
+        return Some(complete_slash_mcp_second(span, after_ws));
     }
     if cmd.eq_ignore_ascii_case("models") {
-        return complete_slash_models_second(span, after_ws);
+        return Some(complete_slash_models_second(span, after_ws));
     }
     if cmd.eq_ignore_ascii_case("agent") {
-        return complete_slash_agent_second(span, after_ws);
+        return Some(complete_slash_agent_second(span, after_ws));
     }
     if cmd.eq_ignore_ascii_case("model") {
-        return complete_slash_model_second(span, after_ws);
+        return Some(complete_slash_model_second(span, after_ws));
     }
     if cmd.eq_ignore_ascii_case("api-base") || cmd.eq_ignore_ascii_case("apibase") {
-        return complete_slash_api_base_second(span, cmd, after_ws);
+        return Some(complete_slash_api_base_second(span, cmd, after_ws));
     }
+    None
+}
+
+fn complete_slash_export_format_second(span: Span, cmd: &str, after_ws: &str) -> Vec<Suggestion> {
     let prefix = if cmd.eq_ignore_ascii_case("export") {
         "/export"
     } else if cmd.eq_ignore_ascii_case("save-session") {
@@ -445,4 +467,16 @@ pub(super) fn complete_slash_after_whitespace(
             ..Default::default()
         })
         .collect()
+}
+
+/// `cmd` = 第一个 token（已 trim），`after_ws` = 其后的原文（可含前导空白）。
+pub(super) fn complete_slash_after_whitespace(
+    span: Span,
+    cmd: &str,
+    after_ws: &str,
+) -> Vec<Suggestion> {
+    if let Some(suggestions) = complete_slash_builtin_second_token(span, cmd, after_ws) {
+        return suggestions;
+    }
+    complete_slash_export_format_second(span, cmd, after_ws)
 }
