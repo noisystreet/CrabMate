@@ -209,6 +209,78 @@ pub(crate) async fn prepare_session_messages_shared(
     .await
 }
 
+fn context_summary_attempt_prep(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) -> Option<(usize, String)> {
+    let trigger = effective_summary_trigger_for_turn(cfg, turn_budget.map(|a| a.as_ref()));
+    if trigger == 0 {
+        return None;
+    }
+    let tail = cfg
+        .context_pipeline
+        .context_summary_tail_messages
+        .clamp(4, 64);
+    let chars = crate::agent::message_pipeline::estimate_non_system_chars(messages);
+    if chars < trigger {
+        return None;
+    }
+    if messages.is_empty() || messages[0].role != "system" {
+        return None;
+    }
+    if messages.len() <= 1 + tail + 1 {
+        return None;
+    }
+    let transcript = build_transcript_middle(
+        messages,
+        tail,
+        cfg.context_pipeline.context_summary_transcript_max_chars,
+    )?;
+    Some((tail, transcript))
+}
+
+fn build_context_summary_chat_request(cfg: &AgentConfig, transcript: &str) -> ChatRequest {
+    let sum_messages = build_context_summary_side_messages(cfg, transcript);
+    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        llm: cfg.llm.clone(),
+        sampling: cfg.llm_sampling.clone(),
+        vendor_flags: cfg.llm_vendor_flags.clone(),
+        http_retry: cfg.llm_http_retry.clone(),
+    };
+    ChatRequest {
+        core: crate::types::ChatRequestCore {
+            model: cfg.llm.model.clone(),
+            messages: sum_messages,
+            tools: None,
+            tool_choice: None,
+            max_tokens: cfg.context_pipeline.context_summary_max_tokens,
+            temperature: vendor_temperature_for_config(&llm_cfg, 0.2),
+            seed: None,
+            stream: None,
+        },
+        vendor: crate::llm::chat_request_vendor_extensions_for_agent(&llm_cfg),
+    }
+}
+
+fn apply_llm_summary_to_messages(messages: &mut Vec<Message>, tail: usize, summary_text: &str) {
+    let tail_start = messages.len() - tail;
+    let tail_part: Vec<Message> = messages[tail_start..].to_vec();
+    messages.truncate(1);
+    messages.push(Message::user_only(format!(
+        "[较早对话已摘要，以下为压缩要点]\n{}",
+        summary_text.trim()
+    )));
+    messages.extend(tail_part);
+    info!(
+        target: "crabmate",
+        "已用 LLM 压缩上下文 tail_kept={} new_len={}",
+        tail,
+        messages.len()
+    );
+    let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+}
+
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
 pub async fn maybe_summarize_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -219,29 +291,7 @@ pub async fn maybe_summarize_with_llm(
     cancel: Option<&std::sync::atomic::AtomicBool>,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let trigger = effective_summary_trigger_for_turn(cfg, turn_budget.map(|a| a.as_ref()));
-    if trigger == 0 {
-        return Ok(());
-    }
-    let tail = cfg
-        .context_pipeline
-        .context_summary_tail_messages
-        .clamp(4, 64);
-    let chars = crate::agent::message_pipeline::estimate_non_system_chars(messages);
-    if chars < trigger {
-        return Ok(());
-    }
-    if messages.is_empty() || messages[0].role != "system" {
-        return Ok(());
-    }
-    if messages.len() <= 1 + tail + 1 {
-        return Ok(());
-    }
-    let Some(transcript) = build_transcript_middle(
-        messages,
-        tail,
-        cfg.context_pipeline.context_summary_transcript_max_chars,
-    ) else {
+    let Some((tail, transcript)) = context_summary_attempt_prep(cfg, messages, turn_budget) else {
         return Ok(());
     };
 
@@ -255,37 +305,7 @@ pub async fn maybe_summarize_with_llm(
         return Ok(());
     }
 
-    let sum_messages = build_context_summary_side_messages(cfg, &transcript);
-    let req = ChatRequest {
-        core: crate::types::ChatRequestCore {
-            model: cfg.llm.model.clone(),
-            messages: sum_messages,
-            tools: None,
-            tool_choice: None,
-            max_tokens: cfg.context_pipeline.context_summary_max_tokens,
-            temperature: {
-                let llm_cfg = crabmate_types::llm_config::LlmConfig {
-                    llm: cfg.llm.clone(),
-                    sampling: cfg.llm_sampling.clone(),
-                    vendor_flags: cfg.llm_vendor_flags.clone(),
-                    http_retry: cfg.llm_http_retry.clone(),
-                };
-                vendor_temperature_for_config(&llm_cfg, 0.2)
-            },
-            seed: None,
-            stream: None,
-        },
-        vendor: {
-            let llm_cfg = crabmate_types::llm_config::LlmConfig {
-                llm: cfg.llm.clone(),
-                sampling: cfg.llm_sampling.clone(),
-                vendor_flags: cfg.llm_vendor_flags.clone(),
-                http_retry: cfg.llm_http_retry.clone(),
-            };
-            crate::llm::chat_request_vendor_extensions_for_agent(&llm_cfg)
-        },
-    };
-
+    let req = build_context_summary_chat_request(cfg, &transcript);
     let cc = CompleteChatRetryingParams::new(
         llm_backend,
         client,
@@ -313,21 +333,7 @@ pub async fn maybe_summarize_with_llm(
                 );
                 return Ok(());
             }
-            let tail_start = messages.len() - tail;
-            let tail_part: Vec<Message> = messages[tail_start..].to_vec();
-            messages.truncate(1);
-            messages.push(Message::user_only(format!(
-                "[较早对话已摘要，以下为压缩要点]\n{}",
-                summary_text.trim()
-            )));
-            messages.extend(tail_part);
-            info!(
-                target: "crabmate",
-                "已用 LLM 压缩上下文 tail_kept={} new_len={}",
-                tail,
-                messages.len()
-            );
-            let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+            apply_llm_summary_to_messages(messages, tail, &summary_text);
         }
         Err(e) => {
             warn!(

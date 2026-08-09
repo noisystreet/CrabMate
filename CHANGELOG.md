@@ -18,6 +18,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - Deb `depends` → **`libc6 (>= 2.39)`** to match binaries built on Ubuntu 24.04 / current CI (`ubuntu-latest`).
 - **`lizard-rust`** gate: per-module **count of functions with CCN>10** (exact ratchet vs `scripts/lizard_module_ccn_caps.toml`), aligned with Client; replaces per-module max-CCN caps (`global_ccn_ceiling` / `ccn_max`).
 - Refactor small modules that had 1–2 functions with CCN>10 (meta dialogue, chat job queue, MCP, CLI serve, turn replay dump, e2e dump/judge, terminal render, runtime display/LaTeX, turn-layout, `cmd_mate`) so those module caps are **0**.
+- Refactor `src/agent` outer-loop / reflect / serial early-emit / context summary helpers so its CCN>10 count is **0**.
 
 ### Fixed
 
