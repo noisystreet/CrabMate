@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Rust 圈复杂度：按模块统计 CCN 超阈函数个数（crabmate_agent）。
+"""Rust 圈复杂度：按模块统计 CCN 超阈函数个数，并限制其 CCN 之和（crabmate_agent）。
 
 模块划分：
   - crates/<crate>
   - src/<顶层目录或文件>
 
-门禁：各模块中 **CCN > high_ccn_threshold**（默认 10）的函数个数
-必须 **恰好等于** caps 文件中该模块的上限：
-  - 实测 > cap：失败（复杂度回潮，需拆分或有意抬高 cap）
-  - 实测 < cap：失败（须主动调低 cap；可 `bash scripts/lizard-rust.sh --write-caps`）
+门禁：
+  1. 各模块中 **CCN > high_ccn_threshold**（默认 10）的函数个数必须 **恰好等于**
+     caps 中该模块上限（`[modules]` / `default_over_max`）。
+  2. 全量扫描时，上述超阈函数的 **CCN 之和** 必须 **恰好等于**
+     **`global_over_ccn_sum_cap`**（单模块 `--module` 模式不检查此项）。
 
-配置见 **`scripts/lizard_module_ccn_caps.toml`**（`[modules]` + `default_over_max`）。
+  实测 > cap：失败（复杂度回潮，需拆分或有意抬高 cap）
+  实测 < cap：失败（须主动调低 cap；可 `bash scripts/lizard-rust.sh --write-caps`）
+
+配置见 **`scripts/lizard_module_ccn_caps.toml`**。
 业务 UI 复杂度门禁在 Client 仓 crabmate-client。
 
 用法：
@@ -47,6 +51,10 @@ class CapsConfig:
     global_over_ceiling: int
     modules: dict[str, int]
     frozen_modules: frozenset[str] = frozenset()
+    # 全仓「CCN > threshold」函数的 CCN 之和棘轮；None 表示尚未配置（检查时失败）
+    global_over_ccn_sum_cap: int | None = None
+    # --write-caps 时全局之和只降不升
+    frozen_over_ccn_sum: bool = False
 
 
 @dataclass
@@ -64,6 +72,14 @@ class ModuleStats:
     over_cap: int = 0
     over_threshold: list[FnHit] = field(default_factory=list)
     above_warn: list[FnHit] = field(default_factory=list)
+
+    @property
+    def over_ccn_sum(self) -> int:
+        return sum(h.ccn for h in self.over_threshold)
+
+
+def total_over_ccn_sum(by_mod: dict[str, ModuleStats]) -> int:
+    return sum(st.over_ccn_sum for st in by_mod.values())
 
 
 def module_id_for(path: Path) -> str:
@@ -178,7 +194,27 @@ def load_caps(path: Path = CAPS_PATH) -> CapsConfig:
             file=sys.stderr,
         )
         raise SystemExit(2)
-    return CapsConfig(threshold, default_over, ceiling, modules, frozen)
+    sum_cap: int | None
+    if "global_over_ccn_sum_cap" in raw:
+        sum_cap = int(raw["global_over_ccn_sum_cap"])
+        if sum_cap < 0:
+            print(
+                f"lizard: global_over_ccn_sum_cap 无效: {sum_cap}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+    else:
+        sum_cap = None
+    frozen_sum = bool(raw.get("frozen_over_ccn_sum", False))
+    return CapsConfig(
+        threshold,
+        default_over,
+        ceiling,
+        modules,
+        frozen,
+        sum_cap,
+        frozen_sum,
+    )
 
 
 def cap_for(mid: str, caps: CapsConfig, *, missing: set[str]) -> int:
@@ -232,30 +268,44 @@ def print_module_table(
     except ValueError:
         caps_rel = caps_path
     the = caps.threshold
+    sum_cap_s = (
+        str(caps.global_over_ccn_sum_cap)
+        if caps.global_over_ccn_sum_cap is not None
+        else "?"
+    )
     print(
         f"lizard Rust（按模块限制 CCN>{the} 函数个数；"
+        f"全仓超阈 CCN 之和 cap={sum_cap_s}；"
         f"个数天花板≤{caps.global_over_ceiling}；配置 {caps_rel}）"
     )
     col = f">{the}"
-    print(f"{'module':<36} {'fns':>6} {'max':>4} {col:>5} {'cap':>5}")
-    print("-" * 62)
+    sum_col = f"Σ>{the}"
+    print(
+        f"{'module':<36} {'fns':>6} {'max':>4} {col:>5} {'cap':>5} {sum_col:>6}"
+    )
+    print("-" * 70)
     total_fns = 0
     overall_max = 0
     total_over = 0
     total_cap = 0
+    total_sum = 0
     for mid in sorted(by_mod.keys()):
         st = by_mod[mid]
         n_over = len(st.over_threshold)
+        s_over = st.over_ccn_sum
         total_fns += st.fn_count
         overall_max = max(overall_max, st.max_ccn)
         total_over += n_over
         total_cap += st.over_cap
+        total_sum += s_over
         print(
-            f"{mid:<36} {st.fn_count:>6} {st.max_ccn:>4} {n_over:>5} {st.over_cap:>5}"
+            f"{mid:<36} {st.fn_count:>6} {st.max_ccn:>4} "
+            f"{n_over:>5} {st.over_cap:>5} {s_over:>6}"
         )
-    print("-" * 62)
+    print("-" * 70)
     print(
-        f"{'TOTAL':<36} {total_fns:>6} {overall_max:>4} {total_over:>5} {total_cap:>5}"
+        f"{'TOTAL':<36} {total_fns:>6} {overall_max:>4} "
+        f"{total_over:>5} {total_cap:>5} {total_sum:>6}"
     )
 
 
@@ -281,7 +331,7 @@ def print_hits(
         print(f"  ... 另有 {len(hits) - limit} 个", file=out)
 
 
-def caps_file_header_lines(caps: CapsConfig) -> list[str]:
+def caps_file_header_lines(caps: CapsConfig, *, over_ccn_sum_cap: int) -> list[str]:
     the = caps.threshold
     lines = [
         "# 各模块「CCN > high_ccn_threshold」函数个数上限（lizard）。",
@@ -289,14 +339,19 @@ def caps_file_header_lines(caps: CapsConfig) -> list[str]:
         "# - high_ccn_threshold：计入超标的 CCN 下限（默认 10，即统计 CCN>10）",
         "# - default_over_max：未在 [modules] 登记的新模块回退个数上限",
         "# - global_over_ceiling：任一模块配置的个数上限不得超过此值",
-        "# - frozen_modules：禁止抬高 cap；实测变小时仍须下调（--write-caps 只降不升）",
-        "# 棘轮：实测个数必须与 cap 一致；变小则 pre-commit / lizard 失败，须调低 cap。",
-        "# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测个数重写",
+        "# - global_over_ccn_sum_cap：全仓「CCN>阈值」函数的 CCN 之和棘轮（须恰好相等）",
+        "# - frozen_over_ccn_sum：为 true 时 --write-caps 对之和只降不升",
+        "# - frozen_modules：禁止抬高模块个数 cap；实测变小时仍须下调（--write-caps 只降不升）",
+        "# 棘轮：实测个数/之和必须与 cap 一致；变小则 pre-commit / lizard 失败，须调低 cap。",
+        "# 可用：python3 scripts/lizard_rust_metrics.py --write-caps 按当前实测重写",
         "",
         f"high_ccn_threshold = {the}",
         f"default_over_max = {caps.default_over_max}",
         f"global_over_ceiling = {caps.global_over_ceiling}",
+        f"global_over_ccn_sum_cap = {over_ccn_sum_cap}",
     ]
+    if caps.frozen_over_ccn_sum:
+        lines.append("frozen_over_ccn_sum = true")
     if caps.frozen_modules:
         frozen_list = ", ".join(f'"{m}"' for m in sorted(caps.frozen_modules))
         lines.append(f"frozen_modules = [{frozen_list}]")
@@ -324,20 +379,47 @@ def _cap_value_for_module(
     return value, comment
 
 
+def _resolve_over_ccn_sum_cap_for_write(
+    caps: CapsConfig,
+    by_mod: dict[str, ModuleStats],
+    *,
+    update_global_sum: bool,
+) -> int:
+    """全量 write 用实测之和；单模块 write 保留原 global_over_ccn_sum_cap。"""
+    if not update_global_sum:
+        if caps.global_over_ccn_sum_cap is None:
+            print(
+                "lizard: --module --write-caps 需要已有 global_over_ccn_sum_cap；"
+                "请先全量 bash scripts/lizard-rust.sh --write-caps",
+                file=sys.stderr,
+            )
+            raise SystemExit(2)
+        return caps.global_over_ccn_sum_cap
+    measured = total_over_ccn_sum(by_mod)
+    if caps.frozen_over_ccn_sum and caps.global_over_ccn_sum_cap is not None:
+        return min(caps.global_over_ccn_sum_cap, measured)
+    return measured
+
+
 def write_caps_from_measured(
     by_mod: dict[str, ModuleStats],
     caps: CapsConfig,
     path: Path,
     *,
     preserve_unscanned: dict[str, int] | None = None,
+    update_global_sum: bool = True,
 ) -> None:
     """按当前实测「CCN > threshold」个数写入 caps 文件的 [modules]。
 
     `frozen_modules`：允许下调到实测值，禁止抬高。
     `preserve_unscanned`：未参与本次扫描的模块保留原 cap（供 `--module` + `--write-caps` 合并，避免截断）。
+    `update_global_sum`：为 False 时保留原 `global_over_ccn_sum_cap`（单模块写入）。
     """
     the = caps.threshold
-    lines = caps_file_header_lines(caps)
+    sum_cap = _resolve_over_ccn_sum_cap_for_write(
+        caps, by_mod, update_global_sum=update_global_sum
+    )
+    lines = caps_file_header_lines(caps, over_ccn_sum_cap=sum_cap)
     values: dict[str, int] = {}
     comments: dict[str, str] = {}
 
@@ -376,12 +458,16 @@ def write_caps_from_measured(
         rel = path.resolve().relative_to(ROOT)
     except ValueError:
         rel = path
-    print(f"已写入 {rel}（{len(values)} 个模块）")
+    print(
+        f"已写入 {rel}（{len(values)} 个模块；"
+        f"global_over_ccn_sum_cap={sum_cap}"
+        f"{'' if update_global_sum else '，单模块模式未重算之和'}）"
+    )
 
 
 def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="按模块检查 Rust 函数 CCN>阈值的个数（lizard）"
+        description="按模块检查 Rust 函数 CCN>阈值的个数，并检查全仓超阈 CCN 之和（lizard）"
     )
     p.add_argument(
         "--module",
@@ -403,8 +489,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         "--write-caps",
         action="store_true",
         help=(
-            "按当前实测各模块 CCN>阈值函数个数写入 lizard_module_ccn_caps.toml 后退出 0；"
-            "与 --module 联用时合并更新该模块，保留其余 [modules] 条目"
+            "按当前实测写入 lizard_module_ccn_caps.toml（模块个数 + 全仓超阈 CCN 之和）后退出 0；"
+            "与 --module 联用时合并更新该模块个数，保留其余 [modules] 与原 global_over_ccn_sum_cap"
         ),
     )
     p.add_argument(
@@ -472,6 +558,7 @@ def main(argv: list[str] | None = None) -> int:
             print("lizard: 未分析到任何函数", file=sys.stderr)
             return 1
         preserve = None
+        update_global_sum = args.module is None
         if args.module is not None:
             scanned = {mid for mid, st in by_mod.items() if st.fn_count > 0}
             preserve = {
@@ -480,7 +567,11 @@ def main(argv: list[str] | None = None) -> int:
                 if mid not in scanned
             }
         write_caps_from_measured(
-            by_mod, caps, caps_path, preserve_unscanned=preserve
+            by_mod,
+            caps,
+            caps_path,
+            preserve_unscanned=preserve,
+            update_global_sum=update_global_sum,
         )
         return 0
 
@@ -532,6 +623,34 @@ def main(argv: list[str] | None = None) -> int:
                 f"[{mid}] CCN > {args.list_above}：",
                 st.above_warn,
                 stream=sys.stdout,
+            )
+
+    # 全仓超阈 CCN 之和棘轮（仅全量扫描）
+    if args.module is None:
+        measured_sum = total_over_ccn_sum(by_mod)
+        sum_cap = caps.global_over_ccn_sum_cap
+        if sum_cap is None:
+            failed = True
+            print(
+                "lizard: 缺少 global_over_ccn_sum_cap。"
+                "请执行: bash scripts/lizard-rust.sh --write-caps",
+                file=sys.stderr,
+            )
+        elif measured_sum > sum_cap:
+            failed = True
+            print(
+                f"lizard: 全仓 CCN>{the} 函数的 CCN 之和 {measured_sum} "
+                f"超过 global_over_ccn_sum_cap={sum_cap}",
+                file=sys.stderr,
+            )
+        elif measured_sum < sum_cap:
+            failed = True
+            print(
+                f"lizard: 全仓 CCN>{the} 函数的 CCN 之和已降为 {measured_sum}，"
+                f"低于 global_over_ccn_sum_cap={sum_cap}；"
+                "须主动调低 scripts/lizard_module_ccn_caps.toml 中该值"
+                "（或：bash scripts/lizard-rust.sh --write-caps）。",
+                file=sys.stderr,
             )
 
     return 1 if failed else 0
