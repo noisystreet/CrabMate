@@ -23,14 +23,15 @@ where
 
 /// 挂载 `/uploads` 与（可选）SPA `fallback`（Leptos `dist`）。
 ///
+/// `static_dir`：仅在显式托管 UI（`serve --with-web`）时传入；`None` 表示纯 API，不挂 SPA。
+///
 /// `allow_cross_origin_uploads`：仅在启用 CORS 白名单（远程 UI）时为 `true`，
 /// 将 `/uploads` 的 **`Cross-Origin-Resource-Policy`** 设为 **`cross-origin`**；
 /// 默认同源部署保持 **`same-site`**，避免无故放宽嵌入面。
 pub fn mount_uploads_and_spa<S>(
     mut app: Router<S>,
     uploads_dir: PathBuf,
-    static_dir: PathBuf,
-    mount_web_ui: bool,
+    static_dir: Option<PathBuf>,
     allow_cross_origin_uploads: bool,
 ) -> Router<S>
 where
@@ -58,9 +59,9 @@ where
             ))
             .service(ServeDir::new(uploads_dir)),
     );
-    if mount_web_ui {
+    if let Some(dir) = static_dir {
         // axum 0.8+：禁止 `nest_service("/", …)`，未匹配 API/静态前缀的请求走 fallback。
-        app = app.fallback_service(ServeDir::new(static_dir));
+        app = app.fallback_service(ServeDir::new(dir));
     }
     app
 }

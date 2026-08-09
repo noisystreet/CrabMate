@@ -104,26 +104,28 @@ pub(super) async fn serve_bind_auth_flags(cfg_holder: &SharedAgentConfig) -> (bo
 }
 
 /// 启动日志：是否挂载 SPA（`--with-web`）及静态根是否可用。
-pub(super) fn serve_log_ui_mount_status(with_web: bool, static_dir: &std::path::Path) {
-    if with_web {
-        let index = static_dir.join("index.html");
-        if index.is_file() {
-            println!("  UI：已启用 --with-web（静态根 {}）", static_dir.display());
-            return;
+///
+/// `static_dir`：仅托管 UI 时传入已解析路径；纯 API 为 `None`（本函数不探测 dist）。
+pub(super) fn serve_log_ui_mount_status(static_dir: Option<&std::path::Path>) {
+    let Some(static_dir) = static_dir else {
+        println!("  UI：默认纯 API（托管 SPA 请加 --with-web）");
+        if std::env::var("CM_WEB_STATIC_DIR")
+            .map(|s| !s.trim().is_empty())
+            .unwrap_or(false)
+        {
+            println!("  提示：已设置 CM_WEB_STATIC_DIR，但未传 --with-web，静态目录不会挂载");
         }
-        eprintln!(
-            "  警告：已启用 --with-web，但未找到 {}（/ 可能 404）。请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend",
-            index.display()
-        );
+        return;
+    };
+    let index = static_dir.join("index.html");
+    if index.is_file() {
+        println!("  UI：已启用 --with-web（静态根 {}）", static_dir.display());
         return;
     }
-    println!("  UI：默认纯 API（托管 SPA 请加 --with-web）");
-    if std::env::var("CM_WEB_STATIC_DIR")
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false)
-    {
-        println!("  提示：已设置 CM_WEB_STATIC_DIR，但未传 --with-web，静态目录不会挂载");
-    }
+    eprintln!(
+        "  警告：已启用 --with-web，但未找到 {}（/ 可能 404）。请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend",
+        index.display()
+    );
 }
 
 /// 启动日志：CORS 白名单非空时提示（改白名单须重启）。

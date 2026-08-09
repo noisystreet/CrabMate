@@ -22,7 +22,7 @@
 | 阶段 | 内容 | 本仓状态 |
 |------|------|----------|
 | **Phase 1** | UI/API 分 Origin；`serve` 默认不挂 SPA；CORS 暴露头；文档/ systemd / man | **已落地**（CLI + 文档） |
-| **Phase 2** | Desktop / Android 包内或本地加载业务 UI，API 基址指向 `serve` | Client 仓立项 |
+| **Phase 2** | Desktop / Android 包内或本地加载业务 UI，API 基址指向 `serve` | **进行中**（Client：`connect_remote` → 包内 `index.html` + `cm_api_base`） |
 | **Phase 3** | 叙事收敛；可选浏览器 session-only Bearer、网关示例 | 按需 |
 
 公网分入口 / VPN 等运维收口**不是**本设计前置（可并行，见个人云附录）。
@@ -36,6 +36,7 @@
 - [x] README / 配置说明 / 命令行与路由 / systemd 注释 / CI 断言与行为一致
 - [x] 冒烟 / 真 LLM / AGENTS 等同机托管路径改为 **`--with-web`**（跨 Origin §9 仍纯 API）
 - [x] CORS 已暴露 **`x-conversation-id` / `x-stream-job-id` / `x-request-id`**（既有实现；跨 Origin 须配置 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）
+- [x] 纯 API 热路径：未传 `--with-web` 时不探测/解析 `frontend` dist
 - [ ] Client 仓 E2E/README 启动命令同步加 **`--with-web`**（本仓外）
 - [ ] E2E / 冒烟在「静态私有或壳本地」路径上通过（随 Client / 部署验证）
 
