@@ -207,7 +207,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置，持久化到系统钥匙串而非 XDG 明文文件。 |
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
-| **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 跨 Origin 浏览器访问时的 Origin 白名单（逗号分隔）；空=不挂 CORS。静态托管 UI 时见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
+| **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 额外 Origin 白名单（逗号分隔）；**未设置**时已默认放行官方壳 Origin（`tauri://localhost`、`http://tauri.localhost`）。显式空串关闭 CORS。静态浏览器 UI：补上其 Origin；见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
 | **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve --with-web`** 时的静态资源根（Client `frontend/dist` / 安装路径；默认不挂 SPA）。 |
 | **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
 | **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
@@ -218,7 +218,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
 - **LLM API Key**：Web/桌面设置、默认 `/api-key set` 与已保存模型的密钥写入系统钥匙串。无可用钥匙串时可继续使用环境变量 `API_KEY`。
-- **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML / **`crabmate web-bearer set`**）。密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。浏览器须在 **设置 →「Web API 共享密钥（Bearer）」** 保存与服务端相同的值（**`localStorage`** **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。**跨 Origin 静态 UI**：设置页填 **API 基址**，并配置 **`CM_WEB_CORS_ALLOWED_ORIGINS`**。冒烟见 **`docs/design/client_turn_smoke_runbook.md`** §9。**本机临时跳过**：`unset CM_WEB_API_BEARER_TOKEN` 后听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`。对外建议 **`web_api_require_bearer = true`**。详见 [docs/配置说明.md](docs/配置说明.md)。
+- **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML / **`crabmate web-bearer set`**）。密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。浏览器须在 **设置 →「Web API 共享密钥（Bearer）」** 保存与服务端相同的值（**`localStorage`** **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。**跨 Origin 静态 UI**：设置页填 **API 基址**；官方壳 Origin 已默认放行，其它浏览器 Origin 再配 **`CM_WEB_CORS_ALLOWED_ORIGINS`**。冒烟见 **`docs/design/client_turn_smoke_runbook.md`** §9。**本机临时跳过**：`unset CM_WEB_API_BEARER_TOKEN` 后听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`。对外建议 **`web_api_require_bearer = true`**。详见 [docs/配置说明.md](docs/配置说明.md)。
 - **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入；工作区须在允许根内。调试与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。
 - **个人 VPS（反代 TLS）**：见 [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md)。
 

@@ -34,7 +34,8 @@ fn env_override_web_api_security_fields(b: &mut ConfigBuilder) {
             .map(|x| x.trim().to_string())
             .filter(|x| !x.is_empty())
             .collect();
-        // 显式空串（或仅空白/逗号）→ 清空白名单（不挂 CORS）；非空则覆盖。
+        // 显式空串（或仅空白/逗号）→ Some([])，finalize 时关闭 CORS（含默认壳 Origin）。
+        // 非空 → 与默认壳 Origin 合并（见 `resolve_web_cors_allowed_origins`）。
         b.web_api.web_cors_allowed_origins = Some(list);
     }
     if let Ok(v) = std::env::var("CM_WEB_AUDIT_LOG_WRITE_TOOLS")

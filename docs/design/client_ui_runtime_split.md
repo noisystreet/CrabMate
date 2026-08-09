@@ -35,7 +35,7 @@
 - [x] **`--with-web`** 显式兼容托管；**`--no-web`** 降级为无操作
 - [x] README / 配置说明 / 命令行与路由 / systemd 注释 / CI 断言与行为一致
 - [x] 冒烟 / 真 LLM / AGENTS 等同机托管路径改为 **`--with-web`**（跨 Origin §9 仍纯 API）
-- [x] CORS 已暴露 **`x-conversation-id` / `x-stream-job-id` / `x-request-id`**（既有实现；跨 Origin 须配置 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）
+- [x] CORS 已暴露 **`x-conversation-id` / `x-stream-job-id` / `x-request-id`**（既有实现；官方壳 Origin 默认放行，额外静态 Origin 用 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）
 - [x] 纯 API 热路径：未传 `--with-web` 时不探测/解析 `frontend` dist
 - [ ] Client 仓 E2E/README 启动命令同步加 **`--with-web`**（本仓外）
 - [ ] E2E / 冒烟在「静态私有或壳本地」路径上通过（随 Client / 部署验证）
@@ -49,7 +49,7 @@
 静态 UI:   不配公网 A；壳包内 / Tailscale 私有 Origin / 过渡期 --with-web
 ```
 
-跨 Origin：Client 静态 Origin 写入 **`CM_WEB_CORS_ALLOWED_ORIGINS`**（精确白名单，禁止 `*`；改后重启 `serve`）。无头 VPS 密钥用 **`EnvironmentFile` / systemd credentials**，勿依赖 gnome-keyring。
+跨 Origin：官方壳（`tauri://localhost` / `http://tauri.localhost`）**默认已放行**；其它浏览器静态 Origin 写入 **`CM_WEB_CORS_ALLOWED_ORIGINS`**（与默认合并；精确白名单，禁止 `*`；改后重启 `serve`）。无头 VPS 密钥用 **`EnvironmentFile` / systemd credentials**，勿依赖 gnome-keyring。
 
 ---
 

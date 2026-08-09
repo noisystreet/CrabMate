@@ -98,7 +98,7 @@ conversation_store_sqlite_path = ".crabmate/conversations.db"
 # web_api_bearer_token = ""
 # 为 true 时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。本地纯匿名调试可设为 false。CM_WEB_API_REQUIRE_BEARER
 web_api_require_bearer = false
-# 跨 Origin 浏览器访问时的 Origin 白名单；空/省略则不挂 CORS（默认同源）。非空时仅允许列表内精确 Origin（无 *）。改后须重启 serve。CM_WEB_CORS_ALLOWED_ORIGINS（逗号分隔）
+# 跨 Origin Origin 白名单。省略时默认含官方壳 tauri://localhost 与 http://tauri.localhost；显式 [] 关闭 CORS；非空与默认合并。CM_WEB_CORS_ALLOWED_ORIGINS（逗号分隔；空串=关闭）
 # web_cors_allowed_origins = ["http://127.0.0.1:8081"]
 # 为 true（默认）时，成功执行的写副作用工具在日志中打一行 target=crabmate::audit_write_tool（无密钥；含时间、IP、共享密钥 SHA-256 前 12 位十六进制、工具名与脱敏 args 预览）。CM_WEB_AUDIT_LOG_WRITE_TOOLS
 # web_audit_log_write_tools = true
