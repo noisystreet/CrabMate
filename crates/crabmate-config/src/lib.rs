@@ -22,8 +22,11 @@ mod types;
 mod user_config_layers;
 mod user_config_xdg;
 mod validate;
+mod web_cors;
 mod workspace_roots;
 mod xdg;
+
+pub use web_cors::{DEFAULT_SHELL_CORS_ORIGINS, resolve_web_cors_allowed_origins};
 
 pub use final_plan_requirement_mode::FinalPlanRequirementMode;
 pub use gateway_hints::{
@@ -143,9 +146,13 @@ model = "deepseek-chat"
                     !cfg.web_api.web_api_require_bearer,
                     "embedded default should allow serve without forcing non-empty web_api_bearer_token"
                 );
-                assert!(
-                    cfg.web_api.web_cors_allowed_origins.is_empty(),
-                    "embedded default should not enable CORS"
+                assert_eq!(
+                    cfg.web_api.web_cors_allowed_origins,
+                    crate::DEFAULT_SHELL_CORS_ORIGINS
+                        .iter()
+                        .map(|s| (*s).to_string())
+                        .collect::<Vec<_>>(),
+                    "embedded default should allow official Client shell Origins"
                 );
             });
         });
@@ -192,7 +199,9 @@ web_cors_allowed_origins = ["http://127.0.0.1:8081", "https://ui.example.com"]
                     cfg.web_api.web_cors_allowed_origins,
                     vec![
                         "http://127.0.0.1:8081".to_string(),
-                        "https://ui.example.com".to_string()
+                        "https://ui.example.com".to_string(),
+                        "tauri://localhost".to_string(),
+                        "http://tauri.localhost".to_string(),
                     ]
                 );
             });

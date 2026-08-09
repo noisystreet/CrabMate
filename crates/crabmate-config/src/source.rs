@@ -219,7 +219,8 @@ pub(super) struct AgentSection {
     pub(super) web_api_bearer_token: Option<String>,
     /// `CM_WEB_API_REQUIRE_BEARER`；未在 TOML/环境显式设置时，finalize 默认 **false**（允许无密钥启动 `serve`）；显式 **`true`** 时须配非空 `web_api_bearer_token` 后 `serve` 才启动。
     pub(super) web_api_require_bearer: Option<bool>,
-    /// 跨 Origin 允许的 Origin 列表；空/省略则不挂 CORS 层。`CM_WEB_CORS_ALLOWED_ORIGINS`（逗号分隔）。
+    /// 跨 Origin 允许的 Origin 列表。省略时默认含官方壳 Origin（见 `DEFAULT_SHELL_CORS_ORIGINS`）；
+    /// 显式空列表关闭 CORS。`CM_WEB_CORS_ALLOWED_ORIGINS`（逗号分隔）可追加或显式清空。
     pub(super) web_cors_allowed_origins: Option<Vec<String>>,
     pub(super) allow_insecure_no_auth_for_non_loopback: Option<bool>,
     /// `CM_WEB_AUDIT_LOG_WRITE_TOOLS`；默认 true：成功执行的写副作用工具记一行结构化审计日志。

@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Default **`web_cors_allowed_origins`**: official Client shell Origins **`tauri://localhost`** + **`http://tauri.localhost`** (CORS on without env). Explicit empty env/TOML list still disables CORS; non-empty lists are merged with those defaults.
 - **BREAKING**: `serve` is **API-only by default** (no SPA mount). Host Client UI with **`--with-web`** / **`--web`** plus **`CM_WEB_STATIC_DIR`** (or probed dist). **`--no-web`** / **`--cli-only`** remain as compat no-ops (mutually exclusive with **`--with-web`**). **`config` / dry-run** now **skips** UI static checks by default (previously required dist unless `--no-web`); add **`--with-web`** to require dist. Docs, systemd comments, and man page updated accordingly.
 - Default pure-API `serve` skips `resolve_web_static_dir` / SPA probe; static root is resolved only with **`--with-web`**.
 - Deb `depends` → **`libc6 (>= 2.39)`** to match binaries built on Ubuntu 24.04 / current CI (`ubuntu-latest`).

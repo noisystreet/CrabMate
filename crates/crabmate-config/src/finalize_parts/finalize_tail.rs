@@ -370,7 +370,8 @@ fn derive_tail_sandbox_web_scalars(
         types::SecretString::new(b.web_api.web_api_bearer_token.clone().unwrap_or_default().into());
     // 默认 **false**：允许无密钥启动 `serve`；生产环境请显式 `web_api_require_bearer = true` 并配置非空密钥。
     let web_api_require_bearer = b.web_api.web_api_require_bearer.unwrap_or(false);
-    let web_cors_allowed_origins = b.web_api.web_cors_allowed_origins.clone().unwrap_or_default();
+    let web_cors_allowed_origins =
+        crate::resolve_web_cors_allowed_origins(b.web_api.web_cors_allowed_origins.clone());
     let web_audit_log_write_tools = b.web_api.web_audit_log_write_tools.unwrap_or(true);
     let web_audit_trust_x_forwarded_for = b.web_api.web_audit_trust_x_forwarded_for.unwrap_or(false);
     let allow_insecure_no_auth_for_non_loopback =
