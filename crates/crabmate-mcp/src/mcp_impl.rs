@@ -112,13 +112,10 @@ pub async fn connect_stdio_client_launch(
     Ok(client)
 }
 
-/// 经 Streamable HTTP 连接远程 MCP。
-pub async fn connect_streamable_http_client(
-    url: &str,
+fn apply_mcp_http_headers(
+    mut config: StreamableHttpClientTransportConfig,
     headers: &std::collections::BTreeMap<String, String>,
-) -> Result<McpClientSession, String> {
-    validate_mcp_remote_url(url)?;
-    let mut config = StreamableHttpClientTransportConfig::with_uri(url.trim().to_string());
+) -> Result<StreamableHttpClientTransportConfig, String> {
     let mut custom = HashMap::new();
     for (k, v) in headers {
         let key = k.trim();
@@ -145,6 +142,17 @@ pub async fn connect_streamable_http_client(
     if !custom.is_empty() {
         config = config.custom_headers(custom);
     }
+    Ok(config)
+}
+
+/// 经 Streamable HTTP 连接远程 MCP。
+pub async fn connect_streamable_http_client(
+    url: &str,
+    headers: &std::collections::BTreeMap<String, String>,
+) -> Result<McpClientSession, String> {
+    validate_mcp_remote_url(url)?;
+    let config = StreamableHttpClientTransportConfig::with_uri(url.trim().to_string());
+    let config = apply_mcp_http_headers(config, headers)?;
     let transport = StreamableHttpClientTransport::from_config(config);
     let client = new_client_info()
         .serve(transport)

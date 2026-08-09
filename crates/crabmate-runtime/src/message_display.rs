@@ -163,6 +163,34 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
     None
 }
 
+fn human_summary_duplicates_prefix(raw: &str, prefix: &str) -> bool {
+    let t = prefix.trim();
+    if t.is_empty() || !raw.trim().starts_with('{') {
+        return false;
+    }
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) else {
+        return false;
+    };
+    let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) else {
+        return false;
+    };
+    let hs = h.trim();
+    hs == t || hs.contains(t) || (t.len() > 5 && t.contains(hs))
+}
+
+fn with_summarize_tool_prefix(raw: &str, body: String, name: &str, args: &str) -> String {
+    let Some(prefix) = crabmate_tools::tools::summarize_tool_call(name, args) else {
+        return body;
+    };
+    if prefix.trim().is_empty() || human_summary_duplicates_prefix(raw, &prefix) {
+        return body;
+    }
+    if body.is_empty() {
+        return prefix;
+    }
+    format!("{prefix}\n\n{body}")
+}
+
 /// **TUI / 导出**：优先 [`crabmate_tool_card::tool_stored_text_from_envelope`] compact
 ///（与 Web/Tauri `StoredMessage.text` / 快照 `display_content` 同源）；解析失败时回退
 /// [`tool_content_for_display`] + `summarize_tool_call` 前缀。
@@ -187,27 +215,7 @@ pub fn tool_content_for_display_for_message(
     let Some((name, args)) = call else {
         return body;
     };
-    let Some(prefix) = crabmate_tools::tools::summarize_tool_call(&name, &args) else {
-        return body;
-    };
-    let t = prefix.trim();
-    if t.is_empty() {
-        return body;
-    }
-    // JSON 已以 human_summary 开头且与 summarize 重复时不再加前缀
-    if raw.trim().starts_with('{')
-        && let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim())
-        && let Some(h) = v.get("human_summary").and_then(|x| x.as_str())
-    {
-        let hs = h.trim();
-        if hs == t || hs.contains(t) || (t.len() > 5 && t.contains(hs)) {
-            return body;
-        }
-    }
-    if body.is_empty() {
-        return prefix.to_string();
-    }
-    format!("{prefix}\n\n{body}")
+    with_summarize_tool_prefix(raw, body, &name, &args)
 }
 
 // --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（与 TUI / CLI `terminal_render_agent_markdown` 共用）---

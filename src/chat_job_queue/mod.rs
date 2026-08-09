@@ -482,74 +482,68 @@ async fn dispatcher_loop(
         let recent = recent.clone();
         metrics.running.fetch_add(1, Ordering::SeqCst);
         tokio::spawn(async move {
-            let job_id = job.job_id();
-            let _permit = permit;
-            let start = Instant::now();
-            let outcome = worker::run_queued_job(job).await;
-            let ms = start.elapsed().as_millis() as u64;
-            metrics.running.fetch_sub(1, Ordering::SeqCst);
-
-            let record = match outcome {
-                worker::JobOutcome::Stream { ok, cancelled, err } => {
-                    if cancelled {
-                        metrics.completed_cancelled.fetch_add(1, Ordering::SeqCst);
-                    } else if ok {
-                        metrics.completed_ok.fetch_add(1, Ordering::SeqCst);
-                    } else {
-                        metrics.completed_err.fetch_add(1, Ordering::SeqCst);
-                    }
-                    ChatJobRecord {
-                        job_id,
-                        kind: "stream".into(),
-                        ok,
-                        cancelled,
-                        duration_ms: ms,
-                        error_preview: err,
-                    }
-                }
-                worker::JobOutcome::Json { ok, cancelled, err } => {
-                    if cancelled {
-                        metrics.completed_cancelled.fetch_add(1, Ordering::SeqCst);
-                    } else if ok {
-                        metrics.completed_ok.fetch_add(1, Ordering::SeqCst);
-                    } else {
-                        metrics.completed_err.fetch_add(1, Ordering::SeqCst);
-                    }
-                    ChatJobRecord {
-                        job_id,
-                        kind: "json".into(),
-                        ok,
-                        cancelled,
-                        duration_ms: ms,
-                        error_preview: err,
-                    }
-                }
-            };
-
-            debug!(
-                target: "crabmate",
-                "chat 队列任务结束 job_id={} kind={} ok={} duration_ms={}",
-                job_id,
-                record.kind,
-                record.ok,
-                record.duration_ms
-            );
-            if record.cancelled {
-                debug!(
-                    target: "crabmate",
-                    "chat 队列任务结束 job_id={} kind={} cancelled=true",
-                    job_id,
-                    record.kind
-                );
-            }
-
-            if let Ok(mut g) = recent.lock() {
-                g.push_back(record);
-                while g.len() > RECENT_CAP {
-                    g.pop_front();
-                }
-            }
+            finish_dispatched_job(job, permit, metrics, recent).await;
         });
     }
     log::info!(target: "crabmate", "队列调度器：所有任务处理完毕，dispatcher 退出。");
+}
+
+fn bump_job_completion_metrics(metrics: &QueueMetrics, ok: bool, cancelled: bool) {
+    if cancelled {
+        metrics.completed_cancelled.fetch_add(1, Ordering::SeqCst);
+    } else if ok {
+        metrics.completed_ok.fetch_add(1, Ordering::SeqCst);
+    } else {
+        metrics.completed_err.fetch_add(1, Ordering::SeqCst);
+    }
+}
+
+async fn finish_dispatched_job(
+    job: QueuedChatJob,
+    permit: tokio::sync::OwnedSemaphorePermit,
+    metrics: Arc<QueueMetrics>,
+    recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
+) {
+    let job_id = job.job_id();
+    let _permit = permit;
+    let start = Instant::now();
+    let outcome = worker::run_queued_job(job).await;
+    let ms = start.elapsed().as_millis() as u64;
+    metrics.running.fetch_sub(1, Ordering::SeqCst);
+
+    let kind = outcome.kind_label().to_string();
+    let (ok, cancelled, err) = outcome.fields();
+    bump_job_completion_metrics(&metrics, ok, cancelled);
+    let record = ChatJobRecord {
+        job_id,
+        kind,
+        ok,
+        cancelled,
+        duration_ms: ms,
+        error_preview: err,
+    };
+
+    debug!(
+        target: "crabmate",
+        "chat 队列任务结束 job_id={} kind={} ok={} duration_ms={}",
+        job_id,
+        record.kind,
+        record.ok,
+        record.duration_ms
+    );
+    if record.cancelled {
+        debug!(
+            target: "crabmate",
+            "chat 队列任务结束 job_id={} kind={} cancelled=true",
+            job_id,
+            record.kind
+        );
+    }
+
+    if let Ok(mut g) = recent.lock() {
+        g.push_back(record);
+        while g.len() > RECENT_CAP {
+            g.pop_front();
+        }
+    }
 }

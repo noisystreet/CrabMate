@@ -33,22 +33,19 @@ pub(crate) fn merge_meta_dialogue_into_execution_constraint_hint(
     }
 }
 
+const META_RECALL_ANCHORS: &[&str] = &["我刚才", "我上一条", "上一句", "上一条"];
+const META_ASKS_CONTENT: &[&str] = &["什么", "问了", "说的", "提问", "问题", "原文"];
+
+fn text_contains_any(t: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|p| t.contains(p))
+}
+
 fn triggers_meta_dialogue_recall(s: &str) -> bool {
     let t = s.trim();
     if t.is_empty() {
         return false;
     }
-    let recall_anchor = t.contains("我刚才")
-        || t.contains("我上一条")
-        || t.contains("上一句")
-        || t.contains("上一条");
-    let asks_content = t.contains("什么")
-        || t.contains("问了")
-        || t.contains("说的")
-        || t.contains("提问")
-        || t.contains("问题")
-        || t.contains("原文");
-    recall_anchor && asks_content
+    text_contains_any(t, META_RECALL_ANCHORS) && text_contains_any(t, META_ASKS_CONTENT)
 }
 
 /// 从缓冲区尾部取「最新一条、倒数第二条」计入分支截断的真实 user 纯文本。

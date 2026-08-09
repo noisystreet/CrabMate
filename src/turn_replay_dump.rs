@@ -121,6 +121,95 @@ pub(crate) fn append_turn_replay_event_if_configured(
     append_turn_replay_event_json_if_configured(event, title, detail_json.as_ref());
 }
 
+fn insert_replay_context_fields(
+    map: &mut serde_json::Map<String, serde_json::Value>,
+    ctx: Option<&TurnReplayEventContext>,
+) {
+    map.insert(
+        "replay_schema_version".to_string(),
+        serde_json::Value::Number(REPLAY_SCHEMA_VERSION.into()),
+    );
+    map.insert(
+        "replay_turn_seq".to_string(),
+        match ctx.map(|c| c.replay_turn_seq) {
+            Some(v) => serde_json::Value::Number(v.into()),
+            None => serde_json::Value::Null,
+        },
+    );
+    match ctx {
+        Some(ctx) => {
+            map.insert(
+                "wall_start_ms".to_string(),
+                serde_json::Value::Number(ctx.wall_start_ms.into()),
+            );
+            map.insert(
+                "job_id".to_string(),
+                match ctx.job_id {
+                    Some(v) => serde_json::Value::Number(v.into()),
+                    None => serde_json::Value::Null,
+                },
+            );
+            map.insert(
+                "conversation_scope_id".to_string(),
+                match ctx.conversation_scope_id.clone() {
+                    Some(v) => serde_json::Value::String(v),
+                    None => serde_json::Value::Null,
+                },
+            );
+        }
+        None => {
+            map.insert("wall_start_ms".to_string(), serde_json::Value::Null);
+            map.insert("job_id".to_string(), serde_json::Value::Null);
+            map.insert("conversation_scope_id".to_string(), serde_json::Value::Null);
+        }
+    }
+}
+
+fn build_turn_replay_event_payload(
+    event: &str,
+    title: &str,
+    detail: Option<&serde_json::Value>,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "seq": TURN_REPLAY_EVENT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+        "ts_ms": now_unix_ms(),
+        "event": event,
+        "title": title,
+    });
+    if let serde_json::Value::Object(map) = &mut payload {
+        let ctx = TURN_REPLAY_EVENT_CONTEXT
+            .read()
+            .ok()
+            .and_then(|g| g.as_ref().cloned());
+        insert_replay_context_fields(map, ctx.as_ref());
+        if let Some(d) = detail {
+            map.insert("detail".to_string(), d.clone());
+        }
+    }
+    payload
+}
+
+fn append_jsonl_line(path: &std::path::Path, payload: &serde_json::Value) {
+    let mut line = redact::redact_secrets_in_json_str(&payload.to_string());
+    line.push('\n');
+    let write_result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+        f.write_all(line.as_bytes())?;
+        f.flush()?;
+        Ok(())
+    })();
+    if let Err(e) = write_result {
+        log::warn!(
+            target: "crabmate",
+            "turn replay event: append {} failed: {e}",
+            path.display()
+        );
+    }
+}
+
 pub(crate) fn append_turn_replay_event_json_if_configured(
     event: &str,
     title: &str,
@@ -145,79 +234,9 @@ pub(crate) fn append_turn_replay_event_json_if_configured(
         );
         return;
     }
-
     let path = dir.join(EVENT_STREAM_FILE);
-    let mut payload = serde_json::json!({
-        "seq": TURN_REPLAY_EVENT_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-        "ts_ms": now_unix_ms(),
-        "event": event,
-        "title": title,
-    });
-    if let serde_json::Value::Object(map) = &mut payload {
-        map.insert(
-            "replay_schema_version".to_string(),
-            serde_json::Value::Number(REPLAY_SCHEMA_VERSION.into()),
-        );
-        let ctx = TURN_REPLAY_EVENT_CONTEXT
-            .read()
-            .ok()
-            .and_then(|g| g.as_ref().cloned());
-        map.insert(
-            "replay_turn_seq".to_string(),
-            match ctx.as_ref().map(|c| c.replay_turn_seq) {
-                Some(v) => serde_json::Value::Number(v.into()),
-                None => serde_json::Value::Null,
-            },
-        );
-        if let Some(ctx) = ctx.as_ref() {
-            map.insert(
-                "wall_start_ms".to_string(),
-                serde_json::Value::Number(ctx.wall_start_ms.into()),
-            );
-            map.insert(
-                "job_id".to_string(),
-                match ctx.job_id {
-                    Some(v) => serde_json::Value::Number(v.into()),
-                    None => serde_json::Value::Null,
-                },
-            );
-            map.insert(
-                "conversation_scope_id".to_string(),
-                match ctx.conversation_scope_id.clone() {
-                    Some(v) => serde_json::Value::String(v),
-                    None => serde_json::Value::Null,
-                },
-            );
-        } else {
-            map.insert("wall_start_ms".to_string(), serde_json::Value::Null);
-            map.insert("job_id".to_string(), serde_json::Value::Null);
-            map.insert("conversation_scope_id".to_string(), serde_json::Value::Null);
-        }
-    }
-    if let Some(d) = detail
-        && let serde_json::Value::Object(map) = &mut payload
-    {
-        map.insert("detail".to_string(), d.clone());
-    }
-
-    let mut line = redact::redact_secrets_in_json_str(&payload.to_string());
-    line.push('\n');
-    let write_result = (|| -> std::io::Result<()> {
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
-        f.write_all(line.as_bytes())?;
-        f.flush()?;
-        Ok(())
-    })();
-    if let Err(e) = write_result {
-        log::warn!(
-            target: "crabmate",
-            "turn replay event: append {} failed: {e}",
-            path.display()
-        );
-    }
+    let payload = build_turn_replay_event_payload(event, title, detail);
+    append_jsonl_line(&path, &payload);
 }
 
 pub(crate) fn append_decision_point_event_if_configured(

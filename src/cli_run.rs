@@ -587,6 +587,53 @@ async fn validate_bind_auth(
 }
 
 #[cfg(feature = "web")]
+fn serve_log_bind_warnings(bind_ip: std::net::IpAddr, auth_enabled: bool, actual_addr: SocketAddr) {
+    if bind_ip.is_unspecified() && !auth_enabled {
+        eprintln!(
+            "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
+            actual_addr
+        );
+    }
+    if bind_ip.is_loopback() && !auth_enabled {
+        eprintln!(
+            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token / `crabmate web-bearer set`，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
+        );
+    }
+    if bind_ip.is_unspecified() && auth_enabled {
+        println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
+    }
+}
+
+#[cfg(feature = "web")]
+fn print_desktop_ready_json(actual_addr: SocketAddr, web_api_bearer_layer_enabled: bool) {
+    let ready = serde_json::json!({
+        "event": "web_ready",
+        "host": actual_addr.ip().to_string(),
+        "port": actual_addr.port(),
+        "url": format!("http://{}/", actual_addr),
+        "auth_enabled": web_api_bearer_layer_enabled,
+    });
+    println!("{}", serde_json::to_string(&ready).unwrap_or_default());
+}
+
+#[cfg(feature = "web")]
+fn spawn_uploads_cleanup(uploads_dir: std::path::PathBuf) {
+    // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(600));
+        loop {
+            interval.tick().await;
+            web::cleanup_uploads_dir(
+                uploads_dir.clone(),
+                Duration::from_secs(24 * 3600),
+                500 * 1024 * 1024,
+            )
+            .await;
+        }
+    });
+}
+
+#[cfg(feature = "web")]
 pub(super) async fn run_serve_branch(
     args: ServeBranchArgs<'_>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -645,48 +692,13 @@ pub(super) async fn run_serve_branch(
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");
     println!("  监听: http://{}/", actual_addr);
-    if bind_ip.is_unspecified() && !auth_enabled {
-        eprintln!(
-            "  警告: 正在监听所有网卡（{}），接口无鉴权，请勿在不可信网络暴露",
-            actual_addr
-        );
-    }
-    if bind_ip.is_loopback() && !auth_enabled {
-        eprintln!(
-            "  提示: 未配置 web_api_bearer_token 时，受保护路由不校验 Bearer（见中间件逻辑）；对外或共享网络请设置 CM_WEB_API_BEARER_TOKEN / web_api_bearer_token / `crabmate web-bearer set`，并可将 web_api_require_bearer=true 强制启动前须配密钥。浏览器须在设置中保存同一串 Web API 共享密钥（localStorage「crabmate-api-bearer-token」；勿与模型 API_KEY 混淆）。"
-        );
-    }
-    if bind_ip.is_unspecified() && auth_enabled {
-        println!("  安全: 已启用 Web API 鉴权（Authorization: Bearer 或 X-API-Key）");
-    }
+    serve_log_bind_warnings(bind_ip, auth_enabled, actual_addr);
     cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {
-        let ready = serde_json::json!({
-            "event": "web_ready",
-            "host": actual_addr.ip().to_string(),
-            "port": actual_addr.port(),
-            "url": format!("http://{}/", actual_addr),
-            "auth_enabled": web_api_bearer_layer_enabled,
-        });
-        println!("{}", serde_json::to_string(&ready).unwrap_or_default());
+        print_desktop_ready_json(actual_addr, web_api_bearer_layer_enabled);
     }
     info!(target: "crabmate", "Web 服务监听 addr={}", actual_addr);
-    // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
-    tokio::spawn({
-        let dir = uploads_dir.clone();
-        async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(600));
-            loop {
-                interval.tick().await;
-                web::cleanup_uploads_dir(
-                    dir.clone(),
-                    Duration::from_secs(24 * 3600),
-                    500 * 1024 * 1024,
-                )
-                .await;
-            }
-        }
-    });
+    spawn_uploads_cleanup(uploads_dir);
 
     // 优雅关闭：监听 SIGTERM / SIGINT，构建 axum graceful shutdown 信号
     let shutdown_signal = build_serve_shutdown_signal(state.clone());

@@ -703,6 +703,57 @@ fn export_artifacts(metrics: &TestRunMetrics, messages: &[Message], artifacts_di
     let _ = std::fs::write(artifacts_dir.join("summary.md"), &summary);
 }
 
+fn role_heading_for_dump(role: &str) -> String {
+    match role {
+        "system" => "🧠 **System**".to_string(),
+        "user" => "👤 **User**".to_string(),
+        "assistant" => "🤖 **Assistant**".to_string(),
+        "tool" => "🛠️ **Tool**".to_string(),
+        r => format!("**{r}**"),
+    }
+}
+
+fn append_one_message_md(out: &mut String, i: usize, msg: &Message) {
+    out.push_str(&format!(
+        "## 消息 {i}: {}\n\n",
+        role_heading_for_dump(&msg.role)
+    ));
+    if let Some(ref r) = msg.reasoning_content
+        && !r.is_empty()
+    {
+        out.push_str("### 推理过程\n\n```\n");
+        out.push_str(r);
+        out.push_str("\n```\n\n");
+    }
+    if let Some(text) = crate::message_content_as_str(&msg.content)
+        && !text.is_empty()
+    {
+        out.push_str("### 内容\n\n```\n");
+        out.push_str(text);
+        out.push_str("\n```\n\n");
+    }
+    if let Some(ref calls) = msg.tool_calls {
+        for tc in calls {
+            out.push_str(&format!("### 🔧 工具调用: `{}`\n\n", tc.function.name));
+            out.push_str(&format!("- **id**: `{}`\n", tc.id));
+            out.push_str(&format!(
+                "- **参数**:\n\n```json\n{}\n```\n\n",
+                tc.function.arguments
+            ));
+        }
+    }
+    if msg.role == "tool" {
+        if let Some(ref name) = msg.name {
+            out.push_str(&format!("- **工具**: `{name}`\n"));
+        }
+        if let Some(ref id) = msg.tool_call_id {
+            out.push_str(&format!("- **tool_call_id**: `{id}`\n"));
+        }
+        out.push('\n');
+    }
+    out.push_str("---\n\n");
+}
+
 /// 将 messages 导出为可读的 Markdown 格式。
 pub fn dump_messages_markdown(messages: &[Message], test_name: &str) -> String {
     let mut out = String::new();
@@ -714,62 +765,9 @@ pub fn dump_messages_markdown(messages: &[Message], test_name: &str) -> String {
     ));
     out.push('\n');
     out.push_str("---\n\n");
-
     for (i, msg) in messages.iter().enumerate() {
-        let role_desc = match msg.role.as_str() {
-            "system" => "🧠 **System**".to_string(),
-            "user" => "👤 **User**".to_string(),
-            "assistant" => "🤖 **Assistant**".to_string(),
-            "tool" => "🛠️ **Tool**".to_string(),
-            r => format!("**{r}**"),
-        };
-
-        out.push_str(&format!("## 消息 {i}: {role_desc}\n\n"));
-
-        // reasoning_content
-        if let Some(ref r) = msg.reasoning_content
-            && !r.is_empty()
-        {
-            out.push_str("### 推理过程\n\n```\n");
-            out.push_str(r);
-            out.push_str("\n```\n\n");
-        }
-
-        // content
-        if let Some(text) = crate::message_content_as_str(&msg.content)
-            && !text.is_empty()
-        {
-            out.push_str("### 内容\n\n```\n");
-            out.push_str(text);
-            out.push_str("\n```\n\n");
-        }
-
-        // tool_calls
-        if let Some(ref calls) = msg.tool_calls {
-            for tc in calls {
-                out.push_str(&format!("### 🔧 工具调用: `{}`\n\n", tc.function.name));
-                out.push_str(&format!("- **id**: `{}`\n", tc.id));
-                out.push_str(&format!(
-                    "- **参数**:\n\n```json\n{}\n```\n\n",
-                    tc.function.arguments
-                ));
-            }
-        }
-
-        // tool result metadata
-        if msg.role == "tool" {
-            if let Some(ref name) = msg.name {
-                out.push_str(&format!("- **工具**: `{name}`\n"));
-            }
-            if let Some(ref id) = msg.tool_call_id {
-                out.push_str(&format!("- **tool_call_id**: `{id}`\n"));
-            }
-            out.push('\n');
-        }
-
-        out.push_str("---\n\n");
+        append_one_message_md(&mut out, i, msg);
     }
-
     out
 }
 
@@ -777,26 +775,14 @@ pub fn dump_messages_markdown(messages: &[Message], test_name: &str) -> String {
 ///
 /// 向配置的 LLM 端点发送单次 chat/completions 请求，要求模型以 JSON 格式
 /// 对 assistant 的回复进行 1-5 评分并给出理由。
-async fn judge_scenario(
-    scenario: &TestScenario,
-    messages: &[Message],
-    api_key: &str,
-    judge_cfg: &JudgeConfig,
-) -> Option<JudgeResult> {
-    if !judge_cfg.enabled || api_key.is_empty() {
-        return None;
-    }
-
-    // 构建评分 prompt
+fn build_judge_prompts(scenario: &TestScenario, messages: &[Message]) -> (String, String) {
     let last_assistant = messages
         .iter()
         .rev()
         .find(|m| m.role == "assistant" && m.tool_calls.is_none());
-
     let final_output = last_assistant
         .and_then(|m| crate::message_content_as_str(&m.content))
         .unwrap_or("");
-
     let tool_trace: Vec<String> = messages
         .iter()
         .filter(|m| m.role == "assistant")
@@ -804,11 +790,10 @@ async fn judge_scenario(
         .flat_map(|calls| calls.iter())
         .map(|tc| format!("  - {} (args: {})", tc.function.name, tc.function.arguments))
         .collect();
-
     let system_prompt = "You are an evaluator that rates AI assistant responses. \
         Score 1-5 based on: task completion, correctness, tool usage efficiency. \
-        Respond in JSON only: {\"score\": <1-5>, \"rationale\": \"...\", \"failed_aspects\": [\"...\"]}";
-
+        Respond in JSON only: {\"score\": <1-5>, \"rationale\": \"...\", \"failed_aspects\": [\"...\"]}"
+        .to_string();
     let user_prompt = format!(
         r#"## Task
 {}
@@ -839,16 +824,36 @@ async fn judge_scenario(
         },
         scenario.expected_tool_used.as_deref().unwrap_or("(none)"),
     );
+    (system_prompt, user_prompt)
+}
 
+fn parse_judge_json_content(content: &str) -> Option<JudgeResult> {
+    let cleaned = content
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| content.trim().strip_prefix("```"))
+        .and_then(|s| s.strip_suffix("```"))
+        .unwrap_or(content.trim());
+    serde_json::from_str(cleaned).ok()
+}
+
+async fn judge_scenario(
+    scenario: &TestScenario,
+    messages: &[Message],
+    api_key: &str,
+    judge_cfg: &JudgeConfig,
+) -> Option<JudgeResult> {
+    if !judge_cfg.enabled || api_key.is_empty() {
+        return None;
+    }
+    let (system_prompt, user_prompt) = build_judge_prompts(scenario, messages);
     let cfg = load_config(None).ok()?;
     let api_base = judge_cfg.api_base.as_deref().unwrap_or(&cfg.llm.api_base);
     let model = judge_cfg.model.as_deref().unwrap_or(&cfg.llm.model);
-
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(60))
         .build()
         .ok()?;
-
     let body = serde_json::json!({
         "model": model,
         "messages": [
@@ -858,7 +863,6 @@ async fn judge_scenario(
         "temperature": 0.0,
         "max_tokens": 512,
     });
-
     let resp = client
         .post(format!("{api_base}/chat/completions"))
         .header("Authorization", format!("Bearer {api_key}"))
@@ -867,20 +871,9 @@ async fn judge_scenario(
         .send()
         .await
         .ok()?;
-
     let resp_json: serde_json::Value = resp.json().await.ok()?;
     let content = resp_json["choices"][0]["message"]["content"]
         .as_str()
         .unwrap_or("{}");
-
-    // 尝试从 JSON 中提取评分（模型可能返回 markdown code block）
-    let cleaned = content
-        .trim()
-        .strip_prefix("```json")
-        .or_else(|| content.trim().strip_prefix("```"))
-        .and_then(|s| s.strip_suffix("```"))
-        .unwrap_or(content.trim());
-
-    let judge: JudgeResult = serde_json::from_str(cleaned).ok()?;
-    Some(judge)
+    parse_judge_json_content(content)
 }
