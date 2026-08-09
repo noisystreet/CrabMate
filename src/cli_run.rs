@@ -668,7 +668,8 @@ pub(super) async fn run_serve_branch(
         g.conversation_persistence.scheduled_agent_tasks.clone()
     };
     web::cron_scheduler::spawn_serve_cron_scheduler(Arc::clone(&state), sched_tasks);
-    let static_dir = web_static_dir::resolve_web_static_dir();
+    // 纯 API：不探测/解析 frontend dist；仅 `--with-web` 时解析。
+    let static_dir = with_web.then(web_static_dir::resolve_web_static_dir);
     cli_run_serve::serve_require_web_api_bearer_when_enabled(cfg_holder).await?;
     let web_api_bearer_layer_enabled =
         cli_run_serve::serve_web_api_bearer_layer_enabled(cfg_holder).await;
@@ -678,7 +679,6 @@ pub(super) async fn run_serve_branch(
     };
     let app = web::server::build_app(
         state.clone(),
-        with_web,
         static_dir.clone(),
         uploads_dir.clone(),
         web_api_bearer_layer_enabled,
@@ -692,7 +692,7 @@ pub(super) async fn run_serve_branch(
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");
     println!("  监听: http://{}/", actual_addr);
-    cli_run_serve::serve_log_ui_mount_status(with_web, &static_dir);
+    cli_run_serve::serve_log_ui_mount_status(static_dir.as_deref());
     serve_log_bind_warnings(bind_ip, auth_enabled, actual_addr);
     cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {

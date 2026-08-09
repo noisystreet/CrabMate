@@ -5,11 +5,11 @@ use axum::middleware;
 use axum::routing::get;
 
 /// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件。
+/// `static_dir`：仅 `--with-web` 时传入已解析的 SPA 根；纯 API 传 `None`（不探测 dist）。
 /// `cors_allowed_origins`：非空时在最外层挂 CORS 白名单（启动时装配，热更不改层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
-    mount_web_ui: bool,
-    static_dir: std::path::PathBuf,
+    static_dir: Option<std::path::PathBuf>,
     uploads_dir_for_static: std::path::PathBuf,
     web_api_bearer_layer_enabled: bool,
     cors_allowed_origins: Vec<String>,
@@ -42,7 +42,6 @@ pub(crate) fn build_app(
         app,
         uploads_dir_for_static,
         static_dir,
-        mount_web_ui,
         allow_cross_origin_uploads,
     );
     // 外层：`x-request-id`；再外层 CORS（若启用），以便预检 OPTIONS 不被其它层挡住。

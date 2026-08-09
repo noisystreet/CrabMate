@@ -1,5 +1,8 @@
 //! Web 静态资源目录：可选 SPA `dist`（官方 UI 在 Client 仓 `crabmate-client/frontend`）。
 //!
+//! **调用时机**：仅 `serve --with-web` / `config --with-web`（dry-run 检查 dist）需要解析；
+//! 默认纯 API 的 `serve` **不**调用本模块。
+//!
 //! 解析顺序：`CM_WEB_STATIC_DIR` → 自 crate/可执行文件/cwd 向上查找已构建的
 //! `frontend/dist` 或同级 `crabmate-client/frontend/dist` → 安装布局
 //! [`INSTALLED_FRONTEND_DIST`] → 约定路径（可能尚不存在，供错误提示）。
@@ -9,7 +12,9 @@ use std::path::{Path, PathBuf};
 /// 桌面 `.deb` / 系统安装时 `serve` 提供 Web UI 的静态资源根（含 `vendor/ide-codemirror.js`）。
 pub const INSTALLED_FRONTEND_DIST: &str = "/usr/share/crabmate/frontend/dist";
 
-/// 解析 `serve` 与 `config --dry-run` 使用的静态资源根目录。
+/// 解析 `serve --with-web` 与 `config --with-web` 使用的静态资源根目录。
+///
+/// 默认纯 API 路径请勿调用（避免无意义的 cwd/安装路径探测）。
 pub fn resolve_web_static_dir() -> PathBuf {
     if let Some(dist) = env_frontend_dist() {
         return dist;

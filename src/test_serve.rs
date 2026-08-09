@@ -109,8 +109,7 @@ pub async fn start_test_serve(
 
     let app = web::server::build_app(
         state,
-        true, /* mount_web_ui */
-        resolve_web_static_dir(),
+        Some(resolve_web_static_dir()),
         uploads_dir,
         false,      /* web_api_bearer_layer_enabled */
         Vec::new(), /* cors_allowed_origins */
