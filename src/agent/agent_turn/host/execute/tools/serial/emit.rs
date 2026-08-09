@@ -352,179 +352,173 @@ async fn serial_emit_run_command_failure_short_circuits(
     false
 }
 
-/// 预检 / 策略拒绝 / `run_command` 短路 / 只读缓存命中：若已下发工具结果则返回 `true`（外层应 `continue`）。
-pub(super) async fn serial_emit_early_without_dispatch(
-    p: SerialEmitEarlyWithoutDispatchParams<'_>,
+async fn serial_emit_run_command_preflight_errors(
+    p: &mut SerialEmitEarlyWithoutDispatchParams<'_>,
 ) -> bool {
-    let SerialEmitEarlyWithoutDispatchParams {
-        messages,
-        per_coord,
-        cfg,
-        tool_outcome_recorder,
-        control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
-        tool_result_envelope_v1,
-        effective_working_dir,
-        name,
-        args,
-        id,
-        step_executor_constraint,
-        tools_defs_full,
-        turn_allow,
-        readonly_cache,
-        readonly_tool_ttl_cache,
-    } = p;
     if let Some(preflight_error) =
-        run_command_cargo_workdir_preflight_error(name, args, effective_working_dir)
+        run_command_cargo_workdir_preflight_error(p.name, p.args, p.effective_working_dir)
     {
-        per_coord.mark_tool_failure_signature(name, args, "cargo_manifest_missing".to_string());
+        p.per_coord.mark_tool_failure_signature(
+            p.name,
+            p.args,
+            "cargo_manifest_missing".to_string(),
+        );
         emit_serial_tool_result(SerialEmitToolResultParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            control: control.clone(),
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            control: p.control.clone(),
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
             result: preflight_error,
             reflection_inject: None,
         })
         .await;
         return true;
     }
-    if let Some(preflight_error) = run_command_ctest_preflight_error(name, args) {
-        mark_ctest_preflight_failure_signature(per_coord, name, args);
+    if let Some(preflight_error) = run_command_ctest_preflight_error(p.name, p.args) {
+        mark_ctest_preflight_failure_signature(p.per_coord, p.name, p.args);
         emit_serial_tool_result(SerialEmitToolResultParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            control: control.clone(),
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            control: p.control.clone(),
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
             result: preflight_error,
             reflection_inject: None,
         })
         .await;
         return true;
     }
+    false
+}
 
-    if serial_emit_early_tool_policy_denials(SerialEarlyToolPolicyDenyParams {
-        messages,
-        per_coord,
-        cfg,
-        tool_outcome_recorder,
-        control: control.clone(),
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
-        tool_result_envelope_v1,
-        name,
-        args,
-        id,
-        step_executor_constraint,
-        tools_defs_full,
-        turn_allow,
-    })
-    .await
-    {
-        return true;
-    }
-
-    let is_readonly = tool_registry::is_readonly_tool(cfg.as_ref(), name);
-    let cache_key = (name.to_string(), args.to_string());
-
-    if name == "run_command"
+async fn serial_emit_run_command_and_readonly_cache_hits(
+    p: &mut SerialEmitEarlyWithoutDispatchParams<'_>,
+) -> bool {
+    if p.name == "run_command"
         && serial_emit_run_command_success_dedupe(SerialRunCommandSuccessDedupeParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            control: control.clone(),
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            control: p.control.clone(),
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
         })
         .await
     {
         return true;
     }
-
-    if name == "run_command"
+    if p.name == "run_command"
         && serial_emit_run_command_failure_short_circuits(SerialRunCommandDupShortCircuitEmitCtx {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            control: control.clone(),
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            control: p.control.clone(),
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
         })
         .await
     {
         return true;
     }
-
     if serial_try_ttl_run_command_cache_hit(SerialTtlRunCommandEarlyHitParams {
-        messages,
-        per_coord,
-        cfg,
-        tool_outcome_recorder,
-        control: control.clone(),
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
-        tool_result_envelope_v1,
-        effective_working_dir,
-        name,
-        args,
-        id,
-        readonly_tool_ttl_cache,
+        messages: p.messages,
+        per_coord: p.per_coord,
+        cfg: p.cfg,
+        tool_outcome_recorder: p.tool_outcome_recorder,
+        control: p.control.clone(),
+        echo_terminal_transcript: p.echo_terminal_transcript,
+        terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+        tool_result_envelope_v1: p.tool_result_envelope_v1,
+        effective_working_dir: p.effective_working_dir,
+        name: p.name,
+        args: p.args,
+        id: p.id,
+        readonly_tool_ttl_cache: p.readonly_tool_ttl_cache,
     })
     .await
     {
         return true;
     }
-
-    if is_readonly && let Some(cached) = readonly_cache.get(&cache_key) {
+    let is_readonly = tool_registry::is_readonly_tool(p.cfg.as_ref(), p.name);
+    let cache_key = (p.name.to_string(), p.args.to_string());
+    if is_readonly && let Some(cached) = p.readonly_cache.get(&cache_key) {
+        let cached = cached.clone();
         info!(
             target: super::super::LOG_TARGET,
             "工具结果命中缓存（只读去重） tool={} args_preview={}",
-            name,
-            crate::redact::tool_arguments_preview_for_log(args)
+            p.name,
+            crate::redact::tool_arguments_preview_for_log(p.args)
         );
         emit_serial_tool_result(SerialEmitToolResultParams {
-            messages,
-            per_coord,
-            cfg,
-            tool_outcome_recorder,
-            control: control.clone(),
-            echo_terminal_transcript,
-            terminal_tool_display_max_chars,
-            tool_result_envelope_v1,
-            name,
-            args,
-            id,
-            result: cached.clone(),
+            messages: p.messages,
+            per_coord: p.per_coord,
+            cfg: p.cfg,
+            tool_outcome_recorder: p.tool_outcome_recorder,
+            control: p.control.clone(),
+            echo_terminal_transcript: p.echo_terminal_transcript,
+            terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+            tool_result_envelope_v1: p.tool_result_envelope_v1,
+            name: p.name,
+            args: p.args,
+            id: p.id,
+            result: cached,
             reflection_inject: None,
         })
         .await;
         return true;
     }
-
     false
+}
+
+/// 预检 / 策略拒绝 / `run_command` 短路 / 只读缓存命中：若已下发工具结果则返回 `true`（外层应 `continue`）。
+pub(super) async fn serial_emit_early_without_dispatch(
+    mut p: SerialEmitEarlyWithoutDispatchParams<'_>,
+) -> bool {
+    if serial_emit_run_command_preflight_errors(&mut p).await {
+        return true;
+    }
+    if serial_emit_early_tool_policy_denials(SerialEarlyToolPolicyDenyParams {
+        messages: p.messages,
+        per_coord: p.per_coord,
+        cfg: p.cfg,
+        tool_outcome_recorder: p.tool_outcome_recorder,
+        control: p.control.clone(),
+        echo_terminal_transcript: p.echo_terminal_transcript,
+        terminal_tool_display_max_chars: p.terminal_tool_display_max_chars,
+        tool_result_envelope_v1: p.tool_result_envelope_v1,
+        name: p.name,
+        args: p.args,
+        id: p.id,
+        step_executor_constraint: p.step_executor_constraint,
+        tools_defs_full: p.tools_defs_full,
+        turn_allow: p.turn_allow,
+    })
+    .await
+    {
+        return true;
+    }
+    serial_emit_run_command_and_readonly_cache_hits(&mut p).await
 }

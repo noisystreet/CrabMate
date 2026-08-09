@@ -251,6 +251,184 @@ fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'
     }
 }
 
+/// 非首轮：通知前端结束上一 answer 段并开启新段。
+async fn outer_loop_emit_answer_segment_transition(p: &RunLoopParams<'_>, iteration_count: u32) {
+    if iteration_count <= 1 {
+        return;
+    }
+    send_sse_control_payload_optional(
+        p.ctx.io.control.out,
+        None,
+        SsePayload::TurnSegmentEnd {
+            end: TurnSegmentEndBody {
+                segment_id: format!("seg-model-round-{}", iteration_count - 1),
+            },
+        },
+        "outer_loop::prev_answer_segment_end",
+        p.ctx.io.control.sse_encoder.as_ref(),
+    )
+    .await;
+    send_sse_control_payload_optional(
+        p.ctx.io.control.out,
+        None,
+        SsePayload::TurnSegmentStart {
+            start: TurnSegmentStartBody {
+                segment_id: format!("seg-model-round-{iteration_count}"),
+                kind: "answer".to_string(),
+                before_tool_call_id: None,
+            },
+        },
+        "outer_loop::new_answer_segment_start",
+        p.ctx.io.control.sse_encoder.as_ref(),
+    )
+    .await;
+    send_sse_control_payload_optional(
+        p.ctx.io.control.out,
+        None,
+        SsePayload::AssistantAnswerPhase {
+            assistant_answer_phase: true,
+        },
+        "outer_loop::assistant_answer_phase",
+        p.ctx.io.control.sse_encoder.as_ref(),
+    )
+    .await;
+}
+
+/// 目标已完成且本轮工具均为冗余探针时：丢弃工具调用并停外循环。
+fn try_stop_on_completed_goal_redundant_tools(
+    p: &mut RunLoopParams<'_>,
+    msg: &Message,
+) -> Option<OuterLoopIterationExit> {
+    if !completed_goal_with_redundant_tool_calls(p, msg) {
+        return None;
+    }
+    let messages = p.turn.messages();
+    let goal_preview = crate::types::last_real_user_task_content(messages, false)
+        .unwrap_or("")
+        .chars()
+        .take(80)
+        .collect::<String>();
+    let redundant_tools = msg
+        .tool_calls
+        .as_ref()
+        .map(|calls| redundant_tool_names_for_log(calls.as_slice()))
+        .unwrap_or_default();
+    tracing::info!(
+        target: "crabmate::agent_turn",
+        goal_preview = %goal_preview,
+        ?redundant_tools,
+        "当前用户目标已有完成证据，静默跳过冗余探针/重复 run_command"
+    );
+    drop_redundant_tool_calls_after_active_goal_completed(p, msg);
+    Some(OuterLoopIterationExit::StopOuterLoop)
+}
+
+async fn outer_loop_post_tools_exit(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    msg: &Message,
+    render_to_terminal: bool,
+    driver: &mut OuterLoopDriver,
+    iteration_count: u32,
+) -> Result<OuterLoopIterationExit, RunAgentTurnError> {
+    driver.record_phase(OuterLoopIterationPhase::ToolsExecute);
+    tracing::debug!(
+        target: "crabmate::agent_turn",
+        outer_loop_fsm = "single_agent_outer",
+        outer_loop_step = driver.phase_str(),
+        iteration = iteration_count,
+        "outer_loop tools execute"
+    );
+    outer_loop_execute_tools_round(p, per_coord, msg, render_to_terminal).await?;
+    if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
+        per_coord.reset_outer_loop_build_idle_streak();
+    }
+    let task_level_early_stop = task_level_satisfied_allows_early_stop(p.turn.messages());
+    if task_level_early_stop {
+        tracing::info!(
+            target: "crabmate::agent_turn",
+            "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
+        );
+    }
+    Ok(driver.decide_post_tools_exit(task_level_early_stop))
+}
+
+async fn outer_loop_call_planner_and_push(
+    p: &mut RunLoopParams<'_>,
+    planner_tools: &[crate::types::Tool],
+    render_to_terminal: bool,
+    exec_api_base: Option<&str>,
+    exec_api_key: Option<&str>,
+) -> Result<(Message, String), RunAgentTurnError> {
+    let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
+        llm_backend: p.ctx.core.llm_backend,
+        client: p.ctx.core.client,
+        api_key: p.ctx.core.api_key,
+        cfg: p.ctx.core.cfg.as_ref(),
+        tools_defs: planner_tools,
+        messages: p.turn.messages(),
+        out: p.ctx.io.control.out,
+        render_to_terminal,
+        no_stream: p.ctx.io.no_stream,
+        cancel: p.ctx.io.cancel,
+        plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
+        tui_llm_stream_scratch: p.ctx.io.terminal.tui_llm_stream_scratch.clone(),
+        temperature_override: p.turn.temperature_override,
+        seed_override: p.turn.seed_override,
+        request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
+        model_override: p.effective_model(),
+        executor_api_base: exec_api_base,
+        executor_api_key: exec_api_key,
+        turn_budget: Some(&p.turn.turn_budget),
+    })
+    .await
+    .map_err(|e| {
+        p.turn
+            .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
+        RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e)
+    })?;
+    p.turn
+        .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
+    if let Some(f) = p.ctx.attach.per_flight.as_ref() {
+        f.awaiting_plan_rewrite_model
+            .store(false, Ordering::Relaxed);
+    }
+    debug!(
+        target: "crabmate",
+        "模型轮次输出 finish_reason={} message_count_before_push={} assistant_preview={}",
+        finish_reason,
+        p.turn.messages().len(),
+        crate::redact::assistant_message_preview_for_log(&msg)
+    );
+    p.turn.push_assistant_merging_trailing_empty(msg.clone());
+    Ok((msg, finish_reason))
+}
+
+/// Reflect 后：若已决定退出则 `Some`；否则继续工具阶段时返回 `None`。
+async fn outer_loop_reflect_exit_if_any(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+    driver: &mut OuterLoopDriver,
+    finish_reason: &str,
+    msg: &Message,
+    iteration_count: u32,
+) -> Result<Option<OuterLoopIterationExit>, RunAgentTurnError> {
+    let reflect_ctl = outer_loop_reflect_branch(p, per_coord, finish_reason, msg).await?;
+    let reflect_reduce = driver.record_reflect_branch(reflect_ctl);
+    driver.record_phase(OuterLoopIterationPhase::ReflectDecided);
+    tracing::debug!(
+        target: "crabmate::agent_turn",
+        outer_loop_fsm = "single_agent_outer",
+        outer_loop_step = driver.phase_str(),
+        iteration = iteration_count,
+        reflect_branch = reflect_reduce.as_str(),
+        "outer_loop reflect branch"
+    );
+    Ok(outer_loop_iteration_exit_from_reflect_reduce(
+        reflect_reduce,
+    ))
+}
+
 /// 执行单次 **P → R →（可选）E** 迭代；返回 [`OuterLoopIterationExit`] 供外层循环决策。
 async fn run_outer_loop_single_iteration(
     p: &mut RunLoopParams<'_>,
@@ -291,88 +469,16 @@ async fn run_outer_loop_single_iteration(
     );
 
     let planner_tools = build_planner_round_tools(p);
+    outer_loop_emit_answer_segment_transition(p, iteration_count).await;
 
-    // 非首轮 LLM 调用：通知前端本轮是新的 answer segment，促使其拆分新气泡
-    if iteration_count > 1 {
-        send_sse_control_payload_optional(
-            p.ctx.io.control.out,
-            None,
-            SsePayload::TurnSegmentEnd {
-                end: TurnSegmentEndBody {
-                    segment_id: format!("seg-model-round-{}", iteration_count - 1),
-                },
-            },
-            "outer_loop::prev_answer_segment_end",
-            p.ctx.io.control.sse_encoder.as_ref(),
-        )
-        .await;
-        send_sse_control_payload_optional(
-            p.ctx.io.control.out,
-            None,
-            SsePayload::TurnSegmentStart {
-                start: TurnSegmentStartBody {
-                    segment_id: format!("seg-model-round-{iteration_count}"),
-                    kind: "answer".to_string(),
-                    before_tool_call_id: None,
-                },
-            },
-            "outer_loop::new_answer_segment_start",
-            p.ctx.io.control.sse_encoder.as_ref(),
-        )
-        .await;
-        send_sse_control_payload_optional(
-            p.ctx.io.control.out,
-            None,
-            SsePayload::AssistantAnswerPhase {
-                assistant_answer_phase: true,
-            },
-            "outer_loop::assistant_answer_phase",
-            p.ctx.io.control.sse_encoder.as_ref(),
-        )
-        .await;
-    }
-
-    let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
-        llm_backend: p.ctx.core.llm_backend,
-        client: p.ctx.core.client,
-        api_key: p.ctx.core.api_key,
-        cfg: p.ctx.core.cfg.as_ref(),
-        tools_defs: planner_tools.as_slice(),
-        messages: p.turn.messages(),
-        out: p.ctx.io.control.out,
+    let (msg, finish_reason) = outer_loop_call_planner_and_push(
+        p,
+        planner_tools.as_slice(),
         render_to_terminal,
-        no_stream: p.ctx.io.no_stream,
-        cancel: p.ctx.io.cancel,
-        plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
-        tui_llm_stream_scratch: p.ctx.io.terminal.tui_llm_stream_scratch.clone(),
-        temperature_override: p.turn.temperature_override,
-        seed_override: p.turn.seed_override,
-        request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
-        model_override: p.effective_model(),
-        executor_api_base: exec_api_base.as_deref(),
-        executor_api_key: exec_api_key.as_deref(),
-        turn_budget: Some(&p.turn.turn_budget),
-    })
-    .await
-    .map_err(|e| {
-        p.turn
-            .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
-        RunAgentTurnError::from_llm(AgentTurnSubPhase::Planner, e)
-    })?;
-    p.turn
-        .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
-    if let Some(f) = p.ctx.attach.per_flight.as_ref() {
-        f.awaiting_plan_rewrite_model
-            .store(false, Ordering::Relaxed);
-    }
-    debug!(
-        target: "crabmate",
-        "模型轮次输出 finish_reason={} message_count_before_push={} assistant_preview={}",
-        finish_reason,
-        p.turn.messages().len(),
-        crate::redact::assistant_message_preview_for_log(&msg)
-    );
-    p.turn.push_assistant_merging_trailing_empty(msg.clone());
+        exec_api_base.as_deref(),
+        exec_api_key.as_deref(),
+    )
+    .await?;
 
     driver.record_phase(OuterLoopIterationPhase::AfterPlannerModel);
     tracing::debug!(
@@ -390,68 +496,34 @@ async fn run_outer_loop_single_iteration(
         return Ok(exit);
     }
 
-    let reflect_ctl = outer_loop_reflect_branch(p, per_coord, finish_reason.as_str(), &msg).await?;
-    let reflect_reduce = driver.record_reflect_branch(reflect_ctl);
-    driver.record_phase(OuterLoopIterationPhase::ReflectDecided);
-    tracing::debug!(
-        target: "crabmate::agent_turn",
-        outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = driver.phase_str(),
-        iteration = iteration_count,
-        reflect_branch = reflect_reduce.as_str(),
-        "outer_loop reflect branch"
-    );
-
-    if let Some(exit) = outer_loop_iteration_exit_from_reflect_reduce(reflect_reduce) {
+    if let Some(exit) = outer_loop_reflect_exit_if_any(
+        p,
+        per_coord,
+        driver,
+        finish_reason.as_str(),
+        &msg,
+        iteration_count,
+    )
+    .await?
+    {
         driver.record_iteration_exit(exit);
         return Ok(exit);
     }
 
-    if completed_goal_with_redundant_tool_calls(p, &msg) {
-        let messages = p.turn.messages();
-        let goal_preview = crate::types::last_real_user_task_content(messages, false)
-            .unwrap_or("")
-            .chars()
-            .take(80)
-            .collect::<String>();
-        let redundant_tools = msg
-            .tool_calls
-            .as_ref()
-            .map(|calls| redundant_tool_names_for_log(calls.as_slice()))
-            .unwrap_or_default();
-        tracing::info!(
-            target: "crabmate::agent_turn",
-            goal_preview = %goal_preview,
-            ?redundant_tools,
-            "当前用户目标已有完成证据，静默跳过冗余探针/重复 run_command"
-        );
-        drop_redundant_tool_calls_after_active_goal_completed(p, &msg);
-        let exit = OuterLoopIterationExit::StopOuterLoop;
+    if let Some(exit) = try_stop_on_completed_goal_redundant_tools(p, &msg) {
         driver.record_iteration_exit(exit);
         return Ok(exit);
     }
 
-    driver.record_phase(OuterLoopIterationPhase::ToolsExecute);
-    tracing::debug!(
-        target: "crabmate::agent_turn",
-        outer_loop_fsm = "single_agent_outer",
-        outer_loop_step = driver.phase_str(),
-        iteration = iteration_count,
-        "outer_loop tools execute"
-    );
-
-    outer_loop_execute_tools_round(p, per_coord, &msg, render_to_terminal).await?;
-    if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
-        per_coord.reset_outer_loop_build_idle_streak();
-    }
-    let task_level_early_stop = task_level_satisfied_allows_early_stop(p.turn.messages());
-    if task_level_early_stop {
-        tracing::info!(
-            target: "crabmate::agent_turn",
-            "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
-        );
-    }
-    let exit = driver.decide_post_tools_exit(task_level_early_stop);
+    let exit = outer_loop_post_tools_exit(
+        p,
+        per_coord,
+        &msg,
+        render_to_terminal,
+        driver,
+        iteration_count,
+    )
+    .await?;
     driver.record_iteration_exit(exit);
     Ok(exit)
 }
