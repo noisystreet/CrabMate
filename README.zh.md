@@ -109,6 +109,11 @@ cargo build
 # 发布用优化二进制
 cargo build --release
 ./target/release/crabmate serve
+
+# 可选：Ubuntu 24.04 工具链镜像（开发 + `make package`；glibc 2.39；非运行镜像）
+# docker build -t crabmate-dev .          # 仅 DNS 异常时再加 --network=host
+# docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev
+# make package-docker                     # → 宿主 dist/*.tar.gz 与 dist/*.deb
 ```
 
 **`serve`** 的 Web API 鉴权（**`CM_WEB_API_BEARER_TOKEN`** 等）见 **[部署与安全](#部署与安全)**。调用云端模型所需的 **`API_KEY`** 见 **[环境变量提示](#环境变量提示)**（或通过 Web「设置」、REPL **`/api-key set`**）。

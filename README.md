@@ -109,6 +109,11 @@ cargo build
 # Release
 cargo build --release
 ./target/release/crabmate serve
+
+# Optional: Ubuntu 24.04 toolchain image (dev + `make package`; glibc 2.39; not a runtime)
+# docker build -t crabmate-dev .          # add --network=host only if DNS fails
+# docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev
+# make package-docker                     # → dist/*.tar.gz and dist/*.deb on the host
 ```
 
 **`serve`** Web API auth (**`CM_WEB_API_BEARER_TOKEN`**, etc.): **[Deployment and security](#deployment-and-security)**. Cloud **`API_KEY`**: **[Environment variables](#environment-variables)** (or Web Settings / REPL **`/api-key set`**).

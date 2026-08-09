@@ -19,7 +19,7 @@ BACKEND_BIN := $(if $(filter 1 true yes,$(RELEASE)),$(BACKEND_BIN_RELEASE),$(BAC
 .PHONY: help all all-dev \
 	backend backend-release \
 	workspace workspace-release \
-	package package-tar package-deb \
+	package package-tar package-deb package-docker \
 	test check fmt clippy \
 	clean clean-backend clean-dist
 
@@ -39,6 +39,7 @@ help:
 	@echo "  make package          tar.gz + 可选 .deb → dist/（需 cargo-deb 才出 deb）"
 	@echo "  make package-tar      仅 tar.gz"
 	@echo "  make package-deb      仅 .deb（Linux + cargo-deb）"
+	@echo "  make package-docker   在 Docker 工具链镜像内 package（产物写入宿主 dist/）"
 	@echo ""
 	@echo "质检："
 	@echo "  make test             cargo test --workspace"
@@ -89,6 +90,25 @@ package-tar:
 package-deb:
 	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
 	"$(PACKAGE_RELEASE)" --skip-frontend --skip-tar
+
+# 在 Docker 工具链镜像内执行 `make package`（产物写入宿主 dist/；需本机 Docker）
+# 用法：make package-docker
+#       make package-docker DOCKER_BUILD=0          # 复用已有镜像
+#       make package-docker DOCKER_NETWORK=host     # 宿主机 DNS 异常时构建镜像
+DOCKER_IMAGE ?= crabmate-dev
+DOCKER_BUILD ?= 1
+DOCKER_NETWORK ?= bridge
+
+package-docker:
+	@command -v docker >/dev/null || { echo "需要 docker" >&2; exit 1; }
+	@if [ "$(DOCKER_BUILD)" = "1" ]; then \
+		docker build --network="$(DOCKER_NETWORK)" -t "$(DOCKER_IMAGE)" "$(ROOT)"; \
+	fi
+	docker run --rm \
+		-v "$(ROOT)":/workspace \
+		-w /workspace \
+		"$(DOCKER_IMAGE)" \
+		make package
 
 # --- 质检（可选）---
 

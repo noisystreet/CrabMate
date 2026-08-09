@@ -136,7 +136,7 @@ CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reac
 (e.g. DeepSeek, MiniMax, local Ollama). It supports function calling, workspace-oriented command \
 and file tools, a Web UI (Axum + Leptos), and a CLI (REPL, one-shot chat, and serve). Configuration \
 is TOML plus environment variables; see /usr/share/doc/crabmate/ after install."""
-depends = "libc6 (>= 2.31)"
+depends = "libc6 (>= 2.39)"
 section = "utils"
 priority = "optional"
 # systemd 单元 + postinst（#DEBHELPER#）；默认不 enable / 不 start，需管理员显式 systemctl enable。
