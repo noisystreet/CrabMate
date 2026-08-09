@@ -146,7 +146,11 @@ jobs:
           rm -rf /tmp/package-deb-root
           dpkg-deb -x "$DEB" /tmp/package-deb-root
           grep -F -- '--config /etc/crabmate/config.toml' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service
-          # packaged unit must not force --no-web on ExecStart (blocks CM_WEB_STATIC_DIR)
+          # packaged unit must stay API-only by default (no --with-web on ExecStart)
+          if grep -E '^ExecStart=.*--with-web' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service; then
+            echo "unexpected --with-web in packaged unit (default must be API-only)" >&2
+            exit 1
+          fi
           if grep -E '^ExecStart=.*--no-web' /tmp/package-deb-root/usr/lib/systemd/system/crabmate.service; then
             echo "unexpected --no-web in packaged unit" >&2
             exit 1

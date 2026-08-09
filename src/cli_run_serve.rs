@@ -103,6 +103,29 @@ pub(super) async fn serve_bind_auth_flags(cfg_holder: &SharedAgentConfig) -> (bo
     )
 }
 
+/// 启动日志：是否挂载 SPA（`--with-web`）及静态根是否可用。
+pub(super) fn serve_log_ui_mount_status(with_web: bool, static_dir: &std::path::Path) {
+    if with_web {
+        let index = static_dir.join("index.html");
+        if index.is_file() {
+            println!("  UI：已启用 --with-web（静态根 {}）", static_dir.display());
+            return;
+        }
+        eprintln!(
+            "  警告：已启用 --with-web，但未找到 {}（/ 可能 404）。请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend",
+            index.display()
+        );
+        return;
+    }
+    println!("  UI：默认纯 API（托管 SPA 请加 --with-web）");
+    if std::env::var("CM_WEB_STATIC_DIR")
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+    {
+        println!("  提示：已设置 CM_WEB_STATIC_DIR，但未传 --with-web，静态目录不会挂载");
+    }
+}
+
 /// 启动日志：CORS 白名单非空时提示（改白名单须重启）。
 pub(super) fn serve_log_cors_startup(cors_allowed_origins: &[String]) {
     if cors_allowed_origins.is_empty() {
@@ -121,7 +144,7 @@ pub(super) fn serve_log_cors_startup(cors_allowed_origins: &[String]) {
 
 /// `serve` 启动前：与 `GET /health` 同源的可选依赖与工具链检查，并写启动日志。
 ///
-/// `include_frontend_static`：与是否挂载 UI 一致（`--no-web` 时为 false）。
+/// `include_frontend_static`：与是否挂载 UI 一致（默认纯 API 为 false；`--with-web` 时为 true）。
 pub(super) async fn serve_log_startup_health(
     cfg_holder: &SharedAgentConfig,
     workspace_cli: &Option<String>,

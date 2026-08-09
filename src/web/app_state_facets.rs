@@ -55,7 +55,7 @@ pub(crate) type WebChangelogAppFacet = WebTasksAppFacet;
 pub(crate) struct WebHealthAppFacet {
     pub(crate) http: AppStateHttpCore,
     pub(crate) llm_models_health_cache: Arc<std::sync::Mutex<Option<CachedLlmModelsHealthProbe>>>,
-    /// 与 `serve --no-web` 相反：仅挂载 UI 时检查静态目录。
+    /// 与 `serve --with-web` 一致：仅挂载 UI 时检查静态目录。
     pub(crate) mount_web_ui: bool,
 }
 

@@ -102,7 +102,7 @@ elif [[ "$SKIP_FRONTEND" -eq 0 && -n "${FRONTEND_DIST}" ]]; then
   echo "错误: FRONTEND_DIST/CM_WEB_STATIC_DIR 无效（缺 index.html）: ${FRONTEND_DIST}" >&2
   exit 1
 else
-  echo "==> server-only（未附带 UI；运行时用 --no-web 或 CM_WEB_STATIC_DIR）"
+  echo "==> server-only（未附带 UI；运行时默认纯 API；托管 SPA 用 --with-web + CM_WEB_STATIC_DIR）"
 fi
 
 echo "==> cargo build --release -p crabmate"

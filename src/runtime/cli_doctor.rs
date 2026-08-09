@@ -285,7 +285,7 @@ fn print_doctor_rust_toolchain_block() {
 fn print_doctor_frontend_block(_ws: &Path) {
     println!("【Web UI（可选静态资源）】");
     println!("  官方 UI：同级 crabmate-client（cd ../crabmate-client && make frontend）");
-    println!("  serve：CM_WEB_STATIC_DIR=…/frontend/dist 或 --no-web（纯 API）");
+    println!("  serve：默认纯 API；托管 SPA 用 --with-web 与 CM_WEB_STATIC_DIR=…/frontend/dist");
     if let Ok(dir) = std::env::var("CM_WEB_STATIC_DIR") {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {

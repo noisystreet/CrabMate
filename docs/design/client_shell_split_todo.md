@@ -182,6 +182,7 @@
 | 2026-08-08 | 自中间稿升格；路径 A / Client 矩阵 / 密钥边界已决；Phase 0 完成 |
 | 2026-08-08 | Phase 1：`client_contract_versioning.md`、门禁脚本与 CI job `client-contract`；下一刀 Phase 2 |
 | 2026-08-08 | Phase 2：API 基址 + `web_cors_allowed_origins` + runbook §9；下一刀 Phase 3 |
+| 2026-08-09 | **运行时 Phase 1**：`serve` **默认纯 API**；`--with-web` 显式托管 SPA；`--no-web` 兼容无操作。见 [`client_ui_runtime_split.md`](./client_ui_runtime_split.md) |
 | 2026-08-08 | Phase 2 补丁：CORS **expose** 会话头；`/uploads` CORP 仅 CORS 启用时放宽；API 基址显式清空不回落 `CRABMATE_API_BASE` |
 | 2026-08-08 | Phase 3 开工：本地外仓 `../crabmate-client`（壳 + connect）；主仓目录暂保留双轨 |
 | 2026-08-08 | Phase 3 文档：壳专题 / 冒烟 / Victauri / AGENTS+pre-commit 迁入 `crabmate-client`；主仓 `tauri_gui_mvp` 改指针 |

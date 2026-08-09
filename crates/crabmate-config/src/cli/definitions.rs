@@ -45,8 +45,14 @@ pub struct ServeCmd {
     #[arg(long, value_name = "ADDR")]
     pub host: Option<String>,
 
-    /// 仅提供后端 API，不挂载前端静态页面
-    #[arg(long, alias = "cli-only")]
+    /// 显式挂载业务 UI 静态资源（Client `frontend/dist` / `CM_WEB_STATIC_DIR`）。
+    /// **默认不挂**（纯 API）；同机托管 SPA 须传本旗标。
+    #[arg(long = "with-web", alias = "web", conflicts_with = "no_web")]
+    pub with_web: bool,
+
+    /// 兼容别名：默认已是纯 API，本旗标**无操作**（与省略 `--with-web` 等价）。
+    /// 与 `--with-web` 互斥。
+    #[arg(long, alias = "cli-only", conflicts_with = "with_web")]
     pub no_web: bool,
 
     /// 监听成功后向 stdout 输出一行 `{"event":"web_ready",...}` JSON；壳不再依赖，仅脚本/工具。
@@ -358,8 +364,12 @@ pub struct ConfigCmd {
     #[arg(long)]
     pub dry_run: bool,
 
-    /// 纯 API：跳过 UI 静态目录检查（与 `serve --no-web` 同语义）
-    #[arg(long, alias = "cli-only")]
+    /// 与 `serve --with-web` 同语义：检查 UI 静态目录是否存在（默认跳过，纯 API）。
+    #[arg(long = "with-web", alias = "web", conflicts_with = "no_web")]
+    pub with_web: bool,
+
+    /// 兼容别名：默认已跳过 UI 静态检查，本旗标**无操作**。
+    #[arg(long, alias = "cli-only", conflicts_with = "with_web")]
     pub no_web: bool,
 }
 
@@ -521,7 +531,7 @@ pub enum ExtraCliCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// 启动 Web UI + HTTP API（默认端口 8080）
+    /// 启动 HTTP API（默认纯 API；可选 `--with-web` 挂载 UI；默认端口 8080）
     Serve(ServeCmd),
     /// 交互式终端对话（默认子命令）
     Repl(ReplCmd),
@@ -608,7 +618,8 @@ pub struct ParsedCliArgs {
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,
     pub no_tools: bool,
-    pub no_web: bool,
+    /// `serve` / `config`：是否挂载或检查业务 UI 静态资源（默认 `false` = 纯 API）。
+    pub with_web: bool,
     pub dry_run: bool,
     pub no_stream: bool,
     pub log_file: Option<String>,

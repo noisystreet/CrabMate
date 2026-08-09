@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **BREAKING**: `serve` is **API-only by default** (no SPA mount). Host Client UI with **`--with-web`** / **`--web`** plus **`CM_WEB_STATIC_DIR`** (or probed dist). **`--no-web`** / **`--cli-only`** remain as compat no-ops (mutually exclusive with **`--with-web`**). **`config` / dry-run** now **skips** UI static checks by default (previously required dist unless `--no-web`); add **`--with-web`** to require dist. Docs, systemd comments, and man page updated accordingly.
 - Deb `depends` → **`libc6 (>= 2.39)`** to match binaries built on Ubuntu 24.04 / current CI (`ubuntu-latest`).
 - **`lizard-rust`** gate: per-module **count of functions with CCN>10** (exact ratchet vs `scripts/lizard_module_ccn_caps.toml`), aligned with Client; replaces per-module max-CCN caps (`global_ccn_ceiling` / `ccn_max`).
 - **`lizard-rust`**: also ratchets **`global_over_ccn_sum_cap`** — the sum of CCN across all functions with CCN>threshold (full-repo scans).

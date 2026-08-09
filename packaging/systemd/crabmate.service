@@ -19,8 +19,9 @@ Environment=RUST_LOG=info
 # Minimal PATH for system user; extend in crabmate.env for cargo/rustc (e.g. /usr/local/cargo/bin).
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # --config anchors relative system_prompt_file paths under /etc/crabmate/
-# Default: loopback :8080. No --no-web so CM_WEB_STATIC_DIR can mount UI when set.
-# Without a dist, / is 404 while /health and APIs still work.
+# Default: loopback :8080, API-only (no SPA).
+# To host Client UI on the same process: add --with-web and set CM_WEB_STATIC_DIR.
+# Without --with-web, / is 404 while /health and APIs still work.
 ExecStart=/usr/bin/crabmate --config /etc/crabmate/config.toml serve --host 127.0.0.1 --port 8080
 Restart=on-failure
 RestartSec=5
