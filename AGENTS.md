@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides Web UI (Axum + Leptos) and CLI (interactive terminal / `chat` single-shot / `serve`; experimental full-screen **`tui`** (minimal chat loop; loads config like **`repl`**)). See `README.md` for quick start and feature overview; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview (main modules and data flow). If you change module layout or layering, update `docs/开发文档.md` per `.trae/rules/architecture-docs-sync.mdc` (or `.cursor/rules/` for Cursor IDE).
+CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides HTTP **`serve`** (Axum) and ops CLIs; **official Web UI / Desktop / remote terminal (`crabmate-tui`)** live in **Client** [`../crabmate-client`](https://github.com/noisystreet/crabmate-client). In-process **`repl` / `chat` / `tui`** on this binary are **deprecated** (see `docs/design/client_shell_split.md`). See `README.md` for quick start; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview. If you change module layout or layering, update `docs/开发文档.md` per `.trae/rules/architecture-docs-sync.mdc` (or `.cursor/rules/` for Cursor IDE).
 
 ### Agent workspace
 

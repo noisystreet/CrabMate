@@ -21,15 +21,15 @@
 
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
-It includes **function calling**, workspace command and file tools, plus **HTTP `serve`**, **CLI**, and an experimental **TUI**.
+It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in sibling **[`crabmate-client`](../crabmate-client/)**. In-process **`repl` / `chat` / `tui`** on this binary are **deprecated**.
 
-**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, CLI/TUI). Official Web UI and Desktop/Android shells live in sibling **[`crabmate-client`](../crabmate-client/)** ([ADR](docs/design/client_shell_split.md)).
+**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](../crabmate-client/)** ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
 
 - [Overview](#overview)
 - [Common subcommands](#common-subcommands)
-  - [TUI (full-screen terminal)](#tui-full-screen-terminal)
+  - [Deprecated in-process TUI](#deprecated-in-process-tui)
 - [Build, run, and packaging](#build-run-and-packaging)
   - [Makefile (recommended)](#makefile-recommended)
   - [Backend](#backend)
@@ -47,20 +47,20 @@ It includes **function calling**, workspace command and file tools, plus **HTTP 
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`** for **`bash -c`/`sh -c`**; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Web UI (Client)**: built and shipped from **[`crabmate-client`](../crabmate-client/)**; this repo’s **`serve` defaults to API-only**; host a SPA with **`--with-web`** plus **`CM_WEB_STATIC_DIR`** (or probed Client `frontend/dist`). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected.
-- **Terminal**: **`repl`** (interactive), **`chat`** (one-shot), **`serve`** (HTTP API-only by default; optional **`--with-web`**), **`tui`** (experimental **full-screen**, real TTY—see below). Streaming **SSE**, tool approval/cancel: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
-- **Sessions and export**: by default **Web `serve`** (and **`tui`** with the same path) persist under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
+- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](../crabmate-client/)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui`** on this binary are **deprecated** (stderr warning; removal planned—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
+- **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
 - **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
 ## Common subcommands
 
-With no subcommand, **`repl`** runs. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--agent-role`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
+With no subcommand, deprecated **`repl`** still runs (prints a warning). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--agent-role`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
 | Subcommand | Summary |
 | --- | --- |
 | **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). **`--no-web`** is a no-op alias. Default port **8080**, bind **127.0.0.1**. |
-| **`repl`** | Interactive terminal; **`/`** commands and **`/api-key set`**: [docs/en/CLI.md](docs/en/CLI.md). |
-| **`chat`** | One-shot then exit (**`--query`** / **`--stdin`** / files); **`--output json`**: [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md). |
-| **`tui`** | Experimental **full-screen** terminal UI; needs an **interactive TTY** (otherwise use **`repl`** / **`chat`**). Summary: **[TUI (full-screen terminal)](#tui-full-screen-terminal)**. |
+| **`repl`** | **Deprecated** in-process interactive terminal; use Client **`crabmate-tui`**. |
+| **`chat`** | **Deprecated** in-process one-shot; use Client **`crabmate-tui chat`**. |
+| **`tui`** | **Deprecated** in-process full-screen UI; use Client **`crabmate-tui`**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
 | **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
@@ -73,14 +73,10 @@ With no subcommand, **`repl`** runs. Common globals: **`--config`**, **`--worksp
 
 Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
-### TUI (full-screen terminal)
+### Deprecated in-process TUI
 
-**`crabmate tui`** is an experimental **full-screen** UI sharing the same agent/tool stack as **`repl`**.
+**`crabmate tui`** remains temporarily for compatibility but is **not** the official terminal. Prefer Client **`crabmate-tui`** + **`crabmate serve`**. Details while it exists: [docs/en/CLI.md](docs/en/CLI.md), ADR [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md).
 
-- **Environment**: real **TTY** required; otherwise use **`repl`** / **`chat`**.
-- **Interaction**: **Enter** sends from the composer; with focus on the right **Workspace** pane, **Enter** opens path browse (same as Web **`/workspace`** / REPL **`/workspace`**). **`q`** / **Ctrl+C** to quit. **`/api-key`**, **`/mode`** (Ask/Plan/Act), and other **`/`** commands match **`repl`**.
-- **Streaming**: assistant stream is not painted on **stdout**; see **`--no-stream`** in **`crabmate tui --help`**.
-- **More**: optional SQLite multi-session (**`/conv`**, **`/branch`**), clarification, **`CM_TUI_CONVERSATION_ID`**—[docs/en/CLI.md](docs/en/CLI.md).
 
 ## Build, run, and packaging
 

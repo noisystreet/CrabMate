@@ -4,6 +4,8 @@
 
 Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--agent-role`, `--no-tools`, `--log`.
 
+**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` are deprecated** (stderr warning; hard removal planned—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
+
 **Script contract** (exit codes, `chat --output json` line JSON `type`/`v`, etc.): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
 ## Man page (troff / `man`)
@@ -16,10 +18,10 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client repo **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**). |
-| `repl` | Interactive chat; **default when no subcommand**. With **`bearer`** and no env **`API_KEY`**, use **`/api-key set <secret>`** before sending messages. |
-| `tui` | Full-screen terminal UI (**experimental**); phase B/C: layout + minimal chat loop sharing **`repl_dispatch_chat_round`** with **`repl`**. **Requires an interactive TTY for stdin and stdout**. Assistant output is **not rendered to stdout** (alternate-screen safe); respects global **`--no-stream`** for SSE vs JSON. **`Enter`** sends the line; **`/api-key`** / **`/apikey`** supported (feedback in the transcript); slash commands match **`repl`**; with **`conversation_store_sqlite_path`** set, **`/conv`** / **`/branch`** manage SQLite sessions like Web. **`q`/`Q` with empty input** or **Ctrl+C** exits. Loads **`AgentConfig`** like **`repl`**. See **`runtime/tui`**. |
-| `chat` | One-shot / scripted chat: `--query` / `--stdin` / `--user-prompt-file`, `--system-prompt-file`, `--messages-json-file`, `--message-file` (JSONL), `--yes` / `--approve-commands`, `--output json`, `--no-stream`. With **`bearer`** and no **`API_KEY`**, the first turn fails unless you export **`API_KEY`** or use **`repl`** / **`serve`** as above. |
+| `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`, authority on the Client) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client repo **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**). |
+| `repl` | **Deprecated** in-process interactive chat; **still the default with no subcommand** (prints a warning). Prefer Client **`crabmate-tui`**. |
+| `tui` | **Deprecated** in-process full-screen TUI; prefer Client **`crabmate-tui`**. |
+| `chat` | **Deprecated** in-process one-shot; prefer Client **`crabmate-tui chat`**. |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
 | `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
 | `doctor` | Local diagnostics (**no** `API_KEY`). |

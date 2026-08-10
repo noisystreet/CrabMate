@@ -26,10 +26,10 @@
 
 | 产物 | 来源仓 | 含什么 |
 |------|--------|--------|
-| `crabmate` / `serve`（tar.gz / server `.deb`） | **本仓** | 二进制 + 配置模板；可选附带 UI dist；**过渡期**仍含同进程 `chat|repl|tui` |
+| `crabmate` / `serve`（tar.gz / server `.deb`） | **本仓** | 二进制 + 配置模板；可选附带 UI dist；同进程 `chat|repl|tui` **官方停用（软弃用）** |
 | Desktop Linux `.deb` / Android APK | **`crabmate-client`** | 壳 + connect；**不**内嵌 `serve` sidecar |
 | 业务 UI 静态包 | **`crabmate-client/frontend`** | `index.html` + wasm 等 |
-| **`crabmate-tui`**（远程终端） | **`crabmate-client`** | HTTP/SSE 客户端；**不**内嵌 / spawn `serve`；见 Client [`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md) |
+| **`crabmate-tui`**（远程终端） | **`crabmate-client`** | **官方** HTTP/SSE 终端；**不**内嵌 / spawn `serve`；见 Client [`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md) |
 
 ## 4. 弃用
 
@@ -37,4 +37,4 @@
 |----|------|
 | 主仓 `desktop-tauri` / `mobile-tauri` / `crabmate-connect` | **已移除**（Phase 4.1；权威仅在 `crabmate-client`） |
 | `serve --desktop-ready-json` | **保留别名** `--web-ready-json`；壳不依赖；脚本仍可用 |
-| 本仓同进程 `crabmate chat|repl|tui` 作为官方终端 | **过渡**；官方入口为 Client **`crabmate-tui`**（[`client_shell_split.md`](./client_shell_split.md) §2.2–2.3） |
+| 本仓同进程 `crabmate chat|repl|tui` | **官方停用（D1 软弃用）**；请用 Client **`crabmate-tui`** + `serve`；硬删见 [`client_shell_split.md`](./client_shell_split.md) §2.5 **D2** |
