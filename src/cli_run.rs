@@ -689,7 +689,7 @@ pub(super) async fn run_serve_branch(
     let bind_ip = parse_bind_ip(http_bind_host)?;
     let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
     let addr = std::net::SocketAddr::from((bind_ip, port));
-    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, &api_key, with_web).await;
+    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, with_web).await;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");

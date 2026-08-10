@@ -197,7 +197,7 @@ Every `build_app` response includes **`x-request-id`** (echo inbound if valid, e
 | DELETE | `/workspace/file` | Delete file (`path` required; not directories) |
 | POST | `/workspace/dir` | Create dir (JSON **`path`**, optional **`parents`**); or delete dir (JSON **`delete=true`**, **`confirm=true`**, optional **`recursive=true`**, same as **`DELETE`**; frontend falls back to **`POST`** on 404/405) |
 | DELETE | `/workspace/dir` | Delete directory (`path` query required; **`confirm=true`** required; non-empty dirs need **`recursive=true`**) |
-| GET | `/health` | Health |
+| GET | `/health` | Health (workspace writable, optional CLI deps; **not** failed for missing process `API_KEY`; Client supplies `client_llm.api_key`) |
 
 SSE control-plane fields: **`docs/SSE协议.md`**.
 

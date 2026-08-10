@@ -108,7 +108,7 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 
 | Variable | Description |
 | --- | --- |
-| `CM_HEALTH_LLM_MODELS_PROBE` | When `1`/`true`, **`GET /health`** runs a **GET …/models** check (list endpoint only, no completion cost). Default off. |
+| `CM_HEALTH_LLM_MODELS_PROBE` | When `1`/`true`, **`GET /health`** runs a **GET …/models** check (list endpoint only, no completion cost). Default off. **Skipped** (not a failure) when **`bearer`** and process has no **`API_KEY`** (model keys come from Client request body). |
 | `CM_HEALTH_LLM_MODELS_PROBE_CACHE_SECS` | Cache probe results in-process (**5–86400**, default **120**) to limit upstream traffic from frequent health polls. |
 | `CM_CHAT_QUEUE_MAX_CONCURRENT` | Max concurrent chat jobs. |
 | `CM_CHAT_QUEUE_MAX_PENDING` | Max queued chat jobs. |

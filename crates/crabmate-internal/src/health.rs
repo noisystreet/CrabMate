@@ -46,11 +46,11 @@ pub struct LlmModelsEndpointProbeParams<'a> {
 }
 
 fn health_report_status(checks: &BTreeMap<String, HealthCheckItem>) -> String {
-    let required_ok = checks.get("api_key").map(|c| c.ok).unwrap_or(false)
-        && checks
-            .get("workspace_writable")
-            .map(|c| c.ok)
-            .unwrap_or(false);
+    // 进程级 API_KEY 不再作为健康必检项：官方 Client 经请求体 `client_llm.api_key` 注入。
+    let required_ok = checks
+        .get("workspace_writable")
+        .map(|c| c.ok)
+        .unwrap_or(false);
     if required_ok && checks.values().all(|c| c.ok) {
         "ok".to_string()
     } else {
@@ -143,28 +143,13 @@ async fn probe_llm_models_endpoint(
 /// 构建健康报告（阻塞工作放在 `spawn_blocking` 内）。
 ///
 /// `include_frontend_static`：为 true 时检查 UI 静态根（`CM_WEB_STATIC_DIR` / Client `frontend/dist` 等，与挂载 SPA 一致）；默认纯 API（未传 `--with-web`）应为 false。
+///
+/// **不**检查进程级 `API_KEY`（对话密钥由 Client 请求体提供；可选回退仍可用于 `models`/`probe` 与 `health_llm_models_probe`）。
 pub async fn build_health_report(
     workspace_dir: &Path,
-    api_key: &str,
-    llm_http_auth_mode: LlmHttpAuthMode,
     include_frontend_static: bool,
 ) -> HealthReport {
     let mut checks: BTreeMap<String, HealthCheckItem> = BTreeMap::new();
-
-    let api_key_ok = llm_http_auth_mode == LlmHttpAuthMode::None || !api_key.trim().is_empty();
-    checks.insert(
-        "api_key".to_string(),
-        HealthCheckItem {
-            ok: api_key_ok,
-            detail: if api_key_ok {
-                None
-            } else if llm_http_auth_mode == LlmHttpAuthMode::Bearer {
-                Some("未设置 API_KEY（llm_http_auth_mode=bearer）".to_string())
-            } else {
-                Some("未设置 API_KEY".to_string())
-            },
-        },
-    );
 
     if include_frontend_static {
         let static_dir = crate::web_static_dir::resolve_web_static_dir();
@@ -362,15 +347,6 @@ fn is_version_incompat_detail(detail: &str) -> bool {
     detail.contains("低于建议最低")
 }
 
-fn startup_config_failure_line(check_key: &str, detail: &str) -> String {
-    if check_key == "api_key" && detail.contains("未设置 API_KEY") && detail.contains("bearer") {
-        return format!(
-            "{detail}（Web 侧栏「设置」可填 client_llm.api_key，或设置环境变量 API_KEY）"
-        );
-    }
-    format!("{check_key}: {detail}")
-}
-
 struct StartupHealthBuckets {
     config: Vec<String>,
     workspace: Vec<String>,
@@ -392,9 +368,8 @@ fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBucke
             continue;
         }
         let detail = item.detail.as_deref().unwrap_or("未通过");
-        if check_key == "api_key" || check_key == "frontend_static_dir" {
-            b.config
-                .push(startup_config_failure_line(check_key, detail));
+        if check_key == "frontend_static_dir" {
+            b.config.push(format!("{check_key}: {detail}"));
         } else if check_key == "workspace_writable" {
             b.workspace.push(format!("{check_key}: {detail}"));
         } else if check_key.starts_with("dep_toolchain_") {
@@ -475,13 +450,6 @@ mod health_status_tests {
     fn status_ok_when_required_and_all_checks_ok() {
         let mut checks = BTreeMap::new();
         checks.insert(
-            "api_key".into(),
-            HealthCheckItem {
-                ok: true,
-                detail: None,
-            },
-        );
-        checks.insert(
             "workspace_writable".into(),
             HealthCheckItem {
                 ok: true,
@@ -501,13 +469,6 @@ mod health_status_tests {
     #[test]
     fn status_degraded_when_optional_dep_fails() {
         let mut checks = BTreeMap::new();
-        checks.insert(
-            "api_key".into(),
-            HealthCheckItem {
-                ok: true,
-                detail: None,
-            },
-        );
         checks.insert(
             "workspace_writable".into(),
             HealthCheckItem {
@@ -529,10 +490,10 @@ mod health_status_tests {
     fn startup_summary_groups_optional_missing_and_config() {
         let mut checks = BTreeMap::new();
         checks.insert(
-            "api_key".into(),
+            "frontend_static_dir".into(),
             HealthCheckItem {
                 ok: false,
-                detail: Some("未设置 API_KEY（llm_http_auth_mode=bearer）".into()),
+                detail: Some("目录不存在：/tmp/missing-frontend-dist".into()),
             },
         );
         checks.insert(
@@ -561,7 +522,7 @@ mod health_status_tests {
             checks,
         });
         assert!(summary.contains("【配置】"));
-        assert!(summary.contains("client_llm.api_key"));
+        assert!(summary.contains("frontend_static_dir"));
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
         assert!(summary.contains("bandit"));
         assert!(summary.contains("shellcheck"));
@@ -570,13 +531,6 @@ mod health_status_tests {
     #[test]
     fn startup_summary_shows_toolchain_version_reason() {
         let mut checks = BTreeMap::new();
-        checks.insert(
-            "api_key".into(),
-            HealthCheckItem {
-                ok: true,
-                detail: None,
-            },
-        );
         checks.insert(
             "workspace_writable".into(),
             HealthCheckItem {

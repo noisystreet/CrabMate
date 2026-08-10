@@ -150,22 +150,18 @@ pub(super) fn serve_log_cors_startup(cors_allowed_origins: &[String]) {
 pub(super) async fn serve_log_startup_health(
     cfg_holder: &SharedAgentConfig,
     workspace_cli: &Option<String>,
-    api_key: &str,
     include_frontend_static: bool,
 ) {
-    let (work_dir, auth_mode) = {
+    let work_dir = {
         let g = cfg_holder.read().await;
-        let wd = workspace_cli
+        workspace_cli
             .as_deref()
             .filter(|s| !s.trim().is_empty())
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| {
                 std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
-            });
-        (wd, g.llm.llm_http_auth_mode)
+            })
     };
-    let report =
-        crate::health::build_health_report(&work_dir, api_key, auth_mode, include_frontend_static)
-            .await;
+    let report = crate::health::build_health_report(&work_dir, include_frontend_static).await;
     crate::health::log_startup_dep_compat_summary(&report);
 }
