@@ -37,4 +37,4 @@
 |----|------|
 | 主仓 `desktop-tauri` / `mobile-tauri` / `crabmate-connect` | **已移除**（Phase 4.1；权威仅在 `crabmate-client`） |
 | `serve --desktop-ready-json` | **保留别名** `--web-ready-json`；壳不依赖；脚本仍可用 |
-| 本仓同进程 `crabmate chat|repl|tui` | **官方停用（D1 软弃用）**；请用 Client **`crabmate-tui`** + `serve`；硬删见 [`client_shell_split.md`](./client_shell_split.md) §2.5 **D2** |
+| 本仓同进程 `crabmate chat|repl|tui` | **命令入口已移除**（D2.1）；请用 Client **`crabmate-tui`** + `serve`；实现硬删见 [`client_shell_split.md`](./client_shell_split.md) §2.5 **D2.2** |

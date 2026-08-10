@@ -1,6 +1,6 @@
 # ADR：官方 Client 与本仓「只维护 Server」（路径 A）
 
-> **状态**：**已采纳（2026-08-08）**；**2026-08-10 修订** — 官方终端为 Client 远程 `crabmate-tui`；本仓同进程 `chat|repl|tui` **官方停用（软弃用）**，计划硬删。  
+> **状态**：**已采纳（2026-08-08）**；**2026-08-10 修订** — 官方终端为 Client 远程 `crabmate-tui`；本仓同进程 `chat|repl|tui` **命令入口已移除（D2.1）**；实现硬删见 D2.2。  
 > **执行清单**：[`client_shell_split_todo.md`](./client_shell_split_todo.md)  
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **运行时 UI/API 拆分**：[`client_ui_runtime_split.md`](./client_ui_runtime_split.md)（`serve` 默认纯 API）  
@@ -76,10 +76,11 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| **D0** | ADR / 兼容矩阵写明官方停用 | 本文 |
-| **D1** | clap help、启动 stderr、`命令行与路由` / README 指向 `crabmate-tui` | **进行中** |
-| **D2** | 硬删 `runtime/tui` 与同进程对话 REPL/`chat` 入口（保留 `serve` 与运维子命令）；清理 `/api-key` 斜杠与仅服务该路径的 `api_key_holder` | 计划 |
-| **D3** | 视需要：收紧进程 `API_KEY` / 服务端 client_llm 钥匙串回退；man / CI / 冒烟清单去同进程宿主项 | 计划 |
+| **D0** | ADR / 兼容矩阵写明官方停用 | ✅ |
+| **D1** | clap help、启动 stderr、`命令行与路由` / README 指向 `crabmate-tui` | ✅ |
+| **D2.1** | **移除** clap / 调度入口（`chat|repl|tui`）；须显式子命令；legacy 不再插 repl/chat | ✅ |
+| **D2.2** | 硬删 `runtime/tui` 与同进程对话 REPL/`chat` 实现及 `/api-key` | 计划 |
+| **D3** | 视需要：收紧进程 `API_KEY` / 服务端 client_llm 钥匙串回退；man / CI / 冒烟清单 | 计划 |
 
 ---
 

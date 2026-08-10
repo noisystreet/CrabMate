@@ -1,10 +1,12 @@
 **Languages / 语言:** [中文](../命令行契约.md) · English (this page)
 
-# CLI contract (exit codes, JSON, `chat` output)
+# CLI contract (exit codes, JSON, ops subcommands)
 
-For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/config/cli.rs` (clap), and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
+For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `crates/crabmate-config` clap, and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
 
-## `chat` process exit codes
+> **D2.1**: in-process **`crabmate chat`** entry is removed. Sections below about `chat` exit codes / `--output json` are **historical** (old scripts/logs). Prefer Client **`crabmate-tui`**, HTTP APIs, or this repo’s **`tool-replay`** / **`bench`**.
+
+## Process exit codes (historical: `chat`; current: `tool-replay`, etc.)
 
 | Code | Meaning | Typical case |
 |------|---------|--------------|
@@ -66,9 +68,9 @@ Constants: **`crates/crabmate-api-contract/src/error_codes.rs`**. Full streaming
 - Crate semver vs SSE wire protocol, compatibility window, and git tag **`client-contract-vX.Y.Z`**: **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**.
 - Gate: `bash scripts/check-client-contract.sh` (OpenAPI smoke + external-style path consumer).
 
-## `chat --output json` one JSON line per turn (stable shape)
+## `chat --output json` one JSON line per turn (historical; entry removed)
 
-After each turn, **stdout** prints **one** UTF-8 JSON line for `jq` / scripts.
+> **Removed**: `crabmate chat --output json` is no longer available. Fields below describe the old stdout JSON line for migration only.
 
 ### Top-level fields
 

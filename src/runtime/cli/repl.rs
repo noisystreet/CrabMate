@@ -1,4 +1,7 @@
 //! 交互式 REPL 主循环。
+//!
+//! **CLI 入口已移除**（D2.1）；本模块暂留至 D2.2 删除。
+#![allow(dead_code)]
 
 pub(crate) use super::repl_bootstrap::repl_prepare_messages_and_editor;
 pub(crate) use super::repl_chat_round::{

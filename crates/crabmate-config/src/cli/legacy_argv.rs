@@ -5,9 +5,6 @@ fn is_known_subcommand(s: &str) -> bool {
     matches!(
         s,
         "serve"
-            | "repl"
-            | "tui"
-            | "chat"
             | "bench"
             | "config"
             | "doctor"
@@ -21,6 +18,7 @@ fn is_known_subcommand(s: &str) -> bool {
             | "sse-replay"
             | "plugin"
             | "workflow"
+            | "e2e"
     )
 }
 
@@ -113,35 +111,13 @@ fn rest_has_legacy_bench_flag(rest: &[String]) -> bool {
     })
 }
 
-const LEGACY_CHAT_FLAG_BASES: &[&str] = &[
-    "--query",
-    "--output",
-    "--system-prompt-file",
-    "--user-prompt-file",
-    "--messages-json-file",
-    "--message-file",
-    "--approve-commands",
-    "--agent-role",
-];
-
-fn rest_has_legacy_chat_flag(rest: &[String]) -> bool {
-    rest.iter().any(|a| {
-        let a = a.as_str();
-        a == "--stdin"
-            || a == "--yes"
-            || LEGACY_CHAT_FLAG_BASES
-                .iter()
-                .any(|b| flag_or_eq_value(a, b))
-    })
-}
-
-/// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--query` 等），改写为 `serve` / `chat` / … 形式再交给 clap。
+/// 若 argv 在 **未写子命令名** 时使用历史平铺 flag（`--serve`、`--benchmark` 等），改写为 `serve` / `bench` / … 形式再交给 clap。
 ///
-/// 已写子命令（如 `crabmate repl` / `crabmate doctor`）或 `-h` / `--help` / `-V` / `--version` 时不改写。
+/// 已写子命令或 `-h` / `--help` / `-V` / `--version` 时不改写。
 ///
-/// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`（否则未写子命令时会被当成 `repl` 的多余参数并报错）。
+/// **`help` 子命令**：`crabmate help` → 根级 `--help`；`crabmate help serve` 等 → 对应子命令 `--help`。
 ///
-/// 将历史平铺 flag 映射为子命令形式（**契约稳定面**）；与 [`super::parse::parse_args`] / [`super::parse::parse_args_from_argv`] 共用。
+/// 同进程 **`chat|repl|tui` 已移除**：不再把 `--query` / 裸 flag 映射或默认插入 `chat`/`repl`（交给 clap 报缺子命令）。
 pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
     if args.len() <= 1 {
         return args;
@@ -175,15 +151,8 @@ pub fn normalize_legacy_argv(args: Vec<String>) -> Vec<String> {
         return out;
     }
 
-    if rest_has_legacy_chat_flag(rest) {
-        let mut out = vec![prog, "chat".into()];
-        out.extend(rest.iter().cloned());
-        return out;
-    }
-
-    let mut out = vec![prog, "repl".into()];
-    out.extend(rest.iter().cloned());
-    out
+    // 旧 chat/repl 平铺 flag / 裸全局 flag：保持原 argv，由 clap 因缺合法子命令失败。
+    args
 }
 
 #[cfg(test)]
@@ -250,7 +219,7 @@ mod legacy_argv_tests {
     fn try_parse_root_doctor_subcommand() {
         let r = RootCli::try_parse_from(vec!["crabmate".to_string(), "doctor".to_string()]);
         assert!(r.is_ok(), "{:?}", r.as_ref().err());
-        assert!(matches!(r.unwrap().command, Some(Commands::Doctor)));
+        assert!(matches!(r.unwrap().command, Commands::Doctor));
     }
 
     #[test]
@@ -338,21 +307,28 @@ mod legacy_argv_tests {
     }
 
     #[test]
-    fn legacy_repl_implicit() {
+    fn legacy_no_longer_inserts_repl_or_chat() {
         let v = norm(&["crabmate", "--no-stream"]);
-        assert_eq!(v, vec!["crabmate", "repl", "--no-stream"]);
-    }
-
-    #[test]
-    fn legacy_chat() {
+        assert_eq!(v, vec!["crabmate", "--no-stream"]);
         let v = norm(&["crabmate", "--query", "hi"]);
-        assert_eq!(v, vec!["crabmate", "chat", "--query", "hi"]);
+        assert_eq!(v, vec!["crabmate", "--query", "hi"]);
+        let v = norm(&["crabmate", "--message-file", "cases.jsonl"]);
+        assert_eq!(v, vec!["crabmate", "--message-file", "cases.jsonl"]);
     }
 
     #[test]
-    fn legacy_chat_message_file_maps() {
-        let v = norm(&["crabmate", "--message-file", "cases.jsonl"]);
-        assert_eq!(v, vec!["crabmate", "chat", "--message-file", "cases.jsonl"]);
+    fn parse_removed_chat_subcommand_fails() {
+        let err = parse_args_from_argv(
+            vec![
+                "crabmate".to_string(),
+                "chat".to_string(),
+                "--query".to_string(),
+                "hi".to_string(),
+            ],
+            None,
+        )
+        .expect_err("chat entry removed");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[test]

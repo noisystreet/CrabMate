@@ -19,11 +19,14 @@ mod repl_slash_dispatch;
 #[cfg(feature = "repl")]
 mod repl_slash_followup;
 
+#[allow(unused_imports)] // D2.1：入口已移除；D2.2 删模块
 pub use chat::{CliMainInvocationCommon, run_chat_invocation};
 pub use commands::{
     run_plugin_init_command, run_plugin_list_command, run_plugin_validate_command,
     run_save_session_command, run_sse_replay_command, run_tool_replay_command,
 };
+// 同进程入口已移除；符号暂留至 D2.2 删模块，避免 feature 门控路径立刻爆 dead_code。
+#[allow(unused_imports)]
 #[cfg(feature = "repl")]
 pub use repl::run_repl;
 #[cfg(feature = "repl")]

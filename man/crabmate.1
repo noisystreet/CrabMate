@@ -2,11 +2,11 @@
 .el .ds Aq '
 .TH CRABMATE 1  "crabmate 0.2.0" "CrabMate User Commands"
 .SH NAME
-crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate\-tui`（同进程 chat|repl|tui 已弃用）
+crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate\-tui`
 .SH SYNOPSIS
-\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-agent\-role\fR] [\fB\-\-llm\-context\-tokens\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] [\fIsubcommands\fR]
+\fBcrabmate\fR [\fB\-\-config\fR] [\fB\-\-workspace\fR] [\fB\-\-no\-tools\fR] [\fB\-\-llm\-context\-tokens\fR] [\fB\-\-log\fR] [\fB\-h\fR|\fB\-\-help\fR] [\fB\-V\fR|\fB\-\-version\fR] <\fIsubcommands\fR>
 .SH DESCRIPTION
-基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate\-tui`（同进程 chat|repl|tui 已弃用）
+基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate\-tui`
 .SH OPTIONS
 .TP
 \fB\-\-config\fR \fI<CONFIG>\fR
@@ -17,9 +17,6 @@ crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 
 .TP
 \fB\-\-no\-tools\fR
 禁用所有工具调用，仅作为普通 Chat 使用
-.TP
-\fB\-\-agent\-role\fR \fI<ID>\fR
-新建 REPL / `chat` 会话时使用的命名角色 id（须与配置中 `[[agent_roles]]` 或 `agent_roles.toml` 一致；与 `\-\-system\-prompt\-file` 互斥时以后者为准）
 .TP
 \fB\-\-llm\-context\-tokens\fR \fI<N>\fR
 模型上下文窗口 token 上限（输入+输出），覆盖配置 `llm_context_tokens` / `CM_LLM_CONTEXT_TOKENS`；省略则使用配置文件；`0` 视为不覆盖
@@ -36,15 +33,6 @@ Print version
 .TP
 \fBserve\fR
 启动 HTTP API（默认纯 API；可选 `\-\-with\-web` 挂载 UI；默认端口 8080）
-.TP
-\fBrepl\fR
-【已弃用】同进程交互式对话（默认子命令）。官方终端请用 Client 仓 `crabmate\-tui` 连接本进程 `serve`
-.TP
-crabmate\-tui(1)
-【已弃用】同进程全屏 TUI。官方终端请用 Client 仓 `crabmate\-tui` 连接本进程 `serve`
-.TP
-\fBchat\fR
-【已弃用】同进程单次提问。官方请用 Client 仓 `crabmate\-tui chat`（或 WASM/桌面）经 `serve` HTTP/SSE
 .TP
 \fBbench\fR
 批量 benchmark 测评（JSONL）
@@ -87,6 +75,6 @@ crabmate\-e2e(1)
 .PP
 Use \fBcrabmate \-\-help\fR or \fBcrabmate \fIsubcommand\fR \fB\-\-help\fR.
 .SH EXTRA
-官方对话请：`crabmate serve` + Client `crabmate\-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 已官方弃用（见 docs/design/client_shell_split.md）。CLI 退出码与 `chat \-\-output json`：**docs/命令行契约.md**；SSE：**docs/SSE协议.md**；子命令：**docs/命令行与路由.md**。
+官方对话请：`crabmate serve` + Client `crabmate\-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 入口已移除（见 docs/design/client_shell_split.md）。运维子命令与 SSE：**docs/命令行与路由.md**、**docs/SSE协议.md**。
 .SH VERSION
 v0.1.0
