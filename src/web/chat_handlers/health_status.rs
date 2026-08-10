@@ -82,10 +82,6 @@ struct StatusResponse {
     sync_default_tool_sandbox_docker_image: String,
     /// Docker 沙盒容器进程身份摘要：`effective_uid:gid` | `image_default`（与配置 `current` / `image` 等对应）。
     sync_default_tool_sandbox_docker_user_effective: String,
-    /// CLI REPL 是否在启动时从 `.crabmate/tui_session.json` 恢复会话（默认 false；文件名历史兼容）。
-    tui_load_session_on_start: bool,
-    /// CLI REPL 是否在后台构建 `initial_workspace_messages`（默认 false；仅 REPL）。
-    repl_initial_workspace_messages_enabled: bool,
     max_message_history: usize,
     tool_message_max_chars: usize,
     context_char_budget: usize,
@@ -373,10 +369,6 @@ pub(crate) async fn status_handler(
             Some(s) => s.to_string(),
             None => "image_default".to_string(),
         },
-        tui_load_session_on_start: cfg.session_ui.tui_load_session_on_start,
-        repl_initial_workspace_messages_enabled: cfg
-            .session_ui
-            .repl_initial_workspace_messages_enabled,
         max_message_history: cfg.session_ui.max_message_history,
         tool_message_max_chars: cfg.tool_transcript.tool_message_max_chars,
         context_char_budget: cfg.context_pipeline.context_char_budget,

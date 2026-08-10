@@ -125,8 +125,7 @@ async fn run_command_resolve_effective_allowlist(
                         crate::tool_approval::request_tool_interactive_approval(
                             None,
                             Some(crate::tool_approval::CliApprovalInput {
-                                auto_approve_all_sensitive: false,
-                                tui_blocking_approval_tx: ctx.tui_blocking_approval_tx.clone(),
+                                auto_approve_all_sensitive: false
                             }),
                             &spec,
                             "tool_registry::run_command approval",
@@ -252,8 +251,7 @@ async fn approve_external_run_command_paths_if_needed(
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         cli_ctx.map(|c| CliApprovalInput {
-            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
-            tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
+            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
         }),
         &spec,
         "tool_registry::run_command external path approval",
@@ -467,8 +465,7 @@ pub async fn prefetch_http_fetch_parallel_approvals(
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
             cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
-                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
-                tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
+                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
             }),
             &spec,
             "tool_registry::http_fetch approval parallel prefetch",

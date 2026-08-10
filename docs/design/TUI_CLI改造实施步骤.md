@@ -5,7 +5,7 @@
 **现状简述（仓库当前代码）**
 
 - 交互式 CLI 入口在 **`src/runtime/cli/repl.rs`**，输入由 **`repl_reedline`**（reedline）驱动；配色与提示集中在 **`cli_repl_ui`**，底层已有 **`crossterm`**（根 **`Cargo.toml`**）。
-- 已有 **`src/runtime/tui/`**（**`crabmate tui`**）与 **`ratatouille`**（**`crossterm`** 后端）；当前以占位 UI + 终端恢复为主，对话闭环见阶段 C。配置里 **`tui_session.json` / `tui_load_session_on_start`** 等仍为后续数据化预留语义（见 **`docs/开发文档.md`** 对 **`workspace_session`** 的说明）。
+- 已有 **`src/runtime/tui/`**（**`crabmate tui`**）与 **`ratatouille`**（**`crossterm`** 后端）；当前以占位 UI + 终端恢复为主，对话闭环见阶段 C。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（进程内 TUI/REPL 会话 UI 配置键已移除，见 D2.2）。
 
 **原则**
 

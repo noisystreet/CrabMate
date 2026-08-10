@@ -57,31 +57,6 @@ pub struct ServeCmd {
     pub desktop_ready_json: bool,
 }
 
-/// 同进程 `chat` 运行时参数（**CLI 入口已移除**；类型暂留供 `runtime::cli::chat`，D2.2 删模块时一并去掉）。
-#[derive(Debug, Clone, Default)]
-pub struct ChatCliArgs {
-    /// `--query` 或 `--stdin` 读入的用户正文（`--user-prompt-file` 时在运行时读文件）
-    pub inline_user_text: Option<String>,
-    pub user_prompt_file: Option<String>,
-    pub system_prompt_file: Option<String>,
-    pub messages_json_file: Option<String>,
-    pub message_file: Option<String>,
-    pub output: Option<String>,
-    pub no_stream: bool,
-    pub yes_run_command: bool,
-    pub approve_commands: Option<String>,
-}
-
-impl ChatCliArgs {
-    /// 是否应走同进程 `chat`（入口移除后仅测试/死代码路径可能调用）。
-    pub fn wants_chat(&self) -> bool {
-        self.message_file.is_some()
-            || self.messages_json_file.is_some()
-            || self.user_prompt_file.is_some()
-            || self.inline_user_text.is_some()
-    }
-}
-
 /// 批量测评
 #[derive(Parser, Debug, Clone)]
 pub struct BenchCmd {

@@ -5,7 +5,7 @@ use crate::config::cli::{
     PluginInitCli, PluginListCli, PluginValidateCli, SaveSessionCli, SaveSessionFormat,
     SaveSessionProjection, SseReplayCli, ToolReplayCli,
 };
-use crate::runtime::cli::{ReplExportKind, cli_effective_work_dir};
+use crate::runtime::cli::{SessionExportKind, cli_effective_work_dir};
 use crate::runtime::cli_exit::{CliExitError, EXIT_TOOL_REPLAY_MISMATCH, EXIT_USAGE};
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -95,21 +95,21 @@ pub fn run_tool_replay_command(
 fn write_save_session_export(
     workspace: &std::path::Path,
     messages: &[crate::types::Message],
-    fmt: ReplExportKind,
+    fmt: SessionExportKind,
     projection: crate::runtime::chat_export::JsonExportProjection,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match fmt {
-        ReplExportKind::Json => {
+        SessionExportKind::Json => {
             let p = crate::runtime::workspace_session::export_json_with_projection(
                 workspace, messages, projection,
             )?;
             println!("{}", p.display());
         }
-        ReplExportKind::Markdown => {
+        SessionExportKind::Markdown => {
             let p = crate::runtime::workspace_session::export_markdown(workspace, messages)?;
             println!("{}", p.display());
         }
-        ReplExportKind::Both => {
+        SessionExportKind::Both => {
             let pj = crate::runtime::workspace_session::export_json_with_projection(
                 workspace, messages, projection,
             )?;
@@ -145,9 +145,9 @@ pub fn run_save_session_command(
     let parsed: crate::runtime::chat_export::ChatSessionFile = serde_json::from_str(&data)
         .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, format!("会话 JSON 无效: {e}")))?;
     let fmt = match args.format {
-        SaveSessionFormat::Json => ReplExportKind::Json,
-        SaveSessionFormat::Markdown => ReplExportKind::Markdown,
-        SaveSessionFormat::Both => ReplExportKind::Both,
+        SaveSessionFormat::Json => SessionExportKind::Json,
+        SaveSessionFormat::Markdown => SessionExportKind::Markdown,
+        SaveSessionFormat::Both => SessionExportKind::Both,
     };
     let projection = match args.projection {
         SaveSessionProjection::Raw => crate::runtime::chat_export::JsonExportProjection::Raw,

@@ -1,4 +1,4 @@
-//! Axum handler：浏览器 Web UI 调用的工作区、任务等 HTTP API（**非**终端 TUI；TUI 在 `runtime/tui`）。
+//! Axum handler：浏览器 Web UI / Client 调用的工作区、任务等 HTTP API。
 mod app_state;
 mod app_state_facets;
 mod async_chat_job;

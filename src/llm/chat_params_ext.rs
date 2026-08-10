@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crabmate_config::AgentConfig;
 use crabmate_llm::backend::ChatCompletionsBackend;
 use crabmate_llm::chat_params::{LlmRetryingTransportOpts, StreamChatParams};
-use crabmate_llm::stream_scratch::TuiLlmStreamScratchArc;
 use crabmate_llm::{fold_system_into_user_for_config, llm_vendor_adapter, vendor};
 use reqwest::Client;
 
@@ -22,7 +21,6 @@ pub struct CompleteChatRetryingParams<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
     pub plain_terminal_stream: bool,
-    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub model_override: Option<&'a str>,
     /// 单轮共享预算；设置时由 [`super::complete_chat_retrying`] 统一门禁与计数。
@@ -45,7 +43,6 @@ impl<'a> CompleteChatRetryingParams<'a> {
             no_stream,
             cancel,
             plain_terminal_stream,
-            tui_llm_stream_scratch,
         } = transport;
         Self {
             llm_backend,
@@ -57,7 +54,6 @@ impl<'a> CompleteChatRetryingParams<'a> {
             no_stream,
             cancel,
             plain_terminal_stream,
-            tui_llm_stream_scratch,
             request_chrome_trace,
             model_override,
             turn_budget: None,
@@ -103,7 +99,6 @@ impl<'a> CompleteChatRetryingParams<'a> {
                 &self.cfg.llm.api_base,
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
-            tui_llm_stream_scratch: self.tui_llm_stream_scratch.clone(),
         }
     }
 }

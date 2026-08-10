@@ -1,7 +1,7 @@
 //! 终端等待指示器（旋转菊）的统一入口。
 //!
 //! 仅在 **CLI plain 终端流**（[`try_start_for_cli_plain_stream`] 的 `cli_terminal_plain`）下启动；
-//! **TUI / Web**（`plain_terminal_stream = false`）不得写 stderr，以免叠到 ratatui 底栏。
+//! **Web**（`plain_terminal_stream = false`）不得写 stderr spinner，以免干扰服务端日志。
 //!
 //! 另须 **`CM_CLI_WAIT_SPINNER`** 为真、stderr 为 TTY、未设 **`NO_COLOR`**（与文档一致，默认关）。
 

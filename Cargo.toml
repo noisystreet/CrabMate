@@ -111,8 +111,6 @@ zip = { version = "8.6", default-features = false, features = ["deflate", "time"
 axum = { version = "0.8", default-features = false }
 clap_mangen = { version = "0.3", default-features = false }
 crossterm = { version = "0.29" }
-ratatui = { version = "0.30", default-features = false, features = ["crossterm_0_29", "layout-cache"] }
-reedline = { version = "0.49", default-features = false }
 tower = { version = "0.5" }
 tower-http = { version = "0.6" }
 
@@ -124,7 +122,7 @@ name = "crabmate"
 version = "0.2.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, Web UI, CLI"
+description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, HTTP serve, ops CLI"
 # 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
 default-run = "crabmate"
 
@@ -134,8 +132,9 @@ license-file = "README.md"
 extended-description = """\
 CrabMate is a Rust AI agent that uses OpenAI-compatible chat/completions to reach LLM backends \
 (e.g. DeepSeek, MiniMax, local Ollama). It supports function calling, workspace-oriented command \
-and file tools, a Web UI (Axum + Leptos), and a CLI (REPL, one-shot chat, and serve). Configuration \
-is TOML plus environment variables; see /usr/share/doc/crabmate/ after install."""
+and file tools, HTTP serve (Axum), and ops CLIs. Official Web UI / Desktop / crabmate-tui live in \
+the Client repo. Configuration is TOML plus environment variables; see /usr/share/doc/crabmate/ \
+after install."""
 depends = "libc6 (>= 2.39)"
 section = "utils"
 priority = "optional"
@@ -178,7 +177,7 @@ assets = [
 ]
 
 [features]
-default = ["web", "repl", "tui", "mcp"]
+default = ["web", "mcp"]
 ## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
 web = [
     "dep:axum",
@@ -186,10 +185,6 @@ web = [
     "dep:tokio-cron-scheduler",
     "dep:crabmate-web-host",
 ]
-## 交互式 REPL（**reedline**）。
-repl = ["dep:reedline", "dep:unicode-width"]
-## 全屏 TUI（**ratatui** / **crossterm**）；隐含 **repl**（共用行编辑与斜杠命令）。
-tui = ["repl", "dep:ratatui", "dep:crossterm"]
 ## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
 gen-man = ["dep:clap_mangen"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
@@ -269,11 +264,9 @@ axum = { workspace = true, optional = true, features = [
 ] }
 rusqlite = { workspace = true, optional = true }
 tokio-cron-scheduler = { workspace = true, optional = true }
-reedline = { workspace = true, optional = true }
 indicatif = { workspace = true }
-unicode-width = { workspace = true, optional = true }
-ratatui = { workspace = true, optional = true }
-crossterm = { workspace = true, optional = true }
+unicode-width = { workspace = true }
+crossterm = { workspace = true }
 clap_mangen = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]

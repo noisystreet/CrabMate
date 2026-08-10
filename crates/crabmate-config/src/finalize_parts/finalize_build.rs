@@ -51,9 +51,6 @@ fn finalize_section_llm_connection(mid: &FinalizeAfterRoles) -> types::LlmConnec
 fn finalize_section_session_ui(mid: &FinalizeAfterRoles) -> types::SessionUiConfig {
     types::SessionUiConfig {
         max_message_history: mid.max_message_history,
-        tui_load_session_on_start: mid.tui_load_session_on_start,
-        tui_session_max_messages: mid.tui_session_max_messages,
-        repl_initial_workspace_messages_enabled: mid.repl_initial_workspace_messages_enabled,
     }
 }
 

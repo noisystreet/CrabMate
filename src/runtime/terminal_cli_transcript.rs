@@ -1,5 +1,5 @@
-//! CLI 无 SSE 通道（`out: None`）时，将分阶段规划与工具结果写到 stdout，与 TUI 聊天区信息对齐。
-//! 前缀/次要行颜色与 [`crate::runtime::cli_repl_ui::CliReplStyle`] 的 **`/help`** 主题 RGB 同源（见 **`CLI_REPL_HELP_*_FG`**），并同样尊重 **`NO_COLOR`**、非 TTY 不着色。
+//! CLI 无 SSE 通道（`out: None`）时，将分阶段规划与工具结果写到 stdout（如 `web_chat_json` 终端回显）。
+//! 前缀/次要行颜色见 [`crate::runtime::terminal_ansi`]，并尊重 **`NO_COLOR`**、非 TTY 不着色。
 //!
 //! 实现拆至 [`terminal_cli_transcript_impl`]，避免 `lizard` 将后续函数误并入首个函数（扭曲 `fn-nloc`）。
 
@@ -8,7 +8,7 @@ mod terminal_cli_transcript_impl;
 
 use crabmate_sse_protocol::StreamEndReason;
 
-use crate::runtime::cli_repl_ui::{CLI_REPL_HELP_TITLE_FG, cli_repl_stdout_use_color};
+use crate::runtime::terminal_ansi::{TERMINAL_HELP_TITLE_FG, terminal_stdout_use_color};
 use crossterm::{
     queue,
     style::{Attribute, ResetColor, SetAttribute, SetForegroundColor},
@@ -30,12 +30,12 @@ pub(crate) fn print_stream_end_reason_terminal(reason: StreamEndReason) -> io::R
         return Ok(());
     }
     let mut w = io::stdout();
-    let color = cli_repl_stdout_use_color();
+    let color = terminal_stdout_use_color();
     if color {
         queue!(
             w,
             SetAttribute(Attribute::Bold),
-            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
+            SetForegroundColor(TERMINAL_HELP_TITLE_FG)
         )?;
     }
     writeln!(

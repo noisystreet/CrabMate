@@ -1,5 +1,5 @@
 //! `crabmate doctor` / `models` / `probe`：面向终端的一页诊断与网关探测（输出脱敏，不打印密钥）。
-//! REPL 内建 **`/doctor`**、**`/probe`**、**`/models`** 分别复用 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`]（与上述子命令对齐）；**`/models choose`** 见 [`run_models_choose_repl`]。
+//! 子命令 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`] 供 CLI 入口调用（进程内 REPL slash 已移除）。
 
 use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use reqwest::Client;
 
 use crate::AgentConfig;
-use crate::config::{ExposeSecret, LlmHttpAuthMode, SharedAgentConfig};
+use crate::config::{ExposeSecret, LlmHttpAuthMode};
 use crate::llm::fetch_models_report;
 use crate::tools::{canonical_workspace_root, capture_trimmed};
 
@@ -300,7 +300,7 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
          **models** / **probe**：`llm_http_auth_mode=bearer` 时需有效 **API_KEY**；`none` 时可不设。部分网关不提供 OpenAI 兼容 GET /models。"
     );
     println!();
-    println!("【终端与工具审批（repl / chat）】");
+    println!("【工具审批（Web / 运维路径）】");
     let stdin_tty = io::stdin().is_terminal();
     let stderr_tty = io::stderr().is_terminal();
     println!(
@@ -310,14 +310,14 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
     );
     if stdin_tty && stderr_tty {
         println!(
-            "  非白名单 **run_command** 与未匹配前缀的 **http_fetch** / **http_request** 可使用 **dialoguer** 箭头菜单（stderr）。"
+            "  非白名单 **run_command** 与未匹配前缀的 **http_fetch** / **http_request** 在**本机终端工具路径**可使用 **dialoguer** 箭头菜单（stderr）；官方对话请用 Client **crabmate-tui** / Web（SSE 审批）。"
         );
     } else {
         println!(
-            "  **非交互模式**：上述工具将打印说明到 stderr 并从 **stdin** 读一行（y / a / n）；管道或 CI 中 stdin 非 TTY 时易阻塞或默认拒绝。"
+            "  **非交互模式**：本机终端工具路径将打印说明到 stderr 并从 **stdin** 读一行（y / a / n）；管道或 CI 中 stdin 非 TTY 时易阻塞或默认拒绝。"
         );
         println!(
-            "  建议：脚本使用 **chat --yes**（极危险，仅可信环境）或 **--approve-commands**（仅扩展 run_command 命令名）；HTTP 工具须匹配 **http_fetch_allowed_prefixes** 或改用 Web 审批。"
+            "  建议：对话走 **Web / Client crabmate-tui** 的人工审批；或扩大 **allowed_commands** / 匹配 **http_fetch_allowed_prefixes**（仅可信环境）。同进程 **chat --yes** 已移除（D2.2）。"
         );
     }
     let n_prefix = cfg.http_fetch.http_fetch_allowed_prefixes.len();
@@ -426,81 +426,6 @@ pub async fn run_models_cli(
     Ok(())
 }
 
-/// 将用户输入的 `requested` 解析为 `ids` 中的**规范 id**（与列表一致）：先精确匹配，再整串不区分大小写唯一匹配，再唯一前缀（不区分大小写）。
-pub(crate) fn resolve_model_id_from_list(
-    ids: &[String],
-    requested: &str,
-) -> Result<String, String> {
-    let q = requested.trim();
-    if q.is_empty() {
-        return Err("模型 id 为空。".to_string());
-    }
-    if let Some(found) = ids.iter().find(|id| id.as_str() == q) {
-        return Ok(found.clone());
-    }
-    let mut ci: Vec<&String> = ids.iter().filter(|id| id.eq_ignore_ascii_case(q)).collect();
-    ci.sort_unstable();
-    ci.dedup();
-    match ci.len() {
-        0 => {}
-        1 => return Ok(ci[0].clone()),
-        _ => {
-            return Err(format!(
-                "「{q}」匹配到多个模型 id（仅大小写不同），请使用列表中的完整 id。"
-            ));
-        }
-    }
-    let q_l = q.to_ascii_lowercase();
-    let mut pref: Vec<&String> = ids
-        .iter()
-        .filter(|id| id.to_ascii_lowercase().starts_with(&q_l))
-        .collect();
-    pref.sort_unstable();
-    pref.dedup();
-    match pref.len() {
-        0 => Err(format!(
-            "「{q}」不在当前 GET …/models 返回的列表中；请先执行 /models 查看 id。"
-        )),
-        1 => Ok(pref[0].clone()),
-        n => Err(format!(
-            "「{q}」前缀不唯一（匹配 {n} 个），请加长前缀或写完整 id。"
-        )),
-    }
-}
-
-/// REPL **`/models choose`**：拉取列表、校验 id 后写入 [`SharedAgentConfig`] 内存中的 **`model`**（不落盘）。
-pub async fn run_models_choose_repl(
-    client: &Client,
-    cfg_holder: &SharedAgentConfig,
-    api_key: &str,
-    requested: &str,
-) -> Result<String, String> {
-    let (api_base, auth_mode) = {
-        let g = cfg_holder.read().await;
-        (g.llm.api_base.clone(), g.llm.llm_http_auth_mode)
-    };
-    let r = fetch_models_report(client, api_base.trim(), api_key.trim(), auth_mode)
-        .await
-        .map_err(|e| e.to_string())?;
-    if !(200..300).contains(&r.http_status) {
-        return Err(format!(
-            "无法拉取模型列表（HTTP {}）；请检查 api_base 与 API_KEY。",
-            r.http_status
-        ));
-    }
-    if r.model_ids.is_empty() {
-        return Err("网关未返回可用模型 id，无法从列表选择。".to_string());
-    }
-    let resolved = resolve_model_id_from_list(&r.model_ids, requested)?;
-    let mut w = cfg_holder.write().await;
-    w.llm.model = resolved.clone();
-    let model = w.llm.model.clone();
-    let api_base = w.llm.api_base.clone();
-    w.llm_vendor_flags.llm_reasoning_split =
-        crabmate_types::llm_config::default_llm_reasoning_split_for_gateway(&model, &api_base);
-    Ok(resolved)
-}
-
 /// `crabmate probe`：仅报告连通性与 HTTP 状态。
 pub async fn run_probe_cli(
     client: &Client,
@@ -538,49 +463,4 @@ pub async fn run_probe_cli(
         println!("{}", n);
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod resolve_model_id_tests {
-    use super::resolve_model_id_from_list;
-
-    fn ids() -> Vec<String> {
-        vec![
-            "gpt-4o".to_string(),
-            "gpt-4o-mini".to_string(),
-            "Other".to_string(),
-        ]
-    }
-
-    fn ids_ambiguous_prefix() -> Vec<String> {
-        vec!["alpha-one".to_string(), "alpha-two".to_string()]
-    }
-
-    #[test]
-    fn exact_match() {
-        assert_eq!(
-            resolve_model_id_from_list(&ids(), "gpt-4o-mini").unwrap(),
-            "gpt-4o-mini"
-        );
-    }
-
-    #[test]
-    fn unique_prefix() {
-        assert_eq!(
-            resolve_model_id_from_list(&ids(), "gpt-4o-m").unwrap(),
-            "gpt-4o-mini"
-        );
-    }
-
-    #[test]
-    fn ambiguous_prefix() {
-        let e = resolve_model_id_from_list(&ids_ambiguous_prefix(), "alpha").unwrap_err();
-        assert!(e.contains("不唯一"), "{e}");
-    }
-
-    #[test]
-    fn not_in_list() {
-        let e = resolve_model_id_from_list(&ids(), "zz").unwrap_err();
-        assert!(e.contains("不在"), "{e}");
-    }
 }

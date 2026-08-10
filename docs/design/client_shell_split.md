@@ -1,13 +1,13 @@
 # ADR：官方 Client 与本仓「只维护 Server」（路径 A）
 
-> **状态**：**已采纳（2026-08-08）**；**2026-08-10 修订** — 官方终端为 Client 远程 `crabmate-tui`；本仓同进程 `chat|repl|tui` **命令入口已移除（D2.1）**；实现硬删见 D2.2。  
+> **状态**：**已采纳（2026-08-08）**；**2026-08-11 修订** — 官方终端为 Client 远程 `crabmate-tui`；本仓同进程 `chat|repl|tui` **命令入口已移除（D2.1）**；**实现硬删已完成（D2.2）**。  
 > **执行清单**：[`client_shell_split_todo.md`](./client_shell_split_todo.md)  
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **运行时 UI/API 拆分**：[`client_ui_runtime_split.md`](./client_ui_runtime_split.md)（`serve` 默认纯 API）  
 > **远程 CLI/TUI（Client）**：同级 [`../crabmate-client/docs/design/remote_cli_tui.md`](../../../crabmate-client/docs/design/remote_cli_tui.md)（GitHub：[remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`crate_dep_policy.md`](./crate_dep_policy.md)、[`web_host_extract.md`](./web_host_extract.md)、[`turn_runtime_placement.md`](./turn_runtime_placement.md)、[`web_host_p5_placement.md`](./web_host_p5_placement.md)；契约见 **`docs/SSE协议.md`**、**`docs/命令行与路由.md`**、**`docs/配置说明.md`**。  
 > **非目标**：拆 Agent 微服务；另开第二套会话 API；把同进程 `run_agent_turn` 剪贴进 Client；多租户账号体系；以本 ADR 替代 turn-runtime / queue 搬家决策。  
-> **本轮已做 / 不做**：软弃用（help / 启动警告 / 文档）**已开始**；**本轮不**一次删光 `runtime/cli` 对话栈与 `runtime/tui`（硬删另 PR，避免与无关改动捆死）。
+> **本轮**：D2.2 已硬删 `runtime/tui`、同进程对话 REPL/`chat`、Cargo feature `repl`/`tui`（及 **reedline** / **ratatui**）；默认 features 为 **`web` + `mcp`**。
 
 ---
 
@@ -15,7 +15,7 @@
 
 CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区）。桌面 / 移动壳已**不** spawn sidecar；业务 UI 与官方终端已在 Client，经 API 基址 + CORS / HTTP+SSE 连接 `serve`。模型密钥由 **Client 本机**存放，经请求体 **`client_llm.api_key`** 注入（**不**以本仓进程 `/api-key` 为官方路径）。
 
-同进程 **`repl` / `tui` / `chat`** 仍可在本仓二进制内直调 `run_agent_turn`，但官方产品已不再使用该路径。
+同进程 **`repl` / `tui` / `chat`** 实现与 clap 入口均已硬删（D2.2）；官方终端仅 Client **`crabmate-tui`**（HTTP + SSE）。
 
 目标句：**本仓只维护 Server**；官方 Client（Desktop Linux、Android、浏览器直连、**远程终端**）可独立发版，只认稳定 HTTP/SSE。
 
@@ -30,7 +30,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 | 业务 UI | 由 Client / 可选独立 UI 仓构建与发版；经可配置 **API 基址** 连接兼容的 `serve` |
 | 路径 B（UI 永远随 server 托管） | **不作终点**；不得用「UI 随 server」宣称「只维护 server」已完成（勿与下文「远程终端路径 B」混淆） |
 | 本仓终点 | `serve` + 契约 crate + 运维子命令（`doctor` / `web-bearer` / `config` 等）；**官方终端不在本仓** |
-| 同进程 `chat` / `repl` / `tui` | **官方停用**：help 与启动 stderr 标弃用并指向 **`crabmate-tui`**；代码暂留兼容，**计划硬删**（另 PR） |
+| 同进程 `chat` / `repl` / `tui` | **已硬删（D2.2）**；官方终端为 Client **`crabmate-tui`** |
 | 拆壳仓门槛 | **须先**完成契约可发布 + 前端 API 基址/CORS（见 todo Phase 1–2）；禁止跳过 Phase 2 |
 
 ### 2.2 官方 Client 矩阵
@@ -44,7 +44,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 
 **不在官方矩阵**（可存在但不承诺一等公民）：macOS/Windows 桌面、iOS、IDE 扩展、IM 桥等——另开产品切片，仍只认同一契约。
 
-**本仓同进程 `chat` / `repl` / `tui`**：**已官方停用**（软弃用）；**不是**上表入口。默认无子命令仍可能落入历史 `repl` 行为，但须打印弃用警告。
+**本仓同进程 `chat` / `repl` / `tui`**：**已硬删**（D2.1 入口 + D2.2 实现）；**不是**上表入口。无子命令时 clap 报错并提示使用 `serve` / 运维命令或 Client **`crabmate-tui`**。
 
 ### 2.3 远程终端（Client 路径 B，已拍板）
 
@@ -55,7 +55,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 | 二进制 | **`crabmate-tui`**（避免与本仓 `crabmate` / Desktop `crabmate-desktop` 冲突） |
 | 契约 | 钉 `crabmate-sse-protocol` / `crabmate-api-contract` 等（同 `frontend`） |
 | 模型密钥 | **Client 本机**钥匙串 / Keystore → 请求体 **`client_llm.api_key`**（同 WASM UI） |
-| 同进程 Agent CLI | **不**迁入 Client；本仓仅软弃用 → 硬删 |
+| 同进程 Agent CLI | **不**迁入 Client；本仓已软弃用 → **硬删（D2.2）** |
 
 细节、分期（P0–P5）与仓内布局以 Client **`remote_cli_tui.md`** 为准；本 ADR 只钉**产品边界**。
 
@@ -79,7 +79,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 | **D0** | ADR / 兼容矩阵写明官方停用 | ✅ |
 | **D1** | clap help、启动 stderr、`命令行与路由` / README 指向 `crabmate-tui` | ✅ |
 | **D2.1** | **移除** clap / 调度入口（`chat|repl|tui`）；须显式子命令；legacy 不再插 repl/chat | ✅ |
-| **D2.2** | 硬删 `runtime/tui` 与同进程对话 REPL/`chat` 实现及 `/api-key` | 计划 |
+| **D2.2** | 硬删 `runtime/tui` 与同进程对话 REPL/`chat` 实现、Cargo feature `repl`/`tui`、`TuiLlmStreamScratch` / `TuiApprovalRequest` 链 | ✅ |
 | **D3** | 收紧进程 `API_KEY`（可选）；man / CI / 冒烟清单 | 进行中（模型钥匙串槽已退役） |
 
 ---
@@ -98,7 +98,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 |------|------|----------|
 | **远程 `crabmate-tui`（采纳）** | Client 仓 HTTP/SSE 客户端 | **唯一**官方终端入口 |
 | 同进程 `repl`/`tui` 迁入 Client | 剪贴 `run_agent_turn` / 工具栈 | **拒绝** |
-| 软弃用 → 硬删同进程入口 | help/警告后删除代码 | **采纳**（D1→D2） |
+| 软弃用 → 硬删同进程入口 | help/警告后删除代码 | **采纳并完成**（D1→D2.2） |
 
 ---
 

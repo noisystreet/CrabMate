@@ -12,13 +12,10 @@ use super::{
     WebSearchProvider,
 };
 
-/// REPL/TUI 与会话列表相关。
+/// 会话消息历史相关（上下文裁剪等）；历史文件名 `.crabmate/tui_session.json` 见 `workspace_session`。
 #[derive(Debug, Clone)]
 pub struct SessionUiConfig {
     pub max_message_history: usize,
-    pub tui_load_session_on_start: bool,
-    pub tui_session_max_messages: usize,
-    pub repl_initial_workspace_messages_enabled: bool,
 }
 
 /// `run_command` 与工作目录。

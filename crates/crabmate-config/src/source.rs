@@ -99,10 +99,6 @@ pub(super) struct AgentSection {
     /// `bearer`（默认）| `none`（不向 chat/models 发 Authorization；可不设 API_KEY）
     pub(super) llm_http_auth_mode: Option<String>,
     pub(super) max_message_history: Option<u64>,
-    pub(super) tui_load_session_on_start: Option<bool>,
-    pub(super) tui_session_max_messages: Option<u64>,
-    /// 为 `true` 时 CLI REPL 在后台构建 [`crate::runtime::workspace_session::initial_workspace_messages`]（画像 / 依赖摘要 / 可选磁盘会话）；默认 `false` 仅首条 `system`。
-    pub(super) repl_initial_workspace_messages_enabled: Option<bool>,
     pub(super) command_timeout_secs: Option<u64>,
     pub(super) command_max_output_len: Option<u64>,
     pub(super) allowed_commands: Option<Vec<String>>,
@@ -400,6 +396,9 @@ typo_unknown_key = 1
             "intent_non_hier_execute_high_threshold = 0.45",
             "intent_l0_routing_boost_enabled = true",
             "intent_at_turn_start_enabled = false",
+            "tui_load_session_on_start = false",
+            "tui_session_max_messages = 400",
+            "repl_initial_workspace_messages_enabled = false",
         ] {
             let toml = format!(
                 r#"

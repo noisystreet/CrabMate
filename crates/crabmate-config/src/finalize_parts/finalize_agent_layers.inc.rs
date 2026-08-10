@@ -99,9 +99,6 @@ fn allowed_commands_arc_from_builder(b: &ConfigBuilder) -> Arc<[String]> {
 
 struct FinalizeMidLayerScalars {
     max_message_history: usize,
-    tui_load_session_on_start: bool,
-    tui_session_max_messages: usize,
-    repl_initial_workspace_messages_enabled: bool,
     command_timeout_secs: u64,
     command_max_output_len: usize,
     allow_external_path_with_approval: bool,
@@ -122,16 +119,6 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
             .max_message_history
             .unwrap_or(32)
             .clamp(1, 1024) as usize,
-        tui_load_session_on_start: b.session_ui.tui_load_session_on_start.unwrap_or(false),
-        tui_session_max_messages: b
-            .session_ui
-            .tui_session_max_messages
-            .unwrap_or(400)
-            .clamp(2, 50_000) as usize,
-        repl_initial_workspace_messages_enabled: b
-            .session_ui
-            .repl_initial_workspace_messages_enabled
-            .unwrap_or(false),
         command_timeout_secs: b.command_exec.command_timeout_secs.unwrap_or(30).max(1),
         command_max_output_len: b
             .command_exec

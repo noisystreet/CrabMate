@@ -50,8 +50,8 @@ context_summary_user_file = "config/prompts/context_summary_user.md"
 # agent_tool_stats_max_chars = 800
 # agent_tool_stats_warn_below_success_ratio = 0.65
 
-# 4. CLI 会话（tui_session.json 等）
-# 默认见 **`config/session.toml`**
+# 4. 会话文件路径（历史名 `.crabmate/tui_session.json`，见 `workspace_session`）
+# 嵌入片段 **`config/session.toml`**（当前无额外 `[agent]` 键；`max_message_history` 见上文）
 
 # 5. Web 对话队列（并发上限；单轮只读工具并行与 read_file 缓存见 **`config/tools.toml`**）
 # GET /health 可选：对当前 api_base 发 GET …/models（列表接口，无 chat 计费；默认关）。CM_HEALTH_LLM_MODELS_PROBE
