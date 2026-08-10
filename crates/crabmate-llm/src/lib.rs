@@ -19,7 +19,6 @@ pub mod requests;
 mod retry;
 pub mod retry_hooks;
 pub mod stream_host;
-pub mod stream_scratch;
 pub mod trace_sink;
 pub mod vendor;
 pub mod vendor_messages;
@@ -50,7 +49,6 @@ pub use requests::{
 pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
 pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
 pub use stream_host::{CliWaitSpinnerGuardHost, StreamChatHost, TerminalPlainFragmentCtx};
-pub use stream_scratch::{TuiLlmStreamScratch, TuiLlmStreamScratchArc};
 pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceUsage};
 pub use vendor::{
     LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,

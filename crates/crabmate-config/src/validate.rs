@@ -62,12 +62,6 @@ fn u64_range_rows_a1() -> &'static [U64RangeRow] {
             1024,
         ),
         (
-            "tui_session_max_messages",
-            |b| b.session_ui.tui_session_max_messages,
-            2,
-            50_000,
-        ),
-        (
             "command_timeout_secs",
             |b| b.command_exec.command_timeout_secs,
             1,

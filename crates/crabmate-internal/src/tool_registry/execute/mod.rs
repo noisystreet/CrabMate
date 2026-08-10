@@ -166,7 +166,6 @@ async fn approve_external_read_dir_if_needed(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         cli_ctx.map(|c| CliApprovalInput {
             auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
-            tui_blocking_approval_tx: c.tui_blocking_approval_tx.clone(),
         }),
         &spec,
         "tool_registry::read_dir external path approval",

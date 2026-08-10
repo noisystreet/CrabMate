@@ -281,93 +281,15 @@ pub fn count(conn: &Connection) -> Result<usize, rusqlite::Error> {
     Ok(n as usize)
 }
 
-/// 与 Web `normalize_client_conversation_id` 字符集一致，供 TUI/CLI 校验。
+/// 与 Web `normalize_client_conversation_id` 字符集一致。
 pub const CONVERSATION_ID_MAX_LEN: usize = 128;
 
-pub fn validate_conversation_id_chars(raw: &str) -> Result<(), String> {
-    let id = raw.trim();
-    if id.is_empty() {
-        return Err("conversation_id 不能为空".to_string());
-    }
-    if id.len() > CONVERSATION_ID_MAX_LEN {
-        return Err(format!(
-            "conversation_id 过长（最多 {} 个字符）",
-            CONVERSATION_ID_MAX_LEN
-        ));
-    }
-    if !id
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':'))
-    {
-        return Err("conversation_id 仅允许字母、数字、- _ . :".to_string());
-    }
-    Ok(())
-}
-
-/// 按最近更新时间倒序返回会话 id（与 Web 共用 SQLite 时便于 TUI 列出）。
-pub fn list_conversation_ids_recent_first(
-    conn: &Connection,
-    limit: usize,
-) -> Result<Vec<String>, rusqlite::Error> {
-    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id FROM {TABLE} ORDER BY updated_at_unix DESC LIMIT ?1"
-    ))?;
-    let rows = stmt.query_map(params![lim], |r| r.get::<_, String>(0))?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
-}
-
-/// 最近会话摘要：id + 与 Tauri 侧栏同源的展示标题（首条用户消息推导）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConversationListEntry {
-    pub id: String,
-    pub title: String,
-}
-
-/// 按最近更新时间倒序返回会话 id 与标题。
-pub fn list_conversations_recent_first(
-    conn: &Connection,
-    limit: usize,
-) -> Result<Vec<ConversationListEntry>, rusqlite::Error> {
-    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
-    let mut stmt = conn.prepare(&format!(
-        "SELECT id, messages_json FROM {TABLE} ORDER BY updated_at_unix DESC LIMIT ?1"
-    ))?;
-    let rows = stmt.query_map(params![lim], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (id, json) = row?;
-        let title = match messages_from_json(&json) {
-            Ok(msgs) => crate::session_title::conversation_title_from_messages(&msgs),
-            Err(e) => {
-                log::warn!(
-                    target: "crabmate",
-                    "list_conversations: 解析 messages_json 失败 id={} error={}",
-                    id,
-                    e
-                );
-                crate::session_title::DEFAULT_SESSION_TITLE_ZH.to_string()
-            }
-        };
-        out.push(ConversationListEntry { id, title });
-    }
-    Ok(out)
-}
-
-fn update_messages_json_if_revision(
+fn load_messages_at_revision(
     conn: &Connection,
     id: &str,
     expected_revision: u64,
     corrupt_log: &'static str,
-    serialize_fail_log: &'static str,
-    mut mutate: impl FnMut(&mut Vec<Message>) -> bool,
-) -> Result<SaveConversationOutcome, rusqlite::Error> {
+) -> Result<Option<Vec<Message>>, rusqlite::Error> {
     let row: Option<(String, i64)> = conn
         .query_row(
             &format!("SELECT messages_json, revision FROM {TABLE} WHERE id = ?1"),
@@ -376,14 +298,14 @@ fn update_messages_json_if_revision(
         )
         .optional()?;
     let Some((json, revision)) = row else {
-        return Ok(SaveConversationOutcome::Conflict);
+        return Ok(None);
     };
     let rev = u64::try_from(revision).unwrap_or(0);
     if rev != expected_revision {
-        return Ok(SaveConversationOutcome::Conflict);
+        return Ok(None);
     }
-    let mut messages = match messages_from_json(&json) {
-        Ok(m) => m,
+    match messages_from_json(&json) {
+        Ok(m) => Ok(Some(m)),
         Err(e) => {
             log::warn!(
                 target: "crabmate",
@@ -392,14 +314,19 @@ fn update_messages_json_if_revision(
                 id,
                 e
             );
-            return Ok(SaveConversationOutcome::Conflict);
+            Ok(None)
         }
-    };
-    if !mutate(&mut messages) {
-        return Ok(SaveConversationOutcome::Saved);
     }
-    let now = now_unix();
-    let new_json = match messages_to_json(&messages) {
+}
+
+fn persist_messages_bump_revision(
+    conn: &Connection,
+    id: &str,
+    expected_revision: u64,
+    messages: &[Message],
+    serialize_fail_log: &'static str,
+) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    let new_json = match messages_to_json(messages) {
         Ok(j) => j,
         Err(e) => {
             log::error!(
@@ -412,6 +339,7 @@ fn update_messages_json_if_revision(
             return Ok(SaveConversationOutcome::Conflict);
         }
     };
+    let now = now_unix();
     let n = conn.execute(
         &format!(
             "UPDATE {TABLE} SET messages_json = ?1, revision = revision + 1, updated_at_unix = ?2 WHERE id = ?3 AND revision = ?4"
@@ -427,6 +355,24 @@ fn update_messages_json_if_revision(
         CONVERSATION_STORE_MAX_ENTRIES,
     )?;
     Ok(SaveConversationOutcome::Saved)
+}
+
+fn update_messages_json_if_revision(
+    conn: &Connection,
+    id: &str,
+    expected_revision: u64,
+    corrupt_log: &'static str,
+    serialize_fail_log: &'static str,
+    mut mutate: impl FnMut(&mut Vec<Message>) -> bool,
+) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    let Some(mut messages) = load_messages_at_revision(conn, id, expected_revision, corrupt_log)?
+    else {
+        return Ok(SaveConversationOutcome::Conflict);
+    };
+    if !mutate(&mut messages) {
+        return Ok(SaveConversationOutcome::Saved);
+    }
+    persist_messages_bump_revision(conn, id, expected_revision, &messages, serialize_fail_log)
 }
 
 /// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
@@ -573,60 +519,5 @@ mod tests {
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded3.3, "");
-    }
-
-    #[test]
-    fn list_conversations_recent_first_includes_title_from_first_user() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let msgs = vec![
-            Message::system_only("s".to_string()),
-            Message::user_only("分析项目结构".to_string()),
-        ];
-        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap();
-        let entries = list_conversations_recent_first(&conn, 10).unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "c1");
-        assert_eq!(entries[0].title, "分析项目结构");
-    }
-
-    #[test]
-    fn list_conversations_title_skips_injected_user_messages() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let mut mem = Message::user_only(
-            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\nx"
-                .to_string(),
-        );
-        mem.name = Some(crate::types::CRABMATE_LONG_TERM_MEMORY_NAME.to_string());
-        let msgs = vec![
-            Message::system_only("s".to_string()),
-            mem,
-            Message::user_only("真正的问题".to_string()),
-        ];
-        save_if_revision(&conn, "c2", msgs, None, None, None).unwrap();
-        let entries = list_conversations_recent_first(&conn, 10).unwrap();
-        assert_eq!(entries[0].title, "真正的问题");
-    }
-
-    #[test]
-    fn list_conversation_ids_recent_first_orders_by_updated_desc() {
-        let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn).unwrap();
-        let m = vec![Message::system_only("s".to_string())];
-        save_if_revision(&conn, "older", m.clone(), None, None, None).unwrap();
-        save_if_revision(&conn, "newer", m.clone(), None, None, None).unwrap();
-        conn.execute(
-            &format!(
-                "UPDATE {} SET updated_at_unix = updated_at_unix - 999 WHERE id = 'older'",
-                super::TABLE
-            ),
-            [],
-        )
-        .unwrap();
-        let ids = list_conversation_ids_recent_first(&conn, 10).unwrap();
-        assert_eq!(ids.as_slice(), &["newer".to_string(), "older".to_string()]);
-        let lim = list_conversation_ids_recent_first(&conn, 1).unwrap();
-        assert_eq!(lim.as_slice(), &["newer".to_string()]);
     }
 }

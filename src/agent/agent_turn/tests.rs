@@ -173,7 +173,6 @@ mod per_reflect_tests {
                     terminal: crate::agent::agent_turn::TurnTerminalIo {
                         render_to_terminal: false,
                         plain_terminal_stream: false,
-                        tui_llm_stream_scratch: None,
                     },
                 },
                 attach: RunLoopAttach {

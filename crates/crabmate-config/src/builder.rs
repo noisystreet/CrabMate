@@ -157,15 +157,6 @@ impl ConfigBuilder {
     fn apply_section_merge_numeric_mid(&mut self, agent: &AgentSection) {
         let su = &mut self.session_ui;
         su.max_message_history = agent.max_message_history.or(su.max_message_history);
-        su.tui_load_session_on_start = agent
-            .tui_load_session_on_start
-            .or(su.tui_load_session_on_start);
-        su.tui_session_max_messages = agent
-            .tui_session_max_messages
-            .or(su.tui_session_max_messages);
-        su.repl_initial_workspace_messages_enabled = agent
-            .repl_initial_workspace_messages_enabled
-            .or(su.repl_initial_workspace_messages_enabled);
         let ce = &mut self.command_exec;
         ce.command_timeout_secs = agent.command_timeout_secs.or(ce.command_timeout_secs);
         ce.command_max_output_len = agent.command_max_output_len.or(ce.command_max_output_len);

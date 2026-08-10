@@ -145,7 +145,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 ### 开发与质检（维护者）
 
-- **Cargo features / 裁剪二进制**：默认 **`web` + `repl` + `tui`**（**`mcp`**、**`fastembed`**、**`project_metrics`**、`docker_sandbox` / `gen-man` 按需开启）。MCP：`cargo build --features mcp`；语义检索：`cargo build --features fastembed`；tokei：`cargo build --features project_metrics`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
+- **Cargo features / 裁剪二进制**：默认 **`web` + `mcp`**（**`fastembed`**、**`project_metrics`**、`docker_sandbox` / `gen-man` 按需开启）。同进程 **`repl`/`tui` feature 已移除（D2.2）**，官方终端用 Client **`crabmate-tui`**。语义检索：`cargo build --features fastembed`；tokei：`cargo build --features project_metrics`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
 - **fmt / clippy / test、pre-commit、SSE、E2E**：见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。CI 另跑 **`make package`**（server-only tar.gz + `.deb` 冒烟）。
 
 ## 文档索引
@@ -199,7 +199,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
 | **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
 
-其它 **`CM_*`**（含 **`CM_TUI_CONVERSATION_ID`**、skills、分阶段规划等）见 [docs/配置说明.md](docs/配置说明.md)。
+其它 **`CM_*`**（skills、分阶段规划等）见 [docs/配置说明.md](docs/配置说明.md)。
 
 ## 部署与安全
 

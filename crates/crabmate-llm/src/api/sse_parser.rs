@@ -10,35 +10,10 @@ use crabmate_types::{StreamChoice, StreamDelta};
 
 use crate::call_error::LlmCallError;
 use crate::stream_host::{StreamChatHost, TerminalPlainFragmentCtx};
-use crate::stream_scratch::TuiLlmStreamScratchArc;
 
 use super::sse_turn_segment_emit::{
     IngestSseToolCallsFrame, emit_turn_segment_end_if_open, ingest_sse_tool_calls_from_delta,
 };
-
-#[inline]
-fn tui_scratch_push_reasoning(scratch: Option<&TuiLlmStreamScratchArc>, fragment: &str) {
-    if fragment.is_empty() {
-        return;
-    }
-    if let Some(a) = scratch
-        && let Ok(mut g) = a.lock()
-    {
-        g.reasoning.push_str(fragment);
-    }
-}
-
-#[inline]
-fn tui_scratch_push_content(scratch: Option<&TuiLlmStreamScratchArc>, fragment: &str) {
-    if fragment.is_empty() {
-        return;
-    }
-    if let Some(a) = scratch
-        && let Ok(mut g) = a.lock()
-    {
-        g.content.push_str(fragment);
-    }
-}
 
 #[inline]
 async fn emit_thinking_trace_if(
@@ -101,7 +76,6 @@ struct AccumulateReasoningStreamDeltaCtx<'a> {
     cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
-    tui_llm_stream_scratch: Option<&'a TuiLlmStreamScratchArc>,
 }
 
 async fn accumulate_reasoning_stream_delta(
@@ -112,7 +86,6 @@ async fn accumulate_reasoning_stream_delta(
         return Ok(());
     }
     ctx.reasoning_acc.push_str(fragment);
-    tui_scratch_push_reasoning(ctx.tui_llm_stream_scratch, fragment);
     if ctx.cli_terminal_plain {
         ctx.host.cli_terminal_write_plain_fragment(
             fragment,
@@ -156,7 +129,6 @@ struct MinimaxReasoningDetailsCtx<'a> {
     cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
-    tui_llm_stream_scratch: Option<&'a TuiLlmStreamScratchArc>,
 }
 
 async fn accumulate_minimax_reasoning_details_deltas(
@@ -173,7 +145,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
         cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
-        tui_llm_stream_scratch,
     } = ctx;
     while snaps.len() < details.len() {
         snaps.push(String::new());
@@ -202,7 +173,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
                 cli_plain_reasoning_style_active,
                 coop_cancel,
                 thinking_trace_enabled,
-                tui_llm_stream_scratch,
             },
         )
         .await?;
@@ -250,7 +220,6 @@ pub(super) struct IngestSseState<'a> {
     pub(super) minimax_reasoning_snaps: &'a mut Vec<String>,
     pub(super) coop_cancel: Option<&'a AtomicBool>,
     pub(super) thinking_trace_enabled: bool,
-    pub(super) tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
     /// SSE 末尾帧提取的 usage。
     pub(super) usage: &'a mut Option<crabmate_types::Usage>,
 }
@@ -305,7 +274,6 @@ struct IngestSseReasoningFrame<'a> {
     cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
-    tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 struct IngestSseContentFrame<'a> {
@@ -319,7 +287,6 @@ struct IngestSseContentFrame<'a> {
     cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
-    tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 #[inline]
@@ -343,7 +310,6 @@ async fn ingest_sse_reasoning_from_delta(
         cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
-        tui_llm_stream_scratch,
     } = frame;
     let has_reasoning_details = delta
         .reasoning_details
@@ -366,7 +332,6 @@ async fn ingest_sse_reasoning_from_delta(
                     cli_plain_reasoning_style_active,
                     coop_cancel,
                     thinking_trace_enabled,
-                    tui_llm_stream_scratch: tui_llm_stream_scratch.as_ref(),
                 },
             )
             .await?;
@@ -387,7 +352,6 @@ async fn ingest_sse_reasoning_from_delta(
                 cli_plain_reasoning_style_active,
                 coop_cancel,
                 thinking_trace_enabled,
-                tui_llm_stream_scratch: tui_llm_stream_scratch.as_ref(),
             },
         )
         .await?;
@@ -407,7 +371,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
-        tui_llm_stream_scratch,
     } = frame;
     let Some(s) = delta.content.as_ref() else {
         return Ok(());
@@ -451,7 +414,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         .await?;
     }
     content_acc.push_str(s);
-    tui_scratch_push_content(tui_llm_stream_scratch.as_ref(), s);
     if cli_terminal_plain {
         host.cli_terminal_write_plain_fragment(
             s,
@@ -500,10 +462,8 @@ pub(super) async fn ingest_sse_data_payload(
         minimax_reasoning_snaps,
         coop_cancel,
         thinking_trace_enabled,
-        tui_llm_stream_scratch,
         usage,
     } = state;
-    let tui_scratch = tui_llm_stream_scratch.clone();
     let Ok(chunk) = serde_json::from_slice::<crabmate_types::StreamChunk>(payload.as_bytes())
     else {
         return Ok(());
@@ -525,7 +485,6 @@ pub(super) async fn ingest_sse_data_payload(
             cli_plain_reasoning_style_active,
             coop_cancel,
             thinking_trace_enabled,
-            tui_llm_stream_scratch: tui_scratch.clone(),
         })
         .await?;
         ingest_sse_content_from_delta(IngestSseContentFrame {
@@ -539,7 +498,6 @@ pub(super) async fn ingest_sse_data_payload(
             cli_plain_reasoning_style_active,
             coop_cancel,
             thinking_trace_enabled,
-            tui_llm_stream_scratch: tui_scratch,
         })
         .await?;
         ingest_sse_tool_calls_from_delta(IngestSseToolCallsFrame {
@@ -578,7 +536,6 @@ pub(super) struct ConsumeSseStreamOpts<'a> {
     pub out: Option<&'a Sender<String>>,
     pub cli_terminal_plain: bool,
     pub thinking_trace_enabled: bool,
-    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 pub(super) async fn consume_openai_sse_byte_stream<S, B>(
@@ -595,7 +552,6 @@ where
         out,
         cli_terminal_plain,
         thinking_trace_enabled,
-        tui_llm_stream_scratch,
     } = opts;
     let mut buf = Vec::new();
     let mut reasoning_acc = String::new();
@@ -651,7 +607,6 @@ where
                     minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                     coop_cancel: cancel,
                     thinking_trace_enabled,
-                    tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
                     usage: &mut usage,
                 },
             )
@@ -689,7 +644,6 @@ where
             minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
             coop_cancel: cancel,
             thinking_trace_enabled,
-            tui_llm_stream_scratch: tui_llm_stream_scratch.clone(),
             usage: &mut usage,
         },
     )

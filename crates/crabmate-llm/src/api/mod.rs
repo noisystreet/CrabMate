@@ -285,7 +285,6 @@ async fn streaming_chat_response(
             out: params.out,
             cli_terminal_plain,
             thinking_trace_enabled: params.thinking_trace_enabled,
-            tui_llm_stream_scratch: params.tui_llm_stream_scratch.clone(),
         },
     )
     .await?;

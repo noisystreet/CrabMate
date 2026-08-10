@@ -8,8 +8,6 @@ pub mod cli;
 pub mod cli_doctor;
 pub mod cli_exit;
 pub(crate) mod cli_mcp;
-#[cfg(any(feature = "repl", feature = "tui"))]
-pub(crate) mod cli_repl_ui;
 pub(crate) mod cli_web_bearer;
 pub use crabmate_runtime::cli_wait_spinner;
 pub mod cli_workflow;
@@ -17,23 +15,8 @@ pub(crate) mod config_reload;
 pub use crabmate_runtime::latex_unicode;
 pub(crate) use crabmate_runtime::message_display;
 pub(crate) use crabmate_runtime::message_snapshot_display;
-#[cfg(any(feature = "repl", feature = "tui"))]
-pub(crate) mod cli_sqlite_session;
-#[cfg(any(feature = "repl", feature = "tui"))]
-pub(crate) mod cli_sqlite_slash;
-#[cfg(any(feature = "repl", feature = "tui"))]
-pub(crate) mod context_usage;
-#[cfg(feature = "repl")]
-pub(crate) mod repl_reedline;
-#[cfg(feature = "repl")]
-pub(crate) mod repl_slash_complete;
-#[cfg(any(feature = "repl", feature = "tui"))]
+pub(crate) mod terminal_ansi;
 pub(crate) mod terminal_cli_transcript;
-#[cfg(any(feature = "repl", feature = "tui"))]
 pub(crate) mod terminal_labels;
 pub mod tool_replay;
-#[cfg(feature = "tui")]
-pub mod tui;
-#[cfg(feature = "tui")]
-pub(crate) mod tui_terminal_bridge;
 pub mod workspace_session;

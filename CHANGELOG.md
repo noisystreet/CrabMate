@@ -15,7 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- (none yet)
+- **BREAKING (D2.2)**: Hard-delete in-process **`chat` / `repl` / `tui`** implementation and Cargo features **`repl`/`tui`** (official terminal: Client **`crabmate-tui`**). Default features are **`web` + `mcp`**.
+- **BREAKING**: TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
 
 ### Fixed
 
@@ -79,7 +80,7 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - **Trusted workspace** model: `run_command` allowlist includes powerful tools (`bash`, `git`, `cargo`, …). Not a multi-tenant SaaS.
 - Chat job queue is **single-process**; no Redis/SQS horizontal scale yet.
 - Process auth is shared **Bearer** (optional); no per-user accounts in-process (use a gateway/BFF if needed).
-- Default Cargo features include **`mcp`** (among `web` / `repl` / `tui`); heavy options such as **`fastembed`** remain opt-in.
+- Default Cargo features include **`mcp`** (with `web`); in-process **`repl`/`tui` features removed** (D2.2). Heavy options such as **`fastembed`** remain opt-in.
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 

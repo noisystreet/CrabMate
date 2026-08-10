@@ -118,7 +118,6 @@ pub async fn run_agent_turn<'a>(
         web_tool_ctx,
         cli_tool_ctx,
         plain_terminal_stream,
-        tui_llm_stream_scratch,
         tool_running_hook,
         clarification_questionnaire_hook,
         sse_control_mirror,
@@ -206,7 +205,6 @@ pub async fn run_agent_turn<'a>(
                 terminal: crate::agent::agent_turn::TurnTerminalIo {
                     render_to_terminal,
                     plain_terminal_stream,
-                    tui_llm_stream_scratch,
                 },
             },
             attach: crate::agent::agent_turn::RunLoopAttach {

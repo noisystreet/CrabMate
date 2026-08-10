@@ -1,5 +1,5 @@
 //! 配置加载之后的 CLI 主路径：`serve` / `bench`（从 [`cli_run::run`] 拆出以降低圈复杂度）。
-//! 同进程 `chat|repl|tui` 入口已移除；实现模块暂留待 D2.2 删除。
+//! 同进程 `chat|repl|tui` 入口与实现已硬删（D2.2）；本模块仅处理 `serve` / `bench` 等仍存活的会话型子命令。
 
 use std::sync::Arc;
 

@@ -512,7 +512,6 @@ async fn run_single_agent_turn(
             web_tool_ctx: None,
             cli_tool_ctx: None,
             plain_terminal_stream: false,
-            tui_llm_stream_scratch: None,
             tool_running_hook: None,
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,

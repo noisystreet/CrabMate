@@ -54,7 +54,6 @@ global_over_ccn_sum_cap = 2600
 "src/request_audit.rs" = 0
 "src/run_agent_turn.rs" = 0
 "src/runtime" = 0
-"src/session_title.rs" = 0
 "src/shutdown" = 0
 "src/test_serve.rs" = 0
 "src/turn_replay_dump.rs" = 0

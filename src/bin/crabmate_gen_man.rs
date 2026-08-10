@@ -13,8 +13,6 @@ fn fix_subcommand_crossrefs(troff: &str) -> String {
     // clap_mangen 使用「父名-子名(1)」；本包仅分发 crabmate.1。
     let pairs = [
         ("crabmate\\-serve(1)", "\\fBserve\\fR"),
-        ("crabmate\\-repl(1)", "\\fBrepl\\fR"),
-        ("crabmate\\-chat(1)", "\\fBchat\\fR"),
         ("crabmate\\-bench(1)", "\\fBbench\\fR"),
         ("crabmate\\-config(1)", "\\fBconfig\\fR"),
         ("crabmate\\-doctor(1)", "\\fBdoctor\\fR"),

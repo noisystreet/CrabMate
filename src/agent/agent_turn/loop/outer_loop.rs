@@ -372,7 +372,6 @@ async fn outer_loop_call_planner_and_push(
         no_stream: p.ctx.io.no_stream,
         cancel: p.ctx.io.cancel,
         plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
-        tui_llm_stream_scratch: p.ctx.io.terminal.tui_llm_stream_scratch.clone(),
         temperature_override: p.turn.temperature_override,
         seed_override: p.turn.seed_override,
         request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),

@@ -29,9 +29,6 @@ pub(crate) struct ConfigBuilderRolesPrompts {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderSessionUi {
     pub(crate) max_message_history: Option<u64>,
-    pub(crate) tui_load_session_on_start: Option<bool>,
-    pub(crate) tui_session_max_messages: Option<u64>,
-    pub(crate) repl_initial_workspace_messages_enabled: Option<bool>,
 }
 
 #[derive(Default)]

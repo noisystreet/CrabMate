@@ -3,8 +3,8 @@
 use log::debug;
 
 use crate::redact;
-use crate::runtime::cli_repl_ui::{
-    CLI_REPL_HELP_CMD_FG, CLI_REPL_HELP_DESC_FG, CLI_REPL_HELP_TITLE_FG, cli_repl_stdout_use_color,
+use crate::runtime::terminal_ansi::{
+    TERMINAL_HELP_CMD_FG, TERMINAL_HELP_DESC_FG, TERMINAL_HELP_TITLE_FG, terminal_stdout_use_color,
 };
 use crate::tool_result::{ParsedLegacyOutput, parse_legacy_output};
 
@@ -86,13 +86,13 @@ fn begin_playbook_hint_block(w: &mut io::Stdout, color: bool) -> io::Result<()> 
         queue!(
             w,
             SetAttribute(Attribute::Bold),
-            SetForegroundColor(CLI_REPL_HELP_TITLE_FG)
+            SetForegroundColor(TERMINAL_HELP_TITLE_FG)
         )?;
     }
     writeln!(w, "\n── 自愈提示 · 诊断命令包 ──")?;
     if color {
         queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
-        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+        queue!(w, SetForegroundColor(TERMINAL_HELP_DESC_FG))?;
     }
     Ok(())
 }
@@ -129,7 +129,7 @@ pub(crate) fn print_cli_playbook_healing_hint(
         serde_json::to_string(snippet.as_ref()).unwrap_or_else(|_| "\"\"".to_string());
 
     let mut w = io::stdout();
-    let color = cli_repl_stdout_use_color();
+    let color = terminal_stdout_use_color();
     begin_playbook_hint_block(&mut w, color)?;
     writeln!(
         w,
@@ -171,13 +171,13 @@ fn write_tool_cli_heading_line(
         queue!(
             w,
             SetAttribute(Attribute::Bold),
-            SetForegroundColor(CLI_REPL_HELP_CMD_FG)
+            SetForegroundColor(TERMINAL_HELP_CMD_FG)
         )?;
     }
     writeln!(w, "{}", format_tool_cli_heading_line(name, title_rest))?;
     if color {
         queue!(w, SetAttribute(Attribute::Reset), ResetColor)?;
-        queue!(w, SetForegroundColor(CLI_REPL_HELP_DESC_FG))?;
+        queue!(w, SetForegroundColor(TERMINAL_HELP_DESC_FG))?;
     }
     Ok(())
 }
@@ -215,7 +215,7 @@ pub(crate) fn print_tool_result_terminal(
         redact::preview_chars(raw_result, redact::MESSAGE_LOG_PREVIEW_CHARS)
     );
     let mut w = io::stdout();
-    let color = cli_repl_stdout_use_color();
+    let color = terminal_stdout_use_color();
     let title_compact = tool_cli_compact_title_rest(name, args, summary);
     write_tool_cli_heading_line(&mut w, color, name, title_compact.as_deref())?;
     if omit_body {

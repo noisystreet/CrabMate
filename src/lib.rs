@@ -16,7 +16,7 @@ pub(crate) use crabmate_internal::{
     clarification_questionnaire_body_if_tool_ok, context_bootstrap, github_token, health, mcp,
     memory, memory_tool_hosts, observability, process_handles, read_file_turn_cache,
     readonly_tool_ttl_cache, redact, request_chrome_trace, session_mode_turn, text_encoding,
-    text_util, tool_approval, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
+    text_util, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
     user_message_file_refs, web_static_dir, workspace,
 };
 /// SSE 控制面协议与运行时（原 `crabmate_internal::sse`，已迁移至 `crabmate-sse-protocol`）。
@@ -32,7 +32,6 @@ pub use crabmate_llm;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 #[cfg(feature = "web")]
 mod conversation_store;
-mod session_title;
 pub use crabmate_llm::http_client;
 mod llm;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。
@@ -68,9 +67,8 @@ pub use per_turn_flight::PerTurnFlight;
 pub use request_audit::WebRequestAudit;
 
 pub use config::cli::{
-    ChatCliArgs, E2eCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli,
-    WebBearerCli, normalize_legacy_argv, parse_args, parse_args_from_argv,
-    root_clap_command_for_man_page,
+    E2eCliArgs, ExtraCliCommand, ParsedCliArgs, SaveSessionFormat, ToolReplayCli, WebBearerCli,
+    normalize_legacy_argv, parse_args, parse_args_from_argv, root_clap_command_for_man_page,
 };
 pub use read_file_turn_cache::{ReadFileTurnCache, ReadFileTurnCacheHandle, new_turn_cache_handle};
 pub use run_agent_turn::run_agent_turn;
@@ -91,8 +89,6 @@ pub struct AgentTurnTransport<'a> {
     /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub plain_terminal_stream: bool,
-    /// 全屏 TUI：流式助手增量写入（见 [`crabmate_llm::TuiLlmStreamScratch`]）；其它入口 `None`。
-    pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
     /// 澄清问卷回调（与 [`crate::agent::agent_turn::TurnControlSink::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
@@ -232,31 +228,6 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub session_mode: types::SessionMode,
 }
-pub struct CliTerminalChatBuildArgs<'a> {
-    pub shared: RunAgentTurnSharedInputs<'a>,
-    pub messages: &'a mut Vec<types::Message>,
-    pub effective_working_dir: &'a std::path::Path,
-    pub no_stream: bool,
-    /// 为 `true` 时不向 stdout 渲染助手流式/非流式输出（全屏 TUI alternate screen）。
-    pub suppress_stdout_render: bool,
-    /// 与 **`suppress_stdout_render`** 配套：流式正文写入供 TUI 中区刷新。
-    pub tui_llm_stream_scratch: Option<crabmate_llm::TuiLlmStreamScratchArc>,
-    /// 与 [`AgentTurnTransport::tool_running_hook`] 一致；REPL 等为 `None`。
-    pub tool_running_hook: Option<Arc<dyn Fn(bool) + Send + Sync>>,
-    /// `present_clarification_questionnaire` 成功时通知 TUI 展示问卷；其它入口 `None`。
-    pub clarification_questionnaire_hook:
-        Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
-    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-    pub long_term_memory:
-        Option<std::sync::Arc<crate::memory::long_term_memory::LongTermMemoryRuntime>>,
-    pub long_term_memory_scope_id: Option<String>,
-    pub turn_allowed_tool_names: Option<Arc<HashSet<String>>>,
-    pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
-    /// TUI：SSE 控制面镜像（与 Web `SsePayload` 对齐）；`repl` / `chat` 为 `None`。
-    pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
-    pub session_mode: types::SessionMode,
-}
-
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
 #[cfg(feature = "web")]
 struct WebChatJobCommonParts<'a> {
@@ -360,7 +331,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
@@ -429,7 +399,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
@@ -457,73 +426,6 @@ impl<'a> RunAgentTurnParams<'a> {
             request_audit,
             process_handles,
         })
-    }
-
-    /// `chat` 子命令等：本机终端、纯文本流式、可选 `run_command` 交互。
-    pub fn cli_terminal_chat(args: CliTerminalChatBuildArgs<'a>) -> Self {
-        let CliTerminalChatBuildArgs {
-            shared,
-            messages,
-            effective_working_dir,
-            no_stream,
-            suppress_stdout_render,
-            tui_llm_stream_scratch,
-            tool_running_hook,
-            clarification_questionnaire_hook,
-            cli_tool_ctx,
-            long_term_memory,
-            long_term_memory_scope_id,
-            turn_allowed_tool_names,
-            process_handles,
-            sse_control_mirror,
-            session_mode,
-        } = args;
-        let echo_stdout = !suppress_stdout_render;
-        Self {
-            shared,
-            session: RunAgentTurnSession {
-                messages,
-                effective_working_dir,
-                workspace_is_set: true,
-            },
-            transport: AgentTurnTransport {
-                out: None,
-                render_to_terminal: echo_stdout,
-                no_stream,
-                cancel: None,
-                per_flight: None,
-                web_tool_ctx: None,
-                cli_tool_ctx,
-                plain_terminal_stream: echo_stdout,
-                tui_llm_stream_scratch,
-                tool_running_hook,
-                clarification_questionnaire_hook,
-                sse_control_mirror,
-                llm_backend: None,
-                trace_sink: None,
-            },
-            llm: AgentTurnLlmOverrides {
-                temperature_override: None,
-                model_override: None,
-                use_executor_model: false,
-                executor_model_override: None,
-                executor_api_base: None,
-                executor_api_key: None,
-                seed_override: types::LlmSeedOverride::default(),
-            },
-            attach: RunAgentTurnAttach {
-                long_term_memory,
-                long_term_memory_scope_id,
-                read_file_turn_cache: None,
-                turn_allowed_tool_names,
-                session_mode,
-            },
-            obs: RunAgentTurnObs {
-                tracing_chat_turn: None,
-                request_audit: None,
-                process_handles,
-            },
-        }
     }
 
     /// `bench` 批量任务：无终端渲染、非流式、可超时取消。
@@ -557,7 +459,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
                 plain_terminal_stream: false,
-                tui_llm_stream_scratch: None,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,

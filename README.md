@@ -145,7 +145,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 ### Maintainer QA
 
-- **Cargo features**: defaults **`web` + `repl` + `tui`**; opt-in **`mcp`**, **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features mcp`, `--features fastembed`, `--features project_metrics`, or `--all-features`. See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
+- **Cargo features**: defaults **`web` + `mcp`**; opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features fastembed`, `--features project_metrics`, or `--all-features`. In-process **`repl`/`tui` features removed** (D2.2; use Client **`crabmate-tui`**). See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
 - **fmt / clippy / test, pre-commit, SSE, E2E**: [docs/en/TESTING.md](docs/en/TESTING.md) (includes **`./scripts/check-sse-protocol.sh`**). CI also runs **`make package`** (server-only tar.gz + `.deb` smoke).
 
 ## Documentation index
@@ -199,7 +199,7 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 | **`CM_DESKTOP_SUGGESTED_URL`** | Optional connect-page suggested `serve` URL (default `http://127.0.0.1:8080/`). |
 | **`CM_DESKTOP_SERVE_URL`** | Required when skipping connect page (with **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**). |
 
-Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged planning): [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 
 ## Deployment and security
 

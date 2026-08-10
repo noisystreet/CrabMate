@@ -6,14 +6,6 @@ use std::sync::Arc;
 use crabmate_types::CommandApprovalDecision;
 use tokio::sync::{Mutex as TokioMutex, mpsc};
 
-/// 全屏 TUI：工具审批由 UI 线程接管 stdin，异步侧在 [`Self::respond_tx`] 上阻塞等待结果。
-#[derive(Debug)]
-pub struct TuiApprovalRequest {
-    pub title: String,
-    pub detail: String,
-    pub respond_tx: std::sync::mpsc::Sender<CommandApprovalDecision>,
-}
-
 pub enum ToolRuntime<'a> {
     Web {
         workspace_changed: &'a mut bool,
@@ -39,14 +31,13 @@ pub struct CliCommandTurnStats {
     pub run_command_denials: u32,
 }
 
-/// CLI REPL / 单次提问：`run_command` 非白名单时在终端 stdin 交互确认。
+/// CLI：`run_command` 非白名单时在终端 stdin 交互确认。
 #[derive(Clone)]
 pub struct CliToolRuntime {
     pub persistent_allowlist_shared: Arc<TokioMutex<HashSet<String>>>,
     pub auto_approve_all_non_whitelist_run_command: bool,
     pub extra_allowlist_commands: Arc<[String]>,
     pub command_stats: Arc<std::sync::Mutex<CliCommandTurnStats>>,
-    pub tui_blocking_approval_tx: Option<std::sync::mpsc::SyncSender<TuiApprovalRequest>>,
 }
 
 impl CliToolRuntime {
@@ -56,16 +47,7 @@ impl CliToolRuntime {
             auto_approve_all_non_whitelist_run_command: false,
             extra_allowlist_commands: Arc::from([] as [String; 0]),
             command_stats: Arc::new(std::sync::Mutex::new(CliCommandTurnStats::default())),
-            tui_blocking_approval_tx: None,
         }
-    }
-
-    pub fn with_tui_blocking_approval(
-        mut self,
-        tx: std::sync::mpsc::SyncSender<TuiApprovalRequest>,
-    ) -> Self {
-        self.tui_blocking_approval_tx = Some(tx);
-        self
     }
 
     pub fn reset_command_stats(&self) {

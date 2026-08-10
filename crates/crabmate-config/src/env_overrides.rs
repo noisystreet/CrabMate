@@ -33,7 +33,7 @@ pub(super) fn apply_env_overrides(b: &mut ConfigBuilder) {
 
 fn apply_env_overrides_part_1(b: &mut ConfigBuilder) {
     env_override_api_base_models_auth(b);
-    env_override_tui_repl_session_flags(b);
+    env_override_session_ui_flags(b);
     env_override_run_command_limits(b);
 }
 
@@ -70,26 +70,11 @@ fn env_override_api_base_models_auth(b: &mut ConfigBuilder) {
     }
 }
 
-fn env_override_tui_repl_session_flags(b: &mut ConfigBuilder) {
+fn env_override_session_ui_flags(b: &mut ConfigBuilder) {
     if let Ok(v) = std::env::var("CM_MAX_MESSAGE_HISTORY")
         && let Ok(n) = v.trim().parse::<u64>()
     {
         b.session_ui.max_message_history = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_TUI_SESSION_MAX_MESSAGES")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.session_ui.tui_session_max_messages = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_TUI_LOAD_SESSION_ON_START")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.session_ui.tui_load_session_on_start = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.session_ui.repl_initial_workspace_messages_enabled = Some(val);
     }
 }
 

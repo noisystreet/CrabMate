@@ -8,7 +8,6 @@ use tokio::sync::mpsc::Sender;
 use crabmate_types::llm_config::LlmHttpAuthMode;
 
 use crate::stream_host::StreamChatHost;
-use crate::stream_scratch::TuiLlmStreamScratchArc;
 
 /// **SSE / 终端 / 流式 / 取消** 开关（各调用点差异主要在此）。
 #[derive(Clone)]
@@ -18,8 +17,6 @@ pub struct LlmRetryingTransportOpts<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub plain_terminal_stream: bool,
-    /// 全屏 TUI：`suppress_stdout_render` 时经 SSE 解析线程写入，UI 线程轮询展示。
-    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
 
 impl<'a> LlmRetryingTransportOpts<'a> {
@@ -31,7 +28,6 @@ impl<'a> LlmRetryingTransportOpts<'a> {
             no_stream: true,
             cancel: None,
             plain_terminal_stream: false,
-            tui_llm_stream_scratch: None,
         }
     }
 }
@@ -56,5 +52,4 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
-    pub tui_llm_stream_scratch: Option<TuiLlmStreamScratchArc>,
 }
