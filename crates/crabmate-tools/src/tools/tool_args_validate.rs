@@ -8,7 +8,7 @@
 //! 的 **`start_line` / `end_line`** 字符串与整型 JSON 数字、`modify_file` 的 **`mode`** 大小写/同义词、
 //! `path` 的常见别名（**`file_path`** / **`filename`** / **`file`** / **`name`** / **`output_path`** 等；键名大小写不敏感）、
 //! **`copy_file`** 的 **`src`/`dst`**、
-//! **`create_file`** 的 **`content`** 别名（含 **`code`**）与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
+//! **`create_file`** / **`modify_file`** / **`append_file`** 的 **`content`** 别名（含 **`code`**）与缺省空串等），见 [`coerce_builtin_tool_args_value`]、
 //! [`effective_builtin_tool_args_json`]。
 
 use std::borrow::Cow;
@@ -75,11 +75,15 @@ fn coerce_path_string_field(path_val: &mut Value) -> bool {
 }
 
 fn coerce_read_file_one_u64_line_field(val: &mut Value) -> bool {
+    coerce_one_u64_field_min(val, 1)
+}
+
+fn coerce_one_u64_field_min(val: &mut Value, min: u64) -> bool {
     match val {
         Value::String(s) => {
             let t = s.trim();
             if let Ok(n) = t.parse::<u64>()
-                && n >= 1
+                && n >= min
             {
                 *val = Value::Number(n.into());
                 true
@@ -91,7 +95,7 @@ fn coerce_read_file_one_u64_line_field(val: &mut Value) -> bool {
             let Some(u) = json_number_to_u64(n) else {
                 return false;
             };
-            if u < 1 {
+            if u < min {
                 return false;
             }
             let new_v = Value::Number(u.into());
@@ -183,6 +187,11 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
             changed = true;
         }
     }
+    if let Some(val) = map.get_mut("after_line")
+        && coerce_one_u64_field_min(val, 0)
+    {
+        changed = true;
+    }
     let Some(mode_val) = map.get_mut("mode") else {
         return changed;
     };
@@ -202,9 +211,17 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
         .collect();
     let mapped = match norm.as_str() {
         "lines" | "line" | "line_replace" | "replace" | "partial" => "replace_lines".to_string(),
+        "insert" | "insert_line" | "insert_after" | "append_after_line" => {
+            "insert_after_line".to_string()
+        }
         "replacelines" => "replace_lines".to_string(),
         "full" | "overwrite" | "whole" | "whole_file" => "full".to_string(),
-        other if other == "replace_lines" || other == "full" || other == "overwrite" => {
+        other
+            if other == "replace_lines"
+                || other == "insert_after_line"
+                || other == "full"
+                || other == "overwrite" =>
+        {
             other.to_string()
         }
         _ => norm,
@@ -361,7 +378,7 @@ fn apply_path_coercions(name: &str, map: &mut serde_json::Map<String, Value>) ->
 
 fn apply_write_content_coercions(name: &str, map: &mut serde_json::Map<String, Value>) -> bool {
     let mut changed = false;
-    if matches!(name, "create_file" | "modify_file")
+    if matches!(name, "create_file" | "modify_file" | "append_file")
         && schema_has_top_level_prop(name, "content")
         && remap_content_aliases(map)
     {
@@ -583,6 +600,18 @@ mod tests {
     }
 
     #[test]
+    fn effective_append_file_serializes_after_alias_coercion() {
+        let raw = r#"{"file_path":"n.txt","text":"z"}"#;
+        let cow = effective_builtin_tool_args_json("append_file", raw).expect("ok");
+        assert!(matches!(cow, Cow::Owned(_)));
+        let v: Value = serde_json::from_str(cow.as_ref()).expect("json");
+        assert_eq!(v["path"], "n.txt");
+        assert_eq!(v["content"], "z");
+        let r = validate_parsed_str_for_builtin("append_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
     fn modify_file_coerce_string_line_numbers_and_mode_passes_schema() {
         let mut v = json!({
             "path": "src/lib.rs",
@@ -610,6 +639,21 @@ mod tests {
         });
         assert!(coerce_builtin_tool_args_value("modify_file", &mut v));
         assert_eq!(v["mode"], "replace_lines");
+        let r = validate_parsed_value_if_known("modify_file", &v).expect("modify_file");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn modify_file_insert_after_line_synonym_and_zero_line_pass_schema() {
+        let mut v = json!({
+            "path": "a.txt",
+            "mode": "insert",
+            "after_line": "0",
+            "content": "x"
+        });
+        assert!(coerce_builtin_tool_args_value("modify_file", &mut v));
+        assert_eq!(v["mode"], "insert_after_line");
+        assert_eq!(v["after_line"].as_u64(), Some(0));
         let r = validate_parsed_value_if_known("modify_file", &v).expect("modify_file");
         assert!(r.is_ok(), "{r:?}");
     }

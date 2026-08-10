@@ -17,7 +17,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "append_file",
-            description: "在工作区内文件末尾追加内容。默认文件须已存在；create_if_missing=true 时不存在则创建。不覆盖已有内容。",
+            description: "在工作区内文件末尾追加内容。默认文件须已存在；create_if_missing=true 时不存在则创建。不覆盖已有内容。支持 dry_run=true 预览；默认 ensure_leading_newline=true，会在原文件非空且末尾无换行时先补一个换行，避免新内容接在旧末行后。`content` 可用 body/text/code 等别名。",
             category: ToolCategory::Development,
             parameters: tool_params::params_append_file,
             runner: runner_append_file,

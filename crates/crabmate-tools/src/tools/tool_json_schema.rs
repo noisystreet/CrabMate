@@ -423,7 +423,7 @@ mod tests {
                 }
             }
         }
-        for needle in ["full", "overwrite", "replace_lines"] {
+        for needle in ["full", "overwrite", "replace_lines", "insert_after_line"] {
             assert!(
                 flat.contains(&needle),
                 "ModifyFileMode schema should include {needle}: collected={flat:?}"

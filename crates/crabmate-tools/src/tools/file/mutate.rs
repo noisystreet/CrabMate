@@ -109,6 +109,134 @@ fn append_create_parent_if_needed(
     Ok(())
 }
 
+fn append_file_needs_leading_newline(
+    before: Option<&str>,
+    content: &str,
+    ensure_leading_newline: bool,
+) -> bool {
+    ensure_leading_newline
+        && !content.is_empty()
+        && !content.starts_with('\n')
+        && before.is_some_and(|s| !s.is_empty() && !s.ends_with('\n'))
+}
+
+struct AppendFilePlan {
+    path: String,
+    target: PathBuf,
+    base: PathBuf,
+    before: Option<String>,
+    append_body: String,
+    inserted_leading_newline: bool,
+    create_if_missing: bool,
+}
+
+fn append_file_display(working_dir: &Path, plan: &AppendFilePlan) -> String {
+    path_for_tool_display(working_dir, &plan.target, Some(&plan.path))
+}
+
+fn append_file_build_body(prefix: &str, working_dir: &Path, plan: &AppendFilePlan) -> String {
+    let mut body = format!(
+        "{} {} 字节到 {}",
+        prefix,
+        plan.append_body.len(),
+        append_file_display(working_dir, plan)
+    );
+    if plan.inserted_leading_newline {
+        body.push_str("\n已为原文件末尾补 1 个前导换行，避免新内容接在旧末行后。");
+    }
+    body
+}
+
+fn append_file_after_preview(plan: &AppendFilePlan) -> Option<String> {
+    plan.before
+        .as_ref()
+        .map(|b| {
+            let mut s = b.clone();
+            s.push_str(&plan.append_body);
+            s
+        })
+        .or_else(|| plan.create_if_missing.then(|| plan.append_body.clone()))
+}
+
+fn append_file_prepare(
+    args: AppendFileArgs,
+    working_dir: &Path,
+) -> Result<(bool, AppendFilePlan), String> {
+    let path = match args.path.trim() {
+        s if !s.is_empty() => s.to_string(),
+        _ => return Err("缺少 path 参数".to_string()),
+    };
+    let target = append_resolve_target_path(working_dir, &path, args.create_if_missing)?;
+    let base =
+        canonical_workspace_root(working_dir).map_err(tool_user_error_from_workspace_path)?;
+    append_create_parent_if_needed(&base, args.create_if_missing, &target)?;
+    let before = std::fs::read_to_string(&target).ok();
+    let inserted_leading_newline = append_file_needs_leading_newline(
+        before.as_deref(),
+        &args.content,
+        args.ensure_leading_newline,
+    );
+    let mut append_body = String::new();
+    if inserted_leading_newline {
+        append_body.push('\n');
+    }
+    append_body.push_str(&args.content);
+    Ok((
+        args.dry_run,
+        AppendFilePlan {
+            path,
+            target,
+            base,
+            before,
+            append_body,
+            inserted_leading_newline,
+            create_if_missing: args.create_if_missing,
+        },
+    ))
+}
+
+fn append_file_preview(working_dir: &Path, plan: AppendFilePlan) -> String {
+    let body =
+        append_file_build_body("预览（dry_run=true）：将追加", working_dir, &plan) + "，未写盘";
+    let after = append_file_after_preview(&plan);
+    format_tool_output_with_write_diff_preview(
+        "append_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: plan.path,
+            before: plan.before,
+            after,
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
+}
+
+fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFilePlan) -> String {
+    let mut file =
+        match open_file_append_under_root(&plan.base, &plan.target, plan.create_if_missing) {
+            Ok(f) => f,
+            Err(e) => return format!("打开文件失败：{}", e),
+        };
+    if let Err(e) = file.write_all(plan.append_body.as_bytes()) {
+        return format!("写入失败：{}", e);
+    }
+    let after = std::fs::read_to_string(&plan.target).ok();
+    if let Some(c) = ctx.workspace_changelist {
+        c.record_mutation(&plan.path, plan.before.clone(), after.clone());
+    }
+    let body = append_file_build_body("已追加", working_dir, &plan);
+    format_tool_output_with_write_diff_preview(
+        "append_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: plan.path,
+            before: plan.before,
+            after,
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
+}
+
 pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -208,56 +336,14 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(a) => a,
         Err(e) => return e,
     };
-    let path = match args.path.trim() {
-        s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
-    };
-    let content = args.content;
-    let create_if_missing = args.create_if_missing;
-
-    let target = match append_resolve_target_path(working_dir, &path, create_if_missing) {
+    let (dry_run, plan) = match append_file_prepare(args, working_dir) {
         Ok(p) => p,
         Err(e) => return e,
     };
-
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-
-    if let Err(e) = append_create_parent_if_needed(&base, create_if_missing, &target) {
-        return e;
+    if dry_run {
+        return append_file_preview(working_dir, plan);
     }
-
-    let before = std::fs::read_to_string(&target).ok();
-    let mut file = match open_file_append_under_root(&base, &target, create_if_missing) {
-        Ok(f) => f,
-        Err(e) => return format!("打开文件失败：{}", e),
-    };
-    match file.write_all(content.as_bytes()) {
-        Ok(()) => {
-            let after = std::fs::read_to_string(&target).ok();
-            if let Some(c) = ctx.workspace_changelist {
-                c.record_mutation(&path, before.clone(), after.clone());
-            }
-            let body = format!(
-                "已追加 {} 字节到 {}",
-                content.len(),
-                path_for_tool_display(working_dir, &target, Some(&path))
-            );
-            format_tool_output_with_write_diff_preview(
-                "append_file",
-                body,
-                vec![WriteDiffFileState {
-                    rel_path: path.clone(),
-                    before,
-                    after,
-                }],
-                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-            )
-        }
-        Err(e) => format!("写入失败：{}", e),
-    }
+    append_file_write(working_dir, ctx, plan)
 }
 
 // ── create_dir ──────────────────────────────────────────────

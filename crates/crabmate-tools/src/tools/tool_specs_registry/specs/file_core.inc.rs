@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "modify_file",
-            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写）。**`mode=full`（默认）或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**。",
+            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写；起止行写反会自动交换）或 `mode=insert_after_line`（`after_line` 后插入，0 表示文件开头）。未显式给 `mode` 但传了 `start_line`/`end_line` 时自动按 `replace_lines`，传了 `after_line` 时自动按 `insert_after_line`。**`mode=full` 或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入，拒绝时会返回 diff 预览；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**、**`insert_after_line`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_modify_file,
             runner: runner_modify_file,
