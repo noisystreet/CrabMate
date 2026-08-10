@@ -46,13 +46,12 @@ fn test_e2e_config() -> E2eRunConfig {
     }
 }
 
-/// 优先从 `API_KEY` 环境变量读取；未设置时回退到 CrabMate 系统钥匙串。
+/// 优先从 `API_KEY` 环境变量读取。
 fn resolve_test_api_key() -> String {
-    let from_env = std::env::var("API_KEY").unwrap_or_default();
-    if !from_env.trim().is_empty() {
-        return from_env.trim().to_string();
-    }
-    crabmate_internal::user_data::read_secret_client_llm().unwrap_or_default()
+    std::env::var("API_KEY")
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 /// 单场景 smoke 测试：简单问候，验证一轮 LLM 调用后能正常结束。

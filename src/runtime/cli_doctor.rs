@@ -381,28 +381,15 @@ fn print_doctor_user_data_block() {
     }
     let st = secrets_status();
     println!(
-        "  system-keyring/client_llm: {}",
-        if st.client_llm.set {
-            "已设置（值已隐藏）"
-        } else {
-            "未设置"
-        }
-    );
-    println!(
-        "  system-keyring/executor_llm: {}",
-        if st.executor_llm.set {
-            "已设置（值已隐藏）"
-        } else {
-            "未设置"
-        }
-    );
-    println!(
         "  system-keyring/web_api_bearer: {}",
         if st.web_api_bearer.set {
             "已设置（值已隐藏）"
         } else {
             "未设置"
         }
+    );
+    println!(
+        "  模型密钥：权威在 Client（请求体 client_llm.api_key）；服务端不再持有 client_llm/executor_llm/saved_model 钥匙串槽"
     );
     println!("  详见 docs/design/user_data_dir.md");
 }

@@ -65,12 +65,12 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 |------|------|------|
 | **Web API 共享密钥**（`CM_WEB_API_BEARER_TOKEN` / `web_api_bearer_token`；Client 连接页/侧栏/钥匙串） | 保护 HTTP API（`Authorization: Bearer` / `X-API-Key`） | 不得当作模型密钥发给上游 LLM |
 | **模型密钥 / `client_llm.api_key`** | 上游 `chat/completions` 等；**权威存放在 Client** | 不得要求浏览器把模型密钥当 Web Bearer；日志/错误体不得打印完整值 |
-| 进程环境 **`API_KEY`** / 服务端钥匙串 merge | **可选回退**（无头 `serve`、旧脚本、`models`/`probe`/`e2e`/`bench` 等）；**不是**官方 Client 对话路径 | 不与 Web Bearer 混用 |
+| 进程环境 **`API_KEY`** | **可选回退**（无头 `serve`、旧脚本、`models`/`probe`/`e2e`/`bench` 等）；**不是**官方 Client 对话路径；服务端模型钥匙串槽已退役 | 不与 Web Bearer 混用 |
 | 其它（GitHub、MCP bearer 等） | 各能力专用 | 不与上列混用 |
 
 跨 Origin 仍只靠 **Web Bearer** + CORS 白名单；connect hash（`#cm_web_api_bearer=`）仅传递 Web API 密钥；非回环监听策略与现文档一致。
 
-**硬删同进程对话后**：可再评估是否 deprecate 服务端 `PUT /user-data/secrets/client-llm` 与进程 `API_KEY` 对 **chat** 的回退；**不得**删请求体 `client_llm` 消费路径。
+**硬删同进程对话后**：服务端 **`PUT /user-data/secrets/client-llm` / `executor-llm` 与模型钥匙串槽已退役**（Client 持钥）；进程 **`API_KEY`** 仍可为 `models`/`probe`/可选回退。**不得**删请求体 `client_llm` 消费路径。
 
 ### 2.5 弃用与删除分期（本仓）
 
@@ -80,7 +80,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 | **D1** | clap help、启动 stderr、`命令行与路由` / README 指向 `crabmate-tui` | ✅ |
 | **D2.1** | **移除** clap / 调度入口（`chat|repl|tui`）；须显式子命令；legacy 不再插 repl/chat | ✅ |
 | **D2.2** | 硬删 `runtime/tui` 与同进程对话 REPL/`chat` 实现及 `/api-key` | 计划 |
-| **D3** | 视需要：收紧进程 `API_KEY` / 服务端 client_llm 钥匙串回退；man / CI / 冒烟清单 | 计划 |
+| **D3** | 收紧进程 `API_KEY`（可选）；man / CI / 冒烟清单 | 进行中（模型钥匙串槽已退役） |
 
 ---
 

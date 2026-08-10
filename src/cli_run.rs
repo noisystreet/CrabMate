@@ -50,28 +50,18 @@ fn require_api_key_for_cli_models_probe(
     Ok(v)
 }
 
-/// `serve` / `repl` / `chat` / `tui` / `bench`：读取 LLM Bearer 密钥。
+/// `serve` / `bench` 等：读取可选进程级 LLM Bearer（**仅环境变量 `API_KEY`**）。
 ///
-/// 优先级：**环境变量 `API_KEY`** → 系统钥匙串（与 Web/桌面同源）；
-/// `bearer` 且二者皆空时返回空串（不报错，可由 **`/api-key set`** 再填）。
+/// 模型密钥权威在 Client 请求体 **`client_llm.api_key`**；服务端不再读 `client_llm` 钥匙串。
 fn read_llm_api_key_from_env_lenient(cfg: &config::AgentConfig) -> String {
     let from_env = env::var("API_KEY").unwrap_or_default();
     if !from_env.trim().is_empty() {
         return from_env;
     }
-    if let Some(from_keyring) = crate::user_data::read_secret_client_llm()
-        && !from_keyring.trim().is_empty()
-    {
-        info!(
-            target: "crabmate",
-            "API_KEY 未设置：已从系统钥匙串加载（与 Web/桌面侧栏同源）"
-        );
-        return from_keyring;
-    }
     if cfg.llm.llm_http_auth_mode == config::LlmHttpAuthMode::Bearer {
         info!(
             target: "crabmate",
-            "API_KEY 未设置（llm_http_auth_mode=bearer）：可 export API_KEY、使用 Web/桌面侧栏保存到系统钥匙串，或 REPL/TUI /api-key set <密钥>"
+            "API_KEY 未设置（llm_http_auth_mode=bearer）：对话请由 Client 发送 client_llm.api_key，或 export API_KEY 供 models/probe/进程回退"
         );
     }
     String::new()
@@ -388,15 +378,10 @@ async fn run_dry_run(
             let env_ok = env::var("API_KEY")
                 .map(|s| !s.trim().is_empty())
                 .unwrap_or(false);
-            let keyring_ok =
-                crate::user_data::read_secret_client_llm().is_some_and(|s| !s.trim().is_empty());
             if env_ok {
                 "llm_http_auth_mode=bearer 且 API_KEY 非空".to_string()
-            } else if keyring_ok {
-                "llm_http_auth_mode=bearer：API_KEY 空，已检测到系统钥匙串密钥（与 Web/桌面同源）"
-                    .to_string()
             } else {
-                "llm_http_auth_mode=bearer：当前未检测到非空 API_KEY 或系统钥匙串密钥（可在 Web/桌面侧栏保存、export API_KEY 或 REPL/TUI /api-key）"
+                "llm_http_auth_mode=bearer：当前未设置 API_KEY（对话靠 Client client_llm.api_key；models/probe 仍须环境变量）"
                     .to_string()
             }
         }

@@ -16,8 +16,7 @@ use crate::user_data::{
     load_mcp_servers_with_legacy_import, load_prefs, load_web_sessions, mcp_servers_file_public,
     merge_mcp_commands_from_stored, normalize_mcp_servers_file, save_llm_overrides,
     save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_mcp_secret_server_id,
-    validate_sessions_value, write_secret_client_llm, write_secret_executor_llm,
-    write_secret_mcp_bearer, write_secret_web_api_bearer,
+    validate_sessions_value, write_secret_mcp_bearer, write_secret_web_api_bearer,
 };
 use crate::web::app_state::AppStateHttpCore;
 
@@ -89,24 +88,6 @@ pub(crate) async fn put_llm_overrides_handler(
 
 pub(crate) async fn get_secrets_status_handler() -> Json<SecretsStatusResponse> {
     Json(secrets_status())
-}
-
-pub(crate) async fn put_secret_client_llm_handler(
-    Json(body): Json<SecretWriteBody>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let key = body.api_key.unwrap_or_default();
-    write_secret_client_llm(&key)
-        .map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-pub(crate) async fn put_secret_executor_llm_handler(
-    Json(body): Json<SecretWriteBody>,
-) -> Result<StatusCode, (StatusCode, String)> {
-    let key = body.api_key.unwrap_or_default();
-    write_secret_executor_llm(&key)
-        .map_err(|e| user_data_err(StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    Ok(StatusCode::NO_CONTENT)
 }
 
 pub(crate) async fn put_secret_web_api_bearer_handler(
