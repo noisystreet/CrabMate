@@ -155,22 +155,25 @@ async fn dispatch_sync_default_tool(
     let ltm2 = long_term_memory.clone();
     let ltm_scope2 = long_term_memory_scope_id.clone();
     let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
+    let github_token = crabmate_tools::github_token::resolve_token_plaintext();
     let handle = tokio::task::spawn_blocking(move || {
-        let hosts = crate::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
-            cfg2.as_ref(),
-            ltm2,
-            ltm_scope2.as_deref(),
-        );
-        let ctx = tools::tool_context_for_with_read_cache_and_memory(
-            cfg2.as_ref(),
-            cfg2.command_exec.allowed_commands.as_ref(),
-            work_dir.as_path(),
-            rfc.as_ref().map(|a| a.as_ref()),
-            wcl.as_ref(),
-            Some(hosts.codebase_ref()),
-            hosts.long_term_ref(),
-        );
-        tools::run_tool(&tool_name, &tool_args, &ctx)
+        crabmate_tools::github_token::with_request_github_token_blocking(github_token, || {
+            let hosts = crate::memory_tool_hosts::DispatchMemoryHosts::from_dispatch_inputs(
+                cfg2.as_ref(),
+                ltm2,
+                ltm_scope2.as_deref(),
+            );
+            let ctx = tools::tool_context_for_with_read_cache_and_memory(
+                cfg2.as_ref(),
+                cfg2.command_exec.allowed_commands.as_ref(),
+                work_dir.as_path(),
+                rfc.as_ref().map(|a| a.as_ref()),
+                wcl.as_ref(),
+                Some(hosts.codebase_ref()),
+                hosts.long_term_ref(),
+            );
+            tools::run_tool(&tool_name, &tool_args, &ctx)
+        })
     });
     let result = match tokio::time::timeout(Duration::from_secs(wall_secs), handle).await {
         Ok(Ok(s)) => s,

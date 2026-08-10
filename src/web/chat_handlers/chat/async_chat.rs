@@ -266,7 +266,8 @@ pub(crate) async fn chat_async_handler(
     );
     info!(target: "crabmate", "chat async 任务入队 job_id={}", job_id);
     let request_audit = web_request_audit_for_turn(&state, &headers, peer).await;
-    let envelope = json_chat_job_envelope(&state, job_id, prepared, &parsed, request_audit);
+    let envelope =
+        json_chat_job_envelope(&state, job_id, prepared, &parsed, request_audit, &headers);
     let submit = state
         .chat
         .chat_queue

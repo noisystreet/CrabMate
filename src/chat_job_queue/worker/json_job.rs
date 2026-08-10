@@ -45,6 +45,7 @@ pub(super) async fn run_json_queued_job(p: JsonQueuedJobParams) -> JobOutcome {
         request_audit,
         client_sse_protocol: _,
         request_id,
+        github_token: _,
     } = envelope;
     info!(
         target: "crabmate",

@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 2622
+global_over_ccn_sum_cap = 2623
 
 [modules]
 "crates/cmd_mate" = 0

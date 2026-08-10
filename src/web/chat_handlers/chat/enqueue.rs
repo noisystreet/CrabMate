@@ -205,6 +205,7 @@ pub(crate) fn json_chat_job_envelope(
     prepared: PreparedJsonChatEnqueue,
     parsed: &ParsedChatRequestForEnqueue,
     request_audit: crate::WebRequestAudit,
+    headers: &HeaderMap,
 ) -> chat_job_queue::WebChatJobEnvelope {
     chat_job_queue::WebChatJobEnvelope {
         job_id,
@@ -227,6 +228,7 @@ pub(crate) fn json_chat_job_envelope(
         readonly_tool_ttl_cache_secs: parsed.readonly_tool_ttl_cache_secs,
         request_audit,
         request_id: None,
+        github_token: crate::web::github_token_request::extract_github_token_from_headers(headers),
     }
 }
 
@@ -257,7 +259,8 @@ pub(crate) async fn enqueue_and_wait_json_chat(
     );
     info!(target: "crabmate", "chat json 任务入队 job_id={}", job_id);
     let request_audit = web_request_audit_for_turn(&state, headers, peer).await;
-    let envelope = json_chat_job_envelope(&state, job_id, prepared, &parsed, request_audit);
+    let envelope =
+        json_chat_job_envelope(&state, job_id, prepared, &parsed, request_audit, headers);
     state
         .chat
         .chat_queue

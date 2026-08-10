@@ -43,16 +43,24 @@ pub(super) async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             stream_event_tx,
             web_approval_session,
         } => {
-            stream_job::run_stream_queued_job(stream_job::StreamQueuedJobParams {
-                envelope,
-                stream_event_tx,
-                web_approval_session,
+            let github_token = envelope.github_token.clone();
+            crate::github_token::with_request_github_token(github_token, async move {
+                stream_job::run_stream_queued_job(stream_job::StreamQueuedJobParams {
+                    envelope,
+                    stream_event_tx,
+                    web_approval_session,
+                })
+                .await
             })
             .await
         }
         QueuedChatJob::Json { envelope, reply_tx } => {
-            json_job::run_json_queued_job(json_job::JsonQueuedJobParams { envelope, reply_tx })
-                .await
+            let github_token = envelope.github_token.clone();
+            crate::github_token::with_request_github_token(github_token, async move {
+                json_job::run_json_queued_job(json_job::JsonQueuedJobParams { envelope, reply_tx })
+                    .await
+            })
+            .await
         }
     }
 }

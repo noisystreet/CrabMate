@@ -256,7 +256,7 @@ fn clone_fail_code_and_message(
     if github && (!has_token || auth_hint) {
         (
             "CLONE_AUTH_REQUIRED",
-            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → GitHub」连接，或配置服务端 GH_TOKEN / 钥匙串；SSH remote 不使用 OAuth token。"
+            "git clone 失败：GitHub HTTPS 需要有效凭据。请在「设置 → GitHub」连接，或配置服务端 GH_TOKEN；SSH remote 不使用 OAuth token。"
                 .into(),
         )
     } else {
@@ -571,21 +571,26 @@ pub async fn workspace_clone_stream_handler(
     let (tx, rx) = mpsc::channel::<Result<Event, axum::Error>>(64);
     let (cancel_tx, cancel_rx) = oneshot::channel();
     let http2 = http.clone();
+    // `tokio::spawn` 不会继承 HTTP 中间件的 task-local；入队前捕获再挂回作用域。
+    let github_token = crate::github_token::resolve_token_plaintext();
     tokio::spawn(async move {
-        let _ = tx
-            .send(sse_data(json!({ "type": "phase", "phase": "validate" })))
+        crate::github_token::with_request_github_token(github_token, async move {
+            let _ = tx
+                .send(sse_data(json!({ "type": "phase", "phase": "validate" })))
+                .await;
+            run_clone_and_stream(CloneJob {
+                http: http2,
+                pool,
+                target,
+                name,
+                url,
+                depth,
+                branch,
+                tx,
+                cancel: cancel_rx,
+                _slot: slot,
+            })
             .await;
-        run_clone_and_stream(CloneJob {
-            http: http2,
-            pool,
-            target,
-            name,
-            url,
-            depth,
-            branch,
-            tx,
-            cancel: cancel_rx,
-            _slot: slot,
         })
         .await;
     });

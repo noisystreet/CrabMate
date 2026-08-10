@@ -275,6 +275,9 @@ async fn chat_stream_try_enqueue_job(
                 readonly_tool_ttl_cache_secs: p.readonly_tool_ttl_cache_secs,
                 request_audit,
                 request_id,
+                github_token: crate::web::github_token_request::extract_github_token_from_headers(
+                    headers,
+                ),
             },
             stream_event_tx: tx,
             web_approval_session,

@@ -1,25 +1,46 @@
 //! 子进程 `gh` / Git HTTPS 的 GitHub token 解析与注入。
 //!
 //! 优先级：进程环境 **`GH_TOKEN` / `GITHUB_TOKEN`**（非空）→
-//! 可选 [`set_token_provider`]（由宿主注册钥匙串读取）→ 否则依赖本机 `gh auth`。
+//! 当前请求作用域 token（HTTP 头 / Cookie，经 [`with_request_github_token`]）→
+//! 否则依赖本机 `gh auth`（子进程自行解析，本模块不注入）。
 //!
 //! **勿**在日志中输出 token 明文。Git HTTPS 使用子进程环境变量
 //! **`GIT_CONFIG_*`** 注入 `http.extraHeader`（避免把凭据写进 argv）。
 //! GitHub App user token（`ghu_`）等对 smart HTTP **不接受** `Authorization: Bearer`，
 //! 须用 **`Basic` + 用户名 `x-access-token`**（PAT / `gho_` 同样可用）。
 
+use std::future::Future;
 use std::process::Command;
-use std::sync::{Arc, OnceLock};
 
 use base64::Engine;
 
-type TokenProvider = Arc<dyn Fn() -> Option<String> + Send + Sync>;
+tokio::task_local! {
+    static REQUEST_GITHUB_TOKEN: Option<String>;
+}
 
-static TOKEN_PROVIDER: OnceLock<TokenProvider> = OnceLock::new();
+/// 在异步作用域内设置本请求的 GitHub user token（供工具 / clone 注入）。
+///
+/// Chat 队列 worker 须在执行回合时再次 [`with_request_github_token`]，因 HTTP 中间件作用域在入队后结束。
+/// `spawn_blocking` 内须用 [`with_request_github_token_blocking`]（task-local 不会自动传到阻塞线程）。
+pub async fn with_request_github_token<F, R>(token: Option<String>, fut: F) -> R
+where
+    F: Future<Output = R>,
+{
+    let cleaned = token
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    REQUEST_GITHUB_TOKEN.scope(cleaned, fut).await
+}
 
-/// 注册钥匙串等回退源（进程内至多一次；重复调用忽略）。
-pub fn set_token_provider(provider: TokenProvider) {
-    let _ = TOKEN_PROVIDER.set(provider);
+/// 在 **阻塞线程**（如 `spawn_blocking`）内设置请求作用域 token。
+pub fn with_request_github_token_blocking<F, R>(token: Option<String>, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    let cleaned = token
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    REQUEST_GITHUB_TOKEN.sync_scope(cleaned, f)
 }
 
 fn env_github_token_set() -> bool {
@@ -42,25 +63,26 @@ fn token_from_env() -> Option<String> {
     None
 }
 
-fn token_from_provider() -> Option<String> {
-    TOKEN_PROVIDER
-        .get()
-        .and_then(|f| f())
+fn token_from_request() -> Option<String> {
+    REQUEST_GITHUB_TOKEN
+        .try_with(|t| t.clone())
+        .ok()
+        .flatten()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
 }
 
-/// 明文 token：环境优先，否则 provider。供 Git HTTPS `Authorization` 头使用。
+/// 明文 token：环境优先，否则请求作用域。供 Git HTTPS `Authorization` 头使用。
 pub fn resolve_token_plaintext() -> Option<String> {
-    token_from_env().or_else(token_from_provider)
+    token_from_env().or_else(token_from_request)
 }
 
-/// 供 `gh` 子进程使用的 token：环境已有则 `None`（让子进程继承）；否则问 provider。
+/// 供 `gh` 子进程使用的 token：环境已有则 `None`（让子进程继承）；否则用请求作用域。
 pub fn resolve_token_for_child_env() -> Option<String> {
     if env_github_token_set() {
         return None;
     }
-    token_from_provider()
+    token_from_request()
 }
 
 /// 若需注入，设置子进程 **`GH_TOKEN`**（`gh` 官方优先识别）。
@@ -149,7 +171,6 @@ mod tests {
 
     #[test]
     fn resolve_skips_when_env_set() {
-        // 不依赖真实钥匙串；仅验证「环境已设则返回 None」分支可调用。
         if env_github_token_set() {
             assert!(resolve_token_for_child_env().is_none());
         }
@@ -168,7 +189,6 @@ mod tests {
 
     #[test]
     fn github_https_auth_envs_none_without_token_or_non_github() {
-        // 无 provider 且通常无环境时返回 None；非 github URL 必为 None。
         assert!(github_https_auth_envs("https://gitlab.com/a/b.git").is_none());
         assert!(github_https_auth_envs("git@github.com:a/b.git").is_none());
     }
@@ -187,5 +207,27 @@ mod tests {
         assert_eq!(raw, "x-access-token:ghu_test_token");
         assert!(!h.contains("Bearer"));
         assert!(!h.contains("ghu_test_token"));
+    }
+
+    #[tokio::test]
+    async fn request_scope_token_is_visible_inside_scope() {
+        assert!(token_from_request().is_none());
+        with_request_github_token(Some("ghu_scope".into()), async {
+            assert_eq!(token_from_request().as_deref(), Some("ghu_scope"));
+            if !env_github_token_set() {
+                assert_eq!(resolve_token_plaintext().as_deref(), Some("ghu_scope"));
+            }
+        })
+        .await;
+        assert!(token_from_request().is_none());
+    }
+
+    #[test]
+    fn blocking_scope_token_visible_on_thread() {
+        assert!(token_from_request().is_none());
+        with_request_github_token_blocking(Some("ghu_block".into()), || {
+            assert_eq!(token_from_request().as_deref(), Some("ghu_block"));
+        });
+        assert!(token_from_request().is_none());
     }
 }

@@ -828,8 +828,6 @@ pub(super) async fn run_cli_from_parsed(
         /* quiet_cli_default */ true,
     )?;
 
-    crate::user_data::install_github_cli_token_provider();
-
     args.config_path = finalize_cli_config_path(args.config_path.take());
     apply_prefs_cli_defaults(&mut args.agent_role_cli);
 

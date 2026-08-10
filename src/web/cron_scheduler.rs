@@ -173,6 +173,7 @@ async fn run_scheduled_json_turn(state: Arc<AppState>, task: ScheduledAgentTask)
                 readonly_tool_ttl_cache_secs: None,
                 request_audit: crate::WebRequestAudit::scheduled_placeholder(),
                 request_id: None,
+                github_token: None,
             },
             reply_tx,
         })

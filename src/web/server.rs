@@ -44,7 +44,10 @@ pub(crate) fn build_app(
         static_dir,
         allow_cross_origin_uploads,
     );
-    // 外层：`x-request-id`；再外层 CORS（若启用），以便预检 OPTIONS 不被其它层挡住。
+    // 内层：请求作用域 GitHub token；再 `x-request-id`；最外 CORS（预检 OPTIONS）。
+    app = app.layer(middleware::from_fn(
+        super::github_token_request::attach_request_github_token,
+    ));
     app = app.layer(middleware::from_fn(super::request_id::attach_request_id));
     if let Some(cors) = cors_layer {
         app = app.layer(cors);

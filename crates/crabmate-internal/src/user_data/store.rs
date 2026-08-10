@@ -512,11 +512,6 @@ pub fn secrets_status() -> SecretsStatusResponse {
         client_llm: slot_status_from_secret(read_secret_client_llm()),
         executor_llm: slot_status_from_secret(read_secret_executor_llm()),
         web_api_bearer: slot_status_from_secret(read_secret_web_api_bearer()),
-        github: slot_status_from_secret(super::github_secret::read_secret_github()),
-        github_oauth_client_id: slot_status_from_secret(
-            super::github_secret::read_secret_github_oauth_client_id(),
-        ),
-        github_oauth_client_id_env: super::github_secret::github_oauth_client_id_env_is_set(),
     }
 }
 
