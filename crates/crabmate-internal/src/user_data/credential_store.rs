@@ -158,10 +158,8 @@ pub(super) fn read_named_secret(account: &str) -> Option<String> {
     let result = SystemSecretEntry::new(account).and_then(|entry| entry.get_password());
     match result {
         Ok(secret) => secret.filter(|value| !value.trim().is_empty()),
-        Err(error) => {
-            tracing::warn!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
-            None
-        }
+        // 无 Secret Service / 容器等环境常见；官方 Client 不依赖服务端钥匙串回填模型密钥。
+        Err(_error) => None,
     }
 }
 

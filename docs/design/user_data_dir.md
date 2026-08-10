@@ -260,13 +260,12 @@ flowchart TB
 
 **非密钥字段**（`api_base` / `model` / 上下文窗口等）：请求体优先；空缺由 **`llm_overrides.json`** 填补；再回落到 `AgentConfig` / TOML。
 
-**`api_key`（高 → 低，与 CLI 一致）**：
+**`api_key`（对话回合）**：
 
-1. 请求体 **`client_llm.api_key`**（Web 设置页当次提交，**不写盘**除非用户显式保存）  
-2. 进程环境 **`API_KEY`**（非空时**不**再注入钥匙串，便于临时覆盖）  
-3. 已保存模型钥匙串 → **`client_llm`** 钥匙串（服务名 `com.crabmate.credentials`）
+1. 请求体 **`client_llm.api_key`**（官方 Client 本机存放并随请求发送；权威路径）  
+2. 进程环境 **`API_KEY`**（可选回退，供运维 / `models` / `probe`；**不**经 `merge_client_llm_body` 写入 body）
 
-与现文档一致：持久化密钥只进系统钥匙串，**服务端 `serve` 进程不把 Web 密钥写入 `AppState` 持久字段**（启动时仍可读 env/`API_KEY`）。旧 `secrets/*` 与 `saved_models[*].api_key` 采用「先写钥匙串、成功后删明文」迁移；失败时保留旧数据。
+**不再**从服务端系统钥匙串 / `saved_model_*` / `client_llm` 槽回填请求体密钥（无桌面 Secret Service 的 `serve` 不再探测这些账户）。旧 `secrets/*` 与 `saved_models[*].api_key` 的迁移写入逻辑仍保留（成功才删明文）；读失败静默视为无密钥。
 
 ---
 
