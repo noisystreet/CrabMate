@@ -204,3 +204,4 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 |------|------|
 | 2026-08-08 | Phase 1：semver / 线协议轴、N−1 现状、git tag 钉法、connect+Tauri 2、CI 门禁 |
 | 2026-08-08 | Phase A：钉清单扩至 UI 展示契约（turn-layout / tool-card / chat-export + types/display）；connect 仅 Client；补充打 tag 命令 |
+| 2026-08-10 | `client-contract-v0.1.1`：对齐 D2.1 合入 tip（CLI 入口移除）；契约 crate 版本未 bump，供 Client 与 `serve` 配套联调 |
