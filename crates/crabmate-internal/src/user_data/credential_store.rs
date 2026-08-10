@@ -153,16 +153,6 @@ pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option
         .expect("test migrating secret read")
 }
 
-#[cfg(not(test))]
-pub(super) fn read_named_secret(account: &str) -> Option<String> {
-    let result = SystemSecretEntry::new(account).and_then(|entry| entry.get_password());
-    match result {
-        Ok(secret) => secret.filter(|value| !value.trim().is_empty()),
-        // 无 Secret Service / 容器等环境常见；官方 Client 不依赖服务端钥匙串回填模型密钥。
-        Err(_error) => None,
-    }
-}
-
 #[cfg(test)]
 fn test_named_secrets() -> &'static Mutex<std::collections::HashMap<String, String>> {
     static SECRETS: std::sync::OnceLock<Mutex<std::collections::HashMap<String, String>>> =
@@ -205,17 +195,6 @@ pub(super) fn write_migrating_secret(
     secret: &str,
 ) -> Result<(), String> {
     write_secret(&TestNamedSecretEntry { account }, legacy_path, secret)
-}
-
-#[cfg(not(test))]
-pub(super) fn write_named_secret(account: &str, secret: &str) -> Result<(), String> {
-    let entry = SystemSecretEntry::new(account)?;
-    let secret = secret.trim();
-    if secret.is_empty() {
-        entry.delete_credential()
-    } else {
-        entry.set_password(secret)
-    }
 }
 
 #[cfg(test)]

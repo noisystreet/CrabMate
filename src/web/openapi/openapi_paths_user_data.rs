@@ -73,7 +73,7 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {
-                        "description": "各密钥槽是否已设置（LLM 槽来自系统钥匙串）",
+                        "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串；client_llm/executor_llm 槽已退役，恒为未设置）",
                         "content": {
                             "application/json": {
                                 "schema": { "$ref": "#/components/schemas/SecretsStatusResponse" }
@@ -81,21 +81,6 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
                         }
                     }
                 }
-            }
-        },
-        "/user-data/secrets/client-llm": {
-            "put": {
-                "tags": ["user_data"],
-                "summary": "写主模型 API Key 到系统钥匙串（仅写；无 GET 明文）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
-                "requestBody": {
-                    "content": {
-                        "application/json": {
-                            "schema": { "$ref": "#/components/schemas/SecretWriteBody" }
-                        }
-                    }
-                },
-                "responses": { "204": { "description": "已保存或已清除" } }
             }
         },
         "/user-data/workspaces/current/sessions": {

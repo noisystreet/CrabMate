@@ -83,17 +83,7 @@ pub fn load_llm_overrides() -> LlmOverridesFile {
     let path = llm_path(&root());
     let mut file: LlmOverridesFile = read_json_file_or_default(&path);
     let before = file.saved_models.clone();
-    if let Err(error) =
-        super::saved_model_secrets::prepare_saved_model_secrets(&mut file.saved_models)
-    {
-        super::saved_model_secrets::scrub_saved_model_api_keys(&mut file.saved_models);
-        tracing::warn!(
-            target: "crabmate",
-            error = %error,
-            "迁移已保存模型 API 密钥到系统钥匙串失败；旧文件暂不改写"
-        );
-        return file;
-    }
+    let _ = super::saved_model_secrets::prepare_saved_model_secrets(&mut file.saved_models);
     if before != file.saved_models
         && let Err(error) = write_json_atomic(&path, &file)
     {
@@ -110,14 +100,9 @@ pub fn save_llm_overrides(file: &LlmOverridesFile) -> Result<(), String> {
     let r = root();
     ensure_tree(&r)?;
     let path = llm_path(&r);
-    let mut old: LlmOverridesFile = read_json_file_or_default(&path);
-    super::saved_model_secrets::prepare_saved_model_secrets(&mut old.saved_models)?;
-    let old_accounts = super::saved_model_secrets::saved_model_accounts(&old.saved_models);
     let mut sanitized = file.clone();
     super::saved_model_secrets::prepare_saved_model_secrets(&mut sanitized.saved_models)?;
-    let new_accounts = super::saved_model_secrets::saved_model_accounts(&sanitized.saved_models);
-    write_json_atomic(&path, &sanitized)?;
-    super::saved_model_secrets::delete_removed_saved_model_secrets(&old_accounts, &new_accounts)
+    write_json_atomic(&path, &sanitized)
 }
 
 pub fn load_mcp_servers() -> McpServersFile {
@@ -391,22 +376,6 @@ pub fn list_workspaces() -> Result<Vec<WorkspaceListEntry>, String> {
     Ok(out)
 }
 
-pub fn write_secret_client_llm(api_key: &str) -> Result<(), String> {
-    super::credential_store::write_migrating_secret(
-        "client_llm",
-        &secret_path(&root(), "client_llm"),
-        api_key,
-    )
-}
-
-pub fn write_secret_executor_llm(api_key: &str) -> Result<(), String> {
-    super::credential_store::write_migrating_secret(
-        "executor_llm",
-        &secret_path(&root(), "executor_llm"),
-        api_key,
-    )
-}
-
 pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
     super::credential_store::write_migrating_secret(
         "web_api_bearer",
@@ -508,26 +477,12 @@ fn slot_status_from_secret(secret: Option<String>) -> SecretSlotStatus {
 }
 
 pub fn secrets_status() -> SecretsStatusResponse {
+    // 模型密钥槽已退役（Client 本机持钥）；字段保留兼容旧客户端，恒为未设置。
     SecretsStatusResponse {
-        client_llm: slot_status_from_secret(read_secret_client_llm()),
-        executor_llm: slot_status_from_secret(read_secret_executor_llm()),
+        client_llm: SecretSlotStatus::default(),
+        executor_llm: SecretSlotStatus::default(),
         web_api_bearer: slot_status_from_secret(read_secret_web_api_bearer()),
     }
-}
-
-/// 供 `POST /chat` 合并：仅返回密钥明文（勿记录日志）。
-pub fn read_secret_client_llm() -> Option<String> {
-    super::credential_store::read_migrating_secret(
-        "client_llm",
-        &secret_path(&root(), "client_llm"),
-    )
-}
-
-pub fn read_secret_executor_llm() -> Option<String> {
-    super::credential_store::read_migrating_secret(
-        "executor_llm",
-        &secret_path(&root(), "executor_llm"),
-    )
 }
 
 /// `web_sessions.json` 的 `sessions` 须为 JSON 数组。
@@ -604,13 +559,17 @@ mod tests {
             .as_object()
             .expect("saved model object");
         assert!(!saved.contains_key("api_key"));
-        assert_eq!(saved.get("has_api_key"), Some(&Value::Bool(true)));
+        assert_eq!(saved.get("has_api_key"), Some(&Value::Bool(false)));
         let persisted: Value =
             serde_json::from_str(&std::fs::read_to_string(path).expect("read overrides"))
                 .expect("parse overrides");
         assert!(
             persisted["saved_models"][0].get("api_key").is_none(),
             "persisted llm_overrides must not contain API keys"
+        );
+        assert_eq!(
+            persisted["saved_models"][0].get("has_api_key"),
+            Some(&Value::Bool(false))
         );
     }
 

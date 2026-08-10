@@ -176,13 +176,12 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 
 | 账户 | 内容 |
 |------|------|
-| `client_llm` | 云厂商 Bearer（主模型） |
-| `executor_llm` | 可选：执行器 API Key |
-| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets` 或 CLI **`crabmate web-bearer set`**；**`serve`** 在 TOML/`CM_WEB_API_BEARER_TOKEN` 皆空时从此处回退加载；与服务端校验值一致时由前端携带） |
+| `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets` 或 CLI **`crabmate web-bearer set`**；**`serve`** 在 TOML/`CM_WEB_API_BEARER_TOKEN` 皆空时从此处回退加载） |
 | `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
-| `saved_model_<sha256>` | 已保存模型的 API Key（`llm_overrides.json` 仅留 `has_api_key`） |
 
-旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：首次成功读/写钥匙串后自动迁移并删除；钥匙串已有值时仅在遗留文件仍存在时清理。钥匙串不可用时：有遗留文件则保留并报错；无遗留文件则降噪（debug），避免刷屏。
+**已退役（模型密钥）**：`client_llm` / `executor_llm` / `saved_model_*` 不再读写。官方 Client 本机持钥并经请求体 **`client_llm.api_key`** 发送；`llm_overrides.json` 的 `saved_models` 仅保留端点元数据，剥离明文 `api_key` 且 **`has_api_key=false`**。
+
+旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：对仍使用的槽（`web_api_bearer` / `mcp_bearer_*`），首次成功读/写钥匙串后自动迁移并删除。
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 
@@ -230,7 +229,7 @@ flowchart TB
 |----|------|------|
 | **Web** | `GET/PUT /user-data/*` | WASM 无法直接读 `$HOME`；与现有 Bearer 鉴权一致 |
 | **Tauri** | 同 Web（`serve` 动态 loopback URL，见 **`web_ready` JSON**） | 业务数据不再依赖 `com.crabmate.desktop/localstorage/` |
-| **CLI** | `user_data` 直读；`doctor` 打印路径与钥匙串脱敏状态 | 启动**不**自动套用 `prefs.last_workspace_root`（须 `--workspace`）；`cm_role` 仍可回退；密钥优先 `API_KEY` env，其次系统钥匙串 |
+| **CLI** | `user_data` 直读；`doctor` 打印路径与 **web_api_bearer** 脱敏状态 | 启动**不**自动套用 `prefs.last_workspace_root`（须 `--workspace`）；模型密钥不读服务端钥匙串 |
 | **TUI** | 直读 `prefs` + 可选 HTTP | 同 CLI：不自动打开上次工作区；会话链仍以 SQLite / `tui_session.json` 为主 |
 
 ---
@@ -244,9 +243,9 @@ flowchart TB
 | `GET` | `/user-data/prefs` | 读 `prefs.json` |
 | `PUT` | `/user-data/prefs` | 写回；可选 `If-Match` / revision |
 | `GET` | `/user-data/llm-overrides` | 读 `llm_overrides.json` |
-| `PUT` | `/user-data/llm-overrides` | 写回非机密 LLM 字段 |
-| `PUT` | `/user-data/secrets/client-llm` | 仅写系统钥匙串；**无**对应 GET 明文 |
-| `GET` | `/user-data/secrets/status` | `{ "client_llm": { "set": true }, ... }` 脱敏状态 |
+| `PUT` | `/user-data/llm-overrides` | 写回非机密 LLM 字段（剥离 `saved_models[*].api_key`） |
+| `GET` | `/user-data/secrets/status` | `{ "client_llm"/"executor_llm": 恒未设置, "web_api_bearer": … }`（兼容字段；模型槽已退役） |
+| `PUT` | `/user-data/secrets/web-api-bearer` | 写 Web API 共享密钥到系统钥匙串 |
 | `GET` | `/user-data/workspaces/current/sessions` | 按当前 `workspace_override` 解析桶 |
 | `PUT` | `/user-data/workspaces/current/sessions` | 写 `web_sessions.json` |
 | `GET` | `/user-data/workspaces` | 列出 `manifest.json` |
@@ -263,9 +262,9 @@ flowchart TB
 **`api_key`（对话回合）**：
 
 1. 请求体 **`client_llm.api_key`**（官方 Client 本机存放并随请求发送；权威路径）  
-2. 进程环境 **`API_KEY`**（可选回退，供运维 / `models` / `probe`；**不**经 `merge_client_llm_body` 写入 body）
+2. 进程环境 **`API_KEY`**（可选回退，供运维 / `models` / `probe`）
 
-**不再**从服务端系统钥匙串 / `saved_model_*` / `client_llm` 槽回填请求体密钥（无桌面 Secret Service 的 `serve` 不再探测这些账户）。旧 `secrets/*` 与 `saved_models[*].api_key` 的迁移写入逻辑仍保留（成功才删明文）；读失败静默视为无密钥。
+服务端 **不再** 提供 `PUT /user-data/secrets/client-llm` / `executor-llm`，亦 **不再** 从钥匙串回填模型密钥。
 
 ---
 
