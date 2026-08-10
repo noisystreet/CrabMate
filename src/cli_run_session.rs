@@ -6,6 +6,13 @@ use crate::config::cli::ChatCliArgs;
 use crate::config::cli::definitions::BenchmarkCliArgs;
 use crate::runtime;
 
+/// 同进程对话入口已官方弃用（ADR `client_shell_split` §2.5 D1）；仍可运行以兼容，硬删见 D2。
+fn warn_in_process_terminal_deprecated(kind: &str) {
+    eprintln!(
+        "warning: `crabmate {kind}`（同进程对话）已官方弃用；请改用 Client 仓 `crabmate-tui` 连接 `crabmate serve`。见 docs/design/client_shell_split.md。"
+    );
+}
+
 /// `AgentConfig` 已载入并完成 HTTP 客户端与工具表初始化。
 pub(super) struct CliSessionStart {
     pub cfg_holder: crate::config::SharedAgentConfig,
@@ -137,6 +144,7 @@ pub(super) async fn run_cli_main_routes(
     }
 
     if chat_cli.wants_chat() {
+        warn_in_process_terminal_deprecated("chat");
         runtime::cli::run_chat_invocation(
             runtime::cli::CliMainInvocationCommon {
                 cfg_holder: &cfg_holder,
@@ -157,6 +165,7 @@ pub(super) async fn run_cli_main_routes(
     if tui {
         #[cfg(feature = "tui")]
         {
+            warn_in_process_terminal_deprecated("tui");
             runtime::tui::run_tui_session(
                 runtime::cli::CliMainInvocationCommon {
                     cfg_holder: &cfg_holder,
@@ -183,6 +192,7 @@ pub(super) async fn run_cli_main_routes(
         }
     }
 
+    warn_in_process_terminal_deprecated("repl");
     runtime::cli::run_repl(
         runtime::cli::CliMainInvocationCommon {
             cfg_holder: &cfg_holder,

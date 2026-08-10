@@ -21,15 +21,15 @@
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
-内置 **Function Calling** 与工作区内的命令、文件等工具，并提供 **HTTP `serve`**、**CLI** 与实验性 **TUI**。
+提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在同级 **[`crabmate-client`](../crabmate-client/)**。本仓同进程 **`repl` / `chat` / `tui` 已弃用**。
 
-**路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、CLI/TUI）；官方 Web UI 与 Desktop/Android 壳在同级 **[`crabmate-client`](../crabmate-client/)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
+**路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、运维 CLI）；官方 Client 在 **[`crabmate-client`](../crabmate-client/)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
 
 ## 目录
 
 - [功能概览](#功能概览)
 - [常用子命令](#常用子命令)
-  - [TUI（全屏终端）](#tui全屏终端)
+  - [已弃用的同进程 TUI](#已弃用的同进程-tui)
 - [编译运行与打包](#编译运行与打包)
   - [Makefile（推荐）](#makefile推荐)
   - [后端](#后端)
@@ -47,20 +47,20 @@
 
 - **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**，复合命令用 **`bash -c`/`sh -c`**；argv 含工作区外绝对路径或路径穿越形 `..`/`../` 时默认经 **`allow_external_path_with_approval`** 人工审批后放行，可关；**git** `A..B` 不算穿越）、HTTP、**联网搜索**（默认 **worbrow** 本机浏览器，免 API Key；可选 Brave/Tavily）、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。**`run_command`** 等子进程工具输出默认按 **`command_max_output_len`**（嵌入默认 **512KiB**）截断，详见 **`config/tools.toml`** 与 [docs/配置说明.md](docs/配置说明.md)。
 - **Web UI（Client）**：源码与发版在 **[`crabmate-client`](../crabmate-client/)**；本仓 **`serve` 默认纯 API**；同机托管 SPA 须 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client `frontend/dist`）。会话、工作区/项目池、编辑器、PR、终端流聊天、Ask/Plan/Act、设置等见 Client README 与 [docs/命令行与路由.md](docs/命令行与路由.md)。须**显式选择工作区**后工具与 **`@相对路径`** 才生效。
-- **终端**：**`repl`**（交互）、**`chat`**（单次）、**`serve`**（HTTP；默认纯 API，可选 `--with-web`）、**`tui`**（实验性**全屏**，须真实 TTY，见下文）。流式 **SSE**、工具审批与取消见 [docs/SSE协议.md](docs/SSE协议.md)。
-- **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**（及同路径的 **`tui`**）；不需要时将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
+- **终端**：官方远程客户端为 **[`crabmate-client`](../crabmate-client/)** 的 **`crabmate-tui`**（HTTP/SSE 连本仓 **`serve`**；模型密钥存 Client）。本仓同进程 **`repl` / `chat` / `tui` 已弃用**（stderr 警告；计划硬删，见 [docs/design/client_shell_split.md](docs/design/client_shell_split.md)）。**`serve`** 默认纯 API（可选 **`--with-web`**）。流式 **SSE** 见 [docs/SSE协议.md](docs/SSE协议.md)。
+- **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**；不需要时将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **进阶（默认不必读）**：分阶段规划、澄清问卷、**`thinking_trace`**、长期记忆、活文档、**MCP**、工作区 **`plugins/*.json`** 等见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)。
 
 ## 常用子命令
 
-不写子命令时默认进入 **`repl`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--agent-role`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
+不写子命令时仍会进入已弃用的 **`repl`**（打印警告）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--agent-role`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
 
 | 子命令 | 说明 |
 | --- | --- |
 | **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。**`--no-web`** 为兼容无操作。默认端口 **8080**，绑定 **127.0.0.1**。 |
-| **`repl`** | 交互式终端对话；**`/`** 斜杠命令与 **`/api-key set`** 等见 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
-| **`chat`** | 单次提问后退出（**`--query`** / **`--stdin`** / 文件等）；**`--output json`** 见 [docs/命令行契约.md](docs/命令行契约.md)。 |
-| **`tui`** | 实验性**全屏**终端 UI；须**交互式 TTY**（管道或非 TTY 请用 **`repl`** / **`chat`**）。见 **[TUI（全屏终端）](#tui全屏终端)**。 |
+| **`repl`** | **已弃用**的同进程交互终端；请用 Client **`crabmate-tui`**。 |
+| **`chat`** | **已弃用**的同进程单次对话；请用 Client **`crabmate-tui chat`**。 |
+| **`tui`** | **已弃用**的同进程全屏 UI；请用 Client **`crabmate-tui`**。 |
 | **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
 | **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
@@ -73,14 +73,9 @@
 
 完整参数、HTTP 路由与 **`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
 
-### TUI（全屏终端）
+### 已弃用的同进程 TUI
 
-**`crabmate tui`** 为实验性**全屏**界面，与 **`repl`** 共用 Agent/工具编排。
-
-- **环境**：须真实 **TTY**；否则请用 **`repl`** / **`chat`**。
-- **交互**：撰写区 **Enter** 发送；右栏 **「工作区」** 聚焦时 **Enter** 打开路径浏览（与 Web **`/workspace`**、REPL **`/workspace`** 同源）。**`q`** / **Ctrl+C** 退出。**`/api-key`**、**`/mode`**（Ask/Plan/Act）等 **`/`** 命令与 **`repl`** 同源。
-- **流式**：不在 **stdout** 刷助手流式正文；细节与 **`--no-stream`** 见 **`crabmate tui --help`**。
-- **其它**：可选 SQLite 多会话（**`/conv`**、**`/branch`**）、澄清问卷、**`CM_TUI_CONVERSATION_ID`** 等见 **[docs/命令行与路由.md](docs/命令行与路由.md)**。
+**`crabmate tui`** 仅为兼容暂留，**不是**官方终端。请用 Client **`crabmate-tui`** + **`crabmate serve`**。过渡期细节见 [docs/命令行与路由.md](docs/命令行与路由.md)、ADR [docs/design/client_shell_split.md](docs/design/client_shell_split.md)。
 
 ## 编译运行与打包
 

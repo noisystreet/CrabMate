@@ -533,11 +533,11 @@ pub enum ExtraCliCommand {
 pub enum Commands {
     /// 启动 HTTP API（默认纯 API；可选 `--with-web` 挂载 UI；默认端口 8080）
     Serve(ServeCmd),
-    /// 交互式终端对话（默认子命令）
+    /// 【已弃用】同进程交互式对话（默认子命令）。官方终端请用 Client 仓 `crabmate-tui` 连接本进程 `serve`
     Repl(ReplCmd),
-    /// 全屏终端 UI（实验性；须交互式 TTY；与 repl 共用 Agent 回合；不写 stdout 渲染流式正文，遵循 **`--no-stream`**；支持 **`/api-key`**；见 **`runtime::tui`**）
+    /// 【已弃用】同进程全屏 TUI。官方终端请用 Client 仓 `crabmate-tui` 连接本进程 `serve`
     Tui,
-    /// 单次提问后退出（脚本/管道）
+    /// 【已弃用】同进程单次提问。官方请用 Client 仓 `crabmate-tui chat`（或 WASM/桌面）经 `serve` HTTP/SSE
     Chat(ChatCmd),
     /// 批量 benchmark 测评（JSONL）
     Bench(BenchCmd),
@@ -575,14 +575,14 @@ pub enum Commands {
 #[command(
     name = "crabmate",
     version,
-    about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent（DeepSeek / MiniMax / Ollama 等），支持工具调用、Web 界面与 CLI",
-    after_long_help = "CLI 退出码、`chat --output json` 行协议与 SSE 错误码交叉引用：**docs/命令行契约.md**、**docs/SSE协议.md**。子命令详情：**docs/命令行与路由.md**。"
+    about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate-tui`（同进程 chat|repl|tui 已弃用）",
+    after_long_help = "官方对话请：`crabmate serve` + Client `crabmate-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 已官方弃用（见 docs/design/client_shell_split.md）。CLI 退出码与 `chat --output json`：**docs/命令行契约.md**；SSE：**docs/SSE协议.md**；子命令：**docs/命令行与路由.md**。"
 )]
 pub struct RootCli {
     #[command(flatten)]
     pub global: GlobalOpts,
 
-    /// 未指定时进入 `repl`
+    /// 未指定时进入已弃用的 `repl`（请改用 `serve` + Client `crabmate-tui`）
     #[command(subcommand)]
     pub command: Option<Commands>,
 }
