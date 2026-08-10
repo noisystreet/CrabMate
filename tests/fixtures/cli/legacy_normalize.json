@@ -1,72 +1,196 @@
 [
   {
     "name": "explicit_subcommand_unchanged",
-    "argv": ["crabmate", "serve", "3000"],
-    "normalized": ["crabmate", "serve", "3000"]
+    "argv": [
+      "crabmate",
+      "serve",
+      "3000"
+    ],
+    "normalized": [
+      "crabmate",
+      "serve",
+      "3000"
+    ]
   },
   {
     "name": "legacy_serve_with_port",
-    "argv": ["crabmate", "--serve", "3000", "--no-web"],
-    "normalized": ["crabmate", "serve", "3000", "--no-web"]
+    "argv": [
+      "crabmate",
+      "--serve",
+      "3000",
+      "--no-web"
+    ],
+    "normalized": [
+      "crabmate",
+      "serve",
+      "3000",
+      "--no-web"
+    ]
   },
   {
     "name": "legacy_serve_default_port",
-    "argv": ["crabmate", "--serve"],
-    "normalized": ["crabmate", "serve"]
+    "argv": [
+      "crabmate",
+      "--serve"
+    ],
+    "normalized": [
+      "crabmate",
+      "serve"
+    ]
   },
   {
     "name": "legacy_serve_then_host",
-    "argv": ["crabmate", "--serve", "--host", "0.0.0.0"],
-    "normalized": ["crabmate", "serve", "--host", "0.0.0.0"]
+    "argv": [
+      "crabmate",
+      "--serve",
+      "--host",
+      "0.0.0.0"
+    ],
+    "normalized": [
+      "crabmate",
+      "serve",
+      "--host",
+      "0.0.0.0"
+    ]
   },
   {
     "name": "help_root",
-    "argv": ["crabmate", "help"],
-    "normalized": ["crabmate", "--help"]
+    "argv": [
+      "crabmate",
+      "help"
+    ],
+    "normalized": [
+      "crabmate",
+      "--help"
+    ]
   },
   {
     "name": "help_save_session",
-    "argv": ["crabmate", "help", "save-session"],
-    "normalized": ["crabmate", "save-session", "--help"]
+    "argv": [
+      "crabmate",
+      "help",
+      "save-session"
+    ],
+    "normalized": [
+      "crabmate",
+      "save-session",
+      "--help"
+    ]
   },
   {
     "name": "help_export_session_alias",
-    "argv": ["crabmate", "help", "export-session"],
-    "normalized": ["crabmate", "export-session", "--help"]
+    "argv": [
+      "crabmate",
+      "help",
+      "export-session"
+    ],
+    "normalized": [
+      "crabmate",
+      "export-session",
+      "--help"
+    ]
   },
   {
     "name": "legacy_dry_run_config",
-    "argv": ["crabmate", "--dry-run", "--config", "/tmp/x.toml"],
-    "normalized": ["crabmate", "config", "--config", "/tmp/x.toml", "--dry-run"]
+    "argv": [
+      "crabmate",
+      "--dry-run",
+      "--config",
+      "/tmp/x.toml"
+    ],
+    "normalized": [
+      "crabmate",
+      "config",
+      "--config",
+      "/tmp/x.toml",
+      "--dry-run"
+    ]
   },
   {
     "name": "legacy_chat_query",
-    "argv": ["crabmate", "--query", "hi"],
-    "normalized": ["crabmate", "chat", "--query", "hi"]
+    "argv": [
+      "crabmate",
+      "--query",
+      "hi"
+    ],
+    "normalized": [
+      "crabmate",
+      "--query",
+      "hi"
+    ]
   },
   {
     "name": "legacy_bench_flags",
-    "argv": ["crabmate", "--benchmark", "generic", "--batch", "in.jsonl"],
-    "normalized": ["crabmate", "bench", "--benchmark", "generic", "--batch", "in.jsonl"]
+    "argv": [
+      "crabmate",
+      "--benchmark",
+      "generic",
+      "--batch",
+      "in.jsonl"
+    ],
+    "normalized": [
+      "crabmate",
+      "bench",
+      "--benchmark",
+      "generic",
+      "--batch",
+      "in.jsonl"
+    ]
   },
   {
-    "name": "implicit_repl_extra_flags",
-    "argv": ["crabmate", "--no-stream"],
-    "normalized": ["crabmate", "repl", "--no-stream"]
+    "name": "no_subcommand_no_longer_inserts_repl",
+    "argv": [
+      "crabmate",
+      "--no-stream"
+    ],
+    "normalized": [
+      "crabmate",
+      "--no-stream"
+    ]
   },
   {
     "name": "global_flags_then_known_subcommand_not_wrapped_in_repl",
-    "argv": ["crabmate", "--workspace", "/tmp/ws", "doctor"],
-    "normalized": ["crabmate", "--workspace", "/tmp/ws", "doctor"]
+    "argv": [
+      "crabmate",
+      "--workspace",
+      "/tmp/ws",
+      "doctor"
+    ],
+    "normalized": [
+      "crabmate",
+      "--workspace",
+      "/tmp/ws",
+      "doctor"
+    ]
   },
   {
     "name": "explicit_web_bearer_unchanged",
-    "argv": ["crabmate", "web-bearer", "status"],
-    "normalized": ["crabmate", "web-bearer", "status"]
+    "argv": [
+      "crabmate",
+      "web-bearer",
+      "status"
+    ],
+    "normalized": [
+      "crabmate",
+      "web-bearer",
+      "status"
+    ]
   },
   {
     "name": "explicit_tool_replay_unchanged",
-    "argv": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"],
-    "normalized": ["crabmate", "tool-replay", "export", "--output", "/tmp/x.json"]
+    "argv": [
+      "crabmate",
+      "tool-replay",
+      "export",
+      "--output",
+      "/tmp/x.json"
+    ],
+    "normalized": [
+      "crabmate",
+      "tool-replay",
+      "export",
+      "--output",
+      "/tmp/x.json"
+    ]
   }
 ]

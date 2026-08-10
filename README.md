@@ -21,7 +21,7 @@
 
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
-It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in sibling **[`crabmate-client`](../crabmate-client/)**. In-process **`repl` / `chat` / `tui`** on this binary are **deprecated**.
+It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in sibling **[`crabmate-client`](../crabmate-client/)**. In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
 
 **Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](../crabmate-client/)** ([ADR](docs/design/client_shell_split.md)).
 
@@ -29,7 +29,6 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 
 - [Overview](#overview)
 - [Common subcommands](#common-subcommands)
-  - [Deprecated in-process TUI](#deprecated-in-process-tui)
 - [Build, run, and packaging](#build-run-and-packaging)
   - [Makefile (recommended)](#makefile-recommended)
   - [Backend](#backend)
@@ -47,20 +46,17 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`** for **`bash -c`/`sh -c`**; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Web UI (Client)**: built and shipped from **[`crabmate-client`](../crabmate-client/)**; this repo’s **`serve` defaults to API-only**; host a SPA with **`--with-web`** plus **`CM_WEB_STATIC_DIR`** (or probed Client `frontend/dist`). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected.
-- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](../crabmate-client/)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui`** on this binary are **deprecated** (stderr warning; removal planned—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
+- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](../crabmate-client/)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` command entries are removed** (implementation pending D2.2 delete—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
 - **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
 - **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
 ## Common subcommands
 
-With no subcommand, deprecated **`repl`** still runs (prints a warning). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--agent-role`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
+With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
 | Subcommand | Summary |
 | --- | --- |
 | **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). **`--no-web`** is a no-op alias. Default port **8080**, bind **127.0.0.1**. |
-| **`repl`** | **Deprecated** in-process interactive terminal; use Client **`crabmate-tui`**. |
-| **`chat`** | **Deprecated** in-process one-shot; use Client **`crabmate-tui chat`**. |
-| **`tui`** | **Deprecated** in-process full-screen UI; use Client **`crabmate-tui`**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
 | **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
@@ -72,11 +68,6 @@ With no subcommand, deprecated **`repl`** still runs (prints a warning). Prefer 
 | **`tool-replay`** | Export or replay tool fixtures (**no** `API_KEY`; trusted workspace only). |
 
 Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
-
-### Deprecated in-process TUI
-
-**`crabmate tui`** remains temporarily for compatibility but is **not** the official terminal. Prefer Client **`crabmate-tui`** + **`crabmate serve`**. Details while it exists: [docs/en/CLI.md](docs/en/CLI.md), ADR [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md).
-
 
 ## Build, run, and packaging
 
@@ -113,7 +104,7 @@ cargo build --release
 # make package-docker                     # → dist/*.tar.gz and dist/*.deb on the host
 ```
 
-**`serve`** Web API auth (**`CM_WEB_API_BEARER_TOKEN`**, etc.): **[Deployment and security](#deployment-and-security)**. Cloud **`API_KEY`**: **[Environment variables](#environment-variables)** (or Web Settings / REPL **`/api-key set`**).
+**`serve`** Web API auth (**`CM_WEB_API_BEARER_TOKEN`**, etc.): **[Deployment and security](#deployment-and-security)**. Cloud **`API_KEY`**: **[Environment variables](#environment-variables)** (or Client Web Settings / `client_llm` on requests).
 
 ### Web frontend
 
@@ -200,7 +191,7 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 
 | Variable | Role |
 | --- | --- |
-| **`API_KEY`** | Cloud bearer (**`llm_http_auth_mode=bearer`**); `serve` / `repl` / `chat` can start first, then set via UI or **`/api-key`** (keychain, not XDG plaintext). |
+| **`API_KEY`** | Cloud bearer (**`llm_http_auth_mode=bearer`**); optional process fallback for **`serve`** / **`models`** / **`probe`**. Official Client dialogue sends **`client_llm.api_key`** (keychain on the client). |
 | **`CM_API_BASE`** / **`CM_MODEL`** | Override gateway and model from config. |
 | **`CM_WEB_API_BEARER_TOKEN`** | Protects Web APIs (with **`web_api_require_bearer`**); [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). |
 | **`CM_WEB_CORS_ALLOWED_ORIGINS`** | Extra Origin allowlist (comma-separated); **unset** already allows official shell Origins (`tauri://localhost`, `http://tauri.localhost`). Explicit empty disables CORS. Static browser UI: add its Origin; see Settings **API base** (`localStorage` **`crabmate-api-base-url`**). |
@@ -213,7 +204,7 @@ Other **`CM_*`** (including **`CM_TUI_CONVERSATION_ID`**, skills, staged plannin
 ## Deployment and security
 
 - **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs **`web_api_bearer_token`** or an explicit insecure switch ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **LLM API Key**: Web/desktop settings and default **`/api-key set`** use the OS keychain; env **`API_KEY`** remains a fallback.
+- **LLM API Key**: Client stores keys locally and sends **`client_llm.api_key`**. Process env **`API_KEY`** remains an optional **`serve`** / ops fallback.
 - **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, require non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML / **`crabmate web-bearer set`**). When the token is set, send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**)—**not** the LLM **`API_KEY`**. Cross-origin static UI: set **API base**; official shell Origins are allowed by default—add **`CM_WEB_CORS_ALLOWED_ORIGINS`** only for extra browser Origins. Smoke: **`docs/design/client_turn_smoke_runbook.md`** §9. Temporary local skip: unset the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`**. Prefer **`web_api_require_bearer = true`** on exposed networks. Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Other**: Web **Settings → Save all** persists via **`/user-data`**; workspace must stay under allowed roots. Debug / **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 - **Personal VPS (TLS reverse proxy)**: [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (Chinese; **`127.0.0.1` + Bearer + Caddy/Nginx**).

@@ -1,32 +1,14 @@
 //! `parse_args` / `parse_args_from_argv` 与 `RootCli` → [`ParsedCliArgs`] 映射。
 
 use super::definitions::{
-    BenchmarkCliArgs, ChatCliArgs, Commands, E2eCliArgs, ExtraCliCommand, GlobalOpts, McpSubCmd,
-    ParsedCliArgs, PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli,
-    SaveSessionCli, SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WebBearerCli, WebBearerSubCmd,
-    WorkflowFileCli, WorkflowSubCmd,
+    BenchmarkCliArgs, Commands, E2eCliArgs, ExtraCliCommand, GlobalOpts, McpSubCmd, ParsedCliArgs,
+    PluginInitCli, PluginListCli, PluginSubCmd, PluginValidateCli, RootCli, SaveSessionCli,
+    SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WebBearerCli, WebBearerSubCmd, WorkflowFileCli,
+    WorkflowSubCmd,
 };
 use super::legacy_argv::normalize_legacy_argv;
 use clap::Parser;
-use std::io::{self, Read};
-
-/// 从标准输入读取全部内容（直到 EOF）
-fn read_stdin_to_string() -> io::Result<String> {
-    let mut s = String::new();
-    io::stdin().read_to_string(&mut s)?;
-    Ok(s)
-}
-
-fn parse_output_mode(raw: Option<String>) -> Option<String> {
-    raw.as_ref().and_then(|m| {
-        let m = m.to_ascii_lowercase();
-        if m == "json" || m == "plain" {
-            Some(m)
-        } else {
-            None
-        }
-    })
-}
+use std::io;
 
 fn resolve_http_bind_host(host_opt: Option<String>) -> String {
     host_opt
@@ -48,18 +30,12 @@ struct CliParseCtx {
     workspace_cli: Option<String>,
     no_tools: bool,
     log_file: Option<String>,
-    agent_role_cli: Option<String>,
     llm_context_tokens_cli: Option<u32>,
 }
 
 impl CliParseCtx {
     fn new(global: &GlobalOpts) -> Self {
         let llm_context_tokens_cli = global.llm_context_tokens.filter(|&n| n > 0);
-        let agent_role_cli = global
-            .agent_role
-            .as_ref()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
         let log_file = global
             .log
             .as_ref()
@@ -70,7 +46,6 @@ impl CliParseCtx {
             workspace_cli: global.workspace.clone(),
             no_tools: global.no_tools,
             log_file,
-            agent_role_cli,
             llm_context_tokens_cli,
         }
     }
@@ -78,9 +53,7 @@ impl CliParseCtx {
     fn base_parsed(&self) -> ParsedCliArgs {
         ParsedCliArgs {
             config_path: self.config_path.clone(),
-            agent_role_cli: self.agent_role_cli.clone(),
             llm_context_tokens_cli: self.llm_context_tokens_cli,
-            chat_cli: ChatCliArgs::default(),
             serve_port: None,
             serve_desktop_ready_json: false,
             http_bind_host: resolve_http_bind_host(None),
@@ -88,7 +61,6 @@ impl CliParseCtx {
             no_tools: self.no_tools,
             with_web: false,
             dry_run: false,
-            no_stream: false,
             log_file: self.log_file.clone(),
             bench_args: BenchmarkCliArgs::default(),
             extra_cli: ExtraCliCommand::None,
@@ -102,87 +74,45 @@ impl CliParseCtx {
             workflow_validate: None,
             workflow_compile: None,
             workflow_run: None,
-            tui: false,
             e2e: None,
         }
     }
 }
 
-/// 解析命令行：支持 **`serve` / `repl` / `tui` / `chat` / `bench` / `config` / `doctor` / `web-bearer` / `models` / `probe` / `mcp` / `save-session`**（兼容别名 **`export-session`**）、**`tool-replay`** 子命令，**`help`**（同 `--help` 或 `help <子命令>`），并兼容未写子命令时的历史平铺 flag（`--serve`、`--query` 等）。
-///
-/// `chat --stdin` 时若读取标准输入失败则返回 [`io::Error`]。
+/// 解析命令行：须显式子命令（**`serve` / `bench` / `config` / `doctor` / …**）；同进程 **`chat|repl|tui` 入口已移除**。
 ///
 /// 非法 CLI：打印 clap 说明后以 **非零** 码退出进程（与历史 `parse_from` 行为一致）；**不会**向调用方返回 `Err`。
 pub fn parse_args() -> io::Result<ParsedCliArgs> {
     let raw: Vec<String> = std::env::args().collect();
     let normalized = normalize_legacy_argv(raw);
     let root = RootCli::try_parse_from(normalized).unwrap_or_else(|e| e.exit());
-    build_parsed_cli_args(root, None)
+    Ok(build_parsed_cli_args(root))
 }
 
 /// 使用给定 **`argv`**（首元素为程序名）解析 CLI，供契约/集成测试；生产请用 [`parse_args`]。
 ///
-/// - **`stdin_fixture`**：当参数含 `chat --stdin` 时，使用该字符串代替读取真实 stdin（避免测试挂起）。
+/// - **`stdin_fixture`**：保留参数以兼容旧测试签名（同进程 `chat --stdin` 已移除，忽略）。
 /// - 非法参数：返回 [`io::Error`]（**不**退出进程），便于断言。
 pub fn parse_args_from_argv(
     raw: Vec<String>,
-    stdin_fixture: Option<String>,
+    _stdin_fixture: Option<String>,
 ) -> io::Result<ParsedCliArgs> {
     let normalized = normalize_legacy_argv(raw);
     let root = RootCli::try_parse_from(normalized)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
-    build_parsed_cli_args(root, stdin_fixture)
+    Ok(build_parsed_cli_args(root))
 }
 
-fn build_parsed_cli_args(
-    root: RootCli,
-    stdin_fixture: Option<String>,
-) -> io::Result<ParsedCliArgs> {
+fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
     let ctx = CliParseCtx::new(&root.global);
-    let cmd = match root.command {
-        None => return Ok(ctx.base_parsed()),
-        Some(c) => c,
-    };
     let mut b = ctx.base_parsed();
 
-    match cmd {
+    match root.command {
         Commands::Serve(s) => {
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
             b.serve_desktop_ready_json = s.desktop_ready_json;
             b.http_bind_host = resolve_http_bind_host(s.host);
-            // `--no-web` 为兼容无操作；仅 `--with-web` 开启挂载。
             b.with_web = s.with_web;
-        }
-        Commands::Repl(r) => {
-            b.no_stream = r.no_stream;
-        }
-        Commands::Tui => {
-            b.tui = true;
-        }
-        Commands::Chat(c) => {
-            let inline_user_text = if c.user_prompt_file.is_some() {
-                None
-            } else if c.stdin {
-                match stdin_fixture.as_ref() {
-                    Some(s) => Some(s.clone()),
-                    None => Some(read_stdin_to_string()?),
-                }
-            } else {
-                c.query.clone()
-            };
-            let chat_output = parse_output_mode(c.output);
-            b.chat_cli = ChatCliArgs {
-                inline_user_text,
-                user_prompt_file: c.user_prompt_file,
-                system_prompt_file: c.system_prompt_file,
-                messages_json_file: c.messages_json_file,
-                message_file: c.message_file,
-                output: chat_output,
-                no_stream: c.no_stream,
-                yes_run_command: c.yes,
-                approve_commands: c.approve_commands,
-            };
-            b.no_stream = c.no_stream;
         }
         Commands::Bench(be) => {
             b.bench_args = BenchmarkCliArgs {
@@ -329,5 +259,5 @@ fn build_parsed_cli_args(
         }
     }
 
-    Ok(b)
+    b
 }

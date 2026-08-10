@@ -114,41 +114,9 @@ fn fixture_parse_args_from_argv_contract() {
             );
             let want_port = case["serve_port"].as_u64().map(|u| u as u16);
             assert_eq!(p.serve_port, want_port, "{name} serve_port");
-            assert_eq!(
-                p.no_stream,
-                case["no_stream"].as_bool().unwrap(),
-                "{name} no_stream"
-            );
-            assert_eq!(
-                p.chat_cli.wants_chat(),
-                case["chat_wants"].as_bool().unwrap(),
-                "{name} chat_wants"
-            );
-            assert_eq!(p.tui, case["tui"].as_bool().unwrap_or(false), "{name} tui");
-
-            if let Some(ar) = case.get("agent_role").and_then(|v| v.as_str()) {
-                assert_eq!(p.agent_role_cli.as_deref(), Some(ar), "{name} agent_role");
-            } else {
-                assert!(
-                    p.agent_role_cli.is_none(),
-                    "{name}: agent_role_cli should be absent"
-                );
-            }
 
             if let Some(ws) = case.get("workspace").and_then(|v| v.as_str()) {
                 assert_eq!(p.workspace_cli.as_deref(), Some(ws), "{name} workspace");
-            }
-
-            if let Some(inline) = case.get("chat_inline").and_then(|v| v.as_str()) {
-                assert_eq!(
-                    p.chat_cli.inline_user_text.as_deref(),
-                    Some(inline),
-                    "{name} chat_inline"
-                );
-            }
-
-            if let Some(om) = case.get("chat_output").and_then(|v| v.as_str()) {
-                assert_eq!(p.chat_cli.output.as_deref(), Some(om), "{name} chat_output");
             }
 
             if let Some(ef) = case.get("save_session_format").and_then(|v| v.as_str()) {

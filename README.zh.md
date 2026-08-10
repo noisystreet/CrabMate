@@ -21,7 +21,7 @@
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
-提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在同级 **[`crabmate-client`](../crabmate-client/)**。本仓同进程 **`repl` / `chat` / `tui` 已弃用**。
+提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在同级 **[`crabmate-client`](../crabmate-client/)**。本仓同进程 **`repl` / `chat` / `tui` 命令入口已移除**（请用 Client **`crabmate-tui`**；见 [ADR](docs/design/client_shell_split.md)）。
 
 **路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、运维 CLI）；官方 Client 在 **[`crabmate-client`](../crabmate-client/)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
 
@@ -29,7 +29,6 @@
 
 - [功能概览](#功能概览)
 - [常用子命令](#常用子命令)
-  - [已弃用的同进程 TUI](#已弃用的同进程-tui)
 - [编译运行与打包](#编译运行与打包)
   - [Makefile（推荐）](#makefile推荐)
   - [后端](#后端)
@@ -53,14 +52,11 @@
 
 ## 常用子命令
 
-不写子命令时仍会进入已弃用的 **`repl`**（打印警告）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--agent-role`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
+不写子命令时须显式给出（如 **`serve`**）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
 
 | 子命令 | 说明 |
 | --- | --- |
 | **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。**`--no-web`** 为兼容无操作。默认端口 **8080**，绑定 **127.0.0.1**。 |
-| **`repl`** | **已弃用**的同进程交互终端；请用 Client **`crabmate-tui`**。 |
-| **`chat`** | **已弃用**的同进程单次对话；请用 Client **`crabmate-tui chat`**。 |
-| **`tui`** | **已弃用**的同进程全屏 UI；请用 Client **`crabmate-tui`**。 |
 | **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
 | **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
@@ -72,10 +68,6 @@
 | **`tool-replay`** | 从会话导出工具 fixture 或重放（**不要**求 `API_KEY`，须在可信工作区）。 |
 
 完整参数、HTTP 路由与 **`man crabmate`**：[docs/命令行与路由.md](docs/命令行与路由.md)。
-
-### 已弃用的同进程 TUI
-
-**`crabmate tui`** 仅为兼容暂留，**不是**官方终端。请用 Client **`crabmate-tui`** + **`crabmate serve`**。过渡期细节见 [docs/命令行与路由.md](docs/命令行与路由.md)、ADR [docs/design/client_shell_split.md](docs/design/client_shell_split.md)。
 
 ## 编译运行与打包
 
@@ -112,7 +104,7 @@ cargo build --release
 # make package-docker                     # → 宿主 dist/*.tar.gz 与 dist/*.deb
 ```
 
-**`serve`** 的 Web API 鉴权（**`CM_WEB_API_BEARER_TOKEN`** 等）见 **[部署与安全](#部署与安全)**。调用云端模型所需的 **`API_KEY`** 见 **[环境变量提示](#环境变量提示)**（或通过 Web「设置」、REPL **`/api-key set`**）。
+**`serve`** 的 Web API 鉴权（**`CM_WEB_API_BEARER_TOKEN`** 等）见 **[部署与安全](#部署与安全)**。调用云端模型所需的 **`API_KEY`** 见 **[环境变量提示](#环境变量提示)**（或 Client 侧栏 / 请求体 **`client_llm`**）。
 
 ### 前端 Web
 
@@ -199,7 +191,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 变量 | 作用 |
 | --- | --- |
-| **`API_KEY`** | 云网关 Bearer token（**`llm_http_auth_mode=bearer`**）；`serve` / `repl` / `chat` 可先启动再在界面或 **`/api-key`** 设置，持久化到系统钥匙串而非 XDG 明文文件。 |
+| **`API_KEY`** | 云网关 Bearer（**`llm_http_auth_mode=bearer`**）；可选进程回退供 **`serve`** / **`models`** / **`probe`**。官方 Client 对话走请求体 **`client_llm.api_key`**（密钥存 Client 本机）。 |
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
 | **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 额外 Origin 白名单（逗号分隔）；**未设置**时已默认放行官方壳 Origin（`tauri://localhost`、`http://tauri.localhost`）。显式空串关闭 CORS。静态浏览器 UI：补上其 Origin；见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
@@ -212,7 +204,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
-- **LLM API Key**：Web/桌面设置、默认 `/api-key set` 与已保存模型的密钥写入系统钥匙串。无可用钥匙串时可继续使用环境变量 `API_KEY`。
+- **LLM API Key**：Client 本机存放并经 **`client_llm.api_key`** 发送；进程环境变量 **`API_KEY`** 仍可作为 **`serve`** / 运维回退。
 - **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML / **`crabmate web-bearer set`**）。密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。浏览器须在 **设置 →「Web API 共享密钥（Bearer）」** 保存与服务端相同的值（**`localStorage`** **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。**跨 Origin 静态 UI**：设置页填 **API 基址**；官方壳 Origin 已默认放行，其它浏览器 Origin 再配 **`CM_WEB_CORS_ALLOWED_ORIGINS`**。冒烟见 **`docs/design/client_turn_smoke_runbook.md`** §9。**本机临时跳过**：`unset CM_WEB_API_BEARER_TOKEN` 后听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`。对外建议 **`web_api_require_bearer = true`**。详见 [docs/配置说明.md](docs/配置说明.md)。
 - **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入；工作区须在允许根内。调试与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。
 - **个人 VPS（反代 TLS）**：见 [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md)。

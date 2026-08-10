@@ -1,17 +1,9 @@
-//! 配置加载之后的 CLI 主路径：`serve` / `bench` / `chat` / `tui` / `repl`（从 [`cli_run::run`] 拆出以降低圈复杂度）。
+//! 配置加载之后的 CLI 主路径：`serve` / `bench`（从 [`cli_run::run`] 拆出以降低圈复杂度）。
+//! 同进程 `chat|repl|tui` 入口已移除；实现模块暂留待 D2.2 删除。
 
 use std::sync::Arc;
 
-use crate::config::cli::ChatCliArgs;
 use crate::config::cli::definitions::BenchmarkCliArgs;
-use crate::runtime;
-
-/// 同进程对话入口已官方弃用（ADR `client_shell_split` §2.5 D1）；仍可运行以兼容，硬删见 D2。
-fn warn_in_process_terminal_deprecated(kind: &str) {
-    eprintln!(
-        "warning: `crabmate {kind}`（同进程对话）已官方弃用；请改用 Client 仓 `crabmate-tui` 连接 `crabmate serve`。见 docs/design/client_shell_split.md。"
-    );
-}
 
 /// `AgentConfig` 已载入并完成 HTTP 客户端与工具表初始化。
 pub(super) struct CliSessionStart {
@@ -71,10 +63,6 @@ pub(super) struct CliDispatchArgs {
     pub workspace_cli: Option<String>,
     pub with_web: bool,
     pub bench_args: BenchmarkCliArgs,
-    pub chat_cli: ChatCliArgs,
-    pub tui: bool,
-    pub no_stream: bool,
-    pub agent_role_cli: Option<String>,
 }
 
 pub(super) async fn run_cli_main_routes(
@@ -89,10 +77,6 @@ pub(super) async fn run_cli_main_routes(
         workspace_cli,
         with_web,
         bench_args,
-        chat_cli,
-        tui,
-        no_stream,
-        agent_role_cli,
     } = args;
     let CliSessionStart {
         cfg_holder,
@@ -143,68 +127,9 @@ pub(super) async fn run_cli_main_routes(
         return Ok(());
     }
 
-    if chat_cli.wants_chat() {
-        warn_in_process_terminal_deprecated("chat");
-        runtime::cli::run_chat_invocation(
-            runtime::cli::CliMainInvocationCommon {
-                cfg_holder: &cfg_holder,
-                config_path: config_path.as_deref(),
-                client: &client,
-                api_key: &api_key,
-                tools: &tools,
-                workspace_cli: &workspace_cli,
-                agent_role: agent_role_cli.as_deref(),
-                process_handles: Arc::clone(&process_handles),
-            },
-            &chat_cli,
-        )
-        .await?;
-        return Ok(());
-    }
-
-    if tui {
-        #[cfg(feature = "tui")]
-        {
-            warn_in_process_terminal_deprecated("tui");
-            runtime::tui::run_tui_session(
-                runtime::cli::CliMainInvocationCommon {
-                    cfg_holder: &cfg_holder,
-                    config_path: config_path.as_deref(),
-                    client: &client,
-                    api_key: &api_key,
-                    tools: &tools,
-                    workspace_cli: &workspace_cli,
-                    agent_role: agent_role_cli.as_deref(),
-                    process_handles: Arc::clone(&process_handles),
-                },
-                no_stream,
-            )
-            .await?;
-            return Ok(());
-        }
-        #[cfg(not(feature = "tui"))]
-        {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "本 crabmate 二进制未启用 `tui` Cargo feature，不支持全屏 TUI。请使用默认构建或 `cargo build --features tui`。",
-            )
-            .into());
-        }
-    }
-
-    warn_in_process_terminal_deprecated("repl");
-    runtime::cli::run_repl(
-        runtime::cli::CliMainInvocationCommon {
-            cfg_holder: &cfg_holder,
-            config_path: config_path.as_deref(),
-            client: &client,
-            api_key: &api_key,
-            tools: &tools,
-            workspace_cli: &workspace_cli,
-            agent_role: agent_role_cli.as_deref(),
-            process_handles: Arc::clone(&process_handles),
-        },
-        no_stream,
+    Err(std::io::Error::new(
+        std::io::ErrorKind::InvalidInput,
+        "未指定可执行的子命令。请使用 `crabmate serve`（API）或运维子命令（如 `doctor`）；官方终端为 Client 仓 `crabmate-tui`。同进程 `chat|repl|tui` 入口已移除。",
     )
-    .await
+    .into())
 }

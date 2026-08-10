@@ -2,11 +2,11 @@
 
 # CLI and subcommands
 
-Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root and **`chat --help`** footers cross-reference **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--agent-role`, `--no-tools`, `--log`.
+Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`, `--log`. An explicit subcommand is required (e.g. `serve`); bare `cargo run` no longer defaults into dialogue.
 
-**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` are deprecated** (stderr warning; hard removal planned—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
+**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` command entries are removed** (D2.1; implementation pending D2.2—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
 
-**Script contract** (exit codes, `chat --output json` line JSON `type`/`v`, etc.): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
+**Script contract** (exit codes, `tool-replay`; legacy `chat --output json` shape is historical only): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
 ## Man page (troff / `man`)
 
@@ -19,9 +19,6 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 | Subcommand | Description |
 |------------|-------------|
 | `serve [PORT]` | Web UI + HTTP API, default **8080**; with **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`, authority on the Client) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client repo **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**). |
-| `repl` | **Deprecated** in-process interactive chat; **still the default with no subcommand** (prints a warning). Prefer Client **`crabmate-tui`**. |
-| `tui` | **Deprecated** in-process full-screen TUI; prefer Client **`crabmate-tui`**. |
-| `chat` | **Deprecated** in-process one-shot; prefer Client **`crabmate-tui chat`**. |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
 | `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
 | `doctor` | Local diagnostics (**no** `API_KEY`). |
@@ -38,7 +35,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 ## Log levels
 
-Without `RUST_LOG`: `serve` defaults to **info**; `repl` / `chat` / `tui` / `bench` / `config` / `mcp` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
+Without `RUST_LOG`: `serve` defaults to **info**; `bench` / `config` / `mcp` / `web-bearer` / `save-session` (and alias `export-session`) / `tool-replay` / `plugin` / `workflow` / `doctor` and other subcommands default to **warn**. Use `RUST_LOG` or `--log <FILE>`.
 
 ## Message pipeline debug logs
 
@@ -46,7 +43,7 @@ With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline sessi
 
 ## Legacy usage
 
-Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-run`, etc. still map internally. If argv **anywhere** contains an explicit subcommand name (`serve`, `doctor`, `tui`, `save-session`, `export-session`, `tool-replay`, `plugin`, …), the default `repl` is **not** inserted (see `tests/fixtures/cli/legacy_normalize.json`).
+Without a subcommand, legacy **`--serve`**, **`--benchmark`**, **`--dry-run`**, etc. still map internally. Bare argv / **`--query`** / **`--stdin`** are **no longer** mapped to `chat` or default-inserted as `repl` (explicit subcommand required; see `tests/fixtures/cli/legacy_normalize.json`). If argv **anywhere** already contains a known subcommand name, nothing extra is inserted.
 
 ## Common options (compat)
 
@@ -58,16 +55,15 @@ Without a subcommand, legacy flags `--serve`, `--query`, `--benchmark`, `--dry-r
 | `--port 0` | With `serve`: OS-assigned free port; startup log and **`web_ready`** **`port`/`url`** use **`local_addr()`** after bind |
 | `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for scripts/tools; the desktop shell **no longer** depends on it). **Deprecated name**; prefer alias **`--web-ready-json`** (same behavior) |
 | `--web-ready-json` | Alias of `--desktop-ready-json` |
-| `--query` / `--stdin` | Same as `chat` |
 | `--workspace <path>` | Override initial workspace |
-| `--agent-role <id>` | First-turn `system` for new `repl` / `chat` session (must exist in config; mutually exclusive with `chat --system-prompt-file`) |
-| `--output` | With `chat`: `plain` or `json` |
 | `--no-tools` | Disable tools |
+| `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
 | `--no-web` / `--cli-only` | Compat no-op (API-only is default) |
 | `--with-web` / `--web` | Explicitly mount business UI static assets (needs `CM_WEB_STATIC_DIR` or probed dist) |
 | `--dry-run` | Maps to `config` |
-| `--no-stream` | With `repl` / `chat` |
 | `--log <FILE>` | Log file + stderr mirror |
+
+> **Removed (D2.1)**: global **`--agent-role`**, and chat/repl-only **`--query` / `--stdin` / `--output` / `--no-stream`**. Use Client **`crabmate-tui`** or Web; roles via request body / Web **`agent_role`**.
 
 ## Benchmark (`bench`)
 
@@ -94,21 +90,18 @@ python3 scripts/humaneval_score_benchmark_results.py --tasks tasks.jsonl --resul
 ## Examples
 
 ```bash
-cargo run                                    # default repl
-cargo run -- --config /path/to/my.toml serve
-RUST_LOG=debug cargo run -- --log /tmp/crabmate.log repl
 cargo run -- serve
+cargo run -- --config /path/to/my.toml serve
+RUST_LOG=debug cargo run -- --log /tmp/crabmate.log serve
 cargo run -- serve 3000
 cargo run -- serve --port 3000               # same as above
 cargo run -- --workspace /path/to/project serve 8080
 cargo run -- serve --host 0.0.0.0            # mind auth & safety
 cargo run -- serve --host 127.0.0.1 --port 0 --web-ready-json   # optional: print web_ready for scripts (legacy alias: --desktop-ready-json)
-cargo run -- chat --query "What's the weather in Beijing?"
-cargo run -- chat --output json --query "…"
-echo "1+1?" | cargo run -- chat --stdin
 cargo run -- --no-tools serve
 cargo run -- bench --benchmark swe_bench --batch tasks.jsonl --batch-output results.jsonl --task-timeout 600
 cargo run -- config
+cargo run -- doctor
 cargo run -- save-session
 cargo run -- save-session --format json --workspace /path/to/proj
 ```
@@ -133,51 +126,20 @@ crabmate tool-replay run --fixture ./fixture.json --compare-recorded   # CI regr
 
 **Safety**: Same trust model as a normal agent turn; use only in **trusted workspaces**; do not run untrusted session fixtures against sensitive directories.
 
-## `chat` and pipes
+## In-process dialogue entry (removed)
 
-Exactly one of `--query`, `--stdin`, `--user-prompt-file`. `--system-prompt-file` overrides configured system. `--messages-json-file` supplies full messages for one turn. `--message-file` is JSONL batch.
+**D2.1**: **`crabmate chat` / `repl` / `tui`** and legacy maps (`--query`, default `repl`, etc.) are **removed from clap**. Official terminal: Client **`crabmate-tui`** (HTTP/SSE → **`serve`**); Web / Desktop still use **`POST /chat`** / **`/chat/stream`**.
 
-**Exit codes**: **0** success; **1** general error; **2** usage; **3** model/parse failure; **4** all `run_command` denied this turn; **5** quota/rate-limit style (e.g. 429).
+Still available in this repo:
 
-## Built-in CLI commands
+- **`save-session`** (alias **`export-session`**): export disk session files to **`.crabmate/exports/`** (same shape as Web).
+- **`tool-replay`**: extract/replay tool timelines from session JSON (**no** LLM).
+- **`bench`**: batch evaluation.
+- Web session persistence, approval (SSE + **`POST /chat/approval`**), export: see HTTP routes and Client UI below.
 
-**Startup banner**: Interactive CLI prints sections—**model** (truncated `api_base`, `llm_http_auth`, `temperature`, `llm_seed`, current **`--no-stream`**), **workspace & tools**, **slash commands**, **key config** (`max_tokens`, `max_message_history`, API timeouts/retries, `run_command` timeout/output caps, optional session restore/MCP/long-term memory, etc.). Styling matches **`cli_repl_ui`** `/help`; **`NO_COLOR`** or non-TTY disables ANSI. **`/config`** reprints a **key config summary** anytime (same family as banner, **no** secrets).
+Exit-code constants remain in **`src/runtime/cli_exit.rs`** / [`CLI_CONTRACT.md`](CLI_CONTRACT.md) (mainly **`tool-replay`** today). **`runtime/cli/{chat,repl}`** and **`runtime/tui`** implementations remain until **D2.2**.
 
-**Optional**: **`CM_CLI_WAIT_SPINNER=1`** shows stderr spinner and elapsed time while waiting for the **first** streaming chunk (or full body with **`--no-stream`**); default off; needs stderr TTY and no **`NO_COLOR`**. See **`docs/配置说明.md`**.
-
-**SyncDefault Docker (CLI + `chat`)**: Optionally run **SyncDefault** and some tools inside **Docker** after host approval/allowlist (**`sync_default_tool_sandbox_mode = docker`**, image, `user`, etc.; Unix often uses **effective uid:gid** for workspace ownership). Full notes in **`docs/配置说明.md`** § SyncDefault Docker sandbox.
-
-**Feedback style**: Success/error lines start with **✓** / **✗**; with **`NO_COLOR`** or non-TTY use **`[ok]` / `[err]`** (ASCII).
-
-Slash commands: **`/help`**, **`/clear`**, **`/model`**, **`/api-key`** (**`status` / `set <secret>` / `clear`**; in-process LLM Bearer key, not persisted; alias **`/apikey`**), **`/config`** (no args), **`/doctor`** (same as **`crabmate doctor`**), **`/probe`** (same as **`crabmate probe`**), **`/models`** / **`/models list`** (same as **`crabmate models`**), **`/models choose <id>`** (set in-memory **`model`** from latest **`GET …/models`** list, unique case-insensitive prefix; persist via config; **`/config reload`** overwrites from disk), **`/agent`** / **`/agent list`** (list configured role ids, same source as **`GET /status`** **`agent_role_ids`**; prints a hint when multi-role is not configured), **`/agent set <id>`** / **`/agent set default`** (set or clear this REPL’s explicit **`agent_role`**; **replace only the first `system`**, keep the transcript for multi-role workbench), **`/skills`** / **`/skills list`** (merged workspace + user + system skills; **`/<skill-id> [task]`** force-selects one), **`/workspace`** / **`/cd`**, **`/tools`**, **`/export`** (optional `json` / `markdown` / `both`, default `both`; **current memory**), **`/save-session`** (same format args; reads disk **`tui_session.json`**, same as **`crabmate save-session`**). `quit` / `exit` / Ctrl+D exit.
-
-**Tab completion** (interactive TTY, **reedline**): Under the “me:” prompt, if the line before the cursor (trimmed) starts with **`/`**, **Tab** opens slash-command completion (arrows or Tab to select; single match may auto-fill). After **`/export`** or **`/save-session`**, **Tab** completes **`json` / `markdown` / `md` / `both`**. After **`/mcp`**: **`list`**, **`probe`**, **`list probe`**. After **`/models`**: **`list`**, **`choose`** (**`choose`** gets a trailing space for model id). After **`/agent`**: **`list`**, **`set`** (**`set`** gets a trailing space for role id). **`/api-key`** and **`/apikey`** appear in the root completion list. Completion is off in **`bash#:`** local shell mode.
-
-**`/mcp`**: Read-only MCP stdio cache and merged tool names (same as **`crabmate mcp list`**); **`/mcp probe`** or **`/mcp list probe`** tries one connection (starts **`mcp_command`**). **`/version`**: `crabmate` version and **`OS`/`ARCH`** (no secrets).
-
-**`/config reload`**: Re-merge TOML from the startup config path (**`--config`**, or default cwd **`config.toml`** / **`.agent_demo.toml`** then **`$XDG_CONFIG_HOME/crabmate/config.toml`**) with current env into memory **`AgentConfig`**—**`api_base`**, model, timeouts, allowlists, MCP, **re-read `system_prompt_file`**, etc.; **does not** reopen session SQLite or rebuild shared **`reqwest::Client`**; **does not** re-read env **`API_KEY`** (REPL **`/api-key`** memory is **not** cleared). Web keys still come from **`client_llm.api_key`** or process **`API_KEY`** at startup. Web equivalent: **`POST /config/reload`**. If Bearer middleware was enabled at startup, toggling token still needs **`serve` restart**. See **`docs/配置说明.md`** § Hot reload.
-
-**Tool stdout**: After each tool in interactive CLI / **`chat`** (no SSE), prints **`### Tool · …`** title and body. **`read_file`**, **`read_dir`**, and **`list_tree`** print a **terminal summary** (headers + first N lines of content; lines may be truncated) and note that the full output is in history; other tools print the body (truncated if over limit). Full tool results stay in history for the model. On **failure** (non-zero `run_command`, `错误：` / error-prefix style messages, etc.), terminal may print a **self-heal hint · diagnostic command bundle**: one JSON line for the model to call **`playbook_run_commands`** (same heuristics as **`error_output_playbook`**, but **executes** allowlisted `run_command`; **sanitize** `error_text` first). Commands are **not** auto-run.
-
-### Leading `$` (local shell boundary)
-
-On **interactive TTY**, when the input buffer is **empty**, **`$`** (or fullwidth **`＄`**) **without Enter** toggles between “me:” and **`bash#:`**; still supports a line that is only **`$`** then Enter. In **`bash#:`**, one line runs as **local shell** via **`sh -c`** (Windows **`cmd /C`**) in the current workspace directory—**not** the model, **not** `run_command` allowlist—same as typing in your own terminal (any `sh -c` program; stdin cleared). If the line already has text, **`$` inserts normally** (e.g. dollar amounts). **Trusted machine / workspace only**; for controlled commands, use the model with `run_command`. Pipes/non-TTY: inline **`$ <cmd>`**. TTY history: **`.crabmate/repl_history.txt`** in the workspace (separate from model session file).
-
-On model/network failure, interactive CLI prints error and **continues**; use **`/clear`** if history is inconsistent (keeps current `system`).
-
-## `run_command` terminal approval
-
-If the command is not allowlisted: when **stdin** and **stderr** are TTY, **stderr** shows a **dialoguer** menu (arrows; **`NO_COLOR`** plain theme); otherwise **non-interactive**: print instructions, read one line—**y** once; **a** / **always** allow this command name for the session; **n** / Enter deny (good for `echo y` in CI). **`chat --yes`** auto-approves non-whitelist **`run_command`** and unmatched-prefix **`http_fetch` / `http_request`** (very dangerous). **`chat --approve-commands a,b`** adds extra allowed **command names** only (not HTTP URLs).
-
-## CLI vs Web (persistence / approval / export)
-
-| Capability | Web (`serve`) | CLI |
-|------------|---------------|-----|
-| **Session persistence** | Embedded default: SQLite at **`.crabmate/conversations.db`** (`conversation_store_sqlite_path`) + `conversation_id`, multi-session, survives restart (TTL/limits; see `docs/开发文档.md`); clear the path for in-memory-only. | **Partial**: **`repl`** optional load/save **`.crabmate/tui_session.json`** (`tui_load_session_on_start` / `tui_session_max_messages`), **single** chain file. **`tui`** uses the same SQLite session DB as Web when **`conversation_store_sqlite_path`** is set (`CM_TUI_CONVERSATION_ID` optional; **`/conv`** / **`/branch`**); then **`tui_session.json`** is **not** written on exit. **`tui_session.json`** remains for **`tui`** without session SQLite. `chat` does not persist across invocations by default; use `--messages-json-file`, etc. **`repl_initial_workspace_messages_enabled`** (default false; see `docs/配置说明.md`): when true, CLI builds **`initial_workspace_messages`** in background (profile, deps, disk restore); when false, startup is one `system` only—no tokei / `cargo metadata` on boot. |
-| **Human approval** | Non-whitelist `run_command`, **`http_fetch` / `http_request`** without `http_fetch_allowed_prefixes` match: SSE control plane + **`POST /chat/approval`** (non-stream `/chat` without approval session may reject). | **`run_command`**: see above (TTY menu / pipe). **`http_fetch` / `http_request`**: same approval; permanent key for **`http_request:<METHOD>:<URL>`** vs **`http_fetch:`**. |
-| **Export chat** | Frontend export JSON/Markdown (shape aligned with `.crabmate/tui_session.json`; see `README.md`). | **`save-session`** (alias **`export-session`**) from disk session → **`.crabmate/exports/`**; interactive **`/save-session`** same; **`/export`** exports **in-memory** messages. `chat --output json` is **not** full session export. |
-
-Keep this section in sync with `README.md` when export behavior changes.
+Hot reload for **`serve`**: **`POST /config/reload`** (see **`docs/en/CONFIGURATION.md`**).
 
 ## Frontend build and Web
 

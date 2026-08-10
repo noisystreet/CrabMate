@@ -97,6 +97,8 @@ fn finalize_cli_config_path(explicit: Option<String>) -> Option<String> {
 /// 无 CLI 显式角色时，回退本机 prefs 的 `cm_role`（与 Web 侧栏对齐）。
 ///
 /// **不**自动恢复 `prefs.last_workspace_root`：须 `--workspace` 或启动后手动选择工作区。
+/// 同进程对话入口移除后暂无调用方；D2.2 可删。
+#[allow(dead_code)]
 fn apply_prefs_cli_defaults(agent_role: &mut Option<String>) {
     let prefs = crate::user_data::load_prefs();
     if agent_role
@@ -829,7 +831,6 @@ pub(super) async fn run_cli_from_parsed(
     )?;
 
     args.config_path = finalize_cli_config_path(args.config_path.take());
-    apply_prefs_cli_defaults(&mut args.agent_role_cli);
 
     if run_early_commands(
         EarlyCliDispatch {
@@ -888,7 +889,7 @@ async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::er
     Box::pin(run_cli_interactive_session(args, cfg)).await
 }
 
-/// 载入配置并进入 `serve` / `bench` / `chat` / `tui` / `repl` 分发。
+/// 载入配置并进入 `serve` / `bench` 分发。
 async fn run_cli_interactive_session(
     args: ParsedCliArgs,
     cfg: config::AgentConfig,
@@ -905,10 +906,6 @@ async fn run_cli_interactive_session(
             workspace_cli: args.workspace_cli,
             with_web: args.with_web,
             bench_args: args.bench_args,
-            chat_cli: args.chat_cli,
-            tui: args.tui,
-            no_stream: args.no_stream,
-            agent_role_cli: args.agent_role_cli,
         },
     ))
     .await

@@ -1,4 +1,7 @@
 //! `chat` 子命令：`--query` / JSONL / `--messages-json-file` 等。
+//!
+//! **CLI 入口已移除**（D2.1）；本模块暂留至 D2.2 删除。
+#![allow(dead_code)]
 
 use crate::agent_role_turn::{filter_tools_for_agent_role, turn_allow_for_web_or_cli_job};
 use crate::config::cli::ChatCliArgs;

@@ -17,10 +17,6 @@ pub struct GlobalOpts {
     #[arg(long, global = true)]
     pub no_tools: bool,
 
-    /// 新建 REPL / `chat` 会话时使用的命名角色 id（须与配置中 `[[agent_roles]]` 或 `agent_roles.toml` 一致；与 `--system-prompt-file` 互斥时以后者为准）
-    #[arg(long = "agent-role", global = true, value_name = "ID")]
-    pub agent_role: Option<String>,
-
     /// 模型上下文窗口 token 上限（输入+输出），覆盖配置 `llm_context_tokens` / `CM_LLM_CONTEXT_TOKENS`；省略则使用配置文件；`0` 视为不覆盖
     #[arg(long = "llm-context-tokens", global = true, value_name = "N")]
     pub llm_context_tokens: Option<u32>,
@@ -61,15 +57,7 @@ pub struct ServeCmd {
     pub desktop_ready_json: bool,
 }
 
-/// 交互式 REPL（无子命令时默认进入 REPL）
-#[derive(Parser, Debug, Clone, Default)]
-pub struct ReplCmd {
-    /// 关闭流式输出，等待完整回答后一次性打印
-    #[arg(long)]
-    pub no_stream: bool,
-}
-
-/// `chat` 子命令解析结果（非 `chat` 子命令时见 [`ChatCliArgs::default`]）。
+/// 同进程 `chat` 运行时参数（**CLI 入口已移除**；类型暂留供 `runtime::cli::chat`，D2.2 删模块时一并去掉）。
 #[derive(Debug, Clone, Default)]
 pub struct ChatCliArgs {
     /// `--query` 或 `--stdin` 读入的用户正文（`--user-prompt-file` 时在运行时读文件）
@@ -85,75 +73,13 @@ pub struct ChatCliArgs {
 }
 
 impl ChatCliArgs {
-    /// 是否应走 `chat` 流程（`repl`/`serve` 等路径下为默认空，恒为 false）。
+    /// 是否应走同进程 `chat`（入口移除后仅测试/死代码路径可能调用）。
     pub fn wants_chat(&self) -> bool {
         self.message_file.is_some()
             || self.messages_json_file.is_some()
             || self.user_prompt_file.is_some()
             || self.inline_user_text.is_some()
     }
-}
-
-/// 单次或批处理提问（脚本 / CI）
-#[derive(Parser, Debug, Clone)]
-#[command(group(
-    clap::ArgGroup::new("chat_user_text_exclusive")
-        .args(["query", "stdin", "user_prompt_file"])
-        .multiple(false),
-))]
-#[command(group(
-    clap::ArgGroup::new("chat_one_source")
-        .required(true)
-        .args([
-            "query",
-            "stdin",
-            "user_prompt_file",
-            "messages_json_file",
-            "message_file",
-        ]),
-))]
-#[command(
-    after_long_help = "进程退出码与 `--output json` 稳定 JSON 行（`crabmate_chat_cli_result` v=1）见仓库 **docs/命令行契约.md**；SSE 流错误码（如 INTERNAL_ERROR）见 **docs/SSE协议.md**。"
-)]
-pub struct ChatCmd {
-    /// 直接在参数中给出用户消息
-    #[arg(long, value_name = "TEXT")]
-    pub query: Option<String>,
-
-    /// 从标准输入读取用户消息（直到 EOF）
-    #[arg(long)]
-    pub stdin: bool,
-
-    /// 从文件读取用户消息（与 `--query`/`--stdin` 三选一）
-    #[arg(long, value_name = "FILE")]
-    pub user_prompt_file: Option<String>,
-
-    /// 覆盖本轮 system 提示词（与配置合并语义：仅替换 seed 中的 system，不含工作区注入）
-    #[arg(long, value_name = "FILE")]
-    pub system_prompt_file: Option<String>,
-
-    /// 单轮完整 `messages` JSON：顶层数组，或 `{"messages":[...]}`（OpenAI 兼容字段）
-    #[arg(long, value_name = "FILE")]
-    pub messages_json_file: Option<String>,
-
-    /// 多轮批跑 JSONL：每行 `{"user":"…"}` 追加用户消息后跑一轮，或 `{"messages":[...]}` 整表替换后跑一轮
-    #[arg(long = "message-file", value_name = "FILE")]
-    pub message_file: Option<String>,
-
-    /// plain（默认）或 json：每轮结束后 stdout 一行 JSON（`type=crabmate_chat_cli_result`，见 docs/命令行契约.md）
-    #[arg(long, value_name = "MODE")]
-    pub output: Option<String>,
-
-    #[arg(long)]
-    pub no_stream: bool,
-
-    /// 自动批准所有非白名单 `run_command`（**仅可信环境**）
-    #[arg(long)]
-    pub yes: bool,
-
-    /// 逗号分隔命令名，与配置白名单合并，匹配者不经终端确认即可 `run_command`
-    #[arg(long, value_name = "NAMES")]
-    pub approve_commands: Option<String>,
 }
 
 /// 批量测评
@@ -533,12 +459,6 @@ pub enum ExtraCliCommand {
 pub enum Commands {
     /// 启动 HTTP API（默认纯 API；可选 `--with-web` 挂载 UI；默认端口 8080）
     Serve(ServeCmd),
-    /// 【已弃用】同进程交互式对话（默认子命令）。官方终端请用 Client 仓 `crabmate-tui` 连接本进程 `serve`
-    Repl(ReplCmd),
-    /// 【已弃用】同进程全屏 TUI。官方终端请用 Client 仓 `crabmate-tui` 连接本进程 `serve`
-    Tui,
-    /// 【已弃用】同进程单次提问。官方请用 Client 仓 `crabmate-tui chat`（或 WASM/桌面）经 `serve` HTTP/SSE
-    Chat(ChatCmd),
     /// 批量 benchmark 测评（JSONL）
     Bench(BenchCmd),
     /// 配置与自检（如 dry-run）
@@ -575,16 +495,16 @@ pub enum Commands {
 #[command(
     name = "crabmate",
     version,
-    about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate-tui`（同进程 chat|repl|tui 已弃用）",
-    after_long_help = "官方对话请：`crabmate serve` + Client `crabmate-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 已官方弃用（见 docs/design/client_shell_split.md）。CLI 退出码与 `chat --output json`：**docs/命令行契约.md**；SSE：**docs/SSE协议.md**；子命令：**docs/命令行与路由.md**。"
+    about = "基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate-tui`",
+    after_long_help = "官方对话请：`crabmate serve` + Client `crabmate-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 入口已移除（见 docs/design/client_shell_split.md）。运维子命令与 SSE：**docs/命令行与路由.md**、**docs/SSE协议.md**。"
 )]
 pub struct RootCli {
     #[command(flatten)]
     pub global: GlobalOpts,
 
-    /// 未指定时进入已弃用的 `repl`（请改用 `serve` + Client `crabmate-tui`）
+    /// 须显式子命令（如 `serve`、`doctor`）；无默认 `repl`
     #[command(subcommand)]
-    pub command: Option<Commands>,
+    pub command: Commands,
 }
 
 /// 与当前构建一致的根级 `clap::Command`，供 **`crabmate-gen-man`** 生成 `man/crabmate.1`（troff）。
@@ -608,9 +528,6 @@ pub struct BenchmarkCliArgs {
 #[derive(Debug, Clone)]
 pub struct ParsedCliArgs {
     pub config_path: Option<String>,
-    /// 全局 `--agent-role`：REPL / `chat` 新建会话首条 system 用（配置须含该 id）
-    pub agent_role_cli: Option<String>,
-    pub chat_cli: ChatCliArgs,
     pub serve_port: Option<u16>,
     /// `serve --desktop-ready-json` / `--web-ready-json`：监听成功后打印 `web_ready`（已弃用命名；壳不依赖）
     pub serve_desktop_ready_json: bool,
@@ -621,7 +538,6 @@ pub struct ParsedCliArgs {
     /// `serve` / `config`：是否挂载或检查业务 UI 静态资源（默认 `false` = 纯 API）。
     pub with_web: bool,
     pub dry_run: bool,
-    pub no_stream: bool,
     pub log_file: Option<String>,
     pub bench_args: BenchmarkCliArgs,
     pub extra_cli: ExtraCliCommand,
@@ -647,8 +563,6 @@ pub struct ParsedCliArgs {
     pub workflow_run: Option<WorkflowFileCli>,
     /// 全局 `--llm-context-tokens`：非零时覆盖已加载配置中的 `llm_context_tokens`
     pub llm_context_tokens_cli: Option<u32>,
-    /// 是否执行 **`crabmate tui`** 全屏界面（与默认 **`repl`** 互斥）
-    pub tui: bool,
     /// `Some` 时执行 e2e 测试后退出（需 API_KEY）
     pub e2e: Option<E2eCliArgs>,
 }

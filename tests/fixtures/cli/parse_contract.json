@@ -1,159 +1,164 @@
 [
   {
     "name": "doctor",
-    "argv": ["crabmate", "doctor"],
+    "argv": [
+      "crabmate",
+      "doctor"
+    ],
     "extra_cli": "Doctor",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "web_bearer_status",
-    "argv": ["crabmate", "web-bearer", "status"],
+    "argv": [
+      "crabmate",
+      "web-bearer",
+      "status"
+    ],
     "extra_cli": "None",
     "web_bearer": "Status",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "config_implicit_dry_run",
-    "argv": ["crabmate", "config"],
+    "argv": [
+      "crabmate",
+      "config"
+    ],
     "extra_cli": "None",
     "dry_run": true,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "models",
-    "argv": ["crabmate", "models"],
+    "argv": [
+      "crabmate",
+      "models"
+    ],
     "extra_cli": "Models",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "probe",
-    "argv": ["crabmate", "probe"],
+    "argv": [
+      "crabmate",
+      "probe"
+    ],
     "extra_cli": "Probe",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "mcp_list",
-    "argv": ["crabmate", "mcp", "list"],
+    "argv": [
+      "crabmate",
+      "mcp",
+      "list"
+    ],
     "extra_cli": "McpList",
     "mcp_probe": false,
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "mcp_list_probe",
-    "argv": ["crabmate", "mcp", "list", "--probe"],
+    "argv": [
+      "crabmate",
+      "mcp",
+      "list",
+      "--probe"
+    ],
     "extra_cli": "McpList",
     "mcp_probe": true,
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "serve_port_8080",
-    "argv": ["crabmate", "serve", "8080"],
+    "argv": [
+      "crabmate",
+      "serve",
+      "8080"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": 8080,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "serve_long_port_9090",
-    "argv": ["crabmate", "serve", "--port", "9090"],
+    "argv": [
+      "crabmate",
+      "serve",
+      "--port",
+      "9090"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": 9090,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
     "name": "serve_flag_overrides_positional_port",
-    "argv": ["crabmate", "serve", "8080", "--port", "9090"],
+    "argv": [
+      "crabmate",
+      "serve",
+      "8080",
+      "--port",
+      "9090"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": 9090,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null
   },
   {
-    "name": "chat_query_json_output",
-    "argv": ["crabmate", "chat", "--query", "hello", "--output", "json"],
-    "extra_cli": "None",
-    "dry_run": false,
-    "serve_port": null,
-    "no_stream": false,
-    "chat_wants": true,
-    "save_session_format": null,
-    "chat_inline": "hello",
-    "chat_output": "json"
-  },
-  {
     "name": "save_session_json",
-    "argv": ["crabmate", "save-session", "--format", "json"],
+    "argv": [
+      "crabmate",
+      "save-session",
+      "--format",
+      "json"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": "Json"
   },
   {
     "name": "save_session_json_export_session_alias",
-    "argv": ["crabmate", "export-session", "--format", "json"],
+    "argv": [
+      "crabmate",
+      "export-session",
+      "--format",
+      "json"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": "Json"
   },
   {
-    "name": "chat_stdin_fixture",
-    "argv": ["crabmate", "chat", "--stdin"],
-    "stdin_fixture": "pipe content",
-    "extra_cli": "None",
-    "dry_run": false,
-    "serve_port": null,
-    "no_stream": false,
-    "chat_wants": true,
-    "save_session_format": null,
-    "chat_inline": "pipe content"
-  },
-  {
     "name": "global_workspace_before_subcommand",
-    "argv": ["crabmate", "--workspace", "/tmp/ws", "doctor"],
+    "argv": [
+      "crabmate",
+      "--workspace",
+      "/tmp/ws",
+      "doctor"
+    ],
     "extra_cli": "Doctor",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null,
     "workspace": "/tmp/ws"
   },
@@ -173,8 +178,6 @@
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null,
     "tool_replay": {
       "kind": "Export",
@@ -185,39 +188,22 @@
   },
   {
     "name": "tool_replay_run_compare",
-    "argv": ["crabmate", "tool-replay", "run", "--fixture", "f.json", "--compare-recorded"],
+    "argv": [
+      "crabmate",
+      "tool-replay",
+      "run",
+      "--fixture",
+      "f.json",
+      "--compare-recorded"
+    ],
     "extra_cli": "None",
     "dry_run": false,
     "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
     "save_session_format": null,
     "tool_replay": {
       "kind": "Run",
       "fixture": "f.json",
       "compare_recorded": true
     }
-  },
-  {
-    "name": "repl_global_agent_role",
-    "argv": ["crabmate", "--agent-role", "code", "repl"],
-    "extra_cli": "None",
-    "dry_run": false,
-    "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
-    "save_session_format": null,
-    "agent_role": "code"
-  },
-  {
-    "name": "tui_subcommand",
-    "argv": ["crabmate", "tui"],
-    "extra_cli": "None",
-    "dry_run": false,
-    "serve_port": null,
-    "no_stream": false,
-    "chat_wants": false,
-    "save_session_format": null,
-    "tui": true
   }
 ]
