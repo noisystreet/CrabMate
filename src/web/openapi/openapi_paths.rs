@@ -811,25 +811,47 @@ fn openapi_paths_fragment_github() -> Value {
         "/github/oauth/device/start": {
             "post": {
                 "tags": ["github"],
-                "summary": "启动 GitHub Device Flow（须 CM_GITHUB_OAUTH_CLIENT_ID 或钥匙串 github_oauth_client_id；不返回 device_code/token）",
+                "summary": "启动 GitHub Device Flow（body.client_id 必填；不返回 device_code）",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["client_id"],
+                                "properties": {
+                                    "client_id": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                },
                 "responses": {
                     "200": {
                         "description": "user_code 与 verification_uri_complete 等",
                         "content": { "application/json": { "schema": { "type": "object" } } }
                     },
-                    "503": { "description": "GITHUB_OAUTH_NOT_CONFIGURED" }
+                    "400": { "description": "GITHUB_OAUTH_CLIENT_ID_REQUIRED" }
                 }
             }
         },
         "/github/oauth/device/status": {
             "get": {
                 "tags": ["github"],
-                "summary": "Device Flow 轮询状态（pending/success/denied/…）",
+                "summary": "Device Flow 状态；成功时 Set-Cookie crabmate_github_token；头 X-CrabMate-GitHub-Token-Delivery: body 时 JSON 含一次性 access_token",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "X-CrabMate-GitHub-Token-Delivery",
+                        "in": "header",
+                        "required": false,
+                        "schema": { "type": "string", "enum": ["body"] }
+                    }
+                ],
                 "responses": {
                     "200": {
-                        "description": "state / login / error",
+                        "description": "state / login / error；壳可选 access_token",
                         "content": { "application/json": { "schema": { "type": "object" } } }
                     }
                 }
@@ -838,9 +860,17 @@ fn openapi_paths_fragment_github() -> Value {
         "/github/oauth/device/cancel": {
             "post": {
                 "tags": ["github"],
-                "summary": "取消当前 Device 会话（不删已落盘 token）",
+                "summary": "取消当前 Device 会话",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": { "204": { "description": "已取消" } }
+            }
+        },
+        "/github/oauth/device/logout": {
+            "post": {
+                "tags": ["github"],
+                "summary": "清除浏览器 HttpOnly Cookie crabmate_github_token",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": { "204": { "description": "已清除 Cookie" } }
             }
         },
     })

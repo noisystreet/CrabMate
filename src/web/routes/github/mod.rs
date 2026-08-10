@@ -7,9 +7,9 @@ use axum::routing::{get, post};
 
 use crate::AppState;
 use crate::web::github::{
-    github_oauth_device_cancel_handler, github_oauth_device_start_handler,
-    github_oauth_device_status_handler, github_pr_current_checks_handler,
-    github_repo_context_handler,
+    github_oauth_device_cancel_handler, github_oauth_device_logout_handler,
+    github_oauth_device_start_handler, github_oauth_device_status_handler,
+    github_pr_current_checks_handler, github_repo_context_handler,
 };
 
 pub(crate) fn router() -> Router<Arc<AppState>> {
@@ -30,5 +30,9 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route(
             "/github/oauth/device/cancel",
             post(github_oauth_device_cancel_handler),
+        )
+        .route(
+            "/github/oauth/device/logout",
+            post(github_oauth_device_logout_handler),
         )
 }

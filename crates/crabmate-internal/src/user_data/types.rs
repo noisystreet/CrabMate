@@ -149,15 +149,6 @@ pub struct SecretsStatusResponse {
     pub client_llm: SecretSlotStatus,
     pub executor_llm: SecretSlotStatus,
     pub web_api_bearer: SecretSlotStatus,
-    /// GitHub user access token / PAT（Device Flow 或手动写入；账户名 `github`）。
-    #[serde(default)]
-    pub github: SecretSlotStatus,
-    /// GitHub App / OAuth App Client ID（账户名 `github_oauth_client_id`；仅 `set`/后缀）。
-    #[serde(default)]
-    pub github_oauth_client_id: SecretSlotStatus,
-    /// 环境变量 **`CM_GITHUB_OAUTH_CLIENT_ID`** 非空（仅布尔；Device Flow 优先于钥匙串）。
-    #[serde(default)]
-    pub github_oauth_client_id_env: bool,
 }
 
 /// `mcp_servers.json` 单条 MCP 服务器（用户数据目录，非 TOML）。

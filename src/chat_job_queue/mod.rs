@@ -213,6 +213,8 @@ pub struct WebChatJobEnvelope {
     pub request_audit: WebRequestAudit,
     /// 与当次 HTTP **`x-request-id`** 同值；SSE `RUN_ERROR` 可带回客户端。
     pub request_id: Option<String>,
+    /// 本请求 GitHub user token（头 / Cookie）；worker 内再挂入请求作用域。
+    pub github_token: Option<String>,
     /// 客户端声明的 SSE 协议版本（`None` 兼容旧客户端 → v1）。
     ///
     /// 当前暂未在 worker 中用作 encoder 选择，待 Phase 3（前端 V2Parser）就绪后激活。

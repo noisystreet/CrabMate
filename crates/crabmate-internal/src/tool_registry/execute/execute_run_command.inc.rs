@@ -344,28 +344,31 @@ async fn execute_run_command_impl(
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
     let allowed_for_run = Arc::clone(&effective_allowed_arc);
+    let github_token = crabmate_tools::github_token::resolve_token_plaintext();
     let handle = tokio::task::spawn_blocking(move || {
-        if skip_arg_safety {
-            // 审批放行路径：直接带 skip_arg_safety 调用（不经 ToolContext）。
-            match tools::run_checked(
-                &args_cloned,
-                cfg.command_exec.command_max_output_len,
-                allowed_for_run.as_ref(),
-                work_dir.as_path(),
-                None,
-                true,
-            ) {
-                Ok(s) => s,
-                Err(e) => e.extended_user_message(),
+        crabmate_tools::github_token::with_request_github_token_blocking(github_token, || {
+            if skip_arg_safety {
+                // 审批放行路径：直接带 skip_arg_safety 调用（不经 ToolContext）。
+                match tools::run_checked(
+                    &args_cloned,
+                    cfg.command_exec.command_max_output_len,
+                    allowed_for_run.as_ref(),
+                    work_dir.as_path(),
+                    None,
+                    true,
+                ) {
+                    Ok(s) => s,
+                    Err(e) => e.extended_user_message(),
+                }
+            } else {
+                let ctx = tools::tool_context_for(
+                    cfg.as_ref(),
+                    allowed_for_run.as_ref(),
+                    work_dir.as_path(),
+                );
+                tools::run_tool(&name_in, &args_cloned, &ctx)
             }
-        } else {
-            let ctx = tools::tool_context_for(
-                cfg.as_ref(),
-                allowed_for_run.as_ref(),
-                work_dir.as_path(),
-            );
-            tools::run_tool(&name_in, &args_cloned, &ctx)
-        }
+        })
     });
     let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
         Ok(Ok(s)) => s,

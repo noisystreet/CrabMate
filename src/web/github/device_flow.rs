@@ -1,6 +1,6 @@
-//! GitHub OAuth Device Flow：向 GitHub 要码、后台轮询、写入钥匙串账户 `github`。
+//! GitHub OAuth Device Flow：客户端提供 `client_id`，服务端代要码与轮询；成功后经 Cookie / JSON 交给客户端。
 //!
-//! `device_code` 仅留在本模块内存；HTTP 响应不回传 token / device_code。
+//! `device_code` 仅留在本模块内存；服务端不把 user token 写入钥匙串或磁盘。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -8,14 +8,17 @@ use std::time::{Duration, Instant};
 
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
-use serde::Serialize;
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
-use crate::user_data::{install_github_cli_token_provider, write_secret_github};
 use crate::web::app_state::AppStateHttpCore;
+use crate::web::github_token_request::{
+    GITHUB_TOKEN_COOKIE_NAME, wants_github_token_body_delivery,
+};
 
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
@@ -42,39 +45,11 @@ struct DeviceSession {
     login: Option<String>,
     scopes: Option<String>,
     error: Option<String>,
+    /// 成功后暂存；status 投递（Cookie / 可选 body）后清空。
+    access_token: Option<String>,
 }
 
 static DEVICE_SESSION: Mutex<Option<DeviceSession>> = Mutex::const_new(None);
-
-fn oauth_client_id_from_env() -> Option<String> {
-    std::env::var("CM_GITHUB_OAUTH_CLIENT_ID")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// 优先级：环境变量 → 钥匙串；两侧均 `trim`，空串视为未设置。
-pub(crate) fn resolve_oauth_client_id_sources(
-    from_env: Option<String>,
-    from_keychain: Option<String>,
-) -> Option<String> {
-    from_env
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            from_keychain
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
-        })
-}
-
-/// 优先级：环境变量 **`CM_GITHUB_OAUTH_CLIENT_ID`** → 钥匙串账户 **`github_oauth_client_id`**。
-fn resolve_oauth_client_id() -> Option<String> {
-    resolve_oauth_client_id_sources(
-        oauth_client_id_from_env(),
-        crate::user_data::read_secret_github_oauth_client_id(),
-    )
-}
 
 /// OAuth App 可用 `repo` 等；GitHub App Device Flow 通常**省略** scope（靠 App 权限）。
 /// 环境变量 **`CM_GITHUB_OAUTH_SCOPES`**：未设置或空 → 不传 `scope`；非空则原样提交（空格分隔）。
@@ -98,6 +73,25 @@ fn ensure_verification_uri_complete(verification_uri: &str, user_code: &str) -> 
     format!("{base}{sep}user_code={code}")
 }
 
+fn validate_oauth_client_id(raw: &str) -> Option<String> {
+    let id = raw.trim();
+    if id.is_empty() || id.len() > 128 {
+        return None;
+    }
+    if !id
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+    {
+        return None;
+    }
+    Some(id.to_string())
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct DeviceStartRequest {
+    pub client_id: String,
+}
+
 #[derive(Debug, Serialize)]
 pub(crate) struct DeviceStartResponse {
     pub user_code: String,
@@ -116,6 +110,8 @@ pub(crate) struct DeviceStatusResponse {
     pub scopes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub access_token: Option<String>,
 }
 
 fn err_json(
@@ -154,14 +150,100 @@ fn form_body(pairs: &[(&str, &str)]) -> String {
         .join("&")
 }
 
+fn origin_matches_host(origin: &str, host: &str) -> bool {
+    let origin = origin.trim().trim_end_matches('/');
+    let host = host.trim();
+    if let Some(rest) = origin.strip_prefix("https://") {
+        return rest == host || rest == format!("www.{host}") || host == format!("www.{rest}");
+    }
+    if let Some(rest) = origin.strip_prefix("http://") {
+        return rest == host;
+    }
+    false
+}
+
+fn request_is_https(headers: &HeaderMap) -> bool {
+    headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|p| {
+            p.split(',')
+                .next()
+                .is_some_and(|s| s.trim().eq_ignore_ascii_case("https"))
+        })
+        || headers
+            .get(header::ORIGIN)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|o| o.trim().starts_with("https://"))
+}
+
+fn cookie_secure_flag(headers: &HeaderMap) -> bool {
+    if request_is_https(headers) {
+        return true;
+    }
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let host_only = host.split(':').next().unwrap_or("");
+    matches!(host_only, "localhost" | "127.0.0.1" | "::1")
+}
+
+fn cookie_samesite(headers: &HeaderMap) -> &'static str {
+    let origin = headers
+        .get(header::ORIGIN)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let host = headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    match (origin, host) {
+        (Some(o), Some(h)) if origin_matches_host(o, h) => "Strict",
+        (Some(_), _) => "None",
+        _ => "Strict",
+    }
+}
+
+fn set_github_token_cookie_header(token: &str, headers: &HeaderMap) -> Option<HeaderValue> {
+    let mut parts = vec![
+        format!("{GITHUB_TOKEN_COOKIE_NAME}={}", form_encode(token)),
+        "HttpOnly".into(),
+        "Path=/".into(),
+        format!("SameSite={}", cookie_samesite(headers)),
+    ];
+    if cookie_secure_flag(headers) || cookie_samesite(headers) == "None" {
+        parts.push("Secure".into());
+    }
+    HeaderValue::from_str(&parts.join("; ")).ok()
+}
+
+fn clear_github_token_cookie_header(headers: &HeaderMap) -> Option<HeaderValue> {
+    let mut parts = vec![
+        format!("{GITHUB_TOKEN_COOKIE_NAME}="),
+        "HttpOnly".into(),
+        "Path=/".into(),
+        "Max-Age=0".into(),
+        format!("SameSite={}", cookie_samesite(headers)),
+    ];
+    if cookie_secure_flag(headers) || cookie_samesite(headers) == "None" {
+        parts.push("Secure".into());
+    }
+    HeaderValue::from_str(&parts.join("; ")).ok()
+}
+
 pub(crate) async fn github_oauth_device_start_handler(
     State(http): State<AppStateHttpCore>,
+    Json(body): Json<DeviceStartRequest>,
 ) -> Result<Json<DeviceStartResponse>, (StatusCode, Json<serde_json::Value>)> {
-    let Some(client_id) = resolve_oauth_client_id() else {
+    let Some(client_id) = validate_oauth_client_id(&body.client_id) else {
         return Err(err_json(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "GITHUB_OAUTH_NOT_CONFIGURED",
-            "未配置 GitHub OAuth Client ID：请设置环境变量 CM_GITHUB_OAUTH_CLIENT_ID，或在「设置 → GitHub」写入钥匙串",
+            StatusCode::BAD_REQUEST,
+            "GITHUB_OAUTH_CLIENT_ID_REQUIRED",
+            "请在请求体提供非空的 client_id（GitHub OAuth / App Client ID）",
         ));
     };
 
@@ -269,6 +351,7 @@ pub(crate) async fn github_oauth_device_start_handler(
             login: None,
             scopes: None,
             error: None,
+            access_token: None,
         });
     }
 
@@ -286,22 +369,52 @@ pub(crate) async fn github_oauth_device_start_handler(
     }))
 }
 
-pub(crate) async fn github_oauth_device_status_handler() -> Json<DeviceStatusResponse> {
-    let guard = DEVICE_SESSION.lock().await;
-    match guard.as_ref() {
-        None => Json(DeviceStatusResponse {
-            state: DeviceFlowState::Cancelled,
-            login: None,
-            scopes: None,
-            error: Some("无进行中的 Device Flow 会话".into()),
-        }),
-        Some(s) => Json(DeviceStatusResponse {
-            state: s.state,
-            login: s.login.clone(),
-            scopes: s.scopes.clone(),
-            error: s.error.clone(),
-        }),
+pub(crate) async fn github_oauth_device_status_handler(headers: HeaderMap) -> Response {
+    let deliver_body = wants_github_token_body_delivery(&headers);
+    let mut guard = DEVICE_SESSION.lock().await;
+    let (body, set_cookie) = match guard.as_mut() {
+        None => (
+            DeviceStatusResponse {
+                state: DeviceFlowState::Cancelled,
+                login: None,
+                scopes: None,
+                error: Some("无进行中的 Device Flow 会话".into()),
+                access_token: None,
+            },
+            None,
+        ),
+        Some(s) => {
+            let mut access_token = None;
+            let mut set_cookie = None;
+            if s.state == DeviceFlowState::Success
+                && let Some(token) = s.access_token.take()
+            {
+                set_cookie = set_github_token_cookie_header(&token, &headers);
+                if deliver_body {
+                    access_token = Some(token);
+                } else if set_cookie.is_none() {
+                    // Cookie 头构造失败时把 token 放回会话，避免静默丢凭据。
+                    s.access_token = Some(token);
+                }
+            }
+            (
+                DeviceStatusResponse {
+                    state: s.state,
+                    login: s.login.clone(),
+                    scopes: s.scopes.clone(),
+                    error: s.error.clone(),
+                    access_token,
+                },
+                set_cookie,
+            )
+        }
+    };
+    drop(guard);
+    let mut res = Json(body).into_response();
+    if let Some(cookie) = set_cookie {
+        res.headers_mut().insert(header::SET_COOKIE, cookie);
     }
+    res
 }
 
 pub(crate) async fn github_oauth_device_cancel_handler() -> StatusCode {
@@ -309,9 +422,19 @@ pub(crate) async fn github_oauth_device_cancel_handler() -> StatusCode {
     if let Some(s) = guard.as_mut() {
         s.cancel.store(true, Ordering::SeqCst);
         s.state = DeviceFlowState::Cancelled;
+        s.access_token = None;
     }
     *guard = None;
     StatusCode::NO_CONTENT
+}
+
+/// 清除浏览器 HttpOnly GitHub token Cookie（壳另清本机钥匙串）。
+pub(crate) async fn github_oauth_device_logout_handler(headers: HeaderMap) -> Response {
+    let mut res = StatusCode::NO_CONTENT.into_response();
+    if let Some(cookie) = clear_github_token_cookie_header(&headers) {
+        res.headers_mut().insert(header::SET_COOKIE, cookie);
+    }
+    res
 }
 
 fn session_is_ours(s: &DeviceSession, cancel: &Arc<AtomicBool>) -> bool {
@@ -325,6 +448,7 @@ async fn mark_session(
     clear_device_code: bool,
     login: Option<String>,
     scopes: Option<String>,
+    access_token: Option<String>,
 ) {
     let mut guard = DEVICE_SESSION.lock().await;
     let Some(s) = guard.as_mut() else {
@@ -343,6 +467,9 @@ async fn mark_session(
     }
     if scopes.is_some() {
         s.scopes = scopes;
+    }
+    if access_token.is_some() {
+        s.access_token = access_token;
     }
 }
 
@@ -372,27 +499,32 @@ async fn apply_access_token(
     scopes: Option<String>,
 ) {
     let login = fetch_github_login(client, token).await;
-    if let Err(e) = write_secret_github(token) {
-        mark_session(
-            cancel,
-            DeviceFlowState::Error,
-            Some(format!("写入钥匙串失败：{e}")),
-            false,
-            None,
-            None,
-        )
-        .await;
-        return;
-    }
-    install_github_cli_token_provider();
-    mark_session(cancel, DeviceFlowState::Success, None, true, login, scopes).await;
+    mark_session(
+        cancel,
+        DeviceFlowState::Success,
+        None,
+        true,
+        login,
+        scopes,
+        Some(token.to_string()),
+    )
+    .await;
 }
 
 /// 处理非 access_token 的 OAuth 错误；返回是否应结束轮询。
 async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Duration) -> bool {
     match err {
         "authorization_pending" => {
-            mark_session(cancel, DeviceFlowState::Pending, None, false, None, None).await;
+            mark_session(
+                cancel,
+                DeviceFlowState::Pending,
+                None,
+                false,
+                None,
+                None,
+                None,
+            )
+            .await;
             tokio::time::sleep(interval).await;
             false
         }
@@ -420,6 +552,7 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
                 false,
                 None,
                 None,
+                None,
             )
             .await;
             true
@@ -432,6 +565,7 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
                 false,
                 None,
                 None,
+                None,
             )
             .await;
             true
@@ -442,7 +576,16 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
             } else {
                 format!("GitHub 错误：{other}")
             };
-            mark_session(cancel, DeviceFlowState::Error, Some(msg), false, None, None).await;
+            mark_session(
+                cancel,
+                DeviceFlowState::Error,
+                Some(msg),
+                false,
+                None,
+                None,
+                None,
+            )
+            .await;
             true
         }
     }
@@ -473,6 +616,7 @@ async fn poll_device_token(client: reqwest::Client, cancel: Arc<AtomicBool>) {
                 DeviceFlowState::Expired,
                 Some("授权码已过期，请重新连接".into()),
                 false,
+                None,
                 None,
                 None,
             )
@@ -567,17 +711,24 @@ mod tests {
     }
 
     #[test]
-    fn resolve_oauth_client_id_prefers_env_over_keychain() {
+    fn validate_client_id_accepts_github_shapes() {
         assert_eq!(
-            resolve_oauth_client_id_sources(Some("  env-id  ".into()), Some("keychain-id".into()))
-                .as_deref(),
-            Some("env-id")
+            validate_oauth_client_id("  Iv1.abcDEF12  ").as_deref(),
+            Some("Iv1.abcDEF12")
         );
-        assert_eq!(
-            resolve_oauth_client_id_sources(Some("   ".into()), Some(" key-id ".into())).as_deref(),
-            Some("key-id")
-        );
-        assert_eq!(resolve_oauth_client_id_sources(None, Some("".into())), None);
-        assert_eq!(resolve_oauth_client_id_sources(None, None), None);
+        assert!(validate_oauth_client_id("").is_none());
+        assert!(validate_oauth_client_id("bad id").is_none());
+    }
+
+    #[test]
+    fn origin_host_match_detects_same_site() {
+        assert!(origin_matches_host(
+            "http://127.0.0.1:8080",
+            "127.0.0.1:8080"
+        ));
+        assert!(!origin_matches_host(
+            "https://ui.example.com",
+            "api.example.com"
+        ));
     }
 }

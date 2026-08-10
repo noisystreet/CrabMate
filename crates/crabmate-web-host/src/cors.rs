@@ -27,9 +27,10 @@ pub fn parse_cors_origin_header_values(allowed_origins: &[String]) -> Vec<Header
 /// 空白名单 → `None`（不挂 CORS，默认同源）；非空 → 精确 Origin 列表（无 `*`）。
 ///
 /// - Methods: GET / POST / PUT / DELETE / OPTIONS
-/// - Allow headers: Authorization、Content-Type、Accept、`x-api-key`、`last-event-id`
+/// - Allow headers: Authorization、Content-Type、Accept、`x-api-key`、`last-event-id`、
+///   `x-crabmate-github-token`、`x-crabmate-github-token-delivery`
 /// - Expose headers: [`CORS_EXPOSE_RESPONSE_HEADERS`]
-/// - `allow_credentials(false)`：凭证走 Bearer 头，不依赖 cookie
+/// - `allow_credentials(true)`：浏览器 GitHub token 走 HttpOnly Cookie（须精确 Origin，禁止 `*`）
 pub fn try_cors_layer(allowed_origins: &[String]) -> Option<CorsLayer> {
     let origins = parse_cors_origin_header_values(allowed_origins);
     if origins.is_empty() {
@@ -55,10 +56,12 @@ pub fn try_cors_layer(allowed_origins: &[String]) -> Option<CorsLayer> {
                 header::ACCEPT,
                 HeaderName::from_static("x-api-key"),
                 HeaderName::from_static("last-event-id"),
+                HeaderName::from_static("x-crabmate-github-token"),
+                HeaderName::from_static("x-crabmate-github-token-delivery"),
             ])
             .expose_headers(expose)
             .max_age(Duration::from_secs(600))
-            .allow_credentials(false),
+            .allow_credentials(true),
     )
 }
 
