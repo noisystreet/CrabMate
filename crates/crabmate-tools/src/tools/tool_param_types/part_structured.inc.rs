@@ -455,6 +455,12 @@ pub struct AppendFileArgs {
     pub content: String,
     #[serde(default)]
     pub create_if_missing: bool,
+    /// 为 `true` 时只返回 unified diff 预览，**不写盘**。
+    #[serde(default)]
+    pub dry_run: bool,
+    /// 原文件非空且末尾无换行时，追加前自动补一个 `\n`，避免把新内容接在旧末行后。
+    #[serde(default = "default_true")]
+    pub ensure_leading_newline: bool,
 }
 
 /// [`super::file::mutate::create_dir`] 入参。

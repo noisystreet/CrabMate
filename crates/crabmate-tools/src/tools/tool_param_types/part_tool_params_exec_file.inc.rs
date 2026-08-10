@@ -49,6 +49,8 @@ pub enum ModifyFileMode {
     /// 与 `full` 相同，仅名称强调「整文件覆盖」语义。
     Overwrite,
     ReplaceLines,
+    /// 在指定行后插入 `content`；`after_line=0` 表示插入文件开头。
+    InsertAfterLine,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -61,6 +63,9 @@ pub struct ModifyFileArgs {
     pub start_line: Option<u32>,
     #[schemars(range(min = 1))]
     pub end_line: Option<u32>,
+    /// `mode=insert_after_line` 时使用；0 表示文件开头，N 表示第 N 行之后。
+    #[schemars(range(min = 0))]
+    pub after_line: Option<u32>,
     /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。
     pub dry_run: Option<bool>,
     /// 当整文件覆盖被判定为高危（大幅缩短、大量删行、清空非空文件）时须显式 `true` 才执行写入。

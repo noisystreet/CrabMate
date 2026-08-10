@@ -262,6 +262,79 @@ fn test_modify_file_replace_lines() {
 }
 
 #[test]
+fn test_modify_file_infers_replace_lines_when_line_range_present() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","start_line":2,"end_line":2,"content":"X"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nX\nL3\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_replace_lines_swaps_inverted_range() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":3,"end_line":2,"content":"X"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nX\nL4\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_insert_after_line() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"INS"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已插入内容"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nINS\nL2\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_line_range_out_of_bounds_shows_tail_context() {
+    let dir = make_test_dir();
+    let file = dir.join("m.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":9,"end_line":9,"content":"X"}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("超出文件行数"), "{}", out);
+    assert!(out.contains("文件末尾上下文"), "{}", out);
+    assert!(out.contains("3|L3"), "{}", out);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_modify_file_full_emits_shrink_warning() {
     let dir = make_test_dir();
     let file = dir.join("big.txt");
@@ -397,6 +470,56 @@ fn test_modify_file_full_clear_nonempty_requires_confirm() {
     );
     assert!(ok.contains("已整文件覆盖"), "{}", ok);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_append_file_dry_run_leaves_disk_unchanged() {
+    let dir = make_test_dir();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "old\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = append_file(
+        r#"{"path":"a.txt","content":"new\n","dry_run":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("dry_run"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "old\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_append_file_adds_leading_newline_by_default() {
+    let dir = make_test_dir();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "old").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = append_file(r#"{"path":"a.txt","content":"new\n"}"#, &dir, &ctx);
+    assert!(out.contains("前导换行"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "old\nnew\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_append_file_can_disable_leading_newline() {
+    let dir = make_test_dir();
+    let file = dir.join("a.txt");
+    std::fs::write(&file, "old").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = append_file(
+        r#"{"path":"a.txt","content":"new","ensure_leading_newline":false}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已追加"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "oldnew");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

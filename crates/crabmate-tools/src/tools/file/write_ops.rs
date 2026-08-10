@@ -249,9 +249,21 @@ fn modify_file_write_full_overwrite(
     }
 
     if full_overwrite_requires_user_confirm(before_str, &content) && !confirm_full_overwrite {
-        return "错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。\
-请先 dry_run=true 核对 diff，确认后使用 confirm_full_overwrite=true 再次调用；或改用 mode=replace_lines / search_replace 做局部修改。"
-            .to_string();
+        let body = tool_output_prepend_path(
+            &disp,
+            "错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。\
+下方为本次写入的 diff 预览；确认后使用 confirm_full_overwrite=true 再次调用，或改用 mode=replace_lines / mode=insert_after_line / search_replace 做局部修改。",
+        );
+        return format_tool_output_with_write_diff_preview(
+            "modify_file",
+            body,
+            vec![WriteDiffFileState {
+                rel_path: path.to_string(),
+                before: before.clone(),
+                after: Some(content.clone()),
+            }],
+            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+        );
     }
 
     let base = match canonical_workspace_root(working_dir) {
@@ -287,9 +299,124 @@ fn modify_file_write_full_overwrite(
     }
 }
 
+fn modify_file_path_arg(v: &serde_json::Value) -> Result<String, String> {
+    v.get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "缺少 path 参数".to_string())
+}
+
+fn modify_file_mode_arg(v: &serde_json::Value) -> (Option<&str>, String) {
+    let explicit_mode = v.get("mode").and_then(|m| m.as_str());
+    let mode = explicit_mode
+        .map(|s| s.trim().to_lowercase())
+        .unwrap_or_else(|| {
+            if v.get("start_line").is_some() || v.get("end_line").is_some() {
+                "replace_lines".to_string()
+            } else if v.get("after_line").is_some() {
+                "insert_after_line".to_string()
+            } else {
+                "full".to_string()
+            }
+        });
+    (explicit_mode, mode)
+}
+
+fn modify_file_display(working_dir: &Path, target: &Path, path: &str) -> String {
+    path_for_tool_display(working_dir, target, Some(path))
+}
+
+fn modify_file_dispatch_local_mode(
+    v: &serde_json::Value,
+    target: &Path,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    path: &str,
+    mode: &str,
+) -> Option<String> {
+    let display = modify_file_display(working_dir, target, path);
+    match mode {
+        "replace_lines" | "lines" | "replacelines" => {
+            Some(super::replace_lines_stream::modify_file_replace_lines(
+                v,
+                target,
+                &display,
+                ctx,
+                working_dir,
+                path,
+            ))
+        }
+        "insert_after_line" => Some(super::replace_lines_stream::modify_file_insert_after_line(
+            v,
+            target,
+            &display,
+            ctx,
+            working_dir,
+            path,
+        )),
+        _ => None,
+    }
+}
+
+fn modify_file_dispatch_full_mode(
+    v: &serde_json::Value,
+    target: &Path,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    path: &str,
+    explicit_mode: Option<&str>,
+) -> String {
+    if (v.get("start_line").is_some() || v.get("end_line").is_some()) && explicit_mode.is_some() {
+        return "错误：mode=full/overwrite 是整文件覆盖，不能与 start_line/end_line 混用；局部修改请使用 mode=replace_lines。"
+            .to_string();
+    }
+    let content = v
+        .get("content")
+        .and_then(|c| c.as_str())
+        .map(String::from)
+        .unwrap_or_default();
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+    let confirm_full_overwrite = v
+        .get("confirm_full_overwrite")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    modify_file_write_full_overwrite(
+        path,
+        target,
+        working_dir,
+        ctx,
+        content,
+        dry_run,
+        confirm_full_overwrite,
+    )
+}
+
+fn modify_file_dispatch_mode(
+    v: &serde_json::Value,
+    target: &Path,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    path: &str,
+    explicit_mode: Option<&str>,
+    mode: &str,
+) -> String {
+    if let Some(out) = modify_file_dispatch_local_mode(v, target, working_dir, ctx, path, mode) {
+        return out;
+    }
+    if mode == "full" || mode == "overwrite" || mode.is_empty() {
+        return modify_file_dispatch_full_mode(v, target, working_dir, ctx, path, explicit_mode);
+    }
+    format!(
+        "错误：mode 仅支持 full、overwrite、replace_lines 或 insert_after_line（收到 {mode:?}）"
+    )
+}
+
 /// 修改文件：仅在文件已存在时写入。
-/// - 默认 `mode`=`full`：整文件覆盖（`content` 为全文）；`mode`=`overwrite` 与 `full` 等价。
+/// - 未显式给出 `mode` 但带有 `start_line`/`end_line` 时自动使用 `replace_lines`，带有 `after_line` 时自动使用 `insert_after_line`；否则默认 `mode`=`full`。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
+/// - `mode`=`insert_after_line`：在 `after_line` 之后插入 `content`；`after_line=0` 表示文件开头。
 /// - `dry_run=true`：仅返回 diff 预览，不写盘（`replace_lines` 与整文件覆盖均支持）。
 /// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -297,27 +424,11 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(v) => v,
         Err(e) => return e,
     };
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
-    let confirm_full_overwrite = v
-        .get("confirm_full_overwrite")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-
-    let path = match v
-        .get("path")
-        .and_then(|p| p.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(p) => p.to_string(),
-        None => return "缺少 path 参数".to_string(),
+    let path = match modify_file_path_arg(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
-
-    let mode = v
-        .get("mode")
-        .and_then(|m| m.as_str())
-        .map(|s| s.trim().to_lowercase())
-        .unwrap_or_else(|| "full".to_string());
+    let (explicit_mode, mode) = modify_file_mode_arg(&v);
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
@@ -327,36 +438,5 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         return "错误：路径不是文件或不存在，无法仅修改".to_string();
     }
 
-    // 兼容历史 schema 误生成的字面量 `replacelines`（无下划线）；规范取值为 `replace_lines`。
-    if mode == "replace_lines" || mode == "lines" || mode == "replacelines" {
-        let display = path_for_tool_display(working_dir, &target, Some(&path));
-        super::replace_lines_stream::modify_file_replace_lines(
-            &v,
-            &target,
-            &display,
-            ctx,
-            working_dir,
-            &path,
-        )
-    } else if mode == "full" || mode == "overwrite" || mode.is_empty() {
-        let content = v
-            .get("content")
-            .and_then(|c| c.as_str())
-            .map(String::from)
-            .unwrap_or_default();
-        modify_file_write_full_overwrite(
-            &path,
-            &target,
-            working_dir,
-            ctx,
-            content,
-            dry_run,
-            confirm_full_overwrite,
-        )
-    } else {
-        format!(
-            "错误：mode 仅支持 full、overwrite 或 replace_lines（收到 {:?}）",
-            mode
-        )
-    }
+    modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode)
 }

@@ -476,11 +476,13 @@ pub fn open_file_append_under_root(
     } else {
         oflag |= OFlag::O_NOFOLLOW;
     }
-    let mode = Mode::S_IRUSR | Mode::S_IWUSR | Mode::S_IRGRP | Mode::S_IROTH;
-    let how = OpenHow::new()
+    let mut how = OpenHow::new()
         .flags(oflag)
-        .mode(mode)
         .resolve(ResolveFlag::RESOLVE_IN_ROOT);
+    if create_if_missing {
+        let mode = Mode::S_IRUSR | Mode::S_IWUSR | Mode::S_IRGRP | Mode::S_IROTH;
+        how = how.mode(mode);
+    }
     let owned = openat2(&root, rel.as_path(), how).map_err(io::Error::from)?;
     Ok(unsafe { File::from_raw_fd(owned.into_raw_fd()) })
 }
