@@ -32,91 +32,112 @@ pub struct CommandApprovalNotice {
     pub args: String,
 }
 
+fn apply_sse_stop_outcome(acc: &mut StreamAccum, v: &Value) {
+    acc.saw_error = true;
+    let msg = v.get("error").and_then(|x| x.as_str()).unwrap_or("error");
+    let code = v.get("code").and_then(|x| x.as_str()).unwrap_or("");
+    acc.error_preview = if code.is_empty() {
+        msg.to_string()
+    } else {
+        format!("{msg} ({code})")
+    };
+}
+
+fn timeline_log_status_line(obj: &serde_json::Map<String, Value>) -> String {
+    let kind = obj.get("kind").and_then(|x| x.as_str()).unwrap_or("");
+    let title = obj.get("title").and_then(|x| x.as_str()).unwrap_or("");
+    let detail = obj
+        .get("detail")
+        .and_then(|x| x.as_str())
+        .filter(|s| !s.is_empty());
+    match detail {
+        Some(d) => format!("[{kind}] {title}: {d}"),
+        None => format!("[{kind}] {title}"),
+    }
+}
+
+fn tool_call_status_line(obj: &serde_json::Map<String, Value>) -> String {
+    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("?");
+    let summary = obj.get("summary").and_then(|x| x.as_str()).unwrap_or("");
+    if summary.is_empty() {
+        format!("🔧 工具: {name}")
+    } else {
+        format!("🔧 工具: {name} — {summary}")
+    }
+}
+
+fn extract_command_approvals(v: &Value) -> Vec<CommandApprovalNotice> {
+    let Some(obj) = v
+        .get("command_approval_request")
+        .and_then(|x| x.as_object())
+    else {
+        return Vec::new();
+    };
+    let command = obj
+        .get("command")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    let args = obj
+        .get("args")
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .to_string();
+    vec![CommandApprovalNotice { command, args }]
+}
+
+fn collect_handled_sse_status_lines(v: &Value) -> Vec<String> {
+    let mut status_lines = Vec::new();
+    if let Some(obj) = v.get("timeline_log").and_then(|x| x.as_object()) {
+        status_lines.push(timeline_log_status_line(obj));
+    }
+    if let Some(obj) = v.get("tool_call").and_then(|x| x.as_object()) {
+        status_lines.push(tool_call_status_line(obj));
+    }
+    if v.get("tool_running") == Some(&Value::Bool(true)) {
+        status_lines.push("⏳ 正在执行工具…".into());
+    }
+    if v.get("parsing_tool_calls") == Some(&Value::Bool(true)) {
+        status_lines.push("🧩 正在解析工具调用…".into());
+    }
+    status_lines
+}
+
+fn apply_sse_handled_outcome(v: &Value) -> (Vec<CommandApprovalNotice>, Vec<String>) {
+    let approvals = extract_command_approvals(v);
+    let status_lines = collect_handled_sse_status_lines(v);
+    (approvals, status_lines)
+}
+
 /// 解析单个 `data:` 负载：更新 `acc`，并返回本帧内的审批请求与状态行。
 fn process_one_sse_data_payload(
     data: &str,
     acc: &mut StreamAccum,
 ) -> (Vec<CommandApprovalNotice>, Vec<String>) {
-    let mut approvals = Vec::new();
-    let mut status_lines = Vec::new();
-
     let t = data.trim();
     if t.is_empty() || t == "[DONE]" {
-        return (approvals, status_lines);
+        return (Vec::new(), Vec::new());
     }
 
     let v: Value = match serde_json::from_str(t) {
         Ok(v) => v,
         Err(_) => {
             acc.answer.push_str(data);
-            return (approvals, status_lines);
+            return (Vec::new(), Vec::new());
         }
     };
 
-    let outcome = classify_sse_control_outcome(&v);
-    match outcome {
+    match classify_sse_control_outcome(&v) {
         "stop" => {
-            acc.saw_error = true;
-            let msg = v.get("error").and_then(|x| x.as_str()).unwrap_or("error");
-            let code = v.get("code").and_then(|x| x.as_str()).unwrap_or("");
-            acc.error_preview = if code.is_empty() {
-                msg.to_string()
-            } else {
-                format!("{msg} ({code})")
-            };
+            apply_sse_stop_outcome(acc, &v);
+            (Vec::new(), Vec::new())
         }
-        "handled" => {
-            if let Some(obj) = v
-                .get("command_approval_request")
-                .and_then(|x| x.as_object())
-            {
-                let command = obj
-                    .get("command")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                let args = obj
-                    .get("args")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("")
-                    .to_string();
-                approvals.push(CommandApprovalNotice { command, args });
-            }
-            if let Some(obj) = v.get("timeline_log").and_then(|x| x.as_object()) {
-                let kind = obj.get("kind").and_then(|x| x.as_str()).unwrap_or("");
-                let title = obj.get("title").and_then(|x| x.as_str()).unwrap_or("");
-                let detail = obj
-                    .get("detail")
-                    .and_then(|x| x.as_str())
-                    .filter(|s| !s.is_empty());
-                let line = match detail {
-                    Some(d) => format!("[{kind}] {title}: {d}"),
-                    None => format!("[{kind}] {title}"),
-                };
-                status_lines.push(line);
-            }
-            if let Some(obj) = v.get("tool_call").and_then(|x| x.as_object()) {
-                let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("?");
-                let summary = obj.get("summary").and_then(|x| x.as_str()).unwrap_or("");
-                let line = if summary.is_empty() {
-                    format!("🔧 工具: {name}")
-                } else {
-                    format!("🔧 工具: {name} — {summary}")
-                };
-                status_lines.push(line);
-            }
-            if v.get("tool_running") == Some(&Value::Bool(true)) {
-                status_lines.push("⏳ 正在执行工具…".into());
-            }
-            if v.get("parsing_tool_calls") == Some(&Value::Bool(true)) {
-                status_lines.push("🧩 正在解析工具调用…".into());
-            }
-        }
+        "handled" => apply_sse_handled_outcome(&v),
         _ => {
             acc.answer.push_str(data);
+            (Vec::new(), Vec::new())
         }
     }
-    (approvals, status_lines)
 }
 
 /// 同单帧解析结果：更新 `acc`，并返回本帧内的审批请求与状态行。
