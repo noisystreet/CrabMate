@@ -47,33 +47,64 @@ pub fn validate_clone_repo_url(raw: &str) -> Result<&str, CloneUrlError> {
     if url.is_empty() {
         return Err(CloneUrlError::Empty);
     }
-    if url.contains('\0') || url.chars().any(|c| c.is_control()) {
+    if url_has_illegal_chars(url) {
         return Err(CloneUrlError::Invalid);
     }
     let lower = url.to_ascii_lowercase();
-    if lower.starts_with("https://") || lower.starts_with("http://") {
-        if url.len() < 12 {
-            return Err(CloneUrlError::Invalid);
-        }
-        return Ok(url);
+    if let Some(r) = try_validate_http_clone_url(url, &lower) {
+        return r;
     }
-    if lower.starts_with("ssh://") {
-        if url.len() < 10 {
-            return Err(CloneUrlError::Invalid);
-        }
-        return Ok(url);
+    if let Some(r) = try_validate_ssh_clone_url(url, &lower) {
+        return r;
     }
-    // git@host:path/to/repo.git
-    if let Some(rest) = url.strip_prefix("git@") {
-        if rest.contains(':') && !rest.contains("://") {
-            return Ok(url);
-        }
-        return Err(CloneUrlError::Invalid);
+    if let Some(r) = try_validate_git_at_clone_url(url) {
+        return r;
     }
     if lower.starts_with("file:") || lower.starts_with("ftp:") {
         return Err(CloneUrlError::UnsupportedScheme);
     }
     Err(CloneUrlError::UnsupportedScheme)
+}
+
+fn url_has_illegal_chars(url: &str) -> bool {
+    url.contains('\0') || url.chars().any(|c| c.is_control())
+}
+
+fn try_validate_http_clone_url<'a>(
+    url: &'a str,
+    lower: &str,
+) -> Option<Result<&'a str, CloneUrlError>> {
+    if !(lower.starts_with("https://") || lower.starts_with("http://")) {
+        return None;
+    }
+    Some(if url.len() < 12 {
+        Err(CloneUrlError::Invalid)
+    } else {
+        Ok(url)
+    })
+}
+
+fn try_validate_ssh_clone_url<'a>(
+    url: &'a str,
+    lower: &str,
+) -> Option<Result<&'a str, CloneUrlError>> {
+    if !lower.starts_with("ssh://") {
+        return None;
+    }
+    Some(if url.len() < 10 {
+        Err(CloneUrlError::Invalid)
+    } else {
+        Ok(url)
+    })
+}
+
+fn try_validate_git_at_clone_url(url: &str) -> Option<Result<&str, CloneUrlError>> {
+    let rest = url.strip_prefix("git@")?;
+    Some(if rest.contains(':') && !rest.contains("://") {
+        Ok(url)
+    } else {
+        Err(CloneUrlError::Invalid)
+    })
 }
 
 /// 可选分支名：拒绝空（调用方已滤）、控制字符、以及以 `-` 开头（避免歧义）。
