@@ -81,31 +81,42 @@ fn clip_chars(s: &str, max: usize) -> String {
     s.chars().take(take).collect::<String>() + "\n…（JSON 已截断）"
 }
 
+fn push_rich_text_line(out: &mut String, text: &str) {
+    if !out.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(text);
+}
+
+fn post_object_text_tag(map: &serde_json::Map<String, Value>) -> Option<&str> {
+    if map.get("tag").and_then(|t| t.as_str()) != Some("text") {
+        return None;
+    }
+    let t = map.get("text").and_then(|x| x.as_str())?;
+    if t.is_empty() {
+        return None;
+    }
+    Some(t)
+}
+
+fn collect_post_object_fields(map: &serde_json::Map<String, Value>, out: &mut String) {
+    if let Some(t) = post_object_text_tag(map) {
+        push_rich_text_line(out, t);
+    }
+    if let Some(title) = map.get("title").and_then(|x| x.as_str())
+        && !title.is_empty()
+    {
+        push_rich_text_line(out, title);
+    }
+    for val in map.values() {
+        collect_post_rich_text(val, out);
+    }
+}
+
 /// 递归收集富文本 **`{"tag":"text","text":"…"}`** 与常见 **`title`** 字段（`post` 多语言结构）。
 fn collect_post_rich_text(v: &Value, out: &mut String) {
     match v {
-        Value::Object(map) => {
-            if let Some("text") = map.get("tag").and_then(|t| t.as_str())
-                && let Some(t) = map.get("text").and_then(|x| x.as_str())
-                && !t.is_empty()
-            {
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str(t);
-            }
-            if let Some(title) = map.get("title").and_then(|x| x.as_str())
-                && !title.is_empty()
-            {
-                if !out.is_empty() {
-                    out.push('\n');
-                }
-                out.push_str(title);
-            }
-            for (_k, val) in map {
-                collect_post_rich_text(val, out);
-            }
-        }
+        Value::Object(map) => collect_post_object_fields(map, out),
         Value::Array(arr) => {
             for item in arr {
                 collect_post_rich_text(item, out);

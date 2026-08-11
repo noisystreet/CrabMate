@@ -133,6 +133,82 @@ struct TenantTokenCache {
     expires_at: i64,
 }
 
+struct EventTransport {
+    event_tx: Option<mpsc::Sender<Value>>,
+    event_rx: Option<mpsc::Receiver<Value>>,
+    sqlite_queue: Option<std::sync::Arc<FeishuImEventSqliteQueue>>,
+}
+
+fn build_event_transport(cfg: &FeishuBridgeConfig) -> Result<EventTransport, FeishuBridgeInitError> {
+    if !cfg.async_worker {
+        return Ok(EventTransport {
+            event_tx: None,
+            event_rx: None,
+            sqlite_queue: None,
+        });
+    }
+
+    let sqlite_path = cfg
+        .event_queue_sqlite_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from);
+
+    if let Some(path) = sqlite_path {
+        let q = FeishuImEventSqliteQueue::new(
+            path.as_path(),
+            cfg.sqlite_queue_max_retries,
+            cfg.sqlite_queue_poll_ms,
+        )?;
+        return Ok(EventTransport {
+            event_tx: None,
+            event_rx: None,
+            sqlite_queue: Some(std::sync::Arc::new(q)),
+        });
+    }
+
+    if cfg.event_queue_capacity > 0 {
+        let cap = cfg.event_queue_capacity.max(1);
+        let (tx, rx) = mpsc::channel(cap);
+        return Ok(EventTransport {
+            event_tx: Some(tx),
+            event_rx: Some(rx),
+            sqlite_queue: None,
+        });
+    }
+
+    Ok(EventTransport {
+        event_tx: None,
+        event_rx: None,
+        sqlite_queue: None,
+    })
+}
+
+fn spawn_feishu_async_workers(
+    state: &Arc<FeishuBridgeState>,
+    event_rx: Option<mpsc::Receiver<Value>>,
+) {
+    if let Some(mut rx) = event_rx {
+        let st = Arc::clone(state);
+        tokio::spawn(async move {
+            while let Some(envelope) = rx.recv().await {
+                if let Err(e) = handle_im_message_receive(&st, &envelope).await {
+                    error!(?e, "async feishu im.message.receive_v1 worker failed");
+                }
+            }
+        });
+    }
+
+    if let Some(q) = state.sqlite_queue.clone() {
+        let st = Arc::clone(state);
+        let lease = state.cfg.sqlite_queue_lease_secs.max(30);
+        tokio::spawn(async move {
+            run_sqlite_im_queue_consumer(st, q, lease).await;
+        });
+    }
+}
+
 impl FeishuBridgeState {
     pub fn try_new(cfg: FeishuBridgeConfig) -> Result<Arc<Self>, FeishuBridgeInitError> {
         let http = reqwest::Client::builder()
@@ -140,31 +216,8 @@ impl FeishuBridgeState {
             .timeout(Duration::from_secs(120))
             .build()?;
 
-        let sqlite_path = cfg
-            .event_queue_sqlite_path
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(std::path::PathBuf::from);
-
-        let (event_tx, event_rx, sqlite_queue) = if cfg.async_worker {
-            if let Some(ref path) = sqlite_path {
-                let q = FeishuImEventSqliteQueue::new(
-                    path.as_path(),
-                    cfg.sqlite_queue_max_retries,
-                    cfg.sqlite_queue_poll_ms,
-                )?;
-                (None, None, Some(std::sync::Arc::new(q)))
-            } else if cfg.event_queue_capacity > 0 {
-                let cap = cfg.event_queue_capacity.max(1);
-                let (tx, rx) = mpsc::channel(cap);
-                (Some(tx), Some(rx), None)
-            } else {
-                (None, None, None)
-            }
-        } else {
-            (None, None, None)
-        };
+        let transport = build_event_transport(&cfg)?;
+        let event_rx = transport.event_rx;
 
         let state = Arc::new(Self {
             cfg,
@@ -175,34 +228,36 @@ impl FeishuBridgeState {
             }),
             seen_message_ids: DashMap::new(),
             seen_lark_nonces: DashMap::new(),
-            event_tx,
-            sqlite_queue,
+            event_tx: transport.event_tx,
+            sqlite_queue: transport.sqlite_queue,
             turn_lock: Mutex::new(()),
             last_workspace_path: Mutex::new(None),
             pending_tool_decisions: DashMap::new(),
             pending_tool_session_by_chat: DashMap::new(),
         });
 
-        if let Some(mut rx) = event_rx {
-            let st = Arc::clone(&state);
-            tokio::spawn(async move {
-                while let Some(envelope) = rx.recv().await {
-                    if let Err(e) = handle_im_message_receive(&st, &envelope).await {
-                        error!(?e, "async feishu im.message.receive_v1 worker failed");
-                    }
-                }
-            });
-        }
-
-        if let Some(q) = state.sqlite_queue.clone() {
-            let st = Arc::clone(&state);
-            let lease = state.cfg.sqlite_queue_lease_secs.max(30);
-            tokio::spawn(async move {
-                run_sqlite_im_queue_consumer(st, q, lease).await;
-            });
-        }
+        spawn_feishu_async_workers(&state, event_rx);
 
         Ok(state)
+    }
+}
+
+async fn sqlite_queue_mark_done(queue: Arc<FeishuImEventSqliteQueue>, id: i64) {
+    if let Err(e) = tokio::task::spawn_blocking(move || queue.mark_done(id)).await {
+        error!(?e, queue_id = id, "feishu sqlite mark_done join failed");
+    }
+}
+
+async fn sqlite_queue_mark_retry_or_fail(
+    queue: Arc<FeishuImEventSqliteQueue>,
+    id: i64,
+    msg: &str,
+) {
+    let msg = msg.to_string();
+    if let Err(join_e) =
+        tokio::task::spawn_blocking(move || queue.mark_retry_or_fail(id, &msg)).await
+    {
+        error!(?join_e, queue_id = id, "feishu sqlite mark_retry join failed");
     }
 }
 
@@ -220,33 +275,17 @@ async fn sqlite_queue_process_claimed(
                 queue_id = id,
                 "feishu sqlite queue envelope json corrupt"
             );
-            let q = Arc::clone(&queue);
-            let _ = tokio::task::spawn_blocking(move || q.mark_done(id)).await;
+            sqlite_queue_mark_done(Arc::clone(&queue), id).await;
             return;
         }
     };
 
     let st = Arc::clone(&state);
     match handle_im_message_receive(&st, &envelope).await {
-        Ok(()) => {
-            let q = Arc::clone(&queue);
-            if let Err(e) = tokio::task::spawn_blocking(move || q.mark_done(id)).await {
-                error!(?e, queue_id = id, "feishu sqlite mark_done join failed");
-            }
-        }
+        Ok(()) => sqlite_queue_mark_done(Arc::clone(&queue), id).await,
         Err(e) => {
             error!(?e, queue_id = id, "feishu sqlite queue handler failed");
-            let msg = e.to_string();
-            let q = Arc::clone(&queue);
-            if let Err(join_e) =
-                tokio::task::spawn_blocking(move || q.mark_retry_or_fail(id, &msg)).await
-            {
-                error!(
-                    ?join_e,
-                    queue_id = id,
-                    "feishu sqlite mark_retry join failed"
-                );
-            }
+            sqlite_queue_mark_retry_or_fail(Arc::clone(&queue), id, &e.to_string()).await;
         }
     }
 }
@@ -450,55 +489,59 @@ async fn handle_card_action_trigger(st: &Arc<FeishuBridgeState>, v: &Value) -> R
     }
 }
 
-async fn feishu_im_message_receive_v1_response(st: &Arc<FeishuBridgeState>, v: &Value) -> Response {
-    if let Some(q) = &st.sqlite_queue {
-        let qc = std::sync::Arc::clone(q);
-        let payload = v.clone();
-        return match tokio::task::spawn_blocking(move || qc.enqueue(&payload)).await {
-            Ok(Ok(())) => {
-                tracing::debug!("feishu im.message.receive_v1 persisted to sqlite queue");
-                (StatusCode::OK, Json(json!({}))).into_response()
-            }
-            Ok(Err(e)) => {
-                error!(?e, "feishu sqlite queue enqueue failed");
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({
-                        "error": "persistent queue write failed; retry later",
-                        "code": "FEISHU_EVENT_QUEUE_SQLITE_ERROR"
-                    })),
-                )
-                    .into_response()
-            }
-            Err(e) => {
-                error!(?e, "feishu sqlite queue enqueue join failed");
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({ "error": "queue worker overloaded" })),
-                )
-                    .into_response()
-            }
-        };
+async fn im_receive_sqlite_enqueue_response(
+    q: std::sync::Arc<FeishuImEventSqliteQueue>,
+    v: &Value,
+) -> Response {
+    let payload = v.clone();
+    match tokio::task::spawn_blocking(move || q.enqueue(&payload)).await {
+        Ok(Ok(())) => {
+            tracing::debug!("feishu im.message.receive_v1 persisted to sqlite queue");
+            (StatusCode::OK, Json(json!({}))).into_response()
+        }
+        Ok(Err(e)) => {
+            error!(?e, "feishu sqlite queue enqueue failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "error": "persistent queue write failed; retry later",
+                    "code": "FEISHU_EVENT_QUEUE_SQLITE_ERROR"
+                })),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            error!(?e, "feishu sqlite queue enqueue join failed");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "queue worker overloaded" })),
+            )
+                .into_response()
+        }
     }
-    if let Some(tx) = &st.event_tx {
-        return match tx.try_send(v.clone()) {
-            Ok(()) => {
-                tracing::debug!("feishu im.message.receive_v1 enqueued");
-                (StatusCode::OK, Json(json!({}))).into_response()
-            }
-            Err(e) => {
-                warn!(?e, "feishu event queue full");
-                (
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    Json(json!({
-                        "error": "event queue full; retry later",
-                        "code": "FEISHU_EVENT_QUEUE_FULL"
-                    })),
-                )
-                    .into_response()
-            }
-        };
+}
+
+fn im_receive_mpsc_enqueue_response(tx: &mpsc::Sender<Value>, v: &Value) -> Response {
+    match tx.try_send(v.clone()) {
+        Ok(()) => {
+            tracing::debug!("feishu im.message.receive_v1 enqueued");
+            (StatusCode::OK, Json(json!({}))).into_response()
+        }
+        Err(e) => {
+            warn!(?e, "feishu event queue full");
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({
+                    "error": "event queue full; retry later",
+                    "code": "FEISHU_EVENT_QUEUE_FULL"
+                })),
+            )
+                .into_response()
+        }
     }
+}
+
+async fn im_receive_sync_process_response(st: &Arc<FeishuBridgeState>, v: &Value) -> Response {
     match handle_im_message_receive(st, v).await {
         Ok(()) => (StatusCode::OK, Json(json!({}))).into_response(),
         Err(e) => {
@@ -506,6 +549,16 @@ async fn feishu_im_message_receive_v1_response(st: &Arc<FeishuBridgeState>, v: &
             (StatusCode::OK, Json(json!({}))).into_response()
         }
     }
+}
+
+async fn feishu_im_message_receive_v1_response(st: &Arc<FeishuBridgeState>, v: &Value) -> Response {
+    if let Some(q) = &st.sqlite_queue {
+        return im_receive_sqlite_enqueue_response(std::sync::Arc::clone(q), v).await;
+    }
+    if let Some(tx) = &st.event_tx {
+        return im_receive_mpsc_enqueue_response(tx, v);
+    }
+    im_receive_sync_process_response(st, v).await
 }
 
 type FeishuEventReject = Box<Response>;
@@ -522,11 +575,11 @@ fn feishu_event_body_utf8(body: &[u8]) -> Result<&str, FeishuEventReject> {
     })
 }
 
-fn feishu_prepare_verified_event_json(
+fn verify_lark_request_or_reject(
     st: &FeishuBridgeState,
     headers: &HeaderMap,
     body_str: &str,
-) -> Result<Value, FeishuEventReject> {
+) -> Result<(), FeishuEventReject> {
     let signature_verified = match verify_lark_signature_if_needed(&st.cfg, headers, body_str) {
         Ok(v) => v,
         Err(e) => {
@@ -559,9 +612,16 @@ fn feishu_prepare_verified_event_json(
         ));
     }
 
-    let payload_str = match maybe_decrypt_event_json(st.cfg.encrypt_key.as_deref(), body_str) {
-        Ok(Some(s)) => s,
-        Ok(None) => body_str.to_string(),
+    Ok(())
+}
+
+fn decrypt_feishu_event_body(
+    encrypt_key: Option<&str>,
+    body_str: &str,
+) -> Result<String, FeishuEventReject> {
+    match maybe_decrypt_event_json(encrypt_key, body_str) {
+        Ok(Some(s)) => Ok(s),
+        Ok(None) => Ok(body_str.to_string()),
         Err(e) => {
             warn!(?e, "feishu decrypt failed");
             let msg = match e {
@@ -570,32 +630,41 @@ fn feishu_prepare_verified_event_json(
                 }
                 _ => e.to_string(),
             };
-            return Err(Box::new(
+            Err(Box::new(
                 (StatusCode::BAD_REQUEST, Json(json!({ "error": msg }))).into_response(),
-            ));
+            ))
         }
-    };
+    }
+}
 
-    let v: Value = match serde_json::from_str(&payload_str) {
-        Ok(v) => v,
-        Err(e) => {
-            return Err(Box::new(
-                (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": format!("invalid json after decrypt: {e}") })),
-                )
-                    .into_response(),
-            ));
-        }
-    };
+fn parse_feishu_event_json(payload_str: &str) -> Result<Value, FeishuEventReject> {
+    match serde_json::from_str(payload_str) {
+        Ok(v) => Ok(v),
+        Err(e) => Err(Box::new(
+            (
+                StatusCode::BAD_REQUEST,
+                Json(json!({ "error": format!("invalid json after decrypt: {e}") })),
+            )
+                .into_response(),
+        )),
+    }
+}
 
+fn feishu_prepare_verified_event_json(
+    st: &FeishuBridgeState,
+    headers: &HeaderMap,
+    body_str: &str,
+) -> Result<Value, FeishuEventReject> {
+    verify_lark_request_or_reject(st, headers, body_str)?;
+    let payload_str =
+        decrypt_feishu_event_body(st.cfg.encrypt_key.as_deref(), body_str)?;
+    let v = parse_feishu_event_json(&payload_str)?;
     if let Err(msg) = verify_event_verification_token(&st.cfg, &v) {
         warn!(%msg, "feishu verification token mismatch");
         return Err(Box::new(
             (StatusCode::UNAUTHORIZED, Json(json!({ "error": msg }))).into_response(),
         ));
     }
-
     Ok(v)
 }
 

@@ -246,6 +246,50 @@ async fn handle_im_message_receive(
     Ok(())
 }
 
+fn approval_session_id_for_turn(
+    cfg: &FeishuBridgeConfig,
+    message_id: &str,
+) -> Option<String> {
+    match cfg.tool_approval_mode {
+        FeishuToolApprovalMode::DenyAll => None,
+        _ => Some(format!("feishu:{message_id}")),
+    }
+}
+
+fn turn_result_title_and_body(acc: &StreamAccum) -> (String, String) {
+    let final_text = if acc.answer.trim().is_empty() {
+        "（本轮无正文输出）".to_string()
+    } else {
+        acc.answer.clone()
+    };
+    let title = if acc.saw_error {
+        "完成（部分报错）"
+    } else {
+        "CrabMate 执行完成"
+    };
+    (title.to_string(), final_text)
+}
+
+async fn maybe_reply_stream_terminal_error(
+    st: &FeishuBridgeState,
+    message_id: &str,
+    acc: &StreamAccum,
+    follow_idx: &mut u64,
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+    if !acc.saw_error || !acc.answer.trim().is_empty() {
+        return Ok(false);
+    }
+    *follow_idx = follow_idx.saturating_add(1);
+    reply_followup_text_message(
+        st,
+        message_id,
+        *follow_idx,
+        &format!("（CrabMate 流结束报错：{}）", acc.error_preview),
+    )
+    .await?;
+    Ok(true)
+}
+
 async fn crabmate_turn_with_feishu(
     st: &FeishuBridgeState,
     message_id: &str,
@@ -253,10 +297,7 @@ async fn crabmate_turn_with_feishu(
     user_text: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conv = format!("feishu:{chat_id}");
-    let approval_session_id = match st.cfg.tool_approval_mode {
-        FeishuToolApprovalMode::DenyAll => None,
-        _ => Some(format!("feishu:{message_id}")),
-    };
+    let approval_session_id = approval_session_id_for_turn(&st.cfg, message_id);
 
     let mut follow_idx: u64 = 0;
     let progress_card_message_id =
@@ -287,34 +328,17 @@ async fn crabmate_turn_with_feishu(
     )
     .await?;
 
-    if acc.saw_error && acc.answer.trim().is_empty() {
-        follow_idx = follow_idx.saturating_add(1);
-        reply_followup_text_message(
-            st,
-            message_id,
-            follow_idx,
-            &format!("（CrabMate 流结束报错：{}）", acc.error_preview),
-        )
-        .await?;
+    if maybe_reply_stream_terminal_error(st, message_id, &acc, &mut follow_idx).await? {
         return Ok(());
     }
 
-    let final_text = if acc.answer.trim().is_empty() {
-        "（本轮无正文输出）".to_string()
-    } else {
-        acc.answer
-    };
-    let title = if acc.saw_error {
-        "完成（部分报错）"
-    } else {
-        "CrabMate 执行完成"
-    };
+    let (title, final_text) = turn_result_title_and_body(&acc);
     let card_cap = st.cfg.result_card_max_body_chars.max(200);
     reply_turn_result_card_and_remainder(
         st,
         message_id,
         progress_card_message_id.as_deref(),
-        title,
+        &title,
         &final_text,
         card_cap,
         &mut follow_idx,
