@@ -9,6 +9,10 @@ use super::common::{
     push_extra_args_from_json, push_repo_arg, run_gh_vec, validate_job_name, validate_run_id,
 };
 
+/// `gh_pr_checks` / `structured: true` 请求的 `--json` 字段（与当前 `gh pr checks --help` 对齐）。
+pub const PR_CHECKS_STRUCTURED_JSON_FIELDS: &str =
+    "name,bucket,state,link,workflow,description,startedAt,completedAt,event";
+
 fn parse_exit_code(formatted: &str) -> Option<i32> {
     command_formatted_exit_code(formatted)
 }
@@ -68,14 +72,41 @@ fn summarize_failed_checks_json(stdout: &str) -> Option<String> {
 }
 
 /// 为 `gh pr checks` 在 structured 模式下附加检查摘要。
+///
+/// **不**要求退出码为 0：`gh pr checks` 在有失败时为 1、仍有进行中为 8，stdout 仍可能是合法 JSON。
 pub fn append_checks_summary(formatted: String, stdout: &str) -> String {
-    if parse_exit_code(&formatted) != Some(0) {
-        return formatted;
-    }
     let Some(summary) = summarize_failed_checks_json(stdout) else {
         return formatted;
     };
     format!("{}{}", formatted.trim_end(), summary)
+}
+
+/// `gh pr checks --json` 自 GitHub CLI **2.50** 起支持；更旧版本会报 `unknown flag: --json`。
+pub fn gh_pr_checks_rejects_json_flag(formatted: &str) -> bool {
+    formatted
+        .to_ascii_lowercase()
+        .contains("unknown flag: --json")
+}
+
+/// `structured` 成功路径：在退出码 0/1/8 且 stdout 为 JSON 时附加美化块与失败摘要。
+///
+/// 退出码 0 时 `run_gh_vec` 可能已附加美化块；1/8 时需在此补上。
+pub fn finalize_structured_pr_checks(formatted: String) -> String {
+    let stdout = extract_stdout_from_formatted(&formatted).to_string();
+    let with_json = match parse_exit_code(&formatted) {
+        // 0=全过（`run_gh_vec` 通常已美化）；1=有失败；8=仍有 pending
+        Some(1 | 8) => wrap_with_parsed_if_json(formatted, stdout.as_str()),
+        _ => formatted,
+    };
+    append_checks_summary(with_json, stdout.as_str())
+}
+
+fn wrap_with_parsed_if_json(formatted: String, stdout: &str) -> String {
+    if serde_json::from_str::<JsonValue>(stdout.trim()).is_ok() {
+        super::common::wrap_with_parsed(formatted, stdout)
+    } else {
+        formatted
+    }
 }
 
 /// `gh run rerun`（写远端：重新运行 workflow）
@@ -296,7 +327,10 @@ pub fn gh_run_failure_summary(
 
 #[cfg(test)]
 mod tests {
-    use super::summarize_failed_checks_json;
+    use super::{
+        append_checks_summary, finalize_structured_pr_checks, gh_pr_checks_rejects_json_flag,
+        summarize_failed_checks_json,
+    };
 
     #[test]
     fn summarize_failed_checks_json_lists_failures() {
@@ -304,5 +338,34 @@ mod tests {
         let s = summarize_failed_checks_json(raw).expect("summary");
         assert!(s.contains("失败"), "{s}");
         assert!(s.contains("ci"), "{s}");
+    }
+
+    #[test]
+    fn gh_pr_checks_rejects_json_flag_detects_stderr() {
+        let raw = "命令：gh pr checks 3 --json name\n退出码：1\n标准错误：\nunknown flag: --json\n\nUsage:  gh pr checks [<number> | <url> | <branch>] [flags]\n";
+        assert!(gh_pr_checks_rejects_json_flag(raw));
+        assert!(!gh_pr_checks_rejects_json_flag(
+            "退出码：0\n标准输出：\n[]\n"
+        ));
+    }
+
+    #[test]
+    fn append_checks_summary_works_when_exit_is_failure() {
+        let raw = r#"[{"name":"ci","state":"FAILURE","link":"https://example.com"}]"#;
+        let formatted = format!("命令：gh pr checks\n退出码：1\n标准输出：\n{raw}\n");
+        let out = append_checks_summary(formatted, raw);
+        assert!(out.contains("检查摘要"), "{out}");
+        assert!(out.contains("失败"), "{out}");
+    }
+
+    #[test]
+    fn finalize_structured_pr_checks_attaches_summary_on_exit_1() {
+        let raw =
+            r#"[{"name":"lint","bucket":"fail","state":"FAILURE","link":"https://example.com/x"}]"#;
+        let formatted = format!("命令：gh pr checks --json …\n退出码：1\n标准输出：\n{raw}\n");
+        let out = finalize_structured_pr_checks(formatted);
+        assert!(out.contains("解析后的 JSON"), "{out}");
+        assert!(out.contains("检查摘要"), "{out}");
+        assert!(out.contains("lint"), "{out}");
     }
 }

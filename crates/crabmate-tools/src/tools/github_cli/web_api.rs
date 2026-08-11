@@ -43,8 +43,22 @@ fn gh_tool_error(formatted: &str) -> String {
 }
 
 fn parse_gh_json_stdout(formatted: &str) -> Result<JsonValue, String> {
-    if gh_exit_code(formatted) != Some(0) {
-        return Err(gh_tool_error(formatted));
+    parse_gh_json_stdout_exits(formatted, &[0])
+}
+
+/// 允许的退出码下解析 stdout JSON（`gh pr checks`：0 全过 / 1 有失败 / 8 仍有 pending）。
+fn parse_gh_json_stdout_exits(formatted: &str, ok_exits: &[i32]) -> Result<JsonValue, String> {
+    match gh_exit_code(formatted) {
+        Some(c) if ok_exits.contains(&c) => {}
+        _ => {
+            if formatted.contains("不支持 `pr checks --json`") {
+                return Err(
+                    "本机 GitHub CLI 不支持 `gh pr checks --json`（需 ≥ 2.50）。请升级 `gh`。"
+                        .to_string(),
+                );
+            }
+            return Err(gh_tool_error(formatted));
+        }
     }
     let stdout = extract_stdout_from_formatted(formatted).trim();
     if stdout.is_empty() {
@@ -337,7 +351,7 @@ pub fn github_pr_checks(
         allowed_commands,
         working_dir,
     );
-    let checks_v = parse_gh_json_stdout(&checks_formatted)?;
+    let checks_v = parse_gh_json_stdout_exits(&checks_formatted, &[0, 1, 8])?;
     out.checks = parse_check_items(&checks_v);
     out.summary = summarize_checks(&out.checks);
     Ok(out)
