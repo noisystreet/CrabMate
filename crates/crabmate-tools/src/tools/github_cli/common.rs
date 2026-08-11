@@ -98,6 +98,105 @@ pub fn clamp_limit(n: Option<u32>) -> u32 {
     n.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIMIT)
 }
 
+/// 解析 `gh_*` 工具 JSON 参数；失败时返回错误字符串（与 [`run_gh_vec`] 风格一致）。
+pub fn parse_gh_tool_args(args_json: &str) -> Result<JsonValue, String> {
+    crate::tools::parse_args_json(args_json)
+}
+
+pub fn push_repo_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        validate_repo(r)?;
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    Ok(())
+}
+
+pub fn push_json_fields_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
+    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
+        let fields: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        let j = join_json_fields(&fields)?;
+        argv.push("--json".into());
+        argv.push(j);
+    }
+    Ok(())
+}
+
+pub fn push_web_argv(argv: &mut Vec<String>, v: &JsonValue) {
+    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
+        argv.push("--web".into());
+    }
+}
+
+pub fn push_extra_args_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        validate_extra_args(&extra)?;
+        argv.extend(extra);
+    }
+    Ok(())
+}
+
+pub fn push_list_state_argv(
+    argv: &mut Vec<String>,
+    v: &JsonValue,
+    allow_merged: bool,
+) -> Result<(), String> {
+    if let Some(s) = v.get("state").and_then(|x| x.as_str()) {
+        let st = s.trim();
+        let valid = if allow_merged {
+            matches!(st, "open" | "closed" | "merged" | "all")
+        } else {
+            matches!(st, "open" | "closed" | "all")
+        };
+        if !valid {
+            return Err(if allow_merged {
+                "错误：state 须为 open、closed、merged 或 all".to_string()
+            } else {
+                "错误：state 须为 open、closed 或 all".to_string()
+            });
+        }
+        if st != "open" {
+            argv.push("--state".into());
+            argv.push(st.to_string());
+        }
+    }
+    Ok(())
+}
+
+pub fn push_list_limit_argv(argv: &mut Vec<String>, v: &JsonValue) {
+    let lim = clamp_limit(v.get("limit").and_then(|x| x.as_u64()).map(|u| u as u32));
+    argv.push("--limit".into());
+    argv.push(lim.to_string());
+}
+
+pub fn push_view_tail_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
+    push_repo_argv(argv, v)?;
+    push_json_fields_argv(argv, v)?;
+    push_web_argv(argv, v);
+    push_extra_args_argv(argv, v)?;
+    Ok(())
+}
+
+pub fn push_list_tail_argv(
+    argv: &mut Vec<String>,
+    v: &JsonValue,
+    allow_merged: bool,
+) -> Result<(), String> {
+    push_list_state_argv(argv, v, allow_merged)?;
+    push_list_limit_argv(argv, v);
+    push_json_fields_argv(argv, v)?;
+    push_web_argv(argv, v);
+    push_extra_args_argv(argv, v)?;
+    Ok(())
+}
+
 pub fn try_pretty_json(stdout: &str) -> Option<String> {
     let t = stdout.trim();
     if t.is_empty() {

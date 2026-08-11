@@ -90,33 +90,42 @@ fn invocation_is_git_status(invocation: &str) -> bool {
     tokens.get(i).copied() == Some("status")
 }
 
-fn stdout_looks_like_git_status(stdout: &str) -> bool {
-    let Some(first) = first_non_empty_line(stdout) else {
+fn git_status_xy_first_line(first: &str) -> bool {
+    let bytes = first.as_bytes();
+    if bytes.len() < 3 || bytes[2] != b' ' {
         return false;
-    };
-    if first.starts_with("On branch ")
+    }
+    let x = bytes[0] as char;
+    let y = bytes[1] as char;
+    const STATUS_XY: &str = "MADRCU?! ";
+    STATUS_XY.contains(x) && STATUS_XY.contains(y)
+}
+
+fn git_status_known_first_line(first: &str) -> bool {
+    first.starts_with("On branch ")
         || first.starts_with("## ")
         || first.starts_with("HEAD detached")
         || first.starts_with("位于分支")
         || first == "Not currently on any branch."
-    {
-        return true;
-    }
-    let bytes = first.as_bytes();
-    if bytes.len() >= 3 && bytes[2] == b' ' {
-        let x = bytes[0] as char;
-        let y = bytes[1] as char;
-        const STATUS_XY: &str = "MADRCU?! ";
-        if STATUS_XY.contains(x) && STATUS_XY.contains(y) {
-            return true;
-        }
-    }
+}
+
+fn git_status_body_markers(stdout: &str) -> bool {
     stdout.contains("Changes not staged for commit")
         || stdout.contains("Changes to be committed")
         || stdout.contains("Untracked files:")
         || stdout.contains("nothing to commit, working tree clean")
         || stdout.contains("无文件要提交")
         || stdout.contains("尚未暂存以备提交的变更")
+}
+
+fn stdout_looks_like_git_status(stdout: &str) -> bool {
+    let Some(first) = first_non_empty_line(stdout) else {
+        return false;
+    };
+    if git_status_known_first_line(first) || git_status_xy_first_line(first) {
+        return true;
+    }
+    git_status_body_markers(stdout)
 }
 
 fn run_command_stdout_qualifies_for_workspace_preview(stdout: &str, invocation: &str) -> bool {

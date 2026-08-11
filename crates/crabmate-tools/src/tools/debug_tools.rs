@@ -4,6 +4,61 @@ use std::collections::BTreeMap;
 
 use crate::tools::tool_param_types::BacktraceAnalyzeArgs;
 
+fn collect_backtrace_frame(
+    line: &str,
+    crate_hint: Option<&str>,
+    frame_hits: &mut Vec<String>,
+    module_count: &mut BTreeMap<String, usize>,
+) {
+    if !line.contains("::") {
+        return;
+    }
+    if let Some(hint) = crate_hint {
+        if !line.contains(hint) {
+            return;
+        }
+    } else if is_noise_frame(line) {
+        return;
+    }
+    frame_hits.push(line.to_string());
+    let module = line
+        .split("::")
+        .take(2)
+        .collect::<Vec<_>>()
+        .join("::")
+        .trim()
+        .to_string();
+    if !module.is_empty() {
+        *module_count.entry(module).or_insert(0) += 1;
+    }
+}
+
+fn format_backtrace_analysis(
+    frame_hits: &[String],
+    module_count: BTreeMap<String, usize>,
+) -> String {
+    if frame_hits.is_empty() {
+        return "未识别到可分析的业务调用栈帧。可尝试传入 crate_hint（如你的 crate 名）。"
+            .to_string();
+    }
+
+    let first = frame_hits.first().cloned().unwrap_or_default();
+    let mut top_modules = module_count.into_iter().collect::<Vec<_>>();
+    top_modules.sort_by_key(|b| std::cmp::Reverse(b.1));
+
+    let mut out = String::new();
+    out.push_str("backtrace 分析结果:\n");
+    out.push_str(&format!("- 首个可疑业务帧: {}\n", first));
+    out.push_str("- 主要模块命中:\n");
+    for (name, count) in top_modules.into_iter().take(5) {
+        out.push_str(&format!("  - {}: {} 次\n", name, count));
+    }
+    out.push_str(
+        "- 建议: 优先从首个可疑业务帧对应函数开始排查参数、unwrap、索引越界和并发共享状态。",
+    );
+    out
+}
+
 pub fn rust_backtrace_analyze(args_json: &str) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -30,49 +85,10 @@ pub fn rust_backtrace_analyze(args_json: &str) -> String {
         if l.is_empty() {
             continue;
         }
-        if !l.contains("::") {
-            continue;
-        }
-        if let Some(hint) = crate_hint {
-            if !l.contains(hint) {
-                continue;
-            }
-        } else if is_noise_frame(l) {
-            continue;
-        }
-        frame_hits.push(l.to_string());
-        let module = l
-            .split("::")
-            .take(2)
-            .collect::<Vec<_>>()
-            .join("::")
-            .trim()
-            .to_string();
-        if !module.is_empty() {
-            *module_count.entry(module).or_insert(0) += 1;
-        }
+        collect_backtrace_frame(l, crate_hint, &mut frame_hits, &mut module_count);
     }
 
-    if frame_hits.is_empty() {
-        return "未识别到可分析的业务调用栈帧。可尝试传入 crate_hint（如你的 crate 名）。"
-            .to_string();
-    }
-
-    let first = frame_hits.first().cloned().unwrap_or_default();
-    let mut top_modules = module_count.into_iter().collect::<Vec<_>>();
-    top_modules.sort_by_key(|b| std::cmp::Reverse(b.1));
-
-    let mut out = String::new();
-    out.push_str("backtrace 分析结果:\n");
-    out.push_str(&format!("- 首个可疑业务帧: {}\n", first));
-    out.push_str("- 主要模块命中:\n");
-    for (name, count) in top_modules.into_iter().take(5) {
-        out.push_str(&format!("  - {}: {} 次\n", name, count));
-    }
-    out.push_str(
-        "- 建议: 优先从首个可疑业务帧对应函数开始排查参数、unwrap、索引越界和并发共享状态。",
-    );
-    out
+    format_backtrace_analysis(&frame_hits, module_count)
 }
 
 fn is_noise_frame(line: &str) -> bool {
