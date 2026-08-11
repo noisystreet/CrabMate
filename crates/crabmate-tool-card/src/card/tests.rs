@@ -439,10 +439,10 @@ fn detail_scrub_drops_title_and_matching_one_line() {
     );
     assert!(!scrubbed.contains("命令执行"), "{scrubbed}");
     assert!(
-        !scrubbed
+        scrubbed
             .lines()
             .next()
-            .is_some_and(|l| l.trim() == "cargo check --workspace"),
+            .is_none_or(|l| l.trim() != "cargo check --workspace"),
         "{scrubbed}"
     );
     assert!(scrubbed.contains("stderr here"), "{scrubbed}");

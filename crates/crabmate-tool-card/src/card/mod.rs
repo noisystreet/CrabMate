@@ -237,45 +237,61 @@ fn legacy_tool_title_from_first_line(
     title
 }
 
-fn collect_legacy_tool_extra_lines(lines: Vec<String>, loc: ToolCardLocale) -> Vec<String> {
-    let mut extras: Vec<String> = Vec::new();
-    for line in lines {
-        if line == locale::tool_exit_line_zero(loc)
-            || line == locale::tool_exit_line_zero(ToolCardLocale::ZhHans)
-        {
-            continue;
-        }
-        if let Some(v) = line
-            .strip_prefix(locale::tool_line_stdout_prefix(loc))
-            .or_else(|| line.strip_prefix(locale::tool_line_stdout_prefix(ToolCardLocale::ZhHans)))
-        {
-            let v = v.trim();
-            if !v.is_empty() {
-                let label = locale::tool_summary_label_stdout(loc);
-                extras.push(format!("{label}：{v}"));
-            }
-            continue;
-        }
-        if let Some(v) = line
-            .strip_prefix(locale::tool_line_stderr_prefix(loc))
-            .or_else(|| line.strip_prefix(locale::tool_line_stderr_prefix(ToolCardLocale::ZhHans)))
-        {
-            let v = v.trim();
-            if !v.is_empty() {
-                let label = locale::tool_summary_label_stderr(loc);
-                extras.push(format!("{label}：{v}"));
-            }
-            continue;
-        }
-        if line.starts_with(locale::tool_line_exit_prefix(loc))
-            || line.starts_with(locale::tool_line_exit_prefix(ToolCardLocale::ZhHans))
-        {
-            extras.push(line.to_string());
-            continue;
-        }
-        extras.push(line);
+fn is_skipped_legacy_exit_zero_line(line: &str, loc: ToolCardLocale) -> bool {
+    line == locale::tool_exit_line_zero(loc)
+        || line == locale::tool_exit_line_zero(ToolCardLocale::ZhHans)
+}
+
+fn legacy_extra_stdout_line(line: &str, loc: ToolCardLocale) -> Option<String> {
+    let v = line
+        .strip_prefix(locale::tool_line_stdout_prefix(loc))
+        .or_else(|| line.strip_prefix(locale::tool_line_stdout_prefix(ToolCardLocale::ZhHans)))?;
+    let v = v.trim();
+    if v.is_empty() {
+        return None;
     }
-    extras
+    let label = locale::tool_summary_label_stdout(loc);
+    Some(format!("{label}：{v}"))
+}
+
+fn legacy_extra_stderr_line(line: &str, loc: ToolCardLocale) -> Option<String> {
+    let v = line
+        .strip_prefix(locale::tool_line_stderr_prefix(loc))
+        .or_else(|| line.strip_prefix(locale::tool_line_stderr_prefix(ToolCardLocale::ZhHans)))?;
+    let v = v.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let label = locale::tool_summary_label_stderr(loc);
+    Some(format!("{label}：{v}"))
+}
+
+fn is_legacy_exit_prefix_line(line: &str, loc: ToolCardLocale) -> bool {
+    line.starts_with(locale::tool_line_exit_prefix(loc))
+        || line.starts_with(locale::tool_line_exit_prefix(ToolCardLocale::ZhHans))
+}
+
+fn map_one_legacy_extra_line(line: String, loc: ToolCardLocale) -> Option<String> {
+    if is_skipped_legacy_exit_zero_line(&line, loc) {
+        return None;
+    }
+    if let Some(s) = legacy_extra_stdout_line(&line, loc) {
+        return Some(s);
+    }
+    if let Some(s) = legacy_extra_stderr_line(&line, loc) {
+        return Some(s);
+    }
+    if is_legacy_exit_prefix_line(&line, loc) {
+        return Some(line);
+    }
+    Some(line)
+}
+
+fn collect_legacy_tool_extra_lines(lines: Vec<String>, loc: ToolCardLocale) -> Vec<String> {
+    lines
+        .into_iter()
+        .filter_map(|line| map_one_legacy_extra_line(line, loc))
+        .collect()
 }
 
 fn rewrite_legacy_tool_summary(sum: &str, loc: ToolCardLocale) -> String {

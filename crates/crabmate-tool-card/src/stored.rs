@@ -57,6 +57,65 @@ mod hydrate_tool_card_golden {
     use super::*;
     use crate::ToolCardLocale;
 
+    fn assert_golden_needles(
+        line_no: usize,
+        label: &str,
+        text: &str,
+        needles_csv: &str,
+        field: &str,
+    ) {
+        for needle in needles_csv
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            assert!(
+                text.contains(needle),
+                "line {} ({}): {} {:?} missing {:?}",
+                line_no + 1,
+                label,
+                field,
+                text,
+                needle
+            );
+        }
+    }
+
+    fn run_one_hydrate_golden_line(line_no: usize, line: &str) {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            return;
+        }
+        let mut parts = t.splitn(4, '\t');
+        let label = parts.next().unwrap_or("?");
+        let envelope = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {}: missing envelope", line_no + 1));
+        let compact_needles = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {}: missing compact needles", line_no + 1));
+        let detail_needles = parts
+            .next()
+            .unwrap_or_else(|| panic!("line {}: missing detail needles", line_no + 1));
+        let loc = ToolCardLocale::ZhHans;
+        let sse = tool_stored_text_from_envelope(envelope, None, loc)
+            .unwrap_or_else(|| panic!("line {} ({}): parse", line_no + 1, label));
+        let input = crate::parse_tool_envelope(envelope, None)
+            .unwrap_or_else(|| panic!("line {} ({}): input", line_no + 1, label));
+        let direct = tool_stored_text(&input, loc);
+        assert_eq!(
+            sse,
+            direct,
+            "line {} ({}): envelope vs input",
+            line_no + 1,
+            label
+        );
+        assert_golden_needles(line_no, label, &sse.compact, compact_needles, "compact");
+        assert_golden_needles(line_no, label, &sse.detail, detail_needles, "detail");
+        assert!(!sse.compact.contains("crabmate_tool"));
+        assert!(!sse.detail.contains("crabmate_tool"));
+    }
+
     #[test]
     fn hydrate_tool_card_golden() {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -68,64 +127,7 @@ mod hydrate_tool_card_golden {
         let raw =
             fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
         for (line_no, line) in raw.lines().enumerate() {
-            let t = line.trim();
-            if t.is_empty() || t.starts_with('#') {
-                continue;
-            }
-            let mut parts = t.splitn(4, '\t');
-            let label = parts.next().unwrap_or("?");
-            let envelope = parts
-                .next()
-                .unwrap_or_else(|| panic!("line {}: missing envelope", line_no + 1));
-            let compact_needles = parts
-                .next()
-                .unwrap_or_else(|| panic!("line {}: missing compact needles", line_no + 1));
-            let detail_needles = parts
-                .next()
-                .unwrap_or_else(|| panic!("line {}: missing detail needles", line_no + 1));
-            let loc = ToolCardLocale::ZhHans;
-            let sse = tool_stored_text_from_envelope(envelope, None, loc)
-                .unwrap_or_else(|| panic!("line {} ({}): parse", line_no + 1, label));
-            let input = crate::parse_tool_envelope(envelope, None)
-                .unwrap_or_else(|| panic!("line {} ({}): input", line_no + 1, label));
-            let direct = tool_stored_text(&input, loc);
-            assert_eq!(
-                sse,
-                direct,
-                "line {} ({}): envelope vs input",
-                line_no + 1,
-                label
-            );
-            for needle in compact_needles
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                assert!(
-                    sse.compact.contains(needle),
-                    "line {} ({}): compact {:?} missing {:?}",
-                    line_no + 1,
-                    label,
-                    sse.compact,
-                    needle
-                );
-            }
-            for needle in detail_needles
-                .split(',')
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-            {
-                assert!(
-                    sse.detail.contains(needle),
-                    "line {} ({}): detail {:?} missing {:?}",
-                    line_no + 1,
-                    label,
-                    sse.detail,
-                    needle
-                );
-            }
-            assert!(!sse.compact.contains("crabmate_tool"));
-            assert!(!sse.detail.contains("crabmate_tool"));
+            run_one_hydrate_golden_line(line_no, line);
         }
     }
 }
