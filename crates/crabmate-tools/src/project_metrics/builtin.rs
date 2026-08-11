@@ -52,6 +52,16 @@ fn excluded_dir_in_path(path: &Path, excluded: &HashMap<String, ()>) -> bool {
     })
 }
 
+fn path_has_skipped_binary_suffix(lower_path: &str) -> bool {
+    const SKIP_SUFFIXES: &[&str] = [
+        ".min.js", ".min.css", ".lock", ".wasm", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+        ".woff", ".woff2", ".ttf", ".eot",
+    ];
+    SKIP_SUFFIXES
+        .iter()
+        .any(|suffix| lower_path.ends_with(suffix))
+}
+
 fn should_skip_path(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
         return true;
@@ -60,20 +70,7 @@ fn should_skip_path(path: &Path) -> bool {
         return true;
     }
     let lower = path.to_string_lossy().to_lowercase();
-    lower.ends_with(".min.js")
-        || lower.ends_with(".min.css")
-        || lower.ends_with(".lock")
-        || lower.ends_with(".wasm")
-        || lower.ends_with(".png")
-        || lower.ends_with(".jpg")
-        || lower.ends_with(".jpeg")
-        || lower.ends_with(".gif")
-        || lower.ends_with(".webp")
-        || lower.ends_with(".ico")
-        || lower.ends_with(".woff")
-        || lower.ends_with(".woff2")
-        || lower.ends_with(".ttf")
-        || lower.ends_with(".eot")
+    path_has_skipped_binary_suffix(&lower)
 }
 
 fn language_from_path(path: &Path) -> String {

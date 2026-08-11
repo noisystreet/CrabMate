@@ -95,30 +95,39 @@ fn light_redact(text: &str) -> String {
 
 fn detect_ecosystem_auto(text: &str) -> Ecosystem {
     let t = text.to_ascii_lowercase();
-    if t.contains("pytest")
+    if detect_ecosystem_python(&t) {
+        return Ecosystem::Python;
+    }
+    if detect_ecosystem_node(&t) {
+        return Ecosystem::Node;
+    }
+    if detect_ecosystem_rust(&t) {
+        return Ecosystem::Rust;
+    }
+    Ecosystem::Generic
+}
+
+fn detect_ecosystem_python(t: &str) -> bool {
+    t.contains("pytest")
         || t.contains("python ")
         || t.contains("pip install")
         || t.contains("modulenotfounderror")
         || t.contains("traceback (most recent call last)")
-    {
-        return Ecosystem::Python;
-    }
-    if t.contains("npm err")
+}
+
+fn detect_ecosystem_node(t: &str) -> bool {
+    t.contains("npm err")
         || t.contains("yarn error")
         || t.contains("pnpm")
         || t.contains("eslint")
         || t.contains("typescript error ts")
-    {
-        return Ecosystem::Node;
-    }
-    if t.contains("error[e")
+}
+
+fn detect_ecosystem_rust(t: &str) -> bool {
+    t.contains("error[e")
         || t.contains("cargo:")
         || t.contains("rustc ")
         || t.contains("could not compile")
-    {
-        return Ecosystem::Rust;
-    }
-    Ecosystem::Generic
 }
 
 fn effective_ecosystem(requested: Ecosystem, text: &str) -> Ecosystem {

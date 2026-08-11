@@ -14,6 +14,70 @@ fn has_go_project(workspace_root: &Path) -> bool {
     workspace_root.join("go.mod").is_file()
 }
 
+fn normalize_go_package(raw: Option<&str>) -> String {
+    raw.map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("./...")
+        .to_string()
+}
+
+fn validate_go_package(package: &str) -> Result<(), String> {
+    if package.contains("..") && package != "./..." && package != "..." {
+        return Err("错误：package 参数不安全".to_string());
+    }
+    Ok(())
+}
+
+fn optional_trimmed(raw: Option<&str>) -> Option<&str> {
+    raw.map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn push_go_race_verbose(cmd: &mut Command, race: bool, verbose: bool) {
+    if race {
+        cmd.arg("-race");
+    }
+    if verbose {
+        cmd.arg("-v");
+    }
+}
+
+fn push_go_tags(cmd: &mut Command, tags: Option<&str>) {
+    if let Some(t) = tags {
+        cmd.arg("-tags").arg(t);
+    }
+}
+
+fn push_go_test_flags(
+    cmd: &mut Command,
+    verbose: bool,
+    race: bool,
+    short: bool,
+    run_filter: Option<&str>,
+    count: Option<u64>,
+    timeout: Option<&str>,
+    tags: Option<&str>,
+) {
+    if verbose {
+        cmd.arg("-v");
+    }
+    if race {
+        cmd.arg("-race");
+    }
+    if short {
+        cmd.arg("-short");
+    }
+    if let Some(r) = run_filter {
+        cmd.arg("-run").arg(r);
+    }
+    if let Some(c) = count {
+        cmd.arg("-count").arg(c.to_string());
+    }
+    if let Some(t) = timeout {
+        cmd.arg("-timeout").arg(t);
+    }
+    push_go_tags(cmd, tags);
+}
+
 pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,
@@ -27,40 +91,19 @@ pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -
         return "go build: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = args
-        .package
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("./...");
-    if package.contains("..") && package != "./..." && package != "..." {
-        return "错误：package 参数不安全".to_string();
+    let package = normalize_go_package(args.package.as_deref());
+    if let Err(e) = validate_go_package(&package) {
+        return e;
     }
     let race = args.race;
     let verbose = args.verbose;
-    let tags = args
-        .tags
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let tags = optional_trimmed(args.tags.as_deref());
 
     let mut cmd = Command::new("go");
     cmd.arg("build");
-    if race {
-        cmd.arg("-race");
-    }
-    if verbose {
-        cmd.arg("-v");
-    }
-    if let Some(t) = tags {
-        cmd.arg("-tags").arg(t);
-    }
-    if let Some(out) = args
-        .output
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
+    push_go_race_verbose(&mut cmd, race, verbose);
+    push_go_tags(&mut cmd, tags);
+    if let Some(out) = optional_trimmed(args.output.as_deref()) {
         if out.contains("..") || out.starts_with('/') {
             return "错误：output 参数不安全".to_string();
         }
@@ -83,54 +126,23 @@ pub fn go_test(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
         return "go test: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = args
-        .package
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("./...");
-    if package.contains("..") && package != "./..." && package != "..." {
-        return "错误：package 参数不安全".to_string();
+    let package = normalize_go_package(args.package.as_deref());
+    if let Err(e) = validate_go_package(&package) {
+        return e;
     }
-    let run_filter = args.run.as_deref().map(str::trim).filter(|s| !s.is_empty());
-    let race = args.race;
-    let verbose = args.verbose;
-    let short = args.short;
-    let count = args.count;
-    let timeout = args
-        .timeout
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let tags = args
-        .tags
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
 
     let mut cmd = Command::new("go");
     cmd.arg("test");
-    if verbose {
-        cmd.arg("-v");
-    }
-    if race {
-        cmd.arg("-race");
-    }
-    if short {
-        cmd.arg("-short");
-    }
-    if let Some(r) = run_filter {
-        cmd.arg("-run").arg(r);
-    }
-    if let Some(c) = count {
-        cmd.arg("-count").arg(c.to_string());
-    }
-    if let Some(t) = timeout {
-        cmd.arg("-timeout").arg(t);
-    }
-    if let Some(t) = tags {
-        cmd.arg("-tags").arg(t);
-    }
+    push_go_test_flags(
+        &mut cmd,
+        args.verbose,
+        args.race,
+        args.short,
+        optional_trimmed(args.run.as_deref()),
+        args.count,
+        optional_trimmed(args.timeout.as_deref()),
+        optional_trimmed(args.tags.as_deref()),
+    );
     cmd.arg(package).current_dir(workspace_root);
     run_and_format(cmd, max_output_len, "go test")
 }
@@ -148,26 +160,15 @@ pub fn go_vet(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
         return "go vet: 跳过（未找到 go.mod）".to_string();
     }
 
-    let package = args
-        .package
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("./...");
-    if package.contains("..") && package != "./..." && package != "..." {
-        return "错误：package 参数不安全".to_string();
+    let package = normalize_go_package(args.package.as_deref());
+    if let Err(e) = validate_go_package(&package) {
+        return e;
     }
-    let tags = args
-        .tags
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let tags = optional_trimmed(args.tags.as_deref());
 
     let mut cmd = Command::new("go");
     cmd.arg("vet");
-    if let Some(t) = tags {
-        cmd.arg("-tags").arg(t);
-    }
+    push_go_tags(&mut cmd, tags);
     cmd.arg(package).current_dir(workspace_root);
     run_and_format(cmd, max_output_len, "go vet")
 }

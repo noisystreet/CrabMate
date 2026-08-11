@@ -49,6 +49,21 @@ const TRACKED_ENV_VARS: &[&str] = &[
     "RUST_LOG",
 ];
 
+fn is_secret_env_suffix(u: &str) -> bool {
+    u.ends_with("_API_KEY")
+        || u.ends_with("_SECRET")
+        || u.ends_with("_SECRETS")
+        || u.ends_with("_TOKEN")
+}
+
+fn is_secret_env_substring(u: &str) -> bool {
+    u.contains("PASSWORD") || u.contains("PRIVATE_KEY") || u.contains("BEARER")
+}
+
+fn is_proxy_env_with_credentials(u: &str) -> bool {
+    u.ends_with("PROXY") && u != "NO_PROXY"
+}
+
 fn is_strict_secret_env(name: &str) -> bool {
     let u = name.to_ascii_uppercase();
     if matches!(
@@ -57,20 +72,13 @@ fn is_strict_secret_env(name: &str) -> bool {
     ) {
         return true;
     }
-    if u.ends_with("_API_KEY") || u.ends_with("_SECRET") || u.ends_with("_SECRETS") {
+    if is_secret_env_suffix(&u) || is_secret_env_substring(&u) {
         return true;
     }
-    if u.ends_with("_TOKEN") || u.contains("PASSWORD") || u.contains("PRIVATE_KEY") {
+    if u == "AUTHORIZATION" || u == "AUTH" {
         return true;
     }
-    if u.contains("BEARER") || u == "AUTHORIZATION" || u == "AUTH" {
-        return true;
-    }
-    // 代理 URL 常带账号口令
-    if u.ends_with("PROXY") && u != "NO_PROXY" {
-        return true;
-    }
-    false
+    is_proxy_env_with_credentials(&u)
 }
 
 fn env_presence_line(name: &str, val: Result<String, std::env::VarError>) -> String {

@@ -22,22 +22,14 @@ pub fn npm_install(args_json: &str, workspace_root: &Path, max_output_len: usize
         Ok(a) => a,
         Err(e) => return format!("参数 JSON 与 npm_install 形状不一致: {e}"),
     };
-    let subdir = args
-        .subdir
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(".");
+    let subdir = normalize_npm_subdir(args.subdir.as_deref());
     let ci = args.ci;
     let production = args.production;
 
-    if let Some(e) = check_subdir(subdir) {
-        return e;
-    }
-    let dir = workspace_root.join(subdir);
-    if !dir.join("package.json").is_file() {
-        return format!("npm install: 跳过（{}/package.json 不存在）", subdir);
-    }
+    let dir = match resolve_npm_package_dir(workspace_root, subdir) {
+        Ok(d) => d,
+        Err(e) => return format!("npm install: {e}"),
+    };
 
     let mut cmd = Command::new("npm");
     if ci {
@@ -67,27 +59,18 @@ pub fn npm_run(
         Ok(a) => a,
         Err(e) => return format!("参数 JSON 与 npm_run 形状不一致: {e}"),
     };
-    let subdir = args
-        .subdir
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(".");
-    let script = args.script.trim();
-    if script.is_empty() {
-        return "错误：缺少 script 参数".to_string();
-    }
-    if script.contains(char::is_whitespace) {
-        return "错误：script 参数无效（不能包含空白字符）".to_string();
-    }
-
-    if let Some(e) = check_subdir(subdir) {
+    let subdir = normalize_npm_subdir(args.subdir.as_deref());
+    if let Err(e) = validate_npm_script(&args.script) {
         return e;
     }
-    let dir = workspace_root.join(subdir);
-    if !dir.join("package.json").is_file() {
-        return format!("npm run {}: 跳过（{}/package.json 不存在）", script, subdir);
-    }
+    let script = args.script.trim();
+
+    let dir = match resolve_npm_package_dir(workspace_root, subdir) {
+        Ok(d) => d,
+        Err(_) => {
+            return format!("npm run {}: 跳过（{}/package.json 不存在）", script, subdir);
+        }
+    };
 
     let extra_args = args.args;
 
@@ -228,6 +211,35 @@ pub fn tsc_check(args_json: &str, workspace_root: &Path, max_output_len: usize) 
     }
     cmd.current_dir(&dir);
     run_and_format(cmd, max_output_len, "npx tsc --noEmit")
+}
+
+fn normalize_npm_subdir(raw: Option<&str>) -> &str {
+    raw.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(".")
+}
+
+fn resolve_npm_package_dir(
+    workspace_root: &Path,
+    subdir: &str,
+) -> Result<std::path::PathBuf, String> {
+    if let Some(e) = check_subdir(subdir) {
+        return Err(e);
+    }
+    let dir = workspace_root.join(subdir);
+    if !dir.join("package.json").is_file() {
+        return Err(format!("npm: 跳过（{}/package.json 不存在）", subdir));
+    }
+    Ok(dir)
+}
+
+fn validate_npm_script(script: &str) -> Result<(), String> {
+    let script = script.trim();
+    if script.is_empty() {
+        return Err("错误：缺少 script 参数".to_string());
+    }
+    if script.contains(char::is_whitespace) {
+        return Err("错误：script 参数无效（不能包含空白字符）".to_string());
+    }
+    Ok(())
 }
 
 fn check_subdir(subdir: &str) -> Option<String> {
