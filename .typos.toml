@@ -2,6 +2,7 @@
 typ = "typ"
 clen = "clen"
 hel = "hel"
+# 历史依赖名（D2.2 已移除；设计文档仍会提及）
 ratatui = "ratatui"
 
 [files]

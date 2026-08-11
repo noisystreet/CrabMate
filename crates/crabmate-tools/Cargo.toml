@@ -81,7 +81,7 @@ zip = { workspace = true, optional = true }
 uom = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["fs", "dir", "signal", "term", "process"] }
+nix = { workspace = true, features = ["fs", "dir", "signal", "process"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

@@ -1064,6 +1064,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap_mangen",
+ "console",
  "crabmate-agent",
  "crabmate-api-contract",
  "crabmate-benchmark",
@@ -1076,12 +1077,10 @@ dependencies = [
  "crabmate-types",
  "crabmate-web-host",
  "crabmate-workflow",
- "dialoguer",
  "futures-util",
  "libc",
  "log",
  "nix",
- "proptest",
  "regex",
  "reqwest 0.13.4",
  "rusqlite",
@@ -1096,7 +1095,6 @@ dependencies = [
  "tokio-cron-scheduler",
  "tokio-stream",
  "tracing",
- "unicodeit",
  "yaml_serde",
 ]
 
@@ -1112,7 +1110,6 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "tempfile",
  "tracing",
 ]
 
@@ -1218,7 +1215,6 @@ dependencies = [
  "libc",
  "log",
  "nix",
- "proptest",
  "regex",
  "reqwest 0.13.4",
  "serde",
@@ -1273,13 +1269,11 @@ dependencies = [
  "glob",
  "ignore",
  "log",
- "proptest",
  "regex",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
- "tempfile",
  "tokio",
 ]
 
@@ -1392,7 +1386,6 @@ dependencies = [
  "axum",
  "crabmate-api-contract",
  "crabmate-tools",
- "crabmate-types",
  "serde",
  "serde_json",
  "tower",
@@ -1692,16 +1685,6 @@ name = "deunicode"
 version = "1.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "abd57806937c9cc163efc8ea3910e00a62e2aeb0b8119f1793a978088f8f6b04"
-
-[[package]]
-name = "dialoguer"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25f104b501bf2364e78d0d3974cbc774f738f5865306ed128e1e0d7499c0ad96"
-dependencies = [
- "console",
- "shell-words",
-]
 
 [[package]]
 name = "diffy"
@@ -5185,12 +5168,6 @@ checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
 ]
-
-[[package]]
-name = "shell-words"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc6fe69c597f9c37bfeeeeeb33da3530379845f10be461a66d16d03eca2ded77"
 
 [[package]]
 name = "shlex"

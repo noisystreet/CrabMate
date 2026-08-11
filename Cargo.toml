@@ -55,8 +55,8 @@ base64 = "0.23"
 bzip2 = "0.6"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
+console = { version = "0.16", default-features = false }
 csv = "1.3"
-dialoguer = { version = "0.12", default-features = false }
 diffy = "0.5"
 ego-tree = "0.11"
 encoding_rs = "0.8"
@@ -239,12 +239,11 @@ sha2 = { workspace = true }
 subtle = { workspace = true }
 log = { workspace = true }
 tracing = { workspace = true }
-dialoguer = { workspace = true }
+console = { workspace = true }
 tokio-stream = { workspace = true }
 async-trait = { workspace = true }
 libc = { workspace = true }
 tiktoken-rs = { workspace = true }
-unicodeit = { workspace = true }
 axum = { workspace = true, optional = true, features = [
     "form",
     "http1",
@@ -262,7 +261,7 @@ tokio-cron-scheduler = { workspace = true, optional = true }
 clap_mangen = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["fs", "dir", "signal", "term", "process"] }
+nix = { workspace = true, features = ["fs", "dir"] }
 
 [[bin]]
 name = "crabmate-gen-man"
@@ -271,7 +270,6 @@ required-features = ["gen-man"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
-proptest = { workspace = true }
 tempfile = { workspace = true }
 
 [profile.release]

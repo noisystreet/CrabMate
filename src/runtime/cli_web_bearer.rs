@@ -119,7 +119,7 @@ fn read_token_interactively() -> Result<String, Box<dyn std::error::Error>> {
     }
     eprint!("Web API Bearer（输入不回显）: ");
     let _ = io::stderr().flush();
-    let term = dialoguer::console::Term::stderr();
+    let term = console::Term::stderr();
     let line = term.read_secure_line().map_err(std::io::Error::other)?;
     eprintln!();
     Ok(line)
