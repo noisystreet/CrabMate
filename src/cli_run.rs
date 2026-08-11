@@ -280,7 +280,7 @@ async fn try_dispatch_early_extra_cli(
         }
         ExtraCliCommand::McpList { probe } => {
             let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-            crate::runtime::cli_mcp::run_mcp_list(&cfg, probe, false).await;
+            crate::runtime::cli_mcp::run_mcp_list(&cfg, probe).await;
             Ok(Some(true))
         }
         ExtraCliCommand::McpServe { no_tools, port } => {

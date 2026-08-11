@@ -22,26 +22,19 @@ async fn prefetch_parallel_approval_failures_impl(
         tool_calls,
         cfg,
         web_tool_ctx,
-        cli_tool_ctx,
         handler_lookup,
     } = params;
     let mut prefetch_failures = ParallelPrefetchFailures::new();
     if tool_calls.iter().any(|t| t.function.name == "http_fetch") {
         prefetch_failures.extend(
-            tool_registry::prefetch_http_fetch_parallel_approvals(
-                tool_calls,
-                cfg,
-                web_tool_ctx,
-                cli_tool_ctx,
-            )
-            .await,
+            tool_registry::prefetch_http_fetch_parallel_approvals(tool_calls, cfg, web_tool_ctx)
+                .await,
         );
     }
     prefetch_failures.extend(
         tool_registry::prefetch_parallel_syncdefault_approvals(
             tool_calls,
             web_tool_ctx,
-            cli_tool_ctx,
             handler_lookup,
         )
         .await,

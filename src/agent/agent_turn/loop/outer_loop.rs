@@ -186,7 +186,6 @@ async fn outer_loop_execute_tools_round(
             read_file_turn_cache: p.ctx.attach.read_file_turn_cache.clone(),
             control: p.ctx.io.control.clone(),
             web_tool_ctx: p.ctx.attach.web_tool_ctx,
-            cli_tool_ctx: p.ctx.attach.cli_tool_ctx,
             mcp_turn: p.ctx.attach.mcp_turn.as_ref(),
             workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),

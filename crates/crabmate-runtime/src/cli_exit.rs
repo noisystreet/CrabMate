@@ -7,7 +7,8 @@ pub const EXIT_GENERAL: i32 = 1;
 pub const EXIT_USAGE: i32 = 2;
 /// 模型接口或解析失败
 pub const EXIT_MODEL_ERROR: i32 = 3;
-/// 本回合内所有 `run_command` 调用均被用户拒绝
+/// Historical：同进程 `chat` 下本回合内所有 `run_command` 均被用户拒绝（码 4）。
+/// D2.2 后生产路径不再发出该码（无同进程 CLI 工具审批）；契约测试仍断言常量值 == 4 作占位。
 pub const EXIT_TOOLS_ALL_RUN_COMMAND_DENIED: i32 = 4;
 /// 配额 / 限流
 pub const EXIT_QUOTA_OR_RATE_LIMIT: i32 = 5;

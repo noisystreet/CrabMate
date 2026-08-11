@@ -1213,7 +1213,6 @@ dependencies = [
  "crabmate-sse-protocol",
  "crabmate-tools",
  "crabmate-types",
- "dialoguer",
  "futures-util",
  "keyring",
  "libc",

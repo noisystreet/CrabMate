@@ -94,13 +94,11 @@ mod write_sse_preview;
 
 pub mod dev_tag;
 
-use std::path::Path;
 use std::sync::Arc;
 
 use crate::memory_tool_host::{CodebaseSemanticToolHost, LongTermMemoryToolHost};
 use crate::tool_result::{ToolError, ToolResult};
 use crate::workspace::changelist::WorkspaceChangelist;
-use crate::workspace::path::{validate_effective_workspace_base, validate_workspace_set_path};
 use crabmate_config::{AgentConfig, ExposeSecret};
 use crabmate_types::{FunctionDef, Tool};
 
@@ -151,42 +149,6 @@ pub fn resolve_workspace_path_for_read(
     rel: &str,
 ) -> Result<std::path::PathBuf, WorkspacePathError> {
     file::resolve_for_read(working_dir, rel)
-}
-
-/// REPL **`/workspace`** / **`/cd`**：相对路径走 [`resolve_workspace_path_for_read`]（与 `read_file` 等一致：**禁止**以 `/` 开头的绝对路径）；绝对路径走 [`crate::workspace::path::validate_workspace_set_path`]（与 Web **`POST /workspace`** 一致：`workspace_allowed_roots` + 敏感目录黑名单）。
-pub fn resolve_repl_workspace_switch_path(
-    cfg: &AgentConfig,
-    current_work_dir: &Path,
-    raw: &str,
-) -> Result<std::path::PathBuf, ReplWorkspaceSwitchError> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return Err(ReplWorkspaceSwitchError::Usage);
-    }
-    if Path::new(raw).is_absolute() {
-        validate_workspace_set_path(cfg, raw).map_err(ReplWorkspaceSwitchError::Path)
-    } else {
-        let p = resolve_workspace_path_for_read(current_work_dir, raw)
-            .map_err(ReplWorkspaceSwitchError::Path)?;
-        if !p.is_dir() {
-            return Err(ReplWorkspaceSwitchError::NotADirectory(
-                p.display().to_string(),
-            ));
-        }
-        validate_effective_workspace_base(cfg, &p).map_err(ReplWorkspaceSwitchError::Path)?;
-        Ok(p)
-    }
-}
-
-/// REPL `/workspace` 切换失败：用法提示或与 [`WorkspacePathError`] 同源的路径策略错误。
-#[derive(Debug, thiserror::Error)]
-pub enum ReplWorkspaceSwitchError {
-    #[error("用法: /workspace <路径>（须为已存在目录）")]
-    Usage,
-    #[error("不是目录: {0}")]
-    NotADirectory(String),
-    #[error(transparent)]
-    Path(#[from] WorkspacePathError),
 }
 
 pub fn tool_context_for<'a>(

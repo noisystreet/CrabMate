@@ -12,9 +12,7 @@ use crabmate_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_de
 use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchParams};
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
-use crate::tool_registry::{
-    self, CliToolRuntime, HandlerId, HandlerLookupTable, ToolRuntime, WebToolRuntime,
-};
+use crate::tool_registry::{self, HandlerId, HandlerLookupTable, ToolRuntime, WebToolRuntime};
 use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
@@ -42,7 +40,6 @@ struct ParallelUniqueBatchParts<'a> {
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     web_tool_ctx: Option<&'a WebToolRuntime>,
-    cli_tool_ctx: Option<&'a CliToolRuntime>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
     tools_defs_hint: Arc<Vec<crate::types::Tool>>,
     turn_allow: Option<&'a HashSet<String>>,
@@ -91,7 +88,6 @@ async fn parallel_prefetch_approval_failures(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
     web_tool_ctx: Option<&WebToolRuntime>,
-    cli_tool_ctx: Option<&CliToolRuntime>,
     handler_lookup: &HandlerLookupTable,
 ) -> HashMap<(String, String), String> {
     let host = CrabmateParallelToolDispatch;
@@ -99,7 +95,6 @@ async fn parallel_prefetch_approval_failures(
         tool_calls,
         cfg,
         web_tool_ctx,
-        cli_tool_ctx,
         handler_lookup,
     })
     .await
@@ -117,7 +112,6 @@ async fn parallel_collect_unique_results(
         read_file_turn_cache,
         workspace_changelist,
         web_tool_ctx,
-        cli_tool_ctx,
         step_executor_constraint,
         tools_defs_hint,
         turn_allow,
@@ -212,16 +206,9 @@ async fn parallel_collect_unique_results(
                     | ParallelToolKind::WebSearch
                     | ParallelToolKind::SyncDefault => {
                         let mut workspace_changed_local = false;
-                        let runtime = if let Some(cctx) = cli_tool_ctx {
-                            ToolRuntime::Cli {
-                                workspace_changed: &mut workspace_changed_local,
-                                ctx: cctx,
-                            }
-                        } else {
-                            ToolRuntime::Web {
-                                workspace_changed: &mut workspace_changed_local,
-                                ctx: web_tool_ctx,
-                            }
+                        let runtime = ToolRuntime {
+                            workspace_changed: &mut workspace_changed_local,
+                            ctx: web_tool_ctx,
                         };
                         let mut host = CrabmateParallelToolDispatch;
                         host.dispatch_tool_call(
@@ -413,7 +400,6 @@ pub(super) async fn execute_tools_parallel(
         control,
         tool_result_envelope_v1,
         web_tool_ctx,
-        cli_tool_ctx,
         mcp_turn: _,
         request_chrome_trace: _,
         step_executor_constraint,
@@ -449,14 +435,8 @@ pub(super) async fn execute_tools_parallel(
     );
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
-    let prefetch_failures = parallel_prefetch_approval_failures(
-        tool_calls,
-        cfg,
-        web_tool_ctx,
-        cli_tool_ctx,
-        &handler_lookup,
-    )
-    .await;
+    let prefetch_failures =
+        parallel_prefetch_approval_failures(tool_calls, cfg, web_tool_ctx, &handler_lookup).await;
 
     let result_by_name_args = parallel_collect_unique_results(
         ParallelUniqueBatchParts {
@@ -466,7 +446,6 @@ pub(super) async fn execute_tools_parallel(
             read_file_turn_cache,
             workspace_changelist,
             web_tool_ctx,
-            cli_tool_ctx,
             step_executor_constraint,
             tools_defs_hint,
             turn_allow,

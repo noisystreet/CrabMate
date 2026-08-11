@@ -1,7 +1,6 @@
 //! `crabmate doctor` / `models` / `probe`：面向终端的一页诊断与网关探测（输出脱敏，不打印密钥）。
 //! 子命令 [`print_doctor_report`]、[`run_probe_cli`]、[`run_models_cli`] 供 CLI 入口调用（进程内 REPL slash 已移除）。
 
-use std::io::{self, IsTerminal};
 use std::path::{Path, PathBuf};
 
 use reqwest::Client;
@@ -300,29 +299,16 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
          **models** / **probe**：`llm_http_auth_mode=bearer` 时需有效 **API_KEY**；`none` 时可不设。部分网关不提供 OpenAI 兼容 GET /models。"
     );
     println!();
-    println!("【工具审批（Web / 运维路径）】");
-    let stdin_tty = io::stdin().is_terminal();
-    let stderr_tty = io::stderr().is_terminal();
+    println!("【工具审批（Web SSE）】");
     println!(
-        "  stdin 为 TTY: {}  stderr 为 TTY: {}",
-        if stdin_tty { "是" } else { "否" },
-        if stderr_tty { "是" } else { "否" },
+        "  非白名单 **run_command** 与未匹配前缀的 **http_fetch** / **http_request**：仅 **Web** `/chat/stream`（`approval_session_id`）经 SSE 人工审批；运维 CLI 无同进程对话审批。"
     );
-    if stdin_tty && stderr_tty {
-        println!(
-            "  非白名单 **run_command** 与未匹配前缀的 **http_fetch** / **http_request** 在**本机终端工具路径**可使用 **dialoguer** 箭头菜单（stderr）；官方对话请用 Client **crabmate-tui** / Web（SSE 审批）。"
-        );
-    } else {
-        println!(
-            "  **非交互模式**：本机终端工具路径将打印说明到 stderr 并从 **stdin** 读一行（y / a / n）；管道或 CI 中 stdin 非 TTY 时易阻塞或默认拒绝。"
-        );
-        println!(
-            "  建议：对话走 **Web / Client crabmate-tui** 的人工审批；或扩大 **allowed_commands** / 匹配 **http_fetch_allowed_prefixes**（仅可信环境）。同进程 **chat --yes** 已移除（D2.2）。"
-        );
-    }
+    println!(
+        "  官方对话请用 Client **crabmate-tui** / Web；或扩大 **allowed_commands** / 匹配 **http_fetch_allowed_prefixes**（仅可信环境）。同进程 **chat** / 终端审批已移除（D2.2）。"
+    );
     let n_prefix = cfg.http_fetch.http_fetch_allowed_prefixes.len();
     println!(
-        "  http_fetch_allowed_prefixes: {} 条（未匹配的 HTTP 工具在 CLI 与 TTY 路径下可能需审批）",
+        "  http_fetch_allowed_prefixes: {} 条（未匹配时需 Web SSE 审批通道）",
         n_prefix
     );
     println!(

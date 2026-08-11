@@ -224,66 +224,54 @@ mod legacy_argv_tests {
 
     #[test]
     fn parse_args_from_argv_doctor_matches_extra_cli() {
-        let p =
-            parse_args_from_argv(vec!["crabmate".to_string(), "doctor".to_string()], None).unwrap();
+        let p = parse_args_from_argv(vec!["crabmate".to_string(), "doctor".to_string()]).unwrap();
         assert_eq!(p.extra_cli, ExtraCliCommand::Doctor);
     }
 
     #[test]
     fn parse_serve_default_is_api_only() {
-        let p =
-            parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()], None).unwrap();
+        let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()]).unwrap();
         assert_eq!(p.serve_port, Some(8080));
         assert!(!p.with_web);
     }
 
     #[test]
     fn parse_serve_with_web_enables_ui_mount() {
-        let p = parse_args_from_argv(
-            vec![
-                "crabmate".to_string(),
-                "serve".to_string(),
-                "--with-web".to_string(),
-            ],
-            None,
-        )
+        let p = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "serve".to_string(),
+            "--with-web".to_string(),
+        ])
         .unwrap();
         assert!(p.with_web);
     }
 
     #[test]
     fn parse_serve_no_web_is_compat_noop() {
-        let p = parse_args_from_argv(
-            vec![
-                "crabmate".to_string(),
-                "serve".to_string(),
-                "--no-web".to_string(),
-            ],
-            None,
-        )
+        let p = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "serve".to_string(),
+            "--no-web".to_string(),
+        ])
         .unwrap();
         assert!(!p.with_web);
     }
 
     #[test]
     fn parse_serve_with_web_and_no_web_conflicts() {
-        let err = parse_args_from_argv(
-            vec![
-                "crabmate".to_string(),
-                "serve".to_string(),
-                "--with-web".to_string(),
-                "--no-web".to_string(),
-            ],
-            None,
-        )
+        let err = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "serve".to_string(),
+            "--with-web".to_string(),
+            "--no-web".to_string(),
+        ])
         .expect_err("with-web and no-web must conflict");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
     #[test]
     fn parse_config_default_skips_web_static_check() {
-        let p =
-            parse_args_from_argv(vec!["crabmate".to_string(), "config".to_string()], None).unwrap();
+        let p = parse_args_from_argv(vec!["crabmate".to_string(), "config".to_string()]).unwrap();
         assert!(p.dry_run);
         assert!(!p.with_web);
     }
@@ -318,15 +306,12 @@ mod legacy_argv_tests {
 
     #[test]
     fn parse_removed_chat_subcommand_fails() {
-        let err = parse_args_from_argv(
-            vec![
-                "crabmate".to_string(),
-                "chat".to_string(),
-                "--query".to_string(),
-                "hi".to_string(),
-            ],
-            None,
-        )
+        let err = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "chat".to_string(),
+            "--query".to_string(),
+            "hi".to_string(),
+        ])
         .expect_err("chat entry removed");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }

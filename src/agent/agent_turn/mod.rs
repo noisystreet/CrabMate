@@ -74,9 +74,6 @@ mod turn_route_decision_golden;
 pub(crate) async fn run_agent_turn_common(
     p: &mut RunLoopParams<'_>,
 ) -> Result<(), RunAgentTurnError> {
-    if let Some(ctx) = p.ctx.attach.cli_tool_ctx {
-        ctx.reset_command_stats();
-    }
     debug!(
         target: "crabmate",
         "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} planner_executor_mode={} work_dir={}",

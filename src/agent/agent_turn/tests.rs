@@ -167,13 +167,10 @@ mod per_reflect_tests {
                         out: None,
                         sse_encoder: crate::sse::default_encoder(),
                         sse_control_mirror: None,
-                        tool_running_hook: None,
-                        clarification_questionnaire_hook: None,
                     },
                 },
                 attach: RunLoopAttach {
                     web_tool_ctx: None,
-                    cli_tool_ctx: None,
                     per_flight: None,
                     long_term_memory: None,
                     long_term_memory_scope_id: None,

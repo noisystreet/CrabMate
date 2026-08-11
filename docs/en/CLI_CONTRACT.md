@@ -14,11 +14,11 @@ For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `crates/crabmate-con
 | 1 | General error | I/O, config, uncategorized failure |
 | 2 | Usage / input | Bad args, JSON/JSONL parse failure |
 | 3 | Model / parse | Gateway error body, unparsable response, some invalid plan prefix (heuristic `classify_model_error_message`) |
-| 4 | All `run_command` attempts denied this turn | Pipe without `y`/`a`, or interactive all-deny |
+| 4 | All `run_command` attempts denied this turn (**historical**) | In-process `chat` pipe without `y`/`a`, or interactive all-deny. **Not emitted in production after D2.2** (no in-process CLI tool approval); constant kept for contract tests |
 | 5 | Quota / rate limit | HTTP 429, 402, some 503 (heuristic) |
 | 6 | Tool replay mismatch | `tool-replay run --compare-recorded` string mismatch vs `recorded_output` |
 
-Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED`, `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs`. Tests: `tests/cli_contract.rs`.
+Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED` (**historical**, not emitted in production after D2.2), `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs` / `crates/crabmate-runtime`. Tests: `tests/cli_contract.rs` (still asserts placeholder value 4).
 
 ## SSE / stream error codes (Web `POST /chat/stream`)
 

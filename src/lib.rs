@@ -85,13 +85,6 @@ pub struct AgentTurnTransport<'a> {
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub per_flight: Option<std::sync::Arc<PerTurnFlight>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
-    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-    /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
-    pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
-    /// 澄清问卷回调（与 [`crate::agent::agent_turn::TurnControlSink::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
-    pub clarification_questionnaire_hook:
-        Option<std::sync::Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
     /// 无 `/chat/stream` 通道时镜像 SSE 控制面（与 Web [`crate::sse::SsePayload`] 同形），供 TUI 等终端界面展示。
     pub sse_control_mirror: Option<crate::sse::SseControlMirror>,
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
@@ -326,9 +319,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 cancel: Some(cancel),
                 per_flight: Some(per_flight),
                 web_tool_ctx,
-                cli_tool_ctx: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
                 trace_sink: None,
@@ -392,9 +382,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 cancel: None,
                 per_flight: Some(per_flight),
                 web_tool_ctx: None,
-                cli_tool_ctx: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
                 trace_sink: None,
@@ -450,9 +437,6 @@ impl<'a> RunAgentTurnParams<'a> {
                 cancel: Some(cancel),
                 per_flight: None,
                 web_tool_ctx: None,
-                cli_tool_ctx: None,
-                tool_running_hook: None,
-                clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
                 llm_backend: None,
                 trace_sink: None,
