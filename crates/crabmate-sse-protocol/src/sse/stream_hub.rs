@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use tokio::sync::broadcast;
 
@@ -16,6 +17,7 @@ use super::protocol::SSE_RESUME_RING_CAP;
 
 /// SSE replay dump 文件名。
 const SSE_REPLAY_FILE: &str = "sse-replay-events.jsonl";
+const COMPLETED_REPLAY_TTL: Duration = Duration::from_secs(120);
 
 static SSE_REPLAY_DUMP_DIR_LOGGED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
@@ -80,7 +82,8 @@ fn append_sse_replay_line(job_id: u64, seq: u64, data_payload: &str) {
 struct StreamEntry {
     next_seq: AtomicU64,
     ring: Mutex<VecDeque<(u64, String)>>,
-    tx: broadcast::Sender<(u64, String)>,
+    tx: Mutex<Option<broadcast::Sender<(u64, String)>>>,
+    finished_at: Mutex<Option<Instant>>,
 }
 
 /// 单进程、单 `serve` 实例：按 `job_id` 索引活跃流式任务。
@@ -99,23 +102,23 @@ impl SseStreamHub {
     /// 为新 `job_id` 注册 hub；若已存在则返回现有（幂等）。
     pub fn register_job(&self, job_id: u64) {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        purge_expired_completed(&mut g, Instant::now());
         g.entry(job_id).or_insert_with(|| {
             let (tx, _) =
                 broadcast::channel::<(u64, String)>(SSE_RESUME_RING_CAP.saturating_mul(2).max(64));
             Arc::new(StreamEntry {
                 next_seq: AtomicU64::new(0),
                 ring: Mutex::new(VecDeque::new()),
-                tx,
+                tx: Mutex::new(Some(tx)),
+                finished_at: Mutex::new(None),
             })
         });
     }
 
     fn entry(&self, job_id: u64) -> Option<Arc<StreamEntry>> {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&job_id)
-            .cloned()
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        purge_expired_completed(&mut g, Instant::now());
+        g.get(&job_id).cloned()
     }
 
     /// 递增序号、写入环形缓冲、向所有订户广播（**含** `id:` / `data:` / 空行）。
@@ -132,14 +135,23 @@ impl SseStreamHub {
                 ring.pop_front();
             }
         }
-        let _ = e.tx.send((seq, data_payload.clone()));
+        let tx = e.tx.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(tx) = tx {
+            let _ = tx.send((seq, data_payload.clone()));
+        }
         append_sse_replay_line(job_id, seq, &data_payload);
         Some((seq, data_payload))
     }
 
     /// 订阅实时事件（`recv()` 得到 **`(seq, data 负载)`**）。
     pub fn subscribe(&self, job_id: u64) -> Option<broadcast::Receiver<(u64, String)>> {
-        self.entry(job_id).map(|e| e.tx.subscribe())
+        let entry = self.entry(job_id)?;
+        entry
+            .tx
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .as_ref()
+            .map(broadcast::Sender::subscribe)
     }
 
     /// 环形缓冲中 `seq > after_seq` 的 `data:` 负载（不含 `id` 行），按序。
@@ -154,17 +166,29 @@ impl SseStreamHub {
         )
     }
 
-    pub fn remove_job(&self, job_id: u64) {
-        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        g.remove(&job_id);
+    /// 关闭实时广播，但在短暂宽限期内保留环形缓冲供终态丢失的客户端续接。
+    pub fn finish_job(&self, job_id: u64) {
+        self.finish_job_at(job_id, Instant::now());
+    }
+
+    fn finish_job_at(&self, job_id: u64, finished_at: Instant) {
+        let Some(entry) = self.entry(job_id) else {
+            return;
+        };
+        *entry.finished_at.lock().unwrap_or_else(|e| e.into_inner()) = Some(finished_at);
+        entry.tx.lock().unwrap_or_else(|e| e.into_inner()).take();
     }
 
     pub fn has_job(&self, job_id: u64) -> bool {
-        self.inner
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .contains_key(&job_id)
+        self.entry(job_id).is_some()
     }
+}
+
+fn purge_expired_completed(entries: &mut HashMap<u64, Arc<StreamEntry>>, now: Instant) {
+    entries.retain(|_, entry| {
+        let finished_at = *entry.finished_at.lock().unwrap_or_else(|e| e.into_inner());
+        finished_at.is_none_or(|at| now.saturating_duration_since(at) <= COMPLETED_REPLAY_TTL)
+    });
 }
 
 #[cfg(test)]
@@ -182,6 +206,42 @@ mod tests {
         assert_eq!(r.len(), 10);
         assert_eq!(r[0].0, 1);
         assert_eq!(r[9].0, 10);
+    }
+
+    #[test]
+    fn finished_job_retains_replay_and_closes_live_channel() {
+        let hub = SseStreamHub::new();
+        hub.register_job(8);
+        let mut sub = hub.subscribe(8).expect("active job subscription");
+        let _ = hub.publish(8, "final answer".to_string());
+        hub.finish_job(8);
+
+        assert!(hub.has_job(8));
+        assert_eq!(
+            hub.replay_after(8, 0).expect("completed replay"),
+            vec![(1, "final answer".to_string())]
+        );
+        assert_eq!(
+            sub.try_recv().expect("published event"),
+            (1, "final answer".to_string())
+        );
+        assert_eq!(sub.try_recv(), Err(broadcast::error::TryRecvError::Closed));
+        assert!(hub.subscribe(8).is_none());
+    }
+
+    #[test]
+    fn expired_finished_job_is_purged() {
+        let hub = SseStreamHub::new();
+        hub.register_job(9);
+        hub.finish_job_at(
+            9,
+            Instant::now()
+                .checked_sub(COMPLETED_REPLAY_TTL + Duration::from_secs(1))
+                .expect("test instant supports short subtraction"),
+        );
+
+        assert!(!hub.has_job(9));
+        assert!(hub.replay_after(9, 0).is_none());
     }
 
     static REPLAY_DUMP_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

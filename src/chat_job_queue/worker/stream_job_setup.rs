@@ -41,14 +41,18 @@ pub(super) struct StreamJobSetupParams<'a> {
 
 pub(super) async fn stream_job_setup_runtime(
     p: StreamJobSetupParams<'_>,
-) -> (StreamJobRuntime, tokio::task::JoinHandle<()>) {
+) -> (
+    StreamJobRuntime,
+    tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<()>,
+) {
     let job_id = p.envelope.job_id;
     p.queue_deps.sse_stream_hub.register_job(job_id);
     let hub_bridge = p.queue_deps.sse_stream_hub.clone();
     let http_tx = p.stream_event_tx.clone();
     let (sse_tx, mut sse_rx) = mpsc::channel::<String>(1024);
     let bridge_job = job_id;
-    tokio::spawn(async move {
+    let bridge_task = tokio::spawn(async move {
         while let Some(line) = sse_rx.recv().await {
             if let Some(pair) = hub_bridge.publish(bridge_job, line) {
                 let _ = http_tx.send(pair).await;
@@ -142,7 +146,7 @@ pub(super) async fn stream_job_setup_runtime(
         web_tool_ctx,
         approval_session_id,
     };
-    (runtime, cancel_watcher)
+    (runtime, cancel_watcher, bridge_task)
 }
 
 fn stream_job_web_tool_ctx(

@@ -61,7 +61,8 @@ async fn chat_stream_resume_response(
     let after_header = parse_last_event_id(headers).unwrap_or(0);
     let after_body = sr.after_seq.unwrap_or(0);
     let after_seq = after_header.max(after_body);
-    let Some(sub) = state.sse_stream_hub.subscribe(job_id) else {
+    let sub = state.sse_stream_hub.subscribe(job_id);
+    let Some(replay) = state.sse_stream_hub.replay_after(job_id, after_seq) else {
         return Err((
             StatusCode::GONE,
             Json(ApiError::new(
@@ -70,10 +71,6 @@ async fn chat_stream_resume_response(
             )),
         ));
     };
-    let replay = state
-        .sse_stream_hub
-        .replay_after(job_id, after_seq)
-        .unwrap_or_default();
     let max_replayed = replay.last().map(|(s, _)| *s).unwrap_or(after_seq);
     info!(
         target: "crabmate",
@@ -83,25 +80,29 @@ async fn chat_stream_resume_response(
         replay.len()
     );
     let replay_st = stream::iter(replay).map(|(seq, data)| sse_event_with_id(seq, data));
-    let live_st = BroadcastStream::new(sub).filter_map(move |item| {
-        std::future::ready(match item {
-            Ok((seq, data)) if seq > max_replayed => Some(sse_event_with_id(seq, data)),
-            Ok(_) => None,
-            Err(BroadcastStreamRecvError::Lagged(n)) => {
-                warn!(
-                    target: "crabmate",
-                    "chat stream 重连 broadcast lag job_id={} skipped={}",
-                    job_id,
-                    n
-                );
-                None
-            }
-        })
-    });
-    let merged = replay_st.chain(live_st);
-    let mut resp = Sse::new(merged)
-        .keep_alive(KeepAlive::default())
-        .into_response();
+    let mut resp = if let Some(sub) = sub {
+        let live_st = BroadcastStream::new(sub).filter_map(move |item| {
+            std::future::ready(match item {
+                Ok((seq, data)) if seq > max_replayed => Some(sse_event_with_id(seq, data)),
+                Ok(_) => None,
+                Err(BroadcastStreamRecvError::Lagged(n)) => {
+                    warn!(
+                        target: "crabmate",
+                        "chat stream 重连 broadcast lag job_id={} skipped={}",
+                        job_id,
+                        n
+                    );
+                    None
+                }
+            })
+        });
+        Sse::new(replay_st.chain(live_st))
+            .keep_alive(KeepAlive::default())
+            .into_response()
+    } else {
+        // 已完成任务仅回放剩余事件；流随后关闭，避免客户端等待 keep-alive 超时。
+        Sse::new(replay_st).into_response()
+    };
     if let Ok(v) = HeaderValue::from_str(&job_id.to_string()) {
         resp.headers_mut().insert("x-stream-job-id", v);
     }

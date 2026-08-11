@@ -1,6 +1,6 @@
 //! Web `/chat/stream` 队列任务执行体（从 `worker/mod.rs` 拆出以降低单文件行数）。
 
-use log::{debug, info};
+use log::{debug, info, warn};
 
 use super::super::stream_finish::{
     StreamJobOutcomeCtx, emit_stream_cancelled_terminal, emit_stream_ended_once,
@@ -33,7 +33,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     );
 
     let queue_deps = p.envelope.queue_deps.clone();
-    let (rt, cancel_watcher) = stream_job_setup_runtime(StreamJobSetupParams {
+    let (rt, cancel_watcher, bridge_task) = stream_job_setup_runtime(StreamJobSetupParams {
         envelope: &p.envelope,
         stream_event_tx: p.stream_event_tx,
         web_approval_session: p.web_approval_session,
@@ -161,6 +161,15 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         .await;
     }
     drop(rt.sse_tx);
-    queue_deps.sse_stream_hub.remove_job(job_id);
+    drop(rt.web_tool_ctx);
+    if let Err(error) = bridge_task.await {
+        warn!(
+            target: "crabmate",
+            "chat stream SSE 桥接任务异常结束 job_id={} error={}",
+            job_id,
+            error
+        );
+    }
+    queue_deps.sse_stream_hub.finish_job(job_id);
     JobOutcome::Stream { ok, cancelled, err }
 }
