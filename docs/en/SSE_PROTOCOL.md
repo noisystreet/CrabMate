@@ -220,7 +220,7 @@ When changing any of:
 
 Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for IM bridge etc. uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
 
-- **SSE golden**: `./scripts/check-sse-protocol.sh` (server-side classify). Client AG-UI parser tests live in the Client repo.
+- **SSE golden**: `./scripts/check-sse-protocol.sh` (server-side classify + **HTTP/SSE failure-path** golden `fixtures/http_sse_failure_path_golden.jsonl`). Client AG-UI parser tests live in the Client repo.
 When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key, also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
 
 ---

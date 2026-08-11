@@ -6,6 +6,9 @@ mod enqueue;
 pub(super) mod stream;
 mod turn_build;
 
+#[cfg(test)]
+mod http_sse_failure_path_golden;
+
 pub(crate) use async_chat::{chat_async_handler, chat_job_status_handler};
 pub(crate) use enqueue::prepare_json_chat_enqueue;
 pub(crate) use stream::chat_stream_handler;

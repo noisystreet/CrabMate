@@ -40,7 +40,7 @@ Includes (non-exhaustive):
 - **`fn-param-ratchet`**: Rust function parameter counts (**`scripts/fn-param-ratchet.sh`** / **`scripts/fn_param_rust_metrics.py`**; hard cap **32** and `scripts/fn_param_*.txt` baselines are fixed in Python)
 - **`fn-nloc-ratchet`**: Rust function-body **`nloc`** (lizard) plus **physical `.rs` file line counts** (same script **`scripts/fn-nloc-ratchet.sh`** / **`scripts/fn_nloc_rust_metrics.py`**; baseline paths and write-back policy are fixed in Python); function ratchets **`scripts/fn_nloc_max_baseline.txt`**, **`scripts/fn_nloc_top10_sum_baseline.txt`**; file ratchets **`scripts/rust_file_max_lines_baseline.txt`**, **`scripts/rust_file_top10_lines_sum_baseline.txt`**; runs in **`.github/workflows/code-complexity.yml`**
 - **Coverage**: **`.github/workflows/code-coverage.yml`** is **manual-only** (`workflow_dispatch`); locally you can still run `cargo llvm-cov` + **`scripts/check_coverage_ratchet.py`**
-- **`./scripts/check-sse-protocol.sh`** (when changing SSE / `fixtures/sse_ag_ui_golden.jsonl`)
+- **`./scripts/check-sse-protocol.sh`** (when changing SSE / `fixtures/sse_ag_ui_golden.jsonl` / **`fixtures/http_sse_failure_path_golden.jsonl`**)
 
 Without pre-commit installed, run at least:
 
