@@ -256,6 +256,50 @@ struct ReplayEntry {
     finish_reason: String,
 }
 
+fn parse_round_resp_filename(filename: &str) -> Option<usize> {
+    let rest = filename.strip_prefix("round_")?;
+    let n_str = rest.strip_suffix("_resp.json")?;
+    n_str.parse().ok()
+}
+
+fn load_replay_entry(path: &Path) -> Result<(usize, ReplayEntry), String> {
+    let filename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let Some(n) = parse_round_resp_filename(&filename) else {
+        return Err(format!("不是 round_N_resp.json: {}", path.display()));
+    };
+    let content =
+        std::fs::read_to_string(path).map_err(|e| format!("读取 {} 失败: {e}", path.display()))?;
+    let resp: RecordedResponse =
+        serde_json::from_str(&content).map_err(|e| format!("解析 {} 失败: {e}", path.display()))?;
+    Ok((
+        n,
+        ReplayEntry {
+            fingerprint: resp.fingerprint,
+            message: resp.message,
+            finish_reason: resp.finish_reason,
+        },
+    ))
+}
+
+fn scan_round_resp_entries(test_dir: &Path) -> Result<Vec<(usize, ReplayEntry)>, String> {
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(test_dir)
+        .map_err(|e| format!("读取录制目录失败 {}: {e}", test_dir.display()))?
+    {
+        let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
+        let path = entry.path();
+        let filename = entry.file_name().to_string_lossy().into_owned();
+        if parse_round_resp_filename(&filename).is_none() {
+            continue;
+        }
+        entries.push(load_replay_entry(&path)?);
+    }
+    Ok(entries)
+}
+
 impl ReplayBackend {
     /// 从 `<recordings_dir>/<test_name>/` 加载所有录制响应。
     pub fn load(recordings_dir: &Path, test_name: &str) -> Result<Self, String> {
@@ -268,33 +312,7 @@ impl ReplayBackend {
             ));
         }
 
-        // 扫描 round_N_resp.json，按 N 排序
-        let mut entries: Vec<(usize, ReplayEntry)> = Vec::new();
-        for entry in std::fs::read_dir(&test_dir)
-            .map_err(|e| format!("读取录制目录失败 {}: {e}", test_dir.display()))?
-        {
-            let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
-            let filename = entry.file_name().to_string_lossy().to_string();
-            // 匹配 round_<N>_resp.json（折叠三层 if let 为 let-chain）
-            if let Some(rest) = filename.strip_prefix("round_")
-                && let Some(n_str) = rest.strip_suffix("_resp.json")
-                && let Ok(n) = n_str.parse::<usize>()
-            {
-                let content = std::fs::read_to_string(entry.path())
-                    .map_err(|e| format!("读取 {} 失败: {e}", entry.path().display()))?;
-                let resp: RecordedResponse = serde_json::from_str(&content)
-                    .map_err(|e| format!("解析 {} 失败: {e}", entry.path().display()))?;
-                entries.push((
-                    n,
-                    ReplayEntry {
-                        fingerprint: resp.fingerprint,
-                        message: resp.message,
-                        finish_reason: resp.finish_reason,
-                    },
-                ));
-            }
-        }
-
+        let mut entries = scan_round_resp_entries(&test_dir)?;
         if entries.is_empty() {
             return Err(format!(
                 "录制目录为空（无 round_N_resp.json）: {}（test_name={test_name}）",
