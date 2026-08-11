@@ -505,13 +505,11 @@ async fn run_single_agent_turn(
         },
         transport: AgentTurnTransport {
             out: None,
-            render_to_terminal: false,
             no_stream: true,
             cancel: None,
             per_flight: None,
             web_tool_ctx: None,
             cli_tool_ctx: None,
-            plain_terminal_stream: false,
             tool_running_hook: None,
             clarification_questionnaire_hook: None,
             sse_control_mirror: None,

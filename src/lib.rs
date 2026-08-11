@@ -78,17 +78,15 @@ use tokio::sync::mpsc;
 #[allow(unused_imports)] // `DefaultTurnRunner` 供文档与类型探查；装配走 `default_turn_runner`
 pub(crate) use turn_runner::{DefaultTurnRunner, TurnRunner, default_turn_runner};
 
-/// 回合传输与端点表现（SSE、取消、审批上下文、终端渲染等），与模型采样/路由覆盖解耦。
+/// 回合传输与端点表现（SSE、取消、审批上下文等），与模型采样/路由覆盖解耦。
 pub struct AgentTurnTransport<'a> {
     pub out: Option<&'a mpsc::Sender<String>>,
-    pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     pub per_flight: Option<std::sync::Arc<PerTurnFlight>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时在 stdin 交互确认；Web 传 `None`。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-    pub plain_terminal_stream: bool,
     /// 无 SSE（`out` 为 `None`）时可选：工具批开始/结束时各调用一次（`true` / `false`），与 Web `SsePayload::ToolRunning` 对齐（如 TUI 底栏）。
     pub tool_running_hook: Option<std::sync::Arc<dyn Fn(bool) + Send + Sync>>,
     /// 澄清问卷回调（与 [`crate::agent::agent_turn::TurnControlSink::clarification_questionnaire_hook`] 同源）；Web/SSE 通常为 `None`。
@@ -324,13 +322,11 @@ impl<'a> RunAgentTurnParams<'a> {
             workspace_is_set,
             transport: AgentTurnTransport {
                 out: Some(out),
-                render_to_terminal: false,
                 no_stream: false,
                 cancel: Some(cancel),
                 per_flight: Some(per_flight),
                 web_tool_ctx,
                 cli_tool_ctx: None,
-                plain_terminal_stream: false,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
@@ -360,7 +356,7 @@ impl<'a> RunAgentTurnParams<'a> {
         })
     }
 
-    /// Web `POST /chat`（JSON）：无 SSE，终端渲染管线用于分步通知等。
+    /// Web `POST /chat`（JSON）：无 SSE；不向 serve 进程 stdout 回显助手/工具输出。
     #[cfg(feature = "web")]
     pub fn web_chat_json(args: WebChatJsonBuildArgs<'a>) -> Self {
         let WebChatJsonBuildArgs {
@@ -392,13 +388,11 @@ impl<'a> RunAgentTurnParams<'a> {
             workspace_is_set,
             transport: AgentTurnTransport {
                 out: None,
-                render_to_terminal: true,
                 no_stream: false,
                 cancel: None,
                 per_flight: Some(per_flight),
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
-                plain_terminal_stream: false,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,
@@ -452,13 +446,11 @@ impl<'a> RunAgentTurnParams<'a> {
             },
             transport: AgentTurnTransport {
                 out: None,
-                render_to_terminal: false,
                 no_stream: true,
                 cancel: Some(cancel),
                 per_flight: None,
                 web_tool_ctx: None,
                 cli_tool_ctx: None,
-                plain_terminal_stream: false,
                 tool_running_hook: None,
                 clarification_questionnaire_hook: None,
                 sse_control_mirror: None,

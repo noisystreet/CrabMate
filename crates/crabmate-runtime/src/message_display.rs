@@ -218,7 +218,7 @@ pub fn tool_content_for_display_for_message(
     with_summarize_tool_prefix(raw, body, &name, &args)
 }
 
-// --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（与 TUI / CLI `terminal_render_agent_markdown` 共用）---
+// --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（Web / SSE 展示管线）---
 
 /// `user` 气泡 / CLI 用户侧展示。
 pub fn user_message_for_chat_display(raw: &str) -> String {

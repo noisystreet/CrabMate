@@ -165,7 +165,6 @@ async fn outer_loop_execute_tools_round(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     msg: &Message,
-    render_to_terminal: bool,
 ) -> Result<(), RunAgentTurnError> {
     let tool_calls = msg
         .tool_calls
@@ -175,7 +174,6 @@ async fn outer_loop_execute_tools_round(
             message: "无 tool_calls".to_string(),
         })?;
     p.turn.sub_phase = AgentTurnSubPhase::Executor;
-    let echo_terminal_transcript = render_to_terminal && p.ctx.io.control.out.is_none();
     let step_executor_constraint = p.turn.turn_planner_hints.step_executor_constraint;
     let exec_outcome = per_execute_tools_web(
         tool_calls,
@@ -189,7 +187,6 @@ async fn outer_loop_execute_tools_round(
             control: p.ctx.io.control.clone(),
             web_tool_ctx: p.ctx.attach.web_tool_ctx,
             cli_tool_ctx: p.ctx.attach.cli_tool_ctx,
-            echo_terminal_transcript,
             mcp_turn: p.ctx.attach.mcp_turn.as_ref(),
             workspace_changelist: p.ctx.attach.workspace_changelist.as_ref(),
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
@@ -327,7 +324,6 @@ async fn outer_loop_post_tools_exit(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
     msg: &Message,
-    render_to_terminal: bool,
     driver: &mut OuterLoopDriver,
     iteration_count: u32,
 ) -> Result<OuterLoopIterationExit, RunAgentTurnError> {
@@ -339,7 +335,7 @@ async fn outer_loop_post_tools_exit(
         iteration = iteration_count,
         "outer_loop tools execute"
     );
-    outer_loop_execute_tools_round(p, per_coord, msg, render_to_terminal).await?;
+    outer_loop_execute_tools_round(p, per_coord, msg).await?;
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
     }
@@ -356,7 +352,6 @@ async fn outer_loop_post_tools_exit(
 async fn outer_loop_call_planner_and_push(
     p: &mut RunLoopParams<'_>,
     planner_tools: &[crate::types::Tool],
-    render_to_terminal: bool,
     exec_api_base: Option<&str>,
     exec_api_key: Option<&str>,
 ) -> Result<(Message, String), RunAgentTurnError> {
@@ -368,10 +363,8 @@ async fn outer_loop_call_planner_and_push(
         tools_defs: planner_tools,
         messages: p.turn.messages(),
         out: p.ctx.io.control.out,
-        render_to_terminal,
         no_stream: p.ctx.io.no_stream,
         cancel: p.ctx.io.cancel,
-        plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
         temperature_override: p.turn.temperature_override,
         seed_override: p.turn.seed_override,
         request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
@@ -455,7 +448,6 @@ async fn run_outer_loop_single_iteration(
         t.on_outer_loop_iteration();
     }
 
-    let render_to_terminal = p.ctx.io.terminal.render_to_terminal;
     outer_loop_prepare_planner_context(p, per_coord).await?;
 
     driver.record_phase(OuterLoopIterationPhase::PrepareContextDone);
@@ -473,7 +465,6 @@ async fn run_outer_loop_single_iteration(
     let (msg, finish_reason) = outer_loop_call_planner_and_push(
         p,
         planner_tools.as_slice(),
-        render_to_terminal,
         exec_api_base.as_deref(),
         exec_api_key.as_deref(),
     )
@@ -514,15 +505,7 @@ async fn run_outer_loop_single_iteration(
         return Ok(exit);
     }
 
-    let exit = outer_loop_post_tools_exit(
-        p,
-        per_coord,
-        &msg,
-        render_to_terminal,
-        driver,
-        iteration_count,
-    )
-    .await?;
+    let exit = outer_loop_post_tools_exit(p, per_coord, &msg, driver, iteration_count).await?;
     driver.record_iteration_exit(exit);
     Ok(exit)
 }

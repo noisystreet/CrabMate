@@ -67,8 +67,6 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
     pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
-    /// CLI：`render_to_terminal` 且 `out: None` 时为 true，工具结果打印到 stdout。
-    pub echo_terminal_transcript: bool,
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
@@ -98,13 +96,11 @@ pub(crate) use crabmate_agent::agent_turn::{
     ExecuteToolsBatchOutcome, dedup_readonly_tool_calls_count,
 };
 
-/// 单工具：SSE / 终端回显 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
+/// 单工具：SSE 控制面 + 追加 `tool` 与可选反思 `user`（与串行路径一致）的入参。
 pub(super) struct EmitToolResultParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
-    echo_terminal_transcript: bool,
-    terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
     name: &'a str,
     args: &'a str,
@@ -153,8 +149,6 @@ struct ExecuteToolsCommonCtx<'a> {
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
-    echo_terminal_transcript: bool,
-    terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
@@ -335,7 +329,6 @@ pub(crate) async fn per_execute_tools_web(
         control,
         web_tool_ctx,
         cli_tool_ctx,
-        echo_terminal_transcript,
         mcp_turn,
         workspace_changelist,
         request_chrome_trace,
@@ -366,8 +359,6 @@ pub(crate) async fn per_execute_tools_web(
         read_file_turn_cache,
         workspace_changelist,
         control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars: cfg.command_exec.command_max_output_len,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
         web_tool_ctx,
         cli_tool_ctx,

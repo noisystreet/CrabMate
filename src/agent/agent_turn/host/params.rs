@@ -5,7 +5,7 @@
 //!
 //! **`RunLoopCtx`**：整场固定的输入上下文，按职责分为四块（降低扁平字段带来的隐式耦合）：
 //! - [`RunLoopCore`]：LLM 接入、配置快照、工具表与工作目录；
-//! - [`RunLoopIo`]：取消 / `no_stream`，以及嵌套的 [`super::TurnControlSink`] 与 [`super::TurnTerminalIo`]；
+//! - [`RunLoopIo`]：取消 / `no_stream`，以及嵌套的 [`super::TurnControlSink`]；
 //! - [`RunLoopAttach`]：工具运行时句柄、缓存、记忆；
 //! - [`RunLoopObs`]：Chrome trace、结构化 tracing、HTTP 审计、[`crate::process_handles::TurnProcessHandles`]。
 //!
@@ -29,7 +29,7 @@ use crate::agent::turn_budget::TurnBudgetCounter;
 use crate::workspace::changelist::WorkspaceChangelist;
 
 use super::errors::AgentTurnSubPhase;
-use super::turn_sink::{TurnControlSink, TurnTerminalIo};
+use super::turn_sink::TurnControlSink;
 use crate::PerTurnFlight;
 use crate::WebRequestAudit;
 use crate::agent::agent_turn::messages::{
@@ -52,14 +52,13 @@ pub(crate) struct RunLoopCore<'a> {
     pub workspace_is_set: bool,
 }
 
-/// SSE/终端流式、取消与 CLI/TUI 侧回调（传输语义）。
+/// SSE/流式、取消与 CLI/TUI 侧回调（传输语义）。
 ///
-/// 控制面与终端呈现已拆到 [`TurnControlSink`] / [`TurnTerminalIo`]（见 `turn_sink`）。
+/// 控制面见 [`TurnControlSink`]（`turn_sink`）。
 pub(crate) struct RunLoopIo<'a> {
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
     pub control: TurnControlSink<'a>,
-    pub terminal: TurnTerminalIo,
 }
 
 /// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。

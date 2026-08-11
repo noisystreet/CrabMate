@@ -1,4 +1,4 @@
-//! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析与可选终端输出（经 [`StreamChatHost`] 注入）。
+//! OpenAI 兼容 **`chat/completions`** 的单次 HTTP 调用：SSE/JSON 解析（经 [`StreamChatHost`] 注入侧效应）。
 
 mod error_handler;
 mod sse_parser;
@@ -144,52 +144,37 @@ async fn non_stream_emit_sse_for_assistant(
     host: &dyn StreamChatHost,
     msg: &Message,
     tx: &tokio::sync::mpsc::Sender<String>,
-    plain_terminal_stream: bool,
     cancel: Option<&AtomicBool>,
 ) {
-    if plain_terminal_stream {
-        let sse_plain = host.assistant_streaming_plain_concat(msg);
-        if !sse_plain.is_empty() {
-            let _ = sse_out_send(
-                host,
-                tx,
-                sse_plain,
-                "llm::stream_chat non-stream assistant plain",
-                cancel,
-            )
-            .await;
-        }
-    } else {
-        let r = msg.reasoning_content.as_deref().unwrap_or("");
-        let c = message_content_as_str(&msg.content).unwrap_or("");
-        if !r.is_empty() {
-            let _ = sse_out_send(
-                host,
-                tx,
-                r.to_string(),
-                "llm::stream_chat non-stream assistant reasoning",
-                cancel,
-            )
-            .await;
-        }
-        if !c.is_empty() {
-            let _ = sse_out_send(
-                host,
-                tx,
-                host.encode_assistant_answer_phase_sse(),
-                "llm::stream_chat non-stream assistant_answer_phase",
-                cancel,
-            )
-            .await;
-            let _ = sse_out_send(
-                host,
-                tx,
-                c.to_string(),
-                "llm::stream_chat non-stream assistant content",
-                cancel,
-            )
-            .await;
-        }
+    let r = msg.reasoning_content.as_deref().unwrap_or("");
+    let c = message_content_as_str(&msg.content).unwrap_or("");
+    if !r.is_empty() {
+        let _ = sse_out_send(
+            host,
+            tx,
+            r.to_string(),
+            "llm::stream_chat non-stream assistant reasoning",
+            cancel,
+        )
+        .await;
+    }
+    if !c.is_empty() {
+        let _ = sse_out_send(
+            host,
+            tx,
+            host.encode_assistant_answer_phase_sse(),
+            "llm::stream_chat non-stream assistant_answer_phase",
+            cancel,
+        )
+        .await;
+        let _ = sse_out_send(
+            host,
+            tx,
+            c.to_string(),
+            "llm::stream_chat non-stream assistant content",
+            cancel,
+        )
+        .await;
     }
 }
 
@@ -211,18 +196,13 @@ async fn non_stream_emit_parsing_tool_calls_if_needed(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 async fn non_stream_chat_response(
     host: &dyn StreamChatHost,
     res: reqwest::Response,
     out: Option<&tokio::sync::mpsc::Sender<String>>,
-    render_to_terminal: bool,
-    plain_terminal_stream: bool,
     cancel: Option<&AtomicBool>,
-    cli_terminal_plain: bool,
     model: &str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let _cli_wait_spinner = host.try_start_cli_wait_spinner(cli_terminal_plain);
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(LLM_CANCELLED_ERROR.into());
     }
@@ -241,10 +221,7 @@ async fn non_stream_chat_response(
     merge_reasoning_details_into_reasoning_content(&mut msg);
 
     if let Some(tx) = out {
-        non_stream_emit_sse_for_assistant(host, &msg, tx, plain_terminal_stream, cancel).await;
-    }
-    if render_to_terminal {
-        host.render_non_stream_assistant_terminal(&msg, plain_terminal_stream, out.is_none())?;
+        non_stream_emit_sse_for_assistant(host, &msg, tx, cancel).await;
     }
     if let Some(tx) = out {
         non_stream_emit_parsing_tool_calls_if_needed(host, &msg, tx, cancel).await;
@@ -259,9 +236,6 @@ async fn non_stream_chat_response(
     );
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish_reason, &msg);
     host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
-    if render_to_terminal && out.is_none() {
-        host.print_stream_end_reason_terminal(terminal_end_reason);
-    }
     log_cache_usage(usage.as_ref(), model);
     Ok((msg, finish_reason))
 }
@@ -270,12 +244,8 @@ async fn streaming_chat_response(
     host: &dyn StreamChatHost,
     res: reqwest::Response,
     params: &StreamChatParams<'_>,
-    render_to_terminal: bool,
     model: &str,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
-    let cli_terminal_plain =
-        render_to_terminal && params.out.is_none() && params.plain_terminal_stream;
-    let _cli_wait_spinner = host.try_start_cli_wait_spinner(cli_terminal_plain);
     let stream = res.bytes_stream();
     let acc = consume_openai_sse_byte_stream(
         host,
@@ -283,28 +253,10 @@ async fn streaming_chat_response(
         ConsumeSseStreamOpts {
             cancel: params.cancel,
             out: params.out,
-            cli_terminal_plain,
             thinking_trace_enabled: params.thinking_trace_enabled,
         },
     )
     .await?;
-
-    if render_to_terminal {
-        let md = host.assistant_raw_markdown_body_from_parts(
-            acc.reasoning_acc.as_str(),
-            acc.content_acc.as_str(),
-        );
-        if cli_terminal_plain {
-            host.finalize_stream_plain_terminal_suffix(
-                acc.cli_plain_reasoning_style_active,
-                acc.cli_plain_prefix_emitted,
-                acc.content_acc.as_str(),
-                acc.reasoning_acc.as_str(),
-            )?;
-        } else if !md.is_empty() {
-            host.terminal_render_agent_markdown(&md)?;
-        }
-    }
 
     let finish = if params.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         USER_CANCELLED_FINISH_REASON.to_string()
@@ -323,9 +275,6 @@ async fn streaming_chat_response(
     );
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish, &msg);
     host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
-    if render_to_terminal && params.out.is_none() {
-        host.print_stream_end_reason_terminal(terminal_end_reason);
-    }
     log_cache_usage(usage.as_ref(), model);
     Ok((msg, finish))
 }
@@ -342,10 +291,8 @@ pub async fn stream_chat(
         api_base,
         auth_mode,
         out,
-        render_to_terminal,
         no_stream,
         cancel,
-        plain_terminal_stream,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
         preserve_deepseek_thinking_reasoning_roundtrip,
@@ -391,22 +338,10 @@ pub async fn stream_chat(
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
 
-    let cli_terminal_plain = render_to_terminal && out.is_none() && plain_terminal_stream;
-
     let model = req.model.clone();
     if no_stream {
-        non_stream_chat_response(
-            host,
-            res,
-            out,
-            render_to_terminal,
-            plain_terminal_stream,
-            cancel,
-            cli_terminal_plain,
-            &model,
-        )
-        .await
+        non_stream_chat_response(host, res, out, cancel, &model).await
     } else {
-        streaming_chat_response(host, res, params, render_to_terminal, &model).await
+        streaming_chat_response(host, res, params, &model).await
     }
 }

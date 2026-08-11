@@ -9,14 +9,12 @@ use crabmate_types::llm_config::LlmHttpAuthMode;
 
 use crate::stream_host::StreamChatHost;
 
-/// **SSE / 终端 / 流式 / 取消** 开关（各调用点差异主要在此）。
+/// **SSE / 流式 / 取消** 开关（各调用点差异主要在此）。
 #[derive(Clone)]
 pub struct LlmRetryingTransportOpts<'a> {
     pub out: Option<&'a Sender<String>>,
-    pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
-    pub plain_terminal_stream: bool,
 }
 
 impl<'a> LlmRetryingTransportOpts<'a> {
@@ -24,10 +22,8 @@ impl<'a> LlmRetryingTransportOpts<'a> {
     pub fn headless_no_stream() -> Self {
         Self {
             out: None,
-            render_to_terminal: false,
             no_stream: true,
             cancel: None,
-            plain_terminal_stream: false,
         }
     }
 }
@@ -41,10 +37,8 @@ pub struct StreamChatParams<'a> {
     pub api_base: &'a str,
     pub auth_mode: LlmHttpAuthMode,
     pub out: Option<&'a Sender<String>>,
-    pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
-    pub plain_terminal_stream: bool,
     pub fold_system_into_user: bool,
     /// Moonshot **kimi-k2.5** + 默认 thinking：含 **`tool_calls`** 的 assistant 须保留 **`reasoning_content`**。
     pub preserve_reasoning_on_assistant_tool_calls: bool,

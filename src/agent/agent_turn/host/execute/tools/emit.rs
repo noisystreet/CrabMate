@@ -189,8 +189,6 @@ pub(super) async fn emit_tool_result_sse_and_append(
         cfg,
         tool_outcome_recorder,
         control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
         tool_result_envelope_v1,
         name,
         args,
@@ -209,16 +207,6 @@ pub(super) async fn emit_tool_result_sse_and_append(
         tools::summarize_tool_call(name, args)
     };
     let parsed_for_timeline = parse_legacy_output(name, result.as_str());
-
-    crate::runtime::terminal_cli_transcript::echo_tool_result_transcript(
-        echo_terminal_transcript,
-        out.is_some(),
-        name,
-        args,
-        tool_summary.as_deref(),
-        result.as_str(),
-        terminal_tool_display_max_chars,
-    );
 
     emit_sse_tool_result(
         out,

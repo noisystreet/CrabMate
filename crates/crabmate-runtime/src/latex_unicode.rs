@@ -1,6 +1,6 @@
-//! 将常见 LaTeX 数学定界符内的内容转为 Unicode，供终端 Markdown 渲染（`unicodeit`）。
+//! 将常见 LaTeX 数学定界符内的内容转为 Unicode（`unicodeit`）。
 //!
-//! 经根包 `crate::runtime::latex_unicode` 再导出；与 Web 端数学公式展示无关。
+//! 经 `message_display` 等展示管线使用；与 Web 端数学公式展示无关。
 //! 在 `unicodeit` 之前做**小规模结构化预处理**：`\frac`、`\sqrt`、`\text`/`\mathrm` 等拆壳、`\left`/`\right` 剥离、`\quad` 等空白命令。
 
 use regex::Regex;

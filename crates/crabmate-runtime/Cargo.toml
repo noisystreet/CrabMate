@@ -3,7 +3,7 @@ name = "crabmate-runtime"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "CrabMate CLI/TUI runtime utilities (display, spinner, exit codes, completion)"
+description = "CrabMate runtime utilities (display, exit codes, chat export)"
 
 [dependencies]
 crabmate-agent = { workspace = true, default-features = false }
@@ -12,7 +12,6 @@ chrono = { workspace = true }
 crabmate-tool-card = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
-indicatif = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

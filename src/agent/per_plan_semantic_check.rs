@@ -176,7 +176,6 @@ pub(crate) struct PlanSemanticLlmCtx<'a> {
     pub out: Option<&'a mpsc::Sender<String>>,
     pub no_stream: bool,
     pub cancel: Option<&'a AtomicBool>,
-    pub plain_terminal_stream: bool,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub temperature_override: Option<f32>,
     pub model_override: Option<String>,
@@ -239,10 +238,8 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         ctx.cfg,
         LlmRetryingTransportOpts {
             out: ctx.out,
-            render_to_terminal: false,
             no_stream: ctx.no_stream,
             cancel: ctx.cancel,
-            plain_terminal_stream: ctx.plain_terminal_stream,
         },
         ctx.request_chrome_trace,
         model_override,

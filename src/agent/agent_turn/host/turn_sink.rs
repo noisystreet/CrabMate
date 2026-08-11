@@ -1,7 +1,6 @@
-//! 回合 IO 适配面：把 SSE 控制通道与终端呈现从扁平 [`super::RunLoopIo`] 中切开。
+//! 回合 IO 适配面：把 SSE 控制通道从扁平 [`super::RunLoopIo`] 中切开。
 //!
 //! - [`TurnControlSink`]：主 SSE `out`、编码器、可选镜像、无 SSE 钩子（工具批 / 澄清问卷）
-//! - [`TurnTerminalIo`]：stdout 渲染、plain stream
 //!
 //! 具体 payload 编码仍在 `execute/tools/emit`；本模块只定**通道形状**，便于入口装配与后续逐步收窄 emit 形参。
 
@@ -22,12 +21,4 @@ pub(crate) struct TurnControlSink<'a> {
     /// 澄清问卷：工具 `present_clarification_questionnaire` 成功时回调。
     pub clarification_questionnaire_hook:
         Option<Arc<dyn Fn(crate::sse::ClarificationQuestionnaireBody) + Send + Sync>>,
-}
-
-/// 终端呈现（与 SSE 控制面正交）。
-#[derive(Clone)]
-pub(crate) struct TurnTerminalIo {
-    pub render_to_terminal: bool,
-    /// 见 [`crate::llm::api::stream_chat`] 的 `plain_terminal_stream`；仅 CLI 入口为 `true`。
-    pub plain_terminal_stream: bool,
 }

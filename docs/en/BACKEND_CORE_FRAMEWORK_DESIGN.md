@@ -13,7 +13,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 ## 2. Current structure (brief)
 
-- The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **CLI** (`clap`), **TUI** (`crossterm`/`reedline`), optional memory embeddings (`fastembed`), MCP, and Docker sandbox (`bollard`).
+- The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **ops CLI** (`clap`), optional memory embeddings (`fastembed`), MCP, and Docker sandbox (`bollard`). Official terminal / Web UI live in the Client repo (in-process `chat|repl|tui` removed in D2.2).
 - Workspace-level extraction already exists for:
   - `frontend` (Web UI)
   - `crates/crabmate-sse-protocol` (SSE control-plane contract)
