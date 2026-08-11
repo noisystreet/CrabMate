@@ -62,6 +62,5 @@ keyring = "4.1.5"
 nix = { workspace = true, features = ["fs", "dir", "signal", "term", "process"] }
 
 [dev-dependencies]
-proptest = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }

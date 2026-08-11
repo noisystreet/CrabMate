@@ -16,7 +16,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 
 - **BREAKING (D2.2)**: Hard-delete in-process **`chat` / `repl` / `tui`** implementation and Cargo features **`repl`/`tui`** (official terminal: Client **`crabmate-tui`**). Default features are **`web` + `mcp`**.
-- **BREAKING**: **`web_chat_json`** (`POST /chat`) no longer echoes assistant/tool transcript to the **`serve`** process stdout; remove direct dependencies on the in-process terminal render stack (`termimad` / `crossterm` / `indicatif`); **`CM_CLI_WAIT_SPINNER`** is ignored. **`unicode-width`** may remain transitively (e.g. via `dialoguer`).
+- **BREAKING**: **`web_chat_json`** (`POST /chat`) no longer echoes assistant/tool transcript to the **`serve`** process stdout; remove direct dependencies on the in-process terminal render stack (`termimad` / `crossterm` / `indicatif`); **`CM_CLI_WAIT_SPINNER`** is ignored. **`unicode-width`** may remain transitively (e.g. via `console` for `web-bearer`).
 - **BREAKING**: TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
 
 ### Fixed

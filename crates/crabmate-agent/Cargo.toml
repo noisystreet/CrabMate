@@ -21,4 +21,3 @@ tracing = { workspace = true }
 
 [dev-dependencies]
 crabmate-config = { workspace = true }
-tempfile = { workspace = true }
