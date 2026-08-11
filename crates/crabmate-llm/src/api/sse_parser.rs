@@ -472,6 +472,110 @@ pub(super) struct ConsumeSseStreamOpts<'a> {
     pub thinking_trace_enabled: bool,
 }
 
+struct SseConsumeScratch {
+    reasoning_acc: String,
+    content_acc: String,
+    pending_sse_delta: String,
+    tool_calls_acc: Vec<(String, String, String, String)>,
+    finish_reason: String,
+    parsing_tool_calls_notified: bool,
+    turn_segment_open: Option<String>,
+    turn_segment_emitted_ids: HashSet<String>,
+    minimax_reasoning_snaps: Vec<String>,
+    usage: Option<crabmate_types::Usage>,
+}
+
+impl SseConsumeScratch {
+    fn new() -> Self {
+        Self {
+            reasoning_acc: String::new(),
+            content_acc: String::new(),
+            pending_sse_delta: String::new(),
+            tool_calls_acc: Vec::new(),
+            finish_reason: String::new(),
+            parsing_tool_calls_notified: false,
+            turn_segment_open: None,
+            turn_segment_emitted_ids: HashSet::new(),
+            minimax_reasoning_snaps: Vec::new(),
+            usage: None,
+        }
+    }
+
+    fn ingest_state<'a>(
+        &'a mut self,
+        host: &'a dyn StreamChatHost,
+        out: Option<&'a Sender<String>>,
+        cancel: Option<&'a AtomicBool>,
+        thinking_trace_enabled: bool,
+    ) -> IngestSseState<'a> {
+        IngestSseState {
+            host,
+            out,
+            pending_sse_delta: &mut self.pending_sse_delta,
+            reasoning_acc: &mut self.reasoning_acc,
+            content_acc: &mut self.content_acc,
+            finish_reason: &mut self.finish_reason,
+            tool_calls_acc: &mut self.tool_calls_acc,
+            parsing_tool_calls_notified: &mut self.parsing_tool_calls_notified,
+            turn_segment_open: &mut self.turn_segment_open,
+            turn_segment_emitted_ids: &mut self.turn_segment_emitted_ids,
+            minimax_reasoning_snaps: &mut self.minimax_reasoning_snaps,
+            coop_cancel: cancel,
+            thinking_trace_enabled,
+            usage: &mut self.usage,
+        }
+    }
+
+    fn into_accum(self) -> SseStreamAccum {
+        SseStreamAccum {
+            reasoning_acc: self.reasoning_acc,
+            content_acc: self.content_acc,
+            tool_calls_acc: self.tool_calls_acc,
+            finish_reason: self.finish_reason,
+            usage: self.usage,
+        }
+    }
+}
+
+enum DrainSseLinesOutcome {
+    Continue,
+    StreamDone,
+    Cancelled,
+}
+
+async fn drain_sse_newlines_from_buf(
+    buf: &mut Vec<u8>,
+    host: &dyn StreamChatHost,
+    opts: &ConsumeSseStreamOpts<'_>,
+    scratch: &mut SseConsumeScratch,
+) -> Result<DrainSseLinesOutcome, Box<dyn std::error::Error + Send + Sync>> {
+    let mut consumed = 0usize;
+    while let Some(rel_pos) = buf[consumed..].iter().position(|&b| b == b'\n') {
+        if opts.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+            buf.drain(..consumed);
+            return Ok(DrainSseLinesOutcome::Cancelled);
+        }
+        let pos = consumed + rel_pos;
+        let line = std::str::from_utf8(&buf[consumed..pos])
+            .unwrap_or("")
+            .trim();
+        consumed = pos + 1;
+        let done = ingest_openai_sse_trimmed_line(
+            line,
+            scratch.ingest_state(host, opts.out, opts.cancel, opts.thinking_trace_enabled),
+        )
+        .await?;
+        if done {
+            buf.drain(..consumed);
+            return Ok(DrainSseLinesOutcome::StreamDone);
+        }
+    }
+    if consumed > 0 {
+        buf.drain(..consumed);
+    }
+    Ok(DrainSseLinesOutcome::Continue)
+}
+
 pub(super) async fn consume_openai_sse_byte_stream<S, B>(
     host: &dyn StreamChatHost,
     mut stream: S,
@@ -481,110 +585,40 @@ where
     S: futures_util::Stream<Item = Result<B, reqwest::Error>> + Unpin,
     B: AsRef<[u8]>,
 {
-    let ConsumeSseStreamOpts {
-        cancel,
-        out,
-        thinking_trace_enabled,
-    } = opts;
     let mut buf = Vec::new();
-    let mut reasoning_acc = String::new();
-    let mut content_acc = String::new();
-    let mut pending_sse_delta = String::new();
-    let mut tool_calls_acc: Vec<(String, String, String, String)> = Vec::new();
-    let mut finish_reason = String::new();
-    let mut parsing_tool_calls_notified = false;
-    let mut turn_segment_open: Option<String> = None;
-    let mut turn_segment_emitted_ids: HashSet<String> = HashSet::new();
-
-    let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
+    let mut scratch = SseConsumeScratch::new();
     let mut stream_done = false;
-    let mut usage = None;
 
     while let Some(chunk) = stream.next().await {
-        if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+        if opts.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             break;
         }
         let chunk = chunk.map_err(LlmCallError::boxed_from_reqwest)?;
         buf.extend_from_slice(chunk.as_ref());
 
-        let mut consumed = 0usize;
-        let mut cancelled = false;
-        while let Some(rel_pos) = buf[consumed..].iter().position(|&b| b == b'\n') {
-            if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
-                cancelled = true;
-                break;
-            }
-            let pos = consumed + rel_pos;
-            let line = std::str::from_utf8(&buf[consumed..pos])
-                .unwrap_or("")
-                .trim();
-            consumed = pos + 1;
-            if ingest_openai_sse_trimmed_line(
-                line,
-                IngestSseState {
-                    host,
-                    out,
-                    pending_sse_delta: &mut pending_sse_delta,
-                    reasoning_acc: &mut reasoning_acc,
-                    content_acc: &mut content_acc,
-                    finish_reason: &mut finish_reason,
-                    tool_calls_acc: &mut tool_calls_acc,
-                    parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
-                    turn_segment_open: &mut turn_segment_open,
-                    turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
-                    minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
-                    coop_cancel: cancel,
-                    thinking_trace_enabled,
-                    usage: &mut usage,
-                },
-            )
-            .await?
-            {
+        match drain_sse_newlines_from_buf(&mut buf, host, &opts, &mut scratch).await? {
+            DrainSseLinesOutcome::Continue => {}
+            DrainSseLinesOutcome::StreamDone => {
                 stream_done = true;
                 break;
             }
-        }
-        if consumed > 0 {
-            buf.drain(..consumed);
-        }
-        if cancelled || stream_done {
-            break;
+            DrainSseLinesOutcome::Cancelled => break,
         }
     }
 
     ingest_sse_residual_buffer_if_needed(
         stream_done,
         buf.as_slice(),
-        IngestSseState {
-            host,
-            out,
-            pending_sse_delta: &mut pending_sse_delta,
-            reasoning_acc: &mut reasoning_acc,
-            content_acc: &mut content_acc,
-            finish_reason: &mut finish_reason,
-            tool_calls_acc: &mut tool_calls_acc,
-            parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
-            turn_segment_open: &mut turn_segment_open,
-            turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
-            minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
-            coop_cancel: cancel,
-            thinking_trace_enabled,
-            usage: &mut usage,
-        },
+        scratch.ingest_state(host, opts.out, opts.cancel, opts.thinking_trace_enabled),
     )
     .await?;
 
-    emit_turn_segment_end_if_open(host, out, cancel, &mut turn_segment_open).await?;
+    emit_turn_segment_end_if_open(host, opts.out, opts.cancel, &mut scratch.turn_segment_open)
+        .await?;
 
-    flush_sse_delta_buffer(host, &mut pending_sse_delta, out, cancel).await;
+    flush_sse_delta_buffer(host, &mut scratch.pending_sse_delta, opts.out, opts.cancel).await;
 
-    Ok(SseStreamAccum {
-        reasoning_acc,
-        content_acc,
-        tool_calls_acc,
-        finish_reason,
-        usage,
-    })
+    Ok(scratch.into_accum())
 }
 
 #[cfg(test)]
