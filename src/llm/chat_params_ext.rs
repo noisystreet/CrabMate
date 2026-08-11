@@ -17,10 +17,8 @@ pub struct CompleteChatRetryingParams<'a> {
     pub api_key: &'a str,
     pub cfg: &'a AgentConfig,
     pub out: Option<&'a tokio::sync::mpsc::Sender<String>>,
-    pub render_to_terminal: bool,
     pub no_stream: bool,
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
-    pub plain_terminal_stream: bool,
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     pub model_override: Option<&'a str>,
     /// 单轮共享预算；设置时由 [`super::complete_chat_retrying`] 统一门禁与计数。
@@ -39,10 +37,8 @@ impl<'a> CompleteChatRetryingParams<'a> {
     ) -> Self {
         let LlmRetryingTransportOpts {
             out,
-            render_to_terminal,
             no_stream,
             cancel,
-            plain_terminal_stream,
         } = transport;
         Self {
             llm_backend,
@@ -50,10 +46,8 @@ impl<'a> CompleteChatRetryingParams<'a> {
             api_key,
             cfg,
             out,
-            render_to_terminal,
             no_stream,
             cancel,
-            plain_terminal_stream,
             request_chrome_trace,
             model_override,
             turn_budget: None,
@@ -82,10 +76,8 @@ impl<'a> CompleteChatRetryingParams<'a> {
             api_base: &self.cfg.llm.api_base,
             auth_mode: self.cfg.llm.llm_http_auth_mode,
             out: self.out,
-            render_to_terminal: self.render_to_terminal,
             no_stream: self.no_stream,
             cancel: self.cancel,
-            plain_terminal_stream: self.plain_terminal_stream,
             fold_system_into_user: fold_system_into_user_for_config(
                 &self.cfg.llm.model,
                 &self.cfg.llm.api_base,

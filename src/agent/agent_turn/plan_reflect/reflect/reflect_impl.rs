@@ -101,7 +101,6 @@ async fn reflect_pending_semantic_consistency_llm(
             out: p.ctx.io.control.out,
             no_stream: p.ctx.io.no_stream,
             cancel: p.ctx.io.cancel,
-            plain_terminal_stream: p.ctx.io.terminal.plain_terminal_stream,
             request_chrome_trace: p.ctx.obs.request_chrome_trace.clone(),
             temperature_override: p.turn.temperature_override,
             model_override: p.turn.model_override.clone(),

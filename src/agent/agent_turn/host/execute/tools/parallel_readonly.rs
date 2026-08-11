@@ -308,8 +308,6 @@ struct ParallelEmitOrderedParams<'a> {
     cfg: &'a Arc<AgentConfig>,
     tool_outcome_recorder: &'a Arc<crate::tool_stats::ToolOutcomeRecorder>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
-    echo_terminal_transcript: bool,
-    terminal_tool_display_max_chars: usize,
     tool_result_envelope_v1: bool,
 }
 
@@ -325,8 +323,6 @@ async fn parallel_emit_ordered_tool_results(
         cfg,
         tool_outcome_recorder,
         control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
         tool_result_envelope_v1,
     } = p;
 
@@ -386,8 +382,6 @@ async fn parallel_emit_ordered_tool_results(
                 cfg,
                 tool_outcome_recorder,
                 control: control.clone(),
-                echo_terminal_transcript,
-                terminal_tool_display_max_chars,
                 tool_result_envelope_v1,
                 name: &tc.function.name,
                 args: &tc.function.arguments,
@@ -417,8 +411,6 @@ pub(super) async fn execute_tools_parallel(
         read_file_turn_cache,
         workspace_changelist,
         control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
         tool_result_envelope_v1,
         web_tool_ctx,
         cli_tool_ctx,
@@ -498,8 +490,6 @@ pub(super) async fn execute_tools_parallel(
         cfg,
         tool_outcome_recorder: &tool_outcome_recorder,
         control,
-        echo_terminal_transcript,
-        terminal_tool_display_max_chars,
         tool_result_envelope_v1,
     })
     .await

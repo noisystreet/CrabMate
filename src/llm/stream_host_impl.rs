@@ -1,33 +1,20 @@
-//! 根包 [`crabmate_llm::StreamChatHost`] 实现（SSE、终端、redact）。
+//! 根包 [`crabmate_llm::StreamChatHost`] 实现（SSE、redact）。
 
-use std::io;
 use std::sync::atomic::AtomicBool;
 
 use async_trait::async_trait;
-use crabmate_llm::{
-    CliWaitSpinnerGuardHost, LlmCallError, StreamChatHost, TerminalPlainFragmentCtx,
-};
-use crabmate_sse_protocol::StreamEndReason;
+use crabmate_llm::{LlmCallError, StreamChatHost};
 use crabmate_types::{ChatRequest, Message, message_content_as_str};
 use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
 
-use crate::llm::terminal_render::{
-    cli_terminal_write_plain_fragment, finalize_stream_plain_terminal_suffix,
-    render_non_stream_assistant_terminal, terminal_render_agent_markdown,
-};
 use crate::redact::{
     self, CHAT_REQUEST_JSON_LOG_INFO_CHARS, CHAT_REQUEST_JSON_LOG_MAX_CHARS,
     HTTP_BODY_PREVIEW_LOG_CHARS,
 };
-use crate::runtime::cli_wait_spinner::CliWaitSpinnerGuard;
 use crate::sse::{SsePayload, ThinkingTraceBody, encode_message};
 
 const THINKING_TRACE_CHUNK_MAX: usize = 4096;
-
-struct CrabmateCliWaitSpinnerGuard(#[allow(dead_code)] CliWaitSpinnerGuard);
-
-impl CliWaitSpinnerGuardHost for CrabmateCliWaitSpinnerGuard {}
 
 fn clip_thinking_trace_text(s: &str) -> String {
     if s.len() <= THINKING_TRACE_CHUNK_MAX {
@@ -54,7 +41,7 @@ mod tests {
     }
 }
 
-/// 进程内默认 [`StreamChatHost`]（Web / CLI / TUI 共用）。
+/// 进程内默认 [`StreamChatHost`]（Web / 运维 CLI 共用）。
 #[derive(Debug, Copy, Clone, Default)]
 pub struct CrabmateStreamChatHost;
 
@@ -237,76 +224,6 @@ impl StreamChatHost for CrabmateStreamChatHost {
 
     fn encode_text_message_start_sse(&self) -> String {
         crate::sse::encode_text_message_start_sse_str()
-    }
-
-    fn try_start_cli_wait_spinner(
-        &self,
-        cli_terminal_plain: bool,
-    ) -> Option<Box<dyn CliWaitSpinnerGuardHost>> {
-        CliWaitSpinnerGuard::try_start_for_cli_plain_stream(cli_terminal_plain).map(|guard| {
-            Box::new(CrabmateCliWaitSpinnerGuard(guard)) as Box<dyn CliWaitSpinnerGuardHost>
-        })
-    }
-
-    fn assistant_streaming_plain_concat(&self, msg: &Message) -> String {
-        crate::runtime::message_display::assistant_streaming_plain_concat(msg)
-    }
-
-    fn cli_terminal_write_plain_fragment(
-        &self,
-        fragment: &str,
-        ctx: TerminalPlainFragmentCtx<'_>,
-        is_reasoning: bool,
-    ) -> io::Result<()> {
-        cli_terminal_write_plain_fragment(
-            fragment,
-            ctx.prefix_emitted,
-            is_reasoning,
-            ctx.reasoning_style_active,
-        )
-    }
-
-    fn render_non_stream_assistant_terminal(
-        &self,
-        msg: &Message,
-        plain_terminal_stream: bool,
-        out_is_none: bool,
-    ) -> io::Result<()> {
-        render_non_stream_assistant_terminal(msg, plain_terminal_stream, out_is_none)
-    }
-
-    fn finalize_stream_plain_terminal_suffix(
-        &self,
-        cli_plain_reasoning_style_active: bool,
-        cli_plain_prefix_emitted: bool,
-        content_acc: &str,
-        reasoning_acc: &str,
-    ) -> io::Result<()> {
-        finalize_stream_plain_terminal_suffix(
-            cli_plain_reasoning_style_active,
-            cli_plain_prefix_emitted,
-            content_acc,
-            reasoning_acc,
-        )
-    }
-
-    fn terminal_render_agent_markdown(&self, md: &str) -> io::Result<()> {
-        terminal_render_agent_markdown(md)
-    }
-
-    fn assistant_raw_markdown_body_from_parts(
-        &self,
-        reasoning_acc: &str,
-        content_acc: &str,
-    ) -> String {
-        crate::runtime::message_display::assistant_raw_markdown_body_from_parts(
-            reasoning_acc,
-            content_acc,
-        )
-    }
-
-    fn print_stream_end_reason_terminal(&self, reason: StreamEndReason) {
-        let _ = crate::runtime::terminal_cli_transcript::print_stream_end_reason_terminal(reason);
     }
 }
 

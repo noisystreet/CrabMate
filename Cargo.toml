@@ -64,11 +64,9 @@ flate2 = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 glob = "0.3"
 ignore = "0.4"
-indicatif = "0.18"
 jsonschema = { version = "0.49", default-features = false }
 libc = "0.2"
 log = "0.4"
-termimad = "0.35"
 path-absolutize = "4"
 proptest = "1"
 regex = "1"
@@ -98,7 +96,6 @@ toml = "1.1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false }
 unicodeit = "0.2"
-unicode-width = { version = "0.2" }
 urlencoding = "2.1"
 uom = { version = "0.38", features = ["si"] }
 walkdir = "2"
@@ -110,7 +107,6 @@ zip = { version = "8.6", default-features = false, features = ["deflate", "time"
 # HTTP / optional UI (feature-gated in root)
 axum = { version = "0.8", default-features = false }
 clap_mangen = { version = "0.3", default-features = false }
-crossterm = { version = "0.29" }
 tower = { version = "0.5" }
 tower-http = { version = "0.6" }
 
@@ -248,7 +244,6 @@ tokio-stream = { workspace = true }
 async-trait = { workspace = true }
 libc = { workspace = true }
 tiktoken-rs = { workspace = true }
-termimad = { workspace = true }
 unicodeit = { workspace = true }
 axum = { workspace = true, optional = true, features = [
     "form",
@@ -264,9 +259,6 @@ axum = { workspace = true, optional = true, features = [
 ] }
 rusqlite = { workspace = true, optional = true }
 tokio-cron-scheduler = { workspace = true, optional = true }
-indicatif = { workspace = true }
-unicode-width = { workspace = true }
-crossterm = { workspace = true }
 clap_mangen = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]

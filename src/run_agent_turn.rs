@@ -22,7 +22,6 @@ fn resolved_turn_llm_backend<'a>(
 async fn emit_mcp_servers_skipped_notice(
     skipped: &[crate::mcp::McpServerSkipInfo],
     out: Option<&tokio::sync::mpsc::Sender<String>>,
-    render_to_terminal: bool,
 ) {
     if skipped.is_empty() {
         return;
@@ -38,9 +37,6 @@ async fn emit_mcp_servers_skipped_notice(
         format!("MCP：{} 个服务器连接失败", skipped.len())
     };
     log::warn!(target: "crabmate", "MCP 本轮跳过服务器：\n{detail}");
-    if render_to_terminal {
-        eprintln!("[MCP] {title}\n{detail}");
-    }
     crate::turn_replay_dump::append_turn_replay_event_if_configured(
         "mcp_servers_skipped",
         title.as_str(),
@@ -67,13 +63,10 @@ async fn emit_mcp_servers_skipped_notice(
 /// `cfg` 建议使用 [`Arc`] 共享（与进程内 Web 服务状态一致），以便工具在 `spawn_blocking` 路径中复用同一份配置而不反复深拷贝。
 /// 若提供 transport.out，则流式 content 会通过 out 发送（供 SSE 等使用）；`transport.no_stream` 为 true 时 API 使用 `stream: false`，
 /// 有正文则通过 `out` 一次性下发整段。
-/// 若 `transport.plain_terminal_stream` 为 `true`（仅 **`runtime::cli`** 应传入）：`transport.render_to_terminal` 且 `transport.out` 为 `None` 时，助手正文以**纯文本**流式（或 `--no-stream` 时整段）写入 stdout，不经 `termimad`。
-/// 若 `transport.plain_terminal_stream` 为 `false` 且 `transport.render_to_terminal` 为 `true`：仍在整段到达后用 `termimad` 渲染（用于服务端 jobs 等 **`out.is_none()`** 场景，避免与 CLI 混淆）。
-/// 当 `transport.out` 为 `None` 且 `transport.render_to_terminal` 为 `true` 时，分阶段规划通知、分步注入 user 与各工具结果另经 `runtime::terminal_cli_transcript` 写入 stdout；通知与注入正文经 `user_message_for_chat_display`（分步长句可压缩）；`transport.plain_terminal_stream` 为 `true` 时助手正文为上游原始增量/拼接，为 `false` 时经 `assistant_markdown_source_for_display` 管线再渲染。
 /// effective_working_dir 为当前生效的工作目录（可与前端设置的工作区一致）。
 /// `transport.cancel` 为 `Some` 时，各轮请求会在流式读与重试间隔中轮询其标志；置位后尽快结束并返回 `Ok`（或 `Err`：[`agent::agent_turn::RunAgentTurnError`] 中含取消 / 限流 / SSE 早停等，用户可见串与常量 [`crate::types::LLM_CANCELLED_ERROR`] 对齐），供协作取消等场景使用。
-/// 分阶段规划下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与门控拒绝时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再视情况执行工具，避免网关误报 `tool_calls` 时 CLI 静默无动作。
-/// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；CLI 传 `None`。
+/// 分阶段规划下若规划轮未解析出合法 `agent_reply_plan` v1：**不再**整轮失败退出：保留规划轮助手正文并**降级**为与门控拒绝时相同的常规 `run_agent_outer_loop`（含工具）。规划轮会先丢弃 API 返回的原生 `tool_calls`，再视情况执行工具，避免网关误报 `tool_calls` 时静默无动作。
+/// `transport.per_flight` 仅 Web 队列任务传入，用于 `GET /status` 的 `per_active_jobs` 镜像；运维 CLI 传 `None`。
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
     p: RunAgentTurnParams<'a>,
@@ -111,13 +104,11 @@ pub async fn run_agent_turn<'a>(
     } = obs;
     let AgentTurnTransport {
         out,
-        render_to_terminal,
         no_stream,
         cancel,
         per_flight,
         web_tool_ctx,
         cli_tool_ctx,
-        plain_terminal_stream,
         tool_running_hook,
         clarification_questionnaire_hook,
         sse_control_mirror,
@@ -158,7 +149,7 @@ pub async fn run_agent_turn<'a>(
         turn_allowed_tool_names.as_ref().map(|a| a.as_ref()),
     )
     .await;
-    emit_mcp_servers_skipped_notice(&mcp_skipped, out, render_to_terminal).await;
+    emit_mcp_servers_skipped_notice(&mcp_skipped, out).await;
 
     let request_chrome_trace = crate::request_chrome_trace::request_trace_dir_from_env()
         .map(|_| Arc::new(crate::request_chrome_trace::RequestTurnTrace::new()));
@@ -201,10 +192,6 @@ pub async fn run_agent_turn<'a>(
                     sse_control_mirror,
                     tool_running_hook,
                     clarification_questionnaire_hook,
-                },
-                terminal: crate::agent::agent_turn::TurnTerminalIo {
-                    render_to_terminal,
-                    plain_terminal_stream,
                 },
             },
             attach: crate::agent::agent_turn::RunLoopAttach {
@@ -264,8 +251,6 @@ pub async fn run_agent_turn<'a>(
         tools: tools_for_turn.as_slice(),
         cfg: loop_params.ctx.core.cfg,
         no_stream,
-        render_to_terminal,
-        plain_terminal_stream,
         effective_working_dir,
         workspace_is_set,
         temperature_override,

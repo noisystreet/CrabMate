@@ -64,7 +64,7 @@ pub(crate) use plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
 #[allow(unused_imports)]
 pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
-pub(crate) use turn_sink::{TurnControlSink, TurnTerminalIo};
+pub(crate) use turn_sink::TurnControlSink;
 
 #[cfg(test)]
 mod tests;

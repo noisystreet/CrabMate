@@ -170,10 +170,6 @@ mod per_reflect_tests {
                         tool_running_hook: None,
                         clarification_questionnaire_hook: None,
                     },
-                    terminal: crate::agent::agent_turn::TurnTerminalIo {
-                        render_to_terminal: false,
-                        plain_terminal_stream: false,
-                    },
                 },
                 attach: RunLoopAttach {
                     web_tool_ctx: None,

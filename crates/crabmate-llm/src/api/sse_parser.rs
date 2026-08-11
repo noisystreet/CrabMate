@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 use crabmate_types::{StreamChoice, StreamDelta};
 
 use crate::call_error::LlmCallError;
-use crate::stream_host::{StreamChatHost, TerminalPlainFragmentCtx};
+use crate::stream_host::StreamChatHost;
 
 use super::sse_turn_segment_emit::{
     IngestSseToolCallsFrame, emit_turn_segment_end_if_open, ingest_sse_tool_calls_from_delta,
@@ -71,9 +71,6 @@ struct AccumulateReasoningStreamDeltaCtx<'a> {
     host: &'a dyn StreamChatHost,
     reasoning_acc: &'a mut String,
     out: Option<&'a Sender<String>>,
-    cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &'a mut bool,
-    cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
 }
@@ -86,16 +83,6 @@ async fn accumulate_reasoning_stream_delta(
         return Ok(());
     }
     ctx.reasoning_acc.push_str(fragment);
-    if ctx.cli_terminal_plain {
-        ctx.host.cli_terminal_write_plain_fragment(
-            fragment,
-            TerminalPlainFragmentCtx {
-                prefix_emitted: ctx.cli_plain_prefix_emitted,
-                reasoning_style_active: ctx.cli_plain_reasoning_style_active,
-            },
-            true,
-        )?;
-    }
     if let Some(tx) = ctx.out {
         let line = ctx.host.encode_reasoning_content_sse(fragment);
         let _ = sse_out_send(
@@ -124,9 +111,6 @@ struct MinimaxReasoningDetailsCtx<'a> {
     snaps: &'a mut Vec<String>,
     reasoning_acc: &'a mut String,
     out: Option<&'a Sender<String>>,
-    cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &'a mut bool,
-    cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
 }
@@ -140,9 +124,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
         snaps,
         reasoning_acc,
         out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
     } = ctx;
@@ -168,9 +149,6 @@ async fn accumulate_minimax_reasoning_details_deltas(
                 host,
                 reasoning_acc,
                 out,
-                cli_terminal_plain,
-                cli_plain_prefix_emitted,
-                cli_plain_reasoning_style_active,
                 coop_cancel,
                 thinking_trace_enabled,
             },
@@ -214,9 +192,6 @@ pub(super) struct IngestSseState<'a> {
     pub(super) parsing_tool_calls_notified: &'a mut bool,
     pub(super) turn_segment_open: &'a mut Option<String>,
     pub(super) turn_segment_emitted_ids: &'a mut HashSet<String>,
-    pub(super) cli_terminal_plain: bool,
-    pub(super) cli_plain_prefix_emitted: &'a mut bool,
-    pub(super) cli_plain_reasoning_style_active: &'a mut bool,
     pub(super) minimax_reasoning_snaps: &'a mut Vec<String>,
     pub(super) coop_cancel: Option<&'a AtomicBool>,
     pub(super) thinking_trace_enabled: bool,
@@ -269,9 +244,6 @@ struct IngestSseReasoningFrame<'a> {
     reasoning_acc: &'a mut String,
     minimax_reasoning_snaps: &'a mut Vec<String>,
     out: Option<&'a Sender<String>>,
-    cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &'a mut bool,
-    cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
 }
@@ -282,9 +254,6 @@ struct IngestSseContentFrame<'a> {
     content_acc: &'a mut String,
     pending_sse_delta: &'a mut String,
     out: Option<&'a Sender<String>>,
-    cli_terminal_plain: bool,
-    cli_plain_prefix_emitted: &'a mut bool,
-    cli_plain_reasoning_style_active: &'a mut bool,
     coop_cancel: Option<&'a AtomicBool>,
     thinking_trace_enabled: bool,
 }
@@ -305,9 +274,6 @@ async fn ingest_sse_reasoning_from_delta(
         reasoning_acc,
         minimax_reasoning_snaps,
         out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
     } = frame;
@@ -327,9 +293,6 @@ async fn ingest_sse_reasoning_from_delta(
                     host,
                     reasoning_acc,
                     out,
-                    cli_terminal_plain,
-                    cli_plain_prefix_emitted,
-                    cli_plain_reasoning_style_active,
                     coop_cancel,
                     thinking_trace_enabled,
                 },
@@ -347,9 +310,6 @@ async fn ingest_sse_reasoning_from_delta(
                 snaps: minimax_reasoning_snaps,
                 reasoning_acc,
                 out,
-                cli_terminal_plain,
-                cli_plain_prefix_emitted,
-                cli_plain_reasoning_style_active,
                 coop_cancel,
                 thinking_trace_enabled,
             },
@@ -366,9 +326,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         content_acc,
         pending_sse_delta,
         out,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
         coop_cancel,
         thinking_trace_enabled,
     } = frame;
@@ -380,7 +337,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
     }
     if content_acc.is_empty()
         && let Some(tx) = out
-        && !cli_terminal_plain
     {
         // AG-UI: 在首段终答正文前发送 TEXT_MESSAGE_START
         let msg_start = host.encode_text_message_start_sse();
@@ -414,16 +370,6 @@ async fn ingest_sse_content_from_delta(frame: IngestSseContentFrame<'_>) -> std:
         .await?;
     }
     content_acc.push_str(s);
-    if cli_terminal_plain {
-        host.cli_terminal_write_plain_fragment(
-            s,
-            TerminalPlainFragmentCtx {
-                prefix_emitted: cli_plain_prefix_emitted,
-                reasoning_style_active: cli_plain_reasoning_style_active,
-            },
-            false,
-        )?;
-    }
     if let Some(tx) = out {
         let line = host.encode_answer_content_sse(s);
         let _ = sse_out_send(
@@ -456,9 +402,6 @@ pub(super) async fn ingest_sse_data_payload(
         parsing_tool_calls_notified,
         turn_segment_open,
         turn_segment_emitted_ids,
-        cli_terminal_plain,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
         minimax_reasoning_snaps,
         coop_cancel,
         thinking_trace_enabled,
@@ -480,9 +423,6 @@ pub(super) async fn ingest_sse_data_payload(
             reasoning_acc,
             minimax_reasoning_snaps,
             out,
-            cli_terminal_plain,
-            cli_plain_prefix_emitted,
-            cli_plain_reasoning_style_active,
             coop_cancel,
             thinking_trace_enabled,
         })
@@ -493,9 +433,6 @@ pub(super) async fn ingest_sse_data_payload(
             content_acc,
             pending_sse_delta,
             out,
-            cli_terminal_plain,
-            cli_plain_prefix_emitted,
-            cli_plain_reasoning_style_active,
             coop_cancel,
             thinking_trace_enabled,
         })
@@ -525,8 +462,6 @@ pub(super) struct SseStreamAccum {
     pub(super) content_acc: String,
     pub(super) tool_calls_acc: Vec<(String, String, String, String)>,
     pub(super) finish_reason: String,
-    pub(super) cli_plain_prefix_emitted: bool,
-    pub(super) cli_plain_reasoning_style_active: bool,
     /// SSE 末尾帧携带的 usage（含缓存统计）。
     pub(super) usage: Option<crabmate_types::Usage>,
 }
@@ -534,7 +469,6 @@ pub(super) struct SseStreamAccum {
 pub(super) struct ConsumeSseStreamOpts<'a> {
     pub cancel: Option<&'a AtomicBool>,
     pub out: Option<&'a Sender<String>>,
-    pub cli_terminal_plain: bool,
     pub thinking_trace_enabled: bool,
 }
 
@@ -550,7 +484,6 @@ where
     let ConsumeSseStreamOpts {
         cancel,
         out,
-        cli_terminal_plain,
         thinking_trace_enabled,
     } = opts;
     let mut buf = Vec::new();
@@ -563,8 +496,6 @@ where
     let mut turn_segment_open: Option<String> = None;
     let mut turn_segment_emitted_ids: HashSet<String> = HashSet::new();
 
-    let mut cli_plain_prefix_emitted = false;
-    let mut cli_plain_reasoning_style_active = false;
     let mut minimax_reasoning_snaps: Vec<String> = Vec::new();
     let mut stream_done = false;
     let mut usage = None;
@@ -601,9 +532,6 @@ where
                     parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
                     turn_segment_open: &mut turn_segment_open,
                     turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
-                    cli_terminal_plain,
-                    cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
-                    cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
                     minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
                     coop_cancel: cancel,
                     thinking_trace_enabled,
@@ -638,9 +566,6 @@ where
             parsing_tool_calls_notified: &mut parsing_tool_calls_notified,
             turn_segment_open: &mut turn_segment_open,
             turn_segment_emitted_ids: &mut turn_segment_emitted_ids,
-            cli_terminal_plain,
-            cli_plain_prefix_emitted: &mut cli_plain_prefix_emitted,
-            cli_plain_reasoning_style_active: &mut cli_plain_reasoning_style_active,
             minimax_reasoning_snaps: &mut minimax_reasoning_snaps,
             coop_cancel: cancel,
             thinking_trace_enabled,
@@ -658,8 +583,6 @@ where
         content_acc,
         tool_calls_acc,
         finish_reason,
-        cli_plain_prefix_emitted,
-        cli_plain_reasoning_style_active,
         usage,
     })
 }
