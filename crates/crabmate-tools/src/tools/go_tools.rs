@@ -47,35 +47,26 @@ fn push_go_tags(cmd: &mut Command, tags: Option<&str>) {
     }
 }
 
-fn push_go_test_flags(
-    cmd: &mut Command,
-    verbose: bool,
-    race: bool,
-    short: bool,
-    run_filter: Option<&str>,
-    count: Option<u64>,
-    timeout: Option<&str>,
-    tags: Option<&str>,
-) {
-    if verbose {
+fn push_go_test_flags(cmd: &mut Command, args: &GoTestArgs) {
+    if args.verbose {
         cmd.arg("-v");
     }
-    if race {
+    if args.race {
         cmd.arg("-race");
     }
-    if short {
+    if args.short {
         cmd.arg("-short");
     }
-    if let Some(r) = run_filter {
+    if let Some(r) = optional_trimmed(args.run.as_deref()) {
         cmd.arg("-run").arg(r);
     }
-    if let Some(c) = count {
+    if let Some(c) = args.count {
         cmd.arg("-count").arg(c.to_string());
     }
-    if let Some(t) = timeout {
+    if let Some(t) = optional_trimmed(args.timeout.as_deref()) {
         cmd.arg("-timeout").arg(t);
     }
-    push_go_tags(cmd, tags);
+    push_go_tags(cmd, optional_trimmed(args.tags.as_deref()));
 }
 
 pub fn go_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -133,16 +124,7 @@ pub fn go_test(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
 
     let mut cmd = Command::new("go");
     cmd.arg("test");
-    push_go_test_flags(
-        &mut cmd,
-        args.verbose,
-        args.race,
-        args.short,
-        optional_trimmed(args.run.as_deref()),
-        args.count,
-        optional_trimmed(args.timeout.as_deref()),
-        optional_trimmed(args.tags.as_deref()),
-    );
+    push_go_test_flags(&mut cmd, &args);
     cmd.arg(package).current_dir(workspace_root);
     run_and_format(cmd, max_output_len, "go test")
 }
