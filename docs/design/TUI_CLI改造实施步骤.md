@@ -1,13 +1,15 @@
 # CLI → TUI 改造实施步骤（与 Web 布局对齐）
 
+> **历史文档（已归档）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](./client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
+
 本文面向维护者：在**不替换既有 Agent / 工具 / 配置栈**的前提下，将当前 **reedline 行式 REPL** 渐进演进为 **全屏 TUI**，并在**信息架构**上与 Web 侧栏 + 主会话区 + 状态/辅助区对齐。
 
-**现状简述（仓库当前代码）**
+**现状简述（撰写时仓库；D2.2 后已失效）**
 
-- 交互式 CLI 入口在 **`src/runtime/cli/repl.rs`**，输入由 **`repl_reedline`**（reedline）驱动；配色与提示集中在 **`cli_repl_ui`**，底层已有 **`crossterm`**（根 **`Cargo.toml`**）。
-- 已有 **`src/runtime/tui/`**（**`crabmate tui`**）与 **`ratatouille`**（**`crossterm`** 后端）；当前以占位 UI + 终端恢复为主，对话闭环见阶段 C。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（进程内 TUI/REPL 会话 UI 配置键已移除，见 D2.2）。
+- 交互式 CLI 入口曾在 **`src/runtime/cli/repl.rs`**，输入由 **`repl_reedline`**（reedline）驱动；配色与提示集中在 **`cli_repl_ui`**，底层曾有 **`crossterm`**。
+- 曾有 **`src/runtime/tui/`**（**`crabmate tui`**）与 **`ratatouille`**；对话闭环见阶段 C。进程内 TUI/REPL 会话 UI 配置键已移除（D2.2）。
 
-**原则**
+**原则（历史）**
 
 1. **编排复用**：会话消息、`run_agent_turn`、工具执行、审批与 **`CliToolRuntime`** 等与现有 REPL/`chat` 子命令共用；TUI 仅替换「渲染 + 输入 + 焦点」层（与 Web 前端的职责划分对称）。
 2. **三端约定**：新能力优先落在共享层；若某能力明确仅适合某一界面，须在注释或 **`docs/待办清单.md`** 中写明。参见仓库 **`.cursor/rules/cli-tui-web-shared-logic.mdc`**。

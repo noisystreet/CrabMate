@@ -84,23 +84,6 @@ fn finalize_cli_config_path(explicit: Option<String>) -> Option<String> {
     config::resolve_interactive_cli_config_path(None).map(|p| p.to_string_lossy().into_owned())
 }
 
-/// 无 CLI 显式角色时，回退本机 prefs 的 `cm_role`（与 Web 侧栏对齐）。
-///
-/// **不**自动恢复 `prefs.last_workspace_root`：须 `--workspace` 或启动后手动选择工作区。
-/// 同进程对话入口移除后暂无调用方；D2.2 可删。
-#[allow(dead_code)]
-fn apply_prefs_cli_defaults(agent_role: &mut Option<String>) {
-    let prefs = crate::user_data::load_prefs();
-    if agent_role
-        .as_ref()
-        .map(|s| s.trim().is_empty())
-        .unwrap_or(true)
-        && let Some(role) = prefs.cm_role.filter(|s| !s.trim().is_empty())
-    {
-        *agent_role = Some(role);
-    }
-}
-
 fn load_cli_agent_config(
     config_path: Option<&str>,
     llm_context_tokens_cli: Option<u32>,
