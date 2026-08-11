@@ -46,6 +46,33 @@ fn compact_from_to_from_output(info: &ToolCardInput) -> Option<String> {
     None
 }
 
+fn parse_search_in_files_json_header(line: &str) -> Option<(usize, Option<u64>)> {
+    let v = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    if v.get("kind").and_then(|x| x.as_str()) != Some("crabmate_tool_output") {
+        return None;
+    }
+    if v.get("tool").and_then(|x| x.as_str()) != Some("search_in_files") {
+        return None;
+    }
+    let match_count = v.get("match_count").and_then(|x| x.as_u64());
+    Some((1, match_count))
+}
+
+fn parse_search_pat_and_scope(lines: &[&str], start_idx: usize) -> Option<(String, String)> {
+    let mut pat: Option<String> = None;
+    let mut scope: Option<String> = None;
+    for line in lines.iter().skip(start_idx) {
+        if let Some(v) = line.strip_prefix("搜索：") {
+            pat = Some(v.trim().trim_matches('"').to_string());
+        } else if let Some(v) = line.strip_prefix("范围：") {
+            scope = Some(v.trim().to_string());
+        }
+    }
+    let pat = pat?;
+    let sc = scope.unwrap_or_else(|| ".".to_string());
+    Some((pat, sc))
+}
+
 fn compact_search_from_tool_output(output: &str, loc: ToolCardLocale) -> Option<String> {
     let trimmed = output.trim();
     if trimmed.is_empty() {
@@ -59,26 +86,8 @@ fn compact_search_from_tool_output(output: &str, loc: ToolCardLocale) -> Option<
     if lines.is_empty() {
         return None;
     }
-    let mut idx = 0usize;
-    let mut match_count: Option<u64> = None;
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(lines[0])
-        && v.get("kind").and_then(|x| x.as_str()) == Some("crabmate_tool_output")
-        && v.get("tool").and_then(|x| x.as_str()) == Some("search_in_files")
-    {
-        match_count = v.get("match_count").and_then(|x| x.as_u64());
-        idx = 1;
-    }
-    let mut pat: Option<String> = None;
-    let mut scope: Option<String> = None;
-    for line in lines.iter().skip(idx) {
-        if let Some(v) = line.strip_prefix("搜索：") {
-            pat = Some(v.trim().trim_matches('"').to_string());
-        } else if let Some(v) = line.strip_prefix("范围：") {
-            scope = Some(v.trim().to_string());
-        }
-    }
-    let pat = pat?;
-    let sc = scope.unwrap_or_else(|| ".".to_string());
+    let (start_idx, match_count) = parse_search_in_files_json_header(lines[0]).unwrap_or((0, None));
+    let (pat, sc) = parse_search_pat_and_scope(&lines, start_idx)?;
     let mut right = format!("{pat} · {sc}");
     if let Some(n) = match_count.filter(|&n| n > 0) {
         right.push_str(" · ");
@@ -109,31 +118,40 @@ fn path_from_summary_read_file_english(joined: &str) -> Option<String> {
     }
 }
 
-fn compact_read_file_from_output(output: &str, loc: ToolCardLocale) -> Option<String> {
-    let trimmed = output.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let first = trimmed.lines().next()?.trim();
-    let v: serde_json::Value = serde_json::from_str(first).ok()?;
+fn read_file_tool_output_value(first_line: &str) -> Option<serde_json::Value> {
+    let v: serde_json::Value = serde_json::from_str(first_line).ok()?;
     if v.get("kind").and_then(|x| x.as_str()) != Some("crabmate_tool_output") {
         return None;
     }
     if v.get("tool").and_then(|x| x.as_str()) != Some("read_file") {
         return None;
     }
-    let path = v.get("path").and_then(|x| x.as_str())?.trim();
-    if path.is_empty() {
-        return None;
-    }
+    Some(v)
+}
+
+fn read_file_line_count_from_json(v: &serde_json::Value) -> Option<usize> {
     let total = v.get("total_lines").and_then(|x| x.as_u64());
     let returned = v.get("line_count_returned").and_then(|x| x.as_u64());
-    let line_count = match (total, returned) {
+    match (total, returned) {
         (Some(t), _) if t > 0 => Some(t as usize),
         (None, Some(r)) if r > 0 => Some(r as usize),
         (Some(0), Some(r)) if r > 0 => Some(r as usize),
         _ => None,
-    };
+    }
+}
+
+fn compact_read_file_from_output(output: &str, loc: ToolCardLocale) -> Option<String> {
+    let trimmed = output.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let first = trimmed.lines().next()?.trim();
+    let v = read_file_tool_output_value(first)?;
+    let path = v.get("path").and_then(|x| x.as_str())?.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let line_count = read_file_line_count_from_json(&v);
     Some(match line_count {
         Some(n) => join_compact_parts(path, &locale::tool_read_file_lines_suffix(loc, n)),
         None => path.to_string(),

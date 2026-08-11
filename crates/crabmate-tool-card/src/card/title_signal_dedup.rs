@@ -82,13 +82,7 @@ fn strip_leading_tool_title<'a>(title: &str, compact: &'a str) -> &'a str {
         .trim()
 }
 
-/// 标题栏已展示工具名时，按候选标题剥掉 compact 前缀后的旁侧信号。
-pub(super) fn tool_signal_beside_titles(titles: &[&str], compact: &str) -> Option<String> {
-    let compact = compact.trim();
-    if compact.is_empty() {
-        return None;
-    }
-    let mut signal = compact.to_string();
+fn strip_title_prefixes_from_signal(titles: &[&str], mut signal: String) -> String {
     loop {
         let before = signal.clone();
         for t in titles {
@@ -102,22 +96,23 @@ pub(super) fn tool_signal_beside_titles(titles: &[&str], compact: &str) -> Optio
             break;
         }
     }
-    if signal.is_empty() {
-        return None;
-    }
+    signal
+}
+
+fn resolve_beside_title_signal(titles: &[&str], signal: &str) -> Option<String> {
     for t in titles {
         let t = t.trim();
         if t.is_empty() {
             continue;
         }
-        if let Some(tail) = tool_compact_signal_paren_suffix_after_redundant_head(t, &signal) {
+        if let Some(tail) = tool_compact_signal_paren_suffix_after_redundant_head(t, signal) {
             // `(exit=N)` 是结果元数据，不是 git `(working)` 这类模式后缀；保留完整 CLI 信号。
             if tail.starts_with("(exit=") {
                 continue;
             }
             return Some(tail);
         }
-        if tool_compact_signal_redundant_with_title(t, &signal) {
+        if tool_compact_signal_redundant_with_title(t, signal) {
             // `cargo check (exit=101)` 与 `cargo_check` 头同义，但不能整段丢掉。
             if signal.contains("(exit=") {
                 continue;
@@ -125,7 +120,20 @@ pub(super) fn tool_signal_beside_titles(titles: &[&str], compact: &str) -> Optio
             return None;
         }
     }
-    Some(signal)
+    Some(signal.to_string())
+}
+
+/// 标题栏已展示工具名时，按候选标题剥掉 compact 前缀后的旁侧信号。
+pub(super) fn tool_signal_beside_titles(titles: &[&str], compact: &str) -> Option<String> {
+    let compact = compact.trim();
+    if compact.is_empty() {
+        return None;
+    }
+    let signal = strip_title_prefixes_from_signal(titles, compact.to_string());
+    if signal.is_empty() {
+        return None;
+    }
+    resolve_beside_title_signal(titles, &signal)
 }
 
 /// 标题栏已展示工具名时，旁侧应显示的信号（去掉同义标题；保留 `(working)` 等后缀）。
