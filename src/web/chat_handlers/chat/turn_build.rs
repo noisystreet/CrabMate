@@ -251,6 +251,102 @@ fn refresh_existing_turn_system(
     Ok(())
 }
 
+struct TurnBuildParts<'a> {
+    agent_role: Option<&'a str>,
+    mode_opt: Option<crate::types::SessionMode>,
+    user_msg: &'a str,
+    root: &'a std::path::Path,
+    forced_skill: Option<crate::config::skills::SkillDoc>,
+    last_user: Message,
+}
+
+async fn build_existing_conversation_turn(
+    state: &WebChatTurnAppFacet,
+    mut seed: ConversationTurnSeed,
+    parts: TurnBuildParts<'_>,
+) -> Result<ConversationTurnSeed, String> {
+    {
+        let cfg = state.cfg.read().await;
+        refresh_existing_turn_system(
+            &cfg,
+            &mut seed,
+            parts.agent_role,
+            parts.mode_opt,
+            parts.user_msg,
+            parts.root,
+            &state.process_handles.tool_outcome_recorder,
+            parts.forced_skill,
+        )?;
+    }
+    if let Some(m) = parts.mode_opt {
+        seed.persisted_active_session_mode = Some(m.as_str().to_string());
+    }
+    seed.messages.push(parts.last_user);
+    Ok(seed)
+}
+
+async fn build_new_conversation_turn(
+    state: &WebChatTurnAppFacet,
+    parts: TurnBuildParts<'_>,
+) -> Result<ConversationTurnSeed, String> {
+    let cfg = state.cfg.read().await;
+    let role_for_turn =
+        crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
+            &cfg,
+            parts.agent_role,
+            None,
+        )?;
+    let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
+        parts.mode_opt.map(|m| m.as_str()),
+        None,
+        crate::session_mode_turn::role_default_session_mode_for_turn(&cfg, None, parts.agent_role),
+        cfg.roles_prompts.default_session_mode,
+    )?;
+    let skills_base = resolve_skills_base_dir(parts.root);
+    let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
+        &cfg,
+        &state.process_handles.tool_outcome_recorder,
+        FirstSystemComposeOpts {
+            agent_role: role_for_turn.as_deref(),
+            user_msg_for_skills: Some(parts.user_msg),
+            skills_base_dir: Some(skills_base),
+            forced_skill: parts.forced_skill,
+            role_resolution: RoleSystemResolution::Strict,
+            session_mode: Some(mode),
+        },
+    )?;
+    debug!(
+        target: "crabmate",
+        "first_system_compose path=web_new conversation_id_refresh=false layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
+        diag.layers_applied,
+        diag.chars_l3_base,
+        diag.chars_l4_augmented,
+        diag.chars_final,
+        diag.skills_total_docs,
+        diag.skills_selected_labels
+    );
+    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
+        load_memory_snippet(
+            parts.root,
+            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
+            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
+        )
+    } else {
+        None
+    };
+
+    let combined =
+        first_turn_project_context_user_message_for_web(parts.root, &cfg, memory_snippet).await;
+    let messages =
+        compose_new_conversation_messages(&system_for_turn, combined, Some(parts.last_user));
+    Ok(ConversationTurnSeed {
+        messages,
+        expected_revision: None,
+        persisted_active_agent_role: None,
+        persisted_active_session_mode: Some(mode.as_str().to_string()),
+    })
+}
+
 pub(super) async fn build_messages_for_turn(
     state: &WebChatTurnAppFacet,
     conversation_id: &str,
@@ -275,79 +371,18 @@ pub(super) async fn build_messages_for_turn(
         message_user_with_images(&raw_user_for_store, image_urls)
     };
     let mode_opt = crate::types::parse_optional_session_mode(session_mode)?;
-    if let Some(mut seed) = state.load_conversation_seed(conversation_id).await {
-        {
-            let cfg = state.cfg.read().await;
-            refresh_existing_turn_system(
-                &cfg,
-                &mut seed,
-                agent_role,
-                mode_opt,
-                user_msg.as_str(),
-                root.as_path(),
-                &state.process_handles.tool_outcome_recorder,
-                forced_skill,
-            )?;
-        }
-        if let Some(m) = mode_opt {
-            seed.persisted_active_session_mode = Some(m.as_str().to_string());
-        }
-        seed.messages.push(last_user);
-        return Ok(seed);
-    }
-    let cfg = state.cfg.read().await;
-    let role_for_turn =
-        crate::context_bootstrap::prompt_compose::resolve_agent_role_for_prompt_compose(
-            &cfg, agent_role, None,
-        )?;
-    let mode = crate::session_mode_turn::resolve_session_mode_for_turn(
-        mode_opt.map(|m| m.as_str()),
-        None,
-        crate::session_mode_turn::role_default_session_mode_for_turn(&cfg, None, agent_role),
-        cfg.roles_prompts.default_session_mode,
-    )?;
-    let skills_base = resolve_skills_base_dir(root.as_path());
-    let (system_for_turn, diag) = compose_first_system_for_turn_with_diagnostics(
-        &cfg,
-        &state.process_handles.tool_outcome_recorder,
-        FirstSystemComposeOpts {
-            agent_role: role_for_turn.as_deref(),
-            user_msg_for_skills: Some(user_msg.as_str()),
-            skills_base_dir: Some(skills_base),
-            forced_skill,
-            role_resolution: RoleSystemResolution::Strict,
-            session_mode: Some(mode),
-        },
-    )?;
-    debug!(
-        target: "crabmate",
-        "first_system_compose path=web_new conversation_id_refresh=false layers={:?} chars_l3={} chars_l4={} chars_final={} skills_total={} skills_selected={:?}",
-        diag.layers_applied,
-        diag.chars_l3_base,
-        diag.chars_l4_augmented,
-        diag.chars_final,
-        diag.skills_total_docs,
-        diag.skills_selected_labels
-    );
-    let memory_snippet = if cfg.context_bootstrap_inject.agent_memory_file_enabled {
-        load_memory_snippet(
-            &root,
-            cfg.context_bootstrap_inject.agent_memory_file.as_str(),
-            cfg.context_bootstrap_inject.agent_memory_file_max_chars,
-        )
-    } else {
-        None
+    let parts = TurnBuildParts {
+        agent_role,
+        mode_opt,
+        user_msg: user_msg.as_str(),
+        root: root.as_path(),
+        forced_skill,
+        last_user,
     };
-
-    let combined =
-        first_turn_project_context_user_message_for_web(root.as_path(), &cfg, memory_snippet).await;
-    let messages = compose_new_conversation_messages(&system_for_turn, combined, Some(last_user));
-    Ok(ConversationTurnSeed {
-        messages,
-        expected_revision: None,
-        persisted_active_agent_role: None,
-        persisted_active_session_mode: Some(mode.as_str().to_string()),
-    })
+    if let Some(seed) = state.load_conversation_seed(conversation_id).await {
+        return build_existing_conversation_turn(state, seed, parts).await;
+    }
+    build_new_conversation_turn(state, parts).await
 }
 
 #[cfg(test)]

@@ -117,10 +117,11 @@ pub(crate) struct ParsedChatRequestForEnqueue {
     pub(crate) readonly_tool_ttl_cache_secs: Option<u64>,
 }
 
-pub(crate) async fn parse_chat_request_for_enqueue(
-    state: &WebChatTurnAppFacet,
+type NormalizedChatEnqueuePayload = (Vec<String>, Option<ClarifyAnswersNormalized>, String);
+
+fn normalize_chat_enqueue_payload(
     body: &ChatRequestBody,
-) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
+) -> Result<NormalizedChatEnqueuePayload, (StatusCode, Json<ApiError>)> {
     validate_chat_request_payload_limits(body)?;
     let image_urls = normalize_chat_image_urls(&body.image_urls)
         .map_err(|e| bad_request("INVALID_IMAGE_URLS", e))?;
@@ -138,7 +139,16 @@ pub(crate) async fn parse_chat_request_for_enqueue(
         ));
     }
     reject_if_client_sse_protocol_invalid(body.client_sse_protocol)?;
-    let parsed = parse_chat_request_for_enqueue_tail(state, body, image_urls, clarify, user_trim)?;
+    Ok((image_urls, clarify, user_trim.to_string()))
+}
+
+pub(crate) async fn parse_chat_request_for_enqueue(
+    state: &WebChatTurnAppFacet,
+    body: &ChatRequestBody,
+) -> Result<ParsedChatRequestForEnqueue, (StatusCode, Json<ApiError>)> {
+    let (image_urls, clarify, user_trim) = normalize_chat_enqueue_payload(body)?;
+    let parsed =
+        parse_chat_request_for_enqueue_tail(state, body, image_urls, clarify, user_trim.as_str())?;
     ensure_bearer_api_key_for_chat(state, &parsed.llm_override).await?;
     Ok(parsed)
 }

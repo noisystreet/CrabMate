@@ -84,16 +84,41 @@ fn response_content_length(parts: &axum::http::response::Parts) -> Option<usize>
         .and_then(|s| s.parse().ok())
 }
 
+fn should_inject_request_id_into_body(res: &Response) -> bool {
+    // 成功体不改写；SSE 等非 JSON 已在 content-type 处排除。
+    (res.status().is_client_error() || res.status().is_server_error()) && content_type_is_json(res)
+}
+
+fn api_error_missing_request_id(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+    let looks_like_api_error = obj.contains_key("code") && obj.contains_key("message");
+    if !looks_like_api_error {
+        return false;
+    }
+    match obj.get("request_id") {
+        None | Some(serde_json::Value::Null) => true,
+        Some(serde_json::Value::String(s)) => s.is_empty(),
+        _ => false,
+    }
+}
+
+fn response_with_json_bytes(
+    mut parts: axum::http::response::Parts,
+    bytes: impl Into<axum::body::Bytes>,
+) -> Response {
+    let bytes = bytes.into();
+    parts.headers.remove(CONTENT_LENGTH);
+    if let Ok(len) = HeaderValue::from_str(&bytes.len().to_string()) {
+        parts.headers.insert(CONTENT_LENGTH, len);
+    }
+    Response::from_parts(parts, Body::from(bytes))
+}
+
 /// 若体为带 `code`+`message` 的 JSON 对象且无 `request_id`，则写入与头同值的字段。
 async fn inject_request_id_into_json_api_error(res: Response, id: &str) -> Response {
-    // 成功体不改写；SSE 等非 JSON 已在 content-type 处排除。
-    if !res.status().is_client_error() && !res.status().is_server_error() {
+    if !should_inject_request_id_into_body(&res) {
         return res;
     }
-    if !content_type_is_json(&res) {
-        return res;
-    }
-    let (mut parts, body) = res.into_parts();
+    let (parts, body) = res.into_parts();
     if response_content_length(&parts).is_some_and(|n| n > MAX_JSON_INJECT_BYTES) {
         return Response::from_parts(parts, body);
     }
@@ -110,13 +135,7 @@ async fn inject_request_id_into_json_api_error(res: Response, id: &str) -> Respo
     let Some(obj) = value.as_object_mut() else {
         return Response::from_parts(parts, Body::from(bytes));
     };
-    let looks_like_api_error = obj.contains_key("code") && obj.contains_key("message");
-    let missing_request_id = match obj.get("request_id") {
-        None | Some(serde_json::Value::Null) => true,
-        Some(serde_json::Value::String(s)) => s.is_empty(),
-        _ => false,
-    };
-    if !looks_like_api_error || !missing_request_id {
+    if !api_error_missing_request_id(obj) {
         return Response::from_parts(parts, Body::from(bytes));
     }
     obj.insert(
@@ -126,11 +145,7 @@ async fn inject_request_id_into_json_api_error(res: Response, id: &str) -> Respo
     let Ok(new_bytes) = serde_json::to_vec(&value) else {
         return Response::from_parts(parts, Body::from(bytes));
     };
-    parts.headers.remove(CONTENT_LENGTH);
-    if let Ok(len) = HeaderValue::from_str(&new_bytes.len().to_string()) {
-        parts.headers.insert(CONTENT_LENGTH, len);
-    }
-    Response::from_parts(parts, Body::from(new_bytes))
+    response_with_json_bytes(parts, new_bytes)
 }
 
 #[cfg(test)]

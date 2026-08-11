@@ -66,114 +66,114 @@ fn split_loaded_skills_by_budget(
     (loaded, skipped)
 }
 
+struct SkillsCmdCtx {
+    max_chars: usize,
+    dir: String,
+    user_dir: String,
+    system_dir: String,
+    base_dir: std::path::PathBuf,
+}
+
+async fn load_skills_cmd_ctx(state: &WebChatTurnAppFacet) -> Result<SkillsCmdCtx, String> {
+    let cfg = state.cfg.read().await;
+    if !cfg.skills.skills_enabled {
+        return Err("skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string());
+    }
+    let max_chars = cfg.skills.skills_max_chars;
+    let dir = cfg.skills.skills_dir.clone();
+    let user_dir = cfg.skills.skills_user_dir.clone();
+    let system_dir = cfg.skills.skills_system_dir.clone();
+    drop(cfg);
+    let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
+    let base_dir = resolve_skills_base_dir(ws.as_path());
+    Ok(SkillsCmdCtx {
+        max_chars,
+        dir,
+        user_dir,
+        system_dir,
+        base_dir,
+    })
+}
+
+fn format_skills_overview(ctx: &SkillsCmdCtx) -> String {
+    let opts = crate::config::skills::SkillsListOpts {
+        workspace_base_dir: ctx.base_dir.as_path(),
+        skills_dir: ctx.dir.as_str(),
+        skills_user_dir: ctx.user_dir.as_str(),
+        skills_system_dir: ctx.system_dir.as_str(),
+    };
+    let layers = format_skills_layer_dirs(&ctx.dir, &ctx.user_dir, &ctx.system_dir);
+    let max_chars = ctx.max_chars;
+    match list_skills(opts) {
+        Ok(files) if files.is_empty() => {
+            format!("当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}")
+        }
+        Ok(files) => {
+            let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
+            format!(
+                "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：{}\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看可 `/<id>` 调用的技能；对话中发送 `/<id> [任务]` 可强制选用。",
+                files.len(),
+                loaded.len(),
+                skipped.len(),
+                layers,
+                max_chars
+            )
+        }
+        Err(e) => format!("读取 skills 失败：{e}"),
+    }
+}
+
+fn format_skill_lines(docs: &[SkillDoc]) -> String {
+    if docs.is_empty() {
+        "- （无）".to_string()
+    } else {
+        docs.iter()
+            .map(format_skill_list_line)
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+fn format_skills_list(ctx: &SkillsCmdCtx) -> String {
+    let opts = crate::config::skills::SkillsListOpts {
+        workspace_base_dir: ctx.base_dir.as_path(),
+        skills_dir: ctx.dir.as_str(),
+        skills_user_dir: ctx.user_dir.as_str(),
+        skills_system_dir: ctx.system_dir.as_str(),
+    };
+    let layers = format_skills_layer_dirs(&ctx.dir, &ctx.user_dir, &ctx.system_dir);
+    let max_chars = ctx.max_chars;
+    match list_skills(opts) {
+        Ok(files) if files.is_empty() => {
+            format!("当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}")
+        }
+        Ok(files) => {
+            let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
+            format!(
+                "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n对话中可用 `/<id> [任务]` 强制选用某一技能（跳过 Top-K）。\n目录：{}\n上限：skills_max_chars={}（扫描总数：{}）",
+                format_skill_lines(&loaded),
+                format_skill_lines(&skipped),
+                layers,
+                max_chars,
+                files.len()
+            )
+        }
+        Err(e) => format!("读取 skills 失败：{e}"),
+    }
+}
+
 pub(super) async fn run_web_builtin_command(
     state: &WebChatTurnAppFacet,
     command: &str,
 ) -> Option<String> {
-    match classify_web_builtin_command(command)? {
-        "skills" => {
-            let cfg = state.cfg.read().await;
-            if !cfg.skills.skills_enabled {
-                return Some(
-                    "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
-                );
-            }
-            let max_chars = cfg.skills.skills_max_chars;
-            let dir = cfg.skills.skills_dir.clone();
-            let user_dir = cfg.skills.skills_user_dir.clone();
-            let system_dir = cfg.skills.skills_system_dir.clone();
-            drop(cfg);
-            let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
-            let base_dir = resolve_skills_base_dir(ws.as_path());
-            let opts = crate::config::skills::SkillsListOpts {
-                workspace_base_dir: base_dir.as_path(),
-                skills_dir: dir.as_str(),
-                skills_user_dir: user_dir.as_str(),
-                skills_system_dir: system_dir.as_str(),
-            };
-            let layers = format_skills_layer_dirs(&dir, &user_dir, &system_dir);
-
-            let text = match list_skills(opts) {
-                Ok(files) if files.is_empty() => {
-                    format!(
-                        "当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}"
-                    )
-                }
-                Ok(files) => {
-                    let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
-                    format!(
-                        "skills 概览：共 {} 个文件，按上限预计完整加载 {} 个，未完整加载 {} 个。\n目录：{}\n上限：skills_max_chars={}\n\n输入 `/skills list` 查看可 `/<id>` 调用的技能；对话中发送 `/<id> [任务]` 可强制选用。",
-                        files.len(),
-                        loaded.len(),
-                        skipped.len(),
-                        layers,
-                        max_chars
-                    )
-                }
-                Err(e) => format!("读取 skills 失败：{e}"),
-            };
-            Some(text)
-        }
-        "skills_list" => {
-            let cfg = state.cfg.read().await;
-            if !cfg.skills.skills_enabled {
-                return Some(
-                    "skills 已关闭（skills_enabled=false），当前不会加载任何 skills。".to_string(),
-                );
-            }
-            let max_chars = cfg.skills.skills_max_chars;
-            let dir = cfg.skills.skills_dir.clone();
-            let user_dir = cfg.skills.skills_user_dir.clone();
-            let system_dir = cfg.skills.skills_system_dir.clone();
-            drop(cfg);
-            let ws = std::path::PathBuf::from(state.effective_workspace_path().await);
-            let base_dir = resolve_skills_base_dir(ws.as_path());
-            let opts = crate::config::skills::SkillsListOpts {
-                workspace_base_dir: base_dir.as_path(),
-                skills_dir: dir.as_str(),
-                skills_user_dir: user_dir.as_str(),
-                skills_system_dir: system_dir.as_str(),
-            };
-            let layers = format_skills_layer_dirs(&dir, &user_dir, &system_dir);
-            let text = match list_skills(opts) {
-                Ok(files) if files.is_empty() => {
-                    format!(
-                        "当前未发现 skills。\n目录：{layers}\n上限：skills_max_chars={max_chars}"
-                    )
-                }
-                Ok(files) => {
-                    let (loaded, skipped) = split_loaded_skills_by_budget(&files, max_chars);
-                    let loaded_lines = if loaded.is_empty() {
-                        "- （无）".to_string()
-                    } else {
-                        loaded
-                            .iter()
-                            .map(format_skill_list_line)
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    };
-                    let skipped_lines = if skipped.is_empty() {
-                        "- （无）".to_string()
-                    } else {
-                        skipped
-                            .iter()
-                            .map(format_skill_list_line)
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    };
-                    format!(
-                        "当前已加载（完整进入 system）skills：\n{}\n\n未完整加载（受上限影响）skills：\n{}\n\n对话中可用 `/<id> [任务]` 强制选用某一技能（跳过 Top-K）。\n目录：{}\n上限：skills_max_chars={}（扫描总数：{}）",
-                        loaded_lines,
-                        skipped_lines,
-                        layers,
-                        max_chars,
-                        files.len()
-                    )
-                }
-                Err(e) => format!("读取 skills 失败：{e}"),
-            };
-            Some(text)
-        }
-        _ => None,
-    }
+    let kind = classify_web_builtin_command(command)?;
+    let ctx = match load_skills_cmd_ctx(state).await {
+        Ok(c) => c,
+        Err(msg) => return Some(msg),
+    };
+    Some(match kind {
+        "skills" => format_skills_overview(&ctx),
+        "skills_list" => format_skills_list(&ctx),
+        _ => return None,
+    })
 }

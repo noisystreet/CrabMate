@@ -318,6 +318,17 @@ fn chat_stream_sse_response_with_meta(
     resp
 }
 
+fn chat_stream_builtin_sse_response(reply: String, conversation_id: &str) -> Response {
+    let stream = stream::iter(vec![(1_u64, reply)]).map(|(seq, data)| sse_event_with_id(seq, data));
+    let mut resp = Sse::new(stream)
+        .keep_alive(KeepAlive::default())
+        .into_response();
+    if let Ok(v) = HeaderValue::from_str(conversation_id) {
+        resp.headers_mut().insert("x-conversation-id", v);
+    }
+    resp
+}
+
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
 pub(crate) async fn chat_stream_handler(
     State(state): State<WebChatTurnAppFacet>,
@@ -329,15 +340,7 @@ pub(crate) async fn chat_stream_handler(
     let p = parse_chat_stream_request(&state, &body)?;
     ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
     if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
-        let stream =
-            stream::iter(vec![(1_u64, reply)]).map(|(seq, data)| sse_event_with_id(seq, data));
-        let mut resp = Sse::new(stream)
-            .keep_alive(KeepAlive::default())
-            .into_response();
-        if let Ok(v) = HeaderValue::from_str(&p.conversation_id) {
-            resp.headers_mut().insert("x-conversation-id", v);
-        }
-        return Ok(resp);
+        return Ok(chat_stream_builtin_sse_response(reply, &p.conversation_id));
     }
 
     if let Some(resp) = chat_stream_resume_response(&state, &headers, &p).await? {
