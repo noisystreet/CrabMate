@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 2537
+global_over_ccn_sum_cap = 2523
 
 [modules]
 "crates/cmd_mate" = 0
@@ -59,4 +59,4 @@ global_over_ccn_sum_cap = 2537
 "src/turn_replay_dump.rs" = 0
 "src/turn_runner.rs" = 0
 "src/user_data" = 0
-"src/web" = 13
+"src/web" = 12
