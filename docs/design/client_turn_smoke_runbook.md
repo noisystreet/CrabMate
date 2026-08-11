@@ -192,8 +192,8 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 | 路径 | 角色 |
 |------|------|
 | `src/turn_runner.rs` | Web 队列注入面 |
-| `src/runtime/cli/` | CLI / repl / chat |
-| `src/runtime/tui/` | TUI |
+| `src/runtime/cli/` | 运维 CLI（`save-session` / `tool-replay` 等；同进程 `chat|repl|tui` 已于 D2.2 硬删） |
+| Client **`crabmate-tui`** | 官方远程终端（HTTP/SSE → `serve`；见 Client `docs/design/remote_cli_tui.md`） |
 | `../crabmate-client/crates/crabmate-connect/` | 桌面/移动共用连接页（**仅** Client 仓） |
 | `../crabmate-client/desktop-tauri/`、`mobile-tauri/` | 官方 Desktop / Android 壳（**仅** Client 仓） |
 | `../crabmate-client/docs/design/shell_smoke_runbook.md` | 壳人工冒烟 |

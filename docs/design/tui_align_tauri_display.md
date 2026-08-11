@@ -1,17 +1,19 @@
 # 终端 TUI 对齐 Tauri / Web 展示规划
 
-**状态**：路线图（**P1–P4 与 Phase 1–6 已落地**；**§9 左右侧栏**与 **§10 跟底意图**已落地）。  
-**受众**：维护 **`src/runtime/tui/`**、**`crates/crabmate-turn-layout`**、**`crates/crabmate-tool-card`** 与相关文档的开发者。  
+> **历史文档（已归档）**：本仓同进程 `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](./client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**。下文路径与实现**不再存在**；展示对齐请改跟 Client 远程 TUI / Web UI。
+
+**状态**：~~路线图~~ **已归档**（曾落地 P1–P4 与 Phase 1–6 等；D2.2 后同进程 TUI 代码移除）。  
+**受众**：考古时查阅；现行维护请看 Client **`remote_cli_tui.md`** 与 **`docs/Turn布局设计.md`**（Web）。  
 **语言**：中文。  
 **关联**：
 
 | 文档 | 用途 |
 |------|------|
 | **`docs/Turn布局设计.md`** | Canonical Turn / `project_turn_web_v2` / Web `TurnLayout` 权威说明 |
-| **`docs/design/tui_chat_display_ownership.md`** | **ADR**：中区 content 所有权（投影权威、合成入口、flush 规则） |
-| **`docs/design/TUI_CLI改造实施步骤.md`** | CLI→TUI 壳与对话闭环（阶段 A–D）；**布局骨架**已完成，展示对齐见本文 |
-| **`docs/design/web_tui_stream_to_opencode_style.md`** | **Web** `ChatTuiStreamView` 流式跟底演进（与 ratatouille **无**代码共用） |
-| **`docs/命令行与路由.md`** | `crabmate tui` 能力、导出 `projection=raw|display` |
+| **`docs/design/tui_chat_display_ownership.md`** | **历史 ADR**：中区 content 所有权（同进程 TUI） |
+| **`docs/design/TUI_CLI改造实施步骤.md`** | **历史**：CLI→TUI 壳与对话闭环 |
+| **`docs/design/web_tui_stream_to_opencode_style.md`** | **Web** `ChatTuiStreamView` 流式跟底演进 |
+| **`docs/命令行与路由.md`** | 运维 CLI；官方终端指向 Client **`crabmate-tui`** |
 | **`.cursor/rules/cli-tui-web-shared-logic.mdc`** | 三端共享逻辑原则 |
 
 ---

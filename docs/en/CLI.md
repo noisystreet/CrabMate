@@ -4,7 +4,7 @@
 
 Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as `--help`). Root **after_help** cross-references **`docs/命令行契约.md`** and **`docs/SSE协议.md`**. **Global options** go **before** the subcommand: `--config`, `--workspace`, `--no-tools`, `--llm-context-tokens`, `--log`. An explicit subcommand is required (e.g. `serve`); bare `cargo run` no longer defaults into dialogue.
 
-**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` command entries are removed** (D2.1; implementation pending D2.2—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
+**Official terminal**: Client **`crabmate-tui`** (HTTP/SSE to this repo’s **`serve`**; LLM keys on the client). In-process **`chat` / `repl` / `tui` are hard-deleted** (D2.1 entry + D2.2 implementation—[`design/client_shell_split.md`](../design/client_shell_split.md) §2.5).
 
 **Script contract** (exit codes, `tool-replay`; legacy `chat --output json` shape is historical only): [`CLI_CONTRACT.md`](CLI_CONTRACT.md).
 
@@ -137,7 +137,7 @@ Still available in this repo:
 - **`bench`**: batch evaluation.
 - Web session persistence, approval (SSE + **`POST /chat/approval`**), export: see HTTP routes and Client UI below.
 
-Exit-code constants remain in **`src/runtime/cli_exit.rs`** / [`CLI_CONTRACT.md`](CLI_CONTRACT.md) (mainly **`tool-replay`** today). **`runtime/cli/{chat,repl}`** and **`runtime/tui`** implementations remain until **D2.2**.
+Exit-code constants remain in **`src/runtime/cli_exit.rs`** / [`CLI_CONTRACT.md`](CLI_CONTRACT.md) (mainly **`tool-replay`** today). In-process **`runtime/cli/{chat,repl}`** and **`runtime/tui`** were removed in **D2.2**; use Client **`crabmate-tui`**.
 
 Hot reload for **`serve`**: **`POST /config/reload`** (see **`docs/en/CONFIGURATION.md`**).
 
