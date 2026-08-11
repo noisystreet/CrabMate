@@ -72,16 +72,13 @@ pub(crate) async fn delete_uploads_handler(
     Ok(Json(DeleteUploadsResponseBody { deleted, skipped }))
 }
 
-pub(crate) async fn cleanup_uploads_dir(
-    dir: std::path::PathBuf,
-    max_age: std::time::Duration,
-    max_bytes: u64,
-) {
-    let now = std::time::SystemTime::now();
-    let mut entries: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
-    let mut total: u64 = 0;
+type UploadEntry = (std::path::PathBuf, std::time::SystemTime, u64);
 
-    let mut rd = match tokio::fs::read_dir(&dir).await {
+async fn collect_upload_entries(dir: &std::path::Path) -> Option<(Vec<UploadEntry>, u64)> {
+    let now = std::time::SystemTime::now();
+    let mut entries: Vec<UploadEntry> = Vec::new();
+    let mut total: u64 = 0;
+    let mut rd = match tokio::fs::read_dir(dir).await {
         Ok(r) => r,
         Err(e) => {
             error!(
@@ -90,10 +87,9 @@ pub(crate) async fn cleanup_uploads_dir(
                 dir.display(),
                 e
             );
-            return;
+            return None;
         }
     };
-
     while let Ok(Some(ent)) = rd.next_entry().await {
         let path = ent.path();
         let meta = match ent.metadata().await {
@@ -108,9 +104,16 @@ pub(crate) async fn cleanup_uploads_dir(
         total = total.saturating_add(size);
         entries.push((path, mtime, size));
     }
+    Some((entries, total))
+}
 
-    // 1) 先按时间清理
-    let mut kept: Vec<(std::path::PathBuf, std::time::SystemTime, u64)> = Vec::new();
+async fn purge_uploads_by_age(
+    entries: Vec<UploadEntry>,
+    now: std::time::SystemTime,
+    max_age: std::time::Duration,
+    total: &mut u64,
+) -> Vec<UploadEntry> {
+    let mut kept = Vec::new();
     for (p, mt, sz) in entries {
         let too_old = now
             .duration_since(mt)
@@ -119,25 +122,42 @@ pub(crate) async fn cleanup_uploads_dir(
             .unwrap_or(false);
         if too_old {
             if tokio::fs::remove_file(&p).await.is_ok() {
-                total = total.saturating_sub(sz);
+                *total = total.saturating_sub(sz);
             }
         } else {
             kept.push((p, mt, sz));
         }
     }
+    kept
+}
 
-    // 2) 再按容量清理（从最旧开始删，直到 <= max_bytes）
-    if total > max_bytes {
-        kept.sort_by_key(|x| x.1);
-        for (p, _mt, sz) in kept {
-            if total <= max_bytes {
-                break;
-            }
-            if tokio::fs::remove_file(&p).await.is_ok() {
-                total = total.saturating_sub(sz);
-            }
+async fn purge_uploads_by_bytes(kept: Vec<UploadEntry>, max_bytes: u64, total: &mut u64) {
+    if *total <= max_bytes {
+        return;
+    }
+    let mut kept = kept;
+    kept.sort_by_key(|x| x.1);
+    for (p, _mt, sz) in kept {
+        if *total <= max_bytes {
+            break;
+        }
+        if tokio::fs::remove_file(&p).await.is_ok() {
+            *total = total.saturating_sub(sz);
         }
     }
+}
+
+pub(crate) async fn cleanup_uploads_dir(
+    dir: std::path::PathBuf,
+    max_age: std::time::Duration,
+    max_bytes: u64,
+) {
+    let now = std::time::SystemTime::now();
+    let Some((entries, mut total)) = collect_upload_entries(&dir).await else {
+        return;
+    };
+    let kept = purge_uploads_by_age(entries, now, max_age, &mut total).await;
+    purge_uploads_by_bytes(kept, max_bytes, &mut total).await;
 }
 
 fn sanitize_display_filename(input: &str) -> String {
@@ -169,6 +189,109 @@ fn ext_lower(file_name: &str) -> Option<String> {
         .map(|s| s.to_ascii_lowercase())
 }
 
+async fn write_upload_field_chunks(
+    field: &mut axum::extract::multipart::Field<'_>,
+    path: &std::path::Path,
+    f: &mut tokio::fs::File,
+    max_single: u64,
+    total: &mut u64,
+    max_total: u64,
+) -> Result<u64, UploadErr> {
+    let mut size: u64 = 0;
+    loop {
+        let next = match field.chunk().await {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = tokio::fs::remove_file(path).await;
+                return Err(upload_api_error(
+                    StatusCode::BAD_REQUEST,
+                    "UPLOAD_READ_ERROR",
+                    format!("读取上传内容失败：{}", e),
+                ));
+            }
+        };
+        let Some(chunk) = next else {
+            break;
+        };
+        let chunk_len = chunk.len() as u64;
+        size += chunk_len;
+        *total += chunk_len;
+        if size > max_single {
+            let _ = tokio::fs::remove_file(path).await;
+            return Err(upload_api_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "UPLOAD_FILE_TOO_LARGE",
+                "单个文件过大",
+            ));
+        }
+        if *total > max_total {
+            let _ = tokio::fs::remove_file(path).await;
+            return Err(upload_api_error(
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "UPLOAD_TOO_LARGE",
+                "上传内容过大",
+            ));
+        }
+        f.write_all(&chunk).await.map_err(|e| {
+            upload_api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "UPLOAD_WRITE_ERROR",
+                format!("写入上传内容失败：{}", e),
+            )
+        })?;
+    }
+    Ok(size)
+}
+
+fn upload_safe_disk_name(file_name: &str) -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    let ext = ext_lower(file_name).unwrap_or_default();
+    let ext_with_dot = if ext.is_empty() {
+        "".to_string()
+    } else {
+        format!(".{}", ext)
+    };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot)
+}
+
+async fn store_one_upload_field(
+    facet: &UploadsFacet,
+    field: axum::extract::multipart::Field<'_>,
+    total: &mut u64,
+    max_total: u64,
+) -> Result<UploadedFileInfo, UploadErr> {
+    let raw_name = field.file_name().unwrap_or("upload.bin");
+    let file_name = sanitize_display_filename(raw_name);
+    let mime = field
+        .content_type()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "application/octet-stream".to_string());
+    let max_single = upload_max_single_bytes(&file_name, &mime)?;
+    let safe_name = upload_safe_disk_name(&file_name);
+    let path = facet.uploads_dir.join(&safe_name);
+    let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
+        upload_api_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "UPLOAD_WRITE_ERROR",
+            format!("无法写入上传文件：{}", e),
+        )
+    })?;
+    let mut field = field;
+    let size =
+        write_upload_field_chunks(&mut field, &path, &mut f, max_single, total, max_total).await?;
+    Ok(UploadedFileInfo {
+        url: format!("/uploads/{}", safe_name),
+        filename: file_name,
+        mime,
+        size,
+    })
+}
+
 pub(crate) async fn upload_handler(
     State(facet): State<UploadsFacet>,
     mut multipart: Multipart,
@@ -177,8 +300,6 @@ pub(crate) async fn upload_handler(
     let max_total: u64 = 200 * 1024 * 1024; // 200MB total
     let max_files: usize = 20;
     let mut total: u64 = 0;
-
-    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
     while let Some(field) = multipart.next_field().await.map_err(|e| {
         upload_api_error(
@@ -194,91 +315,7 @@ pub(crate) async fn upload_handler(
                 "上传文件数量过多",
             ));
         }
-
-        let raw_name = field.file_name().unwrap_or("upload.bin");
-        let file_name = sanitize_display_filename(raw_name);
-        let mime = field
-            .content_type()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "application/octet-stream".to_string());
-
-        let max_single = upload_max_single_bytes(&file_name, &mime)?;
-
-        let ext = ext_lower(&file_name).unwrap_or_default();
-        let ext_with_dot = if ext.is_empty() {
-            "".to_string()
-        } else {
-            format!(".{}", ext)
-        };
-
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis();
-        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let safe_name = format!("u{}_{}_{}{}", std::process::id(), ts, n, ext_with_dot);
-        let path = facet.uploads_dir.join(&safe_name);
-
-        let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
-            upload_api_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "UPLOAD_WRITE_ERROR",
-                format!("无法写入上传文件：{}", e),
-            )
-        })?;
-
-        let mut size: u64 = 0;
-        let mut field = field;
-        loop {
-            let next = match field.chunk().await {
-                Ok(v) => v,
-                Err(e) => {
-                    let _ = tokio::fs::remove_file(&path).await;
-                    return Err(upload_api_error(
-                        StatusCode::BAD_REQUEST,
-                        "UPLOAD_READ_ERROR",
-                        format!("读取上传内容失败：{}", e),
-                    ));
-                }
-            };
-            let Some(chunk) = next else {
-                break;
-            };
-            let chunk_len = chunk.len() as u64;
-            size += chunk_len;
-            total += chunk_len;
-            if size > max_single {
-                let _ = tokio::fs::remove_file(&path).await;
-                return Err(upload_api_error(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "UPLOAD_FILE_TOO_LARGE",
-                    "单个文件过大",
-                ));
-            }
-            if total > max_total {
-                let _ = tokio::fs::remove_file(&path).await;
-                return Err(upload_api_error(
-                    StatusCode::PAYLOAD_TOO_LARGE,
-                    "UPLOAD_TOO_LARGE",
-                    "上传内容过大",
-                ));
-            }
-            f.write_all(&chunk).await.map_err(|e| {
-                upload_api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "UPLOAD_WRITE_ERROR",
-                    format!("写入上传内容失败：{}", e),
-                )
-            })?;
-        }
-
-        let url = format!("/uploads/{}", safe_name);
-        out.push(UploadedFileInfo {
-            url,
-            filename: file_name,
-            mime,
-            size,
-        });
+        out.push(store_one_upload_field(&facet, field, &mut total, max_total).await?);
     }
 
     Ok(Json(UploadResponseBody { files: out }))

@@ -9,39 +9,33 @@ use axum::{
 use log::error;
 use serde_json;
 
-use crate::text_encoding::{decode_bytes_strict, parse_text_encoding_name};
+use super::handlers_sync::workspace_dir_create_sync;
+#[cfg(unix)]
+use super::handlers_sync::{
+    workspace_delete_file_sync_unix, workspace_file_write_sync_unix, workspace_list_entries_sync,
+    workspace_read_file_sync_unix,
+};
+#[cfg(not(unix))]
+use crate::text_encoding::decode_bytes_strict;
+use crate::text_encoding::parse_text_encoding_name;
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::http_types::validation::{
     clamp_workspace_search_max_results, validate_workspace_file_write_request,
     validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
 };
+#[cfg(not(unix))]
+use crate::web::http_types::workspace::WorkspaceEntry;
 use crate::web::http_types::workspace::{
     WorkspaceDirCreateBody, WorkspaceDirCreateResponse, WorkspaceDirDeleteQuery,
-    WorkspaceDirDeleteResponse, WorkspaceEntry, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
+    WorkspaceDirDeleteResponse, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
     WorkspaceFileReadResponse, WorkspaceFileWriteBody, WorkspaceFileWriteResponse,
     WorkspacePickResponse, WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse,
     WorkspaceSearchBody, WorkspaceSearchResponse, WorkspaceSetBody,
 };
-#[cfg(unix)]
-use crate::workspace::fs::{
-    open_directory_under_root, open_existing_file_under_root, unlink_file_under_root,
-};
-
-use super::handlers_sync::workspace_dir_create_sync;
-#[cfg(unix)]
-use super::handlers_sync::workspace_file_write_sync_unix;
 use crate::workspace::path::{
     WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
     validate_effective_workspace_base, validate_workspace_set_path,
 };
-#[cfg(unix)]
-use libc;
-#[cfg(unix)]
-use nix::dir::Type;
-#[cfg(unix)]
-use nix::fcntl::AtFlags;
-#[cfg(unix)]
-use nix::sys::stat::fstatat;
 
 const WORKSPACE_FILE_READ_MAX_BYTES: u64 = 1_048_576;
 
@@ -195,19 +189,22 @@ async fn set_workspace_from_raw_path(
     Ok(Json(serde_json::json!({ "ok": true, "path": path_str })))
 }
 
-/// 列出当前工作区或子目录
-pub async fn workspace_handler(
-    State(http): State<AppStateHttpCore>,
-    Query(query): Query<WorkspaceQuery>,
-) -> Json<WorkspaceResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&http).await {
+fn workspace_list_empty(path: String, error: Option<String>) -> Json<WorkspaceResponse> {
+    Json(WorkspaceResponse {
+        path,
+        entries: Vec::new(),
+        error,
+    })
+}
+
+async fn workspace_list_resolve_dirs(
+    http: &AppStateHttpCore,
+    query_path: Option<&str>,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), Json<WorkspaceResponse>> {
+    let base_canonical = match effective_workspace_base_canonical(http).await {
         Ok(p) => p,
         Err(WorkspacePathError::WebEffectiveWorkspaceUnset) => {
-            return Json(WorkspaceResponse {
-                path: String::new(),
-                entries: Vec::new(),
-                error: None,
-            });
+            return Err(workspace_list_empty(String::new(), None));
         }
         Err(e) => {
             log::warn!(
@@ -216,123 +213,143 @@ pub async fn workspace_handler(
                 e.kind(),
                 e
             );
-            return Json(WorkspaceResponse {
-                path: String::new(),
-                entries: Vec::new(),
-                error: Some(e.user_message()),
-            });
+            return Err(workspace_list_empty(String::new(), Some(e.user_message())));
         }
     };
-    let canonical = match resolve_web_workspace_read_path(&base_canonical, query.path.as_deref()) {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceResponse {
-                path: base_canonical.display().to_string(),
-                entries: Vec::new(),
-                error: Some(e.user_message()),
-            });
-        }
-    };
-    let path_str = canonical.display().to_string();
-
-    #[cfg(unix)]
-    {
-        let base = base_canonical.clone();
-        let can = canonical.clone();
-        let path_for_resp = path_str.clone();
-        match tokio::task::spawn_blocking(move || {
-            let (mut dir, _) = open_directory_under_root(&base, &can)
-                .map_err(|e| format!("无法读取工作目录: {e}"))?;
-            let mut names: Vec<String> = Vec::new();
-            let mut types_hint: Vec<Option<Type>> = Vec::new();
-            for ent in dir.iter() {
-                let ent = ent.map_err(|e| format!("读取目录项失败: {e}"))?;
-                let name_c = ent.file_name();
-                let nb = name_c.to_bytes();
-                if nb == b"." || nb == b".." {
-                    continue;
-                }
-                names.push(String::from_utf8_lossy(nb).to_string());
-                types_hint.push(ent.file_type());
-            }
-            let mut entries = Vec::new();
-            for (name, hint) in names.into_iter().zip(types_hint) {
-                let is_dir = match hint {
-                    Some(Type::Directory) => true,
-                    Some(Type::Symlink) | None => {
-                        let st = fstatat(&dir, name.as_str(), AtFlags::AT_SYMLINK_NOFOLLOW)
-                            .map_err(|e| format!("读取目录项失败: {e}"))?;
-                        (st.st_mode & libc::S_IFMT) == libc::S_IFDIR
-                    }
-                    _ => false,
-                };
-                entries.push(WorkspaceEntry { name, is_dir });
-            }
-            entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
-            Ok::<_, String>((path_for_resp, entries))
-        })
-        .await
-        {
-            Ok(Ok((p, entries))) => Json(WorkspaceResponse {
-                path: p,
-                entries,
-                error: None,
-            }),
-            Ok(Err(msg)) => {
-                log::warn!("{}", msg);
-                Json(WorkspaceResponse {
-                    path: path_str,
-                    entries: Vec::new(),
-                    error: Some(msg),
-                })
-            }
-            Err(e) => {
-                log::warn!("workspace list join error: {}", e);
-                Json(WorkspaceResponse {
-                    path: path_str,
-                    entries: Vec::new(),
-                    error: Some("列出工作区失败".to_string()),
-                })
-            }
-        }
+    match resolve_web_workspace_read_path(&base_canonical, query_path) {
+        Ok(canonical) => Ok((base_canonical, canonical)),
+        Err(e) => Err(workspace_list_empty(
+            base_canonical.display().to_string(),
+            Some(e.user_message()),
+        )),
     }
+}
 
-    #[cfg(not(unix))]
+#[cfg(unix)]
+async fn workspace_list_unix(
+    base_canonical: std::path::PathBuf,
+    canonical: std::path::PathBuf,
+    path_str: String,
+) -> Json<WorkspaceResponse> {
+    let base = base_canonical;
+    let can = canonical;
+    let path_for_resp = path_str.clone();
+    match tokio::task::spawn_blocking(move || {
+        workspace_list_entries_sync(base, can).map(|entries| (path_for_resp, entries))
+    })
+    .await
     {
-        let mut entries = Vec::new();
-        let mut read_dir = match tokio::fs::read_dir(&canonical).await {
-            Ok(d) => d,
-            Err(e) => {
-                let msg = format!("无法读取工作目录: {}", e);
-                log::warn!("{}", msg);
-                return Json(WorkspaceResponse {
-                    path: path_str,
-                    entries: Vec::new(),
-                    error: Some(msg),
-                });
-            }
-        };
-        loop {
-            let entry = match read_dir.next_entry().await {
-                Ok(Some(e)) => e,
-                Ok(None) => break,
-                Err(e) => {
-                    let msg = format!("读取目录项失败: {}", e);
-                    log::warn!("{}", msg);
-                    break;
-                }
-            };
-            let name = entry.file_name().to_string_lossy().to_string();
-            let is_dir = entry.metadata().await.map(|m| m.is_dir()).unwrap_or(false);
-            entries.push(WorkspaceEntry { name, is_dir });
-        }
-        entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
-        Json(WorkspaceResponse {
-            path: path_str,
+        Ok(Ok((p, entries))) => Json(WorkspaceResponse {
+            path: p,
             entries,
             error: None,
-        })
+        }),
+        Ok(Err(msg)) => {
+            log::warn!("{}", msg);
+            workspace_list_empty(path_str, Some(msg))
+        }
+        Err(e) => {
+            log::warn!("workspace list join error: {}", e);
+            workspace_list_empty(path_str, Some("列出工作区失败".to_string()))
+        }
     }
+}
+
+#[cfg(not(unix))]
+async fn workspace_list_non_unix(
+    canonical: std::path::PathBuf,
+    path_str: String,
+) -> Json<WorkspaceResponse> {
+    let mut entries = Vec::new();
+    let mut read_dir = match tokio::fs::read_dir(&canonical).await {
+        Ok(d) => d,
+        Err(e) => {
+            let msg = format!("无法读取工作目录: {}", e);
+            log::warn!("{}", msg);
+            return workspace_list_empty(path_str, Some(msg));
+        }
+    };
+    loop {
+        let entry = match read_dir.next_entry().await {
+            Ok(Some(e)) => e,
+            Ok(None) => break,
+            Err(e) => {
+                let msg = format!("读取目录项失败: {}", e);
+                log::warn!("{}", msg);
+                break;
+            }
+        };
+        let name = entry.file_name().to_string_lossy().to_string();
+        let is_dir = entry.metadata().await.map(|m| m.is_dir()).unwrap_or(false);
+        entries.push(WorkspaceEntry { name, is_dir });
+    }
+    entries.sort_by_cached_key(|e| (!e.is_dir, e.name.to_lowercase()));
+    Json(WorkspaceResponse {
+        path: path_str,
+        entries,
+        error: None,
+    })
+}
+
+/// 列出当前工作区或子目录
+pub async fn workspace_handler(
+    State(http): State<AppStateHttpCore>,
+    Query(query): Query<WorkspaceQuery>,
+) -> Json<WorkspaceResponse> {
+    let (base_canonical, canonical) =
+        match workspace_list_resolve_dirs(&http, query.path.as_deref()).await {
+            Ok(v) => v,
+            Err(resp) => return resp,
+        };
+    let path_str = canonical.display().to_string();
+    #[cfg(unix)]
+    {
+        workspace_list_unix(base_canonical, canonical, path_str).await
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = base_canonical;
+        workspace_list_non_unix(canonical, path_str).await
+    }
+}
+
+fn workspace_search_rel_path(
+    base_canonical: &std::path::Path,
+    path: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(raw) = path else {
+        return Ok(None);
+    };
+    if raw.trim().is_empty() {
+        return Ok(None);
+    }
+    let canonical =
+        resolve_web_workspace_read_path(base_canonical, Some(raw)).map_err(|e| e.user_message())?;
+    Ok(canonical
+        .strip_prefix(base_canonical)
+        .ok()
+        .map(|r| r.to_string_lossy().to_string()))
+}
+
+fn build_workspace_search_args(
+    pattern: &str,
+    rel_path: Option<String>,
+    body: &WorkspaceSearchBody,
+) -> String {
+    let mut args = serde_json::json!({ "pattern": pattern });
+    if let Some(p) = rel_path {
+        args["path"] = serde_json::Value::String(p);
+    }
+    if let Some(m) = clamp_workspace_search_max_results(body.max_results) {
+        args["max_results"] = serde_json::json!(m);
+    }
+    if let Some(ci) = body.case_insensitive {
+        args["case_insensitive"] = serde_json::json!(ci);
+    }
+    if let Some(ih) = body.ignore_hidden {
+        args["ignore_hidden"] = serde_json::json!(ih);
+    }
+    args.to_string()
 }
 
 /// 在当前工作区内搜索文件内容（基于 search_in_files/grep 工具），返回纯文本结果
@@ -358,41 +375,16 @@ pub async fn workspace_search_handler(
             });
         }
     };
-    let rel_path = match body.path.as_deref() {
-        None => None,
-        Some(raw) => {
-            if raw.trim().is_empty() {
-                None
-            } else {
-                match resolve_web_workspace_read_path(&base_canonical, Some(raw)) {
-                    Ok(canonical) => match canonical.strip_prefix(&base_canonical) {
-                        Ok(r) => Some(r.to_string_lossy().to_string()),
-                        Err(_) => None,
-                    },
-                    Err(e) => {
-                        return Json(WorkspaceSearchResponse {
-                            output: String::new(),
-                            error: Some(e.user_message()),
-                        });
-                    }
-                }
-            }
+    let rel_path = match workspace_search_rel_path(&base_canonical, body.path.as_deref()) {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(WorkspaceSearchResponse {
+                output: String::new(),
+                error: Some(e),
+            });
         }
     };
-    let mut args = serde_json::json!({ "pattern": pattern });
-    if let Some(p) = rel_path {
-        args["path"] = serde_json::Value::String(p);
-    }
-    if let Some(m) = clamp_workspace_search_max_results(body.max_results) {
-        args["max_results"] = serde_json::json!(m);
-    }
-    if let Some(ci) = body.case_insensitive {
-        args["case_insensitive"] = serde_json::json!(ci);
-    }
-    if let Some(ih) = body.ignore_hidden {
-        args["ignore_hidden"] = serde_json::json!(ih);
-    }
-    let args_json = args.to_string();
+    let args_json = build_workspace_search_args(pattern, rel_path, &body);
     let cfg_snap = {
         let g = http.cfg.read().await;
         g.clone()
@@ -428,6 +420,72 @@ pub async fn workspace_search_handler(
     })
 }
 
+fn workspace_file_read_err(msg: String) -> Json<WorkspaceFileReadResponse> {
+    Json(WorkspaceFileReadResponse {
+        content: String::new(),
+        error: Some(msg),
+    })
+}
+
+#[cfg(unix)]
+async fn workspace_file_read_unix(
+    base_canonical: std::path::PathBuf,
+    canonical: std::path::PathBuf,
+    enc_name: crate::text_encoding::TextEncodingName,
+) -> Json<WorkspaceFileReadResponse> {
+    let base = base_canonical;
+    let can = canonical;
+    let max_b = WORKSPACE_FILE_READ_MAX_BYTES;
+    match tokio::task::spawn_blocking(move || {
+        workspace_read_file_sync_unix(base, can, enc_name, max_b)
+    })
+    .await
+    {
+        Ok(Ok(content)) => Json(WorkspaceFileReadResponse {
+            content,
+            error: None,
+        }),
+        Ok(Err(msg)) => workspace_file_read_err(msg),
+        Err(e) => workspace_file_read_err(format!("读取文件任务失败: {}", e)),
+    }
+}
+
+#[cfg(not(unix))]
+async fn workspace_file_read_non_unix(
+    canonical: std::path::PathBuf,
+    enc_name: crate::text_encoding::TextEncodingName,
+) -> Json<WorkspaceFileReadResponse> {
+    let meta = match tokio::fs::metadata(&canonical).await {
+        Ok(m) => m,
+        Err(e) => {
+            return workspace_file_read_err(format!("无法读取文件信息: {}", e));
+        }
+    };
+    if meta.is_dir() {
+        return workspace_file_read_err("路径是目录，无法读取为文件".to_string());
+    }
+    if meta.len() > WORKSPACE_FILE_READ_MAX_BYTES {
+        return workspace_file_read_err(format!(
+            "文件过大（{} 字节），当前最多读取 {} 字节",
+            meta.len(),
+            WORKSPACE_FILE_READ_MAX_BYTES
+        ));
+    }
+    let raw = match tokio::fs::read(&canonical).await {
+        Ok(b) => b,
+        Err(e) => {
+            return workspace_file_read_err(format!("读取文件失败: {}", e));
+        }
+    };
+    match decode_bytes_strict(&raw, enc_name) {
+        Ok((content, _)) => Json(WorkspaceFileReadResponse {
+            content,
+            error: None,
+        }),
+        Err(msg) => workspace_file_read_err(msg),
+    }
+}
+
 /// 工作区文件读取：按 path 返回文件内容（path 为工作区内文件路径）
 pub async fn workspace_file_read_handler(
     State(http): State<AppStateHttpCore>,
@@ -441,92 +499,71 @@ pub async fn workspace_file_read_handler(
 
     #[cfg(unix)]
     {
-        use std::io::Read;
-        let base = base_canonical.clone();
-        let can = canonical.clone();
-        let max_b = WORKSPACE_FILE_READ_MAX_BYTES;
-        match tokio::task::spawn_blocking(move || -> Result<(String, _), String> {
-            let opened = open_existing_file_under_root(&base, &can)
-                .map_err(|e| format!("无法读取文件信息: {e}"))?;
-            if opened.metadata.is_dir() {
-                return Err("路径是目录，无法读取为文件".to_string());
-            }
-            let len = opened.metadata.len();
-            if len > max_b {
-                return Err(format!(
-                    "文件过大（{} 字节），当前最多读取 {} 字节",
-                    len, max_b
-                ));
-            }
-            let mut f = opened.file;
-            let mut raw = Vec::new();
-            f.read_to_end(&mut raw)
-                .map_err(|e| format!("读取文件失败: {e}"))?;
-            decode_bytes_strict(&raw, enc_name)
-        })
-        .await
-        {
-            Ok(Ok((content, _))) => Json(WorkspaceFileReadResponse {
-                content,
-                error: None,
-            }),
-            Ok(Err(msg)) => Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(msg),
-            }),
-            Err(e) => Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(format!("读取文件任务失败: {}", e)),
-            }),
-        }
+        workspace_file_read_unix(base_canonical, canonical, enc_name).await
     }
-
     #[cfg(not(unix))]
     {
-        let meta = match tokio::fs::metadata(&canonical).await {
-            Ok(m) => m,
-            Err(e) => {
-                return Json(WorkspaceFileReadResponse {
-                    content: String::new(),
-                    error: Some(format!("无法读取文件信息: {}", e)),
-                });
-            }
-        };
-        if meta.is_dir() {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some("路径是目录，无法读取为文件".to_string()),
-            });
+        let _ = base_canonical;
+        workspace_file_read_non_unix(canonical, enc_name).await
+    }
+}
+
+fn workspace_file_delete_err(msg: String) -> Json<WorkspaceFileDeleteResponse> {
+    Json(WorkspaceFileDeleteResponse { error: Some(msg) })
+}
+
+async fn workspace_file_delete_resolve(
+    http: &AppStateHttpCore,
+    query: &WorkspaceFileQuery,
+) -> Result<(std::path::PathBuf, std::path::PathBuf), Json<WorkspaceFileDeleteResponse>> {
+    let base_canonical = match effective_workspace_base_canonical(http).await {
+        Ok(p) => p,
+        Err(e) => return Err(workspace_file_delete_err(e.user_message())),
+    };
+    if let Err(e) = validate_workspace_query_encoding_optional(query.encoding.as_deref()) {
+        return Err(workspace_file_delete_err(e));
+    }
+    if query.path.trim().is_empty() {
+        return Err(workspace_file_delete_err("path 不能为空".to_string()));
+    }
+    match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
+        Ok(canonical) => Ok((base_canonical, canonical)),
+        Err(e) => Err(workspace_file_delete_err(e.user_message())),
+    }
+}
+
+#[cfg(unix)]
+async fn workspace_file_delete_unix(
+    base_canonical: std::path::PathBuf,
+    canonical: std::path::PathBuf,
+) -> Json<WorkspaceFileDeleteResponse> {
+    match tokio::task::spawn_blocking(move || {
+        workspace_delete_file_sync_unix(base_canonical, canonical)
+    })
+    .await
+    {
+        Ok(Ok(())) => Json(WorkspaceFileDeleteResponse { error: None }),
+        Ok(Err(msg)) => workspace_file_delete_err(msg),
+        Err(e) => workspace_file_delete_err(format!("删除文件任务失败: {}", e)),
+    }
+}
+
+#[cfg(not(unix))]
+async fn workspace_file_delete_non_unix(
+    canonical: std::path::PathBuf,
+) -> Json<WorkspaceFileDeleteResponse> {
+    let meta = match tokio::fs::metadata(&canonical).await {
+        Ok(m) => m,
+        Err(e) => {
+            return workspace_file_delete_err(format!("无法读取文件信息: {}", e));
         }
-        if meta.len() > WORKSPACE_FILE_READ_MAX_BYTES {
-            return Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(format!(
-                    "文件过大（{} 字节），当前最多读取 {} 字节",
-                    meta.len(),
-                    WORKSPACE_FILE_READ_MAX_BYTES
-                )),
-            });
-        }
-        let raw = match tokio::fs::read(&canonical).await {
-            Ok(b) => b,
-            Err(e) => {
-                return Json(WorkspaceFileReadResponse {
-                    content: String::new(),
-                    error: Some(format!("读取文件失败: {}", e)),
-                });
-            }
-        };
-        match decode_bytes_strict(&raw, enc_name) {
-            Ok((content, _)) => Json(WorkspaceFileReadResponse {
-                content,
-                error: None,
-            }),
-            Err(msg) => Json(WorkspaceFileReadResponse {
-                content: String::new(),
-                error: Some(msg),
-            }),
-        }
+    };
+    if meta.is_dir() {
+        return workspace_file_delete_err("不支持删除目录".to_string());
+    }
+    match tokio::fs::remove_file(&canonical).await {
+        Ok(()) => Json(WorkspaceFileDeleteResponse { error: None }),
+        Err(e) => workspace_file_delete_err(format!("删除文件失败: {}", e)),
     }
 }
 
@@ -535,76 +572,19 @@ pub async fn workspace_file_delete_handler(
     State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceFileQuery>,
 ) -> Json<WorkspaceFileDeleteResponse> {
-    let base_canonical = match effective_workspace_base_canonical(&http).await {
-        Ok(p) => p,
-        Err(e) => {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some(e.user_message()),
-            });
-        }
+    let (base_canonical, canonical) = match workspace_file_delete_resolve(&http, &query).await {
+        Ok(v) => v,
+        Err(e) => return e,
     };
-    if let Err(e) = validate_workspace_query_encoding_optional(query.encoding.as_deref()) {
-        return Json(WorkspaceFileDeleteResponse { error: Some(e) });
-    }
-    let path = query.path.trim();
-    if path.is_empty() {
-        return Json(WorkspaceFileDeleteResponse {
-            error: Some("path 不能为空".to_string()),
-        });
-    }
-    let canonical =
-        match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
-            Ok(p) => p,
-            Err(e) => {
-                return Json(WorkspaceFileDeleteResponse {
-                    error: Some(e.user_message()),
-                });
-            }
-        };
 
     #[cfg(unix)]
     {
-        let base = base_canonical.clone();
-        let can = canonical.clone();
-        match tokio::task::spawn_blocking(move || {
-            let opened = open_existing_file_under_root(&base, &can)
-                .map_err(|e| format!("无法读取文件信息: {e}"))?;
-            if opened.metadata.is_dir() {
-                return Err("不支持删除目录".to_string());
-            }
-            unlink_file_under_root(&base, &can).map_err(|e| format!("删除文件失败: {e}"))
-        })
-        .await
-        {
-            Ok(Ok(())) => Json(WorkspaceFileDeleteResponse { error: None }),
-            Ok(Err(msg)) => Json(WorkspaceFileDeleteResponse { error: Some(msg) }),
-            Err(e) => Json(WorkspaceFileDeleteResponse {
-                error: Some(format!("删除文件任务失败: {}", e)),
-            }),
-        }
+        workspace_file_delete_unix(base_canonical, canonical).await
     }
-
     #[cfg(not(unix))]
     {
-        let meta = match tokio::fs::metadata(&canonical).await {
-            Ok(m) => m,
-            Err(e) => {
-                return Json(WorkspaceFileDeleteResponse {
-                    error: Some(format!("无法读取文件信息: {}", e)),
-                });
-            }
-        };
-        if meta.is_dir() {
-            return Json(WorkspaceFileDeleteResponse {
-                error: Some("不支持删除目录".to_string()),
-            });
-        }
-        match tokio::fs::remove_file(&canonical).await {
-            Ok(()) => Json(WorkspaceFileDeleteResponse { error: None }),
-            Err(e) => Json(WorkspaceFileDeleteResponse {
-                error: Some(format!("删除文件失败: {}", e)),
-            }),
-        }
+        let _ = base_canonical;
+        workspace_file_delete_non_unix(canonical).await
     }
 }
 
@@ -623,6 +603,35 @@ async fn workspace_dir_create_response(
         Err(e) => Json(WorkspaceFileWriteResponse {
             error: Some(format!("创建目录任务失败: {}", e)),
         }),
+    }
+}
+
+fn workspace_file_write_err(msg: String) -> Json<WorkspaceFileWriteResponse> {
+    Json(WorkspaceFileWriteResponse { error: Some(msg) })
+}
+
+#[cfg(not(unix))]
+async fn workspace_file_write_non_unix(
+    canonical: std::path::PathBuf,
+    body: WorkspaceFileWriteBody,
+) -> Json<WorkspaceFileWriteResponse> {
+    let exists = tokio::fs::try_exists(&canonical).await.unwrap_or(false);
+    if body.create_only && exists {
+        return workspace_file_write_err("文件已存在，无法仅创建".to_string());
+    }
+    if body.update_only && !exists {
+        return workspace_file_write_err("文件不存在，无法仅修改".to_string());
+    }
+
+    if let Some(parent) = canonical.parent()
+        && !parent.as_os_str().is_empty()
+        && let Err(e) = tokio::fs::create_dir_all(parent).await
+    {
+        return workspace_file_write_err(format!("创建目录失败: {}", e));
+    }
+    match tokio::fs::write(&canonical, body.content.as_bytes()).await {
+        Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
+        Err(e) => workspace_file_write_err(format!("写入文件失败: {}", e)),
     }
 }
 
@@ -648,41 +657,15 @@ async fn workspace_file_write_resolved(
         .await
         {
             Ok(Ok(())) => Json(WorkspaceFileWriteResponse { error: None }),
-            Ok(Err(msg)) => Json(WorkspaceFileWriteResponse { error: Some(msg) }),
-            Err(e) => Json(WorkspaceFileWriteResponse {
-                error: Some(format!("写入文件任务失败: {}", e)),
-            }),
+            Ok(Err(msg)) => workspace_file_write_err(msg),
+            Err(e) => workspace_file_write_err(format!("写入文件任务失败: {}", e)),
         }
     }
 
     #[cfg(not(unix))]
     {
-        let exists = tokio::fs::try_exists(&canonical).await.unwrap_or(false);
-        if body.create_only && exists {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some("文件已存在，无法仅创建".to_string()),
-            });
-        }
-        if body.update_only && !exists {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some("文件不存在，无法仅修改".to_string()),
-            });
-        }
-
-        if let Some(parent) = canonical.parent()
-            && !parent.as_os_str().is_empty()
-            && let Err(e) = tokio::fs::create_dir_all(parent).await
-        {
-            return Json(WorkspaceFileWriteResponse {
-                error: Some(format!("创建目录失败: {}", e)),
-            });
-        }
-        match tokio::fs::write(&canonical, body.content.as_bytes()).await {
-            Ok(()) => Json(WorkspaceFileWriteResponse { error: None }),
-            Err(e) => Json(WorkspaceFileWriteResponse {
-                error: Some(format!("写入文件失败: {}", e)),
-            }),
-        }
+        let _ = base_canonical;
+        workspace_file_write_non_unix(canonical, body).await
     }
 }
 
