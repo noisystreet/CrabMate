@@ -67,6 +67,8 @@ pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
 pub(crate) use turn_sink::TurnControlSink;
 
 #[cfg(test)]
+mod http_sse_failure_path_golden;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod turn_route_decision_golden;

@@ -1,0 +1,46 @@
+# HTTP / SSE 失败路径契约金样（零网络）。
+# 对齐 docs/SSE协议.md、docs/命令行契约.md、RunAgentTurnError / client_sse_protocol 握手。
+# kind:
+#   turn — RunAgentTurnError → public_code / http_status / sse / ApiError / job_outcome
+#   sse_protocol — reject_if_client_sse_protocol_invalid（client_sse_protocol）
+#   http_api_constant — crabmate_api_contract::error_codes 与文档 HTTP 状态对照（握手队列类）
+#
+# turn.case 字段：
+#   variant: llm_cancelled | llm_transport | llm_other | turn_aborted_sse | turn_aborted_user
+#            | other | step_retry | replan | time_limit | token_limit
+#   phase: planner | executor | reflect
+#   http_status?: u16（仅 llm_transport）
+#   user_message?: string（llm_transport）
+#   message?: string（other / 预算类）
+#   abort?: sse_disconnected | user_cancelled
+#   turn_id?: u64（传给 sse_error_payload）
+# expect:
+#   public_code, http_status, sse_code
+#   http_has_reason_code, sse_has_reason_code
+#   job_outcome: user_cancelled | failure_emit_sse
+#   public_message_contains?: string（可选子串）
+
+{"id":"llm_cancelled","kind":"turn","case":{"variant":"llm_cancelled","phase":"planner","turn_id":7},"expect":{"public_code":"STREAM_CANCELLED","http_status":499,"sse_code":"STREAM_CANCELLED","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"user_cancelled"}}
+{"id":"llm_transport_503","kind":"turn","case":{"variant":"llm_transport","phase":"executor","http_status":503,"user_message":"upstream unavailable","turn_id":3},"expect":{"public_code":"LLM_REQUEST_FAILED","http_status":503,"sse_code":"LLM_REQUEST_FAILED","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"failure_emit_sse","public_message_contains":"upstream"}}
+{"id":"llm_transport_429","kind":"turn","case":{"variant":"llm_transport","phase":"planner","http_status":429,"user_message":"rate limited","turn_id":1},"expect":{"public_code":"LLM_RATE_LIMIT","http_status":429,"sse_code":"LLM_RATE_LIMIT","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"failure_emit_sse"}}
+{"id":"llm_transport_quota_msg","kind":"turn","case":{"variant":"llm_transport","phase":"planner","http_status":400,"user_message":"You exceeded your current quota","turn_id":2},"expect":{"public_code":"LLM_RATE_LIMIT","http_status":429,"sse_code":"LLM_RATE_LIMIT","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"failure_emit_sse"}}
+{"id":"llm_other_internal","kind":"turn","case":{"variant":"llm_other","phase":"planner","message":"parse blew up","turn_id":9},"expect":{"public_code":"INTERNAL_ERROR","http_status":500,"sse_code":"INTERNAL_ERROR","http_has_reason_code":true,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse","public_message_contains":"对话失败"}}
+{"id":"turn_aborted_sse","kind":"turn","case":{"variant":"turn_aborted_sse","phase":"executor","turn_id":4},"expect":{"public_code":"turn_aborted","http_status":499,"sse_code":"turn_aborted","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"failure_emit_sse"}}
+{"id":"turn_aborted_user","kind":"turn","case":{"variant":"turn_aborted_user","phase":"reflect","turn_id":5},"expect":{"public_code":"STREAM_CANCELLED","http_status":499,"sse_code":"STREAM_CANCELLED","http_has_reason_code":false,"sse_has_reason_code":false,"job_outcome":"user_cancelled"}}
+{"id":"other_internal","kind":"turn","case":{"variant":"other","phase":"executor","message":"internal: missing tool_calls","turn_id":7},"expect":{"public_code":"INTERNAL_ERROR","http_status":500,"sse_code":"INTERNAL_ERROR","http_has_reason_code":true,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse","public_message_contains":"对话失败"}}
+{"id":"step_retry_exhausted","kind":"turn","case":{"variant":"step_retry","phase":"planner","message":"step failed"},"expect":{"public_code":"STEP_RETRY_EXHAUSTED","http_status":422,"sse_code":"STEP_RETRY_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
+{"id":"replan_exhausted","kind":"turn","case":{"variant":"replan","phase":"reflect","message":"replan out"},"expect":{"public_code":"REPLAN_EXHAUSTED","http_status":422,"sse_code":"REPLAN_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
+{"id":"time_limit_exhausted","kind":"turn","case":{"variant":"time_limit","phase":"planner","message":"wall clock"},"expect":{"public_code":"TIME_LIMIT_EXHAUSTED","http_status":422,"sse_code":"TIME_LIMIT_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
+{"id":"token_limit_exhausted","kind":"turn","case":{"variant":"token_limit","phase":"executor","message":"tokens out"},"expect":{"public_code":"TOKEN_LIMIT_EXHAUSTED","http_status":422,"sse_code":"TOKEN_LIMIT_EXHAUSTED","http_has_reason_code":false,"sse_has_reason_code":true,"job_outcome":"failure_emit_sse"}}
+
+{"id":"sse_protocol_omit_ok","kind":"sse_protocol","case":{"client_sse_protocol":null},"expect":{"ok":true}}
+{"id":"sse_protocol_match_ok","kind":"sse_protocol","case":{"client_sse_protocol":"supported"},"expect":{"ok":true}}
+{"id":"sse_protocol_zero","kind":"sse_protocol","case":{"client_sse_protocol":0},"expect":{"ok":false,"http_status":400,"code":"INVALID_SSE_CLIENT_PROTOCOL"}}
+{"id":"sse_protocol_too_new","kind":"sse_protocol","case":{"client_sse_protocol":"too_new"},"expect":{"ok":false,"http_status":400,"code":"SSE_CLIENT_TOO_NEW"}}
+{"id":"sse_protocol_mismatch","kind":"sse_protocol","case":{"client_sse_protocol":"too_old"},"expect":{"ok":false,"http_status":400,"code":"SSE_PROTOCOL_MISMATCH"}}
+
+{"id":"const_queue_full","kind":"http_api_constant","case":{"code_const":"QUEUE_FULL"},"expect":{"code":"QUEUE_FULL","http_status":503}}
+{"id":"const_stream_job_gone","kind":"http_api_constant","case":{"code_const":"STREAM_JOB_GONE"},"expect":{"code":"STREAM_JOB_GONE","http_status":410}}
+{"id":"const_unauthorized","kind":"http_api_constant","case":{"code_const":"UNAUTHORIZED"},"expect":{"code":"UNAUTHORIZED","http_status":401}}
+{"id":"const_llm_api_key_required","kind":"http_api_constant","case":{"code_const":"LLM_API_KEY_REQUIRED"},"expect":{"code":"LLM_API_KEY_REQUIRED","http_status":400}}
+{"id":"const_conversation_conflict","kind":"http_api_constant","case":{"code_const":"CONVERSATION_CONFLICT"},"expect":{"code":"CONVERSATION_CONFLICT","http_status":409}}

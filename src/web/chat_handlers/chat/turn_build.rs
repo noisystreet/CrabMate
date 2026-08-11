@@ -36,7 +36,7 @@ pub(super) fn bad_request(code: &'static str, message: impl Into<String>) -> Cha
     (StatusCode::BAD_REQUEST, Json(ApiError::new(code, message)))
 }
 
-pub(super) fn reject_if_client_sse_protocol_invalid(
+pub(crate) fn reject_if_client_sse_protocol_invalid(
     client_sse_protocol: Option<u8>,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
     let Some(v) = client_sse_protocol else {
