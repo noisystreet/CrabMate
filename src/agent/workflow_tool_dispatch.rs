@@ -12,7 +12,8 @@ use super::per_coord::PerCoordinator;
 use super::workflow;
 use super::workflow_reflection_controller;
 
-/// Web / CLI 共用：执行 `workflow_execute`（含 `prepare_workflow_execute` 与可选 DAG 运行），返回工具结果正文与反思注入 JSON。
+/// 执行 `workflow_execute`（含 `prepare_workflow_execute` 与可选 DAG 运行），返回工具结果正文与反思注入 JSON。
+/// 有 `web_ctx` 时走 Interactive（Web SSE 审批）；否则 NoApproval（与运维/无会话通道一致）。
 pub async fn dispatch_workflow_execute_tool(
     runtime: ToolRuntime<'_>,
     per_coord: &mut PerCoordinator,
@@ -49,29 +50,19 @@ pub async fn dispatch_workflow_execute_tool(
         {
             contract_err.to_string()
         } else {
-            let (workspace_changed_ref, approval_mode) = match runtime {
-                ToolRuntime::Web {
-                    workspace_changed,
-                    ctx,
-                } => {
-                    let mode = if let Some(web_ctx) = ctx {
-                        workflow::WorkflowApprovalMode::Interactive {
-                            out_tx: web_ctx.out_tx.clone(),
-                            approval_rx: web_ctx.approval_rx_shared.clone(),
-                            approval_request_guard: web_ctx.approval_request_guard.clone(),
-                            persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
-                        }
-                    } else {
-                        workflow::WorkflowApprovalMode::NoApproval
-                    };
-                    (workspace_changed, mode)
+            let ToolRuntime {
+                workspace_changed: workspace_changed_ref,
+                ctx,
+            } = runtime;
+            let approval_mode = if let Some(web_ctx) = ctx {
+                workflow::WorkflowApprovalMode::Interactive {
+                    out_tx: web_ctx.out_tx.clone(),
+                    approval_rx: web_ctx.approval_rx_shared.clone(),
+                    approval_request_guard: web_ctx.approval_request_guard.clone(),
+                    persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
                 }
-                ToolRuntime::Cli {
-                    workspace_changed, ..
-                } => (
-                    workspace_changed,
-                    workflow::WorkflowApprovalMode::NoApproval,
-                ),
+            } else {
+                workflow::WorkflowApprovalMode::NoApproval
             };
             let wf_cfg = WorkflowConfig {
                 command_timeout_secs: cfg.command_exec.command_timeout_secs,

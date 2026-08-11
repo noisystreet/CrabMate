@@ -9,9 +9,7 @@ use async_trait::async_trait;
 use crabmate_config::AgentConfig;
 use crabmate_types::ToolCall;
 
-use crate::tool_registry::{
-    CliToolRuntime, DispatchToolParams, HandlerLookupTable, WebToolRuntime,
-};
+use crate::tool_registry::{DispatchToolParams, HandlerLookupTable, WebToolRuntime};
 
 /// 并行只读批预取审批失败映射的键。
 pub type ParallelPrefetchFailureKey = (String, String);
@@ -24,7 +22,6 @@ pub struct ParallelPrefetchParams<'a> {
     pub tool_calls: &'a [ToolCall],
     pub cfg: &'a Arc<AgentConfig>,
     pub web_tool_ctx: Option<&'a WebToolRuntime>,
-    pub cli_tool_ctx: Option<&'a CliToolRuntime>,
     pub handler_lookup: &'a HandlerLookupTable,
 }
 

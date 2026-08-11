@@ -8,7 +8,7 @@
 //!
 //! - [`meta`]：工具名 → 执行类别 / 元数据 / 内部分发 id（`tool_dispatch_registry!`）。
 //! - [`policy`]：并行墙钟、只读判定、`SyncDefault` 内联等与 `[tool_registry]` 配置对应。
-//! - [`runtime`]：`WebToolRuntime` / `CliToolRuntime` / [`ToolRuntime`]。
+//! - [`runtime`]：`WebToolRuntime` / [`ToolRuntime`]。
 //! - [`execute`]：`dispatch_tool` 及各类异步执行路径。
 
 mod execute;
@@ -32,7 +32,7 @@ pub use policy::{
     is_readonly_tool, parallel_tool_wall_timeout_secs, tool_calls_allow_parallel_sync_batch,
     tool_ok_for_parallel_readonly_batch_piece,
 };
-pub use runtime::{CliCommandTurnStats, CliToolRuntime, ToolRuntime, WebToolRuntime};
+pub use runtime::{ToolRuntime, WebToolRuntime};
 
 #[cfg(test)]
 mod tests;

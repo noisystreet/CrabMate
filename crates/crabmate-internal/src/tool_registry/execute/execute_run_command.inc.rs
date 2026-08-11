@@ -69,7 +69,6 @@ async fn run_command_resolve_effective_allowlist(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     cmd: &str,
     command_raw: &str,
     arg_preview: &str,
@@ -87,17 +86,15 @@ async fn run_command_resolve_effective_allowlist(
         ) {
             effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, cmd);
         } else {
-            let already_allowed = match (web_ctx, cli_ctx) {
-                (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(cmd),
-                (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(cmd),
-                (None, None) => false,
+            let already_allowed = match web_ctx {
+                Some(w) => w.persistent_allowlist_shared.lock().await.contains(cmd),
+                None => false,
             };
             if already_allowed {
                 effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, cmd);
             } else {
                 let allow_handles = crate::tool_approval::SharedAllowlistHandles {
                     web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-                    cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
                 };
                 let cmd_show = if arg_preview.is_empty() {
                     cmd.to_string()
@@ -113,30 +110,9 @@ async fn run_command_resolve_effective_allowlist(
                     cli_detail: format!("命令不在白名单:\n{}", cmd_show.trim()),
                     web_timeline_prefix_zh: "命令审批：",
                 };
-                let decision_opt = if let Some(ctx) = cli_ctx {
-                    if ctx.auto_approve_all_non_whitelist_run_command
-                        || ctx
-                            .extra_allowlist_commands
-                            .iter()
-                            .any(|e| e.eq_ignore_ascii_case(cmd))
-                    {
-                        Some(CommandApprovalDecision::AllowOnce)
-                    } else {
-                        crate::tool_approval::request_tool_interactive_approval(
-                            None,
-                            Some(crate::tool_approval::CliApprovalInput {
-                                auto_approve_all_sensitive: false
-                            }),
-                            &spec,
-                            "tool_registry::run_command approval",
-                        )
-                        .await
-                        .ok()
-                    }
-                } else if web_ctx.is_some() {
+                let decision_opt = if web_ctx.is_some() {
                     match crate::tool_approval::request_tool_interactive_approval(
                         web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
-                        None,
                         &spec,
                         "tool_registry::run_command approval",
                     )
@@ -159,9 +135,6 @@ async fn run_command_resolve_effective_allowlist(
                 if let Some(decision) = decision_opt {
                     match decision {
                         CommandApprovalDecision::Deny => {
-                            if let Some(c) = cli_ctx {
-                                c.record_run_command_denial();
-                            }
                             return Err((format!("用户拒绝执行命令：{}", cmd_show.trim()), None));
                         }
                         CommandApprovalDecision::AllowOnce => {
@@ -199,7 +172,6 @@ async fn approve_external_run_command_paths_if_needed(
     working_dir: &Path,
     allowed_commands: &[String],
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     sse_command: &str,
 ) -> Result<ExternalPathGate, String> {
     if !cfg.command_exec.allow_external_path_with_approval {
@@ -222,7 +194,7 @@ async fn approve_external_run_command_paths_if_needed(
             unsafe_args.join(", ")
         ));
     }
-    if web_ctx.is_none() && cli_ctx.is_none() {
+    if web_ctx.is_none() {
         return Err(format!(
             "错误：{sse_command} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
             unsafe_args.join(", ")
@@ -246,13 +218,9 @@ async fn approve_external_run_command_paths_if_needed(
     };
     let allow_handles = SharedAllowlistHandles {
         web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-        cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
     };
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
-        cli_ctx.map(|c| CliApprovalInput {
-            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
-        }),
         &spec,
         "tool_registry::run_command external path approval",
         &allow_handles,
@@ -267,14 +235,12 @@ async fn approve_external_run_command_paths_if_needed(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Web + CLI 双路径审批共享实现
 async fn execute_run_command_impl(
     env: &ToolExecEnv<'_>,
     effective_working_dir: &Path,
     workspace_is_set: bool,
     workspace_changed: &mut bool,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -282,15 +248,11 @@ async fn execute_run_command_impl(
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
-    if let Some(ctx) = cli_ctx {
-        ctx.record_run_command_attempt();
-    }
     let (cmd, command_raw, arg_preview) = parse_run_command_json(args);
     let effective_allowed_arc = match run_command_resolve_effective_allowlist(
         cfg,
         effective_working_dir,
         web_ctx,
-        cli_ctx,
         cmd.as_str(),
         command_raw.as_str(),
         arg_preview.as_str(),
@@ -307,7 +269,6 @@ async fn execute_run_command_impl(
         effective_working_dir,
         effective_allowed_arc.as_ref(),
         web_ctx,
-        cli_ctx,
         "run_command",
     )
     .await
@@ -396,7 +357,6 @@ pub async fn prefetch_http_fetch_parallel_approvals(
     tool_calls: &[ToolCall],
     cfg: &Arc<AgentConfig>,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
     let mut seen: HashSet<(String, String)> = HashSet::new();
@@ -422,23 +382,18 @@ pub async fn prefetch_http_fetch_parallel_approvals(
             &url,
             &cfg.http_fetch.http_fetch_allowed_prefixes,
         );
-        let allowed_by_list = match (web_ctx, cli_ctx) {
-            (Some(w), _) => w
+        let allowed_by_list = match web_ctx {
+            Some(w) => w
                 .persistent_allowlist_shared
                 .lock()
                 .await
                 .contains(&storage_key),
-            (None, Some(c)) => c
-                .persistent_allowlist_shared
-                .lock()
-                .await
-                .contains(&storage_key),
-            (None, None) => false,
+            None => false,
         };
         if allowed_by_cfg || allowed_by_list {
             continue;
         }
-        if web_ctx.is_none() && cli_ctx.is_none() {
+        if web_ctx.is_none() {
             failures.insert(
                 key,
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
@@ -460,13 +415,9 @@ pub async fn prefetch_http_fetch_parallel_approvals(
         };
         let allow_handles = crate::tool_approval::SharedAllowlistHandles {
             web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
         };
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
-            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
-                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
-            }),
             &spec,
             "tool_registry::http_fetch approval parallel prefetch",
             &allow_handles,

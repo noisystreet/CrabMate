@@ -199,7 +199,6 @@ pub(super) async fn emit_tool_result_sse_and_append(
     } = p;
     let out = control.out;
     let sse_control_mirror = control.sse_control_mirror;
-    let clarification_questionnaire_hook = control.clarification_questionnaire_hook;
     let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
     let tool_summary = if let Some(ref parsed) = args_parsed {
         tools::summarize_tool_call_parsed(name, parsed)
@@ -221,7 +220,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
 
     if let Some(body) = clarification_questionnaire_body_if_tool_ok(name, args, result.as_str()) {
         let payload = SsePayload::ClarificationQuestionnaire {
-            clarification_questionnaire: body.clone(),
+            clarification_questionnaire: body,
         };
         let _ = send_sse_control_payload_optional(
             out,
@@ -231,9 +230,6 @@ pub(super) async fn emit_tool_result_sse_and_append(
             encoder,
         )
         .await;
-        if let Some(h) = clarification_questionnaire_hook.as_ref() {
-            h(body);
-        }
     }
 
     let status = if parsed_for_timeline.ok {

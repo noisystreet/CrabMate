@@ -3,7 +3,6 @@ async fn execute_http_fetch_impl(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -18,13 +17,12 @@ async fn execute_http_fetch_impl(
         &url,
         &cfg.http_fetch.http_fetch_allowed_prefixes,
     );
-    let allowed_by_list = match (web_ctx, cli_ctx) {
-        (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
-        (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
-        (None, None) => false,
+    let allowed_by_list = match web_ctx {
+        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
+        None => false,
     };
     if !(allowed_by_cfg || allowed_by_list) {
-        if web_ctx.is_none() && cli_ctx.is_none() {
+        if web_ctx.is_none() {
             return (
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
@@ -45,13 +43,9 @@ async fn execute_http_fetch_impl(
         };
         let allow_handles = crate::tool_approval::SharedAllowlistHandles {
             web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
         };
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
-            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
-                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
-            }),
             &spec,
             "tool_registry::http_fetch approval",
             &allow_handles,
@@ -114,7 +108,6 @@ async fn execute_http_request_impl(
     effective_working_dir: &Path,
     workspace_is_set: bool,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     name: &str,
     args: &str,
 ) -> (String, Option<serde_json::Value>) {
@@ -131,13 +124,12 @@ async fn execute_http_request_impl(
         &url,
         &cfg.http_fetch.http_fetch_allowed_prefixes,
     );
-    let allowed_by_list = match (web_ctx, cli_ctx) {
-        (Some(w), _) => w.persistent_allowlist_shared.lock().await.contains(&key),
-        (None, Some(c)) => c.persistent_allowlist_shared.lock().await.contains(&key),
-        (None, None) => false,
+    let allowed_by_list = match web_ctx {
+        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
+        None => false,
     };
     if !(allowed_by_cfg || allowed_by_list) {
-        if web_ctx.is_none() && cli_ctx.is_none() {
+        if web_ctx.is_none() {
             return (
                 "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
                     .to_string(),
@@ -158,13 +150,9 @@ async fn execute_http_request_impl(
         };
         let allow_handles = crate::tool_approval::SharedAllowlistHandles {
             web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-            cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
         };
         match crate::tool_approval::interactive_gate_after_whitelist_miss(
             web_ctx.map(crate::tool_approval::web_tool_runtime_approval_sink),
-            cli_ctx.map(|c| crate::tool_approval::CliApprovalInput {
-                auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command
-            }),
             &spec,
             "tool_registry::http_request approval",
             &allow_handles,

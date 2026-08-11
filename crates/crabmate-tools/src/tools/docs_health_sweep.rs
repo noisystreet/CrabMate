@@ -381,7 +381,7 @@ fn run_markdown_links_phase(
 /// 只读聚合：文档头预览、`typos_check`、`codespell_check`、`markdown_check_links`。
 ///
 /// **外链探测**：`markdown_check_links` 在 `allowed_external_prefixes` 非空时使用内置 HTTP 客户端发 HEAD，
-/// **不经过** `http_fetch` / `http_request` 工具与 `http_fetch_allowed_prefixes`，也**无** Web/CLI 审批会话。
+/// **不经过** `http_fetch` / `http_request` 工具与 `http_fetch_allowed_prefixes`，也**无** Web SSE 审批会话。
 pub fn docs_health_sweep(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     let parsed = match crate::tools::parse_args_json(args_json) {
         Ok(v) => v,

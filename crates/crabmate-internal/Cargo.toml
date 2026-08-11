@@ -22,7 +22,6 @@ crabmate-sse-protocol = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 async-trait = { workspace = true }
-dialoguer = { workspace = true }
 futures-util = { workspace = true }
 libc = { workspace = true }
 log = { workspace = true }

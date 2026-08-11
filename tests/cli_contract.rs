@@ -102,8 +102,7 @@ fn fixture_parse_args_from_argv_contract() {
                 .iter()
                 .map(|x| x.as_str().unwrap().to_string())
                 .collect();
-            let stdin_fixture = case["stdin_fixture"].as_str().map(|s| s.to_string());
-            let p = parse_args_from_argv(argv, stdin_fixture).unwrap();
+            let p = parse_args_from_argv(argv).unwrap();
 
             let want_extra = parse_extra_cli(case);
             assert_eq!(p.extra_cli, want_extra, "{name} extra_cli");

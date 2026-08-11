@@ -41,9 +41,7 @@ mod full {
     }
 
     /// 执行 `mcp list`（`probe` 为 true 时按 user-data 尝试建立/刷新进程内 MCP 缓存）。
-    ///
-    /// `repl_context`：来自 REPL **`/mcp`** 时为 true，无缓存时的提示语指向 **`/mcp probe`** 与「输入用户消息跑一轮」。
-    pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool, repl_context: bool) {
+    pub async fn run_mcp_list(cfg: &AgentConfig, probe: bool) {
         let resolved = crate::mcp::resolve_mcp_config(cfg);
         if probe {
             print_mcp_probe_skips(&crate::mcp::try_open_turn_handle(&resolved).await);
@@ -62,7 +60,7 @@ mod full {
         let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
         let connected: Vec<_> = runtime.iter().filter(|s| s.connected).collect();
         if connected.is_empty() {
-            print_mcp_list_empty_hint(probe, repl_context);
+            print_mcp_list_empty_hint(probe);
             print_mcp_disconnected_rows(&runtime);
             return;
         }
@@ -87,21 +85,16 @@ mod full {
         }
     }
 
-    fn print_mcp_list_empty_hint(probe: bool, repl_context: bool) {
+    fn print_mcp_list_empty_hint(probe: bool) {
         if probe {
             println!(
                 "MCP：已尝试连接，但无可用缓存会话（见日志 target=crabmate）。\
                  常见原因：stdio 子进程失败、远程 DNS/TLS/401、握手失败或 tools/list 为空。"
             );
-        } else if repl_context {
-            println!(
-                "MCP：本进程内尚无已缓存会话（stdio / 远程）。\
-                 可先输入任意用户消息跑一轮，或执行 **/mcp probe** 立即尝试连接。"
-            );
         } else {
             println!(
                 "MCP：本进程内尚无已缓存会话（stdio / 远程）。\
-                 请先在本进程中执行至少一轮对话（`repl` / `chat` / Web `/chat`），\
+                 请先经 Web / Client 对 `serve` 跑至少一轮对话以建立缓存，\
                  或使用 `crabmate mcp list --probe` 尝试立即连接。"
             );
         }
@@ -171,7 +164,7 @@ mod full {
 pub use full::{run_mcp_list, run_mcp_serve};
 
 #[cfg(not(feature = "mcp"))]
-pub async fn run_mcp_list(_cfg: &AgentConfig, _probe: bool, _repl_context: bool) {
+pub async fn run_mcp_list(_cfg: &AgentConfig, _probe: bool) {
     println!(
         "本 crabmate 二进制未启用 `mcp` Cargo feature，不支持 MCP 列表/探测。请使用 `cargo build --features mcp` 重新编译。"
     );

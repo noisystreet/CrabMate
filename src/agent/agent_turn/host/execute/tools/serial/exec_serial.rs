@@ -55,7 +55,6 @@ struct SerialToolLoopState<'a> {
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a crate::tool_registry::WebToolRuntime>,
-    cli_tool_ctx: Option<&'a crate::tool_registry::CliToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
@@ -88,7 +87,6 @@ impl<'a> SerialToolLoopState<'a> {
             control,
             tool_result_envelope_v1,
             web_tool_ctx,
-            cli_tool_ctx,
             mcp_turn,
             request_chrome_trace,
             step_executor_constraint,
@@ -115,7 +113,6 @@ impl<'a> SerialToolLoopState<'a> {
             control,
             tool_result_envelope_v1,
             web_tool_ctx,
-            cli_tool_ctx,
             mcp_turn,
             request_chrome_trace,
             step_executor_constraint,
@@ -190,16 +187,9 @@ async fn serial_execute_one_tool_call(
     let is_readonly = tool_registry::is_readonly_tool(st.cfg.as_ref(), name.as_str());
     let cache_key = (name.clone(), args.clone());
     let t_tool = Instant::now();
-    let runtime = if let Some(cctx) = st.cli_tool_ctx {
-        ToolRuntime::Cli {
-            workspace_changed: st.workspace_changed,
-            ctx: cctx,
-        }
-    } else {
-        ToolRuntime::Web {
-            workspace_changed: st.workspace_changed,
-            ctx: st.web_tool_ctx,
-        }
+    let runtime = ToolRuntime {
+        workspace_changed: st.workspace_changed,
+        ctx: st.web_tool_ctx,
     };
     let (result, reflection_inject) = {
         let mut host = CrabmateToolExecutionHost {

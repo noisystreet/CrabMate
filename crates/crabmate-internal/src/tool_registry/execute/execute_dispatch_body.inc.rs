@@ -123,8 +123,8 @@ async fn dispatch_sync_default_tool(
 
     // `read_dir` 外部路径审批：绝对路径或含 `..` 时需用户确认（不走白名单）。
     if name == "read_dir" {
-        let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
-        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx, cli_ctx).await {
+        let web_ctx = http_tool_approval_context(runtime);
+        if let Err(msg) = approve_external_read_dir_if_needed(args, web_ctx).await {
             return (msg, None);
         }
     }
@@ -272,80 +272,41 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 None,
             )
         }
-        HandlerId::RunCommand => match runtime {
-            ToolRuntime::Web {
+        HandlerId::RunCommand => {
+            let ToolRuntime {
                 workspace_changed,
                 ctx,
-            } => {
-                execute_run_command_impl(
-                    &env,
-                    effective_working_dir,
-                    workspace_is_set,
-                    workspace_changed,
-                    ctx,
-                    None,
-                    name,
-                    args,
-                )
-                .await
-            }
-            ToolRuntime::Cli {
+            } = runtime;
+            execute_run_command_impl(
+                &env,
+                effective_working_dir,
+                workspace_is_set,
                 workspace_changed,
                 ctx,
-            } => {
-                execute_run_command_impl(
-                    &env,
-                    effective_working_dir,
-                    workspace_is_set,
-                    workspace_changed,
-                    None,
-                    Some(ctx),
-                    name,
-                    args,
-                )
-                .await
-            }
-        },
-        HandlerId::TerminalSession => match runtime {
-            ToolRuntime::Web {
+                name,
+                args,
+            )
+            .await
+        }
+        HandlerId::TerminalSession => {
+            let ToolRuntime {
                 workspace_changed,
                 ctx,
-            } => {
-                execute_terminal_session_impl(TerminalSessionExecInvoke {
-                    env: &env,
-                    effective_working_dir,
-                    workspace_is_set,
-                    workspace_changed,
-                    web_ctx: ctx,
-                    cli_ctx: None,
-                    args,
-                    sse_out_tx,
-                    sse_control_mirror,
-                    tool_call_id: tc.id.as_str(),
-                    sse_encoder: None,
-                })
-                .await
-            }
-            ToolRuntime::Cli {
+            } = runtime;
+            execute_terminal_session_impl(TerminalSessionExecInvoke {
+                env: &env,
+                effective_working_dir,
+                workspace_is_set,
                 workspace_changed,
-                ctx,
-            } => {
-                execute_terminal_session_impl(TerminalSessionExecInvoke {
-                    env: &env,
-                    effective_working_dir,
-                    workspace_is_set,
-                    workspace_changed,
-                    web_ctx: None,
-                    cli_ctx: Some(ctx),
-                    args,
-                    sse_out_tx,
-                    sse_control_mirror,
-                    tool_call_id: tc.id.as_str(),
-                    sse_encoder: None,
-                })
-                .await
-            }
-        },
+                web_ctx: ctx,
+                args,
+                sse_out_tx,
+                sse_control_mirror,
+                tool_call_id: tc.id.as_str(),
+                sse_encoder: None,
+            })
+            .await
+        }
         HandlerId::GetWeather => {
             execute_get_weather_web(&env, effective_working_dir, workspace_is_set, name, args).await
         }
@@ -353,26 +314,24 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             execute_web_search_web(&env, effective_working_dir, workspace_is_set, name, args).await
         }
         HandlerId::HttpFetch => {
-            let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+            let web_ctx = http_tool_approval_context(runtime);
             execute_http_fetch_impl(
                 &env,
                 effective_working_dir,
                 workspace_is_set,
                 web_ctx,
-                cli_ctx,
                 name,
                 args,
             )
             .await
         }
         HandlerId::HttpRequest => {
-            let (web_ctx, cli_ctx) = http_tool_approval_context(runtime);
+            let web_ctx = http_tool_approval_context(runtime);
             execute_http_request_impl(
                 &env,
                 effective_working_dir,
                 workspace_is_set,
                 web_ctx,
-                cli_ctx,
                 name,
                 args,
             )
@@ -403,7 +362,6 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
 pub async fn prefetch_parallel_syncdefault_approvals(
     tool_calls: &[ToolCall],
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
     handler_lookup: &HandlerLookupTable,
 ) -> HashMap<(String, String), String> {
     let mut failures: HashMap<(String, String), String> = HashMap::new();
@@ -420,8 +378,7 @@ pub async fn prefetch_parallel_syncdefault_approvals(
             continue;
         }
         if let Err(msg) =
-            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx, cli_ctx)
-                .await
+            approve_external_read_dir_if_needed(tc.function.arguments.as_str(), web_ctx).await
         {
             failures.insert(key, msg);
         }

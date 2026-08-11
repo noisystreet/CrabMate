@@ -10,8 +10,8 @@ use std::time::Duration;
 use log::error;
 
 use crate::tool_approval::{
-    self, ApprovalRequestSpec, CliApprovalInput, InteractiveGateOutcome, SensitiveCapability,
-    SharedAllowlistHandles, ToolApprovalWebError,
+    self, ApprovalRequestSpec, InteractiveGateOutcome, SensitiveCapability, SharedAllowlistHandles,
+    ToolApprovalWebError,
 };
 use crate::tools;
 use crabmate_config::{AgentConfig, SyncDefaultToolSandboxMode};
@@ -22,7 +22,7 @@ use super::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, parallel_tool_wall_timeout_secs,
     sync_default_runs_inline, web_search_outer_wall_secs,
 };
-use super::runtime::{CliToolRuntime, ToolRuntime, WebToolRuntime};
+use super::runtime::{ToolRuntime, WebToolRuntime};
 
 /// Web UI：未选择工作区时的统一提示尾句（`run_command` / `run_executable` 共用）。
 const WEB_WORKSPACE_PANEL_HINT: &str = "请先在右侧工作区面板设置目录（可选择目录或手动输入路径）。";
@@ -109,14 +109,9 @@ struct ToolExecEnv<'a> {
     sandbox_backend: &'a Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
 }
 
-/// `http_fetch` / `http_request` 共用：`Web` 带可选审批会话，`Cli` 带终端审批上下文（本路径不使用 `workspace_changed`）。
-fn http_tool_approval_context<'a>(
-    runtime: ToolRuntime<'a>,
-) -> (Option<&'a WebToolRuntime>, Option<&'a CliToolRuntime>) {
-    match runtime {
-        ToolRuntime::Web { ctx, .. } => (ctx, None),
-        ToolRuntime::Cli { ctx, .. } => (None, Some(ctx)),
-    }
+/// `http_fetch` / `http_request` 共用：可选 Web 审批会话（本路径不使用 `workspace_changed`）。
+fn http_tool_approval_context<'a>(runtime: ToolRuntime<'a>) -> Option<&'a WebToolRuntime> {
+    runtime.ctx
 }
 
 /// 检测 `read_dir` 入参中 `path` 是否为外部路径（绝对路径或含 `..`）。
@@ -135,12 +130,11 @@ fn read_dir_path_is_external(args_json: &str) -> Option<String> {
 async fn approve_external_read_dir_if_needed(
     args: &str,
     web_ctx: Option<&WebToolRuntime>,
-    cli_ctx: Option<&CliToolRuntime>,
 ) -> Result<(), String> {
     let Some(ext_path) = read_dir_path_is_external(args) else {
         return Ok(());
     };
-    if web_ctx.is_none() && cli_ctx.is_none() {
+    if web_ctx.is_none() {
         return Err(format!(
             "错误：read_dir 访问工作区外路径 \"{}\" 需要审批通道（当前无可用会话）。",
             ext_path
@@ -160,13 +154,9 @@ async fn approve_external_read_dir_if_needed(
     };
     let allow_handles = SharedAllowlistHandles {
         web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-        cli: cli_ctx.map(|c| &c.persistent_allowlist_shared),
     };
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
-        cli_ctx.map(|c| CliApprovalInput {
-            auto_approve_all_sensitive: c.auto_approve_all_non_whitelist_run_command,
-        }),
         &spec,
         "tool_registry::read_dir external path approval",
         &allow_handles,

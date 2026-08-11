@@ -4,7 +4,7 @@
 
 **历史问题**（已解决）：早期 Web / Tauri 曾把用户级状态写在浏览器 **`localStorage`**（Tauri WebKit 按 `http://127.0.0.1:<port>` 分叉），导致跨端口不一致、难备份，且 CLI/TUI 无法读取。
 
-**工作区内**数据（`conversations.db`、导出、`repl_history.txt` 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。
+**工作区内**数据（`conversations.db`、导出、历史路径名 **`tui_session.json`** 等）落在 **`<workspace>/.crabmate/`**，与本设计**互补**，不合并。旧同进程 REPL 曾写 **`repl_history.txt`**（D2.2 后不再写入）。
 
 **用户级 Agent 配置 TOML**（与本目录分离）：默认 **`$XDG_CONFIG_HOME/crabmate/`**（**`CM_CRABMATE_CONFIG_DIR`**）。发现顺序为 cwd 本地覆盖 → XDG；桌面 deb 系统模板在 **`/etc/crabmate/`**；用户尚无 **`config.toml`** 时首次种子拷贝运行时子集到 XDG Config（**不覆盖**；含可选 **`skills/`**；日常只读用户副本，种子失败时桌面可只读回退 `/etc`）。用户级 skills 默认目录为 **`$XDG_CONFIG_HOME/crabmate/skills`**（与工作区 **`.crabmate/skills`**、系统 **`/etc/crabmate/skills`** 合并；与是否自动加载 XDG `config.toml` 无关，见 **`docs/配置说明.md`**）。
 
@@ -28,7 +28,7 @@
 ### 2.2 非目标（本阶段不替代）
 
 - **不**替代 `<workspace>/.crabmate/conversations.db`（服务端对话持久化，`conversation_id` 消息链）；
-- **不**替代 REPL **`repl_history.txt`**（按工作区）；
+- **不**再维护同进程 REPL **`repl_history.txt`**（D2.2 已硬删；磁盘上旧文件可忽略）；
 - **不**将大段对话正文迁入 home（仅侧栏会话元数据、草稿、绑定 id）；
 - **不**使用 **`~/.cache/crabmate`** 存放需长期保留的会话与密钥（cache 语义可被系统清理）。
 
@@ -193,9 +193,9 @@ Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的�
 |------|------|------|
 | 供应商对话消息链、`conversation_id` | `<workspace>/.crabmate/conversations.db` | Web `serve`、TUI（配置非空时）、**不**迁入 home |
 | 导出 JSON/Markdown | `<workspace>/.crabmate/exports/` | Web / `save-session` |
-| REPL 行历史 | `<workspace>/.crabmate/repl_history.txt` | REPL only |
-| TUI 单链快照（无 SQLite 时） | `<workspace>/.crabmate/tui_session.json` | TUI；Phase 2 可选与 `web_sessions` 对齐 |
-| 侧栏多会话、壳层偏好、本机 LLM 覆盖 | **`~/.local/share/crabmate`** | Web + Tauri + CLI 读 |
+| ~~REPL 行历史~~ | `<workspace>/.crabmate/repl_history.txt` | **historical**（D2.2 后不再写入；可忽略） |
+| 会话文件（历史路径名） | `<workspace>/.crabmate/tui_session.json` | `save-session` / `tool-replay` 默认可读；官方终端为 Client **`crabmate-tui`** |
+| 侧栏多会话、壳层偏好、本机 LLM 覆盖 | **`~/.local/share/crabmate`** | Web + Tauri + Client 读 |
 
 ---
 

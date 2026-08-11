@@ -65,8 +65,6 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// SSE 控制面 / 钩子（与 [`crate::agent::agent_turn::RunLoopIo::control`] 同源）。
     pub control: crate::agent::agent_turn::TurnControlSink<'a>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    /// 终端 CLI：`run_command` 非白名单时 stdin 审批；`None` 时与历史一致（非白名单则无法执行）。
-    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
@@ -151,7 +149,6 @@ struct ExecuteToolsCommonCtx<'a> {
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,
@@ -167,23 +164,9 @@ struct ExecuteToolsCommonCtx<'a> {
     readonly_tool_ttl_cache: Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
 }
 
-fn notify_cli_tool_running_hook(
-    out: Option<&mpsc::Sender<String>>,
-    hook: Option<&Arc<dyn Fn(bool) + Send + Sync>>,
-    running: bool,
-) {
-    if out.is_some() {
-        return;
-    }
-    if let Some(h) = hook {
-        h(running);
-    }
-}
-
 async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteToolsBatchOutcome {
     let control = ctx.control.clone();
     let out = control.out;
-    let tool_running_hook = control.tool_running_hook.clone();
     let sse_control_mirror = control.sse_control_mirror.clone();
     let sse_encoder = control.sse_encoder.clone();
     let force_serial = replay_force_serial_from_env();
@@ -195,8 +178,6 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         sse_encoder.as_ref(),
     )
     .await;
-    notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), true);
-
     let batch_mode = resolve_tool_batch_execution_mode(&ToolBatchModeParams {
         force_serial,
         workspace_is_set: ctx.workspace_is_set,
@@ -230,7 +211,6 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     sse_encoder.as_ref(),
                 )
                 .await;
-                notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
                 return outcome;
             }
             false
@@ -277,7 +257,6 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
                     sse_encoder.as_ref(),
                 )
                 .await;
-                notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
                 return outcome;
             }
             workspace_changed
@@ -309,8 +288,6 @@ async fn per_execute_tools_common(ctx: ExecuteToolsCommonCtx<'_>) -> ExecuteTool
         sse_encoder.as_ref(),
     )
     .await;
-    notify_cli_tool_running_hook(out, tool_running_hook.as_ref(), false);
-
     ExecuteToolsBatchOutcome::Finished
 }
 
@@ -328,7 +305,6 @@ pub(crate) async fn per_execute_tools_web(
         read_file_turn_cache,
         control,
         web_tool_ctx,
-        cli_tool_ctx,
         mcp_turn,
         workspace_changelist,
         request_chrome_trace,
@@ -361,7 +337,6 @@ pub(crate) async fn per_execute_tools_web(
         control,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
         web_tool_ctx,
-        cli_tool_ctx,
         mcp_turn,
         request_chrome_trace,
         step_executor_constraint,

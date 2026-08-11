@@ -64,8 +64,6 @@ pub(crate) struct RunLoopIo<'a> {
 /// 工具运行时、缓存、记忆与分阶段冻结开关（执行附件）。
 pub(crate) struct RunLoopAttach<'a> {
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
-    /// 与 [`WebExecuteCtx::cli_tool_ctx`] 相同；Web 队列传 `None`。
-    pub cli_tool_ctx: Option<&'a tool_registry::CliToolRuntime>,
     pub per_flight: Option<Arc<PerTurnFlight>>,
     pub long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     /// `conversation_id` 或 CLI 固定 `cli`；`None` 时不按会话隔离（跳过记忆）。

@@ -31,7 +31,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use crate::tool_registry::{
-        CliToolRuntime, DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
+        DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
         DispatchToolPolicy, DispatchToolWorkspace, HandlerLookupTable, ToolRuntime,
     };
     use crate::tool_sandbox::default_sync_default_sandbox_backend;
@@ -59,10 +59,9 @@ mod tests {
         let cfg = Arc::new(load_config(None).expect("embed default"));
         let wd = Path::new(".");
         let mut workspace_changed = false;
-        let cli = CliToolRuntime::new_interactive_default();
-        let runtime = ToolRuntime::Cli {
+        let runtime = ToolRuntime {
             workspace_changed: &mut workspace_changed,
-            ctx: &cli,
+            ctx: None,
         };
         let tc = ToolCall {
             id: "call_mock".into(),

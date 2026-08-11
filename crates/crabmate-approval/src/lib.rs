@@ -4,7 +4,7 @@
 //! - **Web 通道模式**：[`WebApprovalChannelMode::Strict`] 在 `send` 失败时立即 Err；
 //!   [`WebApprovalChannelMode::Lenient`] 仍等待 receiver（工作流历史行为）。
 //!
-//! CLI / dialoguer / TUI 阻塞队列见 `crabmate-internal::tool_approval`。
+//! 运维 CLI 无同进程终端审批；官方对话审批仅 Web SSE（经 `crabmate-internal::tool_approval` 组装）。
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -55,14 +55,13 @@ pub enum WebApprovalChannelMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolApprovalWebError {
-    /// Web `send` 失败（Strict 模式）或既无 Web 也无 CLI 输入。
+    /// Web `send` 失败（Strict 模式）或无 Web 审批通道。
     ChannelUnavailable,
 }
 
-/// Web / CLI 会话级 **永久允许** 集合句柄。
+/// Web 会话级 **永久允许** 集合句柄。
 pub struct SharedAllowlistHandles<'a> {
     pub web: Option<&'a Arc<Mutex<HashSet<String>>>>,
-    pub cli: Option<&'a Arc<Mutex<HashSet<String>>>>,
 }
 
 /// 白名单未命中且已走交互审批之后的结果（`AllowOnce` / `AllowAlways` 均视为已放行）。
@@ -81,12 +80,10 @@ pub(crate) fn web_timeline_detail(spec: &ApprovalRequestSpec) -> String {
     }
 }
 
-/// 将 `key` 写入 Web 或 CLI 的 persistent allowlist（与历史「二选一」一致）。
+/// 将 `key` 写入 Web persistent allowlist（无 `web` 句柄时为 no-op）。
 pub async fn persist_allowlist_key(handles: &SharedAllowlistHandles<'_>, key: &str) {
     if let Some(w) = handles.web {
         w.lock().await.insert(key.to_string());
-    } else if let Some(c) = handles.cli {
-        c.lock().await.insert(key.to_string());
     }
 }
 

@@ -4,7 +4,6 @@ struct TerminalSessionExecInvoke<'a> {
     workspace_is_set: bool,
     workspace_changed: &'a mut bool,
     web_ctx: Option<&'a WebToolRuntime>,
-    cli_ctx: Option<&'a CliToolRuntime>,
     args: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&'a crabmate_sse_protocol::sse::SseControlMirror>,
@@ -21,7 +20,6 @@ async fn execute_terminal_session_impl(
         workspace_is_set,
         workspace_changed,
         web_ctx,
-        cli_ctx,
         args,
         sse_out_tx,
         sse_control_mirror,
@@ -71,15 +69,11 @@ async fn execute_terminal_session_impl(
     });
 
     let effective_allowed: Arc<[String]> = if let Some(rc) = exec_rc_json.as_ref() {
-        if let Some(ctx) = cli_ctx {
-            ctx.record_run_command_attempt();
-        }
         let (cmd, command_raw, arg_preview) = parse_run_command_json(rc);
         match run_command_resolve_effective_allowlist(
             cfg,
             effective_working_dir,
             web_ctx,
-            cli_ctx,
             cmd.as_str(),
             command_raw.as_str(),
             arg_preview.as_str(),
@@ -100,7 +94,6 @@ async fn execute_terminal_session_impl(
             effective_working_dir,
             effective_allowed.as_ref(),
             web_ctx,
-            cli_ctx,
             "terminal_session",
         )
         .await

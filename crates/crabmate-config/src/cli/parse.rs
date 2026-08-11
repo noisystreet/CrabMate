@@ -91,12 +91,8 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
 
 /// 使用给定 **`argv`**（首元素为程序名）解析 CLI，供契约/集成测试；生产请用 [`parse_args`]。
 ///
-/// - **`stdin_fixture`**：保留参数以兼容旧测试签名（同进程 `chat --stdin` 已移除，忽略）。
-/// - 非法参数：返回 [`io::Error`]（**不**退出进程），便于断言。
-pub fn parse_args_from_argv(
-    raw: Vec<String>,
-    _stdin_fixture: Option<String>,
-) -> io::Result<ParsedCliArgs> {
+/// 非法参数：返回 [`io::Error`]（**不**退出进程），便于断言。
+pub fn parse_args_from_argv(raw: Vec<String>) -> io::Result<ParsedCliArgs> {
     let normalized = normalize_legacy_argv(raw);
     let root = RootCli::try_parse_from(normalized)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
