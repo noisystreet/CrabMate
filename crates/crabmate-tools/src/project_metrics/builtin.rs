@@ -53,7 +53,7 @@ fn excluded_dir_in_path(path: &Path, excluded: &HashMap<String, ()>) -> bool {
 }
 
 fn path_has_skipped_binary_suffix(lower_path: &str) -> bool {
-    const SKIP_SUFFIXES: &[&str] = [
+    const SKIP_SUFFIXES: &[&str] = &[
         ".min.js", ".min.css", ".lock", ".wasm", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
         ".woff", ".woff2", ".ttf", ".eot",
     ];
