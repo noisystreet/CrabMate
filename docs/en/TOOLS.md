@@ -124,7 +124,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```json
   {"repo":"octocat/Hello-World","number":1,"fields":["title","body","state","author","commits"]}
   ```
-- `gh_pr_checks` (CI status; **`structured: true`** adds JSON + failure/pending summary):
+- `gh_pr_checks` (CI status; **`structured: true`** adds JSON + failure/pending summary; needs **`gh` ≥ 2.50**, else falls back to table):
   ```json
   {"structured":true}
   ```

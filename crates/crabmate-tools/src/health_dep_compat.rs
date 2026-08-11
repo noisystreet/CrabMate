@@ -44,7 +44,7 @@ fn min_version_for(kind: DepCompatKind) -> (u64, u64, u64) {
         DepCompatKind::Rustc | DepCompatKind::Cargo => MIN_RUST_VERSION,
         DepCompatKind::Python3 => (3, 8, 0),
         DepCompatKind::Npm => (6, 0, 0),
-        DepCompatKind::Gh => (2, 0, 0),
+        DepCompatKind::Gh => (2, 50, 0),
         DepCompatKind::Bc | DepCompatKind::ClangFormat => (0, 0, 0),
     }
 }

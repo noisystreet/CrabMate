@@ -3,13 +3,14 @@ use std::path::Path;
 use serde_json::Value as JsonValue;
 
 use super::common::{
-    attach_json_if_exit_zero, clamp_limit, extract_stdout_from_formatted, gh_allowed,
-    join_json_fields, push_bool_flag, push_extra_args_from_json, push_repo_arg,
-    push_trimmed_string_flag, run_gh_vec, validate_extra_args, validate_pr_body,
+    clamp_limit, gh_allowed, join_json_fields, push_bool_flag, push_extra_args_from_json,
+    push_repo_arg, push_trimmed_string_flag, run_gh_vec, validate_extra_args, validate_pr_body,
     validate_pr_ref_token, validate_pr_title, validate_repo, write_workspace_temp_markdown,
 };
 use super::pr_body::build_pr_body_draft;
-use super::run_ci::append_checks_summary;
+use super::run_ci::{
+    PR_CHECKS_STRUCTURED_JSON_FIELDS, finalize_structured_pr_checks, gh_pr_checks_rejects_json_flag,
+};
 
 /// `gh run list`
 pub fn gh_run_list(
@@ -107,6 +108,51 @@ pub fn gh_pr_diff(
     run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
+fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, String> {
+    let mut argv = vec!["pr".into(), "checks".into()];
+    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
+        validate_repo(r)?;
+        argv.push("-R".into());
+        argv.push(r.trim().to_string());
+    }
+    if let Some(n) = v.get("number").and_then(|x| x.as_u64()) {
+        if n == 0 || n > 999_999 {
+            return Err("错误：number 须为 1～999999 的正整数或省略".to_string());
+        }
+        argv.push(n.to_string());
+    }
+    if with_structured_json {
+        argv.push("--json".into());
+        argv.push(PR_CHECKS_STRUCTURED_JSON_FIELDS.into());
+    }
+    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
+        let extra: Vec<String> = arr
+            .iter()
+            .filter_map(|x| x.as_str().map(String::from))
+            .collect();
+        validate_extra_args(&extra)?;
+        argv.extend(extra);
+    }
+    Ok(argv)
+}
+
+fn gh_pr_checks_table_fallback(
+    v: &JsonValue,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+) -> String {
+    let argv = match build_pr_checks_argv(v, false) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
+    let table = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
+    format!(
+        "{}\n\n---\n提示：本机 `gh` 不支持 `pr checks --json`（需 GitHub CLI ≥ 2.50）。已回退为表格输出；请升级 `gh` 后再用 `structured: true`。\n",
+        table.trim_end()
+    )
+}
+
 /// `gh pr checks`（只读）：CI 检查状态；省略 `number` 时使用当前分支关联的 PR（与 `gh` 默认一致）。
 pub fn gh_pr_checks(
     args_json: &str,
@@ -121,43 +167,19 @@ pub fn gh_pr_checks(
         Ok(x) => x,
         Err(e) => return e,
     };
-    let mut argv = vec!["pr".into(), "checks".into()];
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
-        if let Err(e) = validate_repo(r) {
-            return e;
-        }
-        argv.push("-R".into());
-        argv.push(r.trim().to_string());
-    }
-    if let Some(n) = v.get("number").and_then(|x| x.as_u64()) {
-        if n == 0 || n > 999_999 {
-            return "错误：number 须为 1～999999 的正整数或省略".to_string();
-        }
-        argv.push(n.to_string());
-    }
-    if v.get("structured").and_then(|x| x.as_bool()) == Some(true) {
-        argv.push("--json".into());
-        argv.push("name,bucket,state,link,workflow,description,startedAt,completedAt,event".into());
-    }
-    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
-        let extra: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        if let Err(e) = validate_extra_args(&extra) {
-            return e;
-        }
-        argv.extend(extra);
-    }
+    let structured = v.get("structured").and_then(|x| x.as_bool()) == Some(true);
+    let argv = match build_pr_checks_argv(&v, structured) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
     let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
-    if v.get("structured").and_then(|x| x.as_bool()) == Some(true) {
-        let stdout = extract_stdout_from_formatted(&out).to_string();
-        return append_checks_summary(
-            attach_json_if_exit_zero(out, stdout.as_str()),
-            stdout.as_str(),
-        );
+    if !structured {
+        return out;
     }
-    out
+    if gh_pr_checks_rejects_json_flag(&out) {
+        return gh_pr_checks_table_fallback(&v, max_output_len, allowed_commands, working_dir);
+    }
+    finalize_structured_pr_checks(out)
 }
 
 fn resolve_pr_create_body(v: &JsonValue, working_dir: &Path) -> Result<String, String> {

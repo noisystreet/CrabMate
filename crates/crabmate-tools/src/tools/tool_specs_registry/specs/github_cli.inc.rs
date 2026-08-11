@@ -17,7 +17,7 @@
     },
     ToolSpec {
         name: "gh_pr_checks",
-        description: "查看 PR 的 **CI 检查状态**（封装 **`gh pr checks`**，只读）。可选 `repo`；可选 `number`（省略则由 `gh` 按当前分支解析关联 PR）。**`structured: true`** 时附加 `--json` 并在输出末尾汇总失败/进行中的检查项。",
+        description: "查看 PR 的 **CI 检查状态**（封装 **`gh pr checks`**，只读）。可选 `repo`；可选 `number`（省略则由 `gh` 按当前分支解析关联 PR）。**`structured: true`** 时附加 `--json` 并在输出末尾汇总失败/进行中的检查项（需本机 **GitHub CLI ≥ 2.50**；更旧版本自动回退表格并提示升级）。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_checks,
         runner: runner_gh_pr_checks,
