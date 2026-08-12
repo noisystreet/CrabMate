@@ -242,6 +242,18 @@ pub fn extract_stdout_from_formatted(out: &str) -> &str {
     out[start..end].trim_end()
 }
 
+/// 从 `command::run` 风格输出中提取「标准错误：」段落（通常为失败时的诊断信息，位于输出末尾）。
+///
+/// 与 [`extract_stdout_from_formatted`] 不同，此处无需截断「\n\n---\n」模型 JSON 附录：
+/// 该附录只在退出码 0 时由 `attach_json_if_exit_zero` 附加，而 stderr 提取用于失败路径。
+pub fn extract_stderr_from_formatted(out: &str) -> &str {
+    let Some(idx) = out.find("\n标准错误：\n") else {
+        return "";
+    };
+    let start = idx + "\n标准错误：\n".len();
+    out[start..].trim_end()
+}
+
 /// 存在 `退出码：0` 且 stdout 可解析为 JSON 时附加格式化块。
 pub fn attach_json_if_exit_zero(formatted: String, stdout_raw: &str) -> String {
     if command_formatted_exit_code(&formatted) != Some(0) {
@@ -498,6 +510,21 @@ mod tests {
     fn extract_stdout_stops_before_parsed_json_appendix() {
         let raw = "命令：gh pr list\n退出码：0\n标准输出：\n[]\n\n---\n解析后的 JSON（供模型直接使用）：\n[]\n";
         assert_eq!(extract_stdout_from_formatted(raw), "[]");
+    }
+
+    #[test]
+    fn extract_stderr_returns_empty_when_absent() {
+        let raw = "命令：gh pr create\n退出码：1\n标准输出：\n(无输出)\n";
+        assert_eq!(extract_stderr_from_formatted(raw), "");
+    }
+
+    #[test]
+    fn extract_stderr_takes_remaining_tail() {
+        let raw = "命令：gh pr create --title t\n退出码：1\n标准输出：\n(无输出)\n标准错误：\npull request create failed: GraphQL: No commits between main and feat/x (createPullRequest)\n";
+        assert_eq!(
+            extract_stderr_from_formatted(raw),
+            "pull request create failed: GraphQL: No commits between main and feat/x (createPullRequest)"
+        );
     }
 
     #[test]
