@@ -92,7 +92,7 @@ fn parse_anchor_branch(
     };
     if v.get("start_line").is_some() || v.get("end_line").is_some() {
         return Err(ToolError::invalid_args(
-            "错误：使用 anchor_line 时不要同时传 start_line/end_line（检索命中行号只用锚点即可对称取上下文）".to_string(),
+            "错误：anchor_line 与 start_line/end_line 互斥，只能二选一。示例（对称取上下文）：{\"path\":\"...\",\"anchor_line\":200,\"context_lines\":120}；或传统区间：{\"path\":\"...\",\"start_line\":1,\"end_line\":100}".to_string(),
         ));
     }
     let context_lines = v
