@@ -3,8 +3,9 @@ use std::path::Path;
 use serde_json::Value as JsonValue;
 
 use super::common::{
-    clamp_limit, gh_allowed, join_json_fields, push_bool_flag, push_extra_args_from_json,
-    push_repo_arg, push_trimmed_string_flag, run_gh_vec, validate_extra_args, validate_pr_body,
+    clamp_limit, command_formatted_exit_code, extract_stderr_from_formatted, gh_allowed,
+    join_json_fields, push_bool_flag, push_extra_args_from_json, push_repo_arg,
+    push_trimmed_string_flag, run_gh_vec, validate_extra_args, validate_pr_body,
     validate_pr_ref_token, validate_pr_title, validate_repo, write_workspace_temp_markdown,
 };
 use super::pr_body::build_pr_body_draft;
@@ -229,6 +230,32 @@ fn gh_pr_create_build_argv(
     Ok(argv)
 }
 
+/// `gh pr create` 失败时对常见 GraphQL / gh 错误归类，追加可操作提示（LLM 可据此纠正后重试）。
+/// 退出码 0 时原样返回；无法识别的失败也原样返回（避免误报）。
+fn annotate_gh_pr_create_failure(formatted: String) -> String {
+    if command_formatted_exit_code(&formatted) == Some(0) {
+        return formatted;
+    }
+    let stderr = extract_stderr_from_formatted(&formatted).to_ascii_lowercase();
+    let hint = if stderr.contains("no commits between")
+        || stderr.contains("head sha can't be blank")
+        || stderr.contains("base sha can't be blank")
+    {
+        "head 分支与 base 分支之间没有提交差异，或 head 分支尚未推送到远端。请先用 `git push -u origin <head>` 推送包含至少一个提交的分支，并确认 head/base 分支名拼写无误后再重试。"
+    } else if stderr.contains("base ref must be a branch") {
+        "`base` 必须是仓库中已存在的分支（如 main/master）。请确认 base 分支名拼写后再重试。"
+    } else if stderr.contains("a pull request already exists") {
+        "该 head 分支已有关联 PR。请改用 `gh_pr_view` 查看现有 PR，而非重复创建。"
+    } else if stderr.contains("repository not found")
+        || stderr.contains("could not resolve to a repository")
+    {
+        "仓库不存在或当前 `gh` 身份无权访问。请确认 `repo` 参数（owner/repo）拼写与 `gh auth status` 的权限。"
+    } else {
+        return formatted;
+    };
+    format!("{}\n\n---\n提示：{}\n", formatted.trim_end(), hint)
+}
+
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
 pub fn gh_pr_create(
     args_json: &str,
@@ -280,5 +307,72 @@ pub fn gh_pr_create(
     };
     let out = run_gh_vec(argv, max_output_len, allowed_commands, working_dir);
     drop(dir);
-    out
+    annotate_gh_pr_create_failure(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::annotate_gh_pr_create_failure;
+
+    fn gh_create_err(stderr: &str) -> String {
+        format!(
+            "命令：gh pr create --title t --body-file /tmp/b.md --base main --head feat/x\n退出码：1\n标准错误：\n{stderr}"
+        )
+    }
+
+    #[test]
+    fn annotate_no_commits_between_suggests_push() {
+        let raw = gh_create_err(
+            "pull request create failed: GraphQL: Head sha can't be blank, Base sha can't be blank, \
+             No commits between main and feat/avx-example, Base ref must be a branch (createPullRequest)",
+        );
+        let out = annotate_gh_pr_create_failure(raw);
+        assert!(out.contains("push -u origin"), "{}", out);
+        assert!(out.contains("提示"), "{}", out);
+    }
+
+    #[test]
+    fn annotate_base_ref_must_be_branch() {
+        let raw = gh_create_err("GraphQL: Base ref must be a branch (createPullRequest)");
+        let out = annotate_gh_pr_create_failure(raw);
+        assert!(out.contains("必须") && out.contains("base"), "{}", out);
+    }
+
+    #[test]
+    fn annotate_pr_already_exists_points_to_view() {
+        let raw = gh_create_err("a pull request already exists for feat/x (createPullRequest)");
+        let out = annotate_gh_pr_create_failure(raw);
+        assert!(out.contains("gh_pr_view"), "{}", out);
+    }
+
+    #[test]
+    fn annotate_repo_not_found() {
+        let raw =
+            gh_create_err("GraphQL: Could not resolve to a Repository with the name 'no/such'");
+        let out = annotate_gh_pr_create_failure(raw);
+        assert!(out.contains("仓库"), "{}", out);
+    }
+
+    #[test]
+    fn annotate_bare_not_found_is_left_untouched() {
+        // 裸 "not found" 不命中任何分类，避免误判为「仓库不存在」。
+        let raw = gh_create_err("GraphQL: Some other thing not found (createPullRequest)");
+        let out = annotate_gh_pr_create_failure(raw.clone());
+        assert_eq!(out, raw);
+    }
+
+    #[test]
+    fn annotate_keeps_success_output_untouched() {
+        let raw =
+            "命令：gh pr create --title t\n退出码：0\n标准输出：\nhttps://github.com/o/r/pull/1\n";
+        let out = annotate_gh_pr_create_failure(raw.to_string());
+        assert_eq!(out, raw);
+    }
+
+    #[test]
+    fn annotate_leaves_unrecognized_failure_untouched() {
+        let raw = gh_create_err("some unrelated error");
+        let out = annotate_gh_pr_create_failure(raw.clone());
+        assert_eq!(out, raw);
+    }
 }
