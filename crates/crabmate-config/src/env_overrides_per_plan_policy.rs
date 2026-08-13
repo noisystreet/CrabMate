@@ -4,7 +4,7 @@
 //! `single_agent`，由 finalize 校验。
 
 use crate::builder::ConfigBuilder;
-use crate::source::parse_bool_like;
+use crate::env_override_apply::{apply_bool, apply_nonempty_opt, apply_parse};
 
 pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);
@@ -13,60 +13,52 @@ pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
 }
 
 fn env_override_planner_executor_mode(b: &mut ConfigBuilder) {
-    if let Ok(s) = std::env::var("CM_PLANNER_EXECUTOR_MODE") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.planner_executor_mode_str = Some(s);
-        }
-    }
+    apply_nonempty_opt(
+        &mut b.per_plan_policy.planner_executor_mode_str,
+        "CM_PLANNER_EXECUTOR_MODE",
+    );
 }
 
 fn env_override_reflection_rounds_and_rewrite(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_REFLECTION_DEFAULT_MAX_ROUNDS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.reflection_default_max_rounds = Some(n);
-    }
-    if let Ok(s) = std::env::var("CM_FINAL_PLAN_REQUIREMENT") {
-        let s = s.trim().to_string();
-        if !s.is_empty() {
-            b.per_plan_policy.final_plan_requirement_str = Some(s);
-        }
-    }
-    if let Ok(v) = std::env::var("CM_PLAN_REWRITE_MAX_ATTEMPTS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.plan_rewrite_max_attempts = Some(n);
-    }
+    apply_parse(
+        &mut b.per_plan_policy.reflection_default_max_rounds,
+        "CM_REFLECTION_DEFAULT_MAX_ROUNDS",
+    );
+    apply_nonempty_opt(
+        &mut b.per_plan_policy.final_plan_requirement_str,
+        "CM_FINAL_PLAN_REQUIREMENT",
+    );
+    apply_parse(
+        &mut b.per_plan_policy.plan_rewrite_max_attempts,
+        "CM_PLAN_REWRITE_MAX_ATTEMPTS",
+    );
 }
 
 fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.per_plan_policy
-            .final_plan_require_strict_workflow_node_coverage = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.per_plan_policy.final_plan_semantic_check_enabled = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT")
-        && let Some(val) = parse_bool_like(&v)
-    {
-        b.per_plan_policy
-            .final_plan_semantic_check_accept_legacy_text = Some(val);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy
-            .final_plan_semantic_check_max_non_readonly_tools = Some(n);
-    }
-    if let Ok(v) = std::env::var("CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
-        b.per_plan_policy.final_plan_semantic_check_max_tokens = Some(n);
-    }
+    apply_bool(
+        &mut b
+            .per_plan_policy
+            .final_plan_require_strict_workflow_node_coverage,
+        "CM_FINAL_PLAN_REQUIRE_STRICT_WORKFLOW_NODE_COVERAGE",
+    );
+    apply_bool(
+        &mut b.per_plan_policy.final_plan_semantic_check_enabled,
+        "CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED",
+    );
+    apply_bool(
+        &mut b
+            .per_plan_policy
+            .final_plan_semantic_check_accept_legacy_text,
+        "CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT",
+    );
+    apply_parse(
+        &mut b
+            .per_plan_policy
+            .final_plan_semantic_check_max_non_readonly_tools,
+        "CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_NON_READONLY_TOOLS",
+    );
+    apply_parse(
+        &mut b.per_plan_policy.final_plan_semantic_check_max_tokens,
+        "CM_FINAL_PLAN_SEMANTIC_CHECK_MAX_TOKENS",
+    );
 }
