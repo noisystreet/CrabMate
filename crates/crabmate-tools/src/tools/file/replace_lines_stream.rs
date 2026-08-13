@@ -48,6 +48,12 @@ fn parse_insert_after_line(v: &Value) -> Result<(usize, String), String> {
     Ok((after_line, new_body))
 }
 
+fn write_tmp_bytes<W: Write>(writer: &mut W, bytes: &[u8]) -> Result<(), String> {
+    writer
+        .write_all(bytes)
+        .map_err(|e| format!("写入临时文件失败: {}", e))
+}
+
 fn stream_replace_lines_to_writer<W: Write>(
     reader: &mut BufReader<File>,
     writer: &mut W,
@@ -68,33 +74,14 @@ fn stream_replace_lines_to_writer<W: Write>(
             break;
         }
         line_no += 1;
-        if line_no < start_line {
-            writer
-                .write_all(buf.as_bytes())
-                .map_err(|e| format!("写入临时文件失败: {}", e))?;
-            continue;
-        }
         if line_no == start_line {
-            if !new_body.is_empty() {
-                writer
-                    .write_all(new_body.as_bytes())
-                    .map_err(|e| format!("写入临时文件失败: {}", e))?;
-                if !new_body.ends_with('\n') {
-                    writer
-                        .write_all(b"\n")
-                        .map_err(|e| format!("写入临时文件失败: {}", e))?;
-                }
-            }
+            write_insert_body(writer, new_body)?;
             replaced = true;
         }
-        if line_no >= start_line && line_no <= end_line {
+        if (start_line..=end_line).contains(&line_no) {
             continue;
         }
-        if line_no > end_line {
-            writer
-                .write_all(buf.as_bytes())
-                .map_err(|e| format!("写入临时文件失败: {}", e))?;
-        }
+        write_tmp_bytes(writer, buf.as_bytes())?;
     }
 
     Ok((line_no, replaced))
@@ -147,13 +134,9 @@ fn write_insert_body<W: Write>(writer: &mut W, new_body: &str) -> Result<(), Str
     if new_body.is_empty() {
         return Ok(());
     }
-    writer
-        .write_all(new_body.as_bytes())
-        .map_err(|e| format!("写入临时文件失败: {}", e))?;
+    write_tmp_bytes(writer, new_body.as_bytes())?;
     if !new_body.ends_with('\n') {
-        writer
-            .write_all(b"\n")
-            .map_err(|e| format!("写入临时文件失败: {}", e))?;
+        write_tmp_bytes(writer, b"\n")?;
     }
     Ok(())
 }
@@ -252,6 +235,131 @@ fn commit_tmp_over_target(tmp_path: &Path, target: &Path) -> Result<(), String> 
     })
 }
 
+fn edit_tmp_path(target: &Path) -> Result<std::path::PathBuf, String> {
+    let parent = match target.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => return Err("错误：无法解析目标文件父目录".to_string()),
+    };
+    let fname = target
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("file");
+    Ok(parent.join(format!(".{fname}.crabmate_edit_tmp")))
+}
+
+fn open_stream_edit_pair(
+    target: &Path,
+    tmp_path: &Path,
+) -> Result<(BufReader<File>, BufWriter<File>), String> {
+    let src = File::open(target).map_err(|e| format!("读取原文件失败: {}", e))?;
+    let tmp_file = File::create(tmp_path).map_err(|e| format!("创建临时文件失败: {}", e))?;
+    Ok((BufReader::new(src), BufWriter::new(tmp_file)))
+}
+
+fn flush_or_abort_tmp(writer: &mut BufWriter<File>, tmp_path: &Path) -> Result<(), String> {
+    writer.flush().map_err(|e| {
+        let _ = std::fs::remove_file(tmp_path);
+        format!("刷新临时文件失败: {}", e)
+    })
+}
+
+fn modify_replace_dry_run(
+    target: &Path,
+    display_path: &str,
+    rel_path: &str,
+    original: Option<String>,
+    start_line: usize,
+    end_line: usize,
+    new_body: &str,
+) -> String {
+    let preview =
+        match replace_lines_after_content_in_memory(target, start_line, end_line, new_body) {
+            Ok(s) => s,
+            Err(e) => return append_tail_context_to_error(e, original.as_deref()),
+        };
+    let body = tool_output_prepend_path(
+        display_path,
+        format!(
+            "预览（dry_run=true）：replace_lines {}-{} 未写盘。设置 dry_run=false 以执行。\n\
+共替换 {} 行区间，新片段 {} 字节",
+            start_line,
+            end_line,
+            end_line - start_line + 1,
+            new_body.len()
+        ),
+    );
+    format_tool_output_with_write_diff_preview(
+        "modify_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: rel_path.to_string(),
+            before: original,
+            after: Some(preview),
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
+}
+
+fn modify_insert_dry_run(
+    target: &Path,
+    display_path: &str,
+    rel_path: &str,
+    original: Option<String>,
+    after_line: usize,
+    new_body: &str,
+) -> String {
+    let preview = match insert_after_content_in_memory(target, after_line, new_body) {
+        Ok(s) => s,
+        Err(e) => return append_tail_context_to_error(e, original.as_deref()),
+    };
+    let body = tool_output_prepend_path(
+        display_path,
+        format!(
+            "预览（dry_run=true）：insert_after_line {} 未写盘。设置 dry_run=false 以执行。\n\
+新片段 {} 字节",
+            after_line,
+            new_body.len()
+        ),
+    );
+    format_tool_output_with_write_diff_preview(
+        "modify_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: rel_path.to_string(),
+            before: original,
+            after: Some(preview),
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
+}
+
+fn finish_modify_file_success(
+    ctx: &ToolContext<'_>,
+    working_dir: &Path,
+    rel_path: &str,
+    original: Option<String>,
+    target: &Path,
+    body: String,
+) -> String {
+    record_file_state_after_write(
+        ctx.workspace_changelist,
+        working_dir,
+        rel_path,
+        original.clone(),
+    );
+    let after = std::fs::read_to_string(target).ok();
+    format_tool_output_with_write_diff_preview(
+        "modify_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: rel_path.to_string(),
+            before: original,
+            after,
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
+}
+
 pub(super) fn modify_file_replace_lines(
     v: &Value,
     target: &Path,
@@ -268,54 +376,25 @@ pub(super) fn modify_file_replace_lines(
     };
 
     if dry_run {
-        let preview =
-            match replace_lines_after_content_in_memory(target, start_line, end_line, &new_body) {
-                Ok(s) => s,
-                Err(e) => return append_tail_context_to_error(e, original.as_deref()),
-            };
-        let body = tool_output_prepend_path(
+        return modify_replace_dry_run(
+            target,
             display_path,
-            format!(
-                "预览（dry_run=true）：replace_lines {}-{} 未写盘。设置 dry_run=false 以执行。\n\
-共替换 {} 行区间，新片段 {} 字节",
-                start_line,
-                end_line,
-                end_line - start_line + 1,
-                new_body.len()
-            ),
-        );
-        return format_tool_output_with_write_diff_preview(
-            "modify_file",
-            body,
-            vec![WriteDiffFileState {
-                rel_path: rel_path.to_string(),
-                before: original.clone(),
-                after: Some(preview),
-            }],
-            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+            rel_path,
+            original,
+            start_line,
+            end_line,
+            &new_body,
         );
     }
 
-    let parent = match target.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => return "错误：无法解析目标文件父目录".to_string(),
+    let tmp_path = match edit_tmp_path(target) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
-    let fname = target
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("file");
-    let tmp_path = parent.join(format!(".{fname}.crabmate_edit_tmp"));
-
-    let src = match File::open(target) {
-        Ok(f) => f,
-        Err(e) => return format!("读取原文件失败: {}", e),
+    let (mut reader, mut writer) = match open_stream_edit_pair(target, &tmp_path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let tmp_file = match File::create(&tmp_path) {
-        Ok(f) => f,
-        Err(e) => return format!("创建临时文件失败: {}", e),
-    };
-    let mut reader = BufReader::new(src);
-    let mut writer = BufWriter::new(tmp_file);
 
     let (line_no, replaced) = match stream_replace_lines_to_writer(
         &mut reader,
@@ -336,9 +415,8 @@ pub(super) fn modify_file_replace_lines(
         return append_tail_context_to_error(e, original.as_deref());
     }
 
-    if let Err(e) = writer.flush() {
-        let _ = std::fs::remove_file(&tmp_path);
-        return format!("刷新临时文件失败: {}", e);
+    if let Err(e) = flush_or_abort_tmp(&mut writer, &tmp_path) {
+        return e;
     }
     drop(writer);
 
@@ -346,13 +424,6 @@ pub(super) fn modify_file_replace_lines(
         return e;
     }
 
-    record_file_state_after_write(
-        ctx.workspace_changelist,
-        working_dir,
-        rel_path,
-        original.clone(),
-    );
-    let after = std::fs::read_to_string(target).ok();
     let body = tool_output_prepend_path(
         display_path,
         format!(
@@ -363,16 +434,7 @@ pub(super) fn modify_file_replace_lines(
             new_body.len()
         ),
     );
-    format_tool_output_with_write_diff_preview(
-        "modify_file",
-        body,
-        vec![WriteDiffFileState {
-            rel_path: rel_path.to_string(),
-            before: original,
-            after,
-        }],
-        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-    )
+    finish_modify_file_success(ctx, working_dir, rel_path, original, target, body)
 }
 
 pub(super) fn modify_file_insert_after_line(
@@ -391,51 +453,24 @@ pub(super) fn modify_file_insert_after_line(
     };
 
     if dry_run {
-        let preview = match insert_after_content_in_memory(target, after_line, &new_body) {
-            Ok(s) => s,
-            Err(e) => return append_tail_context_to_error(e, original.as_deref()),
-        };
-        let body = tool_output_prepend_path(
+        return modify_insert_dry_run(
+            target,
             display_path,
-            format!(
-                "预览（dry_run=true）：insert_after_line {} 未写盘。设置 dry_run=false 以执行。\n\
-新片段 {} 字节",
-                after_line,
-                new_body.len()
-            ),
-        );
-        return format_tool_output_with_write_diff_preview(
-            "modify_file",
-            body,
-            vec![WriteDiffFileState {
-                rel_path: rel_path.to_string(),
-                before: original.clone(),
-                after: Some(preview),
-            }],
-            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+            rel_path,
+            original,
+            after_line,
+            &new_body,
         );
     }
 
-    let parent = match target.parent() {
-        Some(p) if !p.as_os_str().is_empty() => p,
-        _ => return "错误：无法解析目标文件父目录".to_string(),
+    let tmp_path = match edit_tmp_path(target) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
-    let fname = target
-        .file_name()
-        .and_then(|f| f.to_str())
-        .unwrap_or("file");
-    let tmp_path = parent.join(format!(".{fname}.crabmate_edit_tmp"));
-
-    let src = match File::open(target) {
-        Ok(f) => f,
-        Err(e) => return format!("读取原文件失败: {}", e),
+    let (mut reader, mut writer) = match open_stream_edit_pair(target, &tmp_path) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
-    let tmp_file = match File::create(&tmp_path) {
-        Ok(f) => f,
-        Err(e) => return format!("创建临时文件失败: {}", e),
-    };
-    let mut reader = BufReader::new(src);
-    let mut writer = BufWriter::new(tmp_file);
 
     if let Err(e) =
         stream_insert_after_line_to_writer(&mut reader, &mut writer, after_line, &new_body)
@@ -444,9 +479,8 @@ pub(super) fn modify_file_insert_after_line(
         return append_tail_context_to_error(e, original.as_deref());
     }
 
-    if let Err(e) = writer.flush() {
-        let _ = std::fs::remove_file(&tmp_path);
-        return format!("刷新临时文件失败: {}", e);
+    if let Err(e) = flush_or_abort_tmp(&mut writer, &tmp_path) {
+        return e;
     }
     drop(writer);
 
@@ -454,13 +488,6 @@ pub(super) fn modify_file_insert_after_line(
         return e;
     }
 
-    record_file_state_after_write(
-        ctx.workspace_changelist,
-        working_dir,
-        rel_path,
-        original.clone(),
-    );
-    let after = std::fs::read_to_string(target).ok();
     let body = tool_output_prepend_path(
         display_path,
         format!(
@@ -469,14 +496,5 @@ pub(super) fn modify_file_insert_after_line(
             new_body.len()
         ),
     );
-    format_tool_output_with_write_diff_preview(
-        "modify_file",
-        body,
-        vec![WriteDiffFileState {
-            rel_path: rel_path.to_string(),
-            before: original,
-            after,
-        }],
-        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-    )
+    finish_modify_file_success(ctx, working_dir, rel_path, original, target, body)
 }

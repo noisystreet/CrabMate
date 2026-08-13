@@ -25,6 +25,21 @@ struct ExtractInFileParams {
     max_block_lines: usize,
 }
 
+fn json_u64_min1(v: &serde_json::Value, key: &str, default: usize) -> usize {
+    v.get(key)
+        .and_then(|n| n.as_u64())
+        .map(|n| n.max(1) as usize)
+        .unwrap_or(default)
+}
+
+fn parse_optional_line_1based(v: &serde_json::Value, key: &str) -> Result<Option<usize>, String> {
+    match v.get(key).and_then(|n| n.as_u64()) {
+        Some(n) if n >= 1 => Ok(Some(n as usize)),
+        Some(_) => Err(format!("错误：{key} 必须是大于等于 1 的整数")),
+        None => Ok(None),
+    }
+}
+
 fn parse_extract_in_file_params(v: &serde_json::Value) -> Result<ExtractInFileParams, String> {
     let path = v
         .get("path")
@@ -43,57 +58,30 @@ fn parse_extract_in_file_params(v: &serde_json::Value) -> Result<ExtractInFilePa
         .and_then(|p| p.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(|s| s.to_string());
-    let pattern = pattern.ok_or_else(|| "缺少 pattern 参数".to_string())?;
+        .map(|s| s.to_string())
+        .ok_or_else(|| "缺少 pattern 参数".to_string())?;
 
-    let start_line = v.get("start_line").and_then(|n| n.as_u64());
-    let end_line = v.get("end_line").and_then(|n| n.as_u64());
-
-    let start_line = match start_line {
-        Some(n) if n >= 1 => Some(n as usize),
-        Some(_) => return Err("错误：start_line 必须是大于等于 1 的整数".to_string()),
-        None => None,
-    };
-    let end_line = match end_line {
-        Some(n) if n >= 1 => Some(n as usize),
-        Some(_) => return Err("错误：end_line 必须是大于等于 1 的整数".to_string()),
-        None => None,
-    };
+    let start_line = parse_optional_line_1based(v, "start_line")?;
+    let end_line = parse_optional_line_1based(v, "end_line")?;
     if let (Some(s), Some(e)) = (start_line, end_line)
         && e < s
     {
         return Err("错误：end_line 不能小于 start_line".to_string());
     }
 
-    let max_matches = v
-        .get("max_matches")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(50);
+    let max_matches = json_u64_min1(v, "max_matches", 50);
     let case_insensitive = v
         .get("case_insensitive")
         .and_then(|b| b.as_bool())
         .unwrap_or(true);
-    let max_snippet_chars = v
-        .get("max_snippet_chars")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(400);
+    let max_snippet_chars = json_u64_min1(v, "max_snippet_chars", 400);
     let mode = v
         .get("mode")
         .and_then(|m| m.as_str())
         .map(|s| s.trim().to_lowercase())
         .unwrap_or_else(|| "lines".to_string());
-    let max_block_chars = v
-        .get("max_block_chars")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(8000);
-    let max_block_lines = v
-        .get("max_block_lines")
-        .and_then(|n| n.as_u64())
-        .map(|n| n.max(1) as usize)
-        .unwrap_or(500);
+    let max_block_chars = json_u64_min1(v, "max_block_chars", 8000);
+    let max_block_lines = json_u64_min1(v, "max_block_lines", 500);
 
     Ok(ExtractInFileParams {
         path,
@@ -256,6 +244,48 @@ fn extract_in_file_rust_fn_block_mode(p: ExtractInFileRustFnBlockParams<'_>) -> 
     out.trim_end().to_string()
 }
 
+fn load_extract_file_text(
+    working_dir: &Path,
+    path: &str,
+    enc_name: crate::text_encoding::TextEncodingName,
+) -> Result<(std::path::PathBuf, String), String> {
+    let target = match resolve_for_read(working_dir, path) {
+        Ok(p) => p,
+        Err(e) => return Err(tool_user_error_from_workspace_path(e)),
+    };
+    if !target.is_file() {
+        return Err("错误：路径不是文件或不存在，无法读取".to_string());
+    }
+    let raw = std::fs::read(&target).map_err(|e| format!("读取文件失败: {}", e))?;
+    match decode_bytes_strict(&raw, enc_name) {
+        Ok((s, _note)) => Ok((target, s)),
+        Err(e) => Err(e),
+    }
+}
+
+fn extract_line_window(
+    total: usize,
+    start_line: Option<usize>,
+    end_line: Option<usize>,
+) -> Result<(usize, usize), String> {
+    let from = start_line.unwrap_or(1);
+    let to = end_line.unwrap_or(total);
+    if from > total {
+        return Err(format!(
+            "错误：start_line 超出文件总行数（总行数: {}）",
+            total
+        ));
+    }
+    Ok((from, to.min(total)))
+}
+
+fn compile_extract_regex(pattern: &str, case_insensitive: bool) -> Result<Regex, String> {
+    RegexBuilder::new(pattern)
+        .case_insensitive(case_insensitive)
+        .build()
+        .map_err(|e| format!("错误：无效的正则表达式：{}", e))
+}
+
 /// 在文件中按正则抽取匹配行（只读）。
 /// 参数：
 /// { "path": string, "pattern": string, "start_line"?: int, "end_line"?: int,
@@ -285,20 +315,8 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         max_block_lines,
     } = p;
 
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    if !target.is_file() {
-        return "错误：路径不是文件或不存在，无法读取".to_string();
-    }
-
-    let raw = match std::fs::read(&target) {
-        Ok(b) => b,
-        Err(e) => return format!("读取文件失败: {}", e),
-    };
-    let content = match decode_bytes_strict(&raw, enc_name) {
-        Ok((s, _note)) => s,
+    let (target, content) = match load_extract_file_text(working_dir, &path, enc_name) {
+        Ok(x) => x,
         Err(e) => return e,
     };
     let all_lines: Vec<&str> = content.lines().collect();
@@ -310,19 +328,14 @@ pub fn extract_in_file(args_json: &str, working_dir: &Path) -> String {
         );
     }
 
-    let from = start_line.unwrap_or(1);
-    let to = end_line.unwrap_or(total);
-    if from > total {
-        return format!("错误：start_line 超出文件总行数（总行数: {}）", total);
-    }
-    let to = to.min(total);
+    let (from, to) = match extract_line_window(total, start_line, end_line) {
+        Ok(w) => w,
+        Err(e) => return e,
+    };
 
-    let re = match RegexBuilder::new(&pattern)
-        .case_insensitive(case_insensitive)
-        .build()
-    {
+    let re = match compile_extract_regex(&pattern, case_insensitive) {
         Ok(r) => r,
-        Err(e) => return format!("错误：无效的正则表达式：{}", e),
+        Err(e) => return e,
     };
 
     if mode == "lines" {
@@ -380,6 +393,46 @@ fn truncate_line(s: &str, max_chars: usize) -> String {
     }
 }
 
+fn scan_rust_brace_line(
+    line: &str,
+    line_idx: usize,
+    state: &mut RustBraceScanState,
+    started: &mut bool,
+    brace_count: &mut i32,
+    end_line: &mut Option<usize>,
+    char_budget: &mut usize,
+) {
+    let chars: Vec<char> = line.chars().collect();
+    let mut pos: usize = 0;
+    let mut scan_ctx = RustBraceScanCtx {
+        line_idx,
+        chars: &chars,
+        started,
+        brace_count,
+        end_line,
+    };
+
+    while pos < chars.len() {
+        if *char_budget == 0 {
+            break;
+        }
+        let ch = chars[pos];
+        *char_budget = char_budget.saturating_sub(1);
+
+        match rust_brace_scan_step(*state, pos, ch, &mut scan_ctx) {
+            RustBraceLineStep::Continue { state: ns, pos: np } => {
+                *state = ns;
+                pos = np;
+            }
+            RustBraceLineStep::BreakCharLoop | RustBraceLineStep::BreakLineScan => break,
+        }
+    }
+
+    if *state == RustBraceScanState::LineComment {
+        *state = RustBraceScanState::Normal;
+    }
+}
+
 /// 从 start_line（1-based）开始向后提取 `{ ... }` 配对块。
 /// 说明：会在扫描时跳过注释/字符串/原始字符串/字符字面量里的 `{`/`}`，
 /// 以避免花括号误判块边界。
@@ -401,52 +454,25 @@ fn extract_rust_brace_block(
     let mut brace_count: i32 = 0;
     let mut started = false;
     let mut end_line: Option<usize> = None;
-
-    // 扫描成本上限，避免极端文件导致非常大的扫描开销
     let mut char_budget: usize = max_block_chars.saturating_mul(3);
 
     for (line_idx, line) in all_lines.iter().enumerate().skip(start_idx) {
         if line_idx >= start_idx + max_block_lines || end_line.is_some() || char_budget == 0 {
             break;
         }
-
-        let line = *line;
-        let chars: Vec<char> = line.chars().collect();
-        let mut pos: usize = 0;
-        let mut scan_ctx = RustBraceScanCtx {
+        scan_rust_brace_line(
+            line,
             line_idx,
-            chars: &chars,
-            started: &mut started,
-            brace_count: &mut brace_count,
-            end_line: &mut end_line,
-        };
-
-        while pos < chars.len() {
-            if char_budget == 0 {
-                break;
-            }
-            let ch = chars[pos];
-            char_budget = char_budget.saturating_sub(1);
-
-            match rust_brace_scan_step(state, pos, ch, &mut scan_ctx) {
-                RustBraceLineStep::Continue { state: ns, pos: np } => {
-                    state = ns;
-                    pos = np;
-                }
-                RustBraceLineStep::BreakCharLoop => break,
-                RustBraceLineStep::BreakLineScan => break,
-            }
-        }
-
-        // // ... 在下一行会自动回到 Normal
-        if state == RustBraceScanState::LineComment {
-            state = RustBraceScanState::Normal;
-        }
+            &mut state,
+            &mut started,
+            &mut brace_count,
+            &mut end_line,
+            &mut char_budget,
+        );
     }
 
-    let end_line = match end_line {
-        Some(e) => e,
-        None => return Ok(None),
+    let Some(end_line) = end_line else {
+        return Ok(None);
     };
 
     let text = all_lines[start_idx..=end_line].join("\n");
