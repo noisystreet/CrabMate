@@ -563,20 +563,8 @@ fn tool_should_append_raw_output(name_trim: &str) -> bool {
 
 /// 从 `run_command` 正文首行 `命令：…` 或（回退）单行摘要取「调用串」，供详情卡标题 `$ …` 与去重用。
 fn run_command_invocation_for_display(info: &ToolCardInput, summary_norm: &str) -> Option<String> {
-    if info.name.trim() != "run_command" {
-        return None;
-    }
-    for line in info.output.lines().map(str::trim) {
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(inv) = line.strip_prefix("命令：") {
-            let inv = inv.trim();
-            if !inv.is_empty() {
-                return Some(inv.to_string());
-            }
-        }
-        break;
+    if let Some(inv) = compact_key::compact_run_command_invocation(info) {
+        return Some(inv);
     }
     let s = summary_norm.trim();
     if s.is_empty() || s.contains('\n') {

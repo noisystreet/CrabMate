@@ -236,6 +236,22 @@ fn compact_run_command_prefers_invocation_from_output() {
 }
 
 #[test]
+fn compact_run_command_uses_structured_preview_invocation() {
+    let mut info = mk("tool: run_command");
+    info.name = "run_command".to_string();
+    info.output = "退出码：0\n(无输出)\n".to_string();
+    info.structured_preview = Some(serde_json::json!({
+        "schema": "run_command_exit_v1",
+        "invocation": "cargo test --all -- --nocapture"
+    }));
+    let out = tool_card_compact_text(&info, ToolCardLocale::ZhHans);
+    assert!(
+        out.contains("cargo test --all -- --nocapture"),
+        "compact={out}"
+    );
+}
+
+#[test]
 fn compact_read_dir_uses_short_human_signal() {
     let mut info = mk("✅ read_dir 成功: 目录： . 总计遍历： 0，展示： 0");
     info.name = "read_dir".to_string();

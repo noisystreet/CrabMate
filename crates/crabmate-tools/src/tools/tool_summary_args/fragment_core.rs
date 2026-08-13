@@ -81,13 +81,40 @@ impl ToolSummaryLine for SearchInFilesSummaryArgs {
     }
 }
 
-// ── run_command, run_executable (string args only in summary) ─
+// ── run_command, run_executable (`args` may be array or string) ─
+
+fn json_arg_display_token(v: &serde_json::Value) -> Option<String> {
+    match v {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(s) => Some(terminal_session_arg_display_token(s)),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        other => Some(terminal_session_arg_display_token(&other.to_string())),
+    }
+}
+
+fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
+    match args {
+        serde_json::Value::Null => Vec::new(),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Vec::new()
+            } else {
+                vec![terminal_session_arg_display_token(t)]
+            }
+        }
+        serde_json::Value::Array(items) => items.iter().filter_map(json_arg_display_token).collect(),
+        other => vec![terminal_session_arg_display_token(&other.to_string())],
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub(super) struct RunCommandSummaryArgs {
     command: String,
+    /// 模型常把 `args` 写成数组或整段字符串；缺省为 JSON null。
     #[serde(default)]
-    args: Vec<serde_json::Value>,
+    args: serde_json::Value,
 }
 
 impl ToolSummaryLine for RunCommandSummaryArgs {
@@ -96,16 +123,11 @@ impl ToolSummaryLine for RunCommandSummaryArgs {
         if cmd.is_empty() {
             return None;
         }
-        let args = self
-            .args
-            .iter()
-            .filter_map(|x| x.as_str())
-            .collect::<Vec<_>>()
-            .join(" ");
+        let args = run_command_arg_display_tokens(&self.args);
         if args.is_empty() {
             Some(cmd.to_string())
         } else {
-            Some(format!("{} {}", cmd, args))
+            Some(format!("{} {}", cmd, args.join(" ")))
         }
     }
 }
