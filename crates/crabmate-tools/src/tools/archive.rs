@@ -10,6 +10,20 @@ use crate::tools::tool_param_types::{ArchiveListArgs, ArchivePackArgs, ArchiveUn
 /// 超大归档列表默认最多输出的条目数（避免灌满上下文）。
 const ARCHIVE_LIST_MAX_ENTRIES: usize = 250;
 
+/// 按最长后缀优先匹配（须先 `.tar.gz` 再 `.tar`）。
+const ARCHIVE_FORMAT_SUFFIXES: &[(&str, &str)] = &[
+    (".tar.gz", "tar.gz"),
+    (".tgz", "tar.gz"),
+    (".tar.bz2", "tar.bz2"),
+    (".tbz2", "tar.bz2"),
+    (".tar.xz", "tar.xz"),
+    (".txz", "tar.xz"),
+    (".tar", "tar"),
+    (".zip", "zip"),
+    (".7z", "7z"),
+    (".rar", "rar"),
+];
+
 /// 创建归档
 pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
     let v = match crate::tools::parse_args_json(args_json) {
@@ -276,22 +290,64 @@ fn format_capped_list(
 
 fn detect_format(filename: &str) -> String {
     let lower = filename.to_lowercase();
-    if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") {
-        "tar.gz".to_string()
-    } else if lower.ends_with(".tar.bz2") || lower.ends_with(".tbz2") {
-        "tar.bz2".to_string()
-    } else if lower.ends_with(".tar.xz") || lower.ends_with(".txz") {
-        "tar.xz".to_string()
-    } else if lower.ends_with(".tar") {
-        "tar".to_string()
-    } else if lower.ends_with(".zip") {
-        "zip".to_string()
-    } else if lower.ends_with(".7z") {
-        "7z".to_string()
-    } else if lower.ends_with(".rar") {
-        "rar".to_string()
+    ARCHIVE_FORMAT_SUFFIXES
+        .iter()
+        .find(|(suffix, _)| lower.ends_with(suffix))
+        .map(|(_, kind)| (*kind).to_string())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn tar_magic_kind(magic: [u8; 2]) -> &'static str {
+    match &magic {
+        b"\x1f\x8b" => "gzip",
+        b"BZ" => "bzip2",
+        b"\xfd\x37" => "xz",
+        _ => "none",
+    }
+}
+
+fn tar_decoder_from_magic(file: std::fs::File, magic: [u8; 2]) -> Box<dyn std::io::Read> {
+    match tar_magic_kind(magic) {
+        "gzip" => Box::new(flate2::read::GzDecoder::new(file)),
+        "bzip2" => Box::new(bzip2::read::BzDecoder::new(file)),
+        "xz" => Box::new(xz2::read::XzDecoder::new(file)),
+        _ => Box::new(file),
+    }
+}
+
+fn open_tar_list_decoder(
+    archive: &Path,
+) -> Result<Box<dyn std::io::Read>, Box<dyn std::error::Error>> {
+    let mut probe = std::fs::File::open(archive)?;
+    let mut magic = [0u8; 2];
+    probe.read_exact(&mut magic)?;
+    let file = std::fs::File::open(archive)?;
+    Ok(tar_decoder_from_magic(file, magic))
+}
+
+fn tar_decoder_from_compress(
+    file: std::fs::File,
+    compress: Option<&str>,
+) -> Box<dyn std::io::Read> {
+    match compress {
+        Some("gzip") => Box::new(flate2::read::GzDecoder::new(file)),
+        Some("bzip2") => Box::new(bzip2::read::BzDecoder::new(file)),
+        Some("xz") => Box::new(xz2::read::XzDecoder::new(file)),
+        _ => Box::new(file),
+    }
+}
+
+fn format_archive_list_line(name: &str, verbose: bool, verbose_detail: &str) -> String {
+    if verbose {
+        format!("  {name} ({verbose_detail})")
     } else {
-        "unknown".to_string()
+        format!("  {name}")
+    }
+}
+
+fn maybe_push_list_line(lines: &mut Vec<String>, max_entries: usize, line: String) {
+    if lines.len() < max_entries {
+        lines.push(line);
     }
 }
 
@@ -383,6 +439,32 @@ fn pack_tar(
 
 // ============ 解压实现 ============
 
+fn zip_member_outpath(name: &str, opts: &UnpackOptions<'_>, output: &Path) -> Option<PathBuf> {
+    let name = PathBuf::from(name);
+    if !archive_entry_selected(&name, opts.selected_files) {
+        return None;
+    }
+    let rel = strip_archive_path(&name, opts.strip_components)?;
+    Some(output.join(rel))
+}
+
+fn write_member_to_disk(
+    is_dir: bool,
+    reader: &mut impl Read,
+    outpath: &Path,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    if is_dir {
+        std::fs::create_dir_all(outpath)?;
+        return Ok(0);
+    }
+    if let Some(parent) = outpath.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut outfile = std::fs::File::create(outpath)?;
+    std::io::copy(reader, &mut outfile)?;
+    Ok(1)
+}
+
 fn unpack_zip(
     archive: &Path,
     output: &Path,
@@ -396,25 +478,10 @@ fn unpack_zip(
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
-        let name = PathBuf::from(file.name());
-        if !archive_entry_selected(&name, opts.selected_files) {
-            continue;
-        }
-        let Some(rel) = strip_archive_path(&name, opts.strip_components) else {
+        let Some(outpath) = zip_member_outpath(file.name(), opts, output) else {
             continue;
         };
-        let outpath = output.join(rel);
-
-        if file.is_dir() {
-            std::fs::create_dir_all(&outpath)?;
-        } else {
-            if let Some(parent) = outpath.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            let mut outfile = std::fs::File::create(&outpath)?;
-            std::io::copy(&mut file, &mut outfile)?;
-            count += 1;
-        }
+        count += write_member_to_disk(file.is_dir(), &mut file, &outpath)?;
     }
 
     Ok(count)
@@ -436,6 +503,31 @@ fn write_tar_entry_to_disk(
     Ok(())
 }
 
+fn tar_entry_outpath(path: &Path, opts: &UnpackOptions<'_>, output: &Path) -> Option<PathBuf> {
+    if !archive_entry_selected(path, opts.selected_files) {
+        return None;
+    }
+    let rel = strip_archive_path(path, opts.strip_components)?;
+    if rel.as_os_str().is_empty() {
+        return None;
+    }
+    Some(output.join(rel))
+}
+
+fn unpack_one_tar_entry(
+    entry: &mut tar::Entry<'_, Box<dyn Read>>,
+    output: &Path,
+    opts: &UnpackOptions<'_>,
+) -> Result<usize, Box<dyn std::error::Error>> {
+    let path = entry.path()?.into_owned();
+    let Some(outpath) = tar_entry_outpath(&path, opts, output) else {
+        return Ok(0);
+    };
+    let is_file = !entry.header().entry_type().is_dir();
+    write_tar_entry_to_disk(entry, &outpath)?;
+    Ok(usize::from(is_file))
+}
+
 fn unpack_tar(
     archive: &Path,
     output: &Path,
@@ -443,36 +535,14 @@ fn unpack_tar(
     opts: &UnpackOptions<'_>,
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(archive)?;
-
-    let dec: Box<dyn std::io::Read> = match compress {
-        Some("gzip") => Box::new(flate2::read::GzDecoder::new(file)),
-        Some("bzip2") => Box::new(bzip2::read::BzDecoder::new(file)),
-        Some("xz") => Box::new(xz2::read::XzDecoder::new(file)),
-        _ => Box::new(file),
-    };
-
+    let dec = tar_decoder_from_compress(file, compress);
     let mut tar = tar::Archive::new(dec);
     std::fs::create_dir_all(output)?;
     let mut count = 0;
 
     for entry in tar.entries()? {
         let mut entry = entry?;
-        let path = entry.path()?.into_owned();
-        if !archive_entry_selected(&path, opts.selected_files) {
-            continue;
-        }
-        let Some(rel) = strip_archive_path(&path, opts.strip_components) else {
-            continue;
-        };
-        if rel.as_os_str().is_empty() {
-            continue;
-        }
-        let outpath = output.join(&rel);
-        let is_file = !entry.header().entry_type().is_dir();
-        write_tar_entry_to_disk(&mut entry, &outpath)?;
-        if is_file {
-            count += 1;
-        }
+        count += unpack_one_tar_entry(&mut entry, output, opts)?;
     }
 
     Ok(count)
@@ -521,6 +591,13 @@ fn unpack_rar(archive: &Path, output: &Path) -> Result<usize, Box<dyn std::error
 
 // ============ 列表实现 ============
 
+fn zip_list_detail(size: u64, modified: Option<impl std::fmt::Debug>) -> String {
+    let modified = modified
+        .map(|dt| format!("{dt:?}"))
+        .unwrap_or_else(|| "unknown".to_string());
+    format!("{size} bytes, {modified}")
+}
+
 fn list_zip(
     archive: &Path,
     verbose: bool,
@@ -537,17 +614,12 @@ fn list_zip(
         let file = zip.by_index(i)?;
         let name = file.name().to_string();
         all_paths.push(name.clone());
-        if lines.len() < max_entries {
-            if verbose {
-                let modified = file
-                    .last_modified()
-                    .map(|dt| format!("{:?}", dt))
-                    .unwrap_or_else(|| "unknown".to_string());
-                lines.push(format!("  {} ({} bytes, {})", name, file.size(), modified));
-            } else {
-                lines.push(format!("  {name}"));
-            }
-        }
+        let detail = zip_list_detail(file.size(), file.last_modified());
+        maybe_push_list_line(
+            &mut lines,
+            max_entries,
+            format_archive_list_line(&name, verbose, &detail),
+        );
     }
 
     Ok(format_capped_list(
@@ -564,24 +636,7 @@ fn list_tar(
     verbose: bool,
     max_entries: usize,
 ) -> Result<String, Box<dyn std::error::Error>> {
-    let file = std::fs::File::open(archive)?;
-
-    // 尝试检测压缩格式
-    let mut buf = [0u8; 2];
-    let mut file = file;
-    file.read_exact(&mut buf)?;
-    let file = std::fs::File::open(archive)?;
-
-    let dec: Box<dyn std::io::Read> = if buf[0] == 0x1f && buf[1] == 0x8b {
-        Box::new(flate2::read::GzDecoder::new(file))
-    } else if buf[0] == b'B' && buf[1] == b'Z' {
-        Box::new(bzip2::read::BzDecoder::new(file))
-    } else if buf[0] == 0xfd && buf[1] == 0x37 {
-        Box::new(xz2::read::XzDecoder::new(file))
-    } else {
-        Box::new(file)
-    };
-
+    let dec = open_tar_list_decoder(archive)?;
     let mut tar = tar::Archive::new(dec);
     let mut count = 0usize;
     let mut lines = Vec::new();
@@ -589,17 +644,15 @@ fn list_tar(
 
     for entry in tar.entries()? {
         let entry = entry?;
-        let path = entry.path()?;
-        let display = path.display().to_string();
+        let display = entry.path()?.display().to_string();
         all_paths.push(display.clone());
         count += 1;
-        if lines.len() < max_entries {
-            if verbose {
-                lines.push(format!("  {} ({} bytes)", display, entry.size()));
-            } else {
-                lines.push(format!("  {display}"));
-            }
-        }
+        let detail = format!("{} bytes", entry.size());
+        maybe_push_list_line(
+            &mut lines,
+            max_entries,
+            format_archive_list_line(&display, verbose, &detail),
+        );
     }
 
     let header = format!("TAR 归档: {} ({} 个文件)", archive.display(), count);
@@ -645,6 +698,23 @@ mod archive_tool_tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn detect_format_prefers_compound_tar_suffixes() {
+        assert_eq!(detect_format("a.TAR.GZ"), "tar.gz");
+        assert_eq!(detect_format("a.tgz"), "tar.gz");
+        assert_eq!(detect_format("a.tar"), "tar");
+        assert_eq!(detect_format("a.zip"), "zip");
+        assert_eq!(detect_format("a.bin"), "unknown");
+    }
+
+    #[test]
+    fn tar_magic_kind_matches_gzip_bzip_xz() {
+        assert_eq!(tar_magic_kind(*b"\x1f\x8b"), "gzip");
+        assert_eq!(tar_magic_kind(*b"BZ"), "bzip2");
+        assert_eq!(tar_magic_kind(*b"\xfd\x37"), "xz");
+        assert_eq!(tar_magic_kind(*b"\x00\x00"), "none");
+    }
 
     #[test]
     fn strip_archive_path_removes_prefix_levels() {
