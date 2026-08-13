@@ -42,7 +42,14 @@ async fn dispatch_non_sync_tool_to_docker(
     })
 }
 
-fn parse_run_command_json(args: &str) -> (String, String, String) {
+struct ParsedRunCommandJson {
+    cmd: String,
+    command_raw: String,
+    cmd_args: Vec<String>,
+    script: String,
+}
+
+fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
     let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     let command_raw = v
         .get("command")
@@ -51,17 +58,22 @@ fn parse_run_command_json(args: &str) -> (String, String, String) {
         .trim()
         .to_string();
     let cmd = command_raw.to_lowercase();
-    let arg_preview = v
+    let cmd_args: Vec<String> = v
         .get("args")
         .and_then(|x| x.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|x| x.as_str())
-                .collect::<Vec<_>>()
-                .join(" ")
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
         })
         .unwrap_or_default();
-    (cmd, command_raw, arg_preview)
+    let script = tools::join_run_command_shell_script(&command_raw, &cmd_args);
+    ParsedRunCommandJson {
+        cmd,
+        command_raw,
+        cmd_args,
+        script,
+    }
 }
 
 /// 解析 `run_command` 白名单与交互审批，返回最终生效的 `allowed_commands` 快照（可能与配置不同）。
@@ -71,7 +83,8 @@ async fn run_command_resolve_effective_allowlist(
     web_ctx: Option<&WebToolRuntime>,
     cmd: &str,
     command_raw: &str,
-    arg_preview: &str,
+    script: &str,
+    needs_shell: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
     let base_allowed = Arc::clone(&cfg.command_exec.allowed_commands);
     let mut effective_allowed_arc: Arc<[String]> = base_allowed;
@@ -96,18 +109,18 @@ async fn run_command_resolve_effective_allowlist(
                 let allow_handles = crate::tool_approval::SharedAllowlistHandles {
                     web: web_ctx.map(|w| &w.persistent_allowlist_shared),
                 };
-                let cmd_show = if arg_preview.is_empty() {
+                let cmd_show = if script.is_empty() {
                     cmd.to_string()
                 } else {
-                    format!("{} {}", cmd, arg_preview)
+                    script.to_string()
                 };
                 let spec = crate::tool_approval::ApprovalRequestSpec {
                     capability: crate::tool_approval::SensitiveCapability::HostShell,
                     sse_command: cmd.to_string(),
-                    sse_args: arg_preview.to_string(),
+                    sse_args: cmd_show.clone(),
                     allowlist_key: None,
                     cli_title: "run_command 审批",
-                    cli_detail: format!("命令不在白名单:\n{}", cmd_show.trim()),
+                    cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", cmd_show.trim()),
                     web_timeline_prefix_zh: "命令审批：",
                 };
                 let decision_opt = if web_ctx.is_some() {
@@ -138,16 +151,18 @@ async fn run_command_resolve_effective_allowlist(
                             return Err((format!("用户拒绝执行命令：{}", cmd_show.trim()), None));
                         }
                         CommandApprovalDecision::AllowOnce => {
-                            effective_allowed_arc = extend_allowed_commands_arc(
+                            effective_allowed_arc = extend_allowlist_with_cmd_and_optional_bash(
                                 &cfg.command_exec.allowed_commands,
                                 cmd,
+                                needs_shell,
                             );
                         }
                         CommandApprovalDecision::AllowAlways => {
                             crate::tool_approval::persist_allowlist_key(&allow_handles, cmd).await;
-                            effective_allowed_arc = extend_allowed_commands_arc(
+                            effective_allowed_arc = extend_allowlist_with_cmd_and_optional_bash(
                                 &cfg.command_exec.allowed_commands,
                                 cmd,
+                                needs_shell,
                             );
                         }
                     }
@@ -156,6 +171,132 @@ async fn run_command_resolve_effective_allowlist(
         }
     }
     Ok(effective_allowed_arc)
+}
+
+fn extend_allowlist_with_cmd_and_optional_bash(
+    base: &Arc<[String]>,
+    cmd: &str,
+    needs_shell: bool,
+) -> Arc<[String]> {
+    let with_cmd = extend_allowed_commands_arc(base, cmd);
+    if needs_shell {
+        extend_allowed_commands_arc(&with_cmd, "bash")
+    } else {
+        with_cmd
+    }
+}
+
+/// glob/`$VAR` 且白名单已有 bash：静默包装。Web 上独立 argv 操作符即使已有 bash 也再审（避免 `ls && rm` 绕过单命令白名单）。无审批通道且已有 bash 时仍包装。
+fn posix_shell_wrap_needs_interactive_approval(
+    command_raw: &str,
+    cmd_args: &[String],
+    bash_on_allowlist: bool,
+    has_web_ctx: bool,
+) -> bool {
+    let expansion = tools::argv_needs_shell_expansion(command_raw, cmd_args);
+    let operators = tools::argv_has_shell_operators(command_raw, cmd_args);
+    if !expansion && !operators {
+        return false;
+    }
+    if !bash_on_allowlist {
+        return true;
+    }
+    operators && has_web_ctx
+}
+
+/// 白名单无 bash/sh 但 argv 需要 glob/`$VAR` 时，或 Web 上 argv 含 `&&`/`|` 等操作符时：审批完整脚本。
+async fn approve_posix_shell_wrap_if_needed(
+    command_raw: &str,
+    cmd_args: &[String],
+    script: &str,
+    effective_allowed: Arc<[String]>,
+    web_ctx: Option<&WebToolRuntime>,
+    sse_command: &str,
+) -> Result<Arc<[String]>, String> {
+    if !posix_shell_wrap_needs_interactive_approval(
+        command_raw,
+        cmd_args,
+        tools::posix_shell_on_allowlist(effective_allowed.as_ref()).is_some(),
+        web_ctx.is_some(),
+    ) {
+        return Ok(effective_allowed);
+    }
+    if web_ctx.is_none() {
+        return Err(format!(
+            "错误：{sse_command} 脚本含 glob / 变量 / 管道等，需经 bash -c 执行，但白名单无 bash/sh 且无审批通道。完整脚本：{}",
+            script.trim()
+        ));
+    }
+    let spec = ApprovalRequestSpec {
+        capability: SensitiveCapability::HostShell,
+        sse_command: sse_command.to_string(),
+        sse_args: script.to_string(),
+        allowlist_key: None,
+        cli_title: if sse_command == "terminal_session" {
+            "terminal_session 脚本审批"
+        } else {
+            "run_command 脚本审批"
+        },
+        cli_detail: format!(
+            "将经 bash -c 执行整行（glob / $VAR 会展开；独立 argv 中的 && / | 等会绕过单命令白名单）：\n{}",
+            script.trim()
+        ),
+        web_timeline_prefix_zh: "脚本审批：",
+    };
+    let allow_handles = SharedAllowlistHandles {
+        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+    };
+    match tool_approval::interactive_gate_after_whitelist_miss(
+        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        &spec,
+        "tool_registry::run_command shell script approval",
+        &allow_handles,
+    )
+    .await
+    {
+        Ok(InteractiveGateOutcome::Allowed) => {
+            Ok(extend_allowed_commands_arc(&effective_allowed, "bash"))
+        }
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{msg}")),
+        Err(ToolApprovalWebError::ChannelUnavailable) => {
+            Err("错误：审批通道不可用，请重试。".to_string())
+        }
+    }
+}
+
+async fn resolve_run_command_shell_allowlist(
+    cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    web_ctx: Option<&WebToolRuntime>,
+    parsed: &ParsedRunCommandJson,
+    sse_command: &str,
+) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
+    let (policy_cmd, policy_args) =
+        tools::peel_cd_prefix_argv_for_shell_policy(&parsed.command_raw, &parsed.cmd_args);
+    let needs_shell = tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
+    let allowed = run_command_resolve_effective_allowlist(
+        cfg,
+        effective_working_dir,
+        web_ctx,
+        parsed.cmd.as_str(),
+        parsed.command_raw.as_str(),
+        parsed.script.as_str(),
+        needs_shell,
+    )
+    .await?;
+    match approve_posix_shell_wrap_if_needed(
+        policy_cmd.as_str(),
+        &policy_args,
+        parsed.script.as_str(),
+        allowed,
+        web_ctx,
+        sse_command,
+    )
+    .await
+    {
+        Ok(a) => Ok(a),
+        Err(e) => Err((e, None)),
+    }
 }
 
 /// 工作区外路径 / `..` 预检三态：仅 [`ExternalPathGate::Approved`] 可置 `skip_arg_safety`。
@@ -248,14 +389,13 @@ async fn execute_run_command_impl(
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
-    let (cmd, command_raw, arg_preview) = parse_run_command_json(args);
-    let effective_allowed_arc = match run_command_resolve_effective_allowlist(
+    let parsed = parse_run_command_json(args);
+    let effective_allowed_arc = match resolve_run_command_shell_allowlist(
         cfg,
         effective_working_dir,
         web_ctx,
-        cmd.as_str(),
-        command_raw.as_str(),
-        arg_preview.as_str(),
+        &parsed,
+        "run_command",
     )
     .await
     {

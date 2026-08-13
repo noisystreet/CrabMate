@@ -69,14 +69,13 @@ async fn execute_terminal_session_impl(
     });
 
     let effective_allowed: Arc<[String]> = if let Some(rc) = exec_rc_json.as_ref() {
-        let (cmd, command_raw, arg_preview) = parse_run_command_json(rc);
-        match run_command_resolve_effective_allowlist(
+        let parsed = parse_run_command_json(rc);
+        match resolve_run_command_shell_allowlist(
             cfg,
             effective_working_dir,
             web_ctx,
-            cmd.as_str(),
-            command_raw.as_str(),
-            arg_preview.as_str(),
+            &parsed,
+            "terminal_session",
         )
         .await
         {

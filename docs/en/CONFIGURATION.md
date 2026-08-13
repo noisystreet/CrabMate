@@ -130,7 +130,7 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 
 | Variable | Description |
 | --- | --- |
-| `CM_ALLOWED_COMMANDS` | Comma-separated allowlist for **`run_command`** and the first **`terminal_session` `exec`**. Embedded defaults also include **`bash`** / **`sh`** (for **`bash -c` / `sh -c`** compound one-liners), **`docker`**, **`podman`**, **`mvn`**, **`gradle`**, …; full list **`config/tools.toml`**. |
+| `CM_ALLOWED_COMMANDS` | Comma-separated allowlist for **`run_command`** and the first **`terminal_session` `exec`**. Embedded defaults also include **`bash`** / **`sh`** (glob/`$VAR`/`~` join into one script and run via **`bash -c` / `sh -c`**; Web re-approves standalone `&&`/`|`), **`docker`**, **`podman`**, **`mvn`**, **`gradle`**, …; full list **`config/tools.toml`**. |
 | `CM_MCP_ENABLED` | Enable MCP. Requires **`cargo build --features mcp`**; without that feature, `mcp list` and in-process MCP tool proxy are unavailable. Multi-server source of truth: **`~/.local/share/crabmate/mcp_servers.json`**. |
 | `CM_MCP_COMMAND` | Legacy single stdio command; imported **once** only when user-data has no servers **and** `mcp_servers.json` has not set **`toml_legacy_imported`**. After a successful import or when servers already exist, the marker is persisted so clearing the list will not re-import from TOML/`CM_MCP_COMMAND`. |
 | `CM_MCP_TOOL_TIMEOUT_SECS` | MCP tool timeout; stdio reused by fingerprint (`command`/`args`/`env`/`cwd`); **`crabmate mcp list`** needs no `API_KEY`; **`mcp list --probe`** spawns subprocess. MCP JSON import stores structured fields (no forced `sh -c`); connect failures surface as status **`last_error`** and turn `timeline_log` / terminal notice. |

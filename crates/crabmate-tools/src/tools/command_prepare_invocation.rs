@@ -7,7 +7,13 @@ use super::super::command_line_prepare::{
     arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
     peel_workspace_cd_prefix, split_command_prefix_if_embedded,
 };
-use super::{PreparedRunCommand, RunCommandError, check_shell_variable_references};
+use super::{
+    PreparedRunCommand, RunCommandError, check_shell_variable_references,
+    command_shell_script::{
+        argv_needs_posix_shell_wrap, is_shell_dash_c_invocation, maybe_wrap_argv_with_posix_shell,
+        posix_shell_on_allowlist,
+    },
+};
 
 fn normalize_workspace_absolute_arg(arg: &str, working_dir: &Path) -> String {
     let a = arg.trim();
@@ -187,9 +193,8 @@ pub fn scan_run_command_unsafe_args(
         &mut cmd_args,
         &mut unsafe_args,
     )?;
-    check_shell_variable_references(&cmd_raw, &cmd_args)?;
-
     // 扫描阶段：命令未在白名单时仍收集 argv 危险参数（调用方通常已先做命令名审批）。
+    // 不在此拦截 glob/`$VAR`：展开改由 bash -c 或异步审批处理。
     let cmd_name = cmd_raw.to_lowercase();
     let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
     let has_workspace_exec = if is_workspace_executable {
@@ -213,6 +218,28 @@ pub fn scan_run_command_unsafe_args(
     Ok(unsafe_args)
 }
 
+fn skip_shell_variable_check(cmd_raw: &str, cmd_args: &[String], allowed: &[String]) -> bool {
+    is_shell_dash_c_invocation(cmd_raw, cmd_args)
+        || (posix_shell_on_allowlist(allowed).is_some()
+            && argv_needs_posix_shell_wrap(cmd_raw, cmd_args))
+}
+
+fn wrap_posix_shell_reresolve(
+    cmd_raw: &mut String,
+    cmd_args: &mut Vec<String>,
+    cmd_name: &mut String,
+    exec_path: &mut Option<PathBuf>,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<(), RunCommandError> {
+    if maybe_wrap_argv_with_posix_shell(cmd_raw, cmd_args, allowed_commands) {
+        let wrapped = resolve_run_command_exec_path(cmd_raw, working_dir, allowed_commands)?;
+        *cmd_name = wrapped.0;
+        *exec_path = wrapped.1;
+    }
+    Ok(())
+}
+
 pub(super) fn prepare_run_command_invocation(
     args: &serde_json::Value,
     working_dir: &Path,
@@ -230,13 +257,24 @@ pub(super) fn prepare_run_command_invocation(
         skip_arg_safety,
     )?;
 
-    check_shell_variable_references(&cmd_raw, &cmd_args)?;
+    let inject_gh_token = crate::github_token::command_basename_is_gh(&cmd_raw);
+    if !skip_shell_variable_check(&cmd_raw, &cmd_args, allowed_commands) {
+        check_shell_variable_references(&cmd_raw, &cmd_args)?;
+    }
 
-    let (cmd_name, exec_path) =
+    let (mut cmd_name, mut exec_path) =
         resolve_run_command_exec_path(&cmd_raw, &effective_working_dir, allowed_commands)?;
     if !skip_arg_safety {
         validate_run_command_args_safety(&cmd_name, &cmd_args, exec_path.is_some())?;
     }
+    wrap_posix_shell_reresolve(
+        &mut cmd_raw,
+        &mut cmd_args,
+        &mut cmd_name,
+        &mut exec_path,
+        &effective_working_dir,
+        allowed_commands,
+    )?;
 
     Ok(PreparedRunCommand {
         cmd_raw,
@@ -244,6 +282,7 @@ pub(super) fn prepare_run_command_invocation(
         exec_path,
         cmd_args,
         effective_working_dir,
+        inject_gh_token,
     })
 }
 
