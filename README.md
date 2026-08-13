@@ -167,6 +167,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2 UI migrate plan | — |
 | [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ protocol ↔ Client compat | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap | — |
+| [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) | Recorded bench scores (no secrets) | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
 
 **More**: backlog, roadmap, frontend drafts—under **`docs/`** ([docs/中英文文档对照.md](docs/中英文文档对照.md)).

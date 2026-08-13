@@ -30,7 +30,7 @@ pub fn extract_final_answer(reply: &str) -> Option<String> {
         .map(|cap| cap[1].trim().to_string())
 }
 
-/// 从 agent 回复中提取代码补全（HumanEval）。
+/// 从 agent 回复中提取代码补全（围栏内正文，否则整段回复）。
 pub fn extract_code_completion(reply: &str) -> String {
     static CODE_BLOCK: LazyLock<Regex> = LazyLock::new(|| {
         Regex::new(r"(?s)```(?:python|py)?\s*\n(.*?)```").expect("code block regex invalid")
@@ -41,6 +41,27 @@ pub fn extract_code_completion(reply: &str) -> String {
     }
 
     reply.to_string()
+}
+
+/// HumanEval 官方 `check` 会执行 `prompt + completion`。若模型复述了函数桩，剥掉前缀以免重复 `def`。
+pub fn extract_humaneval_completion(reply: &str, prompt: &str) -> String {
+    strip_repeated_prompt_prefix(&extract_code_completion(reply), prompt)
+}
+
+fn strip_repeated_prompt_prefix(completion: &str, prompt: &str) -> String {
+    if prompt.is_empty() {
+        return completion.to_string();
+    }
+    let body = completion.trim_start_matches(['\n', '\r']);
+    for prefix in [prompt, prompt.trim_end()] {
+        if prefix.is_empty() {
+            continue;
+        }
+        if let Some(rest) = body.strip_prefix(prefix) {
+            return rest.trim_start_matches('\n').to_string();
+        }
+    }
+    completion.to_string()
 }
 
 #[cfg(test)]
@@ -77,5 +98,23 @@ mod tests {
         let reply = "def add(a, b):\n    return a + b\n";
         let code = extract_code_completion(reply);
         assert!(code.contains("def add"));
+    }
+
+    #[test]
+    fn test_extract_humaneval_strips_repeated_prompt() {
+        let prompt = "def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n";
+        let reply =
+            "```python\ndef add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n    return a + b\n```";
+        let code = extract_humaneval_completion(reply, prompt);
+        assert_eq!(code, "    return a + b\n");
+        assert!(!code.contains("def add"));
+    }
+
+    #[test]
+    fn test_extract_humaneval_keeps_body_only() {
+        let prompt = "def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n";
+        let reply = "    return a + b\n";
+        let code = extract_humaneval_completion(reply, prompt);
+        assert_eq!(code, "    return a + b\n");
     }
 }

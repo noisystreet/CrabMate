@@ -74,15 +74,15 @@ Planning for benchmark features and testing: **`docs/基准测试规划.md`** (k
 | `--batch <FILE>` | Input JSONL (`human_eval` rows need `humaneval_test` and `entry_point`; see **`docs/基准测试规划.md`** §5) |
 | `--batch-output <FILE>` | Default `benchmark_results.jsonl` |
 | `--task-timeout <SECS>` | `0` = no limit |
-| `--max-tool-rounds <N>` | `0` = no limit |
+| `--max-tool-rounds <N>` | `0` = **no** round cap (**does not** disable tools); use global **`--no-tools`** to disable |
 | `--resume` | Skip existing `instance_id` |
 | `--bench-system-prompt <FILE>` | Override system |
 
-HumanEval: convert the official JSONL, run `bench`, then score with Python 3 (**executes model-generated code** — sandbox if needed):
+HumanEval adapter prepends a “complete the function body, do not ask” instruction and a system suffix. Convert the official JSONL, run `bench`, then score with Python 3 (**executes model-generated code** — sandbox if needed). Prefer global **`--no-tools`** (`--max-tool-rounds 0` is not enough):
 
 ```bash
 python3 scripts/humaneval_official_to_crabmate_jsonl.py --input HumanEval.jsonl --output tasks.jsonl
-cargo run -- bench --benchmark human_eval --batch tasks.jsonl --batch-output results.jsonl
+cargo run -- --no-tools bench --benchmark human_eval --batch tasks.jsonl --batch-output results.jsonl
 python3 scripts/humaneval_score_benchmark_results.py --tasks tasks.jsonl --results results.jsonl
 ```
 
