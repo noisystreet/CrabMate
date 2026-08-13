@@ -1,6 +1,6 @@
 //! SSE：经 `data:` 下发的**控制面 JSON**（`protocol`）与客户端侧**行分类**（`line`）。
 //!
-//! 与 `llm::api::stream_chat` 下发的纯文本 delta 区分；前端对齐见 **`frontend/src/api/`**（**`chat_stream/`**）。
+//! 与 `llm::api::stream_chat` 下发的纯文本 delta 区分；前端对齐见 Client **`frontend/src/api/`**（**`chat_stream/`**）。
 //!
 //! 人读契约见仓库 **`docs/SSE协议.md`**。协议版本常量见 **`crabmate-sse-protocol`** 的 `SSE_PROTOCOL_VERSION`。
 

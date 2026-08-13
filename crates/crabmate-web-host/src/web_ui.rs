@@ -5,7 +5,7 @@ pub use crabmate_api_contract::WebUiConfigResponse;
 
 pub const CM_WEB_DISABLE_MARKDOWN: &str = "CM_WEB_DISABLE_MARKDOWN";
 
-/// 为真时 CSR 不对助手消息做展示层过滤；并影响分阶段规划 SSE 门控（与根包 `env_flags` 同名约定）。
+/// 为真时 CSR 不对助手消息做展示层过滤；并影响分阶段规划 SSE 门控（与 `GET /web-ui` 同源）。
 pub const CM_WEB_RAW_ASSISTANT_OUTPUT: &str = "CM_WEB_RAW_ASSISTANT_OUTPUT";
 
 fn env_flag_truthy(name: &str) -> bool {

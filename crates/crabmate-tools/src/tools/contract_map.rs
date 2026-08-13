@@ -156,37 +156,13 @@ pub fn crate_contract_map(args_json: &str, ctx: &ToolContext<'_>) -> String {
         keyword_hits.min(30),
         &mut out,
     );
-    section_file(
-        ctx.working_dir,
-        "Leptos 前端 API 与流式请求",
-        "frontend/src/api/mod.rs",
-        head_lines,
-        &["chat", "stream", "SSE", "/chat"],
-        keyword_hits,
-        &mut out,
-    );
-    section_file(
-        ctx.working_dir,
-        "Leptos SSE 控制面类型（SseControlSink）",
-        "frontend/src/sse_dispatch/types.rs",
-        head_lines,
-        &["SseControlSink", "turn_phase", "Handled", "control"],
-        keyword_hits,
-        &mut out,
-    );
-    section_file(
-        ctx.working_dir,
-        "Leptos AG-UI 解析分发（V2Parser）",
-        "frontend/src/api/chat_stream/parser_v2.rs",
-        head_lines,
-        &["V2Parser", "CUSTOM", "Handled", "parse"],
-        keyword_hits,
-        &mut out,
+    out.push_str(
+        "官方 UI SSE 解析在 Client 仓 `../crabmate-client/frontend/src/api/`（`chat_stream/parser_v2.rs`、`sse_dispatch/types.rs`）。本工作区无 `frontend/` 源码；下列为本仓协议与金样。\n\n",
     );
     section_file(
         ctx.working_dir,
         "Rust 控制面分类（IM/V1 形状）",
-        "crates/crabmate-sse-protocol/control_classify.rs",
+        "crates/crabmate-sse-protocol/src/control_classify.rs",
         head_lines,
         &["classify", "handled", "plain", "stop"],
         keyword_hits.min(40),
@@ -316,6 +292,7 @@ mod tests {
 
         assert!(body.contains("crate_contract_map"));
         assert!(body.contains("crabmate_contract_map_v1"));
+        assert!(body.contains("Client 仓"));
         assert!(body.contains("Router"));
         assert!(body.contains("SSE"));
     }

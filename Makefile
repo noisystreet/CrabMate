@@ -53,7 +53,7 @@ help:
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
 	@echo "变量：RELEASE=1 作用于 backend / workspace"
-	@echo "serve UI：CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist 或 --no-web"
+	@echo "serve：默认纯 API；托管 SPA：--with-web 且 CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist"
 
 # --- 聚合 ---
 
@@ -77,7 +77,7 @@ workspace:
 workspace-release:
 	$(MAKE) workspace RELEASE=1
 
-# --- 发布打包（默认不附带 UI；运行时 --no-web 或 CM_WEB_STATIC_DIR）---
+# --- 发布打包（默认不附带 UI；运行时默认纯 API，托管 SPA 用 --with-web + CM_WEB_STATIC_DIR）---
 
 package:
 	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }

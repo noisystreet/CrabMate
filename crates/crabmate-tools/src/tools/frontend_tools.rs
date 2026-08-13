@@ -8,7 +8,7 @@ use super::output_util;
 const MAX_OUTPUT_LINES: usize = 800;
 
 /// 未在 JSON 中指定 **`subdir`** 时：默认子目录 **`frontend`**（相对工作区根）。
-/// 若该路径下无 **`package.json`**，`frontend_lint` / `prettier` 等会跳过（CrabMate 自带 Leptos 前端通常仅含 `Cargo.toml` / Trunk）。
+/// 若该路径下无 **`package.json`**，`frontend_lint` / `prettier` 等会跳过（官方 Leptos UI 在 Client 仓，本仓工作区常无 npm 前端）。
 #[must_use]
 pub fn npm_package_subdir_default(_workspace_root: &Path) -> String {
     "frontend".to_string()

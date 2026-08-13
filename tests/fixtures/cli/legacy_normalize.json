@@ -17,14 +17,12 @@
     "argv": [
       "crabmate",
       "--serve",
-      "3000",
-      "--no-web"
+      "3000"
     ],
     "normalized": [
       "crabmate",
       "serve",
-      "3000",
-      "--no-web"
+      "3000"
     ]
   },
   {

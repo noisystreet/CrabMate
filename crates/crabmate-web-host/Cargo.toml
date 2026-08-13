@@ -3,7 +3,7 @@ name = "crabmate-web-host"
 version = "0.1.0"
 edition = "2024"
 license = "Apache-2.0"
-description = "CrabMate Axum Web host surface (HTTP DTOs, web-ui, serve shell); not the Leptos WASM UI (crabmate-web)"
+description = "CrabMate Axum Web host surface (HTTP DTOs, web-ui, serve shell); not the Leptos WASM UI (Client crabmate-web)"
 
 [dependencies]
 axum = { workspace = true, default-features = false, features = ["json", "tokio"] }

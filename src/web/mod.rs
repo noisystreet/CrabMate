@@ -7,7 +7,6 @@ mod chat_handlers;
 mod conversation_messages_window;
 pub(crate) mod cron_scheduler;
 pub(crate) mod http_types;
-pub(crate) mod web_ui_env;
 
 pub(crate) use app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,
