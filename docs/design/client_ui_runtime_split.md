@@ -11,9 +11,9 @@
 
 **Server（`crabmate serve`）只提供 HTTP/SSE API 与 Agent 执行权威；业务 UI 的构建、发版与（目标态）运行时加载均在 Client 侧。**
 
-- **`serve` 默认即为纯 API**（不必再传 `--no-web`）。
+- **`serve` 默认即为纯 API**。
 - 同机托管静态 UI 须 **显式** **`--with-web`** / **`--web`**（配合 **`CM_WEB_STATIC_DIR`** 或可探测 dist）。
-- **`--no-web`** / **`--cli-only`**：兼容无操作（与默认等价）；与 **`--with-web`** 互斥。
+- **`--no-web` / `--cli-only` 已删除**（曾为与默认等价的无操作旗标）。
 
 ---
 
@@ -32,7 +32,8 @@
 ## 3. Phase 1 退出标准（Server）
 
 - [x] 默认 `serve` 不托管 SPA（`mount_web_ui=false`）
-- [x] **`--with-web`** 显式兼容托管；**`--no-web`** 降级为无操作
+- [x] **`--with-web`** 显式兼容托管
+- [x] 删除无操作旗标 **`--no-web` / `--cli-only`**
 - [x] README / 配置说明 / 命令行与路由 / systemd 注释 / CI 断言与行为一致
 - [x] 冒烟 / 真 LLM / AGENTS 等同机托管路径改为 **`--with-web`**（跨 Origin §9 仍纯 API）
 - [x] CORS 已暴露 **`x-conversation-id` / `x-stream-job-id` / `x-request-id`**（既有实现；官方壳 Origin 默认放行，额外静态 Origin 用 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）

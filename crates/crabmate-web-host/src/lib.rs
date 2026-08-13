@@ -1,6 +1,6 @@
 //! Axum Web **宿主** crate：HTTP 契约、`GET /web-ui`、serve 静态挂载壳。
 //!
-//! **不是** Leptos WASM 前端包（workspace 成员名仍为 **`crabmate-web`** / `frontend/`）。
+//! **不是** Leptos WASM 前端包（UI crate **`crabmate-web`** 在 Client 仓 `../crabmate-client/frontend`）。
 //! 依赖策略见 `docs/design/web_host_extract.md`：本 crate **不得**依赖 `crabmate-internal`。
 //!
 //! ## 阶段 B / C（边界说明）

@@ -8,7 +8,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 
 - **Rust**: 1.85+ (edition 2024); see [`README.md`](../../README.md).
 - **E2E**: **Playwright** and **Victauri** live in the Client repo (`../crabmate-client`). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
-- **Web assets**: E2E and `serve --with-web` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`**. API-only: default **`serve`** (no `--no-web` needed).
+- **Web assets**: E2E and `serve --with-web` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`**. API-only: default **`serve`**.
 
 ## GitHub Actions (main CI)
 
@@ -56,7 +56,7 @@ Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format
 
 ## Rust: workspace tests
 
-From the **repo root** (workspace members: `crabmate`, `crabmate-web`, `crabmate-sse-protocol`):
+From the **repo root** (this workspace: `crabmate`, `crabmate-sse-protocol`, `crabmate-web-host`, …; **not** Client `crabmate-web`):
 
 ```bash
 cargo test
@@ -68,7 +68,7 @@ cargo test
 | --- | --- | --- |
 | Main binary + backend | `cargo test -p crabmate` | Most `src/` and `tests/` tests |
 | SSE protocol crate | `cargo test -p crabmate-sse-protocol` | Version / doc marker self-checks, etc. |
-| Web UI crate | `cargo test -p crabmate-web` | See **Frontend (Leptos)** below |
+| Web host crate | `cargo test -p crabmate-web-host` | HTTP contract shell; Leptos UI tests are in Client |
 
 ### Filter by test name (examples)
 
@@ -85,27 +85,27 @@ If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.
 cargo +nightly test
 ```
 
-## Frontend (Leptos / `frontend`)
+## Frontend (Leptos / Client `frontend`)
+
+Business UI lives in the Client repo. Run the following from **`../crabmate-client`**.
 
 ### Host target unit tests (default)
 
-From repo root:
-
 ```bash
-cargo test -p crabmate-web
+cd ../crabmate-client/frontend && cargo test
 ```
 
 Or:
 
 ```bash
-# UI tests: cd ../crabmate-client/frontend && cargo test
+cd ../crabmate-client && cargo test -p crabmate-web
 ```
 
 Covers Markdown sanitization, session helpers, `debounce_schedule`, etc. (no browser).
 
 ### WASM target tests (optional)
 
-`wasm-bindgen-test` needs **`wasm-bindgen-cli`** matching the **`wasm-bindgen`** version in **`Cargo.lock`**, plus the wasm32 test runner. The lockfile currently pins **0.2.114**:
+`wasm-bindgen-test` needs **`wasm-bindgen-cli`** matching **`wasm-bindgen`** in the **Client** `frontend/Cargo.lock`, plus the wasm32 test runner. Example (pin to the lockfile version):
 
 ```bash
 cargo install wasm-bindgen-cli --version 0.2.114 --locked

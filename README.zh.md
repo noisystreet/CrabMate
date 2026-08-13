@@ -56,7 +56,7 @@
 
 | 子命令 | 说明 |
 | --- | --- |
-| **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。**`--no-web`** 为兼容无操作。默认端口 **8080**，绑定 **127.0.0.1**。 |
+| **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。默认端口 **8080**，绑定 **127.0.0.1**。 |
 | **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
 | **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
@@ -116,7 +116,7 @@ export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
 cd ../crabmate_agent && cargo run -- serve --with-web
 ```
 
-纯 API（默认）：`serve`（无需 `--no-web`）。设计笔记仍见本仓 [`docs/frontend/`](docs/frontend/)。
+纯 API（默认）：`serve`。UI 指针见 [`docs/frontend/`](docs/frontend/)。
 
 ### 官方 Client（Desktop / Android）
 

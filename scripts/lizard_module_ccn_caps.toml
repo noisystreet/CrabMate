@@ -44,7 +44,6 @@ global_over_ccn_sum_cap = 1621
 "src/cli_run_session.rs" = 0
 "src/conversation_store.rs" = 0
 "src/e2e_scenario.rs" = 0
-"src/env_flags.rs" = 0
 "src/lib" = 0
 "src/lib.rs" = 0
 "src/llm" = 0

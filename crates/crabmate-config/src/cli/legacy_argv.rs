@@ -247,25 +247,13 @@ mod legacy_argv_tests {
     }
 
     #[test]
-    fn parse_serve_no_web_is_compat_noop() {
-        let p = parse_args_from_argv(vec![
-            "crabmate".to_string(),
-            "serve".to_string(),
-            "--no-web".to_string(),
-        ])
-        .unwrap();
-        assert!(!p.with_web);
-    }
-
-    #[test]
-    fn parse_serve_with_web_and_no_web_conflicts() {
+    fn parse_serve_no_web_is_rejected() {
         let err = parse_args_from_argv(vec![
             "crabmate".to_string(),
             "serve".to_string(),
-            "--with-web".to_string(),
             "--no-web".to_string(),
         ])
-        .expect_err("with-web and no-web must conflict");
+        .expect_err("--no-web must be unknown");
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     }
 
@@ -278,8 +266,8 @@ mod legacy_argv_tests {
 
     #[test]
     fn legacy_serve_with_port() {
-        let v = norm(&["crabmate", "--serve", "3000", "--no-web"]);
-        assert_eq!(v, vec!["crabmate", "serve", "3000", "--no-web"]);
+        let v = norm(&["crabmate", "--serve", "3000"]);
+        assert_eq!(v, vec!["crabmate", "serve", "3000"]);
     }
 
     #[test]

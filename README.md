@@ -56,7 +56,7 @@ With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer
 
 | Subcommand | Summary |
 | --- | --- |
-| **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). **`--no-web`** is a no-op alias. Default port **8080**, bind **127.0.0.1**. |
+| **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). Default port **8080**, bind **127.0.0.1**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
 | **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
@@ -116,7 +116,7 @@ export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
 cd ../crabmate_agent && cargo run -- serve --with-web
 ```
 
-API-only (default): `serve` (no `--no-web` needed). Design notes in this repo: [`docs/frontend/`](docs/frontend/).
+API-only (default): `serve`. UI pointers: [`docs/frontend/`](docs/frontend/).
 
 ### Official Client (Desktop / Android)
 

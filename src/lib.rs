@@ -25,7 +25,6 @@ pub use crabmate_sse_protocol::sse;
 mod chat_job_queue;
 mod cli_run;
 pub mod e2e_scenario;
-mod env_flags;
 pub use crabmate_config;
 pub use crabmate_config as config;
 pub use crabmate_llm;

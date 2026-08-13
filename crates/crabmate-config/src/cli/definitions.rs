@@ -43,13 +43,8 @@ pub struct ServeCmd {
 
     /// 显式挂载业务 UI 静态资源（Client `frontend/dist` / `CM_WEB_STATIC_DIR`）。
     /// **默认不挂**（纯 API）；同机托管 SPA 须传本旗标。
-    #[arg(long = "with-web", alias = "web", conflicts_with = "no_web")]
+    #[arg(long = "with-web", alias = "web")]
     pub with_web: bool,
-
-    /// 兼容别名：默认已是纯 API，本旗标**无操作**（与省略 `--with-web` 等价）。
-    /// 与 `--with-web` 互斥。
-    #[arg(long, alias = "cli-only", conflicts_with = "with_web")]
-    pub no_web: bool,
 
     /// 监听成功后向 stdout 输出一行 `{"event":"web_ready",...}` JSON；壳不再依赖，仅脚本/工具。
     /// 旗标名 `--desktop-ready-json` 已弃用命名，请优先使用可见别名 `--web-ready-json`。
@@ -266,12 +261,8 @@ pub struct ConfigCmd {
     pub dry_run: bool,
 
     /// 与 `serve --with-web` 同语义：检查 UI 静态目录是否存在（默认跳过，纯 API）。
-    #[arg(long = "with-web", alias = "web", conflicts_with = "no_web")]
+    #[arg(long = "with-web", alias = "web")]
     pub with_web: bool,
-
-    /// 兼容别名：默认已跳过 UI 静态检查，本旗标**无操作**。
-    #[arg(long, alias = "cli-only", conflicts_with = "with_web")]
-    pub no_web: bool,
 }
 
 /// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）

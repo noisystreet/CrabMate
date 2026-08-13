@@ -58,7 +58,6 @@ Without a subcommand, legacy **`--serve`**, **`--benchmark`**, **`--dry-run`**, 
 | `--workspace <path>` | Override initial workspace |
 | `--no-tools` | Disable tools |
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
-| `--no-web` / `--cli-only` | Compat no-op (API-only is default) |
 | `--with-web` / `--web` | Explicitly mount business UI static assets (needs `CM_WEB_STATIC_DIR` or probed dist) |
 | `--dry-run` | Maps to `config` |
 | `--log <FILE>` | Log file + stderr mirror |
@@ -149,7 +148,7 @@ export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
 cd ../crabmate_agent && cargo run -- serve --with-web
 ```
 
-API-only (default): `cargo run -- serve` (**`--no-web`** is a compat no-op). Config check: `cargo run -- config` (skips UI dist by default; add **`--with-web`** to require static root).
+API-only (default): `cargo run -- serve`. Config check: `cargo run -- config` (skips UI dist by default; add **`--with-web`** to require static root).
 
 Static assets are served only with **`--with-web`**, via **`CM_WEB_STATIC_DIR`** (or sibling Client `frontend/dist`).
 
