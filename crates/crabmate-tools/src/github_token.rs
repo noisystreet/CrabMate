@@ -93,12 +93,17 @@ pub fn apply_gh_token_env(cmd: &mut Command) {
 }
 
 /// `run_command` / 直接 spawn 时：仅当命令名为 `gh` 时注入。
-pub fn apply_gh_token_env_if_gh_command(cmd: &mut Command, command_name: &str) {
+pub fn command_basename_is_gh(command_name: &str) -> bool {
     let base = std::path::Path::new(command_name)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or(command_name);
-    if base == "gh" {
+    base.eq_ignore_ascii_case("gh")
+}
+
+/// `run_command` / 直接 spawn 时：仅当命令名为 `gh` 时注入。
+pub fn apply_gh_token_env_if_gh_command(cmd: &mut Command, command_name: &str) {
+    if command_basename_is_gh(command_name) {
         apply_gh_token_env(cmd);
     }
 }
@@ -168,6 +173,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn command_basename_is_gh_matches_path() {
+        assert!(command_basename_is_gh("gh"));
+        assert!(command_basename_is_gh("/usr/bin/gh"));
+        assert!(!command_basename_is_gh("bash"));
+    }
 
     #[test]
     fn resolve_skips_when_env_set() {

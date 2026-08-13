@@ -17,9 +17,16 @@ use crate::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::CdPeelError;
 
+#[path = "command_shell_script.rs"]
+mod command_shell_script;
 #[path = "command_prepare_invocation.rs"]
 mod prepare_invocation;
 use prepare_invocation::{prepare_run_command_invocation, scan_run_command_unsafe_args};
+
+pub use command_shell_script::{
+    argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
+    join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
+};
 
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
 #[derive(Debug, Error)]
@@ -34,9 +41,10 @@ pub enum RunCommandError {
     ArgsNotArray,
     #[error("错误：参数不允许包含父目录穿越（如 ..、../）或绝对路径（以 / 开头）")]
     UnsafeArg,
-    /// 参数含 Shell 变量引用（`$(…)`、`${…}`、`` `…` ``），这些不会被 `run_command` 展开。
-    /// 请使用具体值代替（如 `4` 代替 `$(nproc)`）。
-    #[error("错误：参数含 Shell 变量引用 `{pattern}`，不会被展开。请使用具体值代替")]
+    /// 参数含 Shell 展开（`$(…)` / `$VAR` / glob 等），且白名单无 `bash`/`sh`、也未经脚本审批。
+    #[error(
+        "错误：参数含 Shell 展开 `{pattern}`。请将 bash 或 sh 加入 allowed_commands，或经 Web 审批后以 bash -c 执行整行脚本"
+    )]
     ShellVariableDetected { pattern: String },
     /// `cd` 在无 shell 下不可直接 `exec`；仅支持前缀 `cd <相对目录> && <命令…>`（可多次串联），见 `command_line_prepare::peel_workspace_cd_prefix`.
     #[error("错误：`cd` 前缀无效：{detail}（当前工作目录：{work_dir}）")]
@@ -259,6 +267,8 @@ pub struct PreparedRunCommand {
     pub cmd_args: Vec<String>,
     /// `cd rel && …` 前缀展开后的进程工作目录（默认等于调用方传入的 `working_dir`）。
     pub effective_working_dir: PathBuf,
+    /// 包装成 `bash -c` 前原命令为 `gh` 时仍注入 token。
+    pub inject_gh_token: bool,
 }
 
 /// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
@@ -340,7 +350,7 @@ fn run_cargo_test_with_optional_cache(
     Ok(Some(formatted))
 }
 
-/// 在指定工作目录下执行白名单内的 Linux 命令，不经过 shell，输出截断。
+/// 在指定工作目录下执行白名单内的 Linux 命令；若 argv 需 glob/`$VAR`/`~` 且白名单含 `bash`/`sh`，则经 `bash -c`（或 `sh -c`）跑整行。
 /// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
 /// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
 pub fn run(
@@ -440,7 +450,11 @@ fn run_impl(
     let mut cmd = Command::new(&prepared.cmd_name);
     cmd.args(&prepared.cmd_args)
         .current_dir(&prepared.effective_working_dir);
-    crate::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+    if prepared.inject_gh_token {
+        crate::github_token::apply_gh_token_env(&mut cmd);
+    } else {
+        crate::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+    }
     let output = cmd.output().map_err(|e| {
         map_spawn_error(
             &prepared.cmd_name,
@@ -468,6 +482,14 @@ fn parse_run_command_args_with_repair(
 }
 
 fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
+    if command_shell_script::is_shell_dash_c_invocation(cmd_raw, args)
+        && let Some(script) = command_shell_script::dash_c_script_body(args)
+    {
+        let script = script.trim();
+        if !script.is_empty() {
+            return script.to_string();
+        }
+    }
     let cmd = cmd_raw.trim();
     if args.is_empty() {
         cmd.to_string()
@@ -531,37 +553,12 @@ fn check_rate_limit() -> Result<(), RunCommandError> {
     Ok(())
 }
 
-/// 检测字符串中是否包含 Shell 变量引用（`$(…)`、`${…}`、`` `…` ``）。
-/// 返回第一个匹配的模式字符串。
-fn detect_shell_variable(s: &str) -> Option<&str> {
-    let bytes = s.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    while i < len {
-        match bytes[i] {
-            b'$' if i + 1 < len => {
-                if bytes[i + 1] == b'(' {
-                    return Some("$(...)");
-                }
-                if bytes[i + 1] == b'{' {
-                    return Some("${...}");
-                }
-                i += 2;
-            }
-            b'`' => {
-                return Some("`...`");
-            }
-            _ => {
-                i += 1;
-            }
-        }
-    }
-    None
-}
-
-fn check_shell_variable_references(cmd: &str, args: &[String]) -> Result<(), RunCommandError> {
+pub(super) fn check_shell_variable_references(
+    cmd: &str,
+    args: &[String],
+) -> Result<(), RunCommandError> {
     for a in std::iter::once(cmd).chain(args.iter().map(String::as_str)) {
-        if let Some(pattern) = detect_shell_variable(a) {
+        if let Some(pattern) = command_shell_script::detect_shell_expansion_token(a) {
             return Err(RunCommandError::ShellVariableDetected {
                 pattern: pattern.to_string(),
             });
@@ -578,319 +575,5 @@ pub fn reset_run_command_rate_limit_for_tests() {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    const TEST_MAX_OUTPUT_LEN: usize = 8192;
-    const TEST_ALLOWED: &[&str] = &[
-        "ls",
-        "pwd",
-        "whoami",
-        "date",
-        "echo",
-        "id",
-        "uname",
-        "env",
-        "df",
-        "du",
-        "head",
-        "tail",
-        "wc",
-        "cat",
-        "cd",
-        "cmake",
-        "ninja",
-        "gcc",
-        "g++",
-        "clang",
-        "clang++",
-        "c++filt",
-        "autoreconf",
-        "autoconf",
-        "automake",
-        "aclocal",
-        "make",
-        "cargo",
-    ];
-
-    fn test_allowed() -> Vec<String> {
-        TEST_ALLOWED.iter().map(|s| s.to_string()).collect()
-    }
-
-    fn test_work_dir() -> &'static Path {
-        Path::new(".")
-    }
-
-    #[test]
-    fn test_run_invalid_json() {
-        let out = run(
-            "not json",
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.starts_with("参数解析错误"));
-    }
-
-    #[test]
-    fn test_run_missing_command_checked() {
-        let e = run_checked(
-            r#"{"args":[]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        )
-        .expect_err("missing command");
-        assert_eq!(e.kind(), "missing_command");
-    }
-
-    #[test]
-    fn test_run_missing_command() {
-        let out = run(
-            r#"{"args":[]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert_eq!(out, "错误：缺少 command 参数");
-    }
-
-    #[test]
-    fn test_run_disallowed_command_checked() {
-        let e = run_checked(
-            r#"{"command":"rm","args":["-rf","/"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        )
-        .expect_err("disallowed");
-        assert_eq!(e.kind(), "disallowed_command");
-        let msg = e.user_message();
-        assert!(msg.contains("不允许的命令"));
-        assert!(msg.contains("rm"));
-    }
-
-    #[test]
-    fn test_run_disallowed_command() {
-        let out = run(
-            r#"{"command":"rm","args":["-rf","/"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("不允许的命令"));
-        assert!(out.contains("rm"));
-    }
-
-    #[test]
-    fn test_run_args_not_array() {
-        let out = run(
-            r#"{"command":"echo","args":"x"}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("args 必须是字符串数组"));
-    }
-
-    #[test]
-    fn test_run_unsafe_arg_absolute_path() {
-        let out = run(
-            r#"{"command":"cat","args":["/etc/passwd"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("参数不允许"));
-    }
-
-    #[test]
-    fn test_run_unsafe_arg_parent_dir() {
-        let out = run(
-            r#"{"command":"cat","args":["../../etc/passwd"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("参数不允许"));
-    }
-
-    #[test]
-    fn test_run_workspace_absolute_arg_auto_normalized() {
-        let wd = std::env::current_dir().expect("cwd");
-        let wd_abs = wd.to_string_lossy().to_string();
-        let out = run(
-            &format!(r#"{{"command":"ls","args":["{wd_abs}"]}}"#),
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            &wd,
-            None,
-            false,
-        );
-        assert!(out.contains("退出码：0"), "{out}");
-    }
-
-    #[test]
-    fn prepare_peels_cd_prefix_into_effective_workdir() {
-        let v: serde_json::Value =
-            serde_json::from_str(r#"{"command":"cd","args":["src","&&","echo","peeled"]}"#)
-                .expect("json");
-        let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
-            .expect("prep");
-        assert_eq!(p.cmd_name, "echo");
-        assert_eq!(p.cmd_args, vec!["peeled".to_string()]);
-        assert!(
-            p.effective_working_dir.ends_with("src"),
-            "{:?}",
-            p.effective_working_dir
-        );
-    }
-
-    #[test]
-    fn prepare_cd_without_and_is_rejected() {
-        let v: serde_json::Value =
-            serde_json::from_str(r#"{"command":"cd","args":["src"]}"#).expect("json");
-        let e = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
-            .err()
-            .expect("cd alone");
-        assert_eq!(e.kind(), "cd_prefix_invalid");
-    }
-
-    #[test]
-    fn prepare_splits_embedded_command_prefix() {
-        let v = serde_json::from_str::<serde_json::Value>(
-            r#"{"command":"pre-commit run --all-files","args":[]}"#,
-        )
-        .expect("json");
-        let p =
-            prepare_run_command_invocation(&v, Path::new("."), &["pre-commit".to_string()], false)
-                .expect("prep");
-        assert_eq!(p.cmd_name, "pre-commit");
-        assert_eq!(
-            p.cmd_args,
-            vec!["run".to_string(), "--all-files".to_string()]
-        );
-    }
-
-    #[test]
-    fn prepare_merges_dot_slash_command_with_single_relative_executable() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let bin_dir = dir.path().join("hello/build");
-        std::fs::create_dir_all(&bin_dir).expect("mkdir");
-        let bin = bin_dir.join("hello");
-        std::fs::write(&bin, b"\x7fELF").expect("write");
-        let mut perms = std::fs::metadata(&bin).expect("meta").permissions();
-        perms.set_mode(0o755);
-        std::fs::set_permissions(&bin, perms).expect("chmod");
-
-        let v: serde_json::Value =
-            serde_json::from_str(r#"{"command":"./","args":["hello/build/hello"]}"#).expect("json");
-        let p = prepare_run_command_invocation(&v, dir.path(), &[], false).expect("prep");
-        assert_eq!(p.cmd_raw, "./hello/build/hello");
-        assert!(p.cmd_args.is_empty());
-        assert!(
-            p.exec_path.is_some(),
-            "merged path should resolve as workspace executable"
-        );
-    }
-
-    #[test]
-    fn run_command_embedded_args_in_command_field() {
-        let out = run(
-            r#"{"command":"echo hello world","args":[]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("退出码：0"), "{out}");
-        assert!(out.contains("hello world"), "{out}");
-    }
-
-    #[test]
-    fn run_command_embedded_prefix_then_json_args_order() {
-        let out = run(
-            r#"{"command":"echo a","args":["b"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        );
-        assert!(out.contains("退出码：0"), "{out}");
-        assert!(out.contains("a b"), "{out}");
-    }
-
-    #[test]
-    fn command_not_found_extended_appends_install_hint() {
-        let e = RunCommandError::CommandNotFound {
-            cmd: "python3".to_string(),
-            work_dir: "/tmp".to_string(),
-            source: std::io::Error::new(std::io::ErrorKind::NotFound, "x"),
-        };
-        let s = e.extended_user_message();
-        assert!(s.contains("安装提示"), "{s}");
-        assert!(s.contains("python3 --version"), "{s}");
-    }
-
-    #[test]
-    fn command_not_found_extended_skips_hint_for_unknown_cmd() {
-        let e = RunCommandError::CommandNotFound {
-            cmd: "crabmate_nonexistent_cli_9f3a".to_string(),
-            work_dir: "/tmp".to_string(),
-            source: std::io::Error::new(std::io::ErrorKind::NotFound, "x"),
-        };
-        let s = e.extended_user_message();
-        assert!(!s.contains("安装提示"), "{s}");
-    }
-
-    #[test]
-    fn skip_arg_safety_allows_external_absolute_path() {
-        let out = run(
-            r#"{"command":"ls","args":["/tmp"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            true,
-        );
-        assert!(
-            out.contains("退出码：") || out.contains("标准输出"),
-            "approved external path should reach exec: {out}"
-        );
-    }
-
-    #[test]
-    fn skip_arg_safety_false_still_rejects_external_path() {
-        let e = run_checked(
-            r#"{"command":"ls","args":["/tmp"]}"#,
-            TEST_MAX_OUTPUT_LEN,
-            &test_allowed(),
-            test_work_dir(),
-            None,
-            false,
-        )
-        .expect_err("unsafe");
-        assert_eq!(e.kind(), "unsafe_arg");
-    }
-}
+#[path = "command_run_tests.rs"]
+mod tests;
