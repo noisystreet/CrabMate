@@ -243,6 +243,27 @@ fn line_digest(out: &str) -> String {
 }
 
 #[test]
+fn test_modify_file_ok_ignores_failure_word_inside_diff_preview() {
+    let dir = make_test_dir();
+    let file = dir.join("conf.py");
+    std::fs::write(&file, "# 行1\n# 构建失败重试说明\n# 行3\n# 行4\n# 行5\n").unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r##"{"path":"conf.py","mode":"replace_lines","start_line":2,"end_line":3,"content":"# 新内容"}"##,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    // 工具实际写盘成功；即使 diff 预览内容行里恰好含「失败」字样，也不应被误判为失败。
+    let r = crate::tool_result::ToolResult::from_legacy_output("modify_file", out);
+    assert!(r.ok, "工具成功却判失败: error_code={:?}", r.error_code);
+    assert_eq!(r.error_code, None);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_modify_file_replace_lines() {
     let dir = make_test_dir();
     let file = dir.join("m.txt");
