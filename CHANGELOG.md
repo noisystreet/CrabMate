@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **`run_command` tool-call summary**: join `command` + `args` even when `args` is a JSON string (not only a string array); quote tokens that contain spaces. Tool cards also read `run_command_exit_v1.invocation` when the output body no longer starts with `命令：`.
 - **`bench --benchmark human_eval`**: adapter prepends a function-completion instruction and a system suffix so the default coding workbench does not ask clarifying questions; **`extract_humaneval_completion`** strips a repeated function prefix before scoring. Prefer global **`--no-tools`** (`--max-tool-rounds 0` does not disable tools).
 - **BREAKING**: Removed **`--no-web`** / **`--cli-only`** (they were no-ops after API-only default). Use bare **`serve`** / **`config`** for API-only; **`--with-web`** to mount or check UI dist. Scripts that still pass those flags will get clap unknown-argument errors.
 - **BREAKING (D2.2)**: Hard-delete in-process **`chat` / `repl` / `tui`** implementation and Cargo features **`repl`/`tui`** (official terminal: Client **`crabmate-tui`**). Default features are **`web` + `mcp`**.

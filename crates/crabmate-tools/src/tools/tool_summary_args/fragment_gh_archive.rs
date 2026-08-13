@@ -477,6 +477,28 @@ mod tests {
     }
 
     #[test]
+    fn run_command_summary_joins_command_and_string_args() {
+        let v = json!({ "command": "cargo", "args": ["test", "--all"] });
+        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
+        assert_eq!(s, "cargo test --all");
+    }
+
+    #[test]
+    fn run_command_summary_accepts_args_as_single_string() {
+        let v = json!({ "command": "bash", "args": "-c echo hi" });
+        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
+        assert!(s.starts_with("bash "), "{s}");
+        assert!(s.contains("echo hi"), "{s}");
+    }
+
+    #[test]
+    fn run_command_summary_quotes_args_with_spaces() {
+        let v = json!({ "command": "bash", "args": ["-c", "echo hello world"] });
+        let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");
+        assert_eq!(s, r#"bash -c "echo hello world""#);
+    }
+
+    #[test]
     fn ast_grep_rewrite_dry_run_defaults_true() {
         let v = json!({ "lang": "rust", "pattern": "foo" });
         let s = summarize_from_value::<AstGrepRewriteSummaryArgs>(&v).expect("summary");

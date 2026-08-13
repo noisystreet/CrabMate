@@ -9,6 +9,42 @@ fn join_compact_parts(left: &str, right: &str) -> String {
     format!("{left}{COMPACT_SEPARATOR}{right}")
 }
 
+fn structured_preview_run_command_invocation(
+    preview: Option<&serde_json::Value>,
+) -> Option<String> {
+    let v = preview?;
+    let inv = v
+        .get("invocation")
+        .or_else(|| {
+            v.get("structured_payload")
+                .and_then(|p| p.get("invocation"))
+        })
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?;
+    Some(inv.to_string())
+}
+
+/// 正文首行 `命令：…`，否则 `run_command_exit_v1.invocation`。
+pub(super) fn compact_run_command_invocation(info: &ToolCardInput) -> Option<String> {
+    if info.name.trim() != "run_command" {
+        return None;
+    }
+    for line in info.output.lines().map(str::trim) {
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(inv) = line.strip_prefix("命令：") {
+            let inv = inv.trim();
+            if !inv.is_empty() {
+                return Some(inv.to_string());
+            }
+        }
+        break;
+    }
+    structured_preview_run_command_invocation(info.structured_preview.as_ref())
+}
+
 fn first_nonempty_line_with_prefix<'a>(output: &'a str, prefix: &str) -> Option<&'a str> {
     for line in output.lines().map(str::trim) {
         if line.is_empty() {
@@ -161,17 +197,8 @@ fn compact_read_file_from_output(output: &str, loc: ToolCardLocale) -> Option<St
 fn compact_from_named_output(info: &ToolCardInput, loc: ToolCardLocale) -> Option<String> {
     match info.name.trim() {
         "run_command" => {
-            for line in info.output.lines().map(str::trim) {
-                if line.is_empty() {
-                    continue;
-                }
-                if let Some(inv) = line.strip_prefix("命令：") {
-                    let inv = inv.trim();
-                    if !inv.is_empty() {
-                        return Some(inv.to_string());
-                    }
-                }
-                break;
+            if let Some(inv) = compact_run_command_invocation(info) {
+                return Some(inv);
             }
         }
         "create_file" | "modify_file" => {
