@@ -10,38 +10,43 @@ use crate::tools::tool_param_types::ChmodFileArgs;
 // ── chmod_file ──────────────────────────────────────────────
 
 #[cfg(unix)]
-pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
-    use std::os::unix::fs::PermissionsExt;
+fn parse_unix_mode_octal(mode_str: &str) -> Result<u32, String> {
+    match u32::from_str_radix(mode_str, 8) {
+        Ok(m) if m <= 0o7777 => Ok(m),
+        _ => Err(format!(
+            "错误：mode \"{}\" 不是合法的八进制权限值（如 755、644）",
+            mode_str
+        )),
+    }
+}
 
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: ChmodFileArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+#[cfg(unix)]
+fn parse_chmod_args(args_json: &str) -> Result<(String, String, u32), String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    let args: ChmodFileArgs =
+        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err("缺少 path 参数".to_string()),
     };
     let mode_str = match args.mode.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 mode 参数（如 \"755\"、\"644\"）".to_string(),
+        _ => return Err("缺少 mode 参数（如 \"755\"、\"644\"）".to_string()),
     };
-    let confirm = args.confirm.unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：chmod_file 需要 confirm=true".to_string();
+    if !args.confirm.unwrap_or(false) {
+        return Err("拒绝执行：chmod_file 需要 confirm=true".to_string());
     }
+    let mode = parse_unix_mode_octal(&mode_str)?;
+    Ok((path, mode_str, mode))
+}
 
-    let mode = match u32::from_str_radix(&mode_str, 8) {
-        Ok(m) if m <= 0o7777 => m,
-        _ => {
-            return format!(
-                "错误：mode \"{}\" 不是合法的八进制权限值（如 755、644）",
-                mode_str
-            );
-        }
+#[cfg(unix)]
+pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (path, mode_str, mode) = match parse_chmod_args(args_json) {
+        Ok(x) => x,
+        Err(e) => return e,
     };
 
     let target = match resolve_for_read(working_dir, &path) {

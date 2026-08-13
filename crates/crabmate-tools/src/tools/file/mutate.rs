@@ -237,23 +237,39 @@ fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFile
     )
 }
 
-pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: DeleteFileArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+fn parse_confirmed_delete_path(args_json: &str) -> Result<String, String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    let args: DeleteFileArgs =
+        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err("缺少 path 参数".to_string()),
     };
-    let confirm = args.confirm.unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：delete_file 需要 confirm=true".to_string();
+    if !args.confirm.unwrap_or(false) {
+        return Err("拒绝执行：delete_file 需要 confirm=true".to_string());
     }
+    Ok(path)
+}
+
+fn delete_file_remove(working_dir: &Path, target: &Path) -> Result<(), String> {
+    let base =
+        canonical_workspace_root(working_dir).map_err(tool_user_error_from_workspace_path)?;
+    #[cfg(unix)]
+    {
+        unlink_file_under_root(&base, target).map_err(|e| format!("删除文件失败：{}", e))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = base;
+        std::fs::remove_file(target).map_err(|e| format!("删除文件失败：{}", e))
+    }
+}
+
+pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
+    let path = match parse_confirmed_delete_path(args_json) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
 
     let target = match resolve_for_read(working_dir, &path) {
         Ok(p) => p,
@@ -266,15 +282,7 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         );
     }
     let before = std::fs::read_to_string(&target).ok();
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    #[cfg(unix)]
-    let remove_result = unlink_file_under_root(&base, &target);
-    #[cfg(not(unix))]
-    let remove_result = std::fs::remove_file(&target);
-    match remove_result {
+    match delete_file_remove(working_dir, &target) {
         Ok(()) => {
             let body = format!(
                 "已删除文件：{}",
@@ -295,7 +303,7 @@ pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
                 WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
             )
         }
-        Err(e) => format!("删除文件失败：{}", e),
+        Err(e) => e,
     }
 }
 

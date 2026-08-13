@@ -60,7 +60,48 @@ pub fn file_exists(args_json: &str, working_dir: &Path) -> String {
     out.trim_end().to_string()
 }
 
-/// 只读二进制/任意文件的**元数据**：大小、可选修改时间、文件头一段的 SHA256（不把整文件载入上下文）。
+fn required_json_path(v: &serde_json::Value) -> Result<String, String> {
+    v.get("path")
+        .and_then(|p| p.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .ok_or_else(|| "错误：缺少 path 参数".to_string())
+}
+
+fn resolve_regular_file(working_dir: &Path, path: &str) -> Result<std::path::PathBuf, String> {
+    let target = match resolve_for_read(working_dir, path) {
+        Ok(p) => p,
+        Err(e) => return Err(tool_user_error_from_workspace_path(e)),
+    };
+    if !target.is_file() {
+        return Err("错误：路径不是文件或不存在".to_string());
+    }
+    Ok(target)
+}
+
+fn append_modified_unix(out: &mut String, meta: &std::fs::Metadata) {
+    let modified_unix = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs());
+    if let Some(secs) = modified_unix {
+        out.push_str(&format!("modified_unix_secs: {}\n", secs));
+    } else {
+        out.push_str("modified_unix_secs: (不可用)\n");
+    }
+}
+
+fn sha256_file_prefix(target: &Path, to_read: usize) -> Result<String, String> {
+    let mut file = File::open(target).map_err(|e| format!("打开文件失败: {}", e))?;
+    let mut buf = vec![0u8; to_read];
+    if to_read > 0 {
+        file.read_exact(&mut buf)
+            .map_err(|e| format!("读取文件头失败: {}", e))?;
+    }
+    Ok(bytes_to_hex(&Sha256::digest(&buf)))
+}
 ///
 /// 参数：`path`（必填）；`prefix_hash_bytes`（可选，默认 8192，0 表示不算哈希，上限 256KiB）。
 pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
@@ -68,14 +109,9 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v
-        .get("path")
-        .and_then(|p| p.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(p) => p.to_string(),
-        None => return "错误：缺少 path 参数".to_string(),
+    let path = match required_json_path(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let prefix_hash_bytes = v
@@ -85,24 +121,16 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
         .unwrap_or(READ_BINARY_META_PREFIX_DEFAULT)
         .min(READ_BINARY_META_PREFIX_MAX);
 
-    let target = match resolve_for_read(working_dir, &path) {
+    let target = match resolve_regular_file(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
+        Err(e) => return e,
     };
-    if !target.is_file() {
-        return "错误：路径不是文件或不存在".to_string();
-    }
 
     let meta = match std::fs::metadata(&target) {
         Ok(m) => m,
         Err(e) => return format!("读取元数据失败: {}", e),
     };
     let size = meta.len();
-    let modified_unix = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .map(|d| d.as_secs());
 
     let mut out = String::new();
     out.push_str(&format!(
@@ -110,12 +138,7 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
         path_for_tool_display(working_dir, &target, Some(&path))
     ));
     out.push_str(&format!("size_bytes: {}\n", size));
-
-    if let Some(secs) = modified_unix {
-        out.push_str(&format!("modified_unix_secs: {}\n", secs));
-    } else {
-        out.push_str("modified_unix_secs: (不可用)\n");
-    }
+    append_modified_unix(&mut out, &meta);
 
     if prefix_hash_bytes == 0 {
         out.push_str("sha256_prefix: (已跳过，prefix_hash_bytes=0)\n");
@@ -124,19 +147,10 @@ pub fn read_binary_meta(args_json: &str, working_dir: &Path) -> String {
     }
 
     let to_read = (size as usize).min(prefix_hash_bytes);
-    let mut file = match File::open(&target) {
-        Ok(f) => f,
-        Err(e) => return format!("打开文件失败: {}", e),
+    let hex = match sha256_file_prefix(&target, to_read) {
+        Ok(h) => h,
+        Err(e) => return e,
     };
-    let mut buf = vec![0u8; to_read];
-    if to_read > 0
-        && let Err(e) = file.read_exact(&mut buf)
-    {
-        return format!("读取文件头失败: {}", e);
-    }
-
-    let digest = Sha256::digest(&buf);
-    let hex = bytes_to_hex(&digest);
     out.push_str(&format!("sha256_prefix: {}\n", hex));
     out.push_str(&format!(
         "sha256_prefix_bytes: {}（文件共 {} 字节；仅头 {} 字节参与哈希）\n",
@@ -156,14 +170,9 @@ pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let path = match v
-        .get("path")
-        .and_then(|p| p.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(p) => p.to_string(),
-        None => return "错误：缺少 path 参数".to_string(),
+    let path = match required_json_path(&v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
 
     let algo = v
@@ -172,54 +181,82 @@ pub fn hash_file(args_json: &str, working_dir: &Path) -> String {
         .map(|s| s.trim().to_lowercase())
         .unwrap_or_else(|| "sha256".to_string());
 
-    let max_bytes = match v.get("max_bytes").and_then(|n| n.as_u64()) {
-        Some(0) => return "错误：max_bytes 须大于 0；省略该字段表示哈希整文件".to_string(),
-        Some(n) => Some(n.min(HASH_FILE_MAX_PREFIX_BYTES)),
-        None => None,
+    let max_bytes = match parse_hash_max_bytes(&v) {
+        Ok(m) => m,
+        Err(e) => return e,
     };
 
-    let target = match resolve_for_read(working_dir, &path) {
+    let target = match resolve_regular_file(working_dir, &path) {
         Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
+        Err(e) => return e,
     };
-    if !target.is_file() {
-        return "错误：路径不是文件或不存在".to_string();
-    }
 
     let meta = match std::fs::metadata(&target) {
         Ok(m) => m,
         Err(e) => return format!("读取元数据失败: {}", e),
     };
     let size = meta.len();
-
     let limit = max_bytes.map(|m| m.min(size)).unwrap_or(size);
 
-    let hash_result = match algo.as_str() {
-        "sha256" | "sha-256" => hash_file_stream_sha256(&target, limit),
-        "sha512" | "sha-512" => hash_file_stream_sha512(&target, limit),
-        _ => {
-            return format!("错误：algorithm 仅支持 sha256、sha512（收到 {:?}）", algo);
-        }
-    };
-
-    match hash_result {
-        Ok(hex_digest) => {
-            let mut out = String::new();
-            out.push_str(&format!(
-                "path: {}\n",
-                path_for_tool_display(working_dir, &target, Some(&path))
-            ));
-            out.push_str(&format!("size_bytes: {}\n", size));
-            out.push_str(&format!("hashed_bytes: {}\n", limit));
-            out.push_str(&format!("algorithm: {}\n", algo));
-            out.push_str(&format!("digest_hex: {}\n", hex_digest));
-            if max_bytes.is_some() && limit < size {
-                out.push_str("note: 仅前 hashed_bytes 参与哈希，非整文件。\n");
-            }
-            out.trim_end().to_string()
-        }
+    match hash_digest_for_algo(&algo, &target, limit) {
+        Ok(hex_digest) => format_hash_file_ok(HashFileOkFmt {
+            working_dir,
+            target: &target,
+            path: &path,
+            size,
+            limit,
+            algo: &algo,
+            hex_digest: &hex_digest,
+            prefix_only: max_bytes.is_some() && limit < size,
+        }),
         Err(e) => e,
     }
+}
+
+fn parse_hash_max_bytes(v: &serde_json::Value) -> Result<Option<u64>, String> {
+    match v.get("max_bytes").and_then(|n| n.as_u64()) {
+        Some(0) => Err("错误：max_bytes 须大于 0；省略该字段表示哈希整文件".to_string()),
+        Some(n) => Ok(Some(n.min(HASH_FILE_MAX_PREFIX_BYTES))),
+        None => Ok(None),
+    }
+}
+
+fn hash_digest_for_algo(algo: &str, target: &Path, limit: u64) -> Result<String, String> {
+    match algo {
+        "sha256" | "sha-256" => hash_file_stream_sha256(target, limit),
+        "sha512" | "sha-512" => hash_file_stream_sha512(target, limit),
+        _ => Err(format!(
+            "错误：algorithm 仅支持 sha256、sha512（收到 {:?}）",
+            algo
+        )),
+    }
+}
+
+struct HashFileOkFmt<'a> {
+    working_dir: &'a Path,
+    target: &'a Path,
+    path: &'a str,
+    size: u64,
+    limit: u64,
+    algo: &'a str,
+    hex_digest: &'a str,
+    prefix_only: bool,
+}
+
+fn format_hash_file_ok(f: HashFileOkFmt<'_>) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "path: {}\n",
+        path_for_tool_display(f.working_dir, f.target, Some(f.path))
+    ));
+    out.push_str(&format!("size_bytes: {}\n", f.size));
+    out.push_str(&format!("hashed_bytes: {}\n", f.limit));
+    out.push_str(&format!("algorithm: {}\n", f.algo));
+    out.push_str(&format!("digest_hex: {}\n", f.hex_digest));
+    if f.prefix_only {
+        out.push_str("note: 仅前 hashed_bytes 参与哈希，非整文件。\n");
+    }
+    out.trim_end().to_string()
 }
 
 fn hash_file_stream_sha256(path: &Path, max_read: u64) -> Result<String, String> {

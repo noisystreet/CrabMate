@@ -7,22 +7,35 @@ use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path}
 
 use crate::tools::tool_param_types::SymlinkInfoArgs;
 
-pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: SymlinkInfoArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
+fn parse_symlink_rel_path(args_json: &str) -> Result<String, String> {
+    let v = crate::tools::parse_args_json(args_json)?;
+    let args: SymlinkInfoArgs =
+        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err("缺少 path 参数".to_string()),
     };
     if Path::new(&path).is_absolute() || path.contains("..") {
-        return "错误：path 必须是相对路径，且不能包含 ..".to_string();
+        return Err("错误：path 必须是相对路径，且不能包含 ..".to_string());
     }
+    Ok(path)
+}
+
+fn symlink_target_flags(target: &Path, link_target: &Path, base_canonical: &Path) -> (bool, bool) {
+    let resolved = target.parent().unwrap_or(base_canonical).join(link_target);
+    let dangling = !resolved.exists();
+    let outside_workspace = resolved
+        .canonicalize()
+        .map(|c| !c.starts_with(base_canonical))
+        .unwrap_or(true);
+    (dangling, outside_workspace)
+}
+
+pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
+    let path = match parse_symlink_rel_path(args_json) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
 
     let base_canonical = match canonical_workspace_root(working_dir) {
         Ok(p) => p,
@@ -52,12 +65,8 @@ pub fn symlink_info(args_json: &str, working_dir: &Path) -> String {
         .parent()
         .unwrap_or(&base_canonical)
         .join(&link_target);
-    let dangling = !resolved.exists();
-    let outside_workspace = resolved
-        .canonicalize()
-        .map(|c| !c.starts_with(&base_canonical))
-        .unwrap_or(true);
-
+    let (dangling, outside_workspace) =
+        symlink_target_flags(&target, &link_target, &base_canonical);
     format_symlink_report(&path, &link_target, &resolved, dangling, outside_workspace)
 }
 
