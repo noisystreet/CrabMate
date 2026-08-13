@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 2011
+global_over_ccn_sum_cap = 1828
 
 [modules]
 "crates/cmd_mate" = 0
@@ -21,7 +21,7 @@ global_over_ccn_sum_cap = 2011
 "crates/crabmate-approval" = 0
 "crates/crabmate-benchmark" = 0
 "crates/crabmate-chat-export" = 0
-"crates/crabmate-config" = 25
+"crates/crabmate-config" = 10
 "crates/crabmate-display-rules" = 0
 "crates/crabmate-im-bridge" = 0
 "crates/crabmate-internal" = 11

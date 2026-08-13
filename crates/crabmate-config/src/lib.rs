@@ -6,6 +6,7 @@ mod assembly;
 mod builder;
 pub mod cli;
 mod cursor_rules;
+mod env_override_apply;
 mod env_overrides;
 mod final_plan_requirement_mode;
 mod finalize;
