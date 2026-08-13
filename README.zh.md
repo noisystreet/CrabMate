@@ -167,6 +167,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2：`frontend/` 迁出实施计划 | — |
 | [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ 协议版 ↔ 最低 Client 兼容表 | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** 规划与开源基准衔接 | — |
+| [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) | 已记录的 bench 分数（不含密钥） | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval 转换、执行与冒烟 | — |
 
 **更多**：维护待办、路线图、前端架构草案等见 **`docs/`**（一览：[docs/中英文文档对照.md](docs/中英文文档对照.md)）。

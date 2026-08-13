@@ -47,6 +47,24 @@ struct SweBenchAdapter;
 struct GaiaAdapter;
 struct HumanEvalAdapter;
 
+/// 覆盖默认编程工作台「先问清楚 / 未授权不改代码」的产品语气。
+const HUMAN_EVAL_SYSTEM_SUFFIX: &str = "\
+You are completing a HumanEval-style Python function. Do not ask clarifying questions. \
+Do not wait for extra authorization. Do not call tools. Output only the code completion.";
+
+/// 官方 harness 将本前缀与模型 `completion` 拼接后执行；须让模型续写函数体。
+const HUMAN_EVAL_USER_INSTRUCTION: &str = "\
+Complete the Python function below. Do not ask what to do. Do not explain. \
+Emit only the continuation that is concatenated after this prefix (typically the indented body). \
+A ```python fence is allowed.\n\n";
+
+fn humaneval_user_prompt(stub: &str) -> String {
+    let mut out = String::with_capacity(HUMAN_EVAL_USER_INSTRUCTION.len() + stub.len());
+    out.push_str(HUMAN_EVAL_USER_INSTRUCTION);
+    out.push_str(stub);
+    out
+}
+
 impl BenchmarkAdapter for SweBenchAdapter {
     fn kind(&self) -> BenchmarkKind {
         BenchmarkKind::SweBench
@@ -227,7 +245,11 @@ impl BenchmarkAdapter for HumanEvalAdapter {
     }
 
     fn build_user_prompt(&self, task: &BenchmarkTask) -> String {
-        task.prompt.clone()
+        humaneval_user_prompt(&task.prompt)
+    }
+
+    fn system_prompt_suffix(&self) -> Option<String> {
+        Some(HUMAN_EVAL_SYSTEM_SUFFIX.to_string())
     }
 
     fn setup_workspace(
@@ -248,7 +270,8 @@ impl BenchmarkAdapter for HumanEvalAdapter {
         model_name: &str,
         error: Option<String>,
     ) -> BenchmarkResult {
-        let code = raw_reply.map(artifact::extract_code_completion);
+        let code =
+            raw_reply.map(|reply| artifact::extract_humaneval_completion(reply, &task.prompt));
         BenchmarkResult {
             instance_id: task.instance_id.clone(),
             benchmark: "human_eval".to_string(),
@@ -322,5 +345,35 @@ pub fn create_adapter(kind: BenchmarkKind) -> Box<dyn BenchmarkAdapter> {
         BenchmarkKind::Gaia => Box::new(GaiaAdapter),
         BenchmarkKind::HumanEval => Box::new(HumanEvalAdapter),
         BenchmarkKind::Generic => Box::new(GenericAdapter),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn humaneval_sample_task() -> BenchmarkTask {
+        serde_json::from_str(
+            r#"{"instance_id":"tiny/add","prompt":"def add(a, b):\n    \"\"\"Add two numbers.\"\"\"\n"}"#,
+        )
+        .expect("sample HumanEval task JSON")
+    }
+
+    #[test]
+    fn humaneval_user_prompt_includes_stub_and_completion_instruction() {
+        let adapter = create_adapter(BenchmarkKind::HumanEval);
+        let task = humaneval_sample_task();
+        let user = adapter.build_user_prompt(&task);
+        assert!(user.contains("def add(a, b):"));
+        assert!(user.contains("Do not ask what to do"));
+        assert!(user.starts_with(HUMAN_EVAL_USER_INSTRUCTION));
+    }
+
+    #[test]
+    fn humaneval_system_suffix_overrides_conversational_defaults() {
+        let adapter = create_adapter(BenchmarkKind::HumanEval);
+        let suffix = adapter.system_prompt_suffix().expect("suffix");
+        assert!(suffix.contains("Do not ask clarifying questions"));
+        assert!(suffix.contains("Do not call tools"));
     }
 }

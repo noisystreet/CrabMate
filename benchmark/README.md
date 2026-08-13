@@ -95,11 +95,13 @@ python3 scripts/humaneval_official_to_crabmate_jsonl.py \
 ### 2) 执行 benchmark
 
 ```bash
-cargo run -- bench \
+cargo run -- --no-tools bench \
   --benchmark human_eval \
   --batch benchmark/humaneval_tasks.jsonl \
   --batch-output benchmark/humaneval_results.jsonl
 ```
+
+`--max-tool-rounds 0` 只表示**不限制**轮次，**不会**关闭工具。HumanEval 函数补全建议全局 **`--no-tools`**，以免默认编程工作台去追问或调工具。适配器会在用户消息中附带续写指令，并追加 system suffix。
 
 ### 3) 执行外挂判分
 
