@@ -64,6 +64,20 @@ fn strip_leading_command_invocation_line(output: &str) -> &str {
     s
 }
 
+/// 首行是否为 `crabmate_tool_output` 结构化头（写工具经 `format_tool_output_with_write_diff_preview` 生成）。
+///
+/// 该头单行内联了 unified diff（含文件内容行），不能把整行交给 `looks_like_failure` 做
+/// `contains("失败"/"超时")` 判定——内容行里恰好出现这些字样会把成功误判为失败
+/// （error_code 兜底为 `{tool}_failed`）。header 表明工具已进入结果组装阶段，但
+/// **是否成功仍需看 header 之后的正文**：拒绝/部分失败路径（如 `confirm_full_overwrite`
+/// 缺失、`apply_patch` 部分失败）同样会生成 header，正文带「错误：…」等失败语义。
+fn is_tool_output_header(first: &str) -> bool {
+    first.contains("\"kind\":\"crabmate_tool_output\"")
+        || serde_json::from_str::<serde_json::Value>(first)
+            .map(|v| v.get("kind").and_then(|k| k.as_str()) == Some("crabmate_tool_output"))
+            .unwrap_or(false)
+}
+
 /// 解析旧格式工具输出，仅返回状态与分流字段，避免复制完整 message。
 pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput {
     let body = strip_leading_command_invocation_line(output);
@@ -71,7 +85,11 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
     let exit_code = parse_exit_code(first);
     let (stdout, stderr) = extract_streams(output);
 
-    let ok = if let Some(code) = exit_code {
+    let ok = if is_tool_output_header(first) {
+        // diff 内容只内联在 header 行，正文行不含文件内容，可安全扫描；
+        // 命中失败语义（如「错误：…未写盘」）即判定未成功。
+        !body.lines().skip(1).any(|l| looks_like_failure(l.trim()))
+    } else if let Some(code) = exit_code {
         code == 0
     } else {
         !looks_like_failure(first)
@@ -427,6 +445,47 @@ mod tests {
     use serde_json::Value;
 
     use super::*;
+
+    #[test]
+    fn parse_ok_when_first_line_is_tool_output_header_with_failure_word() {
+        // diff 预览内容行含「失败」字样时，结构化头（成功路径生成）应判定成功而非 modify_file_failed。
+        let raw = r##"{"files":[{"path":"conf.py","unified_diff":"--- a/conf.py\n+++ b/conf.py\n-构建失败重试说明\n+新内容\n","truncated":false}],"kind":"crabmate_tool_output","preview":"workspace_write_diff","preview_truncated":false,"tool":"modify_file","version":1}
+路径：conf.py
+已按行替换（行 4-15，共删除 12 行，写入新内容 763 字节）"##;
+        let parsed = parse_legacy_output("modify_file", raw);
+        assert!(parsed.ok);
+        assert_eq!(parsed.error_code, None);
+    }
+
+    #[test]
+    fn parse_fails_when_header_body_has_reject_error_line() {
+        // full overwrite 未带 confirm 的拒绝路径：header 后正文含「错误：…未写盘」。
+        let raw = r##"{"files":[{"path":"conf.py","unified_diff":"--- a/conf.py\n+++ b/conf.py\n-旧\n+新\n","truncated":false}],"kind":"crabmate_tool_output","preview":"workspace_write_diff","preview_truncated":false,"tool":"modify_file","version":1}
+路径：conf.py
+错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。"##;
+        let parsed = parse_legacy_output("modify_file", raw);
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error_code.as_deref(), Some("modify_file_failed"));
+    }
+
+    #[test]
+    fn parse_fails_when_header_body_has_patch_partial_failure() {
+        // apply_patch 部分失败同样生成 header，正文带「失败：」行。
+        let raw = r##"{"files":[{"path":"a.rs","unified_diff":"--- a/a.rs\n+++ b/a.rs\n+ok\n","truncated":false}],"kind":"crabmate_tool_output","preview":"workspace_write_diff","preview_truncated":false,"tool":"apply_patch","version":1}
+补丁部分应用：
+成功：
+a.rs
+失败：
+b.rs"##;
+        let parsed = parse_legacy_output("apply_patch", raw);
+        assert!(!parsed.ok);
+    }
+
+    #[test]
+    fn tool_output_header_rejects_plain_error_first_line() {
+        assert!(!is_tool_output_header("错误：未设置工作区"));
+        assert!(!is_tool_output_header("执行失败：xxx"));
+    }
 
     #[test]
     fn parse_exit_code_from_chinese_prefix() {
