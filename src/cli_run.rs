@@ -775,6 +775,7 @@ pub(super) async fn run_benchmark_batch_if_requested(
         output_path: batch_output.to_string(),
         task_timeout_secs: bench_args.task_timeout,
         max_tool_rounds: bench_args.max_tool_rounds,
+        samples: bench_args.samples,
         resume_from_existing: bench_args.resume,
         system_prompt_override,
     };

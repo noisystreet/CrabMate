@@ -117,6 +117,7 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
                 batch_output: be.batch_output,
                 task_timeout: be.task_timeout,
                 max_tool_rounds: be.max_tool_rounds,
+                samples: be.samples,
                 resume: be.resume,
                 system_prompt_file: be.bench_system_prompt,
             };

@@ -5,7 +5,9 @@
 Reads:
   * **tasks** JSONL in CrabMate format (must include `humaneval_test`, `entry_point`, `prompt`,
     `instance_id`; typically produced by `humaneval_official_to_crabmate_jsonl.py`).
-  * **results** JSONL from `crabmate bench --benchmark human_eval` (`completion` field).
+  * **results** JSONL from `crabmate bench --benchmark human_eval` (`completion` field). When the
+    bench is run with `--samples N`, the results contain `N` rows per `instance_id` (distinguished
+    by `sample_index`), and this script aggregates them to report **pass@k**.
 
 For each matching `instance_id`, runs the vendored ``execution.check_correctness`` (same logic as
 upstream HumanEval). **Executes untrusted model-generated code** — run in a sandbox if exposed to
@@ -17,7 +19,7 @@ Usage::
         --results benchmark_results.jsonl \\
         --output humaneval_score.jsonl
 
-Optional: ``--timeout 3.0`` (seconds per task, forwarded to ``check_correctness``).
+Optional: ``--timeout 3.0`` (seconds per task), ``--k 10`` (max k for pass@k reporting).
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from math import comb
 from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
@@ -73,6 +76,14 @@ def load_problems(tasks_path: str) -> Dict[str, Dict[str, Any]]:
     return problems
 
 
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """HumanEval 无偏估计：`1 - C(n-c, k) / C(n, k)`（要求 `k <= n`）。"""
+    if k > n:
+        raise ValueError(f"k={k} cannot exceed n={n}")
+    # `math.comb(a, b)` 在 b > a 时返回 0，因此 n-c < k 时该式自然为 1.0。
+    return 1.0 - comb(n - c, k) / comb(n, k)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tasks", required=True, help="CrabMate HumanEval task JSONL (with humaneval_test)")
@@ -83,11 +94,14 @@ def main() -> None:
         help="Write per-task score JSONL here (default: <results>_humaneval_scores.jsonl)",
     )
     ap.add_argument("--timeout", type=float, default=3.0, help="Seconds for each check_correctness")
+    ap.add_argument("--k", type=int, default=10, help="Max k for pass@k reporting (default 10)")
     args = ap.parse_args()
 
     problems = load_problems(args.tasks)
     out_path = args.output or f"{args.results}_humaneval_scores.jsonl"
 
+    # instance_id -> {"n": samples, "c": passed, "task_id": str}
+    agg: Dict[str, Dict[str, Any]] = {}
     scored = 0
     passed = 0
     human_eval_rows = 0
@@ -104,14 +118,22 @@ def main() -> None:
             if not iid:
                 skipped.append("<empty instance_id>")
                 continue
+            sample_index = res.get("sample_index", 0)
             prob = problems.get(iid)
             if prob is None:
                 missing_problem.append(iid)
+                entry = agg.setdefault(iid, {"n": 0, "c": 0, "task_id": iid})
+                entry["n"] += 1
                 continue
+
+            entry = agg.setdefault(iid, {"n": 0, "c": 0, "task_id": prob["task_id"]})
+            entry["n"] += 1
+
             completion = res.get("completion")
             if completion is None or str(completion).strip() == "":
                 row = {
                     "instance_id": iid,
+                    "sample_index": sample_index,
                     "benchmark": "human_eval",
                     "bench_status": res.get("status"),
                     "skipped": True,
@@ -125,17 +147,31 @@ def main() -> None:
                 prob, str(completion), args.timeout, completion_id=None
             )
             scored += 1
-            if chk.get("passed"):
+            ok = bool(chk.get("passed"))
+            if ok:
                 passed += 1
+                entry["c"] += 1
             row = {
                 "instance_id": iid,
+                "sample_index": sample_index,
                 "benchmark": "human_eval",
                 "bench_status": res.get("status"),
-                "humaneval_passed": chk.get("passed"),
+                "humaneval_passed": ok,
                 "humaneval_result": chk.get("result"),
                 "task_id": prob["task_id"],
             }
             out.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+    k_max = max(1, args.k)
+    pass_at_k_table: Dict[str, float] = {}
+    for k in range(1, k_max + 1):
+        vals = [
+            pass_at_k(entry["n"], entry["c"], k)
+            for entry in agg.values()
+            if entry["n"] >= k
+        ]
+        if vals:
+            pass_at_k_table[f"pass@{k}"] = sum(vals) / len(vals)
 
     rate = (passed / scored) if scored else 0.0
     print(
@@ -148,6 +184,8 @@ def main() -> None:
                 "scored_with_completion": scored,
                 "passed": passed,
                 "pass_rate": rate,
+                "problems_with_samples": len(agg),
+                "pass_at_k": pass_at_k_table,
                 "skipped_empty_completion": len(skipped),
                 "missing_task_definition": missing_problem,
             },

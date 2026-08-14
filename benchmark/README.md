@@ -112,6 +112,20 @@ python3 scripts/humaneval_score_benchmark_results.py \
   --output benchmark/humaneval_scores.jsonl
 ```
 
+**pass@k（多采样）**：给 `bench` 加 `--samples N`（每任务跑 N 次采样），再用 `--k K` 聚合无偏估计 `pass@k`：
+
+```bash
+cargo run -- --no-tools bench --benchmark human_eval \
+  --batch benchmark/humaneval_tasks.jsonl \
+  --batch-output benchmark/humaneval_results.jsonl \
+  --samples 10
+python3 scripts/humaneval_score_benchmark_results.py \
+  --tasks benchmark/humaneval_tasks.jsonl \
+  --results benchmark/humaneval_results.jsonl \
+  --output benchmark/humaneval_scores.jsonl \
+  --k 10
+```
+
 ### 4)（可选）断点续跑
 
 长任务中断后可使用 `--resume`，避免从头重跑：

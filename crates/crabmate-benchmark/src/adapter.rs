@@ -155,6 +155,7 @@ impl BenchmarkAdapter for SweBenchAdapter {
         };
         BenchmarkResult {
             instance_id: task.instance_id.clone(),
+            sample_index: 0,
             benchmark: "swe_bench".to_string(),
             status,
             raw_reply: raw_reply.map(String::from),
@@ -216,6 +217,7 @@ impl BenchmarkAdapter for GaiaAdapter {
         let answer = raw_reply.and_then(artifact::extract_final_answer);
         BenchmarkResult {
             instance_id: task.instance_id.clone(),
+            sample_index: 0,
             benchmark: "gaia".to_string(),
             status,
             raw_reply: raw_reply.map(String::from),
@@ -274,6 +276,7 @@ impl BenchmarkAdapter for HumanEvalAdapter {
             raw_reply.map(|reply| artifact::extract_humaneval_completion(reply, &task.prompt));
         BenchmarkResult {
             instance_id: task.instance_id.clone(),
+            sample_index: 0,
             benchmark: "human_eval".to_string(),
             status,
             raw_reply: raw_reply.map(String::from),
@@ -325,6 +328,7 @@ impl BenchmarkAdapter for GenericAdapter {
     ) -> BenchmarkResult {
         BenchmarkResult {
             instance_id: task.instance_id.clone(),
+            sample_index: 0,
             benchmark: "generic".to_string(),
             status,
             raw_reply: raw_reply.map(String::from),
