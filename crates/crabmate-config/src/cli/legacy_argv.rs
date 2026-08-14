@@ -99,6 +99,7 @@ const LEGACY_BENCH_FLAG_BASES: &[&str] = &[
     "--batch-output",
     "--task-timeout",
     "--max-tool-rounds",
+    "--samples",
     "--bench-system-prompt",
 ];
 

@@ -102,3 +102,10 @@ sse-replay-events.jsonl
 # proptest 回归测试缓存（本机产物，勿提交）
 proptest-regressions/
 .playwright-mcp/
+
+########################
+# Benchmark 生成产物（官方数据集与跑分/判分输出；勿提交）
+########################
+benchmark/data/
+benchmark/*.jsonl
+benchmark/*_summary.json

@@ -84,6 +84,9 @@ pub struct BenchmarkTask {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkResult {
     pub instance_id: String,
+    /// 多采样（pass@k 的 n）时该结果的第几次采样；单采样为 0。
+    #[serde(default)]
+    pub sample_index: usize,
     pub benchmark: String,
     pub status: TaskStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -120,6 +123,8 @@ pub struct BatchRunConfig {
     pub output_path: String,
     pub task_timeout_secs: u64,
     pub max_tool_rounds: usize,
+    /// 每任务采样次数（pass@k 的 n）；默认 1。
+    pub samples: usize,
     pub resume_from_existing: bool,
     pub system_prompt_override: Option<String>,
 }

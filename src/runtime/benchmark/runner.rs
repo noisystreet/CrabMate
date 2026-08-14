@@ -49,6 +49,7 @@ pub async fn run_batch(
     } else {
         HashSet::new()
     };
+    let samples = batch_cfg.samples.max(1);
 
     let mut results: Vec<BenchmarkResult> = Vec::new();
     let base_work_dir = {
@@ -61,50 +62,57 @@ pub async fn run_batch(
     let mut out_file = open_output_file(&batch_cfg.output_path, batch_cfg.resume_from_existing)?;
 
     for (idx, task) in tasks.iter().enumerate() {
-        if existing_ids.contains(&task.instance_id) {
-            eprintln!(
-                "[benchmark] [{}/{}] 跳过已有结果: {}",
-                idx + 1,
-                tasks.len(),
-                task.instance_id
-            );
-            continue;
-        }
-
-        eprintln!(
-            "[benchmark] [{}/{}] 开始: {}",
-            idx + 1,
-            tasks.len(),
-            task.instance_id
-        );
-
         let base_snap = {
             let g = cfg.read().await;
             Arc::new(g.clone())
         };
-        let result = run_single_task(
-            &base_snap,
-            client,
-            api_key,
-            tools,
-            adapter.as_ref(),
-            task,
-            &base_work_dir,
-            batch_cfg,
-        )
-        .await;
 
-        eprintln!(
-            "[benchmark] [{}/{}] 完成: {} status={:?} time={:.1}s",
-            idx + 1,
-            tasks.len(),
-            task.instance_id,
-            result.status,
-            result.metrics.wall_time_secs,
-        );
+        for sample in 0..samples {
+            if existing_ids.contains(&(task.instance_id.clone(), sample)) {
+                eprintln!(
+                    "[benchmark] [{}/{}] 跳过已有结果: {} sample={}",
+                    idx + 1,
+                    tasks.len(),
+                    task.instance_id,
+                    sample
+                );
+                continue;
+            }
 
-        write_result_line(&mut out_file, &result)?;
-        results.push(result);
+            eprintln!(
+                "[benchmark] [{}/{}] 开始: {} sample={}",
+                idx + 1,
+                tasks.len(),
+                task.instance_id,
+                sample
+            );
+
+            let mut result = run_single_task(
+                &base_snap,
+                client,
+                api_key,
+                tools,
+                adapter.as_ref(),
+                task,
+                &base_work_dir,
+                batch_cfg,
+            )
+            .await;
+            result.sample_index = sample;
+
+            eprintln!(
+                "[benchmark] [{}/{}] 完成: {} sample={} status={:?} time={:.1}s",
+                idx + 1,
+                tasks.len(),
+                task.instance_id,
+                sample,
+                result.status,
+                result.metrics.wall_time_secs,
+            );
+
+            write_result_line(&mut out_file, &result)?;
+            results.push(result);
+        }
     }
 
     let summary = BatchSummary::from_results(&results);
@@ -317,7 +325,7 @@ fn load_tasks(path: &str) -> Result<Vec<BenchmarkTask>, Box<dyn std::error::Erro
     Ok(tasks)
 }
 
-fn load_existing_ids(path: &str) -> HashSet<String> {
+fn load_existing_ids(path: &str) -> HashSet<(String, usize)> {
     let mut ids = HashSet::new();
     let Ok(file) = std::fs::File::open(path) else {
         return ids;
@@ -326,7 +334,7 @@ fn load_existing_ids(path: &str) -> HashSet<String> {
     for line in reader.lines().map_while(Result::ok) {
         let trimmed = line.trim();
         if let Ok(r) = serde_json::from_str::<BenchmarkResult>(trimmed) {
-            ids.insert(r.instance_id);
+            ids.insert((r.instance_id, r.sample_index));
         }
     }
     ids

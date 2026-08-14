@@ -70,6 +70,9 @@ pub struct BenchCmd {
     #[arg(long, value_name = "N", default_value = "0")]
     pub max_tool_rounds: usize,
 
+    #[arg(long, value_name = "N", default_value = "1")]
+    pub samples: usize,
+
     #[arg(long)]
     pub resume: bool,
 
@@ -486,6 +489,7 @@ pub struct BenchmarkCliArgs {
     pub batch_output: Option<String>,
     pub task_timeout: u64,
     pub max_tool_rounds: usize,
+    pub samples: usize,
     pub resume: bool,
     pub system_prompt_file: Option<String>,
 }
