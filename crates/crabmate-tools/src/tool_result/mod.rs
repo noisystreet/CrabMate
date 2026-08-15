@@ -64,18 +64,36 @@ fn strip_leading_command_invocation_line(output: &str) -> &str {
     s
 }
 
-/// 首行是否为 `crabmate_tool_output` 结构化头（写工具经 `format_tool_output_with_write_diff_preview` 生成）。
-///
-/// 该头单行内联了 unified diff（含文件内容行），不能把整行交给 `looks_like_failure` 做
-/// `contains("失败"/"超时")` 判定——内容行里恰好出现这些字样会把成功误判为失败
-/// （error_code 兜底为 `{tool}_failed`）。header 表明工具已进入结果组装阶段，但
-/// **是否成功仍需看 header 之后的正文**：拒绝/部分失败路径（如 `confirm_full_overwrite`
-/// 缺失、`apply_patch` 部分失败）同样会生成 header，正文带「错误：…」等失败语义。
+/// 写工具 SSE 预览头的 `preview` 值：其后正文才是状态行（可含「错误：」「失败：」），
+/// unified diff 已内联在 header，不能对 header 做失败关键词扫描。
+const PREVIEW_WORKSPACE_WRITE_DIFF: &str = "workspace_write_diff";
+
+/// 首行是否为 `crabmate_tool_output` 结构化头。
 fn is_tool_output_header(first: &str) -> bool {
-    first.contains("\"kind\":\"crabmate_tool_output\"")
-        || serde_json::from_str::<serde_json::Value>(first)
-            .map(|v| v.get("kind").and_then(|k| k.as_str()) == Some("crabmate_tool_output"))
-            .unwrap_or(false)
+    parse_tool_output_header(first).is_some() || first.contains("\"kind\":\"crabmate_tool_output\"")
+}
+
+fn parse_tool_output_header(first: &str) -> Option<serde_json::Value> {
+    let v: serde_json::Value = serde_json::from_str(first).ok()?;
+    (v.get("kind").and_then(|k| k.as_str()) == Some("crabmate_tool_output")).then_some(v)
+}
+
+fn body_after_header_looks_like_failure(body: &str) -> bool {
+    body.lines().skip(1).any(|l| looks_like_failure(l.trim()))
+}
+
+/// 按 **header 契约** 判断，不维护工具名白名单：
+/// 1. 头上显式 `ok` → 以它为准（生产端已知成败）；
+/// 2. `preview=workspace_write_diff` → 写预览可与失败正文并存，扫 header **之后**的状态行；
+/// 3. 其余（`read_file` 等载荷头）错误路径不带该头，有头即成功，避免扫文件/命中正文。
+fn structured_header_output_ok(header: &serde_json::Value, body: &str) -> bool {
+    if let Some(ok) = header.get("ok").and_then(|x| x.as_bool()) {
+        return ok;
+    }
+    if header.get("preview").and_then(|x| x.as_str()) == Some(PREVIEW_WORKSPACE_WRITE_DIFF) {
+        return !body_after_header_looks_like_failure(body);
+    }
+    true
 }
 
 /// 解析旧格式工具输出，仅返回状态与分流字段，避免复制完整 message。
@@ -85,10 +103,10 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
     let exit_code = parse_exit_code(first);
     let (stdout, stderr) = extract_streams(output);
 
-    let ok = if is_tool_output_header(first) {
-        // diff 内容只内联在 header 行，正文行不含文件内容，可安全扫描；
-        // 命中失败语义（如「错误：…未写盘」）即判定未成功。
-        !body.lines().skip(1).any(|l| looks_like_failure(l.trim()))
+    let ok = if let Some(header) = parse_tool_output_header(first) {
+        structured_header_output_ok(&header, body)
+    } else if is_tool_output_header(first) {
+        !body_after_header_looks_like_failure(body)
     } else if let Some(code) = exit_code {
         code == 0
     } else {
@@ -455,6 +473,59 @@ mod tests {
         let parsed = parse_legacy_output("modify_file", raw);
         assert!(parsed.ok);
         assert_eq!(parsed.error_code, None);
+    }
+
+    #[test]
+    fn parse_ok_when_read_file_body_contains_failure_word() {
+        // 文件短于 max_lines 时整段进入正文；内容含「失败」不得把成功读取标成 read_file_failed。
+        let raw = r#"{"end_line_shown":3,"file_empty":false,"has_more":false,"kind":"crabmate_tool_output","line_count_returned":3,"path":"github_trending.py","start_line":1,"tool":"read_file","total_lines":null,"truncated_by_max_lines":false,"version":1}
+文本编码: UTF-8
+文件: github_trending.py
+总行数: 未统计（大文件可避免 count_total_lines 以省时间）
+本段行范围: 1-3（单次 max_lines=500）
+已读到文件末尾（本段范围内无更多行）。
+
+1|print("ok")
+2|raise RuntimeError("请求失败")
+3|# 超时重试"#;
+        let parsed = parse_legacy_output("read_file", raw);
+        assert!(parsed.ok, "short successful read must stay ok");
+        assert_eq!(parsed.error_code, None);
+    }
+
+    #[test]
+    fn parse_ok_when_search_hit_line_contains_failure_word() {
+        let raw = r#"{"files_visited":1,"kind":"crabmate_tool_output","match_count":1,"max_results":200,"pattern":"Error","root":".","tool":"search_in_files","truncated":false,"version":1}
+搜索："Error"
+范围：.
+a.py:10: raise RuntimeError("请求失败")"#;
+        let parsed = parse_legacy_output("search_in_files", raw);
+        assert!(parsed.ok);
+        assert_eq!(parsed.error_code, None);
+    }
+
+    #[test]
+    fn parse_ok_when_payload_header_even_if_tool_name_unknown() {
+        // 不靠工具名白名单：无 write-diff preview 的载荷头，正文含「失败」仍为成功。
+        let raw = r#"{"kind":"crabmate_tool_output","tool":"future_list","version":1}
+条目：构建失败.log"#;
+        let parsed = parse_legacy_output("future_list", raw);
+        assert!(parsed.ok);
+        assert_eq!(parsed.error_code, None);
+    }
+
+    #[test]
+    fn parse_respects_explicit_ok_on_header() {
+        let fail = r#"{"kind":"crabmate_tool_output","ok":false,"tool":"read_file","version":1}
+文件: a.txt"#;
+        let parsed = parse_legacy_output("read_file", fail);
+        assert!(!parsed.ok);
+
+        let ok_write = r##"{"kind":"crabmate_tool_output","ok":true,"preview":"workspace_write_diff","tool":"modify_file","version":1}
+路径：a
+错误：不应再扫正文"##;
+        let parsed = parse_legacy_output("modify_file", ok_write);
+        assert!(parsed.ok);
     }
 
     #[test]

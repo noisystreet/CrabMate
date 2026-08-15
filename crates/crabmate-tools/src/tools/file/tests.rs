@@ -42,6 +42,36 @@ fn test_read_file_with_line_range() {
 }
 
 #[test]
+fn test_read_file_shorter_than_max_lines_stays_ok_when_content_has_failure_word() {
+    let dir = make_test_dir();
+    std::fs::write(
+        dir.join("github_trending.py"),
+        "print('ok')\nraise RuntimeError('请求失败')\n# 超时重试\n",
+    )
+    .unwrap();
+    let cfg = crabmate_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let result = crate::tools::run_tool_result(
+        "read_file",
+        r#"{"path":"github_trending.py","start_line":1,"max_lines":500}"#,
+        &ctx,
+    );
+    assert!(
+        result.ok,
+        "EOF before max_lines is success; got error_code={:?} message={}",
+        result.error_code, result.message
+    );
+    assert_eq!(result.error_code, None);
+    assert!(
+        result.message.contains("已读到文件末尾"),
+        "expected EOF marker in {}",
+        result.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn test_read_file_rejects_directory_with_directory_hint() {
     let dir = make_test_dir();
     std::fs::create_dir_all(dir.join("subdir")).unwrap();
