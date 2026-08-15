@@ -14,10 +14,17 @@
 //! 读路径请优先经 [`normalize::NormalizedToolEnvelope`]（[`normalize_tool_message_content`]），避免在展示层重复解析 `crabmate_tool` 字段。
 
 mod normalize;
+mod output_header;
 mod tool_error;
 
 pub use normalize::{
     CRABMATE_TOOL_ENVELOPE_VERSION_V1, NormalizedToolEnvelope, normalize_tool_message_content,
+};
+pub use output_header::{
+    CRABMATE_TOOL_OUTPUT_KIND, CRABMATE_TOOL_OUTPUT_VERSION, CrabmateToolOutputEnvelope,
+    CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
+    ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
+    WorkspaceWriteDiffFile, prepend_crabmate_tool_output,
 };
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
@@ -64,18 +71,10 @@ fn strip_leading_command_invocation_line(output: &str) -> &str {
     s
 }
 
-/// 写工具 SSE 预览头的 `preview` 值：其后正文才是状态行（可含「错误：」「失败：」），
-/// unified diff 已内联在 header，不能对 header 做失败关键词扫描。
-const PREVIEW_WORKSPACE_WRITE_DIFF: &str = "workspace_write_diff";
-
 /// 首行是否为 `crabmate_tool_output` 结构化头。
 fn is_tool_output_header(first: &str) -> bool {
-    parse_tool_output_header(first).is_some() || first.contains("\"kind\":\"crabmate_tool_output\"")
-}
-
-fn parse_tool_output_header(first: &str) -> Option<serde_json::Value> {
-    let v: serde_json::Value = serde_json::from_str(first).ok()?;
-    (v.get("kind").and_then(|k| k.as_str()) == Some("crabmate_tool_output")).then_some(v)
+    CrabmateToolOutputMeta::parse_line(first).is_some()
+        || first.contains("\"kind\":\"crabmate_tool_output\"") // 非法 JSON 回退；合法头走 parse_line
 }
 
 fn body_after_header_looks_like_failure(body: &str) -> bool {
@@ -86,11 +85,11 @@ fn body_after_header_looks_like_failure(body: &str) -> bool {
 /// 1. 头上显式 `ok` → 以它为准（生产端已知成败）；
 /// 2. `preview=workspace_write_diff` → 写预览可与失败正文并存，扫 header **之后**的状态行；
 /// 3. 其余（`read_file` 等载荷头）错误路径不带该头，有头即成功，避免扫文件/命中正文。
-fn structured_header_output_ok(header: &serde_json::Value, body: &str) -> bool {
-    if let Some(ok) = header.get("ok").and_then(|x| x.as_bool()) {
+fn structured_header_output_ok(header: &CrabmateToolOutputMeta, body: &str) -> bool {
+    if let Some(ok) = header.ok {
         return ok;
     }
-    if header.get("preview").and_then(|x| x.as_str()) == Some(PREVIEW_WORKSPACE_WRITE_DIFF) {
+    if header.is_workspace_write_diff() {
         return !body_after_header_looks_like_failure(body);
     }
     true
@@ -103,7 +102,7 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
     let exit_code = parse_exit_code(first);
     let (stdout, stderr) = extract_streams(output);
 
-    let ok = if let Some(header) = parse_tool_output_header(first) {
+    let ok = if let Some(header) = CrabmateToolOutputMeta::parse_line(first) {
         structured_header_output_ok(&header, body)
     } else if is_tool_output_header(first) {
         !body_after_header_looks_like_failure(body)

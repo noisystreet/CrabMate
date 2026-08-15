@@ -2,7 +2,6 @@
 #![allow(clippy::manual_string_new)]
 
 use glob::Pattern;
-use serde_json::json;
 use std::path::Path;
 use walkdir::DirEntry;
 
@@ -59,18 +58,18 @@ fn prepend_list_tree_output_header(
     lines_count: usize,
     truncated: bool,
 ) -> String {
-    let header = json!({
-        "kind": "crabmate_tool_output",
-        "tool": "list_tree",
-        "version": 1,
-        "path": root_rel,
-        "max_depth": max_depth,
-        "max_entries": max_entries,
-        "include_hidden": include_hidden,
-        "lines_count": lines_count,
-        "truncated": truncated,
-    });
-    format!("{}\n{}", header, body)
+    crate::tool_result::prepend_crabmate_tool_output(
+        "list_tree",
+        crate::tool_result::ListTreeOutputFields {
+            path: root_rel.to_string(),
+            max_depth,
+            max_entries,
+            include_hidden,
+            lines_count,
+            truncated,
+        },
+        body,
+    )
 }
 
 /// 在 `abs_dir`（已位于工作区内）下列目录，按 glob 收集文件相对路径（相对**起始目录** `scan_root_display`）。

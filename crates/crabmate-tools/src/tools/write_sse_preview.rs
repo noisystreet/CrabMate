@@ -2,8 +2,11 @@
 //!
 //! 体积须受限，避免阻塞 SSE 与增大会话存储。
 
-use serde_json::{Value, json};
 use similar::TextDiff;
+
+use crate::tool_result::{
+    WorkspaceWriteDiffFields, WorkspaceWriteDiffFile, prepend_crabmate_tool_output,
+};
 
 /// 与 [`crate::workspace::changelist`] 单文件块上限同量级；**`structured_preview`** 中 **`git diff`**
 /// 等单段 stdout 预览与写工具共用该上限。
@@ -51,7 +54,7 @@ pub fn format_tool_output_with_write_diff_preview(
     }
 
     let mut remaining = budget_chars;
-    let mut out_files: Vec<Value> = Vec::new();
+    let mut out_files: Vec<WorkspaceWriteDiffFile> = Vec::new();
     let mut preview_truncated = false;
 
     for f in files {
@@ -69,43 +72,36 @@ pub fn format_tool_output_with_write_diff_preview(
             preview_truncated = true;
             let take = remaining.saturating_sub(80);
             let partial: String = udiff.chars().take(take).collect();
-            out_files.push(json!({
-                "path": rel,
-                "unified_diff": format!("{partial}…\n（已达本轮预览体积上限）"),
-                "truncated": true,
-            }));
+            out_files.push(WorkspaceWriteDiffFile {
+                path: rel.to_string(),
+                unified_diff: format!("{partial}…\n（已达本轮预览体积上限）"),
+                truncated: true,
+            });
             break;
         }
         remaining = remaining.saturating_sub(cost);
-        out_files.push(json!({
-            "path": rel,
-            "unified_diff": udiff,
-            "truncated": trunc_file,
-        }));
+        out_files.push(WorkspaceWriteDiffFile {
+            path: rel.to_string(),
+            unified_diff: udiff,
+            truncated: trunc_file,
+        });
     }
 
     if out_files.is_empty() {
         return body;
     }
 
-    let header = json!({
-        "kind": "crabmate_tool_output",
-        "tool": tool_name,
-        "version": 1u32,
-        "preview": "workspace_write_diff",
-        "files": out_files,
-        "preview_truncated": preview_truncated,
-    });
-
-    match serde_json::to_string(&header) {
-        Ok(line) => format!("{line}\n{body}"),
-        Err(_) => body,
-    }
+    prepend_crabmate_tool_output(
+        tool_name,
+        WorkspaceWriteDiffFields::new(out_files, preview_truncated),
+        &body,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
 
     #[test]
     fn prepends_header_and_diff() {

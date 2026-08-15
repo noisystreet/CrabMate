@@ -67,22 +67,20 @@ fn read_file_workspace_tool_error_maybe_hint(
 }
 
 fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) -> String {
-    let path_disp = path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path));
-    let header = serde_json::json!({
-        "kind": "crabmate_tool_output",
-        "tool": "read_file",
-        "version": 1,
-        "path": path_disp,
-        "start_line": meta.start_line,
-        "end_line_shown": meta.end_line_shown,
-        "line_count_returned": meta.line_count_returned,
-        "total_lines": meta.total_lines,
-        "truncated_by_max_lines": meta.truncated_by_max_lines,
-        "has_more": meta.has_more,
-        "file_empty": meta.file_empty,
-    });
-    let line = header.to_string();
-    format!("{}\n{}", line, body)
+    crate::tool_result::prepend_crabmate_tool_output(
+        "read_file",
+        crate::tool_result::ReadFileOutputFields {
+            path: path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path)),
+            start_line: meta.start_line,
+            end_line_shown: meta.end_line_shown,
+            line_count_returned: meta.line_count_returned,
+            total_lines: meta.total_lines,
+            truncated_by_max_lines: meta.truncated_by_max_lines,
+            has_more: meta.has_more,
+            file_empty: meta.file_empty,
+        },
+        body,
+    )
 }
 
 struct ReadFileOutputMeta<'a> {
