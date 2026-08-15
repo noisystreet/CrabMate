@@ -11,6 +11,10 @@
 use serde_json::{Value, json};
 
 use super::write_sse_preview::MAX_UNIFIED_PREVIEW_FILE_CHARS;
+use crate::tool_result::{
+    CrabmateToolOutputEnvelope, CrabmateToolOutputMeta, PREVIEW_WORKSPACE_WRITE_DIFF,
+    WorkspaceWriteDiffFields, WorkspaceWriteDiffFile,
+};
 
 /// 若 `result` 首行是 `{"kind":"crabmate_tool_output","tool":…}` 且 `tool` 与 `tool_name` 一致，返回该 JSON；否则 `None`。
 pub fn crabmate_tool_output_header(tool_name: &str, result: &str) -> Option<Value> {
@@ -18,15 +22,11 @@ pub fn crabmate_tool_output_header(tool_name: &str, result: &str) -> Option<Valu
     if first.is_empty() {
         return None;
     }
-    let v: Value = serde_json::from_str(first).ok()?;
-    let obj = v.as_object()?;
-    if obj.get("kind").and_then(|k| k.as_str()) != Some("crabmate_tool_output") {
+    let meta = CrabmateToolOutputMeta::parse_line(first)?;
+    if meta.tool.as_deref() != Some(tool_name) {
         return None;
     }
-    if obj.get("tool").and_then(|t| t.as_str()) != Some(tool_name) {
-        return None;
-    }
-    Some(v)
+    serde_json::from_str(first).ok()
 }
 
 /// 合并 **`crabmate_tool_output`** 首行预览与信封 **`structured_payload`**（如 **`run_command`**），供 SSE **`tool_result.structured_preview`** 单一出口。
@@ -215,28 +215,29 @@ pub fn augment_run_command_preview_with_git_diff(
     }
     let display_path = workspace_preview_display_path(stdout, invocation);
     let (unified_diff, trunc_file) = truncate_stdout_for_preview(stdout);
-    let tool_header = json!({
-        "kind": "crabmate_tool_output",
-        "tool": "run_command",
-        "version": 1_u32,
-        "preview": "workspace_write_diff",
-        "files": [{
-            "path": display_path,
-            "unified_diff": unified_diff,
-            "truncated": trunc_file,
-        }],
-        "preview_truncated": trunc_file,
-    });
+    let tool_header = CrabmateToolOutputEnvelope::new(
+        "run_command",
+        WorkspaceWriteDiffFields::new(
+            vec![WorkspaceWriteDiffFile {
+                path: display_path,
+                unified_diff,
+                truncated: trunc_file,
+            }],
+            trunc_file,
+        ),
+    )
+    .to_json_value()
+    .unwrap_or_else(|e| panic!("run_command workspace_write_diff 头序列化失败（内部错误）: {e}"));
 
     match preview {
         None => Some(tool_header),
         Some(v) => {
             if let Some(h) = v.get("tool_output_header")
-                && h.get("preview").and_then(|p| p.as_str()) == Some("workspace_write_diff")
+                && h.get("preview").and_then(|p| p.as_str()) == Some(PREVIEW_WORKSPACE_WRITE_DIFF)
             {
                 return Some(v);
             }
-            if v.get("preview").and_then(|p| p.as_str()) == Some("workspace_write_diff") {
+            if v.get("preview").and_then(|p| p.as_str()) == Some(PREVIEW_WORKSPACE_WRITE_DIFF) {
                 return Some(v);
             }
             if v.get("kind").and_then(|k| k.as_str()) == Some("crabmate_structured_payload") {

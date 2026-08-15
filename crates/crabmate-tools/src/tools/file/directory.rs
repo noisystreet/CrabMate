@@ -13,15 +13,15 @@ fn prepend_read_dir_output_header(
     entries_shown: usize,
     entries_walked: usize,
 ) -> String {
-    let header = serde_json::json!({
-        "kind": "crabmate_tool_output",
-        "tool": "read_dir",
-        "version": 1,
-        "path": path_disp,
-        "entries_shown": entries_shown,
-        "entries_walked": entries_walked,
-    });
-    format!("{}\n{}", header, body)
+    crate::tool_result::prepend_crabmate_tool_output(
+        "read_dir",
+        crate::tool_result::ReadDirOutputFields {
+            path: path_disp.to_string(),
+            entries_shown,
+            entries_walked,
+        },
+        body,
+    )
 }
 
 /// 敏感路径前缀（拒绝绝对路径访问）

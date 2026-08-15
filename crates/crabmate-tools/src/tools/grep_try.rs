@@ -6,7 +6,7 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use crate::tool_result::ToolError;
+use crate::tool_result::{SearchInFilesOutputFields, ToolError, prepend_crabmate_tool_output};
 
 struct SearchParams {
     pattern: String,
@@ -245,19 +245,18 @@ struct SearchOutputHeader<'a> {
 }
 
 fn prepend_search_header(body: &str, h: SearchOutputHeader<'_>) -> String {
-    let rel_root = path_under_workspace_display(h.working_dir, h.root);
-    let header = serde_json::json!({
-        "kind": "crabmate_tool_output",
-        "tool": "search_in_files",
-        "version": 1,
-        "pattern": h.pattern,
-        "root": rel_root,
-        "match_count": h.match_count,
-        "files_visited": h.files_visited,
-        "max_results": h.max_results,
-        "truncated": h.truncated,
-    });
-    format!("{}\n{}", header, body)
+    prepend_crabmate_tool_output(
+        "search_in_files",
+        SearchInFilesOutputFields {
+            pattern: h.pattern.to_string(),
+            root: path_under_workspace_display(h.working_dir, h.root),
+            match_count: h.match_count,
+            files_visited: h.files_visited,
+            max_results: h.max_results,
+            truncated: h.truncated,
+        },
+        body,
+    )
 }
 
 #[allow(clippy::result_large_err)]
