@@ -218,7 +218,7 @@
 
 ## 契约测试（控制面分类）
 
-现行 Web（AG-UI）由 Client **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，金样 **`fixtures/sse_ag_ui_golden.jsonl`**。V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供 IM bridge 等使用，参考向量见 **`fixtures/sse_control_golden.jsonl`**。
+现行 Web（AG-UI）由 Client **`frontend/src/api/chat_stream/parser_v2.rs`** 判定 `handled` / `plain` / `stream_ended`，金样 **`fixtures/sse_ag_ui_golden.jsonl`**。V1 形状的 `stop` / `handled` / `plain` 分类函数 **`classify_sse_control_outcome`**（`control_classify.rs`）仍供非 Web 消费者使用，参考向量见 **`fixtures/sse_control_golden.jsonl`**。
 
 ---
 
@@ -296,7 +296,7 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 ### 切换机制
 
 - `POST /chat/stream` 请求体可选字段 `client_sse_protocol`：当前生产默认 **v2（AG-UI）**；服务端编码走 **`V2Encoder`**
-- Web 前端由 **`parser_v2.rs`** 消费；V1 形状分类（`classify_sse_control_outcome`）仍供 IM bridge 等使用
+- Web 前端由 **`parser_v2.rs`** 消费；V1 形状分类（`classify_sse_control_outcome`）仍供非 Web 消费者使用
 - 版本常量：`SSE_PROTOCOL_VERSION=2`
 
 ### 金样测试

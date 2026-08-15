@@ -214,4 +214,4 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Workspace crates**: `crates/crabmate-sse-protocol` (SSE control-plane contract); **`crates/crabmate-im-bridge`** (optional Feishu webhook → **`POST /chat`**). See [docs/design/feishu_bridge_mvp.md](docs/design/feishu_bridge_mvp.md).
+- **Workspace crates**: `crates/crabmate-sse-protocol` (SSE control-plane contract).
