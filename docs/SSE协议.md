@@ -2,7 +2,7 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client **`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`**（AG-UI；回调形状见 **`frontend/src/sse_dispatch/types.rs`**）。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)（AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
 
 ## 协议版本 `v` 与协商
 

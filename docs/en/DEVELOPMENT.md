@@ -13,7 +13,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 | Built-in tools | **`docs/en/TOOLS.md`** |
 | Turn display order | **`docs/Turn布局设计.md`** (Chinese authoritative) |
 | Debug | **`docs/en/DEBUG.md`** |
-| Frontend layout | **`docs/frontend/`** (pointers in this repo) · source **`../crabmate-client/frontend`** |
+| Frontend layout | **`docs/frontend/`** (pointers in this repo) · source [crabmate-client `frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) |
 
 ## Documentation and collaboration (summary)
 
@@ -26,7 +26,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 ## Overview
 
 - **Backend** (`src/` + workspace crates): OpenAI-compatible chat, agent turns, HTTP/SSE, tools, workspace, sessions.
-- **Official UI** (Client repo `../crabmate-client/frontend`): Leptos + WASM (Trunk); this repo’s `serve` is **API-only by default**; host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**.
+- **Official UI** (Client [frontend](https://github.com/noisystreet/crabmate-client/tree/main/frontend)): Leptos + WASM (Trunk); this repo’s `serve` is **API-only by default**; host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**. Local checkouts default to sibling `../crabmate-client` (Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**).
 - **CLI / TUI** (`runtime/`): share **`run_agent_turn`** and tool execution with Web.
 - **Dev / package container** (optional): root **`Dockerfile`** is a **toolchain** image on **Ubuntu 24.04** (Rust + `cargo-deb`; glibc **2.39** / deb `libc6 (>= 2.39)`; not a production runtime). `docker build -t crabmate-dev .` (use `--network=host` only if DNS fails) then `docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev`, or **`make package-docker`**. UI/Trunk stays in Client.
 
@@ -110,7 +110,7 @@ Implementations often live under `crates/*` with root re-exports. Forbidden edge
 
 ## Frontend (summary)
 
-UI **source is not in this repo** (path A). Leptos CSR lives under Client `frontend/src/api/` + `sse_dispatch`; design notes: **`docs/frontend/ARCHITECTURE.md`**. Build: `cd ../crabmate-client && make frontend`.
+UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch); design notes: **`docs/frontend/ARCHITECTURE.md`**. Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 

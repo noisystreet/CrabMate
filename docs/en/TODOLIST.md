@@ -91,7 +91,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## `sse/`
 
-**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with `frontend`).
+**Summary**: `protocol` encodes control JSON; `line` classifies lines (align with Client [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch) / [`api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api)).
 
 - [ ] Optional debug payloads (dev-only).
 
@@ -131,7 +131,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ## Client `frontend/` (UI in `crabmate-client`)
 
-**Summary**: Official UI lives in **`../crabmate-client/frontend`** (path A). This repo keeps contracts / `serve` only. Build: Client `make frontend`. Design notes: **`docs/frontend/`**.
+**Summary**: Official UI lives in Client [`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (path A). This repo keeps contracts / `serve` only. Build: Client `make frontend`. Design notes: **`docs/frontend/`**.
 
 - [ ] **Official Client / server-only (path A)**: main path done (**`docs/design/client_shell_split_todo.md`**); optional **P4.3** / **Phase 5**. Ship against **`docs/design/client_compat_matrix.md`**.
 - [ ] Browser session state (follow-up): optional **encrypted** local cache. Implemented: `ChatSession` persists **`server_conversation_id` / `server_revision`** and **`GET /conversation/messages`** hydration after stream saves; tab-local model remains Client **`frontend/src/session_sync.rs`** (`SessionSyncState`).

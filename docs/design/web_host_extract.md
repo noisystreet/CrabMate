@@ -4,7 +4,7 @@
 
 在**不**拆独立部署进程的前提下，把 Web 控制面与领域回合解耦：handler 只拿所需 **facet**；**`crabmate-web-host`** 承载 HTTP 契约与 serve 壳，**不得**依赖整包 `crabmate-internal`。
 
-> 命名：Axum 宿主包为 **`crabmate-web-host`**。Leptos WASM UI 是 Client 仓 **`crabmate-web`**（`../crabmate-client/frontend`），二者勿混用。
+> 命名：Axum 宿主包为 **`crabmate-web-host`**。Leptos WASM UI 是 Client 仓 **`crabmate-web`**（[`frontend`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)），二者勿混用。
 
 ## 非目标
 

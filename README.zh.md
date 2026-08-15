@@ -21,9 +21,9 @@
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
-提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在同级 **[`crabmate-client`](../crabmate-client/)**。本仓同进程 **`repl` / `chat` / `tui` 命令入口已移除**（请用 Client **`crabmate-tui`**；见 [ADR](docs/design/client_shell_split.md)）。
+提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（本机开发默认同级 `../crabmate-client`；Playwright 转发可用 **`CRABMATE_CLIENT_DIR`**）。本仓同进程 **`repl` / `chat` / `tui` 命令入口已移除**（请用 Client **`crabmate-tui`**；见 [ADR](docs/design/client_shell_split.md)）。
 
-**路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、运维 CLI）；官方 Client 在 **[`crabmate-client`](../crabmate-client/)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
+**路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、运维 CLI）；官方 Client 在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
 
 ## 目录
 
@@ -45,8 +45,8 @@
 ## 功能概览
 
 - **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**：需 glob/`$VAR`/`~` 时经 **`bash -c`** 跑整行脚本；Web 上独立 argv 的 `&&`/`|` 即使 bash 已在白名单也会再审完整脚本；审批对象为完整脚本；argv 含工作区外绝对路径或路径穿越形 `..`/`../` 时默认经 **`allow_external_path_with_approval`** 人工审批后放行，可关；**git** `A..B` 不算穿越）、HTTP、**联网搜索**（默认 **worbrow** 本机浏览器，免 API Key；可选 Brave/Tavily）、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。**`run_command`** 等子进程工具输出默认按 **`command_max_output_len`**（嵌入默认 **512KiB**）截断，详见 **`config/tools.toml`** 与 [docs/配置说明.md](docs/配置说明.md)。
-- **Web UI（Client）**：源码与发版在 **[`crabmate-client`](../crabmate-client/)**；本仓 **`serve` 默认纯 API**；同机托管 SPA 须 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client `frontend/dist`）。会话、工作区/项目池、编辑器、PR、终端流聊天、Ask/Plan/Act、设置等见 Client README 与 [docs/命令行与路由.md](docs/命令行与路由.md)。须**显式选择工作区**后工具与 **`@相对路径`** 才生效。
-- **终端**：官方远程客户端为 **[`crabmate-client`](../crabmate-client/)** 的 **`crabmate-tui`**（HTTP/SSE 连本仓 **`serve`**；模型密钥存 Client）。本仓同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 [docs/design/client_shell_split.md](docs/design/client_shell_split.md) §2.5）。**`serve`** 默认纯 API（可选 **`--with-web`**）。流式 **SSE** 见 [docs/SSE协议.md](docs/SSE协议.md)。
+- **Web UI（Client）**：源码与发版在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**；本仓 **`serve` 默认纯 API**；同机托管 SPA 须 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client `frontend/dist`）。会话、工作区/项目池、编辑器、PR、终端流聊天、Ask/Plan/Act、设置等见 Client README 与 [docs/命令行与路由.md](docs/命令行与路由.md)。须**显式选择工作区**后工具与 **`@相对路径`** 才生效。
+- **终端**：官方远程客户端为 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** 的 **`crabmate-tui`**（HTTP/SSE 连本仓 **`serve`**；模型密钥存 Client）。本仓同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 [docs/design/client_shell_split.md](docs/design/client_shell_split.md) §2.5）。**`serve`** 默认纯 API（可选 **`--with-web`**）。流式 **SSE** 见 [docs/SSE协议.md](docs/SSE协议.md)。
 - **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**；不需要时将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **进阶（默认不必读）**：分阶段规划、澄清问卷、**`thinking_trace`**、长期记忆、活文档、**MCP**、工作区 **`plugins/*.json`** 等见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)。
 
@@ -83,7 +83,7 @@ make package           # server-only tar.gz + 可选 .deb → dist/（不附带 
 make clean             # 清理 target 与 dist/
 ```
 
-业务 UI：`cd ../crabmate-client && make frontend`。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 默认 **不**打包 frontend（运行时默认纯 API；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。Desktop / Android：同级 **[`../crabmate-client`](../crabmate-client/)**。
+业务 UI：`cd ../crabmate-client && make frontend`（先将 [crabmate-client](https://github.com/noisystreet/crabmate-client) 克隆为同级目录）。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 默认 **不**打包 frontend（运行时默认纯 API；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。Desktop / Android：**[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**。
 
 ### 后端
 
@@ -108,7 +108,7 @@ cargo build --release
 
 ### 前端 Web
 
-业务 UI 源码在官方 Client 仓 **[`../crabmate-client/frontend`](../crabmate-client/frontend)**（路径 A Phase 4.2）。
+业务 UI 源码在官方 Client 仓 **[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)**（[crabmate-client](https://github.com/noisystreet/crabmate-client)；路径 A Phase 4.2）。本机默认同级 `../crabmate-client`。
 
 ```bash
 cd ../crabmate-client && make frontend
@@ -120,7 +120,7 @@ cd ../crabmate_agent && cargo run -- serve --with-web
 
 ### 官方 Client（Desktop / Android）
 
-> **权威仓**：同级 **[`../crabmate-client`](../crabmate-client/)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)）。  
+> **权威仓**：**[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（路径 A；见 [`docs/design/client_shell_split.md`](docs/design/client_shell_split.md)；本机同级 `../crabmate-client`）。  
 > 本仓 **已移除** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect`（Phase 4.1；权威仅在 Client 仓）。
 
 壳**不**拉起 `serve`：先本机或远程启动 **`crabmate serve`**，再在 Client 仓连接页填写服务器与 Web API Bearer。
@@ -140,7 +140,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
 | **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
 | **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（默认 **127.0.0.1:8080**，纯 API，**不**自动 enable；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
-| **桌面 / APK** | **仅** Client 仓（[`../crabmate-client`](../crabmate-client/)）。 |
+| **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
 | **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
 
 ### 开发与质检（维护者）

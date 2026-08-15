@@ -55,14 +55,14 @@ Server cut after path-A Client split follow-ups: API-only `serve` by default, `-
 
 First public **server** release tag (`v0.1.0`). Cargo package version was already `0.1.0`; this changelog marks the cut for GitHub Release / installable artifacts.
 
-**Scope**: this repo is the Agent **server** (HTTP API, CLI/REPL/TUI, tools, SSE). Official Web UI and desktop/Android shells live in the sibling Client repo [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (path A, Phase 4.2 complete).
+**Scope**: this repo is the Agent **server** (HTTP API, tools, SSE). At this tag the tree still included in-process **CLI/REPL/TUI**; those entries were **removed in D2.2** (see Unreleased). Official Web UI and desktop/Android shells live in [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (path A, Phase 4.2 complete).
 
 ### Added
 
 - OpenAI-compatible `chat/completions` client (DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, Ollama, …) with streaming, retries, and tool calling.
 - HTTP **`serve`**: `/chat`, `/chat/stream` (SSE / AG-UI), workspace APIs, conversation SQLite under `.crabmate/`, optional Web API Bearer.
 - Built-in tool registry (`run_command` allowlist, file tools, fetch, cargo/npm stacks, workflows, optional MCP / Docker sandbox / fastembed via Cargo features).
-- CLI: `serve`, `repl`, `tui`, `chat`, `doctor`, `models` / `probe`, `save-session`, `mcp`, packaging helpers.
+- CLI: `serve`, `doctor`, `models` / `probe`, `save-session`, `mcp`, packaging helpers. Historical at this tag also: `repl`, `tui`, `chat` (removed in D2.2).
 - CLI **`web-bearer status|set|clear`**: persist the Web API shared secret in the system keyring (same slot as Web Settings); **`serve`** falls back when TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty. Prefer **`set --stdin`** / **`set --from-env`** / interactive hidden input to avoid putting the secret on argv.
 - Client contract versioning gates (`client-contract-v*`) and CI smoke for SSE / OpenAPI / consumer pins.
 - Release packaging: `make package` → server-only **tar.gz** + **`.deb`**; **systemd** unit (`crabmate.service`), `/etc/crabmate/config.toml` + `config/prompts/`, env example (`KEY=value` only).
