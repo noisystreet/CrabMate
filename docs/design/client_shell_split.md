@@ -4,7 +4,7 @@
 > **执行清单**：[`client_shell_split_todo.md`](./client_shell_split_todo.md)  
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
 > **运行时 UI/API 拆分**：[`client_ui_runtime_split.md`](./client_ui_runtime_split.md)（`serve` 默认纯 API）  
-> **远程 CLI/TUI（Client）**：同级 [`../crabmate-client/docs/design/remote_cli_tui.md`](../../../crabmate-client/docs/design/remote_cli_tui.md)（GitHub：[remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）  
+> **远程 CLI/TUI（Client）**：[remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`crate_dep_policy.md`](./crate_dep_policy.md)、[`web_host_extract.md`](./web_host_extract.md)、[`turn_runtime_placement.md`](./turn_runtime_placement.md)、[`web_host_p5_placement.md`](./web_host_p5_placement.md)；契约见 **`docs/SSE协议.md`**、**`docs/命令行与路由.md`**、**`docs/配置说明.md`**。  
 > **非目标**：拆 Agent 微服务；另开第二套会话 API；把同进程 `run_agent_turn` 剪贴进 Client；多租户账号体系；以本 ADR 替代 turn-runtime / queue 搬家决策。  
 > **本轮**：D2.2 已硬删 `runtime/tui`、同进程对话 REPL/`chat`、Cargo feature `repl`/`tui`（及 **reedline** / **ratatui**）；默认 features 为 **`web` + `mcp`**。
@@ -37,8 +37,8 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 
 | 入口 | 形态 | 备注 |
 |------|------|------|
-| **Desktop Linux** | Tauri 壳（**`../crabmate-client/desktop-tauri/`**） | 回环可保留有限 IPC；非回环 IPC 降级可接受 |
-| **Android** | Tauri 壳（**`../crabmate-client/mobile-tauri/`**） | 不 spawn 本机 Agent |
+| **Desktop Linux** | Tauri 壳（Client [`desktop-tauri/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri)） | 回环可保留有限 IPC；非回环 IPC 降级可接受 |
+| **Android** | Tauri 壳（Client [`mobile-tauri/`](https://github.com/noisystreet/crabmate-client/tree/main/mobile-tauri)） | 不 spawn 本机 Agent |
 | **浏览器直连** | 静态托管官方 WASM/UI | 与壳共用同一套 UI 产物或同源构建 |
 | **Terminal（远程）** | Client 仓 **`crabmate-tui`**（HTTP + SSE） | 与壳同契约钉 / Web Bearer / `client_llm`；**不**内嵌、**不** spawn `serve`；分期见 Client [`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md) |
 
@@ -106,7 +106,7 @@ CrabMate **执行权威**在 **`crabmate serve`**（Agent / 工具 / 工作区�
 
 1. **契约优先**：不新开会话 API；Client（含 `crabmate-tui`）只认现有 HTTP + SSE（见 `docs/SSE协议.md`）。
 2. **与宿主解耦正交**：`turn_runtime_placement` / `web_host_p5_placement` **不阻塞**本决策。
-3. **现状**：壳与业务 UI 在 **`../crabmate-client`**；远程终端见 Client `remote_cli_tui.md`（P2+）。兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
+3. **现状**：壳与业务 UI 在 [crabmate-client](https://github.com/noisystreet/crabmate-client)（本机默认同级 `../crabmate-client`）；远程终端见 Client [remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)（P2+）。兼容表见 [`client_compat_matrix.md`](./client_compat_matrix.md)。
 4. **安全**：CORS 默认保守；非回环须 Bearer；模型密钥权威在 Client。
 5. **删除纪律**：D2 硬删须独立 PR（或明确范围的提交），配套测试 / 冒烟清单 / man 再生；**禁止**在未完成 D1 文案前静默删入口。
 

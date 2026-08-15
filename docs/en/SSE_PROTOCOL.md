@@ -2,7 +2,7 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client **`../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`** (AG-UI; sink shapes in **`frontend/src/sse_dispatch/types.rs`**).
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs) (AG-UI; sink shapes in [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)).
 
 ## Protocol version `v` and negotiation
 

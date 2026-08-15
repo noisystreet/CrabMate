@@ -7,7 +7,7 @@ This page lists **automated tests and common checks** for the CrabMate repo (run
 ## Prerequisites
 
 - **Rust**: 1.85+ (edition 2024); see [`README.md`](../../README.md).
-- **E2E**: **Playwright** and **Victauri** live in the Client repo (`../crabmate-client`). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
+- **E2E**: **Playwright** and **Victauri** live in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; `./scripts/e2e-playwright.sh` honors **`CRABMATE_CLIENT_DIR`**). This repo keeps `crabmate e2e` / HTTP real-LLM tests.
 - **Web assets**: E2E and `serve --with-web` need **`frontend/dist/index.html`** — build in the Client repo with **`make frontend`**, then set **`CM_WEB_STATIC_DIR`**. API-only: default **`serve`**.
 
 ## GitHub Actions (main CI)
@@ -87,7 +87,7 @@ cargo +nightly test
 
 ## Frontend (Leptos / Client `frontend`)
 
-Business UI lives in the Client repo. Run the following from **`../crabmate-client`**.
+Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-client). Run the following from sibling **`../crabmate-client`** (or set **`CRABMATE_CLIENT_DIR`**).
 
 ### Host target unit tests (default)
 
@@ -135,7 +135,7 @@ cd ../crabmate-client && make frontend
 
 > **Canonical entry is only in the Client repo** [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`; see [`docs/TESTING.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md) there). This repo no longer ships `desktop-tauri/` or `scripts/victauri-e2e.sh`.
 
-Directory: **`../crabmate-client/desktop-tauri/src-tauri/tests/`**. Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
+Directory: Client [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests) (local sibling `../crabmate-client/desktop-tauri/src-tauri/tests/`). Runs inside the **Tauri WebView** via [Victauri](https://github.com/runyourempire/victauri) (`victauri-test`). Seeds data with in-webview **`fetch()`** against `/user-data/*` and **`CM_E2E_FIXTURES=1`** backend routes; stubs **`POST /chat/stream`** with **`eval_js`** fetch interceptors where needed — **no real LLM** (except the opt-in **`victauri_real_llm`** suite). Prefer **`data-testid`**. See also [`docs/测试指南.md`](../测试指南.md) § 桌面端到端.
 
 | Phase | Examples | Notes |
 | --- | --- | --- |
@@ -223,6 +223,6 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## See also
 
-- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E)
+- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (this repo’s [`frontend/ARCHITECTURE.md`](../frontend/ARCHITECTURE.md) is a pointer only). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
 - SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
 - Debugging: [`DEBUG.md`](../调试指南.md)

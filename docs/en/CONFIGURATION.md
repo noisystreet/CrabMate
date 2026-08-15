@@ -61,7 +61,7 @@ Common keys below; **full names and defaults** live in **`config/default_config.
 
 ### Desktop Tauri (thin client)
 
-The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (local or remote), then connect via the connect page (see Client repo **`../crabmate-client/desktop-tauri/README.md`**). Packaging is done in the **Client** repo (e.g. **`make desktop-release`** / **`desktop-tauri/scripts/prepare-sidecar.sh`** to sync connect/splash and optional **`frontend/dist`**; **no** sidecar binary).
+The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (local or remote), then connect via the connect page (see Client [`desktop-tauri/README.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/README.md)). Packaging is done in the **Client** repo (e.g. **`make desktop-release`** / **`desktop-tauri/scripts/prepare-sidecar.sh`** to sync connect/splash and optional **`frontend/dist`**; **no** sidecar binary).
 
 ### Workspace & Cursor-style rules
 

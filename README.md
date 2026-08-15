@@ -21,9 +21,9 @@
 
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
-It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in sibling **[`crabmate-client`](../crabmate-client/)**. In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
+It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
 
-**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](../crabmate-client/)** ([ADR](docs/design/client_shell_split.md)).
+**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
 
@@ -45,8 +45,8 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 ## Overview
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`**—glob/`$VAR`/`~` run via **`bash -c`** on the joined script; Web re-approves standalone `&&`/`|` even if bash is allowlisted; approval shows that script; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **Web UI (Client)**: built and shipped from **[`crabmate-client`](../crabmate-client/)**; this repo’s **`serve` defaults to API-only**; host a SPA with **`--with-web`** plus **`CM_WEB_STATIC_DIR`** (or probed Client `frontend/dist`). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected.
-- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](../crabmate-client/)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
+- **Web UI (Client)**: built and shipped from **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; this repo’s **`serve` defaults to API-only**; host a SPA with **`--with-web`** plus **`CM_WEB_STATIC_DIR`** (or probed Client `frontend/dist`). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected.
+- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
 - **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
 - **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
@@ -83,7 +83,7 @@ make package           # server-only tar.gz + optional .deb → dist/ (no UI)
 make clean             # clean target and dist/
 ```
 
-UI: `cd ../crabmate-client && make frontend`. **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (API-only by default; use **`--with-web`** + **`CM_WEB_STATIC_DIR`** to host SPA). Desktop / Android: sibling **[`../crabmate-client`](../crabmate-client/)**.
+UI: `cd ../crabmate-client && make frontend` (clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling first). **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (API-only by default; use **`--with-web`** + **`CM_WEB_STATIC_DIR`** to host SPA). Desktop / Android: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**.
 
 ### Backend
 
@@ -108,7 +108,7 @@ cargo build --release
 
 ### Web frontend
 
-Official UI source: **[`../crabmate-client/frontend`](../crabmate-client/frontend)** (path A Phase 4.2).
+Official UI source: **[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (path A Phase 4.2). Local default: sibling `../crabmate-client`.
 
 ```bash
 cd ../crabmate-client && make frontend
@@ -120,7 +120,7 @@ API-only (default): `serve`. UI pointers: [`docs/frontend/`](docs/frontend/).
 
 ### Official Client (Desktop / Android)
 
-> **Canonical repo**: sibling **[`../crabmate-client`](../crabmate-client/)** (path A; [ADR](docs/design/client_shell_split.md)).  
+> **Canonical repo**: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (path A; [ADR](docs/design/client_shell_split.md); local sibling `../crabmate-client`).  
 > This repo **removed** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect` (Phase 4.1).
 
 The shell **does not** spawn `serve`: start **`crabmate serve`**, then enter URL + Web API Bearer on the Client connect page.
@@ -140,7 +140,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | **Install to PATH** | **`cargo install --path .`** (**does not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed). |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** is script-only. |
 | **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, API-only by default; add **`--with-web`** + **`CM_WEB_STATIC_DIR`** for UI). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
-| **Desktop / APK** | **Only** the Client repo ([`../crabmate-client`](../crabmate-client/)). |
+| **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
 | **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
 
 ### Maintainer QA

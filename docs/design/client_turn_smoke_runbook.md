@@ -38,7 +38,7 @@
 |------|-------------|-------------------|
 | 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** CLI 宿主面；**不**覆盖 TUI UI / 壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
-| Playwright mock | `../crabmate-client/e2e/specs/mock-*.spec.ts` | **不**替代（无真模型 / 无壳生命周期） |
+| Playwright mock | Client [`e2e/specs/mock-*.spec.ts`](https://github.com/noisystreet/crabmate-client/tree/main/e2e/specs) | **不**替代（无真模型 / 无壳生命周期） |
 | Victauri 真 LLM | **仅** Client 仓：`cd ../crabmate-client && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
 
 本 runbook 的价值是：**跨入口人工勾选 + 协议错位 + 远程壳**，补自动化盲区。
@@ -91,7 +91,7 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 
 ### 4.4 Client：Desktop（薄壳 + 本机已启动的 serve）
 
-**权威步骤在 Client 仓**：同级 [`../crabmate-client/docs/design/shell_smoke_runbook.md`](../../../crabmate-client/docs/design/shell_smoke_runbook.md) §2。
+**权威步骤在 Client 仓**：[shell_smoke_runbook.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/shell_smoke_runbook.md) §2。
 
 壳**不再** spawn `serve`；先起后端，再开 **Client 仓**桌面壳（或用 `CM_DESKTOP_SERVE_URL` 跳过连接页）。
 
@@ -112,11 +112,11 @@ cargo tauri dev
 
 ### 4.5 Client：Mobile 或「桌面当远程壳」
 
-见 Client 仓 [`shell_smoke_runbook.md`](../../../crabmate-client/docs/design/shell_smoke_runbook.md) §3。
+见 Client 仓 [shell_smoke_runbook.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/shell_smoke_runbook.md) §3。
 
 任选其一：
 
-**A. Android APK**（`../crabmate-client/mobile-tauri`）：连接页填 `http://<LAN-IP>:8080/` + 与服务器相同的 Web Bearer → 一轮对话。
+**A. Android APK**（Client [`mobile-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/mobile-tauri)）：连接页填 `http://<LAN-IP>:8080/` + 与服务器相同的 Web Bearer → 一轮对话。
 
 **B. 无真机时**：用 Desktop 连接页指向**另一**已启动的 `serve`（或本机第二端口），等同验证「薄壳 + 远程权威」。
 
@@ -194,11 +194,11 @@ serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
 | `src/turn_runner.rs` | Web 队列注入面 |
 | `src/runtime/cli/` | 运维 CLI（`save-session` / `tool-replay` 等；同进程 `chat|repl|tui` 已于 D2.2 硬删） |
 | Client **`crabmate-tui`** | 官方远程终端（HTTP/SSE → `serve`；见 Client `docs/design/remote_cli_tui.md`） |
-| `../crabmate-client/crates/crabmate-connect/` | 桌面/移动共用连接页（**仅** Client 仓） |
-| `../crabmate-client/desktop-tauri/`、`mobile-tauri/` | 官方 Desktop / Android 壳（**仅** Client 仓） |
-| `../crabmate-client/docs/design/shell_smoke_runbook.md` | 壳人工冒烟 |
-| `../crabmate-client/docs/TESTING.md` | Victauri / Client pre-commit |
-| `../crabmate-client/scripts/victauri-e2e.sh` | Victauri 一键脚本（本仓已无） |
+| Client [`crates/crabmate-connect/`](https://github.com/noisystreet/crabmate-client/tree/main/crates/crabmate-connect) | 桌面/移动共用连接页（**仅** Client 仓） |
+| Client [`desktop-tauri/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri)、[`mobile-tauri/`](https://github.com/noisystreet/crabmate-client/tree/main/mobile-tauri) | 官方 Desktop / Android 壳（**仅** Client 仓） |
+| Client [shell_smoke_runbook.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/shell_smoke_runbook.md) | 壳人工冒烟 |
+| Client [TESTING.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/TESTING.md) | Victauri / Client pre-commit |
+| Client [`scripts/victauri-e2e.sh`](https://github.com/noisystreet/crabmate-client/blob/main/scripts/victauri-e2e.sh) | Victauri 一键脚本（本仓已无） |
 | `docs/SSE协议.md`、`docs/命令行与路由.md` | 契约真源 |
 | `docs/真实LLM-E2E.md`、`docs/测试指南.md`；Client `e2e/` | 自动化入口（Server 编排 / Client Playwright） |
 | `docs/design/client_contract_versioning.md` | 契约 semver / git tag |

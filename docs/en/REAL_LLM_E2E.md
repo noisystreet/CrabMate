@@ -4,13 +4,13 @@ Runs only when **`REAL_LLM_E2E=1`**. Default **`cargo test`** / CI use SSE stubs
 
 Canonical guide (Chinese): [`../真实LLM-E2E.md`](../真实LLM-E2E.md).
 
-Victauri lives **only** in the Client repo (`../crabmate-client`).
+Victauri lives **only** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (local sibling `../crabmate-client`).
 
 ## Specs
 
 | File | Purpose |
 |------|---------|
-| `../crabmate-client/desktop-tauri/src-tauri/tests/victauri_real_llm.rs` | Real vendor streaming (e.g. skills smoke, compile turn) |
+| [`desktop-tauri/src-tauri/tests/victauri_real_llm.rs`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_real_llm.rs) | Real vendor streaming (e.g. skills smoke, compile turn) |
 
 ## Quick start
 

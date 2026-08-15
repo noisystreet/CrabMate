@@ -302,16 +302,16 @@ flowchart TB
 
 实现位置：
 
-- `src/user_data/`、`src/web/user_data/`、`frontend/src/api/user_data.rs`、`frontend/src/user_prefs_sync.rs`
+- `src/user_data/`、`src/web/user_data/`、Client [`frontend/src/api/user_data.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/user_data.rs)、[`frontend/src/user_prefs_sync.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/user_prefs_sync.rs)
 
 ---
 
 ## 12. 与 Tauri 的关系（补充）
 
-当前 Client 仓桌面壳（**`../crabmate-client/desktop-tauri`**）**不**再 spawn `serve`。请自行启动 **`crabmate serve`**（开发时 cwd 多为仓库根；过渡期同机托管 SPA：`CM_WEB_STATIC_DIR=…/frontend/dist crabmate serve --with-web`）。壳通过连接页或 **`CM_DESKTOP_SERVE_URL`** 加载 WebView（**勿**假设固定端口如 3000，除非你自己用该端口启动）。  
+当前 Client 仓桌面壳（[`desktop-tauri`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri)）**不**再 spawn `serve`。请自行启动 **`crabmate serve`**（开发时 cwd 多为仓库根；过渡期同机托管 SPA：`CM_WEB_STATIC_DIR=…/frontend/dist crabmate serve --with-web`）。壳通过连接页或 **`CM_DESKTOP_SERVE_URL`** 加载 WebView（**勿**假设固定端口如 3000，除非你自己用该端口启动）。  
 WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `~/.local/share/com.crabmate.desktop/localstorage/`。
 
-详见 Client 仓 **`docs/design/tauri_gui_mvp_design.md`**（进程壳层；主仓本路径为指针）与 **`../crabmate-client/desktop-tauri/DEVELOPMENT.md`**（开发与故障排查）；本文件负责**数据落盘**。
+详见 Client [tauri_gui_mvp_design.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/tauri_gui_mvp_design.md)（进程壳层；主仓本路径为指针）与 [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)（开发与故障排查）；本文件负责**数据落盘**。
 
 ---
 

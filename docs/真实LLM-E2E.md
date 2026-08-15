@@ -91,7 +91,7 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 
 ## Layer 3：Tauri/WebView 级（Victauri）
 
-**仅 Client 仓** `../crabmate-client/desktop-tauri/src-tauri/tests/`。**`REAL_LLM_E2E=1`** 时才会执行；用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
+**仅 Client 仓** [`desktop-tauri/src-tauri/tests/`](https://github.com/noisystreet/crabmate-client/tree/main/desktop-tauri/src-tauri/tests)（本机同级 `../crabmate-client/desktop-tauri/src-tauri/tests/`）。**`REAL_LLM_E2E=1`** 时才会执行；用于验证 Tauri WebView 中流式渲染在真实厂商下的行为。
 
 | 文件 | 场景 | 超时（约） | 断言要点 |
 |------|------|------------|----------|

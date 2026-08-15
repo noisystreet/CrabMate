@@ -162,7 +162,7 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 
 | 项 | 约定 |
 |----|------|
-| 位置（路径 A） | **仅**在 Client 仓 `../crabmate-client/crates/crabmate-connect/`（Phase 4.1 起主仓已移除） |
+| 位置（路径 A） | **仅**在 Client [`crates/crabmate-connect/`](https://github.com/noisystreet/crabmate-client/tree/main/crates/crabmate-connect)（Phase 4.1 起主仓已移除） |
 | 主仓历史 | 曾位于本仓 `crates/crabmate-connect/`（非根 workspace members；`exclude` + 空 `[workspace]`）；曾可用 `git`+`path` 钉主仓 tag——**已废弃** |
 | `publish` | `publish = false`（默认走 Client 仓 path / git，不进 crates.io） |
 | Tauri | **`tauri = "2"`**（与 Client 仓 `desktop-tauri` / `mobile-tauri` 一致；升级 major 须壳仓同步） |

@@ -1,6 +1,6 @@
 # Web 界面美化设计（Leptos 前端）
 
-本文面向**维护与迭代 CrabMate Web UI** 的同事，说明当前前端的样式架构、美化切入点，以及「Material 主题」与 Leptos 的关系。实现细节以仓库内 **`frontend/`** 为准。
+本文面向**维护与迭代 CrabMate Web UI** 的同事，说明当前前端的样式架构、美化切入点，以及「Material 主题」与 Leptos 的关系。实现细节以 [crabmate-client](https://github.com/noisystreet/crabmate-client) 的 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 为准（本仓无 UI 源码）。
 
 ---
 
@@ -104,7 +104,7 @@ Trunk 要求 **`index.html`** 中 **`data-trunk` 的 `link rel="css"`** 与磁�
 
 ## 6. 实施与自检清单
 
-改动样式或 `index.html` 后建议至少执行其一（与 **`.cursor/rules/frontend.mdc`** 一致；均在 Client 仓）：
+改动样式或 `index.html` 后建议至少执行其一（与 **`.cursor/rules/frontend.mdc`** 一致；均在 [crabmate-client](https://github.com/noisystreet/crabmate-client)，本机命令假定同级克隆）：
 
 ```bash
 cd ../crabmate-client && make frontend-check
@@ -114,7 +114,7 @@ cd ../crabmate-client && make frontend
 
 **提交前自检（样式相关）**
 
-- [ ] 新增/重命名 CSS 文件已写入 Client **`frontend/index.html`** 的 `data-trunk` 链。
+- [ ] 新增/重命名 CSS 文件已写入 Client [`frontend/index.html`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/index.html) 的 `data-trunk` 链。
 - [ ] 未在源码中引入可误认的真实密钥或 token（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
 - [ ] 若变更 **用户可见** 行为或显著外观，按 **`docs/待办清单.md`** / **`README.md`** 约定评估是否同步文档。
 
