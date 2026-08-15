@@ -15,17 +15,44 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- **`run_command` tool-call summary**: join `command` + `args` even when `args` is a JSON string (not only a string array); quote tokens that contain spaces. Tool cards also read `run_command_exit_v1.invocation` when the output body no longer starts with `命令：`.
-- **`run_command`**: when argv needs glob / `$VAR` / `~` and **`bash`/`sh`** are allowlisted, join into one script and run **`bash -c`**. Standalone `&&` / `|` / `;` also wrap, but **Web always re-approves** that script (so `ls && rm` cannot silently bypass the single-command allowlist). `?` / `[` are not glob unless the token looks like a path glob (`file?.c`). Wrapped **`gh`** still receives **`GH_TOKEN`**. Plain argv still uses `execve`. Without bash/sh, expansion requires Web approval of the full script.
-- **`bench --benchmark human_eval`**: adapter prepends a function-completion instruction and a system suffix so the default coding workbench does not ask clarifying questions; **`extract_humaneval_completion`** strips a repeated function prefix before scoring. Prefer global **`--no-tools`** (`--max-tool-rounds 0` does not disable tools).
-- **BREAKING**: Removed **`--no-web`** / **`--cli-only`** (they were no-ops after API-only default). Use bare **`serve`** / **`config`** for API-only; **`--with-web`** to mount or check UI dist. Scripts that still pass those flags will get clap unknown-argument errors.
-- **BREAKING (D2.2)**: Hard-delete in-process **`chat` / `repl` / `tui`** implementation and Cargo features **`repl`/`tui`** (official terminal: Client **`crabmate-tui`**). Default features are **`web` + `mcp`**.
-- **BREAKING**: **`web_chat_json`** (`POST /chat`) no longer echoes assistant/tool transcript to the **`serve`** process stdout; remove direct dependencies on the in-process terminal render stack (`termimad` / `crossterm` / `indicatif`); **`CM_CLI_WAIT_SPINNER`** is ignored. **`unicode-width`** may remain transitively (e.g. via `console` for `web-bearer`).
-- **BREAKING**: TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
+- (none yet)
 
 ### Fixed
 
 - (none yet)
+
+## [0.3.0] - 2026-08-15
+
+Server cut after **D2.2**: in-process `chat` / `repl` / `tui` are gone; official terminal is Client **`crabmate-tui`**. Also drops the Feishu IM sidecar crate from this workspace.
+
+### Added
+
+- **`bench --samples N`**: multi-sample HumanEval scoring with unbiased **pass@k** aggregation (`humaneval_score_benchmark_results.py --k`); records pass@1 baselines (first 30 and full 164).
+- **`gh_pr_create`**: annotates common GraphQL failures with actionable hints.
+
+### Changed
+
+- **BREAKING (D2.2)**: Hard-delete in-process **`chat` / `repl` / `tui`** implementation and Cargo features **`repl`/`tui`** (official terminal: Client **`crabmate-tui`**). Default features are **`web` + `mcp`**.
+- **BREAKING**: Removed in-process CLI tool runtime and terminal approval. Interactive tool approval is **Web SSE** only.
+- **BREAKING**: **`web_chat_json`** (`POST /chat`) no longer echoes assistant/tool transcript to the **`serve`** process stdout; remove direct dependencies on the in-process terminal render stack (`termimad` / `crossterm` / `indicatif`); **`CM_CLI_WAIT_SPINNER`** is ignored. **`unicode-width`** may remain transitively (e.g. via `console` for `web-bearer`).
+- **BREAKING**: Removed **`--no-web`** / **`--cli-only`** (they were no-ops after API-only default). Use bare **`serve`** / **`config`** for API-only; **`--with-web`** to mount or check UI dist. Scripts that still pass those flags will get clap unknown-argument errors.
+- **BREAKING**: TOML keys **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** rejected under `[agent]` (**`deny_unknown_fields`**). Remove them from user `config.toml`. Legacy **`CM_TUI_*` / `CM_REPL_*`** env vars for those settings are ignored. **`GET /status`** no longer reports the two session-UI booleans. Historical path **`.crabmate/tui_session.json`** remains for **`save-session`** / **`tool-replay`**.
+- **BREAKING**: Removed **`CM_GITHUB_OAUTH_CLIENT_ID`** and **`/user-data/secrets/github*`**. Device Flow carries `client_id` in the request body; git/gh credentials are request-scoped (header/Cookie). Requires a matching Client upgrade.
+- **BREAKING**: Server no longer reads/writes **`client_llm` / `executor_llm` / `saved_model_*`** keyring slots; **`PUT` client-llm** is removed. Secrets status for those slots is always unset. **`web_api_bearer`** and MCP bearer remain. LLM keys come from the Client request (`client_llm.api_key`) or process **`API_KEY`**.
+- **BREAKING**: Removed workspace crate **`crabmate-im-bridge`**. Feishu/IM sidecar is no longer part of this server repository.
+- **`GET /health`** and `serve` startup no longer treat a missing process **`API_KEY`** as a required failure (Client supplies `client_llm.api_key`).
+- **`run_command` tool-call summary**: join `command` + `args` even when `args` is a JSON string (not only a string array); quote tokens that contain spaces. Tool cards also read `run_command_exit_v1.invocation` when the output body no longer starts with `命令：`.
+- **`run_command`**: when argv needs glob / `$VAR` / `~` and **`bash`/`sh`** are allowlisted, join into one script and run **`bash -c`**. Standalone `&&` / `|` / `;` also wrap, but **Web always re-approves** that script (so `ls && rm` cannot silently bypass the single-command allowlist). `?` / `[` are not glob unless the token looks like a path glob (`file?.c`). Wrapped **`gh`** still receives **`GH_TOKEN`**. Plain argv still uses `execve`. Without bash/sh, expansion requires Web approval of the full script.
+- **`bench --benchmark human_eval`**: adapter prepends a function-completion instruction and a system suffix so the default coding workbench does not ask clarifying questions; **`extract_humaneval_completion`** strips a repeated function prefix before scoring. Prefer global **`--no-tools`** (`--max-tool-rounds 0` does not disable tools).
+- Produce **`crabmate_tool_output`** headers from serde structs (same on-wire contract).
+- Maintainer docs point Client links at GitHub rather than a sibling checkout path.
+
+### Fixed
+
+- Judge tool success/failure from the **`crabmate_tool_output`** header contract, not from failure keywords inside the payload (avoids false “failed” when diffs or logs mention 失败).
+- **`read_file`**: conflict errors show mutually exclusive `anchor_line` vs range usage.
+- **`gh_pr_checks`**: fall back to table output when `gh pr checks --json` is unsupported.
+- Enable **`console`** `std` feature so `Term` compiles after replacing `dialoguer`.
 
 ## [0.2.0] - 2026-08-09
 
@@ -55,7 +82,7 @@ Server cut after path-A Client split follow-ups: API-only `serve` by default, `-
 
 First public **server** release tag (`v0.1.0`). Cargo package version was already `0.1.0`; this changelog marks the cut for GitHub Release / installable artifacts.
 
-**Scope**: this repo is the Agent **server** (HTTP API, tools, SSE). At this tag the tree still included in-process **CLI/REPL/TUI**; those entries were **removed in D2.2** (see Unreleased). Official Web UI and desktop/Android shells live in [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (path A, Phase 4.2 complete).
+**Scope**: this repo is the Agent **server** (HTTP API, tools, SSE). At this tag the tree still included in-process **CLI/REPL/TUI**; those entries were **removed in D2.2** (see [0.3.0]). Official Web UI and desktop/Android shells live in [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (path A, Phase 4.2 complete).
 
 ### Added
 
@@ -89,6 +116,7 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
 [0.1.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.1.0
