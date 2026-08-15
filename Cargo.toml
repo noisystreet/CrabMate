@@ -8,7 +8,6 @@ members = [
     "crates/crabmate-tool-card",
     "crates/crabmate-sse-protocol",
     "crates/crabmate-turn-layout",
-    "crates/crabmate-im-bridge",
     "crates/crabmate-types",
     "crates/crabmate-chat-export",
     "crates/crabmate-approval",

@@ -45,7 +45,7 @@ P4 原问题：是否把「默认执行面」迁到独立 crate（如 `crabmate-
 ## 4. 理由（为何现在选 A）
 
 1. **注入边已切开**：`chat_job_queue` 不再直调 `run_agent_turn`；测试可 mock `TurnRunner` / `ToolDispatch`。P4 的「可替换」在**进程内**已满足。
-2. **缺第二装配消费者**：尚无「只要回合、不要 serve 根包」的独立二进制强需求；飞书桥 / IDE 等若接入，优先挂现有 HTTP 或同进程 `TurnRunner`（见 server/client 解耦非目标）。
+2. **缺第二装配消费者**：尚无「只要回合、不要 serve 根包」的独立二进制强需求；外部 HTTP 客户端 / IDE 等若接入，优先挂现有 HTTP 或同进程 `TurnRunner`（见 server/client 解耦非目标）。
 3. **搬家成本集中在参数袋与 internal**：真正阻碍「小 runtime crate」的是巨大的 `RunAgentTurnParams` 与工具 registry，不是缺一个空 crate 壳。
 4. **与契约优先一致**：Server/Client 解耦近期优先 HTTP/SSE 契约卫生；执行面 crate 搬家不降低远程 Client 风险。
 

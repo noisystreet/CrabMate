@@ -55,7 +55,7 @@
 | **异步 JSON + 轮询 / Webhook** | **`POST /chat/async`**：请求体为 **`ChatRequestBody` 全部字段** + 可选 **`webhook_url`** / **`webhook_secret`**；立即返回 **`job_id`**；**`GET /chat/jobs/{job_id}`** 查询 **`pending` / `running` / `completed` / `failed`**。与 **`POST /chat`** 共用同一 JSON 队列与限制（**无**流式工具审批；需审批请用 **`POST /chat/stream`**）。任务元数据**仅进程内内存**；**`serve` 重启后 `job_id` 失效**。若配置了 **`webhook_url`**，完成或失败时服务端 **POST** JSON（字段含 **`job_id`**、**`status`**、**`conversation_id`**、**`conversation_revision`**、**`reply`**、**`error`**）；可选请求头 **`X-Crabmate-Webhook-Secret`**（与请求体 **`webhook_secret`** 相同，由集成方校验；**勿**记入日志原文）。 |
 | **SSE 流式** | **`POST /chat/stream`**：`text/event-stream`、事件 **`id:`**、**`Last-Event-ID`** + 请求体 **`stream_resume`**、响应头 **`x-conversation-id`** / **`x-stream-job-id`**；控制面与正文区分见 **`docs/SSE协议.md`**。 |
 | **会话与分叉** | **`conversation_id`**、**`POST /chat/branch`**、**`GET /conversation/messages`**（含 **`revision`**）。 |
-| **审批** | SSE **`command_approval_request`** + **`POST /chat/approval`**；非流式 **`/chat`** 队列路径**未**挂载 `WebToolRuntime`，**不宜**作为需审批工具的集成入口。IM 桥接（**`crabmate-im-bridge`**）已改为消费 **`/chat/stream`** 并转发审批。 |
+| **审批** | SSE **`command_approval_request`** + **`POST /chat/approval`**；非流式 **`/chat`** 队列路径**未**挂载 `WebToolRuntime`，**不宜**作为需审批工具的集成入口。需审批请用 **`POST /chat/stream`** 并转发 **`POST /chat/approval`**。 |
 | **热重载** | **`POST /config/reload`**；**`web_api_bearer_token` 中间件是否生效**仍以 **`serve` 重启**为准（见配置重载说明）。 |
 | **健康检查** | **`GET /health`**。 |
 
@@ -111,6 +111,5 @@
 
 ## 7. 小结
 
-- **短期**：桥接服务 + 现有 **`/chat` / `/chat/stream` + Bearer + `conversation_id`** 即可闭环绝大多数 IM 场景；幂等、验签、卡片在桥接完成。
-- **仓库内参考实现**：workspace crate **`crates/crabmate-im-bridge`**（二进制 **`crabmate-im-bridge`**）提供飞书 MVP；使用说明、已知限制与**后续完善路线图**见 **`docs/design/feishu_bridge_mvp.md`**（「后续完善方向」一节）。
-- **中长期**：若在仓库内减少桥接样板代码、支撑多租户与水平扩展，再按第 5 节逐项立项，并同步 OpenAPI 与 SSE 单一事实来源。
+- **短期**：自建桥接 + 现有 **`/chat` / `/chat/stream` + Bearer + `conversation_id`** 即可闭环绝大多数 IM 场景；幂等、验签、卡片在桥接完成。
+- **中长期**：若减少桥接样板、支撑多租户与水平扩展，再按第 5 节逐项立项，并同步 OpenAPI 与 SSE 单一事实来源。

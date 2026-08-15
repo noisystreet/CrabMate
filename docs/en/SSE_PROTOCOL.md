@@ -218,7 +218,7 @@ When changing any of:
 
 ## Contract tests (control-plane classification)
 
-Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for IM bridge etc. uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
+Current Web (AG-UI) classifies via Client **`frontend/src/api/chat_stream/parser_v2.rs`** (`handled` / `plain` / `stream_ended`); golden **`fixtures/sse_ag_ui_golden.jsonl`**. V1-shaped `stop` / `handled` / `plain` for non-Web consumers uses **`classify_sse_control_outcome`** (`control_classify.rs`) with reference vectors in **`fixtures/sse_control_golden.jsonl`**.
 
 - **SSE golden**: `./scripts/check-sse-protocol.sh` (server-side classify + **HTTP/SSE failure-path** golden `fixtures/http_sse_failure_path_golden.jsonl`). Client AG-UI parser tests live in the Client repo.
 When adding a new top-level key consumed by the Web UI: update **`parser_v2.rs`** and **`sse_ag_ui_golden.jsonl`**; if IM/V1 still needs the key, also update **`control_classify.rs`** and **`sse_control_golden.jsonl`**.
@@ -299,7 +299,7 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 ### Switching mechanism
 
 - `POST /chat/stream` body: optional `client_sse_protocol`; production default is **v2 (AG-UI)** with **`V2Encoder`**
-- Web UI consumes via **`parser_v2.rs`**; V1-shaped classification (`classify_sse_control_outcome`) remains for IM bridge etc.
+- Web UI consumes via **`parser_v2.rs`**; V1-shaped classification (`classify_sse_control_outcome`) remains for non-Web consumers.
 - Version constant: `SSE_PROTOCOL_VERSION=2`
 
 ### Golden test
