@@ -702,6 +702,9 @@ mod tests {
     #[test]
     fn remaining_secret_files_migrate_to_keyring() {
         let root = test_root();
+        // `save_mcp_servers` → `prune_mcp_bearer_secrets` 会删 keep 集外的 `mcp_bearer_*` 文件；
+        // 须先拿 MCP 锁（与 `save_mcp_servers_*` 同序），避免并行测把本用例的遗留文件清掉。
+        let _mcp_lock = lock_mcp_servers_tests();
         let _secrets_lock = lock_named_secret_tests();
         let secrets = root.join("secrets");
         std::fs::create_dir_all(&secrets).expect("create secrets dir");
