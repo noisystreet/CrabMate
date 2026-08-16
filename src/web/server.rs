@@ -1,4 +1,4 @@
-//! Web 服务路由组装：根包合并域路由；静态挂载与体积分层在 **`crabmate-web-host::serve`**。
+//! Web 服务路由组装：根包合并域路由；静态挂载与体积分层在 **`cm_web_host::serve`**。
 
 use axum::Router;
 use axum::middleware;

@@ -300,7 +300,7 @@ src/
 |----|------|------|------|
 | S4.5.1 | rustdoc `src/lib.rs` + 中英 README | 写清 §2.4 白名单：`protocol` 六模块；`server` 显式入口；hidden / 内部路径不承诺 | 读者能区分「线契约」与「带库的服务器」 |
 | S4.5.2 | 将打进 `cargo package` 的注释 | 去掉仍写旧 workspace 包名的误导（如 `cm_api_contract` 仍称 `crabmate-web-host`） | 发布包内无「本 crate crabmate-*」类过时指称 |
-| S4.5.3 | `GET /openapi.json` | 补已挂载的 `/user-data/mcp-servers*`、`PUT /user-data/secrets/web-api-bearer`；测试「axum 路由表 vs OpenAPI paths」（E2E 夹具路由除外） | 漏路径会 fail；OpenAPI 仍**不**替代 `docs/SSE协议.md` |
+| S4.5.3 | `GET /openapi.json` | 补已挂载的 `/user-data/mcp-servers*`、`PUT /user-data/secrets/web-api-bearer`；测试从 `src/web/routes/**`、`server.rs`、`cm_web_host` 的 `.route(` 收集 **path+method** 对照 OpenAPI（排除 `e2e_fixtures` / 静态） | 漏路径或漏 method 会 fail；OpenAPI 仍**不**替代 `docs/SSE协议.md` |
 
 ### S4 — publish 准备
 

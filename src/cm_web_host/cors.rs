@@ -1,6 +1,6 @@
 //! 可选 CORS：配置非空 Origin 白名单时挂载 `tower_http::cors::CorsLayer`。
 //!
-//! 官方壳默认 Origin 由 **`crabmate-config::resolve_web_cors_allowed_origins`** 注入
+//! 官方壳默认 Origin 由 **`cm_config::resolve_web_cors_allowed_origins`** 注入
 //!（`tauri://localhost` / `http://tauri.localhost`）；显式空列表可关闭。
 
 use std::time::Duration;
