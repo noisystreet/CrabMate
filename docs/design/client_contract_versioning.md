@@ -122,6 +122,8 @@ client-contract-vX.Y.Z
 
 发标签前本地/CI 须绿：`bash scripts/check-client-contract.sh`。
 
+**当前外仓钉点**：`client-contract-v0.2.0`（本 tag 起钉清单**不含** `crabmate-tool-card`；工具卡在 Client 仓 path）。前序：`client-contract-v0.1.1` / `v0.1.0`。产品 tag `v0.3.0` 仍含 Server 侧 `tool-card` 副本，旧 Client 可继续钉它。
+
 首枚标签建议在 **P4.1 + Phase A 文档/门禁合入 `main` 后** 打；在此之前外仓可用 **`rev = "<commit sha>"`** 钉同一形状。
 
 ```bash
@@ -203,3 +205,4 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 | 2026-08-08 | Phase 1：semver / 线协议轴、N−1 现状、git tag 钉法、connect+Tauri 2、CI 门禁 |
 | 2026-08-08 | Phase A：钉清单扩至 UI 展示契约（turn-layout / tool-card / chat-export + types/display）；connect 仅 Client；补充打 tag 命令 |
 | 2026-08-10 | `client-contract-v0.1.1`：对齐 D2.1 合入 tip（CLI 入口移除）；契约 crate 版本未 bump，供 Client 与 `serve` 配套联调 |
+| 2026-08-16 | `client-contract-v0.2.0`：W2b 从本仓去掉 `crabmate-tool-card`；`GET /conversation/messages` 的 `role=tool` 不再填 `display_*`；crate `version` 未 bump |

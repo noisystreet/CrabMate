@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- (none yet)
+- **Client contract `client-contract-v0.2.0`**: drop `crabmate-tool-card` from this repo (Client vendors it). `GET /conversation/messages` no longer fills `display_*` on `role=tool`; `save-session` Markdown tool sections are no longer pixel-aligned with Web cards. Remaining pin crates are unchanged at Cargo `0.1.0`.
 
 ### Fixed
 

@@ -10,7 +10,7 @@
 | 轴 | 当前值 | 权威位置 |
 |----|--------|----------|
 | 线协议 `SSE_PROTOCOL_VERSION` | **2** | `crabmate-sse-protocol` / `docs/SSE协议.md` |
-| 契约 git tag | `client-contract-v0.1.1`（联调基线；前序 `v0.1.0`） | [`client_contract_versioning.md`](./client_contract_versioning.md) |
+| 契约 git tag | `client-contract-v0.2.0`（当前；前序 `v0.1.1` / `v0.1.0`） | [`client_contract_versioning.md`](./client_contract_versioning.md) |
 | 官方 Client 仓 | `noisystreet/crabmate-client` | 同级 `../crabmate-client` |
 | N−1 线协议解码窗口 | **无**（错位即失败可预期） | versioning §3 |
 
@@ -18,7 +18,8 @@
 
 | Server / 契约 | 最低 Client（壳） | 最低 UI（WASM/dist） | 备注 |
 |---------------|-------------------|----------------------|------|
-| 本仓 `main` + SSE v2 + `client-contract-v0.1.1` | Client 仓钉同 tag（或产品 `v*`）；须能发 `client_sse_protocol: 2`；对话密钥走 `client_llm.api_key` | Client `frontend/dist`（`make frontend`） | D2.1 后同进程 `chat|repl|tui` 入口已移除；跨 Origin 须 CORS + Web Bearer |
+| 本仓 `main` + SSE v2 + `client-contract-v0.2.0` | Client 仓钉同 tag（线契约）；`crabmate-tool-card` 须为本仓 path，勿再 git 钉本 tag | Client `frontend/dist`（`make frontend`） | W2b：快照 `role=tool` 无 `display_*`；Client 本地水合。跨 Origin 须 CORS + Web Bearer |
+| 本仓历史 + `client-contract-v0.1.1` / 产品 `v0.3.0` | Client 可 git 钉 Server `crabmate-tool-card` | 同左 | 仍含本仓 `tool-card`；快照可带 `display_*` |
 | 本仓历史 + `client-contract-v0.1.0` | 同左 | 同左 | 契约 crate 形状与 `v0.1.1` 同；不含 D2.1 `serve`/CLI 行为 |
 
 **最低 Client** 含义：连接页 + WebView 能完成一轮对话，且协议错位返回 `SSE_CLIENT_TOO_NEW` / `SSE_PROTOCOL_MISMATCH` 可预期。
