@@ -15,14 +15,22 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- **crates.io prep**: package **`version = "0.4.0"`** with `repository` / `readme` / `include`; install via **`cargo install crabmate`** after S5 publish. Git product tag remains **`v0.4.0`** at S5 (do not reuse **`v0.3.0`**). Maintainer docs (architecture, testing, SSE) point at `src/cm_*` instead of old workspace package names.
-- **Public API docs**: rustdoc and README state the `0.4.0` semver whitelist (`protocol` six modules; `server` composition names + explicit `pub use`). `#[doc(hidden)]` is not a stable SDK.
-- **`GET /openapi.json`**: document `/user-data/mcp-servers*` and `PUT /user-data/secrets/web-api-bearer`; test that OpenAPI **path+method** pairs match axum `.route(` in source (not a hand-maintained list; not E2E fixtures / static files).
-- **Client contract `client-contract-v0.2.0`**: drop `crabmate-tool-card` from this repo (Client vendors it). `GET /conversation/messages` no longer fills `display_*` on `role=tool`; `save-session` Markdown tool sections are no longer pixel-aligned with Web cards. Remaining pin crates are unchanged at Cargo `0.1.0`.
+- (none yet)
 
 ### Fixed
 
 - (none yet)
+
+## [0.4.0] - 2026-08-16
+
+First **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.4.0`** matches this package; do **not** treat **`v0.3.0`** as crates.io `0.3.0`.
+
+### Changed
+
+- **Public API docs**: rustdoc and README state the `0.4.0` semver whitelist (`protocol` six modules; `server` composition names + explicit `pub use`). `#[doc(hidden)]` is not a stable SDK.
+- **`GET /openapi.json`**: document `/user-data/mcp-servers*` and `PUT /user-data/secrets/web-api-bearer`; test that OpenAPI **path+method** pairs match axum `.route(` in source (not a hand-maintained list; not E2E fixtures / static files).
+- **Package metadata**: `repository` / `readme` / `include` for the crates.io tarball; maintainer docs point at `src/cm_*` instead of old workspace package names.
+- **Client contract `client-contract-v0.2.0`**: drop `crabmate-tool-card` from this repo (Client vendors it). `GET /conversation/messages` no longer fills `display_*` on `role=tool`; `save-session` Markdown tool sections are no longer pixel-aligned with Web cards. Remaining pin crates are unchanged at Cargo `0.1.0`.
 
 ## [0.3.0] - 2026-08-15
 
@@ -119,7 +127,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
 [0.1.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.1.0

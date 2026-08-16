@@ -19,7 +19,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] **S5**: `cargo publish`, then git tag **`v0.4.0`**; Client pins crates.io **`0.4.0`** + **`protocol`** (git pin optional). **W3/W4/W5 deferred**. S0–S4.5 and S4 (version / include / dry-run) landed or land in this wave. Further visibility shrink / splitting `server` does **not** go into the first publish.
+- [ ] **Client pin crates.io**: official Client uses `crabmate = { version = "0.4.0", default-features = false, features = ["protocol"] }` (git pin optional). Server is published: [crates.io/crates/crabmate](https://crates.io/crates/crabmate) **0.4.0**, git **`v0.4.0`**. **W3/W4/W5 deferred**.
 
 ### P4 — Testing and quality
 

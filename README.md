@@ -17,6 +17,7 @@
   <a href="https://github.com/noisystreet/CrabMate/pulls"><img src="https://img.shields.io/github/issues-pr/noisystreet/CrabMate" alt="Pull requests" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+  <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
 </p>
 
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
@@ -214,5 +215,5 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Single crate**: `crabmate` **`0.4.0`** with default feature **`server`**. Install: **`cargo install crabmate`**. Official Client pins **`default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases). Until crates.io publish (S5), Client may still git-pin a `rev`.
+- **Single crate**: `crabmate` **`0.4.0`** on [crates.io](https://crates.io/crates/crabmate) with default feature **`server`**. Install: **`cargo install crabmate`**. Official Client pins **`version = "0.4.0", default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases). Git tag **`v0.4.0`** is the same commit.
 - **Semver surface**: `protocol` = the six `cm_*` contract modules. `server` promises the composition module *names* (`agent` / `config` / `llm` / `sse` / `types`) and explicit root `pub use`s (`run`, `run_agent_turn`, `build_tools*`, …). `#[doc(hidden)]` modules and paths such as `agent::agent_turn` are **not** a stable SDK. Details: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4.
