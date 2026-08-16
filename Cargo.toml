@@ -76,12 +76,25 @@ nix = { version = "0.31", default-features = false }
 
 [package]
 name = "crabmate"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, HTTP serve, ops CLI"
+repository = "https://github.com/noisystreet/CrabMate"
+homepage = "https://github.com/noisystreet/CrabMate"
+readme = "README.md"
 # 存在 `crabmate-gen-man` 时，`cargo run` 须默认主二进制（与 README「cargo run」一致）。
 default-run = "crabmate"
+# crates.io 源码包：编译与默认配置 / man；不含测试夹具、docs、packaging、本地 leftover `crates/`。
+include = [
+    "/src/",
+    "/config/",
+    "/man/",
+    "/LICENSE",
+    "/README.md",
+    "/README.zh.md",
+    "/fixtures/workflows/schema/",
+]
 
 [package.metadata.deb]
 maintainer = "CrabMate <adustofsnow@163.com>"

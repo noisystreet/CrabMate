@@ -40,7 +40,7 @@ Single **Tokio** process: Axum HTTP + `runtime` CLI; shared `AgentConfig`, tools
 2. **Orchestration**: `chat_job_queue`, `agent/` (`agent_turn`, pipelines, `per_coord`, workflow)
 3. **Model**: `llm` (`complete_chat_retrying` → backend → `api::stream_chat`), vendors
 4. **Tools**: table-driven tools, `tool_registry`, optional sandbox, `tool_result`
-5. **Contracts**: types / config / llm / agent crates, `crabmate-sse-protocol`, `crabmate-web-host` (HTTP DTOs)
+5. **Contracts**: `cm_types` / `cm_config` / `cm_llm` / `cm_agent`, `cm_api_contract` (HTTP JSON + OpenAPI schemars), `cm_sse_protocol`, `cm_web_host` (handler shell re-exports)
 
 ```mermaid
 flowchart TB
@@ -89,24 +89,24 @@ Update this table when top-level duties or crate boundaries change. **Do not** m
 | Area | Responsibility |
 |------|----------------|
 | **`agent/`** | Turn orchestration, pipelines, `per_coord`, workflow glue |
-| **`llm/`** | Retried completion, vendor, streaming API (`crabmate-llm`) |
+| **`llm/`** | Retried completion, vendor, streaming API (`cm_llm`) |
 | **`tools/`** / **`tool_registry/`** | Implementations, dispatch, approval, timeouts |
-| **`sse/`** | Control-plane payloads (`crabmate-sse-protocol`) |
-| **`web/`** | Axum, `AppState`, domain routes; DTOs in **`crabmate-web-host`** |
+| **`sse/`** | Control-plane payloads (`cm_sse_protocol`; `protocol` has no tokio) |
+| **`web/`** | Axum, `AppState`, domain routes; JSON DTOs in **`cm_api_contract`**, handlers re-exported via **`cm_web_host`** |
 | **`chat_job_queue/`** | `/chat*` queue and workers |
-| **`config/`** | Load, finalize, hot reload (`crabmate-config`) |
+| **`config/`** | Load, finalize, hot reload (`cm_config`) |
 | **`workspace/`** | Path policy and safe opens |
 | **`memory/`** | Long-term memory / optional semantic index |
-| **`runtime/`** | REPL, chat, export, TUI, bench |
+| **`runtime/`** | Ops CLI exit codes, export, bench glue (`cm_runtime`) |
 | **`tool_result/`** | Tool output envelopes |
-| **`crabmate-types`** | Messages, tools, gateway presets |
-| **`crabmate-agent`** | Intent, outer-loop FSM, completion core; root hosts IO |
-| **`crabmate-turn-layout`** | Canonical Turn → Web/TUI projection (**stays in this repo**; after the single-crate cutover it is a `protocol` module — [`crates_io_single_package.md`](../design/crates_io_single_package.md); W3 deferred) |
-| **`crabmate-approval`** | Web tool approval + SSE |
-| **`crabmate-chat-export`** | Export envelope (raw / display) |
+| **`cm_types`** | Messages, tools, gateway presets (`protocol`) |
+| **`cm_agent`** | Intent, outer-loop FSM, completion core; root `agent/` hosts IO |
+| **`cm_turn_layout`** | Canonical Turn → Web/TUI projection (`protocol`; W3 deferred — [`crates_io_single_package.md`](../design/crates_io_single_package.md)) |
+| **`cm_approval`** | Web tool approval + SSE |
+| **`cm_chat_export`** | Export envelope (raw / display, `protocol`) |
 | **`observability`** | Tracing init |
 
-Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases); server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]` (**not** a semver promise — see [`crates_io_single_package.md`](../design/crates_io_single_package.md) §2.4 / S4.5 before the first publish). Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
+Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases); server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]` (**not** a semver promise — see [`crates_io_single_package.md`](../design/crates_io_single_package.md) §2.4). Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
 
 ## Frontend (summary)
 

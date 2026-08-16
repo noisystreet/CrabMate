@@ -54,27 +54,27 @@ bash scripts/fn-nloc-ratchet.sh
 
 Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see [`.cursor/rules/conventional-commits.mdc`](../../.cursor/rules/conventional-commits.mdc)).
 
-## Rust: workspace tests
+## Rust: unit and integration tests
 
-From the **repo root** (this workspace: `crabmate`, `crabmate-sse-protocol`, `crabmate-web-host`, …; **not** Client `crabmate-web`):
+From the **repo root** (single crate **`crabmate`**; **not** Client `crabmate-web`):
 
 ```bash
 cargo test
 ```
 
-### By package
+### By scope
 
-| Package | Command | Notes |
+| Scope | Command | Notes |
 | --- | --- | --- |
 | Main binary + backend | `cargo test -p crabmate` | Most `src/` and `tests/` tests |
-| SSE protocol crate | `cargo test -p crabmate-sse-protocol` | Version / doc marker self-checks, etc. |
-| Web host crate | `cargo test -p crabmate-web-host` | HTTP contract shell; Leptos UI tests are in Client |
+| Wire contract (no tokio) | `cargo test --lib --no-default-features --features protocol cm_sse_protocol` | `cm_sse_protocol` classify/frames; also **`./scripts/check-sse-protocol.sh`** |
+| OpenAPI / HTTP shell | `cargo test --lib openapi_` | `GET /openapi.json` vs axum `.route(`; Leptos UI tests are in Client |
 
 ### Filter by test name (examples)
 
 ```bash
 ./scripts/check-sse-protocol.sh
-cargo test -p crabmate-tools tool_result_envelope_golden
+cargo test tool_result_envelope_golden
 ```
 
 If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).

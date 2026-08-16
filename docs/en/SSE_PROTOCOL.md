@@ -2,11 +2,11 @@
 
 # Agent SSE control-plane protocol (`/chat/stream`)
 
-This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in workspace crate **`crabmate-sse-protocol`** (`sse/protocol.rs`, `sse/line.rs`); the root crate re-exports via `pub use crabmate_sse_protocol::sse`. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs) (AG-UI; sink shapes in [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)).
+This document describes **control-plane JSON** sent by the CrabMate server on SSE `data:` lines, distinct from **plain-text model deltas**. **Payload shapes** and line classification live in **`src/cm_sse_protocol`** (`sse/protocol.rs`, `sse/line.rs`). Clients pin **`crabmate::cm_sse_protocol`** (`features = ["protocol"]`); the `sse` alias exists only on the `server` composition surface — **do not** use it from Client. The **numeric protocol version** is **`SSE_PROTOCOL_VERSION`** (shared with the Leptos UI). The browser consumes via Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs) (AG-UI; sink shapes in [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)).
 
 ## Protocol version `v` and negotiation
 
-- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**.
+- Each control JSON object **should** include top-level **`v`** (`u8`). Current value **`2`**, aligned with **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`**.
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
 - **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
 - **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
@@ -308,8 +308,8 @@ AG-UI event classification by V2Parser is validated in `fixtures/sse_ag_ui_golde
 
 ## Contract tests (`crabmate_tool` history envelope)
 
-- **`crates/crabmate-tools/fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
-- **Rust**: `cargo test -p crabmate-tools tool_result_envelope_golden`.
+- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**: each line `description<TAB>single-line JSON` (`#` lines are comments); round-trip via **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`**.
+- **Rust**: `cargo test tool_result_envelope_golden`.
 
 ---
 

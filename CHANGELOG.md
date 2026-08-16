@@ -15,6 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **crates.io prep**: package **`version = "0.4.0"`** with `repository` / `readme` / `include`; install via **`cargo install crabmate`** after S5 publish. Git product tag remains **`v0.4.0`** at S5 (do not reuse **`v0.3.0`**). Maintainer docs (architecture, testing, SSE) point at `src/cm_*` instead of old workspace package names.
 - **Public API docs**: rustdoc and README state the `0.4.0` semver whitelist (`protocol` six modules; `server` composition names + explicit `pub use`). `#[doc(hidden)]` is not a stable SDK.
 - **`GET /openapi.json`**: document `/user-data/mcp-servers*` and `PUT /user-data/secrets/web-api-bearer`; test that OpenAPI **path+method** pairs match axum `.route(` in source (not a hand-maintained list; not E2E fixtures / static files).
 - **Client contract `client-contract-v0.2.0`**: drop `crabmate-tool-card` from this repo (Client vendors it). `GET /conversation/messages` no longer fills `display_*` on `role=tool`; `save-session` Markdown tool sections are no longer pixel-aligned with Web cards. Remaining pin crates are unchanged at Cargo `0.1.0`.
