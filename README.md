@@ -214,4 +214,5 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Single crate**: `crabmate` with default feature **`server`**. Client WASM pins **`protocol`** only (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
+- **Single crate**: `crabmate` with default feature **`server`** (`cargo install crabmate` after crates.io `0.4.0`; until then `cargo install --path .`). Client WASM pins **`protocol`** only (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
+- **Semver surface**: `protocol` = the six `cm_*` contract modules. `server` promises the composition module *names* (`agent` / `config` / `llm` / `sse` / `types`) and explicit root `pub use`s (`run`, `run_agent_turn`, `build_tools*`, …). `#[doc(hidden)]` modules and paths such as `agent::agent_turn` are **not** a stable SDK. Details: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4.

@@ -19,9 +19,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] **S3**: Client pin single crate `crabmate` + `features = ["protocol"]` (git rev **`27c1fd3a`** / #855); in progress: [crabmate-client#62](https://github.com/noisystreet/crabmate-client/pull/62). Remove this item after that PR merges.
-- [ ] **S4.5**: Before the version bump, document the semver whitelist (rustdoc / README), drop stale workspace crate names from packaged comments, and fill OpenAPI for MCP + web-api-bearer with a route-table check. See **`docs/design/crates_io_single_package.md`** §2.4 / S4.5. Land **before** changing `version`; do not mix with the dry-run PR.
-- [ ] **S4/S5**: set `version = "0.4.0"`, dry-run, then `cargo publish`. **W3/W4/W5 deferred**. S0–S2 and the public-API tighten already landed on `main` (#854 / #855). Further visibility shrink / splitting `server` does **not** go into S4.
+- [ ] **S4/S5**: set `version = "0.4.0"`, dry-run, then `cargo publish`. **W3/W4/W5 deferred**. S0–S3 and S4.5 (semver whitelist / OpenAPI route table) landed or land in this wave. Further visibility shrink / splitting `server` does **not** go into S4.
 
 ### P4 — Testing and quality
 

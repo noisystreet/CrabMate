@@ -2,9 +2,9 @@
 //!
 //! 完整回合编排（`agent_turn` 执行面、`workflow` 执行、PER 协调）仍在根包 **`crabmate::agent`**，以便注入 `tool_registry`、SSE 与 `complete_chat_retrying`。
 //! 外循环 FSM / reduce / driver / pre-gate reason、完成判定核（`turn_completion_decision` /
-//! `completion_suppression` / `task_level_evidence`）已落在本 crate **`agent_turn`**（根包再导出）。
+//! `completion_suppression` / `task_level_evidence`）已落在本模块 **`agent_turn`**（根包再导出）。
 //!
-//! 依赖链：`crabmate-types` → `crabmate-config` → `crabmate-tools` → **`crabmate-agent`** → `crabmate`（根包编排）。
+//! 依赖链：`cm_types` → `cm_config` → `cm_tools` → **`cm_agent`** → 根包编排。
 
 pub mod acceptance;
 pub mod agent_turn;

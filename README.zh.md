@@ -214,4 +214,5 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态；Web 壳层请用 **`GET /status?view=shell`**。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
-- **单 crate**：`crabmate`，默认 feature **`server`**。Client WASM 钉 **`protocol`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。
+- **单 crate**：`crabmate`，默认 feature **`server`**（crates.io `0.4.0` 后可用 `cargo install crabmate`；此前 `cargo install --path .`）。Client WASM 钉 **`protocol`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。
+- **semver 面**：`protocol` 为六个 `cm_*` 契约模块；`server` 承诺组合面模块**名**（`agent` / `config` / `llm` / `sse` / `types`）与根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*` 等）。`#[doc(hidden)]` 模块与 `agent::agent_turn` 等内部路径**不是**稳定 SDK。详见 [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4。

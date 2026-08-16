@@ -3,8 +3,7 @@
 //! 拆成多段 `json!`，降低单函数 `nloc`（`fn-nloc` 棘轮）；运行时合并为单一 object。
 
 use serde_json::{Map, Value, json};
-
-use super::openapi_paths_user_data;
+use super::{openapi_paths_user_data, openapi_paths_user_data_mcp};
 
 fn merge_path_fragments(fragments: &[Value]) -> Value {
     let mut map = Map::new();
@@ -916,5 +915,6 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_github(),
         openapi_paths_fragment_workspace_rest(),
         openapi_paths_user_data::openapi_paths_fragment_user_data(),
+        openapi_paths_user_data_mcp::openapi_paths_fragment_user_data_mcp(),
     ])
 }
