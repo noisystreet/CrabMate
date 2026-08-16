@@ -7,19 +7,26 @@
 mod ag_ui_convert;
 mod ag_ui_encode;
 mod ag_ui_event;
+#[cfg(feature = "runtime")]
 mod control_mirror;
 mod encoder;
 mod encoder_v2;
+#[cfg(feature = "runtime")]
 mod final_response_terminal;
 pub mod line;
+#[cfg(feature = "runtime")]
 mod mpsc_send;
 pub mod protocol;
+#[cfg(feature = "runtime")]
 pub mod stream_hub;
+#[cfg(feature = "runtime")]
 pub mod web_approval;
 
+#[cfg(feature = "runtime")]
 pub use control_mirror::send_sse_control_payload_optional;
 pub use encoder::{SseEncoder, default_encoder};
 pub use encoder_v2::V2Encoder;
+#[cfg(feature = "runtime")]
 pub use final_response_terminal::{
     encode_reasoning_message_content_sse, encode_text_message_content_sse,
     encode_text_message_start_sse_str, send_final_response_timeline_then_answer_phase,
@@ -27,9 +34,12 @@ pub use final_response_terminal::{
     send_reasoning_message_start_sse, send_run_started_sse, send_state_snapshot_sse,
     send_text_message_end_sse, send_text_message_start_sse,
 };
+#[cfg(feature = "runtime")]
 pub use mpsc_send::{send_string_logged, send_string_logged_cooperative_cancel};
+#[cfg(feature = "runtime")]
 pub use stream_hub::SseStreamHub;
 
+#[cfg(feature = "runtime")]
 pub use control_mirror::SseControlMirror;
 pub use protocol::{
     ClarificationQuestionField, ClarificationQuestionnaireBody, CommandApprovalBody,

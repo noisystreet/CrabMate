@@ -162,8 +162,8 @@
 - [x] W1 瘦 `types` 直接依赖（`StatusShellView` 仍走 `api-contract`，见 sink ADR W1.2 跳过说明）
 - [x] W2 expand `crabmate-tool-card`（Client path）
 - [x] W2b Server 去掉 `tool-card`
-- [ ] W3 / W4 `crabmate-turn-layout`
-- [ ] W5（可选）`display-rules` 拷贝
+- [ ] W3 / W4 `crabmate-turn-layout` — **缓做**（优先 [`crates_io_single_package.md`](./crates_io_single_package.md)）
+- [ ] W5（可选）`display-rules` 拷贝 — **缓做**
 
 ---
 
@@ -187,7 +187,7 @@
 | Phase 3 | 3–7 日 |
 | Phase 4 | 2–4 日 |
 | Phase 5 | 按需 |
-| Phase 6 | 见 `client_display_crate_sink.md`（W1 小；W2–W4 各 1–3 日量级） |
+| Phase 6 | 见 `client_display_crate_sink.md`（W1–W2b 完；W3 缓做）+ `crates_io_single_package.md` |
 
 ---
 
@@ -209,3 +209,4 @@
 | 2026-08-08 | Phase A：扩契约钉清单 + `check-client-contract` UI smoke；Client `contract_pin`；tag 待合 main |
 | 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |
 | 2026-08-08 | **P4.2 完成**：Client #2（UI）+ #3（Playwright）与主仓 #795（删 frontend / e2e）已合 `main`；路径 A 分离终点达成（可选 P4.3 / Phase 5） |
+| 2026-08-16 | W2b 合入；展示 W3 缓做；单包 crates.io 计划 [`crates_io_single_package.md`](./crates_io_single_package.md) |

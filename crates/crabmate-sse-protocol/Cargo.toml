@@ -7,12 +7,17 @@ description = "Shared SSE control-plane protocol and runtime for CrabMate (Rust 
 repository = "https://github.com/noisystreet/CrabMate"
 readme = "../../docs/design/client_contract_versioning.md"
 
+[features]
+default = ["runtime"]
+## 广播中枢、mpsc 桥、审批 SSE（`tokio`）。WASM / 外仓分类器请 `--no-default-features`。
+runtime = ["dep:tokio"]
+
 [dependencies]
 crabmate-types = { workspace = true }
 log = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["sync"] }
+tokio = { workspace = true, optional = true, features = ["sync"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

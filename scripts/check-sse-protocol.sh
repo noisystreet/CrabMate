@@ -14,11 +14,30 @@ set -euo pipefail
 echo "[sse-check] cargo test -p crabmate-sse-protocol sse::protocol::tests"
 cargo test -p crabmate-sse-protocol sse::protocol::tests -- --nocapture
 
+echo "[sse-check] cargo test -p crabmate-sse-protocol --no-default-features (protocol / classify)"
+cargo test -p crabmate-sse-protocol --no-default-features -- --nocapture
+
+echo "[sse-check] protocol graph has no tokio"
+if cargo tree -p crabmate-sse-protocol --no-default-features -e normal --prefix none \
+  | grep -qE '^tokio '; then
+  echo "FORBIDDEN: crabmate-sse-protocol --no-default-features must not depend on tokio" >&2
+  cargo tree -p crabmate-sse-protocol --no-default-features -e normal -i tokio --prefix indent | head -40
+  exit 1
+fi
+echo "  ok: no tokio"
+
 echo "[sse-check] cargo test -p crabmate-sse-protocol golden_sse_control"
 cargo test -p crabmate-sse-protocol golden_sse_control -- --nocapture
 
 echo "[sse-check] cargo test -p crabmate-sse-protocol golden_ag_ui_classify_matches_expected"
 cargo test -p crabmate-sse-protocol golden_ag_ui_classify_matches_expected -- --nocapture
+
+echo "[sse-check] wasm32 protocol (no runtime)"
+if rustup target list --installed 2>/dev/null | grep -qx 'wasm32-unknown-unknown'; then
+  cargo check -p crabmate-sse-protocol --no-default-features --target wasm32-unknown-unknown --lib
+else
+  echo "  skip: rustup target wasm32-unknown-unknown not installed"
+fi
 
 echo "[sse-check] cargo test --lib golden_http_sse_failure_path"
 cargo test --lib golden_http_sse_failure_path -- --nocapture
