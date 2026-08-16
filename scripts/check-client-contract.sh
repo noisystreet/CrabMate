@@ -23,7 +23,6 @@ for crate in \
   crabmate-types \
   crabmate-display-rules \
   crabmate-turn-layout \
-  crabmate-tool-card \
   crabmate-chat-export
 do
   manifest="$ROOT/crates/$crate/Cargo.toml"
@@ -54,7 +53,6 @@ crabmate-sse-protocol = { path = "$ROOT/crates/crabmate-sse-protocol" }
 crabmate-types = { path = "$ROOT/crates/crabmate-types" }
 crabmate-display-rules = { path = "$ROOT/crates/crabmate-display-rules" }
 crabmate-turn-layout = { path = "$ROOT/crates/crabmate-turn-layout" }
-crabmate-tool-card = { path = "$ROOT/crates/crabmate-tool-card" }
 crabmate-chat-export = { path = "$ROOT/crates/crabmate-chat-export" }
 EOF
 
@@ -66,7 +64,6 @@ pub fn smoke_sse_protocol_version() -> u8 {
     let _ = crabmate_api_contract::error_codes::SSE_CLIENT_TOO_NEW;
     let _ = crabmate_api_contract::error_codes::INVALID_SSE_CLIENT_PROTOCOL;
     let _ = crabmate_display_rules::user_message_should_hide_for_chat_display("");
-    let _ = crabmate_tool_card::looks_like_crabmate_tool_envelope("");
     let _ = crabmate_chat_export::CHAT_EXPORT_SCHEMA_VERSION;
     let _ = crabmate_turn_layout::Turn::default();
     let _ = crabmate_types::OPENAI_CHAT_COMPLETIONS_REL_PATH;

@@ -9,7 +9,6 @@ description = "CrabMate runtime utilities (display, exit codes, chat export)"
 crabmate-agent = { workspace = true, default-features = false }
 crabmate-chat-export = { workspace = true }
 chrono = { workspace = true }
-crabmate-tool-card = { workspace = true }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 regex = { workspace = true }

@@ -163,59 +163,23 @@ fn find_tool_call_for_display(messages: &[Message], tool_idx: usize) -> Option<(
     None
 }
 
-fn human_summary_duplicates_prefix(raw: &str, prefix: &str) -> bool {
-    let t = prefix.trim();
-    if t.is_empty() || !raw.trim().starts_with('{') {
-        return false;
-    }
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) else {
-        return false;
-    };
-    let Some(h) = v.get("human_summary").and_then(|x| x.as_str()) else {
-        return false;
-    };
-    let hs = h.trim();
-    hs == t || hs.contains(t) || (t.len() > 5 && t.contains(hs))
-}
-
-fn with_summarize_tool_prefix(raw: &str, body: String, name: &str, args: &str) -> String {
-    let Some(prefix) = crabmate_tools::tools::summarize_tool_call(name, args) else {
-        return body;
-    };
-    if prefix.trim().is_empty() || human_summary_duplicates_prefix(raw, &prefix) {
-        return body;
-    }
-    if body.is_empty() {
-        return prefix;
-    }
-    format!("{prefix}\n\n{body}")
-}
-
-/// **TUI / 导出**：优先 [`crabmate_tool_card::tool_stored_text_from_envelope`] compact
-///（与 Web/Tauri `StoredMessage.text` / 快照 `display_content` 同源）；解析失败时回退
-/// [`tool_content_for_display`] + `summarize_tool_call` 前缀。
+/// **导出 / 运维 CLI**：信封走 [`tool_content_for_display`]（摘要或截断原文）；聊天省略策略下
+/// 正文为空时再回退 `summarize_tool_call`。不生成 Web 像素级工具卡（W2b：`crabmate-tool-card` 已迁 Client）。
 pub fn tool_content_for_display_for_message(
     raw: &str,
     messages: &[Message],
     tool_msg_idx: usize,
 ) -> String {
-    let call = find_tool_call_for_display(messages, tool_msg_idx);
-    let name_hint = call.as_ref().map(|(n, _)| n.as_str());
-    if let Some(stored) = crabmate_tool_card::tool_stored_text_from_envelope(
-        raw,
-        name_hint,
-        crabmate_tool_card::ToolCardLocale::ZhHans,
-    ) {
-        let compact = stored.compact.trim();
-        if !compact.is_empty() {
-            return compact.to_string();
-        }
-    }
     let body = tool_content_for_display(raw);
-    let Some((name, args)) = call else {
+    if !body.trim().is_empty() {
+        return body;
+    }
+    let Some((name, args)) = find_tool_call_for_display(messages, tool_msg_idx) else {
         return body;
     };
-    with_summarize_tool_prefix(raw, body, &name, &args)
+    crabmate_tools::tools::summarize_tool_call(&name, &args)
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or(body)
 }
 
 // --- 助手正文：剥重复「模型：」标签 → 规划可读化 → LaTeX（Web / SSE 展示管线）---
@@ -516,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn tool_for_message_prefers_tool_card_compact_from_envelope() {
+    fn tool_for_message_uses_envelope_summary_not_pixel_tool_card() {
         let envelope = r#"{"crabmate_tool":{"v":1,"name":"read_file","summary":"读：a.rs","ok":true,"output":"content"}}"#;
         let messages = vec![
             Message::user_only("hi"),
@@ -547,13 +511,8 @@ mod tests {
             },
         ];
         let out = tool_content_for_display_for_message(envelope, &messages, 2);
-        let web = crabmate_tool_card::tool_stored_text_from_envelope(
-            envelope,
-            Some("read_file"),
-            crabmate_tool_card::ToolCardLocale::ZhHans,
-        )
-        .expect("envelope");
-        assert_eq!(out, web.compact);
+        assert_eq!(out, "读：a.rs");
+        assert!(!out.contains("crabmate_tool"));
     }
 
     #[test]

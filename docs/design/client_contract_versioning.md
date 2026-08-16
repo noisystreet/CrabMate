@@ -2,7 +2,7 @@
 
 > **状态**：采纳（2026-08-08）— 支撑 [`client_shell_split.md`](./client_shell_split.md) 路径 A。  
 > **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 1；UI 迁出见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md) Phase A。  
-> **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `turn-layout` / `tool-card` 计划迁 Client；线契约仍以本文钉版本。  
+> **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `tool-card` 已迁 Client（W2b）；`turn-layout` 计划 W3/W4；线契约仍以本文钉版本。  
 > **人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)（HTTP `ApiError` / OpenAPI）。  
 > **门禁脚本**：`scripts/check-client-contract.sh`（SSE 金样 + OpenAPI 冒烟 + 外仓风格 path 消费；展示 crate 下沉后钉清单会收窄，见 [`client_display_crate_sink.md`](./client_display_crate_sink.md)）。
 
@@ -19,7 +19,6 @@
 | 展示过滤 | `crabmate-display-rules` | 聊天区隐藏注入 user 等（Web/TUI 对齐） |
 | SSE 控制面 | `crabmate-sse-protocol` | `SSE_PROTOCOL_VERSION`、载荷类型、分类 |
 | 回合布局 / 投影 | `crabmate-turn-layout` | **计划迁 Client**（[`client_display_crate_sink.md`](./client_display_crate_sink.md) W3/W4）；迁出前仍在本仓钉清单 |
-| 工具卡展示 | `crabmate-tool-card` | **计划迁 Client**（同上 W2）；迁出前仍在本仓钉清单 |
 | 会话导出 schema | `crabmate-chat-export` | 导出 JSON/Markdown 契约（无 I/O）；**本轮不迁** |
 | Tauri 连接页逻辑 | `crabmate-connect`（**仅** Client 仓） | 探测 `/health`、Bearer hash、钥匙串 |
 
@@ -61,7 +60,7 @@
 
 `crabmate-api-contract` 与 OpenAPI / `docs/命令行契约.md` 中的 HTTP 码表同发布节奏；破坏性 HTTP JSON 变更须在发版说明与 OpenAPI 中标明。
 
-展示契约（`turn-layout` / `tool-card` / `chat-export` / `display-rules`）破坏性 Rust API 变更时：bump 对应 crate，并打新的 `client-contract-v*`（或更新外仓 `rev`）。
+展示契约（`turn-layout` / `chat-export` / `display-rules`）破坏性 Rust API 变更时：bump 对应 crate，并打新的 `client-contract-v*`（或更新外仓 `rev`）。`crabmate-tool-card` 已迁 Client（W2b），不再随本仓 tag 钉。
 
 ---
 
@@ -115,7 +114,6 @@ client-contract-vX.Y.Z
 **官方 UI 展示契约（Phase A 起必钉，对齐 `frontend/Cargo.toml`）**
 
 - `crabmate-turn-layout`
-- `crabmate-tool-card`
 - `crabmate-chat-export`
 
 **壳连接（不在本仓）**
@@ -145,7 +143,6 @@ crabmate-sse-protocol = { git = "https://github.com/noisystreet/CrabMate", tag =
 crabmate-types = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", package = "crabmate-types" }
 crabmate-display-rules = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", package = "crabmate-display-rules" }
 crabmate-turn-layout = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", package = "crabmate-turn-layout" }
-crabmate-tool-card = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", package = "crabmate-tool-card" }
 crabmate-chat-export = { git = "https://github.com/noisystreet/CrabMate", tag = "client-contract-v0.1.0", package = "crabmate-chat-export" }
 ```
 

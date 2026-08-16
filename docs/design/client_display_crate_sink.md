@@ -27,7 +27,7 @@ D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，
 | `crabmate-types` | **Server**（`Message` 领域核） | **不下沉**。Client 只拷网关预设表。 |
 | `crabmate-display-rules` | **Server**（注入文案与快照过滤同源） | **不搬源码**。W5 可选：Client 拷 ~97 行到 `crabmate-client-api`，接受双份前缀。 |
 | `crabmate-turn-layout` | **Client**（D2.2 后唯一投影消费者） | **迁出**（W3 expand → W4 contract）。 |
-| `crabmate-tool-card` | **Client**（工具卡 UI） | **迁出**（W2 expand → W2b contract）。 |
+| `crabmate-tool-card` | **Client**（工具卡 UI） | **已迁出**（W2 expand → W2b contract，2026-08-16）。 |
 | `crabmate-chat-export` | **Server**（`save-session` raw / `tool-replay`） | **本轮不迁**。Client 继续 git 钉 schema 常量；display Markdown 可后续再拆。 |
 
 **禁止**：Client 再 `path = "../crabmate_agent/crates/…"`（已有 `check-no-main-path.sh`）。expand 阶段 Client 用 **本仓 path**；线契约仍 git tag。
@@ -117,9 +117,14 @@ W6 （可选，另轨）sse-protocol feature 切开 — 不阻塞 W1–W4
 
 | ID | 仓 | 动作 | 验收 |
 |----|----|------|------|
-| W2.1 | Client | 复制 crate；workspace/`frontend/Cargo.toml` 改为 `path = "../crates/crabmate-tool-card"` | `cargo test -p crabmate-tool-card`；`cd frontend && cargo test --lib`（工具卡相关） |
+| W2.1 | Client | 复制 crate；独立 `[workspace]` + `frontend/Cargo.toml` 改为 `path = "../crates/crabmate-tool-card"` | Client：`cd crates/crabmate-tool-card && cargo test`（无根 workspace，勿用 `-p`）；`cd frontend && cargo test --lib`（工具卡相关） |
 | W2.2 | Client | `check-no-main-path.sh` 允许本仓 path、仍禁 Server path | 脚本绿 |
 | W2.3 | 双仓 | **expand 窗口**：Server 副本暂留，旧 git tag 消费者不破 | 不删 Server crate |
+
+### W2 expand 落地（2026-08-16）
+
+- **W2.1 / W2.2**：Client `crates/crabmate-tool-card` 为独立 `[workspace]`；`frontend` path 依赖；金样在 crate 内 `fixtures/hydrate_tool_card_golden.jsonl`。
+- **W2.3**：本仓 crate **暂留**（`crabmate-runtime` / `save-session` 仍用）；W2b 再删 member 与钉清单。
 
 ### W2b — contract（Server 去掉 `tool-card`）
 
@@ -130,6 +135,12 @@ W6 （可选，另轨）sse-protocol feature 切开 — 不阻塞 W1–W4
 | W2b.3 | Server | `docs/命令行与路由.md`：说明 `save-session` md 工具段不再保证与 Web 工具卡逐字一致 | 文档与行为一致 |
 
 **产品默认**：运维 CLI 不对齐 Web 像素；需要漂亮工具卡走 Client 导出。
+
+### W2b 落地（2026-08-16）
+
+- **W2b.1**：`tool_content_for_display_for_message` 只用信封摘要 / `summarize_tool_call`；`GET /conversation/messages` 的 `role=tool` **不再**填 `display_*`（Client 水合回退本地 `crabmate-tool-card`）。
+- **W2b.2**：本仓删除 `crates/crabmate-tool-card` member；钉清单与 lizard cap 已同步。
+- **W2b.3**：`docs/命令行与路由.md` / `docs/en/CLI.md` 已说明 md/`display` 工具段不与 Web 工具卡逐字对齐。
 
 ---
 
@@ -165,7 +176,7 @@ expand 窗口内 Server 副本仍可编译 `sse-replay`。
 | W4.1 | Server | `crabmate sse-replay`：**默认打印 JSONL `data` 原文**；删除对 `project_turn_web` / `ProjectedRow` 的依赖。`--format canonical` **删除或文档化为已移除** | `cargo test` 覆盖 cli 解析；手动 `sse-replay` 仍能读 dump 文件 |
 | W4.2 | Server | 移出 workspace member；`check-client-contract.sh` 去掉该包；删除根 `fixtures/turn_project_*.jsonl`（已在 Client） | 门禁绿；无悬空路径 |
 | W4.3 | Server | 更新 `docs/Turn布局设计.md`、`docs/开发文档.md`、`docs/en/DEVELOPMENT.md`：投影权威 = Client crate；本仓金样只锁 SSE 字节 | 链接指向 Client 路径 |
-| W4.4 | Server | `client_contract_versioning.md` §4.1「官方 UI 展示契约」删 `turn-layout` / `tool-card`；保留线契约四件套（+ 仍钉的 `chat-export` / `display-rules` 直至 W5） | 外仓示例 toml 与 `check-client-contract.sh` 一致 |
+| W4.4 | Server | `client_contract_versioning.md` §4.1「官方 UI 展示契约」删 `turn-layout`（`tool-card` 已在 W2b 去掉）；保留线契约四件套（+ 仍钉的 `chat-export` / `display-rules` 直至 W5） | 外仓示例 toml 与 `check-client-contract.sh` 一致 |
 
 **回滚**：expand 窗口未关时可把 Client 改回 git tag；W4 合入后回滚需还原 Server member（保留 git 历史）。
 
@@ -208,7 +219,7 @@ expand 窗口内 Server 副本仍可编译 `sse-replay`。
 |------|-------------|
 | Server 线契约 | `bash scripts/check-client-contract.sh` |
 | Server 全量（W2b/W4 后） | `cargo test`（至少 `crabmate` + `crabmate-runtime`） |
-| Client 展示 crate | `cargo test -p crabmate-tool-card` / `-p crabmate-turn-layout` |
+| Client 展示 crate | Client：`cd crates/crabmate-tool-card && cargo test` / `cd crates/crabmate-turn-layout && cargo test` |
 | Client WASM | `cd frontend && cargo test --lib`；既有 `make frontend-check` |
 | 禁 path | Client `scripts/check-no-main-path.sh` |
 | 一轮对话 | 既有 Client 冒烟 / Playwright（投影回归以金样为主，不必每波真 LLM） |

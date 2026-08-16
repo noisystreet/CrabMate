@@ -19,7 +19,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (sink display crates to Client)
 
-- [ ] Follow **`docs/design/client_display_crate_sink.md`**: W1 thin Client git deps → W2 `tool-card` → W3/W4 `turn-layout`; optional W5 copy of `display-rules`. Do **not** move `sse-protocol` / `api-contract` / `types` out of Server. Client checklist: `docs/design/display_crate_sink.md` in crabmate-client.
+- [ ] Follow **`docs/design/client_display_crate_sink.md`**: W1–W2b landed; next is W3/W4 `turn-layout`; optional W5 copy of `display-rules`. Do **not** move `sse-protocol` / `api-contract` / `types` out of Server. Client checklist: `docs/design/display_crate_sink.md` in crabmate-client.
 
 ### P4 — Testing and quality
 
