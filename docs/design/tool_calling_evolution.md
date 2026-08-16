@@ -32,7 +32,7 @@
 | **同轮并行与依赖** | 多 `tool_calls` 的并行、失败策略、依赖图 | 已有 **`workflow_execute` DAG**；可补：**非 DAG 的批策略在文档与提示词中显式化**（与 `parallel_readonly` 策略一致）。 |
 | **工具结果部分接受** | 用户只批准部分 `tool_calls` 或跳过失败条 | 可增强 **Web 粒度审批** 与 **重试单条**（与 `tool_approval` 同向）。 |
 | **强制结构化输出** | 某工具或某步要求 JSON schema 结果 | 与 **`agent_reply_plan`**、**`structured_payload`** 同谱系；可扩展：**特定工具注册「结果 JSON profile」** 供下游节点消费。 |
-| **长任务进度事件** | 构建/索引等分阶段 SSE | 在 **`sse/`** 与 **`execute_tools`** 增加 **可订阅进度**（注意体积与脱敏）。 |
+| **长任务进度事件** | 构建/索引等分阶段 SSE | 在 **`sse/`** 与 **`execute_tools`** 增加 **可订阅进度**（注意体积与脱敏）。落地切片（杀进程、chunk、分层超时）见 **`docs/design/long_running_tool_execution_todo.md`**。 |
 
 ---
 
