@@ -15,6 +15,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- **Public API docs**: rustdoc and README state the `0.4.0` semver whitelist (`protocol` six modules; `server` composition names + explicit `pub use`). `#[doc(hidden)]` is not a stable SDK.
+- **`GET /openapi.json`**: document `/user-data/mcp-servers*` and `PUT /user-data/secrets/web-api-bearer`; test that OpenAPI paths match mounted axum routes (not E2E fixtures / static files).
 - **Client contract `client-contract-v0.2.0`**: drop `crabmate-tool-card` from this repo (Client vendors it). `GET /conversation/messages` no longer fills `display_*` on `role=tool`; `save-session` Markdown tool sections are no longer pixel-aligned with Web cards. Remaining pin crates are unchanged at Cargo `0.1.0`.
 
 ### Fixed

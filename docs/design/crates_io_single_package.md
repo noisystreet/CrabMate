@@ -101,7 +101,7 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 |----------------|--------|
 | **`protocol`**：六个模块 `cm_types` / `cm_api_contract` / `cm_sse_protocol` / `cm_turn_layout` / `cm_display_rules` / `cm_chat_export` 上 Client 已用的符号 | `#[doc(hidden)]` 的 `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` / `cm_internal`、`e2e_scenario`、`test_serve` |
 | **`server`**：组合面模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**；根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*`、`ProcessHandles`、`tool_sandbox` 等，以 `src/lib.rs` 为准） | `agent::agent_turn` 等组合面**内部路径**；把 `crabmate` 当通用嵌入式 Agent SDK |
-| 线协议：`docs/SSE协议.md` + `cm_api_contract` 错误码 + `ChatRequestBody` | `GET /openapi.json` 在 S4.5.3 补齐前视为**摘要**，不是完整路由表 |
+| 线协议：`docs/SSE协议.md` + `cm_api_contract` 错误码 + `ChatRequestBody` | 静态 SPA / `/uploads` 文件与 `CM_E2E_FIXTURES` 路由不进 OpenAPI |
 
 HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审批、会话 revision）。默认 `web_api_require_bearer=false` 与「密钥为空则中间件不校验」是产品选择，**不**在首发前改行为。
 

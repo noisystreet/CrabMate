@@ -4,6 +4,7 @@ mod openapi_components;
 mod openapi_components_user_data;
 mod openapi_paths;
 mod openapi_paths_user_data;
+mod openapi_paths_user_data_mcp;
 
 use serde_json::{Value, json};
 
@@ -47,6 +48,78 @@ pub(crate) async fn openapi_json_handler() -> axum::Json<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
+
+    /// `build_app` 挂载且须写入 OpenAPI 的路径（不含 `CM_E2E_FIXTURES`、静态 SPA/`/uploads` 文件）。
+    /// 增删 `src/web/routes/**` 或 `cm_web_host` 的 `/web-ui` 时同步本表。
+    const MOUNTED_DOCUMENTED_HTTP_PATHS: &[&str] = &[
+    "/chat",
+    "/chat/approval",
+    "/chat/async",
+    "/chat/branch",
+    "/chat/jobs/{job_id}",
+    "/chat/stream",
+    "/config/reload",
+    "/config/session/conversation-store",
+    "/conversation/messages",
+    "/github/oauth/device/cancel",
+    "/github/oauth/device/logout",
+    "/github/oauth/device/start",
+    "/github/oauth/device/status",
+    "/github/pr/current/checks",
+    "/github/repo-context",
+    "/health",
+    "/openapi.json",
+    "/skills",
+    "/status",
+    "/tasks",
+    "/upload",
+    "/uploads/delete",
+    "/user-data/llm-overrides",
+    "/user-data/mcp-servers",
+    "/user-data/mcp-servers/import",
+    "/user-data/mcp-servers/probe-all",
+    "/user-data/mcp-servers/status",
+    "/user-data/mcp-servers/{id}/probe",
+    "/user-data/mcp-servers/{id}/remote-auth",
+    "/user-data/prefs",
+    "/user-data/secrets/status",
+    "/user-data/secrets/web-api-bearer",
+    "/user-data/workspaces",
+    "/user-data/workspaces/current/sessions",
+    "/web-ui",
+    "/workspace",
+    "/workspace/changelog",
+    "/workspace/clone/stream",
+    "/workspace/dir",
+    "/workspace/file",
+    "/workspace/pick",
+    "/workspace/profile",
+    "/workspace/projects",
+    "/workspace/search",
+];
+
+    #[test]
+    fn openapi_paths_match_mounted_documented_routes() {
+        let spec = build_openapi_spec();
+        let documented: BTreeSet<&str> = spec["paths"]
+            .as_object()
+            .expect("paths object")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        let mounted: BTreeSet<&str> = MOUNTED_DOCUMENTED_HTTP_PATHS.iter().copied().collect();
+        let missing: Vec<&str> = mounted.difference(&documented).copied().collect();
+        let extra: Vec<&str> = documented.difference(&mounted).copied().collect();
+        assert!(
+            missing.is_empty() && extra.is_empty(),
+            "OpenAPI paths must match axum documented routes\nmissing from OpenAPI: {missing:?}\nextra in OpenAPI: {extra:?}"
+        );
+        assert!(
+            !documented.contains("/e2e/fixtures/conversation"),
+            "E2E fixture routes must not appear in OpenAPI"
+        );
+    }
 
     #[test]
     fn openapi_spec_has_core_paths_and_version() {
