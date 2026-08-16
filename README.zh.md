@@ -17,6 +17,7 @@
   <a href="https://github.com/noisystreet/CrabMate/pulls"><img src="https://img.shields.io/github/issues-pr/noisystreet/CrabMate" alt="Pull requests" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+  <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
 </p>
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
@@ -214,5 +215,5 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态；Web 壳层请用 **`GET /status?view=shell`**。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
-- **单 crate**：`crabmate` **`0.4.0`**，默认 feature **`server`**。安装：**`cargo install crabmate`**。官方 Client 钉 **`default-features = false, features = ["protocol"]`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。crates.io 发布（S5）前 Client 仍可 git 钉 `rev`。
+- **单 crate**：`crabmate` **`0.4.0`** 已在 [crates.io](https://crates.io/crates/crabmate)，默认 feature **`server`**。安装：**`cargo install crabmate`**。官方 Client 钉 **`version = "0.4.0", default-features = false, features = ["protocol"]`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。git tag **`v0.4.0`** 与该包同源。
 - **semver 面**：`protocol` 为六个 `cm_*` 契约模块；`server` 承诺组合面模块**名**（`agent` / `config` / `llm` / `sse` / `types`）与根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*` 等）。`#[doc(hidden)]` 模块与 `agent::agent_turn` 等内部路径**不是**稳定 SDK。详见 [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4。
