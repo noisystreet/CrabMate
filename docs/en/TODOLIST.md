@@ -17,9 +17,9 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 (P0 security landed: `openat2`/`mkdirat` on write paths; `doctor` serve deployment checks; write-tool audit defaults on. Per-user auth remains at gateway/BFF — **`docs/en/FUTURE_PLANS.md`**.)
 
-### P3 — Architecture (sink display crates to Client)
+### P3 — Architecture (single crate on crates.io)
 
-- [ ] Follow **`docs/design/client_display_crate_sink.md`**: W1–W2b landed; next is W3/W4 `turn-layout`; optional W5 copy of `display-rules`. Do **not** move `sse-protocol` / `api-contract` / `types` out of Server. Client checklist: `docs/design/display_crate_sink.md` in crabmate-client.
+- [ ] Follow **`docs/design/crates_io_single_package.md`**: S0 docs → S1 sse-protocol features → S2 merge workspace → S3 Client pin `protocol` → S4 dry-run → S5 publish `0.4.0`. Display-sink W1–W2b done; **W3/W4/W5 deferred**.
 
 ### P4 — Testing and quality
 

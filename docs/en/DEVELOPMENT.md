@@ -101,7 +101,7 @@ Update this table when top-level duties or crate boundaries change. **Do not** m
 | **`tool_result/`** | Tool output envelopes |
 | **`crabmate-types`** | Messages, tools, gateway presets |
 | **`crabmate-agent`** | Intent, outer-loop FSM, completion core; root hosts IO |
-| **`crabmate-turn-layout`** | Canonical Turn → Web/TUI projection (**planned move to Client**; [`client_display_crate_sink.md`](../design/client_display_crate_sink.md)) |
+| **`crabmate-turn-layout`** | Canonical Turn → Web/TUI projection (**stays in this repo**; after the single-crate cutover it is a `protocol` module — [`crates_io_single_package.md`](../design/crates_io_single_package.md); W3 deferred) |
 | **`crabmate-approval`** | Web tool approval + SSE |
 | **`crabmate-chat-export`** | Export envelope (raw / display) |
 | **`observability`** | Tracing init |
@@ -131,4 +131,4 @@ Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace 
 
 ## Further reading
 
-`docs/design/` (agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.
+`docs/design/` (agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.

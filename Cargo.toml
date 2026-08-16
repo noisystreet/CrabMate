@@ -40,7 +40,7 @@ crabmate-llm = { path = "crates/crabmate-llm" }
 crabmate-mcp = { path = "crates/crabmate-mcp" }
 crabmate-memory = { path = "crates/crabmate-memory" }
 crabmate-workflow = { path = "crates/crabmate-workflow" }
-crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
+crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" } # default = runtime（tokio）；WASM 用 default-features = false
 crabmate-tools = { path = "crates/crabmate-tools" }
 crabmate-turn-layout = { path = "crates/crabmate-turn-layout" }
 crabmate-types = { path = "crates/crabmate-types" }
@@ -198,7 +198,7 @@ fastembed = [
 ]
 
 [dependencies]
-crabmate-sse-protocol = { workspace = true }
+crabmate-sse-protocol = { workspace = true, features = ["runtime"] }
 crabmate-turn-layout = { workspace = true }
 crabmate-types = { workspace = true }
 crabmate-config = { workspace = true, default-features = false }

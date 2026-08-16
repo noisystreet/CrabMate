@@ -18,7 +18,7 @@ crabmate-approval = { workspace = true }
 crabmate-llm = { workspace = true }
 crabmate-mcp = { workspace = true }
 crabmate-memory = { workspace = true }
-crabmate-sse-protocol = { workspace = true }
+crabmate-sse-protocol = { workspace = true, features = ["runtime"] }
 crabmate-tools = { workspace = true }
 crabmate-types = { workspace = true }
 async-trait = { workspace = true }

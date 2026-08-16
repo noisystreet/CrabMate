@@ -6,7 +6,7 @@ license = "Apache-2.0"
 description = "Sensitive-tool Web approval types and SSE round (shared by workflow and tool_registry)"
 
 [dependencies]
-crabmate-sse-protocol = { workspace = true }
+crabmate-sse-protocol = { workspace = true, features = ["runtime"] }
 crabmate-types = { workspace = true }
 log = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }

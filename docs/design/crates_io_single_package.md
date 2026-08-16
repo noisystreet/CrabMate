@@ -1,0 +1,283 @@
+# ADR：单包 `crabmate` 发布到 crates.io
+
+> **状态**：**Accepted**（2026-08-16）  
+> **入口**：PR 853 / `client-contract-v0.2.0` 已合入 `main`（W2b：本仓无 `crabmate-tool-card`）。  
+> **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A；[`client_contract_versioning.md`](./client_contract_versioning.md)；展示下沉 [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W3/W4 **缓做**，不阻塞本计划）。  
+> **Client 消费**：合入后钉 **一个** crate `crabmate`，`default-features = false, features = ["protocol"]`；禁止再 git 钉 `crabmate-sse-protocol` 等旧包名（`v0.3.0` / `client-contract-v0.2.0` 旧 Client 仍可用）。
+
+---
+
+## 1. Context
+
+本仓是 Cargo workspace（根包 `crabmate` `0.3.0` + ~19 个 `crates/*`）。`cargo publish -p crabmate` 会把 path 依赖换成 crates.io 上的**同名版本**：内部 crate 只要还是独立 package，就会出现在 registry 上。
+
+目标：**crates.io 上只有 `crabmate` 一个包**，同时官方 Client（WASM `frontend` + native `crabmate-tui-core`）仍能消费线契约，且**不能**链接 `tokio` 运行时 / `nix` / `rusqlite` / `axum`。
+
+约束：
+
+1. 已发布 crate 不得 path 依赖 `publish = false` 的 workspace 成员。
+2. 把现有成员**逐个**并进根包不可行：叶子（如 `types`）并入根包后，`sse-protocol` 等仍依赖 `types`，若改依赖根包会与「根包依赖 sse-protocol」成环。**切仓必须一次完成。**
+3. Client **禁止** `path` 回本开发树（`check-no-main-path.sh`）。切仓后钉 git tag / crates.io `version`，带 `protocol` feature。
+4. 线协议字节与 HTTP JSON **不**随本次搬家而变；破坏的是 **Cargo 包名**（`crabmate-sse-protocol` → `crabmate::sse_protocol`）。
+5. 产品 git tag **`v0.3.0` 不得**用作 crates.io `0.3.0`：树形状不同。首发单包用 **`0.4.0`**。
+
+---
+
+## 2. Decision
+
+| 项 | 选择 |
+|----|------|
+| crates.io 包 | 仅 **`crabmate`** |
+| 首发版本 | **`0.4.0`**（相对 git `v0.3.0` 为 Cargo 包图 BREAKING） |
+| 默认 feature | **`server`**（`cargo install crabmate` / `serve` / 运维 CLI） |
+| Client feature | **`protocol`**：类型、SSE 分类/帧、OpenAPI DTO、display-rules、turn-layout、chat-export；**无** `rt-multi-thread` / `net` / `process`、`nix`、`rusqlite`、`axum` |
+| `turn-layout` | **留在本仓**，作为 `protocol` 模块；**不做** display-sink W3/W4 |
+| `tool-card` | 已在 Client；不进本包 |
+| 旧 git 钉 | `v0.3.0` / `client-contract-v0.2.0` **永久可取**；新 Client 不跟 |
+
+### 2.1 Feature 切分
+
+```toml
+[features]
+default = ["server"]
+server = ["dep:tokio", "dep:axum", "dep:rusqlite", /* 现有 web/mcp/… 门控 */]
+protocol = []
+# 现有：mcp / gen-man / docker_sandbox / fastembed / project_metrics —— 仅 server 侧，不得被 protocol 打开
+```
+
+第三方依赖凡仅 server 使用的，一律 `optional = true`，由 `server`（或更细 feature）启用。`nix` 保持 `[target.'cfg(unix)'.dependencies]`。
+
+`protocol` 允许的第三方（白名单，S1 冻结）：`serde` / `serde_json` / `thiserror` / `schemars` / `log`（若分类路径需要）。**禁止**进入 `protocol` 编译图：`tokio`（含仅 `sync`）、`reqwest`、`axum`、`rusqlite`、`nix`、`tiktoken-rs`、`worbrow`。
+
+> 现状：Client 已 git 钉带 `tokio` `sync` 的 `crabmate-sse-protocol`，wasm 能过。单包后**仍禁止**把 `tokio` 放进 `protocol`，避免根包再导出 `stream_hub` 时误开 runtime。
+
+### 2.2 合并后模块名（Client `use` 映射）
+
+| 旧 package | 新路径（`features = ["protocol"]`） |
+|------------|-------------------------------------|
+| `crabmate-types` | `crabmate::types` |
+| `crabmate-display-rules` | `crabmate::display_rules` |
+| `crabmate-api-contract` | `crabmate::api_contract` |
+| `crabmate-chat-export` | `crabmate::chat_export` |
+| `crabmate-turn-layout` | `crabmate::turn_layout` |
+| `crabmate-sse-protocol` | `crabmate::sse_protocol`（**不含** `stream_hub` / `mpsc_send` / 审批桥） |
+
+Client 示例：
+
+```toml
+crabmate = { git = "https://github.com/noisystreet/CrabMate", tag = "v0.4.0", package = "crabmate", default-features = false, features = ["protocol"] }
+# 上 crates.io 后改为：
+# crabmate = { version = "0.4.0", default-features = false, features = ["protocol"] }
+```
+
+```rust
+use crabmate::sse_protocol::{classify_ag_ui_sse_data, SSE_PROTOCOL_VERSION, StreamEndReason};
+use crabmate::api_contract::StatusShellView;
+use crabmate::turn_layout::project_turn_web_v2;
+```
+
+`crabmate-tui-core` 自身已有 `tokio`，**仍然只开 `protocol`**，不要为图省事开 `server`。
+
+### 2.3 SSE：`protocol` vs `server`
+
+今日 `crates/crabmate-sse-protocol` 混了两层：
+
+| 进 `protocol` | 仅 `server` |
+|---------------|-------------|
+| `SSE_PROTOCOL_VERSION`、`classify_*`、`sse_frame`、`StreamEndReason` | `sse::stream_hub`、`mpsc_send`、`control_mirror`、`web_approval`、终态 `send_*`（`Sender<String>`） |
+| `sse::protocol` 载荷类型与纯函数 `encode_message` | 依赖 `tokio::sync::mpsc` / `broadcast` 的桥 |
+
+S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），切仓时同一边界收成 `crabmate::sse_protocol` vs `crabmate::sse_runtime`（名可在 S1 定稿）。
+
+---
+
+## 3. Consequences
+
+**好处**
+
+- `cargo install crabmate` / `cargo add crabmate` 只对一个包。
+- 内部实现不出现在 crates.io 包列表。
+- Client 钉点从 5～6 条 git package 收到 1 条。
+- 改气泡投影不必再为「多 crate 版本对齐」发一串包（仍建议打 git tag 供 Client 在 publish 前联调）。
+
+**代价**
+
+- 一次大切仓：各原 crate 内 `crate::` 改为 `crate::<mod>::`（或等价 `super`）。
+- 禁边脚本 `check-crate-deps.sh`（`cargo tree -p`）失效，须改成**模块** DAG 检查。
+- Client 全量改 `use` + lockfile；旧包名无法从同一 crate 再导出为第二个 crates.io 名。
+- 根包 `lib.rs` 公共 API 面变大；须在文档标明 **`protocol` 为稳定契约、`server` 模块不承诺 semver**。
+
+**后续约束**
+
+- 线协议仍以 `docs/SSE协议.md` + `fixtures/sse_*_golden.jsonl` 为权威。
+- `docs/Turn布局设计.md` 投影实现指针改为 `crabmate::turn_layout`（本仓模块），不迁 Client。
+- 新的仅-WASM 依赖不得加入 `protocol` feature 的依赖边。
+
+---
+
+## 4. Alternatives Considered
+
+| 方案 | 否决原因 |
+|------|----------|
+| 维持 workspace，内部 crate 也 publish | 与「一个包」目标相反 |
+| 内部 `publish = false`，只发根包 | Cargo 不允许已发布包依赖未发布 path 成员 |
+| 只发契约 6 包 + git 安装二进制 | 不是单包；使用者仍要记一串 crate |
+| 并进根包且 Client 依赖默认 feature | WASM 链 `tokio` runtime / `rusqlite` 等 |
+| 先 W3 把 `turn-layout` 迁 Client 再单包 | 不减小 publish 图；切仓时多一次双仓搬家 |
+| 兼容空壳包 `crabmate-sse-protocol` 转发到 `crabmate` | 又变多包 |
+| 第三仓只放 protocol | 三仓发版税；与「一个包」相反 |
+
+---
+
+## 5. 波次
+
+每波可单独 PR。S2 **必须**一整条分支切完再合 `main`（禁止合到一半的「半 workspace」）。
+
+```text
+S0  本文 + 索引（本 PR）
+S1  现仓：sse-protocol 切开 protocol/runtime（tokio 可选）
+S2  切仓：单一 [package]，feature 门控，禁边脚本改模块 DAG
+S3  Client：钉 v0.4.0-pre / rev，features=["protocol"]
+S4  元数据 + cargo publish --dry-run
+S5  crates.io 真发 0.4.0 + 文档 / Client 改 version
+```
+
+S3 可与 S2 末尾叠：S2 合入并打 **`v0.4.0-alpha.1`**（或 `rev`）后 Client 再合。禁止 S5 早于 S3 绿。
+
+### S0 — 文档
+
+| ID | 仓 | 动作 | 验收 |
+|----|----|------|------|
+| S0.1 | Server | 本文；`client_display_crate_sink` 标明 W3 缓做；待办 / 开发文档 / versioning 入口 | 本 PR |
+| S0.2 | Client | `display_crate_sink.md` / `contract_pin.md`：W3 缓做；单包钉法指向本文 | 与 S0.1 同期或紧随 |
+
+### S1 — `sse-protocol` feature（仍为独立 crate）
+
+**入口**：S0。**目的**：切仓前证明「无 tokio 的协议面」测试与 wasm 都绿。
+
+| ID | 动作 | 验收 |
+|----|------|------|
+| S1.1 | `crabmate-sse-protocol`：`default = ["runtime"]`，`runtime = ["dep:tokio"]`；hub/mpsc/审批桥 `#[cfg(feature = "runtime")]` | `cargo test -p crabmate-sse-protocol --no-default-features` 覆盖 classify / 金样 |
+| S1.2 | 根包 `server` 路径启用 `crabmate-sse-protocol/runtime` | `cargo test -p crabmate` 现有 SSE 测仍绿 |
+| S1.3 | 增加 wasm 冒烟：临时或 `examples/` 仅依赖 `--no-default-features` 的 sse-protocol | `cargo check --target wasm32-unknown-unknown`（无 `rt`/`net`） |
+| S1.4 | 更新 `check-client-contract.sh` 消费者：可 `default-features = false` | 脚本绿 |
+
+Client **此波不必改钉**（仍用默认 feature 的 git tag 也能编）。
+
+### S1 落地（2026-08-16）
+
+- **S1.1**：`default = ["runtime"]`，`runtime = ["dep:tokio"]`；`stream_hub` / `mpsc_send` / `web_approval` / `control_mirror` / `final_response_terminal` 均 `#[cfg(feature = "runtime")]`。
+- **S1.2**：根包、`crabmate-internal`、`crabmate-approval`、`crabmate-llm` 显式 `features = ["runtime"]`。
+- **S1.3 / S1.4**：`scripts/check-sse-protocol.sh` 跑 `--no-default-features` 测、`cargo tree` 禁 tokio、wasm32 `--lib` check（无该 target 则 skip）；`check-client-contract.sh` 消费者 `default-features = false`。
+
+### S2 — 切仓（一次 PR / 一条长分支）
+
+**入口**：S1 绿。工作区最终：
+
+```toml
+[workspace]
+members = ["."]
+resolver = "2"
+```
+
+（若工具脚本假设 `crates/*` 成员，同步改 pre-commit / lizard / CI cache paths。）
+
+建议物理布局（可微调，S2 开头冻结）：
+
+```text
+src/
+  lib.rs                 # feature 门控 mod
+  types/                 # 原 crates/crabmate-types
+  display_rules/
+  api_contract/
+  chat_export/
+  turn_layout/
+  sse_protocol/          # 无 tokio
+  sse_runtime/           # cfg(feature = "server")
+  …                      # agent / tools / internal / …
+```
+
+| ID | 动作 | 验收 |
+|----|------|------|
+| S2.1 | 冻结模块表与 `crate::` 改写规则（脚本或清单）；**不要**先删成员再改一半 `use` | 清单进本 ADR 或 PR 正文 |
+| S2.2 | `git mv` + 改写原 crate 内 `crate::` → `crate::<mod>::`；根 `Cargo.toml` 去掉 members 与 path 依赖 | `cargo check --features server`（或 default） |
+| S2.3 | `protocol`：`cargo check --no-default-features --features protocol --target wasm32-unknown-unknown` | 无 `tokio`/`nix`/`rusqlite`/`axum` 在该图中（`cargo tree -e features`） |
+| S2.4 | 替换 `check-crate-deps.sh`：原禁边改为模块级（workflow ↛ internal 等） | pre-commit 钩子绿 |
+| S2.5 | `check-client-contract.sh`：外仓风格消费者只 `crabmate` + `protocol` | 脚本绿 |
+| S2.6 | 金样路径：`CARGO_MANIFEST_DIR` 从 `crates/foo` 改为根；`turn_project_*.jsonl` 仍本仓 | `cargo test --features server`（至少契约 + runtime 相关） |
+| S2.7 | 文档：`开发文档` 模块表、`Turn布局设计.md`、`crate_dep_policy.md` | 与树一致 |
+
+**禁止**：S2 合入后仍留 `crates/crabmate-*` 作为第二套源码。
+
+### S3 — Client 钉单包
+
+**入口**：S2 在 `main`（或已推送 tag `v0.4.0-alpha.N`）。
+
+| ID | 仓 | 动作 | 验收 |
+|----|------|------|------|
+| S3.1 | frontend | 一条 `crabmate` 依赖；删除其余 Server git package；改 `use` | `cd frontend && cargo test --lib`；wasm clippy |
+| S3.2 | tui-core | 同上，仅 `protocol` | `cargo test`（该 crate 目录） |
+| S3.3 | `contract_pin.md` / `check-no-main-path.sh` | 允许 git/crates.io `crabmate`，仍禁 path 回 agent 仓 | 脚本绿 |
+| S3.4 | Playwright / `make frontend-check` | 与 Server `v0.4.0-alpha` 或 `rev` 对齐 | CI 绿 |
+
+### S4 — publish 准备
+
+**入口**：S2+S3 绿。
+
+| ID | 动作 | 验收 |
+|----|------|------|
+| S4.1 | `[package]`：`version = "0.4.0"`、`repository`、`readme`、`include`（`config/`、`man/`、`LICENSE*`；排除巨大无关夹具若有） | `cargo package --list` 合理 |
+| S4.2 | `cargo publish --dry-run --allow-dirty` 在干净树改为不 dirty | dry-run 成功 |
+| S4.3 | `cargo deny` / 许可证与 `deny.toml` | 与 CI 一致 |
+| S4.4 | README：`cargo install crabmate`；Client 钉 `0.4.0` + `protocol` | 中英 README 各一段 |
+
+### S5 — 真发
+
+| ID | 动作 | 验收 |
+|----|------|------|
+| S5.1 | crates.io `cargo publish`（需维护者 token；**不进仓库**） | `https://crates.io/crates/crabmate` 显示 0.4.0 |
+| S5.2 | git 注释标签 **`v0.4.0`**（产品 + 单包同源） | tag 指向 publish 的 commit |
+| S5.3 | Client 改 `version = "0.4.0"`（可去掉 git） | frontend / tui-core CI 绿 |
+| S5.4 | `client_contract_versioning.md`：默认渠道改为 crates.io **或** git `v0.4.0` 二选一写清 | 与 `contract_pin.md` 一致 |
+
+---
+
+## 6. 验证矩阵
+
+| 检查 | 命令 / 位置 |
+|------|-------------|
+| protocol / wasm | `cargo check -p crabmate --no-default-features --features protocol --target wasm32-unknown-unknown`（S2 后无 `-p` 即根包） |
+| protocol 依赖图 | `cargo tree --no-default-features --features protocol` 不含 tokio/nix/rusqlite/axum |
+| server | `cargo test`（default / `--features server`） |
+| 契约门禁 | `bash scripts/check-client-contract.sh` |
+| Client | `make frontend-check`；tui-core 测试 |
+| 禁 path | Client `scripts/check-no-main-path.sh` |
+| publish | `cargo publish --dry-run`（S4） |
+
+---
+
+## 7. 与展示下沉、契约 tag 的关系
+
+| 项 | 本计划 |
+|----|--------|
+| W1 / W2b | **已完成**；`tool-card` 不回本仓 |
+| W3 / W4 / W5 | **缓做**（无期限）；单包后 `turn-layout` 已是本仓模块，再迁 Client 无益于 crates.io |
+| `client-contract-v0.2.0` | 旧多包钉点；S5 后新 Client 不再需要 `client-contract-v*` 多 package |
+| B2（布局元数据） | 金样继续留本仓 `turn_layout` 模块；不把「迁 Client」当 B2 前置 |
+
+---
+
+## 8. 回滚
+
+- **S1**：还原 feature；Client 未改钉，回滚面小。
+- **S2 合入前**：丢弃切仓分支。
+- **S2 已合、S5 未发**：恢复 workspace 需 git revert 整波；旧 Client 仍钉 `v0.3.0`。
+- **S5 已 publish**：crates.io 版本不可删；只能发 `0.4.1` / `0.5.0`。yank `0.4.0` 仅防新下载，不从 registry 抹掉。
+
+---
+
+## 修订记录
+
+| 日期 | 说明 |
+|------|------|
+| 2026-08-16 | 初稿：单包 `0.4.0` + `server`/`protocol`；切仓一次完成；W3 不阻塞 |

@@ -49,7 +49,7 @@ publish = false
 
 [dependencies]
 crabmate-api-contract = { path = "$ROOT/crates/crabmate-api-contract" }
-crabmate-sse-protocol = { path = "$ROOT/crates/crabmate-sse-protocol" }
+crabmate-sse-protocol = { path = "$ROOT/crates/crabmate-sse-protocol", default-features = false }
 crabmate-types = { path = "$ROOT/crates/crabmate-types" }
 crabmate-display-rules = { path = "$ROOT/crates/crabmate-display-rules" }
 crabmate-turn-layout = { path = "$ROOT/crates/crabmate-turn-layout" }
@@ -67,6 +67,7 @@ pub fn smoke_sse_protocol_version() -> u8 {
     let _ = crabmate_chat_export::CHAT_EXPORT_SCHEMA_VERSION;
     let _ = crabmate_turn_layout::Turn::default();
     let _ = crabmate_types::OPENAI_CHAT_COMPLETIONS_REL_PATH;
+    let _ = crabmate_sse_protocol::classify_sse_control_outcome;
     crabmate_sse_protocol::SSE_PROTOCOL_VERSION
 }
 

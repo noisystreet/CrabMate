@@ -1,9 +1,9 @@
 # ADR：展示 crate 下沉 Client（执行计划）
 
-> **状态**：**Proposed**（2026-08-16）  
+> **状态**：**Proposed**（2026-08-16）；**W3/W4/W5 缓做**（2026-08-16：优先 [`crates_io_single_package.md`](./crates_io_single_package.md)）。  
 > **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A（本仓只维护 Server）；[`client_contract_versioning.md`](./client_contract_versioning.md)（线契约钉版本）；Client [`contract_pin.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/contract_pin.md)、[`client_shared_logic.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/client_shared_logic.md)。  
 > **Client 仓勾选**：[`crabmate-client/docs/design/display_crate_sink.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)（消费侧清单；决策以本文为准）。  
-> **非目标**：把 `sse-protocol` / `api-contract` / `types` 搬进 Client；Server 依赖 Client git crate；本轮 `cargo publish` 到 crates.io（另开）。
+> **非目标**：把 `sse-protocol` / `api-contract` / `types` 搬进 Client；Server 依赖 Client git crate。**crates.io 单包**见 [`crates_io_single_package.md`](./crates_io_single_package.md)（不依赖 W3）。
 
 ---
 
@@ -26,7 +26,7 @@ D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，
 | `crabmate-api-contract` | **Server**（DTO + OpenAPI） | **不下沉**。Client 去掉对整包的过度依赖（见 W1）。 |
 | `crabmate-types` | **Server**（`Message` 领域核） | **不下沉**。Client 只拷网关预设表。 |
 | `crabmate-display-rules` | **Server**（注入文案与快照过滤同源） | **不搬源码**。W5 可选：Client 拷 ~97 行到 `crabmate-client-api`，接受双份前缀。 |
-| `crabmate-turn-layout` | **Client**（D2.2 后唯一投影消费者） | **迁出**（W3 expand → W4 contract）。 |
+| `crabmate-turn-layout` | **本仓**（随单包收成 `protocol` 模块） | **缓做 W3/W4**；crates.io 见 [`crates_io_single_package.md`](./crates_io_single_package.md)。 |
 | `crabmate-tool-card` | **Client**（工具卡 UI） | **已迁出**（W2 expand → W2b contract，2026-08-16）。 |
 | `crabmate-chat-export` | **Server**（`save-session` raw / `tool-replay`） | **本轮不迁**。Client 继续 git 钉 schema 常量；display Markdown 可后续再拆。 |
 
@@ -36,8 +36,8 @@ D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，
 
 **好处**
 
-- 本仓 crates.io / 单包 `crabmate` 发布图不再拖 WASM 展示 crate。
-- 投影与工具卡随 UI 发版，不必为改气泡行序打 Server tag。
+- `tool-card` 已离开本仓；单包发布图不再拖 WASM 工具卡 crate（见 [`crates_io_single_package.md`](./crates_io_single_package.md)）。
+- （W3 若重启）投影随 UI 发版，不必为改气泡行序打 Server tag。
 - Client `frontend` git 依赖从 7 条收到 **线契约 2～3 条**（`sse-protocol` 必留；`api-contract`/`chat-export` 可再瘦）。
 
 **代价**
@@ -57,7 +57,7 @@ D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，
 | 方案 | 否决原因 |
 |------|----------|
 | 7 包全部迁 Client，Server git 依赖回来 | 依赖反转；`cargo publish crabmate` 绑 UI 仓 |
-| 全部并进根包 `crabmate`，Client 依赖胖包 | WASM 编不过 |
+| 全部并进根包 `crabmate`，Client 依赖**默认** feature | WASM 编不过。**有 `protocol` feature 的单包**见 [`crates_io_single_package.md`](./crates_io_single_package.md) |
 | Client 重写 turn-layout / tool-card | ~4500 行 + 金样漂移；无收益 |
 | 第三仓 `crabmate-protocol` 只放展示 crate | 三仓发版税；展示本就该跟 UI |
 
@@ -71,12 +71,12 @@ D2.2 已硬删本仓同进程 TUI。官方 UI / `crabmate-tui` 在 Client 仓，
 W0 文档（本 ADR）
 W1 瘦 Client git 依赖（无搬家）
 W2 tool-card expand（Client path）→ W2b Server 去掉依赖
-W3 turn-layout expand → W4 Server 去掉依赖 + 金样搬家
-W5 （可选）display-rules 拷贝
-W6 （可选，另轨）sse-protocol feature 切开 — 不阻塞 W1–W4
+W3 / W4 turn-layout — **缓做**（单包计划将它收成 `crabmate::turn_layout`）
+W5 （可选）display-rules 拷贝 — **缓做**
+W6 sse-protocol feature — **并入**单包计划 S1（crates_io_single_package.md）
 ```
 
-钉 tag 的 Client 在 W2/W3 合入前仍可用 `v0.3.0`；合入后展示 crate 改 **Client path**，不再等 Server 新 tag。
+钉 tag 的 Client 在 W2 合入前仍可用 `v0.3.0`；合入后 `tool-card` 改 **Client path**。W3 缓做期间 `turn-layout` 继续 git 钉 Server。
 
 ---
 
@@ -144,7 +144,9 @@ W6 （可选，另轨）sse-protocol feature 切开 — 不阻塞 W1–W4
 
 ---
 
-## 9. W3 — `crabmate-turn-layout` expand
+## 9. W3 — `crabmate-turn-layout` expand（**缓做**）
+
+> 2026-08-16：优先单包 crates.io。W3/W4 不再作为下一波；重启前须对照 [`crates_io_single_package.md`](./crates_io_single_package.md)（切仓后本包已是模块，再迁 Client 无益于发布图）。
 
 **入口**：建议 W2b 已合（减并行冲突）；crate **不依赖** `types` / `sse-protocol`（仅 `serde`/`log`），搬家干净。
 
