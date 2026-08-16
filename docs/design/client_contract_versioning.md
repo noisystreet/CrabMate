@@ -2,8 +2,9 @@
 
 > **状态**：采纳（2026-08-08）— 支撑 [`client_shell_split.md`](./client_shell_split.md) 路径 A。  
 > **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 1；UI 迁出见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md) Phase A。  
+> **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `turn-layout` / `tool-card` 计划迁 Client；线契约仍以本文钉版本。  
 > **人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)（HTTP `ApiError` / OpenAPI）。  
-> **门禁脚本**：`scripts/check-client-contract.sh`（SSE 金样 + OpenAPI 冒烟 + 外仓风格 path 消费，含 UI 展示契约 crate）。
+> **门禁脚本**：`scripts/check-client-contract.sh`（SSE 金样 + OpenAPI 冒烟 + 外仓风格 path 消费；展示 crate 下沉后钉清单会收窄，见 [`client_display_crate_sink.md`](./client_display_crate_sink.md)）。
 
 ---
 
@@ -17,9 +18,9 @@
 | 共享类型 | `crabmate-types` | 模型预设等（常被契约传递依赖） |
 | 展示过滤 | `crabmate-display-rules` | 聊天区隐藏注入 user 等（Web/TUI 对齐） |
 | SSE 控制面 | `crabmate-sse-protocol` | `SSE_PROTOCOL_VERSION`、载荷类型、分类 |
-| 回合布局 / 投影 | `crabmate-turn-layout` | 流式回合归约与气泡投影（官方 UI） |
-| 工具卡展示 | `crabmate-tool-card` | 工具卡 compact/detail、envelope |
-| 会话导出 schema | `crabmate-chat-export` | 导出 JSON/Markdown 契约（无 I/O） |
+| 回合布局 / 投影 | `crabmate-turn-layout` | **计划迁 Client**（[`client_display_crate_sink.md`](./client_display_crate_sink.md) W3/W4）；迁出前仍在本仓钉清单 |
+| 工具卡展示 | `crabmate-tool-card` | **计划迁 Client**（同上 W2）；迁出前仍在本仓钉清单 |
+| 会话导出 schema | `crabmate-chat-export` | 导出 JSON/Markdown 契约（无 I/O）；**本轮不迁** |
 | Tauri 连接页逻辑 | `crabmate-connect`（**仅** Client 仓） | 探测 `/health`、Bearer hash、钥匙串 |
 
 **默认发版渠道**：**本仓 git 注释标签**（见 §4）。**暂不**要求 `cargo publish` 到 crates.io；待供应链与版本节奏稳定后再开（可选）。

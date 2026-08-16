@@ -3,6 +3,7 @@
 > **状态**：**已采纳（2026-08-08）**；**2026-08-11 修订** — 官方终端为 Client 远程 `crabmate-tui`；本仓同进程 `chat|repl|tui` **命令入口已移除（D2.1）**；**实现硬删已完成（D2.2）**。  
 > **执行清单**：[`client_shell_split_todo.md`](./client_shell_split_todo.md)  
 > **契约发版（Phase 1）**：[`client_contract_versioning.md`](./client_contract_versioning.md)  
+> **展示 crate 下沉（Phase 6）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md)  
 > **运行时 UI/API 拆分**：[`client_ui_runtime_split.md`](./client_ui_runtime_split.md)（`serve` 默认纯 API）  
 > **远程 CLI/TUI（Client）**：[remote_cli_tui.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)  
 > **关联**：[`client_turn_smoke_runbook.md`](./client_turn_smoke_runbook.md)、[`crate_dep_policy.md`](./crate_dep_policy.md)、[`web_host_extract.md`](./web_host_extract.md)、[`turn_runtime_placement.md`](./turn_runtime_placement.md)、[`web_host_p5_placement.md`](./web_host_p5_placement.md)；契约见 **`docs/SSE协议.md`**、**`docs/命令行与路由.md`**、**`docs/配置说明.md`**。  

@@ -4,6 +4,7 @@
 > **权威决策**：[`client_shell_split.md`](./client_shell_split.md)  
 > **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 4 · P4.2  
 > **契约钉法**：[`client_contract_versioning.md`](./client_contract_versioning.md)、兼容表 [`client_compat_matrix.md`](./client_compat_matrix.md)  
+> **展示 crate 下沉（后续）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md)（`turn-layout` / `tool-card` 不再作为长期钉清单）  
 > **Client 仓**：同级 / GitHub [`noisystreet/crabmate-client`](https://github.com/noisystreet/crabmate-client)（`docs/design/contract_pin.md`）
 
 ---

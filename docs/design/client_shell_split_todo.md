@@ -18,8 +18,9 @@
 | Phase 3 | connect + 壳仓拆出 | ✅ 完成（2026-08-08；见下方总验收） |
 | Phase 4 | 本仓收尾（去壳 / 移出 frontend 源码） | ✅ **完成**（P4.1–P4.2、P4.4–P4.5；可选 P4.3） |
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
+| Phase 6 | 展示 crate 下沉 Client | ⬜ 计划见 [`client_display_crate_sink.md`](./client_display_crate_sink.md) |
 
-**下一执行**：可选 P4.3（release 附 UI 包）或 Phase 5；日常按兼容表发版。
+**下一执行**：展示 crate 下沉 Client — [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W1 瘦 git 依赖 → W2 `tool-card` → W3/W4 `turn-layout`）。可选 P4.3（release 附 UI 包）或 Phase 5 不阻塞该计划。
 
 ---
 
@@ -152,6 +153,19 @@
 
 ---
 
+## Phase 6 — 展示 crate 下沉 Client
+
+**权威**：[`client_display_crate_sink.md`](./client_display_crate_sink.md)。Client 勾选：[display_crate_sink.md](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/display_crate_sink.md)。
+
+线协议（`sse-protocol` / `api-contract` / `types`）**不**迁出。迁出的是 `tool-card`、`turn-layout`（可选拷贝 `display-rules`）。
+
+- [ ] W1 瘦 `types` /（可选）`api-contract` git 依赖
+- [ ] W2 / W2b `crabmate-tool-card`
+- [ ] W3 / W4 `crabmate-turn-layout`
+- [ ] W5（可选）`display-rules` 拷贝
+
+---
+
 ## 与宿主解耦
 
 | 主题 | 态度 |
@@ -172,6 +186,7 @@
 | Phase 3 | 3–7 日 |
 | Phase 4 | 2–4 日 |
 | Phase 5 | 按需 |
+| Phase 6 | 见 `client_display_crate_sink.md`（W1 小；W2–W4 各 1–3 日量级） |
 
 ---
 
