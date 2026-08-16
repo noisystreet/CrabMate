@@ -17,6 +17,10 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 (P0 security landed: `openat2`/`mkdirat` on write paths; `doctor` serve deployment checks; write-tool audit defaults on. Per-user auth remains at gateway/BFF — **`docs/en/FUTURE_PLANS.md`**.)
 
+### P3 — Architecture (sink display crates to Client)
+
+- [ ] Follow **`docs/design/client_display_crate_sink.md`**: W1 thin Client git deps → W2 `tool-card` → W3/W4 `turn-layout`; optional W5 copy of `display-rules`. Do **not** move `sse-protocol` / `api-contract` / `types` out of Server. Client checklist: `docs/design/display_crate_sink.md` in crabmate-client.
+
 ### P4 — Testing and quality
 
 - [ ] **Unified error types (incremental)**: Reduce plain `String` / `format!` on hot paths; structured enums for `run_command`, path resolution, etc.
@@ -37,7 +41,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 > **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (this branch: `stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
 > **Next**: **B2**. Items below need a compatibility window.
 
-- [ ] **B2 (E2)**: Optional server layout metadata + shared projection goldens.
+- [ ] **B2 (E2)**: Optional server layout metadata + shared projection goldens. After the display-crate sink, golden files live on Client — see **`docs/design/client_display_crate_sink.md`** §15.
 - [ ] **B3 (E3)**: Hydration dual-read (metadata first; legacy when absent).
 - [ ] **B4 (E4)**: Contract: drop post-terminal business frames, same-revision bandage, legacy merge/dedupe (only after E4 exit criteria).
 
