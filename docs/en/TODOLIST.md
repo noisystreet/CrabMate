@@ -19,7 +19,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] **S4/S5**: set `version = "0.4.0"`, dry-run, then `cargo publish`. **W3/W4/W5 deferred**. S0–S3 and S4.5 (semver whitelist / OpenAPI route table) landed or land in this wave. Further visibility shrink / splitting `server` does **not** go into S4.
+- [ ] **S5**: `cargo publish`, then git tag **`v0.4.0`**; Client pins crates.io **`0.4.0`** + **`protocol`** (git pin optional). **W3/W4/W5 deferred**. S0–S4.5 and S4 (version / include / dry-run) landed or land in this wave. Further visibility shrink / splitting `server` does **not** go into the first publish.
 
 ### P4 — Testing and quality
 

@@ -2,11 +2,11 @@
 
 # Agent SSE 控制面协议（`/chat/stream`）
 
-本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 workspace crate **`crabmate-sse-protocol`**（`sse/protocol.rs`、`sse/line.rs`）；根包经 `pub use crabmate_sse_protocol::sse` 再导出。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)（AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
+本文档描述 **CrabMate 服务端经 SSE `data:` 行下发的控制面 JSON**，与模型正文的 **纯文本 delta** 区分。**控制面载荷形状**与行分类的单一事实来源为 **`src/cm_sse_protocol`**（`sse/protocol.rs`、`sse/line.rs`）。Client 钉 **`crabmate::cm_sse_protocol`**（`features = ["protocol"]`）；`server` 组合面另有 `sse` 别名，**不要**在 Client 使用。**协议版本号**为 **`SSE_PROTOCOL_VERSION`**（与 Leptos 前端共用）。浏览器消费逻辑在 Client [`frontend/src/api/chat_stream/parser_v2.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/api/chat_stream/parser_v2.rs)（AG-UI；回调形状见 [`frontend/src/sse_dispatch/types.rs`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/src/sse_dispatch/types.rs)）。
 
 ## 协议版本 `v` 与协商
 
-- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate_sse_protocol::SSE_PROTOCOL_VERSION`**（及 `sse::protocol::SSE_PROTOCOL_VERSION`）一致。
+- 每条控制面 JSON 为对象，**推荐**包含顶层字段 **`v`**（`u8`）。当前版本为 **`2`**，与 **`crabmate::cm_sse_protocol::SSE_PROTOCOL_VERSION`** 一致。
 - **缺省**：历史载荷可省略 `v`，反序列化时按 **`SSE_PROTOCOL_VERSION`** 处理（见 `SseMessage` 的 `#[serde(default = "default_sse_v")]`）。
 - **请求体（可选）**：`POST /chat` 与 **`POST /chat/stream`** 的 JSON 可带 **`client_sse_protocol`**（`u8`）。**省略**时服务端不据此拒绝（兼容旧客户端）。若 **`client_sse_protocol >` 服务端 `SSE_PROTOCOL_VERSION`** → **HTTP 400**，`ApiError.code` 为 **`SSE_CLIENT_TOO_NEW`**；若为 **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**；若为 **正整数且低于**服务端版本 → **`SSE_PROTOCOL_MISMATCH`**。
 - **首帧能力**：新流建立后，服务端尽快下发 **`sse_capabilities`**，其中 **`supported_sse_v`** 等于服务端 **`SSE_PROTOCOL_VERSION`**。官方 Leptos 前端在收到该帧时比对本地常量：若 **`supported_sse_v ≠ SSE_PROTOCOL_VERSION`**，触发 `onError` 并停止读流，文案中含 **`SSE_SERVER_TOO_NEW`**（服务端更**新**、前端更**旧**）或 **`SSE_SERVER_TOO_OLD`**（服务端更**旧**、前端更**新**；通常此前已被 **`SSE_CLIENT_TOO_NEW`** 拒绝，保留用于重连重放等边界）。
@@ -310,8 +310,8 @@ AG-UI 事件的 V2Parser 分类验证见 `fixtures/sse_ag_ui_golden.jsonl`，由
 
 ## 契约测试（`crabmate_tool` 历史信封）
 
-- **`crates/crabmate-tools/fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
-- **Rust**：`cargo test -p crabmate-tools tool_result_envelope_golden`。
+- **`src/cm_tools/fixtures/tool_result_envelope_golden.jsonl`**：每行 `描述<TAB>单行 JSON`（`#` 行为注释）；与 **`tool_result::normalize_tool_message_content`** + **`NormalizedToolEnvelope::encode_to_message_line`** round-trip 对齐。
+- **Rust**：`cargo test tool_result_envelope_golden`。
 
 ---
 

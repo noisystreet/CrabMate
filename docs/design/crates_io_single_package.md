@@ -1,7 +1,7 @@
 # ADR：单包 `crabmate` 发布到 crates.io
 
 > **状态**：**Accepted**（2026-08-16）  
-> **入口**：PR 853 / `client-contract-v0.2.0` 已合入 `main`（W2b：本仓无 `crabmate-tool-card`）。S2 **#854**、公开面收口 **#855**（`27c1fd3a`）已合 `main`。Client **S3** 钉该 rev + `protocol`。  
+> **入口**：PR 853 / `client-contract-v0.2.0` 已合入 `main`（W2b：本仓无 `crabmate-tool-card`）。S2 **#854**、公开面收口 **#855**（`27c1fd3a`）已合 `main`。Client **S3** 钉该 rev + `protocol`。S4.5 **#857** 已合 `main`。  
 > **对齐**：[`client_shell_split.md`](./client_shell_split.md) 路径 A；[`client_contract_versioning.md`](./client_contract_versioning.md)；展示下沉 [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W3/W4 **缓做**，不阻塞本计划）。  
 > **Client 消费**：合入后钉 **一个** crate `crabmate`，`default-features = false, features = ["protocol"]`；禁止再 git 钉 `crabmate-sse-protocol` 等旧包名（`v0.3.0` / `client-contract-v0.2.0` 旧 Client 仍可用）。
 
@@ -9,7 +9,7 @@
 
 ## 1. Context
 
-本仓是 Cargo workspace（根包 `crabmate` `0.3.0` + ~19 个 `crates/*`）。`cargo publish -p crabmate` 会把 path 依赖换成 crates.io 上的**同名版本**：内部 crate 只要还是独立 package，就会出现在 registry 上。
+切仓前本仓是 Cargo workspace（根包 `crabmate` `0.3.0` + ~19 个 `crates/*`）。`cargo publish -p crabmate` 会把 path 依赖换成 crates.io 上的**同名版本**：内部 crate 只要还是独立 package，就会出现在 registry 上。S2 后树内只有根包 **`crabmate`**。
 
 目标：**crates.io 上只有 `crabmate` 一个包**，同时官方 Client（WASM `frontend` + native `crabmate-tui-core`）仍能消费线契约，且**不能**链接 `tokio` 运行时 / `nix` / `rusqlite` / `axum`。
 
@@ -368,3 +368,4 @@ src/
 | 2026-08-16 | 初稿：单包 `0.4.0` + `server`/`protocol`；切仓一次完成；W3 不阻塞 |
 | 2026-08-16 | 收紧顶层 `pub`：protocol 无别名；server `cm_*` 实现模块 `pub(crate)` |
 | 2026-08-16 | S4.5：首发前写清 semver 白名单与 OpenAPI 漏路径；可见性再收 / feature 拆分不进 version PR |
+| 2026-08-16 | S4：`version = "0.4.0"`、`include`、README `cargo install crabmate`；S5 再 publish / 打 tag |

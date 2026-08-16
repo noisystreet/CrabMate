@@ -137,7 +137,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 方式 | 命令 / 说明 |
 | --- | --- |
-| **安装到 PATH** | **`cargo install --path .`**（**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**）。 |
+| **安装到 PATH** | **`cargo install crabmate`**（crates.io **`0.4.0`**，默认 feature **`server`**）。从源码树：**`cargo install --path .`**。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
 | **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
 | **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（默认 **127.0.0.1:8080**，纯 API，**不**自动 enable；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
@@ -145,7 +145,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 ### 开发与质检（维护者）
 
-- **Cargo features / 裁剪二进制**：默认 **`web` + `mcp`**（**`fastembed`**、**`project_metrics`**、`docker_sandbox` / `gen-man` 按需开启）。同进程 **`repl`/`tui` feature 已移除（D2.2）**，官方终端用 Client **`crabmate-tui`**。语义检索：`cargo build --features fastembed`；tokei：`cargo build --features project_metrics`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
+- **Cargo features / 裁剪二进制**：默认 **`server`**（含 **`protocol`**、**`web`**、**`mcp`**）；**`fastembed`**、**`project_metrics`**、`docker_sandbox` / `gen-man` 按需开启。同进程 **`repl`/`tui` feature 已移除（D2.2）**，官方终端用 Client **`crabmate-tui`**。语义检索：`cargo build --features fastembed`；tokei：`cargo build --features project_metrics`。完整能力：`cargo build --all-features`。详见根目录 **`Cargo.toml`** **`[features]`**。
 - **fmt / clippy / test、pre-commit、SSE、E2E**：见 **[docs/测试指南.md](docs/测试指南.md)**（含 **`./scripts/check-sse-protocol.sh`**）。CI 另跑 **`make package`**（server-only tar.gz + `.deb` 冒烟）。
 
 ## 文档索引
@@ -214,5 +214,5 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态；Web 壳层请用 **`GET /status?view=shell`**。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
-- **单 crate**：`crabmate`，默认 feature **`server`**（crates.io `0.4.0` 后可用 `cargo install crabmate`；此前 `cargo install --path .`）。Client WASM 钉 **`protocol`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。
+- **单 crate**：`crabmate` **`0.4.0`**，默认 feature **`server`**。安装：**`cargo install crabmate`**。官方 Client 钉 **`default-features = false, features = ["protocol"]`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。crates.io 发布（S5）前 Client 仍可 git 钉 `rev`。
 - **semver 面**：`protocol` 为六个 `cm_*` 契约模块；`server` 承诺组合面模块**名**（`agent` / `config` / `llm` / `sse` / `types`）与根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*` 等）。`#[doc(hidden)]` 模块与 `agent::agent_turn` 等内部路径**不是**稳定 SDK。详见 [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4。

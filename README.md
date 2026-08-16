@@ -137,7 +137,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 | Method | Command / notes |
 | --- | --- |
-| **Install to PATH** | **`cargo install --path .`** (**does not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed). |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **`0.4.0`**, default feature **`server`**). From a clone: **`cargo install --path .`**. Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** is script-only. |
 | **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, API-only by default; add **`--with-web`** + **`CM_WEB_STATIC_DIR`** for UI). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
@@ -145,7 +145,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 ### Maintainer QA
 
-- **Cargo features**: defaults **`web` + `mcp`**; opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features fastembed`, `--features project_metrics`, or `--all-features`. In-process **`repl`/`tui` features removed** (D2.2; use Client **`crabmate-tui`**). See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
+- **Cargo features**: default **`server`** (includes **`protocol`**, **`web`**, **`mcp`**); opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features fastembed`, `--features project_metrics`, or `--all-features`. In-process **`repl`/`tui` features removed** (D2.2; use Client **`crabmate-tui`**). See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
 - **fmt / clippy / test, pre-commit, SSE, E2E**: [docs/en/TESTING.md](docs/en/TESTING.md) (includes **`./scripts/check-sse-protocol.sh`**). CI also runs **`make package`** (server-only tar.gz + `.deb` smoke).
 
 ## Documentation index
@@ -214,5 +214,5 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Single crate**: `crabmate` with default feature **`server`** (`cargo install crabmate` after crates.io `0.4.0`; until then `cargo install --path .`). Client WASM pins **`protocol`** only (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
+- **Single crate**: `crabmate` **`0.4.0`** with default feature **`server`**. Install: **`cargo install crabmate`**. Official Client pins **`default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases). Until crates.io publish (S5), Client may still git-pin a `rev`.
 - **Semver surface**: `protocol` = the six `cm_*` contract modules. `server` promises the composition module *names* (`agent` / `config` / `llm` / `sse` / `types`) and explicit root `pub use`s (`run`, `run_agent_turn`, `build_tools*`, …). `#[doc(hidden)]` modules and paths such as `agent::agent_turn` are **not** a stable SDK. Details: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4.
