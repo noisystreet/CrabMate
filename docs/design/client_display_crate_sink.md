@@ -101,6 +101,12 @@ W6 （可选，另轨）sse-protocol feature 切开 — 不阻塞 W1–W4
 
 **不改** Server `types` / `api-contract` 源码（除非发现 Client 误用了不该公开的符号）。
 
+### W1 落地（2026-08-16）
+
+- **W1.1**：Client `frontend/src/client_llm_presets.rs` 持有预设表副本；`frontend` 去掉直接 `crabmate-types`。
+- **W1.2**：**跳过**。`StatusShellView` 仍走 `crabmate-api-contract`（与 OpenAPI / `deny_unknown_fields` 同源；本地再写一份会漂）。
+- **W1.3**：Client `contract_pin.md` 钉清单去掉 `crabmate-types`。lockfile 里它仍可能作为 `api-contract` / `sse-protocol` 的传递依赖出现。
+
 ---
 
 ## 8. W2 — `crabmate-tool-card` expand

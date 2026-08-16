@@ -159,7 +159,7 @@
 
 线协议（`sse-protocol` / `api-contract` / `types`）**不**迁出。迁出的是 `tool-card`、`turn-layout`（可选拷贝 `display-rules`）。
 
-- [ ] W1 瘦 `types` /（可选）`api-contract` git 依赖
+- [x] W1 瘦 `types` 直接依赖（`StatusShellView` 仍走 `api-contract`，见 sink ADR W1.2 跳过说明）
 - [ ] W2 / W2b `crabmate-tool-card`
 - [ ] W3 / W4 `crabmate-turn-layout`
 - [ ] W5（可选）`display-rules` 拷贝

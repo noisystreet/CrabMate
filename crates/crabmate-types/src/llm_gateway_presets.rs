@@ -1,4 +1,8 @@
-//! OpenAI 兼容网关 URL / 建议模型预设表（Web 设置、REPL/TUI `/api-base` 同源）。
+//! OpenAI 兼容网关 URL / 建议模型预设表（文档示例；`resolve_api_base_set_arg` 供历史 CLI 辅助）。
+//!
+//! 官方 Web 设置页持有一份拷贝：Client `frontend/src/client_llm_presets.rs`
+//!（`docs/design/client_display_crate_sink.md` W1）；改表时请同步。
+//! Client `/api-base set` 只接受字面 URL，不解析本表预设 id。
 
 /// 单条预设：`id` 用于 UI / slash 补全；`url` 写入 `api_base`（空串表示「沿用服务端 / 自定义」占位）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
