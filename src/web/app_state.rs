@@ -62,7 +62,7 @@ pub(crate) struct ConversationTurnSeed {
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
 ///
-/// 根包保留本类型以满足 axum `FromRef` 孤儿规则（**不**在 `crabmate-web-host` 镜像同名类型）。
+/// 根包保留本类型以满足 axum `FromRef` 孤儿规则（**不**在 `cm_web_host` 镜像同名类型）。
 #[derive(Clone)]
 pub(crate) struct AppStateHttpCore {
     pub(crate) cfg: SharedAgentConfig,

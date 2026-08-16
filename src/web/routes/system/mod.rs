@@ -1,4 +1,4 @@
-//! `GET /health`、`GET /status`（JSON 形状在各自 handler 模块内定义）；`GET /web-ui` 在 **`crabmate-web-host`**。
+//! `GET /health`、`GET /status`（JSON 形状在各自 handler 模块内定义）；`GET /web-ui` 在 **`cm_web_host`**。
 
 use std::sync::Arc;
 
