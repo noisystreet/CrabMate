@@ -12,7 +12,7 @@
 
 ## 第 2 轮：根包 `lib.rs` 再导出
 
-- 原 `pub use crabmate_internal::{…}` 改为 **`pub(crate) use`**：内部模块仅包内可见（`crate::tools` 等路径不变）。
+- 原 `pub use crabmate_internal::{…}` 改为 **`pub(crate) use`**；切仓后无整模块再导出的实现为 **`pub(crate) mod`**，`cm_internal` 等因 `tool_sandbox` 等模块再导出而 `#[doc(hidden)] pub`。
 - 去掉根上未再经 `crate::` 引用的再导出（如 `cargo_metadata`、`dynamic_tools`、`health_dep_compat`）；需用时直接依赖 **`crabmate-internal`** 或走已有工具路径。
 - 显式保留 **`pub use crabmate_internal::tool_sandbox`**（`main` 的 `tool-runner-internal`）。
 - 稳定对外面仍为显式 `pub use`：`run_agent_turn`、`load_config`、`build_tools*`、`ProcessHandles`、`ChatCompletionsBackend`、CLI 解析符号等。

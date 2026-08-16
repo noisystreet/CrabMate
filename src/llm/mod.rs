@@ -1,6 +1,6 @@
 //! 与大模型（OpenAI 兼容 **`/chat/completions`**）交互的封装层。
 //!
-//! - **重试**：[`complete_chat_retrying`] 实现于 **`crabmate-llm`**，经 [`retry_hooks::CrabmateLlmRetryHooks`] 注入 turn replay。
+//! - **重试**：[`complete_chat_retrying`] 实现于 **`cm_llm`**，经 [`retry_hooks::CrabmateLlmRetryHooks`] 注入 turn replay。
 //! - **单次 HTTP**：[`crate::cm_llm::stream_chat`] 经 [`stream_host_impl::CrabmateStreamChatHost`] 注入 SSE 控制面。
 //!
 //! Agent 主循环应通过 [`complete_chat_retrying`] 发请求，避免在 `agent::agent_turn` 中散落重试与请求拼装逻辑。
@@ -24,13 +24,14 @@ pub use backend::{
 pub use chat_params_ext::CompleteChatRetryingParams;
 #[allow(unused_imports)]
 pub use crate::cm_llm::{
-    LlmCallError, LlmCompleteError, LlmRetryHooks, LlmRetryingTransportOpts, LlmVendorAdapter,
-    StreamChatHost, StreamChatParams, chat_request_vendor_extensions_for_agent,
-    conversation_messages_to_vendor_body, fetch_models_report, fold_system_into_user_for_config,
-    kimi_k2_5_vendor_requires_tool_call_reasoning, llm_vendor_adapter,
-    llm_vendor_adapter_for_model, no_tools_chat_request, no_tools_chat_request_from_messages,
-    normalize_stripped_messages_for_vendor_body, stream_chat, tool_chat_request, vendor,
-    vendor_temperature_for_config,
+    E2eMode, FileTraceSink, LlmCallError, LlmCompleteError, LlmRetryHooks, LlmRetryingTransportOpts,
+    LlmVendorAdapter, NullTraceSink, StreamChatHost, StreamChatParams, TraceEvent, TraceSink,
+    TraceUsage, build_e2e_backend, chat_request_vendor_extensions_for_agent,
+    conversation_messages_to_vendor_body, detect_mode_from_env, fetch_models_report,
+    fold_system_into_user_for_config, kimi_k2_5_vendor_requires_tool_call_reasoning,
+    llm_vendor_adapter, llm_vendor_adapter_for_model, no_tools_chat_request,
+    no_tools_chat_request_from_messages, normalize_stripped_messages_for_vendor_body, stream_chat,
+    tool_chat_request, vendor, vendor_temperature_for_config,
 };
 #[allow(unused_imports)]
 pub use stream_host_impl::{CRABMATE_STREAM_CHAT_HOST, CrabmateStreamChatHost};

@@ -1,12 +1,12 @@
 //! CrabMate 内部服务层：工具注册与执行、工作区、MCP、长期记忆等。
 //!
-//! SSE 控制面协议与运行时已迁移至 `crabmate-sse-protocol` crate 的 `sse` 模块。
+//! SSE 控制面协议与运行时已迁至 [`crate::cm_sse_protocol`] 的 `sse` 模块。
 
-pub use crate::cm_config;
-pub use crate::cm_config as config;
-pub use crate::cm_memory;
-pub use crate::cm_types;
-pub use crate::cm_types as types;
+pub(crate) use crate::cm_config;
+pub(crate) use crate::cm_config as config;
+pub(crate) use crate::cm_memory;
+pub(crate) use crate::cm_types;
+pub(crate) use crate::cm_types as types;
 
 pub mod agent_errors;
 pub mod agent_role_turn;

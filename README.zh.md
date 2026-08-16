@@ -214,4 +214,4 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态；Web 壳层请用 **`GET /status?view=shell`**。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
-- **单 crate**：`crabmate`，默认 feature **`server`**。Client WASM 钉 **`protocol`**（`crabmate::cm_sse_protocol`、`cm_types` 等）。
+- **单 crate**：`crabmate`，默认 feature **`server`**。Client WASM 钉 **`protocol`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。

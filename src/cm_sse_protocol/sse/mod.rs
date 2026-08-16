@@ -2,7 +2,7 @@
 //!
 //! 与 `llm::api::stream_chat` 下发的纯文本 delta 区分；前端对齐见 Client **`frontend/src/api/`**（**`chat_stream/`**）。
 //!
-//! 人读契约见仓库 **`docs/SSE协议.md`**。协议版本常量见 **`crabmate-sse-protocol`** 的 `SSE_PROTOCOL_VERSION`。
+//! 人读契约见仓库 **`docs/SSE协议.md`**。协议版本常量见 **`crate::cm_sse_protocol::SSE_PROTOCOL_VERSION`**。
 
 mod ag_ui_convert;
 mod ag_ui_encode;

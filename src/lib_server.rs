@@ -1,23 +1,36 @@
-pub mod cmd_mate;
+#[allow(unused)]
+pub(crate) mod cmd_mate;
+#[doc(hidden)]
 pub mod cm_agent;
+#[doc(hidden)]
 pub mod cm_llm;
-pub mod cm_runtime;
+#[allow(unused)]
+pub(crate) mod cm_runtime;
+#[doc(hidden)]
 pub mod cm_config;
-pub mod cm_tools;
-pub mod cm_memory;
+#[allow(unused)]
+pub(crate) mod cm_tools;
+#[allow(unused)]
+pub(crate) mod cm_memory;
+#[doc(hidden)]
 pub mod cm_workflow;
-pub mod cm_approval;
+#[allow(unused)]
+pub(crate) mod cm_approval;
 #[cfg(feature = "web")]
-pub mod cm_web_host;
-pub mod cm_mcp;
-pub mod cm_benchmark;
+#[allow(unused)]
+pub(crate) mod cm_web_host;
+#[allow(unused)]
+pub(crate) mod cm_mcp;
+#[allow(unused)]
+pub(crate) mod cm_benchmark;
+#[doc(hidden)]
+#[allow(unused_imports)]
 pub mod cm_internal;
 
 pub mod agent;
 /// Docker 沙盒内 `tool-runner-internal` 入口；二进制与 `main` 经此路径调用。
 pub use crate::cm_internal::tool_sandbox;
-/// `crabmate-internal` 门面：仅本包（及同 crate 集成路径）可见，避免把服务内部模块整包升格为公共 API。
-/// 稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
+/// `cm_internal` 门面：`#[doc(hidden)]`。稳定对外符号见下方显式 `pub use`（如 `build_tools`、`ProcessHandles`）与 [`tool_sandbox`]。
 pub(crate) use crate::cm_internal::{
     agent_errors, agent_role_turn, agent_turn_prep, clarification_questionnaire,
     clarification_questionnaire_body_if_tool_ok, context_bootstrap, github_token, health, mcp,
@@ -26,17 +39,21 @@ pub(crate) use crate::cm_internal::{
     text_util, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
     user_message_file_refs, web_static_dir, workspace,
 };
-/// SSE 控制面协议与运行时（原 `crate::cm_internal::sse`，已迁移至 `crabmate-sse-protocol`）。
+/// SSE 控制面协议与运行时（原 `crate::cm_internal::sse`，已迁至 [`crate::cm_sse_protocol`]）。
 #[cfg(feature = "web")]
 mod chat_job_queue;
 mod cli_run;
+/// 集成测试 / `crabmate e2e` 场景入口；**不**承诺 semver。
+#[doc(hidden)]
 pub mod e2e_scenario;
 pub use crate::cm_config as config;
+pub use crate::cm_sse_protocol::sse;
+pub use crate::cm_types as types;
 /// Web `conversation_id` 持久化（可选 SQLite）与 `SaveConversationOutcome`。
 #[cfg(feature = "web")]
 mod conversation_store;
 pub use crate::cm_llm::http_client;
-mod llm;
+pub mod llm;
 /// 元对话门控补充（如「我刚才问了什么」类追问）。
 mod meta_dialogue;
 mod per_turn_flight;
@@ -54,8 +71,9 @@ pub fn reset_process_tool_globals_for_tests() {
 
 mod run_agent_turn;
 mod runtime;
-/// 测试用 Web 服务器启动器（feature="web"）；集成测试通过公开的 [`test_serve::start_test_serve`] 快速启动。
+/// 测试用 Web 服务器启动器（feature="web"）；集成测试通过 [`test_serve::start_test_serve`] 启动。**不**承诺 semver。
 #[cfg(feature = "web")]
+#[doc(hidden)]
 pub mod test_serve;
 mod turn_replay_dump;
 mod turn_runner;
@@ -91,8 +109,8 @@ pub struct AgentTurnTransport<'a> {
     /// 可选：自定义 [`llm::ChatCompletionsBackend`]；`None` 时使用 OpenAI 兼容 HTTP（与历史行为一致）。
     pub llm_backend: Option<&'a (dyn llm::ChatCompletionsBackend + 'static)>,
     /// 可选：per-step trace sink（bench/e2e 注入；`None` 时零开销）。
-    /// 持有 [`crate::cm_llm::TraceSink`] 以便在 LLM 请求/响应、工具调用前后 emit [`crate::cm_llm::TraceEvent`]。
-    pub trace_sink: Option<std::sync::Arc<dyn crate::cm_llm::TraceSink>>,
+    /// 持有 [`crate::llm::TraceSink`] 以便在 LLM 请求/响应、工具调用前后 emit [`crate::llm::TraceEvent`]。
+    pub trace_sink: Option<std::sync::Arc<dyn crate::llm::TraceSink>>,
 }
 
 /// 本回合对 `chat/completions` 的采样与模型路由覆盖（相对 [`config::AgentConfig`]）。
@@ -491,12 +509,15 @@ pub use config::{
     load_config, load_config_for_cli,
 };
 pub use llm::{
-    ChatCompletionsBackend, CompleteChatRetryingParams, OPENAI_COMPAT_BACKEND, OpenAiCompatBackend,
-    StreamChatParams, default_chat_completions_backend, shared_static_chat_backend,
+    ChatCompletionsBackend, CompleteChatRetryingParams, E2eMode, OPENAI_COMPAT_BACKEND,
+    OpenAiCompatBackend, StreamChatParams, TraceEvent, TraceSink, default_chat_completions_backend,
+    shared_static_chat_backend,
 };
+pub use crate::cm_memory::memory::long_term_memory::LongTermMemoryRuntime;
+pub use observability::TracingChatTurn;
 pub use tool_registry::{
-    ToolDispatchMeta, ToolExecutionClass, all_dispatch_metadata, execution_class_for_tool,
-    is_readonly_tool, try_dispatch_meta,
+    ToolDispatchMeta, ToolExecutionClass, WebToolRuntime, all_dispatch_metadata,
+    execution_class_for_tool, is_readonly_tool, try_dispatch_meta,
 };
 pub use tools::dev_tag;
 pub use tools::{ToolsBuildOptions, build_tools, build_tools_filtered, build_tools_with_options};

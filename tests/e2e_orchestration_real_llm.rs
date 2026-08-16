@@ -35,8 +35,8 @@ use crabmate::e2e_scenario::{
 /// 构建 e2e runner 配置（从环境变量读取模式，与 CLI 默认路径一致）。
 fn test_e2e_config() -> E2eRunConfig {
     let mode = match std::env::var("CM_E2E_RECORD") {
-        Ok(v) if v == "1" || v.to_lowercase() == "true" => crabmate::cm_llm::E2eMode::Record,
-        _ => crabmate::cm_llm::E2eMode::Real,
+        Ok(v) if v == "1" || v.to_lowercase() == "true" => crabmate::llm::E2eMode::Record,
+        _ => crabmate::llm::E2eMode::Real,
     };
     E2eRunConfig {
         api_key: resolve_test_api_key(),
