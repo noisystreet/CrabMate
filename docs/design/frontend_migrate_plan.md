@@ -50,7 +50,7 @@
 | `crabmate-types` | 传递 / 预设等 | ✅ 作为传递依赖至少可用；建议文档显式列出 |
 | `crabmate-display-rules` | 展示过滤 | ✅ 传递；建议显式列出 |
 | `crabmate-turn-layout` | 流式回合投影 | ⚠️ **须扩进钉清单**（当前 Phase 1 文档未写） |
-| `crabmate-tool-card` | 工具卡展示 | ⚠️ **须扩进钉清单** |
+| `crabmate-tool-card` | 工具卡展示 | ✅ **已迁 Client**（W2/W2b；本仓不再 member） |
 | `crabmate-chat-export` | 导出会话 schema | ⚠️ **须扩进钉清单** |
 
 **可选跟进（不阻塞首迁）**：`sse-protocol` 增加 WASM/`client` feature，避免拖 server tokio/hub 编译面。

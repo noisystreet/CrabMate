@@ -5,7 +5,6 @@ members = [
     "crates/crabmate-api-contract",
     "crates/crabmate-display-rules",
     "crates/crabmate-mcp",
-    "crates/crabmate-tool-card",
     "crates/crabmate-sse-protocol",
     "crates/crabmate-turn-layout",
     "crates/crabmate-types",
@@ -42,7 +41,6 @@ crabmate-mcp = { path = "crates/crabmate-mcp" }
 crabmate-memory = { path = "crates/crabmate-memory" }
 crabmate-workflow = { path = "crates/crabmate-workflow" }
 crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" }
-crabmate-tool-card = { path = "crates/crabmate-tool-card" }
 crabmate-tools = { path = "crates/crabmate-tools" }
 crabmate-turn-layout = { path = "crates/crabmate-turn-layout" }
 crabmate-types = { path = "crates/crabmate-types" }

@@ -20,7 +20,7 @@
 | Phase 5 | （可选）独立 UI 仓 | ⬜ 按需 |
 | Phase 6 | 展示 crate 下沉 Client | ⬜ 计划见 [`client_display_crate_sink.md`](./client_display_crate_sink.md) |
 
-**下一执行**：展示 crate 下沉 Client — [`client_display_crate_sink.md`](./client_display_crate_sink.md)（W1 瘦 git 依赖 → W2 `tool-card` → W3/W4 `turn-layout`）。可选 P4.3（release 附 UI 包）或 Phase 5 不阻塞该计划。
+**下一执行**：W3 `turn-layout` expand — [`client_display_crate_sink.md`](./client_display_crate_sink.md)（然后 W4 contract）。可选 P4.3 或 Phase 5 不阻塞该计划。
 
 ---
 
@@ -160,7 +160,8 @@
 线协议（`sse-protocol` / `api-contract` / `types`）**不**迁出。迁出的是 `tool-card`、`turn-layout`（可选拷贝 `display-rules`）。
 
 - [x] W1 瘦 `types` 直接依赖（`StatusShellView` 仍走 `api-contract`，见 sink ADR W1.2 跳过说明）
-- [ ] W2 / W2b `crabmate-tool-card`
+- [x] W2 expand `crabmate-tool-card`（Client path）
+- [x] W2b Server 去掉 `tool-card`
 - [ ] W3 / W4 `crabmate-turn-layout`
 - [ ] W5（可选）`display-rules` 拷贝
 

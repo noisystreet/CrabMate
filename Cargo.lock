@@ -1202,7 +1202,6 @@ dependencies = [
  "chrono",
  "crabmate-agent",
  "crabmate-chat-export",
- "crabmate-tool-card",
  "crabmate-tools",
  "crabmate-types",
  "regex",
@@ -1222,13 +1221,6 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
-]
-
-[[package]]
-name = "crabmate-tool-card"
-version = "0.1.0"
-dependencies = [
- "serde_json",
 ]
 
 [[package]]
