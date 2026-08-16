@@ -1,9 +1,10 @@
+#![cfg(feature = "server")]
 //! `workflow_execute` 在 `fail_fast` 且首节点失败后须能结束调度（回归 P0 空转）。
 
 use crabmate::agent::workflow::{WorkflowApprovalMode, run_workflow_execute_tool};
+use crabmate::cm_workflow::config::WorkflowConfig;
 use crabmate::config::{AgentConfig, ExposeSecret};
 use crabmate::load_config;
-use crabmate_workflow::config::WorkflowConfig;
 
 #[tokio::test]
 async fn workflow_fail_fast_marks_downstream_skipped_and_returns() {

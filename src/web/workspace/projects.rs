@@ -4,7 +4,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use axum::{Json, extract::State, http::StatusCode};
-use crabmate_web_host::http_types::workspace::{
+use crate::cm_web_host::http_types::workspace::{
     WorkspaceProjectPostBody, WorkspaceProjectPostResponse, WorkspaceProjectsListResponse,
 };
 
@@ -161,7 +161,7 @@ pub async fn workspace_projects_post_handler(
 
 /// 解析 `POST /workspace` 的 `project` 字段为绝对路径（目录须已存在）。
 pub fn resolve_workspace_set_project_path(
-    cfg: &crabmate_config::AgentConfig,
+    cfg: &crate::cm_config::AgentConfig,
     project: &str,
 ) -> Result<std::path::PathBuf, WorkspacePathError> {
     validate_workspace_project_set_path(cfg, project)

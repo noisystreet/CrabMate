@@ -12,7 +12,7 @@ use crate::llm::{
 };
 use crate::types::{Message, message_content_into_text_lossy};
 
-pub use crabmate_types::TiktokenPromptTokensSnapshot;
+pub use crate::cm_types::TiktokenPromptTokensSnapshot;
 
 fn ping_message() -> ChatCompletionRequestMessage {
     ChatCompletionRequestMessage {
@@ -147,7 +147,7 @@ pub fn prompt_token_count_vendor_shaped_for_session(
     cfg: &AgentConfig,
     session_messages: &[Message],
 ) -> Option<TiktokenPromptTokensSnapshot> {
-    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+    let llm_cfg = crate::cm_types::llm_config::LlmConfig {
         llm: cfg.llm.clone(),
         sampling: cfg.llm_sampling.clone(),
         vendor_flags: cfg.llm_vendor_flags.clone(),

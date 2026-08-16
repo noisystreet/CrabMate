@@ -39,19 +39,19 @@
 
 ## 禁止边（门禁）
 
-见 **`scripts/check-crate-deps.sh`**（**pre-commit** 钩子 **`check-crate-deps`** 与 **CI** **`.github/workflows/ci.yml`** 均会执行）：
+见 **`scripts/check-crate-deps.sh`**（**pre-commit** 钩子 **`check-crate-deps`** 与 **CI** **`.github/workflows/ci.yml`** 均会执行）。单包切仓后（[`crates_io_single_package.md`](./crates_io_single_package.md) S2）按**模块**扫描 `crate::cm_internal` 引用：
 
-| 包 | 不得依赖 |
-|----|----------|
-| `crabmate-workflow` | `crabmate-internal` |
-| `crabmate-tools` | `crabmate-internal` |
-| `crabmate-agent` | `crabmate-internal` |
-| `crabmate-approval` | `crabmate-internal` |
-| `crabmate-web-host` | `crabmate-internal` |
+| 模块 | 不得引用 |
+|------|----------|
+| `src/cm_workflow` | `crate::cm_internal` |
+| `src/cm_tools` | `crate::cm_internal` |
+| `src/cm_agent` | `crate::cm_internal` |
+| `src/cm_approval` | `crate::cm_internal` |
+| `src/cm_web_host` | `crate::cm_internal` |
 
 ## 后续（未做）
 
 - handler 侧剩余宽入口逐步 facet 化（P3b/P3c 已切窄面；**E2E 夹具**已用 [`E2eConversationFixtureFacet`](../../src/web/app_state_facets.rs)；新路由优先窄 facet）——见 **`web_host_extract.md`**
 - **P4 / P5 评估已落地**：执行面留根包（[`turn_runtime_placement.md`](./turn_runtime_placement.md)）；**暂不**整包迁 queue/带状态 handler 入 web-host（[`web_host_p5_placement.md`](./web_host_p5_placement.md)）
 - 可选：构造 `WebToolRuntime` 时减少对 internal `tool_registry` 门面的字面依赖（见 P5 ADR §4）；**`tools` 拆子包**不在本 P5 结论内，另开规划
-- **单包切仓后**（[`crates_io_single_package.md`](./crates_io_single_package.md) S2）：本表禁边改为**模块** DAG；`check-crate-deps.sh` 的 `cargo tree -p` 将失效，须同步改脚本
+- 可选：构造 `WebToolRuntime` 时减少对 internal `tool_registry` 门面的字面依赖（见 P5 ADR §4）；**`tools` 拆子包**不在本 P5 结论内，另开规划

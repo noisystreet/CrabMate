@@ -1,0 +1,187 @@
+//! Benchmark 共享类型：任务输入、任务结果、运行配置。
+
+use serde::{Deserialize, Serialize};
+
+use crate::cm_benchmark::metrics::TaskMetrics;
+
+/// 支持的 benchmark 类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BenchmarkKind {
+    SweBench,
+    Gaia,
+    HumanEval,
+    /// 通用模式：仅以 `prompt` 字段发送给 agent，收集自由文本回复。
+    Generic,
+}
+
+impl BenchmarkKind {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+            "swe_bench" | "swebench" => Ok(Self::SweBench),
+            "gaia" => Ok(Self::Gaia),
+            "human_eval" | "humaneval" => Ok(Self::HumanEval),
+            "generic" => Ok(Self::Generic),
+            _ => Err(format!(
+                "未知 benchmark 类型: {s:?}（支持 swe_bench、gaia、human_eval、generic）"
+            )),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SweBench => "swe_bench",
+            Self::Gaia => "gaia",
+            Self::HumanEval => "human_eval",
+            Self::Generic => "generic",
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 通用任务输入（JSONL 反序列化）
+// ---------------------------------------------------------------------------
+
+/// 从 JSONL 文件中读取的单条 benchmark 任务。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkTask {
+    pub instance_id: String,
+
+    #[serde(default)]
+    pub prompt: String,
+
+    // -- SWE-bench 特有 --
+    #[serde(default)]
+    pub repo: Option<String>,
+    #[serde(default)]
+    pub base_commit: Option<String>,
+    #[serde(default)]
+    pub problem_statement: Option<String>,
+    #[serde(default)]
+    pub hints_text: Option<String>,
+
+    // -- GAIA 特有 --
+    #[serde(default)]
+    pub file_attachments: Vec<String>,
+
+    // -- HumanEval 特有 --
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub entry_point: Option<String>,
+    #[serde(
+        default,
+        rename = "humaneval_test",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub humaneval_test: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// 任务结果输出
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkResult {
+    pub instance_id: String,
+    /// 多采样（pass@k 的 n）时该结果的第几次采样；单采样为 0。
+    #[serde(default)]
+    pub sample_index: usize,
+    pub benchmark: String,
+    pub status: TaskStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_reply: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_patch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_answer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub completion: Option<String>,
+    pub metrics: TaskMetrics,
+    pub model_name_or_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TaskStatus {
+    Success,
+    Timeout,
+    Error,
+    MaxRounds,
+}
+
+// ---------------------------------------------------------------------------
+// Batch 运行配置
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub struct BatchRunConfig {
+    pub benchmark: BenchmarkKind,
+    pub input_path: String,
+    pub output_path: String,
+    pub task_timeout_secs: u64,
+    pub max_tool_rounds: usize,
+    /// 每任务采样次数（pass@k 的 n）；默认 1。
+    pub samples: usize,
+    pub resume_from_existing: bool,
+    pub system_prompt_override: Option<String>,
+}
+
+/// 将 JSONL 中的一行解析为 `BenchmarkTask`。
+pub fn parse_task_jsonl_line(line: &str) -> Result<Option<BenchmarkTask>, serde_json::Error> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return Ok(None);
+    }
+    serde_json::from_str(trimmed).map(Some)
+}
+
+#[cfg(test)]
+mod parse_tests {
+    use super::*;
+
+    #[test]
+    fn benchmark_kind_parse_aliases() {
+        assert_eq!(
+            BenchmarkKind::parse("human_eval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("HumanEval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("humaneval").unwrap(),
+            BenchmarkKind::HumanEval
+        );
+        assert_eq!(
+            BenchmarkKind::parse("swe-bench").unwrap(),
+            BenchmarkKind::SweBench
+        );
+        assert_eq!(
+            BenchmarkKind::parse("SWE_BENCH").unwrap(),
+            BenchmarkKind::SweBench
+        );
+        let err = BenchmarkKind::parse("unknown_suite").unwrap_err();
+        assert!(err.contains("未知 benchmark 类型"), "{err}");
+    }
+
+    #[test]
+    fn parse_task_jsonl_skips_blank_and_hash() {
+        assert!(parse_task_jsonl_line("").unwrap().is_none());
+        assert!(parse_task_jsonl_line("   ").unwrap().is_none());
+        assert!(parse_task_jsonl_line("# comment").unwrap().is_none());
+        assert!(parse_task_jsonl_line(" # leading").unwrap().is_none());
+    }
+
+    #[test]
+    fn humaneval_task_roundtrip_jsonl() {
+        let line = r#"{"instance_id":"t0","prompt":"def f():\n    \"\"\"x\"\"\"\n","task_id":"HumanEval/0","entry_point":"f","humaneval_test":"def check(x):\n    pass\n"}"#;
+        let t = parse_task_jsonl_line(line).unwrap().expect("task");
+        assert_eq!(t.instance_id, "t0");
+        assert_eq!(t.entry_point.as_deref(), Some("f"));
+        assert!(t.humaneval_test.as_deref().unwrap().contains("check"));
+    }
+}

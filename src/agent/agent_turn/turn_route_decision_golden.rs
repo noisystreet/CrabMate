@@ -1,6 +1,6 @@
 //! `TurnRouteDecision` v1 金样：`fixtures/turn_route_decision_golden.jsonl`（经 [`assess_turn_routing`]）。
 
-use crabmate_agent::agent_turn::{
+use crate::cm_agent::agent_turn::{
     AssessTurnRoutingParams, TurnRouteDecisionV1, TurnRouteDriver, TurnStartSnapshot,
     assess_turn_routing,
 };
@@ -26,10 +26,10 @@ struct GoldenExpect {
     driver: Option<String>,
 }
 
-fn cfg_with(mode: &str) -> crabmate_config::AgentConfig {
-    use crabmate_config::PlannerExecutorMode;
+fn cfg_with(mode: &str) -> crate::cm_config::AgentConfig {
+    use crate::cm_config::PlannerExecutorMode;
     let pem = PlannerExecutorMode::parse(mode).expect("planner mode");
-    let mut c = crabmate_config::load_config(None).expect("embed default config");
+    let mut c = crate::cm_config::load_config(None).expect("embed default config");
     c.per_plan_policy.planner_executor_mode = pem;
     c
 }

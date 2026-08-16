@@ -1,0 +1,846 @@
+//! 本地 CI 流水线工具：fmt + clippy + test + frontend lint / build + 可选 Python（ruff/pytest/mypy）
+
+use std::path::Path;
+
+use super::tool_param_types::{CiPipelineLocalArgs, ReleaseReadyCheckArgs};
+use super::{cargo_tools, frontend_tools, python_tools, security_tools};
+
+struct CiPipelineOpts {
+    run_fmt: bool,
+    run_clippy: bool,
+    run_test: bool,
+    run_frontend_lint: bool,
+    run_frontend_build: bool,
+    run_ruff_check: bool,
+    run_pytest: bool,
+    run_mypy: bool,
+    fail_fast: bool,
+    summary_only: bool,
+}
+
+impl CiPipelineOpts {
+    fn from_json(v: &serde_json::Value) -> Self {
+        Self {
+            run_fmt: v.get("run_fmt").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_clippy: v
+                .get("run_clippy")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_test: v.get("run_test").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_frontend_lint: v
+                .get("run_frontend_lint")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_frontend_build: v
+                .get("run_frontend_build")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            run_ruff_check: v
+                .get("run_ruff_check")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            run_pytest: v
+                .get("run_pytest")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            run_mypy: v.get("run_mypy").and_then(|x| x.as_bool()).unwrap_or(false),
+            fail_fast: v
+                .get("fail_fast")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            summary_only: v
+                .get("summary_only")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+        }
+    }
+}
+
+struct ReleaseReadyOpts {
+    run_ci: bool,
+    run_audit: bool,
+    run_deny: bool,
+    require_clean: bool,
+    fail_fast: bool,
+    summary_only: bool,
+}
+
+impl ReleaseReadyOpts {
+    fn from_json(v: &serde_json::Value) -> Self {
+        Self {
+            run_ci: v.get("run_ci").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_audit: v.get("run_audit").and_then(|x| x.as_bool()).unwrap_or(true),
+            run_deny: v.get("run_deny").and_then(|x| x.as_bool()).unwrap_or(true),
+            require_clean: v
+                .get("require_clean_worktree")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+            fail_fast: v
+                .get("fail_fast")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(false),
+            summary_only: v
+                .get("summary_only")
+                .and_then(|x| x.as_bool())
+                .unwrap_or(true),
+        }
+    }
+}
+
+pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: CiPipelineLocalArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let v = match serde_json::to_value(&args) {
+        Ok(v) => v,
+        Err(e) => return format!("参数序列化错误: {e}"),
+    };
+    let o = CiPipelineOpts::from_json(&v);
+    let mut sections = Vec::new();
+    let mut summary: Vec<(String, &'static str)> = Vec::new();
+
+    if let Some(out) = ci_run_fmt(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_clippy(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_cargo_test(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_frontend_lint(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_frontend_build(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_ruff(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = ci_run_pytest(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    ci_run_mypy(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    );
+
+    build_named_pipeline_summary_output(
+        "ci_pipeline_local",
+        &summary,
+        &sections,
+        o.summary_only,
+        false,
+    )
+}
+
+fn ci_run_fmt(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_fmt {
+        let r = cargo_fmt_check(workspace_root, max_output_len);
+        let failed = section_failed(&r);
+        summary.push((
+            "cargo fmt --check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_skipped(
+                summary,
+                o.run_clippy,
+                o.run_test,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
+            );
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("cargo fmt --check".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_clippy(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_clippy {
+        let r =
+            cargo_tools::cargo_clippy(r#"{"all_targets":true}"#, workspace_root, max_output_len);
+        let failed = section_failed(&r);
+        summary.push((
+            "cargo clippy".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_skipped(
+                summary,
+                false,
+                o.run_test,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
+            );
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("cargo clippy".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_cargo_test(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_test {
+        let r = cargo_tools::cargo_test("{}", workspace_root, max_output_len, None);
+        let failed = section_failed(&r);
+        summary.push((
+            "cargo test".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_skipped(
+                summary,
+                false,
+                false,
+                o.run_frontend_lint,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
+            );
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("cargo test".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_frontend_lint(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_frontend_lint {
+        let r =
+            frontend_tools::frontend_lint(r#"{"script":"lint"}"#, workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "frontend lint".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_skipped(
+                summary,
+                false,
+                false,
+                false,
+                o.run_frontend_build,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
+            );
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("frontend lint".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_frontend_build(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_frontend_build {
+        let r =
+            frontend_tools::frontend_build(r#"{"script":"build"}"#, workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "frontend build".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_skipped(
+                summary,
+                false,
+                false,
+                false,
+                false,
+                o.run_ruff_check,
+                o.run_pytest,
+                o.run_mypy,
+            );
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("frontend build".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_ruff(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_ruff_check {
+        let r = python_tools::ruff_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "ruff check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            if o.run_pytest {
+                summary.push(("pytest".to_string(), "skipped"));
+            }
+            if o.run_mypy {
+                summary.push(("mypy".to_string(), "skipped"));
+            }
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("ruff check".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_pytest(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_pytest {
+        let r = python_tools::pytest_run("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push((
+            "pytest".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            if o.run_mypy {
+                summary.push(("mypy".to_string(), "skipped"));
+            }
+            return Some(build_named_pipeline_summary_output(
+                "ci_pipeline_local",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("pytest".to_string(), "skipped"));
+    }
+    None
+}
+
+fn ci_run_mypy(
+    o: &CiPipelineOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) {
+    if o.run_mypy {
+        let r = python_tools::mypy_check("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r) && !r.contains("跳过（");
+        summary.push(("mypy".to_string(), if failed { "failed" } else { "passed" }));
+        sections.push(r);
+    } else {
+        summary.push(("mypy".to_string(), "skipped"));
+    }
+}
+
+pub fn release_ready_check(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
+    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: ReleaseReadyCheckArgs = match serde_json::from_value(parsed) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析错误: {e}"),
+    };
+    let v = match serde_json::to_value(&args) {
+        Ok(v) => v,
+        Err(e) => return format!("参数序列化错误: {e}"),
+    };
+    let o = ReleaseReadyOpts::from_json(&v);
+
+    let mut sections = Vec::new();
+    let mut summary: Vec<(String, &'static str)> = Vec::new();
+
+    if let Some(out) = release_ready_try_ci_pipeline(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = release_ready_try_audit(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    if let Some(out) = release_ready_try_deny(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    ) {
+        return out;
+    }
+    release_ready_append_git_clean(
+        &o,
+        workspace_root,
+        max_output_len,
+        &mut summary,
+        &mut sections,
+    );
+
+    build_named_pipeline_summary_output(
+        "release_ready_check",
+        &summary,
+        &sections,
+        o.summary_only,
+        false,
+    )
+}
+
+fn release_ready_try_ci_pipeline(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_ci {
+        let r = ci_pipeline_local(
+            r#"{"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"fail_fast":false,"summary_only":false}"#,
+            workspace_root,
+            max_output_len,
+        );
+        let failed = r.contains("failed=");
+        summary.push((
+            "ci_pipeline_local".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, o.run_audit, o.run_deny, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("ci_pipeline_local".to_string(), "skipped"));
+    }
+    None
+}
+
+fn release_ready_try_audit(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_audit {
+        let r = security_tools::cargo_audit("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r);
+        summary.push((
+            "cargo_audit".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, false, o.run_deny, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("cargo_audit".to_string(), "skipped"));
+    }
+    None
+}
+
+fn release_ready_try_deny(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) -> Option<String> {
+    if o.run_deny {
+        let r = security_tools::cargo_deny("{}", workspace_root, max_output_len);
+        let failed = section_failed(&r);
+        summary.push((
+            "cargo_deny".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+        if o.fail_fast && failed {
+            push_release_skipped(summary, false, false, o.require_clean);
+            return Some(build_named_pipeline_summary_output(
+                "release_ready_check",
+                summary,
+                sections,
+                o.summary_only,
+                true,
+            ));
+        }
+    } else {
+        summary.push(("cargo_deny".to_string(), "skipped"));
+    }
+    None
+}
+
+fn release_ready_append_git_clean(
+    o: &ReleaseReadyOpts,
+    workspace_root: &Path,
+    max_output_len: usize,
+    summary: &mut Vec<(String, &'static str)>,
+    sections: &mut Vec<String>,
+) {
+    if o.require_clean {
+        let r = git_clean_check(workspace_root, max_output_len);
+        let failed = section_failed(&r);
+        summary.push((
+            "git_clean_check".to_string(),
+            if failed { "failed" } else { "passed" },
+        ));
+        sections.push(r);
+    } else {
+        summary.push(("git_clean_check".to_string(), "skipped"));
+    }
+}
+
+fn push_release_skipped(
+    summary: &mut Vec<(String, &'static str)>,
+    audit: bool,
+    deny: bool,
+    clean: bool,
+) {
+    if audit {
+        summary.push(("cargo_audit".to_string(), "skipped"));
+    }
+    if deny {
+        summary.push(("cargo_deny".to_string(), "skipped"));
+    }
+    if clean {
+        summary.push(("git_clean_check".to_string(), "skipped"));
+    }
+}
+
+fn git_clean_check(workspace_root: &Path, max_output_len: usize) -> String {
+    let out = std::process::Command::new("git")
+        .arg("status")
+        .arg("--porcelain")
+        .current_dir(workspace_root)
+        .output();
+    match out {
+        Ok(output) => {
+            let status = output.status.code().unwrap_or(-1);
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            if status != 0 {
+                let msg = if !stderr.trim().is_empty() {
+                    stderr
+                } else {
+                    stdout
+                };
+                return format!(
+                    "git clean check (exit={}):\n{}",
+                    status,
+                    truncate_simple(&msg, max_output_len)
+                );
+            }
+            if stdout.trim().is_empty() {
+                "git clean check (exit=0):\n工作区干净".to_string()
+            } else {
+                format!(
+                    "git clean check (exit=1):\n存在未提交改动：\n{}",
+                    truncate_simple(&stdout, max_output_len)
+                )
+            }
+        }
+        Err(e) => format!("git clean check (exit=1):\n执行失败: {}", e),
+    }
+}
+
+fn truncate_simple(s: &str, max_output_len: usize) -> String {
+    if s.len() <= max_output_len {
+        s.to_string()
+    } else {
+        let truncated = super::output_util::truncate_to_char_boundary(s, max_output_len);
+        format!("{}\n\n... (输出已截断)", truncated)
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // 本地 CI 汇总：各步骤是否仍待执行（用于 fail_fast 跳过列表）
+fn push_skipped(
+    summary: &mut Vec<(String, &'static str)>,
+    clippy: bool,
+    test: bool,
+    frontend_lint: bool,
+    frontend_build: bool,
+    ruff: bool,
+    pytest: bool,
+    mypy: bool,
+) {
+    if clippy {
+        summary.push(("cargo clippy".to_string(), "skipped"));
+    }
+    if test {
+        summary.push(("cargo test".to_string(), "skipped"));
+    }
+    if frontend_lint {
+        summary.push(("frontend lint".to_string(), "skipped"));
+    }
+    if frontend_build {
+        summary.push(("frontend build".to_string(), "skipped"));
+    }
+    if ruff {
+        summary.push(("ruff check".to_string(), "skipped"));
+    }
+    if pytest {
+        summary.push(("pytest".to_string(), "skipped"));
+    }
+    if mypy {
+        summary.push(("mypy".to_string(), "skipped"));
+    }
+}
+
+fn build_named_pipeline_summary_output(
+    pipeline_name: &str,
+    summary: &[(String, &'static str)],
+    sections: &[String],
+    summary_only: bool,
+    fail_fast_triggered: bool,
+) -> String {
+    let passed = summary.iter().filter(|(_, s)| *s == "passed").count();
+    let failed = summary.iter().filter(|(_, s)| *s == "failed").count();
+    let skipped = summary.iter().filter(|(_, s)| *s == "skipped").count();
+    let mut summary_text = String::new();
+    summary_text.push_str(&format!("{pipeline_name} summary:\n"));
+    for (name, status) in summary {
+        summary_text.push_str(&format!("- {}: {}\n", name, status));
+    }
+    summary_text.push_str(&format!(
+        "统计：passed={}, failed={}, skipped={}",
+        passed, failed, skipped
+    ));
+    if fail_fast_triggered {
+        summary_text.push_str("\n已启用 fail_fast，出现失败后已停止后续步骤");
+    }
+    if summary_only {
+        return summary_text;
+    }
+    if sections.is_empty() {
+        summary_text
+    } else {
+        format!(
+            "{}\n\n====================\n\n{}",
+            summary_text,
+            sections.join("\n\n====================\n\n")
+        )
+    }
+}
+
+fn section_failed(s: &str) -> bool {
+    let first = s.lines().next().unwrap_or("");
+    let Some(idx) = first.find("(exit=") else {
+        return false;
+    };
+    let rest = &first[idx + "(exit=".len()..];
+    let Some(end) = rest.find(')') else {
+        return false;
+    };
+    rest[..end]
+        .trim()
+        .parse::<i32>()
+        .map(|c| c != 0)
+        .unwrap_or(false)
+}
+
+fn cargo_fmt_check(workspace_root: &Path, max_output_len: usize) -> String {
+    if !workspace_root.join("Cargo.toml").is_file() {
+        return "cargo fmt --check: 跳过（未找到 Cargo.toml）".to_string();
+    }
+    let out = std::process::Command::new("cargo")
+        .arg("fmt")
+        .arg("--")
+        .arg("--check")
+        .current_dir(workspace_root)
+        .output();
+    match out {
+        Ok(output) => {
+            let status = output.status.code().unwrap_or(-1);
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let body = if !stderr.trim().is_empty() {
+                stderr.to_string()
+            } else if !stdout.trim().is_empty() {
+                stdout.to_string()
+            } else {
+                "(无输出)".to_string()
+            };
+            let mut s = body;
+            if s.len() > max_output_len {
+                let truncated = super::output_util::truncate_to_char_boundary(&s, max_output_len);
+                s = format!("{}\n\n... (输出已截断)", truncated);
+            }
+            format!("cargo fmt --check (exit={}):\n{}", status, s)
+        }
+        Err(e) => format!("cargo fmt --check: 执行失败（{}）", e),
+    }
+}
+
+pub fn cargo_fmt_check_tool(
+    _args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+) -> String {
+    cargo_fmt_check(workspace_root, max_output_len)
+}

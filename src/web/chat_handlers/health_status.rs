@@ -3,7 +3,7 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
-use crabmate_api_contract::StatusShellView;
+use crate::cm_api_contract::StatusShellView;
 use serde::Deserialize;
 
 use crate::agent::message_pipeline::MESSAGE_PIPELINE_COUNTERS;
@@ -308,7 +308,7 @@ pub(crate) async fn status_handler(
         workspace_root.as_path(),
         &agent_role_ids,
     );
-    let effective_orchestration_path = crabmate_config::effective_orchestration_path_summary(
+    let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary(
         cfg.per_plan_policy.planner_executor_mode.as_str(),
         cfg.per_plan_policy.orchestration_profile,
     );

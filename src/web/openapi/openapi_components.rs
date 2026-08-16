@@ -7,7 +7,7 @@ use serde_json::{Map, Value, json};
 use super::openapi_components_user_data;
 
 fn openapi_components_schemas_from_contract() -> Value {
-    Value::Object(crabmate_api_contract::openapi::openapi_component_schemas())
+    Value::Object(crate::cm_api_contract::openapi::openapi_component_schemas())
 }
 
 fn merge_component_objects(fragments: &[Value]) -> Value {

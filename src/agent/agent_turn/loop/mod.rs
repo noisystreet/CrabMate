@@ -12,17 +12,17 @@ pub(crate) mod run_dispatch;
 pub(crate) mod turn_completion;
 
 pub(crate) mod outer_loop_driver {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_driver::*;
+    pub(crate) use crate::cm_agent::agent_turn::outer_loop_driver::*;
 }
 pub(crate) mod outer_loop_fsm {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_fsm::*;
+    pub(crate) use crate::cm_agent::agent_turn::outer_loop_fsm::*;
 }
 pub(crate) mod outer_loop_iteration_reduce {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_iteration_reduce::*;
+    pub(crate) use crate::cm_agent::agent_turn::outer_loop_iteration_reduce::*;
 }
 pub(crate) mod outer_loop_reflect_reason {
-    pub(crate) use crabmate_agent::agent_turn::outer_loop_reflect_reason::*;
+    pub(crate) use crate::cm_agent::agent_turn::outer_loop_reflect_reason::*;
 }
 pub(crate) mod orchestration_entry {
-    pub(crate) use crabmate_agent::agent_turn::orchestration_entry::*;
+    pub(crate) use crate::cm_agent::agent_turn::orchestration_entry::*;
 }

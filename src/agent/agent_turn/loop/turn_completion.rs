@@ -8,20 +8,20 @@
 mod turn_completion_golden;
 
 #[cfg(test)]
-pub(crate) use crabmate_agent::agent_turn::turn_completion_decision::evaluate_turn_suppress_replanning;
-pub(crate) use crabmate_agent::agent_turn::turn_completion_decision::{
+pub(crate) use crate::cm_agent::agent_turn::turn_completion_decision::evaluate_turn_suppress_replanning;
+pub(crate) use crate::cm_agent::agent_turn::turn_completion_decision::{
     TurnCompletionDecision, evaluate_turn_early_stop, evaluate_turn_redundant_tools,
     log_turn_completion_decision,
 };
 
-pub(crate) use crabmate_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
+pub(crate) use crate::cm_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
 
 /// 外循环构建空转纠偏 user 首行。
 const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
 
 #[cfg(test)]
 #[allow(unused_imports)]
-pub(crate) use crabmate_agent::agent_turn::completion_suppression::{
+pub(crate) use crate::cm_agent::agent_turn::completion_suppression::{
     plan_steps_are_redundant_after_completion, tool_call_is_redundant_after_completion,
     tool_calls_are_redundant_after_completion,
 };

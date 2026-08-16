@@ -1,55 +1,14 @@
 [workspace]
-members = [
-    ".",
-    "crates/cmd_mate",
-    "crates/crabmate-api-contract",
-    "crates/crabmate-display-rules",
-    "crates/crabmate-mcp",
-    "crates/crabmate-sse-protocol",
-    "crates/crabmate-turn-layout",
-    "crates/crabmate-types",
-    "crates/crabmate-chat-export",
-    "crates/crabmate-approval",
-    "crates/crabmate-web-host",
-    "crates/crabmate-config",
-    "crates/crabmate-llm",
-    "crates/crabmate-agent",
-    "crates/crabmate-tools",
-    "crates/crabmate-memory",
-    "crates/crabmate-workflow",
-    "crates/crabmate-benchmark",
-    "crates/crabmate-runtime",
-    "crates/crabmate-internal",
-]
+members = ["."]
 # 壳专用 crabmate-connect 已迁至 Client 仓（路径 A Phase 4）；本仓不再 exclude 副本路径。
 resolver = "2"
 
 [workspace.dependencies]
-# Workspace crates
-cmd_mate = { path = "crates/cmd_mate" }
-crabmate-agent = { path = "crates/crabmate-agent", default-features = false }
-crabmate-api-contract = { path = "crates/crabmate-api-contract" }
-crabmate-approval = { path = "crates/crabmate-approval" }
-crabmate-web-host = { path = "crates/crabmate-web-host" }
-crabmate-benchmark = { path = "crates/crabmate-benchmark" }
-crabmate-runtime = { path = "crates/crabmate-runtime" }
-crabmate-config = { path = "crates/crabmate-config", default-features = false }
-crabmate-display-rules = { path = "crates/crabmate-display-rules" }
-crabmate-internal = { path = "crates/crabmate-internal", default-features = false }
-crabmate-llm = { path = "crates/crabmate-llm" }
-crabmate-mcp = { path = "crates/crabmate-mcp" }
-crabmate-memory = { path = "crates/crabmate-memory" }
-crabmate-workflow = { path = "crates/crabmate-workflow" }
-crabmate-sse-protocol = { path = "crates/crabmate-sse-protocol" } # default = runtime（tokio）；WASM 用 default-features = false
-crabmate-tools = { path = "crates/crabmate-tools" }
-crabmate-turn-layout = { path = "crates/crabmate-turn-layout" }
-crabmate-types = { path = "crates/crabmate-types" }
-crabmate-chat-export = { path = "crates/crabmate-chat-export" }
-
 # Shared third-party (pin versions; enable features per crate)
 async-trait = "0.1"
 base64 = "0.23"
 bzip2 = "0.6"
+chardetng = "1.0"
 chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 console = { version = "0.16", default-features = false, features = ["std"] }
@@ -60,8 +19,10 @@ encoding_rs = "0.8"
 flate2 = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 glob = "0.3"
+http = "1"
 ignore = "0.4"
 jsonschema = { version = "0.49", default-features = false }
+keyring = "4.1.5"
 libc = "0.2"
 log = "0.4"
 path-absolutize = "4"
@@ -101,9 +62,12 @@ worbrow = { version = "0.2.0", default-features = false }
 xz2 = "0.1"
 zip = { version = "8.6", default-features = false, features = ["deflate", "time"] }
 
-# HTTP / optional UI (feature-gated in root)
+# HTTP / optional UI (feature-gated)
 axum = { version = "0.8", default-features = false }
+bollard = { version = "0.21", default-features = false }
 clap_mangen = { version = "0.3", default-features = false }
+fastembed = "5.13"
+rmcp = { version = "3.0", default-features = false }
 tower = { version = "0.5" }
 tower-http = { version = "0.6" }
 
@@ -170,55 +134,99 @@ assets = [
 ]
 
 [features]
-default = ["web", "mcp"]
+default = ["server"]
+## 线契约：类型、SSE 分类/帧、Turn 布局、导出 schema（无 tokio）。Client WASM 只开本 feature。
+protocol = []
+## 默认：HTTP serve、运维 CLI、工具执行。含 protocol。
+server = [
+    "protocol",
+    "web",
+    "mcp",
+    "archive-tools",
+    "web-fetch-tools",
+    "schema-tools",
+    "csv-tools",
+    "diff-tools",
+    "unit-tools",
+    "dep:reqwest",
+    "dep:futures-util",
+    "dep:secrecy",
+    "dep:serde_yaml",
+    "dep:tempfile",
+    "dep:tokio",
+    "dep:chrono",
+    "dep:regex",
+    "dep:sha2",
+    "dep:subtle",
+    "dep:tracing",
+    "dep:tracing-subscriber",
+    "dep:console",
+    "dep:tokio-stream",
+    "dep:async-trait",
+    "dep:libc",
+    "dep:tiktoken-rs",
+    "dep:clap",
+    "dep:toml",
+    "dep:keyring",
+    "dep:unicodeit",
+    "dep:base64",
+    "dep:glob",
+    "dep:ignore",
+    "dep:path-absolutize",
+    "dep:diffy",
+    "dep:walkdir",
+    "dep:worbrow",
+    "dep:urlencoding",
+    "dep:jsonschema",
+    "dep:rusqlite",
+    "dep:nix",
+]
 ## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
 web = [
     "dep:axum",
-    "dep:rusqlite",
     "dep:tokio-cron-scheduler",
-    "dep:crabmate-web-host",
+    "dep:tower",
+    "dep:tower-http",
 ]
 ## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
 gen-man = ["dep:clap_mangen"]
 ## Model Context Protocol（`rmcp`）：`mcp list` / `mcp serve`、进程内 MCP 工具代理。
-mcp = ["crabmate-config/mcp", "crabmate-internal/mcp"]
+mcp = ["dep:rmcp", "dep:http"]
 ## `code_stats` / 项目画像 tokei 统计（未启用时用内置扩展名 walk）。
-project_metrics = [
-    "crabmate-internal/project_metrics",
-]
+project_metrics = ["dep:tokei"]
 ## `sync_default_tool_sandbox_mode = docker` 时连接 Docker Engine（`bollard`）。
-docker_sandbox = [
-    "crabmate-config/docker_sandbox",
-    "crabmate-internal/docker_sandbox",
-]
+docker_sandbox = ["dep:bollard"]
 ## 本地向量嵌入（**fastembed** / ONNX）：长期记忆 `fastembed` 后端、`codebase_semantic_search` 的向量索引与 hybrid/semantic 查询。
-fastembed = [
-    "crabmate-config/fastembed",
-    "crabmate-internal/fastembed",
-]
+fastembed = ["dep:fastembed"]
+## 压缩归档：tar/zip/tar.gz/tar.bz2/tar.xz 的打包和解包
+archive-tools = ["dep:bzip2", "dep:flate2", "dep:tar", "dep:xz2", "dep:zip"]
+## HTTP 抓取：编码检测 + HTML 解析
+web-fetch-tools = ["dep:chardetng", "dep:encoding_rs", "dep:scraper", "dep:ego-tree"]
+## JSON Schema 校验（`jsonschema` 由 `server` 启用；本名为 `cfg` 开关）
+schema-tools = []
+## CSV/TSV 数据格式
+csv-tools = ["dep:csv"]
+## 文本差异对比
+diff-tools = ["dep:similar"]
+## 单位换算
+unit-tools = ["dep:uom"]
 
 [dependencies]
-crabmate-sse-protocol = { workspace = true, features = ["runtime"] }
-crabmate-turn-layout = { workspace = true }
-crabmate-types = { workspace = true }
-crabmate-config = { workspace = true, default-features = false }
-crabmate-llm = { workspace = true }
-crabmate-agent = { workspace = true, default-features = false }
-crabmate-api-contract = { workspace = true }
-crabmate-benchmark = { workspace = true }
-crabmate-runtime = { workspace = true }
-crabmate-workflow = { workspace = true }
-crabmate-internal = { workspace = true, default-features = false }
-crabmate-web-host = { workspace = true, optional = true }
-reqwest = { workspace = true, features = ["json", "stream", "blocking", "query", "rustls"] }
-futures-util = { workspace = true }
+# protocol（始终编译 `cm_types` / SSE 分类 / Turn 布局等）
 serde = { workspace = true }
 serde_json = { workspace = true }
-secrecy = { workspace = true }
-serde_yaml = { workspace = true }
-tempfile = { workspace = true }
+thiserror = { workspace = true }
+schemars = { workspace = true }
+log = { workspace = true }
+
+# server
+reqwest = { workspace = true, optional = true, features = ["json", "stream", "blocking", "query", "rustls"] }
+futures-util = { workspace = true, optional = true }
+secrecy = { workspace = true, optional = true }
+serde_yaml = { workspace = true, optional = true }
+tempfile = { workspace = true, optional = true }
 # 避免 `full`：仅启用代码路径实际用到的子特性，缩短 `cargo build` / `cargo check` 解析与编译图。
-tokio = { workspace = true, features = [
+tokio = { workspace = true, optional = true, features = [
     "macros",
     "rt",
     "rt-multi-thread",
@@ -230,17 +238,39 @@ tokio = { workspace = true, features = [
     "io-util",
     "signal",
 ] }
-chrono = { workspace = true }
-regex = { workspace = true }
-sha2 = { workspace = true }
-subtle = { workspace = true }
-log = { workspace = true }
-tracing = { workspace = true }
-console = { workspace = true }
-tokio-stream = { workspace = true }
-async-trait = { workspace = true }
-libc = { workspace = true }
-tiktoken-rs = { workspace = true }
+chrono = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
+subtle = { workspace = true, optional = true }
+tracing = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true, features = [
+    "ansi",
+    "env-filter",
+    "fmt",
+    "json",
+    "local-time",
+    "time",
+    "tracing-log",
+] }
+console = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
+async-trait = { workspace = true, optional = true }
+libc = { workspace = true, optional = true }
+tiktoken-rs = { workspace = true, optional = true }
+clap = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
+keyring = { workspace = true, optional = true }
+unicodeit = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+glob = { workspace = true, optional = true }
+ignore = { workspace = true, optional = true }
+path-absolutize = { workspace = true, optional = true }
+diffy = { workspace = true, optional = true }
+walkdir = { workspace = true, optional = true }
+worbrow = { workspace = true, optional = true }
+urlencoding = { workspace = true, optional = true }
+jsonschema = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
 axum = { workspace = true, optional = true, features = [
     "form",
     "http1",
@@ -253,12 +283,42 @@ axum = { workspace = true, optional = true, features = [
     "tower-log",
     "tracing",
 ] }
-rusqlite = { workspace = true, optional = true }
 tokio-cron-scheduler = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+tower-http = { workspace = true, optional = true, features = ["fs", "set-header", "cors"] }
 clap_mangen = { workspace = true, optional = true }
+rmcp = { workspace = true, optional = true, default-features = false, features = [
+    "client",
+    "server",
+    "transport-child-process",
+    "transport-io",
+    "transport-streamable-http-client-reqwest",
+] }
+http = { workspace = true, optional = true }
+bollard = { workspace = true, optional = true, default-features = false, features = [
+    "http",
+    "pipe",
+] }
+fastembed = { workspace = true, optional = true }
+tokei = { workspace = true, optional = true }
+bzip2 = { workspace = true, optional = true }
+flate2 = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
+xz2 = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
+chardetng = { workspace = true, optional = true }
+encoding_rs = { workspace = true, optional = true }
+scraper = { workspace = true, optional = true }
+ego-tree = { workspace = true, optional = true }
+csv = { workspace = true, optional = true }
+similar = { workspace = true, optional = true }
+uom = { workspace = true, optional = true }
+nix = { workspace = true, optional = true, features = ["fs", "dir", "signal", "term", "process"] }
 
-[target.'cfg(unix)'.dependencies]
-nix = { workspace = true, features = ["fs", "dir"] }
+[[bin]]
+name = "crabmate"
+path = "src/main.rs"
+required-features = ["server"]
 
 [[bin]]
 name = "crabmate-gen-man"
@@ -268,6 +328,7 @@ required-features = ["gen-man"]
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
+proptest = { workspace = true }
 
 [profile.release]
 # 默认关闭 LTO，加快 `cargo build --release`；体积敏感发布可改用下方 `release-lto` profile。

@@ -229,7 +229,7 @@ pub async fn run_agent_turn<'a>(
     if let Err(e) = &res
         && let Some(sink) = loop_params.ctx.obs.trace_sink.as_ref()
     {
-        sink.emit(crabmate_llm::TraceEvent::Error {
+        sink.emit(crate::cm_llm::TraceEvent::Error {
             round: 0,
             kind: "turn_failed".to_string(),
             message: e.to_string(),

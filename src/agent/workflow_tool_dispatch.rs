@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::config::{AgentConfig, ExposeSecret};
 use crate::request_chrome_trace::RequestTurnTrace;
 use crate::tool_registry::ToolRuntime;
-use crabmate_workflow::config::WorkflowConfig;
+use crate::cm_workflow::config::WorkflowConfig;
 
 use super::per_coord::PerCoordinator;
 use super::workflow;

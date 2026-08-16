@@ -4,9 +4,9 @@
 
 use crate::config::{AgentConfig, SharedAgentConfig};
 use crate::types::Tool;
-use crabmate_benchmark::adapter::{BenchmarkAdapter, create_adapter};
-use crabmate_benchmark::metrics::{BatchSummary, TaskMetrics};
-use crabmate_benchmark::types::{
+use crate::cm_benchmark::adapter::{BenchmarkAdapter, create_adapter};
+use crate::cm_benchmark::metrics::{BatchSummary, TaskMetrics};
+use crate::cm_benchmark::types::{
     BatchRunConfig, BenchmarkResult, BenchmarkTask, TaskStatus, parse_task_jsonl_line,
 };
 use log::{error, info, warn};

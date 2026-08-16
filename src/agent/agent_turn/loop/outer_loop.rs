@@ -8,7 +8,7 @@ use std::sync::atomic::Ordering;
 
 use log::debug;
 
-use crate::check_abort;
+use super::check_abort::check_abort;
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::sse::{

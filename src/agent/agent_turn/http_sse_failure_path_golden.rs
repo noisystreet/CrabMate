@@ -159,7 +159,7 @@ fn assert_turn_case(row: &GoldenLine, ctx: &str) {
 }
 
 fn assert_http_api_constant(row: &GoldenLine, ctx: &str) {
-    use crabmate_api_contract::error_codes;
+    use crate::cm_api_contract::error_codes;
     let name = row.case["code_const"].as_str().expect("code_const");
     let expect_code = row.expect["code"].as_str().expect("code");
     let expect_status = row.expect["http_status"].as_u64().expect("http_status") as u16;

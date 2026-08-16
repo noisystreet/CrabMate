@@ -1,10 +1,10 @@
-//! 根包 [`crabmate_llm::StreamChatHost`] 实现（SSE、redact）。
+//! 根包 [`crate::cm_llm::StreamChatHost`] 实现（SSE、redact）。
 
 use std::sync::atomic::AtomicBool;
 
 use async_trait::async_trait;
-use crabmate_llm::{LlmCallError, StreamChatHost};
-use crabmate_types::{ChatRequest, Message, message_content_as_str};
+use crate::cm_llm::{LlmCallError, StreamChatHost};
+use crate::cm_types::{ChatRequest, Message, message_content_as_str};
 use log::{debug, error, info};
 use tokio::sync::mpsc::Sender;
 

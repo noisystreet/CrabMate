@@ -6,8 +6,8 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use crabmate_config::AgentConfig;
-use crabmate_types::ToolCall;
+use crate::cm_config::AgentConfig;
+use crate::cm_types::ToolCall;
 
 use crate::tool_registry::{DispatchToolParams, HandlerLookupTable, WebToolRuntime};
 

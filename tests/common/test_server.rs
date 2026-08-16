@@ -4,9 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crabmate::crabmate_llm::{
-    ChatCompletionsBackend, E2eMode, build_e2e_backend, detect_mode_from_env,
-};
+use crabmate::cm_llm::{ChatCompletionsBackend, E2eMode, build_e2e_backend, detect_mode_from_env};
 
 /// e2e 测试服务器句柄。
 pub struct TestServer {

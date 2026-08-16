@@ -1,6 +1,6 @@
 //! HTTP JSON 语义上限（字段长度、条数），与传输层请求体大小限制配合。
 //!
-//! 纯校验在 **`crabmate_web_host::http_types::limits`**；本模块再导出 handler 所需符号，并提供 axum
+//! 纯校验在 **`crate::cm_web_host::http_types::limits`**；本模块再导出 handler 所需符号，并提供 axum
 //! [`StatusCode`] / [`Json`] 包装（如 [`validate_chat_request_payload_limits`]）。
 
 use axum::Json;
@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 
 use super::chat::{ApiError, ChatRequestBody};
 
-pub(crate) use crabmate_web_host::http_types::limits::{
+pub(crate) use crate::cm_web_host::http_types::limits::{
     clamp_workspace_search_max_results, validate_workspace_file_write_request,
     validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
 };
@@ -16,7 +16,7 @@ pub(crate) use crabmate_web_host::http_types::limits::{
 pub(crate) fn validate_chat_request_payload_limits(
     body: &ChatRequestBody,
 ) -> Result<(), (StatusCode, Json<ApiError>)> {
-    match crabmate_web_host::http_types::limits::chat_request_payload_limit_error(body) {
+    match crate::cm_web_host::http_types::limits::chat_request_payload_limit_error(body) {
         None => Ok(()),
         Some((code, message)) => Err((StatusCode::BAD_REQUEST, Json(ApiError::new(code, message)))),
     }
@@ -65,10 +65,10 @@ mod tests {
         clamp_workspace_search_max_results, validate_workspace_query_encoding_optional,
         workspace_search_pattern_or_error,
     };
-    use crabmate_web_host::http_types::chat_keys::{
+    use crate::cm_web_host::http_types::chat_keys::{
         CHAT_REQUEST_BODY_ALLOWED_KEYS, reject_unknown_chat_body_keys,
     };
-    use crabmate_web_host::http_types::limits::{
+    use crate::cm_web_host::http_types::limits::{
         WORKSPACE_QUERY_ENCODING_MAX_BYTES, WORKSPACE_SEARCH_MAX_RESULTS_CAP,
         WORKSPACE_SEARCH_PATTERN_MAX_BYTES, validate_clarify_answers_json_budget,
         validate_workspace_search_pattern,

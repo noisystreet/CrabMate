@@ -10,7 +10,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 - **Default**: Legacy payloads may omit `v`; deserialization treats missing as **`SSE_PROTOCOL_VERSION`** (`SseMessage` `#[serde(default = "default_sse_v")]`).
 - **Request body (optional)**: JSON for **`POST /chat`** and **`POST /chat/stream`** may include **`client_sse_protocol`** (`u8`). If **omitted**, the server does not reject on that basis. If **`client_sse_protocol` > server `SSE_PROTOCOL_VERSION`** → **HTTP 400**, `ApiError.code` **`SSE_CLIENT_TOO_NEW`**; if **`0`** → **`INVALID_SSE_CLIENT_PROTOCOL`**; if a positive integer **below** the server version → **`SSE_PROTOCOL_MISMATCH`**.
 - **First frame**: After a new stream is attached, the server emits **`sse_capabilities`** with **`supported_sse_v`** equal to server **`SSE_PROTOCOL_VERSION`**. The official Leptos client compares to its compile-time constant; on mismatch it calls `onError` and stops reading; the message includes **`SSE_SERVER_TOO_NEW`** (server newer, client older) or **`SSE_SERVER_TOO_OLD`** (server older; usually already rejected by **`SSE_CLIENT_TOO_NEW`**).
-- **Evolution**: Bump **`crates/crabmate-sse-protocol`**, this doc and the Chinese twin, and run **`cargo test -p crabmate-sse-protocol`** (doc marker self-check).
+- **Evolution**: Bump **`src/cm_sse_protocol`**, this doc and the Chinese twin, and run **`cargo test --lib --no-default-features --features protocol cm_sse_protocol`** (doc marker self-check).
 - **Semver / publishing / external pins**: Wire `SSE_PROTOCOL_VERSION` and Cargo crate semver are separate axes; breaking vs soft fields, **no N−1 wire decoder window today**, and git tag `client-contract-vX.Y.Z` pinning are in **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**. Gate: `bash scripts/check-client-contract.sh`.
 
 ## Transport and framing
@@ -208,10 +208,10 @@ Queue full, auth failures, etc. return **HTTP 4xx/5xx + JSON** (e.g. `code: "QUE
 
 When changing any of:
 
-1. **`crates/crabmate-sse-protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
-2. **`crates/crabmate-sse-protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
+1. **`src/cm_sse_protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
+2. **`src/cm_sse_protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
 3. Client `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
-4. `crates/crabmate-sse-protocol/src/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI)
+4. `src/cm_sse_protocol/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI)
 5. New `encode_message(SsePayload::…)` call sites
 
 …keep Rust, Leptos, and this doc aligned.

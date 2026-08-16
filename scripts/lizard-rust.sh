@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 对 `src/` 与 `crates/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
+# 对 `src/` 下 Rust 代码做圈复杂度（CCN）扫描，使用 lizard（https://github.com/terryyin/lizard）。
 # 业务 UI 复杂度门禁在 Client 仓 crabmate-client（同为「CCN>10 函数个数」棘轮）。
 # 未安装时：pip install lizard
 #
@@ -10,7 +10,7 @@
 # --write-caps 与 --module 联用时合并更新该模块个数，不重算全局之和。
 # 额外参数原样传给 Python，例如：
 #   bash scripts/lizard-rust.sh --list-modules
-#   bash scripts/lizard-rust.sh --module crates/crabmate-tools
+#   bash scripts/lizard-rust.sh --module src/cm_tools
 #   bash scripts/lizard-rust.sh --list-above 10
 #   bash scripts/lizard-rust.sh --write-caps
 #   bash scripts/lizard-rust.sh --module src/runtime --write-caps

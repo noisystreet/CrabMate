@@ -1,0 +1,286 @@
+//! Web/CLI 多角色工作台：按回合解析 `agent_role`、会话内切换时刷新首条 system、按角色裁剪工具列表并在执行层拒绝越权调用。
+
+use std::collections::HashSet;
+use std::path::Path;
+use std::sync::Arc;
+
+use crate::cm_internal::context_bootstrap::prompt_compose::{
+    FirstSystemComposeOpts, RoleSystemResolution, compose_first_system_for_turn,
+    resolve_agent_role_for_prompt_compose, resolve_skills_base_dir,
+};
+use crate::cm_config::AgentConfig;
+use crate::cm_types::{Message, ToolCall};
+
+/// 本回合生效的角色 id：`request` 非空时优先，否则沿用 `persisted_active`（Web 会话存储 / REPL 内存）。
+/// `None` 表示默认人格（`default_agent_role_id` 或全局 `system_prompt`），与历史未配置多角色时一致。
+pub fn effective_agent_role_id_for_turn(
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<String> {
+    let req = request_agent_role.map(str::trim).filter(|s| !s.is_empty());
+    if req.is_some() {
+        return req.map(str::to_string);
+    }
+    persisted_active
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// 与 `system_prompt_for_new_conversation` 对齐的**命名**角色 id（用于工具白名单）：请求 → 持久化 → 配置默认。
+pub fn named_agent_role_for_tool_policy(
+    cfg: &AgentConfig,
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<String> {
+    if let Some(id) = effective_agent_role_id_for_turn(persisted_active, request_agent_role) {
+        return Some(id);
+    }
+    cfg.roles_prompts
+        .default_agent_role_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// 回合结束后写入存储的 `active_agent_role`：本请求显式传了 `agent_role` 时用请求值，否则保持 `persisted_active`。
+pub fn persisted_agent_role_after_turn(
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<String> {
+    let req = request_agent_role.map(str::trim).filter(|s| !s.is_empty());
+    if req.is_some() {
+        return req.map(str::to_string);
+    }
+    persisted_active
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn last_user_message_text(messages: &[Message]) -> Option<String> {
+    messages
+        .iter()
+        .rev()
+        .find(|m| m.role.trim().eq_ignore_ascii_case("user"))
+        .map(|m| crate::cm_types::message_content_into_text_lossy(m.content.clone()))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// 将首条 `system` 更新为新角色正文（保留后续 transcript）；含 L4 与可选 L5（skills top-k）。
+///
+/// `session_mode`：`None` 时用配置 `default_session_mode`（与 [`compose_first_system_for_turn`] 一致）。
+pub fn apply_agent_role_switch_to_messages(
+    cfg: &AgentConfig,
+    messages: &mut [Message],
+    role_id: Option<&str>,
+    tool_recorder: &Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: Option<&Path>,
+    user_msg_for_skills: Option<&str>,
+    session_mode: Option<crate::cm_types::SessionMode>,
+) -> Result<(), String> {
+    let last_user_owned = last_user_message_text(messages);
+    let skills_user = user_msg_for_skills
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .or(last_user_owned.as_deref());
+    let skills_base = workspace_root.map(resolve_skills_base_dir);
+    let resolved_role = resolve_agent_role_for_prompt_compose(cfg, role_id, None)?;
+    let sys = compose_first_system_for_turn(
+        cfg,
+        tool_recorder,
+        FirstSystemComposeOpts {
+            agent_role: resolved_role.as_deref(),
+            user_msg_for_skills: skills_user,
+            skills_base_dir: skills_base,
+            forced_skill: None,
+            role_resolution: RoleSystemResolution::Strict,
+            session_mode,
+        },
+    )?;
+    let mut found_system = false;
+    for m in messages.iter_mut() {
+        if m.role == "system" {
+            m.content = Some(sys.into());
+            m.name = None;
+            found_system = true;
+            break;
+        }
+    }
+    if !found_system {
+        return Err("会话缺少首条 system 消息，无法切换角色".to_string());
+    }
+    Ok(())
+}
+
+fn normalized_role_key(a: Option<&str>, b: Option<&str>) -> bool {
+    match (
+        a.map(str::trim).filter(|s| !s.is_empty()),
+        b.map(str::trim).filter(|s| !s.is_empty()),
+    ) {
+        (None, None) => true,
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// 已有会话且请求中的 `agent_role` 与持久化不一致时，刷新首条 `system`。
+#[allow(clippy::too_many_arguments)]
+pub fn maybe_apply_mid_session_agent_role_switch(
+    cfg: &AgentConfig,
+    messages: &mut [Message],
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+    tool_recorder: &Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: Option<&Path>,
+    user_msg_for_skills: &str,
+    session_mode: Option<crate::cm_types::SessionMode>,
+) -> Result<(), String> {
+    if messages.is_empty() {
+        return Ok(());
+    }
+    let req = request_agent_role.map(str::trim).filter(|s| !s.is_empty());
+    let Some(req_id) = req else {
+        return Ok(());
+    };
+    if normalized_role_key(Some(req_id), persisted_active) {
+        return Ok(());
+    }
+    apply_agent_role_switch_to_messages(
+        cfg,
+        messages,
+        Some(req_id),
+        tool_recorder,
+        workspace_root,
+        Some(user_msg_for_skills),
+        session_mode,
+    )
+}
+
+/// 按角色 `allowed_tools` 过滤 `tools`（`None` 表示不限制）。
+/// `mcp__*`：允许集合含 `"mcp"` 或完整工具名时保留（与 [`tool_allowed_for_turn`] 一致）。
+pub fn filter_tools_for_agent_role(
+    tools: &[crate::cm_types::Tool],
+    allowed: Option<&HashSet<String>>,
+) -> Vec<crate::cm_types::Tool> {
+    tools
+        .iter()
+        .filter(|t| tool_allowed_for_turn(t.function.name.as_str(), allowed))
+        .cloned()
+        .collect()
+}
+
+/// 执行层：当前回合允许的工具名（与送进模型的列表一致）；`None` 表示全量。
+pub fn turn_allowed_tool_names_for_role(
+    cfg: &AgentConfig,
+    role_id: Option<&str>,
+) -> Option<Arc<HashSet<String>>> {
+    let id = role_id.map(str::trim).filter(|s| !s.is_empty())?;
+    cfg.roles_prompts
+        .agent_roles
+        .get(id)
+        .and_then(|spec| spec.allowed_tools.clone())
+}
+
+pub fn turn_allow_for_web_or_cli_job(
+    cfg: &AgentConfig,
+    persisted_active: Option<&str>,
+    request_agent_role: Option<&str>,
+) -> Option<Arc<HashSet<String>>> {
+    let id = named_agent_role_for_tool_policy(cfg, persisted_active, request_agent_role);
+    turn_allowed_tool_names_for_role(cfg, id.as_deref())
+}
+
+/// 多角色工具白名单：`allow` 为 `None` 时不限制。
+///
+/// 实现委托 [`crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist`]，
+/// 与 `crate::cm_agent::turn_tool_policy` 保持同一规则。
+#[inline]
+pub fn tool_allowed_for_turn(name: &str, allow: Option<&HashSet<String>>) -> bool {
+    crate::cm_tools::tool_naming::tool_name_allowed_by_turn_allowlist(name, allow)
+}
+
+pub fn turn_tool_denied_message(name: &str) -> String {
+    format!("错误：当前 Agent 角色不允许调用工具 `{name}`（配置项 `allowed_tools`）。")
+}
+
+/// 在原有「只读并行批」判定之上，叠加多角色工具白名单。
+pub fn tool_calls_allow_parallel_for_role(
+    handler_lookup: &crate::cm_internal::tool_registry::HandlerLookupTable,
+    cfg: &AgentConfig,
+    tool_calls: &[ToolCall],
+    turn_allow: Option<&HashSet<String>>,
+) -> bool {
+    if !crate::cm_internal::tool_registry::tool_calls_allow_parallel_sync_batch(handler_lookup, cfg, tool_calls)
+    {
+        return false;
+    }
+    if let Some(a) = turn_allow {
+        tool_calls
+            .iter()
+            .all(|tc| tool_allowed_for_turn(tc.function.name.as_str(), Some(a)))
+    } else {
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_role_request_overrides_persisted() {
+        assert_eq!(
+            effective_agent_role_id_for_turn(Some("a"), Some("b")).as_deref(),
+            Some("b")
+        );
+        assert_eq!(
+            effective_agent_role_id_for_turn(Some("a"), None).as_deref(),
+            Some("a")
+        );
+        assert_eq!(effective_agent_role_id_for_turn(None, None), None);
+    }
+
+    #[test]
+    fn filter_tools_respects_set_and_mcp_prefix() {
+        use crate::cm_types::{FunctionDef, Tool};
+        let tools = vec![
+            Tool {
+                typ: "function".into(),
+                function: FunctionDef {
+                    name: "read_file".into(),
+                    description: String::new(),
+                    parameters: serde_json::json!({}),
+                },
+            },
+            Tool {
+                typ: "function".into(),
+                function: FunctionDef {
+                    name: "mcp__x".into(),
+                    description: String::new(),
+                    parameters: serde_json::json!({}),
+                },
+            },
+        ];
+        let mut s = HashSet::new();
+        s.insert("read_file".to_string());
+        let f = filter_tools_for_agent_role(&tools, Some(&s));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].function.name, "read_file");
+
+        let mut s2 = HashSet::new();
+        s2.insert("mcp".to_string());
+        let f2 = filter_tools_for_agent_role(&tools, Some(&s2));
+        assert_eq!(f2.len(), 1);
+        assert_eq!(f2[0].function.name, "mcp__x");
+
+        let mut s3 = HashSet::new();
+        s3.insert("mcp__x".to_string());
+        let f3 = filter_tools_for_agent_role(&tools, Some(&s3));
+        assert_eq!(f3.len(), 1);
+        assert_eq!(f3[0].function.name, "mcp__x");
+        assert!(tool_allowed_for_turn("mcp__x", Some(&s3)));
+    }
+}

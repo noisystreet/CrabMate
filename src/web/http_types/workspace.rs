@@ -2,4 +2,4 @@
 //!
 //! 类型定义在 **`crabmate-web-host`**；此处再导出保持原路径。
 
-pub use crabmate_web_host::http_types::workspace::*;
+pub use crate::cm_web_host::http_types::workspace::*;

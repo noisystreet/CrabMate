@@ -3,12 +3,12 @@
 //!
 //! 对话请求/响应主体与键白名单在 **`crabmate-web-host`**；本文件再导出。
 
-pub(crate) use crabmate_web_host::http_types::api::{
+pub(crate) use crate::cm_web_host::http_types::api::{
     ApiError, ConfigReloadResponseBody, DeleteUploadsBody, DeleteUploadsResponseBody,
     SessionConversationStoreRequestBody, SessionConversationStoreResponseBody, UploadResponseBody,
     UploadedFileInfo,
 };
-pub(crate) use crabmate_web_host::http_types::chat::{
+pub(crate) use crate::cm_web_host::http_types::chat::{
     ChatApprovalRequestBody, ChatApprovalResponseBody, ChatAsyncRequestBody,
     ChatAsyncSubmitResponseBody, ChatBranchRequestBody, ChatBranchResponseBody,
     ChatJobStatusResponseBody, ChatRequestBody, ChatResponseBody, ClientLlmBody,

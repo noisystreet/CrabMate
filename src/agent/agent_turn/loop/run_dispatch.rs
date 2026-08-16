@@ -2,7 +2,7 @@
 //!
 //! 从 [`super::run_agent_turn_common`] 抽离，使 `mod.rs` 仅保留入口日志、分隔线与 `PerCoordinator` 构造等接线。
 
-use crabmate_agent::agent_turn::{
+use crate::cm_agent::agent_turn::{
     AssessTurnRoutingParams, TurnRouteDriver, TurnStartSnapshot, assess_turn_routing,
 };
 
@@ -33,7 +33,7 @@ pub(crate) async fn dispatch_react_turn(
     // 会话 Ask/Plan：须在启发式之后挂只读（Ask/Plan 跳过 Act 句启发式；只读由本处 mode 挂载）。
     if crate::session_mode_turn::session_mode_requires_readonly_tools(p.ctx.attach.session_mode) {
         p.turn.turn_planner_hints.step_executor_constraint =
-            Some(crabmate_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
+            Some(crate::cm_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
         tracing::info!(
             target: "crabmate::agent_turn",
             session_mode = %p.ctx.attach.session_mode,

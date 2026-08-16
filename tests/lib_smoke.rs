@@ -1,3 +1,4 @@
+#![cfg(feature = "server")]
 //! 集成测试：库 crate 可链接，公开 API 可用（不启动网络服务）。
 
 #[test]

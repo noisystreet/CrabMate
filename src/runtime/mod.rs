@@ -3,7 +3,7 @@
 //! 部分独立工具模块已提取到 `crabmate-runtime` crate，在此重导出。
 
 pub mod benchmark;
-pub use crabmate_runtime::chat_export;
+pub use crate::cm_runtime::chat_export;
 pub mod cli;
 pub mod cli_doctor;
 pub mod cli_exit;
@@ -11,6 +11,6 @@ pub(crate) mod cli_mcp;
 pub(crate) mod cli_web_bearer;
 pub mod cli_workflow;
 pub(crate) mod config_reload;
-pub(crate) use crabmate_runtime::message_snapshot_display;
+pub(crate) use crate::cm_runtime::message_snapshot_display;
 pub mod tool_replay;
 pub mod workspace_session;
