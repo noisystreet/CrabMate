@@ -1,6 +1,6 @@
 //! 重导出自 `crabmate-runtime` + `classify_model_error_message`（依赖根包 `agent_errors` / `plan_artifact`）。
 
-pub use crabmate_runtime::cli_exit::*;
+pub use crate::cm_runtime::cli_exit::*;
 
 /// 根据 `run_agent_turn` / LLM 层常见错误文案归类退出码（启发式，与 `llm::api` 用户可见串对齐）。
 pub fn classify_model_error_message(msg: &str) -> i32 {

@@ -1,6 +1,6 @@
 //! 将本机 user-data（`llm_overrides.json`）合并进进程 [`AgentConfig`]（对齐 Web/桌面侧栏）。
 
-use crabmate_config::{AgentConfig, ExposeSecret};
+use crate::cm_config::{AgentConfig, ExposeSecret};
 use secrecy::SecretString;
 
 use super::{LlmEndpointOverride, load_llm_overrides, read_secret_web_api_bearer};

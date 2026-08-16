@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use log::{info, warn};
 
-use crabmate_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
+use crate::cm_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::run_command_dedupe::{
     RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key,

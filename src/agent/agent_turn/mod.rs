@@ -38,7 +38,7 @@ pub(crate) use turn_loop::turn_completion;
 pub(crate) use turn_loop::{orchestration_entry, run_dispatch};
 
 pub(crate) mod messages {
-    pub(crate) use crabmate_agent::agent_turn::messages::*;
+    pub(crate) use crate::cm_agent::agent_turn::messages::*;
 }
 
 // 供 crate 内其它模块与文档链接；本文件自身不直接使用这些符号。

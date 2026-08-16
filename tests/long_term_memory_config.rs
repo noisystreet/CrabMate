@@ -1,3 +1,4 @@
+#![cfg(feature = "server")]
 //! 长期记忆配置（阶段 1）：`finalize` 对未实现的向量后端组合报错。
 
 use std::io::Write;

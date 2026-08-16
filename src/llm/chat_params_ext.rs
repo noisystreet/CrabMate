@@ -2,10 +2,10 @@
 
 use std::sync::Arc;
 
-use crabmate_config::AgentConfig;
-use crabmate_llm::backend::ChatCompletionsBackend;
-use crabmate_llm::chat_params::{LlmRetryingTransportOpts, StreamChatParams};
-use crabmate_llm::{fold_system_into_user_for_config, llm_vendor_adapter, vendor};
+use crate::cm_config::AgentConfig;
+use crate::cm_llm::backend::ChatCompletionsBackend;
+use crate::cm_llm::chat_params::{LlmRetryingTransportOpts, StreamChatParams};
+use crate::cm_llm::{fold_system_into_user_for_config, llm_vendor_adapter, vendor};
 use reqwest::Client;
 
 use crate::agent::turn_budget::TurnBudgetCounter;
@@ -63,7 +63,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
 
     pub(crate) fn stream_params(&self) -> StreamChatParams<'_> {
         // `vendor` 接口不再需要 `AgentConfig`，此处构造临时 `LlmConfig` 供 trait 方法使用。
-        let llm_cfg = crabmate_types::llm_config::LlmConfig {
+        let llm_cfg = crate::cm_types::llm_config::LlmConfig {
             llm: self.cfg.llm.clone(),
             sampling: self.cfg.llm_sampling.clone(),
             vendor_flags: self.cfg.llm_vendor_flags.clone(),

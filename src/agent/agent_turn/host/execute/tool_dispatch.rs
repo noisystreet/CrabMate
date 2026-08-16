@@ -4,7 +4,7 @@
 //! 测试可注入假实现而不走真实 `dispatch_tool`。
 
 use async_trait::async_trait;
-use crabmate_internal::tool_registry::{DispatchToolParams, dispatch_tool};
+use crate::cm_internal::tool_registry::{DispatchToolParams, dispatch_tool};
 
 /// 单次工具调用的 registry 分发面（不含 `workflow_execute`）。
 #[async_trait]
@@ -35,8 +35,8 @@ mod tests {
         DispatchToolPolicy, DispatchToolWorkspace, HandlerLookupTable, ToolRuntime,
     };
     use crate::tool_sandbox::default_sync_default_sandbox_backend;
-    use crabmate_config::load_config;
-    use crabmate_types::{FunctionCall, ToolCall};
+    use crate::cm_config::load_config;
+    use crate::cm_types::{FunctionCall, ToolCall};
 
     struct CountingMockDispatch {
         hits: AtomicUsize,

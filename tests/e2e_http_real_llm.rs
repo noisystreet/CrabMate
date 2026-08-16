@@ -1,3 +1,4 @@
+#![cfg(feature = "server")]
 //! HTTP/SSE 协议级 e2e 真实 LLM 测试（Layer 1）。
 //!
 //! 骨架版：启动真实 axum 实例 + 默认 HTTP LLM 后端。

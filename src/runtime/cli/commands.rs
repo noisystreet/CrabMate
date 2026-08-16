@@ -510,7 +510,7 @@ pub fn run_plugin_list_command(
 }
 
 /// `crabmate sse-replay`：从 `sse-replay-events.jsonl` 回放 AG-UI 事件到 TurnLayout 投影（不要求 API_KEY）。
-fn print_sse_replay_rows(rows: &[crabmate_turn_layout::ProjectedRow]) {
+fn print_sse_replay_rows(rows: &[crate::cm_turn_layout::ProjectedRow]) {
     if rows.is_empty() {
         println!("（无投影行）");
     }
@@ -545,11 +545,11 @@ pub fn run_sse_replay_command(cli: SseReplayCli) -> Result<(), Box<dyn std::erro
     }
     match cli.format.as_str() {
         "rows" => {
-            let rows = crabmate_turn_layout::replay::replay_sse_events_to_web_rows(&path)?;
+            let rows = crate::cm_turn_layout::replay::replay_sse_events_to_web_rows(&path)?;
             print_sse_replay_rows(&rows);
         }
         "canonical" => {
-            let turn = crabmate_turn_layout::replay::replay_sse_events_to_turn(&path)?;
+            let turn = crate::cm_turn_layout::replay::replay_sse_events_to_turn(&path)?;
             let json = serde_json::to_string_pretty(&turn)?;
             println!("{json}");
         }

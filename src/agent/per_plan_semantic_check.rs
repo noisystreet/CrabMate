@@ -13,7 +13,7 @@ use crate::llm::{
 };
 use crate::types::{LlmSeedOverride, Message};
 
-use crabmate_agent::PlanSemanticLlmOutcome;
+use crate::cm_agent::PlanSemanticLlmOutcome;
 
 fn truncate_unicode(s: &str, max_chars: usize) -> String {
     let n = s.chars().count();
@@ -216,7 +216,7 @@ pub(crate) async fn evaluate_plan_consistency_with_recent_tools_llm(
         .model_override
         .as_deref()
         .or(ctx.cfg.llm.planner_model.as_deref());
-    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+    let llm_cfg = crate::cm_types::llm_config::LlmConfig {
         llm: ctx.cfg.llm.clone(),
         sampling: ctx.cfg.llm_sampling.clone(),
         vendor_flags: ctx.cfg.llm_vendor_flags.clone(),

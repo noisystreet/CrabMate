@@ -18,7 +18,7 @@
 1. 已发布 crate 不得 path 依赖 `publish = false` 的 workspace 成员。
 2. 把现有成员**逐个**并进根包不可行：叶子（如 `types`）并入根包后，`sse-protocol` 等仍依赖 `types`，若改依赖根包会与「根包依赖 sse-protocol」成环。**切仓必须一次完成。**
 3. Client **禁止** `path` 回本开发树（`check-no-main-path.sh`）。切仓后钉 git tag / crates.io `version`，带 `protocol` feature。
-4. 线协议字节与 HTTP JSON **不**随本次搬家而变；破坏的是 **Cargo 包名**（`crabmate-sse-protocol` → `crabmate::sse_protocol`）。
+4. 线协议字节与 HTTP JSON **不**随本次搬家而变；破坏的是 **Cargo 包名**（`crabmate-sse-protocol` → `crabmate::cm_sse_protocol`）。
 5. 产品 git tag **`v0.3.0` 不得**用作 crates.io `0.3.0`：树形状不同。首发单包用 **`0.4.0`**。
 
 ---
@@ -53,14 +53,18 @@ protocol = []
 
 ### 2.2 合并后模块名（Client `use` 映射）
 
+规则：`crabmate-<x>` → 模块 **`cm_<x>`**（连字符改下划线）。crates.io 包名仍是 **`crabmate`**。
+
 | 旧 package | 新路径（`features = ["protocol"]`） |
 |------------|-------------------------------------|
-| `crabmate-types` | `crabmate::types` |
-| `crabmate-display-rules` | `crabmate::display_rules` |
-| `crabmate-api-contract` | `crabmate::api_contract` |
-| `crabmate-chat-export` | `crabmate::chat_export` |
-| `crabmate-turn-layout` | `crabmate::turn_layout` |
-| `crabmate-sse-protocol` | `crabmate::sse_protocol`（**不含** `stream_hub` / `mpsc_send` / 审批桥） |
+| `crabmate-types` | `crabmate::cm_types` |
+| `crabmate-display-rules` | `crabmate::cm_display_rules` |
+| `crabmate-api-contract` | `crabmate::cm_api_contract` |
+| `crabmate-chat-export` | `crabmate::cm_chat_export` |
+| `crabmate-turn-layout` | `crabmate::cm_turn_layout` |
+| `crabmate-sse-protocol` | `crabmate::cm_sse_protocol`（**不含** `stream_hub` / `mpsc_send` / 审批桥） |
+
+根包可再导出别名（**仅 server 组合面**，减少 `src/` 改写）：`cm_types` → `types`，`cm_sse_protocol::sse` → `sse`，`cm_config` → `config`。Client **不要**依赖这些别名，只钉 `cm_*`。
 
 Client 示例：
 
@@ -71,9 +75,9 @@ crabmate = { git = "https://github.com/noisystreet/CrabMate", tag = "v0.4.0", pa
 ```
 
 ```rust
-use crabmate::sse_protocol::{classify_ag_ui_sse_data, SSE_PROTOCOL_VERSION, StreamEndReason};
-use crabmate::api_contract::StatusShellView;
-use crabmate::turn_layout::project_turn_web_v2;
+use crabmate::cm_sse_protocol::{classify_ag_ui_sse_data, SSE_PROTOCOL_VERSION, StreamEndReason};
+use crabmate::cm_api_contract::StatusShellView;
+use crabmate::cm_turn_layout::project_turn_web_v2;
 ```
 
 `crabmate-tui-core` 自身已有 `tokio`，**仍然只开 `protocol`**，不要为图省事开 `server`。
@@ -87,7 +91,7 @@ use crabmate::turn_layout::project_turn_web_v2;
 | `SSE_PROTOCOL_VERSION`、`classify_*`、`sse_frame`、`StreamEndReason` | `sse::stream_hub`、`mpsc_send`、`control_mirror`、`web_approval`、终态 `send_*`（`Sender<String>`） |
 | `sse::protocol` 载荷类型与纯函数 `encode_message` | 依赖 `tokio::sync::mpsc` / `broadcast` 的桥 |
 
-S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），切仓时同一边界收成 `crabmate::sse_protocol` vs `crabmate::sse_runtime`（名可在 S1 定稿）。
+S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），切仓时同一边界收在 `crabmate::cm_sse_protocol` 内用 `cfg(feature = "server")`（不再单列 `sse_runtime` 模块）。
 
 ---
 
@@ -110,7 +114,7 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 **后续约束**
 
 - 线协议仍以 `docs/SSE协议.md` + `fixtures/sse_*_golden.jsonl` 为权威。
-- `docs/Turn布局设计.md` 投影实现指针改为 `crabmate::turn_layout`（本仓模块），不迁 Client。
+- `docs/Turn布局设计.md` 投影实现指针改为 `crabmate::cm_turn_layout`（本仓模块），不迁 Client。
 - 新的仅-WASM 依赖不得加入 `protocol` feature 的依赖边。
 
 ---
@@ -182,30 +186,76 @@ resolver = "2"
 
 （若工具脚本假设 `crates/*` 成员，同步改 pre-commit / lizard / CI cache paths。）
 
-建议物理布局（可微调，S2 开头冻结）：
+### S2.1 冻结：包名与模块目录（2026-08-16）
+
+**包名**：crates.io / Cargo 只有 **`crabmate`**。不再保留 `crabmate-sse-protocol` 等 package 名（兼容空壳包否决，见 §4）。
+
+**规则**：`crabmate-<x>` → 目录 / `mod` **`cm_<x>`**（`-` → `_`）。与现有 `src/agent`、`src/llm`、`src/runtime` **自然错开**，不必再发明 `agent_domain` 一类名字。
+
+**原则**
+
+1. 现有根包 `src/{agent,llm,runtime,web,…}` **保持 composition**（`crate::agent` 执行面路径不变）。
+2. 原 workspace 成员 **1:1** 变成顶层 `mod cm_*`，目录 `src/cm_*/`（由 `crates/crabmate-*/src` `git mv`）。
+3. 不把两棵 `agent_turn` 树硬并成一个目录（`src/agent/agent_turn` vs `src/cm_agent/agent_turn`）。
+4. `protocol` feature 只编译下表「P」列；其余 `cfg(feature = "server")`（默认）。
+5. 原 crate 内 `crate::foo` → `crate::cm_<x>::foo`。根包 `src/` 里 `crabmate_<pkg>::` → `crate::cm_<x>::`。
+6. 组合面别名（`types` / `sse` / `config` / `crate::tools`）仅服务本仓 `src/`，不作为 Client 契约。
+
+**对外（Client / `protocol`）** — 与 §2.2 一致：
+
+| 旧 package | 目录 / `mod` | feature |
+|------------|----------------|---------|
+| `crabmate-types` | `src/cm_types/` | P |
+| `crabmate-display-rules` | `src/cm_display_rules/` | P |
+| `crabmate-api-contract` | `src/cm_api_contract/` | P |
+| `crabmate-chat-export` | `src/cm_chat_export/` | P |
+| `crabmate-turn-layout` | `src/cm_turn_layout/` | P |
+| `crabmate-sse-protocol` | `src/cm_sse_protocol/` | P（无 tokio）；hub/mpsc 等 `cfg(server)` |
+
+根包：`pub use crate::cm_sse_protocol::sse as sse`，保持 `crate::sse::…`。
+
+**对内（仅 `server`）**
+
+| 旧 package | 目录 / `mod` | 说明 |
+|------------|----------------|------|
+| （已有） | `src/agent/` `src/llm/` `src/runtime/` | **不动** |
+| `crabmate-agent` | `src/cm_agent/` | 今日 `src/agent/mod.rs` `pub use crabmate_agent::…` |
+| `crabmate-llm` | `src/cm_llm/` | 今日 `pub use crabmate_llm` |
+| `crabmate-runtime` | `src/cm_runtime/` | 退出码、消息展示、`save-session` 辅助 |
+| `crabmate-config` | `src/cm_config/` | 可 `pub use cm_config as config` |
+| `crabmate-tools` | `src/cm_tools/` | 经 `cm_internal` 再导出可继续叫 `crate::tools` |
+| `crabmate-memory` | `src/cm_memory/` | |
+| `crabmate-workflow` | `src/cm_workflow/` | `crate::agent::workflow` 再导出可保留 |
+| `crabmate-approval` | `src/cm_approval/` | |
+| `crabmate-web-host` | `src/cm_web_host/` | 不与 `src/web/` 合并 |
+| `crabmate-mcp` | `src/cm_mcp/` | |
+| `crabmate-benchmark` | `src/cm_benchmark/` | 不与 `src/runtime/benchmark/` 合并 |
+| `crabmate-internal` | `src/cm_internal/` | **整包一座**，S2 不摊平 |
+| `cmd_mate` | `src/cmd_mate/` | **不是** `crabmate-*`，模块名保持 `cmd_mate` |
+
+**不要在 S2 做**：把 `cm_internal` 拆进根；把两棵 `agent_turn` 合成一目录；给 Client 再导出第二个 crates.io 包名。
+
+物理结果（示意）：
 
 ```text
 src/
-  lib.rs                 # feature 门控 mod
-  types/                 # 原 crates/crabmate-types
-  display_rules/
-  api_contract/
-  chat_export/
-  turn_layout/
-  sse_protocol/          # 无 tokio
-  sse_runtime/           # cfg(feature = "server")
-  …                      # agent / tools / internal / …
+  lib.rs
+  cm_types/ cm_display_rules/ cm_api_contract/ cm_chat_export/ cm_turn_layout/ cm_sse_protocol/
+  cm_agent/ cm_llm/ cm_runtime/ cm_config/ cm_tools/ cm_memory/ cm_workflow/
+  cm_approval/ cm_web_host/ cm_mcp/ cm_benchmark/ cm_internal/
+  agent/ llm/ runtime/ web/ chat_job_queue/ …   # 原根包 composition
+  cmd_mate/
 ```
 
 | ID | 动作 | 验收 |
 |----|------|------|
-| S2.1 | 冻结模块表与 `crate::` 改写规则（脚本或清单）；**不要**先删成员再改一半 `use` | 清单进本 ADR 或 PR 正文 |
-| S2.2 | `git mv` + 改写原 crate 内 `crate::` → `crate::<mod>::`；根 `Cargo.toml` 去掉 members 与 path 依赖 | `cargo check --features server`（或 default） |
-| S2.3 | `protocol`：`cargo check --no-default-features --features protocol --target wasm32-unknown-unknown` | 无 `tokio`/`nix`/`rusqlite`/`axum` 在该图中（`cargo tree -e features`） |
-| S2.4 | 替换 `check-crate-deps.sh`：原禁边改为模块级（workflow ↛ internal 等） | pre-commit 钩子绿 |
-| S2.5 | `check-client-contract.sh`：外仓风格消费者只 `crabmate` + `protocol` | 脚本绿 |
-| S2.6 | 金样路径：`CARGO_MANIFEST_DIR` 从 `crates/foo` 改为根；`turn_project_*.jsonl` 仍本仓 | `cargo test --features server`（至少契约 + runtime 相关） |
-| S2.7 | 文档：`开发文档` 模块表、`Turn布局设计.md`、`crate_dep_policy.md` | 与树一致 |
+| S2.1 | ~~冻结模块表~~ **已写入本节** | 切仓按上表，不现场改名 |
+| S2.2 | ~~`git mv` + 改写 `crate::`；单 `[package]`~~ **已落地** | `cargo check --features server` |
+| S2.3 | ~~`protocol` wasm / `cargo tree` 无 tokio/nix/rusqlite/axum~~ **已落地** | `--no-default-features --features protocol --target wasm32-unknown-unknown --lib` |
+| S2.4 | ~~`check-crate-deps.sh` 改为模块 DAG~~ **已落地** | `src/cm_workflow` ↛ `crate::cm_internal` 等 |
+| S2.5 | ~~`check-client-contract.sh` 只钉 `crabmate` + `protocol`~~ **已落地** | 外仓风格消费者脚本 |
+| S2.6 | ~~金样 `CARGO_MANIFEST_DIR` 改根~~ **已落地** | `fixtures/` 与 `src/cm_*/fixtures/` |
+| S2.7 | ~~文档模块表~~ **已落地** | `开发文档` / `Turn布局设计.md` / `crate_dep_policy.md` |
 
 **禁止**：S2 合入后仍留 `crates/crabmate-*` 作为第二套源码。
 
@@ -263,7 +313,7 @@ src/
 | W1 / W2b | **已完成**；`tool-card` 不回本仓 |
 | W3 / W4 / W5 | **缓做**（无期限）；单包后 `turn-layout` 已是本仓模块，再迁 Client 无益于 crates.io |
 | `client-contract-v0.2.0` | 旧多包钉点；S5 后新 Client 不再需要 `client-contract-v*` 多 package |
-| B2（布局元数据） | 金样继续留本仓 `turn_layout` 模块；不把「迁 Client」当 B2 前置 |
+| B2（布局元数据） | 金样继续留本仓 `cm_turn_layout` 模块；不把「迁 Client」当 B2 前置 |
 
 ---
 

@@ -13,7 +13,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
-use crabmate_web_host::http_types::workspace::WorkspaceCloneStreamBody;
+use crate::cm_web_host::http_types::workspace::WorkspaceCloneStreamBody;
 use futures_util::Stream;
 use serde_json::json;
 use tokio::io::{AsyncReadExt, BufReader};

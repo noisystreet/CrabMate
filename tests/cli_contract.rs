@@ -1,3 +1,4 @@
+#![cfg(feature = "server")]
 //! CLI 契约：legacy argv 映射、[`crabmate::parse_args_from_argv`]、[`crabmate::classify_model_error_message`] 与 [`crabmate::CliExitError`] 退出码（与 `main` 一致）。
 //!
 //! Fixture 位于 `tests/fixtures/cli/`；增删子命令或改映射时请同步更新 JSON。

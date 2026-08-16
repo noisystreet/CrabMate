@@ -40,7 +40,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use crabmate_llm::{E2eMode, build_e2e_backend};
+use crate::cm_llm::{E2eMode, build_e2e_backend};
 
 use crate::config::load_config;
 use crate::context_bootstrap::conversation_turn_bootstrap::compose_new_conversation_messages;

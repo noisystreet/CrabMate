@@ -1,0 +1,579 @@
+//! 有限的 Linux 命令执行工具（白名单、工作目录限制、无 shell 注入）
+
+use std::io;
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use thiserror::Error;
+
+use super::output_util;
+use super::test_result_cache::{
+    TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
+    fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
+};
+use crate::cm_tools::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
+
+use super::command_line_prepare::CdPeelError;
+
+#[path = "command_shell_script.rs"]
+mod command_shell_script;
+#[path = "command_prepare_invocation.rs"]
+mod prepare_invocation;
+use prepare_invocation::{prepare_run_command_invocation, scan_run_command_unsafe_args};
+
+pub use command_shell_script::{
+    argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
+    join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
+};
+
+/// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
+#[derive(Debug, Error)]
+pub enum RunCommandError {
+    #[error("参数解析错误：{0}")]
+    JsonParse(#[from] serde_json::Error),
+    #[error("错误：缺少 command 参数")]
+    MissingCommand,
+    #[error("不允许的命令：{attempted}。允许的命令：{allowed}")]
+    DisallowedCommand { attempted: String, allowed: String },
+    #[error("错误：args 必须是字符串数组")]
+    ArgsNotArray,
+    #[error("错误：参数不允许包含父目录穿越（如 ..、../）或绝对路径（以 / 开头）")]
+    UnsafeArg,
+    /// 参数含 Shell 展开（`$(…)` / `$VAR` / glob 等），且白名单无 `bash`/`sh`、也未经脚本审批。
+    #[error(
+        "错误：参数含 Shell 展开 `{pattern}`。请将 bash 或 sh 加入 allowed_commands，或经 Web 审批后以 bash -c 执行整行脚本"
+    )]
+    ShellVariableDetected { pattern: String },
+    /// `cd` 在无 shell 下不可直接 `exec`；仅支持前缀 `cd <相对目录> && <命令…>`（可多次串联），见 `command_line_prepare::peel_workspace_cd_prefix`.
+    #[error("错误：`cd` 前缀无效：{detail}（当前工作目录：{work_dir}）")]
+    CdPrefixInvalid { detail: String, work_dir: String },
+    #[error("命令调用过于频繁：每秒最多允许 {max_per_sec} 次，请稍后再试")]
+    RateLimited { max_per_sec: u32 },
+    #[error("错误：命令 \"{cmd}\" 不存在或在当前环境中不可用（工作目录：{work_dir}）")]
+    CommandNotFound {
+        cmd: String,
+        work_dir: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("错误：没有权限执行命令 \"{cmd}\"（请检查可执行权限或安全策略）")]
+    PermissionDenied {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
+    #[error("错误：无法执行命令 \"{cmd}\"（系统错误：{source}）")]
+    SpawnOther {
+        cmd: String,
+        #[source]
+        source: io::Error,
+    },
+}
+
+impl RunCommandError {
+    /// 转为 [`ToolError`]，供 `run_command` runner 显式返回（与信封 `error_code` 对齐）。
+    #[must_use]
+    pub fn into_tool_error(self) -> ToolError {
+        let msg = match &self {
+            RunCommandError::CommandNotFound { .. } => self.extended_user_message(),
+            _ => self.user_message(),
+        };
+        match self {
+            RunCommandError::JsonParse(_) => ToolError::invalid_args(msg),
+            RunCommandError::MissingCommand => ToolError {
+                category: ToolFailureCategory::InvalidInput,
+                code: "missing_command".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("missing_command".to_string()),
+                },
+            },
+            RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
+            RunCommandError::ArgsNotArray
+            | RunCommandError::UnsafeArg
+            | RunCommandError::CdPrefixInvalid { .. } => ToolError::invalid_args(msg),
+            RunCommandError::ShellVariableDetected { .. } => ToolError {
+                category: ToolFailureCategory::InvalidInput,
+                code: "shell_variable_detected".to_string(),
+                message: msg,
+                retryable: true,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("shell_variable_detected".to_string()),
+                },
+            },
+            RunCommandError::RateLimited { .. } => ToolError::rate_limited(msg),
+            RunCommandError::CommandNotFound { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "command_not_found".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("command_not_found".to_string()),
+                },
+            },
+            RunCommandError::PermissionDenied { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "permission_denied".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("permission_denied".to_string()),
+                },
+            },
+            RunCommandError::SpawnOther { .. } => ToolError {
+                category: ToolFailureCategory::External,
+                code: "spawn_failed".to_string(),
+                message: msg,
+                retryable: false,
+                legacy_parsed: ParsedLegacyOutput {
+                    ok: false,
+                    exit_code: None,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("spawn_failed".to_string()),
+                },
+            },
+        }
+    }
+
+    /// 简短分类键，供 metrics / 结构化日志（不含命令名等细节时可只记此项）。
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            RunCommandError::JsonParse(_) => "json_parse",
+            RunCommandError::MissingCommand => "missing_command",
+            RunCommandError::DisallowedCommand { .. } => "disallowed_command",
+            RunCommandError::ArgsNotArray => "args_not_array",
+            RunCommandError::UnsafeArg => "unsafe_arg",
+            RunCommandError::CdPrefixInvalid { .. } => "cd_prefix_invalid",
+            RunCommandError::RateLimited { .. } => "rate_limited",
+            RunCommandError::CommandNotFound { .. } => "command_not_found",
+            RunCommandError::PermissionDenied { .. } => "permission_denied",
+            RunCommandError::SpawnOther { .. } => "spawn_other",
+            RunCommandError::ShellVariableDetected { .. } => "shell_variable_detected",
+        }
+    }
+
+    /// 与历史工具输出一致的完整说明。
+    #[must_use]
+    pub fn user_message(&self) -> String {
+        self.to_string()
+    }
+
+    /// 与 [`user_message`] 相同；若为本变体为 [`RunCommandError::CommandNotFound`] 且命中内置表，文末追加 CLI 安装提示。
+    #[must_use]
+    pub fn extended_user_message(&self) -> String {
+        let mut s = self.user_message();
+        if let RunCommandError::CommandNotFound { cmd, .. } = self
+            && let Some(h) = output_util::cli_missing_install_hint(cmd)
+        {
+            s.push_str("\n\n");
+            s.push_str(h);
+        }
+        s
+    }
+}
+
+impl From<CdPeelError> for RunCommandError {
+    fn from(e: CdPeelError) -> Self {
+        match e {
+            CdPeelError::CdPrefixInvalid { detail, work_dir } => {
+                RunCommandError::CdPrefixInvalid { detail, work_dir }
+            }
+            CdPeelError::UnsafeArg => RunCommandError::UnsafeArg,
+            CdPeelError::MissingCommand => RunCommandError::MissingCommand,
+            CdPeelError::SpawnOther { cmd, source } => RunCommandError::SpawnOther { cmd, source },
+        }
+    }
+}
+
+fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> RunCommandError {
+    use io::ErrorKind::*;
+    match e.kind() {
+        NotFound => RunCommandError::CommandNotFound {
+            cmd: cmd.to_string(),
+            work_dir: working_dir.display().to_string(),
+            source: e,
+        },
+        PermissionDenied => RunCommandError::PermissionDenied {
+            cmd: cmd.to_string(),
+            source: e,
+        },
+        _ => RunCommandError::SpawnOther {
+            cmd: cmd.to_string(),
+            source: e,
+        },
+    }
+}
+
+/// 简单的每秒调用限流器状态
+struct RateLimitState {
+    window_sec: u64,
+    count: u32,
+}
+
+/// 全局限流器：在任意 1 秒窗口内最多允许执行的命令数
+const MAX_COMMANDS_PER_SEC: u32 = 5;
+
+static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
+    window_sec: 0,
+    count: 0,
+});
+
+const MAX_OUTPUT_LINES: usize = 500;
+
+/// 可选：`cargo test …` 的进程内结果缓存（与内置 `cargo_test` 工具共用指纹逻辑）。
+pub struct RunCommandTestCacheOpts<'a> {
+    pub enabled: bool,
+    pub max_entries: usize,
+    pub workspace_root: &'a Path,
+}
+
+fn cargo_test_argv_cache_eligible(cmd_args: &[String]) -> bool {
+    if cmd_args.first().map(|s| s.as_str()) != Some("test") {
+        return false;
+    }
+    for a in cmd_args {
+        if a == "--nocapture" || a == "--test-threads" {
+            return false;
+        }
+    }
+    true
+}
+
+pub struct PreparedRunCommand {
+    pub cmd_raw: String,
+    pub cmd_name: String,
+    pub exec_path: Option<PathBuf>,
+    pub cmd_args: Vec<String>,
+    /// `cd rel && …` 前缀展开后的进程工作目录（默认等于调用方传入的 `working_dir`）。
+    pub effective_working_dir: PathBuf,
+    /// 包装成 `bash -c` 前原命令为 `gh` 时仍注入 token。
+    pub inject_gh_token: bool,
+}
+
+/// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
+/// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
+pub fn prepare_run_command_for_pty_spawn(
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+    skip_arg_safety: bool,
+) -> Result<PreparedRunCommand, RunCommandError> {
+    let args = parse_run_command_args_with_repair(args_json)?;
+    let p = prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
+    check_rate_limit()?;
+    Ok(p)
+}
+
+/// 与 [`prepare_run_command_invocation`] 同源：列出 argv 级不安全参数（空 = 无需外部路径审批）。
+pub fn scan_run_command_unsafe_args_json(
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<Vec<String>, RunCommandError> {
+    let args = parse_run_command_args_with_repair(args_json)?;
+    scan_run_command_unsafe_args(&args, working_dir, allowed_commands)
+}
+
+fn run_command_execute_workspace_binary(
+    cmd_raw: &str,
+    cmd_args: &[String],
+    working_dir: &Path,
+    target_path: &Path,
+    max_output_len: usize,
+) -> Result<String, RunCommandError> {
+    let invocation = format_invocation_for_display(cmd_raw, cmd_args);
+    let output = Command::new(target_path)
+        .args(cmd_args)
+        .current_dir(working_dir)
+        .output()
+        .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
+    Ok(format_command_output(&invocation, output, max_output_len))
+}
+
+fn run_cargo_test_with_optional_cache(
+    prepared: &PreparedRunCommand,
+    working_dir: &Path,
+    invocation: &str,
+    max_output_len: usize,
+    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+) -> Result<Option<String>, RunCommandError> {
+    let Some(opts) = test_cache else {
+        return Ok(None);
+    };
+    if prepared.cmd_name != "cargo"
+        || !opts.enabled
+        || !cargo_test_argv_cache_eligible(&prepared.cmd_args)
+    {
+        return Ok(None);
+    }
+    let Some(inputs_fp) = fingerprint_rust_workspace_sources(opts.workspace_root) else {
+        return Ok(None);
+    };
+    let args_fp = cargo_test_run_command_args_fingerprint(&prepared.cmd_args);
+    let key = TestCacheKey {
+        workspace_root: opts.workspace_root.to_path_buf(),
+        kind: TestCacheKind::CargoTestViaRunCommand,
+        args_fingerprint: args_fp,
+        inputs_fingerprint: inputs_fp.clone(),
+    };
+    if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
+        return Ok(Some(wrap_cache_hit(&inputs_fp, &hit)));
+    }
+    let output = Command::new(&prepared.cmd_name)
+        .args(&prepared.cmd_args)
+        .current_dir(working_dir)
+        .output()
+        .map_err(|e| map_spawn_error(&prepared.cmd_name, working_dir, e))?;
+    let formatted = format_command_output(invocation, output, max_output_len);
+    store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
+    Ok(Some(formatted))
+}
+
+/// 在指定工作目录下执行白名单内的 Linux 命令；若 argv 需 glob/`$VAR`/`~` 且白名单含 `bash`/`sh`，则经 `bash -c`（或 `sh -c`）跑整行。
+/// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
+/// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
+pub fn run(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> String {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+    )
+    .unwrap_or_else(|e| e.extended_user_message())
+}
+
+/// 与 [`run`] 相同，失败时返回 [`ToolError`]（显式 `error_code` / 分类，不经字符串启发式）。
+#[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
+pub fn run_try(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> Result<String, ToolError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+    )
+    .map_err(RunCommandError::into_tool_error)
+}
+
+/// 与 [`run`] 相同，失败时返回结构化错误（成功仍为格式化输出字符串）。
+pub fn run_checked(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> Result<String, RunCommandError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+    )
+}
+
+fn run_impl(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> Result<String, RunCommandError> {
+    let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
+    let prepared =
+        prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
+    check_rate_limit()?;
+
+    let invocation = format_invocation_for_display(&prepared.cmd_raw, &prepared.cmd_args);
+
+    if let Some(ref target_path) = prepared.exec_path {
+        return run_command_execute_workspace_binary(
+            &prepared.cmd_raw,
+            &prepared.cmd_args,
+            prepared.effective_working_dir.as_path(),
+            target_path,
+            max_output_len,
+        );
+    }
+
+    if let Some(cached) = run_cargo_test_with_optional_cache(
+        &prepared,
+        prepared.effective_working_dir.as_path(),
+        &invocation,
+        max_output_len,
+        test_cache.as_ref(),
+    )? {
+        return Ok(cached);
+    }
+
+    let mut cmd = Command::new(&prepared.cmd_name);
+    cmd.args(&prepared.cmd_args)
+        .current_dir(&prepared.effective_working_dir);
+    if prepared.inject_gh_token {
+        crate::cm_tools::github_token::apply_gh_token_env(&mut cmd);
+    } else {
+        crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+    }
+    let output = cmd.output().map_err(|e| {
+        map_spawn_error(
+            &prepared.cmd_name,
+            prepared.effective_working_dir.as_path(),
+            e,
+        )
+    })?;
+    Ok(format_command_output(&invocation, output, max_output_len))
+}
+
+fn parse_run_command_args_with_repair(
+    args_json: &str,
+) -> Result<serde_json::Value, RunCommandError> {
+    match serde_json::from_str::<serde_json::Value>(args_json) {
+        Ok(v) => Ok(v),
+        Err(primary_err) => {
+            if let Some(repaired) = super::parse_args::try_repair_run_command_args_json(args_json)
+                && let Ok(v) = serde_json::from_str::<serde_json::Value>(&repaired)
+            {
+                return Ok(v);
+            }
+            Err(RunCommandError::JsonParse(primary_err))
+        }
+    }
+}
+
+fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
+    if command_shell_script::is_shell_dash_c_invocation(cmd_raw, args)
+        && let Some(script) = command_shell_script::dash_c_script_body(args)
+    {
+        let script = script.trim();
+        if !script.is_empty() {
+            return script.to_string();
+        }
+    }
+    let cmd = cmd_raw.trim();
+    if args.is_empty() {
+        cmd.to_string()
+    } else {
+        format!("{} {}", cmd, args.join(" "))
+    }
+}
+
+fn format_command_output(
+    invocation: &str,
+    output: std::process::Output,
+    max_output_len: usize,
+) -> String {
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let truncate =
+        |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
+    let status = output.status;
+    let mut out = format!(
+        "命令：{invocation}\n退出码：{}\n",
+        status.code().unwrap_or(-1)
+    );
+    if !stdout.is_empty() {
+        out.push_str("标准输出：\n");
+        out.push_str(&truncate(&stdout));
+    }
+    if !stderr.is_empty() {
+        out.push_str("标准错误：\n");
+        out.push_str(&truncate(&stderr));
+    }
+    if stdout.is_empty() && stderr.is_empty() && status.success() {
+        out.push_str("(无输出)");
+    }
+    out.trim_end().to_string()
+}
+
+fn now_sec() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn check_rate_limit() -> Result<(), RunCommandError> {
+    // 单元测试并行调用 `run`/`run_gh_vec` 时共享进程级计数，易误触 5/s 上限导致偶发失败。
+    if cfg!(test) {
+        return Ok(());
+    }
+    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
+    let now = now_sec();
+    if now != state.window_sec {
+        state.window_sec = now;
+        state.count = 0;
+    }
+    if state.count >= MAX_COMMANDS_PER_SEC {
+        return Err(RunCommandError::RateLimited {
+            max_per_sec: MAX_COMMANDS_PER_SEC,
+        });
+    }
+    state.count += 1;
+    Ok(())
+}
+
+pub(super) fn check_shell_variable_references(
+    cmd: &str,
+    args: &[String],
+) -> Result<(), RunCommandError> {
+    for a in std::iter::once(cmd).chain(args.iter().map(String::as_str)) {
+        if let Some(pattern) = command_shell_script::detect_shell_expansion_token(a) {
+            return Err(RunCommandError::ShellVariableDetected {
+                pattern: pattern.to_string(),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// 仅 **`cargo test`**：清空 [`RATE_LIMIT`] 窗口计数，避免与其它测试共享限流状态。
+pub fn reset_run_command_rate_limit_for_tests() {
+    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
+    state.window_sec = 0;
+    state.count = 0;
+}
+
+#[cfg(test)]
+#[path = "command_run_tests.rs"]
+mod tests;

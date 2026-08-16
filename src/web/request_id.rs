@@ -1,6 +1,6 @@
 //! HTTP 请求关联 id：入站 `x-request-id`（校验后沿用）或服务端生成；始终写回响应头。
 //!
-//! 对小型 `application/json` 且形似 [`ApiError`](crabmate_api_contract::ApiError) 的响应体，
+//! 对小型 `application/json` 且形似 [`ApiError`](crate::cm_api_contract::ApiError) 的响应体，
 //! 若缺少 `request_id` 则补上与响应头同值的字段（handler 未手动挂载时亦一致）。
 
 use std::sync::atomic::{AtomicU64, Ordering};

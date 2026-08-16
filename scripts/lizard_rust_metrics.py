@@ -2,8 +2,7 @@
 """Rust 圈复杂度：按模块统计 CCN 超阈函数个数，并限制其 CCN 之和（crabmate_agent）。
 
 模块划分：
-  - crates/<crate>
-  - src/<顶层目录或文件>
+  - src/<顶层目录或文件>（含 `src/cm_*` 原 workspace 成员）
 
 门禁：
   1. 各模块中 **CCN > high_ccn_threshold**（默认 10）的函数个数必须 **恰好等于**
@@ -19,7 +18,7 @@
 
 用法：
   python3 scripts/lizard_rust_metrics.py
-  python3 scripts/lizard_rust_metrics.py --module crates/crabmate-tools
+  python3 scripts/lizard_rust_metrics.py --module src/cm_tools
   python3 scripts/lizard_rust_metrics.py --list-above 10
   python3 scripts/lizard_rust_metrics.py --write-caps
   bash scripts/lizard-rust.sh --module src/runtime --list-above 10
@@ -40,7 +39,7 @@ except ImportError:
     sys.exit(1)
 
 ROOT = Path(__file__).resolve().parent.parent
-RUST_ROOTS = [ROOT / "src", ROOT / "crates"]
+RUST_ROOTS = [ROOT / "src"]
 CAPS_PATH = ROOT / "scripts" / "lizard_module_ccn_caps.toml"
 
 
@@ -91,8 +90,6 @@ def module_id_for(path: Path) -> str:
     parts = rel.parts
     if not parts:
         return str(rel)
-    if parts[0] == "crates" and len(parts) >= 2:
-        return f"crates/{parts[1]}"
     if parts[0] == "src":
         if len(parts) == 1:
             return "src"
@@ -472,7 +469,7 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument(
         "--module",
         metavar="ID",
-        help="只检查一个模块，如 crates/crabmate-tools、src/runtime",
+        help="只检查一个模块，如 src/cm_tools、src/runtime",
     )
     p.add_argument(
         "--list-modules",

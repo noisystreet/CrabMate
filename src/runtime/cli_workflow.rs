@@ -9,7 +9,7 @@ use crate::agent::workflow::{
 use crate::config::cli::WorkflowFileCli;
 use crate::config::{AgentConfig, ExposeSecret};
 use crate::runtime::cli::cli_effective_work_dir;
-use crabmate_workflow::config::WorkflowConfig;
+use crate::cm_workflow::config::WorkflowConfig;
 
 fn load_author_yaml_source(path: &Path) -> Result<String, String> {
     let text =
@@ -39,7 +39,7 @@ pub fn run_workflow_compile_command(cli: &WorkflowFileCli) -> Result<(), String>
 fn print_workflow_validate_json(
     path: &Path,
     author_mode: &str,
-    spec: &crabmate_workflow::model::WorkflowSpec,
+    spec: &crate::cm_workflow::model::WorkflowSpec,
     layers: &[Vec<String>],
 ) -> Result<(), String> {
     let payload = serde_json::json!({
@@ -63,7 +63,7 @@ fn print_workflow_validate_json(
 fn print_workflow_validate_human(
     path: &Path,
     author_mode: &str,
-    spec: &crabmate_workflow::model::WorkflowSpec,
+    spec: &crate::cm_workflow::model::WorkflowSpec,
     layers: &[Vec<String>],
 ) {
     println!("workflow validate: OK");

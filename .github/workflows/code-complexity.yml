@@ -43,13 +43,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Golden turn project web (fixtures/turn_project_web_golden.jsonl)
-        run: cargo test -p crabmate-turn-layout golden_turn_project_web --no-fail-fast
+        run: cargo test --lib golden_turn_project_web --no-fail-fast
 
       - name: Golden turn route decision (fixtures/turn_route_decision_golden.jsonl)
         run: cargo test golden_turn_route_decision --no-fail-fast
 
       - name: Golden outer loop phase (fixtures/outer_loop_phase_golden.jsonl)
-        run: cargo test -p crabmate-agent golden_outer_loop_phase --no-fail-fast
+        run: cargo test --lib golden_outer_loop_phase --no-fail-fast
 
   turn-completion-golden:
     runs-on: ubuntu-latest
@@ -79,7 +79,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Golden acceptance regression (fixtures/acceptance_regression.jsonl)
-        run: cargo test golden_acceptance_regression -p crabmate-agent --no-fail-fast
+        run: cargo test --lib golden_acceptance_regression --no-fail-fast
 
   final-plan-gate-golden:
     runs-on: ubuntu-latest
@@ -93,11 +93,11 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Golden final plan gate (crates/crabmate-agent/fixtures/final_plan_gate_golden.jsonl)
-        run: cargo test -p crabmate-agent golden_final_plan_gate --no-fail-fast
+      - name: Golden final plan gate (src/cm_agent/fixtures/final_plan_gate_golden.jsonl)
+        run: cargo test --lib golden_final_plan_gate --no-fail-fast
 
       - name: Golden workflow→plan requirement (fixtures/workflow_to_plan_requirement_golden.jsonl)
-        run: cargo test -p crabmate-agent golden_workflow_to_plan_requirement --no-fail-fast
+        run: cargo test --lib golden_workflow_to_plan_requirement --no-fail-fast
 
   workflow-reflection-golden:
     runs-on: ubuntu-latest

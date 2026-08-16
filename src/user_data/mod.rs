@@ -6,5 +6,5 @@ mod cli_llm_align;
 mod merge;
 
 pub use cli_llm_align::{apply_user_data_llm_overrides, apply_user_data_web_api_bearer};
-pub use crabmate_internal::user_data::*;
+pub use crate::cm_internal::user_data::*;
 pub use merge::{merge_client_llm_body, merge_executor_llm_body};

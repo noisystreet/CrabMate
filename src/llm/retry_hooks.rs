@@ -1,7 +1,7 @@
-//! 宿主侧 [`crabmate_llm::LlmRetryHooks`] 实现。
+//! 宿主侧 [`crate::cm_llm::LlmRetryHooks`] 实现。
 
-use crabmate_llm::{LlmRetryDecisionPoint, LlmRetryHooks};
-use crabmate_types::{Message, message_content_as_str};
+use crate::cm_llm::{LlmRetryDecisionPoint, LlmRetryHooks};
+use crate::cm_types::{Message, message_content_as_str};
 
 pub struct CrabmateLlmRetryHooks;
 

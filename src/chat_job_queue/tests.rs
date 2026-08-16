@@ -1,4 +1,4 @@
-use crabmate_sse_protocol::StreamEndReason;
+use crate::cm_sse_protocol::StreamEndReason;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 

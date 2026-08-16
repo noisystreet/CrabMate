@@ -11,5 +11,5 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
-        .merge(crabmate_web_host::routes::web_ui::router())
+        .merge(crate::cm_web_host::routes::web_ui::router())
 }

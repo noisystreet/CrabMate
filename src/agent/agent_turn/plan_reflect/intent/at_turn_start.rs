@@ -4,8 +4,8 @@
 //! 启发式直接看最新真实 user 句（不改写「继续」/确认续接为前序任务）。
 
 use crate::agent::plan_artifact::PlanStepExecutorKind;
-use crabmate_agent::agent_turn::TurnStartSnapshot;
-use crabmate_types::SessionMode;
+use crate::cm_agent::agent_turn::TurnStartSnapshot;
+use crate::cm_types::SessionMode;
 
 use crate::agent::agent_turn::params::RunLoopParams;
 
@@ -16,8 +16,8 @@ fn should_skip_act_utterance_heuristics(session_mode: SessionMode) -> bool {
 }
 
 /// 最新真实用户任务句（跳过编排注入）；供 Act 关键词启发式使用。
-fn latest_user_task_for_heuristics(messages: &[crabmate_types::Message]) -> String {
-    crabmate_types::last_real_user_task_content(messages, false)
+fn latest_user_task_for_heuristics(messages: &[crate::cm_types::Message]) -> String {
+    crate::cm_types::last_real_user_task_content(messages, false)
         .unwrap_or_default()
         .to_string()
 }
@@ -56,7 +56,7 @@ fn apply_act_utterance_heuristics(p: &mut RunLoopParams<'_>, task: &str) {
 #[cfg(test)]
 mod skip_heuristics_tests {
     use super::should_skip_act_utterance_heuristics;
-    use crabmate_types::SessionMode;
+    use crate::cm_types::SessionMode;
 
     #[test]
     fn skips_ask_plan() {
@@ -270,8 +270,8 @@ mod tests {
     fn latest_user_task_skips_orchestration_injection() {
         use super::latest_user_task_for_heuristics;
         let messages = vec![
-            crabmate_types::Message::user_only("编译 hpcg"),
-            crabmate_types::Message::user_only("【编排纠偏】继续构建"),
+            crate::cm_types::Message::user_only("编译 hpcg"),
+            crate::cm_types::Message::user_only("【编排纠偏】继续构建"),
         ];
         assert_eq!(latest_user_task_for_heuristics(&messages), "编译 hpcg");
     }

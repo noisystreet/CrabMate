@@ -1,7 +1,7 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
 **状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；E2–E4 未落地。本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。运维 CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
-**目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`crates/crabmate-turn-layout`** 前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
+**目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
 
 ---
 
@@ -82,7 +82,7 @@ flowchart TB
 
 | 层 | 位置 | 职责 |
 |----|------|------|
-| **Canonical Turn** | `crates/crabmate-turn-layout` | `Turn` + `TurnEvent` reducer；`project_turn` 输出金样行类型 |
+| **Canonical Turn** | `src/cm_turn_layout`（`protocol`） | `Turn` + `TurnEvent` reducer；`project_turn` 输出金样行类型 |
 | **SSE 段边界** | `sse::protocol`（`turn_segment_start` / `turn_segment_end` / `turn_tool_phase_end`） | 在 `tool_call` 前声明锚点；工具批结束标记 |
 | **Web 投影** | `frontend/.../composer_stream/` | `TurnLayout` 操作 `messages`；`TurnCanonicalState` 驱动旁注 upsert |
 
@@ -92,7 +92,7 @@ flowchart TB
 
 ## 4. 模块与文件索引
 
-### 4.1 共享 crate：`crates/crabmate-turn-layout`
+### 4.1 共享模块：`src/cm_turn_layout`
 
 | 文件 | 内容 |
 |------|------|
@@ -102,7 +102,7 @@ flowchart TB
 | `project.rs` | `project_turn` → `Vec<ProjectedRow>` |
 
 **金样**：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 事件形状 + v2 stored sync）
-**测试**：`cargo test -p crabmate-turn-layout golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
+**测试**：`cargo test --lib golden_turn_project` · `golden_turn_project_web` · `cd ../crabmate-client/frontend && cargo test --lib golden_turn_web_stored_sync`
 
 ### 4.2 后端 emit
 
@@ -440,7 +440,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | 机制 | 说明 |
 |------|------|
-| canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs) |
+| canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../src/cm_turn_layout/project.rs) |
 | 落盘 | `TurnRowQueue::upsert_commentary_before_tool` / `upsert_streaming_anchored_commentary`：按 `tool_call_id` upsert `turn-commentary-*`；工具未到时暂挂 loading 前，到达后锚定工具前 |
 | 流式 | 带 `before_tool_call_id` 的 open 旁白**不**写 loading overlay；无锚点的短暂段仍可走 overlay。锚定旁白在**工具尚未声明**时即落盘（见 §14 I15） |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
@@ -449,7 +449,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
-**生产投影**：[`project_turn_web_v2`](../../crates/crabmate-turn-layout/project.rs)。Web 已移除 v1 batch 特判；crate 级 [`project_turn_web`](../../crates/crabmate-turn-layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
+**生产投影**：[`project_turn_web_v2`](../../src/cm_turn_layout/project.rs)。Web 已移除 v1 batch 特判；模块级 [`project_turn_web`](../../src/cm_turn_layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
 
 Web `sync_turn_projection` / `sync_stream_preview` 以 `tool_call_id` 稳定消息 ID upsert 到对应工具之前；同 ID 可更新正文，错序时重排到工具前。
 

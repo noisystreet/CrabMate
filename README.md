@@ -214,4 +214,4 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Workspace crates**: `crates/crabmate-sse-protocol` (SSE control-plane contract).
+- **Single crate**: `crabmate` with default feature **`server`**. Client WASM pins **`protocol`** (`crabmate::cm_sse_protocol`, `cm_types`, …).

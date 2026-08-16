@@ -1,5 +1,5 @@
 # SSE 控制面契约金样（V1 JSON 形状）：每行 `描述<TAB>JSON<TAB>期望分类`（stop|handled|plain）
-# 分类须与 crates/crabmate-sse-protocol/control_classify.rs（`classify_sse_control_outcome`）一致；
+# 分类须与 src/cm_sse_protocol/control_classify.rs（`classify_sse_control_outcome`）一致；
 # 现行 Web 消费为 AG-UI（见 fixtures/sse_ag_ui_golden.jsonl + frontend/src/api/chat_stream/parser_v2.rs）。
 
 protocol v only	{"v":1}	handled

@@ -62,7 +62,7 @@ pub(super) async fn stream_job_setup_runtime(
             resume_ring_cap: crate::sse::protocol::SSE_RESUME_RING_CAP,
             job_id,
             terminal_order: Some(
-                crabmate_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED.to_string(),
+                crate::cm_sse_protocol::SSE_TERMINAL_ORDER_SAVED_BEFORE_FINISHED.to_string(),
             ),
         },
     });

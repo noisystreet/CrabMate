@@ -45,19 +45,19 @@ pub(crate) fn reject_if_client_sse_protocol_invalid(
     let supported = crate::sse::protocol::SSE_PROTOCOL_VERSION;
     if v == 0 {
         return Err(bad_request(
-            crabmate_api_contract::error_codes::INVALID_SSE_CLIENT_PROTOCOL,
+            crate::cm_api_contract::error_codes::INVALID_SSE_CLIENT_PROTOCOL,
             "client_sse_protocol 不能为 0",
         ));
     }
     if v > supported {
         return Err(bad_request(
-            crabmate_api_contract::error_codes::SSE_CLIENT_TOO_NEW,
+            crate::cm_api_contract::error_codes::SSE_CLIENT_TOO_NEW,
             format!("客户端 SSE 协议版本 v{v} 高于服务端 v{supported}"),
         ));
     }
     if v < supported {
         return Err(bad_request(
-            crabmate_api_contract::error_codes::SSE_PROTOCOL_MISMATCH,
+            crate::cm_api_contract::error_codes::SSE_PROTOCOL_MISMATCH,
             format!("仅支持 SSE 协议版本 {supported}（收到 v{v}）"),
         ));
     }
@@ -388,7 +388,7 @@ pub(super) async fn build_messages_for_turn(
 #[cfg(test)]
 mod client_sse_protocol_tests {
     use super::reject_if_client_sse_protocol_invalid;
-    use crabmate_api_contract::error_codes;
+    use crate::cm_api_contract::error_codes;
 
     #[test]
     fn omits_ok() {

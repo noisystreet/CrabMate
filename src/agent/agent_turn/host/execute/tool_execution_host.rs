@@ -9,7 +9,7 @@ use crate::agent::agent_turn::execute::tool_dispatch::ToolDispatch;
 use crate::agent::agent_turn::execute::tool_execution_trait::{
     ParallelPrefetchFailures, ParallelPrefetchParams, ToolExecutionHost,
 };
-use crabmate_internal::tool_registry::{self, DispatchToolParams, HandlerId};
+use crate::cm_internal::tool_registry::{self, DispatchToolParams, HandlerId};
 
 use crate::agent::per_coord::PerCoordinator;
 use crate::agent::workflow_tool_dispatch;

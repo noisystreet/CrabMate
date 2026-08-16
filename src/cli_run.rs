@@ -237,9 +237,9 @@ async fn try_early_e2e(
     let api_key = read_llm_api_key_from_env_lenient(&cfg);
 
     let mode = match e2e.mode.as_str() {
-        "record" => crabmate_llm::E2eMode::Record,
-        "replay" => crabmate_llm::E2eMode::Replay,
-        _ => crabmate_llm::E2eMode::Real,
+        "record" => crate::cm_llm::E2eMode::Record,
+        "replay" => crate::cm_llm::E2eMode::Replay,
+        _ => crate::cm_llm::E2eMode::Real,
     };
 
     let artifacts_root = e2e

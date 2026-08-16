@@ -1,9 +1,10 @@
+#![cfg(feature = "server")]
 //! `workflow_execute` 在设置 `CM_WORKFLOW_CHROME_TRACE_DIR` 时写入 Chrome trace，并在报告 JSON 中带 `chrome_trace_path`。
 
 use crabmate::agent::workflow::{WorkflowApprovalMode, run_workflow_execute_tool};
+use crabmate::cm_workflow::config::WorkflowConfig;
 use crabmate::config::{AgentConfig, ExposeSecret};
 use crabmate::load_config;
-use crabmate_workflow::config::WorkflowConfig;
 use std::ffi::OsString;
 use std::path::Path;
 use std::sync::Mutex;

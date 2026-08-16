@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crabmate::crabmate_llm::{E2eMode, FileTraceSink, TraceSink};
+use crabmate::cm_llm::{E2eMode, FileTraceSink, TraceSink};
 
 use super::error_classify;
 use super::test_server::TestServer;

@@ -12,7 +12,7 @@ use crate::types::{
     ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
     message_content_as_str, message_content_into_text_lossy,
 };
-use crabmate_agent::context_budget_pressure::{
+use crate::cm_agent::context_budget_pressure::{
     effective_summary_trigger_for_turn, resolve_context_budget_pressure,
     scale_message_pipeline_char_budget,
 };
@@ -53,7 +53,7 @@ pub(crate) fn build_context_summary_side_messages(
     let system = {
         let s = cfg.context_pipeline.context_summary_system.trim();
         if s.is_empty() {
-            crabmate_config::embedded_context_summary_system().to_string()
+            crate::cm_config::embedded_context_summary_system().to_string()
         } else {
             s.to_string()
         }
@@ -61,7 +61,7 @@ pub(crate) fn build_context_summary_side_messages(
     let template = {
         let t = cfg.context_pipeline.context_summary_user_template.trim();
         if t.is_empty() {
-            crabmate_config::embedded_context_summary_user_template()
+            crate::cm_config::embedded_context_summary_user_template()
         } else {
             t
         }
@@ -242,7 +242,7 @@ fn context_summary_attempt_prep(
 
 fn build_context_summary_chat_request(cfg: &AgentConfig, transcript: &str) -> ChatRequest {
     let sum_messages = build_context_summary_side_messages(cfg, transcript);
-    let llm_cfg = crabmate_types::llm_config::LlmConfig {
+    let llm_cfg = crate::cm_types::llm_config::LlmConfig {
         llm: cfg.llm.clone(),
         sampling: cfg.llm_sampling.clone(),
         vendor_flags: cfg.llm_vendor_flags.clone(),

@@ -9,7 +9,6 @@
 /// check_abort!(ctx.io, AgentTurnSubPhase::Planner);
 /// // 后面的代码只有未取消时才会执行
 /// ```
-#[macro_export]
 macro_rules! check_abort {
     ($io:expr, $phase:expr) => {{
         let io = &$io;
@@ -35,3 +34,5 @@ macro_rules! check_abort {
         }
     }};
 }
+
+pub(crate) use check_abort;

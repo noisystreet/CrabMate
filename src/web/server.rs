@@ -28,7 +28,7 @@ pub(crate) fn build_app(
             super::chat_handlers::require_web_api_bearer_auth,
         ));
     }
-    protected_api = crabmate_web_host::serve::layer_protected_body_limit(protected_api);
+    protected_api = crate::cm_web_host::serve::layer_protected_body_limit(protected_api);
     let mut app = Router::new()
         .merge(protected_api)
         .route("/openapi.json", get(super::openapi::openapi_json_handler))
@@ -36,9 +36,9 @@ pub(crate) fn build_app(
     if let Some(e2e) = super::routes::e2e_fixtures::router() {
         app = app.merge(e2e);
     }
-    let cors_layer = crabmate_web_host::try_cors_layer(&cors_allowed_origins);
+    let cors_layer = crate::cm_web_host::try_cors_layer(&cors_allowed_origins);
     let allow_cross_origin_uploads = cors_layer.is_some();
-    app = crabmate_web_host::serve::mount_uploads_and_spa(
+    app = crate::cm_web_host::serve::mount_uploads_and_spa(
         app,
         uploads_dir_for_static,
         static_dir,

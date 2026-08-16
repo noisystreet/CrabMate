@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crabmate_sse_protocol::StreamEndReason;
+use crate::cm_sse_protocol::StreamEndReason;
 use log::{debug, error, info};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
