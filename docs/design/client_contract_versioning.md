@@ -155,7 +155,7 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 
 ### 4.3 与 crates.io
 
-权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md) — **只发布根包 `crabmate` `0.4.0`**（`server` / `protocol` feature），不发布 `crabmate-sse-protocol` 等成员。落地前默认渠道仍是 git tag（§4.1）。落地后 Client 钉 `crabmate` + `features = ["protocol"]`；`v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。
+权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md) — **只发布根包 `crabmate` `0.4.0`**（`server` / `protocol` feature），不发布 `crabmate-sse-protocol` 等成员。落地前默认渠道仍是 git tag（§4.1）。落地后 Client 钉 `crabmate` + `features = ["protocol"]`；`v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。改 `version` 前先做该文 **S4.5**（semver 白名单；`doc(hidden)` 不承诺；OpenAPI 补 MCP / web-api-bearer）。
 
 ---
 

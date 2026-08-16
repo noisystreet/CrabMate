@@ -93,6 +93,25 @@ use crabmate::cm_turn_layout::project_turn_web_v2;
 
 S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），切仓时同一边界收在 `crabmate::cm_sse_protocol` 内用 `cfg(feature = "server")`（不再单列 `sse_runtime` 模块）。
 
+### 2.4 首发 `0.4.0` 的 semver 承诺
+
+`0.4.0` 把默认 `server` 面冻进 crates.io。**承诺**与 **不承诺** 必须在改 `version` 之前写进 rustdoc / 中英 README（波次 **S4.5**），避免下游把 `#[doc(hidden)]` 当成稳定 SDK。
+
+| 承诺（semver） | 不承诺 |
+|----------------|--------|
+| **`protocol`**：六个模块 `cm_types` / `cm_api_contract` / `cm_sse_protocol` / `cm_turn_layout` / `cm_display_rules` / `cm_chat_export` 上 Client 已用的符号 | `#[doc(hidden)]` 的 `cm_agent` / `cm_llm` / `cm_config` / `cm_workflow` / `cm_internal`、`e2e_scenario`、`test_serve` |
+| **`server`**：组合面模块名 `agent` / `config` / `llm` / `sse` / `types` 的**存在**；根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*`、`ProcessHandles`、`tool_sandbox` 等，以 `src/lib.rs` 为准） | `agent::agent_turn` 等组合面**内部路径**；把 `crabmate` 当通用嵌入式 Agent SDK |
+| 线协议：`docs/SSE协议.md` + `cm_api_contract` 错误码 + `ChatRequestBody` | `GET /openapi.json` 在 S4.5.3 补齐前视为**摘要**，不是完整路由表 |
+
+HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审批、会话 revision）。默认 `web_api_require_bearer=false` 与「密钥为空则中间件不校验」是产品选择，**不**在首发前改行为。
+
+**首发前不做**（会把 S4 拖成又一次大切仓；若将来要做须**单独 PR 且在 S5 之前**，否则 `0.4.0` 后再缩是又一次 breaking）：
+
+- 把 hidden 模块改成真正 `pub(crate)`（E0365：整模块 `pub use` 需要源模块保持 `pub`）
+- 把 `server` 拆成无 axum 的 agent + `web` + `mcp`
+- 合并 `src/agent` 与 `src/cm_agent` 两棵 `agent_turn`
+- 给 `/chat` 加幂等键；收紧默认 Bearer
+
 ---
 
 ## 3. Consequences
@@ -116,6 +135,7 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 - 线协议仍以 `docs/SSE协议.md` + `fixtures/sse_*_golden.jsonl` 为权威。
 - `docs/Turn布局设计.md` 投影实现指针改为 `crabmate::cm_turn_layout`（本仓模块），不迁 Client。
 - 新的仅-WASM 依赖不得加入 `protocol` feature 的依赖边。
+- 首发前按 **§2.4 / S4.5** 写清白名单；`doc(hidden)` **不是** semver 围栏。
 
 ---
 
@@ -142,11 +162,12 @@ S0  本文 + 索引（本 PR）
 S1  现仓：sse-protocol 切开 protocol/runtime（tokio 可选）
 S2  切仓：单一 [package]，feature 门控，禁边脚本改模块 DAG
 S3  Client：钉 v0.4.0-pre / rev，features=["protocol"]
+S4.5 稳定面说明 + OpenAPI 补洞（**先于**改 version）
 S4  元数据 + cargo publish --dry-run
 S5  crates.io 真发 0.4.0 + 文档 / Client 改 version
 ```
 
-S3 可与 S2 末尾叠：S2 合入并打 **`v0.4.0-alpha.1`**（或 `rev`）后 Client 再合。禁止 S5 早于 S3 绿。
+S3 可与 S2 末尾叠：S2 合入并打 **`v0.4.0-alpha.1`**（或 `rev`）后 Client 再合。禁止 S5 早于 S3 绿。**S4.5 须在 S4.1 改 `version` 之前合入**（可与 S4 同波，但不要和 dry-run 塞进同一个 PR）。
 
 ### S0 — 文档
 
@@ -271,18 +292,30 @@ src/
 | S3.3 | `contract_pin.md` / `check-no-main-path.sh` | 允许 git/crates.io `crabmate`，仍禁 path 回 agent 仓 | 脚本绿 |
 | S3.4 | Playwright / `make frontend-check` | 与 Server `v0.4.0-alpha` 或 `rev` 对齐 | CI 绿 |
 
+### S4.5 — 契约说明与 OpenAPI 补洞（先于改 version）
+
+**入口**：S3 绿（Client 已钉 `protocol`）。**单独 PR**，不要和 S4.1–S4.3 绑在一起。
+
+| ID | 仓 | 动作 | 验收 |
+|----|------|------|------|
+| S4.5.1 | rustdoc `src/lib.rs` + 中英 README | 写清 §2.4 白名单：`protocol` 六模块；`server` 显式入口；hidden / 内部路径不承诺 | 读者能区分「线契约」与「带库的服务器」 |
+| S4.5.2 | 将打进 `cargo package` 的注释 | 去掉仍写旧 workspace 包名的误导（如 `cm_api_contract` 仍称 `crabmate-web-host`） | 发布包内无「本 crate crabmate-*」类过时指称 |
+| S4.5.3 | `GET /openapi.json` | 补已挂载的 `/user-data/mcp-servers*`、`PUT /user-data/secrets/web-api-bearer`；测试「axum 路由表 vs OpenAPI paths」（E2E 夹具路由除外） | 漏路径会 fail；OpenAPI 仍**不**替代 `docs/SSE协议.md` |
+
 ### S4 — publish 准备
 
-**入口**：S2+S3 绿。
+**入口**：S3 + S4.5 绿。
 
 | ID | 动作 | 验收 |
 |----|------|------|
 | S4.1 | `[package]`：`version = "0.4.0"`、`repository`、`readme`、`include`（`config/`、`man/`、`LICENSE*`；排除巨大无关夹具若有） | `cargo package --list` 合理 |
 | S4.2 | `cargo publish --dry-run --allow-dirty` 在干净树改为不 dirty | dry-run 成功 |
 | S4.3 | `cargo deny` / 许可证与 `deny.toml` | 与 CI 一致 |
-| S4.4 | README：`cargo install crabmate`；Client 钉 `0.4.0` + `protocol` | 中英 README 各一段 |
+| S4.4 | README：`cargo install crabmate`；Client 钉 `0.4.0` + `protocol`（可与 S4.5.1 同改 README，但 **version 数字仍放本步**） | 中英 README 各一段 |
 
 ### S5 — 真发
+
+**入口**：S4 dry-run 绿（含 S4.5）。
 
 | ID | 动作 | 验收 |
 |----|------|------|
@@ -301,9 +334,10 @@ src/
 | protocol 依赖图 | `cargo tree --no-default-features --features protocol` 不含 tokio/nix/rusqlite/axum |
 | server | `cargo test`（default / `--features server`） |
 | 契约门禁 | `bash scripts/check-client-contract.sh` |
+| OpenAPI vs 路由 | S4.5.3 落地后的路由表对照测试 |
 | Client | `make frontend-check`；tui-core 测试 |
 | 禁 path | Client `scripts/check-no-main-path.sh` |
-| publish | `cargo publish --dry-run`（S4） |
+| publish | `cargo publish --dry-run`（S4；**S4.5 已合**） |
 
 ---
 
@@ -333,3 +367,4 @@ src/
 |------|------|
 | 2026-08-16 | 初稿：单包 `0.4.0` + `server`/`protocol`；切仓一次完成；W3 不阻塞 |
 | 2026-08-16 | 收紧顶层 `pub`：protocol 无别名；server `cm_*` 实现模块 `pub(crate)` |
+| 2026-08-16 | S4.5：首发前写清 semver 白名单与 OpenAPI 漏路径；可见性再收 / feature 拆分不进 version PR |

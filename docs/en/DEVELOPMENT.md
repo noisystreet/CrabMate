@@ -106,7 +106,7 @@ Update this table when top-level duties or crate boundaries change. **Do not** m
 | **`crabmate-chat-export`** | Export envelope (raw / display) |
 | **`observability`** | Tracing init |
 
-Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases); server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]`. Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
+Implementations live under `src/cm_*` with root composition in `src/{agent,llm,runtime,web,…}`. **Public surface:** `protocol` exports only the six `cm_*` contract modules (no `types`/`sse` aliases); server composition is `agent` / `config` / `llm`. Domain modules without a module-level re-export are `pub(crate)`; the rest are `#[doc(hidden)]` (**not** a semver promise — see [`crates_io_single_package.md`](../design/crates_io_single_package.md) §2.4 / S4.5 before the first publish). Forbidden edges: **`scripts/check-crate-deps.sh`**, **`docs/design/crate_dep_policy.md`**, **`web_host_extract.md`**.
 
 ## Frontend (summary)
 
