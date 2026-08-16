@@ -6,7 +6,7 @@
 //!
 //! 金样：`fixtures/turn_project_golden.jsonl`（逐步 `project_turn`）、`fixtures/turn_project_web_golden.jsonl`（Web 块布局 `project_turn_web`）、
 //! `fixtures/turn_project_projection_golden.jsonl`（`project_turn_projection` finalized/active）；
-//! 测试：`cargo test -p crabmate-turn-layout golden_turn_project` / `golden_turn_project_web` / `golden_turn_project_projection`。
+//! 测试：`cargo test --lib golden_turn_project` / `golden_turn_project_web` / `golden_turn_project_projection`。
 
 mod event;
 mod model;

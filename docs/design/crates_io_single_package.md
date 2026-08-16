@@ -64,7 +64,7 @@ protocol = []
 | `crabmate-turn-layout` | `crabmate::cm_turn_layout` |
 | `crabmate-sse-protocol` | `crabmate::cm_sse_protocol`（**不含** `stream_hub` / `mpsc_send` / 审批桥） |
 
-根包可再导出别名（**仅 server 组合面**，减少 `src/` 改写）：`cm_types` → `types`，`cm_sse_protocol::sse` → `sse`，`cm_config` → `config`。Client **不要**依赖这些别名，只钉 `cm_*`。
+根包可再导出别名（**仅 `server` 组合面**，减少 `src/` 改写）：`cm_types` → `types`，`cm_sse_protocol::sse` → `sse`，`cm_config` → `config`。这些别名 **`cfg(feature = "server")`**，`protocol`-only **编译不过** `crabmate::types` / `crabmate::sse`。Client **不要**依赖这些别名，只钉 `cm_*`。
 
 Client 示例：
 
@@ -109,7 +109,7 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 - 一次大切仓：各原 crate 内 `crate::` 改为 `crate::<mod>::`（或等价 `super`）。
 - 禁边脚本 `check-crate-deps.sh`（`cargo tree -p`）失效，须改成**模块** DAG 检查。
 - Client 全量改 `use` + lockfile；旧包名无法从同一 crate 再导出为第二个 crates.io 名。
-- 根包 `lib.rs` 公共 API 面变大；须在文档标明 **`protocol` 为稳定契约、`server` 模块不承诺 semver**。
+- 根包 `lib.rs`：**`protocol` 为稳定契约**（六个 `cm_*`）；**`server` 组合面** `agent` / `config` / `llm` / `sse` / `types` 与显式 `pub use`。无再导出的实现模块 `pub(crate)`；因整模块 `pub use` 必须保持 `pub` 的标 `#[doc(hidden)]`。
 
 **后续约束**
 
@@ -199,7 +199,8 @@ resolver = "2"
 3. 不把两棵 `agent_turn` 树硬并成一个目录（`src/agent/agent_turn` vs `src/cm_agent/agent_turn`）。
 4. `protocol` feature 只编译下表「P」列；其余 `cfg(feature = "server")`（默认）。
 5. 原 crate 内 `crate::foo` → `crate::cm_<x>::foo`。根包 `src/` 里 `crabmate_<pkg>::` → `crate::cm_<x>::`。
-6. 组合面别名（`types` / `sse` / `config` / `crate::tools`）仅服务本仓 `src/`，不作为 Client 契约。
+6. 组合面别名（`types` / `sse` / `config` / `crate::tools`）仅服务本仓 `src/`，**`cfg(feature = "server")`**，不作为 Client 契约。
+7. 无组合面模块再导出的 server 实现（`cm_tools`、`cmd_mate`、`cm_runtime`、`cm_memory` 等）为 **`pub(crate)`**。`cm_agent` / `cm_config` / `cm_llm` / `cm_workflow` / `cm_internal` 因 `pub use` 整模块（`agent` / `config` / `http_client` / `workflow` / `tool_sandbox`）须保持 `pub`，标 **`#[doc(hidden)]`**，不作为 Client 契约。
 
 **对外（Client / `protocol`）** — 与 §2.2 一致：
 
@@ -212,7 +213,7 @@ resolver = "2"
 | `crabmate-turn-layout` | `src/cm_turn_layout/` | P |
 | `crabmate-sse-protocol` | `src/cm_sse_protocol/` | P（无 tokio）；hub/mpsc 等 `cfg(server)` |
 
-根包：`pub use crate::cm_sse_protocol::sse as sse`，保持 `crate::sse::…`。
+根包：`pub use crate::cm_sse_protocol::sse` **仅 server**，保持本仓 `crate::sse::…`。`protocol`-only 只用 `crabmate::cm_sse_protocol`。
 
 **对内（仅 `server`）**
 
@@ -331,3 +332,4 @@ src/
 | 日期 | 说明 |
 |------|------|
 | 2026-08-16 | 初稿：单包 `0.4.0` + `server`/`protocol`；切仓一次完成；W3 不阻塞 |
+| 2026-08-16 | 收紧顶层 `pub`：protocol 无别名；server `cm_*` 实现模块 `pub(crate)` |

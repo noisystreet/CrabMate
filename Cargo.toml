@@ -135,7 +135,7 @@ assets = [
 
 [features]
 default = ["server"]
-## 线契约：类型、SSE 分类/帧、Turn 布局、导出 schema（无 tokio）。Client WASM 只开本 feature。
+## 线契约：类型、SSE 分类/帧、Turn 布局、导出 schema（无 tokio）。Client WASM 只开本 feature；模块以 `cfg(feature = "protocol")` 门控（`server` 会启用本 feature）。
 protocol = []
 ## 默认：HTTP serve、运维 CLI、工具执行。含 protocol。
 server = [
