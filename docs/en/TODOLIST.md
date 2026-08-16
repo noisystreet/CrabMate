@@ -19,7 +19,8 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] Follow **`docs/design/crates_io_single_package.md`**: S0 docs → S1 sse-protocol features → S2 merge workspace → S3 Client pin `protocol` → S4 dry-run → S5 publish `0.4.0`. Display-sink W1–W2b done; **W3/W4/W5 deferred**.
+- [ ] **S3**: Client pin single crate `crabmate` + `features = ["protocol"]` (git rev **`27c1fd3a`** / #855); in progress: [crabmate-client#62](https://github.com/noisystreet/crabmate-client/pull/62). Remove this item after that PR merges.
+- [ ] **S4/S5**: set `version = "0.4.0"`, dry-run, then `cargo publish`. **W3/W4/W5 deferred** (`docs/design/client_display_crate_sink.md`). S0–S2 and the public-API tighten already landed on `main` (#854 / #855).
 
 ### P4 — Testing and quality
 
