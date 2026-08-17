@@ -23,7 +23,7 @@ pub mod stream_hub;
 pub mod web_approval;
 
 #[cfg(feature = "server")]
-pub use control_mirror::send_sse_control_payload_optional;
+pub use control_mirror::{send_sse_control_payload_optional, send_sse_control_payload_try_send};
 pub use encoder::{SseEncoder, default_encoder};
 pub use encoder_v2::V2Encoder;
 #[cfg(feature = "server")]

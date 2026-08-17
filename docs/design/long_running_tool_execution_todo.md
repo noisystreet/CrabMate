@@ -1,6 +1,6 @@
 # 长耗时工具执行：待办
 
-**状态**：P0 已落地（共享会话 + 宿主/`workflow` `run_command` reap）；P1–P3 未承诺排期。**受众**：维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。  
+**状态**：P0 已落地；P1 宿主 `run_command` 的 `tool_output_chunk` 已落地；测试类工具 chunk 与 P2–P3 未承诺排期。**受众**：维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。  
 **语言**：中文。  
 **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章）删除对应条目；本文件可改为修订记录或删节。
 
@@ -142,9 +142,10 @@
 
 **待实现**：
 
-- [ ] **`run_command` 先**；测试类工具（`cargo_test`、`pytest_run` 等）须已迁入共享会话后再 chunk。
-- [ ] 按行或块下发已有 **`tool_output_chunk`**（`tool_call_id`、`seq`、可选 `stream`）。**chunk 不进模型上下文**（`docs/SSE协议.md`）。总量仍受 `command_max_output_len` 约束，避免气泡无限涨。
-- [ ] **默认不加新顶层 SSE 键**。代理靠现有 HTTP `KeepAlive`。若必须做「无输出仍显示已耗时」，复用控制面/debug 形状，并同步 Client `parser_v2.rs`、`sse_dispatch/types.rs`、`control_classify.rs`、金样（`.cursor/rules/api-sse-chat-protocol.mdc`）。
+- [x] **`run_command` 先**（宿主 chat 路径把捕获缓冲打成 `tool_output_chunk`）。
+- [ ] 测试类工具（`cargo_test`、`pytest_run` 等）须已迁入共享会话后再 chunk。
+- [x] 按行或块下发已有 **`tool_output_chunk`**（`tool_call_id`、`seq`、可选 `stream`）。**chunk 不进模型上下文**（`docs/SSE协议.md`）。总量仍受 `command_max_output_len` 约束，避免气泡无限涨。（workflow **不下发** chunk。）
+- [x] **默认不加新顶层 SSE 键**。代理靠现有 HTTP `KeepAlive`。若必须做「无输出仍显示已耗时」，复用控制面/debug 形状，并同步 Client `parser_v2.rs`、`sse_dispatch/types.rs`、`control_classify.rs`、金样（`.cursor/rules/api-sse-chat-protocol.mdc`）。
 
 **关联文件**：会话模块、`serial/emit.rs`、`cm_sse_protocol/sse/protocol.rs`、Client `parser_v2.rs`。
 
