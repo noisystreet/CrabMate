@@ -179,3 +179,63 @@ fn posix_shell_wrap_web_operators_need_approval_even_with_bash() {
         true,
     ));
 }
+
+#[test]
+fn run_command_chunk_seq_is_monotonic_on_mirror() {
+    use crate::cm_sse_protocol::sse::protocol::SsePayload;
+    use crate::cm_tools::subprocess_session::SessionStream;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicU64;
+
+    let seen = Arc::new(Mutex::new(Vec::<u64>::new()));
+    let seen_cb = Arc::clone(&seen);
+    let mirror: crate::cm_sse_protocol::sse::SseControlMirror = Arc::new(move |p| {
+        if let SsePayload::ToolOutputChunk { tool_output_chunk } = p {
+            seen_cb.lock().expect("lock").push(tool_output_chunk.seq);
+        }
+    });
+    let seq = AtomicU64::new(0);
+    let utf8 = Mutex::new(Vec::<u8>::new());
+    assert!(emit_run_command_tool_output_chunk(
+        &seq,
+        "tc-p1",
+        SessionStream::Stdout,
+        b"a\n",
+        None,
+        Some(&mirror),
+        &utf8,
+    ));
+    assert!(emit_run_command_tool_output_chunk(
+        &seq,
+        "tc-p1",
+        SessionStream::Stderr,
+        b"e\n",
+        None,
+        Some(&mirror),
+        &utf8,
+    ));
+    assert_eq!(*seen.lock().expect("lock"), vec![1, 2]);
+}
+
+#[tokio::test]
+async fn run_command_chunk_try_send_full_does_not_bump_seq() {
+    use crate::cm_tools::subprocess_session::SessionStream;
+    use std::sync::Mutex;
+    use std::sync::atomic::AtomicU64;
+    use tokio::sync::mpsc;
+
+    let seq = AtomicU64::new(0);
+    let utf8 = Mutex::new(Vec::<u8>::new());
+    let (tx, _rx) = mpsc::channel::<String>(1);
+    tx.try_send("fill".into()).expect("fill");
+    assert!(!emit_run_command_tool_output_chunk(
+        &seq,
+        "tc-p1",
+        SessionStream::Stdout,
+        b"lost?\n",
+        Some(&tx),
+        None,
+        &utf8,
+    ));
+    assert_eq!(seq.load(std::sync::atomic::Ordering::SeqCst), 0);
+}

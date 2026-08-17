@@ -286,7 +286,9 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 web_ctx: ctx,
                 name,
                 args,
+                tool_call_id: tc.id.as_str(),
                 sse_out_tx,
+                sse_control_mirror,
                 cancel,
             })
             .await

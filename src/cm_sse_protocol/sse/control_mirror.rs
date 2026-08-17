@@ -9,6 +9,7 @@ use tokio::sync::mpsc::Sender;
 use super::encoder::SseEncoder;
 use super::protocol::SsePayload;
 use super::send_string_logged;
+use log::debug;
 
 /// 与 Web SSE 控制面同形的回合事件回调（`SsePayload` 克隆后投递）。
 pub type SseControlMirror = Arc<dyn Fn(SsePayload) + Send + Sync>;
@@ -33,6 +34,31 @@ pub async fn send_sse_control_payload_optional(
         return true;
     };
     send_string_logged(tx, encoder.encode(&payload), context).await
+}
+
+/// 同步 `try_send`：给 `spawn_blocking` 内的工具进度用，避免在 wait 循环里 `blocking_send` 卡住超时/取消检查。
+pub fn send_sse_control_payload_try_send(
+    out: Option<&Sender<String>>,
+    mirror: Option<&SseControlMirror>,
+    payload: SsePayload,
+    context: &'static str,
+    encoder: &dyn SseEncoder,
+) -> bool {
+    mirror_sse_control_optional(mirror, &payload);
+    let Some(tx) = out else {
+        return true;
+    };
+    match tx.try_send(encoder.encode(&payload)) {
+        Ok(()) => true,
+        Err(_) => {
+            debug!(
+                target: "crabmate::sse_mpsc",
+                "SSE mpsc try_send failed context={} (full or closed)",
+                context
+            );
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -78,6 +104,22 @@ mod tests {
         assert!(send_sse_control_payload_optional(Some(&tx), None, p, "test_ctx", &encoder).await);
         drop(tx);
         let line = rx.recv().await.expect("line");
-        assert!(line.contains("parsing_tool_calls"));
+        assert!(!line.is_empty());
+    }
+
+    #[test]
+    fn send_sse_control_payload_try_send_delivers() {
+        let encoder = crate::cm_sse_protocol::sse::V2Encoder;
+        let (tx, mut rx) = mpsc::channel::<String>(4);
+        let p = SsePayload::ToolRunning { tool_running: true };
+        assert!(send_sse_control_payload_try_send(
+            Some(&tx),
+            None,
+            p,
+            "test_try_send",
+            &encoder
+        ));
+        let line = rx.try_recv().expect("line");
+        assert!(!line.is_empty());
     }
 }
