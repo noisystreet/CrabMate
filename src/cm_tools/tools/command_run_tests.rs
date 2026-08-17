@@ -317,10 +317,14 @@ fn skip_arg_safety_false_still_rejects_external_path() {
 
 #[test]
 fn without_bash_dollar_var_is_rejected() {
+    let allowed: Vec<String> = test_allowed()
+        .into_iter()
+        .filter(|c| !c.eq_ignore_ascii_case("bash") && !c.eq_ignore_ascii_case("sh"))
+        .collect();
     let e = run_checked(
         r#"{"command":"echo","args":["$HOME"]}"#,
         TEST_MAX_OUTPUT_LEN,
-        &test_allowed(),
+        &allowed,
         test_work_dir(),
         None,
         false,
