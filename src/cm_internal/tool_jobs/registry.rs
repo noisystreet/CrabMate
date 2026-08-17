@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use super::types::{JobLimits, JobOutcome, JobRecord, JobStatus};
+use super::types::{JobLimits, JobOutcome, JobRecord, JobSpawn, JobStatus};
 
 /// 进程内注册表（所有操作持锁，单临界区保证状态转移原子性）。
 pub struct ToolJobRegistry {
@@ -76,6 +76,8 @@ impl ToolJobRegistry {
         &self,
         workspace: PathBuf,
         source_turn_job_id: Option<u64>,
+        spawn: super::types::JobSpawn,
+        args_json: String,
     ) -> Result<String, RegisterError> {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         if g.jobs.len() >= self.limits.max_entries && !self.evict_one_terminal_locked(&mut g) {
@@ -96,6 +98,8 @@ impl ToolJobRegistry {
             finished_at: None,
             cancel_requested: false,
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            spawn,
+            args_json,
             workspace_changed: false,
             outcome: None,
         };
@@ -288,10 +292,38 @@ mod tests {
         r.id.clone()
     }
 
+    fn spawn_default() -> JobSpawn {
+        JobSpawn {
+            program: "true".to_string(),
+            args: Vec::new(),
+            cwd: PathBuf::from("/"),
+            extra_env: Vec::new(),
+            wall: Duration::from_secs(10),
+            max_output_len: 1024,
+        }
+    }
+
+    fn register_default(reg: &ToolJobRegistry) -> String {
+        reg.register(
+            PathBuf::from("/w"),
+            None,
+            spawn_default(),
+            r#"{"command":"true"}"#.to_string(),
+        )
+        .expect("register")
+    }
+
     #[test]
     fn register_queues_and_get_returns_record() {
         let reg = ToolJobRegistry::new(limits());
-        let id = reg.register(PathBuf::from("/ws"), Some(7)).expect("register");
+        let id = reg
+            .register(
+                PathBuf::from("/ws"),
+                Some(7),
+                spawn_default(),
+                r#"{"command":"true"}"#.to_string(),
+            )
+            .expect("register");
         assert!(id.starts_with("tooljob_"), "id: {id}");
         assert_eq!(id.len(), "tooljob_".len() + 32);
         let rec = reg.get(&id).expect("record");
@@ -303,9 +335,9 @@ mod tests {
     #[test]
     fn try_start_fifo_and_respects_max_concurrent() {
         let reg = ToolJobRegistry::new(limits());
-        let a = reg.register(PathBuf::from("/w"), None).expect("a");
-        let b = reg.register(PathBuf::from("/w"), None).expect("b");
-        let c = reg.register(PathBuf::from("/w"), None).expect("c"); // 第 3 个：进入队列
+        let a = register_default(&reg); // a
+        let b = register_default(&reg); // b
+        let c = register_default(&reg); // 第 3 个：进入队列
         let r1 = reg.try_start().expect("r1");
         let r2 = reg.try_start().expect("r2");
         assert_eq!(job_id(&r1), a);
@@ -322,14 +354,19 @@ mod tests {
             max_entries: 100,
             ..limits()
         }); // concurrent=2, queued=2；entries 上限放大以免先触发 AtCapacity
-        reg.register(PathBuf::from("/w"), None).expect("a");
-        reg.register(PathBuf::from("/w"), None).expect("b");
+        register_default(&reg); // a
+        register_default(&reg); // b
         reg.try_start().expect("r1");
         reg.try_start().expect("r2"); // 并发已满
-        reg.register(PathBuf::from("/w"), None).expect("c");
-        reg.register(PathBuf::from("/w"), None).expect("d"); // 队列已满
+        register_default(&reg); // c
+        register_default(&reg); // 队列已满
         assert_eq!(
-            reg.register(PathBuf::from("/w"), None),
+            reg.register(
+                PathBuf::from("/w"),
+                None,
+                spawn_default(),
+                r#"{"command":"true"}"#.to_string()
+            ),
             Err(RegisterError::QueueFull)
         );
     }
@@ -337,8 +374,8 @@ mod tests {
     #[test]
     fn cancel_queued_moves_terminal_and_removes_from_queue() {
         let reg = ToolJobRegistry::new(limits());
-        let a = reg.register(PathBuf::from("/w"), None).expect("a");
-        let b = reg.register(PathBuf::from("/w"), None).expect("b");
+        let a = register_default(&reg); // a
+        let b = register_default(&reg); // b
         assert_eq!(reg.cancel(&a), CancelOutcome::Cancelled);
         assert_eq!(reg.get(&a).expect("a").status, JobStatus::Cancelled);
         assert!(reg.get(&a).expect("a").finished_at.is_some());
@@ -350,7 +387,7 @@ mod tests {
     #[test]
     fn cancel_running_sets_flag_then_complete_transitions() {
         let reg = ToolJobRegistry::new(limits());
-        let id = reg.register(PathBuf::from("/w"), None).expect("id");
+        let id = register_default(&reg); // id
         reg.try_start().expect("start");
         let flag = reg.cancel_flag(&id).expect("cancel flag");
         assert_eq!(reg.cancel(&id), CancelOutcome::Cancelled);
@@ -375,7 +412,7 @@ mod tests {
     #[test]
     fn complete_rejects_non_terminal_outcome() {
         let reg = ToolJobRegistry::new(limits());
-        let id = reg.register(PathBuf::from("/w"), None).expect("id");
+        let id = register_default(&reg); // id
         reg.try_start().expect("start");
         let running = JobOutcome {
             status: JobStatus::Running,
@@ -393,7 +430,7 @@ mod tests {
     #[test]
     fn complete_rejects_terminal_overwrite_and_unknown() {
         let reg = ToolJobRegistry::new(limits());
-        let id = reg.register(PathBuf::from("/w"), None).expect("id");
+        let id = register_default(&reg); // id
         let ok = JobOutcome {
             status: JobStatus::Succeeded,
             exit_code: Some(0),
@@ -415,7 +452,7 @@ mod tests {
             grace: Duration::from_secs(10),
             ..limits()
         });
-        let id = reg.register(PathBuf::from("/w"), None).expect("id");
+        let id = register_default(&reg); // id
         let ok = JobOutcome {
             status: JobStatus::Succeeded,
             exit_code: Some(0),
@@ -441,7 +478,7 @@ mod tests {
     #[test]
     fn cleanup_never_removes_running() {
         let reg = ToolJobRegistry::new(limits());
-        let id = reg.register(PathBuf::from("/w"), None).expect("id");
+        let id = register_default(&reg); // id
         reg.try_start().expect("start");
         let far = SystemTime::now() + Duration::from_secs(10_000);
         assert_eq!(reg.cleanup(far), 0);
@@ -454,10 +491,18 @@ mod tests {
             max_entries: 2,
             ..limits()
         });
-        let a = reg.register(PathBuf::from("/w"), None).expect("a");
-        let b = reg.register(PathBuf::from("/w"), None).expect("b");
+        let a = register_default(&reg); // a
+        let b = register_default(&reg); // b
         // 无终态可淘汰：AtCapacity
-        assert_eq!(reg.register(PathBuf::from("/w"), None), Err(RegisterError::AtCapacity));
+        assert_eq!(
+            reg.register(
+                PathBuf::from("/w"),
+                None,
+                spawn_default(),
+                r#"{"command":"true"}"#.to_string()
+            ),
+            Err(RegisterError::AtCapacity)
+        );
         // 完成 a（终态）后注册 c → 淘汰 a
         let ok = JobOutcome {
             status: JobStatus::Succeeded,
@@ -468,7 +513,7 @@ mod tests {
             failure_category: None,
         };
         reg.complete(&a, ok, false);
-        let c = reg.register(PathBuf::from("/w"), None).expect("c");
+        let c = register_default(&reg); // c
         assert!(reg.get(&a).is_none(), "最旧终态应被淘汰");
         assert!(reg.get(&b).is_some());
         assert!(reg.get(&c).is_some());

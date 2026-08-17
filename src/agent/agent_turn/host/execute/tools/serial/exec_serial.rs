@@ -71,6 +71,7 @@ struct SerialToolLoopState<'a> {
     sync_default_sandbox_backend:
         std::sync::Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
     readonly_tool_ttl_cache: std::sync::Arc<crate::readonly_tool_ttl_cache::ReadonlyToolTtlCache>,
+    tool_job_registry: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
     workspace_changed: &'a mut bool,
 }
 
@@ -102,6 +103,7 @@ impl<'a> SerialToolLoopState<'a> {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache,
+            tool_job_registry,
         } = ctx;
         Self {
             tool_calls,
@@ -129,6 +131,7 @@ impl<'a> SerialToolLoopState<'a> {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache,
+            tool_job_registry,
             workspace_changed,
         }
     }
@@ -223,6 +226,7 @@ async fn serial_execute_one_tool_call(
                     sse_out_tx: st.control.out,
                     sse_control_mirror: st.control.sse_control_mirror.as_ref(),
                     cancel: st.cancel.clone(),
+                    tool_jobs: st.tool_job_registry.clone(),
                 },
                 memory: tool_registry::DispatchToolMemory {
                     read_file_turn_cache: st.read_file_turn_cache.clone(),

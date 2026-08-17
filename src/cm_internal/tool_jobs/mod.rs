@@ -13,4 +13,12 @@ pub mod worker;
 
 pub use registry::{CancelOutcome, JobRegistryStats, RegisterError, ToolJobRegistry};
 pub use types::{JobLimits, JobOutcome, JobRecord, JobStatus};
-pub use worker::{JobSpawn, launch_job, run_job_blocking, spawn_cleanup_task};
+pub use worker::{JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_blocking, spawn_cleanup_task};
+
+/// 按当前 `[tool_registry]` 配置构建注册表（web 启动 / 热重载时读取一次；已运行 job 不受影响）。
+#[must_use]
+pub fn registry_from_config(cfg: &crate::cm_config::AgentConfig) -> std::sync::Arc<ToolJobRegistry> {
+    std::sync::Arc::new(ToolJobRegistry::new(JobLimits::from_config(
+        &cfg.tool_registry_policy,
+    )))
+}

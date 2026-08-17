@@ -76,6 +76,7 @@ async fn execute_terminal_session_impl(
             web_ctx,
             &parsed,
             "terminal_session",
+            false,
         )
         .await
         {
@@ -94,6 +95,7 @@ async fn execute_terminal_session_impl(
             effective_allowed.as_ref(),
             web_ctx,
             "terminal_session",
+            false,
         )
         .await
         {

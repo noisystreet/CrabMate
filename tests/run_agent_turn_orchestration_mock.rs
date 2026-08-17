@@ -141,6 +141,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             tracing_chat_turn: None,
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
+            tool_job_registry: None,
         },
     };
 
@@ -213,6 +214,7 @@ async fn run_mock_agent_turn(
             tracing_chat_turn: None,
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
+            tool_job_registry: None,
         },
     };
     run_agent_turn(params)
@@ -285,6 +287,7 @@ async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
             tracing_chat_turn: None,
             request_audit: None,
             process_handles: TurnProcessHandles::default_arc(),
+            tool_job_registry: None,
         },
     };
 

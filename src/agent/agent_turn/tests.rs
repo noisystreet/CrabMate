@@ -186,6 +186,7 @@ mod per_reflect_tests {
                     request_audit: None,
                     process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
                     trace_sink: None,
+                    tool_job_registry: None,
                 },
             },
             turn: RunLoopTurnState {

@@ -273,7 +273,14 @@ impl PerCoordinator {
             name: None,
             tool_call_id: Some(tool_call_id),
         });
-        if let Some(instruction) = reflection_inject {
+        // 后台任务启动帧（`run_command` 的 `async=true`，含 `tool_job` 键）：只作为 SSE 软字段，
+        // 不注入模型上下文（轮询结果由调用方带回后续回合）。
+        let is_tool_job_start = reflection_inject
+            .as_ref()
+            .is_some_and(|v| v.get("tool_job").is_some());
+        if let Some(instruction) = reflection_inject
+            && !is_tool_job_start
+        {
             let instruction_str = match serde_json::to_string(&instruction) {
                 Ok(s) => s,
                 Err(e) => {

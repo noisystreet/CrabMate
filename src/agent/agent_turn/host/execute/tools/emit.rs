@@ -60,6 +60,9 @@ pub(super) async fn emit_thinking_trace_sse(
 }
 
 /// SSE：`SsePayload::ToolResult`（含 stdout/stderr、retryable、信封元数据）。
+/// `reflection_inject` 中若含 `tool_job` 对象（`run_command` 的 `async=true` 启动帧），
+/// 提取为 `tool_result.tool_job_*` 软字段（契约 §2）。
+#[allow(clippy::too_many_arguments)] // 工具结果 SSE 组装：SSE 通道、工具元数据与注入帧
 async fn emit_sse_tool_result(
     out: Option<&mpsc::Sender<String>>,
     sse_control_mirror: Option<&crate::sse::SseControlMirror>,
@@ -67,6 +70,7 @@ async fn emit_sse_tool_result(
     result: &str,
     tool_summary: Option<String>,
     envelope_ctx: Option<ToolEnvelopeContext<'_>>,
+    reflection_inject: Option<&serde_json::Value>,
     encoder: &dyn SseEncoder,
 ) {
     let parsed = parse_legacy_output(name, result);
@@ -105,6 +109,13 @@ async fn emit_sse_tool_result(
     } else {
         Some(parsed.stderr)
     };
+    let tool_job = reflection_inject.and_then(|v| v.get("tool_job"));
+    let tool_job_str = |key: &str| {
+        tool_job
+            .and_then(|j| j.get(key))
+            .and_then(|x| x.as_str())
+            .map(str::to_string)
+    };
     let payload = SsePayload::ToolResult {
         tool_result: ToolResultBody {
             name: norm.name,
@@ -123,6 +134,9 @@ async fn emit_sse_tool_result(
             stdout,
             stderr,
             structured_preview,
+            tool_job_id: tool_job_str("tool_job_id"),
+            tool_job_poll_url: tool_job_str("tool_job_poll_url"),
+            tool_job_status: tool_job_str("tool_job_status"),
         },
     };
     let _ = send_sse_control_payload_optional(
@@ -214,6 +228,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
         result.as_str(),
         tool_summary.clone(),
         envelope_ctx,
+        reflection_inject.as_ref(),
         encoder,
     )
     .await;

@@ -208,6 +208,7 @@ async fn outer_loop_execute_tools_round(
                 &p.ctx.obs.process_handles.sync_default_sandbox_backend,
             ),
             readonly_tool_ttl_cache: Arc::clone(&p.ctx.obs.process_handles.readonly_tool_ttl_cache),
+            tool_job_registry: p.ctx.obs.tool_job_registry.clone(),
         },
     )
     .await;

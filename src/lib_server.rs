@@ -168,6 +168,8 @@ pub struct RunAgentTurnObs {
     pub request_audit: Option<Arc<WebRequestAudit>>,
     /// 进程内显式句柄：工作区变更集注册表、工具统计等（`bench` 等无 `AppState` 时用 [`crate::process_handles::TurnProcessHandles::default_arc`]；完整袋见 [`ProcessHandles`]）。
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    /// 后台任务注册表（`run_command` 的 `async=true`）；`None` 时返回未启用（默认关闭路径）。
+    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
 /// Web/CLI/基准测试共用的 `run_agent_turn` 入参（避免长参数列表）。
@@ -210,6 +212,8 @@ pub struct WebChatStreamBuildArgs<'a> {
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub session_mode: types::SessionMode,
+    /// 后台任务注册表（`run_command` 的 `async=true`）。
+    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
 /// 构造 [`RunAgentTurnParams::web_chat_json`] 所需的参数包。
@@ -237,6 +241,8 @@ pub struct WebChatJsonBuildArgs<'a> {
     pub request_audit: Arc<WebRequestAudit>,
     pub process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub session_mode: types::SessionMode,
+    /// 后台任务注册表（`run_command` 的 `async=true`）。
+    pub tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 /// `web_chat_stream` / `web_chat_json` 共用的字段装配（单参数传入以满足形参棘轮）。
 #[cfg(feature = "web")]
@@ -255,6 +261,7 @@ struct WebChatJobCommonParts<'a> {
     tracing_chat_turn: Arc<observability::TracingChatTurn>,
     request_audit: Arc<WebRequestAudit>,
     process_handles: Arc<crate::process_handles::TurnProcessHandles>,
+    tool_job_registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
 impl<'a> RunAgentTurnParams<'a> {
@@ -274,6 +281,7 @@ impl<'a> RunAgentTurnParams<'a> {
             tracing_chat_turn,
             request_audit,
             process_handles,
+            tool_job_registry,
         } = parts;
         Self {
             shared,
@@ -295,6 +303,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tracing_chat_turn: Some(tracing_chat_turn),
                 request_audit: Some(request_audit),
                 process_handles,
+                tool_job_registry,
             },
         }
     }
@@ -326,6 +335,7 @@ impl<'a> RunAgentTurnParams<'a> {
             process_handles,
             session_mode,
             request_id,
+            tool_job_registry,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -362,6 +372,7 @@ impl<'a> RunAgentTurnParams<'a> {
             ),
             request_audit,
             process_handles,
+            tool_job_registry,
         })
     }
 
@@ -389,6 +400,7 @@ impl<'a> RunAgentTurnParams<'a> {
             process_handles,
             session_mode,
             request_id,
+            tool_job_registry,
         } = args;
         Self::from_web_job_common(WebChatJobCommonParts {
             shared,
@@ -425,6 +437,7 @@ impl<'a> RunAgentTurnParams<'a> {
             ),
             request_audit,
             process_handles,
+            tool_job_registry,
         })
     }
 
@@ -480,6 +493,7 @@ impl<'a> RunAgentTurnParams<'a> {
                 tracing_chat_turn: None,
                 request_audit: None,
                 process_handles: crate::process_handles::TurnProcessHandles::default_arc(),
+                tool_job_registry: None,
             },
         }
     }

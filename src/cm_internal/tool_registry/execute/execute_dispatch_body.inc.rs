@@ -221,6 +221,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 sse_out_tx,
                 sse_control_mirror,
                 cancel,
+                tool_jobs,
             },
         memory:
             DispatchToolMemory {
@@ -290,6 +291,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 sse_out_tx,
                 sse_control_mirror,
                 cancel,
+                tool_jobs,
             })
             .await
         }

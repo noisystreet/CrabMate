@@ -3,7 +3,8 @@
 //! 契约见 `docs/design/background_tool_jobs_contract.md`。状态机：
 //! `queued → running → succeeded | failed | cancelled | timed_out`；**`expired` 不是持久状态**（TTL+宽限到期即删除记录，轮询得 `410`）。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -69,6 +70,55 @@ impl JobOutcome {
     }
 }
 
+/// 一次后台执行的参数（命令已通过白名单/路径/审批）。
+///
+/// 纯数据（`Clone`），供排队任务在领取时重建 `Command`；取消信号不在其中：
+/// 由注册表持有一份（`JobRecord.cancel_flag`），`launch_job` 启动时从注册表取同一次
+/// `Arc<AtomicBool>` 传入，`registry.cancel()` 才能命中同一信号。
+#[derive(Debug, Clone)]
+pub struct JobSpawn {
+    /// 可执行文件路径或命令名（`Command::new` 的入参）。
+    pub program: String,
+    pub args: Vec<String>,
+    /// 进程工作目录。
+    pub cwd: PathBuf,
+    /// 额外环境变量（如 `GH_TOKEN`；不含 `PATH` 等继承项）。
+    pub extra_env: Vec<(String, String)>,
+    /// 墙钟；超时对进程组 SIGTERM→SIGKILL。
+    pub wall: Duration,
+    /// 输出截断上限（复用 `command_max_output_len`）。
+    pub max_output_len: usize,
+}
+
+impl JobSpawn {
+    /// 重建可 spawn 的 `Command`（进程组/环境由 worker 再装配）。
+    #[must_use]
+    pub fn to_command(&self) -> Command {
+        let mut cmd = Command::new(&self.program);
+        cmd.args(&self.args).current_dir(&self.cwd);
+        if !self.extra_env.is_empty() {
+            cmd.envs(self.extra_env.iter().map(|(k, v)| (k.as_str(), v.as_str())));
+        }
+        cmd
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_command(cmd: &mut Command, wall: Duration, max_output_len: usize) -> Self {
+        let program = cmd.get_program().to_string_lossy().into_owned();
+        let args = cmd.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let cwd = cmd.get_current_dir().unwrap_or(Path::new(".")).to_path_buf();
+        let extra_env = Vec::new();
+        Self {
+            program,
+            args,
+            cwd,
+            extra_env,
+            wall,
+            max_output_len,
+        }
+    }
+}
+
 /// 注册表条目。
 #[derive(Debug, Clone)]
 pub struct JobRecord {
@@ -85,6 +135,10 @@ pub struct JobRecord {
     pub cancel_requested: bool,
     /// worker 取消信号（`register` 时创建；`cancel()` 置位，`launch_job` 传入 `wait_child_session`）。
     pub cancel_flag: Arc<AtomicBool>,
+    /// 领取（`queued → running`）后用于启动的纯数据参数；注册时必填。
+    pub spawn: JobSpawn,
+    /// 发起时的 `run_command` 参数 JSON（终态 `workspace_changed` 判定与日志关联用）。
+    pub args_json: String,
     pub workspace_changed: bool,
     pub outcome: Option<JobOutcome>,
 }

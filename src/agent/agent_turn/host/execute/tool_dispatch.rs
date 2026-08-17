@@ -100,6 +100,7 @@ mod tests {
                     sse_out_tx: None,
                     sse_control_mirror: None,
                     cancel: None,
+                    tool_jobs: None,
                 },
                 memory: DispatchToolMemory {
                     read_file_turn_cache: None,
