@@ -177,7 +177,7 @@
 - [ ] 其余子进程类迁入共享会话；短同步 SDK / 文件 IO 仍 `spawn_blocking`，墙钟按 P2 工具名表。
 - [ ] **Docker 沙盒超时 reap**（`docker stop/kill` 或 runner 生命周期）：单独设计，勿与 P0 混 PR。
 - [x] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`.cursor/rules/secrets-and-logging.mdc`）。**实现**：`cm_tools/subprocess_session.rs` 进程内原子计数 + 时长直方图（桶上界 1s/5s/30s/120s/600s/溢出），`session_stats_snapshot()` 快照；会话完成打 `debug`（`pid/kind/killed/duration_ms`）、reap 未确认打 `warn`（残留风险），均不含 argv 与密钥。
-- [ ] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。
+- [ ] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。**契约设计已出**：见 [`background_tool_jobs.md`](./background_tool_jobs.md)（`tool_job_id` 独立命名空间、`run_command` 可选 `async`、轮询为主 + 可选 `tool_job_finished`、配置默认关、不 bump `SSE_PROTOCOL_VERSION`）；实现按该 ADR 切片，不与其它条目混 PR。
 
 与路线图「可观测与执行轨迹」、`tool_calling_evolution.md`「长任务进度事件」同向，落地时合并拆解。
 
