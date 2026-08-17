@@ -274,6 +274,18 @@ pub struct ToolRegistryPolicyConfig {
     pub tool_registry_sub_agent_patch_write_extra_tools: Option<Arc<HashSet<String>>>,
     pub tool_registry_sub_agent_test_runner_extra_tools: Option<Arc<HashSet<String>>>,
     pub tool_registry_sub_agent_review_readonly_deny_tools: Option<Arc<HashSet<String>>>,
+    /// 后台工具任务总开关（`run_command` 的 `async=true`）；默认 `false`。
+    pub tool_registry_background_jobs_enabled: bool,
+    /// 后台任务同时运行上限；超出进入 `queued`（FIFO）。默认 `4`。
+    pub tool_registry_background_job_max_concurrent: u64,
+    /// 后台任务排队上限；超限拒绝创建。默认 `32`。
+    pub tool_registry_background_job_max_queued: u64,
+    /// 后台任务自**创建**起算的保留时长（秒）。默认 `86400`。
+    pub tool_registry_background_job_ttl_secs: u64,
+    /// 后台任务终态后再保留的宽限（秒），避免"刚完成即被清"。默认 `300`。
+    pub tool_registry_background_job_result_grace_secs: u64,
+    /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
+    pub tool_registry_background_job_max_entries: u64,
 }
 
 #[derive(Debug, Clone)]

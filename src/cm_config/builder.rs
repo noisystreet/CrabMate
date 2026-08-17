@@ -578,5 +578,24 @@ impl ConfigBuilder {
         if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
             p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
         }
+        // 后台任务 6 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
+        p.tool_registry_background_jobs_enabled = tr
+            .background_jobs_enabled
+            .or(p.tool_registry_background_jobs_enabled);
+        p.tool_registry_background_job_max_concurrent = tr
+            .background_job_max_concurrent
+            .or(p.tool_registry_background_job_max_concurrent);
+        p.tool_registry_background_job_max_queued = tr
+            .background_job_max_queued
+            .or(p.tool_registry_background_job_max_queued);
+        p.tool_registry_background_job_ttl_secs = tr
+            .background_job_ttl_secs
+            .or(p.tool_registry_background_job_ttl_secs);
+        p.tool_registry_background_job_result_grace_secs = tr
+            .background_job_result_grace_secs
+            .or(p.tool_registry_background_job_result_grace_secs);
+        p.tool_registry_background_job_max_entries = tr
+            .background_job_max_entries
+            .or(p.tool_registry_background_job_max_entries);
     }
 }

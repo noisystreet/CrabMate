@@ -206,6 +206,19 @@ sub_agent_patch_write_extra_tools = ["run_command"]
 sub_agent_test_runner_extra_tools = ["custom_test_runner"]
 # review_readonly 步内显式拒绝（精确匹配）
 sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
+# # 后台工具任务（`run_command` 可选 `async=true`；契约见 docs/design/background_tool_jobs_contract.md）
+# # 总开关（默认 false；开启后模型仍须显式传 async=true）
+# background_jobs_enabled = false
+# # 同时运行上限（1–256，默认 4）；超出进入 queued（FIFO）
+# background_job_max_concurrent = 4
+# # 排队上限（0–10000，默认 32）；超限拒绝创建
+# background_job_max_queued = 32
+# # 自创建起算的保留时长，秒（1–604800，默认 86400=1 天）
+# background_job_ttl_secs = 86400
+# # 终态后再保留宽限，秒（0–86400，默认 300），避免"刚完成即被清"
+# background_job_result_grace_secs = 300
+# # 注册表条目上限（1–10000，默认 128）；仅淘汰终态条目
+# background_job_max_entries = 128
 # # 并行只读批与 SyncDefault+spawn_blocking 墙上时钟：键与 ToolExecutionClass 蛇形一致（workflow, command_spawn_timeout, …, blocking_sync）。
 # [tool_registry.parallel_wall_timeout_secs]
 # blocking_sync = 600

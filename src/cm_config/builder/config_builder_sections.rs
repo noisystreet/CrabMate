@@ -280,6 +280,12 @@ pub(crate) struct ConfigBuilderToolRegistryPolicy {
     pub(crate) tool_registry_sub_agent_patch_write_extra_tools: Option<Vec<String>>,
     pub(crate) tool_registry_sub_agent_test_runner_extra_tools: Option<Vec<String>>,
     pub(crate) tool_registry_sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_background_jobs_enabled: Option<bool>,
+    pub(crate) tool_registry_background_job_max_concurrent: Option<u64>,
+    pub(crate) tool_registry_background_job_max_queued: Option<u64>,
+    pub(crate) tool_registry_background_job_ttl_secs: Option<u64>,
+    pub(crate) tool_registry_background_job_result_grace_secs: Option<u64>,
+    pub(crate) tool_registry_background_job_max_entries: Option<u64>,
 }
 
 /// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。

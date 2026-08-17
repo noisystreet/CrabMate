@@ -509,6 +509,8 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         }
     }
 
+    validate_background_job_ranges(b)?;
+
     if let Some(ref min_c) = b.tool_call_explain.tool_call_explain_min_chars
         && let Some(ref max_c) = b.tool_call_explain.tool_call_explain_max_chars
         && max_c < min_c
@@ -518,5 +520,50 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
         ));
     }
 
+    Ok(())
+}
+
+/// 后台工具任务数值范围（与 `finalize.rs` 的 clamp 一致，越界直接报错而非静默钳制）。
+fn validate_background_job_ranges(b: &ConfigBuilder) -> Result<(), String> {
+    let p = &b.tool_registry_policy;
+    let entries: [(&str, Option<u64>, std::ops::RangeInclusive<u64>); 5] = [
+        (
+            "background_job_max_concurrent",
+            p.tool_registry_background_job_max_concurrent,
+            1..=256,
+        ),
+        (
+            "background_job_max_queued",
+            p.tool_registry_background_job_max_queued,
+            0..=10_000,
+        ),
+        (
+            "background_job_ttl_secs",
+            p.tool_registry_background_job_ttl_secs,
+            1..=604_800,
+        ),
+        (
+            "background_job_result_grace_secs",
+            p.tool_registry_background_job_result_grace_secs,
+            0..=86_400,
+        ),
+        (
+            "background_job_max_entries",
+            p.tool_registry_background_job_max_entries,
+            1..=10_000,
+        ),
+    ];
+    for (key, value, range) in entries {
+        if let Some(v) = value
+            && !range.contains(&v)
+        {
+            return Err(err_out_of_range(
+                &format!("tool_registry.{key}"),
+                v,
+                *range.start(),
+                *range.end(),
+            ));
+        }
+    }
     Ok(())
 }

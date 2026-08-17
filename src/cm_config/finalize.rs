@@ -309,6 +309,12 @@ struct ToolRegistryDerived {
     tool_registry_sub_agent_patch_write_extra_tools: Option<Arc<HashSet<String>>>,
     tool_registry_sub_agent_test_runner_extra_tools: Option<Arc<HashSet<String>>>,
     tool_registry_sub_agent_review_readonly_deny_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_background_jobs_enabled: bool,
+    tool_registry_background_job_max_concurrent: u64,
+    tool_registry_background_job_max_queued: u64,
+    tool_registry_background_job_ttl_secs: u64,
+    tool_registry_background_job_result_grace_secs: u64,
+    tool_registry_background_job_max_entries: u64,
 }
 
 fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
@@ -400,6 +406,31 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                         .collect::<HashSet<_>>(),
                 )
             }),
+        // 后台工具任务：默认值/范围见 `docs/design/background_tool_jobs_contract.md` §6；
+        // validate.rs 先拒绝越界，此处 clamp 仅作兜底。
+        tool_registry_background_jobs_enabled: tr
+            .tool_registry_background_jobs_enabled
+            .unwrap_or(false),
+        tool_registry_background_job_max_concurrent: tr
+            .tool_registry_background_job_max_concurrent
+            .unwrap_or(4)
+            .clamp(1, 256),
+        tool_registry_background_job_max_queued: tr
+            .tool_registry_background_job_max_queued
+            .unwrap_or(32)
+            .clamp(0, 10_000),
+        tool_registry_background_job_ttl_secs: tr
+            .tool_registry_background_job_ttl_secs
+            .unwrap_or(86_400)
+            .clamp(1, 604_800),
+        tool_registry_background_job_result_grace_secs: tr
+            .tool_registry_background_job_result_grace_secs
+            .unwrap_or(300)
+            .clamp(0, 86_400),
+        tool_registry_background_job_max_entries: tr
+            .tool_registry_background_job_max_entries
+            .unwrap_or(128)
+            .clamp(1, 10_000),
     }
 }
 
@@ -791,3 +822,60 @@ fn finalize_agent_config(
 
 include!("finalize_parts/finalize_tail.rs");
 include!("finalize_parts/finalize_build.rs");
+
+#[cfg(test)]
+mod background_job_defaults_tests {
+    use super::*;
+
+    #[test]
+    fn background_job_fields_default_and_clamp() {
+        let tr = derive_tool_registry_fields(&ConfigBuilder::default());
+        assert!(!tr.tool_registry_background_jobs_enabled);
+        assert_eq!(tr.tool_registry_background_job_max_concurrent, 4);
+        assert_eq!(tr.tool_registry_background_job_max_queued, 32);
+        assert_eq!(tr.tool_registry_background_job_ttl_secs, 86_400);
+        assert_eq!(tr.tool_registry_background_job_result_grace_secs, 300);
+        assert_eq!(tr.tool_registry_background_job_max_entries, 128);
+
+        let mut b = ConfigBuilder::default();
+        b.tool_registry_policy.tool_registry_background_jobs_enabled = Some(true);
+        b.tool_registry_policy.tool_registry_background_job_max_concurrent = Some(999);
+        b.tool_registry_policy.tool_registry_background_job_ttl_secs = Some(1_000_000);
+        let tr = derive_tool_registry_fields(&b);
+        assert!(tr.tool_registry_background_jobs_enabled);
+        assert_eq!(tr.tool_registry_background_job_max_concurrent, 256);
+        assert_eq!(tr.tool_registry_background_job_ttl_secs, 604_800);
+    }
+
+    #[test]
+    fn background_job_keys_parse_from_toml_and_finalize() {
+        // 端到端：TOML 键名（serde 字段）→ apply_tool_registry → derive，防止字段名漂移静默落默认值。
+        let sec: crate::cm_config::source::ToolRegistrySection = toml::from_str(
+            r#"
+background_jobs_enabled = true
+background_job_max_concurrent = 6
+background_job_max_queued = 64
+background_job_ttl_secs = 7200
+background_job_result_grace_secs = 120
+background_job_max_entries = 256
+"#,
+        )
+        .expect("parse [tool_registry] section");
+        assert_eq!(sec.background_jobs_enabled, Some(true));
+        assert_eq!(sec.background_job_max_concurrent, Some(6));
+        assert_eq!(sec.background_job_max_queued, Some(64));
+        assert_eq!(sec.background_job_ttl_secs, Some(7200));
+        assert_eq!(sec.background_job_result_grace_secs, Some(120));
+        assert_eq!(sec.background_job_max_entries, Some(256));
+
+        let mut b = ConfigBuilder::default();
+        b.apply_tool_registry(sec);
+        let tr = derive_tool_registry_fields(&b);
+        assert!(tr.tool_registry_background_jobs_enabled);
+        assert_eq!(tr.tool_registry_background_job_max_concurrent, 6);
+        assert_eq!(tr.tool_registry_background_job_max_queued, 64);
+        assert_eq!(tr.tool_registry_background_job_ttl_secs, 7200);
+        assert_eq!(tr.tool_registry_background_job_result_grace_secs, 120);
+        assert_eq!(tr.tool_registry_background_job_max_entries, 256);
+    }
+}

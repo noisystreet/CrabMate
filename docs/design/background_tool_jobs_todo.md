@@ -36,8 +36,8 @@
 ### Slice 1：后端核心（`run_command` async + job 模块 + 端点）
 
 **1.1 配置**（[`config/tools.toml`](../config/tools.toml) `[tool_registry]` + `cm_config`）
-- [ ] 新增 6 键（契约 §6）：`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`；TOML 注释钉默认值。
-- [ ] 热重载：创建 job 时读取；已运行 job 不受后续变更影响（`POST /config/reload` 回归）。
+- [x] 新增 6 键（契约 §6）：`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`；TOML 注释钉默认值。
+- [x] 热重载：`POST /config/reload` 重建 `AgentConfig`（finalize 路径自动含新键默认值）；**「创建 job 时读取、已运行 job 不受影响」**的消费语义随 1.2/1.3 落地并回归。
 
 **1.2 job 模块**（新目录 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`）
 - [ ] `types.rs`：`JobStatus` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）、`JobRecord`（`tool_job_id`、`workspace`、来源 turn `job_id`、创建/完成时间、截断 stdout/stderr、`workspace_changed`）、原子状态转移（Mutex 临界区；`queued/running → cancelled`，已完成不可覆盖）。

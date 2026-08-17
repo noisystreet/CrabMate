@@ -563,4 +563,16 @@ mod numeric_validate_tests {
         let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
         assert!(err.contains("parallel_wall_timeout_secs"), "err: {err}");
     }
+
+    #[test]
+    fn background_job_max_concurrent_out_of_range() {
+        let mut b = ConfigBuilder::default();
+        b.tool_registry_policy
+            .tool_registry_background_job_max_concurrent = Some(1000);
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(
+            err.contains("background_job_max_concurrent"),
+            "err: {err}"
+        );
+    }
 }

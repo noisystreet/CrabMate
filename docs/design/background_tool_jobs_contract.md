@@ -156,14 +156,14 @@ queued ──cancel──▶ cancelled
 
 ## 6. 配置键（`config/tools.toml` `[tool_registry]`）
 
-| 键 | 类型 | 默认 | 说明 |
-|----|------|------|------|
-| `background_jobs_enabled` | bool | `false` | 总开关；关闭时 `async=true` 返回 `invalid_args` |
-| `background_job_max_concurrent` | int | `4` | 同时运行上限；超出进入 `queued` |
-| `background_job_max_queued` | int | `32` | 排队上限；超限拒绝创建 |
-| `background_job_ttl_secs` | int | `86400` | 自**创建**起算的保留时长 |
-| `background_job_result_grace_secs` | int | `300` | 终态后再保留的宽限（避免"刚完成即被清"） |
-| `background_job_max_entries` | int | `128` | 注册表条目上限；**仅淘汰终态**条目（`queued`/`running` 不可淘汰，防结果丢失） |
+| 键 | 类型 | 默认 | 范围 | 说明 |
+|----|------|------|------|------|
+| `background_jobs_enabled` | bool | `false` | `true`/`false` | 总开关；关闭时 `async=true` 返回 `invalid_args` |
+| `background_job_max_concurrent` | int | `4` | 1–256 | 同时运行上限；超出进入 `queued` |
+| `background_job_max_queued` | int | `32` | 0–10000 | 排队上限；`0` = 满并发即拒绝；超限拒绝创建 |
+| `background_job_ttl_secs` | int | `86400` | 1–604800 | 自**创建**起算的保留时长（秒） |
+| `background_job_result_grace_secs` | int | `300` | 0–86400 | 终态后再保留的宽限（秒）；`0` = 完成即到期（避免"刚完成即被清"） |
+| `background_job_max_entries` | int | `128` | 1–10000 | 注册表条目上限；**仅淘汰终态**条目 |
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 
