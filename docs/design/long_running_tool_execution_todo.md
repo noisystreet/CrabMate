@@ -1,6 +1,6 @@
 # 长耗时工具执行：待办
 
-**状态**：P0 已落地；P1 宿主 `run_command` 的 `tool_output_chunk` 已落地；测试类工具 chunk 与 P2–P3 未承诺排期。**受众**：维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。  
+**状态**：P0 已落地；P1 宿主 `run_command` 的 `tool_output_chunk` 已落地；**`python_snippet_run` 已迁入共享会话（删除 pid-only hard_kill）**；**P3 观测已落地**（会话时长直方图、超时/取消/已 kill/残留计数 + 脱敏日志）；测试类工具 chunk 与 P2–P3 其余项未承诺排期。**受众**：维护 `tool_registry`、`run_command`、`execute_tools`、SSE 工具事件的开发者。  
 **语言**：中文。  
 **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章）删除对应条目；本文件可改为修订记录或删节。
 
@@ -101,7 +101,7 @@
 - 返回：exit / timeout / cancelled + 已截断 stdout/stderr。显式 `ToolError` 码（`timeout` / 取消），不要只靠正文含「超时」。
 - 优先 `tokio::process::Command` + `kill_on_drop`，避免长命令占死 `spawn_blocking` 线程池。若短期仍在 blocking 线程里 `try_wait` 轮询，须在文档/PR 写明占用时长与迁出计划。
 
-**迁入顺序**：`run_command` → `python_snippet_run`（去掉 hard_kill）→ 各 `run_and_format*`（P0 之后、P1 测试工具 chunk 之前或同时）。
+**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 各 `run_and_format*`（未开始；P0 之后、P1 测试工具 chunk 之前或同时）。
 
 **安全**：改 wait **不得**绕过白名单、`..`/绝对路径、审批门闩。超时/取消 **不得** 走 `is_compile_command_success` 成功路径，**不得** 写入 `test_result_cache`，**不得** 把 `workspace_changed` 打成 true。
 
@@ -176,7 +176,7 @@
 
 - [ ] 其余子进程类迁入共享会话；短同步 SDK / 文件 IO 仍 `spawn_blocking`，墙钟按 P2 工具名表。
 - [ ] **Docker 沙盒超时 reap**（`docker stop/kill` 或 runner 生命周期）：单独设计，勿与 P0 混 PR。
-- [ ] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`.cursor/rules/secrets-and-logging.mdc`）。
+- [x] **观测**：工具时长直方图、超时率、是否已 kill、残留 Child 计数；日志脱敏（`.cursor/rules/secrets-and-logging.mdc`）。**实现**：`cm_tools/subprocess_session.rs` 进程内原子计数 + 时长直方图（桶上界 1s/5s/30s/120s/600s/溢出），`session_stats_snapshot()` 快照；会话完成打 `debug`（`pid/kind/killed/duration_ms`）、reap 未确认打 `warn`（残留风险），均不含 argv 与密钥。
 - [ ] **后台 job + `job_id`**：不绑死当前 LLM turn；须单独契约与兼容窗口。
 
 与路线图「可观测与执行轨迹」、`tool_calling_evolution.md`「长任务进度事件」同向，落地时合并拆解。

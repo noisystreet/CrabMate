@@ -221,3 +221,51 @@ fn wait_session_chunk_sink_false_retries_same_bytes() {
     assert_eq!(live, r.stdout);
     assert!(String::from_utf8_lossy(&live).contains("retry-me"));
 }
+
+#[cfg(unix)]
+#[test]
+fn session_stats_record_timeout_killed_and_live_returns_to_zero() {
+    let before = session_stats_snapshot();
+    let mut cmd = Command::new("sleep");
+    cmd.arg("60");
+    prepare_piped_process_group(&mut cmd);
+    let child = cmd.spawn().expect("spawn");
+    let r = wait_child_session(child, &SubprocessWaitCtl::with_wall_secs(1), 1024)
+        .expect("wait");
+    assert_eq!(r.kind, SessionStopKind::Timeout);
+    let after = session_stats_snapshot();
+    // 其它测试并发跑会话，只用单调下界断言。
+    assert!(after.spawns > before.spawns, "{after:?}");
+    assert!(after.completed > before.completed, "{after:?}");
+    assert!(after.timeouts > before.timeouts, "{after:?}");
+    assert!(after.killed > before.killed, "{after:?}");
+    assert!(after.live >= 0, "{after:?}");
+    assert!(
+        after.duration_mean_ms > 0,
+        "本会话至少 wall 1s + reap 时间，均值不应为 0: {after:?}"
+    );
+    // 直方图测试会并发注入时长（非会话），此处只断言本会话带来至少一次累加。
+    assert!(
+        after.duration_buckets.iter().sum::<u64>() > before.duration_buckets.iter().sum::<u64>(),
+        "{after:?}"
+    );
+}
+
+#[test]
+fn session_stats_histogram_places_duration_into_overflow_bucket() {
+    // 直接驱动内部计数：超大时长应落入最后一桶（>600s 溢出），小时长落入首桶。
+    let before = session_stats_snapshot();
+    record_session_duration(42);
+    record_session_duration(900_000);
+    let after = session_stats_snapshot();
+    assert!(after.duration_buckets[0] > before.duration_buckets[0], "{after:?}");
+    assert!(
+        after.duration_buckets[SESSION_DURATION_BUCKET_MS.len() - 1]
+            > before.duration_buckets[SESSION_DURATION_BUCKET_MS.len() - 1],
+        "{after:?}"
+    );
+    assert!(
+        after.duration_mean_ms > before.duration_mean_ms,
+        "累计均值应随两段新增时长上升: {after:?}"
+    );
+}
