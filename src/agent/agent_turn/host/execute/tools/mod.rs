@@ -64,6 +64,8 @@ pub(crate) struct WebExecuteCtx<'a> {
     pub read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     /// SSE 控制面 / 钩子（与 [`crate::agent::agent_turn::RunLoopIo::control`] 同源）。
     pub control: crate::agent::agent_turn::TurnControlSink<'a>,
+    /// 用户取消标志（与 [`crate::agent::agent_turn::RunLoopIo::cancel`] 同源）。
+    pub cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     pub web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
@@ -147,6 +149,7 @@ struct ExecuteToolsCommonCtx<'a> {
     read_file_turn_cache: Option<Arc<crate::read_file_turn_cache::ReadFileTurnCache>>,
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
@@ -304,6 +307,7 @@ pub(crate) async fn per_execute_tools_web(
         workspace_is_set,
         read_file_turn_cache,
         control,
+        cancel,
         web_tool_ctx,
         mcp_turn,
         workspace_changelist,
@@ -335,6 +339,7 @@ pub(crate) async fn per_execute_tools_web(
         read_file_turn_cache,
         workspace_changelist,
         control,
+        cancel,
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn,

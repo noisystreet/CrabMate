@@ -99,6 +99,7 @@ mod tests {
                 obs: DispatchToolObs {
                     sse_out_tx: None,
                     sse_control_mirror: None,
+                    cancel: None,
                 },
                 memory: DispatchToolMemory {
                     read_file_turn_cache: None,

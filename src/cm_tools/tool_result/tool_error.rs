@@ -93,6 +93,7 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
             ToolFailureCategory::Workspace
         }
         "timeout" => ToolFailureCategory::Timeout,
+        "cancelled" => ToolFailureCategory::Timeout,
         "rate_limited" => ToolFailureCategory::PolicyDenied,
         "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
             ToolFailureCategory::External

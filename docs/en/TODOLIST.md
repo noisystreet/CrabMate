@@ -87,7 +87,7 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 **Summary**: Table-driven `ToolSpec`, `run_tool`; workflow / timeouts / search policies in `tool_registry`.
 
-- [ ] Long-running tool execution: kill the child on timeout/cancel (do not only drop the `spawn_blocking` wait); stream `tool_output_chunk` for `run_command` and similar; include partial output in timeout envelopes; per-class wall clocks. Details: **`docs/design/long_running_tool_execution_todo.md`**.
+- [ ] Long-running tool execution: shared child session (process-group SIGTERM→SIGKILL, concurrent pipe drain); P0 host `run_command` + matching workflow nodes must reap; partial output in timeout envelopes; then `tool_output_chunk`; wall clocks by **tool name** and `timeout_secs`, not `ToolExecutionClass`. Details: **`docs/design/long_running_tool_execution_todo.md`**.
 - [ ] Extend sensitive-operation tiers and `tool_approval::SensitiveCapability` for disk writes if needed.
 - [ ] More stacks under `dev_tag` as needed (whitelist and path safety).
 - [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.

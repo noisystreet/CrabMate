@@ -15,6 +15,7 @@ pub mod project_profile;
 pub mod read_file_turn_cache;
 pub mod redact;
 pub mod registry_policy;
+pub mod subprocess_session;
 pub mod text_encoding;
 pub mod tool_dispatch;
 pub mod tool_naming;

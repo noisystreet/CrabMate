@@ -652,3 +652,30 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
     assert!(names.contains(&"cargo_check"));
     assert!(!names.contains(&"git_status"));
 }
+
+#[cfg(unix)]
+#[test]
+fn run_tool_result_run_command_honors_command_timeout_secs() {
+    let allowed = vec!["bash".into(), "sleep".into(), "echo".into()];
+    let mut ctx = test_ctx(&allowed);
+    ctx.command_timeout_secs = 1;
+    let t0 = std::time::Instant::now();
+    let result = run_tool_result(
+        "run_command",
+        r#"{"command":"bash","args":["-c","echo wf-partial; sleep 60"]}"#,
+        &ctx,
+    );
+    assert!(
+        t0.elapsed() < std::time::Duration::from_secs(8),
+        "dispatch must apply wall clock, elapsed={:?}",
+        t0.elapsed()
+    );
+    assert!(!result.ok);
+    assert_eq!(result.error_code.as_deref(), Some("timeout"));
+    assert!(
+        result.message.contains("wf-partial") || result.stdout.contains("wf-partial"),
+        "message={} stdout={}",
+        result.message,
+        result.stdout
+    );
+}

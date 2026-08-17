@@ -12,10 +12,11 @@ mod code_metrics;
 mod code_nav;
 mod command;
 pub use command::{
-    PreparedRunCommand, RunCommandError, argv_has_shell_operators, argv_needs_posix_shell_wrap,
-    argv_needs_shell_expansion, join_run_command_shell_script,
-    peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, run_checked, scan_run_command_unsafe_args_json,
+    PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts,
+    argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
+    join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
+    prepare_run_command_for_pty_spawn, run_checked, run_checked_wait,
+    scan_run_command_unsafe_args_json,
 };
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
@@ -366,13 +367,17 @@ fn run_tool_dispatch(
                         max_entries: ctx.test_result_cache_max_entries,
                         workspace_root: ctx.working_dir,
                     });
-            match command::run_try(
+            let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
+                ctx.command_timeout_secs,
+            );
+            match command::run_try_wait(
                 args_ref,
                 ctx.command_max_output_len,
                 ctx.allowed_commands,
                 ctx.working_dir,
                 test_cache,
                 false,
+                &wait,
             ) {
                 Ok(output) => {
                     let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);

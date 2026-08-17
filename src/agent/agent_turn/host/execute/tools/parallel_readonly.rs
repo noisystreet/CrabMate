@@ -48,6 +48,7 @@ struct ParallelUniqueBatchParts<'a> {
     tracing_chat_turn: Option<Arc<crate::observability::TracingChatTurn>>,
     handler_lookup: HandlerLookupTable,
     sync_default_sandbox_backend: Arc<dyn crate::tool_sandbox::SyncDefaultSandboxBackend>,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 fn parallel_readonly_log_batch_start(
@@ -120,6 +121,7 @@ async fn parallel_collect_unique_results(
         tracing_chat_turn,
         handler_lookup,
         sync_default_sandbox_backend,
+        cancel,
     } = parts;
 
     let wd_root = effective_working_dir.to_path_buf();
@@ -145,6 +147,7 @@ async fn parallel_collect_unique_results(
         let tracing_turn_parallel = tracing_chat_turn.clone();
         let hl = handler_lookup.clone();
         let sb = Arc::clone(&sync_default_sandbox_backend);
+        let cancel_flag = cancel.clone();
         let kind = match hl.id_for(name.as_str()) {
             HandlerId::HttpFetch => ParallelToolKind::HttpFetch,
             HandlerId::GetWeather => ParallelToolKind::GetWeather,
@@ -234,6 +237,7 @@ async fn parallel_collect_unique_results(
                                 obs: tool_registry::DispatchToolObs {
                                     sse_out_tx: None,
                                     sse_control_mirror: None,
+                                    cancel: cancel_flag,
                                 },
                                 memory: tool_registry::DispatchToolMemory {
                                     read_file_turn_cache: rfc.clone(),
@@ -396,9 +400,10 @@ pub(super) async fn execute_tools_parallel(
         effective_working_dir,
         workspace_is_set: _,
         read_file_turn_cache,
-        workspace_changelist,
-        control,
-        tool_result_envelope_v1,
+            workspace_changelist,
+            control,
+            cancel,
+            tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn: _,
         request_chrome_trace: _,
@@ -454,6 +459,7 @@ pub(super) async fn execute_tools_parallel(
             tracing_chat_turn,
             handler_lookup,
             sync_default_sandbox_backend: sandbox_backend.clone(),
+            cancel,
         },
         prefetch_failures,
         parallel_max,

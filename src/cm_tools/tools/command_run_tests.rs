@@ -31,6 +31,9 @@ const TEST_ALLOWED: &[&str] = &[
     "aclocal",
     "make",
     "cargo",
+    "bash",
+    "sh",
+    "sleep",
 ];
 
 fn test_allowed() -> Vec<String> {
@@ -389,4 +392,86 @@ fn bash_wraps_operators_and_gh_dollar_keeps_token_flag() {
     assert!(p.inject_gh_token);
     assert_eq!(p.cmd_name, "bash");
     assert_eq!(p.cmd_args.first().map(String::as_str), Some("-c"));
+}
+
+#[cfg(unix)]
+#[test]
+fn run_command_timeout_includes_partial_output_and_kills() {
+    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    let marker = format!("cm_p0_rc_{}", std::process::id());
+    let args = format!(
+        r#"{{"command":"bash","args":["-c","echo partial-out; sleep 60 # {marker}"]}}"#
+    );
+    let err = run_checked_wait(
+        &args,
+        TEST_MAX_OUTPUT_LEN,
+        &test_allowed(),
+        test_work_dir(),
+        None,
+        false,
+        &SubprocessWaitCtl::with_wall_secs(1),
+    )
+    .expect_err("timeout");
+    assert_eq!(err.kind(), "timeout");
+    let msg = err.user_message();
+    assert!(msg.contains("命令执行超时"), "{msg}");
+    assert!(msg.contains("partial-out"), "{msg}");
+    std::thread::sleep(std::time::Duration::from_millis(250));
+    assert!(
+        !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+        "sleep grandchild still running for {marker}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_command_timeout_legacy_parsed_keeps_stdout() {
+    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    let err = run_checked_wait(
+        r#"{"command":"bash","args":["-c","echo partial-out; sleep 60"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &test_allowed(),
+        test_work_dir(),
+        None,
+        false,
+        &SubprocessWaitCtl::with_wall_secs(1),
+    )
+    .expect_err("timeout");
+    let te = err.into_tool_error();
+    assert_eq!(te.code, "timeout");
+    assert!(
+        te.legacy_parsed.stdout.contains("partial-out"),
+        "stdout={:?}",
+        te.legacy_parsed.stdout
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn run_command_cancel_sets_cancelled_code() {
+    use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    let cancel = Arc::new(AtomicBool::new(false));
+    let wait = SubprocessWaitCtl {
+        wall: Some(std::time::Duration::from_secs(30)),
+        cancel: Some(Arc::clone(&cancel)),
+        extra_stop: None,
+    };
+    let handle = std::thread::spawn(move || {
+        run_checked_wait(
+            r#"{"command":"sleep","args":["60"]}"#,
+            TEST_MAX_OUTPUT_LEN,
+            &test_allowed(),
+            test_work_dir(),
+            None,
+            false,
+            &wait,
+        )
+    });
+    std::thread::sleep(std::time::Duration::from_millis(150));
+    cancel.store(true, Ordering::SeqCst);
+    let err = handle.join().expect("join").expect_err("cancelled");
+    assert_eq!(err.kind(), "cancelled");
+    assert!(err.user_message().contains("命令已取消"));
 }

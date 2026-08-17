@@ -57,7 +57,7 @@ pub(crate) struct RunLoopCore<'a> {
 /// 控制面见 [`TurnControlSink`]（`turn_sink`）。
 pub(crate) struct RunLoopIo<'a> {
     pub no_stream: bool,
-    pub cancel: Option<&'a AtomicBool>,
+    pub cancel: Option<Arc<AtomicBool>>,
     pub control: TurnControlSink<'a>,
 }
 

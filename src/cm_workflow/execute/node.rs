@@ -44,7 +44,14 @@ async fn execute_node_tool_phase(
     let hf_mb = tool_exec_ctx.cfg_http_fetch_max_response_bytes;
     let test_result_cache_enabled = tool_exec_ctx.test_result_cache_enabled;
     let test_result_cache_max_entries = tool_exec_ctx.test_result_cache_max_entries;
-    let command_timeout_secs = tool_exec_ctx.cfg_command_timeout_secs;
+    let command_timeout_secs = if tool_name == "run_command" {
+        timeout_secs
+            .unwrap_or(tool_exec_ctx.cfg_command_timeout_secs)
+            .max(1)
+    } else {
+        tool_exec_ctx.cfg_command_timeout_secs
+    };
+    let run_command_reaps_self = tool_name == "run_command";
 
     let output_fut = async {
         let handle = tokio::task::spawn_blocking(move || {
@@ -83,13 +90,15 @@ async fn execute_node_tool_phase(
             })
     };
 
-    let tool_result = if let Some(ts) = timeout_secs {
+    let tool_result = if run_command_reaps_self {
+        output_fut.await
+    } else if let Some(ts) = timeout_secs {
         match tokio::time::timeout(std::time::Duration::from_secs(ts), output_fut).await {
             Ok(s) => s,
             Err(_) => {
                 log::warn!(
                     target: "crabmate",
-                    "workflow 节点超时（{} 秒）：tool={} node_id={} —— 后台任务仍在运行（spawn_blocking 无法取消），请手动检查是否有孤儿进程。",
+                    "workflow 节点超时（{} 秒）：tool={} node_id={} —— 非 run_command 的 spawn_blocking 任务无法取消，后台子进程可能仍在运行。",
                     ts,
                     tool_name,
                     node_id,
