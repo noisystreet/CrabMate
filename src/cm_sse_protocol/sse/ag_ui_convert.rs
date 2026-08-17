@@ -343,6 +343,9 @@ mod tests {
                 stdout: None,
                 stderr: None,
                 structured_preview: None,
+                tool_job_id: None,
+                tool_job_poll_url: None,
+                tool_job_status: None,
             },
         });
         assert_eq!(events.len(), 1);

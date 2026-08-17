@@ -101,6 +101,7 @@ pub async fn run_agent_turn<'a>(
         tracing_chat_turn,
         request_audit,
         process_handles,
+        tool_job_registry,
     } = obs;
     let AgentTurnTransport {
         out,
@@ -206,6 +207,7 @@ pub async fn run_agent_turn<'a>(
                 request_audit: request_audit.clone(),
                 process_handles: Arc::clone(&process_handles),
                 trace_sink,
+                tool_job_registry,
             },
         },
         turn: crate::agent::agent_turn::RunLoopTurnState {

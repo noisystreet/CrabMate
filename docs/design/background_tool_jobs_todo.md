@@ -46,10 +46,10 @@
 - [x] 启动 sweep：**内存注册表启动即为空，sweep 为空操作**（无持久化可清）；孤儿进程无法可靠识别（子进程无标记），不承诺清理，文档明示单副本不承诺崩溃恢复。
 
 **1.3 `run_command` 集成**
-- [ ] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）与 `timeout_secs: Option<u64>`（钳制 1～600，对齐 `python_snippet_run`；**随本切片一并落地**，本属 P2 子项）；Schema 自动含新字段。
-- [ ] 门闩：`background_jobs_enabled=false` → `invalid_args`；需交互审批（AllowOnce）→ 拒绝。**async 仅对 `run_command` 开放**，不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并发写责任在 `docs/工具说明.md` 明示。
-- [ ] `execute_run_command.inc.rs` async 路径：白名单/路径/审批照旧（发起时刻）→ `create_job` → 立即返回启动 `tool_result`（`tool_job_id` / `tool_job_poll_url` / `tool_job_status=queued`），`output` 为发起确认文案。
-- [ ] 启动帧软字段序列化 + 不 bump 协议（`tool_result` 可选字段，旧客户端忽略）。
+- [x] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）与 `timeout_secs: Option<u64>`（钳制 1～600，对齐 `python_snippet_run`；**随本切片一并落地**，本属 P2 子项）；Schema 自动含新字段。
+- [x] 门闩：`background_jobs_enabled=false` → `invalid_args`；需交互审批（AllowOnce）→ 拒绝。**async 仅对 `run_command` 开放**，不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并发写责任在 `docs/工具说明.md` 明示（1.5 同步）。
+- [x] `execute_run_command.inc.rs` async 路径：白名单/路径/审批照旧（发起时刻，`async_mode` 拒绝一切交互审批）→ `enqueue_and_launch`（登记 + `try_start` 调度，并发满入队、完成后续领）→ 立即返回启动 `tool_result`（`tool_job_id` / `tool_job_poll_url` / `tool_job_status=queued`），`output` 为发起确认文案。
+- [x] 启动帧软字段序列化 + 不 bump 协议（`tool_result.tool_job_*` 可选字段经注入 JSON → `ToolResultBody` 软字段；`append_tool_result_and_reflection` 跳过 `tool_job` 键不注入模型）。
 
 **1.4 HTTP 端点**（`src/web/routes/` + `crabmate-api-contract`）
 - [ ] `GET /tools/jobs/{tool_job_id}`：契约 §3.1 响应字段 + 错误码 `401/403/404/410`（`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 新增，同步 `crates/crabmate-api-contract/src/error_codes.rs`）。

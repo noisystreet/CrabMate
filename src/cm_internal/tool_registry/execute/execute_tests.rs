@@ -60,6 +60,7 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
         &allowed,
         None,
         "run_command",
+        false,
     )
     .await
     .expect("disabled → NotNeeded");
@@ -73,6 +74,7 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
         &allowed,
         None,
         "run_command",
+        false,
     )
     .await
     .expect("git range → NotNeeded");
@@ -88,7 +90,7 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     let abs = r#"{"command":"cat","args":["/etc/passwd"]}"#;
 
     let err =
-        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command")
+        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command", false)
             .await
             .expect_err("no channel");
     assert!(err.contains("需要审批通道"), "{err}");
@@ -96,7 +98,7 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
         crate::cm_config::SyncDefaultToolSandboxMode::Docker;
     let err =
-        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command")
+        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command", false)
             .await
             .expect_err("docker");
     assert!(err.contains("Docker"), "{err}");
@@ -112,6 +114,7 @@ async fn posix_shell_wrap_gate_errs_without_channel() {
         allowed,
         None,
         "run_command",
+        false,
     )
     .await
     .expect_err("no channel");
@@ -129,6 +132,7 @@ async fn posix_shell_wrap_skips_glob_when_bash_allowlisted() {
         allowed,
         None,
         "run_command",
+        false,
     )
     .await
     .expect("glob + bash → no extra approval");
@@ -153,6 +157,7 @@ async fn posix_shell_wrap_skips_cd_prefix_without_expansion() {
         allowed,
         None,
         "run_command",
+        false,
     )
     .await
     .expect("cd peel → git status");
@@ -238,4 +243,107 @@ async fn run_command_chunk_try_send_full_does_not_bump_seq() {
         &utf8,
     ));
     assert_eq!(seq.load(std::sync::atomic::Ordering::SeqCst), 0);
+}
+
+fn async_test_sandbox(
+) -> Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend> {
+    crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend()
+}
+
+fn async_test_env<'a>(
+    cfg: &'a Arc<AgentConfig>,
+    sandbox: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
+) -> ToolExecEnv<'a> {
+    ToolExecEnv {
+        cfg,
+        sandbox_backend: sandbox,
+    }
+}
+
+#[tokio::test]
+async fn run_command_async_disabled_returns_invalid_args() {
+    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    let sandbox = async_test_sandbox();
+    let env = async_test_env(&cfg, &sandbox);
+    let wd = std::path::Path::new(".");
+    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
+        env: &env,
+        effective_working_dir: wd,
+        web_ctx: None,
+        args: r#"{"command":"echo","args":["hi"],"async":true}"#,
+        tool_jobs: None,
+    })
+    .await;
+    assert!(out.contains("未启用"), "{out}");
+    assert!(inject.is_none());
+    drop(sandbox);
+}
+
+#[tokio::test]
+async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    let cfg = Arc::new(cfg);
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let sandbox = async_test_sandbox();
+    let env = async_test_env(&cfg, &sandbox);
+    let wd = std::path::Path::new(".");
+    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
+        env: &env,
+        effective_working_dir: wd,
+        web_ctx: None,
+        args: r#"{"command":"echo","args":["async-hi"],"async":true,"timeout_secs":5}"#,
+        tool_jobs: Some(Arc::clone(&registry)),
+    })
+    .await;
+    let tj = inject
+        .as_ref()
+        .and_then(|v| v.get("tool_job"))
+        .expect("tool_job 启动帧");
+    let id = tj.get("tool_job_id").and_then(|x| x.as_str()).expect("id");
+    assert!(id.starts_with("tooljob_"));
+    assert_eq!(
+        tj.get("tool_job_status").and_then(|x| x.as_str()),
+        Some("queued")
+    );
+    assert_eq!(
+        tj.get("tool_job_poll_url").and_then(|x| x.as_str()),
+        Some(format!("/tools/jobs/{id}").as_str())
+    );
+    assert!(out.contains(id), "{out}");
+    // 等待 worker 完成（async 已启动），校验注册表落定终态。
+    let id_owned = id.to_string();
+    loop {
+        let rec = registry.get(&id_owned).expect("record");
+        if rec.status.is_terminal() {
+            assert_eq!(rec.status, crate::cm_internal::tool_jobs::JobStatus::Succeeded);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    drop(sandbox);
+}
+
+#[tokio::test]
+async fn run_command_async_rejects_allow_once_requiring_command() {
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    let cfg = Arc::new(cfg);
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let sandbox = async_test_sandbox();
+    let env = async_test_env(&cfg, &sandbox);
+    let wd = std::path::Path::new(".");
+    // `definitely_not_allowlisted_cmd_xyz` 不在白名单且无审批通道（web_ctx=None）→ 拒绝 async。
+    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
+        env: &env,
+        effective_working_dir: wd,
+        web_ctx: None,
+        args: r#"{"command":"definitely_not_allowlisted_cmd_xyz","async":true}"#,
+        tool_jobs: Some(Arc::clone(&registry)),
+    })
+    .await;
+    assert!(out.contains("AllowAlways"), "{out}");
+    assert!(inject.is_none());
+    assert_eq!(registry.stats().total, 0, "拒绝后不得创建任务");
+    drop(sandbox);
 }

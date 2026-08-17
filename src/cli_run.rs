@@ -478,6 +478,15 @@ async fn build_serve_runtime_state(
         ltm_store_path.trim(),
     );
     let sse_stream_hub = std::sync::Arc::new(crate::sse::SseStreamHub::new());
+    let tool_job_registry = {
+        let g = cfg_holder.read().await;
+        crate::cm_internal::tool_jobs::registry_from_config(&g)
+    };
+    // 后台任务 TTL 清理定时器（终态过期 → 轮询 410）；serve 级单例，与注册表同生命周期。
+    crate::cm_internal::tool_jobs::spawn_cleanup_task(
+        Arc::clone(&tool_job_registry),
+        std::time::Duration::from_secs(60),
+    );
     let api_key: Arc<str> = Arc::from(api_key);
     let chat_queue_job_deps = std::sync::Arc::new(chat_job_queue::WebChatQueueDeps {
         cfg: Arc::clone(cfg_holder),
@@ -521,6 +530,7 @@ async fn build_serve_runtime_state(
                 sse_stream_hub,
                 process_handles: Arc::clone(&process_handles),
                 async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+                tool_job_registry,
                 mount_web_ui,
             },
         }),

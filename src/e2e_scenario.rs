@@ -533,6 +533,7 @@ async fn run_single_agent_turn(
             tracing_chat_turn: None,
             request_audit: None,
             process_handles: ProcessHandles::default_arc_process_handles().turn_handles_arc(),
+            tool_job_registry: None,
         },
     };
 

@@ -62,6 +62,15 @@ pub async fn start_test_serve(
 
     let api_key: Arc<str> = Arc::from(api_key);
     let sse_stream_hub = Arc::new(SseStreamHub::new());
+    let tool_job_registry = {
+        let g = cfg_holder.read().await;
+        crate::cm_internal::tool_jobs::registry_from_config(&g)
+    };
+    // 后台任务 TTL 清理定时器（终态过期 → 轮询 410）。
+    crate::cm_internal::tool_jobs::spawn_cleanup_task(
+        Arc::clone(&tool_job_registry),
+        std::time::Duration::from_secs(60),
+    );
     let chat_queue_job_deps = Arc::new(WebChatQueueDeps {
         cfg: Arc::clone(&cfg_holder),
         api_key: api_key.to_string(),
@@ -101,6 +110,7 @@ pub async fn start_test_serve(
             sse_stream_hub,
             process_handles: ProcessHandles::default_arc_process_handles(),
             async_chat_jobs: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            tool_job_registry,
             mount_web_ui: true,
         },
     });

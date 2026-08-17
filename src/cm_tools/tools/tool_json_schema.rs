@@ -380,6 +380,31 @@ mod tests {
     }
 
     #[test]
+    fn run_command_schema_exposes_async_and_timeout_secs() {
+        let v = tool_parameters_schema_value::<RunCommandArgs>();
+        let async_prop = v
+            .pointer("/properties/async")
+            .expect("properties.async");
+        let async_types = async_prop.get("type").and_then(|x| x.as_array());
+        assert!(
+            async_types.is_some_and(|t| t.iter().any(|x| x == "boolean")),
+            "async 字段（serde rename）应为 boolean（Option → 含 null）：{async_prop}"
+        );
+        let timeout = v
+            .pointer("/properties/timeout_secs")
+            .expect("properties.timeout_secs");
+        let timeout_types = timeout.get("type").and_then(|x| x.as_array());
+        assert!(
+            timeout_types.is_some_and(|t| t.iter().any(|x| x == "integer")),
+            "timeout_secs 应为 integer（Option → 含 null）：{timeout}"
+        );
+        let range = timeout.get("minimum").and_then(|x| x.as_u64());
+        assert_eq!(range, Some(1));
+        let max = timeout.get("maximum").and_then(|x| x.as_u64());
+        assert_eq!(max, Some(600));
+    }
+
+    #[test]
     fn git_status_schema_optional_flags() {
         let v = tool_parameters_schema_value::<GitStatusArgs>();
         assert_eq!(v.get("type"), Some(&json!("object")));

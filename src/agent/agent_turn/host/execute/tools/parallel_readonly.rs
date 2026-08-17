@@ -238,6 +238,8 @@ async fn parallel_collect_unique_results(
                                     sse_out_tx: None,
                                     sse_control_mirror: None,
                                     cancel: cancel_flag,
+                                    // 并行只读批不含 `run_command`；后台任务仅串行路径开放。
+                                    tool_jobs: None,
                                 },
                                 memory: tool_registry::DispatchToolMemory {
                                     read_file_turn_cache: rfc.clone(),
@@ -418,6 +420,7 @@ pub(super) async fn execute_tools_parallel(
         handler_lookup,
         sync_default_sandbox_backend,
         readonly_tool_ttl_cache: _,
+        tool_job_registry: _,
     } = ctx;
 
     let sandbox_backend = Arc::clone(&sync_default_sandbox_backend);

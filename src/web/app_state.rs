@@ -134,6 +134,8 @@ pub(crate) struct AppStateWebAux {
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
+    /// 后台任务注册表（`run_command` 的 `async=true`）；启动时按 `[tool_registry]` 配置构建。
+    pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
     /// 是否挂载业务 UI 静态资源（`serve --with-web`）。为 false（默认）时 `/health` 不检查静态目录。
     pub(crate) mount_web_ui: bool,
 }
@@ -154,6 +156,8 @@ pub(crate) struct WebChatJobAppFacet {
     pub(crate) conversation: AppStateConversationRuntime,
     pub(crate) process_handles: Arc<crate::process_handles::TurnProcessHandles>,
     pub(crate) approval_sessions: Arc<tokio::sync::RwLock<HashMap<String, ApprovalSessionSlot>>>,
+    /// 后台任务注册表（`run_command` 的 `async=true`）。
+    pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
 }
 
 /// Web 会话存储后端。

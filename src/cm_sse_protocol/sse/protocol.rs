@@ -24,6 +24,7 @@ pub struct SseMessage {
 /// 控制面负载：`untagged` 按字段形状区分，顺序从更特异的结构到更通用的结构。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(untagged)]
+#[allow(clippy::large_enum_variant)] // `ToolResultBody` 承载完整工具输出（含软字段），保持直存便于测试/双端对齐
 pub enum SsePayload {
     /// 流式对话失败（`chat_stream_handler` 等）
     Error(SseErrorBody),
@@ -256,6 +257,13 @@ pub struct ToolResultBody {
     /// 当前由 **`read_file`** / **`read_dir`** / **`list_tree`** 等只读文件工具填充；其它工具省略。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub structured_preview: Option<serde_json::Value>,
+    /// 可选：后台任务启动帧（`run_command` 的 `async=true`；契约 `background_tool_jobs_contract.md` §2）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_job_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_job_poll_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_job_status: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -511,6 +519,9 @@ mod tests {
                 stdout: Some(String::new()),
                 stderr: Some("permission denied".into()),
                 structured_preview: None,
+                tool_job_id: None,
+                tool_job_poll_url: None,
+                tool_job_status: None,
             },
         });
         let m: SseMessage = serde_json::from_str(&s).unwrap();

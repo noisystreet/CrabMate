@@ -30,6 +30,14 @@ pub struct RunCommandArgs {
     /// 纯命令名（详见工具说明；禁止嵌入参数）
     pub command: String,
     pub args: Option<Vec<String>>,
+    /// 墙钟秒（钳制 1～600，对齐 `python_snippet_run`）；`async` 与非 `async` 均生效。
+    #[schemars(range(min = 1, max = 600))]
+    pub timeout_secs: Option<u64>,
+    /// `true` 时后台执行（默认 `false`）：创建后台任务、立即返回启动 `tool_result`
+    /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
+    /// 需 `[tool_registry] background_jobs_enabled`；命令须已在白名单或已 AllowAlways 批准。
+    #[serde(rename = "async")]
+    pub async_: Option<bool>,
 }
 
 // ── file_core ────────────────────────────────────────────────────

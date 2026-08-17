@@ -77,6 +77,8 @@ fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
 }
 
 /// 解析 `run_command` 白名单与交互审批，返回最终生效的 `allowed_commands` 快照（可能与配置不同）。
+/// `async_mode=true` 时**拒绝**任何会触发交互审批的路径（后台任务无法关联单次 AllowOnce 审批）。
+#[allow(clippy::too_many_arguments)] // 白名单解析：配置、目录、Web 上下文、命令/脚本与审批模式
 async fn run_command_resolve_effective_allowlist(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
@@ -85,6 +87,7 @@ async fn run_command_resolve_effective_allowlist(
     command_raw: &str,
     script: &str,
     needs_shell: bool,
+    async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
     let base_allowed = Arc::clone(&cfg.command_exec.allowed_commands);
     let mut effective_allowed_arc: Arc<[String]> = base_allowed;
@@ -106,6 +109,15 @@ async fn run_command_resolve_effective_allowlist(
             if already_allowed {
                 effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, cmd);
             } else {
+                if async_mode {
+                    return Err((
+                        format!(
+                            "错误：后台任务（async）要求命令 '{}' 已在白名单或已 AllowAlways 批准；请先 AllowAlways，或去掉 async 参数。",
+                            cmd
+                        ),
+                        None,
+                    ));
+                }
                 let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
                     web: web_ctx.map(|w| &w.persistent_allowlist_shared),
                 };
@@ -205,6 +217,7 @@ fn posix_shell_wrap_needs_interactive_approval(
 }
 
 /// 白名单无 bash/sh 但 argv 需要 glob/`$VAR` 时，或 Web 上 argv 含 `&&`/`|` 等操作符时：审批完整脚本。
+/// `async_mode=true` 时拒绝需要交互审批的 bash 包装。
 async fn approve_posix_shell_wrap_if_needed(
     command_raw: &str,
     cmd_args: &[String],
@@ -212,6 +225,7 @@ async fn approve_posix_shell_wrap_if_needed(
     effective_allowed: Arc<[String]>,
     web_ctx: Option<&WebToolRuntime>,
     sse_command: &str,
+    async_mode: bool,
 ) -> Result<Arc<[String]>, String> {
     if !posix_shell_wrap_needs_interactive_approval(
         command_raw,
@@ -224,6 +238,12 @@ async fn approve_posix_shell_wrap_if_needed(
     if web_ctx.is_none() {
         return Err(format!(
             "错误：{sse_command} 脚本含 glob / 变量 / 管道等，需经 bash -c 执行，但白名单无 bash/sh 且无审批通道。完整脚本：{}",
+            script.trim()
+        ));
+    }
+    if async_mode {
+        return Err(format!(
+            "错误：后台任务（async）不允许 bash -c 包装的交互审批；请先将 bash/sh 列入白名单，或去掉 async 参数。完整脚本：{}",
             script.trim()
         ));
     }
@@ -270,6 +290,7 @@ async fn resolve_run_command_shell_allowlist(
     web_ctx: Option<&WebToolRuntime>,
     parsed: &ParsedRunCommandJson,
     sse_command: &str,
+    async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
     let (policy_cmd, policy_args) =
         tools::peel_cd_prefix_argv_for_shell_policy(&parsed.command_raw, &parsed.cmd_args);
@@ -282,6 +303,7 @@ async fn resolve_run_command_shell_allowlist(
         parsed.command_raw.as_str(),
         parsed.script.as_str(),
         needs_shell,
+        async_mode,
     )
     .await?;
     match approve_posix_shell_wrap_if_needed(
@@ -291,6 +313,7 @@ async fn resolve_run_command_shell_allowlist(
         allowed,
         web_ctx,
         sse_command,
+        async_mode,
     )
     .await
     {
@@ -307,6 +330,7 @@ enum ExternalPathGate {
 }
 
 /// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
+/// `async_mode=true` 时拒绝需要交互审批的工作区外路径。
 async fn approve_external_run_command_paths_if_needed(
     cfg: &AgentConfig,
     args_json: &str,
@@ -314,6 +338,7 @@ async fn approve_external_run_command_paths_if_needed(
     allowed_commands: &[String],
     web_ctx: Option<&WebToolRuntime>,
     sse_command: &str,
+    async_mode: bool,
 ) -> Result<ExternalPathGate, String> {
     if !cfg.command_exec.allow_external_path_with_approval {
         return Ok(ExternalPathGate::NotNeeded);
@@ -338,6 +363,12 @@ async fn approve_external_run_command_paths_if_needed(
     if web_ctx.is_none() {
         return Err(format!(
             "错误：{sse_command} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
+            unsafe_args.join(", ")
+        ));
+    }
+    if async_mode {
+        return Err(format!(
+            "错误：后台任务（async）不支持工作区外路径（{}）的交互审批；请去掉外部路径 / 路径穿越形 \"..\"，或去掉 async 参数。",
             unsafe_args.join(", ")
         ));
     }
@@ -388,6 +419,7 @@ struct RunCommandHostInvoke<'a> {
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
 fn run_command_chunk_sink(
@@ -467,6 +499,145 @@ fn emit_run_command_tool_output_chunk(
     }
 }
 
+struct RunCommandAsyncInvoke<'a> {
+    env: &'a ToolExecEnv<'a>,
+    effective_working_dir: &'a Path,
+    web_ctx: Option<&'a WebToolRuntime>,
+    args: &'a str,
+    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+}
+
+/// `run_command` 的 `async=true` 后台路径（契约 §1.2 / §2）。
+///
+/// 发起时刻完成白名单 / 路径 / 审批（`async_mode=true` 拒绝一切交互审批），
+/// 构造进程组可执行参数后登记后台任务并立即返回启动帧；轮询/取消走 `GET /tools/jobs/{id}` 等端点。
+async fn execute_run_command_async(
+    invoke: RunCommandAsyncInvoke<'_>,
+) -> (String, Option<serde_json::Value>) {
+    let RunCommandAsyncInvoke {
+        env,
+        effective_working_dir,
+        web_ctx,
+        args,
+        tool_jobs,
+    } = invoke;
+    let cfg = env.cfg;
+    if !cfg.tool_registry_policy.tool_registry_background_jobs_enabled {
+        return (
+            "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务或去掉 async 参数。"
+                .to_string(),
+            None,
+        );
+    }
+    let Some(registry) = tool_jobs else {
+        return (
+            "错误：当前执行环境不支持后台任务（async）。请去掉 async 参数。".to_string(),
+            None,
+        );
+    };
+    if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
+        return (
+            "错误：后台任务（async）暂不支持 Docker 同步工具沙盒模式；请使用宿主模式或去掉 async 参数。"
+                .to_string(),
+            None,
+        );
+    }
+
+    let parsed = parse_run_command_json(args);
+    let effective_allowed_arc =
+        match resolve_run_command_shell_allowlist(cfg, effective_working_dir, web_ctx, &parsed, "run_command", true)
+            .await
+        {
+            Ok(a) => a,
+            Err(e) => return e,
+        };
+    let gate = match approve_external_run_command_paths_if_needed(
+        cfg.as_ref(),
+        args,
+        effective_working_dir,
+        effective_allowed_arc.as_ref(),
+        web_ctx,
+        "run_command",
+        true,
+    )
+    .await
+    {
+        Ok(g) => g,
+        Err(e) => return (e, None),
+    };
+    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
+
+    let prepared =
+        match tools::prepare_run_command_for_pty_spawn(
+            args,
+            effective_working_dir,
+            effective_allowed_arc.as_ref(),
+            skip_arg_safety,
+        ) {
+            Ok(p) => p,
+            Err(e) => return (e.extended_user_message(), None),
+        };
+    let program = match prepared.exec_path {
+        Some(p) => p.to_string_lossy().into_owned(),
+        None => prepared.cmd_name,
+    };
+    // gh token：发起时刻解析并固化到 spawn（worker 线程无请求作用域）。
+    let extra_env = if crate::cm_tools::github_token::command_basename_is_gh(&program) {
+        crate::cm_tools::github_token::resolve_token_for_child_env()
+            .map(|t| vec![("GH_TOKEN".to_string(), t)])
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let args_value: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+    let timeout_secs = args_value.get("timeout_secs").and_then(|x| x.as_u64());
+    let wall = Duration::from_secs(
+        timeout_secs
+            .map(|t| t.clamp(1, 600))
+            .unwrap_or(cfg.command_exec.command_timeout_secs)
+            .max(1),
+    );
+    let spawn = crate::cm_internal::tool_jobs::JobSpawn {
+        program,
+        args: prepared.cmd_args,
+        cwd: prepared.effective_working_dir,
+        extra_env,
+        wall,
+        max_output_len: cfg.command_exec.command_max_output_len,
+    };
+    let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
+        registry,
+        effective_working_dir.to_path_buf(),
+        None,
+        spawn,
+        args.to_string(),
+    ) {
+        Ok(id) => id,
+        Err(crate::cm_internal::tool_jobs::RegisterError::QueueFull) => {
+            return (
+                "错误：后台任务队列已满，请稍后重试或去掉 async 参数。".to_string(),
+                None,
+            );
+        }
+        Err(crate::cm_internal::tool_jobs::RegisterError::AtCapacity) => {
+            return (
+                "错误：后台任务注册表已达条目上限，请稍后重试。".to_string(),
+                None,
+            );
+        }
+    };
+    let poll_url = format!("/tools/jobs/{id}");
+    let output = format!("已创建后台任务 {id}，轮询 GET {poll_url}（结果可通过轮询接口获取）。");
+    let inject = Some(serde_json::json!({
+        "tool_job": {
+            "tool_job_id": id,
+            "tool_job_poll_url": poll_url,
+            "tool_job_status": "queued",
+        }
+    }));
+    (output, inject)
+}
+
 async fn execute_run_command_impl(
     invoke: RunCommandHostInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
@@ -482,11 +653,29 @@ async fn execute_run_command_impl(
         sse_out_tx,
         sse_control_mirror,
         cancel,
+        tool_jobs,
     } = invoke;
     let cfg = env.cfg;
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
+    let args_value: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+    let async_flag = args_value
+        .get("async")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let timeout_secs = args_value.get("timeout_secs").and_then(|x| x.as_u64());
+    if async_flag {
+        return execute_run_command_async(RunCommandAsyncInvoke {
+            env,
+            effective_working_dir,
+            web_ctx,
+            args,
+            tool_jobs: tool_jobs.clone(),
+        })
+        .await;
+    }
+
     let parsed = parse_run_command_json(args);
     let effective_allowed_arc = match resolve_run_command_shell_allowlist(
         cfg,
@@ -494,6 +683,7 @@ async fn execute_run_command_impl(
         web_ctx,
         &parsed,
         "run_command",
+        false,
     )
     .await
     {
@@ -508,6 +698,7 @@ async fn execute_run_command_impl(
         effective_allowed_arc.as_ref(),
         web_ctx,
         "run_command",
+        false,
     )
     .await
     {
@@ -535,7 +726,9 @@ async fn execute_run_command_impl(
         return (s, inj);
     }
 
-    let cmd_timeout = cfg.command_exec.command_timeout_secs;
+    let cmd_timeout = timeout_secs
+        .map(|t| t.clamp(1, 600))
+        .unwrap_or(cfg.command_exec.command_timeout_secs);
     let max_out = cfg.command_exec.command_max_output_len;
     let test_cache_enabled = cfg.chat_queues_cache.test_result_cache_enabled;
     let test_cache_max = cfg.chat_queues_cache.test_result_cache_max_entries;

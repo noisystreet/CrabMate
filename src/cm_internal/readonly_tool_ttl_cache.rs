@@ -220,6 +220,14 @@ fn standalone_ttl_eligible(cmd: &str) -> bool {
 /// 策略：拒绝 shell 解释器；**`git`** / **`cargo`** 仅允许保守子命令集；其余命令使用小型只读工具白名单；
 /// 任意参数含 **`..`** 或以 **`/`** 开头时不缓存（与现有路径约束一致）。
 pub fn run_command_invocation_ttl_cache_eligible(args_json: &str) -> bool {
+    // 后台任务启动帧（`async: true`）不是真实执行结果，不得缓存/命中。
+    if serde_json::from_str::<serde_json::Value>(args_json)
+        .ok()
+        .and_then(|v| v.get("async").and_then(|x| x.as_bool()))
+        .unwrap_or(false)
+    {
+        return false;
+    }
     let Some((command, args)) = parse_run_command_payload(args_json) else {
         return false;
     };
@@ -279,6 +287,20 @@ mod tests {
         ));
         assert!(!run_command_invocation_ttl_cache_eligible(
             args("cat", &["../x"]).as_str()
+        ));
+    }
+
+    #[test]
+    fn eligibility_denies_async_background_job_start_frame() {
+        // 后台任务启动帧不是真实执行结果：不得缓存/命中，防止后续同步调用返回「已创建后台任务…」。
+        assert!(!run_command_invocation_ttl_cache_eligible(
+            r#"{"command":"git","args":["status"],"async":true}"#
+        ));
+        assert!(run_command_invocation_ttl_cache_eligible(
+            r#"{"command":"git","args":["status"],"async":false}"#
+        ));
+        assert!(run_command_invocation_ttl_cache_eligible(
+            r#"{"command":"git","args":["status"]}"#
         ));
     }
 
