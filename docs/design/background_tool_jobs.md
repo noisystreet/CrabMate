@@ -22,7 +22,7 @@
 ### 2. job 标识与生命周期
 
 - **`tool_job_id`**（string，形如 `tooljob_<32hex>`，**随机不透明**，不可枚举）：**独立命名空间**，与 LLM turn 的 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）**明确区分**，避免日志/端点歧义。job 记录绑定**来源会话 + workspace**，轮询/取消端点校验归属，防越权读取。
-- 状态机：`queued → running → succeeded | failed | cancelled | timed_out | expired`。
+- 状态机：`queued → running → succeeded | failed | cancelled | timed_out`。**`expired` 不是持久状态**：TTL+宽限到期即删除记录（轮询得 `410 Gone`）。
 - 超时：默认 `command_timeout_secs`；工具参数 `timeout_secs` 显式覆盖（钳制同现有 1～600）。取消：复用 `subprocess_session` 的进程组 kill（`Cancelled` 路径已实现）。
 - 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；成功结果**可**写入 `test_result_cache`；超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。
 
@@ -34,6 +34,7 @@
   - 已过期被清理的 job：返回 **`410 Gone`**（`expired` 不保留条目，到期即删除）。
   - 鉴权复用现有 protected routes（Bearer）；**归属校验**：读取与取消均校验 `tool_job_id` 绑定的来源会话/workspace 与调用方一致。
 - **TTL 起算与宽限**：TTL 自**创建**算（对齐 `background_job_ttl_secs`），但结果完成后额外保留宽限 `background_job_result_grace_secs`（默认 300s），避免长 job"刚完成即被清"。
+- **结果消费者**：job 结果**不自动回填模型/对话**（ADR 否决项）；由**调用方/用户**把轮询结果带回后续回合（产品上 Client 提供"复制结果"或注入下一轮 user 消息；`workspace_changed` 同理由调用方转达）。
 - **辅助 = 尽力而为 SSE 补发**（Phase 2，可选）：新顶层键 **`tool_job_finished`**（体含 `tool_job_id`、`status`、`exit_code`、`summary`）——**仅当原 SSE 连接仍存活**时投递，作为"顺路提醒"，不参与主流程；旧客户端忽略未知键。
 
 ### 4. 启动帧（SSE `tool_result`）
@@ -53,9 +54,9 @@
 - 复用 `subprocess_session::wait_child_session`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；`tokio::spawn_blocking` 包一层（与现 run_command 一致；迁 `tokio::process` 时随共享会话一并升级）。
 - 注册表：进程内 `Mutex<HashMap<tool_job_id, JobState>>` + 过期清理（TTL 与条目上限）。**多副本**需外部代理/持久化（与 `chat_job_queue` 既有声明一致），另立项。
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
-- **worker 异常兜底**：`spawn_blocking` 闭包包 `catch_unwind`；`JoinHandle` 出错/panic → 标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。
-- **启动清理**：serve 启动时 sweep 残留 job 状态。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：sweep 按可识别标记清理残留子进程组，无法可靠识别的在文档明示。
-- **并发写约束**：async 允许并行 job，写盘类并发冲突责任在模型/调用方；已知写盘类命令默认禁 async（实现时按工具分类钉死，与 P0「写工具并行仍走串行批」对齐）。
+- **worker 异常兜底**：`spawn_blocking` 闭包包 `catch_unwind`；`JoinHandle` 出错/panic → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。
+- **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
+- **并发写约束**：**async 仅对 `run_command` 开放**（本切片范围），不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
 
 ### 6. 配置与默认
 

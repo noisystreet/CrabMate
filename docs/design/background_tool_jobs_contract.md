@@ -14,11 +14,12 @@
 |------|------|------|------|
 | `command` | string | 是 | 现有语义不变 |
 | `args` | string[] | 否 | 现有语义不变 |
+| `timeout_secs` | int | 否 | **新增**；墙钟秒（钳制 1～600，对齐 `python_snippet_run`）；仅 async 与非 async 均生效。**随本功能在 Slice 1 一并落地**（本属 P2 子项） |
 | `async` | bool | 否 | **新增**；默认 `false`（同步，现有行为不变） |
 
 - Rust 侧 `async` 是关键字：结构体字段用 `#[serde(rename = "async")] pub async_: bool`（或等价 raw identifier），JSON Schema 输出名为 `async`。
 - 备选命名 `run_async` / `background`：否决，保持与语义、文档一致的 `async`。
-- **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` 会被旧服务端拒绝（unknown field）——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §9）。
+- **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` / `timeout_secs` 会被旧服务端拒绝（unknown field）——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §8）。
 
 ### 1.2 语义
 
@@ -30,7 +31,7 @@
 | `async: true`，白名单/路径校验通过 | 创建 job → **立即**返回启动 `tool_result`（§2），不执行 |
 
 - 发起时刻即完成白名单、`..`/绝对路径校验与交互审批（`AllowAlways` / 已在白名单者放行）。
-- 已知**写盘类**命令默认禁 async（按工具分类钉死，与 P0「写工具并行仍走串行批」对齐），实现时在审批/分类层拒绝。
+- **async 仅对 `run_command` 开放**（本切片范围）；不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
 
 ---
 
@@ -104,10 +105,9 @@
 |------|------|
 | `queued` | 直接标 `cancelled`（**不**走杀进程路径） |
 | `running` | 置 job 级取消 → `subprocess_session` 走 `Cancelled`（进程组 SIGTERM→SIGKILL）→ `cancelled` |
-| 已完成（`succeeded`/`failed`/`cancelled`/`timed_out`） | 不覆盖：返回 **409** `{ "status": "<当前状态>" }`（原子状态转移，杜绝把成功覆盖成取消） |
+| 已是 `cancelled` | 幂等：返回 **200** 当前状态 |
+| 其它终态（`succeeded`/`failed`/`timed_out`） | 不覆盖：返回 **409** `{ "status": "<当前状态>" }`（原子状态转移，杜绝把成功覆盖成取消） |
 | 不存在 / 已过期 | 404 / 410（同 §3.1） |
-
-重复 cancel：幂等（已 `cancelled` 返回 200 当前状态；已完成返回 409）。
 
 ### 3.3 归属校验
 
@@ -131,7 +131,7 @@ queued ──cancel──▶ cancelled
 |------|------|------|
 | `queued → running` | worker 领取（并发上限内） | FIFO |
 | `running → succeeded` | 子进程 exit 0 | 可写 `test_result_cache` |
-| `running → failed` | exit ≠0 / spawn 失败 / **worker panic**（`catch_unwind` → `error_code=internal`） | 不得卡 `running` 直至 TTL |
+| `running → failed` | exit ≠0 / spawn 失败 / **worker panic**（`catch_unwind` → 先 terminate 进程组，再标 `error_code=internal`） | 不得卡 `running` 直至 TTL |
 | `running → timed_out` | 墙钟到期（默认 `command_timeout_secs`，可 `timeout_secs` 覆盖） | 不缓存、`workspace_changed=false` |
 | `queued/running → cancelled` | §3.2 | 原子转移，已完成不可取消 |
 | 任意 → 删除 | TTL（创建起算）+ 完成后宽限 | 清理定时器扫描 |
@@ -163,7 +163,7 @@ queued ──cancel──▶ cancelled
 | `background_job_max_queued` | int | `32` | 排队上限；超限拒绝创建 |
 | `background_job_ttl_secs` | int | `86400` | 自**创建**起算的保留时长 |
 | `background_job_result_grace_secs` | int | `300` | 终态后再保留的宽限（避免"刚完成即被清"） |
-| `background_job_max_entries` | int | `128` | 注册表条目上限；最旧优先淘汰 |
+| `background_job_max_entries` | int | `128` | 注册表条目上限；**仅淘汰终态**条目（`queued`/`running` 不可淘汰，防结果丢失） |
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 

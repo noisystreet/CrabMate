@@ -31,7 +31,7 @@
 ### Slice 0：文档（ADR + 契约 + 本计划）提交
 
 - [ ] 评审通过后提交：`background_tool_jobs.md`、`background_tool_jobs_contract.md`、`background_tool_jobs_todo.md`（本文件）+ `long_running_tool_execution_todo.md` P3 第 4 条链接（已改，未提交）。
-- [ ] 提交方式待定：并入 PR #870 分支 或 另开 `docs/background-tool-jobs-adr`（建议另开，主题独立）。
+- [ ] **提交方式（已定）**：另开 `docs/background-tool-jobs-adr` 分支单独 PR（PR #870 已合入，不可并入）。
 
 ### Slice 1：后端核心（`run_command` async + job 模块 + 端点）
 
@@ -41,13 +41,13 @@
 
 **1.2 job 模块**（新目录 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`）
 - [ ] `types.rs`：`JobStatus` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）、`JobRecord`（`tool_job_id`、`workspace`、来源 turn `job_id`、创建/完成时间、截断 stdout/stderr、`workspace_changed`）、原子状态转移（Mutex 临界区；`queued/running → cancelled`，已完成不可覆盖）。
-- [ ] `registry.rs`：`tool_job_id` 生成（`tooljob_` + 32 hex 随机，不可枚举）；`Mutex<HashMap>` + 并发/排队上限 + 条目上限（最旧淘汰）；TTL 清理定时器（创建起算 + 终态宽限 `result_grace_secs`，清理后轮询 410）。
-- [ ] `worker.rs`：`tokio::spawn_blocking` + `catch_unwind`（panic → `failed`，`error_code=internal`）；`wait_child_session`（wall 默认 `command_timeout_secs`，`timeout_secs` 覆盖；取消走 `AtomicBool` → `Cancelled`）；成功结果可写 `test_result_cache`；超时/取消不写、`workspace_changed=false`。
-- [ ] 启动 sweep：serve 启动时清理残留 job 记录与可识别孤儿进程（明示单副本不承诺崩溃恢复）。
+- [ ] `registry.rs`：`tool_job_id` 生成（`tooljob_` + 32 hex 随机，不可枚举）；`Mutex<HashMap>` + 并发/排队上限 + 条目上限（**仅淘汰终态**，`queued`/`running` 不可淘汰）；TTL 清理定时器（创建起算 + 终态宽限 `result_grace_secs`，清理后轮询 410）。
+- [ ] `worker.rs`：`tokio::spawn_blocking` + `catch_unwind`（panic → **先 terminate 进程组**，再标 `failed`，`error_code=internal`）；`wait_child_session`（wall 默认 `command_timeout_secs`，`timeout_secs` 覆盖；取消走 `AtomicBool` → `Cancelled`）；成功结果可写 `test_result_cache`；超时/取消不写、`workspace_changed=false`。
+- [ ] 启动 sweep：serve 启动时**清空残留 job 注册表记录**；孤儿进程无法可靠识别（子进程无标记），不承诺清理，文档明示单副本不承诺崩溃恢复。
 
 **1.3 `run_command` 集成**
-- [ ] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）；Schema 自动含新字段。
-- [ ] 门闩：`background_jobs_enabled=false` → `invalid_args`；需交互审批（AllowOnce）→ 拒绝；写盘类分类禁 async。
+- [ ] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）与 `timeout_secs: Option<u64>`（钳制 1～600，对齐 `python_snippet_run`；**随本切片一并落地**，本属 P2 子项）；Schema 自动含新字段。
+- [ ] 门闩：`background_jobs_enabled=false` → `invalid_args`；需交互审批（AllowOnce）→ 拒绝。**async 仅对 `run_command` 开放**，不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并发写责任在 `docs/工具说明.md` 明示。
 - [ ] `execute_run_command.inc.rs` async 路径：白名单/路径/审批照旧（发起时刻）→ `create_job` → 立即返回启动 `tool_result`（`tool_job_id` / `tool_job_poll_url` / `tool_job_status=queued`），`output` 为发起确认文案。
 - [ ] 启动帧软字段序列化 + 不 bump 协议（`tool_result` 可选字段，旧客户端忽略）。
 
@@ -78,7 +78,7 @@
 
 ## 测试计划
 
-- **单测**（Slice 1）：job 生命周期转移；超时/取消杀进程组（复用 `subprocess_session` 测试模式）；**完成竞态**（cancel 不得覆盖 succeeded）；过期 → 410；认证/归属越权（403）；并发与排队上限（含 queued 取消不杀进程）；worker panic → `failed(internal)`；`deny_unknown_fields` 回归（旧服务端拒 `async`）。
+- **单测**（Slice 1）：job 生命周期转移；超时/取消杀进程组（复用 `subprocess_session` 测试模式）；**完成竞态**（cancel 不得覆盖 succeeded）；过期 → 410；认证/归属越权（403）；并发与排队上限（含 queued 取消不杀进程）；worker panic → `failed(internal)` 且进程组已终止；`timeout_secs` 钳制（1～600）；`deny_unknown_fields` 回归（旧服务端拒 `async`/`timeout_secs`）。
 - **金样/双端**：本仓 `golden_ag_ui_classify_matches_expected`（若动分类）；Client `golden_ag_ui_v2_parser_matches_expected`。
 - **e2e（可选）**：真实 `cargo build` async → 轮询到 succeeded → `workspace_changed` 语义。
 
@@ -92,7 +92,7 @@
 
 ## 风险与开放问题
 
-- **崩溃不恢复**：serve 重启后 job 丢失（契约明示）；sweep 仅兜底孤儿进程。
-- **并发写**：async 并行写 workspace 冲突责任在模型/调用方；写盘类默认禁 async。
+- **崩溃不恢复**：serve 重启后 job 丢失（契约明示）；sweep 第一版只清注册表记录，孤儿进程不承诺清理。
+- **并发写**：async 并行写 workspace 冲突责任在模型/调用方；不按命令分类禁（async 仅对 `run_command` 开放，`docs/工具说明.md` 明示）。
 - **Client 排期**：后台气泡/轮询 UI 在外部仓，需协调；后端先落地不影响默认行为。
-- **开放**：`tool_job_finished` 是否本期做（默认不做）；`run_command` 的 `timeout_secs` 是否随本功能一并加入（可留给 P2）；Slice 0 提交分支方式。
+- **开放**：`tool_job_finished` 是否本期做（默认不做）。
