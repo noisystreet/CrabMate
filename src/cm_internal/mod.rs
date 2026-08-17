@@ -27,6 +27,7 @@ pub mod terminal_session;
 pub mod text_util;
 pub mod tool_approval;
 pub mod tool_call_explain;
+pub mod tool_jobs;
 pub mod tool_registry;
 pub mod tool_sandbox;
 pub mod tool_stats;

@@ -40,10 +40,10 @@
 - [x] 热重载：`POST /config/reload` 重建 `AgentConfig`（finalize 路径自动含新键默认值）；**「创建 job 时读取、已运行 job 不受影响」**的消费语义随 1.2/1.3 落地并回归。
 
 **1.2 job 模块**（新目录 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`）
-- [ ] `types.rs`：`JobStatus` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）、`JobRecord`（`tool_job_id`、`workspace`、来源 turn `job_id`、创建/完成时间、截断 stdout/stderr、`workspace_changed`）、原子状态转移（Mutex 临界区；`queued/running → cancelled`，已完成不可覆盖）。
-- [ ] `registry.rs`：`tool_job_id` 生成（`tooljob_` + 32 hex 随机，不可枚举）；`Mutex<HashMap>` + 并发/排队上限 + 条目上限（**仅淘汰终态**，`queued`/`running` 不可淘汰）；TTL 清理定时器（创建起算 + 终态宽限 `result_grace_secs`，清理后轮询 410）。
-- [ ] `worker.rs`：`tokio::spawn_blocking` + `catch_unwind`（panic → **先 terminate 进程组**，再标 `failed`，`error_code=internal`）；`wait_child_session`（wall 默认 `command_timeout_secs`，`timeout_secs` 覆盖；取消走 `AtomicBool` → `Cancelled`）；成功结果可写 `test_result_cache`；超时/取消不写、`workspace_changed=false`。
-- [ ] 启动 sweep：serve 启动时**清空残留 job 注册表记录**；孤儿进程无法可靠识别（子进程无标记），不承诺清理，文档明示单副本不承诺崩溃恢复。
+- [x] `types.rs`：`JobStatus` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）、`JobRecord`（`tool_job_id`、`workspace`、来源 turn `job_id`、创建/完成时间、截断 stdout/stderr、`workspace_changed`）、原子状态转移（Mutex 临界区；`queued/running → cancelled`，已完成不可覆盖）。
+- [x] `registry.rs`：`tool_job_id` 生成（`tooljob_` + 32 hex 随机，`getrandom`，不可枚举）；`Mutex<HashMap>` + 并发/排队上限 + 条目上限（**仅淘汰终态**，`queued`/`running` 不可淘汰）；TTL 清理定时器（创建起算 + 终态宽限 `result_grace_secs`，清理后轮询 410）。
+- [x] `worker.rs`：`tokio::spawn_blocking` + `catch_unwind`（panic → **先 terminate 进程组**，再标 `failed`，`error_code=internal`）；`wait_child_session`（wall 默认 `command_timeout_secs`，`timeout_secs` 覆盖；取消走 `AtomicBool` → `Cancelled`）；成功结果可写 `test_result_cache`（缓存写入随 1.3 的 `run_command` 缓存键落地）；超时/取消不写、`workspace_changed=false`。
+- [x] 启动 sweep：**内存注册表启动即为空，sweep 为空操作**（无持久化可清）；孤儿进程无法可靠识别（子进程无标记），不承诺清理，文档明示单副本不承诺崩溃恢复。
 
 **1.3 `run_command` 集成**
 - [ ] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）与 `timeout_secs: Option<u64>`（钳制 1～600，对齐 `python_snippet_run`；**随本切片一并落地**，本属 P2 子项）；Schema 自动含新字段。
