@@ -2,11 +2,13 @@
 //!
 //! 当前实现走 **`std::process` + 阻塞轮询**（`run_command` 仍在 `spawn_blocking` 内调用）。
 //! 长命令仍占用阻塞线程；迁 `tokio::process` 见 `docs/design/long_running_tool_execution_todo.md`。
+//!
+//! 观测：进程内原子计数 + 时长直方图（见 [`session_stats_snapshot`]），供日志、测试与未来 metrics 端点读取。
 
 use std::collections::VecDeque;
 use std::io::{self, Read};
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -19,6 +21,120 @@ const POLL: Duration = Duration::from_millis(50);
 const REAP_WAIT: Duration = Duration::from_secs(2);
 /// 管道 drain 线程 join 上限；超时则带走已捕获字节，避免孤儿占管导致永久卡住。
 const DRAIN_JOIN: Duration = Duration::from_secs(2);
+
+/// 会话时长直方图桶上界（毫秒）：`≤1s、≤5s、≤30s、≤120s、≤600s、>600s`（末桶 `u64::MAX` 为溢出）。
+pub const SESSION_DURATION_BUCKET_MS: [u64; 6] = [1_000, 5_000, 30_000, 120_000, 600_000, u64::MAX];
+
+/// 进程内会话观测快照（进程级累计；无外部指标后端时供日志/测试/未来 metrics 端点读取）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SessionStats {
+    pub spawns: u64,
+    /// 当前尚未结束的会话数（结束含正常退出与杀进程后 reap）。
+    pub live: i64,
+    pub completed: u64,
+    pub timeouts: u64,
+    pub cancelled: u64,
+    /// 超时/取消/`try_wait` 失败时对进程组发信号的数量（与 `timeouts + cancelled` 近似，含 try_wait 异常）。
+    pub killed: u64,
+    /// 杀进程后 `REAP_WAIT` 内仍未确认退出的会话数（**残留子进程风险**，日志会带 pid）。
+    pub reap_failed: u64,
+    pub duration_mean_ms: u64,
+    pub duration_buckets: [u64; SESSION_DURATION_BUCKET_MS.len()],
+}
+
+static STAT_SPAWNS: AtomicU64 = AtomicU64::new(0);
+static STAT_LIVE: AtomicI64 = AtomicI64::new(0);
+static STAT_COMPLETED: AtomicU64 = AtomicU64::new(0);
+static STAT_TIMEOUTS: AtomicU64 = AtomicU64::new(0);
+static STAT_CANCELLED: AtomicU64 = AtomicU64::new(0);
+static STAT_KILLED: AtomicU64 = AtomicU64::new(0);
+static STAT_REAP_FAILED: AtomicU64 = AtomicU64::new(0);
+static STAT_DURATION_MS_SUM: AtomicU64 = AtomicU64::new(0);
+static STAT_DURATION_COUNT: AtomicU64 = AtomicU64::new(0);
+static STAT_DURATION_BUCKETS: [AtomicU64; SESSION_DURATION_BUCKET_MS.len()] =
+    [const { AtomicU64::new(0) }; SESSION_DURATION_BUCKET_MS.len()];
+
+/// 进程内会话观测快照（`duration_mean_ms` 为累计平均，`0` 表示尚无完成记录）。
+#[must_use]
+pub fn session_stats_snapshot() -> SessionStats {
+    let count = STAT_DURATION_COUNT.load(Ordering::Relaxed);
+    let sum = STAT_DURATION_MS_SUM.load(Ordering::Relaxed);
+    let mut duration_buckets = [0u64; SESSION_DURATION_BUCKET_MS.len()];
+    for (dst, src) in duration_buckets
+        .iter_mut()
+        .zip(STAT_DURATION_BUCKETS.iter())
+    {
+        *dst = src.load(Ordering::Relaxed);
+    }
+    SessionStats {
+        spawns: STAT_SPAWNS.load(Ordering::Relaxed),
+        live: STAT_LIVE.load(Ordering::Relaxed),
+        completed: STAT_COMPLETED.load(Ordering::Relaxed),
+        timeouts: STAT_TIMEOUTS.load(Ordering::Relaxed),
+        cancelled: STAT_CANCELLED.load(Ordering::Relaxed),
+        killed: STAT_KILLED.load(Ordering::Relaxed),
+        reap_failed: STAT_REAP_FAILED.load(Ordering::Relaxed),
+        duration_mean_ms: sum.checked_div(count).unwrap_or(0),
+        duration_buckets,
+    }
+}
+
+fn record_session_duration(duration_ms: u64) {
+    STAT_DURATION_MS_SUM.fetch_add(duration_ms, Ordering::Relaxed);
+    STAT_DURATION_COUNT.fetch_add(1, Ordering::Relaxed);
+    for (bound, bucket) in SESSION_DURATION_BUCKET_MS
+        .iter()
+        .zip(STAT_DURATION_BUCKETS.iter())
+    {
+        if duration_ms <= *bound {
+            bucket.fetch_add(1, Ordering::Relaxed);
+            return;
+        }
+    }
+    // 超过所有上界（`>u64::MAX`，实际不可达）：落入末桶。
+    STAT_DURATION_BUCKETS[SESSION_DURATION_BUCKET_MS.len() - 1].fetch_add(1, Ordering::Relaxed);
+}
+
+fn record_session_stats(
+    child_pid: u32,
+    kind: SessionStopKind,
+    killed: bool,
+    reap_failed: bool,
+    duration_ms: u64,
+) {
+    record_session_duration(duration_ms);
+    if killed {
+        STAT_KILLED.fetch_add(1, Ordering::Relaxed);
+    }
+    match kind {
+        SessionStopKind::Exited => {}
+        SessionStopKind::Timeout => {
+            STAT_TIMEOUTS.fetch_add(1, Ordering::Relaxed);
+        }
+        SessionStopKind::Cancelled => {
+            STAT_CANCELLED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    STAT_COMPLETED.fetch_add(1, Ordering::Relaxed);
+    if reap_failed {
+        STAT_REAP_FAILED.fetch_add(1, Ordering::Relaxed);
+        log::warn!(
+            target: "crabmate",
+            "subprocess session reap 未确认 pid={} kind={:?} duration_ms={}（进程组可能残留）",
+            child_pid,
+            kind,
+            duration_ms
+        );
+    }
+    log::debug!(
+        target: "crabmate",
+        "subprocess session done pid={} kind={:?} killed={} duration_ms={}",
+        child_pid,
+        kind,
+        killed,
+        duration_ms
+    );
+}
 
 /// 等待控制：墙钟、协作取消、额外停止条件（如 SSE `Sender::is_closed`）、可选增量回调。
 #[derive(Clone, Default)]
@@ -110,6 +226,9 @@ pub fn wait_child_session(
     max_capture_bytes: usize,
 ) -> io::Result<SessionWaitResult> {
     let child_pid = child.id();
+    STAT_SPAWNS.fetch_add(1, Ordering::Relaxed);
+    STAT_LIVE.fetch_add(1, Ordering::Relaxed);
+    let t0 = Instant::now();
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     let cap = max_capture_bytes.max(1);
@@ -124,19 +243,22 @@ pub fn wait_child_session(
     let mut killed = false;
     let mut kind = SessionStopKind::Exited;
     let mut wait_err = None;
-    let status = loop {
+    let mut reap_failed = false;
+    let status: io::Result<Option<ExitStatus>> = loop {
         flush_live_chunks(live.as_ref(), ctl.chunk_sink.as_ref());
         if stop_requested(ctl) {
             kind = SessionStopKind::Cancelled;
             terminate_child_group(&mut child, child_pid, "cancel");
             killed = true;
-            break reap_after_kill(&mut child);
+            reap_failed = reap_not_confirmed(reap_after_kill(&mut child));
+            break Ok(None);
         }
         if deadline.is_some_and(|d| Instant::now() >= d) {
             kind = SessionStopKind::Timeout;
             terminate_child_group(&mut child, child_pid, "timeout");
             killed = true;
-            break reap_after_kill(&mut child);
+            reap_failed = reap_not_confirmed(reap_after_kill(&mut child));
+            break Ok(None);
         }
         match child.try_wait() {
             Ok(Some(st)) => break Ok(Some(st)),
@@ -145,7 +267,7 @@ pub fn wait_child_session(
                 wait_err = Some(e);
                 terminate_child_group(&mut child, child_pid, "try_wait");
                 killed = true;
-                let _ = reap_after_kill(&mut child);
+                reap_failed = reap_not_confirmed(reap_after_kill(&mut child));
                 break Ok(None);
             }
         }
@@ -155,6 +277,14 @@ pub fn wait_child_session(
     let stderr = take_drain(err_buf, DRAIN_JOIN);
     drain_live_chunks_after_reap(live.as_ref(), ctl.chunk_sink.as_ref());
     finish_chunk_sink(ctl.chunk_sink.as_ref());
+    record_session_stats(
+        child_pid,
+        kind,
+        killed,
+        reap_failed,
+        t0.elapsed().as_millis() as u64,
+    );
+    STAT_LIVE.fetch_sub(1, Ordering::Relaxed);
     if let Some(e) = wait_err {
         return Err(e);
     }
@@ -166,6 +296,11 @@ pub fn wait_child_session(
         killed,
         child_pid,
     })
+}
+
+/// 杀进程后是否在 `REAP_WAIT` 内**未**确认退出（残留风险）；`Err` 视同残留。
+fn reap_not_confirmed(reap: io::Result<Option<ExitStatus>>) -> bool {
+    reap.map(|r| r.is_none()).unwrap_or(true)
 }
 
 fn stop_requested(ctl: &SubprocessWaitCtl) -> bool {

@@ -3,16 +3,11 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
 
 use super::output_util;
-
-#[cfg(unix)]
-use nix::sys::signal::{self, Signal};
-#[cfg(unix)]
-use nix::unistd::Pid;
+use crate::cm_tools::subprocess_session::{
+    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, wait_child_session,
+};
 
 const MAX_OUTPUT_LINES: usize = 800;
 const MAX_UV_RUN_ARGS: usize = 48;
@@ -438,6 +433,7 @@ fn python_snippet_build_command(prep: &PythonSnippetPrep) -> (Command, String) {
 /// - 默认：`python3 <脚本>`，`PYTHONPATH` 含工作区根（可 `import` 工作区内包）。
 /// - `use_uv: true` 且存在 `pyproject.toml`：`uv run python <脚本>`，使用项目/锁文件环境。
 /// - 墙上时钟超时：默认 `command_timeout_secs`，可用 `timeout_secs` 覆盖（1～600 秒）。
+/// - 执行走共享子进程会话（`subprocess_session`）：并发排空管道、超时对**进程组** SIGTERM→SIGKILL（不再只杀直接 pid）。
 pub fn python_snippet_run(
     args_json: &str,
     workspace_root: &Path,
@@ -468,6 +464,7 @@ pub fn python_snippet_run(
 
     let (mut cmd, title) = python_snippet_build_command(&prep);
 
+    prepare_piped_process_group(&mut cmd);
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -481,107 +478,44 @@ pub fn python_snippet_run(
         }
     };
 
-    let child_pid = child.id();
-    let (tx, rx) = mpsc::channel::<std::io::Result<std::process::Output>>();
-    let join = thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
-
-    let deadline = Instant::now() + Duration::from_secs(prep.wall_secs);
-    let output = match python_snippet_wait_child_output(child_pid, join, rx, deadline, &title) {
-        Ok(o) => o,
-        Err(SnippetWaitOutcome::Timeout) => {
-            return output_util::format_exited_command_output(
-                &title,
-                -1,
-                &format!(
-                    "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
-                    prep.wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
-                ),
-                max_output_len,
-                MAX_OUTPUT_LINES,
-            );
-        }
-        Err(SnippetWaitOutcome::Err(msg)) => return msg,
+    let ctl = SubprocessWaitCtl::with_wall_secs(prep.wall_secs);
+    let session = match wait_child_session(child, &ctl, max_output_len) {
+        Ok(s) => s,
+        Err(e) => return format!("{}: 收集子进程输出失败（{}）", title, e),
     };
 
-    let status_code = output.status.code().unwrap_or(-1);
-    let body = output_util::merge_process_output(
-        &output,
-        output_util::ProcessOutputMerge::StderrElseStdout,
-    );
+    let exit_code = session.status.and_then(|s| s.code()).unwrap_or(-1);
+    let body = match session.kind {
+        SessionStopKind::Exited => {
+            snippet_merge_stderr_else_stdout(&session.stdout, &session.stderr)
+        }
+        SessionStopKind::Timeout => format!(
+            "已超出墙上时钟上限（{} 秒）；子进程已发送终止信号。请在更小数据集上重试或调大 timeout_secs（上限 {}）。",
+            prep.wall_secs, MAX_PYTHON_SNIPPET_TIMEOUT_SECS
+        ),
+        SessionStopKind::Cancelled => "命令已取消；子进程已发送终止信号。".to_string(),
+    };
     output_util::format_exited_command_output(
         &title,
-        status_code,
+        exit_code,
         &body,
         max_output_len,
         MAX_OUTPUT_LINES,
     )
 }
 
-enum SnippetWaitOutcome {
-    Timeout,
-    Err(String),
-}
-
-fn python_snippet_wait_child_output(
-    child_pid: u32,
-    join: thread::JoinHandle<()>,
-    rx: mpsc::Receiver<std::io::Result<std::process::Output>>,
-    deadline: Instant,
-    title: &str,
-) -> Result<std::process::Output, SnippetWaitOutcome> {
-    loop {
-        let now = Instant::now();
-        if now >= deadline {
-            python_snippet_hard_kill(child_pid);
-            let _ = join.join();
-            return Err(SnippetWaitOutcome::Timeout);
-        }
-        let step = deadline
-            .saturating_duration_since(now)
-            .min(Duration::from_millis(200));
-        match rx.recv_timeout(step) {
-            Ok(Ok(out)) => {
-                let _ = join.join();
-                return Ok(out);
-            }
-            Ok(Err(e)) => {
-                let _ = join.join();
-                return Err(SnippetWaitOutcome::Err(format!(
-                    "{}: 收集子进程输出失败（{}）",
-                    title, e
-                )));
-            }
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(mpsc::RecvTimeoutError::Disconnected) => {
-                let _ = join.join();
-                return Err(SnippetWaitOutcome::Err(format!(
-                    "{}: 等待子进程输出的线程已结束但未返回结果",
-                    title
-                )));
-            }
-        }
+/// `stderr` 优先、否则 `stdout`；两者为空返回 `(无输出)`（与历史 `ProcessOutputMerge::StderrElseStdout` 一致）。
+fn snippet_merge_stderr_else_stdout(stdout: &[u8], stderr: &[u8]) -> String {
+    let out = String::from_utf8_lossy(stdout);
+    let err = String::from_utf8_lossy(stderr);
+    if !err.trim().is_empty() {
+        err.trim_end().to_string()
+    } else if !out.trim().is_empty() {
+        out.trim_end().to_string()
+    } else {
+        "(无输出)".to_string()
     }
 }
-
-#[cfg(unix)]
-fn python_snippet_hard_kill(pid: u32) {
-    let _ = signal::kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
-}
-
-#[cfg(windows)]
-fn python_snippet_hard_kill(pid: u32) {
-    let _ = Command::new("taskkill")
-        .args(["/F", "/T", "/PID", &pid.to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status();
-}
-
-#[cfg(all(not(unix), not(windows)))]
-fn python_snippet_hard_kill(_pid: u32) {}
 
 /// 在已有 `PYTHONPATH` 前追加工作区根，便于 `import` 本地包（仅 `python3` 路径使用）。
 fn pythonpath_with_workspace(workspace_root: &Path) -> String {
@@ -748,6 +682,32 @@ mod tests {
         assert!(
             out.contains("42"),
             "expected stdout 42 in output, got: {out:?}"
+        );
+        let _ = std::fs::remove_dir_all(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn python_snippet_timeout_kills_process_group() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let marker = format!("cm_py_pg_{}", std::process::id());
+        // python 孙进程（bash -c 'sleep …'）与 python 同进程组；超时后应一并被终止。
+        let code = format!(
+            "import subprocess, time\nsubprocess.Popen(['bash','-c','sleep 60 # {marker}'])\ntime.sleep(60)"
+        );
+        // JSON 字符串内不允许裸换行，转义后再嵌入。
+        let code_json = code.replace('\n', "\\n");
+        let out = python_snippet_run(
+            &format!(r#"{{"code":"{}","timeout_secs":1}}"#, code_json),
+            dir.path(),
+            4096,
+            30,
+        );
+        assert!(out.contains("墙上时钟"), "{out:?}");
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+            "python 孙进程 sleep 仍在运行（进程组未杀干净）"
         );
         let _ = std::fs::remove_dir_all(dir.path());
     }
