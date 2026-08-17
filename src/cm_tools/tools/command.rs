@@ -6,6 +6,10 @@ use std::process::Command;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::cm_tools::subprocess_session::{
+    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, wait_child_session,
+};
+
 use thiserror::Error;
 
 use super::output_util;
@@ -13,7 +17,9 @@ use super::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
     fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
 };
-use crate::cm_tools::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
+use crate::cm_tools::tool_result::{
+    ParsedLegacyOutput, ToolError, ToolFailureCategory, parse_legacy_output,
+};
 
 use super::command_line_prepare::CdPeelError;
 
@@ -70,6 +76,15 @@ pub enum RunCommandError {
         #[source]
         source: io::Error,
     },
+    /// 墙钟超时；`formatted` 含截断后的部分 stdout/stderr。
+    #[error("命令执行超时（{timeout_secs} 秒）")]
+    TimedOut {
+        timeout_secs: u64,
+        formatted: String,
+    },
+    /// 用户取消或 SSE 关闭；`formatted` 含截断后的部分输出。
+    #[error("命令已取消")]
+    Cancelled { formatted: String },
 }
 
 impl RunCommandError {
@@ -77,7 +92,9 @@ impl RunCommandError {
     #[must_use]
     pub fn into_tool_error(self) -> ToolError {
         let msg = match &self {
-            RunCommandError::CommandNotFound { .. } => self.extended_user_message(),
+            RunCommandError::CommandNotFound { .. }
+            | RunCommandError::TimedOut { .. }
+            | RunCommandError::Cancelled { .. } => self.extended_user_message(),
             _ => self.user_message(),
         };
         match self {
@@ -152,6 +169,12 @@ impl RunCommandError {
                     error_code: Some("spawn_failed".to_string()),
                 },
             },
+            RunCommandError::TimedOut { formatted, .. } => {
+                session_stop_tool_error(formatted, "timeout", true)
+            }
+            RunCommandError::Cancelled { formatted } => {
+                session_stop_tool_error(formatted, "cancelled", false)
+            }
         }
     }
 
@@ -170,13 +193,19 @@ impl RunCommandError {
             RunCommandError::PermissionDenied { .. } => "permission_denied",
             RunCommandError::SpawnOther { .. } => "spawn_other",
             RunCommandError::ShellVariableDetected { .. } => "shell_variable_detected",
+            RunCommandError::TimedOut { .. } => "timeout",
+            RunCommandError::Cancelled { .. } => "cancelled",
         }
     }
 
     /// 与历史工具输出一致的完整说明。
     #[must_use]
     pub fn user_message(&self) -> String {
-        self.to_string()
+        match self {
+            RunCommandError::TimedOut { formatted, .. }
+            | RunCommandError::Cancelled { formatted } => formatted.clone(),
+            _ => self.to_string(),
+        }
     }
 
     /// 与 [`user_message`] 相同；若为本变体为 [`RunCommandError::CommandNotFound`] 且命中内置表，文末追加 CLI 安装提示。
@@ -190,6 +219,19 @@ impl RunCommandError {
             s.push_str(h);
         }
         s
+    }
+}
+
+fn session_stop_tool_error(formatted: String, code: &str, retryable: bool) -> ToolError {
+    let mut parsed = parse_legacy_output("run_command", &formatted);
+    parsed.ok = false;
+    parsed.error_code = Some(code.to_string());
+    ToolError {
+        category: ToolFailureCategory::Timeout,
+        code: code.to_string(),
+        message: formatted,
+        retryable,
+        legacy_parsed: parsed,
     }
 }
 
@@ -301,14 +343,12 @@ fn run_command_execute_workspace_binary(
     working_dir: &Path,
     target_path: &Path,
     max_output_len: usize,
+    wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
     let invocation = format_invocation_for_display(cmd_raw, cmd_args);
-    let output = Command::new(target_path)
-        .args(cmd_args)
-        .current_dir(working_dir)
-        .output()
-        .map_err(|e| map_spawn_error(cmd_raw, working_dir, e))?;
-    Ok(format_command_output(&invocation, output, max_output_len))
+    let mut cmd = Command::new(target_path);
+    cmd.args(cmd_args).current_dir(working_dir);
+    run_spawned_command(&mut cmd, cmd_raw, working_dir, &invocation, max_output_len, wait)
 }
 
 fn run_cargo_test_with_optional_cache(
@@ -317,6 +357,7 @@ fn run_cargo_test_with_optional_cache(
     invocation: &str,
     max_output_len: usize,
     test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+    wait: &SubprocessWaitCtl,
 ) -> Result<Option<String>, RunCommandError> {
     let Some(opts) = test_cache else {
         return Ok(None);
@@ -340,12 +381,17 @@ fn run_cargo_test_with_optional_cache(
     if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
         return Ok(Some(wrap_cache_hit(&inputs_fp, &hit)));
     }
-    let output = Command::new(&prepared.cmd_name)
-        .args(&prepared.cmd_args)
-        .current_dir(working_dir)
-        .output()
-        .map_err(|e| map_spawn_error(&prepared.cmd_name, working_dir, e))?;
-    let formatted = format_command_output(invocation, output, max_output_len);
+    let mut cmd = Command::new(&prepared.cmd_name);
+    cmd.args(&prepared.cmd_args)
+        .current_dir(working_dir);
+    let formatted = run_spawned_command(
+        &mut cmd,
+        &prepared.cmd_name,
+        working_dir,
+        invocation,
+        max_output_len,
+        wait,
+    )?;
     store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
     Ok(Some(formatted))
 }
@@ -368,6 +414,7 @@ pub fn run(
         working_dir,
         test_cache,
         skip_arg_safety,
+        &SubprocessWaitCtl::default(),
     )
     .unwrap_or_else(|e| e.extended_user_message())
 }
@@ -389,6 +436,30 @@ pub fn run_try(
         working_dir,
         test_cache,
         skip_arg_safety,
+        &SubprocessWaitCtl::default(),
+    )
+    .map_err(RunCommandError::into_tool_error)
+}
+
+/// 与 [`run_try`] 相同，并传入墙钟/取消（workflow `run_tool_result` / `run_tool_dispatch`）。
+#[allow(clippy::result_large_err)]
+pub fn run_try_wait(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, ToolError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
     )
     .map_err(RunCommandError::into_tool_error)
 }
@@ -409,6 +480,50 @@ pub fn run_checked(
         working_dir,
         test_cache,
         skip_arg_safety,
+        &SubprocessWaitCtl::default(),
+    )
+}
+
+/// 与 [`run`] 相同，并传入墙钟/取消（宿主 `dispatch_tool` / `runner_run_command`）。
+pub fn run_with_wait(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> String {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .unwrap_or_else(|e| e.extended_user_message())
+}
+
+/// 与 [`run_checked`] 相同，并传入墙钟/取消。
+pub fn run_checked_wait(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    run_impl(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
     )
 }
 
@@ -419,6 +534,7 @@ fn run_impl(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
     let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
     let prepared =
@@ -434,6 +550,7 @@ fn run_impl(
             prepared.effective_working_dir.as_path(),
             target_path,
             max_output_len,
+            wait,
         );
     }
 
@@ -443,6 +560,7 @@ fn run_impl(
         &invocation,
         max_output_len,
         test_cache.as_ref(),
+        wait,
     )? {
         return Ok(cached);
     }
@@ -455,14 +573,14 @@ fn run_impl(
     } else {
         crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
     }
-    let output = cmd.output().map_err(|e| {
-        map_spawn_error(
-            &prepared.cmd_name,
-            prepared.effective_working_dir.as_path(),
-            e,
-        )
-    })?;
-    Ok(format_command_output(&invocation, output, max_output_len))
+    run_spawned_command(
+        &mut cmd,
+        &prepared.cmd_name,
+        prepared.effective_working_dir.as_path(),
+        &invocation,
+        max_output_len,
+        wait,
+    )
 }
 
 fn parse_run_command_args_with_repair(
@@ -524,6 +642,70 @@ fn format_command_output(
         out.push_str("(无输出)");
     }
     out.trim_end().to_string()
+}
+
+fn format_command_streams(
+    invocation: &str,
+    exit_code: i32,
+    stdout: &str,
+    stderr: &str,
+    max_output_len: usize,
+) -> String {
+    let truncate =
+        |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
+    let mut out = format!("命令：{invocation}\n退出码：{exit_code}\n");
+    if !stdout.is_empty() {
+        out.push_str("标准输出：\n");
+        out.push_str(&truncate(stdout));
+    }
+    if !stderr.is_empty() {
+        out.push_str("标准错误：\n");
+        out.push_str(&truncate(stderr));
+    }
+    if stdout.is_empty() && stderr.is_empty() && exit_code == 0 {
+        out.push_str("(无输出)");
+    }
+    out.trim_end().to_string()
+}
+
+fn run_spawned_command(
+    cmd: &mut Command,
+    cmd_label: &str,
+    working_dir: &Path,
+    invocation: &str,
+    max_output_len: usize,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    prepare_piped_process_group(cmd);
+    let child = cmd
+        .spawn()
+        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
+    let session = wait_child_session(child, wait, max_output_len)
+        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
+    let stdout = String::from_utf8_lossy(&session.stdout);
+    let stderr = String::from_utf8_lossy(&session.stderr);
+    let exit_code = session
+        .status
+        .and_then(|s| s.code())
+        .unwrap_or(-1);
+    let body = format_command_streams(invocation, exit_code, &stdout, &stderr, max_output_len);
+    match session.kind {
+        SessionStopKind::Exited => Ok(body),
+        SessionStopKind::Timeout => {
+            let timeout_secs = wait.wall.map(|d| d.as_secs()).unwrap_or(0);
+            let formatted = format!(
+                "命令执行超时（{timeout_secs} 秒）；子进程已发送终止信号。\n{body}"
+            );
+            Err(RunCommandError::TimedOut {
+                timeout_secs,
+                formatted,
+            })
+        }
+        SessionStopKind::Cancelled => {
+            let formatted = format!("命令已取消；子进程已发送终止信号。\n{body}");
+            Err(RunCommandError::Cancelled { formatted })
+        }
+    }
 }
 
 fn now_sec() -> u64 {

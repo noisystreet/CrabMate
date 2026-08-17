@@ -376,15 +376,32 @@ async fn approve_external_run_command_paths_if_needed(
     }
 }
 
-async fn execute_run_command_impl(
-    env: &ToolExecEnv<'_>,
-    effective_working_dir: &Path,
+struct RunCommandHostInvoke<'a> {
+    env: &'a ToolExecEnv<'a>,
+    effective_working_dir: &'a Path,
     workspace_is_set: bool,
-    workspace_changed: &mut bool,
-    web_ctx: Option<&WebToolRuntime>,
-    name: &str,
-    args: &str,
+    workspace_changed: &'a mut bool,
+    web_ctx: Option<&'a WebToolRuntime>,
+    name: &'a str,
+    args: &'a str,
+    sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+}
+
+async fn execute_run_command_impl(
+    invoke: RunCommandHostInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
+    let RunCommandHostInvoke {
+        env,
+        effective_working_dir,
+        workspace_is_set,
+        workspace_changed,
+        web_ctx,
+        name,
+        args,
+        sse_out_tx,
+        cancel,
+    } = invoke;
     let cfg = env.cfg;
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
@@ -437,41 +454,48 @@ async fn execute_run_command_impl(
         return (s, inj);
     }
 
-    let name_in = name.to_string();
     let cmd_timeout = cfg.command_exec.command_timeout_secs;
-    let cfg = Arc::clone(cfg);
+    let max_out = cfg.command_exec.command_max_output_len;
+    let test_cache_enabled = cfg.chat_queues_cache.test_result_cache_enabled;
+    let test_cache_max = cfg.chat_queues_cache.test_result_cache_max_entries;
     let work_dir = effective_working_dir.to_path_buf();
     let args_cloned = args.to_string();
     let allowed_for_run = Arc::clone(&effective_allowed_arc);
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
+    let cancel = cancel.clone();
+    let sse_closed = sse_out_tx.cloned();
+    let extra_stop = sse_closed.map(|tx| {
+        std::sync::Arc::new(move || tx.is_closed()) as std::sync::Arc<dyn Fn() -> bool + Send + Sync>
+    });
+    let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl {
+        wall: Some(std::time::Duration::from_secs(cmd_timeout.max(1))),
+        cancel,
+        extra_stop,
+    };
     let handle = tokio::task::spawn_blocking(move || {
         crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            if skip_arg_safety {
-                // 审批放行路径：直接带 skip_arg_safety 调用（不经 ToolContext）。
-                match tools::run_checked(
-                    &args_cloned,
-                    cfg.command_exec.command_max_output_len,
-                    allowed_for_run.as_ref(),
-                    work_dir.as_path(),
-                    None,
-                    true,
-                ) {
-                    Ok(s) => s,
-                    Err(e) => e.extended_user_message(),
-                }
-            } else {
-                let ctx = tools::tool_context_for(
-                    cfg.as_ref(),
-                    allowed_for_run.as_ref(),
-                    work_dir.as_path(),
-                );
-                tools::run_tool(&name_in, &args_cloned, &ctx)
+            let test_cache = test_cache_enabled.then_some(tools::RunCommandTestCacheOpts {
+                enabled: true,
+                max_entries: test_cache_max,
+                workspace_root: work_dir.as_path(),
+            });
+            match tools::run_checked_wait(
+                &args_cloned,
+                max_out,
+                allowed_for_run.as_ref(),
+                work_dir.as_path(),
+                test_cache,
+                skip_arg_safety,
+                &wait,
+            ) {
+                Ok(s) => s,
+                Err(e) => e.extended_user_message(),
             }
         })
     });
-    let s = match tokio::time::timeout(Duration::from_secs(cmd_timeout), handle).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
+    let s = match handle.await {
+        Ok(s) => s,
+        Err(e) => {
             error!(
                 target: "crabmate",
                 "工具执行异常 tool={} error={:?}",
@@ -479,10 +503,6 @@ async fn execute_run_command_impl(
                 e
             );
             format!("工具执行异常：{:?}", e)
-        }
-        Err(_) => {
-            error!(target: "crabmate", "命令执行超时 tool={}", name);
-            format!("命令执行超时（{} 秒）", cmd_timeout)
         }
     };
     if tools::is_compile_command_success(args, &s) {

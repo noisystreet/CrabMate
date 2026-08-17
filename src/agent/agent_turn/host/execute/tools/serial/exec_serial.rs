@@ -53,6 +53,7 @@ struct SerialToolLoopState<'a> {
     workspace_changelist:
         Option<&'a std::sync::Arc<crate::workspace::changelist::WorkspaceChangelist>>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
+    cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a crate::tool_registry::WebToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
@@ -85,6 +86,7 @@ impl<'a> SerialToolLoopState<'a> {
             read_file_turn_cache,
             workspace_changelist,
             control,
+            cancel,
             tool_result_envelope_v1,
             web_tool_ctx,
             mcp_turn,
@@ -111,6 +113,7 @@ impl<'a> SerialToolLoopState<'a> {
             read_file_turn_cache,
             workspace_changelist,
             control,
+            cancel,
             tool_result_envelope_v1,
             web_tool_ctx,
             mcp_turn,
@@ -219,6 +222,7 @@ async fn serial_execute_one_tool_call(
                 obs: tool_registry::DispatchToolObs {
                     sse_out_tx: st.control.out,
                     sse_control_mirror: st.control.sse_control_mirror.as_ref(),
+                    cancel: st.cancel.clone(),
                 },
                 memory: tool_registry::DispatchToolMemory {
                     read_file_turn_cache: st.read_file_turn_cache.clone(),

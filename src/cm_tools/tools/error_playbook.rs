@@ -477,13 +477,16 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
             }
         };
         out.push_str(&format!("—— 步骤 {}: `{}` ——\n", i + 1, t));
-        let r = match command::run_checked(
+        let r = match command::run_checked_wait(
             &args_s,
             ctx.command_max_output_len,
             ctx.allowed_commands,
             ctx.working_dir,
             None,
             false,
+            &crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
+                ctx.command_timeout_secs,
+            ),
         ) {
             Ok(s) => s,
             Err(e) => {

@@ -81,13 +81,16 @@ pub fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
             max_entries: ctx.test_result_cache_max_entries,
             workspace_root: ctx.working_dir,
         });
-    command::run(
+    command::run_with_wait(
         args,
         ctx.command_max_output_len,
         ctx.allowed_commands,
         ctx.working_dir,
         test_cache,
         false,
+        &crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
+            ctx.command_timeout_secs,
+        ),
     )
 }
 

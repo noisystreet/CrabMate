@@ -66,6 +66,8 @@ pub struct DispatchToolPolicy<'a> {
 pub struct DispatchToolObs<'a> {
     pub sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     pub sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
+    /// 用户取消；`run_command` 等待循环会观察此标志。
+    pub cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 /// 只读缓存、LTM、MCP 等附属宿主（字段不删，仅分组）。

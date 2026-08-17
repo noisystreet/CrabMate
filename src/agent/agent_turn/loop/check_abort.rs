@@ -23,6 +23,7 @@ macro_rules! check_abort {
         }
         if io
             .cancel
+            .as_ref()
             .is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst))
         {
             return Err(

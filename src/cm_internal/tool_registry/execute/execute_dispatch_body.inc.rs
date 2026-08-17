@@ -220,6 +220,7 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
             DispatchToolObs {
                 sse_out_tx,
                 sse_control_mirror,
+                cancel,
             },
         memory:
             DispatchToolMemory {
@@ -277,15 +278,17 @@ pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_j
                 workspace_changed,
                 ctx,
             } = runtime;
-            execute_run_command_impl(
-                &env,
+            execute_run_command_impl(RunCommandHostInvoke {
+                env: &env,
                 effective_working_dir,
                 workspace_is_set,
                 workspace_changed,
-                ctx,
+                web_ctx: ctx,
                 name,
                 args,
-            )
+                sse_out_tx,
+                cancel,
+            })
             .await
         }
         HandlerId::TerminalSession => {
