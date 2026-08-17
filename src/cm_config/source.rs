@@ -70,6 +70,24 @@ pub(super) struct ToolRegistrySection {
     /// 分阶段 `executor_kind: review_readonly` 下显式禁止的工具名（精确匹配，优先于只读判定）。
     #[serde(default)]
     pub(super) sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
+    /// 后台工具任务总开关（`run_command` 的 `async=true`）；默认 `false`。契约见 `docs/design/background_tool_jobs_contract.md`。
+    #[serde(default)]
+    pub(super) background_jobs_enabled: Option<bool>,
+    /// 后台任务同时运行上限；超出进入 `queued`（FIFO）。默认 `4`。
+    #[serde(default)]
+    pub(super) background_job_max_concurrent: Option<u64>,
+    /// 后台任务排队上限；超限拒绝创建。默认 `32`。
+    #[serde(default)]
+    pub(super) background_job_max_queued: Option<u64>,
+    /// 后台任务自**创建**起算的保留时长（秒）。默认 `86400`（1 天）。
+    #[serde(default)]
+    pub(super) background_job_ttl_secs: Option<u64>,
+    /// 后台任务终态后再保留的宽限（秒），避免"刚完成即被清"。默认 `300`。
+    #[serde(default)]
+    pub(super) background_job_result_grace_secs: Option<u64>,
+    /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
+    #[serde(default)]
+    pub(super) background_job_max_entries: Option<u64>,
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应
