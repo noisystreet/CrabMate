@@ -435,57 +435,28 @@ fn run_aggregate(
             .map_err(|e| format!("表头解析失败: {}", e))?;
     }
 
-    let mut scanned = 0usize;
-    let mut sum = 0.0f64;
-    let mut count_num = 0usize;
-    let mut count_nonempty = 0usize;
-    let mut min_v: Option<f64> = None;
-    let mut max_v: Option<f64> = None;
-
-    for result in it {
-        let rec = result.map_err(|e| format!("解析行失败: {}", e))?;
-        scanned += 1;
-        if scanned > cap {
-            break;
-        }
-        let cell = rec.get(col).unwrap_or("");
-        if !cell.trim().is_empty() {
-            count_nonempty += 1;
-        }
-        if let Some(v) = parse_f64_cell(cell) {
-            count_num += 1;
-            sum += v;
-            min_v = Some(match min_v {
-                None => v,
-                Some(m) => m.min(v),
-            });
-            max_v = Some(match max_v {
-                None => v,
-                Some(m) => m.max(v),
-            });
-        }
-    }
+    let stats = scan_aggregate_stats(it, col, cap)?;
 
     let op = op.trim().to_lowercase();
     let summary = match op.as_str() {
-        "count" | "count_non_empty" => format!("非空单元格数: {}", count_nonempty),
-        "count_numeric" => format!("可解析为数字的单元格数: {}", count_num),
+        "count" | "count_non_empty" => format!("非空单元格数: {}", stats.count_nonempty),
+        "count_numeric" => format!("可解析为数字的单元格数: {}", stats.count_num),
         "sum" => {
-            if count_num == 0 {
+            if stats.count_num == 0 {
                 "sum: （无数值）".to_string()
             } else {
-                format!("sum: {}", sum)
+                format!("sum: {}", stats.sum)
             }
         }
         "mean" | "avg" => {
-            if count_num == 0 {
+            if stats.count_num == 0 {
                 "mean: （无数值）".to_string()
             } else {
-                format!("mean: {}", sum / count_num as f64)
+                format!("mean: {}", stats.sum / stats.count_num as f64)
             }
         }
-        "min" => format!("min: {:?}", min_v),
-        "max" => format!("max: {:?}", max_v),
+        "min" => format!("min: {:?}", stats.min_v),
+        "max" => format!("max: {:?}", stats.max_v),
         _ => {
             return Err(format!(
                 "aggregate.op 支持 count、count_non_empty、count_numeric、sum、mean、min、max（当前：{}）",
@@ -499,9 +470,59 @@ fn run_aggregate(
         delim as char,
         col,
         cap,
-        scanned.min(cap),
+        stats.scanned.min(cap),
         summary
     ))
+}
+
+/// `run_aggregate` 的逐行统计累加结果。
+struct AggStats {
+    scanned: usize,
+    sum: f64,
+    count_num: usize,
+    count_nonempty: usize,
+    min_v: Option<f64>,
+    max_v: Option<f64>,
+}
+
+/// 逐行扫描并累计数值统计（`col` 缺失按空单元格处理）。
+fn scan_aggregate_stats(
+    it: impl Iterator<Item = Result<csv::StringRecord, csv::Error>>,
+    col: usize,
+    cap: usize,
+) -> Result<AggStats, String> {
+    let mut stats = AggStats {
+        scanned: 0,
+        sum: 0.0,
+        count_num: 0,
+        count_nonempty: 0,
+        min_v: None,
+        max_v: None,
+    };
+    for result in it {
+        let rec = result.map_err(|e| format!("解析行失败: {}", e))?;
+        stats.scanned += 1;
+        if stats.scanned > cap {
+            break;
+        }
+        let cell = rec.get(col).unwrap_or("");
+        if !cell.trim().is_empty() {
+            stats.count_nonempty += 1;
+        }
+        if let Some(v) = parse_f64_cell(cell) {
+            stats.count_num += 1;
+            stats.sum += v;
+            stats.min_v = Some(match stats.min_v {
+                None => v,
+                Some(m) => m.min(v),
+            });
+            stats.max_v = Some(match stats.max_v {
+                None => v,
+                Some(m) => m.max(v),
+            });
+        }
+    }
+    Ok(stats)
 }
 
 fn parse_usize(v: &Value, key: &str, default: usize, max: usize) -> Result<usize, String> {
@@ -534,14 +555,57 @@ fn parse_column_indices(v: &Value) -> Result<Vec<usize>, String> {
 }
 
 fn table_text_args_to_json_value(args: &TableTextArgs) -> Value {
-    let action_str = match args.action {
+    let mut v = serde_json::json!({
+        "action": table_text_action_str(args.action),
+        "delimiter": table_text_delimiter_str(
+            args.delimiter.unwrap_or(TableTextDelimiter::Auto)
+        ),
+        "has_header": args.has_header,
+    });
+    set_opt_field(
+        &mut v,
+        "path",
+        args.path
+            .as_ref()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    );
+    set_opt_field(&mut v, "text", args.text.clone());
+    set_opt_field(&mut v, "preview_rows", args.preview_rows);
+    set_opt_field(&mut v, "max_rows_scan", args.max_rows_scan);
+    if !args.columns.is_empty() {
+        v["columns"] = Value::Array(
+            args.columns
+                .iter()
+                .copied()
+                .map(Value::from)
+                .collect(),
+        );
+    }
+    set_opt_field(&mut v, "column", args.column);
+    set_opt_field(&mut v, "equals", args.equals.clone());
+    set_opt_field(&mut v, "contains", args.contains.clone());
+    set_opt_field(
+        &mut v,
+        "op",
+        args.op.map(table_text_aggregate_op_str).map(str::to_string),
+    );
+    set_opt_field(&mut v, "max_output_rows", args.max_output_rows);
+    v
+}
+
+fn table_text_action_str(action: TableTextAction) -> &'static str {
+    match action {
         TableTextAction::Preview => "preview",
         TableTextAction::Validate => "validate",
         TableTextAction::SelectColumns => "select_columns",
         TableTextAction::FilterRows => "filter_rows",
         TableTextAction::Aggregate => "aggregate",
-    };
-    let delim_str = match args.delimiter.unwrap_or(TableTextDelimiter::Auto) {
+    }
+}
+
+fn table_text_delimiter_str(delim: TableTextDelimiter) -> &'static str {
+    match delim {
         TableTextDelimiter::Auto => "auto",
         TableTextDelimiter::Comma => "comma",
         TableTextDelimiter::Csv => "csv",
@@ -549,65 +613,27 @@ fn table_text_args_to_json_value(args: &TableTextArgs) -> Value {
         TableTextDelimiter::Tsv => "tsv",
         TableTextDelimiter::Semicolon => "semicolon",
         TableTextDelimiter::Pipe => "pipe",
-    };
+    }
+}
 
-    let mut v = serde_json::json!({
-        "action": action_str,
-        "delimiter": delim_str,
-        "has_header": args.has_header,
-    });
-    if let Some(p) = args
-        .path
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        v["path"] = serde_json::Value::String(p.to_string());
+fn table_text_aggregate_op_str(op: TableTextAggregateOp) -> &'static str {
+    match op {
+        TableTextAggregateOp::Count => "count",
+        TableTextAggregateOp::CountNonEmpty => "count_non_empty",
+        TableTextAggregateOp::CountNumeric => "count_numeric",
+        TableTextAggregateOp::Sum => "sum",
+        TableTextAggregateOp::Mean => "mean",
+        TableTextAggregateOp::Avg => "avg",
+        TableTextAggregateOp::Min => "min",
+        TableTextAggregateOp::Max => "max",
     }
-    if let Some(t) = args.text.as_ref() {
-        v["text"] = serde_json::Value::String(t.clone());
+}
+
+/// 有值时写入 JSON 字段（`v` 须为对象）。
+fn set_opt_field<T: Into<Value>>(v: &mut Value, key: &str, val: Option<T>) {
+    if let Some(val) = val {
+        v[key] = val.into();
     }
-    if let Some(n) = args.preview_rows {
-        v["preview_rows"] = serde_json::Value::from(n);
-    }
-    if let Some(n) = args.max_rows_scan {
-        v["max_rows_scan"] = serde_json::Value::from(n);
-    }
-    if !args.columns.is_empty() {
-        v["columns"] = serde_json::Value::Array(
-            args.columns
-                .iter()
-                .copied()
-                .map(serde_json::Value::from)
-                .collect(),
-        );
-    }
-    if let Some(c) = args.column {
-        v["column"] = serde_json::Value::from(c);
-    }
-    if let Some(ref s) = args.equals {
-        v["equals"] = serde_json::Value::String(s.clone());
-    }
-    if let Some(ref s) = args.contains {
-        v["contains"] = serde_json::Value::String(s.clone());
-    }
-    if let Some(op) = args.op {
-        let op_str = match op {
-            TableTextAggregateOp::Count => "count",
-            TableTextAggregateOp::CountNonEmpty => "count_non_empty",
-            TableTextAggregateOp::CountNumeric => "count_numeric",
-            TableTextAggregateOp::Sum => "sum",
-            TableTextAggregateOp::Mean => "mean",
-            TableTextAggregateOp::Avg => "avg",
-            TableTextAggregateOp::Min => "min",
-            TableTextAggregateOp::Max => "max",
-        };
-        v["op"] = serde_json::Value::String(op_str.to_string());
-    }
-    if let Some(n) = args.max_output_rows {
-        v["max_output_rows"] = serde_json::Value::from(n);
-    }
-    v
 }
 
 fn table_text_run_preview_action(v: &Value, bytes: &[u8], delim: u8, has_header: bool) -> String {

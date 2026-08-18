@@ -47,16 +47,38 @@ fn summarize_failed_checks_json(stdout: &str) -> Option<String> {
         } else {
             format!("- **{name}**: {state} ({link})")
         };
-        let st = state.to_ascii_lowercase();
-        if st.contains("fail") {
-            failed.push(line);
-        } else if st.contains("pend") || st.contains("progress") || st.contains("queued") {
-            pending.push(line);
+        match check_state_bucket(state) {
+            CheckStateBucket::Failed => failed.push(line),
+            CheckStateBucket::Pending => pending.push(line),
+            CheckStateBucket::Other => {}
         }
     }
     if failed.is_empty() && pending.is_empty() {
         return None;
     }
+    Some(render_checks_summary(failed, pending))
+}
+
+/// 检查状态归类：失败 / 进行中 / 其它。
+enum CheckStateBucket {
+    Failed,
+    Pending,
+    Other,
+}
+
+fn check_state_bucket(state: &str) -> CheckStateBucket {
+    let st = state.to_ascii_lowercase();
+    if st.contains("fail") {
+        CheckStateBucket::Failed
+    } else if st.contains("pend") || st.contains("progress") || st.contains("queued") {
+        CheckStateBucket::Pending
+    } else {
+        CheckStateBucket::Other
+    }
+}
+
+/// 渲染失败 / 进行中检查列表。
+fn render_checks_summary(failed: Vec<String>, pending: Vec<String>) -> String {
     let mut out = String::from("\n\n---\n**检查摘要**\n");
     if !failed.is_empty() {
         out.push_str("\n### 失败\n");
@@ -68,7 +90,7 @@ fn summarize_failed_checks_json(stdout: &str) -> Option<String> {
         out.push_str(&pending.join("\n"));
         out.push('\n');
     }
-    Some(out)
+    out
 }
 
 /// 为 `gh pr checks` 在 structured 模式下附加检查摘要。

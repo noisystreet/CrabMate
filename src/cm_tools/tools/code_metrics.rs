@@ -231,27 +231,7 @@ fn detect_coverage_format(path: &str, content: &str) -> String {
 }
 
 fn parse_lcov(content: &str, max_output_len: usize) -> String {
-    let mut files: Vec<(String, usize, usize)> = Vec::new();
-    let mut current_file = String::new();
-    let mut lines_found: usize = 0;
-    let mut lines_hit: usize = 0;
-
-    for line in content.lines() {
-        if let Some(sf) = line.strip_prefix("SF:") {
-            current_file = sf.trim().to_string();
-        } else if let Some(lf) = line.strip_prefix("LF:") {
-            lines_found = lf.trim().parse().unwrap_or(0);
-        } else if let Some(lh) = line.strip_prefix("LH:") {
-            lines_hit = lh.trim().parse().unwrap_or(0);
-        } else if line == "end_of_record" {
-            if !current_file.is_empty() {
-                files.push((current_file.clone(), lines_found, lines_hit));
-            }
-            current_file.clear();
-            lines_found = 0;
-            lines_hit = 0;
-        }
-    }
+    let mut files = parse_lcov_records(content);
 
     if files.is_empty() {
         return "LCOV 文件为空或解析无结果".to_string();
@@ -259,11 +239,7 @@ fn parse_lcov(content: &str, max_output_len: usize) -> String {
 
     let total_found: usize = files.iter().map(|(_, f, _)| f).sum();
     let total_hit: usize = files.iter().map(|(_, _, h)| h).sum();
-    let pct = if total_found > 0 {
-        total_hit as f64 / total_found as f64 * 100.0
-    } else {
-        0.0
-    };
+    let pct = coverage_pct(total_hit, total_found, 0.0);
 
     let mut out = format!(
         "LCOV 覆盖率摘要：{:.1}%（{}/{} 行）\n\n",
@@ -277,25 +253,13 @@ fn parse_lcov(content: &str, max_output_len: usize) -> String {
     out.push('\n');
 
     files.sort_by(|a, b| {
-        let pa = if a.1 > 0 {
-            a.2 as f64 / a.1 as f64
-        } else {
-            1.0
-        };
-        let pb = if b.1 > 0 {
-            b.2 as f64 / b.1 as f64
-        } else {
-            1.0
-        };
-        pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+        coverage_pct(a.2, a.1, 100.0)
+            .partial_cmp(&coverage_pct(b.2, b.1, 100.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (file, found, hit) in &files {
-        let fp = if *found > 0 {
-            *hit as f64 / *found as f64 * 100.0
-        } else {
-            100.0
-        };
+        let fp = coverage_pct(*hit, *found, 100.0);
         let short = if file.len() > 48 {
             let suffix: String = file
                 .chars()
@@ -318,45 +282,65 @@ fn parse_lcov(content: &str, max_output_len: usize) -> String {
     output_util::truncate_output_lines(&out, max_output_len, MAX_OUTPUT_LINES)
 }
 
+/// 覆盖率百分比；`found == 0` 时返回 `none_default`。
+fn coverage_pct(hit: usize, found: usize, none_default: f64) -> f64 {
+    if found > 0 {
+        hit as f64 / found as f64 * 100.0
+    } else {
+        none_default
+    }
+}
+
+/// 解析 LCOV 的 `SF:` / `LF:` / `LH:` / `end_of_record` 记录，返回 (文件, 总行数, 命中行数)。
+fn parse_lcov_records(content: &str) -> Vec<(String, usize, usize)> {
+    let mut files = Vec::new();
+    let mut current_file = String::new();
+    let mut lines_found = 0usize;
+    let mut lines_hit = 0usize;
+    for line in content.lines() {
+        if let Some(sf) = line.strip_prefix("SF:") {
+            current_file = sf.trim().to_string();
+        } else if let Some(lf) = line.strip_prefix("LF:") {
+            lines_found = lf.trim().parse().unwrap_or(0);
+        } else if let Some(lh) = line.strip_prefix("LH:") {
+            lines_hit = lh.trim().parse().unwrap_or(0);
+        } else if line == "end_of_record" {
+            if !current_file.is_empty() {
+                files.push((current_file.clone(), lines_found, lines_hit));
+            }
+            current_file.clear();
+            lines_found = 0;
+            lines_hit = 0;
+        }
+    }
+    files
+}
+
 fn parse_tarpaulin_json(content: &str, max_output_len: usize) -> String {
     let v: serde_json::Value = match serde_json::from_str(content) {
         Ok(v) => v,
         Err(e) => return format!("Tarpaulin JSON 解析失败：{}", e),
     };
-
-    let mut file_stats: HashMap<String, (usize, usize)> = HashMap::new();
-
-    if let Some(files) = v.get("files").and_then(|f| f.as_array()) {
-        for f in files {
-            let path = f.get("path").and_then(|p| p.as_str()).unwrap_or("?");
-            let covered = f.get("covered").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
-            let coverable = f.get("coverable").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
-            file_stats.insert(path.to_string(), (coverable, covered));
+    let file_stats = match parse_tarpaulin_files(&v) {
+        Some(fs) if !fs.is_empty() => fs,
+        Some(_) => return "Tarpaulin JSON：无文件级覆盖数据".to_string(),
+        None => {
+            // 单文件模式：顶层 covered / coverable 直接出摘要。
+            let Some(covered) = v.get("covered").and_then(|c| c.as_u64()) else {
+                return "Tarpaulin JSON：无文件级覆盖数据".to_string();
+            };
+            let coverable = v.get("coverable").and_then(|c| c.as_u64()).unwrap_or(0);
+            let pct = coverage_pct(covered as usize, coverable as usize, 0.0);
+            return format!(
+                "Tarpaulin 覆盖率：{:.1}%（{}/{} 行）",
+                pct, covered, coverable
+            );
         }
-    } else if let Some(covered) = v.get("covered").and_then(|c| c.as_u64()) {
-        let coverable = v.get("coverable").and_then(|c| c.as_u64()).unwrap_or(0);
-        let pct = if coverable > 0 {
-            covered as f64 / coverable as f64 * 100.0
-        } else {
-            0.0
-        };
-        return format!(
-            "Tarpaulin 覆盖率：{:.1}%（{}/{} 行）",
-            pct, covered, coverable
-        );
-    }
-
-    if file_stats.is_empty() {
-        return "Tarpaulin JSON：无文件级覆盖数据".to_string();
-    }
+    };
 
     let total_coverable: usize = file_stats.values().map(|(c, _)| c).sum();
     let total_covered: usize = file_stats.values().map(|(_, h)| h).sum();
-    let pct = if total_coverable > 0 {
-        total_covered as f64 / total_coverable as f64 * 100.0
-    } else {
-        0.0
-    };
+    let pct = coverage_pct(total_covered, total_coverable, 0.0);
 
     let mut out = format!(
         "Tarpaulin 覆盖率摘要：{:.1}%（{}/{} 行）\n\n",
@@ -364,25 +348,13 @@ fn parse_tarpaulin_json(content: &str, max_output_len: usize) -> String {
     );
     let mut sorted: Vec<_> = file_stats.into_iter().collect();
     sorted.sort_by(|a, b| {
-        let pa = if a.1.0 > 0 {
-            a.1.1 as f64 / a.1.0 as f64
-        } else {
-            1.0
-        };
-        let pb = if b.1.0 > 0 {
-            b.1.1 as f64 / b.1.0 as f64
-        } else {
-            1.0
-        };
-        pa.partial_cmp(&pb).unwrap_or(std::cmp::Ordering::Equal)
+        coverage_pct(a.1.1, a.1.0, 100.0)
+            .partial_cmp(&coverage_pct(b.1.1, b.1.0, 100.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 
     for (file, (coverable, covered)) in &sorted {
-        let fp = if *coverable > 0 {
-            *covered as f64 / *coverable as f64 * 100.0
-        } else {
-            100.0
-        };
+        let fp = coverage_pct(*covered, *coverable, 100.0);
         let short = if file.len() > 48 {
             let suffix: String = file
                 .chars()
@@ -400,6 +372,19 @@ fn parse_tarpaulin_json(content: &str, max_output_len: usize) -> String {
     }
 
     output_util::truncate_output_lines(&out, max_output_len, MAX_OUTPUT_LINES)
+}
+
+/// 从 Tarpaulin JSON 提取（path → (coverable, covered)）；顶层无 `files` 数组时返回 `None`。
+fn parse_tarpaulin_files(v: &serde_json::Value) -> Option<HashMap<String, (usize, usize)>> {
+    let files = v.get("files")?.as_array()?;
+    let mut file_stats = HashMap::new();
+    for f in files {
+        let path = f.get("path").and_then(|p| p.as_str()).unwrap_or("?");
+        let covered = f.get("covered").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+        let coverable = f.get("coverable").and_then(|c| c.as_u64()).unwrap_or(0) as usize;
+        file_stats.insert(path.to_string(), (coverable, covered));
+    }
+    Some(file_stats)
 }
 
 fn parse_cobertura_summary(content: &str, max_output_len: usize) -> String {
