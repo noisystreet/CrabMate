@@ -25,21 +25,27 @@ fn validate_gh_api_json(v: &JsonValue) -> Result<(), String> {
     ) {
         return Err("错误：method 须为 GET、HEAD、POST、PATCH、PUT 或 DELETE".to_string());
     }
-    let body = v.get("body").and_then(|x| x.as_str()).map(str::trim);
-    if let Some(b) = body {
-        if !b.is_empty() && method == "GET" {
-            return Err("错误：GET 请求不应带 body".to_string());
-        }
-        if !b.is_empty() && serde_json::from_str::<JsonValue>(b).is_err() {
-            return Err("错误：body 须为合法 JSON 字符串".to_string());
-        }
-    }
+    validate_gh_api_body(v.get("body").and_then(|x| x.as_str()).map(str::trim), &method)?;
     if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
         let extra: Vec<String> = arr
             .iter()
             .filter_map(|x| x.as_str().map(String::from))
             .collect();
         validate_extra_args(&extra)?;
+    }
+    Ok(())
+}
+
+/// 校验 `gh api` 的 body：GET 不允许 body，非空 body 须为合法 JSON。
+fn validate_gh_api_body(body: Option<&str>, method: &str) -> Result<(), String> {
+    let Some(b) = body else {
+        return Ok(());
+    };
+    if !b.is_empty() && method == "GET" {
+        return Err("错误：GET 请求不应带 body".to_string());
+    }
+    if !b.is_empty() && serde_json::from_str::<JsonValue>(b).is_err() {
+        return Err("错误：body 须为合法 JSON 字符串".to_string());
     }
     Ok(())
 }

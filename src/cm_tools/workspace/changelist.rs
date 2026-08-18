@@ -113,41 +113,7 @@ fn format_inner(inner: &ChangelistInner, max_total_chars: usize) -> Option<Strin
         let Some(t) = inner.files.get(p) else {
             continue;
         };
-        let left = t.baseline.as_deref().unwrap_or("");
-        let right = match &t.current {
-            Some(s) => s.as_str(),
-            None => "",
-        };
-        let header_note = if t.baseline.is_none() && t.current.is_some() {
-            "（新建）"
-        } else if t.baseline.is_some() && t.current.is_none() {
-            "（已删除）"
-        } else {
-            ""
-        };
-        let diff = TextDiff::from_lines(left, right);
-        let unified = diff
-            .unified_diff()
-            .context_radius(3)
-            .header(&format!("a/{p}"), &format!("b/{p}"))
-            .to_string();
-        const MAX_UNIFIED_BLOCK_CHARS: usize = 6000;
-        let unified = if unified.chars().count() > MAX_UNIFIED_BLOCK_CHARS {
-            format!(
-                "{}…\n（该文件 diff 已截断；请以 read_file 为准）",
-                unified
-                    .chars()
-                    .take(MAX_UNIFIED_BLOCK_CHARS)
-                    .collect::<String>()
-            )
-        } else {
-            unified
-        };
-        let block = if header_note.is_empty() {
-            format!("#### `{p}`\n```diff\n{unified}\n```\n")
-        } else {
-            format!("#### `{p}` {header_note}\n```diff\n{unified}\n```\n")
-        };
+        let block = format_changelist_diff_block(p, t);
         let cost = block.len().div_ceil(2);
         if cost > budget && !diff_blocks.is_empty() {
             diff_blocks.push(format!(
@@ -161,6 +127,45 @@ fn format_inner(inner: &ChangelistInner, max_total_chars: usize) -> Option<Strin
 
     lines.push(diff_blocks.join("\n"));
     Some(lines.join("\n"))
+}
+
+/// 生成单个路径的 unified diff 块（含新建/删除标注与超长截断）。
+fn format_changelist_diff_block(p: &str, t: &TrackedFile) -> String {
+    let left = t.baseline.as_deref().unwrap_or("");
+    let right = match &t.current {
+        Some(s) => s.as_str(),
+        None => "",
+    };
+    let header_note = if t.baseline.is_none() && t.current.is_some() {
+        "（新建）"
+    } else if t.baseline.is_some() && t.current.is_none() {
+        "（已删除）"
+    } else {
+        ""
+    };
+    let diff = TextDiff::from_lines(left, right);
+    let unified = diff
+        .unified_diff()
+        .context_radius(3)
+        .header(&format!("a/{p}"), &format!("b/{p}"))
+        .to_string();
+    const MAX_UNIFIED_BLOCK_CHARS: usize = 6000;
+    let unified = if unified.chars().count() > MAX_UNIFIED_BLOCK_CHARS {
+        format!(
+            "{}…\n（该文件 diff 已截断；请以 read_file 为准）",
+            unified
+                .chars()
+                .take(MAX_UNIFIED_BLOCK_CHARS)
+                .collect::<String>()
+        )
+    } else {
+        unified
+    };
+    if header_note.is_empty() {
+        format!("#### `{p}`\n```diff\n{unified}\n```\n")
+    } else {
+        format!("#### `{p}` {header_note}\n```diff\n{unified}\n```\n")
+    }
 }
 
 fn estimate_chars(parts: &[String]) -> usize {
