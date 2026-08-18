@@ -234,23 +234,10 @@ pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
     let Some(arr) = v.get("args").and_then(|x| x.as_array()) else {
         return "错误：缺少 args 数组（至少一项，如 [\"pytest\",\"-q\"]）".to_string();
     };
-    if arr.is_empty() || arr.len() > MAX_UV_RUN_ARGS {
-        return format!("错误：args 须非空且最多 {} 项", MAX_UV_RUN_ARGS);
-    }
-    let mut argv: Vec<String> = Vec::new();
-    for x in arr {
-        let s = match x.as_str() {
-            Some(t) => t.trim(),
-            None => return "错误：args 须全部为字符串".to_string(),
-        };
-        if !is_safe_uv_run_arg(s) {
-            return format!(
-                "错误：非法参数项（禁止空白与 shell 元字符，单段最长 {} 字符）：{:?}",
-                MAX_UV_RUN_ARG_LEN, s
-            );
-        }
-        argv.push(s.to_string());
-    }
+    let argv = match collect_uv_run_argv(arr) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
 
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
@@ -275,6 +262,28 @@ pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
         title
     };
     run_and_format(cmd, max_output_len, &title, None)
+}
+
+/// 校验 `uv run` 的 args 数组并逐项做安全字符检查，返回可执行 argv。
+fn collect_uv_run_argv(arr: &[serde_json::Value]) -> Result<Vec<String>, String> {
+    if arr.is_empty() || arr.len() > MAX_UV_RUN_ARGS {
+        return Err(format!("错误：args 须非空且最多 {} 项", MAX_UV_RUN_ARGS));
+    }
+    let mut argv: Vec<String> = Vec::new();
+    for x in arr {
+        let s = match x.as_str() {
+            Some(t) => t.trim(),
+            None => return Err("错误：args 须全部为字符串".to_string()),
+        };
+        if !is_safe_uv_run_arg(s) {
+            return Err(format!(
+                "错误：非法参数项（禁止空白与 shell 元字符，单段最长 {} 字符）：{:?}",
+                MAX_UV_RUN_ARG_LEN, s
+            ));
+        }
+        argv.push(s.to_string());
+    }
+    Ok(argv)
 }
 
 /// 在工作区根执行可编辑安装：`uv pip install -e .` 或 `python3 -m pip install -e .`。
@@ -685,31 +694,7 @@ pub fn ruff_format_file(
         output_util::append_notfound_install_hint(b, &e, "ruff")
     })?;
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr.trim_end().to_string()
-        } else if !stdout.trim().is_empty() {
-            stdout.trim_end().to_string()
-        } else {
-            String::new()
-        };
-        let suffix = if detail.is_empty() {
-            String::new()
-        } else {
-            format!("\n{}", detail)
-        };
-        let phase = if check_only {
-            "ruff format --check"
-        } else {
-            "ruff format"
-        };
-        return Err(format!(
-            "{} 失败，退出码：{}{}",
-            phase,
-            output.status.code().unwrap_or(-1),
-            suffix
-        ));
+        return Err(format_ruff_failure(check_only, &output));
     }
     Ok(format!(
         "已使用 ruff format {}：{}",
@@ -720,6 +705,35 @@ pub fn ruff_format_file(
         },
         relative.to_string_lossy().replace('\\', "/")
     ))
+}
+
+/// 组装 `ruff format` 失败时的错误文案（stderr/stdout 优先、阶段名与退出码）。
+fn format_ruff_failure(check_only: bool, output: &std::process::Output) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = if !stderr.trim().is_empty() {
+        stderr.trim_end().to_string()
+    } else if !stdout.trim().is_empty() {
+        stdout.trim_end().to_string()
+    } else {
+        String::new()
+    };
+    let suffix = if detail.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", detail)
+    };
+    let phase = if check_only {
+        "ruff format --check"
+    } else {
+        "ruff format"
+    };
+    format!(
+        "{} 失败，退出码：{}{}",
+        phase,
+        output.status.code().unwrap_or(-1),
+        suffix
+    )
 }
 
 #[cfg(test)]

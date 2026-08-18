@@ -243,26 +243,39 @@ fn walk_rs(root: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
     if root.is_file() {
         return walk_rs_one_file(root, ctx);
     }
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
+    walk_rs_dir(root, ctx)
+}
+
+/// 目录递归主体：隐藏目录/非 `.rs` 文件由 [`is_rs_entry_visitable`] 过滤，命中上限即停止。
+fn walk_rs_dir(dir: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if ctx.ignore_hidden_dirs && name.starts_with('.') {
+        let name = entry.file_name();
+        if !is_rs_entry_visitable(&path, &name, ctx) {
             continue;
         }
         if path.is_dir() {
             walk_rs(&path, ctx)?;
-            if ctx.results.len() >= ctx.max_results {
-                break;
-            }
-        } else if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs") {
+        } else {
             walk_rs_one_file(&path, ctx)?;
-            if ctx.results.len() >= ctx.max_results {
-                break;
-            }
+        }
+        if ctx.results.len() >= ctx.max_results {
+            break;
         }
     }
     Ok(())
+}
+
+/// 是否进入该条目：目录始终进入；文件仅当后缀为 `.rs`；隐藏目录按 `ignore_hidden_dirs` 跳过。
+fn is_rs_entry_visitable(path: &Path, name: &std::ffi::OsStr, ctx: &RsWalkCtx<'_>) -> bool {
+    if ctx.ignore_hidden_dirs && name.to_string_lossy().starts_with('.') {
+        return false;
+    }
+    if path.is_dir() {
+        return true;
+    }
+    path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("rs")
 }
 
 fn walk_rs_one_file(path: &Path, ctx: &mut RsWalkCtx<'_>) -> Result<(), String> {

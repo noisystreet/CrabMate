@@ -379,24 +379,42 @@ where
         return Ok((line_no, note));
     }
 
+    if read_decoder_chunks(&mut file, &mut decoder, &mut pending, &mut line_no, &mut on_line, label)?
+    {
+        return Ok((line_no, note));
+    }
+
+    emit_decoder_pending_tail_line(&mut line_no, pending, &mut on_line);
+
+    Ok((line_no, note))
+}
+
+/// 从 `file` 继续读取剩余块喂给解码器并逐行回调；回调请求中断（`is_break`）时返回 `true`。
+fn read_decoder_chunks<F>(
+    file: &mut File,
+    decoder: &mut encoding_rs::Decoder,
+    pending: &mut String,
+    line_no: &mut usize,
+    on_line: &mut F,
+    label: &str,
+) -> Result<bool, String>
+where
+    F: FnMut(usize, &str) -> std::ops::ControlFlow<()>,
+{
     let mut chunk = vec![0u8; READ_CHUNK];
     loop {
         let n = file
             .read(&mut chunk)
             .map_err(|e| format!("读取文件失败: {}", e))?;
         if n == 0 {
-            feed_decoder_strict(&mut decoder, b"", &mut pending, true, label)?;
-            break;
+            feed_decoder_strict(decoder, b"", pending, true, label)?;
+            return Ok(false);
         }
-        feed_decoder_strict(&mut decoder, &chunk[..n], &mut pending, false, label)?;
-        if drain_pending_decoder_lines(&mut line_no, &mut pending, &mut on_line)?.is_break() {
-            return Ok((line_no, note));
+        feed_decoder_strict(decoder, &chunk[..n], pending, false, label)?;
+        if drain_pending_decoder_lines(line_no, pending, on_line)?.is_break() {
+            return Ok(true);
         }
     }
-
-    emit_decoder_pending_tail_line(&mut line_no, pending, &mut on_line);
-
-    Ok((line_no, note))
 }
 
 /// 与 [`for_each_decoded_line`] 相同，但复用已打开的 `File`（避免对路径二次 `open`）。
