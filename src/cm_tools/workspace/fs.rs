@@ -336,11 +336,7 @@ pub fn create_directory_under_root(
 
     if !parents {
         if components.len() == 1 {
-            match mkdirat(&root, Path::new(components[0]), mode) {
-                Ok(()) => Ok(()),
-                Err(Errno::EEXIST) => Ok(()),
-                Err(e) => Err(io::Error::from(e)),
-            }
+            mkdirat_leaf(&root, Path::new(components[0]), mode)
         } else {
             let mut parent_rel = PathBuf::new();
             for c in &components[..components.len() - 1] {
@@ -349,14 +345,26 @@ pub fn create_directory_under_root(
             let parent_logical = root_canonical.join(parent_rel);
             let (parent_dir, _) = open_directory_under_root(root_canonical, &parent_logical)?;
             let last = components[components.len() - 1];
-            match mkdirat(&parent_dir, Path::new(last), mode) {
-                Ok(()) => Ok(()),
-                Err(Errno::EEXIST) => Ok(()),
-                Err(e) => Err(io::Error::from(e)),
-            }
+            mkdirat_leaf(&parent_dir, Path::new(last), mode)
         }
     } else {
         mkdirat_components_from_fd(&root, &components, mode)
+    }
+}
+
+/// 在 fd 目录下 `mkdirat` 单层；已存在视为成功。
+#[cfg(target_os = "linux")]
+fn mkdirat_leaf<Fd: std::os::fd::AsFd>(
+    dir: Fd,
+    name: &Path,
+    mode: nix::sys::stat::Mode,
+) -> io::Result<()> {
+    use nix::errno::Errno;
+    use nix::sys::stat::mkdirat;
+    match mkdirat(dir, name, mode) {
+        Ok(()) => Ok(()),
+        Err(Errno::EEXIST) => Ok(()),
+        Err(e) => Err(io::Error::from(e)),
     }
 }
 
@@ -536,9 +544,6 @@ pub fn rename_file_under_root(
     src_logical: &Path,
     dst_logical: &Path,
 ) -> io::Result<()> {
-    use nix::errno::Errno;
-    use nix::fcntl::renameat;
-
     ensure_parent_dirs_under_root(root_canonical, dst_logical)?;
     let src_parent = src_logical
         .parent()
@@ -552,6 +557,31 @@ pub fn rename_file_under_root(
     let dst_name = dst_logical
         .file_name()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "dst has no file name"))?;
+
+    renameat_under_root(
+        root_canonical,
+        src_parent,
+        src_name,
+        dst_parent,
+        dst_name,
+        src_logical,
+        dst_logical,
+    )
+}
+
+/// `renameat` 同文件系统改名；跨设备（EXDEV）时退化为复制后删除源。
+#[cfg(all(unix, target_os = "linux"))]
+fn renameat_under_root(
+    root_canonical: &Path,
+    src_parent: &Path,
+    src_name: &std::ffi::OsStr,
+    dst_parent: &Path,
+    dst_name: &std::ffi::OsStr,
+    src_logical: &Path,
+    dst_logical: &Path,
+) -> io::Result<()> {
+    use nix::errno::Errno;
+    use nix::fcntl::renameat;
 
     let (src_dir, _) = open_directory_under_root(root_canonical, src_parent)?;
     let (dst_dir, _) = open_directory_under_root(root_canonical, dst_parent)?;

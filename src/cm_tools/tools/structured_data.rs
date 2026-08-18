@@ -331,39 +331,52 @@ fn ensure_parent_for_set<'a>(
     }
     let mut cur = root;
     for seg in &tokens[..tokens.len() - 1] {
-        match cur {
-            JsonValue::Object(map) => {
-                if !map.contains_key(seg) {
-                    if !create_missing {
-                        return Err(format!("中间路径不存在: {}", seg));
-                    }
-                    map.insert(seg.clone(), JsonValue::Object(serde_json::Map::new()));
-                }
-                cur = map
-                    .get_mut(seg)
-                    .ok_or_else(|| format!("中间路径不存在: {}", seg))?;
-            }
-            JsonValue::Array(arr) => {
-                let idx = seg
-                    .parse::<usize>()
-                    .map_err(|_| format!("数组路径片段不是非负整数: {}", seg))?;
-                if idx >= arr.len() {
-                    if create_missing && idx == arr.len() {
-                        arr.push(JsonValue::Object(serde_json::Map::new()));
-                    } else {
-                        return Err(format!("数组下标越界: {}（长度 {}）", idx, arr.len()));
-                    }
-                }
-                let len_now = arr.len();
-                let Some(next) = arr.get_mut(idx) else {
-                    return Err(format!("数组下标越界: {}（长度 {}）", idx, len_now));
-                };
-                cur = next;
-            }
+        cur = match cur {
+            JsonValue::Object(map) => descend_object(map, seg, create_missing)?,
+            JsonValue::Array(arr) => descend_array(arr, seg, create_missing)?,
             _ => return Err("中间路径不是 object/array，无法继续下钻".to_string()),
-        }
+        };
     }
     Ok((cur, tokens.last().cloned().unwrap_or_default()))
+}
+
+/// 下钻 object：缺失键按 `create_missing` 补建空对象。
+fn descend_object<'a>(
+    map: &'a mut serde_json::Map<String, JsonValue>,
+    seg: &str,
+    create_missing: bool,
+) -> Result<&'a mut JsonValue, String> {
+    if !map.contains_key(seg) {
+        if !create_missing {
+            return Err(format!("中间路径不存在: {}", seg));
+        }
+        map.insert(seg.to_string(), JsonValue::Object(serde_json::Map::new()));
+    }
+    map.get_mut(seg)
+        .ok_or_else(|| format!("中间路径不存在: {}", seg))
+}
+
+/// 下钻 array：片段须为非负整数下标；越界按 `create_missing` 补建（仅允许追加末尾一项）。
+fn descend_array<'a>(
+    arr: &'a mut Vec<JsonValue>,
+    seg: &str,
+    create_missing: bool,
+) -> Result<&'a mut JsonValue, String> {
+    let idx = seg
+        .parse::<usize>()
+        .map_err(|_| format!("数组路径片段不是非负整数: {}", seg))?;
+    if idx >= arr.len() {
+        if create_missing && idx == arr.len() {
+            arr.push(JsonValue::Object(serde_json::Map::new()));
+        } else {
+            return Err(format!("数组下标越界: {}（长度 {}）", idx, arr.len()));
+        }
+    }
+    let len_now = arr.len();
+    let Some(next) = arr.get_mut(idx) else {
+        return Err(format!("数组下标越界: {}（长度 {}）", idx, len_now));
+    };
+    Ok(next)
 }
 
 fn set_value_at_path(

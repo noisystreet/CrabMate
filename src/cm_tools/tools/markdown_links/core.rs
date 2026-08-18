@@ -166,65 +166,9 @@ pub fn collect_markdown_files(
     if out.len() >= max_files {
         return;
     }
-    let root_rel = root_rel.trim();
-    if root_rel.is_empty() {
-        errors.push("roots 中存在空路径".to_string());
+    let Some(abs) = resolve_collect_root(ws, ws_canonical, root_rel, errors) else {
         return;
-    }
-    if Path::new(root_rel).is_absolute() || root_rel.contains("..") {
-        errors.push(format!("非法根路径（须为相对路径且无 ..）：{}", root_rel));
-        return;
-    }
-    let abs = ws.join(root_rel);
-    let abs = match abs.canonicalize() {
-        Ok(p) => p,
-        Err(_) => {
-            errors.push(format!("扫描根不存在或无法访问：{}", root_rel));
-            return;
-        }
     };
-    if !abs.starts_with(ws_canonical) {
-        errors.push(format!("扫描根越界：{}", root_rel));
-        return;
-    }
-
-    fn walk(
-        ws_canonical: &Path,
-        dir: &Path,
-        depth: usize,
-        max_depth: usize,
-        max_files: usize,
-        out: &mut Vec<PathBuf>,
-        seen: &mut HashSet<PathBuf>,
-    ) {
-        if out.len() >= max_files || depth > max_depth {
-            return;
-        }
-        let Ok(rd) = std::fs::read_dir(dir) else {
-            return;
-        };
-        let mut entries: Vec<_> = rd.flatten().collect();
-        entries.sort_by_key(|e| e.file_name());
-        for e in entries {
-            if out.len() >= max_files {
-                break;
-            }
-            let p = e.path();
-            let Ok(meta) = e.metadata() else {
-                continue;
-            };
-            if meta.is_dir() {
-                walk(ws_canonical, &p, depth + 1, max_depth, max_files, out, seen);
-            } else if meta.is_file()
-                && p.extension().is_some_and(|x| x.eq_ignore_ascii_case("md"))
-                && let Ok(can) = p.canonicalize()
-                && can.starts_with(ws_canonical)
-                && seen.insert(can.clone())
-            {
-                out.push(can);
-            }
-        }
-    }
 
     let meta = match std::fs::metadata(&abs) {
         Ok(m) => m,
@@ -234,20 +178,110 @@ pub fn collect_markdown_files(
         }
     };
     if meta.is_file() {
-        if abs
-            .extension()
-            .is_some_and(|x| x.eq_ignore_ascii_case("md"))
-            && seen.insert(abs.clone())
-        {
-            out.push(abs);
-        } else if !abs
-            .extension()
-            .is_some_and(|x| x.eq_ignore_ascii_case("md"))
-        {
-            errors.push(format!("扫描根是文件但不是 .md：{}", root_rel));
-        }
+        collect_root_markdown_file(&abs, ws_canonical, seen, out, root_rel, errors);
     } else if meta.is_dir() {
-        walk(ws_canonical, &abs, 0, max_depth, max_files, out, seen);
+        walk_collect(ws_canonical, &abs, 0, max_depth, max_files, out, seen);
+    }
+}
+
+/// 校验根路径（相对、无 `..`、可访问、不越界）并规范化；失败时写入 `errors` 并返回 `None`。
+fn resolve_collect_root(
+    ws: &Path,
+    ws_canonical: &Path,
+    root_rel: &str,
+    errors: &mut Vec<String>,
+) -> Option<PathBuf> {
+    let root_rel = root_rel.trim();
+    if root_rel.is_empty() {
+        errors.push("roots 中存在空路径".to_string());
+        return None;
+    }
+    if Path::new(root_rel).is_absolute() || root_rel.contains("..") {
+        errors.push(format!("非法根路径（须为相对路径且无 ..）：{}", root_rel));
+        return None;
+    }
+    let abs = ws.join(root_rel);
+    let abs = match abs.canonicalize() {
+        Ok(p) => p,
+        Err(_) => {
+            errors.push(format!("扫描根不存在或无法访问：{}", root_rel));
+            return None;
+        }
+    };
+    if !abs.starts_with(ws_canonical) {
+        errors.push(format!("扫描根越界：{}", root_rel));
+        return None;
+    }
+    Some(abs)
+}
+
+/// 根路径是单个 `.md` 文件时收集（去重）；非 `.md` 文件记错误。
+fn collect_root_markdown_file(
+    abs: &Path,
+    ws_canonical: &Path,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+    root_rel: &str,
+    errors: &mut Vec<String>,
+) {
+    if abs
+        .extension()
+        .is_some_and(|x| x.eq_ignore_ascii_case("md"))
+        && seen.insert(abs.to_path_buf())
+    {
+        out.push(abs.to_path_buf());
+    } else if !abs.extension().is_some_and(|x| x.eq_ignore_ascii_case("md")) {
+        errors.push(format!("扫描根是文件但不是 .md：{}", root_rel));
+    }
+}
+
+/// 目录递归收集：隐藏/非 `.md`/越界条目由 [`collect_markdown_entry`] 过滤。
+fn walk_collect(
+    ws_canonical: &Path,
+    dir: &Path,
+    depth: usize,
+    max_depth: usize,
+    max_files: usize,
+    out: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if out.len() >= max_files || depth > max_depth {
+        return;
+    }
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let mut entries: Vec<_> = rd.flatten().collect();
+    entries.sort_by_key(|e| e.file_name());
+    for e in entries {
+        if out.len() >= max_files {
+            break;
+        }
+        let p = e.path();
+        let Ok(meta) = e.metadata() else {
+            continue;
+        };
+        if meta.is_dir() {
+            walk_collect(ws_canonical, &p, depth + 1, max_depth, max_files, out, seen);
+        } else if meta.is_file() {
+            collect_markdown_entry(&p, ws_canonical, seen, out);
+        }
+    }
+}
+
+/// 单文件判断：后缀 `.md`、可规范化且不越界、去重通过后收集。
+fn collect_markdown_entry(
+    p: &Path,
+    ws_canonical: &Path,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<PathBuf>,
+) {
+    if p.extension().is_some_and(|x| x.eq_ignore_ascii_case("md"))
+        && let Ok(can) = p.canonicalize()
+        && can.starts_with(ws_canonical)
+        && seen.insert(can.clone())
+    {
+        out.push(can);
     }
 }
 

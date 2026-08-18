@@ -622,50 +622,42 @@ fn event_update_fields_any_set(patch: &EventUpdateFields) -> bool {
 }
 
 fn apply_event_updates(e: &mut Event, patch: &EventUpdateFields) {
-    if let Some(ref t) = patch.title {
-        e.title = t.clone();
+    if let Some(t) = patch.title.clone() {
+        e.title = t;
     }
-    if let Some(ref s) = patch.start_at {
+    apply_event_start_at(e, &patch.start_at);
+    apply_event_clearable_text(e, &patch.end_at, |e, v| e.end_at = v);
+    apply_event_clearable_text(e, &patch.location, |e, v| e.location = v);
+    apply_event_clearable_text(e, &patch.notes, |e, v| e.notes = v);
+    e.updated_at = Some(now_rfc3339());
+}
+
+/// 应用 start_at：空值视为「不更新」（与可清空字段语义不同）。
+fn apply_event_start_at(e: &mut Event, value: &Option<String>) {
+    if let Some(s) = value {
         let t = s.trim();
         if !t.is_empty() {
             e.start_at = parse_datetime_to_rfc3339(t).unwrap_or_else(|| t.to_string());
         }
     }
-    if let Some(ref s) = patch.end_at {
+}
+
+/// 应用可清空字段：显式传空字符串时清空为 `None`。
+fn apply_event_clearable_text(
+    e: &mut Event,
+    value: &Option<String>,
+    set: fn(&mut Event, Option<String>),
+) {
+    if let Some(s) = value {
         let t = s.trim();
-        if t.is_empty() {
-            e.end_at = None;
-        } else {
-            e.end_at = Some(parse_datetime_to_rfc3339(t).unwrap_or_else(|| t.to_string()));
-        }
+        set(e, if t.is_empty() { None } else { Some(t.to_string()) });
     }
-    if let Some(ref s) = patch.location {
-        let t = s.trim();
-        e.location = if t.is_empty() {
-            None
-        } else {
-            Some(t.to_string())
-        };
-    }
-    if let Some(ref s) = patch.notes {
-        let t = s.trim();
-        e.notes = if t.is_empty() {
-            None
-        } else {
-            Some(t.to_string())
-        };
-    }
-    e.updated_at = Some(now_rfc3339());
 }
 
 pub fn update_event(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: UpdateEventArgs = match serde_json::from_value(v) {
+    let args = match crate::cm_tools::tools::parse_args_typed::<UpdateEventArgs>(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -682,15 +674,7 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> String {
         Ok(d) => d,
         Err(e) => return e,
     };
-    let mut found = None;
-    for e in &mut data.items {
-        if e.id == id {
-            apply_event_updates(e, &patch);
-            found = Some(e.title.clone());
-            break;
-        }
-    }
-    let title = match found {
+    let title = match apply_event_update(&mut data.items, &id, &patch) {
         Some(t) => t,
         None => return format!("未找到日程：id={}", id),
     };
@@ -698,6 +682,21 @@ pub fn update_event(args_json: &str, working_dir: &Path) -> String {
         return e;
     }
     format!("已更新日程：{}（id={}）", title, id)
+}
+
+/// 在 `items` 中按 `id` 应用更新并返回新标题；未命中返回 `None`。
+fn apply_event_update(
+    items: &mut [Event],
+    id: &str,
+    patch: &EventUpdateFields,
+) -> Option<String> {
+    for e in items {
+        if e.id == id {
+            apply_event_updates(e, patch);
+            return Some(e.title.clone());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
