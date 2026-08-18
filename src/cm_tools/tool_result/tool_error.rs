@@ -296,6 +296,22 @@ impl ToolError {
             legacy_parsed: parsed,
         }
     }
+
+    /// 子进程会话超时 / 取消（供 `run_command` 与 `run_and_format*` 类工具复用）：
+    /// `code` 为 `timeout` / `cancelled`，`message` 已含截断后的部分输出；
+    /// `legacy_parsed` 保留 stdout/stderr（供信封失败路径免再解析）。
+    pub fn session_stop(code: &'static str, message: String) -> Self {
+        let mut parsed = super::parse_legacy_output(code, &message);
+        parsed.ok = false;
+        parsed.error_code = Some(code.to_string());
+        Self {
+            category: ToolFailureCategory::Timeout,
+            code: code.to_string(),
+            message,
+            retryable: code == "timeout",
+            legacy_parsed: parsed,
+        }
+    }
 }
 
 #[cfg(test)]

@@ -422,8 +422,13 @@ fn run_tool_dispatch(
                 .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_nextest" => {
-            cargo_tools::cargo_nextest_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+            cargo_tools::cargo_nextest_try(
+                args_ref,
+                ctx.working_dir,
+                ctx.command_max_output_len,
+                Some(ctx.command_timeout_secs),
+            )
+            .map(|output| finish_dispatch_parsed(name, output))
         }
         "cargo_outdated" => {
             cargo_tools::cargo_outdated_try(args_ref, ctx.working_dir, ctx.command_max_output_len)

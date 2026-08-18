@@ -8,7 +8,6 @@ use crate::cm_tools::cargo_metadata::cargo_metadata_command;
 use crate::cm_tools::tool_result::ToolError;
 
 use super::ToolContext;
-use super::output_util;
 use super::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_args_fingerprint, fingerprint_rust_workspace_sources,
     store_cached, try_get_cached, wrap_cache_hit,
@@ -25,7 +24,7 @@ pub fn cargo_check_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    run_cargo_subcommand_str_try("check", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str_try("check", args_json, workspace_root, max_output_len, None)
 }
 
 const RUST_RUSTC_MAX_ARGS: usize = 64;
@@ -82,7 +81,7 @@ pub fn rust_rustc_try(
 
     let mut cmd = Command::new("rustc");
     cmd.args(&args).current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "rustc", "rust_rustc")
+    run_and_format_try(cmd, max_output_len, "rustc", "rust_rustc", None)
 }
 
 pub fn cargo_test(
@@ -102,10 +101,16 @@ pub fn cargo_test_try(
 ) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let Some(c) = ctx else {
-        return run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len);
+        return run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len, None);
     };
     maybe_cache_cargo_test_try(&v, workspace_root, c, || {
-        run_cargo_subcommand_value_try("test", &v, workspace_root, max_output_len)
+        run_cargo_subcommand_value_try(
+            "test",
+            &v,
+            workspace_root,
+            max_output_len,
+            Some(c.command_timeout_secs),
+        )
     })
 }
 
@@ -118,7 +123,7 @@ pub fn cargo_clippy_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    run_cargo_subcommand_str_try("clippy", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str_try("clippy", args_json, workspace_root, max_output_len, None)
 }
 
 pub fn cargo_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -130,7 +135,7 @@ pub fn cargo_run_try(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
-    run_cargo_subcommand_str_try("run", args_json, workspace_root, max_output_len)
+    run_cargo_subcommand_str_try("run", args_json, workspace_root, max_output_len, None)
 }
 
 pub fn rust_test_one(
@@ -162,10 +167,16 @@ pub fn rust_test_one_try(
         obj.insert("test_filter".to_string(), serde_json::Value::String(filter));
     }
     let Some(c) = ctx else {
-        return run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len);
+        return run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len, None);
     };
     maybe_cache_cargo_test_try(&merged, workspace_root, c, || {
-        run_cargo_subcommand_value_try("test", &merged, workspace_root, max_output_len)
+        run_cargo_subcommand_value_try(
+            "test",
+            &merged,
+            workspace_root,
+            max_output_len,
+            Some(c.command_timeout_secs),
+        )
     })
 }
 
@@ -229,7 +240,7 @@ pub fn cargo_metadata_try(
     }
 
     let cmd = cargo_metadata_command(workspace_root, no_deps, format_version);
-    run_and_format_try(cmd, max_output_len, "cargo metadata", "cargo_metadata")
+    run_and_format_try(cmd, max_output_len, "cargo metadata", "cargo_metadata", None)
 }
 
 pub fn cargo_tree(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -268,7 +279,7 @@ pub fn cargo_tree_try(
         cmd.arg("--edges").arg(e);
     }
     cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo tree", "cargo_tree")
+    run_and_format_try(cmd, max_output_len, "cargo tree", "cargo_tree", None)
 }
 
 pub fn cargo_clean(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -307,7 +318,7 @@ pub fn cargo_clean_try(
         cmd.arg("--dry-run");
     }
     cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo clean", "cargo_clean")
+    run_and_format_try(cmd, max_output_len, "cargo clean", "cargo_clean", None)
 }
 
 pub fn cargo_doc(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
@@ -342,17 +353,18 @@ pub fn cargo_doc_try(
         cmd.arg("--open");
     }
     cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo doc", "cargo_doc")
+    run_and_format_try(cmd, max_output_len, "cargo doc", "cargo_doc", None)
 }
 
 pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_nextest_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
+    cargo_nextest_try(args_json, workspace_root, max_output_len, None).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_nextest_try(
     args_json: &str,
     workspace_root: &Path,
     max_output_len: usize,
+    wall_secs: Option<u64>,
 ) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     if !workspace_root.join("Cargo.toml").is_file() {
@@ -392,7 +404,7 @@ pub fn cargo_nextest_try(
         cmd.arg("--").arg("--nocapture");
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format_try(cmd, max_output_len, "cargo nextest run", "cargo_nextest")?;
+    let out = run_and_format_try(cmd, max_output_len, "cargo nextest run", "cargo_nextest", wall_secs)?;
     if out.contains("no such command: `nextest`") {
         return Err(ToolError::invalid_args(
             "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`"
@@ -433,7 +445,7 @@ pub fn cargo_outdated_try(
         cmd.arg("--depth").arg(d.to_string());
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format_try(cmd, max_output_len, "cargo outdated", "cargo_outdated")?;
+    let out = run_and_format_try(cmd, max_output_len, "cargo outdated", "cargo_outdated", None)?;
     if out.contains("no such command: `outdated`") || out.contains("no such command: outdated") {
         return Err(ToolError::invalid_args(
             "cargo outdated: 未安装 cargo-outdated，请先运行 `cargo install cargo-outdated`"
@@ -502,7 +514,7 @@ pub fn cargo_machete_try(
         }
     }
     cmd.current_dir(workspace_root);
-    let out = run_and_format_try(cmd, max_output_len, "cargo machete", "cargo_machete")?;
+    let out = run_and_format_try(cmd, max_output_len, "cargo machete", "cargo_machete", None)?;
     if out.contains("no such command: `machete`") || out.contains("no such command: machete") {
         return Err(ToolError::invalid_args(
             "cargo machete: 未安装 cargo-machete，请先运行 `cargo install cargo-machete`"
@@ -537,7 +549,7 @@ pub fn cargo_udeps_try(
     }
     cmd.arg("udeps");
     cmd.current_dir(workspace_root);
-    let out = run_and_format_try(cmd, max_output_len, "cargo udeps", "cargo_udeps")?;
+    let out = run_and_format_try(cmd, max_output_len, "cargo udeps", "cargo_udeps", None)?;
     if out.contains("no such command: `udeps`") || out.contains("no such command: udeps") {
         return Err(ToolError::invalid_args(
             "cargo udeps: 未安装 cargo-udeps，请先运行 `cargo install cargo-udeps`（运行期通常需 nightly，可传 nightly: true）"
@@ -616,6 +628,7 @@ pub fn cargo_publish_dry_run_try(
         max_output_len,
         "cargo publish --dry-run",
         "cargo_publish_dry_run",
+        None,
     )
 }
 
@@ -723,161 +736,14 @@ pub fn cargo_fix_try(
     }
 
     cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix")
+    run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix", None)
 }
 
-struct CargoSubCmdOpts<'a> {
-    release: bool,
-    all_targets: bool,
-    package: Option<&'a str>,
-    bin: Option<&'a str>,
-    features: Option<&'a str>,
-    test_filter: Option<&'a str>,
-    no_capture: bool,
-    run_args: Vec<serde_json::Value>,
-}
+#[path = "cargo_subcommand.rs"]
+mod cargo_subcommand;
+use cargo_subcommand::{
+    run_and_format_try, run_cargo_subcommand_str_try, run_cargo_subcommand_value_try,
+};
 
-fn parse_cargo_subcmd_opts(v: &serde_json::Value) -> Result<CargoSubCmdOpts<'_>, ToolError> {
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
-    let bin = v.get("bin").and_then(|x| x.as_str()).map(str::trim);
-    if let Some(p) = package
-        && (p.is_empty() || p.contains(char::is_whitespace))
-    {
-        return Err(ToolError::invalid_args(
-            "错误：package 参数无效".to_string(),
-        ));
-    }
-    if let Some(b) = bin
-        && (b.is_empty() || b.contains(char::is_whitespace))
-    {
-        return Err(ToolError::invalid_args("错误：bin 参数无效".to_string()));
-    }
-    Ok(CargoSubCmdOpts {
-        release: v.get("release").and_then(|x| x.as_bool()).unwrap_or(false),
-        all_targets: v
-            .get("all_targets")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        package,
-        bin,
-        features: v
-            .get("features")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty()),
-        test_filter: v
-            .get("test_filter")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty()),
-        no_capture: v
-            .get("nocapture")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false),
-        run_args: v
-            .get("args")
-            .and_then(|x| x.as_array())
-            .cloned()
-            .unwrap_or_default(),
-    })
-}
-
-fn push_cargo_subcmd_cli(cmd: &mut Command, subcmd: &str, o: &CargoSubCmdOpts<'_>) {
-    cmd.arg(subcmd);
-    if o.release {
-        cmd.arg("--release");
-    }
-    if o.all_targets && matches!(subcmd, "check" | "clippy") {
-        cmd.arg("--all-targets");
-    }
-    if let Some(p) = o.package {
-        cmd.arg("--package").arg(p);
-    }
-    if let Some(b) = o.bin {
-        cmd.arg("--bin").arg(b);
-    }
-    if let Some(f) = o.features {
-        cmd.arg("--features").arg(f);
-    }
-    if subcmd == "test" {
-        if let Some(filter) = o.test_filter {
-            cmd.arg(filter);
-        }
-        if o.no_capture {
-            cmd.arg("--").arg("--nocapture");
-        }
-    } else if subcmd == "run" && !o.run_args.is_empty() {
-        cmd.arg("--");
-        for a in &o.run_args {
-            if let Some(s) = a.as_str() {
-                cmd.arg(s);
-            }
-        }
-    }
-}
-
-fn run_cargo_subcommand_str_try(
-    subcmd: &str,
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-    run_cargo_subcommand_value_try(subcmd, &v, workspace_root, max_output_len)
-}
-
-fn run_cargo_subcommand_value_try(
-    subcmd: &str,
-    v: &serde_json::Value,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> Result<String, ToolError> {
-    if !workspace_root.join("Cargo.toml").is_file() {
-        return Err(ToolError::workspace(
-            "workspace_no_cargo_toml",
-            "错误：当前工作目录未找到 Cargo.toml".to_string(),
-        ));
-    }
-
-    let o = parse_cargo_subcmd_opts(v)?;
-    let mut cmd = Command::new("cargo");
-    push_cargo_subcmd_cli(&mut cmd, subcmd, &o);
-    cmd.current_dir(workspace_root);
-    let tool_code = format!("cargo_{}", subcmd);
-    run_and_format_try(
-        cmd,
-        max_output_len,
-        &format!("cargo {}", subcmd),
-        &tool_code,
-    )
-}
-
-fn run_and_format_try(
-    mut cmd: Command,
-    max_output_len: usize,
-    title: &str,
-    tool_code: &str,
-) -> Result<String, ToolError> {
-    match cmd.output() {
-        Ok(output) => {
-            let exit = output.status.code().unwrap_or(-1);
-            let body = output_util::merge_process_output(
-                &output,
-                output_util::ProcessOutputMerge::ConcatStdoutStderr,
-            );
-            let message = output_util::format_exited_command_output(
-                title,
-                exit,
-                &body,
-                max_output_len,
-                MAX_OUTPUT_LINES,
-            );
-            if output.status.success() {
-                Ok(message)
-            } else {
-                Err(ToolError::cargo_subcommand_failed(tool_code, exit, message))
-            }
-        }
-        Err(e) => Err(ToolError::subprocess_spawn_error(title, e)),
-    }
-}
+#[path = "cargo_tools_run_tests.rs"]
+mod tests;

@@ -6,7 +6,8 @@ use std::process::{Command, Stdio};
 
 use super::output_util;
 use crate::cm_tools::subprocess_session::{
-    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, wait_child_session,
+    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, run_and_capture,
+    wait_child_session,
 };
 
 const MAX_OUTPUT_LINES: usize = 800;
@@ -52,11 +53,17 @@ pub fn ruff_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "ruff check")
+    run_and_format(cmd, max_output_len, "ruff check", None)
 }
 
 /// `python3 -m pytest`：可选单一路径、`-k` / `-m`、`-q`、maxfail、是否 nocapture。
-pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+/// `wall_secs = Some(secs)` 时超时对进程组 SIGTERM→SIGKILL 并保留部分输出。
+pub fn pytest_run(
+    args_json: &str,
+    workspace_root: &Path,
+    max_output_len: usize,
+    wall_secs: Option<u64>,
+) -> String {
     if !workspace_has_python_project(workspace_root) {
         return "pytest: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
             .to_string();
@@ -88,7 +95,7 @@ pub fn pytest_run(args_json: &str, workspace_root: &Path, max_output_len: usize)
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "python3 -m pytest")
+    run_and_format(cmd, max_output_len, "python3 -m pytest", wall_secs)
 }
 
 fn pytest_validate_test_path(v: &serde_json::Value) -> Option<String> {
@@ -177,7 +184,7 @@ pub fn mypy_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "mypy")
+    run_and_format(cmd, max_output_len, "mypy", None)
 }
 
 /// 在工作区根执行 `uv sync`（须存在 `pyproject.toml`）。
@@ -211,7 +218,7 @@ pub fn uv_sync(args_json: &str, workspace_root: &Path, max_output_len: usize) ->
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "uv sync")
+    run_and_format(cmd, max_output_len, "uv sync", None)
 }
 
 /// 在工作区根执行 `uv run <args...>`：`args` 为**非空**字符串数组，逐项传给子进程（不经 shell）。
@@ -267,7 +274,7 @@ pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
     } else {
         title
     };
-    run_and_format(cmd, max_output_len, &title)
+    run_and_format(cmd, max_output_len, &title, None)
 }
 
 /// 在工作区根执行可编辑安装：`uv pip install -e .` 或 `python3 -m pip install -e .`。
@@ -314,7 +321,7 @@ pub fn python_install_editable(
     } else {
         "python3 -m pip install -e ."
     };
-    run_and_format(cmd, max_output_len, title)
+    run_and_format(cmd, max_output_len, title, None)
 }
 
 /// `python_snippet_run`：临时脚本路径、命令参数等（`_tmp` 须存活至子进程结束）。
@@ -578,15 +585,71 @@ fn parse_rel_paths(
     Ok(arr)
 }
 
-fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -> String {
-    output_util::run_command_output_formatted(
-        cmd,
-        title,
-        max_output_len,
-        MAX_OUTPUT_LINES,
-        output_util::ProcessOutputMerge::StderrElseStdout,
-        output_util::CommandSpawnErrorStyle::CannotStartCommand,
-    )
+fn run_and_format(
+    cmd: Command,
+    max_output_len: usize,
+    title: &str,
+    wall_secs: Option<u64>,
+) -> String {
+    let program_hint = cmd.get_program().to_str().map(|s| {
+        Path::new(s)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| s.to_string())
+    });
+    match run_and_capture(cmd, max_output_len, wall_secs) {
+        Ok(session) => {
+            let stdout = String::from_utf8_lossy(&session.stdout);
+            let stderr = String::from_utf8_lossy(&session.stderr);
+            // 与历史 `StderrElseStdout` 合并一致；空输出显示 `(无输出)`。
+            let mut body = String::new();
+            if !stderr.trim().is_empty() {
+                body.push_str(stderr.trim_end());
+            } else if !stdout.trim().is_empty() {
+                body.push_str(stdout.trim_end());
+            } else {
+                body.push_str("(无输出)");
+            }
+            match session.kind {
+                SessionStopKind::Exited => {
+                    let code = session.status.and_then(|s| s.code()).unwrap_or(-1);
+                    output_util::format_exited_command_output(
+                        title,
+                        code,
+                        &body,
+                        max_output_len,
+                        MAX_OUTPUT_LINES,
+                    )
+                }
+                SessionStopKind::Timeout | SessionStopKind::Cancelled => {
+                    let head = if matches!(session.kind, SessionStopKind::Timeout) {
+                        format!(
+                            "{} 命令执行超时（{} 秒）；子进程已发送终止信号。",
+                            title,
+                            wall_secs.unwrap_or_default()
+                        )
+                    } else {
+                        format!("{} 命令已取消；子进程已发送终止信号。", title)
+                    };
+                    format!(
+                        "{head}\n{}",
+                        output_util::format_marked_streams_block(
+                            &stdout,
+                            &stderr,
+                            max_output_len,
+                            MAX_OUTPUT_LINES,
+                        )
+                    )
+                }
+            }
+        }
+        Err(e) => output_util::format_spawn_error_with_program(
+            title,
+            &e,
+            output_util::CommandSpawnErrorStyle::CannotStartCommand,
+            program_hint.as_deref(),
+        ),
+    }
 }
 
 /// `ruff format` 单文件（`path` 为相对工作区根的路径）。
@@ -710,5 +773,32 @@ mod tests {
             "python 孙进程 sleep 仍在运行（进程组未杀干净）"
         );
         let _ = std::fs::remove_dir_all(dir.path());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_and_format_timeout_kills_and_keeps_partial_output() {
+        // `pytest_run` / `ruff_check` 等共用 run_and_format：超时对进程组 SIGTERM→SIGKILL，
+        // 返回正文含「超时」说明与已捕获部分输出。
+        let marker = format!("cm_py_runfmt_{}", std::process::id());
+        let mut cmd = Command::new("bash");
+        cmd.args([
+            "-c",
+            &format!("echo partial-py-out; sleep 60 # {marker}"),
+        ]);
+        let out = run_and_format(cmd, 4096, "python3 -m pytest", Some(1));
+        assert!(out.contains("命令执行超时"), "{out:?}");
+        assert!(out.contains("partial-py-out"), "{out:?}");
+        let parsed = crate::cm_tools::tool_result::parse_legacy_output("pytest_run", &out);
+        assert_eq!(parsed.error_code.as_deref(), Some("timeout"), "{parsed:?}");
+        assert!(
+            parsed.stdout.contains("partial-py-out"),
+            "legacy 解析应保留部分 stdout: {parsed:?}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        assert!(
+            !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
+            "run_and_format 孙进程 sleep 仍在运行（进程组未杀干净）"
+        );
     }
 }

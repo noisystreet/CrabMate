@@ -203,7 +203,12 @@ pub fn runner_ruff_check(args: &str, ctx: &ToolContext<'_>) -> String {
 }
 
 pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::pytest_run(args, ctx.working_dir, ctx.command_max_output_len)
+    python_tools::pytest_run(
+        args,
+        ctx.working_dir,
+        ctx.command_max_output_len,
+        Some(ctx.command_timeout_secs),
+    )
 }
 
 pub fn runner_mypy_check(args: &str, ctx: &ToolContext<'_>) -> String {

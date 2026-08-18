@@ -431,7 +431,7 @@ fn ci_run_pytest(
     sections: &mut Vec<String>,
 ) -> Option<String> {
     if o.run_pytest {
-        let r = python_tools::pytest_run("{}", workspace_root, max_output_len);
+        let r = python_tools::pytest_run("{}", workspace_root, max_output_len, None);
         let failed = section_failed(&r) && !r.contains("跳过（");
         summary.push((
             "pytest".to_string(),
