@@ -220,6 +220,7 @@ pub(super) fn openapi_components_value() -> Value {
         openapi_components_schemas_from_contract(),
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),
+        openapi_components_schemas_tool_jobs(),
         openapi_components_user_data::openapi_components_schemas_user_data(),
     ]);
     let Value::Object(sec_root) = openapi_components_security_schemes() else {
@@ -228,4 +229,36 @@ pub(super) fn openapi_components_value() -> Value {
     let mut root = sec_root;
     root.insert("schemas".to_string(), schemas_merged);
     Value::Object(root)
+}
+
+fn openapi_components_schemas_tool_jobs() -> Value {
+    json!({
+        "ToolJobStatusResponseBody": {
+            "type": "object",
+            "required": ["tool_job_id", "status", "workspace_changed", "result_version"],
+            "properties": {
+                "tool_job_id": { "type": "string" },
+                "status": {
+                    "type": "string",
+                    "enum": ["queued", "running", "succeeded", "failed", "cancelled", "timed_out"]
+                },
+                "exit_code": { "type": "integer", "nullable": true },
+                "stdout": { "type": "string", "nullable": true },
+                "stderr": { "type": "string", "nullable": true },
+                "summary": { "type": "string", "nullable": true },
+                "error_code": { "type": "string", "nullable": true },
+                "failure_category": { "type": "string", "nullable": true },
+                "workspace_changed": { "type": "boolean" },
+                "result_version": { "type": "integer" }
+            }
+        },
+        "ToolJobCancelResponseBody": {
+            "type": "object",
+            "required": ["tool_job_id", "status"],
+            "properties": {
+                "tool_job_id": { "type": "string" },
+                "status": { "type": "string" }
+            }
+        }
+    })
 }

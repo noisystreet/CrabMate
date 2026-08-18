@@ -13,6 +13,7 @@ pub mod chat_keys;
 pub mod error_codes;
 pub mod openapi;
 pub mod status;
+pub mod tool_jobs;
 pub mod web_ui;
 
 pub use api::ApiError;

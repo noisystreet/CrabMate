@@ -24,5 +24,6 @@ pub mod routes;
 pub mod server;
 pub(crate) mod skills_handlers;
 pub mod task;
+pub(crate) mod tool_jobs;
 mod user_data;
 pub mod workspace;

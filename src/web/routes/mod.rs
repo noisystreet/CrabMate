@@ -10,6 +10,7 @@
 //! | [`user_data`] | `/user-data/*` | 本机用户数据（prefs、会话桶、LLM 覆盖、secrets） |
 //! | [`github`] | `/github/*` | GitHub 在线模式（PR 列表、checks、合并） |
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
+//! | [`tools`] | `/tools/jobs/*` | 后台工具任务轮询与取消 |
 //! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`**；[`E2eConversationFixtureFacet`](crate::web::app_state_facets::E2eConversationFixtureFacet) |
 
 pub(crate) mod chat;
@@ -19,5 +20,6 @@ pub(crate) mod github;
 pub(crate) mod skills;
 pub(crate) mod system;
 pub(crate) mod tasks;
+pub(crate) mod tools;
 pub(crate) mod user_data;
 pub(crate) mod workspace;
