@@ -183,7 +183,7 @@ fn run_quality_step(step: QualityStep, workspace_root: &Path, max_output_len: us
             frontend_tools::frontend_prettier_check("{}", workspace_root, max_output_len)
         }
         QualityStep::RuffCheck => python_tools::ruff_check("{}", workspace_root, max_output_len),
-        QualityStep::Pytest => python_tools::pytest_run("{}", workspace_root, max_output_len),
+        QualityStep::Pytest => python_tools::pytest_run("{}", workspace_root, max_output_len, None),
         QualityStep::Mypy => python_tools::mypy_check("{}", workspace_root, max_output_len),
         QualityStep::MavenCompile => jvm_tools::maven_compile("{}", workspace_root, max_output_len),
         QualityStep::MavenTest => jvm_tools::maven_test("{}", workspace_root, max_output_len),

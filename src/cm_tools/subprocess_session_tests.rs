@@ -187,6 +187,42 @@ fn take_utf8_text_finish_replaces_incomplete() {
 
 #[cfg(unix)]
 #[test]
+fn run_and_capture_timeout_kills_process_group_with_partial_output() {
+    // 覆盖 `run_and_format*` 类工具迁移后共用的 `run_and_capture`：
+    // 超时对进程组 SIGTERM→SIGKILL，且已捕获输出随结果返回（孙进程同样被清）。
+    let marker = format!("cm_capture_sleep_{}", std::process::id());
+    let mut cmd = Command::new("bash");
+    cmd.args([
+        "-c",
+        &format!("echo partial-out; sleep 60 # {marker}"),
+    ]);
+    let r = run_and_capture(cmd, 4096, Some(1)).expect("run");
+    assert_eq!(r.kind, SessionStopKind::Timeout);
+    assert!(r.killed);
+    assert!(
+        String::from_utf8_lossy(&r.stdout).contains("partial-out"),
+        "{:?}",
+        r.stdout
+    );
+    thread::sleep(Duration::from_millis(200));
+    assert!(
+        !proc_cmdline_contains(&marker),
+        "grandchild sleep still listed for {marker}"
+    );
+}
+
+#[test]
+fn run_and_capture_no_wall_exits_cleanly() {
+    let mut cmd = Command::new("echo");
+    cmd.arg("capture-ok");
+    let r = run_and_capture(cmd, 4096, None).expect("run");
+    assert_eq!(r.kind, SessionStopKind::Exited);
+    assert!(!r.killed);
+    assert!(String::from_utf8_lossy(&r.stdout).contains("capture-ok"));
+}
+
+#[cfg(unix)]
+#[test]
 fn wait_session_chunk_sink_false_retries_same_bytes() {
     use std::sync::atomic::{AtomicUsize, Ordering};
     let fails_left = Arc::new(AtomicUsize::new(2));

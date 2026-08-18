@@ -101,7 +101,7 @@
 - 返回：exit / timeout / cancelled + 已截断 stdout/stderr。显式 `ToolError` 码（`timeout` / 取消），不要只靠正文含「超时」。
 - 优先 `tokio::process::Command` + `kill_on_drop`，避免长命令占死 `spawn_blocking` 线程池。若短期仍在 blocking 线程里 `try_wait` 轮询，须在文档/PR 写明占用时长与迁出计划。
 
-**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 各 `run_and_format*`（未开始；P0 之后、P1 测试工具 chunk 之前或同时）。
+**迁入顺序**：`run_command`（✅）→ `python_snippet_run`（✅ 已迁入，pid-only `hard_kill` 已删除；新增进程组超时回归测试）→ 测试类工具（✅ `cargo_test` / `pytest_run` / `cargo_nextest` 已迁入：超时杀进程组、部分输出进错误正文、稳定 `error_code`，共用 `subprocess_session::run_and_capture`）→ 其余 `run_and_format*`（未开始；P1 测试工具 chunk 之前）。
 
 **安全**：改 wait **不得**绕过白名单、`..`/绝对路径、审批门闩。超时/取消 **不得** 走 `is_compile_command_success` 成功路径，**不得** 写入 `test_result_cache`，**不得** 把 `workspace_changed` 打成 true。
 
@@ -143,7 +143,7 @@
 **待实现**：
 
 - [x] **`run_command` 先**（宿主 chat 路径把捕获缓冲打成 `tool_output_chunk`）。
-- [ ] 测试类工具（`cargo_test`、`pytest_run` 等）须已迁入共享会话后再 chunk。
+- [ ] 测试类工具（`cargo_test` / `pytest_run` / `cargo_nextest`）**已迁入共享会话**（超时杀进程组、部分输出、稳定 `error_code`），`tool_output_chunk` 待做。
 - [x] 按行或块下发已有 **`tool_output_chunk`**（`tool_call_id`、`seq`、可选 `stream`）。**chunk 不进模型上下文**（`docs/SSE协议.md`）。总量仍受 `command_max_output_len` 约束，避免气泡无限涨。（workflow **不下发** chunk。）
 - [x] **默认不加新顶层 SSE 键**。代理靠现有 HTTP `KeepAlive`。若必须做「无输出仍显示已耗时」，复用控制面/debug 形状，并同步 Client `parser_v2.rs`、`sse_dispatch/types.rs`、`control_classify.rs`、金样（`.cursor/rules/api-sse-chat-protocol.mdc`）。
 

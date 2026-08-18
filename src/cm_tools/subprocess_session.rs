@@ -298,6 +298,25 @@ pub fn wait_child_session(
     })
 }
 
+/// 一次性运行命令并等待：`spawn`（新进程组 + 并发排空管道）→ [`wait_child_session`]。
+///
+/// 供 `run_and_format*` 等测试/构建类工具复用，避免各工具各自抄一套 wait：
+/// `wall_secs = None` 表示无墙钟（保持既有「靠外圈 `spawn_blocking` timeout」语义）；
+/// `Some(secs)` 时超时对**进程组** SIGTERM→SIGKILL，已截断 stdout/stderr 仍随结果返回。
+pub fn run_and_capture(
+    mut cmd: Command,
+    max_output_len: usize,
+    wall_secs: Option<u64>,
+) -> io::Result<SessionWaitResult> {
+    prepare_piped_process_group(&mut cmd);
+    let child = cmd.spawn()?;
+    let ctl = SubprocessWaitCtl {
+        wall: wall_secs.map(|s| Duration::from_secs(s.max(1))),
+        ..SubprocessWaitCtl::default()
+    };
+    wait_child_session(child, &ctl, max_output_len)
+}
+
 /// 杀进程后是否在 `REAP_WAIT` 内**未**确认退出（残留风险）；`Err` 视同残留。
 fn reap_not_confirmed(reap: io::Result<Option<ExitStatus>>) -> bool {
     reap.map(|r| r.is_none()).unwrap_or(true)
