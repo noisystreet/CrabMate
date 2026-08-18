@@ -301,6 +301,19 @@ pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: us
         Err(e) => return format!("解析 cargo metadata JSON 失败: {}", e),
     };
 
+    let by_name = match collect_licenses(&meta, workspace_only) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+
+    truncate_str(&render_license_table(&by_name, max_crates), max_output_len)
+}
+
+/// 解析 cargo metadata 中的 workspace_members / packages，按 crate 名聚合多版本 license。
+fn collect_licenses(
+    meta: &serde_json::Value,
+    workspace_only: bool,
+) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
     let workspace_ids: HashSet<String> = meta
         .get("workspace_members")
         .and_then(|x| x.as_array())
@@ -311,13 +324,11 @@ pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: us
         })
         .unwrap_or_default();
 
-    let packages = match meta.get("packages").and_then(|x| x.as_array()) {
-        Some(p) => p,
-        None => return "错误：metadata 中无 packages 数组".to_string(),
+    let Some(packages) = meta.get("packages").and_then(|x| x.as_array()) else {
+        return Err("错误：metadata 中无 packages 数组".to_string());
     };
 
     let mut by_name: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-
     for pkg in packages {
         let Some(id) = pkg.get("id").and_then(|x| x.as_str()) else {
             continue;
@@ -337,7 +348,14 @@ pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: us
             .unwrap_or_else(|| "(Cargo.toml 未声明 license)".to_string());
         by_name.entry(name.to_string()).or_default().insert(lic);
     }
+    Ok(by_name)
+}
 
+/// 将聚合结果渲染为 Markdown 表格（限 `max_crates` 行）。
+fn render_license_table(
+    by_name: &BTreeMap<String, BTreeSet<String>>,
+    max_crates: usize,
+) -> String {
     let mut md = String::from(
         "> 以下为 **许可证摘要草稿**（来自 `cargo metadata`），**非法律意见**；未声明项已标注。发版前请人工核对。\n\n",
     );
@@ -362,7 +380,7 @@ pub fn license_notice(args_json: &str, workspace_root: &Path, max_output_len: us
         ));
     }
 
-    truncate_str(&md, max_output_len)
+    md
 }
 
 #[cfg(test)]

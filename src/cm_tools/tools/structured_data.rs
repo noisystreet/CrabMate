@@ -529,13 +529,9 @@ pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
 /// 解析后按路径取值（JSON Pointer 或点号路径）。
 /// 参数：`path`，`query`（必填），`format?`，`has_header?`（仅 CSV/TSV；默认 true）
 pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: StructuredQueryArgs = match serde_json::from_value(v) {
+    let args = match crate::cm_tools::tools::parse_args_typed::<StructuredQueryArgs>(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path = match args.path.trim() {
         p if !p.is_empty() => p,
@@ -545,24 +541,14 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
         q if !q.is_empty() => q,
         _ => return "错误：缺少 query（JSON Pointer 如 /a/b 或点号路径如 a.b）".to_string(),
     };
-    let fmt = args.format.map(|f| f.as_detect_token());
-    let has_header = args.has_header;
-
-    let abs = match file::resolve_for_read(working_dir, path) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let data_fmt = match detect_format(path, fmt) {
-        Ok(f) => f,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let text = match read_limited(&abs) {
-        Ok(t) => t,
-        Err(e) => return format!("错误：{}", e),
-    };
-    let jv = match parse_to_json(&text, data_fmt, has_header) {
+    let jv = match load_structured_query_doc(
+        working_dir,
+        path,
+        args.format.map(|f| f.as_detect_token()),
+        args.has_header,
+    ) {
         Ok(j) => j,
-        Err(e) => return format!("解析失败: {}", e),
+        Err(e) => return e,
     };
     match resolve_query_path(&jv, query) {
         Some(found) => {
@@ -576,6 +562,19 @@ pub fn structured_query(args_json: &str, working_dir: &Path) -> String {
         }
         None => format!("路径不存在或中间节点缺失: file={} query={}", path, query),
     }
+}
+
+/// 解析路径、探测格式并载入为 JSON 模型。
+fn load_structured_query_doc(
+    working_dir: &Path,
+    path: &str,
+    fmt: Option<&str>,
+    has_header: bool,
+) -> Result<JsonValue, String> {
+    let abs = file::resolve_for_read(working_dir, path).map_err(|e| format!("错误：{}", e))?;
+    let data_fmt = detect_format(path, fmt).map_err(|e| format!("错误：{}", e))?;
+    let text = read_limited(&abs).map_err(|e| format!("错误：{}", e))?;
+    parse_to_json(&text, data_fmt, has_header).map_err(|e| format!("解析失败: {}", e))
 }
 
 fn json_type_name(v: &JsonValue) -> &'static str {
