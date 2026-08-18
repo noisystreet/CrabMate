@@ -71,6 +71,10 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
                     "errorCode": tool_result.error_code,
                     "failureCategory": tool_result.failure_category,
                     "summary": tool_result.summary,
+                    // 后台任务启动帧软字段（`run_command` async=true；无则 null）。
+                    "toolJobId": tool_result.tool_job_id,
+                    "toolJobPollUrl": tool_result.tool_job_poll_url,
+                    "toolJobStatus": tool_result.tool_job_status,
                 })),
             }]
         }
@@ -361,6 +365,70 @@ mod tests {
             }
             other => panic!("expected ToolCallResult, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn convert_tool_result_carries_tool_job_metadata() {
+        let events = convert_sse_payload_to_ag_ui(&SsePayload::ToolResult {
+            tool_result: ToolResultBody {
+                name: "run_command".into(),
+                goal_id: None,
+                result_version: 1,
+                summary: None,
+                output: "已创建后台任务 tooljob_ab".into(),
+                ok: Some(true),
+                exit_code: None,
+                error_code: None,
+                failure_category: None,
+                retryable: None,
+                tool_call_id: Some("tc-2".into()),
+                execution_mode: None,
+                parallel_batch_id: None,
+                stdout: None,
+                stderr: None,
+                structured_preview: None,
+                tool_job_id: Some("tooljob_ab".into()),
+                tool_job_poll_url: Some("/tools/jobs/tooljob_ab".into()),
+                tool_job_status: Some("queued".into()),
+            },
+        });
+        let AgUiEvent::ToolCallResult { metadata, .. } = &events[0] else {
+            panic!("expected ToolCallResult");
+        };
+        let meta = metadata.as_ref().expect("metadata");
+        assert_eq!(meta["toolJobId"], "tooljob_ab");
+        assert_eq!(meta["toolJobPollUrl"], "/tools/jobs/tooljob_ab");
+        assert_eq!(meta["toolJobStatus"], "queued");
+        // 无 job 时保持 null（前端 Option 容忍）。
+        let events2 = convert_sse_payload_to_ag_ui(&SsePayload::ToolResult {
+            tool_result: ToolResultBody {
+                name: "ls".into(),
+                goal_id: None,
+                result_version: 1,
+                summary: None,
+                output: "x".into(),
+                ok: Some(true),
+                exit_code: Some(0),
+                error_code: None,
+                failure_category: None,
+                retryable: None,
+                tool_call_id: Some("tc-3".into()),
+                execution_mode: None,
+                parallel_batch_id: None,
+                stdout: None,
+                stderr: None,
+                structured_preview: None,
+                tool_job_id: None,
+                tool_job_poll_url: None,
+                tool_job_status: None,
+            },
+        });
+        let AgUiEvent::ToolCallResult { metadata, .. } = &events2[0] else {
+            panic!("expected ToolCallResult");
+        };
+        let meta = metadata.as_ref().expect("metadata");
+        assert!(meta.get("toolJobId").is_some(), "key 应存在（null）");
+        assert!(meta["toolJobId"].is_null());
     }
 
     #[test]

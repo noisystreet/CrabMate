@@ -16,6 +16,7 @@ TOOL_CALL_ARGS	{"type":"TOOL_CALL_ARGS","toolCallId":"tc-1","args":"path=/etc/ho
 TOOL_CALL_END	{"type":"TOOL_CALL_END","toolCallId":"tc-1"}	handled
 TOOL_CALL_RESULT	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-1","content":"done"}	handled
 TOOL_CALL_RESULT partial	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-1","content":"building...","metadata":{"partial":true,"seq":1}}	handled
+TOOL_CALL_RESULT async job	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-2","content":"已创建后台任务 tooljob_0123456789abcdef0123456789abcdef","metadata":{"name":"run_command","ok":true,"toolJobId":"tooljob_0123456789abcdef0123456789abcdef","toolJobPollUrl":"/tools/jobs/tooljob_0123456789abcdef0123456789abcdef","toolJobStatus":"queued"}}	handled
 REASONING_MESSAGE_START	{"type":"REASONING_MESSAGE_START","messageId":"r-1"}	handled
 REASONING_MESSAGE_CONTENT	{"type":"REASONING_MESSAGE_CONTENT","messageId":"r-1","delta":"thinking"}	handled
 REASONING_MESSAGE_END	{"type":"REASONING_MESSAGE_END","messageId":"r-1"}	handled
