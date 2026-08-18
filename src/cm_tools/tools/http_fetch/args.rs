@@ -163,19 +163,27 @@ pub fn parse_http_request_args(
     if method_raw.is_empty() {
         return Err("缺少 method（POST/PUT/PATCH/DELETE）".to_string());
     }
-    let method = match method_raw.as_str() {
-        "POST" => RequestMethod::Post,
-        "PUT" => RequestMethod::Put,
-        "PATCH" => RequestMethod::Patch,
-        "DELETE" => RequestMethod::Delete,
-        _ => {
-            return Err(format!(
-                "method 仅支持 POST/PUT/PATCH/DELETE（收到 {:?}）",
-                method_raw
-            ));
-        }
-    };
+    let method = parse_request_method(&method_raw)?;
     let json_body = args.json_body.clone();
+    validate_request_json_body(&json_body)?;
+    let text_format = parse_text_format_optional(args.text_format.as_deref())?;
+    Ok((url, method, json_body, text_format))
+}
+
+fn parse_request_method(method_raw: &str) -> Result<RequestMethod, String> {
+    match method_raw {
+        "POST" => Ok(RequestMethod::Post),
+        "PUT" => Ok(RequestMethod::Put),
+        "PATCH" => Ok(RequestMethod::Patch),
+        "DELETE" => Ok(RequestMethod::Delete),
+        _ => Err(format!(
+            "method 仅支持 POST/PUT/PATCH/DELETE（收到 {:?}）",
+            method_raw
+        )),
+    }
+}
+
+fn validate_request_json_body(json_body: &Option<serde_json::Value>) -> Result<(), String> {
     if let Some(body) = json_body.as_ref() {
         let body_len = serde_json::to_vec(body)
             .map(|b| b.len())
@@ -187,6 +195,5 @@ pub fn parse_http_request_args(
             ));
         }
     }
-    let text_format = parse_text_format_optional(args.text_format.as_deref())?;
-    Ok((url, method, json_body, text_format))
+    Ok(())
 }
