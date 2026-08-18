@@ -241,22 +241,8 @@ fn diff_recursive(
                 if out.len() >= max_lines {
                     break;
                 }
-                let seg = json_pointer_escape(&k);
-                let p = if base_path.is_empty() {
-                    format!("/{}", seg)
-                } else {
-                    format!("{}/{}", base_path, seg)
-                };
-                match (oa.get(&k), ob.get(&k)) {
-                    (None, Some(vb)) => {
-                        out.push(format!("仅 B 存在: {} = {}", p, preview_value(vb)));
-                    }
-                    (Some(va), None) => {
-                        out.push(format!("仅 A 存在: {} = {}", p, preview_value(va)));
-                    }
-                    (Some(va), Some(vb)) => diff_recursive(&p, va, vb, out, max_lines),
-                    (None, None) => {}
-                }
+                let p = child_pointer(base_path, &json_pointer_escape(&k));
+                diff_value_pair(&p, oa.get(&k), ob.get(&k), out, max_lines);
             }
         }
         (JsonValue::Array(aa), JsonValue::Array(ab)) => {
@@ -265,21 +251,8 @@ fn diff_recursive(
                 if out.len() >= max_lines {
                     break;
                 }
-                let p = if base_path.is_empty() {
-                    format!("/{}", i)
-                } else {
-                    format!("{}/{}", base_path, i)
-                };
-                match (aa.get(i), ab.get(i)) {
-                    (None, Some(vb)) => {
-                        out.push(format!("仅 B 存在: {} = {}", p, preview_value(vb)));
-                    }
-                    (Some(va), None) => {
-                        out.push(format!("仅 A 存在: {} = {}", p, preview_value(va)));
-                    }
-                    (Some(va), Some(vb)) => diff_recursive(&p, va, vb, out, max_lines),
-                    (None, None) => {}
-                }
+                let p = child_pointer(base_path, &i.to_string());
+                diff_value_pair(&p, aa.get(i), ab.get(i), out, max_lines);
             }
         }
         _ => {
@@ -290,6 +263,31 @@ fn diff_recursive(
                 preview_value(b)
             ));
         }
+    }
+}
+
+/// 拼接 JSON Pointer 子段（`/a/b` 或 `/a/0`）。
+fn child_pointer(base: &str, seg: &str) -> String {
+    if base.is_empty() {
+        format!("/{}", seg)
+    } else {
+        format!("{}/{}", base, seg)
+    }
+}
+
+/// 输出一对（可能缺失的）键/下标值的差异；Object 与 Array 分支共用。
+fn diff_value_pair(
+    p: &str,
+    va: Option<&JsonValue>,
+    vb: Option<&JsonValue>,
+    out: &mut Vec<String>,
+    max_lines: usize,
+) {
+    match (va, vb) {
+        (None, Some(vb)) => out.push(format!("仅 B 存在: {} = {}", p, preview_value(vb))),
+        (Some(va), None) => out.push(format!("仅 A 存在: {} = {}", p, preview_value(va))),
+        (Some(va), Some(vb)) => diff_recursive(p, va, vb, out, max_lines),
+        (None, None) => {}
     }
 }
 

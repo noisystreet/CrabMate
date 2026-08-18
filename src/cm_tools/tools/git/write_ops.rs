@@ -279,53 +279,68 @@ pub fn tag(args_json: &str, max_output_len: usize, working_dir: &Path) -> String
         .map(str::trim)
         .unwrap_or("list");
 
+    if action == "delete"
+        && let Err(e) = require_confirm(&v, "git_tag delete")
+    {
+        return e;
+    }
+    let args = match build_git_tag_args(&v, action) {
+        Ok(a) => a,
+        Err(e) => return e,
+    };
     let mut cmd = Command::new("git");
+    cmd.args(&args).current_dir(working_dir);
+    run_and_format(cmd, max_output_len, &format!("git tag {}", action))
+}
+
+/// 构造 `git tag <action>` 的 argv；参数不合法时返回错误正文。
+fn build_git_tag_args(v: &serde_json::Value, action: &str) -> Result<Vec<String>, String> {
     match action {
         "list" => {
-            cmd.arg("tag").arg("-l");
-            let pattern = v
+            let mut args = vec!["tag".to_string(), "-l".to_string()];
+            if let Some(p) = v
                 .get("pattern")
                 .and_then(|x| x.as_str())
                 .map(str::trim)
-                .filter(|s| !s.is_empty());
-            if let Some(p) = pattern {
-                cmd.arg(p);
+                .filter(|s| !s.is_empty())
+            {
+                args.push(p.to_string());
             }
+            Ok(args)
         }
         "create" => {
             let name = match v.get("name").and_then(|x| x.as_str()).map(str::trim) {
                 Some(s) if !s.is_empty() => s,
-                _ => return "错误：创建 tag 需要 name 参数".to_string(),
+                _ => return Err("错误：创建 tag 需要 name 参数".to_string()),
             };
             if name.contains("..") || name.starts_with('-') {
-                return "错误：tag 名不合法".to_string();
+                return Err("错误：tag 名不合法".to_string());
             }
             let message = v
                 .get("message")
                 .and_then(|x| x.as_str())
                 .map(str::trim)
                 .filter(|s| !s.is_empty());
-            cmd.arg("tag");
-            if let Some(m) = message {
-                cmd.arg("-a").arg(name).arg("-m").arg(m);
-            } else {
-                cmd.arg(name);
-            }
+            Ok(match message {
+                Some(m) => vec![
+                    "tag".into(),
+                    "-a".into(),
+                    name.into(),
+                    "-m".into(),
+                    m.into(),
+                ],
+                None => vec!["tag".into(), name.into()],
+            })
         }
         "delete" => {
-            if let Err(e) = require_confirm(&v, "git_tag delete") {
-                return e;
-            }
             let name = match v.get("name").and_then(|x| x.as_str()).map(str::trim) {
                 Some(s) if !s.is_empty() => s,
-                _ => return "错误：删除 tag 需要 name 参数".to_string(),
+                _ => return Err("错误：删除 tag 需要 name 参数".to_string()),
             };
-            cmd.arg("tag").arg("-d").arg(name);
+            Ok(vec!["tag".into(), "-d".into(), name.into()])
         }
-        _ => return format!("错误：不支持的 tag action: {}", action),
+        _ => Err(format!("错误：不支持的 tag action: {}", action)),
     }
-    cmd.current_dir(working_dir);
-    run_and_format(cmd, max_output_len, &format!("git tag {}", action))
 }
 
 pub fn reset(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {

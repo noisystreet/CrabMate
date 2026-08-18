@@ -1,6 +1,6 @@
 //! `dependency_graph` 工具（从 `code_metrics.rs` 拆分以降低圈复杂度）。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::MAX_OUTPUT_LINES;
@@ -184,11 +184,7 @@ fn go_dep_graph(workspace_root: &Path, format: &str, max_output_len: usize) -> S
 }
 
 fn npm_dep_graph(workspace_root: &Path, format: &str, max_output_len: usize) -> String {
-    let dir = if workspace_root.join("package.json").is_file() {
-        workspace_root.to_path_buf()
-    } else {
-        workspace_root.join("frontend")
-    };
+    let dir = npm_project_dir(workspace_root);
 
     let output = match Command::new("npm")
         .arg("ls")
@@ -203,51 +199,43 @@ fn npm_dep_graph(workspace_root: &Path, format: &str, max_output_len: usize) -> 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     if format == "raw" || (format != "mermaid" && format != "dot") {
-        let text_out = match Command::new("npm")
-            .arg("ls")
-            .arg("--depth=1")
-            .current_dir(&dir)
-            .output()
-        {
-            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
-            Err(_) => stdout.to_string(),
-        };
-        return format!(
-            "npm 依赖树：\n{}",
-            output_util::truncate_output_lines(
-                text_out.trim_end(),
-                max_output_len,
-                MAX_OUTPUT_LINES
-            )
-        );
+        return npm_text_dep_tree(&dir, &stdout, max_output_len);
     }
 
     let parsed: serde_json::Value = match serde_json::from_str(&stdout) {
         Ok(v) => v,
-        Err(_) => {
-            return format!(
-                "npm ls --json 解析失败，原始输出：\n{}",
-                output_util::truncate_output_lines(
-                    stdout.trim_end(),
-                    max_output_len,
-                    MAX_OUTPUT_LINES
-                )
-            );
-        }
+        Err(_) => return npm_json_parse_error(&stdout, max_output_len),
     };
     let root_name = parsed
         .get("name")
         .and_then(|n| n.as_str())
         .unwrap_or("project");
-    let root_id = sanitize_id(root_name);
     let deps = parsed.get("dependencies").and_then(|d| d.as_object());
+    let lines = npm_render_lines(format, &sanitize_id(root_name), deps);
+    let result = lines.join("\n");
+    let label = if format == "mermaid" {
+        "Mermaid"
+    } else {
+        "DOT"
+    };
+    format!(
+        "{} 依赖图（npm）：\n{}",
+        label,
+        output_util::truncate_output_lines(&result, max_output_len, MAX_OUTPUT_LINES)
+    )
+}
 
+/// 按 mermaid / dot 渲染根包到直接依赖的边（至多 100 条）。
+fn npm_render_lines(
+    format: &str,
+    root_id: &str,
+    deps: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Vec<String> {
     let mut lines = if format == "mermaid" {
         vec!["graph TD".to_string()]
     } else {
         vec!["digraph deps {".to_string(), "    rankdir=LR;".to_string()]
     };
-
     if let Some(deps_map) = deps {
         for (dep_name, _) in deps_map.iter().take(100) {
             let dep_id = sanitize_id(dep_name);
@@ -261,17 +249,45 @@ fn npm_dep_graph(workspace_root: &Path, format: &str, max_output_len: usize) -> 
     if format == "dot" {
         lines.push("}".to_string());
     }
+    lines
+}
 
-    let result = lines.join("\n");
-    let label = if format == "mermaid" {
-        "Mermaid"
+fn npm_project_dir(workspace_root: &Path) -> PathBuf {
+    if workspace_root.join("package.json").is_file() {
+        workspace_root.to_path_buf()
     } else {
-        "DOT"
+        workspace_root.join("frontend")
+    }
+}
+
+fn npm_text_dep_tree(dir: &Path, stdout_fallback: &str, max_output_len: usize) -> String {
+    let text_out = match Command::new("npm")
+        .arg("ls")
+        .arg("--depth=1")
+        .current_dir(dir)
+        .output()
+    {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+        Err(_) => stdout_fallback.to_string(),
     };
     format!(
-        "{} 依赖图（npm）：\n{}",
-        label,
-        output_util::truncate_output_lines(&result, max_output_len, MAX_OUTPUT_LINES)
+        "npm 依赖树：\n{}",
+        output_util::truncate_output_lines(
+            text_out.trim_end(),
+            max_output_len,
+            MAX_OUTPUT_LINES
+        )
+    )
+}
+
+fn npm_json_parse_error(stdout: &str, max_output_len: usize) -> String {
+    format!(
+        "npm ls --json 解析失败，原始输出：\n{}",
+        output_util::truncate_output_lines(
+            stdout.trim_end(),
+            max_output_len,
+            MAX_OUTPUT_LINES
+        )
     )
 }
 
