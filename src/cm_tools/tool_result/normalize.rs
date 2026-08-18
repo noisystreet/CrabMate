@@ -182,42 +182,20 @@ impl NormalizedToolEnvelope {
         ct.insert("summary".into(), Value::String(self.summary.clone()));
         ct.insert("ok".into(), Value::Bool(self.ok));
         ct.insert("output".into(), Value::String(self.output.clone()));
-        if let Some(c) = self.exit_code {
-            ct.insert("exit_code".into(), Value::from(c));
-        }
-        if let Some(ref e) = self.error_code {
-            ct.insert("error_code".into(), Value::String(e.clone()));
-        }
-        if let Some(ref fc) = self.failure_category {
-            ct.insert("failure_category".into(), Value::String(fc.clone()));
-        }
-        if let Some(r) = self.retryable {
-            ct.insert("retryable".into(), Value::Bool(r));
-        }
-        if let Some(ref id) = self.tool_call_id {
-            ct.insert("tool_call_id".into(), Value::String(id.clone()));
-        }
-        if let Some(ref m) = self.execution_mode {
-            ct.insert("execution_mode".into(), Value::String(m.clone()));
-        }
-        if let Some(ref b) = self.parallel_batch_id {
-            ct.insert("parallel_batch_id".into(), Value::String(b.clone()));
-        }
+        insert_opt(&mut ct, "exit_code", &self.exit_code);
+        insert_opt(&mut ct, "error_code", &self.error_code);
+        insert_opt(&mut ct, "failure_category", &self.failure_category);
+        insert_opt(&mut ct, "retryable", &self.retryable);
+        insert_opt(&mut ct, "tool_call_id", &self.tool_call_id);
+        insert_opt(&mut ct, "execution_mode", &self.execution_mode);
+        insert_opt(&mut ct, "parallel_batch_id", &self.parallel_batch_id);
         if self.output_truncated {
             ct.insert("output_truncated".into(), Value::Bool(true));
         }
-        if let Some(n) = self.output_original_chars {
-            ct.insert("output_original_chars".into(), Value::from(n));
-        }
-        if let Some(n) = self.output_kept_head_chars {
-            ct.insert("output_kept_head_chars".into(), Value::from(n));
-        }
-        if let Some(n) = self.output_kept_tail_chars {
-            ct.insert("output_kept_tail_chars".into(), Value::from(n));
-        }
-        if let Some(ref p) = self.structured_payload {
-            ct.insert("structured_payload".into(), p.clone());
-        }
+        insert_opt(&mut ct, "output_original_chars", &self.output_original_chars);
+        insert_opt(&mut ct, "output_kept_head_chars", &self.output_kept_head_chars);
+        insert_opt(&mut ct, "output_kept_tail_chars", &self.output_kept_tail_chars);
+        insert_opt(&mut ct, "structured_payload", &self.structured_payload);
         ct
     }
 
@@ -234,4 +212,11 @@ impl NormalizedToolEnvelope {
 /// 若 `content` 为 `{"crabmate_tool":{...}}` 则解析为归一化视图；否则 `None`。
 pub fn normalize_tool_message_content(content: &str) -> Option<NormalizedToolEnvelope> {
     NormalizedToolEnvelope::parse_tool_message_content(content)
+}
+
+/// `Option` 有值时插入信封字段；无值时跳过（保持 `crabmate_tool` 不写空字段）。
+fn insert_opt<T: Clone + Into<Value>>(ct: &mut Map<String, Value>, key: &str, v: &Option<T>) {
+    if let Some(v) = v.as_ref() {
+        ct.insert(key.to_string(), (*v).clone().into());
+    }
 }

@@ -52,14 +52,7 @@ fn repair_args_array_inner(inner: &str) -> Option<String> {
             out_parts.push(part.to_string());
             continue;
         }
-        let keep_as_is = token.starts_with('"')
-            || token.starts_with('{')
-            || token.starts_with('[')
-            || token == "true"
-            || token == "false"
-            || token == "null"
-            || token.parse::<f64>().is_ok();
-        if keep_as_is {
+        if args_token_keep_as_is(token) {
             out_parts.push(token.to_string());
             continue;
         }
@@ -74,6 +67,17 @@ fn repair_args_array_inner(inner: &str) -> Option<String> {
         }
     }
     changed.then(|| out_parts.join(", "))
+}
+
+/// 已是合法 JSON 字面量（无需补引号）的裸 token。
+fn args_token_keep_as_is(token: &str) -> bool {
+    token.starts_with('"')
+        || token.starts_with('{')
+        || token.starts_with('[')
+        || token == "true"
+        || token == "false"
+        || token == "null"
+        || token.parse::<f64>().is_ok()
 }
 
 #[cfg(test)]
