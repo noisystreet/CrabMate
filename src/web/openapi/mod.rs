@@ -3,6 +3,7 @@
 mod openapi_components;
 mod openapi_components_user_data;
 mod openapi_paths;
+mod openapi_paths_tool_jobs;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
 #[cfg(test)]
@@ -33,6 +34,7 @@ pub fn build_openapi_spec() -> Value {
             { "name": "workspace", "description": "工作区浏览与文件" },
             { "name": "system", "description": "健康检查与状态" },
             { "name": "tasks", "description": "进程内任务清单" },
+            { "name": "tool_jobs", "description": "后台工具任务轮询与取消" },
             { "name": "config", "description": "配置热重载" },
             { "name": "user_data", "description": "本机用户数据（~/.local/share/crabmate）" },
             { "name": "uploads", "description": "上传与删除" }
@@ -80,6 +82,8 @@ mod tests {
         assert!(paths.contains_key("/chat/stream"));
         assert!(paths.contains_key("/chat/async"));
         assert!(paths.contains_key("/chat/jobs/{job_id}"));
+        assert!(paths.contains_key("/tools/jobs/{tool_job_id}"));
+        assert!(paths.contains_key("/tools/jobs/{tool_job_id}/cancel"));
         assert!(paths.contains_key("/conversation/messages"));
         assert!(paths.contains_key("/openapi.json"));
         assert!(paths.contains_key("/user-data/prefs"));

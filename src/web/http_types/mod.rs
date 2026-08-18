@@ -4,5 +4,6 @@ pub mod chat;
 pub mod github;
 pub mod skills;
 pub mod tasks;
+pub mod tool_jobs;
 pub(crate) mod validation;
 pub mod workspace;

@@ -42,3 +42,9 @@ pub const MESSAGE_TOO_LARGE: &str = "MESSAGE_TOO_LARGE";
 pub const SSE_ENCODE: &str = "SSE_ENCODE";
 /// 内部错误。
 pub const INTERNAL_ERROR: &str = "INTERNAL_ERROR";
+/// 后台任务 id 不存在 / 从未创建（`GET /tools/jobs/{id}`、`POST .../cancel`）。
+pub const JOB_NOT_FOUND: &str = "JOB_NOT_FOUND";
+/// 后台任务已过 TTL+宽限被清理。
+pub const JOB_EXPIRED: &str = "JOB_EXPIRED";
+/// 请求头 `X-Workspace-Root` 与任务归属 workspace 不符。
+pub const JOB_OWNERSHIP_MISMATCH: &str = "JOB_OWNERSHIP_MISMATCH";

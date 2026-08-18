@@ -18,10 +18,16 @@ pub struct ToolJobRegistry {
     limits: JobLimits,
 }
 
+/// 已过期 id 记录上限（TTL 清理/容量淘汰后用于把轮询区分成 `410` 而非 `404`）。
+const MAX_EXPIRED_IDS: usize = 2048;
+
 struct Inner {
     jobs: HashMap<String, JobRecord>,
     queue: VecDeque<String>,
     running: usize,
+    /// 已被清理（TTL+宽限到期或容量淘汰）的 id：轮询区分 `JOB_EXPIRED`（410）与 `JOB_NOT_FOUND`（404）。
+    /// 有界（`MAX_EXPIRED_IDS`），超限丢弃最旧（退回 `NotFound`）。
+    expired: VecDeque<String>,
 }
 
 /// 登记失败原因。
@@ -38,8 +44,22 @@ pub enum RegisterError {
 pub enum CancelOutcome {
     /// 已转为 `cancelled`（`queued` 直接转移；`running` 仅置取消标记，状态由 worker 完成时落定）。
     Cancelled,
-    /// 已是其它终态（不覆盖）。
+    /// 已是其它终态（不覆盖；HTTP 409 返回当前状态）。
     AlreadyFinished(JobStatus),
+    /// 已过期被清理（HTTP 410）。
+    Expired,
+    NotFound,
+}
+
+/// 轮询读取结果（契约 §3.1 错误码区分）。
+#[derive(Debug, Clone)]
+// `Found` 携带整条 `JobRecord`；轮询频率低，体积差异可接受。
+#[allow(clippy::large_enum_variant)]
+pub enum GetOutcome {
+    Found(JobRecord),
+    /// 已过 TTL+宽限被清理（HTTP 410 `JOB_EXPIRED`）。
+    Expired,
+    /// 不存在 / 从未创建（HTTP 404 `JOB_NOT_FOUND`）。
     NotFound,
 }
 
@@ -60,6 +80,7 @@ impl ToolJobRegistry {
                 jobs: HashMap::new(),
                 queue: VecDeque::new(),
                 running: 0,
+                expired: VecDeque::new(),
             }),
             limits,
         }
@@ -108,7 +129,7 @@ impl ToolJobRegistry {
         Ok(id)
     }
 
-    /// 读取任务快照（轮询）。
+    /// 读取任务快照（轮询/worker 用；**不**做过期清理判定）。
     #[must_use]
     pub fn get(&self, id: &str) -> Option<JobRecord> {
         self.inner
@@ -117,6 +138,34 @@ impl ToolJobRegistry {
             .jobs
             .get(id)
             .cloned()
+    }
+
+    /// 轮询读取（契约 §3.1）：命中记录按 TTL+宽限做**惰性**过期判定（过期即删除并记入 `expired`）；
+    /// 记录不存在时按是否曾存在过区分 `Expired`（410）与 `NotFound`（404）。
+    #[must_use]
+    pub fn get_checked(&self, id: &str, now: SystemTime) -> GetOutcome {
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(record) = g.jobs.get(id) else {
+            return if g.expired.iter().any(|eid| eid == id) {
+                GetOutcome::Expired
+            } else {
+                GetOutcome::NotFound
+            };
+        };
+        if !record.status.is_terminal() {
+            return GetOutcome::Found(record.clone());
+        }
+        let since_created = now.duration_since(record.created_at).unwrap_or_default();
+        let since_finished = record
+            .finished_at
+            .and_then(|f| now.duration_since(f).ok())
+            .unwrap_or_default();
+        if since_created >= self.limits.ttl && since_finished >= self.limits.grace {
+            g.jobs.remove(id);
+            remember_expired_locked(&mut g, id);
+            return GetOutcome::Expired;
+        }
+        GetOutcome::Found(record.clone())
     }
 
     /// 有空位则从 FIFO 队列取出下一个 `queued` 任务并转 `running`（worker 领取）。
@@ -141,7 +190,11 @@ impl ToolJobRegistry {
     pub fn cancel(&self, id: &str) -> CancelOutcome {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(record) = g.jobs.get_mut(id) else {
-            return CancelOutcome::NotFound;
+            return if g.expired.iter().any(|eid| eid == id) {
+                CancelOutcome::Expired
+            } else {
+                CancelOutcome::NotFound
+            };
         };
         match record.status {
             JobStatus::Queued => {
@@ -197,21 +250,30 @@ impl ToolJobRegistry {
     }
 
     /// TTL 清理：**仅终态**条目，且满足「自创建 ≥ `ttl`」与「完成后 ≥ `grace`」同时成立才删除。
-    /// 返回删除条数。
+    /// 返回删除条数。被清理的 id 记入 `expired`（轮询 410）。
     pub fn cleanup(&self, now: SystemTime) -> usize {
         let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let before = g.jobs.len();
-        g.jobs.retain(|_, r| {
-            if !r.status.is_terminal() {
-                return true;
-            }
-            let since_created = now.duration_since(r.created_at).unwrap_or_default();
-            let since_finished = r
-                .finished_at
-                .and_then(|f| now.duration_since(f).ok())
-                .unwrap_or_default();
-            since_created < self.limits.ttl || since_finished < self.limits.grace
-        });
+        let expired_ids: Vec<String> = g
+            .jobs
+            .iter()
+            .filter(|(_, r)| {
+                if !r.status.is_terminal() {
+                    return false;
+                }
+                let since_created = now.duration_since(r.created_at).unwrap_or_default();
+                let since_finished = r
+                    .finished_at
+                    .and_then(|f| now.duration_since(f).ok())
+                    .unwrap_or_default();
+                since_created >= self.limits.ttl && since_finished >= self.limits.grace
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in &expired_ids {
+            g.jobs.remove(id);
+            remember_expired_locked(&mut g, id);
+        }
         let live: std::collections::HashSet<String> = g.jobs.keys().cloned().collect();
         g.queue.retain(|id| live.contains(id));
         before - g.jobs.len()
@@ -247,8 +309,19 @@ impl ToolJobRegistry {
             return false;
         };
         g.jobs.remove(&id);
+        remember_expired_locked(g, &id);
         g.queue.retain(|qid| qid != &id);
         true
+    }
+}
+
+/// 把被清理的 id 记入有界 `expired` 集合（轮询 410 依据；超限丢弃最旧）。
+fn remember_expired_locked(g: &mut Inner, id: &str) {
+    if g.expired.len() >= MAX_EXPIRED_IDS {
+        g.expired.pop_front();
+    }
+    if !g.expired.iter().any(|eid| eid == id) {
+        g.expired.push_back(id.to_string());
     }
 }
 
@@ -528,5 +601,100 @@ mod tests {
         let hex = a.trim_start_matches("tooljob_");
         assert_eq!(hex.len(), 32);
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn get_checked_found_not_found_and_lazy_expiry() {
+        let reg = ToolJobRegistry::new(JobLimits {
+            ttl: Duration::from_secs(100),
+            grace: Duration::from_secs(10),
+            ..limits()
+        });
+        let id = register_default(&reg); // id
+        // 非终态（queued）：直接 Found，不过期。
+        assert!(matches!(
+            reg.get_checked(&id, SystemTime::now() + Duration::from_secs(10_000)),
+            GetOutcome::Found(_)
+        ));
+        // 从未创建：NotFound。
+        assert!(matches!(
+            reg.get_checked("tooljob_unknown", SystemTime::now()),
+            GetOutcome::NotFound
+        ));
+        // 完成后已过 grace 且自创建过 ttl：惰性判定 Expired 并删除。
+        let ok = JobOutcome {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            error_code: None,
+            failure_category: None,
+        };
+        assert!(reg.complete(&id, ok, false));
+        let rec = reg.get(&id).expect("rec");
+        let expired_at = rec.created_at + Duration::from_secs(200);
+        assert!(matches!(reg.get_checked(&id, expired_at), GetOutcome::Expired));
+        assert!(reg.get(&id).is_none());
+        // 删除后仍能识别为 Expired（而非 NotFound）。
+        assert!(matches!(reg.get_checked(&id, expired_at), GetOutcome::Expired));
+    }
+
+    #[test]
+    fn cleanup_remembers_expired_then_cancel_reports_expired() {
+        let reg = ToolJobRegistry::new(JobLimits {
+            ttl: Duration::from_secs(100),
+            grace: Duration::from_secs(10),
+            ..limits()
+        });
+        let id = register_default(&reg); // id
+        let ok = JobOutcome {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            error_code: None,
+            failure_category: None,
+        };
+        reg.complete(&id, ok, false);
+        let far = SystemTime::now() + Duration::from_secs(10_000);
+        assert_eq!(reg.cleanup(far), 1);
+        assert!(reg.get(&id).is_none());
+        assert_eq!(reg.cancel(&id), CancelOutcome::Expired);
+        assert_eq!(reg.cancel("tooljob_never"), CancelOutcome::NotFound);
+        // 被淘汰的终态同样记入 expired。
+        let reg2 = ToolJobRegistry::new(JobLimits {
+            max_entries: 2,
+            ..limits()
+        });
+        let a = register_default(&reg2); // a
+        let b = register_default(&reg2); // b（占用全部条目，无终态可淘汰）
+        let ok2 = JobOutcome {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            error_code: None,
+            failure_category: None,
+        };
+        reg2.complete(&a, ok2, false);
+        register_default(&reg2); // 触发淘汰终态 a
+        assert!(reg2.get(&b).is_some(), "非终态 b 不可被淘汰");
+        assert_eq!(reg2.cancel(&a), CancelOutcome::Expired);
+    }
+
+    #[test]
+    fn get_checked_does_not_expire_running_or_queued() {
+        let reg = ToolJobRegistry::new(JobLimits {
+            ttl: Duration::from_secs(1),
+            grace: Duration::from_secs(1),
+            ..limits()
+        });
+        let queued = register_default(&reg); // queued
+        let running = register_default(&reg); // running
+        reg.try_start().expect("start");
+        let far = SystemTime::now() + Duration::from_secs(3600);
+        assert!(matches!(reg.get_checked(&queued, far), GetOutcome::Found(_)));
+        assert!(matches!(reg.get_checked(&running, far), GetOutcome::Found(_)));
+        assert_eq!(reg.stats().total, 2, "非终态不得被惰性清理");
     }
 }

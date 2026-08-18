@@ -20,6 +20,7 @@ pub(crate) fn build_app(
         .merge(super::routes::skills::router())
         .merge(super::routes::github::router())
         .merge(super::routes::tasks::router())
+        .merge(super::routes::tools::router())
         .merge(super::routes::config::router())
         .merge(super::routes::user_data::router());
     if web_api_bearer_layer_enabled {
