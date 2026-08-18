@@ -88,37 +88,47 @@ fn read_source_bytes(
     if let Some(p) = path {
         let p = p.trim();
         if !p.is_empty() {
-            let pb = file::resolve_for_read(workspace, p)
-                .map_err(|e| format!("错误：{}", e.user_message()))?;
-            let meta = std::fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
-            if meta.len() > MAX_FILE_BYTES {
-                return Err(format!(
-                    "文件过大：{} 字节，上限 {}",
-                    meta.len(),
-                    MAX_FILE_BYTES
-                ));
-            }
-            let mut buf = Vec::new();
-            let mut f = File::open(&pb).map_err(|e| format!("打开文件失败: {}", e))?;
-            f.read_to_end(&mut buf)
-                .map_err(|e| format!("读取文件失败: {}", e))?;
-            return Ok(buf);
+            return read_bytes_from_path(p, workspace);
         }
     }
     if let Some(t) = text {
-        if t.is_empty() {
-            return Err("text 不能为空".to_string());
-        }
-        if t.len() > MAX_INLINE_BYTES {
-            return Err(format!(
-                "text 过长：{} 字节，上限 {}",
-                t.len(),
-                MAX_INLINE_BYTES
-            ));
-        }
-        return Ok(t.as_bytes().to_vec());
+        return read_bytes_from_inline(t);
     }
     Err("须提供 path（相对工作区）或 text（内联，上限 256KiB）".to_string())
+}
+
+/// 从工作区内相对路径读取字节（带文件大小上限）。
+fn read_bytes_from_path(p: &str, workspace: &Path) -> Result<Vec<u8>, String> {
+    let pb = file::resolve_for_read(workspace, p)
+        .map_err(|e| format!("错误：{}", e.user_message()))?;
+    let meta = std::fs::metadata(&pb).map_err(|e| format!("读取元数据失败: {}", e))?;
+    if meta.len() > MAX_FILE_BYTES {
+        return Err(format!(
+            "文件过大：{} 字节，上限 {}",
+            meta.len(),
+            MAX_FILE_BYTES
+        ));
+    }
+    let mut buf = Vec::new();
+    let mut f = File::open(&pb).map_err(|e| format!("打开文件失败: {}", e))?;
+    f.read_to_end(&mut buf)
+        .map_err(|e| format!("读取文件失败: {}", e))?;
+    Ok(buf)
+}
+
+/// 从内联文本读取字节（带长度上限）。
+fn read_bytes_from_inline(t: &str) -> Result<Vec<u8>, String> {
+    if t.is_empty() {
+        return Err("text 不能为空".to_string());
+    }
+    if t.len() > MAX_INLINE_BYTES {
+        return Err(format!(
+            "text 过长：{} 字节，上限 {}",
+            t.len(),
+            MAX_INLINE_BYTES
+        ));
+    }
+    Ok(t.as_bytes().to_vec())
 }
 
 fn parse_path_text(v: &Value) -> (Option<String>, Option<String>) {

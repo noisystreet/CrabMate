@@ -30,14 +30,13 @@ pub(super) fn lsp_rust_analyzer_request(
     } = load_ra_workspace_sources(workspace_root, &inputs.path_rel)?;
 
     let mut guard = spawn_rust_analyzer_server(&inputs.server_path)?;
-    let c = guard.0.as_mut().ok_or("internal")?;
-
-    let mut stdin = c.stdin.take().ok_or("stdin")?;
-    let stdout = c.stdout.take().ok_or("stdout")?;
+    let (mut stdin, stdout) = take_ra_child_io(&mut guard)?;
     let mut reader = BufReader::new(stdout);
     let deadline = Instant::now() + LSP_IO_TIMEOUT;
 
-    lsp_rust_analyzer_handshake(
+    let req_id = 2u64;
+    let req = build_ra_request(op, &file_uri, &inputs, &v, req_id);
+    let resp = perform_ra_roundtrip(
         &mut stdin,
         &mut reader,
         &LspRustAnalyzerHandshake {
@@ -48,22 +47,52 @@ pub(super) fn lsp_rust_analyzer_request(
             wait_ms: inputs.wait_ms,
             deadline,
         },
+        &req,
+        req_id,
     )?;
+    drop(stdin);
+    lsp_rust_analyzer_run(op, &resp, inputs.max_symbols)
+}
 
-    let req_id = 2u64;
+/// 从已启动的子进程上取下 stdin/stdout 管道句柄。
+fn take_ra_child_io(
+    guard: &mut KillRaChild,
+) -> Result<(std::process::ChildStdin, std::process::ChildStdout), String> {
+    let c = guard.0.as_mut().ok_or("internal")?;
+    let stdin = c.stdin.take().ok_or("stdin")?;
+    let stdout = c.stdout.take().ok_or("stdout")?;
+    Ok((stdin, stdout))
+}
+
+/// 构造 LSP 请求 JSON（`jsonrpc`/`id`/`method`/`params`）。
+fn build_ra_request(
+    op: RaLspOp,
+    file_uri: &str,
+    inputs: &ParsedRaLspInputs,
+    v: &Value,
+    req_id: u64,
+) -> Value {
     let (method, params) =
-        ra_lsp_request_method_params(op, &file_uri, inputs.line, inputs.character, &v);
-    let req = json!({
+        ra_lsp_request_method_params(op, file_uri, inputs.line, inputs.character, v);
+    json!({
         "jsonrpc": "2.0",
         "id": req_id,
         "method": method,
         "params": params
-    });
-    write_lsp(&mut stdin, &req.to_string()).map_err(|e| e.to_string())?;
+    })
+}
 
-    let resp = read_response_until_id(&mut reader, req_id, deadline)?;
-    drop(stdin);
-    lsp_rust_analyzer_run(op, &resp, inputs.max_symbols)
+/// handshake → 写请求 → 读响应（`deadline` 内）。
+fn perform_ra_roundtrip(
+    stdin: &mut std::process::ChildStdin,
+    reader: &mut BufReader<std::process::ChildStdout>,
+    handshake: &LspRustAnalyzerHandshake<'_>,
+    req: &Value,
+    req_id: u64,
+) -> Result<Value, String> {
+    lsp_rust_analyzer_handshake(stdin, reader, handshake)?;
+    write_lsp(stdin, &req.to_string()).map_err(|e| e.to_string())?;
+    read_response_until_id(reader, req_id, handshake.deadline)
 }
 
 struct ParsedRaLspInputs {

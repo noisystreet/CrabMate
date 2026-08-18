@@ -225,12 +225,20 @@ fn walk_and_match(
     }
     if root.is_file() {
         *visited_files += 1;
-        let found = search_file(root, re, results, max_results)?;
-        if found {
-            // already enforced by max_results check in search_file
-        }
+        search_file(root, re, results, max_results)?;
         return Ok(());
     }
+    walk_and_match_dir(root, re, results, visited_files, max_results, ignore_hidden)
+}
+
+fn walk_and_match_dir(
+    root: &Path,
+    re: &regex::Regex,
+    results: &mut Vec<(PathBuf, usize, String)>,
+    visited_files: &mut usize,
+    max_results: usize,
+    ignore_hidden: bool,
+) -> Result<(), String> {
     for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
         let entry = entry.map_err(|e| e.to_string())?;
         let path = entry.path();
@@ -247,16 +255,25 @@ fn walk_and_match(
                 max_results,
                 ignore_hidden,
             )?;
-        } else if path.is_file() {
-            *visited_files += 1;
-            if search_file(&path, re, results, max_results).unwrap_or(false)
-                && results.len() >= max_results
-            {
-                break;
-            }
+        } else if path.is_file()
+            && visit_walk_match_file(&path, re, results, visited_files, max_results)
+        {
+            break;
         }
     }
     Ok(())
+}
+
+/// 扫描单个文件：计数访问次数；命中且结果已满时返回 `true`（调用方据此 `break`）。
+fn visit_walk_match_file(
+    path: &Path,
+    re: &regex::Regex,
+    results: &mut Vec<(PathBuf, usize, String)>,
+    visited_files: &mut usize,
+    max_results: usize,
+) -> bool {
+    *visited_files += 1;
+    search_file(path, re, results, max_results).unwrap_or(false) && results.len() >= max_results
 }
 
 fn search_file(

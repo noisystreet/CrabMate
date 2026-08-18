@@ -50,28 +50,20 @@ fn run_structured_patch(
     working_dir: &Path,
     ctx: &ToolContext<'_>,
 ) -> Result<String, String> {
-    let args = parse_structured_patch_args(args_json)?;
-    validate_write_intent(&args)?;
-    let path = nonempty_trimmed(&args.path).ok_or_else(|| "错误：缺少 path".to_string())?;
-    let query = nonempty_trimmed(args.query.trim())
-        .ok_or_else(|| "错误：缺少 query（JSON Pointer 或点号路径）".to_string())?;
-    let action = match args.action {
-        StructuredPatchAction::Set => "set",
-        StructuredPatchAction::Remove => "remove",
-    };
+    let (args, path, query, action) = prepare_structured_patch(args_json)?;
     let fmt = args.format.map(|f| f.as_detect_token());
-    let abs = file::resolve_for_read(working_dir, path).map_err(|e| format!("错误：{}", e))?;
-    let data_fmt = detect_structured_patch_format(path, fmt)?;
+    let abs = file::resolve_for_read(working_dir, &path).map_err(|e| format!("错误：{}", e))?;
+    let data_fmt = detect_structured_patch_format(&path, fmt)?;
     let (text, mut jv) = read_limited_json_value(&abs, data_fmt)?;
-    let tokens = parse_patch_query_tokens(query).map_err(|e| format!("query 无效: {}", e))?;
+    let tokens = parse_patch_query_tokens(&query).map_err(|e| format!("query 无效: {}", e))?;
 
     apply_patch_mutation(action, &args, &mut jv, tokens.as_slice())?;
     let serialized =
         serialize_by_format(&jv, data_fmt).map_err(|e| format!("序列化失败: {}", e))?;
     Ok(finish_structured_patch(StructuredPatchOutcome {
-        path,
+        path: &path,
         action,
-        query,
+        query: &query,
         dry_run: args.dry_run,
         abs: &abs,
         text: &text,
@@ -79,6 +71,25 @@ fn run_structured_patch(
         working_dir,
         ctx,
     }))
+}
+
+/// 解析并校验结构化补丁参数，返回规范化后的 `(args, path, query, action 文案)`。
+fn prepare_structured_patch(
+    args_json: &str,
+) -> Result<(StructuredPatchArgs, String, String, &'static str), String> {
+    let args = parse_structured_patch_args(args_json)?;
+    validate_write_intent(&args)?;
+    let path = nonempty_trimmed(&args.path)
+        .ok_or_else(|| "错误：缺少 path".to_string())?
+        .to_string();
+    let query = nonempty_trimmed(args.query.trim())
+        .ok_or_else(|| "错误：缺少 query（JSON Pointer 或点号路径）".to_string())?
+        .to_string();
+    let action = match args.action {
+        StructuredPatchAction::Set => "set",
+        StructuredPatchAction::Remove => "remove",
+    };
+    Ok((args, path, query, action))
 }
 
 fn parse_structured_patch_args(args_json: &str) -> Result<StructuredPatchArgs, String> {
