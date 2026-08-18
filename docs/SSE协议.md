@@ -85,6 +85,11 @@
 | `execution_mode` | string? | `serial`（串行或含写/审批路径）或 `parallel_readonly_batch`（同轮只读并行批） |
 | `parallel_batch_id` | string? | 仅 `parallel_readonly_batch`；同批内多工具共享（形如 `prb-<n>`） |
 | `structured_preview` | object? | 可选；**`read_file`** / **`read_dir`** / **`list_tree`**：与输出首行 **`crabmate_tool_output`** JSON **同源**的小型副本（**不含**文件正文）；**写盘工具**（如 **`create_file`** / **`modify_file`** / **`apply_patch`** / **`search_replace`** 等）成功时可为 **`preview`**=`workspace_write_diff`，含 **`files[]`**（**`path`**、**`unified_diff`**、**`truncated`**）及 **`preview_truncated`**：供 Web 展示变更预览（**非**审批闸门）；**`run_command`** / **`cargo_*`** / **`rust_rustc`** / **`http_fetch`** / **`http_request`**：与历史 **`crabmate_tool.structured_payload`**（对应 **`schema`**）同源或与之合并；若首行预览与 **`structured_payload`** 同时存在，则为合并对象（**`tool_output_header`** + **`structured_payload`**） |
+| `tool_job_id` | string? | **软字段**（旧客户端忽略；不 bump `result_version`）。仅 **`run_command`** 的 **`async:true`** 发起帧：后台任务 id（`tooljob_` + 32 hex 随机，不可枚举，即能力凭证） |
+| `tool_job_poll_url` | string? | 同上，相对路径 `GET /tools/jobs/{tool_job_id}`（轮询端点） |
+| `tool_job_status` | string? | 同上，发起时恒为 **`queued`**（尚未运行） |
+
+**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键未实现**（Phase 2 可选；旧客户端可忽略未知顶层键）。
 
 ### `tool_output_chunk` 体内字段
 
