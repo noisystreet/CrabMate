@@ -109,6 +109,7 @@ fn finalize_section_http_fetch(tail: &FinalizeTailScalars) -> types::HttpFetchCo
         http_fetch_allowed_prefixes: tail.http_fetch_allowed_prefixes.clone(),
         http_fetch_timeout_secs: tail.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: tail.http_fetch_max_response_bytes,
+        http_fetch_user_agent: tail.http_fetch_user_agent.clone(),
     }
 }
 

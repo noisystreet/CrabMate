@@ -206,12 +206,16 @@ Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conve
 | `CM_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
 | `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
+| `CM_HTTP_FETCH_USER_AGENT` | `User-Agent` for `http_fetch` / `http_request` (default **`crabmate/<version>`**). |
 
 **`worbrow`**: uses [worbrow](https://crates.io/crates/worbrow) **≥0.2.0** against local **Firefox** (preferred) or **Chrome/Edge/Chromium**; engine chain **`bing,duckduckgo`** (fallback on captcha/low-quality yield); results include unwrapped landing URLs, `domain`, and quality signals (`result_kind` / `is_ad` / `published_at`, …). The crate also exposes page fetch **`fetch`/`fetch_page`** (CrabMate still uses its own **`http_fetch`**). Without a browser, switch to `brave`/`tavily` or install one. Docker SyncDefault sandboxes usually lack a host browser—use an API provider or avoid web search in-sandbox.
 
 **`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**, brave/tavily **+2s**) so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
 
 **Outer `tokio::time::timeout` around `spawn_blocking`** (HTTP tools): besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
+
+**`http_fetch` / `http_request` request behavior (curl-aligned)**: automatically sends **`Accept: */*`** and **`Accept-Encoding`** (gzip/brotli/deflate; response bodies are decompressed automatically, so uncompressed payloads no longer hit the truncation cap as often). **`User-Agent`** defaults to **`crabmate/<version>`** and can be overridden via TOML **`http_fetch_user_agent`** or **`CM_HTTP_FETCH_USER_AGENT`** (e.g. a browser or curl UA for anti-bot sites).
+**Environment proxies**: **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** are honored (HTTP(S) proxies work). Note **reqwest 0.13 does not support SOCKS** — with a `socks5://` proxy (common with Clash/v2ray), `http_fetch` fails and hints at it; `unset ALL_PROXY HTTPS_PROXY HTTP_PROXY` or use the same port as `http://` (e.g. Clash mixed port) to retry.
 
 ### `tool_registry` policy (`tools.toml` / main config)
 

@@ -47,6 +47,8 @@ pub struct HttpFetchConfigSection {
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
+    /// `http_fetch` / `http_request` 请求 `User-Agent`（默认 `crabmate/<版本>`；可设为 curl/浏览器 UA 以应对反爬站点）。
+    pub http_fetch_user_agent: String,
 }
 
 #[derive(Debug, Clone)]

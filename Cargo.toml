@@ -236,7 +236,8 @@ log = { workspace = true }
 getrandom = { workspace = true }
 
 # server
-reqwest = { workspace = true, optional = true, features = ["json", "stream", "blocking", "query", "rustls"] }
+# `gzip`/`brotli`/`deflate`：`http_fetch`/`http_request` 向 curl 对齐——自动发送对应 `Accept-Encoding` 并解压响应体（未开 `zstd` 以避免 zstd-sys 的 C 编译负担）。
+reqwest = { workspace = true, optional = true, features = ["json", "stream", "blocking", "query", "rustls", "gzip", "brotli", "deflate"] }
 futures-util = { workspace = true, optional = true }
 secrecy = { workspace = true, optional = true }
 serde_yaml = { workspace = true, optional = true }

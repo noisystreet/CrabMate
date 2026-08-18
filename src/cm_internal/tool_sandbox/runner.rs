@@ -42,6 +42,7 @@ pub struct SandboxToolRunnerConfig {
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
+    pub http_fetch_user_agent: String,
     pub codebase_semantic: CodebaseSemanticToolParams,
 }
 
@@ -65,6 +66,7 @@ impl SandboxToolRunnerConfig {
             http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),
             http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
             http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
+            http_fetch_user_agent: cfg.http_fetch.http_fetch_user_agent.clone(),
             codebase_semantic: CodebaseSemanticToolParams::from_agent_config(cfg),
         }
     }
@@ -158,6 +160,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
                 &u,
                 m,
                 fmt,
+                &snap.http_fetch_user_agent,
                 snap.http_fetch_timeout_secs.max(1),
                 snap.http_fetch_max_response_bytes,
             ),
@@ -169,6 +172,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
                 m,
                 b.as_ref(),
                 fmt,
+                &snap.http_fetch_user_agent,
                 snap.http_fetch_timeout_secs.max(1),
                 snap.http_fetch_max_response_bytes,
             ),

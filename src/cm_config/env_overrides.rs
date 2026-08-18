@@ -173,6 +173,10 @@ fn env_override_http_fetch_limits(b: &mut ConfigBuilder) {
         &mut b.http_fetch.http_fetch_max_response_bytes,
         "CM_HTTP_FETCH_MAX_RESPONSE_BYTES",
     );
+    apply_nonempty_opt(
+        &mut b.http_fetch.http_fetch_user_agent,
+        "CM_HTTP_FETCH_USER_AGENT",
+    );
 }
 
 fn apply_env_overrides_part_4(b: &mut ConfigBuilder) {

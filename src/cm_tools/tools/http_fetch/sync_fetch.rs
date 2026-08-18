@@ -1,7 +1,8 @@
+use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use reqwest::header::CONTENT_TYPE;
+use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
 use reqwest::redirect::Policy;
 
 use super::super::ToolContext;
@@ -12,13 +13,22 @@ use super::args::{
 use super::decode::{apply_text_format_if_requested, decode_http_body_text_for_tool};
 use super::policy::url_matches_allowed_prefixes;
 
-fn user_agent_blocking() -> String {
+/// 默认 UA：`crabmate/<版本>`；可经配置 `http_fetch_user_agent` / `CM_HTTP_FETCH_USER_AGENT` 覆盖。
+pub fn default_user_agent() -> String {
     format!("crabmate/{}", env!("CARGO_PKG_VERSION"))
+}
+
+/// 从 `ToolContext.cfg`（若有）解析已配置的 UA；缺省回落到 [`default_user_agent`]。
+fn resolve_user_agent(cfg: Option<&crate::cm_config::AgentConfig>) -> String {
+    cfg.map(|c| c.http_fetch.http_fetch_user_agent.clone())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(default_user_agent)
 }
 
 fn build_client(
     timeout_secs: u64,
     redirect_hops: Arc<Mutex<Vec<String>>>,
+    user_agent: &str,
 ) -> Result<reqwest::blocking::Client, String> {
     let timeout_secs = timeout_secs.max(1);
     let hops = redirect_hops;
@@ -31,12 +41,36 @@ fn build_client(
         }
         attempt.follow()
     });
+    // 与 curl 默认对齐：显式声明 `Accept: */*`（reqwest 默认不发送该头）。
+    let mut default_headers = HeaderMap::new();
+    default_headers.insert(ACCEPT, HeaderValue::from_static("*/*"));
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(timeout_secs))
         .redirect(policy)
-        .user_agent(user_agent_blocking())
+        .default_headers(default_headers)
+        .user_agent(user_agent)
         .build()
         .map_err(|e| format!("HTTP 客户端构建失败: {}", e))
+}
+
+/// 格式化 reqwest 错误并附带 `source()` 链（如代理连接失败的具体原因），便于诊断代理/网络问题。
+/// 检测到 **SOCKS 环境代理**（`ALL_PROXY`/`HTTP_PROXY`/`HTTPS_PROXY` 为 `socks5://` 等）时追加可操作提示：
+/// reqwest 0.13 仅支持 HTTP(S) 代理，SOCKS 需 curl 等原生客户端。
+fn format_reqwest_error(e: &reqwest::Error) -> String {
+    let mut s = format!("请求失败: {}", e);
+    let mut chain = String::new();
+    let mut src = e.source();
+    while let Some(c) = src {
+        chain.push_str(&format!(" → {}", c));
+        src = c.source();
+    }
+    if chain.contains("unsupported scheme socks") {
+        s.push_str(
+            "；检测到 SOCKS 环境代理，但 reqwest 0.13 不支持 socks 代理：可 unset ALL_PROXY/HTTPS_PROXY/HTTP_PROXY，或用同端口的 http:// 代理（如 Clash 混合端口）重试",
+        );
+    }
+    s.push_str(&chain);
+    s
 }
 
 fn format_redirect_section(hops: &[String]) -> String {
@@ -55,12 +89,13 @@ pub fn fetch_with_method(
     url: &reqwest::Url,
     method: FetchMethod,
     text_format: HttpBodyTextFormat,
+    user_agent: &str,
     timeout_secs: u64,
     max_body_bytes: usize,
 ) -> String {
     let max_body_bytes = max_body_bytes.clamp(1024, ABS_MAX_BODY_BYTES);
     let hops: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let client = match build_client(timeout_secs, hops.clone()) {
+    let client = match build_client(timeout_secs, hops.clone(), user_agent) {
         Ok(c) => c,
         Err(e) => return e,
     };
@@ -72,7 +107,7 @@ pub fn fetch_with_method(
 
     let resp = match req.send() {
         Ok(r) => r,
-        Err(e) => return format!("请求失败: {}", e),
+        Err(e) => return format_reqwest_error(&e),
     };
 
     let status = resp.status();
@@ -143,12 +178,13 @@ pub fn request_with_json_body(
     method: RequestMethod,
     json_body: Option<&serde_json::Value>,
     text_format: HttpBodyTextFormat,
+    user_agent: &str,
     timeout_secs: u64,
     max_body_bytes: usize,
 ) -> String {
     let max_body_bytes = max_body_bytes.clamp(1024, ABS_MAX_BODY_BYTES);
     let hops: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let client = match build_client(timeout_secs, hops.clone()) {
+    let client = match build_client(timeout_secs, hops.clone(), user_agent) {
         Ok(c) => c,
         Err(e) => return e,
     };
@@ -166,7 +202,7 @@ pub fn request_with_json_body(
     }
     let resp = match req.send() {
         Ok(r) => r,
-        Err(e) => return format!("请求失败: {}", e),
+        Err(e) => return format_reqwest_error(&e),
     };
 
     let status = resp.status();
@@ -239,10 +275,12 @@ pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
         return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可人工审批。".to_string();
     }
+    let user_agent = resolve_user_agent(ctx.cfg);
     fetch_with_method(
         &url,
         method,
         text_format,
+        &user_agent,
         ctx.http_fetch_timeout_secs,
         ctx.http_fetch_max_response_bytes,
     )
@@ -257,11 +295,13 @@ pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
         return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可对 http_request 人工审批。".to_string();
     }
+    let user_agent = resolve_user_agent(ctx.cfg);
     request_with_json_body(
         &url,
         method,
         json_body.as_ref(),
         text_format,
+        &user_agent,
         ctx.http_fetch_timeout_secs,
         ctx.http_fetch_max_response_bytes,
     )

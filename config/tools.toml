@@ -158,6 +158,7 @@ weather_timeout_secs = 15
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/", "https://example.com/api/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288
+# http_fetch_user_agent = "crabmate/0.4.0"   # User-Agent；默认 crabmate/<版本>，可设 curl/浏览器 UA 应对反爬
 
 # --- 工具解释卡（可选）---
 # tool_call_explain_enabled = false
