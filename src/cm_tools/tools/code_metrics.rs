@@ -49,41 +49,46 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
         return format!("路径 {} 下未找到可识别的源码文件", path);
     }
 
-    let total_files = stats.total_files();
-    let total_code = stats.total_code();
-    let total_comments = stats.total_comments();
-    let total_blanks = stats.total_blanks();
-    let total_lines = stats.total_lines();
-
     if format == "json" {
-        let entries: Vec<serde_json::Value> = stats
-            .languages
-            .iter()
-            .map(|lang| {
-                serde_json::json!({
-                    "language": lang.language,
-                    "files": lang.files,
-                    "lines": lang.total_lines(),
-                    "blank": lang.blanks,
-                    "comment": lang.comments,
-                    "code": lang.code
-                })
-            })
-            .collect();
-        let result = serde_json::json!({
-            "total_files": total_files,
-            "total_lines": total_lines,
-            "total_code": total_code,
-            "total_comments": total_comments,
-            "total_blanks": total_blanks,
-            "languages": entries
-        });
-        return match serde_json::to_string_pretty(&result) {
-            Ok(s) => output_util::truncate_output_lines(&s, max_output_len, MAX_OUTPUT_LINES),
-            Err(e) => format!("JSON 序列化错误：{}", e),
-        };
+        return format_code_stats_json(&stats, max_output_len);
     }
+    format_code_stats_table(&stats, path, max_output_len)
+}
 
+fn format_code_stats_json(stats: &project_metrics::WorkspaceCodeStats, max_output_len: usize) -> String {
+    let entries: Vec<serde_json::Value> = stats
+        .languages
+        .iter()
+        .map(|lang| {
+            serde_json::json!({
+                "language": lang.language,
+                "files": lang.files,
+                "lines": lang.total_lines(),
+                "blank": lang.blanks,
+                "comment": lang.comments,
+                "code": lang.code
+            })
+        })
+        .collect();
+    let result = serde_json::json!({
+        "total_files": stats.total_files(),
+        "total_lines": stats.total_lines(),
+        "total_code": stats.total_code(),
+        "total_comments": stats.total_comments(),
+        "total_blanks": stats.total_blanks(),
+        "languages": entries
+    });
+    match serde_json::to_string_pretty(&result) {
+        Ok(s) => output_util::truncate_output_lines(&s, max_output_len, MAX_OUTPUT_LINES),
+        Err(e) => format!("JSON 序列化错误：{}", e),
+    }
+}
+
+fn format_code_stats_table(
+    stats: &project_metrics::WorkspaceCodeStats,
+    path: &str,
+    max_output_len: usize,
+) -> String {
     let source_label = if cfg!(feature = "project_metrics") {
         "tokei 库"
     } else {
@@ -112,7 +117,12 @@ pub fn code_stats(args_json: &str, workspace_root: &Path, max_output_len: usize)
     out.push('\n');
     out.push_str(&format!(
         "{:<20} {:>6} {:>10} {:>8} {:>8} {:>8}\n",
-        "Total", total_files, total_lines, total_blanks, total_comments, total_code
+        "Total",
+        stats.total_files(),
+        stats.total_lines(),
+        stats.total_blanks(),
+        stats.total_comments(),
+        stats.total_code()
     ));
 
     output_util::truncate_output_lines(&out, max_output_len, MAX_OUTPUT_LINES)
@@ -144,20 +154,17 @@ pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: u
         return "错误：path 不安全（禁止 .. 与绝对路径）".to_string();
     }
 
-    let format = match args.format.unwrap_or_default() {
-        CoverageReportFormat::Auto => "auto",
-        CoverageReportFormat::Lcov => "lcov",
-        CoverageReportFormat::Tarpaulin => "tarpaulin",
-        CoverageReportFormat::TarpaulinJson => "tarpaulin_json",
-        CoverageReportFormat::Cobertura => "cobertura",
-    };
+    let format = coverage_format_str(args.format.unwrap_or_default());
+    run_coverage_parse(&path, &workspace_root.join(&path), format, max_output_len)
+}
 
-    let full = workspace_root.join(&path);
+/// 读取覆盖率文件并按格式解析；未知格式时输出前 50 行预览。
+fn run_coverage_parse(path: &str, full: &Path, format: &str, max_output_len: usize) -> String {
     if !full.is_file() {
         return format!("错误：覆盖率文件 {} 不存在", path);
     }
 
-    let content = match std::fs::read_to_string(&full) {
+    let content = match std::fs::read_to_string(full) {
         Ok(c) => c,
         Err(e) => return format!("读取覆盖率文件失败：{}", e),
     };
@@ -165,20 +172,36 @@ pub fn coverage_report(args_json: &str, workspace_root: &Path, max_output_len: u
     let actual_format = if format != "auto" {
         format.to_string()
     } else {
-        detect_coverage_format(&path, &content)
+        detect_coverage_format(path, &content)
     };
 
-    match actual_format.as_str() {
-        "lcov" => parse_lcov(&content, max_output_len),
-        "tarpaulin" | "tarpaulin_json" => parse_tarpaulin_json(&content, max_output_len),
-        "cobertura" => parse_cobertura_summary(&content, max_output_len),
-        _ => {
-            let preview = output_util::truncate_output_lines(&content, max_output_len / 2, 50);
-            format!(
-                "覆盖率文件 {}（格式：{}）前 50 行：\n{}",
-                path, actual_format, preview
-            )
-        }
+    if let Some(result) = parse_coverage_by_format(&actual_format, &content, max_output_len) {
+        return result;
+    }
+    let preview = output_util::truncate_output_lines(&content, max_output_len / 2, 50);
+    format!(
+        "覆盖率文件 {}（格式：{}）前 50 行：\n{}",
+        path, actual_format, preview
+    )
+}
+
+fn coverage_format_str(format: CoverageReportFormat) -> &'static str {
+    match format {
+        CoverageReportFormat::Auto => "auto",
+        CoverageReportFormat::Lcov => "lcov",
+        CoverageReportFormat::Tarpaulin => "tarpaulin",
+        CoverageReportFormat::TarpaulinJson => "tarpaulin_json",
+        CoverageReportFormat::Cobertura => "cobertura",
+    }
+}
+
+/// 按格式分派覆盖率解析（`coverage_report` / `auto_detect_coverage` 共用）；未知格式返回 `None`。
+fn parse_coverage_by_format(fmt: &str, content: &str, max_output_len: usize) -> Option<String> {
+    match fmt {
+        "lcov" => Some(parse_lcov(content, max_output_len)),
+        "tarpaulin" | "tarpaulin_json" => Some(parse_tarpaulin_json(content, max_output_len)),
+        "cobertura" => Some(parse_cobertura_summary(content, max_output_len)),
+        _ => None,
     }
 }
 
@@ -201,11 +224,9 @@ fn auto_detect_coverage(workspace_root: &Path, max_output_len: usize) -> String 
                 Err(_) => continue,
             };
             let fmt = detect_coverage_format(c, &content);
-            let result = match fmt.as_str() {
-                "lcov" => parse_lcov(&content, max_output_len),
-                "tarpaulin" | "tarpaulin_json" => parse_tarpaulin_json(&content, max_output_len),
-                "cobertura" => parse_cobertura_summary(&content, max_output_len),
-                _ => continue,
+            let result = match parse_coverage_by_format(&fmt, &content, max_output_len) {
+                Some(r) => r,
+                None => continue,
             };
             return format!("自动检测覆盖率文件：{}\n{}", c, result);
         }
