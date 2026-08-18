@@ -77,12 +77,14 @@ async fn execute_http_fetch_impl(
     let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
     let name_in = name.to_string();
     let url_owned = url.clone();
+    let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_fetch_outer_wall_secs(cfg);
     let handle = tokio::task::spawn_blocking(move || {
         tools::http_fetch::fetch_with_method(
             &url_owned,
             method,
             text_format,
+            &user_agent,
             timeout_secs,
             max_body,
         )
@@ -184,6 +186,7 @@ async fn execute_http_request_impl(
     let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
     let name_in = name.to_string();
     let url_fetch = url.clone();
+    let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_request_outer_wall_secs(cfg);
     let handle = tokio::task::spawn_blocking(move || {
         tools::http_fetch::request_with_json_body(
@@ -191,6 +194,7 @@ async fn execute_http_request_impl(
             method,
             json_body.as_ref(),
             text_format,
+            &user_agent,
             timeout_secs,
             max_body,
         )

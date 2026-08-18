@@ -323,6 +323,80 @@ model = "deepseek-chat"
 }
 
 #[cfg(test)]
+mod http_fetch_user_agent_load_tests {
+    use super::load_config;
+    use std::fs;
+    use std::sync::Mutex;
+
+    static CM_HTTP_FETCH_USER_AGENT_LOCK: Mutex<()> = Mutex::new(());
+
+    /// `load_config` 会读 `CM_HTTP_FETCH_USER_AGENT`；并行用例若短暂写入会污染其它 `load_config` 测试。
+    fn with_http_fetch_user_agent_env<F, R>(value: Option<&str>, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_HTTP_FETCH_USER_AGENT_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("CM_HTTP_FETCH_USER_AGENT").ok();
+        // SAFETY: serialized by mutex for this env key only.
+        unsafe {
+            match value {
+                Some(v) => std::env::set_var("CM_HTTP_FETCH_USER_AGENT", v),
+                None => std::env::remove_var("CM_HTTP_FETCH_USER_AGENT"),
+            }
+        }
+        struct RestoreEnv(Option<String>);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                unsafe {
+                    match self.0.take() {
+                        Some(v) => std::env::set_var("CM_HTTP_FETCH_USER_AGENT", v),
+                        None => std::env::remove_var("CM_HTTP_FETCH_USER_AGENT"),
+                    }
+                }
+            }
+        }
+        let _restore = RestoreEnv(prev);
+        f()
+    }
+
+    fn write_minimal_config(dir: &tempfile::TempDir) -> String {
+        let path = dir.path().join("http_fetch_ua.toml");
+        fs::write(
+            &path,
+            r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+"#,
+        )
+        .expect("write");
+        path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn http_fetch_user_agent_defaults_to_crabmate_version() {
+        with_http_fetch_user_agent_env(None, || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cfg = load_config(Some(&write_minimal_config(&dir))).expect("load");
+            assert_eq!(
+                cfg.http_fetch.http_fetch_user_agent,
+                format!("crabmate/{}", env!("CARGO_PKG_VERSION"))
+            );
+        });
+    }
+
+    #[test]
+    fn http_fetch_user_agent_env_override() {
+        with_http_fetch_user_agent_env(Some("Mozilla/5.0 verify"), || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cfg = load_config(Some(&write_minimal_config(&dir))).expect("load");
+            assert_eq!(cfg.http_fetch.http_fetch_user_agent, "Mozilla/5.0 verify");
+        });
+    }
+}
+
+#[cfg(test)]
 mod llm_reasoning_split_default_tests {
     use super::load_config;
     use super::load_config_test_env::without_cm_planner_executor_mode_env;

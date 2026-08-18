@@ -80,6 +80,7 @@ pub(crate) struct ConfigBuilderHttpFetch {
     pub(crate) http_fetch_allowed_prefixes: Option<Vec<String>>,
     pub(crate) http_fetch_timeout_secs: Option<u64>,
     pub(crate) http_fetch_max_response_bytes: Option<u64>,
+    pub(crate) http_fetch_user_agent: Option<String>,
 }
 
 #[derive(Default)]

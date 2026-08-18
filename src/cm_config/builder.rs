@@ -189,6 +189,7 @@ impl ConfigBuilder {
         hf.http_fetch_max_response_bytes = agent
             .http_fetch_max_response_bytes
             .or(hf.http_fetch_max_response_bytes);
+        override_opt_string_non_empty(&mut hf.http_fetch_user_agent, agent.http_fetch_user_agent.clone());
         let pp = &mut self.per_plan_policy;
         pp.reflection_default_max_rounds = agent
             .reflection_default_max_rounds

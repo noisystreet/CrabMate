@@ -85,6 +85,7 @@ struct FinalizeTailScalars {
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
+    http_fetch_user_agent: String,
 }
 
 /// `derive_finalize_tail_scalars` 中段：规划/工具/思维链附录（降低单函数 `nloc`）。
@@ -418,6 +419,7 @@ struct TailStorageInjectNetScalars {
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
+    http_fetch_user_agent: String,
 }
 
 fn derive_tail_storage_inject_net_scalars(
@@ -489,6 +491,12 @@ fn derive_tail_storage_inject_net_scalars(
         .http_fetch.http_fetch_max_response_bytes
         .unwrap_or(524_288)
         .clamp(1024, 4_194_304) as usize;
+    let http_fetch_user_agent = b
+        .http_fetch
+        .http_fetch_user_agent
+        .clone()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| format!("crabmate/{}", env!("CARGO_PKG_VERSION")));
 
     Ok(TailStorageInjectNetScalars {
         conversation_store_sqlite_path,
@@ -516,6 +524,7 @@ fn derive_tail_storage_inject_net_scalars(
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
+        http_fetch_user_agent,
     })
 }
 
@@ -709,6 +718,7 @@ fn assemble_finalize_tail_scalars(
         http_fetch_allowed_prefixes: sin.http_fetch_allowed_prefixes,
         http_fetch_timeout_secs: sin.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: sin.http_fetch_max_response_bytes,
+        http_fetch_user_agent: sin.http_fetch_user_agent,
     }
 }
 

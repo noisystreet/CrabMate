@@ -145,6 +145,7 @@ pub(super) struct AgentSection {
     pub(super) http_fetch_allowed_prefixes: Option<Vec<String>>,
     pub(super) http_fetch_timeout_secs: Option<u64>,
     pub(super) http_fetch_max_response_bytes: Option<u64>,
+    pub(super) http_fetch_user_agent: Option<String>,
     pub(super) reflection_default_max_rounds: Option<u64>,
     /// `never` / `workflow_reflection` / `always`
     pub(super) final_plan_requirement: Option<String>,
