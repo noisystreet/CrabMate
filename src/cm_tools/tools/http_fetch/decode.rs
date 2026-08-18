@@ -256,37 +256,9 @@ pub fn decode_http_body_text_for_tool(content_type: &str, bytes: &[u8]) -> (Stri
         }
     }
 
-    // 1) Content-Type charset
-    if let Some(ref label_str) = charset_from_content_type(content_type)
-        && let Some(enc) = encoding_for_label(label_str)
-    {
-        let (cow, _) = enc.decode_with_bom_removal(bytes);
-        return (
-            cow.into_owned(),
-            format!("正文解码: {}（Content-Type charset）", enc.name()),
-        );
-    }
-
-    // 2) HTML / XHTML meta
-    if (should_sniff_html_meta(content_type) || content_type.trim().is_empty())
-        && let Some(enc) = html_declared_encoding_prefix(bytes)
-    {
-        let (cow, _) = enc.decode_with_bom_removal(bytes);
-        return (
-            cow.into_owned(),
-            format!("正文解码: {}（HTML meta 声明）", enc.name()),
-        );
-    }
-
-    // 3) XML 声明 encoding=
-    if is_xml_family_content_type(content_type)
-        && let Some(enc) = xml_declared_encoding_prefix(bytes)
-    {
-        let (cow, _) = enc.decode_with_bom_removal(bytes);
-        return (
-            cow.into_owned(),
-            format!("正文解码: {}（XML 声明 encoding）", enc.name()),
-        );
+    // 1-3) Content-Type charset / HTML meta / XML 声明 encoding
+    if let Some(decoded) = decode_by_declared_encoding(content_type, bytes) {
+        return decoded;
     }
 
     // 4) chardetng
@@ -296,4 +268,39 @@ pub fn decode_http_body_text_for_tool(content_type: &str, bytes: &[u8]) -> (Stri
         cow.into_owned(),
         format!("正文解码: {}（chardetng 嗅探）", guessed.name()),
     )
+}
+
+/// 依次尝试 Content-Type charset、HTML meta、XML 声明 encoding；均未声明时返回 `None`。
+fn decode_by_declared_encoding(content_type: &str, bytes: &[u8]) -> Option<(String, String)> {
+    if let Some(ref label_str) = charset_from_content_type(content_type)
+        && let Some(enc) = encoding_for_label(label_str)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return Some((
+            cow.into_owned(),
+            format!("正文解码: {}（Content-Type charset）", enc.name()),
+        ));
+    }
+
+    if (should_sniff_html_meta(content_type) || content_type.trim().is_empty())
+        && let Some(enc) = html_declared_encoding_prefix(bytes)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return Some((
+            cow.into_owned(),
+            format!("正文解码: {}（HTML meta 声明）", enc.name()),
+        ));
+    }
+
+    if is_xml_family_content_type(content_type)
+        && let Some(enc) = xml_declared_encoding_prefix(bytes)
+    {
+        let (cow, _) = enc.decode_with_bom_removal(bytes);
+        return Some((
+            cow.into_owned(),
+            format!("正文解码: {}（XML 声明 encoding）", enc.name()),
+        ));
+    }
+
+    None
 }

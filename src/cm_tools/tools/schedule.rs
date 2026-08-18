@@ -312,17 +312,44 @@ fn apply_update_reminder_fields(
 }
 
 pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
+    let args = match crate::cm_tools::tools::parse_args_typed::<UpdateReminderArgs>(args_json) {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    let args: UpdateReminderArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+    let f = match parse_update_reminder_fields(&args) {
+        Ok(f) => f,
+        Err(e) => return e,
     };
+    let path = reminders_path(working_dir);
+    let mut data: RemindersData = match read_json(&path) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+    let title = match apply_reminder_update(&mut data.items, &f.id, &f.title, &f.due_at, f.done) {
+        Some(t) => t,
+        None => return format!("未找到提醒：id={}", f.id),
+    };
+    if let Err(e) = write_json(&path, &data) {
+        return e;
+    }
+    format!("已更新提醒：{}（id={}）", title, f.id)
+}
+
+/// 提醒更新的规范化字段集合。
+struct UpdateReminderFields {
+    id: String,
+    title: Option<String>,
+    due_at: Option<String>,
+    done: Option<bool>,
+}
+
+/// 解析并校验更新字段。
+fn parse_update_reminder_fields(
+    args: &UpdateReminderArgs,
+) -> Result<UpdateReminderFields, String> {
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 id 参数".to_string(),
+        _ => return Err("错误：缺少 id 参数".to_string()),
     };
     let title = args
         .title
@@ -332,32 +359,32 @@ pub fn update_reminder(args_json: &str, working_dir: &Path) -> String {
         .map(str::to_string);
     let due_at = args.due_at.as_deref().map(|s| s.trim().to_string());
     let done = args.done;
-
     if title.is_none() && due_at.is_none() && done.is_none() {
-        return "错误：至少提供 title/due_at/done 中的一个用于更新".to_string();
+        return Err("错误：至少提供 title/due_at/done 中的一个用于更新".to_string());
     }
+    Ok(UpdateReminderFields {
+        id,
+        title,
+        due_at,
+        done,
+    })
+}
 
-    let path = reminders_path(working_dir);
-    let mut data: RemindersData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
-    let mut found = None;
-    for r in &mut data.items {
+/// 在 `items` 中按 `id` 更新字段并返回新标题；未命中返回 `None`。
+fn apply_reminder_update(
+    items: &mut [Reminder],
+    id: &str,
+    title: &Option<String>,
+    due_at: &Option<String>,
+    done: Option<bool>,
+) -> Option<String> {
+    for r in items {
         if r.id == id {
-            apply_update_reminder_fields(&mut *r, &title, &due_at, done);
-            found = Some(r.title.clone());
-            break;
+            apply_update_reminder_fields(r, title, due_at, done);
+            return Some(r.title.clone());
         }
     }
-    let title = match found {
-        Some(t) => t,
-        None => return format!("未找到提醒：id={}", id),
-    };
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已更新提醒：{}（id={}）", title, id)
+    None
 }
 
 pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
@@ -392,21 +419,40 @@ pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
 // ---------------- Events ----------------
 
 pub fn add_event(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
+    let args = match crate::cm_tools::tools::parse_args_typed::<AddEventArgs>(args_json) {
+        Ok(a) => a,
         Err(e) => return e,
     };
-    let args: AddEventArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+    let item = match prepare_new_event(&args) {
+        Ok(e) => e,
+        Err(e) => return e,
     };
+    if let Err(e) = ensure_data_dir(working_dir) {
+        return e;
+    }
+    let path = events_path(working_dir);
+    let mut data: EventsData = match read_json(&path) {
+        Ok(d) => d,
+        Err(e) => return e,
+    };
+    let id = item.id.clone();
+    let title_for_return = item.title.clone();
+    data.items.push(item);
+    if let Err(e) = write_json(&path, &data) {
+        return e;
+    }
+    format!("已添加日程：{}（id={}）", title_for_return, id)
+}
+
+/// 解析并校验新建日程字段，构造 `Event`（含时间归一化）。
+fn prepare_new_event(args: &AddEventArgs) -> Result<Event, String> {
     let title = match args.title.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "错误：缺少 title 参数".to_string(),
+        _ => return Err("错误：缺少 title 参数".to_string()),
     };
     let start_at_raw = match args.start_at.trim() {
         s if !s.is_empty() => s,
-        _ => return "错误：缺少 start_at 参数".to_string(),
+        _ => return Err("错误：缺少 start_at 参数".to_string()),
     };
     let start_at =
         parse_datetime_to_rfc3339(start_at_raw).unwrap_or_else(|| start_at_raw.to_string());
@@ -428,34 +474,16 @@ pub fn add_event(args_json: &str, working_dir: &Path) -> String {
         .map(str::trim)
         .filter(|s| !s.is_empty())
         .map(str::to_string);
-    // 用于返回消息（title 会在构造 Event 时 move 进去）
-    let title_for_return = title.clone();
-
-    if let Err(e) = ensure_data_dir(working_dir) {
-        return e;
-    }
-    let path = events_path(working_dir);
-    let mut data: EventsData = match read_json(&path) {
-        Ok(d) => d,
-        Err(e) => return e,
-    };
-    let now = now_rfc3339();
-    let item = Event {
+    Ok(Event {
         id: gen_id("evt"),
         title,
         start_at,
         end_at,
         location,
         notes,
-        created_at: now,
+        created_at: now_rfc3339(),
         updated_at: None,
-    };
-    let id = item.id.clone();
-    data.items.push(item);
-    if let Err(e) = write_json(&path, &data) {
-        return e;
-    }
-    format!("已添加日程：{}（id={}）", title_for_return, id)
+    })
 }
 
 pub fn list_events(args_json: &str, working_dir: &Path) -> String {

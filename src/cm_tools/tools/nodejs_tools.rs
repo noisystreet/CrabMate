@@ -74,19 +74,6 @@ pub fn npm_run(
 
     let extra_args = args.args;
 
-    let run = || {
-        let mut cmd = Command::new("npm");
-        cmd.arg("run").arg(script);
-        if !extra_args.is_empty() {
-            cmd.arg("--");
-            for a in &extra_args {
-                cmd.arg(a);
-            }
-        }
-        cmd.current_dir(&dir);
-        run_and_format(cmd, max_output_len, &format!("npm run {}", script))
-    };
-
     if ctx.test_result_cache_enabled
         && script == "test"
         && let Some(inputs_fp) = fingerprint_npm_package_dir(workspace_root, subdir)
@@ -107,7 +94,7 @@ pub fn npm_run(
         ) {
             return wrap_cache_hit(&inputs_fp, &hit);
         }
-        let out = run();
+        let out = run_npm_script(script, &extra_args, &dir, max_output_len);
         store_cached(
             ctx.test_result_cache_enabled,
             ctx.test_result_cache_max_entries,
@@ -117,7 +104,26 @@ pub fn npm_run(
         return out;
     }
 
-    run()
+    run_npm_script(script, &extra_args, &dir, max_output_len)
+}
+
+/// 执行 `npm run <script> [-- extra...]` 并格式化输出。
+fn run_npm_script(
+    script: &str,
+    extra_args: &[String],
+    dir: &Path,
+    max_output_len: usize,
+) -> String {
+    let mut cmd = Command::new("npm");
+    cmd.arg("run").arg(script);
+    if !extra_args.is_empty() {
+        cmd.arg("--");
+        for a in extra_args {
+            cmd.arg(a);
+        }
+    }
+    cmd.current_dir(dir);
+    run_and_format(cmd, max_output_len, &format!("npm run {}", script))
 }
 
 pub fn npx_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {

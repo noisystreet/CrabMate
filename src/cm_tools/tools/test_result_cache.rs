@@ -125,17 +125,7 @@ pub fn fingerprint_rust_workspace_sources(root: &Path) -> Option<String> {
         if !track {
             continue;
         }
-        let rel = path.strip_prefix(&root).ok()?;
-        let rel_s = rel.to_string_lossy().replace('\\', "/");
-        let meta = std::fs::metadata(path).ok()?;
-        let mtime = meta
-            .modified()
-            .ok()?
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_nanos();
-        let len = meta.len();
-        rows.push((rel_s, mtime, len));
+        rows.push(rust_source_row(path, &root)?);
     }
 
     rows.sort_by(|a, b| a.0.cmp(&b.0));
@@ -147,6 +137,21 @@ pub fn fingerprint_rust_workspace_sources(root: &Path) -> Option<String> {
     }
     let hash = hasher.finalize();
     Some(hash.iter().map(|b| format!("{b:02x}")).collect::<String>())
+}
+
+/// 记录单个可跟踪文件的相对路径 + mtime 纳秒 + 长度；任一步失败则返回 `None`（调用方中止）。
+fn rust_source_row(path: &Path, root: &Path) -> Option<(String, u128, u64)> {
+    let rel = path.strip_prefix(root).ok()?;
+    let rel_s = rel.to_string_lossy().replace('\\', "/");
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    let len = meta.len();
+    Some((rel_s, mtime, len))
 }
 
 /// `npm test` 指纹：`subdir/package.json` 与可选 lockfile 的 mtime+size。

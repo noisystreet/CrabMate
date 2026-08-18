@@ -6,6 +6,12 @@ pub fn parse_args_json(args_json: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))
 }
 
+/// 将工具入参 JSON 直接反序列化为目标类型（`parse_args_json` + `serde_json::from_value` 一步到位）。
+pub fn parse_args_typed<T: serde::de::DeserializeOwned>(args_json: &str) -> Result<T, String> {
+    let v = parse_args_json(args_json)?;
+    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+}
+
 /// 仅用于 `run_command`：尝试修复常见的裸 token 数组写法（如 `args:[-la]`、`args:[CMakeLists.txt]`）。
 /// 返回修复后的 JSON 字符串；若不满足修复条件则返回 `None`。
 pub fn try_repair_run_command_args_json(raw: &str) -> Option<String> {
