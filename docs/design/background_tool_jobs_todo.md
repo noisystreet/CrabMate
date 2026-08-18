@@ -52,15 +52,15 @@
 - [x] 启动帧软字段序列化 + 不 bump 协议（`tool_result.tool_job_*` 可选字段经注入 JSON → `ToolResultBody` 软字段；`append_tool_result_and_reflection` 跳过 `tool_job` 键不注入模型）。
 
 **1.4 HTTP 端点**（`src/web/routes/` + `crabmate-api-contract`）
-- [ ] `GET /tools/jobs/{tool_job_id}`：契约 §3.1 响应字段 + 错误码 `401/403/404/410`（`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 新增，同步 `crates/crabmate-api-contract/src/error_codes.rs`）。
-- [ ] `POST /tools/jobs/{tool_job_id}/cancel`：契约 §3.2（`queued` 不杀进程、完成态 409、幂等）。
-- [ ] 归属校验：随机 id 主防护；可选 `X-Workspace-Root` 头比对（不符 403）。
+- [x] `GET /tools/jobs/{tool_job_id}`：契约 §3.1 响应字段 + 错误码 `401/403/404/410`（`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 新增，同步 `crates/crabmate-api-contract/src/error_codes.rs`）。
+- [x] `POST /tools/jobs/{tool_job_id}/cancel`：契约 §3.2（`queued` 不杀进程、完成态 409、幂等）。
+- [x] 归属校验：随机 id 主防护；可选 `X-Workspace-Root` 头比对（不符 403）。
 
 **1.5 文档同步**（Slice 1 同 PR）
-- [ ] `docs/SSE协议.md`：`tool_result` 软字段表 +（若未做 Phase 2 则注明 `tool_job_finished` 未实现）。
-- [ ] `docs/命令行契约.md` / OpenAPI：两个端点 + 新 `ApiError.code`。
-- [ ] `docs/工具说明.md`：`run_command` 的 `async` 参数与限制。
-- [ ] `docs/配置说明.md` / README：用户可见配置键。
+- [x] `docs/SSE协议.md`：`tool_result` 软字段表 +（若未做 Phase 2 则注明 `tool_job_finished` 未实现）。
+- [x] `docs/命令行契约.md` / OpenAPI：两个端点 + 新 `ApiError.code`。
+- [x] `docs/工具说明.md`：`run_command` 的 `async` 参数与限制。
+- [x] `docs/配置说明.md` / README：用户可见配置键。
 
 ### Slice 2：Client（`crabmate-client` 仓，可并行）
 
