@@ -657,86 +657,41 @@ pub fn cargo_fix_try(
         ));
     }
 
-    let broken_code = v
-        .get("broken_code")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let all_targets = v
-        .get("all_targets")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let package = v
-        .get("package")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let features = v
-        .get("features")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let all_features = v
-        .get("all_features")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let edition = v
-        .get("edition")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let edition_idioms = v
-        .get("edition_idioms")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let allow_dirty = v
-        .get("allow_dirty")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let allow_staged = v
-        .get("allow_staged")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    let allow_no_vcs = v
-        .get("allow_no_vcs")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-
     let mut cmd = Command::new("cargo");
     cmd.arg("fix");
-
-    if broken_code {
-        cmd.arg("--broken-code");
-    }
-    if all_targets {
-        cmd.arg("--all-targets");
-    }
-    if let Some(p) = package {
-        cmd.arg("--package").arg(p);
-    }
-    if let Some(f) = features {
-        cmd.arg("--features").arg(f);
-    }
-    if all_features {
-        cmd.arg("--all-features");
-    }
-    if let Some(e) = edition {
-        cmd.arg("--edition").arg(e);
-    }
-    if edition_idioms {
-        cmd.arg("--edition-idioms");
-    }
-    if allow_dirty {
-        cmd.arg("--allow-dirty");
-    }
-    if allow_staged {
-        cmd.arg("--allow-staged");
-    }
-    if allow_no_vcs {
-        cmd.arg("--allow-no-vcs");
-    }
-
+    push_cargo_fix_flags(&mut cmd, &v);
     cmd.current_dir(workspace_root);
     run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix", None)
+}
+
+/// `cargo fix` 布尔开关参数（`args` 键 → CLI flag）。
+const CARGO_FIX_BOOL_FLAGS: &[(&str, &str)] = &[
+    ("broken_code", "--broken-code"),
+    ("all_targets", "--all-targets"),
+    ("all_features", "--all-features"),
+    ("edition_idioms", "--edition-idioms"),
+    ("allow_dirty", "--allow-dirty"),
+    ("allow_staged", "--allow-staged"),
+    ("allow_no_vcs", "--allow-no-vcs"),
+];
+
+/// 按 `cargo_fix` 参数表驱动追加 CLI 开关与取值 flag。
+fn push_cargo_fix_flags(cmd: &mut Command, v: &serde_json::Value) {
+    for (key, flag) in CARGO_FIX_BOOL_FLAGS {
+        if v.get(*key).and_then(|x| x.as_bool()).unwrap_or(false) {
+            cmd.arg(*flag);
+        }
+    }
+    for (key, flag) in [("package", "--package"), ("features", "--features"), ("edition", "--edition")] {
+        if let Some(s) = v
+            .get(key)
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        {
+            cmd.arg(flag).arg(s);
+        }
+    }
 }
 
 #[path = "cargo_subcommand.rs"]

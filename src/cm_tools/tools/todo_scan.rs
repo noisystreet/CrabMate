@@ -14,40 +14,21 @@ pub fn run(args_json: &str, working_dir: &Path) -> String {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let args: TodoScanArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 todo_scan 形状不一致: {e}"),
+    let plan = match plan_todo_scan(v) {
+        Ok(p) => p,
+        Err(e) => return e,
     };
-    let markers: Vec<String> = args
-        .markers
-        .as_ref()
-        .map(|arr| arr.iter().map(|s| s.to_uppercase()).collect::<Vec<_>>())
-        .filter(|m: &Vec<String>| !m.is_empty())
-        .unwrap_or_else(|| DEFAULT_MARKERS.iter().map(|s| s.to_string()).collect());
-
-    let paths: Vec<String> = match args.paths {
-        None => vec![".".to_string()],
-        Some(p) => p.into_iter().filter(|s| !s.is_empty()).collect(),
-    };
-
-    let exclude: Vec<String> = args.exclude.unwrap_or_else(|| {
-        vec![
-            "target".into(),
-            "node_modules".into(),
-            ".git".into(),
-            "vendor".into(),
-            "dist".into(),
-            "build".into(),
-        ]
-    });
+    let markers = &plan.markers;
+    let paths = &plan.paths;
+    let exclude = &plan.exclude;
 
     let mut results: Vec<String> = Vec::new();
-    for rel_path in &paths {
+    for rel_path in paths {
         if rel_path.contains("..") || rel_path.starts_with('/') {
             continue;
         }
         let abs = working_dir.join(rel_path);
-        scan_dir(&abs, working_dir, &markers, &exclude, &mut results);
+        scan_dir(&abs, working_dir, markers, exclude, &mut results);
         if results.len() >= MAX_RESULTS {
             break;
         }
@@ -67,6 +48,43 @@ pub fn run(args_json: &str, working_dir: &Path) -> String {
         out.push_str(&format!("\n... 已截断，仅显示前 {} 条", shown));
     }
     out
+}
+
+/// 解析 `todo_scan` 参数并计算标记 / 扫描路径 / 排除目录。
+struct TodoScanPlan {
+    markers: Vec<String>,
+    paths: Vec<String>,
+    exclude: Vec<String>,
+}
+
+fn plan_todo_scan(v: serde_json::Value) -> Result<TodoScanPlan, String> {
+    let args: TodoScanArgs = serde_json::from_value(v)
+        .map_err(|e| format!("参数 JSON 与 todo_scan 形状不一致: {e}"))?;
+    let markers: Vec<String> = args
+        .markers
+        .as_ref()
+        .map(|arr| arr.iter().map(|s| s.to_uppercase()).collect::<Vec<_>>())
+        .filter(|m: &Vec<String>| !m.is_empty())
+        .unwrap_or_else(|| DEFAULT_MARKERS.iter().map(|s| s.to_string()).collect());
+    let paths: Vec<String> = match args.paths {
+        None => vec![".".to_string()],
+        Some(p) => p.into_iter().filter(|s| !s.is_empty()).collect(),
+    };
+    let exclude: Vec<String> = args.exclude.unwrap_or_else(|| {
+        vec![
+            "target".into(),
+            "node_modules".into(),
+            ".git".into(),
+            "vendor".into(),
+            "dist".into(),
+            "build".into(),
+        ]
+    });
+    Ok(TodoScanPlan {
+        markers,
+        paths,
+        exclude,
+    })
 }
 
 fn scan_dir(

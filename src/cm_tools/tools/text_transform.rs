@@ -48,6 +48,41 @@ fn hash_short_hex(text: &str) -> String {
     hex[..16].to_string()
 }
 
+/// Base64 解码；结果非 UTF-8 时附十六进制预览（供 `base64_decode` 分支）。
+fn decode_base64_text(text: &str) -> String {
+    let raw = match B64_ENGINE.decode(text.trim().as_bytes()) {
+        Ok(b) => b,
+        Err(e) => return format!("Base64 解码失败：{}", e),
+    };
+    match String::from_utf8(raw.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            let n = NON_UTF8_HEX_BYTES.min(raw.len());
+            let hex = hex::encode(&raw[..n]);
+            format!(
+                "（解码结果非 UTF-8 文本；以下为前 {} 字节的十六进制，共 {} 字节）\n{}",
+                n,
+                raw.len(),
+                hex
+            )
+        }
+    }
+}
+
+/// 解析 `lines_join` / `lines_split` 分隔符；`allow_empty = false` 时拒绝缺省（split 语义）。
+fn resolve_delimiter(delim: Option<&str>, allow_empty: bool) -> Result<String, String> {
+    match delim {
+        None | Some("") if allow_empty => Ok(" ".to_string()),
+        None | Some("") => Err("lines_split 必须提供非空 delimiter".to_string()),
+        Some(s) if s.len() > MAX_DELIMITER_BYTES => Err(format!(
+            "delimiter 过长：{} 字节，上限 {}",
+            s.len(),
+            MAX_DELIMITER_BYTES
+        )),
+        Some(s) => Ok(s.to_string()),
+    }
+}
+
 /// 执行 `text_transform` 工具。
 pub fn run(args_json: &str) -> String {
     let args: super::tool_param_types::TextTransformArgs = match serde_json::from_str(args_json) {
@@ -63,25 +98,7 @@ pub fn run(args_json: &str) -> String {
         super::tool_param_types::TextTransformOp::Base64Encode => {
             B64_ENGINE.encode(text.as_bytes())
         }
-        super::tool_param_types::TextTransformOp::Base64Decode => {
-            let raw = match B64_ENGINE.decode(text.trim().as_bytes()) {
-                Ok(b) => b,
-                Err(e) => return format!("Base64 解码失败：{}", e),
-            };
-            match String::from_utf8(raw.clone()) {
-                Ok(s) => s,
-                Err(_) => {
-                    let n = NON_UTF8_HEX_BYTES.min(raw.len());
-                    let hex = hex::encode(&raw[..n]);
-                    format!(
-                        "（解码结果非 UTF-8 文本；以下为前 {} 字节的十六进制，共 {} 字节）\n{}",
-                        n,
-                        raw.len(),
-                        hex
-                    )
-                }
-            }
-        }
+        super::tool_param_types::TextTransformOp::Base64Decode => decode_base64_text(text),
         super::tool_param_types::TextTransformOp::UrlEncode => {
             urlencoding::encode(text).into_owned()
         }
@@ -93,35 +110,17 @@ pub fn run(args_json: &str) -> String {
             format!("sha256:{}", hash_short_hex(text))
         }
         super::tool_param_types::TextTransformOp::LinesJoin => {
-            let delim = match args.delimiter.as_deref() {
-                None | Some("") => " ".to_string(),
-                Some(s) => {
-                    if s.len() > MAX_DELIMITER_BYTES {
-                        return format!(
-                            "delimiter 过长：{} 字节，上限 {}",
-                            s.len(),
-                            MAX_DELIMITER_BYTES
-                        );
-                    }
-                    s.to_string()
-                }
+            let delim = match resolve_delimiter(args.delimiter.as_deref(), true) {
+                Ok(d) => d,
+                Err(e) => return e,
             };
             let lines: Vec<&str> = text.lines().collect();
             lines.join(&delim)
         }
         super::tool_param_types::TextTransformOp::LinesSplit => {
-            let delim = match args.delimiter.as_deref() {
-                Some(s) if !s.is_empty() => {
-                    if s.len() > MAX_DELIMITER_BYTES {
-                        return format!(
-                            "delimiter 过长：{} 字节，上限 {}",
-                            s.len(),
-                            MAX_DELIMITER_BYTES
-                        );
-                    }
-                    s.to_string()
-                }
-                _ => return "lines_split 必须提供非空 delimiter".to_string(),
+            let delim = match resolve_delimiter(args.delimiter.as_deref(), false) {
+                Ok(d) => d,
+                Err(e) => return e,
             };
             let parts: Vec<&str> = text.split(&delim).collect();
             if parts.len() > MAX_SPLIT_PARTS {

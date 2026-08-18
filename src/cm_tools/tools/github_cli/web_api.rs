@@ -110,6 +110,15 @@ fn git_remote_get_url(working_dir: &Path, remote: &str) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
+/// 常见 GitHub remote 前缀（大小写不敏感匹配；顺序即优先级）。
+const GITHUB_REMOTE_PREFIXES: &[&str] = &[
+    "https://github.com/",
+    "https://www.github.com/",
+    "git@github.com:",
+    "ssh://git@github.com/",
+    "ssh://github.com/",
+];
+
 /// 将常见 GitHub remote 转为浏览器可打开的 HTTPS 页与 `owner/repo`。
 ///
 /// 支持 `https://github.com/…`、`git@github.com:…`、`ssh://git@github.com/…`。
@@ -120,19 +129,10 @@ fn github_web_from_remote_url(raw: &str) -> Option<(String, String)> {
         return None;
     }
     let lower = s.to_ascii_lowercase();
-    let prefix_len = if lower.starts_with("https://github.com/") {
-        "https://github.com/".len()
-    } else if lower.starts_with("https://www.github.com/") {
-        "https://www.github.com/".len()
-    } else if lower.starts_with("git@github.com:") {
-        "git@github.com:".len()
-    } else if lower.starts_with("ssh://git@github.com/") {
-        "ssh://git@github.com/".len()
-    } else if lower.starts_with("ssh://github.com/") {
-        "ssh://github.com/".len()
-    } else {
-        return None;
-    };
+    let prefix_len = GITHUB_REMOTE_PREFIXES
+        .iter()
+        .find(|p| lower.starts_with(**p))
+        .map(|p| p.len())?;
     // 上述前缀均为 ASCII，字节长度与原串一致。
     let path = s.get(prefix_len..)?;
     let path = path

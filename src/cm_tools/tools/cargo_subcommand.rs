@@ -77,15 +77,21 @@ fn push_cargo_subcmd_cli(cmd: &mut Command, subcmd: &str, o: &CargoSubCmdOpts<'_
     if o.all_targets && matches!(subcmd, "check" | "clippy") {
         cmd.arg("--all-targets");
     }
-    if let Some(p) = o.package {
-        cmd.arg("--package").arg(p);
+    push_opt_str(cmd, "--package", o.package);
+    push_opt_str(cmd, "--bin", o.bin);
+    push_opt_str(cmd, "--features", o.features);
+    push_cargo_subcmd_tail_flags(cmd, subcmd, o);
+}
+
+/// 有值时追加 `--flag <value>`。
+fn push_opt_str(cmd: &mut Command, flag: &str, v: Option<&str>) {
+    if let Some(v) = v {
+        cmd.arg(flag).arg(v);
     }
-    if let Some(b) = o.bin {
-        cmd.arg("--bin").arg(b);
-    }
-    if let Some(f) = o.features {
-        cmd.arg("--features").arg(f);
-    }
+}
+
+/// `cargo test` 过滤器 / `cargo run` 透传参数。
+fn push_cargo_subcmd_tail_flags(cmd: &mut Command, subcmd: &str, o: &CargoSubCmdOpts<'_>) {
     if subcmd == "test" {
         if let Some(filter) = o.test_filter {
             cmd.arg(filter);

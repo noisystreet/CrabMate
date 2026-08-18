@@ -254,14 +254,24 @@ fn parse_title_exit_prefix_line(line: &str) -> Option<(String, i32)> {
     Some((title, code))
 }
 
+/// `http_fetch` / `http_request` 失败正文前缀 / 中缀（命中则不生成结构化载荷）。
+const HTTP_TOOL_FAILURE_PREFIXES: &[&str] = &[
+    "错误：",
+    "请求失败:",
+    "读取响应体失败:",
+    "HTTP 客户端构建失败",
+    "json_body 序列化失败",
+];
+const HTTP_TOOL_FAILURE_SUBSTRINGS: &[&str] = &["未匹配配置的 http_fetch_allowed_prefixes"];
+
 /// `http_fetch` / `http_request` 成功响应正文：`method:` / `请求 URL:` / `状态:` 等（见 **`http_fetch.rs`**）。
 fn http_tool_response_v1_payload(tool_name: &str, raw_output: &str) -> Option<Value> {
-    if raw_output.starts_with("错误：")
-        || raw_output.contains("未匹配配置的 http_fetch_allowed_prefixes")
-        || raw_output.starts_with("请求失败:")
-        || raw_output.starts_with("读取响应体失败:")
-        || raw_output.starts_with("HTTP 客户端构建失败")
-        || raw_output.starts_with("json_body 序列化失败")
+    if HTTP_TOOL_FAILURE_PREFIXES
+        .iter()
+        .any(|p| raw_output.starts_with(p))
+        || HTTP_TOOL_FAILURE_SUBSTRINGS
+            .iter()
+            .any(|s| raw_output.contains(s))
     {
         return None;
     }
@@ -269,14 +279,7 @@ fn http_tool_response_v1_payload(tool_name: &str, raw_output: &str) -> Option<Va
     let mut request_url = None::<String>;
     let mut status_line = None::<String>;
     for line in raw_output.lines() {
-        let t = line.trim();
-        if let Some(rest) = t.strip_prefix("method:") {
-            method = Some(rest.trim().to_string());
-        } else if let Some(rest) = t.strip_prefix("请求 URL:") {
-            request_url = Some(rest.trim().to_string());
-        } else if let Some(rest) = t.strip_prefix("状态:") {
-            status_line = Some(rest.trim().to_string());
-        }
+        capture_http_v1_field(line.trim(), &mut method, &mut request_url, &mut status_line);
     }
     let status_text = status_line?;
     let status_code = status_text
@@ -297,6 +300,22 @@ fn http_tool_response_v1_payload(tool_name: &str, raw_output: &str) -> Option<Va
         "http_status_code": status_code,
         "ok": ok,
     }))
+}
+
+/// 解析 `http_tool_response_v1` 头部的 `method:` / `请求 URL:` / `状态:` 行字段。
+fn capture_http_v1_field(
+    t: &str,
+    method: &mut Option<String>,
+    request_url: &mut Option<String>,
+    status_line: &mut Option<String>,
+) {
+    if let Some(rest) = t.strip_prefix("method:") {
+        *method = Some(rest.trim().to_string());
+    } else if let Some(rest) = t.strip_prefix("请求 URL:") {
+        *request_url = Some(rest.trim().to_string());
+    } else if let Some(rest) = t.strip_prefix("状态:") {
+        *status_line = Some(rest.trim().to_string());
+    }
 }
 
 fn run_command_structured_payload(raw_output: &str) -> Value {
