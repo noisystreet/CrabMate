@@ -193,6 +193,7 @@ Every `build_app` response includes **`x-request-id`** (echo inbound if valid, e
 | GET | `/workspace/profile` | Project profile Markdown |
 | GET | `/workspace/changelog` | Session workspace changelist Markdown (optional `conversation_id` query; same body as **`session_workspace_changelist`** model injection, read-only) |
 | POST | `/workspace/search` | In-workspace text search; JSON **`pattern`** (required), optional **`path`**, **`max_results`**, **`case_insensitive`**, **`ignore_hidden`** (see OpenAPI **`WorkspaceSearchBody`**); response **`output`**, may stay **200** with **`error`** on tool failure |
+| GET | `/workspace/file/raw` | Raw **image bytes** in the workspace (`path` relative; **png/jpg/jpeg/webp/gif** only, no svg; 8 MiB cap; same auth as other protected APIs). Used so chat Markdown `![alt](plots/a.png)` can be fetched with Bearer and shown as a `blob:` URL. Do **not** copy workspace files onto `/uploads` |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
 | POST | `/workspace/file` | Write file (JSON `path`, `content`; optional **`create_only`** / **`update_only`**) |
 | DELETE | `/workspace/file` | Delete file (`path` required; not directories) |

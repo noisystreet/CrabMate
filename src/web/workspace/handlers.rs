@@ -95,7 +95,7 @@ async fn workspace_file_read_resolve(
 }
 
 /// 解析当前会话工作区根为 canonical 路径，并校验仍在 `workspace_allowed_roots` 内、非敏感目录。
-async fn effective_workspace_base_canonical(
+pub(super) async fn effective_workspace_base_canonical(
     http: &AppStateHttpCore,
 ) -> Result<std::path::PathBuf, WorkspacePathError> {
     let base_str = http.effective_workspace_path().await;

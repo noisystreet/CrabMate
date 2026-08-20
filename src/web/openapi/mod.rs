@@ -6,6 +6,7 @@ mod openapi_paths;
 mod openapi_paths_tool_jobs;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
+mod openapi_paths_workspace;
 #[cfg(test)]
 mod route_table;
 
