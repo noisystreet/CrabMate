@@ -36,6 +36,9 @@ pub struct TestServeHandle {
 /// 构建最小化 `AppState` + `build_app`，跳过定时任务与鉴权中间件。
 /// 调用方可在测试结束时 drop `handle`（触发 graceful shutdown）。
 ///
+/// 库内轻量 HTTP 样例见 `src/web/workspace/handlers_file_raw_http_tests.rs`
+///（环回客户端须 `reqwest` `.no_proxy()`，避免 `HTTP_PROXY` 劫持）。
+///
 /// # Panics
 ///
 /// 若加载默认配置 / 绑定端口失败则 panic（测试应快速失败）。
