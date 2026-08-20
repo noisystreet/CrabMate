@@ -21,6 +21,29 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - (none yet)
 
+## [0.5.0] - 2026-08-20
+
+**Git pre-release `v0.5.0-alpha.0`.** crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+
+SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT` are soft (old clients ignore them). Chat image embeds need a matching **crabmate-client** build.
+
+### Added
+
+- **`GET /workspace/file/raw`**: serve workspace **png/jpg/jpeg/webp/gif** bytes (relative `path`, 8 MiB cap, same auth as other protected APIs) so Client chat can show `![alt](relative.png)` without copying files onto `/uploads`.
+- **Background tool jobs**: `run_command` can start **`async`** jobs; poll/cancel via **`GET /tools/jobs/{id}`** and **`POST /tools/jobs/{id}/cancel`**. AG-UI v2 forwards job metadata on **`TOOL_CALL_RESULT`**.
+- **`http_fetch`**: curl-like **`Accept` / `Accept-Encoding`** (gzip/brotli/deflate), default **`User-Agent` `crabmate/<version>`**, and a hint when the env proxy is **SOCKS** (reqwest 0.13 does not support it).
+- Shared subprocess sessions for **`python_snippet_run`**, **`cargo_test`**, and **`pytest_run`** (wall-clock / session stats).
+- Host **`run_command`** emits **`tool_output_chunk`** streaming chunks.
+
+### Changed
+
+- On timeout or cancel, **`run_command`** kills the **process group**, not only the direct child.
+
+### Fixed
+
+- Treat reqwest **`SendRequest`**-class transport errors as retryable (same backoff as other transient LLM HTTP failures).
+- Upgrade **`h2`** for **RUSTSEC-2026-0258**.
+
 ## [0.4.0] - 2026-08-16
 
 First **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.4.0`** matches this package; do **not** treat **`v0.3.0`** as crates.io `0.3.0`.
@@ -127,7 +150,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.0...HEAD
+[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.0
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
