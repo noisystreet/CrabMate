@@ -2,7 +2,8 @@
 
 use crate::cm_llm::vendor::{
     api_base_looks_volcano_engine_openai_compat, deepseek_json_output_eligible,
-    deepseek_reasoning_effort_for_request, fold_system_into_user_for_config, llm_vendor_adapter,
+    deepseek_reasoning_effort_for_request, flatten_image_url_parts_for_config,
+    fold_system_into_user_for_config, llm_vendor_adapter,
 };
 use crate::cm_llm::vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
@@ -66,9 +67,10 @@ pub fn tool_chat_request(
             model: effective_model.to_string(),
             messages: conversation_messages_to_vendor_body(
                 messages,
-                fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
+                fold_system_into_user_for_config(effective_model, &cfg.llm.api_base),
                 v.preserve_assistant_tool_call_reasoning(cfg),
                 deepseek_json_output_eligible(&cfg.llm.api_base),
+                flatten_image_url_parts_for_config(effective_model, &cfg.llm.api_base),
             ),
             tools: Some(tools.to_vec()),
             tool_choice: Some("auto".to_string()),
@@ -127,7 +129,8 @@ pub fn no_tools_chat_request_from_messages(
             model: effective_model.to_string(),
             messages: normalize_stripped_messages_for_vendor_body(
                 messages,
-                fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
+                fold_system_into_user_for_config(effective_model, &cfg.llm.api_base),
+                flatten_image_url_parts_for_config(effective_model, &cfg.llm.api_base),
             ),
             tools: Some(vec![]),
             tool_choice: Some("none".to_string()),
@@ -242,5 +245,57 @@ mod tests {
         let llm_cfg = agent_to_llm_cfg(&cfg);
         let ext = super::chat_request_vendor_extensions_for_agent(&llm_cfg);
         assert!(ext.reasoning_split.is_none());
+    }
+
+    #[test]
+    fn tool_chat_request_flattens_image_url_for_deepseek() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.llm.api_base = "https://api.deepseek.com/v1".to_string();
+        cfg.llm.model = "deepseek-chat".to_string();
+        let llm_cfg = agent_to_llm_cfg(&cfg);
+        let msgs = [crate::cm_types::message_user_with_images(
+            "看图",
+            &["/uploads/shot.png".to_string()],
+        )];
+        let req = super::tool_chat_request(
+            &llm_cfg,
+            &msgs,
+            &[],
+            None,
+            None,
+            LlmSeedOverride::FromConfig,
+        );
+        match &req.messages.last().expect("user").content {
+            Some(crate::cm_types::MessageContent::Text(s)) => {
+                assert!(s.contains("看图"));
+                assert!(s.contains("/uploads/shot.png"));
+                assert!(s.contains("无法查看像素"));
+            }
+            other => panic!("expected flattened Text, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tool_chat_request_flatten_follows_effective_model_not_cfg_model() {
+        let mut cfg = load_config(None).expect("default embedded config");
+        cfg.llm.api_base = "https://api.openai.com/v1".to_string();
+        cfg.llm.model = "MiniMax-M2.7".to_string();
+        let llm_cfg = agent_to_llm_cfg(&cfg);
+        let msgs = [crate::cm_types::message_user_with_images(
+            "看图",
+            &["/uploads/shot.png".to_string()],
+        )];
+        let req = super::tool_chat_request(
+            &llm_cfg,
+            &msgs,
+            &[],
+            None,
+            Some("gpt-4o"),
+            LlmSeedOverride::FromConfig,
+        );
+        match &req.messages.last().expect("user").content {
+            Some(crate::cm_types::MessageContent::Parts(_)) => {}
+            other => panic!("override gpt-4o should keep image_url parts, got {other:?}"),
+        }
     }
 }

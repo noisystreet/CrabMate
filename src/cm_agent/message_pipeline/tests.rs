@@ -277,7 +277,7 @@ fn vendor_body_matches_manual_strip_normalize() {
         tool_call_id: None,
     };
     let slice = [Message::user_only("u"), sep, a.clone()];
-    let via = conversation_messages_to_vendor_body(&slice, false, false, false);
+    let via = conversation_messages_to_vendor_body(&slice, false, false, false, false);
     let manual = crate::cm_types::normalize_messages_for_openai_compatible_request(
         crate::cm_types::messages_for_api_stripping_reasoning_skip_ui_separators(
             &slice, false, false,

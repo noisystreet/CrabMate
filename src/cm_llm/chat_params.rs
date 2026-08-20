@@ -1,5 +1,6 @@
 //! 单次 `chat/completions` 传输层入参（不含可变请求体）。
 
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
 use reqwest::Client;
@@ -46,4 +47,6 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
+    /// Web 聊天上传目录（与 `AppState.uploads_dir` 一致）；`None` 时 inline 回退 [`crate::cm_llm::default_chat_uploads_dir`]。
+    pub chat_uploads_dir: Option<&'a Path>,
 }

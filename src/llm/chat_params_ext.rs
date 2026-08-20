@@ -23,6 +23,8 @@ pub struct CompleteChatRetryingParams<'a> {
     pub model_override: Option<&'a str>,
     /// 单轮共享预算；设置时由 [`super::complete_chat_retrying`] 统一门禁与计数。
     pub turn_budget: Option<&'a Arc<TurnBudgetCounter>>,
+    /// 与 Web `uploads_dir` 对齐；`None` 时 HTTP 层回退默认上传目录。
+    pub chat_uploads_dir: Option<&'a std::path::Path>,
 }
 
 impl<'a> CompleteChatRetryingParams<'a> {
@@ -51,6 +53,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
             request_chrome_trace,
             model_override,
             turn_budget: None,
+            chat_uploads_dir: None,
         }
     }
 
@@ -58,6 +61,13 @@ impl<'a> CompleteChatRetryingParams<'a> {
     #[inline]
     pub fn with_turn_budget(mut self, turn_budget: Option<&'a Arc<TurnBudgetCounter>>) -> Self {
         self.turn_budget = turn_budget;
+        self
+    }
+
+    /// 视觉出站 inline 所用上传目录（与 `POST /upload` 落盘目录相同）。
+    #[inline]
+    pub fn with_chat_uploads_dir(mut self, dir: Option<&'a std::path::Path>) -> Self {
+        self.chat_uploads_dir = dir;
         self
     }
 
@@ -91,6 +101,7 @@ impl<'a> CompleteChatRetryingParams<'a> {
                 &self.cfg.llm.api_base,
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
+            chat_uploads_dir: self.chat_uploads_dir,
         }
     }
 }

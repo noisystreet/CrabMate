@@ -22,6 +22,7 @@ pub mod stream_host;
 pub mod trace_sink;
 pub mod vendor;
 pub mod vendor_messages;
+mod vendor_messages_images;
 
 pub use api::stream_chat;
 pub use backend::ChatCompletionsBackend;
@@ -51,9 +52,10 @@ pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
 pub use stream_host::StreamChatHost;
 pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceUsage};
 pub use vendor::{
-    LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
-    llm_vendor_adapter_for_model,
+    LlmVendorAdapter, flatten_image_url_parts_for_config, fold_system_into_user_for_config,
+    llm_vendor_adapter, llm_vendor_adapter_for_model,
 };
 pub use vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
 };
+pub use vendor_messages_images::{default_chat_uploads_dir, inline_local_chat_upload_images};

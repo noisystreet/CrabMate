@@ -4,6 +4,8 @@ use std::hash::{Hash, Hasher};
 
 use crate::cm_types::Message;
 
+use super::vendor_messages_images::flatten_image_url_parts_in_messages;
+
 fn system_prompt_stability_info(messages: &[Message]) -> (u64, usize) {
     let sys_content: String = messages
         .iter()
@@ -94,6 +96,7 @@ pub fn conversation_messages_to_vendor_body(
     fold_system_into_user: bool,
     preserve_reasoning_on_assistant_tool_calls: bool,
     preserve_deepseek_thinking_reasoning_roundtrip: bool,
+    flatten_image_url_parts: bool,
 ) -> Vec<Message> {
     log_system_prompt_stability(messages);
     let mut v = crate::cm_types::normalize_messages_for_openai_compatible_request(
@@ -107,19 +110,26 @@ pub fn conversation_messages_to_vendor_body(
         v = crate::cm_types::fold_system_messages_into_following_user(v);
     }
     sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
+    if flatten_image_url_parts {
+        flatten_image_url_parts_in_messages(&mut v);
+    }
     v
 }
 
-/// 与 [`conversation_messages_to_vendor_body`] 相同，但输入已是「已 strip」的 `Vec`（避免重复遍历），仅做 normalize（及可选 system 折叠）。
+/// 与 [`conversation_messages_to_vendor_body`] 相同，但输入已是「已 strip」的 `Vec`（避免重复遍历），仅做 normalize（及可选 system 折叠 / `image_url` flatten）。
 #[inline]
 pub fn normalize_stripped_messages_for_vendor_body(
     messages: Vec<Message>,
     fold_system_into_user: bool,
+    flatten_image_url_parts: bool,
 ) -> Vec<Message> {
     let mut v = crate::cm_types::normalize_messages_for_openai_compatible_request(messages);
     if fold_system_into_user {
         v = crate::cm_types::fold_system_messages_into_following_user(v);
     }
     sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
+    if flatten_image_url_parts {
+        flatten_image_url_parts_in_messages(&mut v);
+    }
     v
 }

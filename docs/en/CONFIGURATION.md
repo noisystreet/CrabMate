@@ -302,7 +302,7 @@ llm_http_auth_mode = "bearer"
 # llm_reasoning_split: omit → defaults to true on MiniMax; set false to disable
 ```
 
-**`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted), the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**.
+**`API_KEY`** as Bearer. When **`llm_reasoning_split`** is true (including MiniMax default when omitted), the request includes **`reasoning_split: true`**; streaming **`delta.reasoning_details`** may fold into **`reasoning_content`**. Tested **M2.x** text models also **reject** OpenAI **`image_url`** parts; chat attachments are flattened like DeepSeek (see **Chat images** in the DeepSeek section below).
 
 ### Less system-prompt echo in thinking/reasoning
 
@@ -349,6 +349,8 @@ If **`api_base`** uses a Volcano host (**`*.volces.com`**, e.g. **`https://ark.c
 - Neither flag → omit both fields; gateway defaults apply (docs: thinking **enabled** by default).
 
 Structured no-tools JSON paths (if any) still strip **`thinking`**, **`reasoning_split`**, and **`reasoning_effort`**.
+
+**Chat images**: the session still stores OpenAI-shaped **`image_url`** parts (`/uploads/…` for the UI). Official DeepSeek **`chat/completions` does not accept** content part **`type: image_url`** (HTTP 400 `unknown variant image_url, expected text`). CrabMate **flattens images to a text placeholder** on the way out (which file was attached; the model cannot see pixels) and does **not** send local relative paths upstream. For vision-capable gateways, **`/uploads/`** files are inlined as **`data:` URLs** at send time (base64 is **not** written to the conversation store).
 
 ## Sample `config.toml`
 

@@ -373,6 +373,7 @@ async fn outer_loop_call_planner_and_push(
         executor_api_base: exec_api_base,
         executor_api_key: exec_api_key,
         turn_budget: Some(&p.turn.turn_budget),
+        chat_uploads_dir: Some(p.ctx.obs.process_handles.chat_uploads_dir.as_path()),
     })
     .await
     .map_err(|e| {

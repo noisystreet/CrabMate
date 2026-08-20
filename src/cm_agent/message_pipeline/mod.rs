@@ -3,7 +3,7 @@
 //! ## 两阶段
 //!
 //! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符裁剪、孤立 `tool` 剔除。相邻 `assistant` 合并已移至供应商出站阶段（见 `conversation_messages_to_vendor_body`），不在会话同步管道内执行。
-//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::cm_agent::llm::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若调用方传入的 **`fold_system_into_user`** 为真（由 [`crate::cm_agent::llm::fold_system_into_user_for_config`] 按 MiniMax 等网关判定），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
+//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::cm_agent::llm::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若调用方传入的 **`fold_system_into_user`** 为真（由 [`crate::cm_agent::llm::fold_system_into_user_for_config`] 按 MiniMax 等网关判定），再将 **`system`** 折叠进后续 **`user`**。文本网关（DeepSeek / MiniMax）另将 **`image_url`** 压成文字占位。**不**写入会话 `Vec`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
 //!

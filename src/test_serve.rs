@@ -111,7 +111,7 @@ pub async fn start_test_serve(
             long_term_memory: None,
             llm_models_health_cache: Arc::new(std::sync::Mutex::new(None)),
             sse_stream_hub,
-            process_handles: ProcessHandles::default_arc_process_handles(),
+            process_handles: ProcessHandles::default_arc_with_chat_uploads_dir(uploads_dir.clone()),
             async_chat_jobs: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             tool_job_registry,
             mount_web_ui: true,

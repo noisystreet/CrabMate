@@ -312,14 +312,32 @@ pub async fn stream_chat(
         !no_stream
     );
 
+    let flatten_image_url_parts =
+        crate::cm_llm::vendor::flatten_image_url_parts_for_config(&req.model, api_base);
     let taken = std::mem::take(&mut req.messages);
     req.messages = crate::cm_llm::vendor_messages::conversation_messages_to_vendor_body(
         &taken,
         fold_system_into_user,
         preserve_reasoning_on_assistant_tool_calls,
         preserve_deepseek_thinking_reasoning_roundtrip,
+        flatten_image_url_parts,
     );
     log_chat_request_json_preview_if_enabled(host, req);
+    if !flatten_image_url_parts {
+        let uploads = params
+            .chat_uploads_dir
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(crate::cm_llm::default_chat_uploads_dir);
+        let mut msgs = std::mem::take(&mut req.messages);
+        req.messages = tokio::task::spawn_blocking(move || {
+            crate::cm_llm::inline_local_chat_upload_images(&mut msgs, &uploads);
+            msgs
+        })
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> {
+            format!("inline chat uploads join error: {e}").into()
+        })?;
+    }
     req.stream = Some(!no_stream);
 
     // 序列化为 JSON，条件注入 cache_control（DeepSeek 等供应商支持）

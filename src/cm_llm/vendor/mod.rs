@@ -20,6 +20,13 @@ pub trait LlmVendorAdapter: Send + Sync {
     fn supports_explicit_cache_control(&self) -> bool {
         false
     }
+
+    /// 出站 `message.content` 数组是否允许 OpenAI 兼容的 **`type: image_url`**。
+    ///
+    /// **DeepSeek** / **MiniMax** 文本网关的 content 片段枚举仅有 **`text`**，带 `image_url` 会 HTTP 400。
+    fn supports_image_url_content_parts(&self) -> bool {
+        true
+    }
 }
 
 // --------------------------------------------------------------------------- model id helpers (Kimi)
@@ -131,6 +138,12 @@ pub fn fold_system_into_user_for_config(model: &str, api_base: &str) -> bool {
     crate::cm_types::llm_config::fold_system_into_user_for_gateway(model, api_base)
 }
 
+/// 出站是否将多模态 **`image_url`** 压成纯文本（与 [`LlmVendorAdapter::supports_image_url_content_parts`] 相反）。
+#[inline]
+pub fn flatten_image_url_parts_for_config(model: &str, api_base: &str) -> bool {
+    !llm_vendor_adapter(model, api_base).supports_image_url_content_parts()
+}
+
 /// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
 ///
 /// 仅用 URL 判断、**不**用 `model` ID：避免在 MiniMax 等网关误配 `deepseek-chat` 时下发 `response_format`。
@@ -233,6 +246,10 @@ impl LlmVendorAdapter for MiniMaxVendor {
     fn preserve_assistant_tool_call_reasoning(&self, _cfg: &LlmConfig) -> bool {
         false
     }
+
+    fn supports_image_url_content_parts(&self) -> bool {
+        false
+    }
 }
 
 /// DeepSeek 官方 OpenAI 兼容：**`api_base`** 含 **`deepseek`** 且未被 Kimi/MiniMax/智谱路由命中时选用。
@@ -263,6 +280,10 @@ impl LlmVendorAdapter for DeepSeekVendor {
 
     fn supports_explicit_cache_control(&self) -> bool {
         true
+    }
+
+    fn supports_image_url_content_parts(&self) -> bool {
+        false
     }
 }
 
@@ -550,6 +571,22 @@ mod tests {
         assert!(!super::fold_system_into_user_for_config(
             "deepseek-chat",
             "https://api.deepseek.com/v1"
+        ));
+    }
+
+    #[test]
+    fn flatten_image_url_for_deepseek_and_minimax_not_generic() {
+        assert!(super::flatten_image_url_parts_for_config(
+            "deepseek-chat",
+            "https://api.deepseek.com/v1"
+        ));
+        assert!(super::flatten_image_url_parts_for_config(
+            "MiniMax-M2.7",
+            "https://api.minimaxi.com/v1"
+        ));
+        assert!(!super::flatten_image_url_parts_for_config(
+            "gpt-4o",
+            "https://api.openai.com/v1"
         ));
     }
 

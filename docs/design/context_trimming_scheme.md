@@ -51,7 +51,7 @@
 
 - **入口**：**`conversation_messages_to_vendor_body`** / **`normalize_stripped_messages_for_vendor_body`** 等（见 **`crabmate_llm::vendor_messages`**；根包经 **`message_pipeline`** 再导出）。  
 - **作用对象**：从会话切片构造 **`ChatRequest.messages`**，**不写回**会话 `Vec`。  
-- **典型处理**：跳过 UI 分隔线 / 长期记忆注入展示条、按网关处理 **`reasoning_content`**、OpenAI 兼容 **normalize**、可选 **system→user** 折叠。
+- **典型处理**：跳过 UI 分隔线 / 长期记忆注入展示条、按网关处理 **`reasoning_content`**、OpenAI 兼容 **normalize**、可选 **system→user** 折叠、文本网关 **flatten `image_url`**。
 
 **原则**：会话侧裁剪解决「体积与结构」；出站路径解决「供应商兼容」。新增裁剪逻辑时默认落在 **会话同步**，除非明确只做 HTTP 层语义且不应改写会话 truth。
 

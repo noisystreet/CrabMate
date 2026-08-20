@@ -8,7 +8,8 @@ use tiktoken_rs::{ChatCompletionRequestMessage, FunctionCall, num_tokens_from_me
 use crate::agent::message_pipeline::conversation_messages_to_vendor_body;
 use crate::config::AgentConfig;
 use crate::llm::{
-    fold_system_into_user_for_config, llm_vendor_adapter, vendor::deepseek_json_output_eligible,
+    flatten_image_url_parts_for_config, fold_system_into_user_for_config, llm_vendor_adapter,
+    vendor::deepseek_json_output_eligible,
 };
 use crate::types::{Message, message_content_into_text_lossy};
 
@@ -159,6 +160,7 @@ pub fn prompt_token_count_vendor_shaped_for_session(
         fold_system_into_user_for_config(&cfg.llm.model, &cfg.llm.api_base),
         v.preserve_assistant_tool_call_reasoning(&llm_cfg),
         deepseek_json_output_eligible(&cfg.llm.api_base),
+        flatten_image_url_parts_for_config(&cfg.llm.model, &cfg.llm.api_base),
     );
     count_prompt_tokens_openai_compat_vendor_slice(&cfg.llm.model, &vendor)
 }

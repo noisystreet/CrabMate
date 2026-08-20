@@ -27,6 +27,8 @@ pub struct TurnProcessHandles {
     pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     /// 只读类 **`run_command`** 短时 TTL 缓存（按工作区键失效；配置见 **`readonly_tool_ttl_cache_*`**）。
     pub readonly_tool_ttl_cache: Arc<ReadonlyToolTtlCache>,
+    /// Web 聊天 `POST /upload` 落盘目录；出站视觉 inline 与此对齐。
+    pub chat_uploads_dir: Arc<PathBuf>,
 }
 
 impl TurnProcessHandles {
@@ -46,6 +48,8 @@ pub struct ProcessHandles {
     pub sync_default_sandbox_backend: Arc<dyn SyncDefaultSandboxBackend>,
     /// 只读类 **`run_command`** 短时 TTL 缓存（按工作区键失效；配置见 **`readonly_tool_ttl_cache_*`**）。
     pub readonly_tool_ttl_cache: Arc<ReadonlyToolTtlCache>,
+    /// Web 聊天 `POST /upload` 落盘目录；出站视觉 inline 与此对齐。
+    pub chat_uploads_dir: Arc<PathBuf>,
     /// 与 Web 侧栏任务同源：键为规范化工作区路径字符串。
     pub workspace_tasks_by_path: WorkspaceTasksByPath,
     /// CLI：懒打开的长期记忆运行时（路径变更后下次调用会重开）。
@@ -65,6 +69,7 @@ impl ProcessHandles {
             handler_lookup,
             sync_default_sandbox_backend,
             readonly_tool_ttl_cache: Arc::new(ReadonlyToolTtlCache::new()),
+            chat_uploads_dir: Arc::new(crate::cm_llm::default_chat_uploads_dir()),
             workspace_tasks_by_path: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             cli_long_term_memory: Mutex::new(None),
         }
@@ -84,6 +89,26 @@ impl ProcessHandles {
         ))
     }
 
+    /// 覆盖聊天上传目录（须与 Axum 静态 `/uploads` 及 `AppState.uploads_dir` 相同）。
+    #[must_use]
+    pub fn with_chat_uploads_dir(mut self, dir: PathBuf) -> Self {
+        self.chat_uploads_dir = Arc::new(dir);
+        self
+    }
+
+    /// 默认句柄但指定上传目录（`test_serve` 等与生产 `crabmate_uploads` 隔离的路径）。
+    pub fn default_arc_with_chat_uploads_dir(dir: PathBuf) -> Arc<Self> {
+        Arc::new(
+            Self::new(
+                Arc::new(WorkspaceChangelistRegistry::default()),
+                Arc::new(ToolOutcomeRecorder::new()),
+                HandlerLookupTable::default_dispatch(),
+                crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend(),
+            )
+            .with_chat_uploads_dir(dir),
+        )
+    }
+
     /// 回合路径消费面：变更集注册表、工具统计、handler、沙盒、只读 TTL（不含 tasks / CLI LTM）。
     pub fn turn_handles(&self) -> TurnProcessHandles {
         TurnProcessHandles {
@@ -92,6 +117,7 @@ impl ProcessHandles {
             handler_lookup: self.handler_lookup.clone(),
             sync_default_sandbox_backend: Arc::clone(&self.sync_default_sandbox_backend),
             readonly_tool_ttl_cache: Arc::clone(&self.readonly_tool_ttl_cache),
+            chat_uploads_dir: Arc::clone(&self.chat_uploads_dir),
         }
     }
 
