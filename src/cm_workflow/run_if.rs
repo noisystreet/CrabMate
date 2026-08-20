@@ -79,6 +79,57 @@ fn json_values_equal(a: &Value, b: &Value) -> bool {
     }
 }
 
+fn json_nonempty_str_field<'a>(
+    obj: &'a serde_json::Map<String, Value>,
+    key: &str,
+) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn parse_run_if_branch(
+    obj: &serde_json::Map<String, Value>,
+    branch: &str,
+) -> Result<WorkflowRunIf, String> {
+    let from = json_nonempty_str_field(obj, "from")
+        .ok_or("run_if.branch 须提供 from")?
+        .to_string();
+    let branch = match branch {
+        "success" => WorkflowBranch::Success,
+        "failure" => WorkflowBranch::Failure,
+        other => {
+            return Err(format!(
+                "run_if.branch 未知值: {other}（支持 success|failure）"
+            ));
+        }
+    };
+    Ok(WorkflowRunIf::Branch { from, branch })
+}
+
+fn parse_run_if_match(obj: &serde_json::Map<String, Value>) -> Result<WorkflowRunIf, String> {
+    let match_v = obj.get("match").ok_or("run_if 须含 branch 或 match")?;
+    let match_obj = match_v.as_object().ok_or("run_if.match 必须是对象")?;
+    let from = json_nonempty_str_field(obj, "from")
+        .ok_or("run_if.match 须提供 from")?
+        .to_string();
+    let field = json_nonempty_str_field(match_obj, "field")
+        .ok_or("run_if.match 须提供 field")?
+        .to_string();
+    let equals = match_obj.get("equals").cloned();
+    let in_list = match_obj.get("in").and_then(|x| x.as_array()).cloned();
+    if equals.is_none() && in_list.is_none() {
+        return Err("run_if.match 须提供 equals 或 in".to_string());
+    }
+    Ok(WorkflowRunIf::Match {
+        from,
+        field,
+        equals,
+        in_list,
+    })
+}
+
 /// 从 `workflow.nodes[].run_if` JSON 解析。
 pub(crate) fn parse_run_if_json(v: &Value) -> Result<Option<WorkflowRunIf>, String> {
     if v.is_null() {
@@ -87,52 +138,8 @@ pub(crate) fn parse_run_if_json(v: &Value) -> Result<Option<WorkflowRunIf>, Stri
     let obj = v
         .as_object()
         .ok_or_else(|| "run_if 必须是对象".to_string())?;
-
     if let Some(branch) = obj.get("branch").and_then(|x| x.as_str()) {
-        let from = obj
-            .get("from")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or("run_if.branch 须提供 from")?
-            .to_string();
-        let branch = match branch {
-            "success" => WorkflowBranch::Success,
-            "failure" => WorkflowBranch::Failure,
-            other => {
-                return Err(format!(
-                    "run_if.branch 未知值: {other}（支持 success|failure）"
-                ));
-            }
-        };
-        return Ok(Some(WorkflowRunIf::Branch { from, branch }));
+        return Ok(Some(parse_run_if_branch(obj, branch)?));
     }
-
-    let match_v = obj.get("match").ok_or("run_if 须含 branch 或 match")?;
-    let match_obj = match_v.as_object().ok_or("run_if.match 必须是对象")?;
-    let from = obj
-        .get("from")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or("run_if.match 须提供 from")?
-        .to_string();
-    let field = match_obj
-        .get("field")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or("run_if.match 须提供 field")?
-        .to_string();
-    let equals = match_obj.get("equals").cloned();
-    let in_list = match_obj.get("in").and_then(|x| x.as_array()).cloned();
-    if equals.is_none() && in_list.is_none() {
-        return Err("run_if.match 须提供 equals 或 in".to_string());
-    }
-    Ok(Some(WorkflowRunIf::Match {
-        from,
-        field,
-        equals,
-        in_list,
-    }))
+    Ok(Some(parse_run_if_match(obj)?))
 }

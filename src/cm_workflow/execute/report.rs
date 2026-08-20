@@ -140,13 +140,19 @@ pub(super) fn build_first_failure_report(
     }
 }
 
-pub(super) fn format_main_summary(
+fn node_status_word(status: NodeRunStatus) -> &'static str {
+    match status {
+        NodeRunStatus::Passed => "passed",
+        NodeRunStatus::Failed => "failed",
+        NodeRunStatus::Skipped => "skipped",
+    }
+}
+
+fn tally_summary_stats(
     spec: &WorkflowSpec,
     completed: &HashMap<String, NodeRunResult>,
     started: &HashSet<String>,
-    completion_order: &[String],
-    first_failure: Option<&NodeRunResult>,
-) -> String {
+) -> (usize, usize, usize) {
     let mut passed = 0usize;
     let mut failed = 0usize;
     let mut skipped = 0usize;
@@ -164,7 +170,70 @@ pub(super) fn format_main_summary(
             skipped += 1;
         }
     }
+    (passed, failed, skipped)
+}
 
+fn append_node_result_line(
+    out: &mut String,
+    r: &NodeRunResult,
+    max_chars: usize,
+    status_debug: bool,
+) {
+    if status_debug {
+        out.push_str(&format!("  - {}: {:?}\n", r.id, node_status_word(r.status)));
+    } else {
+        out.push_str(&format!("  - {}: {}\n", r.id, node_status_word(r.status)));
+    }
+    out.push_str(&format!(
+        "    output: {}\n",
+        truncate_for_summary(&r.output, max_chars)
+    ));
+}
+
+fn append_completion_order_lines(
+    out: &mut String,
+    completion_order: &[String],
+    completed: &HashMap<String, NodeRunResult>,
+    listed: &mut HashSet<String>,
+    max_chars: usize,
+) {
+    for id in completion_order.iter() {
+        if !listed.insert(id.clone()) {
+            continue;
+        }
+        if let Some(r) = completed.get(id) {
+            append_node_result_line(out, r, max_chars, true);
+        }
+    }
+}
+
+fn append_remaining_node_lines(
+    out: &mut String,
+    spec: &WorkflowSpec,
+    completed: &HashMap<String, NodeRunResult>,
+    listed: &HashSet<String>,
+    max_chars: usize,
+) {
+    for node in spec.nodes.iter() {
+        if listed.contains(&node.id) {
+            continue;
+        }
+        if let Some(r) = completed.get(&node.id) {
+            append_node_result_line(out, r, max_chars, false);
+        } else {
+            out.push_str(&format!("  - {}: skipped\n", node.id));
+        }
+    }
+}
+
+pub(super) fn format_main_summary(
+    spec: &WorkflowSpec,
+    completed: &HashMap<String, NodeRunResult>,
+    started: &HashSet<String>,
+    completion_order: &[String],
+    first_failure: Option<&NodeRunResult>,
+) -> String {
+    let (passed, failed, skipped) = tally_summary_stats(spec, completed, started);
     let status = if first_failure.is_some() {
         "failed"
     } else {
@@ -181,51 +250,22 @@ pub(super) fn format_main_summary(
         "- stats: passed={}, failed={}, skipped={}\n",
         passed, failed, skipped
     ));
-
     out.push_str("- node results:\n");
     let mut listed: HashSet<String> = HashSet::new();
-    for id in completion_order.iter() {
-        if !listed.insert(id.clone()) {
-            continue;
-        }
-        if let Some(r) = completed.get(id) {
-            out.push_str(&format!(
-                "  - {}: {:?}\n",
-                r.id,
-                match r.status {
-                    NodeRunStatus::Passed => "passed",
-                    NodeRunStatus::Failed => "failed",
-                    NodeRunStatus::Skipped => "skipped",
-                }
-            ));
-            out.push_str(&format!(
-                "    output: {}\n",
-                truncate_for_summary(&r.output, spec.summary_preview_max_chars)
-            ));
-        }
-    }
-    for node in spec.nodes.iter() {
-        if listed.contains(&node.id) {
-            continue;
-        }
-        if let Some(r) = completed.get(&node.id) {
-            out.push_str(&format!(
-                "  - {}: {}\n",
-                r.id,
-                match r.status {
-                    NodeRunStatus::Passed => "passed",
-                    NodeRunStatus::Failed => "failed",
-                    NodeRunStatus::Skipped => "skipped",
-                }
-            ));
-            out.push_str(&format!(
-                "    output: {}\n",
-                truncate_for_summary(&r.output, spec.summary_preview_max_chars)
-            ));
-        } else {
-            out.push_str(&format!("  - {}: skipped\n", node.id));
-        }
-    }
+    append_completion_order_lines(
+        &mut out,
+        completion_order,
+        completed,
+        &mut listed,
+        spec.summary_preview_max_chars,
+    );
+    append_remaining_node_lines(
+        &mut out,
+        spec,
+        completed,
+        &listed,
+        spec.summary_preview_max_chars,
+    );
 
     if let Some(f) = first_failure {
         out.push_str(&format!(

@@ -9,6 +9,27 @@ use super::model::ForEachPendingSpec;
 const MAX_STEPS: usize = 64;
 const MAX_REPEAT_COUNT: usize = 5;
 
+fn map_trimmed_str<'a>(obj: &'a Map<String, Value>, key: &str) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn map_required_id(obj: &Map<String, Value>, step_index: usize, ctx: &str) -> Result<String, String> {
+    map_trimmed_str(obj, "id").map(str::to_string).ok_or_else(|| format!("steps[{step_index}] {ctx}"))
+}
+
+fn map_tool_name(obj: &Map<String, Value>, step_index: usize) -> Result<String, String> {
+    obj.get("tool")
+        .or_else(|| obj.get("tool_name"))
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| format!("steps[{step_index}] 缺少 tool"))
+}
+
 struct CompileStepsOutput {
     nodes: Vec<Value>,
     for_each_pending: Vec<ForEachPendingSpec>,
@@ -243,17 +264,40 @@ fn step_map_without_repeat(obj: &Map<String, Value>) -> Map<String, Value> {
         .collect()
 }
 
+fn repeat_stop_on_success_run_if(prev_id: &str) -> Value {
+    Value::Object(Map::from_iter([
+        ("from".to_string(), Value::String(prev_id.to_string())),
+        ("branch".to_string(), Value::String("failure".to_string())),
+    ]))
+}
+
+fn apply_repeat_node_run_if(
+    node: &mut Map<String, Value>,
+    i: usize,
+    when_run_if: &Option<Value>,
+    stop_on: RepeatStopOn,
+    prev_id: Option<&str>,
+) {
+    if i == 1 {
+        if let Some(run_if) = when_run_if.clone() {
+            node.insert("run_if".to_string(), run_if);
+        }
+        return;
+    }
+    if stop_on == RepeatStopOn::Success {
+        node.insert(
+            "run_if".to_string(),
+            repeat_stop_on_success_run_if(prev_id.unwrap_or("")),
+        );
+    }
+}
+
 fn expand_repeat_step_nodes(
     obj: &Map<String, Value>,
     step_index: usize,
     repeat: &RepeatSpec,
 ) -> Result<Vec<Map<String, Value>>, String> {
-    let base_id = obj
-        .get("id")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("steps[{step_index}] 缺少 id"))?;
+    let base_id = map_required_id(obj, step_index, "缺少 id")?;
     let step_base = step_map_without_repeat(obj);
     let when_run_if = obj.get("when").map(parse_when_to_run_if_json).transpose()?;
 
@@ -268,24 +312,40 @@ fn expand_repeat_step_nodes(
         };
         let mut node =
             compile_plain_step_node(&step_base, step_index, Some(&node_id), Some(&deps))?;
-        if i == 1 {
-            if let Some(run_if) = when_run_if.clone() {
-                node.insert("run_if".to_string(), run_if);
-            }
-        } else if repeat.stop_on == RepeatStopOn::Success {
-            let prev = prev_id.as_deref().unwrap_or("");
-            node.insert(
-                "run_if".to_string(),
-                Value::Object(Map::from_iter([
-                    ("from".to_string(), Value::String(prev.to_string())),
-                    ("branch".to_string(), Value::String("failure".to_string())),
-                ])),
-            );
-        }
+        apply_repeat_node_run_if(&mut node, i, &when_run_if, repeat.stop_on, prev_id.as_deref());
         prev_id = Some(node_id);
         out.push(node);
     }
     Ok(out)
+}
+
+fn insert_unique_step_id(
+    seen_ids: &mut std::collections::HashSet<String>,
+    id: String,
+) -> Result<(), String> {
+    if !seen_ids.insert(id.clone()) {
+        return Err(format!("steps 中重复的 id: {id}"));
+    }
+    Ok(())
+}
+
+fn compile_repeat_author_nodes(
+    obj: &Map<String, Value>,
+    step_index: usize,
+    repeat: &RepeatSpec,
+    seen_ids: &mut std::collections::HashSet<String>,
+    nodes: &mut Vec<Value>,
+) -> Result<(), String> {
+    for node in expand_repeat_step_nodes(obj, step_index, repeat)? {
+        let id = node
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string();
+        insert_unique_step_id(seen_ids, id)?;
+        nodes.push(Value::Object(node));
+    }
+    Ok(())
 }
 
 fn compile_plain_author_step(
@@ -295,37 +355,33 @@ fn compile_plain_author_step(
     nodes: &mut Vec<Value>,
 ) -> Result<(), String> {
     if let Some(repeat) = parse_repeat_spec(obj, step_index)? {
-        for node in expand_repeat_step_nodes(obj, step_index, &repeat)? {
-            let id = node
-                .get("id")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .to_string();
-            if !seen_ids.insert(id.clone()) {
-                return Err(format!("steps 中重复的 id: {id}"));
-            }
-            nodes.push(Value::Object(node));
-        }
-        return Ok(());
+        return compile_repeat_author_nodes(obj, step_index, &repeat, seen_ids, nodes);
     }
-
-    let id = obj
-        .get("id")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("steps[{step_index}] 缺少 id"))?
-        .to_string();
-    if !seen_ids.insert(id.clone()) {
-        return Err(format!("steps 中重复的 id: {id}"));
-    }
+    let id = map_required_id(obj, step_index, "缺少 id")?;
+    insert_unique_step_id(seen_ids, id)?;
     let mut node = compile_plain_step_node(obj, step_index, None, None)?;
     if let Some(when_v) = obj.get("when") {
-        let run_if = parse_when_to_run_if_json(when_v)?;
-        node.insert("run_if".to_string(), run_if);
+        node.insert("run_if".to_string(), parse_when_to_run_if_json(when_v)?);
     }
     nodes.push(Value::Object(node));
     Ok(())
+}
+
+fn compile_one_flat_step(
+    obj: &Map<String, Value>,
+    i: usize,
+    seen_ids: &mut std::collections::HashSet<String>,
+    nodes: &mut Vec<Value>,
+    for_each_pending: &mut Vec<ForEachPendingSpec>,
+) -> Result<(), String> {
+    if obj.contains_key("for_each") && obj.contains_key("repeat") {
+        return Err(format!("steps[{i}] 不能同时含 for_each 与 repeat"));
+    }
+    if obj.contains_key("for_each") {
+        compile_for_each_author_step(obj, i, seen_ids, nodes, for_each_pending)
+    } else {
+        compile_plain_author_step(obj, i, seen_ids, nodes)
+    }
 }
 
 fn compile_flat_steps(steps: &[Value]) -> Result<CompileStepsOutput, String> {
@@ -343,14 +399,7 @@ fn compile_flat_steps(steps: &[Value]) -> Result<CompileStepsOutput, String> {
         let obj = step
             .as_object()
             .ok_or_else(|| format!("steps[{i}] 必须是对象"))?;
-        if obj.contains_key("for_each") && obj.contains_key("repeat") {
-            return Err(format!("steps[{i}] 不能同时含 for_each 与 repeat"));
-        }
-        if obj.contains_key("for_each") {
-            compile_for_each_author_step(obj, i, &mut seen_ids, &mut nodes, &mut for_each_pending)?;
-        } else {
-            compile_plain_author_step(obj, i, &mut seen_ids, &mut nodes)?;
-        }
+        compile_one_flat_step(obj, i, &mut seen_ids, &mut nodes, &mut for_each_pending)?;
     }
 
     validate_after_refs(&nodes, &for_each_pending)?;
@@ -360,40 +409,34 @@ fn compile_flat_steps(steps: &[Value]) -> Result<CompileStepsOutput, String> {
     })
 }
 
+fn resolve_plain_step_id(
+    obj: &Map<String, Value>,
+    step_index: usize,
+    id_override: Option<&str>,
+) -> Result<String, String> {
+    id_override
+        .map(str::to_string)
+        .or_else(|| map_trimmed_str(obj, "id").map(str::to_string))
+        .ok_or_else(|| format!("steps[{step_index}] 缺少 id"))
+}
+
 fn compile_plain_step_node(
     obj: &Map<String, Value>,
     step_index: usize,
     id_override: Option<&str>,
     deps_override: Option<&[String]>,
 ) -> Result<Map<String, Value>, String> {
-    let tool_name = obj
-        .get("tool")
-        .or_else(|| obj.get("tool_name"))
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("steps[{step_index}] 缺少 tool"))?
-        .to_string();
+    let tool_name = map_tool_name(obj, step_index)?;
     let tool_args = obj
         .get("args")
         .or_else(|| obj.get("tool_args"))
         .cloned()
         .unwrap_or_else(|| Value::Object(Map::new()));
-    let deps = if let Some(d) = deps_override {
-        d.to_vec()
-    } else {
-        parse_after_deps(obj.get("after"), step_index)?
+    let deps = match deps_override {
+        Some(d) => d.to_vec(),
+        None => parse_after_deps(obj.get("after"), step_index)?,
     };
-    let id = id_override
-        .map(str::to_string)
-        .or_else(|| {
-            obj.get("id")
-                .and_then(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .map(str::to_string)
-        })
-        .ok_or_else(|| format!("steps[{step_index}] 缺少 id"))?;
+    let id = resolve_plain_step_id(obj, step_index, id_override)?;
 
     let mut node = Map::new();
     node.insert("id".to_string(), Value::String(id));
@@ -505,37 +548,32 @@ fn parse_for_each_loop_config(
     })
 }
 
+fn for_each_string_list_field(obj: &Map<String, Value>, key: &str) -> Vec<String> {
+    obj.get(key)
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 fn parse_for_each_step(
     obj: &Map<String, Value>,
     step_index: usize,
 ) -> Result<ForEachPendingSpec, String> {
-    let base_id = obj
-        .get("id")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("steps[{step_index}] for_each 缺少 id"))?
-        .to_string();
+    let base_id = map_required_id(obj, step_index, "for_each 缺少 id")?;
     let fe = obj
         .get("for_each")
         .and_then(|x| x.as_object())
         .ok_or_else(|| format!("steps[{step_index}].for_each 必须是对象"))?;
     let loop_cfg = parse_for_each_loop_config(fe, step_index)?;
-    let tool_name = obj
-        .get("tool")
-        .or_else(|| obj.get("tool_name"))
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| format!("steps[{step_index}] 缺少 tool"))?
-        .to_string();
     let tool_args_template = obj
         .get("args")
         .or_else(|| obj.get("tool_args"))
         .cloned()
         .unwrap_or_else(|| Value::Object(Map::new()));
-    let extra_deps = parse_after_deps(obj.get("after"), step_index)?;
-
     Ok(ForEachPendingSpec {
         base_id,
         from: loop_cfg.from,
@@ -544,22 +582,14 @@ fn parse_for_each_step(
         item_var: loop_cfg.item_var,
         max_items: loop_cfg.max_items,
         parallel: loop_cfg.parallel,
-        tool_name,
+        tool_name: map_tool_name(obj, step_index)?,
         tool_args_template,
         requires_approval: obj
             .get("requires_approval")
             .and_then(|x| x.as_bool())
             .unwrap_or(false),
         timeout_secs: obj.get("timeout_secs").and_then(|x| x.as_u64()),
-        compensate_with: obj
-            .get("compensate_with")
-            .and_then(|x| x.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default(),
+        compensate_with: for_each_string_list_field(obj, "compensate_with"),
         max_retries: obj
             .get("max_retries")
             .and_then(|x| x.as_u64())
@@ -569,7 +599,7 @@ fn parse_for_each_step(
             .get("node_tool_role")
             .or_else(|| obj.get("executor_kind"))
             .and_then(|x| serde_json::from_value(x.clone()).ok()),
-        extra_deps,
+        extra_deps: parse_after_deps(obj.get("after"), step_index)?,
     })
 }
 
