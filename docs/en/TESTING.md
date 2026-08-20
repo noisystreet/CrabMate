@@ -69,6 +69,19 @@ cargo test
 | Main binary + backend | `cargo test -p crabmate` | Most `src/` and `tests/` tests |
 | Wire contract (no tokio) | `cargo test --lib --no-default-features --features protocol cm_sse_protocol` | `cm_sse_protocol` classify/frames; also **`./scripts/check-sse-protocol.sh`** |
 | OpenAPI / HTTP shell | `cargo test --lib openapi_` | `GET /openapi.json` vs axum `.route(`; Leptos UI tests are in Client |
+| Light HTTP smoke (no LLM) | `cargo test -p crabmate --lib workspace_file_raw_http_smoke` | `src/test_serve.rs` random port; see below |
+
+### Lightweight HTTP integration tests (`start_test_serve`)
+
+Prefer **`#[tokio::test]` next to handlers** (`cargo test --lib`) for route + workspace security + status codes. Do not default to `tests/` real-LLM e2e.
+
+1. **`start_test_serve(None)`**: random port, default config, `build_tools()`, **no Bearer middleware**, no LLM.
+2. **`tempfile` workspace** + `POST /workspace` `{"path": …}` to set the root. Empty `workspace_allowed_roots` allows any path except sensitive prefixes (`/etc`, `/root`, …).
+3. **`reqwest::Client::builder().no_proxy()`**: otherwise `HTTP_PROXY` (e.g. Privoxy) hijacks loopback. Same idea as `no_proxy=127.0.0.1,localhost` in e2e.
+4. **One serve, several asserts** (e.g. 200 / 415 / 400) so you do not pay `load_config` per case.
+5. **lizard** counts test functions in `src/`; keep CCN ≤ 10 and file-line ratchets; split HTTP tests into `*_http_tests.rs` if needed.
+
+Example: `src/web/workspace/handlers_file_raw_http_tests.rs`.
 
 ### Filter by test name (examples)
 

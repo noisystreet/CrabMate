@@ -5,6 +5,8 @@ mod clone_validate;
 mod handlers;
 mod handlers_dir_tests;
 mod handlers_file_raw;
+#[cfg(test)]
+mod handlers_file_raw_http_tests;
 mod handlers_sync;
 mod projects;
 
