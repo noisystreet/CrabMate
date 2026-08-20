@@ -11,7 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- Prompt + successful tool-result hint so the model embeds workspace **png/jpg/jpeg/webp/gif** with `![alt](relative.png)` in the final reply (Web `GET /workspace/file/raw`); do not tell users to copy files onto `CM_WEB_STATIC_DIR`.
 
 ### Changed
 

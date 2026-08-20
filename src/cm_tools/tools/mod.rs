@@ -94,6 +94,7 @@ mod tool_summary_args;
 mod unit_convert;
 mod weather;
 mod web_search;
+mod workspace_image_chat_hint;
 mod write_sse_preview;
 
 pub mod dev_tag;
@@ -383,6 +384,8 @@ fn run_tool_dispatch(
                 Ok(output) => {
                     let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
                     if parsed.ok {
+                        let output =
+                            workspace_image_chat_hint::append_if_needed(args_ref, output);
                         Ok((output, parsed))
                     } else {
                         Err(ToolError::from_parsed_legacy(name, &parsed, output))
@@ -393,7 +396,7 @@ fn run_tool_dispatch(
         }
         "cargo_check" => {
             cargo_tools::cargo_check_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_test" => cargo_tools::cargo_test_try(
             args_ref,
@@ -401,26 +404,26 @@ fn run_tool_dispatch(
             ctx.command_max_output_len,
             Some(ctx),
         )
-        .map(|output| finish_dispatch_parsed(name, output)),
+        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
         "cargo_clippy" => {
             cargo_tools::cargo_clippy_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_metadata" => {
             cargo_tools::cargo_metadata_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_tree" => {
             cargo_tools::cargo_tree_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_clean" => {
             cargo_tools::cargo_clean_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_doc" => {
             cargo_tools::cargo_doc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_nextest" => {
             cargo_tools::cargo_nextest_try(
@@ -429,33 +432,33 @@ fn run_tool_dispatch(
                 ctx.command_max_output_len,
                 Some(ctx.command_timeout_secs),
             )
-            .map(|output| finish_dispatch_parsed(name, output))
+            .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_outdated" => {
             cargo_tools::cargo_outdated_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_machete" => {
             cargo_tools::cargo_machete_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_udeps" => {
             cargo_tools::cargo_udeps_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_publish_dry_run" => cargo_tools::cargo_publish_dry_run_try(
             args_ref,
             ctx.working_dir,
             ctx.command_max_output_len,
         )
-        .map(|output| finish_dispatch_parsed(name, output)),
+        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
         "cargo_fix" => {
             cargo_tools::cargo_fix_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_run" => {
             cargo_tools::cargo_run_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "rust_test_one" => cargo_tools::rust_test_one_try(
             args_ref,
@@ -463,20 +466,21 @@ fn run_tool_dispatch(
             ctx.command_max_output_len,
             Some(ctx),
         )
-        .map(|output| finish_dispatch_parsed(name, output)),
+        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
         "rust_rustc" => {
             cargo_tools::rust_rustc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, output))
+                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "read_file" => {
-            read_file_try_dispatch(args_ref, ctx).map(|output| finish_dispatch_parsed(name, output))
+            read_file_try_dispatch(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "search_in_files" => grep_try::search_in_files_try(args_ref, ctx.working_dir)
-            .map(|output| finish_dispatch_parsed(name, output)),
+            .map(|output| finish_dispatch_parsed(name, args_ref, output)),
         _ => {
             let output = run_tool(name, args_ref, ctx);
             let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
             if parsed.ok {
+                let output = workspace_image_chat_hint::append_if_needed(args_ref, output);
                 Ok((output, parsed))
             } else {
                 Err(ToolError::from_parsed_legacy(name, &parsed, output))
@@ -487,8 +491,10 @@ fn run_tool_dispatch(
 
 fn finish_dispatch_parsed(
     name: &str,
+    args_json: &str,
     output: String,
 ) -> (String, crate::cm_tools::tool_result::ParsedLegacyOutput) {
+    let output = workspace_image_chat_hint::append_if_needed(args_json, output);
     let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
     (output, parsed)
 }
