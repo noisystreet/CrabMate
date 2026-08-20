@@ -80,6 +80,32 @@ pub(crate) fn workspace_read_file_sync_unix(
 }
 
 #[cfg(unix)]
+pub(crate) fn workspace_read_file_bytes_sync_unix(
+    base: std::path::PathBuf,
+    can: std::path::PathBuf,
+    max_b: u64,
+) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+    let opened =
+        open_existing_file_under_root(&base, &can).map_err(|e| format!("无法读取文件信息: {e}"))?;
+    if opened.metadata.is_dir() {
+        return Err("路径是目录，无法读取为文件".to_string());
+    }
+    let len = opened.metadata.len();
+    if len > max_b {
+        return Err(format!(
+            "文件过大（{} 字节），当前最多读取 {} 字节",
+            len, max_b
+        ));
+    }
+    let mut f = opened.file;
+    let mut raw = Vec::new();
+    f.read_to_end(&mut raw)
+        .map_err(|e| format!("读取文件失败: {e}"))?;
+    Ok(raw)
+}
+
+#[cfg(unix)]
 pub(crate) fn workspace_delete_file_sync_unix(
     base: std::path::PathBuf,
     can: std::path::PathBuf,

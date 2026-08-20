@@ -1,7 +1,10 @@
 //! OpenAPI `paths` 对象（由 `openapi::build_openapi_spec` 组装）；多段 `json!` 合并，降低单函数 `nloc`。
 
 use serde_json::{Map, Value, json};
-use super::{openapi_paths_tool_jobs, openapi_paths_user_data, openapi_paths_user_data_mcp};
+use super::{
+    openapi_paths_tool_jobs, openapi_paths_user_data, openapi_paths_user_data_mcp,
+    openapi_paths_workspace,
+};
 
 fn merge_path_fragments(fragments: &[Value]) -> Value {
     let mut map = Map::new();
@@ -873,13 +876,6 @@ fn openapi_paths_fragment_github() -> Value {
     })
 }
 
-fn openapi_paths_fragment_workspace_rest() -> Value {
-    merge_path_fragments(&[
-        openapi_paths_fragment_workspace_file_meta(),
-        openapi_paths_fragment_workspace_tasks_and_config(),
-    ])
-}
-
 fn openapi_paths_fragment_skills() -> Value {
     json!({
         "/skills": {
@@ -911,7 +907,9 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_workspace_list(),
         openapi_paths_fragment_skills(),
         openapi_paths_fragment_github(),
-        openapi_paths_fragment_workspace_rest(),
+        openapi_paths_workspace::openapi_paths_fragment_workspace_file_raw(),
+        openapi_paths_fragment_workspace_file_meta(),
+        openapi_paths_fragment_workspace_tasks_and_config(),
         openapi_paths_tool_jobs::openapi_paths_fragment_tool_jobs(),
         openapi_paths_user_data::openapi_paths_fragment_user_data(),
         openapi_paths_user_data_mcp::openapi_paths_fragment_user_data_mcp(),
