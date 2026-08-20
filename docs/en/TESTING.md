@@ -78,7 +78,7 @@ Prefer **`#[tokio::test]` next to handlers** (`cargo test --lib`) for route + wo
 1. **`start_test_serve(None)`**: random port, default config, `build_tools()`, **no Bearer middleware**, no LLM.
 2. **`tempfile` workspace** + `POST /workspace` `{"path": …}` to set the root. Empty `workspace_allowed_roots` allows any path except sensitive prefixes (`/etc`, `/root`, …).
 3. **`reqwest::Client::builder().no_proxy()`**: otherwise `HTTP_PROXY` (e.g. Privoxy) hijacks loopback. Same idea as `no_proxy=127.0.0.1,localhost` in e2e.
-4. **One serve, several asserts** (e.g. 200 / 415 / 400) so you do not pay `load_config` per case.
+4. **One serve, several asserts** (e.g. GET raw 200 / 415 / 400, PUT 204 / 409) so you do not pay `load_config` per case.
 5. **lizard** counts test functions in `src/`; keep CCN ≤ 10 and file-line ratchets; split HTTP tests into `*_http_tests.rs` if needed.
 
 Example: `src/web/workspace/handlers_file_raw_http_tests.rs`.

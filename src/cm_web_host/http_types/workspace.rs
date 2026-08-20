@@ -115,6 +115,19 @@ pub struct WorkspaceFileQuery {
     pub encoding: Option<String>,
 }
 
+/// `PUT /workspace/file/raw` 查询参数（正文为原始字节，非 JSON）。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileRawPutQuery {
+    pub path: String,
+    /// 仅创建：若文件已存在则 **409** `WORKSPACE_FILE_EXISTS`
+    #[serde(default)]
+    pub create_only: bool,
+    /// 仅修改：若文件不存在则 **404** `WORKSPACE_FILE_MISSING`
+    #[serde(default)]
+    pub update_only: bool,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceFileWriteBody {
