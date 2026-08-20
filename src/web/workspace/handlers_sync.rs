@@ -122,7 +122,7 @@ pub(crate) fn workspace_delete_file_sync_unix(
 pub(crate) fn workspace_file_write_sync_unix(
     base: std::path::PathBuf,
     normalized: std::path::PathBuf,
-    content: String,
+    content: Vec<u8>,
     create_only: bool,
     update_only: bool,
 ) -> Result<(), String> {
@@ -145,7 +145,7 @@ pub(crate) fn workspace_file_write_sync_unix(
             return Err(format!("打开文件失败: {e}"));
         }
     };
-    f.write_all(content.as_bytes())
+    f.write_all(&content)
         .map_err(|e| format!("写入文件失败: {e}"))
 }
 

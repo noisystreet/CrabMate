@@ -17,9 +17,13 @@ use crate::workspace::path::resolve_web_workspace_read_path;
 /// 与 Web `POST /upload` 单张图片上限一致。
 const WORKSPACE_IMAGE_RAW_MAX_BYTES: u64 = 8 * 1024 * 1024;
 
-type RawErr = (StatusCode, Json<ApiError>);
+pub(crate) type RawErr = (StatusCode, Json<ApiError>);
 
-fn raw_err(status: StatusCode, code: &'static str, message: impl Into<String>) -> RawErr {
+pub(crate) fn raw_err(
+    status: StatusCode,
+    code: &'static str,
+    message: impl Into<String>,
+) -> RawErr {
     (status, Json(ApiError::new(code, message)))
 }
 
@@ -36,7 +40,7 @@ pub(crate) fn workspace_chat_image_content_type(path: &str) -> Option<&'static s
     }
 }
 
-fn reject_unsafe_rel_path(path: &str) -> Result<(), RawErr> {
+pub(crate) fn reject_unsafe_rel_path(path: &str) -> Result<(), RawErr> {
     let t = path.trim();
     if t.is_empty() {
         return Err(raw_err(
@@ -45,12 +49,21 @@ fn reject_unsafe_rel_path(path: &str) -> Result<(), RawErr> {
             "path 不能为空",
         ));
     }
-    if t.contains("..") || t.contains('\\') {
+    if t.contains('\\') {
         return Err(raw_err(
             StatusCode::BAD_REQUEST,
             "WORKSPACE_PATH_INVALID",
             "path 非法",
         ));
+    }
+    for part in t.split('/') {
+        if part.is_empty() || part == "." || part == ".." {
+            return Err(raw_err(
+                StatusCode::BAD_REQUEST,
+                "WORKSPACE_PATH_INVALID",
+                "path 非法",
+            ));
+        }
     }
     Ok(())
 }
@@ -196,6 +209,9 @@ mod tests {
     #[test]
     fn rejects_dotdot() {
         assert!(reject_unsafe_rel_path("../x.png").is_err());
+        assert!(reject_unsafe_rel_path("a/../b.png").is_err());
+        assert!(reject_unsafe_rel_path("a/./b.png").is_err());
         assert!(reject_unsafe_rel_path("ok/a.png").is_ok());
+        assert!(reject_unsafe_rel_path("foo..bar.png").is_ok());
     }
 }

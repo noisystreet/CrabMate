@@ -648,7 +648,7 @@ async fn workspace_file_write_resolved(
     {
         let base = base_canonical;
         let normalized = canonical;
-        let content = body.content;
+        let content = body.content.into_bytes();
         let create_only = body.create_only;
         let update_only = body.update_only;
         match tokio::task::spawn_blocking(move || {

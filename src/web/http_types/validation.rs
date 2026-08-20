@@ -9,8 +9,9 @@ use axum::http::StatusCode;
 use super::chat::{ApiError, ChatRequestBody};
 
 pub(crate) use crate::cm_web_host::http_types::limits::{
-    clamp_workspace_search_max_results, validate_workspace_file_write_request,
-    validate_workspace_query_encoding_optional, workspace_search_pattern_or_error,
+    clamp_workspace_search_max_results, validate_workspace_file_write_payload,
+    validate_workspace_file_write_request, validate_workspace_query_encoding_optional,
+    workspace_search_pattern_or_error,
 };
 
 pub(crate) fn validate_chat_request_payload_limits(
