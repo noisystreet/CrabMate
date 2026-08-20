@@ -104,35 +104,35 @@ fn workflow_object(root: &Value) -> Option<&serde_json::Map<String, Value>> {
     root.get("workflow").and_then(|w| w.as_object())
 }
 
-/// 判定作者层模式；**不**接受同时含 `steps` 与 `nodes`。
-pub fn detect_author_document_mode(root: &Value) -> Result<AuthorDocumentMode, String> {
-    validate_version_field(root)?;
-
-    let has_root_steps = root.get("steps").is_some();
-    let wf = workflow_object(root);
-    let has_wf_steps = wf.is_some_and(|o| o.contains_key("steps"));
-    let has_wf_nodes = wf.is_some_and(|o| o.contains_key("nodes"));
-    let has_template = wf.is_some_and(|o| {
+fn author_mode_flags(root: &Value) -> (bool, bool, bool) {
+    let has_steps = root.get("steps").is_some()
+        || workflow_object(root).is_some_and(|o| o.contains_key("steps"));
+    let has_nodes = workflow_object(root).is_some_and(|o| o.contains_key("nodes"))
+        || root.get("nodes").is_some();
+    let has_template = workflow_object(root).is_some_and(|o| {
         o.get("workflow_template")
             .and_then(|x| x.as_str())
             .is_some_and(|s| !s.trim().is_empty())
     });
+    (has_steps, has_nodes, has_template)
+}
 
-    if (has_root_steps || has_wf_steps) && (has_wf_nodes || root.get("nodes").is_some()) {
+/// 判定作者层模式；**不**接受同时含 `steps` 与 `nodes`。
+pub fn detect_author_document_mode(root: &Value) -> Result<AuthorDocumentMode, String> {
+    validate_version_field(root)?;
+    let (has_steps, has_nodes, has_template) = author_mode_flags(root);
+    if has_steps && has_nodes {
         return Err(
             "workflow_author 不能同时包含 steps 与 nodes（请二选一，见 docs/工作流Markdown作者层设计.md）"
                 .to_string(),
         );
     }
-
-    if has_root_steps || has_wf_steps {
+    if has_steps {
         return Ok(AuthorDocumentMode::Steps);
     }
-
-    if has_wf_nodes || root.get("nodes").is_some() || has_template {
+    if has_nodes || has_template {
         return Ok(AuthorDocumentMode::Nodes);
     }
-
     Err(
         "workflow_author 须包含 steps，或 workflow.nodes / workflow.workflow_template 之一"
             .to_string(),

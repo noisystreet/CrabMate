@@ -77,6 +77,143 @@ fn dag_handle_empty_inflight(
     false // continue
 }
 
+fn node_panic_result(node_id: String, panic_payload: Box<dyn std::any::Any + Send>) -> NodeRunResult {
+    let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+        format!("workflow 节点 panic：{}", s)
+    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+        format!("workflow 节点 panic：{}", s)
+    } else {
+        "workflow 节点 panic（原因未知）".to_string()
+    };
+    log::error!(
+        target: "crabmate",
+        "workflow 节点 panic node_id={} msg={}",
+        node_id,
+        msg,
+    );
+    NodeRunResult {
+        id: node_id,
+        status: NodeRunStatus::Failed,
+        output: msg.into(),
+        workspace_changed: false,
+        exit_code: None,
+        error_code: Some("workflow_node_panic".to_string()),
+        attempt: 1,
+    }
+}
+
+async fn run_node_with_permit(
+    node: WorkflowNodeSpec,
+    approval_mode: WorkflowApprovalMode,
+    exec_ctx: WorkflowToolExecCtx,
+    completed_snapshot: HashMap<String, NodeRunResult>,
+    inject_max_chars: usize,
+    permit_sem: Arc<Semaphore>,
+) -> NodeRunResult {
+    let node_id = node.id.clone();
+    let _permit = match permit_sem.acquire_owned().await {
+        Ok(p) => p,
+        Err(_) => {
+            return NodeRunResult {
+                id: node_id,
+                status: NodeRunStatus::Failed,
+                output: "workflow 并发控制异常（semaphore closed）".into(),
+                workspace_changed: false,
+                exit_code: None,
+                error_code: Some("workflow_semaphore_closed".to_string()),
+                attempt: 1,
+            };
+        }
+    };
+    let node_fut = run_node(
+        node,
+        approval_mode,
+        exec_ctx,
+        completed_snapshot,
+        inject_max_chars,
+        "main",
+    );
+    match std::panic::AssertUnwindSafe(node_fut).catch_unwind().await {
+        Ok(res) => res,
+        Err(panic_payload) => node_panic_result(node_id, panic_payload),
+    }
+}
+
+fn mark_run_if_skipped(
+    node: &WorkflowNodeSpec,
+    started: &mut HashSet<String>,
+    completed: &mut HashMap<String, NodeRunResult>,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+) {
+    started.insert(node.id.clone());
+    completed.insert(
+        node.id.clone(),
+        NodeRunResult {
+            id: node.id.clone(),
+            status: NodeRunStatus::Skipped,
+            output: "choice: run_if not satisfied".into(),
+            workspace_changed: false,
+            exit_code: None,
+            error_code: Some("workflow_choice_skipped".to_string()),
+            attempt: 0,
+        },
+    );
+    workflow_trace_push(WorkflowTracePush {
+        trace: &tool_exec_ctx.trace_events,
+        workflow_run_id: tool_exec_ctx.workflow_run_id,
+        event: "node_choice_skipped",
+        node_id: Some(node.id.as_str()),
+        detail: node.run_if.as_ref().map(|_| "run_if=false".to_string()),
+        attempt: None,
+        status: Some("skipped"),
+        elapsed_ms: None,
+        error_code: Some("workflow_choice_skipped"),
+        tool_name: Some(node.tool_name.as_str()),
+        phase: Some("main"),
+    });
+}
+
+fn trace_for_each_expanded(tool_exec_ctx: &WorkflowToolExecCtx, expanded: &[String]) {
+    for id in expanded.iter() {
+        workflow_trace_push(WorkflowTracePush {
+            trace: &tool_exec_ctx.trace_events,
+            workflow_run_id: tool_exec_ctx.workflow_run_id,
+            event: "for_each_expanded",
+            node_id: Some(id.as_str()),
+            detail: None,
+            attempt: None,
+            status: None,
+            elapsed_ms: None,
+            error_code: None,
+            tool_name: None,
+            phase: Some("main"),
+        });
+    }
+}
+
+enum NodeScheduleDecision {
+    Ignore,
+    SkipRunIf,
+    Start,
+}
+
+fn node_schedule_decision(
+    node: &WorkflowNodeSpec,
+    started: &HashSet<String>,
+    completed: &HashMap<String, NodeRunResult>,
+) -> NodeScheduleDecision {
+    if started.contains(&node.id) || completed.contains_key(&node.id) {
+        return NodeScheduleDecision::Ignore;
+    }
+    if !node_deps_resolved(&node.deps, completed) {
+        return NodeScheduleDecision::Ignore;
+    }
+    if !node_run_if_satisfied(node.run_if.as_ref(), completed) {
+        return NodeScheduleDecision::SkipRunIf;
+    }
+    NodeScheduleDecision::Start
+}
+
 /// 并行调度就绪节点并等待全部 inflight 完成。
 pub(super) async fn dag_run_parallel_schedule_loop(
     spec: &WorkflowSpec,
@@ -99,128 +236,32 @@ pub(super) async fn dag_run_parallel_schedule_loop(
     let mut stall_count: u32 = 0;
 
     loop {
-        // 展开 for_each 节点
         let expanded =
             expand_pending_for_each(&mut for_each_pending, &mut active_nodes, &completed);
-        for id in expanded.iter() {
-            workflow_trace_push(WorkflowTracePush {
-                trace: &tool_exec_ctx.trace_events,
-                workflow_run_id: tool_exec_ctx.workflow_run_id,
-                event: "for_each_expanded",
-                node_id: Some(id.as_str()),
-                detail: None,
-                attempt: None,
-                status: None,
-                elapsed_ms: None,
-                error_code: None,
-                tool_name: None,
-                phase: Some("main"),
-            });
-        }
+        trace_for_each_expanded(&tool_exec_ctx, &expanded);
 
-        // 调度就绪节点（fail_fast 时跳过）
         if !(spec.fail_fast && first_failure.is_some()) {
             for node in active_nodes.iter() {
-                if started.contains(&node.id) || completed.contains_key(&node.id) {
-                    continue;
-                }
-                if !node_deps_resolved(&node.deps, &completed) {
-                    continue;
-                }
-                if !node_run_if_satisfied(node.run_if.as_ref(), &completed) {
-                    started.insert(node.id.clone());
-                    completed.insert(
-                        node.id.clone(),
-                        NodeRunResult {
-                            id: node.id.clone(),
-                            status: NodeRunStatus::Skipped,
-                            output: "choice: run_if not satisfied".into(),
-                            workspace_changed: false,
-                            exit_code: None,
-                            error_code: Some("workflow_choice_skipped".to_string()),
-                            attempt: 0,
-                        },
-                    );
-                    workflow_trace_push(WorkflowTracePush {
-                        trace: &tool_exec_ctx.trace_events,
-                        workflow_run_id: tool_exec_ctx.workflow_run_id,
-                        event: "node_choice_skipped",
-                        node_id: Some(node.id.as_str()),
-                        detail: node.run_if.as_ref().map(|_| "run_if=false".to_string()),
-                        attempt: None,
-                        status: Some("skipped"),
-                        elapsed_ms: None,
-                        error_code: Some("workflow_choice_skipped"),
-                        tool_name: Some(node.tool_name.as_str()),
-                        phase: Some("main"),
-                    });
-                    continue;
-                }
-                started.insert(node.id.clone());
-                let permit_sem = semaphore.clone();
-                let node_cloned = node.clone();
-                let approval_mode_cloned = approval_mode.clone();
-                let exec_ctx = tool_exec_ctx.clone();
-                let completed_snapshot = completed.clone();
-                let inject_max_chars = spec.output_inject_max_chars;
-                let node_id = node_cloned.id.clone();
-                // P0-4: 使用 catch_unwind 隔离节点执行 panic，不会杀死整个 workflow。
-                // permit 在此 future 作用域内，future 被 drop 时自动归还信号量。
-                inflight.push(async move {
-                    let _permit = match permit_sem.acquire_owned().await {
-                        Ok(p) => p,
-                        Err(_) => {
-                            return NodeRunResult {
-                                id: node_id,
-                                status: NodeRunStatus::Failed,
-                                output: "workflow 并发控制异常（semaphore closed）".into(),
-                                workspace_changed: false,
-                                exit_code: None,
-                                error_code: Some("workflow_semaphore_closed".to_string()),
-                                attempt: 1,
-                            };
-                        }
-                    };
-                    let node_fut = run_node(
-                        node_cloned,
-                        approval_mode_cloned,
-                        exec_ctx,
-                        completed_snapshot,
-                        inject_max_chars,
-                        "main",
-                    );
-                    match std::panic::AssertUnwindSafe(node_fut).catch_unwind().await {
-                        Ok(res) => res,
-                        Err(panic_payload) => {
-                            let msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                                format!("workflow 节点 panic：{}", s)
-                            } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                                format!("workflow 节点 panic：{}", s)
-                            } else {
-                                "workflow 节点 panic（原因未知）".to_string()
-                            };
-                            log::error!(
-                                target: "crabmate",
-                                "workflow 节点 panic node_id={} msg={}",
-                                node_id,
-                                msg,
-                            );
-                            NodeRunResult {
-                                id: node_id,
-                                status: NodeRunStatus::Failed,
-                                output: msg.into(),
-                                workspace_changed: false,
-                                exit_code: None,
-                                error_code: Some("workflow_node_panic".to_string()),
-                                attempt: 1,
-                            }
-                        }
+                match node_schedule_decision(node, &started, &completed) {
+                    NodeScheduleDecision::Ignore => {}
+                    NodeScheduleDecision::SkipRunIf => {
+                        mark_run_if_skipped(node, &mut started, &mut completed, &tool_exec_ctx);
                     }
-                });
+                    NodeScheduleDecision::Start => {
+                        started.insert(node.id.clone());
+                        inflight.push(run_node_with_permit(
+                            node.clone(),
+                            approval_mode.clone(),
+                            tool_exec_ctx.clone(),
+                            completed.clone(),
+                            spec.output_inject_max_chars,
+                            semaphore.clone(),
+                        ));
+                    }
+                }
             }
         }
 
-        // 处理 inflight 为空的情况（正常结束 / fail_fast / 活锁）
         if inflight.is_empty() {
             if dag_handle_empty_inflight(
                 spec,
@@ -238,9 +279,7 @@ pub(super) async fn dag_run_parallel_schedule_loop(
             continue;
         }
 
-        // 有 inflight 节点，重置 stall 计数器
         stall_count = 0;
-
         let Some(res) = inflight.next().await else {
             continue;
         };

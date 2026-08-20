@@ -128,19 +128,13 @@ pub(super) async fn workflow_compensation_and_human_summary(
     (human, comp_workspace_changed, Some(s), true)
 }
 
-async fn execute_compensations(
-    spec: &WorkflowSpec,
+fn collect_compensation_ids(
     nodes: &HashMap<String, WorkflowNodeSpec>,
     completion_order: &[String],
     completed: &HashMap<String, NodeRunResult>,
-    approval_mode: WorkflowApprovalMode,
-    tool_exec_ctx: WorkflowToolExecCtx,
-    _command_max_output_len: usize,
-) -> (String, bool) {
+) -> Vec<String> {
     let mut compensation_ids: Vec<String> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
-
-    // 按"成功完成节点"的逆序收集 compensate_with
     for id in completion_order.iter().rev() {
         if !completed.contains_key(id) {
             continue;
@@ -153,7 +147,42 @@ async fn execute_compensations(
             }
         }
     }
+    compensation_ids
+}
 
+fn append_compensation_outcome(
+    out: &mut String,
+    spec: &WorkflowSpec,
+    comp_id: &str,
+    res: &NodeRunResult,
+    any_failed: &mut bool,
+    any_workspace_changed: &mut bool,
+) {
+    if res.workspace_changed {
+        *any_workspace_changed = true;
+    }
+    if res.status == NodeRunStatus::Passed {
+        out.push_str(&format!("- {}: passed\n", comp_id));
+        return;
+    }
+    *any_failed = true;
+    out.push_str(&format!(
+        "- {}: failed\n    output: {}\n",
+        comp_id,
+        truncate_for_summary(&res.output, spec.compensation_preview_max_chars)
+    ));
+}
+
+async fn execute_compensations(
+    spec: &WorkflowSpec,
+    nodes: &HashMap<String, WorkflowNodeSpec>,
+    completion_order: &[String],
+    completed: &HashMap<String, NodeRunResult>,
+    approval_mode: WorkflowApprovalMode,
+    tool_exec_ctx: WorkflowToolExecCtx,
+    _command_max_output_len: usize,
+) -> (String, bool) {
+    let compensation_ids = collect_compensation_ids(nodes, completion_order, completed);
     if compensation_ids.is_empty() {
         return ("无补偿节点".to_string(), false);
     }
@@ -167,43 +196,28 @@ async fn execute_compensations(
     let mut any_failed = false;
     let mut any_workspace_changed = false;
     for comp_id in compensation_ids {
-        let n = match nodes.get(&comp_id) {
-            Some(n) => n.clone(),
-            None => {
-                any_failed = true;
-                out.push_str(&format!("- {}: 失败（找不到节点定义）\n", comp_id));
-                continue;
-            }
+        let Some(n) = nodes.get(&comp_id).cloned() else {
+            any_failed = true;
+            out.push_str(&format!("- {}: 失败（找不到节点定义）\n", comp_id));
+            continue;
         };
-
-        // 补偿节点执行采用串行策略，避免进一步复杂的并发回滚竞态。
-        let completed_snapshot = completed.clone();
-        // P0-4: 使用 catch_unwind 隔离补偿阶段 panic，防止单节点崩溃导致整个补偿阶段丢失
         let res = run_compensation_node_safe(
             &comp_id,
             n,
             approval_mode.clone(),
             tool_exec_ctx.clone(),
-            completed_snapshot,
+            completed.clone(),
             spec.output_inject_max_chars,
         )
         .await;
-        if res.status == NodeRunStatus::Passed {
-            if res.workspace_changed {
-                any_workspace_changed = true;
-            }
-            out.push_str(&format!("- {}: passed\n", comp_id));
-        } else {
-            any_failed = true;
-            if res.workspace_changed {
-                any_workspace_changed = true;
-            }
-            out.push_str(&format!(
-                "- {}: failed\n    output: {}\n",
-                comp_id,
-                truncate_for_summary(&res.output, spec.compensation_preview_max_chars)
-            ));
-        }
+        append_compensation_outcome(
+            &mut out,
+            spec,
+            &comp_id,
+            &res,
+            &mut any_failed,
+            &mut any_workspace_changed,
+        );
     }
 
     if any_failed {

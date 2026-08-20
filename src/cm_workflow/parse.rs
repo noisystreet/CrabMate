@@ -168,6 +168,69 @@ pub fn parse_workflow_spec(args_json: &str) -> Result<WorkflowSpec, String> {
     })
 }
 
+fn json_map_trimmed<'a>(
+    obj: &'a serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<&'a str> {
+    obj.get(key)
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+}
+
+fn parse_one_for_each_pending(
+    obj: &serde_json::Map<String, serde_json::Value>,
+    i: usize,
+) -> Result<ForEachPendingSpec, String> {
+    let extra_deps = obj
+        .get("extra_deps")
+        .and_then(|x| x.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(ForEachPendingSpec {
+        base_id: json_map_trimmed(obj, "base_id")
+            .ok_or_else(|| format!("for_each_pending[{i}] 缺少 base_id"))?
+            .to_string(),
+        from: json_map_trimmed(obj, "from")
+            .ok_or_else(|| format!("for_each_pending[{i}] 缺少 from"))?
+            .to_string(),
+        json_path: obj
+            .get("json_path")
+            .and_then(|x| x.as_str())
+            .map(str::to_string),
+        static_items: None,
+        item_var: obj
+            .get("item_var")
+            .and_then(|x| x.as_str())
+            .unwrap_or("item")
+            .to_string(),
+        max_items: obj.get("max_items").and_then(|x| x.as_u64()).unwrap_or(32) as usize,
+        parallel: obj
+            .get("parallel")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false),
+        tool_name: obj
+            .get("tool")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| format!("for_each_pending[{i}] 缺少 tool"))?
+            .to_string(),
+        tool_args_template: obj
+            .get("tool_args")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({})),
+        requires_approval: false,
+        timeout_secs: None,
+        compensate_with: vec![],
+        max_retries: 0,
+        node_tool_role: None,
+        extra_deps,
+    })
+}
+
 fn parse_for_each_pending_list(
     v: Option<&serde_json::Value>,
 ) -> Result<Vec<ForEachPendingSpec>, String> {
@@ -179,62 +242,7 @@ fn parse_for_each_pending_list(
         let obj = it
             .as_object()
             .ok_or_else(|| format!("for_each_pending[{i}] 必须是对象"))?;
-        let base_id = obj
-            .get("base_id")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| format!("for_each_pending[{i}] 缺少 base_id"))?
-            .to_string();
-        let from = obj
-            .get("from")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| format!("for_each_pending[{i}] 缺少 from"))?
-            .to_string();
-        out.push(ForEachPendingSpec {
-            base_id,
-            from,
-            json_path: obj
-                .get("json_path")
-                .and_then(|x| x.as_str())
-                .map(str::to_string),
-            static_items: None,
-            item_var: obj
-                .get("item_var")
-                .and_then(|x| x.as_str())
-                .unwrap_or("item")
-                .to_string(),
-            max_items: obj.get("max_items").and_then(|x| x.as_u64()).unwrap_or(32) as usize,
-            parallel: obj
-                .get("parallel")
-                .and_then(|x| x.as_bool())
-                .unwrap_or(false),
-            tool_name: obj
-                .get("tool")
-                .and_then(|x| x.as_str())
-                .ok_or_else(|| format!("for_each_pending[{i}] 缺少 tool"))?
-                .to_string(),
-            tool_args_template: obj
-                .get("tool_args")
-                .cloned()
-                .unwrap_or_else(|| serde_json::json!({})),
-            requires_approval: false,
-            timeout_secs: None,
-            compensate_with: vec![],
-            max_retries: 0,
-            node_tool_role: None,
-            extra_deps: obj
-                .get("extra_deps")
-                .and_then(|x| x.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(str::to_string))
-                        .collect()
-                })
-                .unwrap_or_default(),
-        });
+        out.push(parse_one_for_each_pending(obj, i)?);
     }
     Ok(out)
 }

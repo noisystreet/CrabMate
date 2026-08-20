@@ -134,35 +134,48 @@ fn resolve_legacy_dot_path_ref<'a>(
     Ok(cur)
 }
 
-fn apply_legacy_segment<'a>(
-    cur: &'a Value,
-    seg: &str,
-    is_first: bool,
-) -> Result<&'a Value, JsonPathResolveError> {
-    let mut s = seg;
-    if is_first && s.starts_with('$') {
-        s = &s[1..];
+fn strip_legacy_root_dollar(seg: &str, is_first: bool) -> &str {
+    if is_first && seg.starts_with('$') {
+        &seg[1..]
+    } else {
+        seg
     }
+}
 
-    let (field, bracket_tail) = match s.find('[') {
+fn split_field_and_brackets(s: &str) -> (&str, &str) {
+    match s.find('[') {
         Some(pos) => (s[..pos].trim(), &s[pos..]),
         None => (s.trim(), ""),
-    };
-
-    let mut v = cur;
-    if !field.is_empty() {
-        v = v.get(field).ok_or_else(|| {
-            JsonPathResolveError::PathNotFound(format!("missing key {:?}", field))
-        })?;
     }
+}
 
-    let indices = parse_bracket_suffix(bracket_tail)?;
-    for idx in indices {
+fn apply_bracket_indices<'a>(
+    mut v: &'a Value,
+    bracket_tail: &str,
+) -> Result<&'a Value, JsonPathResolveError> {
+    for idx in parse_bracket_suffix(bracket_tail)? {
         v = v.get(idx).ok_or_else(|| {
             JsonPathResolveError::PathNotFound(format!("array index {} out of bounds", idx))
         })?;
     }
     Ok(v)
+}
+
+fn apply_legacy_segment<'a>(
+    cur: &'a Value,
+    seg: &str,
+    is_first: bool,
+) -> Result<&'a Value, JsonPathResolveError> {
+    let s = strip_legacy_root_dollar(seg, is_first);
+    let (field, bracket_tail) = split_field_and_brackets(s);
+    let v = if field.is_empty() {
+        cur
+    } else {
+        cur.get(field).ok_or_else(|| {
+            JsonPathResolveError::PathNotFound(format!("missing key {:?}", field))
+        })?
+    };
+    apply_bracket_indices(v, bracket_tail)
 }
 
 /// 解析紧跟在字段名后的 `[0][1]…`；必须**恰好消费**整段 `bracket_tail`。

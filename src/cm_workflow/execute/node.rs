@@ -220,18 +220,153 @@ fn workflow_node_workspace_failure_if_unset(
     })
 }
 
+fn extend_allowlist_with_cmd(base: &Arc<[String]>, cmd_lower: &str) -> Arc<[String]> {
+    let mut v: Vec<String> = base.iter().cloned().collect();
+    v.push(cmd_lower.to_string());
+    v.into()
+}
+
+async fn command_already_in_persistent_allowlist(
+    approval_mode: &WorkflowApprovalMode,
+    cmd_lower: &str,
+) -> bool {
+    match approval_mode {
+        WorkflowApprovalMode::Interactive {
+            persistent_allowlist,
+            ..
+        } => persistent_allowlist.lock().await.contains(cmd_lower),
+        WorkflowApprovalMode::NoApproval => false,
+    }
+}
+
+fn args_preview_from_node(node: &WorkflowNodeSpec) -> String {
+    node.tool_args
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str())
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .unwrap_or_default()
+}
+
+fn command_not_allowed_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
+    NodeRunResult {
+        id: node.id.clone(),
+        status: NodeRunStatus::Failed,
+        output: format!(
+            "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
+            cmd_lower
+        )
+        .into(),
+        workspace_changed: false,
+        exit_code: None,
+        error_code: Some("command_not_allowed".to_string()),
+        attempt: 1,
+    }
+}
+
+fn command_denied_result(node: &WorkflowNodeSpec, cmd_lower: &str) -> NodeRunResult {
+    NodeRunResult {
+        id: node.id.clone(),
+        status: NodeRunStatus::Failed,
+        output: format!(
+            "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
+            cmd_lower
+        )
+        .into(),
+        workspace_changed: false,
+        exit_code: None,
+        error_code: Some("command_denied".to_string()),
+        attempt: 1,
+    }
+}
+
+async fn request_disallowed_command_approval(
+    node: &WorkflowNodeSpec,
+    approval_mode: &WorkflowApprovalMode,
+    cmd_lower: &str,
+) -> Result<CommandApprovalDecision, NodeRunResult> {
+    match approval_mode {
+        WorkflowApprovalMode::Interactive {
+            out_tx,
+            approval_rx,
+            approval_request_guard,
+            ..
+        } => Ok(request_approval(
+            out_tx.clone(),
+            approval_rx.clone(),
+            approval_request_guard.clone(),
+            cmd_lower,
+            &args_preview_from_node(node),
+        )
+        .await),
+        WorkflowApprovalMode::NoApproval => Err(command_not_allowed_result(node, cmd_lower)),
+    }
+}
+
+async fn apply_interactive_allow_decision(
+    node: &WorkflowNodeSpec,
+    approval_mode: &WorkflowApprovalMode,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    cmd_lower: &str,
+) -> Result<Arc<[String]>, NodeRunResult> {
+    match request_disallowed_command_approval(node, approval_mode, cmd_lower).await? {
+        CommandApprovalDecision::Deny => Err(command_denied_result(node, cmd_lower)),
+        CommandApprovalDecision::AllowOnce => Ok(extend_allowlist_with_cmd(
+            &tool_exec_ctx.cfg_allowed_commands,
+            cmd_lower,
+        )),
+        CommandApprovalDecision::AllowAlways => {
+            if let WorkflowApprovalMode::Interactive {
+                persistent_allowlist,
+                ..
+            } = approval_mode
+            {
+                persistent_allowlist.lock().await.insert(cmd_lower.to_string());
+            }
+            Ok(extend_allowlist_with_cmd(
+                &tool_exec_ctx.cfg_allowed_commands,
+                cmd_lower,
+            ))
+        }
+    }
+}
+
+async fn extend_for_new_disallowed_command(
+    node: &WorkflowNodeSpec,
+    approval_mode: &WorkflowApprovalMode,
+    tool_exec_ctx: &WorkflowToolExecCtx,
+    cmd: &str,
+    cmd_lower: &str,
+) -> Result<Arc<[String]>, NodeRunResult> {
+    let workspace_script_ok = tool_exec_ctx.workspace_is_set
+        && crate::cm_tools::tools::run_command_invocation_targets_workspace_script_or_executable(
+            tool_exec_ctx.effective_working_dir.as_path(),
+            cmd.trim(),
+        );
+    if workspace_script_ok {
+        return Ok(extend_allowlist_with_cmd(
+            &tool_exec_ctx.cfg_allowed_commands,
+            cmd_lower,
+        ));
+    }
+    apply_interactive_allow_decision(node, approval_mode, tool_exec_ctx, cmd_lower).await
+}
+
 /// `run_command`：白名单扩展 + 交互审批；其它工具类型直接返回配置白名单。
 async fn apply_run_command_allowlist_approvals(
     node: &WorkflowNodeSpec,
     approval_mode: &WorkflowApprovalMode,
     tool_exec_ctx: &WorkflowToolExecCtx,
 ) -> Result<Arc<[String]>, NodeRunResult> {
-    let mut effective_allowed_arc: Arc<[String]> = Arc::clone(&tool_exec_ctx.cfg_allowed_commands);
     if node.tool_name != "run_command" {
-        return Ok(effective_allowed_arc);
+        return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     }
     let Some(cmd) = node.tool_args.get("command").and_then(|x| x.as_str()) else {
-        return Ok(effective_allowed_arc);
+        return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     };
     let cmd_lower = cmd.trim().to_lowercase();
     let disallowed = !tool_exec_ctx
@@ -239,120 +374,18 @@ async fn apply_run_command_allowlist_approvals(
         .as_ref()
         .iter()
         .any(|c| c.eq_ignore_ascii_case(&cmd_lower));
-
-    let already_allowed = match approval_mode {
-        WorkflowApprovalMode::Interactive {
-            persistent_allowlist,
-            ..
-        } => {
-            let guard = persistent_allowlist.lock().await;
-            guard.contains(&cmd_lower)
-        }
-        WorkflowApprovalMode::NoApproval => false,
-    };
-
-    if disallowed && already_allowed && !cmd_lower.is_empty() {
-        let mut v: Vec<String> = tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-        v.push(cmd_lower.clone());
-        effective_allowed_arc = v.into();
+    let already_allowed =
+        command_already_in_persistent_allowlist(approval_mode, &cmd_lower).await;
+    if !disallowed || cmd_lower.is_empty() {
+        return Ok(Arc::clone(&tool_exec_ctx.cfg_allowed_commands));
     }
-
-    let workspace_script_or_exe_no_approval = tool_exec_ctx.workspace_is_set
-        && crate::cm_tools::tools::run_command_invocation_targets_workspace_script_or_executable(
-            tool_exec_ctx.effective_working_dir.as_path(),
-            cmd.trim(),
-        );
-
-    if disallowed && !already_allowed && !cmd_lower.is_empty() {
-        if workspace_script_or_exe_no_approval {
-            let mut v: Vec<String> = tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-            v.push(cmd_lower.clone());
-            effective_allowed_arc = v.into();
-        } else {
-            let decision = match approval_mode {
-                WorkflowApprovalMode::Interactive {
-                    out_tx,
-                    approval_rx,
-                    approval_request_guard,
-                    ..
-                } => {
-                    let args_preview = node
-                        .tool_args
-                        .get("args")
-                        .and_then(|x| x.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|x| x.as_str())
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        })
-                        .unwrap_or_default();
-                    request_approval(
-                        out_tx.clone(),
-                        approval_rx.clone(),
-                        approval_request_guard.clone(),
-                        &cmd_lower,
-                        &args_preview,
-                    )
-                    .await
-                }
-                WorkflowApprovalMode::NoApproval => {
-                    return Err(NodeRunResult {
-                        id: node.id.clone(),
-                        status: NodeRunStatus::Failed,
-                        output: format!(
-                            "workflow 执行失败：run_command 命令不在允许列表且无法人工审批：{}",
-                            cmd_lower
-                        )
-                        .into(),
-                        workspace_changed: false,
-                        exit_code: None,
-                        error_code: Some("command_not_allowed".to_string()),
-                        attempt: 1,
-                    });
-                }
-            };
-
-            match decision {
-                CommandApprovalDecision::Deny => {
-                    return Err(NodeRunResult {
-                        id: node.id.clone(),
-                        status: NodeRunStatus::Failed,
-                        output: format!(
-                            "workflow 执行失败：用户拒绝执行命令（run_command）：{}",
-                            cmd_lower
-                        )
-                        .into(),
-                        workspace_changed: false,
-                        exit_code: None,
-                        error_code: Some("command_denied".to_string()),
-                        attempt: 1,
-                    });
-                }
-                CommandApprovalDecision::AllowOnce => {
-                    let mut v: Vec<String> =
-                        tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-                    v.push(cmd_lower.clone());
-                    effective_allowed_arc = v.into();
-                }
-                CommandApprovalDecision::AllowAlways => {
-                    if let WorkflowApprovalMode::Interactive {
-                        persistent_allowlist,
-                        ..
-                    } = approval_mode
-                    {
-                        persistent_allowlist.lock().await.insert(cmd_lower.clone());
-                    }
-                    let mut v: Vec<String> =
-                        tool_exec_ctx.cfg_allowed_commands.iter().cloned().collect();
-                    v.push(cmd_lower.clone());
-                    effective_allowed_arc = v.into();
-                }
-            }
-        }
+    if already_allowed {
+        return Ok(extend_allowlist_with_cmd(
+            &tool_exec_ctx.cfg_allowed_commands,
+            &cmd_lower,
+        ));
     }
-
-    Ok(effective_allowed_arc)
+    extend_for_new_disallowed_command(node, approval_mode, tool_exec_ctx, cmd, &cmd_lower).await
 }
 
 /// 非 `run_command` 且 `requires_approval` 时的通用人工审批门闩。
