@@ -335,6 +335,27 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 }
             }
         },
+        "/uploads/{filename}": {
+            "get": {
+                "tags": ["uploads"],
+                "summary": "读取聊天附图字节（与其它受保护 API 同鉴权）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "filename",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string" },
+                        "description": "单段文件名（与 POST /upload 返回的 /uploads/<filename> 一致）"
+                    }
+                ],
+                "responses": {
+                    "200": { "description": "文件字节" },
+                    "400": { "description": "非法文件名" },
+                    "404": { "description": "不存在或已过期" }
+                }
+            }
+        },
         "/uploads/delete": {
             "post": {
                 "tags": ["uploads"],
@@ -876,28 +897,6 @@ fn openapi_paths_fragment_github() -> Value {
     })
 }
 
-fn openapi_paths_fragment_skills() -> Value {
-    json!({
-        "/skills": {
-            "get": {
-                "tags": ["skills"],
-                "summary": "列出当前工作区 skills（供 composer `/` 浮层）",
-                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
-                "responses": {
-                    "200": {
-                        "description": "skills 目录 JSON",
-                        "content": {
-                            "application/json": {
-                                "schema": { "$ref": "#/components/schemas/SkillsListResponse" }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    })
-}
-
 pub(super) fn openapi_paths_value() -> Value {
     merge_path_fragments(&[
         openapi_paths_fragment_system(),
@@ -905,7 +904,7 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_fragment_chat_async(),
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
-        openapi_paths_fragment_skills(),
+        openapi_paths_workspace::openapi_paths_fragment_skills(),
         openapi_paths_fragment_github(),
         openapi_paths_workspace::openapi_paths_fragment_workspace_file_raw(),
         openapi_paths_fragment_workspace_file_meta(),

@@ -1,6 +1,6 @@
 //! Web 服务进程内状态：会话存储、上传目录、任务队列句柄等（自 `lib.rs` 下沉）。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
@@ -439,6 +439,43 @@ impl AppStateConversationRuntime {
                     )
                 })
                 .await
+            }
+        }
+    }
+
+    /// 会话正文里仍引用的 **`/uploads/<filename>`**（清理附图时跳过）。
+    pub(crate) async fn referenced_upload_filenames(&self) -> HashSet<String> {
+        use crate::web::chat_uploads_paths::collect_upload_filenames_from_text;
+        let backing = self.conversation_backing.read().await;
+        match &*backing {
+            ConversationBacking::Memory(map) => {
+                let guard = map.read().await;
+                let mut out = HashSet::new();
+                for entry in guard.values() {
+                    if let Ok(s) = serde_json::to_string(&entry.messages) {
+                        out.extend(collect_upload_filenames_from_text(&s));
+                    }
+                }
+                out
+            }
+            ConversationBacking::Sqlite(conn) => {
+                let c = Arc::clone(conn);
+                tokio::task::spawn_blocking(move || {
+                    let g = match c.lock() {
+                        Ok(g) => g,
+                        Err(_) => return HashSet::new(),
+                    };
+                    let Ok(blobs) = conversation_store::list_all_messages_json(&g) else {
+                        return HashSet::new();
+                    };
+                    let mut out = HashSet::new();
+                    for s in blobs {
+                        out.extend(collect_upload_filenames_from_text(&s));
+                    }
+                    out
+                })
+                .await
+                .unwrap_or_default()
             }
         }
     }

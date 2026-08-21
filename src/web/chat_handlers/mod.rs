@@ -37,5 +37,10 @@ pub(crate) use health_status::{health_handler, status_handler};
 pub(crate) use parse::normalize_agent_role;
 pub(crate) use parse::normalize_client_conversation_id;
 pub(crate) use session_conversation_store::session_conversation_store_handler;
-pub(crate) use upload::{cleanup_uploads_dir, delete_uploads_handler, upload_handler};
+pub(crate) use upload::{
+    cleanup_uploads_dir, delete_uploads_handler, get_upload_file_handler, upload_handler,
+};
 pub(crate) use workspace_changelog::workspace_changelog_handler;
+
+#[cfg(test)]
+mod upload_http_tests;

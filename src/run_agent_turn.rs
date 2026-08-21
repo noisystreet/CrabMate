@@ -127,6 +127,14 @@ pub async fn run_agent_turn<'a>(
     let turn_dump_executor_model_override = executor_model_override.clone();
     let llm_backend = resolved_turn_llm_backend(llm_backend);
 
+    // 出站 `@` 图跟本轮工具 `work_dir`，不读热更新后的全局工作区。
+    let cfg_for_turn = {
+        let mut snap = (**cfg).clone();
+        snap.chat_workspace_root = Some(effective_working_dir.to_path_buf());
+        Arc::new(snap)
+    };
+    let cfg = &cfg_for_turn;
+
     let read_file_turn_cache =
         crate::agent_turn_prep::resolve_read_file_turn_cache_for_turn(cfg, read_file_turn_cache);
 

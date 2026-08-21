@@ -323,6 +323,9 @@ pub async fn stream_chat(
     let model = req.model.clone();
     let api_base_owned = api_base.to_string();
     let uploads = params.chat_uploads_dir.map(std::path::Path::to_path_buf);
+    let workspace = params
+        .chat_workspace_root
+        .map(std::path::Path::to_path_buf);
     let mut messages = std::mem::take(&mut req.messages);
     req.messages = tokio::task::spawn_blocking(move || {
         crate::cm_llm::outbound_images::rewrite_messages_for_vendor(
@@ -330,6 +333,7 @@ pub async fn stream_chat(
             &model,
             &api_base_owned,
             uploads.as_deref(),
+            workspace.as_deref(),
         );
         messages
     })

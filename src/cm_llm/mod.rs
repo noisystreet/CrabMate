@@ -15,6 +15,7 @@ pub mod fingerprint;
 pub mod http_client;
 mod openai_models;
 pub mod outbound_images;
+mod outbound_workspace_images;
 pub mod recording;
 pub mod requests;
 mod retry;

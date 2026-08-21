@@ -5,6 +5,7 @@
 //!   - **`@{相对路径}`**（兼容手输 / CLI）
 //! - 路径内勿含空白；**禁止**绝对路径或以 `/` 开头。
 //! - 同一文件多次引用只展开一次；展开块按首次出现顺序追加在全文末尾。
+//! - **png/jpg/jpeg/webp/gif** **不**按源码展开（避免把二进制塞进会话）；出站由视觉网关打成 **`image_url`**。
 //! - 总展开字符上限约 **512 KiB**，超出部分跳过并附说明。
 //! - **安全**：路径经 [`crate::cm_internal::tools::file::read_file_try`] / `resolve_for_read_open`，与工具一致，不扩大工作区外读取。
 
@@ -95,20 +96,44 @@ fn expand_one_path(rel: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> Resu
     }
 }
 
-fn collect_ordered_rel_paths(raw: &str) -> Result<Vec<String>, String> {
+/// 工作区相对路径是否为聊天气泡/视觉入站允许的栅格图（不含 svg）。
+#[must_use]
+pub fn is_workspace_chat_image_rel(rel: &str) -> bool {
+    let name = rel.rsplit(['/', '\\']).next().unwrap_or(rel);
+    let Some((_, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    matches!(
+        ext.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "webp" | "gif"
+    )
+}
+
+/// 用户正文中按出现顺序去重的工作区相对路径（`file:///` 先于 `@`）。
+pub(crate) fn collect_ordered_rel_paths(raw: &str) -> Result<Vec<String>, String> {
+    collect_ordered_rel_paths_inner(raw, true)
+}
+
+/// 出站内联用：跳过非法 token，仍收集合法相对路径。
+pub(crate) fn collect_ordered_rel_paths_lenient(raw: &str) -> Vec<String> {
+    collect_ordered_rel_paths_inner(raw, false).unwrap_or_default()
+}
+
+fn collect_ordered_rel_paths_inner(raw: &str, fail_fast: bool) -> Result<Vec<String>, String> {
     let mut seen: HashSet<String> = HashSet::new();
     let mut ordered: Vec<String> = Vec::new();
 
-    let push_token = |token_raw: &str,
-                      display: &str,
-                      seen: &mut HashSet<String>,
-                      ordered: &mut Vec<String>|
-     -> Result<(), String> {
+    let mut push_token = |token_raw: &str, display: &str| -> Result<(), String> {
         let token = normalize_rel_path_token(token_raw);
         if token.is_empty() {
             return Ok(());
         }
-        validate_workspace_rel_token(&token, display)?;
+        if let Err(e) = validate_workspace_rel_token(&token, display) {
+            if fail_fast {
+                return Err(e);
+            }
+            return Ok(());
+        }
         if seen.insert(token.clone()) {
             ordered.push(token);
         }
@@ -120,15 +145,14 @@ fn collect_ordered_rel_paths(raw: &str) -> Result<Vec<String>, String> {
             continue;
         };
         let display = format!("file:///{}", m.as_str());
-        push_token(m.as_str(), &display, &mut seen, &mut ordered)?;
+        push_token(m.as_str(), &display)?;
     }
     for cap in at_file_path_token_re().captures_iter(raw) {
         let Some(m) = cap.get(1) else {
             continue;
         };
-        // 避免把 `file:///x` 里的残余误当成 @（file URI 不含 @）。
         let display = format!("@{}", m.as_str());
-        push_token(m.as_str(), &display, &mut seen, &mut ordered)?;
+        push_token(m.as_str(), &display)?;
     }
     Ok(ordered)
 }
@@ -154,16 +178,26 @@ pub fn expand_at_file_refs_in_user_message(
     if ordered.is_empty() {
         return Ok(raw.to_string());
     }
-
     let allowed: &[String] = &[];
     let ctx = tools::tool_context_for(cfg, allowed, working_dir);
+    append_expanded_file_blocks(raw, &ordered, working_dir, &ctx)
+}
 
+fn append_expanded_file_blocks(
+    raw: &str,
+    ordered: &[String],
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, String> {
     let mut budget = EXPAND_TOTAL_MAX_CHARS;
     let mut blocks: Vec<String> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
 
-    for rel in &ordered {
-        let block = expand_one_path(rel, working_dir, &ctx)?;
+    for rel in ordered {
+        if is_workspace_chat_image_rel(rel) {
+            continue;
+        }
+        let block = expand_one_path(rel, working_dir, ctx)?;
         let body_len = block.chars().count();
         if body_len <= budget {
             budget = budget.saturating_sub(body_len);
@@ -251,5 +285,30 @@ mod tests {
         let err = expand_at_file_refs_in_user_message("x file:////etc/passwd", wd, &cfg)
             .expect_err("abs uri");
         assert!(err.contains("绝对路径") || err.contains("/"));
+    }
+
+    #[test]
+    fn expand_skips_png_binary_dump() {
+        let tmp = tempdir().expect("tempdir");
+        let wd = tmp.path();
+        fs::write(wd.join("plot.png"), [0x89, 0x50, 0x4E, 0x47]).expect("write");
+        fs::write(wd.join("hello.txt"), "txt-body\n").expect("write");
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+        cfg.command_exec.run_command_working_dir = wd.to_string_lossy().to_string();
+
+        let out = expand_at_file_refs_in_user_message("see @plot.png and @hello.txt", wd, &cfg)
+            .expect("expand");
+        assert!(out.contains("see @plot.png and @hello.txt"));
+        assert!(out.contains("txt-body"));
+        assert!(!out.contains("PNG"));
+        assert!(is_workspace_chat_image_rel("dir/a.PNG"));
+        assert!(!is_workspace_chat_image_rel("a.svg"));
+    }
+
+    #[test]
+    fn lenient_collect_skips_illegal_keeps_image() {
+        let rels = collect_ordered_rel_paths_lenient("see @plot.png and @/etc/passwd");
+        assert_eq!(rels, vec!["plot.png".to_string()]);
+        assert!(collect_ordered_rel_paths("see @plot.png and @/etc/passwd").is_err());
     }
 }

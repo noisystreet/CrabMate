@@ -1,8 +1,12 @@
-//! `POST /upload`、`POST /upload/delete` 与 uploads 目录清理。
+//! `POST /upload`、`GET /uploads/{filename}`、`POST /upload/delete` 与 uploads 目录清理。
+
+use std::collections::HashSet;
 
 use axum::Json;
-use axum::extract::{Multipart, State};
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::extract::{Multipart, Path, State};
+use axum::http::{HeaderValue, StatusCode, header};
+use axum::response::Response;
 use log::error;
 use tokio::io::AsyncWriteExt;
 
@@ -62,7 +66,7 @@ pub(crate) async fn delete_uploads_handler(
             skipped.push(u);
             continue;
         }
-        let path = facet.uploads_dir.join(name);
+        let path = facet.uploads_dir().await.join(name);
         // 不暴露更多信息：不存在也当作 skipped
         match tokio::fs::remove_file(&path).await {
             Ok(()) => deleted.push(format!("/uploads/{}", name)),
@@ -112,9 +116,17 @@ async fn purge_uploads_by_age(
     now: std::time::SystemTime,
     max_age: std::time::Duration,
     total: &mut u64,
+    referenced: &HashSet<String>,
 ) -> Vec<UploadEntry> {
     let mut kept = Vec::new();
     for (p, mt, sz) in entries {
+        if upload_file_name(&p)
+            .map(|n| referenced.contains(&n))
+            .unwrap_or(false)
+        {
+            kept.push((p, mt, sz));
+            continue;
+        }
         let too_old = now
             .duration_since(mt)
             .ok()
@@ -131,7 +143,12 @@ async fn purge_uploads_by_age(
     kept
 }
 
-async fn purge_uploads_by_bytes(kept: Vec<UploadEntry>, max_bytes: u64, total: &mut u64) {
+async fn purge_uploads_by_bytes(
+    kept: Vec<UploadEntry>,
+    max_bytes: u64,
+    total: &mut u64,
+    referenced: &HashSet<String>,
+) {
     if *total <= max_bytes {
         return;
     }
@@ -141,23 +158,36 @@ async fn purge_uploads_by_bytes(kept: Vec<UploadEntry>, max_bytes: u64, total: &
         if *total <= max_bytes {
             break;
         }
+        if upload_file_name(&p)
+            .map(|n| referenced.contains(&n))
+            .unwrap_or(false)
+        {
+            continue;
+        }
         if tokio::fs::remove_file(&p).await.is_ok() {
             *total = total.saturating_sub(sz);
         }
     }
 }
 
+fn upload_file_name(p: &std::path::Path) -> Option<String> {
+    p.file_name()
+        .and_then(|s| s.to_str())
+        .map(std::string::ToString::to_string)
+}
+
 pub(crate) async fn cleanup_uploads_dir(
     dir: std::path::PathBuf,
     max_age: std::time::Duration,
     max_bytes: u64,
+    referenced: &HashSet<String>,
 ) {
     let now = std::time::SystemTime::now();
     let Some((entries, mut total)) = collect_upload_entries(&dir).await else {
         return;
     };
-    let kept = purge_uploads_by_age(entries, now, max_age, &mut total).await;
-    purge_uploads_by_bytes(kept, max_bytes, &mut total).await;
+    let kept = purge_uploads_by_age(entries, now, max_age, &mut total, referenced).await;
+    purge_uploads_by_bytes(kept, max_bytes, &mut total, referenced).await;
 }
 
 fn sanitize_display_filename(input: &str) -> String {
@@ -273,7 +303,7 @@ async fn store_one_upload_field(
         .unwrap_or_else(|| "application/octet-stream".to_string());
     let max_single = upload_max_single_bytes(&file_name, &mime)?;
     let safe_name = upload_safe_disk_name(&file_name);
-    let path = facet.uploads_dir.join(&safe_name);
+    let path = facet.uploads_dir().await.join(&safe_name);
     let mut f = tokio::fs::File::create(&path).await.map_err(|e| {
         upload_api_error(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -319,4 +349,114 @@ pub(crate) async fn upload_handler(
     }
 
     Ok(Json(UploadResponseBody { files: out }))
+}
+
+const GET_UPLOAD_MAX_BYTES: u64 = 80 * 1024 * 1024;
+
+fn upload_filename_ok(name: &str) -> bool {
+    !name.is_empty()
+        && !name.contains('/')
+        && !name.contains('\\')
+        && !name.contains("..")
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+fn upload_content_type(name: &str, bytes: &[u8]) -> &'static str {
+    if bytes.len() >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF {
+        return "image/jpeg";
+    }
+    if bytes.len() >= 8 && bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return "image/png";
+    }
+    if bytes.len() >= 6 && (bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a")) {
+        return "image/gif";
+    }
+    if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        return "image/webp";
+    }
+    match ext_lower(name).as_deref() {
+        Some("mp3") => "audio/mpeg",
+        Some("wav") => "audio/wav",
+        Some("m4a" | "aac") => "audio/mp4",
+        Some("ogg") => "audio/ogg",
+        Some("mp4") => "video/mp4",
+        Some("webm") => "video/webm",
+        Some("mov") => "video/quicktime",
+        Some("mkv") => "video/x-matroska",
+        _ => "application/octet-stream",
+    }
+}
+
+/// `GET /uploads/{filename}`：与其它受保护 API 同鉴权（不再走匿名 ServeDir）。
+pub(crate) async fn get_upload_file_handler(
+    State(facet): State<UploadsFacet>,
+    Path(filename): Path<String>,
+) -> Result<Response, UploadErr> {
+    if !upload_filename_ok(&filename) {
+        return Err(upload_api_error(
+            StatusCode::BAD_REQUEST,
+            "UPLOAD_PATH_INVALID",
+            "非法文件名",
+        ));
+    }
+    let dir = facet.uploads_dir().await;
+    let path = dir.join(&filename);
+    let meta = tokio::fs::metadata(&path).await.map_err(|_| {
+        upload_api_error(StatusCode::NOT_FOUND, "UPLOAD_NOT_FOUND", "附图不存在或已过期")
+    })?;
+    if !meta.is_file() {
+        return Err(upload_api_error(
+            StatusCode::NOT_FOUND,
+            "UPLOAD_NOT_FOUND",
+            "附图不存在或已过期",
+        ));
+    }
+    if meta.len() > GET_UPLOAD_MAX_BYTES {
+        return Err(upload_api_error(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "UPLOAD_FILE_TOO_LARGE",
+            "单个文件过大",
+        ));
+    }
+    let bytes = tokio::fs::read(&path).await.map_err(|_| {
+        upload_api_error(StatusCode::NOT_FOUND, "UPLOAD_NOT_FOUND", "附图不存在或已过期")
+    })?;
+    let ctype = upload_content_type(&filename, &bytes);
+    let corp = {
+        let g = facet.cfg.read().await;
+        if g.web_api.web_cors_allowed_origins.is_empty() {
+            "same-site"
+        } else {
+            "cross-origin"
+        }
+    };
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, ctype)
+        .header(header::CACHE_CONTROL, "private, max-age=60")
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(
+            header::HeaderName::from_static("cross-origin-resource-policy"),
+            HeaderValue::from_static(corp),
+        )
+        .body(Body::from(bytes))
+        .map_err(|e| {
+            upload_api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "UPLOAD_READ_ERROR",
+                format!("构造响应失败：{e}"),
+            )
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_bad_get_filename() {
+        assert!(!upload_filename_ok("../a.png"));
+        assert!(!upload_filename_ok("a/b.png"));
+        assert!(upload_filename_ok("u1_2_3.png"));
+    }
 }

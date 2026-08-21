@@ -281,6 +281,17 @@ pub fn count(conn: &Connection) -> Result<usize, rusqlite::Error> {
     Ok(n as usize)
 }
 
+/// 全部会话的 `messages_json` 原文（供扫描 `/uploads/` 引用，避免清掉仍在用的附图）。
+pub fn list_all_messages_json(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
+    let mut stmt = conn.prepare(&format!("SELECT messages_json FROM {TABLE}"))?;
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
 /// 与 Web `normalize_client_conversation_id` 字符集一致。
 pub const CONVERSATION_ID_MAX_LEN: usize = 128;
 

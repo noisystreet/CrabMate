@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use openapi_components::openapi_components_value;
 use openapi_paths::openapi_paths_value;
 
-/// 构建与当前 `serve` 路由表一致的 OpenAPI 文档（不含静态 `/`、`/uploads` 文件服务细节）。
+/// 构建与当前 `serve` 路由表一致的 OpenAPI 文档（不含静态 `/` SPA）。
 pub fn build_openapi_spec() -> Value {
     let version = env!("CARGO_PKG_VERSION");
     json!({
