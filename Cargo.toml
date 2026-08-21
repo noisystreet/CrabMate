@@ -77,7 +77,7 @@ nix = { version = "0.31", default-features = false }
 
 [package]
 name = "crabmate"
-version = "0.4.0"
+version = "0.5.0-alpha.0"
 edition = "2024"
 license = "Apache-2.0"
 description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, HTTP serve, ops CLI"

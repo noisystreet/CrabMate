@@ -11,16 +11,42 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- **`PUT /workspace/file/raw`**: write **raw bytes** into the workspace (`path` query, optional `create_only` / `update_only`; **16 MiB** cap, same as JSON `POST /workspace/file`). HTTP body limit on this route is **16 MiB** (not the ~220 MiB protected-API default). **204** on success. Used by Client OS-file drop (text and binary). `GET` on this path remains image-only. Path segments `.` / `..` are rejected; names like `foo..bar.bin` are allowed.
-- Prompt + successful tool-result hint so the model embeds workspace **png/jpg/jpeg/webp/gif** with `![alt](relative.png)` in the final reply (Web `GET /workspace/file/raw`); do not tell users to copy files onto `CM_WEB_STATIC_DIR`.
-- Outbound `chat/completions`: session still stores **`/uploads/<file>`**. Files live next to the session SQLite (**`.crabmate/chat_uploads/`** beside **`conversations.db`**), not the current `POST /workspace` root. Text models drop `image_url` parts; vision models inline JPEG/PNG/GIF/WebP as **`data:`**. Workspace **`@rel.png` / `file:///rel.png`** skip text expansion and are inlined from that turn’s working directory. **`GET /uploads/{filename}`** uses the same auth as other protected APIs; cleanup skips files still referenced in the conversation store.
+- (none yet)
 
 ### Changed
 
+- (none yet)
+
+### Fixed
+
+- (none yet)
+
+## [0.5.0] - 2026-08-21
+
+**Git pre-release `v0.5.0-alpha.0`.** crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+
+SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT` are soft (old clients ignore them). Chat image embeds need a matching **crabmate-client** build; the model is prompted to write `![alt](relative.png)` rather than copying files onto `CM_WEB_STATIC_DIR`.
+
+### Added
+
+- **`GET /workspace/file/raw`**: serve workspace **png/jpg/jpeg/webp/gif** bytes (relative `path`, 8 MiB cap, same auth as other protected APIs) so Client chat can show `![alt](relative.png)` without copying files onto `/uploads`.
+- **`PUT /workspace/file/raw`**: write **raw bytes** into the workspace (`path` query, optional `create_only` / `update_only`; **16 MiB** cap, same as JSON `POST /workspace/file`). HTTP body limit on this route is **16 MiB** (not the ~220 MiB protected-API default). **204** on success. Used by Client OS-file drop (text and binary). `GET` on this path remains image-only. Path segments `.` / `..` are rejected; names like `foo..bar.bin` are allowed.
+- System prompt + successful tool-result hint: embed those images with `![alt](relative.png)` in the final reply; do not tell users to copy files onto `CM_WEB_STATIC_DIR`.
+- Outbound `chat/completions`: session still stores **`/uploads/<file>`**. Files live next to the session SQLite (**`.crabmate/chat_uploads/`** beside **`conversations.db`**), not the current `POST /workspace` root. Text models drop `image_url` parts; vision models inline JPEG/PNG/GIF/WebP as **`data:`**. Workspace **`@rel.png` / `file:///rel.png`** skip text expansion and are inlined from that turn’s working directory. **`GET /uploads/{filename}`** uses the same auth as other protected APIs; cleanup skips files still referenced in the conversation store.
+- **Background tool jobs**: `run_command` can start **`async`** jobs; poll/cancel via **`GET /tools/jobs/{id}`** and **`POST /tools/jobs/{id}/cancel`**. AG-UI v2 forwards job metadata on **`TOOL_CALL_RESULT`**.
+- **`http_fetch`**: curl-like **`Accept` / `Accept-Encoding`** (gzip/brotli/deflate), default **`User-Agent` `crabmate/<version>`**, and a hint when the env proxy is **SOCKS** (reqwest 0.13 does not support it).
+- Shared subprocess sessions for **`python_snippet_run`**, **`cargo_test`**, and **`pytest_run`** (wall-clock / session stats).
+- Host **`run_command`** emits **`tool_output_chunk`** streaming chunks.
+
+### Changed
+
+- On timeout or cancel, **`run_command`** kills the **process group**, not only the direct child.
 - DeepSeek vendor match also uses **`model_id_prefixes = ["deepseek-"]`**, so a proxy `api_base` without the substring `deepseek` still gets text-vs-vision image handling.
 
 ### Fixed
 
+- Treat reqwest **`SendRequest`**-class transport errors as retryable (same backoff as other transient LLM HTTP failures).
+- Upgrade **`h2`** for **RUSTSEC-2026-0258**.
 - LLM HTTP retries clone the original `ChatRequest` each attempt so debug request previews do not dump inlined base64.
 
 ## [0.4.0] - 2026-08-16
@@ -129,7 +155,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.0...HEAD
+[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.0
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
