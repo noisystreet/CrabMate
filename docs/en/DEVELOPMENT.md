@@ -65,7 +65,7 @@ flowchart TB
 
 ### Configuration
 
-`AgentConfig`: TOML shards + `CM_*` → `finalize`. **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
+`AgentConfig`: TOML shards + `CM_*` → `finalize`. Embedded **`config/llm_vendors.toml`** (vendor matchers, `models` lists, outbound caps; not `[agent]` hot-reload). **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
 
 ### Agent main loop (mental model)
 

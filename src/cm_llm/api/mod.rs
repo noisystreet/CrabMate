@@ -325,7 +325,9 @@ pub async fn stream_chat(
     // 序列化为 JSON，条件注入 cache_control（DeepSeek 等供应商支持）
     let mut body = serde_json::to_value(&req)
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
-    if api_base.to_ascii_lowercase().contains("deepseek") {
+    if crate::cm_llm::vendor_catalog::resolved_vendor_caps(&req.model, api_base)
+        .explicit_cache_control
+    {
         body = inject_cache_control_json(body);
     }
 

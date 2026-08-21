@@ -181,10 +181,10 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 场景 | 配置要点 |
 | --- | --- |
-| **DeepSeek** | `api_base`：`https://api.deepseek.com/v1`；`model` 如 `deepseek-chat` / `deepseek-reasoner`。[官网](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
-| **MiniMax** | `api_base`：`https://api.minimaxi.com/v1`；`model` 如 `MiniMax-M2.7`。[配置说明](docs/配置说明.md) · [厂商 OpenAI 兼容](https://platform.minimaxi.com/docs/api-reference/text-openai-api) |
-| **智谱 GLM** | `api_base`：`https://open.bigmodel.cn/api/paas/v4`；`model` 如 `glm-5`。[配置说明](docs/配置说明.md) · [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5) |
-| **Moonshot Kimi** | `api_base`：`https://api.moonshot.cn/v1`；`model` 如 `kimi-k2.5`。[配置说明](docs/配置说明.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
+| **DeepSeek** | `api_base`：`https://api.deepseek.com/v1`；常用 `model` 见 **`config/llm_vendors.toml`**（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp` 等）。[官网](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
+| **MiniMax** | `api_base`：`https://api.minimaxi.com/v1`（国际站 `https://api.minimax.io/v1`）；`model` 如 `MiniMax-M3`。[配置说明](docs/配置说明.md) · [厂商 OpenAI 兼容](https://platform.minimax.io/docs/api-reference/text-openai-api) |
+| **智谱 GLM** | `api_base`：`https://open.bigmodel.cn/api/paas/v4`；`model` 如 `glm-5.3`。[配置说明](docs/配置说明.md) · [GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) |
+| **Moonshot Kimi** | `api_base`：`https://api.moonshot.cn/v1`；`model` 如 `kimi-k3`。[配置说明](docs/配置说明.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
 | **本地 Ollama 等** | `llm_http_auth_mode = "none"`，`api_base` 如 `http://127.0.0.1:11434/v1`；可不设 `API_KEY`。 |
 
 本机诊断：**`crabmate doctor`**（无需 `API_KEY`）、**`probe`** / **`models`**。各厂商特有选项见 [docs/配置说明.md](docs/配置说明.md)。**厂商能力以供应商文档为准**。

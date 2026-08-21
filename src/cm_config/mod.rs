@@ -1,4 +1,5 @@
-//! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖
+//! 运行配置：API 地址、模型等，从 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml`、`config/memory.toml` 嵌入默认 + 可选覆盖。
+//! 厂商匹配与常用 **`models`** 列表见独立嵌入 **`config/llm_vendors.toml`**（`cm_llm::vendor_catalog`，不并入本模块 `[agent]` 合并）。
 
 pub mod agent_role_spec;
 mod agent_roles;

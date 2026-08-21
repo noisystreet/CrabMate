@@ -1,0 +1,107 @@
+# OpenAI 兼容厂商目录（编译期嵌入 `src/cm_llm/vendor_catalog.rs`）。
+# 不是当前连接：会话仍用 `[agent] api_base` / `model`（或 Web `client_llm`）。
+# 匹配：**自上而下第一条命中**（`api_base_contains` 或 `model_id_prefixes`，大小写不敏感）。
+# 改本文件须重新编译；不随 `POST /config/reload` 热更新。勿写入密钥。
+#
+# `adapter`：generic | deepseek | kimi | glm | minimax（思考链 / 温度等仍由对应 Rust 适配器实现）。
+# `models`：该网关常用模型 ID（首项为建议默认）；不禁止填写列表外的 ID。以各厂商文档为准，随其发版更新。
+# 族级能力缺省：`image_url_content_parts = true`（未写时）；其余布尔未写为 false。
+# `[[vendor.model_caps]]` 按 `id_equals` / `id_contains` 覆盖族级能力。
+
+[[vendor]]
+id = "volcano"
+adapter = "generic"
+api_base_contains = ["volces.com"]
+models = []
+
+[[vendor]]
+id = "kimi"
+adapter = "kimi"
+# 官方 Chat 当前含 kimi-k3；kimi-k2* 仍覆盖 k2.5/k2.6/k2.7-code。
+model_id_prefixes = ["kimi-k3", "kimi-k2"]
+api_base_contains = ["moonshot"]
+canonical_api_bases = [
+    "https://api.moonshot.cn/v1",
+    "https://api.moonshot.ai/v1",
+]
+models = [
+    "kimi-k3",
+    "kimi-k2.6",
+    "kimi-k2.7-code",
+    "kimi-k2.7-code-highspeed",
+    "kimi-k2.5",
+    "kimi-k2-thinking",
+    "kimi-k2-0905-preview",
+]
+# 文本/代码模型默认不发 image_url；视觉见下方 model_caps。
+image_url_content_parts = false
+
+[[vendor.model_caps]]
+id_contains = ["kimi-k3", "kimi-k2.6", "kimi-k2.5"]
+image_url_content_parts = true
+
+[[vendor]]
+id = "minimax"
+adapter = "minimax"
+model_id_prefixes = ["minimax-", "abab"]
+api_base_contains = ["minimax"]
+canonical_api_bases = [
+    "https://api.minimaxi.com/v1",
+    "https://api.minimax.io/v1",
+]
+models = [
+    "MiniMax-M3",
+    "MiniMax-M2.7",
+    "MiniMax-M2.7-highspeed",
+    "MiniMax-M2.5",
+    "MiniMax-M2.5-highspeed",
+]
+fold_system_into_user = true
+default_reasoning_split = true
+image_url_content_parts = false
+
+[[vendor.model_caps]]
+id_equals = ["MiniMax-M3"]
+image_url_content_parts = true
+
+[[vendor]]
+id = "zhipu"
+adapter = "glm"
+model_id_prefixes = ["glm-"]
+api_base_contains = ["bigmodel.cn"]
+canonical_api_bases = ["https://open.bigmodel.cn/api/paas/v4"]
+models = [
+    "glm-5.3",
+    "glm-5.2",
+    "glm-5.1",
+    "glm-5",
+    "glm-5-turbo",
+    "glm-5v-turbo",
+]
+image_url_content_parts = false
+
+[[vendor.model_caps]]
+id_contains = ["glm-5v", "glm-4.6v", "glm-4.1v", "glm-4v"]
+image_url_content_parts = true
+
+[[vendor]]
+id = "deepseek"
+adapter = "deepseek"
+api_base_contains = ["deepseek"]
+canonical_api_bases = [
+    "https://api.deepseek.com",
+    "https://api.deepseek.com/v1",
+]
+# 官方当前三模型；`deepseek-chat` / `deepseek-reasoner` 已于 2026-07-24 停用。
+models = [
+    "deepseek-v4-flash",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash-vision-exp",
+]
+explicit_cache_control = true
+image_url_content_parts = false
+
+[[vendor.model_caps]]
+id_equals = ["deepseek-v4-flash-vision-exp"]
+id_contains = ["-vision"]
+image_url_content_parts = true
