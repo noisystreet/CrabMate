@@ -53,6 +53,10 @@ pub async fn start_test_serve(
     let api_key = std::env::var("API_KEY").unwrap_or_default();
     let uploads_dir = std::env::temp_dir().join("crabmate_e2e_uploads");
     let _ = std::fs::create_dir_all(&uploads_dir);
+    {
+        let mut g = cfg_holder.write().await;
+        g.chat_uploads_dir = Some(uploads_dir.clone());
+    }
 
     let (cq_conc, cq_pending) = {
         let g = cfg_holder.read().await;

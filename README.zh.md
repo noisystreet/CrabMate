@@ -181,7 +181,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 场景 | 配置要点 |
 | --- | --- |
-| **DeepSeek** | `api_base`：`https://api.deepseek.com/v1`；常用 `model` 见 **`config/llm_vendors.toml`**（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp` 等）。[官网](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
+| **DeepSeek** | `api_base`：`https://api.deepseek.com/v1`；常用 `model` 见 **`config/llm_vendors.toml`**（`deepseek-v4-flash`、`deepseek-v4-pro`、`deepseek-v4-flash-vision-exp` 等）。会话附图仍是 `/uploads/`；出站仅 **vision-exp** 会打成 `data:`。[官网](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
 | **MiniMax** | `api_base`：`https://api.minimaxi.com/v1`（国际站 `https://api.minimax.io/v1`）；`model` 如 `MiniMax-M3`。[配置说明](docs/配置说明.md) · [厂商 OpenAI 兼容](https://platform.minimax.io/docs/api-reference/text-openai-api) |
 | **智谱 GLM** | `api_base`：`https://open.bigmodel.cn/api/paas/v4`；`model` 如 `glm-5.3`。[配置说明](docs/配置说明.md) · [GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) |
 | **Moonshot Kimi** | `api_base`：`https://api.moonshot.cn/v1`；`model` 如 `kimi-k3`。[配置说明](docs/配置说明.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |

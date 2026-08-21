@@ -204,8 +204,9 @@ pub async fn complete_chat_retrying(
     emit_llm_request_started(hooks, request, &llm_call_id, max_attempts);
     let t0 = Instant::now();
     let mut last_ok = None;
-    let mut req = request.clone();
     for attempt in 0..max_attempts {
+        // 每次从原始请求克隆：避免上一轮把 `/uploads/` 打成 `data:` 后，日志预览刷 base64。
+        let mut req = request.clone();
         let attempt_t0 = Instant::now();
         if p.stream.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
             return Err(LlmCompleteError::Cancelled);

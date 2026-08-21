@@ -282,6 +282,9 @@ mod tests {
         assert_eq!(models[0], "deepseek-v4-flash");
         assert!(models.iter().any(|m| m == "deepseek-v4-flash-vision-exp"));
         assert!(!models.iter().any(|m| m == "deepseek-chat"));
+        let via_model = resolved_vendor_caps("deepseek-v4-flash", "https://llm.example.com/v1");
+        assert_eq!(via_model.adapter, VendorAdapterId::Deepseek);
+        assert!(!via_model.image_url_content_parts);
     }
 
     #[test]

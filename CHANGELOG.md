@@ -13,14 +13,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **`PUT /workspace/file/raw`**: write **raw bytes** into the workspace (`path` query, optional `create_only` / `update_only`; **16 MiB** cap, same as JSON `POST /workspace/file`). HTTP body limit on this route is **16 MiB** (not the ~220 MiB protected-API default). **204** on success. Used by Client OS-file drop (text and binary). `GET` on this path remains image-only. Path segments `.` / `..` are rejected; names like `foo..bar.bin` are allowed.
 - Prompt + successful tool-result hint so the model embeds workspace **png/jpg/jpeg/webp/gif** with `![alt](relative.png)` in the final reply (Web `GET /workspace/file/raw`); do not tell users to copy files onto `CM_WEB_STATIC_DIR`.
+- Outbound `chat/completions`: session still stores **`/uploads/<file>`**; text models drop `image_url` parts, vision models inline JPEG/PNG/GIF/WebP as **`data:`** (catalog **`image_url_content_parts`**, e.g. **`deepseek-v4-flash-vision-exp`**).
 
 ### Changed
 
-- (none yet)
+- DeepSeek vendor match also uses **`model_id_prefixes = ["deepseek-"]`**, so a proxy `api_base` without the substring `deepseek` still gets text-vs-vision image handling.
 
 ### Fixed
 
-- (none yet)
+- LLM HTTP retries clone the original `ChatRequest` each attempt so debug request previews do not dump inlined base64.
 
 ## [0.4.0] - 2026-08-16
 

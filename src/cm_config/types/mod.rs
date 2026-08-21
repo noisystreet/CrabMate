@@ -350,6 +350,8 @@ pub struct AgentConfig {
     pub codebase_semantic: CodebaseSemanticConfig,
     pub tool_registry_policy: ToolRegistryPolicyConfig,
     pub turn_budget: TurnBudgetConfig,
+    /// 聊天附图落盘目录（`POST /upload`）。**非 TOML**：由 **`serve`** 注入；热重载保留。
+    pub chat_uploads_dir: Option<std::path::PathBuf>,
 }
 
 impl AgentConfig {

@@ -14,6 +14,7 @@ use super::types::AgentConfig;
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
 /// - **`agent_tool_stats_*`**：热更后影响**下一轮起**附加段内容；已打开会话的 `system` 不会自动改写。
 /// - **MCP**：`mcp_enabled` / `mcp_command` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::cm_config::mcp::clear_mcp_process_cache`].
+/// - **`chat_uploads_dir`**：由 **`serve`** 注入，**不**热更（`src` 里恒为 `None`）。
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
     dst.llm.clone_from(&src.llm);
     dst.session_ui.clone_from(&src.session_ui);
@@ -52,4 +53,5 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
 
     dst.conversation_persistence.scheduled_agent_tasks =
         src.conversation_persistence.scheduled_agent_tasks.clone();
+    // `chat_uploads_dir` 由 serve 注入，热重载不覆盖。
 }
