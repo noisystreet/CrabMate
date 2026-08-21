@@ -162,10 +162,10 @@ Matches **`src/web/server.rs`**. When **`web_api_bearer_token` / `CM_WEB_API_BEA
 
 | Class | Paths | Bearer layer | Notes |
 |-------|-------|--------------|-------|
-| Protected API | `/chat*`, `/conversation/*`, `/workspace*`, `/skills`, `/tasks`, `/github/*`, `/config/*`, `/user-data/*`, `/upload`, `/uploads/delete` | **Yes** (if token non-empty at start) | See configuration docs |
+| Protected API | `/chat*`, `/conversation/*`, `/workspace*`, `/skills`, `/tasks`, `/github/*`, `/config/*`, `/user-data/*`, `/upload`, `GET /uploads/{filename}`, `/uploads/delete` | **Yes** (if token non-empty at start) | See configuration docs |
 | Public system | `GET /health`, `GET /status` | **No** | **Not** behind Bearer even when configured; isolate via bind/`127.0.0.1`/firewall/proxy |
 | Spec / shell | `GET /openapi.json`, `GET /web-ui` | **No** | |
-| Static | `/`, SPA, `/uploads/*` files | **No** | |
+| Static | `/`, SPA | **No** | |
 | E2E | `/e2e/...` | Conditional | **`CM_E2E_FIXTURES=1` only** |
 
 Every `build_app` response includes **`x-request-id`** (echo inbound if valid, else generate). Prefer the response header for correlation; **4xx/5xx** JSON **`ApiError.request_id`** matches the header (middleware fills when missing). See **`docs/en/CLI_CONTRACT.md`**.
@@ -180,7 +180,8 @@ Every `build_app` response includes **`x-request-id`** (echo inbound if valid, e
 | POST | `/chat/stream` | SSE; each event has **`id:`**; headers **`x-conversation-id`**, **`x-stream-job-id`**; optional JSON **`stream_resume`** (`job_id`, `after_seq`) and **`Last-Event-ID`** for reconnect; **410** `STREAM_JOB_GONE` if the job is gone; optional `approval_session_id`, `agent_role` (same) |
 | POST | `/chat/approval` | Approval: `approval_session_id`, `decision` |
 | POST | `/chat/branch` | Branch/truncate: JSON `conversation_id`, `before_user_ordinal` (0-based plain user index), `expected_revision`; server truncates **before** that user message (same as Web “regenerate from here”: resend the user text via `/chat/stream`). Requires persisted conversation and matching `revision` |
-| POST | `/upload` | Multipart upload (protected); returns file URL list (`UploadResponseBody`) |
+| POST | `/upload` | Multipart upload (protected); returns file URL list (`UploadResponseBody`). Files live beside the session SQLite (`chat_uploads/` next to `conversations.db`; **not** switched by `POST /workspace`). Session still stores **`/uploads/<filename>`** |
+| GET | `/uploads/{filename}` | Chat attachment bytes (same auth as other protected APIs; Client fetches with Bearer into a `blob:` URL). Missing → **404** |
 | POST | `/uploads/delete` | Delete uploaded files by URL list; JSON **`urls`** (only `/uploads/<filename>` shapes) |
 | GET | `/tasks` | Sidebar tasks for current workspace (**in-process memory**, not on-disk workspace files); protected |
 | POST | `/tasks` | Replace task list and echo (refreshes **`updated_at`**); protected |

@@ -74,3 +74,25 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
         }
     })
 }
+
+pub(super) fn openapi_paths_fragment_skills() -> Value {
+    json!({
+        "/skills": {
+            "get": {
+                "tags": ["skills"],
+                "summary": "列出当前工作区 skills（供 composer `/` 浮层）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "responses": {
+                    "200": {
+                        "description": "skills 目录 JSON",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/SkillsListResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}

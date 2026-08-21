@@ -1,14 +1,15 @@
 //! 出站 `chat/completions`：按厂商目录改写 `image_url` 内容块。
 //!
-//! 会话仍保存 **`/uploads/<文件名>`**。真正 HTTP 前：文本网关压成纯文本；视觉网关读盘打成 **`data:`** URL。
+//! 会话仍保存 **`/uploads/<文件名>`** 与工作区 **`@路径`**。真正 HTTP 前：文本网关压成纯文本；视觉网关读盘打成 **`data:`** URL。
 
 use std::path::{Path, PathBuf};
 
+use crate::cm_llm::outbound_workspace_images::attach_workspace_image_refs;
 use crate::cm_llm::vendor_catalog::resolved_vendor_caps;
 use crate::cm_types::{Message, MessageContent};
 
 const MAX_INLINE_IMAGE_BYTES: u64 = 16 * 1024 * 1024;
-const FLATTEN_PLACEHOLDER: &str = "（用户发送了图片，但当前模型不支持视觉输入。）";
+pub(super) const FLATTEN_PLACEHOLDER: &str = "（用户发送了图片，但当前模型不支持视觉输入。）";
 
 /// 按 **`image_url_content_parts`** 改写 `messages`（就地）。应在请求 JSON 序列化之前、日志预览之后调用，避免把 base64 打进日志。
 pub fn rewrite_messages_for_vendor(
@@ -16,10 +17,12 @@ pub fn rewrite_messages_for_vendor(
     model: &str,
     api_base: &str,
     uploads_dir: Option<&Path>,
+    workspace_root: Option<&Path>,
 ) {
     let allow = resolved_vendor_caps(model, api_base).image_url_content_parts;
     let mut budget = MAX_INLINE_IMAGE_BYTES;
     for msg in messages {
+        attach_workspace_image_refs(msg, allow, workspace_root, &mut budget);
         rewrite_one_message(msg, allow, uploads_dir, &mut budget);
     }
 }
@@ -156,7 +159,7 @@ fn rewrite_image_url_part(
 }
 
 #[derive(Clone, Copy)]
-enum InlineFail {
+pub(super) enum InlineFail {
     BadPath,
     NoDir,
     Read,
@@ -165,14 +168,29 @@ enum InlineFail {
     NotImage,
 }
 
-fn omit_note(fail: InlineFail, shown: &str) -> String {
+pub(super) fn omit_note(fail: InlineFail, shown: &str) -> String {
     let why = match fail {
         InlineFail::TooLarge => "附图超过出站大小上限",
         InlineFail::NotImage => "附图不是 JPEG/PNG/GIF/WebP",
         InlineFail::Empty => "附图为空",
-        InlineFail::NoDir | InlineFail::Read | InlineFail::BadPath => "附图无法读取",
+        InlineFail::NoDir | InlineFail::Read | InlineFail::BadPath => "附图已过期或无法读取",
     };
     format!("（{why}，已省略：{shown}）")
+}
+
+pub(super) fn bytes_to_data_url(bytes: &[u8], budget: &mut u64) -> Result<String, InlineFail> {
+    let len = bytes.len() as u64;
+    if len == 0 {
+        return Err(InlineFail::Empty);
+    }
+    if len > *budget {
+        return Err(InlineFail::TooLarge);
+    }
+    let mime = sniff_image_mime(bytes).ok_or(InlineFail::NotImage)?;
+    *budget -= len;
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
 }
 
 fn looks_like_http_url(url: &str) -> bool {
@@ -199,18 +217,7 @@ fn read_upload_as_data_url(
 ) -> Result<String, InlineFail> {
     let path = safe_upload_path(dir, name).ok_or(InlineFail::BadPath)?;
     let bytes = std::fs::read(&path).map_err(|_| InlineFail::Read)?;
-    let len = bytes.len() as u64;
-    if len == 0 {
-        return Err(InlineFail::Empty);
-    }
-    if len > *budget {
-        return Err(InlineFail::TooLarge);
-    }
-    let mime = sniff_image_mime(&bytes).ok_or(InlineFail::NotImage)?;
-    *budget -= len;
-    use base64::Engine as _;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
-    Ok(format!("data:{mime};base64,{b64}"))
+    bytes_to_data_url(&bytes, budget)
 }
 
 fn safe_upload_path(dir: &Path, name: &str) -> Option<PathBuf> {
@@ -273,6 +280,7 @@ mod tests {
             "deepseek-v4-flash",
             "https://api.deepseek.com/v1",
             None,
+            None,
         );
         let MessageContent::Text(t) = msgs[0].content.as_ref().expect("text") else {
             panic!("expected flattened text");
@@ -289,6 +297,7 @@ mod tests {
             &mut msgs,
             "deepseek-v4-flash",
             "https://llm.example.com/v1",
+            None,
             None,
         );
         let MessageContent::Text(t) = msgs[0].content.as_ref().expect("text") else {
@@ -307,6 +316,7 @@ mod tests {
             "deepseek-v4-flash-vision-exp",
             "https://api.deepseek.com/v1",
             Some(dir.path()),
+            None,
         );
         let MessageContent::Parts(parts) = msgs[0].content.as_ref().expect("parts") else {
             panic!("expected parts");
@@ -325,15 +335,16 @@ mod tests {
             "deepseek-v4-flash-vision-exp",
             "https://api.deepseek.com/v1",
             Some(dir.path()),
+            None,
         );
         match msgs[0].content.as_ref() {
-            Some(MessageContent::Text(t)) => assert!(t.contains("无法读取")),
+            Some(MessageContent::Text(t)) => assert!(t.contains("已过期") || t.contains("无法读取")),
             Some(MessageContent::Parts(p)) => {
                 let joined: String = p
                     .iter()
                     .filter_map(|v| v.get("text").and_then(|x| x.as_str()))
                     .collect();
-                assert!(joined.contains("无法读取"));
+                assert!(joined.contains("已过期") || joined.contains("无法读取"));
             }
             _ => panic!("expected note"),
         }
@@ -349,6 +360,7 @@ mod tests {
             "deepseek-v4-flash-vision-exp",
             "https://api.deepseek.com/v1",
             Some(dir.path()),
+            None,
         );
         let joined = match msgs[0].content.as_ref() {
             Some(MessageContent::Text(t)) => t.clone(),
@@ -380,5 +392,97 @@ mod tests {
             uploads_file_name("/uploads/ok.png").as_deref(),
             Some("ok.png")
         );
+    }
+
+    #[test]
+    fn vision_inlines_workspace_at_ref() {
+        let ws = tempfile::tempdir().expect("tmp");
+        std::fs::write(ws.path().join("plot.png"), PNG_1X1).expect("write");
+        let mut msgs = vec![crate::cm_types::Message::user_only(
+            "看 @plot.png".to_string(),
+        )];
+        rewrite_messages_for_vendor(
+            &mut msgs,
+            "deepseek-v4-flash-vision-exp",
+            "https://api.deepseek.com/v1",
+            None,
+            Some(ws.path()),
+        );
+        let MessageContent::Parts(parts) = msgs[0].content.as_ref().expect("parts") else {
+            panic!("expected parts");
+        };
+        let url = parts
+            .iter()
+            .find_map(|p| p.get("image_url").and_then(|i| i.get("url")).and_then(|u| u.as_str()))
+            .expect("data url");
+        assert!(url.starts_with("data:image/png;base64,"));
+        assert!(parts.iter().any(|p| p.get("text").and_then(|t| t.as_str()) == Some("看 @plot.png")));
+    }
+
+    #[test]
+    fn text_model_does_not_embed_workspace_png_bytes() {
+        let ws = tempfile::tempdir().expect("tmp");
+        std::fs::write(ws.path().join("plot.png"), PNG_1X1).expect("write");
+        let mut msgs = vec![crate::cm_types::Message::user_only(
+            "看 @plot.png".to_string(),
+        )];
+        rewrite_messages_for_vendor(
+            &mut msgs,
+            "deepseek-v4-flash",
+            "https://api.deepseek.com/v1",
+            None,
+            Some(ws.path()),
+        );
+        let MessageContent::Text(t) = msgs[0].content.as_ref().expect("text") else {
+            panic!("expected text");
+        };
+        assert!(t.contains("看 @plot.png"));
+        assert!(t.contains("不支持视觉"));
+        assert!(!t.contains("data:image"));
+    }
+
+    #[test]
+    fn text_model_placeholder_once_for_at_and_uploads() {
+        let ws = tempfile::tempdir().expect("tmp");
+        std::fs::write(ws.path().join("plot.png"), PNG_1X1).expect("write");
+        let mut msgs = vec![message_user_with_images(
+            "看 @plot.png",
+            &["/uploads/a.png".into()],
+        )];
+        rewrite_messages_for_vendor(
+            &mut msgs,
+            "deepseek-v4-flash",
+            "https://api.deepseek.com/v1",
+            None,
+            Some(ws.path()),
+        );
+        let MessageContent::Text(t) = msgs[0].content.as_ref().expect("text") else {
+            panic!("expected text");
+        };
+        assert_eq!(t.matches("不支持视觉").count(), 1);
+    }
+
+    #[test]
+    fn vision_inlines_at_ref_despite_illegal_sibling_token() {
+        let ws = tempfile::tempdir().expect("tmp");
+        std::fs::write(ws.path().join("plot.png"), PNG_1X1).expect("write");
+        let mut msgs = vec![crate::cm_types::Message::user_only(
+            "看 @plot.png 和 @/etc/passwd".to_string(),
+        )];
+        rewrite_messages_for_vendor(
+            &mut msgs,
+            "deepseek-v4-flash-vision-exp",
+            "https://api.deepseek.com/v1",
+            None,
+            Some(ws.path()),
+        );
+        let MessageContent::Parts(parts) = msgs[0].content.as_ref().expect("parts") else {
+            panic!("expected parts");
+        };
+        assert!(parts.iter().any(|p| p
+            .get("image_url")
+            .and_then(|i| i.get("url"))
+            .and_then(|u| u.as_str())
+            .is_some_and(|u| u.starts_with("data:image/png;base64,"))));
     }
 }

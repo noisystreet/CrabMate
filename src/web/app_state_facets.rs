@@ -34,10 +34,22 @@ pub(crate) struct ConfigReloadFacet {
     pub(crate) config_path_for_reload: Option<String>,
 }
 
-/// `POST /upload` / `POST /upload/delete`：uploads 目录。
+/// `POST /upload` / `POST /uploads/delete` / `GET /uploads/{filename}`：当前附图目录。
 #[derive(Clone)]
 pub(crate) struct UploadsFacet {
-    pub(crate) uploads_dir: PathBuf,
+    pub(crate) cfg: SharedAgentConfig,
+    pub(crate) fallback_uploads_dir: PathBuf,
+}
+
+impl UploadsFacet {
+    pub(crate) async fn uploads_dir(&self) -> PathBuf {
+        self.cfg
+            .read()
+            .await
+            .chat_uploads_dir
+            .clone()
+            .unwrap_or_else(|| self.fallback_uploads_dir.clone())
+    }
 }
 
 /// `GET|PUT /tasks` 与 `GET /workspace/changelog`：工作区键 + 完整 [`ProcessHandles`]。
@@ -280,7 +292,8 @@ impl FromRef<Arc<AppState>> for ConfigReloadFacet {
 impl FromRef<Arc<AppState>> for UploadsFacet {
     fn from_ref(state: &Arc<AppState>) -> Self {
         Self {
-            uploads_dir: state.http.uploads_dir.clone(),
+            cfg: Arc::clone(&state.http.cfg),
+            fallback_uploads_dir: state.http.uploads_dir.clone(),
         }
     }
 }

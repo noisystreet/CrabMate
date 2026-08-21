@@ -48,4 +48,6 @@ pub struct StreamChatParams<'a> {
     pub thinking_trace_enabled: bool,
     /// 聊天附图目录（`POST /upload` 落盘）；视觉网关据此把 **`/uploads/`** 打成 **`data:`**。
     pub chat_uploads_dir: Option<&'a std::path::Path>,
+    /// 当前工作区根；出站把用户消息里的 **`@` / `file:///`** 栅格图按 `read_file` 策略读盘。
+    pub chat_workspace_root: Option<&'a std::path::Path>,
 }

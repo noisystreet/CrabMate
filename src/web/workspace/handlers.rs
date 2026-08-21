@@ -157,6 +157,17 @@ pub async fn workspace_set_handler(
 pub(crate) async fn apply_workspace_override(http: &AppStateHttpCore, path_str: &str) {
     let mut guard = http.workspace_override.write().await;
     *guard = Some(path_str.to_string());
+    drop(guard);
+    if path_str.trim().is_empty() {
+        let default_ws = {
+            let cfg = http.cfg.read().await;
+            std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
+        };
+        crate::web::sync_chat_runtime_paths_for_workspace(http, &default_ws).await;
+    } else {
+        crate::web::sync_chat_runtime_paths_for_workspace(http, std::path::Path::new(path_str))
+            .await;
+    }
 }
 
 async fn set_workspace_from_raw_path(
@@ -167,6 +178,12 @@ async fn set_workspace_from_raw_path(
     // None 表示“从未设置过”；Some("") 表示“显式选择默认目录”；Some("...") 表示指定路径（存规范绝对路径）
     if raw.is_empty() {
         *guard = Some(String::new());
+        drop(guard);
+        let default_ws = {
+            let cfg = http.cfg.read().await;
+            std::path::PathBuf::from(cfg.command_exec.run_command_working_dir.clone())
+        };
+        crate::web::sync_chat_runtime_paths_for_workspace(http, &default_ws).await;
         return Ok(Json(serde_json::json!({ "ok": true, "path": "" })));
     }
     let cfg = http.cfg.read().await;
@@ -185,7 +202,10 @@ async fn set_workspace_from_raw_path(
         }
     };
     let path_str = canon.display().to_string();
+    drop(cfg);
     *guard = Some(path_str.clone());
+    drop(guard);
+    crate::web::sync_chat_runtime_paths_for_workspace(http, std::path::Path::new(&path_str)).await;
     Ok(Json(serde_json::json!({ "ok": true, "path": path_str })))
 }
 

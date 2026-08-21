@@ -23,10 +23,13 @@ use crate::web_static_dir::resolve_web_static_dir;
 /// 测试用服务器句柄。
 pub struct TestServeHandle {
     pub base_url: String,
+    /// 本实例附图目录（进程内 `GET /uploads` / `POST /upload`）。
+    pub uploads_dir: std::path::PathBuf,
     /// 持有后端引用以防过早 drop（`&'static` 引用安全，但保留引用可验证所有权的逻辑关联）。
     #[allow(dead_code)]
     pub(crate) llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
     pub(crate) _shutdown_tx: oneshot::Sender<()>,
+    _uploads_keep: tempfile::TempDir,
 }
 
 /// 启动测试用 axum Web 服务器（随机端口），返回 [`TestServeHandle`]。
@@ -51,8 +54,8 @@ pub async fn start_test_serve(
         .expect("构建 HTTP 客户端失败");
     let tools = crate::build_tools();
     let api_key = std::env::var("API_KEY").unwrap_or_default();
-    let uploads_dir = std::env::temp_dir().join("crabmate_e2e_uploads");
-    let _ = std::fs::create_dir_all(&uploads_dir);
+    let uploads_keep = tempfile::tempdir().expect("test uploads dir");
+    let uploads_dir = uploads_keep.path().to_path_buf();
     {
         let mut g = cfg_holder.write().await;
         g.chat_uploads_dir = Some(uploads_dir.clone());
@@ -125,7 +128,6 @@ pub async fn start_test_serve(
     let app = web::server::build_app(
         state,
         Some(resolve_web_static_dir()),
-        uploads_dir,
         false,      /* web_api_bearer_layer_enabled */
         Vec::new(), /* cors_allowed_origins */
     );
@@ -152,7 +154,9 @@ pub async fn start_test_serve(
 
     TestServeHandle {
         base_url,
+        uploads_dir,
         llm_backend,
         _shutdown_tx: shutdown_tx,
+        _uploads_keep: uploads_keep,
     }
 }

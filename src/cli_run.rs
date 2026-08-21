@@ -423,7 +423,6 @@ pub(super) struct ServeBranchArgs<'a> {
 
 #[cfg(feature = "web")]
 struct ServeRuntimeBuilt {
-    uploads_dir: std::path::PathBuf,
     state: Arc<AppState>,
 }
 
@@ -453,26 +452,38 @@ async fn build_serve_runtime_state(
         process_handles,
         mount_web_ui,
     } = input;
-    let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
-    std::fs::create_dir_all(&uploads_dir).ok();
-    {
-        let mut g = cfg_holder.write().await;
-        g.chat_uploads_dir = Some(uploads_dir.clone());
-    }
-    let (cq_conc, cq_pending, conv_sqlite, ltm_enabled, ltm_store_path) = {
+    let (default_ws, uploads_dir, conv_sqlite, cq_conc, cq_pending, ltm_enabled, ltm_store_path) = {
         let g = cfg_holder.read().await;
+        let ws = initial_workspace
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
+            });
+        let conv_sqlite = g
+            .conversation_persistence
+            .conversation_store_sqlite_path
+            .clone();
+        let uploads = crate::web::chat_uploads_dir_beside_session_store(&conv_sqlite, &ws);
+        std::fs::create_dir_all(&uploads).ok();
         (
+            ws,
+            uploads,
+            conv_sqlite,
             g.chat_queues_cache.chat_queue_max_concurrent,
             g.chat_queues_cache.chat_queue_max_pending,
-            g.conversation_persistence
-                .conversation_store_sqlite_path
-                .clone(),
             g.long_term_memory.long_term_memory_enabled,
             g.long_term_memory
                 .long_term_memory_store_sqlite_path
                 .clone(),
         )
     };
+    {
+        let mut g = cfg_holder.write().await;
+        g.chat_uploads_dir = Some(uploads_dir.clone());
+        g.chat_workspace_root = Some(default_ws);
+    }
     let chat_queue = chat_job_queue::ChatJobQueue::new(cq_conc, cq_pending);
     let conversation_backing =
         cli_run_serve::conversation_backing_from_sqlite_path(conv_sqlite.trim())?;
@@ -504,7 +515,6 @@ async fn build_serve_runtime_state(
         turn_runner: crate::default_turn_runner(),
     });
     Ok(ServeRuntimeBuilt {
-        uploads_dir: uploads_dir.clone(),
         state: Arc::new(AppState {
             http: web::AppStateHttpCore {
                 cfg: Arc::clone(cfg_holder),
@@ -601,16 +611,25 @@ fn print_desktop_ready_json(actual_addr: SocketAddr, web_api_bearer_layer_enable
 }
 
 #[cfg(feature = "web")]
-fn spawn_uploads_cleanup(uploads_dir: std::path::PathBuf) {
-    // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB
+fn spawn_uploads_cleanup(state: Arc<AppState>) {
+    // uploads 自动清理：每 10 分钟执行一次；保留 24h；总容量上限 500MB；会话仍引用的文件跳过
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(600));
         loop {
             interval.tick().await;
+            let dir = {
+                let g = state.http.cfg.read().await;
+                g.chat_uploads_dir.clone()
+            };
+            let Some(dir) = dir else {
+                continue;
+            };
+            let referenced = state.conversation.referenced_upload_filenames().await;
             web::cleanup_uploads_dir(
-                uploads_dir.clone(),
+                dir,
                 Duration::from_secs(24 * 3600),
                 500 * 1024 * 1024,
+                &referenced,
             )
             .await;
         }
@@ -646,7 +665,6 @@ pub(super) async fn run_serve_branch(
     })
     .await?;
     let state = runtime.state;
-    let uploads_dir = runtime.uploads_dir;
     let sched_tasks = {
         let g = cfg_holder.read().await;
         g.conversation_persistence.scheduled_agent_tasks.clone()
@@ -664,7 +682,6 @@ pub(super) async fn run_serve_branch(
     let app = web::server::build_app(
         state.clone(),
         static_dir.clone(),
-        uploads_dir.clone(),
         web_api_bearer_layer_enabled,
         cors_allowed_origins.clone(),
     );
@@ -683,7 +700,7 @@ pub(super) async fn run_serve_branch(
         print_desktop_ready_json(actual_addr, web_api_bearer_layer_enabled);
     }
     info!(target: "crabmate", "Web 服务监听 addr={}", actual_addr);
-    spawn_uploads_cleanup(uploads_dir);
+    spawn_uploads_cleanup(state.clone());
 
     // 优雅关闭：监听 SIGTERM / SIGINT，构建 axum graceful shutdown 信号
     let shutdown_signal = build_serve_shutdown_signal(state.clone());

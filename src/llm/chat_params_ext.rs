@@ -92,6 +92,14 @@ impl<'a> CompleteChatRetryingParams<'a> {
             ),
             thinking_trace_enabled: self.cfg.agent_thinking_trace.agent_thinking_trace_enabled,
             chat_uploads_dir: self.cfg.chat_uploads_dir.as_deref(),
+            chat_workspace_root: self
+                .cfg
+                .chat_workspace_root
+                .as_deref()
+                .or_else(|| {
+                    let d = self.cfg.command_exec.run_command_working_dir.trim();
+                    (!d.is_empty()).then_some(std::path::Path::new(d))
+                }),
         }
     }
 }

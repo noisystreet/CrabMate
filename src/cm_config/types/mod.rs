@@ -350,8 +350,10 @@ pub struct AgentConfig {
     pub codebase_semantic: CodebaseSemanticConfig,
     pub tool_registry_policy: ToolRegistryPolicyConfig,
     pub turn_budget: TurnBudgetConfig,
-    /// 聊天附图落盘目录（`POST /upload`）。**非 TOML**：由 **`serve`** 注入；热重载保留。
+    /// 聊天附图落盘目录（`POST /upload`）。**非 TOML**：`serve` 启动时设为会话库旁的 **`chat_uploads/`**；热重载与 **`POST /workspace`** **不**改写。
     pub chat_uploads_dir: Option<std::path::PathBuf>,
+    /// 当前 Web 有效工作区根。**非 TOML**：由 **`serve`** / **`POST /workspace`** 注入；Agent 回合会再钉到该轮 `effective_working_dir`。
+    pub chat_workspace_root: Option<std::path::PathBuf>,
 }
 
 impl AgentConfig {

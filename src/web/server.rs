@@ -10,7 +10,6 @@ use axum::routing::get;
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
     static_dir: Option<std::path::PathBuf>,
-    uploads_dir_for_static: std::path::PathBuf,
     web_api_bearer_layer_enabled: bool,
     cors_allowed_origins: Vec<String>,
 ) -> Router {
@@ -38,13 +37,7 @@ pub(crate) fn build_app(
         app = app.merge(e2e);
     }
     let cors_layer = crate::cm_web_host::try_cors_layer(&cors_allowed_origins);
-    let allow_cross_origin_uploads = cors_layer.is_some();
-    app = crate::cm_web_host::serve::mount_uploads_and_spa(
-        app,
-        uploads_dir_for_static,
-        static_dir,
-        allow_cross_origin_uploads,
-    );
+    app = crate::cm_web_host::serve::mount_uploads_and_spa(app, static_dir);
     // 内层：请求作用域 GitHub token；再 `x-request-id`；最外 CORS（预检 OPTIONS）。
     app = app.layer(middleware::from_fn(
         super::github_token_request::attach_request_github_token,

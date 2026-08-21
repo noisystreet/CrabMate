@@ -2,7 +2,7 @@
 //!
 //! | 子模块 | 路径前缀（相对站点根） | 说明 |
 //! |--------|------------------------|------|
-//! | [`chat`] | `/chat*`、`/upload*`、`/uploads/delete` | 对话与上传（handler 在 `chat_handlers`） |
+//! | [`chat`] | `/chat*`、`/upload*`、`GET /uploads/{filename}`、`/uploads/delete` | 对话与上传（handler 在 `chat_handlers`） |
 //! | [`config`] | `/config/reload` | 配置热重载 |
 //! | [`skills`] | `/skills` | 工作区 skills 目录 JSON（composer `/` 浮层） |
 //! | [`workspace`] | `/workspace*` | 工作区浏览、文件、changelog |
