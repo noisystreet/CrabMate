@@ -21,6 +21,7 @@ pub mod retry_hooks;
 pub mod stream_host;
 pub mod trace_sink;
 pub mod vendor;
+pub mod vendor_catalog;
 pub mod vendor_messages;
 
 pub use api::stream_chat;
@@ -53,6 +54,10 @@ pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceU
 pub use vendor::{
     LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
     llm_vendor_adapter_for_model,
+};
+pub use vendor_catalog::{
+    ResolvedVendorCaps, VendorAdapterId, matched_vendor_default_model, matched_vendor_id,
+    matched_vendor_models, resolved_vendor_caps,
 };
 pub use vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,

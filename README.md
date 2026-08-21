@@ -181,10 +181,10 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 | Scenario | Notes |
 | --- | --- |
-| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; `model` e.g. `deepseek-chat` / `deepseek-reasoner`. [Platform](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
-| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1`; `model` e.g. `MiniMax-M2.7`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Vendor OpenAI-compatible API](https://platform.minimaxi.com/docs/api-reference/text-openai-api) |
-| **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; `model` e.g. `glm-5`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [GLM-5](https://docs.bigmodel.cn/cn/guide/models/text/glm-5) |
-| **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k2.5`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
+| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; common `model` ids in **`config/llm_vendors.toml`** (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`, …). [Platform](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
+| **MiniMax** | `api_base`: `https://api.minimaxi.com/v1` (intl. `https://api.minimax.io/v1`); `model` e.g. `MiniMax-M3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Vendor OpenAI-compatible API](https://platform.minimax.io/docs/api-reference/text-openai-api) |
+| **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; `model` e.g. `glm-5.3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) |
+| **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |
 | **Local Ollama** | `llm_http_auth_mode = "none"`; `api_base` e.g. `http://127.0.0.1:11434/v1`; **`API_KEY`** optional. |
 
 Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Vendor knobs: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor behavior is defined by provider docs.**

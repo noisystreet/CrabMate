@@ -1,7 +1,8 @@
 //! 按 **OpenAI 兼容网关族** 调整出站 `chat/completions` 请求（温度、`thinking`、`reasoning_effort`、是否保留带 `tool_calls` 的 `reasoning_content` 等）。
 //!
-//! 新增厂商时：实现 [`LlmVendorAdapter`]，并在 [`llm_vendor_adapter_for_model`] / [`llm_vendor_adapter`] 中注册路由（优先 **`model` ID**；[`llm_vendor_adapter`] 还可参考 **`api_base`**）。
+//! 新增厂商时：先在 **`config/llm_vendors.toml`** 增加匹配与能力，再实现 [`LlmVendorAdapter`]（思考链 / 温度等）。路由见 [`llm_vendor_adapter`]（目录 **自上而下第一条**）。
 
+use crate::cm_llm::vendor_catalog::{VendorAdapterId, resolved_vendor_caps};
 use crate::cm_types::llm_config::{LlmConfig, LlmConnectionConfig, LlmVendorFlagsConfig};
 
 /// 对单次 `ChatRequest` 的厂商特有处理（构造阶段调用；HTTP 仍走 OpenAI 兼容 JSON）。
@@ -61,58 +62,17 @@ fn is_kimi_k2_fixed_temperature_zero_six_family(model: &str) -> bool {
     !is_kimi_k2_5_model(model) && !is_kimi_k2_thinking_model(model)
 }
 
-/// 是否走 **Moonshot Kimi** 采样与消息规则（当前为 **`kimi-k2` 前缀** 族，含 `kimi-k2.5`、`kimi-k2-thinking`、`kimi-k2-0905` 等）。
-#[inline]
-pub(crate) fn is_moonshot_kimi_family_model_id(model: &str) -> bool {
-    let b = model.as_bytes();
-    const P: &[u8] = b"kimi-k2";
-    b.len() >= P.len() && b[..P.len()].eq_ignore_ascii_case(P)
-}
-
-// --------------------------------------------------------------------------- model id helpers (智谱 GLM / MiniMax)
-
-/// **`glm-` 前缀**（如 **`glm-5`**、**`glm-4.7`**），大小写不敏感。
-#[inline]
-pub(crate) fn is_zhipu_glm_family_model_id(model: &str) -> bool {
-    let b = model.as_bytes();
-    const P: &[u8] = b"glm-";
-    b.len() >= P.len() && b[..P.len()].eq_ignore_ascii_case(P)
-}
-
-/// **MiniMax** 常见 OpenAI 兼容 **`model`**：`MiniMax-…`（大小写不敏感）；兼容部分 **`abab`** 前缀旧 ID。
-#[inline]
-pub(crate) fn is_minimax_family_model_id(model: &str) -> bool {
-    let b = model.as_bytes();
-    const M: &[u8] = b"minimax-";
-    if b.len() >= M.len() && b[..M.len()].eq_ignore_ascii_case(M) {
-        return true;
-    }
-    const A: &[u8] = b"abab";
-    b.len() >= A.len() && b[..A.len()].eq_ignore_ascii_case(A)
-}
-
-#[inline]
-fn api_base_looks_zhipu_bigmodel(base: &str) -> bool {
-    base.to_ascii_lowercase().contains("bigmodel.cn")
-}
-
-#[inline]
-fn api_base_looks_minimax(base: &str) -> bool {
-    let b = base.to_ascii_lowercase();
-    b.contains("minimax")
-}
-
 /// 火山引擎方舟 / OpenAI 兼容端（域名 **`volces.com`**）：模型名可能含 **`Kimi-*`** 等，但并非 Moonshot **`api.moonshot.cn`** 托管；
 /// 若仍走 [`MoonshotKimiVendor`]，会带去 **`thinking`** / Kimi 专用规则，网关常以 HTTP **400 InvalidParameter** 拒绝。
 #[inline]
 pub fn api_base_looks_volcano_engine_openai_compat(base: &str) -> bool {
-    base.to_ascii_lowercase().contains("volces.com")
+    crate::cm_llm::vendor_catalog::matched_vendor_id("", base) == Some("volcano")
 }
 
-/// TOML/环境变量均未设置 **`llm_reasoning_split`** 时的默认值：**MiniMax** 网关为 **`true`**，否则 **`false`**。
+/// TOML/环境变量均未设置 **`llm_reasoning_split`** 时的默认值（**`config/llm_vendors.toml`** 的 **`default_reasoning_split`**）。
 #[inline]
 pub fn default_llm_reasoning_split_for_gateway(model: &str, api_base: &str) -> bool {
-    crate::cm_types::llm_config::default_llm_reasoning_split_for_gateway(model, api_base)
+    resolved_vendor_caps(model, api_base).default_reasoning_split
 }
 
 /// 运行时更新 **`model` / `api_base`** 后，将 **`llm_reasoning_split`** 同步为与当前网关一致的推断（与配置 **`finalize`** 中省略 **`llm_reasoning_split`** 时的行为一致）。
@@ -125,10 +85,10 @@ pub fn refresh_llm_reasoning_split_for_gateway(
         default_llm_reasoning_split_for_gateway(&llm.model, &llm.api_base);
 }
 
-/// 出站是否将独立 **`system`** 折叠进 **`user`**：**MiniMax**（按 `model` / `api_base` 与 [`llm_vendor_adapter`] 同源规则识别）为 **`true`**，其余为 **`false`**（不再由 TOML / 环境变量配置）。
+/// 出站是否将独立 **`system`** 折叠进 **`user`**（目录 **`fold_system_into_user`**；当前 MiniMax 为真）。
 #[inline]
 pub fn fold_system_into_user_for_config(model: &str, api_base: &str) -> bool {
-    crate::cm_types::llm_config::fold_system_into_user_for_gateway(model, api_base)
+    resolved_vendor_caps(model, api_base).fold_system_into_user
 }
 
 /// 当前 **`api_base`** 是否视为 DeepSeek 官方 OpenAI 兼容端点（用于启用 [JSON Output](https://api-docs.deepseek.com/zh-cn/guides/json_mode)）。
@@ -296,41 +256,27 @@ static KIMI: MoonshotKimiVendor = MoonshotKimiVendor;
 static GLM: ZhipuGlmVendor = ZhipuGlmVendor;
 static MINIMAX: MiniMaxVendor = MiniMaxVendor;
 
-/// 按 **`model`** 与 **`api_base`** 选择适配器（**`model` 族优先**，避免误用 `api_base` 覆盖 Kimi 等明确 ID）。
+/// 按 **`config/llm_vendors.toml`** 匹配 **`model` + `api_base`** 后选择适配器。
 #[inline]
 pub fn llm_vendor_adapter(model: &str, api_base: &str) -> &'static dyn LlmVendorAdapter {
-    // Volcano Ark：`model` 常为 `Kimi-K2.x` 等，但与 Moonshot 官方网关语义不同；必须先于 Kimi 前缀判定。
-    if api_base_looks_volcano_engine_openai_compat(api_base) {
-        return &GENERIC;
+    adapter_for_id(resolved_vendor_caps(model, api_base).adapter)
+}
+
+fn adapter_for_id(id: VendorAdapterId) -> &'static dyn LlmVendorAdapter {
+    match id {
+        VendorAdapterId::Generic => &GENERIC,
+        VendorAdapterId::Deepseek => &DEEPSEEK,
+        VendorAdapterId::Kimi => &KIMI,
+        VendorAdapterId::Glm => &GLM,
+        VendorAdapterId::Minimax => &MINIMAX,
     }
-    if is_moonshot_kimi_family_model_id(model) {
-        return &KIMI;
-    }
-    if is_minimax_family_model_id(model) || api_base_looks_minimax(api_base) {
-        return &MINIMAX;
-    }
-    if is_zhipu_glm_family_model_id(model) || api_base_looks_zhipu_bigmodel(api_base) {
-        return &GLM;
-    }
-    if deepseek_json_output_eligible(api_base) {
-        return &DEEPSEEK;
-    }
-    &GENERIC
 }
 
 /// 仅按 **`model`** ID 选择适配器（无 `AgentConfig` 时用于温度等逻辑；**不含** `api_base` 回退）。
 #[inline]
 #[allow(dead_code)] // 对外 API：仅按 model ID 选型（无 api_base）；库内主路径用 `llm_vendor_adapter`
 pub fn llm_vendor_adapter_for_model(model: &str) -> &'static dyn LlmVendorAdapter {
-    if is_moonshot_kimi_family_model_id(model) {
-        &KIMI
-    } else if is_minimax_family_model_id(model) {
-        &MINIMAX
-    } else if is_zhipu_glm_family_model_id(model) {
-        &GLM
-    } else {
-        &GENERIC
-    }
+    llm_vendor_adapter(model, "")
 }
 
 #[cfg(test)]

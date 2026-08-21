@@ -1,8 +1,7 @@
 //! OpenAI 兼容网关 URL / 建议模型预设表（文档示例；`resolve_api_base_set_arg` 供历史 CLI 辅助）。
 //!
-//! 官方 Web 设置页持有一份拷贝：Client `frontend/src/client_llm_presets.rs`
-//!（`docs/design/client_display_crate_sink.md` W1）；改表时请同步。
-//! Client `/api-base set` 只接受字面 URL，不解析本表预设 id。
+//! 官方 Web 设置页另有一份 UI 拷贝：Client `frontend/src/client_llm_presets.rs`。
+//! 出站匹配、能力与**完整常用模型列表**以 Agent **`config/llm_vendors.toml`** 为准（本表 `suggested_model` 应对应该厂商 `models` 首项）。
 
 /// 单条预设：`id` 用于 UI / slash 补全；`url` 写入 `api_base`（空串表示「沿用服务端 / 自定义」占位）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,12 +37,12 @@ pub const LLM_API_BASE_PRESETS: &[LlmApiBasePreset] = &[
     LlmApiBasePreset {
         id: "zhipu",
         url: "https://open.bigmodel.cn/api/paas/v4",
-        suggested_model: Some("glm-5"),
+        suggested_model: Some("glm-5.3"),
     },
     LlmApiBasePreset {
         id: "moonshot",
         url: "https://api.moonshot.cn/v1",
-        suggested_model: Some("kimi-k2.5"),
+        suggested_model: Some("kimi-k3"),
     },
     LlmApiBasePreset {
         id: "custom",
