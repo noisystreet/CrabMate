@@ -65,7 +65,7 @@ flowchart TB
 
 ### Configuration
 
-`AgentConfig`: TOML shards + `CM_*` → `finalize`. Embedded **`config/llm_vendors.toml`** (vendor matchers, `models` lists, outbound caps; not `[agent]` hot-reload). **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
+`AgentConfig`: TOML shards + `CM_*` → `finalize`. Embedded **`config/llm_vendors.toml`** (vendor matchers, `models` lists, outbound caps; not `[agent]` hot-reload). Before HTTP, outbound `chat/completions` flatten or inline **`/uploads/`** as **`data:`** per catalog **`image_url_content_parts`** (session does not store base64). **`POST /config/reload`** hot-reloads most fields. Details: **CONFIGURATION**.
 
 ### Agent main loop (mental model)
 

@@ -455,6 +455,10 @@ async fn build_serve_runtime_state(
     } = input;
     let uploads_dir = std::env::temp_dir().join("crabmate_uploads");
     std::fs::create_dir_all(&uploads_dir).ok();
+    {
+        let mut g = cfg_holder.write().await;
+        g.chat_uploads_dir = Some(uploads_dir.clone());
+    }
     let (cq_conc, cq_pending, conv_sqlite, ltm_enabled, ltm_store_path) = {
         let g = cfg_holder.read().await;
         (

@@ -35,6 +35,7 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         codebase_semantic: finalize_section_codebase_semantic(mid),
         tool_registry_policy: finalize_section_tool_registry_policy(mid),
         turn_budget: finalize_section_turn_budget(),
+        chat_uploads_dir: None,
     }
 }
 

@@ -46,4 +46,6 @@ pub struct StreamChatParams<'a> {
     pub preserve_deepseek_thinking_reasoning_roundtrip: bool,
     /// 为 true 时经 SSE 下发结构化 **`thinking_trace`**（推理增量、终答阶段等），供 Web 调试台。
     pub thinking_trace_enabled: bool,
+    /// 聊天附图目录（`POST /upload` 落盘）；视觉网关据此把 **`/uploads/`** 打成 **`data:`**。
+    pub chat_uploads_dir: Option<&'a std::path::Path>,
 }

@@ -87,6 +87,7 @@ image_url_content_parts = true
 [[vendor]]
 id = "deepseek"
 adapter = "deepseek"
+model_id_prefixes = ["deepseek-"]
 api_base_contains = ["deepseek"]
 canonical_api_bases = [
     "https://api.deepseek.com",

@@ -181,7 +181,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 | Scenario | Notes |
 | --- | --- |
-| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; common `model` ids in **`config/llm_vendors.toml`** (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`, …). [Platform](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
+| **DeepSeek** | `api_base`: `https://api.deepseek.com/v1`; common `model` ids in **`config/llm_vendors.toml`** (`deepseek-v4-flash`, `deepseek-v4-pro`, `deepseek-v4-flash-vision-exp`, …). Chat attachments stay as `/uploads/` in session; only **vision-exp** inlines them as `data:` on the wire. [Platform](https://platform.deepseek.com/) · [API](https://api-docs.deepseek.com/api/create-chat-completion) |
 | **MiniMax** | `api_base`: `https://api.minimaxi.com/v1` (intl. `https://api.minimax.io/v1`); `model` e.g. `MiniMax-M3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Vendor OpenAI-compatible API](https://platform.minimax.io/docs/api-reference/text-openai-api) |
 | **Zhipu GLM** | `api_base`: `https://open.bigmodel.cn/api/paas/v4`; `model` e.g. `glm-5.3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [GLM-5.3](https://docs.bigmodel.cn/cn/guide/models/text/glm-5.3) |
 | **Moonshot Kimi** | `api_base`: `https://api.moonshot.cn/v1`; `model` e.g. `kimi-k3`. [CONFIGURATION](docs/en/CONFIGURATION.md) · [Kimi Chat API](https://platform.moonshot.cn/docs/api/chat) |

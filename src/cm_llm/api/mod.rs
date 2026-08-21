@@ -320,6 +320,21 @@ pub async fn stream_chat(
         preserve_deepseek_thinking_reasoning_roundtrip,
     );
     log_chat_request_json_preview_if_enabled(host, req);
+    let model = req.model.clone();
+    let api_base_owned = api_base.to_string();
+    let uploads = params.chat_uploads_dir.map(std::path::Path::to_path_buf);
+    let mut messages = std::mem::take(&mut req.messages);
+    req.messages = tokio::task::spawn_blocking(move || {
+        crate::cm_llm::outbound_images::rewrite_messages_for_vendor(
+            &mut messages,
+            &model,
+            &api_base_owned,
+            uploads.as_deref(),
+        );
+        messages
+    })
+    .await
+    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
     req.stream = Some(!no_stream);
 
     // 序列化为 JSON，条件注入 cache_control（DeepSeek 等供应商支持）
