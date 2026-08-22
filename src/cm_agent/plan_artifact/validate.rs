@@ -130,78 +130,79 @@ fn validate_plan_step_transitions(
     Ok(())
 }
 
+fn invalid_plan_step(index: usize, reason: &'static str) -> PlanArtifactError {
+    PlanArtifactError::InvalidStep { index, reason }
+}
+
+fn validate_plan_step_id(
+    raw_id: &str,
+    step_index: usize,
+    seen_step_ids: &mut HashSet<String>,
+) -> Result<(), PlanArtifactError> {
+    if raw_id != raw_id.trim() {
+        return Err(invalid_plan_step(step_index, "id 首尾不得含空白"));
+    }
+    let id = raw_id.trim();
+    if id.is_empty() {
+        return Err(invalid_plan_step(step_index, "id 为空"));
+    }
+    if !plan_step_id_syntax_ok(id) {
+        return Err(invalid_plan_step(
+            step_index,
+            "id 语法不合法（须 ASCII 字母数字起头，仅含 - _ . /，总长不超过 128）",
+        ));
+    }
+    if !seen_step_ids.insert(id.to_string()) {
+        return Err(invalid_plan_step(step_index, "id 重复"));
+    }
+    Ok(())
+}
+
+fn validate_optional_workflow_node_id(
+    workflow_node_id: Option<&str>,
+    step_index: usize,
+) -> Result<(), PlanArtifactError> {
+    let Some(raw_w) = workflow_node_id else {
+        return Ok(());
+    };
+    if raw_w != raw_w.trim() {
+        return Err(invalid_plan_step(
+            step_index,
+            "workflow_node_id 首尾不得含空白",
+        ));
+    }
+    let w = raw_w.trim();
+    if w.is_empty() {
+        return Err(invalid_plan_step(
+            step_index,
+            "workflow_node_id 若出现须为非空字符串（否则请省略该字段）",
+        ));
+    }
+    if !plan_step_id_syntax_ok(w) {
+        return Err(invalid_plan_step(step_index, "workflow_node_id 语法不合法"));
+    }
+    Ok(())
+}
+
 fn validate_single_plan_step_v1(
     p: &AgentReplyPlanV1,
     step_index: usize,
     s: &super::PlanStepV1,
     seen_step_ids: &mut HashSet<String>,
 ) -> Result<(), PlanArtifactError> {
-    let raw_id = s.id.as_str();
-    if raw_id != raw_id.trim() {
-        return Err(PlanArtifactError::InvalidStep {
-            index: step_index,
-            reason: "id 首尾不得含空白",
-        });
-    }
-    let id = raw_id.trim();
-    if id.is_empty() {
-        return Err(PlanArtifactError::InvalidStep {
-            index: step_index,
-            reason: "id 为空",
-        });
-    }
-    if !plan_step_id_syntax_ok(id) {
-        return Err(PlanArtifactError::InvalidStep {
-            index: step_index,
-            reason: "id 语法不合法（须 ASCII 字母数字起头，仅含 - _ . /，总长不超过 128）",
-        });
-    }
-    if !seen_step_ids.insert(id.to_string()) {
-        return Err(PlanArtifactError::InvalidStep {
-            index: step_index,
-            reason: "id 重复",
-        });
-    }
+    validate_plan_step_id(s.id.as_str(), step_index, seen_step_ids)?;
     if s.description.trim().is_empty() {
-        return Err(PlanArtifactError::InvalidStep {
-            index: step_index,
-            reason: "description 为空",
-        });
+        return Err(invalid_plan_step(step_index, "description 为空"));
     }
-    if let Some(ref w) = s.workflow_node_id {
-        let raw_w = w.as_str();
-        if raw_w != raw_w.trim() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: step_index,
-                reason: "workflow_node_id 首尾不得含空白",
-            });
-        }
-        let w = raw_w.trim();
-        if w.is_empty() {
-            return Err(PlanArtifactError::InvalidStep {
-                index: step_index,
-                reason: "workflow_node_id 若出现须为非空字符串（否则请省略该字段）",
-            });
-        }
-        if !plan_step_id_syntax_ok(w) {
-            return Err(PlanArtifactError::InvalidStep {
-                index: step_index,
-                reason: "workflow_node_id 语法不合法",
-            });
-        }
-    }
-
+    validate_optional_workflow_node_id(s.workflow_node_id.as_deref(), step_index)?;
     if let Some(ref transitions) = s.transitions {
         validate_plan_step_transitions(p, step_index, transitions, seen_step_ids)?;
     }
     Ok(())
 }
 
-pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
-    p: &AgentReplyPlanV1,
-    validate_only_binding_ids: Option<&[String]>,
-) -> Result<(), PlanArtifactError> {
-    const PLAN_FIXED_MAX_STEPS: usize = 1;
+/// `Ok(true)`：`no_task` 且 `steps` 为空，校验已完成。`Ok(false)`：继续校验步骤。
+fn validate_agent_reply_plan_v1_header(p: &AgentReplyPlanV1) -> Result<bool, PlanArtifactError> {
     if p.plan_type != "agent_reply_plan" {
         return Err(PlanArtifactError::WrongType(p.plan_type.clone()));
     }
@@ -212,26 +213,43 @@ pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
         if !p.steps.is_empty() {
             return Err(PlanArtifactError::NoTaskWithNonEmptySteps);
         }
-        return Ok(());
+        return Ok(true);
     }
     if p.steps.is_empty() {
         return Err(PlanArtifactError::EmptySteps);
     }
+    Ok(false)
+}
+
+fn plan_allows_workflow_bound_multi_step(
+    p: &AgentReplyPlanV1,
+    validate_only_binding_ids: Option<&[String]>,
+    max_steps: usize,
+) -> bool {
+    let every_step_bound = p.steps.iter().all(|s| {
+        s.workflow_node_id
+            .as_deref()
+            .is_some_and(|w| !w.trim().is_empty())
+    });
+    let has_validate_only_binding_context =
+        validate_only_binding_ids.is_some_and(|ids| !ids.is_empty());
+    p.steps.len() > max_steps && every_step_bound && has_validate_only_binding_context
+}
+
+pub fn validate_agent_reply_plan_v1_with_validate_only_binding_ids(
+    p: &AgentReplyPlanV1,
+    validate_only_binding_ids: Option<&[String]>,
+) -> Result<(), PlanArtifactError> {
+    const PLAN_FIXED_MAX_STEPS: usize = 1;
+    if validate_agent_reply_plan_v1_header(p)? {
+        return Ok(());
+    }
     // 固定单步：默认只允许 1 步。
     // 绑定优先例外：若每步都显式绑定 `workflow_node_id`，且存在 validate-only 绑定上下文，
     // 允许多步交由 `validate_plan_binds_workflow_validate_nodes` 做严格的一一对应校验。
-    let workflow_bound_multi_step = p.steps.len() > PLAN_FIXED_MAX_STEPS
-        && p.steps.iter().all(|s| {
-            s.workflow_node_id
-                .as_deref()
-                .map(|w| !w.trim().is_empty())
-                .unwrap_or(false)
-        });
-    let has_validate_only_binding_context =
-        validate_only_binding_ids.is_some_and(|ids| !ids.is_empty());
-    let allow_workflow_bound_multi_step =
-        workflow_bound_multi_step && has_validate_only_binding_context;
-    if p.steps.len() > PLAN_FIXED_MAX_STEPS && !allow_workflow_bound_multi_step {
+    if p.steps.len() > PLAN_FIXED_MAX_STEPS
+        && !plan_allows_workflow_bound_multi_step(p, validate_only_binding_ids, PLAN_FIXED_MAX_STEPS)
+    {
         return Err(PlanArtifactError::TooManySteps {
             max: PLAN_FIXED_MAX_STEPS,
             got: p.steps.len(),

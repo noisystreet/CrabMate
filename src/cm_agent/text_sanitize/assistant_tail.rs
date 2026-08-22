@@ -165,6 +165,29 @@ fn collapse_duplicate_prose_fused_twice(s: &str) -> String {
     }
 }
 
+fn line_looks_like_bullet(l: &str) -> bool {
+    l.starts_with("- ")
+        || l.starts_with("* ")
+        || l.starts_with("• ")
+        || RE_ORDERED_LINE_PREFIX.is_match(l)
+}
+
+fn strip_bullet_prefix(l: &str) -> String {
+    if let Some(x) = l.strip_prefix("- ") {
+        return x.to_string();
+    }
+    if let Some(x) = l.strip_prefix("* ") {
+        return x.to_string();
+    }
+    if let Some(x) = l.strip_prefix("• ") {
+        return x.to_string();
+    }
+    RE_ORDERED_LINE_PREFIX
+        .replace(l.trim(), "")
+        .trim()
+        .to_string()
+}
+
 /// 多行列表并成一句中文（分号分隔）；非全列表则合并为空格分隔的单段。
 fn flatten_bullet_lines_to_prose(s: &str) -> String {
     let lines: Vec<String> = s
@@ -178,29 +201,10 @@ fn flatten_bullet_lines_to_prose(s: &str) -> String {
     if lines.len() == 1 {
         return lines.into_iter().next().unwrap_or_default();
     }
-    let all_bullets = lines.iter().all(|l| {
-        l.starts_with("- ")
-            || l.starts_with("* ")
-            || l.starts_with("• ")
-            || RE_ORDERED_LINE_PREFIX.is_match(l)
-    });
+    let all_bullets = lines.iter().all(|l| line_looks_like_bullet(l));
     let cleaned: Vec<String> = lines
         .into_iter()
-        .map(|l| {
-            if let Some(x) = l.strip_prefix("- ") {
-                x.to_string()
-            } else if let Some(x) = l.strip_prefix("* ") {
-                x.to_string()
-            } else if let Some(x) = l.strip_prefix("• ") {
-                x.to_string()
-            } else {
-                RE_ORDERED_LINE_PREFIX
-                    .replace(l.trim(), "")
-                    .trim()
-                    .to_string()
-            }
-        })
-        .map(|s| s.trim().to_string())
+        .map(|l| strip_bullet_prefix(&l).trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
     if cleaned.is_empty() {

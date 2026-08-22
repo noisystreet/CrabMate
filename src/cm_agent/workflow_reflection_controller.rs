@@ -340,24 +340,25 @@ fn collect_workflow_execute_nodes(nodes_v: &Value) -> Result<WorkflowExecuteColl
     Ok((node_ids, entries))
 }
 
-fn validate_one_workflow_node_contract(
-    node: &Value,
+fn workflow_node_deps_values(
+    node_obj: &serde_json::Map<String, Value>,
+    id: &str,
+) -> Result<Vec<Value>, Value> {
+    match node_obj.get("deps") {
+        None => Ok(Vec::new()),
+        Some(dv) => Ok(dv
+            .as_array()
+            .ok_or_else(|| workflow_contract_error(format!("node {} 的 deps 必须是数组", id)))?
+            .clone()),
+    }
+}
+
+fn validate_workflow_node_deps(
+    deps: &[Value],
     id: &str,
     node_ids: &HashSet<String>,
 ) -> Result<(), Value> {
-    let node_obj = node
-        .as_object()
-        .ok_or_else(|| workflow_contract_error(format!("node {} 必须是对象", id)))?;
-
-    let deps_values: Vec<Value> = match node_obj.get("deps") {
-        None => Vec::new(),
-        Some(dv) => dv
-            .as_array()
-            .ok_or_else(|| workflow_contract_error(format!("node {} 的 deps 必须是数组", id)))?
-            .clone(),
-    };
-
-    for dep in deps_values.iter() {
+    for dep in deps {
         let dep_id = dep.as_str().ok_or_else(|| {
             workflow_contract_error(format!("node {} 的 deps 元素必须是字符串", id))
         })?;
@@ -368,13 +369,28 @@ fn validate_one_workflow_node_contract(
             )));
         }
     }
+    Ok(())
+}
 
-    let tool_name = node_obj
+fn workflow_node_tool_name(node_obj: &serde_json::Map<String, Value>) -> &str {
+    node_obj
         .get("tool_name")
         .or_else(|| node_obj.get("tool"))
         .and_then(|x| x.as_str())
-        .unwrap_or("");
-    if tool_name.trim().is_empty() {
+        .unwrap_or("")
+}
+
+fn validate_one_workflow_node_contract(
+    node: &Value,
+    id: &str,
+    node_ids: &HashSet<String>,
+) -> Result<(), Value> {
+    let node_obj = node
+        .as_object()
+        .ok_or_else(|| workflow_contract_error(format!("node {} 必须是对象", id)))?;
+    let deps_values = workflow_node_deps_values(node_obj, id)?;
+    validate_workflow_node_deps(&deps_values, id, node_ids)?;
+    if workflow_node_tool_name(node_obj).trim().is_empty() {
         return Err(workflow_contract_error(format!(
             "node {} 缺少 tool_name（或 tool）",
             id

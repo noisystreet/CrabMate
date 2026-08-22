@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 94
+global_over_ccn_sum_cap = 0
 
 [modules]
 "src/agent" = 0
@@ -21,7 +21,7 @@ global_over_ccn_sum_cap = 94
 "src/cli_run.rs" = 0
 "src/cli_run_serve.rs" = 0
 "src/cli_run_session.rs" = 0
-"src/cm_agent" = 8
+"src/cm_agent" = 0
 "src/cm_api_contract" = 0
 "src/cm_approval" = 0
 "src/cm_benchmark" = 0
