@@ -489,12 +489,7 @@ fn validate_f64_table(b: &ConfigBuilder) -> Result<(), String> {
     Ok(())
 }
 
-/// 对 `finalize` 中会 `clamp` 的字段做前置校验；`None` 表示使用默认，跳过。
-pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), String> {
-    validate_u64_table(b)?;
-    check_i64_inclusive("llm_seed", b.llm_sampling.llm_seed, i64::MIN, i64::MAX)?;
-    validate_f64_table(b)?;
-
+fn validate_parallel_wall_timeouts(b: &ConfigBuilder) -> Result<(), String> {
     for (k, v) in &b
         .tool_registry_policy
         .tool_registry_parallel_wall_timeout_secs
@@ -508,9 +503,10 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
             ));
         }
     }
+    Ok(())
+}
 
-    validate_background_job_ranges(b)?;
-
+fn validate_tool_call_explain_char_range(b: &ConfigBuilder) -> Result<(), String> {
     if let Some(ref min_c) = b.tool_call_explain.tool_call_explain_min_chars
         && let Some(ref max_c) = b.tool_call_explain.tool_call_explain_max_chars
         && max_c < min_c
@@ -519,7 +515,17 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
             "配置错误：tool_call_explain_max_chars({max_c}) 小于 tool_call_explain_min_chars({min_c})"
         ));
     }
+    Ok(())
+}
 
+/// 对 `finalize` 中会 `clamp` 的字段做前置校验；`None` 表示使用默认，跳过。
+pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), String> {
+    validate_u64_table(b)?;
+    check_i64_inclusive("llm_seed", b.llm_sampling.llm_seed, i64::MIN, i64::MAX)?;
+    validate_f64_table(b)?;
+    validate_parallel_wall_timeouts(b)?;
+    validate_background_job_ranges(b)?;
+    validate_tool_call_explain_char_range(b)?;
     Ok(())
 }
 

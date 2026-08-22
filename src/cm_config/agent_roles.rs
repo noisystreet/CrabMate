@@ -51,6 +51,28 @@ struct AgentRoleEntryToml {
     default_session_mode: Option<String>,
 }
 
+pub(super) fn merge_into_role_entry(
+    slot: &mut AgentRoleEntryBuilder,
+    system_prompt: Option<String>,
+    system_prompt_file: Option<String>,
+    allowed_tools: Option<Vec<String>>,
+    prepend_coding_workbench: Option<bool>,
+    default_session_mode: Option<String>,
+) {
+    super::builder::override_opt_string_non_empty(&mut slot.system_prompt, system_prompt);
+    super::builder::override_opt_string_non_empty(&mut slot.system_prompt_file, system_prompt_file);
+    if let Some(list) = allowed_tools {
+        slot.allowed_tools = Some(list);
+    }
+    if let Some(v) = prepend_coding_workbench {
+        slot.prepend_coding_workbench = Some(v);
+    }
+    super::builder::override_opt_string_non_empty(
+        &mut slot.default_session_mode,
+        default_session_mode,
+    );
+}
+
 /// 将 `config/agent_roles.toml` 合并进 [`super::builder::ConfigBuilder`]（多文件时后加载的覆盖同 id 字段）。
 pub(super) fn merge_agent_roles_file_into_builder(
     content: &str,
@@ -74,31 +96,14 @@ pub(super) fn merge_agent_roles_file_into_builder(
             if id.is_empty() {
                 continue;
             }
-            let slot = entries.entry(id).or_default();
-            if let Some(p) = row.system_prompt {
-                let p = p.trim().to_string();
-                if !p.is_empty() {
-                    slot.system_prompt = Some(p);
-                }
-            }
-            if let Some(f) = row.system_prompt_file {
-                let f = f.trim().to_string();
-                if !f.is_empty() {
-                    slot.system_prompt_file = Some(f);
-                }
-            }
-            if let Some(list) = row.allowed_tools {
-                slot.allowed_tools = Some(list);
-            }
-            if let Some(v) = row.prepend_coding_workbench {
-                slot.prepend_coding_workbench = Some(v);
-            }
-            if let Some(m) = row.default_session_mode {
-                let m = m.trim().to_string();
-                if !m.is_empty() {
-                    slot.default_session_mode = Some(m);
-                }
-            }
+            merge_into_role_entry(
+                entries.entry(id).or_default(),
+                row.system_prompt,
+                row.system_prompt_file,
+                row.allowed_tools,
+                row.prepend_coding_workbench,
+                row.default_session_mode,
+            );
         }
     }
     Ok(())
@@ -152,6 +157,34 @@ struct RoleSystemMergeCtx<'a> {
     skills_top_k: usize,
 }
 
+fn merge_role_delta_with_layers(
+    ctx: &RoleSystemMergeCtx<'_>,
+    prepend_coding_workbench: Option<bool>,
+    delta: &str,
+) -> Result<String, String> {
+    let combined = l0_stack_before_role_delta(
+        ctx.universal_l0_system_prompt,
+        ctx.coding_workbench_increment,
+        prepend_coding_workbench,
+        ctx.coding_workbench_enabled,
+        delta,
+    );
+    let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
+        combined,
+        ctx.cursor_rules_enabled,
+        ctx.cursor_rules_dir,
+        ctx.cursor_rules_include_agents_md,
+        ctx.cursor_rules_max_chars,
+    )?;
+    skills::merge_system_prompt_with_skills_index(
+        with_rules,
+        ctx.skills_list_opts,
+        ctx.skills_enabled,
+        ctx.skills_max_chars,
+        ctx.skills_top_k,
+    )
+}
+
 fn merge_role_system_prompt(
     role_id: &str,
     b: &AgentRoleEntryBuilder,
@@ -168,52 +201,12 @@ fn merge_role_system_prompt(
                 "配置错误：角色 \"{role_id}\" 的 system_prompt_file 加载后为空"
             ));
         }
-        let combined = l0_stack_before_role_delta(
-            ctx.universal_l0_system_prompt,
-            ctx.coding_workbench_increment,
-            b.prepend_coding_workbench,
-            ctx.coding_workbench_enabled,
-            raw.trim(),
-        );
-        let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-            combined,
-            ctx.cursor_rules_enabled,
-            ctx.cursor_rules_dir,
-            ctx.cursor_rules_include_agents_md,
-            ctx.cursor_rules_max_chars,
-        )?;
-        skills::merge_system_prompt_with_skills_index(
-            with_rules,
-            ctx.skills_list_opts,
-            ctx.skills_enabled,
-            ctx.skills_max_chars,
-            ctx.skills_top_k,
-        )?
+        merge_role_delta_with_layers(ctx, b.prepend_coding_workbench, raw.trim())?
     } else if let Some(ref s) = b.system_prompt {
         if s.trim().is_empty() {
             ctx.global_effective_system_prompt.to_string()
         } else {
-            let combined = l0_stack_before_role_delta(
-                ctx.universal_l0_system_prompt,
-                ctx.coding_workbench_increment,
-                b.prepend_coding_workbench,
-                ctx.coding_workbench_enabled,
-                s.trim(),
-            );
-            let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-                combined,
-                ctx.cursor_rules_enabled,
-                ctx.cursor_rules_dir,
-                ctx.cursor_rules_include_agents_md,
-                ctx.cursor_rules_max_chars,
-            )?;
-            skills::merge_system_prompt_with_skills_index(
-                with_rules,
-                ctx.skills_list_opts,
-                ctx.skills_enabled,
-                ctx.skills_max_chars,
-                ctx.skills_top_k,
-            )?
+            merge_role_delta_with_layers(ctx, b.prepend_coding_workbench, s.trim())?
         }
     } else {
         ctx.global_effective_system_prompt.to_string()

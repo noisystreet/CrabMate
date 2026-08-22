@@ -513,31 +513,14 @@ impl ConfigBuilder {
             if id.is_empty() {
                 continue;
             }
-            let slot = self.agent_role_entries.entry(id).or_default();
-            if let Some(ref p) = row.system_prompt {
-                let p = p.trim().to_string();
-                if !p.is_empty() {
-                    slot.system_prompt = Some(p);
-                }
-            }
-            if let Some(ref f) = row.system_prompt_file {
-                let f = f.trim().to_string();
-                if !f.is_empty() {
-                    slot.system_prompt_file = Some(f);
-                }
-            }
-            if let Some(list) = row.allowed_tools.clone() {
-                slot.allowed_tools = Some(list);
-            }
-            if let Some(v) = row.prepend_coding_workbench {
-                slot.prepend_coding_workbench = Some(v);
-            }
-            if let Some(ref m) = row.default_session_mode {
-                let m = m.trim().to_string();
-                if !m.is_empty() {
-                    slot.default_session_mode = Some(m);
-                }
-            }
+            super::agent_roles::merge_into_role_entry(
+                self.agent_role_entries.entry(id).or_default(),
+                row.system_prompt.clone(),
+                row.system_prompt_file.clone(),
+                row.allowed_tools.clone(),
+                row.prepend_coding_workbench,
+                row.default_session_mode.clone(),
+            );
         }
     }
 
@@ -548,55 +531,69 @@ impl ConfigBuilder {
     }
 
     pub(super) fn apply_tool_registry(&mut self, tr: ToolRegistrySection) {
-        let p = &mut self.tool_registry_policy;
-        if let Some(v) = tr.http_fetch_wall_timeout_secs {
-            p.tool_registry_http_fetch_wall_timeout_secs = Some(v);
-        }
-        if let Some(v) = tr.http_request_wall_timeout_secs {
-            p.tool_registry_http_request_wall_timeout_secs = Some(v);
-        }
-        for (k, v) in tr.parallel_wall_timeout_secs {
-            p.tool_registry_parallel_wall_timeout_secs.insert(k, v);
-        }
-        if let Some(v) = tr.parallel_sync_denied_tools {
-            p.tool_registry_parallel_sync_denied_tools = Some(v);
-        }
-        if let Some(v) = tr.parallel_sync_denied_prefixes {
-            p.tool_registry_parallel_sync_denied_prefixes = Some(v);
-        }
-        if let Some(v) = tr.sync_default_inline_tools {
-            p.tool_registry_sync_default_inline_tools = Some(v);
-        }
-        if let Some(v) = tr.write_effect_tools {
-            p.tool_registry_write_effect_tools = Some(v);
-        }
-        if let Some(v) = tr.sub_agent_patch_write_extra_tools {
-            p.tool_registry_sub_agent_patch_write_extra_tools = Some(v);
-        }
-        if let Some(v) = tr.sub_agent_test_runner_extra_tools {
-            p.tool_registry_sub_agent_test_runner_extra_tools = Some(v);
-        }
-        if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
-            p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
-        }
-        // 后台任务 6 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
-        p.tool_registry_background_jobs_enabled = tr
-            .background_jobs_enabled
-            .or(p.tool_registry_background_jobs_enabled);
-        p.tool_registry_background_job_max_concurrent = tr
-            .background_job_max_concurrent
-            .or(p.tool_registry_background_job_max_concurrent);
-        p.tool_registry_background_job_max_queued = tr
-            .background_job_max_queued
-            .or(p.tool_registry_background_job_max_queued);
-        p.tool_registry_background_job_ttl_secs = tr
-            .background_job_ttl_secs
-            .or(p.tool_registry_background_job_ttl_secs);
-        p.tool_registry_background_job_result_grace_secs = tr
-            .background_job_result_grace_secs
-            .or(p.tool_registry_background_job_result_grace_secs);
-        p.tool_registry_background_job_max_entries = tr
-            .background_job_max_entries
-            .or(p.tool_registry_background_job_max_entries);
+        apply_tool_registry_timeouts(&mut self.tool_registry_policy, &tr);
+        apply_tool_registry_tool_lists(&mut self.tool_registry_policy, tr);
     }
+}
+
+fn apply_tool_registry_timeouts(
+    p: &mut config_builder_sections::ConfigBuilderToolRegistryPolicy,
+    tr: &ToolRegistrySection,
+) {
+    if let Some(v) = tr.http_fetch_wall_timeout_secs {
+        p.tool_registry_http_fetch_wall_timeout_secs = Some(v);
+    }
+    if let Some(v) = tr.http_request_wall_timeout_secs {
+        p.tool_registry_http_request_wall_timeout_secs = Some(v);
+    }
+    for (k, v) in &tr.parallel_wall_timeout_secs {
+        p.tool_registry_parallel_wall_timeout_secs
+            .insert(k.clone(), *v);
+    }
+}
+
+fn apply_tool_registry_tool_lists(
+    p: &mut config_builder_sections::ConfigBuilderToolRegistryPolicy,
+    tr: ToolRegistrySection,
+) {
+    if let Some(v) = tr.parallel_sync_denied_tools {
+        p.tool_registry_parallel_sync_denied_tools = Some(v);
+    }
+    if let Some(v) = tr.parallel_sync_denied_prefixes {
+        p.tool_registry_parallel_sync_denied_prefixes = Some(v);
+    }
+    if let Some(v) = tr.sync_default_inline_tools {
+        p.tool_registry_sync_default_inline_tools = Some(v);
+    }
+    if let Some(v) = tr.write_effect_tools {
+        p.tool_registry_write_effect_tools = Some(v);
+    }
+    if let Some(v) = tr.sub_agent_patch_write_extra_tools {
+        p.tool_registry_sub_agent_patch_write_extra_tools = Some(v);
+    }
+    if let Some(v) = tr.sub_agent_test_runner_extra_tools {
+        p.tool_registry_sub_agent_test_runner_extra_tools = Some(v);
+    }
+    if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
+        p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
+    }
+    // 后台任务 6 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
+    p.tool_registry_background_jobs_enabled = tr
+        .background_jobs_enabled
+        .or(p.tool_registry_background_jobs_enabled);
+    p.tool_registry_background_job_max_concurrent = tr
+        .background_job_max_concurrent
+        .or(p.tool_registry_background_job_max_concurrent);
+    p.tool_registry_background_job_max_queued = tr
+        .background_job_max_queued
+        .or(p.tool_registry_background_job_max_queued);
+    p.tool_registry_background_job_ttl_secs = tr
+        .background_job_ttl_secs
+        .or(p.tool_registry_background_job_ttl_secs);
+    p.tool_registry_background_job_result_grace_secs = tr
+        .background_job_result_grace_secs
+        .or(p.tool_registry_background_job_result_grace_secs);
+    p.tool_registry_background_job_max_entries = tr
+        .background_job_max_entries
+        .or(p.tool_registry_background_job_max_entries);
 }
