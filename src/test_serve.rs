@@ -23,6 +23,9 @@ use crate::web_static_dir::resolve_web_static_dir;
 /// 测试用服务器句柄。
 pub struct TestServeHandle {
     pub base_url: String,
+    /// 与本实例队列同一句柄；crate 内 HTTP 冒烟读取。
+    #[allow(dead_code)]
+    pub(crate) chat_queue: ChatJobQueue,
     /// 本实例附图目录（进程内 `GET /uploads` / `POST /upload`）。
     pub uploads_dir: std::path::PathBuf,
     /// 持有后端引用以防过早 drop（`&'static` 引用安全，但保留引用可验证所有权的逻辑关联）。
@@ -104,7 +107,7 @@ pub async fn start_test_serve(
             uploads_dir: uploads_dir.clone(),
         },
         chat: web::AppStateChatRuntime {
-            chat_queue,
+            chat_queue: chat_queue.clone(),
             chat_queue_job_deps,
         },
         conversation: web::AppStateConversationRuntime {
@@ -154,6 +157,7 @@ pub async fn start_test_serve(
 
     TestServeHandle {
         base_url,
+        chat_queue: chat_queue.clone(),
         uploads_dir,
         llm_backend,
         _shutdown_tx: shutdown_tx,

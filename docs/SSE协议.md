@@ -154,7 +154,7 @@
 
 | `code` | HTTP | 说明 |
 |--------|------|------|
-| `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`） |
+| `STREAM_JOB_GONE` | 410 | **`stream_resume`** 任务不在 hub（见 `chat_stream_handler`）；**`POST /chat/stream/{job_id}/cancel`** 任务未登记时亦为此码与状态 |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** 高于服务端 **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
 | `SSE_PROTOCOL_MISMATCH` | 400 | **`client_sse_protocol`** 为正整数且**低于**服务端版本 |
