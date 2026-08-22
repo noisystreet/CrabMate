@@ -278,56 +278,36 @@ fn static_semantics_validate_only_binding_ok(
     }
 }
 
-fn evaluate_static_semantics(
+fn static_semantics_fail_codes(
+    layers_ok: bool,
+    workflow_subset_ok: bool,
+    workflow_cover_ok: bool,
+    validate_only_binding_ok: bool,
+    plan_steps: usize,
+    layer_need: Option<usize>,
+) -> Vec<String> {
+    let mut codes: Vec<String> = Vec::new();
+    if !layers_ok {
+        let need = layer_need.unwrap_or(0);
+        codes.push(format!("plan_layer_count_mismatch need={need} got={plan_steps}"));
+    }
+    if !workflow_subset_ok {
+        codes.push("plan_workflow_node_ids_invalid".to_string());
+    }
+    if !workflow_cover_ok {
+        codes.push("plan_workflow_node_coverage_incomplete".to_string());
+    }
+    if !validate_only_binding_ok {
+        codes.push("plan_validate_only_node_binding_mismatch".to_string());
+    }
+    codes
+}
+
+fn static_semantics_pass_outcome(
     plan: &AgentReplyPlanV1,
     args: &FinalPlanGateArgs<'_>,
-    apply_layer_semantics: bool,
     layer_need: Option<usize>,
-    validate_only_binding_ids: Option<&Vec<String>>,
 ) -> StaticSemanticsOutcome {
-    let layers_ok = static_semantics_layers_ok(plan, apply_layer_semantics, layer_need);
-    let wf_ids = plan_rewrite::last_workflow_tool_node_ids(args.messages);
-    let (workflow_subset_ok, workflow_cover_ok) =
-        static_semantics_workflow_id_checks(plan, args, &wf_ids);
-    let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
-    let validate_only_binding_ok = static_semantics_validate_only_binding_ok(
-        plan,
-        apply_layer_semantics,
-        validate_only_binding_ids,
-    );
-    if !(layers_ok && workflow_ids_ok && validate_only_binding_ok) {
-        let mut codes: Vec<String> = Vec::new();
-        if !layers_ok {
-            let got = plan.steps.len();
-            let need = layer_need.unwrap_or(0);
-            codes.push(format!("plan_layer_count_mismatch need={need} got={got}"));
-        }
-        if !workflow_subset_ok {
-            codes.push("plan_workflow_node_ids_invalid".to_string());
-        }
-        if !workflow_cover_ok {
-            codes.push("plan_workflow_node_coverage_incomplete".to_string());
-        }
-        if !validate_only_binding_ok {
-            codes.push("plan_validate_only_node_binding_mismatch".to_string());
-        }
-        tracing::info!(
-            target: "crabmate::per",
-            outcome = "plan_schema_ok_semantics_fail",
-            plan_steps = plan.steps.len(),
-            layer_need = ?layer_need,
-            workflow_subset_ok,
-            workflow_cover_ok,
-            validate_only_binding_ok = validate_only_binding_ok,
-            feedback = %codes.join(";"),
-            sub_phase = "reflect",
-            "after_final_assistant static semantics failed"
-        );
-        return StaticSemanticsOutcome::Fail {
-            feedback: codes.join("; "),
-        };
-    }
-
     let digest = plan_rewrite::summarize_messages_for_final_plan_semantic_check(
         args.messages,
         &|name| crate::cm_tools::registry_policy::is_readonly_tool(args.cfg, name),
@@ -359,6 +339,92 @@ fn evaluate_static_semantics(
             "after_final_assistant plan ok stop turn"
         );
         StaticSemanticsOutcome::PassStopTurn
+    }
+}
+
+fn evaluate_static_semantics(
+    plan: &AgentReplyPlanV1,
+    args: &FinalPlanGateArgs<'_>,
+    apply_layer_semantics: bool,
+    layer_need: Option<usize>,
+    validate_only_binding_ids: Option<&Vec<String>>,
+) -> StaticSemanticsOutcome {
+    let layers_ok = static_semantics_layers_ok(plan, apply_layer_semantics, layer_need);
+    let wf_ids = plan_rewrite::last_workflow_tool_node_ids(args.messages);
+    let (workflow_subset_ok, workflow_cover_ok) =
+        static_semantics_workflow_id_checks(plan, args, &wf_ids);
+    let workflow_ids_ok = workflow_subset_ok && workflow_cover_ok;
+    let validate_only_binding_ok = static_semantics_validate_only_binding_ok(
+        plan,
+        apply_layer_semantics,
+        validate_only_binding_ids,
+    );
+    if !(layers_ok && workflow_ids_ok && validate_only_binding_ok) {
+        let codes = static_semantics_fail_codes(
+            layers_ok,
+            workflow_subset_ok,
+            workflow_cover_ok,
+            validate_only_binding_ok,
+            plan.steps.len(),
+            layer_need,
+        );
+        tracing::info!(
+            target: "crabmate::per",
+            outcome = "plan_schema_ok_semantics_fail",
+            plan_steps = plan.steps.len(),
+            layer_need = ?layer_need,
+            workflow_subset_ok,
+            workflow_cover_ok,
+            validate_only_binding_ok = validate_only_binding_ok,
+            feedback = %codes.join(";"),
+            sub_phase = "reflect",
+            "after_final_assistant static semantics failed"
+        );
+        return StaticSemanticsOutcome::Fail {
+            feedback: codes.join("; "),
+        };
+    }
+    static_semantics_pass_outcome(plan, args, layer_need)
+}
+
+fn plan_rewrite_strict_node_coverage_suffix(require_strict: bool, ids: &[String]) -> String {
+    if !require_strict {
+        return String::new();
+    }
+    format!(
+        "\n- 若**任一步**填写了 `workflow_node_id`，则须覆盖下列**全部**节点 id（每 id 至少一步）：{}。",
+        ids.join(", ")
+    )
+}
+
+fn plan_rewrite_text_for_semantics_failure(
+    base: String,
+    layer_need: Option<usize>,
+    apply_layer_semantics: bool,
+    messages: &[crate::cm_types::Message],
+    require_strict: bool,
+) -> String {
+    let n = layer_need.filter(|&n| n > 0 && apply_layer_semantics);
+    let ids = plan_rewrite::last_workflow_tool_node_ids(messages);
+    match (n, ids.as_ref().filter(|v| !v.is_empty())) {
+        (Some(n), Some(ids)) => {
+            let strict = plan_rewrite_strict_node_coverage_suffix(require_strict, ids);
+            format!(
+                "{base}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。{strict}",
+                ids.join(", "),
+            )
+        }
+        (Some(n), None) => format!(
+            "{base}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。"
+        ),
+        (None, Some(ids)) => {
+            let strict = plan_rewrite_strict_node_coverage_suffix(require_strict, ids);
+            format!(
+                "{base}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。{strict}",
+                ids.join(", "),
+            )
+        }
+        (None, None) => base,
     }
 }
 
@@ -402,43 +468,13 @@ fn outcome_after_semantics_failure(
         Some(s) => plan_rewrite::plan_rewrite_user_text_with_issue(s),
         None => plan_rewrite::plan_rewrite_user_text_base(),
     };
-    let rewrite_text = match (
-        layer_need.filter(|&n| n > 0 && apply_layer_semantics),
-        plan_rewrite::last_workflow_tool_node_ids(args.messages),
-    ) {
-        (Some(n), Some(ids)) if !ids.is_empty() => {
-            let strict = if args.final_plan_require_strict_workflow_node_coverage {
-                format!(
-                    "\n- 若**任一步**填写了 `workflow_node_id`，则须覆盖下列**全部**节点 id（每 id 至少一步）：{}。",
-                    ids.join(", ")
-                )
-            } else {
-                String::new()
-            };
-            format!(
-                "{base}\n\n补充：\n- 最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。\n- 若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与 `nodes[].id` 对齐）：{}。{strict}",
-                ids.join(", "),
-            )
-        }
-        (Some(n), _) => format!(
-            "{base}\n\n补充：最近一次 `workflow_validate_only` 结果为 **{n}** 个执行层（`spec.layer_count`）。你的 `agent_reply_plan.steps` 条数须 **不少于 {n}**，且每条 `description` 应能对应到具体层或节点意图。"
-        ),
-        (None, Some(ids)) if !ids.is_empty() => {
-            let strict = if args.final_plan_require_strict_workflow_node_coverage {
-                format!(
-                    "\n- 若**任一步**填写了 `workflow_node_id`，则须覆盖下列**全部**节点 id（每 id 至少一步）：{}。",
-                    ids.join(", ")
-                )
-            } else {
-                String::new()
-            };
-            format!(
-                "{base}\n\n补充：若步骤中填写了 `workflow_node_id`，其值须为下列 **workflow 节点 id** 之一的子集（与最近一次 `workflow_execute` 工具结果中 `nodes[].id` 对齐）：{}。{strict}",
-                ids.join(", "),
-            )
-        }
-        (None, _) => base,
-    };
+    let rewrite_text = plan_rewrite_text_for_semantics_failure(
+        base,
+        layer_need,
+        apply_layer_semantics,
+        args.messages,
+        args.final_plan_require_strict_workflow_node_coverage,
+    );
     let rewrite_text = format!("{rewrite_text}{bind_suffix}");
     tracing::info!(
         target: "crabmate::per",

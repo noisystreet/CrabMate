@@ -43,22 +43,32 @@ struct GenericToolEvidence {
     readonly_success: bool,
 }
 
+fn history_contains_any(hay: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|n| hay.contains(n))
+}
+
 fn message_history_build_flags(history_lower: &str) -> (bool, bool, bool) {
-    let wrote_source = history_lower.contains(".cpp")
-        && (history_lower.contains("create file")
-            || history_lower.contains("创建文件")
-            || history_lower.contains("已创建文件")
-            || history_lower.contains("write_file")
-            || history_lower.contains("apply_patch"));
-    let compiled = history_lower.contains("cmake --build")
-        || history_lower.contains("built target")
-        || history_lower.contains("linking cxx executable")
-        || (history_lower.contains("configuring done")
-            && history_lower.contains("generating done"));
-    let ran_program = (history_lower.contains("退出码：0")
-        || history_lower.contains("exit code: 0"))
-        && (history_lower.contains("build/") || history_lower.contains("./build/"))
-        && (history_lower.contains("标准输出") || history_lower.contains("stdout"));
+    const WRITE_HINTS: &[&str] = &[
+        "create file",
+        "创建文件",
+        "已创建文件",
+        "write_file",
+        "apply_patch",
+    ];
+    const COMPILE_HINTS: &[&str] = &[
+        "cmake --build",
+        "built target",
+        "linking cxx executable",
+    ];
+    const EXIT_OK: &[&str] = &["退出码：0", "exit code: 0"];
+    const BUILD_PATH: &[&str] = &["build/", "./build/"];
+    const STDOUT: &[&str] = &["标准输出", "stdout"];
+    let wrote_source = history_lower.contains(".cpp") && history_contains_any(history_lower, WRITE_HINTS);
+    let compiled = history_contains_any(history_lower, COMPILE_HINTS)
+        || (history_lower.contains("configuring done") && history_lower.contains("generating done"));
+    let ran_program = history_contains_any(history_lower, EXIT_OK)
+        && history_contains_any(history_lower, BUILD_PATH)
+        && history_contains_any(history_lower, STDOUT);
     (wrote_source, compiled, ran_program)
 }
 
@@ -115,12 +125,11 @@ fn tool_exit_ok(env: &crate::cm_tools::tool_result::NormalizedToolEnvelope) -> b
     env.ok || env.exit_code == Some(0)
 }
 
-fn update_program_evidence_from_tool_env(
+fn maybe_mark_wrote_cpp_source(
     evidence: &mut ProgramBuildRunEvidence,
     env: &crate::cm_tools::tool_result::NormalizedToolEnvelope,
+    lower: &str,
 ) {
-    let text = normalized_tool_text(env);
-    let lower = text.to_lowercase();
     if matches!(
         env.name.as_str(),
         "create_file" | "write_file" | "edit_file" | "apply_patch"
@@ -128,27 +137,49 @@ fn update_program_evidence_from_tool_env(
     {
         evidence.wrote_source = true;
     }
-    if env.name == "run_command" && tool_exit_ok(env) {
-        let invocation = run_command_invocation_from_env(env).to_lowercase();
-        if invocation.contains("cmake --build")
-            || lower.contains("cmake --build")
-            || lower.contains("built target")
-            || lower.contains("linking cxx executable")
-        {
-            evidence.compiled = true;
-        }
-        let parsed = crate::cm_tools::tool_result::parse_legacy_output(
-            env.name.as_str(),
-            env.output.as_str(),
-        );
-        let stdout_nonempty = structured_stdout_nonempty(env) || !parsed.stdout.trim().is_empty();
-        if looks_like_build_artifact_run(&invocation, &lower)
-            && tool_exit_ok(env)
-            && stdout_nonempty
-        {
-            evidence.ran_program = true;
-        }
+}
+
+fn maybe_mark_compiled_from_run_command(
+    evidence: &mut ProgramBuildRunEvidence,
+    invocation: &str,
+    lower: &str,
+) {
+    if invocation.contains("cmake --build")
+        || lower.contains("cmake --build")
+        || lower.contains("built target")
+        || lower.contains("linking cxx executable")
+    {
+        evidence.compiled = true;
     }
+}
+
+fn maybe_mark_ran_program(
+    evidence: &mut ProgramBuildRunEvidence,
+    env: &crate::cm_tools::tool_result::NormalizedToolEnvelope,
+    invocation: &str,
+    lower: &str,
+) {
+    let parsed =
+        crate::cm_tools::tool_result::parse_legacy_output(env.name.as_str(), env.output.as_str());
+    let stdout_nonempty = structured_stdout_nonempty(env) || !parsed.stdout.trim().is_empty();
+    if looks_like_build_artifact_run(invocation, lower) && stdout_nonempty {
+        evidence.ran_program = true;
+    }
+}
+
+fn update_program_evidence_from_tool_env(
+    evidence: &mut ProgramBuildRunEvidence,
+    env: &crate::cm_tools::tool_result::NormalizedToolEnvelope,
+) {
+    let text = normalized_tool_text(env);
+    let lower = text.to_lowercase();
+    maybe_mark_wrote_cpp_source(evidence, env, &lower);
+    if env.name != "run_command" || !tool_exit_ok(env) {
+        return;
+    }
+    let invocation = run_command_invocation_from_env(env).to_lowercase();
+    maybe_mark_compiled_from_run_command(evidence, &invocation, &lower);
+    maybe_mark_ran_program(evidence, env, &invocation, &lower);
 }
 
 fn update_program_evidence_from_legacy_text(evidence: &mut ProgramBuildRunEvidence, raw: &str) {
@@ -470,6 +501,31 @@ fn last_assistant_substantive_answer(messages: &[Message]) -> bool {
     })
 }
 
+fn generic_impl_intent_satisfied(
+    intent: &GenericTaskIntent,
+    evidence: &GenericToolEvidence,
+    completion: bool,
+) -> bool {
+    let build_ok = !intent.build_or_test || (evidence.build_or_test_success && completion);
+    let write_ok = !intent.write_change || (evidence.write_success && completion);
+    build_ok && write_ok
+}
+
+fn generic_intent_satisfied(
+    intent: &GenericTaskIntent,
+    evidence: &GenericToolEvidence,
+    completion: bool,
+    substantive: bool,
+) -> bool {
+    if intent.build_or_test || intent.write_change {
+        return generic_impl_intent_satisfied(intent, evidence, completion);
+    }
+    if intent.readonly_analysis {
+        return evidence.readonly_success && (completion || substantive);
+    }
+    evidence.any_success && completion
+}
+
 fn check_generic_successful_tool_then_completion(
     task: &str,
     messages: &[Message],
@@ -478,16 +534,7 @@ fn check_generic_successful_tool_then_completion(
     let evidence = recent_generic_tool_evidence(messages);
     let completion = last_assistant_completion_claim(messages);
     let substantive = last_assistant_substantive_answer(messages);
-    let has_impl_intent = intent.build_or_test || intent.write_change;
-    let satisfied = if has_impl_intent {
-        (!intent.build_or_test || (evidence.build_or_test_success && completion))
-            && (!intent.write_change || (evidence.write_success && completion))
-    } else if intent.readonly_analysis {
-        evidence.readonly_success && (completion || substantive)
-    } else {
-        evidence.any_success && completion
-    };
-    if satisfied {
+    if generic_intent_satisfied(&intent, &evidence, completion, substantive) {
         GoalCompletionEvidenceCheck::Satisfied
     } else {
         GoalCompletionEvidenceCheck::NotApplicable
