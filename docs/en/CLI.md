@@ -12,7 +12,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 - **Source tree**: Pre-generated **`man/crabmate.1`** (troff), aligned with current `clap`; **Debian `.deb`** installs to **`/usr/share/man/man1/crabmate.1`** (see root `Cargo.toml` `[package.metadata.deb] assets`).
 - **Regenerate** (after adding/removing subcommands or global flags): `cargo run --features gen-man --bin crabmate-gen-man`, then commit the updated `man/crabmate.1`.
-- **`cargo install crabmate`** (crates.io **stable `0.4.0`**, default **`server`**; pre-release **`0.5.0-alpha.0`** via clone **`cargo install --path .`** or the GitHub Release): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
+- **`cargo install crabmate`** (crates.io **stable `0.4.0`**, default **`server`**; pre-release **`0.5.0-alpha.1`** via clone **`cargo install --path .`** or the GitHub Release): does **not** install man into `MANPATH` by default; copy `man/crabmate.1` to `.../share/man/man1/` and run `mandb` (distro-dependent), or prefer **`cargo deb`** / distro packages.
 
 ## Subcommand overview
 
