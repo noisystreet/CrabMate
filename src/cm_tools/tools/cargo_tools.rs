@@ -1,7 +1,7 @@
 //! Rust 开发工具：cargo check/test/clippy/metadata/run/tree/clean/doc/outdated/machete/udeps/publish dry-run、工作区内 `rustc`。
 #![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::cm_tools::cargo_metadata::cargo_metadata_command;
@@ -460,6 +460,38 @@ pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usi
     cargo_machete_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
 }
 
+fn cargo_machete_resolved_path(
+    workspace_root: &Path,
+    path_rel: Option<&str>,
+) -> Result<Option<PathBuf>, ToolError> {
+    let Some(p) = path_rel else {
+        return Ok(None);
+    };
+    if p.is_empty() || p.contains("..") {
+        return Err(ToolError::invalid_args(
+            "错误：path 无效（不可为空或含 ..）".to_string(),
+        ));
+    }
+    let root_canon = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
+    let joined = workspace_root.join(p);
+    match joined.canonicalize() {
+        Ok(abs) => {
+            if !abs.starts_with(&root_canon) {
+                return Err(ToolError::invalid_args(
+                    "错误：path 必须位于工作区内".to_string(),
+                ));
+            }
+            Ok(Some(abs))
+        }
+        Err(e) => Err(ToolError::invalid_args(format!(
+            "错误：无法解析 path（{}）",
+            e
+        ))),
+    }
+}
+
 pub fn cargo_machete_try(
     args_json: &str,
     workspace_root: &Path,
@@ -477,41 +509,15 @@ pub fn cargo_machete_try(
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     let path_rel = v.get("path").and_then(|x| x.as_str()).map(str::trim);
-
-    if let Some(p) = path_rel
-        && (p.is_empty() || p.contains(".."))
-    {
-        return Err(ToolError::invalid_args(
-            "错误：path 无效（不可为空或含 ..）".to_string(),
-        ));
-    }
+    let resolved = cargo_machete_resolved_path(workspace_root, path_rel)?;
 
     let mut cmd = Command::new("cargo");
     cmd.arg("machete");
     if with_metadata {
         cmd.arg("--with-metadata");
     }
-    if let Some(p) = path_rel.filter(|s| !s.is_empty()) {
-        let root_canon = workspace_root
-            .canonicalize()
-            .unwrap_or_else(|_| workspace_root.to_path_buf());
-        let joined = workspace_root.join(p);
-        match joined.canonicalize() {
-            Ok(abs) => {
-                if !abs.starts_with(&root_canon) {
-                    return Err(ToolError::invalid_args(
-                        "错误：path 必须位于工作区内".to_string(),
-                    ));
-                }
-                cmd.arg(abs);
-            }
-            Err(e) => {
-                return Err(ToolError::invalid_args(format!(
-                    "错误：无法解析 path（{}）",
-                    e
-                )));
-            }
-        }
+    if let Some(abs) = resolved {
+        cmd.arg(abs);
     }
     cmd.current_dir(workspace_root);
     let out = run_and_format_try(cmd, max_output_len, "cargo machete", "cargo_machete", None)?;

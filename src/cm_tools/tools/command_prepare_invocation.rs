@@ -118,6 +118,33 @@ fn collect_unsafe_cmd_args(
         .collect()
 }
 
+fn scan_cd_join_escape(
+    candidate: &Path,
+    anchor: &Path,
+    pattern_unsafe: bool,
+    effective_working_dir: &mut PathBuf,
+) -> Result<bool, RunCommandError> {
+    if !candidate.is_dir() {
+        return Ok(false);
+    }
+    match candidate.canonicalize() {
+        Ok(canon_cand) => {
+            if !canon_cand.starts_with(anchor) {
+                Ok(true)
+            } else {
+                if !pattern_unsafe {
+                    *effective_working_dir = canon_cand;
+                }
+                Ok(false)
+            }
+        }
+        Err(e) => Err(RunCommandError::SpawnOther {
+            cmd: format!("canonicalize({})", candidate.display()),
+            source: e,
+        }),
+    }
+}
+
 /// 扫描用：推进 `cd … &&` 前缀；不安全的 `cd` 目录记入 `unsafe_out` 后仍合成推进以便继续扫后续 argv。
 fn advance_cd_prefixes_collecting_unsafe(
     workspace_root: &Path,
@@ -143,24 +170,8 @@ fn advance_cd_prefixes_collecting_unsafe(
         let dir = cmd_args[0].trim().to_string();
         let pattern_unsafe = !is_arg_safe("cd", &dir);
         let candidate = effective_working_dir.join(&dir);
-        let mut escape_unsafe = false;
-        if candidate.is_dir() {
-            match candidate.canonicalize() {
-                Ok(canon_cand) => {
-                    if !canon_cand.starts_with(&anchor) {
-                        escape_unsafe = true;
-                    } else if !pattern_unsafe {
-                        *effective_working_dir = canon_cand;
-                    }
-                }
-                Err(e) => {
-                    return Err(RunCommandError::SpawnOther {
-                        cmd: format!("canonicalize({})", candidate.display()),
-                        source: e,
-                    });
-                }
-            }
-        }
+        let escape_unsafe =
+            scan_cd_join_escape(&candidate, &anchor, pattern_unsafe, effective_working_dir)?;
         if (pattern_unsafe || escape_unsafe) && !unsafe_out.iter().any(|u| u == &dir) {
             unsafe_out.push(dir);
         }

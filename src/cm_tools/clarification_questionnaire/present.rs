@@ -41,11 +41,7 @@ pub struct ClarificationQuestionnaireBody {
     pub questions: Vec<ClarificationQuestionField>,
 }
 
-pub fn parse_present_clarification_body(
-    args_json: &str,
-) -> Result<ClarificationQuestionnaireBody, String> {
-    let args: PresentArgs =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效：{e}"))?;
+fn validate_present_header(args: &PresentArgs) -> Result<(String, String), String> {
     let qid = args.questionnaire_id.trim().to_string();
     if !valid_questionnaire_id(&qid) {
         return Err("questionnaire_id 须为非空字母数字与 -_，且长度不超过 128".to_string());
@@ -63,48 +59,67 @@ pub fn parse_present_clarification_body(
             "questions 数量须在 {MIN_QUESTIONS}～{MAX_QUESTIONS} 之间"
         ));
     }
+    Ok((qid, intro))
+}
+
+fn parse_present_question_kind(id: &str, kind: Option<&str>) -> Result<Option<String>, String> {
+    match kind.map(str::trim).filter(|s| !s.is_empty()) {
+        None | Some("text") => Ok(Some("text".to_string())),
+        Some("choice") => Ok(Some("choice".to_string())),
+        Some(k) => Err(format!("题目 `{id}` 的 kind 非法：{k}（仅 text / choice）")),
+    }
+}
+
+fn parse_present_question(
+    q: PresentQuestion,
+    seen: &mut std::collections::HashSet<String>,
+) -> Result<ClarificationQuestionField, String> {
+    let id = q.id.trim().to_string();
+    if !valid_question_id(&id) {
+        return Err(format!(
+            "题目 id `{id}` 非法（须字母数字与 -_，长度 ≤ {MAX_QUESTION_ID_LEN}）"
+        ));
+    }
+    if !seen.insert(id.clone()) {
+        return Err(format!("题目 id `{id}` 重复"));
+    }
+    let label = q.label.trim().to_string();
+    if label.is_empty() || label.chars().count() > MAX_LABEL_CHARS {
+        return Err(format!(
+            "题目 `{id}` 的 label 须非空且不超过 {MAX_LABEL_CHARS} 字符"
+        ));
+    }
+    let hint = q
+        .hint
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    if hint
+        .as_ref()
+        .is_some_and(|h| h.chars().count() > MAX_HINT_CHARS)
+    {
+        return Err(format!("题目 `{id}` 的 hint 过长（上限 {MAX_HINT_CHARS}）"));
+    }
+    let kind = parse_present_question_kind(&id, q.kind.as_deref())?;
+    Ok(ClarificationQuestionField {
+        id,
+        label,
+        hint,
+        required: q.required,
+        kind,
+    })
+}
+
+pub fn parse_present_clarification_body(
+    args_json: &str,
+) -> Result<ClarificationQuestionnaireBody, String> {
+    let args: PresentArgs =
+        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效：{e}"))?;
+    let (qid, intro) = validate_present_header(&args)?;
+    let n = args.questions.len();
     let mut fields: Vec<ClarificationQuestionField> = Vec::with_capacity(n);
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     for q in args.questions {
-        let id = q.id.trim().to_string();
-        if !valid_question_id(&id) {
-            return Err(format!(
-                "题目 id `{id}` 非法（须字母数字与 -_，长度 ≤ {MAX_QUESTION_ID_LEN}）"
-            ));
-        }
-        if !seen.insert(id.clone()) {
-            return Err(format!("题目 id `{id}` 重复"));
-        }
-        let label = q.label.trim().to_string();
-        if label.is_empty() || label.chars().count() > MAX_LABEL_CHARS {
-            return Err(format!(
-                "题目 `{id}` 的 label 须非空且不超过 {MAX_LABEL_CHARS} 字符"
-            ));
-        }
-        let hint = q
-            .hint
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        if hint
-            .as_ref()
-            .is_some_and(|h| h.chars().count() > MAX_HINT_CHARS)
-        {
-            return Err(format!("题目 `{id}` 的 hint 过长（上限 {MAX_HINT_CHARS}）"));
-        }
-        let kind = match q.kind.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-            None | Some("text") => Some("text".to_string()),
-            Some("choice") => Some("choice".to_string()),
-            Some(k) => {
-                return Err(format!("题目 `{id}` 的 kind 非法：{k}（仅 text / choice）"));
-            }
-        };
-        fields.push(ClarificationQuestionField {
-            id,
-            label,
-            hint,
-            required: q.required,
-            kind,
-        });
+        fields.push(parse_present_question(q, &mut seen)?);
     }
     Ok(ClarificationQuestionnaireBody {
         questionnaire_id: qid,

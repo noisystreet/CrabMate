@@ -382,6 +382,47 @@ pub fn reset(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
     )
 }
 
+fn cherry_pick_commit_list(v: &serde_json::Value) -> Result<Vec<String>, String> {
+    match v.get("commits").and_then(|x| x.as_array()) {
+        Some(arr) if !arr.is_empty() => Ok(arr
+            .iter()
+            .filter_map(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string)
+            .collect()),
+        _ => match v.get("commit").and_then(|x| x.as_str()).map(str::trim) {
+            Some(s) if !s.is_empty() => Ok(vec![s.to_string()]),
+            _ => Err("错误：缺少 commit(s) 参数".to_string()),
+        },
+    }
+}
+
+fn apply_cherry_pick_subcommand(cmd: &mut Command, v: &serde_json::Value) -> Result<(), String> {
+    let abort = v.get("abort").and_then(|x| x.as_bool()).unwrap_or(false);
+    let cont = v.get("continue").and_then(|x| x.as_bool()).unwrap_or(false);
+    if abort {
+        cmd.arg("--abort");
+        return Ok(());
+    }
+    if cont {
+        cmd.arg("--continue");
+        return Ok(());
+    }
+    let commits = cherry_pick_commit_list(v)?;
+    let no_commit = v
+        .get("no_commit")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    if no_commit {
+        cmd.arg("--no-commit");
+    }
+    for c in &commits {
+        cmd.arg(c);
+    }
+    Ok(())
+}
+
 pub fn cherry_pick(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
@@ -393,38 +434,10 @@ pub fn cherry_pick(args_json: &str, max_output_len: usize, working_dir: &Path) -
     if let Err(e) = require_confirm(&v, "git_cherry_pick") {
         return e;
     }
-    let abort = v.get("abort").and_then(|x| x.as_bool()).unwrap_or(false);
-    let cont = v.get("continue").and_then(|x| x.as_bool()).unwrap_or(false);
-
     let mut cmd = Command::new("git");
     cmd.arg("cherry-pick");
-    if abort {
-        cmd.arg("--abort");
-    } else if cont {
-        cmd.arg("--continue");
-    } else {
-        let commits = match v.get("commits").and_then(|x| x.as_array()) {
-            Some(arr) if !arr.is_empty() => arr
-                .iter()
-                .filter_map(|x| x.as_str())
-                .map(str::trim)
-                .filter(|s| !s.is_empty())
-                .collect::<Vec<_>>(),
-            _ => match v.get("commit").and_then(|x| x.as_str()).map(str::trim) {
-                Some(s) if !s.is_empty() => vec![s],
-                _ => return "错误：缺少 commit(s) 参数".to_string(),
-            },
-        };
-        let no_commit = v
-            .get("no_commit")
-            .and_then(|x| x.as_bool())
-            .unwrap_or(false);
-        if no_commit {
-            cmd.arg("--no-commit");
-        }
-        for c in &commits {
-            cmd.arg(*c);
-        }
+    if let Err(e) = apply_cherry_pick_subcommand(&mut cmd, &v) {
+        return e;
     }
     cmd.current_dir(working_dir);
     run_and_format(cmd, max_output_len, "git cherry-pick")

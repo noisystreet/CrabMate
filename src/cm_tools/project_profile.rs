@@ -57,6 +57,60 @@ pub fn build_project_profile_markdown(workspace_root: &Path, max_chars: usize) -
     out
 }
 
+fn workspace_member_crate_names(ws: &toml::Value) -> Option<Vec<String>> {
+    let members = ws.get("members")?.as_array()?;
+    let mut names: Vec<String> = Vec::new();
+    for m in members.iter().filter_map(|x| x.as_str()) {
+        let trimmed = m.trim_end_matches(['/', '\\']);
+        let name = trimmed
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(trimmed)
+            .to_string();
+        if !name.is_empty() && name != "*" {
+            names.push(name);
+        }
+    }
+    names.sort();
+    names.dedup();
+    Some(names)
+}
+
+fn format_workspace_member_lines(names: Vec<String>) -> Vec<String> {
+    if names.is_empty() {
+        return vec!["- （workspace 未列出 members 或为空）\n".to_string()];
+    }
+    let show: Vec<_> = names.iter().take(16).cloned().collect();
+    let mut lines = vec![format!(
+        "- 成员 crate 目录（节选）：{}\n",
+        show.join("、")
+    )];
+    if names.len() > 16 {
+        lines.push(format!("- … 共 {} 个 member 条目\n", names.len()));
+    }
+    lines
+}
+
+fn section_layout_kind_lines(v: &toml::Value) -> Vec<String> {
+    if let Some(ws) = v.get("workspace") {
+        let mut lines = vec!["**Rust workspace**\n".to_string()];
+        match workspace_member_crate_names(ws) {
+            Some(names) => lines.extend(format_workspace_member_lines(names)),
+            None => lines.push("- （未解析到 `[workspace].members`）\n".to_string()),
+        }
+        lines
+    } else if v.get("package").is_some() {
+        let name = v
+            .get("package")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("unknown");
+        vec![format!("**Rust 单包（cargo）**\n- 包名：`{name}`\n")]
+    } else {
+        vec!["**检测到 Cargo.toml（结构未识别为 package 或 workspace）**\n".to_string()]
+    }
+}
+
 fn section_layout(root: &Path) -> Option<String> {
     let cargo = root.join("Cargo.toml");
     if !cargo.is_file() {
@@ -65,45 +119,7 @@ fn section_layout(root: &Path) -> Option<String> {
     let raw = fs::read_to_string(&cargo).ok()?;
     let v: toml::Value = toml::from_str(&raw).ok()?;
     let mut lines = vec!["### 工程类型\n".to_string()];
-    if let Some(ws) = v.get("workspace") {
-        lines.push("**Rust workspace**\n".to_string());
-        if let Some(members) = ws.get("members").and_then(|m| m.as_array()) {
-            let mut names: Vec<String> = Vec::new();
-            for m in members.iter().filter_map(|x| x.as_str()) {
-                let trimmed = m.trim_end_matches(['/', '\\']);
-                let name = trimmed
-                    .rsplit(['/', '\\'])
-                    .next()
-                    .unwrap_or(trimmed)
-                    .to_string();
-                if !name.is_empty() && name != "*" {
-                    names.push(name);
-                }
-            }
-            names.sort();
-            names.dedup();
-            if names.is_empty() {
-                lines.push("- （workspace 未列出 members 或为空）\n".to_string());
-            } else {
-                let show: Vec<_> = names.iter().take(16).cloned().collect();
-                lines.push(format!("- 成员 crate 目录（节选）：{}\n", show.join("、")));
-                if names.len() > 16 {
-                    lines.push(format!("- … 共 {} 个 member 条目\n", names.len()));
-                }
-            }
-        } else {
-            lines.push("- （未解析到 `[workspace].members`）\n".to_string());
-        }
-    } else if v.get("package").is_some() {
-        let name = v
-            .get("package")
-            .and_then(|p| p.get("name"))
-            .and_then(|n| n.as_str())
-            .unwrap_or("unknown");
-        lines.push(format!("**Rust 单包（cargo）**\n- 包名：`{name}`\n"));
-    } else {
-        lines.push("**检测到 Cargo.toml（结构未识别为 package 或 workspace）**\n".to_string());
-    }
+    lines.extend(section_layout_kind_lines(&v));
     Some(lines.join(""))
 }
 

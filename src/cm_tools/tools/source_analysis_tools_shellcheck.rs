@@ -133,29 +133,30 @@ fn walkdir_shell_scripts(dir: &Path, base: &Path) -> Result<Vec<String>, ()> {
     Ok(out)
 }
 
+fn shebang_is_unix_shell(head: &str) -> bool {
+    head.starts_with("#!")
+        && (head.contains("/sh")
+            || head.contains("/bash")
+            || head.contains("/zsh")
+            || head.contains("/ksh")
+            || head.contains("env sh")
+            || head.contains("env bash"))
+}
+
 fn is_shell_script(path: &Path) -> bool {
     if let Some(ext) = path.extension().and_then(|e| e.to_str())
         && matches!(ext, "sh" | "bash" | "zsh" | "ksh")
     {
         return true;
     }
-    if let Ok(f) = std::fs::File::open(path) {
-        use std::io::Read;
-        let mut buf = [0u8; 64];
-        let mut reader = std::io::BufReader::new(f);
-        if let Ok(n) = reader.read(&mut buf) {
-            let head = String::from_utf8_lossy(&buf[..n]);
-            if head.starts_with("#!")
-                && (head.contains("/sh")
-                    || head.contains("/bash")
-                    || head.contains("/zsh")
-                    || head.contains("/ksh")
-                    || head.contains("env sh")
-                    || head.contains("env bash"))
-            {
-                return true;
-            }
-        }
-    }
-    false
+    let Ok(f) = std::fs::File::open(path) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut buf = [0u8; 64];
+    let mut reader = std::io::BufReader::new(f);
+    let Ok(n) = reader.read(&mut buf) else {
+        return false;
+    };
+    shebang_is_unix_shell(&String::from_utf8_lossy(&buf[..n]))
 }

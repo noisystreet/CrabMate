@@ -102,6 +102,34 @@ fn cd_prefix_invalid(work_dir: &Path, detail: impl Into<String>) -> CdPeelError 
     }
 }
 
+fn resolve_cd_prefix_dir(
+    effective_working_dir: &Path,
+    dir: &str,
+    anchor: &Path,
+    allow_external_paths: bool,
+) -> Result<PathBuf, CdPeelError> {
+    if !allow_external_paths && !is_arg_safe("cd", dir) {
+        return Err(CdPeelError::UnsafeArg);
+    }
+    let candidate = effective_working_dir.join(dir);
+    if !candidate.is_dir() {
+        return Err(cd_prefix_invalid(
+            effective_working_dir,
+            format!("路径 `{dir}` 不是已存在目录"),
+        ));
+    }
+    let canon_cand = candidate
+        .canonicalize()
+        .map_err(|e| CdPeelError::SpawnOther {
+            cmd: format!("canonicalize({})", candidate.display()),
+            source: e,
+        })?;
+    if !allow_external_paths && !canon_cand.starts_with(anchor) {
+        return Err(CdPeelError::UnsafeArg);
+    }
+    Ok(canon_cand)
+}
+
 /// 将 `cd … && …` 前缀展开为嵌套工作目录与真实 argv（无 shell）。
 ///
 /// 默认（`allow_external_paths == false`）：`rel` 不得含 `..` / 绝对路径，且规范路径须落在
@@ -131,26 +159,8 @@ pub fn peel_workspace_cd_prefix(
             ));
         }
         let dir = cmd_args[0].trim();
-        if !allow_external_paths && !is_arg_safe("cd", dir) {
-            return Err(CdPeelError::UnsafeArg);
-        }
-        let candidate = effective_working_dir.join(dir);
-        if !candidate.is_dir() {
-            return Err(cd_prefix_invalid(
-                effective_working_dir,
-                format!("路径 `{dir}` 不是已存在目录"),
-            ));
-        }
-        let canon_cand = candidate
-            .canonicalize()
-            .map_err(|e| CdPeelError::SpawnOther {
-                cmd: format!("canonicalize({})", candidate.display()),
-                source: e,
-            })?;
-        if !allow_external_paths && !canon_cand.starts_with(&anchor) {
-            return Err(CdPeelError::UnsafeArg);
-        }
-        *effective_working_dir = canon_cand;
+        *effective_working_dir =
+            resolve_cd_prefix_dir(effective_working_dir, dir, &anchor, allow_external_paths)?;
         *cmd_args = cmd_args[2..].to_vec();
         if cmd_args.is_empty() {
             return Err(CdPeelError::MissingCommand);
