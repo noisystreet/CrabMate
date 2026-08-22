@@ -113,84 +113,14 @@ fn default_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Strin
 /// 行首时间戳默认**本机本地时区**（`tracing_subscriber::fmt::time::LocalTime::rfc_3339`，RFC3339 且带与 UTC 的偏移），由系统 `TZ` / `/etc/localtime` 决定。
 pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool) -> io::Result<()> {
     let result = LOGGING_INIT.get_or_init(|| {
-        let filter_str = default_env_filter(quiet_cli_default, log_file);
-        let env_filter = if std::env::var_os("RUST_LOG").is_some() {
-            EnvFilter::try_from_default_env().map_err(|e| e.to_string())?
-        } else {
-            EnvFilter::new(&filter_str)
-        };
-
+        let env_filter = tracing_env_filter(quiet_cli_default, log_file)?;
         let json_logs = std::env::var("CM_LOG_JSON")
             .ok()
             .as_deref()
             .and_then(agent_log_json_truthy)
             .unwrap_or(false);
-
         let ansi_stderr = std::io::stderr().is_terminal() && log_file.is_none();
-
-        match log_file {
-            None => {
-                if json_logs {
-                    tracing_subscriber::registry()
-                        .with(env_filter)
-                        .with(
-                            tracing_subscriber::fmt::layer()
-                                .json()
-                                .with_target(true)
-                                .with_timer(LocalTime::rfc_3339())
-                                .with_writer(std::io::stderr),
-                        )
-                        .init();
-                } else {
-                    tracing_subscriber::registry()
-                        .with(env_filter)
-                        .with(
-                            tracing_subscriber::fmt::layer()
-                                .with_target(true)
-                                .with_timer(LocalTime::rfc_3339())
-                                .with_ansi(ansi_stderr)
-                                .compact()
-                                .with_writer(std::io::stderr),
-                        )
-                        .init();
-                }
-            }
-            Some(path) => {
-                let f = open_log_append(path)
-                    .map_err(|e| format!("无法打开日志文件 {}: {e}", path.display()))?;
-                let pipe = Arc::new(Mutex::new(StderrAndFile {
-                    stderr: io::stderr(),
-                    file: f,
-                }));
-                if json_logs {
-                    let wj = Arc::clone(&pipe);
-                    tracing_subscriber::registry()
-                        .with(env_filter)
-                        .with(
-                            tracing_subscriber::fmt::layer()
-                                .json()
-                                .with_target(true)
-                                .with_timer(LocalTime::rfc_3339())
-                                .with_writer(move || StderrFilePipeWriter(Arc::clone(&wj))),
-                        )
-                        .init();
-                } else {
-                    let wc = Arc::clone(&pipe);
-                    tracing_subscriber::registry()
-                        .with(env_filter)
-                        .with(
-                            tracing_subscriber::fmt::layer()
-                                .with_target(true)
-                                .with_timer(LocalTime::rfc_3339())
-                                .with_ansi(false)
-                                .compact()
-                                .with_writer(move || StderrFilePipeWriter(Arc::clone(&wc))),
-                        )
-                        .init();
-                }
-            }
-        }
-
+        install_tracing_subscriber(env_filter, log_file, json_logs, ansi_stderr)?;
         Ok(())
     });
 
@@ -198,6 +128,98 @@ pub fn init_tracing_subscriber(log_file: Option<&Path>, quiet_cli_default: bool)
         Ok(()) => Ok(()),
         Err(s) => Err(io::Error::other(s.clone())),
     }
+}
+
+fn tracing_env_filter(quiet_cli_default: bool, log_file: Option<&Path>) -> Result<EnvFilter, String> {
+    let filter_str = default_env_filter(quiet_cli_default, log_file);
+    if std::env::var_os("RUST_LOG").is_some() {
+        EnvFilter::try_from_default_env().map_err(|e| e.to_string())
+    } else {
+        Ok(EnvFilter::new(&filter_str))
+    }
+}
+
+fn install_tracing_subscriber(
+    env_filter: EnvFilter,
+    log_file: Option<&Path>,
+    json_logs: bool,
+    ansi_stderr: bool,
+) -> Result<(), String> {
+    match log_file {
+        None => install_stderr_tracing(env_filter, json_logs, ansi_stderr),
+        Some(path) => install_file_pipe_tracing(env_filter, path, json_logs),
+    }
+}
+
+fn install_stderr_tracing(
+    env_filter: EnvFilter,
+    json_logs: bool,
+    ansi_stderr: bool,
+) -> Result<(), String> {
+    if json_logs {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_timer(LocalTime::rfc_3339())
+                    .with_writer(std::io::stderr),
+            )
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_timer(LocalTime::rfc_3339())
+                    .with_ansi(ansi_stderr)
+                    .compact()
+                    .with_writer(std::io::stderr),
+            )
+            .init();
+    }
+    Ok(())
+}
+
+fn install_file_pipe_tracing(
+    env_filter: EnvFilter,
+    path: &Path,
+    json_logs: bool,
+) -> Result<(), String> {
+    let f = open_log_append(path).map_err(|e| format!("无法打开日志文件 {}: {e}", path.display()))?;
+    let pipe = Arc::new(Mutex::new(StderrAndFile {
+        stderr: io::stderr(),
+        file: f,
+    }));
+    if json_logs {
+        let wj = Arc::clone(&pipe);
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_timer(LocalTime::rfc_3339())
+                    .with_writer(move || StderrFilePipeWriter(Arc::clone(&wj))),
+            )
+            .init();
+    } else {
+        let wc = Arc::clone(&pipe);
+        tracing_subscriber::registry()
+            .with(env_filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_target(true)
+                    .with_timer(LocalTime::rfc_3339())
+                    .with_ansi(false)
+                    .compact()
+                    .with_writer(move || StderrFilePipeWriter(Arc::clone(&wc))),
+            )
+            .init();
+    }
+    Ok(())
 }
 
 /// Web 单条 `/chat*` 任务根 span：**`job_id`** 与 HTTP **`x-stream-job-id`** / SSE **`job_id`** 一致；**`conversation_id`** 为截断预览（完整 id 仍由业务层与会话存储持有）。

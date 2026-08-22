@@ -202,63 +202,73 @@ pub fn normalize_mcp_servers_file(mut file: McpServersFile) -> Result<McpServers
     }
     let now = now_ms();
     for srv in &mut file.servers {
-        if srv.id.trim().is_empty() {
-            srv.id = new_mcp_server_id();
-            srv.created_at_ms = now;
-        }
-        srv.id = srv.id.trim().to_string();
-        srv.name = srv.name.trim().to_string();
-        if srv.name.is_empty() {
-            return Err("MCP 服务器 name 不能为空".to_string());
-        }
-        srv.command = srv.command.trim().to_string();
-        srv.args = srv.args.iter().map(|a| a.trim().to_string()).collect();
-        srv.env = srv
-            .env
-            .iter()
-            .filter(|(k, _)| !k.trim().is_empty())
-            .map(|(k, v)| (k.trim().to_string(), v.clone()))
-            .collect();
-        srv.cwd = srv
-            .cwd
-            .take()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        srv.url = srv
-            .url
-            .take()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty());
-        srv.headers = srv
-            .headers
-            .iter()
-            .filter(|(k, _)| !k.trim().is_empty())
-            .map(|(k, v)| (k.trim().to_string(), v.clone()))
-            .collect();
-        let has_cmd = srv.has_stdio();
-        let has_url = srv.has_remote_url();
-        if has_cmd && has_url {
-            return Err(format!(
-                "MCP 服务器「{}」不能同时填写 command 与 url",
-                srv.name
-            ));
-        }
-        if srv.enabled && !has_cmd && !has_url {
-            return Err(format!(
-                "已启用的 MCP 服务器「{}」须填写 command 或 url",
-                srv.name
-            ));
-        }
-        if has_url {
-            crate::cm_mcp::resolve::validate_mcp_remote_url(srv.url.as_deref().unwrap_or(""))?;
-        }
-        if srv.created_at_ms == 0 {
-            srv.created_at_ms = now;
-        }
-        srv.updated_at_ms = now;
+        normalize_one_mcp_server(srv, now)?;
     }
     assign_slugs_from_names(&mut file.servers);
     Ok(file)
+}
+
+fn normalize_one_mcp_server(srv: &mut McpServerEntry, now: i64) -> Result<(), String> {
+    if srv.id.trim().is_empty() {
+        srv.id = new_mcp_server_id();
+        srv.created_at_ms = now;
+    }
+    srv.id = srv.id.trim().to_string();
+    srv.name = srv.name.trim().to_string();
+    if srv.name.is_empty() {
+        return Err("MCP 服务器 name 不能为空".to_string());
+    }
+    srv.command = srv.command.trim().to_string();
+    srv.args = srv.args.iter().map(|a| a.trim().to_string()).collect();
+    srv.env = srv
+        .env
+        .iter()
+        .filter(|(k, _)| !k.trim().is_empty())
+        .map(|(k, v)| (k.trim().to_string(), v.clone()))
+        .collect();
+    srv.cwd = srv
+        .cwd
+        .take()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    srv.url = srv
+        .url
+        .take()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    srv.headers = srv
+        .headers
+        .iter()
+        .filter(|(k, _)| !k.trim().is_empty())
+        .map(|(k, v)| (k.trim().to_string(), v.clone()))
+        .collect();
+    validate_mcp_server_endpoints(srv)?;
+    if srv.created_at_ms == 0 {
+        srv.created_at_ms = now;
+    }
+    srv.updated_at_ms = now;
+    Ok(())
+}
+
+fn validate_mcp_server_endpoints(srv: &McpServerEntry) -> Result<(), String> {
+    let has_cmd = srv.has_stdio();
+    let has_url = srv.has_remote_url();
+    if has_cmd && has_url {
+        return Err(format!(
+            "MCP 服务器「{}」不能同时填写 command 与 url",
+            srv.name
+        ));
+    }
+    if srv.enabled && !has_cmd && !has_url {
+        return Err(format!(
+            "已启用的 MCP 服务器「{}」须填写 command 或 url",
+            srv.name
+        ));
+    }
+    if has_url {
+        crate::cm_mcp::resolve::validate_mcp_remote_url(srv.url.as_deref().unwrap_or(""))?;
+    }
+    Ok(())
 }
 
 fn legacy_mcp_display_name(command: &str) -> String {

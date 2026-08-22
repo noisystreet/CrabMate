@@ -93,46 +93,65 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
     if !has_command && !has_url {
         return;
     }
-
     let enabled = !server.disabled.unwrap_or(false);
     let now = super::store::now_ms();
     let name = name_from_mcp_server_key(key);
-
     if has_url {
-        let url = server.url.unwrap_or_default().trim().to_string();
-        if let Err(e) = crate::cm_mcp::resolve::validate_mcp_remote_url(&url) {
-            out.warnings.push(format!("「{key}」：{e}"));
-            out.skipped_remote.push(key.to_string());
-            return;
-        }
-        let headers: BTreeMap<String, String> = server
-            .headers
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|(k, _)| !k.trim().is_empty())
-            .map(|(k, v)| (k.trim().to_string(), v))
-            .collect();
-        if let Some(path) = server.env_file.filter(|s| !s.trim().is_empty()) {
-            out.warnings
-                .push(format!("「{key}」：远程 url 条目忽略 envFile（{path}）"));
-        }
-        out.entries.push(McpServerEntry {
-            id: super::store::new_mcp_server_id(),
-            name,
-            slug: String::new(),
-            command: String::new(),
-            args: Vec::new(),
-            env: BTreeMap::new(),
-            cwd: None,
-            url: Some(url),
-            headers,
-            enabled,
-            created_at_ms: now,
-            updated_at_ms: now,
-        });
+        import_remote_mcp_server(key, server, enabled, now, name, out);
         return;
     }
+    import_stdio_mcp_server(key, server, enabled, now, name, out);
+}
 
+fn import_remote_mcp_server(
+    key: &str,
+    server: McpJsonServerDef,
+    enabled: bool,
+    now: i64,
+    name: String,
+    out: &mut McpJsonImportResult,
+) {
+    let url = server.url.unwrap_or_default().trim().to_string();
+    if let Err(e) = crate::cm_mcp::resolve::validate_mcp_remote_url(&url) {
+        out.warnings.push(format!("「{key}」：{e}"));
+        out.skipped_remote.push(key.to_string());
+        return;
+    }
+    let headers: BTreeMap<String, String> = server
+        .headers
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(k, _)| !k.trim().is_empty())
+        .map(|(k, v)| (k.trim().to_string(), v))
+        .collect();
+    if let Some(path) = server.env_file.filter(|s| !s.trim().is_empty()) {
+        out.warnings
+            .push(format!("「{key}」：远程 url 条目忽略 envFile（{path}）"));
+    }
+    out.entries.push(McpServerEntry {
+        id: super::store::new_mcp_server_id(),
+        name,
+        slug: String::new(),
+        command: String::new(),
+        args: Vec::new(),
+        env: BTreeMap::new(),
+        cwd: None,
+        url: Some(url),
+        headers,
+        enabled,
+        created_at_ms: now,
+        updated_at_ms: now,
+    });
+}
+
+fn import_stdio_mcp_server(
+    key: &str,
+    server: McpJsonServerDef,
+    enabled: bool,
+    now: i64,
+    name: String,
+    out: &mut McpJsonImportResult,
+) {
     let command = server.command.unwrap_or_default().trim().to_string();
     let args = server.args.unwrap_or_default();
     let env: BTreeMap<String, String> = server
@@ -152,13 +171,7 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
             "「{key}」：envFile（{path}）未自动加载，请改用 env 或在本机 shell 中导出变量"
         ));
     }
-    if contains_mcp_json_placeholders(&command)
-        || args.iter().any(|a| contains_mcp_json_placeholders(a))
-        || env.values().any(|v| contains_mcp_json_placeholders(v))
-        || cwd
-            .as_ref()
-            .is_some_and(|c| contains_mcp_json_placeholders(c))
-    {
+    if stdio_fields_have_placeholders(&command, &args, &env, cwd.as_deref()) {
         out.warnings.push(format!(
             "「{key}」：含 ${{env:…}} / ${{workspaceFolder}} 等占位符，导入后请按需改路径或在本机设置环境变量"
         ));
@@ -178,6 +191,18 @@ fn import_one_server(key: &str, server: McpJsonServerDef, out: &mut McpJsonImpor
         created_at_ms: now,
         updated_at_ms: now,
     });
+}
+
+fn stdio_fields_have_placeholders(
+    command: &str,
+    args: &[String],
+    env: &BTreeMap<String, String>,
+    cwd: Option<&str>,
+) -> bool {
+    contains_mcp_json_placeholders(command)
+        || args.iter().any(|a| contains_mcp_json_placeholders(a))
+        || env.values().any(|v| contains_mcp_json_placeholders(v))
+        || cwd.is_some_and(contains_mcp_json_placeholders)
 }
 
 fn contains_mcp_json_placeholders(s: &str) -> bool {

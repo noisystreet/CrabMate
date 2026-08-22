@@ -98,42 +98,107 @@ struct CargoBlock {
     error: Option<String>,
 }
 
+fn cargo_block_fail(error: String) -> CargoBlock {
+    CargoBlock {
+        workspace_packages: Vec::new(),
+        edges: Vec::new(),
+        error: Some(error),
+    }
+}
+
+fn cargo_block_empty() -> CargoBlock {
+    CargoBlock {
+        workspace_packages: Vec::new(),
+        edges: Vec::new(),
+        error: None,
+    }
+}
+
+fn collect_package_id_names(packages: &[serde_json::Value]) -> HashMap<String, String> {
+    let mut id_to_name: HashMap<String, String> = HashMap::new();
+    for p in packages {
+        let Some(id) = p.get("id").and_then(|i| i.as_str()) else {
+            continue;
+        };
+        let Some(name) = p.get("name").and_then(|n| n.as_str()) else {
+            continue;
+        };
+        id_to_name.insert(id.to_string(), name.to_string());
+    }
+    id_to_name
+}
+
+fn try_insert_workspace_dep_edge(
+    edge_set: &mut BTreeSet<(String, String)>,
+    workspace_ids: &HashSet<String>,
+    id_to_name: &HashMap<String, String>,
+    from_name: &str,
+    dep: &serde_json::Value,
+) {
+    let Some(to_id) = dep.get("pkg").and_then(|p| p.as_str()) else {
+        return;
+    };
+    if !workspace_ids.contains(to_id) {
+        return;
+    }
+    let Some(to_name) = id_to_name.get(to_id) else {
+        return;
+    };
+    if from_name == to_name {
+        return;
+    }
+    edge_set.insert((from_name.to_string(), to_name.clone()));
+}
+
+fn collect_workspace_dep_edges(
+    val: &serde_json::Value,
+    workspace_ids: &HashSet<String>,
+    id_to_name: &HashMap<String, String>,
+) -> Vec<(String, String)> {
+    let mut edge_set: BTreeSet<(String, String)> = BTreeSet::new();
+    let Some(nodes) = val
+        .get("resolve")
+        .and_then(|r| r.get("nodes"))
+        .and_then(|n| n.as_array())
+    else {
+        return Vec::new();
+    };
+    for n in nodes {
+        let Some(from_id) = n.get("id").and_then(|i| i.as_str()) else {
+            continue;
+        };
+        if !workspace_ids.contains(from_id) {
+            continue;
+        }
+        let Some(from_name) = id_to_name.get(from_id) else {
+            continue;
+        };
+        let Some(deps) = n.get("deps").and_then(|d| d.as_array()) else {
+            continue;
+        };
+        for d in deps {
+            try_insert_workspace_dep_edge(&mut edge_set, workspace_ids, id_to_name, from_name, d);
+        }
+    }
+    edge_set.into_iter().collect()
+}
+
 fn cargo_metadata_brief(root: &Path) -> CargoBlock {
     if !root.join("Cargo.toml").is_file() {
-        return CargoBlock {
-            workspace_packages: Vec::new(),
-            edges: Vec::new(),
-            error: None,
-        };
+        return cargo_block_empty();
     }
 
     let output = match cargo_metadata_command(root, false, 1).output() {
         Ok(o) => o,
-        Err(e) => {
-            return CargoBlock {
-                workspace_packages: Vec::new(),
-                edges: Vec::new(),
-                error: Some(format!("无法执行 cargo metadata: {e}")),
-            };
-        }
+        Err(e) => return cargo_block_fail(format!("无法执行 cargo metadata: {e}")),
     };
     if !output.status.success() {
-        return CargoBlock {
-            workspace_packages: Vec::new(),
-            edges: Vec::new(),
-            error: Some("`cargo metadata` 退出非零（已跳过图与包列表）".to_string()),
-        };
+        return cargo_block_fail("`cargo metadata` 退出非零（已跳过图与包列表）".to_string());
     }
 
     let val: serde_json::Value = match serde_json::from_slice(&output.stdout) {
         Ok(v) => v,
-        Err(_) => {
-            return CargoBlock {
-                workspace_packages: Vec::new(),
-                edges: Vec::new(),
-                error: Some("cargo metadata 输出 JSON 解析失败".to_string()),
-            };
-        }
+        Err(_) => return cargo_block_fail("cargo metadata 输出 JSON 解析失败".to_string()),
     };
 
     let workspace_ids: HashSet<String> = val
@@ -146,74 +211,18 @@ fn cargo_metadata_brief(root: &Path) -> CargoBlock {
         })
         .unwrap_or_default();
 
-    let packages = match val.get("packages").and_then(|p| p.as_array()) {
-        Some(a) => a,
-        None => {
-            return CargoBlock {
-                workspace_packages: Vec::new(),
-                edges: Vec::new(),
-                error: Some("metadata 缺少 packages 数组".to_string()),
-            };
-        }
+    let Some(packages) = val.get("packages").and_then(|p| p.as_array()) else {
+        return cargo_block_fail("metadata 缺少 packages 数组".to_string());
     };
 
-    let mut id_to_name: HashMap<String, String> = HashMap::new();
-    for p in packages {
-        let Some(id) = p.get("id").and_then(|i| i.as_str()) else {
-            continue;
-        };
-        let Some(name) = p.get("name").and_then(|n| n.as_str()) else {
-            continue;
-        };
-        id_to_name.insert(id.to_string(), name.to_string());
-    }
-
+    let id_to_name = collect_package_id_names(packages);
     let mut ws_names: Vec<String> = workspace_ids
         .iter()
         .filter_map(|id| id_to_name.get(id).cloned())
         .collect();
     ws_names.sort();
     ws_names.dedup();
-
-    let mut edge_set: BTreeSet<(String, String)> = BTreeSet::new();
-    if let Some(nodes) = val
-        .get("resolve")
-        .and_then(|r| r.get("nodes"))
-        .and_then(|n| n.as_array())
-    {
-        for n in nodes {
-            let Some(from_id) = n.get("id").and_then(|i| i.as_str()) else {
-                continue;
-            };
-            if !workspace_ids.contains(from_id) {
-                continue;
-            }
-            let Some(from_name) = id_to_name.get(from_id) else {
-                continue;
-            };
-            let Some(deps) = n.get("deps").and_then(|d| d.as_array()) else {
-                continue;
-            };
-            for d in deps {
-                let Some(to_id) = d.get("pkg").and_then(|p| p.as_str()) else {
-                    continue;
-                };
-                if !workspace_ids.contains(to_id) {
-                    continue;
-                }
-                let Some(to_name) = id_to_name.get(to_id) else {
-                    continue;
-                };
-                if from_name == to_name {
-                    continue;
-                }
-                edge_set.insert((from_name.clone(), to_name.clone()));
-            }
-        }
-    }
-
-    let edges: Vec<(String, String)> = edge_set.into_iter().collect();
-
+    let edges = collect_workspace_dep_edges(&val, &workspace_ids, &id_to_name);
     CargoBlock {
         workspace_packages: ws_names,
         edges,

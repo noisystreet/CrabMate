@@ -164,17 +164,7 @@ impl ToolOutcomeRecorder {
 
         let mut per_tool: HashMap<String, (usize, usize, HashMap<String, usize>)> = HashMap::new();
         for ev in q.iter() {
-            let e = per_tool
-                .entry(ev.tool.clone())
-                .or_insert((0, 0, HashMap::new()));
-            e.0 += 1;
-            if ev.ok {
-                e.1 += 1;
-            } else if let Some(ref code) = ev.error_code {
-                *e.2.entry(code.clone()).or_insert(0) += 1;
-            } else {
-                *e.2.entry("(无 error_code)".to_string()).or_insert(0) += 1;
-            }
+            accumulate_tool_stat_event(&mut per_tool, ev);
         }
 
         let mut keys: Vec<String> = per_tool.keys().cloned().collect();
@@ -182,27 +172,10 @@ impl ToolOutcomeRecorder {
 
         let mut lines: Vec<String> = Vec::new();
         for tool in keys {
-            let (total, ok_c, ref err_map) = per_tool[&tool];
-            if total < min_s {
-                continue;
+            if let Some(line) = format_tool_stat_hint_line(&tool, &per_tool[&tool], min_s, ratio_threshold)
+            {
+                lines.push(line);
             }
-            let fail_c = total.saturating_sub(ok_c);
-            let success_r = ok_c as f64 / total as f64;
-            if fail_c == 0 && success_r + f64::EPSILON >= ratio_threshold {
-                continue;
-            }
-            let mut line = format!("- `{tool}`：窗口内 {total} 次，成功 {ok_c} / 失败 {fail_c}");
-            if fail_c > 0 && !err_map.is_empty() {
-                let mut pairs: Vec<(&String, &usize)> = err_map.iter().collect();
-                pairs.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-                let top: Vec<String> = pairs
-                    .into_iter()
-                    .take(3)
-                    .map(|(c, n)| format!("`{c}`×{n}"))
-                    .collect();
-                line.push_str(&format!("；常见错误：{}", top.join("、")));
-            }
-            lines.push(line);
         }
 
         if lines.is_empty() {
@@ -212,14 +185,66 @@ impl ToolOutcomeRecorder {
         let header = "## 近期工具调用提示（进程内全局统计，仅供参考）";
         let body = lines.join("\n");
         let mut out = format!("{header}\n\n{body}");
-        let max_c = cfg.agent_tool_stats.agent_tool_stats_max_chars.max(64);
-        let len = out.chars().count();
-        if len > max_c {
-            let take = max_c.saturating_sub(12);
-            out = format!("{}…（已截断）", out.chars().take(take).collect::<String>());
-        }
+        truncate_tool_stat_hints(&mut out, cfg.agent_tool_stats.agent_tool_stats_max_chars.max(64));
         Some(out)
     }
+}
+
+fn accumulate_tool_stat_event(
+    per_tool: &mut HashMap<String, (usize, usize, HashMap<String, usize>)>,
+    ev: &ToolStatEvent,
+) {
+    let e = per_tool
+        .entry(ev.tool.clone())
+        .or_insert((0, 0, HashMap::new()));
+    e.0 += 1;
+    if ev.ok {
+        e.1 += 1;
+        return;
+    }
+    let key = ev
+        .error_code
+        .clone()
+        .unwrap_or_else(|| "(无 error_code)".to_string());
+    *e.2.entry(key).or_insert(0) += 1;
+}
+
+fn format_tool_stat_hint_line(
+    tool: &str,
+    stats: &(usize, usize, HashMap<String, usize>),
+    min_s: usize,
+    ratio_threshold: f64,
+) -> Option<String> {
+    let (total, ok_c, ref err_map) = *stats;
+    if total < min_s {
+        return None;
+    }
+    let fail_c = total.saturating_sub(ok_c);
+    let success_r = ok_c as f64 / total as f64;
+    if fail_c == 0 && success_r + f64::EPSILON >= ratio_threshold {
+        return None;
+    }
+    let mut line = format!("- `{tool}`：窗口内 {total} 次，成功 {ok_c} / 失败 {fail_c}");
+    if fail_c > 0 && !err_map.is_empty() {
+        let mut pairs: Vec<(&String, &usize)> = err_map.iter().collect();
+        pairs.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = pairs
+            .into_iter()
+            .take(3)
+            .map(|(c, n)| format!("`{c}`×{n}"))
+            .collect();
+        line.push_str(&format!("；常见错误：{}", top.join("、")));
+    }
+    Some(line)
+}
+
+fn truncate_tool_stat_hints(out: &mut String, max_c: usize) {
+    let len = out.chars().count();
+    if len <= max_c {
+        return;
+    }
+    let take = max_c.saturating_sub(12);
+    *out = format!("{}…（已截断）", out.chars().take(take).collect::<String>());
 }
 
 #[cfg(test)]

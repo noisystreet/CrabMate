@@ -12,7 +12,7 @@
 high_ccn_threshold = 10
 default_over_max = 0
 global_over_ceiling = 10000
-global_over_ccn_sum_cap = 343
+global_over_ccn_sum_cap = 199
 
 [modules]
 "src/agent" = 0
@@ -28,7 +28,7 @@ global_over_ccn_sum_cap = 343
 "src/cm_chat_export" = 0
 "src/cm_config" = 0
 "src/cm_display_rules" = 0
-"src/cm_internal" = 11
+"src/cm_internal" = 0
 "src/cm_llm" = 0
 "src/cm_mcp" = 0
 "src/cm_memory" = 0

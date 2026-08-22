@@ -7,21 +7,25 @@ pub fn is_user_cancelled_run_agent_error(s: &str) -> bool {
     s.trim() == LLM_CANCELLED_ERROR
 }
 
+const QUOTA_OR_RATE_LIMIT_NEEDLES: &[&str] = &[
+    "HTTP 429",
+    "http 429",
+    "status=429",
+    "限流",
+    "quota",
+    "Quota",
+    "HTTP 402",
+    "http 402",
+    "余额",
+    "insufficient",
+    "HTTP 503",
+    "http 503",
+    "status=503",
+];
+
 /// 配额 / 限流 / 余额类（与 `llm::api` 常见中文文案及 HTTP 状态片段对齐）。
 pub fn is_quota_or_rate_limit_llm_message(msg: &str) -> bool {
-    msg.contains("HTTP 429")
-        || msg.contains("http 429")
-        || msg.contains("status=429")
-        || msg.contains("限流")
-        || msg.contains("quota")
-        || msg.contains("Quota")
-        || msg.contains("HTTP 402")
-        || msg.contains("http 402")
-        || msg.contains("余额")
-        || msg.contains("insufficient")
-        || msg.contains("HTTP 503")
-        || msg.contains("http 503")
-        || msg.contains("status=503")
+    QUOTA_OR_RATE_LIMIT_NEEDLES.iter().any(|n| msg.contains(n))
 }
 
 #[cfg(test)]
