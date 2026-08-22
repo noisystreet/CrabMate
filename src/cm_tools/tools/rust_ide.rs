@@ -197,6 +197,45 @@ pub fn rust_compiler_json(args_json: &str, workspace_root: &Path, max_output_len
     )
 }
 
+fn format_compiler_span_line(sp: &Value) -> String {
+    let file = sp.get("file_name").and_then(|x| x.as_str()).unwrap_or("?");
+    let line = sp.get("line_start").and_then(|x| x.as_u64()).unwrap_or(0);
+    let col = sp.get("column_start").and_then(|x| x.as_u64()).unwrap_or(0);
+    let is_primary = sp
+        .get("is_primary")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
+    let label = sp.get("label").and_then(|x| x.as_str()).unwrap_or("");
+    let p = if is_primary { " (primary)" } else { "" };
+    format!(
+        "  {}{}:{}:{}{} {}\n",
+        file,
+        p,
+        line,
+        col,
+        if label.is_empty() { "" } else { " — " },
+        label
+    )
+}
+
+fn append_compiler_spans(s: &mut String, spans: &[Value]) {
+    for sp in spans.iter().take(5) {
+        s.push_str(&format_compiler_span_line(sp));
+    }
+    if spans.len() > 5 {
+        s.push_str(&format!("  … 另有 {} 个 span\n", spans.len() - 5));
+    }
+}
+
+fn append_compiler_children(s: &mut String, children: &[Value]) {
+    for ch in children.iter().take(8) {
+        s.push_str(&format_compiler_message(ch));
+    }
+    if children.len() > 8 {
+        s.push_str(&format!("… 另有 {} 条子诊断\n", children.len() - 8));
+    }
+}
+
 fn format_compiler_message(m: &Value) -> String {
     let level = m.get("level").and_then(|x| x.as_str()).unwrap_or("?");
     let code = m
@@ -218,38 +257,11 @@ fn format_compiler_message(m: &Value) -> String {
     }
 
     if let Some(spans) = m.get("spans").and_then(|x| x.as_array()) {
-        for sp in spans.iter().take(5) {
-            let file = sp.get("file_name").and_then(|x| x.as_str()).unwrap_or("?");
-            let line = sp.get("line_start").and_then(|x| x.as_u64()).unwrap_or(0);
-            let col = sp.get("column_start").and_then(|x| x.as_u64()).unwrap_or(0);
-            let is_primary = sp
-                .get("is_primary")
-                .and_then(|x| x.as_bool())
-                .unwrap_or(false);
-            let label = sp.get("label").and_then(|x| x.as_str()).unwrap_or("");
-            let p = if is_primary { " (primary)" } else { "" };
-            s.push_str(&format!(
-                "  {}{}:{}:{}{} {}\n",
-                file,
-                p,
-                line,
-                col,
-                if label.is_empty() { "" } else { " — " },
-                label
-            ));
-        }
-        if spans.len() > 5 {
-            s.push_str(&format!("  … 另有 {} 个 span\n", spans.len() - 5));
-        }
+        append_compiler_spans(&mut s, spans);
     }
 
     if let Some(children) = m.get("children").and_then(|x| x.as_array()) {
-        for ch in children.iter().take(8) {
-            s.push_str(&format_compiler_message(ch));
-        }
-        if children.len() > 8 {
-            s.push_str(&format!("… 另有 {} 条子诊断\n", children.len() - 8));
-        }
+        append_compiler_children(&mut s, children);
     }
     s.trim_end().to_string()
 }

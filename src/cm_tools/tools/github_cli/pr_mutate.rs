@@ -91,6 +91,38 @@ pub fn gh_pr_merge(
     run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
+fn gh_pr_review_argv(v: &serde_json::Value) -> Result<Vec<String>, String> {
+    let event = match v.get("event").and_then(|x| x.as_str()) {
+        Some(s) => s.trim().to_ascii_lowercase(),
+        None => return Err("错误：缺少 event（approve / request-changes / comment）".to_string()),
+    };
+    let mut argv = vec!["pr".into(), "review".into()];
+    if let Ok(Some(num)) = parse_optional_pr_number(v) {
+        argv.push(num);
+    }
+    push_repo(v, &mut argv)?;
+    match event.as_str() {
+        "approve" => argv.push("--approve".into()),
+        "request-changes" | "request_changes" => argv.push("--request-changes".into()),
+        "comment" => argv.push("--comment".into()),
+        _ => return Err("错误：event 须为 approve、request-changes 或 comment".to_string()),
+    }
+    if let Some(b) = v.get("body").and_then(|x| x.as_str()) {
+        validate_pr_body(b)?;
+        if !b.trim().is_empty() {
+            argv.push("--body".into());
+            argv.push(b.trim().to_string());
+        }
+    } else if matches!(
+        event.as_str(),
+        "comment" | "request-changes" | "request_changes"
+    ) {
+        return Err("错误：comment / request-changes 须提供 body".to_string());
+    }
+    push_extra(v, &mut argv)?;
+    Ok(argv)
+}
+
 /// `gh pr review`（写远端：审批 / 请求修改 / 评论）
 pub fn gh_pr_review(
     args_json: &str,
@@ -105,41 +137,10 @@ pub fn gh_pr_review(
         Ok(x) => x,
         Err(e) => return e,
     };
-    let event = match v.get("event").and_then(|x| x.as_str()) {
-        Some(s) => s.trim().to_ascii_lowercase(),
-        None => return "错误：缺少 event（approve / request-changes / comment）".to_string(),
-    };
-    let mut argv = vec!["pr".into(), "review".into()];
-    if let Ok(Some(num)) = parse_optional_pr_number(&v) {
-        argv.push(num);
+    match gh_pr_review_argv(&v) {
+        Ok(argv) => run_gh_vec(argv, max_output_len, allowed_commands, working_dir),
+        Err(e) => e,
     }
-    if let Err(e) = push_repo(&v, &mut argv) {
-        return e;
-    }
-    match event.as_str() {
-        "approve" => argv.push("--approve".into()),
-        "request-changes" | "request_changes" => argv.push("--request-changes".into()),
-        "comment" => argv.push("--comment".into()),
-        _ => return "错误：event 须为 approve、request-changes 或 comment".to_string(),
-    }
-    if let Some(b) = v.get("body").and_then(|x| x.as_str()) {
-        if let Err(e) = validate_pr_body(b) {
-            return e;
-        }
-        if !b.trim().is_empty() {
-            argv.push("--body".into());
-            argv.push(b.trim().to_string());
-        }
-    } else if matches!(
-        event.as_str(),
-        "comment" | "request-changes" | "request_changes"
-    ) {
-        return "错误：comment / request-changes 须提供 body".to_string();
-    }
-    if let Err(e) = push_extra(&v, &mut argv) {
-        return e;
-    }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 /// `gh pr comment`（写远端：在 PR 上评论）

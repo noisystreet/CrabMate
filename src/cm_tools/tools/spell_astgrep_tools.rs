@@ -179,32 +179,41 @@ pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize
     run_and_format(cmd, max_output_len, "typos")
 }
 
-fn codespell_apply_optional_cli_flags(
-    v: &serde_json::Value,
+fn push_codespell_skip_flag(v: &serde_json::Value, cmd: &mut Command) -> Result<(), String> {
+    let Some(skip) = v.get("skip").and_then(|x| x.as_str()).map(str::trim) else {
+        return Ok(());
+    };
+    if skip.len() > 512 || skip.contains("..") || skip.contains('\n') {
+        return Err("错误：skip 过长或含非法字符".to_string());
+    }
+    if !skip.is_empty() {
+        cmd.arg("--skip").arg(skip);
+    }
+    Ok(())
+}
+
+fn push_codespell_ignore_words(v: &serde_json::Value, cmd: &mut Command) -> Result<(), String> {
+    let Some(list) = v
+        .get("ignore_words_list")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+    else {
+        return Ok(());
+    };
+    if list.len() > 512 || list.contains('\n') {
+        return Err("错误：ignore_words_list 过长或含非法字符".to_string());
+    }
+    if !list.is_empty() {
+        cmd.arg("-L").arg(list);
+    }
+    Ok(())
+}
+
+fn push_codespell_dictionaries(
     cmd: &mut Command,
     base: &Path,
     dictionary_paths: &[String],
 ) -> Result<(), String> {
-    if let Some(skip) = v.get("skip").and_then(|x| x.as_str()).map(str::trim) {
-        if skip.len() > 512 || skip.contains("..") || skip.contains('\n') {
-            return Err("错误：skip 过长或含非法字符".to_string());
-        }
-        if !skip.is_empty() {
-            cmd.arg("--skip").arg(skip);
-        }
-    }
-    if let Some(list) = v
-        .get("ignore_words_list")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-    {
-        if list.len() > 512 || list.contains('\n') {
-            return Err("错误：ignore_words_list 过长或含非法字符".to_string());
-        }
-        if !list.is_empty() {
-            cmd.arg("-L").arg(list);
-        }
-    }
     for dict in dictionary_paths {
         if !base.join(dict).is_file() {
             return Err(format!("错误：dictionary_paths 文件不存在：{}", dict));
@@ -212,6 +221,17 @@ fn codespell_apply_optional_cli_flags(
         cmd.arg("-I").arg(dict);
     }
     Ok(())
+}
+
+fn codespell_apply_optional_cli_flags(
+    v: &serde_json::Value,
+    cmd: &mut Command,
+    base: &Path,
+    dictionary_paths: &[String],
+) -> Result<(), String> {
+    push_codespell_skip_flag(v, cmd)?;
+    push_codespell_ignore_words(v, cmd)?;
+    push_codespell_dictionaries(cmd, base, dictionary_paths)
 }
 
 /// `codespell`：默认路径同 typos；**禁止**传入写回参数。使用 `-q 3` 减少噪音。
