@@ -468,7 +468,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 - 加载缓存时，`turn-commentary-*` / `turn-final-answer` 稳定 key 可将未带版本字段的早期 v2 缓存识别为 v2。
 - 流结束边界立即发起 best-effort `keepalive` 会话快照 PUT，覆盖常规大小会话“状态就绪后马上刷新”；常规 400ms 防抖写盘继续作为兜底。
 - 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或仅覆盖已有回合时不进入 assistant/tool pool 启发式重排。若较新 revision 含更多 user 回合，则保留本地 v2 行不变，并从首个服务端独有 user 起追加 canonical 后缀，避免另一浏览器新增的回合被本地快照遮蔽。
-- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 因暂不携带 segment projection key，继续走 v1 legacy adapter；因此旧会话无需迁移，回滚 v1 reader 也不要求改盘。
+- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 在响应**无** `layout`（或缺 segment 键）时继续走 v1 legacy adapter；旧会话无需迁移。响应已可带可选 **`layout`**（B2 expand）；**生产保存路径尚未写入**该列。
 
 ---
 
@@ -525,7 +525,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 - `e2e/specs/mock-mid-process-commentary-duplicate.spec.ts`
 - `e2e/specs/mock-commentary-before-tool-order.spec.ts`
 - `e2e/specs/mock-empty-assistant-shell.spec.ts`
-- 金样：`fixtures/turn_project_projection_golden.jsonl`（`cargo test -p crabmate-turn-layout golden_turn_project_projection`）
+- 金样：`fixtures/turn_project_projection_golden.jsonl`（`cargo test --lib golden_turn_project_projection`）
 
 **Debug 观测**（仅 debug 构建）：`layout_debug_counters` 累计 `empty_shell_skip` / `commentary_handoff`，控制台 `[layout_debug]`。
 
@@ -539,7 +539,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 - **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。软能力 `sse_capabilities.terminal_order=saved_before_finished`。
 - **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；`stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
-- hydration：same-revision 守卫仍保留（E4 前不删）。
+- hydration：same-revision 守卫仍保留（E4 前不删）。`GET /conversation/messages` 已可省略或携带可选 **`layout`**（契约 expand）；当前回合保存**不**写该元数据，故线上仍走 legacy。
 - Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`，hydration / 冷启动尚未完全同一投影键权威。
 
 长期方向：**不再堆 merge / dedupe / sleep**，而是统一终态顺序、canonical 事实来源与确定性投影。

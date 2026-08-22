@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 
 use crate::chat_job_queue::{ChatJobQueue, WebChatQueueDeps};
 use crate::config::SharedAgentConfig;
+use crate::cm_api_contract::chat::ConversationLayoutMeta;
 use crate::conversation_store::{
     self, CONVERSATION_STORE_MAX_ENTRIES, CONVERSATION_STORE_TTL_SECS, SaveConversationOutcome,
 };
@@ -47,6 +48,9 @@ pub(crate) struct MemoryConversationEntry {
     active_agent_role: Option<String>,
     /// 当前会话工作模式；`None` 表示未显式设置（回落配置默认）。
     active_session_mode: Option<String>,
+    /// B2：布局元数据。当前 expand **不写入**（插入为 `None`，revision 更新也不改此字段）。
+    /// PR3 落盘时须与 SQLite `layout_meta_json` 同语义：插入写入、更新保留或刷新，勿只改 SQL。
+    layout: Option<ConversationLayoutMeta>,
     revision: u64,
     updated_at: std::time::Instant,
 }
@@ -58,6 +62,17 @@ pub(crate) struct ConversationTurnSeed {
     pub persisted_active_agent_role: Option<String>,
     /// 持久化的会话工作模式（ask/plan/act）；`None` 表示未设置。
     pub persisted_active_session_mode: Option<String>,
+    /// 可选布局元数据；缺省时 GET 省略。会话级，不随消息分页切片。
+    pub layout: Option<ConversationLayoutMeta>,
+}
+
+fn nonempty_persisted_column(raw: String) -> Option<String> {
+    let t = raw.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 /// HTTP 客户端、共享配置快照与工作区覆盖（与队列 / 会话后端解耦）。
@@ -237,6 +252,7 @@ impl AppStateConversationRuntime {
                     expected_revision: Some(entry.revision),
                     persisted_active_agent_role: entry.active_agent_role.clone(),
                     persisted_active_session_mode: entry.active_session_mode.clone(),
+                    layout: entry.layout.clone(),
                 })
             }
             ConversationBacking::Sqlite(conn) => {
@@ -270,25 +286,14 @@ impl AppStateConversationRuntime {
                 .await
                 .ok()
                 .flatten();
-                loaded.map(|(messages, revision, active, mode)| ConversationTurnSeed {
-                    messages,
-                    expected_revision: Some(revision),
-                    persisted_active_agent_role: {
-                        let t = active.trim();
-                        if t.is_empty() {
-                            None
-                        } else {
-                            Some(t.to_string())
-                        }
-                    },
-                    persisted_active_session_mode: {
-                        let t = mode.trim();
-                        if t.is_empty() {
-                            None
-                        } else {
-                            Some(t.to_string())
-                        }
-                    },
+                loaded.map(|row| ConversationTurnSeed {
+                    messages: row.messages,
+                    expected_revision: Some(row.revision),
+                    persisted_active_agent_role: nonempty_persisted_column(row.active_agent_role),
+                    persisted_active_session_mode: nonempty_persisted_column(
+                        row.active_session_mode,
+                    ),
+                    layout: row.layout,
                 })
             }
         }
@@ -340,6 +345,7 @@ impl AppStateConversationRuntime {
                             entry.messages = messages;
                             entry.active_agent_role = role_owned;
                             entry.active_session_mode = mode_owned;
+                            // B2 expand：不写 layout。PR3 须在此刷新或显式保留，避免只改 SQLite。
                             entry.revision = entry.revision.saturating_add(1);
                             entry.updated_at = now;
                         }
@@ -354,6 +360,7 @@ impl AppStateConversationRuntime {
                             messages,
                             active_agent_role: role_owned,
                             active_session_mode: mode_owned,
+                            layout: None,
                             revision: 1,
                             updated_at: now,
                         },

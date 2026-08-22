@@ -193,6 +193,7 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cm_api_contract::chat::ConversationMessagesResponseBody;
 
     #[test]
     fn openapi_schemas_include_core_chat_and_status() {
@@ -275,6 +276,38 @@ mod tests {
             "messages.items must be a schema object"
         );
         assert_ne!(messages, &Value::Bool(true));
+
+        let conv = &schemas["ConversationMessagesResponseBody"];
+        let required = conv
+            .get("required")
+            .and_then(|v| v.as_array())
+            .expect("ConversationMessagesResponseBody required");
+        assert!(
+            !required.iter().any(|v| v.as_str() == Some("layout")),
+            "layout must stay optional (B2 expand)"
+        );
+        assert!(
+            conv.pointer("/properties/layout").is_some(),
+            "layout property must be documented"
+        );
+    }
+
+    #[test]
+    fn conversation_messages_json_omits_absent_layout() {
+        let body = ConversationMessagesResponseBody {
+            conversation_id: "c".into(),
+            revision: 1,
+            active_agent_role: None,
+            active_session_mode: None,
+            tiktoken_prompt_tokens: None,
+            layout: None,
+            messages: Vec::<Value>::new(),
+            total_count: 0,
+            window_start_index: 0,
+            has_older: false,
+        };
+        let v = serde_json::to_value(&body).expect("serialize");
+        assert!(v.get("layout").is_none());
     }
 
     fn assert_no_json_schema_null_type(path: &str, node: &Value) {
