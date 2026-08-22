@@ -274,6 +274,7 @@ pub(crate) async fn conversation_messages_handler(
         active_agent_role,
         active_session_mode,
         tiktoken_prompt_tokens,
+        layout: seed.layout,
         messages,
         total_count: window.meta.total_count,
         window_start_index: window.meta.window_start_index,

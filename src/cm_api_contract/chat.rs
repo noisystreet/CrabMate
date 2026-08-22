@@ -143,6 +143,34 @@ pub struct TiktokenPromptTokensOpenApi {
     pub tiktoken_model: String,
 }
 
+/// 与 Client `CURRENT_LAYOUT_SCHEMA_VERSION`（Web 块布局 **2**）对齐；有元数据时写入 [`ConversationLayoutMeta`]。
+pub const CONVERSATION_LAYOUT_SCHEMA_VERSION_V2: u32 = 2;
+
+/// 单条 canonical 段（B2/E2 可选 hydration 键；旧会话可整段省略）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct ConversationLayoutSegment {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn_id: Option<String>,
+    pub segment_id: String,
+    pub segment_kind: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before_tool_call_id: Option<String>,
+    pub sequence: u32,
+}
+
+/// `GET /conversation/messages` 可选布局元数据。
+///
+/// **会话级**（与 `revision` 同范围），**不**随 `limit` / `before_index` 对 `messages` 分页切片。
+/// 落盘 JSON 与本类型 serde 相同。省略该对象时客户端走 legacy hydration（B3 前官方 Web 亦不消费本字段）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+pub struct ConversationLayoutMeta {
+    pub layout_schema_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub projection_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub segments: Vec<ConversationLayoutSegment>,
+}
+
 /// `GET /conversation/messages` 响应 OpenAPI 形状（`messages` 为 OpenAI 兼容对象数组）。
 #[derive(Serialize, JsonSchema)]
 pub struct ConversationMessagesResponseBodyOpenApi {
@@ -154,6 +182,9 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     pub active_session_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<TiktokenPromptTokensOpenApi>,
+    /// 会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<ConversationLayoutMeta>,
     #[schemars(schema_with = "schema_open_object_array")]
     pub messages: Vec<serde_json::Value>,
     #[serde(default)]
@@ -295,6 +326,9 @@ pub struct ConversationMessagesResponseBody<M> {
     pub active_session_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tiktoken_prompt_tokens: Option<crate::cm_types::TiktokenPromptTokensSnapshot>,
+    /// 会话级布局元数据；省略表示未写入。不随本页 `messages` 窗口切片；当前保存路径仍不写（hydration 不变）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layout: Option<ConversationLayoutMeta>,
     pub messages: Vec<M>,
     #[serde(default)]
     pub total_count: u32,

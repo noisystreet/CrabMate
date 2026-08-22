@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 
+use crate::cm_api_contract::chat::ConversationLayoutMeta;
 use crate::types::Message;
 
 const TABLE: &str = "crabmate_conversations";
@@ -43,7 +44,12 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
     ))?;
     ensure_active_agent_role_column(conn)?;
     ensure_active_session_mode_column(conn)?;
+    ensure_layout_meta_json_column(conn)?;
     Ok(())
+}
+
+fn ensure_layout_meta_json_column(conn: &Connection) -> Result<(), rusqlite::Error> {
+    ensure_text_column(conn, "layout_meta_json")
 }
 
 fn ensure_active_agent_role_column(conn: &Connection) -> Result<(), rusqlite::Error> {
@@ -106,57 +112,87 @@ fn messages_from_json(s: &str) -> Result<Vec<Message>, String> {
     Ok(out)
 }
 
-/// 读取会话；不存在、或超过 TTL 视为无（并删除过期行）。
-/// 返回：`(messages, revision, active_agent_role, active_session_mode)`；后两列空串视为未设置。
-#[allow(clippy::type_complexity)]
-pub fn load(
-    conn: &Connection,
-    id: &str,
-    ttl_secs: u64,
-) -> Result<Option<(Vec<Message>, u64, String, String)>, rusqlite::Error> {
-    let now = now_unix();
-    let row: Option<(String, i64, i64, String, String)> = conn
-        .query_row(
-            &format!(
-                "SELECT messages_json, revision, updated_at_unix, active_agent_role, active_session_mode FROM {TABLE} WHERE id = ?1"
-            ),
-            params![id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
-        )
-        .optional()?;
-    let Some((json, revision, updated, active_role, active_mode)) = row else {
-        return Ok(None);
-    };
-    load_row_after_fetch(
-        conn,
-        id,
-        ttl_secs,
-        now,
-        json,
-        revision,
-        updated,
-        active_role,
-        active_mode,
-    )
+/// SQLite / 内存会话读出形状。
+#[derive(Debug, Clone)]
+pub struct LoadedConversation {
+    pub messages: Vec<Message>,
+    pub revision: u64,
+    pub active_agent_role: String,
+    pub active_session_mode: String,
+    pub layout: Option<ConversationLayoutMeta>,
 }
 
-#[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn load_row_after_fetch(
-    conn: &Connection,
-    id: &str,
-    ttl_secs: u64,
-    now: i64,
+struct ConversationFetchRow {
     json: String,
     revision: i64,
     updated: i64,
     active_role: String,
     active_mode: String,
-) -> Result<Option<(Vec<Message>, u64, String, String)>, rusqlite::Error> {
-    if ttl_secs > 0 && now.saturating_sub(updated) > ttl_secs as i64 {
+    layout_meta_json: String,
+}
+
+fn layout_meta_from_column(conversation_id: &str, raw: &str) -> Option<ConversationLayoutMeta> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    match serde_json::from_str(t) {
+        Ok(meta) => Some(meta),
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "会话 layout_meta_json 解析失败，已忽略 conversation_id={} error={e}",
+                conversation_id
+            );
+            None
+        }
+    }
+}
+
+/// 读取会话；不存在、或超过 TTL 视为无（并删除过期行）。
+/// `active_*` 空串视为未设置；`layout` 仅在 `layout_meta_json` 非空且可解析时存在。
+pub fn load(
+    conn: &Connection,
+    id: &str,
+    ttl_secs: u64,
+) -> Result<Option<LoadedConversation>, rusqlite::Error> {
+    let now = now_unix();
+    let row: Option<ConversationFetchRow> = conn
+        .query_row(
+            &format!(
+                "SELECT messages_json, revision, updated_at_unix, active_agent_role, active_session_mode, layout_meta_json FROM {TABLE} WHERE id = ?1"
+            ),
+            params![id],
+            |r| {
+                Ok(ConversationFetchRow {
+                    json: r.get(0)?,
+                    revision: r.get(1)?,
+                    updated: r.get(2)?,
+                    active_role: r.get(3)?,
+                    active_mode: r.get(4)?,
+                    layout_meta_json: r.get(5)?,
+                })
+            },
+        )
+        .optional()?;
+    let Some(row) = row else {
+        return Ok(None);
+    };
+    load_row_after_fetch(conn, id, ttl_secs, now, row)
+}
+
+fn load_row_after_fetch(
+    conn: &Connection,
+    id: &str,
+    ttl_secs: u64,
+    now: i64,
+    row: ConversationFetchRow,
+) -> Result<Option<LoadedConversation>, rusqlite::Error> {
+    if ttl_secs > 0 && now.saturating_sub(row.updated) > ttl_secs as i64 {
         conn.execute(&format!("DELETE FROM {TABLE} WHERE id = ?1"), params![id])?;
         return Ok(None);
     }
-    let messages = match messages_from_json(&json) {
+    let messages = match messages_from_json(&row.json) {
         Ok(m) => m,
         Err(e) => {
             log::warn!(
@@ -169,12 +205,18 @@ fn load_row_after_fetch(
             return Ok(None);
         }
     };
-    let rev = u64::try_from(revision).unwrap_or(0);
+    let rev = u64::try_from(row.revision).unwrap_or(0);
     conn.execute(
         &format!("UPDATE {TABLE} SET updated_at_unix = ?1 WHERE id = ?2"),
         params![now, id],
     )?;
-    Ok(Some((messages, rev, active_role, active_mode)))
+    Ok(Some(LoadedConversation {
+        messages,
+        revision: rev,
+        active_agent_role: row.active_role,
+        active_session_mode: row.active_mode,
+        layout: layout_meta_from_column(id, &row.layout_meta_json),
+    }))
 }
 
 /// 与 `AppState::save_conversation_messages_if_revision` 语义一致。
@@ -440,17 +482,20 @@ mod tests {
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded.0.len(), 3);
+        assert_eq!(loaded.messages.len(), 3);
         assert_eq!(
-            truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.1).unwrap(),
+            truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.revision).unwrap(),
             SaveConversationOutcome::Saved
         );
         let after = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(after.0.len(), 2);
-        assert_eq!(after.0[0].role, "system");
-        assert_eq!(message_content_as_str(&after.0[1].content), Some("ctx"));
+        assert_eq!(after.messages.len(), 2);
+        assert_eq!(after.messages[0].role, "system");
         assert_eq!(
-            after.0[1].name.as_deref(),
+            message_content_as_str(&after.messages[1].content),
+            Some("ctx")
+        );
+        assert_eq!(
+            after.messages[1].name.as_deref(),
             Some(crate::types::CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
         );
     }
@@ -468,14 +513,15 @@ mod tests {
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded.1, 1);
-        assert_eq!(loaded.0.len(), 2);
+        assert_eq!(loaded.revision, 1);
+        assert_eq!(loaded.messages.len(), 2);
+        assert!(loaded.layout.is_none());
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded2.1, 2);
+        assert_eq!(loaded2.revision, 2);
     }
 
     #[test]
@@ -488,21 +534,21 @@ mod tests {
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded.2, "");
+        assert_eq!(loaded.active_agent_role, "");
 
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), Some("reviewer"), None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded2.2, "reviewer");
+        assert_eq!(loaded2.active_agent_role, "reviewer");
 
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded3.2, "");
+        assert_eq!(loaded3.active_agent_role, "");
     }
 
     #[test]
@@ -515,20 +561,79 @@ mod tests {
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded.3, "ask");
+        assert_eq!(loaded.active_session_mode, "ask");
 
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, Some("plan"), Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded2 = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded2.3, "plan");
+        assert_eq!(loaded2.active_session_mode, "plan");
 
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(2)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded3 = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(loaded3.3, "");
+        assert_eq!(loaded3.active_session_mode, "");
+    }
+
+    #[test]
+    fn load_optional_layout_meta_json_without_touching_save_path() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![Message::user_only("hi".to_string())];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let meta = ConversationLayoutMeta {
+            layout_schema_version:
+                crate::cm_api_contract::chat::CONVERSATION_LAYOUT_SCHEMA_VERSION_V2,
+            projection_hash: Some("abc".into()),
+            segments: vec![],
+        };
+        let json = serde_json::to_string(&meta).unwrap();
+        conn.execute(
+            "UPDATE crabmate_conversations SET layout_meta_json = ?1 WHERE id = ?2",
+            params![json, "c1"],
+        )
+        .unwrap();
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(loaded.layout.as_ref(), Some(&meta));
+
+        conn.execute(
+            "UPDATE crabmate_conversations SET layout_meta_json = ?1 WHERE id = ?2",
+            params!["{not-json", "c1"],
+        )
+        .unwrap();
+        let loaded_bad = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert!(loaded_bad.layout.is_none());
+        assert_eq!(loaded_bad.messages.len(), 1);
+    }
+
+    #[test]
+    fn save_if_revision_does_not_clear_layout_meta_json() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![Message::user_only("hi".to_string())];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        conn.execute(
+            "UPDATE crabmate_conversations SET layout_meta_json = ?1 WHERE id = ?2",
+            params![r#"{"layout_schema_version":2}"#, "c1"],
+        )
+        .unwrap();
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs, None, None, Some(1)).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert_eq!(
+            loaded.layout.as_ref().map(|m| m.layout_schema_version),
+            Some(2)
+        );
     }
 }

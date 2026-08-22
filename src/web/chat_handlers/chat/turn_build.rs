@@ -344,6 +344,7 @@ async fn build_new_conversation_turn(
         expected_revision: None,
         persisted_active_agent_role: None,
         persisted_active_session_mode: Some(mode.as_str().to_string()),
+        layout: None,
     })
 }
 
