@@ -302,6 +302,86 @@ impl LongTermMemoryRuntime {
         );
     }
 
+    fn warn_unwired_vector_backend(backend: LongTermMemoryVectorBackend) {
+        if matches!(
+            backend,
+            LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector
+        ) {
+            debug!(
+                target: "crabmate",
+                "长期记忆向量后端 {:?} 未接外部服务，回退关键词检索",
+                backend
+            );
+        }
+    }
+
+    fn score_memory_rows_against_query(
+        rows: &[MemoryRow],
+        qv: &[f32],
+        query: &str,
+        prioritize: bool,
+    ) -> Vec<(f32, MemoryRow)> {
+        let mut scored = Vec::with_capacity(rows.len());
+        for row in rows {
+            let base = row
+                .embedding
+                .as_ref()
+                .and_then(|b| bytes_to_f32_slice(b).map(|ev| cosine_sim(qv, &ev)))
+                .unwrap_or(0.0);
+            let score = crate::cm_memory::memory::long_term_memory_recall::score_row(
+                base, row, query, prioritize,
+            );
+            scored.push((score, row.clone()));
+        }
+        scored
+    }
+
+    #[cfg(feature = "fastembed")]
+    fn embed_memory_query_vector(&self, query: &str) -> Option<Vec<f32>> {
+        if let Err(e) = Self::ensure_embedder(&self.embedder) {
+            warn!(target: "crabmate", "长期记忆嵌入不可用，回退关键词检索: {}", e);
+            return None;
+        }
+        let mut g = self.embedder.lock().ok()?;
+        let model = (*g).as_mut()?;
+        let docs = vec![format!("query: {}", query)];
+        match model.embed(docs, None) {
+            Ok(v) => v.into_iter().next(),
+            Err(e) => {
+                warn!(target: "crabmate", "长期记忆 query 嵌入失败: {}", e);
+                None
+            }
+        }
+    }
+
+    fn try_vector_pick_fastembed(
+        &self,
+        rows: &[MemoryRow],
+        query: &str,
+        top_k: usize,
+        prioritize: bool,
+    ) -> Option<Vec<crate::cm_memory::memory::long_term_memory_recall::RecallPick>> {
+        #[cfg(feature = "fastembed")]
+        {
+            let qv = self.embed_memory_query_vector(query)?;
+            let scored = Self::score_memory_rows_against_query(rows, &qv, query, prioritize);
+            Some(
+                crate::cm_memory::memory::long_term_memory_recall::pick_recall_chunks(
+                    top_k, query, scored, prioritize,
+                ),
+            )
+        }
+        #[cfg(not(feature = "fastembed"))]
+        {
+            let _ = (self, rows, query, top_k, prioritize);
+            warn!(
+                target: "crabmate",
+                "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，回退关键词检索"
+            );
+            None
+        }
+    }
+
     fn pick_ranked_memory_chunks(
         &self,
         cfg: &AgentConfig,
@@ -312,65 +392,15 @@ impl LongTermMemoryRuntime {
         let prioritize = cfg
             .long_term_memory
             .long_term_memory_prioritize_experience_recall;
-
-        let vector_picked = match cfg.long_term_memory.long_term_memory_vector_backend {
+        let backend = cfg.long_term_memory.long_term_memory_vector_backend;
+        let vector_picked = match backend {
             LongTermMemoryVectorBackend::Fastembed => {
-                #[cfg(feature = "fastembed")]
-                {
-                    if let Err(e) = Self::ensure_embedder(&self.embedder) {
-                        warn!(target: "crabmate", "长期记忆嵌入不可用，回退关键词检索: {}", e);
-                        None
-                    } else {
-                        let q_emb = {
-                            let mut g = self.embedder.lock().ok()?;
-                            let model = (*g).as_mut()?;
-                            let docs = vec![format!("query: {}", query)];
-                            match model.embed(docs, None) {
-                                Ok(v) => v.into_iter().next(),
-                                Err(e) => {
-                                    warn!(target: "crabmate", "长期记忆 query 嵌入失败: {}", e);
-                                    None
-                                }
-                            }
-                        };
-                        let qv = q_emb?;
-                        let mut scored: Vec<(f32, MemoryRow)> = Vec::with_capacity(rows.len());
-                        for row in &rows {
-                            let base = if let Some(ref b) = row.embedding {
-                                bytes_to_f32_slice(b)
-                                    .map(|ev| cosine_sim(&qv, &ev))
-                                    .unwrap_or(0.0)
-                            } else {
-                                0.0
-                            };
-                            let score = crate::cm_memory::memory::long_term_memory_recall::score_row(
-                                base, row, query, prioritize,
-                            );
-                            scored.push((score, row.clone()));
-                        }
-                        Some(crate::cm_memory::memory::long_term_memory_recall::pick_recall_chunks(
-                            top_k, query, scored, prioritize,
-                        ))
-                    }
-                }
-                #[cfg(not(feature = "fastembed"))]
-                {
-                    warn!(
-                        target: "crabmate",
-                        "长期记忆向量后端为 fastembed 但本构建未启用 `fastembed` feature，回退关键词检索"
-                    );
-                    None
-                }
+                self.try_vector_pick_fastembed(&rows, query, top_k, prioritize)
             }
             LongTermMemoryVectorBackend::Disabled
             | LongTermMemoryVectorBackend::Qdrant
             | LongTermMemoryVectorBackend::Pgvector => {
-                if matches!(
-                    cfg.long_term_memory.long_term_memory_vector_backend,
-                    LongTermMemoryVectorBackend::Qdrant | LongTermMemoryVectorBackend::Pgvector
-                ) {
-                    debug!(target: "crabmate", "长期记忆向量后端 {:?} 未接外部服务，回退关键词检索", cfg.long_term_memory.long_term_memory_vector_backend);
-                }
+                Self::warn_unwired_vector_backend(backend);
                 None
             }
         };
@@ -522,6 +552,39 @@ impl LongTermMemoryRuntime {
         Ok(())
     }
 
+    fn ensure_embedder_if_indexing(
+        rt: &LongTermMemoryRuntime,
+        need_embed: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !need_embed {
+            return Ok(());
+        }
+        #[cfg(feature = "fastembed")]
+        LongTermMemoryRuntime::ensure_embedder(&rt.embedder)?;
+        let _ = rt;
+        Ok(())
+    }
+
+    fn embed_auto_index_bytes_if_needed(
+        rt: &LongTermMemoryRuntime,
+        text: &str,
+        role: &str,
+        need_embed: bool,
+    ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
+        if !need_embed {
+            return Ok(None);
+        }
+        #[cfg(feature = "fastembed")]
+        {
+            return Ok(Some(Self::embed_auto_index_chunk_bytes(rt, text, role)?));
+        }
+        #[cfg(not(feature = "fastembed"))]
+        {
+            let _ = (rt, text, role);
+            Ok(None)
+        }
+    }
+
     fn index_turn_blocking(
         rt: &LongTermMemoryRuntime,
         cfg: &AgentConfig,
@@ -532,10 +595,7 @@ impl LongTermMemoryRuntime {
             return Ok(());
         };
         let need_embed = Self::index_turn_needs_fastembed_embedding(cfg);
-        if need_embed {
-            #[cfg(feature = "fastembed")]
-            LongTermMemoryRuntime::ensure_embedder(&rt.embedder)?;
-        }
+        Self::ensure_embedder_if_indexing(rt, need_embed)?;
         let conn = rt
             .conn
             .lock()
@@ -550,18 +610,7 @@ impl LongTermMemoryRuntime {
             if long_term_memory_store::has_duplicate_text(&conn, scope_id, &text)? {
                 continue;
             }
-            let emb = if need_embed {
-                #[cfg(feature = "fastembed")]
-                {
-                    Some(Self::embed_auto_index_chunk_bytes(rt, &text, role)?)
-                }
-                #[cfg(not(feature = "fastembed"))]
-                {
-                    None::<Vec<u8>>
-                }
-            } else {
-                None
-            };
+            let emb = Self::embed_auto_index_bytes_if_needed(rt, &text, role, need_embed)?;
             long_term_memory_store::insert_chunk(
                 &conn,
                 scope_id,
@@ -788,6 +837,26 @@ fn last_user_query_for_memory(messages: &[Message]) -> Option<&str> {
     None
 }
 
+fn preceding_user_text(messages: &[Message], before: usize) -> Option<&str> {
+    let mut j = before;
+    while j > 0 {
+        j -= 1;
+        let u = &messages[j];
+        if u.role != "user" {
+            continue;
+        }
+        if is_long_term_memory_injection(u) {
+            continue;
+        }
+        let uc = crate::cm_types::message_content_as_str(&u.content)?.trim();
+        if uc.is_empty() {
+            continue;
+        }
+        return Some(uc);
+    }
+    None
+}
+
 /// 最后一轮「用户提问 → 助手终答」（无 `tool_calls`）的正文对。
 pub fn last_user_assistant_final_pair_for_turn(messages: &[Message]) -> Option<(&str, &str)> {
     let mut i = messages.len();
@@ -804,23 +873,8 @@ pub fn last_user_assistant_final_pair_for_turn(messages: &[Message]) -> Option<(
         if ac.is_empty() {
             continue;
         }
-        let mut j = i;
-        while j > 0 {
-            j -= 1;
-            let u = &messages[j];
-            if u.role != "user" {
-                continue;
-            }
-            if is_long_term_memory_injection(u) {
-                continue;
-            }
-            let uc = crate::cm_types::message_content_as_str(&u.content)?.trim();
-            if uc.is_empty() {
-                continue;
-            }
-            return Some((uc, ac));
-        }
-        return None;
+        let uc = preceding_user_text(messages, i)?;
+        return Some((uc, ac));
     }
     None
 }

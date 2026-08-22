@@ -526,122 +526,112 @@ pub struct RebuildIndexParams<'a> {
     pub incremental: bool,
 }
 
+#[cfg(feature = "fastembed")]
+fn rebuild_mode_note(subtree: bool, incremental: bool, files_unchanged: usize) -> String {
+    if subtree {
+        "模式：子树全量重嵌入（已清空该子树目录表与块）。".to_string()
+    } else if incremental {
+        format!(
+            "模式：整库增量（mtime+size+SHA256 未变的文件跳过嵌入；未再出现的文件已删块与目录行）。未改文件数：{}",
+            files_unchanged
+        )
+    } else {
+        "模式：整库全量（已清空向量块与文件目录后重建）。".to_string()
+    }
+}
+
+#[cfg(feature = "fastembed")]
+fn format_rebuild_success_message(
+    p: &RebuildIndexParams<'_>,
+    subtree: bool,
+    scan: &RebuildScanOutcome,
+    chunks_total: usize,
+) -> String {
+    let scope_note = match p.sub_path.and_then(posix_subdir_prefix_for_delete) {
+        None => "范围：整库（未指定 path 或 path 为 .）".to_string(),
+        Some(pref) => format!("范围：子树 `{}`（其余路径索引保留）", pref),
+    };
+    format!(
+        "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n{}\n{}\n已嵌入文件数（本趟；上限 {}）：{}\n文本块数（本趟写入）：{}\n跳过/超限/未产生块：{}\n提示：大仓可调高 codebase_semantic_rebuild_max_files 或缩小 path/extensions；整库默认增量见 codebase_semantic_rebuild_incremental；强制全量可传 incremental:false。",
+        p.index_path.display(),
+        p.ws_key,
+        scope_note,
+        rebuild_mode_note(subtree, p.incremental, scan.files_unchanged),
+        p.rebuild_max_files,
+        scan.files_indexed,
+        chunks_total,
+        scan.skipped_files
+    )
+}
+
+#[cfg(feature = "fastembed")]
+fn rebuild_index_write_scan(
+    tx: &rusqlite::Transaction<'_>,
+    p: &RebuildIndexParams<'_>,
+    search_root: &Path,
+    subtree: bool,
+) -> Result<(RebuildScanOutcome, usize), String> {
+    let mut embedder = ensure_embedder()?;
+    let catalog = load_incremental_catalog(tx, p.ws_key, p.incremental, subtree)?;
+    let mut scan = scan_rebuild_files(ScanRebuildFilesParams {
+        ws_root: p.ws_root,
+        ws_key: p.ws_key,
+        tx,
+        search_root,
+        max_file_bytes: p.max_file_bytes,
+        chunk_max_chars: p.chunk_max_chars,
+        rebuild_max_files: p.rebuild_max_files,
+        ext_set: p.ext_set,
+        file_glob_pat: p.file_glob_pat,
+        incremental: p.incremental,
+        subtree,
+        catalog: &catalog,
+    })?;
+    remove_stale_catalog_rows(
+        tx,
+        p.ws_key,
+        &catalog,
+        &scan.seen_rels,
+        p.incremental,
+        subtree,
+    )?;
+    let chunks_total = write_embedding_batches(tx, p.ws_key, &mut embedder, &scan.embed_batches)?;
+    write_file_rows_and_meta(tx, p.ws_key, std::mem::take(&mut scan.file_rows))?;
+    Ok((scan, chunks_total))
+}
+
+#[cfg(feature = "fastembed")]
+fn rebuild_index_in_open_db(
+    conn: &mut rusqlite::Connection,
+    p: RebuildIndexParams<'_>,
+) -> Result<String, String> {
+    let search_root = resolve_rebuild_search_root(p.ws_root, p.sub_path)?;
+    let tx = conn
+        .transaction()
+        .map_err(|e| format!("索引事务开始失败: {}", e))?;
+    let subtree = clear_rebuild_scope_rows(&tx, p.ws_key, p.sub_path, p.incremental)?;
+    let (scan, chunks_total) = rebuild_index_write_scan(&tx, &p, &search_root, subtree)?;
+    tx.commit()
+        .map_err(|e| format!("索引提交失败: {}", e))?;
+    Ok(format_rebuild_success_message(&p, subtree, &scan, chunks_total))
+}
+
 pub fn rebuild_index(p: RebuildIndexParams<'_>) -> String {
-    let RebuildIndexParams {
-        ws_root,
-        ws_key,
-        index_path,
-        sub_path,
-        max_file_bytes,
-        chunk_max_chars,
-        rebuild_max_files,
-        ext_set,
-        file_glob_pat,
-        incremental,
-    } = p;
     #[cfg(not(feature = "fastembed"))]
     {
+        let _ = p;
         return "错误：rebuild_index 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请使用带 fastembed 的构建，或关闭 codebase_semantic_search。".to_string();
     }
 
     #[cfg(feature = "fastembed")]
     {
-        let mut conn = match open_codebase_semantic_db(index_path) {
+        let mut conn = match open_codebase_semantic_db(p.index_path) {
             Ok(c) => c,
             Err(e) => return e,
         };
-        let search_root = match resolve_rebuild_search_root(ws_root, sub_path) {
-            Ok(p) => p,
-            Err(e) => return e,
-        };
-
-        let tx = match conn.transaction() {
-            Ok(t) => t,
-            Err(e) => return format!("索引事务开始失败: {}", e),
-        };
-        let subtree = match clear_rebuild_scope_rows(&tx, ws_key, sub_path, incremental) {
-            Ok(v) => v,
-            Err(e) => return e,
-        };
-
-        let mut embedder = match ensure_embedder() {
-            Ok(m) => m,
-            Err(e) => return e,
-        };
-
-        let catalog = match load_incremental_catalog(&tx, ws_key, incremental, subtree) {
-            Ok(c) => c,
-            Err(e) => return e,
-        };
-        let scan = match scan_rebuild_files(ScanRebuildFilesParams {
-            ws_root,
-            ws_key,
-            tx: &tx,
-            search_root: &search_root,
-            max_file_bytes,
-            chunk_max_chars,
-            rebuild_max_files,
-            ext_set,
-            file_glob_pat,
-            incremental,
-            subtree,
-            catalog: &catalog,
-        }) {
-            Ok(s) => s,
-            Err(e) => return e,
-        };
-        let RebuildScanOutcome {
-            files_indexed,
-            files_unchanged,
-            skipped_files,
-            embed_batches,
-            seen_rels,
-            file_rows,
-        } = scan;
-
-        if let Err(e) =
-            remove_stale_catalog_rows(&tx, ws_key, &catalog, &seen_rels, incremental, subtree)
-        {
-            return e;
+        match rebuild_index_in_open_db(&mut conn, p) {
+            Ok(msg) => msg,
+            Err(e) => e,
         }
-
-        let chunks_total = match write_embedding_batches(&tx, ws_key, &mut embedder, &embed_batches)
-        {
-            Ok(n) => n,
-            Err(e) => return e,
-        };
-        if let Err(e) = write_file_rows_and_meta(&tx, ws_key, file_rows) {
-            return e;
-        }
-
-        if let Err(e) = tx.commit() {
-            return format!("索引提交失败: {}", e);
-        }
-
-        let scope_note = match sub_path.and_then(posix_subdir_prefix_for_delete) {
-            None => "范围：整库（未指定 path 或 path 为 .）".to_string(),
-            Some(p) => format!("范围：子树 `{}`（其余路径索引保留）", p),
-        };
-        let mode_note = if subtree {
-            "模式：子树全量重嵌入（已清空该子树目录表与块）。".to_string()
-        } else if incremental {
-            format!(
-                "模式：整库增量（mtime+size+SHA256 未变的文件跳过嵌入；未再出现的文件已删块与目录行）。未改文件数：{}",
-                files_unchanged
-            )
-        } else {
-            "模式：整库全量（已清空向量块与文件目录后重建）。".to_string()
-        };
-        format!(
-            "代码语义索引已重建。\n索引文件：{}\n工作区键：{}\n{}\n{}\n已嵌入文件数（本趟；上限 {}）：{}\n文本块数（本趟写入）：{}\n跳过/超限/未产生块：{}\n提示：大仓可调高 codebase_semantic_rebuild_max_files 或缩小 path/extensions；整库默认增量见 codebase_semantic_rebuild_incremental；强制全量可传 incremental:false。",
-            index_path.display(),
-            ws_key,
-            scope_note,
-            mode_note,
-            rebuild_max_files,
-            files_indexed,
-            chunks_total,
-            skipped_files
-        )
     }
 }

@@ -121,69 +121,147 @@ enum InvalScopesFill {
     FullWorkspace,
 }
 
+fn fill_dir_path_tools(name: &str, v: &serde_json::Value, scopes: &mut Vec<RelScope>) -> Option<InvalScopesFill> {
+    if !matches!(name, "delete_dir" | "create_dir") {
+        return None;
+    }
+    push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), true);
+    Some(InvalScopesFill::Ok)
+}
+
+fn is_single_file_path_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "create_file"
+            | "modify_file"
+            | "delete_file"
+            | "append_file"
+            | "search_replace"
+            | "chmod_file"
+            | "format_file"
+            | "format_check_file"
+            | "extract_in_file"
+            | "read_binary_meta"
+            | "hash_file"
+    )
+}
+
+fn fill_single_file_path_tools(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
+    if !is_single_file_path_tool(name) {
+        return None;
+    }
+    push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
+    Some(InvalScopesFill::Ok)
+}
+
+fn fill_copy_move_tools(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
+    if !matches!(name, "copy_file" | "move_file") {
+        return None;
+    }
+    push_invalidation_scope(scopes, v.get("from").and_then(|p| p.as_str()), false);
+    push_invalidation_scope(scopes, v.get("to").and_then(|p| p.as_str()), false);
+    Some(InvalScopesFill::Ok)
+}
+
+fn fill_apply_patch_tool(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
+    if name != "apply_patch" {
+        return None;
+    }
+    if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
+        for rel in patch_paths_from_unified_diff(patch) {
+            push_invalidation_scope(scopes, Some(rel.as_str()), false);
+        }
+    }
+    if scopes.is_empty() {
+        Some(InvalScopesFill::FullWorkspace)
+    } else {
+        Some(InvalScopesFill::Ok)
+    }
+}
+
+fn fill_structured_spell_tools(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
+    if !matches!(
+        name,
+        "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check"
+    ) {
+        return None;
+    }
+    push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
+    if name == "markdown_check_links"
+        && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
+    {
+        for x in roots {
+            push_invalidation_scope(scopes, x.as_str(), false);
+        }
+    }
+    if matches!(name, "typos_check" | "codespell_check")
+        && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
+    {
+        for x in ps {
+            push_invalidation_scope(scopes, x.as_str(), false);
+        }
+    }
+    Some(InvalScopesFill::Ok)
+}
+
+fn fill_ast_grep_tool(
+    name: &str,
+    v: &serde_json::Value,
+    scopes: &mut Vec<RelScope>,
+) -> Option<InvalScopesFill> {
+    if name != "ast_grep_rewrite" {
+        return None;
+    }
+    if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
+        for x in ps {
+            push_invalidation_scope(scopes, x.as_str(), false);
+        }
+        Some(InvalScopesFill::Ok)
+    } else {
+        Some(InvalScopesFill::FullWorkspace)
+    }
+}
+
 fn fill_invalidation_scopes_for_tool(
     name: &str,
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> InvalScopesFill {
-    match name {
-        "delete_dir" | "create_dir" => {
-            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), true);
-            InvalScopesFill::Ok
-        }
-        "create_file" | "modify_file" | "delete_file" | "append_file" | "search_replace"
-        | "chmod_file" | "format_file" | "format_check_file" | "extract_in_file"
-        | "read_binary_meta" | "hash_file" => {
-            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
-            InvalScopesFill::Ok
-        }
-        "copy_file" | "move_file" => {
-            push_invalidation_scope(scopes, v.get("from").and_then(|p| p.as_str()), false);
-            push_invalidation_scope(scopes, v.get("to").and_then(|p| p.as_str()), false);
-            InvalScopesFill::Ok
-        }
-        "apply_patch" => {
-            if let Some(patch) = v.get("patch").and_then(|p| p.as_str()) {
-                for rel in patch_paths_from_unified_diff(patch) {
-                    push_invalidation_scope(scopes, Some(rel.as_str()), false);
-                }
-            }
-            if scopes.is_empty() {
-                InvalScopesFill::FullWorkspace
-            } else {
-                InvalScopesFill::Ok
-            }
-        }
-        "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check" => {
-            push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
-            if name == "markdown_check_links"
-                && let Some(roots) = v.get("roots").and_then(|r| r.as_array())
-            {
-                for x in roots {
-                    push_invalidation_scope(scopes, x.as_str(), false);
-                }
-            }
-            if matches!(name, "typos_check" | "codespell_check")
-                && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
-            {
-                for x in ps {
-                    push_invalidation_scope(scopes, x.as_str(), false);
-                }
-            }
-            InvalScopesFill::Ok
-        }
-        "ast_grep_rewrite" => {
-            if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
-                for x in ps {
-                    push_invalidation_scope(scopes, x.as_str(), false);
-                }
-                InvalScopesFill::Ok
-            } else {
-                InvalScopesFill::FullWorkspace
-            }
-        }
-        _ => InvalScopesFill::FullWorkspace,
+    if let Some(r) = fill_dir_path_tools(name, v, scopes) {
+        return r;
     }
+    if let Some(r) = fill_single_file_path_tools(name, v, scopes) {
+        return r;
+    }
+    if let Some(r) = fill_copy_move_tools(name, v, scopes) {
+        return r;
+    }
+    if let Some(r) = fill_apply_patch_tool(name, v, scopes) {
+        return r;
+    }
+    if let Some(r) = fill_structured_spell_tools(name, v, scopes) {
+        return r;
+    }
+    if let Some(r) = fill_ast_grep_tool(name, v, scopes) {
+        return r;
+    }
+    InvalScopesFill::FullWorkspace
 }
 
 /// 根据工具名与参数推断应失效的范围；**只读工具**返回 `None`。
@@ -265,80 +343,100 @@ pub fn apply_after_successful_tool(
     index_sqlite_path_cfg: &str,
     inv: CodebaseSemanticInvalidation,
 ) {
-    let ws_key = match canonical_workspace_root(workspace_root) {
-        Ok(p) => p.to_string_lossy().to_string(),
-        Err(_) => return,
+    let Some((ws_key, mut conn)) = open_invalidation_connection(workspace_root, index_sqlite_path_cfg)
+    else {
+        return;
     };
-    let index_path = match index_path_for_workspace(workspace_root, index_sqlite_path_cfg) {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-    let mut conn = match open_codebase_semantic_db(&index_path) {
-        Ok(c) => c,
-        Err(_) => return,
-    };
-
     match inv {
         CodebaseSemanticInvalidation::FullWorkspace => {
-            let _ = conn.execute(
-                &format!("DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1"),
-                params![ws_key],
-            );
-            let _ = conn.execute(
-                &format!("DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1"),
-                params![ws_key],
-            );
+            delete_workspace_index_rows(&conn, &ws_key);
         }
         CodebaseSemanticInvalidation::RelScopes(scopes) => {
-            if scopes.is_empty() {
-                return;
-            }
-            let tx = match conn.transaction() {
-                Ok(t) => t,
-                Err(_) => return,
-            };
-            let mut ok = true;
-            for sc in &scopes {
-                let res = if sc.is_dir {
-                    let like_pat =
-                        sqlite_like_escape(&format!("{}/%", sc.path.trim_end_matches('/')));
-                    let r1 = tx.execute(
-                        &format!(
-                            "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
-                        ),
-                        params![ws_key, sc.path.trim_end_matches('/'), like_pat],
-                    );
-                    let r2 = tx.execute(
-                        &format!(
-                            "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
-                        ),
-                        params![ws_key, sc.path.trim_end_matches('/'), like_pat],
-                    );
-                    r1.and(r2)
-                } else {
-                    let r1 = tx.execute(
-                        &format!(
-                            "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
-                        ),
-                        params![ws_key, sc.path.as_str()],
-                    );
-                    let r2 = tx.execute(
-                        &format!(
-                            "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
-                        ),
-                        params![ws_key, sc.path.as_str()],
-                    );
-                    r1.and(r2)
-                };
-                if res.is_err() {
-                    ok = false;
-                    break;
-                }
-            }
-            if ok {
-                let _ = tx.commit();
-            }
+            apply_rel_scope_invalidation(&mut conn, &ws_key, &scopes);
         }
+    }
+}
+
+fn open_invalidation_connection(
+    workspace_root: &Path,
+    index_sqlite_path_cfg: &str,
+) -> Option<(String, rusqlite::Connection)> {
+    let ws_key = canonical_workspace_root(workspace_root)
+        .ok()?
+        .to_string_lossy()
+        .to_string();
+    let index_path = index_path_for_workspace(workspace_root, index_sqlite_path_cfg).ok()?;
+    let conn = open_codebase_semantic_db(&index_path).ok()?;
+    Some((ws_key, conn))
+}
+
+fn delete_workspace_index_rows(conn: &rusqlite::Connection, ws_key: &str) {
+    let _ = conn.execute(
+        &format!("DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1"),
+        params![ws_key],
+    );
+    let _ = conn.execute(
+        &format!("DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1"),
+        params![ws_key],
+    );
+}
+
+fn delete_one_rel_scope(
+    tx: &rusqlite::Transaction<'_>,
+    ws_key: &str,
+    sc: &RelScope,
+) -> rusqlite::Result<()> {
+    if sc.is_dir {
+        let like_pat = sqlite_like_escape(&format!("{}/%", sc.path.trim_end_matches('/')));
+        let path = sc.path.trim_end_matches('/');
+        tx.execute(
+            &format!(
+                "DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+            ),
+            params![ws_key, path, like_pat],
+        )?;
+        tx.execute(
+            &format!(
+                "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND (rel_path = ?2 OR rel_path LIKE ?3 ESCAPE '\\')"
+            ),
+            params![ws_key, path, like_pat],
+        )?;
+        return Ok(());
+    }
+    tx.execute(
+        &format!("DELETE FROM {CHUNKS_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"),
+        params![ws_key, sc.path.as_str()],
+    )?;
+    tx.execute(
+        &format!(
+            "DELETE FROM {CODEBASE_SEMANTIC_FILES_TABLE} WHERE workspace_root = ?1 AND rel_path = ?2"
+        ),
+        params![ws_key, sc.path.as_str()],
+    )?;
+    Ok(())
+}
+
+fn apply_rel_scope_invalidation(
+    conn: &mut rusqlite::Connection,
+    ws_key: &str,
+    scopes: &[RelScope],
+) {
+    if scopes.is_empty() {
+        return;
+    }
+    let tx = match conn.transaction() {
+        Ok(t) => t,
+        Err(_) => return,
+    };
+    let mut ok = true;
+    for sc in scopes {
+        if delete_one_rel_scope(&tx, ws_key, sc).is_err() {
+            ok = false;
+            break;
+        }
+    }
+    if ok {
+        let _ = tx.commit();
     }
 }
 

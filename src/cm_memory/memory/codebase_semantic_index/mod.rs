@@ -28,6 +28,103 @@ use crate::cm_types::path_utils::canonical_workspace_root;
 use numeric::default_code_extensions;
 use rebuild::{RebuildIndexParams, rebuild_index};
 
+fn json_bool(v: &serde_json::Value, key: &str, default: bool) -> bool {
+    v.get(key).and_then(|x| x.as_bool()).unwrap_or(default)
+}
+
+fn parse_ext_set(v: &serde_json::Value) -> HashSet<String> {
+    v.get("extensions")
+        .and_then(|e| e.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| {
+                    x.as_str()
+                        .map(|s| s.trim().trim_start_matches('.').to_ascii_lowercase())
+                })
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>()
+        })
+        .unwrap_or_else(|| {
+            default_code_extensions()
+                .into_iter()
+                .map(ToString::to_string)
+                .collect()
+        })
+}
+
+fn parse_file_glob_pat(v: &serde_json::Value) -> Option<glob::Pattern> {
+    v.get("file_glob")
+        .and_then(|g| g.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .and_then(|g| glob::Pattern::new(g).ok())
+}
+
+fn parse_query_max_chunks(v: &serde_json::Value, default: usize) -> usize {
+    let mut n = v
+        .get("query_max_chunks")
+        .and_then(|x| x.as_u64())
+        .unwrap_or(default as u64) as usize;
+    if n > 0 {
+        n = n.clamp(1, 2_000_000);
+    }
+    n
+}
+
+fn resolve_run_tool_paths(
+    workspace_root: &Path,
+    index_sqlite_path: &str,
+) -> Result<(std::path::PathBuf, String, std::path::PathBuf), String> {
+    let ws_root = canonical_workspace_root(workspace_root)
+        .map_err(|e| format!("错误：{}", e.user_message()))?;
+    let ws_key = ws_root.to_string_lossy().to_string();
+    let index_path = index_path_for_workspace(workspace_root, index_sqlite_path)?;
+    Ok((ws_root, ws_key, index_path))
+}
+
+fn parse_search_query_params(
+    v: &serde_json::Value,
+    p: &CodebaseSemanticToolParams,
+    top_k: usize,
+    query_max_chunks: usize,
+    max_output_chars: usize,
+) -> Result<search::SearchQueryParams, String> {
+    let retrieve_mode = v
+        .get("retrieve_mode")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("hybrid");
+    let fts_top_n = v
+        .get("fts_top_n")
+        .and_then(|n| n.as_u64())
+        .unwrap_or(p.fts_top_n as u64) as usize;
+    let fts_top_n = fts_top_n.clamp(1, 10_000);
+    let hybrid_semantic_pool = v
+        .get("hybrid_semantic_pool")
+        .and_then(|n| n.as_u64())
+        .unwrap_or(p.hybrid_semantic_pool as u64) as usize;
+    let hybrid_semantic_pool = hybrid_semantic_pool.clamp(top_k, 10_000);
+    let mut hybrid_alpha = v
+        .get("hybrid_alpha")
+        .and_then(|x| x.as_f64())
+        .map(|a| a as f32)
+        .unwrap_or(p.hybrid_alpha);
+    if !hybrid_alpha.is_finite() {
+        hybrid_alpha = p.hybrid_alpha;
+    }
+    hybrid_alpha = hybrid_alpha.clamp(0.0, 1.0);
+    Ok(search::SearchQueryParams {
+        top_k,
+        query_max_chunks,
+        max_out_chars: max_output_chars.max(4096),
+        mode: search::RetrieveMode::parse(retrieve_mode)?,
+        fts_top_n,
+        hybrid_semantic_pool,
+        hybrid_alpha,
+    })
+}
+
 /// `rebuild_index=true` 时扫描工作区并写入向量；否则仅查询（需已有索引）。
 pub fn run_tool(
     args_json: &str,
@@ -45,78 +142,33 @@ pub fn run_tool(
         Err(e) => return format!("参数 JSON 无效: {}", e),
     };
 
-    let rebuild = v
-        .get("rebuild_index")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
+    let rebuild = json_bool(&v, "rebuild_index", false);
     let query = v.get("query").and_then(|q| q.as_str()).unwrap_or("").trim();
     if !rebuild && query.is_empty() {
         return "错误：query 不能为空（除非 rebuild_index=true）".to_string();
     }
 
-    let sub_path = v
-        .get("path")
-        .and_then(|p| p.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
+    let (ws_root, ws_key, index_path) =
+        match resolve_run_tool_paths(workspace_root, &p.index_sqlite_path) {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
 
-    let ws_root: std::path::PathBuf = match canonical_workspace_root(workspace_root) {
-        Ok(p) => p,
-        Err(e) => return format!("错误：{}", e.user_message()),
-    };
-    let ws_key = ws_root.to_string_lossy().to_string();
-
-    let index_path = match index_path_for_workspace(workspace_root, &p.index_sqlite_path) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
-    let file_glob = v
-        .get("file_glob")
-        .and_then(|g| g.as_str())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
-    let file_glob_pat = file_glob
-        .as_deref()
-        .and_then(|g| glob::Pattern::new(g).ok());
-
-    let mut top_k_req = v
+    let top_k_req = v
         .get("top_k")
         .and_then(|n| n.as_u64())
         .unwrap_or(p.top_k as u64) as usize;
-    top_k_req = top_k_req.clamp(1, 64);
-
-    let exts_cfg = v.get("extensions").and_then(|e| e.as_array()).map(|arr| {
-        arr.iter()
-            .filter_map(|x| {
-                x.as_str()
-                    .map(|s| s.trim().trim_start_matches('.').to_ascii_lowercase())
-            })
-            .filter(|s| !s.is_empty())
-            .collect::<HashSet<_>>()
-    });
-
-    let ext_set: HashSet<String> = exts_cfg.unwrap_or_else(|| {
-        default_code_extensions()
-            .into_iter()
-            .map(|x| x.to_string())
-            .collect()
-    });
-
-    let mut query_max_chunks = v
-        .get("query_max_chunks")
-        .and_then(|n| n.as_u64())
-        .unwrap_or(p.query_max_chunks as u64) as usize;
-    if query_max_chunks > 0 {
-        query_max_chunks = query_max_chunks.clamp(1, 2_000_000);
-    }
-
-    let incremental = v
-        .get("incremental")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(p.rebuild_incremental);
+    let top_k_req = top_k_req.clamp(1, 64);
+    let query_max_chunks = parse_query_max_chunks(&v, p.query_max_chunks);
 
     if rebuild {
+        let sub_path = v
+            .get("path")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let file_glob_pat = parse_file_glob_pat(&v);
+        let ext_set = parse_ext_set(&v);
         return rebuild_index(RebuildIndexParams {
             ws_root: &ws_root,
             ws_key: &ws_key,
@@ -127,57 +179,14 @@ pub fn run_tool(
             rebuild_max_files: p.rebuild_max_files,
             ext_set: &ext_set,
             file_glob_pat: file_glob_pat.as_ref(),
-            incremental,
+            incremental: json_bool(&v, "incremental", p.rebuild_incremental),
         });
     }
 
-    let retrieve_mode = v
-        .get("retrieve_mode")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("hybrid");
-
-    let mut fts_top_n = v
-        .get("fts_top_n")
-        .and_then(|n| n.as_u64())
-        .unwrap_or(p.fts_top_n as u64) as usize;
-    fts_top_n = fts_top_n.clamp(1, 10_000);
-
-    let mut hybrid_semantic_pool = v
-        .get("hybrid_semantic_pool")
-        .and_then(|n| n.as_u64())
-        .unwrap_or(p.hybrid_semantic_pool as u64) as usize;
-    hybrid_semantic_pool = hybrid_semantic_pool.clamp(top_k_req, 10_000);
-
-    let mut hybrid_alpha = v
-        .get("hybrid_alpha")
-        .and_then(|x| x.as_f64())
-        .map(|a| a as f32)
-        .unwrap_or(p.hybrid_alpha);
-    if !hybrid_alpha.is_finite() {
-        hybrid_alpha = p.hybrid_alpha;
+    match parse_search_query_params(&v, p, top_k_req, query_max_chunks, max_output_chars) {
+        Ok(q) => search::search_index(&ws_key, &index_path, query, q),
+        Err(e) => e,
     }
-    hybrid_alpha = hybrid_alpha.clamp(0.0, 1.0);
-
-    let mode = match search::RetrieveMode::parse(retrieve_mode) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    search::search_index(
-        &ws_key,
-        &index_path,
-        query,
-        search::SearchQueryParams {
-            top_k: top_k_req,
-            query_max_chunks,
-            max_out_chars: max_output_chars.max(4096),
-            mode,
-            fts_top_n,
-            hybrid_semantic_pool,
-            hybrid_alpha,
-        },
-    )
 }
 mod search;
 

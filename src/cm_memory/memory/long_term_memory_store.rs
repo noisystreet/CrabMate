@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, Row, params};
 
 const TABLE: &str = "crabmate_long_term_memory";
 
@@ -104,6 +104,31 @@ pub fn delete_expired_for_scope(
     Ok(n)
 }
 
+fn collect_query_rows<T>(
+    rows: impl Iterator<Item = Result<T, rusqlite::Error>>,
+) -> Result<Vec<T>, rusqlite::Error> {
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row?);
+    }
+    Ok(out)
+}
+
+fn memory_row_from_select(r: &Row<'_>) -> rusqlite::Result<MemoryRow> {
+    let emb: Option<Vec<u8>> = r.get(6)?;
+    Ok(MemoryRow {
+        id: r.get(0)?,
+        chunk_text: r.get(1)?,
+        source_role: r.get(2)?,
+        created_at_unix: r.get(3)?,
+        expires_at_unix: r.get(4)?,
+        tags_json: r
+            .get::<_, Option<String>>(5)?
+            .unwrap_or_else(|| "[]".to_string()),
+        embedding: emb,
+    })
+}
+
 /// 列顺序与 [`MemoryRow`] 一致；过滤已过期行。
 pub fn list_for_scope(
     conn: &Connection,
@@ -118,25 +143,8 @@ pub fn list_for_scope(
          WHERE scope_id = ?1 AND (expires_at_unix IS NULL OR expires_at_unix > ?3) \
          ORDER BY created_at_unix DESC LIMIT ?2"
     ))?;
-    let rows = stmt.query_map(params![scope_id, lim, now], |r| {
-        let emb: Option<Vec<u8>> = r.get(6)?;
-        Ok(MemoryRow {
-            id: r.get(0)?,
-            chunk_text: r.get(1)?,
-            source_role: r.get(2)?,
-            created_at_unix: r.get(3)?,
-            expires_at_unix: r.get(4)?,
-            tags_json: r
-                .get::<_, Option<String>>(5)?
-                .unwrap_or_else(|| "[]".to_string()),
-            embedding: emb,
-        })
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
+    let rows = stmt.query_map(params![scope_id, lim, now], memory_row_from_select)?;
+    collect_query_rows(rows)
 }
 
 /// 自动索引写入（回合结束）；`source_kind` 为 `auto`。`expires_at_unix` 为 `None` 表示不过期。
@@ -277,6 +285,17 @@ pub fn delete_matching_text(
 /// 最近若干条（含 id），供 `long_term_memory_list`；从新到旧。
 pub type MemoryListRow = (i64, String, String, Option<i64>, String);
 
+fn memory_list_row_from_select(r: &Row<'_>) -> rusqlite::Result<MemoryListRow> {
+    Ok((
+        r.get::<_, i64>(0)?,
+        r.get::<_, String>(1)?,
+        r.get::<_, String>(2)?,
+        r.get::<_, Option<i64>>(3)?,
+        r.get::<_, Option<String>>(4)?
+            .unwrap_or_else(|| "[]".to_string()),
+    ))
+}
+
 pub fn list_recent_for_scope(
     conn: &Connection,
     scope_id: &str,
@@ -290,21 +309,8 @@ pub fn list_recent_for_scope(
          WHERE scope_id = ?1 AND (expires_at_unix IS NULL OR expires_at_unix > ?3) \
          ORDER BY created_at_unix DESC LIMIT ?2"
     ))?;
-    let rows = stmt.query_map(params![scope_id, lim, now], |r| {
-        Ok((
-            r.get::<_, i64>(0)?,
-            r.get::<_, String>(1)?,
-            r.get::<_, String>(2)?,
-            r.get::<_, Option<i64>>(3)?,
-            r.get::<_, Option<String>>(4)?
-                .unwrap_or_else(|| "[]".to_string()),
-        ))
-    })?;
-    let mut out = Vec::new();
-    for row in rows {
-        out.push(row?);
-    }
-    Ok(out)
+    let rows = stmt.query_map(params![scope_id, lim, now], memory_list_row_from_select)?;
+    collect_query_rows(rows)
 }
 
 #[cfg(test)]
