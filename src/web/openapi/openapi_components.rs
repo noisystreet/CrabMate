@@ -145,6 +145,16 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
                     "error": { "type": "string", "nullable": true }
                 }
             },
+            "WorkspaceFileMoveBody": {
+                "type": "object",
+                "required": ["from", "to"],
+                "properties": {
+                    "from": { "type": "string" },
+                    "to": { "type": "string" },
+                    "overwrite": { "type": "boolean" },
+                    "conversation_id": { "type": "string" }
+                }
+            },
             "WorkspaceFileWriteBody": {
                 "type": "object",
                 "required": ["path", "content"],

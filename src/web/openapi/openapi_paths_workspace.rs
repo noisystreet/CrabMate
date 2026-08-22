@@ -98,6 +98,52 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
                     "4XX": { "description": "路径或大小错误（JSON ApiError）" }
                 }
             }
+        },
+        "/workspace/dir/archive": {
+            "get": {
+                "tags": ["workspace"],
+                "summary": "将工作区目录打包为 zip（未压缩合计与条目有上限；不跟随符号链接）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": false,
+                        "schema": { "type": "string" },
+                        "description": "相对目录；省略或空表示工作区根；禁止 `..`"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "zip 字节",
+                        "content": {
+                            "application/zip": {
+                                "schema": { "type": "string", "format": "binary" }
+                            }
+                        }
+                    },
+                    "4XX": { "description": "路径、非目录或过大（JSON ApiError）" }
+                }
+            }
+        },
+        "/workspace/file/move": {
+            "post": {
+                "tags": ["workspace"],
+                "summary": "移动或重命名工作区常规文件（非目录；可选写入会话变更集）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/WorkspaceFileMoveBody" }
+                        }
+                    }
+                },
+                "responses": {
+                    "204": { "description": "已移动" },
+                    "4XX": { "description": "路径、冲突或源不是文件（JSON ApiError）" }
+                }
+            }
         }
     })
 }

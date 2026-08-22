@@ -22,6 +22,12 @@ pub const WORKSPACE_SEARCH_PATTERN_MAX_BYTES: usize = 8192;
 pub const WORKSPACE_SEARCH_MAX_RESULTS_CAP: usize = 5000;
 /// Web 工作区文件写入正文上限。
 pub const WORKSPACE_FILE_WRITE_MAX_BYTES: usize = 16 * 1024 * 1024;
+/// `GET /workspace/dir/archive`：纳入 zip 的未压缩字节上限（与单文件写相同）。
+pub const WORKSPACE_DIR_ARCHIVE_MAX_UNCOMPRESSED: u64 = WORKSPACE_FILE_WRITE_MAX_BYTES as u64;
+/// `GET /workspace/dir/archive`：纳入 zip 的常规文件数上限。
+pub const WORKSPACE_DIR_ARCHIVE_MAX_ENTRIES: usize = 256;
+/// 归档目录树最大深度（不含根自身）。
+pub const WORKSPACE_DIR_ARCHIVE_MAX_DEPTH: usize = 24;
 
 fn clarify_answers_walk(
     v: &Value,

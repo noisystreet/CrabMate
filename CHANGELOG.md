@@ -12,6 +12,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Added
 
 - **`GET /workspace/file/download`**: raw bytes of any workspace file (`path` query, **16 MiB**, `application/octet-stream`). Client **Save to this device** (PDF/binary). `GET /workspace/file/raw` stays image-only.
+- **`GET /workspace/dir/archive`**: zip a workspace directory (`path` query or workspace root; **16 MiB** uncompressed, **256** files; no symlink follow).
+- **`POST /workspace/file/move`**: rename/move a regular file (`from`/`to`, optional `overwrite` / `conversation_id`); **204**; records session changelist like `move_file`.
 
 ### Changed
 
