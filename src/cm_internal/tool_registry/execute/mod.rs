@@ -177,6 +177,7 @@ async fn approve_external_read_dir_if_needed(
 
 include!("execute_dispatch_body.inc.rs");
 include!("execute_run_command.inc.rs");
+include!("execute_run_command_sync.inc.rs");
 include!("execute_terminal_session.inc.rs");
 include!("execute_http_tools.inc.rs");
 

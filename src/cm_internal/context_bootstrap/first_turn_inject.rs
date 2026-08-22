@@ -8,16 +8,16 @@ use crate::cm_tools::project_profile::build_project_profile_markdown;
 use super::project_dependency_brief;
 use crate::cm_internal::memory::agent_memory;
 
-/// Web / CLI 首轮：合并备忘、项目画像、依赖摘要；全无则 `None`。
-pub fn build_first_turn_user_context_markdown(
+fn inject_flag_with_budget(enabled: bool, max_chars: usize) -> bool {
+    enabled && max_chars > 0
+}
+
+fn first_turn_memory_snippet(
     workspace_root: &Path,
     cfg: &AgentConfig,
     memory_preloaded: Option<String>,
 ) -> Option<String> {
-    if workspace_root.as_os_str().is_empty() {
-        return None;
-    }
-    let memory_snippet = memory_preloaded.or_else(|| {
+    memory_preloaded.or_else(|| {
         if cfg.context_bootstrap_inject.agent_memory_file_enabled {
             agent_memory::load_memory_snippet(
                 workspace_root,
@@ -27,33 +27,48 @@ pub fn build_first_turn_user_context_markdown(
         } else {
             None
         }
-    });
-    let living_snippet = if cfg.context_bootstrap_inject.living_docs_inject_enabled
-        && cfg.context_bootstrap_inject.living_docs_inject_max_chars > 0
-    {
-        super::living_docs::load_living_docs_snippet(
-            workspace_root,
-            cfg.context_bootstrap_inject
-                .living_docs_relative_dir
-                .as_str(),
-            cfg.context_bootstrap_inject.living_docs_inject_max_chars,
-            cfg.context_bootstrap_inject.living_docs_file_max_each_chars,
-        )
-    } else {
-        None
-    };
-    let want_profile = cfg.context_bootstrap_inject.project_profile_inject_enabled
-        && cfg
-            .context_bootstrap_inject
-            .project_profile_inject_max_chars
-            > 0;
-    let want_dep = cfg
-        .context_bootstrap_inject
-        .project_dependency_brief_inject_enabled
-        && cfg
-            .context_bootstrap_inject
-            .project_dependency_brief_inject_max_chars
-            > 0;
+    })
+}
+
+fn first_turn_living_snippet(workspace_root: &Path, cfg: &AgentConfig) -> Option<String> {
+    if !inject_flag_with_budget(
+        cfg.context_bootstrap_inject.living_docs_inject_enabled,
+        cfg.context_bootstrap_inject.living_docs_inject_max_chars,
+    ) {
+        return None;
+    }
+    super::living_docs::load_living_docs_snippet(
+        workspace_root,
+        cfg.context_bootstrap_inject
+            .living_docs_relative_dir
+            .as_str(),
+        cfg.context_bootstrap_inject.living_docs_inject_max_chars,
+        cfg.context_bootstrap_inject.living_docs_file_max_each_chars,
+    )
+}
+
+/// Web / CLI 首轮：合并备忘、项目画像、依赖摘要；全无则 `None`。
+pub fn build_first_turn_user_context_markdown(
+    workspace_root: &Path,
+    cfg: &AgentConfig,
+    memory_preloaded: Option<String>,
+) -> Option<String> {
+    if workspace_root.as_os_str().is_empty() {
+        return None;
+    }
+    let memory_snippet = first_turn_memory_snippet(workspace_root, cfg, memory_preloaded);
+    let living_snippet = first_turn_living_snippet(workspace_root, cfg);
+    let want_profile = inject_flag_with_budget(
+        cfg.context_bootstrap_inject.project_profile_inject_enabled,
+        cfg.context_bootstrap_inject
+            .project_profile_inject_max_chars,
+    );
+    let want_dep = inject_flag_with_budget(
+        cfg.context_bootstrap_inject
+            .project_dependency_brief_inject_enabled,
+        cfg.context_bootstrap_inject
+            .project_dependency_brief_inject_max_chars,
+    );
     if !want_profile && !want_dep && memory_snippet.is_none() && living_snippet.is_none() {
         return None;
     }

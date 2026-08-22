@@ -117,6 +117,11 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
     let key = Box::leak(snap.web_search_api_key.into_boxed_str());
     let provider =
         WebSearchProvider::parse(&snap.web_search_provider).map_err(|e| e.to_string())?;
+    let http_cfg = ToolRunnerHttpCfg {
+        user_agent: snap.http_fetch_user_agent.clone(),
+        timeout_secs: snap.http_fetch_timeout_secs,
+        max_response_bytes: snap.http_fetch_max_response_bytes,
+    };
     let code_host = Box::leak(Box::new(CodebaseSemanticHost::from_params(
         snap.codebase_semantic,
     )));
@@ -142,51 +147,76 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         long_term_memory_host: None,
     };
     let k = inv.kind.trim();
-    let out = match k {
-        "sync_default" => {
-            let tool = inv
-                .tool
-                .as_deref()
-                .filter(|s| !s.is_empty())
-                .ok_or_else(|| "sync_default 须提供非空 tool".to_string())?;
-            run_tool(tool, &inv.args_json, &ctx)
-        }
-        "get_weather" => run_tool("get_weather", &inv.args_json, &ctx),
-        "web_search" => run_tool("web_search", &inv.args_json, &ctx),
-        "run_command" => run_tool("run_command", &inv.args_json, &ctx),
-        "run_executable" => run_tool("run_executable", &inv.args_json, &ctx),
-        "http_fetch" => match http_fetch::parse_http_fetch_args(&inv.args_json) {
-            Ok((u, m, fmt)) => http_fetch::fetch_with_method(
-                &u,
-                m,
-                fmt,
-                &snap.http_fetch_user_agent,
-                snap.http_fetch_timeout_secs.max(1),
-                snap.http_fetch_max_response_bytes,
-            ),
-            Err(e) => format!("错误：{}", e),
-        },
-        "http_request" => match http_fetch::parse_http_request_args(&inv.args_json) {
-            Ok((u, m, b, fmt)) => http_fetch::request_with_json_body(
-                &u,
-                m,
-                b.as_ref(),
-                fmt,
-                &snap.http_fetch_user_agent,
-                snap.http_fetch_timeout_secs.max(1),
-                snap.http_fetch_max_response_bytes,
-            ),
-            Err(e) => format!("错误：{}", e),
-        },
-        _ => {
-            return Err(format!(
-                "未知的沙盒调用 kind: {:?}（支持 sync_default、get_weather、web_search、http_fetch、http_request、run_command、run_executable）",
-                inv.kind
-            ));
-        }
-    };
+    let out = dispatch_tool_runner_kind(k, &inv, &ctx, &http_cfg)?;
     print!("{out}");
     Ok(())
+}
+
+struct ToolRunnerHttpCfg {
+    user_agent: String,
+    timeout_secs: u64,
+    max_response_bytes: usize,
+}
+
+fn dispatch_tool_runner_kind(
+    kind: &str,
+    inv: &ToolInvocationLine,
+    ctx: &ToolContext<'_>,
+    http: &ToolRunnerHttpCfg,
+) -> Result<String, String> {
+    if kind == "sync_default" {
+        let tool = inv
+            .tool
+            .as_deref()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "sync_default 须提供非空 tool".to_string())?;
+        return Ok(run_tool(tool, &inv.args_json, ctx));
+    }
+    if matches!(
+        kind,
+        "get_weather" | "web_search" | "run_command" | "run_executable"
+    ) {
+        return Ok(run_tool(kind, &inv.args_json, ctx));
+    }
+    if kind == "http_fetch" {
+        return Ok(run_tool_runner_http_fetch(inv, http));
+    }
+    if kind == "http_request" {
+        return Ok(run_tool_runner_http_request(inv, http));
+    }
+    Err(format!(
+        "未知的沙盒调用 kind: {:?}（支持 sync_default、get_weather、web_search、http_fetch、http_request、run_command、run_executable）",
+        inv.kind
+    ))
+}
+
+fn run_tool_runner_http_fetch(inv: &ToolInvocationLine, http: &ToolRunnerHttpCfg) -> String {
+    match http_fetch::parse_http_fetch_args(&inv.args_json) {
+        Ok((u, m, fmt)) => http_fetch::fetch_with_method(
+            &u,
+            m,
+            fmt,
+            &http.user_agent,
+            http.timeout_secs.max(1),
+            http.max_response_bytes,
+        ),
+        Err(e) => format!("错误：{}", e),
+    }
+}
+
+fn run_tool_runner_http_request(inv: &ToolInvocationLine, http: &ToolRunnerHttpCfg) -> String {
+    match http_fetch::parse_http_request_args(&inv.args_json) {
+        Ok((u, m, b, fmt)) => http_fetch::request_with_json_body(
+            &u,
+            m,
+            b.as_ref(),
+            fmt,
+            &http.user_agent,
+            http.timeout_secs.max(1),
+            http.max_response_bytes,
+        ),
+        Err(e) => format!("错误：{}", e),
+    }
 }
 
 pub fn write_runner_config_json(cfg: &AgentConfig) -> Result<PathBuf, String> {

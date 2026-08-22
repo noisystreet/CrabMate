@@ -76,6 +76,133 @@ fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
     }
 }
 
+fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
+    !cmd.is_empty() && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
+}
+
+async fn request_unknown_cmd_approval(
+    cfg: &Arc<AgentConfig>,
+    web_ctx: Option<&WebToolRuntime>,
+    cmd: &str,
+    script: &str,
+    needs_shell: bool,
+    async_mode: bool,
+) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
+    if async_mode {
+        return Err((
+            format!(
+                "错误：后台任务（async）要求命令 '{}' 已在白名单或已 AllowAlways 批准；请先 AllowAlways，或去掉 async 参数。",
+                cmd
+            ),
+            None,
+        ));
+    }
+    let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
+        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+    };
+    let cmd_show = if script.is_empty() {
+        cmd.to_string()
+    } else {
+        script.to_string()
+    };
+    let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
+        capability: crate::cm_internal::tool_approval::SensitiveCapability::HostShell,
+        sse_command: cmd.to_string(),
+        sse_args: cmd_show.clone(),
+        allowlist_key: None,
+        cli_title: "run_command 审批",
+        cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", cmd_show.trim()),
+        web_timeline_prefix_zh: "命令审批：",
+    };
+    let decision_opt = if web_ctx.is_some() {
+        match crate::cm_internal::tool_approval::request_tool_interactive_approval(
+            web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
+            &spec,
+            "tool_registry::run_command approval",
+        )
+        .await
+        {
+            Ok(d) => Some(d),
+            Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
+                return Err(("错误：审批通道不可用，请重试。".to_string(), None));
+            }
+        }
+    } else {
+        return Err((
+            format!(
+                "命令 '{}' 不在白名单中，且审批通道不可用。请在请求中提供 approval_session_id 以启用命令审批流程。",
+                cmd
+            ),
+            None,
+        ));
+    };
+    apply_unknown_cmd_decision(cfg, cmd, needs_shell, &cmd_show, decision_opt, &allow_handles).await
+}
+
+async fn apply_unknown_cmd_decision(
+    cfg: &Arc<AgentConfig>,
+    cmd: &str,
+    needs_shell: bool,
+    cmd_show: &str,
+    decision_opt: Option<CommandApprovalDecision>,
+    allow_handles: &crate::cm_internal::tool_approval::SharedAllowlistHandles<'_>,
+) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
+    let Some(decision) = decision_opt else {
+        return Ok(Arc::clone(&cfg.command_exec.allowed_commands));
+    };
+    match decision {
+        CommandApprovalDecision::Deny => {
+            Err((format!("用户拒绝执行命令：{}", cmd_show.trim()), None))
+        }
+        CommandApprovalDecision::AllowOnce => Ok(extend_allowlist_with_cmd_and_optional_bash(
+            &cfg.command_exec.allowed_commands,
+            cmd,
+            needs_shell,
+        )),
+        CommandApprovalDecision::AllowAlways => {
+            crate::cm_internal::tool_approval::persist_allowlist_key(allow_handles, cmd).await;
+            Ok(extend_allowlist_with_cmd_and_optional_bash(
+                &cfg.command_exec.allowed_commands,
+                cmd,
+                needs_shell,
+            ))
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)] // 与 run_command_resolve_effective_allowlist 同组参数
+async fn resolve_unknown_cmd_allowlist(
+    cfg: &Arc<AgentConfig>,
+    effective_working_dir: &Path,
+    web_ctx: Option<&WebToolRuntime>,
+    cmd: &str,
+    command_raw: &str,
+    script: &str,
+    needs_shell: bool,
+    async_mode: bool,
+) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
+    if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
+        effective_working_dir,
+        command_raw,
+    ) {
+        return Ok(extend_allowed_commands_arc(
+            &cfg.command_exec.allowed_commands,
+            cmd,
+        ));
+    }
+    let already_allowed = match web_ctx {
+        Some(w) => w.persistent_allowlist_shared.lock().await.contains(cmd),
+        None => false,
+    };
+    if already_allowed {
+        return Ok(extend_allowed_commands_arc(
+            &cfg.command_exec.allowed_commands,
+            cmd,
+        ));
+    }
+    request_unknown_cmd_approval(cfg, web_ctx, cmd, script, needs_shell, async_mode).await
+}
+
 /// 解析 `run_command` 白名单与交互审批，返回最终生效的 `allowed_commands` 快照（可能与配置不同）。
 /// `async_mode=true` 时**拒绝**任何会触发交互审批的路径（后台任务无法关联单次 AllowOnce 审批）。
 #[allow(clippy::too_many_arguments)] // 白名单解析：配置、目录、Web 上下文、命令/脚本与审批模式
@@ -89,100 +216,21 @@ async fn run_command_resolve_effective_allowlist(
     needs_shell: bool,
     async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let base_allowed = Arc::clone(&cfg.command_exec.allowed_commands);
-    let mut effective_allowed_arc: Arc<[String]> = base_allowed;
-    if !cmd.is_empty()
-        && !effective_allowed_arc
-            .iter()
-            .any(|c| c.eq_ignore_ascii_case(cmd))
-    {
-        if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
-            effective_working_dir,
-            command_raw,
-        ) {
-            effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, cmd);
-        } else {
-            let already_allowed = match web_ctx {
-                Some(w) => w.persistent_allowlist_shared.lock().await.contains(cmd),
-                None => false,
-            };
-            if already_allowed {
-                effective_allowed_arc = extend_allowed_commands_arc(&effective_allowed_arc, cmd);
-            } else {
-                if async_mode {
-                    return Err((
-                        format!(
-                            "错误：后台任务（async）要求命令 '{}' 已在白名单或已 AllowAlways 批准；请先 AllowAlways，或去掉 async 参数。",
-                            cmd
-                        ),
-                        None,
-                    ));
-                }
-                let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
-                    web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-                };
-                let cmd_show = if script.is_empty() {
-                    cmd.to_string()
-                } else {
-                    script.to_string()
-                };
-                let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
-                    capability: crate::cm_internal::tool_approval::SensitiveCapability::HostShell,
-                    sse_command: cmd.to_string(),
-                    sse_args: cmd_show.clone(),
-                    allowlist_key: None,
-                    cli_title: "run_command 审批",
-                    cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", cmd_show.trim()),
-                    web_timeline_prefix_zh: "命令审批：",
-                };
-                let decision_opt = if web_ctx.is_some() {
-                    match crate::cm_internal::tool_approval::request_tool_interactive_approval(
-                        web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
-                        &spec,
-                        "tool_registry::run_command approval",
-                    )
-                    .await
-                    {
-                        Ok(d) => Some(d),
-                        Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                            return Err(("错误：审批通道不可用，请重试。".to_string(), None));
-                        }
-                    }
-                } else {
-                    return Err((
-                        format!(
-                            "命令 '{}' 不在白名单中，且审批通道不可用。请在请求中提供 approval_session_id 以启用命令审批流程。",
-                            cmd
-                        ),
-                        None,
-                    ));
-                };
-                if let Some(decision) = decision_opt {
-                    match decision {
-                        CommandApprovalDecision::Deny => {
-                            return Err((format!("用户拒绝执行命令：{}", cmd_show.trim()), None));
-                        }
-                        CommandApprovalDecision::AllowOnce => {
-                            effective_allowed_arc = extend_allowlist_with_cmd_and_optional_bash(
-                                &cfg.command_exec.allowed_commands,
-                                cmd,
-                                needs_shell,
-                            );
-                        }
-                        CommandApprovalDecision::AllowAlways => {
-                            crate::cm_internal::tool_approval::persist_allowlist_key(&allow_handles, cmd).await;
-                            effective_allowed_arc = extend_allowlist_with_cmd_and_optional_bash(
-                                &cfg.command_exec.allowed_commands,
-                                cmd,
-                                needs_shell,
-                            );
-                        }
-                    }
-                }
-            }
-        }
+    let effective_allowed_arc = Arc::clone(&cfg.command_exec.allowed_commands);
+    if !cmd_missing_from_allowlist(cmd, effective_allowed_arc.as_ref()) {
+        return Ok(effective_allowed_arc);
     }
-    Ok(effective_allowed_arc)
+    resolve_unknown_cmd_allowlist(
+        cfg,
+        effective_working_dir,
+        web_ctx,
+        cmd,
+        command_raw,
+        script,
+        needs_shell,
+        async_mode,
+    )
+    .await
 }
 
 fn extend_allowlist_with_cmd_and_optional_bash(
@@ -655,7 +703,6 @@ async fn execute_run_command_impl(
         cancel,
         tool_jobs,
     } = invoke;
-    let cfg = env.cfg;
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
@@ -675,119 +722,21 @@ async fn execute_run_command_impl(
         })
         .await;
     }
-
-    let parsed = parse_run_command_json(args);
-    let effective_allowed_arc = match resolve_run_command_shell_allowlist(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        &parsed,
-        "run_command",
-        false,
-    )
-    .await
-    {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-
-    let gate = match approve_external_run_command_paths_if_needed(
-        cfg.as_ref(),
-        args,
-        effective_working_dir,
-        effective_allowed_arc.as_ref(),
-        web_ctx,
-        "run_command",
-        false,
-    )
-    .await
-    {
-        Ok(g) => g,
-        Err(e) => return (e, None),
-    };
-    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
-
-    if let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
+    execute_run_command_sync_host(RunCommandSyncHostInvoke {
         env,
         effective_working_dir,
         workspace_is_set,
-        "run_command",
+        workspace_changed,
+        web_ctx,
+        name,
         args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json_with_allowed_commands(
-            cfg.as_ref(),
-            effective_allowed_arc.as_ref(),
-        ),
-    )
-    .await
-    {
-        if tools::is_compile_command_success(args, &s) {
-            *workspace_changed = true;
-        }
-        return (s, inj);
-    }
-
-    let cmd_timeout = timeout_secs
-        .map(|t| t.clamp(1, 600))
-        .unwrap_or(cfg.command_exec.command_timeout_secs);
-    let max_out = cfg.command_exec.command_max_output_len;
-    let test_cache_enabled = cfg.chat_queues_cache.test_result_cache_enabled;
-    let test_cache_max = cfg.chat_queues_cache.test_result_cache_max_entries;
-    let work_dir = effective_working_dir.to_path_buf();
-    let args_cloned = args.to_string();
-    let allowed_for_run = Arc::clone(&effective_allowed_arc);
-    let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
-    let cancel = cancel.clone();
-    let sse_closed = sse_out_tx.cloned();
-    let extra_stop = sse_closed.map(|tx| {
-        std::sync::Arc::new(move || tx.is_closed()) as std::sync::Arc<dyn Fn() -> bool + Send + Sync>
-    });
-    let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl {
-        wall: Some(std::time::Duration::from_secs(cmd_timeout.max(1))),
+        tool_call_id,
+        sse_out_tx,
+        sse_control_mirror,
         cancel,
-        extra_stop,
-        chunk_sink: run_command_chunk_sink(
-            tool_call_id.to_string(),
-            sse_out_tx.cloned(),
-            sse_control_mirror.cloned(),
-        ),
-    };
-    let handle = tokio::task::spawn_blocking(move || {
-        crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            let test_cache = test_cache_enabled.then_some(tools::RunCommandTestCacheOpts {
-                enabled: true,
-                max_entries: test_cache_max,
-                workspace_root: work_dir.as_path(),
-            });
-            match tools::run_checked_wait(
-                &args_cloned,
-                max_out,
-                allowed_for_run.as_ref(),
-                work_dir.as_path(),
-                test_cache,
-                skip_arg_safety,
-                &wait,
-            ) {
-                Ok(s) => s,
-                Err(e) => e.extended_user_message(),
-            }
-        })
-    });
-    let s = match handle.await {
-        Ok(s) => s,
-        Err(e) => {
-            error!(
-                target: "crabmate",
-                "工具执行异常 tool={} error={:?}",
-                name,
-                e
-            );
-            format!("工具执行异常：{:?}", e)
-        }
-    };
-    if tools::is_compile_command_success(args, &s) {
-        *workspace_changed = true;
-    }
-    (s, None)
+        timeout_secs,
+    })
+    .await
 }
 
 /// 并行只读批内 **`http_fetch`**：在 `spawn_blocking` 之前串行完成解析与白名单/审批，避免多请求竞态修改 `persistent_allowlist`。
