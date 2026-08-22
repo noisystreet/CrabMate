@@ -235,38 +235,42 @@ pub fn last_workflow_tool_node_ids(messages: &[Message]) -> Option<Vec<String>> 
     None
 }
 
+fn workflow_execute_tool_payload_json(messages: &[Message], i: usize) -> Option<Value> {
+    let m = &messages[i];
+    if m.role != "tool" {
+        return None;
+    }
+    let tid = m.tool_call_id.as_deref()?;
+    let aidx = assistant_index_for_tool_call(messages, i, tid)?;
+    let name = messages[aidx]
+        .tool_calls
+        .as_ref()?
+        .iter()
+        .find(|c| c.id == tid)
+        .map(|c| c.function.name.as_str())?;
+    if name != "workflow_execute" {
+        return None;
+    }
+    let body = crate::cm_types::message_content_as_str(&m.content)?;
+    let payload = tool_message_payload_for_inner_parse(body);
+    serde_json::from_str(payload.as_ref()).ok()
+}
+
+fn layer_count_from_validate_result(v: &Value) -> Option<usize> {
+    if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
+        return None;
+    }
+    v.get("spec")
+        .and_then(|s| s.get("layer_count"))
+        .and_then(|x| x.as_u64())
+        .map(|n| n as usize)
+}
+
 /// 从对话历史中取**最近一次** `workflow_execute` 的 `workflow_validate_only` 工具结果里的 `spec.layer_count`。
 pub fn last_workflow_validate_layer_count(messages: &[Message]) -> Option<usize> {
-    for i in (0..messages.len()).rev() {
-        let m = &messages[i];
-        if m.role != "tool" {
-            continue;
-        }
-        let tid = m.tool_call_id.as_deref()?;
-        let aidx = assistant_index_for_tool_call(messages, i, tid)?;
-        let assistant = &messages[aidx];
-        let name = assistant
-            .tool_calls
-            .as_ref()?
-            .iter()
-            .find(|c| c.id == tid)
-            .map(|c| c.function.name.as_str())?;
-        if name != "workflow_execute" {
-            continue;
-        }
-        let body = crate::cm_types::message_content_as_str(&m.content)?;
-        let payload = tool_message_payload_for_inner_parse(body);
-        let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
-        if v.get("report_type").and_then(|x| x.as_str()) != Some("workflow_validate_result") {
-            continue;
-        }
-        let n = v
-            .get("spec")
-            .and_then(|s| s.get("layer_count"))
-            .and_then(|x| x.as_u64())? as usize;
-        return Some(n);
-    }
-    None
+    (0..messages.len())
+        .rev()
+        .find_map(|i| layer_count_from_validate_result(&workflow_execute_tool_payload_json(messages, i)?))
 }
 
 /// 自历史中取最近一次 **`workflow_validate_result`** 的 `nodes[].id` 列表（含重复），供 **validate_only → Do** 路径上强制规划逐步绑定。

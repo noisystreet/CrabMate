@@ -134,35 +134,54 @@ fn resolve_legacy_dot_path_ref<'a>(
     Ok(cur)
 }
 
+fn strip_legacy_root_dollar(seg: &str, is_first: bool) -> &str {
+    if is_first && seg.starts_with('$') {
+        &seg[1..]
+    } else {
+        seg
+    }
+}
+
+fn split_legacy_field_and_brackets(s: &str) -> (&str, &str) {
+    match s.find('[') {
+        Some(pos) => (s[..pos].trim(), &s[pos..]),
+        None => (s.trim(), ""),
+    }
+}
+
+fn apply_legacy_field<'a>(
+    cur: &'a Value,
+    field: &str,
+) -> Result<&'a Value, JsonPathResolveError> {
+    if field.is_empty() {
+        return Ok(cur);
+    }
+    cur.get(field)
+        .ok_or_else(|| JsonPathResolveError::PathNotFound(format!("missing key {:?}", field)))
+}
+
+fn apply_legacy_indices<'a>(
+    mut v: &'a Value,
+    indices: &[usize],
+) -> Result<&'a Value, JsonPathResolveError> {
+    for idx in indices {
+        v = v.get(*idx).ok_or_else(|| {
+            JsonPathResolveError::PathNotFound(format!("array index {} out of bounds", idx))
+        })?;
+    }
+    Ok(v)
+}
+
 fn apply_legacy_segment<'a>(
     cur: &'a Value,
     seg: &str,
     is_first: bool,
 ) -> Result<&'a Value, JsonPathResolveError> {
-    let mut s = seg;
-    if is_first && s.starts_with('$') {
-        s = &s[1..];
-    }
-
-    let (field, bracket_tail) = match s.find('[') {
-        Some(pos) => (s[..pos].trim(), &s[pos..]),
-        None => (s.trim(), ""),
-    };
-
-    let mut v = cur;
-    if !field.is_empty() {
-        v = v.get(field).ok_or_else(|| {
-            JsonPathResolveError::PathNotFound(format!("missing key {:?}", field))
-        })?;
-    }
-
+    let s = strip_legacy_root_dollar(seg, is_first);
+    let (field, bracket_tail) = split_legacy_field_and_brackets(s);
+    let v = apply_legacy_field(cur, field)?;
     let indices = parse_bracket_suffix(bracket_tail)?;
-    for idx in indices {
-        v = v.get(idx).ok_or_else(|| {
-            JsonPathResolveError::PathNotFound(format!("array index {} out of bounds", idx))
-        })?;
-    }
-    Ok(v)
+    apply_legacy_indices(v, &indices)
 }
 
 /// 解析紧跟在字段名后的 `[0][1]…`；必须**恰好消费**整段 `bracket_tail`，否则语法错误。

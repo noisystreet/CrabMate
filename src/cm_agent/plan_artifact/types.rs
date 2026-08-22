@@ -351,13 +351,33 @@ pub fn plan_steps_fingerprint(steps: &[PlanStepV1]) -> String {
         .join(";;")
 }
 
+fn path_contains_build_dir(lower: &str) -> bool {
+    lower.contains("/bin/") || lower.contains("/build/") || lower.contains("/target/")
+}
+
+fn dotted_basename_is_build_artifact(lower: &str) -> bool {
+    const NON_BUILD_SUFFIXES: &[&str] = &[
+        ".md", ".txt", ".rst", ".json", ".toml", ".yaml", ".yml", ".cmake", ".in", ".dat", ".cpp",
+        ".c", ".h", ".hpp", ".rs", ".py", ".sh",
+    ];
+    if NON_BUILD_SUFFIXES.iter().any(|ext| lower.ends_with(ext)) {
+        return false;
+    }
+    lower.ends_with(".exe") || lower.ends_with(".out") || lower.ends_with(".o")
+}
+
+fn extensionless_basename_is_build_artifact(basename: &str) -> bool {
+    // 无扩展名：短名多为可执行体（如 xhpcg）；长名或含 release 的多为源码目录
+    basename.len() <= 24 && !basename.to_ascii_lowercase().contains("release")
+}
+
 pub fn plan_acceptance_path_looks_like_build_artifact(path: &str) -> bool {
     let trimmed = path.trim();
     if trimmed.is_empty() {
         return false;
     }
     let lower = trimmed.to_lowercase();
-    if lower.contains("/bin/") || lower.contains("/build/") || lower.contains("/target/") {
+    if path_contains_build_dir(&lower) {
         return true;
     }
     let basename = trimmed.rsplit('/').next().unwrap_or(trimmed);
@@ -365,20 +385,9 @@ pub fn plan_acceptance_path_looks_like_build_artifact(path: &str) -> bool {
         return false;
     }
     if basename.contains('.') {
-        const NON_BUILD_SUFFIXES: &[&str] = &[
-            ".md", ".txt", ".rst", ".json", ".toml", ".yaml", ".yml", ".cmake", ".in", ".dat",
-            ".cpp", ".c", ".h", ".hpp", ".rs", ".py", ".sh",
-        ];
-        if NON_BUILD_SUFFIXES.iter().any(|ext| lower.ends_with(ext)) {
-            return false;
-        }
-        return lower.ends_with(".exe") || lower.ends_with(".out") || lower.ends_with(".o");
+        return dotted_basename_is_build_artifact(&lower);
     }
-    // 无扩展名：短名多为可执行体（如 xhpcg）；长名或含 release 的多为源码目录
-    if basename.len() > 24 || basename.to_ascii_lowercase().contains("release") {
-        return false;
-    }
-    true
+    extensionless_basename_is_build_artifact(basename)
 }
 
 /// 对规划中每一步执行 [`normalize_plan_step_acceptance_in_place`]。
