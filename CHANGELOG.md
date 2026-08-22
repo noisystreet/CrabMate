@@ -15,15 +15,15 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- **`lizard-rust`**: fail if any `src/` function has CCN > 10; drop per-module count/sum ratchets and `scripts/lizard_module_ccn_caps.toml`.
+- (none yet)
 
 ### Fixed
 
 - (none yet)
 
-## [0.5.0] - 2026-08-21
+## [0.5.0] - 2026-08-22
 
-**Git pre-release `v0.5.0-alpha.0`.** crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+**Git pre-release `v0.5.0-alpha.1`** (follows **`v0.5.0-alpha.0`**). crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
 
 SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT` are soft (old clients ignore them). Chat image embeds need a matching **crabmate-client** build; the model is prompted to write `![alt](relative.png)` rather than copying files onto `CM_WEB_STATIC_DIR`.
 
@@ -40,6 +40,7 @@ SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT
 
 ### Changed
 
+- **`lizard-rust`**: fail if any `src/` function has CCN > 10; drop per-module count/sum ratchets and `scripts/lizard_module_ccn_caps.toml`. Split remaining high-CCN helpers in `src/cm_*` so the global cap holds.
 - On timeout or cancel, **`run_command`** kills the **process group**, not only the direct child.
 - DeepSeek vendor match also uses **`model_id_prefixes = ["deepseek-"]`**, so a proxy `api_base` without the substring `deepseek` still gets text-vs-vision image handling.
 
@@ -155,8 +156,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.0...HEAD
-[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.0
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.1...HEAD
+[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.1
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
