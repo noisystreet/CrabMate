@@ -177,6 +177,27 @@ pub fn classify_exhausted_reason(
     PlanRewriteExhaustedReason::ExhaustedOther
 }
 
+fn workflow_execute_report_node_ids(v: &Value) -> Option<Vec<String>> {
+    let rt = v.get("report_type").and_then(|x| x.as_str());
+    if !matches!(
+        rt,
+        Some("workflow_validate_result") | Some("workflow_execute_result")
+    ) {
+        return None;
+    }
+    let nodes = v.get("nodes").and_then(|x| x.as_array())?;
+    let mut ids = Vec::new();
+    for n in nodes {
+        let id = n.get("id").and_then(|x| x.as_str())?;
+        ids.push(id.to_string());
+    }
+    if ids.is_empty() {
+        None
+    } else {
+        Some(ids)
+    }
+}
+
 // 解析单条 `role: tool` 消息：若为 `workflow_execute` 且报告类型与 `nodes` 合法则返回 id 列表。
 fn try_node_ids_from_workflow_execute_tool_message(
     messages: &[Message],
@@ -198,23 +219,7 @@ fn try_node_ids_from_workflow_execute_tool_message(
     let body = crate::cm_types::message_content_as_str(&m.content)?;
     let payload = tool_message_payload_for_inner_parse(body);
     let v: Value = serde_json::from_str(payload.as_ref()).ok()?;
-    let rt = v.get("report_type").and_then(|x| x.as_str());
-    if !matches!(
-        rt,
-        Some("workflow_validate_result") | Some("workflow_execute_result")
-    ) {
-        return None;
-    }
-    let nodes = v.get("nodes").and_then(|x| x.as_array())?;
-    let mut ids = Vec::new();
-    for n in nodes {
-        let id = n.get("id").and_then(|x| x.as_str())?;
-        ids.push(id.to_string());
-    }
-    if ids.is_empty() {
-        return None;
-    }
-    Some(ids)
+    workflow_execute_report_node_ids(&v)
 }
 
 /// 从对话历史中取**最近一次** `workflow_execute` 工具结果中的 `nodes[].id`（`workflow_validate_result` / `workflow_execute_result`）。

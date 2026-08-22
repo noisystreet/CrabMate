@@ -58,6 +58,28 @@ pub fn compress_tool_message_contents(messages: &mut [Message], max_chars: usize
     n
 }
 
+fn trim_tail_after_system(after: &[Message], tail_keep: usize) -> Vec<Message> {
+    let skip = after.len().saturating_sub(tail_keep);
+    let mut tail: Vec<Message> = after.iter().skip(skip).cloned().collect();
+    let tail_opens_with_assistant_run = tail.len() >= 2
+        && tail[0].role.trim().eq_ignore_ascii_case("assistant")
+        && tail[1].role.trim().eq_ignore_ascii_case("assistant");
+    if tail_opens_with_assistant_run
+        && let Some(ui) = after[..skip]
+            .iter()
+            .rposition(|m| m.role.trim().eq_ignore_ascii_case("user"))
+    {
+        tail.insert(0, after[ui].clone());
+        while tail.len() > tail_keep {
+            if tail.len() <= 1 {
+                break;
+            }
+            tail.remove(1);
+        }
+    }
+    tail
+}
+
 /// 保留首条 `system`，其后最多保留 `max_after_system` 条消息（与历史 `max_message_history` 语义一致）。
 ///
 /// 与 `runtime/workspace_session` 加载截断一致：若保留的尾部以**两条连续** `assistant` 开头，且被裁掉的前缀里仍有 `user`，则插回其中最后一条 `user`（并丢掉一条较旧消息以维持条数上限），避免 `[system, assistant, assistant, …]` 触发 400。
@@ -72,26 +94,7 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
             return false;
         }
         let sys = messages[0].clone();
-        let after: Vec<Message> = messages[1..].to_vec();
-        let tail_keep = max_after_system;
-        let skip = after.len().saturating_sub(tail_keep);
-        let mut tail: Vec<Message> = after.iter().skip(skip).cloned().collect();
-        let tail_opens_with_assistant_run = tail.len() >= 2
-            && tail[0].role.trim().eq_ignore_ascii_case("assistant")
-            && tail[1].role.trim().eq_ignore_ascii_case("assistant");
-        if tail_opens_with_assistant_run
-            && let Some(ui) = after[..skip]
-                .iter()
-                .rposition(|m| m.role.trim().eq_ignore_ascii_case("user"))
-        {
-            tail.insert(0, after[ui].clone());
-            while tail.len() > tail_keep {
-                if tail.len() <= 1 {
-                    break;
-                }
-                tail.remove(1);
-            }
-        }
+        let tail = trim_tail_after_system(&messages[1..], max_after_system);
         let mut out = vec![sys];
         out.extend(tail);
         *messages = out;

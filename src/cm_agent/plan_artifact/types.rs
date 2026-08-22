@@ -107,37 +107,30 @@ impl PlanStepAcceptance {
         if let Some(c) = self.expect_exit_code {
             parts.push(format!("expect_exit_code={c}"));
         }
-        if let Some(ref s) = self.expect_stdout_contains
-            && !s.trim().is_empty()
-        {
-            parts.push(format!(
-                "expect_stdout_contains={}",
-                crate::cm_agent::preview_chars(s, SUB_PREVIEW)
-            ));
-        }
-        if let Some(ref s) = self.expect_stderr_contains
-            && !s.trim().is_empty()
-        {
-            parts.push(format!(
-                "expect_stderr_contains={}",
-                crate::cm_agent::preview_chars(s, SUB_PREVIEW)
-            ));
-        }
-        if let Some(ref p) = self.expect_file_exists
-            && !p.trim().is_empty()
-        {
-            parts.push(format!(
-                "expect_file_exists={}",
-                crate::cm_agent::preview_chars(p.trim(), PATH_PREVIEW)
-            ));
-        }
+        push_previewed_field(
+            &mut parts,
+            "expect_stdout_contains",
+            self.expect_stdout_contains.as_deref(),
+            SUB_PREVIEW,
+        );
+        push_previewed_field(
+            &mut parts,
+            "expect_stderr_contains",
+            self.expect_stderr_contains.as_deref(),
+            SUB_PREVIEW,
+        );
+        push_previewed_field(
+            &mut parts,
+            "expect_file_exists",
+            self.expect_file_exists.as_deref(),
+            PATH_PREVIEW,
+        );
         if let Some(ref rule) = self.expect_json_path_equals
             && !rule.path.trim().is_empty()
         {
-            let p = rule.path.trim();
             parts.push(format!(
                 "expect_json_path_equals.path={}",
-                crate::cm_agent::preview_chars(p, PATH_PREVIEW)
+                crate::cm_agent::preview_chars(rule.path.trim(), PATH_PREVIEW)
             ));
         }
         if let Some(h) = self.expect_http_status {
@@ -149,6 +142,16 @@ impl PlanStepAcceptance {
             Some(parts.join("；"))
         }
     }
+}
+
+fn push_previewed_field(parts: &mut Vec<String>, label: &str, value: Option<&str>, preview: usize) {
+    let Some(s) = value.map(str::trim).filter(|s| !s.is_empty()) else {
+        return;
+    };
+    parts.push(format!(
+        "{label}={}",
+        crate::cm_agent::preview_chars(s, preview)
+    ));
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
