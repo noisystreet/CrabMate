@@ -103,6 +103,21 @@ fn unified_patch_format_outcome(applied_files: &[String], errors: &[String]) -> 
     }
 }
 
+enum DevNullHunkKind {
+    Create,
+    Delete,
+}
+
+fn classify_dev_null_hunk(file_path: &str, original_path: &str) -> Option<DevNullHunkKind> {
+    if original_path == "/dev/null" {
+        Some(DevNullHunkKind::Create)
+    } else if file_path == "/dev/null" {
+        Some(DevNullHunkKind::Delete)
+    } else {
+        None
+    }
+}
+
 fn apply_single_unified_hunk(
     hunk_patch: &str,
     root: &Path,
@@ -120,9 +135,9 @@ fn apply_single_unified_hunk(
         }
     };
 
-    if file_path == "/dev/null" || original_path == "/dev/null" {
-        if original_path == "/dev/null" {
-            unified_hunk_create_new_file(
+    if let Some(kind) = classify_dev_null_hunk(&file_path, &original_path) {
+        match kind {
+            DevNullHunkKind::Create => unified_hunk_create_new_file(
                 hunk_patch,
                 root,
                 &file_path,
@@ -130,18 +145,15 @@ fn apply_single_unified_hunk(
                 preview_files,
                 applied_files,
                 errors,
-            );
-            return;
-        }
-        if file_path == "/dev/null" {
-            unified_hunk_delete_file(
+            ),
+            DevNullHunkKind::Delete => unified_hunk_delete_file(
                 root,
                 &original_path,
                 changelist,
                 preview_files,
                 applied_files,
                 errors,
-            );
+            ),
         }
         return;
     }

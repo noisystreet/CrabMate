@@ -207,6 +207,22 @@ fn strip_push_quoted_char(out: &mut String, c: char, quote: char, prev_escape: &
     closes
 }
 
+enum StripSlash {
+    LineEnd,
+    AfterBlock(usize),
+}
+
+fn strip_slash_at(chars: &[char], i: usize) -> Option<StripSlash> {
+    if chars.get(i) != Some(&'/') || i + 1 >= chars.len() {
+        return None;
+    }
+    match chars[i + 1] {
+        '/' => Some(StripSlash::LineEnd),
+        '*' => Some(StripSlash::AfterBlock(skip_rust_block_comment(chars, i))),
+        _ => None,
+    }
+}
+
 fn strip_line_comment_code(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_string: Option<char> = None;
@@ -222,13 +238,13 @@ fn strip_line_comment_code(s: &str) -> String {
             i += 1;
             continue;
         }
-        if c == '/' && i + 1 < chars.len() {
-            if chars[i + 1] == '/' {
-                break;
-            }
-            if chars[i + 1] == '*' {
-                i = skip_rust_block_comment(&chars, i);
-                continue;
+        if let Some(slash) = strip_slash_at(&chars, i) {
+            match slash {
+                StripSlash::LineEnd => break,
+                StripSlash::AfterBlock(next) => {
+                    i = next;
+                    continue;
+                }
             }
         }
         if (c == '"' || c == '\'') && !prev_escape {

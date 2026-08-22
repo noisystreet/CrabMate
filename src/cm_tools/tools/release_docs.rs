@@ -134,21 +134,7 @@ fn push_log_rev(args: &mut Vec<String>, since: &str, until: &str) {
     }
 }
 
-fn changelog_by_date(
-    working_dir: &Path,
-    since: &str,
-    until: &str,
-    max_commits: usize,
-) -> Result<String, String> {
-    let mut args: Vec<String> = vec![
-        "log".into(),
-        format!("--max-count={}", max_commits),
-        "--format=%cs|%h %s".into(),
-    ];
-    push_log_rev(&mut args, since, until);
-    let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let text = run_git_stdout(working_dir, &argv)?;
-
+fn changelog_sections_by_date(text: &str) -> BTreeMap<String, Vec<String>> {
     let mut sections: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for line in text.lines() {
         let line = line.trim();
@@ -163,7 +149,14 @@ fn changelog_by_date(
             .or_default()
             .push(format!("- {}", rest.trim()));
     }
+    sections
+}
 
+fn format_changelog_by_date(
+    since: &str,
+    until: &str,
+    sections: BTreeMap<String, Vec<String>>,
+) -> String {
     let mut out = String::from("# 变更日志（草稿）\n\n");
     if !since.is_empty() || !until.is_empty() {
         out.push_str(&format!(
@@ -183,7 +176,28 @@ fn changelog_by_date(
     if out.ends_with("\n\n") {
         out.pop();
     }
-    Ok(out)
+    out
+}
+
+fn changelog_by_date(
+    working_dir: &Path,
+    since: &str,
+    until: &str,
+    max_commits: usize,
+) -> Result<String, String> {
+    let mut args: Vec<String> = vec![
+        "log".into(),
+        format!("--max-count={}", max_commits),
+        "--format=%cs|%h %s".into(),
+    ];
+    push_log_rev(&mut args, since, until);
+    let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let text = run_git_stdout(working_dir, &argv)?;
+    Ok(format_changelog_by_date(
+        since,
+        until,
+        changelog_sections_by_date(&text),
+    ))
 }
 
 fn changelog_flat(

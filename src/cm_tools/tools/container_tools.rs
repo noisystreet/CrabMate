@@ -122,44 +122,35 @@ pub fn docker_build(args_json: &str, workspace_root: &Path, max_output_len: usiz
     run_and_format(cmd, max_output_len, "docker build")
 }
 
-pub fn docker_compose_ps(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: DockerComposePsArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 docker_compose_ps 形状不一致: {e}"),
-    };
-
-    if let Some(p) = args
-        .project
+fn trimmed_compose_project(args: &DockerComposePsArgs) -> Option<&str> {
+    args.project
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
+}
+
+fn validate_docker_compose_ps_args(args: &DockerComposePsArgs) -> Result<(), String> {
+    if let Some(p) = trimmed_compose_project(args)
         && let Err(e) = safe_compose_project(p)
     {
-        return format!("错误：{}", e);
+        return Err(format!("错误：{}", e));
     }
-
     for f in &args.compose_files {
         let f = f.trim();
         if f.is_empty() {
             continue;
         }
         if let Err(e) = safe_relative_path(f, "compose_files") {
-            return format!("错误：{}", e);
+            return Err(format!("错误：{}", e));
         }
     }
+    Ok(())
+}
 
+fn docker_compose_ps_command(args: &DockerComposePsArgs, workspace_root: &Path) -> Command {
     let mut cmd = Command::new("docker");
     cmd.arg("compose");
-    if let Some(p) = args
-        .project
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
+    if let Some(p) = trimmed_compose_project(args) {
         cmd.arg("-p").arg(p);
     }
     for f in &args.compose_files {
@@ -170,7 +161,26 @@ pub fn docker_compose_ps(args_json: &str, workspace_root: &Path, max_output_len:
     }
     cmd.arg("ps");
     cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "docker compose ps")
+    cmd
+}
+
+pub fn docker_compose_ps(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
+    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let args: DockerComposePsArgs = match serde_json::from_value(v) {
+        Ok(a) => a,
+        Err(e) => return format!("参数 JSON 与 docker_compose_ps 形状不一致: {e}"),
+    };
+    if let Err(e) = validate_docker_compose_ps_args(&args) {
+        return e;
+    }
+    run_and_format(
+        docker_compose_ps_command(&args, workspace_root),
+        max_output_len,
+        "docker compose ps",
+    )
 }
 
 pub fn podman_images(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {

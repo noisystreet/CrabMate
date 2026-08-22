@@ -67,6 +67,18 @@ pub fn gh_run_list(
     run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
+fn gh_pr_diff_argv(v: &JsonValue) -> Result<Vec<String>, String> {
+    let num = match v.get("number").and_then(|x| x.as_u64()) {
+        Some(n) if n > 0 && n <= 999_999 => n.to_string(),
+        _ => return Err("错误：缺少或非法 number".to_string()),
+    };
+    let mut argv = vec!["pr".into(), "diff".into(), num];
+    push_repo_arg(v, &mut argv)?;
+    push_bool_flag(v, "patch", "--patch", &mut argv);
+    push_extra_args_from_json(v, &mut argv)?;
+    Ok(argv)
+}
+
 /// `gh pr diff`（只读）
 pub fn gh_pr_diff(
     args_json: &str,
@@ -81,32 +93,10 @@ pub fn gh_pr_diff(
         Ok(x) => x,
         Err(e) => return e,
     };
-    let num = match v.get("number").and_then(|x| x.as_u64()) {
-        Some(n) if n > 0 && n <= 999_999 => n.to_string(),
-        _ => return "错误：缺少或非法 number".to_string(),
-    };
-    let mut argv = vec!["pr".into(), "diff".into(), num];
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
-        if let Err(e) = validate_repo(r) {
-            return e;
-        }
-        argv.push("-R".into());
-        argv.push(r.trim().to_string());
+    match gh_pr_diff_argv(&v) {
+        Ok(argv) => run_gh_vec(argv, max_output_len, allowed_commands, working_dir),
+        Err(e) => e,
     }
-    if v.get("patch").and_then(|x| x.as_bool()) == Some(true) {
-        argv.push("--patch".into());
-    }
-    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
-        let extra: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        if let Err(e) = validate_extra_args(&extra) {
-            return e;
-        }
-        argv.extend(extra);
-    }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
 }
 
 fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, String> {
@@ -256,6 +246,37 @@ fn annotate_gh_pr_create_failure(formatted: String) -> String {
     format!("{}\n\n---\n提示：{}\n", formatted.trim_end(), hint)
 }
 
+fn gh_pr_create_inputs(
+    args_json: &str,
+    working_dir: &Path,
+) -> Result<(JsonValue, String, String), String> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
+    let title = v
+        .get("title")
+        .and_then(|x| x.as_str())
+        .ok_or_else(|| "错误：缺少 title".to_string())?
+        .to_string();
+    validate_pr_title(&title)?;
+    let body_str = resolve_pr_create_body(&v, working_dir)?;
+    validate_pr_body(&body_str)?;
+    gh_pr_create_validate_repo_base_head(&v)?;
+    Ok((v, title, body_str))
+}
+
+fn write_pr_create_body_temp(
+    working_dir: &Path,
+    body: &[u8],
+) -> Result<(tempfile::TempDir, String), String> {
+    // 与历史文案对齐：路径非 UTF-8 时固定为「临时文件路径非 UTF-8」（不用带 label 的通用句）。
+    match write_workspace_temp_markdown(working_dir, "crabmate_pr_body.md", body, "PR 正文") {
+        Ok(x) => Ok(x),
+        Err(e) if e.contains("临时文件路径非 UTF-8") => {
+            Err("错误：临时文件路径非 UTF-8".to_string())
+        }
+        Err(e) => Err(e),
+    }
+}
+
 /// `gh pr create`（在远端创建 PR；**写操作**）。`title` + `body` 经工作区内临时文件以 `--body-file` 传入，避免 shell 转义问题。
 pub fn gh_pr_create(
     args_json: &str,
@@ -266,42 +287,15 @@ pub fn gh_pr_create(
     if let Err(e) = gh_allowed(allowed_commands) {
         return e;
     }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
+    let (v, title, body_str) = match gh_pr_create_inputs(args_json, working_dir) {
         Ok(x) => x,
         Err(e) => return e,
     };
-    let title = match v.get("title").and_then(|x| x.as_str()) {
-        Some(s) => s,
-        None => return "错误：缺少 title".to_string(),
-    };
-    if let Err(e) = validate_pr_title(title) {
-        return e;
-    }
-    let body_str = match resolve_pr_create_body(&v, working_dir) {
-        Ok(b) => b,
-        Err(e) => return e,
-    };
-    if let Err(e) = validate_pr_body(&body_str) {
-        return e;
-    }
-    if let Err(e) = gh_pr_create_validate_repo_base_head(&v) {
-        return e;
-    }
-
-    // 与历史文案对齐：路径非 UTF-8 时固定为「临时文件路径非 UTF-8」（不用带 label 的通用句）。
-    let (dir, body_path_str) = match write_workspace_temp_markdown(
-        working_dir,
-        "crabmate_pr_body.md",
-        body_str.as_bytes(),
-        "PR 正文",
-    ) {
+    let (dir, body_path_str) = match write_pr_create_body_temp(working_dir, body_str.as_bytes()) {
         Ok(x) => x,
-        Err(e) if e.contains("临时文件路径非 UTF-8") => {
-            return "错误：临时文件路径非 UTF-8".to_string();
-        }
         Err(e) => return e,
     };
-    let argv = match gh_pr_create_build_argv(&v, title, body_path_str) {
+    let argv = match gh_pr_create_build_argv(&v, &title, body_path_str) {
         Ok(a) => a,
         Err(e) => return e,
     };

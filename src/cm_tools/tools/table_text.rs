@@ -179,6 +179,59 @@ fn cell_preview(s: &str) -> String {
     format!("{}…（{} 字节，已截断预览）", &t[..end], t.len())
 }
 
+fn preview_format_fields(rec: &csv::StringRecord, oversize: fn(usize) -> String) -> Vec<String> {
+    rec.iter()
+        .map(|f| {
+            if f.len() > MAX_CELL_BYTES {
+                oversize(f.len())
+            } else {
+                cell_preview(f)
+            }
+        })
+        .collect()
+}
+
+fn preview_header_oversize(n: usize) -> String {
+    format!("（单元格过长 {} 字节）", n)
+}
+
+fn preview_row_oversize(n: usize) -> String {
+    format!("（{} 字节）", n)
+}
+
+fn preview_append_header(
+    it: &mut csv::StringRecordsIter<'_, io::Cursor<&[u8]>>,
+    out: &mut String,
+) -> Result<bool, String> {
+    if let Some(rec) = it
+        .next()
+        .transpose()
+        .map_err(|e| format!("解析表头失败: {}", e))?
+    {
+        let fields = preview_format_fields(&rec, preview_header_oversize);
+        out.push_str("[header] ");
+        out.push_str(&fields.join(" | "));
+        out.push('\n');
+        Ok(true)
+    } else {
+        out.push_str("[header] （空文件）\n");
+        Ok(false)
+    }
+}
+
+fn count_remaining_preview_rows(it: csv::StringRecordsIter<'_, io::Cursor<&[u8]>>) -> (usize, bool) {
+    let mut rest = 0usize;
+    let mut capped = false;
+    for _ in it {
+        rest += 1;
+        if rest > MAX_ROWS_SCAN {
+            capped = true;
+            break;
+        }
+    }
+    (rest, capped)
+}
+
 fn run_preview(
     data: &[u8],
     delim: u8,
@@ -194,29 +247,8 @@ fn run_preview(
     ));
 
     let mut it = rdr.records();
-    if has_header {
-        if let Some(rec) = it
-            .next()
-            .transpose()
-            .map_err(|e| format!("解析表头失败: {}", e))?
-        {
-            let fields: Vec<String> = rec
-                .iter()
-                .map(|f| {
-                    if f.len() > MAX_CELL_BYTES {
-                        format!("（单元格过长 {} 字节）", f.len())
-                    } else {
-                        cell_preview(f)
-                    }
-                })
-                .collect();
-            out.push_str("[header] ");
-            out.push_str(&fields.join(" | "));
-            out.push('\n');
-        } else {
-            out.push_str("[header] （空文件）\n");
-            return Ok(out);
-        }
+    if has_header && !preview_append_header(&mut it, &mut out)? {
+        return Ok(out);
     }
 
     let mut shown = 0usize;
@@ -229,16 +261,7 @@ fn run_preview(
         };
         row_idx += 1;
         let ncols = rec.len();
-        let fields: Vec<String> = rec
-            .iter()
-            .map(|f| {
-                if f.len() > MAX_CELL_BYTES {
-                    format!("（{} 字节）", f.len())
-                } else {
-                    cell_preview(f)
-                }
-            })
-            .collect();
+        let fields = preview_format_fields(&rec, preview_row_oversize);
         out.push_str(&format!(
             "[{}] cols={} {}\n",
             row_idx,
@@ -248,15 +271,7 @@ fn run_preview(
         shown += 1;
     }
 
-    let mut rest = 0usize;
-    let mut capped = false;
-    for _ in it {
-        rest += 1;
-        if rest > MAX_ROWS_SCAN {
-            capped = true;
-            break;
-        }
-    }
+    let (rest, capped) = count_remaining_preview_rows(it);
     let tail = if capped {
         format!("≥{}", rest)
     } else {
@@ -267,6 +282,36 @@ fn run_preview(
         shown, tail
     ));
     Ok(out)
+}
+
+fn format_column_validate_report(
+    delim: u8,
+    cap: usize,
+    total: usize,
+    expected: Option<usize>,
+    mismatches: &[String],
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "delimiter={:?} 扫描数据行数（上限 {}）: {}\n",
+        delim as char, cap, total
+    ));
+    if let Some(e) = expected {
+        out.push_str(&format!("首行参照列数: {}\n", e));
+    }
+    if mismatches.is_empty() {
+        out.push_str("列数一致（在扫描范围内）。\n");
+    } else {
+        out.push_str("列数不一致：\n");
+        for m in mismatches {
+            out.push_str(m);
+            out.push('\n');
+        }
+        if mismatches.len() >= MAX_MISMATCH_REPORT {
+            out.push_str(&format!("（仅列出前 {} 处不一致）\n", MAX_MISMATCH_REPORT));
+        }
+    }
+    out
 }
 
 fn run_validate(data: &[u8], delim: u8, max_scan: usize) -> Result<String, String> {
@@ -294,27 +339,9 @@ fn run_validate(data: &[u8], delim: u8, max_scan: usize) -> Result<String, Strin
         }
     }
 
-    let mut out = String::new();
-    out.push_str(&format!(
-        "delimiter={:?} 扫描数据行数（上限 {}）: {}\n",
-        delim as char, cap, total
-    ));
-    if let Some(e) = expected {
-        out.push_str(&format!("首行参照列数: {}\n", e));
-    }
-    if mismatches.is_empty() {
-        out.push_str("列数一致（在扫描范围内）。\n");
-    } else {
-        out.push_str("列数不一致：\n");
-        for m in &mismatches {
-            out.push_str(m);
-            out.push('\n');
-        }
-        if mismatches.len() >= MAX_MISMATCH_REPORT {
-            out.push_str(&format!("（仅列出前 {} 处不一致）\n", MAX_MISMATCH_REPORT));
-        }
-    }
-    Ok(out)
+    Ok(format_column_validate_report(
+        delim, cap, total, expected, &mismatches,
+    ))
 }
 
 fn run_select_columns(

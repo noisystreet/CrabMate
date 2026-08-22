@@ -87,85 +87,52 @@ impl ReleaseReadyOpts {
     }
 }
 
+type CiFailFastStep = fn(
+    &CiPipelineOpts,
+    &Path,
+    usize,
+    &mut Vec<(String, &'static str)>,
+    &mut Vec<String>,
+) -> Option<String>;
+
+fn ci_pipeline_opts_from_args(args_json: &str) -> Result<CiPipelineOpts, String> {
+    let parsed = crate::cm_tools::tools::parse_args_json(args_json)?;
+    let args: CiPipelineLocalArgs =
+        serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    let v = serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))?;
+    Ok(CiPipelineOpts::from_json(&v))
+}
+
+fn ci_pipeline_fail_fast_steps() -> &'static [CiFailFastStep] {
+    &[
+        ci_run_fmt,
+        ci_run_clippy,
+        ci_run_cargo_test,
+        ci_run_frontend_lint,
+        ci_run_frontend_build,
+        ci_run_ruff,
+        ci_run_pytest,
+    ]
+}
+
 pub fn ci_pipeline_local(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
+    let o = match ci_pipeline_opts_from_args(args_json) {
+        Ok(o) => o,
         Err(e) => return e,
     };
-    let args: CiPipelineLocalArgs = match serde_json::from_value(parsed) {
-        Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
-    };
-    let v = match serde_json::to_value(&args) {
-        Ok(v) => v,
-        Err(e) => return format!("参数序列化错误: {e}"),
-    };
-    let o = CiPipelineOpts::from_json(&v);
     let mut sections = Vec::new();
     let mut summary: Vec<(String, &'static str)> = Vec::new();
 
-    if let Some(out) = ci_run_fmt(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_clippy(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_cargo_test(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_frontend_lint(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_frontend_build(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_ruff(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
-    }
-    if let Some(out) = ci_run_pytest(
-        &o,
-        workspace_root,
-        max_output_len,
-        &mut summary,
-        &mut sections,
-    ) {
-        return out;
+    for step in ci_pipeline_fail_fast_steps() {
+        if let Some(out) = step(
+            &o,
+            workspace_root,
+            max_output_len,
+            &mut summary,
+            &mut sections,
+        ) {
+            return out;
+        }
     }
     ci_run_mypy(
         &o,

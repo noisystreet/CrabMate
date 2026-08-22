@@ -172,6 +172,34 @@ pub fn fetch_with_method(
     out
 }
 
+fn attach_optional_json_body(
+    req: reqwest::blocking::RequestBuilder,
+    json_body: Option<&serde_json::Value>,
+) -> Result<(reqwest::blocking::RequestBuilder, usize), String> {
+    let Some(body) = json_body else {
+        return Ok((req, 0));
+    };
+    let v = serde_json::to_vec(body).map_err(|e| format!("json_body 序列化失败: {}", e))?;
+    let n = v.len();
+    Ok((req.header(CONTENT_TYPE, "application/json").body(v), n))
+}
+
+fn append_json_body_line(out: &mut String, json_body: bool, body_bytes: usize) {
+    if json_body {
+        out.push_str(&format!("请求体: JSON（{} 字节）\n", body_bytes));
+    } else {
+        out.push_str("请求体: (无)\n");
+    }
+}
+
+fn append_content_length_line(out: &mut String, clen: &str) {
+    if clen.is_empty() {
+        out.push_str("Content-Length: (未返回)\n");
+    } else {
+        out.push_str(&format!("Content-Length: {}\n", clen));
+    }
+}
+
 /// 同步 HTTP 请求（POST/PUT/PATCH/DELETE + 可选 JSON body）。
 pub fn request_with_json_body(
     url: &reqwest::Url,
@@ -189,17 +217,11 @@ pub fn request_with_json_body(
         Err(e) => return e,
     };
 
-    let mut req = client.request(method.into_reqwest(), url.clone());
-    let mut body_bytes = 0usize;
-    if let Some(body) = json_body {
-        match serde_json::to_vec(body) {
-            Ok(v) => {
-                body_bytes = v.len();
-                req = req.header(CONTENT_TYPE, "application/json").body(v);
-            }
-            Err(e) => return format!("json_body 序列化失败: {}", e),
-        }
-    }
+    let req = client.request(method.into_reqwest(), url.clone());
+    let (req, body_bytes) = match attach_optional_json_body(req, json_body) {
+        Ok(x) => x,
+        Err(e) => return e,
+    };
     let resp = match req.send() {
         Ok(r) => r,
         Err(e) => return format_reqwest_error(&e),
@@ -223,20 +245,12 @@ pub fn request_with_json_body(
     let mut out = String::new();
     out.push_str(&format!("method: {}\n", method.as_str()));
     out.push_str(&format!("请求 URL: {}\n", url));
-    if json_body.is_some() {
-        out.push_str(&format!("请求体: JSON（{} 字节）\n", body_bytes));
-    } else {
-        out.push_str("请求体: (无)\n");
-    }
+    append_json_body_line(&mut out, json_body.is_some(), body_bytes);
     out.push_str(&format_redirect_section(&hop_lines));
     out.push_str(&format!("最终 URL: {}\n", final_url));
     out.push_str(&format!("状态: {}\n", status));
     out.push_str(&format!("Content-Type: {}\n", ctype));
-    if clen.is_empty() {
-        out.push_str("Content-Length: (未返回)\n");
-    } else {
-        out.push_str(&format!("Content-Length: {}\n", clen));
-    }
+    append_content_length_line(&mut out, clen);
 
     let bytes = match resp.bytes() {
         Ok(b) => b,
