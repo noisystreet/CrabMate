@@ -71,6 +71,33 @@ pub(super) fn openapi_paths_fragment_workspace_file_raw() -> Value {
                     "4XX": { "description": "路径、标志冲突或过大（JSON ApiError）" }
                 }
             }
+        },
+        "/workspace/file/download": {
+            "get": {
+                "tags": ["workspace"],
+                "summary": "读取工作区文件原始字节（任意类型；上限 16 MiB；供 Client 保存到本机）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "string" },
+                        "description": "工作区相对路径；禁止 `..`"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "文件字节",
+                        "content": {
+                            "application/octet-stream": {
+                                "schema": { "type": "string", "format": "binary" }
+                            }
+                        }
+                    },
+                    "4XX": { "description": "路径或大小错误（JSON ApiError）" }
+                }
+            }
         }
     })
 }

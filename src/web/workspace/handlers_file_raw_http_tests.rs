@@ -79,6 +79,48 @@ async fn workspace_file_raw_http_smoke() {
     );
 }
 
+async fn get_download(client: &reqwest::Client, base: &str, path: &str) -> reqwest::Response {
+    client
+        .get(format!("{base}/workspace/file/download"))
+        .query(&[("path", path)])
+        .send()
+        .await
+        .expect("GET /workspace/file/download")
+}
+
+#[tokio::test]
+async fn workspace_file_download_http_smoke() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let pdf = b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n";
+    std::fs::write(root.path().join("说明.pdf"), pdf).expect("write pdf");
+
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+    let set = client
+        .post(format!("{}/workspace", handle.base_url))
+        .json(&serde_json::json!({ "path": root.path() }))
+        .send()
+        .await
+        .expect("POST /workspace");
+    assert!(set.status().is_success(), "set workspace");
+
+    let raw_pdf = get_raw(&client, &handle.base_url, "说明.pdf").await;
+    assert_eq!(raw_pdf.status(), reqwest::StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    let dl = get_download(&client, &handle.base_url, "说明.pdf").await;
+    assert_eq!(dl.status(), reqwest::StatusCode::OK);
+    let ctype = dl
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    assert_eq!(ctype, "application/octet-stream");
+    assert_eq!(dl.bytes().await.expect("pdf body").as_ref(), pdf);
+
+    let trav = get_download(&client, &handle.base_url, "../说明.pdf").await;
+    assert_eq!(trav.status(), reqwest::StatusCode::BAD_REQUEST);
+}
+
 async fn put_raw(
     client: &reqwest::Client,
     base: &str,
