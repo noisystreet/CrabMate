@@ -82,7 +82,50 @@ pub async fn workspace_file_raw_handler(
             "仅支持 png/jpg/jpeg/webp/gif",
         ));
     };
-    let base = effective_workspace_base_canonical(&http)
+    let bytes = load_workspace_rel_file_bytes(
+        &http,
+        path,
+        WORKSPACE_IMAGE_RAW_MAX_BYTES,
+        "WORKSPACE_IMAGE_READ",
+    )
+    .await?;
+    bytes_ok_response(
+        bytes,
+        ctype,
+        "private, max-age=60",
+        "WORKSPACE_IMAGE_RESPONSE",
+    )
+}
+
+pub(crate) fn bytes_ok_response(
+    bytes: Vec<u8>,
+    ctype: &'static str,
+    cache: &'static str,
+    err_code: &'static str,
+) -> Result<Response, RawErr> {
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, ctype)
+        .header(header::CACHE_CONTROL, cache)
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .body(Body::from(bytes))
+        .map_err(|e| {
+            raw_err(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                err_code,
+                format!("构造响应失败: {e}"),
+            )
+        })
+}
+
+/// 已通过 [`reject_unsafe_rel_path`] 的相对路径：解析并读取字节。
+pub(crate) async fn load_workspace_rel_file_bytes(
+    http: &AppStateHttpCore,
+    path: &str,
+    max_b: u64,
+    read_code: &'static str,
+) -> Result<Vec<u8>, RawErr> {
+    let base = effective_workspace_base_canonical(http)
         .await
         .map_err(|e| {
             raw_err(
@@ -99,27 +142,15 @@ pub async fn workspace_file_raw_handler(
         };
         raw_err(status, "WORKSPACE_PATH_DENIED", e.user_message())
     })?;
-    let bytes = read_workspace_image_bytes(base, canonical).await?;
-    Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, ctype)
-        .header(header::CACHE_CONTROL, "private, max-age=60")
-        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
-        .body(Body::from(bytes))
-        .map_err(|e| {
-            raw_err(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "WORKSPACE_IMAGE_RESPONSE",
-                format!("构造响应失败: {e}"),
-            )
-        })
+    read_workspace_bytes(base, canonical, max_b, read_code).await
 }
 
-async fn read_workspace_image_bytes(
+async fn read_workspace_bytes(
     base: std::path::PathBuf,
     canonical: std::path::PathBuf,
+    max_b: u64,
+    read_code: &'static str,
 ) -> Result<Vec<u8>, RawErr> {
-    let max_b = WORKSPACE_IMAGE_RAW_MAX_BYTES;
     #[cfg(unix)]
     {
         tokio::task::spawn_blocking(move || {
@@ -129,20 +160,20 @@ async fn read_workspace_image_bytes(
         .map_err(|e| {
             raw_err(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "WORKSPACE_IMAGE_READ",
+                read_code,
                 format!("读取文件任务失败: {e}"),
             )
         })?
-        .map_err(map_read_msg_to_status)
+        .map_err(|msg| map_read_msg_to_status(msg, read_code))
     }
     #[cfg(not(unix))]
     {
         let _ = base;
-        read_workspace_image_bytes_non_unix(canonical, max_b).await
+        read_workspace_bytes_non_unix(canonical, max_b, read_code).await
     }
 }
 
-fn map_read_msg_to_status(msg: String) -> RawErr {
+fn map_read_msg_to_status(msg: String, code: &'static str) -> RawErr {
     let status = if msg.contains("过大") {
         StatusCode::PAYLOAD_TOO_LARGE
     } else if msg.contains("目录") {
@@ -150,39 +181,40 @@ fn map_read_msg_to_status(msg: String) -> RawErr {
     } else {
         StatusCode::NOT_FOUND
     };
-    raw_err(status, "WORKSPACE_IMAGE_READ", msg)
+    raw_err(status, code, msg)
 }
 
 #[cfg(not(unix))]
-async fn read_workspace_image_bytes_non_unix(
+async fn read_workspace_bytes_non_unix(
     canonical: std::path::PathBuf,
     max_b: u64,
+    read_code: &'static str,
 ) -> Result<Vec<u8>, RawErr> {
     let meta = tokio::fs::metadata(&canonical).await.map_err(|e| {
         raw_err(
             StatusCode::NOT_FOUND,
-            "WORKSPACE_IMAGE_READ",
+            read_code,
             format!("无法读取文件信息: {e}"),
         )
     })?;
     if meta.is_dir() {
         return Err(raw_err(
             StatusCode::BAD_REQUEST,
-            "WORKSPACE_IMAGE_READ",
+            read_code,
             "路径是目录，无法读取为文件",
         ));
     }
     if meta.len() > max_b {
         return Err(raw_err(
             StatusCode::PAYLOAD_TOO_LARGE,
-            "WORKSPACE_IMAGE_READ",
+            read_code,
             format!("文件过大（{} 字节），当前最多读取 {} 字节", meta.len(), max_b),
         ));
     }
     tokio::fs::read(&canonical).await.map_err(|e| {
         raw_err(
             StatusCode::NOT_FOUND,
-            "WORKSPACE_IMAGE_READ",
+            read_code,
             format!("读取文件失败: {e}"),
         )
     })
