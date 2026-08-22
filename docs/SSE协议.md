@@ -16,7 +16,7 @@
 ## 传输与分帧
 
 - 路由：**`POST /chat/stream`**；响应为 **`text/event-stream`**。（运维向 **`POST /config/reload`** 为 JSON、非 SSE，见 **`docs/配置说明.md`**「配置热重载」。）
-- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
+- **事件序号 `id:`**：服务端为每个逻辑事件块设置 **`id:`**（单调递增 `u64`，与进程内 `SseStreamHub` 一致）。断线重连时客户端可带请求头 **`Last-Event-ID`**，并在 JSON 体使用 **`stream_resume`**：`{ "job_id": <u64>, "after_seq": <u64> }`（省略 `after_seq` 视为 0）；服务端取 **`max(Last-Event-ID, after_seq)`** 后从环形缓冲重放，再订阅实时广播。**仅单进程内存**：任务结束或进程重启后重连返回 **HTTP 410**，`code` **`STREAM_JOB_GONE`**。用户在 UI 点「停止」须另发 **`POST /chat/stream/{job_id}/cancel`**（`job_id` 与 **`x-stream-job-id`** 相同）置协作取消；**仅 abort SSE 连接不会停止**模型调用与工具（否则无法 `stream_resume`）。新流响应头另含 **`x-stream-job-id`**（与首帧 `sse_capabilities.caps.job_id` 一致）。
 - 事件块：以 **空行 `\n\n`** 分隔；块内可有若干 **`data: `** 行。前端将同一块内多行 `data:` **去掉前缀后按 `\n` 拼接**，并**保留前导空格/换行**后直接进入分发（仅在判断 `[DONE]` 哨兵时做 `trim`），避免把“仅空格增量”吞掉导致单词粘连（见 `sendChatStream` 与 `join_sse_data_lines`）。
 - **正文 delta**：拼接后的字符串若 **不是** 控制面 JSON（解析失败），或解析后判定为 **`plain`**，则作为助手正文片段交给 `onDelta`。
 - **流结束**：可能收到字面量 **`[DONE]`**（与 OpenAI 兼容习惯一致），前端忽略，不当作正文。另见控制面 **`stream_ended`**。
@@ -124,7 +124,7 @@
 | `LLM_REQUEST_FAILED` | `chat_job_queue`（由 `agent_turn` 映射） | 模型 HTTP/传输失败（**`error`** 为脱敏后的网关说明；**429** 等限流见 **`LLM_RATE_LIMIT`**） |
 | `LLM_RATE_LIMIT` | `chat_job_queue`（由 `agent_turn` 映射） | 限流 / 配额类（**HTTP 429** 或文案启发式与 `agent_errors::is_quota_or_rate_limit_llm_message` 一致） |
 | `turn_aborted` | `chat_job_queue`（由 `agent_turn` 映射） | 编排早停（如 **SSE 接收端已关闭**仍尝试继续）；**`error`** 为用户可读说明 |
-| `STREAM_CANCELLED` | `chat_job_queue` | 流被取消且仍可投递时补发（与协作取消配合） |
+| `STREAM_CANCELLED` | `chat_job_queue` | 流被取消且仍可投递时补发（`POST /chat/stream/{job_id}/cancel` 或内部协作取消） |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | 终答规划重写次数用尽 |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` 序列化失败兜底 |
 

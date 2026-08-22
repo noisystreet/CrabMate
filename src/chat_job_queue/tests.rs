@@ -18,6 +18,16 @@ async fn queue_accepts_config_bounds() {
     assert_eq!(q.max_pending(), 4);
 }
 
+#[tokio::test]
+async fn queue_stream_cancel_flag_roundtrip() {
+    let q = ChatJobQueue::new(1, 1);
+    let flag = q.register_stream_cancel(42);
+    assert!(q.request_stream_cancel(42));
+    assert!(flag.load(std::sync::atomic::Ordering::SeqCst));
+    q.unregister_stream_cancel(42);
+    assert!(!q.request_stream_cancel(42));
+}
+
 // `final_response` 兜底回归覆盖：
 // 1) 缺失时应补发（fallback_emits_final_response_when_missing）
 // 2) 已存在且稍后可见时不应误补（fallback_skips_when_final_response_arrives_with_small_delay）

@@ -42,6 +42,7 @@ pub(super) async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
             envelope,
             stream_event_tx,
             web_approval_session,
+            cancel,
         } => {
             let github_token = envelope.github_token.clone();
             crate::github_token::with_request_github_token(github_token, async move {
@@ -49,6 +50,7 @@ pub(super) async fn run_queued_job(job: QueuedChatJob) -> JobOutcome {
                     envelope,
                     stream_event_tx,
                     web_approval_session,
+                    cancel,
                 })
                 .await
             })

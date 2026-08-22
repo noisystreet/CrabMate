@@ -37,6 +37,8 @@ pub(super) struct StreamJobSetupParams<'a> {
     pub stream_event_tx: mpsc::Sender<(u64, String)>,
     pub web_approval_session: Option<WebApprovalSession>,
     pub queue_deps: &'a WebChatQueueDeps,
+    /// 与 [`ChatJobQueue::register_stream_cancel`] 同一 `Arc`（入队时已创建）。
+    pub cancel: Arc<AtomicBool>,
 }
 
 pub(super) async fn stream_job_setup_runtime(
@@ -85,7 +87,7 @@ pub(super) async fn stream_job_setup_runtime(
     let (web_tool_ctx, approval_session_id) =
         stream_job_web_tool_ctx(p.web_approval_session, &sse_tx);
 
-    let cancel = Arc::new(AtomicBool::new(false));
+    let cancel = p.cancel;
     let cancel_watcher =
         stream_job_spawn_cancel_watcher(sse_tx.clone(), Arc::clone(&cancel), job_id);
 
@@ -169,6 +171,9 @@ fn stream_job_spawn_cancel_watcher(
     cancel: Arc<AtomicBool>,
     job_id: u64,
 ) -> tokio::task::JoinHandle<()> {
+    // 仅当**内部** SSE mpsc 的接收端被 drop 时触发。HTTP 客户端 abort 不会 drop 该接收端
+    //（桥接任务仍读 `sse_rx` 以便 `stream_resume`）。用户点「停止」须走
+    // `POST /chat/stream/{job_id}/cancel` 置同一 `cancel` 标志。
     tokio::spawn(async move {
         sse_tx.closed().await;
         cancel.store(true, Ordering::SeqCst);

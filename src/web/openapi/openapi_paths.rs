@@ -2,8 +2,8 @@
 
 use serde_json::{Map, Value, json};
 use super::{
-    openapi_paths_tool_jobs, openapi_paths_user_data, openapi_paths_user_data_mcp,
-    openapi_paths_workspace,
+    openapi_paths_chat_stream, openapi_paths_tool_jobs, openapi_paths_user_data,
+    openapi_paths_user_data_mcp, openapi_paths_workspace,
 };
 
 fn merge_path_fragments(fragments: &[Value]) -> Value {
@@ -148,7 +148,7 @@ fn openapi_paths_fragment_chat_core() -> Value {
                     "5XX": { "description": "服务器错误" }
                 }
             }
-        },
+        }
     })
 }
 
@@ -901,6 +901,7 @@ pub(super) fn openapi_paths_value() -> Value {
     merge_path_fragments(&[
         openapi_paths_fragment_system(),
         openapi_paths_fragment_chat_core(),
+        openapi_paths_chat_stream::openapi_paths_fragment_chat_stream_cancel(),
         openapi_paths_fragment_chat_async(),
         openapi_paths_fragment_chat_extras(),
         openapi_paths_fragment_workspace_list(),
