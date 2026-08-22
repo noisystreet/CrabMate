@@ -67,6 +67,39 @@ pub fn default_code_extensions() -> HashSet<&'static str> {
     .collect()
 }
 
+/// 从 `start` 起尽量填满一块；单行已超 `max_chunk` 时返回 `None`（由调用方硬切）。
+fn try_accumulate_line_chunk(
+    lines: &[&str],
+    start: usize,
+    max_chunk: usize,
+) -> Option<(usize, String)> {
+    let mut chunk = String::new();
+    let mut end_i = start;
+    while end_i < lines.len() {
+        let line = lines[end_i];
+        let add_len = if chunk.is_empty() {
+            line.len()
+        } else {
+            1 + line.len()
+        };
+        if chunk.is_empty() && add_len > max_chunk {
+            return None;
+        }
+        if !chunk.is_empty() && chunk.len() + add_len > max_chunk {
+            break;
+        }
+        if !chunk.is_empty() {
+            chunk.push('\n');
+        }
+        chunk.push_str(line);
+        end_i += 1;
+        if chunk.len() >= max_chunk {
+            break;
+        }
+    }
+    Some((end_i, chunk))
+}
+
 pub fn chunk_text_lines(s: &str, max_chunk: usize) -> Vec<(usize, usize, String)> {
     let s = s.trim_end_matches('\n');
     if s.is_empty() || max_chunk == 0 {
@@ -80,38 +113,16 @@ pub fn chunk_text_lines(s: &str, max_chunk: usize) -> Vec<(usize, usize, String)
     let mut i = 0usize;
     while i < lines.len() {
         let start_line = i + 1;
-        let mut chunk = String::new();
-        let mut end_i = i;
-        while end_i < lines.len() {
-            let line = lines[end_i];
-            let add_len = if chunk.is_empty() {
-                line.len()
-            } else {
-                1 + line.len()
-            };
-            if chunk.is_empty() && add_len > max_chunk {
-                break;
+        match try_accumulate_line_chunk(&lines, i, max_chunk) {
+            None => {
+                push_long_line_chunks(&mut out, lines[i], start_line, max_chunk);
+                i += 1;
             }
-            if !chunk.is_empty() && chunk.len() + add_len > max_chunk {
-                break;
-            }
-            if !chunk.is_empty() {
-                chunk.push('\n');
-            }
-            chunk.push_str(line);
-            end_i += 1;
-            if chunk.len() >= max_chunk {
-                break;
+            Some((end_i, chunk)) => {
+                out.push((start_line, end_i, chunk));
+                i = end_i;
             }
         }
-        if end_i == i {
-            // single line longer than max_chunk: hard split by chars
-            push_long_line_chunks(&mut out, lines[i], i + 1, max_chunk);
-            i += 1;
-            continue;
-        }
-        out.push((start_line, end_i, chunk));
-        i = end_i;
     }
     out
 }

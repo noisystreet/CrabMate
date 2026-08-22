@@ -8,7 +8,7 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::path::Path;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 use super::{TABLE, TABLE_FTS, fts5_match_expression, norm_scores_bm25, open_codebase_semantic_db};
 #[cfg(feature = "fastembed")]
@@ -94,6 +94,61 @@ struct SearchOutputHeader {
     max_out_chars: usize,
 }
 
+fn search_mode_zh(mode: RetrieveMode) -> &'static str {
+    match mode {
+        RetrieveMode::SemanticOnly => "semantic_only（仅向量）",
+        RetrieveMode::FtsOnly => "fts_only（仅 FTS 全文）",
+        RetrieveMode::Hybrid => "hybrid（FTS BM25 + 向量余弦加权）",
+    }
+}
+
+fn search_chunk_heading(mode: RetrieveMode, rank: usize, chunk: &ScoredChunk) -> String {
+    match mode {
+        RetrieveMode::Hybrid => format!(
+            "## {}. {} (行 {}–{})  hybrid={:.4}  cos={:.4}  fts={:.4}\n",
+            rank + 1,
+            chunk.rel,
+            chunk.sl,
+            chunk.el,
+            chunk.score,
+            chunk.cosine,
+            chunk.fts
+        ),
+        RetrieveMode::FtsOnly => format!(
+            "## {}. {} (行 {}–{})  fts={:.4}\n",
+            rank + 1,
+            chunk.rel,
+            chunk.sl,
+            chunk.el,
+            chunk.score
+        ),
+        RetrieveMode::SemanticOnly => format!(
+            "## {}. {} (行 {}–{})  cos={:.4}\n",
+            rank + 1,
+            chunk.rel,
+            chunk.sl,
+            chunk.el,
+            chunk.cosine
+        ),
+    }
+}
+
+fn search_snippet_for_budget(body: &str, remain: usize) -> &str {
+    if body.len() <= remain {
+        return body;
+    }
+    let take = remain.saturating_sub(20);
+    if take == 0 {
+        return "";
+    }
+    let end = body
+        .char_indices()
+        .nth(take)
+        .map(|(i, _)| i)
+        .unwrap_or(body.len());
+    &body[..end]
+}
+
 fn format_search_output(header: &SearchOutputHeader, scored: &[ScoredChunk]) -> String {
     let limit_note = if header.limit_active {
         format!("，上限 {}", header.query_max_chunks)
@@ -106,17 +161,11 @@ fn format_search_output(header: &SearchOutputHeader, scored: &[ScoredChunk]) -> 
         ""
     };
 
-    let mode_zh = match header.mode {
-        RetrieveMode::SemanticOnly => "semantic_only（仅向量）",
-        RetrieveMode::FtsOnly => "fts_only（仅 FTS 全文）",
-        RetrieveMode::Hybrid => "hybrid（FTS BM25 + 向量余弦加权）",
-    };
-
     let mut out = String::new();
     out.push_str(&format!(
         "代码检索 mode={}，top_k={}，hybrid_alpha={:.2}，FTS 候选 {} 条，向量已扫描 {} 块{}{}。\n\
          hybrid 综合分 = α×cosine + (1-α)×fts_norm；fts_only 按 BM25 归一化排序。\n\n",
-        mode_zh,
+        search_mode_zh(header.mode),
         header.top_k,
         header.hybrid_alpha,
         header.fts_rows_fetched,
@@ -126,36 +175,7 @@ fn format_search_output(header: &SearchOutputHeader, scored: &[ScoredChunk]) -> 
     ));
     let mut used = 0usize;
     for (rank, chunk) in scored.iter().enumerate() {
-        let line_hdr = if header.mode == RetrieveMode::Hybrid {
-            format!(
-                "## {}. {} (行 {}–{})  hybrid={:.4}  cos={:.4}  fts={:.4}\n",
-                rank + 1,
-                chunk.rel,
-                chunk.sl,
-                chunk.el,
-                chunk.score,
-                chunk.cosine,
-                chunk.fts
-            )
-        } else if header.mode == RetrieveMode::FtsOnly {
-            format!(
-                "## {}. {} (行 {}–{})  fts={:.4}\n",
-                rank + 1,
-                chunk.rel,
-                chunk.sl,
-                chunk.el,
-                chunk.score
-            )
-        } else {
-            format!(
-                "## {}. {} (行 {}–{})  cos={:.4}\n",
-                rank + 1,
-                chunk.rel,
-                chunk.sl,
-                chunk.el,
-                chunk.cosine
-            )
-        };
+        let line_hdr = search_chunk_heading(header.mode, rank, chunk);
         let fence = "```\n";
         let footer = "```\n\n";
         let budget = header.max_out_chars.saturating_sub(used);
@@ -165,20 +185,7 @@ fn format_search_output(header: &SearchOutputHeader, scored: &[ScoredChunk]) -> 
         }
         let remain = budget - line_hdr.len() - fence.len() - footer.len();
         let body = chunk.text.as_str();
-        let snippet = if body.len() <= remain {
-            body
-        } else {
-            let take = remain.saturating_sub(20);
-            if take > 0 {
-                &body[..body
-                    .char_indices()
-                    .nth(take)
-                    .map(|(i, _)| i)
-                    .unwrap_or(body.len())]
-            } else {
-                ""
-            }
-        };
+        let snippet = search_snippet_for_budget(body, remain);
         out.push_str(&line_hdr);
         out.push_str(fence);
         out.push_str(snippet);
@@ -340,6 +347,41 @@ fn semantic_fastembed_scored_chunk(
 }
 
 #[cfg(feature = "fastembed")]
+fn map_semantic_scan_row(r: &Row<'_>) -> rusqlite::Result<SemanticChunkRow> {
+    Ok(SemanticChunkRow {
+        id: r.get(0)?,
+        rel: r.get(1)?,
+        sl: r.get(2)?,
+        el: r.get(3)?,
+        text: r.get(4)?,
+        blob: r.get(5)?,
+    })
+}
+
+#[cfg(feature = "fastembed")]
+struct SemanticScanOfferCtx<'a> {
+    heap: &'a mut BinaryHeap<Reverse<ScoredChunk>>,
+    scanned: &'a mut usize,
+    pool_k: usize,
+    qv: &'a [f32],
+    q: &'a SearchQueryParams,
+    fts_by_id: &'a HashMap<i64, f32>,
+}
+
+#[cfg(feature = "fastembed")]
+fn offer_one_semantic_scan_row(
+    ctx: &mut SemanticScanOfferCtx<'_>,
+    row: rusqlite::Result<SemanticChunkRow>,
+) {
+    let Ok(chunk) = row else {
+        return;
+    };
+    *ctx.scanned = ctx.scanned.saturating_add(1);
+    let item = semantic_fastembed_scored_chunk(ctx.qv, chunk, ctx.q, ctx.fts_by_id);
+    semantic_heap_offer_top_k(ctx.heap, ctx.pool_k, item);
+}
+
+#[cfg(feature = "fastembed")]
 fn semantic_fastembed_scan_into_heap(
     conn: &Connection,
     ws_key: &str,
@@ -354,43 +396,26 @@ fn semantic_fastembed_scan_into_heap(
         ))
         .map_err(|e| format!("读取索引失败: {}", e))?;
     let rows = stmt
-        .query_map(params![ws_key], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, i64>(2)?,
-                r.get::<_, i64>(3)?,
-                r.get::<_, String>(4)?,
-                r.get::<_, Vec<u8>>(5)?,
-            ))
-        })
+        .query_map(params![ws_key], map_semantic_scan_row)
         .map_err(|e| format!("遍历索引失败: {}", e))?;
     let mut heap: BinaryHeap<Reverse<ScoredChunk>> = BinaryHeap::new();
     let mut scanned = 0usize;
     let limit_active = q.query_max_chunks > 0;
-    for row in rows {
-        if limit_active && scanned >= q.query_max_chunks {
-            break;
-        }
-        let (id, rel, sl, el, text, blob) = match row {
-            Ok(x) => x,
-            Err(_) => continue,
-        };
-        scanned = scanned.saturating_add(1);
-        let item = semantic_fastembed_scored_chunk(
+    {
+        let mut ctx = SemanticScanOfferCtx {
+            heap: &mut heap,
+            scanned: &mut scanned,
+            pool_k,
             qv,
-            SemanticChunkRow {
-                id,
-                rel,
-                sl,
-                el,
-                text,
-                blob,
-            },
             q,
             fts_by_id,
-        );
-        semantic_heap_offer_top_k(&mut heap, pool_k, item);
+        };
+        for row in rows {
+            if limit_active && *ctx.scanned >= q.query_max_chunks {
+                break;
+            }
+            offer_one_semantic_scan_row(&mut ctx, row);
+        }
     }
     Ok((scanned, heap))
 }
@@ -437,6 +462,54 @@ fn search_index_semantic_fastembed(
     format_search_output(&hdr, &scored)
 }
 
+fn retrieve_mode_for_build(requested: RetrieveMode) -> RetrieveMode {
+    #[cfg(not(feature = "fastembed"))]
+    {
+        if matches!(requested, RetrieveMode::Hybrid) {
+            RetrieveMode::FtsOnly
+        } else {
+            requested
+        }
+    }
+    #[cfg(feature = "fastembed")]
+    {
+        requested
+    }
+}
+
+fn load_fts_norm_scores(
+    conn: &Connection,
+    ws_key: &str,
+    query: &str,
+    mode: RetrieveMode,
+    fts_top_n: usize,
+) -> (HashMap<i64, f32>, usize) {
+    if mode == RetrieveMode::SemanticOnly {
+        return (HashMap::new(), 0);
+    }
+    let Some(fts_q) = fts5_match_expression(query) else {
+        return (HashMap::new(), 0);
+    };
+    let sql = format!(
+        "SELECT c.id, bm25({TABLE_FTS}) AS rank \
+         FROM {TABLE_FTS} f \
+         JOIN {TABLE} c ON c.id = f.rowid \
+         WHERE c.workspace_root = ?1 AND f.chunk_text MATCH ?2 \
+         ORDER BY rank ASC LIMIT ?3"
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return (HashMap::new(), 0);
+    };
+    let Ok(it) = stmt.query_map(params![ws_key, fts_q, fts_top_n as i64], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
+    }) else {
+        return (HashMap::new(), 0);
+    };
+    let raw: Vec<(i64, f64)> = it.flatten().collect();
+    let n = raw.len();
+    (norm_scores_bm25(&raw), n)
+}
+
 pub(super) fn search_index(
     ws_key: &str,
     index_path: &Path,
@@ -453,49 +526,10 @@ pub(super) fn search_index(
         return "错误：retrieve_mode=semantic_only 需要本地向量嵌入；当前二进制未启用 `fastembed` Cargo feature。请改用 fts_only，或使用带 fastembed 的构建。".to_string();
     }
 
-    let mode = {
-        #[cfg(not(feature = "fastembed"))]
-        {
-            if matches!(q.mode, RetrieveMode::Hybrid) {
-                RetrieveMode::FtsOnly
-            } else {
-                q.mode
-            }
-        }
-        #[cfg(feature = "fastembed")]
-        {
-            q.mode
-        }
-    };
+    let mode = retrieve_mode_for_build(q.mode);
+    let (fts_by_id, fts_rows_fetched) =
+        load_fts_norm_scores(&conn, ws_key, query, mode, q.fts_top_n);
 
-    // ── FTS 候选（BM25）────────────────────────────────────────
-    let mut fts_by_id: HashMap<i64, f32> = HashMap::new();
-    let mut fts_rows_fetched = 0usize;
-    if mode != RetrieveMode::SemanticOnly
-        && let Some(fts_q) = fts5_match_expression(query)
-    {
-        let sql = format!(
-            "SELECT c.id, bm25({TABLE_FTS}) AS rank \
-             FROM {TABLE_FTS} f \
-             JOIN {TABLE} c ON c.id = f.rowid \
-             WHERE c.workspace_root = ?1 AND f.chunk_text MATCH ?2 \
-             ORDER BY rank ASC LIMIT ?3"
-        );
-        if let Ok(mut stmt) = conn.prepare(&sql)
-            && let Ok(it) = stmt.query_map(params![ws_key, fts_q, q.fts_top_n as i64], |r| {
-                Ok((r.get::<_, i64>(0)?, r.get::<_, f64>(1)?))
-            })
-        {
-            let mut raw: Vec<(i64, f64)> = Vec::new();
-            for row in it.flatten() {
-                raw.push(row);
-            }
-            fts_rows_fetched = raw.len();
-            fts_by_id = norm_scores_bm25(&raw);
-        }
-    }
-
-    // ── fts_only：仅按 FTS 命中的块 id 拉取，不跑向量 ────────────
     if mode == RetrieveMode::FtsOnly {
         return search_index_fts_only_branch(&conn, ws_key, &fts_by_id, &q, fts_rows_fetched);
     }
