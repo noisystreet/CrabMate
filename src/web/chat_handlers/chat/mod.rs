@@ -4,6 +4,7 @@ mod async_chat;
 mod builtin_skills;
 mod enqueue;
 pub(super) mod stream;
+mod stream_cancel;
 mod turn_build;
 
 #[cfg(test)]
@@ -12,6 +13,7 @@ mod http_sse_failure_path_golden;
 pub(crate) use async_chat::{chat_async_handler, chat_job_status_handler};
 pub(crate) use enqueue::prepare_json_chat_enqueue;
 pub(crate) use stream::chat_stream_handler;
+pub(crate) use stream_cancel::chat_stream_cancel_handler;
 
 use std::net::SocketAddr;
 

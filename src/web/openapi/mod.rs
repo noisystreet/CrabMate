@@ -3,6 +3,7 @@
 mod openapi_components;
 mod openapi_components_user_data;
 mod openapi_paths;
+mod openapi_paths_chat_stream;
 mod openapi_paths_tool_jobs;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
@@ -81,6 +82,7 @@ mod tests {
         assert!(paths.contains_key("/health"));
         assert!(paths.contains_key("/web-ui"));
         assert!(paths.contains_key("/chat/stream"));
+        assert!(paths.contains_key("/chat/stream/{job_id}/cancel"));
         assert!(paths.contains_key("/chat/async"));
         assert!(paths.contains_key("/chat/jobs/{job_id}"));
         assert!(paths.contains_key("/tools/jobs/{tool_job_id}"));

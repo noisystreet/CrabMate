@@ -1,7 +1,7 @@
 //! Web `/chat` / `/chat/stream` 的**进程内任务队列**：有界排队 + 并发上限，避免高并发时无界 `tokio::spawn`。
 //!
 //! - **多副本 / 跨进程重放**：需外部消息代理（Redis、SQS 等）与持久化；本模块仅单进程协调。
-//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。流取消时 **`Receiver` drop** 打 **info**；取消且 SSE 仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE协议.md`**）。
+//! - **可观测**：`job_id` 写入日志；`/status` 暴露运行中任务数与近期任务摘要。用户停止须 **`POST /chat/stream/{job_id}/cancel`**（仅 abort SSE **不会**取消，以便 `stream_resume`）；取消且 SSE 仍可投递时补发 **`STREAM_CANCELLED`**（见 **`docs/SSE协议.md`**）。
 
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -270,6 +270,7 @@ pub(super) enum QueuedChatJob {
         envelope: WebChatJobEnvelope,
         stream_event_tx: mpsc::Sender<(u64, String)>,
         web_approval_session: Option<WebApprovalSession>,
+        cancel: Arc<AtomicBool>,
     },
     Json {
         envelope: WebChatJobEnvelope,
@@ -301,6 +302,9 @@ struct Inner {
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
     /// 正在执行的队列任务的 PER 飞行快照（任务结束即移除）。
     active_per_flights: Arc<Mutex<HashMap<u64, Arc<PerTurnFlight>>>>,
+    /// `/chat/stream` 协作取消：入队时登记，任务结束移除。Client「停止」走
+    /// `POST /chat/stream/{job_id}/cancel` 置位；**不断** SSE 不断开即取消（否则无法 `stream_resume`）。
+    stream_cancels: Arc<Mutex<HashMap<u64, Arc<AtomicBool>>>>,
     shutdown_triggered: Arc<AtomicBool>,
 }
 
@@ -332,6 +336,7 @@ impl ChatJobQueue {
                 metrics,
                 recent,
                 active_per_flights: Arc::new(Mutex::new(HashMap::new())),
+                stream_cancels: Arc::new(Mutex::new(HashMap::new())),
                 shutdown_triggered: Arc::new(AtomicBool::new(false)),
             }),
         }
@@ -429,6 +434,34 @@ impl ChatJobQueue {
         Ok(())
     }
 
+    /// 为即将入队的流式 `job_id` 登记协作取消标志（与 worker 共用同一 `Arc`）。
+    pub(crate) fn register_stream_cancel(&self, job_id: u64) -> Arc<AtomicBool> {
+        let flag = Arc::new(AtomicBool::new(false));
+        if let Ok(mut g) = self.inner.stream_cancels.lock() {
+            g.insert(job_id, Arc::clone(&flag));
+        }
+        flag
+    }
+
+    /// Client 显式停止：置位流式回合取消标志。任务未登记（已结束或不存在）返回 `false`。
+    #[must_use]
+    pub fn request_stream_cancel(&self, job_id: u64) -> bool {
+        let Ok(g) = self.inner.stream_cancels.lock() else {
+            return false;
+        };
+        let Some(flag) = g.get(&job_id) else {
+            return false;
+        };
+        flag.store(true, Ordering::SeqCst);
+        true
+    }
+
+    pub(crate) fn unregister_stream_cancel(&self, job_id: u64) {
+        if let Ok(mut g) = self.inner.stream_cancels.lock() {
+            g.remove(&job_id);
+        }
+    }
+
     pub fn try_submit_stream(&self, p: StreamSubmitParams) -> Result<(), ChatQueueFull> {
         self.reject_if_shutdown()?;
         let StreamSubmitParams {
@@ -436,17 +469,20 @@ impl ChatJobQueue {
             stream_event_tx,
             web_approval_session,
         } = p;
+        let job_id = envelope.job_id;
+        let cancel = self.register_stream_cancel(job_id);
         let job = QueuedChatJob::Stream {
             envelope,
             stream_event_tx,
             web_approval_session,
+            cancel,
         };
-        self.inner
-            .submit_tx
-            .try_send(job)
-            .map_err(|_| ChatQueueFull {
+        self.inner.submit_tx.try_send(job).map_err(|_| {
+            self.unregister_stream_cancel(job_id);
+            ChatQueueFull {
                 max_pending: self.inner.max_pending,
-            })
+            }
+        })
     }
 
     pub fn try_submit_json(&self, p: JsonSubmitParams) -> Result<(), ChatQueueFull> {
@@ -507,9 +543,16 @@ async fn finish_dispatched_job(
     recent: Arc<Mutex<VecDeque<ChatJobRecord>>>,
 ) {
     let job_id = job.job_id();
+    let stream_queue = match &job {
+        QueuedChatJob::Stream { envelope, .. } => Some(envelope.queue_deps.chat_queue.clone()),
+        QueuedChatJob::Json { .. } => None,
+    };
     let _permit = permit;
     let start = Instant::now();
     let outcome = worker::run_queued_job(job).await;
+    if let Some(q) = stream_queue {
+        q.unregister_stream_cancel(job_id);
+    }
     let ms = start.elapsed().as_millis() as u64;
     metrics.running.fetch_sub(1, Ordering::SeqCst);
 

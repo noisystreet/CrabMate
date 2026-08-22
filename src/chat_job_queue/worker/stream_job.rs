@@ -9,12 +9,15 @@ use super::super::stream_finish::{
 use super::super::{WebApprovalSession, WebChatJobEnvelope};
 use super::JobOutcome;
 use super::stream_job_setup::{StreamJobSetupParams, stream_job_setup_runtime};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 /// `run_stream_queued_job` 入参（[`WebChatJobEnvelope`] + SSE / 审批）。
 pub(super) struct StreamQueuedJobParams {
     pub(super) envelope: WebChatJobEnvelope,
     pub(super) stream_event_tx: tokio::sync::mpsc::Sender<(u64, String)>,
     pub(super) web_approval_session: Option<WebApprovalSession>,
+    pub(super) cancel: Arc<AtomicBool>,
 }
 
 pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcome {
@@ -38,6 +41,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         stream_event_tx: p.stream_event_tx,
         web_approval_session: p.web_approval_session,
         queue_deps: queue_deps.as_ref(),
+        cancel: p.cancel,
     })
     .await;
 

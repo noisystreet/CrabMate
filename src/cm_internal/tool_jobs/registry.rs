@@ -212,6 +212,30 @@ impl ToolJobRegistry {
         }
     }
 
+    /// 取消本回合 `source_turn_job_id` 下尚未终态的后台工具任务（用户停止 SSE 回合时）。
+    pub fn cancel_non_terminal_for_source_turn(&self, turn_job_id: u64) -> usize {
+        let ids: Vec<String> = {
+            let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            g.jobs
+                .iter()
+                .filter(|(_, r)| {
+                    r.source_turn_job_id == Some(turn_job_id) && !r.status.is_terminal()
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let mut n = 0;
+        for id in ids {
+            if matches!(
+                self.cancel(&id),
+                CancelOutcome::Cancelled | CancelOutcome::AlreadyFinished(JobStatus::Cancelled)
+            ) {
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// 取任务的取消信号句柄（worker 启动时传入；记录不存在则 `None`）。
     #[must_use]
     pub fn cancel_flag(&self, id: &str) -> Option<Arc<AtomicBool>> {
@@ -403,6 +427,30 @@ mod tests {
         assert_eq!(rec.status, JobStatus::Queued);
         assert_eq!(rec.workspace, PathBuf::from("/ws"));
         assert_eq!(rec.source_turn_job_id, Some(7));
+    }
+
+    #[test]
+    fn cancel_non_terminal_for_source_turn_skips_other_turns() {
+        let reg = ToolJobRegistry::new(limits());
+        let id_keep = reg
+            .register(
+                PathBuf::from("/ws"),
+                Some(1),
+                spawn_default(),
+                r#"{"command":"true"}"#.to_string(),
+            )
+            .expect("keep");
+        let id_stop = reg
+            .register(
+                PathBuf::from("/ws"),
+                Some(2),
+                spawn_default(),
+                r#"{"command":"true"}"#.to_string(),
+            )
+            .expect("stop");
+        assert_eq!(reg.cancel_non_terminal_for_source_turn(2), 1);
+        assert_eq!(reg.get(&id_stop).expect("stop").status, JobStatus::Cancelled);
+        assert_eq!(reg.get(&id_keep).expect("keep").status, JobStatus::Queued);
     }
 
     #[test]

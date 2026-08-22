@@ -16,7 +16,7 @@ This document describes **control-plane JSON** sent by the CrabMate server on SS
 ## Transport and framing
 
 - **Route**: **`POST /chat/stream`**; response **`text/event-stream`**. (Ops **`POST /config/reload`** is JSON, not SSE—see **CONFIGURATION.md** § hot reload.)
-- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**, replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
+- **Event `id:`**: Each logical block has monotonic **`id:`** (`u64`, in-process hub). Reconnect with header **`Last-Event-ID`** and JSON **`stream_resume`**: `{ "job_id": <u64>, "after_seq": <u64> }` (omit `after_seq` → 0). Server uses **`max(Last-Event-ID, after_seq)`**, replays from the ring buffer, then subscribes to live broadcast. **In-process only**: after the job ends or the process restarts, reconnect returns **HTTP 410** with **`STREAM_JOB_GONE`**. UI **Stop** must also **`POST /chat/stream/{job_id}/cancel`** (`job_id` = **`x-stream-job-id`**); **aborting the SSE connection alone does not stop** the model or tools (otherwise `stream_resume` could not work). New streams also expose **`x-stream-job-id`** (same as first-frame `sse_capabilities.caps.job_id`).
 - **Event blocks**: Separated by **blank line `\n\n`**; each block may contain multiple **`data: `** lines. The frontend **joins** same-block `data:` lines with `\n` and preserves leading spaces/newlines for dispatch (only `[DONE]` sentinel checks use `trim`), so whitespace-only deltas are not dropped (see `sendChatStream` and `join_sse_data_lines`).
 - **Text delta**: If the joined string is **not** valid control JSON, or parses as **`plain`**, it is treated as assistant content for `onDelta`.
 - **Stream end**: Literal **`[DONE]`** may appear (OpenAI-style); frontend ignores it as content. See also **`stream_ended`**.
@@ -117,7 +117,7 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `LLM_REQUEST_FAILED` | `chat_job_queue` (mapped from `agent_turn`) | Model HTTP/transport failure (**`error`** is the redacted gateway message; prefer **`LLM_RATE_LIMIT`** for **429** / quota heuristics) |
 | `LLM_RATE_LIMIT` | `chat_job_queue` (mapped from `agent_turn`) | Rate limit / quota class (**HTTP 429** or heuristic aligned with `agent_errors::is_quota_or_rate_limit_llm_message`) |
 | `turn_aborted` | `chat_job_queue` (mapped from `agent_turn`) | Orchestration early stop (e.g. SSE receiver closed while the turn continues); **`error`** is user-facing |
-| `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open |
+| `STREAM_CANCELLED` | `chat_job_queue` | Cancelled stream, delivered when channel still open (`POST /chat/stream/{job_id}/cancel` or internal cooperative cancel) |
 | `plan_rewrite_exhausted` | `agent_turn/outer_loop` | Final plan rewrite budget exhausted |
 | `SSE_ENCODE` | `sse/protocol` | `encode_message` serialization fallback |
 

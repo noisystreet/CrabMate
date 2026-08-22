@@ -13,7 +13,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **`GET /workspace/file/download`**: raw bytes of any workspace file (`path` query, **16 MiB**, `application/octet-stream`). Client **Save to this device** (PDF/binary). `GET /workspace/file/raw` stays image-only.
 - **`GET /workspace/dir/archive`**: zip a workspace directory (`path` query or workspace root; **16 MiB** uncompressed, **256** files; no symlink follow).
-- **`POST /workspace/file/move`**: rename/move a regular file (`from`/`to`, optional `overwrite` / `conversation_id`); **204**; records session changelist like `move_file`.
+- **`POST /chat/stream/{job_id}/cancel`**: cooperative cancel for an in-flight SSE turn (`job_id` = `x-stream-job-id`). Also cancels that turn’s background `run_command` jobs. Aborting the SSE connection alone does **not** cancel (so `stream_resume` still works).
 
 ### Changed
 
@@ -21,7 +21,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- (none yet)
+- Clicking Stop in the Client previously only aborted the browser fetch; the agent turn and tools kept running. Clients must call the new cancel route.
 
 ## [0.5.0] - 2026-08-22
 
