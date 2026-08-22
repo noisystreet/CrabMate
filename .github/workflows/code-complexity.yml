@@ -1,4 +1,4 @@
-# 圈复杂度（lizard：各模块 CCN>10 函数个数 + 全仓超阈 CCN 之和）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_turn_completion`、`golden_acceptance_regression`、`golden_turn_route_decision`、`golden_outer_loop_phase`、`golden_final_plan_gate`、`golden_workflow_to_plan_requirement`、`golden_workflow_reflection_regression`）。
+# 圈复杂度（lizard：src/ 每个函数 CCN ≤ 10）、函数形参上限（fn-param：≤ 9）、函数 nloc + 源文件行数上限（fn-nloc：nloc ≤ 200、单文件 ≤ 920），与 scripts/*.sh / pre-commit 对齐；另含 fixtures 金样测试（`golden_turn_completion`、`golden_acceptance_regression`、`golden_turn_route_decision`、`golden_outer_loop_phase`、`golden_final_plan_gate`、`golden_workflow_to_plan_requirement`、`golden_workflow_reflection_regression`）。
 name: code-complexity
 
 on:
@@ -21,7 +21,7 @@ jobs:
       - name: Install lizard
         run: pip install lizard
 
-      - name: Run lizard (Rust CCN>10 count + sum caps in lizard_module_ccn_caps.toml)
+      - name: Run lizard (Rust CCN ≤ 10)
         run: bash scripts/lizard-rust.sh
 
       - name: Run fn-param cap (Rust max function params ≤ 9)

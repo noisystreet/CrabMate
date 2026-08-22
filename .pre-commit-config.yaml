@@ -31,7 +31,7 @@ repos:
         always_run: true
         stages: [pre-commit]
       - id: lizard-rust
-        name: lizard complexity (Rust CCN>10 count + sum)
+        name: lizard complexity (Rust CCN ≤ 10)
         entry: bash scripts/lizard-rust.sh
         language: system
         pass_filenames: false
