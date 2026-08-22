@@ -64,6 +64,12 @@ impl OutlinePatterns {
     }
 
     fn match_line(&self, line: &str, include_use: bool) -> Option<String> {
+        self.match_named_item(line)
+            .or_else(|| self.try_impl(line))
+            .or_else(|| self.try_use(line, include_use))
+    }
+
+    fn match_named_item(&self, line: &str) -> Option<String> {
         self.try_mod(line)
             .or_else(|| self.try_fn(line))
             .or_else(|| self.try_struct(line))
@@ -73,8 +79,6 @@ impl OutlinePatterns {
             .or_else(|| self.try_const(line))
             .or_else(|| self.try_static(line))
             .or_else(|| self.try_macro(line))
-            .or_else(|| self.try_impl(line))
-            .or_else(|| self.try_use(line, include_use))
     }
 
     fn try_mod(&self, line: &str) -> Option<String> {

@@ -304,6 +304,50 @@ pub fn extract_ref_definitions(content: &str) -> HashMap<String, String> {
     m
 }
 
+fn push_stripped_url_hits(
+    hits: &mut Vec<LinkHit>,
+    line_no: usize,
+    line: &str,
+    re: &Regex,
+    group: usize,
+) {
+    for c in re.captures_iter(line) {
+        let raw = c.get(group).map(|x| x.as_str()).unwrap_or("");
+        let u = strip_link_wrappers(raw);
+        if !u.is_empty() {
+            hits.push(LinkHit {
+                line: line_no,
+                raw: u,
+            });
+        }
+    }
+}
+
+fn push_ref_link_hits(
+    hits: &mut Vec<LinkHit>,
+    line_no: usize,
+    line: &str,
+    ref_map: &HashMap<String, String>,
+) {
+    for c in RE_REF_LINK.captures_iter(line) {
+        let text = c.get(1).map(|x| x.as_str()).unwrap_or("");
+        let id_part = c.get(2).map(|x| x.as_str()).unwrap_or("");
+        let key = if id_part.is_empty() {
+            ref_key(text)
+        } else {
+            ref_key(id_part)
+        };
+        if let Some(url) = ref_map.get(&key)
+            && !url.is_empty()
+        {
+            hits.push(LinkHit {
+                line: line_no,
+                raw: url.clone(),
+            });
+        }
+    }
+}
+
 pub fn extract_link_hits(content: &str, ref_map: &HashMap<String, String>) -> Vec<LinkHit> {
     let mut hits = Vec::new();
     for (line_no, line) in content.lines().enumerate() {
@@ -311,43 +355,9 @@ pub fn extract_link_hits(content: &str, ref_map: &HashMap<String, String>) -> Ve
         if line.len() > 64 * 1024 {
             continue;
         }
-        for c in RE_INLINE.captures_iter(line) {
-            let raw = c.get(2).map(|x| x.as_str()).unwrap_or("");
-            let u = strip_link_wrappers(raw);
-            if !u.is_empty() {
-                hits.push(LinkHit {
-                    line: line_no,
-                    raw: u,
-                });
-            }
-        }
-        for c in RE_AUTOLINK.captures_iter(line) {
-            let raw = c.get(1).map(|x| x.as_str()).unwrap_or("");
-            let u = strip_link_wrappers(raw);
-            if !u.is_empty() {
-                hits.push(LinkHit {
-                    line: line_no,
-                    raw: u,
-                });
-            }
-        }
-        for c in RE_REF_LINK.captures_iter(line) {
-            let text = c.get(1).map(|x| x.as_str()).unwrap_or("");
-            let id_part = c.get(2).map(|x| x.as_str()).unwrap_or("");
-            let key = if id_part.is_empty() {
-                ref_key(text)
-            } else {
-                ref_key(id_part)
-            };
-            if let Some(url) = ref_map.get(&key)
-                && !url.is_empty()
-            {
-                hits.push(LinkHit {
-                    line: line_no,
-                    raw: url.clone(),
-                });
-            }
-        }
+        push_stripped_url_hits(&mut hits, line_no, line, &RE_INLINE, 2);
+        push_stripped_url_hits(&mut hits, line_no, line, &RE_AUTOLINK, 1);
+        push_ref_link_hits(&mut hits, line_no, line, ref_map);
     }
     hits
 }
