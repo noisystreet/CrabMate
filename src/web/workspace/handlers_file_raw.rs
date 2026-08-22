@@ -27,6 +27,31 @@ pub(crate) fn raw_err(
     (status, Json(ApiError::new(code, message)))
 }
 
+/// 相对路径读取：越界 403；`canonicalize` 失败（不存在）404；其余 400。
+pub(crate) fn map_workspace_rel_read_err(
+    e: crate::workspace::path::WorkspacePathError,
+    missing_code: &'static str,
+) -> RawErr {
+    if e.is_policy_denied() {
+        return raw_err(
+            StatusCode::FORBIDDEN,
+            "WORKSPACE_PATH_DENIED",
+            e.user_message(),
+        );
+    }
+    match e {
+        crate::workspace::path::WorkspacePathError::PathResolveFailed(_)
+        | crate::workspace::path::WorkspacePathError::WorkspacePathInvalid(_) => {
+            raw_err(StatusCode::NOT_FOUND, missing_code, e.user_message())
+        }
+        other => raw_err(
+            StatusCode::BAD_REQUEST,
+            "WORKSPACE_PATH_DENIED",
+            other.user_message(),
+        ),
+    }
+}
+
 /// 工作区相对路径中允许作为聊天内嵌图的扩展名（不含 svg，避免内联脚本）。
 pub(crate) fn workspace_chat_image_content_type(path: &str) -> Option<&'static str> {
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);

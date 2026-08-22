@@ -106,6 +106,20 @@ pub struct WorkspaceProfileResponse {
     pub error: Option<String>,
 }
 
+/// `POST /workspace/file/move`：工作区内移动/重命名**文件**（非目录）。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceFileMoveBody {
+    pub from: String,
+    pub to: String,
+    /// 目标已存在为文件时须为 true 才覆盖（默认 false）。
+    #[serde(default)]
+    pub overwrite: bool,
+    /// 可选；与 `GET /workspace/changelog` 相同作用域，供写入会话变更集。
+    #[serde(default)]
+    pub conversation_id: Option<String>,
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceFileQuery {
@@ -181,6 +195,14 @@ pub struct WorkspaceDirCreateBody {
 pub struct WorkspaceDirCreateResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+/// `GET /workspace/dir/archive`：打包目录为 zip。空/`None` 表示工作区根。
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkspaceDirArchiveQuery {
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Deserialize)]
