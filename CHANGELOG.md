@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- (none yet)
+- **`lizard-rust`**: fail if any `src/` function has CCN > 10; drop per-module count/sum ratchets and `scripts/lizard_module_ccn_caps.toml`.
 
 ### Fixed
 

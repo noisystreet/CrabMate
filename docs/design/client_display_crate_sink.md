@@ -131,7 +131,7 @@ W6 sse-protocol feature — **并入**单包计划 S1（crates_io_single_package
 | ID | 仓 | 动作 | 验收 |
 |----|----|------|------|
 | W2b.1 | Server | `crabmate-runtime` `message_display` / `message_snapshot_display` 不再 `use crabmate_tool_card`；工具 Markdown 用截断原文或现有 `tool_result` 纯文本 | `cargo test -p crabmate-runtime`；`save-session` 仍写出 json/md |
-| W2b.2 | Server | 根 `Cargo.toml` members / `workspace.dependencies` 删除；`scripts/check-client-contract.sh` 钉清单去掉 `crabmate-tool-card`；`lizard_module_ccn_caps.toml` 同步 | `bash scripts/check-client-contract.sh` |
+| W2b.2 | Server | 根 `Cargo.toml` members / `workspace.dependencies` 删除；`scripts/check-client-contract.sh` 钉清单去掉 `crabmate-tool-card` | `bash scripts/check-client-contract.sh` |
 | W2b.3 | Server | `docs/命令行与路由.md`：说明 `save-session` md 工具段不再保证与 Web 工具卡逐字一致 | 文档与行为一致 |
 
 **产品默认**：运维 CLI 不对齐 Web 像素；需要漂亮工具卡走 Client 导出。
@@ -139,7 +139,7 @@ W6 sse-protocol feature — **并入**单包计划 S1（crates_io_single_package
 ### W2b 落地（2026-08-16）
 
 - **W2b.1**：`tool_content_for_display_for_message` 只用信封摘要 / `summarize_tool_call`；`GET /conversation/messages` 的 `role=tool` **不再**填 `display_*`（Client 水合回退本地 `crabmate-tool-card`）。
-- **W2b.2**：本仓删除 `crates/crabmate-tool-card` member；钉清单与 lizard cap 已同步。
+- **W2b.2**：本仓删除 `crates/crabmate-tool-card` member；钉清单已同步。圈复杂度门禁现为全仓 **CCN ≤ 10**（`scripts/lizard-rust.sh`），不再使用按模块 caps TOML。
 - **W2b.3**：`docs/命令行与路由.md` / `docs/en/CLI.md` 已说明 md/`display` 工具段不与 Web 工具卡逐字对齐。
 
 ---
