@@ -47,7 +47,7 @@ Prefer response header **`x-request-id`** for correlation. Common stable codes (
 | `LLM_API_KEY_REQUIRED` | 400 | No | Missing model API key |
 | `WORKSPACE_NOT_SET` | 400 | No | Workspace unset |
 | `SSE_PROTOCOL_MISMATCH` / `SSE_CLIENT_TOO_NEW` / `INVALID_SSE_CLIENT_PROTOCOL` | 400 | No | SSE handshake |
-| `STREAM_JOB_GONE` | 410 | No | Stream job finished |
+| `STREAM_JOB_GONE` | 410 | No | Stream job finished (`stream_resume` and `POST /chat/stream/{job_id}/cancel`) |
 | `UNKNOWN_JOB` | 404 | No | Unknown async `job_id` |
 | `CONVERSATION_NOT_FOUND` / `INVALID_CONVERSATION_ID` | 404 / 400 | No | Conversation |
 | `CONVERSATION_CONFLICT` / `CONVERSATION_REVISION_UNKNOWN` | 409 / 400 | No | Optimistic lock |

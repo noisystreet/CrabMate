@@ -8,7 +8,7 @@ pub(super) fn openapi_paths_fragment_chat_stream_cancel() -> Value {
             "post": {
                 "tags": ["chat"],
                 "summary": "取消进行中的 SSE 流式回合",
-                "description": "置位与 `x-stream-job-id` 相同的协作取消标志，并取消该回合发起的后台 `run_command` 任务。仅断开 SSE **不会**取消（以便 `stream_resume`）。任务已结束则 404 `STREAM_JOB_GONE`。",
+                "description": "置位与 `x-stream-job-id` 相同的协作取消标志，并取消该回合发起的后台 `run_command` 任务。仅断开 SSE **不会**取消（以便 `stream_resume`）。任务已结束或不存在则 410 `STREAM_JOB_GONE`（与 `stream_resume` 同码）。",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "parameters": [
                     {
@@ -35,7 +35,7 @@ pub(super) fn openapi_paths_fragment_chat_stream_cancel() -> Value {
                             }
                         }
                     },
-                    "404": { "description": "任务已结束或不存在（STREAM_JOB_GONE）" }
+                    "410": { "description": "任务已结束或不存在（STREAM_JOB_GONE）" }
                 }
             }
         }

@@ -147,7 +147,7 @@ Approximate category of the **last** failed final answer when the rewrite budget
 
 | `code` | HTTP | Notes |
 |--------|------|------|
-| `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub |
+| `STREAM_JOB_GONE` | 410 | **`stream_resume`** job not in hub; also **`POST /chat/stream/{job_id}/cancel`** when the job is unregistered |
 | `SSE_CLIENT_TOO_NEW` | 400 | **`client_sse_protocol`** greater than server **`SSE_PROTOCOL_VERSION`** |
 | `INVALID_SSE_CLIENT_PROTOCOL` | 400 | **`client_sse_protocol == 0`** |
 | `SSE_PROTOCOL_MISMATCH` | 400 | **`client_sse_protocol`** positive and **below** server version |
