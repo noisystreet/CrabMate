@@ -183,6 +183,23 @@ fn copy_file_no_overwrite(from: &Path, to: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn copy_dir_entry_no_overwrite(dst: &Path, entry: fs::DirEntry) -> Result<(), String> {
+    let file_type = entry
+        .file_type()
+        .map_err(|e| format!("无法识别 \"{}\": {e}", entry.path().display()))?;
+    let from = entry.path();
+    let to = dst.join(entry.file_name());
+    if file_type.is_dir() {
+        copy_dir_contents_no_overwrite(&from, &to)?;
+    } else if file_type.is_file() {
+        copy_file_no_overwrite(&from, &to)?;
+    } else if file_type.is_symlink() && from.is_file() {
+        // 跟随为普通文件时再拷；目录 symlink 跳过，避免越出模板树。
+        copy_file_no_overwrite(&from, &to)?;
+    }
+    Ok(())
+}
+
 fn copy_dir_contents_no_overwrite(src: &Path, dst: &Path) -> Result<(), String> {
     fs::create_dir_all(dst).map_err(|e| format!("无法创建 \"{}\": {e}", dst.display()))?;
     let entries = fs::read_dir(src)
@@ -190,22 +207,7 @@ fn copy_dir_contents_no_overwrite(src: &Path, dst: &Path) -> Result<(), String> 
     for entry in entries {
         let entry =
             entry.map_err(|e| format!("无法读取系统配置目录 \"{}\": {e}", src.display()))?;
-        let file_type = entry
-            .file_type()
-            .map_err(|e| format!("无法识别 \"{}\": {e}", entry.path().display()))?;
-        let name = entry.file_name();
-        let from = entry.path();
-        let to = dst.join(&name);
-        if file_type.is_dir() {
-            copy_dir_contents_no_overwrite(&from, &to)?;
-        } else if file_type.is_file() {
-            copy_file_no_overwrite(&from, &to)?;
-        } else if file_type.is_symlink() {
-            // 跟随为普通文件时再拷；目录 symlink 跳过，避免越出模板树。
-            if from.is_file() {
-                copy_file_no_overwrite(&from, &to)?;
-            }
-        }
+        copy_dir_entry_no_overwrite(dst, entry)?;
     }
     Ok(())
 }

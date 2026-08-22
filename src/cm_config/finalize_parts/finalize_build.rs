@@ -376,6 +376,22 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
     }
 }
 
+fn parse_env_u64(key: &str) -> Option<u64> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn parse_env_usize(key: &str) -> Option<usize> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn parse_env_u32(key: &str) -> Option<u32> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
+fn parse_env_u8(key: &str) -> Option<u8> {
+    std::env::var(key).ok()?.trim().parse().ok()
+}
+
 fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     let mut cfg = types::TurnBudgetConfig {
         max_turn_duration_seconds: 600,
@@ -385,19 +401,13 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
         budget_degradation_enabled: false,
         budget_degradation_threshold_percent: 80,
     };
-    if let Ok(v) = std::env::var("CM_MAX_TURN_DURATION_SECONDS")
-        && let Ok(n) = v.trim().parse::<u64>()
-    {
+    if let Some(n) = parse_env_u64("CM_MAX_TURN_DURATION_SECONDS") {
         cfg.max_turn_duration_seconds = n;
     }
-    if let Ok(v) = std::env::var("CM_MAX_TURN_TOKENS")
-        && let Ok(n) = v.trim().parse::<usize>()
-    {
+    if let Some(n) = parse_env_usize("CM_MAX_TURN_TOKENS") {
         cfg.max_turn_tokens = n;
     }
-    if let Ok(v) = std::env::var("CM_MAX_LLM_CALLS_PER_TURN")
-        && let Ok(n) = v.trim().parse::<u32>()
-    {
+    if let Some(n) = parse_env_u32("CM_MAX_LLM_CALLS_PER_TURN") {
         cfg.max_llm_calls_per_turn = n;
     }
     if let Ok(v) = std::env::var("CM_TURN_BUDGET_DEGRADATION_ENABLED")
@@ -405,9 +415,7 @@ fn finalize_section_turn_budget() -> types::TurnBudgetConfig {
     {
         cfg.budget_degradation_enabled = b;
     }
-    if let Ok(v) = std::env::var("CM_TURN_BUDGET_DEGRADATION_THRESHOLD_PERCENT")
-        && let Ok(n) = v.trim().parse::<u8>()
-    {
+    if let Some(n) = parse_env_u8("CM_TURN_BUDGET_DEGRADATION_THRESHOLD_PERCENT") {
         cfg.budget_degradation_threshold_percent = n.clamp(50, 99);
     }
     cfg

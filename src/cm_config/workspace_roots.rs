@@ -57,29 +57,17 @@ pub(super) fn resolve_workspace_allowed_roots(
     Ok(out)
 }
 
-/// 解析 Web 项目池根目录；若路径不存在则创建（`mkdir -p`）。
-/// 配置了池根时**必须**同时配置非空 `workspace_allowed_roots`，且池根须落在白名单内、不得命中敏感前缀。
-pub(super) fn resolve_web_workspace_pool(
-    pool_opt: Option<String>,
-    allowed_roots: &[PathBuf],
-) -> Result<Option<PathBuf>, String> {
-    let Some(raw) = pool_opt.filter(|s| !s.trim().is_empty()) else {
-        return Ok(None);
-    };
-    let raw = raw.trim();
-    if allowed_roots.is_empty() {
-        return Err(
-            "配置 web_workspace_pool 时必须同时设置非空的 workspace_allowed_roots（或 CM_WORKSPACE_ALLOWED_ROOTS）"
-                .to_string(),
-        );
-    }
+fn join_pool_path(raw: &str) -> Result<PathBuf, String> {
     let cwd = std::env::current_dir().map_err(|e| format!("无法获取当前工作目录: {}", e))?;
     let p = Path::new(raw);
-    let joined = if p.is_absolute() {
+    Ok(if p.is_absolute() {
         p.to_path_buf()
     } else {
         cwd.join(p)
-    };
+    })
+}
+
+fn canonicalize_web_workspace_pool_dir(joined: PathBuf, raw: &str) -> Result<PathBuf, String> {
     if is_sensitive_workspace_path(&joined) {
         return Err(format!(
             "web_workspace_pool {} 命中敏感系统路径前缀，已拒绝",
@@ -102,6 +90,26 @@ pub(super) fn resolve_web_workspace_pool(
             canon.display()
         ));
     }
+    Ok(canon)
+}
+
+/// 解析 Web 项目池根目录；若路径不存在则创建（`mkdir -p`）。
+/// 配置了池根时**必须**同时配置非空 `workspace_allowed_roots`，且池根须落在白名单内、不得命中敏感前缀。
+pub(super) fn resolve_web_workspace_pool(
+    pool_opt: Option<String>,
+    allowed_roots: &[PathBuf],
+) -> Result<Option<PathBuf>, String> {
+    let Some(raw) = pool_opt.filter(|s| !s.trim().is_empty()) else {
+        return Ok(None);
+    };
+    let raw = raw.trim();
+    if allowed_roots.is_empty() {
+        return Err(
+            "配置 web_workspace_pool 时必须同时设置非空的 workspace_allowed_roots（或 CM_WORKSPACE_ALLOWED_ROOTS）"
+                .to_string(),
+        );
+    }
+    let canon = canonicalize_web_workspace_pool_dir(join_pool_path(raw)?, raw)?;
     if !is_within_allowed_roots(&canon, allowed_roots) {
         let roots_display = allowed_roots
             .iter()

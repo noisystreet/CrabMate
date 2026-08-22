@@ -168,11 +168,11 @@ struct PromptMergeForRoles {
     skills_top_k: usize,
 }
 
-fn merge_system_prompt_layers_for_finalize(
-    b: &mut ConfigBuilder,
+fn load_required_system_prompt_for_finalize(
+    b: &ConfigBuilder,
     system_prompt_search_bases: &[PathBuf],
     run_command_working_dir: &Path,
-) -> Result<PromptMergeForRoles, String> {
+) -> Result<String, String> {
     let system_prompt = if let Some(ref path) = b.roles_prompts.system_prompt_file {
         read_system_prompt_file_resolved(
             path,
@@ -189,7 +189,27 @@ fn merge_system_prompt_layers_for_finalize(
     if system_prompt.trim().is_empty() {
         return Err("配置错误：system_prompt 从文件或内联加载后为空".to_string());
     }
-    let universal_l0_system_prompt = system_prompt.clone();
+    Ok(system_prompt)
+}
+
+fn stack_l0_with_coding_workbench(l0: &str, increment: &str) -> String {
+    if increment.trim().is_empty() {
+        l0.to_string()
+    } else {
+        super::agent_roles::prepend_l0_base_to_role_body(l0, increment)
+    }
+}
+
+fn merge_system_prompt_layers_for_finalize(
+    b: &mut ConfigBuilder,
+    system_prompt_search_bases: &[PathBuf],
+    run_command_working_dir: &Path,
+) -> Result<PromptMergeForRoles, String> {
+    let universal_l0_system_prompt = load_required_system_prompt_for_finalize(
+        b,
+        system_prompt_search_bases,
+        run_command_working_dir,
+    )?;
     let coding_workbench_enabled = b.roles_prompts.coding_workbench_enabled.unwrap_or(true);
     let coding_workbench_increment_file = b
         .roles_prompts
@@ -202,14 +222,8 @@ fn merge_system_prompt_layers_for_finalize(
         system_prompt_search_bases,
         run_command_working_dir,
     )?;
-    let system_prompt = if coding_workbench_increment.trim().is_empty() {
-        universal_l0_system_prompt.clone()
-    } else {
-        super::agent_roles::prepend_l0_base_to_role_body(
-            &universal_l0_system_prompt,
-            &coding_workbench_increment,
-        )
-    };
+    let system_prompt =
+        stack_l0_with_coding_workbench(&universal_l0_system_prompt, &coding_workbench_increment);
     let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
     let cursor_rules_dir = b
         .cursor_rules

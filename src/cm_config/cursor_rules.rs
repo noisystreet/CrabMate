@@ -1,22 +1,16 @@
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-fn load_cursor_rule_documents(
-    cwd: &Path,
-    rules_dir: &str,
-    include_agents_md: bool,
-) -> Result<Vec<(String, String)>, String> {
+fn cursor_rules_dir_path(cwd: &Path, rules_dir: &str) -> Result<PathBuf, String> {
     let rules_dir = rules_dir.trim();
     if rules_dir.is_empty() {
         return Err("配置错误：cursor_rules_dir 不能为空".to_string());
     }
-    let dir_path = {
-        let p = Path::new(rules_dir);
-        if p.is_absolute() {
-            p.to_path_buf()
-        } else {
-            cwd.join(p)
-        }
+    let p = Path::new(rules_dir);
+    let dir_path = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        cwd.join(p)
     };
     if dir_path.exists() && !dir_path.is_dir() {
         return Err(format!(
@@ -24,16 +18,12 @@ fn load_cursor_rule_documents(
             dir_path.display()
         ));
     }
+    Ok(dir_path)
+}
 
-    let mut files: Vec<PathBuf> = Vec::new();
-    if include_agents_md {
-        let agents = cwd.join("AGENTS.md");
-        if agents.is_file() {
-            files.push(agents);
-        }
-    }
+fn collect_mdc_rule_files(dir_path: &Path) -> Result<Vec<PathBuf>, String> {
     // 避免 `is_dir` 与 `read_dir` 之间的 TOCTOU：并行测试里可能临时删掉 cwd 下的规则目录。
-    let mut mdc_files: Vec<PathBuf> = match std::fs::read_dir(&dir_path) {
+    let mut mdc_files: Vec<PathBuf> = match std::fs::read_dir(dir_path) {
         Ok(entries) => entries
             .filter_map(Result::ok)
             .map(|e| e.path())
@@ -54,7 +44,23 @@ fn load_cursor_rule_documents(
         }
     };
     mdc_files.sort();
-    files.extend(mdc_files);
+    Ok(mdc_files)
+}
+
+fn load_cursor_rule_documents(
+    cwd: &Path,
+    rules_dir: &str,
+    include_agents_md: bool,
+) -> Result<Vec<(String, String)>, String> {
+    let dir_path = cursor_rules_dir_path(cwd, rules_dir)?;
+    let mut files: Vec<PathBuf> = Vec::new();
+    if include_agents_md {
+        let agents = cwd.join("AGENTS.md");
+        if agents.is_file() {
+            files.push(agents);
+        }
+    }
+    files.extend(collect_mdc_rule_files(&dir_path)?);
 
     let mut out: Vec<(String, String)> = Vec::new();
     for path in files {

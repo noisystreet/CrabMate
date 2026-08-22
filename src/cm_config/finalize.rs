@@ -711,6 +711,41 @@ fn canonical_run_command_working_dir(b: &ConfigBuilder) -> Result<PathBuf, Strin
 
 include!("finalize_parts/finalize_agent_layers.inc.rs");
 
+fn parse_builder_default_session_mode(
+    b: &ConfigBuilder,
+) -> Result<crate::cm_types::SessionMode, String> {
+    match b
+        .roles_prompts
+        .default_session_mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        None => Ok(crate::cm_types::SessionMode::Act),
+        Some(s) => crate::cm_types::parse_session_mode(s)
+            .map_err(|e| format!("配置错误：default_session_mode：{e}")),
+    }
+}
+
+fn resolve_finalize_workspace_paths(
+    b: &ConfigBuilder,
+) -> Result<(PathBuf, Vec<PathBuf>, Option<PathBuf>), String> {
+    let run_command_working_dir = canonical_run_command_working_dir(b)?;
+    let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
+        b.workspace_roots.workspace_allowed_roots.clone(),
+        run_command_working_dir.as_path(),
+    )?;
+    let web_workspace_pool = workspace_roots::resolve_web_workspace_pool(
+        b.workspace_roots.web_workspace_pool.clone(),
+        workspace_allowed_roots.as_slice(),
+    )?;
+    Ok((
+        run_command_working_dir,
+        workspace_allowed_roots,
+        web_workspace_pool,
+    ))
+}
+
 /// 验证、clamp 并组装最终 `AgentConfig`（实现体；`finalize` 为薄包装以降低圈复杂度扫描中的函数 CCN）。
 fn finalize_agent_config(
     mut b: ConfigBuilder,
@@ -725,16 +760,8 @@ fn finalize_agent_config(
     let mid = clamp_finalize_mid_layer_scalars(&b);
     let allowed_commands = allowed_commands_arc_from_builder(&b);
 
-    let run_command_working_dir = canonical_run_command_working_dir(&b)?;
-
-    let workspace_allowed_roots = workspace_roots::resolve_workspace_allowed_roots(
-        b.workspace_roots.workspace_allowed_roots.clone(),
-        run_command_working_dir.as_path(),
-    )?;
-    let web_workspace_pool = workspace_roots::resolve_web_workspace_pool(
-        b.workspace_roots.web_workspace_pool.clone(),
-        workspace_allowed_roots.as_slice(),
-    )?;
+    let (run_command_working_dir, workspace_allowed_roots, web_workspace_pool) =
+        resolve_finalize_workspace_paths(&b)?;
 
     let pm = merge_system_prompt_layers_for_finalize(
         &mut b,
@@ -770,17 +797,7 @@ fn finalize_agent_config(
             skills_top_k: pm.skills_top_k,
         })?;
 
-    let default_session_mode = match b
-        .roles_prompts
-        .default_session_mode
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        None => crate::cm_types::SessionMode::Act,
-        Some(s) => crate::cm_types::parse_session_mode(s)
-            .map_err(|e| format!("配置错误：default_session_mode：{e}"))?,
-    };
+    let default_session_mode = parse_builder_default_session_mode(&b)?;
 
     let scheduled_agent_tasks = super::scheduled_agent_task::finalize_scheduled_agent_tasks(
         std::mem::take(&mut b.scheduled_agent_task_rows),
