@@ -166,6 +166,7 @@ fn format_worbrow_outcome(outcome: &Outcome, browser: BrowserKind) -> String {
             ResultKind::Web => {}
             ResultKind::Dictionary => flags.push("dictionary"),
             ResultKind::Translation => flags.push("translation"),
+            ResultKind::Hub => flags.push("hub"),
         }
         // `url_resolved=false` 含「本就是直链、无需解包」（Bing 常见），不能一律当失败。
         // 仅当仍像跟踪跳转链且未解出时提示。

@@ -58,8 +58,8 @@ unicodeit = "0.2"
 urlencoding = "2.1"
 uom = { version = "0.38", features = ["si"] }
 walkdir = "2"
-# 联网搜索默认后端：本机浏览器 SERP（库路径；关闭 mcp 以免拉入 rmcp；≥0.2.0 含质量信号/抓取 API）
-worbrow = { version = "0.2.0", default-features = false }
+# 联网搜索默认后端：本机浏览器 SERP（库路径；关闭 mcp 以免拉入 rmcp；≥0.2.2 含质量信号/抓取 API）
+worbrow = { version = "0.2.2", default-features = false }
 xz2 = "0.1"
 zip = { version = "8.6", default-features = false, features = ["deflate", "time"] }
 
