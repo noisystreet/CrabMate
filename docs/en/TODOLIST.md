@@ -38,10 +38,9 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 ### Compat-layer shrink (follow-ups)
 
 > Compat-layer shrink **todos in this section are authoritative** (local drafts are gitignored and must not be cited as docs).  
-> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (this branch: `stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
-> **Next**: **B2**. Items below need a compatibility window.
+> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`, persist/truncate from `messages`, projection goldens; official Web still ignores `layout`); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
+> **Next**: **B3**. Items below need a compatibility window.
 
-- [ ] **B2 (E2)**: Optional server layout metadata + shared projection goldens (stay in this repo as `crabmate::cm_turn_layout`; do **not** wait on Client crate move). **Done**: optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`, persist/truncate derive from `messages`, extra projection goldens. **Next**: B3 hydration dual-read.
 - [ ] **B3 (E3)**: Hydration dual-read (metadata first; legacy when absent).
 - [ ] **B4 (E4)**: Contract: drop post-terminal business frames, same-revision bandage, legacy merge/dedupe (only after E4 exit criteria).
 
