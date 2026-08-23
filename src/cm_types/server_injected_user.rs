@@ -1,9 +1,10 @@
 //! 服务端注入的 **`role: user`** 消息：注册表、识别与落盘剥离（非用户真实发言）。
 
 use crate::cm_types::message::{
-    CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME, CRABMATE_LONG_TERM_MEMORY_NAME,
-    CRABMATE_PLAN_REWRITE_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
-    CRABMATE_WORKSPACE_CHANGELIST_NAME, Message, message_content_as_str,
+    CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
+    CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PLAN_REWRITE_NAME,
+    CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
+    message_content_as_str,
 };
 
 /// 是否为 **`role: user`** 且非用户真实发言（编排注入、画像、记忆等）。
@@ -28,10 +29,11 @@ fn is_server_injected_user_by_name(m: &Message) -> bool {
             | Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
             | Some(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME)
             | Some(CRABMATE_PLAN_REWRITE_NAME)
+            | Some(CRABMATE_CONTEXT_SUMMARY_NAME)
     )
 }
 
-/// 落盘前剥离：编排类注入 user（保留首轮工作区画像等仍须持久化的注入）。
+/// 落盘前剥离：编排类注入 user（保留首轮工作区画像、上下文摘要等仍须持久化的注入）。
 pub fn strip_orchestration_injected_users_for_conversation_store(messages: &mut Vec<Message>) {
     messages.retain(|m| !should_strip_user_before_conversation_store(m));
 }
@@ -41,4 +43,5 @@ fn should_strip_user_before_conversation_store(m: &Message) -> bool {
     m.role == "user"
         && is_server_injected_user_message(m)
         && !crate::cm_types::is_first_turn_workspace_context_injection(m)
+        && !crate::cm_types::is_context_summary_injection(m)
 }

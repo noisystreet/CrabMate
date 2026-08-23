@@ -227,10 +227,11 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
     is_chat_ui_separator(m) || is_chat_timeline_marker(m)
 }
 
-/// 供 **`GET /conversation/messages`** 等客户端只读视图：去掉不应展示的会话内注入（与落盘前 `strip_*` 一致）。
+/// 供 **`GET /conversation/messages`** 等客户端只读视图：省略聊天区不应展示的条目。
 ///
-/// 另：**不**返回普通 **`system`** 正文（[`Message::system_only`] 等），聊天 UI 与导出 Markdown 均不向用户展示系统提示词；仅保留 **`name == crabmate_timeline`** 的时间线旁注供前端还原步骤条。
-/// 亦不返回首轮工作区画像注入（[`is_first_turn_workspace_context_injection`]）：仍落盘并送模型，但不在聊天区展示。
+/// 与落盘前 [`crate::cm_types::strip_orchestration_injected_users_for_conversation_store`] **不完全相同**：
+/// 规划拒绝 / `plan_rewrite` 等编排注入落盘时也会剥离；**首轮工作区画像**与**上下文摘要**仍落盘并送模型，仅从本快照省略。
+/// 另：**不**返回普通 **`system`** 正文（[`Message::system_only`] 等）；仅保留 **`name == crabmate_timeline`** 的时间线旁注。
 pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Message> {
     messages
         .iter()
@@ -247,7 +248,7 @@ fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
 
 /// Web 聊天区与 TUI transcript 是否展示该条（与 [`filter_messages_for_web_client_snapshot`] 过滤条件一致）。
 ///
-/// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
+/// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像 / 上下文摘要等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
 #[inline]
 pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
     !crate::cm_types::server_injected_user::is_server_injected_user_message(m)
@@ -263,6 +264,12 @@ pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changel
 /// 新会话首轮「工作区 / 项目画像」等上下文注入（`user.name`）；供模型读取，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
     "crabmate_first_turn_workspace_context";
+
+/// LLM 中间段摘要折叠条（`user.name`）；落盘并送模型，**不向** Web 快照与聊天水合展示。
+pub const CRABMATE_CONTEXT_SUMMARY_NAME: &str = "crabmate_context_summary";
+
+/// 摘要条正文前缀（与无 `name` 的历史落盘兼容；须与 `cm_display_rules` 一致）。
+pub const CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX: &str = "[较早对话已摘要，以下为压缩要点]";
 
 /// 分阶段无工具规划轮：模型违规输出 `tool_calls` 后的一次性重写约束（`user.name`）；送模型，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME: &str = "crabmate_planner_tool_call_reject";
@@ -295,6 +302,20 @@ pub fn is_workspace_changelist_injection(m: &Message) -> bool {
 #[inline]
 pub fn is_first_turn_workspace_context_injection(m: &Message) -> bool {
     m.role == "user" && m.name.as_deref() == Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME)
+}
+
+#[inline]
+pub fn is_context_summary_injection(m: &Message) -> bool {
+    if m.role != "user" {
+        return false;
+    }
+    if m.name.as_deref() == Some(CRABMATE_CONTEXT_SUMMARY_NAME) {
+        return true;
+    }
+    message_content_as_str(&m.content).is_some_and(|s| {
+        s.trim_start()
+            .starts_with(CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX)
+    })
 }
 
 /// `POST /chat/branch` 等按序截断时计入的「真实用户发言」：排除各类 `user.name` 注入条。
@@ -485,6 +506,19 @@ impl Message {
             name: None,
             tool_call_id: None,
         }
+    }
+
+    /// LLM 中间段摘要（`user` + [`CRABMATE_CONTEXT_SUMMARY_NAME`]）；落盘并送模型，Web 快照过滤。
+    pub fn user_context_summary_injection(summary_text: impl Into<String>) -> Self {
+        let text = summary_text.into();
+        Self::user_server_injection(
+            CRABMATE_CONTEXT_SUMMARY_NAME,
+            format!(
+                "{}\n{}",
+                CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX,
+                text.trim()
+            ),
+        )
     }
 
     /// 首轮工作区 / 项目画像等上下文（`user` + [`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`]）；送模型，Web 快照过滤。

@@ -93,10 +93,11 @@ mod server_injected_user_store_tests {
             Message::user_only("真实用户"),
             Message::user_plan_rewrite_injection("你的最终回答缺少**结构化规划**"),
             Message::user_first_turn_workspace_context("工作区画像"),
+            Message::user_context_summary_injection("压缩要点：修了 path_bug"),
             Message::assistant_only("ok"),
         ];
         strip_orchestration_injected_users_for_conversation_store(&mut v);
-        assert_eq!(v.len(), 3);
+        assert_eq!(v.len(), 4);
         assert!(v.iter().any(|m| {
             message_content_as_str(&m.content).is_some_and(|c| c.contains("真实用户"))
         }));
@@ -104,6 +105,7 @@ mod server_injected_user_store_tests {
             v.iter()
                 .any(crate::cm_types::is_first_turn_workspace_context_injection)
         );
+        assert!(v.iter().any(crate::cm_types::is_context_summary_injection));
     }
 }
 
@@ -132,12 +134,21 @@ mod api_messages_strip_tests {
             tool_call_id: None,
         };
         let inj_ctx = Message::user_first_turn_workspace_context("profile");
+        let inj_sum = Message::user_context_summary_injection("压缩要点");
         let sys = Message::system_only("do not leak to web list");
         let plain = Message::user_only("hi");
         let reject = Message::user_planner_tool_call_reject_injection(format!(
             "{STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX}\n请重写"
         ));
-        let v = vec![sys, inj_mem, inj_cl, inj_ctx, plain.clone(), reject];
+        let v = vec![
+            sys,
+            inj_mem,
+            inj_cl,
+            inj_ctx,
+            inj_sum,
+            plain.clone(),
+            reject,
+        ];
         let out = filter_messages_for_web_client_snapshot(&v);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0], plain);
@@ -154,6 +165,7 @@ mod api_messages_strip_tests {
                 ),
                 false,
             ),
+            (Message::user_context_summary_injection("压缩要点"), false),
         ];
         for (msg, expect_visible) in cases {
             let out = filter_messages_for_web_client_snapshot(std::slice::from_ref(&msg));

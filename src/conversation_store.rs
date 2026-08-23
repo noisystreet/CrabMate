@@ -445,7 +445,7 @@ fn update_messages_json_if_revision(
 }
 
 /// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
-/// 计数不含长期记忆 / 变更集 / 首轮工作区画像等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
+/// 计数不含长期记忆 / 变更集 / 首轮工作区画像 / 上下文摘要等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
 pub fn truncate_before_user_ordinal_if_revision(
     conn: &Connection,
     id: &str,
