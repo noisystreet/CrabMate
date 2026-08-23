@@ -18,7 +18,7 @@ ego-tree = "0.11"
 encoding_rs = "0.8"
 flate2 = "1.0"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
-getrandom = "0.3"
+getrandom = "0.4"
 glob = "0.3"
 http = "1"
 ignore = "0.4"
