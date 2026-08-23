@@ -67,7 +67,7 @@ zip = { version = "8.6", default-features = false, features = ["deflate", "time"
 axum = { version = "0.8", default-features = false }
 bollard = { version = "0.21", default-features = false }
 clap_mangen = { version = "0.3", default-features = false }
-fastembed = "5.13"
+fastembed = "6.0"
 rmcp = { version = "3.0", default-features = false }
 tower = { version = "0.5" }
 tower-http = { version = "0.6" }
