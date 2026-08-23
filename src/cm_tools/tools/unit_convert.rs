@@ -26,9 +26,9 @@ fn norm_unit(s: &str) -> String {
 
 /// JSON：`category`（length|mass|temperature|data|time|area|pressure|speed）、`value`（数字）、`from`、`to`（单位符号或常用别名）。
 pub fn run(args_json: &str) -> String {
-    let args: super::tool_param_types::ConvertUnitsArgs = match serde_json::from_str(args_json) {
+    let args: super::tool_param_types::ConvertUnitsArgs = match super::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数 JSON 无效: {e}"),
+        Err(e) => return e,
     };
     let category = args.category.trim();
     if category.is_empty() {

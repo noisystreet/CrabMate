@@ -5,13 +5,13 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::clarification_questionnaire_body_if_tool_ok;
 use crate::config::AgentConfig;
 use crate::sse::{
-    SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary, ToolResultBody,
+    SseEncoder, SsePayload, ThinkingTraceBody, ToolCallSummary,
     TurnSegmentStartBody, send_sse_control_payload_optional,
 };
-use crate::tool_result::{self, NormalizedToolEnvelope, ToolEnvelopeContext, parse_legacy_output};
-use crate::tools;
+use crate::tool_result::{self, parse_legacy_output};
 use crate::types::{Message, message_content_byte_len_for_estimate};
 
+use super::emit_common::{emit_sse_tool_result, summarize_tool_call_args};
 use super::EmitToolResultParams;
 
 fn context_snapshot_for_trace(messages: &[Message]) -> String {
@@ -55,96 +55,6 @@ pub(super) async fn emit_thinking_trace_sse(
         tx,
         encoder.encode(&SsePayload::ThinkingTrace { trace: body }),
         "execute_tools::thinking_trace",
-    )
-    .await;
-}
-
-/// SSE：`SsePayload::ToolResult`（含 stdout/stderr、retryable、信封元数据）。
-/// `reflection_inject` 中若含 `tool_job` 对象（`run_command` 的 `async=true` 启动帧），
-/// 提取为 `tool_result.tool_job_*` 软字段（契约 §2）。
-#[allow(clippy::too_many_arguments)] // 工具结果 SSE 组装：SSE 通道、工具元数据与注入帧
-async fn emit_sse_tool_result(
-    out: Option<&mpsc::Sender<String>>,
-    sse_control_mirror: Option<&crate::sse::SseControlMirror>,
-    name: &str,
-    result: &str,
-    tool_summary: Option<String>,
-    envelope_ctx: Option<ToolEnvelopeContext<'_>>,
-    reflection_inject: Option<&serde_json::Value>,
-    encoder: &dyn SseEncoder,
-) {
-    let parsed = parse_legacy_output(name, result);
-    let structured_payload = tool_result::structured_payload_for_tool(name, result);
-    let summary_for_norm = tool_summary
-        .clone()
-        .unwrap_or_else(|| format!("tool: {name}"));
-    let norm = NormalizedToolEnvelope::from_tool_run(
-        name,
-        summary_for_norm,
-        &parsed,
-        result,
-        envelope_ctx.as_ref(),
-        structured_payload,
-    );
-    let mut structured_preview = crate::tools::structured_preview::structured_preview_for_tool_sse(
-        name,
-        result,
-        norm.structured_payload.as_ref(),
-    );
-    if name == "run_command" {
-        structured_preview =
-            crate::tools::structured_preview::augment_run_command_preview_with_git_diff(
-                structured_preview,
-                result,
-                parsed.stdout.as_str(),
-            );
-    }
-    let stdout = if parsed.stdout.is_empty() {
-        None
-    } else {
-        Some(parsed.stdout)
-    };
-    let stderr = if parsed.stderr.is_empty() {
-        None
-    } else {
-        Some(parsed.stderr)
-    };
-    let tool_job = reflection_inject.and_then(|v| v.get("tool_job"));
-    let tool_job_str = |key: &str| {
-        tool_job
-            .and_then(|j| j.get(key))
-            .and_then(|x| x.as_str())
-            .map(str::to_string)
-    };
-    let payload = SsePayload::ToolResult {
-        tool_result: ToolResultBody {
-            name: norm.name,
-            goal_id: None,
-            result_version: norm.envelope_version,
-            summary: tool_summary,
-            output: result.to_string(),
-            ok: Some(norm.ok),
-            exit_code: norm.exit_code,
-            error_code: norm.error_code.clone(),
-            failure_category: norm.failure_category.clone(),
-            retryable: norm.retryable,
-            tool_call_id: norm.tool_call_id,
-            execution_mode: norm.execution_mode,
-            parallel_batch_id: norm.parallel_batch_id,
-            stdout,
-            stderr,
-            structured_preview,
-            tool_job_id: tool_job_str("tool_job_id"),
-            tool_job_poll_url: tool_job_str("tool_job_poll_url"),
-            tool_job_status: tool_job_str("tool_job_status"),
-        },
-    };
-    let _ = send_sse_control_payload_optional(
-        out,
-        sse_control_mirror,
-        payload,
-        "execute_tools::emit_tool_result_sse",
-        encoder,
     )
     .await;
 }
@@ -213,12 +123,7 @@ pub(super) async fn emit_tool_result_sse_and_append(
     } = p;
     let out = control.out;
     let sse_control_mirror = control.sse_control_mirror;
-    let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
-    let tool_summary = if let Some(ref parsed) = args_parsed {
-        tools::summarize_tool_call_parsed(name, parsed)
-    } else {
-        tools::summarize_tool_call(name, args)
-    };
+    let tool_summary = summarize_tool_call_args(name, args);
     let parsed_for_timeline = parse_legacy_output(name, result.as_str());
 
     emit_sse_tool_result(
@@ -415,13 +320,7 @@ pub(super) async fn emit_tool_call_summary_sse(
     encoder: &dyn SseEncoder,
 ) {
     let args_preview = crate::redact::tool_arguments_preview_for_sse(args);
-    let args_parsed: Option<serde_json::Value> = serde_json::from_str(args).ok();
-    let summary = if let Some(ref parsed) = args_parsed {
-        tools::summarize_tool_call_parsed(name, parsed)
-    } else {
-        tools::summarize_tool_call(name, args)
-    }
-    .unwrap_or_else(|| format!("tool: {name}"));
+    let summary = super::batch_dispatch::tool_call_summary_from_args(name, args);
     let arguments_preview = Some(args_preview.clone());
     let arguments = cfg
         .tool_transcript

@@ -32,7 +32,7 @@ pub fn tool_spec_requires_fastembed(name: &str) -> bool {
 
 pub fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
     let parsed: super::tool_param_types::GetCurrentTimeArgs =
-        serde_json::from_str(args).unwrap_or_default();
+        super::parse_args_typed(args).unwrap_or_default();
     let mode = parsed
         .mode
         .map(super::tool_param_types::GetCurrentTimeMode::to_time_output)
@@ -41,9 +41,9 @@ pub fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
 }
 
 pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let parsed: super::tool_param_types::CalcArgs = match serde_json::from_str(args) {
+    let parsed: super::tool_param_types::CalcArgs = match super::parse_args_typed(args) {
         Ok(v) => v,
-        Err(e) => return format!("错误：参数 JSON 无效: {e}"),
+        Err(e) => return e,
     };
     calc::run(&parsed.expression)
 }

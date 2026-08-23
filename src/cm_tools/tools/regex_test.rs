@@ -3,10 +3,11 @@
 use regex::Regex;
 
 pub fn run(args_json: &str) -> String {
-    let args: super::tool_param_types::RegexTestArgs = match serde_json::from_str(args_json) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 无效: {e}"),
-    };
+    let args: super::tool_param_types::RegexTestArgs =
+        match super::parse_args_typed(args_json) {
+            Ok(a) => a,
+            Err(e) => return e,
+        };
     let pattern = args.pattern.trim();
     if pattern.is_empty() {
         return "错误：缺少 pattern 参数".to_string();

@@ -62,8 +62,7 @@ pub fn run(args_json: &str, timeout_secs: u64) -> String {
 }
 
 fn parse_weather_city(args_json: &str) -> Result<String, String> {
-    let args: super::tool_param_types::GetWeatherArgs =
-        serde_json::from_str(args_json).map_err(|e| format!("参数 JSON 无效: {e}"))?;
+    let args: super::tool_param_types::GetWeatherArgs = super::parse_args_typed(args_json)?;
     let city = args
         .city
         .as_deref()

@@ -24,13 +24,15 @@ use crate::cm_agent::agent_turn::{
     resolve_tool_batch_execution_mode,
 };
 
+mod batch_dispatch;
 mod emit;
+mod emit_common;
 mod parallel_readonly;
 mod run_command_guard;
 mod serial;
 use emit::{
     emit_sse_tool_running, emit_timeline_log_sse, emit_tool_call_summary_sse,
-    emit_tool_result_sse_and_append, emit_turn_tool_phase_end_sse,
+    emit_turn_tool_phase_end_sse,
 };
 use parallel_readonly::execute_tools_parallel;
 use serial::execute_tools_serial;
