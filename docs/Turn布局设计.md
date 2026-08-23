@@ -1,6 +1,6 @@
 # Turn 布局：单轮工具回合的消息顺序设计
 
-**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；**E2 persist（会话 `layout` 落盘）已落地**；**E3 hydration 双读已落地**（有 `layout` 优先 v2 行键，无则 legacy；差分只记行数/角色序/文本 hash；same-revision 守卫保留至 E4）。本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。运维 CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
+**状态**：Web 流式 **Phase 0–4** 已落地（见 §12）；**Phase 5（单一读路径）** 已落地（§12.8）；**Phase 6（消息块 → 气泡）** 已落地（§12.9）；**Phase 7 P0（写入收敛）** 已落地（§12.10）；旁注 loading↔commentary **I14 同帧原子移交**已落地（§12.10.1）；**Phase 7 P1（补丁层退役）** 已落地（§12.11）；~~**Phase 7 P2（per-tool 即时投影）**~~ 已退役（§12.12）；**Phase 8（块布局）** 已落地（§13）；**已知过渡债**见 **§15**；**Phase E**：**E1（终态序）已落地**（§16.5）；**E2 persist（会话 `layout` 落盘）已落地**；**E3 hydration 双读已落地**（消费 `layout` 记差分；GET 历史保持 legacy 行 id，不 stamp 流式活键；same-revision 守卫保留至 E4）。本仓同进程 TUI（曾用 `crabmate-turn-layout` / `project_turn_web_v2`）已于 **D2.2 硬删**；官方终端为 Client **`crabmate-tui`**（HTTP/SSE）。运维 CLI stdout 仍仅镜像控制面、未做完整 canonical 投影。  
 **目标读者**：维护者；变更 **`turn_segment_*`**、Client [`frontend/src/app/chat/composer_stream/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/app/chat/composer_stream) 或 **`src/cm_turn_layout`**（`crabmate::cm_turn_layout`）前须读本文，并同步 **`docs/SSE协议.md`**、**`fixtures/turn_project_golden.jsonl`**、**`fixtures/sse_control_golden.jsonl`**。下文 **`frontend/src/...`** 均指 [crabmate-client](https://github.com/noisystreet/crabmate-client) 仓路径（本机测试命令假定同级 `../crabmate-client`）。
 
 ---
@@ -468,7 +468,7 @@ messages:            同上（旁注行 id 为 turn-commentary-{tool_call_id}）
 - 加载缓存时，`turn-commentary-*` / `turn-final-answer` 稳定 key 可将未带版本字段的早期 v2 缓存识别为 v2。
 - 流结束边界立即发起 best-effort `keepalive` 会话快照 PUT，覆盖常规大小会话“状态就绪后马上刷新”；常规 400ms 防抖写盘继续作为兜底。
 - 非空 v2 finalized 投影是浏览器展示快照；服务端 revision 相同或仅覆盖已有回合时不进入 assistant/tool pool 启发式重排。若较新 revision 含更多 user 回合，则保留本地 v2 行不变，并从首个服务端独有 user 起追加 canonical 后缀，避免另一浏览器新增的回合被本地快照遮蔽。
-- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 在响应**无** `layout`（或缺 segment 键）时继续走 v1 legacy adapter；旧会话无需迁移。新回合保存会写入会话级 **`layout`**（B2 persist）；官方 Web hydration 在 B3 前仍忽略该字段。
+- 本地缓存为空或只有 v1 行时，`GET /conversation/messages` 在响应**无** `layout`（或缺 segment 键）时继续走 v1 legacy adapter；旧会话无需迁移。新回合保存会写入会话级 **`layout`**（B2 persist）。官方 Web **B3** 双读该字段记差分，但 GET 历史行仍用 legacy id（不 stamp 流式活键），以免空缓存被当成可保留的 v2 投影。
 
 ---
 
@@ -539,8 +539,8 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 
 - **服务端（E1）**：成功路径为 `stream_draining` → 落盘 → `conversation_saved` →（可选 `STATE_SNAPSHOT`）→ **最后** `RUN_FINISHED`；冲突时先业务错误再由 worker 发 `RUN_FINISHED`(conflict)。软能力 `sse_capabilities.terminal_order=saved_before_finished`。
 - **前端（双序）**：`RUN_FINISHED` 进入 Draining，**延迟 `on_done`**，继续读 body；亦接受旧序（终态后再来 `conversation_saved`）；`stream_draining` 经专用 `on_stream_draining` 提前进入 Draining 文案，**不**清 abort/resume、**不**写终态 reason、不置 `saw_stream_ended`（见 `frontend/src/api/chat_stream/sse_frame.rs`）。
-- hydration：same-revision 守卫仍保留（E4 前不删）。回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web **双读**：响应含 v2 `layout` 时 hydration 标 v2 行键并记差分指纹（行数/角色序/文本 hash）；无 `layout` 走 legacy。旧库行若 `layout_meta_json` 为空则 GET 省略该键。
-- Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`，hydration / 冷启动尚未完全同一投影键权威。
+- hydration：same-revision 守卫仍保留（E4 前不删）。回合保存把 **`layout`** 写入 SQLite / 内存（由落盘 `Message[]` 派生）。官方 Web **双读**：响应含 v2 `layout` 时记差分指纹（行数/角色序/文本 hash），GET 还原的历史行保持 legacy id（流式活键仅本回合）；无 `layout` 走纯 legacy。旧库行若 `layout_meta_json` 为空则 GET 省略该键。
+- Web 块布局（Phase 8/9）与服务端持久化的 OpenAI 兼容 `Message[]` **仍非同一种结构**；流式路径已用 `crabmate-turn-layout` + `layout_schema_version=2`；hydration / 冷启动双读 `layout` 但历史行仍是 legacy id，完整同键投影尚未成为权威。
 
 长期方向：**不再堆 merge / dedupe / sleep**，而是统一终态顺序、canonical 事实来源与确定性投影。
 
@@ -607,7 +607,7 @@ v2 逐旁注与 `layout_schema_version=2` 已落地；**Phase A–D** 与正文�
 | **E0** | 固化现状：保留终态后读 body、same-revision 守卫（标明临时）；文档记录旧序 vs 目标 | ✅ 文档 |
 | **E1** | 修正终态顺序（expand-first）：前端吃可选 `stream_draining` 并兼容旧序；协议/parser/金样同步；后端先保存与 `conversation_saved`，**最后** `RUN_FINISHED`；`terminal_order` 软能力 | ✅ 已落地（兼容层 B1） |
 | **E2** | 版本化布局契约：服务端可选布局元数据；共享 golden（无工具 / 单多工具 / 审批旁注 / 失败 / reasoning / cancel / resume）；分清 canonical 行 vs Web 本地 timeline | persist（保存写 `layout`）✅；hydration 仍走 legacy（E3） |
-| **E3** | 双读：新会话写元数据；hydration 优先确定性投影；无元数据走 legacy；差分模式只记行数/角色序/文本 hash（不记全文） | ✅ Client 消费 `GET layout`；E4 前**不**删 same-revision 守卫 |
+| **E3** | 双读：新会话写元数据；hydration 消费 `layout` 记差分（行数/角色序/文本 hash）；GET 历史保持 legacy 行 id（完整同键投影待 Client 可复用投影器）；无元数据走 legacy | ✅ Client 双读观测；不 stamp 流式活键；E4 前**不**删 same-revision 守卫 |
 | **E4** | 收缩：删终态后业务事件兼容、same-revision 止血、assistant/tool pool legacy merge、仅为旧布局的 dedupe | ⬜ 删除条件见下 |
 
 **E4 删除条件（须同时满足）**：新序覆盖受支持客户端；投影差分达稳定期；冷启动 / 跨浏览器 / resume 通过；线上无终态后业务事件；legacy 会话比例可接受。
