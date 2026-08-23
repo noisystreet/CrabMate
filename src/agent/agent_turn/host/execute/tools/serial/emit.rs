@@ -11,7 +11,7 @@ use crate::agent::per_coord::PerCoordinator;
 use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
 
-use super::super::emit_tool_result_sse_and_append;
+use super::super::batch_dispatch::emit_tool_batch_result;
 use super::super::run_command_guard::{
     classify_run_command_failure_family_from_invocation, parse_run_command_payload,
     run_command_cargo_workdir_preflight_error, run_command_ctest_preflight_error,
@@ -161,15 +161,10 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
         result,
         reflection_inject,
     } = p;
-    let env = crate::tool_result::ToolEnvelopeContext {
-        tool_call_id: id,
-        execution_mode: "serial",
-        parallel_batch_id: None,
-    };
-    emit_tool_result_sse_and_append(
-        messages,
-        per_coord,
-        super::super::EmitToolResultParams {
+    emit_tool_batch_result(
+        super::super::batch_dispatch::EmitToolBatchResultParams {
+            messages,
+            per_coord,
             cfg,
             tool_outcome_recorder,
             control: control.clone(),
@@ -179,7 +174,8 @@ pub(super) async fn emit_serial_tool_result(p: SerialEmitToolResultParams<'_>) {
             id,
             result,
             reflection_inject,
-            envelope_ctx: Some(env),
+            execution_mode: "serial",
+            parallel_batch_id: None,
         },
         control.sse_encoder.as_ref(),
     )

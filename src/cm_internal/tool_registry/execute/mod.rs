@@ -162,7 +162,11 @@ async fn approve_external_read_dir_if_needed(
 }
 
 include!("execute_dispatch_body.inc.rs");
-include!("execute_run_command.inc.rs");
+include!("execute_run_command_docker.inc.rs");
+include!("execute_run_command_approval.inc.rs");
+include!("execute_run_command_chunks.inc.rs");
+include!("execute_run_command_async.inc.rs");
+include!("execute_run_command_host.inc.rs");
 include!("execute_run_command_sync.inc.rs");
 include!("execute_terminal_session.inc.rs");
 include!("http_tool_exec.inc.rs");

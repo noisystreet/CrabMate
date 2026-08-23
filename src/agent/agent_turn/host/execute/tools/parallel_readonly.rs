@@ -13,15 +13,15 @@ use crate::agent::agent_turn::{CrabmateParallelToolDispatch, ParallelHttpFetchPa
 use crate::config::AgentConfig;
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::tool_registry::{self, HandlerId, HandlerLookupTable, ToolRuntime, WebToolRuntime};
-use crate::tool_result::ToolEnvelopeContext;
 use crate::types::{Message, ToolCall};
 use crate::workspace::changelist::WorkspaceChangelist;
 
 use super::{
     ExecuteToolsBatchOutcome, ExecuteToolsCommonCtx, PARALLEL_READONLY_TOOL_BATCH_SEQ,
     abort_tool_batch_if_sse_closed, dedup_readonly_tool_calls_count, emit_timeline_log_sse,
-    emit_tool_call_summary_sse, emit_tool_result_sse_and_append, trace_parallel_tool_child_span,
+    emit_tool_call_summary_sse, trace_parallel_tool_child_span,
 };
+use super::batch_dispatch::emit_tool_batch_result;
 
 /// 并行执行时工具的分类，用于在构建 fut 前预分类，消除 if/else if/else 字符串比较。
 #[derive(Clone, Copy)]
@@ -363,15 +363,10 @@ async fn parallel_emit_ordered_tool_results(
             .map(String::as_str)
             .unwrap_or("")
             .to_string();
-        let env = ToolEnvelopeContext {
-            tool_call_id: tc.id.as_str(),
-            execution_mode: "parallel_readonly_batch",
-            parallel_batch_id: Some(parallel_batch_id_ref),
-        };
-        emit_tool_result_sse_and_append(
-            messages,
-            per_coord,
-            super::EmitToolResultParams {
+        emit_tool_batch_result(
+            super::batch_dispatch::EmitToolBatchResultParams {
+                messages,
+                per_coord,
                 cfg,
                 tool_outcome_recorder,
                 control: control.clone(),
@@ -381,7 +376,8 @@ async fn parallel_emit_ordered_tool_results(
                 id: &tc.id,
                 result: cached,
                 reflection_inject: None,
-                envelope_ctx: Some(env),
+                execution_mode: "parallel_readonly_batch",
+                parallel_batch_id: Some(parallel_batch_id_ref),
             },
             sse_encoder,
         )

@@ -33,9 +33,9 @@ fn format_one_env_var_line(
 }
 
 pub fn run(args_json: &str) -> String {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
+    let v = match super::parse_args_json(args_json) {
         Ok(v) => v,
-        Err(e) => return format!("参数 JSON 无效: {e}"),
+        Err(e) => return e,
     };
     if v.get("names").is_none() {
         return "错误：缺少 names 数组参数".to_string();

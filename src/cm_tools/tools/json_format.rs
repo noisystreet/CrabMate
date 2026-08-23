@@ -3,9 +3,9 @@
 const MAX_INPUT_BYTES: usize = 512 * 1024;
 
 pub fn run(args_json: &str) -> String {
-    let args: super::tool_param_types::JsonFormatArgs = match serde_json::from_str(args_json) {
+    let args: super::tool_param_types::JsonFormatArgs = match super::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数 JSON 无效: {e}"),
+        Err(e) => return e,
     };
     let text = args.text.trim();
     if text.is_empty() {
