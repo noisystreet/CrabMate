@@ -13,10 +13,19 @@ pub const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】
 /// 长期记忆召回注入正文前缀（与 `long_term_memory::format_ltm_injection_body` 一致；无 `user.name` 时的兜底识别）。
 pub const LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX: &str = "以下为与当前问题可能相关的长期记忆";
 
+/// LLM 中间段摘要正文前缀（与 `types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX` 一致）。
+pub const CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX: &str = "[较早对话已摘要，以下为压缩要点]";
+
 #[must_use]
 pub fn is_long_term_memory_injected_user_content(s: &str) -> bool {
     s.trim_start()
         .starts_with(LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX)
+}
+
+#[must_use]
+pub fn is_context_summary_injected_user_content(s: &str) -> bool {
+    s.trim_start()
+        .starts_with(CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX)
 }
 
 #[must_use]
@@ -44,6 +53,7 @@ pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
         || is_staged_patch_feedback_user_content(s)
         || is_plan_rewrite_injected_user_content(s)
         || is_long_term_memory_injected_user_content(s)
+        || is_context_summary_injected_user_content(s)
         || s.trim_start()
             .starts_with(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX)
 }
@@ -89,5 +99,14 @@ mod tests {
             let got = user_message_should_hide_for_chat_display(body.as_str());
             assert_eq!(got, expect_hidden, "line {} ({})", line_no + 1, label);
         }
+    }
+
+    #[test]
+    fn context_summary_prefix_matches_types_constant() {
+        assert_eq!(
+            CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX,
+            crate::cm_types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX,
+            "drift would hide unnamed summaries but strip them on save"
+        );
     }
 }

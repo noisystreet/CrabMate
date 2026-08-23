@@ -267,10 +267,7 @@ fn apply_llm_summary_to_messages(messages: &mut Vec<Message>, tail: usize, summa
     let tail_start = messages.len() - tail;
     let tail_part: Vec<Message> = messages[tail_start..].to_vec();
     messages.truncate(1);
-    messages.push(Message::user_only(format!(
-        "[较早对话已摘要，以下为压缩要点]\n{}",
-        summary_text.trim()
-    )));
+    messages.push(Message::user_context_summary_injection(summary_text));
     messages.extend(tail_part);
     info!(
         target: "crabmate",
@@ -530,5 +527,68 @@ mod tests {
             bad,
             &["crates/demo/src/path_bug.rs", "error[E0308]"]
         ));
+    }
+
+    #[test]
+    fn apply_llm_summary_writes_named_injection_and_keeps_tail() {
+        let mut messages = vec![
+            Message::system_only("sys"),
+            Message::user_only("old-1"),
+            Message::assistant_only("a1"),
+            Message::user_only("tail-user"),
+            Message::assistant_only("tail-a"),
+        ];
+        apply_llm_summary_to_messages(&mut messages, 2, "要点：修了 path_bug");
+        assert_eq!(messages[0].role, "system");
+        assert!(crate::types::is_context_summary_injection(&messages[1]));
+        assert_eq!(
+            messages[1].name.as_deref(),
+            Some(crate::types::CRABMATE_CONTEXT_SUMMARY_NAME)
+        );
+        assert!(!crate::types::user_message_counts_for_branch_truncation(
+            &messages[1]
+        ));
+        assert_eq!(messages.len(), 4);
+        assert_eq!(
+            crate::types::message_content_as_str(&messages[2].content),
+            Some("tail-user")
+        );
+        let snap = crate::types::filter_messages_for_web_client_snapshot(&messages);
+        assert!(
+            snap.iter()
+                .all(|m| !crate::types::is_context_summary_injection(m))
+        );
+        assert!(
+            snap.iter()
+                .any(|m| crate::types::message_content_as_str(&m.content) == Some("tail-user"))
+        );
+        let vendor = crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
+            &messages, false, false,
+        );
+        assert!(
+            vendor
+                .iter()
+                .any(crate::types::is_context_summary_injection),
+            "summary must still go to the vendor"
+        );
+    }
+
+    #[test]
+    fn legacy_unnamed_summary_prefix_stays_persisted_and_hidden() {
+        let legacy = Message::user_only(format!(
+            "{}\n旧会话无 name",
+            crate::types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX
+        ));
+        assert!(crate::types::is_context_summary_injection(&legacy));
+        assert!(!crate::types::user_message_counts_for_branch_truncation(
+            &legacy
+        ));
+        let mut v = vec![Message::user_only("真实"), legacy.clone()];
+        crate::types::strip_orchestration_injected_users_for_conversation_store(&mut v);
+        assert_eq!(v.len(), 2);
+        assert_eq!(
+            crate::types::filter_messages_for_web_client_snapshot(&v).len(),
+            1
+        );
     }
 }
