@@ -187,6 +187,8 @@ pub(crate) struct RunLoopTurnState<'a> {
     pub seed_override: LlmSeedOverride,
     /// 单轮墙钟与 LLM 调用计数（外循环与分层 Operator 共用）。
     pub turn_budget: Arc<TurnBudgetCounter>,
+    /// 本用户回合窗口/注入时间线（SSE 去重 + 落盘）。
+    pub(crate) context_timeline: crate::cm_agent::context_timeline::ContextTimelineAcc,
 }
 
 impl<'a> RunLoopTurnState<'a> {
@@ -247,6 +249,16 @@ impl<'a> RunLoopTurnState<'a> {
 
     pub(crate) fn push_assistant_merging_trailing_empty(&mut self, msg: Message) {
         push_assistant_merging_trailing_empty_placeholder(self.messages_buf, msg);
+        self.bump_messages_revision();
+    }
+
+    pub(crate) fn flush_context_timeline_markers(&mut self) {
+        let markers = self.context_timeline.persist_markers();
+        if markers.is_empty() {
+            return;
+        }
+        crate::cm_agent::context_timeline::strip_context_window_timeline_markers(self.messages_buf);
+        self.messages_buf.extend(markers);
         self.bump_messages_revision();
     }
 
@@ -319,7 +331,7 @@ impl RunLoopParams<'_> {
         &mut self,
         per_coord_layer_cache: Option<&mut crate::agent::per_coord::PerCoordinator>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        crate::agent::context_window::prepare_messages_for_model(
+        let delta = crate::agent::context_window::prepare_messages_for_model(
             self.ctx.core.llm_backend,
             self.ctx.core.client,
             self.ctx.core.api_key,
@@ -336,7 +348,21 @@ impl RunLoopParams<'_> {
                 turn_budget: Some(&self.turn.turn_budget),
             },
         )
-        .await
+        .await?;
+        let events = self.turn.context_timeline.merge(
+            crate::cm_agent::context_timeline::ContextTimelineSnapshot {
+                messages: self.turn.messages_buf,
+                pipeline: delta.pipeline,
+                summarized: delta.summarized,
+                summary_tail_kept: delta.summary_tail_kept,
+            },
+        );
+        crate::agent::agent_turn::turn_loop::context_timeline_sse::emit_context_timeline_sse(
+            &self.ctx.io.control,
+            &events,
+        )
+        .await;
+        Ok(())
     }
 }
 
@@ -396,6 +422,7 @@ mod turn_planner_hints_tests {
             executor_api_key: None,
             seed_override: LlmSeedOverride::FromConfig,
             turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+            context_timeline: Default::default(),
         };
         assert_eq!(turn.messages_buffer_revision(), 0);
         turn.push_message(Message::assistant_only("a"));

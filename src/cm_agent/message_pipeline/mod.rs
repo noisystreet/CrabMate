@@ -9,11 +9,11 @@
 //!
 //! 对 [`apply_session_sync_pipeline`] / [`apply_session_sync_pipeline_with_config`] 中**固定**为：
 //!
-//! 1. 记录起点快照（`SessionSyncStart`）
+//! 1. 暂存 `crabmate_timeline`（不计入条数/字符预算），记录起点快照（`SessionSyncStart`）
 //! 2. **`compress_tool_message_contents`**（`tool_message_max_chars`）
 //! 3. **`trim_messages_by_count`**（`max_message_history`）
 //! 4. 若 **`context_char_budget > 0`**：`trim_messages_by_char_budget` → 再次 **`compress_tool_message_contents`**
-//! 5. **`drop_orphan_tool_messages`**
+//! 5. **`drop_orphan_tool_messages`**，再把暂存的时间线旁注接回尾部
 //!
 //! 新增步骤须同步更新 [`sync_pipeline::MessagePipelineStage`]、本列表、以及 `docs/开发文档.md` 中上下文策略描述。
 //!
@@ -45,8 +45,8 @@ pub use crate::cm_llm::vendor_messages::{
     conversation_messages_to_vendor_body, normalize_stripped_messages_for_vendor_body,
 };
 pub use sync_pipeline::{
-    MessagePipelineReport, MessagePipelineStage, PipelineStepSnapshot, apply_session_sync_pipeline,
-    apply_session_sync_pipeline_with_config,
+    MessagePipelineDelta, MessagePipelineReport, MessagePipelineStage, PipelineStepSnapshot,
+    apply_session_sync_pipeline, apply_session_sync_pipeline_with_config,
 };
 pub use transforms::{
     compress_tool_message_contents, drop_orphan_tool_messages, estimate_message_chars,

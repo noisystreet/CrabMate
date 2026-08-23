@@ -231,10 +231,14 @@ pub async fn run_agent_turn<'a>(
             executor_api_key,
             seed_override,
             turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+            context_timeline: Default::default(),
         },
     };
 
     let res = run_agent_turn_common_with_optional_trace(&mut loop_params, wall_ms).await;
+    if res.is_ok() {
+        loop_params.turn.flush_context_timeline_markers();
+    }
     // 失败时向 trace_sink emit Error 事件（最小化 emit；完整 LLM/工具事件由后续 PR 接入）
     if let Err(e) = &res
         && let Some(sink) = loop_params.ctx.obs.trace_sink.as_ref()

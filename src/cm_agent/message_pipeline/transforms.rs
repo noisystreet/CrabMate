@@ -1,6 +1,21 @@
 //! 会话侧逐步变换：条数/字符裁剪、tool 压缩、孤立 tool 剔除等（由 [`super::sync_pipeline::apply_session_sync_pipeline_with_config`] 编排）。
 
-use crate::cm_types::{Message, message_content_byte_len_for_estimate};
+use crate::cm_types::{Message, is_chat_timeline_marker, message_content_byte_len_for_estimate};
+
+/// 抽出 `crabmate_timeline`，避免占用 `max_message_history` / 字符预算。
+pub fn take_chat_timeline_markers(messages: &mut Vec<Message>) -> Vec<Message> {
+    let mut parked = Vec::new();
+    let mut kept = Vec::with_capacity(messages.len());
+    for m in messages.drain(..) {
+        if is_chat_timeline_marker(&m) {
+            parked.push(m);
+        } else {
+            kept.push(m);
+        }
+    }
+    *messages = kept;
+    parked
+}
 
 /// 从字节长度近似字符数：ASCII 约 1:1，CJK 约 3:1，混合取中间值 ~2:1。
 fn estimate_chars_from_bytes(s: &str) -> usize {

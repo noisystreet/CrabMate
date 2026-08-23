@@ -202,6 +202,7 @@ mod per_reflect_tests {
                 executor_api_key: None,
                 seed_override: LlmSeedOverride::FromConfig,
                 turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
+                context_timeline: Default::default(),
             },
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;

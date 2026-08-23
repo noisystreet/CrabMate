@@ -26,6 +26,7 @@ CUSTOM tool_running	{"type":"CUSTOM","customType":"tool_running","data":{"runnin
 CUSTOM parsing_tool_calls	{"type":"CUSTOM","customType":"parsing_tool_calls","data":{"parsing":true}}	handled
 CUSTOM assistant_answer_phase	{"type":"CUSTOM","customType":"assistant_answer_phase","data":{"phase":"answer"}}	handled
 CUSTOM timeline_log	{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"k","title":"t"}}	handled
+CUSTOM timeline_log context_trim	{"type":"CUSTOM","customType":"timeline_log","data":{"kind":"context_trim","title":"已裁剪历史","detail":"{\"n_before\":3}"}}	handled
 CUSTOM thinking_trace	{"type":"CUSTOM","customType":"thinking_trace","data":{"op":"reasoning_delta","chunk":"x"}}	handled
 CUSTOM workspace_changed	{"type":"CUSTOM","customType":"workspace_changed","data":{"changed":true}}	handled
 CUSTOM command_approval	{"type":"CUSTOM","customType":"command_approval","data":{"command":"git","args":"status"}}	handled

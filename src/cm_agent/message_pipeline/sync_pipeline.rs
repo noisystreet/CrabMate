@@ -7,7 +7,7 @@ use crate::cm_types::Message;
 
 use super::transforms::{
     compress_tool_message_contents, drop_orphan_tool_messages, estimate_non_system_chars,
-    trim_messages_by_char_budget, trim_messages_by_count,
+    take_chat_timeline_markers, trim_messages_by_char_budget, trim_messages_by_count,
 };
 use super::{MESSAGE_PIPELINE_COUNTERS, MessagePipelineConfig, MessagePipelineCounters};
 
@@ -46,7 +46,17 @@ pub struct PipelineStepSnapshot {
     pub non_system_chars_est: usize,
 }
 
-/// 会话同步管道的一次执行轨迹（仅 debug 启用时填充）。
+/// 单次会话同步的轻量结果（始终填充，供回合时间线；与 `GET /status` 进程累计无关）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MessagePipelineDelta {
+    pub n_before: usize,
+    pub n_after: usize,
+    pub trim_count_hit: bool,
+    pub trim_char_hit: bool,
+    pub tool_compress_hits: usize,
+}
+
+/// 会话同步管道的一次执行轨迹（仅 debug 启用时填充 `steps`）。
 #[derive(Default, Debug)]
 pub struct MessagePipelineReport {
     pub steps: Vec<PipelineStepSnapshot>,
@@ -107,8 +117,10 @@ pub fn apply_session_sync_pipeline_with_config(
     messages: &mut Vec<Message>,
     cfg: MessagePipelineConfig,
     mut report: Option<&mut MessagePipelineReport>,
-) {
+) -> MessagePipelineDelta {
     let ctr: &MessagePipelineCounters = &MESSAGE_PIPELINE_COUNTERS;
+    let parked = take_chat_timeline_markers(messages);
+    let n_before = messages.len();
 
     record_and_trace(
         &mut report,
@@ -116,10 +128,10 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
-    let c1 = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
-    if c1 > 0 {
+    let mut tool_compress_hits = compress_tool_message_contents(messages, cfg.tool_message_max_chars);
+    if tool_compress_hits > 0 {
         ctr.tool_compress_hits
-            .fetch_add(c1 as u64, Ordering::Relaxed);
+            .fetch_add(tool_compress_hits as u64, Ordering::Relaxed);
     }
     record_and_trace(
         &mut report,
@@ -127,7 +139,8 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
-    if trim_messages_by_count(messages, cfg.max_message_history) {
+    let trim_count_hit = trim_messages_by_count(messages, cfg.max_message_history);
+    if trim_count_hit {
         ctr.trim_count_hits.fetch_add(1, Ordering::Relaxed);
     }
     record_and_trace(
@@ -136,12 +149,14 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
+    let mut trim_char_hit = false;
     if cfg.context_char_budget > 0 {
-        if trim_messages_by_char_budget(
+        trim_char_hit = trim_messages_by_char_budget(
             messages,
             cfg.context_char_budget,
             cfg.context_min_messages_after_system,
-        ) {
+        );
+        if trim_char_hit {
             ctr.trim_char_budget_hits.fetch_add(1, Ordering::Relaxed);
         }
         record_and_trace(
@@ -153,6 +168,7 @@ pub fn apply_session_sync_pipeline_with_config(
         if c2 > 0 {
             ctr.tool_compress_hits
                 .fetch_add(c2 as u64, Ordering::Relaxed);
+            tool_compress_hits = tool_compress_hits.saturating_add(c2);
         }
         record_and_trace(
             &mut report,
@@ -171,6 +187,15 @@ pub fn apply_session_sync_pipeline_with_config(
         MessagePipelineStage::AfterDropOrphanTool,
         messages,
     );
+    let n_after = messages.len();
+    messages.extend(parked);
+    MessagePipelineDelta {
+        n_before,
+        n_after,
+        trim_count_hit,
+        trim_char_hit,
+        tool_compress_hits,
+    }
 }
 
 /// 与 [`apply_session_sync_pipeline_with_config`] 相同，从完整 [`AgentConfig`] 取子集。
@@ -178,6 +203,6 @@ pub fn apply_session_sync_pipeline(
     messages: &mut Vec<Message>,
     cfg: &AgentConfig,
     report: Option<&mut MessagePipelineReport>,
-) {
-    apply_session_sync_pipeline_with_config(messages, MessagePipelineConfig::from(cfg), report);
+) -> MessagePipelineDelta {
+    apply_session_sync_pipeline_with_config(messages, MessagePipelineConfig::from(cfg), report)
 }

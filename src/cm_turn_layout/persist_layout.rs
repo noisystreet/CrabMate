@@ -383,4 +383,16 @@ mod tests {
         assert_eq!(a.segments.len(), 1);
         assert_eq!(a.segments[0].segment_kind, "assistant_answer");
     }
+
+    #[test]
+    fn context_trim_timeline_json_projects_assistant_timeline() {
+        let body = r#"{"kind":"context_trim","title":"已裁剪历史","detail":"{\"n_before\":12,\"n_after\":8}"}"#;
+        let msgs = vec![timeline(body), user("hi"), assistant_text("ok")];
+        let meta = layout_meta_from_messages(&msgs);
+        assert!(
+            kinds(&meta).contains(&"assistant_timeline"),
+            "{:?}",
+            kinds(&meta)
+        );
+    }
 }
