@@ -80,6 +80,19 @@ fn ensure_text_column(conn: &Connection, column: &str) -> Result<(), rusqlite::E
     Ok(())
 }
 
+fn layout_meta_json_for_messages(messages: &[Message]) -> String {
+    match serde_json::to_string(&crate::cm_turn_layout::layout_meta_from_messages(messages)) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!(
+                target: "crabmate",
+                "会话 layout 元数据序列化失败 error={e}"
+            );
+            String::new()
+        }
+    }
+}
+
 /// 打开库文件并迁移（父目录不存在则创建）。
 pub fn open_file(path: &Path) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
     if let Some(parent) = path.parent() {
@@ -249,13 +262,14 @@ pub fn save_if_revision(
             return Ok(SaveConversationOutcome::Conflict);
         }
     };
+    let layout_json = layout_meta_json_for_messages(&messages);
 
     if let Some(exp) = expected_revision {
         let n = conn.execute(
             &format!(
-                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, revision = revision + 1, updated_at_unix = ?4 WHERE id = ?5 AND revision = ?6"
+                "UPDATE {TABLE} SET messages_json = ?1, active_agent_role = ?2, active_session_mode = ?3, layout_meta_json = ?4, revision = revision + 1, updated_at_unix = ?5 WHERE id = ?6 AND revision = ?7"
             ),
-            params![json, active_col, mode_col, now, id, exp as i64],
+            params![json, active_col, mode_col, layout_json, now, id, exp as i64],
         )?;
         if n == 0 {
             return Ok(SaveConversationOutcome::Conflict);
@@ -271,9 +285,9 @@ pub fn save_if_revision(
         }
         conn.execute(
             &format!(
-                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, 1, ?5)"
+                "INSERT INTO {TABLE} (id, messages_json, active_agent_role, active_session_mode, layout_meta_json, revision, updated_at_unix) VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6)"
             ),
-            params![id, json, active_col, mode_col, now],
+            params![id, json, active_col, mode_col, layout_json, now],
         )?;
     }
     prune(
@@ -393,11 +407,12 @@ fn persist_messages_bump_revision(
         }
     };
     let now = now_unix();
+    let layout_json = layout_meta_json_for_messages(messages);
     let n = conn.execute(
         &format!(
-            "UPDATE {TABLE} SET messages_json = ?1, revision = revision + 1, updated_at_unix = ?2 WHERE id = ?3 AND revision = ?4"
+            "UPDATE {TABLE} SET messages_json = ?1, layout_meta_json = ?2, revision = revision + 1, updated_at_unix = ?3 WHERE id = ?4 AND revision = ?5"
         ),
-        params![new_json, now, id, expected_revision as i64],
+        params![new_json, layout_json, now, id, expected_revision as i64],
     )?;
     if n == 0 {
         return Ok(SaveConversationOutcome::Conflict);
@@ -515,7 +530,10 @@ mod tests {
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert_eq!(loaded.revision, 1);
         assert_eq!(loaded.messages.len(), 2);
-        assert!(loaded.layout.is_none());
+        assert_eq!(
+            loaded.layout.as_ref().map(|m| m.layout_schema_version),
+            Some(2)
+        );
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
@@ -613,27 +631,61 @@ mod tests {
     }
 
     #[test]
-    fn save_if_revision_does_not_clear_layout_meta_json() {
+    fn save_if_revision_rewrites_layout_from_messages() {
         let conn = Connection::open_in_memory().unwrap();
         migrate(&conn).unwrap();
-        let msgs = vec![Message::user_only("hi".to_string())];
+        let msgs = vec![
+            Message::user_only("hi".to_string()),
+            Message::assistant_only("ok".to_string()),
+        ];
         assert_eq!(
             save_if_revision(&conn, "c1", msgs.clone(), None, None, None).unwrap(),
             SaveConversationOutcome::Saved
         );
         conn.execute(
             "UPDATE crabmate_conversations SET layout_meta_json = ?1 WHERE id = ?2",
-            params![r#"{"layout_schema_version":2}"#, "c1"],
+            params![
+                r#"{"layout_schema_version":2,"projection_hash":"stale"}"#,
+                "c1"
+            ],
         )
         .unwrap();
         assert_eq!(
-            save_if_revision(&conn, "c1", msgs, None, None, Some(1)).unwrap(),
+            save_if_revision(&conn, "c1", msgs.clone(), None, None, Some(1)).unwrap(),
             SaveConversationOutcome::Saved
         );
         let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
-        assert_eq!(
-            loaded.layout.as_ref().map(|m| m.layout_schema_version),
-            Some(2)
+        let expected = crate::cm_turn_layout::layout_meta_from_messages(&msgs);
+        assert_eq!(loaded.layout.as_ref(), Some(&expected));
+        assert_ne!(
+            loaded
+                .layout
+                .as_ref()
+                .and_then(|m| m.projection_hash.as_deref()),
+            Some("stale")
         );
+    }
+
+    #[test]
+    fn truncate_before_user_rewrites_layout_meta() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        let msgs = vec![
+            Message::user_only("hi".to_string()),
+            Message::assistant_only("ok".to_string()),
+        ];
+        assert_eq!(
+            save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert!(!loaded.layout.as_ref().unwrap().segments.is_empty());
+        assert_eq!(
+            truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.revision).unwrap(),
+            SaveConversationOutcome::Saved
+        );
+        let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+        assert!(after.messages.is_empty());
+        assert!(after.layout.as_ref().unwrap().segments.is_empty());
     }
 }

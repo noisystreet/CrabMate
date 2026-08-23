@@ -10,12 +10,14 @@
 
 mod event;
 mod model;
+mod persist_layout;
 mod project;
 mod reduce;
 pub mod replay;
 
 pub use event::TurnEvent;
 pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSegment};
+pub use persist_layout::layout_meta_from_messages;
 pub use project::{
     ASSISTANT_ANSWER, ASSISTANT_BATCH_NARRATION, ASSISTANT_COMMENTARY, ActiveProjectedRow,
     ProjectedRow, TurnProjection, batch_narration_row, batch_narration_text, commentary_for_tool,
