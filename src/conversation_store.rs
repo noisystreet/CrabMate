@@ -80,13 +80,14 @@ fn ensure_text_column(conn: &Connection, column: &str) -> Result<(), rusqlite::E
     Ok(())
 }
 
-fn layout_meta_json_for_messages(messages: &[Message]) -> String {
+fn layout_meta_json_for_messages(conversation_id: &str, messages: &[Message]) -> String {
     match serde_json::to_string(&crate::cm_turn_layout::layout_meta_from_messages(messages)) {
         Ok(s) => s,
         Err(e) => {
             log::error!(
                 target: "crabmate",
-                "会话 layout 元数据序列化失败 error={e}"
+                "会话 layout 元数据序列化失败 conversation_id={} error={e}",
+                conversation_id
             );
             String::new()
         }
@@ -262,7 +263,7 @@ pub fn save_if_revision(
             return Ok(SaveConversationOutcome::Conflict);
         }
     };
-    let layout_json = layout_meta_json_for_messages(&messages);
+    let layout_json = layout_meta_json_for_messages(id, &messages);
 
     if let Some(exp) = expected_revision {
         let n = conn.execute(
@@ -407,7 +408,7 @@ fn persist_messages_bump_revision(
         }
     };
     let now = now_unix();
-    let layout_json = layout_meta_json_for_messages(messages);
+    let layout_json = layout_meta_json_for_messages(id, messages);
     let n = conn.execute(
         &format!(
             "UPDATE {TABLE} SET messages_json = ?1, layout_meta_json = ?2, revision = revision + 1, updated_at_unix = ?3 WHERE id = ?4 AND revision = ?5"
