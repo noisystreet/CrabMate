@@ -9,6 +9,7 @@
 //! 测试：`cargo test --lib golden_turn_project` / `golden_turn_project_web` / `golden_turn_project_projection`。
 
 mod event;
+mod hydration_diff;
 mod model;
 mod persist_layout;
 mod project;
@@ -16,6 +17,9 @@ mod reduce;
 pub mod replay;
 
 pub use event::TurnEvent;
+pub use hydration_diff::{
+    HydrationLayoutFingerprint, fingerprint_layout, layout_prefers_projection,
+};
 pub use model::{PENDING_STREAM_COMMENTARY_SEGMENT_ID, SegmentKind, Turn, TurnSegment};
 pub use persist_layout::layout_meta_from_messages;
 pub use project::{

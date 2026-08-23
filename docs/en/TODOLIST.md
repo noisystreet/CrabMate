@@ -38,10 +38,9 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 ### Compat-layer shrink (follow-ups)
 
 > Compat-layer shrink **todos in this section are authoritative** (local drafts are gitignored and must not be cited as docs).  
-> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`, persist/truncate from `messages`, projection goldens; official Web still ignores `layout`); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
-> **Next**: **B3**. Items below need a compatibility window.
+> **Done**: **A3/A1/A2** (`44b13fd2`); **B1 / Turn §16 E1** (`stream_draining` → persist → `conversation_saved` → last `RUN_FINISHED`; dual-order Web; soft `terminal_order`); **B2 / Turn §16 E2 persist** (optional `layout` on `GET /conversation/messages`, SQLite `layout_meta_json`, persist/truncate from `messages`, projection goldens); **B3 / Turn §16 E3** (hydration dual-read: v2 row keys when `layout` present, legacy otherwise; diffs record row count/role order/text hash only); **C1–C3** (weaker secret migration reads; MCP `toml_legacy_imported`; semantic side-check JSON-only by default).  
+> **Next**: **B4**. Items below need a compatibility window.
 
-- [ ] **B3 (E3)**: Hydration dual-read (metadata first; legacy when absent).
 - [ ] **B4 (E4)**: Contract: drop post-terminal business frames, same-revision bandage, legacy merge/dedupe (only after E4 exit criteria).
 
 ---
