@@ -7,6 +7,16 @@
 
 use log::debug;
 
+mod approval_specs;
+
+pub use approval_specs::{
+    http_fetch as approval_spec_http_fetch,
+    http_request as approval_spec_http_request,
+    read_dir_external_path as approval_spec_read_dir_external_path,
+    run_command_unknown_cmd as approval_spec_run_command_unknown_cmd,
+    shell_script as approval_spec_shell_script,
+    workspace_external_path as approval_spec_workspace_external_path,
+};
 pub use crate::cm_approval::{
     ApprovalRequestSpec, InteractiveGateOutcome, SensitiveCapability, SharedAllowlistHandles,
     ToolApprovalWebError, WebApprovalChannelMode, WebApprovalSink, persist_allowlist_key,
@@ -67,3 +77,42 @@ pub async fn request_tool_interactive_approval(
     }
     Err(ToolApprovalWebError::ChannelUnavailable)
 }
+
+/// 从 [`crate::cm_tools::tool_runtime::WebToolRuntime`] 构造 persistent allowlist 句柄。
+pub fn shared_allowlist_handles_web(
+    web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+) -> SharedAllowlistHandles<'_> {
+    SharedAllowlistHandles {
+        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
+    }
+}
+
+/// Web 会话下的交互审批门控（封装 allowlist 句柄与 sink 构造）。
+pub async fn interactive_gate_web_runtime(
+    web_ctx: Option<&crate::cm_tools::tool_runtime::WebToolRuntime>,
+    spec: &ApprovalRequestSpec,
+    sse_log_label: &'static str,
+) -> Result<InteractiveGateOutcome, ToolApprovalWebError> {
+    interactive_gate_after_whitelist_miss(
+        web_ctx.map(web_tool_runtime_approval_sink),
+        spec,
+        sse_log_label,
+        &shared_allowlist_handles_web(web_ctx),
+    )
+    .await
+}
+
+/// 将交互门控结果映射为工具层错误串（允许 / 拒绝 / 通道不可用）。
+pub fn interactive_gate_outcome_to_tool_err(outcome: InteractiveGateOutcome) -> Result<(), String> {
+    match outcome {
+        InteractiveGateOutcome::Allowed => Ok(()),
+        InteractiveGateOutcome::Denied(msg) => Err(msg),
+    }
+}
+
+/// HTTP 工具：URL 未匹配配置前缀且无 Web 审批通道时的统一错误。
+pub const HTTP_TOOL_NO_APPROVAL_CHANNEL_ERR: &str =
+    "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。";
+
+/// 交互门控失败时的统一错误文案（拒绝或通道不可用）。
+pub const INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR: &str = "错误：审批通道不可用，请重试。";

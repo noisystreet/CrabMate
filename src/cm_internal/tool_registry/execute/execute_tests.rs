@@ -47,6 +47,32 @@ async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_withou
 }
 
 #[tokio::test]
+async fn prefetch_http_fetch_blocks_without_channel_when_prefix_miss() {
+    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    let args = r#"{"url":"https://example.com/private"}"#;
+    let calls = vec![tool_call("http_fetch", args)];
+    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None).await;
+    assert_eq!(failures.len(), 1);
+    let msg = failures
+        .get(&("http_fetch".to_string(), args.to_string()))
+        .expect("missing failure for http_fetch");
+    assert!(msg.contains("http_fetch_allowed_prefixes"));
+    assert!(msg.contains("审批通道"));
+}
+
+#[tokio::test]
+async fn prefetch_http_fetch_skips_approval_when_prefix_matches() {
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.http_fetch.http_fetch_allowed_prefixes =
+        vec!["https://example.com/".to_string()];
+    let cfg = Arc::new(cfg);
+    let args = r#"{"url":"https://example.com/api/v1"}"#;
+    let calls = vec![tool_call("http_fetch", args)];
+    let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None).await;
+    assert!(failures.is_empty());
+}
+
+#[tokio::test]
 async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     let allowed = cfg.command_exec.allowed_commands.to_vec();
