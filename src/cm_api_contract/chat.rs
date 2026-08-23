@@ -161,7 +161,7 @@ pub struct ConversationLayoutSegment {
 /// `GET /conversation/messages` 可选布局元数据。
 ///
 /// **会话级**（与 `revision` 同范围），**不**随 `limit` / `before_index` 对 `messages` 分页切片。
-/// 落盘 JSON 与本类型 serde 相同。省略该对象时客户端走 legacy hydration（B3 前官方 Web 亦不消费本字段）。
+/// 落盘 JSON 与本类型 serde 相同。新保存写入该对象；旧行可省略，客户端走 legacy hydration（B3 前官方 Web 亦不消费本字段）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
 pub struct ConversationLayoutMeta {
     pub layout_schema_version: u32,

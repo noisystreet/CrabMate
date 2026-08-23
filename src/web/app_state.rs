@@ -48,8 +48,7 @@ pub(crate) struct MemoryConversationEntry {
     active_agent_role: Option<String>,
     /// 当前会话工作模式；`None` 表示未显式设置（回落配置默认）。
     active_session_mode: Option<String>,
-    /// B2：布局元数据。当前 expand **不写入**（插入为 `None`，revision 更新也不改此字段）。
-    /// PR3 落盘时须与 SQLite `layout_meta_json` 同语义：插入写入、更新保留或刷新，勿只改 SQL。
+    /// B2：与 SQLite `layout_meta_json` 同语义，每次按当前 `messages` 派生写入。
     layout: Option<ConversationLayoutMeta>,
     revision: u64,
     updated_at: std::time::Instant,
@@ -342,10 +341,12 @@ impl AppStateConversationRuntime {
                 if let Some(entry) = guard.get_mut(&conversation_id) {
                     match expected_revision {
                         Some(exp) if entry.revision == exp => {
+                            entry.layout = Some(crate::cm_turn_layout::layout_meta_from_messages(
+                                &messages,
+                            ));
                             entry.messages = messages;
                             entry.active_agent_role = role_owned;
                             entry.active_session_mode = mode_owned;
-                            // B2 expand：不写 layout。PR3 须在此刷新或显式保留，避免只改 SQLite。
                             entry.revision = entry.revision.saturating_add(1);
                             entry.updated_at = now;
                         }
@@ -354,13 +355,14 @@ impl AppStateConversationRuntime {
                 } else if expected_revision.is_some() {
                     return SaveConversationOutcome::Conflict;
                 } else {
+                    let layout = Some(crate::cm_turn_layout::layout_meta_from_messages(&messages));
                     guard.insert(
                         conversation_id,
                         MemoryConversationEntry {
                             messages,
                             active_agent_role: role_owned,
                             active_session_mode: mode_owned,
-                            layout: None,
+                            layout,
                             revision: 1,
                             updated_at: now,
                         },
@@ -428,6 +430,9 @@ impl AppStateConversationRuntime {
                     return SaveConversationOutcome::Saved;
                 }
                 entry.messages.truncate(cut);
+                entry.layout = Some(crate::cm_turn_layout::layout_meta_from_messages(
+                    &entry.messages,
+                ));
                 entry.revision = entry.revision.saturating_add(1);
                 entry.updated_at = std::time::Instant::now();
                 Self::prune_memory_locked(&mut guard, std::time::Instant::now());
