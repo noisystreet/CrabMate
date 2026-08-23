@@ -97,23 +97,13 @@ async fn request_unknown_cmd_approval(
             None,
         ));
     }
-    let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
-        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-    };
+    let allow_handles = crate::cm_internal::tool_approval::shared_allowlist_handles_web(web_ctx);
     let cmd_show = if script.is_empty() {
         cmd.to_string()
     } else {
         script.to_string()
     };
-    let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
-        capability: crate::cm_internal::tool_approval::SensitiveCapability::HostShell,
-        sse_command: cmd.to_string(),
-        sse_args: cmd_show.clone(),
-        allowlist_key: None,
-        cli_title: "run_command 审批",
-        cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", cmd_show.trim()),
-        web_timeline_prefix_zh: "命令审批：",
-    };
+    let spec = crate::cm_internal::tool_approval::approval_spec_run_command_unknown_cmd(cmd, &cmd_show);
     let decision_opt = if web_ctx.is_some() {
         match crate::cm_internal::tool_approval::request_tool_interactive_approval(
             web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
@@ -124,7 +114,11 @@ async fn request_unknown_cmd_approval(
         {
             Ok(d) => Some(d),
             Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                return Err(("错误：审批通道不可用，请重试。".to_string(), None));
+                return Err((
+                    crate::cm_internal::tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR
+                        .to_string(),
+                    None,
+                ));
             }
         }
     } else {
@@ -295,25 +289,8 @@ async fn approve_posix_shell_wrap_if_needed(
             script.trim()
         ));
     }
-    let spec = ApprovalRequestSpec {
-        capability: SensitiveCapability::HostShell,
-        sse_command: sse_command.to_string(),
-        sse_args: script.to_string(),
-        allowlist_key: None,
-        cli_title: if sse_command == "terminal_session" {
-            "terminal_session 脚本审批"
-        } else {
-            "run_command 脚本审批"
-        },
-        cli_detail: format!(
-            "将经 bash -c 执行整行（glob / $VAR 会展开；独立 argv 中的 && / | 等会绕过单命令白名单）：\n{}",
-            script.trim()
-        ),
-        web_timeline_prefix_zh: "脚本审批：",
-    };
-    let allow_handles = SharedAllowlistHandles {
-        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-    };
+    let spec = tool_approval::approval_spec_shell_script(sse_command, script);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
@@ -327,7 +304,7 @@ async fn approve_posix_shell_wrap_if_needed(
         }
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{msg}")),
         Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err("错误：审批通道不可用，请重试。".to_string())
+            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
         }
     }
 }
@@ -421,24 +398,9 @@ async fn approve_external_run_command_paths_if_needed(
         ));
     }
     let detail_paths = unsafe_args.join(", ");
-    let spec = ApprovalRequestSpec {
-        capability: SensitiveCapability::WorkspaceExternalPath,
-        sse_command: sse_command.to_string(),
-        sse_args: format!("external_paths={detail_paths}"),
-        allowlist_key: None,
-        cli_title: if sse_command == "terminal_session" {
-            "terminal_session 工作区外路径审批"
-        } else {
-            "run_command 工作区外路径审批"
-        },
-        cli_detail: format!(
-            "{sse_command} 请求使用工作区外路径或 \"..\"：{detail_paths}\n仅在可信环境下批准。\n（不审计 bash/sh -c 脚本字符串内部路径。）"
-        ),
-        web_timeline_prefix_zh: "工作区外路径审批：",
-    };
-    let allow_handles = SharedAllowlistHandles {
-        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-    };
+    let spec =
+        tool_approval::approval_spec_workspace_external_path(sse_command, &detail_paths);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
@@ -450,7 +412,7 @@ async fn approve_external_run_command_paths_if_needed(
         Ok(InteractiveGateOutcome::Allowed) => Ok(ExternalPathGate::Approved),
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
         Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err("错误：审批通道不可用，请重试。".to_string())
+            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
         }
     }
 }
@@ -766,58 +728,12 @@ pub async fn prefetch_http_fetch_parallel_approvals(
         };
         let storage_key = tools::http_fetch::storage_key(&url);
         let approval_args = tools::http_fetch::approval_args_display(method, &url);
-        let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
-            &url,
-            &cfg.http_fetch.http_fetch_allowed_prefixes,
-        );
-        let allowed_by_list = match web_ctx {
-            Some(w) => w
-                .persistent_allowlist_shared
-                .lock()
-                .await
-                .contains(&storage_key),
-            None => false,
-        };
-        if allowed_by_cfg || allowed_by_list {
-            continue;
-        }
-        if web_ctx.is_none() {
-            failures.insert(
-                key,
-                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
-                    .to_string(),
-            );
-            continue;
-        }
-        let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
-            capability: crate::cm_internal::tool_approval::SensitiveCapability::OutboundHttpRead,
-            sse_command: "http_fetch".to_string(),
-            sse_args: approval_args.clone(),
-            allowlist_key: Some(storage_key.clone()),
-            cli_title: "http_fetch 审批",
-            cli_detail: format!(
-                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                approval_args
-            ),
-            web_timeline_prefix_zh: "http_fetch 审批：",
-        };
-        let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
-            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-        };
-        match crate::cm_internal::tool_approval::interactive_gate_after_whitelist_miss(
-            web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
-            &spec,
-            "tool_registry::http_fetch approval parallel prefetch",
-            &allow_handles,
-        )
-        .await
+        match http_fetch_prefetch_approval(web_ctx, cfg.as_ref(), &url, &storage_key, &approval_args)
+            .await
         {
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Allowed) => {}
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
+            Ok(()) => {}
+            Err(msg) => {
                 failures.insert(key, msg);
-            }
-            Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                failures.insert(key, "错误：审批通道不可用，请重试。".to_string());
             }
         }
     }

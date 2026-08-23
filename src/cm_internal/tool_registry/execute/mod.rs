@@ -10,8 +10,7 @@ use std::time::Duration;
 use log::error;
 
 use crate::cm_internal::tool_approval::{
-    self, ApprovalRequestSpec, InteractiveGateOutcome, SensitiveCapability, SharedAllowlistHandles,
-    ToolApprovalWebError,
+    self, InteractiveGateOutcome, ToolApprovalWebError,
 };
 use crate::cm_internal::tools;
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
@@ -144,21 +143,8 @@ async fn approve_external_read_dir_if_needed(
             ext_path
         ));
     }
-    let spec = ApprovalRequestSpec {
-        capability: SensitiveCapability::WorkspaceExternalPath,
-        sse_command: "read_dir".to_string(),
-        sse_args: format!("path={}", ext_path),
-        allowlist_key: None,
-        cli_title: "read_dir 工作区外路径审批",
-        cli_detail: format!(
-            "read_dir 请求访问工作区外路径：{}\n仅在可信环境下批准。",
-            ext_path
-        ),
-        web_timeline_prefix_zh: "工作区外路径审批：",
-    };
-    let allow_handles = SharedAllowlistHandles {
-        web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-    };
+    let spec = tool_approval::approval_spec_read_dir_external_path(&ext_path);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
     match tool_approval::interactive_gate_after_whitelist_miss(
         web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
@@ -170,7 +156,7 @@ async fn approve_external_read_dir_if_needed(
         Ok(InteractiveGateOutcome::Allowed) => Ok(()),
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
         Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err("错误：审批通道不可用，请重试。".to_string())
+            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
         }
     }
 }
@@ -179,6 +165,7 @@ include!("execute_dispatch_body.inc.rs");
 include!("execute_run_command.inc.rs");
 include!("execute_run_command_sync.inc.rs");
 include!("execute_terminal_session.inc.rs");
+include!("http_tool_exec.inc.rs");
 include!("execute_http_tools.inc.rs");
 
 #[cfg(test)]

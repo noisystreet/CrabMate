@@ -13,73 +13,29 @@ async fn execute_http_fetch_impl(
     };
     let key = tools::http_fetch::storage_key(&url);
     let approval_args = tools::http_fetch::approval_args_display(method, &url);
-    let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
-        &url,
-        &cfg.http_fetch.http_fetch_allowed_prefixes,
-    );
-    let allowed_by_list = match web_ctx {
-        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
-        None => false,
-    };
-    if !(allowed_by_cfg || allowed_by_list) {
-        if web_ctx.is_none() {
-            return (
-                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
-                    .to_string(),
-                None,
-            );
-        }
-        let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
-            capability: crate::cm_internal::tool_approval::SensitiveCapability::OutboundHttpRead,
-            sse_command: "http_fetch".to_string(),
-            sse_args: approval_args.clone(),
-            allowlist_key: Some(key.clone()),
-            cli_title: "http_fetch 审批",
-            cli_detail: format!(
-                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                approval_args
-            ),
-            web_timeline_prefix_zh: "http_fetch 审批：",
-        };
-        let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
-            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-        };
-        match crate::cm_internal::tool_approval::interactive_gate_after_whitelist_miss(
-            web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
-            &spec,
-            "tool_registry::http_fetch approval",
-            &allow_handles,
-        )
-        .await
-        {
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Allowed) => {}
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
-                return (msg, None);
-            }
-            Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                return ("错误：审批通道不可用，请重试。".to_string(), None);
-            }
-        }
-    }
-    if let Some(out) = dispatch_non_sync_tool_to_docker(
+    let spec = crate::cm_internal::tool_approval::approval_spec_http_fetch(&approval_args, &key);
+    if let Err(out) = http_tool_preflight(HttpToolPreflightParams {
         env,
         effective_working_dir,
         workspace_is_set,
-        "http_fetch",
+        web_ctx,
         args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
-    )
+        tool_name: "http_fetch",
+        url: &url,
+        storage_key: &key,
+        sse_log_label: "tool_registry::http_fetch approval",
+        approval_spec: &spec,
+    })
     .await
     {
         return out;
     }
     let timeout_secs = cfg.http_fetch.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
-    let name_in = name.to_string();
     let url_owned = url.clone();
     let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_fetch_outer_wall_secs(cfg);
-    let handle = tokio::task::spawn_blocking(move || {
+    let s = spawn_blocking_http_tool("http_fetch", name, outer_wall, move || {
         tools::http_fetch::fetch_with_method(
             &url_owned,
             method,
@@ -88,20 +44,8 @@ async fn execute_http_fetch_impl(
             timeout_secs,
             max_body,
         )
-    });
-    let s = match tokio::time::timeout(Duration::from_secs(outer_wall), handle).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            error!(
-                target: "crabmate",
-                "http_fetch 任务异常 tool={} error={:?}",
-                name_in,
-                e
-            );
-            format!("http_fetch 执行异常：{:?}", e)
-        }
-        Err(_) => format!("http_fetch 超时（{} 秒）", outer_wall),
-    };
+    })
+    .await;
     (s, None)
 }
 
@@ -121,74 +65,32 @@ async fn execute_http_request_impl(
         };
     let has_body = json_body.is_some();
     let key = tools::http_fetch::request_storage_key(method, &url);
-    let approval_args = tools::http_fetch::approval_args_display_request(method, &url, has_body);
-    let allowed_by_cfg = tools::http_fetch::url_matches_allowed_prefixes(
-        &url,
-        &cfg.http_fetch.http_fetch_allowed_prefixes,
-    );
-    let allowed_by_list = match web_ctx {
-        Some(w) => w.persistent_allowlist_shared.lock().await.contains(&key),
-        None => false,
-    };
-    if !(allowed_by_cfg || allowed_by_list) {
-        if web_ctx.is_none() {
-            return (
-                "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes，且无法使用审批通道（例如非流式 Web 会话）。"
-                    .to_string(),
-                None,
-            );
-        }
-        let spec = crate::cm_internal::tool_approval::ApprovalRequestSpec {
-            capability: crate::cm_internal::tool_approval::SensitiveCapability::OutboundHttpWrite,
-            sse_command: "http_request".to_string(),
-            sse_args: approval_args.clone(),
-            allowlist_key: Some(key.clone()),
-            cli_title: "http_request 审批",
-            cli_detail: format!(
-                "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n{}",
-                approval_args
-            ),
-            web_timeline_prefix_zh: "http_request 审批：",
-        };
-        let allow_handles = crate::cm_internal::tool_approval::SharedAllowlistHandles {
-            web: web_ctx.map(|w| &w.persistent_allowlist_shared),
-        };
-        match crate::cm_internal::tool_approval::interactive_gate_after_whitelist_miss(
-            web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
-            &spec,
-            "tool_registry::http_request approval",
-            &allow_handles,
-        )
-        .await
-        {
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Allowed) => {}
-            Ok(crate::cm_internal::tool_approval::InteractiveGateOutcome::Denied(msg)) => {
-                return (msg, None);
-            }
-            Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                return ("错误：审批通道不可用，请重试。".to_string(), None);
-            }
-        }
-    }
-    if let Some(out) = dispatch_non_sync_tool_to_docker(
+    let approval_args =
+        tools::http_fetch::approval_args_display_request(method, &url, has_body);
+    let spec =
+        crate::cm_internal::tool_approval::approval_spec_http_request(&approval_args, &key);
+    if let Err(out) = http_tool_preflight(HttpToolPreflightParams {
         env,
         effective_working_dir,
         workspace_is_set,
-        "http_request",
+        web_ctx,
         args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json(cfg.as_ref()),
-    )
+        tool_name: "http_request",
+        url: &url,
+        storage_key: &key,
+        sse_log_label: "tool_registry::http_request approval",
+        approval_spec: &spec,
+    })
     .await
     {
         return out;
     }
     let timeout_secs = cfg.http_fetch.http_fetch_timeout_secs.max(1);
     let max_body = cfg.http_fetch.http_fetch_max_response_bytes;
-    let name_in = name.to_string();
     let url_fetch = url.clone();
     let user_agent = cfg.http_fetch.http_fetch_user_agent.clone();
     let outer_wall = http_request_outer_wall_secs(cfg);
-    let handle = tokio::task::spawn_blocking(move || {
+    let s = spawn_blocking_http_tool("http_request", name, outer_wall, move || {
         tools::http_fetch::request_with_json_body(
             &url_fetch,
             method,
@@ -198,20 +100,8 @@ async fn execute_http_request_impl(
             timeout_secs,
             max_body,
         )
-    });
-    let s = match tokio::time::timeout(Duration::from_secs(outer_wall), handle).await {
-        Ok(Ok(s)) => s,
-        Ok(Err(e)) => {
-            error!(
-                target: "crabmate",
-                "http_request 任务异常 tool={} error={:?}",
-                name_in,
-                e
-            );
-            format!("http_request 执行异常：{:?}", e)
-        }
-        Err(_) => format!("http_request 超时（{} 秒）", outer_wall),
-    };
+    })
+    .await;
     (s, None)
 }
 
