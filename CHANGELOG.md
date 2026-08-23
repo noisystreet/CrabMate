@@ -21,13 +21,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - (none yet)
 
-## [0.5.0] - 2026-08-22
+## [0.5.0] - 2026-08-23
 
-**Git pre-release `v0.5.0-alpha.2`** (follows **`v0.5.0-alpha.1`**). crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+**Git pre-release `v0.5.0-alpha.3`** (follows **`v0.5.0-alpha.2`**). crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
 
 SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT` are soft (old clients ignore them). Chat image embeds, **Save to this device**, directory zip, in-tree file rename, and **Stop** (stream cancel) need a matching **crabmate-client** build; the model is prompted to write `![alt](relative.png)` rather than copying files onto `CM_WEB_STATIC_DIR`.
 
 ### Added
+
+- Conversation **`layout`**: optional metadata on **`GET /conversation/messages`**; persist on save; dual-read fingerprint (row count / kind order / `projection_hash`). Official Web dual-read must **not** stamp live stream keys (`turn-commentary-*` / `turn-final-answer`) onto GET-hydrated history.
+- Timeline sidecars for context injection and trim events.
 
 - **`GET /workspace/file/download`**: raw bytes of any workspace file (`path` query, **16 MiB**, `application/octet-stream`). Client **Save to this device** (PDF/binary). `GET /workspace/file/raw` stays image-only.
 - **`GET /workspace/dir/archive`**: zip a workspace directory (`path` query or workspace root; **16 MiB** uncompressed, **256** files; no symlink follow).
@@ -44,11 +47,17 @@ SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT
 
 ### Changed
 
+- Bump **`worbrow`** to **0.2.2**.
+- **`run_command`**: split emit vs `parse_args`; shared HTTP approval Spec builders.
+
 - **`lizard-rust`**: fail if any `src/` function has CCN > 10; drop per-module count/sum ratchets and `scripts/lizard_module_ccn_caps.toml`. Split remaining high-CCN helpers in `src/cm_*` so the global cap holds.
 - On timeout or cancel, **`run_command`** kills the **process group**, not only the direct child.
 - DeepSeek vendor match also uses **`model_id_prefixes = ["deepseek-"]`**, so a proxy `api_base` without the substring `deepseek` still gets text-vs-vision image handling.
 
 ### Fixed
+
+- Label LLM context summaries as server injections so they are not shown as user turns.
+- Persist layout segment keys and align timeline projection.
 
 - Clicking Stop in the Client previously only aborted the browser fetch; the agent turn and tools kept running. Clients must call the new cancel route.
 - Treat reqwest **`SendRequest`**-class transport errors as retryable (same backoff as other transient LLM HTTP failures).
@@ -161,8 +170,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.2...HEAD
-[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.2
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.3...HEAD
+[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.3
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0
