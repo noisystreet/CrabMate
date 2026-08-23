@@ -24,6 +24,8 @@ pub mod text_sanitize;
 /// 单轮墙钟预算判定与文案。
 pub mod turn_budget;
 pub mod turn_tool_policy;
+/// 回合上下文时间线收集（注入 / 裁剪；不发 SSE）。
+pub mod context_timeline;
 pub mod workflow_reflection_controller;
 pub mod workspace_snapshot;
 

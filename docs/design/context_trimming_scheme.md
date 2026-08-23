@@ -68,11 +68,11 @@
 
 当前顺序（与源码一致）：
 
-1. 记录起点快照（观测）  
+1. 暂存 **`crabmate_timeline`**（不计入条数/字符预算），记录起点快照（观测）  
 2. **`compress_tool_message_contents`**（**`tool_message_max_chars`**）  
 3. **`trim_messages_by_count`**（**`max_message_history`**）  
 4. 若 **`context_char_budget > 0` 或按 `llm_context_tokens` 推导的预算 `> 0`**（**`AgentConfig::effective_context_char_budget_for_pipeline`** 取显式与推导的**更小非零**）：**`trim_messages_by_char_budget`** → 再次 **`compress_tool_message_contents`**  
-5. **`drop_orphan_tool_messages`**
+5. **`drop_orphan_tool_messages`**，再接回暂存的时间线旁注
 
 **设计意图简述**：
 
@@ -84,7 +84,7 @@
 
 ## 5. 可选 LLM 摘要（中间段压缩）
 
-当 **`context_summary_trigger_chars > 0`** 且非 system 文本总字符超过阈值时，**`maybe_summarize_with_llm`** 可发起**无 tools** 的 `chat/completions`，将「中间段」折叠为一条 **`user.name=crabmate_context_summary`** 摘要（正文前缀 **`[较早对话已摘要，以下为压缩要点]`**），尾部保留 **`context_summary_tail_messages`** 条（细节见 **`context_window.rs`**）。该条**落盘并送模型**，**不**计入分叉用户序号，也**不**出现在 **`GET /conversation/messages`** 快照（与首轮工作区画像同类）。聊天主列在 sidecar 时间线落地前不会展示摘要正文。
+当 **`context_summary_trigger_chars > 0`** 且非 system 文本总字符超过阈值时，**`maybe_summarize_with_llm`** 可发起**无 tools** 的 `chat/completions`，将「中间段」折叠为一条 **`user.name=crabmate_context_summary`** 摘要（正文前缀 **`[较早对话已摘要，以下为压缩要点]`**），尾部保留 **`context_summary_tail_messages`** 条（细节见 **`context_window.rs`**）。该条**落盘并送模型**，**不**计入分叉用户序号，也**不**出现在 **`GET /conversation/messages`** 快照（与首轮工作区画像同类）。窗口裁剪/摘要命中时另发 `timeline_log`（`kind=context_trim`）并在回合结束写入 `crabmate_timeline`。
 
 提示词：**`context_summary_system_file`** / **`context_summary_user_file`**（默认 **`config/prompts/context_summary_*.md`**；读盘优先，失败回退 **`include_str!` 嵌入**）。user 模板须含 **`{transcript}`**（缺失则运行时追加）；长度占位符 **`{max_tokens}`**（别名 **`{max_chars}`**）。默认骨架为「目标 / 已完成 / 未决 / 关键路径与错误」。桌面/deb 模板路径为 **`/etc/crabmate/config/prompts/`**（与配置键相对路径一致）。
 

@@ -9,8 +9,9 @@ use crate::llm::{
     complete_chat_retrying, vendor_temperature_for_config,
 };
 use crate::types::{
-    ChatRequest, Message, is_message_excluded_from_llm_context_except_memory,
-    message_content_as_str, message_content_into_text_lossy,
+    ChatRequest, Message, is_chat_timeline_marker,
+    is_message_excluded_from_llm_context_except_memory, message_content_as_str,
+    message_content_into_text_lossy,
 };
 use crate::cm_agent::context_budget_pressure::{
     effective_summary_trigger_for_turn, resolve_context_budget_pressure,
@@ -125,8 +126,11 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
 ///
 /// - **Debug**（`RUST_LOG` 含 **`crabmate=debug`** 或 **`debug`**）：汇总一行 `message_pipeline session_sync: …`。
 /// - **Trace**（**`crabmate::message_pipeline=trace`**）：每步一行 `session_sync_step stage=…`（可不开启全局 debug）。
-pub fn prepare_messages_before_model_call_sync(messages: &mut Vec<Message>, cfg: &AgentConfig) {
-    prepare_messages_before_model_call_sync_with_budget(messages, cfg, None);
+pub fn prepare_messages_before_model_call_sync(
+    messages: &mut Vec<Message>,
+    cfg: &AgentConfig,
+) -> crate::agent::message_pipeline::MessagePipelineDelta {
+    prepare_messages_before_model_call_sync_with_budget(messages, cfg, None)
 }
 
 fn message_pipeline_config_for_turn(
@@ -149,17 +153,16 @@ pub fn prepare_messages_before_model_call_sync_with_budget(
     messages: &mut Vec<Message>,
     cfg: &AgentConfig,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
-) {
+) -> crate::agent::message_pipeline::MessagePipelineDelta {
     let pipe_cfg = message_pipeline_config_for_turn(cfg, turn_budget);
     let need_report = log::log_enabled!(log::Level::Debug)
         || log::log_enabled!(target: "crabmate::message_pipeline", log::Level::Trace);
+    let mut report = crate::agent::message_pipeline::MessagePipelineReport::default();
+    let report_arg = need_report.then_some(&mut report);
+    let delta = crate::agent::message_pipeline::apply_session_sync_pipeline_with_config(
+        messages, pipe_cfg, report_arg,
+    );
     if need_report {
-        let mut report = crate::agent::message_pipeline::MessagePipelineReport::default();
-        crate::agent::message_pipeline::apply_session_sync_pipeline_with_config(
-            messages,
-            pipe_cfg,
-            Some(&mut report),
-        );
         let pressure = resolve_context_budget_pressure(cfg, turn_budget.map(|a| a.as_ref()));
         let tiktoken_note =
             crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
@@ -179,11 +182,16 @@ pub fn prepare_messages_before_model_call_sync_with_budget(
             tiktoken_note,
             pressure.char_budget_scale_percent
         );
-    } else {
-        crate::agent::message_pipeline::apply_session_sync_pipeline_with_config(
-            messages, pipe_cfg, None,
-        );
     }
+    delta
+}
+
+/// 同步裁剪 + 可选 LLM 摘要后的轻量结果（供时间线；不含 SSE）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PrepareMessagesDelta {
+    pub pipeline: crate::agent::message_pipeline::MessagePipelineDelta,
+    pub summarized: bool,
+    pub summary_tail_kept: Option<usize>,
 }
 
 /// 主 Agent 外循环的「同步裁剪 + 可选 LLM 摘要」核心路径。
@@ -195,9 +203,9 @@ pub(crate) async fn prepare_session_messages_shared(
     messages: &mut Vec<Message>,
     cancel: Option<&std::sync::atomic::AtomicBool>,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    prepare_messages_before_model_call_sync_with_budget(messages, cfg, turn_budget);
-    maybe_summarize_with_llm(
+) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
+    let pipeline = prepare_messages_before_model_call_sync_with_budget(messages, cfg, turn_budget);
+    let summarized = maybe_summarize_with_llm(
         llm_backend,
         client,
         api_key,
@@ -206,7 +214,17 @@ pub(crate) async fn prepare_session_messages_shared(
         cancel,
         turn_budget,
     )
-    .await
+    .await?;
+    let summary_tail_kept = summarized.then_some(
+        cfg.context_pipeline
+            .context_summary_tail_messages
+            .clamp(4, 64),
+    );
+    Ok(PrepareMessagesDelta {
+        pipeline,
+        summarized,
+        summary_tail_kept,
+    })
 }
 
 fn context_summary_attempt_prep(
@@ -287,9 +305,9 @@ pub async fn maybe_summarize_with_llm(
     messages: &mut Vec<Message>,
     cancel: Option<&std::sync::atomic::AtomicBool>,
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let Some((tail, transcript)) = context_summary_attempt_prep(cfg, messages, turn_budget) else {
-        return Ok(());
+        return Ok(false);
     };
 
     if let Some(budget) = turn_budget
@@ -299,7 +317,7 @@ pub async fn maybe_summarize_with_llm(
             target: "crabmate",
             "上下文摘要跳过：已达单轮 LLM 调用或墙钟上限"
         );
-        return Ok(());
+        return Ok(false);
     }
 
     let req = build_context_summary_chat_request(cfg, &transcript);
@@ -321,16 +339,17 @@ pub async fn maybe_summarize_with_llm(
             let summary_text = message_content_into_text_lossy(msg.content);
             if summary_text.trim().is_empty() {
                 warn!(target: "crabmate", "上下文摘要模型返回空正文，跳过替换");
-                return Ok(());
+                return Ok(false);
             }
             if summary_text.trim().chars().count() < 20 {
                 warn!(
                     "context_window: LLM summary too short ({} chars), skipping replacement",
                     summary_text.trim().chars().count()
                 );
-                return Ok(());
+                return Ok(false);
             }
             apply_llm_summary_to_messages(messages, tail, &summary_text);
+            Ok(true)
         }
         Err(e) => {
             warn!(
@@ -338,9 +357,9 @@ pub async fn maybe_summarize_with_llm(
                 "上下文摘要请求失败，继续使用裁剪后的消息 error={}",
                 e
             );
+            Ok(false)
         }
     }
-    Ok(())
 }
 
 /// 与 [`prepare_messages_for_model`] 搭配的**可选**回合侧挂钩：PER 层缓存失效 + `RunLoopTurnState` 缓冲代数。
@@ -359,8 +378,8 @@ pub async fn prepare_messages_for_model(
     messages: &mut Vec<Message>,
     workspace_changelist: Option<&crate::workspace::changelist::WorkspaceChangelist>,
     hooks: PrepareMessagesForModelHooks<'_>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    prepare_session_messages_shared(
+) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
+    let mut delta = prepare_session_messages_shared(
         llm_backend,
         client,
         api_key,
@@ -384,7 +403,8 @@ pub async fn prepare_messages_for_model(
     if let Some(r) = hooks.run_loop_messages_revision {
         *r = r.wrapping_add(1);
     }
-    Ok(())
+    delta.pipeline.n_after = messages.iter().filter(|m| !is_chat_timeline_marker(m)).count();
+    Ok(delta)
 }
 
 #[cfg(test)]

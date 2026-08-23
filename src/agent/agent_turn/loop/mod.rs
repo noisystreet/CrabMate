@@ -3,6 +3,7 @@
 //! 纯 FSM / reduce / decision 在 **`crabmate-agent::agent_turn`**；本目录再导出并承载副作用。
 
 pub(crate) mod check_abort;
+pub(crate) mod context_timeline_sse;
 pub(crate) mod orchestration_route;
 pub(crate) mod outer_loop;
 pub(crate) mod outer_loop_build_idle;

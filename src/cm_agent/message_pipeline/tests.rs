@@ -366,7 +366,8 @@ fn drop_orphan_after_trim_count_in_full_pipeline() {
         context_char_budget: 0,
         context_min_messages_after_system: 1,
     };
-    apply_session_sync_pipeline_with_config(&mut v, cfg, None);
+    let delta = apply_session_sync_pipeline_with_config(&mut v, cfg, None);
+    assert!(delta.trim_count_hit);
     assert!(
         !v.iter().any(|m| m.role == "tool"),
         "trim 后 tool 无有效前驱时应被 drop_orphan 剔除: {:?}",
@@ -378,4 +379,48 @@ fn drop_orphan_after_trim_count_in_full_pipeline() {
         "应保留尾部 user: {:?}",
         v
     );
+}
+
+#[test]
+fn pipeline_parks_timeline_so_history_budget_keeps_users() {
+    use crate::cm_agent::context_timeline::{
+        KIND_CONTEXT_INJECT, KIND_CONTEXT_TRIM, ContextTimelineEvent, timeline_marker,
+    };
+    use crate::cm_types::is_chat_timeline_marker;
+
+    let mut v = vec![
+        Message::system_only("s"),
+        Message::user_only("u1"),
+        Message::user_only("u2"),
+        Message::user_only("u3"),
+        timeline_marker(&ContextTimelineEvent {
+            kind: KIND_CONTEXT_INJECT,
+            title: "t".into(),
+            detail: "{}".into(),
+        }),
+        timeline_marker(&ContextTimelineEvent {
+            kind: KIND_CONTEXT_TRIM,
+            title: "t".into(),
+            detail: "{}".into(),
+        }),
+    ];
+    let cfg = MessagePipelineConfig {
+        tool_message_max_chars: 512,
+        max_message_history: 2,
+        context_char_budget: 0,
+        context_min_messages_after_system: 1,
+    };
+    let delta = apply_session_sync_pipeline_with_config(&mut v, cfg, None);
+    assert!(delta.trim_count_hit);
+    assert_eq!(delta.n_before, 4);
+    assert_eq!(delta.n_after, 3);
+    let users: Vec<_> = v
+        .iter()
+        .filter(|m| m.role == "user")
+        .filter_map(|m| crate::cm_types::message_content_as_str(&m.content))
+        .collect();
+    assert_eq!(users, vec!["u2", "u3"]);
+    assert_eq!(v.iter().filter(|m| is_chat_timeline_marker(m)).count(), 2);
+    let snap = crate::cm_types::filter_messages_for_web_client_snapshot(&v);
+    assert!(snap.iter().any(is_chat_timeline_marker));
 }
