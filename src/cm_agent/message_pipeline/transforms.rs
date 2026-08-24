@@ -1,6 +1,54 @@
 //! 会话侧逐步变换：条数/字符裁剪、tool 压缩、孤立 tool 剔除等（由 [`super::sync_pipeline::apply_session_sync_pipeline_with_config`] 编排）。
 
-use crate::cm_types::{Message, is_chat_timeline_marker, message_content_byte_len_for_estimate};
+use crate::cm_types::{
+    Message, is_chat_timeline_marker, message_content_byte_len_for_estimate,
+    user_message_counts_for_branch_truncation,
+};
+
+/// 一个完整用户交互组在会话切片中的半开区间：真实 `user` 到下一条真实 `user` 之前。
+///
+/// 该区间自然覆盖其后的 `assistant(tool_calls)`、一个或多个 `tool` 结果以及最终 assistant，
+/// 以及服务端命名注入的 `user`，因而按组删除不会制造孤立工具结果。首条 `system` 与首个真实
+/// `user` 之前的前缀不属于任何组。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ConversationTurnGroup {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// 扫描会话中的完整用户交互组。末组可包含当前正在进行的工具链，调用方通常应始终保留。
+#[must_use]
+pub fn conversation_turn_groups(messages: &[Message]) -> Vec<ConversationTurnGroup> {
+    let starts: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, message)| {
+            user_message_counts_for_branch_truncation(message).then_some(idx)
+        })
+        .collect();
+    starts
+        .iter()
+        .enumerate()
+        .map(|(idx, start)| ConversationTurnGroup {
+            start: *start,
+            end: starts.get(idx + 1).copied().unwrap_or(messages.len()),
+        })
+        .collect()
+}
+
+/// 删除最旧完整交互组，同时至少保留 `min_groups_to_keep` 个最近组。
+///
+/// 返回删除的消息条数；没有可删除完整组时返回 0。
+pub fn remove_oldest_turn_group(messages: &mut Vec<Message>, min_groups_to_keep: usize) -> usize {
+    let groups = conversation_turn_groups(messages);
+    if groups.len() <= min_groups_to_keep {
+        return 0;
+    }
+    let oldest = groups[0];
+    let removed = oldest.end.saturating_sub(oldest.start);
+    messages.drain(oldest.start..oldest.end);
+    removed
+}
 
 /// 抽出 `crabmate_timeline`，避免占用 `max_message_history` / 字符预算。
 pub fn take_chat_timeline_markers(messages: &mut Vec<Message>) -> Vec<Message> {
@@ -104,6 +152,18 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
         return false;
     }
     let before = messages.len();
+    let has_system_head = messages[0].role == "system";
+    let max_total = max_after_system.saturating_add(usize::from(has_system_head));
+    while messages.len() > max_total && remove_oldest_turn_group(messages, 1) > 0 {}
+    if messages.len() <= max_total {
+        return messages.len() < before;
+    }
+    if !conversation_turn_groups(messages).is_empty() {
+        // 最近完整组本身可超过条数兜底；结构完整性优先于硬切消息条数。
+        return messages.len() < before;
+    }
+
+    // 无完整 user 组的病理历史沿用旧尾部兜底；正常 ReAct 历史不会进入此分支。
     if messages[0].role == "system" {
         if messages.len() <= 1 + max_after_system {
             return false;
@@ -120,8 +180,53 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
     messages.len() < before
 }
 
-/// 在已压缩 tool 的前提下，从索引 1 起删除最旧消息，直到非 system 字符 ≤ `budget` 或条数触底。
-/// 返回是否**删除了**至少一条消息（字符预算裁剪生效）。
+fn trim_complete_turn_groups_by_char_budget(
+    messages: &mut Vec<Message>,
+    budget: usize,
+    min_total: usize,
+) -> bool {
+    let mut removed_any = false;
+    while estimate_non_system_chars(messages) > budget {
+        let groups = conversation_turn_groups(messages);
+        let Some(oldest) = groups.first().copied() else {
+            break;
+        };
+        let remaining = messages
+            .len()
+            .saturating_sub(oldest.end.saturating_sub(oldest.start));
+        if groups.len() <= 1 || remaining < min_total {
+            break;
+        }
+        messages.drain(oldest.start..oldest.end);
+        removed_any = true;
+    }
+    removed_any
+}
+
+fn trim_ungrouped_messages_by_char_budget(
+    messages: &mut Vec<Message>,
+    budget: usize,
+    min_total: usize,
+) -> bool {
+    let start_idx = usize::from(messages[0].role == "system");
+    let removable = messages.len().saturating_sub(min_total);
+    let mut remaining_chars = estimate_non_system_chars(messages);
+    let mut remove_count = 0usize;
+    for msg in messages.iter().skip(start_idx).take(removable) {
+        if remaining_chars <= budget {
+            break;
+        }
+        remaining_chars = remaining_chars.saturating_sub(estimate_message_chars(msg));
+        remove_count += 1;
+    }
+    if remove_count > 0 {
+        messages.drain(start_idx..start_idx + remove_count);
+    }
+    remove_count > 0
+}
+
+/// 在已压缩 tool 的前提下删除最旧完整交互组，直到非 system 字符 ≤ `budget` 或条数触底。
+/// 无 user 组的病理历史保留逐消息兼容兜底。返回是否**删除了**至少一条消息。
 pub fn trim_messages_by_char_budget(
     messages: &mut Vec<Message>,
     budget: usize,
@@ -134,32 +239,15 @@ pub fn trim_messages_by_char_budget(
     if messages.len() <= min_total {
         return false;
     }
-    let current_chars = estimate_non_system_chars(messages);
-    if current_chars <= budget {
+    if estimate_non_system_chars(messages) <= budget {
         return false;
     }
-
-    let has_system_head = messages[0].role == "system";
-    let start_idx = if has_system_head { 1 } else { 0 };
-    let removable = messages.len().saturating_sub(min_total);
-    if removable == 0 {
-        return false;
+    if conversation_turn_groups(messages).is_empty() {
+        // 无 user 组时保留旧的逐消息兜底，避免损坏历史兼容性。
+        trim_ungrouped_messages_by_char_budget(messages, budget, min_total)
+    } else {
+        trim_complete_turn_groups_by_char_budget(messages, budget, min_total)
     }
-
-    let mut remaining_chars = current_chars;
-    let mut remove_count = 0usize;
-    for msg in messages.iter().skip(start_idx).take(removable) {
-        if remaining_chars <= budget {
-            break;
-        }
-        remaining_chars = remaining_chars.saturating_sub(estimate_message_chars(msg));
-        remove_count += 1;
-    }
-    if remove_count == 0 {
-        return false;
-    }
-    messages.drain(start_idx..start_idx + remove_count);
-    true
 }
 
 /// 删除「无前驱 `assistant` + `tool_calls`」的 `role: tool` 消息。

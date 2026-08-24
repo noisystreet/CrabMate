@@ -329,20 +329,25 @@ impl RunLoopParams<'_> {
     /// 将 [`crate::agent::context_window::prepare_messages_for_model`] 与回合缓冲 + **`messages_revision`** 挂钩集中在一处，避免调用点漏传 revision。
     pub(crate) async fn prepare_turn_messages_for_model(
         &mut self,
+        tools_defs: &[crate::types::Tool],
         per_coord_layer_cache: Option<&mut crate::agent::per_coord::PerCoordinator>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let model_override = self.effective_model().map(str::to_owned);
         let delta = crate::agent::context_window::prepare_messages_for_model(
             self.ctx.core.llm_backend,
             self.ctx.core.client,
             self.ctx.core.api_key,
             self.ctx.core.cfg.as_ref(),
             self.turn.messages_buf,
-            self.ctx
-                .attach
-                .workspace_changelist
-                .as_ref()
-                .map(|a| a.as_ref()),
             crate::agent::context_window::PrepareMessagesForModelHooks {
+                tools: tools_defs,
+                model_override: model_override.as_deref(),
+                workspace_changelist: self
+                    .ctx
+                    .attach
+                    .workspace_changelist
+                    .as_ref()
+                    .map(|a| a.as_ref()),
                 per_coord_layer_cache,
                 run_loop_messages_revision: Some(&mut self.turn.messages_revision),
                 turn_budget: Some(&self.turn.turn_budget),
@@ -355,6 +360,31 @@ impl RunLoopParams<'_> {
                 pipeline: delta.pipeline,
                 summarized: delta.summarized,
                 summary_tail_kept: delta.summary_tail_kept,
+                compaction:
+                    crate::cm_agent::context_timeline::ContextCompactionTimelineSnapshot {
+                        before_tokens: delta.compaction.before.used_input_tokens,
+                        after_tokens: delta.compaction.after.used_input_tokens,
+                        max_input_tokens: delta
+                            .compaction
+                            .budget
+                            .map(|budget| budget.max_input_tokens),
+                        reserved_output_tokens: delta
+                            .compaction
+                            .budget
+                            .map(|budget| budget.reserved_output_tokens),
+                        message_tokens: delta.compaction.after.message_tokens,
+                        tool_schema_tokens: delta.compaction.after.tool_schema_tokens,
+                        attachment_tokens: delta.compaction.after.attachment_tokens,
+                        counting_source: delta
+                            .compaction
+                            .after
+                            .counting_source
+                            .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str),
+                        token_triggered: delta.compaction.token_triggered,
+                        removed_turn_groups: delta.compaction.removed_turn_groups,
+                        removed_messages: delta.compaction.removed_messages,
+                        compaction_reason: delta.compaction.compaction_reason(),
+                    },
             },
         );
         crate::agent::agent_turn::turn_loop::context_timeline_sse::emit_context_timeline_sse(

@@ -27,11 +27,48 @@ pub struct ContextTimelineEvent {
 
 /// 一次 `prepare_messages_for_model` 完成后的快照（含 changelist sync）。
 #[derive(Clone, Copy, Debug)]
+pub struct ContextCompactionTimelineSnapshot {
+    pub before_tokens: u32,
+    pub after_tokens: u32,
+    pub max_input_tokens: Option<u32>,
+    pub reserved_output_tokens: Option<u32>,
+    pub message_tokens: u32,
+    pub tool_schema_tokens: u32,
+    pub attachment_tokens: u32,
+    pub counting_source: Option<&'static str>,
+    pub token_triggered: bool,
+    pub removed_turn_groups: usize,
+    pub removed_messages: usize,
+    pub compaction_reason: &'static str,
+}
+
+impl Default for ContextCompactionTimelineSnapshot {
+    fn default() -> Self {
+        Self {
+            before_tokens: 0,
+            after_tokens: 0,
+            max_input_tokens: None,
+            reserved_output_tokens: None,
+            message_tokens: 0,
+            tool_schema_tokens: 0,
+            attachment_tokens: 0,
+            counting_source: None,
+            token_triggered: false,
+            removed_turn_groups: 0,
+            removed_messages: 0,
+            compaction_reason: "none",
+        }
+    }
+}
+
+/// 一次 `prepare_messages_for_model` 完成后的快照（含 changelist sync）。
+#[derive(Clone, Copy, Debug)]
 pub struct ContextTimelineSnapshot<'a> {
     pub messages: &'a [Message],
     pub pipeline: MessagePipelineDelta,
     pub summarized: bool,
     pub summary_tail_kept: Option<usize>,
+    pub compaction: ContextCompactionTimelineSnapshot,
 }
 
 /// 用户回合内累加；SSE 每种 kind 最多发一次，落盘用最终合并结果。
@@ -47,6 +84,18 @@ pub struct ContextTimelineAcc {
     compress_hits: usize,
     summarized: bool,
     summary_tail_kept: Option<usize>,
+    token_before: Option<u32>,
+    token_after: Option<u32>,
+    max_input_tokens: Option<u32>,
+    reserved_output_tokens: Option<u32>,
+    message_tokens: Option<u32>,
+    tool_schema_tokens: Option<u32>,
+    attachment_tokens: Option<u32>,
+    counting_source: Option<&'static str>,
+    token_triggered: bool,
+    removed_turn_groups: usize,
+    removed_messages: usize,
+    compaction_reason: Option<&'static str>,
     sse_inject_sent: bool,
     sse_trim_sent: bool,
     persist_flushed: bool,
@@ -87,6 +136,27 @@ impl ContextTimelineAcc {
                 self.summary_tail_kept = snap.summary_tail_kept;
             }
         }
+        let compaction = snap.compaction;
+        if self.token_before.is_none() || compaction.token_triggered {
+            self.token_before = Some(compaction.before_tokens);
+        }
+        self.token_after = Some(compaction.after_tokens);
+        self.message_tokens = Some(compaction.message_tokens);
+        self.tool_schema_tokens = Some(compaction.tool_schema_tokens);
+        self.attachment_tokens = Some(compaction.attachment_tokens);
+        self.counting_source = compaction.counting_source;
+        self.max_input_tokens = compaction.max_input_tokens;
+        self.reserved_output_tokens = compaction.reserved_output_tokens;
+        self.token_triggered = self.token_triggered || compaction.token_triggered;
+        self.removed_turn_groups = self
+            .removed_turn_groups
+            .saturating_add(compaction.removed_turn_groups);
+        self.removed_messages = self
+            .removed_messages
+            .saturating_add(compaction.removed_messages);
+        if compaction.compaction_reason != "none" {
+            self.compaction_reason = Some(compaction.compaction_reason);
+        }
     }
 
     fn has_inject(&self) -> bool {
@@ -94,11 +164,15 @@ impl ContextTimelineAcc {
     }
 
     fn has_trim(&self) -> bool {
-        self.count_hit || self.char_hit || self.compress_hits > 0 || self.summarized
+        self.count_hit
+            || self.char_hit
+            || self.compress_hits > 0
+            || self.summarized
+            || self.removed_turn_groups > 0
     }
 
     fn trim_title(&self) -> &'static str {
-        if self.count_hit || self.char_hit || self.summarized {
+        if self.count_hit || self.char_hit || self.summarized || self.removed_turn_groups > 0 {
             TITLE_TRIM
         } else {
             TITLE_TOOL_COMPRESS
@@ -141,6 +215,18 @@ impl ContextTimelineAcc {
             "compress_hits": self.compress_hits,
             "summarized": self.summarized,
             "tail_kept": self.summary_tail_kept,
+            "before_tokens": self.token_before,
+            "after_tokens": self.token_after,
+            "max_input_tokens": self.max_input_tokens,
+            "reserved_output_tokens": self.reserved_output_tokens,
+            "message_tokens": self.message_tokens,
+            "tool_schema_tokens": self.tool_schema_tokens,
+            "attachment_tokens": self.attachment_tokens,
+            "counting_source": self.counting_source,
+            "token_triggered": self.token_triggered,
+            "removed_turn_groups": self.removed_turn_groups,
+            "removed_messages": self.removed_messages,
+            "compaction_reason": self.compaction_reason,
         })
         .to_string();
         ContextTimelineEvent {
@@ -326,6 +412,7 @@ mod tests {
             pipeline: MessagePipelineDelta::default(),
             summarized: false,
             summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         assert!(ev.is_empty());
         assert!(acc.persist_markers().is_empty());
@@ -346,11 +433,50 @@ mod tests {
             },
             summarized: false,
             summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, KIND_CONTEXT_TRIM);
         assert_eq!(events[0].title, TITLE_TOOL_COMPRESS);
         assert!(events[0].detail.contains("\"compress_hits\":1"));
+    }
+
+    #[test]
+    fn token_group_compaction_reports_soft_budget_fields() {
+        let mut acc = ContextTimelineAcc::default();
+        let msgs = vec![Message::system_only("s"), Message::user_only("latest")];
+        let events = acc.merge(ContextTimelineSnapshot {
+            messages: &msgs,
+            pipeline: MessagePipelineDelta {
+                n_before: 8,
+                n_after: 2,
+                ..MessagePipelineDelta::default()
+            },
+            summarized: false,
+            summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot {
+                before_tokens: 9_000,
+                after_tokens: 6_000,
+                max_input_tokens: Some(8_000),
+                reserved_output_tokens: Some(2_000),
+                message_tokens: 5_000,
+                tool_schema_tokens: 900,
+                attachment_tokens: 100,
+                counting_source: Some("matched_tokenizer"),
+                token_triggered: true,
+                removed_turn_groups: 2,
+                removed_messages: 6,
+                compaction_reason: "token_budget_turn_groups",
+            },
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].title, TITLE_TRIM);
+        assert!(events[0].detail.contains("\"before_tokens\":9000"));
+        assert!(
+            events[0]
+                .detail
+                .contains("\"compaction_reason\":\"token_budget_turn_groups\"")
+        );
     }
 
     #[test]
@@ -372,6 +498,7 @@ mod tests {
             },
             summarized: true,
             summary_tail_kept: Some(6),
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         assert_eq!(first.len(), 2);
         assert_eq!(first[0].kind, KIND_CONTEXT_INJECT);
@@ -391,6 +518,7 @@ mod tests {
             },
             summarized: false,
             summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         assert!(second.is_empty());
         let persisted = acc.persist_markers();
@@ -448,6 +576,7 @@ mod tests {
             pipeline: MessagePipelineDelta::default(),
             summarized: false,
             summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         msgs.extend(acc.persist_markers());
         assert_eq!(
@@ -466,6 +595,7 @@ mod tests {
             },
             summarized: false,
             summary_tail_kept: None,
+            compaction: ContextCompactionTimelineSnapshot::default(),
         });
         strip_context_window_timeline_markers(&mut msgs);
         msgs.extend(acc2.persist_markers());

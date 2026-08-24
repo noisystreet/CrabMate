@@ -55,7 +55,7 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 
 With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
-The embedded context-history ceiling is **64 messages** (`max_message_history` / `CM_MAX_MESSAGE_HISTORY`) so tool-heavy turns are less likely to trim early. It remains a message-count safety limit rather than exact token accounting; see [Configuration](docs/en/CONFIGURATION.md).
+Context compaction is Token-led when `llm_context_tokens` is non-zero: Server budgets vendor-shaped messages, tools JSON, attachments, output reservation, and a safety margin, then removes only complete interaction groups. The **256-message** `max_message_history` / `CM_MAX_MESSAGE_HISTORY` limit remains a high-count fallback; see [Configuration](docs/en/CONFIGURATION.md).
 
 | Subcommand | Summary |
 | --- | --- |

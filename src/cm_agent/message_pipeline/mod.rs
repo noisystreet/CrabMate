@@ -2,8 +2,8 @@
 //!
 //! ## 两阶段
 //!
-//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符裁剪、孤立 `tool` 剔除。相邻 `assistant` 合并已移至供应商出站阶段（见 `conversation_messages_to_vendor_body`），不在会话同步管道内执行。
-//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::cm_agent::llm::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若调用方传入的 **`fold_system_into_user`** 为真（由 [`crate::cm_agent::llm::fold_system_into_user_for_config`] 按 MiniMax 等网关判定），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。
+//! 1. **会话同步（`apply_session_sync_pipeline`）**：在每次调用模型前对**进程内** `Vec<Message>` 就地处理——工具正文压缩、条数/字符兜底、孤立 `tool` 剔除。裁剪以完整 [`ConversationTurnGroup`] 为单位；`llm_context_tokens > 0` 时字符预算由最终请求 Token 预算器取代。
+//! 2. **供应商出站（`conversation_messages_to_vendor_body` 等）**：从会话切片构造 **`ChatRequest.messages`**：跳过 UI 分隔线与长期记忆注入、按网关策略去掉 `reasoning_content`（Moonshot **kimi-k2.5** 在 thinking 启用时对含 **`tool_calls`** 的 assistant **保留**思维链，见 [`crate::cm_agent::llm::vendor::LlmVendorAdapter::preserve_assistant_tool_call_reasoning`]）、再经 OpenAI 兼容 normalize（合并相邻 assistant、清理尾部非法 assistant）；若调用方传入的 **`fold_system_into_user`** 为真（由 [`crate::cm_agent::llm::fold_system_into_user_for_config`] 按 MiniMax 等网关判定），再将 **`system`** 折叠进后续 **`user`**。**不**写入会话 `Vec`。最终请求 Token 预算与删组见 `crate::agent::context_compaction`。
 //!
 //! ## 会话同步顺序契约（勿打乱）
 //!
@@ -49,8 +49,9 @@ pub use sync_pipeline::{
     apply_session_sync_pipeline, apply_session_sync_pipeline_with_config,
 };
 pub use transforms::{
-    compress_tool_message_contents, drop_orphan_tool_messages, estimate_message_chars,
-    estimate_non_system_chars, trim_messages_by_char_budget, trim_messages_by_count,
+    ConversationTurnGroup, compress_tool_message_contents, conversation_turn_groups,
+    drop_orphan_tool_messages, estimate_message_chars, estimate_non_system_chars,
+    remove_oldest_turn_group, trim_messages_by_char_budget, trim_messages_by_count,
 };
 
 /// 进程内累计：每次 `prepare_messages_for_model` 内同步管道实际发生裁剪/剔除时递增（供 `GET /status` 排障）。

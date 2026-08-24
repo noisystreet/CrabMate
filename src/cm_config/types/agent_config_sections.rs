@@ -133,6 +133,9 @@ pub struct ThinkingEchoConfig {
 pub struct ContextPipelineConfig {
     pub context_char_budget: usize,
     pub context_min_messages_after_system: usize,
+    pub context_token_trigger_percent: u32,
+    pub context_token_target_percent: u32,
+    pub context_token_safety_margin_tokens: u32,
     pub context_summary_trigger_chars: usize,
     pub context_summary_tail_messages: usize,
     pub context_summary_max_tokens: u32,

@@ -211,6 +211,9 @@ fn finalize_section_context_pipeline(
     types::ContextPipelineConfig {
         context_char_budget: tail.context_char_budget,
         context_min_messages_after_system: tail.context_min_messages_after_system,
+        context_token_trigger_percent: tail.context_token_trigger_percent,
+        context_token_target_percent: tail.context_token_target_percent,
+        context_token_safety_margin_tokens: tail.context_token_safety_margin_tokens,
         context_summary_trigger_chars: tail.context_summary_trigger_chars,
         context_summary_tail_messages: tail.context_summary_tail_messages,
         context_summary_max_tokens: tail.context_summary_max_tokens,

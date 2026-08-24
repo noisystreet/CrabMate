@@ -210,6 +210,24 @@ fn u64_range_rows_a2() -> &'static [U64RangeRow] {
             128,
         ),
         (
+            "context_token_trigger_percent",
+            |b| b.context_pipeline.context_token_trigger_percent,
+            50,
+            95,
+        ),
+        (
+            "context_token_target_percent",
+            |b| b.context_pipeline.context_token_target_percent,
+            30,
+            90,
+        ),
+        (
+            "context_token_safety_margin_tokens",
+            |b| b.context_pipeline.context_token_safety_margin_tokens,
+            128,
+            65_536,
+        ),
+        (
             "context_summary_trigger_chars",
             |b| b.context_pipeline.context_summary_trigger_chars,
             0,

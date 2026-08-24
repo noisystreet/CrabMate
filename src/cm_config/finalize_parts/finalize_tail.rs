@@ -33,6 +33,9 @@ struct FinalizeTailScalars {
     thinking_avoid_echo_appendix: String,
     context_char_budget: usize,
     context_min_messages_after_system: usize,
+    context_token_trigger_percent: u32,
+    context_token_target_percent: u32,
+    context_token_safety_margin_tokens: u32,
     context_summary_trigger_chars: usize,
     context_summary_tail_messages: usize,
     context_summary_max_tokens: u32,
@@ -206,6 +209,9 @@ fn derive_tail_plan_tool_thinking_scalars(
 struct TailContextQueuesSessionScalars {
     context_char_budget: usize,
     context_min_messages_after_system: usize,
+    context_token_trigger_percent: u32,
+    context_token_target_percent: u32,
+    context_token_safety_margin_tokens: u32,
     context_summary_trigger_chars: usize,
     context_summary_tail_messages: usize,
     context_summary_max_tokens: u32,
@@ -233,6 +239,21 @@ fn derive_tail_context_queues_session_scalars(
         .context_pipeline.context_min_messages_after_system
         .unwrap_or(4)
         .clamp(1, 128) as usize;
+    let context_token_trigger_percent = b
+        .context_pipeline
+        .context_token_trigger_percent
+        .unwrap_or(85)
+        .clamp(50, 95) as u32;
+    let context_token_target_percent = b
+        .context_pipeline
+        .context_token_target_percent
+        .unwrap_or(70)
+        .clamp(30, u64::from(context_token_trigger_percent.saturating_sub(5))) as u32;
+    let context_token_safety_margin_tokens = b
+        .context_pipeline
+        .context_token_safety_margin_tokens
+        .unwrap_or(2_048)
+        .clamp(128, 65_536) as u32;
     if context_budget_vs_history_suspicious(
         max_message_history,
         context_char_budget,
@@ -297,6 +318,9 @@ fn derive_tail_context_queues_session_scalars(
     TailContextQueuesSessionScalars {
         context_char_budget,
         context_min_messages_after_system,
+        context_token_trigger_percent,
+        context_token_target_percent,
+        context_token_safety_margin_tokens,
         context_summary_trigger_chars,
         context_summary_tail_messages,
         context_summary_max_tokens,
@@ -615,6 +639,9 @@ fn assemble_finalize_tail_scalars(
     let TailContextQueuesSessionScalars {
         context_char_budget,
         context_min_messages_after_system,
+        context_token_trigger_percent,
+        context_token_target_percent,
+        context_token_safety_margin_tokens,
         context_summary_trigger_chars,
         context_summary_tail_messages,
         context_summary_max_tokens,
@@ -666,6 +693,9 @@ fn assemble_finalize_tail_scalars(
         thinking_avoid_echo_appendix,
         context_char_budget,
         context_min_messages_after_system,
+        context_token_trigger_percent,
+        context_token_target_percent,
+        context_token_safety_margin_tokens,
         context_summary_trigger_chars,
         context_summary_tail_messages,
         context_summary_max_tokens,

@@ -322,6 +322,18 @@ fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
         "CM_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM",
     );
     apply_parse(
+        &mut b.context_pipeline.context_token_trigger_percent,
+        "CM_CONTEXT_TOKEN_TRIGGER_PERCENT",
+    );
+    apply_parse(
+        &mut b.context_pipeline.context_token_target_percent,
+        "CM_CONTEXT_TOKEN_TARGET_PERCENT",
+    );
+    apply_parse(
+        &mut b.context_pipeline.context_token_safety_margin_tokens,
+        "CM_CONTEXT_TOKEN_SAFETY_MARGIN_TOKENS",
+    );
+    apply_parse(
         &mut b.context_pipeline.context_summary_trigger_chars,
         "CM_CONTEXT_SUMMARY_TRIGGER_CHARS",
     );

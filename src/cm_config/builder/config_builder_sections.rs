@@ -147,6 +147,9 @@ pub(crate) struct ConfigBuilderThinkingEcho {
 pub(crate) struct ConfigBuilderContextPipeline {
     pub(crate) context_char_budget: Option<u64>,
     pub(crate) context_min_messages_after_system: Option<u64>,
+    pub(crate) context_token_trigger_percent: Option<u64>,
+    pub(crate) context_token_target_percent: Option<u64>,
+    pub(crate) context_token_safety_margin_tokens: Option<u64>,
     pub(crate) context_summary_trigger_chars: Option<u64>,
     pub(crate) context_summary_tail_messages: Option<u64>,
     pub(crate) context_summary_max_tokens: Option<u64>,

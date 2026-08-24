@@ -11,7 +11,7 @@ model = "deepseek-v4-flash"
 # llm_http_auth_mode = "bearer"
 # 完成段上限；开启推理/思维链时易占满较小额度导致 finish_reason=length。可按供应商与费用调高。
 max_tokens = 4096
-# 模型上下文窗口 token 上限（输入+输出）；用于推导会话同步裁剪的近似字符预算（与 context_char_budget 取更小）。示例：DeepSeek 常见 64k；设为 0 则不因窗口推导裁剪。
+# 模型上下文窗口 Token 上限（输入+输出）；非零时启用最终请求 Token 预算器。示例：DeepSeek 常见 64k；设为 0 则回退 context_char_budget。
 llm_context_tokens = 65536
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
@@ -29,10 +29,14 @@ api_max_retries = 3
 api_retry_delay_secs = 1
 
 # 2. 对话历史、上下文预算与摘要
-# 工具型 ReAct 一次用户回合会产生多条 assistant/tool 消息；64 用于避免仅因消息粒度较细而过早裁剪。
-max_message_history = 64
+# Token 预算为主；消息条数仅作异常安全兜底。工具型 ReAct 单回合可产生多条 assistant/tool 消息。
+max_message_history = 256
 context_char_budget = 200000
 context_min_messages_after_system = 4
+# 最终请求 Token 达到安全输入预算的 85% 时压缩到 70%；另预留固定安全余量吸收供应商封装误差。
+context_token_trigger_percent = 85
+context_token_target_percent = 70
+context_token_safety_margin_tokens = 2048
 context_summary_trigger_chars = 0
 context_summary_tail_messages = 12
 context_summary_max_tokens = 1024

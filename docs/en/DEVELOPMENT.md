@@ -71,7 +71,7 @@ flowchart TB
 
 - Call **`llm::complete_chat_retrying`** from business code (do not bypass via `api::stream_chat` from `agent`).
 - **P / R / E**: plan → reflect / final-answer gate → tool execute.
-- Message transforms: `message_pipeline` / `context_window`. Timeline sidecars are removed before the default **64-message** `max_message_history` ceiling is applied. Tool-output-only compression and actual history trimming use distinct timeline titles.
+- Message transforms: `message_pipeline` / `context_window`. **`agent/context_compaction`** estimates the final request from this round’s actual tools plus vendor-shaped messages, reserves output and safety tokens, and compacts only complete `ConversationTurnGroup` units. Count/character fallbacks also preserve `assistant.tool_calls` / `tool` chains. Timeline sidecars are removed before the default **256-message** fallback is applied; `context_trim.detail` carries soft before/after Token totals, component counts, counting source, and compaction reason.
 - Runtime path: **session_mode → (Act utterance keyword heuristics) → `assess_turn_routing` → ReAct outer loop**; phase vocabulary in **`phase_vocabulary`**; design: **`docs/design/per_state_machine_consolidation.md`**.
 
 ### Web streaming (summary)
