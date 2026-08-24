@@ -65,6 +65,8 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `stream_ended` | End of stream; `job_id`, `reason`; optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`) | Web: extract first; update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
+Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object may contain `count_hit`, `char_hit`, `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`. When only `compress_hits > 0`, the wire title is **`已压缩工具输出`** (“Tool output compressed”); when count/character trimming or summarization occurred, it is **`已裁剪历史`** (“History trimmed”). Both remain soft fields under the existing `timeline_log` shape.
+
 ### `tool_result` common fields
 
 | Field | Type | Description |

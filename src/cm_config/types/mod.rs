@@ -443,6 +443,14 @@ impl AgentConfig {
 #[cfg(test)]
 mod llm_context_budget_tests {
     #[test]
+    fn embedded_default_retains_tool_heavy_history() {
+        let value: toml::Value =
+            toml::from_str(include_str!("../../../config/default_config.toml"))
+                .expect("parse default config");
+        assert_eq!(value["agent"]["max_message_history"].as_integer(), Some(64));
+    }
+
+    #[test]
     fn effective_context_char_budget_is_min_of_explicit_and_derived() {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
         cfg.llm_sampling.max_tokens = 2048;

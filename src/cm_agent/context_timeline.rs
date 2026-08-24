@@ -15,6 +15,7 @@ pub const KIND_CONTEXT_TRIM: &str = "context_trim";
 
 const TITLE_INJECT: &str = "本轮已注入上下文";
 const TITLE_TRIM: &str = "已裁剪历史";
+const TITLE_TOOL_COMPRESS: &str = "已压缩工具输出";
 
 /// 可编码为 `timeline_log` 的一条旁注（kind 已按 §6.1 合并）。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,6 +97,14 @@ impl ContextTimelineAcc {
         self.count_hit || self.char_hit || self.compress_hits > 0 || self.summarized
     }
 
+    fn trim_title(&self) -> &'static str {
+        if self.count_hit || self.char_hit || self.summarized {
+            TITLE_TRIM
+        } else {
+            TITLE_TOOL_COMPRESS
+        }
+    }
+
     fn take_new_sse_events(&mut self) -> Vec<ContextTimelineEvent> {
         let mut out = Vec::new();
         if self.has_inject() && !self.sse_inject_sent {
@@ -136,7 +145,7 @@ impl ContextTimelineAcc {
         .to_string();
         ContextTimelineEvent {
             kind: KIND_CONTEXT_TRIM,
-            title: TITLE_TRIM.to_string(),
+            title: self.trim_title().to_string(),
             detail,
         }
     }
@@ -323,6 +332,28 @@ mod tests {
     }
 
     #[test]
+    fn tool_compress_only_does_not_claim_history_was_trimmed() {
+        let mut acc = ContextTimelineAcc::default();
+        let msgs = vec![Message::system_only("s"), Message::user_only("hi")];
+        let events = acc.merge(ContextTimelineSnapshot {
+            messages: &msgs,
+            pipeline: MessagePipelineDelta {
+                n_before: 2,
+                n_after: 2,
+                trim_count_hit: false,
+                trim_char_hit: false,
+                tool_compress_hits: 1,
+            },
+            summarized: false,
+            summary_tail_kept: None,
+        });
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, KIND_CONTEXT_TRIM);
+        assert_eq!(events[0].title, TITLE_TOOL_COMPRESS);
+        assert!(events[0].detail.contains("\"compress_hits\":1"));
+    }
+
+    #[test]
     fn inject_and_trim_merge_to_at_most_two_sse() {
         let mut acc = ContextTimelineAcc::default();
         let msgs = vec![
@@ -345,6 +376,7 @@ mod tests {
         assert_eq!(first.len(), 2);
         assert_eq!(first[0].kind, KIND_CONTEXT_INJECT);
         assert_eq!(first[1].kind, KIND_CONTEXT_TRIM);
+        assert_eq!(first[1].title, TITLE_TRIM);
         assert!(first[0].detail.contains("memory"));
         assert!(first[0].detail.contains("foo.md"));
         assert!(first[1].detail.contains("\"summarized\":true"));
