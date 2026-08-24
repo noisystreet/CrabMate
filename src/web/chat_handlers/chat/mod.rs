@@ -268,6 +268,11 @@ pub(crate) async fn conversation_messages_handler(
             &cfg,
             &seed.messages,
         );
+    let context_artifacts =
+        crate::agent::model_context_view::artifacts_from_messages(&seed.messages)
+            .into_iter()
+            .filter_map(|artifact| serde_json::to_value(artifact).ok())
+            .collect();
     Ok(Json(ConversationMessagesHttpResponse {
         conversation_id: cid,
         revision,
@@ -275,6 +280,7 @@ pub(crate) async fn conversation_messages_handler(
         active_session_mode,
         tiktoken_prompt_tokens,
         layout: seed.layout,
+        context_artifacts,
         messages,
         total_count: window.meta.total_count,
         window_start_index: window.meta.window_start_index,

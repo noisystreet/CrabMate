@@ -354,6 +354,10 @@ async fn outer_loop_call_planner_and_push(
     exec_api_base: Option<&str>,
     exec_api_key: Option<&str>,
 ) -> Result<(Message, String), RunAgentTurnError> {
+    let provider_usage = std::sync::Arc::clone(&p.turn.provider_usage);
+    if let Ok(mut slot) = provider_usage.lock() {
+        *slot = None;
+    }
     let (msg, finish_reason) = per_plan_call_model_retrying(PerPlanCallModelParams {
         llm_backend: p.ctx.core.llm_backend,
         client: p.ctx.core.client,
@@ -371,6 +375,7 @@ async fn outer_loop_call_planner_and_push(
         executor_api_base: exec_api_base,
         executor_api_key: exec_api_key,
         turn_budget: Some(&p.turn.turn_budget),
+        provider_usage_sink: Some(&provider_usage),
     })
     .await
     .map_err(|e| {
@@ -380,6 +385,14 @@ async fn outer_loop_call_planner_and_push(
     })?;
     p.turn
         .retain_messages(|m| !is_execution_constraint_ephemeral_system(m));
+    if let Some(input_tokens) = provider_usage
+        .lock()
+        .ok()
+        .and_then(|usage| usage.as_ref().and_then(|usage| usage.input_tokens))
+        && let Some(artifact) = p.turn.model_context_artifacts.last_mut()
+    {
+        artifact.compaction.provider_input_tokens = Some(input_tokens);
+    }
     if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.awaiting_plan_rewrite_model
             .store(false, Ordering::Relaxed);

@@ -83,7 +83,9 @@ impl std::ops::DerefMut for ChatRequest {
 #[derive(Debug, Clone, Copy, Default, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Usage {
+    #[serde(alias = "prompt_tokens")]
     pub input_tokens: Option<u64>,
+    #[serde(alias = "completion_tokens")]
     pub output_tokens: Option<u64>,
     /// 本次请求输入中缓存命中的 token 数。
     pub prompt_cache_hit_tokens: Option<u64>,
@@ -103,6 +105,22 @@ pub struct Choice {
     pub message: Message,
     #[serde(default)]
     pub finish_reason: String,
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::Usage;
+
+    #[test]
+    fn usage_accepts_openai_prompt_and_completion_names() {
+        let usage: Usage = serde_json::from_value(serde_json::json!({
+            "prompt_tokens": 123,
+            "completion_tokens": 45
+        }))
+        .expect("deserialize OpenAI usage aliases");
+        assert_eq!(usage.input_tokens, Some(123));
+        assert_eq!(usage.output_tokens, Some(45));
+    }
 }
 
 // ---------- 流式 chunk ----------

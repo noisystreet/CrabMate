@@ -11,13 +11,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- **Model-context replay artifacts**: `GET /conversation/messages.context_artifacts` optionally exposes persisted summary and canonical-range recipes while chat rows remain unchanged.
 
 ### Changed
 
 - **Context history**: raise the embedded `max_message_history` default from **24** to **256** and use it only as an abnormal count fallback once Token budgeting is enabled. `CM_MAX_MESSAGE_HISTORY` and TOML overrides remain available.
 - **Context timeline**: tool-output-only compression now reports **“已压缩工具输出”**; **“已裁剪历史”** is reserved for message-count/character trimming or summarization. SSE v2 and the `timeline_log` JSON shape are unchanged.
 - **Token-aware context compaction**: estimate vendor-shaped messages, actual tools JSON, attachments, output reservation, and safety margin; trigger at **85%** and target **70%** of safe input by default. History, count fallbacks, and summary tails now preserve complete user/tool interaction groups. `context_trim.detail` adds optional Token/report fields while SSE remains v2.
+- **Canonical history / model view split**: context transforms now mutate a derived `ModelContextView`; successful turns append only new current-turn output to complete SQLite history. HTTP/SSE token snapshots add optional safe-input components and prefer provider usage when returned; existing fields and SSE v2 remain compatible.
 - **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** allows any **http/https** URL without prefix approval. Entry **`*`** is the wildcard. Explicit empty TOML `[]` or **`CM_HTTP_FETCH_ALLOWED_PREFIXES=`** overrides the default and restores deny/approve-all-unmatched. Still rejects non-http(s) schemes. SSRF risk (loopback / metadata) is documented.
 
 ### Fixed

@@ -1,6 +1,6 @@
 # ADR：上下文窗口采用 Token 主导、交互组完整的压缩策略
 
-**状态**：Accepted（Phase 1–2 已实施；Phase 3 待实施）
+**状态**：Accepted（Phase 1–3 已实施）
 **日期**：2026-08-24  
 **决策范围**：Server 上下文计量、模型请求视图、裁剪/压缩事件；Client 用量与时间线展示  
 **关联文档**：
@@ -210,15 +210,15 @@ Client 进度条分母使用 `max_input_tokens`，不再使用未扣除输出预
 6. 输出 `ContextCompactionReport`；
 7. 用工具密集型 fixture 验证 2～4 个用户回合不会无故裁剪。
 
-### Phase 3：历史与模型视图分离
+### Phase 3：历史与模型视图分离（已实施）
 
 范围：
 
-1. SQLite 保持完整规范历史；
-2. 每次调用派生 `ModelContextView`；
-3. 摘要与被移出片段可回放；
-4. Server/Client 统一显示可用输入预算；
-5. 支持供应商 usage 校准与估算来源标记。
+1. `run_agent_turn` 从规范消息克隆派生 `ModelContextView`；同步裁剪、摘要与工具输出压缩只改派生视图，成功后仅把当前真实用户回合的新 assistant/tool/时间线写回，因而 SQLite 不再被模型窗口裁剪覆盖；
+2. 每次实际模型调用前记录 `ModelContextArtifact`，以隐藏 `system.name=crabmate_model_context_artifact` 旁注持久化压缩报告、摘要、规范历史计数及被移出组/摘要区间；`GET /conversation/messages.context_artifacts` 返回这些软字段配方，原片段仍在完整规范历史中，可按区间回放；
+3. `tiktoken_prompt_tokens` 保留原有 `prompt_tokens` / `tiktoken_model`，并新增可选 `used_input_tokens`、`max_input_tokens`、输出预留与消息/tools/附件分项；Client 优先用 Server 的 `used_input_tokens / max_input_tokens` 绘制底栏；
+4. OpenAI 兼容 `usage.prompt_tokens` / `completion_tokens` 与 `input_tokens` / `output_tokens` 均可解析；上游返回输入用量时写入 `provider_input_tokens`，`counting_source=provider_usage`，供本轮最终快照校准。未返回时保留 tokenizer/保守估算来源；
+5. 所有新增 HTTP/SSE 字段均为可选软字段；旧 Client 继续读取原有两字段，新 Client 对旧 Server 回退本地配置窗口。
 
 ---
 
@@ -285,17 +285,15 @@ Client 缺少最终 tools、供应商消息变换和 Server 动态注入的完�
 
 ---
 
-## 7. Open Questions
+## 7. Resolved Questions
 
-在 Phase 2 实现前需确定：
-
-1. 安全余量采用固定 Token、比例，还是取两者较大值；
-2. 图片与多模态输入的供应商预算接口；
-3. tool schema Token 是否按每次真实下发工具集缓存；
-4. reasoning 正文在不同供应商下的保留与计量策略；
-5. `ConversationTurnGroup` 对并行 tool calls 与中途取消的边界；
-6. Token 统计字段落在现有 `tiktoken_prompt_tokens` 扩展还是新版本快照；
-7. Phase 3 的完整历史、摘要工件与会话 revision 如何共同版本化。
+1. 安全余量采用可配置固定 Token，并同时扣除输出预留；
+2. 图片先使用保守固定预算，供应商返回 usage 时在最终快照标记校准来源；
+3. tool schema 按每次真实下发工具集计数；
+4. reasoning 按现有供应商 round-trip 规则进入消息估算；
+5. `ConversationTurnGroup` 以真实 user 为边界，并行 tool calls 保持同组；取消回合不提交派生视图；
+6. Token 统计以兼容方式扩展现有 `tiktoken_prompt_tokens`，不提升 SSE 版本；
+7. 规范历史沿用会话 revision；每次模型调用的 `ModelContextArtifact.schema_version = 1` 作为隐藏旁注随同一 revision 原子保存，`model_call_sequence` 区分回合内调用。
 
 ---
 

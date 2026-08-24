@@ -19,7 +19,10 @@ const IMAGE_TOKEN_ESTIMATE: u32 = 1_024;
 const VENDOR_REQUEST_OVERHEAD_TOKENS: u32 = 32;
 
 /// 本次估算使用的来源。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(rename_all = "snake_case")]
 pub enum ContextTokenCountingSource {
     MatchedTokenizer,
     FallbackTokenizer,
@@ -38,7 +41,10 @@ impl ContextTokenCountingSource {
 }
 
 /// 最终请求输入的分项 Token 估算。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(default)]
 pub struct ContextTokenEstimate {
     pub used_input_tokens: u32,
     pub message_tokens: u32,
@@ -49,7 +55,10 @@ pub struct ContextTokenEstimate {
 }
 
 /// 从完整上下文窗口扣除输出预留与安全余量后的输入预算。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(default)]
 pub struct ContextTokenBudget {
     pub context_window_tokens: u32,
     pub reserved_output_tokens: u32,
@@ -93,7 +102,10 @@ impl ContextTokenBudget {
 }
 
 /// 一次模型视图压缩的可观测报告。
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize,
+)]
+#[serde(default)]
 pub struct ContextCompactionReport {
     pub budget: Option<ContextTokenBudget>,
     pub before: ContextTokenEstimate,
@@ -102,6 +114,8 @@ pub struct ContextCompactionReport {
     pub removed_messages: usize,
     pub token_triggered: bool,
     pub summarized_for_token_budget: bool,
+    /// 上游响应 usage 的输入 Token；请求结束后补齐，用于估算校准。
+    pub provider_input_tokens: Option<u64>,
 }
 
 impl ContextCompactionReport {
@@ -247,6 +261,7 @@ pub fn compact_messages_to_token_budget(
         removed_messages,
         token_triggered,
         summarized_for_token_budget,
+        provider_input_tokens: None,
     }
 }
 

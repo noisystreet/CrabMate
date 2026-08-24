@@ -50,4 +50,7 @@ pub struct StreamChatParams<'a> {
     pub chat_uploads_dir: Option<&'a std::path::Path>,
     /// 当前工作区根；出站把用户消息里的 **`@` / `file:///`** 栅格图按 `read_file` 策略读盘。
     pub chat_workspace_root: Option<&'a std::path::Path>,
+    /// 收集最近一次成功响应的供应商 usage；上游不返回时保持 `None`。
+    pub provider_usage_sink:
+        Option<&'a std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
 }

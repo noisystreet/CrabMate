@@ -59,13 +59,15 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 | `tool_result` | Tool finished; includes `output` | `onToolResult` |
 | `command_approval_request` | Approval for `run_command` / workflow | `onCommandApprovalRequest` |
 | `chat_ui_separator` | UI separator; `true` short, `false` long | `onChatUiSeparator` |
-| `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** | Updates `revision` and context meter |
+| `conversation_saved` | Session persisted; `revision` for branching/conflict; optional **`tiktoken_prompt_tokens`** (legacy required fields plus Phase 3 soft fields below) | Updates `revision`; context meter prefers Server `used_input_tokens / max_input_tokens` |
 | `stream_draining` | Non-terminal wrap-up: model/tools done, persisting; `job_id` | Web: may enter Draining UI early; does **not** set `saw_stream_ended` |
 | `sse_capabilities` | First frame: `supported_sse_v`, `resume_ring_cap`, `job_id` (matches `x-stream-job-id`); optional soft **`terminal_order`** (currently **`saved_before_finished`**; older clients ignore) | Official Web: compare to local **`SSE_PROTOCOL_VERSION`**; if match, **swallow**; else **`onError`** and stop. Integrations can persist `job_id` for resume |
 | `stream_ended` | End of stream; `job_id`, `reason`; optional **`tiktoken_prompt_tokens`** (successful path usually already sent `conversation_saved`) | Web: extract first; update context meter; stop auto-reconnect |
 | `timeline_log` | Timeline annotation; **not** in model context | `onTimelineLog` |
 
 Common **`timeline_log.kind`** values include `context_inject` and `context_trim`. A `context_trim` detail object retains `count_hit`, `char_hit`, `n_before`, `n_after`, `compress_hits`, `summarized`, and `tail_kept`, and may additionally carry soft `before_tokens`, `after_tokens`, `max_input_tokens`, `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`, `counting_source`, `token_triggered`, `removed_turn_groups`, `removed_messages`, and `compaction_reason` fields. Counting sources are `matched_tokenizer`, `fallback_tokenizer`, or `conservative_bytes`; current reasons are `token_budget_summary`, `token_budget_turn_groups`, `token_budget_warning`, or `none`. When only `compress_hits > 0`, the wire title is **`已压缩工具输出`** (“Tool output compressed”); count/character/whole-group trimming or summarization uses **`已裁剪历史`** (“History trimmed”). All additions remain soft fields under the existing `timeline_log` shape.
+
+Phase 3 soft fields under **`tiktoken_prompt_tokens`** are `used_input_tokens`, `max_input_tokens` (context window after output reservation and safety margin), `reserved_output_tokens`, `message_tokens`, `tool_schema_tokens`, `attachment_tokens`, `counting_source`, and optional `provider_input_tokens`. The source is `matched_tokenizer`, `fallback_tokenizer`, `conservative_bytes`, or response-calibrated `provider_usage`. Older peers may continue exchanging only `prompt_tokens` and `tiktoken_model`; `SSE_PROTOCOL_VERSION` is unchanged.
 
 ### `tool_result` common fields
 

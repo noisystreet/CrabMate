@@ -290,6 +290,16 @@ mod tests {
             conv.pointer("/properties/layout").is_some(),
             "layout property must be documented"
         );
+        assert!(
+            !required
+                .iter()
+                .any(|v| v.as_str() == Some("context_artifacts")),
+            "context_artifacts must stay optional"
+        );
+        assert!(
+            conv.pointer("/properties/context_artifacts").is_some(),
+            "context_artifacts property must be documented"
+        );
     }
 
     #[test]
@@ -301,6 +311,7 @@ mod tests {
             active_session_mode: None,
             tiktoken_prompt_tokens: None,
             layout: None,
+            context_artifacts: Vec::new(),
             messages: Vec::<Value>::new(),
             total_count: 0,
             window_start_index: 0,

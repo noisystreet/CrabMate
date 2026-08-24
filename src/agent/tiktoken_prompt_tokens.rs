@@ -93,11 +93,13 @@ pub fn count_serialized_text_tokens_openai_compat(
                 .len()
                 .min(u32::MAX as usize) as u32,
             tiktoken_model: model,
+            ..Default::default()
         };
     }
     TiktokenPromptTokensSnapshot {
         prompt_tokens: text.len().div_ceil(3).min(u32::MAX as usize) as u32,
         tiktoken_model: "conservative-bytes".to_string(),
+        ..Default::default()
     }
 }
 
@@ -150,6 +152,7 @@ pub fn count_prompt_tokens_openai_compat_vendor_slice(
             return Some(TiktokenPromptTokensSnapshot {
                 prompt_tokens: n,
                 tiktoken_model: c.clone(),
+                ..Default::default()
             });
         }
     }
@@ -193,7 +196,50 @@ pub fn prompt_token_count_vendor_shaped_for_session(
         v.preserve_assistant_tool_call_reasoning(&llm_cfg),
         deepseek_json_output_eligible(&cfg.llm.api_base),
     );
-    count_prompt_tokens_openai_compat_vendor_slice(&cfg.llm.model, &vendor)
+    let snapshot = count_prompt_tokens_openai_compat_vendor_slice(&cfg.llm.model, &vendor)?;
+    Some(enrich_snapshot_from_latest_model_context_artifact(
+        snapshot,
+        session_messages,
+    ))
+}
+
+fn enrich_snapshot_from_latest_model_context_artifact(
+    mut snapshot: TiktokenPromptTokensSnapshot,
+    session_messages: &[Message],
+) -> TiktokenPromptTokensSnapshot {
+    let Some(artifact) =
+        crate::agent::model_context_view::artifacts_from_messages(session_messages)
+            .into_iter()
+            .next_back()
+    else {
+        return snapshot;
+    };
+    let report = artifact.compaction;
+    if report.after.counting_source.is_none() {
+        return snapshot;
+    }
+    snapshot.prompt_tokens = report.after.message_tokens;
+    snapshot.used_input_tokens = Some(
+        report
+            .provider_input_tokens
+            .and_then(|tokens| u32::try_from(tokens).ok())
+            .unwrap_or(report.after.used_input_tokens),
+    );
+    snapshot.max_input_tokens = report.budget.map(|budget| budget.max_input_tokens);
+    snapshot.reserved_output_tokens =
+        report.budget.map(|budget| budget.reserved_output_tokens);
+    snapshot.message_tokens = Some(report.after.message_tokens);
+    snapshot.tool_schema_tokens = Some(report.after.tool_schema_tokens);
+    snapshot.attachment_tokens = Some(report.after.attachment_tokens);
+    snapshot.counting_source = report
+        .after
+        .counting_source
+        .map(|source| source.as_str().to_string());
+    snapshot.provider_input_tokens = report.provider_input_tokens;
+    if report.provider_input_tokens.is_some() {
+        snapshot.counting_source = Some("provider_usage".to_string());
+    }
+    snapshot
 }
 
 /// 单次 LLM 往返的 prompt + completion Token 粗估（供 [`crate::agent::turn_budget::TurnBudgetCounter`] 累计）。
@@ -243,5 +289,51 @@ mod tests {
                 .expect("fallback tokenizer");
         assert!(snap.prompt_tokens > 0);
         assert!(snap.tiktoken_model == "gpt-4" || snap.tiktoken_model == "gpt-4o");
+    }
+
+    #[test]
+    fn latest_model_context_artifact_unifies_budget_and_provider_usage() {
+        let cfg = crate::config::load_config(None).expect("default config");
+        let report = crate::agent::context_compaction::ContextCompactionReport {
+            after: crate::agent::context_compaction::ContextTokenEstimate {
+                used_input_tokens: 900,
+                message_tokens: 700,
+                tool_schema_tokens: 150,
+                attachment_tokens: 18,
+                vendor_overhead_tokens: 32,
+                counting_source: Some(
+                    crate::agent::context_compaction::ContextTokenCountingSource::MatchedTokenizer,
+                ),
+            },
+            budget: Some(crate::agent::context_compaction::ContextTokenBudget {
+                context_window_tokens: 4_096,
+                reserved_output_tokens: 512,
+                safety_margin_tokens: 128,
+                max_input_tokens: 3_456,
+                trigger_tokens: 2_937,
+                target_tokens: 2_419,
+            }),
+            provider_input_tokens: Some(920),
+            ..Default::default()
+        };
+        let artifact = crate::agent::model_context_view::ModelContextArtifact::capture(
+            1,
+            2,
+            &[Message::user_only("hello")],
+            report,
+            None,
+        );
+        let messages = vec![
+            Message::system_only("system"),
+            artifact.into_marker().expect("artifact marker"),
+            Message::user_only("hello"),
+        ];
+
+        let snapshot = prompt_token_count_vendor_shaped_for_session(&cfg, &messages)
+            .expect("token snapshot");
+        assert_eq!(snapshot.used_input_tokens, Some(920));
+        assert_eq!(snapshot.max_input_tokens, Some(3_456));
+        assert_eq!(snapshot.tool_schema_tokens, Some(150));
+        assert_eq!(snapshot.counting_source.as_deref(), Some("provider_usage"));
     }
 }

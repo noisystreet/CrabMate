@@ -202,6 +202,9 @@ async fn non_stream_chat_response(
     out: Option<&tokio::sync::mpsc::Sender<String>>,
     cancel: Option<&AtomicBool>,
     model: &str,
+    provider_usage_sink: Option<
+        &std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
+    >,
 ) -> Result<(Message, String), Box<dyn std::error::Error + Send + Sync>> {
     if cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
         return Err(LLM_CANCELLED_ERROR.into());
@@ -237,7 +240,20 @@ async fn non_stream_chat_response(
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish_reason, &msg);
     host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
     log_cache_usage(usage.as_ref(), model);
+    record_provider_usage(provider_usage_sink, usage);
     Ok((msg, finish_reason))
+}
+
+fn record_provider_usage(
+    sink: Option<&std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
+    usage: Option<crate::cm_types::Usage>,
+) {
+    let (Some(sink), Some(usage)) = (sink, usage) else {
+        return;
+    };
+    if let Ok(mut slot) = sink.lock() {
+        *slot = Some(usage);
+    }
 }
 
 async fn streaming_chat_response(
@@ -276,6 +292,7 @@ async fn streaming_chat_response(
     let terminal_end_reason = stream_end_reason_from_finish_and_message(&finish, &msg);
     host.append_stream_diagnostic_event(terminal_end_reason.as_str(), &msg);
     log_cache_usage(usage.as_ref(), model);
+    record_provider_usage(params.provider_usage_sink, usage);
     Ok((msg, finish))
 }
 
@@ -361,7 +378,15 @@ pub async fn stream_chat(
 
     let model = req.model.clone();
     if no_stream {
-        non_stream_chat_response(host, res, out, cancel, &model).await
+        non_stream_chat_response(
+            host,
+            res,
+            out,
+            cancel,
+            &model,
+            params.provider_usage_sink,
+        )
+        .await
     } else {
         streaming_chat_response(host, res, params, &model).await
     }

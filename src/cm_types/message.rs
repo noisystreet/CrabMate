@@ -221,10 +221,18 @@ pub fn is_chat_timeline_marker(m: &Message) -> bool {
     m.role == "system" && m.name.as_deref() == Some("crabmate_timeline")
 }
 
+/// Phase 3 派生模型视图的可回放配方；持久化但不送供应商、不展示在聊天区。
+pub const CRABMATE_MODEL_CONTEXT_ARTIFACT_NAME: &str = "crabmate_model_context_artifact";
+
+#[inline]
+pub fn is_model_context_artifact_marker(m: &Message) -> bool {
+    m.role == "system" && m.name.as_deref() == Some(CRABMATE_MODEL_CONTEXT_ARTIFACT_NAME)
+}
+
 /// 仅用于聊天 UI / 摘要等「不进上游 chat/completions」的过滤；**不含**长期记忆注入（调用处另按需过滤）。
 #[inline]
 pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
-    is_chat_ui_separator(m) || is_chat_timeline_marker(m)
+    is_chat_ui_separator(m) || is_chat_timeline_marker(m) || is_model_context_artifact_marker(m)
 }
 
 /// 供 **`GET /conversation/messages`** 等客户端只读视图：省略聊天区不应展示的条目。

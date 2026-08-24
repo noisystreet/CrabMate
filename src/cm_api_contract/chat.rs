@@ -141,6 +141,22 @@ pub struct ExecutorLlmBody {
 pub struct TiktokenPromptTokensOpenApi {
     pub prompt_tokens: u32,
     pub tiktoken_model: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_input_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reserved_output_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_schema_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub attachment_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counting_source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_input_tokens: Option<u64>,
 }
 
 /// 与 Client `CURRENT_LAYOUT_SCHEMA_VERSION`（Web 块布局 **2**）对齐；有元数据时写入 [`ConversationLayoutMeta`]。
@@ -187,6 +203,10 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     /// 会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<ConversationLayoutMeta>,
+    /// 可选的模型视图回放配方；旧会话为空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "schema_open_object_array")]
+    pub context_artifacts: Vec<serde_json::Value>,
     #[schemars(schema_with = "schema_open_object_array")]
     pub messages: Vec<serde_json::Value>,
     #[serde(default)]
@@ -331,6 +351,8 @@ pub struct ConversationMessagesResponseBody<M> {
     /// 会话级布局元数据；省略表示未写入。不随本页 `messages` 窗口切片；当前保存路径仍不写（hydration 不变）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layout: Option<ConversationLayoutMeta>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context_artifacts: Vec<serde_json::Value>,
     pub messages: Vec<M>,
     #[serde(default)]
     pub total_count: u32,
