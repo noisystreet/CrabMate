@@ -189,6 +189,12 @@ pub(crate) struct RunLoopTurnState<'a> {
     pub turn_budget: Arc<TurnBudgetCounter>,
     /// 本用户回合窗口/注入时间线（SSE 去重 + 落盘）。
     pub(crate) context_timeline: crate::cm_agent::context_timeline::ContextTimelineAcc,
+    /// 每次实际发往模型前的派生视图配方；回合成功后作为隐藏旁注持久化。
+    pub(crate) model_context_artifacts:
+        Vec<crate::agent::model_context_view::ModelContextArtifact>,
+    /// 最近一次主 Agent 模型调用返回的供应商 usage（摘要等旁路调用不写入）。
+    pub(crate) provider_usage:
+        Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>,
 }
 
 impl<'a> RunLoopTurnState<'a> {
@@ -354,6 +360,16 @@ impl RunLoopParams<'_> {
             },
         )
         .await?;
+        let model_call_sequence = self.turn.model_context_artifacts.len().saturating_add(1);
+        self.turn.model_context_artifacts.push(
+            crate::agent::model_context_view::ModelContextArtifact::capture(
+                model_call_sequence,
+                0,
+                self.turn.messages_buf,
+                delta.compaction,
+                delta.summary_tail_kept,
+            ),
+        );
         let events = self.turn.context_timeline.merge(
             crate::cm_agent::context_timeline::ContextTimelineSnapshot {
                 messages: self.turn.messages_buf,
@@ -453,6 +469,8 @@ mod turn_planner_hints_tests {
             seed_override: LlmSeedOverride::FromConfig,
             turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
             context_timeline: Default::default(),
+            model_context_artifacts: Vec::new(),
+            provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
         };
         assert_eq!(turn.messages_buffer_revision(), 0);
         turn.push_message(Message::assistant_only("a"));

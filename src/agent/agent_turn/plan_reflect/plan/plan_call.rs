@@ -33,6 +33,8 @@ pub(crate) struct PerPlanCallModelParams<'a> {
     /// 当 use_executor_model 为 true 时，优先使用此 api_key。
     pub executor_api_key: Option<&'a str>,
     pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    pub provider_usage_sink:
+        Option<&'a std::sync::Arc<std::sync::Mutex<Option<crate::cm_types::Usage>>>>,
 }
 
 pub(crate) async fn per_plan_call_model_retrying(
@@ -55,6 +57,7 @@ pub(crate) async fn per_plan_call_model_retrying(
         executor_api_base,
         executor_api_key,
         turn_budget,
+        provider_usage_sink,
     } = p;
 
     // 确定 effective api_base 和 api_key
@@ -100,7 +103,8 @@ pub(crate) async fn per_plan_call_model_retrying(
         request_chrome_trace,
         model_override,
     )
-    .with_turn_budget(turn_budget);
+    .with_turn_budget(turn_budget)
+    .with_provider_usage_sink(provider_usage_sink);
     let (msg, finish_reason) = complete_chat_retrying(&cc, &req).await?;
     Ok((msg, finish_reason))
 }

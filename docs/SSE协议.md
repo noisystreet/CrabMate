@@ -59,13 +59,15 @@
 | `tool_result` | 工具结束；含 `output` 等 | `onToolResult` |
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
-| `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（`prompt_tokens` + `tiktoken_model`，与 `GET /conversation/messages` 同规则） | Leptos：更新 `revision` 与底栏上下文用量（`conversation_prompt_tokens`） |
+| `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（必有旧字段 `prompt_tokens` + `tiktoken_model`；Phase 3 可选软字段见下） | Leptos：更新 `revision`；优先用 Server `used_input_tokens / max_input_tokens` 更新底栏 |
 | `sse_capabilities` | 首帧能力：`supported_sse_v`、`resume_ring_cap`、`job_id`（与 `x-stream-job-id` 一致）；可选软字段 **`terminal_order`**（当前为 **`saved_before_finished`**，旧客户端忽略） | 官方 Web：与本地 **`SSE_PROTOCOL_VERSION`** 校验；匹配则**吞掉**（不当下文）；不匹配则 **`onError`** 并停止。集成方可据此保存 `job_id` 做重连 |
 | `stream_draining` | 非终态收尾：模型/工具已结束、正在落盘；`job_id` | Web：可提前进入 Draining 文案；**不**置 `saw_stream_ended` |
 | `stream_ended` | 流结束；`job_id`、`reason`（`completed` / `cancelled` / `conflict` / `fallback` / `no_output` / `gone`）；可选 **`tiktoken_prompt_tokens`**（成功路径通常已先发 `conversation_saved`） | Web：**先独立提取并吞掉**（不依赖其它控制面分支命中）；更新底栏用量并停止自动重连 |
 | `timeline_log` | 时间线旁注（如审批结果）；**不**进入模型上下文 | `onTimelineLog` |
 
 **`timeline_log.kind` 常用值**：`final_response`（终答标记）；`orchestration_route`（编排路由决议，Web 不渲染为气泡）；`approval_decision` / `tool_result_summary`（审批与工具摘要旁注）；`context_inject` / `context_trim`（本轮注入/skill 与上下文压缩摘要，软字段，未知 kind 应忽略）。`context_inject` 的 `detail` 为 JSON：`kinds`、`skills`、`forced`；`context_trim` 的 `detail` 保留 `count_hit` / `char_hit` / `n_before` / `n_after` / `compress_hits` / `summarized` / `tail_kept`，并可选携带 `before_tokens` / `after_tokens` / `max_input_tokens` / `reserved_output_tokens` / `message_tokens` / `tool_schema_tokens` / `attachment_tokens` / `counting_source` / `token_triggered` / `removed_turn_groups` / `removed_messages` / `compaction_reason`。计数来源为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`；压缩原因当前为 `token_budget_summary` / `token_budget_turn_groups` / `token_budget_warning` / `none`。仅 `compress_hits > 0` 时标题为“已压缩工具输出”；发生条数/字符/完整交互组裁剪或摘要时标题为“已裁剪历史”。回合结束写入 `system.name=crabmate_timeline` 同行 JSON（不进模型）；同步裁剪**不计**这些旁注条数，且同 `kind` 的 `context_inject`/`context_trim` **覆盖**旧行。
+
+**`tiktoken_prompt_tokens` Phase 3 软字段**：`used_input_tokens`（最终输入合计）、`max_input_tokens`（上下文窗口扣除输出预留和安全余量后的可用输入预算）、`reserved_output_tokens`、`message_tokens`、`tool_schema_tokens`、`attachment_tokens`、`counting_source`，以及上游返回时的 `provider_input_tokens`。`counting_source` 为 `matched_tokenizer` / `fallback_tokenizer` / `conservative_bytes`，或已由响应 usage 校准的 `provider_usage`。旧 Server/Client 仍可只交换 `prompt_tokens` + `tiktoken_model`；本次不提升 `SSE_PROTOCOL_VERSION`。
 
 ### `tool_result` 常用字段
 

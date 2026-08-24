@@ -55,7 +55,7 @@
 
 不写子命令时须显式给出（如 **`serve`**）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
 
-`llm_context_tokens` 非零时采用 Token 主导的上下文压缩：Server 计入供应商形状消息、tools JSON、附件、输出预留与安全余量，并只删除完整交互组。**256 条消息**的 `max_message_history` / `CM_MAX_MESSAGE_HISTORY` 保留为高位条数兜底；详见[配置说明](docs/配置说明.md)。
+`llm_context_tokens` 非零时采用 Token 主导的上下文压缩：Server 计入供应商形状消息、tools JSON、附件、输出预留与安全余量，并只从派生 `ModelContextView` 删除完整交互组；SQLite 规范历史保持完整，压缩配方另行持久化并可回放。Client 底栏使用 Server 的 `used_input_tokens / max_input_tokens`（供应商返回 usage 时优先采用）。**256 条消息**的 `max_message_history` / `CM_MAX_MESSAGE_HISTORY` 保留为高位条数兜底；详见[配置说明](docs/配置说明.md)。
 
 | 子命令 | 说明 |
 | --- | --- |

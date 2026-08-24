@@ -261,6 +261,7 @@ mod tests {
         let snap = crate::cm_types::TiktokenPromptTokensSnapshot {
             prompt_tokens: 2048,
             tiktoken_model: "gpt-4o".into(),
+            ..Default::default()
         };
         let events = convert_sse_payload_to_ag_ui(&SsePayload::StreamEnded {
             ended: StreamEndedBody {
@@ -537,6 +538,7 @@ mod tests {
         let snap = crate::cm_types::TiktokenPromptTokensSnapshot {
             prompt_tokens: 512,
             tiktoken_model: "gpt-4".into(),
+            ..Default::default()
         };
         let events = convert_sse_payload_to_ag_ui(&SsePayload::ConversationSaved {
             saved: crate::cm_sse_protocol::sse::protocol::ConversationSavedBody {

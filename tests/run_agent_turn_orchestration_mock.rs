@@ -223,6 +223,46 @@ async fn run_mock_agent_turn(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn run_agent_turn_compacts_only_model_view_and_keeps_canonical_history() {
+    let mut cfg = (*cfg_freeform_turn()).clone();
+    cfg.llm_sampling.llm_context_tokens = 4_096;
+    cfg.llm_sampling.max_tokens = 512;
+    cfg.context_pipeline.context_token_safety_margin_tokens = 128;
+    cfg.context_pipeline.context_token_trigger_percent = 50;
+    cfg.context_pipeline.context_token_target_percent = 40;
+    let cfg = Arc::new(cfg);
+    let old_answer = "old canonical answer";
+    let mut messages = vec![
+        Message::system_only("test system"),
+        Message::user_only("x".repeat(12_000)),
+        Message::assistant_only(old_answer),
+        Message::user_only("current user"),
+    ];
+    let final_msg = Message::assistant_only("current final");
+    let backend: &'static SequencedMockBackend =
+        Box::leak(Box::new(SequencedMockBackend::new(vec![final_msg], "stop")));
+
+    run_mock_agent_turn(cfg, &mut messages, backend).await;
+
+    assert!(
+        messages
+            .iter()
+            .any(|message| { message_content_as_str(&message.content) == Some(old_answer) })
+    );
+    assert!(
+        messages
+            .iter()
+            .any(crabmate::types::is_model_context_artifact_marker)
+    );
+    assert_eq!(
+        messages
+            .last()
+            .and_then(|message| message_content_as_str(&message.content)),
+        Some("current final")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_plan_rewrite_exhausted_on_missing_plan() {
     use crabmate::agent::per_coord::FinalPlanRequirementMode;
 

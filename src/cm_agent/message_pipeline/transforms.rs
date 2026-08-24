@@ -1,8 +1,8 @@
 //! 会话侧逐步变换：条数/字符裁剪、tool 压缩、孤立 tool 剔除等（由 [`super::sync_pipeline::apply_session_sync_pipeline_with_config`] 编排）。
 
 use crate::cm_types::{
-    Message, is_chat_timeline_marker, message_content_byte_len_for_estimate,
-    user_message_counts_for_branch_truncation,
+    Message, is_chat_timeline_marker, is_model_context_artifact_marker,
+    message_content_byte_len_for_estimate, user_message_counts_for_branch_truncation,
 };
 
 /// 一个完整用户交互组在会话切片中的半开区间：真实 `user` 到下一条真实 `user` 之前。
@@ -50,12 +50,12 @@ pub fn remove_oldest_turn_group(messages: &mut Vec<Message>, min_groups_to_keep:
     removed
 }
 
-/// 抽出 `crabmate_timeline`，避免占用 `max_message_history` / 字符预算。
+/// 抽出 UI 时间线与模型视图工件旁注，避免占用 `max_message_history` / 字符预算。
 pub fn take_chat_timeline_markers(messages: &mut Vec<Message>) -> Vec<Message> {
     let mut parked = Vec::new();
     let mut kept = Vec::with_capacity(messages.len());
     for m in messages.drain(..) {
-        if is_chat_timeline_marker(&m) {
+        if is_chat_timeline_marker(&m) || is_model_context_artifact_marker(&m) {
             parked.push(m);
         } else {
             kept.push(m);

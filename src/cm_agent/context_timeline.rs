@@ -302,6 +302,11 @@ fn context_window_timeline_kind(m: &Message) -> Option<&str> {
     }
 }
 
+#[inline]
+pub fn is_context_window_timeline_marker(message: &Message) -> bool {
+    context_window_timeline_kind(message).is_some()
+}
+
 /// 去掉本会话已落盘的 `context_inject` / `context_trim` 旁注（其它 `crabmate_timeline` 保留）。
 pub fn strip_context_window_timeline_markers(messages: &mut Vec<Message>) {
     messages.retain(|m| context_window_timeline_kind(m).is_none());

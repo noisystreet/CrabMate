@@ -203,6 +203,8 @@ mod per_reflect_tests {
                 seed_override: LlmSeedOverride::FromConfig,
                 turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
                 context_timeline: Default::default(),
+                model_context_artifacts: Vec::new(),
+                provider_usage: std::sync::Arc::new(std::sync::Mutex::new(None)),
             },
         };
         let out = per_reflect_after_assistant(&mut p, &mut c, "stop", &msg).await;

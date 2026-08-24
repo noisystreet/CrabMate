@@ -163,21 +163,15 @@ pub async fn run_agent_turn<'a>(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
-    crate::turn_replay_dump::set_turn_replay_event_context(
+    record_turn_start_replay(
+        messages,
         wall_ms,
         turn_dump_scope_id.as_deref(),
         tracing_chat_turn.as_ref().map(|t| t.job_id),
     );
-    crate::turn_replay_dump::append_latest_user_input_event_if_configured(messages);
-    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
-        "turn_started",
-        "run_agent_turn",
-        Some(&serde_json::json!({
-            "text": format!("wall_start_ms={wall_ms}"),
-            "phase": "turn"
-        })),
-    );
 
+    let mut model_context_view =
+        crate::agent::model_context_view::ModelContextView::derive(messages);
     let mut loop_params = crate::agent::agent_turn::RunLoopParams {
         ctx: crate::agent::agent_turn::RunLoopCtx {
             core: crate::agent::agent_turn::RunLoopCore {
@@ -219,7 +213,7 @@ pub async fn run_agent_turn<'a>(
             },
         },
         turn: crate::agent::agent_turn::RunLoopTurnState {
-            messages_buf: messages,
+            messages_buf: model_context_view.messages_mut(),
             messages_revision: 0,
             sub_phase: crate::agent::agent_turn::AgentTurnSubPhase::Planner,
             turn_planner_hints: crate::agent::agent_turn::TurnPlannerHints::default(),
@@ -232,6 +226,8 @@ pub async fn run_agent_turn<'a>(
             seed_override,
             turn_budget: crate::agent::turn_budget::TurnBudgetCounter::new_shared(),
             context_timeline: Default::default(),
+            model_context_artifacts: Vec::new(),
+            provider_usage: Arc::new(std::sync::Mutex::new(None)),
         },
     };
 
@@ -267,7 +263,50 @@ pub async fn run_agent_turn<'a>(
         executor_model_override: turn_dump_executor_model_override,
         seed_override,
     });
+    let mut model_context_artifacts = std::mem::take(&mut loop_params.turn.model_context_artifacts);
+    drop(loop_params);
+    if res.is_ok() {
+        commit_successful_model_context_view(
+            messages,
+            &model_context_view,
+            &mut model_context_artifacts,
+        );
+    }
     res
+}
+
+fn record_turn_start_replay(
+    messages: &[crate::types::Message],
+    wall_ms: u64,
+    scope_id: Option<&str>,
+    job_id: Option<u64>,
+) {
+    crate::turn_replay_dump::set_turn_replay_event_context(wall_ms, scope_id, job_id);
+    crate::turn_replay_dump::append_latest_user_input_event_if_configured(messages);
+    crate::turn_replay_dump::append_turn_replay_event_json_if_configured(
+        "turn_started",
+        "run_agent_turn",
+        Some(&serde_json::json!({
+            "text": format!("wall_start_ms={wall_ms}"),
+            "phase": "turn"
+        })),
+    );
+}
+
+fn commit_successful_model_context_view(
+    canonical: &mut Vec<crate::types::Message>,
+    model_context_view: &crate::agent::model_context_view::ModelContextView,
+    artifacts: &mut Vec<crate::agent::model_context_view::ModelContextArtifact>,
+) {
+    for artifact in artifacts.iter_mut() {
+        artifact.canonical_message_count_before_turn =
+            model_context_view.canonical_message_count_before_turn();
+        artifact.bind_canonical_ranges(canonical);
+    }
+    for marker in artifacts.drain(..).filter_map(|artifact| artifact.into_marker()) {
+        canonical.push(marker);
+    }
+    model_context_view.commit_current_turn_to(canonical);
 }
 
 async fn run_agent_turn_common_with_optional_trace(

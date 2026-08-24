@@ -289,6 +289,7 @@ async fn prepare_session_messages_shared(
         removed_messages: 0,
         token_triggered: force_summary_for_token_budget,
         summarized_for_token_budget: summarized && force_summary_for_token_budget,
+        provider_input_tokens: None,
     };
     Ok(PrepareMessagesDelta {
         pipeline,
