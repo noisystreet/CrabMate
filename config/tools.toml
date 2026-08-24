@@ -155,6 +155,8 @@ weather_timeout_secs = 15
 # web_search_api_key = ""          # 仅 brave / tavily 需要；亦可用 CM_WEB_SEARCH_API_KEY
 # web_search_timeout_secs = 60     # worbrow 建议 ≥60；brave/tavily 可更短
 # web_search_max_results = 8
+# `"*"`：任意 http/https URL 直接执行（无前缀审批）。多租户/不可信工作区请改为具体前缀。
+http_fetch_allowed_prefixes = ["*"]
 # http_fetch_allowed_prefixes = ["https://doc.rust-lang.org/", "https://example.com/api/"]
 # http_fetch_timeout_secs = 30
 # http_fetch_max_response_bytes = 524288

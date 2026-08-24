@@ -81,6 +81,17 @@ fn allowed_prefix_requires_origin_and_path_boundary() {
         &["https://example.comx/api/".to_string()]
     ));
 }
+
+#[test]
+fn allowed_prefix_star_matches_any_http_https_url() {
+    let https = Url::parse("https://other.example/path?q=1").unwrap();
+    let http = Url::parse("http://127.0.0.1:9/meta").unwrap();
+    assert!(url_matches_allowed_prefixes(&https, &["*".to_string()]));
+    assert!(url_matches_allowed_prefixes(&http, &[" * ".to_string()]));
+    assert!(!url_matches_allowed_prefixes(&https, &[] as &[String]));
+    let file = Url::parse("file:///etc/passwd").unwrap();
+    assert!(!url_matches_allowed_prefixes(&file, &["*".to_string()]));
+}
 #[test]
 fn parse_http_request_supports_patch_with_body() {
     let (u, m, body, fmt) = parse_http_request_args(

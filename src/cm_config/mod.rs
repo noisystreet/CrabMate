@@ -398,6 +398,102 @@ model = "deepseek-chat"
 }
 
 #[cfg(test)]
+mod http_fetch_allowed_prefixes_load_tests {
+    use super::load_config;
+    use super::load_config_test_env::without_cm_planner_executor_mode_env;
+    use std::fs;
+    use std::sync::Mutex;
+
+    static CM_HTTP_FETCH_ALLOWED_PREFIXES_LOCK: Mutex<()> = Mutex::new(());
+
+    fn with_http_fetch_allowed_prefixes_env<F, R>(value: Option<&str>, f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        let _g = CM_HTTP_FETCH_ALLOWED_PREFIXES_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let prev = std::env::var("CM_HTTP_FETCH_ALLOWED_PREFIXES").ok();
+        // SAFETY: serialized by mutex for this env key only.
+        unsafe {
+            match value {
+                Some(v) => std::env::set_var("CM_HTTP_FETCH_ALLOWED_PREFIXES", v),
+                None => std::env::remove_var("CM_HTTP_FETCH_ALLOWED_PREFIXES"),
+            }
+        }
+        struct RestoreEnv(Option<String>);
+        impl Drop for RestoreEnv {
+            fn drop(&mut self) {
+                unsafe {
+                    match self.0.take() {
+                        Some(v) => std::env::set_var("CM_HTTP_FETCH_ALLOWED_PREFIXES", v),
+                        None => std::env::remove_var("CM_HTTP_FETCH_ALLOWED_PREFIXES"),
+                    }
+                }
+            }
+        }
+        let _restore = RestoreEnv(prev);
+        f()
+    }
+
+    fn write_agent_toml(dir: &tempfile::TempDir, extra: &str) -> String {
+        let path = dir.path().join("http_fetch_prefixes.toml");
+        fs::write(
+            &path,
+            format!(
+                r#"[agent]
+api_base = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+{extra}
+"#
+            ),
+        )
+        .expect("write");
+        path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn embed_default_http_fetch_prefixes_is_star() {
+        without_cm_planner_executor_mode_env(|| {
+            with_http_fetch_allowed_prefixes_env(None, || {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
+                assert_eq!(
+                    cfg.http_fetch.http_fetch_allowed_prefixes,
+                    vec!["*".to_string()]
+                );
+            });
+        });
+    }
+
+    #[test]
+    fn toml_empty_http_fetch_prefixes_clears_star_default() {
+        without_cm_planner_executor_mode_env(|| {
+            with_http_fetch_allowed_prefixes_env(None, || {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let cfg = load_config(Some(&write_agent_toml(
+                    &dir,
+                    "http_fetch_allowed_prefixes = []",
+                )))
+                .expect("load");
+                assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
+            });
+        });
+    }
+
+    #[test]
+    fn env_empty_http_fetch_prefixes_clears_star_default() {
+        without_cm_planner_executor_mode_env(|| {
+            with_http_fetch_allowed_prefixes_env(Some(""), || {
+                let dir = tempfile::tempdir().expect("tempdir");
+                let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
+                assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
+            });
+        });
+    }
+}
+
+#[cfg(test)]
 mod llm_reasoning_split_default_tests {
     use super::load_config;
     use super::load_config_test_env::without_cm_planner_executor_mode_env;

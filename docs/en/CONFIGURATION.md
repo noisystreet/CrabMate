@@ -203,7 +203,7 @@ Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conve
 | `CM_WEB_SEARCH_API_KEY` | Search API key (`brave` / `tavily` only). |
 | `CM_WEB_SEARCH_TIMEOUT_SECS` | **Inner** search timeout seconds; default **60** (for worbrow). |
 | `CM_WEB_SEARCH_MAX_RESULTS` | Max results. |
-| `CM_HTTP_FETCH_ALLOWED_PREFIXES` | Allowed URL prefixes. |
+| `CM_HTTP_FETCH_ALLOWED_PREFIXES` | CSV prefixes for `http_fetch` / `http_request`. Entry **`*`** allows any **http/https** (embedded default **`["*"]`**). **Explicit empty** (TOML `[]` or env set to empty string) overrides the default so all URLs need Web approval (or fail on the sync path). Omitting the key does **not** clear the list. Concrete prefixes must parse as URLs and match same-origin + path-prefix boundary. |
 | `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
 | `CM_HTTP_FETCH_USER_AGENT` | `User-Agent` for `http_fetch` / `http_request` (default **`crabmate/<version>`**). |
@@ -213,6 +213,8 @@ Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conve
 **`web_search` outer wall**: async path wraps **`spawn_blocking`** with a wall clock of **`web_search_timeout_secs` + grace** (worbrow **+15s**, brave/tavily **+2s**) so the inner timeout can tear down the browser/connection before the outer wait is abandoned. Override via **`[tool_registry].parallel_wall_timeout_secs.web_search_spawn_timeout`**.
 
 **Outer `tokio::time::timeout` around `spawn_blocking`** (HTTP tools): besides **`http_fetch_timeout_secs`** (client read timeout), the async path wraps blocking work. Defaults align with **`command_timeout_secs`** and **`http_fetch_timeout_secs`**. Override with TOML **`[tool_registry]`** keys **`http_fetch_wall_timeout_secs`** / **`http_request_wall_timeout_secs`** (see commented examples at the end of **`config/tools.toml`**).
+
+**`http_fetch` / `http_request` URL gate**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL runs without prefix approval. **Risk**: the model can fetch loopback, RFC1918, and cloud-metadata URLs (SSRF); **`http_request` can POST/PUT/PATCH/DELETE** to the same range. For multi-tenant or non-loopback `serve`, set concrete prefixes, or **TOML `http_fetch_allowed_prefixes = []` / `CM_HTTP_FETCH_ALLOWED_PREFIXES=` (empty)** to override the embed and require approval again. Omitting the key does not clear the list. Schemes remain **http/https** only.
 
 **`http_fetch` / `http_request` request behavior (curl-aligned)**: automatically sends **`Accept: */*`** and **`Accept-Encoding`** (gzip/brotli/deflate; response bodies are decompressed automatically, so uncompressed payloads no longer hit the truncation cap as often). **`User-Agent`** defaults to **`crabmate/<version>`** and can be overridden via TOML **`http_fetch_user_agent`** or **`CM_HTTP_FETCH_USER_AGENT`** (e.g. a browser or curl UA for anti-bot sites).
 **Environment proxies**: **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** are honored (HTTP(S) proxies work). Note **reqwest 0.13 does not support SOCKS** — with a `socks5://` proxy (common with Clash/v2ray), `http_fetch` fails and hints at it; `unset ALL_PROXY HTTPS_PROXY HTTP_PROXY` or use the same port as `http://` (e.g. Clash mixed port) to retry.

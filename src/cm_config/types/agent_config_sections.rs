@@ -44,6 +44,7 @@ pub struct WebSearchConfigSection {
 
 #[derive(Debug, Clone)]
 pub struct HttpFetchConfigSection {
+    /// 允许的 URL 前缀；条目 `"*"` 表示任意 http/https（嵌入默认）。
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,

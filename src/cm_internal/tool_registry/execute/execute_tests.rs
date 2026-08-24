@@ -48,7 +48,9 @@ async fn prefetch_parallel_syncdefault_approvals_blocks_external_read_dir_withou
 
 #[tokio::test]
 async fn prefetch_http_fetch_blocks_without_channel_when_prefix_miss() {
-    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.http_fetch.http_fetch_allowed_prefixes.clear();
+    let cfg = Arc::new(cfg);
     let args = r#"{"url":"https://example.com/private"}"#;
     let calls = vec![tool_call("http_fetch", args)];
     let failures = prefetch_http_fetch_parallel_approvals(&calls, &cfg, None).await;

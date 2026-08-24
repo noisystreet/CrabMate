@@ -306,10 +306,16 @@ fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
     println!(
         "  官方对话请用 Client **crabmate-tui** / Web；或扩大 **allowed_commands** / 匹配 **http_fetch_allowed_prefixes**（仅可信环境）。同进程 **chat** / 终端审批已移除（D2.2）。"
     );
-    let n_prefix = cfg.http_fetch.http_fetch_allowed_prefixes.len();
+    let prefixes = &cfg.http_fetch.http_fetch_allowed_prefixes;
+    let allow_any = crate::tools::http_fetch::prefixes_include_allow_any(prefixes);
     println!(
-        "  http_fetch_allowed_prefixes: {} 条（未匹配时需 Web SSE 审批通道）",
-        n_prefix
+        "  http_fetch_allowed_prefixes: {} 条{}（未匹配时需 Web SSE 审批通道）",
+        prefixes.len(),
+        if allow_any {
+            "（含 `*`：任意 http/https 直接执行）"
+        } else {
+            ""
+        }
     );
     println!(
         "  退出码与 JSON 行协议摘要：**docs/命令行契约.md**；SSE 流错误码：**docs/SSE协议.md**。"

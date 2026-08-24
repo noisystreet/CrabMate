@@ -280,14 +280,14 @@ pub fn request_with_json_body(
     out
 }
 
-/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`tool_approval`**）。
+/// `run_tool` 同步路径：仅当 URL 匹配 `http_fetch_allowed_prefixes`（`*` 或同源 + 路径前缀边界）时才请求；未匹配时返回错误（**不**在此路径弹审批；CLI 经 `tool_registry` 异步路径可走 **`tool_approval`**）。
 pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method, text_format) = match parse_http_fetch_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可人工审批。".to_string();
+        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可人工审批。".to_string();
     }
     let user_agent = resolve_user_agent(ctx.cfg);
     fetch_with_method(
@@ -300,14 +300,14 @@ pub fn run_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-/// `http_request` 同步路径：仅匹配 `http_fetch_allowed_prefixes` 的 URL 才允许执行。
+/// `http_request` 同步路径：仅匹配 `http_fetch_allowed_prefixes`（`*` 或前缀）的 URL 才允许执行。
 pub fn run_request_direct(args_json: &str, ctx: &ToolContext<'_>) -> String {
     let (url, method, json_body, text_format) = match parse_http_request_args(args_json) {
         Ok(x) => x,
         Err(e) => return format!("错误：{}", e),
     };
     if !url_matches_allowed_prefixes(&url, ctx.http_fetch_allowed_prefixes) {
-        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可对 http_request 人工审批。".to_string();
+        return "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes（`*` 放行全部 http/https，或同源 + 路径前缀边界）。本同步路径仅允许白名单；Web 流式或 CLI 异步路径可对 http_request 人工审批。".to_string();
     }
     let user_agent = resolve_user_agent(ctx.cfg);
     request_with_json_body(
