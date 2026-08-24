@@ -182,19 +182,28 @@ fn quote_script_token(arg: &str) -> String {
     double_quote_token(arg)
 }
 
-/// 拼成一行脚本（供 `bash -c` 与审批展示）。
+/// `run_command` 的 `args` 数组拼成参数串（不含 argv0；供 SSE `command_approval_request.args`）。
 #[must_use]
-pub fn join_run_command_shell_script(cmd: &str, args: &[String]) -> String {
-    let cmd = cmd.trim();
-    if args.is_empty() {
-        return cmd.to_string();
-    }
-    let mut out = String::from(cmd);
-    for a in args {
-        out.push(' ');
+pub fn join_run_command_argv_tail(args: &[String]) -> String {
+    let mut out = String::new();
+    for (i, a) in args.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
         out.push_str(&quote_script_token(a));
     }
     out
+}
+
+/// 拼成一行脚本（供 `bash -c` 与审批 **cli_detail**）。
+#[must_use]
+pub fn join_run_command_shell_script(cmd: &str, args: &[String]) -> String {
+    let cmd = cmd.trim();
+    let tail = join_run_command_argv_tail(args);
+    if tail.is_empty() {
+        return cmd.to_string();
+    }
+    format!("{cmd} {tail}")
 }
 
 /// `-c` 后的脚本正文（用于工具卡「命令：」展示）。
@@ -251,6 +260,19 @@ mod tests {
     fn join_quotes_spaces_without_expansion() {
         let s = join_run_command_shell_script("echo", &["hello world".into()]);
         assert_eq!(s, r#"echo "hello world""#);
+    }
+
+    #[test]
+    fn argv_tail_omits_argv0() {
+        assert_eq!(join_run_command_argv_tail(&[]), "");
+        assert_eq!(
+            join_run_command_argv_tail(&["-s".into(), "-L".into()]),
+            "-s -L"
+        );
+        assert_eq!(
+            join_run_command_argv_tail(&["hello world".into()]),
+            r#""hello world""#
+        );
     }
 
     #[test]

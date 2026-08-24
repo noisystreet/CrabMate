@@ -72,12 +72,19 @@ pub enum InteractiveGateOutcome {
 }
 
 pub(crate) fn web_timeline_detail(spec: &ApprovalRequestSpec) -> String {
-    let a = spec.sse_args.trim();
-    if a.is_empty() {
-        spec.sse_command.clone()
-    } else {
-        format!("{} {}", spec.sse_command, a)
+    let command = spec.sse_command.trim();
+    let args = spec.sse_args.trim();
+    if args.is_empty() {
+        return command.to_string();
     }
+    if args_already_include_command(command, args) {
+        return args.to_string();
+    }
+    format!("{command} {args}")
+}
+
+fn args_already_include_command(command: &str, args: &str) -> bool {
+    !command.is_empty() && (args == command || args.starts_with(&format!("{command} ")))
 }
 
 /// 将 `key` 写入 Web persistent allowlist（无 `web` 句柄时为 no-op）。
@@ -165,5 +172,39 @@ mod tests {
             web_timeline_prefix_zh: "p",
         };
         assert_eq!(web_timeline_detail(&spec), "http_fetch GET https://a/");
+    }
+
+    #[test]
+    fn web_timeline_detail_does_not_reduplicate_argv0() {
+        let spec = ApprovalRequestSpec {
+            capability: SensitiveCapability::HostShell,
+            sse_command: "curl".to_string(),
+            sse_args: "curl -s -L https://example.com".to_string(),
+            allowlist_key: None,
+            cli_title: "t",
+            cli_detail: String::new(),
+            web_timeline_prefix_zh: "p",
+        };
+        assert_eq!(
+            web_timeline_detail(&spec),
+            "curl -s -L https://example.com"
+        );
+    }
+
+    #[test]
+    fn web_timeline_detail_argv_tail_joins_once() {
+        let spec = ApprovalRequestSpec {
+            capability: SensitiveCapability::HostShell,
+            sse_command: "curl".to_string(),
+            sse_args: "-s -L https://example.com".to_string(),
+            allowlist_key: None,
+            cli_title: "t",
+            cli_detail: String::new(),
+            web_timeline_prefix_zh: "p",
+        };
+        assert_eq!(
+            web_timeline_detail(&spec),
+            "curl -s -L https://example.com"
+        );
     }
 }

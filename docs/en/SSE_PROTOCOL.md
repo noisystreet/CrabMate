@@ -98,8 +98,8 @@ These are **top-level keys** alongside `v`. Only one variant should match; parse
 
 | Field | Description |
 |-------|-------------|
-| `command` | Command name |
-| `args` | Argument string |
+| `command` | Command name (`run_command` off-allowlist: argv0, e.g. `curl`) |
+| `args` | Argument string **without** argv0 (clients join `command` + space + `args`). Empty when there are no args. The full script belongs in approval detail / timeline, not this field. |
 | `allowlist_key` | Optional persistent allowlist key |
 
 ## Stream error `code` enum (`error` + `code`)

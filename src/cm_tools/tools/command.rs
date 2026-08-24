@@ -31,7 +31,8 @@ use prepare_invocation::{prepare_run_command_invocation, scan_run_command_unsafe
 
 pub use command_shell_script::{
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
-    join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
+    join_run_command_argv_tail, join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy,
+    posix_shell_on_allowlist,
 };
 
 /// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
