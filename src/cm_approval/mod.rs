@@ -77,14 +77,7 @@ pub(crate) fn web_timeline_detail(spec: &ApprovalRequestSpec) -> String {
     if args.is_empty() {
         return command.to_string();
     }
-    if args_already_include_command(command, args) {
-        return args.to_string();
-    }
     format!("{command} {args}")
-}
-
-fn args_already_include_command(command: &str, args: &str) -> bool {
-    !command.is_empty() && (args == command || args.starts_with(&format!("{command} ")))
 }
 
 /// 将 `key` 写入 Web persistent allowlist（无 `web` 句柄时为 no-op）。
@@ -175,20 +168,17 @@ mod tests {
     }
 
     #[test]
-    fn web_timeline_detail_does_not_reduplicate_argv0() {
+    fn web_timeline_detail_keeps_first_arg_equal_to_command() {
         let spec = ApprovalRequestSpec {
             capability: SensitiveCapability::HostShell,
             sse_command: "curl".to_string(),
-            sse_args: "curl -s -L https://example.com".to_string(),
+            sse_args: "curl -I".to_string(),
             allowlist_key: None,
             cli_title: "t",
             cli_detail: String::new(),
             web_timeline_prefix_zh: "p",
         };
-        assert_eq!(
-            web_timeline_detail(&spec),
-            "curl -s -L https://example.com"
-        );
+        assert_eq!(web_timeline_detail(&spec), "curl curl -I");
     }
 
     #[test]

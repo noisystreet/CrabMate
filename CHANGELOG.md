@@ -19,7 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- **`run_command` approval SSE**: `command_approval_request.args` is argv **tail** only (not the full script that already includes argv0), so Client `command + " " + args` no longer shows `curl curl …`. Timeline detail skips re-prefixing when `args` already starts with `command`.
+- **`run_command` approval SSE**: `command_approval_request.args` is argv **tail** only (not the full script that already includes argv0), so Client `command + " " + args` no longer shows `curl curl …`. Timeline detail joins the same way (`command` + space + `args`).
 
 ## [0.5.0] - 2026-08-23
 
