@@ -304,21 +304,12 @@ struct ParallelEmitOrderedParams<'a> {
     tool_result_envelope_v1: bool,
 }
 
-async fn parallel_emit_ordered_tool_results(
-    p: ParallelEmitOrderedParams<'_>,
+async fn parallel_emit_tool_starts(
+    tool_calls: &[ToolCall],
+    cfg: &AgentConfig,
+    messages: &[Message],
+    control: &crate::agent::agent_turn::TurnControlSink<'_>,
 ) -> ExecuteToolsBatchOutcome {
-    let ParallelEmitOrderedParams {
-        tool_calls,
-        result_by_name_args,
-        parallel_batch_id_ref,
-        per_coord,
-        messages,
-        cfg,
-        tool_outcome_recorder,
-        control,
-        tool_result_envelope_v1,
-    } = p;
-
     let out = control.out;
     let sse_mirror_ref = control.sse_control_mirror.as_ref();
     let sse_encoder = control.sse_encoder.as_ref();
@@ -326,7 +317,7 @@ async fn parallel_emit_ordered_tool_results(
     for tc in tool_calls {
         if abort_tool_batch_if_sse_closed(
             out,
-            "SSE sender closed during parallel tool batch, aborting remainder",
+            "SSE sender closed before parallel tool batch, aborting execution",
             sse_encoder,
         )
         .await
@@ -336,7 +327,7 @@ async fn parallel_emit_ordered_tool_results(
         emit_tool_call_summary_sse(
             out,
             sse_mirror_ref,
-            cfg.as_ref(),
+            cfg,
             tc.id.as_str(),
             &tc.function.name,
             &tc.function.arguments,
@@ -357,6 +348,38 @@ async fn parallel_emit_ordered_tool_results(
             sse_encoder,
         )
         .await;
+    }
+    ExecuteToolsBatchOutcome::Finished
+}
+
+async fn parallel_emit_ordered_tool_results(
+    p: ParallelEmitOrderedParams<'_>,
+) -> ExecuteToolsBatchOutcome {
+    let ParallelEmitOrderedParams {
+        tool_calls,
+        result_by_name_args,
+        parallel_batch_id_ref,
+        per_coord,
+        messages,
+        cfg,
+        tool_outcome_recorder,
+        control,
+        tool_result_envelope_v1,
+    } = p;
+
+    let out = control.out;
+    let sse_encoder = control.sse_encoder.as_ref();
+
+    for tc in tool_calls {
+        if abort_tool_batch_if_sse_closed(
+            out,
+            "SSE sender closed during parallel tool batch, aborting remainder",
+            sse_encoder,
+        )
+        .await
+        {
+            return ExecuteToolsBatchOutcome::AbortedSse;
+        }
         let key = (tc.function.name.clone(), tc.function.arguments.clone());
         let cached = result_by_name_args
             .get(&key)
@@ -439,6 +462,13 @@ pub(super) async fn execute_tools_parallel(
     );
     let parallel_batch_id_ref = parallel_batch_id.as_str();
 
+    if matches!(
+        parallel_emit_tool_starts(tool_calls, cfg.as_ref(), messages, &control).await,
+        ExecuteToolsBatchOutcome::AbortedSse
+    ) {
+        return ExecuteToolsBatchOutcome::AbortedSse;
+    }
+
     let prefetch_failures =
         parallel_prefetch_approval_failures(tool_calls, cfg, web_tool_ctx, &handler_lookup).await;
 
@@ -477,4 +507,54 @@ pub(super) async fn execute_tools_parallel(
         tool_result_envelope_v1,
     })
     .await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::FunctionCall;
+
+    fn tool_call(id: &str, name: &str, arguments: &str) -> ToolCall {
+        ToolCall {
+            id: id.to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: name.to_string(),
+                arguments: arguments.to_string(),
+            },
+        }
+    }
+
+    #[tokio::test]
+    async fn parallel_batch_emits_all_tool_starts_before_result_collection() {
+        let cfg = crate::config::load_config(None).expect("embedded default config");
+        let calls = vec![
+            tool_call("tc-a", "read_file", r#"{"path":"a.txt"}"#),
+            tool_call("tc-b", "list_dir", r#"{"path":"."}"#),
+        ];
+        let (tx, mut rx) = tokio::sync::mpsc::channel(16);
+        let control = crate::agent::agent_turn::TurnControlSink {
+            out: Some(&tx),
+            sse_encoder: crate::sse::default_encoder(),
+            sse_control_mirror: None,
+        };
+
+        let outcome = parallel_emit_tool_starts(&calls, &cfg, &[], &control).await;
+
+        assert_eq!(outcome, ExecuteToolsBatchOutcome::Finished);
+        let mut emitted = String::new();
+        while let Ok(line) = rx.try_recv() {
+            emitted.push_str(&line);
+            emitted.push('\n');
+        }
+        let first = emitted
+            .find(r#""toolCallId":"tc-a""#)
+            .expect("first tool declaration");
+        let second = emitted
+            .find(r#""toolCallId":"tc-b""#)
+            .expect("second tool declaration");
+        assert!(first < second);
+        assert!(emitted.contains(r#""type":"TOOL_CALL_START""#));
+        assert!(!emitted.contains(r#""type":"TOOL_CALL_RESULT""#));
+    }
 }
