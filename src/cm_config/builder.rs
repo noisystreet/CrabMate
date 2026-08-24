@@ -45,6 +45,16 @@ pub(super) fn override_opt_vec(dst: &mut Option<Vec<String>>, src: &Option<Vec<S
     }
 }
 
+/// 键存在则覆盖，**允许空列表**（用于关掉嵌入默认 `http_fetch_allowed_prefixes = ["*"]`）。
+pub(super) fn override_opt_vec_allow_empty(
+    dst: &mut Option<Vec<String>>,
+    src: &Option<Vec<String>>,
+) {
+    if let Some(ref v) = *src {
+        *dst = Some(v.clone());
+    }
+}
+
 impl ConfigBuilder {
     /// 将 `AgentSection` 中有值的字段覆盖到当前累加器。
     pub(super) fn apply_section(&mut self, agent: AgentSection) {
@@ -136,7 +146,7 @@ impl ConfigBuilder {
             &mut self.command_exec.allowed_commands,
             &agent.allowed_commands,
         );
-        override_opt_vec(
+        override_opt_vec_allow_empty(
             &mut self.http_fetch.http_fetch_allowed_prefixes,
             &agent.http_fetch_allowed_prefixes,
         );

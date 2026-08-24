@@ -2,9 +2,9 @@
 
 use super::builder::ConfigBuilder;
 use super::env_override_apply::{
-    apply_bool, apply_csv_nonempty, apply_nonempty_opt, apply_nonempty_opt_clearing_file,
-    apply_nonempty_string, apply_nonempty_string_clearing_opt, apply_parse, apply_raw_opt,
-    apply_trimmed_opt, env_flag_true,
+    apply_bool, apply_csv_allow_empty, apply_csv_nonempty, apply_nonempty_opt,
+    apply_nonempty_opt_clearing_file, apply_nonempty_string, apply_nonempty_string_clearing_opt,
+    apply_parse, apply_raw_opt, apply_trimmed_opt, env_flag_true,
 };
 
 #[path = "env_overrides_chat_queue.rs"]
@@ -161,7 +161,7 @@ fn env_override_web_search_limits_part_3(b: &mut ConfigBuilder) {
 }
 
 fn env_override_http_fetch_limits(b: &mut ConfigBuilder) {
-    apply_csv_nonempty(
+    apply_csv_allow_empty(
         &mut b.http_fetch.http_fetch_allowed_prefixes,
         "CM_HTTP_FETCH_ALLOWED_PREFIXES",
     );

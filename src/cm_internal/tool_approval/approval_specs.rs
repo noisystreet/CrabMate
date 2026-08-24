@@ -3,7 +3,7 @@
 use super::{ApprovalRequestSpec, SensitiveCapability};
 
 const HTTP_PREFIX_MISS_DETAIL: &str =
-    "URL 未匹配 http_fetch_allowed_prefixes（同源 + 路径前缀边界）：\n";
+    "URL 未匹配 http_fetch_allowed_prefixes（`*` 或同源 + 路径前缀边界）：\n";
 
 /// `http_fetch`：出站只读 HTTP，未匹配配置前缀时需人工审批。
 pub fn http_fetch(approval_args: &str, allowlist_key: &str) -> ApprovalRequestSpec {

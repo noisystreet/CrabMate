@@ -70,11 +70,28 @@ fn same_origin(url: &Url, prefix: &Url) -> bool {
         && port_url == port_prefix
 }
 
+/// `http_fetch_allowed_prefixes` 中的 `"*"`：放行任意 **http/https** URL。
+fn prefix_allows_any_http_url(raw: &str) -> bool {
+    raw.trim() == "*"
+}
+
+/// 列表是否含 `"*"`（配置 / `doctor` 展示用）。
+pub fn prefixes_include_allow_any(prefixes: &[String]) -> bool {
+    prefixes.iter().any(|raw| prefix_allows_any_http_url(raw))
+}
+
+fn url_is_http_or_https(url: &Url) -> bool {
+    url.scheme() == "http" || url.scheme() == "https"
+}
+
 pub fn url_matches_allowed_prefixes(url: &Url, prefixes: &[String]) -> bool {
     prefixes.iter().any(|raw| {
         let p = raw.trim();
         if p.is_empty() {
             return false;
+        }
+        if prefix_allows_any_http_url(p) {
+            return url_is_http_or_https(url);
         }
         let Ok(prefix) = Url::parse(p) else {
             return false;

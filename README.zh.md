@@ -206,6 +206,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 ## 部署与安全
 
 - **监听**：默认 **`127.0.0.1`**；监听 **`0.0.0.0`** 须 **`web_api_bearer_token`** 或显式不安全开关（见 [docs/配置说明.md](docs/配置说明.md)）。
+- **`http_fetch` / `http_request`**：嵌入默认 **`http_fetch_allowed_prefixes = ["*"]`**，任意 **http/https** 不再走前缀审批（仍拒绝 `file:` 等）。多租户或非本机监听请改回具体前缀，或 **`http_fetch_allowed_prefixes = []`** / 空 **`CM_HTTP_FETCH_ALLOWED_PREFIXES`** 覆盖嵌入默认（见 [docs/配置说明.md](docs/配置说明.md)）。
 - **LLM API Key**：Client 本机存放并经 **`client_llm.api_key`** 发送；进程环境变量 **`API_KEY`** 仍可作为 **`serve`** / 运维回退。
 - **Web API**：嵌入默认 **`web_api_require_bearer = false`**，允许无共享密钥启动 **`serve`**；若设为 **`true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML / **`crabmate web-bearer set`**）。密钥非空时请求须带 **`Authorization: Bearer …`** 或 **`X-API-Key: …`**。浏览器须在 **设置 →「Web API 共享密钥（Bearer）」** 保存与服务端相同的值（**`localStorage`** **`crabmate-api-bearer-token`**），**不要**与模型 **`API_KEY`** 混淆。**跨 Origin 静态 UI**：设置页填 **API 基址**；官方壳 Origin 已默认放行，其它浏览器 Origin 再配 **`CM_WEB_CORS_ALLOWED_ORIGINS`**。冒烟见 **`docs/design/client_turn_smoke_runbook.md`** §9。**本机临时跳过**：`unset CM_WEB_API_BEARER_TOKEN` 后听 `127.0.0.1`；或清密钥后设 **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** 再听 `0.0.0.0`。对外建议 **`web_api_require_bearer = true`**。详见 [docs/配置说明.md](docs/配置说明.md)。
 - **其它**：Web 侧栏「设置」须 **「保存全部」** 才写入；工作区须在允许根内。调试与 **`GET /web-ui`** 见 [docs/调试指南.md](docs/调试指南.md)。

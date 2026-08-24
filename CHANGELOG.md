@@ -15,7 +15,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- (none yet)
+- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** allows any **http/https** URL without prefix approval. Entry **`*`** is the wildcard. Explicit empty TOML `[]` or **`CM_HTTP_FETCH_ALLOWED_PREFIXES=`** overrides the default and restores deny/approve-all-unmatched. Still rejects non-http(s) schemes. SSRF risk (loopback / metadata) is documented.
 
 ### Fixed
 
