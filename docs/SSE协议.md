@@ -105,8 +105,8 @@
 
 | 字段 | 说明 |
 |------|------|
-| `command` | 命令名 |
-| `args` | 参数串 |
+| `command` | 命令名（`run_command` 不在白名单时为 argv0，如 `curl`） |
+| `args` | **不含 argv0** 的参数串（客户端按 `command` + 空格 + `args` 拼成一行）。无参为空串。完整脚本只出现在审批 detail / 时间线，不重复写入本字段。 |
 | `allowlist_key` | 可选；永久允许时写入白名单的键 |
 
 ## 流错误 `code` 枚举（`error` + `code`）

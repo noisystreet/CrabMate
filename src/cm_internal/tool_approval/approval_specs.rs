@@ -47,14 +47,15 @@ pub fn read_dir_external_path(ext_path: &str) -> ApprovalRequestSpec {
 }
 
 /// `run_command`：单命令不在白名单。
-pub fn run_command_unknown_cmd(cmd: &str, cmd_show: &str) -> ApprovalRequestSpec {
+/// `sse_args` 仅为 argv 余下部分（与 SSE 金样 `command`+`args` 拆分一致）；完整脚本只写入 `cli_detail`。
+pub fn run_command_unknown_cmd(cmd: &str, argv_tail: &str, script: &str) -> ApprovalRequestSpec {
     ApprovalRequestSpec {
         capability: SensitiveCapability::HostShell,
         sse_command: cmd.to_string(),
-        sse_args: cmd_show.to_string(),
+        sse_args: argv_tail.to_string(),
         allowlist_key: None,
         cli_title: "run_command 审批",
-        cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", cmd_show.trim()),
+        cli_detail: format!("命令不在白名单；审批对象为完整脚本:\n{}", script.trim()),
         web_timeline_prefix_zh: "命令审批：",
     }
 }
@@ -119,11 +120,12 @@ mod tests {
     }
 
     #[test]
-    fn run_command_unknown_cmd_sse_command_is_argv0() {
-        let spec = run_command_unknown_cmd("git", "git status");
+    fn run_command_unknown_cmd_sse_args_are_argv_tail() {
+        let spec = run_command_unknown_cmd("git", "status", "git status");
         assert_eq!(spec.capability, SensitiveCapability::HostShell);
         assert_eq!(spec.sse_command, "git");
-        assert_eq!(spec.sse_args, "git status");
+        assert_eq!(spec.sse_args, "status");
+        assert!(spec.cli_detail.contains("git status"));
         assert_eq!(spec.allowlist_key, None);
     }
 }

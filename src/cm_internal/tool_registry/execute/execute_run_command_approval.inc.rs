@@ -3,6 +3,7 @@ struct ParsedRunCommandJson {
     command_raw: String,
     cmd_args: Vec<String>,
     script: String,
+    argv_tail: String,
 }
 
 fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
@@ -23,12 +24,14 @@ fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
                 .collect()
         })
         .unwrap_or_default();
+    let argv_tail = tools::join_run_command_argv_tail(&cmd_args);
     let script = tools::join_run_command_shell_script(&command_raw, &cmd_args);
     ParsedRunCommandJson {
         cmd,
         command_raw,
         cmd_args,
         script,
+        argv_tail,
     }
 }
 
@@ -41,6 +44,7 @@ async fn request_unknown_cmd_approval(
     web_ctx: Option<&WebToolRuntime>,
     cmd: &str,
     script: &str,
+    argv_tail: &str,
     needs_shell: bool,
     async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
@@ -59,7 +63,11 @@ async fn request_unknown_cmd_approval(
     } else {
         script.to_string()
     };
-    let spec = crate::cm_internal::tool_approval::approval_spec_run_command_unknown_cmd(cmd, &cmd_show);
+    let spec = crate::cm_internal::tool_approval::approval_spec_run_command_unknown_cmd(
+        cmd,
+        argv_tail,
+        &cmd_show,
+    );
     let decision_opt = if web_ctx.is_some() {
         match crate::cm_internal::tool_approval::request_tool_interactive_approval(
             web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
@@ -128,6 +136,7 @@ async fn resolve_unknown_cmd_allowlist(
     cmd: &str,
     command_raw: &str,
     script: &str,
+    argv_tail: &str,
     needs_shell: bool,
     async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
@@ -150,7 +159,8 @@ async fn resolve_unknown_cmd_allowlist(
             cmd,
         ));
     }
-    request_unknown_cmd_approval(cfg, web_ctx, cmd, script, needs_shell, async_mode).await
+    request_unknown_cmd_approval(cfg, web_ctx, cmd, script, argv_tail, needs_shell, async_mode)
+        .await
 }
 
 /// 解析 `run_command` 白名单与交互审批，返回最终生效的 `allowed_commands` 快照（可能与配置不同）。
@@ -163,6 +173,7 @@ async fn run_command_resolve_effective_allowlist(
     cmd: &str,
     command_raw: &str,
     script: &str,
+    argv_tail: &str,
     needs_shell: bool,
     async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
@@ -177,6 +188,7 @@ async fn run_command_resolve_effective_allowlist(
         cmd,
         command_raw,
         script,
+        argv_tail,
         needs_shell,
         async_mode,
     )
@@ -283,6 +295,7 @@ async fn resolve_run_command_shell_allowlist(
         parsed.cmd.as_str(),
         parsed.command_raw.as_str(),
         parsed.script.as_str(),
+        parsed.argv_tail.as_str(),
         needs_shell,
         async_mode,
     )

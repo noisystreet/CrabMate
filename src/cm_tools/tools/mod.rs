@@ -14,7 +14,8 @@ mod command;
 pub use command::{
     PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
-    join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
+    join_run_command_argv_tail, join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy,
+    posix_shell_on_allowlist,
     prepare_run_command_for_pty_spawn, run_checked, run_checked_wait,
     scan_run_command_unsafe_args_json,
 };

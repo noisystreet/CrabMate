@@ -152,7 +152,9 @@ impl SseErrorBody {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CommandApprovalBody {
+    /// 命令名 / 工具名（`run_command` 未知命令时为 argv0，如 `curl`）。
     pub command: String,
+    /// 参数串，**不含** `command`（客户端按 `command + " " + args` 展示）。`run_command` 未知命令为 argv 余下部分；无参为空串。
     pub args: String,
     /// 永久允许时写入进程内白名单的键；缺省则使用 `command` 小写（与 `run_command` 行为一致）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
