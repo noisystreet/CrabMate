@@ -55,6 +55,8 @@
 
 不写子命令时须显式给出（如 **`serve`**）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
 
+内嵌配置将上下文历史上限设为 **64 条消息**（`max_message_history` / `CM_MAX_MESSAGE_HISTORY`），降低工具密集型回合过早裁剪的概率。该值仍是消息条数安全上限，并非精确 Token 计量；详见[配置说明](docs/配置说明.md)。
+
 | 子命令 | 说明 |
 | --- | --- |
 | **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。默认端口 **8080**，绑定 **127.0.0.1**。 |

@@ -29,7 +29,8 @@ api_max_retries = 3
 api_retry_delay_secs = 1
 
 # 2. 对话历史、上下文预算与摘要
-max_message_history = 24
+# 工具型 ReAct 一次用户回合会产生多条 assistant/tool 消息；64 用于避免仅因消息粒度较细而过早裁剪。
+max_message_history = 64
 context_char_budget = 200000
 context_min_messages_after_system = 4
 context_summary_trigger_chars = 0

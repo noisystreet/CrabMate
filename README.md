@@ -55,6 +55,8 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 
 With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
+The embedded context-history ceiling is **64 messages** (`max_message_history` / `CM_MAX_MESSAGE_HISTORY`) so tool-heavy turns are less likely to trim early. It remains a message-count safety limit rather than exact token accounting; see [Configuration](docs/en/CONFIGURATION.md).
+
 | Subcommand | Summary |
 | --- | --- |
 | **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). Default port **8080**, bind **127.0.0.1**. |
