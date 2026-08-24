@@ -11,28 +11,25 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- **Model-context replay artifacts**: `GET /conversation/messages.context_artifacts` optionally exposes persisted summary and canonical-range recipes while chat rows remain unchanged.
+- (none yet)
 
 ### Changed
 
-- **Context history**: raise the embedded `max_message_history` default from **24** to **256** and use it only as an abnormal count fallback once Token budgeting is enabled. `CM_MAX_MESSAGE_HISTORY` and TOML overrides remain available.
-- **Context timeline**: tool-output-only compression now reports **“已压缩工具输出”**; **“已裁剪历史”** is reserved for message-count/character trimming or summarization. SSE v2 and the `timeline_log` JSON shape are unchanged.
-- **Token-aware context compaction**: estimate vendor-shaped messages, actual tools JSON, attachments, output reservation, and safety margin; trigger at **85%** and target **70%** of safe input by default. History, count fallbacks, and summary tails now preserve complete user/tool interaction groups. `context_trim.detail` adds optional Token/report fields while SSE remains v2.
-- **Canonical history / model view split**: context transforms now mutate a derived `ModelContextView`; successful turns append only new current-turn output to complete SQLite history. HTTP/SSE token snapshots add optional safe-input components and prefer provider usage when returned; existing fields and SSE v2 remain compatible.
-- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** allows any **http/https** URL without prefix approval. Entry **`*`** is the wildcard. Explicit empty TOML `[]` or **`CM_HTTP_FETCH_ALLOWED_PREFIXES=`** overrides the default and restores deny/approve-all-unmatched. Still rejects non-http(s) schemes. SSRF risk (loopback / metadata) is documented.
+- (none yet)
 
 ### Fixed
 
-- **`run_command` approval SSE**: `command_approval_request.args` is argv **tail** only (not the full script that already includes argv0), so Client `command + " " + args` no longer shows `curl curl …`. Timeline detail joins the same way (`command` + space + `args`).
-- **Parallel read-only tool batches**: emit tool-call declarations before approval prefetch and execution, so Client loading cards appear before parallel execution begins instead of near batch completion.
+- (none yet)
 
-## [0.5.0] - 2026-08-23
+## [0.5.0] - 2026-08-24
 
-**Git pre-release `v0.5.0-alpha.3`** (follows **`v0.5.0-alpha.2`**). crates.io remains **`0.4.0`** (`cargo install crabmate` does not pick this up). Install from the GitHub Release tarball/`.deb`, or `cargo install --path .` / `--git` at this tag. **Not** a crates.io publish.
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.0`** matches this package. Follows GitHub pre-releases **`v0.5.0-alpha.0`** … **`v0.5.0-alpha.3`**.
 
 SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT` are soft (old clients ignore them). Chat image embeds, **Save to this device**, directory zip, in-tree file rename, and **Stop** (stream cancel) need a matching **crabmate-client** build; the model is prompted to write `![alt](relative.png)` rather than copying files onto `CM_WEB_STATIC_DIR`.
 
 ### Added
+
+- **Model-context replay artifacts**: `GET /conversation/messages.context_artifacts` optionally exposes persisted summary and canonical-range recipes while chat rows remain unchanged.
 
 - Conversation **`layout`**: optional metadata on **`GET /conversation/messages`**; persist on save; dual-read fingerprint (row count / kind order / `projection_hash`). Official Web dual-read must **not** stamp live stream keys (`turn-commentary-*` / `turn-final-answer`) onto GET-hydrated history.
 - Timeline sidecars for context injection and trim events.
@@ -52,6 +49,11 @@ SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT
 
 ### Changed
 
+- **Context history**: raise the embedded `max_message_history` default from **24** to **256** and use it only as an abnormal count fallback once Token budgeting is enabled. `CM_MAX_MESSAGE_HISTORY` and TOML overrides remain available.
+- **Context timeline**: tool-output-only compression now reports **“已压缩工具输出”**; **“已裁剪历史”** is reserved for message-count/character trimming or summarization. SSE v2 and the `timeline_log` JSON shape are unchanged.
+- **Token-aware context compaction**: estimate vendor-shaped messages, actual tools JSON, attachments, output reservation, and safety margin; trigger at **85%** and target **70%** of safe input by default. History, count fallbacks, and summary tails now preserve complete user/tool interaction groups. `context_trim.detail` adds optional Token/report fields while SSE remains v2.
+- **Canonical history / model view split**: context transforms now mutate a derived `ModelContextView`; successful turns append only new current-turn output to complete SQLite history. HTTP/SSE token snapshots add optional safe-input components and prefer provider usage when returned; existing fields and SSE v2 remain compatible.
+- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** allows any **http/https** URL without prefix approval. Entry **`*`** is the wildcard. Explicit empty TOML `[]` or **`CM_HTTP_FETCH_ALLOWED_PREFIXES=`** overrides the default and restores deny/approve-all-unmatched. Still rejects non-http(s) schemes. SSRF risk (loopback / metadata) is documented.
 - Bump **`worbrow`** to **0.2.2**.
 - **`run_command`**: split emit vs `parse_args`; shared HTTP approval Spec builders.
 
@@ -61,6 +63,8 @@ SSE wire protocol stays **v2**; background-job fields on AG-UI `TOOL_CALL_RESULT
 
 ### Fixed
 
+- **`run_command` approval SSE**: `command_approval_request.args` is argv **tail** only (not the full script that already includes argv0), so Client `command + " " + args` no longer shows `curl curl …`. Timeline detail joins the same way (`command` + space + `args`).
+- **Parallel read-only tool batches**: emit tool-call declarations before approval prefetch and execution, so Client loading cards appear before parallel execution begins instead of near batch completion.
 - Label LLM context summaries as server injections so they are not shown as user turns.
 - Persist layout segment keys and align timeline projection.
 
@@ -175,8 +179,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0-alpha.3...HEAD
-[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0-alpha.3
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
 [0.2.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.2.0

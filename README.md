@@ -140,7 +140,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 | Method | Command / notes |
 | --- | --- |
-| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.4.0`**, default feature **`server`**). Tree / GitHub pre-release **`0.5.0-alpha.3`** (`v0.5.0-alpha.3`): **`cargo install --path .`** or the Release tarball/`.deb`. Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.5.0`**, default feature **`server`**). Git tag **`v0.5.0`** matches this package. Release tarball/`.deb` on GitHub Releases. Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** is script-only. |
 | **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, API-only by default; add **`--with-web`** + **`CM_WEB_STATIC_DIR`** for UI). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
@@ -218,5 +218,5 @@ Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](doc
 
 Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-- **Single crate**: crates.io **stable** is **`0.4.0`** ([crates.io/crates/crabmate](https://crates.io/crates/crabmate), default **`server`**). **`cargo install crabmate`** still installs that. This tree is **`0.5.0-alpha.3`** (git tag **`v0.5.0-alpha.3`**, GitHub **prerelease** artifacts). Official Client pins **`version = "0.4.0", default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
+- **Single crate**: crates.io **stable** is **`0.5.0`** ([crates.io/crates/crabmate](https://crates.io/crates/crabmate), default **`server`**). **`cargo install crabmate`** installs that. Git tag **`v0.5.0`** matches this package. Official Client should pin **`version = "0.5.0", default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
 - **Semver surface**: `protocol` = the six `cm_*` contract modules. `server` promises the composition module *names* (`agent` / `config` / `llm` / `sse` / `types`) and explicit root `pub use`s (`run`, `run_agent_turn`, `build_tools*`, …). `#[doc(hidden)]` modules and paths such as `agent::agent_turn` are **not** a stable SDK. Details: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4.

@@ -19,7 +19,7 @@ This file lists **only open** work items. **Remove an item when it is done** (do
 
 ### P3 — Architecture (single crate on crates.io)
 
-- [ ] **Client pin crates.io**: official Client uses `crabmate = { version = "0.4.0", default-features = false, features = ["protocol"] }` (git pin optional). Server is published: [crates.io/crates/crabmate](https://crates.io/crates/crabmate) **0.4.0**, git **`v0.4.0`**. **W3/W4/W5 deferred**.
+- [ ] **Client pin crates.io**: official Client uses `crabmate = { version = "0.5.0", default-features = false, features = ["protocol"] }` (git pin optional). Server is published: [crates.io/crates/crabmate](https://crates.io/crates/crabmate) **0.5.0**, git **`v0.5.0`**. **W3/W4/W5 deferred**.
 
 ### P4 — Testing and quality
 
