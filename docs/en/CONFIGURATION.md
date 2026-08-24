@@ -94,7 +94,7 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_FINAL_PLAN_REQUIREMENT` | `never` / `workflow_reflection` / `always`. |
 | `CM_PLAN_REWRITE_MAX_ATTEMPTS` | Max plan rewrite rounds. |
 | `CM_PLANNER_EXECUTOR_MODE` | Only **`single_agent`** (ReAct) is valid; omit for the same default. TOML: `planner_executor_mode`. **Removed (TOML)**: `logical_dual_agent` / `hierarchical`, `intent_mode_bias_enabled`, `llm_fold_system_into_user`, **`intent_at_turn_start_enabled`**, **`intent_l2_*`**, **`intent_execute_*_threshold`**, **`intent_non_hier_execute_*`**, **`intent_l0_routing_boost_enabled`** — writing them under `[agent]` fails load via **`deny_unknown_fields`**. Matching legacy env vars (**`CM_INTENT_AT_TURN_START_ENABLED` / `CM_INTENT_L2_*` / `CM_INTENT_EXECUTE_*` / `CM_INTENT_NON_HIER_*` / `CM_INTENT_L0_ROUTING_BOOST_ENABLED` / `CM_INTENT_MODE_BIAS_ENABLED`**, etc.) are **no longer read** (silently ignored; do not fail startup). |
-| `CM_MAX_MESSAGE_HISTORY` | Max messages kept; defaults to **64** to reduce premature trimming when a tool-heavy ReAct turn creates many assistant/tool messages. TOML: `max_message_history`. This remains a message-count ceiling, not an exact token budget; override it for the model window and cost profile. **Removed (TOML, D2.2)**: **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** — writing them under `[agent]` fails load via **`deny_unknown_fields`** (delete from your `config.toml`). Legacy env vars **`CM_TUI_LOAD_SESSION_ON_START` / `CM_TUI_SESSION_MAX_MESSAGES` / `CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` / `CM_TUI_CONVERSATION_ID` / `CM_TUI_PANEL_BG`** are **no longer read** (silently ignored). Historical on-disk path **`.crabmate/tui_session.json`** remains readable by **`save-session`** / **`tool-replay`**. |
+| `CM_MAX_MESSAGE_HISTORY` | Abnormal message-count fallback; defaults to **256**. TOML: `max_message_history`. It does not drive normal compaction while Token budgeting is enabled; override it for deployment memory bounds. **Removed (TOML, D2.2)**: **`tui_load_session_on_start`**, **`tui_session_max_messages`**, **`repl_initial_workspace_messages_enabled`** — writing them under `[agent]` fails load via **`deny_unknown_fields`** (delete from your `config.toml`). Legacy env vars **`CM_TUI_LOAD_SESSION_ON_START` / `CM_TUI_SESSION_MAX_MESSAGES` / `CM_REPL_INITIAL_WORKSPACE_MESSAGES_ENABLED` / `CM_TUI_CONVERSATION_ID` / `CM_TUI_PANEL_BG`** are **no longer read** (silently ignored). Historical on-disk path **`.crabmate/tui_session.json`** remains readable by **`save-session`** / **`tool-replay`**. |
 | `CM_CLI_WAIT_SPINNER` | **Removed**: in-process CLI wait spinner and `web_chat_json` stdout echo pipeline removed; setting this variable is **no longer read** (no effect). |
 
 ### Act utterance heuristics vs `plan_rewrite` (quick reference)
@@ -249,8 +249,12 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `CM_THINKING_AVOID_ECHO_SYSTEM_PROMPT` | Append the thinking-discipline appendix to the first `system` message; defaults to on. |
 | `CM_THINKING_AVOID_ECHO_APPENDIX` | Inline appendix body (non-empty clears the file path; if **`…_FILE`** is set afterward, **file wins**). |
 | `CM_THINKING_AVOID_ECHO_APPENDIX_FILE` | Path to appendix Markdown (same resolution as **`system_prompt_file`**). |
-| `CM_CONTEXT_CHAR_BUDGET` | Character budget trim. |
+| `CM_CONTEXT_CHAR_BUDGET` | Character-budget fallback when `llm_context_tokens` is disabled; not the normal trigger while Token budgeting is enabled. |
+| `CM_LLM_CONTEXT_TOKENS` | Full model context window (input + output); non-zero enables final-request Token budgeting. |
 | `CM_CONTEXT_MIN_MESSAGES_AFTER_SYSTEM` | Min messages after system post-summary. |
+| `CM_CONTEXT_TOKEN_TRIGGER_PERCENT` | Compression trigger as a percentage of safe input budget; default **85** (50–95). |
+| `CM_CONTEXT_TOKEN_TARGET_PERCENT` | Compression target percentage; default **70** (30–90 and finalized at least 5 points below the trigger). |
+| `CM_CONTEXT_TOKEN_SAFETY_MARGIN_TOKENS` | Additional input safety margin; default **2048** (128–65536). |
 | `CM_CONTEXT_SUMMARY_TRIGGER_CHARS` | Trigger summary when over char threshold. |
 | `CM_CONTEXT_SUMMARY_TAIL_MESSAGES` | Tail messages kept after summary. |
 | `CM_CONTEXT_SUMMARY_MAX_TOKENS` | Summary request max_tokens. |
@@ -482,9 +486,9 @@ When **`cursor_rules_enabled`** (**default `true`**), append sorted **`cursor_ru
 
 ## Context window
 
-Before each model call: trim by count, **`context_char_budget`**, optional LLM summary. **`tool_message_max_chars`**: compress long **`role: tool`**; with **`tool_result_envelope_v1`**, head/tail sample **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**). Details: **`config/tools.toml`**.
+Before each model call, Server estimates the final-request input from vendor-shaped system/messages, the actual tools JSON, a conservative fixed image allowance, and request overhead. It subtracts `max_tokens` and the safety margin from `llm_context_tokens`, triggers at **85%**, and targets **70%** by default. History is removed only as complete `user + assistant/tool chain` groups, preserving at least the two newest groups; `max_message_history` is a high-count fallback. With `llm_context_tokens = 0`, **`context_char_budget`** remains the fallback. **`tool_message_max_chars`** compresses long **`role: tool`** content first; with **`tool_result_envelope_v1`**, it head/tail samples **`crabmate_tool.output`** (see **[DEVELOPMENT.md](DEVELOPMENT.md)**).
 
-Optional LLM summary prompts (when **`context_summary_trigger_chars > 0`**) default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**, **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**, both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env: **`CM_CONTEXT_SUMMARY_SYSTEM_FILE`**, **`CM_CONTEXT_SUMMARY_USER_FILE`**.
+Crossing the Token trigger can force an LLM-summary attempt; an explicit **`context_summary_trigger_chars > 0`** may still trigger earlier by characters. Summary tails align to complete turn-group boundaries. Prompts default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**, **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**, both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env: **`CM_CONTEXT_SUMMARY_SYSTEM_FILE`**, **`CM_CONTEXT_SUMMARY_USER_FILE`**.
 
 ## Web chat queue (`chat_queue_*`)
 

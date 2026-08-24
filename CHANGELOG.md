@@ -15,8 +15,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
-- **Context history**: raise the embedded `max_message_history` default from **24** to **64** to reduce premature count-based trimming in tool-heavy turns. `CM_MAX_MESSAGE_HISTORY` and TOML overrides remain available.
+- **Context history**: raise the embedded `max_message_history` default from **24** to **256** and use it only as an abnormal count fallback once Token budgeting is enabled. `CM_MAX_MESSAGE_HISTORY` and TOML overrides remain available.
 - **Context timeline**: tool-output-only compression now reports **“已压缩工具输出”**; **“已裁剪历史”** is reserved for message-count/character trimming or summarization. SSE v2 and the `timeline_log` JSON shape are unchanged.
+- **Token-aware context compaction**: estimate vendor-shaped messages, actual tools JSON, attachments, output reservation, and safety margin; trigger at **85%** and target **70%** of safe input by default. History, count fallbacks, and summary tails now preserve complete user/tool interaction groups. `context_trim.detail` adds optional Token/report fields while SSE remains v2.
 - **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** allows any **http/https** URL without prefix approval. Entry **`*`** is the wildcard. Explicit empty TOML `[]` or **`CM_HTTP_FETCH_ALLOWED_PREFIXES=`** overrides the default and restores deny/approve-all-unmatched. Still rejects non-http(s) schemes. SSRF risk (loopback / metadata) is documented.
 
 ### Fixed

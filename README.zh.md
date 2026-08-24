@@ -55,7 +55,7 @@
 
 不写子命令时须显式给出（如 **`serve`**）。请优先 **`serve`** + Client **`crabmate-tui`**。全局常用选项：**`--config`**、**`--workspace`**、**`--no-tools`**、**`--llm-context-tokens`**、**`--log`**（详见 **`crabmate --help`**）。
 
-内嵌配置将上下文历史上限设为 **64 条消息**（`max_message_history` / `CM_MAX_MESSAGE_HISTORY`），降低工具密集型回合过早裁剪的概率。该值仍是消息条数安全上限，并非精确 Token 计量；详见[配置说明](docs/配置说明.md)。
+`llm_context_tokens` 非零时采用 Token 主导的上下文压缩：Server 计入供应商形状消息、tools JSON、附件、输出预留与安全余量，并只删除完整交互组。**256 条消息**的 `max_message_history` / `CM_MAX_MESSAGE_HISTORY` 保留为高位条数兜底；详见[配置说明](docs/配置说明.md)。
 
 | 子命令 | 说明 |
 | --- | --- |

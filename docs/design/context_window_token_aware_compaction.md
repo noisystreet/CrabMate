@@ -1,6 +1,6 @@
 # ADR：上下文窗口采用 Token 主导、交互组完整的压缩策略
 
-**状态**：Accepted（Phase 1 已实施；Phase 2–3 待实施）  
+**状态**：Accepted（Phase 1–2 已实施；Phase 3 待实施）
 **日期**：2026-08-24  
 **决策范围**：Server 上下文计量、模型请求视图、裁剪/压缩事件；Client 用量与时间线展示  
 **关联文档**：
@@ -198,7 +198,7 @@ Client 进度条分母使用 `max_input_tokens`，不再使用未扣除输出预
 
 本阶段不改变裁剪算法与 JSON 形状，可独立回滚。
 
-### Phase 2：Token 主导与交互组完整性
+### Phase 2：Token 主导与交互组完整性（已实施）
 
 范围：
 
@@ -206,7 +206,7 @@ Client 进度条分母使用 `max_input_tokens`，不再使用未扣除输出预
 2. 计入 tools JSON、system、消息和附件预算；
 3. 实现 `ConversationTurnGroup`；
 4. 以 Token 阈值触发压缩；
-5. 将 `max_message_history` 变为高位安全兜底；
+5. 将 `max_message_history` 提至 256，变为高位安全兜底；
 6. 输出 `ContextCompactionReport`；
 7. 用工具密集型 fixture 验证 2～4 个用户回合不会无故裁剪。
 

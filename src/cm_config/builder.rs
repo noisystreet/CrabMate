@@ -281,6 +281,15 @@ impl ConfigBuilder {
         cp.context_min_messages_after_system = agent
             .context_min_messages_after_system
             .or(cp.context_min_messages_after_system);
+        cp.context_token_trigger_percent = agent
+            .context_token_trigger_percent
+            .or(cp.context_token_trigger_percent);
+        cp.context_token_target_percent = agent
+            .context_token_target_percent
+            .or(cp.context_token_target_percent);
+        cp.context_token_safety_margin_tokens = agent
+            .context_token_safety_margin_tokens
+            .or(cp.context_token_safety_margin_tokens);
         cp.context_summary_trigger_chars = agent
             .context_summary_trigger_chars
             .or(cp.context_summary_trigger_chars);

@@ -3,8 +3,8 @@ use crate::cm_types::{FunctionCall, Message, ToolCall};
 use super::{
     MessagePipelineConfig, MessagePipelineReport, MessagePipelineStage,
     apply_session_sync_pipeline_with_config, compress_tool_message_contents,
-    conversation_messages_to_vendor_body, drop_orphan_tool_messages, trim_messages_by_char_budget,
-    trim_messages_by_count,
+    conversation_messages_to_vendor_body, conversation_turn_groups, drop_orphan_tool_messages,
+    trim_messages_by_char_budget, trim_messages_by_count,
 };
 
 fn tool_msg(s: &str) -> Message {
@@ -31,7 +31,7 @@ fn compress_tool_truncates() {
 }
 
 #[test]
-fn trim_by_count_keeps_system_and_tail() {
+fn trim_by_count_keeps_system_and_latest_complete_group() {
     let mut v = vec![
         Message {
             role: "system".to_string(),
@@ -71,20 +71,16 @@ fn trim_by_count_keeps_system_and_tail() {
         },
     ];
     trim_messages_by_count(&mut v, 2);
-    assert_eq!(v.len(), 3);
+    assert_eq!(v.len(), 2);
     assert_eq!(v[0].role, "system");
     assert_eq!(
         crate::cm_types::message_content_as_str(&v[1].content),
-        Some("b")
-    );
-    assert_eq!(
-        crate::cm_types::message_content_as_str(&v[2].content),
         Some("c")
     );
 }
 
 #[test]
-fn trim_by_count_inserts_user_when_tail_would_be_two_assistants() {
+fn trim_by_count_keeps_only_complete_group_even_when_it_exceeds_cap() {
     let mut v = vec![
         Message::system_only("s"),
         Message::user_only("old_u"),
@@ -108,13 +104,14 @@ fn trim_by_count_inserts_user_when_tail_would_be_two_assistants() {
         },
     ];
     trim_messages_by_count(&mut v, 2);
-    assert_eq!(v.len(), 3);
+    assert_eq!(v.len(), 4);
     assert_eq!(v[1].role, "user");
     assert_eq!(
         crate::cm_types::message_content_as_str(&v[1].content),
         Some("old_u")
     );
     assert_eq!(v[2].role, "assistant");
+    assert_eq!(v[3].role, "assistant");
 }
 
 #[test]
@@ -173,6 +170,74 @@ fn assistant_with_tool_calls() -> Message {
         name: None,
         tool_call_id: None,
     }
+}
+
+#[test]
+fn count_fallback_keeps_parallel_tool_chain_in_latest_group() {
+    let mut assistant = assistant_with_tool_calls();
+    assistant.tool_calls.as_mut().expect("tool calls").push(ToolCall {
+        id: "call_2".to_string(),
+        typ: "function".to_string(),
+        function: FunctionCall {
+            name: "y".to_string(),
+            arguments: "{}".to_string(),
+        },
+    });
+    let mut first_tool = tool_msg("one");
+    first_tool.tool_call_id = Some("call_1".to_string());
+    let mut second_tool = tool_msg("two");
+    second_tool.tool_call_id = Some("call_2".to_string());
+    let mut messages = vec![
+        Message::system_only("s"),
+        Message::user_only("old"),
+        Message::assistant_only("old answer"),
+        Message::user_only("latest"),
+        assistant,
+        first_tool,
+        second_tool,
+    ];
+    assert!(trim_messages_by_count(&mut messages, 2));
+    assert_eq!(messages.len(), 5);
+    assert_eq!(messages[1].role, "user");
+    assert_eq!(messages[2].tool_calls.as_ref().map(Vec::len), Some(2));
+    assert_eq!(messages[3].tool_call_id.as_deref(), Some("call_1"));
+    assert_eq!(messages[4].tool_call_id.as_deref(), Some("call_2"));
+}
+
+#[test]
+fn server_injected_user_does_not_split_real_user_turn_group() {
+    let injected = Message {
+        role: "user".to_string(),
+        content: Some("workspace changes".into()),
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: None,
+        name: Some(crate::cm_types::CRABMATE_WORKSPACE_CHANGELIST_NAME.to_string()),
+        tool_call_id: None,
+    };
+    let mut messages = vec![
+        Message::system_only("s"),
+        Message::user_only("old"),
+        Message::assistant_only("old answer"),
+        Message::user_only("current"),
+        injected,
+        Message::assistant_only("current answer"),
+    ];
+    let groups = conversation_turn_groups(&messages);
+    assert_eq!(groups.len(), 2);
+    assert_eq!(groups[1].start, 3);
+    assert_eq!(groups[1].end, 6);
+
+    assert!(trim_messages_by_count(&mut messages, 3));
+    assert_eq!(messages.len(), 4);
+    assert_eq!(
+        crate::cm_types::message_content_as_str(&messages[1].content),
+        Some("current")
+    );
+    assert_eq!(
+        messages[2].name.as_deref(),
+        Some(crate::cm_types::CRABMATE_WORKSPACE_CHANGELIST_NAME)
+    );
 }
 
 #[test]

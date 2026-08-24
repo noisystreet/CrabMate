@@ -6,6 +6,8 @@
 pub use crate::cm_agent::acceptance;
 pub mod agent_turn;
 pub use crate::cm_agent::context_budget_pressure;
+/// 最终请求 Token 预算、分项估算与完整交互组压缩报告。
+pub mod context_compaction;
 pub mod context_window;
 /// 对话 `Message` 变换管道：会话同步步骤编排与供应商出站 `messages` 构造（见模块内说明）。
 pub use crate::cm_agent::message_pipeline;

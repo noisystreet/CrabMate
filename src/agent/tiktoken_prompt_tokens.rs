@@ -1,16 +1,17 @@
 //! 使用 **tiktoken-rs** 对「与 [`crate::agent::message_pipeline::conversation_messages_to_vendor_body`] 一致」的
-//! `messages` 做 **OpenAI Chat Completions** 风格的 prompt token 近似计数（不含 `tools` JSON、不含图片 token 细项）。
+//! `messages` 做 **OpenAI Chat Completions** 风格的 prompt token 近似计数。消息级 API 不含 `tools` JSON 与图片细项；
+//! 最终请求分项由 `agent::context_compaction` 叠加计算。
 //!
 //! 未知 `model` id 时按 **`gpt-4` → `gpt-4o`** 顺序回落，以便 DeepSeek / Kimi 等 OpenAI 兼容网关仍能给出**可比**的粗估值（与真实网关分词可能仍有偏差，见 API 字段说明）。
 
-use tiktoken_rs::{ChatCompletionRequestMessage, FunctionCall, num_tokens_from_messages};
+use tiktoken_rs::{ChatCompletionRequestMessage, FunctionCall, bpe_for_model, num_tokens_from_messages};
 
 use crate::agent::message_pipeline::conversation_messages_to_vendor_body;
 use crate::config::AgentConfig;
 use crate::llm::{
     fold_system_into_user_for_config, llm_vendor_adapter, vendor::deepseek_json_output_eligible,
 };
-use crate::types::{Message, message_content_into_text_lossy};
+use crate::types::{Message, MessageContent};
 
 pub use crate::cm_types::TiktokenPromptTokensSnapshot;
 
@@ -23,7 +24,15 @@ fn ping_message() -> ChatCompletionRequestMessage {
 }
 
 fn crabmate_message_to_tiktoken(m: &Message) -> ChatCompletionRequestMessage {
-    let mut body = message_content_into_text_lossy(m.content.clone());
+    let mut body = match &m.content {
+        None => String::new(),
+        Some(MessageContent::Text(text)) => text.clone(),
+        Some(MessageContent::Parts(parts)) => parts
+            .iter()
+            .filter_map(|part| part.get("text").and_then(serde_json::Value::as_str))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    };
     let extra_reasoning = if m.role == "assistant" {
         m.reasoning_content.as_deref().and_then(|s| {
             let t = s.trim();
@@ -65,6 +74,30 @@ fn crabmate_message_to_tiktoken(m: &Message) -> ChatCompletionRequestMessage {
         function_call: None,
         tool_calls,
         refusal: None,
+    }
+}
+
+/// 使用与消息计数相同的模型回退顺序估算任意序列化文本（如 tools JSON）的 token 数。
+///
+/// 返回实际采用的 tokenizer 模型；所有已知回退都不可用时按保守的 `3 bytes/token` 估算。
+#[must_use]
+pub fn count_serialized_text_tokens_openai_compat(
+    configured_model: &str,
+    text: &str,
+) -> TiktokenPromptTokensSnapshot {
+    let model = tiktoken_model_id_for_config_model(configured_model);
+    if let Ok(bpe) = bpe_for_model(&model) {
+        return TiktokenPromptTokensSnapshot {
+            prompt_tokens: bpe
+                .encode_ordinary(text)
+                .len()
+                .min(u32::MAX as usize) as u32,
+            tiktoken_model: model,
+        };
+    }
+    TiktokenPromptTokensSnapshot {
+        prompt_tokens: text.len().div_ceil(3).min(u32::MAX as usize) as u32,
+        tiktoken_model: "conservative-bytes".to_string(),
     }
 }
 

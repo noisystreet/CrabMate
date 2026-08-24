@@ -9,7 +9,7 @@ use crate::llm::{
     complete_chat_retrying, vendor_temperature_for_config,
 };
 use crate::types::{
-    ChatRequest, Message, is_chat_timeline_marker,
+    ChatRequest, Message, Tool, is_chat_timeline_marker,
     is_message_excluded_from_llm_context_except_memory, message_content_as_str,
     message_content_into_text_lossy,
 };
@@ -122,6 +122,27 @@ fn build_transcript_middle(messages: &[Message], tail: usize, cap: usize) -> Opt
     Some(s)
 }
 
+fn complete_turn_group_tail_len(messages: &[Message], requested_tail: usize) -> Option<usize> {
+    let groups = crate::agent::message_pipeline::conversation_turn_groups(messages);
+    if groups.len() < 3 {
+        return None;
+    }
+    let mut first_kept_group = groups.len().saturating_sub(2);
+    while first_kept_group > 1
+        && messages
+            .len()
+            .saturating_sub(groups[first_kept_group].start)
+            < requested_tail
+    {
+        first_kept_group -= 1;
+    }
+    Some(
+        messages
+            .len()
+            .saturating_sub(groups[first_kept_group].start),
+    )
+}
+
 /// 每次调用模型前执行：经 [`apply_session_sync_pipeline`]（顺序见 `message_pipeline` 模块文档）。
 ///
 /// - **Debug**（`RUST_LOG` 含 **`crabmate=debug`** 或 **`debug`**）：汇总一行 `message_pipeline session_sync: …`。
@@ -138,6 +159,10 @@ fn message_pipeline_config_for_turn(
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
 ) -> crate::agent::message_pipeline::MessagePipelineConfig {
     let mut pipe = crate::agent::message_pipeline::MessagePipelineConfig::from(cfg);
+    if cfg.llm_sampling.llm_context_tokens > 0 {
+        // 已配置模型窗口时由最终请求 Token 预算器主导；字符预算仅保留为未配置窗口的降级路径。
+        pipe.context_char_budget = 0;
+    }
     let pressure = resolve_context_budget_pressure(cfg, turn_budget.map(|a| a.as_ref()));
     if pressure.char_budget_scale_percent < 100 {
         pipe.context_char_budget = scale_message_pipeline_char_budget(
@@ -192,38 +217,84 @@ pub struct PrepareMessagesDelta {
     pub pipeline: crate::agent::message_pipeline::MessagePipelineDelta,
     pub summarized: bool,
     pub summary_tail_kept: Option<usize>,
+    pub compaction: crate::agent::context_compaction::ContextCompactionReport,
+}
+
+#[derive(Clone, Copy)]
+struct PrepareSessionMessagesParams<'a> {
+    tools: &'a [Tool],
+    model_override: Option<&'a str>,
+    cancel: Option<&'a std::sync::atomic::AtomicBool>,
+    turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+}
+
+#[derive(Clone, Copy)]
+struct MaybeSummarizeParams<'a> {
+    cancel: Option<&'a std::sync::atomic::AtomicBool>,
+    turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    force_for_token_budget: bool,
 }
 
 /// 主 Agent 外循环的「同步裁剪 + 可选 LLM 摘要」核心路径。
-pub(crate) async fn prepare_session_messages_shared(
+async fn prepare_session_messages_shared(
     llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
-    cancel: Option<&std::sync::atomic::AtomicBool>,
-    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    params: PrepareSessionMessagesParams<'_>,
 ) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
-    let pipeline = prepare_messages_before_model_call_sync_with_budget(messages, cfg, turn_budget);
+    let pipeline =
+        prepare_messages_before_model_call_sync_with_budget(messages, cfg, params.turn_budget);
+    let before_tokens = crate::agent::context_compaction::estimate_final_request_tokens(
+        cfg,
+        messages,
+        params.tools,
+        params.model_override,
+    );
+    let force_summary_for_token_budget =
+        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
+            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
+        );
+    let planned_summary_tail = complete_turn_group_tail_len(
+        messages,
+        cfg.context_pipeline
+            .context_summary_tail_messages
+            .clamp(4, 64),
+    );
     let summarized = maybe_summarize_with_llm(
         llm_backend,
         client,
         api_key,
         cfg,
         messages,
-        cancel,
-        turn_budget,
+        MaybeSummarizeParams {
+            cancel: params.cancel,
+            turn_budget: params.turn_budget,
+            force_for_token_budget: force_summary_for_token_budget,
+        },
     )
     .await?;
-    let summary_tail_kept = summarized.then_some(
-        cfg.context_pipeline
-            .context_summary_tail_messages
-            .clamp(4, 64),
-    );
+    let summary_tail_kept = summarized.then_some(planned_summary_tail.unwrap_or(0));
+    let compaction = crate::agent::context_compaction::ContextCompactionReport {
+        budget: crate::agent::context_compaction::ContextTokenBudget::from_config(cfg),
+        before: before_tokens,
+        after: crate::agent::context_compaction::estimate_final_request_tokens(
+            cfg,
+            messages,
+            params.tools,
+            params.model_override,
+        ),
+        removed_turn_groups: 0,
+        removed_messages: 0,
+        token_triggered: force_summary_for_token_budget,
+        summarized_for_token_budget: summarized && force_summary_for_token_budget,
+    };
     Ok(PrepareMessagesDelta {
         pipeline,
         summarized,
         summary_tail_kept,
+        compaction,
     })
 }
 
@@ -231,22 +302,24 @@ fn context_summary_attempt_prep(
     cfg: &AgentConfig,
     messages: &[Message],
     turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    force_for_token_budget: bool,
 ) -> Option<(usize, String)> {
-    let trigger = effective_summary_trigger_for_turn(cfg, turn_budget.map(|a| a.as_ref()));
-    if trigger == 0 {
+    if !context_summary_trigger_reached(
+        cfg,
+        messages,
+        turn_budget,
+        force_for_token_budget,
+    ) {
         return None;
     }
-    let tail = cfg
+    if messages.first().is_none_or(|message| message.role != "system") {
+        return None;
+    }
+    let requested_tail = cfg
         .context_pipeline
         .context_summary_tail_messages
         .clamp(4, 64);
-    let chars = crate::agent::message_pipeline::estimate_non_system_chars(messages);
-    if chars < trigger {
-        return None;
-    }
-    if messages.is_empty() || messages[0].role != "system" {
-        return None;
-    }
+    let tail = complete_turn_group_tail_len(messages, requested_tail)?;
     if messages.len() <= 1 + tail + 1 {
         return None;
     }
@@ -256,6 +329,26 @@ fn context_summary_attempt_prep(
         cfg.context_pipeline.context_summary_transcript_max_chars,
     )?;
     Some((tail, transcript))
+}
+
+fn context_summary_trigger_reached(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    force_for_token_budget: bool,
+) -> bool {
+    if cfg.llm_sampling.llm_context_tokens > 0
+        && cfg.context_pipeline.context_summary_trigger_chars == 0
+        && !force_for_token_budget
+    {
+        return false;
+    }
+    let trigger = effective_summary_trigger_for_turn(cfg, turn_budget.map(|a| a.as_ref()));
+    if trigger == 0 && !force_for_token_budget {
+        return false;
+    }
+    force_for_token_budget
+        || crate::agent::message_pipeline::estimate_non_system_chars(messages) >= trigger
 }
 
 fn build_context_summary_chat_request(cfg: &AgentConfig, transcript: &str) -> ChatRequest {
@@ -297,20 +390,25 @@ fn apply_llm_summary_to_messages(messages: &mut Vec<Message>, tail: usize, summa
 }
 
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
-pub async fn maybe_summarize_with_llm(
+async fn maybe_summarize_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
-    cancel: Option<&std::sync::atomic::AtomicBool>,
-    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+    params: MaybeSummarizeParams<'_>,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let Some((tail, transcript)) = context_summary_attempt_prep(cfg, messages, turn_budget) else {
+    let Some((tail, transcript)) = context_summary_attempt_prep(
+        cfg,
+        messages,
+        params.turn_budget,
+        params.force_for_token_budget,
+    )
+    else {
         return Ok(false);
     };
 
-    if let Some(budget) = turn_budget
+    if let Some(budget) = params.turn_budget
         && budget.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err()
     {
         warn!(
@@ -327,13 +425,13 @@ pub async fn maybe_summarize_with_llm(
         api_key,
         cfg,
         LlmRetryingTransportOpts {
-            cancel,
+            cancel: params.cancel,
             ..LlmRetryingTransportOpts::headless_no_stream()
         },
         None,
         None,
     )
-    .with_turn_budget(turn_budget);
+    .with_turn_budget(params.turn_budget);
     match complete_chat_retrying(&cc, &req).await {
         Ok((msg, _)) => {
             let summary_text = message_content_into_text_lossy(msg.content);
@@ -364,6 +462,10 @@ pub async fn maybe_summarize_with_llm(
 
 /// 与 [`prepare_messages_for_model`] 搭配的**可选**回合侧挂钩：PER 层缓存失效 + `RunLoopTurnState` 缓冲代数。
 pub struct PrepareMessagesForModelHooks<'a> {
+    pub tools: &'a [Tool],
+    pub model_override: Option<&'a str>,
+    pub workspace_changelist:
+        Option<&'a crate::workspace::changelist::WorkspaceChangelist>,
     pub per_coord_layer_cache: Option<&'a mut PerCoordinator>,
     pub run_loop_messages_revision: Option<&'a mut u64>,
     pub turn_budget: Option<&'a std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
@@ -376,7 +478,6 @@ pub async fn prepare_messages_for_model(
     api_key: &str,
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
-    workspace_changelist: Option<&crate::workspace::changelist::WorkspaceChangelist>,
     hooks: PrepareMessagesForModelHooks<'_>,
 ) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
     let mut delta = prepare_session_messages_shared(
@@ -385,18 +486,58 @@ pub async fn prepare_messages_for_model(
         api_key,
         cfg,
         messages,
-        None,
-        hooks.turn_budget,
+        PrepareSessionMessagesParams {
+            tools: hooks.tools,
+            model_override: hooks.model_override,
+            cancel: None,
+            turn_budget: hooks.turn_budget,
+        },
     )
     .await?;
     crate::workspace::changelist::sync_changelist_user_message(
         messages,
-        workspace_changelist,
+        hooks.workspace_changelist,
         cfg.session_workspace_changelist
             .session_workspace_changelist_enabled,
         cfg.session_workspace_changelist
             .session_workspace_changelist_max_chars,
     );
+    delta.compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
+        cfg,
+        messages,
+        hooks.tools,
+        hooks.model_override,
+        delta.compaction.before,
+        delta.compaction.summarized_for_token_budget,
+    );
+    if delta.compaction.removed_turn_groups > 0 {
+        let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+    }
+    if let Some(budget) = delta.compaction.budget {
+        log::debug!(
+            target: "crabmate::context_compaction",
+            "context_compaction before_tokens={} after_tokens={} max_input_tokens={} trigger_tokens={} target_tokens={} reserved_output_tokens={} safety_margin_tokens={} message_tokens={} tool_schema_tokens={} attachment_tokens={} removed_turn_groups={} removed_messages={} counting_source={} reason={}",
+            delta.compaction.before.used_input_tokens,
+            delta.compaction.after.used_input_tokens,
+            budget.max_input_tokens,
+            budget.trigger_tokens,
+            budget.target_tokens,
+            budget.reserved_output_tokens,
+            budget.safety_margin_tokens,
+            delta.compaction.after.message_tokens,
+            delta.compaction.after.tool_schema_tokens,
+            delta.compaction.after.attachment_tokens,
+            delta.compaction.removed_turn_groups,
+            delta.compaction.removed_messages,
+            delta
+                .compaction
+                .after
+                .counting_source
+                .map(crate::agent::context_compaction::ContextTokenCountingSource::as_str)
+                .unwrap_or("unknown"),
+            delta.compaction.compaction_reason(),
+        );
+    }
     if let Some(p) = hooks.per_coord_layer_cache {
         p.invalidate_workflow_validate_layer_cache_after_context_mutation();
     }
@@ -424,6 +565,7 @@ mod tests {
         cfg.context_pipeline.context_char_budget = 20_000;
         cfg.session_ui.max_message_history = 100;
         cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+        cfg.llm_sampling.llm_context_tokens = 0;
         cfg.turn_budget.max_turn_tokens = 100;
 
         let budget = crate::agent::turn_budget::TurnBudgetCounter::new_shared();
@@ -441,6 +583,23 @@ mod tests {
         assert!(
             tight.len() <= loose.len(),
             "budget pressure should trim at least as aggressively"
+        );
+    }
+
+    #[test]
+    fn summary_tail_starts_at_complete_turn_group_boundary() {
+        let mut messages = vec![Message::system_only("s")];
+        for turn in 0..4 {
+            messages.push(Message::user_only(format!("u{turn}")));
+            messages.push(Message::assistant_only(format!("a{turn}")));
+            messages.push(Message::assistant_only(format!("done{turn}")));
+        }
+        let tail = complete_turn_group_tail_len(&messages, 4).expect("four complete groups");
+        let start = messages.len() - tail;
+        assert_eq!(messages[start].role, "user");
+        assert_eq!(
+            crate::types::message_content_as_str(&messages[start].content),
+            Some("u2")
         );
     }
 

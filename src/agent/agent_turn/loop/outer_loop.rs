@@ -73,20 +73,19 @@ fn outer_loop_iteration_guard(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnE
     Ok(())
 }
 
-/// 步级子代理约束时可能需 `Vec` 持有过滤后的工具定义；否则用全量 `tools_defs` 切片。
-struct PlannerRoundTools<'a> {
-    owned_filtered: Option<Vec<crate::types::Tool>>,
-    full_defs: &'a [crate::types::Tool],
+/// 本轮最终下发的工具定义。持有独立副本，使 Token 预算与请求构造使用同一切片。
+struct PlannerRoundTools {
+    definitions: Vec<crate::types::Tool>,
 }
 
-impl<'a> PlannerRoundTools<'a> {
+impl PlannerRoundTools {
     fn as_slice(&self) -> &[crate::types::Tool] {
-        self.owned_filtered.as_deref().unwrap_or(self.full_defs)
+        &self.definitions
     }
 }
 
-fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a> {
-    let owned_filtered = match p.turn.turn_planner_hints.step_executor_constraint {
+fn build_planner_round_tools(p: &RunLoopParams<'_>) -> PlannerRoundTools {
+    let definitions = match p.turn.turn_planner_hints.step_executor_constraint {
         Some(k) => {
             let mut v = filter_tool_defs_for_executor_kind(
                 p.ctx.core.tools_defs,
@@ -101,20 +100,17 @@ fn build_planner_round_tools<'a>(p: &RunLoopParams<'a>) -> PlannerRoundTools<'a>
                     )
                 });
             }
-            Some(v)
+            v
         }
-        None => None,
+        None => p.ctx.core.tools_defs.to_vec(),
     };
-    PlannerRoundTools {
-        owned_filtered,
-        full_defs: p.ctx.core.tools_defs,
-    }
+    PlannerRoundTools { definitions }
 }
 
 async fn outer_loop_prepare_planner_context(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,
-) -> Result<(), RunAgentTurnError> {
+) -> Result<PlannerRoundTools, RunAgentTurnError> {
     {
         let turn = &mut p.turn;
         crate::meta_dialogue::merge_meta_dialogue_into_execution_constraint_hint(
@@ -133,7 +129,8 @@ async fn outer_loop_prepare_planner_context(
             p.turn.messages_buffer_mut(),
         );
     }
-    p.prepare_turn_messages_for_model(Some(per_coord))
+    let planner_tools = build_planner_round_tools(p);
+    p.prepare_turn_messages_for_model(planner_tools.as_slice(), Some(per_coord))
         .await
         .map_err(|e| {
             p.turn
@@ -142,7 +139,8 @@ async fn outer_loop_prepare_planner_context(
                 phase: AgentTurnSubPhase::Planner,
                 message: e.to_string(),
             }
-        })
+        })?;
+    Ok(planner_tools)
 }
 
 async fn outer_loop_reflect_branch(
@@ -449,7 +447,7 @@ async fn run_outer_loop_single_iteration(
         t.on_outer_loop_iteration();
     }
 
-    outer_loop_prepare_planner_context(p, per_coord).await?;
+    let planner_tools = outer_loop_prepare_planner_context(p, per_coord).await?;
 
     driver.record_phase(OuterLoopIterationPhase::PrepareContextDone);
     tracing::debug!(
@@ -460,7 +458,6 @@ async fn run_outer_loop_single_iteration(
         "outer_loop planner context prepared"
     );
 
-    let planner_tools = build_planner_round_tools(p);
     outer_loop_emit_answer_segment_transition(p, iteration_count).await;
 
     let (msg, finish_reason) = outer_loop_call_planner_and_push(
