@@ -1,6 +1,6 @@
 .ie \n(.g .ds Aq \(aq
 .el .ds Aq '
-.TH CRABMATE 1  "crabmate 0.5.0-alpha.3" "CrabMate User Commands"
+.TH CRABMATE 1  "crabmate 0.5.0" "CrabMate User Commands"
 .SH NAME
 crabmate \- 基于 OpenAI 兼容 chat/completions 的 Rust AI Agent；本仓以 `serve` 为执行权威。官方终端为 Client 仓 `crabmate\-tui`
 .SH SYNOPSIS
@@ -77,4 +77,4 @@ Use \fBcrabmate \-\-help\fR or \fBcrabmate \fIsubcommand\fR \fB\-\-help\fR.
 .SH EXTRA
 官方对话请：`crabmate serve` + Client `crabmate\-tui` / 桌面 / WASM。同进程 `chat|repl|tui` 入口已移除（见 docs/design/client_shell_split.md）。运维子命令与 SSE：**docs/命令行与路由.md**、**docs/SSE协议.md**。
 .SH VERSION
-v0.5.0\-alpha.1
+v0.5.0
