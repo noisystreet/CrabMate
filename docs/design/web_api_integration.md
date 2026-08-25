@@ -4,6 +4,7 @@
 **语言**：中文。  
 **关联**：
 
+- API 完备度边界与平台化门槛：[`server_api_completeness.md`](./server_api_completeness.md)（ADR）
 - 路由与契约：**`docs/命令行与路由.md`**（`POST /chat`、`POST /chat/stream`、`GET /openapi.json` 等）
 - SSE 控制面：**`docs/SSE协议.md`**、`crates/crabmate-sse-protocol`
 - Web 鉴权实现：**`src/web/chat_handlers/auth.rs`**、`src/web/server.rs`
