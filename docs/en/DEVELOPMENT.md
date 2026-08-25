@@ -131,4 +131,4 @@ Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace 
 
 ## Further reading
 
-`docs/design/` (agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.
+`docs/design/` (**server_api_completeness** ADR + `web_api_integration`, agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.
