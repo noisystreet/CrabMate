@@ -34,6 +34,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "workflow_execute" => &[GENERAL, RUST, QUALITY],
         "package_query" => &[GENERAL],
         "diagnostic_summary"
+        | "self_config_info"
         | "error_output_playbook"
         | "playbook_run_commands"
         | "changelog_draft"

@@ -330,6 +330,24 @@ pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir, &[])
 }
 
+pub fn runner_self_config_info(args: &str, ctx: &ToolContext<'_>) -> String {
+    let Some(cfg) = ctx.cfg else {
+        return "错误：工具上下文缺少 AgentConfig".to_string();
+    };
+    let parsed: super::tool_param_types::SelfConfigInfoArgs = match super::parse_args_typed(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let out = self_config_info::self_config_info(cfg, parsed.sections.as_deref());
+    if out.is_empty() {
+        return format!(
+            "未匹配到任何配置小节；可用小节：{}。",
+            self_config_info::SECTION_NAMES.join("、")
+        );
+    }
+    out
+}
+
 pub fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {
     crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire(args)
 }
