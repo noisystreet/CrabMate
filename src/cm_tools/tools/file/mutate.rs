@@ -408,12 +408,23 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
         Ok(a) => a,
         Err(e) => return e,
     };
+    let skip_precheck = args.skip_precheck;
     let (dry_run, plan) = match append_file_prepare(args, working_dir) {
         Ok(p) => p,
         Err(e) => return e,
     };
     if dry_run {
         return append_file_preview(working_dir, plan);
+    }
+    // 校验「原内容 + 追加内容」的拼接结果（原文件二进制/不可读时退化为仅校验追加段）。
+    let merged = format!(
+        "{}{}",
+        plan.before.as_deref().unwrap_or(""),
+        plan.append_body
+    );
+    if let Err(e) = super::write_precheck::precheck_before_write(&plan.path, &merged, skip_precheck)
+    {
+        return e;
     }
     append_file_write(working_dir, ctx, plan)
 }
@@ -569,6 +580,19 @@ fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, St
     Ok((path, search))
 }
 
+/// 写盘前闸门：`confirm` 确认 + 语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
+fn search_replace_confirm_and_precheck(
+    confirm: bool,
+    skip_precheck: bool,
+    path: &str,
+    new_content: &str,
+) -> Result<(), String> {
+    if !confirm {
+        return Err("拒绝执行：search_replace 写盘需要 confirm=true".to_string());
+    }
+    super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
+}
+
 fn load_search_replace_file_bytes(
     working_dir: &Path,
     path: &str,
@@ -624,8 +648,9 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
         return search_replace_dry_run_preview(&display, count, &content, &new_content);
     }
 
-    if !confirm {
-        return "拒绝执行：search_replace 写盘需要 confirm=true".to_string();
+    if let Err(e) = search_replace_confirm_and_precheck(confirm, args.skip_precheck, &path, &new_content)
+    {
+        return e;
     }
 
     let before = content.clone();
@@ -789,5 +814,87 @@ mod tests {
         assert!(out.contains("删除失败（1 个）"), "{out}");
         assert!(!tmp.path().join("a.txt").exists());
         assert!(tmp.path().join("ro/x.txt").exists());
+    }
+
+    // ── 写盘前校验（write_precheck）集成 ──────────────────────────
+
+    /// search_replace 替换出 Python 缩进错误 → 拒写（写盘前校验），原文件不变。
+    #[test]
+    fn search_replace_py_bad_indent_rejected_by_precheck() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "app.py", "def f():\n    return 1\n");
+        let before = fs::read_to_string(tmp.path().join("app.py")).unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = search_replace(
+            r#"{"path":"app.py","search":"    return 1","replace":"x = 1\nreturn 2","dry_run":false,"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("校验失败（PY_SYNTAX_ERROR）"), "{out}");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("app.py")).unwrap(),
+            before,
+            "校验失败应拒写，文件不得被修改"
+        );
+    }
+
+    /// search_replace `skip_precheck=true` 绕过校验并写盘。
+    #[test]
+    fn search_replace_skip_precheck_writes() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "app.py", "def f():\n    return 1\n");
+        let ctx = test_ctx(tmp.path());
+        let out = search_replace(
+            r#"{"path":"app.py","search":"return 1","replace":"x = 1","dry_run":false,"confirm":true,"skip_precheck":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(!out.contains("校验失败"), "{out}");
+        assert!(out.contains("已替换"), "{out}");
+        assert!(fs::read_to_string(tmp.path().join("app.py"))
+            .unwrap()
+            .contains("x = 1"));
+    }
+
+    /// create_file 创建非法 Python → 拒写；`skip_precheck` 后写盘。
+    #[test]
+    fn create_file_py_bad_indent_rejected_by_precheck() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = super::super::write_ops::create_file(
+            r#"{"path":"bad.py","content":"def f():\nx = 1\n"}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("校验失败（PY_SYNTAX_ERROR）"), "{out}");
+        assert!(!tmp.path().join("bad.py").exists(), "校验失败应拒写");
+
+        let ok = super::super::write_ops::create_file(
+            r#"{"path":"bad.py","content":"def f():\nx = 1\n","skip_precheck":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(!ok.contains("校验失败"), "{ok}");
+        assert!(tmp.path().join("bad.py").exists());
+    }
+
+    /// append_file 追加出 Python 缩进错误 → 拒写。
+    #[test]
+    fn append_file_py_bad_indent_rejected_by_precheck() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "app.py", "def f():\n    pass\n");
+        let before = fs::read_to_string(tmp.path().join("app.py")).unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = append_file(
+            r#"{"path":"app.py","content":"x = 1\nreturn 2\n"}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("校验失败（PY_SYNTAX_ERROR）"), "{out}");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("app.py")).unwrap(),
+            before,
+            "校验失败应拒写"
+        );
     }
 }

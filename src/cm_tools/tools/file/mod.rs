@@ -16,6 +16,7 @@ mod rust_brace_scan;
 mod symlink;
 mod tree_glob;
 mod write_ops;
+mod write_precheck;
 
 pub use directory::read_dir;
 pub use extract::extract_in_file;

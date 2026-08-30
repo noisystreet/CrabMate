@@ -193,6 +193,9 @@ fn classify_error_code(first_line: &str, tool_name: &str) -> String {
     if first_line.contains("参数解析错误") {
         return "invalid_args".to_string();
     }
+    if first_line.contains("校验失败（") {
+        return "write_precheck_failed".to_string();
+    }
     if first_line.contains("参数与工具 JSON Schema") {
         return "invalid_args".to_string();
     }
