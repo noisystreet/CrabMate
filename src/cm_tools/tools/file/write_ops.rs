@@ -52,6 +52,10 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     if target.exists() {
         return "错误：文件已存在，无法仅创建".to_string();
     }
+    let skip_precheck = super::write_precheck::arg_skip_precheck(args_json);
+    if let Err(e) = super::write_precheck::precheck_before_write(&path, &content, skip_precheck) {
+        return e;
+    }
     match write_bytes_under_root(&base, &target, content.as_bytes(), true, false) {
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
@@ -218,6 +222,7 @@ fn full_overwrite_requires_user_confirm(before: &str, content: &str) -> bool {
     old_lines >= 30 && new_lines.saturating_mul(3) < old_lines
 }
 
+#[allow(clippy::too_many_arguments)] // 整文件覆盖：路径、工作区、上下文、内容与三个写盘闸门标志
 fn modify_file_write_full_overwrite(
     path: &str,
     target: &Path,
@@ -226,6 +231,7 @@ fn modify_file_write_full_overwrite(
     content: String,
     dry_run: bool,
     confirm_full_overwrite: bool,
+    skip_precheck: bool,
 ) -> String {
     let before = std::fs::read_to_string(target).ok();
     let before_str = before.as_deref().unwrap_or("");
@@ -264,6 +270,10 @@ fn modify_file_write_full_overwrite(
             }],
             WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
         );
+    }
+
+    if let Err(e) = super::write_precheck::precheck_before_write(path, &content, skip_precheck) {
+        return e;
     }
 
     let base = match canonical_workspace_root(working_dir) {
@@ -382,6 +392,10 @@ fn modify_file_dispatch_full_mode(
         .get("confirm_full_overwrite")
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
+    let skip_precheck = v
+        .get("skip_precheck")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     modify_file_write_full_overwrite(
         path,
         target,
@@ -390,6 +404,7 @@ fn modify_file_dispatch_full_mode(
         content,
         dry_run,
         confirm_full_overwrite,
+        skip_precheck,
     )
 }
 

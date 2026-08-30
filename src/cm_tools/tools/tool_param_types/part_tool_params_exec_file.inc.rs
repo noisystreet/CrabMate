@@ -78,6 +78,9 @@ pub struct ModifyFileArgs {
     pub dry_run: Option<bool>,
     /// 当整文件覆盖被判定为高危（大幅缩短、大量删行、清空非空文件）时须显式 `true` 才执行写入。
     pub confirm_full_overwrite: Option<bool>,
+    /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。
+    #[serde(default)]
+    pub skip_precheck: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

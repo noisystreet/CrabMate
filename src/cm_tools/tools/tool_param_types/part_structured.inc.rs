@@ -463,6 +463,9 @@ pub struct AppendFileArgs {
     /// 原文件非空且末尾无换行时，追加前自动补一个 `\n`，避免把新内容接在旧末行后。
     #[serde(default = "default_true")]
     pub ensure_leading_newline: bool,
+    /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。
+    #[serde(default)]
+    pub skip_precheck: bool,
 }
 
 /// [`super::file::mutate::create_dir`] 入参。
@@ -489,6 +492,9 @@ pub struct SearchReplaceArgs {
     pub dry_run: bool,
     #[serde(default)]
     pub confirm: bool,
+    /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。
+    #[serde(default)]
+    pub skip_precheck: bool,
 }
 
 /// [`super::file::perm::chmod_file`] 入参。

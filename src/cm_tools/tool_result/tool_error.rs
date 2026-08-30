@@ -107,6 +107,7 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "read_file_encoding"
         | "read_file_internal" => ToolFailureCategory::External,
         c if c.starts_with("read_file_workspace_") => ToolFailureCategory::Workspace,
+        "write_precheck_failed" => ToolFailureCategory::InvalidInput,
         "search_in_files_invalid_regex" | "search_in_files_invalid_glob" => {
             ToolFailureCategory::InvalidInput
         }
