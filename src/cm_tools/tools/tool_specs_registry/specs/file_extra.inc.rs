@@ -1,11 +1,11 @@
 [
 ToolSpec {
-            name: "delete_file",
-            description: "删除工作区内的**单个文件**（受控写入，需 confirm=true）。不能用于删除目录（请用 delete_dir）。路径必须为相对路径。",
+            name: "delete_files",
+            description: "删除工作区内一个或多个文件（受控写入，需 confirm=true）。`paths` 为相对路径列表（最多 32 个，同路径去重）；任一路径非法则整批拒绝、不产生部分删除；不能删除目录（请用 delete_dir）。",
             category: ToolCategory::Development,
-            parameters: tool_params::params_delete_file,
-            runner: runner_delete_file,
-            summary: ToolSummaryKind::Dynamic(ts::summary_delete_file),
+            parameters: tool_params::params_delete_files,
+            runner: runner_delete_files,
+            summary: ToolSummaryKind::Dynamic(ts::summary_delete_files),
         },
         ToolSpec {
             name: "delete_dir",

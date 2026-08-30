@@ -123,7 +123,12 @@ pub struct WorkspaceFileMoveBody {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WorkspaceFileQuery {
+    /// 目标相对路径（读/下载/单路径删除用；批量删除时可省略）。
+    #[serde(default)]
     pub path: String,
+    /// 批量删除：逗号分隔的相对路径列表（与 `path` 二选一，优先）；任一非法则整批拒绝、不产生部分删除。含逗号的文件名请用单路径 `path` 删除。
+    #[serde(default)]
+    pub paths: String,
     /// 可选：`utf-8`（默认）、`utf-8-sig`、`gb18030`、`gbk`、`big5`、`utf-16le`、`utf-16be`、`auto`（与 `read_file` 一致）。
     #[serde(default)]
     pub encoding: Option<String>,
@@ -167,10 +172,23 @@ pub struct WorkspaceFileWriteResponse {
     pub error: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 pub struct WorkspaceFileDeleteResponse {
+    /// 单路径删除或整批校验失败时的错误信息；批量部分失败时为空（看 `failed`）。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 批量删除：成功删除的相对路径（单路径删除时为空数组）。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
+    /// 批量删除：失败项（相对路径 + 原因）；非空时 `error` 为空。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failed: Vec<WorkspaceFileDeleteFailure>,
+}
+
+#[derive(Serialize)]
+pub struct WorkspaceFileDeleteFailure {
+    pub path: String,
+    pub error: String,
 }
 
 #[derive(Deserialize)]

@@ -25,7 +25,7 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "edit_file",
         "edit_and_apply",
         "delete_dir",
-        "delete_file",
+        "delete_files",
         "move_file",
         "copy_file",
         "create_symlink",
@@ -134,7 +134,7 @@ fn is_single_file_path_tool(name: &str) -> bool {
         name,
         "create_file"
             | "modify_file"
-            | "delete_file"
+            | "delete_files"
             | "append_file"
             | "search_replace"
             | "chmod_file"

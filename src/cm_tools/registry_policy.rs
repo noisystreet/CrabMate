@@ -99,7 +99,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "modify_file",
             "copy_file",
             "move_file",
-            "delete_file",
+            "delete_files",
             "delete_dir",
             "append_file",
             "create_dir",

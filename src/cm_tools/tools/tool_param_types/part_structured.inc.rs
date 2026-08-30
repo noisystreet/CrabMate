@@ -431,10 +431,12 @@ impl Default for TextDiffArgs {
 
 // ── 文件额外写操作（`file::mutate` / `perm` / `symlink`）────────
 
-/// [`super::file::mutate::delete_file`] 入参。
+/// [`super::file::mutate::delete_files`] 入参。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct DeleteFileArgs {
-    pub path: String,
+pub struct DeleteFilesArgs {
+    /// 待删除的相对路径列表（1..=32；同路径去重；不能是目录）。
+    pub paths: Vec<String>,
+    /// 破坏性操作确认门：必须为 `true`。
     pub confirm: Option<bool>,
 }
 

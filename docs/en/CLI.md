@@ -203,7 +203,7 @@ Every `build_app` response includes **`x-request-id`** (echo inbound if valid, e
 | PUT | `/workspace/file/raw` | Write **raw bytes** (`path` query required; optional `create_only` / `update_only`; any type, **16 MiB** cap and the same HTTP body limit on this route, not the ~220 MiB protected-API default; same as JSON `POST /workspace/file`). **204** on success; **409** `WORKSPACE_FILE_EXISTS` when `create_only` and the file exists. Used by Client OS-file drop onto the workspace tree; do **not** use chat `POST /upload` |
 | GET | `/workspace/file` | Read file in workspace (`path` required; optional **`encoding`**, same as `read_file`, default UTF-8 strict; 1 MiB cap) |
 | POST | `/workspace/file` | Write file (JSON `path`, `content`; optional **`create_only`** / **`update_only`**) |
-| DELETE | `/workspace/file` | Delete file (`path` required; not directories) |
+| DELETE | `/workspace/file` | Delete file: `path` single file (not directories); or `paths` batch (**comma-separated** relative paths, **up to 32**; rejects the whole batch if any path is invalid, no partial delete from validation; delete phase continues on per-file failure and reports `deleted` / `failed`; use single `path` for names containing commas) |
 | POST | `/workspace/dir` | Create dir (JSON **`path`**, optional **`parents`**); or delete dir (JSON **`delete=true`**, **`confirm=true`**, optional **`recursive=true`**, same as **`DELETE`**; frontend falls back to **`POST`** on 404/405) |
 | DELETE | `/workspace/dir` | Delete directory (`path` query required; **`confirm=true`** required; non-empty dirs need **`recursive=true`**) |
 | GET | `/health` | Health (workspace writable, optional CLI deps; **not** failed for missing process `API_KEY`; Client supplies `client_llm.api_key`) |

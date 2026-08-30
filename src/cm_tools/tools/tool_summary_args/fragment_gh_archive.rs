@@ -537,17 +537,22 @@ impl ToolSummaryLine for ReadBinaryMetaSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct DeleteFileSummaryArgs {
-    path: String,
+pub(super) struct DeleteFilesSummaryArgs {
+    paths: Vec<String>,
 }
 
-impl ToolSummaryLine for DeleteFileSummaryArgs {
+impl ToolSummaryLine for DeleteFilesSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
+        let n = self.paths.len();
+        if n == 0 {
             return None;
         }
-        Some(format!("delete file: {}", path))
+        let shown: Vec<String> = self.paths.into_iter().take(3).collect();
+        let mut line = format!("delete files: {}", shown.join(", "));
+        if n > 3 {
+            line.push_str(&format!(" (+{} more)", n - 3));
+        }
+        Some(line)
     }
 }
 
