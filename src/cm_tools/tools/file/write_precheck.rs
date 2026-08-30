@@ -42,8 +42,11 @@ impl PrecheckFailure {
     }
 }
 
-/// 写盘前校验：按目标相对路径的扩展名选择校验器。
+/// 写盘前校验：按目标相对路径的扩展名选择校验器。空/纯空白内容直接放行（创建空占位文件合法）。
 pub fn precheck_write(rel_path: &str, content: &str) -> PrecheckVerdict {
+    if content.trim().is_empty() {
+        return PrecheckVerdict::Ok;
+    }
     let ext = Path::new(rel_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -93,8 +96,9 @@ except SyntaxError as e:
 "#;
 
 fn check_python(content: &str) -> PrecheckVerdict {
-    use std::io::Write;
+    use std::io::{Read, Write};
     use std::process::{Command, Stdio};
+    use std::time::Instant;
 
     let mut child = match Command::new("python3")
         .args(["-c", PY_COMPILE_CHECK])
@@ -109,28 +113,46 @@ fn check_python(content: &str) -> PrecheckVerdict {
         }
         Err(_) => return PrecheckVerdict::Skipped("无法启动 python3，跳过 Python 语法校验"),
     };
+    let mut stdout = child.stdout.take();
+    let mut stderr = child.stderr.take();
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(content.as_bytes());
     }
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
-    match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(Ok(output)) if output.status.success() => PrecheckVerdict::Ok,
-        Ok(Ok(output)) => {
-            let err = String::from_utf8_lossy(&output.stderr);
-            PrecheckVerdict::Failed(parse_python_syntax_error(err.trim()))
+
+    // 主线程持有 child：超时可 kill 并回收，避免挂起进程与孤儿线程泄漏。
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() >= deadline => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return PrecheckVerdict::Skipped("python3 校验超时，跳过");
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+            Err(_) => return PrecheckVerdict::Skipped("python3 校验执行失败，跳过"),
         }
-        Ok(Err(_)) => PrecheckVerdict::Skipped("python3 校验执行失败，跳过"),
-        Err(_) => PrecheckVerdict::Skipped("python3 校验超时，跳过"),
+    };
+
+    let mut out = Vec::new();
+    let mut err = Vec::new();
+    let _ = stdout.and_then(|mut s| s.read_to_end(&mut out).ok());
+    let _ = stderr.and_then(|mut s| s.read_to_end(&mut err).ok());
+
+    if status.success() {
+        PrecheckVerdict::Ok
+    } else {
+        PrecheckVerdict::Failed(parse_python_syntax_error(String::from_utf8_lossy(&err).trim()))
     }
 }
 
 fn parse_python_syntax_error(stderr: &str) -> PrecheckFailure {
     let first = stderr.lines().next().unwrap_or("");
     let mut parts = first.splitn(3, ':');
-    let line = parts.next().and_then(|s| s.trim().parse::<usize>().ok());
+    let line = parts
+        .next()
+        .and_then(|s| s.trim().parse::<usize>().ok())
+        .filter(|&l| l > 0);
     let message = parts
         .next()
         .and_then(|_| parts.next())
@@ -225,6 +247,23 @@ mod tests {
         assert!(precheck_before_write("x.json", "{bad", true).is_ok());
         assert!(precheck_before_write("x.json", "{bad", false).is_err());
         assert!(precheck_before_write("x.py", "def f():\nx=1", true).is_ok());
+    }
+
+    #[test]
+    fn empty_or_blank_content_allowed() {
+        // 空/纯空白内容直接放行（创建空占位文件合法，且 py/json/toml 行为一致）。
+        assert!(matches!(precheck_write("x.json", ""), PrecheckVerdict::Ok));
+        assert!(matches!(precheck_write("x.json", "  \n"), PrecheckVerdict::Ok));
+        assert!(matches!(precheck_write("app.py", ""), PrecheckVerdict::Ok));
+        assert!(matches!(precheck_write("Cargo.toml", "  "), PrecheckVerdict::Ok));
+    }
+
+    #[test]
+    fn python_line_zero_maps_to_none() {
+        // Python `lineno or 0` 产出的 0 行号与 1-based 契约冲突 → 归为 None。
+        let f = parse_python_syntax_error("0:0: invalid syntax");
+        assert_eq!(f.line, None);
+        assert!(f.message.contains("invalid syntax"), "{}", f.message);
     }
 
     #[test]
