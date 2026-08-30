@@ -66,6 +66,13 @@ pub struct DiagnosticSummaryArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
+pub struct SelfConfigInfoArgs {
+    /// 仅输出指定小节（`llm`、`sampling`、`vendor_flags`、`http_retry`、`command_exec`、`weather`、`web_search`、`http_fetch`、`per_plan_policy`、`roles`、`workspace`、`web_api`、`context_pipeline`、`turn_budget`、`long_term_memory`、`conversation`、`mcp`、`tool_registry`、`sandbox`）；缺省输出全部。
+    pub sections: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
 pub struct RepoOverviewSweepArgs {
     pub doc_paths: Option<Vec<String>>,
     pub source_roots: Option<Vec<String>>,

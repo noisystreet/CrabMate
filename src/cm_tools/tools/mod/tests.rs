@@ -400,6 +400,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"workflow_execute"));
     assert!(names.contains(&"rust_backtrace_analyze"));
     assert!(names.contains(&"diagnostic_summary"));
+    assert!(names.contains(&"self_config_info"));
     assert!(names.contains(&"error_output_playbook"));
     assert!(names.contains(&"playbook_run_commands"));
     assert!(names.contains(&"changelog_draft"));
@@ -679,3 +680,28 @@ fn run_tool_result_run_command_honors_command_timeout_secs() {
         result.stdout
     );
 }
+
+#[test]
+fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
+    let cfg = crate::config::load_config(None).expect("embed default config");
+    let allowed = test_allowed_commands();
+    let mut ctx = test_ctx(&allowed);
+    ctx.cfg = Some(&cfg);
+    let out = run_tool("self_config_info", "{}", &ctx);
+    assert!(out.contains("[llm]"), "应含 llm 小节: {out}");
+    assert!(out.contains("model ="), "应含 model 键: {out}");
+    assert!(out.contains("api_base ="), "应含 api_base 键: {out}");
+    assert!(out.contains("[web_search]"), "应含 web_search 小节: {out}");
+    assert!(
+        out.contains("api_key = 未设置") || out.contains("api_key = 已设置(值隐藏)"),
+        "api_key 只允许报状态: {out}"
+    );
+    let filtered = run_tool("self_config_info", r#"{"sections":["llm"]}"#, &ctx);
+    assert!(filtered.contains("[llm]"));
+    assert!(!filtered.contains("[sampling]"));
+    assert!(
+        run_tool("self_config_info", r#"{"sections":["bogus"]}"#, &ctx).contains("未匹配到任何配置小节")
+    );
+    assert!(run_tool("self_config_info", r#"{"sections":1}"#, &ctx).contains("参数与工具 JSON Schema 不一致"));
+}
+
