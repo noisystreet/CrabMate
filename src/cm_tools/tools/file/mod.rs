@@ -20,7 +20,7 @@ mod write_ops;
 pub use directory::read_dir;
 pub use extract::extract_in_file;
 pub use inspect::{file_exists, hash_file, read_binary_meta};
-pub use mutate::{append_file, create_dir, delete_dir, delete_file, search_replace};
+pub use mutate::{append_file, create_dir, delete_dir, delete_files, search_replace};
 pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 pub use perm::chmod_file;
 pub use read_tool::read_file;

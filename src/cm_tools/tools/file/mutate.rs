@@ -11,7 +11,7 @@ use super::path::{
 };
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::{
-    AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFileArgs, SearchReplaceArgs,
+    AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs, SearchReplaceArgs,
 };
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
@@ -237,18 +237,37 @@ fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFile
     )
 }
 
-fn parse_confirmed_delete_path(args_json: &str) -> Result<String, String> {
+/// 单次 `delete_files` 允许的最大文件数（防输出 / diff 预览爆炸）。
+const DELETE_FILES_MAX_BATCH: usize = 32;
+
+fn parse_delete_files_args(args_json: &str) -> Result<Vec<String>, String> {
     let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: DeleteFileArgs =
+    let args: DeleteFilesArgs =
         serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
-    let path = match args.path.trim() {
-        s if !s.is_empty() => s.to_string(),
-        _ => return Err("缺少 path 参数".to_string()),
-    };
     if !args.confirm.unwrap_or(false) {
-        return Err("拒绝执行：delete_file 需要 confirm=true".to_string());
+        return Err("拒绝执行：delete_files 需要 confirm=true".to_string());
     }
-    Ok(path)
+    let mut seen = std::collections::HashSet::with_capacity(args.paths.len());
+    let mut paths = Vec::with_capacity(args.paths.len());
+    for raw in args.paths {
+        let p = raw.trim().to_string();
+        if p.is_empty() {
+            return Err("paths 中含空路径".to_string());
+        }
+        if seen.insert(p.clone()) {
+            paths.push(p);
+        }
+    }
+    if paths.is_empty() {
+        return Err("缺少 paths 参数".to_string());
+    }
+    if paths.len() > DELETE_FILES_MAX_BATCH {
+        return Err(format!(
+            "一次最多删除 {DELETE_FILES_MAX_BATCH} 个文件（收到 {} 个）",
+            paths.len()
+        ));
+    }
+    Ok(paths)
 }
 
 fn delete_file_remove(working_dir: &Path, target: &Path) -> Result<(), String> {
@@ -265,46 +284,91 @@ fn delete_file_remove(working_dir: &Path, target: &Path) -> Result<(), String> {
     }
 }
 
-pub fn delete_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let path = match parse_confirmed_delete_path(args_json) {
+/// 校验阶段：全部路径须可解析且在根内、且是文件；任一非法则整批拒绝、不产生部分删除。
+fn delete_files_validate(working_dir: &Path, paths: &[String]) -> Result<Vec<PathBuf>, String> {
+    let mut targets = Vec::with_capacity(paths.len());
+    for path in paths {
+        match resolve_for_read(working_dir, path) {
+            Ok(p) => targets.push(p),
+            Err(e) => return Err(tool_user_error_from_workspace_path(e)),
+        }
+    }
+    for (path, target) in paths.iter().zip(&targets) {
+        if !target.is_file() {
+            return Err(format!(
+                "错误：{} 不是文件（可能是目录，请用 delete_dir）",
+                path_for_tool_display(working_dir, target, Some(path))
+            ));
+        }
+    }
+    Ok(targets)
+}
+
+/// 批量删除结果：成功项（相对路径 + 删除前内容，供 diff 预览/变更集）与失败项（相对路径 + 原因）。
+type DeleteFilesOutcome = (Vec<(String, Option<String>)>, Vec<(String, String)>);
+
+/// 删除阶段：继续删完，逐文件汇总成功与失败。
+fn delete_files_execute(
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    paths: &[String],
+    targets: &[PathBuf],
+) -> DeleteFilesOutcome {
+    let mut deleted: Vec<(String, Option<String>)> = Vec::new();
+    let mut failed: Vec<(String, String)> = Vec::new();
+    for (path, target) in paths.iter().zip(targets) {
+        let before = std::fs::read_to_string(target).ok();
+        match delete_file_remove(working_dir, target) {
+            Ok(()) => {
+                if let Some(c) = ctx.workspace_changelist {
+                    c.record_mutation(path, before.clone(), None);
+                }
+                deleted.push((path.clone(), before));
+            }
+            Err(e) => failed.push((path.clone(), e)),
+        }
+    }
+    (deleted, failed)
+}
+
+/// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
+/// 再**逐个删除**并汇总成功/失败（删除阶段继续删完）。
+pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
+    let paths = match parse_delete_files_args(args_json) {
         Ok(p) => p,
         Err(e) => return e,
     };
-
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
+    let targets = match delete_files_validate(working_dir, &paths) {
+        Ok(t) => t,
+        Err(e) => return e,
     };
-    if !target.is_file() {
-        return format!(
-            "错误：{} 不是文件（可能是目录，请用 delete_dir）",
-            path_for_tool_display(working_dir, &target, Some(&path))
-        );
+    let (deleted, failed) = delete_files_execute(working_dir, ctx, &paths, &targets);
+
+    let mut body = format!("已删除 {} 个文件：", deleted.len());
+    for (path, _) in &deleted {
+        body.push_str(&format!("\n- {path}"));
     }
-    let before = std::fs::read_to_string(&target).ok();
-    match delete_file_remove(working_dir, &target) {
-        Ok(()) => {
-            let body = format!(
-                "已删除文件：{}",
-                path_for_tool_display(working_dir, &target, Some(&path))
-            );
-            let preview_before = before.clone();
-            if let Some(c) = ctx.workspace_changelist {
-                c.record_mutation(&path, before, None);
-            }
-            format_tool_output_with_write_diff_preview(
-                "delete_file",
-                body,
-                vec![WriteDiffFileState {
-                    rel_path: path.clone(),
-                    before: preview_before,
-                    after: None,
-                }],
-                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-            )
+    if !failed.is_empty() {
+        body.push_str(&format!("\n\n删除失败（{} 个）：", failed.len()));
+        for (path, e) in &failed {
+            body.push_str(&format!("\n- {path}: {e}"));
         }
-        Err(e) => e,
     }
+
+    let diff_states: Vec<WriteDiffFileState> = deleted
+        .iter()
+        .map(|(path, before)| WriteDiffFileState {
+            rel_path: path.clone(),
+            before: before.clone(),
+            after: None,
+        })
+        .collect();
+    format_tool_output_with_write_diff_preview(
+        "delete_files",
+        body,
+        diff_states,
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
 }
 
 // ── delete_dir ──────────────────────────────────────────────
@@ -593,5 +657,137 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
             )
         }
         Err(e) => format!("写入文件失败：{}", e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_config::WebSearchProvider;
+    use std::fs;
+
+    fn test_ctx(working_dir: &std::path::Path) -> ToolContext<'_> {
+        ToolContext {
+            cfg: None,
+            codebase_semantic_host: None,
+            command_max_output_len: 1 << 20,
+            weather_timeout_secs: 5,
+            allowed_commands: &[],
+            working_dir,
+            web_search_timeout_secs: 5,
+            web_search_provider: WebSearchProvider::Worbrow,
+            web_search_api_key: "",
+            web_search_max_results: 3,
+            http_fetch_allowed_prefixes: &[],
+            http_fetch_timeout_secs: 5,
+            http_fetch_max_response_bytes: 1024,
+            command_timeout_secs: 5,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            test_result_cache_enabled: false,
+            test_result_cache_max_entries: 0,
+            long_term_memory_host: None,
+        }
+    }
+
+    fn write(ws: &std::path::Path, rel: &str, content: &str) {
+        let p = ws.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, content).unwrap();
+    }
+
+    #[test]
+    fn delete_files_batch_success_dedup() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "a.txt", "A");
+        write(tmp.path(), "b.txt", "B");
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(
+            r#"{"paths":["a.txt","b.txt","a.txt"],"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("已删除 2 个文件"), "{out}");
+        assert!(!tmp.path().join("a.txt").exists());
+        assert!(!tmp.path().join("b.txt").exists());
+    }
+
+    #[test]
+    fn delete_files_requires_confirm() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "a.txt", "A");
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(r#"{"paths":["a.txt"]}"#, tmp.path(), &ctx);
+        assert!(out.contains("需要 confirm=true"), "{out}");
+        assert!(tmp.path().join("a.txt").exists());
+    }
+
+    #[test]
+    fn delete_files_validation_rejects_whole_batch() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "a.txt", "A");
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(
+            r#"{"paths":["a.txt","missing.txt"],"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(!out.contains("已删除"), "{out}");
+        assert!(out.contains("路径无法解析") || out.contains("错误"), "{out}");
+        assert!(
+            tmp.path().join("a.txt").exists(),
+            "任一路径非法时整批拒绝，不应删除任何文件"
+        );
+    }
+
+    #[test]
+    fn delete_files_rejects_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("d")).unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(r#"{"paths":["d"],"confirm":true}"#, tmp.path(), &ctx);
+        assert!(out.contains("不是文件"), "{out}");
+        assert!(tmp.path().join("d").is_dir());
+    }
+
+    #[test]
+    fn delete_files_caps_batch_size() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = test_ctx(tmp.path());
+        let paths: Vec<String> = (0..33).map(|i| format!("f{i}.txt")).collect();
+        let args = serde_json::json!({ "paths": paths, "confirm": true }).to_string();
+        let out = delete_files(&args, tmp.path(), &ctx);
+        assert!(out.contains("最多删除 32"), "{out}");
+    }
+
+    #[test]
+    fn delete_files_empty_paths_rejected() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(r#"{"paths":[],"confirm":true}"#, tmp.path(), &ctx);
+        assert!(out.contains("缺少 paths"), "{out}");
+    }
+
+    /// 删除阶段遇个别失败（只读目录内的文件）时继续删完并汇总。
+    #[cfg(unix)]
+    #[test]
+    fn delete_files_partial_failure_continues() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "a.txt", "A");
+        fs::create_dir(tmp.path().join("ro")).unwrap();
+        write(tmp.path(), "ro/x.txt", "X");
+        fs::set_permissions(tmp.path().join("ro"), fs::Permissions::from_mode(0o555)).unwrap();
+        let ctx = test_ctx(tmp.path());
+        let out = delete_files(
+            r#"{"paths":["a.txt","ro/x.txt"],"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        fs::set_permissions(tmp.path().join("ro"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(out.contains("已删除 1 个文件"), "{out}");
+        assert!(out.contains("删除失败（1 个）"), "{out}");
+        assert!(!tmp.path().join("a.txt").exists());
+        assert!(tmp.path().join("ro/x.txt").exists());
     }
 }

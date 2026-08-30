@@ -676,8 +676,8 @@ pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 
 // ── 文件增强 ────────────────────────────────────────────────
 
-pub fn runner_delete_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::delete_file(args, ctx.working_dir, ctx)
+pub fn runner_delete_files(args: &str, ctx: &ToolContext<'_>) -> String {
+    file::delete_files(args, ctx.working_dir, ctx)
 }
 pub fn runner_delete_dir(args: &str, ctx: &ToolContext<'_>) -> String {
     file::delete_dir(args, ctx.working_dir)

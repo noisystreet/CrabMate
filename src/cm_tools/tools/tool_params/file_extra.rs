@@ -2,12 +2,12 @@
 
 use crate::cm_tools::tools::tool_json_schema::tool_parameters_schema_value;
 use crate::cm_tools::tools::tool_param_types::{
-    AppendFileArgs, ChmodFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFileArgs, SearchReplaceArgs,
+    AppendFileArgs, ChmodFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs, SearchReplaceArgs,
     SymlinkInfoArgs,
 };
 
-pub(in crate::cm_tools::tools) fn params_delete_file() -> serde_json::Value {
-    tool_parameters_schema_value::<DeleteFileArgs>()
+pub(in crate::cm_tools::tools) fn params_delete_files() -> serde_json::Value {
+    tool_parameters_schema_value::<DeleteFilesArgs>()
 }
 
 pub(in crate::cm_tools::tools) fn params_delete_dir() -> serde_json::Value {

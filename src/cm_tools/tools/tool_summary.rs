@@ -271,8 +271,8 @@ pub(super) fn summary_coverage_report(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<CoverageReportSummaryArgs>(v)
 }
 
-pub(super) fn summary_delete_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<DeleteFileSummaryArgs>(v)
+pub(super) fn summary_delete_files(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<DeleteFilesSummaryArgs>(v)
 }
 
 pub(super) fn summary_delete_dir(v: &serde_json::Value) -> Option<String> {

@@ -1,4 +1,4 @@
-//! 目录 zip 与文件 move 的轻量 HTTP 冒烟。
+//! 目录 zip、文件 move 与批量文件删除的轻量 HTTP 冒烟。
 
 use crate::test_serve::start_test_serve;
 
@@ -147,5 +147,95 @@ async fn workspace_file_move_http_smoke() {
     assert_eq!(
         std::fs::read(root.path().join("exists.txt")).expect("read exists"),
         b"x"
+    );
+}
+
+#[tokio::test]
+async fn workspace_files_delete_batch_http_smoke() {
+    let root = tempfile::tempdir().expect("tempdir");
+    std::fs::write(root.path().join("a.txt"), b"a").expect("write a");
+    std::fs::write(root.path().join("b.txt"), b"b").expect("write b");
+    std::fs::create_dir(root.path().join("d")).expect("mkdir d");
+    std::fs::write(root.path().join("d").join("c.txt"), b"c").expect("write c");
+
+    let handle = start_test_serve(None).await;
+    let client = loopback_http_client();
+    set_workspace(&client, &handle.base_url, root.path()).await;
+
+    // 目录在校验阶段整批拒绝：a.txt 不应被删。
+    let with_dir = client
+        .delete(format!("{}/workspace/file", handle.base_url))
+        .query(&[("paths", "a.txt,d")])
+        .send()
+        .await
+        .expect("batch with dir");
+    assert_eq!(with_dir.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = with_dir.json().await.expect("json");
+    assert!(
+        body["error"].as_str().unwrap_or("").contains("不支持删除目录"),
+        "{body}"
+    );
+    assert!(
+        root.path().join("a.txt").exists(),
+        "整批校验失败时不应删除任何文件"
+    );
+
+    // 批量成功：三个文件都删。
+    let ok = client
+        .delete(format!("{}/workspace/file", handle.base_url))
+        .query(&[("paths", "a.txt,b.txt,d/c.txt")])
+        .send()
+        .await
+        .expect("batch delete");
+    assert_eq!(ok.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = ok.json().await.expect("json");
+    let deleted = body["deleted"].as_array().expect("deleted array");
+    assert_eq!(deleted.len(), 3, "{body}");
+    assert!(body["failed"].is_null(), "{body}");
+    assert!(!root.path().join("a.txt").exists());
+    assert!(!root.path().join("b.txt").exists());
+    assert!(!root.path().join("d").join("c.txt").exists());
+
+    // 任一缺失 → 整批拒绝：x.txt 不应被删。
+    std::fs::write(root.path().join("x.txt"), b"x").expect("write x");
+    let missing = client
+        .delete(format!("{}/workspace/file", handle.base_url))
+        .query(&[("paths", "x.txt,missing.txt")])
+        .send()
+        .await
+        .expect("batch missing");
+    assert_eq!(missing.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = missing.json().await.expect("json");
+    assert!(
+        body["error"]
+            .as_str()
+            .map(|s| s.contains("路径无法解析"))
+            .unwrap_or(false),
+        "{body}"
+    );
+    assert!(
+        root.path().join("x.txt").exists(),
+        "整批校验失败时不应删除任何文件"
+    );
+
+    // 超过批量上限 → 报错。
+    let many = (0..33)
+        .map(|i| format!("f{i}.txt"))
+        .collect::<Vec<_>>()
+        .join(",");
+    let over = client
+        .delete(format!("{}/workspace/file", handle.base_url))
+        .query(&[("paths", many.as_str())])
+        .send()
+        .await
+        .expect("batch over cap");
+    assert_eq!(over.status(), reqwest::StatusCode::OK);
+    let body: serde_json::Value = over.json().await.expect("json");
+    assert!(
+        body["error"]
+            .as_str()
+            .map(|s| s.contains("最多删除 32"))
+            .unwrap_or(false),
+        "{body}"
     );
 }

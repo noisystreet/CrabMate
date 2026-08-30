@@ -12,8 +12,7 @@ use serde_json;
 use super::handlers_sync::workspace_dir_create_sync;
 #[cfg(unix)]
 use super::handlers_sync::{
-    workspace_delete_file_sync_unix, workspace_file_write_sync_unix, workspace_list_entries_sync,
-    workspace_read_file_sync_unix,
+    workspace_file_write_sync_unix, workspace_list_entries_sync, workspace_read_file_sync_unix,
 };
 #[cfg(not(unix))]
 use crate::text_encoding::decode_bytes_strict;
@@ -27,10 +26,10 @@ use crate::web::http_types::validation::{
 use crate::web::http_types::workspace::WorkspaceEntry;
 use crate::web::http_types::workspace::{
     WorkspaceDirCreateBody, WorkspaceDirCreateResponse, WorkspaceDirDeleteQuery,
-    WorkspaceDirDeleteResponse, WorkspaceFileDeleteResponse, WorkspaceFileQuery,
-    WorkspaceFileReadResponse, WorkspaceFileWriteBody, WorkspaceFileWriteResponse,
-    WorkspacePickResponse, WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse,
-    WorkspaceSearchBody, WorkspaceSearchResponse, WorkspaceSetBody,
+    WorkspaceDirDeleteResponse, WorkspaceFileQuery, WorkspaceFileReadResponse,
+    WorkspaceFileWriteBody, WorkspaceFileWriteResponse, WorkspacePickResponse,
+    WorkspaceProfileResponse, WorkspaceQuery, WorkspaceResponse, WorkspaceSearchBody,
+    WorkspaceSearchResponse, WorkspaceSetBody,
 };
 use crate::workspace::path::{
     WorkspacePathError, resolve_web_workspace_read_path, resolve_web_workspace_write_path,
@@ -525,86 +524,6 @@ pub async fn workspace_file_read_handler(
     {
         let _ = base_canonical;
         workspace_file_read_non_unix(canonical, enc_name).await
-    }
-}
-
-fn workspace_file_delete_err(msg: String) -> Json<WorkspaceFileDeleteResponse> {
-    Json(WorkspaceFileDeleteResponse { error: Some(msg) })
-}
-
-async fn workspace_file_delete_resolve(
-    http: &AppStateHttpCore,
-    query: &WorkspaceFileQuery,
-) -> Result<(std::path::PathBuf, std::path::PathBuf), Json<WorkspaceFileDeleteResponse>> {
-    let base_canonical = match effective_workspace_base_canonical(http).await {
-        Ok(p) => p,
-        Err(e) => return Err(workspace_file_delete_err(e.user_message())),
-    };
-    if let Err(e) = validate_workspace_query_encoding_optional(query.encoding.as_deref()) {
-        return Err(workspace_file_delete_err(e));
-    }
-    if query.path.trim().is_empty() {
-        return Err(workspace_file_delete_err("path 不能为空".to_string()));
-    }
-    match resolve_web_workspace_read_path(&base_canonical, Some(query.path.as_str())) {
-        Ok(canonical) => Ok((base_canonical, canonical)),
-        Err(e) => Err(workspace_file_delete_err(e.user_message())),
-    }
-}
-
-#[cfg(unix)]
-async fn workspace_file_delete_unix(
-    base_canonical: std::path::PathBuf,
-    canonical: std::path::PathBuf,
-) -> Json<WorkspaceFileDeleteResponse> {
-    match tokio::task::spawn_blocking(move || {
-        workspace_delete_file_sync_unix(base_canonical, canonical)
-    })
-    .await
-    {
-        Ok(Ok(())) => Json(WorkspaceFileDeleteResponse { error: None }),
-        Ok(Err(msg)) => workspace_file_delete_err(msg),
-        Err(e) => workspace_file_delete_err(format!("删除文件任务失败: {}", e)),
-    }
-}
-
-#[cfg(not(unix))]
-async fn workspace_file_delete_non_unix(
-    canonical: std::path::PathBuf,
-) -> Json<WorkspaceFileDeleteResponse> {
-    let meta = match tokio::fs::metadata(&canonical).await {
-        Ok(m) => m,
-        Err(e) => {
-            return workspace_file_delete_err(format!("无法读取文件信息: {}", e));
-        }
-    };
-    if meta.is_dir() {
-        return workspace_file_delete_err("不支持删除目录".to_string());
-    }
-    match tokio::fs::remove_file(&canonical).await {
-        Ok(()) => Json(WorkspaceFileDeleteResponse { error: None }),
-        Err(e) => workspace_file_delete_err(format!("删除文件失败: {}", e)),
-    }
-}
-
-/// 删除工作区内的文件：path 为工作区内文件路径，不能删除目录
-pub async fn workspace_file_delete_handler(
-    State(http): State<AppStateHttpCore>,
-    Query(query): Query<WorkspaceFileQuery>,
-) -> Json<WorkspaceFileDeleteResponse> {
-    let (base_canonical, canonical) = match workspace_file_delete_resolve(&http, &query).await {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-
-    #[cfg(unix)]
-    {
-        workspace_file_delete_unix(base_canonical, canonical).await
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = base_canonical;
-        workspace_file_delete_non_unix(canonical).await
     }
 }
 

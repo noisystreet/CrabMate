@@ -176,7 +176,20 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
             "WorkspaceFileDeleteResponse": {
                 "type": "object",
                 "properties": {
-                    "error": { "type": "string", "nullable": true }
+                    "error": { "type": "string", "nullable": true, "description": "单路径删除或整批校验失败时的错误信息；批量部分失败时为空（看 failed）" },
+                    "deleted": { "type": "array", "items": { "type": "string" }, "description": "批量删除成功删除的相对路径（单路径删除时为空数组）" },
+                    "failed": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/WorkspaceFileDeleteFailure" },
+                        "description": "批量删除失败项（非空时 error 为空）"
+                    }
+                }
+            },
+            "WorkspaceFileDeleteFailure": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string" },
+                    "error": { "type": "string" }
                 }
             },
             "WorkspaceDirCreateBody": {

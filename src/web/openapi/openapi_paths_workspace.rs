@@ -169,3 +169,88 @@ pub(super) fn openapi_paths_fragment_skills() -> Value {
         }
     })
 }
+
+pub(super) fn openapi_paths_fragment_workspace_file() -> Value {
+    json!({
+        "/workspace/file": {
+            "get": {
+                "tags": ["workspace"],
+                "summary": "读取工作区内文本文件（有大小上限）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": true,
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "encoding",
+                        "in": "query",
+                        "required": false,
+                        "schema": { "type": "string" },
+                        "description": "如 utf-8、gb18030、auto 等，与 `read_file` 工具一致"
+                    }
+                ],
+                "responses": {
+                    "200": { "description": "文件正文或 JSON 包装（与实现一致）" },
+                    "4XX": { "description": "路径或编码错误" }
+                }
+            },
+            "post": {
+                "tags": ["workspace"],
+                "summary": "写入工作区文件",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": { "$ref": "#/components/schemas/WorkspaceFileWriteBody" }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "写入结果",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkspaceFileWriteResponse" }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": ["workspace"],
+                "summary": "删除工作区文件（path 单文件；或 paths 批量删除，任一非法则整批拒绝）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "path",
+                        "in": "query",
+                        "required": false,
+                        "description": "单路径删除的目标相对路径（批量删除时省略）",
+                        "schema": { "type": "string" }
+                    },
+                    {
+                        "name": "paths",
+                        "in": "query",
+                        "required": false,
+                        "description": "批量删除：逗号分隔的相对路径列表（最多 32 个；任一非法则整批拒绝、不产生部分删除）",
+                        "schema": { "type": "string" }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "删除结果",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/WorkspaceFileDeleteResponse" }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+}
