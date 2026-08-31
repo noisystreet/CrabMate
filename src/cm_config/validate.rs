@@ -543,7 +543,38 @@ pub(super) fn validate_builder_numeric_ranges(b: &ConfigBuilder) -> Result<(), S
     validate_f64_table(b)?;
     validate_parallel_wall_timeouts(b)?;
     validate_background_job_ranges(b)?;
+    validate_tool_retry_ranges(b)?;
     validate_tool_call_explain_char_range(b)?;
+    Ok(())
+}
+
+/// 工具失败透明重试数值范围（与 `finalize.rs` 的 clamp 一致，越界直接报错而非静默钳制）。
+fn validate_tool_retry_ranges(b: &ConfigBuilder) -> Result<(), String> {
+    let p = &b.tool_registry_policy;
+    let entries: [(&str, Option<u64>, std::ops::RangeInclusive<u64>); 2] = [
+        (
+            "tool_retry_max_attempts",
+            p.tool_registry_tool_retry_max_attempts,
+            1..=5,
+        ),
+        (
+            "tool_retry_backoff_ms",
+            p.tool_registry_tool_retry_backoff_ms,
+            0..=10_000,
+        ),
+    ];
+    for (key, value, range) in entries {
+        if let Some(v) = value
+            && !range.contains(&v)
+        {
+            return Err(err_out_of_range(
+                &format!("tool_registry.{key}"),
+                v,
+                *range.start(),
+                *range.end(),
+            ));
+        }
+    }
     Ok(())
 }
 

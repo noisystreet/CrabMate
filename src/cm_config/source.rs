@@ -88,6 +88,21 @@ pub(super) struct ToolRegistrySection {
     /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
     #[serde(default)]
     pub(super) background_job_max_entries: Option<u64>,
+    /// 工具失败透明重试总开关（默认 `false`；仅瞬时失败且只读/免审批工具，见 `tool_retry_policy` 计划）。
+    #[serde(default)]
+    pub(super) tool_retry_enabled: Option<bool>,
+    /// 含首次的总尝试次数上限（默认 `2`；`1`=不重试）。越界由 validate 拒绝。
+    #[serde(default)]
+    pub(super) tool_retry_max_attempts: Option<u64>,
+    /// 基础退避毫秒（默认 `250`；第 n 次 = min(backoff * 2^(n-1), 5000)）。
+    #[serde(default)]
+    pub(super) tool_retry_backoff_ms: Option<u64>,
+    /// 允许自动重试的错误码（默认 `timeout` / `http_timeout` / `rate_limited` / `http_network_error`）；空数组 = 全部禁用。
+    #[serde(default)]
+    pub(super) tool_retry_error_codes: Option<Vec<String>>,
+    /// 额外排除的工具名（精确匹配；默认已按只读/免审批门排除写类与交互审批类工具）。
+    #[serde(default)]
+    pub(super) tool_retry_denied_tools: Option<Vec<String>>,
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应

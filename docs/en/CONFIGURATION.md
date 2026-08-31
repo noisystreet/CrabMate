@@ -232,6 +232,11 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | **`parallel_sync_denied_prefixes`** | Same, by name prefix. |
 | **`sync_default_inline_tools`** | **`SyncDefault`** tools run inline on the async task (skip **`spawn_blocking`**); default small builtin set if omitted. |
 | **`write_effect_tools`** | Tools treated as mutating for **`is_readonly_tool`**, explain card, codebase semantic invalidation, etc.; default builtin set if omitted. |
+| **`tool_retry_enabled`** | Master switch for transparent tool-failure retry (default `false`; transient failures only, readonly & approval-free tools). |
+| **`tool_retry_max_attempts`** | Total attempts incl. the first (1–5, default `2`; `1` = no retry). |
+| **`tool_retry_backoff_ms`** | Base backoff in ms (0–10000, default `250`); nth retry = `min(backoff*2^(n-1), 5000)`. |
+| **`tool_retry_error_codes`** | Error codes eligible for retry (default `timeout`/`http_timeout`/`rate_limited`/`http_network_error`); empty = disabled. |
+| **`tool_retry_denied_tools`** | Extra tool names excluded from retry (exact match; readonly/approval gate already excludes write & interactive tools). |
 
 ### Context & tool messages
 

@@ -222,6 +222,17 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # background_job_result_grace_secs = 300
 # # 注册表条目上限（1–10000，默认 128）；仅淘汰终态条目
 # background_job_max_entries = 128
+# # 工具失败透明重试（默认关闭；仅瞬时失败，且仅只读/免审批工具）
+# # 总开关（默认 false）
+# tool_retry_enabled = false
+# # 含首次的总尝试次数上限（1–5，默认 2；1=不重试）
+# tool_retry_max_attempts = 2
+# # 基础退避毫秒（0–10000，默认 250；第 n 次 = min(backoff*2^(n-1), 5000)）
+# tool_retry_backoff_ms = 250
+# # 允许重试的错误码（默认 timeout/http_timeout/rate_limited/http_network_error；空数组=全部禁用）
+# tool_retry_error_codes = ["timeout", "http_timeout", "rate_limited", "http_network_error"]
+# # 额外排除工具名（默认已按只读/免审批门排除写类与交互审批类）
+# tool_retry_denied_tools = []
 # # 并行只读批与 SyncDefault+spawn_blocking 墙上时钟：键与 ToolExecutionClass 蛇形一致（workflow, command_spawn_timeout, …, blocking_sync）。
 # [tool_registry.parallel_wall_timeout_secs]
 # blocking_sync = 600

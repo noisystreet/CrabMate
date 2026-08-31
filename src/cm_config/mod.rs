@@ -746,4 +746,17 @@ mod numeric_validate_tests {
             "err: {err}"
         );
     }
+
+    #[test]
+    fn tool_retry_ranges_out_of_range() {
+        let mut b = ConfigBuilder::default();
+        b.tool_registry_policy.tool_registry_tool_retry_max_attempts = Some(9);
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(err.contains("tool_retry_max_attempts"), "err: {err}");
+
+        let mut b = ConfigBuilder::default();
+        b.tool_registry_policy.tool_registry_tool_retry_backoff_ms = Some(20_000);
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(err.contains("tool_retry_backoff_ms"), "err: {err}");
+    }
 }
