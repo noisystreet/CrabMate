@@ -18,6 +18,20 @@ use crate::cm_config::AgentConfig;
 /// 退避上限（毫秒），与 `finalize.rs` 夹取后的 `tool_retry_backoff_ms` 上限无关（此为指数上限）。
 const MAX_BACKOFF_MS: u64 = 5000;
 
+/// 内建**硬排除**（`is_readonly_tool` 判定为真但参数可触发写副作用 / 重型任务，重试会重复副作用）：
+/// `codebase_semantic_search` 的 `rebuild_index: true` 会写工作区 SQLite 索引；
+/// 与 `[tool_registry] tool_retry_denied_tools`（用户额外排除）叠加。
+fn builtin_retry_denied() -> &'static std::collections::HashSet<String> {
+    static DENIED: std::sync::OnceLock<std::collections::HashSet<String>> =
+        std::sync::OnceLock::new();
+    DENIED.get_or_init(|| {
+        ["codebase_semantic_search"]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    })
+}
+
 /// 单次工具调用的透明重试预算（由 `[tool_registry]` 字段派生，`Arc` 共享避免每轮克隆）。
 pub struct ToolRetrySpec {
     pub enabled: bool,
@@ -47,7 +61,7 @@ impl ToolRetrySpec {
         if !crate::cm_tools::registry_policy::is_readonly_tool(cfg, tool_name) {
             return false;
         }
-        if self.denied_tools.contains(tool_name) {
+        if builtin_retry_denied().contains(tool_name) || self.denied_tools.contains(tool_name) {
             return false;
         }
         if tool_name == "http_fetch" && http_fetch_args_need_approval(cfg, args) {
@@ -188,6 +202,21 @@ mod tests {
             Arc::new(["get_current_time".to_string()].into_iter().collect());
         let spec = ToolRetrySpec::from_config(&cfg);
         assert!(!spec.tool_retry_eligible(&cfg, "get_current_time", "{}"));
+    }
+
+    #[test]
+    fn eligible_excludes_builtin_write_side_effect_tools() {
+        // 内建硬排除：只读判定为真但参数可写副作用（rebuild_index 写 SQLite 索引）的工具不重试。
+        let cfg = cfg_with_retry_enabled();
+        let spec = ToolRetrySpec::from_config(&cfg);
+        assert!(!spec.tool_retry_eligible(
+            &cfg,
+            "codebase_semantic_search",
+            r#"{"query":"fn main","rebuild_index":true}"#
+        ));
+        // 写类工具由 is_readonly_tool 排除（覆盖 ast_grep_rewrite / structured_patch 等默认写表项）。
+        assert!(!spec.tool_retry_eligible(&cfg, "ast_grep_rewrite", "{}"));
+        assert!(!spec.tool_retry_eligible(&cfg, "structured_patch", "{}"));
     }
 
     #[test]
