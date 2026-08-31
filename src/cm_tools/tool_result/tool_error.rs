@@ -94,6 +94,9 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         }
         "timeout" => ToolFailureCategory::Timeout,
         "cancelled" => ToolFailureCategory::Timeout,
+        "http_timeout" => ToolFailureCategory::Timeout,
+        "http_network_error" | "http_body_read_error" => ToolFailureCategory::External,
+        "weather_api_error" | "web_search_api_error" => ToolFailureCategory::External,
         "rate_limited" => ToolFailureCategory::PolicyDenied,
         "command_not_found" | "permission_denied" | "spawn_failed" | "cargo_spawn_failed" => {
             ToolFailureCategory::External
@@ -351,6 +354,30 @@ mod tests {
         assert_eq!(
             failure_category_for_error_code("approval_required"),
             ToolFailureCategory::PolicyDenied
+        );
+    }
+
+    #[test]
+    fn failure_category_maps_network_error_codes() {
+        assert_eq!(
+            failure_category_for_error_code("http_timeout"),
+            ToolFailureCategory::Timeout
+        );
+        assert_eq!(
+            failure_category_for_error_code("http_network_error"),
+            ToolFailureCategory::External
+        );
+        assert_eq!(
+            failure_category_for_error_code("http_body_read_error"),
+            ToolFailureCategory::External
+        );
+        assert_eq!(
+            failure_category_for_error_code("weather_api_error"),
+            ToolFailureCategory::External
+        );
+        assert_eq!(
+            failure_category_for_error_code("web_search_api_error"),
+            ToolFailureCategory::External
         );
     }
 }

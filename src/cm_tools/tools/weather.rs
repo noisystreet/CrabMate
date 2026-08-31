@@ -98,10 +98,15 @@ fn geocode_city_blocking(
     {
         Ok(res) if res.status().is_success() => match res.json() {
             Ok(j) => j,
-            Err(e) => return Err(format!("解析地理编码结果失败：{}", e)),
+            Err(e) => return Err(format!("错误[weather_api_error]：解析地理编码结果失败：{}", e)),
         },
-        Ok(res) => return Err(format!("地理编码请求失败：{}", res.status())),
-        Err(e) => return Err(format!("网络请求失败：{}", e)),
+        Ok(res) => {
+            return Err(format!(
+                "错误[weather_api_error]：地理编码请求失败：{}",
+                res.status()
+            ))
+        }
+        Err(e) => return Err(format_weather_network_error(&e)),
     };
     geo.results
         .and_then(|r| r.into_iter().next())
@@ -129,10 +134,23 @@ fn forecast_blocking(
     {
         Ok(res) if res.status().is_success() => match res.json() {
             Ok(j) => Ok(j),
-            Err(e) => Err(format!("解析天气结果失败：{}", e)),
+            Err(e) => Err(format!("错误[weather_api_error]：解析天气结果失败：{}", e)),
         },
-        Ok(res) => Err(format!("天气请求失败：{}", res.status())),
-        Err(e) => Err(format!("网络请求失败：{}", e)),
+        Ok(res) => Err(format!(
+            "错误[weather_api_error]：天气请求失败：{}",
+            res.status()
+        )),
+        Err(e) => Err(format_weather_network_error(&e)),
+    }
+}
+
+/// reqwest 发送失败：超时归 `timeout`（瞬时、可重试），其余网络失败归 `weather_api_error`（外部、不重试）。
+/// 首行显式错误码标记供下游 `classify_error_code` 提取。
+fn format_weather_network_error(e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        format!("错误[timeout]：网络请求超时：{}", e)
+    } else {
+        format!("错误[weather_api_error]：网络请求失败：{}", e)
     }
 }
 

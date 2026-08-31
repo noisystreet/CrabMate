@@ -240,6 +240,16 @@ fn append_worbrow_meta_notes(out: &mut String, outcome: &Outcome) {
     out.push('。');
 }
 
+/// reqwest 发送失败：超时归 `timeout`（瞬时、可重试），其余归 `web_search_api_error`（外部、不重试）。
+/// 首行显式错误码标记供下游 `classify_error_code` 提取。
+fn format_search_network_error(provider: &str, e: &reqwest::Error) -> String {
+    if e.is_timeout() {
+        format!("错误[timeout]：{provider} 搜索请求超时：{}", e)
+    } else {
+        format!("错误[web_search_api_error]：{provider} 搜索请求失败：{}", e)
+    }
+}
+
 fn search_brave(
     client: &reqwest::blocking::Client,
     api_key: &str,
@@ -252,7 +262,7 @@ fn search_brave(
         .header("Accept", "application/json")
         .query(&[("q", query), ("count", &max_results.to_string())])
         .send()
-        .map_err(|e| format!("Brave 搜索请求失败：{}", e))?;
+        .map_err(|e| format_search_network_error("Brave", &e))?;
 
     if !res.status().is_success() {
         let status = res.status();
@@ -266,14 +276,14 @@ fn search_brave(
             preview
         );
         return Err(format!(
-            "Brave 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
+            "错误[web_search_api_error]：Brave 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
             status.as_u16()
         ));
     }
 
     let parsed: BraveWebSearchResponse = res
         .json()
-        .map_err(|e| format!("解析 Brave 响应失败：{}", e))?;
+        .map_err(|e| format!("错误[web_search_api_error]：解析 Brave 响应失败：{}", e))?;
 
     let results = parsed.web.and_then(|w| w.results).unwrap_or_default();
 
@@ -315,7 +325,7 @@ fn search_tavily(
         .header("Content-Type", "application/json")
         .json(&body)
         .send()
-        .map_err(|e| format!("Tavily 搜索请求失败：{}", e))?;
+        .map_err(|e| format_search_network_error("Tavily", &e))?;
 
     if !res.status().is_success() {
         let status = res.status();
@@ -329,14 +339,14 @@ fn search_tavily(
             preview
         );
         return Err(format!(
-            "Tavily 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
+            "错误[web_search_api_error]：Tavily 搜索 API 返回错误（HTTP {}），请检查 API 密钥或稍后重试",
             status.as_u16()
         ));
     }
 
     let parsed: TavilySearchResponse = res
         .json()
-        .map_err(|e| format!("解析 Tavily 响应失败：{}", e))?;
+        .map_err(|e| format!("错误[web_search_api_error]：解析 Tavily 响应失败：{}", e))?;
 
     let results = parsed.results.unwrap_or_default();
     if results.is_empty() {

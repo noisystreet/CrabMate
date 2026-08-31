@@ -175,6 +175,7 @@ pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
         error_code,
         Some(
             "timeout"
+                | "http_timeout"
                 | "rate_limited"
                 | "workflow_tool_join_error"
                 | "workflow_semaphore_closed"
@@ -183,7 +184,27 @@ pub fn tool_error_retryable_heuristic(error_code: Option<&str>) -> bool {
     )
 }
 
+/// 从正文首行提取**显式错误码标记**（形如 `错误[http_timeout]：…`），由网络类工具在错误文本中主动嵌入，
+/// 供 `classify_error_code` 精确归类而非依赖关键词推断。仅接受小写字母、数字与下划线组成的码。
+/// **该格式为服务端保留协议**：其他工具的错误正文请勿以 `错误[小写码]` 开头，以免被误提取。
+fn extract_error_code_marker(first_line: &str) -> Option<String> {
+    let rest = first_line.strip_prefix("错误[")?;
+    let end = rest.find(']')?;
+    let code = &rest[..end];
+    if code.is_empty()
+        || !code
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    {
+        return None;
+    }
+    Some(code.to_string())
+}
+
 fn classify_error_code(first_line: &str, tool_name: &str) -> String {
+    if let Some(code) = extract_error_code_marker(first_line) {
+        return code;
+    }
     if first_line.contains("检测到同命令重复失败") {
         return "repeated_tool_failure_short_circuit".to_string();
     }
@@ -258,8 +279,10 @@ fn parse_title_exit_prefix_line(line: &str) -> Option<(String, i32)> {
 }
 
 /// `http_fetch` / `http_request` 失败正文前缀 / 中缀（命中则不生成结构化载荷）。
+/// `错误[` 为网络工具显式错误码标记（如 `错误[http_timeout]`），须与旧 `错误：` 一并识别。
 const HTTP_TOOL_FAILURE_PREFIXES: &[&str] = &[
     "错误：",
+    "错误[",
     "请求失败:",
     "读取响应体失败:",
     "HTTP 客户端构建失败",
@@ -497,6 +520,26 @@ mod tests {
     }
 
     #[test]
+    fn explicit_error_code_marker_parsed_and_classified() {
+        // 网络工具错误正文首行 `错误[码]：` 显式标记：原样提取、数字码、向后兼容、非法格式拒绝、retryable。
+        let code = |l: &str| parse_legacy_output("http_fetch", l).error_code.map(|s| s.to_string());
+        assert_eq!(code("错误[http_timeout]：请求失败: timed out").as_deref(), Some("http_timeout"));
+        assert_eq!(code("错误[http_network_error]：请求失败: dns").as_deref(), Some("http_network_error"));
+        assert_eq!(code("错误[http_body_read_error]：读取响应体失败: io").as_deref(), Some("http_body_read_error"));
+        assert_eq!(code("错误[http_5xx]：上游 5xx").as_deref(), Some("http_5xx"));
+        assert_eq!(code("错误[timeout]：网络请求超时").as_deref(), Some("timeout"));
+        assert_eq!(code("请求失败: connect error").as_deref(), Some("http_fetch_failed"));
+        assert_eq!(extract_error_code_marker("错误：未知错误"), None);
+        assert_eq!(extract_error_code_marker("错误[Invalid]：…"), None);
+        assert_eq!(extract_error_code_marker("错误[]：…"), None);
+        assert_eq!(extract_error_code_marker("错误[a-b]：…"), None);
+        assert!(tool_error_retryable_heuristic(Some("http_timeout")));
+        assert!(tool_error_retryable_heuristic(Some("timeout")));
+        assert!(!tool_error_retryable_heuristic(Some("http_network_error")));
+        assert!(!tool_error_retryable_heuristic(Some("weather_api_error")));
+    }
+
+    #[test]
     fn parse_ok_when_read_file_body_contains_failure_word() {
         // 文件短于 max_lines 时整段进入正文；内容含「失败」不得把成功读取标成 read_file_failed。
         let raw = r#"{"end_line_shown":3,"file_empty":false,"has_more":false,"kind":"crabmate_tool_output","line_count_returned":3,"path":"github_trending.py","start_line":1,"tool":"read_file","total_lines":null,"truncated_by_max_lines":false,"version":1}
@@ -694,6 +737,13 @@ hi"#;
     fn structured_payload_http_skips_prefix_errors() {
         let raw = "错误：当前 URL 未匹配配置的 http_fetch_allowed_prefixes";
         assert!(structured_payload_for_tool("http_fetch", raw).is_none());
+    }
+
+    #[test]
+    fn structured_payload_http_skips_error_code_marker_prefix() {
+        // 显式错误码标记同样命中失败前缀，不生成结构化载荷。
+        assert!(structured_payload_for_tool("http_fetch", "错误[http_timeout]：请求失败: timed out").is_none());
+        assert!(structured_payload_for_tool("http_request", "错误[http_network_error]：请求失败: dns").is_none());
     }
 
     #[test]
