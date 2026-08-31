@@ -56,8 +56,17 @@ fn build_client(
 /// 格式化 reqwest 错误并附带 `source()` 链（如代理连接失败的具体原因），便于诊断代理/网络问题。
 /// 检测到 **SOCKS 环境代理**（`ALL_PROXY`/`HTTP_PROXY`/`HTTPS_PROXY` 为 `socks5://` 等）时追加可操作提示：
 /// reqwest 0.13 仅支持 HTTP(S) 代理，SOCKS 需 curl 等原生客户端。
+///
+/// 错误正文首行嵌入**显式错误码标记**（`错误[http_timeout]` / `错误[http_network_error]`），
+/// 供下游 [`crate::cm_tools::tool_result::classify_error_code`] 提取精确错误码：
+/// 超时归 `http_timeout`（瞬时、可重试），其余网络/连接失败归 `http_network_error`。
 fn format_reqwest_error(e: &reqwest::Error) -> String {
-    let mut s = format!("请求失败: {}", e);
+    let code = if e.is_timeout() {
+        "http_timeout"
+    } else {
+        "http_network_error"
+    };
+    let mut s = format!("错误[{code}]：请求失败: {}", e);
     let mut chain = String::new();
     let mut src = e.source();
     while let Some(c) = src {
@@ -82,6 +91,48 @@ fn format_redirect_section(hops: &[String]) -> String {
         s.push_str(&format!("  {}. {}\n", i + 1, line));
     }
     s
+}
+
+/// 读取响应体、按 `max_body_bytes` 截断、解码并可选转纯文本；返回正文输出段（含截断/解码说明）。
+/// 读取失败区分超时（`http_timeout`）与其它（`http_body_read_error`），正文首行带显式错误码标记。
+fn read_body_section(
+    resp: reqwest::blocking::Response,
+    ctype: &str,
+    max_body_bytes: usize,
+    text_format: HttpBodyTextFormat,
+) -> Result<String, String> {
+    let bytes = match resp.bytes() {
+        Ok(b) => b,
+        Err(e) => {
+            if e.is_timeout() {
+                return Err(format!("错误[http_timeout]：读取响应体超时: {}", e));
+            }
+            return Err(format!("错误[http_body_read_error]：读取响应体失败: {}", e));
+        }
+    };
+    let truncated = bytes.len() > max_body_bytes;
+    let slice = if truncated {
+        &bytes[..max_body_bytes]
+    } else {
+        &bytes[..]
+    };
+    let (decoded, decode_note) = decode_http_body_text_for_tool(ctype, slice);
+    let (body_preview, decode_note) =
+        apply_text_format_if_requested(ctype, text_format, decoded, decode_note);
+    let mut out = String::new();
+    if truncated {
+        out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
+    } else {
+        out.push('\n');
+    }
+    out.push_str(&decode_note);
+    out.push('\n');
+    out.push_str("正文:\n");
+    out.push_str(&body_preview);
+    if truncated {
+        out.push_str("\n…");
+    }
+    Ok(out)
 }
 
 /// 同步 GET 或 HEAD（阻塞）；HEAD 不读取正文，输出状态码、Content-Type、Content-Length 与重定向链。
@@ -144,30 +195,9 @@ pub fn fetch_with_method(
         return out.trim_end().to_string();
     }
 
-    let bytes = match resp.bytes() {
-        Ok(b) => b,
-        Err(e) => return format!("读取响应体失败: {}", e),
-    };
-    let truncated = bytes.len() > max_body_bytes;
-    let slice = if truncated {
-        &bytes[..max_body_bytes]
-    } else {
-        &bytes[..]
-    };
-    let (decoded, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
-    let (body_preview, decode_note) =
-        apply_text_format_if_requested(&ctype, text_format, decoded, decode_note);
-    if truncated {
-        out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
-    } else {
-        out.push('\n');
-    }
-    out.push_str(&decode_note);
-    out.push('\n');
-    out.push_str("正文:\n");
-    out.push_str(&body_preview);
-    if truncated {
-        out.push_str("\n…");
+    match read_body_section(resp, &ctype, max_body_bytes, text_format) {
+        Ok(section) => out.push_str(&section),
+        Err(e) => return e,
     }
     out
 }
@@ -252,30 +282,9 @@ pub fn request_with_json_body(
     out.push_str(&format!("Content-Type: {}\n", ctype));
     append_content_length_line(&mut out, clen);
 
-    let bytes = match resp.bytes() {
-        Ok(b) => b,
-        Err(e) => return format!("读取响应体失败: {}", e),
-    };
-    let truncated = bytes.len() > max_body_bytes;
-    let slice = if truncated {
-        &bytes[..max_body_bytes]
-    } else {
-        &bytes[..]
-    };
-    let (decoded, decode_note) = decode_http_body_text_for_tool(&ctype, slice);
-    let (body_preview, decode_note) =
-        apply_text_format_if_requested(&ctype, text_format, decoded, decode_note);
-    if truncated {
-        out.push_str(&format!("\n正文已截断至前 {} 字节\n", max_body_bytes));
-    } else {
-        out.push('\n');
-    }
-    out.push_str(&decode_note);
-    out.push('\n');
-    out.push_str("正文:\n");
-    out.push_str(&body_preview);
-    if truncated {
-        out.push_str("\n…");
+    match read_body_section(resp, &ctype, max_body_bytes, text_format) {
+        Ok(section) => out.push_str(&section),
+        Err(e) => return e,
     }
     out
 }
