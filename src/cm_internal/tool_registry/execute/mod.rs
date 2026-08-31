@@ -14,6 +14,7 @@ use crate::cm_internal::tool_approval::{
 };
 use crate::cm_internal::tools;
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
+use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
 use crate::cm_types::{CommandApprovalDecision, ToolCall};
 
 use super::meta::{HandlerId, HandlerLookupTable};
