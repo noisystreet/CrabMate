@@ -20,6 +20,7 @@ pub mod text_encoding;
 pub mod tool_dispatch;
 pub mod tool_naming;
 pub mod tool_result;
+pub mod tool_retry_policy;
 pub mod tool_runtime;
 pub mod tools;
 pub mod workspace;
