@@ -5,6 +5,11 @@ use super::policy::{
     parallel_tool_wall_timeout_secs, sync_default_runs_inline,
     tool_calls_allow_parallel_sync_batch, web_search_outer_wall_secs,
 };
+use super::{
+    DispatchToolCall, DispatchToolMemory, DispatchToolObs, DispatchToolParams,
+    DispatchToolPolicy, DispatchToolWorkspace, dispatch_tool,
+};
+use super::runtime::ToolRuntime;
 
 fn tc(name: &str) -> ToolCall {
     ToolCall {
@@ -151,5 +156,177 @@ fn parallel_tool_wall_timeout_secs_smoke() {
     assert!(
         web_search_outer_wall_secs(&cfg) > cfg.web_search.web_search_timeout_secs.max(1),
         "outer wall must exceed inner search timeout for teardown headroom"
+    );
+}
+
+#[tokio::test]
+async fn dispatch_tool_single_call_when_retry_disabled() {
+    // 默认配置（tool_retry_enabled=false）：不进重试循环，单次成功返回时间文本。
+    let cfg = std::sync::Arc::new(test_cfg());
+    let mut workspace_changed = false;
+    let runtime = ToolRuntime {
+        workspace_changed: &mut workspace_changed,
+        ctx: None,
+    };
+    let tc = ToolCall {
+        id: "call_t".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "get_current_time".into(),
+            arguments: "{}".into(),
+        },
+    };
+    let lookup = default_lookup();
+    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let (out, payload) = dispatch_tool(DispatchToolParams {
+        runtime,
+        call: DispatchToolCall {
+            name: "get_current_time",
+            args: "{}",
+            tc: &tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: std::path::Path::new("."),
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: None,
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    assert!(out.contains("当前时间"), "unexpected: {out}");
+    assert!(payload.is_none());
+}
+
+#[tokio::test]
+async fn dispatch_tool_retry_enabled_success_still_single_call() {
+    // 开启重试但工具成功：不触发重试，结果与关闭时一致。
+    let mut cfg = test_cfg();
+    cfg.tool_registry_policy.tool_registry_tool_retry_enabled = true;
+    let cfg = std::sync::Arc::new(cfg);
+    let mut workspace_changed = false;
+    let runtime = ToolRuntime {
+        workspace_changed: &mut workspace_changed,
+        ctx: None,
+    };
+    let tc = ToolCall {
+        id: "call_t".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "get_current_time".into(),
+            arguments: "{}".into(),
+        },
+    };
+    let lookup = default_lookup();
+    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let (out, _) = dispatch_tool(DispatchToolParams {
+        runtime,
+        call: DispatchToolCall {
+            name: "get_current_time",
+            args: "{}",
+            tc: &tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: std::path::Path::new("."),
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: None,
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    assert!(out.contains("当前时间"), "unexpected: {out}");
+}
+
+#[tokio::test]
+async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
+    // 开启重试但 http_fetch URL 未匹配前缀（需审批）：资格门排除，单次调用返回前缀错误（无审批重提示风险）。
+    let mut cfg = test_cfg();
+    cfg.tool_registry_policy.tool_registry_tool_retry_enabled = true;
+    cfg.http_fetch.http_fetch_allowed_prefixes =
+        vec!["https://doc.rust-lang.org/".to_string()];
+    let cfg = std::sync::Arc::new(cfg);
+    let mut workspace_changed = false;
+    let runtime = ToolRuntime {
+        workspace_changed: &mut workspace_changed,
+        ctx: None,
+    };
+    let tc = ToolCall {
+        id: "call_h".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "http_fetch".into(),
+            arguments: r#"{"url":"https://example.com/x"}"#.into(),
+        },
+    };
+    let lookup = default_lookup();
+    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let (out, _) = dispatch_tool(DispatchToolParams {
+        runtime,
+        call: DispatchToolCall {
+            name: "http_fetch",
+            args: r#"{"url":"https://example.com/x"}"#,
+            tc: &tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: std::path::Path::new("."),
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: None,
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    assert!(
+        out.contains("http_fetch_allowed_prefixes"),
+        "unexpected: {out}"
     );
 }

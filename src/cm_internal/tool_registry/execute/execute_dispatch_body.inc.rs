@@ -194,43 +194,128 @@ async fn dispatch_sync_default_tool(
     (result, None)
 }
 
-pub async fn dispatch_tool(p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+/// 工具分发入口：默认单次执行；开启 `[tool_registry] tool_retry_*` 且资格门通过时，
+/// 对瞬时类失败（`error_code ∈ tool_retry_error_codes`）做**透明重试**——失败中间态不写
+/// 模型上下文，仅最终结果返回；重试间隔按 `backoff_for_retry` 指数退避，用户取消立即停止。
+pub async fn dispatch_tool(mut p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
+    let spec = ToolRetrySpec::from_config(p.policy.cfg.as_ref());
+    if !spec.tool_retry_eligible(p.policy.cfg.as_ref(), p.call.name, p.call.args) {
+        return dispatch_tool_inner(&mut p).await;
+    }
+    let max_attempts = spec.max_attempts;
+    let mut attempt: u64 = 1;
+    loop {
+        let (out, payload) = dispatch_tool_inner(&mut p).await;
+        let error_code =
+            crate::cm_tools::tool_result::parse_legacy_output(p.call.name, &out).error_code;
+        if !spec.should_retry(error_code.as_deref(), attempt) {
+            return (out, payload);
+        }
+        // 用户取消：停止重试，返回最后一次结果。
+        if p
+            .obs
+            .cancel
+            .as_ref()
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+        {
+            return (out, payload);
+        }
+        log::info!(
+            target: "crabmate",
+            "tool_retry tool={} attempt={}/{} error_code={} args_preview={}",
+            p.call.name,
+            attempt,
+            max_attempts,
+            error_code.as_deref().unwrap_or("-"),
+            crate::cm_tools::redact::tool_arguments_preview_for_log(p.call.args)
+        );
+        let backoff = spec.backoff_for_retry(attempt);
+        if backoff > 0 {
+            let cancel = p.obs.cancel.clone();
+            tokio::select! {
+                _ = tokio::time::sleep(std::time::Duration::from_millis(backoff)) => {}
+                _ = wait_for_tool_cancel(cancel.as_ref()) => {
+                    // 退避期间用户取消：立即停止，返回最后一次结果。
+                    return (out, payload);
+                }
+            }
+        }
+        attempt += 1;
+    }
+}
+
+/// 等待用户取消标志置位（供重试退避期间响应取消）；`None` 表示无取消源，永久等待。
+async fn wait_for_tool_cancel(
+    cancel: Option<&std::sync::Arc<std::sync::atomic::AtomicBool>>,
+) {
+    let Some(c) = cancel else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    loop {
+        if c.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+/// 单次工具执行（含审批、沙盒与 handler 分发）；供 [`dispatch_tool`] 重试循环按可变借用复用。
+async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<serde_json::Value>) {
     let DispatchToolParams {
         runtime,
-        call:
-            DispatchToolCall {
-                name,
-                args,
-                tc,
-            },
-        workspace:
-            DispatchToolWorkspace {
-                effective_working_dir,
-                workspace_is_set,
-                workspace_changelist,
-            },
-        policy:
-            DispatchToolPolicy {
-                cfg,
-                turn_allow,
-                handler_lookup,
-                sync_default_sandbox_backend,
-            },
-        obs:
-            DispatchToolObs {
-                sse_out_tx,
-                sse_control_mirror,
-                cancel,
-                tool_jobs,
-            },
-        memory:
-            DispatchToolMemory {
-                read_file_turn_cache,
-                long_term_memory,
-                long_term_memory_scope_id,
-                mcp_turn,
-            },
+        call,
+        workspace,
+        policy,
+        obs,
+        memory,
     } = p;
+    let DispatchToolCall { name, args, tc } = call;
+    let DispatchToolWorkspace {
+        effective_working_dir,
+        workspace_is_set,
+        workspace_changelist,
+    } = workspace;
+    let DispatchToolPolicy {
+        cfg,
+        turn_allow,
+        handler_lookup,
+        sync_default_sandbox_backend,
+    } = policy;
+    let DispatchToolObs {
+        sse_out_tx,
+        sse_control_mirror,
+        cancel,
+        tool_jobs,
+    } = obs;
+    let DispatchToolMemory {
+        read_file_turn_cache,
+        long_term_memory,
+        long_term_memory_scope_id,
+        mcp_turn,
+    } = memory;
+    // 可变解构后的字段为 `&mut T` / `&mut &T`，经类型注解自动解引用/克隆为原类型，保持主体逻辑不变。
+    let name: &str = name;
+    let args: &str = args;
+    let tc: &ToolCall = tc;
+    let effective_working_dir: &Path = effective_working_dir;
+    let workspace_is_set = *workspace_is_set;
+    let workspace_changelist = workspace_changelist.clone();
+    let cfg: &Arc<AgentConfig> = cfg;
+    let turn_allow: Option<&HashSet<String>> = *turn_allow;
+    let sse_out_tx = *sse_out_tx;
+    let sse_control_mirror = *sse_control_mirror;
+    let cancel = cancel.clone();
+    let tool_jobs = tool_jobs.clone();
+    let read_file_turn_cache = read_file_turn_cache.clone();
+    let long_term_memory = long_term_memory.clone();
+    let long_term_memory_scope_id = long_term_memory_scope_id.clone();
+    let mcp_turn = *mcp_turn;
+    // `&mut bool` 字段在可变借用下可移动重借用为 owned `ToolRuntime`。
+    let runtime = ToolRuntime {
+        workspace_changed: runtime.workspace_changed,
+        ctx: runtime.ctx,
+    };
     let env = ToolExecEnv {
         cfg,
         sandbox_backend: sync_default_sandbox_backend,
