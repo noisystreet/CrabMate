@@ -376,6 +376,11 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
         tool_registry_background_job_ttl_secs: tr.tool_registry_background_job_ttl_secs,
         tool_registry_background_job_result_grace_secs: tr.tool_registry_background_job_result_grace_secs,
         tool_registry_background_job_max_entries: tr.tool_registry_background_job_max_entries,
+        tool_registry_tool_retry_enabled: tr.tool_registry_tool_retry_enabled,
+        tool_registry_tool_retry_max_attempts: tr.tool_registry_tool_retry_max_attempts,
+        tool_registry_tool_retry_backoff_ms: tr.tool_registry_tool_retry_backoff_ms,
+        tool_registry_tool_retry_error_codes: tr.tool_registry_tool_retry_error_codes.clone(),
+        tool_registry_tool_retry_denied_tools: tr.tool_registry_tool_retry_denied_tools.clone(),
     }
 }
 

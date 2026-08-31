@@ -292,6 +292,16 @@ pub struct ToolRegistryPolicyConfig {
     pub tool_registry_background_job_result_grace_secs: u64,
     /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
     pub tool_registry_background_job_max_entries: u64,
+    /// 工具失败透明重试总开关；默认 `false`（仅瞬时失败且只读/免审批工具）。
+    pub tool_registry_tool_retry_enabled: bool,
+    /// 含首次的总尝试次数上限；默认 `2`（`1`=不重试）。
+    pub tool_registry_tool_retry_max_attempts: u64,
+    /// 基础退避毫秒；默认 `250`，第 n 次 = min(backoff * 2^(n-1), 5000)。
+    pub tool_registry_tool_retry_backoff_ms: u64,
+    /// 允许自动重试的错误码集合；默认 `timeout` / `http_timeout` / `rate_limited` / `http_network_error`。
+    pub tool_registry_tool_retry_error_codes: Arc<HashSet<String>>,
+    /// 额外排除的工具名（精确匹配；默认已按只读/免审批门排除写类与交互审批类）。
+    pub tool_registry_tool_retry_denied_tools: Arc<HashSet<String>>,
 }
 
 #[derive(Debug, Clone)]

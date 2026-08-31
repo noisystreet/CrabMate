@@ -315,6 +315,11 @@ struct ToolRegistryDerived {
     tool_registry_background_job_ttl_secs: u64,
     tool_registry_background_job_result_grace_secs: u64,
     tool_registry_background_job_max_entries: u64,
+    tool_registry_tool_retry_enabled: bool,
+    tool_registry_tool_retry_max_attempts: u64,
+    tool_registry_tool_retry_backoff_ms: u64,
+    tool_registry_tool_retry_error_codes: Arc<HashSet<String>>,
+    tool_registry_tool_retry_denied_tools: Arc<HashSet<String>>,
 }
 
 fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
@@ -431,7 +436,50 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
             .tool_registry_background_job_max_entries
             .unwrap_or(128)
             .clamp(1, 10_000),
+        // 工具失败透明重试（默认关闭；默认码集为瞬时可重试类，validate 拒绝越界，此处仅兜底）。
+        tool_registry_tool_retry_enabled: tr
+            .tool_registry_tool_retry_enabled
+            .unwrap_or(false),
+        tool_registry_tool_retry_max_attempts: tr
+            .tool_registry_tool_retry_max_attempts
+            .unwrap_or(2)
+            .clamp(1, 5),
+        tool_registry_tool_retry_backoff_ms: tr
+            .tool_registry_tool_retry_backoff_ms
+            .unwrap_or(250)
+            .clamp(0, 10_000),
+        tool_registry_tool_retry_error_codes: Arc::new(
+            tr.tool_registry_tool_retry_error_codes
+                .clone()
+                .unwrap_or_else(default_tool_retry_error_codes)
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>(),
+        ),
+        tool_registry_tool_retry_denied_tools: Arc::new(
+            tr.tool_registry_tool_retry_denied_tools
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>(),
+        ),
     }
+}
+
+/// 工具失败透明重试的默认可重试错误码（瞬时可重试类；用户可用 `tool_retry_error_codes` 覆盖）。
+fn default_tool_retry_error_codes() -> Vec<String> {
+    [
+        "timeout",
+        "http_timeout",
+        "rate_limited",
+        "http_network_error",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 struct IntentDerived {
@@ -841,58 +889,4 @@ include!("finalize_parts/finalize_tail.rs");
 include!("finalize_parts/finalize_build.rs");
 
 #[cfg(test)]
-mod background_job_defaults_tests {
-    use super::*;
-
-    #[test]
-    fn background_job_fields_default_and_clamp() {
-        let tr = derive_tool_registry_fields(&ConfigBuilder::default());
-        assert!(!tr.tool_registry_background_jobs_enabled);
-        assert_eq!(tr.tool_registry_background_job_max_concurrent, 4);
-        assert_eq!(tr.tool_registry_background_job_max_queued, 32);
-        assert_eq!(tr.tool_registry_background_job_ttl_secs, 86_400);
-        assert_eq!(tr.tool_registry_background_job_result_grace_secs, 300);
-        assert_eq!(tr.tool_registry_background_job_max_entries, 128);
-
-        let mut b = ConfigBuilder::default();
-        b.tool_registry_policy.tool_registry_background_jobs_enabled = Some(true);
-        b.tool_registry_policy.tool_registry_background_job_max_concurrent = Some(999);
-        b.tool_registry_policy.tool_registry_background_job_ttl_secs = Some(1_000_000);
-        let tr = derive_tool_registry_fields(&b);
-        assert!(tr.tool_registry_background_jobs_enabled);
-        assert_eq!(tr.tool_registry_background_job_max_concurrent, 256);
-        assert_eq!(tr.tool_registry_background_job_ttl_secs, 604_800);
-    }
-
-    #[test]
-    fn background_job_keys_parse_from_toml_and_finalize() {
-        // 端到端：TOML 键名（serde 字段）→ apply_tool_registry → derive，防止字段名漂移静默落默认值。
-        let sec: crate::cm_config::source::ToolRegistrySection = toml::from_str(
-            r#"
-background_jobs_enabled = true
-background_job_max_concurrent = 6
-background_job_max_queued = 64
-background_job_ttl_secs = 7200
-background_job_result_grace_secs = 120
-background_job_max_entries = 256
-"#,
-        )
-        .expect("parse [tool_registry] section");
-        assert_eq!(sec.background_jobs_enabled, Some(true));
-        assert_eq!(sec.background_job_max_concurrent, Some(6));
-        assert_eq!(sec.background_job_max_queued, Some(64));
-        assert_eq!(sec.background_job_ttl_secs, Some(7200));
-        assert_eq!(sec.background_job_result_grace_secs, Some(120));
-        assert_eq!(sec.background_job_max_entries, Some(256));
-
-        let mut b = ConfigBuilder::default();
-        b.apply_tool_registry(sec);
-        let tr = derive_tool_registry_fields(&b);
-        assert!(tr.tool_registry_background_jobs_enabled);
-        assert_eq!(tr.tool_registry_background_job_max_concurrent, 6);
-        assert_eq!(tr.tool_registry_background_job_max_queued, 64);
-        assert_eq!(tr.tool_registry_background_job_ttl_secs, 7200);
-        assert_eq!(tr.tool_registry_background_job_result_grace_secs, 120);
-        assert_eq!(tr.tool_registry_background_job_max_entries, 256);
-    }
-}
+include!("finalize_parts/finalize_tests.rs");
