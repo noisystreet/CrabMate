@@ -11,7 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (none yet)
+- **Transparent tool-failure retry** (`[tool_registry] tool_retry_*`, **off by default**): readonly, approval-free tools retry transient failures (`timeout` / `http_timeout` / `rate_limited` / `http_network_error`) at the dispatch layer with exponential backoff (`min(backoff*2^(n-1), 5000)`) and user-cancel awareness. Intermediate failures are **not** written to model context; only the final result is returned. `codebase_semantic_search` is hard-excluded (its `rebuild_index` writes workspace SQLite); `http_fetch` URLs that would require approval and external-path `read_dir` calls are skipped to avoid re-prompting.
 
 ### Changed
 
@@ -19,7 +19,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Fixed
 
-- (none yet)
+- **Explicit network-tool error codes**: `http_fetch` / `http_request` failures now carry first-line markers (`错误[code]：`) classified precisely — `http_timeout` (retryable), `http_network_error`, `http_body_read_error` — and `get_weather` / `web_search` map API failures to `weather_api_error` / `web_search_api_error`, instead of the coarse `*_failed` heuristic.
 
 ## [0.5.0] - 2026-08-24
 
