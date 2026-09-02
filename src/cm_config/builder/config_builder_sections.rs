@@ -290,6 +290,7 @@ pub(crate) struct ConfigBuilderToolRegistryPolicy {
     pub(crate) tool_registry_background_job_ttl_secs: Option<u64>,
     pub(crate) tool_registry_background_job_result_grace_secs: Option<u64>,
     pub(crate) tool_registry_background_job_max_entries: Option<u64>,
+    pub(crate) tool_registry_background_job_output_buffer_bytes: Option<u64>,
     pub(crate) tool_registry_tool_retry_enabled: Option<bool>,
     pub(crate) tool_registry_tool_retry_max_attempts: Option<u64>,
     pub(crate) tool_registry_tool_retry_backoff_ms: Option<u64>,

@@ -88,6 +88,10 @@ pub(super) struct ToolRegistrySection {
     /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
     #[serde(default)]
     pub(super) background_job_max_entries: Option<u64>,
+    /// 每 job 环形输出缓冲字节上限（超限丢最旧；终态裁剪为各流尾部 ≤ `command_max_output_len`）。
+    /// 默认 `262144`（256 KiB）。契约见 `docs/design/background_tool_jobs_output_streaming_contract.md` §4。
+    #[serde(default)]
+    pub(super) background_job_output_buffer_bytes: Option<u64>,
     /// 工具失败透明重试总开关（默认 `false`；仅瞬时失败且只读/免审批工具，见 `tool_retry_policy` 计划）。
     #[serde(default)]
     pub(super) tool_retry_enabled: Option<bool>,

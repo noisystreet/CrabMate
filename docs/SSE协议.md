@@ -91,7 +91,7 @@
 | `tool_job_poll_url` | string? | 同上，相对路径 `GET /tools/jobs/{tool_job_id}`（轮询端点） |
 | `tool_job_status` | string? | 同上，发起时恒为 **`queued`**（尚未运行） |
 
-**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键未实现**（Phase 2 可选；旧客户端可忽略未知顶层键）。
+**后台任务软字段说明**：发起 `async:true` 时 `output` 仅为发起确认文案（**不是**执行结果），本帧**省略** `exit_code` / `stdout` / `stderr` / `error_code`；`tool_job_*` 字段**不注入**模型上下文（仅 Web/TUI 展示）。任务状态与终态输出通过轮询 **`GET /tools/jobs/{id}`** 获取，执行中输出可经 **`GET /tools/jobs/{id}/output`** 增量拉取（见 `docs/命令行契约.md`）。**`tool_job_finished` 顶层 SSE 键未实现**（Phase 2 可选；旧客户端可忽略未知顶层键）。
 
 ### `tool_output_chunk` 体内字段
 

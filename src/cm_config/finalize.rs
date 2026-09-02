@@ -315,6 +315,7 @@ struct ToolRegistryDerived {
     tool_registry_background_job_ttl_secs: u64,
     tool_registry_background_job_result_grace_secs: u64,
     tool_registry_background_job_max_entries: u64,
+    tool_registry_background_job_output_buffer_bytes: u64,
     tool_registry_tool_retry_enabled: bool,
     tool_registry_tool_retry_max_attempts: u64,
     tool_registry_tool_retry_backoff_ms: u64,
@@ -436,6 +437,10 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
             .tool_registry_background_job_max_entries
             .unwrap_or(128)
             .clamp(1, 10_000),
+        tool_registry_background_job_output_buffer_bytes: tr
+            .tool_registry_background_job_output_buffer_bytes
+            .unwrap_or(262_144)
+            .clamp(4096, 16_777_216),
         // 工具失败透明重试（默认关闭；默认码集为瞬时可重试类，validate 拒绝越界，此处仅兜底）。
         tool_registry_tool_retry_enabled: tr
             .tool_registry_tool_retry_enabled

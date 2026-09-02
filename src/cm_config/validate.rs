@@ -581,7 +581,7 @@ fn validate_tool_retry_ranges(b: &ConfigBuilder) -> Result<(), String> {
 /// 后台工具任务数值范围（与 `finalize.rs` 的 clamp 一致，越界直接报错而非静默钳制）。
 fn validate_background_job_ranges(b: &ConfigBuilder) -> Result<(), String> {
     let p = &b.tool_registry_policy;
-    let entries: [(&str, Option<u64>, std::ops::RangeInclusive<u64>); 5] = [
+    let entries: [(&str, Option<u64>, std::ops::RangeInclusive<u64>); 6] = [
         (
             "background_job_max_concurrent",
             p.tool_registry_background_job_max_concurrent,
@@ -606,6 +606,11 @@ fn validate_background_job_ranges(b: &ConfigBuilder) -> Result<(), String> {
             "background_job_max_entries",
             p.tool_registry_background_job_max_entries,
             1..=10_000,
+        ),
+        (
+            "background_job_output_buffer_bytes",
+            p.tool_registry_background_job_output_buffer_bytes,
+            4096..=16_777_216,
         ),
     ];
     for (key, value, range) in entries {

@@ -282,6 +282,33 @@ fn openapi_components_schemas_tool_jobs() -> Value {
                 "tool_job_id": { "type": "string" },
                 "status": { "type": "string" }
             }
+        },
+        "ToolJobOutputResponseBody": {
+            "type": "object",
+            "required": ["tool_job_id", "status", "cursor", "truncated", "eof", "items"],
+            "properties": {
+                "tool_job_id": { "type": "string" },
+                "status": {
+                    "type": "string",
+                    "enum": ["queued", "running", "succeeded", "failed", "cancelled", "timed_out"]
+                },
+                "cursor": { "type": "integer", "format": "int64" },
+                "truncated": { "type": "boolean" },
+                "eof": { "type": "boolean" },
+                "items": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/ToolJobOutputItem" }
+                }
+            }
+        },
+        "ToolJobOutputItem": {
+            "type": "object",
+            "required": ["seq", "stream", "text"],
+            "properties": {
+                "seq": { "type": "integer", "format": "int64" },
+                "stream": { "type": "string", "enum": ["stdout", "stderr"] },
+                "text": { "type": "string" }
+            }
         }
     })
 }

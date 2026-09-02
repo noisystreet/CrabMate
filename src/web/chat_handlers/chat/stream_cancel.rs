@@ -64,6 +64,7 @@ mod tests {
             ttl: Duration::from_secs(3600),
             grace: Duration::from_secs(60),
             max_entries: 16,
+            output_buffer_bytes: 262_144,
         }
     }
 
