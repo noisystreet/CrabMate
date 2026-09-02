@@ -10,21 +10,50 @@
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::cm_tools::subprocess_session::{
-    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, wait_child_session,
+    SessionChunkSink, SessionStopKind, SessionStream, SubprocessWaitCtl,
+    prepare_piped_process_group, take_utf8_text, wait_child_session,
 };
 
-use super::registry::{RegisterError, ToolJobRegistry};
+use super::registry::{OutputPollOutcome, RegisterError, ToolJobRegistry};
 use super::types::{JobOutcome, JobStatus};
 
 pub use super::types::JobSpawn;
 
+/// 实时输出文本回调（已由 [`chunk_sink_from_output`] 完成 UTF-8 组装；每调用一条完整文本）。
+pub type JobOutputSink = Arc<dyn Fn(SessionStream, &str) + Send + Sync>;
+
+/// 把文本回调包装成 `subprocess_session` 的字节级 `chunk_sink`：
+/// 跨块保持 UTF-8 不完整序列（`pending` 缓冲），流结束（空字节标记）时 flush 尾部非法字节。
+fn chunk_sink_from_output(output: JobOutputSink) -> SessionChunkSink {
+    let stdout_pending = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let stderr_pending = Arc::new(Mutex::new(Vec::<u8>::new()));
+    Arc::new(move |stream, bytes| {
+        let (pending, out) = match stream {
+            SessionStream::Stdout => (Arc::clone(&stdout_pending), Arc::clone(&output)),
+            SessionStream::Stderr => (Arc::clone(&stderr_pending), Arc::clone(&output)),
+        };
+        let mut buf = pending.lock().unwrap_or_else(|e| e.into_inner());
+        let text = take_utf8_text(&mut buf, bytes, bytes.is_empty());
+        drop(buf);
+        if !text.is_empty() {
+            out(stream, &text);
+        }
+        true
+    })
+}
+
 /// 同步执行（阻塞调用线程）。超时/取消/正常退出按会话结果映射为 [`JobOutcome`]。
 /// `cancel` 为注册表持有的取消信号（与 `registry.cancel` 共享同一 `Arc`）。
-pub fn run_job_blocking(spawn: JobSpawn, cancel: Arc<AtomicBool>) -> JobOutcome {
+/// `output` 为实时输出回调（`Some` 时 `uncapped_live=true`，输出不被 `max_output_len` 截断）。
+pub fn run_job_blocking(
+    spawn: JobSpawn,
+    cancel: Arc<AtomicBool>,
+    output: Option<JobOutputSink>,
+) -> JobOutcome {
     let mut cmd = spawn.to_command();
     prepare_piped_process_group(&mut cmd);
     let child = match cmd.spawn() {
@@ -35,11 +64,13 @@ pub fn run_job_blocking(spawn: JobSpawn, cancel: Arc<AtomicBool>) -> JobOutcome 
             return out;
         }
     };
+    let chunk_sink = output.as_ref().map(|sink| chunk_sink_from_output(Arc::clone(sink)));
     let ctl = SubprocessWaitCtl {
         wall: Some(spawn.wall),
         cancel: Some(cancel),
         extra_stop: None,
-        chunk_sink: None,
+        chunk_sink,
+        uncapped_live: output.is_some(),
     };
     let session = match wait_child_session(child, &ctl, spawn.max_output_len) {
         Ok(s) => s,
@@ -88,9 +119,16 @@ pub fn launch_job(
         let cancel = registry
             .cancel_flag(&job_id)
             .unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
+        let output: JobOutputSink = {
+            let reg = Arc::clone(&registry);
+            let id = job_id.clone();
+            Arc::new(move |stream, text| {
+                let _ = reg.push_output(&id, stream, text);
+            })
+        };
         let outcome = tokio::task::spawn_blocking(move || {
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_job_blocking(spawn, cancel)
+                run_job_blocking(spawn, cancel, Some(output))
             }))
             .unwrap_or_else(|_| JobOutcome::failed("internal"))
         })
@@ -180,7 +218,19 @@ mod tests {
         run_job_blocking(
             JobSpawn::from_command(cmd, wall, 4096),
             Arc::new(AtomicBool::new(false)),
+            None,
         )
+    }
+
+    fn test_limits() -> crate::cm_internal::tool_jobs::types::JobLimits {
+        crate::cm_internal::tool_jobs::types::JobLimits {
+            max_concurrent: 4,
+            max_queued: 32,
+            ttl: Duration::from_secs(3600),
+            grace: Duration::from_secs(60),
+            max_entries: 128,
+            output_buffer_bytes: 262_144,
+        }
     }
 
     #[test]
@@ -230,6 +280,7 @@ mod tests {
             run_job_blocking(
                 JobSpawn::from_command(&mut cmd, Duration::from_secs(30), 1024),
                 cancel_th,
+                None,
             )
         });
         std::thread::sleep(std::time::Duration::from_millis(150));
@@ -241,15 +292,7 @@ mod tests {
 
     #[tokio::test]
     async fn launch_job_completes_registry_and_writes_workspace_changed() {
-        let reg = Arc::new(ToolJobRegistry::new(
-            crate::cm_internal::tool_jobs::types::JobLimits {
-                max_concurrent: 4,
-                max_queued: 32,
-                ttl: Duration::from_secs(3600),
-                grace: Duration::from_secs(60),
-                max_entries: 128,
-            },
-        ));
+        let reg = Arc::new(ToolJobRegistry::new(test_limits()));
         let id = enqueue_and_launch(
             Arc::clone(&reg),
             std::path::PathBuf::from("/ws"),
@@ -285,15 +328,7 @@ mod tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn launch_job_cancel_via_registry_stops_process() {
-        let reg = Arc::new(ToolJobRegistry::new(
-            crate::cm_internal::tool_jobs::types::JobLimits {
-                max_concurrent: 4,
-                max_queued: 32,
-                ttl: Duration::from_secs(3600),
-                grace: Duration::from_secs(60),
-                max_entries: 128,
-            },
-        ));
+        let reg = Arc::new(ToolJobRegistry::new(test_limits()));
         let id = enqueue_and_launch(
             Arc::clone(&reg),
             std::path::PathBuf::from("/ws"),
@@ -332,6 +367,7 @@ mod tests {
                 ttl: Duration::from_secs(3600),
                 grace: Duration::from_secs(60),
                 max_entries: 128,
+                output_buffer_bytes: 262_144,
             },
         ));
         let spawn = |program: &str, secs: u64| JobSpawn {
@@ -415,5 +451,84 @@ mod tests {
             r#"{"command":"make"}"#,
             &failed
         ));
+    }
+
+    /// 后台任务输出全程可达环形缓冲（`uncapped_live`）：即使超过 `max_output_len`，
+    /// `poll_output` 也能增量取到全部输出并以 `eof=true` 收尾；终态快照仍按 cap 前缀截断。
+    ///
+    /// 输出先全部落盘、再 `sleep 0.4s` 保持 running：给轮询留出"运行期抓全量"的窗口，
+    /// 避免 `complete()` 终态裁剪（各流尾部 ≤ max_output_len）先行丢早段事件。
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn enqueue_job_output_streams_beyond_capture_cap_and_ends_eof() {
+        let reg = Arc::new(ToolJobRegistry::new(test_limits()));
+        let id = enqueue_and_launch(
+            Arc::clone(&reg),
+            PathBuf::from("/ws"),
+            None,
+            JobSpawn {
+                program: "bash".to_string(),
+                args: vec![
+                    "-c".to_string(),
+                    "awk 'BEGIN{for(i=0;i<6000;i++)printf \"a\"; print \" tail-line\"}' ; sleep 0.4"
+                        .to_string(),
+                ],
+                cwd: PathBuf::from("/"),
+                extra_env: Vec::new(),
+                wall: Duration::from_secs(20),
+                max_output_len: 2048,
+            },
+            r#"{"command":"bash"}"#.to_string(),
+        )
+        .expect("enqueue");
+        let mut cursor: Option<u64> = None;
+        let mut joined = String::new();
+        let mut saw_eof = false;
+        let mut saw_terminal_status = false;
+        for _ in 0..4000 {
+            match reg.poll_output(&id, cursor, std::time::SystemTime::now()) {
+                OutputPollOutcome::Found {
+                    status,
+                    log_read,
+                    eof,
+                    ..
+                } => {
+                    saw_terminal_status = status.is_terminal();
+                    for it in &log_read.items {
+                        joined.push_str(&it.text);
+                    }
+                    cursor = Some(log_read.next_cursor);
+                    saw_eof = eof;
+                    if eof {
+                        break;
+                    }
+                }
+                _ => panic!("job 输出缓冲缺失（理论不可达）"),
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert!(joined.contains("tail-line"), "joined: {joined:?}");
+        assert!(
+            joined.len() >= 6000,
+            "全量输出应可达环形缓冲（> max_output_len），len={}",
+            joined.len()
+        );
+        assert!(saw_terminal_status, "eof 前应看到终态");
+        assert!(saw_eof, "轮询应以 eof=true 收尾");
+        let rec = reg.get(&id).expect("rec");
+        assert_eq!(rec.status, JobStatus::Succeeded);
+        let kept = &rec.outcome.as_ref().expect("out").stdout;
+        assert!(
+            kept.len() <= 2048,
+            "终态快照仍按 max_output_len 前缀截断，len={}",
+            kept.len()
+        );
+        // 终态裁剪：poll 之后缓冲仍保留最终尾部可读。
+        let tail = reg.poll_output(&id, None, std::time::SystemTime::now());
+        let OutputPollOutcome::Found { log_read, .. } = tail else {
+            panic!("终态后应仍可取输出");
+        };
+        let tail_text: String = log_read.items.iter().map(|e| e.text.as_str()).collect();
+        assert!(tail_text.contains("tail-line"), "终态尾部应可读: {tail_text:?}");
     }
 }

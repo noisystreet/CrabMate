@@ -144,6 +144,10 @@ pub struct SubprocessWaitCtl {
     pub extra_stop: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     /// 已捕获字节的增量（不超过 `max_capture_bytes`）；宿主可转成 SSE `tool_output_chunk`。
     pub chunk_sink: Option<SessionChunkSink>,
+    /// 实时流是否**不被 `max_capture_bytes` 截断**：`true` 时无论 kept 截断缓冲是否已满，
+    /// 读到的字节都进 live 队列（供后台任务等"全量输出流"；kept 快照仍前缀截断）。
+    /// 默认 `false` = 既有语义：满 cap 后不再投递增量。
+    pub uncapped_live: bool,
 }
 
 /// stdout / stderr 管道增量。
@@ -236,8 +240,20 @@ pub fn wait_child_session(
         .chunk_sink
         .is_some()
         .then(|| Arc::new(Mutex::new(VecDeque::new())));
-    let out_buf = spawn_drain(stdout, cap, SessionStream::Stdout, live.clone());
-    let err_buf = spawn_drain(stderr, cap, SessionStream::Stderr, live.clone());
+    let out_buf = spawn_drain(
+        stdout,
+        cap,
+        SessionStream::Stdout,
+        live.clone(),
+        ctl.uncapped_live,
+    );
+    let err_buf = spawn_drain(
+        stderr,
+        cap,
+        SessionStream::Stderr,
+        live.clone(),
+        ctl.uncapped_live,
+    );
     let deadline = ctl.wall.map(|d| Instant::now() + d);
 
     let mut killed = false;
@@ -338,6 +354,7 @@ fn spawn_drain<R: Read + Send + 'static>(
     max_bytes: usize,
     stream: SessionStream,
     live: Option<LiveChunks>,
+    uncapped_live: bool,
 ) -> DrainBuf {
     let kept = Arc::new(Mutex::new(Vec::new()));
     let kept_th = Arc::clone(&kept);
@@ -348,7 +365,14 @@ fn spawn_drain<R: Read + Send + 'static>(
             loop {
                 match r.read(&mut chunk) {
                     Ok(0) => break,
-                    Ok(n) => append_captured(&kept_th, &chunk[..n], max_bytes, stream, live.as_ref()),
+                    Ok(n) => append_captured(
+                        &kept_th,
+                        &chunk[..n],
+                        max_bytes,
+                        stream,
+                        live.as_ref(),
+                        uncapped_live,
+                    ),
                     Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
                     Err(_) => break,
                 }
@@ -365,20 +389,33 @@ fn append_captured(
     max_bytes: usize,
     stream: SessionStream,
     live: Option<&LiveChunks>,
+    uncapped_live: bool,
 ) {
-    let added = {
+    // kept 快照保持既有**前缀截断**（max_bytes 只约束终态快照）；live 投递按 uncapped 分流：
+    // - uncapped_live=false：仅把"进入 kept 的增量"投递（满 cap 后不再投递，既有语义）；
+    // - uncapped_live=true：实时流**全量**投递（kept 满 cap 也照常投递，供后台任务）。
+    let to_live: Vec<u8> = {
         let Ok(mut g) = kept.lock() else {
             return;
         };
-        if g.len() >= max_bytes {
-            return;
+        if uncapped_live {
+            if g.len() < max_bytes {
+                let room = max_bytes - g.len();
+                let n = chunk.len().min(room);
+                g.extend_from_slice(&chunk[..n]);
+            }
+            chunk.to_vec()
+        } else {
+            if g.len() >= max_bytes {
+                return;
+            }
+            let room = max_bytes - g.len();
+            let n = chunk.len().min(room);
+            g.extend_from_slice(&chunk[..n]);
+            g[g.len() - n..].to_vec()
         }
-        let room = max_bytes - g.len();
-        let n = chunk.len().min(room);
-        g.extend_from_slice(&chunk[..n]);
-        g[g.len() - n..].to_vec()
     };
-    if added.is_empty() {
+    if to_live.is_empty() {
         return;
     }
     let Some(live) = live else {
@@ -387,7 +424,7 @@ fn append_captured(
     if let Ok(mut q) = live.lock() {
         q.push_back(DrainEvent {
             stream,
-            bytes: added,
+            bytes: to_live,
         });
     }
 }

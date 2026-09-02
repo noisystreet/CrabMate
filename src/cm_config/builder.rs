@@ -596,7 +596,7 @@ fn apply_tool_registry_tool_lists(
     if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
         p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
     }
-    // 后台任务 6 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
+    // 后台任务 7 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
     p.tool_registry_background_jobs_enabled = tr
         .background_jobs_enabled
         .or(p.tool_registry_background_jobs_enabled);
@@ -615,6 +615,9 @@ fn apply_tool_registry_tool_lists(
     p.tool_registry_background_job_max_entries = tr
         .background_job_max_entries
         .or(p.tool_registry_background_job_max_entries);
+    p.tool_registry_background_job_output_buffer_bytes = tr
+        .background_job_output_buffer_bytes
+        .or(p.tool_registry_background_job_output_buffer_bytes);
     // 工具失败透明重试 5 键（数值/开关为 Copy 用 `.or` 合并；数组字段消费 `tr` 值）。
     p.tool_registry_tool_retry_enabled = tr
         .tool_retry_enabled

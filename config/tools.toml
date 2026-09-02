@@ -222,6 +222,9 @@ sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
 # background_job_result_grace_secs = 300
 # # 注册表条目上限（1–10000，默认 128）；仅淘汰终态条目
 # background_job_max_entries = 128
+# # 每 job 环形输出缓冲字节上限（4096–16777216，默认 262144=256 KiB）；超限丢最旧，终态裁剪为各流尾部 ≤ 输出上限
+# # （实时输出端点 GET /tools/jobs/{id}/output；契约见 docs/design/background_tool_jobs_output_streaming_contract.md）
+# background_job_output_buffer_bytes = 262144
 # # 工具失败透明重试（默认关闭；仅瞬时失败，且仅只读/免审批工具）
 # # 总开关（默认 false）
 # tool_retry_enabled = false

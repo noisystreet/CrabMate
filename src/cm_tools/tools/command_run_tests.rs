@@ -462,6 +462,7 @@ fn run_command_cancel_sets_cancelled_code() {
         cancel: Some(Arc::clone(&cancel)),
         extra_stop: None,
         chunk_sink: None,
+        uncapped_live: false,
     };
     let handle = std::thread::spawn(move || {
         run_checked_wait(

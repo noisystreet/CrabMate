@@ -11,9 +11,17 @@ pub mod registry;
 pub mod types;
 pub mod worker;
 
-pub use registry::{CancelOutcome, JobRegistryStats, RegisterError, ToolJobRegistry};
-pub use types::{JobLimits, JobOutcome, JobRecord, JobStatus};
-pub use worker::{JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_blocking, spawn_cleanup_task};
+pub use registry::{
+    CancelOutcome, GetOutcome, JobRegistryStats, OutputPollOutcome, RegisterError, ToolJobRegistry,
+};
+pub use types::{
+    JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus, MAX_ITEMS_PER_RESPONSE,
+    MAX_OUTPUT_ITEMS, OutputEvent, OutputLogRead,
+};
+pub use worker::{
+    JobOutputSink, JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_blocking,
+    spawn_cleanup_task,
+};
 
 /// 按当前 `[tool_registry]` 配置构建注册表（web 启动 / 热重载时读取一次；已运行 job 不受影响）。
 #[must_use]

@@ -47,6 +47,7 @@ fn wait_session_cancel_stops_sleep() {
         cancel: Some(Arc::clone(&cancel)),
         extra_stop: None,
         chunk_sink: None,
+        uncapped_live: false,
     };
     let handle = thread::spawn(move || wait_child_session(child, &ctl, 1024));
     thread::sleep(Duration::from_millis(150));
@@ -86,7 +87,7 @@ fn wait_session_echo_exits_cleanly() {
 
 #[test]
 fn take_drain_returns_before_blocked_pipe_eof() {
-    let buf = spawn_drain(Some(BlockForever), 64, SessionStream::Stdout, None);
+    let buf = spawn_drain(Some(BlockForever), 64, SessionStream::Stdout, None, false);
     let t0 = Instant::now();
     let v = take_drain(buf, Duration::from_millis(150));
     assert!(
@@ -117,6 +118,7 @@ fn wait_session_chunk_sink_emits_stdout_and_stderr_deltas() {
             ));
             true
         })),
+        uncapped_live: false,
     };
     let r = wait_child_session(child, &ctl, 4096).expect("wait");
     assert_eq!(r.kind, SessionStopKind::Exited);
@@ -158,6 +160,7 @@ fn wait_session_chunk_sink_seq_pieces_are_monotonic_concat() {
             }
             true
         })),
+        uncapped_live: false,
     };
     let r = wait_child_session(child, &ctl, 4096).expect("wait");
     let parts = pieces.lock().expect("lock").clone();
@@ -251,11 +254,61 @@ fn wait_session_chunk_sink_false_retries_same_bytes() {
             got_cb.lock().expect("lock").extend_from_slice(bytes);
             true
         })),
+        uncapped_live: false,
     };
     let r = wait_child_session(child, &ctl, 4096).expect("wait");
     let live = got.lock().expect("lock").clone();
     assert_eq!(live, r.stdout);
     assert!(String::from_utf8_lossy(&live).contains("retry-me"));
+}
+
+/// 实时流截断语义：默认（`uncapped_live=false`）sink 只收到 kept 前缀（≤ cap）；
+/// `uncapped_live=true` 时 sink 收到**全量**输出（kept 快照仍前缀截断）。
+#[cfg(unix)]
+#[test]
+fn uncapped_live_streams_beyond_capture_cap_but_kept_snapshot_stays_capped() {
+    let run = |uncapped: bool| -> (Vec<u8>, Vec<u8>) {
+        let stdout_live = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let live_cb = Arc::clone(&stdout_live);
+        let mut cmd = Command::new("bash");
+        cmd.args(["-c", "awk 'BEGIN{for(i=0;i<6000;i++)printf \"a\"}'"]);
+        prepare_piped_process_group(&mut cmd);
+        let child = cmd.spawn().expect("spawn");
+        let ctl = SubprocessWaitCtl {
+            wall: Some(Duration::from_secs(5)),
+            cancel: None,
+            extra_stop: None,
+            chunk_sink: Some(Arc::new(move |stream, bytes| {
+                if stream == SessionStream::Stdout && !bytes.is_empty() {
+                    live_cb.lock().expect("lock").extend_from_slice(bytes);
+                }
+                true
+            })),
+            uncapped_live: uncapped,
+        };
+        let r = wait_child_session(child, &ctl, 2048).expect("wait");
+        let live = stdout_live.lock().expect("lock").clone();
+        (live, r.stdout)
+    };
+
+    // 默认：sink 只收到 kept 前缀增量（满 cap 后不再投递）——既有语义回归。
+    let (live_default, kept_default) = run(false);
+    assert_eq!(live_default, kept_default, "默认 sink 应与 kept 快照一致");
+    assert!(live_default.len() <= 2048, "默认应被 cap 截断：{}", live_default.len());
+
+    // uncapped：sink 收到全量（> cap），kept 快照仍 ≤ cap。
+    let (live_uncapped, kept_uncapped) = run(true);
+    assert!(
+        live_uncapped.len() >= 6000,
+        "uncapped 实时流应全量可达：{}",
+        live_uncapped.len()
+    );
+    assert!(
+        kept_uncapped.len() <= 2048,
+        "kept 快照仍按 cap 前缀截断：{}",
+        kept_uncapped.len()
+    );
+    assert!(live_uncapped.len() > kept_uncapped.len());
 }
 
 #[cfg(unix)]

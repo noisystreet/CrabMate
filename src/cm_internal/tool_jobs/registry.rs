@@ -10,7 +10,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use super::types::{JobLimits, JobOutcome, JobRecord, JobSpawn, JobStatus};
+use crate::cm_tools::subprocess_session::SessionStream;
+
+use super::types::{
+    JobLimits, JobOutcome, JobOutputLog, JobRecord, JobSpawn, JobStatus, OutputLogRead,
+};
 
 /// 进程内注册表（所有操作持锁，单临界区保证状态转移原子性）。
 pub struct ToolJobRegistry {
@@ -23,8 +27,12 @@ const MAX_EXPIRED_IDS: usize = 2048;
 
 struct Inner {
     jobs: HashMap<String, JobRecord>,
+    /// job 实时输出环形缓冲**侧表**（不并入 `JobRecord`，避免状态轮询克隆记录时拷贝缓冲）。
+    outputs: HashMap<String, JobOutputLog>,
     queue: VecDeque<String>,
     running: usize,
+    /// 环形裁剪丢弃的元素条数（观测）。
+    output_events_dropped: u64,
     /// 已被清理（TTL+宽限到期或容量淘汰）的 id：轮询区分 `JOB_EXPIRED`（410）与 `JOB_NOT_FOUND`（404）。
     /// 有界（`MAX_EXPIRED_IDS`），超限丢弃最旧（退回 `NotFound`）。
     expired: VecDeque<String>,
@@ -63,6 +71,25 @@ pub enum GetOutcome {
     NotFound,
 }
 
+/// 输出轮询结果（`GET /tools/jobs/{id}/output`）。
+#[derive(Debug, Clone)]
+pub enum OutputPollOutcome {
+    Found {
+        /// 读取时刻状态快照（`eof` 判定基础）。
+        status: JobStatus,
+        /// job 归属 workspace（handler 归属校验用）。
+        workspace: PathBuf,
+        /// 环形缓冲增量（`eof` 已由注册表结合状态填好）。
+        log_read: OutputLogRead,
+        /// `true` = 任务已终态且缓冲（含终态裁剪尾部）已全部返回 → 查看者可停止。
+        eof: bool,
+    },
+    /// 已过 TTL+宽限被清理（HTTP 410 `JOB_EXPIRED`）。
+    Expired,
+    /// 不存在 / 从未创建（HTTP 404 `JOB_NOT_FOUND`）。
+    NotFound,
+}
+
 /// 注册表快照（观测/`/status` 用）。
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct JobRegistryStats {
@@ -70,6 +97,10 @@ pub struct JobRegistryStats {
     pub queued: usize,
     pub running: usize,
     pub terminal: usize,
+    /// 全部 job 输出缓冲当前保留的文本字节合计（有界：并发 × 上限 + 终态 × 尾部）。
+    pub output_retained_bytes: u64,
+    /// 环形裁剪累计丢弃的元素条数。
+    pub output_events_dropped: u64,
 }
 
 impl ToolJobRegistry {
@@ -78,8 +109,10 @@ impl ToolJobRegistry {
         Self {
             inner: Mutex::new(Inner {
                 jobs: HashMap::new(),
+                outputs: HashMap::new(),
                 queue: VecDeque::new(),
                 running: 0,
+                output_events_dropped: 0,
                 expired: VecDeque::new(),
             }),
             limits,
@@ -125,6 +158,7 @@ impl ToolJobRegistry {
             outcome: None,
         };
         g.jobs.insert(id.clone(), record);
+        g.outputs.insert(id.clone(), JobOutputLog::default());
         g.queue.push_back(id.clone());
         Ok(id)
     }
@@ -162,10 +196,73 @@ impl ToolJobRegistry {
             .unwrap_or_default();
         if since_created >= self.limits.ttl && since_finished >= self.limits.grace {
             g.jobs.remove(id);
+            g.outputs.remove(id);
             remember_expired_locked(&mut g, id);
             return GetOutcome::Expired;
         }
         GetOutcome::Found(record.clone())
+    }
+
+    /// 追加一条实时输出（worker 的 chunk sink 调用；已按 `take_utf8_text` 组装为完整文本）。
+    /// job 不存在/已清理 → `false`（worker 侧忽略即可，进程结束期间正常竞态）。
+    pub fn push_output(&self, id: &str, stream: SessionStream, text: &str) -> bool {
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(log) = g.outputs.get_mut(id) else {
+            return false;
+        };
+        let dropped = log.push(stream, text, self.limits.output_buffer_bytes) as u64;
+        g.output_events_dropped = g.output_events_dropped.saturating_add(dropped);
+        true
+    }
+
+    /// 输出轮询（契约 §3「增量轮询」）：命中记录按 TTL+宽限做惰性过期判定；
+    /// 与状态轮询共用临界区完成「增量读取 + `eof` 判定」，保证与 worker 写入/状态转移原子一致。
+    #[must_use]
+    pub fn poll_output(
+        &self,
+        id: &str,
+        cursor: Option<u64>,
+        now: SystemTime,
+    ) -> OutputPollOutcome {
+        let mut g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(record) = g.jobs.get(id) else {
+            return if g.expired.iter().any(|eid| eid == id) {
+                OutputPollOutcome::Expired
+            } else {
+                OutputPollOutcome::NotFound
+            };
+        };
+        if record.status.is_terminal() {
+            let since_created = now.duration_since(record.created_at).unwrap_or_default();
+            let since_finished = record
+                .finished_at
+                .and_then(|f| now.duration_since(f).ok())
+                .unwrap_or_default();
+            if since_created >= self.limits.ttl && since_finished >= self.limits.grace {
+                g.jobs.remove(id);
+                g.outputs.remove(id);
+                remember_expired_locked(&mut g, id);
+                return OutputPollOutcome::Expired;
+            }
+        }
+        let status = record.status;
+        let workspace = record.workspace.clone();
+        // 侧表缺失（理论不可达：register 即建）按空缓冲兜底，保证终态无输出 → eof=true。
+        let (log_read, written) = match g.outputs.get(id) {
+            Some(log) => {
+                let read = log.read(cursor);
+                (read, log.written())
+            }
+            None => (JobOutputLog::default().read(cursor), 0),
+        };
+        // eof：任务已终态且本次起点已越过全部已写元素（含终态裁剪后的尾部）。
+        let eof = status.is_terminal() && log_read.next_cursor > written;
+        OutputPollOutcome::Found {
+            status,
+            workspace,
+            log_read,
+            eof,
+        }
     }
 
     /// 有空位则从 FIFO 队列取出下一个 `queued` 任务并转 `running`（worker 领取）。
@@ -267,8 +364,13 @@ impl ToolJobRegistry {
         record.outcome = Some(outcome);
         record.finished_at = Some(SystemTime::now());
         record.workspace_changed = workspace_changed;
+        let tail_cap = record.spawn.max_output_len;
         if was_running {
             g.running = g.running.saturating_sub(1);
+        }
+        // 终态裁剪：各流保留尾部 ≤ `command_max_output_len`（内存界收敛，晚到查看者仍可取最终尾部）。
+        if let Some(log) = g.outputs.get_mut(id) {
+            log.terminal_trim(tail_cap);
         }
         true
     }
@@ -296,6 +398,7 @@ impl ToolJobRegistry {
             .collect();
         for id in &expired_ids {
             g.jobs.remove(id);
+            g.outputs.remove(id);
             remember_expired_locked(&mut g, id);
         }
         let live: std::collections::HashSet<String> = g.jobs.keys().cloned().collect();
@@ -309,6 +412,7 @@ impl ToolJobRegistry {
         let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let mut s = JobRegistryStats {
             total: g.jobs.len(),
+            output_events_dropped: g.output_events_dropped,
             ..JobRegistryStats::default()
         };
         for r in g.jobs.values() {
@@ -317,6 +421,11 @@ impl ToolJobRegistry {
                 JobStatus::Running => s.running += 1,
                 _ => s.terminal += 1,
             }
+        }
+        for log in g.outputs.values() {
+            s.output_retained_bytes = s
+                .output_retained_bytes
+                .saturating_add(log.retained_bytes() as u64);
         }
         s
     }
@@ -333,6 +442,7 @@ impl ToolJobRegistry {
             return false;
         };
         g.jobs.remove(&id);
+        g.outputs.remove(&id);
         remember_expired_locked(g, &id);
         g.queue.retain(|qid| qid != &id);
         true
@@ -382,6 +492,7 @@ mod tests {
             ttl: Duration::from_secs(3600),
             grace: Duration::from_secs(60),
             max_entries: 4,
+            output_buffer_bytes: 262_144,
         }
     }
 
@@ -746,3 +857,7 @@ mod tests {
         assert_eq!(reg.stats().total, 2, "非终态不得被惰性清理");
     }
 }
+
+#[cfg(test)]
+#[path = "registry_streaming_tests.rs"]
+mod streaming;

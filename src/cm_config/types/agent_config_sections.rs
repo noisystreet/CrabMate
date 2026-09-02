@@ -292,6 +292,9 @@ pub struct ToolRegistryPolicyConfig {
     pub tool_registry_background_job_result_grace_secs: u64,
     /// 后台任务注册表条目上限；**仅淘汰终态**条目。默认 `128`。
     pub tool_registry_background_job_max_entries: u64,
+    /// 每 job 环形输出缓冲字节上限（超限丢最旧；终态裁剪为各流尾部 ≤ `command_max_output_len`）。
+    /// 默认 `262144`（256 KiB），范围 4096–16777216。契约 `docs/design/background_tool_jobs_output_streaming_contract.md` §4。
+    pub tool_registry_background_job_output_buffer_bytes: u64,
     /// 工具失败透明重试总开关；默认 `false`（仅瞬时失败且只读/免审批工具）。
     pub tool_registry_tool_retry_enabled: bool,
     /// 含首次的总尝试次数上限；默认 `2`（`1`=不重试）。

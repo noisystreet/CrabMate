@@ -13,15 +13,22 @@ mod background_job_defaults_tests {
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 86_400);
         assert_eq!(tr.tool_registry_background_job_result_grace_secs, 300);
         assert_eq!(tr.tool_registry_background_job_max_entries, 128);
+        assert_eq!(tr.tool_registry_background_job_output_buffer_bytes, 262_144);
 
         let mut b = ConfigBuilder::default();
         b.tool_registry_policy.tool_registry_background_jobs_enabled = Some(true);
         b.tool_registry_policy.tool_registry_background_job_max_concurrent = Some(999);
         b.tool_registry_policy.tool_registry_background_job_ttl_secs = Some(1_000_000);
+        b.tool_registry_policy.tool_registry_background_job_output_buffer_bytes = Some(30_000_000);
         let tr = derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 256);
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 604_800);
+        assert_eq!(
+            tr.tool_registry_background_job_output_buffer_bytes,
+            16_777_216,
+            "输出缓冲上限应钳制到 16 MiB"
+        );
     }
 
     #[test]
@@ -35,6 +42,7 @@ background_job_max_queued = 64
 background_job_ttl_secs = 7200
 background_job_result_grace_secs = 120
 background_job_max_entries = 256
+background_job_output_buffer_bytes = 524288
 "#,
         )
         .expect("parse [tool_registry] section");
@@ -44,6 +52,7 @@ background_job_max_entries = 256
         assert_eq!(sec.background_job_ttl_secs, Some(7200));
         assert_eq!(sec.background_job_result_grace_secs, Some(120));
         assert_eq!(sec.background_job_max_entries, Some(256));
+        assert_eq!(sec.background_job_output_buffer_bytes, Some(524288));
 
         let mut b = ConfigBuilder::default();
         b.apply_tool_registry(sec);
@@ -54,6 +63,7 @@ background_job_max_entries = 256
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 7200);
         assert_eq!(tr.tool_registry_background_job_result_grace_secs, 120);
         assert_eq!(tr.tool_registry_background_job_max_entries, 256);
+        assert_eq!(tr.tool_registry_background_job_output_buffer_bytes, 524_288);
     }
 
     #[test]

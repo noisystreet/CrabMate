@@ -151,6 +151,7 @@ async fn spawn_run_command_host_blocking(p: SpawnRunCommandHost<'_>) -> String {
             sse_out_tx.cloned(),
             sse_control_mirror.cloned(),
         ),
+        uncapped_live: false,
     };
     let handle = tokio::task::spawn_blocking(move || {
         crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {

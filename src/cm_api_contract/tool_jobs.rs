@@ -43,3 +43,33 @@ pub struct ToolJobCancelResponseBody {
     /// 取消后状态：`cancelled`（幂等重取消亦为 `cancelled`）。
     pub status: String,
 }
+
+/// `GET /tools/jobs/{tool_job_id}/output` 200 响应中的一条输出。
+///
+/// 契约见 `docs/design/background_tool_jobs_output_streaming_contract.md` §2.2。
+#[derive(Serialize, Clone, JsonSchema)]
+pub struct ToolJobOutputItem {
+    /// 全局单调序号（跨响应不重不漏的游标依据）。
+    pub seq: u64,
+    /// `stdout` | `stderr`。
+    pub stream: String,
+    /// lossy UTF-8 文本（非法字节 U+FFFD）。
+    pub text: String,
+}
+
+/// `GET /tools/jobs/{tool_job_id}/output` 200 响应（增量输出轮询）。
+#[derive(Serialize, Clone, JsonSchema)]
+pub struct ToolJobOutputResponseBody {
+    /// 与路径一致。
+    pub tool_job_id: String,
+    /// 读取时刻状态：`queued` | `running` | `succeeded` | `failed` | `cancelled` | `timed_out`。
+    pub status: String,
+    /// 下次请求应携带的 `cursor`（= 最后一条 `item.seq` + 1；无 item 时为本次起点）。
+    pub cursor: u64,
+    /// `true` = 请求游标早于缓冲最早保留 seq（有输出被环形丢弃，本次从最早可用重放）。
+    pub truncated: bool,
+    /// `true` = 任务已终态且缓冲（含终态裁剪尾部）已全部返回 → 可停止轮询。
+    pub eof: bool,
+    /// 自游标起的保留元素（升序，单次响应至多 500 条）。
+    pub items: Vec<ToolJobOutputItem>,
+}

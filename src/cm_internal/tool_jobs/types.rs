@@ -2,12 +2,162 @@
 //!
 //! 契约见 `docs/design/background_tool_jobs_contract.md`。状态机：
 //! `queued → running → succeeded | failed | cancelled | timed_out`；**`expired` 不是持久状态**（TTL+宽限到期即删除记录，轮询得 `410`）。
+//!
+//! 实时输出流（环形缓冲）契约见 `docs/design/background_tool_jobs_output_streaming_contract.md`。
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+
+use crate::cm_tools::subprocess_session::SessionStream;
+
+/// 环形输出缓冲保留的元素条数硬上限（防海量微块；默认容量下平均开销约 32 B/元素）。
+pub const MAX_OUTPUT_ITEMS: usize = 8192;
+/// `GET /tools/jobs/{id}/output` 单次响应最多返回的元素条数（防大 JSON）。
+pub const MAX_ITEMS_PER_RESPONSE: usize = 500;
+
+/// job 实时输出缓冲中的一条记录（`seq` 全局单调；裁剪只丢最旧）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OutputEvent {
+    pub seq: u64,
+    pub stream: SessionStream,
+    pub text: String,
+}
+
+/// [`JobOutputLog::read`] 的结果（不含 `eof`——由注册表结合 job 终态判定）。
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OutputLogRead {
+    /// 自游标起的保留元素（升序，至多 [`MAX_ITEMS_PER_RESPONSE`] 条）。
+    pub items: Vec<OutputEvent>,
+    /// 下次请求应携带的游标（= 最后一条 `seq`+1；无 item 时为本次起点）。
+    pub next_cursor: u64,
+    /// 请求游标早于缓冲最早保留 seq（有数据被环形丢弃，本次从最早可用重放）。
+    pub truncated: bool,
+}
+
+/// job 级环形输出缓冲（尾部保留；`seq` 单调不回填）。
+///
+/// - 字节上限与元素条数上限双保险，超限**丢最旧**（至少保留 1 条，不拆元素）。
+/// - 空缓冲 ⇔ `written == 0`（裁剪恒保留 ≥1 条），`read` 的"最早可用"= 下一条 `seq`（`written+1`）。
+#[derive(Debug, Default)]
+pub struct JobOutputLog {
+    events: VecDeque<OutputEvent>,
+    /// 已写入元素总数（= 下一条 `seq` - 1）。
+    written: u64,
+    /// 保留元素文本字节合计（stdout/stderr 合并，字节上限裁剪用）。
+    bytes: usize,
+    stdout_bytes: usize,
+    stderr_bytes: usize,
+}
+
+impl JobOutputLog {
+    /// 追加一条输出；返回本次被环形裁剪丢弃的**元素条数**（`0` = 未丢弃）。
+    pub fn push(&mut self, stream: SessionStream, text: &str, max_bytes: usize) -> usize {
+        if text.is_empty() {
+            return 0;
+        }
+        self.written += 1;
+        let len = text.len();
+        self.bytes += len;
+        match stream {
+            SessionStream::Stdout => self.stdout_bytes += len,
+            SessionStream::Stderr => self.stderr_bytes += len,
+        }
+        self.events.push_back(OutputEvent {
+            seq: self.written,
+            stream,
+            text: text.to_string(),
+        });
+        let mut dropped = 0;
+        while (self.bytes > max_bytes || self.events.len() > MAX_OUTPUT_ITEMS)
+            && self.events.len() > 1
+        {
+            self.pop_front_inner();
+            dropped += 1;
+        }
+        dropped
+    }
+
+    /// 终态裁剪（**内存优先**）：自最旧起丢弃，直到「stdout、stderr 各自 ≤ `max_per_stream`」
+    /// 或仅剩 1 条。返回移除条数。
+    ///
+    /// 语义说明：环形缓冲按合并时序裁剪，只能丢头部——要压掉某流尾部的超限部分，必须一并
+    /// 丢弃其前的**另一流**事件（含已达标流），直至可行裁剪点；因此"各流各自 ≤ cap"为**尽力**：
+    /// - 末尾单条超大元素不拆（允许该流单独越界，单条 ≤ 8 KiB 量级）；
+    /// - 无法同时满足双流上限时以内存为优先，可能把已达标流一并丢光（仅剩 1 条兜底）。
+    pub fn terminal_trim(&mut self, max_per_stream: usize) -> usize {
+        let mut removed = 0;
+        while (self.stdout_bytes > max_per_stream || self.stderr_bytes > max_per_stream)
+            && self.events.len() > 1
+        {
+            self.pop_front_inner();
+            removed += 1;
+        }
+        removed
+    }
+
+    /// 返回自 `cursor`（含）起的保留元素。
+    ///
+    /// - `cursor=None` / `0` → 从最早可用起（不标 `truncated`）；
+    /// - `cursor` 早于最早保留 seq → `truncated=true`，从最早可用重放；
+    /// - 单流内/合并单序均为升序、跨响应不重不漏（除非 `truncated`）。
+    pub fn read(&self, cursor: Option<u64>) -> OutputLogRead {
+        let requested = cursor.unwrap_or(0);
+        let earliest = self
+            .events
+            .front()
+            .map(|e| e.seq)
+            .unwrap_or(self.written + 1);
+        let truncated = requested != 0
+            && self
+                .events
+                .front()
+                .is_some_and(|e| requested < e.seq);
+        let start = requested.max(earliest);
+        let mut items = Vec::new();
+        for ev in &self.events {
+            if ev.seq >= start {
+                items.push(ev.clone());
+                if items.len() >= MAX_ITEMS_PER_RESPONSE {
+                    break;
+                }
+            }
+        }
+        let next_cursor = items.last().map_or(start, |e| e.seq + 1);
+        OutputLogRead {
+            items,
+            next_cursor,
+            truncated,
+        }
+    }
+
+    /// 已写入元素总数（`eof` 判定用）。
+    #[must_use]
+    pub fn written(&self) -> u64 {
+        self.written
+    }
+
+    /// 当前保留元素的文本字节合计（观测/统计用；单条超大元素时可能略超上限）。
+    #[must_use]
+    pub fn retained_bytes(&self) -> usize {
+        self.bytes
+    }
+
+    /// 丢弃最旧一条并回扣计数。
+    fn pop_front_inner(&mut self) {
+        if let Some(front) = self.events.pop_front() {
+            let len = front.text.len();
+            self.bytes = self.bytes.saturating_sub(len);
+            match front.stream {
+                SessionStream::Stdout => self.stdout_bytes = self.stdout_bytes.saturating_sub(len),
+                SessionStream::Stderr => self.stderr_bytes = self.stderr_bytes.saturating_sub(len),
+            }
+        }
+    }
+}
 
 /// 任务状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,6 +306,9 @@ pub struct JobLimits {
     pub grace: Duration,
     /// 条目上限；**仅淘汰终态**条目。
     pub max_entries: usize,
+    /// 每 job 环形输出缓冲字节上限（超限丢最旧；终态裁剪为各流尾部 ≤ `command_max_output_len`）。
+    /// 默认 `262144`（256 KiB），范围 4096–16777216（契约 `background_tool_jobs_output_streaming_contract.md` §4）。
+    pub output_buffer_bytes: usize,
 }
 
 impl JobLimits {
@@ -168,6 +321,7 @@ impl JobLimits {
             ttl: Duration::from_secs(cfg.tool_registry_background_job_ttl_secs),
             grace: Duration::from_secs(cfg.tool_registry_background_job_result_grace_secs),
             max_entries: cfg.tool_registry_background_job_max_entries as usize,
+            output_buffer_bytes: cfg.tool_registry_background_job_output_buffer_bytes as usize,
         }
     }
 }

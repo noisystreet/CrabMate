@@ -86,6 +86,7 @@ mod tests {
         assert!(paths.contains_key("/chat/async"));
         assert!(paths.contains_key("/chat/jobs/{job_id}"));
         assert!(paths.contains_key("/tools/jobs/{tool_job_id}"));
+        assert!(paths.contains_key("/tools/jobs/{tool_job_id}/output"));
         assert!(paths.contains_key("/tools/jobs/{tool_job_id}/cancel"));
         assert!(paths.contains_key("/conversation/messages"));
         assert!(paths.contains_key("/openapi.json"));
