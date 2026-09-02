@@ -11,7 +11,16 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- (nothing yet)
+
+## [0.5.1] - 2026-09-02
+
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.1`** matches this package. SSE wire protocol stays **v2**; all HTTP/contract additions below are backward-compatible (new endpoint + soft config, no schema/tool-contract change).
+
+### Added
+
 - **Transparent tool-failure retry** (`[tool_registry] tool_retry_*`, **off by default**): readonly, approval-free tools retry transient failures (`timeout` / `http_timeout` / `rate_limited` / `http_network_error`) at the dispatch layer with exponential backoff (`min(backoff*2^(n-1), 5000)`) and user-cancel awareness. Intermediate failures are **not** written to model context; only the final result is returned. `codebase_semantic_search` is hard-excluded (its `rebuild_index` writes workspace SQLite); `http_fetch` URLs that would require approval and external-path `read_dir` calls are skipped to avoid re-prompting.
+- **Background tool job live output streaming**: `run_command` background jobs (`async:true`) expose **`GET /tools/jobs/{id}/output?cursor=`** incremental polling (`tail -f`): per-job bounded ring buffer (`seq`-monotonic items with `stdout`/`stderr`, `cursor` / `truncated` / `eof`), output not truncated by `command_max_output_len` during streaming, terminal tail trimmed to the output cap, ownership check identical to the status endpoint. New config `background_job_output_buffer_bytes` (default `262144`). Requires a matching **crabmate-client** build to show live output in the job bubble (old client ignores it; old `serve` falls back to status-only polling).
 
 ### Changed
 
@@ -179,7 +188,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/noisystreet/CrabMate/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
 [0.3.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.3.0
