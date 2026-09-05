@@ -36,7 +36,7 @@ fn schema_open_object_array(_gen: &mut SchemaGenerator) -> Schema {
 }
 
 /// 用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。
-#[derive(Deserialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClarifyQuestionnaireAnswersBody {
     pub questionnaire_id: String,
@@ -97,7 +97,7 @@ pub struct ChatJobStatusResponseBody {
     pub error: Option<ApiError>,
 }
 
-#[derive(Deserialize, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct StreamResumeBody {
     pub job_id: u64,
@@ -107,7 +107,7 @@ pub struct StreamResumeBody {
 }
 
 /// `ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。
-#[derive(Deserialize, Default, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Default, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ClientLlmBody {
     #[serde(default)]
@@ -125,7 +125,7 @@ pub struct ClientLlmBody {
 }
 
 /// `ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。
-#[derive(Deserialize, Default, Clone, JsonSchema)]
+#[derive(Deserialize, Serialize, Default, Clone, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutorLlmBody {
     #[serde(default)]
@@ -230,7 +230,7 @@ pub struct ChatAsyncRequestBodyOpenApi {
 }
 
 /// `POST /chat` / `POST /chat/stream` 请求的 JSON 线型（OpenAPI 与 [`ChatRequestBody`] 反序列化同源）。
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChatRequestBodyWire {
     pub message: String,
@@ -287,7 +287,7 @@ impl From<ChatRequestBodyWire> for ChatRequestBody {
     }
 }
 
-#[derive(Deserialize, JsonSchema)]
+#[derive(Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ChatApprovalRequestBody {
     pub approval_session_id: String,
@@ -417,5 +417,66 @@ impl<'de> Deserialize<'de> for ChatAsyncRequestBody {
     {
         let v = serde_json::Value::deserialize(deserializer)?;
         chat_async_request_body_from_json(v).map_err(serde::de::Error::custom)
+    }
+}
+
+#[cfg(test)]
+mod b5_roundtrip_serde_tests {
+    use super::*;
+    use crate::cm_api_contract::chat_keys::CHAT_REQUEST_BODY_ALLOWED_KEYS;
+
+    #[test]
+    fn chat_request_body_wire_roundtrip_serde() {
+        let wire = ChatRequestBodyWire {
+            message: "hi".into(),
+            conversation_id: Some("conv-1".into()),
+            agent_role: None,
+            session_mode: Some("act".into()),
+            approval_session_id: None,
+            temperature: Some(0.5),
+            seed: None,
+            seed_policy: None,
+            client_llm: None,
+            executor_llm: None,
+            readonly_tool_ttl_cache_secs: None,
+            stream_resume: None,
+            client_sse_protocol: Some(2),
+            image_urls: vec![],
+            clarify_questionnaire_answers: None,
+        };
+        let s = serde_json::to_string(&wire).expect("serialize wire");
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        // 出站键必须落在服务端白名单内（与 CHAT_REQUEST_BODY_ALLOWED_KEYS 一致）
+        if let serde_json::Value::Object(obj) = &v {
+            for k in obj.keys() {
+                assert!(
+                    CHAT_REQUEST_BODY_ALLOWED_KEYS.contains(&k.as_str()),
+                    "unexpected outbound key: {k}"
+                );
+            }
+        } else {
+            panic!("expected JSON object");
+        }
+        // 服务端 `ChatRequestBody` 自定义 Deserialize（白名单 + Wire）必须接受
+        let body: ChatRequestBody = serde_json::from_value(v).expect("accept via ChatRequestBody");
+        assert_eq!(body.message, "hi");
+        assert_eq!(body.conversation_id.as_deref(), Some("conv-1"));
+        assert_eq!(body.session_mode.as_deref(), Some("act"));
+    }
+
+    #[test]
+    fn chat_approval_request_roundtrip_serde() {
+        let req = ChatApprovalRequestBody {
+            approval_session_id: "sid-1".into(),
+            decision: "allow".into(),
+        };
+        let s = serde_json::to_string(&req).expect("serialize approval");
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["approval_session_id"], "sid-1");
+        assert_eq!(v["decision"], "allow");
+        let back: ChatApprovalRequestBody =
+            serde_json::from_value(v).expect("deserialize approval");
+        assert_eq!(back.approval_session_id, req.approval_session_id);
+        assert_eq!(back.decision, req.decision);
     }
 }
