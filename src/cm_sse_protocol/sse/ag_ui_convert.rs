@@ -4,7 +4,34 @@
 //! `ToolCall` 拆分为 `ToolCallStart` + `ToolCallArgs` + `ToolCallEnd` 三事件。
 
 use super::ag_ui_event::{AgUiErrorBody, AgUiEvent};
-use super::protocol::SsePayload;
+use super::protocol::{CommandApprovalBody, SsePayload};
+
+/// AG-UI `CUSTOM` 事件 **`command_approval`** 的 `data` 公开视图（camelCase 键，与线上 JSON 1:1）。
+///
+/// 线上由本模块从 snake 面 [`CommandApprovalBody`] 转换生成；Client 可用本类型直接反序列化
+/// `data`（issue #939 B.2）。**刻意不加 `skip_serializing_if`**：缺省 `allowlistKey` 出站为
+/// **`null`**，与历史手写 `json!` 出站逐字节一致，旧客户端按键存在性解析不受影响。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommandApprovalData {
+    /// 命令名 / 工具名（`run_command` 未知命令时为 argv0，如 `curl`）。
+    pub command: String,
+    /// 参数串，**不含** `command`（客户端按 `command + " " + args` 展示）。
+    pub args: String,
+    /// 永久允许时写入白名单的键；缺省出站为 `null`。
+    #[serde(default)]
+    pub allowlist_key: Option<String>,
+}
+
+impl From<&CommandApprovalBody> for CommandApprovalData {
+    fn from(body: &CommandApprovalBody) -> Self {
+        Self {
+            command: body.command.clone(),
+            args: body.args.clone(),
+            allowlist_key: body.allowlist_key.clone(),
+        }
+    }
+}
 
 /// 将单个 `SsePayload` 转换为一个或多个 AG-UI 事件。
 ///
@@ -137,11 +164,8 @@ fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
             command_approval_request,
         } => AgUiEvent::Custom {
             custom_type: "command_approval".into(),
-            data: serde_json::json!({
-                "command": command_approval_request.command,
-                "args": command_approval_request.args,
-                "allowlistKey": command_approval_request.allowlist_key,
-            }),
+            data: serde_json::to_value(CommandApprovalData::from(command_approval_request))
+                .expect("CommandApprovalData is pure JSON and cannot fail to serialize"),
         },
         SsePayload::ClarificationQuestionnaire {
             clarification_questionnaire,
@@ -633,6 +657,64 @@ mod tests {
                 assert_eq!(id1, id3, "id must be consistent across split events");
             }
             _ => panic!("unexpected event variants"),
+        }
+    }
+
+    #[test]
+    fn command_approval_data_parses_agui_camel_sample() {
+        // issue #939 B.2 验收：Client 可用公开类型直接解析 AG-UI camel 样例。
+        let data: CommandApprovalData = serde_json::from_value(serde_json::json!({
+            "command": "curl",
+            "args": "-sS https://example.com",
+            "allowlistKey": "curl"
+        }))
+        .expect("camel AG-UI sample parses");
+        assert_eq!(data.command, "curl");
+        assert_eq!(data.args, "-sS https://example.com");
+        assert_eq!(data.allowlist_key.as_deref(), Some("curl"));
+
+        // 入站容错：缺键 / 显式 null 的 allowlistKey 均解析为 None（#[serde(default)]）。
+        let data: CommandApprovalData =
+            serde_json::from_value(serde_json::json!({ "command": "curl", "args": "-sS" }))
+                .expect("missing allowlistKey parses via serde default");
+        assert_eq!(data.allowlist_key, None);
+        let data: CommandApprovalData = serde_json::from_value(serde_json::json!({
+            "command": "curl",
+            "args": "-sS",
+            "allowlistKey": null
+        }))
+        .expect("explicit null allowlistKey parses");
+        assert_eq!(data.allowlist_key, None);
+    }
+
+    #[test]
+    fn command_approval_data_wire_matches_previous_manual_json() {
+        // 出站形状必须与历史手写 json! 完全一致：缺省 allowlistKey 序列化为 null（键保留）。
+        for allowlist_key in [None, Some("curl".to_string())] {
+            let body = CommandApprovalBody {
+                command: "curl".into(),
+                args: "-sS https://example.com".into(),
+                allowlist_key: allowlist_key.clone(),
+            };
+            let expected = serde_json::json!({
+                "command": body.command,
+                "args": body.args,
+                "allowlistKey": body.allowlist_key,
+            });
+            let events = convert_sse_payload_to_ag_ui(&SsePayload::CommandApproval {
+                command_approval_request: body,
+            });
+            assert_eq!(events.len(), 1);
+            match &events[0] {
+                AgUiEvent::Custom { custom_type, data } => {
+                    assert_eq!(custom_type, "command_approval");
+                    assert_eq!(
+                        data, &expected,
+                        "wire JSON must stay 1:1 with the manual json! shape"
+                    );
+                }
+                other => panic!("expected Custom, got {other:?}"),
+            }
         }
     }
 }

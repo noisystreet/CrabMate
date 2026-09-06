@@ -293,6 +293,14 @@ CrabMate 专有事件通过 `{"type":"CUSTOM","customType":"…","data":{…}}` 
 | `chat_ui_separator` | `chat_ui_separator` | 忽略 |
 | `sse_capabilities` | `sse_capabilities` | 忽略 |
 
+**`command_approval` 的 `data` 字段**（camelCase 键；语义与 v1 `command_approval_request` 一致。公开解析类型 **`cm_sse_protocol::CommandApprovalData`**——由 snake 面 `CommandApprovalBody` 经 `From` 转换生成；缺省键出站为 `null`，**不省略**）：
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `command` | string | 命令名（`run_command` 不在白名单时为 argv0，如 `curl`） |
+| `args` | string | 不含 argv0 的参数串；无参为空串 |
+| `allowlistKey` | string \| null | 永久允许时写入白名单的键；缺省为 `null`（键保留，不省略） |
+
 ### 状态同步
 
 | 事件 | 含义 |
