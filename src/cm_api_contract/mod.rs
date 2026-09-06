@@ -17,6 +17,7 @@ pub mod sessions;
 pub mod status;
 pub mod tool_jobs;
 pub mod web_ui;
+pub mod workspace;
 
 pub use api::ApiError;
 pub use health::HealthReportView;

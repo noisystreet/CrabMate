@@ -80,7 +80,8 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
             "WorkspaceSetBody": {
                 "type": "object",
                 "properties": {
-                    "path": { "type": "string", "nullable": true }
+                    "path": { "type": "string", "nullable": true },
+                    "project": { "type": "string", "nullable": true }
                 }
             },
             "WorkspacePickResponse": {
