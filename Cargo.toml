@@ -69,7 +69,7 @@ bollard = { version = "0.21", default-features = false }
 clap_mangen = { version = "0.3", default-features = false }
 fastembed = "6.0"
 rmcp = { version = "3.0", default-features = false }
-tower-http = { version = "0.6" }
+tower-http = { version = "0.7" }
 
 # Unix-only
 nix = { version = "0.31", default-features = false }
