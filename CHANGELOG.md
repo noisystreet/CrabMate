@@ -11,7 +11,11 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
-- (nothing yet)
+- **Public `/health` contract view**: `GET /health` responses serialize through the `cm_api_contract` view layer (`HealthReportView` / `HealthCheckItemView`), registered in OpenAPI `components` with the `/health` response `$ref`-linked. Wire JSON is unchanged; `checks` keys (`dep_*` etc.) stay dynamic — the view intentionally omits `deny_unknown_fields` so older Clients keep deserializing when new check keys appear.
+
+### Fixed
+
+- **wasm32 protocol-only build**: `cargo check --target wasm32-unknown-unknown --no-default-features --features protocol` now compiles; `getrandom` enables its `wasm_js` feature on that target (previously failed because the unconditional dependency lacked it — the contract gate step silently skipped when the wasm32 target was absent).
 
 ## [0.5.1] - 2026-09-02
 

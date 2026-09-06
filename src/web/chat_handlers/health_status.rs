@@ -3,6 +3,7 @@
 use axum::Json;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
+use crate::cm_api_contract::health::{HealthCheckItemView, HealthReportView};
 use crate::cm_api_contract::StatusShellView;
 use serde::Deserialize;
 
@@ -43,7 +44,27 @@ pub(crate) async fn health_handler(State(facet): State<WebHealthAppFacet>) -> im
         },
     )
     .await;
-    Json(report)
+    Json(health_report_view(report))
+}
+
+/// `cm_internal::health::HealthReport` → 契约公开视图（线上 JSON 形状不变）。
+fn health_report_view(report: health::HealthReport) -> HealthReportView {
+    HealthReportView {
+        status: report.status,
+        checks: report
+            .checks
+            .into_iter()
+            .map(|(k, item)| {
+                (
+                    k,
+                    HealthCheckItemView {
+                        ok: item.ok,
+                        detail: item.detail,
+                    },
+                )
+            })
+            .collect(),
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -433,4 +454,41 @@ pub(crate) async fn status_handler(
         },
     })
     .into_response()
+}
+
+#[cfg(test)]
+mod health_view_tests {
+    use super::health_report_view;
+    use crate::health::{HealthCheckItem, HealthReport};
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn health_report_view_wire_json_matches_internal_report() {
+        let mut checks = BTreeMap::new();
+        checks.insert(
+            "workspace_writable".to_string(),
+            HealthCheckItem {
+                ok: true,
+                detail: None,
+            },
+        );
+        checks.insert(
+            "dep_bc".to_string(),
+            HealthCheckItem {
+                ok: false,
+                detail: Some("missing".into()),
+            },
+        );
+        let report = HealthReport {
+            status: "degraded".into(),
+            checks,
+        };
+
+        let before = serde_json::to_value(&report).expect("internal serialize");
+        let after = serde_json::to_value(health_report_view(report)).expect("view serialize");
+        assert_eq!(
+            before, after,
+            "wire JSON must be unchanged by the view conversion"
+        );
+    }
 }

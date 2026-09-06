@@ -339,6 +339,12 @@ name = "crabmate-gen-man"
 path = "src/bin/crabmate_gen_man.rs"
 required-features = ["gen-man"]
 
+# wasm32-unknown-unknown（protocol-only Client 镜像）编译时，`getrandom` v0.4 必须
+# 显式启用 `wasm_js` feature 才能通过 `--target wasm32-unknown-unknown --no-default-features
+# --features protocol` 检查；native 目标不受影响。
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { workspace = true, features = ["wasm_js"] }
+
 [dev-dependencies]
 serde_json = { workspace = true }
 tempfile = { workspace = true }
