@@ -208,3 +208,4 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 | 2026-08-10 | `client-contract-v0.1.1`：对齐 D2.1 合入 tip（CLI 入口移除）；契约 crate 版本未 bump，供 Client 与 `serve` 配套联调 |
 | 2026-08-16 | `client-contract-v0.2.0`：W2b 从本仓去掉 `crabmate-tool-card`；`GET /conversation/messages` 的 `role=tool` 不再填 `display_*`；crate `version` 未 bump |
 | 2026-08-16 | 单包 crates.io 计划：[`crates_io_single_package.md`](./crates_io_single_package.md)；W3 不阻塞 |
+| 2026-09-06 | 镜像瘦身 B 清单（issue #939）增量公开面：B.5（#940）已随 `0.5.1` 发布；B.4（#941）/ B.2（#942）/ B.3（#943）已合入 `main`；B.1（`/workspace*` DTO 迁入 `cm_api_contract::workspace`）待随下一增量协议版本 **`0.5.2`**（纯 additive → patch+说明，不 bump `SSE_PROTOCOL_VERSION`）发布；§2.4 与 `lib.rs` 顶注已同步，发版时按 §7 清单执行 |
