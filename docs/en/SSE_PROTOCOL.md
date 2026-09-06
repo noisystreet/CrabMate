@@ -293,6 +293,14 @@ CrabMate-specific events use `{"type":"CUSTOM","customType":"…","data":{…}}`
 | `chat_ui_separator` | `chat_ui_separator` | Ignored |
 | `sse_capabilities` | `sse_capabilities` | Ignored |
 
+**`data` fields of `command_approval`** (camelCase keys; semantics identical to v1 `command_approval_request`. Public parse type **`cm_sse_protocol::CommandApprovalData`** — converted from the snake-face `CommandApprovalBody` via `From`; absent keys serialize as `null`, **not omitted**):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `command` | string | Command name (argv0 such as `curl` when `run_command` is not allowlisted) |
+| `args` | string | Argument string without argv0; empty when there are none |
+| `allowlistKey` | string \| null | Key written to the permanent allowlist; absent defaults to `null` (key kept, not omitted) |
+
 ### State sync
 
 | Event | Meaning |

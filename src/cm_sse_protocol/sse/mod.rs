@@ -22,6 +22,7 @@ pub mod stream_hub;
 #[cfg(feature = "server")]
 pub mod web_approval;
 
+pub use ag_ui_convert::CommandApprovalData;
 #[cfg(feature = "server")]
 pub use control_mirror::{send_sse_control_payload_optional, send_sse_control_payload_try_send};
 pub use encoder::{SseEncoder, default_encoder};

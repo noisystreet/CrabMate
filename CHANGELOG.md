@@ -11,6 +11,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- **Public `command_approval` AG-UI parse type**: `cm_sse_protocol::CommandApprovalData` (camelCase keys matching the wire JSON 1:1) is now exported for Clients, with `From<&CommandApprovalBody>` bridging the snake-face protocol type. `ag_ui_convert` now builds the CUSTOM `command_approval` `data` through this type instead of a hand-written `json!` — wire shape unchanged (absent `allowlistKey` still serializes as `null`, key kept, not omitted). Documented the `data` fields in `docs/SSE协议.md` / `docs/en/SSE_PROTOCOL.md`.
 - **Public `/health` contract view**: `GET /health` responses serialize through the `cm_api_contract` view layer (`HealthReportView` / `HealthCheckItemView`), registered in OpenAPI `components` with the `/health` response `$ref`-linked. Wire JSON is unchanged; `checks` keys (`dep_*` etc.) stay dynamic — the view intentionally omits `deny_unknown_fields` so older Clients keep deserializing when new check keys appear.
 
 ### Fixed
