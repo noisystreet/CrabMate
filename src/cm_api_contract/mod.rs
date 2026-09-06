@@ -13,11 +13,13 @@ pub mod chat_keys;
 pub mod error_codes;
 pub mod health;
 pub mod openapi;
+pub mod sessions;
 pub mod status;
 pub mod tool_jobs;
 pub mod web_ui;
 
 pub use api::ApiError;
 pub use health::HealthReportView;
+pub use sessions::SessionListRow;
 pub use status::StatusShellView;
 pub use web_ui::WebUiConfigResponse;

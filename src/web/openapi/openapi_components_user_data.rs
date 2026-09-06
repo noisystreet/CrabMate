@@ -38,15 +38,36 @@ pub(super) fn openapi_components_schemas_user_data() -> Value {
                 "type": "object",
                 "properties": {
                     "schema_version": { "type": "integer" },
-                    "sessions": { "type": "array", "items": { "type": "object" } },
+                    "sessions": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/SessionListRow" }
+                    },
                     "active_session_id": { "type": "string", "nullable": true }
                 }
             },
             "PutWebSessionsBody": {
                 "type": "object",
                 "properties": {
-                    "sessions": { "type": "array", "items": { "type": "object" } },
+                    "sessions": {
+                        "type": "array",
+                        "items": { "$ref": "#/components/schemas/SessionListRow" }
+                    },
                     "active_session_id": { "type": "string", "nullable": true }
+                }
+            },
+            "SessionListRow": {
+                "type": "object",
+                "description": "sessions 数组元素的瘦投影（存储行为 Client 全量 ChatSession，未知字段容忍）",
+                "required": ["id"],
+                "properties": {
+                    "id": { "type": "string" },
+                    "title": { "type": "string" },
+                    "updated_at": { "type": "integer", "format": "int64" },
+                    "pinned": { "type": "boolean" },
+                    "starred": { "type": "boolean" },
+                    "server_conversation_id": { "type": "string", "nullable": true },
+                    "server_revision": { "type": "integer", "format": "int64", "nullable": true },
+                    "workspace_root": { "type": "string", "nullable": true }
                 }
             },
             "WorkspaceListEntry": {
