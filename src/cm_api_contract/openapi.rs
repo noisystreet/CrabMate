@@ -16,6 +16,7 @@ use crate::cm_api_contract::chat::{
     ChatJobStatusResponseBody, ChatRequestBodyWire, ChatResponseBody, ClientLlmBody,
     ConversationMessagesResponseBodyOpenApi, ExecutorLlmBody, StreamResumeBody,
 };
+use crate::cm_api_contract::health::HealthReportView;
 use crate::cm_api_contract::status::StatusShellView;
 use crate::cm_api_contract::web_ui::WebUiConfigResponse;
 
@@ -187,6 +188,7 @@ pub fn openapi_component_schemas() -> Map<String, Value> {
     );
     insert_adapted_schema::<WebUiConfigResponse>(&mut map, "WebUiConfigResponse");
     insert_adapted_schema::<StatusShellView>(&mut map, "StatusShellView");
+    insert_adapted_schema::<HealthReportView>(&mut map, "HealthReportView");
     map
 }
 
@@ -200,6 +202,8 @@ mod tests {
         let schemas = openapi_component_schemas();
         for key in [
             "StatusShellView",
+            "HealthReportView",
+            "HealthCheckItemView",
             "ApiError",
             "ClientLlmBody",
             "ChatRequestBody",

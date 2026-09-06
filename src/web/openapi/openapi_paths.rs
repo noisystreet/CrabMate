@@ -41,8 +41,12 @@ fn openapi_paths_fragment_system() -> Value {
                 "summary": "健康检查（依赖、可选 LLM models 探活等）",
                 "responses": {
                     "200": {
-                        "description": "健康报告 JSON",
-                        "content": { "application/json": { "schema": { "type": "object" } } }
+                        "description": "健康报告 JSON（status + checks；checks 键随运行环境动态增减）",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/HealthReportView" }
+                            }
+                        }
                     }
                 }
             }
