@@ -105,6 +105,11 @@ S1 先在**现 workspace** 把 `tokio` 改为 `runtime` feature（见 §5），�
 
 HTTP 对官方 Client 已够用（`/chat`、`/chat/stream`、`/chat/async`、审批、会话 revision）。默认 `web_api_require_bearer=false` 与「密钥为空则中间件不校验」是产品选择，**不**在首发前改行为。
 
+**`0.5.x` 增量公开面**（镜像瘦身 B 清单，issue #939；全部落在既有六模块内，纯 additive、wire 不变）：
+
+- `0.5.1`（已发）：入站请求体补出站 `Serialize`——`ChatRequestBodyWire` / `ChatApprovalRequestBody` / `ClientLlmBody` / `ExecutorLlmBody` / `StreamResumeBody` / `ClarifyQuestionnaireAnswersBody`（PR #940）。
+- `0.5.2`（增量待发）：`cm_api_contract::HealthReportView` / `HealthCheckItemView`（`GET /health` 视图，PR #941）；`cm_sse_protocol::CommandApprovalData`（AG-UI CUSTOM `command_approval` data camel 面，PR #942）；`cm_api_contract::SessionListRow`（sessions 列表行瘦投影，PR #943，已合入 `main`）；`cm_api_contract::workspace`（`/workspace*` 全量 JSON 契约 27 类型自 `cm_web_host` 迁入、原址转发，B.1）。
+
 **首发前不做**（会把 S4 拖成又一次大切仓；若将来要做须**单独 PR 且在 S5 之前**，否则 `0.4.0` 后再缩是又一次 breaking）：
 
 - 把 hidden 模块改成真正 `pub(crate)`（E0365：整模块 `pub use` 需要源模块保持 `pub`）

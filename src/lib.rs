@@ -7,7 +7,10 @@
 //!
 //! - **承诺 `protocol`**（Client / WASM）：六个模块 [`cm_types`]、[`cm_display_rules`]、
 //!   [`cm_api_contract`]、[`cm_chat_export`]、[`cm_turn_layout`]、[`cm_sse_protocol`]。
-//!   **没有** `types` / `sse` / `config` 别名。
+//!   **没有** `types` / `sse` / `config` 别名。增量公开面（`/health` 视图
+//!   `HealthReportView`、sessions 行瘦投影 `SessionListRow` 与 `/workspace*` 契约
+//!   模块 `workspace` 挂 [`cm_api_contract`]；AG-UI `command_approval` data 面
+//!   `CommandApprovalData` 挂 [`cm_sse_protocol`]）见 §2.4「`0.5.x` 增量公开面」。
 //! - **承诺 `server`**（默认，含 `protocol`）：组合面模块名 `agent` / `config` / `llm` / `sse` /
 //!   `types` 的**存在**；以及 `run`、`run_agent_turn`、`build_tools*`、`ProcessHandles`、
 //!   `tool_sandbox` 等根上显式 `pub use`。
