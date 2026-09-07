@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-09-07
+
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.2`** matches this package. SSE wire protocol stays **v2**; all additions below are purely additive public protocol face (new exported types, wire JSON unchanged) — released as patch + notes per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2; existing Clients keep working.
+
 ### Added
 
 - **Public workspace HTTP DTOs**: the full `/workspace*` JSON contract (`WorkspaceSetBody` / `WorkspacePickResponse` / `WorkspaceEntry` / `WorkspaceResponse` / `WorkspaceProjectsListResponse`, file/dir/clone/search/changelog bodies — 27 types) moved from the server-gated `cm_web_host` into the public `cm_api_contract::workspace` module (protocol face); the original path now re-exports it, so `cm_web_host` / `web` call sites are unchanged and wire JSON is identical. OpenAPI's hand-written `WorkspaceSetBody` component now documents the previously missing `project` key.
@@ -199,7 +203,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/noisystreet/CrabMate/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/noisystreet/CrabMate/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.5.0
 [0.4.0]: https://github.com/noisystreet/CrabMate/releases/tag/v0.4.0
