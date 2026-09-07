@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/openapi.json` snapshot**: committed OpenAPI 3.0.3 snapshot of `build_openapi_spec()` with a lock-step unit test (`openapi_docs_snapshot_matches_spec`); regenerate after route/contract changes or version bumps via `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec` — same maintenance model as `man/crabmate.1`. Import into Swagger Editor / VS Code OpenAPI extensions / Postman for browsing or multi-language client generation; `GET /openapi.json` remains the live source of truth.
+
 ## [0.5.2] - 2026-09-07
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.2`** matches this package. SSE wire protocol stays **v2**; all additions below are purely additive public protocol face (new exported types, wire JSON unchanged) — released as patch + notes per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2; existing Clients keep working.

@@ -1,0 +1,4130 @@
+{
+  "components": {
+    "schemas": {
+      "ApiError": {
+        "description": "统一的 API 错误结构：包含错误码与面向用户的友好提示。",
+        "properties": {
+          "code": {
+            "description": "机器可读的错误码（前端或日志可用）",
+            "type": "string"
+          },
+          "details": {
+            "description": "字段级 / 约束级细节；旧客户端可忽略。",
+            "items": {
+              "$ref": "#/components/schemas/ApiErrorDetail"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "message": {
+            "description": "面向用户展示的友好错误信息",
+            "type": "string"
+          },
+          "reason_code": {
+            "description": "与 `code` 配套的细分子码（如 `INTERNAL_ERROR` 时的截断内部摘要）；旧客户端可忽略。",
+            "nullable": true,
+            "type": "string"
+          },
+          "request_id": {
+            "description": "与响应头 `x-request-id` 同值（有则填）；旧客户端可忽略。",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiError",
+        "type": "object"
+      },
+      "ApiErrorDetail": {
+        "description": "字段级或约束级错误细节（与顶层 `code` 同风格的大写蛇形子码）。",
+        "properties": {
+          "code": {
+            "description": "稳定机器可读子码（建议 `INVALID_*` 等，与顶层 `code` 一致风格）。",
+            "type": "string"
+          },
+          "field": {
+            "nullable": true,
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      },
+      "ChatApprovalRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_session_id": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approval_session_id",
+          "decision"
+        ],
+        "title": "ChatApprovalRequestBody",
+        "type": "object"
+      },
+      "ChatApprovalResponseBody": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "ChatApprovalResponseBody",
+        "type": "object"
+      },
+      "ChatAsyncRequestBody": {
+        "description": "`POST /chat/async` OpenAPI 形状：与 [`ChatRequestBodyWire`] 同形扁平 JSON + 可选 webhook 字段。",
+        "properties": {
+          "agent_role": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "approval_session_id": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "clarify_questionnaire_answers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarifyQuestionnaireAnswersBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "client_llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientLlmBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "client_sse_protocol": {
+            "default": null,
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "conversation_id": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "executor_llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutorLlmBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "image_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "readonly_tool_ttl_cache_secs": {
+            "default": null,
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "seed": {
+            "default": null,
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "seed_policy": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "session_mode": {
+            "default": null,
+            "description": "Session capability mode (orthogonal to agent_role). ask/plan → readonly tools; act → full tools ∩ role allowlist. Default from config default_session_mode.",
+            "enum": [
+              "ask",
+              "plan",
+              "act"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "stream_resume": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamResumeBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "temperature": {
+            "default": null,
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "webhook_secret": {
+            "description": "可选：Webhook 请求头 `X-Crabmate-Webhook-Secret`（勿在日志输出完整值）。",
+            "nullable": true,
+            "type": "string"
+          },
+          "webhook_url": {
+            "description": "非空时：任务进入 `completed` / `failed` 后向该 URL POST JSON（须 http/https）。",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ChatAsyncRequestBodyOpenApi",
+        "type": "object"
+      },
+      "ChatAsyncSubmitResponseBody": {
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "status": {
+            "description": "初始状态恒为 **`pending`**。",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "conversation_id"
+        ],
+        "title": "ChatAsyncSubmitResponseBody",
+        "type": "object"
+      },
+      "ChatBranchRequestBody": {
+        "additionalProperties": false,
+        "description": "Web：将会话在服务端截断到第 `before_user_ordinal` 条**普通**用户消息之前。",
+        "properties": {
+          "before_user_ordinal": {
+            "description": "从此序号对应的用户消息起（含）全部丢弃。",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "expected_revision": {
+            "description": "截断前客户端所知的 `revision`。",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "before_user_ordinal",
+          "expected_revision"
+        ],
+        "title": "ChatBranchRequestBody",
+        "type": "object"
+      },
+      "ChatBranchResponseBody": {
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "revision"
+        ],
+        "title": "ChatBranchResponseBody",
+        "type": "object"
+      },
+      "ChatJobStatusResponseBody": {
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "conversation_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ApiError"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "job_id": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "reply": {
+            "nullable": true,
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "conversation_id"
+        ],
+        "title": "ChatJobStatusResponseBody",
+        "type": "object"
+      },
+      "ChatRequestBody": {
+        "additionalProperties": false,
+        "description": "`POST /chat` / `POST /chat/stream` 请求的 JSON 线型（OpenAPI 与 [`ChatRequestBody`] 反序列化同源）。",
+        "properties": {
+          "agent_role": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "approval_session_id": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "clarify_questionnaire_answers": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClarifyQuestionnaireAnswersBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "client_llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClientLlmBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "client_sse_protocol": {
+            "default": null,
+            "format": "uint8",
+            "maximum": 255,
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "conversation_id": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "executor_llm": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutorLlmBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "image_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "message": {
+            "type": "string"
+          },
+          "readonly_tool_ttl_cache_secs": {
+            "default": null,
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "seed": {
+            "default": null,
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "seed_policy": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "session_mode": {
+            "default": null,
+            "description": "Session capability mode (orthogonal to agent_role). ask/plan → readonly tools; act → full tools ∩ role allowlist. Default from config default_session_mode.",
+            "enum": [
+              "ask",
+              "plan",
+              "act"
+            ],
+            "nullable": true,
+            "type": "string"
+          },
+          "stream_resume": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/StreamResumeBody"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "temperature": {
+            "default": null,
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ChatRequestBodyWire",
+        "type": "object"
+      },
+      "ChatResponseBody": {
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "conversation_revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "reply": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "reply",
+          "conversation_id"
+        ],
+        "title": "ChatResponseBody",
+        "type": "object"
+      },
+      "ClarifyQuestionnaireAnswersBody": {
+        "additionalProperties": false,
+        "description": "用户对澄清问卷的作答；与 SSE `clarification_questionnaire.questionnaire_id` 及题目 `id` 对齐。",
+        "properties": {
+          "answers": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "键为题目的 `id`，值为字符串（或 JSON 数字/布尔，服务端会规范为字符串）。",
+            "type": "object"
+          },
+          "questionnaire_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "questionnaire_id"
+        ],
+        "type": "object"
+      },
+      "ClientLlmBody": {
+        "additionalProperties": false,
+        "description": "`ChatRequestBody::client_llm` 的 JSON 形状（与前端 `client_llm` 对象一致）。",
+        "properties": {
+          "api_base": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "api_key": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "llm_context_tokens": {
+            "default": null,
+            "description": "可选：模型上下文窗口 token 上限（输入+输出），仅本回合。",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "llm_thinking_mode": {
+            "default": null,
+            "description": "可选：本回合覆盖供应商 **`thinking`** 相关开关；**`server`** / 省略表示跟随服务端配置。",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "ClientLlmBody",
+        "type": "object"
+      },
+      "ConfigReloadResponseBody": {
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "message"
+        ],
+        "title": "ConfigReloadResponseBody",
+        "type": "object"
+      },
+      "ConversationLayoutMeta": {
+        "description": "`GET /conversation/messages` 可选布局元数据。\n\n**会话级**（与 `revision` 同范围），**不**随 `limit` / `before_index` 对 `messages` 分页切片。\n落盘 JSON 与本类型 serde 相同。新保存写入该对象；旧行可省略。\n官方 Web（B3）：双读本字段记差分（行数/角色序/文本 hash）；GET 还原的历史行保持 legacy id，\n不把流式活键（`turn-commentary-*` / `turn-final-answer`）stamp 到持久化水合行。无本字段则纯 legacy。",
+        "properties": {
+          "layout_schema_version": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "projection_hash": {
+            "nullable": true,
+            "type": "string"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationLayoutSegment"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "layout_schema_version"
+        ],
+        "type": "object"
+      },
+      "ConversationLayoutSegment": {
+        "description": "单条 canonical 段（B2/E2 可选 hydration 键；旧会话可整段省略）。",
+        "properties": {
+          "before_tool_call_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "segment_id": {
+            "type": "string"
+          },
+          "segment_kind": {
+            "type": "string"
+          },
+          "sequence": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "turn_id": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "segment_id",
+          "segment_kind",
+          "sequence"
+        ],
+        "type": "object"
+      },
+      "ConversationMessagesResponseBody": {
+        "description": "`GET /conversation/messages` 响应 OpenAPI 形状（`messages` 为 OpenAI 兼容对象数组）。",
+        "properties": {
+          "active_agent_role": {
+            "nullable": true,
+            "type": "string"
+          },
+          "active_session_mode": {
+            "nullable": true,
+            "type": "string"
+          },
+          "context_artifacts": {
+            "description": "可选的模型视图回放配方；旧会话为空。",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "conversation_id": {
+            "type": "string"
+          },
+          "has_older": {
+            "default": false,
+            "type": "boolean"
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationLayoutMeta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "会话级布局；省略表示未持久化。不随本页 `messages` 窗口切片。"
+          },
+          "messages": {
+            "description": "OpenAI 兼容 chat messages 对象数组",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "tiktoken_prompt_tokens": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TiktokenPromptTokensOpenApi"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_count": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "window_start_index": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "revision",
+          "messages"
+        ],
+        "title": "ConversationMessagesResponseBodyOpenApi",
+        "type": "object"
+      },
+      "DeleteUploadsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "urls"
+        ],
+        "title": "DeleteUploadsBody",
+        "type": "object"
+      },
+      "DeleteUploadsResponseBody": {
+        "properties": {
+          "deleted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "deleted",
+          "skipped"
+        ],
+        "title": "DeleteUploadsResponseBody",
+        "type": "object"
+      },
+      "ExecutorLlmBody": {
+        "additionalProperties": false,
+        "description": "`ChatRequestBody::executor_llm` 的 JSON 形状（与前端 `executor_llm` 对象一致）。",
+        "properties": {
+          "api_base": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "api_key": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "ExecutorLlmBody",
+        "type": "object"
+      },
+      "HealthCheckItemView": {
+        "description": "单项健康检查结果（`checks` 的值；`detail` 为 `None` 时出站省略该键）。",
+        "properties": {
+          "detail": {
+            "nullable": true,
+            "type": "string"
+          },
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "type": "object"
+      },
+      "HealthReportView": {
+        "description": "`GET /health` 响应体（`status` + `checks`）。\n\n**不**使用 `deny_unknown_fields`：`checks` 为开放 map，`dep_*` 等检查键随运行环境与\n配置动态增减；顶层也容忍未来新增字段，旧 Client 反序列化不破坏。",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/HealthCheckItemView"
+            },
+            "default": {},
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "HealthReportView",
+        "type": "object"
+      },
+      "LlmOverridesFile": {
+        "description": "llm_overrides.json",
+        "type": "object"
+      },
+      "PutWebSessionsBody": {
+        "properties": {
+          "active_session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionListRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "SecretSlotStatus": {
+        "properties": {
+          "set": {
+            "type": "boolean"
+          },
+          "suffix": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SecretWriteBody": {
+        "properties": {
+          "api_key": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SecretsStatusResponse": {
+        "properties": {
+          "client_llm": {
+            "$ref": "#/components/schemas/SecretSlotStatus"
+          },
+          "executor_llm": {
+            "$ref": "#/components/schemas/SecretSlotStatus"
+          },
+          "web_api_bearer": {
+            "$ref": "#/components/schemas/SecretSlotStatus"
+          }
+        },
+        "type": "object"
+      },
+      "SessionConversationStoreRequestBody": {
+        "additionalProperties": false,
+        "properties": {
+          "sqlite": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "sqlite"
+        ],
+        "title": "SessionConversationStoreRequestBody",
+        "type": "object"
+      },
+      "SessionListRow": {
+        "description": "sessions 数组元素的瘦投影（存储行为 Client 全量 ChatSession，未知字段容忍）",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          },
+          "server_conversation_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "server_revision": {
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "starred": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "workspace_root": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "SkillListItem": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "SkillsListResponse": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "skills": {
+            "items": {
+              "$ref": "#/components/schemas/SkillListItem"
+            },
+            "type": "array"
+          },
+          "skills_dir": {
+            "type": "string"
+          },
+          "skills_system_dir": {
+            "type": "string"
+          },
+          "skills_user_dir": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "StatusResponseBody": {
+        "additionalProperties": true,
+        "description": "GET /status（无 view 参数）完整运行状态；字段集以后端实现为准，此处不逐项枚举",
+        "type": "object"
+      },
+      "StatusShellView": {
+        "additionalProperties": false,
+        "description": "Web UI / 状态栏 / 设置页消费的 `/status` 视图（`?view=shell`）。",
+        "properties": {
+          "agent_role_default_session_modes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "agent_role_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "api_base": {
+            "type": "string"
+          },
+          "context_char_budget": {
+            "default": 0,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "conversation_store_sqlite_active": {
+            "default": false,
+            "type": "boolean"
+          },
+          "conversation_store_sqlite_path_configured": {
+            "default": false,
+            "type": "boolean"
+          },
+          "default_agent_role_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "default_session_mode": {
+            "default": "act",
+            "type": "string"
+          },
+          "effective_context_char_budget": {
+            "default": 0,
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "executor_api_base": {
+            "default": "",
+            "type": "string"
+          },
+          "executor_model": {
+            "default": "",
+            "type": "string"
+          },
+          "llm_context_tokens": {
+            "default": 0,
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "planner_executor_mode": {
+            "default": "",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "tiktoken_new_session_baseline_by_agent_role": {
+            "additionalProperties": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "tiktoken_prompt_counting_model": {
+            "default": "",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "model",
+          "api_base"
+        ],
+        "title": "StatusShellView",
+        "type": "object"
+      },
+      "StreamResumeBody": {
+        "additionalProperties": false,
+        "properties": {
+          "after_seq": {
+            "default": null,
+            "description": "已收到的最大 SSE `id`（无则 0）；可与 `Last-Event-ID` 合并取 max。",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "job_id": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "title": "StreamResumeBody",
+        "type": "object"
+      },
+      "TaskItem": {
+        "properties": {
+          "done": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "done"
+        ],
+        "type": "object"
+      },
+      "TasksData": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskItem"
+            },
+            "type": "array"
+          },
+          "source": {
+            "nullable": true,
+            "type": "string"
+          },
+          "updated_at": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "TiktokenPromptTokensOpenApi": {
+        "description": "`GET /conversation/messages` 响应中的 tiktoken 快照（OpenAPI / HTTP 契约）。",
+        "properties": {
+          "attachment_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "counting_source": {
+            "nullable": true,
+            "type": "string"
+          },
+          "max_input_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "message_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "prompt_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "provider_input_tokens": {
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "reserved_output_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "tiktoken_model": {
+            "type": "string"
+          },
+          "tool_schema_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "used_input_tokens": {
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "prompt_tokens",
+          "tiktoken_model"
+        ],
+        "type": "object"
+      },
+      "ToolJobCancelResponseBody": {
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "tool_job_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tool_job_id",
+          "status"
+        ],
+        "type": "object"
+      },
+      "ToolJobOutputItem": {
+        "properties": {
+          "seq": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "stream": {
+            "enum": [
+              "stdout",
+              "stderr"
+            ],
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "seq",
+          "stream",
+          "text"
+        ],
+        "type": "object"
+      },
+      "ToolJobOutputResponseBody": {
+        "properties": {
+          "cursor": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "eof": {
+            "type": "boolean"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToolJobOutputItem"
+            },
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out"
+            ],
+            "type": "string"
+          },
+          "tool_job_id": {
+            "type": "string"
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool_job_id",
+          "status",
+          "cursor",
+          "truncated",
+          "eof",
+          "items"
+        ],
+        "type": "object"
+      },
+      "ToolJobStatusResponseBody": {
+        "properties": {
+          "error_code": {
+            "nullable": true,
+            "type": "string"
+          },
+          "exit_code": {
+            "nullable": true,
+            "type": "integer"
+          },
+          "failure_category": {
+            "nullable": true,
+            "type": "string"
+          },
+          "result_version": {
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "cancelled",
+              "timed_out"
+            ],
+            "type": "string"
+          },
+          "stderr": {
+            "nullable": true,
+            "type": "string"
+          },
+          "stdout": {
+            "nullable": true,
+            "type": "string"
+          },
+          "summary": {
+            "nullable": true,
+            "type": "string"
+          },
+          "tool_job_id": {
+            "type": "string"
+          },
+          "workspace_changed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tool_job_id",
+          "status",
+          "workspace_changed",
+          "result_version"
+        ],
+        "type": "object"
+      },
+      "UploadResponseBody": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/UploadedFileInfo"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "UploadResponseBody",
+        "type": "object"
+      },
+      "UploadedFileInfo": {
+        "properties": {
+          "filename": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "size": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "filename",
+          "mime",
+          "size"
+        ],
+        "title": "UploadedFileInfo",
+        "type": "object"
+      },
+      "UserPrefs": {
+        "description": "prefs.json（非机密壳层偏好）",
+        "type": "object"
+      },
+      "WebSessionsFile": {
+        "properties": {
+          "active_session_id": {
+            "nullable": true,
+            "type": "string"
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/SessionListRow"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "WebUiConfigResponse": {
+        "description": "`GET /web-ui` JSON（`markdown_render` / `apply_assistant_display_filters`）。",
+        "properties": {
+          "apply_assistant_display_filters": {
+            "description": "为 `false` 时 CSR 不对助手消息做展示层过滤，按存储原文输出（进程环境 **`CM_WEB_RAW_ASSISTANT_OUTPUT`**）。",
+            "type": "boolean"
+          },
+          "markdown_render": {
+            "description": "为 `false` 时 Web CSR 应以纯文本（HTML 转义）展示聊天气泡，跳过 Markdown 解析（进程环境 **`CM_WEB_DISABLE_MARKDOWN`**）。",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "markdown_render",
+          "apply_assistant_display_filters"
+        ],
+        "title": "WebUiConfigResponse",
+        "type": "object"
+      },
+      "WorkspaceChangelogResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceDirCreateBody": {
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "delete": {
+            "description": "为 true 时删除目录（须 confirm=true；非空目录须 recursive=true）",
+            "type": "boolean"
+          },
+          "parents": {
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "recursive": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "type": "object"
+      },
+      "WorkspaceDirCreateResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceDirDeleteResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceEntry": {
+        "properties": {
+          "is_dir": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceFileDeleteFailure": {
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceFileDeleteResponse": {
+        "properties": {
+          "deleted": {
+            "description": "批量删除成功删除的相对路径（单路径删除时为空数组）",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "error": {
+            "description": "单路径删除或整批校验失败时的错误信息；批量部分失败时为空（看 failed）",
+            "nullable": true,
+            "type": "string"
+          },
+          "failed": {
+            "description": "批量删除失败项（非空时 error 为空）",
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceFileDeleteFailure"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceFileMoveBody": {
+        "properties": {
+          "conversation_id": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          },
+          "to": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "type": "object"
+      },
+      "WorkspaceFileWriteBody": {
+        "properties": {
+          "content": {
+            "type": "string"
+          },
+          "create_directory": {
+            "description": "为 true 时在 path 创建目录（content 须为空）",
+            "type": "boolean"
+          },
+          "create_only": {
+            "type": "boolean"
+          },
+          "parents": {
+            "description": "create_directory 时递归创建父目录",
+            "type": "boolean"
+          },
+          "path": {
+            "type": "string"
+          },
+          "update_only": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object"
+      },
+      "WorkspaceFileWriteResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceListEntry": {
+        "properties": {
+          "hash": {
+            "type": "string"
+          },
+          "workspace_root": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspacePickResponse": {
+        "properties": {
+          "path": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceProfileResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "markdown": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceResponse": {
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceEntry"
+            },
+            "type": "array"
+          },
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceSearchBody": {
+        "properties": {
+          "case_insensitive": {
+            "type": "boolean"
+          },
+          "ignore_hidden": {
+            "type": "boolean"
+          },
+          "max_results": {
+            "type": "integer"
+          },
+          "path": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "type": "object"
+      },
+      "WorkspaceSearchResponse": {
+        "properties": {
+          "error": {
+            "nullable": true,
+            "type": "string"
+          },
+          "output": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "WorkspaceSetBody": {
+        "properties": {
+          "path": {
+            "nullable": true,
+            "type": "string"
+          },
+          "project": {
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "apiKeyAuth": {
+        "description": "与 `web_api_bearer_token` 相同密钥；与 Bearer 二选一即可（常见于 Dify / Open WebUI 类网关习惯）。",
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "bearerAuth": {
+        "description": "与 `[agent].web_api_bearer_token` / `CM_WEB_API_BEARER_TOKEN` 一致；未启用服务端密钥时可为空。",
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "CrabMate `serve` 模式的 HTTP 契约摘要。\n\n- **鉴权**：嵌入默认 **`web_api_require_bearer=false`**：允许无共享密钥启动 **`serve`**；若将 **`web_api_require_bearer=true`**，则启动前须配置非空 **`CM_WEB_API_BEARER_TOKEN`**（或 TOML **`web_api_bearer_token`**）。进程启动且密钥**非空**时，下列需鉴权路径须在请求头携带 **`Authorization: Bearer <token>`** 或 **`X-API-Key: <token>`**（与配置值为**同一密钥**，二选一）。密钥为空时中间件不校验，路径可对能访问监听地址的客户端匿名访问（仅限可信环境）。\n- **SSE**：`POST /chat/stream` 返回 `text/event-stream`；控制面 JSON 与错误码见仓库 `docs/SSE协议.md`，本 OpenAPI 仅作入口说明。\n- **上传**：`POST /upload` 使用 `multipart/form-data`。",
+    "title": "CrabMate Web API",
+    "version": "0.5.2"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/chat": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponseBody"
+                }
+              }
+            },
+            "description": "助手回复"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "业务或参数错误"
+          },
+          "5XX": {
+            "description": "服务器错误"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "非流式对话",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/approval": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatApprovalRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatApprovalResponseBody"
+                }
+              }
+            },
+            "description": "审批结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "工具/HTTP 审批决策",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/async": {
+      "post": {
+        "description": "立即返回 job_id；执行与 POST /chat 相同 JSON 队列路径。状态仅存本进程内存，serve 重启丢失。需工具审批请用 POST /chat/stream。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatAsyncRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatAsyncSubmitResponseBody"
+                }
+              }
+            },
+            "description": "已接受"
+          },
+          "4XX": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            },
+            "description": "参数或业务错误"
+          },
+          "503": {
+            "description": "队列满（QUEUE_FULL）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "异步非流式对话（轮询 / Webhook）",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/branch": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatBranchRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatBranchResponseBody"
+                }
+              }
+            },
+            "description": "截断结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "会话分叉截断（持久化会话）",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/jobs/{job_id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatJobStatusResponseBody"
+                }
+              }
+            },
+            "description": "任务状态"
+          },
+          "404": {
+            "description": "未知 job_id（UNKNOWN_JOB）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "查询异步对话任务状态",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/stream": {
+      "post": {
+        "description": "响应 `Content-Type: text/event-stream`；成功时响应头可含 `x-conversation-id`。事件载荷见 `docs/SSE协议.md`。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "SSE 字节流"
+          },
+          "4XX": {
+            "description": "错误（部分场景仍为 SSE 控制面 `error` 事件）"
+          },
+          "5XX": {
+            "description": "服务器错误"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "SSE 流式对话",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/chat/stream/{job_id}/cancel": {
+      "post": {
+        "description": "置位与 `x-stream-job-id` 相同的协作取消标志，并取消该回合发起的后台 `run_command` 任务。仅断开 SSE **不会**取消（以便 `stream_resume`）。任务已结束或不存在则 410 `STREAM_JOB_GONE`（与 `stream_resume` 同码）。",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "background_tools_cancelled": {
+                      "type": "integer"
+                    },
+                    "cancelled": {
+                      "type": "boolean"
+                    },
+                    "job_id": {
+                      "format": "int64",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "job_id",
+                    "cancelled",
+                    "background_tools_cancelled"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已请求取消"
+          },
+          "410": {
+            "description": "任务已结束或不存在（STREAM_JOB_GONE）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "取消进行中的 SSE 流式回合",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/config/reload": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "example": {},
+              "schema": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigReloadResponseBody"
+                }
+              }
+            },
+            "description": "重载结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "热重载 AgentConfig（不含部分字段，见 CONFIGURATION.md）",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/config/session/conversation-store": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionConversationStoreRequestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigReloadResponseBody"
+                }
+              }
+            },
+            "description": "切换结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "切换 Web 会话存储后端（内存 / SQLite，仅当前进程）",
+        "tags": [
+          "config"
+        ]
+      }
+    },
+    "/conversation/messages": {
+      "get": {
+        "description": "供 Web 刷新后与 `conversation_id` 对齐；不含长期记忆/变更集/首轮工作区画像注入；404 表示不存在或已过期。",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分页每页条数；省略或 0 表示返回过滤后的全量（兼容旧客户端）",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "取该下标之前的更早消息；省略表示尾部一页",
+            "in": "query",
+            "name": "before_index",
+            "required": false,
+            "schema": {
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationMessagesResponseBody"
+                }
+              }
+            },
+            "description": "会话快照"
+          },
+          "400": {
+            "description": "参数错误"
+          },
+          "404": {
+            "description": "会话不存在或已过期"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "只读拉取已持久化会话消息与 revision",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
+    "/github/oauth/device/cancel": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "已取消"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "取消当前 Device 会话",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/github/oauth/device/logout": {
+      "post": {
+        "responses": {
+          "204": {
+            "description": "已清除 Cookie"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "清除浏览器 HttpOnly Cookie crabmate_github_token",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/github/oauth/device/start": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "client_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "client_id"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "user_code 与 verification_uri_complete 等"
+          },
+          "400": {
+            "description": "GITHUB_OAUTH_CLIENT_ID_REQUIRED"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "启动 GitHub Device Flow（body.client_id 必填；不返回 device_code）",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/github/oauth/device/status": {
+      "get": {
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CrabMate-GitHub-Token-Delivery",
+            "required": false,
+            "schema": {
+              "enum": [
+                "body"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "state / login / error；壳可选 access_token"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "Device Flow 状态；成功时 Set-Cookie crabmate_github_token；头 X-CrabMate-GitHub-Token-Delivery: body 时 JSON 含一次性 access_token",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/github/pr/current/checks": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "checks 摘要"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "当前分支关联 PR 的 CI checks（只读）",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/github/repo-context": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "仓库与分支摘要"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "GitHub 仓库上下文（只读；优先 gh，失败时从 git remote 解析 URL）",
+        "tags": [
+          "github"
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthReportView"
+                }
+              }
+            },
+            "description": "健康报告 JSON（status + checks；checks 键随运行环境动态增减）"
+          }
+        },
+        "summary": "健康检查（依赖、可选 LLM models 探活等）",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "OpenAPI 3.0 JSON"
+          }
+        },
+        "summary": "OpenAPI 本文档",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/skills": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillsListResponse"
+                }
+              }
+            },
+            "description": "skills 目录 JSON"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列出当前工作区 skills（供 composer `/` 浮层）",
+        "tags": [
+          "skills"
+        ]
+      }
+    },
+    "/status": {
+      "get": {
+        "parameters": [
+          {
+            "description": "为 shell 时返回 Web 壳层稳定子集 StatusShellView；省略则返回完整运行状态（StatusResponseBody）",
+            "in": "query",
+            "name": "view",
+            "required": false,
+            "schema": {
+              "enum": [
+                "shell"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/StatusShellView"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StatusResponseBody"
+                    }
+                  ]
+                }
+              }
+            },
+            "description": "状态 JSON"
+          }
+        },
+        "summary": "运行状态（模型、工具数、会话模式默认、规划配置等）",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/tasks": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasksData"
+                }
+              }
+            },
+            "description": "任务数据"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取当前工作区任务清单（进程内存）",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TasksData"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TasksData"
+                }
+              }
+            },
+            "description": "回显保存后的数据"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "保存当前工作区任务清单",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/tools/jobs/{tool_job_id}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "可选归属校验：与任务创建时记录的工作区比对，不符 403 JOB_OWNERSHIP_MISMATCH",
+            "in": "header",
+            "name": "X-Workspace-Root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolJobStatusResponseBody"
+                }
+              }
+            },
+            "description": "任务状态快照"
+          },
+          "403": {
+            "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）"
+          },
+          "404": {
+            "description": "不存在 / 从未创建（JOB_NOT_FOUND）"
+          },
+          "410": {
+            "description": "已过 TTL+宽限被清理（JOB_EXPIRED）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "轮询后台工具任务状态与（终态）输出",
+        "tags": [
+          "tool_jobs"
+        ]
+      }
+    },
+    "/tools/jobs/{tool_job_id}/cancel": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "可选归属校验：与任务创建时记录的工作区比对，不符 403 JOB_OWNERSHIP_MISMATCH",
+            "in": "header",
+            "name": "X-Workspace-Root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolJobCancelResponseBody"
+                }
+              }
+            },
+            "description": "已取消（幂等；已是 cancelled 亦 200）"
+          },
+          "403": {
+            "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）"
+          },
+          "404": {
+            "description": "不存在 / 从未创建（JOB_NOT_FOUND）"
+          },
+          "409": {
+            "description": "已是其它终态（不覆盖；body `{ \"status\": <当前状态> }`）"
+          },
+          "410": {
+            "description": "已过 TTL+宽限被清理（JOB_EXPIRED）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "取消后台工具任务（queued 直接转移；running 置取消标记）",
+        "tags": [
+          "tool_jobs"
+        ]
+      }
+    },
+    "/tools/jobs/{tool_job_id}/output": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_job_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "上次响应返回的游标；省略/非法值从最早可用起（可能 truncated）",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "format": "int64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "可选归属校验：与任务创建时记录的工作区比对，不符 403 JOB_OWNERSHIP_MISMATCH",
+            "in": "header",
+            "name": "X-Workspace-Root",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolJobOutputResponseBody"
+                }
+              }
+            },
+            "description": "输出增量快照（含 status/cursor/truncated/eof）"
+          },
+          "403": {
+            "description": "X-Workspace-Root 与任务归属不符（JOB_OWNERSHIP_MISMATCH）"
+          },
+          "404": {
+            "description": "不存在 / 从未创建（JOB_NOT_FOUND）"
+          },
+          "410": {
+            "description": "已过 TTL+宽限被清理（JOB_EXPIRED）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "轮询后台工具任务实时输出（增量游标；tail -f 语义）",
+        "tags": [
+          "tool_jobs"
+        ]
+      }
+    },
+    "/upload": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "properties": {
+                  "file": {
+                    "format": "binary",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadResponseBody"
+                }
+              }
+            },
+            "description": "上传结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "multipart 文件上传",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/uploads/delete": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteUploadsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteUploadsResponseBody"
+                }
+              }
+            },
+            "description": "删除结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "按 URL 删除已上传文件",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/uploads/{filename}": {
+      "get": {
+        "parameters": [
+          {
+            "description": "单段文件名（与 POST /upload 返回的 /uploads/<filename> 一致）",
+            "in": "path",
+            "name": "filename",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件字节"
+          },
+          "400": {
+            "description": "非法文件名"
+          },
+          "404": {
+            "description": "不存在或已过期"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取聊天附图字节（与其它受保护 API 同鉴权）",
+        "tags": [
+          "uploads"
+        ]
+      }
+    },
+    "/user-data/llm-overrides": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LlmOverridesFile"
+                }
+              }
+            },
+            "description": "llm_overrides.json"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取 LLM 非机密覆盖",
+        "tags": [
+          "user_data"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LlmOverridesFile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已保存"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写回 LLM 非机密覆盖",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "mcp_servers 公共视图"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取本机 MCP 服务器清单（脱敏）",
+        "tags": [
+          "user_data"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已保存"
+          },
+          "400": {
+            "description": "JSON 无效"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写回 MCP 服务器清单（CrabMate 形状或含 mcpServers 的导入 JSON）",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers/import": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "导入结果"
+          },
+          "400": {
+            "description": "JSON 无效"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "追加导入 MCP 配置 JSON（对象或 JSON 字符串）",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers/probe-all": {
+      "post": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "各服务器探测结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "探测所有已启用的 MCP 服务器",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "global_enabled / servers[]"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "MCP 服务器运行时状态（不探测）",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers/{id}/probe": {
+      "post": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            },
+            "description": "探测结果"
+          },
+          "404": {
+            "description": "未找到 MCP 服务器"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "探测单个 MCP 服务器",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/mcp-servers/{id}/remote-auth": {
+      "put": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "bearer_token": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已写入或已清除"
+          },
+          "400": {
+            "description": "非远程服务器或 id 无效"
+          },
+          "404": {
+            "description": "未找到 MCP 服务器"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "为远程（url）MCP 服务器设置或清除 Bearer",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/prefs": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPrefs"
+                }
+              }
+            },
+            "description": "prefs.json"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取本机用户偏好",
+        "tags": [
+          "user_data"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserPrefs"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已保存"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写回本机用户偏好",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/secrets/status": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecretsStatusResponse"
+                }
+              }
+            },
+            "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串；client_llm/executor_llm 槽已退役，恒为未设置）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "密钥槽脱敏状态（无明文）",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/secrets/web-api-bearer": {
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "api_key": {
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已写入或已清除"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写入或清除本机 Web API Bearer（钥匙串；body.token 或 api_key）",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/workspaces": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WorkspaceListEntry"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "manifest 摘要列表"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列举已分桶工作区",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/user-data/workspaces/current/sessions": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSessionsFile"
+                }
+              }
+            },
+            "description": "web_sessions.json"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "当前工作区侧栏会话列表",
+        "tags": [
+          "user_data"
+        ]
+      },
+      "put": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutWebSessionsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已保存"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写当前工作区侧栏会话",
+        "tags": [
+          "user_data"
+        ]
+      }
+    },
+    "/web-ui": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebUiConfigResponse"
+                }
+              }
+            },
+            "description": "Web UI 配置 JSON"
+          }
+        },
+        "summary": "CSR 展示开关（Markdown、助手展示过滤；受 CM_WEB_* 环境变量影响）",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/workspace": {
+      "get": {
+        "parameters": [
+          {
+            "description": "相对子路径，可选",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceResponse"
+                }
+              }
+            },
+            "description": "目录列表"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列出工作区目录项",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSetBody"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "设置结果（JSON，形状与实现一致）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "设置当前 Web 工作区根",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/changelog": {
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "conversation_id",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceChangelogResponse"
+                }
+              }
+            },
+            "description": "变更集"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "本会话工作区变更集 Markdown",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/clone/stream": {
+      "post": {
+        "description": "仅当已配置 web_workspace_pool。请求 JSON：url、name，可选 depth、branch。成功路径：phase → log/progress → phase=activate → done(name,path)。墙钟超时 20 分钟。",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "branch": {
+                    "type": "string"
+                  },
+                  "depth": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "url",
+                  "name"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "text/event-stream（phase/log/progress/done/error）"
+          },
+          "400": {
+            "description": "CLONE_BAD_URL / CLONE_BAD_NAME / CLONE_BAD_DEPTH 等"
+          },
+          "404": {
+            "description": "CLONE_NO_POOL"
+          },
+          "409": {
+            "description": "CLONE_DIR_EXISTS"
+          },
+          "429": {
+            "description": "CLONE_BUSY（并发上限）"
+          },
+          "503": {
+            "description": "CLONE_NO_GIT"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "在项目池内 git clone（SSE 进度；成功后切换当前工作区）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/dir": {
+      "delete": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "confirm",
+            "required": true,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "recursive",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDirDeleteResponse"
+                }
+              }
+            },
+            "description": "删除结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "删除工作区目录（须 confirm=true；非空目录须 recursive=true）",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDirCreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceDirCreateResponse"
+                }
+              }
+            },
+            "description": "创建结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "在工作区内创建目录，或通过 JSON delete=true 删除目录（与 DELETE 等价）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/dir/archive": {
+      "get": {
+        "parameters": [
+          {
+            "description": "相对目录；省略或空表示工作区根；禁止 `..`",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "zip 字节"
+          },
+          "4XX": {
+            "description": "路径、非目录或过大（JSON ApiError）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "将工作区目录打包为 zip（未压缩合计与条目有上限；不跟随符号链接）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/file": {
+      "delete": {
+        "parameters": [
+          {
+            "description": "单路径删除的目标相对路径（批量删除时省略）",
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "批量删除：逗号分隔的相对路径列表（最多 32 个；任一非法则整批拒绝、不产生部分删除）",
+            "in": "query",
+            "name": "paths",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFileDeleteResponse"
+                }
+              }
+            },
+            "description": "删除结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "删除工作区文件（path 单文件；或 paths 批量删除，任一非法则整批拒绝）",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "get": {
+        "parameters": [
+          {
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "如 utf-8、gb18030、auto 等，与 `read_file` 工具一致",
+            "in": "query",
+            "name": "encoding",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "文件正文或 JSON 包装（与实现一致）"
+          },
+          "4XX": {
+            "description": "路径或编码错误"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取工作区内文本文件（有大小上限）",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceFileWriteBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceFileWriteResponse"
+                }
+              }
+            },
+            "description": "写入结果"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写入工作区文件",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/file/download": {
+      "get": {
+        "parameters": [
+          {
+            "description": "工作区相对路径；禁止 `..`",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "文件字节"
+          },
+          "4XX": {
+            "description": "路径或大小错误（JSON ApiError）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取工作区文件原始字节（任意类型；上限 16 MiB；供 Client 保存到本机）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/file/move": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceFileMoveBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已移动"
+          },
+          "4XX": {
+            "description": "路径、冲突或源不是文件（JSON ApiError）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "移动或重命名工作区常规文件（非目录；可选写入会话变更集）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/file/raw": {
+      "get": {
+        "parameters": [
+          {
+            "description": "工作区相对路径；禁止 `..`；不含 svg",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/gif": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/jpeg": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/png": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              },
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
+              }
+            },
+            "description": "图片字节"
+          },
+          "4XX": {
+            "description": "路径、类型或大小错误（JSON ApiError）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取工作区内常见图片原始字节（png/jpg/jpeg/webp/gif；上限 8 MiB）",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "put": {
+        "parameters": [
+          {
+            "description": "工作区相对路径；禁止 `..`",
+            "in": "query",
+            "name": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "为 true 时若目标已存在则 409 WORKSPACE_FILE_EXISTS",
+            "in": "query",
+            "name": "create_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "为 true 时若目标不存在则 404 WORKSPACE_FILE_MISSING",
+            "in": "query",
+            "name": "update_only",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "format": "binary",
+                "type": "string"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "已写入"
+          },
+          "4XX": {
+            "description": "路径、标志冲突或过大（JSON ApiError）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "写入工作区文件原始字节（任意类型；上限 16 MiB；与 POST /workspace/file 的 JSON content 上限一致）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/pick": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspacePickResponse"
+                }
+              }
+            },
+            "description": "所选路径或 null"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "工作区选目录占位（始终 path=null；请在侧栏手动填写路径）",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/profile": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceProfileResponse"
+                }
+              }
+            },
+            "description": "画像"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "项目画像 Markdown",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/projects": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "enabled / pool_path / projects"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列出 Web 项目池状态与项目名",
+        "tags": [
+          "workspace"
+        ]
+      },
+      "post": {
+        "responses": {
+          "200": {
+            "description": "切换结果（含 path）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "按名称打开或新建项目池工作区",
+        "tags": [
+          "workspace"
+        ]
+      }
+    },
+    "/workspace/search": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceSearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSearchResponse"
+                }
+              }
+            },
+            "description": "搜索结果文本"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "工作区内搜索",
+        "tags": [
+          "workspace"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "对话与流式 SSE",
+      "name": "chat"
+    },
+    {
+      "description": "工作区浏览与文件",
+      "name": "workspace"
+    },
+    {
+      "description": "健康检查与状态",
+      "name": "system"
+    },
+    {
+      "description": "进程内任务清单",
+      "name": "tasks"
+    },
+    {
+      "description": "后台工具任务轮询与取消",
+      "name": "tool_jobs"
+    },
+    {
+      "description": "配置热重载",
+      "name": "config"
+    },
+    {
+      "description": "本机用户数据（~/.local/share/crabmate）",
+      "name": "user_data"
+    },
+    {
+      "description": "上传与删除",
+      "name": "uploads"
+    }
+  ]
+}

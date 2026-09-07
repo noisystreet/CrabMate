@@ -74,6 +74,37 @@ mod tests {
         );
     }
 
+    /// `docs/openapi.json` 快照必须与 [`build_openapi_spec`] 一致（路由/契约变更时同步）。
+    ///
+    /// 再生成：`CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`
+    /// （版本号 bump 发布时同样需要；与 `man/crabmate.1` 同一维护模式。）
+    /// 快照可导入 Swagger Editor / VS Code OpenAPI 扩展 / Postman 查阅或生成 client。
+    #[test]
+    fn openapi_docs_snapshot_matches_spec() {
+        let spec = build_openapi_spec();
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/openapi.json");
+        if std::env::var_os("CRABMATE_BLESS").is_some() {
+            let pretty = serde_json::to_string_pretty(&spec).expect("serialize OpenAPI spec");
+            std::fs::write(&path, pretty + "\n").expect("write docs/openapi.json");
+            eprintln!("Wrote {}", path.display());
+            return;
+        }
+        let raw = std::fs::read_to_string(&path).expect(
+            "docs/openapi.json missing; regenerate with `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`",
+        );
+        let on_disk: Value = serde_json::from_str(&raw).expect("docs/openapi.json is valid JSON");
+        if on_disk != spec {
+            let drift: Vec<&str> = ["openapi", "info", "tags", "paths", "components"]
+                .into_iter()
+                .filter(|key| on_disk.get(*key) != spec.get(*key))
+                .collect();
+            panic!(
+                "docs/openapi.json drifted from build_openapi_spec() (fields: {drift:?}); regenerate with `CRABMATE_BLESS=1 cargo test --lib web::openapi::tests::openapi_docs_snapshot_matches_spec`"
+            );
+        }
+    }
+
     #[test]
     fn openapi_spec_has_core_paths_and_version() {
         let v = build_openapi_spec();
