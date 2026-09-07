@@ -20,6 +20,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **wasm32 protocol-only build**: `cargo check --target wasm32-unknown-unknown --no-default-features --features protocol` now compiles; `getrandom` enables its `wasm_js` feature on that target (previously failed because the unconditional dependency lacked it — the contract gate step silently skipped when the wasm32 target was absent).
 
+### Security
+
+- **Dependency hygiene**: targeted `cargo update` clearing 8 `cargo audit` warnings — unsound `event-listener` (RUSTSEC-2026-0221) / `rand` 0.8 & 0.9 (RUSTSEC-2026-0097), removed unmaintained+yanked `core2` (RUSTSEC-2026-0105), and de-yanked `chacha20` / `der` / `spin`. Remaining `paste` / `term_size` unmaintained warnings are transitive and upstream-blocked.
+
 ## [0.5.1] - 2026-09-02
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.1`** matches this package. SSE wire protocol stays **v2**; all HTTP/contract additions below are backward-compatible (new endpoint + soft config, no schema/tool-contract change).
