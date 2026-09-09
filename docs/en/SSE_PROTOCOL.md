@@ -263,7 +263,7 @@ The `"type"` field discriminates event kind (`SCREAMING_SNAKE_CASE`).
 
 | Event | Meaning |
 |-------|---------|
-| `TOOL_CALL_START` | Tool declared (name + id) |
+| `TOOL_CALL_START` | Tool declared (name + id). Optional CrabMate fields **`summary`** / **`argsPreview`** / **`arguments`** (same sources as the v1 `tool_call` frame; `arguments` may be omitted when `sse_tool_call_include_arguments` is off) — the frontend can render the argument summary right at START (e.g. the `run_command` command-line card) without waiting for `TOOL_CALL_RESULT` |
 | `TOOL_CALL_ARGS` | Tool arguments |
 | `TOOL_CALL_END` | Tool declaration end |
 | `TOOL_CALL_RESULT` | Tool result (`metadata.partial` = `true` → output fragment) |

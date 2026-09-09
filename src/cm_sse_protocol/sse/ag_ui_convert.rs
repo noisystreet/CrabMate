@@ -68,11 +68,16 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
                 .clone()
                 .or_else(|| tool_call.arguments_preview.clone())
                 .unwrap_or_default();
+            // START 帧即携带参数摘要/预览，Client 无需等待 ToolCallResult 即可渲染
+            // 命令行卡片（`run_command_card_invocation_line` 在 START 处理时读取）。
             vec![
                 AgUiEvent::ToolCallStart {
                     tool_call_id: tool_call_id.clone(),
                     name: tool_call.name.clone(),
                     parent_message_id: parent_msg_id,
+                    summary: Some(tool_call.summary.clone()),
+                    args_preview: tool_call.arguments_preview.clone(),
+                    arguments: tool_call.arguments.clone(),
                 },
                 AgUiEvent::ToolCallArgs {
                     tool_call_id: tool_call_id.clone(),
@@ -334,13 +339,26 @@ mod tests {
                 goal_id: None,
                 tool_call_id: Some("tc-1".into()),
                 arguments_preview: Some("path=/etc/hosts".into()),
-                arguments: None,
+                arguments: Some(r#"{"path":"/etc/hosts"}"#.into()),
             },
         });
         assert_eq!(events.len(), 3, "ToolCall must split into 3 events");
         assert!(
-            matches!(&events[0], AgUiEvent::ToolCallStart { name, .. } if name == "read_file"),
-            "first event should be ToolCallStart"
+            matches!(
+                &events[0],
+                AgUiEvent::ToolCallStart {
+                    name,
+                    summary,
+                    args_preview,
+                    arguments,
+                    ..
+                }
+                if name == "read_file"
+                    && summary.as_deref() == Some("读取文件")
+                    && args_preview.as_deref() == Some("path=/etc/hosts")
+                    && arguments.as_deref() == Some(r#"{"path":"/etc/hosts"}"#)
+            ),
+            "first event should be ToolCallStart carrying summary/argsPreview/arguments"
         );
         assert!(
             matches!(&events[1], AgUiEvent::ToolCallArgs { tool_call_id, .. } if tool_call_id == "tc-1"),
