@@ -1,6 +1,8 @@
 //! GitHub OAuth Device Flow：客户端提供 `client_id`，服务端代要码与轮询；成功后经 Cookie / JSON 交给客户端。
 //!
-//! `device_code` 仅留在本模块内存；服务端不把 user token 写入钥匙串或磁盘。
+//! GitHub App 授权同时返回 `refresh_token`：status 一次性交付（Cookie / body）给客户端持久化，
+//! 另提供 `POST /github/oauth/token/refresh` 代理刷新（`grant_type=refresh_token`）。
+//! `device_code` / token 仅留在本模块内存；服务端不把 user token 写入钥匙串或磁盘。
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,11 +19,11 @@ use tracing::{debug, warn};
 
 use crate::web::app_state::AppStateHttpCore;
 use crate::web::github_token_request::{
-    GITHUB_TOKEN_COOKIE_NAME, wants_github_token_body_delivery,
+    GITHUB_REFRESH_COOKIE_NAME, GITHUB_TOKEN_COOKIE_NAME, wants_github_token_body_delivery,
 };
 
 const GITHUB_DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
-const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
+pub(crate) const GITHUB_ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,9 +49,18 @@ struct DeviceSession {
     error: Option<String>,
     /// 成功后暂存；status 投递（Cookie / 可选 body）后清空。
     access_token: Option<String>,
+    /// GitHub App 刷新令牌（与 access_token 一同一次性投递后清空）。
+    refresh_token: Option<String>,
+    /// access_token 有效期（秒；GitHub `expires_in`，GitHub App 约 8 小时）。
+    expires_in: Option<u64>,
+    /// refresh_token 有效期（秒；GitHub `refresh_token_expires_in`，约 6 个月）。
+    refresh_token_expires_in: Option<u64>,
 }
 
 static DEVICE_SESSION: Mutex<Option<DeviceSession>> = Mutex::const_new(None);
+
+/// 最近一次 Device Flow 的 client_id（重启即失效；刷新请求可显式携带，失败时兜底）。
+pub(crate) static LAST_OAUTH_CLIENT_ID: Mutex<Option<String>> = Mutex::const_new(None);
 
 /// OAuth App 可用 `repo` 等；GitHub App Device Flow 通常**省略** scope（靠 App 权限）。
 /// 环境变量 **`CM_GITHUB_OAUTH_SCOPES`**：未设置或空 → 不传 `scope`；非空则原样提交（空格分隔）。
@@ -73,7 +84,7 @@ fn ensure_verification_uri_complete(verification_uri: &str, user_code: &str) -> 
     format!("{base}{sep}user_code={code}")
 }
 
-fn validate_oauth_client_id(raw: &str) -> Option<String> {
+pub(crate) fn validate_oauth_client_id(raw: &str) -> Option<String> {
     let id = raw.trim();
     if id.is_empty() || id.len() > 128 {
         return None;
@@ -110,11 +121,19 @@ pub(crate) struct DeviceStatusResponse {
     pub scopes: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// 壳 body 投递：一次性 access_token。
     #[serde(skip_serializing_if = "Option::is_none")]
     pub access_token: Option<String>,
+    /// 壳 body 投递：一次性 refresh_token（GitHub App 才有）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refresh_token_expires_in: Option<u64>,
 }
 
-fn err_json(
+pub(crate) fn err_json(
     status: StatusCode,
     code: &str,
     message: &str,
@@ -142,7 +161,7 @@ fn form_encode(s: &str) -> String {
     out
 }
 
-fn form_body(pairs: &[(&str, &str)]) -> String {
+pub(crate) fn form_body(pairs: &[(&str, &str)]) -> String {
     pairs
         .iter()
         .map(|(k, v)| format!("{}={}", form_encode(k), form_encode(v)))
@@ -208,9 +227,13 @@ fn cookie_samesite(headers: &HeaderMap) -> &'static str {
     }
 }
 
-fn set_github_token_cookie_header(token: &str, headers: &HeaderMap) -> Option<HeaderValue> {
+pub(crate) fn set_token_cookie_header(
+    name: &str,
+    token: &str,
+    headers: &HeaderMap,
+) -> Option<HeaderValue> {
     let mut parts = vec![
-        format!("{GITHUB_TOKEN_COOKIE_NAME}={}", form_encode(token)),
+        format!("{name}={}", form_encode(token)),
         "HttpOnly".into(),
         "Path=/".into(),
         format!("SameSite={}", cookie_samesite(headers)),
@@ -221,9 +244,9 @@ fn set_github_token_cookie_header(token: &str, headers: &HeaderMap) -> Option<He
     HeaderValue::from_str(&parts.join("; ")).ok()
 }
 
-fn clear_github_token_cookie_header(headers: &HeaderMap) -> Option<HeaderValue> {
+fn clear_token_cookie_header(name: &str, headers: &HeaderMap) -> Option<HeaderValue> {
     let mut parts = vec![
-        format!("{GITHUB_TOKEN_COOKIE_NAME}="),
+        format!("{name}="),
         "HttpOnly".into(),
         "Path=/".into(),
         "Max-Age=0".into(),
@@ -336,6 +359,7 @@ pub(crate) async fn github_oauth_device_start_handler(
     }
 
     let cancel = Arc::new(AtomicBool::new(false));
+    *LAST_OAUTH_CLIENT_ID.lock().await = Some(client_id.clone());
     {
         let mut guard = DEVICE_SESSION.lock().await;
         if let Some(prev) = guard.as_ref() {
@@ -352,6 +376,9 @@ pub(crate) async fn github_oauth_device_start_handler(
             scopes: None,
             error: None,
             access_token: None,
+            refresh_token: None,
+            expires_in: None,
+            refresh_token_expires_in: None,
         });
     }
 
@@ -372,7 +399,7 @@ pub(crate) async fn github_oauth_device_start_handler(
 pub(crate) async fn github_oauth_device_status_handler(headers: HeaderMap) -> Response {
     let deliver_body = wants_github_token_body_delivery(&headers);
     let mut guard = DEVICE_SESSION.lock().await;
-    let (body, set_cookie) = match guard.as_mut() {
+    let (body, set_cookies) = match guard.as_mut() {
         None => (
             DeviceStatusResponse {
                 state: DeviceFlowState::Cancelled,
@@ -380,21 +407,41 @@ pub(crate) async fn github_oauth_device_status_handler(headers: HeaderMap) -> Re
                 scopes: None,
                 error: Some("无进行中的 Device Flow 会话".into()),
                 access_token: None,
+                refresh_token: None,
+                expires_in: None,
+                refresh_token_expires_in: None,
             },
-            None,
+            Vec::new(),
         ),
         Some(s) => {
             let mut access_token = None;
-            let mut set_cookie = None;
+            let mut refresh_token_body = None;
+            let mut set_cookies = Vec::new();
             if s.state == DeviceFlowState::Success
                 && let Some(token) = s.access_token.take()
             {
-                set_cookie = set_github_token_cookie_header(&token, &headers);
+                let refresh = s.refresh_token.take();
+                let access_cookie =
+                    set_token_cookie_header(GITHUB_TOKEN_COOKIE_NAME, &token, &headers);
+                let refresh_cookie = refresh
+                    .as_deref()
+                    .and_then(|r| set_token_cookie_header(GITHUB_REFRESH_COOKIE_NAME, r, &headers));
                 if deliver_body {
                     access_token = Some(token);
-                } else if set_cookie.is_none() {
-                    // Cookie 头构造失败时把 token 放回会话，避免静默丢凭据。
-                    s.access_token = Some(token);
+                    refresh_token_body = refresh;
+                    set_cookies.extend(access_cookie);
+                    set_cookies.extend(refresh_cookie);
+                } else {
+                    let refresh_cookie_ok =
+                        refresh.is_none() || refresh_cookie.is_some();
+                    if access_cookie.is_some() && refresh_cookie_ok {
+                        set_cookies.extend(access_cookie);
+                        set_cookies.extend(refresh_cookie);
+                    } else {
+                        // Cookie 头构造失败时把 token 放回会话，避免静默丢凭据。
+                        s.access_token = Some(token);
+                        s.refresh_token = refresh;
+                    }
                 }
             }
             (
@@ -404,15 +451,18 @@ pub(crate) async fn github_oauth_device_status_handler(headers: HeaderMap) -> Re
                     scopes: s.scopes.clone(),
                     error: s.error.clone(),
                     access_token,
+                    refresh_token: refresh_token_body,
+                    expires_in: s.expires_in,
+                    refresh_token_expires_in: s.refresh_token_expires_in,
                 },
-                set_cookie,
+                set_cookies,
             )
         }
     };
     drop(guard);
     let mut res = Json(body).into_response();
-    if let Some(cookie) = set_cookie {
-        res.headers_mut().insert(header::SET_COOKIE, cookie);
+    for cookie in set_cookies {
+        res.headers_mut().append(header::SET_COOKIE, cookie);
     }
     res
 }
@@ -423,16 +473,20 @@ pub(crate) async fn github_oauth_device_cancel_handler() -> StatusCode {
         s.cancel.store(true, Ordering::SeqCst);
         s.state = DeviceFlowState::Cancelled;
         s.access_token = None;
+        s.refresh_token = None;
     }
     *guard = None;
     StatusCode::NO_CONTENT
 }
 
-/// 清除浏览器 HttpOnly GitHub token Cookie（壳另清本机钥匙串）。
+/// 清除浏览器 HttpOnly GitHub token / refresh token Cookie（壳另清本机钥匙串）。
 pub(crate) async fn github_oauth_device_logout_handler(headers: HeaderMap) -> Response {
     let mut res = StatusCode::NO_CONTENT.into_response();
-    if let Some(cookie) = clear_github_token_cookie_header(&headers) {
-        res.headers_mut().insert(header::SET_COOKIE, cookie);
+    if let Some(cookie) = clear_token_cookie_header(GITHUB_TOKEN_COOKIE_NAME, &headers) {
+        res.headers_mut().append(header::SET_COOKIE, cookie);
+    }
+    if let Some(cookie) = clear_token_cookie_header(GITHUB_REFRESH_COOKIE_NAME, &headers) {
+        res.headers_mut().append(header::SET_COOKIE, cookie);
     }
     res
 }
@@ -441,15 +495,20 @@ fn session_is_ours(s: &DeviceSession, cancel: &Arc<AtomicBool>) -> bool {
     Arc::ptr_eq(&s.cancel, cancel)
 }
 
-async fn mark_session(
-    cancel: &Arc<AtomicBool>,
-    state: DeviceFlowState,
+/// `mark_session` 的字段级更新载荷；`None` 字段保持会话原值。
+#[derive(Default)]
+struct SessionUpdate {
     error: Option<String>,
     clear_device_code: bool,
     login: Option<String>,
     scopes: Option<String>,
     access_token: Option<String>,
-) {
+    refresh_token: Option<String>,
+    expires_in: Option<u64>,
+    refresh_token_expires_in: Option<u64>,
+}
+
+async fn mark_session(cancel: &Arc<AtomicBool>, state: DeviceFlowState, update: SessionUpdate) {
     let mut guard = DEVICE_SESSION.lock().await;
     let Some(s) = guard.as_mut() else {
         return;
@@ -458,18 +517,27 @@ async fn mark_session(
         return;
     }
     s.state = state;
-    s.error = error;
-    if clear_device_code {
+    s.error = update.error;
+    if update.clear_device_code {
         s.device_code.clear();
     }
-    if login.is_some() {
-        s.login = login;
+    if update.login.is_some() {
+        s.login = update.login;
     }
-    if scopes.is_some() {
-        s.scopes = scopes;
+    if update.scopes.is_some() {
+        s.scopes = update.scopes;
     }
-    if access_token.is_some() {
-        s.access_token = access_token;
+    if update.access_token.is_some() {
+        s.access_token = update.access_token;
+    }
+    if update.refresh_token.is_some() {
+        s.refresh_token = update.refresh_token;
+    }
+    if update.expires_in.is_some() {
+        s.expires_in = update.expires_in;
+    }
+    if update.refresh_token_expires_in.is_some() {
+        s.refresh_token_expires_in = update.refresh_token_expires_in;
     }
 }
 
@@ -492,21 +560,53 @@ async fn read_poll_snapshot(
     ))
 }
 
-async fn apply_access_token(
-    client: &reqwest::Client,
-    cancel: &Arc<AtomicBool>,
-    token: &str,
-    scopes: Option<String>,
-) {
-    let login = fetch_github_login(client, token).await;
+/// GitHub `access_token` 成功响应（GitHub App 另含轮换刷新令牌与有效期）。
+pub(crate) struct TokenGrant {
+    pub(crate) access_token: String,
+    pub(crate) refresh_token: Option<String>,
+    pub(crate) scope: Option<String>,
+    pub(crate) expires_in: Option<u64>,
+    pub(crate) refresh_token_expires_in: Option<u64>,
+}
+
+pub(crate) fn parse_token_grant(v: &serde_json::Value) -> Option<TokenGrant> {
+    let access_token = v
+        .get("access_token")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())?
+        .to_string();
+    Some(TokenGrant {
+        access_token,
+        refresh_token: v
+            .get("refresh_token")
+            .and_then(|x| x.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string),
+        scope: v.get("scope").and_then(|x| x.as_str()).map(str::to_string),
+        expires_in: v.get("expires_in").and_then(|x| x.as_u64()),
+        refresh_token_expires_in: v
+            .get("refresh_token_expires_in")
+            .and_then(|x| x.as_u64()),
+    })
+}
+
+async fn apply_access_token(client: &reqwest::Client, cancel: &Arc<AtomicBool>, grant: &TokenGrant) {
+    let login = fetch_github_login(client, &grant.access_token).await;
     mark_session(
         cancel,
         DeviceFlowState::Success,
-        None,
-        true,
-        login,
-        scopes,
-        Some(token.to_string()),
+        SessionUpdate {
+            clear_device_code: true,
+            login,
+            scopes: grant.scope.clone(),
+            access_token: Some(grant.access_token.clone()),
+            refresh_token: grant.refresh_token.clone(),
+            expires_in: grant.expires_in,
+            refresh_token_expires_in: grant.refresh_token_expires_in,
+            ..SessionUpdate::default()
+        },
     )
     .await;
 }
@@ -515,16 +615,7 @@ async fn apply_access_token(
 async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Duration) -> bool {
     match err {
         "authorization_pending" => {
-            mark_session(
-                cancel,
-                DeviceFlowState::Pending,
-                None,
-                false,
-                None,
-                None,
-                None,
-            )
-            .await;
+            mark_session(cancel, DeviceFlowState::Pending, SessionUpdate::default()).await;
             tokio::time::sleep(interval).await;
             false
         }
@@ -548,11 +639,10 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
             mark_session(
                 cancel,
                 DeviceFlowState::Denied,
-                Some("用户拒绝了授权".into()),
-                false,
-                None,
-                None,
-                None,
+                SessionUpdate {
+                    error: Some("用户拒绝了授权".into()),
+                    ..SessionUpdate::default()
+                },
             )
             .await;
             true
@@ -561,11 +651,10 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
             mark_session(
                 cancel,
                 DeviceFlowState::Expired,
-                Some("授权码已过期，请重新连接".into()),
-                false,
-                None,
-                None,
-                None,
+                SessionUpdate {
+                    error: Some("授权码已过期，请重新连接".into()),
+                    ..SessionUpdate::default()
+                },
             )
             .await;
             true
@@ -579,11 +668,10 @@ async fn handle_oauth_error(cancel: &Arc<AtomicBool>, err: &str, interval: Durat
             mark_session(
                 cancel,
                 DeviceFlowState::Error,
-                Some(msg),
-                false,
-                None,
-                None,
-                None,
+                SessionUpdate {
+                    error: Some(msg),
+                    ..SessionUpdate::default()
+                },
             )
             .await;
             true
@@ -614,11 +702,10 @@ async fn poll_device_token(client: reqwest::Client, cancel: Arc<AtomicBool>) {
             mark_session(
                 &cancel,
                 DeviceFlowState::Expired,
-                Some("授权码已过期，请重新连接".into()),
-                false,
-                None,
-                None,
-                None,
+                SessionUpdate {
+                    error: Some("授权码已过期，请重新连接".into()),
+                    ..SessionUpdate::default()
+                },
             )
             .await;
             return;
@@ -652,17 +739,8 @@ async fn poll_device_token(client: reqwest::Client, cancel: Arc<AtomicBool>) {
             }
         };
 
-        if let Some(token) = v
-            .get("access_token")
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            let scopes = v
-                .get("scope")
-                .and_then(|x| x.as_str())
-                .map(|s| s.to_string());
-            apply_access_token(&client, &cancel, token, scopes).await;
+        if let Some(grant) = parse_token_grant(&v) {
+            apply_access_token(&client, &cancel, &grant).await;
             return;
         }
 
@@ -730,5 +808,46 @@ mod tests {
             "https://ui.example.com",
             "api.example.com"
         ));
+    }
+
+    #[test]
+    fn parse_token_grant_reads_github_app_fields() {
+        let v: serde_json::Value = serde_json::json!({
+            "access_token": " ghu_abc ",
+            "refresh_token": "ghr_xyz",
+            "expires_in": 28800,
+            "refresh_token_expires_in": 15780000,
+            "scope": "",
+            "token_type": "bearer"
+        });
+        let g = parse_token_grant(&v).expect("grant");
+        assert_eq!(g.access_token, "ghu_abc");
+        assert_eq!(g.refresh_token.as_deref(), Some("ghr_xyz"));
+        assert_eq!(g.expires_in, Some(28800));
+        assert_eq!(g.refresh_token_expires_in, Some(15780000));
+
+        // OAuth App（无 refresh_token）仍可解析。
+        let oauth_app: serde_json::Value =
+            serde_json::json!({ "access_token": "gho_plain", "scope": "repo" });
+        let g = parse_token_grant(&oauth_app).expect("grant");
+        assert_eq!(g.access_token, "gho_plain");
+        assert!(g.refresh_token.is_none());
+
+        let err = serde_json::json!({ "error": "authorization_pending" });
+        assert!(parse_token_grant(&err).is_none());
+    }
+
+    #[test]
+    fn token_cookies_use_configured_names() {
+        let mut h = HeaderMap::new();
+        h.insert(header::HOST, HeaderValue::from_static("127.0.0.1:8080"));
+        let c = set_token_cookie_header(GITHUB_REFRESH_COOKIE_NAME, "ghr_x", &h).unwrap();
+        assert!(
+            c.to_str()
+                .unwrap()
+                .starts_with("crabmate_github_refresh=ghr_x")
+        );
+        let cleared = clear_token_cookie_header(GITHUB_REFRESH_COOKIE_NAME, &h).unwrap();
+        assert!(cleared.to_str().unwrap().contains("Max-Age=0"));
     }
 }
