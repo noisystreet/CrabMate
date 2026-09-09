@@ -17,6 +17,9 @@ pub(crate) static X_CRABMATE_GITHUB_TOKEN_DELIVERY: HeaderName =
 /// HttpOnly Cookie 名（浏览器 Device Flow 成功后种下）。
 pub(crate) const GITHUB_TOKEN_COOKIE_NAME: &str = "crabmate_github_token";
 
+/// HttpOnly Cookie 名：Device Flow 的 refresh_token（浏览器刷新路径由服务端代刷）。
+pub(crate) const GITHUB_REFRESH_COOKIE_NAME: &str = "crabmate_github_refresh";
+
 /// 从请求头解析 token：`X-CrabMate-GitHub-Token` → Cookie `crabmate_github_token`。
 pub(crate) fn extract_github_token_from_headers(headers: &HeaderMap) -> Option<String> {
     if let Some(raw) = headers
@@ -29,6 +32,11 @@ pub(crate) fn extract_github_token_from_headers(headers: &HeaderMap) -> Option<S
         }
     }
     cookie_value(headers, GITHUB_TOKEN_COOKIE_NAME)
+}
+
+/// 从 Cookie 读取 refresh_token（仅 `/github/oauth/token/refresh` 使用）。
+pub(crate) fn extract_github_refresh_token_from_headers(headers: &HeaderMap) -> Option<String> {
+    cookie_value(headers, GITHUB_REFRESH_COOKIE_NAME)
 }
 
 fn cookie_value(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -105,5 +113,19 @@ mod tests {
             HeaderValue::from_static("body"),
         );
         assert!(wants_github_token_body_delivery(&h));
+    }
+
+    #[test]
+    fn reads_refresh_cookie() {
+        let mut h = HeaderMap::new();
+        assert!(extract_github_refresh_token_from_headers(&h).is_none());
+        h.insert(
+            COOKIE,
+            HeaderValue::from_static("crabmate_github_token=ghu_a; crabmate_github_refresh=ghr_b"),
+        );
+        assert_eq!(
+            extract_github_refresh_token_from_headers(&h).as_deref(),
+            Some("ghr_b")
+        );
     }
 }

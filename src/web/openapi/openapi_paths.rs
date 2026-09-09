@@ -792,7 +792,7 @@ fn openapi_paths_fragment_github() -> Value {
         "/github/oauth/device/status": {
             "get": {
                 "tags": ["github"],
-                "summary": "Device Flow 状态；成功时 Set-Cookie crabmate_github_token；头 X-CrabMate-GitHub-Token-Delivery: body 时 JSON 含一次性 access_token",
+                "summary": "Device Flow 状态；成功时 Set-Cookie crabmate_github_token 与 crabmate_github_refresh；头 X-CrabMate-GitHub-Token-Delivery: body 时 JSON 含一次性 access_token / refresh_token",
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "parameters": [
                     {
@@ -804,9 +804,38 @@ fn openapi_paths_fragment_github() -> Value {
                 ],
                 "responses": {
                     "200": {
-                        "description": "state / login / error；壳可选 access_token",
+                        "description": "state / login / error；壳可选 access_token / refresh_token 与有效期秒数",
                         "content": { "application/json": { "schema": { "type": "object" } } }
                     }
+                }
+            }
+        },
+        "/github/oauth/token/refresh": {
+            "post": {
+                "tags": ["github"],
+                "summary": "用 refresh_token 刷新 user access token（壳在 body 提供 refresh_token / client_id；浏览器走 HttpOnly Cookie crabmate_github_refresh，client_id 回退最近一次 Device Flow）",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "requestBody": {
+                    "required": false,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "client_id": { "type": "string" },
+                                    "refresh_token": { "type": "string" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "新 access_token（GitHub App 另含轮换 refresh_token 与有效期秒数）并 Set-Cookie 更新",
+                        "content": { "application/json": { "schema": { "type": "object" } } }
+                    },
+                    "400": { "description": "GITHUB_REFRESH_TOKEN_REQUIRED / GITHUB_OAUTH_CLIENT_ID_REQUIRED" },
+                    "401": { "description": "GITHUB_REFRESH_TOKEN_REJECTED" }
                 }
             }
         },
