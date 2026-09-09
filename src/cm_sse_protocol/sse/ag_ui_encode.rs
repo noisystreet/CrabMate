@@ -41,11 +41,42 @@ mod tests {
             tool_call_id: "tc-1".into(),
             name: "read_file".into(),
             parent_message_id: "msg-1".into(),
+            summary: Some("读取文件".into()),
+            args_preview: Some(r#"{"path":"/etc/hosts"}"#.into()),
+            arguments: Some(r#"{"path":"/etc/hosts"}"#.into()),
         };
         let s = encode_ag_ui_event(&event);
         assert!(s.contains(r#""type":"TOOL_CALL_START""#), "got: {s}");
         assert!(s.contains(r#""toolCallId":"tc-1""#), "got: {s}");
         assert!(s.contains(r#""name":"read_file""#), "got: {s}");
+        assert!(s.contains(r#""summary":"读取文件""#), "got: {s}");
+        assert!(
+            s.contains(r#""argsPreview":"{\"path\":\"/etc/hosts\"}""#),
+            "got: {s}"
+        );
+        assert!(
+            s.contains(r#""arguments":"{\"path\":\"/etc/hosts\"}""#),
+            "got: {s}"
+        );
+    }
+
+    #[test]
+    fn tool_call_start_optional_fields_skipped_when_none() {
+        let event = AgUiEvent::ToolCallStart {
+            tool_call_id: "tc-1".into(),
+            name: "read_file".into(),
+            parent_message_id: "msg-1".into(),
+            summary: None,
+            args_preview: None,
+            arguments: None,
+        };
+        let s = encode_ag_ui_event(&event);
+        assert!(!s.contains("summary"), "unexpected summary in: {s}");
+        assert!(!s.contains("argsPreview"), "unexpected argsPreview in: {s}");
+        assert!(
+            !s.contains(r#""arguments""#),
+            "unexpected arguments in: {s}"
+        );
     }
 
     #[test]

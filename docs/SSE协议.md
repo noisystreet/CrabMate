@@ -263,7 +263,7 @@ AG-UI 事件为单行 JSON，无 `v` 字段或 `SseMessage` 信封：
 
 | 事件 | 含义 |
 |------|------|
-| `TOOL_CALL_START` | 工具声明（名称 + id） |
+| `TOOL_CALL_START` | 工具声明（名称 + id）。可选 CrabMate 扩展字段 **`summary`** / **`argsPreview`** / **`arguments`**（与 v1 `tool_call` 同名面同源；`arguments` 受 `sse_tool_call_include_arguments` 控制可能缺省）——前端在 START 帧即可渲染参数摘要（如 `run_command` 命令行卡片），无需等待 `TOOL_CALL_RESULT` |
 | `TOOL_CALL_ARGS` | 工具参数 |
 | `TOOL_CALL_END` | 工具声明结束 |
 | `TOOL_CALL_RESULT` | 工具执行结果（`metadata.partial` 为 `true` 时表示输出片段） |

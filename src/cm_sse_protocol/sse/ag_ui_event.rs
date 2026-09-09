@@ -66,6 +66,16 @@ pub(crate) enum AgUiEvent {
         name: String,
         #[serde(rename = "parentMessageId")]
         parent_message_id: String,
+        /// CrabMate 扩展：与 v1 `tool_call.summary` 同源；Client 在 START 帧即可渲染卡片标题。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        summary: Option<String>,
+        /// CrabMate 扩展：与 v1 `tool_call.arguments_preview` 同源的参数预览。
+        #[serde(rename = "argsPreview", skip_serializing_if = "Option::is_none")]
+        args_preview: Option<String>,
+        /// CrabMate 扩展：与 v1 `tool_call.arguments` 同源的完整参数 JSON（受
+        /// `sse_tool_call_include_arguments` 控制，可能缺省）。
+        #[serde(skip_serializing_if = "Option::is_none")]
+        arguments: Option<String>,
     },
     ToolCallArgs {
         #[serde(rename = "toolCallId")]

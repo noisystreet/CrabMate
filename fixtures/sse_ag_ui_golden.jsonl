@@ -12,6 +12,7 @@ TEXT_MESSAGE_START	{"type":"TEXT_MESSAGE_START","messageId":"msg-1","role":"assi
 TEXT_MESSAGE_CONTENT	{"type":"TEXT_MESSAGE_CONTENT","messageId":"msg-1","delta":"hello"}	handled
 TEXT_MESSAGE_END	{"type":"TEXT_MESSAGE_END","messageId":"msg-1"}	handled
 TOOL_CALL_START	{"type":"TOOL_CALL_START","toolCallId":"tc-1","name":"read_file","parentMessageId":"msg-1"}	handled
+TOOL_CALL_START with args	{"type":"TOOL_CALL_START","toolCallId":"tc-9","name":"run_command","parentMessageId":"msg-1","summary":"执行命令 ls -la","argsPreview":"{\"command\":\"ls\",\"args\":[\"-la\"]}","arguments":"{\"command\":\"ls\",\"args\":[\"-la\"]}"}	handled
 TOOL_CALL_ARGS	{"type":"TOOL_CALL_ARGS","toolCallId":"tc-1","args":"path=/etc/hosts"}	handled
 TOOL_CALL_END	{"type":"TOOL_CALL_END","toolCallId":"tc-1"}	handled
 TOOL_CALL_RESULT	{"type":"TOOL_CALL_RESULT","toolCallId":"tc-1","content":"done"}	handled
