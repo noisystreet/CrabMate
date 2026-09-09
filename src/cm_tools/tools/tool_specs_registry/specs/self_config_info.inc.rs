@@ -7,4 +7,12 @@
             runner: runner_self_config_info,
             summary: ToolSummaryKind::Static("Runtime self-config summary (redacted)"),
         },
+        ToolSpec {
+            name: "skill_manage",
+            description: "管理技能（skills）文件，支持 install / list / remove 三种 action。`list`：列出三层（system → user → workspace，同 id 工作区优先）已安装技能及其描述、路径与跨层覆盖标注。`install`：将 Markdown 正文写入 `<层目录>/<name>/SKILL.md` 并自动生成 frontmatter（name/description）；可选参数：name（技能 id，字母/数字/-/_，≤64 字符）、content（Markdown 正文）、description（一句话描述，缺省取正文首行）、layer（workspace 默认 / user；不允许 system）、force（同层同 id 冲突时覆盖需 true）。`remove`：按可调用 id 删除技能文件，必须显式 `confirm=true`；跨层歧义时用 `layer`（默认 workspace）消歧。技能在下一轮对话自动生效，无需重启。需要给 agent 安装新技能/斜杠命令、查看已装技能、卸载技能时调用本工具。",
+            category: ToolCategory::Development,
+            parameters: tool_params::params_skill_manage,
+            runner: runner_skill_manage,
+            summary: ToolSummaryKind::Static("Skill install/list/remove"),
+        },
 ]

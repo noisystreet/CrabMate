@@ -5,7 +5,7 @@ use crate::cm_tools::tools::tool_param_types::{
     ChangelogDraftArgs, CrateContractMapArgs, DiagnosticSummaryArgs, ErrorOutputPlaybookArgs,
     LicenseNoticeArgs, LongTermForgetArgs, LongTermMemoryListArgs, LongTermRememberArgs,
     PlaybookRunCommandsArgs, PresentClarificationQuestionnaireArgs, RepoOverviewSweepArgs,
-    SelfConfigInfoArgs, SummarizeExperienceArgs,
+    SelfConfigInfoArgs, SkillManageArgs, SummarizeExperienceArgs,
 };
 
 pub(in crate::cm_tools::tools) fn params_changelog_draft() -> serde_json::Value {
@@ -26,6 +26,10 @@ pub(in crate::cm_tools::tools) fn params_diagnostic_summary() -> serde_json::Val
 
 pub(in crate::cm_tools::tools) fn params_self_config_info() -> serde_json::Value {
     tool_parameters_schema_value::<SelfConfigInfoArgs>()
+}
+
+pub(in crate::cm_tools::tools) fn params_skill_manage() -> serde_json::Value {
+    tool_parameters_schema_value::<SkillManageArgs>()
 }
 
 pub(in crate::cm_tools::tools) fn params_repo_overview_sweep() -> serde_json::Value {
