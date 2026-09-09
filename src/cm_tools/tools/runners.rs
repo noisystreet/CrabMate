@@ -348,6 +348,17 @@ pub fn runner_self_config_info(args: &str, ctx: &ToolContext<'_>) -> String {
     out
 }
 
+pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {
+    let Some(cfg) = ctx.cfg else {
+        return "错误：工具上下文缺少 AgentConfig".to_string();
+    };
+    let parsed: super::tool_param_types::SkillManageArgs = match super::parse_args_typed(args) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    skill_manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
+}
+
 pub fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {
     crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire(args)
 }

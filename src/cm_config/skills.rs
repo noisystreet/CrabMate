@@ -251,13 +251,98 @@ pub(crate) fn default_skills_system_dir() -> PathBuf {
     PathBuf::from(crate::cm_config::user_config_xdg::SYSTEM_CONFIG_DIR).join("skills")
 }
 
-fn skill_merge_key(doc: &SkillDoc) -> String {
+pub(crate) fn skill_merge_key(doc: &SkillDoc) -> String {
     if let Some(n) = doc.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
         return n.to_ascii_lowercase();
     }
     skill_path_stem(&doc.display_path)
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| doc.display_path.to_ascii_lowercase())
+}
+
+/// 技能所在层（`skill_manage` 等管理场景的输出与写入定位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SkillLayer {
+    System,
+    User,
+    Workspace,
+}
+
+impl SkillLayer {
+    /// 层标签（小写，与配置文档用语一致）。
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "user",
+            Self::Workspace => "workspace",
+        }
+    }
+}
+
+/// 带层标签与绝对路径的技能条目：管理工具需要看到**全部物理文件**，不做跨层去重。
+#[derive(Debug, Clone)]
+pub struct SkillManagedDoc {
+    pub layer: SkillLayer,
+    pub abs_path: PathBuf,
+    pub doc: SkillDoc,
+}
+
+impl SkillManagedDoc {
+    /// 合并键（同 id 覆盖判定）：frontmatter `name` 小写，否则路径 stem 小写。
+    #[must_use]
+    pub fn merge_key(&self) -> String {
+        skill_merge_key(&self.doc)
+    }
+}
+
+/// 解析单个技能层目录（供写入 / 管理定位）：空串 = 该层未启用 → `Err`；相对路径相对 `base_dir`。
+pub fn resolve_skill_layer_dir(
+    base_dir: &Path,
+    configured: &str,
+    layer: SkillLayer,
+) -> Result<PathBuf, String> {
+    resolve_optional_layer_dir(base_dir, configured)?
+        .ok_or_else(|| format!("{} 层技能目录未启用（配置为空串）", layer.label()))
+}
+
+/// 按层（系统 → 用户 → 工作区）扫描全部技能文件；**不做**跨层 / 同层去重。
+///
+/// 单层 IO 失败：系统 / 用户层跳过并 `warn`；工作区层返回 `Err`（与 [`list_skills`] 一致）。
+pub fn list_skills_by_layer(opts: SkillsListOpts<'_>) -> Result<Vec<SkillManagedDoc>, String> {
+    let mut out: Vec<SkillManagedDoc> = Vec::new();
+    if let Some(system_dir) =
+        resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_system_dir)?
+    {
+        for doc in list_skills_layer_lenient(&system_dir, &system_dir, "system") {
+            out.push(SkillManagedDoc {
+                layer: SkillLayer::System,
+                abs_path: system_dir.join(&doc.display_path),
+                doc,
+            });
+        }
+    }
+    if let Some(user_dir) = resolve_optional_layer_dir(opts.workspace_base_dir, opts.skills_user_dir)?
+    {
+        for doc in list_skills_layer_lenient(&user_dir, &user_dir, "user") {
+            out.push(SkillManagedDoc {
+                layer: SkillLayer::User,
+                abs_path: user_dir.join(&doc.display_path),
+                doc,
+            });
+        }
+    }
+    let workspace_dir = resolve_skills_dir(opts.workspace_base_dir, opts.skills_dir)?;
+    // 工作区层失败仍上抛：相对路径配置错误应可见。
+    for doc in list_skills_in_resolved_dir(&workspace_dir, opts.workspace_base_dir)? {
+        // display_path 相对工作区根（skills_dir 为绝对路径且在根外时即为绝对路径，join 语义仍正确）。
+        out.push(SkillManagedDoc {
+            layer: SkillLayer::Workspace,
+            abs_path: opts.workspace_base_dir.join(&doc.display_path),
+            doc,
+        });
+    }
+    Ok(out)
 }
 
 /// Cursor 同形：`<id>/SKILL.md`（同目录多个大小写变体时取排序后第一个）。

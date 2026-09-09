@@ -70,6 +70,7 @@ mod schedule;
 mod schema_check;
 mod security_tools;
 mod self_config_info;
+mod skill_manage;
 mod source_analysis_tools;
 mod spell_astgrep_tools;
 #[cfg(feature = "csv-tools")]

@@ -71,6 +71,51 @@ pub struct SelfConfigInfoArgs {
     pub sections: Option<Vec<String>>,
 }
 
+/// `skill_manage` 操作类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillManageAction {
+    /// 安装技能（写入 `<skills_dir>/<name>/SKILL.md`，自动生成 frontmatter）。
+    Install,
+    /// 列出系统 / 用户 / 工作区三层全部技能（含覆盖关系）。
+    List,
+    /// 按可调用 id 删除技能文件（需 `confirm=true`）。
+    Remove,
+}
+
+/// `skill_manage` 目标层（install 不允许 `system`）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SkillManageLayer {
+    /// 工作区层（默认，`.crabmate/skills`）。
+    Workspace,
+    /// 用户级层（跨工作区，`skills_user_dir`）。
+    User,
+    /// 系统级层（仅 `remove` 允许）。
+    System,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields, default)]
+pub struct SkillManageArgs {
+    /// 操作：`install` / `list` / `remove`。必填。
+    pub action: Option<SkillManageAction>,
+    /// 技能 id（install / remove 必填）：即 frontmatter `name` 或 `/<id>` 可调用标识；小写连字符风格。
+    pub name: Option<String>,
+    /// install：Markdown 正文（工具自动生成 `---` frontmatter 与 `name:` / `description:`）。
+    #[schemars(length(min = 1, max = 100_000))]
+    pub content: Option<String>,
+    /// install：一句话描述（写入 frontmatter `description:`，供技能索引与选用排序）。
+    #[schemars(length(min = 1, max = 500))]
+    pub description: Option<String>,
+    /// 目标层：install/remove 默认 `workspace`；install 仅 `workspace` / `user`；remove 额外允许 `system`（跨层歧义时消歧）。
+    pub layer: Option<SkillManageLayer>,
+    /// install：目标层已有同 id 技能时是否覆盖（默认 false 报错）。
+    pub force: Option<bool>,
+    /// remove：删除确认（必须为 true）。
+    pub confirm: Option<bool>,
+}
+
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoOverviewSweepArgs {

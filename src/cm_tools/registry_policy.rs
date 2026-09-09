@@ -149,6 +149,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "gh_issue_create",
             "gh_run_rerun",
             "gh_release_create",
+            "skill_manage",
         ]
         .into_iter()
         .map(|s| s.to_string())
