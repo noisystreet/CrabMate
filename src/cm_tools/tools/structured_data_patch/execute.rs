@@ -93,8 +93,7 @@ fn prepare_structured_patch(
 }
 
 fn parse_structured_patch_args(args_json: &str) -> Result<StructuredPatchArgs, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+    crate::cm_tools::tools::parse_args_typed(args_json)
 }
 
 fn validate_write_intent(args: &StructuredPatchArgs) -> Result<(), String> {

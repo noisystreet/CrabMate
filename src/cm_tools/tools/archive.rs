@@ -26,13 +26,9 @@ const ARCHIVE_FORMAT_SUFFIXES: &[(&str, &str)] = &[
 
 /// 创建归档
 pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: ArchivePackArgs = match serde_json::from_value(v) {
+    let args: ArchivePackArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {}", e),
+        Err(e) => return e,
     };
 
     let output = args.output.trim();
@@ -75,13 +71,9 @@ pub fn archive_pack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>)
 
 /// 解压归档
 pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: ArchiveUnpackArgs = match serde_json::from_value(v) {
+    let args: ArchiveUnpackArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {}", e),
+        Err(e) => return e,
     };
 
     let archive = args.archive.trim();
@@ -133,13 +125,9 @@ pub fn archive_unpack(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_
 
 /// 列出归档内容
 pub fn archive_list(args_json: &str, working_dir: &Path, _ctx: &ToolContext<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: ArchiveListArgs = match serde_json::from_value(v) {
+    let args: ArchiveListArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {}", e),
+        Err(e) => return e,
     };
 
     let archive = args.archive.trim();

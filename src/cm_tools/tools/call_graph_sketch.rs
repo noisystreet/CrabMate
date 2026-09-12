@@ -32,9 +32,7 @@ struct Edge {
 }
 
 fn parse_params(args_json: &str) -> Result<SketchParams, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: CallGraphSketchArgs =
-        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: CallGraphSketchArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
 
     let mut symbols: Vec<String> = args
         .symbols

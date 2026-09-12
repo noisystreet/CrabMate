@@ -94,9 +94,7 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
 }
 
 fn parse_params(args_json: &str) -> Result<SymbolParams, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: FindSymbolArgs =
-        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: FindSymbolArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
 
     let symbol = args.symbol.trim().to_string();
     if symbol.is_empty() {

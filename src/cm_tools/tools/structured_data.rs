@@ -498,13 +498,9 @@ fn serialize_by_format(v: &JsonValue, fmt: DataFormat) -> Result<String, String>
 /// 校验并可选摘要顶层结构。
 /// 参数：`path`，`format?`（auto/json/yaml/toml/csv/tsv），`has_header?`（仅 CSV/TSV；默认 true），`summarize?` 默认 true
 pub fn structured_validate(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: StructuredValidateArgs = match serde_json::from_value(v) {
+    let args: StructuredValidateArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path = match args.path.trim() {
         p if !p.is_empty() => p,
@@ -661,13 +657,9 @@ fn structured_diff_format_report(
 /// 将两份文件解析为同一 JSON 模型后做键级差异（非文本 diff）。
 /// 参数：`path_a`，`path_b`，`format?`（对两边使用同一解释；若 auto 则分别按扩展名推断），`has_header?`（仅 CSV/TSV；默认 true），`max_diff_lines?` 默认 200，上限 2000
 pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: StructuredDiffArgs = match serde_json::from_value(v) {
+    let args: StructuredDiffArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path_a = match args.path_a.trim() {
         p if !p.is_empty() => p,

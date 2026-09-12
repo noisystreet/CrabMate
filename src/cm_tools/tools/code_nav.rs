@@ -18,13 +18,9 @@ const DEFAULT_MAX_OUTLINE_ITEMS: usize = 200;
 
 /// 在工作区内搜索某标识符的「引用」（基于词边界；默认跳过疑似定义行）。
 pub fn find_references(args_json: &str, workspace_root: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: FindReferencesArgs = match serde_json::from_value(v) {
+    let args: FindReferencesArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let symbol = args.symbol.trim().to_string();
     if symbol.is_empty() {

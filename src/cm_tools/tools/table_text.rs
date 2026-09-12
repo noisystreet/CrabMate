@@ -799,13 +799,9 @@ fn run_table_text_from_value(v: &Value, workspace_root: &Path) -> String {
 
 /// 执行 `table_text` 工具。
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: TableTextArgs = match serde_json::from_value(parsed) {
+    let args: TableTextArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
 
     let v = table_text_args_to_json_value(&args);

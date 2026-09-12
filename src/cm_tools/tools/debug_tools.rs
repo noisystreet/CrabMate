@@ -60,13 +60,9 @@ fn format_backtrace_analysis(
 }
 
 pub fn rust_backtrace_analyze(args_json: &str) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: BacktraceAnalyzeArgs = match serde_json::from_value(parsed) {
+    let args: BacktraceAnalyzeArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let text = match args.backtrace.trim() {
         s if !s.is_empty() => s,
