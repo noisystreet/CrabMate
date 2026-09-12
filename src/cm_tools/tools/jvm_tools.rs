@@ -66,13 +66,9 @@ fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -> String {
 }
 
 pub fn maven_compile(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: MavenCompileArgs = match serde_json::from_value(v) {
+    let args: MavenCompileArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     if !has_pom(workspace_root) {
         return "maven_compile: 跳过（未找到 pom.xml）".to_string();
@@ -96,13 +92,9 @@ pub fn maven_compile(args_json: &str, workspace_root: &Path, max_output_len: usi
 }
 
 pub fn maven_test(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: MavenTestArgs = match serde_json::from_value(v) {
+    let args: MavenTestArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     if !has_pom(workspace_root) {
         return "maven_test: 跳过（未找到 pom.xml）".to_string();
@@ -156,13 +148,9 @@ fn gradle_command(workspace_root: &Path) -> Command {
 }
 
 pub fn gradle_compile(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: GradleTasksArgs = match serde_json::from_value(v) {
+    let args: GradleTasksArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     if !has_gradle(workspace_root) {
         return "gradle_compile: 跳过（未找到 build.gradle / build.gradle.kts / settings.gradle*）"
@@ -197,13 +185,9 @@ pub fn gradle_compile(args_json: &str, workspace_root: &Path, max_output_len: us
 }
 
 pub fn gradle_test(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: GradleTasksArgs = match serde_json::from_value(v) {
+    let args: GradleTasksArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     if !has_gradle(workspace_root) {
         return "gradle_test: 跳过（未找到 build.gradle / build.gradle.kts / settings.gradle*）"

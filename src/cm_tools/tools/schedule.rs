@@ -141,13 +141,9 @@ fn parse_rfc3339_utc(s: &str) -> Option<DateTime<Utc>> {
 // ---------------- Reminders ----------------
 
 pub fn add_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: AddReminderArgs = match serde_json::from_value(v) {
+    let args: AddReminderArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let title = match args.title.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -252,13 +248,9 @@ pub fn list_reminders(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn complete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: IdOnlyArgs = match serde_json::from_value(v) {
+    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -388,13 +380,9 @@ fn apply_reminder_update(
 }
 
 pub fn delete_reminder(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: IdOnlyArgs = match serde_json::from_value(v) {
+    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -562,13 +550,9 @@ pub fn list_events(args_json: &str, working_dir: &Path) -> String {
 }
 
 pub fn delete_event(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: IdOnlyArgs = match serde_json::from_value(v) {
+    let args: IdOnlyArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let id = match args.id.trim() {
         s if !s.is_empty() => s.to_string(),

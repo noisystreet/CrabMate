@@ -14,9 +14,7 @@ fn has_precommit_config(root: &Path) -> bool {
 }
 
 fn parse_pre_commit_json(args_json: &str) -> Result<(PreCommitRunArgs, serde_json::Value), String> {
-    let parsed = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: PreCommitRunArgs =
-        serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: PreCommitRunArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
     let v = serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))?;
     Ok((args, v))
 }

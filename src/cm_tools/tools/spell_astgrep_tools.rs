@@ -138,13 +138,9 @@ fn normalize_ast_lang(raw: &str) -> Result<&'static str, String> {
 
 /// `typos`：默认检查 `README.md` 与 `docs`（若存在）；可传 `paths` 覆盖。只读，不写回文件。
 pub fn typos_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: TyposCheckArgs = match serde_json::from_value(parsed) {
+    let args: TyposCheckArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let v = match serde_json::to_value(&args) {
         Ok(v) => v,
@@ -236,13 +232,9 @@ fn codespell_apply_optional_cli_flags(
 
 /// `codespell`：默认路径同 typos；**禁止**传入写回参数。使用 `-q 3` 减少噪音。
 pub fn codespell_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: CodespellCheckArgs = match serde_json::from_value(parsed) {
+    let args: CodespellCheckArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let v = match serde_json::to_value(&args) {
         Ok(v) => v,
@@ -328,8 +320,7 @@ fn typed_args_json_to_value<T>(args_json: &str) -> Result<serde_json::Value, Str
 where
     T: serde::de::DeserializeOwned + serde::Serialize,
 {
-    let parsed = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: T = serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: T = crate::cm_tools::tools::parse_args_typed(args_json)?;
     serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))
 }
 

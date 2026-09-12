@@ -24,13 +24,11 @@ use crate::cm_tools::workspace::fs::{
 };
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+    crate::cm_tools::tools::parse_args_typed(args_json)
 }
 
 fn parse_append_file_args(args_json: &str) -> Result<AppendFileArgs, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+    crate::cm_tools::tools::parse_args_typed(args_json)
 }
 
 fn delete_dir_validate_target(working_dir: &Path, path: &str) -> Result<PathBuf, String> {
@@ -241,9 +239,7 @@ fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFile
 const DELETE_FILES_MAX_BATCH: usize = 32;
 
 fn parse_delete_files_args(args_json: &str) -> Result<Vec<String>, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: DeleteFilesArgs =
-        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: DeleteFilesArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
     if !args.confirm.unwrap_or(false) {
         return Err("拒绝执行：delete_files 需要 confirm=true".to_string());
     }
@@ -432,13 +428,9 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
 // ── create_dir ──────────────────────────────────────────────
 
 pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: CreateDirArgs = match serde_json::from_value(v) {
+    let args: CreateDirArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
@@ -564,8 +556,7 @@ fn search_replace_dry_run_preview(
 }
 
 fn parse_search_replace_args(args_json: &str) -> Result<SearchReplaceArgs, String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
+    crate::cm_tools::tools::parse_args_typed(args_json)
 }
 
 fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, String), String> {

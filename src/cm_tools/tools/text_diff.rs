@@ -128,13 +128,9 @@ fn load_paths_diff_sources(
 
 /// 执行 `text_diff` 工具。
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: TextDiffArgs = match serde_json::from_value(parsed) {
+    let args: TextDiffArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let v = match serde_json::to_value(&args) {
         Ok(v) => v,

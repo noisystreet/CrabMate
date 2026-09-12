@@ -96,9 +96,7 @@ type CiFailFastStep = fn(
 ) -> Option<String>;
 
 fn ci_pipeline_opts_from_args(args_json: &str) -> Result<CiPipelineOpts, String> {
-    let parsed = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: CiPipelineLocalArgs =
-        serde_json::from_value(parsed).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: CiPipelineLocalArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
     let v = serde_json::to_value(&args).map_err(|e| format!("参数序列化错误: {e}"))?;
     Ok(CiPipelineOpts::from_json(&v))
 }
@@ -445,13 +443,9 @@ pub fn release_ready_check(
     workspace_root: &Path,
     max_output_len: usize,
 ) -> String {
-    let parsed = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: ReleaseReadyCheckArgs = match serde_json::from_value(parsed) {
+    let args: ReleaseReadyCheckArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
         Ok(a) => a,
-        Err(e) => return format!("参数解析错误: {e}"),
+        Err(e) => return e,
     };
     let v = match serde_json::to_value(&args) {
         Ok(v) => v,

@@ -22,9 +22,7 @@ fn parse_unix_mode_octal(mode_str: &str) -> Result<u32, String> {
 
 #[cfg(unix)]
 fn parse_chmod_args(args_json: &str) -> Result<(String, String, u32), String> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
-    let args: ChmodFileArgs =
-        serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))?;
+    let args: ChmodFileArgs = crate::cm_tools::tools::parse_args_typed(args_json)?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
         _ => return Err("缺少 path 参数".to_string()),
