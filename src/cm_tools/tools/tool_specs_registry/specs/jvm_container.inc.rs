@@ -4,7 +4,7 @@ ToolSpec {
             description: "在工作区根运行 `mvn -q compile`（须存在 pom.xml）。可选 profile（-P）。需本机已安装 mvn。",
             category: ToolCategory::Development,
             parameters: tool_params::params_maven_compile,
-            runner: runner_maven_compile,
+            runner: ToolRunner::Legacy(runner_maven_compile),
             summary: ToolSummaryKind::Static("mvn compile"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "在工作区根运行 `mvn -q test`（须 pom.xml）。可选 profile、test（-Dtest=）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_maven_test,
-            runner: runner_maven_test,
+            runner: ToolRunner::Legacy(runner_maven_test),
             summary: ToolSummaryKind::Static("mvn test"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "在工作区根运行 Gradle 编译类任务（默认 `classes`，quiet）。优先 `./gradlew`（或 Windows `gradlew.bat`），否则系统 `gradle`。须存在 build.gradle* 或 settings.gradle*。",
             category: ToolCategory::Development,
             parameters: tool_params::params_gradle_compile,
-            runner: runner_gradle_compile,
+            runner: ToolRunner::Legacy(runner_gradle_compile),
             summary: ToolSummaryKind::Static("gradle compile"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "在工作区根运行 Gradle 测试任务（默认 `test`，quiet）。优先 Wrapper，否则系统 gradle。",
             category: ToolCategory::Development,
             parameters: tool_params::params_gradle_test,
-            runner: runner_gradle_test,
+            runner: ToolRunner::Legacy(runner_gradle_test),
             summary: ToolSummaryKind::Static("gradle test"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "在工作区根执行 `docker build`：相对 context（默认 `.`）、tag（默认 crabmate-local:latest）、可选 dockerfile 相对路径、no_cache。**会写本地镜像缓存**；须在可信工作区使用。",
             category: ToolCategory::Development,
             parameters: tool_params::params_docker_build,
-            runner: runner_docker_build,
+            runner: ToolRunner::Legacy(runner_docker_build),
             summary: ToolSummaryKind::Static("docker build"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "在工作区根执行 `docker compose ps`（只读列表）。可选 project（-p）、compose_files（多个 -f，均为相对路径）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_docker_compose_ps,
-            runner: runner_docker_compose_ps,
+            runner: ToolRunner::Legacy(runner_docker_compose_ps),
             summary: ToolSummaryKind::Static("docker compose ps"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "在工作区目录下执行 `podman images`（只读）；可选 reference 过滤。",
             category: ToolCategory::Development,
             parameters: tool_params::params_podman_images,
-            runner: runner_podman_images,
+            runner: ToolRunner::Legacy(runner_podman_images),
             summary: ToolSummaryKind::Static("podman images"),
         },
 ]

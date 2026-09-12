@@ -4,7 +4,7 @@ ToolSpec {
             description: "使用 ShellCheck 对 Shell/Bash 脚本做静态分析（只读）。可指定 paths（默认递归扫描工作区中 .sh/.bash 文件）、severity（error/warning/info/style）、shell（sh/bash/dash/ksh）。需本机安装 shellcheck。",
             category: ToolCategory::Development,
             parameters: tool_params::params_shellcheck_check,
-            runner: runner_shellcheck_check,
+            runner: ToolRunner::Legacy(runner_shellcheck_check),
             summary: ToolSummaryKind::Static("shellcheck"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "使用 cppcheck 对 C/C++ 代码做静态分析（只读）。可指定 paths（默认 src）、enable（all/style/performance/portability 等）、std（如 c++17、c11）、platform。需本机安装 cppcheck。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cppcheck_analyze,
-            runner: runner_cppcheck_analyze,
+            runner: ToolRunner::Legacy(runner_cppcheck_analyze),
             summary: ToolSummaryKind::Static("cppcheck"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "使用 Semgrep 做多语言 SAST 安全扫描（只读）。可指定 config（规则集，默认 auto）、paths、severity、lang、json 输出。需本机安装 semgrep。",
             category: ToolCategory::Development,
             parameters: tool_params::params_semgrep_scan,
-            runner: runner_semgrep_scan,
+            runner: ToolRunner::Legacy(runner_semgrep_scan),
             summary: ToolSummaryKind::Static("semgrep scan"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "使用 Hadolint 对 Dockerfile 做 lint 检查（只读）。可指定 path（默认 Dockerfile）、format（tty/json/checkstyle 等）、ignore（忽略规则列表）。需本机安装 hadolint。",
             category: ToolCategory::Development,
             parameters: tool_params::params_hadolint_check,
-            runner: runner_hadolint_check,
+            runner: ToolRunner::Legacy(runner_hadolint_check),
             summary: ToolSummaryKind::Static("hadolint"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "使用 Bandit 对 Python 代码做安全分析（只读）。递归扫描 Python 文件检查安全反模式。可指定 paths、severity、confidence、skip（跳过测试 ID）。需本机安装 bandit（pip install bandit）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_bandit_scan,
-            runner: runner_bandit_scan,
+            runner: ToolRunner::Legacy(runner_bandit_scan),
             summary: ToolSummaryKind::Static("bandit"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "使用 lizard 分析代码圈复杂度（只读，多语言支持）。可指定 paths、threshold（复杂度阈值）、language（如 python,java,cpp）、sort、warnings_only、exclude。需本机安装 lizard（pip install lizard）；若 PATH 中无 `lizard` 可执行文件，会回退尝试 `python3 -m lizard`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_lizard_complexity,
-            runner: runner_lizard_complexity,
+            runner: ToolRunner::Legacy(runner_lizard_complexity),
             summary: ToolSummaryKind::Static("lizard complexity"),
         },
 ]

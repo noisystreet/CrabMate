@@ -4,7 +4,7 @@
         description: "列出 GitHub Pull Request（封装 **`gh pr list`**）。可选 `owner/repo`、`state`、`limit`（默认 30，最大 200）、`fields`（`--json` 字段名）。**退出码 0** 且 **stdout 整段为合法 JSON** 时，结果末尾附加**格式化 JSON**（与是否传 `fields` 无关）。须本机已安装 **`gh`** 且 **`allowed_commands` 含 gh**；认证依赖环境。`extra_args` 须符合 run_command 安全规则。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_list,
-        runner: runner_gh_pr_list,
+        runner: ToolRunner::Legacy(runner_gh_pr_list),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_list),
     },
     ToolSpec {
@@ -12,7 +12,7 @@
         description: "查看指定 PR（封装 **`gh pr view`**）。必填 `number`；可选 `repo`、`fields`（`--json`）、`web`、`extra_args`。成功且 stdout 为 JSON 时附加格式化块。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_view,
-        runner: runner_gh_pr_view,
+        runner: ToolRunner::Legacy(runner_gh_pr_view),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_view),
     },
     ToolSpec {
@@ -20,7 +20,7 @@
         description: "查看 PR 的 **CI 检查状态**（封装 **`gh pr checks`**，只读）。可选 `repo`；可选 `number`（省略则由 `gh` 按当前分支解析关联 PR）。**`structured: true`** 时附加 `--json` 并在输出末尾汇总失败/进行中的检查项（需本机 **GitHub CLI ≥ 2.50**；更旧版本自动回退表格并提示升级）。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_checks,
-        runner: runner_gh_pr_checks,
+        runner: ToolRunner::Legacy(runner_gh_pr_checks),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_checks),
     },
     ToolSpec {
@@ -28,7 +28,7 @@
         description: "在 GitHub **创建 Pull Request**（封装 **`gh pr create`**；**写远端**）。必填 **`title`**；可选 **`body`**（经工作区内临时 `--body-file` 传入）；省略 **`body`** 且 **`auto_body`** 为 true（默认）时，从 PR 模板 + `base..HEAD` 的 git log 生成正文草稿（见 **`gh_pr_body_draft`**）；可选 **`repo`**、**`base`**、**`head`**、**`draft`**、**`web`**、**`extra_args`**。须已 `git push` 过源分支且本机 **`gh auth`** 有效。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_create,
-        runner: runner_gh_pr_create,
+        runner: ToolRunner::Legacy(runner_gh_pr_create),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_create),
     },
     ToolSpec {
@@ -36,7 +36,7 @@
         description: "合并 Pull Request（封装 **`gh pr merge`**；**写远端**）。可选 **`number`**（省略则按当前分支）；**`merge_method`**：`merge` / `squash` / `rebase`（默认 rebase）；可选 **`auto`**、**`delete_branch`**、**`admin`**、**`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_merge,
-        runner: runner_gh_pr_merge,
+        runner: ToolRunner::Legacy(runner_gh_pr_merge),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_merge),
     },
     ToolSpec {
@@ -44,7 +44,7 @@
         description: "PR 审查（封装 **`gh pr review`**；**写远端**）。必填 **`event`**：`approve` / `request-changes` / `comment`；**`comment` 与 `request-changes` 须 `body`**；可选 **`number`**、**`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_review,
-        runner: runner_gh_pr_review,
+        runner: ToolRunner::Legacy(runner_gh_pr_review),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_review),
     },
     ToolSpec {
@@ -52,7 +52,7 @@
         description: "在 PR 上发表评论（封装 **`gh pr comment`**；**写远端**）。必填 **`body`**；可选 **`number`**、**`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_comment,
-        runner: runner_gh_pr_comment,
+        runner: ToolRunner::Legacy(runner_gh_pr_comment),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_comment),
     },
     ToolSpec {
@@ -60,7 +60,7 @@
         description: "编辑 PR（封装 **`gh pr edit`**；**写远端**）。可选 `number`、`repo`、`title`、`body`、`base`、`draft`/`undraft`、`add_label`/`remove_label`、`add_reviewer`/`remove_reviewer`、`add_assignee`/`remove_assignee`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_edit,
-        runner: runner_gh_pr_edit,
+        runner: ToolRunner::Legacy(runner_gh_pr_edit),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_edit),
     },
     ToolSpec {
@@ -68,7 +68,7 @@
         description: "生成 **PR 正文 Markdown 草稿**（只读、不写盘）：读取 `.github/pull_request_template.md` 等模板，并可选附加相对 **`base`**（默认 `main`）的 `git log` 摘要。供人工审阅或传入 **`gh_pr_create`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_body_draft,
-        runner: runner_gh_pr_body_draft,
+        runner: ToolRunner::Legacy(runner_gh_pr_body_draft),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_body_draft),
     },
     ToolSpec {
@@ -76,7 +76,7 @@
         description: "列出 Issue（封装 **`gh issue list`**）。可选 `repo`、`state`（open/closed/all）、`limit`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_issue_list,
-        runner: runner_gh_issue_list,
+        runner: ToolRunner::Legacy(runner_gh_issue_list),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_issue_list),
     },
     ToolSpec {
@@ -84,7 +84,7 @@
         description: "查看指定 Issue（封装 **`gh issue view`**）。必填 `number`；可选 `repo`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_issue_view,
-        runner: runner_gh_issue_view,
+        runner: ToolRunner::Legacy(runner_gh_issue_view),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_issue_view),
     },
     ToolSpec {
@@ -92,7 +92,7 @@
         description: "在 GitHub **创建 Issue**（封装 **`gh issue create`**；**写远端**）。必填 **`title`**；可选 **`body`**（经工作区临时 `--body-file`）、**`labels`**、**`assignee`**、**`repo`**、**`web`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_issue_create,
-        runner: runner_gh_issue_create,
+        runner: ToolRunner::Legacy(runner_gh_issue_create),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_issue_create),
     },
     ToolSpec {
@@ -100,7 +100,7 @@
         description: "列出 GitHub Actions 工作流运行（封装 **`gh run list`**）。可选 `repo`、`limit`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_run_list,
-        runner: runner_gh_run_list,
+        runner: ToolRunner::Legacy(runner_gh_run_list),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_run_list),
     },
     ToolSpec {
@@ -108,7 +108,7 @@
         description: "查看 PR 与基线的 **diff**（封装 **`gh pr diff`**，只读）。必填 `number`；可选 `repo`、`patch`（`--patch`）、`extra_args`。输出为文本 diff，通常**非 JSON**，不加格式化 JSON 段。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_pr_diff,
-        runner: runner_gh_pr_diff,
+        runner: ToolRunner::Legacy(runner_gh_pr_diff),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_pr_diff),
     },
     ToolSpec {
@@ -116,7 +116,7 @@
         description: "查看单次工作流运行（封装 **`gh run view`**）。必填 **`run_id`**（`databaseId` 样式纯数字）；可选 `repo`；**`log: true`** 时拉取日志（体积大，受 **`command_max_output_len`** 截断），可选 **`job`** 与 `--job` 联用；否则可用 **`fields`** 取 `--json` 摘要。失败排障优先用 **`gh_run_failure_summary`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_run_view,
-        runner: runner_gh_run_view,
+        runner: ToolRunner::Legacy(runner_gh_run_view),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_run_view),
     },
     ToolSpec {
@@ -124,7 +124,7 @@
         description: "重新运行 GitHub Actions workflow（封装 **`gh run rerun`**；**写远端**）。必填 **`run_id`**；可选 **`failed: true`**（仅重跑失败 job）、**`repo`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_run_rerun,
-        runner: runner_gh_run_rerun,
+        runner: ToolRunner::Legacy(runner_gh_run_rerun),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_run_rerun),
     },
     ToolSpec {
@@ -132,7 +132,7 @@
         description: "**CI 失败摘要**（只读）：解析 `gh run view --json jobs` 中失败的 job，并拉取各 job 日志尾部（默认末 60 行，可配 **`tail_lines`** / **`max_failed_jobs`**）。比整段 `--log` 更适合 Agent 排障。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_run_failure_summary,
-        runner: runner_gh_run_failure_summary,
+        runner: ToolRunner::Legacy(runner_gh_run_failure_summary),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_run_failure_summary),
     },
     ToolSpec {
@@ -140,7 +140,7 @@
         description: "列出 Release（封装 **`gh release list`**）。可选 `repo`、`limit`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_release_list,
-        runner: runner_gh_release_list,
+        runner: ToolRunner::Legacy(runner_gh_release_list),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_release_list),
     },
     ToolSpec {
@@ -148,7 +148,7 @@
         description: "查看单个 Release（封装 **`gh release view`**）。必填 **`tag`**（字符集与长度受限）；可选 `repo`、`fields`、`web`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_release_view,
-        runner: runner_gh_release_view,
+        runner: ToolRunner::Legacy(runner_gh_release_view),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_release_view),
     },
     ToolSpec {
@@ -156,7 +156,7 @@
         description: "在 GitHub **创建 Release**（封装 **`gh release create`**；**写远端**）。必填 **`tag`**；可选 **`title`**、**`notes`**（经工作区临时 `--notes-file`）；**`auto_notes: true`** 且 notes 为空时，自最近 tag 至 HEAD 的 commit 列表生成 notes 草稿；可选 **`target`**、**`draft`**、**`prerelease`**、**`repo`**、**`web`**、**`extra_args`**。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_release_create,
-        runner: runner_gh_release_create,
+        runner: ToolRunner::Legacy(runner_gh_release_create),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_release_create),
     },
     ToolSpec {
@@ -164,7 +164,7 @@
         description: "代码托管搜索（封装 **`gh search`**）。**`scope` 仅允许 `issues` / `prs` / `repos`**；**`query`** 长度与字符集受限；**`repo`** 仅用于 issues/prs（`--repo`），**禁止**与 `repos` 同用；`limit` 默认 30、最大 100；可选 `fields`、`extra_args`。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_search,
-        runner: runner_gh_search,
+        runner: ToolRunner::Legacy(runner_gh_search),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_search),
     },
     ToolSpec {
@@ -172,7 +172,7 @@
         description: "调用 **`gh api`**（受限）：`path` 为**无前导 /** 的相对路径（如 `repos/owner/repo/pulls`）；`method` 默认 GET，支持 HEAD/POST/PATCH/PUT/DELETE；可选 JSON `body`（经 stdin 传入）。**写操作**（POST 等）可能修改远端资源，属非只读工具。`path` 字符集受限以降低注入面；勿在 body 中放入密钥。",
         category: ToolCategory::Development,
         parameters: tool_params::params_gh_api,
-        runner: runner_gh_api,
+        runner: ToolRunner::Legacy(runner_gh_api),
         summary: ToolSummaryKind::Dynamic(ts::summary_gh_api),
     },
 ]

@@ -4,7 +4,7 @@ ToolSpec {
             description: "将指定相对路径加入暂存区（受控写入）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_stage_files,
-            runner: runner_git_stage_files,
+            runner: ToolRunner::Legacy(runner_git_stage_files),
             summary: ToolSummaryKind::Static("git add (stage)"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "执行 git commit（受控写入，需 confirm=true）。可选先 stage_all。\n\n【git commit 常用模式】提交暂存区：`git commit -m \"<message>\"`；提交所有已跟踪文件：`git commit -am \"<message>\"`；查看待提交状态：`git status`。推荐提交信息格式：`<type>(<scope>): <subject>`，如 `feat(tui): add new feature`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_commit,
-            runner: runner_git_commit,
+            runner: ToolRunner::Legacy(runner_git_commit),
             summary: ToolSummaryKind::Static("git commit"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "执行 git fetch（可选 remote/branch/prune）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_fetch,
-            runner: runner_git_fetch,
+            runner: ToolRunner::Legacy(runner_git_fetch),
             summary: ToolSummaryKind::Static("git pull"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "查看远程仓库列表（git remote -v）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_empty_object,
-            runner: runner_git_remote_list,
+            runner: ToolRunner::Legacy(runner_git_remote_list),
             summary: ToolSummaryKind::Static("git remote -v"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "设置远程仓库 URL（受控写入，需 confirm=true）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_remote_set_url,
-            runner: runner_git_remote_set_url,
+            runner: ToolRunner::Legacy(runner_git_remote_set_url),
             summary: ToolSummaryKind::Static("git remote set-url"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "执行 git apply。默认 check_only=true 先检查可应用性。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_apply,
-            runner: runner_git_apply,
+            runner: ToolRunner::Legacy(runner_git_apply),
             summary: ToolSummaryKind::Static("git am (apply patch)"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "执行 git clone 到工作区内目标目录（受控写入，需 confirm=true）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_clone,
-            runner: runner_git_clone,
+            runner: ToolRunner::Legacy(runner_git_clone),
             summary: ToolSummaryKind::Static("git clone"),
         },
 ]

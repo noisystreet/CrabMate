@@ -5,7 +5,7 @@
             description: "切换分支、标签或恢复文件（受控写入）。参数 target 为分支名/标签名/commit SHA；create=true 时以 -b 创建新分支。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_checkout,
-            runner: runner_git_checkout,
+            runner: ToolRunner::Legacy(runner_git_checkout),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_checkout),
         },
         ToolSpec {
@@ -13,7 +13,7 @@
             description: "创建新分支（不切换）。参数 name 为分支名，可选 start_point 为起始点。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_branch_create,
-            runner: runner_git_branch_create,
+            runner: ToolRunner::Legacy(runner_git_branch_create),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_branch_create),
         },
         ToolSpec {
@@ -21,7 +21,7 @@
             description: "删除本地分支（受控写入，需 confirm=true）。默认 -d（需已合并）；force=true 时 -D 强制删除。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_branch_delete,
-            runner: runner_git_branch_delete,
+            runner: ToolRunner::Legacy(runner_git_branch_delete),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_branch_delete),
         },
         ToolSpec {
@@ -29,7 +29,7 @@
             description: "推送到远程仓库（受控写入，需 confirm=true）。默认 remote=origin；可选 set_upstream、force_with_lease、tags。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_push,
-            runner: runner_git_push,
+            runner: ToolRunner::Legacy(runner_git_push),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_push),
         },
         ToolSpec {
@@ -37,7 +37,7 @@
             description: "合并指定分支到当前分支（受控写入，需 confirm=true）。可选 no_ff、squash、message。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_merge,
-            runner: runner_git_merge,
+            runner: ToolRunner::Legacy(runner_git_merge),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_merge),
         },
         ToolSpec {
@@ -45,7 +45,7 @@
             description: "将当前分支变基到指定目标（受控写入，需 confirm=true）。onto 为目标分支/SHA；支持 abort/continue 操作冲突。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_rebase,
-            runner: runner_git_rebase,
+            runner: ToolRunner::Legacy(runner_git_rebase),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_rebase),
         },
         ToolSpec {
@@ -53,7 +53,7 @@
             description: "Git 暂存管理：action=push（暂存，可带 message）/pop（恢复并删除）/apply（恢复不删除）/list/drop/clear（需 confirm）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_stash,
-            runner: runner_git_stash,
+            runner: ToolRunner::Legacy(runner_git_stash),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_stash),
         },
         ToolSpec {
@@ -61,7 +61,7 @@
             description: "Git 标签管理：action=list（列出标签，可按 pattern 过滤）/create（创建标签，可加 message 成为注释标签）/delete（删除标签，需 confirm）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_tag,
-            runner: runner_git_tag,
+            runner: ToolRunner::Legacy(runner_git_tag),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_tag),
         },
         ToolSpec {
@@ -69,7 +69,7 @@
             description: "重置 HEAD 到指定位置（受控写入，需 confirm=true）。mode=soft/mixed（默认）/hard；target 默认 HEAD。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_reset,
-            runner: runner_git_reset,
+            runner: ToolRunner::Legacy(runner_git_reset),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_reset),
         },
         ToolSpec {
@@ -77,7 +77,7 @@
             description: "将指定 commit 应用到当前分支（受控写入，需 confirm=true）。支持单个 commit 或 commits 数组；可 no_commit 仅暂存；支持 abort/continue。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_cherry_pick,
-            runner: runner_git_cherry_pick,
+            runner: ToolRunner::Legacy(runner_git_cherry_pick),
             summary: ToolSummaryKind::Static("git cherry-pick"),
         },
         ToolSpec {
@@ -85,7 +85,7 @@
             description: "回滚指定 commit（受控写入，需 confirm=true）。创建一个反向提交；可 no_commit 仅暂存不提交；支持 abort/continue。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_revert,
-            runner: runner_git_revert,
+            runner: ToolRunner::Legacy(runner_git_revert),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_revert),
         },
         // ── Node.js / npm / npx ─────────────────────────────

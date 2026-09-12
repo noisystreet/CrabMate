@@ -4,7 +4,7 @@ ToolSpec {
             description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。**必填** `path`（相对工作目录，禁止 `..`）与 `content`（可为 `\"\"`）；请把 `path` 写在 arguments 靠前位置。别名如 `file_path`/`filename`/`file` 会归一到 `path`。**JSON 中 content 须正确转义**：换行 `\\n`、制表 `\\t`、双引号 `\\\"`、反斜杠 `\\\\`（未转义常导致整段 arguments 非法）。大文件可分多次写入。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_write,
-            runner: runner_create_file,
+            runner: ToolRunner::Legacy(runner_create_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_create_file),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写；起止行写反会自动交换）或 `mode=insert_after_line`（`after_line` 后插入，0 表示文件开头）。未显式给 `mode` 但传了 `start_line`/`end_line` 时自动按 `replace_lines`，传了 `after_line` 时自动按 `insert_after_line`。**`mode=full` 或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入，拒绝时会返回 diff 预览；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**、**`insert_after_line`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_modify_file,
-            runner: runner_modify_file,
+            runner: ToolRunner::Legacy(runner_modify_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_modify_file),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "在工作区内复制**文件**（非目录）。路径校验与 create/read 一致（禁止绝对路径与 `..` 越界、借助 symlink 逃逸）。目标为已存在文件时须 `overwrite=true` 才覆盖；目标为已存在目录会报错。适合批量整理而无需把内容读进对话。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_from_to_overwrite,
-            runner: runner_copy_file,
+            runner: ToolRunner::Legacy(runner_copy_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_copy_file),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "在工作区内移动/重命名**文件**。`overwrite` 语义同 `copy_file`。跨文件系统时 `rename` 失败会自动回退为复制后删除源文件。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_from_to_overwrite,
-            runner: runner_move_file,
+            runner: ToolRunner::Legacy(runner_move_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_move_file),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "按行流式读取文件（不把整文件载入内存）。代码分析：先用 `search_in_files`、`codebase_semantic_search`（需索引）、`glob_files`/`list_tree` 收窄路径；命中行号后可用 **`anchor_line` + `context_lines`** 对称取上下文（勿与 start_line/end_line 同传），亦可用传统 start_line/end_line。默认单次最多 max_lines=500（可调 8000）。可选 count_total_lines（大文件慎用）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_read_file,
-            runner: runner_read_file,
+            runner: ToolRunner::Legacy(runner_read_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_file),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "在工作区内读取目录下的文件/子目录列表（受控只读）。**path 必须是相对工作目录的路径（如 `.`、`src`、`tmp/dir`），禁止绝对路径和 `..`**。可选包含隐藏项、最大条数、文件大小（include_size）、修改时间（include_mtime）和排序方式（sort_by: name/size/mtime）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_read_dir_enhanced,
-            runner: runner_read_dir,
+            runner: ToolRunner::Legacy(runner_read_dir),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_dir),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "在工作区内从指定子目录起递归扫描，按 glob 模式匹配**文件**相对路径（如 **/*.rs）。带 max_depth、max_results 上限；路径均在工作区内解析，禁止 ..。优先于 run_command find。",
             category: ToolCategory::Development,
             parameters: tool_params::params_glob_files,
-            runner: runner_glob_files,
+            runner: ToolRunner::Legacy(runner_glob_files),
             summary: ToolSummaryKind::Dynamic(ts::summary_glob_files),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "在工作区内从指定目录起递归列出子路径（先序、字典序），前缀 dir:/file:；带 max_depth、max_entries。用于快速看目录树而不用 find。",
             category: ToolCategory::Development,
             parameters: tool_params::params_list_tree,
-            runner: runner_list_tree,
+            runner: ToolRunner::Legacy(runner_list_tree),
             summary: ToolSummaryKind::Dynamic(ts::summary_list_tree),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "检查工作区内某路径（文件或目录）是否存在，并可按 kind=file|dir|any 过滤。",
             category: ToolCategory::Development,
             parameters: tool_params::params_file_exists,
-            runner: runner_file_exists,
+            runner: ToolRunner::Legacy(runner_file_exists),
             summary: ToolSummaryKind::Dynamic(ts::summary_file_exists),
         },
         ToolSpec {
@@ -76,7 +76,7 @@ ToolSpec {
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
             category: ToolCategory::Development,
             parameters: tool_params::params_read_binary_meta,
-            runner: runner_read_binary_meta,
+            runner: ToolRunner::Legacy(runner_read_binary_meta),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_binary_meta),
         },
         ToolSpec {
@@ -84,7 +84,7 @@ ToolSpec {
             description: "对工作区内**常规文件**做只读哈希（流式读取，不占满内存）：**sha256**（默认）、**sha512**。可选 `max_bytes` 仅哈希前缀（用于大文件抽样或对齐外部工具）；路径解析与 `read_file` 相同。",
             category: ToolCategory::Development,
             parameters: tool_params::params_hash_file,
-            runner: runner_hash_file,
+            runner: ToolRunner::Legacy(runner_hash_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_hash_file),
         },
         ToolSpec {
@@ -92,7 +92,7 @@ ToolSpec {
             description: "在指定文件内按正则抽取匹配行（只读）。返回带行号的匹配行，并支持截断。",
             category: ToolCategory::Development,
             parameters: tool_params::params_extract_in_file,
-            runner: runner_extract_in_file,
+            runner: ToolRunner::Legacy(runner_extract_in_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_extract_in_file),
         },
         ToolSpec {
@@ -100,7 +100,7 @@ ToolSpec {
             description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** / **git checkout** 回滚。先 dry-run。",
             category: ToolCategory::Development,
             parameters: tool_params::params_apply_patch,
-            runner: runner_apply_patch,
+            runner: ToolRunner::Legacy(runner_apply_patch),
             summary: ToolSummaryKind::Dynamic(ts::summary_apply_patch),
         },
         ToolSpec {
@@ -108,7 +108,7 @@ ToolSpec {
             description: "在当前工作区内搜索文件内容。支持正则或关键词搜索，返回匹配的文件路径、行号和行片段。支持 context_before/context_after 上下文行、file_glob 文件名过滤、exclude_glob 排除。",
             category: ToolCategory::Development,
             parameters: tool_params::params_search_in_files_enhanced,
-            runner: runner_search_in_files,
+            runner: ToolRunner::Typed(runner_search_in_files_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_search_in_files),
         },
         ToolSpec {
@@ -116,7 +116,7 @@ ToolSpec {
             description: "工作区内**混合**代码检索（SQLite **FTS5** 全文 + **fastembed** 向量，与长期记忆分库）。默认 `retrieve_mode: hybrid`：BM25 与余弦相似度按 `hybrid_alpha` 加权；可改 `semantic_only` / `fts_only`。首次或大改后请先 `rebuild_index: true`（schema v4 起自动维护 FTS）。整库重建默认**增量**（mtime+size+SHA256；`incremental:false` 强制全量）；子目录 `path` 仍为子树全量替换。`.rs` 块嵌入前有符号提示行。精确正则仍优先 `search_in_files`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_codebase_semantic_search,
-            runner: runner_codebase_semantic_search,
+            runner: ToolRunner::Legacy(runner_codebase_semantic_search),
             summary: ToolSummaryKind::Dynamic(ts::summary_codebase_semantic_search),
         },
 ]

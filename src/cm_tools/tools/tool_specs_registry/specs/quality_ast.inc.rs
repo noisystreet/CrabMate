@@ -4,7 +4,7 @@ ToolSpec {
             description: "在工作区根运行 `pre-commit run`。须存在 .pre-commit-config.yaml（或 .yml）。可选 hook、all_files、files（--files 相对路径）、verbose。默认检查暂存文件。",
             category: ToolCategory::Development,
             parameters: tool_params::params_pre_commit_run,
-            runner: runner_pre_commit_run,
+            runner: ToolRunner::Legacy(runner_pre_commit_run),
             summary: ToolSummaryKind::Dynamic(ts::summary_pre_commit_run),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "运行 [typos](https://github.com/crate-ci/typos) 拼写检查（**只读**）。默认检查存在的 `README.md` 与 `docs/`；可用 `paths` 指定更多相对路径。需本机已安装 `typos` CLI。适合文档与注释中的常见错别字。",
             category: ToolCategory::Development,
             parameters: tool_params::params_typos_check,
-            runner: runner_typos_check,
+            runner: ToolRunner::Legacy(runner_typos_check),
             summary: ToolSummaryKind::Static("typos spell check"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "运行 [codespell](https://github.com/codespell-project/codespell)（**只读**，不传入 `-w`）。默认路径策略同 `typos_check`；可选 `skip` 传给 `--skip`。需本机已安装 `codespell`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_codespell_check,
-            runner: runner_codespell_check,
+            runner: ToolRunner::Legacy(runner_codespell_check),
             summary: ToolSummaryKind::Static("codespell spell check"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "只读聚合：主文档头预览（默认 README/AGENTS/docs 等，与 repo_overview_sweep 列表一致）+ `typos_check` + `codespell_check` + `markdown_check_links`。**Markdown 外链**：仅当 `md_allowed_external_prefixes` 非空时由 `markdown_check_links` 内置 HTTP 发 HEAD，**不经过** `http_fetch`/`http_request` 与 `http_fetch_allowed_prefixes`，**无** Web SSE 审批；默认不填前缀则外链仅计数、不联网。缺 typos/codespell CLI 时对应步记为 skipped。",
             category: ToolCategory::Development,
             parameters: tool_params::params_docs_health_sweep,
-            runner: runner_docs_health_sweep,
+            runner: ToolRunner::Legacy(runner_docs_health_sweep),
             summary: ToolSummaryKind::Static("docs spell + md link sweep"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "运行 [ast-grep](https://ast-grep.github.io/) `run` 做**结构化**代码搜索（非纯文本 grep）。必填 `pattern` 与 `lang`；默认仅在存在的 `src` 下搜索，并附加 `--globs` 排除 target、node_modules、.git、vendor、dist、build。可用 `paths` 收窄/改写根路径，`globs` 追加排除规则。需本机已安装 `ast-grep` 命令（`cargo install ast-grep`）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_ast_grep_run,
-            runner: runner_ast_grep_run,
+            runner: ToolRunner::Legacy(runner_ast_grep_run),
             summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_run),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "运行 `ast-grep run --rewrite` 做结构化改写。默认 `dry_run=true` 仅预览；当 `dry_run=false` 时需 `confirm=true` 才会写盘（等价 `--update-all`）。路径与 globs 安全策略同 `ast_grep_run`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_ast_grep_rewrite,
-            runner: runner_ast_grep_rewrite,
+            runner: ToolRunner::Legacy(runner_ast_grep_rewrite),
             summary: ToolSummaryKind::Dynamic(ts::summary_ast_grep_rewrite),
         },
 ]

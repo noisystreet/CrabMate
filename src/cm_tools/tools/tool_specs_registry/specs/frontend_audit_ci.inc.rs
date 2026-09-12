@@ -4,7 +4,7 @@ ToolSpec {
             description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。\n\n【npm lint 常用模式】运行项目配置的 lint 脚本：`npm run lint`；修复可自动修复的问题：`npm run lint -- --fix`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
-            runner: runner_frontend_lint,
+            runner: ToolRunner::Legacy(runner_frontend_lint),
             summary: ToolSummaryKind::Static("frontend lint"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "运行前端 npm build（结构化参数）。支持指定前端子目录和 script 名称（默认 build）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
-            runner: runner_frontend_build,
+            runner: ToolRunner::Legacy(runner_frontend_build),
             summary: ToolSummaryKind::Static("frontend build"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "运行前端 npm test（结构化参数）。支持指定前端子目录和 script 名称（默认 test）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_frontend_lint,
-            runner: runner_frontend_test,
+            runner: ToolRunner::Legacy(runner_frontend_test),
             summary: ToolSummaryKind::Static("frontend test"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。\n\n【cargo audit 常用模式】检查所有依赖：`cargo audit`；忽略指定 advisory：`cargo audit --ignore RUSTSEC-xxxx-xxxx`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_audit,
-            runner: runner_cargo_audit,
+            runner: ToolRunner::Legacy(runner_cargo_audit),
             summary: ToolSummaryKind::Static("cargo audit"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "运行 cargo deny check（需要已安装 cargo-deny），做许可证/安全策略检查。\n\n【cargo deny 常用检查】许可证检查：`cargo deny check licenses`；安全源检查：`cargo deny check sources`； bans 检查：`cargo deny check bans`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_deny,
-            runner: runner_cargo_deny,
+            runner: ToolRunner::Legacy(runner_cargo_deny),
             summary: ToolSummaryKind::Static("cargo deny"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "本地一键执行 CI 关键检查（cargo fmt/clippy/test、frontend lint、可选 ruff/pytest/mypy）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_ci_pipeline_local,
-            runner: runner_ci_pipeline_local,
+            runner: ToolRunner::Legacy(runner_ci_pipeline_local),
             summary: ToolSummaryKind::Static("local CI pipeline"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "发布前一键检查：CI + audit + deny + 工作区干净检查。",
             category: ToolCategory::Development,
             parameters: tool_params::params_release_ready_check,
-            runner: runner_release_ready_check,
+            runner: ToolRunner::Legacy(runner_release_ready_check),
             summary: ToolSummaryKind::Static("pre-release checks"),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "执行 DAG 工作流：并行/串行调度 + 人工审批节点 + SLA 超时 + 失败补偿。\n\n【按文件执行】顶层 **`workflow_file`**：工作区相对路径（如 **`examples/workflows/ci.yaml`** 或工作区内路径；含 `` ```crabmate-workflow `` 的 `.md`）；服务端编译 `steps`/`when`/`for_each` 后执行。可与 **`workflow`** 叠加（覆盖 `fail_fast` 等，不覆盖 `nodes`/`steps`）。\n\n【内置模板】**`workflow.workflow_template`**：**`rust_ci_light`**、**`code_review`**、**`refactor_precheck`**（须 **`refactor_symbol`**）。可与手写 **`nodes`** 二选一；见 **`docs/工具说明.md`**、**`docs/工作流Markdown作者层设计.md`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_workflow_execute,
-            runner: runner_workflow_execute,
+            runner: ToolRunner::Legacy(runner_workflow_execute),
             summary: ToolSummaryKind::Static("DAG workflow"),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "分析 Rust panic/backtrace 文本，提取首个可疑业务帧和模块命中统计。",
             category: ToolCategory::Development,
             parameters: tool_params::params_backtrace_analyze,
-            runner: runner_backtrace_analyze,
+            runner: ToolRunner::Legacy(runner_backtrace_analyze),
             summary: ToolSummaryKind::Static("Rust backtrace analysis"),
         },
 ]

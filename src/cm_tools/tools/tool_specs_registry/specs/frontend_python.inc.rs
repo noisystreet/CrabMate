@@ -4,7 +4,7 @@ ToolSpec {
             description: "在工作区运行 `ruff check`（需已安装 ruff）。默认检查 `.`；可通过 paths 指定相对路径。无 pyproject.toml/setup/requirements 等标记时跳过。",
             category: ToolCategory::Development,
             parameters: tool_params::params_ruff_check,
-            runner: runner_ruff_check,
+            runner: ToolRunner::Legacy(runner_ruff_check),
             summary: ToolSummaryKind::Static("ruff check"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "在工作区运行 `python3 -m pytest`（需已安装 pytest）。可选 test_path、keyword（-k）、markers（-m）、quiet、maxfail、nocapture。",
             category: ToolCategory::Development,
             parameters: tool_params::params_pytest_run,
-            runner: runner_pytest_run,
+            runner: ToolRunner::Legacy(runner_pytest_run),
             summary: ToolSummaryKind::Static("python3 -m pytest"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "在工作区运行 `mypy`（需已安装 mypy）。默认检查 `.`；可选 paths 与 strict。无 Python 项目标记时跳过。",
             category: ToolCategory::Development,
             parameters: tool_params::params_mypy_check,
-            runner: runner_mypy_check,
+            runner: ToolRunner::Legacy(runner_mypy_check),
             summary: ToolSummaryKind::Static("mypy"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "在工作区根执行可编辑安装：`backend=uv` 时 `uv pip install -e .`，`backend=pip` 时 `python3 -m pip install -e .`。须存在 pyproject.toml 或 setup.py。",
             category: ToolCategory::Development,
             parameters: tool_params::params_python_install_editable,
-            runner: runner_python_install_editable,
+            runner: ToolRunner::Legacy(runner_python_install_editable),
             summary: ToolSummaryKind::Dynamic(ts::summary_python_install_editable),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "在工作区根运行 `uv sync`（须存在 pyproject.toml）。可选 frozen（--frozen）、no_dev（--no-dev）、all_packages（--all-packages）。需本机已安装 uv。",
             category: ToolCategory::Development,
             parameters: tool_params::params_uv_sync,
-            runner: runner_uv_sync,
+            runner: ToolRunner::Legacy(runner_uv_sync),
             summary: ToolSummaryKind::Static("uv sync"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "在工作区根运行 `uv run`：`args` 为非空字符串数组（如 [\"pytest\",\"-q\"]），逐项作为子进程参数、不经 shell。须存在 pyproject.toml。",
             category: ToolCategory::Development,
             parameters: tool_params::params_uv_run,
-            runner: runner_uv_run,
+            runner: ToolRunner::Legacy(runner_uv_run),
             summary: ToolSummaryKind::Dynamic(ts::summary_uv_run),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "在工作区根目录写入临时 .py 并执行（结束后删除）。可 import 已安装的第三方包；默认 python3 + PYTHONPATH 含工作区根；可选 use_uv 用 uv 项目环境。等同任意代码执行，仅用于可信工作区。",
             category: ToolCategory::Development,
             parameters: tool_params::params_python_snippet_run,
-            runner: runner_python_snippet_run,
+            runner: ToolRunner::Legacy(runner_python_snippet_run),
             summary: ToolSummaryKind::Dynamic(ts::summary_python_snippet_run),
         },
 ]

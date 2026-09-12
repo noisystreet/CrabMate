@@ -1,7 +1,20 @@
-//! 内置工具的 `runner_*` 薄封装与 [`ToolSpec`] 类型别名（由 [`super::tool_specs_registry`] 引用）。
+//! 内置工具的 `runner_*` 薄封装与 [`ToolSpec`] 类型（由 [`super::tool_specs_registry`] 引用）。
 use super::*;
 
-pub type ToolRunner = fn(args_json: &str, ctx: &super::ToolContext<'_>) -> String;
+/// 工具执行体的两种签名形态（strangler 迁移期并存；全部工具迁完后删除 [`ToolRunner::Legacy`]）。
+///
+/// - [`ToolRunner::Legacy`]：返回 `String`，失败状态由 `parse_legacy_output` 从正文推断（历史形态）。
+/// - [`ToolRunner::Typed`]：返回 `Result<String, ToolError>`，失败路径显式（与各 `*_try` 函数同签名）；
+///   成功侧仍为 `String` 正文，结构化载荷由 `parse_legacy_output` 生成（行为与 Legacy 一致）。
+#[derive(Clone, Copy)]
+pub enum ToolRunner {
+    /// 历史签名：错误状态从正文推断；PR3+ 按族迁移为 [`ToolRunner::Typed`]。
+    Legacy(fn(args_json: &str, ctx: &ToolContext<'_>) -> String),
+    /// 显式失败签名：`Err(ToolError)` 直接透传给编排层（与 `*_try` 函数一致）。
+    #[allow(clippy::result_large_err)]
+    Typed(fn(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError>),
+}
+
 pub type ParamBuilder = fn() -> serde_json::Value;
 
 /// 工具调用摘要类型：用于前端 Chat 面板展示。
@@ -98,8 +111,13 @@ pub fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
     package_query::run(args, ctx.command_max_output_len)
 }
 
-pub fn runner_cargo_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_check(args, ctx.working_dir, ctx.command_max_output_len)
+/// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
+#[allow(clippy::result_large_err)]
+pub fn runner_cargo_check_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    cargo_tools::cargo_check_try(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 pub fn runner_cargo_test(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -559,8 +577,13 @@ pub fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
     patch::run_with_changelist(args, ctx.working_dir, ctx.workspace_changelist)
 }
 
-pub fn runner_search_in_files(args: &str, ctx: &ToolContext<'_>) -> String {
-    grep::run(args, ctx.working_dir)
+/// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
+#[allow(clippy::result_large_err)]
+pub fn runner_search_in_files_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    grep_try::search_in_files_try(args, ctx.working_dir)
 }
 
 pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
