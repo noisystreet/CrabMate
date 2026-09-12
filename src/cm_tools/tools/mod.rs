@@ -334,13 +334,19 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
             {
                 return format!("错误：{e}");
             }
-            (spec.runner)(args_eff.as_ref(), ctx)
+            match spec.runner {
+                ToolRunner::Legacy(f) => f(args_eff.as_ref(), ctx),
+                // Typed 失败回退到 `e.message`（与历史 `*_try().unwrap_or_else(|e| e.message)` 包装
+                // 逐字节一致），保证 `run_tool` 的 String API 行为不变。
+                ToolRunner::Typed(f) => f(args_eff.as_ref(), ctx).unwrap_or_else(|e| e.message),
+            }
         }
         None => format!("未知工具：{}", name),
     }
 }
 
-/// `run_command` 与 `cargo_*` / `rust_test_one` / `rust_rustc` 走显式 [`ToolError`]；其余工具仍经 [`run_tool`] + [`crate::cm_tools::tool_result::parse_legacy_output`]。
+/// `run_command` 与 `cargo_*`（除 `cargo_check` 试点）/ `rust_test_one` / `rust_rustc` / `read_file` 走显式 [`ToolError`]；
+/// 已迁移工具经 `spec.runner` 的 [`ToolRunner::Typed`] 显式透传；其余仍经 `parse_legacy_output` 从正文推断。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
@@ -352,9 +358,10 @@ fn run_tool_dispatch(
             "codebase_semantic_search 需要 `fastembed` Cargo feature；当前构建未启用。".to_string(),
         ));
     }
-    if find_spec(name).is_none() {
-        return Err(ToolError::unknown_tool(name));
-    }
+    let spec = match find_spec(name) {
+        Some(s) => s,
+        None => return Err(ToolError::unknown_tool(name)),
+    };
     let args_eff = tool_args_validate::effective_builtin_tool_args_json(name, args_json)
         .map_err(ToolError::invalid_args)?;
     let args_ref = args_eff.as_ref();
@@ -397,10 +404,6 @@ fn run_tool_dispatch(
                 }
                 Err(e) => Err(e),
             }
-        }
-        "cargo_check" => {
-            cargo_tools::cargo_check_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
         "cargo_test" => cargo_tools::cargo_test_try(
             args_ref,
@@ -478,10 +481,25 @@ fn run_tool_dispatch(
         "read_file" => {
             read_file_try_dispatch(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output))
         }
-        "search_in_files" => grep_try::search_in_files_try(args_ref, ctx.working_dir)
-            .map(|output| finish_dispatch_parsed(name, args_ref, output)),
-        _ => {
-            let output = run_tool(name, args_ref, ctx);
+        _ => run_tool_dispatch_fallback(name, args_ref, spec, ctx),
+    }
+}
+
+/// dispatch 兜底：按 `spec.runner` 双路径执行。
+///
+/// Typed：`Ok` 正文走与特判相同的收尾，`Err(ToolError)` 显式透传；
+/// Legacy：正文推断失败状态（与历史 `run_tool` fallback 行为一致）。
+#[allow(clippy::result_large_err)]
+fn run_tool_dispatch_fallback(
+    name: &str,
+    args_ref: &str,
+    spec: &ToolSpec,
+    ctx: &ToolContext<'_>,
+) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+    match spec.runner {
+        ToolRunner::Typed(f) => f(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output)),
+        ToolRunner::Legacy(f) => {
+            let output = f(args_ref, ctx);
             let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
             if parsed.ok {
                 let output = workspace_image_chat_hint::append_if_needed(args_ref, output);
@@ -505,7 +523,7 @@ fn finish_dispatch_parsed(
 
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`run_command`**、**`cargo_*` / `rust_test_one` / `rust_rustc`**、**`read_file`**、**`search_in_files`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；其余工具仍由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
+/// **`run_command`**、**`cargo_test` 等其余 `cargo_*` / `rust_test_one` / `rust_rustc`**、**`read_file`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；已迁移工具（`spec.runner` = [`ToolRunner::Typed`]，现为 `cargo_check` / `search_in_files`）显式透传；其余工具仍由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,

@@ -4,7 +4,7 @@ ToolSpec {
             description: "运行 cargo check（结构化参数）。用于快速检查 Rust 项目编译问题。\n\n【cargo check 常用模式】检查整个项目：`cargo check`；检查特定包：`cargo check -p <package>`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
-            runner: runner_cargo_check,
+            runner: ToolRunner::Typed(runner_cargo_check_try),
             summary: ToolSummaryKind::Static("cargo check"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。\n\n【cargo test 常用模式】运行所有测试：`cargo test`；运行特定测试：`cargo test <test_name>`；显示 println!：`cargo test -- --nocapture`；运行集成测试：`cargo test --test <integration_test_name>`。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_test,
-            runner: runner_cargo_test,
+            runner: ToolRunner::Legacy(runner_cargo_test),
             summary: ToolSummaryKind::Static("cargo test"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "运行 cargo clippy（结构化参数）。用于检查 Rust 代码潜在问题。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_common,
-            runner: runner_cargo_clippy,
+            runner: ToolRunner::Legacy(runner_cargo_clippy),
             summary: ToolSummaryKind::Static("cargo clippy"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "运行 cargo metadata 并返回包/依赖元数据（JSON）。用于理解 workspace 与 crate 关系。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_metadata,
-            runner: runner_cargo_metadata,
+            runner: ToolRunner::Legacy(runner_cargo_metadata),
             summary: ToolSummaryKind::Static("cargo metadata"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "运行 cargo tree 查看依赖树。支持反向依赖、深度和边类型过滤。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_tree,
-            runner: runner_cargo_tree,
+            runner: ToolRunner::Legacy(runner_cargo_tree),
             summary: ToolSummaryKind::Static("cargo tree"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "运行 cargo clean 清理构建产物。默认 dry_run=true，仅预览。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_clean,
-            runner: runner_cargo_clean,
+            runner: ToolRunner::Legacy(runner_cargo_clean),
             summary: ToolSummaryKind::Static("cargo clean"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "运行 cargo doc 生成文档。可选 no_deps/open/package。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_doc,
-            runner: runner_cargo_doc,
+            runner: ToolRunner::Legacy(runner_cargo_doc),
             summary: ToolSummaryKind::Static("cargo doc"),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "运行 cargo run（结构化参数）。用于启动 Rust 可执行程序。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_run,
-            runner: runner_cargo_run,
+            runner: ToolRunner::Legacy(runner_cargo_run),
             summary: ToolSummaryKind::Static("cargo run"),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "运行 cargo nextest run（需要已安装 cargo-nextest）。用于更快的测试执行。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_nextest,
-            runner: runner_cargo_nextest,
+            runner: ToolRunner::Legacy(runner_cargo_nextest),
             summary: ToolSummaryKind::Static("cargo nextest"),
         },
         ToolSpec {
@@ -76,7 +76,7 @@ ToolSpec {
             description: "运行 cargo fmt --check（代码格式检查）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fmt_check,
-            runner: runner_cargo_fmt_check,
+            runner: ToolRunner::Legacy(runner_cargo_fmt_check),
             summary: ToolSummaryKind::Static("cargo fmt --check"),
         },
         ToolSpec {
@@ -84,7 +84,7 @@ ToolSpec {
             description: "运行 cargo outdated（检查依赖是否过期/可升级）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_outdated,
-            runner: runner_cargo_outdated,
+            runner: ToolRunner::Legacy(runner_cargo_outdated),
             summary: ToolSummaryKind::Static("cargo outdated"),
         },
         ToolSpec {
@@ -92,7 +92,7 @@ ToolSpec {
             description: "运行 cargo machete（需 cargo-machete）：快速扫描 **声明但未在源码中引用** 的依赖；与 cargo_outdated（版本可升级）互补。可选 with_metadata、path。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_machete,
-            runner: runner_cargo_machete,
+            runner: ToolRunner::Legacy(runner_cargo_machete),
             summary: ToolSummaryKind::Static("cargo machete"),
         },
         ToolSpec {
@@ -100,7 +100,7 @@ ToolSpec {
             description: "运行 cargo udeps（需 cargo-udeps，通常需 nightly：传 nightly=true 使用 cargo +nightly udeps）：基于构建的未使用依赖检查，与 machete/outdated 互补。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_udeps,
-            runner: runner_cargo_udeps,
+            runner: ToolRunner::Legacy(runner_cargo_udeps),
             summary: ToolSummaryKind::Static("cargo udeps"),
         },
         ToolSpec {
@@ -108,7 +108,7 @@ ToolSpec {
             description: "运行 cargo publish --dry-run：验证打包与发布检查，**不会**上传到 registry。可选 package、allow_dirty、no_verify、features。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_publish_dry_run,
-            runner: runner_cargo_publish_dry_run,
+            runner: ToolRunner::Legacy(runner_cargo_publish_dry_run),
             summary: ToolSummaryKind::Static("cargo publish --dry-run"),
         },
         ToolSpec {
@@ -116,7 +116,7 @@ ToolSpec {
             description: "运行 `cargo check --message-format=<json>`，解析 **compiler-message** 行，输出结构化诊断摘要（级别、错误码、rendered、span）。等价于对接 rustc 的 JSON 诊断流，无需 rust-analyzer。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_compiler_json,
-            runner: runner_rust_compiler_json,
+            runner: ToolRunner::Legacy(runner_rust_compiler_json),
             summary: ToolSummaryKind::Static("cargo check JSON diagnostics"),
         },
         ToolSpec {
@@ -124,7 +124,7 @@ ToolSpec {
             description: "在工作区根目录执行 **rustc**（不经 shell）。`args` 为参数数组，规则与 `run_command` 一致：不得含 `..` 或绝对路径。用于 `rustc --explain E0xxx`、`-vV`、`--print=cfg` 等；**不要求** Cargo.toml。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_rustc,
-            runner: runner_rust_rustc,
+            runner: ToolRunner::Legacy(runner_rust_rustc),
             summary: ToolSummaryKind::Static("rustc"),
         },
         ToolSpec {
@@ -132,7 +132,7 @@ ToolSpec {
             description: "启动 **rust-analyzer**（stdio LSP），对指定 **path + 0-based line/character** 执行 `textDocument/definition`。需本机已安装 rust-analyzer；单文件 didOpen，适合跳转定义。大文件 >512KiB 请换 read_file 分段。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_position,
-            runner: runner_rust_analyzer_goto_definition,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_goto_definition),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_goto_definition),
         },
         ToolSpec {
@@ -140,7 +140,7 @@ ToolSpec {
             description: "同上，执行 `textDocument/references`（语义引用）。参数含 include_declaration。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_references,
-            runner: runner_rust_analyzer_find_references,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_find_references),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_find_references),
         },
         ToolSpec {
@@ -148,7 +148,7 @@ ToolSpec {
             description: "启动 **rust-analyzer**（stdio LSP），对 **path + 0-based line/character** 执行 `textDocument/hover`，输出悬停文档/类型等（Markdown 或纯文本）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_hover,
-            runner: runner_rust_analyzer_hover,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_hover),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_hover),
         },
         ToolSpec {
@@ -156,7 +156,7 @@ ToolSpec {
             description: "同上，对单文件执行 `textDocument/documentSymbol`：层级 `DocumentSymbol` 树或 `SymbolInformation` 列表，条数由 **max_symbols**（默认 500，上限 5000）截断。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_document_symbol,
-            runner: runner_rust_analyzer_document_symbol,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_document_symbol),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_document_symbol),
         },
         ToolSpec {
@@ -164,7 +164,7 @@ ToolSpec {
             description: "同上，执行 `textDocument/implementation`（如 trait 方法跳转到 `impl`）。**path + 0-based line/character**；需 rust-analyzer。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_position,
-            runner: runner_rust_analyzer_goto_implementation,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_goto_implementation),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_goto_implementation),
         },
         ToolSpec {
@@ -172,7 +172,7 @@ ToolSpec {
             description: "同上，执行 `textDocument/typeDefinition`（解析到的类型定义位置）。**path + 0-based line/character**；需 rust-analyzer。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_position,
-            runner: runner_rust_analyzer_goto_type_definition,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_goto_type_definition),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_goto_type_definition),
         },
         ToolSpec {
@@ -180,7 +180,7 @@ ToolSpec {
             description: "同上，执行 `textDocument/documentHighlight`（当前位置符号在文件内的读/写/Text 高亮区间）。**path + 0-based line/character**；需 rust-analyzer。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_position,
-            runner: runner_rust_analyzer_document_highlight,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_document_highlight),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_document_highlight),
         },
         ToolSpec {
@@ -188,7 +188,7 @@ ToolSpec {
             description: "同上，执行 `workspace/symbol` 按 **query** 模糊搜索工作区符号。仍须 **path** 指向一 Rust 源以 `didOpen`（与现有会话一致）；**max_results** 默认 64、上限 500。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_analyzer_workspace_symbol,
-            runner: runner_rust_analyzer_workspace_symbol,
+            runner: ToolRunner::Legacy(runner_rust_analyzer_workspace_symbol),
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_workspace_symbol),
         },
         ToolSpec {
@@ -196,7 +196,7 @@ ToolSpec {
             description: "执行 cargo fix 应用编译器/诊断建议（受控写入，需 confirm=true）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_cargo_fix,
-            runner: runner_cargo_fix,
+            runner: ToolRunner::Legacy(runner_cargo_fix),
             summary: ToolSummaryKind::Static("cargo fix (controlled write)"),
         },
         ToolSpec {
@@ -204,7 +204,7 @@ ToolSpec {
             description: "运行单个 Rust 测试（按 test_name 过滤）。用于快速调试具体测试。",
             category: ToolCategory::Development,
             parameters: tool_params::params_rust_test_one,
-            runner: runner_rust_test_one,
+            runner: ToolRunner::Legacy(runner_rust_test_one),
             summary: ToolSummaryKind::Static("single Rust test"),
         },
 ]

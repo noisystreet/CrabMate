@@ -4,7 +4,7 @@ ToolSpec {
             description: "获取当前时间或打印日历。支持 mode=time|calendar|both（默认 time）。用于回答「现在几点」「今天几号」「打印本月日历」「打印 2026 年 3 月日历」等问题。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_get_current_time,
-            runner: runner_get_current_time,
+            runner: ToolRunner::Legacy(runner_get_current_time),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "使用 Linux 的 bc -l 计算器执行数学表达式。支持：四则 + - * / %、乘方 ^；sqrt(x)、s(x)=sin、c(x)=cos、a(x)=atan、l(x)=ln、e(x)=exp；常量 pi、e（在 bc 中为 pi=4*a(1), e=e(1)）。可写 math::sqrt(2)、math::sin(pi/2)、math::log10(100) 等，会转为 bc 语法后执行。示例：1+2*3、2^10、sqrt(2)、s(3.14159/2)。参数 expression 为单个数学表达式。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_calc,
-            runner: runner_calc,
+            runner: ToolRunner::Legacy(runner_calc),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "物理量与数据量单位换算（Rust uom 库，不调用外部程序）。category：length|mass|temperature|data|time|area|pressure|speed（或中文如 温度、数据量）。参数 value、from、to：如 {\"category\":\"length\",\"value\":5,\"from\":\"km\",\"to\":\"mile\"}；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_convert_units,
-            runner: runner_convert_units,
+            runner: ToolRunner::Legacy(runner_convert_units),
             summary: ToolSummaryKind::Dynamic(ts::summary_convert_units),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "纯内存字符串变换（不落盘）：Base64 编解码、URL 百分号编解码、短哈希（sha256 取 16 位十六进制前缀）、lines_join（按行拆开后以 delimiter 连接，默认空格）、lines_split（按 delimiter 切分，段数上限 50000）。输入 text 单次上限 256KiB，输出上限 512KiB。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_text_transform,
-            runner: runner_text_transform,
+            runner: ToolRunner::Legacy(runner_text_transform),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "获取指定城市或地区的当前天气（使用 Open-Meteo，无需 API Key）。用于回答「某地天气怎么样」「北京今天天气」等问题。参数 city 或 location 为城市/地区名，如北京、上海、Tokyo、New York。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_weather,
-            runner: runner_get_weather,
+            runner: ToolRunner::Legacy(runner_get_weather),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "联网搜索网页：根据关键词返回若干条结果的标题、URL 与摘要。默认 web_search_provider=worbrow（本机 Firefox/Chrome headless，无需 API Key）。亦可设为 brave / tavily（需 web_search_api_key）。适合查新闻、文档、事实类问题；代码仓库内查找请优先用 search_in_files。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_web_search,
-            runner: runner_web_search,
+            runner: ToolRunner::Legacy(runner_web_search),
             summary: ToolSummaryKind::Dynamic(ts::summary_web_search),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "对 **http/https** URL 发起 **GET**（默认）或 **HEAD**。GET 返回状态、Content-Type、**重定向链**与正文（按配置截断）；HEAD 不下载 body，仅元数据与重定向链，省流量。可选 **`text_format: html_text`**：将 HTML 文档页转为纯文本（去 script/style，优先 main/article，**scraper/html5ever**）；非 HTML 仍返回解码原文。`charset` / meta / 嗅探解码见工具说明。**URL 闸门**：`http_fetch_allowed_prefixes` 含 `*` 时任意 http/https 直接执行（嵌入默认）；否则须匹配同源 + 路径前缀。未匹配时 **Web** 经 SSE 审批（`approval_session_id`）。运维 CLI 无同进程终端审批。GET/HEAD 共用白名单键 `http_fetch:<归一化URL>`。勿在 URL 中放真实密钥。`workflow_execute` 节点内仅前缀匹配（含 `*`）可成功。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_fetch,
-            runner: runner_http_fetch,
+            runner: ToolRunner::Legacy(runner_http_fetch),
             summary: ToolSummaryKind::Dynamic(ts::summary_http_fetch),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "对 **http/https** URL 发起 **POST/PUT/PATCH/DELETE**（可选 JSON body）。响应正文可选 **`text_format: html_text`**（与 `http_fetch` 相同）。与 `http_fetch` 共用 `http_fetch_allowed_prefixes`（`*` 放行全部 http/https；否则同源 + 路径前缀）。未匹配时 **Web（流式 + 审批会话）** 可经 SSE 人工审批（运维 CLI 无同进程终端审批；**永久允许**键为 `http_request:<METHOD>:<归一化URL>`，与 GET/HEAD 的 `http_fetch:` 键区分）。响应含状态、Content-Type、重定向链与正文（按配置截断）。**`workflow_execute` 节点内**仍仅前缀匹配。默认建议 dry-run 先验证，勿在 body 中放真实密钥。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_http_request,
-            runner: runner_http_request,
+            runner: ToolRunner::Legacy(runner_http_request),
             summary: ToolSummaryKind::Dynamic(ts::summary_http_request),
         },
 ]

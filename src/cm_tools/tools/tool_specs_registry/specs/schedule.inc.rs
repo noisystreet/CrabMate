@@ -4,7 +4,7 @@ ToolSpec {
             description: "添加一个提醒事项，并持久化到工作区的 .crabmate/reminders.json。可选 due_at 支持 RFC3339 或 YYYY-MM-DD HH:MM / YYYY-MM-DD。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_add_reminder,
-            runner: runner_add_reminder,
+            runner: ToolRunner::Legacy(runner_add_reminder),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "列出提醒事项（默认不包含已完成）。数据来自工作区的 .crabmate/reminders.json。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_list_reminders,
-            runner: runner_list_reminders,
+            runner: ToolRunner::Legacy(runner_list_reminders),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "将指定 id 的提醒标记为完成。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
-            runner: runner_complete_reminder,
+            runner: ToolRunner::Legacy(runner_complete_reminder),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "删除指定 id 的提醒。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
-            runner: runner_delete_reminder,
+            runner: ToolRunner::Legacy(runner_delete_reminder),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "更新提醒（title/due_at/done 任意字段）。due_at 传空字符串表示清空到期时间。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_update_reminder,
-            runner: runner_update_reminder,
+            runner: ToolRunner::Legacy(runner_update_reminder),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "添加一个日程事件，并持久化到工作区的 .crabmate/events.json。start_at 必填，end_at/location/notes 可选。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_add_event,
-            runner: runner_add_event,
+            runner: ToolRunner::Legacy(runner_add_event),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "列出日程事件；可选按 year/month 过滤。数据来自工作区的 .crabmate/events.json。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_list_events,
-            runner: runner_list_events,
+            runner: ToolRunner::Legacy(runner_list_events),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "删除指定 id 的日程事件。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_id_only,
-            runner: runner_delete_event,
+            runner: ToolRunner::Legacy(runner_delete_event),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "更新日程事件（title/start_at/end_at/location/notes 任意字段）。end_at/location/notes 传空字符串表示清空。",
             category: ToolCategory::Basic,
             parameters: tool_params::params_update_event,
-            runner: runner_update_event,
+            runner: ToolRunner::Legacy(runner_update_event),
             summary: ToolSummaryKind::None,
         },
 ]

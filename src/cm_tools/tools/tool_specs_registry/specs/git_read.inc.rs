@@ -4,7 +4,7 @@ ToolSpec {
             description: "读取当前工作区的 Git 状态（只读）。可查看分支、已暂存/未暂存变更和未跟踪文件，帮助在改动前后自检变更范围，避免覆盖未提交内容。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
-            runner: runner_git_status,
+            runner: ToolRunner::Legacy(runner_git_status),
             summary: ToolSummaryKind::Static("git status"),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "读取当前工作区的 Git diff（只读）。支持查看 working、staged 或 all 模式，并可按 path 过滤，便于精确确认具体改动。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff,
-            runner: runner_git_diff,
+            runner: ToolRunner::Legacy(runner_git_diff),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_diff),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "检查当前工作区是否干净（git status --porcelain）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_clean_check,
-            runner: runner_git_clean_check,
+            runner: ToolRunner::Legacy(runner_git_clean_check),
             summary: ToolSummaryKind::Static("检查 Git 工作区是否干净"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "读取当前工作区的 Git diff 统计（只读）。支持 working/staged/all 与可选 path 过滤。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_stat,
-            runner: runner_git_diff_stat,
+            runner: ToolRunner::Legacy(runner_git_diff_stat),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_stat),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "读取当前工作区的 Git diff 变更文件名列表（只读）。支持 working/staged/all 与可选 path 过滤。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_names,
-            runner: runner_git_diff_names,
+            runner: ToolRunner::Legacy(runner_git_diff_names),
             summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_names),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "读取 Git 提交历史（只读）。支持条数和单行模式。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_log,
-            runner: runner_git_log,
+            runner: ToolRunner::Legacy(runner_git_log),
             summary: ToolSummaryKind::Static("git log"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "读取指定提交详情（只读），默认 HEAD。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_show,
-            runner: runner_git_show,
+            runner: ToolRunner::Legacy(runner_git_show),
             summary: ToolSummaryKind::Static("git show"),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "读取 base...HEAD 范围 diff（只读），默认 main...HEAD。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_diff_base,
-            runner: runner_git_diff_base,
+            runner: ToolRunner::Legacy(runner_git_diff_base),
             summary: ToolSummaryKind::Static("git diff base...HEAD"),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "查看文件行级 blame（只读）。可选行范围。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_blame,
-            runner: runner_git_blame,
+            runner: ToolRunner::Legacy(runner_git_blame),
             summary: ToolSummaryKind::Static("git blame"),
         },
         ToolSpec {
@@ -76,7 +76,7 @@ ToolSpec {
             description: "查看单文件历史（只读，--follow）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_file_history,
-            runner: runner_git_file_history,
+            runner: ToolRunner::Legacy(runner_git_file_history),
             summary: ToolSummaryKind::Static("git file history"),
         },
         ToolSpec {
@@ -84,7 +84,7 @@ ToolSpec {
             description: "查看分支列表（只读），可含远程分支。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_branch_list,
-            runner: runner_git_branch_list,
+            runner: ToolRunner::Legacy(runner_git_branch_list),
             summary: ToolSummaryKind::Static("git branch"),
         },
         ToolSpec {
@@ -92,7 +92,7 @@ ToolSpec {
             description: "查看本地分支与远程跟踪关系（只读，git status -sb）。",
             category: ToolCategory::Development,
             parameters: tool_params::params_git_status,
-            runner: runner_git_remote_status,
+            runner: ToolRunner::Legacy(runner_git_remote_status),
             summary: ToolSummaryKind::Static("git remote tracking status"),
         },
 ]
