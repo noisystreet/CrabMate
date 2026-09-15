@@ -95,7 +95,8 @@ fn format_inner(inner: &ChangelistInner, max_total_chars: usize) -> Option<Strin
         return None;
     }
     let mut lines: Vec<String> = Vec::new();
-    lines.push("[CrabMate 会话工作区变更集] 下列路径为本会话内工具写入所触碰的**工作区相对路径**（供后续轮次优先参考，避免猜路径）。".to_string());
+    // 注入正文标题不带工具名，避免模型把「CrabMate」误读为当前项目名。
+    lines.push("[会话工作区变更集] 下列路径为本会话内工具写入所触碰的**工作区相对路径**（供后续轮次优先参考，避免猜路径）。".to_string());
     lines.push(String::new());
     lines.push("### 已触碰路径（按首次写入顺序）".to_string());
     for p in &inner.order {
@@ -248,6 +249,9 @@ mod tests {
         );
         let (_r, s) = cl.snapshot_revision_and_format(50_000);
         let s = s.expect("body");
+        // 注入正文不得携带工具名，避免模型把「CrabMate」误读为当前项目名。
+        assert!(!s.contains("CrabMate"));
+        assert!(s.contains("[会话工作区变更集]"));
         assert!(s.contains("src/x.rs"));
         assert!(s.contains("```diff"));
         assert!(s.contains("-fn main() {}"));

@@ -50,7 +50,7 @@ pub fn build_project_dependency_brief_markdown(workspace_root: &Path, max_chars:
     };
 
     let envelope = json!({
-        "crabmate_project_dependency_brief_version": BRIEF_VERSION,
+        "project_dependency_brief_version": BRIEF_VERSION,
         "cargo": cargo_json,
         "npm": npm_entries,
     });
@@ -61,7 +61,7 @@ pub fn build_project_dependency_brief_markdown(workspace_root: &Path, max_chars:
 
     let mut sections: Vec<String> = Vec::new();
     sections.push(format!(
-        "## CrabMate 项目依赖与结构摘要（自动生成 v{}）\n",
+        "## 项目依赖与结构摘要（自动生成 v{}）\n",
         BRIEF_VERSION
     ));
     sections.push(
@@ -369,6 +369,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let md = build_project_dependency_brief_markdown(&dir, 8000);
         assert!(md.contains("结构化 JSON"));
+        assert!(md.contains("## 项目依赖与结构摘要"));
+        // 注入正文不得携带工具名，避免模型把「CrabMate」误读为当前项目名。
+        assert!(!md.to_ascii_lowercase().contains("crabmate"));
         assert!(!md.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
