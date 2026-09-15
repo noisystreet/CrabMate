@@ -286,16 +286,13 @@ worbrow = { workspace = true, optional = true }
 urlencoding = { workspace = true, optional = true }
 jsonschema = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
+# 仅启用实际用到的子特性，缩短编译图（form/matched-path/original-uri/tower-log 无代码引用）。
 axum = { workspace = true, optional = true, features = [
-    "form",
     "http1",
     "json",
-    "matched-path",
     "multipart",
-    "original-uri",
     "query",
     "tokio",
-    "tower-log",
     "tracing",
 ] }
 tokio-cron-scheduler = { workspace = true, optional = true }
@@ -346,7 +343,7 @@ required-features = ["gen-man"]
 getrandom = { workspace = true, features = ["wasm_js"] }
 
 [dev-dependencies]
-serde_json = { workspace = true }
+# serde_json 已是非可选主依赖，无需在 dev-deps 重复声明。
 tempfile = { workspace = true }
 proptest = { workspace = true }
 
