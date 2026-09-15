@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 一键发布打包：release 构建 + man + tar.gz；在 Linux 上另生成 .deb（需 cargo-deb）。
-# 业务 UI 源码已迁 Client 仓；可选随包附带已构建 dist（CM_WEB_STATIC_DIR 或 --frontend-dist）。
+# 本仓包为 server-only（不附带 UI）；serve 永远纯 API，UI 由 Client 仓自行托管。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -10,8 +10,6 @@ usage() {
   cat <<'EOF'
 用法: scripts/package-release.sh [选项]
 
-  --frontend-dist DIR   将已构建 UI dist 打入包内 frontend/dist（默认读 CM_WEB_STATIC_DIR）
-  --skip-frontend       不附带 UI 产物（server-only；与未设置 dist 相同）
   --skip-man            跳过 crabmate-gen-man
   --skip-tar            不生成 tar.gz
   --skip-deb            不生成 .deb
@@ -22,24 +20,16 @@ usage() {
   - crabmate_<version>_<arch>.deb（仅 Linux；含 crabmate.service，默认不 enable）
 
 依赖: Rust；.deb 需 cargo install cargo-deb
-业务 UI：在 ../crabmate-client 执行 make frontend，再传 --frontend-dist 或 CM_WEB_STATIC_DIR
+业务 UI：在 ../crabmate-client 构建与托管（serve 永远纯 API，不托管 UI）
 EOF
 }
 
-SKIP_FRONTEND=0
 SKIP_MAN=0
 SKIP_TAR=0
 SKIP_DEB=0
-FRONTEND_DIST="${CM_WEB_STATIC_DIR:-}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --frontend-dist)
-      shift
-      FRONTEND_DIST="${1:-}"
-      [[ -n "${FRONTEND_DIST}" ]] || { echo "错误: --frontend-dist 需要目录参数" >&2; exit 2; }
-      ;;
-    --skip-frontend) SKIP_FRONTEND=1 ;;
     --skip-man) SKIP_MAN=1 ;;
     --skip-tar) SKIP_TAR=1 ;;
     --skip-deb) SKIP_DEB=1 ;;
@@ -94,16 +84,7 @@ else
   echo "==> 跳过 man 生成"
 fi
 
-INCLUDE_UI=0
-if [[ "$SKIP_FRONTEND" -eq 0 && -n "${FRONTEND_DIST}" && -f "${FRONTEND_DIST}/index.html" ]]; then
-  INCLUDE_UI=1
-  echo "==> 将附带 UI dist: ${FRONTEND_DIST}"
-elif [[ "$SKIP_FRONTEND" -eq 0 && -n "${FRONTEND_DIST}" ]]; then
-  echo "错误: FRONTEND_DIST/CM_WEB_STATIC_DIR 无效（缺 index.html）: ${FRONTEND_DIST}" >&2
-  exit 1
-else
-  echo "==> server-only（未附带 UI；运行时默认纯 API；托管 SPA 用 --with-web + CM_WEB_STATIC_DIR）"
-fi
+echo "==> server-only 打包（不附带 UI；serve 永远纯 API）"
 
 echo "==> cargo build --release -p crabmate"
 cargo build --release -p crabmate
@@ -133,10 +114,6 @@ if [[ "$SKIP_TAR" -eq 0 ]]; then
   cp packaging/systemd/crabmate.env.example "$STAGE_DIR/etc/crabmate/crabmate.env.example"
   [[ -f config/agent_roles.toml ]] && cp config/agent_roles.toml "$STAGE_DIR/etc/crabmate/"
   cp config/prompts/*.md "$STAGE_DIR/etc/crabmate/config/prompts/"
-  if [[ "$INCLUDE_UI" -eq 1 ]]; then
-    mkdir -p "$STAGE_DIR/frontend"
-    cp -R "${FRONTEND_DIST}" "$STAGE_DIR/frontend/dist"
-  fi
 
   TAR_NAME="crabmate_${VERSION}_${OS_RAW}_${ARCH_RAW}.tar.gz"
   TAR_PATH="dist/${TAR_NAME}"

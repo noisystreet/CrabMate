@@ -53,7 +53,7 @@ help:
 	@echo "  make clean-dist       删除 dist/ 发布目录"
 	@echo ""
 	@echo "变量：RELEASE=1 作用于 backend / workspace"
-	@echo "serve：默认纯 API；托管 SPA：--with-web 且 CM_WEB_STATIC_DIR=../crabmate-client/frontend/dist"
+	@echo "serve：永远纯 API，不托管 UI；UI 在 Client 仓（cd ../crabmate-client && make frontend）"
 
 # --- 聚合 ---
 
@@ -77,19 +77,19 @@ workspace:
 workspace-release:
 	$(MAKE) workspace RELEASE=1
 
-# --- 发布打包（默认不附带 UI；运行时默认纯 API，托管 SPA 用 --with-web + CM_WEB_STATIC_DIR）---
+# --- 发布打包（server-only，不附带 UI；serve 永远纯 API）---
 
 package:
 	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
-	"$(PACKAGE_RELEASE)" --skip-frontend
+	"$(PACKAGE_RELEASE)"
 
 package-tar:
 	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
-	"$(PACKAGE_RELEASE)" --skip-frontend --skip-deb
+	"$(PACKAGE_RELEASE)" --skip-deb
 
 package-deb:
 	@test -x "$(PACKAGE_RELEASE)" || { echo "缺少 $(PACKAGE_RELEASE)" >&2; exit 1; }
-	"$(PACKAGE_RELEASE)" --skip-frontend --skip-tar
+	"$(PACKAGE_RELEASE)" --skip-tar
 
 # 在 Docker 工具链镜像内执行 `make package`（产物写入宿主 dist/；需本机 Docker）
 # 用法：make package-docker

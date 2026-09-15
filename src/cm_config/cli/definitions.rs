@@ -41,11 +41,6 @@ pub struct ServeCmd {
     #[arg(long, value_name = "ADDR")]
     pub host: Option<String>,
 
-    /// 显式挂载业务 UI 静态资源（Client `frontend/dist` / `CM_WEB_STATIC_DIR`）。
-    /// **默认不挂**（纯 API）；同机托管 SPA 须传本旗标。
-    #[arg(long = "with-web", alias = "web")]
-    pub with_web: bool,
-
     /// 监听成功后向 stdout 输出一行 `{"event":"web_ready",...}` JSON；壳不再依赖，仅脚本/工具。
     /// 旗标名 `--desktop-ready-json` 已弃用命名，请优先使用可见别名 `--web-ready-json`。
     #[arg(long = "desktop-ready-json", visible_alias = "web-ready-json")]
@@ -262,10 +257,6 @@ pub struct ConfigCmd {
     /// 可选；与不带本参数相同，均为一次配置检查后退出（供脚本显式标注）
     #[arg(long)]
     pub dry_run: bool,
-
-    /// 与 `serve --with-web` 同语义：检查 UI 静态目录是否存在（默认跳过，纯 API）。
-    #[arg(long = "with-web", alias = "web")]
-    pub with_web: bool,
 }
 
 /// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）
@@ -426,7 +417,7 @@ pub enum ExtraCliCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
-    /// 启动 HTTP API（默认纯 API；可选 `--with-web` 挂载 UI；默认端口 8080）
+    /// 启动 HTTP API（纯 API，不托管 UI；默认端口 8080）
     Serve(ServeCmd),
     /// 批量 benchmark 测评（JSONL）
     Bench(BenchCmd),
@@ -505,8 +496,6 @@ pub struct ParsedCliArgs {
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,
     pub no_tools: bool,
-    /// `serve` / `config`：是否挂载或检查业务 UI 静态资源（默认 `false` = 纯 API）。
-    pub with_web: bool,
     pub dry_run: bool,
     pub log_file: Option<String>,
     pub bench_args: BenchmarkCliArgs,

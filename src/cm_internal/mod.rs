@@ -33,7 +33,6 @@ pub mod tool_sandbox;
 pub mod tool_stats;
 pub mod user_data;
 pub mod user_message_file_refs;
-pub mod web_static_dir;
 
 pub use clarification_sse_bridge::clarification_questionnaire_body_if_tool_ok;
 pub use crate::cm_memory::memory;

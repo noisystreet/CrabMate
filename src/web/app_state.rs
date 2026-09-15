@@ -150,8 +150,6 @@ pub(crate) struct AppStateWebAux {
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,
     /// 后台任务注册表（`run_command` 的 `async=true`）；启动时按 `[tool_registry]` 配置构建。
     pub(crate) tool_job_registry: std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>,
-    /// 是否挂载业务 UI 静态资源（`serve --with-web`）。为 false（默认）时 `/health` 不检查静态目录。
-    pub(crate) mount_web_ui: bool,
 }
 
 #[derive(Clone)]

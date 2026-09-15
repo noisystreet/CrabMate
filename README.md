@@ -22,7 +22,7 @@
 
 **CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
 
-It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
+It ships HTTP **`serve`** (always API-only) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
 
 **Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** ([ADR](docs/design/client_shell_split.md)).
 
@@ -46,8 +46,8 @@ It ships HTTP **`serve`** (API-only by default) plus ops CLIs. **Official Web UI
 ## Overview
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`**—glob/`$VAR`/`~` run via **`bash -c`** on the joined script; Web re-approves standalone `&&`/`|` even if bash is allowlisted; approval shows that script; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **Web UI (Client)**: built and shipped from **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; this repo’s **`serve` defaults to API-only**; host a SPA with **`--with-web`** plus **`CM_WEB_STATIC_DIR`** (or probed Client `frontend/dist`). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected. Assistant Markdown can show workspace plots with **`![alt](relative/plot.png)`** (Client loads **`GET /workspace/file/raw`** with API auth; png/jpg/jpeg/webp/gif only). Client **Save to this device** uses **`GET /workspace/file/download`** (any type, 16 MiB). Folder zip uses **`GET /workspace/dir/archive`**. Rename/move a file with **`POST /workspace/file/move`**. Client can drop local files onto the workspace tree via **`PUT /workspace/file/raw`** (raw bytes, 16 MiB).
-- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only by default (optional **`--with-web`**). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
+- **Web UI (Client)**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; this repo’s **`serve` is always API-only** and never hosts a SPA. Browser UIs connect over CORS (allow extra Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected. Assistant Markdown can show workspace plots with **`![alt](relative/plot.png)`** (Client loads **`GET /workspace/file/raw`** with API auth; png/jpg/jpeg/webp/gif only). Client **Save to this device** uses **`GET /workspace/file/download`** (any type, 16 MiB). Folder zip uses **`GET /workspace/dir/archive`**. Rename/move a file with **`POST /workspace/file/move`**. Client can drop local files onto the workspace tree via **`PUT /workspace/file/raw`** (raw bytes, 16 MiB).
+- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only (never hosts a SPA). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
 - **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
 - **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
@@ -59,7 +59,7 @@ Context compaction is Token-led when `llm_context_tokens` is non-zero: Server bu
 
 | Subcommand | Summary |
 | --- | --- |
-| **`serve`** | HTTP API (**API-only by default**; no SPA). Host UI with **`--with-web`** and **`CM_WEB_STATIC_DIR`** (or probed Client/`frontend/dist` / install path). Default port **8080**, bind **127.0.0.1**. |
+| **`serve`** | HTTP API (**always API-only**, no SPA). UI is hosted by the Client repo and connects via CORS (**`CM_WEB_CORS_ALLOWED_ORIGINS`**). Default port **8080**, bind **127.0.0.1**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
 | **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
@@ -86,15 +86,14 @@ make package           # server-only tar.gz + optional .deb → dist/ (no UI)
 make clean             # clean target and dist/
 ```
 
-UI: `cd ../crabmate-client && make frontend` (clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling first). **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (API-only by default; use **`--with-web`** + **`CM_WEB_STATIC_DIR`** to host SPA). Desktop / Android: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**.
+UI: `cd ../crabmate-client && make frontend` (clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling first). **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (no UI). Desktop / Android: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**.
 
 ### Backend
 
 ```bash
 # Debug
 cargo build
-./target/debug/crabmate serve            # API-only by default
-./target/debug/crabmate serve --with-web # host SPA (needs CM_WEB_STATIC_DIR or probed dist)
+./target/debug/crabmate serve            # always API-only
 # or: API_KEY=… ./target/debug/crabmate serve
 
 # Release
@@ -113,13 +112,16 @@ cargo build --release
 
 Official UI source: **[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (path A Phase 4.2). Local default: sibling `../crabmate-client`.
 
+**`serve` never hosts the SPA.** Build and host the UI from the Client repo, then point it at `serve` (browser Origins beyond the official shell need **`CM_WEB_CORS_ALLOWED_ORIGINS`**).
+
 ```bash
 cd ../crabmate-client && make frontend
-export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
-cd ../crabmate_agent && cargo run -- serve --with-web
+# UI is hosted from the Client repo (its dev flow or any static server);
+# then set API base (http://127.0.0.1:8080/) + Bearer in the UI settings
+cargo run -- serve   # this repo: API-only
 ```
 
-API-only (default): `serve`. UI pointers: [`docs/frontend/`](docs/frontend/).
+UI pointers: [`docs/frontend/`](docs/frontend/).
 
 ### Official Client (Desktop / Android)
 
@@ -141,8 +143,8 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | Method | Command / notes |
 | --- | --- |
 | **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.5.2`**, default feature **`server`**). Git tag **`v0.5.2`** matches this package. Release tarball/`.deb` on GitHub Releases. Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
-| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh --skip-frontend`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **no UI by default**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). Optional **`--frontend-dist`** is script-only. |
-| **Debian (.deb)** | **`make package-deb`** / **`cargo deb`** (UI not required); under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, API-only by default; add **`--with-web`** + **`CM_WEB_STATIC_DIR`** for UI). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
+| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
+| **Debian (.deb)** | **`make package-deb`** / **`cargo deb`**; under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, always API-only). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
 | **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
 
@@ -199,7 +201,6 @@ Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. 
 | **`CM_API_BASE`** / **`CM_MODEL`** | Override gateway and model from config. |
 | **`CM_WEB_API_BEARER_TOKEN`** | Protects Web APIs (with **`web_api_require_bearer`**); [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). |
 | **`CM_WEB_CORS_ALLOWED_ORIGINS`** | Extra Origin allowlist (comma-separated); **unset** already allows official shell Origins (`tauri://localhost`, `http://tauri.localhost`). Explicit empty disables CORS. Static browser UI: add its Origin; see Settings **API base** (`localStorage` **`crabmate-api-base-url`**). |
-| **`CM_WEB_STATIC_DIR`** | Override static root when **`serve --with-web`** (Client `frontend/dist` / install path; SPA off by default). |
 | **`CM_DESKTOP_SUGGESTED_URL`** | Optional connect-page suggested `serve` URL (default `http://127.0.0.1:8080/`). |
 | **`CM_DESKTOP_SERVE_URL`** | Required when skipping connect page (with **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**). |
 

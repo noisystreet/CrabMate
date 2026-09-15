@@ -172,14 +172,6 @@ fn print_doctor_workspace_block(ws: &Path) {
     println!("【工作区路径】");
     println!("  当前目录: {}", ws.display());
     path_status_line("Cargo.toml", &ws.join("Cargo.toml"));
-    path_status_line(
-        "UI dist (optional)",
-        &std::env::var("CM_WEB_STATIC_DIR")
-            .ok()
-            .filter(|s| !s.trim().is_empty())
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| ws.join("frontend/dist")),
-    );
     path_status_line("target", &ws.join("target"));
     path_status_line(".crabmate/workflows", &ws.join(".crabmate/workflows"));
     if let Ok(root) = canonical_workspace_root(ws)
@@ -281,16 +273,11 @@ fn print_doctor_rust_toolchain_block() {
     }
 }
 
-fn print_doctor_frontend_block(_ws: &Path) {
-    println!("【Web UI（可选静态资源）】");
+/// 提示 UI 托管边界：`serve` 永远纯 API，UI 由 Client 仓自行托管。
+fn print_doctor_frontend_block() {
+    println!("【Web UI（由 Client 仓托管）】");
     println!("  官方 UI：同级 crabmate-client（cd ../crabmate-client && make frontend）");
-    println!("  serve：默认纯 API；托管 SPA 用 --with-web 与 CM_WEB_STATIC_DIR=…/frontend/dist");
-    if let Ok(dir) = std::env::var("CM_WEB_STATIC_DIR") {
-        let trimmed = dir.trim();
-        if !trimmed.is_empty() {
-            path_status_line("CM_WEB_STATIC_DIR", Path::new(trimmed));
-        }
-    }
+    println!("  serve：永远纯 API，不托管 SPA；Client 经 CORS（web_cors_allowed_origins）接入");
 }
 
 fn print_doctor_tty_approval_block(cfg: &AgentConfig) {
@@ -345,7 +332,7 @@ pub fn print_doctor_report(cfg: &AgentConfig, workspace_cli: Option<&str>) {
     print_doctor_rust_toolchain_block();
     println!();
 
-    print_doctor_frontend_block(&ws);
+    print_doctor_frontend_block();
     println!();
 
     print_doctor_user_data_block();

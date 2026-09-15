@@ -31,7 +31,6 @@ use crate::observability;
 use crate::runtime;
 #[cfg(feature = "web")]
 use crate::web;
-use crate::web_static_dir;
 
 /// `crabmate models` / `crabmate probe`：`bearer` 时仍要求进程环境变量 **`API_KEY`** 非空。
 fn require_api_key_for_cli_models_probe(
@@ -352,7 +351,6 @@ async fn run_early_commands(
 async fn run_dry_run(
     config_path: &Option<String>,
     llm_context_tokens_cli: Option<u32>,
-    with_web: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cfg = load_cli_agent_config(config_path.as_deref(), llm_context_tokens_cli)?;
     let key_note = match cfg.llm.llm_http_auth_mode {
@@ -369,24 +367,7 @@ async fn run_dry_run(
             }
         }
     };
-    if !with_web {
-        println!("配置检查通过：{}（默认纯 API，跳过 UI 静态目录）", key_note);
-        return Ok(());
-    }
-    let static_dir = web_static_dir::resolve_web_static_dir();
-    if !static_dir.is_dir() {
-        let msg = format!(
-            "dry-run 失败：前端静态目录不存在：{}（请设 CM_WEB_STATIC_DIR 指向 Client 已构建 dist，或 cd ../crabmate-client && make frontend；纯 API 请省略 --with-web）",
-            static_dir.display()
-        );
-        eprintln!("{msg}");
-        return Err(std::io::Error::new(std::io::ErrorKind::NotFound, msg).into());
-    }
-    println!(
-        "配置检查通过：{}，前端静态目录存在：{}",
-        key_note,
-        static_dir.display()
-    );
+    println!("配置检查通过：{}（纯 API，不托管 UI）", key_note);
     Ok(())
 }
 
@@ -417,7 +398,6 @@ pub(super) struct ServeBranchArgs<'a> {
     port: u16,
     desktop_ready_json: bool,
     http_bind_host: &'a str,
-    with_web: bool,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
@@ -435,7 +415,6 @@ struct ServeRuntimeBuildInput<'a> {
     api_key: String,
     initial_workspace: Option<String>,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
-    mount_web_ui: bool,
 }
 
 #[cfg(feature = "web")]
@@ -450,7 +429,6 @@ async fn build_serve_runtime_state(
         api_key,
         initial_workspace,
         process_handles,
-        mount_web_ui,
     } = input;
     let (default_ws, uploads_dir, conv_sqlite, cq_conc, cq_pending, ltm_enabled, ltm_store_path) = {
         let g = cfg_holder.read().await;
@@ -545,7 +523,6 @@ async fn build_serve_runtime_state(
                 process_handles: Arc::clone(&process_handles),
                 async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
                 tool_job_registry,
-                mount_web_ui,
             },
         }),
     })
@@ -650,7 +627,6 @@ pub(super) async fn run_serve_branch(
         port,
         desktop_ready_json,
         http_bind_host,
-        with_web,
         process_handles,
     } = args;
     let runtime = build_serve_runtime_state(ServeRuntimeBuildInput {
@@ -661,7 +637,6 @@ pub(super) async fn run_serve_branch(
         api_key: api_key.clone(),
         initial_workspace: workspace_cli.clone(),
         process_handles,
-        mount_web_ui: with_web,
     })
     .await?;
     let state = runtime.state;
@@ -670,8 +645,6 @@ pub(super) async fn run_serve_branch(
         g.conversation_persistence.scheduled_agent_tasks.clone()
     };
     web::cron_scheduler::spawn_serve_cron_scheduler(Arc::clone(&state), sched_tasks);
-    // 纯 API：不探测/解析 frontend dist；仅 `--with-web` 时解析。
-    let static_dir = with_web.then(web_static_dir::resolve_web_static_dir);
     cli_run_serve::serve_require_web_api_bearer_when_enabled(cfg_holder).await?;
     let web_api_bearer_layer_enabled =
         cli_run_serve::serve_web_api_bearer_layer_enabled(cfg_holder).await;
@@ -681,19 +654,17 @@ pub(super) async fn run_serve_branch(
     };
     let app = web::server::build_app(
         state.clone(),
-        static_dir.clone(),
         web_api_bearer_layer_enabled,
         cors_allowed_origins.clone(),
     );
     let bind_ip = parse_bind_ip(http_bind_host)?;
     let auth_enabled = validate_bind_auth(cfg_holder, bind_ip).await?;
     let addr = std::net::SocketAddr::from((bind_ip, port));
-    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli, with_web).await;
+    cli_run_serve::serve_log_startup_health(cfg_holder, workspace_cli).await;
     let listener = tokio::net::TcpListener::bind(addr).await?;
     let actual_addr = listener.local_addr()?;
     println!("Web 服务已启动");
     println!("  监听: http://{}/", actual_addr);
-    cli_run_serve::serve_log_ui_mount_status(static_dir.as_deref());
     serve_log_bind_warnings(bind_ip, auth_enabled, actual_addr);
     cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {
@@ -758,7 +729,6 @@ pub(super) struct ServeBranchArgs<'a> {
     pub port: u16,
     pub desktop_ready_json: bool,
     pub http_bind_host: &'a str,
-    pub with_web: bool,
     pub process_handles: Arc<crate::process_handles::ProcessHandles>,
 }
 
@@ -862,12 +832,7 @@ pub(super) async fn run_cli_from_parsed(
 /// 默认主路径：`--dry-run`、`models`/`probe`，或 `serve` / `repl` / `chat` / `tui`。
 async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
     if args.dry_run {
-        run_dry_run(
-            &args.config_path,
-            args.llm_context_tokens_cli,
-            args.with_web,
-        )
-        .await?;
+        run_dry_run(&args.config_path, args.llm_context_tokens_cli).await?;
         return Ok(());
     }
 
@@ -904,7 +869,6 @@ async fn run_cli_interactive_session(
             serve_desktop_ready_json: args.serve_desktop_ready_json,
             http_bind_host: args.http_bind_host,
             workspace_cli: args.workspace_cli,
-            with_web: args.with_web,
             bench_args: args.bench_args,
         },
     ))

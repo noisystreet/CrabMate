@@ -16,11 +16,10 @@ Victauri lives **only** in [crabmate-client](https://github.com/noisystreet/crab
 
 ```bash
 unset NO_COLOR && cd ../crabmate-client && make frontend
-export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
 
-# Terminal 1: backend (this repo; transitional SPA hosting)
+# Terminal 1: backend (this repo; serve is always API-only)
 cd ../crabmate_agent
-cargo run -- serve --with-web --host 127.0.0.1 --port 18080
+cargo run -- serve --host 127.0.0.1 --port 18080
 
 # Terminal 2: Tauri app (Client repo; skip connect page)
 cd ../crabmate-client/desktop-tauri/src-tauri

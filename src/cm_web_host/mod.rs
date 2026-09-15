@@ -1,12 +1,13 @@
-//! Axum Web **宿主**模块：HTTP 契约、`GET /web-ui`、serve 静态挂载壳。
+//! Axum Web **宿主**模块：HTTP 契约、`GET /web-ui`、受保护路由体积分层壳。
 //!
 //! **不是** Leptos WASM 前端包（UI **`crabmate-web`** 在 Client 仓 `../crabmate-client/frontend`）。
+//! `serve` 永远纯 API，不托管 SPA/静态文件；UI 由 Client 自行托管（CORS 见 `web_cors_allowed_origins`）。
 //! 依赖策略见 `docs/design/web_host_extract.md`：本模块 **不得**依赖 `cm_internal`。
 //!
 //! ## 阶段 B / C（边界说明）
 //! - **B**：HTTP DTO / `chat_keys` / `limits` / `web_ui` 在本模块；带 `AppState` 的 handler 因
 //!   axum `FromRef` 孤儿规则仍在根包。
-//! - **C**：根包 `build_app` 只装配路由与 `AppState`，静态挂载与体积分层调用 [`serve`]。
+//! - **C**：根包 `build_app` 只装配路由与 `AppState`，受保护路由体积分层调用 [`serve`]。
 //! - 回合队列 / `run_agent_turn` 留在根包，避免宿主模块与编排层循环依赖。
 
 pub mod cors;
@@ -16,9 +17,7 @@ pub mod serve;
 pub mod web_ui;
 
 pub use cors::{CORS_EXPOSE_RESPONSE_HEADERS, parse_cors_origin_header_values, try_cors_layer};
-pub use serve::{
-    PROTECTED_API_BODY_LIMIT_BYTES, layer_protected_body_limit, mount_uploads_and_spa,
-};
+pub use serve::{PROTECTED_API_BODY_LIMIT_BYTES, layer_protected_body_limit};
 
 /// 包身份（门禁/诊断用）。
 pub fn crate_name() -> &'static str {

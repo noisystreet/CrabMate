@@ -67,8 +67,6 @@ pub(crate) type WebChangelogAppFacet = WebTasksAppFacet;
 pub(crate) struct WebHealthAppFacet {
     pub(crate) http: AppStateHttpCore,
     pub(crate) llm_models_health_cache: Arc<std::sync::Mutex<Option<CachedLlmModelsHealthProbe>>>,
-    /// 与 `serve --with-web` 一致：仅挂载 UI 时检查静态目录。
-    pub(crate) mount_web_ui: bool,
 }
 
 /// `GET /status`：配置/工具/队列/会话/LTM/工具统计（不含审批、SSE hub、async jobs）。
@@ -312,7 +310,6 @@ impl FromRef<Arc<AppState>> for WebHealthAppFacet {
         Self {
             http: state.http.clone(),
             llm_models_health_cache: Arc::clone(&state.aux.llm_models_health_cache),
-            mount_web_ui: state.aux.mount_web_ui,
         }
     }
 }

@@ -37,7 +37,7 @@ pub(crate) use crate::cm_internal::{
     memory, memory_tool_hosts, observability, process_handles, read_file_turn_cache,
     readonly_tool_ttl_cache, redact, request_chrome_trace, session_mode_turn, text_encoding,
     text_util, tool_call_explain, tool_registry, tool_result, tool_stats, tools,
-    user_message_file_refs, web_static_dir, workspace,
+    user_message_file_refs, workspace,
 };
 /// SSE 控制面协议与运行时（原 `crate::cm_internal::sse`，已迁至 [`crate::cm_sse_protocol`]）。
 #[cfg(feature = "web")]

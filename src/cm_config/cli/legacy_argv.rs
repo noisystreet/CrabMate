@@ -233,18 +233,6 @@ mod legacy_argv_tests {
     fn parse_serve_default_is_api_only() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "serve".to_string()]).unwrap();
         assert_eq!(p.serve_port, Some(8080));
-        assert!(!p.with_web);
-    }
-
-    #[test]
-    fn parse_serve_with_web_enables_ui_mount() {
-        let p = parse_args_from_argv(vec![
-            "crabmate".to_string(),
-            "serve".to_string(),
-            "--with-web".to_string(),
-        ])
-        .unwrap();
-        assert!(p.with_web);
     }
 
     #[test]
@@ -259,10 +247,9 @@ mod legacy_argv_tests {
     }
 
     #[test]
-    fn parse_config_default_skips_web_static_check() {
+    fn parse_config_default_is_dry_run() {
         let p = parse_args_from_argv(vec!["crabmate".to_string(), "config".to_string()]).unwrap();
         assert!(p.dry_run);
-        assert!(!p.with_web);
     }
 
     #[test]

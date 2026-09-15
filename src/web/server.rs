@@ -1,15 +1,15 @@
-//! Web 服务路由组装：根包合并域路由；静态挂载与体积分层在 **`cm_web_host::serve`**。
+//! Web 服务路由组装：根包合并域路由；受保护路由体积分层在 **`cm_web_host::serve`**。
+//!
+//! `serve` 永远纯 API，不托管 SPA/静态文件；UI 由 Client 仓自行托管。
 
 use axum::Router;
 use axum::middleware;
 use axum::routing::get;
 
 /// `web_api_bearer_layer_enabled`：启动时是否对受保护 API 挂 Web API 鉴权中间件。
-/// `static_dir`：仅 `--with-web` 时传入已解析的 SPA 根；纯 API 传 `None`（不探测 dist）。
 /// `cors_allowed_origins`：非空时在最外层挂 CORS 白名单（启动时装配，热更不改层）。
 pub(crate) fn build_app(
     state: std::sync::Arc<crate::AppState>,
-    static_dir: Option<std::path::PathBuf>,
     web_api_bearer_layer_enabled: bool,
     cors_allowed_origins: Vec<String>,
 ) -> Router {
@@ -37,7 +37,6 @@ pub(crate) fn build_app(
         app = app.merge(e2e);
     }
     let cors_layer = crate::cm_web_host::try_cors_layer(&cors_allowed_origins);
-    app = crate::cm_web_host::serve::mount_uploads_and_spa(app, static_dir);
     // 内层：请求作用域 GitHub token；再 `x-request-id`；最外 CORS（预检 OPTIONS）。
     app = app.layer(middleware::from_fn(
         super::github_token_request::attach_request_github_token,
