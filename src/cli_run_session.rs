@@ -61,7 +61,6 @@ pub(super) struct CliDispatchArgs {
     pub serve_desktop_ready_json: bool,
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,
-    pub with_web: bool,
     pub bench_args: BenchmarkCliArgs,
 }
 
@@ -75,7 +74,6 @@ pub(super) async fn run_cli_main_routes(
         serve_desktop_ready_json,
         http_bind_host,
         workspace_cli,
-        with_web,
         bench_args,
     } = args;
     let CliSessionStart {
@@ -99,7 +97,6 @@ pub(super) async fn run_cli_main_routes(
                 port,
                 desktop_ready_json: serve_desktop_ready_json,
                 http_bind_host: http_bind_host.as_str(),
-                with_web,
                 process_handles: Arc::clone(&process_handles),
             })
             .await?;

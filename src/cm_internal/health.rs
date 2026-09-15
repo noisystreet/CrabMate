@@ -142,30 +142,10 @@ async fn probe_llm_models_endpoint(
 
 /// 构建健康报告（阻塞工作放在 `spawn_blocking` 内）。
 ///
-/// `include_frontend_static`：为 true 时检查 UI 静态根（`CM_WEB_STATIC_DIR` / Client `frontend/dist` 等，与挂载 SPA 一致）；默认纯 API（未传 `--with-web`）应为 false。
-///
 /// **不**检查进程级 `API_KEY`（对话密钥由 Client 请求体提供；可选回退仍可用于 `models`/`probe` 与 `health_llm_models_probe`）。
-pub async fn build_health_report(
-    workspace_dir: &Path,
-    include_frontend_static: bool,
-) -> HealthReport {
+/// **不**检查 UI 静态目录：`serve` 永远纯 API，UI 由 Client 仓自行托管。
+pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
     let mut checks: BTreeMap<String, HealthCheckItem> = BTreeMap::new();
-
-    if include_frontend_static {
-        let static_dir = crate::cm_internal::web_static_dir::resolve_web_static_dir();
-        let static_ok = static_dir.is_dir();
-        checks.insert(
-            "frontend_static_dir".to_string(),
-            HealthCheckItem {
-                ok: static_ok,
-                detail: if static_ok {
-                    None
-                } else {
-                    Some(format!("目录不存在：{}", static_dir.display()))
-                },
-            },
-        );
-    }
 
     let work_dir = workspace_dir.to_path_buf();
     let writable = tokio::task::spawn_blocking({
@@ -348,7 +328,6 @@ fn is_version_incompat_detail(detail: &str) -> bool {
 }
 
 struct StartupHealthBuckets {
-    config: Vec<String>,
     workspace: Vec<String>,
     toolchain: Vec<String>,
     optional_missing: Vec<String>,
@@ -357,7 +336,6 @@ struct StartupHealthBuckets {
 
 fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBuckets {
     let mut b = StartupHealthBuckets {
-        config: Vec::new(),
         workspace: Vec::new(),
         toolchain: Vec::new(),
         optional_missing: Vec::new(),
@@ -368,9 +346,7 @@ fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBucke
             continue;
         }
         let detail = item.detail.as_deref().unwrap_or("未通过");
-        if check_key == "frontend_static_dir" {
-            b.config.push(format!("{check_key}: {detail}"));
-        } else if check_key == "workspace_writable" {
+        if check_key == "workspace_writable" {
             b.workspace.push(format!("{check_key}: {detail}"));
         } else if check_key.starts_with("dep_toolchain_") {
             b.toolchain
@@ -398,9 +374,6 @@ fn classify_startup_health_failures(report: &HealthReport) -> StartupHealthBucke
 pub fn format_startup_health_summary(report: &HealthReport) -> String {
     let b = classify_startup_health_failures(report);
     let mut sections: Vec<String> = Vec::new();
-    if !b.config.is_empty() {
-        sections.push(format!("【配置】{}", b.config.join("；")));
-    }
     if !b.workspace.is_empty() {
         sections.push(format!("【工作区】{}", b.workspace.join("；")));
     }
@@ -487,15 +460,8 @@ mod health_status_tests {
     }
 
     #[test]
-    fn startup_summary_groups_optional_missing_and_config() {
+    fn startup_summary_groups_optional_missing() {
         let mut checks = BTreeMap::new();
-        checks.insert(
-            "frontend_static_dir".into(),
-            HealthCheckItem {
-                ok: false,
-                detail: Some("目录不存在：/tmp/missing-frontend-dist".into()),
-            },
-        );
         checks.insert(
             "workspace_writable".into(),
             HealthCheckItem {
@@ -521,8 +487,6 @@ mod health_status_tests {
             status: "degraded".into(),
             checks,
         });
-        assert!(summary.contains("【配置】"));
-        assert!(summary.contains("frontend_static_dir"));
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
         assert!(summary.contains("bandit"));
         assert!(summary.contains("shellcheck"));

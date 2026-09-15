@@ -136,13 +136,13 @@ client_max_body_size 256m;
 
 - 单元：**`/usr/lib/systemd/system/crabmate.service`**（默认 **`127.0.0.1:8080`**、**`--config /etc/crabmate/config.toml`**；**默认纯 API**；**不会**在安装时自动 enable/start）
 - 提示词与锚定配置：**`/etc/crabmate/config.toml`** + **`/etc/crabmate/config/prompts/`**
-- 环境文件：**`/etc/crabmate/crabmate.env`** 仅 **`KEY=value`**（**不要** `export`）；可设 **`API_KEY`**、**`CM_WEB_API_BEARER_TOKEN`**、**`CM_WEB_CORS_ALLOWED_ORIGINS`**、扩展 **`PATH`**；同机托管 SPA 时另设 **`CM_WEB_STATIC_DIR`** 并在 **`ExecStart`** 加 **`--with-web`**
+- 环境文件：**`/etc/crabmate/crabmate.env`** 仅 **`KEY=value`**（**不要** `export`）；可设 **`API_KEY`**、**`CM_WEB_API_BEARER_TOKEN`**、**`CM_WEB_CORS_ALLOWED_ORIGINS`**、扩展 **`PATH`**（serve 永远纯 API，不托管 SPA；浏览器 UI 经 CORS 接入）
 - `postinst` 会创建系统用户 **`crabmate`** 与家目录 **`/var/lib/crabmate`**
 
 ```bash
 sudo cp /etc/crabmate/crabmate.env.example /etc/crabmate/crabmate.env
 sudo chmod 600 /etc/crabmate/crabmate.env
-# 按需填写 API_KEY / CM_WEB_API_BEARER_TOKEN / CM_WEB_STATIC_DIR / PATH 等
+# 按需填写 API_KEY / CM_WEB_API_BEARER_TOKEN / PATH 等
 sudo systemctl daemon-reload
 sudo systemctl enable --now crabmate.service
 sudo systemctl status crabmate.service

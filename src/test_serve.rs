@@ -18,7 +18,6 @@ use crate::llm::ChatCompletionsBackend;
 use crate::process_handles::ProcessHandles;
 use crate::sse::SseStreamHub;
 use crate::web::{self, AppState};
-use crate::web_static_dir::resolve_web_static_dir;
 
 /// 测试用服务器句柄。
 pub struct TestServeHandle {
@@ -124,13 +123,11 @@ pub async fn start_test_serve(
             process_handles: ProcessHandles::default_arc_process_handles(),
             async_chat_jobs: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             tool_job_registry,
-            mount_web_ui: true,
         },
     });
 
     let app = web::server::build_app(
         state,
-        Some(resolve_web_static_dir()),
         false,      /* web_api_bearer_layer_enabled */
         Vec::new(), /* cors_allowed_origins */
     );

@@ -6,4 +6,4 @@
 - 前端：[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)
 - 构建：先将 [crabmate-client](https://github.com/noisystreet/crabmate-client) 克隆为同级后 `cd ../crabmate-client && make frontend`
 
-本 Server 仓只维护 HTTP/SSE 契约（[`docs/SSE协议.md`](../SSE协议.md)、[`docs/Turn布局设计.md`](../Turn布局设计.md)）与可选 **`serve --with-web`** 静态托管。不要在本仓查找 `frontend/src/`。
+本 Server 仓只维护 HTTP/SSE 契约（[`docs/SSE协议.md`](../SSE协议.md)、[`docs/Turn布局设计.md`](../Turn布局设计.md)）；`serve` 永远纯 API，不托管静态站点（UI 经 CORS 接入）。不要在本仓查找 `frontend/src/`。

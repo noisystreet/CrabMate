@@ -59,7 +59,6 @@ impl CliParseCtx {
             http_bind_host: resolve_http_bind_host(None),
             workspace_cli: self.workspace_cli.clone(),
             no_tools: self.no_tools,
-            with_web: false,
             dry_run: false,
             log_file: self.log_file.clone(),
             bench_args: BenchmarkCliArgs::default(),
@@ -108,7 +107,6 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
             b.serve_desktop_ready_json = s.desktop_ready_json;
             b.http_bind_host = resolve_http_bind_host(s.host);
-            b.with_web = s.with_web;
         }
         Commands::Bench(be) => {
             b.bench_args = BenchmarkCliArgs {
@@ -122,9 +120,8 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
                 system_prompt_file: be.bench_system_prompt,
             };
         }
-        Commands::Config(c) => {
+        Commands::Config(_) => {
             b.dry_run = true;
-            b.with_web = c.with_web;
         }
         Commands::Doctor => {
             b.extra_cli = ExtraCliCommand::Doctor;

@@ -299,7 +299,7 @@ axum = { workspace = true, optional = true, features = [
     "tracing",
 ] }
 tokio-cron-scheduler = { workspace = true, optional = true }
-tower-http = { workspace = true, optional = true, features = ["fs", "set-header", "cors"] }
+tower-http = { workspace = true, optional = true, features = ["cors"] }
 clap_mangen = { workspace = true, optional = true }
 rmcp = { workspace = true, optional = true, default-features = false, features = [
     "client",

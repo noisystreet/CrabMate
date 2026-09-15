@@ -2,8 +2,7 @@
 
 const HINT_MARK: &str = "[crabmate] Web 聊天内嵌";
 
-const HINT_TAIL: &str =
-    "。不要声称纯文本无法插图，也不要把文件拷到 CM_WEB_STATIC_DIR 或 /uploads。";
+const HINT_TAIL: &str = "。不要声称纯文本无法插图，也不要把文件拷到 /uploads。";
 
 pub(super) fn append_if_needed(args_json: &str, output: String) -> String {
     if output.contains(HINT_MARK) {
@@ -111,7 +110,7 @@ mod tests {
         let args = r#"{"code":"plt.savefig('sine_plot.png')"}"#;
         let out = append_if_needed(args, "ok\n".into());
         assert!(out.contains("![sine_plot](sine_plot.png)"), "{out}");
-        assert!(out.contains("CM_WEB_STATIC_DIR"), "{out}");
+        assert!(out.contains("不要把文件拷到 /uploads"), "{out}");
     }
 
     #[test]

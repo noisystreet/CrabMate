@@ -22,7 +22,7 @@
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
 
-提供 HTTP **`serve`**（默认纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（本机开发默认同级 `../crabmate-client`；Playwright 转发可用 **`CRABMATE_CLIENT_DIR`**）。本仓同进程 **`repl` / `chat` / `tui` 命令入口已移除**（请用 Client **`crabmate-tui`**；见 [ADR](docs/design/client_shell_split.md)）。
+提供 HTTP **`serve`**（永远纯 API）与运维 CLI。**官方 Web UI、Desktop/Android、远程终端（`crabmate-tui`）**在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（本机开发默认同级 `../crabmate-client`；Playwright 转发可用 **`CRABMATE_CLIENT_DIR`**）。本仓同进程 **`repl` / `chat` / `tui` 命令入口已移除**（请用 Client **`crabmate-tui`**；见 [ADR](docs/design/client_shell_split.md)）。
 
 **路径 A（双仓）**：本仓维护 **Server**（`serve`、契约、运维 CLI）；官方 Client 在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**（[ADR](docs/design/client_shell_split.md)）。GitHub 默认展示英文入口见根目录 **[README.md](README.md)**。
 
@@ -46,8 +46,8 @@
 ## 功能概览
 
 - **对话与工具**：OpenAI 兼容 `chat/completions`；内置文件/工作区、**`run_command`**（白名单；默认含 **`bash`/`sh`**：需 glob/`$VAR`/`~` 时经 **`bash -c`** 跑整行脚本；Web 上独立 argv 的 `&&`/`|` 即使 bash 已在白名单也会再审完整脚本；审批对象为完整脚本；argv 含工作区外绝对路径或路径穿越形 `..`/`../` 时默认经 **`allow_external_path_with_approval`** 人工审批后放行，可关；**git** `A..B` 不算穿越）、HTTP、**联网搜索**（默认 **worbrow** 本机浏览器，免 API Key；可选 Brave/Tavily）、工作区**代码检索**（关键字 + 可选语义/向量）等；完整列表见 [docs/工具说明.md](docs/工具说明.md)。**`run_command`** 等子进程工具输出默认按 **`command_max_output_len`**（嵌入默认 **512KiB**）截断，详见 **`config/tools.toml`** 与 [docs/配置说明.md](docs/配置说明.md)。
-- **Web UI（Client）**：源码与发版在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**；本仓 **`serve` 默认纯 API**；同机托管 SPA 须 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client `frontend/dist`）。会话、工作区/项目池、编辑器、PR、终端流聊天、Ask/Plan/Act、设置等见 Client README 与 [docs/命令行与路由.md](docs/命令行与路由.md)。须**显式选择工作区**后工具与 **`@相对路径`** 才生效。助手可用 **`![说明](相对路径.png)`** 内嵌工作区图片（Client 经 **`GET /workspace/file/raw`** 鉴权加载；仅 png/jpg/jpeg/webp/gif）。侧栏「保存到本机」走 **`GET /workspace/file/download`**（任意类型，16 MiB）。保存目录走 **`GET /workspace/dir/archive`**（zip）。重命名/移动文件走 **`POST /workspace/file/move`**。本机文件可拖到工作区树，经 **`PUT /workspace/file/raw`** 写入（原始字节，16 MiB）。
-- **终端**：官方远程客户端为 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** 的 **`crabmate-tui`**（HTTP/SSE 连本仓 **`serve`**；模型密钥存 Client）。本仓同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 [docs/design/client_shell_split.md](docs/design/client_shell_split.md) §2.5）。**`serve`** 默认纯 API（可选 **`--with-web`**）。流式 **SSE** 见 [docs/SSE协议.md](docs/SSE协议.md)。
+- **Web UI（Client）**：构建与托管均在 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**；本仓 **`serve` 永远纯 API**（不托管 SPA）。跨源浏览器 UI 经 CORS 接入（额外 Origin 用 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）。会话、工作区/项目池、编辑器、PR、终端流聊天、Ask/Plan/Act、设置等见 Client README 与 [docs/命令行与路由.md](docs/命令行与路由.md)。须**显式选择工作区**后工具与 **`@相对路径`** 才生效。助手可用 **`![说明](相对路径.png)`** 内嵌工作区图片（Client 经 **`GET /workspace/file/raw`** 鉴权加载；仅 png/jpg/jpeg/webp/gif）。侧栏「保存到本机」走 **`GET /workspace/file/download`**（任意类型，16 MiB）。保存目录走 **`GET /workspace/dir/archive`**（zip）。重命名/移动文件走 **`POST /workspace/file/move`**。本机文件可拖到工作区树，经 **`PUT /workspace/file/raw`** 写入（原始字节，16 MiB）。
+- **终端**：官方远程客户端为 **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** 的 **`crabmate-tui`**（HTTP/SSE 连本仓 **`serve`**；模型密钥存 Client）。本仓同进程 **`repl` / `chat` / `tui` 已硬删**（D2.2，见 [docs/design/client_shell_split.md](docs/design/client_shell_split.md) §2.5）。**`serve`** 永远纯 API（不托管 SPA）。流式 **SSE** 见 [docs/SSE协议.md](docs/SSE协议.md)。
 - **会话与导出**：嵌入默认在**当前工作区** **`.crabmate/conversations.db`** 持久化 **Web `serve`**；不需要时将 **`conversation_store_sqlite_path`** 置空。Web 或 CLI **`save-session`**（别名 **`export-session`**）导出 JSON/Markdown，形状见 [docs/命令行与路由.md](docs/命令行与路由.md)。
 - **进阶（默认不必读）**：分阶段规划、澄清问卷、**`thinking_trace`**、长期记忆、活文档、**MCP**、工作区 **`plugins/*.json`** 等见 [docs/配置说明.md](docs/配置说明.md)、[docs/工具说明.md](docs/工具说明.md)。
 
@@ -59,7 +59,7 @@
 
 | 子命令 | 说明 |
 | --- | --- |
-| **`serve`** | 启动 HTTP API（**默认纯 API，不挂 SPA**）。同机托管 UI：加 **`--with-web`**，并用 **`CM_WEB_STATIC_DIR`**（或探测 Client/`frontend/dist` / 安装路径）。默认端口 **8080**，绑定 **127.0.0.1**。 |
+| **`serve`** | 启动 HTTP API（**永远纯 API**，不托管 SPA）。UI 由 Client 仓托管并经 CORS（**`CM_WEB_CORS_ALLOWED_ORIGINS`**）接入。默认端口 **8080**，绑定 **127.0.0.1**。 |
 | **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
 | **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
@@ -86,15 +86,14 @@ make package           # server-only tar.gz + 可选 .deb → dist/（不附带 
 make clean             # 清理 target 与 dist/
 ```
 
-业务 UI：`cd ../crabmate-client && make frontend`（先将 [crabmate-client](https://github.com/noisystreet/crabmate-client) 克隆为同级目录）。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 默认 **不**打包 frontend（运行时默认纯 API；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。Desktop / Android：**[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**。
+业务 UI：`cd ../crabmate-client && make frontend`（先将 [crabmate-client](https://github.com/noisystreet/crabmate-client) 克隆为同级目录）。本仓 **`make package`** / **`package-tar`** / **`package-deb`** 均为 **server-only**（不附带 UI）。Desktop / Android：**[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**。
 
 ### 后端
 
 ```bash
 # 开发调试二进制
 cargo build
-./target/debug/crabmate serve            # 默认纯 API
-./target/debug/crabmate serve --with-web # 同机托管 SPA（须 CM_WEB_STATIC_DIR 或可探测 dist）
+./target/debug/crabmate serve            # 永远纯 API
 # 或: API_KEY=… ./target/debug/crabmate serve
 
 # 发布用优化二进制
@@ -113,13 +112,16 @@ cargo build --release
 
 业务 UI 源码在官方 Client 仓 **[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)**（[crabmate-client](https://github.com/noisystreet/crabmate-client)；路径 A Phase 4.2）。本机默认同级 `../crabmate-client`。
 
+**`serve` 不托管 SPA。**UI 在 Client 仓构建并自行托管，指向 `serve` 即可（官方壳之外的浏览器 Origin 需配 **`CM_WEB_CORS_ALLOWED_ORIGINS`**）。
+
 ```bash
 cd ../crabmate-client && make frontend
-export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
-cd ../crabmate_agent && cargo run -- serve --with-web
+# UI 由 Client 仓自行托管（其开发流或任意静态服务器），
+# 再在 UI 设置里填 API 基址（http://127.0.0.1:8080/）与 Bearer
+cargo run -- serve   # 本仓：永远纯 API
 ```
 
-纯 API（默认）：`serve`。UI 指针见 [`docs/frontend/`](docs/frontend/)。
+UI 指针见 [`docs/frontend/`](docs/frontend/)。
 
 ### 官方 Client（Desktop / Android）
 
@@ -141,8 +143,8 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | 方式 | 命令 / 说明 |
 | --- | --- |
 | **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.5.2`**，默认 feature **`server`**）。git tag **`v0.5.2`** 与此包一致。GitHub Releases 提供 tar.gz/`.deb`。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
-| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh --skip-frontend`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**默认不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。脚本仍支持可选 **`--frontend-dist`**，本 Makefile 不走该路径。 |
-| **Debian 包** | **`make package-deb`** / **`cargo deb`**（本仓不强制 UI）；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（默认 **127.0.0.1:8080**，纯 API，**不**自动 enable；托管 SPA 用 **`--with-web`** + **`CM_WEB_STATIC_DIR`**）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
+| **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**server-only，不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。 |
+| **Debian 包** | **`make package-deb`** / **`cargo deb`**；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（**127.0.0.1:8080**，永远纯 API，**不**自动 enable）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
 | **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**（与 clap 帮助对齐）。 |
 
@@ -199,7 +201,6 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 | **`CM_API_BASE`** / **`CM_MODEL`** | 覆盖配置中的网关与模型。 |
 | **`CM_WEB_API_BEARER_TOKEN`** | Web API 保护（与 **`web_api_require_bearer`** 配合）；详见 [docs/配置说明.md](docs/配置说明.md)。 |
 | **`CM_WEB_CORS_ALLOWED_ORIGINS`** | 额外 Origin 白名单（逗号分隔）；**未设置**时已默认放行官方壳 Origin（`tauri://localhost`、`http://tauri.localhost`）。显式空串关闭 CORS。静态浏览器 UI：补上其 Origin；见设置页 **API 基址**（`localStorage` **`crabmate-api-base-url`**）。 |
-| **`CM_WEB_STATIC_DIR`** | 覆盖 **`serve --with-web`** 时的静态资源根（Client `frontend/dist` / 安装路径；默认不挂 SPA）。 |
 | **`CM_DESKTOP_SUGGESTED_URL`** | 可选：桌面连接页预填的 `serve` URL（默认 `http://127.0.0.1:8080/`）。 |
 | **`CM_DESKTOP_SERVE_URL`** | 跳过连接页时必填：已运行的 `serve` URL（配合 **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**）。 |
 

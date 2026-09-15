@@ -26,7 +26,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 ## Overview
 
 - **Backend** (`src/` + workspace crates): OpenAI-compatible chat, agent turns, HTTP/SSE, tools, workspace, sessions.
-- **Official UI** (Client [frontend](https://github.com/noisystreet/crabmate-client/tree/main/frontend)): Leptos + WASM (Trunk); this repo’s `serve` is **API-only by default**; host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**. Local checkouts default to sibling `../crabmate-client` (Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**).
+- **Official UI** (Client [frontend](https://github.com/noisystreet/crabmate-client/tree/main/frontend)): Leptos + WASM (Trunk); this repo’s `serve` is **always API-only** and never hosts a SPA (browser UIs connect over **CORS**, **`CM_WEB_CORS_ALLOWED_ORIGINS`**). Local checkouts default to sibling `../crabmate-client` (Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**).
 - **CLI / TUI** (`runtime/`): share **`run_agent_turn`** and tool execution with Web.
 - **Dev / package container** (optional): root **`Dockerfile`** is a **toolchain** image on **Ubuntu 24.04** (Rust + `cargo-deb`; glibc **2.39** / deb `libc6 (>= 2.39)`; not a production runtime). `docker build -t crabmate-dev .` (use `--network=host` only if DNS fails) then `docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev`, or **`make package-docker`**. UI/Trunk stays in Client.
 

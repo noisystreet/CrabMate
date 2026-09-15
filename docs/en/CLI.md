@@ -18,7 +18,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 
 | Subcommand | Description |
 |------------|-------------|
-| `serve [PORT]` | HTTP API (API-only by default, port **8080**); host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**. With **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`, authority on the Client) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)). |
+| `serve [PORT]` | HTTP API (always API-only, never hosts a SPA, port **8080**). With **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`, authority on the Client) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)). |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
 | `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
 | `doctor` | Local diagnostics (**no** `API_KEY`). |
@@ -58,7 +58,6 @@ Without a subcommand, legacy **`--serve`**, **`--benchmark`**, **`--dry-run`**, 
 | `--workspace <path>` | Override initial workspace |
 | `--no-tools` | Disable tools |
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
-| `--with-web` / `--web` | Explicitly mount business UI static assets (needs `CM_WEB_STATIC_DIR` or probed dist) |
 | `--dry-run` | Maps to `config` |
 | `--log <FILE>` | Log file + stderr mirror |
 
@@ -146,13 +145,9 @@ Business UI lives in [crabmate-client](https://github.com/noisystreet/crabmate-c
 
 ```bash
 cd ../crabmate-client && make frontend
-export CM_WEB_STATIC_DIR="$PWD/frontend/dist"
-cd ../crabmate_agent && cargo run -- serve --with-web
 ```
 
-API-only (default): `cargo run -- serve`. Config check: `cargo run -- config` (skips UI dist by default; add **`--with-web`** to require static root).
-
-Static assets are served only with **`--with-web`**, via **`CM_WEB_STATIC_DIR`** (or sibling Client `frontend/dist`).
+`serve` is **always API-only** and never hosts a SPA; browser UIs are hosted from the Client repo (its dev flow or any static server) and connect to `serve` over **CORS** (extra Origins: **`CM_WEB_CORS_ALLOWED_ORIGINS`**). **`/`** is 404 while APIs (e.g. **`/health`**) work.
 
 ## Main HTTP routes (`serve`)
 
@@ -232,14 +227,14 @@ make package-deb
 sudo dpkg -i dist/crabmate_*.deb   # or target/debian/crabmate_*.deb
 ```
 
-Server **`make package*`** / `.deb` does **not** embed UI. Runtime is **API-only by default**; host SPA with **`--with-web`** + **`CM_WEB_STATIC_DIR`**. To optionally bundle UI in a tarball, run **`./scripts/package-release.sh --frontend-dist …/frontend/dist`** (Makefile targets do not take that path).
+Server **`make package*`** / `.deb` is **server-only** (no UI). Runtime is always API-only and never hosts a SPA; browser UIs are hosted from the Client repo and connect over **CORS** (**`CM_WEB_CORS_ALLOWED_ORIGINS`**).
 
-After install: `export API_KEY=… && crabmate serve` (API-only); or **`crabmate serve --with-web`** with **`CM_WEB_STATIC_DIR`**. Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
+After install: `export API_KEY=… && crabmate serve` (API-only). Package includes **`/usr/share/man/man1/crabmate.1`** (`man crabmate` if **`MANPATH`** includes `/usr/share/man`).
 
 ### systemd (`.deb` / tarball)
 
 - **`.deb`**: installs **`/usr/lib/systemd/system/crabmate.service`**, **`/etc/crabmate/config.toml`** (path anchor), **`/etc/crabmate/config/prompts/`**, and **`crabmate.env.example`**; `postinst` creates system user **`crabmate`** and **`/var/lib/crabmate`**. **Does not** `enable` / `start` by default.
-- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. **API-only by default** (no SPA); add **`--with-web`** and set **`CM_WEB_STATIC_DIR`** to host UI. Without UI, **`/`** is 404 while APIs (e.g. **`/health`**) work.
+- **Defaults**: **`127.0.0.1:8080`**; unit uses **`--config /etc/crabmate/config.toml`**. Always API-only (no SPA); **`/`** is 404 while APIs (e.g. **`/health`**) work.
 - **Environment file**: **`KEY=value` only** (no **`export`**); set **`API_KEY`**, and extend **`PATH`** if the system user needs cargo/rustc.
 - Before enabling:
 
