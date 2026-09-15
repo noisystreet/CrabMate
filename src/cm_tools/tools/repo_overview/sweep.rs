@@ -323,7 +323,7 @@ mod tests {
         .expect("write");
         let out2 = repo_overview_sweep(r#"{"include_project_profile":false}"#, &root2, 50_000);
         let _ = fs::remove_dir_all(&root2);
-        assert!(!out2.contains("CrabMate 项目画像"));
+        assert!(!out2.contains("项目画像"));
     }
 
     #[test]

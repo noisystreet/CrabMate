@@ -17,10 +17,15 @@ pub fn build_project_profile_markdown(workspace_root: &Path, max_chars: usize) -
     }
     let mut sections: Vec<String> = Vec::new();
     sections.push(format!(
-        "## CrabMate 项目画像（自动生成 v{}）\n",
+        "## 项目画像（自动生成 v{}）\n",
         PROFILE_MARKDOWN_VERSION
     ));
-    sections.push("_由服务端只读扫描生成，不含密钥；切换工作区或点击刷新可更新。_\n".to_string());
+    // 注入正文标题不带工具名，避免模型把「CrabMate」误读为当前项目名；
+    // 说明行中显式声明其为工具名。
+    sections.push(
+        "_由助手工具只读扫描生成（该助手名为 **CrabMate**，是工具名，**不代表当前项目名**），不含密钥；切换工作区或点击刷新可更新。_\n"
+            .to_string(),
+    );
 
     if let Some(block) = section_layout(workspace_root) {
         sections.push(block);
@@ -338,6 +343,22 @@ fn section_python_hints(root: &Path) -> Option<String> {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn profile_title_does_not_leak_tool_name() {
+        // 注入正文的标题不得携带工具名，避免模型把「CrabMate」误读为当前项目名。
+        let root = std::env::temp_dir().join(format!(
+            "crabmate_project_profile_brand_{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let md = build_project_profile_markdown(&root, 20_000);
+        assert!(md.starts_with("## 项目画像"));
+        assert!(!md.contains("CrabMate 项目"));
+        assert!(md.contains("是工具名"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn profile_includes_rust_and_counts() {
