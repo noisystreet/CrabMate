@@ -260,8 +260,8 @@ fn conversation_section(cfg: &AgentConfig) -> String {
 fn mcp_section(cfg: &AgentConfig) -> String {
     let m = &cfg.mcp_client;
     format!(
-        "enabled = {}\ncommand = {}\ntool_timeout_secs = {}\n",
-        m.mcp_enabled, m.mcp_command, m.mcp_tool_timeout_secs,
+        "enabled = {}\ntool_timeout_secs = {}\n",
+        m.mcp_enabled, m.mcp_tool_timeout_secs,
     )
 }
 

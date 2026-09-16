@@ -246,7 +246,6 @@ pub struct LongTermMemoryConfig {
 #[derive(Debug, Clone)]
 pub struct McpClientConfig {
     pub mcp_enabled: bool,
-    pub mcp_command: String,
     pub mcp_tool_timeout_secs: u64,
 }
 

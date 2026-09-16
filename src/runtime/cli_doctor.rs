@@ -78,17 +78,6 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
         cfg.mcp_client.mcp_enabled, cfg.mcp_client.mcp_tool_timeout_secs
     );
     println!(
-        "  mcp_command: {}",
-        if cfg.mcp_client.mcp_command.trim().is_empty() {
-            "（未配置）".to_string()
-        } else {
-            format!(
-                "已配置（{} 字符，内容已隐藏）",
-                cfg.mcp_client.mcp_command.len()
-            )
-        }
-    );
-    println!(
         "  api_timeout_secs: {}",
         cfg.llm_http_retry.api_timeout_secs
     );

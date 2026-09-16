@@ -13,7 +13,7 @@ use super::types::AgentConfig;
 /// - **`web_cors_allowed_origins`**：热更会更新内存中的列表；**CorsLayer 仅在 `serve` 启动时装配**，增删白名单 Origin 须**重启 `serve`**。
 /// - **`system_prompt`**（含 **`system_prompt_file`** 重读）：从 `src` 写入，下一轮起生效。
 /// - **`agent_tool_stats_*`**：热更后影响**下一轮起**附加段内容；已打开会话的 `system` 不会自动改写。
-/// - **MCP**：`mcp_enabled` / `mcp_command` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::cm_config::mcp::clear_mcp_process_cache`].
+/// - **MCP**：`mcp_enabled` / `mcp_tool_timeout_secs` 会更新；调用方应在提交前 [`crate::cm_config::mcp::clear_mcp_process_cache`].
 /// - **`chat_uploads_dir`**：`serve` 启动时钉到会话库旁，**不**热更、**不**随工作区切换。
 /// - **`chat_workspace_root`**：`serve` / **`POST /workspace`** 注入，**不**热更（`src` 里恒为 `None`）。
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {

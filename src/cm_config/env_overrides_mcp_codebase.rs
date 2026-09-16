@@ -10,7 +10,6 @@ pub(super) fn apply_env_overrides_part_14(b: &mut ConfigBuilder) {
 
 fn env_override_mcp_client_fields(b: &mut ConfigBuilder) {
     apply_bool(&mut b.mcp_client.mcp_enabled, "CM_MCP_ENABLED");
-    apply_nonempty_opt(&mut b.mcp_client.mcp_command, "CM_MCP_COMMAND");
     apply_parse(
         &mut b.mcp_client.mcp_tool_timeout_secs,
         "CM_MCP_TOOL_TIMEOUT_SECS",

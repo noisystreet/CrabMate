@@ -167,7 +167,7 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 - **`command`**：可执行文件路径；若 **`args` / `env` / `cwd` 皆空**，则将 `command` 视为 legacy **整行**命令并按 shell 词法拆分（兼容旧的 `sh -c '…'` 落盘）。
 - **`args` / `env` / `cwd`**：结构化启动；导入 MCP JSON 时原样写入，**不再**合成 `sh -c`。
 
-若文件为空、**`toml_legacy_imported` 未置位**，且 TOML/`CM_MCP_COMMAND` 仍启用 legacy 单条 `mcp_command`，**一次性**导入为单服务器并置 **`toml_legacy_imported: true`**；已有非空 `servers` 时也会落该标记（清空列表后不再重导）。之后以本文件为准。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
+本文件是 MCP 配置的**唯一来源**：不再从 TOML / `CM_MCP_COMMAND` 一次性导入（旧 **`toml_legacy_imported`** 字段已移除，磁盘上残留该键将被忽略）。HTTP：`GET/PUT /user-data/mcp-servers`（**GET 响应**不含启动明文，仅 `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`）、`POST …/import`（JSON 解析并追加）、`PUT …/{id}/remote-auth`（Bearer → 系统钥匙串账户 `mcp_bearer_{id}`）、`GET …/status`（含 `transport`、连接失败时的 `last_error` / `last_error_kind`）、`POST …/{id}/probe`。
 
 Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 

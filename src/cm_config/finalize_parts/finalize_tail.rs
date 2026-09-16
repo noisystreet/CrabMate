@@ -78,7 +78,6 @@ struct FinalizeTailScalars {
     tool_call_explain_min_chars: usize,
     tool_call_explain_max_chars: usize,
     mcp_enabled: bool,
-    mcp_command: String,
     mcp_tool_timeout_secs: u64,
     web_search_provider: WebSearchProvider,
     web_search_api_key: types::SecretString,
@@ -427,7 +426,6 @@ struct TailStorageInjectNetScalars {
     tool_call_explain_min_chars: usize,
     tool_call_explain_max_chars: usize,
     mcp_enabled: bool,
-    mcp_command: String,
     mcp_tool_timeout_secs: u64,
     web_search_provider: WebSearchProvider,
     web_search_api_key: types::SecretString,
@@ -486,7 +484,6 @@ fn derive_tail_storage_inject_net_scalars(
     let tool_call_explain_max_chars = max_chars_raw.max(tool_call_explain_min_chars);
 
     let mcp_enabled = b.mcp_client.mcp_enabled.unwrap_or(false);
-    let mcp_command = b.mcp_client.mcp_command.clone().unwrap_or_default();
     let mcp_tool_timeout_secs = b
         .mcp_client.mcp_tool_timeout_secs
         .unwrap_or(command_timeout_secs)
@@ -532,7 +529,6 @@ fn derive_tail_storage_inject_net_scalars(
         tool_call_explain_min_chars,
         tool_call_explain_max_chars,
         mcp_enabled,
-        mcp_command,
         mcp_tool_timeout_secs,
         web_search_provider,
         web_search_api_key,
@@ -730,7 +726,6 @@ fn assemble_finalize_tail_scalars(
         tool_call_explain_min_chars: sin.tool_call_explain_min_chars,
         tool_call_explain_max_chars: sin.tool_call_explain_max_chars,
         mcp_enabled: sin.mcp_enabled,
-        mcp_command: sin.mcp_command,
         mcp_tool_timeout_secs: sin.mcp_tool_timeout_secs,
         web_search_provider: sin.web_search_provider,
         web_search_api_key: sin.web_search_api_key,

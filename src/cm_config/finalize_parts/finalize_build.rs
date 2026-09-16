@@ -332,7 +332,6 @@ fn finalize_section_long_term_memory(mid: &FinalizeAfterRoles) -> types::LongTer
 fn finalize_section_mcp_client(tail: &FinalizeTailScalars) -> types::McpClientConfig {
     types::McpClientConfig {
         mcp_enabled: tail.mcp_enabled,
-        mcp_command: tail.mcp_command.clone(),
         mcp_tool_timeout_secs: tail.mcp_tool_timeout_secs,
     }
 }

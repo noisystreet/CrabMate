@@ -1,4 +1,4 @@
-//! 从 user-data（及 legacy TOML 一次性导入）解析本轮 MCP 配置。
+//! 从 user-data 解析本轮 MCP 配置。
 //!
 //! `crabmate-mcp` crate 中只提供了基于 cfg 的基础构造，本模块补全 user-data 加载层。
 
@@ -7,17 +7,13 @@ use std::collections::BTreeMap;
 use crate::cm_config::AgentConfig;
 use crate::cm_mcp::resolve::{ResolvedMcpConfig, ResolvedMcpServer};
 
-use crate::cm_internal::user_data::{load_mcp_servers_with_legacy_import, read_secret_mcp_bearer};
+use crate::cm_internal::user_data::{load_mcp_servers, read_secret_mcp_bearer};
 
-/// 读取 user-data MCP 列表；空列表时尝试从 TOML `mcp_*` 一次性导入。
+/// 读取 user-data MCP 列表。
 ///
 /// 若系统钥匙串存在 `mcp_bearer_{id}`，合并为 `Authorization: Bearer …`（覆盖条目内同名头）。
 pub fn resolve_mcp_config(cfg: &AgentConfig) -> ResolvedMcpConfig {
-    let file = load_mcp_servers_with_legacy_import(
-        cfg.mcp_client.mcp_enabled,
-        cfg.mcp_client.mcp_command.trim(),
-        cfg.mcp_client.mcp_tool_timeout_secs,
-    );
+    let file = load_mcp_servers();
     let tool_timeout_secs = if file.tool_timeout_secs > 0 {
         file.tool_timeout_secs
     } else {
