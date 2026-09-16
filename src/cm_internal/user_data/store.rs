@@ -114,9 +114,6 @@ pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
         .map(|server| server.id)
         .collect();
     let ids: Vec<String> = file.servers.iter().map(|s| s.id.clone()).collect();
-    for id in &ids {
-        let _ = read_secret_mcp_bearer(id);
-    }
     write_json_atomic(&mcp_servers_path(&r), file)?;
     let keep: std::collections::HashSet<&str> = ids.iter().map(String::as_str).collect();
     for removed_id in old_ids.iter().filter(|id| !keep.contains(id.as_str())) {
