@@ -43,14 +43,15 @@ With `RUST_LOG=crabmate=debug`, each model call prints **`message_pipeline sessi
 
 ## Legacy usage
 
-Without a subcommand, legacy **`--serve`**, **`--benchmark`**, **`--dry-run`**, etc. still map internally. Bare argv / **`--query`** / **`--stdin`** are **no longer** mapped to `chat` or default-inserted as `repl` (explicit subcommand required; see `tests/fixtures/cli/legacy_normalize.json`). If argv **anywhere** already contains a known subcommand name, nothing extra is inserted.
+**Removed**: legacy flat flags without a subcommand (**`--serve`**, **`--dry-run`**, **`--benchmark` / `--batch` / `--resume`**, etc.) are **no longer** mapped to subcommands—write **`serve` / `config` / `bench`** explicitly, otherwise clap reports a missing subcommand. Bare argv / **`--query`** / **`--stdin`** are likewise **no longer** mapped to `chat` or default-inserted as `repl`.
 
-## Common options (compat)
+The only remaining argv normalization is the **`help` subcommand**: `crabmate help` → root `--help`; `crabmate help <known-subcommand>` → that subcommand's `--help` (see `tests/fixtures/cli/help_normalize.json`).
+
+## Common options
 
 | Option | Description |
 |--------|-------------|
 | `--config <path>` | Config file (prefer before subcommand) |
-| `--serve [port]` | Same as `serve` |
 | `--host <ADDR>` | With `serve` |
 | `--port 0` | With `serve`: OS-assigned free port; startup log and **`web_ready`** **`port`/`url`** use **`local_addr()`** after bind |
 | `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for scripts/tools; the desktop shell **no longer** depends on it). **Deprecated name**; prefer alias **`--web-ready-json`** (same behavior) |
@@ -58,8 +59,9 @@ Without a subcommand, legacy **`--serve`**, **`--benchmark`**, **`--dry-run`**, 
 | `--workspace <path>` | Override initial workspace |
 | `--no-tools` | Disable tools |
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
-| `--dry-run` | Maps to `config` |
 | `--log <FILE>` | Log file + stderr mirror |
+
+> **`config --dry-run`**: an explicit marker option of the `config` subcommand (behaves the same as omitting it — a config check then exit); the bare **`--dry-run`** was removed along with the flat flags.
 
 > **Removed (D2.1)**: global **`--agent-role`**, and chat/repl-only **`--query` / `--stdin` / `--output` / `--no-stream`**. Use Client **`crabmate-tui`** or Web; roles via request body / Web **`agent_role`**.
 

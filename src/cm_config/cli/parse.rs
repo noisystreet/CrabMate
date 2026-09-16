@@ -6,7 +6,7 @@ use super::definitions::{
     SseReplayCli, ToolReplayCli, ToolReplaySubCmd, WebBearerCli, WebBearerSubCmd, WorkflowFileCli,
     WorkflowSubCmd,
 };
-use super::legacy_argv::normalize_legacy_argv;
+use super::help_argv::normalize_help_argv;
 use clap::Parser;
 use std::io;
 
@@ -83,7 +83,7 @@ impl CliParseCtx {
 /// 非法 CLI：打印 clap 说明后以 **非零** 码退出进程（与历史 `parse_from` 行为一致）；**不会**向调用方返回 `Err`。
 pub fn parse_args() -> io::Result<ParsedCliArgs> {
     let raw: Vec<String> = std::env::args().collect();
-    let normalized = normalize_legacy_argv(raw);
+    let normalized = normalize_help_argv(raw);
     let root = RootCli::try_parse_from(normalized).unwrap_or_else(|e| e.exit());
     Ok(build_parsed_cli_args(root))
 }
@@ -92,7 +92,7 @@ pub fn parse_args() -> io::Result<ParsedCliArgs> {
 ///
 /// 非法参数：返回 [`io::Error`]（**不**退出进程），便于断言。
 pub fn parse_args_from_argv(raw: Vec<String>) -> io::Result<ParsedCliArgs> {
-    let normalized = normalize_legacy_argv(raw);
+    let normalized = normalize_help_argv(raw);
     let root = RootCli::try_parse_from(normalized)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
     Ok(build_parsed_cli_args(root))

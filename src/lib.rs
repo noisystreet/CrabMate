@@ -21,7 +21,7 @@
 //! 本 crate 默认 feature 是带库的 **`serve` 服务器**，不是通用嵌入式 Agent SDK。
 //! HTTP 线契约以 `docs/SSE协议.md`、`cm_api_contract` 与 `GET /openapi.json` 为准。
 //!
-//! 日志由 **`tracing`** 处理；**`observability::init_tracing_subscriber`**（`cm_internal`）安装 **`tracing-subscriber`** 并用 **`tracing-log`** 桥接既有 `log::` 调用。`RUST_LOG` 优先。未设置时：`--serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。时间戳默认**本机本地时区**（RFC3339）。设 **`CM_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
+//! 日志由 **`tracing`** 处理；**`observability::init_tracing_subscriber`**（`cm_internal`）安装 **`tracing-subscriber`** 并用 **`tracing-log`** 桥接既有 `log::` 调用。`RUST_LOG` 优先。未设置时：`serve` 默认 **info**；其它 CLI 模式默认 **warn**（不输出 info）；`--log <FILE>` 在未设置 `RUST_LOG` 时默认 **info**。时间戳默认**本机本地时区**（RFC3339）。设 **`CM_LOG_JSON=1`** 时输出 JSON 行（便于 `jq` / 日志平台）。
 
 // `web/openapi.rs` 中 `serde_json::json!` 体量较大，默认递归深度不足会无法编译。
 #![recursion_limit = "512"]

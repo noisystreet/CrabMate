@@ -531,7 +531,7 @@ impl AppStateConversationRuntime {
     }
 }
 
-/// 打开 SQLite 会话库（`run()` 在 `--serve` 时调用）。
+/// 打开 SQLite 会话库（`run()` 在 `serve` 时调用）。
 pub(crate) fn open_conversation_sqlite(
     path: &Path,
 ) -> Result<Arc<std::sync::Mutex<rusqlite::Connection>>, Box<dyn std::error::Error + Send + Sync>> {

@@ -1,5 +1,5 @@
 #![cfg(feature = "server")]
-//! CLI 契约：legacy argv 映射、[`crabmate::parse_args_from_argv`]、[`crabmate::classify_model_error_message`] 与 [`crabmate::CliExitError`] 退出码（与 `main` 一致）。
+//! CLI 契约：`help` argv 归一化、[`crabmate::parse_args_from_argv`]、[`crabmate::classify_model_error_message`] 与 [`crabmate::CliExitError`] 退出码（与 `main` 一致）。
 //!
 //! Fixture 位于 `tests/fixtures/cli/`；增删子命令或改映射时请同步更新 JSON。
 
@@ -7,7 +7,7 @@ use crabmate::{
     CliExitError, EXIT_GENERAL, EXIT_MODEL_ERROR, EXIT_QUOTA_OR_RATE_LIMIT,
     EXIT_TOOL_REPLAY_MISMATCH, EXIT_TOOLS_ALL_RUN_COMMAND_DENIED, EXIT_USAGE, ExtraCliCommand,
     SaveSessionFormat, ToolReplayCli, WebBearerCli, classify_model_error_message,
-    normalize_legacy_argv, parse_args_from_argv,
+    normalize_help_argv, parse_args_from_argv,
 };
 use std::sync::Mutex;
 
@@ -66,8 +66,8 @@ fn parse_save_session_format(s: &str) -> SaveSessionFormat {
 }
 
 #[test]
-fn fixture_legacy_normalize_matches_normalize_legacy_argv() {
-    let path = fixture_dir().join("legacy_normalize.json");
+fn fixture_help_normalize_matches_normalize_help_argv() {
+    let path = fixture_dir().join("help_normalize.json");
     let raw = std::fs::read_to_string(&path).unwrap();
     let cases: serde_json::Value = serde_json::from_str(&raw).unwrap();
     for case in cases.as_array().unwrap() {
@@ -84,9 +84,24 @@ fn fixture_legacy_normalize_matches_normalize_legacy_argv() {
             .iter()
             .map(|x| x.as_str().unwrap().to_string())
             .collect();
-        let got = normalize_legacy_argv(argv);
+        let got = normalize_help_argv(argv);
         assert_eq!(got, want, "case {name}");
     }
+}
+
+#[test]
+fn removed_flat_flags_are_rejected() {
+    with_isolated_agent_http_host(|| {
+        for argv in [
+            vec!["crabmate", "--serve"],
+            vec!["crabmate", "--dry-run"],
+            vec!["crabmate", "--benchmark", "generic"],
+        ] {
+            let err = parse_args_from_argv(argv.iter().map(|s| (*s).to_string()).collect())
+                .expect_err("legacy flat flag must no longer map to a subcommand");
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+        }
+    });
 }
 
 #[test]
