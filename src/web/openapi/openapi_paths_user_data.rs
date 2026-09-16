@@ -73,7 +73,7 @@ pub(super) fn openapi_paths_fragment_user_data() -> Value {
                 "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
                 "responses": {
                     "200": {
-                        "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串；client_llm/executor_llm 槽已退役，恒为未设置）",
+                        "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串）",
                         "content": {
                             "application/json": {
                                 "schema": { "$ref": "#/components/schemas/SecretsStatusResponse" }

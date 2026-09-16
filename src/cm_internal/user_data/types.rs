@@ -144,10 +144,10 @@ pub struct SecretSlotStatus {
     pub suffix: Option<String>,
 }
 
+/// Web 侧密钥槽脱敏状态。模型密钥槽（`client_llm` / `executor_llm`）已退役：
+/// 权威在本机 Client 请求体，服务端不再持有。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SecretsStatusResponse {
-    pub client_llm: SecretSlotStatus,
-    pub executor_llm: SecretSlotStatus,
     pub web_api_bearer: SecretSlotStatus,
 }
 

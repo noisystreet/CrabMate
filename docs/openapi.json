@@ -824,12 +824,6 @@
       },
       "SecretsStatusResponse": {
         "properties": {
-          "client_llm": {
-            "$ref": "#/components/schemas/SecretSlotStatus"
-          },
-          "executor_llm": {
-            "$ref": "#/components/schemas/SecretSlotStatus"
-          },
           "web_api_bearer": {
             "$ref": "#/components/schemas/SecretSlotStatus"
           }
@@ -3217,7 +3211,7 @@
                 }
               }
             },
-            "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串；client_llm/executor_llm 槽已退役，恒为未设置）"
+            "description": "密钥槽脱敏状态（web_api_bearer 来自系统钥匙串）"
           }
         },
         "security": [

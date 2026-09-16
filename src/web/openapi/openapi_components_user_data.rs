@@ -15,8 +15,6 @@ pub(super) fn openapi_components_schemas_user_data() -> Value {
             "SecretsStatusResponse": {
                 "type": "object",
                 "properties": {
-                    "client_llm": { "$ref": "#/components/schemas/SecretSlotStatus" },
-                    "executor_llm": { "$ref": "#/components/schemas/SecretSlotStatus" },
                     "web_api_bearer": { "$ref": "#/components/schemas/SecretSlotStatus" }
                 }
             },

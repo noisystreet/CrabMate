@@ -487,10 +487,7 @@ fn slot_status_from_secret(secret: Option<String>) -> SecretSlotStatus {
 }
 
 pub fn secrets_status() -> SecretsStatusResponse {
-    // 模型密钥槽已退役（Client 本机持钥）；字段保留兼容旧客户端，恒为未设置。
     SecretsStatusResponse {
-        client_llm: SecretSlotStatus::default(),
-        executor_llm: SecretSlotStatus::default(),
         web_api_bearer: slot_status_from_secret(read_secret_web_api_bearer()),
     }
 }
