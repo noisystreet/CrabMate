@@ -13,45 +13,6 @@
     ]
   },
   {
-    "name": "legacy_serve_with_port",
-    "argv": [
-      "crabmate",
-      "--serve",
-      "3000"
-    ],
-    "normalized": [
-      "crabmate",
-      "serve",
-      "3000"
-    ]
-  },
-  {
-    "name": "legacy_serve_default_port",
-    "argv": [
-      "crabmate",
-      "--serve"
-    ],
-    "normalized": [
-      "crabmate",
-      "serve"
-    ]
-  },
-  {
-    "name": "legacy_serve_then_host",
-    "argv": [
-      "crabmate",
-      "--serve",
-      "--host",
-      "0.0.0.0"
-    ],
-    "normalized": [
-      "crabmate",
-      "serve",
-      "--host",
-      "0.0.0.0"
-    ]
-  },
-  {
     "name": "help_root",
     "argv": [
       "crabmate",
@@ -89,7 +50,20 @@
     ]
   },
   {
-    "name": "legacy_dry_run_config",
+    "name": "removed_flat_serve_not_rewritten",
+    "argv": [
+      "crabmate",
+      "--serve",
+      "3000"
+    ],
+    "normalized": [
+      "crabmate",
+      "--serve",
+      "3000"
+    ]
+  },
+  {
+    "name": "removed_flat_dry_run_not_rewritten",
     "argv": [
       "crabmate",
       "--dry-run",
@@ -98,27 +72,13 @@
     ],
     "normalized": [
       "crabmate",
-      "config",
+      "--dry-run",
       "--config",
-      "/tmp/x.toml",
-      "--dry-run"
+      "/tmp/x.toml"
     ]
   },
   {
-    "name": "legacy_chat_query",
-    "argv": [
-      "crabmate",
-      "--query",
-      "hi"
-    ],
-    "normalized": [
-      "crabmate",
-      "--query",
-      "hi"
-    ]
-  },
-  {
-    "name": "legacy_bench_flags",
+    "name": "removed_flat_bench_flags_not_rewritten",
     "argv": [
       "crabmate",
       "--benchmark",
@@ -128,11 +88,23 @@
     ],
     "normalized": [
       "crabmate",
-      "bench",
       "--benchmark",
       "generic",
       "--batch",
       "in.jsonl"
+    ]
+  },
+  {
+    "name": "removed_chat_query_not_rewritten",
+    "argv": [
+      "crabmate",
+      "--query",
+      "hi"
+    ],
+    "normalized": [
+      "crabmate",
+      "--query",
+      "hi"
     ]
   },
   {
