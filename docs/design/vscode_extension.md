@@ -25,7 +25,7 @@
 ### 1.2 本文不讨论什么
 
 - **Leptos Web UI** 的逐屏复刻；扩展内 UI 以 **Webview 自绘**或受控加载为主（见第 2 节）。
-- **MCP 协议在扩展内的重实现**：MCP 继续由 **`crabmate mcp serve`** / 配置 **`mcp_command`** 等路径承担；扩展可与 MCP **并存**，职责不重叠。
+- **MCP 协议在扩展内的重实现**：MCP 继续由 **`crabmate mcp serve`** / user-data **`mcp_servers.json`** 等路径承担；扩展可与 MCP **并存**，职责不重叠。
 - **工作区 `plugins/*.json` 动态工具**的解析逻辑：仍由服务端 **`run_agent_turn`** 扫描；扩展只须保证工作区根与 **`POST /workspace`** 语义一致。
 
 ---

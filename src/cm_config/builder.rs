@@ -483,7 +483,6 @@ impl ConfigBuilder {
             .or(ltm.long_term_memory_default_ttl_secs);
         let mcp = &mut self.mcp_client;
         mcp.mcp_enabled = agent.mcp_enabled.or(mcp.mcp_enabled);
-        override_opt_string_non_empty(&mut mcp.mcp_command, agent.mcp_command.clone());
         mcp.mcp_tool_timeout_secs = agent.mcp_tool_timeout_secs.or(mcp.mcp_tool_timeout_secs);
         let cs = &mut self.codebase_semantic;
         cs.codebase_semantic_search_enabled = agent

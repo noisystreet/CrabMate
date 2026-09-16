@@ -138,7 +138,7 @@ pub enum McpSubCmd {
 
 #[derive(Parser, Debug, Clone)]
 pub struct McpListCmd {
-    /// 按配置尝试建立一次 stdio 连接并刷新进程内缓存（排障用；会启动 mcp_command 子进程）
+    /// 按配置尝试建立一次 stdio 连接并刷新进程内缓存（排障用；会启动 user-data 中配置的子进程）
     #[arg(long)]
     pub probe: bool,
 }

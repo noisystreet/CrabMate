@@ -13,7 +13,7 @@ use crate::user_data::{
 };
 use crate::user_data::{
     append_mcp_json_import, ensure_user_data_tree, list_workspaces, load_llm_overrides,
-    load_mcp_servers_with_legacy_import, load_prefs, load_web_sessions, mcp_servers_file_public,
+    load_mcp_servers, load_prefs, load_web_sessions, mcp_servers_file_public,
     merge_mcp_commands_from_stored, normalize_mcp_servers_file, save_llm_overrides,
     save_mcp_servers, save_prefs, save_web_sessions, secrets_status, validate_mcp_secret_server_id,
     validate_sessions_value, write_secret_mcp_bearer, write_secret_web_api_bearer,
@@ -130,21 +130,11 @@ pub(crate) async fn put_current_sessions_handler(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn mcp_legacy_import_params(http: &AppStateHttpCore) -> (bool, String, u64) {
-    let cfg = http.cfg.read().await;
-    (
-        cfg.mcp_client.mcp_enabled,
-        cfg.mcp_client.mcp_command.clone(),
-        cfg.mcp_client.mcp_tool_timeout_secs,
-    )
-}
-
 pub(crate) async fn get_mcp_servers_handler(
-    State(http): State<AppStateHttpCore>,
+    State(_http): State<AppStateHttpCore>,
 ) -> Json<McpServersFilePublic> {
     let _ = ensure_user_data_tree();
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
-    let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
+    let file = load_mcp_servers();
     Json(mcp_servers_file_public(&file))
 }
 
@@ -170,8 +160,6 @@ fn decode_mcp_servers_put(value: Value) -> Result<McpServersFile, String> {
             global_enabled,
             tool_timeout_secs,
             servers: imported.entries,
-            // 经 Web PUT 写入 user-data 后关闭 TOML/`CM_MCP_COMMAND` 一次性导入窗口。
-            toml_legacy_imported: true,
         });
     }
     serde_json::from_value::<McpServersFile>(value).map_err(|e| {
@@ -222,8 +210,7 @@ pub(crate) async fn get_mcp_servers_status_handler(
     State(http): State<AppStateHttpCore>,
 ) -> Json<McpServersStatusResponse> {
     let _ = ensure_user_data_tree();
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
-    let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
+    let file = load_mcp_servers();
     let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let runtime = crate::mcp::mcp_servers_runtime_status(&resolved).await;
@@ -237,15 +224,14 @@ pub(crate) async fn get_mcp_servers_status_handler(
 }
 
 pub(crate) async fn put_mcp_server_remote_auth_handler(
-    State(http): State<AppStateHttpCore>,
+    State(_http): State<AppStateHttpCore>,
     Path(server_id): Path<String>,
     Json(body): Json<McpRemoteAuthBody>,
 ) -> Result<StatusCode, (StatusCode, String)> {
     let id = validate_mcp_secret_server_id(&server_id)
         .map_err(|e| user_data_err(StatusCode::BAD_REQUEST, e))?
         .to_string();
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
-    let file = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
+    let file = load_mcp_servers();
     let Some(srv) = file.servers.iter().find(|s| s.id == id) else {
         return Err(user_data_err(StatusCode::NOT_FOUND, "未找到 MCP 服务器"));
     };
@@ -266,8 +252,6 @@ pub(crate) async fn post_mcp_server_probe_handler(
     State(http): State<AppStateHttpCore>,
     Path(server_id): Path<String>,
 ) -> Result<Json<McpServerStatusEntry>, (StatusCode, String)> {
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
-    let _ = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
     let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let Some(server) = resolved.servers.iter().find(|s| s.id == server_id) else {
@@ -280,8 +264,6 @@ pub(crate) async fn post_mcp_server_probe_handler(
 pub(crate) async fn post_mcp_servers_probe_all_handler(
     State(http): State<AppStateHttpCore>,
 ) -> Json<Vec<McpServerStatusEntry>> {
-    let (enabled, cmd, timeout) = mcp_legacy_import_params(&http).await;
-    let _ = load_mcp_servers_with_legacy_import(enabled, &cmd, timeout);
     let cfg = http.cfg.read().await;
     let resolved = crate::mcp::resolve_mcp_config(&cfg);
     let mut out = Vec::new();

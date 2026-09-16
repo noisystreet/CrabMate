@@ -295,7 +295,6 @@ pub(super) struct AgentSection {
     pub(super) long_term_memory_prioritize_experience_recall: Option<bool>,
     pub(super) long_term_memory_default_ttl_secs: Option<u64>,
     pub(super) mcp_enabled: Option<bool>,
-    pub(super) mcp_command: Option<String>,
     pub(super) mcp_tool_timeout_secs: Option<u64>,
     pub(super) codebase_semantic_search_enabled: Option<bool>,
     pub(super) codebase_semantic_invalidate_on_workspace_change: Option<bool>,

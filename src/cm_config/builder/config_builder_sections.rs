@@ -251,7 +251,6 @@ pub(crate) struct ConfigBuilderLongTermMemory {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderMcpClient {
     pub(crate) mcp_enabled: Option<bool>,
-    pub(crate) mcp_command: Option<String>,
     pub(crate) mcp_tool_timeout_secs: Option<u64>,
 }
 
