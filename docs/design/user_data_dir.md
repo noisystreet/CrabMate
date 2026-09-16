@@ -244,7 +244,7 @@ flowchart TB
 | `PUT` | `/user-data/prefs` | 写回；可选 `If-Match` / revision |
 | `GET` | `/user-data/llm-overrides` | 读 `llm_overrides.json` |
 | `PUT` | `/user-data/llm-overrides` | 写回非机密 LLM 字段（剥离 `saved_models[*].api_key`） |
-| `GET` | `/user-data/secrets/status` | `{ "client_llm"/"executor_llm": 恒未设置, "web_api_bearer": … }`（兼容字段；模型槽已退役） |
+| `GET` | `/user-data/secrets/status` | `{ "web_api_bearer": … }`（模型槽已退役，见 `client_shell_split.md`） |
 | `PUT` | `/user-data/secrets/web-api-bearer` | 写 Web API 共享密钥到系统钥匙串 |
 | `GET` | `/user-data/workspaces/current/sessions` | 按当前 `workspace_override` 解析桶 |
 | `PUT` | `/user-data/workspaces/current/sessions` | 写 `web_sessions.json` |
