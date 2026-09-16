@@ -61,6 +61,36 @@ pub enum ModifyFileMode {
     InsertAfterLine,
 }
 
+/// `edits` 内单条编辑的模式（不允许整文件覆盖）。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ModifyFileEditMode {
+    ReplaceLines,
+    InsertAfterLine,
+}
+
+/// `edits` 内单条编辑：`start_line`/`end_line`（或仅 `end_line` 缺省时同 `start_line`）→ 行区间替换；
+/// `after_line` → 锚点行后插入。行号均基于**调用时的磁盘快照**，由服务端自底向上应用，互不偏移。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ModifyFileEditArgs {
+    /// 省略时按字段推断：给了 `start_line`/`end_line` 即 `replace_lines`，给了 `after_line` 即 `insert_after_line`。
+    pub mode: Option<ModifyFileEditMode>,
+    /// 该条编辑写入的新内容；`replace_lines` 传 `""` 表示删除该区间。
+    pub content: String,
+    #[schemars(range(min = 1))]
+    pub start_line: Option<u32>,
+    #[schemars(range(min = 1))]
+    pub end_line: Option<u32>,
+    /// 0 表示文件开头，N 表示第 N 行之后。
+    #[schemars(range(min = 0))]
+    pub after_line: Option<u32>,
+    /// `replace_lines` 守卫：写盘前校验该区间当前内容与此一致（按行精确比对），不一致即拒写并提示纠偏行号。
+    pub expect_content: Option<String>,
+    /// `insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致，不一致即拒写并提示纠偏行号。
+    pub expect_line_content: Option<String>,
+}
+
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ModifyFileArgs {
@@ -74,6 +104,12 @@ pub struct ModifyFileArgs {
     /// `mode=insert_after_line` 时使用；0 表示文件开头，N 表示第 N 行之后。
     #[schemars(range(min = 0))]
     pub after_line: Option<u32>,
+    /// `mode=replace_lines` 守卫：写盘前校验 [start_line..=end_line] 当前内容与此一致（按行精确比对）；不一致即**拒写**并提示纠偏行号。同文件多次/并行编辑导致行号过期时，可避免误删误写。
+    pub expect_content: Option<String>,
+    /// `mode=insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致；不一致即拒写并提示纠偏行号。
+    pub expect_line_content: Option<String>,
+    /// 批量局部编辑：一次调用基于**同一磁盘快照**自底向上应用全部编辑，行号互不偏移；与 `mode`/`content`/`start_line`/`end_line`/`after_line` 互斥。
+    pub edits: Option<Vec<ModifyFileEditArgs>>,
     /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。
     pub dry_run: Option<bool>,
     /// 当整文件覆盖被判定为高危（大幅缩短、大量删行、清空非空文件）时须显式 `true` 才执行写入。

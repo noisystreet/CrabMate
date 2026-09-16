@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
 
-fn make_test_dir() -> PathBuf {
+/// 临时测试目录；被兄弟测试模块 `tests_guards_batch` 复用。
+pub(super) fn make_test_dir() -> PathBuf {
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()

@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "modify_file",
-            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写；起止行写反会自动交换）或 `mode=insert_after_line`（`after_line` 后插入，0 表示文件开头）。未显式给 `mode` 但传了 `start_line`/`end_line` 时自动按 `replace_lines`，传了 `after_line` 时自动按 `insert_after_line`。**`mode=full` 或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入，拒绝时会返回 diff 预览；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**、**`insert_after_line`**。",
+            description: "在工作区内修改已有文件。**局部改动优先** `mode=replace_lines`（1-based 闭区间 `start_line`..=`end_line` + `content`，流式改写；起止行写反会自动交换）或 `mode=insert_after_line`（`after_line` 后插入，0 表示文件开头）。未显式给 `mode` 但传了 `start_line`/`end_line` 时自动按 `replace_lines`，传了 `after_line` 时自动按 `insert_after_line`。**同一文件多处改动优先用批量 `edits`**：一次调用传 `edits:[{…},…]`（每条含 `content` + `start_line`/`end_line` 或 `after_line`），全部行号基于**调用时的磁盘快照**、服务端自底向上应用、互不偏移（最多 16 条；区间重叠即拒绝）。跨轮编辑或行号可能过期时，用 **`expect_content`**（校验区间当前内容逐行一致）/**`expect_line_content`**（校验锚点行内容）守卫：不一致即拒写并提示实际内容与纠偏行号，**不会误删误写**；二者与 `mode=full/overwrite` 互斥。**`mode=full` 或 `mode=overwrite`：整文件覆盖**，`content` 为磁盘上的**全部**新正文；若不完整将**不可逆**丢失未写入部分。高危缩短/删行/清空时须 `confirm_full_overwrite=true` 才写入，拒绝时会返回 diff 预览；任意模式均可 `dry_run=true` 先拿 diff 预览不写盘。`mode` 合法值为 **`full`**、**`overwrite`**、**`replace_lines`**、**`insert_after_line`**。",
             category: ToolCategory::Development,
             parameters: tool_params::params_modify_file,
             runner: ToolRunner::Legacy(runner_modify_file),
