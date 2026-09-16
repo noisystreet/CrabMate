@@ -111,6 +111,126 @@ fn validate_replace_coverage(
     Ok(())
 }
 
+/// 在全文中定位 `needle` 首次出现的行号（1-based，整行精确匹配）；返回命中行号列表。
+fn find_exact_line_hits(lines: &[&str], needle: &str) -> Vec<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .filter(|(_, l)| **l == needle)
+        .map(|(i, _)| i + 1)
+        .collect()
+}
+
+/// 期望内容找不到时追加的纠偏提示（含实际所在行号或「未找到」说明）。
+fn append_relocate_hint(err: &mut String, lines: &[&str], needle: &str, arg_name: &str) {
+    let hits = find_exact_line_hits(lines, needle);
+    match hits.len() {
+        1 => err.push_str(&format!(
+            "\n提示：期望内容实际位于行 {}（与传入行号不一致）；行号可能已因早前编辑偏移，请按当前行号重算后重试。",
+            hits[0]
+        )),
+        n if n > 1 => err.push_str(&format!(
+            "\n提示：期望内容在文件中出现 {} 处（首次位于行 {}）；请先 read_file 确认当前行号再编辑。",
+            n, hits[0]
+        )),
+        _ => err.push_str(&format!(
+            "\n提示：期望内容未在文件中找到；请先 read_file 获取当前内容后再设置 {}。",
+            arg_name
+        )),
+    }
+}
+
+/// `mode=replace_lines` 的 `expect_content` 守卫：逐行精确比对 [start_line..=end_line]
+/// 当前内容与期望；不一致即拒绝写盘，并给出实际内容与纠偏行号。
+pub(super) fn verify_expect_content(
+    lines: &[&str],
+    start_line: usize,
+    end_line: usize,
+    expect: &str,
+) -> Result<(), String> {
+    let expect_body = expect.trim_end_matches('\n');
+    let expect_lines: Vec<&str> = expect_body.lines().collect();
+    if start_line > lines.len() || end_line > lines.len() {
+        return Err(format!(
+            "错误：expect_content 校验失败，未写盘：行区间 {}-{} 超出文件行数（文件共 {} 行）",
+            start_line,
+            end_line,
+            lines.len()
+        ));
+    }
+    let span = end_line.saturating_sub(start_line) + 1;
+    if expect_lines.len() != span {
+        return Err(format!(
+            "错误：expect_content 校验失败，未写盘：期望内容共 {} 行，与替换区间行 {}-{}（共 {} 行）行数不一致。",
+            expect_lines.len(),
+            start_line,
+            end_line,
+            span
+        ));
+    }
+    let mut mismatches: Vec<String> = Vec::new();
+    for (offset, expect_line) in expect_lines.iter().enumerate() {
+        let idx = start_line - 1 + offset;
+        let actual = lines[idx];
+        if actual != *expect_line {
+            mismatches.push(format!(
+                "  行 {}|实际: {}\n        期望: {}",
+                idx + 1,
+                actual,
+                expect_line
+            ));
+        }
+    }
+    if mismatches.is_empty() {
+        return Ok(());
+    }
+    let mut err = format!(
+        "错误：expect_content 校验失败，未写盘。行 {}-{} 当前内容与期望不符：\n{}",
+        start_line,
+        end_line,
+        mismatches.join("\n")
+    );
+    let first = expect_lines.iter().find(|l| !l.trim().is_empty());
+    if let Some(first) = first {
+        append_relocate_hint(&mut err, lines, first, "expect_content");
+    }
+    Err(err)
+}
+
+/// `mode=insert_after_line` 的 `expect_line_content` 守卫：校验锚点行 `after_line`
+/// 当前内容与期望一致；不一致即拒绝写盘，并给出纠偏行号。
+pub(super) fn verify_expect_line_content(
+    lines: &[&str],
+    after_line: usize,
+    expect: &str,
+) -> Result<(), String> {
+    let expect_body = expect.trim_end_matches('\n');
+    if after_line == 0 {
+        return Err(
+            "错误：expect_line_content 校验失败，未写盘：after_line=0 表示插入到文件开头，无锚点行可校验；请去掉 expect_line_content 或改用 after_line>=1。"
+                .to_string(),
+        );
+    }
+    let Some(actual) = lines.get(after_line - 1) else {
+        return Err(format!(
+            "错误：expect_line_content 校验失败，未写盘：锚点行 {} 超出文件行数（文件共 {} 行）",
+            after_line,
+            lines.len()
+        ));
+    };
+    if *actual == expect_body {
+        return Ok(());
+    }
+    let mut err = format!(
+        "错误：expect_line_content 校验失败，未写盘。锚点行 {} 当前内容与期望不符：\n  行 {}|实际: {}\n        期望: {}",
+        after_line, after_line, actual, expect_body
+    );
+    if !expect_body.is_empty() {
+        append_relocate_hint(&mut err, lines, expect_body, "expect_line_content");
+    }
+    Err(err)
+}
+
 fn append_tail_context_to_error(mut err: String, original: Option<&str>) -> String {
     let Some(original) = original else {
         return err;
@@ -360,6 +480,63 @@ fn finish_modify_file_success(
     )
 }
 
+/// replace_lines 的 expect 守卫：交叉参数拒绝 + `expect_content` 逐行校验（基于当前磁盘快照）。
+fn check_replace_expect_guards(
+    v: &Value,
+    original: Option<&str>,
+    start_line: usize,
+    end_line: usize,
+) -> Result<(), String> {
+    if v.get("expect_line_content").is_some() {
+        return Err(
+            "错误：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content。"
+                .to_string(),
+        );
+    }
+    if let Some(expect) = v.get("expect_content").and_then(|c| c.as_str()) {
+        let Some(orig) = original else {
+            return Err(
+                "错误：无法读取原文件内容进行 expect_content 校验（文件可能不是 UTF-8 文本），未写盘。"
+                    .to_string(),
+            );
+        };
+        let view: Vec<&str> = orig.lines().collect();
+        verify_expect_content(&view, start_line, end_line, expect)?;
+    }
+    Ok(())
+}
+
+/// insert_after_line 的 expect 守卫：交叉参数拒绝 + `expect_line_content` 锚点行校验。
+fn check_insert_expect_guards(
+    v: &Value,
+    original: Option<&str>,
+    after_line: usize,
+) -> Result<(), String> {
+    if v.get("expect_content").is_some() {
+        return Err(
+            "错误：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content。"
+                .to_string(),
+        );
+    }
+    if let Some(expect) = v.get("expect_line_content").and_then(|c| c.as_str()) {
+        if after_line == 0 {
+            return Err(
+                "错误：after_line=0 表示插入到文件开头，无锚点行可校验；expect_line_content 需 after_line>=1。"
+                    .to_string(),
+            );
+        }
+        let Some(orig) = original else {
+            return Err(
+                "错误：无法读取原文件内容进行 expect_line_content 校验（文件可能不是 UTF-8 文本），未写盘。"
+                    .to_string(),
+            );
+        };
+        let view: Vec<&str> = orig.lines().collect();
+        verify_expect_line_content(&view, after_line, expect)?;
+    }
+    Ok(())
+}
+
 pub(super) fn modify_file_replace_lines(
     v: &Value,
     target: &Path,
@@ -374,6 +551,10 @@ pub(super) fn modify_file_replace_lines(
         Ok(x) => x,
         Err(e) => return e,
     };
+
+    if let Err(e) = check_replace_expect_guards(v, original.as_deref(), start_line, end_line) {
+        return e;
+    }
 
     if dry_run {
         return modify_replace_dry_run(
@@ -451,6 +632,10 @@ pub(super) fn modify_file_insert_after_line(
         Ok(x) => x,
         Err(e) => return e,
     };
+
+    if let Err(e) = check_insert_expect_guards(v, original.as_deref(), after_line) {
+        return e;
+    }
 
     if dry_run {
         return modify_insert_dry_run(

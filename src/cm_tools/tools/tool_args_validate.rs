@@ -192,12 +192,60 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
     {
         changed = true;
     }
+    if let Some(Value::Array(edits)) = map.get_mut("edits") {
+        for edit in edits.iter_mut() {
+            let Value::Object(obj) = edit else {
+                continue;
+            };
+            if coerce_modify_file_edit_fields(obj) {
+                changed = true;
+            }
+        }
+    }
     let Some(mode_val) = map.get_mut("mode") else {
         return changed;
     };
     let Value::String(s) = mode_val else {
         return changed;
     };
+    let mapped = normalize_modify_file_mode_str(s);
+    if mapped.as_str() != s.as_str() {
+        *mode_val = Value::String(mapped);
+        changed = true;
+    }
+    changed
+}
+
+/// `modify_file.edits[i]` 的确定性纠错：字符串行号 → 整型；`mode` 同义词/大小写归一。
+fn coerce_modify_file_edit_fields(obj: &mut serde_json::Map<String, Value>) -> bool {
+    let mut changed = false;
+    for key in ["start_line", "end_line"] {
+        let Some(val) = obj.get_mut(key) else {
+            continue;
+        };
+        if coerce_read_file_one_u64_line_field(val) {
+            changed = true;
+        }
+    }
+    if let Some(val) = obj.get_mut("after_line")
+        && coerce_one_u64_field_min(val, 0)
+    {
+        changed = true;
+    }
+    if let Some(Value::String(s)) = obj.get("mode") {
+        let mapped = normalize_modify_file_mode_str(s);
+        if matches!(mapped.as_str(), "replace_lines" | "insert_after_line")
+            && mapped.as_str() != s.as_str()
+        {
+            obj.insert("mode".to_string(), Value::String(mapped));
+            changed = true;
+        }
+    }
+    changed
+}
+
+/// `modify_file` 的 `mode` 归一：去空白、小写，并把常见同义词映射到规范值。
+fn normalize_modify_file_mode_str(s: &str) -> String {
     let norm: String = s
         .trim()
         .chars()
@@ -209,7 +257,7 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
             }
         })
         .collect();
-    let mapped = match norm.as_str() {
+    match norm.as_str() {
         "lines" | "line" | "line_replace" | "replace" | "partial" => "replace_lines".to_string(),
         "insert" | "insert_line" | "insert_after" | "append_after_line" => {
             "insert_after_line".to_string()
@@ -225,12 +273,7 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
             other.to_string()
         }
         _ => norm,
-    };
-    if mapped.as_str() != s.as_str() {
-        *mode_val = Value::String(mapped);
-        changed = true;
     }
-    changed
 }
 
 fn schema_has_top_level_prop(tool_name: &str, prop: &str) -> bool {

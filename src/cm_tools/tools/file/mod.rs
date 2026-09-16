@@ -4,6 +4,7 @@
 
 mod directory;
 mod display_fmt;
+mod edits_batch;
 mod extract;
 mod inspect;
 mod mutate;
@@ -34,3 +35,5 @@ pub use write_ops::{copy_file, create_file, modify_file, move_file};
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_guards_batch;
