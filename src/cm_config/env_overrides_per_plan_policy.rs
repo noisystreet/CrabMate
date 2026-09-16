@@ -45,12 +45,6 @@ fn env_override_final_plan_flags(b: &mut ConfigBuilder) {
         &mut b.per_plan_policy.final_plan_semantic_check_enabled,
         "CM_FINAL_PLAN_SEMANTIC_CHECK_ENABLED",
     );
-    apply_bool(
-        &mut b
-            .per_plan_policy
-            .final_plan_semantic_check_accept_legacy_text,
-        "CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT",
-    );
     apply_parse(
         &mut b
             .per_plan_policy
