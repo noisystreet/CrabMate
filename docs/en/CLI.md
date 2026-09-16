@@ -204,6 +204,24 @@ Every `build_app` response includes **`x-request-id`** (echo inbound if valid, e
 | POST | `/workspace/dir` | Create dir (JSON **`path`**, optional **`parents`**); or delete dir (JSON **`delete=true`**, **`confirm=true`**, optional **`recursive=true`**, same as **`DELETE`**; frontend falls back to **`POST`** on 404/405) |
 | DELETE | `/workspace/dir` | Delete directory (`path` query required; **`confirm=true`** required; non-empty dirs need **`recursive=true`**) |
 | GET | `/health` | Health (workspace writable, optional CLI deps; **not** failed for missing process `API_KEY`; Client supplies `client_llm.api_key`) |
+| GET | `/user-data/prefs` | Local user preferences JSON (`~/.local/share/crabmate/prefs.json`; see **`docs/design/user_data_dir.md`**) |
+| PUT | `/user-data/prefs` | Write back preferences (204) |
+| GET | `/user-data/llm-overrides` | Non-secret LLM overrides |
+| PUT | `/user-data/llm-overrides` | Write back non-secret LLM overrides (204) |
+| GET | `/user-data/secrets/status` | Redacted secret-slot status (no plaintext; `web_api_bearer`) |
+| PUT | `/user-data/secrets/web-api-bearer` | Write the Bearer for accessing this service (204; `token` or `api_key` field) |
+| GET | `/user-data/workspaces` | Bucketed workspace list |
+| GET | `/user-data/workspaces/current/sessions` | Sidebar sessions JSON under the current `POST /workspace` workspace |
+| PUT | `/user-data/workspaces/current/sessions` | Write sidebar sessions (204) |
+| GET | `/user-data/mcp-servers` | Multi-server MCP config (`mcp_servers.json`; **no** launch plaintext returned—only `has_command` / `has_args` / `has_env` / `has_cwd` / `has_url` / `has_headers` / `has_bearer`; see §4.5) |
+| PUT | `/user-data/mcp-servers` | Write back MCP config (204; `slug` recomputed after normalization; empty `command` keeps the on-disk value) |
+| POST | `/user-data/mcp-servers/import` | Parse MCP JSON (`mcpServers`) and append to disk; response includes public fields and `warnings` |
+| GET | `/user-data/mcp-servers/status` | Per-server connection/tool-list status (includes `transport`, `last_error` / `last_error_kind`; opens no new connections) |
+| PUT | `/user-data/mcp-servers/{id}/remote-auth` | Set or clear a remote MCP Bearer (body `{ "bearer_token": "…" }`; empty string clears; stored in the system keyring account `mcp_bearer_{id}`; 204) |
+| POST | `/user-data/mcp-servers/{id}/probe` | Probe one server (refreshes the in-process cache) |
+| POST | `/user-data/mcp-servers/probe-all` | Probe every enabled server |
+
+Env var **`CM_CRABMATE_USER_DATA_DIR`** overrides the local data root. `cargo run -- doctor` prints paths and a secrets summary.
 
 SSE control-plane fields: **`docs/SSE协议.md`**.
 

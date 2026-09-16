@@ -439,6 +439,7 @@ typo_unknown_key = 1
             "tui_session_max_messages = 400",
             "repl_initial_workspace_messages_enabled = false",
             "final_plan_semantic_check_accept_legacy_text = true",
+            "mcp_command = \"npx\"",
         ] {
             let toml = format!(
                 r#"
