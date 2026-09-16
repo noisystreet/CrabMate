@@ -1,4 +1,5 @@
-//! 本机用户数据目录（`~/.local/share/crabmate`）：prefs、按工作区 Web 会话、LLM 覆盖与 secrets。
+//! 本机用户数据目录（`~/.local/share/crabmate`）：prefs、按工作区 Web 会话、LLM 覆盖；
+//! 机密（Web API Bearer / MCP Bearer）在系统钥匙串。
 //!
 //! 设计说明：**`docs/design/user_data_dir.md`**。
 
@@ -19,10 +20,10 @@ pub use store::{
     append_mcp_json_import, ensure_user_data_tree, list_workspaces, load_llm_overrides,
     load_mcp_servers_with_legacy_import, load_meta, load_prefs, load_web_sessions,
     mcp_bearer_is_set, mcp_servers_file_public, merge_mcp_commands_from_stored,
-    normalize_mcp_servers_file, prune_mcp_bearer_secrets, read_secret_mcp_bearer,
-    read_secret_web_api_bearer, save_llm_overrides, save_mcp_servers, save_prefs,
-    save_web_sessions, secrets_status, validate_mcp_secret_server_id, validate_sessions_value,
-    write_secret_mcp_bearer, write_secret_web_api_bearer,
+    normalize_mcp_servers_file, read_secret_mcp_bearer, read_secret_web_api_bearer,
+    save_llm_overrides, save_mcp_servers, save_prefs, save_web_sessions, secrets_status,
+    validate_mcp_secret_server_id, validate_sessions_value, write_secret_mcp_bearer,
+    write_secret_web_api_bearer,
 };
 pub use types::{
     LlmEndpointOverride, LlmOverridesFile, McpServerStatusEntry, McpServersFile,

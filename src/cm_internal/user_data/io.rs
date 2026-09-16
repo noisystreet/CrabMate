@@ -8,12 +8,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 
 pub fn ensure_tree(root: &Path) -> Result<(), String> {
-    for sub in [
-        root,
-        &root.join("global"),
-        &root.join("workspaces"),
-        &root.join("secrets"),
-    ] {
+    for sub in [root, &root.join("global"), &root.join("workspaces")] {
         if sub.exists() {
             restrict_dir(sub)?;
         } else {
@@ -68,14 +63,4 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), Str
     }
     fs::rename(&tmp, path).map_err(|e| format!("rename {}: {e}", path.display()))?;
     Ok(())
-}
-
-pub fn read_secret_line(path: &Path) -> Option<String> {
-    let raw = fs::read_to_string(path).ok()?;
-    let t = raw.trim();
-    if t.is_empty() {
-        None
-    } else {
-        Some(t.to_string())
-    }
 }
