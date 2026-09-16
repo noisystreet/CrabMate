@@ -23,7 +23,7 @@
 | **单一真源** | 用户级 UI 状态与 LLM 本机覆盖集中至 **`~/.local/share/crabmate`**（可配置根目录） |
 | **三端共用** | Web、Tauri（经本机 `serve`）、CLI/TUI（Rust 直读或同一 HTTP API）共用同一套文件 |
 | **可迁移** | （已移除）旧版 `localStorage` 导入；新装直接使用磁盘目录 |
-| **安全分级** | 非机密进 JSON；API Key 等进 **`secrets/`** 且 HTTP 不回传明文 |
+| **安全分级** | 非机密进 JSON；密钥进**系统钥匙串**且 HTTP 不回传明文 |
 
 ### 2.2 非目标（本阶段不替代）
 
@@ -59,12 +59,13 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 ├── mcp_servers.json                  # MCP stdio 多服务器（见 §4.5）；Web 设置 → MCP
 ├── global/
 │   └── web_sessions.json             # 未设置 Web 工作区时的会话桶（现 agent-demo-sessions-v1）
-├── workspaces/
-│   └── <ws_sha256>/                  # SHA256(hex)，与 frontend sessions_json_storage_key 一致
-│       ├── manifest.json             # workspace_root 规范绝对路径
-│       └── web_sessions.json         # 侧栏 ChatSession[] + active_session_id
-└── secrets/                          # 仅遗留迁移用；新写入走系统钥匙串（见 §4.6）
+└── workspaces/
+    └── <ws_sha256>/                  # SHA256(hex)，与 frontend sessions_json_storage_key 一致
+        ├── manifest.json             # workspace_root 规范绝对路径
+        └── web_sessions.json         # 侧栏 ChatSession[] + active_session_id
 ```
+
+机密（Web API Bearer / MCP Bearer）不入本目录，见 §4.6。
 
 **`ws_sha256` 算法**：与 `frontend/src/storage.rs` 中 `normalize_workspace_partition_path` + SHA256 相同，便于从 `agent-demo-sessions-v1::ws::<hex>` 键名一对一迁移。
 
@@ -170,18 +171,18 @@ CM_CRABMATE_USER_DATA_DIR  → 若设置且非空，使用该路径
 
 Web **设置 → MCP → 从 MCP JSON 导入**：粘贴含 **`mcpServers`** 的配置（可为整份 **`mcp.json`** 或其中一段），解析后追加到列表（`name` 取自键名；`command`/`args`/`env`/`cwd` **结构化落盘**，或仅 **`url`** 的远程条目；`slug` 仍于保存时由 `name` 生成）。含 `${env:…}` / `${workspaceFolder}` 等占位符时保留原文并提示手动改路径或环境变量。远程行可在设置页单独保存 Bearer（不经 GET 回显）。
 
-### 4.6 系统钥匙串与遗留 `secrets/`
+### 4.6 系统钥匙串
 
 持久密钥写入系统钥匙串（服务名 **`com.crabmate.credentials`**；macOS Keychain / Windows Credential Manager / Linux Secret Service）。账户名：
 
 | 账户 | 内容 |
 |------|------|
 | `web_api_bearer` | 访问 `/chat`、`/user-data` 等的 CrabMate HTTP 鉴权（经 `/user-data/secrets` 或 CLI **`crabmate web-bearer set`**；**`serve`** 在 TOML/`CM_WEB_API_BEARER_TOKEN` 皆空时从此处回退加载） |
-| `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串，并清理遗留明文文件） |
+| `mcp_bearer_{id}` | 远程 MCP 的 `Authorization: Bearer`（按服务器 id；删除服务器时清除钥匙串条目） |
 
 **已退役（模型密钥）**：`client_llm` / `executor_llm` / `saved_model_*` 不再读写。官方 Client 本机持钥并经请求体 **`client_llm.api_key`** 发送；`llm_overrides.json` 的 `saved_models` 仅保留端点元数据，剥离明文 `api_key` 且 **`has_api_key=false`**。
 
-旧 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件：对仍使用的槽（`web_api_bearer` / `mcp_bearer_*`），首次成功读/写钥匙串后自动迁移并删除。
+钥匙串是**唯一来源**：不再读写 **`$XDG_DATA_HOME/crabmate/secrets/<账户名>`** 明文文件（该子目录也不再创建）；磁盘上若仍残留旧文件，既不会被读入，也不提供回退。
 
 **禁止**写入 `prefs.json` / `web_sessions.json` / 日志 / `doctor` 明文输出。
 
@@ -207,7 +208,6 @@ flowchart TB
     P[prefs.json]
     L[llm_overrides.json]
     W[workspaces/hash/web_sessions.json]
-    S[secrets/]
   end
 
   subgraph rust ["Rust user_data 模块"]
@@ -276,10 +276,10 @@ flowchart TB
 
 ## 10. 安全与运维
 
-- 创建目录 **`0700`**，`secrets/` 下文件 **`0600`**。
-- API 与 `/chat` 相同 Bearer；日志禁止打印 `secrets/` 与 `sessions` 全文。
+- 创建目录 **`0700`**；密钥只写系统钥匙串，**不**落盘明文。
+- API 与 `/chat` 相同 Bearer；日志禁止打印密钥与 `sessions` 全文。
 - `GET` 类接口**不得**返回完整 `api_key`（允许 `has_key`、`key_suffix` 等脱敏字段）。
-- 备份：复制 `~/.local/share/crabmate` 可备份侧栏会话与偏好；**系统钥匙串中的密钥需另行导出/备份**（目录内遗留 `secrets/` 明文若仍在则也含密钥）。勿将目录提交到 git 或公开网盘。
+- 备份：复制 `~/.local/share/crabmate` 可备份侧栏会话与偏好；**系统钥匙串中的密钥需另行导出/备份**。勿将目录提交到 git 或公开网盘。
 - 多 `serve` 实例：对 `web_sessions.json` 使用文件锁或单写者，避免并发写坏。
 
 环境变量：
@@ -297,7 +297,7 @@ flowchart TB
 | **P0** | Rust `user_data` 模块；`prefs` / `web_sessions` / `llm_overrides` 读写；`doctor` 显示路径 | 可手工编辑 JSON，CLI 可读 |
 | **P1** | HTTP `/user-data/*`；Web 会话列表改 HTTP；`last_workspace_root` | Web + Tauri 共用；告别 Tauri localStorage 分叉 |
 | **P2** | 壳层 prefs 迁出 `localStorage`；`migrate` 端点 | 主题/侧栏跨实例一致 |
-| **P3** | `secrets/` + 脱敏 API；CLI 可选读 secrets；TUI 读 `prefs` | 三端 LLM URL/模型/密钥策略一致 |
+| **P3** | 系统钥匙串 + 脱敏 API；CLI 读钥匙串；TUI 读 `prefs` | 三端 LLM URL/模型/密钥策略一致 |
 | **P4** | OpenAPI、`docs/配置说明.md`、e2e 使用临时 `CM_CRABMATE_USER_DATA_DIR` | 可测、可文档化 |
 
 实现位置：
@@ -318,7 +318,7 @@ WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `
 ## 13. 参考
 
 - `frontend/src/storage.rs` — 会话分桶与 `ChatSession` 形状  
-- `frontend/src/api/client_llm_storage.rs` — LLM 覆盖经 `/user-data/llm-overrides` 与 `secrets/`  
+- `frontend/src/api/client_llm_storage.rs` — LLM 覆盖经 `/user-data/llm-overrides`  
 - `docs/命令行与路由.md` — CLI 与 Web 会话持久对照  
 - `docs/配置说明.md` — `API_KEY`、`client_llm`、鉴权  
 - `.cursor/rules/secrets-and-logging.mdc` — 密钥与日志  

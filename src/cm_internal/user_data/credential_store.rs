@@ -1,6 +1,5 @@
-//! 持久密钥的系统钥匙串适配与旧明文文件迁移。
+//! 持久密钥的系统钥匙串适配（系统钥匙串是唯一来源）。
 
-use std::path::Path;
 #[cfg(test)]
 use std::sync::Mutex;
 
@@ -54,103 +53,50 @@ fn keyring_error(error: keyring::Error) -> String {
     format!("系统钥匙串操作失败: {error}")
 }
 
-fn remove_legacy_file(path: &Path) -> Result<(), String> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("删除旧密钥文件 {} 失败: {error}", path.display())),
-    }
+fn normalized(secret: Option<String>) -> Option<String> {
+    secret
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
-fn read_or_migrate(entry: &dyn SecretEntry, legacy_path: &Path) -> Result<Option<String>, String> {
-    if let Some(secret) = entry.get_password()? {
-        let secret = secret.trim();
-        if !secret.is_empty() {
-            // 热路径：钥匙串已有值时仅在遗留文件仍存在时清理，避免每次读盘。
-            if legacy_path.exists() {
-                remove_legacy_file(legacy_path)?;
-                tracing::debug!(
-                    target: "crabmate",
-                    legacy = %legacy_path.display(),
-                    "removed leftover legacy secret file (keyring already had value)"
-                );
-            }
-            return Ok(Some(secret.to_string()));
-        }
-    }
-
-    let Some(secret) = super::io::read_secret_line(legacy_path) else {
-        if legacy_path.exists() {
-            remove_legacy_file(legacy_path)?;
-        }
-        return Ok(None);
-    };
-    entry.set_password(&secret)?;
-    remove_legacy_file(legacy_path)?;
-    let account_hint = legacy_path
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("secret");
-    tracing::info!(
-        target: "crabmate",
-        account = account_hint,
-        "migrated legacy secret file to system keyring"
-    );
-    Ok(Some(secret))
+fn read_entry_secret(entry: &dyn SecretEntry) -> Result<Option<String>, String> {
+    Ok(normalized(entry.get_password()?))
 }
 
-fn write_secret(entry: &dyn SecretEntry, legacy_path: &Path, secret: &str) -> Result<(), String> {
+fn write_entry_secret(entry: &dyn SecretEntry, secret: &str) -> Result<(), String> {
     let secret = secret.trim();
     if secret.is_empty() {
-        entry.delete_credential()?;
+        entry.delete_credential()
     } else {
-        entry.set_password(secret)?;
+        entry.set_password(secret)
     }
-    remove_legacy_file(legacy_path)
 }
 
 #[cfg(not(test))]
-pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option<String> {
-    let result =
-        SystemSecretEntry::new(account).and_then(|entry| read_or_migrate(&entry, legacy_path));
-    match result {
+pub(super) fn read_secret(account: &str) -> Option<String> {
+    match SystemSecretEntry::new(account).and_then(|entry| read_entry_secret(&entry)) {
         Ok(secret) => secret,
         Err(error) => {
-            // 无遗留文件时降为 debug，避免钥匙串短暂不可用时刷屏；有文件时 warn（迁移可能受阻）。
-            if legacy_path.exists() {
-                tracing::warn!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
-            } else {
-                tracing::debug!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
-            }
+            tracing::debug!(target: "crabmate", account, error = %error, "读取系统钥匙串失败");
             None
         }
     }
 }
 
 #[cfg(test)]
-struct TestNamedSecretEntry<'a> {
-    account: &'a str,
+pub(super) fn read_secret(account: &str) -> Option<String> {
+    normalized(read_named_secret(account))
+}
+
+#[cfg(not(test))]
+pub(super) fn write_secret(account: &str, secret: &str) -> Result<(), String> {
+    let entry = SystemSecretEntry::new(account)?;
+    write_entry_secret(&entry, secret)
 }
 
 #[cfg(test)]
-impl SecretEntry for TestNamedSecretEntry<'_> {
-    fn get_password(&self) -> Result<Option<String>, String> {
-        Ok(read_named_secret(self.account))
-    }
-
-    fn set_password(&self, password: &str) -> Result<(), String> {
-        write_named_secret(self.account, password)
-    }
-
-    fn delete_credential(&self) -> Result<(), String> {
-        write_named_secret(self.account, "")
-    }
-}
-
-#[cfg(test)]
-pub(super) fn read_migrating_secret(account: &str, legacy_path: &Path) -> Option<String> {
-    read_or_migrate(&TestNamedSecretEntry { account }, legacy_path)
-        .expect("test migrating secret read")
+pub(super) fn write_secret(account: &str, secret: &str) -> Result<(), String> {
+    write_named_secret(account, secret)
 }
 
 #[cfg(test)]
@@ -170,31 +116,12 @@ pub(super) fn lock_test_named_secret_suite() -> std::sync::MutexGuard<'static, (
 }
 
 #[cfg(test)]
-pub(super) fn read_named_secret(account: &str) -> Option<String> {
+fn read_named_secret(account: &str) -> Option<String> {
     test_named_secrets()
         .lock()
         .expect("test named secrets lock")
         .get(account)
         .cloned()
-}
-
-#[cfg(not(test))]
-pub(super) fn write_migrating_secret(
-    account: &str,
-    legacy_path: &Path,
-    secret: &str,
-) -> Result<(), String> {
-    let entry = SystemSecretEntry::new(account)?;
-    write_secret(&entry, legacy_path, secret)
-}
-
-#[cfg(test)]
-pub(super) fn write_migrating_secret(
-    account: &str,
-    legacy_path: &Path,
-    secret: &str,
-) -> Result<(), String> {
-    write_secret(&TestNamedSecretEntry { account }, legacy_path, secret)
 }
 
 #[cfg(test)]
@@ -214,7 +141,6 @@ pub(super) fn write_named_secret(account: &str, secret: &str) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
 
     #[derive(Default)]
     struct FakeEntry {
@@ -242,81 +168,59 @@ mod tests {
     }
 
     #[test]
-    fn migrates_legacy_file_only_after_keyring_write_succeeds() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let legacy = dir.path().join("client_llm");
-        std::fs::write(&legacy, "example-token").expect("write legacy");
+    fn reads_trimmed_keyring_value() {
+        let entry = FakeEntry {
+            secret: Mutex::new(Some("  example-token\n".to_string())),
+            fail_set: false,
+        };
+
+        assert_eq!(
+            read_entry_secret(&entry).expect("read").as_deref(),
+            Some("example-token")
+        );
+    }
+
+    #[test]
+    fn blank_keyring_value_reads_as_unset() {
+        let entry = FakeEntry {
+            secret: Mutex::new(Some("   ".to_string())),
+            fail_set: false,
+        };
+
+        assert_eq!(read_entry_secret(&entry).expect("read"), None);
+    }
+
+    #[test]
+    fn write_trims_before_storing() {
         let entry = FakeEntry::default();
 
-        let loaded = read_or_migrate(&entry, &legacy).expect("migrate");
+        write_entry_secret(&entry, " example-token ").expect("write");
 
-        assert_eq!(loaded.as_deref(), Some("example-token"));
         assert_eq!(
             entry.secret.lock().expect("fake secret lock").as_deref(),
             Some("example-token")
         );
-        assert!(!legacy.exists());
     }
 
     #[test]
-    fn failed_keyring_write_keeps_legacy_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let legacy = dir.path().join("client_llm");
-        std::fs::write(&legacy, "example-token").expect("write legacy");
+    fn write_blank_clears_keyring_value() {
+        let entry = FakeEntry {
+            secret: Mutex::new(Some("example-token".to_string())),
+            fail_set: false,
+        };
+
+        write_entry_secret(&entry, "").expect("clear");
+
+        assert!(entry.secret.lock().expect("fake secret lock").is_none());
+    }
+
+    #[test]
+    fn write_surfaces_keyring_errors() {
         let entry = FakeEntry {
             fail_set: true,
             ..FakeEntry::default()
         };
 
-        assert!(read_or_migrate(&entry, &legacy).is_err());
-        assert!(legacy.exists());
-    }
-
-    #[test]
-    fn existing_keyring_value_wins_and_removes_legacy_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let legacy = dir.path().join("client_llm");
-        std::fs::write(&legacy, "legacy-example").expect("write legacy");
-        let entry = FakeEntry {
-            secret: Mutex::new(Some("keyring-example".to_string())),
-            fail_set: false,
-        };
-
-        let loaded = read_or_migrate(&entry, &legacy).expect("read");
-
-        assert_eq!(loaded.as_deref(), Some("keyring-example"));
-        assert!(!legacy.exists());
-    }
-
-    #[test]
-    fn keyring_hit_skips_when_legacy_file_absent() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let legacy = dir.path().join("client_llm");
-        assert!(!legacy.exists());
-        let entry = FakeEntry {
-            secret: Mutex::new(Some("keyring-only".to_string())),
-            fail_set: false,
-        };
-
-        let loaded = read_or_migrate(&entry, &legacy).expect("read");
-
-        assert_eq!(loaded.as_deref(), Some("keyring-only"));
-        assert!(!legacy.exists());
-    }
-
-    #[test]
-    fn clearing_removes_keyring_value_and_legacy_file() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let legacy = dir.path().join("client_llm");
-        std::fs::write(&legacy, "legacy-example").expect("write legacy");
-        let entry = FakeEntry {
-            secret: Mutex::new(Some("keyring-example".to_string())),
-            fail_set: false,
-        };
-
-        write_secret(&entry, &legacy, "").expect("clear");
-
-        assert!(entry.secret.lock().expect("fake secret lock").is_none());
-        assert!(!legacy.exists());
+        assert!(write_entry_secret(&entry, "example-token").is_err());
     }
 }

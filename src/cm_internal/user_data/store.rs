@@ -48,10 +48,6 @@ pub fn new_mcp_server_id() -> String {
     format!("mcp_{}", now_ms())
 }
 
-fn secret_path(root: &Path, name: &str) -> PathBuf {
-    root.join("secrets").join(name)
-}
-
 fn sessions_path_for_workspace(root: &Path, effective_workspace: &str) -> PathBuf {
     match workspace_partition_hash(effective_workspace) {
         Some(h) => workspace_sessions_path(root, &h),
@@ -126,7 +122,6 @@ pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {
     for removed_id in old_ids.iter().filter(|id| !keep.contains(id.as_str())) {
         write_secret_mcp_bearer(removed_id, "")?;
     }
-    prune_mcp_bearer_secrets(&ids)?;
     Ok(())
 }
 
@@ -387,18 +382,11 @@ pub fn list_workspaces() -> Result<Vec<WorkspaceListEntry>, String> {
 }
 
 pub fn write_secret_web_api_bearer(token: &str) -> Result<(), String> {
-    super::credential_store::write_migrating_secret(
-        "web_api_bearer",
-        &secret_path(&root(), "web_api_bearer"),
-        token,
-    )
+    super::credential_store::write_secret("web_api_bearer", token)
 }
 
 pub fn read_secret_web_api_bearer() -> Option<String> {
-    super::credential_store::read_migrating_secret(
-        "web_api_bearer",
-        &secret_path(&root(), "web_api_bearer"),
-    )
+    super::credential_store::read_secret("web_api_bearer")
 }
 
 /// 校验 MCP server id 是否可安全用作 secret 文件名片段。
@@ -424,39 +412,17 @@ fn mcp_bearer_secret_name(server_id: &str) -> Result<String, String> {
 /// 远程 MCP Bearer：系统钥匙串账户 `mcp_bearer_{id}`。
 pub fn write_secret_mcp_bearer(server_id: &str, token: &str) -> Result<(), String> {
     let name = mcp_bearer_secret_name(server_id)?;
-    super::credential_store::write_migrating_secret(&name, &secret_path(&root(), &name), token)
+    super::credential_store::write_secret(&name, token)
 }
 
 pub fn read_secret_mcp_bearer(server_id: &str) -> Option<String> {
     let name = mcp_bearer_secret_name(server_id).ok()?;
-    super::credential_store::read_migrating_secret(&name, &secret_path(&root(), &name))
+    super::credential_store::read_secret(&name)
 }
 
+/// 远程 MCP 条目是否已在系统钥匙串中保存 Bearer。
 pub fn mcp_bearer_is_set(server_id: &str) -> bool {
     read_secret_mcp_bearer(server_id).is_some_and(|s| !s.trim().is_empty())
-}
-
-/// 删除已不存在于配置中的 `mcp_bearer_*` orphan secrets。
-pub fn prune_mcp_bearer_secrets(keep_ids: &[String]) -> Result<(), String> {
-    let secrets_dir = root().join("secrets");
-    if !secrets_dir.is_dir() {
-        return Ok(());
-    }
-    let keep: std::collections::HashSet<&str> = keep_ids.iter().map(String::as_str).collect();
-    for entry in std::fs::read_dir(&secrets_dir).map_err(|e| format!("列举 secrets: {e}"))? {
-        let entry = entry.map_err(|e| format!("列举 secrets: {e}"))?;
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let Some(id) = name.strip_prefix("mcp_bearer_") else {
-            continue;
-        };
-        if !keep.contains(id) {
-            let _ = std::fs::remove_file(entry.path());
-        }
-    }
-    Ok(())
 }
 
 /// 公开 MCP 配置体（含各 server `has_bearer`）。
@@ -707,32 +673,26 @@ mod tests {
     }
 
     #[test]
-    fn remaining_secret_files_migrate_to_keyring() {
+    fn legacy_plaintext_secret_files_are_ignored() {
         let root = test_root();
-        // `save_mcp_servers` → `prune_mcp_bearer_secrets` 会删 keep 集外的 `mcp_bearer_*` 文件；
-        // 须先拿 MCP 锁（与 `save_mcp_servers_*` 同序），避免并行测把本用例的遗留文件清掉。
         let _mcp_lock = lock_mcp_servers_tests();
         let _secrets_lock = lock_named_secret_tests();
-        let secrets = root.join("secrets");
-        std::fs::create_dir_all(&secrets).expect("create secrets dir");
-        let web_legacy = secrets.join("web_api_bearer");
-        let mcp_legacy = secrets.join("mcp_bearer_mcp_migration_test");
-        std::fs::write(&web_legacy, "web-example-token").expect("write web legacy");
-        std::fs::write(&mcp_legacy, "mcp-example-token").expect("write mcp legacy");
-
-        assert_eq!(
-            read_secret_web_api_bearer().as_deref(),
-            Some("web-example-token")
-        );
-        assert_eq!(
-            read_secret_mcp_bearer("mcp_migration_test").as_deref(),
-            Some("mcp-example-token")
-        );
-        assert!(!web_legacy.exists());
-        assert!(!mcp_legacy.exists());
-
         write_secret_web_api_bearer("").expect("clear web");
         write_secret_mcp_bearer("mcp_migration_test", "").expect("clear mcp");
+
+        let secrets = root.join("secrets");
+        std::fs::create_dir_all(&secrets).expect("create secrets dir");
+        std::fs::write(secrets.join("web_api_bearer"), "web-example-token").expect("write web");
+        std::fs::write(
+            secrets.join("mcp_bearer_mcp_migration_test"),
+            "mcp-example-token",
+        )
+        .expect("write mcp");
+
+        // 钥匙串是唯一来源：旧明文文件既不读入，也不提供回退。
+        assert_eq!(read_secret_web_api_bearer(), None);
+        assert_eq!(read_secret_mcp_bearer("mcp_migration_test"), None);
+        assert!(!mcp_bearer_is_set("mcp_migration_test"));
     }
 
     #[test]
