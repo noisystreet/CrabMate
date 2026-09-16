@@ -1,15 +1,16 @@
-//! JSON 路径解析（从 `crabmate-agent` 的 `acceptance::resolve_json_path_value` 移植）。
+//! JSON 路径解析：workflow（`run_if` / `for_each`）与验收（`expect_json_path_equals`）共用。
 //!
 //! 支持 **RFC 6901 JSON Pointer**（以 `/` 开头）与 **`$` 点分遗留语法**。
+//! 非法数组下标、未闭合括号或括号后残留文本会返回 [`JsonPathResolveError::PathSyntax`]，而非静默走错路径。
 
 use serde_json::Value;
 
-/// JSON 路径解析失败原因。
+/// JSON 路径解析失败原因（供验收 / workflow 失败文案区分）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JsonPathResolveError {
     /// `tool_output` 不是合法 JSON。
     JsonParse(String),
-    /// 路径表达式本身非法。
+    /// 路径表达式本身非法（未闭合 `[`、非数字下标、括号后多余文本等）。
     PathSyntax(String),
     /// JSON 合法且路径语法合法，但导航不到（缺字段 / 越界）。
     PathNotFound(String),
@@ -25,13 +26,13 @@ impl JsonPathResolveError {
     }
 }
 
-/// 提取路径指向的值；成功时克隆该子树。
+/// 提取路径指向的值；成功时克隆该子树（与历史行为一致）。
 pub fn resolve_json_path_value(json_str: &str, path: &str) -> Result<Value, JsonPathResolveError> {
     let path = path.trim();
     let root: Value = serde_json::from_str(json_str.trim())
         .map_err(|e| JsonPathResolveError::JsonParse(e.to_string()))?;
 
-    // 空白路径视为指向整份 JSON。
+    // 与历史实现一致：空白路径视为指向整份 JSON。
     if path.is_empty() {
         return Ok(root.clone());
     }
@@ -178,7 +179,7 @@ fn apply_legacy_segment<'a>(
     apply_bracket_indices(v, bracket_tail)
 }
 
-/// 解析紧跟在字段名后的 `[0][1]…`；必须**恰好消费**整段 `bracket_tail`。
+/// 解析紧跟在字段名后的 `[0][1]…`；必须**恰好消费**整段 `bracket_tail`，否则语法错误。
 fn parse_bracket_suffix(bracket_tail: &str) -> Result<Vec<usize>, JsonPathResolveError> {
     if bracket_tail.is_empty() {
         return Ok(Vec::new());
@@ -214,4 +215,63 @@ fn parse_bracket_suffix(bracket_tail: &str) -> Result<Vec<usize>, JsonPathResolv
     }
 
     Ok(indices)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn legacy_nested_and_multi_bracket_segment() {
+        let v = json!({"data":{"items":[[1,2],[3,4]]}});
+        let s = v.to_string();
+        let r = resolve_json_path_value(&s, "$.data.items[0][1]").unwrap();
+        assert_eq!(r, json!(2));
+    }
+
+    #[test]
+    fn legacy_invalid_index_is_syntax_error() {
+        let v = json!({"items":[1]});
+        let s = v.to_string();
+        let e = resolve_json_path_value(&s, "$.items[abc]").unwrap_err();
+        assert!(matches!(e, JsonPathResolveError::PathSyntax(_)));
+    }
+
+    #[test]
+    fn legacy_trailing_junk_after_bracket() {
+        let v = json!({"items":[1]});
+        let s = v.to_string();
+        let e = resolve_json_path_value(&s, "$.items[0]oops").unwrap_err();
+        assert!(matches!(e, JsonPathResolveError::PathSyntax(_)));
+    }
+
+    #[test]
+    fn pointer_empty_string_key_and_slash_escape() {
+        let v = json!({"": 1, "a/b": 2});
+        let s = v.to_string();
+        // RFC 6901: "/" → 键名为空字符串。
+        assert_eq!(resolve_json_path_value(&s, "/").unwrap(), json!(1));
+        assert_eq!(resolve_json_path_value(&s, "/a~1b").unwrap(), json!(2));
+    }
+
+    #[test]
+    fn empty_path_means_whole_document() {
+        let v = json!({"x": 1});
+        let s = v.to_string();
+        assert_eq!(resolve_json_path_value(&s, "").unwrap(), v);
+    }
+
+    #[test]
+    fn pointer_array_index() {
+        let v = json!(["x", "y"]);
+        let s = v.to_string();
+        assert_eq!(resolve_json_path_value(&s, "/1").unwrap(), json!("y"));
+    }
+
+    #[test]
+    fn json_parse_error_variant() {
+        let e = resolve_json_path_value("not json", "$.a").unwrap_err();
+        assert!(matches!(e, JsonPathResolveError::JsonParse(_)));
+    }
 }

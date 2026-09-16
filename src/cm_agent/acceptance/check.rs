@@ -1,7 +1,7 @@
 //! 对 [`super::AcceptanceSpec`] 与 [`super::AcceptanceEvidence`] 执行逐项断言。
 
-use super::json_path_resolve::resolve_json_path_value;
 use super::{AcceptanceEvidence, AcceptanceSpec, ExitCodePolicy, FileResolveKind, VerifyOutcome};
+use crate::cm_workflow::resolve_json_path::resolve_json_path_value;
 
 /// 从工具输出中提取 JSON 信封内的 output 字段（如果有的话）
 fn extract_json_output(output: &str) -> Option<String> {
