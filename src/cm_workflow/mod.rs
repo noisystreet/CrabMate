@@ -19,7 +19,7 @@ mod for_each_expand;
 mod md_extract;
 mod parse;
 mod placeholders;
-mod resolve_json_path;
+pub(crate) mod resolve_json_path;
 mod run;
 mod run_if;
 mod tests;
