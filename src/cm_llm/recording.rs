@@ -248,10 +248,6 @@ pub struct ReplayBackend {
 
 #[derive(Debug)]
 struct ReplayEntry {
-    /// 录制时的请求指纹；当前按 round 顺序回放，未做严格校验。
-    /// 未来可用于严格模式（请求指纹不匹配时报错）。
-    #[allow(dead_code)]
-    fingerprint: String,
     message: Message,
     finish_reason: String,
 }
@@ -277,7 +273,6 @@ fn load_replay_entry(path: &Path) -> Result<(usize, ReplayEntry), String> {
     Ok((
         n,
         ReplayEntry {
-            fingerprint: resp.fingerprint,
             message: resp.message,
             finish_reason: resp.finish_reason,
         },

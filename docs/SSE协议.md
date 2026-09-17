@@ -220,7 +220,7 @@
 1. **`src/cm_sse_protocol`**：`SSE_PROTOCOL_VERSION`；`sse/protocol.rs`：`SsePayload`、`SseErrorBody`、`ToolResultBody`（生产默认 **`V2Encoder`** / `default_encoder()`）
 2. **`src/cm_sse_protocol`**：`sse_frame.rs`（`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`）与 `control_extract.rs`（`extract_*` 家族）在前端消费语义变更时同步
 3. Client `frontend/src/api/chat_stream/parser_v2.rs` 与 **`frontend/src/api/`**（**`chat_stream/`** 等）：控制面分类与分发分支顺序、请求体中的 **`client_sse_protocol`**
-4. `src/cm_sse_protocol/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）
+4. `src/cm_sse_protocol/sse/line.rs`：`classify_agent_sse_line`（与前端分支语义一致；可选/未来 TUI）。**预留锚点**：`protocol` 承诺面内 `pub` 但暂无任何生产消费者，属刻意保留的同语义参照实现，**勿**按死代码清理
 5. 新增 `encode_message(SsePayload::…)` 的调用点
 
 ## 契约测试（控制面分类）
