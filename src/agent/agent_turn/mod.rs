@@ -45,7 +45,7 @@ pub(crate) mod messages {
 pub(crate) use errors::{AgentTurnJobOutcomeKind, AgentTurnSubPhase, RunAgentTurnError};
 #[allow(unused_imports)]
 pub(crate) use execute::tool_execution_host::{
-    CrabmateParallelToolDispatch, CrabmateRegistryToolDispatch, ParallelHttpFetchParams,
+    CrabmateParallelToolDispatch, ParallelHttpFetchParams,
 };
 #[allow(unused_imports)]
 pub(crate) use execute_tools::{

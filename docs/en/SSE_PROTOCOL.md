@@ -215,7 +215,7 @@ When changing any of:
 1. **`src/cm_sse_protocol`**: **`SSE_PROTOCOL_VERSION`**; `sse/protocol.rs`: `SsePayload`, `SseErrorBody`, `ToolResultBody` (production default **`V2Encoder`** / `default_encoder()`)
 2. **`src/cm_sse_protocol`**: `sse_frame.rs` (`parse_sse_event_id` / `join_sse_data_lines` / `is_sse_done_sentinel` / `extract_stream_ended_reason`) and `control_extract.rs` (`extract_*`) whenever frontend consumption semantics change
 3. Client `frontend/src/api/chat_stream/parser_v2.rs` and **`frontend/src/api/`** (**`chat_stream/`**, etc.): classification order and **`client_sse_protocol`** in the request body
-4. `src/cm_sse_protocol/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI)
+4. `src/cm_sse_protocol/sse/line.rs`: `classify_agent_sse_line` (optional / future TUI). **Reserved anchor**: `pub` inside the `protocol` promise surface but with no production consumer today — a deliberately kept same-semantics reference; do **not** sweep it as dead code
 5. New `encode_message(SsePayload::…)` call sites
 
 …keep Rust, Leptos, and this doc aligned.

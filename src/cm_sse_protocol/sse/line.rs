@@ -1,6 +1,9 @@
 //! 对经 SSE `data:` 下发的一行字符串做分类（与 `super::protocol` 及历史兼容键名对齐）。
 //!
 //! Web 前端在 Client **`frontend/src/api/chat_stream/`** 的流式读取路径中做等价解析；此处为 **Rust 侧** 单一实现，供后续终端 UI 等与 Web 语义对齐复用。
+//!
+//! **预留锚点**：本模块在 `protocol` feature 承诺面内 `pub`，但仓内外均无生产消费者（仅本文件单测）。
+//! 属**刻意保留**的语义对齐锚点，**勿**按死代码清理；变更须与 Web 消费语义一致或刻意分叉（分叉须在此说明）。
 #![allow(dead_code)]
 
 use crate::cm_sse_protocol::StreamEndReason;

@@ -53,10 +53,7 @@ pub use retry::{CompleteChatRetryingParams, complete_chat_retrying};
 pub use retry_hooks::{LlmRetryDecisionPoint, LlmRetryHooks};
 pub use stream_host::StreamChatHost;
 pub use trace_sink::{FileTraceSink, NullTraceSink, TraceEvent, TraceSink, TraceUsage};
-pub use vendor::{
-    LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter,
-    llm_vendor_adapter_for_model,
-};
+pub use vendor::{LlmVendorAdapter, fold_system_into_user_for_config, llm_vendor_adapter};
 pub use vendor_catalog::{
     ResolvedVendorCaps, VendorAdapterId, matched_vendor_default_model, matched_vendor_id,
     matched_vendor_models, resolved_vendor_caps,

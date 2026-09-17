@@ -160,6 +160,3 @@ impl CrabmateParallelToolDispatch {
         .unwrap_or_else(|e| format!("工具执行 panic：{}", e))
     }
 }
-
-/// 仅 registry [`ToolDispatch`]（无 `workflow_execute`）；供分层 Operator 等路径复用。
-pub use CrabmateParallelToolDispatch as CrabmateRegistryToolDispatch;
