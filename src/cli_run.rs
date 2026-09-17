@@ -829,7 +829,7 @@ pub(super) async fn run_cli_from_parsed(
     Box::pin(run_cli_default_main(args)).await
 }
 
-/// 默认主路径：`--dry-run`、`models`/`probe`，或 `serve` / `repl` / `chat` / `tui`。
+/// 默认主路径：`config`（一次性配置检查）、`models`/`probe`，或 `serve` / `bench`。
 async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::error::Error>> {
     if args.dry_run {
         run_dry_run(&args.config_path, args.llm_context_tokens_cli).await?;

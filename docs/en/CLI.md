@@ -20,7 +20,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 |------------|-------------|
 | `serve [PORT]` | HTTP API (always API-only, never hosts a SPA, port **8080**). With **`bearer`**, may **start without `API_KEY`**; set the **LLM** key in sidebar **Settings** (`client_llm`, authority on the Client) before chatting. When **`web_api_bearer_token`** / **`CM_WEB_API_BEARER_TOKEN`** is set, also save the **same** shared secret under **Settings → Web API shared secret** (not the LLM key). **Temporary skip**: `unset` the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`** (see **`docs/en/CONFIGURATION.md`**). **Desktop Tauri** is a thin client: start **`serve`** yourself, then connect from the shell (see Client [`desktop-tauri/DEVELOPMENT.md`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/DEVELOPMENT.md)). |
 | `bench` | Batch eval: `--benchmark`, `--batch`, etc. |
-| `config` | Config + **`API_KEY`** status self-check; optional `--dry-run`. |
+| `config` | Config + **`API_KEY`** status self-check (takes no options). |
 | `doctor` | Local diagnostics (**no** `API_KEY`). |
 | `web-bearer` | **`status` / `set` / `clear`**: system keyring Web API shared secret (same slot as Web **`/user-data/secrets/web-api-bearer`**; **no** `API_KEY`). Prefer **`set --stdin`**, **`set --from-env`** (reads **`CM_WEB_API_BEARER_TOKEN`**), or interactive hidden prompt (no args); a positional `TOKEN` lands in shell history/`ps` (compat only). When TOML / **`CM_WEB_API_BEARER_TOKEN`** are empty, **`serve`** loads from here; toggling empty↔non-empty still requires a **`serve` restart** to mount/unmount the auth middleware. Browsers must still save the **same** string under **Settings → Web API shared secret**. |
 | `models` | `GET …/models` (needs `API_KEY`). |
@@ -61,7 +61,7 @@ The only remaining argv normalization is the **`help` subcommand**: `crabmate he
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |
 | `--log <FILE>` | Log file + stderr mirror |
 
-> **`config --dry-run`**: an explicit marker option of the `config` subcommand (behaves the same as omitting it — a config check then exit); the bare **`--dry-run`** was removed along with the flat flags.
+> **`config`**: takes no options — a config check then exit. The bare **`--dry-run`** was removed along with the flat flags, and `config --dry-run` is no longer accepted.
 
 > **Removed (D2.1)**: global **`--agent-role`**, and chat/repl-only **`--query` / `--stdin` / `--output` / `--no-stream`**. Use Client **`crabmate-tui`** or Web; roles via request body / Web **`agent_role`**.
 

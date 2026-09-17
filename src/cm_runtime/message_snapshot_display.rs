@@ -51,13 +51,6 @@ pub fn web_client_snapshot_messages(messages: &[Message]) -> Vec<WebClientSnapsh
         .collect()
 }
 
-/// 默认快照（与 Web 默认语言一致；工具卡文案由 Client 本地化）。
-pub fn web_client_snapshot_messages_default_zh(
-    messages: &[Message],
-) -> Vec<WebClientSnapshotMessage> {
-    web_client_snapshot_messages(messages)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

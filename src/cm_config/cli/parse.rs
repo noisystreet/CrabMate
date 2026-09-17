@@ -120,7 +120,7 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
                 system_prompt_file: be.bench_system_prompt,
             };
         }
-        Commands::Config(_) => {
+        Commands::Config => {
             b.dry_run = true;
         }
         Commands::Doctor => {

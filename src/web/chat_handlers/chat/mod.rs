@@ -247,9 +247,7 @@ pub(crate) async fn conversation_messages_handler(
         q.before_index,
     );
     let messages =
-        crate::runtime::message_snapshot_display::web_client_snapshot_messages_default_zh(
-            &window.messages,
-        );
+        crate::runtime::message_snapshot_display::web_client_snapshot_messages(&window.messages);
     let active_agent_role = seed
         .persisted_active_agent_role
         .as_deref()
