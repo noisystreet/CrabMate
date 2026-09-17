@@ -32,10 +32,10 @@ This document captures a **design analysis** (not an implementation commitment) 
 | Missing capability-focused boundaries (crate split or deeper feature partition) | Product mode and library mode remain coupled |
 
 **Already landed (dependency trimming):**
-- Root features: **`mcp`**, **`docker_sandbox`**, **`fastembed`**
-- Default: `default = ["web", "mcp"]` (no `fastembed` / `docker_sandbox`; in-process `repl`/`tui` features removed in D2.2; enable with `--features fastembed`, or `--all-features`)
-- Example trims: `cargo build --no-default-features` or a selected subset
-- Without `fastembed`, config finalize coerces vector backend to disabled and semantic search falls back appropriately
+- Root features: **`mcp`** (`rmcp`), **`archive-tools`** (tar/zip, …), **`docker_sandbox`** (`bollard`), **`fastembed`** (local ONNX embeddings), **`project_metrics`** (`tokei`)
+- Default: `default = ["server"]`, and **`server`** hard-enables **`protocol` / `web` / `mcp` / `archive-tools` / `web-fetch-tools`** (no `fastembed` / `docker_sandbox` / `project_metrics`; in-process `repl`/`tui` features removed in D2.2; enable extras with `--features fastembed`, or `--all-features`)
+- The only trimming path in use today is **protocol-only**: `cargo build --no-default-features --features protocol` (see `scripts/check-client-contract.sh` / `check-sse-protocol.sh`). That combination skips `src/lib_server.rs` entirely, so the `server`-side modules (Web / MCP / archive / CLI) **do not exist**. Consequently the negative branches for **`mcp`** (`src/cm_mcp/stub.rs`, `runtime/cli_mcp.rs`, `cm_internal/mcp/mod.rs`), **`archive-tools`** (`web/workspace/handlers_dir_archive.rs`, `cm_tools/tools/tool_specs_registry/mod.rs`) and **`web`** (`cli_run.rs`, `cli_run_session.rs`, `cm_config/scheduled_agent_task.rs`) are **unreachable under every current feature combination**; they are **intentionally reserved placeholders** for future trimming and **must not be deleted as dead code**.
+- The negative branches that do take effect are **`fastembed`** (finalize coerces `long_term_memory_vector_backend=fastembed` to `disabled` while SQLite long-term memory still works; `codebase_semantic_search` is dropped from the tool list and `codebase_semantic_search_enabled` is forced to `false`; `hybrid` retrieval degrades to FTS-only) plus **`docker_sandbox`** / **`project_metrics`**.
 
 **Conclusion**: for a real framework surface, Web/TUI still need to be optionalized (by crate split and/or additional features).
 
@@ -72,7 +72,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 
 ## 4. Suggested evolution order
 
-1. **Dependency layering**: make no-Axum/no-TUI build paths first-class.
+1. **Dependency layering**: make no-Axum/no-TUI build paths first-class. (**Progress**: only **`fastembed`** / **`docker_sandbox`** / **`project_metrics`** are genuinely optional; **`mcp`** / **`archive-tools`** / **`web`** are currently hard-bound by **`server`** — see §3.1. Web/TUI still need layering.)
 2. **Stable surface**: narrow exported types/functions; document error/cancel semantics.
 3. **Cross-language boundary**: choose subprocess RPC/HTTP and/or PyO3/FFI with clear trade-offs.
 4. **Explicit context injection**: minimize hidden globals; inject config/workspace/http/tool backends via constructors.

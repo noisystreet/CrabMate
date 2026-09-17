@@ -61,7 +61,7 @@
 | --- | --- |
 | **`serve`** | 启动 HTTP API（**永远纯 API**，不托管 SPA）。UI 由 Client 仓托管并经 CORS（**`CM_WEB_CORS_ALLOWED_ORIGINS`**）接入。默认端口 **8080**，绑定 **127.0.0.1**。 |
 | **`doctor`** | 本机环境与依赖一页诊断（**不要**求 `API_KEY`）。 |
-| **`config`** | 加载配置并自检（如 **`--dry-run`**）。 |
+| **`config`** | 加载配置并自检。 |
 | **`models`** / **`probe`** | 探测 **`api_base`** 上 **`GET …/models`**；**`bearer`** 模式下通常需要环境变量 **`API_KEY`**。 |
 | **`save-session`** | 从磁盘会话文件导出到 **`<workspace>/.crabmate/exports/`**（别名 **`export-session`**）。 |
 | **`bench`** | 批量测评（JSONL）；用法见 [benchmark/README.md](benchmark/README.md)、[docs/基准测试规划.md](docs/基准测试规划.md)。 |

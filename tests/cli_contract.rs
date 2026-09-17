@@ -105,6 +105,20 @@ fn removed_flat_flags_are_rejected() {
 }
 
 #[test]
+fn config_subcommand_rejects_options() {
+    with_isolated_agent_http_host(|| {
+        // `config` 已无 `--dry-run` 选项（改前为 no-op 旗标）：须由 clap 报未知参数。
+        let err = parse_args_from_argv(vec![
+            "crabmate".to_string(),
+            "config".to_string(),
+            "--dry-run".to_string(),
+        ])
+        .expect_err("config takes no options; --dry-run must be rejected");
+        assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+    });
+}
+
+#[test]
 fn fixture_parse_args_from_argv_contract() {
     with_isolated_agent_http_host(|| {
         let path = fixture_dir().join("parse_contract.json");

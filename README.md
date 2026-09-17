@@ -61,7 +61,7 @@ Context compaction is Token-led when `llm_context_tokens` is non-zero: Server bu
 | --- | --- |
 | **`serve`** | HTTP API (**always API-only**, no SPA). UI is hosted by the Client repo and connects via CORS (**`CM_WEB_CORS_ALLOWED_ORIGINS`**). Default port **8080**, bind **127.0.0.1**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
-| **`config`** | Load config and self-check (e.g. **`--dry-run`**). |
+| **`config`** | Load config and self-check. |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
 | **`save-session`** | Export session file to **`<workspace>/.crabmate/exports/`** (alias **`export-session`**). |
 | **`bench`** | Batch evaluation (JSONL): [benchmark/README.md](benchmark/README.md), [docs/基准测试规划.md](docs/基准测试规划.md). |

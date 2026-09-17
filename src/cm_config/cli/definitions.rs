@@ -251,14 +251,6 @@ pub struct PluginListCmd {
     pub jsonl: bool,
 }
 
-/// 配置检查（不发起对话）
-#[derive(Parser, Debug, Clone, Default)]
-pub struct ConfigCmd {
-    /// 可选；与不带本参数相同，均为一次配置检查后退出（供脚本显式标注）
-    #[arg(long)]
-    pub dry_run: bool,
-}
-
 /// 将会话 JSON 导出为与 Web 一致的 `chat_export_*.json` / `.md`（**不要**求 `API_KEY`）
 #[derive(Parser, Debug, Clone)]
 pub struct SaveSessionCmd {
@@ -421,8 +413,8 @@ pub enum Commands {
     Serve(ServeCmd),
     /// 批量 benchmark 测评（JSONL）
     Bench(BenchCmd),
-    /// 配置与自检（如 dry-run）
-    Config(ConfigCmd),
+    /// 配置与自检
+    Config,
     /// 一页本地诊断（Rust/npm/前端路径、白名单条数等；人读，脱敏；**不要**求 API_KEY）
     Doctor,
     /// 设置/查询/清除 Web API Bearer（系统钥匙串；**不要**求 API_KEY）
