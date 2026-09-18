@@ -159,31 +159,31 @@ VALUES
 
 ### Step 1: 添加工具函数
 
-**文件**: `src/tools/long_term_memory_tools.rs`
+**文件**: `src/cm_internal/long_term_memory_tools.rs`
 
 新增 `SummarizeExperienceArgs` 结构体和 `summarize_experience()` 函数。内部调用 `rt.explicit_remember_blocking()`，与 `long_term_remember` 共用同一写入路径。
 
-### Step 2: 添加参数构建器
+### Step 2: 定义参数 Schema
 
-**文件**: `src/tools/tool_params/mod.rs`
+**文件**: `src/cm_tools/tools/tool_param_types/part_tool_params_diagnostics.inc.rs`
 
-新增 `params_summarize_experience()` 函数，返回 `ParamBuilder::Object`。
+定义派生 `schemars::JsonSchema` 的 `SummarizeExperienceArgs`；`ToolSpec.parameters` 由 `schema_of::<args::SummarizeExperienceArgs>` 直接生成，不再维护手写的 `ParamBuilder` 构建器（该层已删除）。
 
 ### Step 3: 注册工具规格
 
-**文件**: `src/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
+**文件**: `src/cm_tools/tools/tool_specs_registry/specs/diagnostics_docs.inc.rs`
 
 新增 `ToolSpec { name: "summarize_experience", ... }`。
 
 ### Step 4: 添加工具标签组
 
-**文件**: `src/tools/dev_tag.rs`
+**文件**: `src/cm_tools/tools/dev_tag.rs`
 
 在 `GENERAL` 组或新建 `EXPERIENCE` 组中注册 `"summarize_experience"`。
 
 ### Step 5: 暴露 runner 函数
 
-**文件**: `src/tools/mod.rs`（或 `misc_basic.inc.rs` 同一引入层级）
+**文件**: `src/cm_tools/tools/mod.rs`（或 `misc_basic.inc.rs` 同一引入层级）
 
 ```rust
 fn runner_summarize_experience(args: &str, ctx: &ToolContext<'_>) -> String {
