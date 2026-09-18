@@ -19,6 +19,13 @@ fn fix_subcommand_crossrefs(troff: &str) -> String {
         ("crabmate\\-models(1)", "\\fBmodels\\fR"),
         ("crabmate\\-probe(1)", "\\fBprobe\\fR"),
         ("crabmate\\-save\\-session(1)", "\\fBsave-session\\fR"),
+        ("crabmate\\-web\\-bearer(1)", "\\fBweb-bearer\\fR"),
+        ("crabmate\\-tool\\-replay(1)", "\\fBtool-replay\\fR"),
+        ("crabmate\\-sse\\-replay(1)", "\\fBsse-replay\\fR"),
+        ("crabmate\\-mcp(1)", "\\fBmcp\\fR"),
+        ("crabmate\\-plugin(1)", "\\fBplugin\\fR"),
+        ("crabmate\\-workflow(1)", "\\fBworkflow\\fR"),
+        ("crabmate\\-e2e(1)", "\\fBe2e\\fR"),
     ];
     for (from, to) in pairs {
         out = out.replace(from, to);

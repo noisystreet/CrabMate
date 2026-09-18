@@ -3,9 +3,9 @@
 **状态（2026-08 对齐现实）**：**历史设计 / 归档**。文中 `staged_planning_gate` / 分阶段门控设想**未**作为现行路径保留；运行时为 **session_mode →（Act 句启发式）→ `assess_turn_routing` → ReAct 外循环**。下文算法与落地清单仅供考古，勿当实现索引。  
 **受众**：维护者、Agent 架构贡献者（对比用）  
 **关联（现行）**：
-- `crates/crabmate-agent/src/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
-- `crates/crabmate-agent/src/agent_turn/turn_orchestration.rs` — `TurnResolution` / `TurnOrchestrationMode`
-- `crates/crabmate-config/src/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`）
+- `src/cm_agent/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
+- `src/cm_agent/agent_turn/turn_orchestration.rs` — `TurnResolution` / `TurnOrchestrationMode`
+- `src/cm_config/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`；`CM_ORCHESTRATION_PROFILE` 及其覆盖键均**不再**生效）
 - `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点 Act 句启发式
 - `src/agent/agent_turn/loop/run_dispatch.rs` — 回合分发入口
 
