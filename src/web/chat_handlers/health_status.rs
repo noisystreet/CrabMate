@@ -92,7 +92,7 @@ struct StatusResponse {
     final_plan_semantic_check_max_tokens: u32,
     /// 规划器/执行器模式（恒 `single_agent`；对应配置键已移除）。
     planner_executor_mode: &'static str,
-    /// 编排档位（运行时恒 `react`）。
+    /// 编排档位（恒 `react`；对应配置键已移除）。
     orchestration_profile: &'static str,
     /// 本进程有效编排路径摘要（固定 session_mode / Act 句启发式 → ReAct；不含用户任务级门控）。
     effective_orchestration_path: String,
@@ -325,9 +325,7 @@ pub(crate) async fn status_handler(
         workspace_root.as_path(),
         &agent_role_ids,
     );
-    let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary(
-        cfg.per_plan_policy.orchestration_profile,
-    );
+    let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary();
     if query.view.as_deref() == Some("shell") {
         return Json(build_status_shell_view(StatusShellBuildInput {
             cfg: &cfg,
@@ -363,7 +361,8 @@ pub(crate) async fn status_handler(
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
         planner_executor_mode: "single_agent",
-        orchestration_profile: cfg.per_plan_policy.orchestration_profile.as_str(),
+        // 运行模式已固定为单 agent ReAct，不再由配置决定。
+        orchestration_profile: "react",
         effective_orchestration_path,
         sync_default_tool_sandbox_mode: cfg
             .sync_tool_sandbox

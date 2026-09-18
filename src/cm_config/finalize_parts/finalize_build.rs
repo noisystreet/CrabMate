@@ -129,7 +129,6 @@ fn finalize_section_per_plan_policy(
         final_plan_semantic_check_max_non_readonly_tools: tail
             .final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens: tail.final_plan_semantic_check_max_tokens,
-        orchestration_profile: tail.orchestration_profile,
     }
 }
 

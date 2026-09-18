@@ -10,7 +10,7 @@
 **语言**：中文。  
 **关联文档**：
 
-- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`orchestration_profile`、终答规划）
+- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、终答规划）
 - **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - **`docs/design/run_loop_state_ownership.md`**（回合可变状态四栏）

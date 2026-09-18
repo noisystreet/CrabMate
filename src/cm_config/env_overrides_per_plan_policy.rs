@@ -1,6 +1,6 @@
 //! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` 等 per-plan 策略环境覆盖。
 //!
-//! `CM_ORCHESTRATION_PROFILE` 仍忽略（运行时固定 ReAct）。
+//! 编排档位已固定为 ReAct（单 Agent 外循环），无对应环境变量。
 
 use crate::cm_config::builder::ConfigBuilder;
 use crate::cm_config::env_override_apply::{apply_bool, apply_nonempty_opt, apply_parse};
