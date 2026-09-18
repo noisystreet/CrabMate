@@ -2,7 +2,7 @@ use reqwest::Url;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-/// `http_fetch` 工具入参（与发给模型的 `parameters` 同源，见 `tool_params::params_http_fetch`）。
+/// `http_fetch` 工具入参（与发给模型的 `parameters` 同源，见 `tool_specs_registry` 中 `schema_of::<HttpFetchArgs>`）。
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct HttpFetchArgs {
