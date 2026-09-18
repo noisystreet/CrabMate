@@ -4,7 +4,58 @@ use std::str::FromStr;
 
 use super::source::parse_bool_like;
 
+/// 测试期在当前线程内替换 [`env_ok`] 的环境读取视图（本模块 `CM_*` 覆盖均经该函数）。
+///
+/// 环境变量是**进程级**的：并行用例一旦 `set_var`，该「已设置」窗口对其它线程可见，会让未持锁的
+/// `load_config` 用例读到脏值（历史 flake：`CM_PLANNER_EXECUTOR_MODE=logical_dual_agent` 使
+/// 别处的 `load_config` 直接报错）。把覆盖限制在**当前线程**后，用例不再写进程环境，也就不再需要
+/// 各写各的互斥锁。
+///
+/// 注意：`scope` 只能「设值」，不能表达「取消该键」；对 `apply_nonempty_opt` / `apply_parse` /
+/// `apply_bool` 而言空串等价「未设置」，但 [`apply_csv_allow_empty`] 的空串语义是**显式清空**。
+#[cfg(test)]
+pub(crate) mod scoped_env {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    thread_local! {
+        /// `None`：未启用替换，读真实环境；`Some(map)`：只看该表，缺失键视为「未设置」。
+        static OVERRIDES: RefCell<Option<HashMap<String, String>>> = const { RefCell::new(None) };
+    }
+
+    /// 返回 `None` 表示未启用替换；`Some(None)` 表示已启用但该键不存在。
+    pub(crate) fn lookup(key: &str) -> Option<Option<String>> {
+        OVERRIDES.with(|o| o.borrow().as_ref().map(|m| m.get(key).cloned()))
+    }
+
+    /// 作用域内以 `vars` 覆盖当前线程的环境视图；退出（含 panic）后恢复上一层，支持嵌套。
+    pub(crate) fn scope(vars: &[(&str, &str)]) -> Scope {
+        let prev = OVERRIDES.with(|o| o.borrow_mut().take());
+        let mut map = prev.clone().unwrap_or_default();
+        for (k, v) in vars {
+            map.insert((*k).to_string(), (*v).to_string());
+        }
+        OVERRIDES.with(|o| *o.borrow_mut() = Some(map));
+        Scope(prev)
+    }
+
+    #[must_use]
+    pub(crate) struct Scope(Option<HashMap<String, String>>);
+
+    impl Drop for Scope {
+        fn drop(&mut self) {
+            OVERRIDES.with(|o| *o.borrow_mut() = self.0.take());
+        }
+    }
+}
+
 fn env_ok(key: &str) -> Option<String> {
+    #[cfg(test)]
+    {
+        if let Some(scoped) = scoped_env::lookup(key) {
+            return scoped;
+        }
+    }
     std::env::var(key).ok()
 }
 
