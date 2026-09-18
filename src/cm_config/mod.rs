@@ -98,156 +98,117 @@ mod embedded_shard_parse_tests {
 
 #[cfg(test)]
 mod web_api_require_bearer_defaults_tests {
+    use super::env_override_apply::scoped_env;
     use super::load_config;
-    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
-    use std::sync::Mutex;
 
     /// `load_config` 会读 `CM_WEB_API_REQUIRE_BEARER`（优先级高于 TOML）；开发者本机若导出 `0`/`false` 会覆盖嵌入默认，导致「仅测嵌入默认」的断言不稳定。
-    static CM_WEB_API_REQUIRE_BEARER_LOCK: Mutex<()> = Mutex::new(());
-
+    ///
+    /// 这里用线程局部环境视图屏蔽 `CM_*` 覆盖：既不写进程环境（不干扰并行用例），也不再需要互斥锁。
     fn without_cm_web_api_require_bearer_env<F, R>(f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _g = CM_WEB_API_REQUIRE_BEARER_LOCK
-            .lock()
-            .expect("web_api_require_bearer defaults tests must run serialized");
-        let prev = std::env::var("CM_WEB_API_REQUIRE_BEARER").ok();
-        // SAFETY: `remove_var`/`set_var` are unsafe in Rust 2024; we hold the mutex so no other
-        // test in this module touches `CM_WEB_API_REQUIRE_BEARER` during `f()`.
-        unsafe {
-            std::env::remove_var("CM_WEB_API_REQUIRE_BEARER");
-        }
-        let out = f();
-        unsafe {
-            match prev.as_ref() {
-                Some(v) => std::env::set_var("CM_WEB_API_REQUIRE_BEARER", v),
-                None => std::env::remove_var("CM_WEB_API_REQUIRE_BEARER"),
-            }
-        }
-        out
+        let _env = scoped_env::scope(&[]);
+        f()
     }
 
     #[test]
     fn embedded_default_does_not_require_bearer_without_env_override() {
-        without_cm_planner_executor_mode_env(|| {
-            without_cm_web_api_require_bearer_env(|| {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let path = dir.path().join("minimal.toml");
-                fs::write(
-                    &path,
-                    r#"[agent]
+        without_cm_web_api_require_bearer_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("minimal.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 "#,
-                )
-                .expect("write");
-                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-                assert!(
-                    !cfg.web_api.web_api_require_bearer,
-                    "embedded default should allow serve without forcing non-empty web_api_bearer_token"
-                );
-                assert_eq!(
-                    cfg.web_api.web_cors_allowed_origins,
-                    crate::cm_config::DEFAULT_SHELL_CORS_ORIGINS
-                        .iter()
-                        .map(|s| (*s).to_string())
-                        .collect::<Vec<_>>(),
-                    "embedded default should allow official Client shell Origins"
-                );
-            });
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(
+                !cfg.web_api.web_api_require_bearer,
+                "embedded default should allow serve without forcing non-empty web_api_bearer_token"
+            );
+            assert_eq!(
+                cfg.web_api.web_cors_allowed_origins,
+                crate::cm_config::DEFAULT_SHELL_CORS_ORIGINS
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect::<Vec<_>>(),
+                "embedded default should allow official Client shell Origins"
+            );
         });
     }
 
     #[test]
     fn explicit_true_requires_bearer_secret_at_serve() {
-        without_cm_planner_executor_mode_env(|| {
-            without_cm_web_api_require_bearer_env(|| {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let path = dir.path().join("minimal.toml");
-                fs::write(
-                    &path,
-                    r#"[agent]
+        without_cm_web_api_require_bearer_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("minimal.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 web_api_require_bearer = true
 "#,
-                )
-                .expect("write");
-                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-                assert!(cfg.web_api.web_api_require_bearer);
-            });
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(cfg.web_api.web_api_require_bearer);
         });
     }
 
     #[test]
     fn toml_web_cors_allowed_origins_are_loaded() {
-        without_cm_planner_executor_mode_env(|| {
-            without_cm_web_api_require_bearer_env(|| {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let path = dir.path().join("cors.toml");
-                fs::write(
-                    &path,
-                    r#"[agent]
+        without_cm_web_api_require_bearer_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("cors.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 web_cors_allowed_origins = ["http://127.0.0.1:8081", "https://ui.example.com"]
 "#,
-                )
-                .expect("write");
-                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-                assert_eq!(
-                    cfg.web_api.web_cors_allowed_origins,
-                    vec![
-                        "http://127.0.0.1:8081".to_string(),
-                        "https://ui.example.com".to_string(),
-                        "tauri://localhost".to_string(),
-                        "http://tauri.localhost".to_string(),
-                    ]
-                );
-            });
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert_eq!(
+                cfg.web_api.web_cors_allowed_origins,
+                vec![
+                    "http://127.0.0.1:8081".to_string(),
+                    "https://ui.example.com".to_string(),
+                    "tauri://localhost".to_string(),
+                    "http://tauri.localhost".to_string(),
+                ]
+            );
         });
     }
 }
 
 #[cfg(test)]
 pub(crate) mod load_config_test_env {
-    use std::sync::Mutex;
+    use super::env_override_apply::scoped_env;
 
-    /// `load_config` 会读 `CM_PLANNER_EXECUTOR_MODE`；并行用例若短暂写入废弃值会污染其它 `load_config` 测试。
-    static CM_PLANNER_EXECUTOR_MODE_LOCK: Mutex<()> = Mutex::new(());
-
+    /// 在**当前线程**内屏蔽经 `env_ok` 读取的 `CM_*` 覆盖后运行 `f`
+    /// （`load_config` 会读 `CM_PLANNER_EXECUTOR_MODE` 等键）。
+    ///
+    /// 不写进程环境，故并行用例互不可见，无需互斥锁。
     pub(crate) fn without_cm_planner_executor_mode_env<F, R>(f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _g = CM_PLANNER_EXECUTOR_MODE_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let prev = std::env::var("CM_PLANNER_EXECUTOR_MODE").ok();
-        // SAFETY: serialized by mutex for this env key only.
-        unsafe {
-            std::env::remove_var("CM_PLANNER_EXECUTOR_MODE");
-        }
-        struct RestoreEnv(Option<String>);
-        impl Drop for RestoreEnv {
-            fn drop(&mut self) {
-                unsafe {
-                    match self.0.take() {
-                        Some(v) => std::env::set_var("CM_PLANNER_EXECUTOR_MODE", v),
-                        None => std::env::remove_var("CM_PLANNER_EXECUTOR_MODE"),
-                    }
-                }
-            }
-        }
-        let _restore = RestoreEnv(prev);
+        let _env = scoped_env::scope(&[]);
         f()
     }
 }
 
 #[cfg(test)]
 mod planner_executor_mode_load_tests {
+    use super::env_override_apply::scoped_env;
     use super::load_config;
     use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
@@ -309,10 +270,8 @@ model = "deepseek-chat"
 "#,
             )
             .expect("write");
-            // SAFETY: mutex held for this key.
-            unsafe {
-                std::env::set_var("CM_PLANNER_EXECUTOR_MODE", "logical_dual_agent");
-            }
+            // 只覆盖当前线程的环境视图：不写进程环境，故不会污染并行的其它 `load_config` 用例。
+            let _env = scoped_env::scope(&[("CM_PLANNER_EXECUTOR_MODE", "logical_dual_agent")]);
             let err =
                 load_config(Some(path.to_str().unwrap())).expect_err("legacy env mode must fail");
             assert!(
@@ -325,40 +284,19 @@ model = "deepseek-chat"
 
 #[cfg(test)]
 mod http_fetch_user_agent_load_tests {
+    use super::env_override_apply::scoped_env;
     use super::load_config;
     use std::fs;
-    use std::sync::Mutex;
 
-    static CM_HTTP_FETCH_USER_AGENT_LOCK: Mutex<()> = Mutex::new(());
-
-    /// `load_config` 会读 `CM_HTTP_FETCH_USER_AGENT`；并行用例若短暂写入会污染其它 `load_config` 测试。
+    /// `load_config` 会读 `CM_HTTP_FETCH_USER_AGENT`；用线程局部环境视图覆盖该键，不写进程环境。
     fn with_http_fetch_user_agent_env<F, R>(value: Option<&str>, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _g = CM_HTTP_FETCH_USER_AGENT_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let prev = std::env::var("CM_HTTP_FETCH_USER_AGENT").ok();
-        // SAFETY: serialized by mutex for this env key only.
-        unsafe {
-            match value {
-                Some(v) => std::env::set_var("CM_HTTP_FETCH_USER_AGENT", v),
-                None => std::env::remove_var("CM_HTTP_FETCH_USER_AGENT"),
-            }
-        }
-        struct RestoreEnv(Option<String>);
-        impl Drop for RestoreEnv {
-            fn drop(&mut self) {
-                unsafe {
-                    match self.0.take() {
-                        Some(v) => std::env::set_var("CM_HTTP_FETCH_USER_AGENT", v),
-                        None => std::env::remove_var("CM_HTTP_FETCH_USER_AGENT"),
-                    }
-                }
-            }
-        }
-        let _restore = RestoreEnv(prev);
+        let _env = match value {
+            Some(v) => scoped_env::scope(&[("CM_HTTP_FETCH_USER_AGENT", v)]),
+            None => scoped_env::scope(&[]),
+        };
         f()
     }
 
@@ -399,40 +337,19 @@ model = "deepseek-chat"
 
 #[cfg(test)]
 mod http_fetch_allowed_prefixes_load_tests {
+    use super::env_override_apply::scoped_env;
     use super::load_config;
-    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
-    use std::sync::Mutex;
 
-    static CM_HTTP_FETCH_ALLOWED_PREFIXES_LOCK: Mutex<()> = Mutex::new(());
-
+    /// `load_config` 会读 `CM_HTTP_FETCH_ALLOWED_PREFIXES`；用线程局部环境视图覆盖该键，不写进程环境。
     fn with_http_fetch_allowed_prefixes_env<F, R>(value: Option<&str>, f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let _g = CM_HTTP_FETCH_ALLOWED_PREFIXES_LOCK
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        let prev = std::env::var("CM_HTTP_FETCH_ALLOWED_PREFIXES").ok();
-        // SAFETY: serialized by mutex for this env key only.
-        unsafe {
-            match value {
-                Some(v) => std::env::set_var("CM_HTTP_FETCH_ALLOWED_PREFIXES", v),
-                None => std::env::remove_var("CM_HTTP_FETCH_ALLOWED_PREFIXES"),
-            }
-        }
-        struct RestoreEnv(Option<String>);
-        impl Drop for RestoreEnv {
-            fn drop(&mut self) {
-                unsafe {
-                    match self.0.take() {
-                        Some(v) => std::env::set_var("CM_HTTP_FETCH_ALLOWED_PREFIXES", v),
-                        None => std::env::remove_var("CM_HTTP_FETCH_ALLOWED_PREFIXES"),
-                    }
-                }
-            }
-        }
-        let _restore = RestoreEnv(prev);
+        let _env = match value {
+            Some(v) => scoped_env::scope(&[("CM_HTTP_FETCH_ALLOWED_PREFIXES", v)]),
+            None => scoped_env::scope(&[]),
+        };
         f()
     }
 
@@ -454,96 +371,52 @@ model = "deepseek-chat"
 
     #[test]
     fn embed_default_http_fetch_prefixes_is_star() {
-        without_cm_planner_executor_mode_env(|| {
-            with_http_fetch_allowed_prefixes_env(None, || {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
-                assert_eq!(
-                    cfg.http_fetch.http_fetch_allowed_prefixes,
-                    vec!["*".to_string()]
-                );
-            });
+        with_http_fetch_allowed_prefixes_env(None, || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
+            assert_eq!(
+                cfg.http_fetch.http_fetch_allowed_prefixes,
+                vec!["*".to_string()]
+            );
         });
     }
 
     #[test]
     fn toml_empty_http_fetch_prefixes_clears_star_default() {
-        without_cm_planner_executor_mode_env(|| {
-            with_http_fetch_allowed_prefixes_env(None, || {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let cfg = load_config(Some(&write_agent_toml(
-                    &dir,
-                    "http_fetch_allowed_prefixes = []",
-                )))
-                .expect("load");
-                assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
-            });
+        with_http_fetch_allowed_prefixes_env(None, || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cfg = load_config(Some(&write_agent_toml(
+                &dir,
+                "http_fetch_allowed_prefixes = []",
+            )))
+            .expect("load");
+            assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
         });
     }
 
     #[test]
     fn env_empty_http_fetch_prefixes_clears_star_default() {
-        without_cm_planner_executor_mode_env(|| {
-            with_http_fetch_allowed_prefixes_env(Some(""), || {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
-                assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
-            });
+        with_http_fetch_allowed_prefixes_env(Some(""), || {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let cfg = load_config(Some(&write_agent_toml(&dir, ""))).expect("load");
+            assert!(cfg.http_fetch.http_fetch_allowed_prefixes.is_empty());
         });
     }
 }
 
 #[cfg(test)]
 mod llm_reasoning_split_default_tests {
+    use super::env_override_apply::scoped_env;
     use super::load_config;
-    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
-    use std::sync::Mutex;
 
-    /// `load_config` 会读 `CM_LLM_REASONING_SPLIT`；本机/CI 若导出 `0` 会覆盖「省略键时按网关推断」的断言。
-    static CM_LLM_REASONING_SPLIT_LOCK: Mutex<()> = Mutex::new(());
-
-    /// 临时清除 `CM_LLM_REASONING_SPLIT`，避免本机/CI 导出干扰；结束或 panic 后恢复原值。
-    ///
-    /// 使用 `catch_unwind`：断言失败时仍释放 [`Mutex`]，避免毒化导致后续用例 `PoisonError`。
+    /// 屏蔽 `CM_LLM_REASONING_SPLIT`（以及其它 `CM_*` 覆盖），避免本机/CI 导出干扰；仅作用于当前线程。
     fn without_cm_llm_reasoning_split_env<F, R>(f: F) -> R
     where
         F: FnOnce() -> R,
     {
-        let result = {
-            let _guard = CM_LLM_REASONING_SPLIT_LOCK
-                .lock()
-                .unwrap_or_else(|e| e.into_inner());
-            let prev = std::env::var("CM_LLM_REASONING_SPLIT").ok();
-            // SAFETY: `remove_var`/`set_var` are unsafe in Rust 2024.
-            unsafe {
-                std::env::remove_var("CM_LLM_REASONING_SPLIT");
-            }
-            struct RestoreEnv(Option<String>);
-            impl Drop for RestoreEnv {
-                fn drop(&mut self) {
-                    unsafe {
-                        match self.0.take() {
-                            Some(v) => std::env::set_var("CM_LLM_REASONING_SPLIT", v),
-                            None => std::env::remove_var("CM_LLM_REASONING_SPLIT"),
-                        }
-                    }
-                }
-            }
-            let _restore = RestoreEnv(prev);
-            let mut f_opt = Some(f);
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let fun = f_opt
-                    .take()
-                    .expect("without_cm_llm_reasoning_split_env closure");
-                fun()
-            }))
-        };
-
-        match result {
-            Ok(v) => v,
-            Err(payload) => std::panic::resume_unwind(payload),
-        }
+        let _env = scoped_env::scope(&[]);
+        f()
     }
 
     #[test]
@@ -558,53 +431,48 @@ mod llm_reasoning_split_default_tests {
 
     #[test]
     fn minimax_user_toml_without_key_defaults_true() {
-        // 先拿 planner-mode 锁，避免与 `load_rejects_removed_mode_from_env` 并行污染。
-        without_cm_planner_executor_mode_env(|| {
-            without_cm_llm_reasoning_split_env(|| {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let path = dir.path().join("agent.toml");
-                fs::write(
-                    &path,
-                    r#"[agent]
+        without_cm_llm_reasoning_split_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("agent.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 "#,
-                )
-                .expect("write");
-                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-                assert!(
-                    cfg.llm_vendor_flags.llm_reasoning_split,
-                    "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
-                );
-                assert!(
-                    crate::cm_config::gateway_hints::fold_system_into_user_for_config(
-                        &cfg.llm.model,
-                        &cfg.llm.api_base
-                    ),
-                    "MiniMax 应自动折叠 system→user"
-                );
-            });
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(
+                cfg.llm_vendor_flags.llm_reasoning_split,
+                "MiniMax 网关未写 llm_reasoning_split 时应默认 true"
+            );
+            assert!(
+                crate::cm_config::gateway_hints::fold_system_into_user_for_config(
+                    &cfg.llm.model,
+                    &cfg.llm.api_base
+                ),
+                "MiniMax 应自动折叠 system→user"
+            );
         });
     }
 
     #[test]
     fn minimax_user_toml_explicit_false() {
-        without_cm_planner_executor_mode_env(|| {
-            without_cm_llm_reasoning_split_env(|| {
-                let dir = tempfile::tempdir().expect("tempdir");
-                let path = dir.path().join("agent.toml");
-                fs::write(
-                    &path,
-                    r#"[agent]
+        without_cm_llm_reasoning_split_env(|| {
+            let dir = tempfile::tempdir().expect("tempdir");
+            let path = dir.path().join("agent.toml");
+            fs::write(
+                &path,
+                r#"[agent]
 api_base = "https://api.minimaxi.com/v1"
 model = "MiniMax-M2.7"
 llm_reasoning_split = false
 "#,
-                )
-                .expect("write");
-                let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-                assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
-            });
+            )
+            .expect("write");
+            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
+            assert!(!cfg.llm_vendor_flags.llm_reasoning_split);
         });
     }
 }
