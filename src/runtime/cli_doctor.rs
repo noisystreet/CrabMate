@@ -108,13 +108,8 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
         cfg.per_plan_policy.orchestration_profile.as_str()
     );
     println!(
-        "  planner_executor_mode: {}（仅 single_agent）",
-        cfg.per_plan_policy.planner_executor_mode.as_str()
-    );
-    println!(
         "  有效编排路径（静态）: {}（session_mode / Act 句启发式 → ReAct 外循环）",
         crate::cm_config::effective_orchestration_path_summary(
-            cfg.per_plan_policy.planner_executor_mode.as_str(),
             cfg.per_plan_policy.orchestration_profile,
         )
     );

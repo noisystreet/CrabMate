@@ -10,7 +10,7 @@
 **语言**：中文。  
 **关联文档**：
 
-- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`planner_executor_mode`、终答规划）
+- **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、`orchestration_profile`、终答规划）
 - **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - **`docs/design/run_loop_state_ownership.md`**（回合可变状态四栏）
@@ -126,7 +126,7 @@
 
 **分层观测（与分阶段 FSM 并列，勿混用）**：
 
-- **回合路由**：**`TurnRouteDecisionV1.orchestration_mode`**（及同字段的 **`turn_orchestration_mode`** `tracing`）描述整轮主执行面；话语型回落时可为 **`freeform`**，尽管配置为 **`planner_executor_mode = hierarchical`**。
+- **回合路由**：**`TurnRouteDecisionV1.orchestration_mode`**（及同字段的 **`turn_orchestration_mode`** `tracing`）描述整轮主执行面；话语型回落时可为 **`freeform`**。（历史配置键 **`planner_executor_mode`** 已移除，运行模式恒为单 agent ReAct。）
 - **分层入口子阶段**：**`agent_turn/hierarchy.rs`** 的 **`hierarchical_phase`**（`intent_gate` / `discourse_fallback_outer` / `router_manager_runner` / …）仅在 **`run_hierarchical_agent`** 内出现，与 **`staged_turn_orchestrator_phase`**、外循环 **`outer_loop_iteration_phase`** 正交。
 - **Manager 反思（历史）**：分层 **`hierarchy/`** 已移除；修订记录中的 **`ManagerReflectReplanReason`** / 「分层观测」仅作历史。现行 R 路径见终答 Gate 与外循环（**勿**再依赖已删的开发文档「分层观测」节）。
 

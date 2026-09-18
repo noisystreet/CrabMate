@@ -173,8 +173,6 @@ pub(super) struct AgentSection {
     pub(super) final_plan_semantic_check_enabled: Option<bool>,
     pub(super) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(super) final_plan_semantic_check_max_tokens: Option<u64>,
-    /// 仅 `single_agent`（运行时亦强制 SingleAgent；其它值在 `PlannerExecutorMode::parse` 拒绝）
-    pub(super) planner_executor_mode: Option<String>,
     pub(super) system_prompt: Option<String>,
     pub(super) system_prompt_file: Option<String>,
     /// 未指定 Web/CLI `agent_role` 时使用的默认角色 id（须存在于角色表）
@@ -278,8 +276,6 @@ pub(super) struct AgentSection {
     pub(super) tool_call_explain_enabled: Option<bool>,
     pub(super) tool_call_explain_min_chars: Option<u64>,
     pub(super) tool_call_explain_max_chars: Option<u64>,
-    /// `conversation`（当前唯一值）
-    pub(super) long_term_memory_scope_mode: Option<String>,
     /// `disabled` | `fastembed`（缺省与长期记忆默认一致）| `qdrant` | `pgvector`（后两者未接入时 `finalize` 报错）
     pub(super) long_term_memory_vector_backend: Option<String>,
     pub(super) long_term_memory_enabled: Option<bool>,
@@ -440,6 +436,8 @@ typo_unknown_key = 1
             "repl_initial_workspace_messages_enabled = false",
             "final_plan_semantic_check_accept_legacy_text = true",
             "mcp_command = \"npx\"",
+            "planner_executor_mode = \"single_agent\"",
+            "long_term_memory_scope_mode = \"conversation\"",
         ] {
             let toml = format!(
                 r#"

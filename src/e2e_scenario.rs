@@ -50,9 +50,8 @@ use crate::context_bootstrap::prompt_compose::{
 use crate::tool_stats::ToolOutcomeRecorder;
 use crate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend,
-    LlmSeedOverride, Message, PlannerExecutorMode, ProcessHandles, RunAgentTurnAttach,
-    RunAgentTurnObs, RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
-    build_tools, run_agent_turn,
+    LlmSeedOverride, Message, ProcessHandles, RunAgentTurnAttach, RunAgentTurnObs,
+    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs, build_tools, run_agent_turn,
 };
 
 /// LLM-as-Judge 评分配置。
@@ -437,8 +436,7 @@ fn setup_workspace(scenario: &TestScenario) -> (PathBuf, tempfile::TempDir) {
 
 /// 构造 SingleAgent 配置。
 fn cfg_single_agent() -> Arc<AgentConfig> {
-    let mut cfg = load_config(None).expect("embedded default config must load");
-    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    let cfg = load_config(None).expect("embedded default config must load");
     Arc::new(cfg)
 }
 

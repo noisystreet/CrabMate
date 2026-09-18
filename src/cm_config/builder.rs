@@ -116,10 +116,6 @@ impl ConfigBuilder {
             agent.final_plan_requirement.clone(),
         );
         override_opt_string_non_empty(
-            &mut self.per_plan_policy.planner_executor_mode_str,
-            agent.planner_executor_mode.clone(),
-        );
-        override_opt_string_non_empty(
             &mut self.cursor_rules.cursor_rules_dir,
             agent.cursor_rules_dir.clone(),
         );
@@ -441,10 +437,6 @@ impl ConfigBuilder {
         ltm.long_term_memory_enabled = agent
             .long_term_memory_enabled
             .or(ltm.long_term_memory_enabled);
-        override_opt_string_non_empty(
-            &mut ltm.long_term_memory_scope_mode_str,
-            agent.long_term_memory_scope_mode.clone(),
-        );
         override_opt_string_non_empty(
             &mut ltm.long_term_memory_vector_backend_str,
             agent.long_term_memory_vector_backend.clone(),

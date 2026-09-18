@@ -78,11 +78,10 @@ pub(crate) async fn run_agent_turn_common(
 ) -> Result<(), RunAgentTurnError> {
     debug!(
         target: "crabmate",
-        "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} planner_executor_mode={} work_dir={}",
+        "run_agent_turn 开始 message_count={} messages_revision={} last_user_preview={} work_dir={}",
         p.turn.messages().len(),
         p.turn.messages_buffer_revision(),
         crate::redact::last_user_message_preview_for_log(p.turn.messages()),
-        p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         p.ctx.core.effective_working_dir.display()
     );
     p.turn.insert_separator_after_last_user_for_turn();
@@ -90,7 +89,6 @@ pub(crate) async fn run_agent_turn_common(
     log_orchestration_transition(TurnOrchestrationTransition::EnterCommon, None, &[]);
     info!(
         target: "crabmate::agent_turn",
-        planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
         session_mode = %p.ctx.attach.session_mode,
         "run_agent_turn_common enter"
     );

@@ -73,58 +73,6 @@ mod web_search_provider_tests {
     }
 }
 
-/// 规划器与执行器的运行模式。
-///
-/// 当前运行时**仅**单 agent ReAct 外循环；仅接受 [`Self::SingleAgent`]（`single_agent`）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PlannerExecutorMode {
-    /// 单 agent 外层循环（ReAct）。
-    #[default]
-    SingleAgent,
-}
-
-impl PlannerExecutorMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "single_agent" => Ok(Self::SingleAgent),
-            _ => Err(format!(
-                "未知的 planner_executor_mode: {:?}（有效值仅为 single_agent；logical_dual_agent / hierarchical 已移除）",
-                s.trim()
-            )),
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::SingleAgent => "single_agent",
-        }
-    }
-}
-
-#[cfg(test)]
-mod planner_executor_mode_tests {
-    use super::PlannerExecutorMode;
-
-    #[test]
-    fn parse_accepts_single_agent_only() {
-        assert_eq!(
-            PlannerExecutorMode::parse("single_agent").unwrap(),
-            PlannerExecutorMode::SingleAgent
-        );
-        assert_eq!(
-            PlannerExecutorMode::parse(" Single_Agent ").unwrap(),
-            PlannerExecutorMode::SingleAgent
-        );
-        for legacy in ["logical_dual_agent", "hierarchical", "staged"] {
-            let err = PlannerExecutorMode::parse(legacy).unwrap_err();
-            assert!(
-                err.contains("single_agent"),
-                "expected rejection mentioning single_agent, got: {err}"
-            );
-        }
-    }
-}
-
 /// `HandlerId::SyncDefault` 工具是否在隔离环境中执行（默认宿主进程内 `spawn_blocking`）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SyncDefaultToolSandboxMode {
@@ -220,32 +168,6 @@ mod sandbox_docker_user_tests {
     fn resolve_literal_uid_gid() {
         let u = SandboxDockerContainerUser::resolve_from_config_str("1001:1002");
         assert_eq!(u.as_docker_user_string(), Some("1001:1002"));
-    }
-}
-
-/// 长期记忆条目的隔离作用域（向量检索上线后必须与会话/鉴权一致，见 README 安全说明）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LongTermMemoryScopeMode {
-    /// 按 Web `conversation_id`（及等价 CLI 会话键）隔离；无多租户鉴权时不要指望跨用户安全。
-    #[default]
-    Conversation,
-}
-
-impl LongTermMemoryScopeMode {
-    pub fn parse(s: &str) -> Result<Self, String> {
-        match s.trim().to_ascii_lowercase().as_str() {
-            "conversation" => Ok(Self::Conversation),
-            _ => Err(format!(
-                "未知的 long_term_memory_scope_mode: {:?}（当前仅支持 conversation）",
-                s.trim()
-            )),
-        }
-    }
-
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Conversation => "conversation",
-        }
     }
 }
 
@@ -479,16 +401,7 @@ mod llm_context_budget_tests {
 
 #[cfg(test)]
 mod long_term_memory_parse_tests {
-    use super::{LongTermMemoryScopeMode, LongTermMemoryVectorBackend};
-
-    #[test]
-    fn scope_mode_parse_conversation() {
-        assert_eq!(
-            LongTermMemoryScopeMode::parse("conversation").expect("parse"),
-            LongTermMemoryScopeMode::Conversation
-        );
-        assert!(LongTermMemoryScopeMode::parse("tenant").is_err());
-    }
+    use super::LongTermMemoryVectorBackend;
 
     #[cfg(feature = "fastembed")]
     #[test]

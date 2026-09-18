@@ -90,7 +90,7 @@ struct StatusResponse {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
-    /// 规划器/执行器模式（仅 `single_agent`）。
+    /// 规划器/执行器模式（恒 `single_agent`；对应配置键已移除）。
     planner_executor_mode: &'static str,
     /// 编排档位（运行时恒 `react`）。
     orchestration_profile: &'static str,
@@ -222,11 +222,8 @@ fn build_status_shell_view(input: StatusShellBuildInput<'_>) -> StatusShellView 
         tiktoken_new_session_baseline_by_agent_role,
         executor_model: cfg.llm.executor_model.clone().unwrap_or_default(),
         executor_api_base: String::new(),
-        planner_executor_mode: cfg
-            .per_plan_policy
-            .planner_executor_mode
-            .as_str()
-            .to_string(),
+        // 运行模式已固定为单 agent ReAct，不再由配置决定。
+        planner_executor_mode: "single_agent".to_string(),
         conversation_store_sqlite_path_configured,
         conversation_store_sqlite_active,
     }
@@ -329,7 +326,6 @@ pub(crate) async fn status_handler(
         &agent_role_ids,
     );
     let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary(
-        cfg.per_plan_policy.planner_executor_mode.as_str(),
         cfg.per_plan_policy.orchestration_profile,
     );
     if query.view.as_deref() == Some("shell") {
@@ -366,7 +362,7 @@ pub(crate) async fn status_handler(
         final_plan_semantic_check_max_tokens: cfg
             .per_plan_policy
             .final_plan_semantic_check_max_tokens,
-        planner_executor_mode: cfg.per_plan_policy.planner_executor_mode.as_str(),
+        planner_executor_mode: "single_agent",
         orchestration_profile: cfg.per_plan_policy.orchestration_profile.as_str(),
         effective_orchestration_path,
         sync_default_tool_sandbox_mode: cfg

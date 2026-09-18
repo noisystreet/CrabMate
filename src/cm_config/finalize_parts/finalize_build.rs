@@ -129,7 +129,6 @@ fn finalize_section_per_plan_policy(
         final_plan_semantic_check_max_non_readonly_tools: tail
             .final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens: tail.final_plan_semantic_check_max_tokens,
-        planner_executor_mode: tail.planner_executor_mode,
         orchestration_profile: tail.orchestration_profile,
     }
 }
@@ -311,7 +310,6 @@ fn finalize_section_long_term_memory(mid: &FinalizeAfterRoles) -> types::LongTer
     let ltm = &mid.ltm;
     types::LongTermMemoryConfig {
         long_term_memory_enabled: ltm.long_term_memory_enabled,
-        long_term_memory_scope_mode: ltm.long_term_memory_scope_mode,
         long_term_memory_vector_backend: ltm.long_term_memory_vector_backend,
         long_term_memory_max_entries: ltm.long_term_memory_max_entries,
         long_term_memory_inject_max_chars: ltm.long_term_memory_inject_max_chars,

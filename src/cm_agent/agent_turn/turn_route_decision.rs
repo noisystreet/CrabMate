@@ -62,11 +62,8 @@ pub fn build_turn_route_decision(
         turn_start,
         orchestration_mode: entry.orchestration_mode.as_str().to_string(),
         freeform_because: entry.freeform_because.map(|b| b.as_str().to_string()),
-        planner_executor_mode: cfg
-            .per_plan_policy
-            .planner_executor_mode
-            .as_str()
-            .to_string(),
+        // 运行模式已固定为单 agent ReAct，不再由配置决定。
+        planner_executor_mode: "single_agent".to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
         orchestration_profile: Some(
             cfg.per_plan_policy
