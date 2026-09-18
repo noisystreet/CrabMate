@@ -162,8 +162,7 @@ fn http_fetch_section(cfg: &AgentConfig) -> String {
 fn per_plan_policy_section(cfg: &AgentConfig) -> String {
     let p = &cfg.per_plan_policy;
     format!(
-        "orchestration_profile = {}\nreflection_default_max_rounds = {}\nfinal_plan_requirement = {:?}\nplan_rewrite_max_attempts = {}\n",
-        p.orchestration_profile.as_str(),
+        "reflection_default_max_rounds = {}\nfinal_plan_requirement = {:?}\nplan_rewrite_max_attempts = {}\n",
         p.reflection_default_max_rounds,
         p.final_plan_requirement,
         p.plan_rewrite_max_attempts,

@@ -17,7 +17,6 @@ struct FinalizeTailScalars {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
-    orchestration_profile: OrchestrationProfile,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -97,7 +96,6 @@ struct TailPlanToolThinkingScalars {
     final_plan_semantic_check_enabled: bool,
     final_plan_semantic_check_max_non_readonly_tools: usize,
     final_plan_semantic_check_max_tokens: u32,
-    orchestration_profile: OrchestrationProfile,
     tool_message_max_chars: usize,
     tool_result_envelope_v1: bool,
     sse_tool_call_include_arguments: bool,
@@ -133,8 +131,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         .per_plan_policy.final_plan_semantic_check_max_tokens
         .unwrap_or(256)
         .clamp(32, 1024) as u32;
-    // `orchestration_profile` 覆盖键不再生效，统一 ReAct。
-    let orchestration_profile = crate::cm_config::OrchestrationProfile::ReAct;
     let tool_message_max_chars = b
         .tool_transcript.tool_message_max_chars
         .unwrap_or(32768)
@@ -173,7 +169,6 @@ fn derive_tail_plan_tool_thinking_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
-        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -601,7 +596,6 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
-        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,
@@ -655,7 +649,6 @@ fn assemble_finalize_tail_scalars(
         final_plan_semantic_check_enabled,
         final_plan_semantic_check_max_non_readonly_tools,
         final_plan_semantic_check_max_tokens,
-        orchestration_profile,
         tool_message_max_chars,
         tool_result_envelope_v1,
         sse_tool_call_include_arguments,

@@ -65,12 +65,8 @@ pub fn build_turn_route_decision(
         // 运行模式已固定为单 agent ReAct，不再由配置决定。
         planner_executor_mode: "single_agent".to_string(),
         plan_requirement_policy: plan_requirement_policy_label(cfg),
-        orchestration_profile: Some(
-            cfg.per_plan_policy
-                .orchestration_profile
-                .as_str()
-                .to_string(),
-        ),
+        // 运行模式已固定为单 agent ReAct，不再由配置决定。
+        orchestration_profile: Some("react".to_string()),
     }
 }
 

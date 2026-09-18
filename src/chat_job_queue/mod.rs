@@ -76,7 +76,7 @@ pub(super) fn resolve_web_llm_for_job(
     cfg_snap: Arc<AgentConfig>,
     ov: Option<&WebChatLlmOverride>,
 ) -> (Arc<AgentConfig>, String) {
-    let (mut cfg, key) = match ov {
+    let (cfg, key) = match ov {
         None => (cfg_snap, deps.api_key.clone()),
         Some(o) => {
             let mut c = (*cfg_snap).clone();
@@ -108,12 +108,6 @@ pub(super) fn resolve_web_llm_for_job(
             (Arc::new(c), key)
         }
     };
-    // 与 finalize / CLI 一致：运行时固定 ReAct（单 Agent 外循环）。
-    {
-        let mut c = (*cfg).clone();
-        c.per_plan_policy.orchestration_profile = crate::config::OrchestrationProfile::ReAct;
-        cfg = Arc::new(c);
-    }
     (cfg, key)
 }
 

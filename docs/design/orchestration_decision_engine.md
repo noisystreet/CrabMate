@@ -5,7 +5,7 @@
 **关联（现行）**：
 - `src/cm_agent/agent_turn/turn_route_decision.rs` — 路由决议与 `assess_turn_routing`
 - `src/cm_agent/agent_turn/turn_orchestration.rs` — `TurnResolution` / `TurnOrchestrationMode`
-- `src/cm_config/orchestration_profile.rs` — `OrchestrationProfile`（恒 `react`；`CM_ORCHESTRATION_PROFILE` 及其覆盖键均**不再**生效）
+- `src/cm_config/orchestration_profile.rs` — `effective_orchestration_path_summary()`（编排路径摘要；运行时恒 ReAct，**`OrchestrationProfile` 枚举与覆盖键均已移除**）
 - `src/agent/agent_turn/plan_reflect/intent/at_turn_start.rs` — 回合起点 Act 句启发式
 - `src/agent/agent_turn/loop/run_dispatch.rs` — 回合分发入口
 

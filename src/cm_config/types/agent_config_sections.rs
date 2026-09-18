@@ -60,8 +60,6 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
-    /// 编排档位（当前始终为 `ReAct`，保留用于展示）。
-    pub orchestration_profile: crate::cm_config::OrchestrationProfile,
 }
 
 #[derive(Debug, Clone)]
