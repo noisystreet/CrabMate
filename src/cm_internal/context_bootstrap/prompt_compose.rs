@@ -246,7 +246,7 @@ mod tests {
     use std::io::Write;
 
     fn embed_default_config() -> crate::cm_config::AgentConfig {
-        crate::cm_config::load_config_test_env::without_cm_planner_executor_mode_env(|| {
+        crate::cm_config::load_config_test_env::without_cm_env_overrides(|| {
             crate::cm_config::load_config(None).expect("embed default")
         })
     }

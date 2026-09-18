@@ -1,10 +1,10 @@
-# 长期记忆嵌入默认（启用开关、作用域、向量后端、SQLite 路径、注入与分块参数等）。
+# 长期记忆嵌入默认（启用开关、向量后端、SQLite 路径、注入与分块参数等）。
 # 与 `config/default_config.toml`、`config/session.toml`、`config/context_inject.toml`、`config/tools.toml`、`config/sandbox.toml`、`config/planning.toml` 在 `load_config` 中顺序合并（本文件在 planning 之后），再被 config.toml / .agent_demo.toml 与 CM_LONG_TERM_MEMORY_* 覆盖。
 
 [agent]
 
 long_term_memory_enabled = true
-long_term_memory_scope_mode = "conversation"
+# 作用域固定为 conversation_id；long_term_memory_scope_mode 与 CM_LONG_TERM_MEMORY_SCOPE_MODE 已移除。
 # 向量后端：需编译时启用 Cargo feature `fastembed`（`cargo build --features fastembed`）；默认构建未链接时 finalize 降为 disabled。
 long_term_memory_vector_backend = "fastembed"
 long_term_memory_max_entries = 256

@@ -12,7 +12,6 @@ use std::path::PathBuf;
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
     id: String,
-    cfg_mode: String,
     turn_start: Value,
     expect: GoldenExpect,
 }
@@ -26,12 +25,8 @@ struct GoldenExpect {
     driver: Option<String>,
 }
 
-fn cfg_with(mode: &str) -> crate::cm_config::AgentConfig {
-    use crate::cm_config::PlannerExecutorMode;
-    let pem = PlannerExecutorMode::parse(mode).expect("planner mode");
-    let mut c = crate::cm_config::load_config(None).expect("embed default config");
-    c.per_plan_policy.planner_executor_mode = pem;
-    c
+fn default_cfg() -> crate::cm_config::AgentConfig {
+    crate::cm_config::load_config(None).expect("embed default config")
 }
 
 fn parse_turn_start(v: &Value) -> TurnStartSnapshot {
@@ -78,7 +73,7 @@ fn golden_turn_route_decision() {
             panic!("{}:{}: invalid json: {e}\n{t}", path.display(), line_no + 1)
         });
         let ctx = format!("{}:{} ({})", path.display(), line_no + 1, row.id);
-        let cfg = cfg_with(&row.cfg_mode);
+        let cfg = default_cfg();
         let turn_start = parse_turn_start(&row.turn_start);
 
         let assessed = assess_turn_routing(AssessTurnRoutingParams {

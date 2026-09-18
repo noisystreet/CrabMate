@@ -7,9 +7,8 @@ use std::sync::Arc;
 use crate::cm_config::FinalPlanRequirementMode;
 
 use super::{
-    AgentRoleCatalog, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    SandboxDockerContainerUser, ScheduledAgentTask, SecretString, SyncDefaultToolSandboxMode,
-    WebSearchProvider,
+    AgentRoleCatalog, LongTermMemoryVectorBackend, SandboxDockerContainerUser, ScheduledAgentTask,
+    SecretString, SyncDefaultToolSandboxMode, WebSearchProvider,
 };
 
 /// 会话消息历史相关（上下文裁剪等）；历史文件名 `.crabmate/tui_session.json` 见 `workspace_session`。
@@ -61,7 +60,6 @@ pub struct PerPlanPolicyConfig {
     pub final_plan_semantic_check_enabled: bool,
     pub final_plan_semantic_check_max_non_readonly_tools: usize,
     pub final_plan_semantic_check_max_tokens: u32,
-    pub planner_executor_mode: PlannerExecutorMode,
     /// 编排档位（当前始终为 `ReAct`，保留用于展示）。
     pub orchestration_profile: crate::cm_config::OrchestrationProfile,
 }
@@ -226,7 +224,6 @@ pub struct ToolCallExplainConfig {
 #[derive(Debug, Clone)]
 pub struct LongTermMemoryConfig {
     pub long_term_memory_enabled: bool,
-    pub long_term_memory_scope_mode: LongTermMemoryScopeMode,
     pub long_term_memory_vector_backend: LongTermMemoryVectorBackend,
     pub long_term_memory_max_entries: usize,
     pub long_term_memory_inject_max_chars: usize,

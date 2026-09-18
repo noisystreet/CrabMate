@@ -26,11 +26,8 @@ impl OrchestrationProfile {
 }
 
 /// 本进程有效编排路径摘要（`doctor` / `GET /status`）。
-pub fn effective_orchestration_path_summary(
-    _planner_executor_mode: &str,
-    _profile: OrchestrationProfile,
-) -> String {
-    // 运行时只有 ReAct 外循环（`planner_executor_mode` 仅允许 single_agent）。
+pub fn effective_orchestration_path_summary(_profile: OrchestrationProfile) -> String {
+    // 运行时只有 ReAct 外循环（单 agent 模式已固定）。
     "react outer loop".to_string()
 }
 

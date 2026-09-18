@@ -162,8 +162,8 @@ fn http_fetch_section(cfg: &AgentConfig) -> String {
 fn per_plan_policy_section(cfg: &AgentConfig) -> String {
     let p = &cfg.per_plan_policy;
     format!(
-        "planner_executor_mode = {}\nreflection_default_max_rounds = {}\nfinal_plan_requirement = {:?}\nplan_rewrite_max_attempts = {}\n",
-        p.planner_executor_mode.as_str(),
+        "orchestration_profile = {}\nreflection_default_max_rounds = {}\nfinal_plan_requirement = {:?}\nplan_rewrite_max_attempts = {}\n",
+        p.orchestration_profile.as_str(),
         p.reflection_default_max_rounds,
         p.final_plan_requirement,
         p.plan_rewrite_max_attempts,
@@ -240,9 +240,8 @@ fn turn_budget_section(cfg: &AgentConfig) -> String {
 fn long_term_memory_section(cfg: &AgentConfig) -> String {
     let m = &cfg.long_term_memory;
     format!(
-        "enabled = {}\nscope_mode = {}\nvector_backend = {}\nmax_entries = {}\nstore_sqlite_path = {}\n",
+        "enabled = {}\nvector_backend = {}\nmax_entries = {}\nstore_sqlite_path = {}\n",
         m.long_term_memory_enabled,
-        m.long_term_memory_scope_mode.as_str(),
         m.long_term_memory_vector_backend.as_str(),
         m.long_term_memory_max_entries,
         m.long_term_memory_store_sqlite_path,

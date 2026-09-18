@@ -12,8 +12,7 @@ use super::builder::ConfigBuilder;
 use super::cursor_rules;
 use super::skills;
 use super::types::{
-    self, AgentConfig, LongTermMemoryScopeMode, LongTermMemoryVectorBackend, PlannerExecutorMode,
-    ScheduledAgentTask, WebSearchProvider,
+    self, AgentConfig, LongTermMemoryVectorBackend, ScheduledAgentTask, WebSearchProvider,
 };
 use super::validate;
 use super::workspace_roots;
@@ -508,7 +507,6 @@ fn derive_intent_fields(b: &ConfigBuilder) -> Result<IntentDerived, String> {
 
 struct LtmDerived {
     long_term_memory_enabled: bool,
-    long_term_memory_scope_mode: LongTermMemoryScopeMode,
     long_term_memory_vector_backend: LongTermMemoryVectorBackend,
     long_term_memory_max_entries: usize,
     long_term_memory_inject_max_chars: usize,
@@ -525,14 +523,6 @@ struct LtmDerived {
 
 fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
     let long_term_memory_enabled = b.long_term_memory.long_term_memory_enabled.unwrap_or(true);
-    let long_term_memory_scope_mode = match b
-        .long_term_memory
-        .long_term_memory_scope_mode_str
-        .as_deref()
-    {
-        Some(s) => LongTermMemoryScopeMode::parse(s)?,
-        None => LongTermMemoryScopeMode::default(),
-    };
     let long_term_memory_vector_backend = match b
         .long_term_memory
         .long_term_memory_vector_backend_str
@@ -552,7 +542,6 @@ fn derive_ltm(b: &ConfigBuilder) -> Result<LtmDerived, String> {
     validate_ltm_backend_when_enabled(long_term_memory_enabled, long_term_memory_vector_backend)?;
     Ok(LtmDerived {
         long_term_memory_enabled,
-        long_term_memory_scope_mode,
         long_term_memory_vector_backend,
         long_term_memory_max_entries: b
             .long_term_memory

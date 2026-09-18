@@ -53,12 +53,9 @@ pub fn log_orchestration_transition(
 mod tests {
     use super::*;
     use crate::cm_agent::agent_turn::{ReActBecause, TurnOrchestrationMode, TurnResolution};
-    use crate::cm_config::PlannerExecutorMode;
 
     fn cfg_single_agent() -> crate::cm_config::AgentConfig {
-        let mut c = crate::cm_config::load_config(None).expect("embed default config");
-        c.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
-        c
+        crate::cm_config::load_config(None).expect("embed default config")
     }
 
     #[test]
@@ -66,8 +63,6 @@ mod tests {
         let r = TurnResolution::resolve_react(&cfg_single_agent());
         assert_eq!(r.orchestration_mode, TurnOrchestrationMode::ReAct);
         assert_eq!(r.freeform_because, Some(ReActBecause::Freeform));
-        assert!(PlannerExecutorMode::parse("hierarchical").is_err());
-        assert!(PlannerExecutorMode::parse("logical_dual_agent").is_err());
     }
 
     #[test]

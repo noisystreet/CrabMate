@@ -62,13 +62,12 @@ pub use types::{
     CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
     ConversationPersistenceConfig, CursorRulesConfigSection, ExposeSecret, HttpFetchConfigSection,
     LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
-    LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryScopeMode,
-    LongTermMemoryVectorBackend, McpClientConfig, PerPlanPolicyConfig, PlannerExecutorMode,
-    RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig, SessionWorkspaceChangelistConfig,
-    SkillsConfigSection, SyncDefaultToolSandboxMode, SyncToolSandboxConfig, ThinkingEchoConfig,
-    ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig, TurnBudgetConfig,
-    WeatherToolConfig, WebApiConfig, WebSearchConfigSection, WebSearchProvider,
-    WorkspaceRootsConfig,
+    LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend, McpClientConfig,
+    PerPlanPolicyConfig, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,
+    SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncDefaultToolSandboxMode,
+    SyncToolSandboxConfig, ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig,
+    ToolTranscriptConfig, TurnBudgetConfig, WeatherToolConfig, WebApiConfig, WebSearchConfigSection,
+    WebSearchProvider, WorkspaceRootsConfig,
 };
 
 /// 进程内共享的 [`AgentConfig`]（`serve` / `repl` / `chat` / `bench`）；热重载时 `write` 更新，回合开始时 `read`+`clone` 得快照传入 `run_agent_turn`。
@@ -193,11 +192,10 @@ web_cors_allowed_origins = ["http://127.0.0.1:8081", "https://ui.example.com"]
 pub(crate) mod load_config_test_env {
     use super::env_override_apply::scoped_env;
 
-    /// 在**当前线程**内屏蔽经 `env_ok` 读取的 `CM_*` 覆盖后运行 `f`
-    /// （`load_config` 会读 `CM_PLANNER_EXECUTOR_MODE` 等键）。
+    /// 在**当前线程**内屏蔽经 `env_ok` 读取的 `CM_*` 覆盖后运行 `f`。
     ///
     /// 不写进程环境，故并行用例互不可见，无需互斥锁。
-    pub(crate) fn without_cm_planner_executor_mode_env<F, R>(f: F) -> R
+    pub(crate) fn without_cm_env_overrides<F, R>(f: F) -> R
     where
         F: FnOnce() -> R,
     {
@@ -207,78 +205,30 @@ pub(crate) mod load_config_test_env {
 }
 
 #[cfg(test)]
-mod planner_executor_mode_load_tests {
+mod removed_config_key_load_tests {
     use super::env_override_apply::scoped_env;
     use super::load_config;
-    use super::load_config_test_env::without_cm_planner_executor_mode_env;
     use std::fs;
 
     #[test]
-    fn load_rejects_removed_planner_executor_mode_aliases() {
-        without_cm_planner_executor_mode_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("legacy_mode.toml");
-            fs::write(
-                &path,
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-planner_executor_mode = "hierarchical"
-"#,
-            )
-            .expect("write");
-            let err = load_config(Some(path.to_str().unwrap())).expect_err("legacy mode must fail");
-            assert!(
-                err.contains("planner_executor_mode") || err.contains("single_agent"),
-                "unexpected error: {err}"
-            );
-        });
-    }
-
-    #[test]
-    fn load_accepts_explicit_single_agent() {
-        without_cm_planner_executor_mode_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("ok_mode.toml");
-            fs::write(
-                &path,
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-planner_executor_mode = "single_agent"
-"#,
-            )
-            .expect("write");
-            let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
-            assert_eq!(
-                cfg.per_plan_policy.planner_executor_mode.as_str(),
-                "single_agent"
-            );
-        });
-    }
-
-    #[test]
-    fn load_rejects_removed_mode_from_env() {
-        without_cm_planner_executor_mode_env(|| {
-            let dir = tempfile::tempdir().expect("tempdir");
-            let path = dir.path().join("env_mode.toml");
-            fs::write(
-                &path,
-                r#"[agent]
+    fn load_ignores_removed_env_overrides() {
+        // `CM_PLANNER_EXECUTOR_MODE` / `CM_LONG_TERM_MEMORY_SCOPE_MODE` 已移除；
+        // 即使仍设置历史值，也不再影响加载。
+        let _env = scoped_env::scope(&[
+            ("CM_PLANNER_EXECUTOR_MODE", "logical_dual_agent"),
+            ("CM_LONG_TERM_MEMORY_SCOPE_MODE", "tenant"),
+        ]);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("removed_env.toml");
+        fs::write(
+            &path,
+            r#"[agent]
 api_base = "https://api.deepseek.com/v1"
 model = "deepseek-chat"
 "#,
-            )
-            .expect("write");
-            // 只覆盖当前线程的环境视图：不写进程环境，故不会污染并行的其它 `load_config` 用例。
-            let _env = scoped_env::scope(&[("CM_PLANNER_EXECUTOR_MODE", "logical_dual_agent")]);
-            let err =
-                load_config(Some(path.to_str().unwrap())).expect_err("legacy env mode must fail");
-            assert!(
-                err.contains("planner_executor_mode") || err.contains("single_agent"),
-                "unexpected error: {err}"
-            );
-        });
+        )
+        .expect("write");
+        load_config(Some(path.to_str().unwrap())).expect("removed env keys must be ignored");
     }
 }
 
@@ -480,13 +430,12 @@ llm_reasoning_split = false
 #[cfg(test)]
 mod hot_reload_tests {
     use super::ScheduledAgentTask;
-    use super::load_config_test_env::without_cm_planner_executor_mode_env;
+    use super::load_config_test_env::without_cm_env_overrides;
     use super::{apply_hot_reload_config_subset, load_config};
 
     #[test]
     fn apply_hot_reload_keeps_conversation_store_path() {
-        let base =
-            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
+        let base = without_cm_env_overrides(|| load_config(None).expect("default config"));
         let mut dst = base.clone();
         let frozen = dst
             .conversation_persistence
@@ -505,8 +454,7 @@ mod hot_reload_tests {
     /// 组合式配置下：各子结构应从 `src` 整段替换；仅会话库路径保留 `dst` 原值。
     #[test]
     fn apply_hot_reload_updates_sections_but_not_sqlite_path() {
-        let mut dst =
-            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
+        let mut dst = without_cm_env_overrides(|| load_config(None).expect("default config"));
         let frozen_store = dst
             .conversation_persistence
             .conversation_store_sqlite_path
@@ -536,8 +484,7 @@ mod hot_reload_tests {
 
     #[test]
     fn apply_hot_reload_updates_scheduled_tasks_from_src() {
-        let mut dst =
-            without_cm_planner_executor_mode_env(|| load_config(None).expect("default config"));
+        let mut dst = without_cm_env_overrides(|| load_config(None).expect("default config"));
         dst.conversation_persistence.scheduled_agent_tasks.clear();
         let mut src = dst.clone();
         src.conversation_persistence.scheduled_agent_tasks = vec![ScheduledAgentTask {

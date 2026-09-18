@@ -460,10 +460,6 @@ fn apply_env_overrides_part_12(b: &mut ConfigBuilder) {
         "CM_LONG_TERM_MEMORY_ENABLED",
     );
     apply_nonempty_opt(
-        &mut b.long_term_memory.long_term_memory_scope_mode_str,
-        "CM_LONG_TERM_MEMORY_SCOPE_MODE",
-    );
-    apply_nonempty_opt(
         &mut b.long_term_memory.long_term_memory_vector_backend_str,
         "CM_LONG_TERM_MEMORY_VECTOR_BACKEND",
     );

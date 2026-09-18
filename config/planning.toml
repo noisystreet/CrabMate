@@ -10,11 +10,10 @@ final_plan_require_strict_workflow_node_coverage = false
 final_plan_semantic_check_enabled = false
 final_plan_semantic_check_max_non_readonly_tools = 0
 final_plan_semantic_check_max_tokens = 256
-planner_executor_mode = "single_agent"
 
 # 意图路由配置键已全部移除；deny_unknown_fields 会拒绝：intent_at_turn_start_enabled、
 # intent_l2_*、intent_execute_*_threshold、intent_non_hier_execute_*_threshold、
 # intent_l0_routing_boost_enabled、intent_mode_bias_enabled；CM_INTENT_AT_TURN_START_ENABLED 亦已移除。
-# planner_executor_mode：仅 single_agent（ReAct）；logical_dual_agent / hierarchical 已移除。
+# planner_executor_mode：运行模式已固定为 single_agent（ReAct）；键与 CM_PLANNER_EXECUTOR_MODE 已移除。
 # final_plan_semantic_check_accept_legacy_text 与 CM_FINAL_PLAN_SEMANTIC_CHECK_ACCEPT_LEGACY_TEXT 已移除（侧向模型仅接受 JSON）。
 

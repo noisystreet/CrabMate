@@ -519,8 +519,7 @@ pub async fn run_cli_from_parsed(
 }
 
 pub use config::{
-    AgentConfig, ExposeSecret, LlmHttpAuthMode, PlannerExecutorMode, SharedAgentConfig,
-    load_config, load_config_for_cli,
+    AgentConfig, ExposeSecret, LlmHttpAuthMode, SharedAgentConfig, load_config, load_config_for_cli,
 };
 pub use llm::{
     ChatCompletionsBackend, CompleteChatRetryingParams, E2eMode, OPENAI_COMPAT_BACKEND,

@@ -58,7 +58,6 @@ pub(crate) async fn dispatch_react_turn(
                 target: "crabmate::agent_turn",
                 turn_orchestration_mode = mode,
                 freeform_because = assessed.decision.freeform_because.as_deref(),
-                planner_executor_mode = p.ctx.core.cfg.per_plan_policy.planner_executor_mode.as_str(),
                 "dispatch_react_turn"
             );
             run_react_turn(p, per_coord).await

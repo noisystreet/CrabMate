@@ -145,7 +145,7 @@ score < 0.4  → Freeform（外循环）
 score ≥ 0.4  → Staged（分阶段规划）
 ```
 
-`planner_executor_mode` 配置（`single_agent` / `logical_dual`）控制 Staged 模式下的模型分离策略，不由此引擎决策。
+（历史）`planner_executor_mode` 配置（`single_agent` / `logical_dual`）曾控制 Staged 模式下的模型分离策略；该键**已移除**，运行模式恒为单 agent ReAct。
 
 ### 3.5 多意图处理
 

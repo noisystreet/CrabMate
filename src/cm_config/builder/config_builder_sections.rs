@@ -92,7 +92,6 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
     pub(crate) final_plan_semantic_check_enabled: Option<bool>,
     pub(crate) final_plan_semantic_check_max_non_readonly_tools: Option<u64>,
     pub(crate) final_plan_semantic_check_max_tokens: Option<u64>,
-    pub(crate) planner_executor_mode_str: Option<String>,
 }
 
 #[derive(Default)]
@@ -233,7 +232,6 @@ pub(crate) struct ConfigBuilderToolCallExplain {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderLongTermMemory {
     pub(crate) long_term_memory_enabled: Option<bool>,
-    pub(crate) long_term_memory_scope_mode_str: Option<String>,
     pub(crate) long_term_memory_vector_backend_str: Option<String>,
     pub(crate) long_term_memory_max_entries: Option<u64>,
     pub(crate) long_term_memory_inject_max_chars: Option<u64>,

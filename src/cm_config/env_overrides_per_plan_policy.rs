@@ -1,7 +1,6 @@
-//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` / `CM_PLANNER_EXECUTOR_MODE` 等 per-plan 策略环境覆盖。
+//! `CM_REFLECTION_*` / `CM_FINAL_PLAN_*` 等 per-plan 策略环境覆盖。
 //!
-//! `CM_ORCHESTRATION_PROFILE` 仍忽略（运行时固定 ReAct）。`CM_PLANNER_EXECUTOR_MODE` 若设置则须为
-//! `single_agent`，由 finalize 校验。
+//! `CM_ORCHESTRATION_PROFILE` 仍忽略（运行时固定 ReAct）。
 
 use crate::cm_config::builder::ConfigBuilder;
 use crate::cm_config::env_override_apply::{apply_bool, apply_nonempty_opt, apply_parse};
@@ -9,14 +8,6 @@ use crate::cm_config::env_override_apply::{apply_bool, apply_nonempty_opt, apply
 pub(super) fn env_override_reflection_and_final_plan(b: &mut ConfigBuilder) {
     env_override_reflection_rounds_and_rewrite(b);
     env_override_final_plan_flags(b);
-    env_override_planner_executor_mode(b);
-}
-
-fn env_override_planner_executor_mode(b: &mut ConfigBuilder) {
-    apply_nonempty_opt(
-        &mut b.per_plan_policy.planner_executor_mode_str,
-        "CM_PLANNER_EXECUTOR_MODE",
-    );
 }
 
 fn env_override_reflection_rounds_and_rewrite(b: &mut ConfigBuilder) {

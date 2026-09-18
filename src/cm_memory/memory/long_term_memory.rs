@@ -1,6 +1,6 @@
 //! 长期记忆：注入模型上下文（`prepare`）与回合结束后索引（`index_turn`）。
 //!
-//! - **作用域**：当前仅 `conversation_id`（与 `LongTermMemoryScopeMode::Conversation` 一致）。
+//! - **作用域**：当前仅 `conversation_id`。
 //! - **安全**：索引前截断正文；日志不输出全文。无 Web 鉴权时勿依赖其隔离性（见 README）。
 
 #![cfg_attr(not(feature = "fastembed"), allow(dead_code))]

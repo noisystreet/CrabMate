@@ -14,10 +14,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use async_trait::async_trait;
 use crabmate::{
     AgentConfig, AgentTurnLlmOverrides, AgentTurnTransport, ChatCompletionsBackend, ChatRequest,
-    FunctionCall, LlmSeedOverride, Message, PlannerExecutorMode, RunAgentTurnAttach,
-    RunAgentTurnObs, RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs,
-    StreamChatParams, ToolCall, TurnProcessHandles, build_tools, load_config,
-    message_content_as_str, run_agent_turn,
+    FunctionCall, LlmSeedOverride, Message, RunAgentTurnAttach, RunAgentTurnObs,
+    RunAgentTurnParams, RunAgentTurnSession, RunAgentTurnSharedInputs, StreamChatParams, ToolCall,
+    TurnProcessHandles, build_tools, load_config, message_content_as_str, run_agent_turn,
 };
 
 /// 按序返回预设 assistant 消息；用于编排回归，**非**生产后端。
@@ -58,8 +57,7 @@ impl ChatCompletionsBackend for SequencedMockBackend {
 }
 
 fn cfg_freeform_turn() -> Arc<AgentConfig> {
-    let mut cfg = load_config(None).expect("embedded default config must load");
-    cfg.per_plan_policy.planner_executor_mode = PlannerExecutorMode::SingleAgent;
+    let cfg = load_config(None).expect("embedded default config must load");
     Arc::new(cfg)
 }
 

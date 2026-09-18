@@ -1,7 +1,7 @@
 # TurnRouteDecision v1 金样：经 assess_turn_routing 的 JSON 形状回归（零 IO）。
-# 字段：id, cfg_mode (planner_executor_mode), turn_start, expect
+# 字段：id, turn_start, expect
 # expect.driver: react（TurnRouteDriver::ReAct）
-{"id":"react_act_heuristics","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":false},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
-{"id":"react_act_heuristics_readonly","cfg_mode":"single_agent","turn_start":{"outcome":"act_heuristics","review_readonly":true},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
-{"id":"react_gate_disabled","cfg_mode":"single_agent","turn_start":{"outcome":"disabled"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
-{"id":"react_empty_task","cfg_mode":"single_agent","turn_start":{"outcome":"empty_task"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_act_heuristics","turn_start":{"outcome":"act_heuristics","review_readonly":false},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_act_heuristics_readonly","turn_start":{"outcome":"act_heuristics","review_readonly":true},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_gate_disabled","turn_start":{"outcome":"disabled"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
+{"id":"react_empty_task","turn_start":{"outcome":"empty_task"},"expect":{"orchestration_mode":"react","freeform_because":"freeform","driver":"react"}}
