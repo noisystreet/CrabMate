@@ -194,7 +194,7 @@ queued ──cancel──▶ cancelled
 
 | 面 | 后端 | Client |
 |----|------|--------|
-| 参数/启动帧 | `RunCommandArgs` + `tool_params/exec_package.rs`、`runner_run_command` / `execute_run_command.inc.rs` | 参数表单 |
+| 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`runner_run_command` / `execute_run_command.inc.rs` | 参数表单 |
 | job 注册表 + worker | 新模块（建议 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |
