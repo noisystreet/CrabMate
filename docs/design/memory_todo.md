@@ -1,5 +1,8 @@
 # 设计文档：长期记忆可视化面板
 
+> **状态**：未来扩展清单（**未排期**）。其中 §1-§8 涉及的**后端管理 API 最小闭环**（`GET /memory/list`、`DELETE /memory/{id}`、`GET /memory/stats`）已拆到 **[`memory_management_api.md`](./memory_management_api.md)** 评审与实现；本文件保留为**前端面板与后续扩展**（§9-§14）的草案。
+> **注意**：本文档 §4 称「现有 `list_recent_for_scope` 已返回所需字段，无需改表结构」**与实际不符**——该函数不返回 `created_at_unix` / `source_role`。以 [`memory_management_api.md`](./memory_management_api.md) 与代码为准。
+
 ## 1. 背景与目标
 
 `summarize_experience` 工具已实现模型自主写入经验的功能，但**用户无法查看模型保存了哪些记忆**。当前只有通过 `long_term_memory_list` 工具在对话中查询，以原始文本形式返回，缺乏结构化展示。
