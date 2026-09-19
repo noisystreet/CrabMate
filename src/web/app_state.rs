@@ -138,6 +138,18 @@ pub(crate) struct AppStateConversationRuntime {
     pub(crate) conversation_id_counter: Arc<AtomicU64>,
 }
 
+/// `GET /status` tiktoken 新会话基线的缓存条目。
+///
+/// 命中条件：`cfg_fingerprint`（全量 `AgentConfig` Debug 哈希）与 `workspace_root` 一致
+/// 且未超过 TTL（见 `health_status::BASELINE_CACHE_TTL`）；工作区文件内容变化不主动失效。
+#[derive(Clone)]
+pub(crate) struct CachedTiktokenBaseline {
+    pub(crate) cfg_fingerprint: u64,
+    pub(crate) workspace_root: String,
+    pub(crate) computed_at: std::time::Instant,
+    pub(crate) baseline_by_role: std::collections::BTreeMap<String, u32>,
+}
+
 /// 审批表、任务侧栏、SSE hub、异步作业等 Web 辅助状态。
 #[derive(Clone)]
 pub(crate) struct AppStateWebAux {
@@ -145,6 +157,9 @@ pub(crate) struct AppStateWebAux {
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub(crate) llm_models_health_cache:
         Arc<std::sync::Mutex<Option<crate::health::CachedLlmModelsHealthProbe>>>,
+    /// `GET /status` tiktoken 新会话基线缓存（大工作区同步分词可达数十秒，见 `health_status`）。
+    pub(crate) tiktoken_baseline_cache:
+        Arc<std::sync::Mutex<Option<CachedTiktokenBaseline>>>,
     pub(crate) sse_stream_hub: Arc<SseStreamHub>,
     pub(crate) process_handles: Arc<crate::process_handles::ProcessHandles>,
     pub(crate) async_chat_jobs: super::async_chat_job::AsyncChatJobsMap,

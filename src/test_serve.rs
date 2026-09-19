@@ -119,6 +119,7 @@ pub async fn start_test_serve(
             approval_sessions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             long_term_memory: None,
             llm_models_health_cache: Arc::new(std::sync::Mutex::new(None)),
+            tiktoken_baseline_cache: Arc::new(std::sync::Mutex::new(None)),
             sse_stream_hub,
             process_handles: ProcessHandles::default_arc_process_handles(),
             async_chat_jobs: Arc::new(tokio::sync::RwLock::new(HashMap::new())),

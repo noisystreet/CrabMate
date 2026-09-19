@@ -519,6 +519,7 @@ async fn build_serve_runtime_state(
                 approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
                 long_term_memory,
                 llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                tiktoken_baseline_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
                 sse_stream_hub,
                 process_handles: Arc::clone(&process_handles),
                 async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
@@ -672,6 +673,7 @@ pub(super) async fn run_serve_branch(
     }
     info!(target: "crabmate", "Web 服务监听 addr={}", actual_addr);
     spawn_uploads_cleanup(state.clone());
+    crate::web::spawn_tiktoken_baseline_warmup(state.clone());
 
     // 优雅关闭：监听 SIGTERM / SIGINT，构建 axum graceful shutdown 信号
     let shutdown_signal = build_serve_shutdown_signal(state.clone());

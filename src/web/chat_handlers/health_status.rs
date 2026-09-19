@@ -286,6 +286,99 @@ fn tiktoken_new_session_baselines_by_role(
     tiktoken_new_session_baseline_by_agent_role
 }
 
+/// 缓存 TTL：fingerprint 只覆盖 `AgentConfig`，工作区文件内容变化不主动失效，到期重算。
+const BASELINE_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// 全量 `AgentConfig` Debug 序列哈希，覆盖角色 prompt / 上下文注入 / 工作区根等全部基线输入。
+/// 内部 `HashMap` 迭代顺序不稳定只会导致 fingerprint 偶发变化 → 多算一次，不影响正确性。
+fn cfg_baseline_fingerprint(cfg: &crate::AgentConfig) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    format!("{cfg:?}").hash(&mut hasher);
+    hasher.finish()
+}
+
+/// `GET /status` 的 tiktoken 新会话基线：fingerprint + 工作区 + TTL 命中缓存直接复用；
+/// 未命中走 `spawn_blocking` 重算（同步分词与工作区扫描不阻塞 tokio worker）并回填缓存。
+pub(crate) async fn tiktoken_baselines_cached_or_compute(
+    cache_cell: &std::sync::Mutex<Option<super::super::app_state::CachedTiktokenBaseline>>,
+    cfg: &crate::AgentConfig,
+    tool_recorder: &std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: &std::path::Path,
+    agent_role_ids: &[String],
+) -> std::collections::BTreeMap<String, u32> {
+    use super::super::app_state::CachedTiktokenBaseline;
+    let fingerprint = cfg_baseline_fingerprint(cfg);
+    let workspace = workspace_root.to_string_lossy().into_owned();
+    if let Some(hit) = cache_cell
+        .lock()
+        .ok()
+        .and_then(|cell| cell.clone())
+        .filter(|cached| {
+            cached.cfg_fingerprint == fingerprint
+                && cached.workspace_root == workspace
+                && cached.computed_at.elapsed() < BASELINE_CACHE_TTL
+        })
+    {
+        return hit.baseline_by_role;
+    }
+    let cfg_owned = cfg.clone();
+    let tool_recorder = std::sync::Arc::clone(tool_recorder);
+    let workspace_root = workspace_root.to_path_buf();
+    let agent_role_ids = agent_role_ids.to_vec();
+    let baseline_by_role = match tokio::task::spawn_blocking(move || {
+        tiktoken_new_session_baselines_by_role(
+            &cfg_owned,
+            &tool_recorder,
+            &workspace_root,
+            &agent_role_ids,
+        )
+    })
+    .await
+    {
+        Ok(map) => map,
+        Err(join_err) => std::panic::resume_unwind(join_err.into_panic()),
+    };
+    if let Ok(mut cell) = cache_cell.lock() {
+        *cell = Some(CachedTiktokenBaseline {
+            cfg_fingerprint: fingerprint,
+            workspace_root: workspace,
+            computed_at: std::time::Instant::now(),
+            baseline_by_role: baseline_by_role.clone(),
+        });
+    }
+    baseline_by_role
+}
+
+/// serve 启动后后台预热 tiktoken 基线缓存：大工作区首次计算可达数十秒，
+/// 预热后官方 Client 启动时的首笔 `GET /status` 即可命中缓存。
+pub(crate) fn spawn_tiktoken_baseline_warmup(state: std::sync::Arc<crate::AppState>) {
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let cfg = state.http.cfg.read().await.clone();
+        let mut agent_role_ids: Vec<String> =
+            cfg.roles_prompts.agent_roles.keys().cloned().collect();
+        agent_role_ids.sort();
+        let workspace_root =
+            std::path::PathBuf::from(state.http.effective_workspace_path().await);
+        let baseline_by_role = tiktoken_baselines_cached_or_compute(
+            &state.aux.tiktoken_baseline_cache,
+            &cfg,
+            &state.aux.process_handles.tool_outcome_recorder,
+            &workspace_root,
+            &agent_role_ids,
+        )
+        .await;
+        log::info!(
+            target: "crabmate",
+            "tiktoken 新会话基线预热完成 roles={} entries={} elapsed_ms={}",
+            agent_role_ids.len(),
+            baseline_by_role.len(),
+            started.elapsed().as_millis()
+        );
+    });
+}
+
 pub(crate) async fn status_handler(
     State(state): State<WebStatusAppFacet>,
     Query(query): Query<StatusQuery>,
@@ -319,12 +412,14 @@ pub(crate) async fn status_handler(
     agent_role_ids.sort();
     let tool_recorder = &state.process_handles.tool_outcome_recorder;
     let workspace_root = std::path::PathBuf::from(state.effective_workspace_path().await);
-    let tiktoken_new_session_baseline_by_agent_role = tiktoken_new_session_baselines_by_role(
+    let tiktoken_new_session_baseline_by_agent_role = tiktoken_baselines_cached_or_compute(
+        &state.tiktoken_baseline_cache,
         &cfg,
         tool_recorder,
         workspace_root.as_path(),
         &agent_role_ids,
-    );
+    )
+    .await;
     let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary();
     if query.view.as_deref() == Some("shell") {
         return Json(build_status_shell_view(StatusShellBuildInput {
@@ -480,6 +575,134 @@ mod health_view_tests {
         assert_eq!(
             before, after,
             "wire JSON must be unchanged by the view conversion"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tiktoken_baseline_cache_tests {
+    use super::super::super::app_state::CachedTiktokenBaseline;
+    use super::{cfg_baseline_fingerprint, tiktoken_baselines_cached_or_compute};
+    use std::sync::Mutex;
+
+    const SENTINEL_ROLE: &str = "__cache_probe_role__";
+
+    fn default_cfg() -> crate::AgentConfig {
+        crate::cm_config::load_config(None).expect("embed default")
+    }
+
+    fn test_recorder() -> std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder> {
+        std::sync::Arc::new(crate::tool_stats::ToolOutcomeRecorder::new())
+    }
+
+    fn role_ids(cfg: &crate::AgentConfig) -> Vec<String> {
+        let mut ids: Vec<String> = cfg.roles_prompts.agent_roles.keys().cloned().collect();
+        ids.sort();
+        ids
+    }
+
+    /// 将缓存内容替换为哨兵值：后续若命中缓存，返回值必然携带该哨兵。
+    fn plant_sentinel(cache: &Mutex<Option<CachedTiktokenBaseline>>) {
+        let mut cell = cache.lock().expect("cache lock");
+        let cached = cell.as_mut().expect("cache must be filled by prior compute");
+        cached.baseline_by_role.clear();
+        cached
+            .baseline_by_role
+            .insert(SENTINEL_ROLE.to_string(), 42);
+    }
+
+    #[test]
+    fn fingerprint_is_stable_for_same_cfg() {
+        let cfg = default_cfg();
+        assert_eq!(
+            cfg_baseline_fingerprint(&cfg),
+            cfg_baseline_fingerprint(&cfg)
+        );
+    }
+
+    #[tokio::test]
+    async fn cache_hit_returns_cached_value_without_recompute() {
+        let cfg = default_cfg();
+        let cache: Mutex<Option<CachedTiktokenBaseline>> = Mutex::new(None);
+        let recorder = test_recorder();
+        let workspace = std::env::temp_dir();
+        let ids = role_ids(&cfg);
+        let _first =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &workspace, &ids).await;
+        plant_sentinel(&cache);
+        let second =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &workspace, &ids).await;
+        assert_eq!(
+            second.get(SENTINEL_ROLE),
+            Some(&42),
+            "same cfg+workspace within TTL must hit cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn workspace_change_invalidates_cache() {
+        let cfg = default_cfg();
+        let cache: Mutex<Option<CachedTiktokenBaseline>> = Mutex::new(None);
+        let recorder = test_recorder();
+        let ids = role_ids(&cfg);
+        let ws_a = std::env::temp_dir().join("cm-baseline-cache-ws-a");
+        let ws_b = std::env::temp_dir().join("cm-baseline-cache-ws-b");
+        let first =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &ws_a, &ids).await;
+        plant_sentinel(&cache);
+        let second =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &ws_b, &ids).await;
+        assert_eq!(
+            second.get(SENTINEL_ROLE),
+            None,
+            "workspace change must bypass cache"
+        );
+        assert_eq!(second, first, "same cfg recompute must be deterministic");
+    }
+
+    #[tokio::test]
+    async fn cfg_change_invalidates_cache() {
+        let cfg = default_cfg();
+        let cache: Mutex<Option<CachedTiktokenBaseline>> = Mutex::new(None);
+        let recorder = test_recorder();
+        let workspace = std::env::temp_dir();
+        let ids = role_ids(&cfg);
+        let _first =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &workspace, &ids).await;
+        plant_sentinel(&cache);
+        let mut cfg2 = cfg.clone();
+        cfg2.llm.model = "cache-test-changed-model".to_string();
+        let second =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg2, &recorder, &workspace, &ids).await;
+        assert_eq!(
+            second.get(SENTINEL_ROLE),
+            None,
+            "cfg fingerprint change must bypass cache"
+        );
+    }
+
+    #[tokio::test]
+    async fn ttl_expiry_recomputes() {
+        let cfg = default_cfg();
+        let cache: Mutex<Option<CachedTiktokenBaseline>> = Mutex::new(None);
+        let recorder = test_recorder();
+        let workspace = std::env::temp_dir();
+        let ids = role_ids(&cfg);
+        let _first =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &workspace, &ids).await;
+        plant_sentinel(&cache);
+        {
+            let mut cell = cache.lock().expect("cache lock");
+            let cached = cell.as_mut().expect("cache filled");
+            cached.computed_at = std::time::Instant::now()
+                - std::time::Duration::from_secs(super::BASELINE_CACHE_TTL.as_secs() + 1);
+        }
+        let second =
+            tiktoken_baselines_cached_or_compute(&cache, &cfg, &recorder, &workspace, &ids).await;
+        assert_eq!(
+            second.get(SENTINEL_ROLE),
+            None,
+            "expired TTL must trigger recompute"
         );
     }
 }
