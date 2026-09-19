@@ -230,10 +230,10 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## Not automated
 
-- **Visual / layout smoke list**: [`docs/frontend/VISUAL_REGRESSION_CHECKLIST.md`](../frontend/VISUAL_REGRESSION_CHECKLIST.md) (no screenshot diff pipeline in-repo).
+- **Visual / layout smoke list**: maintained with the UI source in Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (no screenshot diff pipeline in-repo).
 
 ## See also
 
-- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (this repo’s [`frontend/ARCHITECTURE.md`](../frontend/ARCHITECTURE.md) is a pointer only). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
+- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (this repo’s [`frontend/README.md`](../frontend/README.md) is a pointer only). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
 - SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
 - Debugging: [`DEBUG.md`](../调试指南.md)

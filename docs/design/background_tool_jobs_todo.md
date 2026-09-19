@@ -35,7 +35,7 @@
 
 ### Slice 1：后端核心（`run_command` async + job 模块 + 端点）
 
-**1.1 配置**（[`config/tools.toml`](../config/tools.toml) `[tool_registry]` + `cm_config`）
+**1.1 配置**（[`config/tools.toml`](../../config/tools.toml) `[tool_registry]` + `cm_config`）
 - [x] 新增 6 键（契约 §6）：`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`；TOML 注释钉默认值。
 - [x] 热重载：`POST /config/reload` 重建 `AgentConfig`（finalize 路径自动含新键默认值）；**「创建 job 时读取、已运行 job 不受影响」**的消费语义随 1.2/1.3 落地并回归。
 

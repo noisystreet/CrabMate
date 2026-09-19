@@ -5,8 +5,7 @@
 **语言**：中文。  
 **关联**：
 
-- 前端模块：**`docs/frontend/ARCHITECTURE.md`**（`column` / `composer_stream` 等）
-- 前端架构：**`docs/frontend/ARCHITECTURE.md`**
+- 前端模块与架构：Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)（`column` / `composer_stream` 等；UI 源码不在本仓，本仓指针见 **`docs/frontend/README.md`**）
 - SSE 契约：**`docs/SSE协议.md`**（展示层演进**不**改协议，除非另开 ADR）
 - 主列默认路径：`ChatTuiStreamView`（终端流）；旧气泡列表已于 Phase 5 删除
 
@@ -186,7 +185,7 @@ SSE / overlay / sessions（不变）
 
 1. **已完成**：删除未挂载气泡簇（`messages_list` / `message_row/` / `assistant_body/` 等）与仅服务气泡的信号/i18n；「加载更早」迁入 `ChatTuiStreamView`；查找滚动改为 `data-tui-msg-id`。  
 2. 保留 `message_format` / overlay / `message_row_actions` 等共享层。  
-3. 更新 **`docs/frontend/ARCHITECTURE.md`** 数据流图（模块表已同步）。
+3. 更新 Client 仓 `frontend/` 的数据流图（模块表已同步）。
 
 ---
 

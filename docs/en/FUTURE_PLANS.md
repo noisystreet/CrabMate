@@ -29,7 +29,7 @@ This document holds **directional** product and deployment boundaries that are *
 
 **Design draft** (anchors, input hygiene, output schema, phased rollout, relationship to **`plan_rewrite`**): **`docs/design/audience_critic_role.md`**.
 
-**Tracking**: Open work is listed under **`docs/en/TODOLIST.md`** → **`agent/`** (“Audience role”); P-E-V alignment is described in **`docs/规划执行验证架构.md`** / **`docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** §2.3.
+**Tracking**: Open work is listed under **`docs/en/TODOLIST.md`** → **`agent/`** (“Audience role”).
 
 ---
 

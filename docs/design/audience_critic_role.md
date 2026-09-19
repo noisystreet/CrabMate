@@ -7,7 +7,7 @@
 
 **关联文档**：
 
-- **`docs/规划执行验证架构.md`**：P–E–V 与 **`plan_rewrite` / `workflow_reflection` / `final_plan_semantic_check`** 的职责边界。  
+- **`docs/design/per_state_machine_consolidation.md`**：P/R/E 状态机与 **`plan_rewrite` / `workflow_reflection` / `final_plan_semantic_check`** 的职责边界。  
 - **`docs/开发文档.md`**：`agent_turn` / `per_coord` / `llm::complete_chat_retrying` 调用约定。  
 - **`docs/design/run_loop_state_ownership.md`**：可变状态归属；侧向调用挂现有 P/R，**不**新开并行阶段机。  
 - **`docs/SSE协议.md`**：若新增控制面事件，须与 **`frontend`** 及 **`crates/crabmate-sse-protocol`** 对齐。  

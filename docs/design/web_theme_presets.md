@@ -81,7 +81,7 @@
 
 ### 3.4 文件组织（可选）
 
-- 预设较多时，可将各主题块拆到 **`frontend/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `styles/tokens.css` 之后**（当前仓库已采用：`light.css`、`material.css`；深色默认见 `tokens.css` 的 `:root`）；须在 **`docs/frontend/ARCHITECTURE.md`**（或 `frontend/README.md`）中同步样式链路径。
+- 预设较多时，可将各主题块拆到 **`frontend/themes/*.css`**，在 **`index.html`** 的 `data-trunk` 链中 **置于 `styles/tokens.css` 之后**（当前仓库已采用：`light.css`、`material.css`；深色默认见 `tokens.css` 的 `:root`）；须在 Client 仓 [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) 的样式说明中同步样式链路径。
 
 ---
 
@@ -125,9 +125,8 @@
 
 | 项 | 动作 |
 |----|------|
-| **`frontend/README.md`** | 更新 `crabmate-theme` 合法取值说明。 |
-| **`docs/frontend/ARCHITECTURE.md`** | 前端样式 / 主题入口；可链到本文。 |
-| **`docs/frontend/VISUAL_REGRESSION_CHECKLIST.md`** | 为每个新预设增加一条手测（聊天列、模态、侧栏、composer、状态栏）。 |
+| **Client `frontend/`** | 更新 `crabmate-theme` 合法取值说明；为每个新预设增加一条视觉手测（聊天列、模态、侧栏、composer、状态栏）。 |
+| **`docs/frontend/README.md`** | 本仓 UI 指针；可链到本文。 |
 
 ---
 

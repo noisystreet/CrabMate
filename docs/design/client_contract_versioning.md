@@ -1,7 +1,7 @@
 # Client 契约发版与钉版本（Phase 1 + UI 钉清单 Phase A）
 
 > **状态**：采纳（2026-08-08）— 支撑 [`client_shell_split.md`](./client_shell_split.md) 路径 A。  
-> **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 1；UI 迁出见 [`frontend_migrate_plan.md`](./frontend_migrate_plan.md) Phase A。  
+> **执行勾选**：[`client_shell_split_todo.md`](./client_shell_split_todo.md) Phase 1。  
 > **后续（展示 crate 所有权）**：[`client_display_crate_sink.md`](./client_display_crate_sink.md) — `tool-card` 已迁 Client（W2b）；`turn-layout` W3/W4 **缓做**。  
 > **crates.io 单包**：[`crates_io_single_package.md`](./crates_io_single_package.md)（`crabmate` `0.4.0` + `protocol` feature；不依赖 W3）。  
 > **人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)（HTTP `ApiError` / OpenAPI）。  

@@ -110,7 +110,7 @@ Implementations live under `src/cm_*` with root composition in `src/{agent,llm,r
 
 ## Frontend (summary)
 
-UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch); design notes: **`docs/frontend/ARCHITECTURE.md`**. Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
+UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch); design notes: **`docs/frontend/README.md`**. Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 
@@ -131,4 +131,4 @@ Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace 
 
 ## Further reading
 
-`docs/design/` (**server_api_completeness** ADR + `web_api_integration`, agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …), **`docs/规划执行验证架构.md`**. This page is an entry index only.
+`docs/design/` (**server_api_completeness** ADR + `web_api_integration`, agent_turn_split, turn_host_decouple, client_shell_split + client_shell_split_todo + client_contract_versioning, **client_display_crate_sink**, **crates_io_single_package**, per_state_machine_consolidation, run_loop_state_ownership, system_prompt_assembly, crate_dep_policy, **long_running_tool_execution_todo**, …). This page is an entry index only.

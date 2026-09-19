@@ -111,7 +111,7 @@ flowchart TB
 | `src/agent/agent_turn/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `crates/crabmate-llm` SSE 解析） |
 | 同目录 `mod.rs` | 工具批结束发送 **`turn_tool_phase_end: true`**（在 `tool_running: false` 之前） |
 
-TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录（见 **`docs/design/tui_align_tauri_display.md`** Phase 3）。附录**仅**保留错误，避免生成过程中刷出该标题。
+TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录（见 **`docs/design/archive/tui_align_tauri_display.md`** Phase 3）。附录**仅**保留错误，避免生成过程中刷出该标题。
 
 ### 4.3 前端 Web
 
@@ -229,9 +229,9 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 ## 11. 相关文档
 
 - **`docs/SSE协议.md`** — 控制面字段与前端处理列  
-- **`docs/frontend/ARCHITECTURE.md`** — `composer_stream` 分层与 `wire_*`  
+- Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) — `composer_stream` 分层与 `wire_*`（UI 源码不在本仓）  
 - **`docs/开发文档.md`** — Web 流式概要  
-- **`docs/design/tui_align_tauri_display.md`** — 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）  
+- **`docs/design/archive/tui_align_tauri_display.md`** — 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）  
 - **`.cursor/rules/api-sse-chat-protocol.mdc`** — 协议双端同步规则
 
 ---
@@ -440,7 +440,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 | 机制 | 说明 |
 |------|------|
-| canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../../src/cm_turn_layout/project.rs) |
+| canonical | reducer 继续按 `before_tool_call_id` 归并；Web sync 消费 [`project_turn_web_v2`](../src/cm_turn_layout/project.rs) |
 | 落盘 | `TurnRowQueue::upsert_commentary_before_tool` / `upsert_streaming_anchored_commentary`：按 `tool_call_id` upsert `turn-commentary-*`；工具未到时暂挂 loading 前，到达后锚定工具前 |
 | 流式 | 带 `before_tool_call_id` 的 open 旁白**不**写 loading overlay；无锚点的短暂段仍可走 overlay。锚定旁白在**工具尚未声明**时即落盘（见 §14 I15） |
 | peel | 工具边界 peel 正文一律 `ingest_pending_stream_commentary`（不再 per-tool peel ingest） |
@@ -449,7 +449,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 
 ### 13.1 落盘位置（`project_turn_web_v2` → `StoredMessage`）
 
-**生产投影**：[`project_turn_web_v2`](../../src/cm_turn_layout/project.rs)。Web 已移除 v1 batch 特判；模块级 [`project_turn_web`](../../src/cm_turn_layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
+**生产投影**：[`project_turn_web_v2`](../src/cm_turn_layout/project.rs)。Web 已移除 v1 batch 特判；模块级 [`project_turn_web`](../src/cm_turn_layout/project.rs) 与 replay 输出暂留到发布观察窗口结束。
 
 Web `sync_turn_projection` / `sync_stream_preview` 以 `tool_call_id` 稳定消息 ID upsert 到对应工具之前；同 ID 可更新正文，错序时重排到工具前。
 

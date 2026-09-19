@@ -5,7 +5,7 @@
 ## Context
 
 - 长构建（`cargo test` / `pytest_run` / `cmake --build` 数分钟）目前**绑死当前 LLM turn**：SSE 连接必须保持、`RunLoopIo.cancel` 一关 job 就丢。模型只能干等，页面关掉则执行中止。
-- 已落地底座：[`cm_tools/subprocess_session.rs`](../src/cm_tools/subprocess_session.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、`tool_output_chunk`、观测统计）；`run_command` 已 emit chunk；P0/P1（#868/#869）已合并。
+- 已落地底座：[`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 已支持可取消会话（进程组 SIGTERM→SIGKILL、并发排空、`tool_output_chunk`、观测统计）；`run_command` 已 emit chunk；P0/P1（#868/#869）已合并。
 - 目标：工具可**脱离当前 turn** 继续执行，调用方在**连接关闭后**仍能查询/取消；结果不自动塞回模型上下文（避免污染）。
 - 约束：全部新增契约对旧客户端**可忽略**（软字段原则），不 bump `SSE_PROTOCOL_VERSION`；执行与回收都必须与 SSE 连接生命周期解耦。
 
