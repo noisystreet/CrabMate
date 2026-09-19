@@ -2,7 +2,7 @@
 
 **状态**：设计稿（迭代中；分层路径已移除，勿依赖文中 HierarchicalExecutor 示例为现行代码）  
 **受众**：维护者、架构设计者、核心贡献者  
-**关联文档**：`docs/分层多智能体架构.md`（历史/归档）、`规划执行验证架构.md`、`memory_todo.md`
+**关联文档**：`docs/design/archive/分层多智能体架构.md`（历史/归档）、`memory_todo.md`
 
 ---
 
@@ -671,4 +671,4 @@ let sub_goals = vec![
 - [OpenAI Swarm](https://github.com/openai/swarm)
 - [LangGraph Memory](https://langchain-ai.github.io/langgraph/agents/memory/)
 - [AutoGPT Architecture](https://github.com/Significant-Gravitas/AutoGPT)
-- [CrabMate Hierarchical Architecture（归档）](../分层多智能体架构.md)
+- [CrabMate Hierarchical Architecture（归档）](./archive/分层多智能体架构.md)

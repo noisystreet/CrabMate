@@ -3,7 +3,7 @@
 **Status**: Design note for how we **curate and operate** evaluation task suites—not a commitment to procure any specific commercial dataset.  
 **Audience**: Maintainers, eval owners, product, CI owners.  
 **Language**: English.  
-**Related docs**: **`docs/基准测试规划.md`** (Chinese: `crabmate bench`, adapters), **`benchmark/README.md`**, **`docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`**, **`docs/en/TESTING.md`**.
+**Related docs**: **`docs/基准测试规划.md`** (Chinese: `crabmate bench`, adapters), **`benchmark/README.md`**, **`docs/en/TESTING.md`**.
 
 ---
 
@@ -70,7 +70,7 @@ Example **tags**: `readonly`, `patch`, `test_runner`, `workflow`, `staged_plan`,
 | **Exported session JSON** (`save-session` / Web) | Full transcript | Mine new tasks; diff regressions |
 | **`tool-replay`** | Deterministic tool replay | Decouple tool reliability from the LLM |
 | **Logs** (`RUST_LOG`, `--log`) | Textual trace | Triage and coarse cost signals |
-| **`GET /status`** | Queue, pipeline counters, `per_active_jobs` | Runtime mirrors; **final `plan_rewrite`** vs **staged patch** counters (see **`docs/en/PLAN_EXECUTE_VERIFY_ARCHITECTURE.md`** §2.4) |
+| **`GET /status`** | Queue, pipeline counters, `per_active_jobs` | Runtime mirrors; **`plan_rewrite`** counters |
 | **Optional `thinking_trace`** | Phase/thinking events | Deep tuning (watch size & redaction) |
 
 Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_plan_feedback_mode`)—success rate, mean rounds, rewrite exhaustion rate, patch-budget exhaustion rate, top `error_code`s.

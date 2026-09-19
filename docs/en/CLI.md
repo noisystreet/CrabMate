@@ -36,7 +36,7 @@ Help: `crabmate --help`, `crabmate help`, `crabmate help <subcommand>` (same as 
 | `workflow validate` | Same compile, then author-level JSON Schema + DAG topology and tool-argument validation; human-readable summary by default, `--json` emits `author_spec_version`, `author_mode` and the layer table. |
 | `workflow run` | Compile and **run** a workspace workflow file (equivalent to Agent `workflow_execute` + **`workflow_file`**; **no** `API_KEY`). E.g. `cargo run -- workflow run examples/workflows/ci.yaml`. |
 | `mcp serve` | Run an **MCP server** on **stdin/stdout** (default) or **TCP port** (`--port N`), exposing CrabMate built-in tools (`tools/list` / `tools/call` → **`tools::run_tool`**; **no** `API_KEY`). Working directory follows global **`--workspace`** / config **`run_command_working_dir`**. JSON-RPC uses **stdout** (stdio mode) or TCP stream; use **stderr** for human messages. **`--no-tools`**: advertise an empty tool list. **`--port`**: TCP port number (default `0` for stdio mode), binds `127.0.0.1`. **No transport auth**: trusted local or SSH-tunnel integration only; same capability as `run_command` allowlist, workspace path rules. TCP mode enables remote development via SSH port forwarding. |
-| `e2e` | Real-LLM end-to-end tests: run preset scenarios and produce a structured report (needs `API_KEY`). **`--mode real` / `record` / `replay`** (default `real`), **`--output-dir DIR`**, **`--recordings-dir DIR`**. See [`docs/真实LLM-E2E.md`](docs/真实LLM-E2E.md). |
+| `e2e` | Real-LLM end-to-end tests: run preset scenarios and produce a structured report (needs `API_KEY`). **`--mode real` / `record` / `replay`** (default `real`), **`--output-dir DIR`**, **`--recordings-dir DIR`**. See [`docs/真实LLM-E2E.md`](../真实LLM-E2E.md). |
 
 ## Log levels
 

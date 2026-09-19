@@ -6,7 +6,6 @@
 
 - 轮内 DAG 能力边界、FSM/分支/循环原则 → **`docs/工作流编排架构.md`**
 - 运行时 JSON 契约、`workflow_execute` / `validate_only` → **`docs/工具说明.md`**
-- 会话级规划—执行—验证 → **`docs/规划执行验证架构.md`**
 - 源码：`src/agent/workflow/`（**`parse_workflow_spec`**、模板、调度）
 
 ---

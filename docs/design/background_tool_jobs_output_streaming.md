@@ -7,7 +7,7 @@
 - 后台工具任务（`run_command` 的 `async=true`）已脱离 turn 执行，状态轮询（`GET /tools/jobs/{id}`）与取消（`POST …/cancel`）已落地。**但执行中的输出不可见**：轮询只返回**终态、前缀截断**的 stdout/stderr；长构建（`cargo test` / `cmake --build` 数分钟）发起后只能看到"排队/运行中"状态卡，看不到输出滚动。
 - 用户期望：发起长构建后能像 `tail -f` 一样**实时看到输出**（含结尾的编译错误），且不依赖任何 SSE 连接——job 本就与连接生命周期解耦。
 - 已确认的实现事实（决定改动面）：
-  - [`cm_tools/subprocess_session.rs`](../src/cm_tools/subprocess_session.rs) 有增量回调 `chunk_sink`，但 [`append_captured`](../src/cm_tools/subprocess_session.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，增量回调再也收不到字节。后台 worker 现传 `chunk_sink: None`。
+  - [`cm_tools/subprocess_session.rs`](../../src/cm_tools/subprocess_session.rs) 有增量回调 `chunk_sink`，但 [`append_captured`](../../src/cm_tools/subprocess_session.rs#L361) **只在截断缓冲未满时**把字节入 live 队列——输出超过 `command_max_output_len` 后，增量回调再也收不到字节。后台 worker 现传 `chunk_sink: None`。
   - sink 由 wait 循环在**调用方线程**同步 flush（单流内保序；双流按管道排空时序近似交错）。
   - 现有 `JobRecord` / `JobOutcome` 只存终态截断正文，不存执行过程；`registry` 为单 Mutex 临界区。
 - 目标：新增 **job 级有界环形输出缓冲** + **增量轮询端点**，让调用方/用户轮询拉取运行中的输出；数据面设计为 seq 单调，预留 SSE（Phase 2）升级不改数据面。

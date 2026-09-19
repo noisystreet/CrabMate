@@ -169,7 +169,6 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | Personal VPS: loopback `serve` + TLS + Bearer (Chinese) | — |
 | [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits | [zh](docs/测试指南.md) |
 | [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | Official Client split (path A) | — |
-| [docs/design/frontend_migrate_plan.md](docs/design/frontend_migrate_plan.md) | Phase 4.2 UI migrate plan | — |
 | [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ protocol ↔ Client compat | — |
 | [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap | — |
 | [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) | Recorded bench scores (no secrets) | — |

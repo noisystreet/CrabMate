@@ -1,10 +1,10 @@
 # TUI 中区展示所有权（ADR）
 
-> **历史文档（已归档）**：本仓同进程 TUI 已于 **D2.2 硬删**（见 [`client_shell_split.md`](./client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**。下文决策仅适用于已删除的 `src/runtime/tui/`。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 TUI 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**。下文决策仅适用于已删除的 `src/runtime/tui/`。
 
 **状态**：~~已采纳（2026-07）~~ **已归档**（实现随 D2.2 移除）  
 **受众**：考古时查阅  
-**关联**：[`tui_align_tauri_display.md`](./tui_align_tauri_display.md)、[`../Turn布局设计.md`](../Turn布局设计.md)
+**关联**：[`tui_align_tauri_display.md`](./tui_align_tauri_display.md)、[`../../Turn布局设计.md`](../../Turn布局设计.md)
 
 ## 背景
 

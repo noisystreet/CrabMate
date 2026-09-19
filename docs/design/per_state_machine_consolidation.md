@@ -11,7 +11,6 @@
 **关联文档**：
 
 - **`docs/开发文档.md`**（**`run_agent_turn_common`**、P/R/E、终答规划）
-- **`docs/规划执行验证架构.md`**（结构化 P-E-V 与 `plan_rewrite` 正交关系）
 - **`docs/design/agent_state_management.md`**（更广义的会话/产物状态，与本设计正交）
 - **`docs/design/run_loop_state_ownership.md`**（回合可变状态四栏）
 - 源码：`src/agent/agent_turn/mod.rs`、`crates/crabmate-agent/src/agent_turn/{phase_vocabulary,outer_loop_*,turn_route_decision}`、`crates/crabmate-agent/src/per_coord/`（`final_plan_gate`）、`workflow_reflection_controller`
@@ -75,7 +74,7 @@
 | **状态要少** | 状态机只表达**编排**；`messages` 长度、工具摘要等放入只读 **Context**，避免状态爆炸。 |
 | **事件要显式** | 「收到终答」「解析失败」「重写次数 +1」「语义 LLM 完成」等应是具名事件，不是隐式在函数尾部继续跑。 |
 | **效果与 IO 分离** | 转移函数尽量产出 **数据效果**（追加哪条 `Message`、要发的 SSE 种类）；真实 `complete_chat_retrying` / 写 `messages` 保留在 `agent_turn`  driver。 |
-| **与 `plan_rewrite` 正交** | 形式与绑定类失败继续走现有 **`plan_rewrite` / `PlanRewriteExhaustedReason`** 语义，不另造一套码（见 `规划执行验证架构.md`）。 |
+| **与 `plan_rewrite` 正交** | 形式与绑定类失败继续走现有 **`plan_rewrite` / `PlanRewriteExhaustedReason`** 语义，不另造一套码。 |
 | **可测** | 纯表驱动或纯函数可单测；需要 `messages` 的用 fixture 向量。 |
 
 ---
@@ -182,7 +181,7 @@
 | 2026-05-02 | **`staged/orchestrator`**：**`StagedRoundOrchestratorPhase`**（与 **`turn_fsm::StagedTurnPhase`** 区分）；**`run_staged_plan_steps_loop`** 增加 **`crabmate::staged`**（**`staged_fsm=steps_loop`**、**`steps_loop_phase`**）。 |
 | 2026-05-02 | **`agent_turn/hierarchical_intent_route`**：**`HierarchicalPostIntentRoute`** / **`HierarchicalDiscourseFallbackReason`** + **`resolve_hierarchical_post_intent_route`**；**`hierarchy.rs`** 话语型回落路径写入 **`hierarchical_post_intent_route`** / **`hierarchical_discourse_fallback_reason`** 与回放 JSON。 |
 | 2026-05-01 | **`agent_turn/intent/context.rs`**：**`build_intent_routing_context`** 统一装配 **`IntentContext`**，**`run_dispatch`** 与 **`intent/at_turn_start`** 共用。 |
-| 2026-05-01 | **`docs/规划执行验证架构.md`** §2.5：分层 **`hierarchy`** 与 **PER/staged** 双轨职责表；源码索引补 **`hierarchy`** 入口。 |
+| 2026-05-01 | 分层 **`hierarchy`** 与 **PER/staged** 双轨职责表（原 `docs/规划执行验证架构.md` §2.5；该文已随 staged 移除一并删除）；源码索引补 **`hierarchy`** 入口。 |
 | 2026-05-01 | **`agent_turn/hierarchy.rs`**：`run_hierarchical_agent` / **`handle_execution_result`** 增加 **`tracing`**（`target: crabmate::agent_turn`，**`hierarchical_phase`**）；与 **`turn_orchestration_mode=hierarchical`** 正交。 |
 | 2026-05-01 | **`agent_turn/turn_orchestration`**：**`TurnOrchestrationMode`** + **`resolve_non_hierarchical_main_path`**；**`run_agent_turn_common` / `run_dispatch`** 打 **`tracing`**（`target: crabmate::agent_turn`，`turn_orchestration_mode`）。 |
 | 2026-05-01 | **`agent_turn/reflect/reflect_semantic.rs`**：`PlanSemanticLlmOutcome` → **`PlanSemanticConsistencyReflectCtl`**（侧向语义 LLM 后与 **`final_plan_gate`** 挂起态衔接；单测覆盖）。 |

@@ -107,7 +107,7 @@
 
 - [x] P3.1：本地外仓 **`../crabmate-client`**（相对本仓；2026-08-08）
 - [x] P3.2：壳 + connect + 业务 UI 均在 Client 仓；壳导航远程 `serve` UI；可选 `CRABMATE_FRONTEND_DIST`
-- [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓 `tauri_gui_mvp_design.md` 为指针
+- [x] P3.2 文档：壳设计 / 冒烟 / TESTING / AGENTS+pre-commit 在外仓；主仓壳设计文档曾留指针（后已删除，权威副本在 Client 仓）
 - [x] P3.3：壳对 connect 为 Client 仓 path；**禁止** path 回主仓（`scripts/check-no-main-path.sh` + CI）；契约钉法见外仓 `docs/design/contract_pin.md`（首枚 `client-contract-v*` 仍待主仓打 tag）
 - [x] P3.4：壳仓 CI（`.github/workflows/ci.yml`：fmt/clippy/test；Victauri 全量 E2E 不进默认 CI）
 - [x] P3.5：主仓 README / 壳 README 指向外仓；壳目录于 Phase 4.1 从主仓移除
@@ -205,7 +205,7 @@
 | 2026-08-08 | Phase 3 P3.3–P3.5：外仓 CI + `check-no-main-path` + contract_pin；主仓 README/壳 README 指向外仓 |
 | 2026-08-08 | Phase 3 总验收：干净克隆 `.deb` + Desktop release 壳对接本仓 UI/`serve` 真实 SSE 回合；下一刀 Phase 4 |
 | 2026-08-08 | Phase 4.1：移除主仓壳/`connect`/Victauri 脚本与 desktop CI；P4.4 兼容表初稿；P4.5 `--web-ready-json`；下一刀 P4.2 迁 `frontend` |
-| 2026-08-08 | P4.2 实施计划草案：[`frontend_migrate_plan.md`](./frontend_migrate_plan.md)（Client 仓落点；先 `client-contract-v*`，不强制产品发版） |
+| 2026-08-08 | P4.2 实施计划草案（Client 仓落点；先 `client-contract-v*`，不强制产品发版；该计划文已随 P4.2 完成删除） |
 | 2026-08-08 | Phase A：扩契约钉清单 + `check-client-contract` UI smoke；Client `contract_pin`；tag 待合 main |
 | 2026-08-08 | Phase 4.1：主仓移除壳 / connect / Victauri 脚本；P4.4 兼容表初稿；P4.5 `--web-ready-json` 别名；下一刀 **P4.2**（迁 `frontend`） |
 | 2026-08-08 | **P4.2 完成**：Client #2（UI）+ #3（Playwright）与主仓 #795（删 frontend / e2e）已合 `main`；路径 A 分离终点达成（可选 P4.3 / Phase 5） |

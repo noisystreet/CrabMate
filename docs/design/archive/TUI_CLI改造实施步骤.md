@@ -1,6 +1,6 @@
 # CLI → TUI 改造实施步骤（与 Web 布局对齐）
 
-> **历史文档（已归档）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](./client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
+> **历史文档（已归档，仅供考古，勿作实现索引）**：本仓同进程 `chat` / `repl` / `tui` 已于 **D2.2 硬删**（见 [`client_shell_split.md`](../client_shell_split.md) §2.5）。官方终端为 Client **`crabmate-tui`**（[`remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)）。下文描述的路径与实现**不再存在**，仅供考古；**勿按本文实施**。历史会话文件名 **`.crabmate/tui_session.json`** 仍由 **`workspace_session::session_file_path`** 保留（供 `save-session` / `tool-replay`）。
 
 本文面向维护者：在**不替换既有 Agent / 工具 / 配置栈**的前提下，将当前 **reedline 行式 REPL** 渐进演进为 **全屏 TUI**，并在**信息架构**上与 Web 侧栏 + 主会话区 + 状态/辅助区对齐。
 
@@ -116,6 +116,6 @@
 - **`src/tool_approval/`**：CLI 审批抽象。
 - **`docs/Web界面美化设计.md`**：Web 分区与样式层级（TUI 对齐语义分区即可）。
 - **`docs/命令行与路由.md`**：子命令与用户可见行为。
-- **`docs/design/tui_align_tauri_display.md`**：终端 TUI 与 Tauri/Web **展示序 / 工具文案** 对齐路线图（本轮投影已落地；历史 flush、终答、按行渲染等后续阶段）。
+- **`docs/design/archive/tui_align_tauri_display.md`**：终端 TUI 与 Tauri/Web **展示序 / 工具文案** 对齐路线图（本轮投影已落地；历史 flush、终答、按行渲染等后续阶段）。
 
 本文仅作路线图；具体接口命名、crate 边界与 PR 拆分由实现阶段按需调整。
