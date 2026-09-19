@@ -44,9 +44,14 @@ pub async fn complete_chat_retrying(
     request: &ChatRequest,
 ) -> Result<(Message, String), LlmCompleteError> {
     if let Some(budget) = p.turn_budget
-        && let Err(msg) = budget.deny_llm_call_if_exhausted(&p.cfg.turn_budget)
+        && let Err(deny) = budget.deny_llm_call_if_exhausted(&p.cfg.turn_budget)
     {
-        return Err(LlmCompleteError::Other(msg.into()));
+        // 此处刻意压平为 `Other`：`LlmCompleteError` 约定**不含** agent 编排语义（见 `cm_llm::complete_error`），
+        // 故不携带 `TurnBudgetDeny`；下游 `sse_error_payload` 落 `INTERNAL_ERROR`，预算句子只进 `reason_code`。
+        // 外循环主路径的墙钟映射（`TimeLimitExhausted` / `TIME_LIMIT_EXHAUSTED`）由 `check_shared_turn_budget` 负责。
+        return Err(LlmCompleteError::Other(
+            deny.user_message(&p.cfg.turn_budget).into(),
+        ));
     }
     let _llm_trace = p
         .request_chrome_trace

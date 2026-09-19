@@ -76,12 +76,42 @@ pub fn turn_budget_partial_completion_suffix() -> &'static str {
     "（预算已耗尽，以下为已完成部分的摘要）"
 }
 
-/// 是否为 [`deny_llm_call_if_exhausted`] 返回的预算门禁文案（供分层 ReAct 优雅收尾）。
-#[inline]
-pub fn is_turn_budget_limit_user_message(msg: &str) -> bool {
-    msg.contains("单轮墙钟时间上限")
-        || msg.contains("单轮 LLM 调用次数上限")
-        || msg.contains("单轮 Token 预算上限")
+/// [`TurnBudgetCounter::deny_llm_call_if_exhausted`] 的结构化拒绝原因。
+///
+/// 调用方应据此分支（如墙钟 → `RunAgentTurnError::TimeLimitExhausted`），
+/// 而**不要**再嗅探 [`Self::user_message`] 的文案子串。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TurnBudgetDeny {
+    /// 超单轮墙钟上限。
+    WallClock,
+    /// 超单轮 LLM 调用次数上限。
+    LlmCalls,
+    /// 超单轮 Token 粗估上限。
+    Tokens,
+}
+
+impl TurnBudgetDeny {
+    /// 稳定标识（用于 tracing / 日志，不面向用户）。
+    #[inline]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::WallClock => "wall_clock",
+            Self::LlmCalls => "llm_calls",
+            Self::Tokens => "tokens",
+        }
+    }
+
+    /// 面向用户的短消息（与既有 SSE 文案逐字一致）。
+    #[inline]
+    pub fn user_message(self, cfg: &TurnBudgetConfig) -> String {
+        match self {
+            Self::WallClock => turn_wall_clock_limit_user_message(cfg.max_turn_duration_seconds),
+            Self::LlmCalls => {
+                turn_llm_calls_limit_user_message(effective_max_llm_calls_per_turn(cfg))
+            }
+            Self::Tokens => turn_tokens_limit_user_message(cfg.max_turn_tokens),
+        }
+    }
 }
 
 /// 单轮共享预算计数（`Arc` 供分层并行子任务与外循环共用）。
@@ -206,20 +236,19 @@ impl TurnBudgetCounter {
         }
     }
 
-    /// 若已超墙钟、LLM 次数或 Token 上限则返回面向用户的短消息（供 [`complete_chat_retrying`] 等统一门禁）。
+    /// 若已超墙钟、LLM 次数或 Token 上限则返回结构化拒绝原因（供 [`complete_chat_retrying`] 等统一门禁）；
+    /// 用户文案由 [`TurnBudgetDeny::user_message`] 生成。
     #[inline]
-    pub fn deny_llm_call_if_exhausted(&self, cfg: &TurnBudgetConfig) -> Result<(), String> {
+    pub fn deny_llm_call_if_exhausted(&self, cfg: &TurnBudgetConfig) -> Result<(), TurnBudgetDeny> {
         if self.wall_clock_exceeded(cfg) {
-            return Err(turn_wall_clock_limit_user_message(
-                cfg.max_turn_duration_seconds,
-            ));
+            return Err(TurnBudgetDeny::WallClock);
         }
         let max_llm = effective_max_llm_calls_per_turn(cfg);
         if self.llm_calls_exceeded(max_llm) {
-            return Err(turn_llm_calls_limit_user_message(max_llm));
+            return Err(TurnBudgetDeny::LlmCalls);
         }
         if self.tokens_exceeded(cfg.max_turn_tokens) {
-            return Err(turn_tokens_limit_user_message(cfg.max_turn_tokens));
+            return Err(TurnBudgetDeny::Tokens);
         }
         Ok(())
     }
@@ -276,7 +305,10 @@ mod tests {
         assert!(c.deny_llm_call_if_exhausted(&cfg.turn_budget).is_ok());
         c.record_llm_call();
         c.record_llm_call();
-        assert!(c.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err());
+        assert_eq!(
+            c.deny_llm_call_if_exhausted(&cfg.turn_budget),
+            Err(TurnBudgetDeny::LlmCalls)
+        );
     }
 
     #[test]
@@ -285,7 +317,10 @@ mod tests {
         let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
         cfg.turn_budget.max_turn_tokens = 100;
         c.record_estimated_tokens(100);
-        assert!(c.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err());
+        assert_eq!(
+            c.deny_llm_call_if_exhausted(&cfg.turn_budget),
+            Err(TurnBudgetDeny::Tokens)
+        );
     }
 
     #[test]
@@ -304,10 +339,24 @@ mod tests {
     }
 
     #[test]
-    fn is_budget_limit_message_detects_known_phrases() {
-        assert!(is_turn_budget_limit_user_message(
-            &turn_tokens_limit_user_message(1000)
-        ));
-        assert!(!is_turn_budget_limit_user_message("other error"));
+    fn deny_variants_have_stable_labels_and_user_messages() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
+        cfg.turn_budget.max_llm_calls_per_turn = 7;
+        cfg.turn_budget.max_turn_tokens = 4096;
+        assert_eq!(TurnBudgetDeny::WallClock.as_str(), "wall_clock");
+        assert_eq!(TurnBudgetDeny::LlmCalls.as_str(), "llm_calls");
+        assert_eq!(TurnBudgetDeny::Tokens.as_str(), "tokens");
+        assert_eq!(
+            TurnBudgetDeny::WallClock.user_message(&cfg.turn_budget),
+            turn_wall_clock_limit_user_message(cfg.turn_budget.max_turn_duration_seconds)
+        );
+        assert_eq!(
+            TurnBudgetDeny::LlmCalls.user_message(&cfg.turn_budget),
+            turn_llm_calls_limit_user_message(7)
+        );
+        assert_eq!(
+            TurnBudgetDeny::Tokens.user_message(&cfg.turn_budget),
+            turn_tokens_limit_user_message(4096)
+        );
     }
 }

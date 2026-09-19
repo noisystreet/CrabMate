@@ -11,6 +11,7 @@ use log::debug;
 use super::check_abort::check_abort;
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::agent::turn_budget::TurnBudgetDeny;
 use crate::sse::{
     SsePayload, TurnSegmentEndBody, TurnSegmentStartBody, send_sse_control_payload_optional,
 };
@@ -37,22 +38,31 @@ use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
 use crate::agent::agent_turn::reflect::per_reflect_after_assistant;
 use crate::agent::agent_turn::sub_agent_policy::filter_tool_defs_for_executor_kind;
 
-fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
-    if let Err(msg) = p
-        .turn
-        .turn_budget
-        .deny_llm_call_if_exhausted(&p.ctx.core.cfg.turn_budget)
-    {
-        if msg.contains("墙钟") {
-            return Err(RunAgentTurnError::TimeLimitExhausted {
-                phase: AgentTurnSubPhase::Planner,
-                message: msg,
-            });
-        }
-        return Err(RunAgentTurnError::Other {
+/// 预算拒绝 → 回合错误：墙钟单独映射为 [`RunAgentTurnError::TimeLimitExhausted`]（SSE `TIME_LIMIT_EXHAUSTED`），
+/// 其余（LLM 次数 / Token）为 [`RunAgentTurnError::Other`]。
+///
+/// 独立成纯函数以便单测三分支映射：`check_shared_turn_budget` 依赖 `RunLoopParams`（字段繁多、含运行期状态）不便构造。
+fn turn_budget_deny_to_turn_error(
+    deny: TurnBudgetDeny,
+    cfg: &crate::cm_config::TurnBudgetConfig,
+) -> RunAgentTurnError {
+    let message = deny.user_message(cfg);
+    match deny {
+        TurnBudgetDeny::WallClock => RunAgentTurnError::TimeLimitExhausted {
             phase: AgentTurnSubPhase::Planner,
-            message: msg,
-        });
+            message,
+        },
+        TurnBudgetDeny::LlmCalls | TurnBudgetDeny::Tokens => RunAgentTurnError::Other {
+            phase: AgentTurnSubPhase::Planner,
+            message,
+        },
+    }
+}
+
+fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
+    let cfg = &p.ctx.core.cfg.turn_budget;
+    if let Err(deny) = p.turn.turn_budget.deny_llm_call_if_exhausted(cfg) {
+        return Err(turn_budget_deny_to_turn_error(deny, cfg));
     }
     Ok(())
 }
@@ -551,11 +561,48 @@ pub(crate) async fn run_agent_outer_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::OuterLoopIterationExit;
+    use super::{OuterLoopIterationExit, turn_budget_deny_to_turn_error};
+    use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError};
     use crate::agent::agent_turn::turn_completion::{
         tool_call_is_redundant_after_completion, tool_calls_are_redundant_after_completion,
     };
+    use crate::agent::turn_budget::{
+        TurnBudgetDeny, turn_llm_calls_limit_user_message, turn_tokens_limit_user_message,
+        turn_wall_clock_limit_user_message,
+    };
     use crate::types::{FunctionCall, ToolCall};
+
+    #[test]
+    fn turn_budget_deny_maps_wall_clock_to_time_limit_exhausted() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
+        cfg.turn_budget.max_turn_duration_seconds = 33;
+        match turn_budget_deny_to_turn_error(TurnBudgetDeny::WallClock, &cfg.turn_budget) {
+            RunAgentTurnError::TimeLimitExhausted { phase, message } => {
+                assert_eq!(phase, AgentTurnSubPhase::Planner);
+                assert_eq!(message, turn_wall_clock_limit_user_message(33));
+            }
+            other => panic!("WallClock 应映射为 TimeLimitExhausted，实际：{other:?}"),
+        }
+    }
+
+    #[test]
+    fn turn_budget_deny_maps_counts_and_tokens_to_other() {
+        let mut cfg = crate::cm_config::load_config(None).expect("embed default config");
+        cfg.turn_budget.max_llm_calls_per_turn = 7;
+        cfg.turn_budget.max_turn_tokens = 4096;
+        for (deny, expected_message) in [
+            (TurnBudgetDeny::LlmCalls, turn_llm_calls_limit_user_message(7)),
+            (TurnBudgetDeny::Tokens, turn_tokens_limit_user_message(4096)),
+        ] {
+            match turn_budget_deny_to_turn_error(deny, &cfg.turn_budget) {
+                RunAgentTurnError::Other { phase, message } => {
+                    assert_eq!(phase, AgentTurnSubPhase::Planner);
+                    assert_eq!(message, expected_message);
+                }
+                other => panic!("{deny:?} 应映射为 Other，实际：{other:?}"),
+            }
+        }
+    }
 
     #[test]
     fn outer_loop_iteration_exit_trace_str_stable() {

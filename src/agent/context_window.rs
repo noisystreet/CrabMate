@@ -410,11 +410,12 @@ async fn maybe_summarize_with_llm(
     };
 
     if let Some(budget) = params.turn_budget
-        && budget.deny_llm_call_if_exhausted(&cfg.turn_budget).is_err()
+        && let Err(deny) = budget.deny_llm_call_if_exhausted(&cfg.turn_budget)
     {
         warn!(
             target: "crabmate",
-            "上下文摘要跳过：已达单轮 LLM 调用或墙钟上限"
+            "上下文摘要跳过：单轮预算已耗尽（{}）",
+            deny.as_str()
         );
         return Ok(false);
     }
