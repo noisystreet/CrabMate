@@ -6,8 +6,7 @@
 
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
 use super::outer_loop_iteration_reduce::{
-    OuterLoopReflectReduceAction, reduce_outer_loop_post_tools_exit,
-    reduce_outer_loop_reflect_branch,
+    OuterLoopReflectReduceAction, reduce_outer_loop_reflect_branch,
 };
 
 /// 外循环运行时相位（与 **`tracing`** `outer_loop_step` 对齐）。
@@ -65,11 +64,11 @@ impl OuterLoopDriver {
         self.last_exit
     }
 
-    pub fn decide_post_tools_exit(&self, task_level_early_stop: bool) -> OuterLoopIterationExit {
-        reduce_outer_loop_post_tools_exit(task_level_early_stop)
-    }
-
-    /// 粗粒度合法转移（同相位重入允许，便于测试重置到 `IterationEnter`）。
+    /// 合法转移表（同相位重入允许：首轮 `IterationEnter` 由 `new()` 初值 + 首步记录构成）。
+    ///
+    /// 回到 `IterationEnter` 的回边**只**有两条——迭代可能以 `ContinueNextIteration` 收尾的相位：
+    /// 反思分支（`ReflectDecided`，规划重写）与工具批（`ToolsExecute`）。其余相位在根包
+    /// `agent_turn::turn_loop::outer_loop` 侧只会以 `?` 传播错误或 `StopOuterLoop` 收尾，不会重开一轮。
     fn phase_transition_allowed(&self, next: OuterLoopIterationPhase) -> bool {
         use OuterLoopIterationPhase::*;
         if self.phase == next {
@@ -81,8 +80,9 @@ impl OuterLoopDriver {
                 | (PrepareContextDone, AfterPlannerModel)
                 | (AfterPlannerModel, ReflectDecided)
                 | (ReflectDecided, ToolsExecute)
-                // 下一轮迭代：任意相位后回到 IterationEnter
-                | (_, IterationEnter)
+                // 下一轮迭代的回边：仅这两条可达（见上）
+                | (ReflectDecided, IterationEnter)
+                | (ToolsExecute, IterationEnter)
         )
     }
 }
@@ -96,6 +96,7 @@ impl Default for OuterLoopDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cm_agent::agent_turn::outer_loop_iteration_reduce::reduce_outer_loop_post_tools_exit;
 
     #[test]
     fn happy_path_phase_sequence() {
@@ -107,13 +108,33 @@ mod tests {
         assert_eq!(action, OuterLoopReflectReduceAction::ProceedToTools);
         d.record_phase(OuterLoopIterationPhase::ReflectDecided);
         d.record_phase(OuterLoopIterationPhase::ToolsExecute);
-        let exit = d.decide_post_tools_exit(false);
+        let exit = reduce_outer_loop_post_tools_exit(false);
         d.record_iteration_exit(exit);
         assert_eq!(
             d.last_iteration_exit(),
             Some(OuterLoopIterationExit::ContinueNextIteration)
         );
+        // 工具批后回到下一轮迭代（生产路径中最常见的那条回边）
         d.record_phase(OuterLoopIterationPhase::IterationEnter);
+    }
+
+    // 以下两个断言测试依赖 `record_phase` 的 `debug_assert!`，仅在 debug 构建下有效。
+    #[test]
+    #[cfg_attr(not(debug_assertions), ignore = "debug_assert! 在 release 下被编译掉")]
+    #[should_panic(expected = "illegal outer_loop_step")]
+    fn rejects_mid_iteration_reset_to_iteration_enter() {
+        let mut d = OuterLoopDriver::new();
+        d.record_phase(OuterLoopIterationPhase::PrepareContextDone);
+        // 迭代中途不可回到 IterationEnter：只有 ReflectDecided / ToolsExecute 之后才会重开一轮
+        d.record_phase(OuterLoopIterationPhase::IterationEnter);
+    }
+
+    #[test]
+    #[cfg_attr(not(debug_assertions), ignore = "debug_assert! 在 release 下被编译掉")]
+    #[should_panic(expected = "illegal outer_loop_step")]
+    fn rejects_skipping_prepare_context() {
+        let mut d = OuterLoopDriver::new();
+        d.record_phase(OuterLoopIterationPhase::AfterPlannerModel);
     }
 
     #[test]

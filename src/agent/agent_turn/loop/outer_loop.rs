@@ -22,7 +22,9 @@ use crate::types::{
 use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_last_user;
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
-use super::outer_loop_iteration_reduce::outer_loop_iteration_exit_from_reflect_reduce;
+use super::outer_loop_iteration_reduce::{
+    outer_loop_iteration_exit_from_reflect_reduce, reduce_outer_loop_post_tools_exit,
+};
 use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
 use super::turn_completion::{
     redundant_tool_names_for_log, task_level_satisfied_allows_early_stop,
@@ -355,7 +357,7 @@ async fn outer_loop_post_tools_exit(
             "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
         );
     }
-    Ok(driver.decide_post_tools_exit(task_level_early_stop))
+    Ok(reduce_outer_loop_post_tools_exit(task_level_early_stop))
 }
 
 async fn outer_loop_call_planner_and_push(

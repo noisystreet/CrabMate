@@ -364,7 +364,7 @@ async fn run_agent_turn_outer_loop_reflect_break_single_planner_mock() {
     );
 }
 
-/// 外循环工具后早停：预置完成证据后单轮终答（`decide_post_tools_exit` → **`StopOuterLoop`**）。
+/// 外循环工具后早停：预置完成证据后单轮终答（`reduce_outer_loop_post_tools_exit` → **`StopOuterLoop`**）。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn run_agent_turn_outer_loop_post_tools_early_stop_mock() {
     let cfg = cfg_freeform_turn();

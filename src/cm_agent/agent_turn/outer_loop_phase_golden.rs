@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
+use super::outer_loop_iteration_reduce::reduce_outer_loop_post_tools_exit;
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -69,7 +70,7 @@ fn apply_step(driver: &mut OuterLoopDriver, step: &Value, last_reduce: &mut Opti
         return;
     }
     if let Some(early) = step.get("post_tools_early_stop").and_then(|v| v.as_bool()) {
-        let exit = driver.decide_post_tools_exit(early);
+        let exit = reduce_outer_loop_post_tools_exit(early);
         driver.record_iteration_exit(exit);
         return;
     }
