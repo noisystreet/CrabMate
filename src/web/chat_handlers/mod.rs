@@ -34,7 +34,9 @@ pub(crate) use chat::{
 };
 pub(crate) use config_reload::config_reload_handler;
 pub(crate) use conflict::conversation_conflict_sse_line;
-pub(crate) use health_status::{health_handler, status_handler};
+pub(crate) use health_status::{
+    health_handler, spawn_tiktoken_baseline_warmup, status_handler,
+};
 pub(crate) use parse::normalize_agent_role;
 pub(crate) use parse::normalize_client_conversation_id;
 pub(crate) use session_conversation_store::session_conversation_store_handler;

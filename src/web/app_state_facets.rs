@@ -22,8 +22,8 @@ use crate::memory::long_term_memory::LongTermMemoryRuntime;
 
 use super::app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore,
-    ApprovalSessionSlot, ConversationBacking, ConversationTurnSeed, WebChatJobAppFacet,
-    effective_workspace_path_from_override, open_conversation_sqlite,
+    ApprovalSessionSlot, CachedTiktokenBaseline, ConversationBacking, ConversationTurnSeed,
+    WebChatJobAppFacet, effective_workspace_path_from_override, open_conversation_sqlite,
     workspace_is_set_from_override,
 };
 
@@ -77,6 +77,7 @@ pub(crate) struct WebStatusAppFacet {
     pub(crate) chat_queue: ChatJobQueue,
     pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
     pub(crate) process_handles: Arc<ProcessHandles>,
+    pub(crate) tiktoken_baseline_cache: Arc<std::sync::Mutex<Option<CachedTiktokenBaseline>>>,
 }
 
 /// 窄 chat 控制面：共享配置、会话读写、审批投递。
@@ -322,6 +323,7 @@ impl FromRef<Arc<AppState>> for WebStatusAppFacet {
             chat_queue: state.chat.chat_queue.clone(),
             long_term_memory: state.aux.long_term_memory.clone(),
             process_handles: Arc::clone(&state.aux.process_handles),
+            tiktoken_baseline_cache: Arc::clone(&state.aux.tiktoken_baseline_cache),
         }
     }
 }
