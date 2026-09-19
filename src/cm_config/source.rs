@@ -262,6 +262,10 @@ pub(super) struct AgentSection {
     /// `CM_WEB_AUDIT_TRUST_X_FORWARDED_FOR`；默认 false：若 true，客户端 IP 优先取 `X-Forwarded-For` 首跳（仅可信反向代理后启用）。
     pub(super) web_audit_trust_x_forwarded_for: Option<bool>,
     pub(super) conversation_store_sqlite_path: Option<String>,
+    /// 会话保留 TTL（秒）；`0` = 不过期。默认 `86400`。
+    pub(super) conversation_store_ttl_secs: Option<u64>,
+    /// 会话条数上限；`0` = 不限。默认 `512`。
+    pub(super) conversation_store_max_entries: Option<u64>,
     pub(super) agent_memory_file_enabled: Option<bool>,
     pub(super) agent_memory_file: Option<String>,
     pub(super) agent_memory_file_max_chars: Option<u64>,

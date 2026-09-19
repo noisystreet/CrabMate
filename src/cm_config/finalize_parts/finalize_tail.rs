@@ -61,6 +61,8 @@ struct FinalizeTailScalars {
     web_audit_trust_x_forwarded_for: bool,
     allow_insecure_no_auth_for_non_loopback: bool,
     conversation_store_sqlite_path: String,
+    conversation_store_ttl_secs: u64,
+    conversation_store_max_entries: usize,
     agent_memory_file_enabled: bool,
     agent_memory_file: String,
     agent_memory_file_max_chars: usize,
@@ -397,6 +399,8 @@ fn derive_tail_sandbox_web_scalars(
 #[allow(clippy::struct_excessive_bools)]
 struct TailStorageInjectNetScalars {
     conversation_store_sqlite_path: String,
+    conversation_store_ttl_secs: u64,
+    conversation_store_max_entries: usize,
     agent_memory_file_enabled: bool,
     agent_memory_file: String,
     agent_memory_file_max_chars: usize,
@@ -429,6 +433,10 @@ fn derive_tail_storage_inject_net_scalars(
 ) -> Result<TailStorageInjectNetScalars, String> {
     let conversation_store_sqlite_path =
         b.conversation_persistence.conversation_store_sqlite_path.clone().unwrap_or_default();
+    let conversation_store_ttl_secs =
+        b.conversation_persistence.conversation_store_ttl_secs.unwrap_or(86400);
+    let conversation_store_max_entries =
+        b.conversation_persistence.conversation_store_max_entries.unwrap_or(512) as usize;
     let agent_memory_file_enabled = b.context_bootstrap_inject.agent_memory_file_enabled.unwrap_or(false);
     let agent_memory_file = b
         .context_bootstrap_inject.agent_memory_file
@@ -500,6 +508,8 @@ fn derive_tail_storage_inject_net_scalars(
 
     Ok(TailStorageInjectNetScalars {
         conversation_store_sqlite_path,
+        conversation_store_ttl_secs,
+        conversation_store_max_entries,
         agent_memory_file_enabled,
         agent_memory_file,
         agent_memory_file_max_chars,
@@ -693,6 +703,8 @@ fn assemble_finalize_tail_scalars(
         web_audit_trust_x_forwarded_for: ssw.web_audit_trust_x_forwarded_for,
         allow_insecure_no_auth_for_non_loopback: ssw.allow_insecure_no_auth_for_non_loopback,
         conversation_store_sqlite_path: sin.conversation_store_sqlite_path,
+        conversation_store_ttl_secs: sin.conversation_store_ttl_secs,
+        conversation_store_max_entries: sin.conversation_store_max_entries,
         agent_memory_file_enabled: sin.agent_memory_file_enabled,
         agent_memory_file: sin.agent_memory_file,
         agent_memory_file_max_chars: sin.agent_memory_file_max_chars,

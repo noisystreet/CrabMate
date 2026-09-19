@@ -53,6 +53,14 @@ fn env_override_conversation_sqlite_path(b: &mut ConfigBuilder) {
         &mut b.conversation_persistence.conversation_store_sqlite_path,
         "CM_CONVERSATION_STORE_SQLITE_PATH",
     );
+    apply_parse(
+        &mut b.conversation_persistence.conversation_store_ttl_secs,
+        "CM_CONVERSATION_STORE_TTL_SECS",
+    );
+    apply_parse(
+        &mut b.conversation_persistence.conversation_store_max_entries,
+        "CM_CONVERSATION_STORE_MAX_ENTRIES",
+    );
 }
 
 fn env_override_agent_memory_file(b: &mut ConfigBuilder) {

@@ -7,6 +7,7 @@ use super::types::AgentConfig;
 ///
 /// - **`API_KEY`**：仍来自**进程环境**；本函数**不**读取或改写密钥，与启动时一致。
 /// - **`conversation_store_sqlite_path`**：**不**热更（会话 SQLite 连接在启动时打开；改路径须重启 `serve`）。
+/// - **`conversation_store_ttl_secs` / `conversation_store_max_entries`**：**可**热更；每次落盘与每小时后台清理都读取最新值。把上限调**小**不会立即删除既有会话，而在下一次 save / 后台 prune 时生效。
 /// - **`api_base` / `model` / `llm_http_auth_mode`**：从磁盘+环境变量**重新应用**（与 [`load_config`] 一致），**下一轮** LLM 请求起生效；共享 `reqwest::Client` 的连接池可能短暂保留旧主机空闲连接，直至池超时。
 /// - **`scheduled_agent_tasks`**：热更可更新内存中的列表；**cron 注册仅在 `serve` 启动时完成**，改表达式或增减任务需重启进程生效。
 /// - **`web_api_require_bearer`**：热更后字段与 **`web_api_bearer_token`** 一并更新；**`true`** 时与「非空密钥」的**启动级**强制组合仅在下次 **`serve`** 启动时校验（中间件是否挂载仍仅由启动时 token 是否非空决定）。
@@ -54,5 +55,9 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
 
     dst.conversation_persistence.scheduled_agent_tasks =
         src.conversation_persistence.scheduled_agent_tasks.clone();
+    dst.conversation_persistence.conversation_store_ttl_secs =
+        src.conversation_persistence.conversation_store_ttl_secs;
+    dst.conversation_persistence.conversation_store_max_entries =
+        src.conversation_persistence.conversation_store_max_entries;
     // `chat_uploads_dir` / `chat_workspace_root`：serve 注入；热重载不覆盖。
 }

@@ -18,10 +18,6 @@ pub enum SaveConversationOutcome {
     Conflict,
 }
 
-/// 与内存态 `app_state` 一致：24h TTL、最多条数（仅 SQLite 路径下 `prune` 使用）。
-pub const CONVERSATION_STORE_TTL_SECS: u64 = 24 * 3600;
-pub const CONVERSATION_STORE_MAX_ENTRIES: usize = 512;
-
 fn now_unix() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -291,11 +287,6 @@ pub fn save_if_revision(
             params![id, json, active_col, mode_col, layout_json, now],
         )?;
     }
-    prune(
-        conn,
-        CONVERSATION_STORE_TTL_SECS,
-        CONVERSATION_STORE_MAX_ENTRIES,
-    )?;
     Ok(SaveConversationOutcome::Saved)
 }
 
@@ -418,11 +409,6 @@ fn persist_messages_bump_revision(
     if n == 0 {
         return Ok(SaveConversationOutcome::Conflict);
     }
-    prune(
-        conn,
-        CONVERSATION_STORE_TTL_SECS,
-        CONVERSATION_STORE_MAX_ENTRIES,
-    )?;
     Ok(SaveConversationOutcome::Saved)
 }
 
@@ -688,5 +674,88 @@ mod tests {
         let after = load(&conn, "c1", 3600).unwrap().expect("exists");
         assert!(after.messages.is_empty());
         assert!(after.layout.as_ref().unwrap().segments.is_empty());
+    }
+
+    fn seed_ids(conn: &Connection, ids: &[&str]) {
+        for id in ids {
+            assert_eq!(
+                save_if_revision(
+                    conn,
+                    id,
+                    vec![Message::user_only("hi".to_string())],
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap(),
+                SaveConversationOutcome::Saved
+            );
+        }
+    }
+
+    fn backdate(conn: &Connection, id: &str, updated_at_unix: i64) {
+        conn.execute(
+            "UPDATE crabmate_conversations SET updated_at_unix = ?1 WHERE id = ?2",
+            params![updated_at_unix, id],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn prune_removes_rows_older_than_ttl() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_ids(&conn, &["old", "fresh"]);
+        backdate(&conn, "old", now_unix() - 10_000);
+        prune(&conn, 3600, 0).unwrap();
+        assert_eq!(count(&conn).unwrap(), 1);
+        assert!(load(&conn, "old", 0).unwrap().is_none());
+        assert!(load(&conn, "fresh", 0).unwrap().is_some());
+    }
+
+    #[test]
+    fn prune_ttl_zero_keeps_expired_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_ids(&conn, &["ancient", "fresh"]);
+        backdate(&conn, "ancient", 0);
+        prune(&conn, 0, 0).unwrap();
+        assert_eq!(count(&conn).unwrap(), 2);
+    }
+
+    #[test]
+    fn prune_max_entries_zero_keeps_all_rows() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_ids(&conn, &["a", "b", "c"]);
+        prune(&conn, 0, 0).unwrap();
+        assert_eq!(count(&conn).unwrap(), 3);
+    }
+
+    #[test]
+    fn prune_evicts_oldest_beyond_max_entries() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_ids(&conn, &["a", "b", "c"]);
+        let now = now_unix();
+        backdate(&conn, "a", now - 300);
+        backdate(&conn, "b", now - 200);
+        backdate(&conn, "c", now - 100);
+        prune(&conn, 0, 2).unwrap();
+        assert_eq!(count(&conn).unwrap(), 2);
+        assert!(load(&conn, "a", 0).unwrap().is_none(), "oldest evicted");
+        assert!(load(&conn, "b", 0).unwrap().is_some());
+        assert!(load(&conn, "c", 0).unwrap().is_some());
+    }
+
+    #[test]
+    fn delete_by_id_removes_row_and_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        seed_ids(&conn, &["c1"]);
+        delete_by_id(&conn, "c1").unwrap();
+        assert_eq!(count(&conn).unwrap(), 0);
+        delete_by_id(&conn, "c1").unwrap();
+        delete_by_id(&conn, "never-existed").unwrap();
     }
 }

@@ -379,6 +379,12 @@ impl ConfigBuilder {
             &mut self.conversation_persistence.conversation_store_sqlite_path,
             agent.conversation_store_sqlite_path.clone(),
         );
+        self.conversation_persistence.conversation_store_ttl_secs = agent
+            .conversation_store_ttl_secs
+            .or(self.conversation_persistence.conversation_store_ttl_secs);
+        self.conversation_persistence.conversation_store_max_entries = agent
+            .conversation_store_max_entries
+            .or(self.conversation_persistence.conversation_store_max_entries);
     }
 
     /// 上下文引导注入与工具调用解释字段合并。

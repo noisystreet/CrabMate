@@ -277,6 +277,8 @@ fn finalize_section_conversation_persistence(
 ) -> types::ConversationPersistenceConfig {
     types::ConversationPersistenceConfig {
         conversation_store_sqlite_path: tail.conversation_store_sqlite_path.clone(),
+        conversation_store_ttl_secs: tail.conversation_store_ttl_secs,
+        conversation_store_max_entries: tail.conversation_store_max_entries,
         scheduled_agent_tasks: mid.scheduled_agent_tasks.clone(),
     }
 }

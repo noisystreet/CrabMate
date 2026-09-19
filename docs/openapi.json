@@ -2120,6 +2120,42 @@
         ]
       }
     },
+    "/conversation/{conversation_id}": {
+      "delete": {
+        "description": "删除服务端会话记录；会话不存在或已过期同样返回 204。仅删服务端记录，Client 侧栏索引由其自行维护。",
+        "parameters": [
+          {
+            "description": "与 `/chat*` 的 `x-conversation-id` 同一命名空间；仅允许字母、数字、- _ . :，长度上限 128",
+            "in": "path",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除（或本就不存在）"
+          },
+          "400": {
+            "description": "conversation_id 非法"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "删除已持久化会话（幂等）",
+        "tags": [
+          "chat"
+        ]
+      }
+    },
     "/github/oauth/device/cancel": {
       "post": {
         "responses": {

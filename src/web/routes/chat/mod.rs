@@ -6,14 +6,14 @@ use std::sync::Arc;
 
 use axum::{
     Router,
-    routing::{get, post},
+    routing::{delete, get, post},
 };
 
 use crate::AppState;
 use crate::web::chat_handlers::{
     chat_approval_handler, chat_async_handler, chat_branch_handler, chat_handler,
     chat_job_status_handler, chat_stream_cancel_handler, chat_stream_handler,
-    conversation_messages_handler,
+    conversation_delete_handler, conversation_messages_handler,
     delete_uploads_handler, get_upload_file_handler, upload_handler,
 };
 
@@ -27,6 +27,10 @@ pub(crate) fn router() -> Router<Arc<AppState>> {
         .route("/chat/approval", post(chat_approval_handler))
         .route("/chat/branch", post(chat_branch_handler))
         .route("/conversation/messages", get(conversation_messages_handler))
+        .route(
+            "/conversation/{conversation_id}",
+            delete(conversation_delete_handler),
+        )
         .route("/upload", post(upload_handler))
         .route("/uploads/{filename}", get(get_upload_file_handler))
         .route("/uploads/delete", post(delete_uploads_handler))

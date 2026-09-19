@@ -193,6 +193,20 @@ Expired rows are purged on read/write. Built-in tools **`long_term_remember`**, 
 
 Embedded defaults set **`conversation_store_sqlite_path`** to **`.crabmate/conversations.db`**, so **Web `serve`** persists transcripts and can resume a **`conversation_id`** after restart; clear the path to revert to in-memory sessions. Session and memory **may** share one SQLite; long-term memory still defaults to **`run_command_working_dir/.crabmate/long_term_memory.db`**. If long-term memory is enabled but the DB cannot open: one **stderr** warning, process continues without injection.
 
+### Conversation retention
+
+Transcript persistence is controlled by **`conversation_store_sqlite_path`** (above); **retention** (TTL / entry cap) is configured separately:
+
+| Key (in `[agent]`) | Env var | Description |
+| --- | --- | --- |
+| `conversation_store_ttl_secs` | `CM_CONVERSATION_STORE_TTL_SECS` | Retention TTL (seconds). Conversations not updated within this window are pruned. **`0` = never expires** (still capped by `max_entries`). Default **`86400`** (24h). |
+| `conversation_store_max_entries` | `CM_CONVERSATION_STORE_MAX_ENTRIES` | Max conversations; oldest (`updated_at`) are evicted beyond it. **`0` = unlimited**. Default **`512`**. |
+
+- Pruning: the in-memory backend prunes on every save/truncate using current config; the SQLite backend prunes after a successful save and in an **hourly** background task (also run once at `serve` startup), so idle processes still reclaim space.
+- Both keys are **hot-reloadable** (`POST /config/reload`); lowering a limit does not delete sessions immediately—it applies on the next save / background prune. **`conversation_store_sqlite_path` is not hot-reloaded**; changing it requires a `serve` restart.
+- **`0` disables that dimension of eviction** (consistent with `--llm-context-tokens 0`), not "clear now".
+- Delete a single conversation explicitly with **`DELETE /conversation/{conversation_id}`** (idempotent; see `docs/en/CLI.md`).
+
 ### Web search & `http_fetch`
 
 | Variable | Description |
