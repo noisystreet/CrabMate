@@ -28,27 +28,29 @@ It ships HTTP **`serve`** (always API-only) plus ops CLIs. **Official Web UI, De
 
 ## Contents
 
-- [Overview](#overview)
-- [Common subcommands](#common-subcommands)
-- [Build, run, and packaging](#build-run-and-packaging)
-  - [Makefile (recommended)](#makefile-recommended)
-  - [Backend](#backend)
-  - [Web frontend](#web-frontend)
-  - [Official Client (Desktop / Android)](#official-client-desktop-android)
-  - [Install and release artifacts](#install-and-release-artifacts)
-  - [Maintainer QA](#maintainer-qa)
-- [Documentation index](#documentation-index)
-- [Backend models](#backend-models)
-- [Environment variables](#environment-variables)
-- [Deployment and security](#deployment-and-security)
-- [Project structure](#project-structure)
+- [CrabMate](#crabmate)
+  - [Contents](#contents)
+  - [Overview](#overview)
+  - [Common subcommands](#common-subcommands)
+  - [Build, run, and packaging](#build-run-and-packaging)
+    - [Makefile (recommended)](#makefile-recommended)
+    - [Backend](#backend)
+    - [Web frontend](#web-frontend)
+    - [Official Client (Desktop / Android)](#official-client-desktop--android)
+    - [Install and release artifacts](#install-and-release-artifacts)
+    - [Maintainer QA](#maintainer-qa)
+  - [Documentation index](#documentation-index)
+  - [Backend models](#backend-models)
+  - [Environment variables](#environment-variables)
+  - [Deployment and security](#deployment-and-security)
+  - [Project structure](#project-structure)
 
 ## Overview
 
 - **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`**—glob/`$VAR`/`~` run via **`bash -c`** on the joined script; Web re-approves standalone `&&`/`|` even if bash is allowlisted; approval shows that script; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
 - **Web UI (Client)**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; this repo’s **`serve` is always API-only** and never hosts a SPA. Browser UIs connect over CORS (allow extra Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected. Assistant Markdown can show workspace plots with **`![alt](relative/plot.png)`** (Client loads **`GET /workspace/file/raw`** with API auth; png/jpg/jpeg/webp/gif only). Client **Save to this device** uses **`GET /workspace/file/download`** (any type, 16 MiB). Folder zip uses **`GET /workspace/dir/archive`**. Rename/move a file with **`POST /workspace/file/move`**. Client can drop local files onto the workspace tree via **`PUT /workspace/file/raw`** (raw bytes, 16 MiB).
 - **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only (never hosts a SPA). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
-- **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
+- **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Retention is configurable via **`conversation_store_ttl_secs`** (default `86400`; `0` = never expire) and **`conversation_store_max_entries`** (default `512`; `0` = unlimited), both hot-reloadable and also settable as **`CM_CONVERSATION_STORE_TTL_SECS`** / **`CM_CONVERSATION_STORE_MAX_ENTRIES`**. Delete one persisted conversation with **`DELETE /conversation/{conversation_id}`** (idempotent `204`). Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
 - **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
 
 ## Common subcommands
