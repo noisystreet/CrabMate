@@ -514,6 +514,7 @@ async fn build_serve_runtime_state(
                     conversation_backing,
                 )),
                 conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
+                cfg: std::sync::Arc::clone(cfg_holder),
             },
             aux: web::AppStateWebAux {
                 approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
@@ -614,6 +615,18 @@ fn spawn_uploads_cleanup(state: Arc<AppState>) {
     });
 }
 
+/// 会话保留策略的兜底清理：启动时立即执行一次，此后每小时一次；TTL / 条数上限取自配置（可热更）。
+#[cfg(feature = "web")]
+fn spawn_conversation_prune(state: Arc<AppState>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            state.conversation.prune_conversations_now().await;
+        }
+    });
+}
+
 #[cfg(feature = "web")]
 pub(super) async fn run_serve_branch(
     args: ServeBranchArgs<'_>,
@@ -673,6 +686,7 @@ pub(super) async fn run_serve_branch(
     }
     info!(target: "crabmate", "Web 服务监听 addr={}", actual_addr);
     spawn_uploads_cleanup(state.clone());
+    spawn_conversation_prune(state.clone());
     crate::web::spawn_tiktoken_baseline_warmup(state.clone());
 
     // 优雅关闭：监听 SIGTERM / SIGINT，构建 axum graceful shutdown 信号

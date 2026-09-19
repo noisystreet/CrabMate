@@ -114,6 +114,7 @@ pub async fn start_test_serve(
                 web::ConversationBacking::memory_default(),
             )),
             conversation_id_counter: Arc::new(AtomicU64::new(1)),
+            cfg: Arc::clone(&cfg_holder),
         },
         aux: web::AppStateWebAux {
             approval_sessions: Arc::new(tokio::sync::RwLock::new(HashMap::new())),

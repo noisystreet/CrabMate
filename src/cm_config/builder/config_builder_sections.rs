@@ -205,6 +205,8 @@ pub(crate) struct ConfigBuilderSyncToolSandbox {
 #[derive(Default)]
 pub(crate) struct ConfigBuilderConversationPersistence {
     pub(crate) conversation_store_sqlite_path: Option<String>,
+    pub(crate) conversation_store_ttl_secs: Option<u64>,
+    pub(crate) conversation_store_max_entries: Option<u64>,
 }
 
 #[derive(Default)]

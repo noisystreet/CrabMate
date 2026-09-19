@@ -194,6 +194,10 @@ pub struct SyncToolSandboxConfig {
 #[derive(Debug, Clone)]
 pub struct ConversationPersistenceConfig {
     pub conversation_store_sqlite_path: String,
+    /// 会话保留 TTL（秒）；**`0` = 不过期**。默认 `86400`（24h）。
+    pub conversation_store_ttl_secs: u64,
+    /// 会话条数上限；**`0` = 不限**。默认 `512`。
+    pub conversation_store_max_entries: usize,
     pub scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 

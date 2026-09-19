@@ -18,7 +18,7 @@ pub(crate) use stream_cancel::chat_stream_cancel_handler;
 use std::net::SocketAddr;
 
 use axum::Json;
-use axum::extract::{ConnectInfo, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use log::debug;
 
@@ -199,6 +199,34 @@ pub(crate) async fn chat_branch_handler(
         ok: true,
         revision: new_rev,
     }))
+}
+
+/// 删除服务端持久化会话（幂等：会话不存在或已过期同样 204）。
+///
+/// 仅删服务端记录；Client 侧栏索引由其自行维护（见 `docs/design/conversation_management_api.md`）。
+pub(crate) async fn conversation_delete_handler(
+    State(state): State<WebChatAppFacet>,
+    Path(conversation_id): Path<String>,
+) -> Result<StatusCode, (StatusCode, Json<ApiError>)> {
+    let conversation_id = normalize_client_conversation_id(Some(&conversation_id)).map_err(
+        |msg| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ApiError::new("INVALID_CONVERSATION_ID", msg)),
+            )
+        },
+    )?;
+    let Some(cid) = conversation_id else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ApiError::new(
+                "INVALID_CONVERSATION_ID",
+                "conversation_id 不能为空".to_string(),
+            )),
+        ));
+    };
+    state.delete_conversation_record(&cid).await;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// 只读拉取服务端已持久化的会话消息与 revision（Web 刷新后与 `conversation_id` 对齐）。

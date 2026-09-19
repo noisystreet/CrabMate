@@ -29,7 +29,7 @@ pub(crate) use auth::{WEB_API_X_API_KEY_HEADER, require_web_api_bearer_auth};
 pub(crate) use chat::{
     chat_approval_handler, chat_async_handler, chat_branch_handler, chat_handler,
     chat_job_status_handler, chat_stream_cancel_handler, chat_stream_handler,
-    conversation_messages_handler,
+    conversation_delete_handler, conversation_messages_handler,
     prepare_json_chat_enqueue,
 };
 pub(crate) use config_reload::config_reload_handler;
@@ -45,5 +45,7 @@ pub(crate) use upload::{
 };
 pub(crate) use workspace_changelog::workspace_changelog_handler;
 
+#[cfg(test)]
+mod conversation_delete_http_tests;
 #[cfg(test)]
 mod upload_http_tests;

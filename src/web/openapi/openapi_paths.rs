@@ -309,6 +309,27 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                 }
             }
         },
+        "/conversation/{conversation_id}": {
+            "delete": {
+                "tags": ["chat"],
+                "summary": "删除已持久化会话（幂等）",
+                "description": "删除服务端会话记录；会话不存在或已过期同样返回 204。仅删服务端记录，Client 侧栏索引由其自行维护。",
+                "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+                "parameters": [
+                    {
+                        "name": "conversation_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": { "type": "string" },
+                        "description": "与 `/chat*` 的 `x-conversation-id` 同一命名空间；仅允许字母、数字、- _ . :，长度上限 128"
+                    }
+                ],
+                "responses": {
+                    "204": { "description": "已删除（或本就不存在）" },
+                    "400": { "description": "conversation_id 非法" }
+                }
+            }
+        },
         "/upload": {
             "post": {
                 "tags": ["uploads"],

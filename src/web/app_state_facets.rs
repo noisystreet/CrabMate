@@ -201,6 +201,13 @@ impl WebChatAppFacet {
             .await
     }
 
+    /// 删除持久化会话行（`DELETE /conversation/{conversation_id}`；不存在时静默成功）。
+    pub(crate) async fn delete_conversation_record(&self, conversation_id: &str) {
+        self.conversation
+            .delete_conversation_record(conversation_id)
+            .await
+    }
+
     /// Web：在进程内切换会话存储后端（**不**改写磁盘配置；重启 `serve` 后仍以 TOML 为准）。
     pub(crate) async fn set_web_conversation_store_sqlite(
         &self,
