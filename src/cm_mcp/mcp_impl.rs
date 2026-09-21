@@ -17,7 +17,7 @@ use tokio::sync::Mutex as TokioMutex;
 
 use http::{HeaderName, HeaderValue};
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientInfo, ContentBlock,
+    CallToolRequest, CallToolRequestParams, ClientCapabilities, ClientConfig, ContentBlock,
     ResourceContents,
 };
 use rmcp::service::{PeerRequestOptions, RequestHandle, RunningService, ServiceError};
@@ -37,7 +37,7 @@ use crate::cm_mcp::turn_handle::{McpTurnHandle, McpTurnSessions};
 pub use crate::cm_tools::tool_naming::{MCP_PROXY_PREFIX, is_mcp_proxy_tool};
 
 /// 单轮持有的 MCP 客户端（`rmcp` 在 Drop 时会清理子进程 / HTTP 会话）。
-pub type McpClientSession = RunningService<RoleClient, ClientInfo>;
+pub type McpClientSession = RunningService<RoleClient, ClientConfig>;
 
 pub fn mcp_tool_openai_name(server_slug: &str, tool_name: &str) -> String {
     format!("{MCP_PROXY_PREFIX}{server_slug}__{tool_name}")
@@ -56,8 +56,8 @@ pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)>
     Some((slug.to_string(), remote.to_string()))
 }
 
-fn new_client_info() -> ClientInfo {
-    ClientInfo::new(
+fn new_client_config() -> ClientConfig {
+    ClientConfig::new(
         ClientCapabilities::default(),
         rmcp::model::Implementation::new("crabmate", env!("CARGO_PKG_VERSION")),
     )
@@ -104,7 +104,7 @@ pub async fn connect_stdio_client_launch(
     }))
     .map_err(|e| format!("启动 MCP 子进程失败: {e}"))?;
 
-    let client = new_client_info()
+    let client = new_client_config()
         .serve(transport)
         .await
         .map_err(|e| format!("MCP 握手失败: {e}"))?;
@@ -154,7 +154,7 @@ pub async fn connect_streamable_http_client(
     let config = StreamableHttpClientTransportConfig::with_uri(url.trim().to_string());
     let config = apply_mcp_http_headers(config, headers)?;
     let transport = StreamableHttpClientTransport::from_config(config);
-    let client = new_client_info()
+    let client = new_client_config()
         .serve(transport)
         .await
         .map_err(|e| format!("远程 MCP 握手失败: {e}"))?;

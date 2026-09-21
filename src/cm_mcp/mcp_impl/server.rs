@@ -12,7 +12,7 @@ use std::sync::Arc;
 use rmcp::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData as McpError,
-    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerInfo,
+    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
 };
 use rmcp::service::{RequestContext, RoleServer, serve_server};
 use serde_json::Value;
@@ -98,8 +98,8 @@ impl CrabmateMcpServer {
 }
 
 impl ServerHandler for CrabmateMcpServer {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(
                 Implementation::new("crabmate", env!("CARGO_PKG_VERSION"))
                     .with_title("CrabMate built-in tools"),
