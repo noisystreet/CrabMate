@@ -259,6 +259,14 @@ pub(super) fn summary_process_list(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<ProcessListSummaryArgs>(v)
 }
 
+pub(super) fn summary_background_job_status(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<BackgroundJobStatusSummaryArgs>(v)
+}
+
+pub(super) fn summary_background_job_list(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<BackgroundJobListSummaryArgs>(v)
+}
+
 pub(super) fn summary_code_stats(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<CodeStatsSummaryArgs>(v)
 }

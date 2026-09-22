@@ -15,5 +15,21 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_process_list),
             summary: ToolSummaryKind::Dynamic(ts::summary_process_list),
         },
+        ToolSpec {
+            name: "background_job_status",
+            description: "查询后台工具任务的状态与输出（只读，不走白名单审批）。用于 run_command 以 async: true 启动的长任务：传入 tool_job_id；任务未结束时返回当前状态（稍后再查即可），结束时返回退出码与 stdout/stderr（超长会被截断）。",
+            category: ToolCategory::Development,
+            parameters: schema_of::<args::BackgroundJobStatusArgs>,
+            runner: ToolRunner::Legacy(runner_background_job_status),
+            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_status),
+        },
+        ToolSpec {
+            name: "background_job_list",
+            description: "列出当前工作区的后台工具任务（只读，最新创建在前），含任务 id、状态与命令摘要。可用返回的 id 调用 background_job_status 查看详情。",
+            category: ToolCategory::Development,
+            parameters: schema_of::<args::BackgroundJobListArgs>,
+            runner: ToolRunner::Legacy(runner_background_job_list),
+            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_list),
+        },
         // ── 代码度量与分析 ──────────────────────────────────
 ]

@@ -191,6 +191,8 @@ async fn serial_execute_one_tool_call(
     }
 
     let is_readonly = tool_registry::is_readonly_tool(st.cfg.as_ref(), name.as_str());
+    let dedup_cache_eligible =
+        tool_registry::tool_output_dedup_cache_eligible(st.cfg.as_ref(), name.as_str());
     let cache_key = (name.clone(), args.clone());
     let t_tool = Instant::now();
     let runtime = ToolRuntime {
@@ -299,9 +301,9 @@ async fn serial_execute_one_tool_call(
         c.clear();
     }
 
-    if is_readonly {
+    if dedup_cache_eligible {
         readonly_cache.insert(cache_key, result.clone());
-    } else {
+    } else if !is_readonly {
         readonly_cache.clear();
     }
 

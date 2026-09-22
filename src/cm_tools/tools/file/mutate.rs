@@ -703,6 +703,7 @@ mod tests {
             test_result_cache_enabled: false,
             test_result_cache_max_entries: 0,
             long_term_memory_host: None,
+            tool_jobs_host: None,
         }
     }
 

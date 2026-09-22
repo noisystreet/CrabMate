@@ -724,6 +724,24 @@ pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
     process_tools::process_list(args, ctx.command_max_output_len)
 }
 
+// ── 后台任务查询（只读） ─────────────────────────────────────
+
+pub fn runner_background_job_status(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_status(
+        args,
+        ctx.tool_jobs_host,
+        ctx.command_max_output_len,
+    )
+}
+pub fn runner_background_job_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_list(
+        args,
+        ctx.tool_jobs_host,
+        ctx.working_dir,
+        ctx.command_max_output_len,
+    )
+}
+
 // ── 代码度量与分析 ──────────────────────────────────────────
 
 // ── 文件增强 ────────────────────────────────────────────────

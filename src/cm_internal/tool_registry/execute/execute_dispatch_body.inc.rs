@@ -98,6 +98,7 @@ async fn dispatch_sync_default_tool(
         workspace_changelist,
         long_term_memory,
         long_term_memory_scope_id,
+        tool_jobs,
     } = p;
     if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
         if !workspace_is_set {
@@ -135,6 +136,9 @@ async fn dispatch_sync_default_tool(
             long_term_memory.clone(),
             long_term_memory_scope_id.as_deref(),
         );
+        let jobs_host = tool_jobs
+            .as_ref()
+            .map(|r| crate::cm_internal::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
         let ctx = tools::tool_context_for_with_read_cache_and_memory(
             cfg.as_ref(),
             cfg.command_exec.allowed_commands.as_ref(),
@@ -143,6 +147,9 @@ async fn dispatch_sync_default_tool(
             workspace_changelist.as_ref(),
             Some(hosts.codebase_ref()),
             hosts.long_term_ref(),
+            jobs_host
+                .as_ref()
+                .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
         );
         return (tools::run_tool(name, args, &ctx), None);
     }
@@ -154,6 +161,7 @@ async fn dispatch_sync_default_tool(
     let wcl = workspace_changelist.clone();
     let ltm2 = long_term_memory.clone();
     let ltm_scope2 = long_term_memory_scope_id.clone();
+    let tj = tool_jobs.clone();
     let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), name);
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
     let handle = tokio::task::spawn_blocking(move || {
@@ -163,6 +171,9 @@ async fn dispatch_sync_default_tool(
                 ltm2,
                 ltm_scope2.as_deref(),
             );
+            let jobs_host = tj
+                .as_ref()
+                .map(|r| crate::cm_internal::memory_tool_hosts::ToolJobsHost::new(Arc::clone(r)));
             let ctx = tools::tool_context_for_with_read_cache_and_memory(
                 cfg2.as_ref(),
                 cfg2.command_exec.allowed_commands.as_ref(),
@@ -171,6 +182,9 @@ async fn dispatch_sync_default_tool(
                 wcl.as_ref(),
                 Some(hosts.codebase_ref()),
                 hosts.long_term_ref(),
+                jobs_host
+                    .as_ref()
+                    .map(|h| h as &dyn crate::cm_tools::memory_tool_host::ToolJobsToolHost),
             );
             tools::run_tool(&tool_name, &tool_args, &ctx)
         })
@@ -443,6 +457,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
                 workspace_changelist,
                 long_term_memory,
                 long_term_memory_scope_id,
+                tool_jobs,
             })
             .await
         }

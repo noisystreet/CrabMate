@@ -185,6 +185,24 @@ fn default_process_list_max_count() -> u32 {
     100
 }
 
+/// [`super::background_job_tools::background_job_status`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundJobStatusArgs {
+    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `job_...`）
+    pub tool_job_id: String,
+}
+
+/// [`super::background_job_tools::background_job_list`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundJobListArgs {
+    /// 最多返回条数，默认 20，上限 100
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 100))]
+    pub limit: Option<u32>,
+}
+
 /// [`super::go_tools::golangci_lint`] 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]

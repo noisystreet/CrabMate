@@ -67,6 +67,7 @@ fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolCon
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
         long_term_memory_host: None,
+        tool_jobs_host: None,
     }
 }
 

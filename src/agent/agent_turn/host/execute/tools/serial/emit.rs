@@ -428,9 +428,10 @@ async fn serial_emit_run_command_and_readonly_cache_hits(
     {
         return true;
     }
-    let is_readonly = tool_registry::is_readonly_tool(p.cfg.as_ref(), p.name);
     let cache_key = (p.name.to_string(), p.args.to_string());
-    if is_readonly && let Some(cached) = p.readonly_cache.get(&cache_key) {
+    if tool_registry::tool_output_dedup_cache_eligible(p.cfg.as_ref(), p.name)
+        && let Some(cached) = p.readonly_cache.get(&cache_key)
+    {
         let cached = cached.clone();
         info!(
             target: super::super::LOG_TARGET,
