@@ -153,6 +153,8 @@ impl CrabmateParallelToolDispatch {
                 wcl.as_ref(),
                 Some(hosts.codebase_ref()),
                 hosts.long_term_ref(),
+                // 并行 `http_fetch` 路径不涉及后台任务查询。
+                None,
             );
             crate::tools::http_fetch::run_direct(&args, &ctx)
         })

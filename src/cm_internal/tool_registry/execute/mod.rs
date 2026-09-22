@@ -105,6 +105,8 @@ struct SyncDefaultToolDispatchArgs<'a> {
     workspace_changelist: Option<std::sync::Arc<crate::cm_internal::workspace::changelist::WorkspaceChangelist>>,
     long_term_memory: Option<Arc<crate::cm_internal::memory::long_term_memory::LongTermMemoryRuntime>>,
     long_term_memory_scope_id: Option<String>,
+    /// 后台任务注册表：供 `background_job_status` / `background_job_list` 只读查询。
+    tool_jobs: Option<std::sync::Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
 }
 
 /// [`DispatchToolParams`] 中与 Docker / 配置快照相关的字段合并，降低内部分发函数的形参个数。

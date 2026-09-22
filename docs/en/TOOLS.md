@@ -109,6 +109,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
+  - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100).
   - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
   - **Source analysis** (read-only; CLIs required):
     - `shellcheck_check`: [ShellCheck](https://www.shellcheck.net/) for shell scripts; `paths`, `severity`, `shell`, `format`.
@@ -392,6 +393,8 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 **Go**: `go_build`, `go_test`, `go_vet`, `go_mod_tidy`, `go_fmt_check`, `golangci_lint`.
 
 **Process/port**: `port_check`, `process_list`.
+
+**Background jobs**: `background_job_status` (query status/output by `tool_job_id`), `background_job_list` (list workspace jobs, newest first).
 
 **Git writes**: `git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`.
 

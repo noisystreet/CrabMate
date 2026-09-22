@@ -60,6 +60,39 @@ impl ToolSummaryLine for ProcessListSummaryArgs {
     }
 }
 
+// ── Background jobs ───────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub(super) struct BackgroundJobStatusSummaryArgs {
+    tool_job_id: String,
+}
+
+impl ToolSummaryLine for BackgroundJobStatusSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let id = self.tool_job_id.trim();
+        if id.is_empty() {
+            Some("background job status".to_string())
+        } else {
+            Some(format!("background job status: {id}"))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct BackgroundJobListSummaryArgs {
+    #[serde(default)]
+    limit: Option<u64>,
+}
+
+impl ToolSummaryLine for BackgroundJobListSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        match self.limit {
+            Some(n) => Some(format!("list background jobs (limit: {n})")),
+            None => Some("list background jobs".to_string()),
+        }
+    }
+}
+
 // ── Code metrics ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

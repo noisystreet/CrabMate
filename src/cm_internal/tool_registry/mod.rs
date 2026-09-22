@@ -30,7 +30,7 @@ pub use meta::{
 };
 pub use policy::{
     is_readonly_tool, parallel_tool_wall_timeout_secs, tool_calls_allow_parallel_sync_batch,
-    tool_ok_for_parallel_readonly_batch_piece,
+    tool_ok_for_parallel_readonly_batch_piece, tool_output_dedup_cache_eligible,
 };
 pub use runtime::{ToolRuntime, WebToolRuntime};
 

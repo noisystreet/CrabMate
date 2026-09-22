@@ -145,6 +145,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         test_result_cache_enabled: snap.test_result_cache_enabled,
         test_result_cache_max_entries: snap.test_result_cache_max_entries,
         long_term_memory_host: None,
+        tool_jobs_host: None,
     };
     let k = inv.kind.trim();
     let out = dispatch_tool_runner_kind(k, &inv, &ctx, &http_cfg)?;

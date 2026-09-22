@@ -75,6 +75,7 @@ async fn execute_node_tool_phase(
                 test_result_cache_enabled,
                 test_result_cache_max_entries,
                 long_term_memory_host: None,
+                tool_jobs_host: None,
             };
             crate::cm_tools::tools::run_tool_result(&tool_name_owned, &exec_args, &tool_ctx)
         });

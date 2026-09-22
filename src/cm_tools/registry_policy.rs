@@ -172,6 +172,27 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
     !writes.contains(name)
 }
 
+/// 同轮「只读结果去重缓存」的豁免清单。
+///
+/// 这些工具虽为只读，但结果会在**同一回合内**随外部状态推进而变化
+/// （如后台任务状态与输出），若命中同轮去重缓存，模型在同一轮内重复查询只会拿到过期结果。
+fn builtin_dedup_cache_exempt_tools() -> &'static HashSet<String> {
+    static E: OnceLock<HashSet<String>> = OnceLock::new();
+    E.get_or_init(|| {
+        ["background_job_status", "background_job_list"]
+            .into_iter()
+            .map(|s| s.to_string())
+            .collect()
+    })
+}
+
+/// 是否可参与「同轮只读结果去重缓存」（读取侧与写入侧共用同一判定）。
+///
+/// 只读工具默认参与；[`builtin_dedup_cache_exempt_tools`] 中的工具除外。
+pub fn tool_output_dedup_cache_eligible(cfg: &AgentConfig, name: &str) -> bool {
+    is_readonly_tool(cfg, name) && !builtin_dedup_cache_exempt_tools().contains(name)
+}
+
 fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
     static S: OnceLock<HashSet<String>> = OnceLock::new();
     S.get_or_init(|| {

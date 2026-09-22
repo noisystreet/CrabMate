@@ -27,6 +27,7 @@ fn test_ctx<'a>(allowed_commands: &'a [String]) -> ToolContext<'a> {
         test_result_cache_enabled: false,
         test_result_cache_max_entries: 8,
         long_term_memory_host: None,
+        tool_jobs_host: None,
     }
 }
 fn test_allowed_commands() -> Vec<String> {

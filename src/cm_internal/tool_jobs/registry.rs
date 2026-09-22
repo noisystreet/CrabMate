@@ -430,6 +430,25 @@ impl ToolJobRegistry {
         s
     }
 
+    /// 列出任务快照（最新创建在前），可选按 `workspace` 精确过滤，截断到 `limit`。
+    ///
+    /// - `HashMap` 遍历无序 → 显式按 `created_at` **倒序**排序，保证结果确定性；
+    /// - **不做惰性过期**（过期判定归 `get_checked` / `cleanup`，避免与 `expired` 侧表语义打架）；
+    /// - `workspace` 由 `enqueue_and_launch` 写入 `effective_working_dir`，与调用方同源，直接相等比较即可。
+    #[must_use]
+    pub fn list(&self, workspace: Option<&std::path::Path>, limit: usize) -> Vec<JobRecord> {
+        let g = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let mut rows: Vec<JobRecord> = g
+            .jobs
+            .values()
+            .filter(|r| workspace.is_none_or(|ws| r.workspace == ws))
+            .cloned()
+            .collect();
+        rows.sort_by_key(|r| std::cmp::Reverse(r.created_at));
+        rows.truncate(limit);
+        rows
+    }
+
     /// 淘汰最旧**终态**条目（`queued`/`running` 不可淘汰，防结果丢失）。返回是否有可淘汰项。
     fn evict_one_terminal_locked(&self, g: &mut Inner) -> bool {
         let oldest_terminal = g
@@ -538,6 +557,40 @@ mod tests {
         assert_eq!(rec.status, JobStatus::Queued);
         assert_eq!(rec.workspace, PathBuf::from("/ws"));
         assert_eq!(rec.source_turn_job_id, Some(7));
+    }
+
+    #[test]
+    fn list_newest_first_filters_workspace_and_truncates() {
+        let reg = ToolJobRegistry::new(limits());
+        let ws = std::path::Path::new("/ws");
+        let register_at = |workspace: &str| {
+            let id = reg
+                .register(
+                    PathBuf::from(workspace),
+                    None,
+                    spawn_default(),
+                    r#"{"command":"true"}"#.to_string(),
+                )
+                .expect("register");
+            // `created_at` 取 `SystemTime::now()`，退避 1ms 以保证倒序断言确定性。
+            std::thread::sleep(Duration::from_millis(1));
+            id
+        };
+        let first = register_at("/ws");
+        let second = register_at("/ws");
+        let other = register_at("/other");
+
+        let ids = |rows: Vec<JobRecord>| rows.into_iter().map(|r| r.id).collect::<Vec<_>>();
+        assert_eq!(ids(reg.list(Some(ws), 10)), vec![second.clone(), first.clone()]);
+        assert_eq!(
+            ids(reg.list(None, 10)),
+            vec![other.clone(), second.clone(), first.clone()]
+        );
+        assert_eq!(ids(reg.list(None, 2)), vec![other.clone(), second.clone()]);
+        assert_eq!(ids(reg.list(Some(std::path::Path::new("/other")), 10)), vec![
+            other.clone()
+        ]);
+        assert!(reg.list(None, 0).is_empty());
     }
 
     #[test]

@@ -4,6 +4,7 @@
 
 #[cfg(feature = "archive-tools")]
 mod archive;
+mod background_job_tools;
 mod calc;
 mod call_graph_sketch;
 mod cargo_tools;
@@ -104,7 +105,9 @@ pub mod dev_tag;
 
 use std::sync::Arc;
 
-use crate::cm_tools::memory_tool_host::{CodebaseSemanticToolHost, LongTermMemoryToolHost};
+use crate::cm_tools::memory_tool_host::{
+    CodebaseSemanticToolHost, LongTermMemoryToolHost, ToolJobsToolHost,
+};
 use crate::cm_tools::tool_result::{ToolError, ToolResult};
 use crate::cm_tools::workspace::changelist::WorkspaceChangelist;
 use crate::cm_config::{AgentConfig, ExposeSecret};
@@ -146,6 +149,8 @@ pub struct ToolContext<'a> {
     pub test_result_cache_max_entries: usize,
     /// 长期记忆工具；主 Agent 路径由 `crabmate-internal` 注入。
     pub long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
+    /// 后台任务查询工具（`background_job_status` / `background_job_list`）；主 Agent 路径由 `crabmate-internal` 注入。
+    pub tool_jobs_host: Option<&'a dyn ToolJobsToolHost>,
 }
 
 /// 由 [`AgentConfig`] 与当前工作目录、命令白名单构造工具上下文（供 `run_tool` 使用）。
@@ -184,10 +189,12 @@ pub fn tool_context_for<'a>(
         test_result_cache_enabled: cfg.chat_queues_cache.test_result_cache_enabled,
         test_result_cache_max_entries: cfg.chat_queues_cache.test_result_cache_max_entries,
         long_term_memory_host: None,
+        tool_jobs_host: None,
     }
 }
 
-/// 在 [`tool_context_for`] 基础上挂载单轮 `read_file` 缓存、会话变更集与可选记忆宿主。
+/// 在 [`tool_context_for`] 基础上挂载单轮 `read_file` 缓存、会话变更集与可选记忆/后台任务宿主。
+#[allow(clippy::too_many_arguments)] // 逐项注入可选宿主（语义索引 / 长期记忆 / 后台任务），展开为结构体反而更绕
 pub fn tool_context_for_with_read_cache_and_memory<'a>(
     cfg: &'a AgentConfig,
     allowed_commands: &'a [String],
@@ -196,12 +203,14 @@ pub fn tool_context_for_with_read_cache_and_memory<'a>(
     workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
     codebase_semantic_host: Option<&'a dyn CodebaseSemanticToolHost>,
     long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
+    tool_jobs_host: Option<&'a dyn ToolJobsToolHost>,
 ) -> ToolContext<'a> {
     ToolContext {
         read_file_turn_cache,
         workspace_changelist,
         codebase_semantic_host,
         long_term_memory_host,
+        tool_jobs_host,
         ..tool_context_for(cfg, allowed_commands, working_dir)
     }
 }
