@@ -1,8 +1,8 @@
 # 后台工具任务：实施计划（todo）
 
-> **状态**：核心链路实施完成；#873/#874 已合入，#875/#67 待合入；Slice 4（模型侧只读查询工具 P0）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
+> **状态**：核心链路实施完成；#873/#874/#875 与 Client `crabmate-client#67` 均已合入；Slice 4（模型侧只读查询工具 P0）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
 > **依据**：决策见 [`background_tool_jobs.md`](./background_tool_jobs.md)（ADR）；字段级接口见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（**实现照此编码**）。  
-> **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」分项）删除对应内容；本文件可改为修订记录或删节。
+> **跟踪**：Slice 0–2、4 已完成并合入，逐条实现细节见 ADR 与代码；本文件保留为**修订记录 + 未完成项跟踪**。剩余待办（Slice 3）同步维护于 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」分项）。
 
 ---
 
@@ -18,83 +18,52 @@
 
 ---
 
-## 前置与依赖
+## 修订记录（已完成切片）
 
-- **已就绪**：`subprocess_session`（可取消 + chunk + 观测）、P0/P1（#868/#869 已合并）、观测统计（PR #870 待合）。
-- **不阻塞**：P2 按工具名墙钟（job 先用 `command_timeout_secs` + `timeout_secs`）；`run_and_format*` 迁移（只对 `run_command` 开 async）。
-- **外部仓**：Client（`crabmate-client`）改动需走该仓流程；本仓先定契约与后端，Client 可并行或随后。
+### Slice 0：文档（ADR + 契约 + 本计划）提交
+- [x] 提交 `background_tool_jobs.md`、`background_tool_jobs_contract.md`、本文件 + `long_running_tool_execution_todo.md` P3 第 4 条链接。
+- [x] 另开 `docs/background-tool-jobs-adr` 分支单独 PR（PR #870 已合入）。
+
+### Slice 1：后端核心（`run_command` async + job 模块 + 端点）— PR #873 / #874 已合入
+- [x] **1.1 配置**：`[tool_registry]` 新增 6 键（`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`）；热重载经 `POST /config/reload` 重建 `AgentConfig`，创建 job 时读取、已运行 job 不受影响。
+- [x] **1.2 job 模块**（`src/cm_internal/tool_jobs/`，复用 `subprocess_session`）：`types.rs` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）+ 原子状态转移；`registry.rs` 不可枚举 `tool_job_id`（`tooljob_` + 32 hex）+ 并发/排队/条目上限（仅淘汰终态）+ TTL 清理（创建起算 + 终态宽限，清理后轮询 410）；`worker.rs` `spawn_blocking` + `catch_unwind`（panic 先 terminate 进程组再标 `failed(internal)`）；启动 sweep 为空操作（无持久化，不承诺崩溃恢复）。
+- [x] **1.3 `run_command` 集成**：`RunCommandArgs` 增 `async`（默认 false）与 `timeout_secs`（钳制 1～600）；门闩 `background_jobs_enabled=false` → `invalid_args`，需交互审批 → 拒绝；async 仅对 `run_command` 开放；启动帧软字段序列化且不 bump 协议（`tool_job` 键不注入模型）。
+- [x] **1.4 HTTP 端点**（`src/web/routes/` + `crabmate-api-contract`）：`GET /tools/jobs/{tool_job_id}`（错误码 `401/403/404/410`，新增 `JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH`）；`POST /tools/jobs/{tool_job_id}/cancel`（`queued` 不杀进程、完成态 409、幂等）；归属校验（随机 id 主防护 + 可选 `X-Workspace-Root` 头比对）。
+- [x] **1.5 文档同步**：`docs/SSE协议.md`（`tool_result` 软字段表）、`docs/命令行契约.md` / OpenAPI（两端点 + 新 `ApiError.code`）、`docs/工具说明.md`（`async` 参数与限制）、`docs/配置说明.md` / README（用户可见配置键）。
+
+### Slice 2：Client（`crabmate-client` 仓）— PR #67 已合入
+- [x] `parser_v2.rs` / `sse_dispatch/types.rs`：`tool_result.tool_job_*` 软字段透传。
+- [x] 后台任务气泡：轮询 `GET /tools/jobs/{id}`（指数退避）+ 状态展示 + 取消按钮。
+- [x] 金样：`golden_ag_ui_v2_parser_matches_expected`（client 仓无 `fixtures/`，以契约反序列化 + metadata 透传单测补位）+ `make frontend-check`。
+
+### Slice 4：模型侧只读查询工具（P0，已落地）
+**背景**：`async: true` 早已可用，但模型**没有任何工具**能查 job（只能靠 HTTP 轮询），因此「后台启动」对模型实际不可用。本切片只解决「**取回结果**」。
+
+- [x] host trait：`cm_tools/memory_tool_host.rs` 追加 `ToolJobsToolHost`（`status` / `list`）；`cm_internal/memory_tool_hosts.rs` 实现 `ToolJobsHost`（只读 registry）。
+- [x] `ToolJobRegistry::list(workspace, limit)`：最新创建在前 + 截断；不做惰性过期（归 `get_checked` / `cleanup`）。
+- [x] `ToolContext.tool_jobs_host` 软字段 + `tool_context_for_with_read_cache_and_memory` 第 8 参；`tool_context_for` 签名不变（填 `None`）。
+- [x] 透传链：`SyncDefaultToolDispatchArgs.tool_jobs` → 内联分支与 `spawn_blocking` 分支各自注入 `jobs_host`。
+- [x] 两工具注册：`background_job_status` / `background_job_list`（spec / runner / 参数 `deny_unknown_fields` + `schemars(range)` / 摘要 / `dev_tag` → `GENERAL` / `ToolCategory::Development`）。
+- [x] 只读判定 + **豁免**同轮 `(name, args)` 去重缓存（`registry_policy::tool_output_dedup_cache_eligible` + `builtin_dedup_cache_exempt_tools`）。
+- [x] `run_command` ToolSpec description 宣传 `async` / `timeout_secs` 与两个查询工具（纯文案）。
+- [x] 文档：`docs/工具说明.md` / `docs/en/TOOLS.md`。
+- [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued` / `Succeeded` / `Failed` / 终态无 outcome / TTL 过期 / 截断 / 多字节边界 / list 空结果 / 工作区过滤 + 最新在前 + 命令摘要 / limit）与工具参数层单测；async 端到端（真实 `dispatch_tool` 闭环）。
+- **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。
 
 ---
 
-## PR 切片
-
-### Slice 0：文档（ADR + 契约 + 本计划）提交
-
-- [x] 评审通过后提交：`background_tool_jobs.md`、`background_tool_jobs_contract.md`、`background_tool_jobs_todo.md`（本文件）+ `long_running_tool_execution_todo.md` P3 第 4 条链接。
-- [x] **提交方式（已定）**：另开 `docs/background-tool-jobs-adr` 分支单独 PR（PR #870 已合入，不可并入）。
-
-### Slice 1：后端核心（`run_command` async + job 模块 + 端点）
-
-**1.1 配置**（[`config/tools.toml`](../../config/tools.toml) `[tool_registry]` + `cm_config`）
-- [x] 新增 6 键（契约 §6）：`background_jobs_enabled=false`、`background_job_max_concurrent=4`、`background_job_max_queued=32`、`background_job_ttl_secs=86400`、`background_job_result_grace_secs=300`、`background_job_max_entries=128`；TOML 注释钉默认值。
-- [x] 热重载：`POST /config/reload` 重建 `AgentConfig`（finalize 路径自动含新键默认值）；**「创建 job 时读取、已运行 job 不受影响」**的消费语义随 1.2/1.3 落地并回归。
-
-**1.2 job 模块**（新目录 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`）
-- [x] `types.rs`：`JobStatus` 状态机（`queued/running/succeeded/failed/cancelled/timed_out`）、`JobRecord`（`tool_job_id`、`workspace`、来源 turn `job_id`、创建/完成时间、截断 stdout/stderr、`workspace_changed`）、原子状态转移（Mutex 临界区；`queued/running → cancelled`，已完成不可覆盖）。
-- [x] `registry.rs`：`tool_job_id` 生成（`tooljob_` + 32 hex 随机，`getrandom`，不可枚举）；`Mutex<HashMap>` + 并发/排队上限 + 条目上限（**仅淘汰终态**，`queued`/`running` 不可淘汰）；TTL 清理定时器（创建起算 + 终态宽限 `result_grace_secs`，清理后轮询 410）。
-- [x] `worker.rs`：`tokio::spawn_blocking` + `catch_unwind`（panic → **先 terminate 进程组**，再标 `failed`，`error_code=internal`）；`wait_child_session`（wall 默认 `command_timeout_secs`，`timeout_secs` 覆盖；取消走 `AtomicBool` → `Cancelled`）；成功结果可写 `test_result_cache`（缓存写入随 1.3 的 `run_command` 缓存键落地）；超时/取消不写、`workspace_changed=false`。
-- [x] 启动 sweep：**内存注册表启动即为空，sweep 为空操作**（无持久化可清）；孤儿进程无法可靠识别（子进程无标记），不承诺清理，文档明示单副本不承诺崩溃恢复。
-
-**1.3 `run_command` 集成**
-- [x] `RunCommandArgs` 增 `#[serde(rename = "async")] pub async_: bool`（默认 false）与 `timeout_secs: Option<u64>`（钳制 1～600，对齐 `python_snippet_run`；**随本切片一并落地**，本属 P2 子项）；Schema 自动含新字段。
-- [x] 门闩：`background_jobs_enabled=false` → `invalid_args`；需交互审批（AllowOnce）→ 拒绝。**async 仅对 `run_command` 开放**，不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并发写责任在 `docs/工具说明.md` 明示（1.5 同步）。
-- [x] `execute_run_command.inc.rs` async 路径：白名单/路径/审批照旧（发起时刻，`async_mode` 拒绝一切交互审批）→ `enqueue_and_launch`（登记 + `try_start` 调度，并发满入队、完成后续领）→ 立即返回启动 `tool_result`（`tool_job_id` / `tool_job_poll_url` / `tool_job_status=queued`），`output` 为发起确认文案。
-- [x] 启动帧软字段序列化 + 不 bump 协议（`tool_result.tool_job_*` 可选字段经注入 JSON → `ToolResultBody` 软字段；`append_tool_result_and_reflection` 跳过 `tool_job` 键不注入模型）。
-
-**1.4 HTTP 端点**（`src/web/routes/` + `crabmate-api-contract`；PR #874 已实现待合入）
-- [x] `GET /tools/jobs/{tool_job_id}`：契约 §3.1 响应字段 + 错误码 `401/403/404/410`（`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 新增，同步 `crates/crabmate-api-contract/src/error_codes.rs`）。
-- [x] `POST /tools/jobs/{tool_job_id}/cancel`：契约 §3.2（`queued` 不杀进程、完成态 409、幂等）。
-- [x] 归属校验：随机 id 主防护；可选 `X-Workspace-Root` 头比对（不符 403）。
-
-**1.5 文档同步**（Slice 1 同 PR；PR #874 已实现待合入）
-- [x] `docs/SSE协议.md`：`tool_result` 软字段表 +（若未做 Phase 2 则注明 `tool_job_finished` 未实现）。
-- [x] `docs/命令行契约.md` / OpenAPI：两个端点 + 新 `ApiError.code`。
-- [x] `docs/工具说明.md`：`run_command` 的 `async` 参数与限制。
-- [x] `docs/配置说明.md` / README：用户可见配置键。
-
-### Slice 2：Client（`crabmate-client` 仓；PR #67 已实现待合入）
-
-- [x] `parser_v2.rs` / `sse_dispatch/types.rs`：`tool_result.tool_job_*` 软字段透传；参数表单加 `async`（client 前端无工具参数表单 UI，模型经 chat 直接传参，schema 已含 `async`/`timeout_secs`，不适用）。
-- [x] 后台任务气泡：轮询 `GET /tools/jobs/{id}`（指数退避）+ 状态展示 + 取消按钮。
-- [x] 金样：`golden_ag_ui_v2_parser_matches_expected`（client 仓无 `fixtures/`，既有 `--skip golden_`；以契约反序列化 + metadata 透传单测补位）+ `make frontend-check`。
-
-### Slice 3：可选增强（独立 PR，未承诺排期）
+## 未完成项（Slice 3：可选增强，独立 PR，未承诺排期）
 
 - [ ] SSE `tool_job_finished`（契约 §5）：`control_classify.rs` + 金样 + Client parser + `docs/SSE协议.md` 控制面一览。
 - [ ] 观测扩展：job 级计数/时长日志（`tool_job_id`、来源 turn `job_id`、`duration_ms`）对接 `session_stats_snapshot`。
 - [ ] （若产品要）后台任务 UI 增强：完成通知、历史列表。
 
-### Slice 4：模型侧只读查询工具（P0，已落地）
-
-**背景**：`async: true` 早已可用，但模型**没有任何工具**能查 job（只能靠 HTTP 轮询），因此「后台启动」对模型实际不可用。本切片只解决「**取回结果**」。
-
-- [x] host trait：`cm_tools/memory_tool_host.rs` 追加 `ToolJobsToolHost`（`status` / `list`）；`cm_internal/memory_tool_hosts.rs` 实现 `ToolJobsHost`（只读 registry，字段映射照搬 web handler）。
-- [x] `ToolJobRegistry::list(workspace: Option<&Path>, limit)`：最新创建在前（`sort_by_key(Reverse(created_at))`）+ 截断；**不做**惰性过期（归 `get_checked` / `cleanup`）。
-- [x] `ToolContext.tool_jobs_host` 软字段 + `tool_context_for_with_read_cache_and_memory` 第 8 参；**`tool_context_for` 签名不变**（填 `None`，60+ 测试调用点零改动）。
-- [x] 透传链：`SyncDefaultToolDispatchArgs.tool_jobs` → `dispatch_sync_default_tool` 内联分支与 `spawn_blocking` 分支各自构造 `jobs_host` 注入。
-- [x] 两工具注册：`specs/process.inc.rs` spec、`runners.rs` runner、`part_basic.inc.rs` 参数（`deny_unknown_fields` + `schemars(range)`）、`fragment_git_files_tail.rs`/`tool_summary.rs` 摘要、`dev_tag.rs` → `GENERAL`、分类 `ToolCategory::Development`。命名 `background_job_status` / `background_job_list`（规避 `tool_` 前缀写失效启发式与 `tool_job_*` 软字段撞车）。
-- [x] 只读判定：不写入 `builtin_write_effect_tools` → 自动只读；**豁免**同轮 `(name, args)` 去重缓存（`registry_policy::tool_output_dedup_cache_eligible` + `builtin_dedup_cache_exempt_tools`），避免同轮二次查询拿到旧快照。
-- [x] `run_command` ToolSpec description 宣传 `async` / `timeout_secs` 与两个查询工具（纯文案）。
-- [x] 文档：`docs/工具说明.md` / `docs/en/TOOLS.md`。
-- [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued`（「尚未结束」）/ `Succeeded`（退出码 + stdout）/ `Failed`（错误码 + 失败分类 + stderr）/ 终态无 outcome / TTL 过期 / 截断 / 多字节边界安全 / list 空结果 / list 工作区过滤 + 最新在前 + 命令摘要 / list limit）与工具参数层单测；async 端到端（真实 `dispatch_tool`：`run_command async: true` 发起 → 轮询终态 → `background_job_status` 取回 `succeeded` + 退出码 + stdout → `background_job_list` 含该 id）。
-- **未做（本切片范围外，保留现状并已在 ADR §9 说明理由）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。
-
 ---
 
 ## 测试计划
 
-- **单测**（Slice 1）：job 生命周期转移；超时/取消杀进程组（复用 `subprocess_session` 测试模式）；**完成竞态**（cancel 不得覆盖 succeeded）；过期 → 410；认证/归属越权（403）；并发与排队上限（含 queued 取消不杀进程）；worker panic → `failed(internal)` 且进程组已终止；`timeout_secs` 钳制（1～600）；`deny_unknown_fields` 回归（旧服务端拒 `async`/`timeout_secs`）。
-- **单测**（Slice 4）：`ToolJobsHost::status`（`NotFound` / 非终态 / 终态含退出码与 stdout/stderr / 终态无 outcome / TTL 过期文案）；`truncate_text` 截断与**多字节边界**安全；`ToolJobsHost::list`（空结果 / 工作区过滤 + 最新在前 + 命令摘要 / `limit`）；工具参数层（`deny_unknown_fields`、空 id、`limit` 钳制、宿主 `None` 降级文案）。
+- **单测**（Slice 1）：job 生命周期转移；超时/取消杀进程组；**完成竞态**（cancel 不得覆盖 succeeded）；过期 → 410；认证/归属越权（403）；并发与排队上限；worker panic → `failed(internal)` 且进程组已终止；`timeout_secs` 钳制（1～600）；`deny_unknown_fields` 回归。
+- **单测**（Slice 4）：`ToolJobsHost::status` / `truncate_text`（多字节边界）/ `ToolJobsHost::list` / 工具参数层（`deny_unknown_fields`、空 id、`limit` 钳制、宿主 `None` 降级文案）。
 - **金样/双端**：本仓 `golden_ag_ui_classify_matches_expected`（若动分类）；Client `golden_ag_ui_v2_parser_matches_expected`。
 - **e2e**：真实 `cargo build` async → 轮询到 succeeded → `workspace_changed` 语义；**已落地**：Slice 4 在真实 `dispatch_tool` 路径上跑「`run_command async:true` 发起 → `background_job_status` 取回终态输出 → `background_job_list` 列出」闭环（`cm_internal::tool_registry::tests`）。
 
