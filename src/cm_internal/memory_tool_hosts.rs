@@ -221,3 +221,212 @@ impl ToolJobsToolHost for ToolJobsHost {
         truncate_text(&out, max_output_len)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_internal::tool_jobs::{
+        CancelOutcome, JobLimits, JobOutcome, JobSpawn, JobStatus, ToolJobRegistry,
+    };
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    const NO_TRUNCATION: usize = 4096;
+
+    fn limits() -> JobLimits {
+        JobLimits {
+            max_concurrent: 4,
+            max_queued: 4,
+            ttl: Duration::from_secs(3600),
+            grace: Duration::from_secs(60),
+            max_entries: 32,
+            output_buffer_bytes: 262_144,
+        }
+    }
+
+    fn spawn_default() -> JobSpawn {
+        JobSpawn {
+            program: "true".to_string(),
+            args: Vec::new(),
+            cwd: PathBuf::from("/"),
+            extra_env: Vec::new(),
+            wall: Duration::from_secs(10),
+            max_output_len: 1024,
+        }
+    }
+
+    fn setup() -> (Arc<ToolJobRegistry>, ToolJobsHost) {
+        let reg = Arc::new(ToolJobRegistry::new(limits()));
+        let host = ToolJobsHost::new(Arc::clone(&reg));
+        (reg, host)
+    }
+
+    fn register(reg: &ToolJobRegistry, workspace: &str, args_json: &str) -> String {
+        reg.register(
+            PathBuf::from(workspace),
+            None,
+            spawn_default(),
+            args_json.to_string(),
+        )
+        .expect("register")
+    }
+
+    fn succeeded_outcome() -> JobOutcome {
+        JobOutcome {
+            status: JobStatus::Succeeded,
+            exit_code: Some(0),
+            stdout: b"all good\n".to_vec(),
+            stderr: Vec::new(),
+            error_code: None,
+            failure_category: None,
+        }
+    }
+
+    #[test]
+    fn status_unknown_id_reports_not_found() {
+        let (_reg, host) = setup();
+        assert_eq!(
+            host.status("tooljob_missing", NO_TRUNCATION),
+            "错误：后台任务 `tooljob_missing` 不存在或从未创建。"
+        );
+    }
+
+    #[test]
+    fn status_queued_reports_pending_output() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"cargo","args":["test"]}"#);
+        let out = host.status(&id, NO_TRUNCATION);
+        assert!(out.contains(&format!("后台任务 {id}")), "{out}");
+        assert!(out.contains("状态: queued"), "{out}");
+        assert!(out.contains("工作区: /ws"), "{out}");
+        assert!(out.contains("工作区已变更: 否"), "{out}");
+        assert!(out.contains("命令: cargo test"), "{out}");
+        assert!(out.contains("任务尚未结束，暂无输出"), "{out}");
+    }
+
+    #[test]
+    fn status_succeeded_reports_exit_code_and_stdout() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert!(reg.complete(&id, succeeded_outcome(), true), "complete");
+        let out = host.status(&id, NO_TRUNCATION);
+        assert!(out.contains("状态: succeeded"), "{out}");
+        assert!(out.contains("工作区已变更: 是"), "{out}");
+        assert!(out.contains("退出码: 0"), "{out}");
+        assert!(out.contains("--- stdout ---\nall good\n"), "{out}");
+        // 空 stderr 不产生小标题（`append_stream` 跳过空白流）。
+        assert!(!out.contains("--- stderr ---"), "{out}");
+    }
+
+    #[test]
+    fn status_failed_reports_error_code_and_failure_category() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"sleep"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        let mut outcome = JobOutcome::failed("timeout");
+        outcome.status = JobStatus::TimedOut;
+        outcome.failure_category = Some("wall_clock".to_string());
+        outcome.stderr = b"timed out\n".to_vec();
+        assert!(reg.complete(&id, outcome, false), "complete");
+        let out = host.status(&id, NO_TRUNCATION);
+        assert!(out.contains("状态: timed_out"), "{out}");
+        assert!(out.contains("错误码: timeout"), "{out}");
+        assert!(out.contains("失败分类: wall_clock"), "{out}");
+        assert!(out.contains("--- stderr ---\ntimed out\n"), "{out}");
+        assert!(!out.contains("退出码:"), "{out}");
+        assert!(!out.contains("--- stdout ---"), "{out}");
+    }
+
+    #[test]
+    fn status_terminal_without_outcome_says_no_output_record() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        // `queued` 直接取消 → 终态但 `outcome` 仍为 `None`。
+        assert_eq!(reg.cancel(&id), CancelOutcome::Cancelled);
+        let out = host.status(&id, NO_TRUNCATION);
+        assert!(out.contains("状态: cancelled"), "{out}");
+        assert!(out.contains("任务已终态，但无输出记录"), "{out}");
+    }
+
+    #[test]
+    fn status_expired_after_ttl_cleanup() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        assert!(reg.try_start().is_some(), "try_start");
+        assert!(reg.complete(&id, succeeded_outcome(), false), "complete");
+        // TTL 3600s + grace 60s：推进到 3700s 之后清理，再查询应报「已过保留时长」。
+        assert!(reg.cleanup(SystemTime::now() + Duration::from_secs(3700)) >= 1);
+        assert_eq!(
+            host.status(&id, NO_TRUNCATION),
+            format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+        );
+    }
+
+    #[test]
+    fn status_truncates_at_max_output_len() {
+        let (reg, host) = setup();
+        let id = register(&reg, "/ws", r#"{"command":"true"}"#);
+        let full = host.status(&id, NO_TRUNCATION);
+        assert!(!full.contains("输出已截断"), "{full}");
+
+        let cut = host.status(&id, 16);
+        assert!(cut.len() < full.len(), "{cut}");
+        assert!(cut.ends_with(" 字节）"), "{cut}");
+        assert!(cut.contains("输出已截断"), "{cut}");
+        assert!(full.starts_with(&cut[..6]), "{cut}");
+    }
+
+    #[test]
+    fn truncate_text_never_splits_multibyte_chars() {
+        // 「中文」每字 3 字节；7 落在第 3 个字中间，应回退到 6。
+        let out = truncate_text("中文中文", 7);
+        assert!(out.starts_with("中文\n"), "{out}");
+        assert_eq!(out, "中文\n…（输出已截断，仅显示前 6 字节）");
+    }
+
+    #[test]
+    fn list_without_records_reports_none_for_workspace() {
+        let (reg, host) = setup();
+        let _ = register(&reg, "/other", r#"{"command":"true"}"#);
+        assert_eq!(
+            host.list(Path::new("/ws"), 20, NO_TRUNCATION),
+            "后台任务：工作区 /ws 下暂无记录。"
+        );
+    }
+
+    #[test]
+    fn list_filters_workspace_newest_first_with_command_summary() {
+        let (reg, host) = setup();
+        let first = register(&reg, "/ws", r#"{"command":"cargo","args":["test"]}"#);
+        // `created_at` 取 `SystemTime::now()`，退避 1ms 以保证倒序断言确定性。
+        std::thread::sleep(Duration::from_millis(1));
+        let second = register(&reg, "/ws", r#"{"command":"true"}"#);
+        let other = register(&reg, "/other", r#"{"command":"true"}"#);
+
+        let out = host.list(Path::new("/ws"), 20, NO_TRUNCATION);
+        assert!(
+            out.starts_with("后台任务（工作区 /ws，显示 2 条，最新在前）:"),
+            "{out}"
+        );
+        assert!(!out.contains(&other), "{out}");
+        let first_at = out.find(&first).expect("first row");
+        let second_at = out.find(&second).expect("second row");
+        assert!(second_at < first_at, "{out}");
+        assert!(out.contains(&format!("- {second} [queued] true（")), "{out}");
+        assert!(
+            out.contains(&format!("- {first} [queued] cargo test（")),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn list_respects_limit() {
+        let (reg, host) = setup();
+        let _ = register(&reg, "/ws", r#"{"command":"true"}"#);
+        let _ = register(&reg, "/ws", r#"{"command":"true"}"#);
+        let out = host.list(Path::new("/ws"), 1, NO_TRUNCATION);
+        assert!(out.contains("显示 1 条"), "{out}");
+        assert_eq!(out.matches("- tooljob_").count(), 1, "{out}");
+    }
+}

@@ -330,3 +330,193 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
         "unexpected: {out}"
     );
 }
+
+/// 端到端闭环：`run_command` 以 `async: true` 发起 → `background_job_status` 取回终态输出。
+///
+/// 全程走真实 `dispatch_tool` 分发路径（`SyncDefault` / HandlerLookupTable / 宿主注入），
+/// 而非直接调用内部函数——覆盖「模型能取回后台任务结果」这一 P0 目标的可验收路径。
+#[tokio::test]
+async fn background_job_status_reads_async_run_command_result_end_to_end() {
+    let mut cfg = test_cfg();
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    let cfg = std::sync::Arc::new(cfg);
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let lookup = default_lookup();
+    let sandbox = crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend();
+    let wd = std::path::Path::new(".");
+
+    let start_args = r#"{"command":"echo","args":["e2e-background-hi"],"async":true,"timeout_secs":10}"#;
+    let start_tc = ToolCall {
+        id: "call_start".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "run_command".into(),
+            arguments: start_args.into(),
+        },
+    };
+    let mut wc_start = false;
+    let (start_out, start_payload) = dispatch_tool(DispatchToolParams {
+        runtime: ToolRuntime {
+            workspace_changed: &mut wc_start,
+            ctx: None,
+        },
+        call: DispatchToolCall {
+            name: "run_command",
+            args: start_args,
+            tc: &start_tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: wd,
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: Some(std::sync::Arc::clone(&registry)),
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    let job_id = start_payload
+        .as_ref()
+        .and_then(|v| v.get("tool_job"))
+        .and_then(|t| t.get("tool_job_id"))
+        .and_then(|x| x.as_str())
+        .expect("async 启动帧应含 tool_job_id")
+        .to_string();
+    assert!(start_out.contains(&job_id), "{start_out}");
+
+    // 等 worker 落到终态（`echo` 立即退出）。
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        let rec = registry.get(&job_id).expect("record");
+        if rec.status.is_terminal() {
+            assert_eq!(
+                rec.status,
+                crate::cm_internal::tool_jobs::JobStatus::Succeeded,
+                "async 任务应成功"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "等待 async 任务终态超时"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+
+    // 模型侧只读工具取回结果：这一步即 P0「模型能取回后台任务结果」。
+    let status_args = format!(r#"{{"tool_job_id":"{job_id}"}}"#);
+    let status_tc = ToolCall {
+        id: "call_status".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "background_job_status".into(),
+            arguments: status_args.clone(),
+        },
+    };
+    let mut wc_status = false;
+    let (status_out, status_payload) = dispatch_tool(DispatchToolParams {
+        runtime: ToolRuntime {
+            workspace_changed: &mut wc_status,
+            ctx: None,
+        },
+        call: DispatchToolCall {
+            name: "background_job_status",
+            args: &status_args,
+            tc: &status_tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: wd,
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: Some(std::sync::Arc::clone(&registry)),
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    assert!(status_payload.is_none());
+    assert!(status_out.contains(&format!("后台任务 {job_id}")), "{status_out}");
+    assert!(status_out.contains("状态: succeeded"), "{status_out}");
+    assert!(status_out.contains("退出码: 0"), "{status_out}");
+    assert!(status_out.contains("e2e-background-hi"), "{status_out}");
+    assert!(!wc_status, "只读查询不应标记工作区变更");
+
+    // 同一注册表也能经 `background_job_list` 列出该任务。
+    let list_tc = ToolCall {
+        id: "call_list".into(),
+        typ: "function".into(),
+        function: FunctionCall {
+            name: "background_job_list".into(),
+            arguments: "{}".into(),
+        },
+    };
+    let mut wc_list = false;
+    let (list_out, _) = dispatch_tool(DispatchToolParams {
+        runtime: ToolRuntime {
+            workspace_changed: &mut wc_list,
+            ctx: None,
+        },
+        call: DispatchToolCall {
+            name: "background_job_list",
+            args: "{}",
+            tc: &list_tc,
+        },
+        workspace: DispatchToolWorkspace {
+            effective_working_dir: wd,
+            workspace_is_set: true,
+            workspace_changelist: None,
+        },
+        policy: DispatchToolPolicy {
+            cfg: &cfg,
+            turn_allow: None,
+            handler_lookup: &lookup,
+            sync_default_sandbox_backend: &sandbox,
+        },
+        obs: DispatchToolObs {
+            sse_out_tx: None,
+            sse_control_mirror: None,
+            cancel: None,
+            tool_jobs: Some(std::sync::Arc::clone(&registry)),
+        },
+        memory: DispatchToolMemory {
+            read_file_turn_cache: None,
+            long_term_memory: None,
+            long_term_memory_scope_id: None,
+            mcp_turn: None,
+        },
+    })
+    .await;
+    assert!(list_out.contains(&job_id), "{list_out}");
+    assert!(list_out.contains("[succeeded]"), "{list_out}");
+    drop(sandbox);
+}
