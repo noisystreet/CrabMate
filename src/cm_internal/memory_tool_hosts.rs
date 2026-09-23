@@ -340,14 +340,18 @@ mod tests {
     }
 
     #[test]
-    fn status_terminal_without_outcome_says_no_output_record() {
+    fn status_cancelled_queued_reports_error_code() {
         let (reg, host) = setup();
         let id = register(&reg, "/ws", r#"{"command":"true"}"#);
-        // `queued` 直接取消 → 终态但 `outcome` 仍为 `None`。
+        // `queued` 直接取消 → 终态 `cancelled`，且 `outcome` 与 SSE 终态补发同构
+        // （`error_code = cancelled`），使轮询侧与补发侧一致。
         assert_eq!(reg.cancel(&id), CancelOutcome::Cancelled);
         let out = host.status(&id, NO_TRUNCATION);
         assert!(out.contains("状态: cancelled"), "{out}");
-        assert!(out.contains("任务已终态，但无输出记录"), "{out}");
+        assert!(out.contains("错误码: cancelled"), "{out}");
+        // 取消无输出：空 stdout/stderr 不渲染小标题。
+        assert!(!out.contains("--- stdout ---"), "{out}");
+        assert!(!out.contains("--- stderr ---"), "{out}");
     }
 
     #[test]

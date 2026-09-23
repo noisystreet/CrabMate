@@ -104,11 +104,13 @@ async fn execute_run_command_async(
         wall,
         max_output_len: cfg.command_exec.command_max_output_len,
     };
-    // 终态补发（契约 §5，尽力而为）：捕获发起时刻的 SSE 发送端；连接已关闭则 `try_send` 失败即丢。
+    // 终态补发（契约 §5，尽力而为）：捕获发起时刻 SSE 发送端的**弱引用**。
+    // 弱引用不阻止通道关闭，故回合结束后 SSE 通道（及其 HTTP 响应）不被本回调钉住；
+    // 升级成功即「回合仍持有发送端 = 原连接仍存活」，此时 `try_send` 投递，否则静默丢弃。
     // 仅 Web SSE 路径有 `web_ctx`；运维 CLI 无同进程 SSE，`None` 即不补发。
     let finished_sink: Option<crate::cm_internal::tool_jobs::JobFinishedSink> =
         web_ctx.map(|w| {
-            let tx = w.out_tx.clone();
+            let tx_weak = w.out_tx.downgrade();
             let args_for_summary = args.to_string();
             let sink: crate::cm_internal::tool_jobs::JobFinishedSink =
                 std::sync::Arc::new(move |job_id: &str, outcome: &crate::cm_internal::tool_jobs::JobOutcome| {
@@ -128,7 +130,9 @@ async fn execute_run_command_async(
                         },
                     );
                     // 非阻塞：连接已关闭/背压满 → 静默丢弃（主通道是轮询）。
-                    let _ = tx.try_send(line);
+                    if let Some(tx) = tx_weak.upgrade() {
+                        let _ = tx.try_send(line);
+                    }
                 });
             sink
         });

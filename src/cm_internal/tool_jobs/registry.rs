@@ -307,21 +307,23 @@ impl ToolJobRegistry {
         };
         match record.status {
             JobStatus::Queued => {
+                let outcome = JobOutcome {
+                    status: JobStatus::Cancelled,
+                    exit_code: None,
+                    stdout: Vec::new(),
+                    stderr: Vec::new(),
+                    error_code: Some("cancelled".to_string()),
+                    failure_category: None,
+                };
                 record.status = JobStatus::Cancelled;
+                // 与 `complete` 同构：结果写入记录，使轮询侧 `error_code` 与 SSE 补发一致。
+                record.outcome = Some(outcome.clone());
                 record.finished_at = Some(SystemTime::now());
                 g.queue.retain(|qid| qid != id);
-                // 与 `complete` 同构：取出回调（一次性消费），锁外调用。
+                // 取出回调（一次性消费），锁外调用。
                 let sink = g.finished_sinks.remove(id);
                 drop(g);
                 if let Some(sink) = sink {
-                    let outcome = JobOutcome {
-                        status: JobStatus::Cancelled,
-                        exit_code: None,
-                        stdout: Vec::new(),
-                        stderr: Vec::new(),
-                        error_code: Some("cancelled".to_string()),
-                        failure_category: None,
-                    };
                     sink(id, &outcome);
                 }
                 CancelOutcome::Cancelled
