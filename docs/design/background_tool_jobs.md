@@ -1,6 +1,6 @@
 # ADR: 后台工具任务（background tool jobs）
 
-> **状态**：Proposed（待评审）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：[`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：`.cursor/rules/api-sse-chat-protocol.mdc`。
+> **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：[`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：`.cursor/rules/api-sse-chat-protocol.mdc`。
 
 ## Context
 
@@ -34,7 +34,7 @@
   - 已过期被清理的 job：返回 **`410 Gone`**（`expired` 不保留条目，到期即删除）。
   - 鉴权复用现有 protected routes（Bearer）；**归属校验**：读取与取消均校验 `tool_job_id` 绑定的来源会话/workspace 与调用方一致。
 - **TTL 起算与宽限**：TTL 自**创建**算（对齐 `background_job_ttl_secs`），但结果完成后额外保留宽限 `background_job_result_grace_secs`（默认 300s），避免长 job"刚完成即被清"。
-- **结果消费者**：job 结果**不自动回填模型/对话**（ADR 否决项）；由**调用方/用户**把轮询结果带回后续回合（产品上 Client 提供"复制结果"或注入下一轮 user 消息；`workspace_changed` 同理由调用方转达）。
+- **结果消费者**：job 结果**不自动回填模型/对话**（ADR 否决项）；由**调用方/用户**把轮询结果带回后续回合（产品上 Client 提供"复制结果"或注入下一轮 user 消息；`workspace_changed` 同理由调用方转达）。模型若要**主动**取回，只能用下述 §9 的**只读查询工具**（模型显式发起 tool call，不属"自动回填"）。
 - **辅助 = 尽力而为 SSE 补发**（Phase 2，可选）：新顶层键 **`tool_job_finished`**（体含 `tool_job_id`、`status`、`exit_code`、`summary`）——**仅当原 SSE 连接仍存活**时投递，作为"顺路提醒"，不参与主流程；旧客户端忽略未知键。
 
 ### 4. 启动帧（SSE `tool_result`）
@@ -82,6 +82,21 @@
 
 - 复用 `session_stats_snapshot()` 与会话级日志；job 级新增：`started / succeeded / failed / cancelled / timed_out / expired` 计数与时长，日志带 `tool_job_id` 与来源 turn `job_id`（脱敏，不打 argv）。
 
+### 9. 模型侧只读查询工具（P0，已落地）
+
+HTTP 轮询对**模型**不可用（模型只能调工具）。因此新增两个**只读**内置工具，让模型在**同一会话内**取回后台任务结果：
+
+| 工具 | 参数 | 行为 |
+|------|------|------|
+| `background_job_status` | `tool_job_id: string`（`deny_unknown_fields`；trim 后非空） | 按 id 查状态；终态时附退出码 / 错误码 / 失败分类与 `stdout` / `stderr`（截断到 `max_output_len`）；`queued`/`running` 时提示「仍在运行，可稍后再查」；不存在 / 已过 TTL+宽限被清理各给明确文案 |
+| `background_job_list` | `limit?: u32`（默认 20，`clamp(1, 100)`） | 列出**当前 workspace** 的任务，最新创建在前，每行含 id / 状态 / 命令摘要 / 距今秒数 |
+
+- **只读 registry，不走 HTTP、不发起执行、不重复实现审批/白名单/路径校验**；`cm_tools` 侧经 trait [`ToolJobsToolHost`](../../src/cm_tools/memory_tool_host.rs) 注入注册表能力（`cm_tools` 禁引 `cm_internal`，见 [`crate_dep_policy.md`](./crate_dep_policy.md)），实现在 [`cm_internal/memory_tool_hosts.rs`](../../src/cm_internal/memory_tool_hosts.rs) 的 `ToolJobsHost`。
+- **与「不新增发起执行型工具组」不冲突**（见 Alternatives）：否决的是会重复实现审批/白名单的**发起型**工具，本项为**只读查询**。
+- `run_command` 的 ToolSpec description 同时宣传 `async` / `timeout_secs`（schema 早已就绪，属纯文案变更）。
+- **同轮只读去重缓存豁免**：两工具被自动判为只读，但结果随外部状态变化；`registry_policy::tool_output_dedup_cache_eligible` 将其排除在同轮 `(name, args)` 去重缓存外，避免同轮二次查询拿到旧快照。
+- **宿主缺失降级**：并行只读批 / 工作流节点等未注入 registry 的路径返回明确降级文案（不 panic）；**工作区门闩不放行**（未设工作区时 SyncDefault 照旧禁止，此时也不存在可查的 job）。
+
 ## Consequences
 
 **好处**：长构建不再占死 turn/连接；模型可"发起后继续聊"，调用方可随时查状态或取消；全部复用共享会话的杀进程/截断/统计能力。
@@ -92,13 +107,13 @@
 - 单进程注册表有内存上限与 TTL，长保留需另做持久化；多副本不支持（另立项）。
 - **崩溃恢复不承诺**：serve 重启/宕机后 job 状态丢失，调用方得 `410`/`404`；仅启动 sweep 兜底孤儿进程，不能保证可靠回收。
 - **取消是尽力而为**：仅对 `queued`/`running` 生效；与完成竞态时以原子状态转移为准（不会把成功覆盖成取消）。
-- 行为变化需文档同步：`docs/工具说明.md`（`run_command` 的 `async`）、`docs/SSE协议.md`（`tool_result` 软字段、可选 `tool_job_finished`）、`docs/命令行契约.md` / OpenAPI（新端点）、`README.md`（若用户可见配置）。
+- 行为变化需文档同步：`docs/工具说明.md` / `docs/en/TOOLS.md`（`run_command` 的 `async`、`background_job_status` / `background_job_list`）、`docs/SSE协议.md`（`tool_result` 软字段、可选 `tool_job_finished`）、`docs/命令行契约.md` / OpenAPI（新端点）、`README.md`（若用户可见配置）。
 
 ## Alternatives Considered
 
 - **SSE 订阅作为唯一回收机制**：否决。job 与连接解耦是核心约束；连接关闭后订阅即失效。轮询为主、事件为辅。
 - **完成后回填对话（assistant 消息）**：否决。污染对话历史、需要模型参与，且 job 可能属于已结束会话。
-- **独立 `start_job` / `job_poll` / `job_cancel` 工具组**：否决。模型需学新工具名，且审批/白名单/路径校验要在新工具上重复实现。
+- **独立 `start_job` / `job_poll` / `job_cancel` 工具组**：否决。模型需学新工具名，且审批/白名单/路径校验要在新工具上重复实现。**注意范围**：本条否决的是**发起执行型**工具（`start_job` / `job_cancel` 会重复实现审批与白名单、`job_cancel` 还会绕过 `POST …/cancel` 的归属校验）；**只读查询**（§9 的 `background_job_status` / `background_job_list`）不发起执行、不重复上述校验，**不在否决范围内**，且是模型取回结果的唯一可行通道。
 - **turn 保持打开直到 job 结束**：否决。正是要解决的问题本身。
 - **bump `SSE_PROTOCOL_VERSION`**：否决。无破坏性变更，软字段即可；bump 会强制 Client 同步发版。
 
@@ -108,3 +123,4 @@
 2. 后端：job 注册表 + worker + 两个端点 + `run_command` 的 `async` 参数 + 启动 `tool_result` 帧 + 配置；测试含生命周期/超时/取消（含完成竞态）/过期/认证/**归属越权**/并发与排队上限/**worker panic 兜底**。
 3. Client：`tool_job_id` / `tool_job_poll_url` 软字段解析、后台任务气泡与轮询 UI、`tool_job_finished`（若实现）。
 4. 观测接入 + 可选 `tool_job_finished` 补发；多副本持久化另立项。
+5. **P0（§9，已落地）**：模型侧只读查询工具 `background_job_status` / `background_job_list` —— trait 注入（`ToolJobsToolHost` / `ToolJobsHost`）+ `ToolJobRegistry::list` + `ToolContext.tool_jobs_host` 透传 + 同轮去重缓存豁免 + `run_command` description 文案；测试含 host 单测（状态/截断/过期/list 排序与上限）与 async 端到端（`dispatch_tool` 发起 `run_command async` → `background_job_status` 取回终态输出）。**不新增发起执行型工具**（见 Alternatives）。
