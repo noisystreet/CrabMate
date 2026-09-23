@@ -1,6 +1,6 @@
 # 后台工具任务：实施计划（todo）
 
-> **状态**：核心链路实施完成；#873/#874 已合入，#875/#67 待合入。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
+> **状态**：核心链路实施完成；#873/#874 已合入，#875/#67 待合入；Slice 4（模型侧只读查询工具 P0）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
 > **依据**：决策见 [`background_tool_jobs.md`](./background_tool_jobs.md)（ADR）；字段级接口见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（**实现照此编码**）。  
 > **跟踪**：落地后从 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」分项）删除对应内容；本文件可改为修订记录或删节。
 
@@ -74,20 +74,37 @@
 - [ ] 观测扩展：job 级计数/时长日志（`tool_job_id`、来源 turn `job_id`、`duration_ms`）对接 `session_stats_snapshot`。
 - [ ] （若产品要）后台任务 UI 增强：完成通知、历史列表。
 
+### Slice 4：模型侧只读查询工具（P0，已落地）
+
+**背景**：`async: true` 早已可用，但模型**没有任何工具**能查 job（只能靠 HTTP 轮询），因此「后台启动」对模型实际不可用。本切片只解决「**取回结果**」。
+
+- [x] host trait：`cm_tools/memory_tool_host.rs` 追加 `ToolJobsToolHost`（`status` / `list`）；`cm_internal/memory_tool_hosts.rs` 实现 `ToolJobsHost`（只读 registry，字段映射照搬 web handler）。
+- [x] `ToolJobRegistry::list(workspace: Option<&Path>, limit)`：最新创建在前（`sort_by_key(Reverse(created_at))`）+ 截断；**不做**惰性过期（归 `get_checked` / `cleanup`）。
+- [x] `ToolContext.tool_jobs_host` 软字段 + `tool_context_for_with_read_cache_and_memory` 第 8 参；**`tool_context_for` 签名不变**（填 `None`，60+ 测试调用点零改动）。
+- [x] 透传链：`SyncDefaultToolDispatchArgs.tool_jobs` → `dispatch_sync_default_tool` 内联分支与 `spawn_blocking` 分支各自构造 `jobs_host` 注入。
+- [x] 两工具注册：`specs/process.inc.rs` spec、`runners.rs` runner、`part_basic.inc.rs` 参数（`deny_unknown_fields` + `schemars(range)`）、`fragment_git_files_tail.rs`/`tool_summary.rs` 摘要、`dev_tag.rs` → `GENERAL`、分类 `ToolCategory::Development`。命名 `background_job_status` / `background_job_list`（规避 `tool_` 前缀写失效启发式与 `tool_job_*` 软字段撞车）。
+- [x] 只读判定：不写入 `builtin_write_effect_tools` → 自动只读；**豁免**同轮 `(name, args)` 去重缓存（`registry_policy::tool_output_dedup_cache_eligible` + `builtin_dedup_cache_exempt_tools`），避免同轮二次查询拿到旧快照。
+- [x] `run_command` ToolSpec description 宣传 `async` / `timeout_secs` 与两个查询工具（纯文案）。
+- [x] 文档：`docs/工具说明.md` / `docs/en/TOOLS.md`。
+- [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued`（「尚未结束」）/ `Succeeded`（退出码 + stdout）/ `Failed`（错误码 + 失败分类 + stderr）/ 终态无 outcome / TTL 过期 / 截断 / 多字节边界安全 / list 空结果 / list 工作区过滤 + 最新在前 + 命令摘要 / list limit）与工具参数层单测；async 端到端（真实 `dispatch_tool`：`run_command async: true` 发起 → 轮询终态 → `background_job_status` 取回 `succeeded` + 退出码 + stdout → `background_job_list` 含该 id）。
+- **未做（本切片范围外，保留现状并已在 ADR §9 说明理由）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。
+
 ---
 
 ## 测试计划
 
 - **单测**（Slice 1）：job 生命周期转移；超时/取消杀进程组（复用 `subprocess_session` 测试模式）；**完成竞态**（cancel 不得覆盖 succeeded）；过期 → 410；认证/归属越权（403）；并发与排队上限（含 queued 取消不杀进程）；worker panic → `failed(internal)` 且进程组已终止；`timeout_secs` 钳制（1～600）；`deny_unknown_fields` 回归（旧服务端拒 `async`/`timeout_secs`）。
+- **单测**（Slice 4）：`ToolJobsHost::status`（`NotFound` / 非终态 / 终态含退出码与 stdout/stderr / 终态无 outcome / TTL 过期文案）；`truncate_text` 截断与**多字节边界**安全；`ToolJobsHost::list`（空结果 / 工作区过滤 + 最新在前 + 命令摘要 / `limit`）；工具参数层（`deny_unknown_fields`、空 id、`limit` 钳制、宿主 `None` 降级文案）。
 - **金样/双端**：本仓 `golden_ag_ui_classify_matches_expected`（若动分类）；Client `golden_ag_ui_v2_parser_matches_expected`。
-- **e2e（可选）**：真实 `cargo build` async → 轮询到 succeeded → `workspace_changed` 语义。
+- **e2e**：真实 `cargo build` async → 轮询到 succeeded → `workspace_changed` 语义；**已落地**：Slice 4 在真实 `dispatch_tool` 路径上跑「`run_command async:true` 发起 → `background_job_status` 取回终态输出 → `background_job_list` 列出」闭环（`cm_internal::tool_registry::tests`）。
 
 ## 完成定义（删对应待办条目前）
 
 - `run_command` `async=true` 走后台：启动帧含 `tool_job_id`/`poll_url`，轮询/取消端点按契约返回；默认关闭时 `invalid_args`。
+- **模型可自助取回**：`background_job_status` 能按 `tool_job_id` 取回终态输出，`background_job_list` 能列出本工作区任务；两工具只读、不发起执行、不参与同轮去重缓存。
 - 超时/取消/panic/过期路径符合契约 §4 状态机；不写缓存、不误标 `workspace_changed`。
 - 全部新增为软字段/新端点/默认 false 参数，**未** bump `SSE_PROTOCOL_VERSION`；双端金样通过。
-- `docs/SSE协议.md` / `docs/命令行契约.md` / `docs/工具说明.md` / `docs/配置说明.md` 已同步；Client 侧同步或明示待办。
+- `docs/SSE协议.md` / `docs/命令行契约.md` / `docs/工具说明.md` / `docs/en/TOOLS.md` / `docs/配置说明.md` 已同步；Client 侧同步或明示待办。
 - 白名单、路径、审批门闩回归未弱化。
 
 ## 风险与开放问题
