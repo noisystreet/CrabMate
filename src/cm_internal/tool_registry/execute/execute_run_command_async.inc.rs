@@ -104,12 +104,41 @@ async fn execute_run_command_async(
         wall,
         max_output_len: cfg.command_exec.command_max_output_len,
     };
+    // 终态补发（契约 §5，尽力而为）：捕获发起时刻的 SSE 发送端；连接已关闭则 `try_send` 失败即丢。
+    // 仅 Web SSE 路径有 `web_ctx`；运维 CLI 无同进程 SSE，`None` 即不补发。
+    let finished_sink: Option<crate::cm_internal::tool_jobs::JobFinishedSink> =
+        web_ctx.map(|w| {
+            let tx = w.out_tx.clone();
+            let args_for_summary = args.to_string();
+            let sink: crate::cm_internal::tool_jobs::JobFinishedSink =
+                std::sync::Arc::new(move |job_id: &str, outcome: &crate::cm_internal::tool_jobs::JobOutcome| {
+                    let body = crate::cm_sse_protocol::sse::ToolJobFinishedBody {
+                        tool_job_id: job_id.to_string(),
+                        status: outcome.status.as_str().to_string(),
+                        exit_code: outcome.exit_code,
+                        summary: crate::cm_tools::tools::summarize_tool_call(
+                            "run_command",
+                            &args_for_summary,
+                        ),
+                        error_code: outcome.error_code.clone(),
+                    };
+                    let line = crate::cm_sse_protocol::sse::encode_message(
+                        crate::cm_sse_protocol::sse::SsePayload::ToolJobFinished {
+                            tool_job_finished: body,
+                        },
+                    );
+                    // 非阻塞：连接已关闭/背压满 → 静默丢弃（主通道是轮询）。
+                    let _ = tx.try_send(line);
+                });
+            sink
+        });
     let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
         registry,
         effective_working_dir.to_path_buf(),
         None,
         spawn,
         args.to_string(),
+        finished_sink,
     ) {
         Ok(id) => id,
         Err(crate::cm_internal::tool_jobs::RegisterError::QueueFull) => {

@@ -111,6 +111,7 @@ mod tests {
                 Some(1),
                 spawn_true(),
                 r#"{"command":"true"}"#.to_string(),
+                None,
             )
             .expect("keep");
         let stop = reg
@@ -119,6 +120,7 @@ mod tests {
                 Some(7),
                 spawn_true(),
                 r#"{"command":"true"}"#.to_string(),
+                None,
             )
             .expect("stop");
         let body = apply_stream_cancel(&q, &reg, 7).unwrap_or_else(|e| {

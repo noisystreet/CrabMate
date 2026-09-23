@@ -267,6 +267,7 @@ mod tests {
             None,
             spawn_default(),
             args_json.to_string(),
+            None,
         )
         .expect("register")
     }

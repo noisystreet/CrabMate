@@ -19,7 +19,7 @@ use crate::cm_tools::subprocess_session::{
 };
 
 use super::registry::{OutputPollOutcome, RegisterError, ToolJobRegistry};
-use super::types::{JobOutcome, JobStatus};
+use super::types::{JobFinishedSink, JobOutcome, JobStatus};
 
 pub use super::types::JobSpawn;
 
@@ -181,8 +181,9 @@ pub fn enqueue_and_launch(
     source_turn_job_id: Option<u64>,
     spawn: JobSpawn,
     args_json: String,
+    finished_sink: Option<JobFinishedSink>,
 ) -> Result<String, RegisterError> {
-    let id = registry.register(workspace, source_turn_job_id, spawn, args_json)?;
+    let id = registry.register(workspace, source_turn_job_id, spawn, args_json, finished_sink)?;
     drain_queued(Arc::clone(&registry));
     Ok(id)
 }
@@ -306,6 +307,7 @@ mod tests {
                 max_output_len: 4096,
             },
             r#"{"command":"echo"}"#.to_string(),
+            None,
         )
         .expect("enqueue");
         // enqueue_and_launch 已启动；等 worker 完成。
@@ -342,6 +344,7 @@ mod tests {
                 max_output_len: 1024,
             },
             r#"{"command":"sleep"}"#.to_string(),
+            None,
         )
         .expect("enqueue");
         // 等 worker 真正进入等待循环后经注册表取消（验证 cancel_flag 接线）。
@@ -386,6 +389,7 @@ mod tests {
             None,
             spawn("sleep", 0),
             args("sleep"),
+            None,
         )
         .expect("enqueue1");
         let id2 = enqueue_and_launch(
@@ -394,6 +398,7 @@ mod tests {
             None,
             spawn("sleep", 0),
             args("sleep"),
+            None,
         )
         .expect("enqueue2");
         let id3 = enqueue_and_launch(
@@ -402,6 +407,7 @@ mod tests {
             None,
             spawn("sleep", 0),
             args("sleep"),
+            None,
         )
         .expect("enqueue3");
         async fn wait_terminal(reg: &ToolJobRegistry, id: &str) -> JobStatus {
@@ -479,6 +485,7 @@ mod tests {
                 max_output_len: 2048,
             },
             r#"{"command":"bash"}"#.to_string(),
+            None,
         )
         .expect("enqueue");
         let mut cursor: Option<u64> = None;

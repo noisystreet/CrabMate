@@ -133,6 +133,26 @@ pub(crate) fn convert_sse_payload_to_ag_ui(payload: &SsePayload) -> Vec<AgUiEven
 /// 将非核心 SsePayload 映射为 `AgUiEvent::Custom`。
 fn map_payload_to_custom(payload: &SsePayload) -> AgUiEvent {
     match payload {
+        SsePayload::ToolJobFinished { tool_job_finished } => AgUiEvent::Custom {
+            custom_type: "tool_job_finished".into(),
+            data: {
+                // 与 `ToolJobFinishedBody` 的 `skip_serializing_if` 风格一致：`None` 省略而非 `null`。
+                let mut data = serde_json::json!({
+                    "toolJobId": tool_job_finished.tool_job_id,
+                    "status": tool_job_finished.status,
+                });
+                if let Some(exit_code) = tool_job_finished.exit_code {
+                    data["exitCode"] = serde_json::json!(exit_code);
+                }
+                if let Some(summary) = &tool_job_finished.summary {
+                    data["summary"] = serde_json::json!(summary);
+                }
+                if let Some(error_code) = &tool_job_finished.error_code {
+                    data["errorCode"] = serde_json::json!(error_code);
+                }
+                data
+            },
+        },
         SsePayload::ToolRunning { tool_running } => AgUiEvent::Custom {
             custom_type: "tool_running".into(),
             data: serde_json::json!({"running": tool_running}),

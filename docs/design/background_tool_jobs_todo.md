@@ -1,6 +1,6 @@
 # 后台工具任务：实施计划（todo）
 
-> **状态**：核心链路实施完成；#873/#874/#875 与 Client `crabmate-client#67` 均已合入；Slice 4（模型侧只读查询工具 P0）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
+> **状态**：核心链路实施完成；#873/#874/#875 与 Client `crabmate-client#67` 均已合入；Slice 4（模型侧只读查询工具 P0）已落地；Slice 3 首项（SSE `tool_job_finished` 补发）已落地。**受众**：维护 `tool_registry`、`execute_run_command`、web 路由、`cm_sse_protocol`、Client `parser_v2` 的开发者。  
 > **依据**：决策见 [`background_tool_jobs.md`](./background_tool_jobs.md)（ADR）；字段级接口见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（**实现照此编码**）。  
 > **跟踪**：Slice 0–2、4 已完成并合入，逐条实现细节见 ADR 与代码；本文件保留为**修订记录 + 未完成项跟踪**。剩余待办（Slice 3）同步维护于 **`docs/待办清单.md`**（`tools/` 章「长耗时工具执行」分项）。
 
@@ -14,7 +14,7 @@
 - 默认关闭、全部软字段/新端点 → 旧客户端零行为变化。
 
 **非目标**：
-- 多副本/跨进程持久化（另立项）；job 结果自动回填模型上下文；`tool_job_finished` 默认不做（Phase 2 可选）；`run_command` 之外的工具先不开 async；不 bump `SSE_PROTOCOL_VERSION`。
+- 多副本/跨进程持久化（另立项）；job 结果自动回填模型上下文；`run_command` 之外的工具先不开 async；不 bump `SSE_PROTOCOL_VERSION`。
 
 ---
 
@@ -54,7 +54,7 @@
 
 ## 未完成项（Slice 3：可选增强，独立 PR，未承诺排期）
 
-- [ ] SSE `tool_job_finished`（契约 §5）：`control_classify.rs` + 金样 + Client parser + `docs/SSE协议.md` 控制面一览。
+- [x] SSE `tool_job_finished`（契约 §5）：`control_classify.rs` + 金样 + `docs/SSE协议.md` 控制面一览。**已落地**：`SsePayload::ToolJobFinished` + `ToolJobFinishedBody`；`control_classify` 加键；金样加行；发起时捕获 `WebToolRuntime.out_tx` 存入注册表侧表，`complete` 时 `try_send` 尽力而为（连接关闭即丢）。**Client parser 侧仍待**（跨仓，旧客户端忽略未知键）。
 - [ ] 观测扩展：job 级计数/时长日志（`tool_job_id`、来源 turn `job_id`、`duration_ms`）对接 `session_stats_snapshot`。
 - [ ] （若产品要）后台任务 UI 增强：完成通知、历史列表。
 

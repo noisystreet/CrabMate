@@ -28,6 +28,7 @@ pub fn classify_sse_control_outcome(v: &Value) -> &'static str {
         "tool_call",
         "tool_output_chunk",
         "tool_result",
+        "tool_job_finished",
         "timeline_log",
         "thinking_trace",
         "conversation_saved",
