@@ -57,6 +57,7 @@
 | `tool_running` | 工具执行中状态 | `onToolStatusChange` |
 | `tool_output_chunk` | 工具执行中的输出片段（如 PTY、宿主 **`run_command`**）；**不**进入模型上下文；体内须含非空 **`tool_call_id`**、非负整数 **`seq`**；可选 **`name`**、**`chunk`**（UTF-8 文本，可多次下发由前端拼接）、**`stream`**（`stdout` / `stderr` / `combined`）；最终以 **`tool_result`** 收束 | Web：**handled**，`onToolOutputChunk` 追加至对应 `tool_call_id` 的工具气泡详情；TUI：控制面镜像展示截断摘要 |
 | `tool_result` | 工具结束；含 `output` 等 | `onToolResult` |
+| `tool_job_finished` | 后台任务（`run_command` 的 `async=true`）**终态补发**（契约 §5，**尽力而为**）：仅当**原 SSE 连接仍存活**时投递，连接已关闭则静默丢弃（主通道是轮询 `GET /tools/jobs/{id}`）。体含 **`tool_job_id`**（与启动帧一致）、**`status`**（`succeeded` \| `failed` \| `cancelled` \| `timed_out`）；可选 **`exit_code`**、**`summary`**、**`error_code`** | Web：**handled**，可据此刷新对应后台任务气泡（旧客户端忽略未知键，仍靠轮询）；TUI：`line` 分类为 **ignore** |
 | `command_approval_request` | `run_command` / 工作流等需用户审批 | `onCommandApprovalRequest` |
 | `chat_ui_separator` | 聊天区分隔线；`true` 短、`false` 长 | `onChatUiSeparator` |
 | `conversation_saved` | 本会话已成功落库；`revision`（`u64`）供 `POST /chat/branch` 与冲突检测；可选 **`tiktoken_prompt_tokens`**（必有旧字段 `prompt_tokens` + `tiktoken_model`；Phase 3 可选软字段见下） | Leptos：更新 `revision`；优先用 Server `used_input_tokens / max_input_tokens` 更新底栏 |

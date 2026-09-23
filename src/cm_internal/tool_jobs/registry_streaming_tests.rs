@@ -30,6 +30,7 @@ fn register_default(reg: &ToolJobRegistry) -> String {
         None,
         spawn_default(),
         r#"{"command":"true"}"#.to_string(),
+        None,
     )
     .expect("register")
 }

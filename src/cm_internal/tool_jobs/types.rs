@@ -293,6 +293,12 @@ pub struct JobRecord {
     pub outcome: Option<JobOutcome>,
 }
 
+/// 终态补发回调（`tool_job_finished`，契约 §5）：**尽力而为**，实现方须用非阻塞发送
+/// （`try_send`），失败即丢，不得阻塞 worker。
+///
+/// 参数：`(tool_job_id, outcome)`。
+pub type JobFinishedSink = Arc<dyn Fn(&str, &JobOutcome) + Send + Sync>;
+
 /// 注册表限额（来自 `[tool_registry]` 配置，见 `background_tool_jobs_contract.md` §6）。
 #[derive(Debug, Clone, Copy)]
 pub struct JobLimits {

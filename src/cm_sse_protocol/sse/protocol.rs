@@ -45,6 +45,12 @@ pub enum SsePayload {
     ToolResult {
         tool_result: ToolResultBody,
     },
+    /// 后台任务终态补发（Phase 2，尽力而为）：仅当**原 SSE 连接仍存活**时投递；
+    /// 连接已关闭则静默丢弃（主通道是轮询 `GET /tools/jobs/{id}`）。旧客户端忽略未知顶层键。
+    ToolJobFinished {
+        #[serde(rename = "tool_job_finished")]
+        tool_job_finished: ToolJobFinishedBody,
+    },
     WorkspaceChanged {
         workspace_changed: bool,
     },
@@ -266,6 +272,26 @@ pub struct ToolResultBody {
     pub tool_job_poll_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_job_status: Option<String>,
+}
+
+/// 后台任务终态补发体（契约 `background_tool_jobs_contract.md` §5）。
+///
+/// **尽力而为**：仅当原 SSE 连接仍存活时投递；连接已关闭则静默丢弃。
+/// 字段与启动帧（`ToolResultBody.tool_job_*`）的 `tool_job_id` 对齐。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ToolJobFinishedBody {
+    /// 与启动帧一致。
+    pub tool_job_id: String,
+    /// `succeeded` | `failed` | `cancelled` | `timed_out`。
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    /// 终态摘要（与 `summarize_tool_call` 同源）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// 失败词汇（契约 §7）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

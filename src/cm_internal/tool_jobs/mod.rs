@@ -15,8 +15,8 @@ pub use registry::{
     CancelOutcome, GetOutcome, JobRegistryStats, OutputPollOutcome, RegisterError, ToolJobRegistry,
 };
 pub use types::{
-    JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus, MAX_ITEMS_PER_RESPONSE,
-    MAX_OUTPUT_ITEMS, OutputEvent, OutputLogRead,
+    JobFinishedSink, JobLimits, JobOutcome, JobOutputLog, JobRecord, JobStatus,
+    MAX_ITEMS_PER_RESPONSE, MAX_OUTPUT_ITEMS, OutputEvent, OutputLogRead,
 };
 pub use worker::{
     JobOutputSink, JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_blocking,

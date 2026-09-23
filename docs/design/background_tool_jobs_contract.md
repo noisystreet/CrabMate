@@ -138,9 +138,16 @@ queued ──cancel──▶ cancelled
 
 ---
 
-## 5. SSE `tool_job_finished`（Phase 2，可选）
+## 5. SSE `tool_job_finished`（已实现，尽力而为）
 
 仅当**原 SSE 连接仍存活**时尽力而为补发（连接关闭不发，主通道是轮询）。旧客户端忽略未知顶层键。
+
+**实现**：发起 `async=true` 时捕获当时 SSE 发送端（`WebToolRuntime.out_tx`），存入注册表侧表；
+job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）即静默丢弃。
+运维 CLI 无同进程 SSE → 不补发。
+
+**触发点**：`complete`（`running` → 终态）与 `cancel` 的 `queued` 分支（`queued` → `cancelled`，不经 `complete`）均消费回调；
+`running` 取消由 worker 完成时经 `complete` 落定。回调**一次性消费**（终态不可覆盖，重复调用不重复补发）。
 
 | 顶层键 / 形状 | 字段 | 说明 |
 |---------------|------|------|
