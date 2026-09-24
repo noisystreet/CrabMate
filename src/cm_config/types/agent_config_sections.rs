@@ -276,8 +276,10 @@ pub struct ToolRegistryPolicyConfig {
     pub tool_registry_sub_agent_patch_write_extra_tools: Option<Arc<HashSet<String>>>,
     pub tool_registry_sub_agent_test_runner_extra_tools: Option<Arc<HashSet<String>>>,
     pub tool_registry_sub_agent_review_readonly_deny_tools: Option<Arc<HashSet<String>>>,
-    /// 后台工具任务总开关（`run_command` 的 `async=true`）；默认 `false`。
+    /// 后台工具任务总开关（`background_job_async_tools` 白名单内工具的 `async=true`）；默认 `false`。
     pub tool_registry_background_jobs_enabled: bool,
+    /// 允许 `async=true` 的工具名白名单；默认 `{"run_command"}`（空集合 = 全部禁用）。与总开关正交。
+    pub tool_registry_background_job_async_tools: Arc<HashSet<String>>,
     /// 后台任务同时运行上限；超出进入 `queued`（FIFO）。默认 `4`。
     pub tool_registry_background_job_max_concurrent: u64,
     /// 后台任务排队上限；超限拒绝创建。默认 `32`。

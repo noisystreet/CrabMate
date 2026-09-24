@@ -8,6 +8,14 @@ mod background_job_defaults_tests {
     fn background_job_fields_default_and_clamp() {
         let tr = derive_tool_registry_fields(&ConfigBuilder::default());
         assert!(!tr.tool_registry_background_jobs_enabled);
+        assert_eq!(
+            tr.tool_registry_background_job_async_tools
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["run_command".to_string()],
+            "默认白名单应仅含 run_command"
+        );
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 4);
         assert_eq!(tr.tool_registry_background_job_max_queued, 32);
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 86_400);
@@ -29,6 +37,23 @@ mod background_job_defaults_tests {
             16_777_216,
             "输出缓冲上限应钳制到 16 MiB"
         );
+
+        // 白名单清洗：trim + 滤空串。
+        b.tool_registry_policy.tool_registry_background_job_async_tools =
+            Some(vec![" cargo_test ".to_string(), String::new()]);
+        let tr = derive_tool_registry_fields(&b);
+        assert_eq!(
+            tr.tool_registry_background_job_async_tools
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["cargo_test".to_string()]
+        );
+
+        // 显式空数组 = 全部禁用（区别于 `None` 落默认白名单）。
+        b.tool_registry_policy.tool_registry_background_job_async_tools = Some(Vec::new());
+        let tr = derive_tool_registry_fields(&b);
+        assert!(tr.tool_registry_background_job_async_tools.is_empty());
     }
 
     #[test]
@@ -37,6 +62,7 @@ mod background_job_defaults_tests {
         let sec: crate::cm_config::source::ToolRegistrySection = toml::from_str(
             r#"
 background_jobs_enabled = true
+background_job_async_tools = ["run_command", "cargo_test"]
 background_job_max_concurrent = 6
 background_job_max_queued = 64
 background_job_ttl_secs = 7200
@@ -47,6 +73,10 @@ background_job_output_buffer_bytes = 524288
         )
         .expect("parse [tool_registry] section");
         assert_eq!(sec.background_jobs_enabled, Some(true));
+        assert_eq!(
+            sec.background_job_async_tools,
+            Some(vec!["run_command".to_string(), "cargo_test".to_string()])
+        );
         assert_eq!(sec.background_job_max_concurrent, Some(6));
         assert_eq!(sec.background_job_max_queued, Some(64));
         assert_eq!(sec.background_job_ttl_secs, Some(7200));
@@ -58,6 +88,11 @@ background_job_output_buffer_bytes = 524288
         b.apply_tool_registry(sec);
         let tr = derive_tool_registry_fields(&b);
         assert!(tr.tool_registry_background_jobs_enabled);
+        assert!(
+            tr.tool_registry_background_job_async_tools.contains("cargo_test")
+                && tr.tool_registry_background_job_async_tools.contains("run_command")
+                && tr.tool_registry_background_job_async_tools.len() == 2
+        );
         assert_eq!(tr.tool_registry_background_job_max_concurrent, 6);
         assert_eq!(tr.tool_registry_background_job_max_queued, 64);
         assert_eq!(tr.tool_registry_background_job_ttl_secs, 7200);

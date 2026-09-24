@@ -283,6 +283,7 @@ pub(crate) struct ConfigBuilderToolRegistryPolicy {
     pub(crate) tool_registry_sub_agent_test_runner_extra_tools: Option<Vec<String>>,
     pub(crate) tool_registry_sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
     pub(crate) tool_registry_background_jobs_enabled: Option<bool>,
+    pub(crate) tool_registry_background_job_async_tools: Option<Vec<String>>,
     pub(crate) tool_registry_background_job_max_concurrent: Option<u64>,
     pub(crate) tool_registry_background_job_max_queued: Option<u64>,
     pub(crate) tool_registry_background_job_ttl_secs: Option<u64>,

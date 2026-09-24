@@ -209,9 +209,11 @@ sub_agent_patch_write_extra_tools = ["run_command"]
 # sub_agent_test_runner_extra_tools = ["custom_test_runner"]
 # review_readonly 步内显式拒绝（精确匹配）
 # sub_agent_review_readonly_deny_tools = ["risky_readonly_tool"]
-# # 后台工具任务（`run_command` 可选 `async=true`；契约见 docs/design/background_tool_jobs_contract.md）
+# # 后台工具任务（`async=true`；契约见 docs/design/background_tool_jobs_contract.md）
 # # 总开关（默认 false；开启后模型仍须显式传 async=true）
 # background_jobs_enabled = false
+# # 允许 `async=true` 的工具名白名单（默认 ["run_command"]；空数组 = 全部禁用；与总开关正交）
+# background_job_async_tools = ["run_command"]
 # # 同时运行上限（1–256，默认 4）；超出进入 queued（FIFO）
 # background_job_max_concurrent = 4
 # # 排队上限（0–10000，默认 32）；超限拒绝创建
