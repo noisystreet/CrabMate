@@ -28,7 +28,7 @@
 | 条件 | 行为 |
 |------|------|
 | `async` 省略 / `false` | 现状串行执行，`tool_result` 为最终结果 |
-| `async: true`，配置 `background_jobs_enabled=false` | `invalid_args`：后台任务未启用 |
+| `async: true`，配置 `background_jobs_enabled=false`（且工具 ∈ 装配表 ∪ 白名单） | `invalid_args`：后台任务未启用（文案同时点明须将该工具加入 `background_job_async_tools` 白名单） |
 | `async: true`，工具不在 `background_job_async_tools` 白名单内 | `invalid_args`：该工具不支持后台执行 |
 | `async: true`，需**交互审批**（`AllowOnce` 语义 / 需弹审批） | 拒绝：`invalid_args`，提示先 `AllowAlways` 或去掉 async |
 | `async: true`，白名单/路径校验通过 | 创建 job → **立即**返回启动 `tool_result`（§2），不执行 |
@@ -43,6 +43,8 @@
   | 否 | 是 | 错误：该工具暂不支持后台执行（`async`） |
   | 否 | 否 | **不拦截**：维持既有「未知参数被忽略」语义，走前台同步路径 |
 
+  判定顺序：先 `async` 请求 + `name != run_command` + 落在「装配表 ∪ 白名单」内（否则 `Skip`，零影响）；再检查总开关 `background_jobs_enabled`；最后按「白名单 → 装配表」依次 Deny；两者皆满足才 `Launch`。故总开关关闭时，只要工具落在「装配表 ∪ 白名单」内就会得到「未启用」提示（而非被静默忽略）。`Launch` 要求 `supported == true`——白名单只能**收敛**（把装配表内工具排除在外），不能**扩权**。 |
+
 - **`run_command` 不走此门闩**，仍由既有 `execute_run_command_async` 路径处理（含白名单/路径校验/审批）。
 - 不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
 
@@ -55,8 +57,10 @@
 | `cargo_test` | `cargo_subcommand_background_argv("test", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
 | `pytest_run` | `pytest_run_background_argv(…)` | 与同步路径共用 `build_pytest_command`，argv 逐项相同 |
 
-- 装配方式：前台先构造 `std::process::Command`，再用 `Command::get_program()` / `get_args()` 提取 `(program, args)`（`tools::command_program_and_args`）——**同一套参数校验与 CLI 拼装**，避免两处漂移。
+- 装配方式：前台先构造 `std::process::Command`，再用 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取 `(program, args, cwd)` 快照（`tools::command_program_and_args` → `AssembledCommand`）——**同一套参数校验与 CLI 拼装**，避免两处漂移。`cwd` 原样沿用装配时的 `Command::current_dir`（`pytest_run` 会在装配阶段 canonicalize），故后台与前台的工作目录逐字相同。
+- 门闩的「支持」判定与装配共用同一张**装配表**（`background_async_argv_assembler(name)`），即「支持清单」只有一处事实来源；新增工具只登记一行。
 - 墙钟取 `command_exec.command_timeout_secs`（与前台同源）；输出上限取 `command_exec.command_max_output_len`。
+- **不参与 `test_result_cache`**：该缓存仅由 `cargo_test` 的前台同步路径（`maybe_cache_cargo_test_try`）读写；后台路径（`cargo_subcommand_background_argv`）既不读缓存也不写缓存——命中/写入语义完全落在前台。
 - **Docker 同步工具沙盒模式**（`sync_default_tool_sandbox_mode = "docker"`）下拒绝：沙盒包装需走宿主 `run_command` 路径，返回 `invalid_args` 提示改用宿主模式。
 - 新增支持工具 = 在装配表登记一个 `(program, args)` 装配函数 + 参数类型加 `async` 字段；白名单仍是独立的运行时闸门。
 
@@ -112,7 +116,7 @@
 | `summary` | string? | 无 | 终态摘要（与 `tool_result.summary` 同源） |
 | `error_code` | string? | 无 | 终态失败时的 `tool_result.error_code` 词汇（§8） |
 | `failure_category` | string? | 无 | 与 `ToolFailureCategory::as_str` 一致 |
-| `workspace_changed` | bool | 无 | job 结束后的最终值；超时/取消恒为 `false`（与 P0 约束一致） |
+| `workspace_changed` | bool | 无 | job 结束后的最终值；超时/取消恒为 `false`（与 P0 约束一致）。由 `job_outcome_workspace_changed(args_json, outcome)` 从 `args_json.command` 判定，故**仅 `run_command` 的编译命令族**（`gcc`/`g++`/`clang`/`clang++`/`make`/`cmake`/`ninja` 且 exit 0，见 `is_compile_command_success`）可能为 `true`；装配表工具（`cargo_test` / `pytest_run`）恒为 `false`——与其前台同步路径（不置位）语义一致 |
 | `result_version` | int | 有 | 与 `tool_result.result_version` 对齐（当前 1） |
 
 **错误码**：
@@ -157,7 +161,7 @@ queued ──cancel──▶ cancelled
 | 转移 | 触发 | 要点 |
 |------|------|------|
 | `queued → running` | worker 领取（并发上限内） | FIFO |
-| `running → succeeded` | 子进程 exit 0 | 可写 `test_result_cache` |
+| `running → succeeded` | 子进程 exit 0 | `run_command` 可写 `test_result_cache`；装配表工具（`cargo_test` / `pytest_run`）**不**参与该缓存（与前台一致） |
 | `running → failed` | exit ≠0 / spawn 失败 / **worker panic**（`catch_unwind` → 先 terminate 进程组，再标 `error_code=internal`） | 不得卡 `running` 直至 TTL |
 | `running → timed_out` | 墙钟到期（默认 `command_timeout_secs`，可 `timeout_secs` 覆盖） | 不缓存、`workspace_changed=false` |
 | `queued/running → cancelled` | §3.2 | 原子转移，已完成不可取消 |
@@ -232,7 +236,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | 面 | 后端 | Client |
 |----|------|--------|
 | 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`runner_run_command` / `execute_run_command.inc.rs` | 参数表单 |
-| 装配表（`cargo_test` / `pytest_run`） | `tool_registry/execute/execute_background_tool_async.inc.rs`（门闩 + 装配 + 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs::command_program_and_args` | 参数表单（`async`） |
+| 装配表（`cargo_test` / `pytest_run`） | `tool_registry/execute/execute_background_tool_async.inc.rs`（`background_async_gate` 门闩 + `background_async_argv_assembler` 装配表 + `assemble_background_job_spawn` + `launch_background_job` 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs`（`AssembledCommand` + `command_program_and_args`） | 参数表单（`async`） |
 | job 注册表 + worker | 新模块（建议 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |

@@ -452,35 +452,37 @@ fn background_async_gate_launch_and_deny_matrix() {
         panic!("总开关关闭应拒绝");
     };
     assert!(m.contains("未启用"), "{m}");
+    // 未启用提示须同时点明白名单条件，避免用户只开总开关仍不解。
+    assert!(m.contains("background_job_async_tools"), "{m}");
 }
 
 #[test]
 fn background_async_assembly_cargo_test_reuses_foreground_argv() {
     let cfg = crate::cm_config::load_config(None).expect("embed default");
     let dir = cargo_workspace();
-    let launch = assemble_background_job_launch(
+    let spawn = assemble_background_job_spawn(
         &cfg,
         "cargo_test",
         r#"{"release":true,"test_filter":"foo_bar"}"#,
         dir.path(),
     )
     .expect("装配 cargo test");
-    assert_eq!(launch.program, "cargo");
-    assert_eq!(launch.args, vec!["test", "--release", "foo_bar"]);
+    assert_eq!(spawn.program, "cargo");
+    assert_eq!(spawn.args, vec!["test", "--release", "foo_bar"]);
     assert_eq!(
-        launch.wall,
+        spawn.wall,
         std::time::Duration::from_secs(cfg.command_exec.command_timeout_secs.max(1))
     );
+    // cwd 与前台 `build_cargo_subcommand_command` 一致（工作区根，不做 canonicalize）。
+    assert_eq!(spawn.cwd, dir.path());
     // 无 Cargo.toml → 与前台同一条错误。
     let empty = tempfile::TempDir::new().expect("tempdir");
-    let err = assemble_background_job_launch(&cfg, "cargo_test", "{}", empty.path())
-        .err()
-        .expect("无 Cargo.toml 应失败");
+    let err = assemble_background_job_spawn(&cfg, "cargo_test", "{}", empty.path())
+        .expect_err("无 Cargo.toml 应失败");
     assert!(err.contains("Cargo.toml"), "{err}");
     // 装配表外的工具：给「暂不支持」提示（门闩正常路径不会走到这里）。
-    let err = assemble_background_job_launch(&cfg, "not_a_tool", "{}", dir.path())
-        .err()
-        .expect("未装配工具应失败");
+    let err = assemble_background_job_spawn(&cfg, "not_a_tool", "{}", dir.path())
+        .expect_err("未装配工具应失败");
     assert!(err.contains("暂不支持后台执行"), "{err}");
 }
 
@@ -493,19 +495,20 @@ fn background_async_assembly_pytest_uses_python3_module_pytest() {
         "[project]\nname = \"probe\"\nversion = \"0.0.0\"\n",
     )
     .expect("write pyproject.toml");
-    let launch = assemble_background_job_launch(&cfg, "pytest_run", r#"{"async":true}"#, dir.path())
+    let spawn = assemble_background_job_spawn(&cfg, "pytest_run", r#"{"async":true}"#, dir.path())
         .expect("装配 pytest");
-    assert_eq!(launch.program, "python3");
-    assert_eq!(launch.args, vec!["-m", "pytest", "-q"]);
+    assert_eq!(spawn.program, "python3");
+    assert_eq!(spawn.args, vec!["-m", "pytest", "-q"]);
+    // cwd 与前台一致：`build_pytest_command` 对工作区根做了 canonicalize。
+    assert_eq!(spawn.cwd, dir.path().canonicalize().expect("canonicalize"));
     // `test_path` 校验与前台共用（越界路径在装配阶段即拒绝）。
-    let err = assemble_background_job_launch(
+    let err = assemble_background_job_spawn(
         &cfg,
         "pytest_run",
         r#"{"test_path":"../outside"}"#,
         dir.path(),
     )
-    .err()
-    .expect("越界 test_path 应失败");
+    .expect_err("越界 test_path 应失败");
     assert!(err.contains("相对路径"), "{err}");
 }
 

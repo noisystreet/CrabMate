@@ -107,11 +107,12 @@ fn build_pytest_command(args_json: &str, workspace_root: &Path) -> Result<Comman
     Ok(cmd)
 }
 
-/// 后台任务（async）路径：复用同步路径的项目检查 / 参数校验 / CLI 拼装，仅返回 `(program, args)`。
+/// 后台任务（async）路径：复用同步路径的项目检查 / 参数校验 / CLI 拼装，仅返回可复刻
+/// 快照（`program + args + cwd`，其中 `cwd` 与前台同为 canonicalize 后的工作区根）。
 pub(crate) fn pytest_run_background_argv(
     args_json: &str,
     workspace_root: &Path,
-) -> Result<(String, Vec<String>), String> {
+) -> Result<crate::cm_tools::tools::AssembledCommand, String> {
     let cmd = build_pytest_command(args_json, workspace_root)?;
     Ok(crate::cm_tools::tools::command_program_and_args(&cmd))
 }
