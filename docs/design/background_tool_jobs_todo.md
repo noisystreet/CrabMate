@@ -53,14 +53,16 @@
 ### Slice 5：非 `run_command` 工具的后台执行（装配表，`cargo_test` / `pytest_run`）
 **背景**：`async` 原先只对 `run_command` 开放；测试类工具（`cargo_test` / `pytest_run`）是长耗时主力，但参数是结构化字段而非现成 argv。
 
-**方案（已定）**：**进程载荷**——不为普通工具引入新载荷类型。发起时把参数装配成 `(program, args)`（与前台**同一套**校验与 CLI 拼装），复用既有 `JobSpawn` 链路，取消/超时/输出环形缓冲/`tool_job_finished` 全部照用，`tool_jobs` 模块**零改动**。
+**方案（已定）**：**进程载荷**——不为普通工具引入新载荷类型。发起时把参数装配成 `(program, args, cwd)`（与前台**同一套**校验与 CLI 拼装），复用既有 `JobSpawn` 链路，取消/超时/输出环形缓冲/`tool_job_finished` 全部照用，`tool_jobs` 模块**零改动**。
 
-- [x] `cm_tools` 侧 argv helper：`cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` 提取）+ 共享 `tools::command_program_and_args`。
+- [x] `cm_tools` 侧 argv helper：`cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` / `get_current_dir()` 提取快照 `AssembledCommand`）+ 共享 `tools::command_program_and_args`。`cwd` 原样沿用 `Command::current_dir`（`pytest_run` 已在装配阶段 canonicalize），后台与前台工作目录逐字一致。
 - [x] 门闩与装配：`tool_registry/execute/execute_background_tool_async.inc.rs`（`try_dispatch_background_async_tool`：总开关 → 注册表 → Docker 沙盒拒绝 → 装配 → `launch_background_job`）；`execute_run_command_async.inc.rs` 收敛到同一发起函数（顺带修掉终态补发里硬编码 `"run_command"`）。
-- [x] 语义（契约 §1.2/§1.3）：拦截条件 = `async == true` 且 `name != run_command` 且（∈ 装配表 或 ∈ 白名单）；装配表∩白名单 → 发起；装配表×非白名单 → 报「未在白名单中」；白名单×非装配表 → 报「暂不支持后台执行」；两者皆非 → **不拦截**（保持既有「未知参数被忽略」语义）。
-- [x] schema：`CargoTestArgs` / `PytestRunArgs` 增 `async`（`#[serde(rename = "async")] pub async_: Option<bool>`）。
-- [x] 测试：门闩四象限矩阵 + 装配与前台的 argv 等价（含无 `Cargo.toml` / 越界 `test_path` 同错文案）+ 真实 `dispatch` 端到端（跑真实 `cargo test` 到终态 `Succeeded`）。
-- [x] 文档：`docs/工具说明.md`、`docs/配置说明.md`、契约 §1/§6/§9、ADR §5/§6、`config/tools.toml` 注释。
+- [x] 单一事实来源：门闩的「支持」判定与装配共用装配表 `background_async_argv_assembler(name)`（`background_async_gate` 与 `assemble_background_job_spawn` 都查它），「支持清单」不再与装配分支两处漂移。
+- [x] 语义（契约 §1.2/§1.3）：拦截条件 = `async == true` 且 `name != run_command` 且（∈ 装配表 或 ∈ 白名单）；装配表∩白名单 → 发起；装配表×非白名单 → 报「未在白名单中」；白名单×非装配表 → 报「暂不支持后台执行」；两者皆非 → **不拦截**（保持既有「未知参数被忽略」语义）；总开关关闭的文案同时点明白名单条件。
+- [x] schema：`CargoTestArgs` / `PytestRunArgs` 增 `async`（`#[serde(rename = "async")] pub async_: Option<bool>`），并有 schema 断言测试。
+- [x] 测试：门闩四象限矩阵 + 装配与前台的 argv / `cwd` 等价（含无 `Cargo.toml` / 越界 `test_path` 同错文案）+ 真实 `dispatch` 端到端（跑真实 `cargo test` 到终态 `Succeeded`）。
+- [x] 语义边界（文档明示）：后台**不参与** `test_result_cache`（仅前台 `maybe_cache_cargo_test_try`）；`workspace_changed` 仅 `run_command` 编译命令族成功才置位，装配表工具恒为 `false`（与其前台一致）。
+- [x] 文档：`docs/工具说明.md`、`docs/配置说明.md`、契约 §1/§3/§4/§6/§9、ADR §2、`config/tools.toml` 注释。
 - **配置取值**：`background_job_async_tools` **默认仍为 `["run_command"]`**（不外扩默认，保持既有部署零行为变化）；要用这两个工具须显式加入白名单。
 
 ---

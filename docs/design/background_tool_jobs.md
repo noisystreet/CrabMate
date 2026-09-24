@@ -24,7 +24,7 @@
 - **`tool_job_id`**（string，形如 `tooljob_<32hex>`，**随机不透明**，不可枚举）：**独立命名空间**，与 LLM turn 的 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）**明确区分**，避免日志/端点歧义。job 记录绑定**来源会话 + workspace**，轮询/取消端点校验归属，防越权读取。
 - 状态机：`queued → running → succeeded | failed | cancelled | timed_out`。**`expired` 不是持久状态**：TTL+宽限到期即删除记录（轮询得 `410 Gone`）。
 - 超时：默认 `command_timeout_secs`；工具参数 `timeout_secs` 显式覆盖（钳制同现有 1～600）。取消：复用 `subprocess_session` 的进程组 kill（`Cancelled` 路径已实现）。
-- 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；成功结果**可**写入 `test_result_cache`；超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。
+- 输出：轮询响应返回已截断 stdout/stderr（复用 `command_max_output_len` + 行数上限）；`run_command` 的成功结果**可**写入 `test_result_cache`（装配表工具 `cargo_test` / `pytest_run` 不参与该缓存，与其前台同步路径一致）；超时/取消**不**写、不把 `workspace_changed` 置 true（与 P0 约束一致）。`workspace_changed` 仅 `run_command` 编译命令族成功时才为 true，装配表工具恒为 false。
 
 ### 3. 结果回收：轮询为主、事件为辅
 

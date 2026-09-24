@@ -159,12 +159,13 @@ fn build_cargo_subcommand_command(
     Ok(cmd)
 }
 
-/// 后台任务（async）路径：复用同步路径的参数校验与 CLI 拼装，仅返回 `(program, args)`。
+/// 后台任务（async）路径：复用同步路径的参数校验与 CLI 拼装，仅返回可复刻快照
+/// （`program + args + cwd`）。
 pub(crate) fn cargo_subcommand_background_argv(
     subcmd: &str,
     args_json: &str,
     workspace_root: &Path,
-) -> Result<(String, Vec<String>), ToolError> {
+) -> Result<crate::cm_tools::tools::AssembledCommand, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let cmd = build_cargo_subcommand_command(subcmd, &v, workspace_root)?;
     Ok(crate::cm_tools::tools::command_program_and_args(&cmd))

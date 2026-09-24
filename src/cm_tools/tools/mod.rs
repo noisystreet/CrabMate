@@ -220,15 +220,27 @@ mod runners_gh;
 pub use runners::*;
 pub use runners_gh::*;
 
-/// 从已装配的 [`std::process::Command`] 提取 `(program, args)`：后台任务（async）按
-/// 同一份 argv 复刻命令（`std::process::Command` 非 `Send` 快照，故只取纯数据）。
-pub(crate) fn command_program_and_args(cmd: &std::process::Command) -> (String, Vec<String>) {
-    (
-        cmd.get_program().to_string_lossy().into_owned(),
-        cmd.get_args()
+/// 已装配命令的纯数据快照（`std::process::Command` 非 `Send`，无法跨线程复用）。
+///
+/// 后台任务（async）按同一份 `program + args + cwd` 复刻命令，保证后台与前台
+/// 的 argv / 工作目录不漂移。
+pub(crate) struct AssembledCommand {
+    pub(crate) program: String,
+    pub(crate) args: Vec<String>,
+    /// 装配时设定的工作目录（`Command::current_dir`）；`None` = 未显式设定。
+    pub(crate) cwd: Option<std::path::PathBuf>,
+}
+
+/// 从已装配的 [`std::process::Command`] 提取可复刻快照。
+pub(crate) fn command_program_and_args(cmd: &std::process::Command) -> AssembledCommand {
+    AssembledCommand {
+        program: cmd.get_program().to_string_lossy().into_owned(),
+        args: cmd
+            .get_args()
             .map(|a| a.to_string_lossy().into_owned())
             .collect(),
-    )
+        cwd: cmd.get_current_dir().map(std::path::Path::to_path_buf),
+    }
 }
 
 fn tool_specs() -> &'static [ToolSpec] {

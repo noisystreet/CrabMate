@@ -19,13 +19,13 @@ mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
-        CallGraphSketchArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs, CoverageReportArgs,
-        DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs,
-        FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs, GradleTasksArgs,
-        ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs, ModifyFileArgs, NpmRunArgs,
-        PackageQueryArgs, PortCheckArgs, ProcessListArgs, QualityWorkspaceArgs, RunCommandArgs,
-        RunLintsArgs, ShellcheckCheckArgs, StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs,
-        TodoScanArgs, WorkflowExecuteArgs,
+        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs,
+        FindSymbolArgs, FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs,
+        GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
+        ModifyFileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
+        PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs, ShellcheckCheckArgs,
+        StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -402,6 +402,25 @@ mod tests {
         assert_eq!(range, Some(1));
         let max = timeout.get("maximum").and_then(|x| x.as_u64());
         assert_eq!(max, Some(600));
+    }
+
+    /// 后台任务（async）对 `cargo_test` / `pytest_run` 生效，其 `parameters` 须暴露 `async` 布尔开关。
+    #[test]
+    fn cargo_test_and_pytest_run_schemas_expose_async() {
+        for (name, v) in [
+            (
+                "cargo_test",
+                tool_parameters_schema_value::<CargoTestArgs>(),
+            ),
+            ("pytest_run", tool_parameters_schema_value::<PytestRunArgs>()),
+        ] {
+            let prop = v.pointer("/properties/async").expect("properties.async");
+            let types = prop.get("type").and_then(|x| x.as_array());
+            assert!(
+                types.is_some_and(|t| t.iter().any(|x| x == "boolean")),
+                "{name}.async 字段（serde rename）应为 boolean（Option → 含 null）：{prop}"
+            );
+        }
     }
 
     #[test]

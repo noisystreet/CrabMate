@@ -250,7 +250,7 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | **`tool_retry_error_codes`** | Error codes eligible for retry (default `timeout`/`http_timeout`/`rate_limited`/`http_network_error`); empty = disabled. |
 | **`tool_retry_denied_tools`** | Extra tool names excluded from retry (exact match; readonly/approval gate already excludes write & interactive tools). |
 
-**Background tool jobs**: the same **`[tool_registry]`** table also carries 8 background-job keys (TOML only, no **`CM_*`**): **`background_jobs_enabled`** (default `false`), **`background_job_async_tools`** (allowlist of tool names that may pass **`async=true`**, default `["run_command"]`; empty array = all disabled), plus concurrency / queue / TTL / grace / entry-cap / output-buffer limits — see **`docs/配置说明.md`** and **`docs/design/background_tool_jobs_contract.md`** §6.
+**Background tool jobs**: the same **`[tool_registry]`** table also carries 8 background-job keys (TOML only, no **`CM_*`**): **`background_jobs_enabled`** (default `false`), **`background_job_async_tools`** (allowlist of tool names that may pass **`async=true`**, default `["run_command"]`; empty array = all disabled), plus concurrency / queue / TTL / grace / entry-cap / output-buffer limits — see **`docs/配置说明.md`** and **`docs/design/background_tool_jobs_contract.md`** §6. Assembly-table tools (**`cargo_test`** / **`pytest_run`**) reuse the exact same argv and working directory as the foreground path; background runs do **not** participate in **`test_result_cache`** and never set **`workspace_changed`** (matching their foreground behaviour).
 
 ### Context & tool messages
 

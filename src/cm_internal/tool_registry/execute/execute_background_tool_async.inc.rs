@@ -4,19 +4,32 @@
 // 取消（进程组 SIGTERM→SIGKILL）、墙钟超时与输出流式侧表；`tool_jobs` 侧零改动。
 // `run_command` 不走本文件（见 `execute_run_command_async.inc.rs`）。
 
-/// 已支持后台执行（进程载荷）的内置工具。
-const BACKGROUND_ASYNC_ASSEMBLY_TOOLS: &[&str] = &["cargo_test", "pytest_run"];
-
-const BACKGROUND_ASYNC_DISABLED_MSG: &str = "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务或去掉 async 参数。";
+const BACKGROUND_ASYNC_DISABLED_MSG: &str = "错误：后台任务（async）未启用（[tool_registry] background_jobs_enabled=false）。请启用后台任务并确保该工具已在 `background_job_async_tools` 白名单中，或去掉 async 参数。";
 const BACKGROUND_ASYNC_NO_REGISTRY_MSG: &str =
     "错误：当前执行环境不支持后台任务（async）。请去掉 async 参数。";
 const BACKGROUND_ASYNC_DOCKER_MSG: &str = "错误：后台任务（async）暂不支持 Docker 同步工具沙盒模式；请使用宿主模式或去掉 async 参数。";
 
-/// 后台任务进程载荷（已装配的 argv + 墙钟）。
-struct BackgroundJobLaunch {
-    program: String,
-    args: Vec<String>,
-    wall: Duration,
+/// 后台 argv 装配函数签名：`(args_json, workspace_root) → 可复刻命令快照`。
+type BackgroundArgvAssembler =
+    fn(&str, &Path) -> Result<crate::cm_tools::tools::AssembledCommand, String>;
+
+/// **装配表（唯一事实来源）**：支持后台执行（进程载荷）的内置工具 → 其 argv 装配函数。
+///
+/// 门闩的 `supported` 判定与 [`assemble_background_job_spawn`] 的装配共用本表，
+/// 避免「支持清单」与「装配分支」两处漂移；新增工具只需在此登记一行。
+fn background_async_argv_assembler(name: &str) -> Option<BackgroundArgvAssembler> {
+    match name {
+        "cargo_test" => Some(|args_json, workspace_root| {
+            crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
+                "test",
+                args_json,
+                workspace_root,
+            )
+            .map_err(|e| e.message)
+        }),
+        "pytest_run" => Some(crate::cm_tools::tools::python_tools::pytest_run_background_argv),
+        _ => None,
+    }
 }
 
 /// 门闩判定结果。
@@ -61,17 +74,9 @@ fn try_dispatch_background_async_tool(
     if cfg_ref.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
         return Some((BACKGROUND_ASYNC_DOCKER_MSG.to_string(), None));
     }
-    let launch = match assemble_background_job_launch(cfg_ref, name, args, effective_working_dir) {
-        Ok(l) => l,
+    let spawn = match assemble_background_job_spawn(cfg_ref, name, args, effective_working_dir) {
+        Ok(s) => s,
         Err(e) => return Some((e, None)),
-    };
-    let spawn = crate::cm_internal::tool_jobs::JobSpawn {
-        program: launch.program,
-        args: launch.args,
-        cwd: effective_working_dir.to_path_buf(),
-        extra_env: Vec::new(),
-        wall: launch.wall,
-        max_output_len: cfg_ref.command_exec.command_max_output_len,
     };
     Some(launch_background_job(
         registry,
@@ -98,7 +103,7 @@ fn background_async_gate(
         // `run_command` 走既有 `execute_run_command_async` 路径。
         return BackgroundAsyncGate::Skip;
     }
-    let supported = BACKGROUND_ASYNC_ASSEMBLY_TOOLS.contains(&name);
+    let supported = background_async_argv_assembler(name).is_some();
     let allowed = allowlist.contains(name);
     if !supported && !allowed {
         return BackgroundAsyncGate::Skip;
@@ -112,9 +117,7 @@ fn background_async_gate(
         ));
     }
     if !supported {
-        return BackgroundAsyncGate::Deny(format!(
-            "错误：工具 `{name}` 暂不支持后台执行（async）；请去掉 async 参数。"
-        ));
+        return BackgroundAsyncGate::Deny(background_async_unsupported_message(name));
     }
     BackgroundAsyncGate::Launch
 }
@@ -127,33 +130,32 @@ fn args_request_background_async(args: &str) -> bool {
         .unwrap_or(false)
 }
 
-/// 按工具名装配进程载荷；参数校验复用各工具同步路径的同一套逻辑
-/// （`cargo_subcommand_background_argv` / `pytest_run_background_argv`），保证与前台语义一致。
-fn assemble_background_job_launch(
+/// 按工具名装配后台任务 [`JobSpawn`](crate::cm_internal::tool_jobs::JobSpawn)。
+///
+/// 参数校验复用各工具前台同步路径的同一套逻辑（见装配表），并**原样沿用装配时设定的
+/// 工作目录**（`Command::current_dir`；`pytest_run` 会在此 canonicalize），使后台与前台
+/// 的 argv / cwd 完全一致。墙钟与前台 `registry_policy` 的 `BlockingSync` 取同一配置值。
+fn assemble_background_job_spawn(
     cfg: &AgentConfig,
     name: &str,
     args_json: &str,
     workspace_root: &Path,
-) -> Result<BackgroundJobLaunch, String> {
-    let (program, args) = match name {
-        "cargo_test" => crate::cm_tools::tools::cargo_tools::cargo_subcommand_background_argv(
-            "test",
-            args_json,
-            workspace_root,
-        )
-        .map_err(|e| e.message)?,
-        "pytest_run" => {
-            crate::cm_tools::tools::python_tools::pytest_run_background_argv(args_json, workspace_root)?
-        }
-        other => return Err(background_async_unsupported_message(other)),
+) -> Result<crate::cm_internal::tool_jobs::JobSpawn, String> {
+    let Some(assemble) = background_async_argv_assembler(name) else {
+        return Err(background_async_unsupported_message(name));
     };
-    Ok(BackgroundJobLaunch {
-        program,
-        args,
+    let cmd = assemble(args_json, workspace_root)?;
+    Ok(crate::cm_internal::tool_jobs::JobSpawn {
+        program: cmd.program,
+        args: cmd.args,
+        cwd: cmd.cwd.unwrap_or_else(|| workspace_root.to_path_buf()),
+        extra_env: Vec::new(),
         wall: Duration::from_secs(cfg.command_exec.command_timeout_secs.max(1)),
+        max_output_len: cfg.command_exec.command_max_output_len,
     })
 }
 
+/// 「工具不在装配表」的统一文案（门闩与装配共用，避免两处字面量漂移）。
 fn background_async_unsupported_message(name: &str) -> String {
     format!("错误：工具 `{name}` 暂不支持后台执行（async）；请去掉 async 参数。")
 }
