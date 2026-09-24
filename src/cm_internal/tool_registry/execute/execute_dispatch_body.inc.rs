@@ -365,6 +365,18 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
         );
     }
 
+    // 非 `run_command` 工具的 `async=true` 后台门闩（`cargo_test` / `pytest_run` 等进程载荷）。
+    if let Some(out) = try_dispatch_background_async_tool(
+        cfg,
+        effective_working_dir,
+        runtime.ctx,
+        name,
+        args,
+        tool_jobs.as_ref(),
+    ) {
+        return out;
+    }
+
     match hid {
         HandlerId::Workflow => {
             // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。

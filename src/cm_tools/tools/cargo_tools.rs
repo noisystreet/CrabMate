@@ -702,6 +702,7 @@ fn push_cargo_fix_flags(cmd: &mut Command, v: &serde_json::Value) {
 
 #[path = "cargo_subcommand.rs"]
 mod cargo_subcommand;
+pub(crate) use cargo_subcommand::cargo_subcommand_background_argv;
 use cargo_subcommand::{
     run_and_format_try, run_cargo_subcommand_str_try, run_cargo_subcommand_value_try,
 };

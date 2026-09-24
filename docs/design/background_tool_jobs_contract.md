@@ -4,7 +4,7 @@
 
 ---
 
-## 1. 工具契约：`run_command` 可选参数 `async`
+## 1. 工具契约：可选参数 `async`
 
 ### 1.1 Schema（`RunCommandArgs`）
 
@@ -21,6 +21,8 @@
 - 备选命名 `run_async` / `background`：否决，保持与语义、文档一致的 `async`。
 - **`deny_unknown_fields` 的兼容含义**：新客户端对旧服务端传 `async` / `timeout_secs` 会被旧服务端拒绝（unknown field）——兼容窗口只承诺「新服务端 + 旧客户端」，不承诺「新客户端 + 旧服务端」（见 §8）。
 
+**同名字段亦加入「装配表」内工具**（§1.3）：`CargoTestArgs`（`cargo_test`）与 `PytestRunArgs`（`pytest_run`）各增 `#[serde(rename = "async")] pub async_: Option<bool>`，默认 `false`，语义与 `RunCommandArgs.async` 一致。
+
 ### 1.2 语义
 
 | 条件 | 行为 |
@@ -32,7 +34,31 @@
 | `async: true`，白名单/路径校验通过 | 创建 job → **立即**返回启动 `tool_result`（§2），不执行 |
 
 - 发起时刻即完成白名单、`..`/绝对路径校验与交互审批（`AllowAlways` / 已在白名单者放行）。
-- **async 当前仅对 `run_command` 开放**（`config/tools.toml` 默认 `background_job_async_tools = ["run_command"]`）；不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
+- **拦截条件**（非 `run_command` 工具）：`args.async == true` **且**（工具 ∈ 装配表 **或** 工具 ∈ `background_job_async_tools`）。四种结果：
+
+  | 装配表 | 白名单 | 结果 |
+  | --- | --- | --- |
+  | 是 | 是（且总开关开） | 创建后台任务 |
+  | 是 | 否 | 错误：未在 `background_job_async_tools` 白名单中 |
+  | 否 | 是 | 错误：该工具暂不支持后台执行（`async`） |
+  | 否 | 否 | **不拦截**：维持既有「未知参数被忽略」语义，走前台同步路径 |
+
+- **`run_command` 不走此门闩**，仍由既有 `execute_run_command_async` 路径处理（含白名单/路径校验/审批）。
+- 不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
+
+### 1.3 装配表（进程载荷）
+
+引擎**不为**普通工具引入独立载荷类型：装配表内工具在发起时把参数**装配成 argv**，复用与前台完全相同的 `(program, args)`，再交给既有 `JobSpawn` 链路——取消/超时/输出环形缓冲/`tool_job_finished` 补发全部复用，`tool_jobs` 模块无需改动。
+
+| 工具 | 装配来源 | 与前台一致性 |
+|------|----------|--------------|
+| `cargo_test` | `cargo_subcommand_background_argv("test", …)` | 与同步路径共用 `build_cargo_subcommand_command`，argv 逐项相同 |
+| `pytest_run` | `pytest_run_background_argv(…)` | 与同步路径共用 `build_pytest_command`，argv 逐项相同 |
+
+- 装配方式：前台先构造 `std::process::Command`，再用 `Command::get_program()` / `get_args()` 提取 `(program, args)`（`tools::command_program_and_args`）——**同一套参数校验与 CLI 拼装**，避免两处漂移。
+- 墙钟取 `command_exec.command_timeout_secs`（与前台同源）；输出上限取 `command_exec.command_max_output_len`。
+- **Docker 同步工具沙盒模式**（`sync_default_tool_sandbox_mode = "docker"`）下拒绝：沙盒包装需走宿主 `run_command` 路径，返回 `invalid_args` 提示改用宿主模式。
+- 新增支持工具 = 在装配表登记一个 `(program, args)` 装配函数 + 参数类型加 `async` 字段；白名单仍是独立的运行时闸门。
 
 ---
 
@@ -176,6 +202,8 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 
+`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。默认不含它们是为保持既有部署行为不变（总开关本身默认 `false`）。
+
 ---
 
 ## 7. 错误码词汇
@@ -195,7 +223,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
   - [ ] Client：`parser_v2.rs` / `sse_dispatch/types.rs` + `cargo test golden_ag_ui_v2_parser_matches_expected`
   - [ ] `docs/SSE协议.md` 控制面变体一览与 `tool_result` 字段表
 - HTTP 新端点：`docs/命令行契约.md` / OpenAPI 同步；错误码表同步。
-- 工具契约：`docs/工具说明.md`（`run_command` 的 `async`）、工具 JSON Schema（`tool_parameters_schema_value::<RunCommandArgs>` 自动含新字段）。
+- 工具契约：`docs/工具说明.md`（`run_command` / `cargo_test` / `pytest_run` 的 `async`）、工具 JSON Schema（`tool_parameters_schema_value::<…>` 自动含新字段）。
 
 ---
 
@@ -204,6 +232,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | 面 | 后端 | Client |
 |----|------|--------|
 | 参数/启动帧 | `RunCommandArgs` + `tool_specs_registry/specs/exec_package.inc.rs`、`runner_run_command` / `execute_run_command.inc.rs` | 参数表单 |
+| 装配表（`cargo_test` / `pytest_run`） | `tool_registry/execute/execute_background_tool_async.inc.rs`（门闩 + 装配 + 发起）、`tools/cargo_tools.rs` / `tools/cargo_subcommand.rs`、`tools/python_tools.rs`、`tools/mod.rs::command_program_and_args` | 参数表单（`async`） |
 | job 注册表 + worker | 新模块（建议 `src/cm_internal/tool_jobs/`，复用 `subprocess_session`） | — |
 | HTTP 端点 | `src/web/routes/`（Bearer 中间件 + 归属校验） | 轮询逻辑（退避） |
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |

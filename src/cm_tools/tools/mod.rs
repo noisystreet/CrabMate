@@ -7,7 +7,7 @@ mod archive;
 mod background_job_tools;
 mod calc;
 mod call_graph_sketch;
-mod cargo_tools;
+pub(crate) mod cargo_tools;
 mod ci_tools;
 mod code_metrics;
 mod code_nav;
@@ -61,7 +61,7 @@ mod parse_args;
 mod patch;
 mod precommit_tools;
 mod process_tools;
-mod python_tools;
+pub(crate) mod python_tools;
 mod quality_tools;
 mod regex_test;
 mod release_docs;
@@ -219,6 +219,17 @@ mod runners;
 mod runners_gh;
 pub use runners::*;
 pub use runners_gh::*;
+
+/// 从已装配的 [`std::process::Command`] 提取 `(program, args)`：后台任务（async）按
+/// 同一份 argv 复刻命令（`std::process::Command` 非 `Send` 快照，故只取纯数据）。
+pub(crate) fn command_program_and_args(cmd: &std::process::Command) -> (String, Vec<String>) {
+    (
+        cmd.get_program().to_string_lossy().into_owned(),
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect(),
+    )
+}
 
 fn tool_specs() -> &'static [ToolSpec] {
     tool_specs_registry::tool_specs()

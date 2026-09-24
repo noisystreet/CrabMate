@@ -64,21 +64,30 @@ pub fn pytest_run(
     max_output_len: usize,
     wall_secs: Option<u64>,
 ) -> String {
-    if !workspace_has_python_project(workspace_root) {
-        return "pytest: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
-            .to_string();
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
+    let cmd = match build_pytest_command(args_json, workspace_root) {
+        Ok(c) => c,
         Err(e) => return e,
     };
+    run_and_format(cmd, max_output_len, "python3 -m pytest", wall_secs)
+}
+
+/// 装配 `python3 -m pytest`（项目标记检查 + 参数校验 + CLI 拼装）；
+/// 同步执行与后台任务（`pytest_run_background_argv`）共用，避免两条路径漂移。
+fn build_pytest_command(args_json: &str, workspace_root: &Path) -> Result<Command, String> {
+    if !workspace_has_python_project(workspace_root) {
+        return Err(
+            "pytest: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
+                .to_string(),
+        );
+    }
+    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
     let base = match workspace_root.canonicalize() {
         Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
+        Err(e) => return Err(format!("工作区根目录无法解析: {}", e)),
     };
 
     if let Some(err) = pytest_validate_test_path(&v) {
-        return err;
+        return Err(err);
     }
 
     let mut cmd = Command::new("python3");
@@ -87,7 +96,7 @@ pub fn pytest_run(
     pytest_append_test_path_arg(&v, &mut cmd);
 
     if let Some(err) = pytest_append_keyword_and_marker_args(&v, &mut cmd) {
-        return err;
+        return Err(err);
     }
 
     pytest_append_common_pytest_cli_flags(&v, &mut cmd);
@@ -95,7 +104,16 @@ pub fn pytest_run(
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "python3 -m pytest", wall_secs)
+    Ok(cmd)
+}
+
+/// 后台任务（async）路径：复用同步路径的项目检查 / 参数校验 / CLI 拼装，仅返回 `(program, args)`。
+pub(crate) fn pytest_run_background_argv(
+    args_json: &str,
+    workspace_root: &Path,
+) -> Result<(String, Vec<String>), String> {
+    let cmd = build_pytest_command(args_json, workspace_root)?;
+    Ok(crate::cm_tools::tools::command_program_and_args(&cmd))
 }
 
 fn pytest_validate_test_path(v: &serde_json::Value) -> Option<String> {

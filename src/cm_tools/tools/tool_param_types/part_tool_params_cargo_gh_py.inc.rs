@@ -21,6 +21,11 @@ pub struct CargoTestArgs {
     pub features: Option<String>,
     pub test_filter: Option<String>,
     pub nocapture: Option<bool>,
+    /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
+    /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
+    /// 需 `[tool_registry] background_jobs_enabled` 且 `cargo_test` 在 `background_job_async_tools` 白名单内。
+    #[serde(rename = "async")]
+    pub async_: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
@@ -555,6 +560,11 @@ pub struct PytestRunArgs {
     #[schemars(range(min = 1))]
     pub maxfail: Option<u32>,
     pub nocapture: Option<bool>,
+    /// `true` 时后台执行（默认 `false`）：创建后台任务并立即返回启动 `tool_result`
+    /// （含 `tool_job_id` / `tool_job_poll_url` / `tool_job_status`），轮询/取消走后台任务端点。
+    /// 需 `[tool_registry] background_jobs_enabled` 且 `pytest_run` 在 `background_job_async_tools` 白名单内。
+    #[serde(rename = "async")]
+    pub async_: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

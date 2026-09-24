@@ -213,6 +213,7 @@ sub_agent_patch_write_extra_tools = ["run_command"]
 # # 总开关（默认 false；开启后模型仍须显式传 async=true）
 # background_jobs_enabled = false
 # # 允许 `async=true` 的工具名白名单（默认 ["run_command"]；空数组 = 全部禁用；与总开关正交）
+# # 已支持（装配表）：run_command / cargo_test / pytest_run；后两者须显式加入本白名单才走后台
 # background_job_async_tools = ["run_command"]
 # # 同时运行上限（1–256，默认 4）；超出进入 queued（FIFO）
 # background_job_max_concurrent = 4

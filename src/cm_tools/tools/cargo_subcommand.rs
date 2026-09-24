@@ -127,6 +127,24 @@ pub(super) fn run_cargo_subcommand_value_try(
     max_output_len: usize,
     wall_secs: Option<u64>,
 ) -> Result<String, ToolError> {
+    let cmd = build_cargo_subcommand_command(subcmd, v, workspace_root)?;
+    let tool_code = format!("cargo_{}", subcmd);
+    run_and_format_try(
+        cmd,
+        max_output_len,
+        &format!("cargo {}", subcmd),
+        &tool_code,
+        wall_secs,
+    )
+}
+
+/// 装配 `cargo <subcmd>` 命令（Cargo.toml 检查 + 参数校验 + CLI 拼装）；
+/// 同步执行与后台任务（`cargo_subcommand_background_argv`）共用，避免两条路径漂移。
+fn build_cargo_subcommand_command(
+    subcmd: &str,
+    v: &serde_json::Value,
+    workspace_root: &Path,
+) -> Result<Command, ToolError> {
     if !workspace_root.join("Cargo.toml").is_file() {
         return Err(ToolError::workspace(
             "workspace_no_cargo_toml",
@@ -138,14 +156,18 @@ pub(super) fn run_cargo_subcommand_value_try(
     let mut cmd = Command::new("cargo");
     push_cargo_subcmd_cli(&mut cmd, subcmd, &o);
     cmd.current_dir(workspace_root);
-    let tool_code = format!("cargo_{}", subcmd);
-    run_and_format_try(
-        cmd,
-        max_output_len,
-        &format!("cargo {}", subcmd),
-        &tool_code,
-        wall_secs,
-    )
+    Ok(cmd)
+}
+
+/// 后台任务（async）路径：复用同步路径的参数校验与 CLI 拼装，仅返回 `(program, args)`。
+pub(crate) fn cargo_subcommand_background_argv(
+    subcmd: &str,
+    args_json: &str,
+    workspace_root: &Path,
+) -> Result<(String, Vec<String>), ToolError> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let cmd = build_cargo_subcommand_command(subcmd, &v, workspace_root)?;
+    Ok(crate::cm_tools::tools::command_program_and_args(&cmd))
 }
 
 /// 经共享子进程会话运行并格式化输出（进程组 kill、截断、会话统计）；`wall_secs = None` 表示无墙钟。

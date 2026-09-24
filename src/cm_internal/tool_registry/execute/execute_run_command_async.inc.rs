@@ -104,68 +104,13 @@ async fn execute_run_command_async(
         wall,
         max_output_len: cfg.command_exec.command_max_output_len,
     };
-    // 终态补发（契约 §5，尽力而为）：捕获发起时刻 SSE 发送端的**弱引用**。
-    // 弱引用不阻止通道关闭，故回合结束后 SSE 通道（及其 HTTP 响应）不被本回调钉住；
-    // 升级成功即「回合仍持有发送端 = 原连接仍存活」，此时 `try_send` 投递，否则静默丢弃。
-    // 仅 Web SSE 路径有 `web_ctx`；运维 CLI 无同进程 SSE，`None` 即不补发。
-    let finished_sink: Option<crate::cm_internal::tool_jobs::JobFinishedSink> =
-        web_ctx.map(|w| {
-            let tx_weak = w.out_tx.downgrade();
-            let args_for_summary = args.to_string();
-            let sink: crate::cm_internal::tool_jobs::JobFinishedSink =
-                std::sync::Arc::new(move |job_id: &str, outcome: &crate::cm_internal::tool_jobs::JobOutcome| {
-                    let body = crate::cm_sse_protocol::sse::ToolJobFinishedBody {
-                        tool_job_id: job_id.to_string(),
-                        status: outcome.status.as_str().to_string(),
-                        exit_code: outcome.exit_code,
-                        summary: crate::cm_tools::tools::summarize_tool_call(
-                            "run_command",
-                            &args_for_summary,
-                        ),
-                        error_code: outcome.error_code.clone(),
-                    };
-                    let line = crate::cm_sse_protocol::sse::encode_message(
-                        crate::cm_sse_protocol::sse::SsePayload::ToolJobFinished {
-                            tool_job_finished: body,
-                        },
-                    );
-                    // 非阻塞：连接已关闭/背压满 → 静默丢弃（主通道是轮询）。
-                    if let Some(tx) = tx_weak.upgrade() {
-                        let _ = tx.try_send(line);
-                    }
-                });
-            sink
-        });
-    let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
-        registry,
-        effective_working_dir.to_path_buf(),
-        None,
+    // 终态补发与启动帧走通用发起（`launch_background_job`），与其它装配工具完全同构。
+    launch_background_job(
+        &registry,
+        web_ctx,
+        "run_command",
+        args,
+        effective_working_dir,
         spawn,
-        args.to_string(),
-        finished_sink,
-    ) {
-        Ok(id) => id,
-        Err(crate::cm_internal::tool_jobs::RegisterError::QueueFull) => {
-            return (
-                "错误：后台任务队列已满，请稍后重试或去掉 async 参数。".to_string(),
-                None,
-            );
-        }
-        Err(crate::cm_internal::tool_jobs::RegisterError::AtCapacity) => {
-            return (
-                "错误：后台任务注册表已达条目上限，请稍后重试。".to_string(),
-                None,
-            );
-        }
-    };
-    let poll_url = format!("/tools/jobs/{id}");
-    let output = format!("已创建后台任务 {id}，轮询 GET {poll_url}（结果可通过轮询接口获取）。");
-    let inject = Some(serde_json::json!({
-        "tool_job": {
-            "tool_job_id": id,
-            "tool_job_poll_url": poll_url,
-            "tool_job_status": "queued",
-        }
-    }));
-    (output, inject)
+    )
 }

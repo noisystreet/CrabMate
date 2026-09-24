@@ -56,7 +56,7 @@
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
 - **worker 异常兜底**：`spawn_blocking` 闭包包 `catch_unwind`；`JoinHandle` 出错/panic → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。
 - **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
-- **并发写约束**：**async 当前仅对 `run_command` 开放**（`background_job_async_tools` 白名单，默认仅含 `run_command`），不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
+- **并发写约束**：async 开放工具 = **装配表**（`cargo_test` / `pytest_run`，参数可装配为单条 argv）∩ **`background_job_async_tools` 白名单**（默认仅含 `run_command`，故这两个工具须显式加入白名单才可用）；不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）。**`run_command` 之外的装配表工具复用 `JobSpawn` 进程载荷**（前台 `Command` → `get_program()` / `get_args()`），因此取消/超时/输出流全部复用，`tool_jobs` 无改动。并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
 
 ### 6. 配置与默认
 
@@ -73,6 +73,8 @@
 # background_job_result_grace_secs = 300
 # background_job_max_entries = 128
 ```
+
+**已支持的后台执行工具**（装配表，见 contract §1.3）：`run_command`、`cargo_test`、`pytest_run`。白名单默认值**不含**后两者，需显式写入，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。
 
 ### 7. 兼容与版本
 
