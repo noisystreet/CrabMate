@@ -168,6 +168,7 @@ include!("execute_dispatch_body.inc.rs");
 include!("execute_run_command_docker.inc.rs");
 include!("execute_run_command_approval.inc.rs");
 include!("execute_run_command_chunks.inc.rs");
+include!("execute_background_tool_async.inc.rs");
 include!("execute_run_command_async.inc.rs");
 include!("execute_run_command_host.inc.rs");
 include!("execute_run_command_sync.inc.rs");

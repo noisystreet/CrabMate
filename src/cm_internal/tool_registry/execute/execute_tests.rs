@@ -375,3 +375,193 @@ async fn run_command_async_rejects_allow_once_requiring_command() {
     assert_eq!(registry.stats().total, 0, "拒绝后不得创建任务");
     drop(sandbox);
 }
+
+// ── 非 `run_command` 工具的 async 后台门闩（`cargo_test` / `pytest_run`）────────
+
+fn gate_with(enabled: bool, allow: &[&str], name: &str, args: &str) -> BackgroundAsyncGate {
+    let set: std::collections::HashSet<String> =
+        allow.iter().map(|s| (*s).to_string()).collect();
+    background_async_gate(enabled, &set, name, args)
+}
+
+/// 最小可 `cargo test` 的临时工作区（无依赖 → 离线可编译）。
+fn cargo_workspace() -> tempfile::TempDir {
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"crabmate_async_probe\"\nversion = \"0.0.0\"\nedition = \"2021\"\n",
+    )
+    .expect("write Cargo.toml");
+    std::fs::create_dir_all(dir.path().join("src")).expect("mkdir src");
+    std::fs::write(dir.path().join("src/lib.rs"), "").expect("write lib.rs");
+    dir
+}
+
+#[test]
+fn background_async_gate_skips_when_not_applicable() {
+    // 未显式请求 async → 不接管（保持既有「忽略未知参数」语义）。
+    assert!(matches!(
+        gate_with(true, &["cargo_test"], "cargo_test", r#"{"release":true}"#),
+        BackgroundAsyncGate::Skip
+    ));
+    // `run_command` 走既有 `execute_run_command_async` 路径。
+    assert!(matches!(
+        gate_with(
+            true,
+            &["run_command"],
+            "run_command",
+            r#"{"command":"echo","async":true}"#
+        ),
+        BackgroundAsyncGate::Skip
+    ));
+    // 既不在装配表也不在白名单 → 不接管。
+    assert!(matches!(
+        gate_with(true, &[], "cargo_check", r#"{"async":true}"#),
+        BackgroundAsyncGate::Skip
+    ));
+    // `async` 非布尔 / 参数非 JSON → 不接管。
+    assert!(matches!(
+        gate_with(true, &["cargo_test"], "cargo_test", r#"{"async":"yes"}"#),
+        BackgroundAsyncGate::Skip
+    ));
+    assert!(matches!(
+        gate_with(true, &["cargo_test"], "cargo_test", "not-json"),
+        BackgroundAsyncGate::Skip
+    ));
+}
+
+#[test]
+fn background_async_gate_launch_and_deny_matrix() {
+    assert!(matches!(
+        gate_with(true, &["cargo_test"], "cargo_test", r#"{"async":true}"#),
+        BackgroundAsyncGate::Launch
+    ));
+    let BackgroundAsyncGate::Deny(m) = gate_with(true, &[], "cargo_test", r#"{"async":true}"#) else {
+        panic!("装配表内、白名单外应拒绝");
+    };
+    assert!(m.contains("background_job_async_tools"), "{m}");
+    let BackgroundAsyncGate::Deny(m) =
+        gate_with(true, &["cargo_check"], "cargo_check", r#"{"async":true}"#)
+    else {
+        panic!("白名单内、装配表外应拒绝");
+    };
+    assert!(m.contains("暂不支持后台执行"), "{m}");
+    let BackgroundAsyncGate::Deny(m) =
+        gate_with(false, &["cargo_test"], "cargo_test", r#"{"async":true}"#)
+    else {
+        panic!("总开关关闭应拒绝");
+    };
+    assert!(m.contains("未启用"), "{m}");
+}
+
+#[test]
+fn background_async_assembly_cargo_test_reuses_foreground_argv() {
+    let cfg = crate::cm_config::load_config(None).expect("embed default");
+    let dir = cargo_workspace();
+    let launch = assemble_background_job_launch(
+        &cfg,
+        "cargo_test",
+        r#"{"release":true,"test_filter":"foo_bar"}"#,
+        dir.path(),
+    )
+    .expect("装配 cargo test");
+    assert_eq!(launch.program, "cargo");
+    assert_eq!(launch.args, vec!["test", "--release", "foo_bar"]);
+    assert_eq!(
+        launch.wall,
+        std::time::Duration::from_secs(cfg.command_exec.command_timeout_secs.max(1))
+    );
+    // 无 Cargo.toml → 与前台同一条错误。
+    let empty = tempfile::TempDir::new().expect("tempdir");
+    let err = assemble_background_job_launch(&cfg, "cargo_test", "{}", empty.path())
+        .err()
+        .expect("无 Cargo.toml 应失败");
+    assert!(err.contains("Cargo.toml"), "{err}");
+    // 装配表外的工具：给「暂不支持」提示（门闩正常路径不会走到这里）。
+    let err = assemble_background_job_launch(&cfg, "not_a_tool", "{}", dir.path())
+        .err()
+        .expect("未装配工具应失败");
+    assert!(err.contains("暂不支持后台执行"), "{err}");
+}
+
+#[test]
+fn background_async_assembly_pytest_uses_python3_module_pytest() {
+    let cfg = crate::cm_config::load_config(None).expect("embed default");
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join("pyproject.toml"),
+        "[project]\nname = \"probe\"\nversion = \"0.0.0\"\n",
+    )
+    .expect("write pyproject.toml");
+    let launch = assemble_background_job_launch(&cfg, "pytest_run", r#"{"async":true}"#, dir.path())
+        .expect("装配 pytest");
+    assert_eq!(launch.program, "python3");
+    assert_eq!(launch.args, vec!["-m", "pytest", "-q"]);
+    // `test_path` 校验与前台共用（越界路径在装配阶段即拒绝）。
+    let err = assemble_background_job_launch(
+        &cfg,
+        "pytest_run",
+        r#"{"test_path":"../outside"}"#,
+        dir.path(),
+    )
+    .err()
+    .expect("越界 test_path 应失败");
+    assert!(err.contains("相对路径"), "{err}");
+}
+
+#[tokio::test]
+async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal() {
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    cfg.tool_registry_policy.tool_registry_background_job_async_tools = Arc::new(
+        std::collections::HashSet::from(["cargo_test".to_string()]),
+    );
+    let cfg = Arc::new(cfg);
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let dir = cargo_workspace();
+    // 过滤器不匹配任何测试 → `cargo test` 退出码 0。
+    let args_json = r#"{"async":true,"test_filter":"no_such_test_zzz"}"#;
+    let (out, inject) = try_dispatch_background_async_tool(
+        &cfg,
+        dir.path(),
+        None,
+        "cargo_test",
+        args_json,
+        Some(&registry),
+    )
+    .expect("门闩应接管 cargo_test 的 async 调用");
+    let id = inject
+        .as_ref()
+        .and_then(|v| v.get("tool_job"))
+        .and_then(|t| t.get("tool_job_id"))
+        .and_then(|x| x.as_str())
+        .expect("启动帧应含 tool_job_id")
+        .to_string();
+    assert!(out.contains(&id), "{out}");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
+    loop {
+        let rec = registry.get(&id).expect("record");
+        if rec.status.is_terminal() {
+            assert_eq!(
+                rec.status,
+                crate::cm_internal::tool_jobs::JobStatus::Succeeded,
+                "exit_code={:?} error_code={:?}",
+                rec.outcome.as_ref().and_then(|o| o.exit_code),
+                rec.outcome.as_ref().and_then(|o| o.error_code.clone())
+            );
+            // 证明 `cargo test` 真的跑起来了（而非空转成功）。
+            let stdout = rec
+                .outcome
+                .as_ref()
+                .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+                .unwrap_or_default();
+            assert!(stdout.contains("test result"), "stdout: {stdout}");
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "等待 cargo_test 后台任务终态超时"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}

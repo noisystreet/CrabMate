@@ -50,6 +50,19 @@
 - [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued` / `Succeeded` / `Failed` / 终态无 outcome / TTL 过期 / 截断 / 多字节边界 / list 空结果 / 工作区过滤 + 最新在前 + 命令摘要 / limit）与工具参数层单测；async 端到端（真实 `dispatch_tool` 闭环）。
 - **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。
 
+### Slice 5：非 `run_command` 工具的后台执行（装配表，`cargo_test` / `pytest_run`）
+**背景**：`async` 原先只对 `run_command` 开放；测试类工具（`cargo_test` / `pytest_run`）是长耗时主力，但参数是结构化字段而非现成 argv。
+
+**方案（已定）**：**进程载荷**——不为普通工具引入新载荷类型。发起时把参数装配成 `(program, args)`（与前台**同一套**校验与 CLI 拼装），复用既有 `JobSpawn` 链路，取消/超时/输出环形缓冲/`tool_job_finished` 全部照用，`tool_jobs` 模块**零改动**。
+
+- [x] `cm_tools` 侧 argv helper：`cargo_subcommand_background_argv` / `pytest_run_background_argv`（前台抽出 `build_cargo_subcommand_command` / `build_pytest_command` 后经 `Command::get_program()` / `get_args()` 提取）+ 共享 `tools::command_program_and_args`。
+- [x] 门闩与装配：`tool_registry/execute/execute_background_tool_async.inc.rs`（`try_dispatch_background_async_tool`：总开关 → 注册表 → Docker 沙盒拒绝 → 装配 → `launch_background_job`）；`execute_run_command_async.inc.rs` 收敛到同一发起函数（顺带修掉终态补发里硬编码 `"run_command"`）。
+- [x] 语义（契约 §1.2/§1.3）：拦截条件 = `async == true` 且 `name != run_command` 且（∈ 装配表 或 ∈ 白名单）；装配表∩白名单 → 发起；装配表×非白名单 → 报「未在白名单中」；白名单×非装配表 → 报「暂不支持后台执行」；两者皆非 → **不拦截**（保持既有「未知参数被忽略」语义）。
+- [x] schema：`CargoTestArgs` / `PytestRunArgs` 增 `async`（`#[serde(rename = "async")] pub async_: Option<bool>`）。
+- [x] 测试：门闩四象限矩阵 + 装配与前台的 argv 等价（含无 `Cargo.toml` / 越界 `test_path` 同错文案）+ 真实 `dispatch` 端到端（跑真实 `cargo test` 到终态 `Succeeded`）。
+- [x] 文档：`docs/工具说明.md`、`docs/配置说明.md`、契约 §1/§6/§9、ADR §5/§6、`config/tools.toml` 注释。
+- **配置取值**：`background_job_async_tools` **默认仍为 `["run_command"]`**（不外扩默认，保持既有部署零行为变化）；要用这两个工具须显式加入白名单。
+
 ---
 
 ## 未完成项（Slice 3：可选增强，独立 PR，未承诺排期）
