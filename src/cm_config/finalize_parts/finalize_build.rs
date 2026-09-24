@@ -367,6 +367,7 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
         tool_registry_sub_agent_test_runner_extra_tools: tr.tool_registry_sub_agent_test_runner_extra_tools.clone(),
         tool_registry_sub_agent_review_readonly_deny_tools: tr.tool_registry_sub_agent_review_readonly_deny_tools.clone(),
         tool_registry_background_jobs_enabled: tr.tool_registry_background_jobs_enabled,
+        tool_registry_background_job_async_tools: tr.tool_registry_background_job_async_tools.clone(),
         tool_registry_background_job_max_concurrent: tr.tool_registry_background_job_max_concurrent,
         tool_registry_background_job_max_queued: tr.tool_registry_background_job_max_queued,
         tool_registry_background_job_ttl_secs: tr.tool_registry_background_job_ttl_secs,

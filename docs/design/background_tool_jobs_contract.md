@@ -27,11 +27,12 @@
 |------|------|
 | `async` 省略 / `false` | 现状串行执行，`tool_result` 为最终结果 |
 | `async: true`，配置 `background_jobs_enabled=false` | `invalid_args`：后台任务未启用 |
+| `async: true`，工具不在 `background_job_async_tools` 白名单内 | `invalid_args`：该工具不支持后台执行 |
 | `async: true`，需**交互审批**（`AllowOnce` 语义 / 需弹审批） | 拒绝：`invalid_args`，提示先 `AllowAlways` 或去掉 async |
 | `async: true`，白名单/路径校验通过 | 创建 job → **立即**返回启动 `tool_result`（§2），不执行 |
 
 - 发起时刻即完成白名单、`..`/绝对路径校验与交互审批（`AllowAlways` / 已在白名单者放行）。
-- **async 仅对 `run_command` 开放**（本切片范围）；不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
+- **async 当前仅对 `run_command` 开放**（`config/tools.toml` 默认 `background_job_async_tools = ["run_command"]`）；不按命令/argv 分类禁 async（与 P2「不做 argv 启发式」一致）。**并发写 workspace 的冲突责任在模型/调用方**，在 `docs/工具说明.md` 明示。
 
 ---
 
@@ -165,7 +166,8 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 | 键 | 类型 | 默认 | 范围 | 说明 |
 |----|------|------|------|------|
-| `background_jobs_enabled` | bool | `false` | `true`/`false` | 总开关；关闭时 `async=true` 返回 `invalid_args` |
+| `background_jobs_enabled` | bool | `false` | `true`/`false` | 总开关；关闭时白名单内工具 `async=true` 返回 `invalid_args` |
+| `background_job_async_tools` | string[] | `["run_command"]` | 工具名列表 | 允许 `async=true` 的工具名白名单（精确匹配）；空数组 = 全部禁用；与总开关正交 |
 | `background_job_max_concurrent` | int | `4` | 1–256 | 同时运行上限；超出进入 `queued` |
 | `background_job_max_queued` | int | `32` | 0–10000 | 排队上限；`0` = 满并发即拒绝；超限拒绝创建 |
 | `background_job_ttl_secs` | int | `86400` | 1–604800 | 自**创建**起算的保留时长（秒） |

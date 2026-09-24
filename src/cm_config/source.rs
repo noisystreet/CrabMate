@@ -70,9 +70,14 @@ pub(super) struct ToolRegistrySection {
     /// 分阶段 `executor_kind: review_readonly` 下显式禁止的工具名（精确匹配，优先于只读判定）。
     #[serde(default)]
     pub(super) sub_agent_review_readonly_deny_tools: Option<Vec<String>>,
-    /// 后台工具任务总开关（`run_command` 的 `async=true`）；默认 `false`。契约见 `docs/design/background_tool_jobs_contract.md`。
+    /// 后台工具任务总开关（`background_job_async_tools` 白名单内工具的 `async=true`）；默认 `false`。
+    /// 契约见 `docs/design/background_tool_jobs_contract.md`。
     #[serde(default)]
     pub(super) background_jobs_enabled: Option<bool>,
+    /// 允许 `async=true` 的工具名白名单（默认仅 `run_command`；空数组 = 全部禁用）。
+    /// 与总开关正交：总开关为 `false` 时本项不生效。
+    #[serde(default)]
+    pub(super) background_job_async_tools: Option<Vec<String>>,
     /// 后台任务同时运行上限；超出进入 `queued`（FIFO）。默认 `4`。
     #[serde(default)]
     pub(super) background_job_max_concurrent: Option<u64>,

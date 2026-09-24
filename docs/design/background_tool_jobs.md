@@ -56,7 +56,7 @@
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
 - **worker 异常兜底**：`spawn_blocking` 闭包包 `catch_unwind`；`JoinHandle` 出错/panic → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。
 - **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
-- **并发写约束**：**async 仅对 `run_command` 开放**（本切片范围），不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
+- **并发写约束**：**async 当前仅对 `run_command` 开放**（`background_job_async_tools` 白名单，默认仅含 `run_command`），不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）；并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
 
 ### 6. 配置与默认
 
@@ -65,6 +65,8 @@
 ```toml
 # 后台工具任务总开关（默认 false；开启后模型仍须显式传 async=true）
 # background_jobs_enabled = false
+# 允许 async=true 的工具名白名单（默认 ["run_command"]；空数组 = 全部禁用；与总开关正交）
+# background_job_async_tools = ["run_command"]
 # background_job_max_concurrent = 4
 # background_job_max_queued = 32
 # background_job_ttl_secs = 86400

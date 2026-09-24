@@ -308,6 +308,7 @@ struct ToolRegistryDerived {
     tool_registry_sub_agent_test_runner_extra_tools: Option<Arc<HashSet<String>>>,
     tool_registry_sub_agent_review_readonly_deny_tools: Option<Arc<HashSet<String>>>,
     tool_registry_background_jobs_enabled: bool,
+    tool_registry_background_job_async_tools: Arc<HashSet<String>>,
     tool_registry_background_job_max_concurrent: u64,
     tool_registry_background_job_max_queued: u64,
     tool_registry_background_job_ttl_secs: u64,
@@ -415,6 +416,15 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
         tool_registry_background_jobs_enabled: tr
             .tool_registry_background_jobs_enabled
             .unwrap_or(false),
+        tool_registry_background_job_async_tools: Arc::new(
+            tr.tool_registry_background_job_async_tools
+                .clone()
+                .unwrap_or_else(default_background_job_async_tools)
+                .into_iter()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect::<HashSet<_>>(),
+        ),
         tool_registry_background_job_max_concurrent: tr
             .tool_registry_background_job_max_concurrent
             .unwrap_or(4)
@@ -470,6 +480,11 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                 .collect::<HashSet<_>>(),
         ),
     }
+}
+
+/// 允许 `async=true` 的内建工具默认白名单（用户可用 `background_job_async_tools` 覆盖；空数组 = 全部禁用）。
+fn default_background_job_async_tools() -> Vec<String> {
+    vec!["run_command".to_string()]
 }
 
 /// 工具失败透明重试的默认可重试错误码（瞬时可重试类；用户可用 `tool_retry_error_codes` 覆盖）。

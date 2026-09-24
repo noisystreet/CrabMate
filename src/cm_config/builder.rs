@@ -590,7 +590,9 @@ fn apply_tool_registry_tool_lists(
     if let Some(v) = tr.sub_agent_review_readonly_deny_tools {
         p.tool_registry_sub_agent_review_readonly_deny_tools = Some(v);
     }
-    // 后台任务 7 键（字段均 Copy；`.or` 保持既有值，语义与上方 `if let Some` 一致，且不增分支）。
+    let prev_async_tools = p.tool_registry_background_job_async_tools.take();
+    p.tool_registry_background_job_async_tools = tr.background_job_async_tools.or(prev_async_tools);
+    // 后台任务 8 键（数值/开关为 Copy 用 `.or` 合并；上一行为白名单数组，语义一致且不增分支）。
     p.tool_registry_background_jobs_enabled = tr
         .background_jobs_enabled
         .or(p.tool_registry_background_jobs_enabled);

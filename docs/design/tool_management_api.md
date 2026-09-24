@@ -52,7 +52,7 @@
 | 并行拒绝集 | `parallel_sync_denied_tools` / `parallel_sync_denied_prefixes` | 禁止并行（[L175](../../src/cm_tools/registry_policy.rs#L175) 内置 8 项精确 + 17 前缀） |
 | 内联集 | `sync_default_inline_tools` | 免 spawn（[L281](../../src/cm_tools/registry_policy.rs#L281) 内置 2 项） |
 | 墙上时钟 | `parallel_wall_timeout_secs` 等 3 项 | 外圈超时覆盖 |
-| 后台任务 | `background_jobs_enabled` 等 6 项 | 见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md) |
+| 后台任务 | `background_jobs_enabled` 等 8 项 | 见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md) |
 | 透明重试 | `tool_retry_enabled` 等 6 项 | 瞬时失败重试 |
 | 子代理放行 | `sub_agent_*_extra_tools` / `_deny_tools` | 分阶段子代理的额外放行/拒绝 |
 
@@ -151,7 +151,7 @@
   | `sync_default_inline` | `sync_default_runs_inline`（[L292](../../src/cm_tools/registry_policy.rs#L292)） |
   | `wall_timeout_secs` | 生效后的墙上时钟（含 `parallel_wall_timeout_secs` 覆盖） |
   | `sub_agent_extra_allow: [string]` | 命中的 `sub_agent_*_extra_tools` 集合名 |
-  | `background_job_capable` | 仅 `run_command` 为 `true`（且受 `background_jobs_enabled` 约束） |
+  | `background_job_capable` | 仅 `run_command` 为 `true`（且受 `background_jobs_enabled` 约束）；`background_job_async_tools` 白名单为空时全部为 `false` |
   | `retry_eligible` | 命中 `tool_retry_*` 的准入条件（只读 + 免审批 + 不在 `denied_tools`） |
 
 未注册工具名 → **404 `TOOL_NOT_FOUND`**。
