@@ -32,6 +32,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - **BREAKING (CLI)**: the no-op **`config --dry-run`** option is gone. **`config`** now takes no options (it always runs a config self-check and exits) and **`config --dry-run`** is rejected by clap; `cargo run -- config` output is unchanged. `src/cm_config/cli/definitions.rs` drops the `ConfigCmd` struct for a unit `Config` variant; **`ParsedCliArgs::dry_run`** (which drives `cli_run::run_dry_run`) keeps the same meaning.
 
+### Fixed
+
+- **Assistant prose keeps its paragraph blank lines in `display_content`**: the un-fenced prose dedup step `dedupe_adjacent_non_empty_trimmed_lines` (`cm_agent::text_sanitize`) used to **discard every blank line** and re-join the surviving non-empty lines with a single `\n`, so paragraph breaks written by the model disappeared from the assistant `display_content` served by `GET /conversation/messages`. Clients hydrate that field verbatim, so the chat area and session export showed run-together paragraphs even though the streaming deltas — and the persisted raw `content` in `conversations.db` — still carried the blank lines. Blank lines are now emitted as-is; the step still only removes **adjacent** non-empty lines whose trimmed text is identical (the occasional model repeat before a fence). Conversations stored before this fix keep the compressed text until they are re-hydrated or re-sent.
+
 ## [0.5.2] - 2026-09-07
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.5.2`** matches this package. SSE wire protocol stays **v2**; all additions below are purely additive public protocol face (new exported types, wire JSON unchanged) — released as patch + notes per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2; existing Clients keep working.

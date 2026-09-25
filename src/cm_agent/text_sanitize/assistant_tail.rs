@@ -95,12 +95,13 @@ fn prose_dedup_normalize(s: &str) -> String {
         .to_string()
 }
 
-/// 去掉**相邻**的、去首尾空白后完全相同的非空行（模型在围栏前偶发整段复读）。
+/// 去掉**相邻**的、去首尾空白后完全相同的非空行（模型在围栏前偶发整段复读）；空行是原文排版，原样保留。
 fn dedupe_adjacent_non_empty_trimmed_lines(s: &str) -> String {
     let mut out: Vec<String> = Vec::new();
     for line in s.lines() {
         let t = trim_assistant_prose_line(line);
         if t.is_empty() {
+            out.push(String::new());
             continue;
         }
         if out
