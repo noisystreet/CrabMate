@@ -40,3 +40,13 @@ fn dedupe_plain_preamble_collapses_space_joined_duplicate() {
     let raw = format!("{line} {line}");
     assert_eq!(dedupe_plain_assistant_preamble(&raw), line);
 }
+
+#[test]
+fn dedupe_plain_preamble_keeps_blank_lines() {
+    let line = "我将帮您编写 Hello World 并规划步骤。";
+    let raw = format!("{line}\n{line}\n\n正文第一行\n\n正文第二行");
+    assert_eq!(
+        dedupe_plain_assistant_preamble(&raw),
+        format!("{line}\n\n正文第一行\n\n正文第二行")
+    );
+}

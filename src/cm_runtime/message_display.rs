@@ -524,6 +524,12 @@ mod tests {
     }
 
     #[test]
+    fn assistant_display_keeps_paragraph_blank_lines() {
+        let raw = "第一段内容。\n\n第二段内容。\n\n- 项目一\n- 项目二\n\n结束语。";
+        assert_eq!(assistant_markdown_source_for_display(raw), raw);
+    }
+
+    #[test]
     fn assistant_pipeline_matches_strip_then_plan_latex() {
         let raw = "模型：\nhello";
         let stripped = strip_assistant_echo_label(raw);
