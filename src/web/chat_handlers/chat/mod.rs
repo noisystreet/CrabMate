@@ -1,6 +1,7 @@
 //! `POST /chat`、`/chat/stream`、`/chat/approval`、`/chat/branch`。
 
 mod async_chat;
+mod builtin_btw;
 mod builtin_skills;
 mod enqueue;
 pub(super) mod stream;
@@ -32,6 +33,7 @@ use crate::web::http_types::chat::{
     ConversationMessagesQuery,
 };
 
+use builtin_btw::run_btw_command;
 use builtin_skills::run_web_builtin_command;
 use enqueue::{enqueue_and_wait_json_chat, parse_chat_request_for_enqueue};
 
@@ -43,6 +45,26 @@ pub(crate) async fn chat_handler(
 ) -> Result<Json<ChatResponseBody>, (StatusCode, Json<ApiError>)> {
     let parsed = parse_chat_request_for_enqueue(&state, &body).await?;
     if let Some(reply) = run_web_builtin_command(&state, parsed.user_trim.as_str()).await {
+        return Ok(Json(ChatResponseBody {
+            reply,
+            conversation_id: parsed.conversation_id,
+            conversation_revision: None,
+        }));
+    }
+    if let Some(reply) = run_btw_command(
+        &state,
+        builtin_btw::BtwCommandRequest {
+            conversation_id: parsed.conversation_id.as_str(),
+            user_trim: parsed.user_trim.as_str(),
+            image_urls: &parsed.image_urls,
+            clarify: parsed.clarify.as_ref(),
+            llm_override: parsed.llm_override.as_ref(),
+            temperature_override: parsed.temperature_override,
+            seed_override: parsed.seed_override,
+        },
+    )
+    .await
+    {
         return Ok(Json(ChatResponseBody {
             reply,
             conversation_id: parsed.conversation_id,

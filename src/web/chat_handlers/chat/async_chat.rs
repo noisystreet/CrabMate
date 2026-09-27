@@ -13,6 +13,7 @@ use crate::web::http_types::chat::{
     ApiError, ChatAsyncRequestBody, ChatAsyncSubmitResponseBody, ChatJobStatusResponseBody,
 };
 
+use super::builtin_btw::is_btw_command;
 use super::builtin_skills::run_web_builtin_command;
 use super::enqueue::{
     json_chat_job_envelope, parse_chat_request_for_enqueue, prepare_json_chat_enqueue,
@@ -209,12 +210,13 @@ pub(crate) async fn chat_async_handler(
     if run_web_builtin_command(&state, parsed.user_trim.as_str())
         .await
         .is_some()
+        || is_btw_command(parsed.user_trim.as_str())
     {
         return Err((
             StatusCode::BAD_REQUEST,
             Json(ApiError::new(
                 "ASYNC_BUILTIN_UNSUPPORTED",
-                "内置命令（如 /skills）请使用同步 POST /chat",
+                "内置命令（如 /skills、/btw）请使用同步 POST /chat",
             )),
         ));
     }

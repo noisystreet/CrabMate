@@ -30,6 +30,7 @@ use crate::web::app_state::{
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
+use super::builtin_btw::run_btw_command;
 use super::builtin_skills::run_web_builtin_command;
 use super::turn_build::{
     ChatStreamRequestParsed, build_messages_for_turn, parse_chat_stream_request,
@@ -329,6 +330,32 @@ fn chat_stream_builtin_sse_response(reply: String, conversation_id: &str) -> Res
     resp
 }
 
+/// 内建命令短路：命中 `/skills`、`/btw` 等即直接以单帧 SSE 返回内置文本（不落盘、不进队列）。
+async fn chat_stream_try_builtin_reply(
+    state: &WebChatTurnAppFacet,
+    p: &ChatStreamRequestParsed,
+) -> Option<Response> {
+    let reply = match run_web_builtin_command(state, p.user_trim.as_str()).await {
+        Some(reply) => reply,
+        None => {
+            run_btw_command(
+                state,
+                super::builtin_btw::BtwCommandRequest {
+                    conversation_id: p.conversation_id.as_str(),
+                    user_trim: p.user_trim.as_str(),
+                    image_urls: &p.image_urls,
+                    clarify: p.clarify.as_ref(),
+                    llm_override: p.llm_override.as_ref(),
+                    temperature_override: p.temperature_override,
+                    seed_override: p.seed_override,
+                },
+            )
+            .await?
+        }
+    };
+    Some(chat_stream_builtin_sse_response(reply, &p.conversation_id))
+}
+
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。
 pub(crate) async fn chat_stream_handler(
     State(state): State<WebChatTurnAppFacet>,
@@ -339,8 +366,8 @@ pub(crate) async fn chat_stream_handler(
 ) -> Result<Response, (StatusCode, Json<ApiError>)> {
     let p = parse_chat_stream_request(&state, &body)?;
     ensure_bearer_api_key_for_chat(&state, &p.llm_override).await?;
-    if let Some(reply) = run_web_builtin_command(&state, p.user_trim.as_str()).await {
-        return Ok(chat_stream_builtin_sse_response(reply, &p.conversation_id));
+    if let Some(resp) = chat_stream_try_builtin_reply(&state, &p).await {
+        return Ok(resp);
     }
 
     if let Some(resp) = chat_stream_resume_response(&state, &headers, &p).await? {

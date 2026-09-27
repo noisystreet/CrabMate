@@ -288,6 +288,8 @@ impl QueuedChatJob {
 
 struct Inner {
     submit_tx: mpsc::Sender<QueuedChatJob>,
+    /// 普通回合（`dispatcher_loop`）与短路 LLM 命令（如 `/btw`）**共用**的并发上限信号量。
+    turn_sem: Arc<Semaphore>,
     max_concurrent: usize,
     max_pending: usize,
     next_job_id: AtomicU64,
@@ -318,11 +320,17 @@ impl ChatJobQueue {
 
         let metrics_loop = metrics.clone();
         let recent_loop = recent.clone();
-        tokio::spawn(dispatcher_loop(rx, sem, metrics_loop, recent_loop));
+        tokio::spawn(dispatcher_loop(
+            rx,
+            sem.clone(),
+            metrics_loop,
+            recent_loop,
+        ));
 
         Self {
             inner: Arc::new(Inner {
                 submit_tx,
+                turn_sem: sem,
                 max_concurrent,
                 max_pending,
                 next_job_id: AtomicU64::new(1),
@@ -341,6 +349,12 @@ impl ChatJobQueue {
 
     pub fn max_pending(&self) -> usize {
         self.inner.max_pending
+    }
+
+    /// 与普通回合**共用**的并发上限信号量：短路 LLM 命令（如 `/btw`）在调用模型前
+    /// `acquire_owned` 即可复用 `chat_queue_max_concurrent` 上限，避免绕过队列的并发放大。
+    pub fn turn_semaphore(&self) -> Arc<Semaphore> {
+        self.inner.turn_sem.clone()
     }
 
     pub fn next_job_id(&self) -> u64 {
