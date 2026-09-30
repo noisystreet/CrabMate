@@ -351,8 +351,9 @@ impl ChatJobQueue {
         self.inner.max_pending
     }
 
-    /// 与普通回合**共用**的并发上限信号量：短路 LLM 命令（如 `/btw`）在调用模型前
-    /// `acquire_owned` 即可复用 `chat_queue_max_concurrent` 上限，避免绕过队列的并发放大。
+    /// 与普通回合**共用**的并发上限信号量：短路 LLM 命令（如 `/btw`）在开始处理前
+    /// `try_acquire_owned` 即可复用 `chat_queue_max_concurrent` 上限，避免绕过队列的并发放大；
+    /// 取不到 permit 时调用方应立即返回 `QUEUE_FULL`。
     pub fn turn_semaphore(&self) -> Arc<Semaphore> {
         self.inner.turn_sem.clone()
     }

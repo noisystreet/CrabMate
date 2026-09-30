@@ -11,9 +11,19 @@ use crate::clarification_questionnaire::{
     ClarifyAnswersNormalized, merge_user_text_with_clarification_answers,
 };
 use crate::types::LlmSeedOverride;
+use crate::user_message_file_refs::{
+    expand_at_file_refs_in_user_message, user_message_has_workspace_file_ref_syntax,
+};
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 
 const BTW_USAGE: &str = "用法：`/btw <问题>`\n\n旁路提问：结合当前会话上下文回答，但该问答**不写入会话历史**、不增长上下文，模型也**不会**调用任何工具。";
+
+/// `/btw` 因旁路并发放槽已满而无法立即执行时的错误码（与普通回合 `QUEUE_FULL` 对齐）。
+pub(super) const BTW_QUEUE_FULL_CODE: &str = "QUEUE_FULL";
+
+/// `/btw` 并发放槽已满时的用户提示。
+pub(super) const BTW_QUEUE_FULL_MESSAGE: &str =
+    "旁路提问并发已满（`chat_queue_max_concurrent`），请稍后重试";
 
 /// 展示给用户的标记：明确本次回答为不落盘的旁路提问。
 const BTW_REPLY_MARKER: &str = "〔旁路提问 · 未写入会话历史〕\n\n";
@@ -59,6 +69,20 @@ pub(super) struct BtwCommandRequest<'a> {
     pub(super) seed_override: LlmSeedOverride,
 }
 
+/// `/btw` 短路命令的结果。
+pub(super) enum BtwOutcome {
+    /// 正常文本回复（含用法提示与失败提示）。
+    Reply(String),
+    /// 并发槽已满：调用方应返回 **`QUEUE_FULL`**（与普通回合一致）。
+    QueueFull,
+}
+
+/// `/btw` 内部失败原因，用于区分「队列饱和」与「其它错误」。
+enum BtwFailure {
+    QueueFull,
+    Other(String),
+}
+
 /// 执行 `/btw` 短路命令；非 `/btw` 返回 `None`。
 ///
 /// 结果直接返回给调用方（JSON 走 `ChatResponseBody`，SSE 走单条内置事件），
@@ -66,27 +90,36 @@ pub(super) struct BtwCommandRequest<'a> {
 pub(super) async fn run_btw_command(
     state: &WebChatTurnAppFacet,
     req: BtwCommandRequest<'_>,
-) -> Option<String> {
+) -> Option<BtwOutcome> {
     let question = classify_btw_command(req.user_trim)?;
     if question.is_empty() {
-        return Some(BTW_USAGE.to_string());
+        return Some(BtwOutcome::Reply(BTW_USAGE.to_string()));
     }
     Some(match answer_btw(state, &req, question).await {
-        Ok(text) if !text.trim().is_empty() => format!("{BTW_REPLY_MARKER}{text}"),
-        Ok(_) => format!("{BTW_REPLY_MARKER}（模型返回了空回复）"),
-        Err(msg) => format!("旁路提问失败：{msg}"),
+        Ok(text) if !text.trim().is_empty() => {
+            BtwOutcome::Reply(format!("{BTW_REPLY_MARKER}{text}"))
+        }
+        Ok(_) => BtwOutcome::Reply(format!("{BTW_REPLY_MARKER}（模型返回了空回复）")),
+        Err(BtwFailure::QueueFull) => BtwOutcome::QueueFull,
+        Err(BtwFailure::Other(msg)) => BtwOutcome::Reply(format!("旁路提问失败：{msg}")),
     })
 }
 
 /// 组装上下文并无工具调用一次模型。
 ///
-/// 为复用 `chat_queue_max_concurrent` 上限，调用模型前先从队列的**共用**信号量取 permit
-/// （队列饱和时在此等待），避免短路路径绕过队列放大并发。
+/// 为复用 `chat_queue_max_concurrent` 上限，命令开始即先从队列的**共用**信号量取 permit；
+/// 队列饱和时**立即失败**（返回 `QueueFull`，避免无限等待拖住客户端）。
 async fn answer_btw(
     state: &WebChatTurnAppFacet,
     req: &BtwCommandRequest<'_>,
     question: &str,
-) -> Result<String, String> {
+) -> Result<String, BtwFailure> {
+    // 复用队列信号量限流；饱和时**立即失败**，避免无限等待拖住客户端。
+    // 客户端断开时 handler future 被 drop，会连带中止在途请求。
+    let _permit = match state.chat.chat_queue.turn_semaphore().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => return Err(BtwFailure::QueueFull),
+    };
     let deps = state.chat.chat_queue_job_deps.clone();
     let cfg_snap = {
         let g = state.cfg.read().await;
@@ -101,7 +134,10 @@ async fn answer_btw(
     // 复用普通回合的上下文组装（含 system / 工作区画像 / 历史），但**不落盘**：
     // `build_messages_for_turn` 只操作 `load_conversation_seed` 的克隆。
     // hint 前置（见 `BTW_MODEL_HINT`）可规避 `/<skill-id>` 强制技能误判。
-    let user_for_model = format!("{BTW_MODEL_HINT}{question}");
+    let expanded = expand_btw_question(state, question)
+        .await
+        .map_err(BtwFailure::Other)?;
+    let user_for_model = format!("{BTW_MODEL_HINT}{expanded}");
     let user_for_model =
         merge_user_text_with_clarification_answers(user_for_model, req.clarify.cloned());
     let seed = super::turn_build::build_messages_for_turn(
@@ -112,7 +148,8 @@ async fn answer_btw(
         None,
         None,
     )
-    .await?;
+    .await
+    .map_err(BtwFailure::Other)?;
     let messages = seed.messages;
     let model_override = req.llm_override.and_then(|o| o.model.as_deref());
 
@@ -129,14 +166,6 @@ async fn answer_btw(
         model_override,
         req.seed_override,
     );
-    // 复用队列信号量限流；客户端断开时 handler future 被 drop，会连带中止在途请求。
-    let _permit = state
-        .chat
-        .chat_queue
-        .turn_semaphore()
-        .acquire_owned()
-        .await
-        .map_err(|_| "会话队列已关闭".to_string())?;
     let cc = crate::llm::CompleteChatRetryingParams::new(
         llm_backend,
         &state.client,
@@ -152,10 +181,33 @@ async fn answer_btw(
     );
     let (msg, _finish_reason) = crate::llm::complete_chat_retrying(&cc, &chat_req)
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| BtwFailure::Other(e.to_string()))?;
     Ok(crate::types::message_content_as_str(&msg.content)
         .unwrap_or("")
         .to_string())
+}
+
+/// 展开问题中的 `@file` / `file://` 工作区引用（与普通回合一致），返回送入模型的问题文本。
+///
+/// 未设置工作区却含引用语法时报错；无引用语法时原样返回。
+async fn expand_btw_question(
+    state: &WebChatTurnAppFacet,
+    question: &str,
+) -> Result<String, String> {
+    let eff_ws_raw = state.effective_workspace_path().await;
+    if eff_ws_raw.trim().is_empty() {
+        if user_message_has_workspace_file_ref_syntax(question) {
+            return Err(
+                "未设置工作区：无法在消息中使用 `file:///` / `@` 引用工作区内文件。请先在侧栏工作区面板选择或提交目录。"
+                    .to_string(),
+            );
+        }
+        return Ok(question.to_string());
+    }
+    let work_dir = std::path::PathBuf::from(eff_ws_raw);
+    let cfg = state.cfg.read().await;
+    expand_at_file_refs_in_user_message(question, work_dir.as_path(), &cfg)
+        .map_err(|e| format!("引用工作区文件失败：{e}"))
 }
 
 #[cfg(test)]
