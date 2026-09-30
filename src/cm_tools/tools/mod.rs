@@ -213,9 +213,7 @@ pub fn tool_context_for_with_read_cache_and_memory<'a>(
 }
 
 mod runners;
-mod runners_gh;
 pub use runners::*;
-pub use runners_gh::*;
 
 /// 已装配命令的纯数据快照（`std::process::Command` 非 `Send`，无法跨线程复用）。
 ///
