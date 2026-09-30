@@ -231,8 +231,8 @@ fn context_pipeline_section(cfg: &AgentConfig) -> String {
 fn turn_budget_section(cfg: &AgentConfig) -> String {
     let t = &cfg.turn_budget;
     format!(
-        "max_turn_duration_seconds = {}\nmax_turn_tokens = {}\nmax_llm_calls_per_turn = {}\nmax_outer_loop_iterations = {}\n",
-        t.max_turn_duration_seconds, t.max_turn_tokens, t.max_llm_calls_per_turn, t.max_outer_loop_iterations,
+        "max_turn_duration_seconds = {}\nmax_turn_tokens = {}\nmax_llm_calls_per_turn = {}\n",
+        t.max_turn_duration_seconds, t.max_turn_tokens, t.max_llm_calls_per_turn,
     )
 }
 

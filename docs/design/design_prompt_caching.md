@@ -4,11 +4,11 @@
 **日期**：2026-07-09  
 **受众**：维护者、架构决策者  
 **关联**：
-- `crates/crabmate-types/src/chat_api.rs` — ChatResponse / StreamChunk 类型定义
-- `crates/crabmate-llm/src/api/mod.rs` — HTTP 调用入口（流式+非流式）
-- `crates/crabmate-llm/src/api/sse_parser.rs` — SSE 解析（usage 在最后一帧）
-- `crates/crabmate-llm/src/retry.rs` — 重试引擎
-- `src/runtime/diagnostic_summary.rs` — 诊断摘要
+- `src/cm_types/chat_api.rs` — ChatResponse / StreamChunk 类型定义
+- `src/cm_llm/api/mod.rs` — HTTP 调用入口（流式+非流式）
+- `src/cm_llm/api/sse_parser.rs` — SSE 解析（usage 在最后一帧）
+- `src/cm_llm/retry.rs` — 重试引擎
+- `src/cm_tools/tools/diagnostics.rs` — 诊断摘要
 
 ---
 
@@ -69,7 +69,7 @@ DeepSeek 的上下文缓存是**自动且透明的**[^2]（V4 新增"公共前�
 
 #### 3.1 `ChatResponse` / `Usage` 类型扩展
 
-**文件**：`crates/crabmate-types/src/chat_api.rs`
+**文件**：`src/cm_types/chat_api.rs`
 
 DeepSeek 返回的 JSON 结构（缓存字段在 `usage` 对象内）：
 
@@ -114,7 +114,7 @@ pub struct ChatResponse {
 
 #### 3.2 SSE 流式路径 — `StreamChunk` 扩展与最后一帧处理
 
-**文件**：`crates/crabmate-types/src/chat_api.rs`
+**文件**：`src/cm_types/chat_api.rs`
 
 `StreamChunk` 增加 `usage` 字段（可选，仅在 SSE 最后一帧出现）：
 
@@ -128,7 +128,7 @@ pub struct StreamChunk {
 }
 ```
 
-**文件**：`crates/crabmate-llm/src/api/sse_parser.rs`
+**文件**：`src/cm_llm/api/sse_parser.rs`
 
 当前 `ingest_sse_data_payload` 在 `choices` 为空时直接返回，usage 丢失。修正逻辑：
 
@@ -170,7 +170,7 @@ pub(super) struct SseStreamAccum {
 
 #### 3.3 日志记录与 SSE 报告
 
-**文件**：`crates/crabmate-llm/src/api/mod.rs`
+**文件**：`src/cm_llm/api/mod.rs`
 
 在 `stream_chat` 返回后提取 usage 并记录。注意两条路径：
 
@@ -197,7 +197,7 @@ fn log_cache_usage(usage: Option<&Usage>, model: &str) {
 
 #### 3.4 进程级缓存统计累积
 
-**文件**：`crates/crabmate-llm/src/retry.rs`（或独立的 `cache_stats.rs`）
+**文件**：`src/cm_llm/retry.rs`（或独立的 `cache_stats.rs`）
 
 使用 `std::sync::atomic::AtomicU64`（无需 `Mutex`，仅累加值）：
 
@@ -251,7 +251,7 @@ pub static LLM_CACHE_AGGREGATE: LazyLock<LlmCacheAggregate> =
 
 #### 3.5 `diagnostic_summary` 集成
 
-**文件**：`src/runtime/diagnostic_summary.rs`
+**文件**：`src/cm_tools/tools/diagnostics.rs`
 
 ```rust
 /// LLM Prompt 缓存统计。
@@ -281,7 +281,7 @@ DeepSeek 缓存从 **第 0 个 token 起** 开始匹配。Agent 的 system promp
 
 #### 3.7 优化方向：system prompt 内容稳定性
 
-**文件**：`crates/crabmate-llm/src/vendor_messages.rs`（system prompt 构建处）
+**文件**：`src/cm_llm/vendor_messages.rs`（system prompt 构建处）
 
 ```rust
 /// 记录 system prompt 的 hash/长度，用于日志比对。
@@ -312,7 +312,7 @@ pub fn log_system_prompt_stability(messages: &[Message]) {
 
 #### 3.8 配置项
 
-**文件**：`crates/crabmate-config/src/types/agent_config_sections.rs`
+**文件**：`src/cm_config/types/agent_config_sections.rs`
 
 ```rust
 pub struct LlmConnectionConfig {

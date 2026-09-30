@@ -12,7 +12,7 @@
 
 CrabMate already has:
 
-- **In-turn DAG orchestration** via `workflow_execute` (`src/agent/workflow/`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
+- **In-turn DAG orchestration** via `workflow_execute` (`src/cm_workflow/`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
 - **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, final `agent_reply_plan` v1, and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
 
 Roadmap and product expectations are moving toward state-machine-style configurations and readable conditional/loop expression. The core tension is that current `WorkflowSpec` is a **DAG**, not a native FSM/cyclic graph runtime.
@@ -127,13 +127,12 @@ Out of scope for current consensus: making `workflow_execute` simultaneously sup
 
 | Area | Path | Notes |
 |---|---|---|
-| DAG model | `src/agent/workflow/model.rs` | `WorkflowSpec` / `WorkflowNodeSpec` |
-| Parsing | `src/agent/workflow/parse.rs` | `parse_workflow_spec` |
-| Topology | `src/agent/workflow/dag.rs` | `topo_layers` |
-| Scheduling/execution | `src/agent/workflow/execute/` | schedule / retry / compensation |
+| DAG model | `src/cm_workflow/model.rs` | `WorkflowSpec` / `WorkflowNodeSpec` |
+| Parsing | `src/cm_workflow/parse.rs` | `parse_workflow_spec` |
+| Topology | `src/cm_workflow/dag.rs` | `topo_layers` |
+| Scheduling/execution | `src/cm_workflow/execute/` | schedule / retry / compensation |
 | Tool dispatch | `src/agent/workflow_tool_dispatch.rs` | `dispatch_workflow_execute_tool` |
-| Required-field checks | `src/tools/schema_check.rs` | `workflow_tool_args_satisfy_required` |
-| Plan alignment | `src/agent/plan_artifact.rs` etc. | `workflow_node_id` and validate-only binding |
+| Plan alignment | `src/cm_agent/plan_artifact/` etc. | `workflow_node_id` and validate-only binding |
 
 ---
 

@@ -1,6 +1,6 @@
 # 工具调用层：对标开源 Agent 的演进方向
 
-**状态**：路线图 / 设计备忘（**未**承诺实现顺序与时间表）。**受众**：维护 **`src/tools/`**、**`tool_registry`**、**`tool_approval`**、**`agent_turn::execute_tools`** 与 **SSE 工具事件** 的开发者。  
+**状态**：路线图 / 设计备忘（**未**承诺实现顺序与时间表）。**受众**：维护 **`src/cm_tools/`**、**`tool_registry`**、**`tool_approval`**、**`agent_turn::execute_tools`** 与 **SSE 工具事件** 的开发者。  
 **语言**：中文。  
 **关联**：
 

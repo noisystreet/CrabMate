@@ -192,7 +192,7 @@
 | `workflow_tool_join_error` | 工作流工具任务 join 失败 |
 | `{tool_name}_failed` | 通用：某工具失败（如 `run_command_failed`） |
 
-完整启发式见 `src/tool_result/mod.rs`（`classify_error_code`）；**`error_code` → `failure_category`** 映射见 **`src/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/agent/workflow/execute.rs`。
+完整启发式见 `src/cm_tools/tool_result/mod.rs`（`classify_error_code`）；**`error_code` → `failure_category`** 映射见 **`src/cm_tools/tool_result/tool_error.rs`**（**`failure_category_for_error_code`**，与 **`ToolFailureCategory`** 一致）。工作流专用见 `src/cm_workflow/execute/`。
 
 ### `tool_result.failure_category`（与 `crabmate_tool.failure_category`）
 

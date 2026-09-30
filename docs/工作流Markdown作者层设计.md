@@ -6,7 +6,7 @@
 
 - 轮内 DAG 能力边界、FSM/分支/循环原则 → **`docs/工作流编排架构.md`**
 - 运行时 JSON 契约、`workflow_execute` / `validate_only` → **`docs/工具说明.md`**
-- 源码：`src/agent/workflow/`（**`parse_workflow_spec`**、模板、调度）
+- 源码：`src/cm_workflow/`（**`parse_workflow_spec`**、模板、调度）
 
 ---
 
@@ -105,7 +105,7 @@ workflow:
 
 2. **`parse_workflow_spec_yaml(bytes)`** → `serde_json::Value`（与现有 JSON 入口汇合）。
 
-3. **`compile_workflow_spec(spec)`**（新模块，建议 `src/agent/workflow/compile_spec.rs`）  
+3. **`compile_workflow_spec(spec)`**（新模块，建议 `src/cm_workflow/compile_spec.rs`）  
    - 将 `steps[]` 的 `after` / `when` / `for_each` 编译为 **`nodes[]` + `deps`**。  
    - 编译期强制 **`max_items` / `max_iterations`** 上限。  
    - 输出与手写 DAG **同形**，供 **`parse_workflow_spec`** 消费。
@@ -622,15 +622,14 @@ LLM 路径的额外风险：模型生成**无界** `for_each` → 编译器 **�
 
 | 区域 | 路径 |
 |------|------|
-| DAG 规格 | `src/agent/workflow/model.rs` |
-| 解析 | `src/agent/workflow/parse.rs` |
-| 模板 | `src/agent/workflow/workflow_templates.rs` |
-| 调度 | `src/agent/workflow/execute/` |
+| DAG 规格 | `src/cm_workflow/model.rs` |
+| 解析 | `src/cm_workflow/parse.rs` |
+| 模板 | `src/cm_workflow/workflow_templates.rs` |
+| 调度 | `src/cm_workflow/execute/` |
 | 工具分发 | `src/agent/workflow_tool_dispatch.rs` |
-| Schema | `src/tools/schema_check.rs` |
-| 规划对齐 | `src/agent/plan_artifact.rs` |
+| 规划对齐 | `src/cm_agent/plan_artifact/` |
 
-**建议新增**：`src/agent/workflow/compile_spec.rs`、`src/agent/workflow/md_extract.rs`、`runtime/cli_workflow.rs`（或 `cli` 子模块）。
+**建议新增**：`src/cm_workflow/compile_spec.rs`、`src/cm_workflow/md_extract.rs`、`runtime/cli_workflow.rs`（或 `cli` 子模块）。
 
 ---
 

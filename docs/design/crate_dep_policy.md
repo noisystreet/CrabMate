@@ -6,9 +6,9 @@
 
 ## 第 1 轮：审批 crate
 
-- 新增 **`crates/crabmate-approval`**：`SensitiveCapability`、`ApprovalRequestSpec`、`WebApprovalSink`、`run_web_tool_approval` 等。
-- **`crabmate-workflow`** 仅依赖 **`crabmate-approval`**（不再依赖 internal）。
-- **`crabmate-internal::tool_approval`** 再导出 approval，并保留 CLI/TUI / `interactive_gate_*`。
+- 新增 **`src/cm_approval`**：`SensitiveCapability`、`ApprovalRequestSpec`、`WebApprovalSink`、`run_web_tool_approval` 等。
+- **`src/cm_workflow`** 仅依赖 **`src/cm_approval`**（不再依赖 `cm_internal`）。
+- **`src/cm_internal/tool_approval`** 再导出 approval，并保留 CLI/TUI / `interactive_gate_*`。
 
 ## 第 2 轮：根包 `lib.rs` 再导出
 

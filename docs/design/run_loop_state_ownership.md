@@ -10,7 +10,7 @@
 | 袋 | 位置 | 可写什么 | 勿塞入 |
 |---|---|---|---|
 | **`RunLoopTurnState`** | `src/agent/agent_turn/host/params.rs` | `messages_buf` / `messages_revision`、`sub_phase`（观测）、`TurnPlannerHints`、模型/温度覆盖、共享 **`Arc<TurnBudgetCounter>`** | Gate 计数、工作流反思 FSM、工具失败短路表 |
-| **`PerCoordinator`** | `crates/crabmate-agent/src/per_coord/` | 配置镜像、`PlanRequirementSource`、**`plan_rewrite_attempts`**、workflow validate 缓存、工具失败 / `run_command` 去重、内嵌 **`WorkflowReflectionController`** | 整场只读 LLM 句柄、前端 UI 相位 |
+| **`PerCoordinator`** | `src/cm_agent/per_coord/` | 配置镜像、`PlanRequirementSource`、**`plan_rewrite_attempts`**、workflow validate 缓存、工具失败 / `run_command` 去重、内嵌 **`WorkflowReflectionController`** | 整场只读 LLM 句柄、前端 UI 相位 |
 | **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环 Gate **前**纠偏：build-idle streak / 注入次数、终答缺失注入次数（R 轨 3） | 终答 Gate 相位、`plan_rewrite` |
 | **`PerTurnFlight`** | `src/per_turn_flight.rs` | 只读镜像（如 `plan_rewrite_attempts`、`require_plan`）供 `/status` | 权威可变源（权威在 PerCoord） |
 
@@ -35,12 +35,12 @@
 | 能力 | 挂点 | 预算备注 |
 |---|---|---|
 | **观众角色**（未实现） | 锚点 **C**（终答静态通过 / 语义检查旁）、**D**（workflow 反思决策后）；见 `audience_critic_role.md` | 侧向调用经 `complete_chat_retrying`；计入共享墙钟；独立计数名预留 `audience_calls` |
-| **planner / executor 分预算**（未实现） | `OuterLoopPlanCallModelRole` 已按轮选模型端点 | 共享 **`TurnBudgetCounter`**；观测标签预留 **`LlmCallBudgetClass`**（`turn_budget.rs`），**不**改 deny 逻辑、**不**新增 TOML 键于本阶段 |
+| **planner / executor 分预算**（未实现） | `OuterLoopPlanCallModelRole` 已按轮选模型端点 | 共享 **`TurnBudgetCounter`**；**不**改 deny 逻辑、**不**新增 TOML 键于本阶段 |
 
 ---
 
 ## 4. 与相位词汇的关系
 
-- 编排相位字符串：`crates/crabmate-agent/src/agent_turn/phase_vocabulary.rs`
+- 编排相位字符串：`src/cm_agent/agent_turn/phase_vocabulary.rs`
 - 外循环步进只经 **`OuterLoopDriver::record_*`**
 - 前端 `TurnPhase` / `StreamControlPhase` **禁止**并进本表

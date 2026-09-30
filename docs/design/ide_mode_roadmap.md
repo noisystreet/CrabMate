@@ -10,7 +10,7 @@
 - 前端模块：**`frontend/src/app/ide_layout.rs`**、**`ide_layout_switch.rs`**、**`ide_codemirror.rs`**、**`ide_tabs.rs`**、**`ide_disk_sync.rs`**、**`ide_find.rs`**、**`app/ide_menu_bar/`**
 - SSE：**`docs/SSE协议.md`**（**`workspace_changed`**）；前端 **`on_workspace_changed`** → **`ide_sync_disk_nonce`**
 - 工作区文件 API：**`GET`/`POST /workspace/file`**（见 **`docs/命令行与路由.md`**）
-- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`rust_compiler_json`**、**`rust_analyzer_*`**）；实现 **`crates/crabmate-tools/src/tools/rust_ide.rs`**
+- Agent 侧诊断 / LSP 工具：**`docs/工具说明.md`**（**`rust_compiler_json`**、**`rust_analyzer_*`**）；实现 **`src/cm_tools/tools/rust_ide.rs`**
 - 并行产品路线（外部编辑器壳）：**`docs/design/vscode_extension.md`**
 - 用户数据偏好：**`docs/design/user_data_dir.md`**（**`editor_layout_mode`**、**`ide_editor_*`**）
 - E2E：Client [`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs)

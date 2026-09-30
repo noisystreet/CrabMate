@@ -6,7 +6,7 @@
 
 - API 完备度边界与平台化门槛：[`server_api_completeness.md`](./server_api_completeness.md)（ADR）
 - 路由与契约：**`docs/命令行与路由.md`**（`POST /chat`、`POST /chat/stream`、`GET /openapi.json` 等）
-- SSE 控制面：**`docs/SSE协议.md`**、`crates/crabmate-sse-protocol`
+- SSE 控制面：**`docs/SSE协议.md`**、`src/cm_sse_protocol`
 - Web 鉴权实现：**`src/web/chat_handlers/auth.rs`**、`src/web/server.rs`
 - CLI / Web 审批与会话差异：**`docs/命令行与路由.md`**「CLI 与 Web 能力对照」
 - 路线图交叉：**`docs/待办清单.md`**（连接器生态、MCP 扩展等）
