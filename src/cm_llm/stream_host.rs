@@ -1,4 +1,4 @@
-//! 宿主侧钩子：SSE 控制面、日志脱敏（与 `crabmate-internal` / `runtime` 解耦）。
+//! 宿主侧钩子：SSE 控制面、日志脱敏（与 `cm_internal` / `runtime` 解耦）。
 
 use std::sync::atomic::AtomicBool;
 

@@ -1,6 +1,6 @@
 //! 聊天区展示层共用的字符串规则（无 UI / 无 I/O）。
 //!
-//! 与主仓 `src/runtime/message_display.rs`、前端 `message_format/display/message_ex/parts.rs`
+//! 与主仓 `src/cm_runtime/message_display.rs`、前端 `message_format/display/message_ex/parts.rs`
 //! 对齐；金样见仓库根 `fixtures/display_hide_user_golden.jsonl`。
 
 /// 无工具规划轮 tool_calls 拒绝后的一次性重写约束 user 首行（同一来源见 `cm_types`）。

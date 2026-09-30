@@ -122,7 +122,7 @@ pub enum ToolCategory {
 pub struct ToolContext<'a> {
     /// 主 Agent / `tool_context_for*` 路径填充；工作流节点等自建上下文可为 `None`（部分工具将报错）。
     pub cfg: Option<&'a AgentConfig>,
-    /// 代码语义检索；主 Agent 路径由 `crabmate-internal` 注入。
+    /// 代码语义检索；主 Agent 路径由 `cm_internal` 注入。
     pub codebase_semantic_host: Option<&'a dyn CodebaseSemanticToolHost>,
     pub command_max_output_len: usize,
     pub weather_timeout_secs: u64,
@@ -144,9 +144,9 @@ pub struct ToolContext<'a> {
     /// `cargo_test` / `npm run test` / 部分 `run_command cargo test` 的进程内输出缓存。
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
-    /// 长期记忆工具；主 Agent 路径由 `crabmate-internal` 注入。
+    /// 长期记忆工具；主 Agent 路径由 `cm_internal` 注入。
     pub long_term_memory_host: Option<&'a dyn LongTermMemoryToolHost>,
-    /// 后台任务查询工具（`background_job_status` / `background_job_list`）；主 Agent 路径由 `crabmate-internal` 注入。
+    /// 后台任务查询工具（`background_job_status` / `background_job_list`）；主 Agent 路径由 `cm_internal` 注入。
     pub tool_jobs_host: Option<&'a dyn ToolJobsToolHost>,
 }
 

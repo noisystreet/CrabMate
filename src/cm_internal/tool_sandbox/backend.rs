@@ -5,7 +5,7 @@ use std::time::Duration;
 /// 单次工具调用在沙盒内执行所需的参数（与 Docker / OCI 通用字段对齐）。
 #[derive(Debug, Clone)]
 pub struct SandboxRunRequest {
-    /// 容器镜像（如 `registry/crabmate-tools:tag`）。
+    /// 容器镜像（如 `registry/crabmate:tag`）。
     pub image: String,
     /// `None` 表示隔离网络（Docker 下对应 `network_mode: none`）；`Some("bridge")` 等表示命名网络。
     pub network_mode: Option<String>,

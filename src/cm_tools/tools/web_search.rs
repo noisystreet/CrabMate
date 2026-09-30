@@ -425,7 +425,7 @@ mod tests {
     }
 
     /// 实网：本机 Firefox/Chrome + Bing。默认忽略；本地：  
-    /// `cargo test -p crabmate-tools live_worbrow_search -- --ignored --nocapture`
+    /// `cargo test -p crabmate live_worbrow_search -- --ignored --nocapture`
     #[test]
     #[ignore = "requires local browser + network"]
     fn live_worbrow_search() {

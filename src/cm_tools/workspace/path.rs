@@ -13,7 +13,7 @@
 //!
 //! **残余风险**：策略校验仍依赖校验时刻的 `canonicalize`；**非 Linux** 或未走 [`crate::cm_tools::workspace::fs`] 的路径仍可能存在竞态；目录删除等操作未完全 `openat` 化。**不要**将当前实现等同于内核级「不可逃逸」保证；多租户或不可信工作区须与 **HTTP 鉴权**等一并评估。
 //!
-//! 用户可见说明见 **`README.md`**、**`docs/配置说明.md`**（工作区）。工具侧解析与打开入口见 **`src/tools/file/path.rs`**。
+//! 用户可见说明见 **`README.md`**、**`docs/配置说明.md`**（工作区）。工具侧解析与打开入口见 **`src/cm_tools/tools/file/path.rs`**。
 
 use path_absolutize::Absolutize;
 use std::path::{Path, PathBuf};

@@ -1,4 +1,4 @@
-//! 澄清问卷解析结果 → SSE 控制面体（`crabmate-tools` 与 `sse::protocol` 桥接）。
+//! 澄清问卷解析结果 → SSE 控制面体（`cm_tools` 与 `sse::protocol` 桥接）。
 
 use crate::cm_tools::clarification_questionnaire::{
     ClarificationQuestionnaireBody as ToolsBody, parse_present_clarification_body,

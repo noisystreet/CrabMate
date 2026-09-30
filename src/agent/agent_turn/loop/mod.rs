@@ -1,6 +1,6 @@
 //! 外循环与回合分发（IO 侧）：outer_loop、ReAct driver、完成纠偏包装。
 //!
-//! 纯 FSM / reduce / decision 在 **`crabmate-agent::agent_turn`**；本目录再导出并承载副作用。
+//! 纯 FSM / reduce / decision 在 **`crate::cm_agent::agent_turn`**；本目录再导出并承载副作用。
 
 pub(crate) mod check_abort;
 pub(crate) mod context_timeline_sse;

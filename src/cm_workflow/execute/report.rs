@@ -277,7 +277,7 @@ pub(super) fn format_main_summary(
     out
 }
 
-/// 复制自 `crabmate-tools::tools::output_util::truncate_to_char_boundary`。
+/// 复制自 `crate::cm_tools::tools::output_util::truncate_to_char_boundary`。
 fn truncate_to_char_boundary(s: &str, max_bytes: usize) -> String {
     if s.len() <= max_bytes {
         return s.to_string();

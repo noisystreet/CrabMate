@@ -1,6 +1,6 @@
 //! 本机用户数据目录（`~/.local/share/crabmate`）：prefs、按工作区 Web 会话、LLM 覆盖与 secrets。
 //!
-//! 磁盘读写与类型定义在 **`crabmate-internal`**；Web 请求体合并（依赖 `web::http_types`）保留在根 crate。
+//! 磁盘读写与类型定义在 **`crate::cm_internal`**；Web 请求体合并（依赖 `web::http_types`）保留在根 crate。
 
 mod cli_llm_align;
 mod merge;

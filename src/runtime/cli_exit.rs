@@ -1,4 +1,4 @@
-//! 重导出自 `crabmate-runtime` + `classify_model_error_message`（依赖根包 `agent_errors` / `plan_artifact`）。
+//! 重导出自 `crate::cm_runtime` + `classify_model_error_message`（依赖根包 `agent_errors` / `plan_artifact`）。
 
 pub use crate::cm_runtime::cli_exit::*;
 
