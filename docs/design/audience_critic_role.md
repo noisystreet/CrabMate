@@ -10,7 +10,7 @@
 - **`docs/design/per_state_machine_consolidation.md`**：P/R/E 状态机与 **`plan_rewrite` / `workflow_reflection` / `final_plan_semantic_check`** 的职责边界。  
 - **`docs/开发文档.md`**：`agent_turn` / `per_coord` / `llm::complete_chat_retrying` 调用约定。  
 - **`docs/design/run_loop_state_ownership.md`**：可变状态归属；侧向调用挂现有 P/R，**不**新开并行阶段机。  
-- **`docs/SSE协议.md`**：若新增控制面事件，须与 **`frontend`** 及 **`crates/crabmate-sse-protocol`** 对齐。  
+- **`docs/SSE协议.md`**：若新增控制面事件，须与 **`frontend`** 及 **`src/cm_sse_protocol`** 对齐。  
 - **`.cursor/rules/secrets-and-logging.mdc`**：侧向请求的摘要与日志脱敏为**硬性**约束。
 
 ### 现行锚点（ReAct-only，2026-08）
@@ -22,7 +22,7 @@
 | **C** | `final_plan_gate` 静态通过后 / `per_plan_semantic_check` 旁 | 与语义检查定义互斥或合并，避免双次侧向 |
 | **D** | `WorkflowReflectionController::decide` 之后 | 仅 `workflow_execute` 路径 |
 
-下文表中 **A/B/E**（分阶段步结束、补丁规划、分层验证失败）为**历史设想**；复活对应入口前勿实现。侧向须经 **`llm::complete_chat_retrying`**；默认**不**写入上送 `messages`；预算计入共享 **`TurnBudgetCounter`** 墙钟（观测类预留 **`LlmCallBudgetClass::SideCheck`**）。
+下文表中 **A/B/E**（分阶段步结束、补丁规划、分层验证失败）为**历史设想**；复活对应入口前勿实现。侧向须经 **`llm::complete_chat_retrying`**；默认**不**写入上送 `messages`；预算计入共享 **`TurnBudgetCounter`** 墙钟。
 
 ---
 
@@ -132,7 +132,7 @@
 ## 8. 可观测性与协议
 
 1. **Tracing**：统一 `target`（建议 `crabmate::audience` 或与 `crabmate::per` 并列的子 span），携带 `conversation_id` / `job_id` / `plan_id` / `step_id`（若可得）。  
-2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/api/chat_stream/parser_v2.rs`**、**`fixtures/sse_control_golden.jsonl`** 与 **`crates/crabmate-sse-protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。  
+2. **SSE（若需要 UI）**：新控制面事件须更新 **`docs/SSE协议.md`**、**`frontend/src/api/chat_stream/parser_v2.rs`**、**`fixtures/sse_control_golden.jsonl`** 与 **`src/cm_sse_protocol`**（见仓库 **api-sse-chat-protocol** 维护清单）。  
 3. **会话消息**：默认建议**旁路**（仅日志 + SSE），**不**写入上送模型的 `messages`；若产品要求写入时间线，应使用与现有「分阶段旁注 system」一致的模式，并评估 token 膨胀。
 
 ---

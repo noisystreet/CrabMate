@@ -213,7 +213,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 ## 7. 错误码词汇
 
 - 轮询响应 `error_code`：复用 `tool_result.error_code` 表（`docs/SSE协议.md` §「tool_result.error_code」），新增取值 **`internal`**（worker panic/异常，`retryable=false`）；`timeout` / `cancelled` 语义与现有启发式一致。
-- HTTP `ApiError.code`（§3）：`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 为**新增**；写入 `crates/crabmate-api-contract/src/error_codes.rs` 与 `docs/命令行契约.md`。
+- HTTP `ApiError.code`（§3）：`JOB_NOT_FOUND` / `JOB_EXPIRED` / `JOB_OWNERSHIP_MISMATCH` 为**新增**；写入 `src/cm_api_contract/error_codes.rs` 与 `docs/命令行契约.md`。
 
 ---
 

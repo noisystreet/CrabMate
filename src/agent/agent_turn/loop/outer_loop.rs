@@ -70,8 +70,7 @@ fn check_shared_turn_budget(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnErr
 }
 
 fn outer_loop_iteration_guard(p: &RunLoopParams<'_>) -> Result<(), RunAgentTurnError> {
-    let max_iter =
-        crate::agent::turn_budget::effective_max_outer_loop_iterations(&p.ctx.core.cfg.turn_budget);
+    let max_iter = crate::agent::turn_budget::DEFAULT_MAX_OUTER_LOOP_ITERATIONS;
     if p.turn.turn_budget.outer_loop_iterations_exceeded(max_iter) {
         return Err(RunAgentTurnError::Other {
             phase: AgentTurnSubPhase::Planner,

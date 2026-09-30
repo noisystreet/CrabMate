@@ -312,8 +312,6 @@ pub struct TurnBudgetConfig {
     pub max_turn_tokens: usize,
     /// 单轮 LLM 调用次数上限；`0` 表示使用编排层默认（当前 500）。
     pub max_llm_calls_per_turn: u32,
-    /// 单 Agent 外循环迭代上限；`0` 表示使用编排层默认（当前 500）。
-    pub max_outer_loop_iterations: u32,
     /// 预算接近上限时启用降级策略（跳过分层非关键验收与 Manager 反思 LLM）；默认关闭。
     pub budget_degradation_enabled: bool,
     /// 触发降级的使用比例阈值（50–99）；与 LLM 次数 / Token 粗估取较高者。

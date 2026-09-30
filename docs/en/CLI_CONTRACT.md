@@ -2,7 +2,7 @@
 
 # CLI contract (exit codes, JSON, ops subcommands)
 
-For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `crates/crabmate-config` clap, and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
+For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `src/cm_config` clap, and **after_help** in `crabmate --help`. Streaming **Web** error codes: [SSE_PROTOCOL.md](SSE_PROTOCOL.md) § Stream error `code` enum.
 
 > **D2.1**: in-process **`crabmate chat`** entry is removed. Sections below about `chat` exit codes / `--output json` are **historical** (old scripts/logs). Prefer Client **`crabmate-tui`**, HTTP APIs, or this repo’s **`tool-replay`** / **`bench`**.
 
@@ -18,7 +18,7 @@ For scripts and CI: aligned with `src/runtime/cli_exit.rs`, `crates/crabmate-con
 | 5 | Quota / rate limit | HTTP 429, 402, some 503 (heuristic) |
 | 6 | Tool replay mismatch | `tool-replay run --compare-recorded` string mismatch vs `recorded_output` |
 
-Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED` (**historical**, not emitted in production after D2.2), `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs` / `crates/crabmate-runtime`. Tests: `tests/cli_contract.rs` (still asserts placeholder value 4).
+Constants: `EXIT_GENERAL`, `EXIT_USAGE`, `EXIT_MODEL_ERROR`, `EXIT_TOOLS_ALL_RUN_COMMAND_DENIED` (**historical**, not emitted in production after D2.2), `EXIT_QUOTA_OR_RATE_LIMIT`, `EXIT_TOOL_REPLAY_MISMATCH` in `src/runtime/cli_exit.rs` / `src/cm_runtime`. Tests: `tests/cli_contract.rs` (still asserts placeholder value 4).
 
 ## SSE / stream error codes (Web `POST /chat/stream`)
 
@@ -60,11 +60,11 @@ Prefer response header **`x-request-id`** for correlation. Common stable codes (
 | `INTERNAL_ERROR` | 500 | Sometimes | Orchestration; may include truncated `reason_code` |
 | Budget / LLM codes (`STEP_RETRY_EXHAUSTED`, `LLM_RATE_LIMIT`, …) | 4xx / 5xx | Sometimes | See SSE docs for stream path |
 
-Constants: **`crates/crabmate-api-contract/src/error_codes.rs`**. Full streaming error table: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
+Constants: **`src/cm_api_contract/error_codes.rs`**. Full streaming error table: **[`docs/en/SSE_PROTOCOL.md`](SSE_PROTOCOL.md)**.
 
 ### HTTP / OpenAPI contract semver and external pins
 
-- DTOs and schemars live in **`crabmate-api-contract`**; machine-readable **`GET /openapi.json`**.
+- DTOs and schemars live in **`src/cm_api_contract`**; machine-readable **`GET /openapi.json`**.
 - Crate semver vs SSE wire protocol, compatibility window, and git tag **`client-contract-vX.Y.Z`**: **[`docs/design/client_contract_versioning.md`](../design/client_contract_versioning.md)**.
 - Gate: `bash scripts/check-client-contract.sh` (OpenAPI smoke + external-style path consumer).
 

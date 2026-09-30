@@ -14,12 +14,12 @@ This document captures a **design analysis** (not an implementation commitment) 
 ## 2. Current structure (brief)
 
 - The root **`crabmate`** crate still hosts agent/runtime logic plus **Axum Web**, **ops CLI** (`clap`), optional memory embeddings (`fastembed`), MCP, and Docker sandbox (`bollard`). Official terminal / Web UI live in the Client repo (in-process `chat|repl|tui` removed in D2.2).
-- Workspace-level extraction already exists for:
-  - `frontend` (Web UI)
-  - `crates/crabmate-sse-protocol` (SSE control-plane contract)
-  - `crates/crabmate-types` (OpenAI-compatible messages; re-exported as `types`)
-  - `crates/crabmate-config` (configuration loading and `AgentConfig`; re-exported as `config`)
-  - `crates/crabmate-llm` (vendor adapters, HTTP client, LLM errors/backend trait; `llm` module re-exports)
+- Module-level layering already exists inside the single `crabmate` package (`src/cm_*/`):
+  - official Web UI / terminal UI live in the Client repo
+  - `src/cm_sse_protocol/` (SSE control-plane contract)
+  - `src/cm_types/` (OpenAI-compatible messages; re-exported as `types`)
+  - `src/cm_config/` (configuration loading and `AgentConfig`; re-exported as `config`)
+  - `src/cm_llm/` (vendor adapters, HTTP client, LLM errors/backend trait; `llm` module re-exports)
 - Public API is still application-shaped: some `pub use` exports and `run_agent_turn` entrypoints exist, but there is no clearly versioned “framework surface”.
 
 ## 3. Gap analysis

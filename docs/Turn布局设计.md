@@ -108,7 +108,7 @@ flowchart TB
 
 | 位置 | 行为 |
 |------|------|
-| `src/agent/agent_turn/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `crates/crabmate-llm` SSE 解析） |
+| `src/agent/agent_turn/host/execute/tools/emit.rs` | 每个 **`tool_call` SSE 之前** 发送 `turn_segment_start`（execute 阶段；流式段见 `src/cm_llm` SSE 解析） |
 | 同目录 `mod.rs` | 工具批结束发送 **`turn_tool_phase_end: true`**（在 `tool_running: false` 之前） |
 
 TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_project`** 或流式 scratch 承接，**不**写入 `[SSE 控制面]` 附录（见 **`docs/design/archive/tui_align_tauri_display.md`** Phase 3）。附录**仅**保留错误，避免生成过程中刷出该标题。
@@ -282,7 +282,7 @@ execute：   [seg-start₁][tool_call₁][result₁][seg-start₂][tool_call₂]
 | **0（已落地）** | 晚到旁注 | reducer 晚到 attach、`sync_turn_projection`、`delta_apply` 优先 canonical | `reduce.rs`、`turn_canonical.rs`、`delta_apply.rs` |
 | **1（已落地）** | 形态 A 漏网 + I2 | canonical 车道 **不再** fallback `append`；demote 迁入 pending；首次 `tool_call` peel 去掉 `post_tool` 门控 | `delta_apply.rs`、`turn_layout.rs` |
 | **1（已落地）** | 形态 B 首次 peel | `ingest_pre_tool_commentary` + `pending-stream-commentary` 段 | `turn_canonical.rs`、`reduce.rs` |
-| **2（已落地）** | 段边界时机 I5 | LLM 流内解析 `tool_call.id` 时 emit `turn_segment_start/end`；reducer `SegmentStart` 关闭其它 open 段 | `crates/crabmate-llm/.../sse_parser.rs`、`stream_host.rs`、`reduce.rs` |
+| **2（已落地）** | 段边界时机 I5 | LLM 流内解析 `tool_call.id` 时 emit `turn_segment_start/end`；reducer `SegmentStart` 关闭其它 open 段 | `src/cm_llm/api/sse_parser.rs`、`stream_host.rs`、`reduce.rs` |
 | **2（已落地）** | 形态 B 投影 | `sync_turn_projection` 按 **`project_turn`** 行序 upsert | `turn_layout.rs`、`project.rs` |
 | **3（已落地，P1 退役）** | 形态 C I4 | ~~`dedupe_redundant_loading_tail` 于 `on_done`~~ → P1 删除 | 曾：`turn_layout.rs`、`stream_end.rs` |
 | **3（已落地）** | 金样 | `pre_tool_bulk_deltas_pending_stream`、`multi_tool_interleaved_segments` | `fixtures/turn_project_golden.jsonl` |

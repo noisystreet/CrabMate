@@ -293,7 +293,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 - 合并时保留所有标签集的并集，记录被合并经验的 `supersedes_id` 链
 - 合并后的经验注明来源：`"由 N 条相似经验合并，原始 id：..."`
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -307,7 +307,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 - 对经验中涉及的**依赖版本**（如 `"serde v0.4"`），与当前 `Cargo.lock` 比对
 - freshness score 高的经验优先 full budget 注入，低的标注 `[可能过时]` 或降权
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -322,7 +322,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 - 若模型最终放弃经验建议（从日志分析） → 置信度降级标记
 - 数据积累后形成 `经验 → 实际帮助率` 反馈闭环，用于调整注入权重
 
-**关联**：`src/memory/long_term_memory.rs`、`src/memory/long_term_memory_store.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`、`src/cm_memory/memory/long_term_memory_store.rs`
 
 ---
 
@@ -344,7 +344,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
        → 该经验被关联并注入
 ```
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -358,7 +358,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 - 写入 `memory_symbol_index(scope_id, symbol, memory_id)` 表
 - 当模型通过 `rust_analyzer_goto_definition` 等工具接触同一符号时，主动触发相关记忆注入
 
-**关联**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -381,7 +381,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 让模型**知道**存在冲突，而非无意识选择。
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -407,7 +407,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 检索时可展开完整决策路径，让模型学到"为什么这样选"而不仅是"用什么"。
 
-**关联**：`src/memory/long_term_memory_store.rs`、`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -429,7 +429,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 与 `summarize_experience` 对称：一个是成功经验，一个是失败教训。检索时单独注入，带 `[⚠️ 反模式]` 标记。
 
-**关联**：`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -444,7 +444,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 - 经验中涉及的文件自创建以来变更次数？
 - 基于变更自动给已有记忆打上"可能过时"标记或触发自检提醒
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -468,7 +468,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 新增 `memory_collections` 表和 `collection_members` 表，提供创建/添加/删除集合的 API。集合可导出、分享。
 
-**关联**：`src/memory/long_term_memory_store.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`
 
 ---
 
@@ -491,7 +491,7 @@ pub async fn delete_memory(id: i64) -> Result<MemoryDeleteResponse, ApiError>
 
 生成后存入 `config/memory_digest.md`，新会话自动注入作为 system prompt 补充。
 
-**关联**：`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -509,7 +509,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 
 前端面板中以可折叠图谱形式展示记忆网络，帮助用户理解记忆间的关联与冲突。
 
-**关联**：`src/memory/long_term_memory_store.rs`（新增图谱索引表）、前端组件
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`（新增图谱索引表）、前端组件
 
 ---
 
@@ -545,7 +545,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 
 比值高的经验 full budget 注入，比值低的降权或跳过。将价值分作为排序权重注入 `prepare_messages`。
 
-**关联**：`src/memory/long_term_memory.rs`
+**关联**：`src/cm_memory/memory/long_term_memory.rs`
 
 ---
 
@@ -581,7 +581,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 
 与 Web UI 记忆面板互为补充：面板适合批量管理，对话内操作适合快速单条处理。
 
-**关联**：`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -628,7 +628,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 
 **Markdown 导出格式**：人类可读，每条记忆含元信息（来源、标签、TTL）和正文，不含 embedding。
 
-**关联**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -673,7 +673,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 | `created_at_unix` | 保留原时间戳 |
 | `expires_at_unix` | 相对 TTL 保留；若原为永不过期则保持 null |
 
-**关联**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -701,7 +701,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 
 **存储层改动**：新增 `update_chunk()` 函数，更新后触发 embedding 重新计算（因为正文变了）。
 
-**关联**：`src/memory/long_term_memory_store.rs`、`src/memory/long_term_memory.rs`、`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_memory/memory/long_term_memory_store.rs`、`src/cm_memory/memory/long_term_memory.rs`、`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 
@@ -717,7 +717,7 @@ rust_analyzer_goto_definition ──关联──▶ [rust, "符号跳转依赖ru
 2. 手动编辑 JSON（修改标签、合并重复项、删除不需要的）
 3. 导入编辑后的 JSON，回写到同一或不同会话
 
-**关联**：`src/tools/long_term_memory_tools.rs`
+**关联**：`src/cm_internal/long_term_memory_tools.rs`
 
 ---
 

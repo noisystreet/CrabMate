@@ -127,7 +127,7 @@ VICTAURI_E2E=1 CM_E2E_FIXTURES=1 REAL_LLM_E2E=1 cargo test --test victauri_real_
 
 ## 录制/回放
 
-三种模式由 [`E2eMode`](https://github.com/noisystreet/CrabMate/blob/main/crates/crabmate-llm/src/lib.rs) 控制：
+三种模式由 [`E2eMode`](https://github.com/noisystreet/CrabMate/blob/main/src/cm_llm/recording.rs) 控制：
 
 | 环境变量 | 效果 |
 |----------|------|

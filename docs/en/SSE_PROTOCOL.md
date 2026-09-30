@@ -186,7 +186,7 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `workflow_tool_join_error` | Workflow tool task join failed |
 | `{tool_name}_failed` | Generic tool failure (e.g. `run_command_failed`) |
 
-Full heuristics: `src/tool_result/mod.rs` (`classify_error_code`); **`error_code` → `failure_category`**: `src/tool_result/tool_error.rs` (**`failure_category_for_error_code`**, matches **`ToolFailureCategory`**). Workflow-specific: `src/agent/workflow/execute.rs`.
+Full heuristics: `src/cm_tools/tool_result/mod.rs` (`classify_error_code`); **`error_code` → `failure_category`**: `src/cm_tools/tool_result/tool_error.rs` (**`failure_category_for_error_code`**, matches **`ToolFailureCategory`**). Workflow-specific: `src/cm_workflow/execute/`.
 
 ### `tool_result.failure_category` (and `crabmate_tool.failure_category`)
 

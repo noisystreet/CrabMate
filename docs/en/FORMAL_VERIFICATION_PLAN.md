@@ -92,7 +92,7 @@ Optional staged enhancements:
 
 ## 8. Artifacts and locations
 
-- Code tests: `src/sse/protocol.rs`, `crates/crabmate-sse-protocol/control_classify.rs`
+- Code tests: `src/cm_sse_protocol/sse/protocol.rs`, `src/cm_sse_protocol/control_classify.rs`
 - Golden fixtures: `fixtures/sse_control_golden.jsonl`
 - Script: `scripts/check-sse-protocol.sh`
 - Design doc: `docs/形式化验证计划.md` (Chinese source)

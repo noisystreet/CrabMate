@@ -10,7 +10,7 @@
 
 在**不依赖模块搬家**的前提下，用最短路径确认：
 
-1. **宿主面**：CLI / TUI / Web 都能经共享编排完成至少一轮真实（或等价）回合。  
+1. **宿主面**：Client `crabmate-tui`（远程终端）/ Web 都能经共享编排完成至少一轮真实（或等价）回合。  
 2. **Client 面**：浏览器 / Desktop 壳 / Mobile 壳都能只凭 **URL + Bearer** 走 HTTP/SSE 完成一轮对话。  
 3. **契约**：协议版本故意错位时失败可预期（`SSE_CLIENT_TOO_NEW` 等）。
 
@@ -36,7 +36,7 @@
 
 | 层级 | 文档 / 命令 | 能否替代本 runbook |
 |------|-------------|-------------------|
-| 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** CLI 宿主面；**不**覆盖 TUI UI / 壳连接页 |
+| 编排真 LLM | `crabmate e2e` / `REAL_LLM_E2E=1`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | **部分替代** 终端宿主面；**不**覆盖壳连接页 |
 | HTTP SSE 真 LLM | `REAL_LLM_E2E=1 cargo test e2e_http_` | **部分替代** Web 协议路径；**不**覆盖浏览器壳 |
 | Playwright mock | Client [`e2e/specs/mock-*.spec.ts`](https://github.com/noisystreet/crabmate-client/tree/main/e2e/specs) | **不**替代（无真模型 / 无壳生命周期） |
 | Victauri 真 LLM | **仅** Client 仓：`cd ../crabmate-client && REAL_LLM_E2E=1 ./scripts/victauri-e2e.sh real_llm`（另起本仓或外部 `serve`） | **可选替代** Desktop **薄壳 + 本机 serve** 路径 |
@@ -49,14 +49,13 @@
 
 按顺序勾选；任一项失败先记现象再继续（勿跳过协议错位）。
 
-### 4.1 宿主：CLI
+### 4.1 宿主：远程终端（Client `crabmate-tui`）
 
-```bash
-# 仓库根；工作区与密钥按本机调整
-API_KEY='…' cargo run -- --workspace /path/to/ws chat -- "用一句话介绍你自己"
-```
+同进程 `chat` / `repl` / `tui` 已按 **D2.2 硬删**；官方终端为 Client 仓 **`crabmate-tui`**（HTTP/SSE → 本仓 `serve`），权威用法见 Client 仓 [`docs/design/remote_cli_tui.md`](https://github.com/noisystreet/crabmate-client/blob/main/docs/design/remote_cli_tui.md)。
 
-- [ ] 退出码 0（或文档约定的成功路径），stdout/日志可见助手回复摘要  
+先按 §4.2 启动本仓 `serve`，再在 Client 仓运行终端客户端并发 §2 提示词。
+
+- [ ] 退出码 0（或文档约定的成功路径），终端可见助手回复摘要  
 - [ ] 无密钥明文打进日志
 
 ### 4.2 宿主：Web（浏览器本机）
@@ -128,13 +127,13 @@ cargo tauri dev
 
 | ID | 入口 | 命令或步骤 | 通过标准 | 勾选 |
 |----|------|------------|----------|------|
-| H1 | CLI `chat` | §4.1 | 终答可见 | [ ] |
-| H2 | CLI `repl` | `cargo run -- --workspace … repl`，发一条用户消息后退出 | 同左 | [ ] |
-| H3 | TUI | `cargo run -- --workspace … tui`（须 TTY），发一条 | 中区出现助手输出 | [ ] |
+| H1 | Client `crabmate-tui`（远程终端） | §4.1 | 终答可见 | [ ] |
+| H2 | Server `crabmate e2e`（编排真 LLM） | `REAL_LLM_E2E=1 cargo run -- e2e`（见 [`真实LLM-E2E.md`](../真实LLM-E2E.md)） | 预设场景通过 | [ ] |
+| H3 | ~~CLI `repl` / TUI~~ | 同进程入口已于 **D2.2 硬删** | — | — |
 | H4 | Web UI | §4.2 | 流式完成 | [ ] |
 | H5 | Web 队列（可选） | UI 或 `POST /chat/async` 后查 job | job 终态成功 | [ ] |
 
-编排级自动化可记：`crabmate e2e` 中 `orch_single_agent_smoke` 绿 → 在备注栏写「H1≈e2e」。
+编排级自动化可记：`crabmate e2e` 中 `orch_single_agent_smoke` 绿 → 在备注栏写「H2≈e2e」。
 
 ### 5.2 Client 面（仅 HTTP/SSE）
 
@@ -163,7 +162,7 @@ cargo tauri dev
 执行人：
 分支 / commit：
 serve 绑定：127.0.0.1 / 0.0.0.0 / VPS
-最小集 §4：H1 / Web / P1 / Desktop / Mobile-or-remote = pass|fail
+最小集 §4：终端 / Web / P1 / Desktop / Mobile-or-remote = pass|fail
 失败摘要（码 / 截图路径，勿贴密钥）：
 备注（是否用 crabmate e2e / Victauri 替代某项）：
 ```
