@@ -30,7 +30,7 @@ use crate::web::app_state::{
 use crate::web::app_state_facets::WebChatTurnAppFacet;
 
 use super::super::parse::{ensure_bearer_api_key_for_chat, normalize_approval_session_id};
-use super::builtin_btw::run_btw_command;
+use super::builtin_btw::{BTW_QUEUE_FULL_CODE, BTW_QUEUE_FULL_MESSAGE, BtwOutcome, run_btw_command};
 use super::builtin_skills::run_web_builtin_command;
 use super::turn_build::{
     ChatStreamRequestParsed, build_messages_for_turn, parse_chat_stream_request,
@@ -331,29 +331,48 @@ fn chat_stream_builtin_sse_response(reply: String, conversation_id: &str) -> Res
 }
 
 /// 内建命令短路：命中 `/skills`、`/btw` 等即直接以单帧 SSE 返回内置文本（不落盘、不进队列）。
+///
+/// `/btw` 并发饱和时返回 **`QUEUE_FULL`** 响应（与普通回合同一错误码）。
 async fn chat_stream_try_builtin_reply(
     state: &WebChatTurnAppFacet,
     p: &ChatStreamRequestParsed,
 ) -> Option<Response> {
-    let reply = match run_web_builtin_command(state, p.user_trim.as_str()).await {
-        Some(reply) => reply,
-        None => {
-            run_btw_command(
-                state,
-                super::builtin_btw::BtwCommandRequest {
-                    conversation_id: p.conversation_id.as_str(),
-                    user_trim: p.user_trim.as_str(),
-                    image_urls: &p.image_urls,
-                    clarify: p.clarify.as_ref(),
-                    llm_override: p.llm_override.as_ref(),
-                    temperature_override: p.temperature_override,
-                    seed_override: p.seed_override,
-                },
+    if let Some(reply) = run_web_builtin_command(state, p.user_trim.as_str()).await {
+        return Some(chat_stream_builtin_sse_response(
+            reply,
+            &p.conversation_id,
+        ));
+    }
+    match run_btw_command(
+        state,
+        super::builtin_btw::BtwCommandRequest {
+            conversation_id: p.conversation_id.as_str(),
+            user_trim: p.user_trim.as_str(),
+            image_urls: &p.image_urls,
+            clarify: p.clarify.as_ref(),
+            llm_override: p.llm_override.as_ref(),
+            temperature_override: p.temperature_override,
+            seed_override: p.seed_override,
+        },
+    )
+    .await
+    {
+        None => None,
+        Some(BtwOutcome::Reply(reply)) => Some(chat_stream_builtin_sse_response(
+            reply,
+            &p.conversation_id,
+        )),
+        Some(BtwOutcome::QueueFull) => Some(
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError::new(
+                    BTW_QUEUE_FULL_CODE,
+                    BTW_QUEUE_FULL_MESSAGE,
+                )),
             )
-            .await?
-        }
-    };
-    Some(chat_stream_builtin_sse_response(reply, &p.conversation_id))
+                .into_response(),
+        ),
+    }
 }
 
 /// 流式 chat：返回 SSE，每个 event 的 **`id`** 为单调序号（断线重连与 **`Last-Event-ID`** / **`stream_resume`**），`data` 为控制面 JSON 或正文 delta。

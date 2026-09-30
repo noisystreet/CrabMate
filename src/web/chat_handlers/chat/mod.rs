@@ -51,7 +51,7 @@ pub(crate) async fn chat_handler(
             conversation_revision: None,
         }));
     }
-    if let Some(reply) = run_btw_command(
+    match run_btw_command(
         &state,
         builtin_btw::BtwCommandRequest {
             conversation_id: parsed.conversation_id.as_str(),
@@ -65,11 +65,23 @@ pub(crate) async fn chat_handler(
     )
     .await
     {
-        return Ok(Json(ChatResponseBody {
-            reply,
-            conversation_id: parsed.conversation_id,
-            conversation_revision: None,
-        }));
+        Some(builtin_btw::BtwOutcome::Reply(reply)) => {
+            return Ok(Json(ChatResponseBody {
+                reply,
+                conversation_id: parsed.conversation_id,
+                conversation_revision: None,
+            }));
+        }
+        Some(builtin_btw::BtwOutcome::QueueFull) => {
+            return Err((
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ApiError::new(
+                    builtin_btw::BTW_QUEUE_FULL_CODE,
+                    builtin_btw::BTW_QUEUE_FULL_MESSAGE,
+                )),
+            ));
+        }
+        None => {}
     }
     let cid = parsed.conversation_id.clone();
     let (messages, _) = enqueue_and_wait_json_chat(state.clone(), peer, &headers, parsed).await?;
