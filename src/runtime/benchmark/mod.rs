@@ -1,4 +1,4 @@
-//! Benchmark 测评子系统（核心类型与适配器已提取到 `crabmate-benchmark`）。
+//! Benchmark 测评子系统（核心类型与适配器已提取到 `crate::cm_benchmark`）。
 //!
 //! 批量运行入口 `run_batch` 因依赖根包 `run_agent_turn`，保留在 `runner` 模块中。
 

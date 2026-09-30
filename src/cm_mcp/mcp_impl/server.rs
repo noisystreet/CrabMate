@@ -2,7 +2,7 @@
 //!
 //! **安全**：无传输层鉴权；与 `run_command` / 工作区策略一致，调用方获得与本地 `crabmate` 相同的执行面。仅应对**可信**父进程 / 本机集成开放。
 //!
-//! 与 `crabmate-internal` 解耦：工具列表构建与工具执行业务通过 `ToolCallbacks` 注入。
+//! 与 `cm_internal` 解耦：工具列表构建与工具执行业务通过 `ToolCallbacks` 注入。
 
 use std::borrow::Cow;
 use std::path::Path;

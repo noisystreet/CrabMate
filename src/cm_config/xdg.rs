@@ -1,4 +1,4 @@
-//! 本机 XDG 用户目录解析（Config / Cache；Data 见 `crabmate-internal::user_data`）。
+//! 本机 XDG 用户目录解析（Config / Cache；Data 见 `crate::cm_internal::user_data`）。
 
 use std::path::PathBuf;
 

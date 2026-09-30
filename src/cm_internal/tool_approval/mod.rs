@@ -24,7 +24,7 @@ pub use crate::cm_approval::{
 };
 use crate::cm_types::CommandApprovalDecision;
 
-/// 从 [`crate::cm_internal::tool_registry::WebToolRuntime`] 构造 Web 审批通道（类型定义在 `crabmate-tools`）。
+/// 从 [`crate::cm_internal::tool_registry::WebToolRuntime`] 构造 Web 审批通道（类型定义在 `cm_tools`）。
 pub fn web_tool_runtime_approval_sink(
     rt: &crate::cm_tools::tool_runtime::WebToolRuntime,
 ) -> WebApprovalSink<'_> {

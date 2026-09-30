@@ -116,7 +116,7 @@ pub fn dep_compat_kind_for_health_key(dep_key: &str) -> Option<DepCompatKind> {
     }
 }
 
-/// 单项健康检查结果（与 [`crabmate-internal::health::HealthCheckItem`] 字段一致）。
+/// 单项健康检查结果（与 `cm_internal` 的 `health::HealthCheckItem` 字段一致）。
 #[derive(Debug, Clone)]
 pub struct HealthCheckItem {
     pub ok: bool,

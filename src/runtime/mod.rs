@@ -1,6 +1,6 @@
 //! 命令行运行时，以及与 `api` 共用的运行时侧能力；`benchmark` 子模块提供批量无人值守测评能力。
 //!
-//! 部分独立工具模块已提取到 `crabmate-runtime` crate，在此重导出。
+//! 部分独立工具模块已提取到顶层 `crate::cm_runtime` 模块，在此重导出。
 
 pub mod benchmark;
 pub use crate::cm_runtime::chat_export;

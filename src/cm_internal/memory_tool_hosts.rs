@@ -1,4 +1,4 @@
-//! `crabmate-internal` 对 [`crate::cm_tools::memory_tool_host`] 的实现。
+//! `cm_internal` 对 [`crate::cm_tools::memory_tool_host`] 的实现。
 
 use std::path::Path;
 use std::sync::Arc;

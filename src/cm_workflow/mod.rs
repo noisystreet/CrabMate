@@ -1,7 +1,7 @@
 //! 工作流 DAG 编排引擎：一次性下发 DAG，由运行时引擎本地完成编排。
 //!
-//! 模块结构与原 `src/agent/workflow/` 一致，外部依赖通过 `crabmate-types` 和
-//! 参数化 trait 提供。
+//! 模块结构自 `src/agent/workflow/` 时期保持稳定，现已迁至 `src/cm_workflow/`；
+//! 外部依赖通过 `crate::cm_types` 和参数化 trait 提供。
 
 // 公开模块（与 mod.rs 出口一致）
 pub mod config;

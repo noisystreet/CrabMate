@@ -1,4 +1,4 @@
-//! 并行墙钟、只读判定等与 `[tool_registry]` 配置对应的策略（实现见 `crabmate-tools`）。
+//! 并行墙钟、只读判定等与 `[tool_registry]` 配置对应的策略（实现见 `crate::cm_tools`）。
 
 pub use crate::cm_tools::registry_policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, is_readonly_tool,

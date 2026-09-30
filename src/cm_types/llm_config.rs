@@ -1,4 +1,4 @@
-//! LLM 客户端配置类型（供 `crabmate-llm` 与 `crabmate-config` 共用，避免配置加载层膨胀 LLM 编译图）。
+//! LLM 客户端配置类型（供 `cm_llm` 与 `cm_config` 共用，避免配置加载层膨胀 LLM 编译图）。
 
 // ---------------------------------------------------------------------------
 // LlmHttpAuthMode
@@ -88,10 +88,10 @@ pub struct LlmHttpRetryConfig {
 }
 
 // ---------------------------------------------------------------------------
-// LlmConfig — LLM 层运行时视图（crabmate-llm 的 cfg 参数类型）
+// LlmConfig — LLM 层运行时视图（cm_llm 的 cfg 参数类型）
 // ---------------------------------------------------------------------------
 
-/// `crabmate-llm` 需要的全部配置字段聚合（替代 `crate::cm_config::AgentConfig` 子集）。
+/// `cm_llm` 需要的全部配置字段聚合（替代 `crate::cm_config::AgentConfig` 子集）。
 ///
 /// 由上层（根包 `crabmate::llm`）从完整 `AgentConfig` 构造后传入。
 #[derive(Debug, Clone)]

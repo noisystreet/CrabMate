@@ -1,4 +1,4 @@
-//! 记忆相关工具宿主（由 `crabmate-internal` 注入，避免 `crabmate-tools` → `crabmate-memory` 环）。
+//! 记忆相关工具宿主（由 `cm_internal` 注入，避免 `cm_tools` → `cm_memory` 环）。
 
 use std::path::Path;
 

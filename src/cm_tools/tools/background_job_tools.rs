@@ -4,7 +4,7 @@
 //! 审批/白名单，因此与 ADR `docs/design/background_tool_jobs.md` 「不新增发起执行型工具组」的
 //! 约束不冲突。
 //!
-//! 注意：本模块属 `crabmate-tools`，禁止引用 `cm_internal` 内部门面（见 `docs/design/crate_dep_policy.md`）。
+//! 注意：本模块属 `cm_tools`，禁止引用 `cm_internal` 内部门面（见 `docs/design/crate_dep_policy.md`）。
 
 use std::path::Path;
 

@@ -4,7 +4,7 @@
 //! - **Web 通道模式**：[`WebApprovalChannelMode::Strict`] 在 `send` 失败时立即 Err；
 //!   [`WebApprovalChannelMode::Lenient`] 仍等待 receiver（工作流历史行为）。
 //!
-//! 运维 CLI 无同进程终端审批；官方对话审批仅 Web SSE（经 `crabmate-internal::tool_approval` 组装）。
+//! 运维 CLI 无同进程终端审批；官方对话审批仅 Web SSE（经 `cm_internal::tool_approval` 组装）。
 
 use std::collections::HashSet;
 use std::sync::Arc;

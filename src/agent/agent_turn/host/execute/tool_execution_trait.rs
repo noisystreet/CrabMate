@@ -1,4 +1,4 @@
-//! 根包工具执行宿主 trait（依赖 `tool_registry` 运行时类型，故置于编排层而非 `crabmate-agent`）。
+//! 根包工具执行宿主 trait（依赖 `tool_registry` 运行时类型，故置于编排层而非 `cm_agent`）。
 //!
 //! 非 workflow 路径经 [`super::tool_dispatch::ToolDispatch`] 间接调用 registry。
 

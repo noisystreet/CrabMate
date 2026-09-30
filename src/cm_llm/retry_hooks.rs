@@ -14,7 +14,7 @@ pub struct LlmRetryDecisionPoint {
     pub anchor: Option<serde_json::Value>,
 }
 
-/// 根 crate / 测试实现的 LLM 重试环侧效应（与 `crabmate-internal`、`runtime` 解耦）。
+/// 根 crate / 测试实现的 LLM 重试环侧效应（与 `cm_internal`、`runtime` 解耦）。
 pub trait LlmRetryHooks: Send + Sync {
     fn append_turn_replay_json(&self, event: &str, model: &str, payload: Option<serde_json::Value>);
 

@@ -1,6 +1,6 @@
-//! 文本工具函数（从 `crabmate-tools::redact` 提取）。
+//! 文本工具函数（从 `crate::cm_tools::redact` 提取）。
 //!
-//! 供 `crabmate-memory` 等轻量 crate 使用，无需引入完整工具依赖。
+//! 供 `cm_memory` 等轻量模块使用，无需引入完整工具依赖。
 
 /// 按 Unicode 标量截断；超出则后缀 `…(truncated)`。
 pub fn preview_chars(s: &str, max_chars: usize) -> String {

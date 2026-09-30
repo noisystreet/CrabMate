@@ -10,7 +10,7 @@
 //! - [`plan_reflect`]：P / R / 回合起点 Act 启发式
 //! - [`host`]：工具执行宿主、`RunLoopParams`、TurnSink、错误类型
 //!
-//! 外循环 FSM / 完成判定核等纯逻辑已下沉 **`crabmate-agent::agent_turn`**；本目录再导出。
+//! 外循环 FSM / 完成判定核等纯逻辑已下沉 **`crate::cm_agent::agent_turn`**；本目录再导出。
 //!
 //! **与 `llm` 的边界**：本目录内对模型的调用须经 **`llm::complete_chat_retrying`**（见 **`docs/开发文档.md`**「`agent_turn` 与 `llm`：唯一入口与禁止事项」）；**禁止**直接调用 **`llm::api::stream_chat`**。
 //!

@@ -219,7 +219,7 @@ pub struct ToolOutputChunkBody {
     pub stream: Option<String>,
 }
 
-/// 与 `crate::cm_tools::tool_result::CRABMATE_TOOL_ENVELOPE_VERSION_V1` 对齐（避免向 sse-protocol 拉入 crabmate-tools 的重依赖）。
+/// 与 `crate::cm_tools::tool_result::CRABMATE_TOOL_ENVELOPE_VERSION_V1` 对齐（避免向 `cm_sse_protocol` 拉入 `cm_tools` 的重依赖）。
 const CRABMATE_TOOL_ENVELOPE_VERSION_V1: u32 = 1;
 
 fn default_tool_result_payload_version() -> u32 {

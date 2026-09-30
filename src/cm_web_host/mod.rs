@@ -1,6 +1,6 @@
 //! Axum Web **宿主**模块：HTTP 契约、`GET /web-ui`、受保护路由体积分层壳。
 //!
-//! **不是** Leptos WASM 前端包（UI **`crabmate-web`** 在 Client 仓 `../crabmate-client/frontend`）。
+//! **不是** 前端 UI 包（UI 在 Client 仓 `../crabmate-client/frontend`）。
 //! `serve` 永远纯 API，不托管 SPA/静态文件；UI 由 Client 自行托管（CORS 见 `web_cors_allowed_origins`）。
 //! 依赖策略见 `docs/design/web_host_extract.md`：本模块 **不得**依赖 `cm_internal`。
 //!
