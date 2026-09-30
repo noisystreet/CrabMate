@@ -155,7 +155,7 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 
 ### 4.3 与 crates.io
 
-权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md) — crates.io **只发根包 `crabmate` `0.5.2`**（已上线：[crates.io/crates/crabmate](https://crates.io/crates/crabmate)）。**默认渠道**：`crabmate = { version = "0.5.2", default-features = false, features = ["protocol"] }`。等价 git：`tag = "v0.5.2"`。不发布 `crabmate-sse-protocol` 等旧成员。`v0.5.1` / `v0.5.0` / `v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。
+权威计划：[`crates_io_single_package.md`](./crates_io_single_package.md) — crates.io **只发根包 `crabmate` `0.6.0`**（已上线：[crates.io/crates/crabmate](https://crates.io/crates/crabmate)）。**默认渠道**：`crabmate = { version = "0.6.0", default-features = false, features = ["protocol"] }`。等价 git：`tag = "v0.6.0"`。不发布 `crabmate-sse-protocol` 等旧成员。`v0.5.2` / `v0.5.1` / `v0.5.0` / `v0.3.0` / `client-contract-v0.2.0` 旧钉点保留。
 
 ---
 
@@ -209,3 +209,4 @@ Cargo 会拉取该 tag 的 workspace，并解析成员的 `workspace = true` 依
 | 2026-08-16 | `client-contract-v0.2.0`：W2b 从本仓去掉 `crabmate-tool-card`；`GET /conversation/messages` 的 `role=tool` 不再填 `display_*`；crate `version` 未 bump |
 | 2026-08-16 | 单包 crates.io 计划：[`crates_io_single_package.md`](./crates_io_single_package.md)；W3 不阻塞 |
 | 2026-09-06 | 镜像瘦身 B 清单（issue #939）增量公开面：B.5（#940）已随 `0.5.1` 发布；B.4（#941）/ B.2（#942）/ B.3（#943）已合入 `main`；B.1（`/workspace*` DTO 迁入 `cm_api_contract::workspace`）待随下一增量协议版本 **`0.5.2`**（纯 additive → patch+说明，不 bump `SSE_PROTOCOL_VERSION`）发布；§2.4 与 `lib.rs` 顶注已同步，发版时按 §7 清单执行 |
+| 2026-09-30 | `0.6.0`：`0.5.2` 增量公开面（B.4 / B.2 / B.3 / B.1）已随 `0.5.2` 发布；本版公开协议面无新增符号，本体为一批 BREAKING 移除（TOML `[agent] mcp_command`、明文密钥文件迁移、`GET /user-data/secrets/status` 旧槽位、`final_plan_semantic_check_accept_legacy_text`、扁平 CLI flag 层、`config --dry-run`），按 §2.2 在 `0.y.z` 以 **minor** 表破坏；SSE wire 仍 v2，未打 `client-contract-v*` 展示契约 tag |
