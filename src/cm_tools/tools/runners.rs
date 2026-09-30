@@ -43,6 +43,87 @@ pub fn tool_spec_requires_fastembed(name: &str) -> bool {
     name == "codebase_semantic_search"
 }
 
+// ── 同构薄封装宏 ────────────────────────────────────────────
+//
+// 绝大多数 `runner_*` 只是把 `(args, ctx)` 转发给对应实现模块，转发参数由形态决定。
+// 这里按调用形态各定义一个宏；新增同类工具时只需在对应表中增一行 `runner_x => module::fn`。
+// 注意：形态相近（签名一致）的表若写错配对，编译器无法发现，新增条目时务必核对右侧路径。
+
+/// 形态：`f(args, working_dir, command_max_output_len)`。
+macro_rules! define_runners_cwd_maxlen {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+                $func(args, ctx.working_dir, ctx.command_max_output_len)
+            }
+        )*
+    };
+}
+
+/// 形态：`f(args, working_dir, ctx)`。
+macro_rules! define_runners_cwd_ctx {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+                $func(args, ctx.working_dir, ctx)
+            }
+        )*
+    };
+}
+
+/// 形态：`f(args, working_dir)`。
+macro_rules! define_runners_cwd {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+                $func(args, ctx.working_dir)
+            }
+        )*
+    };
+}
+
+/// 形态：`f(args)`（不使用 `ctx`）。
+macro_rules! define_runners_args_only {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            pub fn $runner(args: &str, _ctx: &ToolContext<'_>) -> String {
+                $func(args)
+            }
+        )*
+    };
+}
+
+/// 生成 `fn runner_git_* -> git::impl(args, max_len, cwd)`；新增 Git 工具时在列表中增一行并注册 `tool_specs_registry`。
+macro_rules! define_git_runner {
+    ($runner:ident, $git_fn:ident) => {
+        pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+            git::$git_fn(args, ctx.command_max_output_len, ctx.working_dir)
+        }
+    };
+}
+
+macro_rules! define_git_runners {
+    ($( $runner:ident => $git_fn:ident ),* $(,)? ) => {
+        $( define_git_runner!($runner, $git_fn); )*
+    };
+}
+
+/// 生成 `fn runner_gh_* -> github_cli::gh_*(args, max_len, allowed, cwd)`；新增 GitHub 工具时在列表中增一行。
+macro_rules! gh_runner {
+    ($name:ident, $fn:path) => {
+        pub fn $name(args: &str, ctx: &ToolContext<'_>) -> String {
+            $fn(
+                args,
+                ctx.command_max_output_len,
+                ctx.allowed_commands,
+                ctx.working_dir,
+            )
+        }
+    };
+}
+
+// ── 需要定制逻辑的 runner（不适用同构宏）─────────────────────
+
 pub fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
     let parsed: super::tool_param_types::GetCurrentTimeArgs =
         super::parse_args_typed(args).unwrap_or_default();
@@ -59,31 +140,6 @@ pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
         Err(e) => return e,
     };
     calc::run(&parsed.expression)
-}
-
-pub fn runner_convert_units(args: &str, _ctx: &ToolContext<'_>) -> String {
-    unit_convert::run(args)
-}
-
-pub fn runner_get_weather(args: &str, ctx: &ToolContext<'_>) -> String {
-    weather::run(args, ctx.weather_timeout_secs)
-}
-
-pub fn runner_web_search(args: &str, ctx: &ToolContext<'_>) -> String {
-    web_search::run(args, ctx)
-}
-
-pub fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
-    http_fetch::run_direct(args, ctx)
-}
-
-pub fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
-    http_fetch::run_request_direct(args, ctx)
-}
-
-pub fn runner_terminal_session(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let _ = args;
-    "错误：terminal_session 须由服务端异步调度执行（不走同步 run_tool）。".to_string()
 }
 
 pub fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -107,8 +163,14 @@ pub fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
-    package_query::run(args, ctx.command_max_output_len)
+pub fn runner_terminal_session(args: &str, _ctx: &ToolContext<'_>) -> String {
+    let _ = args;
+    "错误：terminal_session 须由服务端异步调度执行（不走同步 run_tool）。".to_string()
+}
+
+pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
+    // 由 runtime 在 run_agent_turn 中拦截实际执行。
+    "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
 }
 
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
@@ -124,100 +186,8 @@ pub fn runner_cargo_test(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::cargo_test(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
-pub fn runner_cargo_clippy(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_clippy(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_metadata(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_metadata(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cargo_tree(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_tree(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cargo_clean(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_clean(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cargo_doc(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_doc(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cargo_nextest(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_nextest(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_fmt_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    ci_tools::cargo_fmt_check_tool(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_outdated(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_outdated(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_machete(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_machete(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_udeps(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_udeps(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_publish_dry_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_publish_dry_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_rust_compiler_json(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_compiler_json(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_rust_rustc(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::rust_rustc(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_rust_analyzer_goto_definition(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_goto_definition(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_find_references(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_find_references(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_hover(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_hover(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_document_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_document_symbol(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_goto_implementation(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_goto_implementation(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_goto_type_definition(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_goto_type_definition(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_document_highlight(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_document_highlight(args, ctx.working_dir)
-}
-
-pub fn runner_rust_analyzer_workspace_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
-    rust_ide::rust_analyzer_workspace_symbol(args, ctx.working_dir)
-}
-
-pub fn runner_cargo_fix(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_fix(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
 pub fn runner_rust_test_one(args: &str, ctx: &ToolContext<'_>) -> String {
     cargo_tools::rust_test_one(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
-}
-
-pub fn runner_ruff_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::ruff_check(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -229,22 +199,6 @@ pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_mypy_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::mypy_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_python_install_editable(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::python_install_editable(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_uv_sync(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::uv_sync(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_uv_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    python_tools::uv_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
 pub fn runner_python_snippet_run(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::python_snippet_run(
         args,
@@ -254,94 +208,8 @@ pub fn runner_python_snippet_run(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_go_build(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::go_build(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_go_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::go_test(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_go_vet(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::go_vet(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_go_mod_tidy(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::go_mod_tidy(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_go_fmt_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::go_fmt_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_maven_compile(args: &str, ctx: &ToolContext<'_>) -> String {
-    jvm_tools::maven_compile(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_maven_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    jvm_tools::maven_test(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_gradle_compile(args: &str, ctx: &ToolContext<'_>) -> String {
-    jvm_tools::gradle_compile(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_gradle_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    jvm_tools::gradle_test(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_docker_build(args: &str, ctx: &ToolContext<'_>) -> String {
-    container_tools::docker_build(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_docker_compose_ps(args: &str, ctx: &ToolContext<'_>) -> String {
-    container_tools::docker_compose_ps(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_podman_images(args: &str, ctx: &ToolContext<'_>) -> String {
-    container_tools::podman_images(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_pre_commit_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    precommit_tools::pre_commit_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_typos_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    spell_astgrep_tools::typos_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_codespell_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    spell_astgrep_tools::codespell_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_ast_grep_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    spell_astgrep_tools::ast_grep_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_ast_grep_rewrite(args: &str, ctx: &ToolContext<'_>) -> String {
-    spell_astgrep_tools::ast_grep_rewrite(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_frontend_lint(args: &str, ctx: &ToolContext<'_>) -> String {
-    frontend_tools::frontend_lint(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_frontend_build(args: &str, ctx: &ToolContext<'_>) -> String {
-    frontend_tools::frontend_build(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_frontend_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    frontend_tools::frontend_test(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_cargo_audit(args: &str, ctx: &ToolContext<'_>) -> String {
-    security_tools::cargo_audit(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cargo_deny(args: &str, ctx: &ToolContext<'_>) -> String {
-    security_tools::cargo_deny(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_backtrace_analyze(args: &str, _ctx: &ToolContext<'_>) -> String {
-    debug_tools::rust_backtrace_analyze(args)
+pub fn runner_npm_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len, ctx)
 }
 
 pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -377,8 +245,16 @@ pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {
     skill_manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
 }
 
-pub fn runner_present_clarification_questionnaire(args: &str, _ctx: &ToolContext<'_>) -> String {
-    crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire(args)
+pub fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
+    patch::run_with_changelist(args, ctx.working_dir, ctx.workspace_changelist)
+}
+
+pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
+    let Some(host) = ctx.codebase_semantic_host else {
+        return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
+            .to_string();
+    };
+    host.run_search(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
 fn dispatch_long_term_tool(name: &str, args: &str, ctx: &ToolContext<'_>) -> String {
@@ -407,60 +283,237 @@ pub fn runner_long_term_memory_list(args: &str, ctx: &ToolContext<'_>) -> String
     dispatch_long_term_tool("long_term_memory_list", args, ctx)
 }
 
-pub fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
-    error_playbook::error_output_playbook(args, ctx.allowed_commands)
+pub fn runner_background_job_status(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_status(
+        args,
+        ctx.tool_jobs_host,
+        ctx.command_max_output_len,
+    )
+}
+
+pub fn runner_background_job_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_list(
+        args,
+        ctx.tool_jobs_host,
+        ctx.working_dir,
+        ctx.command_max_output_len,
+    )
+}
+
+#[allow(clippy::result_large_err)]
+pub fn read_file_try_dispatch(
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+    file::read_file_try(args_json, ctx.working_dir, ctx)
+}
+
+/// 用户消息 `@路径` 展开等：与 `read_file` 工具同源校验与读取。
+#[allow(clippy::result_large_err)]
+pub fn read_file_try_at_paths(
+    args_json: &str,
+    working_dir: &std::path::Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, crate::cm_tools::tool_result::ToolError> {
+    file::read_file_try(args_json, working_dir, ctx)
+}
+
+/// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
+#[allow(clippy::result_large_err)]
+pub fn runner_search_in_files_try(
+    args: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    grep_try::search_in_files_try(args, ctx.working_dir)
+}
+
+// ── 转发参数较少、单独列出更直观的 runner ───────────────────
+
+pub fn runner_get_weather(args: &str, ctx: &ToolContext<'_>) -> String {
+    weather::run(args, ctx.weather_timeout_secs)
+}
+
+pub fn runner_web_search(args: &str, ctx: &ToolContext<'_>) -> String {
+    web_search::run(args, ctx)
+}
+
+pub fn runner_http_fetch(args: &str, ctx: &ToolContext<'_>) -> String {
+    http_fetch::run_direct(args, ctx)
+}
+
+pub fn runner_http_request(args: &str, ctx: &ToolContext<'_>) -> String {
+    http_fetch::run_request_direct(args, ctx)
 }
 
 pub fn runner_playbook_run_commands(args: &str, ctx: &ToolContext<'_>) -> String {
     error_playbook::playbook_run_commands(args, ctx)
 }
 
-pub fn runner_changelog_draft(args: &str, ctx: &ToolContext<'_>) -> String {
-    release_docs::changelog_draft(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_license_notice(args: &str, ctx: &ToolContext<'_>) -> String {
-    release_docs::license_notice(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_repo_overview_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
-    repo_overview::repo_overview_sweep(args, ctx.working_dir, ctx.command_max_output_len)
+pub fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String {
+    error_playbook::error_output_playbook(args, ctx.allowed_commands)
 }
 
 pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
     contract_map::crate_contract_map(args, ctx)
 }
 
-pub fn runner_docs_health_sweep(args: &str, ctx: &ToolContext<'_>) -> String {
-    docs_health_sweep::docs_health_sweep(args, ctx.working_dir, ctx.command_max_output_len)
+pub fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
+    package_query::run(args, ctx.command_max_output_len)
 }
 
-pub fn runner_ci_pipeline_local(args: &str, ctx: &ToolContext<'_>) -> String {
-    ci_tools::ci_pipeline_local(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_release_ready_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    ci_tools::release_ready_check(args, ctx.working_dir, ctx.command_max_output_len)
+pub fn runner_port_check(args: &str, ctx: &ToolContext<'_>) -> String {
+    process_tools::port_check(args, ctx.command_max_output_len)
 }
 
-pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
-    // 由 runtime 在 run_agent_turn 中拦截实际执行。
-    "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
+pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
+    process_tools::process_list(args, ctx.command_max_output_len)
 }
 
-/// 生成 `fn runner_git_* -> git::impl(args, max_len, cwd)`；新增 Git 工具时在列表中增一行并注册 `tool_specs_registry`。
-macro_rules! define_git_runner {
-    ($runner:ident, $git_fn:ident) => {
-        pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
-            git::$git_fn(args, ctx.command_max_output_len, ctx.working_dir)
-        }
-    };
+// ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
+
+define_runners_cwd_maxlen! {
+    runner_cargo_clippy => cargo_tools::cargo_clippy,
+    runner_cargo_metadata => cargo_tools::cargo_metadata,
+    runner_cargo_tree => cargo_tools::cargo_tree,
+    runner_cargo_clean => cargo_tools::cargo_clean,
+    runner_cargo_doc => cargo_tools::cargo_doc,
+    runner_cargo_nextest => cargo_tools::cargo_nextest,
+    runner_cargo_fmt_check => ci_tools::cargo_fmt_check_tool,
+    runner_cargo_outdated => cargo_tools::cargo_outdated,
+    runner_cargo_machete => cargo_tools::cargo_machete,
+    runner_cargo_udeps => cargo_tools::cargo_udeps,
+    runner_cargo_publish_dry_run => cargo_tools::cargo_publish_dry_run,
+    runner_rust_compiler_json => rust_ide::rust_compiler_json,
+    runner_rust_rustc => cargo_tools::rust_rustc,
+    runner_cargo_fix => cargo_tools::cargo_fix,
+    runner_cargo_run => cargo_tools::cargo_run,
+    runner_ruff_check => python_tools::ruff_check,
+    runner_mypy_check => python_tools::mypy_check,
+    runner_python_install_editable => python_tools::python_install_editable,
+    runner_uv_sync => python_tools::uv_sync,
+    runner_uv_run => python_tools::uv_run,
+    runner_go_build => go_tools::go_build,
+    runner_go_test => go_tools::go_test,
+    runner_go_vet => go_tools::go_vet,
+    runner_go_mod_tidy => go_tools::go_mod_tidy,
+    runner_go_fmt_check => go_tools::go_fmt_check,
+    runner_golangci_lint => go_tools::golangci_lint,
+    runner_maven_compile => jvm_tools::maven_compile,
+    runner_maven_test => jvm_tools::maven_test,
+    runner_gradle_compile => jvm_tools::gradle_compile,
+    runner_gradle_test => jvm_tools::gradle_test,
+    runner_docker_build => container_tools::docker_build,
+    runner_docker_compose_ps => container_tools::docker_compose_ps,
+    runner_podman_images => container_tools::podman_images,
+    runner_pre_commit_run => precommit_tools::pre_commit_run,
+    runner_typos_check => spell_astgrep_tools::typos_check,
+    runner_codespell_check => spell_astgrep_tools::codespell_check,
+    runner_ast_grep_run => spell_astgrep_tools::ast_grep_run,
+    runner_ast_grep_rewrite => spell_astgrep_tools::ast_grep_rewrite,
+    runner_frontend_lint => frontend_tools::frontend_lint,
+    runner_frontend_build => frontend_tools::frontend_build,
+    runner_frontend_test => frontend_tools::frontend_test,
+    runner_cargo_audit => security_tools::cargo_audit,
+    runner_cargo_deny => security_tools::cargo_deny,
+    runner_changelog_draft => release_docs::changelog_draft,
+    runner_license_notice => release_docs::license_notice,
+    runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
+    runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
+    runner_ci_pipeline_local => ci_tools::ci_pipeline_local,
+    runner_release_ready_check => ci_tools::release_ready_check,
+    runner_run_lints => lint::run,
+    runner_quality_workspace => quality_tools::quality_workspace,
+    runner_npm_install => nodejs_tools::npm_install,
+    runner_npx_run => nodejs_tools::npx_run,
+    runner_tsc_check => nodejs_tools::tsc_check,
+    runner_code_stats => code_metrics::code_stats,
+    runner_dependency_graph => code_metrics::dependency_graph,
+    runner_coverage_report => code_metrics::coverage_report,
+    runner_shellcheck_check => source_analysis_tools::shellcheck_check,
+    runner_cppcheck_analyze => source_analysis_tools::cppcheck_analyze,
+    runner_semgrep_scan => source_analysis_tools::semgrep_scan,
+    runner_hadolint_check => source_analysis_tools::hadolint_check,
+    runner_bandit_scan => source_analysis_tools::bandit_scan,
+    runner_lizard_complexity => source_analysis_tools::lizard_complexity,
 }
 
-macro_rules! define_git_runners {
-    ($( $runner:ident => $git_fn:ident ),* $(,)? ) => {
-        $( define_git_runner!($runner, $git_fn); )*
-    };
+// ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
+
+define_runners_cwd_ctx! {
+    runner_archive_pack => archive::archive_pack,
+    runner_archive_unpack => archive::archive_unpack,
+    runner_archive_list => archive::archive_list,
+    runner_create_file => file::create_file,
+    runner_modify_file => file::modify_file,
+    runner_copy_file => file::copy_file,
+    runner_move_file => file::move_file,
+    runner_read_file => file::read_file,
+    runner_structured_patch => structured_data::structured_patch,
+    runner_delete_files => file::delete_files,
+    runner_append_file => file::append_file,
+    runner_search_replace => file::search_replace,
 }
+
+// ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
+
+define_runners_cwd! {
+    runner_rust_analyzer_goto_definition => rust_ide::rust_analyzer_goto_definition,
+    runner_rust_analyzer_find_references => rust_ide::rust_analyzer_find_references,
+    runner_rust_analyzer_hover => rust_ide::rust_analyzer_hover,
+    runner_rust_analyzer_document_symbol => rust_ide::rust_analyzer_document_symbol,
+    runner_rust_analyzer_goto_implementation => rust_ide::rust_analyzer_goto_implementation,
+    runner_rust_analyzer_goto_type_definition => rust_ide::rust_analyzer_goto_type_definition,
+    runner_rust_analyzer_document_highlight => rust_ide::rust_analyzer_document_highlight,
+    runner_rust_analyzer_workspace_symbol => rust_ide::rust_analyzer_workspace_symbol,
+    runner_read_dir => file::read_dir,
+    runner_glob_files => file::glob_files,
+    runner_list_tree => file::list_tree,
+    runner_file_exists => file::file_exists,
+    runner_read_binary_meta => file::read_binary_meta,
+    runner_hash_file => file::hash_file,
+    runner_extract_in_file => file::extract_in_file,
+    runner_markdown_check_links => markdown_links::markdown_check_links,
+    runner_structured_validate => structured_data::structured_validate,
+    runner_structured_query => structured_data::structured_query,
+    runner_structured_diff => structured_data::structured_diff,
+    runner_text_diff => text_diff::run,
+    runner_table_text => table_text::run,
+    runner_find_symbol => symbol::run,
+    runner_find_references => code_nav::find_references,
+    runner_rust_file_outline => code_nav::rust_file_outline,
+    runner_call_graph_sketch => call_graph_sketch::run,
+    runner_format_file => format::run,
+    runner_format_check_file => format::run_check,
+    runner_add_reminder => schedule::add_reminder,
+    runner_list_reminders => schedule::list_reminders,
+    runner_complete_reminder => schedule::complete_reminder,
+    runner_delete_reminder => schedule::delete_reminder,
+    runner_update_reminder => schedule::update_reminder,
+    runner_add_event => schedule::add_event,
+    runner_list_events => schedule::list_events,
+    runner_delete_event => schedule::delete_event,
+    runner_update_event => schedule::update_event,
+    runner_delete_dir => file::delete_dir,
+    runner_create_dir => file::create_dir,
+    runner_chmod_file => file::chmod_file,
+    runner_symlink_info => file::symlink_info,
+    runner_todo_scan => todo_scan::run,
+}
+
+// ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
+
+define_runners_args_only! {
+    runner_convert_units => unit_convert::run,
+    runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
+    runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
+    runner_text_transform => text_transform::run,
+    runner_regex_test => regex_test::run,
+    runner_date_calc => date_calc::run,
+    runner_json_format => json_format::run,
+    runner_env_var_check => env_var_check::run,
+}
+
+// ── Git 工具 ────────────────────────────────────────────────
 
 define_git_runners! {
     runner_git_status => status,
@@ -495,328 +548,33 @@ define_git_runners! {
     runner_git_revert => revert,
 }
 
-pub fn runner_archive_pack(args: &str, ctx: &ToolContext<'_>) -> String {
-    archive::archive_pack(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_archive_unpack(args: &str, ctx: &ToolContext<'_>) -> String {
-    archive::archive_unpack(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_archive_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    archive::archive_list(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_create_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::create_file(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_modify_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::modify_file(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_copy_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::copy_file(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_move_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::move_file(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_read_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::read_file(args, ctx.working_dir, ctx)
-}
-
-#[allow(clippy::result_large_err)]
-pub fn read_file_try_dispatch(
-    args_json: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, ctx.working_dir, ctx)
-}
-
-/// 用户消息 `@路径` 展开等：与 `read_file` 工具同源校验与读取。
-#[allow(clippy::result_large_err)]
-pub fn read_file_try_at_paths(
-    args_json: &str,
-    working_dir: &std::path::Path,
-    ctx: &ToolContext<'_>,
-) -> Result<String, crate::cm_tools::tool_result::ToolError> {
-    file::read_file_try(args_json, working_dir, ctx)
-}
-
-pub fn runner_read_dir(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::read_dir(args, ctx.working_dir)
-}
-
-pub fn runner_glob_files(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::glob_files(args, ctx.working_dir)
-}
-
-pub fn runner_list_tree(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::list_tree(args, ctx.working_dir)
-}
-
-pub fn runner_file_exists(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::file_exists(args, ctx.working_dir)
-}
-
-pub fn runner_read_binary_meta(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::read_binary_meta(args, ctx.working_dir)
-}
-
-pub fn runner_hash_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::hash_file(args, ctx.working_dir)
-}
-
-pub fn runner_extract_in_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::extract_in_file(args, ctx.working_dir)
-}
-
-pub fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
-    patch::run_with_changelist(args, ctx.working_dir, ctx.workspace_changelist)
-}
-
-/// `search_in_files` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
-#[allow(clippy::result_large_err)]
-pub fn runner_search_in_files_try(
-    args: &str,
-    ctx: &ToolContext<'_>,
-) -> Result<String, ToolError> {
-    grep_try::search_in_files_try(args, ctx.working_dir)
-}
-
-pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {
-    let Some(host) = ctx.codebase_semantic_host else {
-        return "错误：当前执行环境未注入代码语义检索配置，无法使用 codebase_semantic_search（如部分工作流节点路径）"
-            .to_string();
-    };
-    host.run_search(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_markdown_check_links(args: &str, ctx: &ToolContext<'_>) -> String {
-    markdown_links::markdown_check_links(args, ctx.working_dir)
-}
-
-pub fn runner_structured_validate(args: &str, ctx: &ToolContext<'_>) -> String {
-    structured_data::structured_validate(args, ctx.working_dir)
-}
-
-pub fn runner_structured_query(args: &str, ctx: &ToolContext<'_>) -> String {
-    structured_data::structured_query(args, ctx.working_dir)
-}
-
-pub fn runner_structured_diff(args: &str, ctx: &ToolContext<'_>) -> String {
-    structured_data::structured_diff(args, ctx.working_dir)
-}
-
-pub fn runner_structured_patch(args: &str, ctx: &ToolContext<'_>) -> String {
-    structured_data::structured_patch(args, ctx.working_dir, ctx)
-}
-
-pub fn runner_text_transform(args: &str, _ctx: &ToolContext<'_>) -> String {
-    text_transform::run(args)
-}
-
-pub fn runner_text_diff(args: &str, ctx: &ToolContext<'_>) -> String {
-    text_diff::run(args, ctx.working_dir)
-}
-
-pub fn runner_table_text(args: &str, ctx: &ToolContext<'_>) -> String {
-    table_text::run(args, ctx.working_dir)
-}
-
-pub fn runner_find_symbol(args: &str, ctx: &ToolContext<'_>) -> String {
-    symbol::run(args, ctx.working_dir)
-}
-
-pub fn runner_find_references(args: &str, ctx: &ToolContext<'_>) -> String {
-    code_nav::find_references(args, ctx.working_dir)
-}
-
-pub fn runner_rust_file_outline(args: &str, ctx: &ToolContext<'_>) -> String {
-    code_nav::rust_file_outline(args, ctx.working_dir)
-}
-
-pub fn runner_call_graph_sketch(args: &str, ctx: &ToolContext<'_>) -> String {
-    call_graph_sketch::run(args, ctx.working_dir)
-}
-
-pub fn runner_format_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    format::run(args, ctx.working_dir)
-}
-
-pub fn runner_format_check_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    format::run_check(args, ctx.working_dir)
-}
-
-pub fn runner_run_lints(args: &str, ctx: &ToolContext<'_>) -> String {
-    lint::run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_quality_workspace(args: &str, ctx: &ToolContext<'_>) -> String {
-    quality_tools::quality_workspace(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-pub fn runner_add_reminder(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::add_reminder(args, ctx.working_dir)
-}
-
-pub fn runner_list_reminders(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::list_reminders(args, ctx.working_dir)
-}
-
-pub fn runner_complete_reminder(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::complete_reminder(args, ctx.working_dir)
-}
-
-pub fn runner_delete_reminder(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::delete_reminder(args, ctx.working_dir)
-}
-
-pub fn runner_update_reminder(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::update_reminder(args, ctx.working_dir)
-}
-
-pub fn runner_add_event(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::add_event(args, ctx.working_dir)
-}
-
-pub fn runner_list_events(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::list_events(args, ctx.working_dir)
-}
-
-pub fn runner_delete_event(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::delete_event(args, ctx.working_dir)
-}
-
-pub fn runner_update_event(args: &str, ctx: &ToolContext<'_>) -> String {
-    schedule::update_event(args, ctx.working_dir)
-}
-
-// ── Node.js / npm / npx ─────────────────────────────────────
-
-pub fn runner_npm_install(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::npm_install(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_npm_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len, ctx)
-}
-pub fn runner_npx_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::npx_run(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_tsc_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::tsc_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-// ── Go 补充：golangci-lint ──────────────────────────────────
-
-pub fn runner_golangci_lint(args: &str, ctx: &ToolContext<'_>) -> String {
-    go_tools::golangci_lint(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-// ── 进程与端口管理 ──────────────────────────────────────────
-
-pub fn runner_port_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    process_tools::port_check(args, ctx.command_max_output_len)
-}
-pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    process_tools::process_list(args, ctx.command_max_output_len)
-}
-
-// ── 后台任务查询（只读） ─────────────────────────────────────
-
-pub fn runner_background_job_status(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_status(
-        args,
-        ctx.tool_jobs_host,
-        ctx.command_max_output_len,
-    )
-}
-pub fn runner_background_job_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_list(
-        args,
-        ctx.tool_jobs_host,
-        ctx.working_dir,
-        ctx.command_max_output_len,
-    )
-}
-
-// ── 代码度量与分析 ──────────────────────────────────────────
-
-// ── 文件增强 ────────────────────────────────────────────────
-
-pub fn runner_delete_files(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::delete_files(args, ctx.working_dir, ctx)
-}
-pub fn runner_delete_dir(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::delete_dir(args, ctx.working_dir)
-}
-pub fn runner_append_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::append_file(args, ctx.working_dir, ctx)
-}
-pub fn runner_create_dir(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::create_dir(args, ctx.working_dir)
-}
-pub fn runner_search_replace(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::search_replace(args, ctx.working_dir, ctx)
-}
-pub fn runner_chmod_file(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::chmod_file(args, ctx.working_dir)
-}
-pub fn runner_symlink_info(args: &str, ctx: &ToolContext<'_>) -> String {
-    file::symlink_info(args, ctx.working_dir)
-}
-
-pub fn runner_code_stats(args: &str, ctx: &ToolContext<'_>) -> String {
-    code_metrics::code_stats(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_dependency_graph(args: &str, ctx: &ToolContext<'_>) -> String {
-    code_metrics::dependency_graph(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_coverage_report(args: &str, ctx: &ToolContext<'_>) -> String {
-    code_metrics::coverage_report(args, ctx.working_dir, ctx.command_max_output_len)
-}
-
-// ── 新增纯内存 / 开发辅助工具 ────────────────────────────────
-
-pub fn runner_regex_test(args: &str, _ctx: &ToolContext<'_>) -> String {
-    regex_test::run(args)
-}
-
-pub fn runner_date_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
-    date_calc::run(args)
-}
-
-pub fn runner_json_format(args: &str, _ctx: &ToolContext<'_>) -> String {
-    json_format::run(args)
-}
-
-pub fn runner_env_var_check(args: &str, _ctx: &ToolContext<'_>) -> String {
-    env_var_check::run(args)
-}
-
-pub fn runner_todo_scan(args: &str, ctx: &ToolContext<'_>) -> String {
-    todo_scan::run(args, ctx.working_dir)
-}
-
-// ── 源码分析工具 ──────────────────────────────────────────────
-
-pub fn runner_shellcheck_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::shellcheck_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_cppcheck_analyze(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::cppcheck_analyze(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_semgrep_scan(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::semgrep_scan(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_hadolint_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::hadolint_check(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_bandit_scan(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::bandit_scan(args, ctx.working_dir, ctx.command_max_output_len)
-}
-pub fn runner_lizard_complexity(args: &str, ctx: &ToolContext<'_>) -> String {
-    source_analysis_tools::lizard_complexity(args, ctx.working_dir, ctx.command_max_output_len)
+// ── GitHub CLI 工具 ─────────────────────────────────────────
+
+gh_runner!(runner_gh_pr_list, github_cli::gh_pr_list);
+gh_runner!(runner_gh_pr_view, github_cli::gh_pr_view);
+gh_runner!(runner_gh_pr_checks, github_cli::gh_pr_checks);
+gh_runner!(runner_gh_pr_create, github_cli::gh_pr_create);
+gh_runner!(runner_gh_pr_merge, github_cli::gh_pr_merge);
+gh_runner!(runner_gh_pr_review, github_cli::gh_pr_review);
+gh_runner!(runner_gh_pr_comment, github_cli::gh_pr_comment);
+gh_runner!(runner_gh_pr_edit, github_cli::gh_pr_edit);
+gh_runner!(runner_gh_issue_list, github_cli::gh_issue_list);
+gh_runner!(runner_gh_issue_view, github_cli::gh_issue_view);
+gh_runner!(runner_gh_issue_create, github_cli::gh_issue_create);
+gh_runner!(runner_gh_run_list, github_cli::gh_run_list);
+gh_runner!(runner_gh_pr_diff, github_cli::gh_pr_diff);
+gh_runner!(runner_gh_run_view, github_cli::gh_run_view);
+gh_runner!(runner_gh_run_rerun, github_cli::gh_run_rerun);
+gh_runner!(
+    runner_gh_run_failure_summary,
+    github_cli::gh_run_failure_summary
+);
+gh_runner!(runner_gh_release_list, github_cli::gh_release_list);
+gh_runner!(runner_gh_release_view, github_cli::gh_release_view);
+gh_runner!(runner_gh_release_create, github_cli::gh_release_create);
+gh_runner!(runner_gh_search, github_cli::gh_search);
+gh_runner!(runner_gh_api, github_cli::gh_api);
+
+pub fn runner_gh_pr_body_draft(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr_body_draft(args, ctx.working_dir, ctx.command_max_output_len)
 }
