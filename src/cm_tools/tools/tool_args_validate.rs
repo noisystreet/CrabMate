@@ -1,7 +1,7 @@
 //! 在工具执行前对照内置 `FunctionDef` 的 `parameters` 做 **JSON Schema** 校验
 //!（`jsonschema` 自动检测草案版本），与发给上游的 `tools` 定义保持一致。
 //!
-//! 与 [`super::schema_check::workflow_tool_args_satisfy_required`] 的「必填键」粗检互补：
+//! 与工具「必填键」粗检互补：
 //! 此模块还校验类型、枚举、数值范围、嵌套子对象、以及 `additionalProperties` 等。
 //!
 //! 内置工具：在 Schema 校验与 runner 执行前做**一轮**确定性参数纠错（如 `read_file` / **`modify_file`**

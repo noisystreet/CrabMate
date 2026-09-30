@@ -16,8 +16,6 @@ pub use crate::cm_agent::message_pipeline;
 /// 规划–执行–反思（PER）协调、终答规划门控与重写（领域核在 `cm_agent`）。
 pub use crate::cm_agent::per_coord;
 mod per_plan_semantic_check;
-/// 步级 `executor_kind` 与 DAG `node_tool_role` 共用的工具允许表。
-pub(crate) mod step_executor_policy;
 /// OpenAI 兼容会话的 **tiktoken** prompt token 粗估（与 `message_pipeline::conversation_messages_to_vendor_body` 对齐）。
 pub mod tiktoken_prompt_tokens;
 pub use crate::cm_workflow as workflow;

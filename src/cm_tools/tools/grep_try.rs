@@ -1,4 +1,4 @@
-//! `search_in_files` 的显式 [`crate::cm_tools::tool_result::ToolError`] 路径（与 `grep::run` 字符串路径并存）。
+//! `search_in_files` 的显式 [`crate::cm_tools::tool_result::ToolError`] 路径。
 
 use ignore::WalkBuilder;
 use regex::RegexBuilder;
@@ -386,7 +386,7 @@ fn format_search_body_matches(
     out
 }
 
-/// 与 [`super::grep::run`] 行为一致，失败返回显式 [`ToolError`]。
+/// 在工作区内按正则/关键词搜索文件内容，失败返回显式 [`ToolError`]。
 #[allow(clippy::result_large_err)]
 pub fn search_in_files_try(args_json: &str, workspace_root: &Path) -> Result<String, ToolError> {
     let params = parse_params(args_json)?;

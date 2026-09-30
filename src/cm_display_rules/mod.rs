@@ -3,18 +3,17 @@
 //! 与主仓 `src/runtime/message_display.rs`、前端 `message_format/display/message_ex/parts.rs`
 //! 对齐；金样见仓库根 `fixtures/display_hide_user_golden.jsonl`。
 
-/// 无工具规划轮 tool_calls 拒绝后的一次性重写约束 user 首行（与 `types::STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX` 一致）。
-pub const STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX: &str =
-    "### 规划轮约束提醒（code=PLANNER_TOOL_CALL_REJECTED）";
+/// 无工具规划轮 tool_calls 拒绝后的一次性重写约束 user 首行（同一来源见 `cm_types`）。
+pub use crate::cm_types::STAGED_PLANNER_TOOL_CALL_REJECT_CONTENT_PREFIX as STAGED_PLANNER_TOOL_CALL_REJECT_PREFIX;
 
 /// 外循环构建空转纠偏 user 首行（与 `outer_loop_build_idle` / `turn_completion` 对齐）。
 pub const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
 
-/// 长期记忆召回注入正文前缀（与 `long_term_memory::format_ltm_injection_body` 一致；无 `user.name` 时的兜底识别）。
+/// 长期记忆召回注入正文前缀（为 `long_term_memory::format_ltm_injection_body` 的前缀；无 `user.name` 时的兜底识别）。
 pub const LONG_TERM_MEMORY_INJECTION_CONTENT_PREFIX: &str = "以下为与当前问题可能相关的长期记忆";
 
-/// LLM 中间段摘要正文前缀（与 `types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX` 一致）。
-pub const CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX: &str = "[较早对话已摘要，以下为压缩要点]";
+/// LLM 中间段摘要正文前缀（同一来源见 `cm_types`）。
+pub use crate::cm_types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX;
 
 #[must_use]
 pub fn is_long_term_memory_injected_user_content(s: &str) -> bool {
@@ -58,12 +57,6 @@ pub fn user_message_should_hide_for_chat_display(s: &str) -> bool {
             .starts_with(OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX)
 }
 
-/// 无 `user.name` 时用于 [`crate::cm_display_rules::types`] 识别服务端注入 user（展示层 + 落盘过滤）。
-#[must_use]
-pub fn is_server_injected_user_content_for_storage(s: &str) -> bool {
-    user_message_should_hide_for_chat_display(s)
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -99,14 +92,5 @@ mod tests {
             let got = user_message_should_hide_for_chat_display(body.as_str());
             assert_eq!(got, expect_hidden, "line {} ({})", line_no + 1, label);
         }
-    }
-
-    #[test]
-    fn context_summary_prefix_matches_types_constant() {
-        assert_eq!(
-            CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX,
-            crate::cm_types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX,
-            "drift would hide unnamed summaries but strip them on save"
-        );
     }
 }

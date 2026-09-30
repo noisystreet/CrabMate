@@ -17,7 +17,7 @@ pub fn is_server_injected_user_message(m: &Message) -> bool {
         return true;
     }
     message_content_as_str(&m.content)
-        .is_some_and(crate::cm_display_rules::is_server_injected_user_content_for_storage)
+        .is_some_and(crate::cm_display_rules::user_message_should_hide_for_chat_display)
 }
 
 #[inline]

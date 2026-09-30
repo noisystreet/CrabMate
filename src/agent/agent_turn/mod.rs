@@ -30,7 +30,7 @@ pub(crate) mod turn_loop;
 
 // ---- 稳定模块路径（对外 / `$crate::agent::agent_turn::…`）----
 pub(crate) use host::{
-    errors, execute, execute_tools, params, run_command_dedupe, sub_agent_policy, turn_sink,
+    errors, execute, execute_tools, params, run_command_dedupe, turn_sink,
 };
 pub(crate) use plan_reflect::{intent, plan, reflect};
 #[allow(unused_imports)] // 测试与文档链接：`crate::agent::agent_turn::turn_completion`
@@ -62,8 +62,6 @@ pub(crate) use params::{
 pub(crate) use plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 #[allow(unused_imports)]
 pub(crate) use reflect::{ReflectOnAssistantOutcome, per_reflect_after_assistant};
-#[allow(unused_imports)]
-pub(crate) use sub_agent_policy::filter_tool_defs_for_executor_kind;
 pub(crate) use turn_sink::TurnControlSink;
 
 #[cfg(test)]

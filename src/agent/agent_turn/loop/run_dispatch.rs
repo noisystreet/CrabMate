@@ -31,7 +31,7 @@ pub(crate) async fn dispatch_react_turn(
 ) -> Result<(), RunAgentTurnError> {
     intent_at_turn_start::run_act_turn_start_heuristics(p);
     // 会话 Ask/Plan：须在启发式之后挂只读（Ask/Plan 跳过 Act 句启发式；只读由本处 mode 挂载）。
-    if crate::session_mode_turn::session_mode_requires_readonly_tools(p.ctx.attach.session_mode) {
+    if p.ctx.attach.session_mode.requires_readonly_tools() {
         p.turn.turn_planner_hints.step_executor_constraint =
             Some(crate::cm_agent::plan_artifact::PlanStepExecutorKind::ReviewReadonly);
         tracing::info!(
