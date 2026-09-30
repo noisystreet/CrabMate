@@ -27,7 +27,7 @@ use super::outer_loop_iteration_reduce::{
 };
 use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
 use super::turn_completion::{
-    redundant_tool_names_for_log, task_level_satisfied_allows_early_stop,
+    redundant_tool_names_for_log, turn_early_stop_allowed,
     turn_redundant_tools_after_completion_allowed,
 };
 use crate::agent::agent_turn::errors::{AgentTurnSubPhase, RunAgentTurnError, TurnAbortReason};
@@ -38,7 +38,7 @@ use crate::agent::agent_turn::params::{OuterLoopPlanCallModelRole, RunLoopParams
 use crate::agent::agent_turn::plan::{PerPlanCallModelParams, per_plan_call_model_retrying};
 use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
 use crate::agent::agent_turn::reflect::per_reflect_after_assistant;
-use crate::agent::agent_turn::sub_agent_policy::filter_tool_defs_for_executor_kind;
+use crate::cm_agent::step_executor_policy::filter_tool_defs_for_executor_kind;
 
 /// 预算拒绝 → 回合错误：墙钟单独映射为 [`RunAgentTurnError::TimeLimitExhausted`]（SSE `TIME_LIMIT_EXHAUSTED`），
 /// 其余（LLM 次数 / Token）为 [`RunAgentTurnError::Other`]。
@@ -350,7 +350,7 @@ async fn outer_loop_post_tools_exit(
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
     }
-    let task_level_early_stop = task_level_satisfied_allows_early_stop(p.turn.messages());
+    let task_level_early_stop = turn_early_stop_allowed(p.turn.messages());
     if task_level_early_stop {
         tracing::info!(
             target: "crabmate::agent_turn",

@@ -16,8 +16,7 @@ pub(crate) use crate::cm_agent::agent_turn::turn_completion_decision::{
 
 pub(crate) use crate::cm_agent::agent_turn::completion_suppression::redundant_tool_names_for_log;
 
-/// 外循环构建空转纠偏 user 首行。
-const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
+pub(crate) use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
 
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -37,11 +36,6 @@ pub(crate) const OUTER_LOOP_MISSING_FINAL_ANSWER_MIN_CHARS: usize = 24;
 /// 任务级证据已 Satisfied 时是否允许**提前停轮**（规划步滚动视界与子 Agent 外循环共用）。
 pub(crate) fn turn_early_stop_allowed(messages: &[Message]) -> bool {
     evaluate_turn_early_stop(messages).is_allow()
-}
-
-/// 与 [`turn_early_stop_allowed`] 同义；保留旧名供逐步迁移引用。
-pub(crate) fn task_level_satisfied_allows_early_stop(messages: &[Message]) -> bool {
-    turn_early_stop_allowed(messages)
 }
 
 /// 活跃目标已有完成证据且允许早停时，是否应静默丢弃本轮探针类 / 重复 `run_command` 工具调用。

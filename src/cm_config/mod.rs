@@ -14,7 +14,6 @@ mod finalize;
 mod gateway_hints;
 mod hot_reload;
 mod load;
-mod orchestration_profile;
 mod scheduled_agent_task;
 pub mod skills;
 pub mod skills_slash;
@@ -36,7 +35,6 @@ pub use gateway_hints::{
 };
 pub use hot_reload::apply_hot_reload_config_subset;
 pub use load::{load_config, load_config_for_cli};
-pub use orchestration_profile::effective_orchestration_path_summary;
 pub use user_config_xdg::{
     ENV_SKIP_CONFIG_SEED, SYSTEM_CONFIG_DIR, cwd_has_local_user_config,
     cwd_in_crabmate_source_tree, ensure_user_config_seeded_from,

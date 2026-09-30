@@ -12,7 +12,7 @@ use crate::agent::agent_turn::params::RunLoopParams;
 /// Ask/Plan 由 mode 决定只读档，跳过 Act 句启发式。
 #[must_use]
 fn should_skip_act_utterance_heuristics(session_mode: SessionMode) -> bool {
-    crate::session_mode_turn::session_mode_requires_readonly_tools(session_mode)
+    session_mode.requires_readonly_tools()
 }
 
 /// 最新真实用户任务句（跳过编排注入）；供 Act 关键词启发式使用。

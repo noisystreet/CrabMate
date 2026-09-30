@@ -1,10 +1,8 @@
 //! L2 单 Agent 外循环：编译/构建类任务在「只说不做」时的轻量门控。
 
 use crate::agent::plan_artifact::plan_step_description_implies_build_execution;
+use crate::cm_display_rules::OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX;
 use crate::types::{Message, last_real_user_message_index, message_content_as_str};
-
-/// 外循环构建空转纠偏 user 首行。
-const OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX: &str = "【编排纠偏】";
 
 /// 从工具名 + 正文推断此工具结果指示了「构建类进展」（非简单退出码 0 检测）。
 pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {

@@ -46,7 +46,6 @@ mod frontend_tools;
 mod git;
 mod github_cli;
 mod go_tools;
-mod grep;
 mod grep_try;
 #[cfg(feature = "web-fetch-tools")]
 pub mod http_fetch;
@@ -68,7 +67,6 @@ mod release_docs;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
-mod schema_check;
 mod security_tools;
 mod self_config_info;
 mod skill_manage;
@@ -80,7 +78,6 @@ pub mod structured_preview;
 mod symbol;
 #[cfg(feature = "csv-tools")]
 mod table_text;
-pub mod terminal_session;
 mod test_result_cache;
 #[cfg(feature = "diff-tools")]
 mod text_diff;
@@ -343,8 +340,6 @@ fn cached_params(spec: &ToolSpec) -> serde_json::Value {
 pub fn cached_params_for_tool_name(name: &str) -> Option<serde_json::Value> {
     find_spec(name).map(cached_params)
 }
-
-pub use schema_check::workflow_tool_args_satisfy_required;
 
 /// 执行本地工具并返回结果字符串。
 /// `ToolContext` 聚合 `run_command`、`get_weather`、`web_search` 等工具所需的配置项。

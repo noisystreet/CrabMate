@@ -72,12 +72,6 @@ pub fn session_mode_from_config_str(raw: &str) -> SessionMode {
     }
 }
 
-/// Ask / Plan 时返回 `true`（调用方应挂 ReviewReadonly）；Act 为 `false`。
-#[must_use]
-pub fn session_mode_requires_readonly_tools(mode: SessionMode) -> bool {
-    mode.requires_readonly_tools()
-}
-
 /// 模式附录文件相对约定（与 `system_prompt_file` 相同解析规则）。
 #[must_use]
 pub fn session_mode_appendix_relpath(mode: SessionMode) -> &'static str {
@@ -167,7 +161,7 @@ mod tests {
     #[test]
     fn ask_mode_readonly_survives_gate_clear_ordering() {
         let mut step_constraint: Option<&'static str> = None;
-        if session_mode_requires_readonly_tools(SessionMode::Ask) {
+        if SessionMode::Ask.requires_readonly_tools() {
             step_constraint = Some("ReviewReadonly");
         }
         assert_eq!(step_constraint, Some("ReviewReadonly"));

@@ -105,8 +105,7 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
     );
     println!("  orchestration_profile: react（运行时固定；对应配置键已移除）");
     println!(
-        "  有效编排路径（静态）: {}（session_mode / Act 句启发式 → ReAct 外循环）",
-        crate::cm_config::effective_orchestration_path_summary()
+        "  有效编排路径（静态）: react outer loop（session_mode / Act 句启发式 → ReAct 外循环）"
     );
 }
 

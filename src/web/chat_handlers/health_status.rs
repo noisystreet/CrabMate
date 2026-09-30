@@ -420,7 +420,7 @@ pub(crate) async fn status_handler(
         &agent_role_ids,
     )
     .await;
-    let effective_orchestration_path = crate::cm_config::effective_orchestration_path_summary();
+    let effective_orchestration_path = "react outer loop".to_string();
     if query.view.as_deref() == Some("shell") {
         return Json(build_status_shell_view(StatusShellBuildInput {
             cfg: &cfg,
