@@ -10,14 +10,14 @@
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg?branch=main" alt="code-complexity" /></a>
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+  <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
   <br />
   <a href="https://github.com/noisystreet/CrabMate/stargazers"><img src="https://img.shields.io/github/stars/noisystreet/CrabMate?style=flat&logo=github" alt="GitHub stars" /></a>
   <a href="https://github.com/noisystreet/CrabMate/commits/main"><img src="https://img.shields.io/github/last-commit/noisystreet/CrabMate?logo=github" alt="Last commit" /></a>
   <a href="https://github.com/noisystreet/CrabMate/issues"><img src="https://img.shields.io/github/issues/noisystreet/CrabMate" alt="Issues" /></a>
   <a href="https://github.com/noisystreet/CrabMate/pulls"><img src="https://img.shields.io/github/issues-pr/noisystreet/CrabMate" alt="Pull requests" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
-  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
-  <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
 </p>
 
 **CrabMate** 是基于 Rust 编写的 AI Agent，通过 **OpenAI 兼容** 的 `chat/completions` 对接 DeepSeek、MiniMax、智谱 GLM、Moonshot Kimi、本地 Ollama 等后端大模型。
@@ -28,20 +28,22 @@
 
 ## 目录
 
-- [功能概览](#功能概览)
-- [常用子命令](#常用子命令)
-- [编译运行与打包](#编译运行与打包)
-  - [Makefile（推荐）](#makefile推荐)
-  - [后端](#后端)
-  - [前端 Web](#前端-web)
-  - [官方 Client（Desktop / Android）](#官方-clientdesktop-android)
-  - [安装与发行包](#安装与发行包)
-  - [开发与质检（维护者）](#开发与质检维护者)
-- [文档索引](#文档索引)
-- [后端模型支持](#后端模型支持)
-- [环境变量提示](#环境变量提示)
-- [部署与安全](#部署与安全)
-- [项目结构](#项目结构)
+- [CrabMate](#crabmate)
+  - [目录](#目录)
+  - [功能概览](#功能概览)
+  - [常用子命令](#常用子命令)
+  - [编译运行与打包](#编译运行与打包)
+    - [Makefile（推荐）](#makefile推荐)
+    - [后端](#后端)
+    - [前端 Web](#前端-web)
+    - [官方 Client（Desktop / Android）](#官方-clientdesktop--android)
+    - [安装与发行包](#安装与发行包)
+    - [开发与质检（维护者）](#开发与质检维护者)
+  - [文档索引](#文档索引)
+  - [后端模型支持](#后端模型支持)
+  - [环境变量提示](#环境变量提示)
+  - [部署与安全](#部署与安全)
+  - [项目结构](#项目结构)
 
 ## 功能概览
 
@@ -142,7 +144,7 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 | 方式 | 命令 / 说明 |
 | --- | --- |
-| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.5.2`**，默认 feature **`server`**）。git tag **`v0.5.2`** 与此包一致。GitHub Releases 提供 tar.gz/`.deb`。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
+| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.6.0`**，默认 feature **`server`**）。git tag **`v0.6.0`** 与此包一致。GitHub Releases 提供 tar.gz/`.deb`。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
 | **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**server-only，不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。 |
 | **Debian 包** | **`make package-deb`** / **`cargo deb`**；产物在 **`dist/`** 或 **`target/debian/`**。安装 **`crabmate.service`**（**127.0.0.1:8080**，永远纯 API，**不**自动 enable）。桌面壳 `.deb` 见 Client 仓。详 [docs/命令行与路由.md](docs/命令行与路由.md)。 |
 | **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
@@ -218,5 +220,5 @@ make desktop-release    # Linux .deb（无 serve sidecar）
 
 架构分层、主要模块与数据流概要见 [docs/开发文档.md](docs/开发文档.md)；**`GET /status`** 返回完整运行状态；Web 壳层请用 **`GET /status?view=shell`**。其它观测字段见 [docs/调试指南.md](docs/调试指南.md)。
 
-- **单 crate**：crates.io **稳定版**为 **`0.5.2`**（[crates.io/crates/crabmate](https://crates.io/crates/crabmate)，默认 **`server`**）。**`cargo install crabmate`** 安装该版。git tag **`v0.5.2`** 与此包一致。官方 Client 应钉 **`version = "0.5.2", default-features = false, features = ["protocol"]`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。
+- **单 crate**：crates.io **稳定版**为 **`0.6.0`**（[crates.io/crates/crabmate](https://crates.io/crates/crabmate)，默认 **`server`**）。**`cargo install crabmate`** 安装该版。git tag **`v0.6.0`** 与此包一致。官方 Client 应钉 **`version = "0.6.0", default-features = false, features = ["protocol"]`**（仅 `crabmate::cm_sse_protocol`、`cm_types` 等，不要用 `types`/`sse` 别名）。
 - **semver 面**：`protocol` 为六个 `cm_*` 契约模块；`server` 承诺组合面模块**名**（`agent` / `config` / `llm` / `sse` / `types`）与根上显式 `pub use`（`run`、`run_agent_turn`、`build_tools*` 等）。`#[doc(hidden)]` 模块与 `agent::agent_turn` 等内部路径**不是**稳定 SDK。详见 [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4。
