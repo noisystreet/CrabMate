@@ -1,7 +1,8 @@
-//! 长期记忆：注入模型上下文（`prepare`）与回合结束后索引（`index_turn`）。
+//! 长期记忆：注入模型上下文（`prepare`）与显式读写（`long_term_remember` / `long_term_forget` / `long_term_memory_list`）。
 //!
 //! - **作用域**：当前仅 `conversation_id`。
 //! - **安全**：索引前截断正文；日志不输出全文。无 Web 鉴权时勿依赖其隔离性（见 README）。
+//! - 回合结束后索引见 `long_term_memory_index`。
 
 #![cfg_attr(not(feature = "fastembed"), allow(dead_code))]
 
@@ -14,6 +15,7 @@ use fastembed::TextEmbedding;
 use log::{debug, info, warn};
 use rusqlite::Connection;
 
+use crate::cm_memory::memory::long_term_memory_recall as recall;
 use crate::cm_memory::memory::long_term_memory_store::{self, MemoryRow};
 use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_types::text_utils::preview_chars;
@@ -22,7 +24,7 @@ use crate::cm_types::{
     is_workspace_changelist_injection,
 };
 
-fn clamp_text(s: &str, max: usize) -> String {
+pub(super) fn clamp_text(s: &str, max: usize) -> String {
     if max == 0 {
         return String::new();
     }
@@ -38,7 +40,7 @@ fn clamp_text(s: &str, max: usize) -> String {
     out
 }
 
-fn chunk_text(s: &str, max_chunk: usize) -> Vec<String> {
+pub(super) fn chunk_text(s: &str, max_chunk: usize) -> Vec<String> {
     let s = s.trim();
     if s.is_empty() {
         return Vec::new();
@@ -86,7 +88,7 @@ fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     if d <= f32::EPSILON { 0.0 } else { dot / d }
 }
 
-fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
+pub(super) fn f32_slice_to_bytes(v: &[f32]) -> Vec<u8> {
     let mut b = Vec::with_capacity(v.len() * 4);
     for x in v {
         b.extend_from_slice(&x.to_le_bytes());
@@ -130,17 +132,11 @@ fn validate_explicit_remember_scope_and_text<'a>(
     Ok((scope, text))
 }
 
-/// 回合索引写入的单条分块（正文 + 角色标识）。
-type LongTermIndexTurnChunk = (String, &'static str);
-/// [`LongTermMemoryRuntime::index_turn_chunks_to_store`] 的返回值。
-type LongTermIndexTurnChunks =
-    Result<Option<Vec<LongTermIndexTurnChunk>>, Box<dyn std::error::Error + Send + Sync>>;
-
 /// 进程内共享：SQLite 连接 + 可选 fastembed（首次 embed 时初始化；未编译 **`fastembed`** feature 时无嵌入器）。
 pub struct LongTermMemoryRuntime {
-    conn: Arc<Mutex<Connection>>,
+    pub(super) conn: Arc<Mutex<Connection>>,
     #[cfg(feature = "fastembed")]
-    embedder: Mutex<Option<TextEmbedding>>,
+    pub(super) embedder: Mutex<Option<TextEmbedding>>,
     #[cfg(not(feature = "fastembed"))]
     _no_fastembed: (),
     pub index_errors: AtomicU64,
@@ -177,7 +173,7 @@ impl LongTermMemoryRuntime {
     }
 
     #[cfg(feature = "fastembed")]
-    fn ensure_embedder(
+    pub(super) fn ensure_embedder(
         embedder: &Mutex<Option<TextEmbedding>>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut g = embedder
@@ -210,9 +206,9 @@ impl LongTermMemoryRuntime {
             .lock()
             .map_err(|e| format!("embedder 锁失败: {e}"))?;
         let model = g.as_mut().ok_or_else(|| "embedder 未初始化".to_string())?;
-        let prefixed = format!("passage: {}", passage);
+        // AllMiniLML6V2 是普通 sentence-transformer，不加 E5 式前缀（前缀只会引入噪声）。
         let v = model
-            .embed(vec![prefixed], None)
+            .embed(vec![passage], None)
             .map_err(|e| format!("嵌入失败: {e}"))?;
         let vec = v
             .into_iter()
@@ -315,29 +311,48 @@ impl LongTermMemoryRuntime {
         }
     }
 
+    /// 对候选行打「base + boost」排序分，返回 `(候选, 是否出现关键词回退 base)`。
+    ///
+    /// 第二个返回值供调用方决定能否做乘性相对衰减：一旦集合里混入关键词 base
+    /// （量纲是 `命中词数 / 查询词总数`，与连续余弦不可比），乘性阈值就不可靠，
+    /// 只能整体放弃裁剪——保守不裁优于误裁，见 [`recall::apply_relative_cutoff`]。
     fn score_memory_rows_against_query(
         rows: &[MemoryRow],
         qv: &[f32],
         query: &str,
         prioritize: bool,
-    ) -> Vec<crate::cm_memory::memory::long_term_memory_recall::ScoredRow> {
+    ) -> (Vec<recall::ScoredRow>, bool) {
         let mut scored = Vec::with_capacity(rows.len());
+        let mut keyword_fallback = false;
         for row in rows {
-            let base = row
+            let (base, from_keywords) = match row
                 .embedding
                 .as_ref()
-                .and_then(|b| bytes_to_f32_slice(b).map(|ev| cosine_sim(qv, &ev)))
-                .unwrap_or(0.0);
-            // 阈值须判 base：boost 是加性的，用总分判定会让无关经验条靠 boost 越过门槛。
-            if base < crate::cm_memory::memory::long_term_memory_recall::MIN_RECALL_BASE_SCORE {
-                continue;
-            }
-            let score = crate::cm_memory::memory::long_term_memory_recall::score_row(
-                base, row, query, prioritize,
-            );
+                .and_then(|b| bytes_to_f32_slice(b))
+            {
+                Some(ev) => {
+                    let b = cosine_sim(qv, &ev);
+                    // 阈值须判 base：boost 是加性的，用总分判定会让无关经验条靠 boost 越过门槛。
+                    if b < recall::MIN_RECALL_BASE_SCORE {
+                        continue;
+                    }
+                    (b, false)
+                }
+                // 无向量（旧数据被配方迁移作废 / 嵌入失败）的行回退关键词打分；
+                // 否则这些行在向量路径下会被整体丢弃，关键词路径才是它们唯一的召回机会。
+                None => {
+                    let kw = recall::keyword_overlap_score(query, &row.chunk_text);
+                    if kw <= 0.0 && !recall::tag_hit_in_query(row, query) {
+                        continue;
+                    }
+                    (kw, true)
+                }
+            };
+            keyword_fallback |= from_keywords;
+            let score = recall::score_row(base, row, query, prioritize, from_keywords);
             scored.push((score, base, row.clone()));
         }
-        scored
+        (scored, keyword_fallback)
     }
 
     #[cfg(feature = "fastembed")]
@@ -348,7 +363,7 @@ impl LongTermMemoryRuntime {
         }
         let mut g = self.embedder.lock().ok()?;
         let model = (*g).as_mut()?;
-        let docs = vec![format!("query: {}", query)];
+        let docs = vec![query];
         match model.embed(docs, None) {
             Ok(v) => v.into_iter().next(),
             Err(e) => {
@@ -364,16 +379,17 @@ impl LongTermMemoryRuntime {
         query: &str,
         top_k: usize,
         prioritize: bool,
-    ) -> Option<Vec<crate::cm_memory::memory::long_term_memory_recall::RecallPick>> {
+    ) -> Option<Vec<recall::RecallPick>> {
         #[cfg(feature = "fastembed")]
         {
             let qv = self.embed_memory_query_vector(query)?;
-            let scored = Self::score_memory_rows_against_query(rows, &qv, query, prioritize);
-            Some(
-                crate::cm_memory::memory::long_term_memory_recall::pick_recall_chunks(
-                    top_k, query, scored, prioritize,
-                ),
-            )
+            let (scored, keyword_fallback) =
+                Self::score_memory_rows_against_query(rows, &qv, query, prioritize);
+            // 纯余弦集（量纲稳定）才做乘性相对衰减剪长尾；混入关键词回退 base 就整体不裁。
+            let cutoff = (!keyword_fallback).then_some(recall::RELATIVE_SCORE_RATIO);
+            Some(recall::pick_recall_chunks(
+                top_k, query, scored, prioritize, cutoff,
+            ))
         }
         #[cfg(not(feature = "fastembed"))]
         {
@@ -391,7 +407,7 @@ impl LongTermMemoryRuntime {
         cfg: &AgentConfig,
         rows: Vec<MemoryRow>,
         query: &str,
-    ) -> Option<Vec<crate::cm_memory::memory::long_term_memory_recall::RecallPick>> {
+    ) -> Option<Vec<recall::RecallPick>> {
         let top_k = cfg.long_term_memory.long_term_memory_top_k;
         let prioritize = cfg
             .long_term_memory
@@ -411,11 +427,8 @@ impl LongTermMemoryRuntime {
         };
 
         let used_vector = vector_picked.is_some();
-        let picked = vector_picked.unwrap_or_else(|| {
-            crate::cm_memory::memory::long_term_memory_recall::keyword_rank_rows(
-                top_k, rows, query, prioritize,
-            )
-        });
+        let picked = vector_picked
+            .unwrap_or_else(|| recall::keyword_rank_rows(top_k, rows, query, prioritize));
         // 供实测校准 MIN_RECALL_BASE_SCORE / RELATIVE_SCORE_RATIO：观察真实会话的分数分布。
         debug!(
             target: "crabmate",
@@ -433,10 +446,7 @@ impl LongTermMemoryRuntime {
         }
     }
 
-    fn format_ltm_injection_body(
-        picked: &[crate::cm_memory::memory::long_term_memory_recall::RecallPick],
-        budget: usize,
-    ) -> Option<String> {
+    fn format_ltm_injection_body(picked: &[recall::RecallPick], budget: usize) -> Option<String> {
         let mut body = String::from(
             "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n",
         );
@@ -445,7 +455,7 @@ impl LongTermMemoryRuntime {
             if used >= budget {
                 break;
             }
-            let entry = crate::cm_memory::memory::long_term_memory_recall::format_recall_entry(*id, role, t);
+            let entry = recall::format_recall_entry(*id, role, t);
             // 预算按字符计：用字节（`.len()`）比对会让中文实际注入量只有配额约 1/3。
             let entry_chars = entry.chars().count();
             if used + entry_chars > budget {
@@ -462,29 +472,6 @@ impl LongTermMemoryRuntime {
             return None;
         }
         Some(body)
-    }
-
-    #[cfg(feature = "fastembed")]
-    fn embed_auto_index_chunk_bytes(
-        rt: &LongTermMemoryRuntime,
-        text: &str,
-        role: &str,
-    ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let mut g = rt
-            .embedder
-            .lock()
-            .map_err(|e| format!("embedder 锁失败: {e}"))?;
-        let model = g.as_mut().ok_or("embedder 未初始化")?;
-        let prefixed = if role == "user" {
-            format!("query: {}", text)
-        } else {
-            format!("passage: {}", text)
-        };
-        let v = model
-            .embed(vec![prefixed], None)
-            .map_err(|e| format!("嵌入失败: {e}"))?;
-        let vec = v.into_iter().next().ok_or("嵌入结果为空")?;
-        Ok(f32_slice_to_bytes(&vec))
     }
 
     /// 回合成功结束后异步索引本轮 user/assistant，并按配置尝试自动沉淀经验。
@@ -568,125 +555,6 @@ impl LongTermMemoryRuntime {
             }
         }
         Ok(())
-    }
-
-    fn ensure_embedder_if_indexing(
-        rt: &LongTermMemoryRuntime,
-        need_embed: bool,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        if !need_embed {
-            return Ok(());
-        }
-        #[cfg(feature = "fastembed")]
-        LongTermMemoryRuntime::ensure_embedder(&rt.embedder)?;
-        let _ = rt;
-        Ok(())
-    }
-
-    fn embed_auto_index_bytes_if_needed(
-        rt: &LongTermMemoryRuntime,
-        text: &str,
-        role: &str,
-        need_embed: bool,
-    ) -> Result<Option<Vec<u8>>, Box<dyn std::error::Error + Send + Sync>> {
-        if !need_embed {
-            return Ok(None);
-        }
-        #[cfg(feature = "fastembed")]
-        {
-            return Ok(Some(Self::embed_auto_index_chunk_bytes(rt, text, role)?));
-        }
-        #[cfg(not(feature = "fastembed"))]
-        {
-            let _ = (rt, text, role);
-            Ok(None)
-        }
-    }
-
-    fn index_turn_blocking(
-        rt: &LongTermMemoryRuntime,
-        cfg: &AgentConfig,
-        scope_id: &str,
-        messages: &[Message],
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let Some(to_store) = Self::index_turn_chunks_to_store(cfg, messages)? else {
-            return Ok(());
-        };
-        let need_embed = Self::index_turn_needs_fastembed_embedding(cfg);
-        Self::ensure_embedder_if_indexing(rt, need_embed)?;
-        let conn = rt
-            .conn
-            .lock()
-            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-        let auto_expires = (cfg.long_term_memory.long_term_memory_default_ttl_secs > 0)
-            .then_some(now + cfg.long_term_memory.long_term_memory_default_ttl_secs as i64);
-        for (text, role) in to_store {
-            if long_term_memory_store::has_duplicate_text(&conn, scope_id, &text)? {
-                continue;
-            }
-            let emb = Self::embed_auto_index_bytes_if_needed(rt, &text, role, need_embed)?;
-            long_term_memory_store::insert_chunk(
-                &conn,
-                scope_id,
-                &text,
-                role,
-                auto_expires,
-                emb.as_deref(),
-            )?;
-            long_term_memory_store::delete_oldest_beyond(
-                &conn,
-                scope_id,
-                cfg.long_term_memory.long_term_memory_max_entries,
-            )?;
-        }
-        Ok(())
-    }
-
-    /// 若本回合无需写入长期记忆，返回 `Ok(None)`。
-    fn index_turn_chunks_to_store(
-        cfg: &AgentConfig,
-        messages: &[Message],
-    ) -> LongTermIndexTurnChunks {
-        if !cfg.long_term_memory.long_term_memory_auto_index_turns {
-            return Ok(None);
-        }
-        let Some((user_t, asst_t)) = last_user_assistant_final_pair_for_turn(messages) else {
-            return Ok(None);
-        };
-        let user_t = clamp_text(
-            user_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        );
-        let asst_t = clamp_text(
-            asst_t,
-            cfg.long_term_memory.long_term_memory_max_chars_per_chunk,
-        );
-        if user_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
-            && asst_t.len() < cfg.long_term_memory.long_term_memory_min_chars_to_index
-        {
-            return Ok(None);
-        }
-        let max = cfg.long_term_memory.long_term_memory_max_chars_per_chunk;
-        let mut to_store: Vec<LongTermIndexTurnChunk> = Vec::new();
-        for part in chunk_text(&user_t, max) {
-            to_store.push((part, "user"));
-        }
-        for part in chunk_text(&asst_t, max) {
-            to_store.push((part, "assistant"));
-        }
-        Ok(Some(to_store))
-    }
-
-    fn index_turn_needs_fastembed_embedding(cfg: &AgentConfig) -> bool {
-        cfg!(feature = "fastembed")
-            && matches!(
-                cfg.long_term_memory.long_term_memory_vector_backend,
-                LongTermMemoryVectorBackend::Fastembed
-            )
     }
 
     /// 显式写入长期记忆（工具 `long_term_remember`）；`ttl_secs` 为 `None` 表示永不过期（仍受条数上限淘汰）。
