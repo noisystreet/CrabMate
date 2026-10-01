@@ -320,7 +320,7 @@ impl LongTermMemoryRuntime {
         qv: &[f32],
         query: &str,
         prioritize: bool,
-    ) -> Vec<(f32, MemoryRow)> {
+    ) -> Vec<crate::cm_memory::memory::long_term_memory_recall::ScoredRow> {
         let mut scored = Vec::with_capacity(rows.len());
         for row in rows {
             let base = row
@@ -328,10 +328,14 @@ impl LongTermMemoryRuntime {
                 .as_ref()
                 .and_then(|b| bytes_to_f32_slice(b).map(|ev| cosine_sim(qv, &ev)))
                 .unwrap_or(0.0);
+            // 阈值须判 base：boost 是加性的，用总分判定会让无关经验条靠 boost 越过门槛。
+            if base < crate::cm_memory::memory::long_term_memory_recall::MIN_RECALL_BASE_SCORE {
+                continue;
+            }
             let score = crate::cm_memory::memory::long_term_memory_recall::score_row(
                 base, row, query, prioritize,
             );
-            scored.push((score, row.clone()));
+            scored.push((score, base, row.clone()));
         }
         scored
     }
@@ -393,6 +397,7 @@ impl LongTermMemoryRuntime {
             .long_term_memory
             .long_term_memory_prioritize_experience_recall;
         let backend = cfg.long_term_memory.long_term_memory_vector_backend;
+        let total_rows = rows.len();
         let vector_picked = match backend {
             LongTermMemoryVectorBackend::Fastembed => {
                 self.try_vector_pick_fastembed(&rows, query, top_k, prioritize)
@@ -405,11 +410,22 @@ impl LongTermMemoryRuntime {
             }
         };
 
+        let used_vector = vector_picked.is_some();
         let picked = vector_picked.unwrap_or_else(|| {
             crate::cm_memory::memory::long_term_memory_recall::keyword_rank_rows(
                 top_k, rows, query, prioritize,
             )
         });
+        // 供实测校准 MIN_RECALL_BASE_SCORE / RELATIVE_SCORE_RATIO：观察真实会话的分数分布。
+        debug!(
+            target: "crabmate",
+            "长期记忆召回：候选 {} 条，命中 {} 条（top_k={}，top1={:.3}，路径={}）",
+            total_rows,
+            picked.len(),
+            top_k,
+            picked.first().map(|p| p.0).unwrap_or(0.0),
+            if used_vector { "vector" } else { "keyword" },
+        );
         if picked.is_empty() {
             None
         } else {
@@ -430,7 +446,9 @@ impl LongTermMemoryRuntime {
                 break;
             }
             let entry = crate::cm_memory::memory::long_term_memory_recall::format_recall_entry(*id, role, t);
-            if used + entry.len() > budget {
+            // 预算按字符计：用字节（`.len()`）比对会让中文实际注入量只有配额约 1/3。
+            let entry_chars = entry.chars().count();
+            if used + entry_chars > budget {
                 let remain = budget.saturating_sub(used);
                 if remain > 8 {
                     body.push_str(&preview_chars(&entry, remain));
@@ -438,9 +456,9 @@ impl LongTermMemoryRuntime {
                 break;
             }
             body.push_str(&entry);
-            used += entry.len();
+            used += entry_chars;
         }
-        if body.len() < 80 {
+        if body.chars().count() < 80 {
             return None;
         }
         Some(body)
