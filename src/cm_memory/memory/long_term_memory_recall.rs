@@ -37,7 +37,7 @@ pub fn is_experience_source_role(source_role: &str) -> bool {
 }
 
 /// 是否命中该行任一标签（标签长度 ≥2 且 query 字面包含）。
-fn tag_hit_in_query(row: &MemoryRow, query: &str) -> bool {
+pub(crate) fn tag_hit_in_query(row: &MemoryRow, query: &str) -> bool {
     let Ok(tags) = serde_json::from_str::<Vec<String>>(&row.tags_json) else {
         return false;
     };
@@ -50,6 +50,11 @@ fn tag_hit_in_query(row: &MemoryRow, query: &str) -> bool {
 
 /// 在向量分（或 0）之上叠加经验优先与标签/关键词加分。
 pub fn experience_recall_boost(row: &MemoryRow, query: &str) -> f32 {
+    role_and_tag_boost(row, query) + keyword_overlap_score(query, &row.chunk_text) * 0.15
+}
+
+/// 经验优先（+0.25，总结类再 +0.1）与标签命中（+0.2）；与 base 量纲无关，故单独拆出。
+fn role_and_tag_boost(row: &MemoryRow, query: &str) -> f32 {
     let mut boost = 0.0f32;
     if is_experience_source_role(&row.source_role) {
         boost += 0.25;
@@ -62,7 +67,7 @@ pub fn experience_recall_boost(row: &MemoryRow, query: &str) -> f32 {
     if tag_hit_in_query(row, query) {
         boost += 0.2;
     }
-    boost + keyword_overlap_score(query, &row.chunk_text) * 0.15
+    boost
 }
 
 fn is_cjk(c: char) -> bool {
@@ -122,7 +127,8 @@ fn flush_terms(buf: &mut String, is_cjk: bool, out: &mut Vec<String>) {
     }
 }
 
-fn keyword_overlap_score(query: &str, text: &str) -> f32 {
+/// 关键词重叠分：`命中查询词数 / 查询词总数`（见 [`query_terms`]，CJK 以 bigram 计词）。
+pub(crate) fn keyword_overlap_score(query: &str, text: &str) -> f32 {
     let words = query_terms(query);
     if words.is_empty() {
         return 0.0;
@@ -132,24 +138,49 @@ fn keyword_overlap_score(query: &str, text: &str) -> f32 {
     hits as f32 / words.len() as f32
 }
 
-pub fn score_row(base: f32, row: &MemoryRow, query: &str, prioritize_experience: bool) -> f32 {
-    if prioritize_experience {
-        base + experience_recall_boost(row, query)
-    } else {
-        base
+/// 排序总分 = `base + boost`。
+///
+/// `base_from_keywords` 为真表示 base 本身就是 [`keyword_overlap_score`]（关键词路径，
+/// 以及向量路径中对「无向量」旧行的回退打分）：此时 boost **不再叠加关键词项**，
+/// 否则同一个关键词重叠量会被计两次（实际 ×1.15），使这类行的排序被无谓放大。
+pub fn score_row(
+    base: f32,
+    row: &MemoryRow,
+    query: &str,
+    prioritize_experience: bool,
+    base_from_keywords: bool,
+) -> f32 {
+    if !prioritize_experience {
+        return base;
     }
+    let boost = if base_from_keywords {
+        role_and_tag_boost(row, query)
+    } else {
+        experience_recall_boost(row, query)
+    };
+    base + boost
 }
 
-/// 相对衰减：入参需已按排序分降序，返回同样降序的子集。
+/// 相对衰减：`ratio` 为 `None` 时不裁剪；否则丢弃 base 低于 `top1 base × ratio` 的尾部。
 ///
 /// 参考点取**全局最大 base**，而非首位（排序分最高）那条的 base——截断只由原始相似度决定，
 /// boost 完全不参与；否则带 boost 的经验条会当上参考点，把 bar 压低成几乎空操作。
-fn apply_relative_cutoff(scored: Vec<ScoredRow>) -> Vec<ScoredRow> {
-    let top1_base = scored.iter().map(|(_, base, _)| *base).fold(0.0f32, f32::max);
+///
+/// **关键词路径必须传 `None`**：关键词 base 是 `命中词数 / 查询词总数`，量纲与连续余弦不同，
+/// 且 CJK bigram 冗余（「记忆召回优化」切出「忆召」「回优」等几乎不可能命中的片段）抬高分母、
+/// 满分 1.0 属离群值；乘性比例在此弊大于利，会误删真正有命中但分数偏低的条。
+fn apply_relative_cutoff(scored: Vec<ScoredRow>, ratio: Option<f32>) -> Vec<ScoredRow> {
+    let Some(ratio) = ratio else {
+        return scored;
+    };
+    let top1_base = scored
+        .iter()
+        .map(|(_, base, _)| *base)
+        .fold(0.0f32, f32::max);
     if top1_base <= 0.0 {
         return scored;
     }
-    let bar = top1_base * RELATIVE_SCORE_RATIO;
+    let bar = top1_base * ratio;
     scored
         .into_iter()
         .filter(|(_, base, _)| *base >= bar)
@@ -164,18 +195,22 @@ fn into_pick((score, _base, row): ScoredRow) -> RecallPick {
 ///
 /// `prioritize_experience` 时经验条优先占位，但为回合记忆保留 `MIN_TURN_SLOTS` 个槽位，
 /// 余下槽位由回合按分数回填；经验条不足时回合条可占满剩余槽位。
+///
+/// `cutoff_ratio` 为 `Some(r)` 时对候选做相对衰减（向量路径传 [`RELATIVE_SCORE_RATIO`]）；
+/// 关键词路径传 `None`，理由见 [`apply_relative_cutoff`]。
 pub fn pick_recall_chunks(
     top_k: usize,
     _query: &str,
     mut scored: Vec<ScoredRow>,
     prioritize_experience: bool,
+    cutoff_ratio: Option<f32>,
 ) -> Vec<RecallPick> {
     if top_k == 0 || scored.is_empty() {
         return Vec::new();
     }
 
     scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    let scored = apply_relative_cutoff(scored);
+    let scored = apply_relative_cutoff(scored, cutoff_ratio);
 
     if !prioritize_experience {
         return scored.into_iter().take(top_k).map(into_pick).collect();
@@ -205,6 +240,9 @@ pub fn pick_recall_chunks(
 ///
 /// 关键词与标签都未命中的行不进候选——旧实现会把它们以 0 分塞进 top-k，
 /// 等价于「按时间取最新几条」，纯噪声。
+///
+/// 本路径**不做相对衰减**（传 `None`）：命中即保留，仅靠排序 + `top_k` 截断，见
+/// [`apply_relative_cutoff`] 对量纲差异的说明。
 pub fn keyword_rank_rows(
     top_k: usize,
     rows: Vec<MemoryRow>,
@@ -218,10 +256,14 @@ pub fn keyword_rank_rows(
             if base <= 0.0 && !tag_hit_in_query(&r, query) {
                 return None;
             }
-            Some((score_row(base, &r, query, prioritize_experience), base, r))
+            Some((
+                score_row(base, &r, query, prioritize_experience, true),
+                base,
+                r,
+            ))
         })
         .collect();
-    pick_recall_chunks(top_k, query, scored, prioritize_experience)
+    pick_recall_chunks(top_k, query, scored, prioritize_experience, None)
 }
 
 pub fn format_recall_entry(id: i64, source_role: &str, text: &str) -> String {
@@ -265,7 +307,7 @@ mod tests {
         rows.push(row(102, "assistant", "auto indexed assistant reply", "[]"));
         let scored: Vec<ScoredRow> = rows.into_iter().map(|r| (0.5f32, 0.5f32, r)).collect();
 
-        let picked = pick_recall_chunks(8, "cargo check 编译", scored, true);
+        let picked = pick_recall_chunks(8, "cargo check 编译", scored, true, Some(RELATIVE_SCORE_RATIO));
         let roles: Vec<_> = picked.iter().map(|p| p.3.as_str()).collect();
         assert_eq!(picked.len(), 8);
         assert_eq!(
@@ -288,7 +330,7 @@ mod tests {
             .collect();
         let scored: Vec<ScoredRow> = rows.into_iter().map(|r| (0.5f32, 0.5f32, r)).collect();
 
-        let picked = pick_recall_chunks(3, "q", scored, true);
+        let picked = pick_recall_chunks(3, "q", scored, true, Some(RELATIVE_SCORE_RATIO));
         assert_eq!(picked.len(), 3);
         assert!(picked.iter().all(|p| p.3 == "explicit"));
     }
@@ -300,7 +342,7 @@ mod tests {
             (0.8f32, 0.8f32, row(2, "explicit", "b", "[]")),
             (0.1f32, 0.1f32, row(3, "explicit", "c", "[]")),
         ];
-        let ids: Vec<_> = pick_recall_chunks(8, "q", scored, false)
+        let ids: Vec<_> = pick_recall_chunks(8, "q", scored, false, Some(RELATIVE_SCORE_RATIO))
             .iter()
             .map(|p| p.1)
             .collect();
@@ -320,11 +362,31 @@ mod tests {
             ),
             (0.54f32, 0.54f32, row(2, "user", "more relevant turn", "[]")),
         ];
-        let ids: Vec<_> = pick_recall_chunks(8, "q", scored, true)
+        let ids: Vec<_> = pick_recall_chunks(8, "q", scored, true, Some(RELATIVE_SCORE_RATIO))
             .iter()
             .map(|p| p.1)
             .collect();
         assert_eq!(ids, vec![1, 2]);
+    }
+
+    #[test]
+    fn no_cutoff_keeps_low_score_keyword_tail() {
+        // 关键词 base = 命中词数 / 查询词总数，量纲与余弦不同：传 None 时不做乘性衰减，
+        // 低分但确有命中的尾部条也要保留（向量路径的 RELATIVE_SCORE_RATIO 会把它裁掉）。
+        let scored = vec![
+            (0.6f32, 0.6f32, row(1, "user", "记忆召回优化", "[]")),
+            (0.2f32, 0.2f32, row(2, "user", "只有记忆命中", "[]")),
+        ];
+        let cut: Vec<_> = pick_recall_chunks(8, "q", scored.clone(), false, Some(RELATIVE_SCORE_RATIO))
+            .iter()
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(cut, vec![1], "向量路径应裁掉 0.2 的尾部条");
+        let kept: Vec<_> = pick_recall_chunks(8, "q", scored, false, None)
+            .iter()
+            .map(|p| p.1)
+            .collect();
+        assert_eq!(kept, vec![1, 2], "关键词路径应保留低分命中条");
     }
 
     #[test]

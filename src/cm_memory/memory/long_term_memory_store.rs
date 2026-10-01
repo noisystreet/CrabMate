@@ -4,9 +4,20 @@
 
 use std::path::Path;
 
-use rusqlite::{Connection, Row, params};
+use log::warn;
+use rusqlite::{Connection, OptionalExtension, Row, params};
 
 const TABLE: &str = "crabmate_long_term_memory";
+const META_TABLE: &str = "crabmate_long_term_memory_meta";
+
+/// 嵌入「配方」版本：模型语义 + 文本预处理（前缀等）共同决定向量分布。
+///
+/// 取值一变更，历史行里的向量就与新查询向量不同分布（相似度失真），必须在 `migrate` 时作废。
+/// 当前 `AllMiniLML6V2` 是普通 sentence-transformer，**不**需要 E5 式 `query:` / `passage:` 前缀。
+///
+/// **降级不安全**：旧二进制（不认识本版本）读到新库时不会作废旧向量，而旧代码对
+/// `embedding IS NULL` 的行按 `0.0` 打分，会被 `MIN_RECALL_BASE_SCORE` 整批过滤——表现为静默零召回。
+pub const EMBEDDING_RECIPE_VERSION: &str = "minilm-noprefix-v1";
 
 /// 一行记忆（检索结果用；部分字段供未来扩展/调试保留）。
 #[derive(Debug, Clone)]
@@ -51,6 +62,10 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
             embedding BLOB
         );
         CREATE INDEX IF NOT EXISTS idx_{TABLE}_scope_created ON {TABLE}(scope_id, created_at_unix DESC);
+        CREATE TABLE IF NOT EXISTS {META_TABLE} (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
         "#
     ))?;
     ensure_column(
@@ -68,6 +83,46 @@ pub fn migrate(conn: &Connection) -> Result<(), rusqlite::Error> {
         "source_kind",
         &format!("ALTER TABLE {TABLE} ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'auto'"),
     )?;
+    sync_embedding_recipe(conn)?;
+    Ok(())
+}
+
+fn meta_value(conn: &Connection, key: &str) -> Result<Option<String>, rusqlite::Error> {
+    conn.query_row(
+        &format!("SELECT value FROM {META_TABLE} WHERE key = ?1"),
+        params![key],
+        |r| r.get(0),
+    )
+    .optional()
+}
+
+fn set_meta_value(conn: &Connection, key: &str, value: &str) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        &format!("INSERT OR REPLACE INTO {META_TABLE} (key, value) VALUES (?1, ?2)"),
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+/// 嵌入配方版本与库中记录不一致时，清空全部旧向量（列置 NULL）并写回新版本。
+///
+/// 只清空向量、保留正文：召回侧对「无 embedding」的行回退关键词打分，
+/// 因此旧条无需重嵌入也不会凭空消失，只是暂时不参与向量排序。
+fn sync_embedding_recipe(conn: &Connection) -> Result<(), rusqlite::Error> {
+    if meta_value(conn, "embedding_recipe")?.as_deref() == Some(EMBEDDING_RECIPE_VERSION) {
+        return Ok(());
+    }
+    let cleared = conn.execute(
+        &format!("UPDATE {TABLE} SET embedding = NULL WHERE embedding IS NOT NULL"),
+        [],
+    )?;
+    set_meta_value(conn, "embedding_recipe", EMBEDDING_RECIPE_VERSION)?;
+    if cleared > 0 {
+        warn!(
+            target: "crabmate",
+            "长期记忆：嵌入配方更新为 {EMBEDDING_RECIPE_VERSION}，已作废 {cleared} 条旧向量（召回回退关键词）"
+        );
+    }
     Ok(())
 }
 
@@ -313,6 +368,42 @@ pub fn list_recent_for_scope(
     collect_query_rows(rows)
 }
 
+/// 列出该作用域内**尚无向量**的未过期行 `(id, chunk_text)`，从新到旧，供逐步回填。
+///
+/// 配方迁移会把历史向量整列置 NULL；若不回填，这些行将永远只能走关键词召回。
+pub fn list_missing_embedding_for_scope(
+    conn: &Connection,
+    scope_id: &str,
+    limit: usize,
+) -> Result<Vec<(i64, String)>, rusqlite::Error> {
+    let now = now_unix();
+    let _ = delete_expired_for_scope(conn, scope_id, now)?;
+    let lim = i64::try_from(limit).unwrap_or(i64::MAX);
+    let mut stmt = conn.prepare_cached(&format!(
+        "SELECT id, chunk_text FROM {TABLE} \
+         WHERE scope_id = ?1 AND embedding IS NULL \
+         AND (expires_at_unix IS NULL OR expires_at_unix > ?3) \
+         ORDER BY created_at_unix DESC LIMIT ?2"
+    ))?;
+    let rows = stmt.query_map(params![scope_id, lim, now], |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    })?;
+    collect_query_rows(rows)
+}
+
+/// 按主键写回向量（供配方迁移后的回填使用）。
+pub fn update_embedding(
+    conn: &Connection,
+    id: i64,
+    embedding: &[u8],
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        &format!("UPDATE {TABLE} SET embedding = ?1 WHERE id = ?2"),
+        params![embedding, id],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -338,5 +429,49 @@ mod tests {
 
         let n = delete_matching_text(&conn, "s1", "remember me", true).unwrap();
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn stale_embedding_recipe_clears_vectors_once() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        insert_chunk(&conn, "s1", "has vector", "user", None, Some(&[1, 2, 3])).unwrap();
+        // 模拟库中记录的是旧配方：重新 migrate 应清空向量并写回新版本。
+        set_meta_value(&conn, "embedding_recipe", "legacy-prefix-v0").unwrap();
+        migrate(&conn).unwrap();
+        let emb: Option<Vec<u8>> = conn
+            .query_row(
+                &format!("SELECT embedding FROM {TABLE} WHERE chunk_text = 'has vector'"),
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(emb.is_none(), "旧配方向量应被作废");
+        assert_eq!(
+            meta_value(&conn, "embedding_recipe").unwrap().as_deref(),
+            Some(EMBEDDING_RECIPE_VERSION)
+        );
+        // 正文保留，仅向量被清空。
+        assert_eq!(list_for_scope(&conn, "s1", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn lists_and_updates_missing_embeddings() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        insert_chunk(&conn, "s1", "with vector", "user", None, Some(&[9, 9])).unwrap();
+        insert_chunk(&conn, "s1", "no vector", "user", None, None).unwrap();
+        insert_chunk(&conn, "s2", "other scope", "user", None, None).unwrap();
+
+        let pending = list_missing_embedding_for_scope(&conn, "s1", 8).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].1, "no vector");
+
+        update_embedding(&conn, pending[0].0, &[1, 2, 3, 4]).unwrap();
+        assert!(
+            list_missing_embedding_for_scope(&conn, "s1", 8)
+                .unwrap()
+                .is_empty()
+        );
     }
 }

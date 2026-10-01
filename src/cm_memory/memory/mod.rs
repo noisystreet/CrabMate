@@ -7,5 +7,6 @@ pub mod codebase_semantic_invalidation;
 #[cfg(feature = "fastembed")]
 pub mod fastembed_init;
 pub mod long_term_memory;
+pub mod long_term_memory_index;
 pub mod long_term_memory_recall;
 pub mod long_term_memory_store;
