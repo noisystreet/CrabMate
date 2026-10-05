@@ -7,7 +7,7 @@ mod background_job_defaults_tests {
     #[test]
     fn background_job_fields_default_and_clamp() {
         let tr = derive_tool_registry_fields(&ConfigBuilder::default());
-        assert!(!tr.tool_registry_background_jobs_enabled);
+        assert!(tr.tool_registry_background_jobs_enabled);
         assert_eq!(
             tr.tool_registry_background_job_async_tools
                 .iter()

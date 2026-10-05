@@ -413,9 +413,10 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
             }),
         // 后台工具任务：默认值/范围见 `docs/design/background_tool_jobs_contract.md` §6；
         // validate.rs 先拒绝越界，此处 clamp 仅作兜底。
+        // 总开关默认 `true`（模型仍须显式传 `async=true` 才走后台；白名单默认仅 `run_command`）。
         tool_registry_background_jobs_enabled: tr
             .tool_registry_background_jobs_enabled
-            .unwrap_or(false),
+            .unwrap_or(true),
         tool_registry_background_job_async_tools: Arc::new(
             tr.tool_registry_background_job_async_tools
                 .clone()
