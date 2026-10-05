@@ -18,7 +18,6 @@ static SPECS_EXEC_PACKAGE: &[ToolSpec] = &include!("specs/exec_package.inc.rs");
 static SPECS_CARGO_RUST: &[ToolSpec] = &include!("specs/cargo_rust.inc.rs");
 static SPECS_FRONTEND_PYTHON: &[ToolSpec] = &include!("specs/frontend_python.inc.rs");
 static SPECS_GO: &[ToolSpec] = &include!("specs/go.inc.rs");
-static SPECS_JVM_CONTAINER: &[ToolSpec] = &include!("specs/jvm_container.inc.rs");
 static SPECS_QUALITY_AST: &[ToolSpec] = &include!("specs/quality_ast.inc.rs");
 static SPECS_FRONTEND_AUDIT_CI: &[ToolSpec] = &include!("specs/frontend_audit_ci.inc.rs");
 static SPECS_DIAGNOSTICS_DOCS: &[ToolSpec] = &include!("specs/diagnostics_docs.inc.rs");
@@ -31,7 +30,6 @@ static SPECS_TEXT_CODE_NAV: &[ToolSpec] = &include!("specs/text_code_nav.inc.rs"
 static SPECS_FORMAT_LINT: &[ToolSpec] = &include!("specs/format_lint.inc.rs");
 static SPECS_SCHEDULE: &[ToolSpec] = &include!("specs/schedule.inc.rs");
 static SPECS_GIT_WRITE_EXTRA: &[ToolSpec] = &include!("specs/git_write_extra.inc.rs");
-static SPECS_NODEJS: &[ToolSpec] = &include!("specs/nodejs.inc.rs");
 static SPECS_GOLANGCI: &[ToolSpec] = &include!("specs/golangci.inc.rs");
 static SPECS_PROCESS: &[ToolSpec] = &include!("specs/process.inc.rs");
 static SPECS_METRICS: &[ToolSpec] = &include!("specs/metrics.inc.rs");
@@ -49,7 +47,6 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_CARGO_RUST.len()
             + SPECS_FRONTEND_PYTHON.len()
             + SPECS_GO.len()
-            + SPECS_JVM_CONTAINER.len()
             + SPECS_QUALITY_AST.len()
             + SPECS_FRONTEND_AUDIT_CI.len()
             + SPECS_DIAGNOSTICS_DOCS.len()
@@ -62,7 +59,6 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_FORMAT_LINT.len()
             + SPECS_SCHEDULE.len()
             + SPECS_GIT_WRITE_EXTRA.len()
-            + SPECS_NODEJS.len()
             + SPECS_GOLANGCI.len()
             + SPECS_PROCESS.len()
             + SPECS_METRICS.len()
@@ -76,7 +72,6 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_CARGO_RUST);
         v.extend_from_slice(SPECS_FRONTEND_PYTHON);
         v.extend_from_slice(SPECS_GO);
-        v.extend_from_slice(SPECS_JVM_CONTAINER);
         v.extend_from_slice(SPECS_QUALITY_AST);
         v.extend_from_slice(SPECS_FRONTEND_AUDIT_CI);
         v.extend_from_slice(SPECS_DIAGNOSTICS_DOCS);
@@ -89,7 +84,6 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_FORMAT_LINT);
         v.extend_from_slice(SPECS_SCHEDULE);
         v.extend_from_slice(SPECS_GIT_WRITE_EXTRA);
-        v.extend_from_slice(SPECS_NODEJS);
         v.extend_from_slice(SPECS_GOLANGCI);
         v.extend_from_slice(SPECS_PROCESS);
         v.extend_from_slice(SPECS_METRICS);

@@ -1,4 +1,4 @@
-//! 前端开发工具：`npm run` 封装（lint / build / test）、prettier 检查。
+//! 前端开发工具：`npm run` 封装（lint / build）、prettier 检查。
 
 use std::path::Path;
 use std::process::Command;
@@ -20,10 +20,6 @@ pub fn frontend_lint(args_json: &str, workspace_root: &Path, max_output_len: usi
 
 pub fn frontend_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
     frontend_run_script(args_json, workspace_root, max_output_len, "build")
-}
-
-pub fn frontend_test(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    frontend_run_script(args_json, workspace_root, max_output_len, "test")
 }
 
 /// `npx prettier --check .`（在指定前端子目录下），用于一致性检查而不改文件。

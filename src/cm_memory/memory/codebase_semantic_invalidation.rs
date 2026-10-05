@@ -49,9 +49,7 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "cargo_fix",
         "cargo_clean",
         "python_install_editable",
-        "npm_install",
         "go_mod_tidy",
-        "docker_build",
         "long_term_remember",
         "long_term_forget",
         "run_command",
@@ -285,7 +283,6 @@ pub fn invalidation_for_tool_call(
             | "cargo_fix"
             | "cargo_clean"
             | "python_install_editable"
-            | "npm_install"
             | "go_mod_tidy"
     ) || name.starts_with("git_")
     {

@@ -1,4 +1,4 @@
-//! 进程内 **`cargo test` / `npm test`** 结果缓存：输入指纹（源码清单 + 参数）未变时复用上次截断后的输出，并标注 **缓存命中**。
+//! 进程内 **`cargo test`** 结果缓存：输入指纹（源码清单 + 参数）未变时复用上次截断后的输出，并标注 **缓存命中**。
 //!
 //! **非**跨进程持久化；**不**保证与真实磁盘状态强一致（指纹为 mtime+size 近似）。`RUST_TEST_THREADS` 等环境变量变化**不会**自动失效缓存——需关闭缓存或改源码触发指纹变化。
 
@@ -14,7 +14,6 @@ use sha2::{Digest, Sha256};
 pub enum TestCacheKind {
     CargoTest,
     CargoTestViaRunCommand,
-    NpmTest { package_subdir: String },
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -154,35 +153,6 @@ fn rust_source_row(path: &Path, root: &Path) -> Option<(String, u128, u64)> {
     Some((rel_s, mtime, len))
 }
 
-/// `npm test` 指纹：`subdir/package.json` 与可选 lockfile 的 mtime+size。
-pub fn fingerprint_npm_package_dir(workspace: &Path, subdir: &str) -> Option<String> {
-    let dir = workspace.join(subdir);
-    let pj = dir.join("package.json");
-    if !pj.is_file() {
-        return None;
-    }
-    let mut hasher = Sha256::new();
-    for name in ["package.json", "package-lock.json", "npm-shrinkwrap.json"] {
-        let p = dir.join(name);
-        if !p.is_file() {
-            continue;
-        }
-        hasher.update(name.as_bytes());
-        hasher.update(0xffu8.to_le_bytes());
-        let meta = std::fs::metadata(&p).ok()?;
-        let mt = meta
-            .modified()
-            .ok()?
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()?
-            .as_nanos();
-        hasher.update(mt.to_le_bytes());
-        hasher.update(meta.len().to_le_bytes());
-    }
-    let hash = hasher.finalize();
-    Some(hash.iter().map(|b| format!("{b:02x}")).collect::<String>())
-}
-
 const CACHE_BANNER: &str =
     "[CrabMate 测试输出缓存命中] 输入指纹与上次相同，未重新执行；以下为缓存副本。\n指纹：";
 
@@ -222,16 +192,6 @@ pub fn cargo_test_args_fingerprint(v: &serde_json::Value) -> String {
 /// `run_command`：`cargo` + `test` 子命令的参数指纹（`args` 为完整数组）。
 pub fn cargo_test_run_command_args_fingerprint(cmd_args: &[String]) -> String {
     serde_json::to_string(&json!({ "argv": cmd_args })).unwrap_or_else(|_| "[]".to_string())
-}
-
-/// `npm run test`：`subdir`、`script`、`args` 数组。
-pub fn npm_test_args_fingerprint(subdir: &str, script: &str, extra: &[String]) -> String {
-    serde_json::to_string(&json!({
-        "subdir": subdir,
-        "script": script,
-        "extra": extra,
-    }))
-    .unwrap_or_else(|_| "{}".to_string())
 }
 
 pub fn try_get_cached(enabled: bool, max_entries: usize, key: &TestCacheKey) -> Option<String> {

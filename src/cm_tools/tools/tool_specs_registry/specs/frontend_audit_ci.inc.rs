@@ -1,29 +1,5 @@
 [
 ToolSpec {
-            name: "frontend_lint",
-            description: "运行前端 npm lint（结构化参数）。支持指定前端子目录和 script 名称。\n\n【npm lint 常用模式】运行项目配置的 lint 脚本：`npm run lint`；修复可自动修复的问题：`npm run lint -- --fix`。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::FrontendLintArgs>,
-            runner: ToolRunner::Legacy(runner_frontend_lint),
-            summary: ToolSummaryKind::Static("frontend lint"),
-        },
-        ToolSpec {
-            name: "frontend_build",
-            description: "运行前端 npm build（结构化参数）。支持指定前端子目录和 script 名称（默认 build）。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::FrontendLintArgs>,
-            runner: ToolRunner::Legacy(runner_frontend_build),
-            summary: ToolSummaryKind::Static("frontend build"),
-        },
-        ToolSpec {
-            name: "frontend_test",
-            description: "运行前端 npm test（结构化参数）。支持指定前端子目录和 script 名称（默认 test）。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::FrontendLintArgs>,
-            runner: ToolRunner::Legacy(runner_frontend_test),
-            summary: ToolSummaryKind::Static("frontend test"),
-        },
-        ToolSpec {
             name: "cargo_audit",
             description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。\n\n【cargo audit 常用模式】检查所有依赖：`cargo audit`；忽略指定 advisory：`cargo audit --ignore RUSTSEC-xxxx-xxxx`。",
             category: ToolCategory::Development,

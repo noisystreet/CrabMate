@@ -128,20 +128,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
             &[GENERAL, RUST]
         }
 
-        // --- 前端 / Node.js ---
-        "frontend_build" | "frontend_test" => &[GENERAL, FRONTEND],
-        "frontend_lint" => &[GENERAL, FRONTEND, QUALITY],
-        "npm_install" | "npm_run" | "npx_run" => &[GENERAL, FRONTEND],
-        "tsc_check" => &[GENERAL, FRONTEND, QUALITY],
-
         // --- Go ---
         "go_build" | "go_test" | "go_mod_tidy" => &[GENERAL, GO],
         "go_vet" | "go_fmt_check" | "golangci_lint" => &[GENERAL, GO, QUALITY],
-
-        // --- JVM ---
-        "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" => {
-            &[GENERAL, JVM, QUALITY]
-        }
 
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
@@ -157,9 +146,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- TODO/标记扫描 ---
         "todo_scan" => &[GENERAL, QUALITY],
-
-        // --- 容器 ---
-        "docker_build" | "docker_compose_ps" | "podman_images" => &[GENERAL, DOCKER, QUALITY],
 
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local"

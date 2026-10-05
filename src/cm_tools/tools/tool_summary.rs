@@ -243,14 +243,6 @@ pub(super) fn summary_git_revert(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GitRevertSummaryArgs>(v)
 }
 
-pub(super) fn summary_npm_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<NpmRunSummaryArgs>(v)
-}
-
-pub(super) fn summary_npx_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<NpxRunSummaryArgs>(v)
-}
-
 pub(super) fn summary_port_check(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<PortCheckSummaryArgs>(v)
 }

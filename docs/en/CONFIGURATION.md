@@ -116,7 +116,7 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | `CM_PARALLEL_READONLY_TOOLS_MAX` | Max parallel readonly tools per round. |
 | `CM_READ_FILE_TURN_CACHE_MAX_ENTRIES` | Per-turn `read_file` cache; `0` off; cleared on writes / workspace change. |
 | `CM_TEST_RESULT_CACHE_ENABLED` | In-process test output LRU. |
-| `CM_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU size. Reuses truncated output for `cargo_test`, `rust_test_one`, `npm_run` (`script=test`), `run_command` `cargo`+`test` without `--nocapture` / `--test-threads`; first line **`[CrabMate test output cache hit]`**; not across restarts. |
+| `CM_TEST_RESULT_CACHE_MAX_ENTRIES` | LRU size. Reuses truncated output for `cargo_test`, `rust_test_one`, and `run_command` `cargo`+`test` without `--nocapture` / `--test-threads`; first line **`[CrabMate test output cache hit]`**; not across restarts. |
 
 ### Session workspace changelist
 

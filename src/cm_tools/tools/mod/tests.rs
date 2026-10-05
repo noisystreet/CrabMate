@@ -391,9 +391,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"codespell_check"));
     assert!(names.contains(&"ast_grep_run"));
     assert!(names.contains(&"ast_grep_rewrite"));
-    assert!(names.contains(&"frontend_lint"));
-    assert!(names.contains(&"frontend_build"));
-    assert!(names.contains(&"frontend_test"));
     assert!(names.contains(&"cargo_audit"));
     assert!(names.contains(&"cargo_deny"));
     assert!(names.contains(&"ci_pipeline_local"));
@@ -460,13 +457,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"format_check_file"));
     assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"quality_workspace"));
-    assert!(names.contains(&"maven_compile"));
-    assert!(names.contains(&"maven_test"));
-    assert!(names.contains(&"gradle_compile"));
-    assert!(names.contains(&"gradle_test"));
-    assert!(names.contains(&"docker_build"));
-    assert!(names.contains(&"docker_compose_ps"));
-    assert!(names.contains(&"podman_images"));
     assert!(names.contains(&"apply_patch"));
     assert!(names.contains(&"package_query"));
 }

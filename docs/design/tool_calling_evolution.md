@@ -101,6 +101,7 @@
 ### 8.5.1 已落地
 
 - **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`；缺失安装提示仍由 `error_output_playbook` 提供。详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
+- **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：`quality_workspace` / `ci_pipeline_local` / `lint.rs` 仍**直接调用** `jvm_tools` / `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，不影响这些组合工具的开关语义（如 `run_maven_*` / `run_gradle_*` / `run_frontend_build`）。
 
 ### 8.5.2 核心约束（收敛前必须权衡）
 
@@ -124,11 +125,11 @@
 
 | 档位 | 做法 | 预期工具名变化 | 风险 |
 |------|------|----------------|------|
-| **A｜延续删除薄封装** | 删除 JVM 容器 / npm 前端等低频只读封装（如 `docker_compose_ps` / `podman_images` / `frontend_lint` 等，约 12 个），改用 `run_command` | 约 -12 | 低（白名单已含相关 CLI；接受 8.5.2 能力损失） |
+| **A｜延续删除薄封装**（**已落地**） | 删除 JVM 容器 / npm 前端等低频封装（`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，共 14 个），改用 `run_command` | **-14** | 低（白名单已含相关 CLI；接受 8.5.2 能力损失） |
 | **B｜合并式精简** | 按家族聚合并参数化（`git_*` ~30、`gh_*` ~22、`cargo_*` ~18 等），一个工具 + `subcommand` 参数 | 约 **-70** | 中（须重写 schema / 分发 / 提示词，并回归后台任务与只读语义；`rust_analyzer_*` 8 个不可替代需保留） |
 | **C｜扩白名单再收敛** | 把 8.5.3 白名单外 CLI 也纳入再删封装 | 视范围 | **高**（扩大任意命令执行面，不建议；如做须走 `tool_approval` 审批） |
 
-**推荐**：先做 **A**（低风险、立即可验证）；中期评估 **B**；**C** 暂不推进。
+**推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；中期评估 **B**；**C** 暂不推进。
 
 ---
 
@@ -138,3 +139,4 @@
 |------|------|
 | 2026-05-01 | 初稿：对标开源 Agent 的工具调用演进维度、与现有模块映射、优先级建议。 |
 | 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
+| 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。 |
