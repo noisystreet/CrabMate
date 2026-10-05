@@ -470,13 +470,6 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn git_rebase_continue_json_key_maps() {
-        let v = json!({ "continue": true });
-        let s = summarize_from_value::<GitRebaseSummaryArgs>(&v).expect("summary");
-        assert_eq!(s, "git rebase --continue");
-    }
-
-    #[test]
     fn run_command_summary_joins_command_and_string_args() {
         let v = json!({ "command": "cargo", "args": ["test", "--all"] });
         let s = summarize_from_value::<RunCommandSummaryArgs>(&v).expect("summary");

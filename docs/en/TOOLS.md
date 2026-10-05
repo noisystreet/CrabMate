@@ -325,14 +325,14 @@ Structured function-calling JSON examples:
      "fail_fast":true,
      "compensate_on_failure":false,
      "nodes":[
-       {"id":"diff","tool_name":"git_diff_base","tool_args":{"base":"main","context_lines":3},"deps":[],"compensate_with":[]},
-       {"id":"patch_check","tool_name":"git_apply","tool_args":{"patch_path":"patches/fix.diff","check_only":true},"deps":["diff"],"compensate_with":[]},
-       {"id":"patch_apply","tool_name":"git_apply","tool_args":{"patch_path":"patches/fix.diff","check_only":false},"deps":["patch_check"],"requires_approval":true,"compensate_with":[]}
+       {"id":"diff","tool_name":"git_diff","tool_args":{"base":"main","context_lines":3},"deps":[],"compensate_with":[]},
+       {"id":"patch_check","tool_name":"run_command","tool_args":{"command":"git","args":["apply","--check","patches/fix.diff"]},"deps":["diff"],"compensate_with":[]},
+       {"id":"patch_apply","tool_name":"run_command","tool_args":{"command":"git","args":["apply","patches/fix.diff"]},"deps":["patch_check"],"requires_approval":true,"compensate_with":[]}
      ]
    }}
    ```
 
-   `patch_path` must point to an existing workspace patch (e.g. `patches/fix.diff`) you or a prior step created.
+   `patch_path` must point to an existing workspace patch (e.g. `patches/fix.diff`) you or a prior step created; write operations (e.g. `git apply`) are downgraded to `run_command` per §8.5.4 **track B**.
 
   Downstream string fields may use placeholders (recursive into JSON objects/arrays):
   - `{{node_id.output}}`: full output from `node_id` (truncated to `output_inject_max_chars`, default `2000`)
@@ -376,7 +376,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Background jobs**: `background_job_status` (query status/output by `tool_job_id`), `background_job_list` (list workspace jobs, newest first).
 
-**Git writes**: `git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`.
+**Git**: read-only tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`; `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`). Write operations (`git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`, `git_commit`, `git_stage_files`, `git_fetch`, `git_clone`, `git_remote_set_url`, `git_apply`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted) instead.
 
 **Metrics**: `code_stats`, `dependency_graph`, `coverage_report`.
 
@@ -407,37 +407,38 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 ## Git tool examples
 
+Read-only tools only. `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`:
+
 - `git_clean_check`:
   ```json
   {}
   ```
-- `git_diff_stat`:
+- `git_diff` (working-tree stat, equivalent to the old `git_diff_stat`):
   ```json
-  {"mode":"working"}
+  {"mode":"working","stat":true}
   ```
-- `git_diff_names`:
+- `git_diff` (changed file names vs `main`, equivalent to the old `git_diff_names` / `git_diff_base`):
   ```json
-  {"mode":"working"}
-  ```
-- `git_fetch`:
-  ```json
-  {"remote":"origin","branch":"main","prune":true}
+  {"mode":"all","base":"main","name_only":true}
   ```
 - `git_remote_list`:
   ```json
   {}
   ```
-- `git_remote_set_url`:
+
+Write operations (`add` / `commit` / `push` / `fetch` / `checkout` / `apply` / `clone`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted):
+
+- Stage and commit:
   ```json
-  {"name":"origin","url":"git@github.com:your-org/your-repo.git","confirm":true}
+  {"command":"git","args":["commit","-am","fix: ..."]}
   ```
-- `git_apply` (check first):
+- Fetch remote updates:
   ```json
-  {"patch_path":"patches/fix.diff","check_only":true}
+  {"command":"git","args":["fetch","origin","main","--prune"]}
   ```
-- `git_clone` (into workspace, needs confirm):
+- Check a patch applies (drop `--check` to actually apply):
   ```json
-  {"repo_url":"https://github.com/rust-lang/cargo.git","target_dir":"vendor/cargo","depth":1,"confirm":true}
+  {"command":"git","args":["apply","--check","patches/fix.diff"]}
   ```
 
 ## Common failure handling

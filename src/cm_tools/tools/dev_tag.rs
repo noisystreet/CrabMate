@@ -73,13 +73,10 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "table_text" => &[GENERAL],
 
         // --- Git ---
-        "git_status" | "git_diff" | "git_clean_check" | "git_diff_stat" | "git_diff_names"
-        | "git_log" | "git_show" | "git_diff_base" | "git_blame" | "git_file_history"
-        | "git_branch_list" | "git_remote_status" | "git_stage_files" | "git_commit"
-        | "git_fetch" | "git_remote_list" | "git_remote_set_url" | "git_apply" | "git_clone"
-        | "git_checkout" | "git_branch_create" | "git_branch_delete" | "git_push" | "git_merge"
-        | "git_rebase" | "git_stash" | "git_tag" | "git_reset" | "git_cherry_pick"
-        | "git_revert" => &[GENERAL, VCS],
+        "git_status" | "git_diff" | "git_clean_check" | "git_log" | "git_show" | "git_blame"
+        | "git_file_history" | "git_branch_list" | "git_remote_status" | "git_remote_list" => {
+            &[GENERAL, VCS]
+        }
         "gh_pr_list"
         | "gh_pr_view"
         | "gh_pr_checks"

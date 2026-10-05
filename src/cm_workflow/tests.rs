@@ -43,7 +43,7 @@ fn test_parse_workflow_template_code_review() {
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes.len(), 4);
     assert!(!spec.fail_fast);
-    assert_eq!(spec.nodes[0].tool_name, "git_diff_names");
+    assert_eq!(spec.nodes[0].tool_name, "git_diff");
     assert_eq!(spec.nodes[1].tool_name, "git_diff");
     assert_eq!(spec.nodes[2].tool_name, "search_in_files");
     assert_eq!(spec.nodes[3].tool_name, "cargo_clippy");
