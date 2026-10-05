@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Changed
+
+- **`run_command` allowlist expanded**: added 21 common developer CLIs to the default **`allowed_commands`** (`config/tools.toml`) so they can be driven through generic **`run_command`** instead of only via their dedicated tools — language toolchains **`npx`**, **`tsc`**, **`go`**, **`gofmt`**, **`golangci-lint`**, **`ruff`**, **`mypy`**, **`uv`**, **`rustfmt`**, **`clang-format`**, **`shfmt`**, **`xmllint`**, **`sqlfluff`**, **`pg_format`**; archives **`7z`**, **`unrar`**; system/package queries **`dpkg-query`**, **`rpm`**, **`ss`**, **`lsof`**, **`bc`**. This closes the previous gap where several built-in tools spawned these CLIs internally while `run_command` rejected them, and fixes the docs that already claimed **`npx`** / **`tsc`** were allowlisted. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.
+
 ### Removed
 
 - **BREAKING (tools)**: removed the six dedicated source-analysis tools — **`shellcheck_check`**, **`cppcheck_analyze`**, **`semgrep_scan`**, **`hadolint_check`**, **`bandit_scan`**, **`lizard_complexity`** — together with their `ToolSpec`, dispatch, implementation modules and typed argument schemas. Their underlying CLIs (**`shellcheck`**, **`cppcheck`**, **`semgrep`**, **`hadolint`**, **`bandit`**, **`lizard`**) are now on the default **`run_command`** allowlist (`config/tools.toml`) and are driven through generic **`run_command`**; missing-CLI install hints are still surfaced by **`error_output_playbook`**. `/health` no longer probes them, so the **`dep_shellcheck`** / **`dep_cppcheck`** / **`dep_semgrep`** / **`dep_hadolint`** / **`dep_bandit`** / **`dep_lizard`** checks are gone (see `docs/工具说明.md` / `docs/en/TOOLS.md`).
