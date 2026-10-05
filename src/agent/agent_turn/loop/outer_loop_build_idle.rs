@@ -18,8 +18,6 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
             | "cargo_fmt_check"
             | "pytest_run"
             | "go_test"
-            | "cppcheck_analyze"
-            | "shellcheck_check"
     ) {
         return true;
     }

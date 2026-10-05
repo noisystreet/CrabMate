@@ -429,12 +429,6 @@ define_runners_cwd_maxlen! {
     runner_code_stats => code_metrics::code_stats,
     runner_dependency_graph => code_metrics::dependency_graph,
     runner_coverage_report => code_metrics::coverage_report,
-    runner_shellcheck_check => source_analysis_tools::shellcheck_check,
-    runner_cppcheck_analyze => source_analysis_tools::cppcheck_analyze,
-    runner_semgrep_scan => source_analysis_tools::semgrep_scan,
-    runner_hadolint_check => source_analysis_tools::hadolint_check,
-    runner_bandit_scan => source_analysis_tools::bandit_scan,
-    runner_lizard_complexity => source_analysis_tools::lizard_complexity,
 }
 
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────

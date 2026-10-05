@@ -18,8 +18,6 @@ pub const QUALITY: &str = "quality";
 pub const GO: &str = "go";
 /// JVM（Maven / Gradle）。
 pub const JVM: &str = "jvm";
-/// 安全分析工具（SAST、漏洞扫描）。
-pub const SECURITY: &str = "security";
 /// Shell 脚本相关工具。
 pub const SHELL: &str = "shell";
 /// Docker / 容器化相关工具。
@@ -160,14 +158,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- TODO/标记扫描 ---
         "todo_scan" => &[GENERAL, QUALITY],
 
-        // --- 源码分析工具 ---
-        "shellcheck_check" => &[GENERAL, SHELL, QUALITY],
-        "cppcheck_analyze" => &[GENERAL, CPP, QUALITY],
-        "semgrep_scan" => &[GENERAL, SECURITY, QUALITY],
-        "hadolint_check" => &[GENERAL, DOCKER, QUALITY],
+        // --- 容器 ---
         "docker_build" | "docker_compose_ps" | "podman_images" => &[GENERAL, DOCKER, QUALITY],
-        "bandit_scan" => &[GENERAL, PYTHON, SECURITY, QUALITY],
-        "lizard_complexity" => &[GENERAL, QUALITY],
 
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local"

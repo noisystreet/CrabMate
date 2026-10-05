@@ -39,5 +39,4 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_todo_scan),
             summary: ToolSummaryKind::None,
         },
-        // ── 源码分析工具 ──────────────────────────────────────────
 ]

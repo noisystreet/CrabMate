@@ -240,13 +240,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         );
         m.insert("cargo_udeps", check_cmd("cargo", &["udeps", "--version"]));
 
-        m.insert("shellcheck", check_cmd("shellcheck", &["--version"]));
-        m.insert("cppcheck", check_cmd("cppcheck", &["--version"]));
-        m.insert("semgrep", check_cmd("semgrep", &["--version"]));
-        m.insert("hadolint", check_cmd("hadolint", &["--version"]));
-        m.insert("bandit", check_cmd("bandit", &["--version"]));
-        m.insert("lizard", check_cmd("lizard", &["--version"]));
-
         m
     })
     .await
@@ -281,12 +274,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
             "ast_grep" => "dep_ast_grep",
             "cargo_machete" => "dep_cargo_machete",
             "cargo_udeps" => "dep_cargo_udeps",
-            "shellcheck" => "dep_shellcheck",
-            "cppcheck" => "dep_cppcheck",
-            "semgrep" => "dep_semgrep",
-            "hadolint" => "dep_hadolint",
-            "bandit" => "dep_bandit",
-            "lizard" => "dep_lizard",
             _ => continue,
         };
         checks.insert(key.to_string(), {
@@ -470,14 +457,14 @@ mod health_status_tests {
             },
         );
         checks.insert(
-            "dep_bandit".into(),
+            "dep_typos".into(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("No such file or directory (os error 2)".into()),
             },
         );
         checks.insert(
-            "dep_shellcheck".into(),
+            "dep_codespell".into(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("No such file or directory (os error 2)".into()),
@@ -488,8 +475,8 @@ mod health_status_tests {
             checks,
         });
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
-        assert!(summary.contains("bandit"));
-        assert!(summary.contains("shellcheck"));
+        assert!(summary.contains("typos"));
+        assert!(summary.contains("codespell"));
     }
 
     #[test]
