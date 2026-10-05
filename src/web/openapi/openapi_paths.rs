@@ -2,8 +2,8 @@
 
 use serde_json::{Map, Value, json};
 use super::{
-    openapi_paths_chat_stream, openapi_paths_tool_jobs, openapi_paths_user_data,
-    openapi_paths_user_data_mcp, openapi_paths_workspace,
+    openapi_paths_chat_stream, openapi_paths_memory, openapi_paths_tool_jobs,
+    openapi_paths_user_data, openapi_paths_user_data_mcp, openapi_paths_workspace,
 };
 
 fn merge_path_fragments(fragments: &[Value]) -> Value {
@@ -893,6 +893,7 @@ pub(super) fn openapi_paths_value() -> Value {
         openapi_paths_workspace::openapi_paths_fragment_workspace_file(),
         openapi_paths_fragment_workspace_file_meta(),
         openapi_paths_fragment_workspace_tasks_and_config(),
+        openapi_paths_memory::openapi_paths_fragment_memory(),
         openapi_paths_tool_jobs::openapi_paths_fragment_tool_jobs(),
         openapi_paths_user_data::openapi_paths_fragment_user_data(),
         openapi_paths_user_data_mcp::openapi_paths_fragment_user_data_mcp(),

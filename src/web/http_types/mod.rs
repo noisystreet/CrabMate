@@ -2,6 +2,7 @@
 
 pub mod chat;
 pub mod github;
+pub mod memory;
 pub mod skills;
 pub mod tasks;
 pub mod tool_jobs;

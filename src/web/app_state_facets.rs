@@ -80,6 +80,13 @@ pub(crate) struct WebStatusAppFacet {
     pub(crate) tiktoken_baseline_cache: Arc<std::sync::Mutex<Option<CachedTiktokenBaseline>>>,
 }
 
+/// `GET /memory/list` / `DELETE /memory/{id}`：共享配置 + 长期记忆运行时。
+#[derive(Clone)]
+pub(crate) struct MemoryAppFacet {
+    pub(crate) cfg: SharedAgentConfig,
+    pub(crate) long_term_memory: Option<Arc<LongTermMemoryRuntime>>,
+}
+
 /// 窄 chat 控制面：共享配置、会话读写、审批投递。
 ///
 /// **不含** 整份 [`AppStateHttpCore`]（避免每次 `FromRef` 克隆 `tools`）、
@@ -331,6 +338,15 @@ impl FromRef<Arc<AppState>> for WebStatusAppFacet {
             long_term_memory: state.aux.long_term_memory.clone(),
             process_handles: Arc::clone(&state.aux.process_handles),
             tiktoken_baseline_cache: Arc::clone(&state.aux.tiktoken_baseline_cache),
+        }
+    }
+}
+
+impl FromRef<Arc<AppState>> for MemoryAppFacet {
+    fn from_ref(state: &Arc<AppState>) -> Self {
+        Self {
+            cfg: Arc::clone(&state.http.cfg),
+            long_term_memory: state.aux.long_term_memory.clone(),
         }
     }
 }

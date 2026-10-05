@@ -1,6 +1,6 @@
 # 设计草案：长期记忆（memory）管理 API 补齐
 
-> **状态**：草案 / Proposed（2026-09-19）。**P0 契约已评审确认**（路径形态、禁用态、删除幂等、与会话删除的关系、对外枚举命名，见 §7.1）；**尚未开始实现**。§7.2 三条遗留问题只影响 P1，或已在 §3 / §4 给出默认取值。
+> **状态**：草案 / Proposed（2026-09-19）。**P0 契约已评审确认**（路径形态、禁用态、删除幂等、与会话删除的关系、对外枚举命名，见 §7.1）；**P0 已实现**（`GET /memory/list` + `DELETE /memory/{id}` + 存储层「完整投影列表 + 计数」，见 §6）。§7.2 三条遗留问题只影响 P1，或已在 §3 / §4 给出默认取值。
 > **关联**：[`conversation_management_api.md`](./conversation_management_api.md)（同一批「资源生命周期」补口的姊妹设计，已实现）、[`memory_todo.md`](./memory_todo.md)（记忆可视化面板与未来扩展清单）、[`server_api_completeness.md`](./server_api_completeness.md)、[`summarize_experience.md`](./summarize_experience.md)
 > **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`docs/openapi.json`](../openapi.json) 快照、[`docs/配置说明.md`](../配置说明.md)（配置项）、[`src/cm_api_contract/error_codes.rs`](../../src/cm_api_contract/error_codes.rs)（错误码）
 > **非目标**：多租户身份与跨 scope 租户键（沿用 [`待办清单.md`](../待办清单.md) L80 的前置条件，仍由网关/BFF 承担）；Qdrant / pgvector 向量后端接线；检索质量（FTS5 混合检索、query 构造）；语义分块与近重复合并；前端 `MemoryModal`（官方 UI 在 [`crabmate-client`](https://github.com/noisystreet/crabmate-client) 仓，本仓只负责契约）；`long_term_remember` / `long_term_forget` 等模型侧工具的行为变更。
@@ -44,7 +44,7 @@
   - `list_recent_for_scope` 只回 `MemoryListRow = (id, chunk_text, source_kind, expires_at_unix, tags_json)`——**丢掉了 `created_at_unix` 与 `source_role`**（[L286-L314](../../src/cm_memory/memory/long_term_memory_store.rs#L286-L314)）；
   - `list_for_scope` 字段齐全，但 SELECT **包含 `embedding` BLOB**（[L141-L148](../../src/cm_memory/memory/long_term_memory_store.rs#L141-L148)），当 HTTP 投影会白读大对象；
   - 两者都**无分页 / 过滤 / 排序 / 总数**参数。
-- 过期行在读写前被动清理（各函数头部调用 `delete_expired_for_scope`），**无后台任务**；`max_entries` 淘汰只在写入路径触发（[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208)）。
+- 过期行不参与读取（各 `WHERE` 按 `expires_at_unix` 过滤，**正确性不依赖物理删除**）；物理回收只在写入/删除路径机会性执行（`insert_*` 头部一次 `delete_expired_for_scope`，[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208) 的裁剪 `DELETE` 亦顺带回收），**无后台任务**；`max_entries` 淘汰只在写入路径触发（[delete_oldest_beyond](../../src/cm_memory/memory/long_term_memory_store.rs#L208)）。
 
 ### 1.4 运行时与对外可见性
 
