@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING (tools)**: removed the six dedicated source-analysis tools — **`shellcheck_check`**, **`cppcheck_analyze`**, **`semgrep_scan`**, **`hadolint_check`**, **`bandit_scan`**, **`lizard_complexity`** — together with their `ToolSpec`, dispatch, implementation modules and typed argument schemas. Their underlying CLIs (**`shellcheck`**, **`cppcheck`**, **`semgrep`**, **`hadolint`**, **`bandit`**, **`lizard`**) are now on the default **`run_command`** allowlist (`config/tools.toml`) and are driven through generic **`run_command`**; missing-CLI install hints are still surfaced by **`error_output_playbook`**. `/health` no longer probes them, so the **`dep_shellcheck`** / **`dep_cppcheck`** / **`dep_semgrep`** / **`dep_hadolint`** / **`dep_bandit`** / **`dep_lizard`** checks are gone (see `docs/工具说明.md` / `docs/en/TOOLS.md`).
+
 ## [0.6.0] - 2026-09-30
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.6.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): this release removes several legacy config / CLI / HTTP compatibility surfaces — TOML **`[agent] mcp_command`** / **`CM_MCP_COMMAND`**, the plaintext-secret file migration, the retired **`client_llm`** / **`executor_llm`** slots in **`GET /user-data/secrets/status`**, **`final_plan_semantic_check_accept_legacy_text`**, the flat CLI flag compatibility layer, and **`config --dry-run`** — so read the **BREAKING** entries below before upgrading. Additive endpoints (**`/btw`**, **`DELETE /conversation/{id}`**) and the new soft config keys are backward-compatible.

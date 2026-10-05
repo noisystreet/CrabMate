@@ -111,13 +111,6 @@ This document describes built-in tools, common function-calling JSON examples, a
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
   - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100).
   - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
-  - **Source analysis** (read-only; CLIs required):
-    - `shellcheck_check`: [ShellCheck](https://www.shellcheck.net/) for shell scripts; `paths`, `severity`, `shell`, `format`.
-    - `cppcheck_analyze`: [cppcheck](https://cppcheck.sourceforge.io/) for C/C++; `paths`, `enable`, `std`, `platform`.
-    - `semgrep_scan`: [Semgrep](https://semgrep.dev/) SAST; `config`, `paths`, `severity`, `lang`, `json`.
-    - `hadolint_check`: [Hadolint](https://github.com/hadolint/hadolint) for Dockerfile; `path`, `format`, `ignore`, `trusted_registries`.
-    - `bandit_scan`: [Bandit](https://bandit.readthedocs.io/) for Python; `paths`, `severity`, `confidence`, `skip`, `format`.
-    - `lizard_complexity`: [lizard](https://github.com/terryyin/lizard) complexity; `paths`, `threshold`, `language`, `sort`, `warnings_only`, `exclude`.
 
 ## GitHub CLI (`gh_*`) examples
 
@@ -400,7 +393,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Metrics**: `code_stats`, `dependency_graph`, `coverage_report`.
 
-**Source analysis**: `shellcheck_check`, `cppcheck_analyze`, `semgrep_scan`, `hadolint_check`, `bandit_scan`, `lizard_complexity`.
+**Static analysis / lint CLIs**: `shellcheck`, `cppcheck`, `semgrep`, `hadolint`, `bandit`, `lizard` are on the default `run_command` allowlist and are invoked via generic `run_command` (the dedicated `shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity` tools were removed). Install hints for missing CLIs are still surfaced by `error_output_playbook`.
 
 ### Python & pre-commit examples
 

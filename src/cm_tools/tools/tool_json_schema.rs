@@ -24,7 +24,7 @@ mod tests {
         FindSymbolArgs, FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
         ModifyFileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
-        PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs, ShellcheckCheckArgs,
+        PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
@@ -168,16 +168,6 @@ mod tests {
         assert!(v.pointer("/properties/race").is_some());
         assert!(v.pointer("/properties/verbose").is_some());
         assert!(v.pointer("/properties/tags").is_some());
-    }
-
-    #[test]
-    fn shellcheck_schema_denies_unknown() {
-        let v = tool_parameters_schema_value::<ShellcheckCheckArgs>();
-        assert_eq!(
-            v.pointer("/additionalProperties"),
-            Some(&json!(false)),
-            "{v}"
-        );
     }
 
     #[test]

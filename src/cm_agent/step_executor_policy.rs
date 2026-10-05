@@ -92,10 +92,6 @@ pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
             | "http_fetch"
             | "diagnostic_summary"
             | "self_config_info"
-            | "lizard_complexity"
-            | "shellcheck_check"
-            | "cppcheck_analyze"
-            | "semgrep_scan"
     )
 }
 
