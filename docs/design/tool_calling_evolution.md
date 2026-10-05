@@ -117,7 +117,7 @@
 
 ### 8.5.3 不可收敛的边界
 
-- **白名单外 CLI**：如 `rust-analyzer` / `rustfmt` / `clang-format` / `ruff` / `pytest` / `mypy` / `uv` / `go` 系 / `typos` / `codespell` / `ast-grep` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。
+- **白名单外 CLI**：如 `rust-analyzer` / `pytest` / `typos` / `codespell` / `ast-grep` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界；但对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*`）**仍保留**——它们是**只读**工具，降级 `run_command` 会失去 §8.5.2 的四项只读能力，与 A 档「低频低价值只读」的取舍不同。
 - **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
 - **Agent / 编排类**：保留。
 - **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），收敛前须确认不破坏该链路。
@@ -132,6 +132,22 @@
 
 **推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；**B 的写侧 + diff 合并已落地**（17 写工具降级 `run_command` + `git_diff` 三合一，能力零损失），其余家族合并（`gh_*` / `cargo_*` 等）待后续切片；**C** 暂不推进。
 
+### 8.5.5 白名单扩充（2026-10，局部落地路线 C）
+
+**背景**：此前存在「能力割裂」——多个内置工具（`go_*` / `ruff_check` / `mypy_check` / `uv_*` / `format_*` / `package_query` / `port_check` 等）内部直接 spawn 的 CLI **不在** `allowed_commands` 中，导致「走专用工具能跑、走 `run_command` 被拒」；且文档已声称 `npx` / `tsc` 在白名单，实际缺失。
+
+**做法**：向 `config/tools.toml` 的 `allowed_commands` 新增 **21 项**（102 → 123）：
+
+- **语言工具链（14）**：`npx` / `tsc` / `go` / `gofmt` / `golangci-lint` / `ruff` / `mypy` / `uv` / `rustfmt` / `clang-format` / `shfmt` / `xmllint` / `sqlfluff` / `pg_format`
+- **归档（2）**：`7z` / `unrar`
+- **系统与包查询（5）**：`dpkg-query` / `rpm` / `ss` / `lsof` / `bc`
+
+**定位**：这是路线 **C（扩白名单）的局部落地**，但**仅扩白名单、不删对应专用工具**——与 C 档「扩白名单**再收敛**」不同。对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*` / `package_query` / `port_check` / `process_list`）**保留**，因其为**只读**工具，降级会失去 §8.5.2 的四项只读能力。
+
+**安全面**：白名单仍是硬闸门，仅扩充允许的命令集合；新增 CLI 均为常规开发工具，未引入任意命令执行面。
+
+**后续**：可评估「工具 spawn 的 CLI ⊆ 白名单」的一致性测试，从机制上防止再次漂移。
+
 ---
 
 ## 9. 修订记录
@@ -142,3 +158,4 @@
 | 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
 | 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。 |
 | 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |
+| 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
