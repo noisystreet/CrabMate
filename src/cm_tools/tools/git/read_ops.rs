@@ -2,9 +2,8 @@ use std::path::Path;
 use std::process::Command;
 
 use super::helpers::{
-    MAX_OUTPUT_LINES, ensure_git_repo, git_remote_url, is_safe_rel_path, parse_args,
-    require_confirm, require_safe_path, require_string_field, run_and_format, run_diff_mode,
-    section_failed,
+    MAX_OUTPUT_LINES, ensure_git_repo, extract_safe_path, parse_args, require_safe_path,
+    run_and_format, run_diff_mode,
 };
 use crate::cm_tools::tools::output_util;
 
@@ -52,15 +51,50 @@ pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
-    let context = v.get("context_lines").and_then(|x| x.as_u64()).unwrap_or(3);
     let cap = max_output_len.max(GIT_DIFF_MIN_CAP_BYTES);
+    let context = v.get("context_lines").and_then(|x| x.as_u64()).unwrap_or(3);
+    let mut extra: Vec<&str> = Vec::new();
+    if v.get("stat").and_then(|x| x.as_bool()).unwrap_or(false) {
+        extra.push("--stat");
+    }
+    if v.get("name_only").and_then(|x| x.as_bool()).unwrap_or(false) {
+        extra.push("--name-only");
+    }
+    let title_base = if extra.is_empty() {
+        "git diff".to_string()
+    } else {
+        format!("git diff {}", extra.join(" "))
+    };
+    // base 存在时改为对比 base...HEAD 范围（忽略 mode）。
+    if let Some(base) = v
+        .get("base")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        let path = match extract_safe_path(&v) {
+            Ok(p) => p,
+            Err(e) => return e,
+        };
+        let mut cmd = Command::new("git");
+        cmd.arg("diff").arg(format!("{}...HEAD", base));
+        for a in &extra {
+            cmd.arg(*a);
+        }
+        cmd.arg(format!("-U{}", context));
+        if let Some(ref p) = path {
+            cmd.arg("--").arg(p);
+        }
+        cmd.current_dir(working_dir);
+        return run_and_format(cmd, cap, &format!("git diff {}...HEAD", base));
+    }
     run_diff_mode(
         &v,
         cap,
         working_dir,
-        &[],
+        &extra,
         Some(format!("-U{}", context)),
-        "git diff",
+        &title_base,
     )
 }
 
@@ -95,66 +129,6 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
         }
         Err(e) => format!("git clean check (exit=1)：执行失败：{}", e),
     }
-}
-
-pub fn diff_stat(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    run_diff_mode(
-        &v,
-        max_output_len,
-        working_dir,
-        &["--stat"],
-        None,
-        "git diff --stat",
-    )
-}
-
-pub fn diff_names(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    run_diff_mode(
-        &v,
-        max_output_len,
-        working_dir,
-        &["--name-only"],
-        None,
-        "git diff --name-only",
-    )
-}
-
-pub fn diff_base(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    let base = v
-        .get("base")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("main");
-    let context = v.get("context_lines").and_then(|x| x.as_u64()).unwrap_or(3);
-    let mut cmd = Command::new("git");
-    cmd.arg("diff")
-        .arg(format!("{}...HEAD", base))
-        .arg(format!("-U{}", context))
-        .current_dir(working_dir);
-    let cap = max_output_len.max(GIT_DIFF_MIN_CAP_BYTES);
-    run_and_format(cmd, cap, &format!("git diff {}...HEAD", base))
 }
 
 pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
@@ -288,196 +262,4 @@ pub fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -
     let mut cmd = Command::new("git");
     cmd.arg("remote").arg("-v").current_dir(working_dir);
     run_and_format(cmd, max_output_len, "git remote -v")
-}
-
-pub fn remote_set_url(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    if let Err(e) = require_confirm(&v, "git_remote_set_url") {
-        return e;
-    }
-    let name = match require_string_field(&v, "name") {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-    let url = match require_string_field(&v, "url") {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-    let mut cmd = Command::new("git");
-    cmd.arg("remote")
-        .arg("set-url")
-        .arg(name)
-        .arg(url)
-        .current_dir(working_dir);
-    run_and_format(cmd, max_output_len, "git remote set-url")
-}
-
-pub fn fetch(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    let remote = v.get("remote").and_then(|x| x.as_str()).map(str::trim);
-    let branch = v.get("branch").and_then(|x| x.as_str()).map(str::trim);
-    let prune = v.get("prune").and_then(|x| x.as_bool()).unwrap_or(false);
-    let mut cmd = Command::new("git");
-    cmd.arg("fetch");
-    if prune {
-        cmd.arg("--prune");
-    }
-    let remote_name = remote.filter(|s| !s.is_empty()).unwrap_or("origin");
-    if remote.filter(|s| !s.is_empty()).is_some() {
-        cmd.arg(remote_name);
-        if let Some(b) = branch.filter(|s| !s.is_empty()) {
-            cmd.arg(b);
-        }
-    }
-    cmd.current_dir(working_dir);
-    // 未指定 remote 时仍按 origin URL 判断是否注入（与常见单远程工作流一致）。
-    if let Some(url) = git_remote_url(working_dir, remote_name) {
-        crate::cm_tools::github_token::apply_github_https_auth(&mut cmd, &url);
-    }
-    run_and_format(cmd, max_output_len, "git fetch")
-}
-
-pub fn apply(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    let patch = match v.get("patch_path").and_then(|x| x.as_str()) {
-        Some(p) if is_safe_rel_path(p) => p.trim(),
-        _ => return "错误：缺少合法 patch_path 参数".to_string(),
-    };
-    let check_only = v
-        .get("check_only")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(true);
-    let mut cmd = Command::new("git");
-    cmd.arg("apply");
-    if check_only {
-        cmd.arg("--check");
-    }
-    cmd.arg("--").arg(patch).current_dir(working_dir);
-    run_and_format(
-        cmd,
-        max_output_len,
-        if check_only {
-            "git apply --check"
-        } else {
-            "git apply"
-        },
-    )
-}
-
-pub fn clone_repo(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = require_confirm(&v, "git_clone") {
-        return e;
-    }
-    let repo_url = match require_string_field(&v, "repo_url") {
-        Ok(s) => s,
-        Err(e) => return e,
-    };
-    let target_dir = match v.get("target_dir").and_then(|x| x.as_str()) {
-        Some(p) if is_safe_rel_path(p) => p.trim(),
-        _ => return "错误：缺少合法 target_dir 参数（必须是相对路径）".to_string(),
-    };
-    let depth = v.get("depth").and_then(|x| x.as_u64());
-    let base = match working_dir.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作目录无法解析: {}", e),
-    };
-    let target_abs = base.join(target_dir);
-    if target_abs.exists() {
-        return "错误：target_dir 已存在".to_string();
-    }
-    let mut cmd = Command::new("git");
-    cmd.arg("clone");
-    if let Some(d) = depth {
-        cmd.arg("--depth").arg(d.to_string());
-    }
-    cmd.arg(repo_url).arg(target_dir).current_dir(&base);
-    crate::cm_tools::github_token::apply_github_https_auth(&mut cmd, repo_url);
-    run_and_format(cmd, max_output_len, "git clone")
-}
-
-pub fn stage_files(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    let files = match v.get("paths").and_then(|x| x.as_array()) {
-        Some(arr) if !arr.is_empty() => arr
-            .iter()
-            .filter_map(|x| x.as_str())
-            .map(str::trim)
-            .filter(|p| is_safe_rel_path(p))
-            .map(str::to_string)
-            .collect::<Vec<_>>(),
-        _ => return "错误：paths 必须是非空字符串数组".to_string(),
-    };
-    if files.is_empty() {
-        return "错误：paths 中没有合法相对路径".to_string();
-    }
-    let mut cmd = Command::new("git");
-    cmd.arg("add").arg("--");
-    for p in files {
-        cmd.arg(p);
-    }
-    cmd.current_dir(working_dir);
-    run_and_format(cmd, max_output_len, "git add")
-}
-
-pub fn commit(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
-    let v = match parse_args(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    if let Err(e) = ensure_git_repo(working_dir) {
-        return e;
-    }
-    if let Err(e) = require_confirm(&v, "git_commit") {
-        return format!("{}才会真正提交", e);
-    }
-    let message = match require_string_field(&v, "message") {
-        Ok(s) => s.to_string(),
-        Err(e) => return e,
-    };
-    let stage_all = v
-        .get("stage_all")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-    if stage_all {
-        let mut add = Command::new("git");
-        add.arg("add").arg("-A").current_dir(working_dir);
-        let out = run_and_format(add, max_output_len, "git add -A");
-        if section_failed(&out) {
-            return out;
-        }
-    }
-    let mut cmd = Command::new("git");
-    cmd.arg("commit")
-        .arg("-m")
-        .arg(message)
-        .current_dir(working_dir);
-    run_and_format(cmd, max_output_len, "git commit")
 }

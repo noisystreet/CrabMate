@@ -83,14 +83,6 @@ pub(super) fn summary_git_diff(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<GitDiffSummaryArgs>(v)
 }
 
-pub(super) fn summary_git_diff_stat(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitDiffStatSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_diff_names(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitDiffNamesSummaryArgs>(v)
-}
-
 pub(super) fn summary_create_file(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<CreateFileSummaryArgs>(v)
 }
@@ -201,46 +193,6 @@ pub(super) fn summary_format_check_file(v: &serde_json::Value) -> Option<String>
 
 pub(super) fn summary_convert_units(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<ConvertUnitsSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_checkout(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitCheckoutSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_branch_create(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitBranchCreateSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_branch_delete(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitBranchDeleteSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_push(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitPushSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_merge(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitMergeSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_rebase(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitRebaseSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_stash(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitStashSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_tag(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitTagSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_reset(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitResetSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_revert(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitRevertSummaryArgs>(v)
 }
 
 pub(super) fn summary_port_check(v: &serde_json::Value) -> Option<String> {

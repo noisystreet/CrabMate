@@ -102,6 +102,7 @@
 
 - **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`；缺失安装提示仍由 `error_output_playbook` 提供。详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
 - **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：`quality_workspace` / `ci_pipeline_local` / `lint.rs` 仍**直接调用** `jvm_tools` / `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，不影响这些组合工具的开关语义（如 `run_maven_*` / `run_gradle_*` / `run_frontend_build`）。
+- **移除 17 个写侧 Git 工具（B 档）**：`git_stage_files` / `git_commit` / `git_checkout` / `git_branch_create` / `git_branch_delete` / `git_push` / `git_merge` / `git_rebase` / `git_stash` / `git_tag` / `git_reset` / `git_cherry_pick` / `git_revert` / `git_clone` / `git_remote_set_url` / `git_apply` / `git_fetch`，统一改用 **`run_command`** 调用 `git`（`git` 已在 `config/tools.toml` 白名单），能力零损失。**只读 Git 工具保留并做同构合并**：`git_diff` 吸收原 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增可选 `stat` / `name_only` / `base`），保留 `git_status` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`。**为何不一并降级只读**：`run_command` 非只读，降级会连带失去 8.5.2 的四项只读能力（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）——这与 A 档「低频低价值只读」的取舍不同（Git 只读查询在代码审查工作流中使用频率高）。
 
 ### 8.5.2 核心约束（收敛前必须权衡）
 
@@ -126,10 +127,10 @@
 | 档位 | 做法 | 预期工具名变化 | 风险 |
 |------|------|----------------|------|
 | **A｜延续删除薄封装**（**已落地**） | 删除 JVM 容器 / npm 前端等低频封装（`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，共 14 个），改用 `run_command` | **-14** | 低（白名单已含相关 CLI；接受 8.5.2 能力损失） |
-| **B｜合并式精简** | 按家族聚合并参数化（`git_*` ~30、`gh_*` ~22、`cargo_*` ~18 等），一个工具 + `subcommand` 参数 | 约 **-70** | 中（须重写 schema / 分发 / 提示词，并回归后台任务与只读语义；`rust_analyzer_*` 8 个不可替代需保留） |
+| **B｜合并式精简**（**写侧 + diff 合并已落地**） | 写侧按「全量降级 `run_command`」处理（17 个写 Git 工具）；只读侧按家族聚合并参数化（`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`）。其余家族（`gh_*` / `cargo_*` 等）仍为候选 | 本轮 **-19**（-17 写 + diff 三合一） | 中（须重写 schema / 分发 / 提示词，并回归后台任务与只读语义；`rust_analyzer_*` 8 个不可替代需保留） |
 | **C｜扩白名单再收敛** | 把 8.5.3 白名单外 CLI 也纳入再删封装 | 视范围 | **高**（扩大任意命令执行面，不建议；如做须走 `tool_approval` 审批） |
 
-**推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；中期评估 **B**；**C** 暂不推进。
+**推荐**：**A 已落地**（低风险、已通过 `cargo clippy --all-targets --all-features -- -D warnings` / `cargo test`）；**B 的写侧 + diff 合并已落地**（17 写工具降级 `run_command` + `git_diff` 三合一，能力零损失），其余家族合并（`gh_*` / `cargo_*` 等）待后续切片；**C** 暂不推进。
 
 ---
 
@@ -140,3 +141,4 @@
 | 2026-05-01 | 初稿：对标开源 Agent 的工具调用演进维度、与现有模块映射、优先级建议。 |
 | 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
 | 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。 |
+| 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |

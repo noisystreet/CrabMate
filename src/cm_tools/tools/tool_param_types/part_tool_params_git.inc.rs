@@ -36,20 +36,12 @@ pub struct GitDiffArgs {
     /// 可选：每处变更展示上下文行数（-U），默认 3
     #[schemars(range(min = 0))]
     pub context_lines: Option<u32>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitDiffStatArgs {
-    pub mode: Option<GitDiffMode>,
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitDiffNamesArgs {
-    pub mode: Option<GitDiffMode>,
-    pub path: Option<String>,
+    /// 可选：仅输出统计信息（等价 git diff --stat），默认 false
+    pub stat: Option<bool>,
+    /// 可选：仅输出变更文件名（等价 git diff --name-only），默认 false
+    pub name_only: Option<bool>,
+    /// 可选：基准分支；设置后改为对比 base...HEAD（忽略 mode），如 "main"
+    pub base: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
@@ -67,15 +59,6 @@ pub struct GitLogArgs {
 pub struct GitShowArgs {
     /// 可选：提交号/引用，默认 HEAD
     pub rev: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitDiffBaseArgs {
-    /// 可选：基准分支，默认 main（对比 base...HEAD）
-    pub base: Option<String>,
-    #[schemars(range(min = 0))]
-    pub context_lines: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -104,176 +87,4 @@ pub struct GitFileHistoryArgs {
 pub struct GitBranchListArgs {
     /// 可选：是否包含远程分支，默认 true
     pub include_remote: Option<bool>,
-}
-
-// ── git write ───────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitStageFilesArgs {
-    /// 要暂存的相对路径列表（必填）
-    pub paths: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitCommitArgs {
-    /// 提交信息（必填）
-    pub message: String,
-    /// 可选：提交前是否执行 git add -A，默认 false
-    pub stage_all: Option<bool>,
-    /// 安全确认；仅当 true 时才会执行 commit
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitFetchArgs {
-    pub remote: Option<String>,
-    pub branch: Option<String>,
-    pub prune: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitRemoteSetUrlArgs {
-    pub name: String,
-    pub url: String,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitApplyArgs {
-    pub patch_path: String,
-    pub check_only: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitCloneArgs {
-    pub repo_url: String,
-    pub target_dir: String,
-    #[schemars(range(min = 1))]
-    pub depth: Option<u32>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitCheckoutArgs {
-    pub target: String,
-    pub create: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitBranchCreateArgs {
-    pub name: String,
-    pub start_point: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitBranchDeleteArgs {
-    pub name: String,
-    pub force: Option<bool>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitPushArgs {
-    pub remote: Option<String>,
-    pub branch: Option<String>,
-    pub set_upstream: Option<bool>,
-    pub force_with_lease: Option<bool>,
-    pub tags: Option<bool>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitMergeArgs {
-    pub branch: String,
-    pub no_ff: Option<bool>,
-    pub squash: Option<bool>,
-    pub message: Option<String>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitRebaseArgs {
-    pub onto: Option<String>,
-    pub abort: Option<bool>,
-    #[serde(rename = "continue")]
-    pub continue_rebase: Option<bool>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GitStashAction {
-    Push,
-    Pop,
-    Apply,
-    List,
-    Drop,
-    Clear,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitStashArgs {
-    pub action: Option<GitStashAction>,
-    pub message: Option<String>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GitTagAction {
-    List,
-    Create,
-    Delete,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitTagArgs {
-    pub action: Option<GitTagAction>,
-    pub name: Option<String>,
-    pub message: Option<String>,
-    pub pattern: Option<String>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GitResetMode {
-    Soft,
-    Mixed,
-    Hard,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitResetArgs {
-    pub mode: Option<GitResetMode>,
-    pub target: Option<String>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct GitCherryPickArgs {
-    pub commit: Option<String>,
-    pub commits: Option<Vec<String>>,
-    pub no_commit: Option<bool>,
-    pub abort: Option<bool>,
-    #[serde(rename = "continue")]
-    pub continue_pick: Option<bool>,
-    pub confirm: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct GitRevertArgs {
-    pub commit: Option<String>,
-    pub no_commit: Option<bool>,
-    pub abort: Option<bool>,
-    #[serde(rename = "continue")]
-    pub continue_revert: Option<bool>,
-    pub confirm: Option<bool>,
 }

@@ -23,13 +23,11 @@ static SPECS_FRONTEND_AUDIT_CI: &[ToolSpec] = &include!("specs/frontend_audit_ci
 static SPECS_DIAGNOSTICS_DOCS: &[ToolSpec] = &include!("specs/diagnostics_docs.inc.rs");
 static SPECS_GITHUB_CLI: &[ToolSpec] = &include!("specs/github_cli.inc.rs");
 static SPECS_GIT_READ: &[ToolSpec] = &include!("specs/git_read.inc.rs");
-static SPECS_GIT_WRITE_CORE: &[ToolSpec] = &include!("specs/git_write_core.inc.rs");
 static SPECS_FILE_CORE: &[ToolSpec] = &include!("specs/file_core.inc.rs");
 static SPECS_MARKDOWN_STRUCTURED: &[ToolSpec] = &include!("specs/markdown_structured.inc.rs");
 static SPECS_TEXT_CODE_NAV: &[ToolSpec] = &include!("specs/text_code_nav.inc.rs");
 static SPECS_FORMAT_LINT: &[ToolSpec] = &include!("specs/format_lint.inc.rs");
 static SPECS_SCHEDULE: &[ToolSpec] = &include!("specs/schedule.inc.rs");
-static SPECS_GIT_WRITE_EXTRA: &[ToolSpec] = &include!("specs/git_write_extra.inc.rs");
 static SPECS_GOLANGCI: &[ToolSpec] = &include!("specs/golangci.inc.rs");
 static SPECS_PROCESS: &[ToolSpec] = &include!("specs/process.inc.rs");
 static SPECS_METRICS: &[ToolSpec] = &include!("specs/metrics.inc.rs");
@@ -52,13 +50,11 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_DIAGNOSTICS_DOCS.len()
             + SPECS_GITHUB_CLI.len()
             + SPECS_GIT_READ.len()
-            + SPECS_GIT_WRITE_CORE.len()
             + SPECS_FILE_CORE.len()
             + SPECS_MARKDOWN_STRUCTURED.len()
             + SPECS_TEXT_CODE_NAV.len()
             + SPECS_FORMAT_LINT.len()
             + SPECS_SCHEDULE.len()
-            + SPECS_GIT_WRITE_EXTRA.len()
             + SPECS_GOLANGCI.len()
             + SPECS_PROCESS.len()
             + SPECS_METRICS.len()
@@ -77,13 +73,11 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_DIAGNOSTICS_DOCS);
         v.extend_from_slice(SPECS_GITHUB_CLI);
         v.extend_from_slice(SPECS_GIT_READ);
-        v.extend_from_slice(SPECS_GIT_WRITE_CORE);
         v.extend_from_slice(SPECS_FILE_CORE);
         v.extend_from_slice(SPECS_MARKDOWN_STRUCTURED);
         v.extend_from_slice(SPECS_TEXT_CODE_NAV);
         v.extend_from_slice(SPECS_FORMAT_LINT);
         v.extend_from_slice(SPECS_SCHEDULE);
-        v.extend_from_slice(SPECS_GIT_WRITE_EXTRA);
         v.extend_from_slice(SPECS_GOLANGCI);
         v.extend_from_slice(SPECS_PROCESS);
         v.extend_from_slice(SPECS_METRICS);

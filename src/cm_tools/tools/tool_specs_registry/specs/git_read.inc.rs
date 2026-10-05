@@ -9,7 +9,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "git_diff",
-            description: "读取当前工作区的 Git diff（只读）。支持查看 working、staged 或 all 模式，并可按 path 过滤，便于精确确认具体改动。",
+            description: "读取当前工作区的 Git diff（只读）。默认按 working/staged/all 模式对比，并可按 path 过滤、用 context_lines 调整上下文行数；stat=true 仅输出统计（--stat），name_only=true 仅输出变更文件名（--name-only）；设置 base 时改为对比 base...HEAD 范围（如 base=\"main\"），此时忽略 mode。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::GitDiffArgs>,
             runner: ToolRunner::Legacy(runner_git_diff),
@@ -22,22 +22,6 @@ ToolSpec {
             parameters: schema_of::<args::EmptyToolArgs>,
             runner: ToolRunner::Legacy(runner_git_clean_check),
             summary: ToolSummaryKind::Static("检查 Git 工作区是否干净"),
-        },
-        ToolSpec {
-            name: "git_diff_stat",
-            description: "读取当前工作区的 Git diff 统计（只读）。支持 working/staged/all 与可选 path 过滤。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::GitDiffStatArgs>,
-            runner: ToolRunner::Legacy(runner_git_diff_stat),
-            summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_stat),
-        },
-        ToolSpec {
-            name: "git_diff_names",
-            description: "读取当前工作区的 Git diff 变更文件名列表（只读）。支持 working/staged/all 与可选 path 过滤。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::GitDiffNamesArgs>,
-            runner: ToolRunner::Legacy(runner_git_diff_names),
-            summary: ToolSummaryKind::Dynamic(ts::summary_git_diff_names),
         },
         ToolSpec {
             name: "git_log",
@@ -54,14 +38,6 @@ ToolSpec {
             parameters: schema_of::<args::GitShowArgs>,
             runner: ToolRunner::Legacy(runner_git_show),
             summary: ToolSummaryKind::Static("git show"),
-        },
-        ToolSpec {
-            name: "git_diff_base",
-            description: "读取 base...HEAD 范围 diff（只读），默认 main...HEAD。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::GitDiffBaseArgs>,
-            runner: ToolRunner::Legacy(runner_git_diff_base),
-            summary: ToolSummaryKind::Static("git diff base...HEAD"),
         },
         ToolSpec {
             name: "git_blame",
@@ -94,5 +70,13 @@ ToolSpec {
             parameters: schema_of::<args::GitStatusArgs>,
             runner: ToolRunner::Legacy(runner_git_remote_status),
             summary: ToolSummaryKind::Static("git remote tracking status"),
+        },
+        ToolSpec {
+            name: "git_remote_list",
+            description: "查看远程仓库列表（只读，git remote -v）。",
+            category: ToolCategory::Development,
+            parameters: schema_of::<args::EmptyToolArgs>,
+            runner: ToolRunner::Legacy(runner_git_remote_list),
+            summary: ToolSummaryKind::Static("git remote -v"),
         },
 ]

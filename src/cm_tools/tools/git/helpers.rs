@@ -29,24 +29,6 @@ pub(super) fn require_safe_path(v: &serde_json::Value) -> Result<String, String>
     }
 }
 
-pub(super) fn require_confirm(v: &serde_json::Value, tool_name: &str) -> Result<(), String> {
-    if v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false) {
-        Ok(())
-    } else {
-        Err(format!("拒绝执行：{} 需要 confirm=true", tool_name))
-    }
-}
-
-pub(super) fn require_string_field<'a>(
-    v: &'a serde_json::Value,
-    field: &str,
-) -> Result<&'a str, String> {
-    match v.get(field).and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if !s.is_empty() => Ok(s),
-        _ => Err(format!("错误：缺少 {} 参数", field)),
-    }
-}
-
 /// 统一处理 working/staged/all 三模式的 diff 类命令。
 /// `extra_args` 为模式无关的附加参数（如 `--stat`、`--name-only`），
 /// `context_fmt` 为可选 `-U{n}` 格式化字符串。
@@ -132,36 +114,6 @@ pub(super) fn is_safe_rel_path(path: &str) -> bool {
     !p.is_empty() && !p.starts_with('/') && !p.contains("..")
 }
 
-/// `git remote get-url <name>`；失败或不存在时返回 `None`。
-pub(super) fn git_remote_url(working_dir: &Path, remote: &str) -> Option<String> {
-    let out = Command::new("git")
-        .args(["remote", "get-url", remote])
-        .current_dir(working_dir)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
-
-pub(super) fn section_failed(s: &str) -> bool {
-    let first = s.lines().next().unwrap_or("");
-    let Some(idx) = first.find("(exit=") else {
-        return false;
-    };
-    let rest = &first[idx + "(exit=".len()..];
-    let Some(end) = rest.find(')') else {
-        return false;
-    };
-    rest[..end]
-        .trim()
-        .parse::<i32>()
-        .map(|c| c != 0)
-        .unwrap_or(false)
-}
-
 pub(super) fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -> String {
     output_util::run_command_output_formatted(
         cmd,
@@ -171,4 +123,17 @@ pub(super) fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -
         output_util::ProcessOutputMerge::ConcatStdoutStderr,
         output_util::CommandSpawnErrorStyle::ExecuteFailed,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_rel_path;
+
+    #[test]
+    fn test_is_safe_rel_path() {
+        assert!(is_safe_rel_path("src/main.rs"));
+        assert!(!is_safe_rel_path("/etc/passwd"));
+        assert!(!is_safe_rel_path("../x"));
+        assert!(!is_safe_rel_path(""));
+    }
 }
