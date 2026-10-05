@@ -290,7 +290,10 @@ fn async_test_env<'a>(
 
 #[tokio::test]
 async fn run_command_async_disabled_returns_invalid_args() {
-    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    // 总开关默认已为 `true`，此处显式关闭以验证「关闭时返回 invalid_args」语义。
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = false;
+    let cfg = Arc::new(cfg);
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
