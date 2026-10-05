@@ -94,8 +94,47 @@
 
 ---
 
+## 8.5 工具收敛：薄 CLI 封装 vs `run_command`（2026-10 分析）
+
+**背景**：近一半内置工具只是把某个 CLI 包成独立 `ToolSpec` + `runner_*`。这些「薄封装」维护成本高于结构化收益时，可考虑收敛为 `run_command`。本节记录收敛的边界、约束与候选路线，供后续切片。
+
+### 8.5.1 已落地
+
+- **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`；缺失安装提示仍由 `error_output_playbook` 提供。详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
+
+### 8.5.2 核心约束（收敛前必须权衡）
+
+`run_command` 在「按工具名」的只读判定中被**明确排除**——见 `tool_retry_policy` / `is_readonly_tool` 注释（同排除的还有 `terminal_session` / `http_request` / 写类 / MCP / 动态 / workflow）。因此任何一个**只读**专用工具改写为 `run_command`，都会**连带失去**：
+
+- `parallel_readonly_batch` 的并行只读批；
+- `tool_retry_policy` 的只读失败重试；
+- `SessionMode::Ask` / `Plan` 的 `requires_readonly_tools()` 门控；
+- 只读结果缓存 / 去重（`readonly_tool_ttl_cache_secs`）。
+
+> **决策（2026-10）**：对**低频、低价值**的只读薄封装，**接受**上述能力损失，一并收敛进 `run_command`。
+
+### 8.5.3 不可收敛的边界
+
+- **白名单外 CLI**：如 `rust-analyzer` / `rustfmt` / `clang-format` / `ruff` / `pytest` / `mypy` / `uv` / `go` 系 / `typos` / `codespell` / `ast-grep` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。
+- **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
+- **Agent / 编排类**：保留。
+- **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），收敛前须确认不破坏该链路。
+
+### 8.5.4 候选路线（按风险 / 收益排序，非承诺顺序）
+
+| 档位 | 做法 | 预期工具名变化 | 风险 |
+|------|------|----------------|------|
+| **A｜延续删除薄封装** | 删除 JVM 容器 / npm 前端等低频只读封装（如 `docker_compose_ps` / `podman_images` / `frontend_lint` 等，约 12 个），改用 `run_command` | 约 -12 | 低（白名单已含相关 CLI；接受 8.5.2 能力损失） |
+| **B｜合并式精简** | 按家族聚合并参数化（`git_*` ~30、`gh_*` ~22、`cargo_*` ~18 等），一个工具 + `subcommand` 参数 | 约 **-70** | 中（须重写 schema / 分发 / 提示词，并回归后台任务与只读语义；`rust_analyzer_*` 8 个不可替代需保留） |
+| **C｜扩白名单再收敛** | 把 8.5.3 白名单外 CLI 也纳入再删封装 | 视范围 | **高**（扩大任意命令执行面，不建议；如做须走 `tool_approval` 审批） |
+
+**推荐**：先做 **A**（低风险、立即可验证）；中期评估 **B**；**C** 暂不推进。
+
+---
+
 ## 9. 修订记录
 
 | 日期 | 摘要 |
 |------|------|
 | 2026-05-01 | 初稿：对标开源 Agent 的工具调用演进维度、与现有模块映射、优先级建议。 |
+| 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
