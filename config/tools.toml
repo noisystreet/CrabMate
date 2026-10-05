@@ -60,6 +60,21 @@ allowed_commands = [
     "npm",
     "podman",
     "python3",
+    # 语言工具链（经 run_command 调用；与内置专用工具并存）
+    "npx",
+    "tsc",
+    "go",
+    "gofmt",
+    "golangci-lint",
+    "ruff",
+    "mypy",
+    "uv",
+    "rustfmt",
+    "clang-format",
+    "shfmt",
+    "xmllint",
+    "sqlfluff",
+    "pg_format",
     # POSIX shell（默认：argv 含 glob/`$VAR`/`~` 时经 `bash -c` 跑整行；Web 上独立 argv 的 &&/| 仍再审完整脚本）
     "bash",
     "sh",
@@ -134,6 +149,15 @@ allowed_commands = [
     "ldd",
     "od",
     "xxd",
+    # 归档（7z / rar 解压）
+    "7z",
+    "unrar",
+    # 系统与包查询
+    "dpkg-query",
+    "rpm",
+    "ss",
+    "lsof",
+    "bc",
 ]
 run_command_working_dir = "."
 
