@@ -296,6 +296,18 @@ pub fn runner_background_job_list(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
+pub fn runner_background_job_output(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_output(
+        args,
+        ctx.tool_jobs_host,
+        ctx.command_max_output_len,
+    )
+}
+
+pub fn runner_background_job_cancel(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job_cancel(args, ctx.tool_jobs_host)
+}
+
 #[allow(clippy::result_large_err)]
 pub fn read_file_try_dispatch(
     args_json: &str,

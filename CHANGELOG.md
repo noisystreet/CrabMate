@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **Background-job monitoring tools**: added two model-facing tools for the background tool-job lifecycle (design doc `docs/design/background_tool_jobs_contract.md` §9). **`background_job_output`** (read-only) incrementally pulls a job's output (`tail -f` semantics) via `tool_job_id` + optional `cursor` (the previous `next_cursor`), returning stdout/stderr deltas plus `next_cursor` and `eof`; it reuses the existing `ToolJobRegistry::poll_output` and is exempt from the same-turn read-only dedup cache (its output changes within a turn). **`background_job_cancel`** cancels a job (`queued` → `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success, other terminal states cannot be cancelled); it reuses `ToolJobRegistry::cancel`, is **termination** (not execution launch) so it does not violate the ADR's "no new execution-launching tool group" constraint, and is registered in `write_effect_tools` for auditing. Both are injected through `ToolJobsToolHost` (no allowlist approval). See `docs/工具说明.md` / `docs/en/TOOLS.md`.
+
 ### Changed
 
 - **`run_command` allowlist expanded**: added 21 common developer CLIs to the default **`allowed_commands`** (`config/tools.toml`) so they can be driven through generic **`run_command`** instead of only via their dedicated tools — language toolchains **`npx`**, **`tsc`**, **`go`**, **`gofmt`**, **`golangci-lint`**, **`ruff`**, **`mypy`**, **`uv`**, **`rustfmt`**, **`clang-format`**, **`shfmt`**, **`xmllint`**, **`sqlfluff`**, **`pg_format`**; archives **`7z`**, **`unrar`**; system/package queries **`dpkg-query`**, **`rpm`**, **`ss`**, **`lsof`**, **`bc`**. This closes the previous gap where several built-in tools spawned these CLIs internally while `run_command` rejected them, and fixes the docs that already claimed **`npx`** / **`tsc`** were allowlisted. See `docs/配置说明.md` / `docs/en/CONFIGURATION.md`.

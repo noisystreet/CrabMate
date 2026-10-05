@@ -131,6 +131,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "gh_run_rerun",
             "gh_release_create",
             "skill_manage",
+            "background_job_cancel",
         ]
         .into_iter()
         .map(|s| s.to_string())
@@ -160,7 +161,7 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
 fn builtin_dedup_cache_exempt_tools() -> &'static HashSet<String> {
     static E: OnceLock<HashSet<String>> = OnceLock::new();
     E.get_or_init(|| {
-        ["background_job_status", "background_job_list"]
+        ["background_job_status", "background_job_list", "background_job_output"]
             .into_iter()
             .map(|s| s.to_string())
             .collect()
