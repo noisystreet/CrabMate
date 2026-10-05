@@ -1,35 +1,3 @@
-// ── Node.js ───────────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub(super) struct NpmRunSummaryArgs {
-    script: String,
-}
-
-impl ToolSummaryLine for NpmRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let script = self.script.trim();
-        if script.is_empty() {
-            return None;
-        }
-        Some(format!("npm run {}", script))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct NpxRunSummaryArgs {
-    package: String,
-}
-
-impl ToolSummaryLine for NpxRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let pkg = self.package.trim();
-        if pkg.is_empty() {
-            return None;
-        }
-        Some(format!("npx {}", pkg))
-    }
-}
-
 // ── Process & ports ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

@@ -1,44 +1,3 @@
-/// [`super::nodejs_tools::npm_install`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct NpmInstallArgs {
-    pub subdir: Option<String>,
-    #[serde(default)]
-    pub ci: bool,
-    #[serde(default)]
-    pub production: bool,
-}
-
-/// [`super::nodejs_tools::npm_run`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct NpmRunArgs {
-    pub script: String,
-    pub subdir: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-}
-
-/// [`super::nodejs_tools::npx_run`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct NpxRunArgs {
-    pub package: String,
-    pub subdir: Option<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-}
-
-/// [`super::nodejs_tools::tsc_check`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct TscCheckArgs {
-    pub subdir: Option<String>,
-    pub project: Option<String>,
-    #[serde(default)]
-    pub strict: bool,
-}
-
 // ── Go（`go_tools`，不含 `golangci_lint`）──────────────────────
 
 /// [`super::go_tools::go_build`] 入参。
@@ -97,17 +56,6 @@ pub struct GoFmtCheckArgs {
 }
 
 // ── 容器（`container_tools`）──────────────────────────────────
-
-/// [`super::container_tools::docker_build`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct DockerBuildArgs {
-    pub context: Option<String>,
-    pub tag: Option<String>,
-    pub dockerfile: Option<String>,
-    #[serde(default)]
-    pub no_cache: bool,
-}
 
 /// [`super::container_tools::docker_compose_ps`] 入参。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

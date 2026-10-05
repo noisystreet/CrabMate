@@ -208,10 +208,6 @@ pub fn runner_python_snippet_run(args: &str, ctx: &ToolContext<'_>) -> String {
     )
 }
 
-pub fn runner_npm_run(args: &str, ctx: &ToolContext<'_>) -> String {
-    nodejs_tools::npm_run(args, ctx.working_dir, ctx.command_max_output_len, ctx)
-}
-
 pub fn runner_diagnostic_summary(args: &str, ctx: &ToolContext<'_>) -> String {
     diagnostics::diagnostic_summary(args, ctx.working_dir, &[])
 }
@@ -398,21 +394,11 @@ define_runners_cwd_maxlen! {
     runner_go_mod_tidy => go_tools::go_mod_tidy,
     runner_go_fmt_check => go_tools::go_fmt_check,
     runner_golangci_lint => go_tools::golangci_lint,
-    runner_maven_compile => jvm_tools::maven_compile,
-    runner_maven_test => jvm_tools::maven_test,
-    runner_gradle_compile => jvm_tools::gradle_compile,
-    runner_gradle_test => jvm_tools::gradle_test,
-    runner_docker_build => container_tools::docker_build,
-    runner_docker_compose_ps => container_tools::docker_compose_ps,
-    runner_podman_images => container_tools::podman_images,
     runner_pre_commit_run => precommit_tools::pre_commit_run,
     runner_typos_check => spell_astgrep_tools::typos_check,
     runner_codespell_check => spell_astgrep_tools::codespell_check,
     runner_ast_grep_run => spell_astgrep_tools::ast_grep_run,
     runner_ast_grep_rewrite => spell_astgrep_tools::ast_grep_rewrite,
-    runner_frontend_lint => frontend_tools::frontend_lint,
-    runner_frontend_build => frontend_tools::frontend_build,
-    runner_frontend_test => frontend_tools::frontend_test,
     runner_cargo_audit => security_tools::cargo_audit,
     runner_cargo_deny => security_tools::cargo_deny,
     runner_changelog_draft => release_docs::changelog_draft,
@@ -423,9 +409,6 @@ define_runners_cwd_maxlen! {
     runner_release_ready_check => ci_tools::release_ready_check,
     runner_run_lints => lint::run,
     runner_quality_workspace => quality_tools::quality_workspace,
-    runner_npm_install => nodejs_tools::npm_install,
-    runner_npx_run => nodejs_tools::npx_run,
-    runner_tsc_check => nodejs_tools::tsc_check,
     runner_code_stats => code_metrics::code_stats,
     runner_dependency_graph => code_metrics::dependency_graph,
     runner_coverage_report => code_metrics::coverage_report,

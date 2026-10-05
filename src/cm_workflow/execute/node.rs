@@ -466,8 +466,6 @@ fn resolve_workflow_node_timeout_secs(
         "run_command" | "run_executable" | "python_snippet_run" => {
             Some(tool_exec_ctx.cfg_command_timeout_secs)
         }
-        "maven_compile" | "maven_test" | "gradle_compile" | "gradle_test" | "docker_build"
-        | "docker_compose_ps" | "podman_images" => Some(tool_exec_ctx.cfg_command_timeout_secs),
         "get_weather" => Some(tool_exec_ctx.cfg_weather_timeout_secs),
         "web_search" => {
             let provider =

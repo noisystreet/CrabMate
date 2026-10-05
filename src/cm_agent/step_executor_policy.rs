@@ -37,9 +37,6 @@ fn default_test_runner_tool_names() -> &'static HashSet<&'static str> {
             "rust_test_one",
             "pytest_run",
             "go_test",
-            "maven_test",
-            "gradle_test",
-            "frontend_test",
             "run_command",
         ]
         .into_iter()

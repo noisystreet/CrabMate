@@ -53,7 +53,6 @@ mod json_format;
 mod jvm_tools;
 mod lint;
 mod markdown_links;
-mod nodejs_tools;
 pub mod output_util;
 mod package_query;
 mod parse_args;
@@ -140,7 +139,7 @@ pub struct ToolContext<'a> {
     pub read_file_turn_cache: Option<&'a crate::cm_tools::read_file_turn_cache::ReadFileTurnCache>,
     /// 本会话工作区变更集（按 `long_term_memory_scope_id`）；`None` 时不记录。
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    /// `cargo_test` / `npm run test` / 部分 `run_command cargo test` 的进程内输出缓存。
+    /// `cargo_test` / 部分 `run_command cargo test` 的进程内输出缓存。
     pub test_result_cache_enabled: bool,
     pub test_result_cache_max_entries: usize,
     /// 长期记忆工具；主 Agent 路径由 `cm_internal` 注入。

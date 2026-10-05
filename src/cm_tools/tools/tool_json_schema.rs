@@ -23,7 +23,7 @@ mod tests {
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs,
         FindSymbolArgs, FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
-        ModifyFileArgs, NpmRunArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
+        ModifyFileArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
@@ -150,16 +150,6 @@ mod tests {
         assert!(e.iter().any(|x| x == "auto"));
         assert!(e.iter().any(|x| x == "lcov"));
         assert!(e.iter().any(|x| x == "tarpaulin_json"));
-    }
-
-    #[test]
-    fn npm_run_schema_requires_script() {
-        let v = tool_parameters_schema_value::<NpmRunArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "script"));
     }
 
     #[test]

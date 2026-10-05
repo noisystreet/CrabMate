@@ -535,14 +535,7 @@ pub struct GhApiArgs {
     pub extra_args: Option<Vec<String>>,
 }
 
-// ── Frontend / Python ─────────────────────────────────────────────
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct FrontendLintArgs {
-    pub subdir: Option<String>,
-    pub script: Option<String>,
-}
+// ── Python ────────────────────────────────────────────────────
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]

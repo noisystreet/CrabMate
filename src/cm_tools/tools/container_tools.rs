@@ -1,10 +1,10 @@
-//! 容器 CLI 最小封装：Docker / Podman / docker compose（只读或受控构建参数）。
+//! 容器 CLI 最小封装：Docker Compose / Podman 只读查询。
 
 use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
-use super::tool_param_types::{DockerBuildArgs, DockerComposePsArgs, PodmanImagesArgs};
+use super::tool_param_types::{DockerComposePsArgs, PodmanImagesArgs};
 
 const MAX_OUTPUT_LINES: usize = 800;
 
@@ -60,66 +60,6 @@ fn run_and_format(cmd: Command, max_output_len: usize, title: &str) -> String {
         output_util::ProcessOutputMerge::ConcatStdoutStderr,
         output_util::CommandSpawnErrorStyle::CannotStartCommand,
     )
-}
-
-pub fn docker_build(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: DockerBuildArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 docker_build 形状不一致: {e}"),
-    };
-
-    let context = args
-        .context
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(".");
-    if let Err(e) = safe_relative_path(context, "context") {
-        return format!("错误：{}", e);
-    }
-
-    let tag = args
-        .tag
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("crabmate-local:latest");
-    if let Err(e) = safe_image_ref(tag) {
-        return format!("错误：{}", e);
-    }
-
-    if let Some(f) = args
-        .dockerfile
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        && let Err(e) = safe_relative_path(f, "dockerfile")
-    {
-        return format!("错误：{}", e);
-    }
-
-    let no_cache = args.no_cache;
-
-    let mut cmd = Command::new("docker");
-    cmd.arg("build").arg("-t").arg(tag);
-    if no_cache {
-        cmd.arg("--no-cache");
-    }
-    if let Some(f) = args
-        .dockerfile
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        cmd.arg("-f").arg(f);
-    }
-    cmd.arg(context);
-    cmd.current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "docker build")
 }
 
 fn trimmed_compose_project(args: &DockerComposePsArgs) -> Option<&str> {

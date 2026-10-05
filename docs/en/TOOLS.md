@@ -102,10 +102,8 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `error_output_playbook`: Heuristic classification of **sanitized** rustc/cargo/npm/pytest errors → **2–3** suggested **`run_command`** strings (**not executed**; filtered to allowlist, e.g. `cargo`/`git`/`python3`/`npm`). `ecosystem`: `auto`/`rust`/`node`/`python`/`generic`; optional `max_chars`. Light redaction for `API_KEY=` patterns; still sanitize before paste.
   - `playbook_run_commands`: Same heuristics; **executes** **1–3** suggestions via internal **`run_command`** (same safety rules; may contend on cargo/npm locks). Same args as `error_output_playbook` + optional **`max_commands`** (default 3, max 3). **Trusted workspace**; on CLI tool failure a one-line JSON may be printed for the model to run this “diagnostic bundle”.
   - **Python / uv / pre-commit** (workspace root; CLIs must exist): `ruff_check`, `pytest_run` (`python3 -m pytest`), `mypy_check`, `python_install_editable` (uv or pip editable), `uv_sync`, `uv_run` (`args` array, no shell), `pre_commit_run` (needs `.pre-commit-config.yaml`). **Format**: `format_file` / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
-  - **Node.js / npm** (needs `package.json`): `npm_install` (`npm ci`, `--production`), `npm_run` (any script; **`script` == `test`** can use test cache with **`[CrabMate test output cache hit]`**), `npx_run`, `tsc_check` (`tsc --noEmit`).
+  - **JVM / Container / Node frontend (now via `run_command`)**: `mvn`/`gradle` (or `gradlew`), `docker`/`podman`, and `npm`/`npx`/`tsc` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly via `run_command` (e.g. `mvn -q test`, `gradle classes`, `docker compose ps`, `podman images`, `npm run build`, `npx tsc --noEmit`). The former thin wrappers (`maven_*`/`gradle_*`/`docker_build`/`docker_compose_ps`/`podman_images`/`npm_install`/`npm_run`/`npx_run`/`tsc_check`/`frontend_lint`/`frontend_build`/`frontend_test`) were removed per design doc §8.5.4 **track A**; their implementations remain shared by the `quality_workspace`/`ci_pipeline_local` flags (`run_maven_*`/`run_gradle_*`/`run_frontend_build`, …).
   - **Go** (needs `go.mod`, Go installed): `go_build`, `go_test` (`-run`/`-race`/`-timeout`, …), `go_vet`, `go_mod_tidy` (write needs `confirm`), `go_fmt_check` (`gofmt -l`), `golangci_lint`.
-  - **JVM (Maven / Gradle)** (needs `mvn`/`gradle` or `gradlew`): `maven_compile` / `maven_test` (needs `pom.xml`, `mvn -q …`, optional `profile`/`test`), `gradle_compile` / `gradle_test` (needs `build.gradle*` or `settings.gradle*`, default tasks `classes`/`test`, conservative task validation). Like `run_command`: no `..` or absolute paths in args.
-  - **Container CLI**: `docker_build` (**writes local images**; relative `context`/`dockerfile`/`tag`/`no_cache`), `docker_compose_ps` (read-only), `podman_images` (read-only). Host CLIs required; default allowlist includes `docker`/`podman`/`mvn`/`gradle` (`config/tools.toml`).
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
@@ -288,18 +286,7 @@ Structured function-calling JSON examples:
   ```json
   {"backtrace":"thread 'main' panicked at src/main.rs:10:5\nstack backtrace:\n   0: ...","crate_hint":"crabmate"}
   ```
-- `frontend_lint`:
-  ```json
-  {}
-  ```
-- `frontend_build`:
-  ```json
-  {"script":"build"}
-  ```
-- `frontend_test`:
-  ```json
-  {"script":"test"}
-  ```
+- `frontend_lint` / `frontend_build` / `frontend_test` (frontend lint / build / test): removed per §8.5.4 **track A**; use `run_command` instead (e.g. `npm run lint` / `npm run build` / `npm run test`).
 - `workflow_execute` (DAG: parallelism, approval, SLA, compensation):
   - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`cargo_fmt_check` → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.
   - Node **`max_retries`** (0–5, default 0): auto backoff retry for **`timeout`**, **`workflow_tool_join_error`**, **`workflow_semaphore_closed`**, …; **not** for business failures (tests, non-zero exit) to avoid duplicate side effects.
@@ -381,7 +368,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
-**Node.js / npm**: `npm_install`, `npm_run`, `npx_run`, `tsc_check`.
+**JVM / Container / Node frontend**: wrappers removed per §8.5.4 **track A**; use `run_command` (`mvn` / `gradle` / `docker` / `podman` / `npm` / `npx` / `tsc` are allowlisted). The aggregate flags (`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images` / `run_frontend_build`, …) remain shared by `quality_workspace` / `ci_pipeline_local`.
 
 **Go**: `go_build`, `go_test`, `go_vet`, `go_mod_tidy`, `go_fmt_check`, `golangci_lint`.
 
