@@ -196,7 +196,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 | 键 | 类型 | 默认 | 范围 | 说明 |
 |----|------|------|------|------|
-| `background_jobs_enabled` | bool | `false` | `true`/`false` | 总开关；关闭时白名单内工具 `async=true` 返回 `invalid_args` |
+| `background_jobs_enabled` | bool | `true` | `true`/`false` | 总开关；关闭时白名单内工具 `async=true` 返回 `invalid_args` |
 | `background_job_async_tools` | string[] | `["run_command"]` | 工具名列表 | 允许 `async=true` 的工具名白名单（精确匹配）；空数组 = 全部禁用；与总开关正交 |
 | `background_job_max_concurrent` | int | `4` | 1–256 | 同时运行上限；超出进入 `queued` |
 | `background_job_max_queued` | int | `32` | 0–10000 | 排队上限；`0` = 满并发即拒绝；超限拒绝创建 |
@@ -206,7 +206,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 `POST /config/reload` 热重载：读取时机为**创建 job 时**；已运行 job 不受后续变更影响。
 
-`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。默认不含它们是为保持既有部署行为不变（总开关本身默认 `false`）。
+`background_job_async_tools` 默认**仍为 `["run_command"]`**（不因支持 `cargo_test` / `pytest_run` 而放宽）：要使用这两个工具的后台执行，须显式写入白名单，例如 `background_job_async_tools = ["run_command", "cargo_test", "pytest_run"]`。默认不含它们是为保持既有部署行为不变（总开关默认 `true`，但模型仍须显式传 `async=true` 才走后台）。
 
 ---
 
