@@ -48,3 +48,9 @@ pub const JOB_NOT_FOUND: &str = "JOB_NOT_FOUND";
 pub const JOB_EXPIRED: &str = "JOB_EXPIRED";
 /// 请求头 `X-Workspace-Root` 与任务归属 workspace 不符。
 pub const JOB_OWNERSHIP_MISMATCH: &str = "JOB_OWNERSHIP_MISMATCH";
+/// `DELETE /memory/{id}` 路径参数不是十进制整数（`i64`）。
+pub const INVALID_MEMORY_ID: &str = "INVALID_MEMORY_ID";
+/// `GET /memory/list` 的 `kind` 不是受支持的枚举值。
+pub const INVALID_MEMORY_KIND: &str = "INVALID_MEMORY_KIND";
+/// 长期记忆（LTM）未启用（配置关闭或运行时未装配）。
+pub const LONG_TERM_MEMORY_DISABLED: &str = "LONG_TERM_MEMORY_DISABLED";

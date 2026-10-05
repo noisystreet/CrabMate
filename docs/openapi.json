@@ -784,6 +784,88 @@
         "description": "llm_overrides.json",
         "type": "object"
       },
+      "MemoryEntryView": {
+        "properties": {
+          "created_at_unix": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "expires_at_unix": {
+            "description": "null 表示不过期",
+            "format": "int64",
+            "nullable": true,
+            "type": "integer"
+          },
+          "id": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "kind": {
+            "description": "对外稳定枚举；不暴露内部 source_role / source_kind",
+            "enum": [
+              "turn",
+              "explicit",
+              "experience",
+              "other"
+            ],
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "text",
+          "kind",
+          "tags",
+          "created_at_unix"
+        ],
+        "type": "object"
+      },
+      "MemoryListResponse": {
+        "properties": {
+          "conversation_id": {
+            "description": "作用域（即 scope_id）",
+            "type": "string"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntryView"
+            },
+            "type": "array"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "offset": {
+            "type": "integer"
+          },
+          "total": {
+            "description": "过滤后（不含分页）总数",
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "conversation_id",
+          "entries",
+          "total",
+          "limit",
+          "offset",
+          "has_more"
+        ],
+        "type": "object"
+      },
       "PutWebSessionsBody": {
         "properties": {
           "active_session_id": {
@@ -2413,6 +2495,169 @@
         "summary": "健康检查（依赖、可选 LLM models 探活等）",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/memory/list": {
+      "get": {
+        "description": "scope 即 `conversation_id`；响应不含 embedding 与内部 source_role/source_kind。空 scope 返回 200 空列表。长期记忆未启用时 503 LONG_TERM_MEMORY_DISABLED（响应体含 enabled:false）。",
+        "parameters": [
+          {
+            "description": "作用域；仅允许字母、数字、- _ . :，长度上限 128",
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "每页条数；clamp 到 1..=200",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "format": "int32",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "format": "int32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "kind",
+            "required": false,
+            "schema": {
+              "enum": [
+                "turn",
+                "explicit",
+                "experience",
+                "other"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "命中 tags_json 中的标签",
+            "in": "query",
+            "name": "tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "chunk_text 子串（非 FTS）",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "default": "created_at_desc",
+              "enum": [
+                "created_at_desc",
+                "created_at_asc"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryListResponse"
+                }
+              }
+            },
+            "description": "投影列表"
+          },
+          "400": {
+            "description": "INVALID_CONVERSATION_ID / INVALID_MEMORY_KIND"
+          },
+          "503": {
+            "description": "LONG_TERM_MEMORY_DISABLED（enabled=false）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "按 scope 投影长期记忆列表（只读）",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/memory/{id}": {
+      "delete": {
+        "description": "行不存在 / 已过期 / 不属于该 conversation_id 均返回 204（不泄露 id 是否存在）。",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "int64",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "作用域守卫（必填）",
+            "in": "query",
+            "name": "conversation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "已删除（或本就不存在 / 不属于该 scope）"
+          },
+          "400": {
+            "description": "INVALID_CONVERSATION_ID / INVALID_MEMORY_ID"
+          },
+          "503": {
+            "description": "LONG_TERM_MEMORY_DISABLED（enabled=false）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "按 id 删除长期记忆（幂等）",
+        "tags": [
+          "memory"
         ]
       }
     },
@@ -4199,6 +4444,10 @@
     {
       "description": "配置热重载",
       "name": "config"
+    },
+    {
+      "description": "长期记忆只读列表与按 id 删除",
+      "name": "memory"
     },
     {
       "description": "本机用户数据（~/.local/share/crabmate）",

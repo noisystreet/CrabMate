@@ -4,6 +4,7 @@ mod openapi_components;
 mod openapi_components_user_data;
 mod openapi_paths;
 mod openapi_paths_chat_stream;
+mod openapi_paths_memory;
 mod openapi_paths_tool_jobs;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
@@ -38,6 +39,7 @@ pub fn build_openapi_spec() -> Value {
             { "name": "tasks", "description": "进程内任务清单" },
             { "name": "tool_jobs", "description": "后台工具任务轮询与取消" },
             { "name": "config", "description": "配置热重载" },
+            { "name": "memory", "description": "长期记忆只读列表与按 id 删除" },
             { "name": "user_data", "description": "本机用户数据（~/.local/share/crabmate）" },
             { "name": "uploads", "description": "上传与删除" }
         ],

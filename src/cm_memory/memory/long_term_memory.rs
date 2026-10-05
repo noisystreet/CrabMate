@@ -16,7 +16,9 @@ use log::{debug, info, warn};
 use rusqlite::Connection;
 
 use crate::cm_memory::memory::long_term_memory_recall as recall;
-use crate::cm_memory::memory::long_term_memory_store::{self, MemoryRow};
+use crate::cm_memory::memory::long_term_memory_store::{
+    self, MemoryListFilter, MemoryProjectionRow, MemoryRow,
+};
 use crate::cm_config::{AgentConfig, LongTermMemoryVectorBackend};
 use crate::cm_types::text_utils::preview_chars;
 use crate::cm_types::{
@@ -448,7 +450,7 @@ impl LongTermMemoryRuntime {
 
     fn format_ltm_injection_body(picked: &[recall::RecallPick], budget: usize) -> Option<String> {
         let mut body = String::from(
-            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n",
+            "以下为与当前问题可能相关的长期记忆（【经验 #id】为可复用提炼；【显式记忆 #id】为显式写入；[记忆 #id] 为回合摘要；可用 long_term_memory_list 核对；若无关请忽略）：\n\n",
         );
         let mut used = 0usize;
         for (_score, id, t, role) in picked.iter() {
@@ -690,6 +692,37 @@ impl LongTermMemoryRuntime {
             ));
         }
         Ok(out)
+    }
+
+    /// Web `GET /memory/list` 的投影列表 + 同过滤条件下的总数（**不含** `embedding`）。
+    ///
+    /// 返回 `(页内行, 该过滤条件下总数)`；`limit` / `offset` 分页由存储层处理。
+    pub fn list_projected_for_scope_blocking(
+        &self,
+        scope_id: &str,
+        filter: &MemoryListFilter<'_>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<MemoryProjectionRow>, i64), String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        let rows = long_term_memory_store::list_projected_for_scope(&conn, scope_id, filter, limit, offset)
+            .map_err(|e| format!("读取长期记忆列表失败: {e}"))?;
+        let total = long_term_memory_store::count_projected_for_scope(&conn, scope_id, filter)
+            .map_err(|e| format!("统计长期记忆条数失败: {e}"))?;
+        Ok((rows, total))
+    }
+
+    /// Web `DELETE /memory/{id}`：按 `(scope_id, id)` 删除，返回删除行数（0 表示不存在，幂等）。
+    pub fn delete_by_id_for_scope_blocking(&self, scope_id: &str, id: i64) -> Result<usize, String> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| format!("长期记忆 SQLite 锁失败: {e}"))?;
+        long_term_memory_store::delete_by_id_for_scope(&conn, scope_id, id)
+            .map_err(|e| format!("删除长期记忆失败: {e}"))
     }
 }
 

@@ -239,11 +239,53 @@ fn openapi_components_schemas_workspace_tasks_config() -> Value {
     })
 }
 
+fn openapi_components_schemas_memory() -> Value {
+    json!({
+        "MemoryEntryView": {
+            "type": "object",
+            "required": ["id", "text", "kind", "tags", "created_at_unix"],
+            "properties": {
+                "id": { "type": "integer", "format": "int64" },
+                "text": { "type": "string" },
+                "kind": {
+                    "type": "string",
+                    "enum": ["turn", "explicit", "experience", "other"],
+                    "description": "对外稳定枚举；不暴露内部 source_role / source_kind"
+                },
+                "tags": { "type": "array", "items": { "type": "string" } },
+                "created_at_unix": { "type": "integer", "format": "int64" },
+                "expires_at_unix": {
+                    "type": "integer",
+                    "format": "int64",
+                    "nullable": true,
+                    "description": "null 表示不过期"
+                }
+            }
+        },
+        "MemoryListResponse": {
+            "type": "object",
+            "required": ["conversation_id", "entries", "total", "limit", "offset", "has_more"],
+            "properties": {
+                "conversation_id": { "type": "string", "description": "作用域（即 scope_id）" },
+                "entries": {
+                    "type": "array",
+                    "items": { "$ref": "#/components/schemas/MemoryEntryView" }
+                },
+                "total": { "type": "integer", "format": "int64", "description": "过滤后（不含分页）总数" },
+                "limit": { "type": "integer" },
+                "offset": { "type": "integer" },
+                "has_more": { "type": "boolean" }
+            }
+        }
+    })
+}
+
 pub(super) fn openapi_components_value() -> Value {
     let schemas_merged = merge_component_objects(&[
         openapi_components_schemas_from_contract(),
         openapi_components_schemas_chat_core(),
         openapi_components_schemas_workspace_tasks_config(),
+        openapi_components_schemas_memory(),
         openapi_components_schemas_tool_jobs(),
         openapi_components_user_data::openapi_components_schemas_user_data(),
     ]);

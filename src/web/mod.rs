@@ -8,6 +8,7 @@ mod chat_uploads_paths;
 mod conversation_messages_window;
 pub(crate) mod cron_scheduler;
 pub(crate) mod http_types;
+mod memory;
 
 pub(crate) use app_state::{
     AppState, AppStateChatRuntime, AppStateConversationRuntime, AppStateHttpCore, AppStateWebAux,

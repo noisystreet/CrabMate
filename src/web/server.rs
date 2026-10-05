@@ -21,6 +21,7 @@ pub(crate) fn build_app(
         .merge(super::routes::tasks::router())
         .merge(super::routes::tools::router())
         .merge(super::routes::config::router())
+        .merge(super::routes::memory::router())
         .merge(super::routes::user_data::router());
     if web_api_bearer_layer_enabled {
         protected_api = protected_api.route_layer(middleware::from_fn_with_state(
