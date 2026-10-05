@@ -61,6 +61,38 @@ impl ToolSummaryLine for BackgroundJobListSummaryArgs {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub(super) struct BackgroundJobOutputSummaryArgs {
+    tool_job_id: String,
+}
+
+impl ToolSummaryLine for BackgroundJobOutputSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let id = self.tool_job_id.trim();
+        if id.is_empty() {
+            Some("background job output".to_string())
+        } else {
+            Some(format!("background job output: {id}"))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub(super) struct BackgroundJobCancelSummaryArgs {
+    tool_job_id: String,
+}
+
+impl ToolSummaryLine for BackgroundJobCancelSummaryArgs {
+    fn summary_line(self) -> Option<String> {
+        let id = self.tool_job_id.trim();
+        if id.is_empty() {
+            Some("cancel background job".to_string())
+        } else {
+            Some(format!("cancel background job: {id}"))
+        }
+    }
+}
+
 // ── Code metrics ──────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

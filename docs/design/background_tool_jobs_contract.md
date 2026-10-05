@@ -242,5 +242,6 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | SSE `tool_job_finished` | `cm_sse_protocol/sse/protocol.rs` + 分发 | `parser_v2.rs` |
 | 配置 | `cm_config` + `config/tools.toml` | — |
 | 观测 | `session_stats_snapshot` 扩展 + job 计数/日志（`tool_job_id`、来源 `job_id`、`duration_ms`） | — |
+| 模型侧工具 | `background_job_status` / `background_job_list` / `background_job_output` / `background_job_cancel`（`src/cm_tools/tools/background_job_tools.rs`，经 `ToolJobsToolHost` 注入只读注册表）。**`output` 为只读增量拉取**（复用 `poll_output`）；**`cancel` 为终止语义**（复用 `cancel`，`queued`→`cancelled` / `running` 置标记 / 终态不覆盖），**不发起执行**，故不违反 ADR「不新增发起执行型工具组」约束。`cancel` 计入 `write_effect_tools`（改变任务状态，供审计）；`output` 计入只读去重缓存豁免（同轮输出会变）。 | — |
 
 测试：生命周期、超时/取消（含完成竞态）、过期/410、认证/归属越权、并发与排队上限、worker panic 兜底、`deny_unknown_fields` 回归、金样。

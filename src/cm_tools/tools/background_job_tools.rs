@@ -11,7 +11,10 @@ use std::path::Path;
 use crate::cm_tools::memory_tool_host::ToolJobsToolHost;
 
 use super::parse_args_json;
-use super::tool_param_types::{BackgroundJobListArgs, BackgroundJobStatusArgs};
+use super::tool_param_types::{
+    BackgroundJobCancelArgs, BackgroundJobListArgs, BackgroundJobOutputArgs,
+    BackgroundJobStatusArgs,
+};
 
 /// `background_job_list` 未显式传入 `limit` 时的默认条数。
 const DEFAULT_LIST_LIMIT: u32 = 20;
@@ -70,6 +73,54 @@ pub fn background_job_list(
     }
 }
 
+/// 增量拉取后台任务输出（只读，`tail -f` 语义）。
+pub fn background_job_output(
+    args_json: &str,
+    host: Option<&dyn ToolJobsToolHost>,
+    max_output_len: usize,
+) -> String {
+    let v = match parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let BackgroundJobOutputArgs { tool_job_id, cursor } =
+        match serde_json::from_value::<BackgroundJobOutputArgs>(v) {
+            Ok(a) => a,
+            Err(e) => return format!("参数 JSON 与 background_job_output 形状不一致: {e}"),
+        };
+    let id = tool_job_id.trim();
+    if id.is_empty() {
+        return "参数错误：`tool_job_id` 不能为空；可先用 background_job_list 查看可用任务 id。"
+            .to_string();
+    }
+    match host {
+        Some(h) => h.output(id, cursor, max_output_len),
+        None => HOST_UNAVAILABLE.to_string(),
+    }
+}
+
+/// 取消后台任务（终止语义，非发起执行）。
+pub fn background_job_cancel(args_json: &str, host: Option<&dyn ToolJobsToolHost>) -> String {
+    let v = match parse_args_json(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let BackgroundJobCancelArgs { tool_job_id } =
+        match serde_json::from_value::<BackgroundJobCancelArgs>(v) {
+            Ok(a) => a,
+            Err(e) => return format!("参数 JSON 与 background_job_cancel 形状不一致: {e}"),
+        };
+    let id = tool_job_id.trim();
+    if id.is_empty() {
+        return "参数错误：`tool_job_id` 不能为空；可先用 background_job_list 查看可用任务 id。"
+            .to_string();
+    }
+    match host {
+        Some(h) => h.cancel(id),
+        None => HOST_UNAVAILABLE.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +134,14 @@ mod tests {
 
         fn list(&self, workspace: &Path, limit: usize, _max_output_len: usize) -> String {
             format!("stub list: {} limit={limit}", workspace.display())
+        }
+
+        fn output(&self, id: &str, cursor: Option<u64>, _max_output_len: usize) -> String {
+            format!("stub output: {id} cursor={cursor:?}")
+        }
+
+        fn cancel(&self, id: &str) -> String {
+            format!("stub cancel: {id}")
         }
     }
 
@@ -136,5 +195,51 @@ mod tests {
         let ws = Path::new("/tmp/ws");
         let out = background_job_list("{}", None, ws, 1024);
         assert!(out.contains("不可用"), "{out}");
+    }
+
+    #[test]
+    fn output_rejects_unknown_field() {
+        let out = background_job_output(r#"{"tool_job_id":"j1","extra":1}"#, None, 1024);
+        assert!(out.contains("形状不一致"), "{out}");
+    }
+
+    #[test]
+    fn output_rejects_empty_id() {
+        let out = background_job_output(r#"{"tool_job_id":"  "}"#, Some(&StubHost), 1024);
+        assert!(out.contains("不能为空"), "{out}");
+    }
+
+    #[test]
+    fn output_degrades_without_host() {
+        let out = background_job_output(r#"{"tool_job_id":"j1"}"#, None, 1024);
+        assert!(out.contains("不可用"), "{out}");
+    }
+
+    #[test]
+    fn output_delegates_with_cursor() {
+        let out = background_job_output(
+            r#"{"tool_job_id":" j1 ","cursor":7}"#,
+            Some(&StubHost),
+            1024,
+        );
+        assert_eq!(out, "stub output: j1 cursor=Some(7)");
+    }
+
+    #[test]
+    fn cancel_rejects_empty_id() {
+        let out = background_job_cancel(r#"{"tool_job_id":""}"#, Some(&StubHost));
+        assert!(out.contains("不能为空"), "{out}");
+    }
+
+    #[test]
+    fn cancel_degrades_without_host() {
+        let out = background_job_cancel(r#"{"tool_job_id":"j1"}"#, None);
+        assert!(out.contains("不可用"), "{out}");
+    }
+
+    #[test]
+    fn cancel_delegates_to_host_with_trimmed_id() {
+        let out = background_job_cancel(r#"{"tool_job_id":" j1 "}"#, Some(&StubHost));
+        assert_eq!(out, "stub cancel: j1");
     }
 }

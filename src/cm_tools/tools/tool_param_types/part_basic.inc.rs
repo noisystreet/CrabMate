@@ -189,7 +189,7 @@ fn default_process_list_max_count() -> u32 {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BackgroundJobStatusArgs {
-    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `job_...`）
+    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
     pub tool_job_id: String,
 }
 
@@ -201,6 +201,25 @@ pub struct BackgroundJobListArgs {
     #[serde(default)]
     #[schemars(range(min = 1, max = 100))]
     pub limit: Option<u32>,
+}
+
+/// [`super::background_job_tools::background_job_output`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundJobOutputArgs {
+    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
+    pub tool_job_id: String,
+    /// 增量游标：上次返回的 `next_cursor`；省略/非法则从最早可用起（宁从头，不错序）
+    #[serde(default)]
+    pub cursor: Option<u64>,
+}
+
+/// [`super::background_job_tools::background_job_cancel`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BackgroundJobCancelArgs {
+    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
+    pub tool_job_id: String,
 }
 
 /// [`super::go_tools::golangci_lint`] 入参。

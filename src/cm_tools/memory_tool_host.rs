@@ -23,4 +23,8 @@ pub trait ToolJobsToolHost: Send + Sync {
     fn status(&self, id: &str, max_output_len: usize) -> String;
     /// 列出任务（按 `workspace` 过滤 + 条数上限）。
     fn list(&self, workspace: &Path, limit: usize, max_output_len: usize) -> String;
+    /// 增量拉取输出（`tail -f` 语义）；`cursor` 省略=从最早可用起。
+    fn output(&self, id: &str, cursor: Option<u64>, max_output_len: usize) -> String;
+    /// 取消任务（`queued` 直接转移；`running` 置取消标记；终态不覆盖）。
+    fn cancel(&self, id: &str) -> String;
 }

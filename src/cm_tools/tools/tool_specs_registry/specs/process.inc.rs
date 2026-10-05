@@ -31,5 +31,21 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_background_job_list),
             summary: ToolSummaryKind::Dynamic(ts::summary_background_job_list),
         },
+        ToolSpec {
+            name: "background_job_output",
+            description: "增量拉取后台工具任务的输出（只读，tail -f 语义）。用于 run_command 以 async: true 启动的长任务：传入 tool_job_id 与可选 cursor（上次返回的 next_cursor）；返回 stdout/stderr 增量与 next_cursor、eof。省略 cursor 则从最早可用起。",
+            category: ToolCategory::Development,
+            parameters: schema_of::<args::BackgroundJobOutputArgs>,
+            runner: ToolRunner::Legacy(runner_background_job_output),
+            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_output),
+        },
+        ToolSpec {
+            name: "background_job_cancel",
+            description: "取消后台工具任务（终止语义，非发起执行）。queued 直接转移为 cancelled；running 置取消标记；已是 cancelled 幂等成功；其它终态不可取消。",
+            category: ToolCategory::Development,
+            parameters: schema_of::<args::BackgroundJobCancelArgs>,
+            runner: ToolRunner::Legacy(runner_background_job_cancel),
+            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_cancel),
+        },
         // ── 代码度量与分析 ──────────────────────────────────
 ]

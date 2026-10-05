@@ -15,6 +15,9 @@ use crate::cm_internal::long_term_memory_tools::{
 };
 use crate::cm_internal::memory::codebase_semantic_index::{CodebaseSemanticToolParams, run_tool};
 use crate::cm_internal::tool_jobs::GetOutcome;
+use crate::cm_internal::tool_jobs::registry::{CancelOutcome, OutputPollOutcome};
+use crate::cm_internal::tool_jobs::types::JobStatus;
+use crate::cm_tools::subprocess_session::SessionStream;
 
 pub struct CodebaseSemanticHost {
     pub params: CodebaseSemanticToolParams,
@@ -219,6 +222,62 @@ impl ToolJobsToolHost for ToolJobsHost {
             ));
         }
         truncate_text(&out, max_output_len)
+    }
+
+    fn output(&self, id: &str, cursor: Option<u64>, max_output_len: usize) -> String {
+        match self.registry.poll_output(id, cursor, SystemTime::now()) {
+            OutputPollOutcome::Found {
+                status,
+                log_read,
+                eof,
+                ..
+            } => {
+                let mut out = format!("后台任务 {id}\n状态: {}\n", status.as_str());
+                let mut stdout = String::new();
+                let mut stderr = String::new();
+                for e in &log_read.items {
+                    let buf = match e.stream {
+                        SessionStream::Stdout => &mut stdout,
+                        SessionStream::Stderr => &mut stderr,
+                    };
+                    buf.push_str(&e.text);
+                }
+                append_stream(&mut out, "--- stdout ---", stdout.as_bytes());
+                append_stream(&mut out, "--- stderr ---", stderr.as_bytes());
+                out.push_str(&format!(
+                    "[游标: {}，eof: {}，truncated: {}]\n",
+                    log_read.next_cursor, eof, log_read.truncated
+                ));
+                if !eof {
+                    out.push_str(
+                        "[提示] 任务未结束或仍有未读输出；若游标推进，请携带该游标继续拉取。\n",
+                    );
+                }
+                truncate_text(&out, max_output_len)
+            }
+            OutputPollOutcome::Expired => {
+                format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+            }
+            OutputPollOutcome::NotFound => {
+                format!("错误：后台任务 `{id}` 不存在或从未创建。")
+            }
+        }
+    }
+
+    fn cancel(&self, id: &str) -> String {
+        match self.registry.cancel(id) {
+            CancelOutcome::Cancelled => format!("已取消后台任务 `{id}`（状态：cancelled）。"),
+            CancelOutcome::AlreadyFinished(JobStatus::Cancelled) => {
+                format!("后台任务 `{id}` 已是 cancelled（幂等，无需重复取消）。")
+            }
+            CancelOutcome::AlreadyFinished(s) => {
+                format!("错误：后台任务 `{id}` 已处于终态 `{}`，不可取消。", s.as_str())
+            }
+            CancelOutcome::Expired => {
+                format!("错误：后台任务 `{id}` 已过保留时长（TTL+宽限）并被清理。")
+            }
+            CancelOutcome::NotFound => format!("错误：后台任务 `{id}` 不存在或从未创建。"),
+        }
     }
 }
 

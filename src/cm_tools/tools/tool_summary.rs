@@ -211,6 +211,14 @@ pub(super) fn summary_background_job_list(v: &serde_json::Value) -> Option<Strin
     summarize_from_value::<BackgroundJobListSummaryArgs>(v)
 }
 
+pub(super) fn summary_background_job_output(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<BackgroundJobOutputSummaryArgs>(v)
+}
+
+pub(super) fn summary_background_job_cancel(v: &serde_json::Value) -> Option<String> {
+    summarize_from_value::<BackgroundJobCancelSummaryArgs>(v)
+}
+
 pub(super) fn summary_code_stats(v: &serde_json::Value) -> Option<String> {
     summarize_from_value::<CodeStatsSummaryArgs>(v)
 }

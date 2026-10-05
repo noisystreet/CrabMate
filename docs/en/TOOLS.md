@@ -107,7 +107,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
-  - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100).
+  - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100), `background_job_output` (incremental output pull, `tail -f` semantics; pass `tool_job_id` and optional `cursor` (the previous `next_cursor`), returns stdout/stderr deltas and prints the cursor plus an `eof` marker at the end of the text; omit `cursor` to start from the earliest available; at most 500 items per call, keep pulling with the cursor while not `eof`), `background_job_cancel` (cancel a job: `queued` moves straight to `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success, other terminal states cannot be cancelled).
   - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
 
 ## GitHub CLI (`gh_*`) examples
@@ -374,7 +374,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Process/port**: `port_check`, `process_list`.
 
-**Background jobs**: `background_job_status` (query status/output by `tool_job_id`), `background_job_list` (list workspace jobs, newest first).
+**Background jobs**: `background_job_status` (query status/output by `tool_job_id`), `background_job_list` (list workspace jobs, newest first), `background_job_output` (incremental output pull, `tail -f` semantics, optional `cursor`), `background_job_cancel` (cancel a job).
 
 **Git**: read-only tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`; `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`). Write operations (`git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`, `git_commit`, `git_stage_files`, `git_fetch`, `git_clone`, `git_remote_set_url`, `git_apply`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted) instead.
 
