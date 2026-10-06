@@ -17,4 +17,10 @@ pub struct WebToolRuntime {
     pub approval_rx_shared: Arc<TokioMutex<mpsc::Receiver<CommandApprovalDecision>>>,
     pub approval_request_guard: Arc<TokioMutex<()>>,
     pub persistent_allowlist_shared: Arc<TokioMutex<HashSet<String>>>,
+    /// 当前回合的流任务 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）。
+    ///
+    /// 后台任务（`async=true`）发起时写入 `JobRecord.source_turn_job_id`，供
+    /// `POST /chat/stream/{job_id}/cancel` 级联取消本回合尚未终态的后台任务。
+    /// 运维 CLI 等无同进程 SSE 的路径为 `None`。
+    pub turn_job_id: Option<u64>,
 }

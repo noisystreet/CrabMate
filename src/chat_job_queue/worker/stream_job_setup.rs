@@ -85,7 +85,7 @@ pub(super) async fn stream_job_setup_runtime(
     crate::sse::send_reasoning_message_start_sse(&sse_tx, "reasoning").await;
 
     let (web_tool_ctx, approval_session_id) =
-        stream_job_web_tool_ctx(p.web_approval_session, &sse_tx);
+        stream_job_web_tool_ctx(p.web_approval_session, &sse_tx, job_id);
 
     let cancel = p.cancel;
     let cancel_watcher =
@@ -150,6 +150,7 @@ pub(super) async fn stream_job_setup_runtime(
 fn stream_job_web_tool_ctx(
     web_approval_session: Option<WebApprovalSession>,
     sse_tx: &mpsc::Sender<String>,
+    job_id: u64,
 ) -> (Option<crate::tool_registry::WebToolRuntime>, Option<String>) {
     if let Some(session) = web_approval_session {
         (
@@ -158,6 +159,7 @@ fn stream_job_web_tool_ctx(
                 approval_rx_shared: Arc::new(tokio::sync::Mutex::new(session.approval_rx)),
                 approval_request_guard: Arc::new(tokio::sync::Mutex::new(())),
                 persistent_allowlist_shared: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
+                turn_job_id: Some(job_id),
             }),
             Some(session.session_id),
         )

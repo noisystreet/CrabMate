@@ -140,6 +140,14 @@
 | 其它终态（`succeeded`/`failed`/`timed_out`） | 不覆盖：返回 **409** `{ "status": "<当前状态>" }`（原子状态转移，杜绝把成功覆盖成取消） |
 | 不存在 / 已过期 | 404 / 410（同 §3.1） |
 
+### 3.2.1 级联取消（停止 SSE 回合）
+
+`POST /chat/stream/{job_id}/cancel`（用户停止流式回合）在取消回合的同时，**级联取消本回合发起的、尚未终态的后台任务**：
+
+- 发起时（`launch_background_job`）把当前回合的流任务 `job_id`（`x-stream-job-id` / `sse_capabilities.job_id`）经 `WebToolRuntime.turn_job_id` 写入 `JobRecord.source_turn_job_id`；无同进程 SSE（运维 CLI 等）时为 `None`。
+- 取消时调 `ToolJobRegistry::cancel_non_terminal_for_source_turn(job_id)`，按 `source_turn_job_id == Some(job_id) && !status.is_terminal()` 命中，返回命中数（响应字段 `background_tools_cancelled`）。
+- 仅影响**本回合**发起的任务；其它回合/无来源的任务不受影响。
+
 ### 3.3 归属校验
 
 - **主防护**：`tool_job_id` 为随机不透明值（32 hex，`getrandom`/`rand` 生成），不可枚举 → 知晓 id 即能力凭证（capability URL）。

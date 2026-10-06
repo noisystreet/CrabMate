@@ -172,10 +172,13 @@ fn launch_background_job(
     spawn: crate::cm_internal::tool_jobs::JobSpawn,
 ) -> (String, Option<serde_json::Value>) {
     let finished_sink = background_job_finished_sink(web_ctx, tool_name, args);
+    // 来源回合 `job_id`：供 `POST /chat/stream/{job_id}/cancel` 级联取消本回合后台任务。
+    // 无同进程 SSE（运维 CLI 等）时为 `None`。
+    let source_turn_job_id = web_ctx.and_then(|c| c.turn_job_id);
     let id = match crate::cm_internal::tool_jobs::enqueue_and_launch(
         Arc::clone(registry),
         effective_working_dir.to_path_buf(),
-        None,
+        source_turn_job_id,
         spawn,
         args.to_string(),
         finished_sink,
