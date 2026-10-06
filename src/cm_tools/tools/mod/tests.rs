@@ -678,6 +678,17 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
         out.contains("api_key = 未设置") || out.contains("api_key = 已设置(值隐藏)"),
         "api_key 只允许报状态: {out}"
     );
+    // `[tool_registry]` 须暴露后台任务配置（模型可自查 async 白名单与并发上限）。
+    let tr = run_tool("self_config_info", r#"{"sections":["tool_registry"]}"#, &ctx);
+    assert!(tr.contains("[tool_registry]"), "应含 tool_registry 小节: {tr}");
+    assert!(tr.contains("background_jobs_enabled ="), "{tr}");
+    assert!(tr.contains("background_job_async_tools = ["), "{tr}");
+    assert!(tr.contains("background_job_max_concurrent ="), "{tr}");
+    assert!(tr.contains("background_job_max_queued ="), "{tr}");
+    assert!(tr.contains("background_job_ttl_secs ="), "{tr}");
+    assert!(tr.contains("background_job_result_grace_secs ="), "{tr}");
+    assert!(tr.contains("background_job_max_entries ="), "{tr}");
+    assert!(tr.contains("background_job_output_buffer_bytes ="), "{tr}");
     let filtered = run_tool("self_config_info", r#"{"sections":["llm"]}"#, &ctx);
     assert!(filtered.contains("[llm]"));
     assert!(!filtered.contains("[sampling]"));
