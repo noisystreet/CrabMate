@@ -215,6 +215,7 @@ Transcript persistence is controlled by **`conversation_store_sqlite_path`** (ab
 | `CM_WEB_SEARCH_API_KEY` | Search API key (`brave` / `tavily` only). |
 | `CM_WEB_SEARCH_TIMEOUT_SECS` | **Inner** search timeout seconds; default **60** (for worbrow). |
 | `CM_WEB_SEARCH_MAX_RESULTS` | Max results. |
+| `CM_WEB_SEARCH_PROXY` | worbrow browser/static-fetch proxy (`http://host:port` / `https://host:port`; empty = direct/system proxy). **`worbrow` only**; **rejects** `socks5://` and credentials. |
 | `CM_HTTP_FETCH_ALLOWED_PREFIXES` | CSV prefixes for `http_fetch` / `http_request`. Entry **`*`** allows any **http/https** (embedded default **`["*"]`**). **Explicit empty** (TOML `[]` or env set to empty string) overrides the default so all URLs need Web approval (or fail on the sync path). Omitting the key does **not** clear the list. Concrete prefixes must parse as URLs and match same-origin + path-prefix boundary. |
 | `CM_HTTP_FETCH_TIMEOUT_SECS` | Fetch timeout. |
 | `CM_HTTP_FETCH_MAX_RESPONSE_BYTES` | Max response bytes. |
