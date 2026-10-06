@@ -1,6 +1,6 @@
 # 后台工具任务实时输出流：实施计划（todo）
 
-> **状态**：Proposed（待评审）。**受众**：维护 `cm_tools/subprocess_session`、`cm_internal/tool_jobs`、web 路由、`cm_config`、Client 后台任务气泡的开发者。  
+> **状态**：Accepted（已落地；`uncapped_live` + job 环形输出缓冲 + `GET /tools/jobs/{id}/output` 端点 + `background_job_output_buffer_bytes` 配置均已实现；Client 气泡实时输出在外部仓）。**受众**：维护 `cm_tools/subprocess_session`、`cm_internal/tool_jobs`、web 路由、`cm_config`、Client 后台任务气泡的开发者。  
 > **依据**：决策见 [`background_tool_jobs_output_streaming.md`](./background_tool_jobs_output_streaming.md)（ADR）；字段级接口见 [`background_tool_jobs_output_streaming_contract.md`](./background_tool_jobs_output_streaming_contract.md)（**实现照此编码**）。  
 > **跟踪**：落地后从本仓库 `docs/待办清单.md`（`tools/` 章「长耗时工具执行」分项，若新增了对应行）删除；本文件可改为修订记录或删节。
 
@@ -55,7 +55,7 @@
 - [ ] OpenAPI：`openapi_paths_tool_jobs.rs` 增路径与 schema。
 
 **1.5 观测与文档同步**（Slice 1 同 PR）
-- [ ] `JobRegistryStats` 增 `output_bytes_total` / `output_dropped_events`；`/status` 暴露。
+- [x] `JobRegistryStats` 增 `output_retained_bytes` / `output_events_dropped`；`/status` 暴露。
 - [ ] `docs/命令行契约.md`：新端点；`docs/配置说明.md`：新配置键。（`docs/SSE协议.md` / `docs/工具说明.md` 无需改动。）
 
 ### Slice 2：Client（`crabmate-client` 仓，独立 PR）

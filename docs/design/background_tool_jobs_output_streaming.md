@@ -67,7 +67,7 @@
 
 ### 7. 观测
 
-- 注册表统计（`JobRegistryStats` / `/status`）增：`output_bytes_total`（缓冲累计写入字节）、`output_dropped_events`（环形裁剪丢弃条数）。
+- 注册表统计（`JobRegistryStats` / `/status`）增：`output_retained_bytes`（当前保留元素文本字节合计）、`output_events_dropped`（环形裁剪累计丢弃条数）。
 - 日志带 `tool_job_id`（不打 argv，脱敏口径不变）。
 
 ## Consequences

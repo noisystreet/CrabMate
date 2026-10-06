@@ -150,7 +150,7 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 | job 缓冲 | `src/cm_internal/tool_jobs/`：`types.rs`（`JobOutputLog`/元素）、`registry.rs`（侧表 `outputs` + `push_output`/`read_output(cursor)`/终态裁剪）、`worker.rs`（`chunk_sink` 接线，`run_job_blocking` 置 `uncapped_live`） | — |
 | 配置 | `cm_config` `ToolRegistryPolicyConfig` + `config/tools.toml` | — |
 | HTTP 端点 | `src/cm_api_contract/tool_jobs.rs`（响应体）+ `src/web/routes/tools/`（handler，Bearer + 归属校验 + `get_checked` 过期语义） | — |
-| 观测 | `JobRegistryStats` 增 `output_bytes_total` / `output_dropped_events`；日志带 `tool_job_id` | — |
+| 观测 | `JobRegistryStats` 增 `output_retained_bytes` / `output_events_dropped`；日志带 `tool_job_id` | — |
 | UI | — | 后台任务气泡：`running` 时短轮询（~300–500 ms）拉 `/output` 增量渲染 + `truncated` 提示 + `eof` 后停止；取消/终态仍走既有端点 |
 
 测试：游标增量不重不漏；环形裁剪 + 落后游标 → `truncated` 重放；终态裁剪后仍可取尾部且 `eof` 正确；超长输出（> `command_max_output_len`）经 `uncapped_live` 全量可达缓冲；`uncapped_live=false` 同步路径回归零变化；401/403/404/410；缓冲与记录同生命周期清理；并发读写（worker push + 轮询 read）无丢失/乱序；配置钳制（4096–16777216）。
