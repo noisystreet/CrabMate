@@ -166,6 +166,7 @@ pub(super) struct AgentSection {
     pub(super) web_search_api_key: Option<String>,
     pub(super) web_search_timeout_secs: Option<u64>,
     pub(super) web_search_max_results: Option<u64>,
+    pub(super) web_search_proxy: Option<String>,
     pub(super) http_fetch_allowed_prefixes: Option<Vec<String>>,
     pub(super) http_fetch_timeout_secs: Option<u64>,
     pub(super) http_fetch_max_response_bytes: Option<u64>,

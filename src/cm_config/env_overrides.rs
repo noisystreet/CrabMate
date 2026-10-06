@@ -141,6 +141,10 @@ fn env_override_web_search_keys(b: &mut ConfigBuilder) {
         &mut b.web_search.web_search_api_key,
         "CM_WEB_SEARCH_API_KEY",
     );
+    apply_raw_opt(
+        &mut b.web_search.web_search_proxy,
+        "CM_WEB_SEARCH_PROXY",
+    );
 }
 
 fn apply_env_overrides_part_3(b: &mut ConfigBuilder) {

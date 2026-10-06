@@ -103,6 +103,7 @@ fn finalize_section_web_search(tail: &FinalizeTailScalars) -> types::WebSearchCo
         web_search_api_key: tail.web_search_api_key.clone(),
         web_search_timeout_secs: tail.web_search_timeout_secs,
         web_search_max_results: tail.web_search_max_results,
+        web_search_proxy: tail.web_search_proxy.clone(),
     }
 }
 

@@ -83,6 +83,7 @@ pub(crate) struct WorkflowToolExecCtx {
     pub(crate) cfg_web_search_provider: String,
     pub(crate) cfg_web_search_api_key: String,
     pub(crate) cfg_web_search_max_results: u32,
+    pub(crate) cfg_web_search_proxy: String,
     pub(crate) cfg_http_fetch_timeout_secs: u64,
     pub(crate) cfg_http_fetch_max_response_bytes: usize,
     pub(crate) cfg_http_fetch_allowed_prefixes: Vec<String>,

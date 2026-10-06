@@ -58,6 +58,7 @@ fn tool_ctx_stub<'a>(workspace_root: &'a Path, max_output_len: usize) -> ToolCon
         web_search_provider: crate::cm_config::WebSearchProvider::Brave,
         web_search_api_key: "",
         web_search_max_results: 0,
+        web_search_proxy: "",
         http_fetch_allowed_prefixes: &[],
         http_fetch_timeout_secs: 0,
         http_fetch_max_response_bytes: 0,

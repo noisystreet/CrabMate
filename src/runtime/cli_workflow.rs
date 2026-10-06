@@ -146,6 +146,7 @@ pub async fn run_workflow_run_command(
             .expose_secret()
             .to_string(),
         web_search_max_results: cfg.web_search.web_search_max_results,
+        web_search_proxy: cfg.web_search.web_search_proxy.clone(),
         http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
         http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),

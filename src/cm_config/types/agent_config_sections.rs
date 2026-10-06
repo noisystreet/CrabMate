@@ -39,6 +39,9 @@ pub struct WebSearchConfigSection {
     pub web_search_api_key: SecretString,
     pub web_search_timeout_secs: u64,
     pub web_search_max_results: u32,
+    /// worbrow 浏览器/静态抓取代理（`http://host:port` 或 `https://host:port`；空 = 直连/系统代理）。
+    /// 仅对 `web_search_provider = worbrow` 生效；不接受 `socks5://` 与凭据。
+    pub web_search_proxy: String,
 }
 
 #[derive(Debug, Clone)]

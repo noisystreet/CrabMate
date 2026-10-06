@@ -130,6 +130,9 @@ pub struct ToolContext<'a> {
     pub web_search_provider: crate::cm_config::WebSearchProvider,
     pub web_search_api_key: &'a str,
     pub web_search_max_results: u32,
+    /// worbrow 浏览器/静态抓取代理（`http://host:port` / `https://host:port`；空 = 直连/系统代理）。
+    /// 仅 `web_search_provider = worbrow` 时透传给 worbrow `Config::with_proxy`。
+    pub web_search_proxy: &'a str,
     pub http_fetch_allowed_prefixes: &'a [String],
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
@@ -175,6 +178,7 @@ pub fn tool_context_for<'a>(
         web_search_provider: cfg.web_search.web_search_provider,
         web_search_api_key: cfg.web_search.web_search_api_key.expose_secret(),
         web_search_max_results: cfg.web_search.web_search_max_results,
+        web_search_proxy: cfg.web_search.web_search_proxy.as_str(),
         http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.as_slice(),
         http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,

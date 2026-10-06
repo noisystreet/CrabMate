@@ -137,6 +137,10 @@ impl ConfigBuilder {
         if let Some(ref k) = agent.web_search_api_key {
             self.web_search.web_search_api_key = Some(k.clone());
         }
+        override_opt_string_trimmed(
+            &mut self.web_search.web_search_proxy,
+            agent.web_search_proxy.as_ref(),
+        );
 
         override_opt_vec(
             &mut self.command_exec.allowed_commands,

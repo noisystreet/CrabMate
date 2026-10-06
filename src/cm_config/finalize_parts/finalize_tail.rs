@@ -83,6 +83,8 @@ struct FinalizeTailScalars {
     web_search_api_key: types::SecretString,
     web_search_timeout_secs: u64,
     web_search_max_results: u32,
+    /// worbrow 浏览器/静态抓取代理（空 = 直连/系统代理）。
+    web_search_proxy: String,
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
@@ -421,6 +423,8 @@ struct TailStorageInjectNetScalars {
     web_search_api_key: types::SecretString,
     web_search_timeout_secs: u64,
     web_search_max_results: u32,
+    /// worbrow 浏览器/静态抓取代理（空 = 直连/系统代理）。
+    web_search_proxy: String,
     http_fetch_allowed_prefixes: Vec<String>,
     http_fetch_timeout_secs: u64,
     http_fetch_max_response_bytes: usize,
@@ -492,6 +496,13 @@ fn derive_tail_storage_inject_net_scalars(
     // 默认 worbrow（本机浏览器）通常需更长墙钟；Brave/Tavily 可自行调低
     let web_search_timeout_secs = b.web_search.web_search_timeout_secs.unwrap_or(60).max(1);
     let web_search_max_results = b.web_search.web_search_max_results.unwrap_or(8).clamp(1, 20) as u32;
+    let web_search_proxy = b
+        .web_search
+        .web_search_proxy
+        .clone()
+        .unwrap_or_default()
+        .trim()
+        .to_string();
 
     let http_fetch_allowed_prefixes = b.http_fetch.http_fetch_allowed_prefixes.clone().unwrap_or_default();
     let http_fetch_timeout_secs = b.http_fetch.http_fetch_timeout_secs.unwrap_or(30).max(1);
@@ -530,6 +541,7 @@ fn derive_tail_storage_inject_net_scalars(
         web_search_api_key,
         web_search_timeout_secs,
         web_search_max_results,
+        web_search_proxy,
         http_fetch_allowed_prefixes,
         http_fetch_timeout_secs,
         http_fetch_max_response_bytes,
@@ -725,6 +737,7 @@ fn assemble_finalize_tail_scalars(
         web_search_api_key: sin.web_search_api_key,
         web_search_timeout_secs: sin.web_search_timeout_secs,
         web_search_max_results: sin.web_search_max_results,
+        web_search_proxy: sin.web_search_proxy,
         http_fetch_allowed_prefixes: sin.http_fetch_allowed_prefixes,
         http_fetch_timeout_secs: sin.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: sin.http_fetch_max_response_bytes,

@@ -39,6 +39,8 @@ pub struct SandboxToolRunnerConfig {
     pub web_search_api_key: String,
     pub web_search_timeout_secs: u64,
     pub web_search_max_results: u32,
+    #[serde(default)]
+    pub web_search_proxy: String,
     pub http_fetch_allowed_prefixes: Vec<String>,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
@@ -63,6 +65,7 @@ impl SandboxToolRunnerConfig {
                 .to_string(),
             web_search_timeout_secs: cfg.web_search.web_search_timeout_secs,
             web_search_max_results: cfg.web_search.web_search_max_results,
+            web_search_proxy: cfg.web_search.web_search_proxy.clone(),
             http_fetch_allowed_prefixes: cfg.http_fetch.http_fetch_allowed_prefixes.clone(),
             http_fetch_timeout_secs: cfg.http_fetch.http_fetch_timeout_secs,
             http_fetch_max_response_bytes: cfg.http_fetch.http_fetch_max_response_bytes,
@@ -115,6 +118,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
     let allowed = Box::leak(snap.allowed_commands.into_boxed_slice());
     let prefixes = Box::leak(snap.http_fetch_allowed_prefixes.into_boxed_slice());
     let key = Box::leak(snap.web_search_api_key.into_boxed_str());
+    let proxy = Box::leak(snap.web_search_proxy.into_boxed_str());
     let provider =
         WebSearchProvider::parse(&snap.web_search_provider).map_err(|e| e.to_string())?;
     let http_cfg = ToolRunnerHttpCfg {
@@ -136,6 +140,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         web_search_provider: provider,
         web_search_api_key: key,
         web_search_max_results: snap.web_search_max_results,
+        web_search_proxy: proxy,
         http_fetch_allowed_prefixes: prefixes,
         http_fetch_timeout_secs: snap.http_fetch_timeout_secs,
         http_fetch_max_response_bytes: snap.http_fetch_max_response_bytes,

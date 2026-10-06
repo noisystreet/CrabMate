@@ -73,6 +73,7 @@ pub(crate) struct ConfigBuilderWebSearch {
     pub(crate) web_search_api_key: Option<String>,
     pub(crate) web_search_timeout_secs: Option<u64>,
     pub(crate) web_search_max_results: Option<u64>,
+    pub(crate) web_search_proxy: Option<String>,
 }
 
 #[derive(Default)]

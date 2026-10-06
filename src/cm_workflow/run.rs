@@ -222,6 +222,7 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
     let web_search_provider = cfg.web_search_provider.clone();
     let web_search_api_key = cfg.web_search_api_key.clone();
     let web_search_max_results = cfg.web_search_max_results;
+    let web_search_proxy = cfg.web_search_proxy.clone();
     let http_fetch_timeout_secs = cfg.http_fetch_timeout_secs;
     let http_fetch_max_response_bytes = cfg.http_fetch_max_response_bytes;
     let http_fetch_allowed_prefixes = cfg.http_fetch_allowed_prefixes.clone();
@@ -233,6 +234,7 @@ async fn workflow_execute_dag_body(p: WorkflowExecuteDagParams<'_>) -> (String, 
         cfg_web_search_provider: web_search_provider,
         cfg_web_search_api_key: web_search_api_key,
         cfg_web_search_max_results: web_search_max_results,
+        cfg_web_search_proxy: web_search_proxy,
         cfg_http_fetch_timeout_secs: http_fetch_timeout_secs,
         cfg_http_fetch_max_response_bytes: http_fetch_max_response_bytes,
         cfg_http_fetch_allowed_prefixes: http_fetch_allowed_prefixes,
