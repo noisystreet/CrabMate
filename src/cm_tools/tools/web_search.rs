@@ -64,6 +64,8 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
         .unwrap_or(ctx.web_search_max_results)
         .clamp(1, 20);
 
+    // 非 worbrow 供应商下 `proxy` 参数不生效；记录提示，避免用户困惑。
+    let mut proxy_ignored_warning = false;
     let raw = match ctx.web_search_provider {
         WebSearchProvider::Worbrow => {
             // 优先级：工具参数 `proxy`（非空）> 配置 `web_search_proxy`。
@@ -71,6 +73,7 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
             search_worbrow(&query, max_results, ctx.web_search_timeout_secs, proxy)
         }
         WebSearchProvider::Brave | WebSearchProvider::Tavily => {
+            proxy_ignored_warning = proxy_arg_present(args.proxy.as_deref());
             if ctx.web_search_api_key.trim().is_empty() {
                 return "错误：未配置联网搜索 API Key。请在配置中设置 web_search_api_key，或设置环境变量 CM_WEB_SEARCH_API_KEY；并设置 web_search_provider 为 brave 或 tavily。若希望免 Key，请使用默认的 worbrow（本机浏览器）或将 web_search_provider 设为 worbrow。".to_string();
             }
@@ -98,6 +101,16 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
         Err(e) => return e,
     };
 
+    let raw = if proxy_ignored_warning {
+        format!(
+            "提示：`proxy` 参数仅对 web_search_provider=worbrow 生效，当前供应商为 {}，已忽略。\n\n{}",
+            ctx.web_search_provider.as_str(),
+            raw
+        )
+    } else {
+        raw
+    };
+
     truncate_output(&raw, ctx.command_max_output_len)
 }
 
@@ -107,6 +120,10 @@ const WORBROW_ENGINE_CHAIN: &str = "bing,duckduckgo";
 /// 解析本次调用的 worbrow 代理：工具参数 `arg`（trim 后非空）优先，否则回退配置 `cfg`。
 fn resolve_proxy<'a>(arg: Option<&'a str>, cfg: &'a str) -> &'a str {
     arg.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(cfg)
+}
+/// 工具参数 `proxy` 是否非空（用于非 worbrow 供应商下的忽略提示）。
+fn proxy_arg_present(arg: Option<&str>) -> bool {
+    arg.map(str::trim).is_some_and(|s| !s.is_empty())
 }
 
 fn search_worbrow(
@@ -458,6 +475,15 @@ mod tests {
         assert_eq!(resolve_proxy(None, "http://cfg:1"), "http://cfg:1");
         // 两者皆空 → 空串（直连/系统代理）
         assert_eq!(resolve_proxy(None, ""), "");
+    }
+
+    #[test]
+    fn proxy_arg_present_detects_non_empty() {
+        assert!(proxy_arg_present(Some("http://127.0.0.1:7890")));
+        assert!(proxy_arg_present(Some("  http://x:1  ")));
+        assert!(!proxy_arg_present(Some("")));
+        assert!(!proxy_arg_present(Some("   ")));
+        assert!(!proxy_arg_present(None));
     }
 
     /// 实网：本机 Firefox/Chrome + Bing。默认忽略；本地：  
