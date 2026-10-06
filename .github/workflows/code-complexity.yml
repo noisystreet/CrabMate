@@ -19,7 +19,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install lizard
-        run: pip install lizard
+        # 固定版本：lizard 1.24.1 改变了 Rust 的 CCN 计算（match/if let/? 等更激进），
+        # 会使仓库现有代码大面积误报超阈；1.24.0 与当前基线一致。升级前须先评估并同步基线。
+        run: pip install 'lizard==1.24.0'
 
       - name: Run lizard (Rust CCN ≤ 10)
         run: bash scripts/lizard-rust.sh
