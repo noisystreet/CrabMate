@@ -3,11 +3,11 @@
 
 use std::time::Duration;
 
-use crate::cm_tools::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use crate::cm_config::WebSearchProvider;
+use crate::cm_tools::redact::{self, HTTP_BODY_PREVIEW_LOG_CHARS};
 use log::warn;
 use serde::Deserialize;
-use worbrow::{BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind, search};
+use worbrow::{search, BrowserKind, Config as WorbrowConfig, DoctorReport, Outcome, ResultKind};
 
 use super::ToolContext;
 
@@ -66,12 +66,9 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
 
     let raw = match ctx.web_search_provider {
         WebSearchProvider::Worbrow => {
-            search_worbrow(
-                &query,
-                max_results,
-                ctx.web_search_timeout_secs,
-                ctx.web_search_proxy,
-            )
+            // 优先级：工具参数 `proxy`（非空）> 配置 `web_search_proxy`。
+            let proxy = resolve_proxy(args.proxy.as_deref(), ctx.web_search_proxy);
+            search_worbrow(&query, max_results, ctx.web_search_timeout_secs, proxy)
         }
         WebSearchProvider::Brave | WebSearchProvider::Tavily => {
             if ctx.web_search_api_key.trim().is_empty() {
@@ -106,6 +103,11 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
 
 /// 首选 Bing，验证码/低质低产时降级 DuckDuckGo（worbrow 引擎链）。
 const WORBROW_ENGINE_CHAIN: &str = "bing,duckduckgo";
+
+/// 解析本次调用的 worbrow 代理：工具参数 `arg`（trim 后非空）优先，否则回退配置 `cfg`。
+fn resolve_proxy<'a>(arg: Option<&'a str>, cfg: &'a str) -> &'a str {
+    arg.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(cfg)
+}
 
 fn search_worbrow(
     query: &str,
@@ -399,7 +401,7 @@ fn truncate_output(s: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use worbrow::{BrowserKind, Config as WorbrowConfig, search};
+    use worbrow::{search, BrowserKind, Config as WorbrowConfig};
 
     #[test]
     fn worbrow_fake_formats_non_empty_results() {
@@ -440,6 +442,22 @@ mod tests {
         );
         assert!(!WebSearchProvider::default().requires_api_key());
         assert!(WebSearchProvider::Brave.requires_api_key());
+    }
+
+    #[test]
+    fn resolve_proxy_prefers_arg_then_falls_back_to_cfg() {
+        // 参数非空 → 用参数（并 trim）
+        assert_eq!(
+            resolve_proxy(Some("  http://127.0.0.1:7890 "), "http://cfg:1"),
+            "http://127.0.0.1:7890"
+        );
+        // 参数为空串/空白 → 回退配置
+        assert_eq!(resolve_proxy(Some(""), "http://cfg:1"), "http://cfg:1");
+        assert_eq!(resolve_proxy(Some("   "), "http://cfg:1"), "http://cfg:1");
+        // 未传参数 → 回退配置
+        assert_eq!(resolve_proxy(None, "http://cfg:1"), "http://cfg:1");
+        // 两者皆空 → 空串（直连/系统代理）
+        assert_eq!(resolve_proxy(None, ""), "");
     }
 
     /// 实网：本机 Firefox/Chrome + Bing。默认忽略；本地：  

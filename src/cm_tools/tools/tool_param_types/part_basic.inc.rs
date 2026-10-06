@@ -61,6 +61,9 @@ pub struct WebSearchArgs {
     pub query: String,
     /// 1～20；省略时用配置默认
     pub max_results: Option<u64>,
+    /// 本次调用的 worbrow 代理（`http://host:port` / `https://host:port`）；
+    /// 省略/空串时回退配置 `web_search_proxy`。仅 `worbrow` 生效；不接受 `socks5://` 与凭据。
+    pub proxy: Option<String>,
 }
 
 /// [`super::regex_test::run`] 入参。
@@ -406,4 +409,3 @@ where
         )),
     }
 }
-
