@@ -77,12 +77,8 @@ async fn request_unknown_cmd_approval(
         .await
         {
             Ok(d) => Some(d),
-            Err(crate::cm_internal::tool_approval::ToolApprovalWebError::ChannelUnavailable) => {
-                return Err((
-                    crate::cm_internal::tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR
-                        .to_string(),
-                    None,
-                ));
+            Err(e) => {
+                return Err((e.user_message_zh().to_string(), None));
             }
         }
     } else {
@@ -271,9 +267,7 @@ async fn approve_posix_shell_wrap_if_needed(
             Ok(extend_allowed_commands_arc(&effective_allowed, "bash"))
         }
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{msg}")),
-        Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
-        }
+        Err(e) => Err(e.user_message_zh().to_string()),
     }
 }
 
@@ -380,8 +374,6 @@ async fn approve_external_run_command_paths_if_needed(
     {
         Ok(InteractiveGateOutcome::Allowed) => Ok(ExternalPathGate::Approved),
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
-        Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
-        }
+        Err(e) => Err(e.user_message_zh().to_string()),
     }
 }

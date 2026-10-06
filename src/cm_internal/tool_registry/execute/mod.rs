@@ -9,9 +9,7 @@ use std::time::Duration;
 
 use log::error;
 
-use crate::cm_internal::tool_approval::{
-    self, InteractiveGateOutcome, ToolApprovalWebError,
-};
+use crate::cm_internal::tool_approval::{self, InteractiveGateOutcome};
 use crate::cm_internal::tools;
 use crate::cm_config::{AgentConfig, SyncDefaultToolSandboxMode};
 use crate::cm_tools::tool_retry_policy::ToolRetrySpec;
@@ -158,9 +156,7 @@ async fn approve_external_read_dir_if_needed(
     {
         Ok(InteractiveGateOutcome::Allowed) => Ok(()),
         Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
-        Err(ToolApprovalWebError::ChannelUnavailable) => {
-            Err(tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string())
-        }
+        Err(e) => Err(e.user_message_zh().to_string()),
     }
 }
 

@@ -32,6 +32,7 @@ pub fn web_tool_runtime_approval_sink(
         out_tx: &rt.out_tx,
         approval_rx_shared: &rt.approval_rx_shared,
         approval_request_guard: &rt.approval_request_guard,
+        cancel: rt.cancel.as_ref(),
     }
 }
 

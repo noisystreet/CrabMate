@@ -60,6 +60,7 @@ pub async fn dispatch_workflow_execute_tool(
                     approval_rx: web_ctx.approval_rx_shared.clone(),
                     approval_request_guard: web_ctx.approval_request_guard.clone(),
                     persistent_allowlist: web_ctx.persistent_allowlist_shared.clone(),
+                    cancel: web_ctx.cancel.clone(),
                 }
             } else {
                 workflow::WorkflowApprovalMode::NoApproval

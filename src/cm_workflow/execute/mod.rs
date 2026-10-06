@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
+use std::sync::atomic::AtomicBool;
 
 use crate::cm_types::CommandApprovalDecision;
 use log::info;
@@ -53,6 +54,8 @@ pub enum WorkflowApprovalMode {
         approval_rx: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
         approval_request_guard: Arc<Mutex<()>>,
         persistent_allowlist: Arc<Mutex<HashSet<String>>>,
+        /// 当前聊天回合的协作式取消标志；`None` 时审批仅靠总超时兜底。
+        cancel: Option<Arc<AtomicBool>>,
     },
 }
 

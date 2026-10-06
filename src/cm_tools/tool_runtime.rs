@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use crate::cm_types::CommandApprovalDecision;
 use tokio::sync::{Mutex as TokioMutex, mpsc};
@@ -23,4 +24,6 @@ pub struct WebToolRuntime {
     /// `POST /chat/stream/{job_id}/cancel` 级联取消本回合尚未终态的后台任务。
     /// 运维 CLI 等无同进程 SSE 的路径为 `None`。
     pub turn_job_id: Option<u64>,
+    /// 当前回合的协作式取消标志；交互审批等待据此在用户点「停止」后提前退出。
+    pub cancel: Option<Arc<AtomicBool>>,
 }
