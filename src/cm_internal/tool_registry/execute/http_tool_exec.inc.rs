@@ -35,10 +35,7 @@ async fn http_tool_gate_url_approval(
     match tool_approval::interactive_gate_web_runtime(web_ctx, spec, sse_log_label).await {
         Ok(outcome) => tool_approval::interactive_gate_outcome_to_tool_err(outcome)
             .map_err(|msg| (msg, None)),
-        Err(ToolApprovalWebError::ChannelUnavailable) => Err((
-            tool_approval::INTERACTIVE_GATE_CHANNEL_UNAVAILABLE_ERR.to_string(),
-            None,
-        )),
+        Err(e) => Err((e.user_message_zh().to_string(), None)),
     }
 }
 

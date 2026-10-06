@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::time::Instant;
 
 use crate::cm_types::CommandApprovalDecision;
@@ -297,11 +298,13 @@ async fn request_disallowed_command_approval(
             out_tx,
             approval_rx,
             approval_request_guard,
+            cancel,
             ..
         } => Ok(request_approval(
             out_tx.clone(),
             approval_rx.clone(),
             approval_request_guard.clone(),
+            cancel.clone(),
             cmd_lower,
             &args_preview_from_node(node),
         )
@@ -422,6 +425,7 @@ async fn apply_generic_workflow_node_approval(
             approval_rx,
             approval_request_guard,
             persistent_allowlist,
+            cancel,
         } => {
             let already_allowed = persistent_allowlist.lock().await.contains(&approval_key);
             if !already_allowed {
@@ -429,6 +433,7 @@ async fn apply_generic_workflow_node_approval(
                     out_tx.clone(),
                     approval_rx.clone(),
                     approval_request_guard.clone(),
+                    cancel.clone(),
                     &approval_key,
                     &format!("工具：{}（requires_approval=true）", node.tool_name),
                 )
@@ -681,6 +686,7 @@ async fn request_approval(
     out_tx: mpsc::Sender<String>,
     approval_rx: Arc<Mutex<mpsc::Receiver<CommandApprovalDecision>>>,
     approval_request_guard: Arc<Mutex<()>>,
+    cancel: Option<Arc<AtomicBool>>,
     command: &str,
     args: &str,
 ) -> CommandApprovalDecision {
@@ -697,6 +703,8 @@ async fn request_approval(
         out_tx: &out_tx,
         approval_rx_shared: &approval_rx,
         approval_request_guard: &approval_request_guard,
+        // 由聊天回合透传的取消标志；`None`（如 CLI）时仅靠 `run_web_tool_approval` 总超时兜底。
+        cancel: cancel.as_ref(),
     };
     crate::cm_approval::run_web_tool_approval(
         sink,

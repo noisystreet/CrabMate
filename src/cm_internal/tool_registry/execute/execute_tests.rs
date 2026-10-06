@@ -383,6 +383,7 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
         approval_request_guard: Arc::new(TokioMutex::new(())),
         persistent_allowlist_shared: Arc::new(TokioMutex::new(std::collections::HashSet::new())),
         turn_job_id: Some(4242),
+        cancel: None,
     };
 
     // 用长睡眠命令确保任务在取消前仍处于非终态。
