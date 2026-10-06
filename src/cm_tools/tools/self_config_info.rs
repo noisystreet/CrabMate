@@ -265,9 +265,31 @@ fn mcp_section(cfg: &AgentConfig) -> String {
 
 fn tool_registry_section(cfg: &AgentConfig) -> String {
     let t = &cfg.tool_registry_policy;
+    // 白名单排序后输出，保证同一配置下文本稳定（便于测试与人工比对）。
+    let mut async_tools: Vec<&str> = t
+        .tool_registry_background_job_async_tools
+        .iter()
+        .map(String::as_str)
+        .collect();
+    async_tools.sort_unstable();
     format!(
-        "background_jobs_enabled = {}\nparallel_wall_timeout_overrides_count = {}\n",
+        "background_jobs_enabled = {}\n\
+         background_job_async_tools = [{}]\n\
+         background_job_max_concurrent = {}\n\
+         background_job_max_queued = {}\n\
+         background_job_ttl_secs = {}\n\
+         background_job_result_grace_secs = {}\n\
+         background_job_max_entries = {}\n\
+         background_job_output_buffer_bytes = {}\n\
+         parallel_wall_timeout_overrides_count = {}\n",
         t.tool_registry_background_jobs_enabled,
+        async_tools.join(", "),
+        t.tool_registry_background_job_max_concurrent,
+        t.tool_registry_background_job_max_queued,
+        t.tool_registry_background_job_ttl_secs,
+        t.tool_registry_background_job_result_grace_secs,
+        t.tool_registry_background_job_max_entries,
+        t.tool_registry_background_job_output_buffer_bytes,
         t.tool_registry_parallel_wall_timeout_secs.len(),
     )
 }
