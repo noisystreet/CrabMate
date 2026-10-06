@@ -37,6 +37,7 @@ async fn execute_node_tool_phase(
     let weather_timeout_secs = tool_exec_ctx.cfg_weather_timeout_secs;
     let ws_timeout = tool_exec_ctx.cfg_web_search_timeout_secs;
     let ws_max = tool_exec_ctx.cfg_web_search_max_results;
+    let ws_proxy = tool_exec_ctx.cfg_web_search_proxy.clone();
     let ws_provider =
         crate::cm_config::WebSearchProvider::parse(&tool_exec_ctx.cfg_web_search_provider)
             .unwrap_or_default();
@@ -66,6 +67,7 @@ async fn execute_node_tool_phase(
                 web_search_provider: ws_provider,
                 web_search_api_key: &web_search_api_key,
                 web_search_max_results: ws_max,
+                web_search_proxy: &ws_proxy,
                 http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
                 http_fetch_timeout_secs: hf_to,
                 http_fetch_max_response_bytes: hf_mb,

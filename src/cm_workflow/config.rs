@@ -7,6 +7,8 @@ pub struct WorkflowConfig {
     pub web_search_provider: String,
     pub web_search_api_key: String,
     pub web_search_max_results: u32,
+    /// worbrow 浏览器/静态抓取代理（空 = 直连/系统代理）。
+    pub web_search_proxy: String,
     pub http_fetch_timeout_secs: u64,
     pub http_fetch_max_response_bytes: usize,
     pub http_fetch_allowed_prefixes: Vec<String>,

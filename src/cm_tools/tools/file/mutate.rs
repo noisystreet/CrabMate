@@ -694,6 +694,7 @@ mod tests {
             web_search_provider: WebSearchProvider::Worbrow,
             web_search_api_key: "",
             web_search_max_results: 3,
+            web_search_proxy: "",
             http_fetch_allowed_prefixes: &[],
             http_fetch_timeout_secs: 5,
             http_fetch_max_response_bytes: 1024,

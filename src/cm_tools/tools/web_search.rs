@@ -66,7 +66,12 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
 
     let raw = match ctx.web_search_provider {
         WebSearchProvider::Worbrow => {
-            search_worbrow(&query, max_results, ctx.web_search_timeout_secs)
+            search_worbrow(
+                &query,
+                max_results,
+                ctx.web_search_timeout_secs,
+                ctx.web_search_proxy,
+            )
         }
         WebSearchProvider::Brave | WebSearchProvider::Tavily => {
             if ctx.web_search_api_key.trim().is_empty() {
@@ -102,13 +107,26 @@ pub fn run(args_json: &str, ctx: &ToolContext<'_>) -> String {
 /// 首选 Bing，验证码/低质低产时降级 DuckDuckGo（worbrow 引擎链）。
 const WORBROW_ENGINE_CHAIN: &str = "bing,duckduckgo";
 
-fn search_worbrow(query: &str, max_results: u32, timeout_secs: u64) -> Result<String, String> {
+fn search_worbrow(
+    query: &str,
+    max_results: u32,
+    timeout_secs: u64,
+    proxy: &str,
+) -> Result<String, String> {
     let browser = resolve_worbrow_browser()?;
+    // 空串 = 直连/系统代理（worbrow `None` 语义）；非空则透传为浏览器启动参数。
+    let proxy = proxy.trim();
+    let proxy = if proxy.is_empty() {
+        None
+    } else {
+        Some(proxy.to_string())
+    };
     let cfg = WorbrowConfig::new(query, WORBROW_ENGINE_CHAIN, browser)
         .with_max_results(max_results as usize)
         .with_timeout(Duration::from_secs(timeout_secs.max(1)))
         // 瞬时网络错误退避重试（验证码/超时不重试）；计入全局超时预算。
-        .with_retry(1);
+        .with_retry(1)
+        .with_proxy(proxy);
     let outcome = search(cfg).map_err(|e| format_worbrow_error(&e))?;
     Ok(format_worbrow_outcome(&outcome, browser))
 }
@@ -429,7 +447,7 @@ mod tests {
     #[test]
     #[ignore = "requires local browser + network"]
     fn live_worbrow_search() {
-        let out = search_worbrow("Rust async tokio", 5, 90).expect("worbrow search");
+        let out = search_worbrow("Rust async tokio", 5, 90, "").expect("worbrow search");
         eprintln!("{out}");
         assert!(
             out.contains("URL:") || out.contains("无网页结果"),
