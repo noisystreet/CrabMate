@@ -60,11 +60,11 @@
 
 ### 6. 配置与默认
 
-`config/tools.toml`（`[tool_registry]`）新增，**默认关闭**，避免未升级客户端看到意外行为：
+`config/tools.toml`（`[tool_registry]`）新增，**总开关默认开启**（`background_jobs_enabled = true`；模型仍须显式传 `async=true` 才走后台，白名单默认仅 `run_command`，故既有部署行为不变）：
 
 ```toml
-# 后台工具任务总开关（默认 false；开启后模型仍须显式传 async=true）
-# background_jobs_enabled = false
+# 后台工具任务总开关（默认 true；开启后模型仍须显式传 async=true）
+# background_jobs_enabled = true
 # 允许 async=true 的工具名白名单（默认 ["run_command"]；空数组 = 全部禁用；与总开关正交）
 # background_job_async_tools = ["run_command"]
 # background_job_max_concurrent = 4
