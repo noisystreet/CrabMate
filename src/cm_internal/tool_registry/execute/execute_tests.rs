@@ -355,6 +355,75 @@ async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
     drop(sandbox);
 }
 
+/// 发起路径须把 `web_ctx.turn_job_id` 写入 `JobRecord.source_turn_job_id`，
+/// 使 `POST /chat/stream/{job_id}/cancel` 能级联取消本回合尚未终态的后台任务。
+#[tokio::test]
+async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
+    use crate::cm_types::CommandApprovalDecision;
+    use tokio::sync::{Mutex as TokioMutex, mpsc};
+
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    // `sleep` 不在默认白名单；加入以让长任务在取消前保持非终态（避免触发审批路径）。
+    let mut allowed: Vec<String> = cfg.command_exec.allowed_commands.to_vec();
+    allowed.push("sleep".to_string());
+    cfg.command_exec.allowed_commands = allowed.into();
+    let cfg = Arc::new(cfg);
+    let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
+    let sandbox = async_test_sandbox();
+    let env = async_test_env(&cfg, &sandbox);
+    let wd = std::path::Path::new(".");
+
+    // 构造带 `turn_job_id` 的 Web 运行时（`out_tx` 保持存活以模拟连接未关闭）。
+    let (out_tx, _out_rx) = mpsc::channel::<String>(8);
+    let (_approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(1);
+    let web_ctx = crate::cm_tools::tool_runtime::WebToolRuntime {
+        out_tx,
+        approval_rx_shared: Arc::new(TokioMutex::new(approval_rx)),
+        approval_request_guard: Arc::new(TokioMutex::new(())),
+        persistent_allowlist_shared: Arc::new(TokioMutex::new(std::collections::HashSet::new())),
+        turn_job_id: Some(4242),
+    };
+
+    // 用长睡眠命令确保任务在取消前仍处于非终态。
+    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
+        env: &env,
+        effective_working_dir: wd,
+        web_ctx: Some(&web_ctx),
+        args: r#"{"command":"sleep","args":["30"],"async":true,"timeout_secs":60}"#,
+        tool_jobs: Some(Arc::clone(&registry)),
+    })
+    .await;
+    let id = inject
+        .as_ref()
+        .and_then(|v| v.get("tool_job"))
+        .and_then(|tj| tj.get("tool_job_id"))
+        .and_then(|x| x.as_str())
+        .expect("tool_job_id")
+        .to_string();
+    assert!(out.contains(&id), "{out}");
+
+    // 记录须带来源回合 id。
+    let rec = registry.get(&id).expect("record");
+    assert_eq!(rec.source_turn_job_id, Some(4242));
+
+    // 级联取消：本回合（4242）应命中该任务。
+    assert_eq!(registry.cancel_non_terminal_for_source_turn(4242), 1);
+    // 其它回合不命中。
+    assert_eq!(registry.cancel_non_terminal_for_source_turn(9999), 0);
+
+    // 等待 worker 落定终态（cancelled）。
+    loop {
+        let rec = registry.get(&id).expect("record");
+        if rec.status.is_terminal() {
+            assert_eq!(rec.status, crate::cm_internal::tool_jobs::JobStatus::Cancelled);
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    drop(sandbox);
+}
+
 #[tokio::test]
 async fn run_command_async_rejects_allow_once_requiring_command() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");

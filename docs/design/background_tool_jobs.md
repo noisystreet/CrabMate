@@ -51,6 +51,7 @@
 ### 5. 执行模型（脱离 turn）
 
 - job worker **不持有** `TurnControlSink` / `RunLoopIo.cancel` / SSE sender；取消改为显式 `POST …/cancel`（置 job 级 `AtomicBool`，`wait_child_session` 走既有 `Cancelled` 路径）。
+- **级联取消**：发起时把当前回合流任务 `job_id` 写入 `JobRecord.source_turn_job_id`（经 `WebToolRuntime.turn_job_id`）；用户 `POST /chat/stream/{job_id}/cancel` 停止回合时，一并取消本回合尚未终态的后台任务（响应 `background_tools_cancelled` 为命中数）。
 - 复用 `subprocess_session::wait_child_session`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；`tokio::spawn_blocking` 包一层（与现 run_command 一致；迁 `tokio::process` 时随共享会话一并升级）。
 - 注册表：进程内 `Mutex<HashMap<tool_job_id, JobState>>` + 过期清理（TTL 与条目上限）。**多副本**需外部代理/持久化（与 `chat_job_queue` 既有声明一致），另立项。
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
