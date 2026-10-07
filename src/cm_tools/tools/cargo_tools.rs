@@ -37,10 +37,6 @@ fn rustc_arg_is_safe(arg: &str) -> bool {
 
 /// 在工作区根目录执行 **`rustc`**（不经 shell），参数须与 `run_command` 相同：**不得**含 `..` 或以 `/` 开头的参数。
 /// 适用于 `rustc --explain E0xxx`、`rustc -vV`、`rustc --print=cfg` 等；**不要求**存在 `Cargo.toml`。
-pub fn rust_rustc(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    rust_rustc_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn rust_rustc_try(
     args_json: &str,
     workspace_root: &Path,
@@ -126,25 +122,12 @@ pub fn cargo_clippy_try(
     run_cargo_subcommand_str_try("clippy", args_json, workspace_root, max_output_len, None)
 }
 
-pub fn cargo_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_run_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_run_try(
     args_json: &str,
     workspace_root: &Path,
     max_output_len: usize,
 ) -> Result<String, ToolError> {
     run_cargo_subcommand_str_try("run", args_json, workspace_root, max_output_len, None)
-}
-
-pub fn rust_test_one(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-    ctx: Option<&ToolContext<'_>>,
-) -> String {
-    rust_test_one_try(args_json, workspace_root, max_output_len, ctx).unwrap_or_else(|e| e.message)
 }
 
 pub fn rust_test_one_try(
@@ -216,10 +199,6 @@ fn maybe_cache_cargo_test_try(
     run()
 }
 
-pub fn cargo_metadata(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_metadata_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_metadata_try(
     args_json: &str,
     workspace_root: &Path,
@@ -241,10 +220,6 @@ pub fn cargo_metadata_try(
 
     let cmd = cargo_metadata_command(workspace_root, no_deps, format_version);
     run_and_format_try(cmd, max_output_len, "cargo metadata", "cargo_metadata", None)
-}
-
-pub fn cargo_tree(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_tree_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_tree_try(
@@ -282,10 +257,6 @@ pub fn cargo_tree_try(
     run_and_format_try(cmd, max_output_len, "cargo tree", "cargo_tree", None)
 }
 
-pub fn cargo_clean(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_clean_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_clean_try(
     args_json: &str,
     workspace_root: &Path,
@@ -321,10 +292,6 @@ pub fn cargo_clean_try(
     run_and_format_try(cmd, max_output_len, "cargo clean", "cargo_clean", None)
 }
 
-pub fn cargo_doc(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_doc_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_doc_try(
     args_json: &str,
     workspace_root: &Path,
@@ -354,10 +321,6 @@ pub fn cargo_doc_try(
     }
     cmd.current_dir(workspace_root);
     run_and_format_try(cmd, max_output_len, "cargo doc", "cargo_doc", None)
-}
-
-pub fn cargo_nextest(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_nextest_try(args_json, workspace_root, max_output_len, None).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_nextest_try(
@@ -414,10 +377,6 @@ pub fn cargo_nextest_try(
     Ok(out)
 }
 
-pub fn cargo_outdated(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_outdated_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_outdated_try(
     args_json: &str,
     workspace_root: &Path,
@@ -455,11 +414,6 @@ pub fn cargo_outdated_try(
     Ok(out)
 }
 
-/// 运行 **cargo machete**（需已安装 `cargo-machete`）：启发式查找 **Cargo.toml 中声明但未在源码中引用** 的依赖；与 `cargo_outdated`（版本是否可升级）互补。误报可用 `with_metadata` 或 `package.metadata.cargo-machete` 缓解。
-pub fn cargo_machete(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_machete_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 fn cargo_machete_resolved_path(
     workspace_root: &Path,
     path_rel: Option<&str>,
@@ -492,6 +446,7 @@ fn cargo_machete_resolved_path(
     }
 }
 
+/// 运行 **cargo machete**（需已安装 `cargo-machete`）：启发式查找 **Cargo.toml 中声明但未在源码中引用** 的依赖；与 `cargo_outdated`（版本是否可升级）互补。误报可用 `with_metadata` 或 `package.metadata.cargo-machete` 缓解。
 pub fn cargo_machete_try(
     args_json: &str,
     workspace_root: &Path,
@@ -531,10 +486,6 @@ pub fn cargo_machete_try(
 }
 
 /// 运行 **cargo udeps**（需已安装 `cargo-udeps`）：基于构建信息查找未使用依赖，通常比 machete 更准但更重；**官方文档要求 nightly 工具链**，可用参数 `nightly: true` 调用 `cargo +nightly udeps`。
-pub fn cargo_udeps(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_udeps_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_udeps_try(
     args_json: &str,
     workspace_root: &Path,
@@ -566,15 +517,6 @@ pub fn cargo_udeps_try(
 }
 
 /// `cargo publish --dry-run`：仅验证打包与发布检查，**不会**上传 registry。
-pub fn cargo_publish_dry_run(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> String {
-    cargo_publish_dry_run_try(args_json, workspace_root, max_output_len)
-        .unwrap_or_else(|e| e.message)
-}
-
 pub fn cargo_publish_dry_run_try(
     args_json: &str,
     workspace_root: &Path,
@@ -636,10 +578,6 @@ pub fn cargo_publish_dry_run_try(
         "cargo_publish_dry_run",
         None,
     )
-}
-
-pub fn cargo_fix(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    cargo_fix_try(args_json, workspace_root, max_output_len).unwrap_or_else(|e| e.message)
 }
 
 pub fn cargo_fix_try(

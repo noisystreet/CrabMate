@@ -60,6 +60,18 @@ macro_rules! define_runners_cwd_maxlen {
     };
 }
 
+/// 形态：`f(args, working_dir, command_max_output_len) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
+macro_rules! define_runners_cwd_maxlen_try {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+                $func(args, ctx.working_dir, ctx.command_max_output_len)
+            }
+        )*
+    };
+}
+
 /// 形态：`f(args, working_dir, ctx)`。
 macro_rules! define_runners_cwd_ctx {
     ($( $runner:ident => $func:path ),* $(,)?) => {
@@ -182,12 +194,49 @@ pub fn runner_cargo_check_try(
     cargo_tools::cargo_check_try(args, ctx.working_dir, ctx.command_max_output_len)
 }
 
-pub fn runner_cargo_test(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::cargo_test(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
+// ── 原 dispatch 特判的 cargo_* / rust_* Typed runner（strangler 收尾）──
+
+define_runners_cwd_maxlen_try! {
+    runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
+    runner_cargo_metadata_try => cargo_tools::cargo_metadata_try,
+    runner_cargo_tree_try => cargo_tools::cargo_tree_try,
+    runner_cargo_clean_try => cargo_tools::cargo_clean_try,
+    runner_cargo_doc_try => cargo_tools::cargo_doc_try,
+    runner_cargo_outdated_try => cargo_tools::cargo_outdated_try,
+    runner_cargo_machete_try => cargo_tools::cargo_machete_try,
+    runner_cargo_udeps_try => cargo_tools::cargo_udeps_try,
+    runner_cargo_publish_dry_run_try => cargo_tools::cargo_publish_dry_run_try,
+    runner_cargo_fix_try => cargo_tools::cargo_fix_try,
+    runner_cargo_run_try => cargo_tools::cargo_run_try,
+    runner_rust_rustc_try => cargo_tools::rust_rustc_try,
 }
 
-pub fn runner_rust_test_one(args: &str, ctx: &ToolContext<'_>) -> String {
-    cargo_tools::rust_test_one(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
+/// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
+#[allow(clippy::result_large_err)]
+pub fn runner_cargo_test_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    cargo_tools::cargo_test_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
+}
+
+/// `rust_test_one` 的 Typed runner：额外透传 `ctx`。
+#[allow(clippy::result_large_err)]
+pub fn runner_rust_test_one_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    cargo_tools::rust_test_one_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
+}
+
+/// `cargo_nextest` 的 Typed runner：额外透传子进程 wall 超时。
+///
+/// **行为变化（有意，非纯等价搬迁）**：dispatch 路径原本已传 `Some(command_timeout_secs)`，
+/// 而 `run_tool`（工作流/String API）路径的旧 Legacy 包装传 `None`（**无墙钟**，可能无限挂起）。
+/// 统一为 `Some(..)` 后两条路径一致，符合 `docs/design/long_running_tool_execution_todo.md`
+/// 「必须走带墙钟的 `run_try_wait`」的不变量。
+#[allow(clippy::result_large_err)]
+pub fn runner_cargo_nextest_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    cargo_tools::cargo_nextest_try(
+        args,
+        ctx.working_dir,
+        ctx.command_max_output_len,
+        Some(ctx.command_timeout_secs),
+    )
 }
 
 pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
@@ -380,21 +429,8 @@ pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 // ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
 
 define_runners_cwd_maxlen! {
-    runner_cargo_clippy => cargo_tools::cargo_clippy,
-    runner_cargo_metadata => cargo_tools::cargo_metadata,
-    runner_cargo_tree => cargo_tools::cargo_tree,
-    runner_cargo_clean => cargo_tools::cargo_clean,
-    runner_cargo_doc => cargo_tools::cargo_doc,
-    runner_cargo_nextest => cargo_tools::cargo_nextest,
     runner_cargo_fmt_check => ci_tools::cargo_fmt_check_tool,
-    runner_cargo_outdated => cargo_tools::cargo_outdated,
-    runner_cargo_machete => cargo_tools::cargo_machete,
-    runner_cargo_udeps => cargo_tools::cargo_udeps,
-    runner_cargo_publish_dry_run => cargo_tools::cargo_publish_dry_run,
     runner_rust_compiler_json => rust_ide::rust_compiler_json,
-    runner_rust_rustc => cargo_tools::rust_rustc,
-    runner_cargo_fix => cargo_tools::cargo_fix,
-    runner_cargo_run => cargo_tools::cargo_run,
     runner_ruff_check => python_tools::ruff_check,
     runner_mypy_check => python_tools::mypy_check,
     runner_python_install_editable => python_tools::python_install_editable,
@@ -436,7 +472,6 @@ define_runners_cwd_ctx! {
     runner_modify_file => file::modify_file,
     runner_copy_file => file::copy_file,
     runner_move_file => file::move_file,
-    runner_read_file => file::read_file,
     runner_structured_patch => structured_data::structured_patch,
     runner_delete_files => file::delete_files,
     runner_append_file => file::append_file,
