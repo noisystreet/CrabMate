@@ -38,9 +38,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "create_symbolic_link",
         "write",
         "mkdir",
-        "cargo_fix",
-        "python_install_editable",
-        "go_mod_tidy",
         "long_term_remember",
         "long_term_forget",
         "run_command",
@@ -271,9 +268,6 @@ pub fn invalidation_for_tool_call(
             | "playbook_run_commands"
             | "workflow_execute"
             | "http_request"
-            | "cargo_fix"
-            | "python_install_editable"
-            | "go_mod_tidy"
     ) || name.starts_with("git_")
     {
         return Some(CodebaseSemanticInvalidation::FullWorkspace);

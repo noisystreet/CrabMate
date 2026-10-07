@@ -24,14 +24,6 @@ ToolSpec {
             summary: ToolSummaryKind::Static("go vet"),
         },
         ToolSpec {
-            name: "go_mod_tidy",
-            description: "在工作区根运行 `go mod tidy`（须 go.mod）。**写盘**：仅当 confirm=true 时执行；可选 verbose。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::GoModTidyArgs>,
-            runner: ToolRunner::Legacy(runner_go_mod_tidy),
-            summary: ToolSummaryKind::Static("go mod tidy"),
-        },
-        ToolSpec {
             name: "go_fmt_check",
             description: "在工作区根运行 `gofmt -l`（须 go.mod）：列出格式不一致的 .go 文件，不改写。可选 paths（默认 [\".\"]）。",
             category: ToolCategory::Development,

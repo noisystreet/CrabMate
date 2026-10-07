@@ -101,9 +101,9 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `long_term_remember` / `long_term_forget` / `long_term_memory_list`: Explicit long-term memory tools (requires **`long_term_memory_enabled`** and a mounted DB for the session). `remember` supports optional `tags` and `ttl_secs` (`0` = no expiry); `forget` deletes by `memory_id` or exact `memory_text`; `list` shows recent rows. **Do not store secrets.**
   - `error_output_playbook`: Heuristic classification of **sanitized** rustc/cargo/npm/pytest errors → **2–3** suggested **`run_command`** strings (**not executed**; filtered to allowlist, e.g. `cargo`/`git`/`python3`/`npm`). `ecosystem`: `auto`/`rust`/`node`/`python`/`generic`; optional `max_chars`. Light redaction for `API_KEY=` patterns; still sanitize before paste.
   - `playbook_run_commands`: Same heuristics; **executes** **1–3** suggestions via internal **`run_command`** (same safety rules; may contend on cargo/npm locks). Same args as `error_output_playbook` + optional **`max_commands`** (default 3, max 3). **Trusted workspace**; on CLI tool failure a one-line JSON may be printed for the model to run this “diagnostic bundle”.
-  - **Python / uv / pre-commit** (workspace root; CLIs must exist): `ruff_check`, `pytest_run` (`python3 -m pytest`), `mypy_check`, `python_install_editable` (uv or pip editable), `uv_sync`, `uv_run` (`args` array, no shell), `pre_commit_run` (needs `.pre-commit-config.yaml`). **Format**: `format_file` / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
+  - **Python / uv / pre-commit** (workspace root; CLIs must exist): `ruff_check`, `pytest_run` (`python3 -m pytest`), `mypy_check`, `uv_sync`, `uv_run` (`args` array, no shell), `pre_commit_run` (needs `.pre-commit-config.yaml`). **Format**: `format_file` / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
   - **JVM / Container / Node frontend (now via `run_command`)**: `mvn`/`gradle` (or `gradlew`), `docker`/`podman`, and `npm`/`npx`/`tsc` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly via `run_command` (e.g. `mvn -q test`, `gradle classes`, `docker compose ps`, `podman images`, `npm run build`, `npx tsc --noEmit`). The former thin wrappers (`maven_*`/`gradle_*`/`docker_build`/`docker_compose_ps`/`podman_images`/`npm_install`/`npm_run`/`npx_run`/`tsc_check`/`frontend_lint`/`frontend_build`/`frontend_test`) were removed per design doc §8.5.4 **track A**; their implementations remain shared by the `quality_workspace`/`ci_pipeline_local` flags (`run_maven_*`/`run_gradle_*`/`run_frontend_build`, …).
-  - **Go** (needs `go.mod`, Go installed): `go_build`, `go_test` (`-run`/`-race`/`-timeout`, …), `go_vet`, `go_mod_tidy` (write needs `confirm`), `go_fmt_check` (`gofmt -l`), `golangci_lint`.
+  - **Go** (needs `go.mod`, Go installed): `go_build`, `go_test` (`-run`/`-race`/`-timeout`, …), `go_vet`, `go_fmt_check` (`gofmt -l`), `golangci_lint`.
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
@@ -274,10 +274,6 @@ Structured function-calling JSON examples:
   ```json
   {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
   ```
-- `cargo_fix` (controlled write):
-  ```json
-  {"confirm":true,"broken_code":false}
-  ```
 - `cargo_deny`:
   ```json
   {"checks":"advisories licenses bans sources","all_features":true}
@@ -362,13 +358,15 @@ Structured function-calling JSON examples:
 
 Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_doc`.
 
-**Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
+**Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
 **JVM / Container / Node frontend**: wrappers removed per §8.5.4 **track A**; use `run_command` (`mvn` / `gradle` / `docker` / `podman` / `npm` / `npx` / `tsc` are allowlisted). The aggregate flags (`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images` / `run_frontend_build`, …) remain shared by `quality_workspace` / `ci_pipeline_local`.
 
 **`cargo_clean`**: removed per the thin-CLI-wrapper consolidation (see [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.1.1 pilot); use `run_command` invoking `cargo clean` (`cargo` is allowlisted). Note: after this downgrade there is **no** `dry_run`-defaults-to-true safety default — pass `--dry-run` explicitly to preview only.
 
-**Go**: `go_build`, `go_test`, `go_vet`, `go_mod_tidy`, `go_fmt_check`, `golangci_lint`.
+**Write-side safety-gate family (§3.1.2)**: `cargo_fix` / `go_mod_tidy` / `python_install_editable` were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.1.2; use `run_command` (`cargo` / `go` / `uv` / `python3` are allowlisted). All three are write-side-effect tools, so the downgrade has **no** read-only-semantics loss; their former `confirm` gate no longer applies, but that gate was **not** a hard security boundary anyway (an allowlisted `run_command` is not subject to sub-command-level approval) — for stronger guarantees use `tool_approval` or a workflow `requires_approval`.
+
+**Go**: `go_build`, `go_test`, `go_vet`, `go_fmt_check`, `golangci_lint`.
 
 **Process/port**: `port_check`, `process_list`.
 

@@ -184,14 +184,6 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_rust_analyzer_workspace_symbol),
         },
         ToolSpec {
-            name: "cargo_fix",
-            description: "执行 cargo fix 应用编译器/诊断建议（受控写入，需 confirm=true）。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::CargoFixArgs>,
-            runner: ToolRunner::Typed(runner_cargo_fix_try),
-            summary: ToolSummaryKind::Static("cargo fix (controlled write)"),
-        },
-        ToolSpec {
             name: "rust_test_one",
             description: "运行单个 Rust 测试（按 test_name 过滤）。用于快速调试具体测试。",
             category: ToolCategory::Development,

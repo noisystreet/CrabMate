@@ -161,3 +161,4 @@
 | 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |
 | 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
 | 2026-10-07 | 新增配套文档 **`docs/design/tool_thin_wrapper_candidates.md`**：对 §8.5 之后的**剩余内置工具**逐家族盘点「适合 / 视情况 / 保留」判定与切片顺序（§8.5 负责方案与约束，该文件负责候选清单）。 |
+| 2026-10-07 | **落地 §3.1.2 写侧安全门族**（见 `tool_thin_wrapper_candidates.md`）：移除 **`cargo_fix`** / **`go_mod_tidy`** / **`python_install_editable`** 三个薄封装，改用 `run_command`（`cargo` / `go` / `uv` / `python3` 均已在白名单）。复核确认 `confirm` 门并非强制安全边界（`run_command` 无子命令级审批），故按「直接收敛、不新增机制」执行；三者均为写副作用工具，只读语义无损失。 |

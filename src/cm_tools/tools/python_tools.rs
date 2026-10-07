@@ -305,53 +305,6 @@ fn collect_uv_run_argv(arr: &[serde_json::Value]) -> Result<Vec<String>, String>
     Ok(argv)
 }
 
-/// 在工作区根执行可编辑安装：`uv pip install -e .` 或 `python3 -m pip install -e .`。
-pub fn python_install_editable(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let backend = match v.get("backend").and_then(|x| x.as_str()).map(str::trim) {
-        Some(s) if s == "uv" || s == "pip" => s,
-        _ => return "错误：backend 须为 \"uv\" 或 \"pip\"".to_string(),
-    };
-
-    if !workspace_root.join("pyproject.toml").is_file()
-        && !workspace_root.join("setup.py").is_file()
-    {
-        return "错误：可编辑安装需要工作区根目录存在 pyproject.toml 或 setup.py".to_string();
-    }
-
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = if backend == "uv" {
-        let mut c = Command::new("uv");
-        c.args(["pip", "install", "-e", "."]);
-        c
-    } else {
-        let mut c = Command::new("python3");
-        c.args(["-m", "pip", "install", "-e", "."]);
-        c
-    };
-    cmd.current_dir(&base)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let title = if backend == "uv" {
-        "uv pip install -e ."
-    } else {
-        "python3 -m pip install -e ."
-    };
-    run_and_format(cmd, max_output_len, title, None)
-}
-
 /// `python_snippet_run`：临时脚本路径、命令参数等（`_tmp` 须存活至子进程结束）。
 struct PythonSnippetPrep {
     base: PathBuf,

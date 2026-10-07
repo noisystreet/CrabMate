@@ -545,64 +545,6 @@ pub fn cargo_publish_dry_run_try(
     )
 }
 
-pub fn cargo_fix_try(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-
-    if !workspace_root.join("Cargo.toml").is_file() {
-        return Err(ToolError::workspace(
-            "workspace_no_cargo_toml",
-            "错误：当前工作目录未找到 Cargo.toml".to_string(),
-        ));
-    }
-
-    let confirm = v.get("confirm").and_then(|x| x.as_bool()).unwrap_or(false);
-    if !confirm {
-        return Err(ToolError::invalid_args(
-            "拒绝执行：cargo_fix 需要 confirm=true 才会真正应用修复（避免误改代码）。".to_string(),
-        ));
-    }
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("fix");
-    push_cargo_fix_flags(&mut cmd, &v);
-    cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo fix", "cargo_fix", None)
-}
-
-/// `cargo fix` 布尔开关参数（`args` 键 → CLI flag）。
-const CARGO_FIX_BOOL_FLAGS: &[(&str, &str)] = &[
-    ("broken_code", "--broken-code"),
-    ("all_targets", "--all-targets"),
-    ("all_features", "--all-features"),
-    ("edition_idioms", "--edition-idioms"),
-    ("allow_dirty", "--allow-dirty"),
-    ("allow_staged", "--allow-staged"),
-    ("allow_no_vcs", "--allow-no-vcs"),
-];
-
-/// 按 `cargo_fix` 参数表驱动追加 CLI 开关与取值 flag。
-fn push_cargo_fix_flags(cmd: &mut Command, v: &serde_json::Value) {
-    for (key, flag) in CARGO_FIX_BOOL_FLAGS {
-        if v.get(*key).and_then(|x| x.as_bool()).unwrap_or(false) {
-            cmd.arg(*flag);
-        }
-    }
-    for (key, flag) in [("package", "--package"), ("features", "--features"), ("edition", "--edition")] {
-        if let Some(s) = v
-            .get(key)
-            .and_then(|x| x.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            cmd.arg(flag).arg(s);
-        }
-    }
-}
-
 #[path = "cargo_subcommand.rs"]
 mod cargo_subcommand;
 pub(crate) use cargo_subcommand::cargo_subcommand_background_argv;
