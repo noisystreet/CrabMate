@@ -5,7 +5,7 @@
 **语言**：中文。  
 **关联**：
 
-- 前端模块与架构：Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)（`column` / `composer_stream` 等；UI 源码不在本仓，本仓指针见 **`docs/frontend/README.md`**）
+- 前端模块与架构：Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)（`column` / `composer_stream` 等；UI 源码不在本仓）
 - SSE 契约：**`docs/SSE协议.md`**（展示层演进**不**改协议，除非另开 ADR）
 - 主列默认路径：`ChatTuiStreamView`（终端流）；旧气泡列表已于 Phase 5 删除
 

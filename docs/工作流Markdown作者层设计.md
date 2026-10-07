@@ -251,291 +251,29 @@ flowchart TD
 | `workflow_for_each_max_items` | `for_each` 默认与上限 |
 
 **严格环境**（CI、受信工作区）：`deterministic_only`。  
-**交互环境**（Web/REPL）：`llm_fallback`（无块才调模型）。
+**交互环境**（Web / Client 终端）：`llm_fallback`（无块才调模型）。
 
 ---
 
-## 6. 中间表示：`workflow_spec` v2（草案）
+## 6. 中间表示：`workflow_spec` v2（编译契约）
 
-与现有 **`workflow.nodes` 对象/数组** 并存；编译后仅保留 `nodes`。
+**语法与字段的权威说明（使用者视角）** 见 **`docs/工作流编写教程.md`**：`steps` 常用能力见其 §5、`nodes` 模式见 §6、字段速查见 §7。本节只保留 **作者层 → 编译层** 的契约与设计约束，不重复 YAML 示例。
 
-```yaml
-version: 2
-workflow:
-  fail_fast: true
-  max_parallelism: 4
-steps:
-  - id: diff
-    label: 查看改动
-    tool: git_diff
-    args: { mode: all }
-  - id: clippy
-    label: Clippy
-    tool: cargo_clippy
-    after: [diff]
-    args: { all_targets: true }
-  - id: test_on_clippy_fail
-    label: Clippy 失败时补跑测试
-    tool: cargo_test
-    when:
-      from: clippy
-      branch: failure   # 编译为 choice / 条件边，见工作流编排架构 Phase 2
-    after: [clippy]
-  - id: outlines
-    tool: rust_file_outline
-    for_each:
-      from: diff
-      json_path: "/changed_rs_paths"  # 或固定工具输出 schema
-      max_items: 10
-```
+- **编译后仅保留 `nodes`**，与现有 **`workflow.nodes`（对象/数组）** 同形，交 **`parse_workflow_spec`** 消费。
+- **必需保证**：`for_each.max_items` / `repeat.count` 硬上限；块内**禁止** shell、任意表达式语言与无界 `while`。
+- **透传**：`label`（trace `display_name` 扩展）、`requires_approval` / `node_tool_role` 原样进入 **`WorkflowNodeSpec`**。
 
-**字段约定（摘要）**：
+**编译契约（概念）**：
 
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `id` | 是 | 稳定节点 id，满足现有 `workflow_node_id` 字符规则 |
-| `label` | 否 | 仅展示；进入 trace `display_name`（扩展） |
-| `tool` / `args` | 是 | 与工具 registry 一致 |
-| `after` | 否 | 串行依赖；编译为 `deps` |
-| `when` | 否 | 守卫；MVP 可要求「守卫工具 + choice」或静态两支展开 |
-| `for_each` | 否 | 须有 `max_items`；编译为有界节点链 |
-| `requires_approval` / `node_tool_role` | 否 | 透传到 **`WorkflowNodeSpec`** |
+| 作者层写法 | 编译产物 |
+|------------|----------|
+| `after: [id]` | `deps: [id]` |
+| `when.branch` / `when.match` / `kind: choice` | 互斥 `steps` 展开 + trace `skipped` |
+| `for_each`（须 `max_items`） | `id_0 … id_{n-1}`，无回边 |
+| `repeat.count` | `id_1 … id_{count}` 链式 `deps` |
+| 无界 `while` | **拒绝编译** |
 
-**禁止**：块内 shell、任意表达式语言、`while` 无上限。
-
-**示例夹具**：`fixtures/workflows/`（纯 YAML 与带围栏的 `.md`）；实现 `compile_spec` 后对照同目录 `*.expected.json` 跑金样测试（见 §11）。
-
-### 6.1 分支（YAML）
-
-分支在作者层用 **`when`** 或集中式 **`kind: choice`** 表达；**不**在 YAML 里写 `if (expr)`。执行层由调度器根据**前驱节点结果**（或守卫工具的结构化 JSON）**剪枝**，未选分支在 **`trace`** 中记为 **`skipped`**（见 **`docs/工作流编排架构.md` §4.2**）。
-
-#### 6.1.1 `when` + `branch`：成功 / 失败二分支
-
-适用：「A 失败才跑 B」「A 成功才通知」。
-
-```yaml
-version: 2
-workflow:
-  fail_fast: false   # 有失败分支时通常关闭，避免 fail_fast 在分支判断前截断整图
-steps:
-  - id: clippy
-    tool: cargo_clippy
-    args: { all_targets: true }
-
-  - id: test_on_fail
-    label: 仅 clippy 失败时跑测试
-    tool: cargo_test
-    after: [clippy]
-    when:
-      from: clippy
-      branch: failure    # success | failure
-
-  - id: notify_ok
-    label: 仅 clippy 通过时（示例）
-    tool: diagnostic_summary
-    after: [clippy]
-    when:
-      from: clippy
-      branch: success
-```
-
-| `when.branch` | 含义（`from` 节点结束后） |
-|---------------|---------------------------|
-| `success` | 工具成功且无未捕获错误 |
-| `failure` | 工具失败、超时或策略视为失败 |
-
-夹具：`fixtures/workflows/02_branch_when_success_failure.yaml`。
-
-#### 6.1.2 `when` + `match`：多路分支（守卫工具输出）
-
-适用：「根据 classify 结果走 hotfix / feature / skip」。前驱须输出**固定 schema**（如 `{ "branch": "hotfix" }`），编译器只支持 **`equals`** / **`in`**（首版），不支持任意表达式。
-
-```yaml
-steps:
-  - id: classify
-    tool: diagnostic_summary
-    args: {}
-
-  - id: hotfix_flow
-    tool: git_diff
-    after: [classify]
-    when:
-      from: classify
-      match:
-        field: branch
-        equals: hotfix
-
-  - id: feature_flow
-    tool: cargo_test
-    after: [classify]
-    when:
-      from: classify
-      match:
-        field: branch
-        equals: feature
-
-  - id: noop_skip
-    tool: diagnostic_summary
-    after: [classify]
-    when:
-      from: classify
-      match:
-        field: branch
-        in: [skip, none]
-```
-
-| `match` 键 | 说明 |
-|------------|------|
-| `field` | 前驱工具结果 JSON 内的字段路径（点分或 JSON Pointer，实现时二选一并在文档固定） |
-| `equals` | 标量相等 |
-| `in` | 枚举列表命中其一 |
-
-夹具：`fixtures/workflows/03_branch_when_match.yaml`。
-
-#### 6.1.3 `kind: choice`（可选语法糖）
-
-多路分支表集中在一处；**编译期**展开为带 `when` 的普通 `steps`，运行时仍走同一 choice 调度器。
-
-```yaml
-steps:
-  - id: lint
-    tool: cargo_clippy
-    args: { all_targets: true }
-
-  - id: route
-    kind: choice
-    after: [lint]
-    branches:
-      - when: { from: lint, branch: success }
-        steps:
-          - id: ship
-            tool: git_diff
-      - when: { from: lint, branch: failure }
-        steps:
-          - id: fix
-            tool: cargo_fmt
-          - id: retest
-            tool: cargo_test
-            after: [fix]
-```
-
-夹具：`fixtures/workflows/07_choice_node.yaml`。
-
-#### 6.1.4 今日可用：手写 `workflow.nodes`（无 `when`）
-
-**已实现**：`parse_workflow_spec` 只认 **`workflow.nodes` + `deps`**，**不会**按成功/失败剪枝，只会按依赖顺序调度。
-
-```yaml
-workflow:
-  fail_fast: false
-  nodes:
-    - id: check
-      tool: cargo_clippy
-      tool_args: { all_targets: true }
-      deps: []
-    - id: test
-      tool: cargo_test
-      tool_args: {}
-      deps: [check]
-```
-
-「仅失败才跑 test」在今日须靠：**(a)** 接受 test 总在 check 之后执行，或 **(b)** 等 `when` 落地，或 **(c)** 会话外环由 Agent 再发一轮更小 DAG。
-
-夹具：`fixtures/workflows/08_nodes_only_today.yaml`（可直接 `validate_only`）。
-
----
-
-### 6.2 循环（YAML）
-
-单轮 DAG **禁止无界环**。循环只允许 **编译期展开** 为有界节点序列（或同层并行批），对应 **`for_each`** 与 **`repeat`**。
-
-#### 6.2.1 `for_each`：对集合逐项
-
-```yaml
-steps:
-  - id: diff
-    tool: git_diff
-    args: { mode: all }
-
-  - id: outline_each
-    tool: rust_file_outline
-    after: [diff]
-    for_each:
-      from: diff
-      json_path: "/changed_rs_paths"
-      item_var: path
-      max_items: 10          # 必填；缺省则编译错误 WORKFLOW_COMPILE_FOR_EACH_UNBOUND
-    args:
-      path: "{{path}}"
-```
-
-| `for_each` 键 | 必填 | 说明 |
-|---------------|------|------|
-| `from` | 是 | 提供数组的前驱 step `id` |
-| `json_path` | 是* | 从前驱工具结果 JSON 取数组（*或与 `static_items` 二选一） |
-| `static_items` | 否 | 作者显式字符串列表（仍受 `max_items` 约束） |
-| `item_var` | 否 | 默认 `item`；展开时替换 `args` 内 `{{item_var}}` |
-| `max_items` | 是 | 硬上限；超出编译失败或截断并写 `trace` 警告（实现时择一并在文档固定） |
-| `parallel` | 否 | 默认 `false`（串行 `outline_0 → outline_1 → …`）；`true` 时同层 `deps: [diff]` + 受 `max_parallelism` 约束 |
-
-编译结果（概念）：`outline_each_0` … `outline_each_{n-1}`，**无**回边。
-
-夹具：`fixtures/workflows/04_loop_for_each.yaml`。
-
-#### 6.2.2 `repeat`：固定次数
-
-```yaml
-steps:
-  - id: flaky_test
-    tool: cargo_test
-    repeat:
-      count: 3
-      stop_on: success    # success：任一轮成功则不再生成后续节点；never：跑满 count
-    args: {}
-```
-
-| `repeat` 键 | 说明 |
-|-------------|------|
-| `count` | 1–`workflow_repeat_max`（配置顶，建议默认 ≤ 5） |
-| `stop_on` | `success` \| `never` |
-
-编译为 `flaky_test_1` → `flaky_test_2` → …（链式 `deps`），**不是** `while`。
-
-夹具：`fixtures/workflows/05_loop_repeat.yaml`。
-
-#### 6.2.3 禁止写法与替代
-
-```yaml
-# ❌ 不支持
-while:
-  condition: tests_pass
-  body: [cargo_test]
-```
-
-| 需求 | 替代 |
-|------|------|
-| 最多试 N 次 | `repeat: { count: N, stop_on: success }` |
-| 直到 CI 全绿（次数未知） | **多轮 `agent_turn`** / 每轮 `workflow_template: rust_ci_light` / `plan_rewrite` |
-| 很长文件列表 | `for_each` + 较小的 `max_items` |
-
-#### 6.2.4 分支 + 循环组合
-
-夹具：`fixtures/workflows/06_branch_and_loop_combined.yaml`（`for_each` → `clippy` → `when` 失败分支 → `repeat`）。
-
----
-
-### 6.3 字段速查（分支 / 循环）
-
-| 场景 | YAML | 编译产物（概念） |
-|------|------|------------------|
-| 串行 | `after: [id]` | `deps: [id]` |
-| 成功/失败 | `when.branch` | choice 剪枝 + `skipped` trace |
-| 多路 | `when.match` / `kind: choice` | 互斥 `steps` 展开 |
-| 遍历 | `for_each` + `max_items` | `id_0…id_{n-1}` |
-| 重试 | `repeat.count` | `id_1…id_count` 链 |
-| 无界 while | — | **拒绝编译** |
-
----
+**示例夹具**：`fixtures/workflows/`（`01_serial_after` … `09_fenced_in_markdown`，各配 `*.expected.json` 或为 `.md`）；`compile_spec` 落地后对照同名 `*.expected.json` 跑金样测试（见 §11）。无界 `for_each` 的**建议**错误码为 **`WORKFLOW_COMPILE_FOR_EACH_UNBOUND`**。
 
 ## 7. 两种路径对比总表
 
@@ -555,11 +293,11 @@ while:
 
 ## 8. 分支、循环与「直到通过」（摘要）
 
-YAML 写法详见 **§6.1–§6.3** 与 **`fixtures/workflows/`**。两种作者路径**共享** **`docs/工作流编排架构.md`** 的边界：
+YAML 写法详见 **`docs/工作流编写教程.md` §5**（`steps`：`after` / `when` / `for_each` / `repeat` / `kind: choice`）与 **`fixtures/workflows/`**。两种作者路径**共享** **`docs/工作流编排架构.md`** 的边界：
 
 | 用户叙事 | 作者层表达 | 执行层 |
 |----------|------------|--------|
-| 「clippy 不过就跑 test」 | `when: { from: clippy, branch: failure }` | choice 剪枝（Phase 2）；MVP 见 §6.1.4 |
+| 「clippy 不过就跑 test」 | `when: { from: clippy, branch: failure }` | choice 剪枝；未选分支 trace 记 `skipped` |
 | 「每个改动文件跑 outline」 | `for_each` + `max_items: 10` | 展开为 N 个节点 |
 | 「直到 CI 全绿」 | **不**编译为单 DAG 环 | 多轮 Agent + 每轮 `workflow_execute` 或 `rust_ci_light` 模板 |
 
@@ -639,3 +377,4 @@ LLM 路径的额外风险：模型生成**无界** `for_each` → 编译器 **�
 |------|------|
 | 2026-05-16 | 初稿：路径 A（确定性围栏 + 编译器）与路径 B（LLM → spec）对比、混合策略、`workflow_spec` v2 草案、安全/测试/演进阶段。 |
 | 2026-05-16 | 增补 §6.1–§6.3 分支/循环 YAML 专节；`fixtures/workflows/` 示例与 `01_serial_after.expected.json`。 |
+| 2026-10-07 | 语法下沉：删除 §6.1–§6.3 的 YAML 语法/字段速查，§6 收敛为「编译契约」，使用者语法权威改指 **`docs/工作流编写教程.md` §5–§7**。 |

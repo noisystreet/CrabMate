@@ -67,23 +67,21 @@ Documentation rule: whenever “state machine” is mentioned externally, explic
 
 ### 4.2 Conditions (branching)
 
-| Layer | Mechanism | Readability strategy |
-|---|---|---|
-| Inside DAG | readonly check nodes + `deps` sequencing | naming convention (`check_*` → `act_*`) and optional display metadata |
-| Explicit DAG branching (future) | choice nodes or result-based edges | scheduler writes skipped-branch trace events |
-| Across turns | model emits next workflow/plan | handled by session-level narration and control |
+**Architectural boundary**: branching has two layers—**intra-turn** uses readonly nodes plus **`deps`** (or **`choice`**) to prune within the same DAG; **cross-turn** is carried by **session-level** narration (a new **`workflow`** JSON or a new **`agent_reply_plan`**), avoiding unbounded expressive power inside a single-turn DAG.
 
-Guard expressions should avoid free-form expression languages initially. Prefer “tool-as-guard”: controlled readonly tools emit structured JSON (for example `branch: "a" | "b"`), choice logic parses fixed schema.
+**Guard expressions**: introducing a free-form expression language in v1 is not advised (poor safety and testability). Prefer **“tool-as-guard”**: guard logic lives in a **readonly tool** or **controlled script tool** that emits structured JSON, and **`choice` parses only a fixed schema** (e.g. `branch: "a"|"b"`).
+
+**Author-layer syntax** (`when.branch` / `when.match` / `kind: choice`) is documented in **`docs/工作流编写教程.md` §5.2–§5.3, §5.6**; unselected branches are recorded in the **trace** as **skipped**.
 
 ### 4.3 Loops
 
-Principle: no unbounded cycles in single-turn DAG execution.
+Principle: no unbounded cycles in single-turn DAG execution. Safe subsets:
 
-Safe subsets:
+1. **Bounded expansion**: `for_each` / `repeat N` declare hard limits (`max_items` / `count`) and compile into multiple nodes or chained **`deps`**; suited to CI matrices and homogeneous multi-file work.
+2. **Outer-loop (agent level)**: “until tests pass” is handled by **multiple `run_agent_turn` rounds** or regenerating a smaller DAG each round, keeping every DAG acyclic—consistent with the **`plan_rewrite`** retry narrative.
+3. **No default `while(true)` support**: if a general loop is ever added, it must include strict **step / wall-clock / token** caps and make each iteration distinguishable in the **trace**.
 
-1. **Bounded expansion** (`for_each`, `repeat N`) with hard limits (`max_items`, `max_iterations`)
-2. **Outer-loop retries** at agent/session level (each DAG still acyclic)
-3. **No default `while(true)` support**; any future general loop must include strict step/wall-clock/token caps and iteration-level trace visibility
+**Author-layer syntax** (`for_each` including `parallel`, and `repeat` fields/limits) is documented in **`docs/工作流编写教程.md` §5.4–§5.5**.
 
 ---
 

@@ -1,6 +1,6 @@
 # workflow_spec v2 示例夹具
 
-**文档**：用户向教程见 **`docs/工作流编写教程.md`**；设计稿见 **`docs/工作流Markdown作者层设计.md`** §6.1–§6.3。用户向示例见 **`examples/workflows/`**。
+**文档**：用户向教程（语法权威）见 **`docs/工作流编写教程.md`**；设计稿（编译契约）见 **`docs/工作流Markdown作者层设计.md`** §6。用户向示例见 **`examples/workflows/`**。
 
 | 文件 | 说明 |
 |------|------|
