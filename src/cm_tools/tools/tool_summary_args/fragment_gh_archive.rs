@@ -9,46 +9,6 @@ fn gh_repo_suffix(repo: Option<String>) -> String {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct GhPrListSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    #[serde(default)]
-    state: Option<String>,
-    #[serde(default)]
-    limit: Option<u64>,
-}
-
-impl ToolSummaryLine for GhPrListSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let st = self.state.as_deref().unwrap_or("open");
-        let lim = self.limit.unwrap_or(30);
-        Some(format!(
-            "gh pr list{} state={} limit={}",
-            gh_repo_suffix(self.repo),
-            st,
-            lim
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhPrNumberSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    number: u64,
-}
-
-impl ToolSummaryLine for GhPrNumberSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        Some(format!(
-            "gh pr view #{}{}",
-            self.number,
-            gh_repo_suffix(self.repo)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct GhPrChecksSummaryArgs {
     #[serde(default)]
     repo: Option<String>,
@@ -193,46 +153,6 @@ impl ToolSummaryLine for GhPrEditSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct GhIssueListSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    #[serde(default)]
-    state: Option<String>,
-    #[serde(default)]
-    limit: Option<u64>,
-}
-
-impl ToolSummaryLine for GhIssueListSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let st = self.state.as_deref().unwrap_or("open");
-        let lim = self.limit.unwrap_or(30);
-        Some(format!(
-            "gh issue list{} state={} limit={}",
-            gh_repo_suffix(self.repo),
-            st,
-            lim
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhIssueViewSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    number: u64,
-}
-
-impl ToolSummaryLine for GhIssueViewSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        Some(format!(
-            "gh issue view #{}{}",
-            self.number,
-            gh_repo_suffix(self.repo)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct GhIssueCreateSummaryArgs {
     title: String,
     #[serde(default)]
@@ -253,63 +173,6 @@ impl ToolSummaryLine for GhIssueCreateSummaryArgs {
             "gh issue create{}: {}",
             gh_repo_suffix(self.repo),
             head
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhRunListSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    #[serde(default)]
-    limit: Option<u64>,
-}
-
-impl ToolSummaryLine for GhRunListSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let lim = self.limit.unwrap_or(30);
-        Some(format!(
-            "gh run list{} limit={}",
-            gh_repo_suffix(self.repo),
-            lim
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhPrDiffSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    number: u64,
-}
-
-impl ToolSummaryLine for GhPrDiffSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        Some(format!(
-            "gh pr diff #{}{}",
-            self.number,
-            gh_repo_suffix(self.repo)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhRunViewSummaryArgs {
-    run_id: String,
-    #[serde(default)]
-    log: bool,
-}
-
-impl ToolSummaryLine for GhRunViewSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let id = self.run_id.trim();
-        if id.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "gh run view {}{}",
-            id,
-            if self.log { " --log" } else { "" }
         ))
     }
 }
@@ -351,50 +214,6 @@ impl ToolSummaryLine for GhRunFailureSummarySummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct GhReleaseListSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    #[serde(default)]
-    limit: Option<u64>,
-}
-
-impl ToolSummaryLine for GhReleaseListSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let lim = self.limit.unwrap_or(30);
-        Some(format!(
-            "gh release list{} limit={}",
-            gh_repo_suffix(self.repo),
-            lim
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhReleaseViewSummaryArgs {
-    #[serde(default)]
-    repo: Option<String>,
-    tag: String,
-}
-
-impl ToolSummaryLine for GhReleaseViewSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let tag = self.tag.trim();
-        if tag.is_empty() {
-            return None;
-        }
-        let mut t: String = tag.chars().take(32).collect();
-        if tag.chars().count() > 32 {
-            t.push('…');
-        }
-        Some(format!(
-            "gh release view {}{}",
-            t,
-            gh_repo_suffix(self.repo)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct GhReleaseCreateSummaryArgs {
     tag: String,
     #[serde(default)]
@@ -413,27 +232,6 @@ impl ToolSummaryLine for GhReleaseCreateSummaryArgs {
             tag,
             if draft { " (draft)" } else { "" }
         ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct GhSearchSummaryArgs {
-    scope: String,
-    query: String,
-}
-
-impl ToolSummaryLine for GhSearchSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let scope = self.scope.trim();
-        let q = self.query.trim();
-        if scope.is_empty() || q.is_empty() {
-            return None;
-        }
-        let mut qs: String = q.chars().take(40).collect();
-        if q.chars().count() > 40 {
-            qs.push('…');
-        }
-        Some(format!("gh search {} {}", scope, qs))
     }
 }
 
