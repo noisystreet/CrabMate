@@ -123,6 +123,7 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "gh_pr_merge",
             "gh_pr_review",
             "gh_pr_comment",
+            "gh_pr_edit",
             "gh_issue_create",
             "gh_run_rerun",
             "gh_release_create",
