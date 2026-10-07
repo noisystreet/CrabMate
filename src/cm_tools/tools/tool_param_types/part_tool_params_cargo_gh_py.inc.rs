@@ -49,68 +49,11 @@ pub struct RustTestOneArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
-pub struct CargoMetadataArgs {
-    pub no_deps: Option<bool>,
-    #[schemars(range(min = 1))]
-    pub format_version: Option<u32>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoTreeArgs {
-    pub package: Option<String>,
-    pub invert: Option<String>,
-    #[schemars(range(min = 0))]
-    pub depth: Option<u32>,
-    pub edges: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoDocArgs {
-    pub package: Option<String>,
-    pub no_deps: Option<bool>,
-    pub open: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
 pub struct CargoNextestArgs {
     pub package: Option<String>,
     pub profile: Option<String>,
     pub test_filter: Option<String>,
     pub nocapture: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoOutdatedArgs {
-    pub workspace: Option<bool>,
-    #[schemars(range(min = 0))]
-    pub depth: Option<u32>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoMacheteArgs {
-    pub with_metadata: Option<bool>,
-    pub path: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoUdepsArgs {
-    pub nightly: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoPublishDryRunArgs {
-    pub package: Option<String>,
-    pub allow_dirty: Option<bool>,
-    pub no_verify: Option<bool>,
-    pub features: Option<String>,
-    pub all_features: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]

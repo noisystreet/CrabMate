@@ -101,12 +101,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "gh_api" => &[GENERAL, VCS],
 
         // --- Rust / Cargo ---
-        "cargo_metadata"
-        | "cargo_tree"
-        | "cargo_doc"
-        | "cargo_run"
+        "cargo_run"
         | "cargo_nextest"
-        | "cargo_publish_dry_run"
         | "rust_test_one"
         | "rust_analyzer_goto_definition"
         | "rust_analyzer_find_references"
@@ -116,9 +112,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "rust_analyzer_goto_type_definition"
         | "rust_analyzer_document_highlight"
         | "rust_analyzer_workspace_symbol" => &[GENERAL, RUST],
-        "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "cargo_outdated"
-        | "cargo_machete" | "cargo_udeps" | "rust_compiler_json" | "rust_rustc" | "cargo_audit"
-        | "cargo_deny" => &[GENERAL, RUST, QUALITY],
+        "cargo_check" | "cargo_test" | "cargo_clippy" | "cargo_fmt_check" | "rust_compiler_json"
+        | "rust_rustc" | "cargo_audit" | "cargo_deny" => &[GENERAL, RUST, QUALITY],
         "find_symbol" | "find_references" | "rust_file_outline" | "call_graph_sketch" => {
             &[GENERAL, RUST]
         }

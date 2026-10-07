@@ -232,22 +232,6 @@ Structured function-calling JSON examples:
   ```json
   {}
   ```
-- `cargo_outdated`:
-  ```json
-  {"workspace":true,"depth":2}
-  ```
-- `cargo_machete` (unused-deps heuristic; `cargo install cargo-machete`):
-  ```json
-  {"with_metadata":false}
-  ```
-- `cargo_udeps` (unused-deps build check; `cargo install cargo-udeps`; often **`nightly: true`**):
-  ```json
-  {"nightly":true}
-  ```
-- `cargo_publish_dry_run` (does **not** upload):
-  ```json
-  {"package":"my-crate","allow_dirty":false,"no_verify":false}
-  ```
 - `rust_compiler_json` (`cargo check --message-format=json` diagnostics):
   ```json
   {"all_targets":true,"max_diagnostics":80,"message_format":"json"}
@@ -347,16 +331,8 @@ Structured function-calling JSON examples:
   ```json
   {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":false}
   ```
-- `cargo_tree`:
-  ```json
-  {"package":"crabmate","depth":2}
-  ```
-- `cargo_doc`:
-  ```json
-  {"package":"crabmate","no_deps":true,"open":false}
-  ```
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_doc`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`.
 
 **Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
@@ -365,6 +341,8 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 **`cargo_clean`**: removed per the thin-CLI-wrapper consolidation (see [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.1.1 pilot); use `run_command` invoking `cargo clean` (`cargo` is allowlisted). Note: after this downgrade there is **no** `dry_run`-defaults-to-true safety default — pass `--dry-run` explicitly to preview only.
 
 **Write-side safety-gate family (§3.1.2)**: `cargo_fix` / `go_mod_tidy` / `python_install_editable` were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.1.2; use `run_command` (`cargo` / `go` / `uv` / `python3` are allowlisted). All three are write-side-effect tools, so the downgrade has **no** read-only-semantics loss; their former `confirm` gate no longer applies, but that gate was **not** a hard security boundary anyway (an allowlisted `run_command` is not subject to sub-command-level approval) — for stronger guarantees use `tool_approval` or a workflow `requires_approval`.
+
+**cargo metadata / bypass family (§3.2)**: seven read-only thin wrappers — `cargo_metadata` / `cargo_tree` / `cargo_doc` / `cargo_outdated` / `cargo_machete` / `cargo_udeps` / `cargo_publish_dry_run` — were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; use `run_command` (`cargo` is allowlisted). Cost is per §2.1: `run_command` is a write-effect tool, so the downgrade **loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache** (the parallel read-only batch never applied, since the `cargo_` prefix is already excluded); `/health` no longer probes `cargo-machete` / `cargo-udeps`.
 
 **Go**: `go_build`, `go_test`, `go_vet`, `go_fmt_check`, `golangci_lint`.
 

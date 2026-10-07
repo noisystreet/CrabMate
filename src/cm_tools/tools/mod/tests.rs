@@ -357,16 +357,9 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_check"));
     assert!(names.contains(&"cargo_test"));
     assert!(names.contains(&"cargo_clippy"));
-    assert!(names.contains(&"cargo_metadata"));
-    assert!(names.contains(&"cargo_tree"));
-    assert!(names.contains(&"cargo_doc"));
     assert!(names.contains(&"cargo_run"));
     assert!(names.contains(&"cargo_nextest"));
     assert!(names.contains(&"cargo_fmt_check"));
-    assert!(names.contains(&"cargo_outdated"));
-    assert!(names.contains(&"cargo_machete"));
-    assert!(names.contains(&"cargo_udeps"));
-    assert!(names.contains(&"cargo_publish_dry_run"));
     assert!(names.contains(&"rust_compiler_json"));
     assert!(names.contains(&"rust_rustc"));
     assert!(names.contains(&"rust_analyzer_goto_definition"));
