@@ -200,7 +200,6 @@ define_runners_cwd_maxlen_try! {
     runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
     runner_cargo_metadata_try => cargo_tools::cargo_metadata_try,
     runner_cargo_tree_try => cargo_tools::cargo_tree_try,
-    runner_cargo_clean_try => cargo_tools::cargo_clean_try,
     runner_cargo_doc_try => cargo_tools::cargo_doc_try,
     runner_cargo_outdated_try => cargo_tools::cargo_outdated_try,
     runner_cargo_machete_try => cargo_tools::cargo_machete_try,

@@ -298,7 +298,7 @@ Structured function-calling JSON examples:
     "fail_fast":true,
     "compensate_on_failure":true,
     "nodes":[
-      {"id":"clean","tool_name":"cargo_clean","tool_args":{"dry_run":true},"deps":[],"compensate_with":[]},
+      {"id":"clean","tool_name":"run_command","tool_args":{"command":"cargo","args":["clean","--dry-run"]},"deps":[],"compensate_with":[]},
       {"id":"clippy","tool_name":"cargo_clippy","tool_args":{"all_targets":true},"deps":["clean"],"compensate_with":["clean"]},
       {"id":"test","tool_name":"cargo_test","tool_args":{},"deps":["clippy"],"compensate_with":[]},
       {"id":"deny","tool_name":"cargo_deny","tool_args":{"checks":"advisories licenses bans sources","all_features":true},"deps":["test"],"requires_approval":true,"compensate_with":["clean"]}
@@ -355,20 +355,18 @@ Structured function-calling JSON examples:
   ```json
   {"package":"crabmate","depth":2}
   ```
-- `cargo_clean` (default dry-run preview):
-  ```json
-  {"release":true,"dry_run":true}
-  ```
 - `cargo_doc`:
   ```json
   {"package":"crabmate","no_deps":true,"open":false}
   ```
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_clean`, `cargo_doc`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `cargo_metadata`, `cargo_machete`, `cargo_udeps`, `cargo_publish_dry_run`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`, `cargo_tree`, `cargo_doc`.
 
 **Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `python_install_editable`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
 **JVM / Container / Node frontend**: wrappers removed per §8.5.4 **track A**; use `run_command` (`mvn` / `gradle` / `docker` / `podman` / `npm` / `npx` / `tsc` are allowlisted). The aggregate flags (`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images` / `run_frontend_build`, …) remain shared by `quality_workspace` / `ci_pipeline_local`.
+
+**`cargo_clean`**: removed per the thin-CLI-wrapper consolidation (see [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.1.1 pilot); use `run_command` invoking `cargo clean` (`cargo` is allowlisted). Note: after this downgrade there is **no** `dry_run`-defaults-to-true safety default — pass `--dry-run` explicitly to preview only.
 
 **Go**: `go_build`, `go_test`, `go_vet`, `go_mod_tidy`, `go_fmt_check`, `golangci_lint`.
 

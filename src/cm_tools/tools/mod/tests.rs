@@ -359,7 +359,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_clippy"));
     assert!(names.contains(&"cargo_metadata"));
     assert!(names.contains(&"cargo_tree"));
-    assert!(names.contains(&"cargo_clean"));
     assert!(names.contains(&"cargo_doc"));
     assert!(names.contains(&"cargo_run"));
     assert!(names.contains(&"cargo_nextest"));

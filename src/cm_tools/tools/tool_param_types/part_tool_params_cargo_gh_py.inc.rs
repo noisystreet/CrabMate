@@ -67,15 +67,6 @@ pub struct CargoTreeArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
-pub struct CargoCleanArgs {
-    pub package: Option<String>,
-    pub release: Option<bool>,
-    pub doc: Option<bool>,
-    pub dry_run: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
 pub struct CargoDocArgs {
     pub package: Option<String>,
     pub no_deps: Option<bool>,
