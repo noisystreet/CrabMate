@@ -2,7 +2,8 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde_json::Value;
 
@@ -342,20 +343,201 @@ fn insert_after_content_in_memory(
     })
 }
 
-fn commit_tmp_over_target(tmp_path: &Path, target: &Path) -> Result<(), String> {
-    if target.exists() {
-        std::fs::remove_file(target).map_err(|e| {
-            let _ = std::fs::remove_file(tmp_path);
-            format!("删除原文件以替换失败: {}", e)
-        })?;
-    }
-    std::fs::rename(tmp_path, target).map_err(|e| {
-        let _ = std::fs::remove_file(tmp_path);
-        format!("替换目标文件失败: {}", e)
-    })
+/// 临时文件守卫：正常提交后调用 [`TmpFileGuard::keep`]；否则 Drop 时删除，避免异常路径残留。
+struct TmpFileGuard {
+    path: PathBuf,
+    committed: bool,
 }
 
-fn edit_tmp_path(target: &Path) -> Result<std::path::PathBuf, String> {
+impl TmpFileGuard {
+    fn new(path: PathBuf) -> Self {
+        Self {
+            path,
+            committed: false,
+        }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn keep(&mut self) {
+        self.committed = true;
+    }
+}
+
+impl Drop for TmpFileGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[cfg(unix)]
+fn copy_owner_best_effort(meta: &std::fs::Metadata, dst: &File) {
+    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::io::AsRawFd;
+    // best-effort：无 CAP_CHOWN 时忽略失败（属主通常已与当前进程一致）。
+    unsafe {
+        let _ = libc::fchown(
+            dst.as_raw_fd(),
+            meta.uid() as libc::uid_t,
+            meta.gid() as libc::gid_t,
+        );
+    }
+}
+
+#[cfg(not(unix))]
+fn copy_owner_best_effort(_meta: &std::fs::Metadata, _dst: &File) {}
+
+/// 复制源文件扩展属性（含 POSIX ACL 的 `system.posix_acl_access`）到目标；逐项 best-effort。
+#[cfg(target_os = "linux")]
+fn copy_xattrs_best_effort(src_path: &Path, dst_path: &Path) {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let src = match CString::new(src_path.as_os_str().as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    let dst = match CString::new(dst_path.as_os_str().as_bytes()) {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let size = unsafe { libc::listxattr(src.as_ptr(), std::ptr::null_mut(), 0) };
+    if size <= 0 {
+        return;
+    }
+    let mut names = vec![0u8; size as usize];
+    let got = unsafe {
+        libc::listxattr(
+            src.as_ptr(),
+            names.as_mut_ptr() as *mut libc::c_char,
+            names.len(),
+        )
+    };
+    if got <= 0 {
+        return;
+    }
+    names.truncate(got as usize);
+
+    for name in names.split(|b| *b == 0u8) {
+        if name.is_empty() {
+            continue;
+        }
+        let name_c = match CString::new(name.to_vec()) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let vlen = unsafe { libc::getxattr(src.as_ptr(), name_c.as_ptr(), std::ptr::null_mut(), 0) };
+        if vlen < 0 {
+            continue;
+        }
+        let mut val = vec![0u8; vlen as usize];
+        let vgot = unsafe {
+            libc::getxattr(
+                src.as_ptr(),
+                name_c.as_ptr(),
+                val.as_mut_ptr() as *mut libc::c_void,
+                val.len(),
+            )
+        };
+        if vgot < 0 {
+            continue;
+        }
+        val.truncate(vgot as usize);
+        // `security.*`（如 SELinux label）等可能因权限失败，best-effort 忽略。
+        unsafe {
+            let _ = libc::setxattr(
+                dst.as_ptr(),
+                name_c.as_ptr(),
+                val.as_ptr() as *const libc::c_void,
+                val.len(),
+                0,
+            );
+        }
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn copy_xattrs_best_effort(_src_path: &Path, _dst_path: &Path) {}
+
+/// 把原文件的元数据尽量继承到临时文件：属主（best-effort）→ 权限位 → 扩展属性（best-effort）。
+/// 先 chown 再 chmod，因为 chown 可能清掉 setuid/setgid 位。
+fn preserve_target_metadata(
+    src: &File,
+    dst: &File,
+    src_path: &Path,
+    dst_path: &Path,
+) -> Result<(), String> {
+    let meta = src
+        .metadata()
+        .map_err(|e| format!("读取原文件元数据失败: {}", e))?;
+    copy_owner_best_effort(&meta, dst);
+    dst.set_permissions(meta.permissions())
+        .map_err(|e| format!("设置临时文件权限失败: {}", e))?;
+    copy_xattrs_best_effort(src_path, dst_path);
+    Ok(())
+}
+
+/// 目标是否为多硬链接（nlink > 1）。这类文件不能用 rename 换 inode，
+/// 否则其他硬链接仍指向旧内容。
+#[cfg(unix)]
+fn target_has_multiple_links(path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path)
+        .map(|m| m.nlink() > 1)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn target_has_multiple_links(_path: &Path) -> bool {
+    false
+}
+
+/// 硬链接场景：把临时文件内容写回原 inode（O_TRUNC 原地覆盖），保留 inode，
+/// 使其他硬链接同步可见新内容。POSIX 下「保留 inode」与「rename 原子替换」不可兼得，
+/// 故此路径非原子，仅在 nlink > 1 时使用。
+fn copy_tmp_into_target_inode(tmp_path: &Path, target: &Path) -> Result<(), String> {
+    let mut src = File::open(tmp_path).map_err(|e| format!("读取临时文件失败: {}", e))?;
+    let mut dst = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(target)
+        .map_err(|e| format!("写入原文件失败: {}", e))?;
+    std::io::copy(&mut src, &mut dst).map_err(|e| format!("写回原文件失败: {}", e))?;
+    dst.sync_all().map_err(|e| format!("落盘原文件失败: {}", e))?;
+    // 写回成功后清理临时文件（best-effort；失败不影响已完成的写入）。
+    let _ = std::fs::remove_file(tmp_path);
+    Ok(())
+}
+
+fn commit_tmp_over_target(
+    tmp_path: &Path,
+    target: &Path,
+    preserve_inode: bool,
+) -> Result<(), String> {
+    if preserve_inode {
+        copy_tmp_into_target_inode(tmp_path, target)?;
+    } else {
+        // 同目录下 rename(2) 会对已存在的目标做原子替换；不再先 remove_file，
+        // 既避免目标短暂消失，也避免 rename 失败时原文件已被删除（数据丢失）。
+        std::fs::rename(tmp_path, target).map_err(|e| format!("替换目标文件失败: {}", e))?;
+    }
+    // 尽力 fsync 父目录，确保目录项落盘。
+    if let Some(parent) = target.parent()
+        && let Ok(dir) = File::open(parent)
+    {
+        let _ = dir.sync_all();
+    }
+    Ok(())
+}
+
+static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn edit_tmp_path(target: &Path) -> Result<PathBuf, String> {
     let parent = match target.parent() {
         Some(p) if !p.as_os_str().is_empty() => p,
         _ => return Err("错误：无法解析目标文件父目录".to_string()),
@@ -364,15 +546,27 @@ fn edit_tmp_path(target: &Path) -> Result<std::path::PathBuf, String> {
         .file_name()
         .and_then(|f| f.to_str())
         .unwrap_or("file");
-    Ok(parent.join(format!(".{fname}.crabmate_edit_tmp")))
+    // pid + 进程内自增序号，避免并发编辑同一文件时临时名冲突。
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    Ok(parent.join(format!(
+        ".{fname}.crabmate_edit_tmp.{}.{}",
+        std::process::id(),
+        seq
+    )))
 }
 
 fn open_stream_edit_pair(
     target: &Path,
     tmp_path: &Path,
+    inherit_metadata: bool,
 ) -> Result<(BufReader<File>, BufWriter<File>), String> {
     let src = File::open(target).map_err(|e| format!("读取原文件失败: {}", e))?;
     let tmp_file = File::create(tmp_path).map_err(|e| format!("创建临时文件失败: {}", e))?;
+    if inherit_metadata {
+        // 临时文件随后会 rename 覆盖目标，需继承原文件属主/权限/扩展属性，否则会退化为默认值。
+        // 写回原 inode（硬链接）时目标元数据不变，无需复制。
+        preserve_target_metadata(&src, &tmp_file, target, tmp_path)?;
+    }
     Ok((BufReader::new(src), BufWriter::new(tmp_file)))
 }
 
@@ -380,6 +574,10 @@ fn flush_or_abort_tmp(writer: &mut BufWriter<File>, tmp_path: &Path) -> Result<(
     writer.flush().map_err(|e| {
         let _ = std::fs::remove_file(tmp_path);
         format!("刷新临时文件失败: {}", e)
+    })?;
+    writer.get_ref().sync_all().map_err(|e| {
+        let _ = std::fs::remove_file(tmp_path);
+        format!("落盘临时文件失败: {}", e)
     })
 }
 
@@ -568,14 +766,17 @@ pub(super) fn modify_file_replace_lines(
         );
     }
 
+    let preserve_inode = target_has_multiple_links(target);
     let tmp_path = match edit_tmp_path(target) {
         Ok(p) => p,
         Err(e) => return e,
     };
-    let (mut reader, mut writer) = match open_stream_edit_pair(target, &tmp_path) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+    let mut guard = TmpFileGuard::new(tmp_path);
+    let (mut reader, mut writer) =
+        match open_stream_edit_pair(target, guard.path(), !preserve_inode) {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
 
     let (line_no, replaced) = match stream_replace_lines_to_writer(
         &mut reader,
@@ -585,25 +786,23 @@ pub(super) fn modify_file_replace_lines(
         &new_body,
     ) {
         Ok(x) => x,
-        Err(e) => {
-            let _ = std::fs::remove_file(&tmp_path);
-            return e;
-        }
+        Err(e) => return e,
     };
 
     if let Err(e) = validate_replace_coverage(line_no, start_line, end_line, replaced) {
-        let _ = std::fs::remove_file(&tmp_path);
         return append_tail_context_to_error(e, original.as_deref());
     }
 
-    if let Err(e) = flush_or_abort_tmp(&mut writer, &tmp_path) {
+    if let Err(e) = flush_or_abort_tmp(&mut writer, guard.path()) {
         return e;
     }
     drop(writer);
+    drop(reader);
 
-    if let Err(e) = commit_tmp_over_target(&tmp_path, target) {
+    if let Err(e) = commit_tmp_over_target(guard.path(), target, preserve_inode) {
         return e;
     }
+    guard.keep();
 
     let body = tool_output_prepend_path(
         display_path,
@@ -648,30 +847,34 @@ pub(super) fn modify_file_insert_after_line(
         );
     }
 
+    let preserve_inode = target_has_multiple_links(target);
     let tmp_path = match edit_tmp_path(target) {
         Ok(p) => p,
         Err(e) => return e,
     };
-    let (mut reader, mut writer) = match open_stream_edit_pair(target, &tmp_path) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+    let mut guard = TmpFileGuard::new(tmp_path);
+    let (mut reader, mut writer) =
+        match open_stream_edit_pair(target, guard.path(), !preserve_inode) {
+            Ok(x) => x,
+            Err(e) => return e,
+        };
 
     if let Err(e) =
         stream_insert_after_line_to_writer(&mut reader, &mut writer, after_line, &new_body)
     {
-        let _ = std::fs::remove_file(&tmp_path);
         return append_tail_context_to_error(e, original.as_deref());
     }
 
-    if let Err(e) = flush_or_abort_tmp(&mut writer, &tmp_path) {
+    if let Err(e) = flush_or_abort_tmp(&mut writer, guard.path()) {
         return e;
     }
     drop(writer);
+    drop(reader);
 
-    if let Err(e) = commit_tmp_over_target(&tmp_path, target) {
+    if let Err(e) = commit_tmp_over_target(guard.path(), target, preserve_inode) {
         return e;
     }
+    guard.keep();
 
     let body = tool_output_prepend_path(
         display_path,

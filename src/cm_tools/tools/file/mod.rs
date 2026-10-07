@@ -37,3 +37,5 @@ pub use write_ops::{copy_file, create_file, modify_file, move_file};
 mod tests;
 #[cfg(test)]
 mod tests_guards_batch;
+#[cfg(test)]
+mod tests_metadata;
