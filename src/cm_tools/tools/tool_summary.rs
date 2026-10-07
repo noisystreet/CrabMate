@@ -3,358 +3,109 @@
 
 use super::tool_summary_args::*;
 
-pub(super) fn summary_codebase_semantic_search(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CodebaseSemanticSearchSummaryArgs>(v)
-}
-
-pub(super) fn summary_search_in_files(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<SearchInFilesSummaryArgs>(v)
-}
-
-pub(super) fn summary_run_command(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RunCommandSummaryArgs>(v)
-}
-
-pub(super) fn summary_terminal_session(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<TerminalSessionSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_goto_definition(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerGotoDefSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_find_references(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerFindRefsSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_hover(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerHoverSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_document_symbol(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerDocSymbolSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_goto_implementation(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerGotoImplSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_goto_type_definition(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerGotoTypeDefSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_document_highlight(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerDocHighlightSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_analyzer_workspace_symbol(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustAnalyzerWorkspaceSymbolSummaryArgs>(v)
-}
-
-pub(super) fn summary_python_install_editable(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<PythonInstallEditableSummaryArgs>(v)
-}
-
-pub(super) fn summary_uv_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<UvRunSummaryArgs>(v)
-}
-
-pub(super) fn summary_python_snippet_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<PythonSnippetRunSummaryArgs>(v)
-}
-
-pub(super) fn summary_error_output_playbook(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ErrorOutputPlaybookSummaryArgs>(v)
-}
-
-pub(super) fn summary_pre_commit_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<PreCommitRunSummaryArgs>(v)
-}
-
-pub(super) fn summary_ast_grep_run(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<AstGrepRunSummaryArgs>(v)
-}
-
-pub(super) fn summary_ast_grep_rewrite(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<AstGrepRewriteSummaryArgs>(v)
-}
-
-pub(super) fn summary_git_diff(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GitDiffSummaryArgs>(v)
-}
-
-pub(super) fn summary_create_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CreateFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_modify_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ModifyFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_copy_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CopyFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_move_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<MoveFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_read_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ReadFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_read_dir(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ReadDirSummaryArgs>(v)
-}
-
-pub(super) fn summary_web_search(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<WebSearchSummaryArgs>(v)
-}
-
-pub(super) fn summary_http_fetch(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<HttpFetchSummaryArgs>(v)
-}
-
-pub(super) fn summary_http_request(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<HttpRequestSummaryArgs>(v)
-}
-
-pub(super) fn summary_glob_files(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GlobFilesSummaryArgs>(v)
-}
-
-pub(super) fn summary_markdown_check_links(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<MarkdownCheckLinksSummaryArgs>(v)
-}
-
-pub(super) fn summary_structured_validate(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<StructuredValidateSummaryArgs>(v)
-}
-
-pub(super) fn summary_structured_query(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<StructuredQuerySummaryArgs>(v)
-}
-
-pub(super) fn summary_structured_diff(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<StructuredDiffSummaryArgs>(v)
-}
-
-pub(super) fn summary_structured_patch(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<StructuredPatchSummaryArgs>(v)
-}
-
-pub(super) fn summary_list_tree(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ListTreeSummaryArgs>(v)
-}
-
-pub(super) fn summary_file_exists(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<FileExistsSummaryArgs>(v)
-}
-
-pub(super) fn summary_read_binary_meta(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ReadBinaryMetaSummaryArgs>(v)
-}
-
-pub(super) fn summary_hash_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<HashFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_extract_in_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ExtractInFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_apply_patch(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ApplyPatchSummaryArgs>(v)
-}
-
-pub(super) fn summary_package_query(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<PackageQuerySummaryArgs>(v)
-}
-
-pub(super) fn summary_find_symbol(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<FindSymbolSummaryArgs>(v)
-}
-
-pub(super) fn summary_find_references(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<FindReferencesSummaryArgs>(v)
-}
-
-pub(super) fn summary_call_graph_sketch(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CallGraphSketchSummaryArgs>(v)
-}
-
-pub(super) fn summary_rust_file_outline(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<RustFileOutlineSummaryArgs>(v)
-}
-
-pub(super) fn summary_format_check_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<FormatCheckFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_convert_units(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ConvertUnitsSummaryArgs>(v)
-}
-
-pub(super) fn summary_port_check(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<PortCheckSummaryArgs>(v)
-}
-
-pub(super) fn summary_process_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ProcessListSummaryArgs>(v)
-}
-
-pub(super) fn summary_background_job_status(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<BackgroundJobStatusSummaryArgs>(v)
-}
-
-pub(super) fn summary_background_job_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<BackgroundJobListSummaryArgs>(v)
-}
-
-pub(super) fn summary_background_job_output(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<BackgroundJobOutputSummaryArgs>(v)
-}
-
-pub(super) fn summary_background_job_cancel(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<BackgroundJobCancelSummaryArgs>(v)
-}
-
-pub(super) fn summary_code_stats(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CodeStatsSummaryArgs>(v)
-}
-
-pub(super) fn summary_dependency_graph(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<DependencyGraphSummaryArgs>(v)
-}
-
-pub(super) fn summary_coverage_report(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CoverageReportSummaryArgs>(v)
-}
-
-pub(super) fn summary_delete_files(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<DeleteFilesSummaryArgs>(v)
-}
-
-pub(super) fn summary_delete_dir(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<DeleteDirSummaryArgs>(v)
-}
-
-pub(super) fn summary_append_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<AppendFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_create_dir(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<CreateDirSummaryArgs>(v)
-}
-
-pub(super) fn summary_search_replace(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<SearchReplaceSummaryArgs>(v)
-}
-
-pub(super) fn summary_chmod_file(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ChmodFileSummaryArgs>(v)
-}
-
-pub(super) fn summary_symlink_info(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<SymlinkInfoSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrListSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_view(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrNumberSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_checks(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrChecksSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_create(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrCreateSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_merge(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrMergeSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_review(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrReviewSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_comment(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrCommentSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_body_draft(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrBodyDraftSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_edit(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrEditSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_issue_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhIssueListSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_issue_view(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhIssueViewSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_issue_create(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhIssueCreateSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_run_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhRunListSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_pr_diff(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhPrDiffSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_run_view(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhRunViewSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_run_rerun(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhRunRerunSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_run_failure_summary(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhRunFailureSummarySummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_release_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhReleaseListSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_release_view(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhReleaseViewSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_release_create(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhReleaseCreateSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_search(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhSearchSummaryArgs>(v)
-}
-
-pub(super) fn summary_gh_api(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<GhApiSummaryArgs>(v)
-}
-
-pub(super) fn summary_archive_pack(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ArchivePackSummaryArgs>(v)
-}
-
-pub(super) fn summary_archive_unpack(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ArchiveUnpackSummaryArgs>(v)
-}
-
-pub(super) fn summary_archive_list(v: &serde_json::Value) -> Option<String> {
-    summarize_from_value::<ArchiveListSummaryArgs>(v)
+/// 生成 `summary_*` 壳函数：每个都只是把 `&serde_json::Value` 交给
+/// [`summarize_from_value`] 并以对应 args 类型反序列化。
+///
+/// 新增动态摘要工具时，只需在下表增一行 `summary_x => XxxSummaryArgs`（args 结构体与
+/// `ToolSummaryLine` 实现按需加到 `tool_summary_args/` 的 fragment 中）。
+macro_rules! define_summaries {
+    ($( $name:ident => $args:ty ),* $(,)?) => {
+        $(
+            pub(super) fn $name(v: &serde_json::Value) -> Option<String> {
+                summarize_from_value::<$args>(v)
+            }
+        )*
+    };
+}
+
+define_summaries! {
+    summary_codebase_semantic_search => CodebaseSemanticSearchSummaryArgs,
+    summary_search_in_files => SearchInFilesSummaryArgs,
+    summary_run_command => RunCommandSummaryArgs,
+    summary_terminal_session => TerminalSessionSummaryArgs,
+    summary_rust_analyzer_goto_definition => RustAnalyzerGotoDefSummaryArgs,
+    summary_rust_analyzer_find_references => RustAnalyzerFindRefsSummaryArgs,
+    summary_rust_analyzer_hover => RustAnalyzerHoverSummaryArgs,
+    summary_rust_analyzer_document_symbol => RustAnalyzerDocSymbolSummaryArgs,
+    summary_rust_analyzer_goto_implementation => RustAnalyzerGotoImplSummaryArgs,
+    summary_rust_analyzer_goto_type_definition => RustAnalyzerGotoTypeDefSummaryArgs,
+    summary_rust_analyzer_document_highlight => RustAnalyzerDocHighlightSummaryArgs,
+    summary_rust_analyzer_workspace_symbol => RustAnalyzerWorkspaceSymbolSummaryArgs,
+    summary_python_install_editable => PythonInstallEditableSummaryArgs,
+    summary_uv_run => UvRunSummaryArgs,
+    summary_python_snippet_run => PythonSnippetRunSummaryArgs,
+    summary_error_output_playbook => ErrorOutputPlaybookSummaryArgs,
+    summary_pre_commit_run => PreCommitRunSummaryArgs,
+    summary_ast_grep_run => AstGrepRunSummaryArgs,
+    summary_ast_grep_rewrite => AstGrepRewriteSummaryArgs,
+    summary_git_diff => GitDiffSummaryArgs,
+    summary_create_file => CreateFileSummaryArgs,
+    summary_modify_file => ModifyFileSummaryArgs,
+    summary_copy_file => CopyFileSummaryArgs,
+    summary_move_file => MoveFileSummaryArgs,
+    summary_read_file => ReadFileSummaryArgs,
+    summary_read_dir => ReadDirSummaryArgs,
+    summary_web_search => WebSearchSummaryArgs,
+    summary_http_fetch => HttpFetchSummaryArgs,
+    summary_http_request => HttpRequestSummaryArgs,
+    summary_glob_files => GlobFilesSummaryArgs,
+    summary_markdown_check_links => MarkdownCheckLinksSummaryArgs,
+    summary_structured_validate => StructuredValidateSummaryArgs,
+    summary_structured_query => StructuredQuerySummaryArgs,
+    summary_structured_diff => StructuredDiffSummaryArgs,
+    summary_structured_patch => StructuredPatchSummaryArgs,
+    summary_list_tree => ListTreeSummaryArgs,
+    summary_file_exists => FileExistsSummaryArgs,
+    summary_read_binary_meta => ReadBinaryMetaSummaryArgs,
+    summary_hash_file => HashFileSummaryArgs,
+    summary_extract_in_file => ExtractInFileSummaryArgs,
+    summary_apply_patch => ApplyPatchSummaryArgs,
+    summary_package_query => PackageQuerySummaryArgs,
+    summary_find_symbol => FindSymbolSummaryArgs,
+    summary_find_references => FindReferencesSummaryArgs,
+    summary_call_graph_sketch => CallGraphSketchSummaryArgs,
+    summary_rust_file_outline => RustFileOutlineSummaryArgs,
+    summary_format_check_file => FormatCheckFileSummaryArgs,
+    summary_convert_units => ConvertUnitsSummaryArgs,
+    summary_port_check => PortCheckSummaryArgs,
+    summary_process_list => ProcessListSummaryArgs,
+    summary_background_job_status => BackgroundJobStatusSummaryArgs,
+    summary_background_job_list => BackgroundJobListSummaryArgs,
+    summary_background_job_output => BackgroundJobOutputSummaryArgs,
+    summary_background_job_cancel => BackgroundJobCancelSummaryArgs,
+    summary_code_stats => CodeStatsSummaryArgs,
+    summary_dependency_graph => DependencyGraphSummaryArgs,
+    summary_coverage_report => CoverageReportSummaryArgs,
+    summary_delete_files => DeleteFilesSummaryArgs,
+    summary_delete_dir => DeleteDirSummaryArgs,
+    summary_append_file => AppendFileSummaryArgs,
+    summary_create_dir => CreateDirSummaryArgs,
+    summary_search_replace => SearchReplaceSummaryArgs,
+    summary_chmod_file => ChmodFileSummaryArgs,
+    summary_symlink_info => SymlinkInfoSummaryArgs,
+    summary_gh_pr_list => GhPrListSummaryArgs,
+    summary_gh_pr_view => GhPrNumberSummaryArgs,
+    summary_gh_pr_checks => GhPrChecksSummaryArgs,
+    summary_gh_pr_create => GhPrCreateSummaryArgs,
+    summary_gh_pr_merge => GhPrMergeSummaryArgs,
+    summary_gh_pr_review => GhPrReviewSummaryArgs,
+    summary_gh_pr_comment => GhPrCommentSummaryArgs,
+    summary_gh_pr_body_draft => GhPrBodyDraftSummaryArgs,
+    summary_gh_pr_edit => GhPrEditSummaryArgs,
+    summary_gh_issue_list => GhIssueListSummaryArgs,
+    summary_gh_issue_view => GhIssueViewSummaryArgs,
+    summary_gh_issue_create => GhIssueCreateSummaryArgs,
+    summary_gh_run_list => GhRunListSummaryArgs,
+    summary_gh_pr_diff => GhPrDiffSummaryArgs,
+    summary_gh_run_view => GhRunViewSummaryArgs,
+    summary_gh_run_rerun => GhRunRerunSummaryArgs,
+    summary_gh_run_failure_summary => GhRunFailureSummarySummaryArgs,
+    summary_gh_release_list => GhReleaseListSummaryArgs,
+    summary_gh_release_view => GhReleaseViewSummaryArgs,
+    summary_gh_release_create => GhReleaseCreateSummaryArgs,
+    summary_gh_search => GhSearchSummaryArgs,
+    summary_gh_api => GhApiSummaryArgs,
+    summary_archive_pack => ArchivePackSummaryArgs,
+    summary_archive_unpack => ArchiveUnpackSummaryArgs,
+    summary_archive_list => ArchiveListSummaryArgs,
 }
