@@ -358,8 +358,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_test"));
     assert!(names.contains(&"cargo_clippy"));
     assert!(names.contains(&"cargo_run"));
-    assert!(names.contains(&"cargo_nextest"));
-    assert!(names.contains(&"cargo_fmt_check"));
     assert!(names.contains(&"rust_compiler_json"));
     assert!(names.contains(&"rust_rustc"));
     assert!(names.contains(&"rust_analyzer_goto_definition"));
@@ -382,8 +380,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"codespell_check"));
     assert!(names.contains(&"ast_grep_run"));
     assert!(names.contains(&"ast_grep_rewrite"));
-    assert!(names.contains(&"cargo_audit"));
-    assert!(names.contains(&"cargo_deny"));
     assert!(names.contains(&"ci_pipeline_local"));
     assert!(names.contains(&"release_ready_check"));
     assert!(names.contains(&"workflow_execute"));

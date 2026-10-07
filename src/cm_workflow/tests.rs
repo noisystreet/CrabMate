@@ -14,7 +14,7 @@ fn test_parse_workflow_template_rust_ci_light() {
     let json = r#"{"workflow":{"workflow_template":"rust_ci_light"}}"#;
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes.len(), 4);
-    assert_eq!(spec.nodes[0].tool_name, "cargo_fmt_check");
+    assert_eq!(spec.nodes[0].tool_name, "run_command");
     assert_eq!(spec.nodes[1].tool_name, "cargo_check");
     assert_eq!(spec.nodes[2].tool_name, "cargo_clippy");
     assert_eq!(spec.nodes[3].tool_name, "cargo_test");

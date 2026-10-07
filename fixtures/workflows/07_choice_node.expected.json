@@ -33,8 +33,14 @@
           "branch": "failure",
           "from": "lint"
         },
-        "tool": "cargo_fmt_check",
-        "tool_args": {}
+        "tool": "run_command",
+        "tool_args": {
+          "command": "cargo",
+          "args": [
+            "fmt",
+            "--check"
+          ]
+        }
       },
       {
         "deps": [

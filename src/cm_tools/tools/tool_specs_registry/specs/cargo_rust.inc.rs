@@ -32,22 +32,6 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo run"),
         },
         ToolSpec {
-            name: "cargo_nextest",
-            description: "运行 cargo nextest run（需要已安装 cargo-nextest）。用于更快的测试执行。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::CargoNextestArgs>,
-            runner: ToolRunner::Typed(runner_cargo_nextest_try),
-            summary: ToolSummaryKind::Static("cargo nextest"),
-        },
-        ToolSpec {
-            name: "cargo_fmt_check",
-            description: "运行 cargo fmt --check（代码格式检查）。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::EmptyToolArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_fmt_check),
-            summary: ToolSummaryKind::Static("cargo fmt --check"),
-        },
-        ToolSpec {
             name: "rust_compiler_json",
             description: "运行 `cargo check --message-format=<json>`，解析 **compiler-message** 行，输出结构化诊断摘要（级别、错误码、rendered、span）。等价于对接 rustc 的 JSON 诊断流，无需 rust-analyzer。",
             category: ToolCategory::Development,

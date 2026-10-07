@@ -47,15 +47,6 @@ pub struct RustTestOneArgs {
     pub nocapture: Option<bool>,
 }
 
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoNextestArgs {
-    pub package: Option<String>,
-    pub profile: Option<String>,
-    pub test_filter: Option<String>,
-    pub nocapture: Option<bool>,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct RustRustcArgs {
@@ -119,20 +110,6 @@ pub struct RustAnalyzerWorkspaceSymbolArgs {
     pub server_path: Option<String>,
     #[schemars(range(min = 0, max = 5000))]
     pub wait_after_open_ms: Option<u32>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoAuditArgs {
-    pub deny_warnings: Option<bool>,
-    pub json: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct CargoDenyArgs {
-    pub checks: Option<String>,
-    pub all_features: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
