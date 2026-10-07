@@ -9,6 +9,7 @@ struct TerminalSessionExecInvoke<'a> {
     sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     tool_call_id: &'a str,
     sse_encoder: Option<&'a dyn crate::cm_sse_protocol::sse::SseEncoder>,
+    cancel: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
 
 fn terminal_session_precheck(
@@ -60,6 +61,7 @@ async fn execute_terminal_session_impl(
         sse_control_mirror,
         tool_call_id,
         sse_encoder,
+        cancel,
     } = invoke;
     let cfg = env.cfg;
     if let Some(err) = terminal_session_precheck(
@@ -114,22 +116,29 @@ async fn execute_terminal_session_impl(
         Err(e) => return (e, None),
     };
 
-    let wall_secs = parallel_tool_wall_timeout_secs(cfg.as_ref(), "terminal_session");
+    let wall_secs = terminal_session_outer_wall_secs(cfg.as_ref());
+    let sse = crate::cm_internal::terminal_session::TerminalSseSink {
+        out_tx: sse_out_tx,
+        control_mirror: sse_control_mirror,
+        encoder: sse_encoder,
+    };
     let fut = crate::cm_internal::terminal_session::execute_terminal_session(
         cfg,
         effective_working_dir,
         args,
         tool_call_id,
-        sse_out_tx,
-        sse_control_mirror,
+        sse,
         effective_allowed.as_ref(),
-        sse_encoder,
         skip_arg_safety,
+        cancel,
     );
 
     let result = match tokio::time::timeout(Duration::from_secs(wall_secs), fut).await {
         Ok(s) => s,
-        Err(_) => format!("terminal_session 执行超时（{} 秒）", wall_secs),
+        Err(_) => format!(
+            "terminal_session 执行超时（{} 秒）；已按超时清理会话。",
+            wall_secs
+        ),
     };
 
     if let Some(rc_line) = exec_rc_json.as_ref()

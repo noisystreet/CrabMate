@@ -422,6 +422,7 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
                 sse_control_mirror,
                 tool_call_id: tc.id.as_str(),
                 sse_encoder: None,
+                cancel,
             })
             .await
         }

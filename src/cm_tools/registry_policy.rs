@@ -15,6 +15,8 @@ use crate::cm_tools::tool_naming::{is_dynamic_tool_name, is_mcp_proxy_tool};
 pub const WEB_SEARCH_WORBROW_OUTER_GRACE_SECS: u64 = 15;
 /// Brave/Tavily 外圈相对 reqwest 超时的少量缓冲。
 pub const WEB_SEARCH_API_OUTER_GRACE_SECS: u64 = 2;
+/// `terminal_session` 外圈相对内层墙钟的收尾宽限（秒）：让内层先优雅返回（会话仍打开）。
+pub const TERMINAL_SESSION_OUTER_GRACE_SECS: u64 = 5;
 
 fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str {
     match class {
@@ -89,6 +91,15 @@ pub fn http_request_outer_wall_secs(cfg: &AgentConfig) -> u64 {
     cfg.tool_registry_policy
         .tool_registry_http_request_wall_timeout_secs
         .unwrap_or_else(|| http_fetch_outer_wall_secs(cfg))
+}
+
+/// `terminal_session`：`spawn_blocking` **外圈** `tokio::time::timeout`（秒）= 内层墙钟 + 收尾宽限。
+///
+/// 内层（`drain_until_idle`）使用 `command_exec.command_timeout_secs`；外圈略长，
+/// 让内层先优雅返回（会话仍打开），仅在病态挂起时由外层超时兜底 drop future 触发会话清理。
+pub fn terminal_session_outer_wall_secs(cfg: &AgentConfig) -> u64 {
+    parallel_tool_wall_timeout_secs(cfg, "terminal_session")
+        .saturating_add(TERMINAL_SESSION_OUTER_GRACE_SECS)
 }
 
 fn builtin_write_effect_tools() -> &'static HashSet<String> {

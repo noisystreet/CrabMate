@@ -5,6 +5,7 @@
 pub enum TerminalSessionAction {
     Exec,
     SendSignal,
+    Interrupt,
     Resize,
     List,
     Close,
@@ -12,7 +13,7 @@ pub enum TerminalSessionAction {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct TerminalSessionArgs {
-    /// exec / send_signal / resize / list / close
+    /// exec / send_signal / interrupt / resize / list / close
     pub action: TerminalSessionAction,
     pub session_id: Option<String>,
     pub command: Option<String>,
