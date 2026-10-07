@@ -38,16 +38,6 @@ pub struct GoVetArgs {
     pub tags: Option<String>,
 }
 
-/// [`super::go_tools::go_mod_tidy`] 入参（runner 仅消费 `confirm`；`verbose` 与历史 schema 对齐）。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GoModTidyArgs {
-    #[serde(default)]
-    pub verbose: bool,
-    #[serde(default)]
-    pub confirm: bool,
-}
-
 /// [`super::go_tools::go_fmt_check`] 入参（与 runner 一致：单键 `path`，默认 `.`）。
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]

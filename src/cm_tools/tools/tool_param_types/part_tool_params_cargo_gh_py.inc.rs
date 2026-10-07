@@ -180,22 +180,6 @@ pub struct RustAnalyzerWorkspaceSymbolArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
-pub struct CargoFixArgs {
-    pub confirm: Option<bool>,
-    pub broken_code: Option<bool>,
-    pub all_targets: Option<bool>,
-    pub package: Option<String>,
-    pub features: Option<String>,
-    pub all_features: Option<bool>,
-    pub edition: Option<String>,
-    pub edition_idioms: Option<bool>,
-    pub allow_dirty: Option<bool>,
-    pub allow_staged: Option<bool>,
-    pub allow_no_vcs: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
 pub struct CargoAuditArgs {
     pub deny_warnings: Option<bool>,
     pub json: Option<bool>,
@@ -556,18 +540,6 @@ pub struct PytestRunArgs {
 pub struct MypyCheckArgs {
     pub paths: Option<Vec<String>>,
     pub strict: Option<bool>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum PythonInstallBackend {
-    Uv,
-    Pip,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct PythonInstallEditableArgs {
-    pub backend: PythonInstallBackend,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

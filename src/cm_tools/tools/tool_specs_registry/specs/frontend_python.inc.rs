@@ -24,14 +24,6 @@ ToolSpec {
             summary: ToolSummaryKind::Static("mypy"),
         },
         ToolSpec {
-            name: "python_install_editable",
-            description: "在工作区根执行可编辑安装：`backend=uv` 时 `uv pip install -e .`，`backend=pip` 时 `python3 -m pip install -e .`。须存在 pyproject.toml 或 setup.py。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::PythonInstallEditableArgs>,
-            runner: ToolRunner::Legacy(runner_python_install_editable),
-            summary: ToolSummaryKind::Dynamic(ts::summary_python_install_editable),
-        },
-        ToolSpec {
             name: "uv_sync",
             description: "在工作区根运行 `uv sync`（须存在 pyproject.toml）。可选 frozen（--frozen）、no_dev（--no-dev）、all_packages（--all-packages）。需本机已安装 uv。",
             category: ToolCategory::Development,

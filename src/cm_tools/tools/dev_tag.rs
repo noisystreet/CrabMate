@@ -107,7 +107,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "cargo_run"
         | "cargo_nextest"
         | "cargo_publish_dry_run"
-        | "cargo_fix"
         | "rust_test_one"
         | "rust_analyzer_goto_definition"
         | "rust_analyzer_find_references"
@@ -125,12 +124,12 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         }
 
         // --- Go ---
-        "go_build" | "go_test" | "go_mod_tidy" => &[GENERAL, GO],
+        "go_build" | "go_test" => &[GENERAL, GO],
         "go_vet" | "go_fmt_check" | "golangci_lint" => &[GENERAL, GO, QUALITY],
 
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
-        "pytest_run" | "python_install_editable" | "uv_sync" | "uv_run" | "python_snippet_run" => {
+        "pytest_run" | "uv_sync" | "uv_run" | "python_snippet_run" => {
             &[GENERAL, PYTHON]
         }
 

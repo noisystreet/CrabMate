@@ -374,20 +374,6 @@ impl ToolSummaryLine for RustAnalyzerWorkspaceSymbolSummaryArgs {
 // ── python / uv / pre-commit / ast-grep ───────────────────────
 
 #[derive(Debug, Deserialize)]
-pub(super) struct PythonInstallEditableSummaryArgs {
-    #[serde(default)]
-    backend: Option<String>,
-}
-
-impl ToolSummaryLine for PythonInstallEditableSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let b = self.backend.as_deref().unwrap_or("?").trim();
-        let b = if b.is_empty() { "?" } else { b };
-        Some(format!("editable Python install ({})", b))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct UvRunSummaryArgs {
     #[serde(default)]
     args: Vec<serde_json::Value>,

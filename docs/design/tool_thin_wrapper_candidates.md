@@ -67,15 +67,15 @@
 |------|----------|-----------|
 | ~~`cargo_clean`~~（**已收敛 2026-10-07**） | `cargo clean` | 已删 ToolSpec + runner（`cargo_clean_try` / `CargoCleanArgs`），改用 `run_command`。失去 `dry_run` **默认 true** 的安全默认 + `package` / `release` / `doc` 参数 schema（降级后须显式自带 `--dry-run`）；**无只读语义损失**（二者均为写副作用工具）。 |
 
-**3.1.2 含安全门 / 增值逻辑（须先定替代机制再收敛）**
+**3.1.2 含安全门 / 增值逻辑（已收敛 2026-10-07）**
 
 | 工具 | 底层 CLI | 收敛后失去 |
 |------|----------|-----------|
-| `cargo_fix` | `cargo fix` | `confirm=true` **强制门**（`src/cm_tools/tools/cargo_tools.rs:597-602`）+ `Cargo.toml` 存在性检查 + 8 个布尔开关 schema |
-| `go_mod_tidy` | `go mod tidy` | `confirm=true` **强制门** + `go.mod` 存在性跳过（`src/cm_tools/tools/go_tools.rs:167-172`） |
-| `python_install_editable` | `uv pip install -e .` / `python3 -m pip install -e .` | `backend`（uv/pip）路由 + `pyproject.toml` / `setup.py` 存在性检查（`src/cm_tools/tools/python_tools.rs:309-342`） |
+| ~~`cargo_fix`~~（**已收敛 2026-10-07**） | `cargo fix` | 已删 ToolSpec + runner（`cargo_fix_try` / `CargoFixArgs`）。失去 `confirm=true` **强制门** + `Cargo.toml` 存在性检查 + 8 个布尔开关 schema |
+| ~~`go_mod_tidy`~~（**已收敛 2026-10-07**） | `go mod tidy` | 已删 ToolSpec + runner（`go_mod_tidy` / `GoModTidyArgs`）。失去 `confirm=true` **强制门** + `go.mod` 存在性跳过 |
+| ~~`python_install_editable`~~（**已收敛 2026-10-07**） | `uv pip install -e .` / `python3 -m pip install -e .` | 已删 ToolSpec + runner（`python_install_editable` / `PythonInstallEditableArgs` + `PythonInstallBackend` + `summary_python_install_editable`）。失去 `backend`（uv/pip）路由 + `pyproject.toml` / `setup.py` 存在性检查 |
 
-> 3.1.2 三项收敛前须先把 `confirm` 门映射到 **`tool_approval::SensitiveCapability`**（或等价审批），否则属**安全回归**。
+> **修订（2026-10-07）**：原计划「3.1.2 三项收敛前须先把 `confirm` 门映射到 **`tool_approval::SensitiveCapability`**，否则属安全回归」经复核后**不再适用**——`cargo` / `go` / `uv` / `python3` **本就在 `allowed_commands` 白名单**，`run_command` 仅在「命令名不在白名单」时触发审批，**无子命令级审批**；即 `confirm` 门在收敛前即可被 `run_command` 直接绕过，**并非强制安全边界**。故本次按「直接收敛、不新增机制」落地：收敛后审批面与既有白名单一致（三工具均为写副作用工具，`Ask`/`Plan` 门控与语义索引失效语义不变）。
 
 ### 3.2 视情况（只读薄封装，须权衡 §2.1 代价）
 
@@ -120,7 +120,7 @@
 ## 4. 建议切片顺序
 
 1. ~~**§3.1.1 试点**：`cargo_clean`~~（**已落地 2026-10-07**：删 ToolSpec + runner + `cargo_clean_try` + `CargoCleanArgs`，并同步 tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
-2. **§3.1.2 写侧安全门族**（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）：**须先落 `confirm` → `tool_approval` 替代**，否则不动。
+2. ~~**§3.1.2 写侧安全门族**（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）~~（**已落地 2026-10-07**：按「直接收敛、不新增机制」删 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`），并同步 `registry_policy` / `codebase_semantic_invalidation` / `dev_tag` / tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `docs/待办清单.md` / `CHANGELOG.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
 3. **§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。
 4. **§3.2 Go / Python 族**：按频率评估；`cargo_test` / `pytest_run` 收敛前须核对后台任务装配。
 5. **`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。
@@ -137,3 +137,4 @@
 | 2026-10-07 | 初稿：对 §8.5 之后的**剩余内置工具**逐家族盘点，给出「适合 / 视情况 / 保留」判定矩阵、收敛代价（只读语义 / 白名单 / 后台任务 / 运行时差异）与建议切片顺序。 |
 | 2026-10-07 | 修订：§3.1 收窄为「写侧薄封装（无只读损失，但非零损失）」，拆 **3.1.1 首推（`cargo_clean`）** / **3.1.2 含 `confirm` 门或校验（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）**；`gh_api`（校验密集 + stdin body，降级扩大安全面）与 `playbook_run_commands`（启发式执行半体，非薄封装）移入 §3.3 保留；§4 顺序同步调整。 |
 | 2026-10-07 | **§3.1.1 `cargo_clean` 试点已落地**：删除 ToolSpec + runner + `cargo_clean_try` + `CargoCleanArgs` + 写副作用 / `dev_tag` / tests 引用，改用 `run_command`；同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
+| 2026-10-07 | **§3.1.2 写侧安全门族已落地**：按「直接收敛、不新增机制」删除 `cargo_fix` / `go_mod_tidy` / `python_install_editable` 的 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`）及写副作用 / `dev_tag` / tests 引用，改用 `run_command`；复核确认 `confirm` 门并非强制安全边界；同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md` / `tool_calling_evolution.md`。 |

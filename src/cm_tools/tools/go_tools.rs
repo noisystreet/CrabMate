@@ -1,11 +1,11 @@
-//! Go 语言工具链：go build / test / vet / mod tidy / fmt check
+//! Go 语言工具链：go build / test / vet / fmt check
 
 use std::path::Path;
 use std::process::Command;
 
 use super::output_util;
 use super::tool_param_types::{
-    GoBuildArgs, GoFmtCheckArgs, GoModTidyArgs, GoTestArgs, GoVetArgs, GolangciLintArgs,
+    GoBuildArgs, GoFmtCheckArgs, GoTestArgs, GoVetArgs, GolangciLintArgs,
 };
 
 const MAX_OUTPUT_LINES: usize = 800;
@@ -153,27 +153,6 @@ pub fn go_vet(args_json: &str, workspace_root: &Path, max_output_len: usize) -> 
     push_go_tags(&mut cmd, tags);
     cmd.arg(package).current_dir(workspace_root);
     run_and_format(cmd, max_output_len, "go vet")
-}
-
-pub fn go_mod_tidy(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let args: GoModTidyArgs = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 go_mod_tidy 形状不一致: {e}"),
-    };
-    if !has_go_project(workspace_root) {
-        return "go mod tidy: 跳过（未找到 go.mod）".to_string();
-    }
-    if !args.confirm {
-        return "拒绝执行：go_mod_tidy 需要 confirm=true".to_string();
-    }
-
-    let mut cmd = Command::new("go");
-    cmd.arg("mod").arg("tidy").current_dir(workspace_root);
-    run_and_format(cmd, max_output_len, "go mod tidy")
 }
 
 pub fn go_fmt_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {

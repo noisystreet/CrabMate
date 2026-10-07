@@ -31,7 +31,6 @@ define_summaries! {
     summary_rust_analyzer_goto_type_definition => RustAnalyzerGotoTypeDefSummaryArgs,
     summary_rust_analyzer_document_highlight => RustAnalyzerDocHighlightSummaryArgs,
     summary_rust_analyzer_workspace_symbol => RustAnalyzerWorkspaceSymbolSummaryArgs,
-    summary_python_install_editable => PythonInstallEditableSummaryArgs,
     summary_uv_run => UvRunSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_error_output_playbook => ErrorOutputPlaybookSummaryArgs,
