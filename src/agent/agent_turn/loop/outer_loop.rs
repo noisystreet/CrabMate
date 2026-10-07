@@ -259,6 +259,12 @@ fn drop_redundant_tool_calls_after_active_goal_completed(p: &mut RunLoopParams<'
 }
 
 /// 非首轮：通知前端结束上一 answer 段并开启新段。
+///
+/// 只负责分段边界，**不**在此下发 `AssistantAnswerPhase`：该轮是否以及何时进入
+/// 正文相，由 `cm_llm` 的 SSE 解析在**该轮首个正文 delta** 时判定
+/// （见 `cm_llm::api::sse_parser::ingest_sse_content_from_delta`）。若某轮只有
+/// reasoning + tool_calls、没有正文，则不发 phase（正确）；否则提前发会把前端
+/// 思维链阶段误推入正文相，使紧随其后的 `reasoning_*` 增量被当作正文渲染。
 async fn outer_loop_emit_answer_segment_transition(p: &RunLoopParams<'_>, iteration_count: u32) {
     if iteration_count <= 1 {
         return;
@@ -286,16 +292,6 @@ async fn outer_loop_emit_answer_segment_transition(p: &RunLoopParams<'_>, iterat
             },
         },
         "outer_loop::new_answer_segment_start",
-        p.ctx.io.control.sse_encoder.as_ref(),
-    )
-    .await;
-    send_sse_control_payload_optional(
-        p.ctx.io.control.out,
-        None,
-        SsePayload::AssistantAnswerPhase {
-            assistant_answer_phase: true,
-        },
-        "outer_loop::assistant_answer_phase",
         p.ctx.io.control.sse_encoder.as_ref(),
     )
     .await;
