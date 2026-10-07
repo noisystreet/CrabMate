@@ -123,36 +123,6 @@ pub struct RustFileOutlineArgs {
 
 // ── GitHub CLI ───────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GhPrState {
-    Open,
-    Closed,
-    Merged,
-    All,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhPrListArgs {
-    pub repo: Option<String>,
-    pub state: Option<GhPrState>,
-    pub limit: Option<u32>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhPrViewArgs {
-    pub number: u32,
-    pub repo: Option<String>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GhPrChecksArgs {
@@ -260,35 +230,6 @@ pub struct GhPrBodyDraftArgs {
     pub include_commit_log: Option<bool>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GhIssueState {
-    Open,
-    Closed,
-    All,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhIssueListArgs {
-    pub repo: Option<String>,
-    pub state: Option<GhIssueState>,
-    pub limit: Option<u32>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhIssueViewArgs {
-    pub number: u32,
-    pub repo: Option<String>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
 pub struct GhIssueCreateArgs {
@@ -297,37 +238,6 @@ pub struct GhIssueCreateArgs {
     pub repo: Option<String>,
     pub labels: Option<Vec<String>>,
     pub assignee: Option<String>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GhRunListArgs {
-    pub repo: Option<String>,
-    pub limit: Option<u32>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhPrDiffArgs {
-    pub number: u32,
-    pub repo: Option<String>,
-    pub patch: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhRunViewArgs {
-    pub run_id: String,
-    pub repo: Option<String>,
-    pub log: Option<bool>,
-    pub job: Option<String>,
-    pub fields: Option<Vec<String>>,
     pub web: Option<bool>,
     pub extra_args: Option<Vec<String>>,
 }
@@ -354,26 +264,6 @@ pub struct GhRunFailureSummaryArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
-pub struct GhReleaseListArgs {
-    pub repo: Option<String>,
-    pub limit: Option<u32>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhReleaseViewArgs {
-    pub tag: String,
-    pub repo: Option<String>,
-    pub fields: Option<Vec<String>>,
-    pub web: Option<bool>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
 pub struct GhReleaseCreateArgs {
     pub tag: String,
     pub title: Option<String>,
@@ -387,25 +277,6 @@ pub struct GhReleaseCreateArgs {
     pub auto_notes: Option<bool>,
     #[schemars(range(min = 1, max = 500))]
     pub max_commits: Option<u32>,
-    pub extra_args: Option<Vec<String>>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum GhSearchScope {
-    Issues,
-    Prs,
-    Repos,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct GhSearchArgs {
-    pub scope: GhSearchScope,
-    pub query: String,
-    pub repo: Option<String>,
-    pub limit: Option<u32>,
-    pub fields: Option<Vec<String>>,
     pub extra_args: Option<Vec<String>>,
 }
 

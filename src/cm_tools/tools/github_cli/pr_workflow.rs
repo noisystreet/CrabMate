@@ -3,101 +3,15 @@ use std::path::Path;
 use serde_json::Value as JsonValue;
 
 use super::common::{
-    clamp_limit, command_formatted_exit_code, extract_stderr_from_formatted, gh_allowed,
-    join_json_fields, push_bool_flag, push_extra_args_from_json, push_repo_arg,
-    push_trimmed_string_flag, run_gh_vec, validate_extra_args, validate_pr_body,
-    validate_pr_ref_token, validate_pr_title, validate_repo, write_workspace_temp_markdown,
+    command_formatted_exit_code, extract_stderr_from_formatted, gh_allowed, push_bool_flag,
+    push_extra_args_from_json, push_repo_arg, push_trimmed_string_flag, run_gh_vec,
+    validate_extra_args, validate_pr_body, validate_pr_ref_token, validate_pr_title, validate_repo,
+    write_workspace_temp_markdown,
 };
 use super::pr_body::build_pr_body_draft;
 use super::run_ci::{
     PR_CHECKS_STRUCTURED_JSON_FIELDS, finalize_structured_pr_checks, gh_pr_checks_rejects_json_flag,
 };
-
-/// `gh run list`
-pub fn gh_run_list(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let mut argv = vec!["run".into(), "list".into()];
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
-        if let Err(e) = validate_repo(r) {
-            return e;
-        }
-        argv.push("-R".into());
-        argv.push(r.trim().to_string());
-    }
-    let lim = clamp_limit(v.get("limit").and_then(|x| x.as_u64()).map(|u| u as u32));
-    argv.push("--limit".into());
-    argv.push(lim.to_string());
-    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
-        let fields: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        match join_json_fields(&fields) {
-            Ok(j) => {
-                argv.push("--json".into());
-                argv.push(j);
-            }
-            Err(e) => return e,
-        }
-    }
-    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
-        argv.push("--web".into());
-    }
-    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
-        let extra: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        if let Err(e) = validate_extra_args(&extra) {
-            return e;
-        }
-        argv.extend(extra);
-    }
-    run_gh_vec(argv, max_output_len, allowed_commands, working_dir)
-}
-
-fn gh_pr_diff_argv(v: &JsonValue) -> Result<Vec<String>, String> {
-    let num = match v.get("number").and_then(|x| x.as_u64()) {
-        Some(n) if n > 0 && n <= 999_999 => n.to_string(),
-        _ => return Err("错误：缺少或非法 number".to_string()),
-    };
-    let mut argv = vec!["pr".into(), "diff".into(), num];
-    push_repo_arg(v, &mut argv)?;
-    push_bool_flag(v, "patch", "--patch", &mut argv);
-    push_extra_args_from_json(v, &mut argv)?;
-    Ok(argv)
-}
-
-/// `gh pr diff`（只读）
-pub fn gh_pr_diff(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-) -> String {
-    if let Err(e) = gh_allowed(allowed_commands) {
-        return e;
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    match gh_pr_diff_argv(&v) {
-        Ok(argv) => run_gh_vec(argv, max_output_len, allowed_commands, working_dir),
-        Err(e) => e,
-    }
-}
 
 fn build_pr_checks_argv(v: &JsonValue, with_structured_json: bool) -> Result<Vec<String>, String> {
     let mut argv = vec!["pr".into(), "checks".into()];
@@ -235,7 +149,7 @@ fn annotate_gh_pr_create_failure(formatted: String) -> String {
     } else if stderr.contains("base ref must be a branch") {
         "`base` 必须是仓库中已存在的分支（如 main/master）。请确认 base 分支名拼写后再重试。"
     } else if stderr.contains("a pull request already exists") {
-        "该 head 分支已有关联 PR。请改用 `gh_pr_view` 查看现有 PR，而非重复创建。"
+        "该 head 分支已有关联 PR。请改用 `gh pr view` 查看现有 PR，而非重复创建。"
     } else if stderr.contains("repository not found")
         || stderr.contains("could not resolve to a repository")
     {
@@ -336,7 +250,14 @@ mod tests {
     fn annotate_pr_already_exists_points_to_view() {
         let raw = gh_create_err("a pull request already exists for feat/x (createPullRequest)");
         let out = annotate_gh_pr_create_failure(raw);
-        assert!(out.contains("gh_pr_view"), "{}", out);
+        assert!(out.contains("gh pr view"), "{}", out);
+    }
+
+    #[test]
+    fn gh_pr_checks_requires_gh_in_allowlist() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let out = super::gh_pr_checks("{}", 4096, &[], dir.path());
+        assert!(out.contains("未包含 gh"), "{}", out);
     }
 
     #[test]

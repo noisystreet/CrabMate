@@ -4,10 +4,6 @@ use serde_json::Value as JsonValue;
 
 use crate::cm_tools::tools::command;
 
-pub const MAX_LIMIT: u32 = 200;
-pub const DEFAULT_LIST_LIMIT: u32 = 30;
-pub const MAX_SEARCH_LIMIT: u32 = 100;
-pub const MAX_SEARCH_QUERY_BYTES: usize = 400;
 pub const MAX_RELEASE_TAG_LEN: usize = 200;
 pub const MAX_JOB_NAME_LEN: usize = 128;
 pub const MAX_PR_TITLE_BYTES: usize = 240;
@@ -74,127 +70,6 @@ pub fn gh_allowed(allowed: &[String]) -> Result<(), String> {
     } else {
         Err("错误：当前配置 allowed_commands 未包含 gh（可在 config/tools.toml 或 CM_ALLOWED_COMMANDS 中加入）".to_string())
     }
-}
-
-pub fn join_json_fields(fields: &[String]) -> Result<String, String> {
-    if fields.is_empty() {
-        return Err("错误：fields 数组不能为空".to_string());
-    }
-    let mut out = Vec::new();
-    for f in fields {
-        let t = f.trim();
-        if t.is_empty() {
-            return Err("错误：fields 中含空字符串".to_string());
-        }
-        if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-            return Err(format!("错误：非法 json 字段名 {:?}", t));
-        }
-        out.push(t.to_string());
-    }
-    Ok(out.join(","))
-}
-
-pub fn clamp_limit(n: Option<u32>) -> u32 {
-    n.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_LIMIT)
-}
-
-/// 解析 `gh_*` 工具 JSON 参数；失败时返回错误字符串（与 [`run_gh_vec`] 风格一致）。
-pub fn parse_gh_tool_args(args_json: &str) -> Result<JsonValue, String> {
-    crate::cm_tools::tools::parse_args_json(args_json)
-}
-
-pub fn push_repo_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
-    if let Some(r) = v.get("repo").and_then(|x| x.as_str()) {
-        validate_repo(r)?;
-        argv.push("-R".into());
-        argv.push(r.trim().to_string());
-    }
-    Ok(())
-}
-
-pub fn push_json_fields_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
-    if let Some(arr) = v.get("fields").and_then(|x| x.as_array()) {
-        let fields: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        let j = join_json_fields(&fields)?;
-        argv.push("--json".into());
-        argv.push(j);
-    }
-    Ok(())
-}
-
-pub fn push_web_argv(argv: &mut Vec<String>, v: &JsonValue) {
-    if v.get("web").and_then(|x| x.as_bool()) == Some(true) {
-        argv.push("--web".into());
-    }
-}
-
-pub fn push_extra_args_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
-    if let Some(arr) = v.get("extra_args").and_then(|x| x.as_array()) {
-        let extra: Vec<String> = arr
-            .iter()
-            .filter_map(|x| x.as_str().map(String::from))
-            .collect();
-        validate_extra_args(&extra)?;
-        argv.extend(extra);
-    }
-    Ok(())
-}
-
-pub fn push_list_state_argv(
-    argv: &mut Vec<String>,
-    v: &JsonValue,
-    allow_merged: bool,
-) -> Result<(), String> {
-    if let Some(s) = v.get("state").and_then(|x| x.as_str()) {
-        let st = s.trim();
-        let valid = if allow_merged {
-            matches!(st, "open" | "closed" | "merged" | "all")
-        } else {
-            matches!(st, "open" | "closed" | "all")
-        };
-        if !valid {
-            return Err(if allow_merged {
-                "错误：state 须为 open、closed、merged 或 all".to_string()
-            } else {
-                "错误：state 须为 open、closed 或 all".to_string()
-            });
-        }
-        if st != "open" {
-            argv.push("--state".into());
-            argv.push(st.to_string());
-        }
-    }
-    Ok(())
-}
-
-pub fn push_list_limit_argv(argv: &mut Vec<String>, v: &JsonValue) {
-    let lim = clamp_limit(v.get("limit").and_then(|x| x.as_u64()).map(|u| u as u32));
-    argv.push("--limit".into());
-    argv.push(lim.to_string());
-}
-
-pub fn push_view_tail_argv(argv: &mut Vec<String>, v: &JsonValue) -> Result<(), String> {
-    push_repo_argv(argv, v)?;
-    push_json_fields_argv(argv, v)?;
-    push_web_argv(argv, v);
-    push_extra_args_argv(argv, v)?;
-    Ok(())
-}
-
-pub fn push_list_tail_argv(
-    argv: &mut Vec<String>,
-    v: &JsonValue,
-    allow_merged: bool,
-) -> Result<(), String> {
-    push_list_state_argv(argv, v, allow_merged)?;
-    push_list_limit_argv(argv, v);
-    push_json_fields_argv(argv, v)?;
-    push_web_argv(argv, v);
-    push_extra_args_argv(argv, v)?;
-    Ok(())
 }
 
 pub fn try_pretty_json(stdout: &str) -> Option<String> {
@@ -323,31 +198,6 @@ pub fn validate_release_tag(tag: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn validate_search_query(q: &str) -> Result<(), String> {
-    let t = q.trim();
-    if t.is_empty() {
-        return Err("错误：query 不能为空".to_string());
-    }
-    if t.len() > MAX_SEARCH_QUERY_BYTES {
-        return Err(format!(
-            "错误：query 过长（上限 {} 字节）",
-            MAX_SEARCH_QUERY_BYTES
-        ));
-    }
-    if t.contains("..") {
-        return Err("错误：query 不得包含 \"..\"".to_string());
-    }
-    for ch in t.chars() {
-        if matches!(ch, '\n' | '\r' | '\0' | '\t') {
-            return Err("错误：query 不得含换行、制表符或空字符".to_string());
-        }
-        if matches!(ch, ';' | '|' | '&' | '`' | '$' | '<' | '>') {
-            return Err(format!("错误：query 含不允许的字符 {:?}", ch));
-        }
-    }
-    Ok(())
-}
-
 pub fn validate_pr_title(title: &str) -> Result<(), String> {
     let t = title.trim();
     if t.is_empty() {
@@ -422,10 +272,6 @@ pub fn validate_job_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
-pub fn clamp_search_limit(n: Option<u32>) -> u32 {
-    n.unwrap_or(DEFAULT_LIST_LIMIT).clamp(1, MAX_SEARCH_LIMIT)
-}
-
 pub fn write_workspace_temp_markdown(
     working_dir: &Path,
     filename: &str,
@@ -462,21 +308,6 @@ pub fn push_extra_args_from_json(v: &JsonValue, argv: &mut Vec<String>) -> Resul
         validate_extra_args(&extra)?;
         argv.extend(extra);
     }
-    Ok(())
-}
-
-/// 若 JSON 含 `fields` 数组，追加 `--json <joined>`（经 [`join_json_fields`] 校验；空数组会报错）。
-pub fn push_json_fields_from_json(v: &JsonValue, argv: &mut Vec<String>) -> Result<(), String> {
-    let Some(arr) = v.get("fields").and_then(|x| x.as_array()) else {
-        return Ok(());
-    };
-    let fields: Vec<String> = arr
-        .iter()
-        .filter_map(|x| x.as_str().map(String::from))
-        .collect();
-    let joined = join_json_fields(&fields)?;
-    argv.push("--json".into());
-    argv.push(joined);
     Ok(())
 }
 
@@ -532,5 +363,45 @@ mod tests {
         let raw = "命令：gh pr list\n退出码：0\n标准输出：\n[]\n".to_string();
         let out = attach_json_if_exit_zero(raw, "[]");
         assert!(out.contains("解析后的 JSON"), "{out}");
+    }
+
+    #[test]
+    fn attach_json_skips_on_nonzero_exit() {
+        let raw = "退出码：1\n标准输出：\n{}\n".to_string();
+        let out = attach_json_if_exit_zero(raw, "{}");
+        assert!(!out.contains("解析后的 JSON"), "{}", out);
+    }
+
+    #[test]
+    fn validate_repo_rejects_absolute() {
+        assert!(validate_repo("/a/b").is_err());
+        assert!(validate_repo("a/../b").is_err());
+        assert!(validate_repo("o/r").is_ok());
+    }
+
+    #[test]
+    fn validate_api_path_cases() {
+        assert!(validate_api_path("repos/foo/bar/issues").is_ok());
+        assert!(validate_api_path("/repos/x").is_err());
+        assert!(validate_api_path("repos/../x").is_err());
+    }
+
+    #[test]
+    fn validate_pr_title_rejects_newline() {
+        assert!(validate_pr_title("a\nb").is_err());
+        assert!(validate_pr_title("ok title").is_ok());
+    }
+
+    #[test]
+    fn validate_pr_ref_token_rejects_dotdot() {
+        assert!(validate_pr_ref_token("main..other").is_err());
+        assert!(validate_pr_ref_token("feature/foo").is_ok());
+        assert!(validate_pr_ref_token("fork:branch").is_ok());
+    }
+
+    #[test]
+    fn validate_run_id_numeric() {
+        assert!(validate_run_id("12345").is_ok());
+        assert!(validate_run_id("12a").is_err());
     }
 }
