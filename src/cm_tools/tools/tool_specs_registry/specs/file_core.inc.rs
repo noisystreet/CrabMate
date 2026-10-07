@@ -36,7 +36,7 @@ ToolSpec {
             description: "按行流式读取文件（不把整文件载入内存）。代码分析：先用 `search_in_files`、`codebase_semantic_search`（需索引）、`glob_files`/`list_tree` 收窄路径；命中行号后可用 **`anchor_line` + `context_lines`** 对称取上下文（勿与 start_line/end_line 同传），亦可用传统 start_line/end_line。默认单次最多 max_lines=500（可调 8000）。可选 count_total_lines（大文件慎用）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ReadFileArgs>,
-            runner: ToolRunner::Legacy(runner_read_file),
+            runner: ToolRunner::Typed(read_file_try_dispatch),
             summary: ToolSummaryKind::Dynamic(ts::summary_read_file),
         },
         ToolSpec {

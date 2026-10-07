@@ -12,7 +12,7 @@ ToolSpec {
             description: "运行 cargo test（支持 package/bin/filter/nocapture）。用于执行 Rust 测试。\n\n【cargo test 常用模式】运行所有测试：`cargo test`；运行特定测试：`cargo test <test_name>`；显示 println!：`cargo test -- --nocapture`；运行集成测试：`cargo test --test <integration_test_name>`。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoTestArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_test),
+            runner: ToolRunner::Typed(runner_cargo_test_try),
             summary: ToolSummaryKind::Static("cargo test"),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "运行 cargo clippy（结构化参数）。用于检查 Rust 代码潜在问题。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoCommonCliArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_clippy),
+            runner: ToolRunner::Typed(runner_cargo_clippy_try),
             summary: ToolSummaryKind::Static("cargo clippy"),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "运行 cargo metadata 并返回包/依赖元数据（JSON）。用于理解 workspace 与 crate 关系。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoMetadataArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_metadata),
+            runner: ToolRunner::Typed(runner_cargo_metadata_try),
             summary: ToolSummaryKind::Static("cargo metadata"),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "运行 cargo tree 查看依赖树。支持反向依赖、深度和边类型过滤。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoTreeArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_tree),
+            runner: ToolRunner::Typed(runner_cargo_tree_try),
             summary: ToolSummaryKind::Static("cargo tree"),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "运行 cargo clean 清理构建产物。默认 dry_run=true，仅预览。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoCleanArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_clean),
+            runner: ToolRunner::Typed(runner_cargo_clean_try),
             summary: ToolSummaryKind::Static("cargo clean"),
         },
         ToolSpec {
@@ -52,7 +52,7 @@ ToolSpec {
             description: "运行 cargo doc 生成文档。可选 no_deps/open/package。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoDocArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_doc),
+            runner: ToolRunner::Typed(runner_cargo_doc_try),
             summary: ToolSummaryKind::Static("cargo doc"),
         },
         ToolSpec {
@@ -60,7 +60,7 @@ ToolSpec {
             description: "运行 cargo run（结构化参数）。用于启动 Rust 可执行程序。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoRunArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_run),
+            runner: ToolRunner::Typed(runner_cargo_run_try),
             summary: ToolSummaryKind::Static("cargo run"),
         },
         ToolSpec {
@@ -68,7 +68,7 @@ ToolSpec {
             description: "运行 cargo nextest run（需要已安装 cargo-nextest）。用于更快的测试执行。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoNextestArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_nextest),
+            runner: ToolRunner::Typed(runner_cargo_nextest_try),
             summary: ToolSummaryKind::Static("cargo nextest"),
         },
         ToolSpec {
@@ -84,7 +84,7 @@ ToolSpec {
             description: "运行 cargo outdated（检查依赖是否过期/可升级）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoOutdatedArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_outdated),
+            runner: ToolRunner::Typed(runner_cargo_outdated_try),
             summary: ToolSummaryKind::Static("cargo outdated"),
         },
         ToolSpec {
@@ -92,7 +92,7 @@ ToolSpec {
             description: "运行 cargo machete（需 cargo-machete）：快速扫描 **声明但未在源码中引用** 的依赖；与 cargo_outdated（版本可升级）互补。可选 with_metadata、path。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoMacheteArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_machete),
+            runner: ToolRunner::Typed(runner_cargo_machete_try),
             summary: ToolSummaryKind::Static("cargo machete"),
         },
         ToolSpec {
@@ -100,7 +100,7 @@ ToolSpec {
             description: "运行 cargo udeps（需 cargo-udeps，通常需 nightly：传 nightly=true 使用 cargo +nightly udeps）：基于构建的未使用依赖检查，与 machete/outdated 互补。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoUdepsArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_udeps),
+            runner: ToolRunner::Typed(runner_cargo_udeps_try),
             summary: ToolSummaryKind::Static("cargo udeps"),
         },
         ToolSpec {
@@ -108,7 +108,7 @@ ToolSpec {
             description: "运行 cargo publish --dry-run：验证打包与发布检查，**不会**上传到 registry。可选 package、allow_dirty、no_verify、features。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoPublishDryRunArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_publish_dry_run),
+            runner: ToolRunner::Typed(runner_cargo_publish_dry_run_try),
             summary: ToolSummaryKind::Static("cargo publish --dry-run"),
         },
         ToolSpec {
@@ -124,7 +124,7 @@ ToolSpec {
             description: "在工作区根目录执行 **rustc**（不经 shell）。`args` 为参数数组，规则与 `run_command` 一致：不得含 `..` 或绝对路径。用于 `rustc --explain E0xxx`、`-vV`、`--print=cfg` 等；**不要求** Cargo.toml。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::RustRustcArgs>,
-            runner: ToolRunner::Legacy(runner_rust_rustc),
+            runner: ToolRunner::Typed(runner_rust_rustc_try),
             summary: ToolSummaryKind::Static("rustc"),
         },
         ToolSpec {
@@ -196,7 +196,7 @@ ToolSpec {
             description: "执行 cargo fix 应用编译器/诊断建议（受控写入，需 confirm=true）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CargoFixArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_fix),
+            runner: ToolRunner::Typed(runner_cargo_fix_try),
             summary: ToolSummaryKind::Static("cargo fix (controlled write)"),
         },
         ToolSpec {
@@ -204,7 +204,7 @@ ToolSpec {
             description: "运行单个 Rust 测试（按 test_name 过滤）。用于快速调试具体测试。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::RustTestOneArgs>,
-            runner: ToolRunner::Legacy(runner_rust_test_one),
+            runner: ToolRunner::Typed(runner_rust_test_one_try),
             summary: ToolSummaryKind::Static("single Rust test"),
         },
 ]

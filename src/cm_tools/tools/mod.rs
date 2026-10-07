@@ -371,8 +371,9 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// `run_command` 与 `cargo_*`（除 `cargo_check` 试点）/ `rust_test_one` / `rust_rustc` / `read_file` 走显式 [`ToolError`]；
-/// 已迁移工具经 `spec.runner` 的 [`ToolRunner::Typed`] 显式透传；其余仍经 `parse_legacy_output` 从正文推断。
+/// 仅 **`run_command`** / **`terminal_session`** 走特判（前者经 `run_try_wait` 返回显式 [`ToolError`]，后者须异步调度）；
+/// 其余工具按 `spec.runner` 双路径执行：已迁移的 [`ToolRunner::Typed`] 显式透传 [`ToolError`]，
+/// [`ToolRunner::Legacy`] 仍经 `parse_legacy_output` 从正文推断。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
@@ -409,7 +410,7 @@ fn run_tool_dispatch(
             let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
                 ctx.command_timeout_secs,
             );
-            match command::run_try_wait(
+            command::run_try_wait(
                 args_ref,
                 ctx.command_max_output_len,
                 ctx.allowed_commands,
@@ -417,95 +418,8 @@ fn run_tool_dispatch(
                 test_cache,
                 false,
                 &wait,
-            ) {
-                Ok(output) => {
-                    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
-                    if parsed.ok {
-                        let output =
-                            workspace_image_chat_hint::append_if_needed(args_ref, output);
-                        Ok((output, parsed))
-                    } else {
-                        Err(ToolError::from_parsed_legacy(name, &parsed, output))
-                    }
-                }
-                Err(e) => Err(e),
-            }
-        }
-        "cargo_test" => cargo_tools::cargo_test_try(
-            args_ref,
-            ctx.working_dir,
-            ctx.command_max_output_len,
-            Some(ctx),
-        )
-        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
-        "cargo_clippy" => {
-            cargo_tools::cargo_clippy_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_metadata" => {
-            cargo_tools::cargo_metadata_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_tree" => {
-            cargo_tools::cargo_tree_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_clean" => {
-            cargo_tools::cargo_clean_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_doc" => {
-            cargo_tools::cargo_doc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_nextest" => {
-            cargo_tools::cargo_nextest_try(
-                args_ref,
-                ctx.working_dir,
-                ctx.command_max_output_len,
-                Some(ctx.command_timeout_secs),
             )
-            .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_outdated" => {
-            cargo_tools::cargo_outdated_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_machete" => {
-            cargo_tools::cargo_machete_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_udeps" => {
-            cargo_tools::cargo_udeps_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_publish_dry_run" => cargo_tools::cargo_publish_dry_run_try(
-            args_ref,
-            ctx.working_dir,
-            ctx.command_max_output_len,
-        )
-        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
-        "cargo_fix" => {
-            cargo_tools::cargo_fix_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "cargo_run" => {
-            cargo_tools::cargo_run_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "rust_test_one" => cargo_tools::rust_test_one_try(
-            args_ref,
-            ctx.working_dir,
-            ctx.command_max_output_len,
-            Some(ctx),
-        )
-        .map(|output| finish_dispatch_parsed(name, args_ref, output)),
-        "rust_rustc" => {
-            cargo_tools::rust_rustc_try(args_ref, ctx.working_dir, ctx.command_max_output_len)
-                .map(|output| finish_dispatch_parsed(name, args_ref, output))
-        }
-        "read_file" => {
-            read_file_try_dispatch(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output))
+            .and_then(|output| finish_dispatch_legacy(name, args_ref, output))
         }
         _ => run_tool_dispatch_fallback(name, args_ref, spec, ctx),
     }
@@ -524,16 +438,7 @@ fn run_tool_dispatch_fallback(
 ) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
     match spec.runner {
         ToolRunner::Typed(f) => f(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output)),
-        ToolRunner::Legacy(f) => {
-            let output = f(args_ref, ctx);
-            let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
-            if parsed.ok {
-                let output = workspace_image_chat_hint::append_if_needed(args_ref, output);
-                Ok((output, parsed))
-            } else {
-                Err(ToolError::from_parsed_legacy(name, &parsed, output))
-            }
-        }
+        ToolRunner::Legacy(f) => finish_dispatch_legacy(name, args_ref, f(args_ref, ctx)),
     }
 }
 
@@ -547,9 +452,26 @@ fn finish_dispatch_parsed(
     (output, parsed)
 }
 
+/// Legacy 收尾：先按原始正文推断成功/失败（**早于**图片提示附加），`ok` 时附加工作区图片提示，否则转 [`ToolError`]。
+#[allow(clippy::result_large_err)]
+fn finish_dispatch_legacy(
+    name: &str,
+    args_json: &str,
+    output: String,
+) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+    if parsed.ok {
+        let output = workspace_image_chat_hint::append_if_needed(args_json, output);
+        Ok((output, parsed))
+    } else {
+        Err(ToolError::from_parsed_legacy(name, &parsed, output))
+    }
+}
+
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`run_command`**、**`cargo_test` 等其余 `cargo_*` / `rust_test_one` / `rust_rustc`**、**`read_file`** 在 [`run_tool_dispatch`] 中经 `*_try` 返回显式 [`ToolError`]；已迁移工具（`spec.runner` = [`ToolRunner::Typed`]，现为 `cargo_check` / `search_in_files`）显式透传；其余工具仍由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
+/// **`run_command`** / **`terminal_session`** 在 [`run_tool_dispatch`] 中特判（前者经 `run_try_wait` 返回显式 [`ToolError`]）；
+/// 其余工具按 `spec.runner` 双路径：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,
