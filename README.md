@@ -8,60 +8,57 @@
 
 <p align="center">
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/code-complexity.yml/badge.svg?branch=main" alt="code-complexity" /></a>
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
   <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
-  <br />
-  <a href="https://github.com/noisystreet/CrabMate/stargazers"><img src="https://img.shields.io/github/stars/noisystreet/CrabMate?style=flat&logo=github" alt="GitHub stars" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/commits/main"><img src="https://img.shields.io/github/last-commit/noisystreet/CrabMate?logo=github" alt="Last commit" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/issues"><img src="https://img.shields.io/github/issues/noisystreet/CrabMate" alt="Issues" /></a>
-  <a href="https://github.com/noisystreet/CrabMate/pulls"><img src="https://img.shields.io/github/issues-pr/noisystreet/CrabMate" alt="Pull requests" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
 </p>
 
-**CrabMate** is a Rust-based AI agent that speaks **OpenAI-compatible** `chat/completions` to backends such as DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, and local Ollama.
+**CrabMate** is a Rust AI agent that speaks **OpenAI-compatible** `chat/completions` to DeepSeek, MiniMax, Zhipu GLM, Moonshot Kimi, or a local Ollama.
 
-It ships HTTP **`serve`** (always API-only) plus ops CLIs. **Official Web UI, Desktop/Android, and remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui` command entries are removed** (use Client **`crabmate-tui`**; see [ADR](docs/design/client_shell_split.md)).
-
-**Path A (repo split):** this repository maintains **Server** (`serve`, contracts, ops CLI). Official clients are in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** ([ADR](docs/design/client_shell_split.md)).
+This repo is the **Server**: HTTP **`serve`** (always API-only — it never hosts a SPA), the `protocol` contracts, and ops CLIs. The official **Web UI, Desktop/Android, and terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local checkouts default to sibling `../crabmate-client`); in-process `repl` / `chat` / `tui` were removed ([ADR](docs/design/client_shell_split.md)).
 
 ## Contents
 
 - [CrabMate](#crabmate)
   - [Contents](#contents)
   - [Overview](#overview)
+  - [Quick start](#quick-start)
   - [Common subcommands](#common-subcommands)
-  - [Build, run, and packaging](#build-run-and-packaging)
-    - [Makefile (recommended)](#makefile-recommended)
-    - [Backend](#backend)
-    - [Web frontend](#web-frontend)
-    - [Official Client (Desktop / Android)](#official-client-desktop--android)
-    - [Install and release artifacts](#install-and-release-artifacts)
-    - [Maintainer QA](#maintainer-qa)
-  - [Documentation index](#documentation-index)
   - [Backend models](#backend-models)
-  - [Environment variables](#environment-variables)
   - [Deployment and security](#deployment-and-security)
-  - [Project structure](#project-structure)
+  - [Install and release artifacts](#install-and-release-artifacts)
+  - [Documentation](#documentation)
 
 ## Overview
 
-- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace files, **`run_command`** (allowlist; defaults include **`bash`/`sh`**—glob/`$VAR`/`~` run via **`bash -c`** on the joined script; Web re-approves standalone `&&`/`|` even if bash is allowlisted; approval shows that script; argv outside the workspace or path-traversal-shaped `..` defaults to approval via **`allow_external_path_with_approval`**—git `A..B` is not treated as traversal), HTTP, **web search** (default **worbrow** local browser, no API key; optional Brave/Tavily), workspace **code search** (keyword + optional semantic/embeddings). Full list: [docs/en/TOOLS.md](docs/en/TOOLS.md). Subprocess tool output is truncated by **`command_max_output_len`** (embedded default **512KiB**); see **`config/tools.toml`** and [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **Web UI (Client)**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; this repo’s **`serve` is always API-only** and never hosts a SPA. Browser UIs connect over CORS (allow extra Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**). Sessions, workspace picker / project pool, editor mode, PR views, terminal-style chat stream, Ask/Plan/Act, and settings—see Client README and [docs/en/CLI.md](docs/en/CLI.md). Tools and **`@relative-path`** apply only after a workspace is selected. Assistant Markdown can show workspace plots with **`![alt](relative/plot.png)`** (Client loads **`GET /workspace/file/raw`** with API auth; png/jpg/jpeg/webp/gif only). Client **Save to this device** uses **`GET /workspace/file/download`** (any type, 16 MiB). Folder zip uses **`GET /workspace/dir/archive`**. Rename/move a file with **`POST /workspace/file/move`**. Client can drop local files onto the workspace tree via **`PUT /workspace/file/raw`** (raw bytes, 16 MiB).
-- **Terminal**: Official remote client is **`crabmate-tui`** in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (HTTP/SSE to **`serve`**; LLM keys stay on the client). In-process **`repl` / `chat` / `tui` are hard-deleted** (D2.2—[`docs/design/client_shell_split.md`](docs/design/client_shell_split.md) §2.5). **`serve`** is HTTP API-only (never hosts a SPA). Streaming **SSE**: [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md).
-- **Sessions and export**: by default **Web `serve`** persists under **`<workspace>/.crabmate/conversations.db`**; clear **`conversation_store_sqlite_path`** to disable. Retention is configurable via **`conversation_store_ttl_secs`** (default `86400`; `0` = never expire) and **`conversation_store_max_entries`** (default `512`; `0` = unlimited), both hot-reloadable and also settable as **`CM_CONVERSATION_STORE_TTL_SECS`** / **`CM_CONVERSATION_STORE_MAX_ENTRIES`**. Delete one persisted conversation with **`DELETE /conversation/{conversation_id}`** (idempotent `204`). Web or CLI **`save-session`** (alias **`export-session`**) → JSON/Markdown; shape in [docs/en/CLI.md](docs/en/CLI.md).
-- **Advanced (skip by default)**: staged-plan timeline, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`**: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Chat and tools**: OpenAI-compatible `chat/completions`; built-in workspace file tools, **`run_command`** (allowlist only), HTTP, **web search** (default local **worbrow** browser, no API key; optional Brave/Tavily), and workspace **code search** (keyword + optional semantic). Full list and semantics: [docs/en/TOOLS.md](docs/en/TOOLS.md).
+- **Sessions**: **`serve`** persists conversations under **`<workspace>/.crabmate/conversations.db`** by default; retention, deletion, and export are configurable — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md), [docs/en/CLI.md](docs/en/CLI.md).
+- **Client UI**: built and hosted by **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**; browser UIs connect over CORS. Sessions, workspace picker / project pool, editor and PR views, terminal-style chat stream, Ask/Plan/Act, and settings.
+- **Advanced (opt-in)**: staged planning, clarification UI, **`thinking_trace`**, long-term memory, living docs, **MCP**, workspace **`plugins/*.json`** — [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
+
+## Quick start
+
+Requires **Rust 1.85+** (edition 2024).
+
+```bash
+# Backend (API-only)
+cargo build
+./target/debug/crabmate serve            # default 127.0.0.1:8080; or: API_KEY=… ./target/debug/crabmate serve
+
+# Client UI (separate repo)
+cd ../crabmate-client && make frontend   # then point it at http://127.0.0.1:8080/ + Bearer
+```
+
+Prefer the Makefile: **`make help`**, **`make backend`** (`cargo build -p crabmate`), **`make package`** (server-only tar.gz + optional `.deb` → `dist/`).
 
 ## Common subcommands
 
 With no subcommand, clap requires an explicit command (e.g. **`serve`**). Prefer **`serve`** + Client **`crabmate-tui`**. Common globals: **`--config`**, **`--workspace`**, **`--no-tools`**, **`--llm-context-tokens`**, **`--log`** (see **`crabmate --help`**).
 
-Context compaction is Token-led when `llm_context_tokens` is non-zero: Server budgets vendor-shaped messages, tools JSON, attachments, output reservation, and a safety margin, then removes only complete interaction groups from a derived `ModelContextView`. Persisted conversation history remains complete and stores replay recipes separately; the Client context meter uses Server `used_input_tokens / max_input_tokens` (provider usage when available). The **256-message** `max_message_history` / `CM_MAX_MESSAGE_HISTORY` limit remains a high-count fallback; see [Configuration](docs/en/CONFIGURATION.md).
-
 | Subcommand | Summary |
 | --- | --- |
-| **`serve`** | HTTP API (**always API-only**, no SPA). UI is hosted by the Client repo and connects via CORS (**`CM_WEB_CORS_ALLOWED_ORIGINS`**). Default port **8080**, bind **127.0.0.1**. |
+| **`serve`** | HTTP API (**always API-only**, no SPA). UI is hosted by the Client repo and connects via CORS. Default port **8080**, bind **127.0.0.1**. |
 | **`doctor`** | One-page local diagnostics (**no** `API_KEY`). |
 | **`config`** | Load config and self-check. |
 | **`models`** / **`probe`** | Probe **`GET …/models`** on **`api_base`**; **`bearer`** usually needs env **`API_KEY`**. |
@@ -74,115 +71,9 @@ Context compaction is Token-led when `llm_context_tokens` is non-zero: Server bu
 
 Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
-## Build, run, and packaging
-
-**Prerequisites**: **Rust 1.85+** (edition 2024). Official UI is in the Client repo (Trunk / wasm32). More: [AGENTS.md](AGENTS.md).
-
-### Makefile (recommended)
-
-```bash
-make help              # list targets
-make all / all-dev     # backend-release / backend
-make backend           # cargo build -p crabmate
-make package           # server-only tar.gz + optional .deb → dist/ (no UI)
-make clean             # clean target and dist/
-```
-
-UI: `cd ../crabmate-client && make frontend` (clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling first). **`make package`** / **`package-tar`** / **`package-deb`** are **server-only** (no UI). Desktop / Android: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)**.
-
-### Backend
-
-```bash
-# Debug
-cargo build
-./target/debug/crabmate serve            # always API-only
-# or: API_KEY=… ./target/debug/crabmate serve
-
-# Release
-cargo build --release
-./target/release/crabmate serve
-
-# Optional: Ubuntu 24.04 toolchain image (dev + `make package`; glibc 2.39; not a runtime)
-# docker build -t crabmate-dev .          # add --network=host only if DNS fails
-# docker run --rm -it -v "$PWD":/workspace -w /workspace crabmate-dev
-# make package-docker                     # → dist/*.tar.gz and dist/*.deb on the host
-```
-
-**`serve`** Web API auth (**`CM_WEB_API_BEARER_TOKEN`**, etc.): **[Deployment and security](#deployment-and-security)**. Cloud **`API_KEY`**: **[Environment variables](#environment-variables)** (or Client Web Settings / `client_llm` on requests).
-
-### Web frontend
-
-Official UI source: **[`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend)** in [crabmate-client](https://github.com/noisystreet/crabmate-client) (path A Phase 4.2). Local default: sibling `../crabmate-client`.
-
-**`serve` never hosts the SPA.** Build and host the UI from the Client repo, then point it at `serve` (browser Origins beyond the official shell need **`CM_WEB_CORS_ALLOWED_ORIGINS`**).
-
-```bash
-cd ../crabmate-client && make frontend
-# UI is hosted from the Client repo (its dev flow or any static server);
-# then set API base (http://127.0.0.1:8080/) + Bearer in the UI settings
-cargo run -- serve   # this repo: API-only
-```
-
-UI pointers: the official Client repo [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (its `frontend/`).
-
-### Official Client (Desktop / Android)
-
-> **Canonical repo**: **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (path A; [ADR](docs/design/client_shell_split.md); local sibling `../crabmate-client`).  
-> This repo **removed** `desktop-tauri/` / `mobile-tauri/` / `crates/crabmate-connect` (Phase 4.1).
-
-The shell **does not** spawn `serve`: start **`crabmate serve`**, then enter URL + Web API Bearer on the Client connect page.
-
-```bash
-cd ../crabmate-client
-make desktop-release    # Linux .deb (no serve sidecar)
-# or make apk / cargo tauri dev — see Client README
-```
-
-Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat_matrix.md).
-
-### Install and release artifacts
-
-| Method | Command / notes |
-| --- | --- |
-| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.6.0`**, default feature **`server`**). Git tag **`v0.6.0`** matches this package. Release tarball/`.deb` on GitHub Releases. Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
-| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
-| **Debian (.deb)** | **`make package-deb`** / **`cargo deb`**; under **`dist/`** or **`target/debian/`**. Installs **`crabmate.service`** (**127.0.0.1:8080**, always API-only). Desktop shell `.deb`: Client repo. Details: [docs/en/CLI.md](docs/en/CLI.md). |
-| **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
-| **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
-
-### Maintainer QA
-
-- **Cargo features**: default **`server`** (includes **`protocol`**, **`web`**, **`mcp`**); opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`**. Examples: `cargo build --features fastembed`, `--features project_metrics`, or `--all-features`. In-process **`repl`/`tui` features removed** (D2.2; use Client **`crabmate-tui`**). See root **`Cargo.toml`** **`[features]`** and **`AGENTS.md`**.
-- **fmt / clippy / test, pre-commit, SSE, E2E**: [docs/en/TESTING.md](docs/en/TESTING.md) (includes **`./scripts/check-sse-protocol.sh`**). CI also runs **`make package`** (server-only tar.gz + `.deb` smoke).
-
-## Documentation index
-
-| Document | Contents | 中文 |
-| --- | --- | --- |
-| [CHANGELOG.md](CHANGELOG.md) | Release notes (Keep a Changelog) | — |
-| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture overview, main modules, data flow | [zh](docs/开发文档.md) |
-| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, Web/TOML | [zh](docs/配置说明.md) |
-| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and examples | [zh](docs/工具说明.md) |
-| [docs/工作流编写教程.md](docs/工作流编写教程.md) | Workflow YAML/steps (Chinese) | — |
-| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control JSON | [zh](docs/SSE协议.md) |
-| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, packaging | [zh](docs/命令行与路由.md) |
-| [docs/en/CLI_CONTRACT.md](docs/en/CLI_CONTRACT.md) | `chat` exit codes, **`--output json`** | [zh](docs/命令行契约.md) |
-| [docs/en/DEBUG.md](docs/en/DEBUG.md) | Logging, `doctor`, `GET /web-ui`, … | [zh](docs/调试指南.md) |
-| [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) | Personal VPS: loopback `serve` + TLS + Bearer (Chinese) | — |
-| [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits | [zh](docs/测试指南.md) |
-| [docs/design/client_shell_split.md](docs/design/client_shell_split.md) | Official Client split (path A) | — |
-| [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md) | Server ↔ protocol ↔ Client compat | — |
-| [docs/基准测试规划.md](docs/基准测试规划.md) | **`bench`** roadmap | — |
-| [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) | Recorded bench scores (no secrets) | — |
-| [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
-
-**More**: backlog and roadmap under **`docs/`** ([docs/中英文文档对照.md](docs/中英文文档对照.md)).
-
-**Maintenance**: keep user-visible docs in sync; conventions in [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
-
 ## Backend models
 
-`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **4096**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys.
+`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **4096**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
 
 | Scenario | Notes |
 | --- | --- |
@@ -194,31 +85,41 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 
 Local checks: **`crabmate doctor`** (no `API_KEY`), **`probe`** / **`models`**. Vendor knobs: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). **Vendor behavior is defined by provider docs.**
 
-## Environment variables
-
-| Variable | Role |
-| --- | --- |
-| **`API_KEY`** | Cloud bearer (**`llm_http_auth_mode=bearer`**); optional process fallback for **`serve`** / **`models`** / **`probe`**. Official Client dialogue sends **`client_llm.api_key`** (keychain on the client). |
-| **`CM_API_BASE`** / **`CM_MODEL`** | Override gateway and model from config. |
-| **`CM_WEB_API_BEARER_TOKEN`** | Protects Web APIs (with **`web_api_require_bearer`**); [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). |
-| **`CM_WEB_CORS_ALLOWED_ORIGINS`** | Extra Origin allowlist (comma-separated); **unset** already allows official shell Origins (`tauri://localhost`, `http://tauri.localhost`). Explicit empty disables CORS. Static browser UI: add its Origin; see Settings **API base** (`localStorage` **`crabmate-api-base-url`**). |
-| **`CM_DESKTOP_SUGGESTED_URL`** | Optional connect-page suggested `serve` URL (default `http://127.0.0.1:8080/`). |
-| **`CM_DESKTOP_SERVE_URL`** | Required when skipping connect page (with **`CM_DESKTOP_SKIP_CONNECT`** / **`CM_E2E_FIXTURES`**). |
-
-Other **`CM_*`** (skills, staged planning, etc.): [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-
 ## Deployment and security
 
-- **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs **`web_api_bearer_token`** or an explicit insecure switch ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL skips prefix approval (still rejects `file:` etc.). On multi-tenant or non-loopback listen, set concrete prefixes or **`[]` / empty `CM_HTTP_FETCH_ALLOWED_PREFIXES`** to override the embed ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
-- **LLM API Key**: Client stores keys locally and sends **`client_llm.api_key`**. Process env **`API_KEY`** remains an optional **`serve`** / ops fallback.
-- **Web API**: embedded default **`web_api_require_bearer = false`**—**`serve`** may start without a shared secret; with **`true`**, require non-empty **`CM_WEB_API_BEARER_TOKEN`** (or TOML / **`crabmate web-bearer set`**). When the token is set, send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**)—**not** the LLM **`API_KEY`**. Cross-origin static UI: set **API base**; official shell Origins are allowed by default—add **`CM_WEB_CORS_ALLOWED_ORIGINS`** only for extra browser Origins. Smoke: **`docs/design/client_turn_smoke_runbook.md`** §9. Temporary local skip: unset the secret and bind **`127.0.0.1`**, or clear it and set **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** before **`0.0.0.0`**. Prefer **`web_api_require_bearer = true`** on exposed networks. Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md).
-- **Other**: Web **Settings → Save all** persists via **`/user-data`**; workspace must stay under allowed roots. Debug / **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
-- **Personal VPS (TLS reverse proxy)**: [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (Chinese; **`127.0.0.1` + Bearer + Caddy/Nginx**).
+- **Listen**: default **`127.0.0.1`**; **`0.0.0.0`** needs a **`web_api_bearer_token`** or an explicit insecure switch.
+- **Web API auth**: embedded default **`web_api_require_bearer = false`** — **`serve`** may start without a shared secret; when a token is set, send **`Authorization: Bearer …`** or **`X-API-Key: …`**. Configure it via **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`**. Browsers must save the **same** value under **Settings → Web API shared secret** (`localStorage` **`crabmate-api-bearer-token`**) — **not** the LLM **`API_KEY`**. Prefer **`web_api_require_bearer = true`** on exposed networks.
+- **CORS**: official shell Origins are allowed by default; add extra browser Origins with **`CM_WEB_CORS_ALLOWED_ORIGINS`**.
+- **`http_fetch` / `http_request`**: embedded default **`http_fetch_allowed_prefixes = ["*"]`** — any **http/https** URL skips prefix approval (still rejects `file:` etc.). On multi-tenant or non-loopback listen, set concrete prefixes or **`[]`**.
+- **LLM API Key**: the Client stores keys locally and sends **`client_llm.api_key`**; env **`API_KEY`** remains an optional **`serve`** / ops fallback.
+- **Personal VPS (TLS reverse proxy)**: [docs/个人VPS部署指南.md](docs/个人VPS部署指南.md) (Chinese).
 
-## Project structure
+Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Debug / **`GET /web-ui`**: [docs/en/DEBUG.md](docs/en/DEBUG.md).
 
-Architecture overview: [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md). **`GET /status`** for full runtime status; Web shell uses **`GET /status?view=shell`**. More: [docs/en/DEBUG.md](docs/en/DEBUG.md).
+## Install and release artifacts
 
-- **Single crate**: crates.io **stable** is **`0.6.0`** ([crates.io/crates/crabmate](https://crates.io/crates/crabmate), default **`server`**). **`cargo install crabmate`** installs that. Git tag **`v0.6.0`** matches this package. Official Client should pin **`version = "0.6.0", default-features = false, features = ["protocol"]`** (`crabmate::cm_sse_protocol`, `cm_types`, … — not `types`/`sse` aliases).
-- **Semver surface**: `protocol` = the six `cm_*` contract modules. `server` promises the composition module *names* (`agent` / `config` / `llm` / `sse` / `types`) and explicit root `pub use`s (`run`, `run_agent_turn`, `build_tools*`, …). `#[doc(hidden)]` modules and paths such as `agent::agent_turn` are **not** a stable SDK. Details: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md) §2.4.
+| Method | Command / notes |
+| --- | --- |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.6.0`**, default feature **`server`**; git tag **`v0.6.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
+| **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
+| **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
+| **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
+
+Versioning / semver surface: [docs/design/crates_io_single_package.md](docs/design/crates_io_single_package.md). Compat matrix: [docs/design/client_compat_matrix.md](docs/design/client_compat_matrix.md).
+
+## Documentation
+
+| Document | Contents |
+| --- | --- |
+| [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md) | Env vars, `CM_*`, Web/TOML |
+| [docs/en/TOOLS.md](docs/en/TOOLS.md) | Built-in tools and examples |
+| [docs/en/CLI.md](docs/en/CLI.md) | Subcommands, HTTP routes, packaging |
+| [docs/en/SSE_PROTOCOL.md](docs/en/SSE_PROTOCOL.md) | `/chat/stream` control JSON |
+| [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md) | Architecture overview, main modules |
+| [docs/en/TESTING.md](docs/en/TESTING.md) | Tests, pre-commit, audits |
+| [docs/工作流编写教程.md](docs/工作流编写教程.md) | Workflow YAML/steps (Chinese) |
+| [CHANGELOG.md](CHANGELOG.md) | Release notes (Keep a Changelog) |
+
+Full bilingual map: [docs/中英文文档对照.md](docs/中英文文档对照.md). Design docs: [docs/design/README.md](docs/design/README.md).
+
+Development: default Cargo feature **`server`**; opt-in **`fastembed`**, **`project_metrics`**, **`docker_sandbox`**, **`gen-man`** (see root **`Cargo.toml`** **`[features]`** and [AGENTS.md](AGENTS.md)). fmt / clippy / test / pre-commit / SSE / E2E: [docs/en/TESTING.md](docs/en/TESTING.md).
