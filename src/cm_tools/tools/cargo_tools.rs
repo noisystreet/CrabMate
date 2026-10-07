@@ -1,4 +1,4 @@
-//! Rust 开发工具：cargo check/test/clippy/run/nextest、工作区内 `rustc`。
+//! Rust 开发工具：cargo check/test/clippy/run、工作区内 `rustc`。
 #![allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
 
 use std::path::Path;
@@ -196,60 +196,6 @@ fn maybe_cache_cargo_test_try(
         return Ok(out);
     }
     run()
-}
-
-pub fn cargo_nextest_try(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-    wall_secs: Option<u64>,
-) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-    if !workspace_root.join("Cargo.toml").is_file() {
-        return Err(ToolError::workspace(
-            "workspace_no_cargo_toml",
-            "错误：当前工作目录未找到 Cargo.toml".to_string(),
-        ));
-    }
-    let test_filter = v
-        .get("test_filter")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
-    let profile = v
-        .get("profile")
-        .and_then(|x| x.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-    let no_capture = v
-        .get("nocapture")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false);
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("nextest").arg("run");
-    if let Some(p) = package.filter(|s| !s.is_empty()) {
-        cmd.arg("--package").arg(p);
-    }
-    if let Some(p) = profile {
-        cmd.arg("--profile").arg(p);
-    }
-    if let Some(f) = test_filter {
-        cmd.arg(f);
-    }
-    if no_capture {
-        cmd.arg("--").arg("--nocapture");
-    }
-    cmd.current_dir(workspace_root);
-    let out = run_and_format_try(cmd, max_output_len, "cargo nextest run", "cargo_nextest", wall_secs)?;
-    if out.contains("no such command: `nextest`") {
-        return Err(ToolError::invalid_args(
-            "cargo nextest: 未安装 cargo-nextest，请先运行 `cargo install cargo-nextest`"
-                .to_string(),
-        ));
-    }
-    Ok(out)
 }
 
 #[path = "cargo_subcommand.rs"]

@@ -212,10 +212,6 @@ Structured function-calling JSON examples:
   ```json
   {"test_name":"tools::tests::test_build_tools_names","nocapture":true}
   ```
-- `cargo_audit`:
-  ```json
-  {"deny_warnings":true}
-  ```
 - `ci_pipeline_local` (local CI; optional frontend `npm run build` via `run_frontend_build`; optional Python `run_ruff_check` / `run_pytest` / `run_mypy`):
   ```json
   {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_frontend_build":false,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
@@ -223,14 +219,6 @@ Structured function-calling JSON examples:
 - `release_ready_check`:
   ```json
   {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":true}
-  ```
-- `cargo_nextest`:
-  ```json
-  {"profile":"default","test_filter":"tools::","nocapture":false}
-  ```
-- `cargo_fmt_check`:
-  ```json
-  {}
   ```
 - `rust_compiler_json` (`cargo check --message-format=json` diagnostics):
   ```json
@@ -258,17 +246,13 @@ Structured function-calling JSON examples:
   ```json
   {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
   ```
-- `cargo_deny`:
-  ```json
-  {"checks":"advisories licenses bans sources","all_features":true}
-  ```
 - `rust_backtrace_analyze`:
   ```json
   {"backtrace":"thread 'main' panicked at src/main.rs:10:5\nstack backtrace:\n   0: ...","crate_hint":"crabmate"}
   ```
 - `frontend_lint` / `frontend_build` / `frontend_test` (frontend lint / build / test): removed per §8.5.4 **track A**; use `run_command` instead (e.g. `npm run lint` / `npm run build` / `npm run test`).
 - `workflow_execute` (DAG: parallelism, approval, SLA, compensation):
-  - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`cargo_fmt_check` → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.
+  - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`run_command` (`cargo fmt --check`) → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.
   - Node **`max_retries`** (0–5, default 0): auto backoff retry for **`timeout`**, **`workflow_tool_join_error`**, **`workflow_semaphore_closed`**, …; **not** for business failures (tests, non-zero exit) to avoid duplicate side effects.
   - **Static check**: each **`tool_name`** must be a built-in tool; **`tool_args`** must include schema **`required`** keys (recursive into nested objects/arrays; full validation still in runners).
   - **Result JSON** (`workflow_execute_result` / `workflow_validate_result`): **`workflow_run_id`** (matches logs), **`trace`** (`dag_start`, `node_attempt_*`, `node_retry_backoff`, `dag_end`, …), **`completion_order`**, **`nodes[].attempt`** final count.
@@ -281,7 +265,7 @@ Structured function-calling JSON examples:
       {"id":"clean","tool_name":"run_command","tool_args":{"command":"cargo","args":["clean","--dry-run"]},"deps":[],"compensate_with":[]},
       {"id":"clippy","tool_name":"cargo_clippy","tool_args":{"all_targets":true},"deps":["clean"],"compensate_with":["clean"]},
       {"id":"test","tool_name":"cargo_test","tool_args":{},"deps":["clippy"],"compensate_with":[]},
-      {"id":"deny","tool_name":"cargo_deny","tool_args":{"checks":"advisories licenses bans sources","all_features":true},"deps":["test"],"requires_approval":true,"compensate_with":["clean"]}
+      {"id":"deny","tool_name":"run_command","tool_args":{"command":"cargo","args":["deny","check","advisories","licenses","bans","sources","--all-features"]},"deps":["test"],"requires_approval":true,"compensate_with":["clean"]}
     ]
   }}
   ```
@@ -417,15 +401,15 @@ Write operations (`add` / `commit` / `push` / `fetch` / `checkout` / `apply` / `
 
 ## Common failure handling
 
-Typical `release_ready_check` / `cargo_deny` / `cargo_audit` issues:
+Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or direct `run_command` invocations of `cargo audit` / `cargo deny check` issues:
 
-- `cargo_deny` (license/policy):
+- `cargo deny check` (license/policy):
   ```bash
   cargo deny check advisories licenses bans sources
   ```
   Causes: `bans` hits, license allowlist, `sources` policy. Fix: upgrade/replace deps; adjust `deny.toml` with review; time-bound exceptions.
 
-- `cargo_audit` (known vulnerabilities):
+- `cargo audit` (known vulnerabilities):
   ```bash
   cargo audit
   ```

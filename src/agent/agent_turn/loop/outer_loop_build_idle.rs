@@ -15,7 +15,6 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
             | "cargo_test"
             | "cargo_check"
             | "cargo_clippy"
-            | "cargo_fmt_check"
             | "pytest_run"
             | "go_test"
     ) {

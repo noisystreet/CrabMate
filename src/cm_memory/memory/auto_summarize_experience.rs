@@ -94,10 +94,7 @@ fn is_build_verify_tool(name: &str) -> bool {
             | "cargo_check"
             | "cargo_test"
             | "cargo_clippy"
-            | "cargo_fmt_check"
-            | "cargo_nextest"
             | "format_check_file"
-            | "cargo_audit"
     )
 }
 

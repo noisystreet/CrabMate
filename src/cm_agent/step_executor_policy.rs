@@ -33,7 +33,6 @@ fn default_test_runner_tool_names() -> &'static HashSet<&'static str> {
     S.get_or_init(|| {
         [
             "cargo_test",
-            "cargo_nextest",
             "rust_test_one",
             "pytest_run",
             "go_test",

@@ -214,22 +214,6 @@ pub fn runner_rust_test_one_try(args: &str, ctx: &ToolContext<'_>) -> Result<Str
     cargo_tools::rust_test_one_try(args, ctx.working_dir, ctx.command_max_output_len, Some(ctx))
 }
 
-/// `cargo_nextest` 的 Typed runner：额外透传子进程 wall 超时。
-///
-/// **行为变化（有意，非纯等价搬迁）**：dispatch 路径原本已传 `Some(command_timeout_secs)`，
-/// 而 `run_tool`（工作流/String API）路径的旧 Legacy 包装传 `None`（**无墙钟**，可能无限挂起）。
-/// 统一为 `Some(..)` 后两条路径一致，符合 `docs/design/long_running_tool_execution_todo.md`
-/// 「必须走带墙钟的 `run_try_wait`」的不变量。
-#[allow(clippy::result_large_err)]
-pub fn runner_cargo_nextest_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    cargo_tools::cargo_nextest_try(
-        args,
-        ctx.working_dir,
-        ctx.command_max_output_len,
-        Some(ctx.command_timeout_secs),
-    )
-}
-
 pub fn runner_pytest_run(args: &str, ctx: &ToolContext<'_>) -> String {
     python_tools::pytest_run(
         args,
@@ -420,7 +404,6 @@ pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 // ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────
 
 define_runners_cwd_maxlen! {
-    runner_cargo_fmt_check => ci_tools::cargo_fmt_check_tool,
     runner_rust_compiler_json => rust_ide::rust_compiler_json,
     runner_ruff_check => python_tools::ruff_check,
     runner_mypy_check => python_tools::mypy_check,
@@ -436,8 +419,6 @@ define_runners_cwd_maxlen! {
     runner_codespell_check => spell_astgrep_tools::codespell_check,
     runner_ast_grep_run => spell_astgrep_tools::ast_grep_run,
     runner_ast_grep_rewrite => spell_astgrep_tools::ast_grep_rewrite,
-    runner_cargo_audit => security_tools::cargo_audit,
-    runner_cargo_deny => security_tools::cargo_deny,
     runner_changelog_draft => release_docs::changelog_draft,
     runner_license_notice => release_docs::license_notice,
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,

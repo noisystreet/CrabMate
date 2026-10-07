@@ -3,7 +3,7 @@
 pub(crate) const SUPPORTED_WORKFLOW_TEMPLATES: &[&str] =
     &["rust_ci_light", "code_review", "refactor_precheck"];
 
-/// `workflow_template: "rust_ci_light"` 时的默认 DAG：`fmt → check → clippy → test`（串行，`cargo_*` 结构化工具）。
+/// `workflow_template: "rust_ci_light"` 时的默认 DAG：`fmt → check → clippy → test`（串行；`fmt` 走 `run_command` + `cargo fmt --check`，其余为 `cargo_*` 结构化工具）。
 pub(crate) fn workflow_template_rust_ci_light() -> serde_json::Value {
     serde_json::json!({
         "max_parallelism": 4,
@@ -12,8 +12,8 @@ pub(crate) fn workflow_template_rust_ci_light() -> serde_json::Value {
         "nodes": [
             {
                 "id": "rust_ci_fmt",
-                "tool_name": "cargo_fmt_check",
-                "tool_args": {},
+                "tool_name": "run_command",
+                "tool_args": { "command": "cargo", "args": ["fmt", "--check"] },
                 "deps": []
             },
             {

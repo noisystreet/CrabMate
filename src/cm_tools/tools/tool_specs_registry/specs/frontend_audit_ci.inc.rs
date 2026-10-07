@@ -1,21 +1,5 @@
 [
 ToolSpec {
-            name: "cargo_audit",
-            description: "运行 cargo audit 做依赖漏洞扫描（需要已安装 cargo-audit）。\n\n【cargo audit 常用模式】检查所有依赖：`cargo audit`；忽略指定 advisory：`cargo audit --ignore RUSTSEC-xxxx-xxxx`。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::CargoAuditArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_audit),
-            summary: ToolSummaryKind::Static("cargo audit"),
-        },
-        ToolSpec {
-            name: "cargo_deny",
-            description: "运行 cargo deny check（需要已安装 cargo-deny），做许可证/安全策略检查。\n\n【cargo deny 常用检查】许可证检查：`cargo deny check licenses`；安全源检查：`cargo deny check sources`； bans 检查：`cargo deny check bans`。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::CargoDenyArgs>,
-            runner: ToolRunner::Legacy(runner_cargo_deny),
-            summary: ToolSummaryKind::Static("cargo deny"),
-        },
-        ToolSpec {
             name: "ci_pipeline_local",
             description: "本地一键执行 CI 关键检查（cargo fmt/clippy/test、frontend lint、可选 ruff/pytest/mypy）。",
             category: ToolCategory::Development,
