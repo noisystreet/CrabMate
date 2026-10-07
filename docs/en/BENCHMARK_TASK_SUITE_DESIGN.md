@@ -87,6 +87,8 @@ Suggested aggregates: group by `model` × `tags` × key config (e.g. `staged_pla
 
 Never commit real API keys; truncate bodies in published reports.
 
+> This table is the authority for **task-suite evaluation run** CI tiers; **unit / contract tests and hook conventions of the benchmark subsystem itself** live in **`docs/基准测试规划.md` §4**.
+
 ---
 
 ## 7. System map

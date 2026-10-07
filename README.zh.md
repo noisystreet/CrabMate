@@ -123,7 +123,7 @@ cd ../crabmate-client && make frontend
 cargo run -- serve   # 本仓：永远纯 API
 ```
 
-UI 指针见 [`docs/frontend/`](docs/frontend/)。
+UI 指针见官方 Client 仓 [`crabmate-client`](https://github.com/noisystreet/crabmate-client)（其 `frontend/`）。
 
 ### 官方 Client（Desktop / Android）
 

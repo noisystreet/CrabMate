@@ -172,7 +172,7 @@ cd ../crabmate-client
 
 ```bash
 # terminal A (this repo; serve is always API-only)
-cd ../crabmate_agent
+cd ../server
 cargo run -- serve --host 127.0.0.1 --port 18080
 
 # terminal B (Client repo)
@@ -234,6 +234,6 @@ Policy file: root **`deny.toml`**. These checks are **not** in pre-commit to avo
 
 ## See also
 
-- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (this repo’s [`frontend/README.md`](../frontend/README.md) is a pointer only). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
+- Architecture and E2E detail: [`DEVELOPMENT.md`](DEVELOPMENT.md) (§ `frontend`, E2E). UI source: Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (not in this repo). Playwright: Client [`e2e/`](https://github.com/noisystreet/crabmate-client/tree/main/e2e)
 - SSE contract and goldens: [`SSE_PROTOCOL.md`](../SSE协议.md)
 - Debugging: [`DEBUG.md`](../调试指南.md)

@@ -41,4 +41,64 @@ This document holds **directional** product and deployment boundaries that are *
 
 ---
 
+## Capability gaps and prioritization (improvement summary)
+
+Compared with mainstream open-source agents (CrewAI, AutoGen, Mastra, LangChain Agents, …), the differences below are **not** tracked in `docs/en/TODOLIST.md`; they are ordered by priority for community reference. Authoritative detail lives in the linked docs.
+
+### P0 — Security (deployment and gateway)
+
+| Improvement | Status |
+|-------------|--------|
+| Web API shared secret + gateway split | **Documented** (see “Web identity and accounts” above; `doctor` includes serve deployment checks; write-tool audit on by default) |
+| Workspace path TOCTOU (`openat2` + `RESOLVE_IN_ROOT` across read/write/delete) | **Shipped** (residual risk in `src/workspace/path.rs`) |
+
+### P1 — Architecture (multi-agent and autonomous agent)
+
+| Improvement | Effort |
+|-------------|--------|
+| Multi-agent collaboration framework (agent instance abstraction + shared message bus/queue; cf. CrewAI role-based agent + task) | High |
+| Proactive autonomous agent mode (goal → self-loop until done; can combine with `workflow_execute` DAG) | High |
+| MCP server exposure (stdio shipped as `crabmate mcp serve`; remaining: streamable HTTP egress and transport auth) | Low–med |
+
+### P2 — Experience and observability
+
+| Improvement | Effort |
+|-------------|--------|
+| Benchmark harness adoption (SWE-bench / GAIA / HumanEval on `crabmate bench`; see **`docs/基准测试规划.md`**) | Med |
+| Visual workflow editing (DAG node editor reusing `workflow_execute` schema) | High |
+| Multi-level self-repair / replanning (per-tool retry → per-step rollback → plan rewrite, on top of `plan_rewrite`) | Med |
+| Token / cost estimation (token side partly shipped; remaining: upstream `usage` metadata and cost estimation) | Low |
+
+### P3 — Ecosystem and scalability (mid/long term)
+
+| Improvement | Effort |
+|-------------|--------|
+| External vector stores (Qdrant / pgvector adapter; decouple `long_term_memory_store` behind a trait; tenant keys track gateway identity, see above) | Med |
+| External observability platforms (OpenTelemetry trace export sharing the Chrome Trace span model) | Low |
+| Cloud scale-out (Redis/SQS instead of in-process mpsc; shared session storage) | High |
+
+### Sequencing
+
+- **Near term**: Web auth and deployment boundary (production `web_api_require_bearer=true` + non-empty secret; identity/quotas at the gateway) + benchmark baseline (`crabmate bench --benchmark swe_bench`, recorded in **`docs/BENCHMARK_RESULTS.md`**).
+- **Mid term**: MCP streamable HTTP egress (aligned with the Web bearer policy) + multi-agent design (start with in-process logical role separation, then independent instances).
+- **Long term**: visual orchestration UI + cloud scale-out (frontend engineering and distributed rework, driven by user growth).
+
+### Capability comparison (current state)
+
+| Capability | Mainstream | CrabMate today |
+|------------|------------|----------------|
+| Multi-agent collaboration | CrewAI, AutoGen | Single agent only (`logical_dual_agent` is logical role separation, not independent collaboration) |
+| Visual orchestration | Mastra, Flowise, LangFlow | No UI orchestrator |
+| Benchmark evaluation | SWE-bench, GAIA, HumanEval | Harness ready, not adopted |
+| External vector stores | Qdrant, pgvector, Pinecone | Local fastembed only |
+| Bidirectional MCP | MCP ecosystem | client side + server stdio (`mcp serve`) work; streamable HTTP egress pending |
+| Token / cost estimation | LangChain Usage Tracking | token budget / context chip shipped; cost estimation not implemented |
+| Proactive autonomous agent | AutoGPT, BabyAGI | Reactive; tools called on demand |
+| Multi-level self-repair | AutoGPT retries, LangChain Plan-and-Execute | Basic plan rewrite (`plan_rewrite`), needs hardening |
+| Cloud scale-out | Mastra, CrewAI cloud | Single process; distribution pending |
+| External observability | LangSmith, OpenTelemetry | Chrome Trace only |
+| API auth (per-user accounts) | — | Out of process (gateway / BFF); see above |
+
+---
+
 *Maintenance: user-visible deployment and security changes still belong in `README.md` / configuration docs; this file is planning narrative, not the source of truth for flags.*

@@ -484,7 +484,6 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 - **Precedence**: request JSON **`session_mode`** → persisted **`active_session_mode`** → role **`default_session_mode`** (e.g. companion/philosopher/literary → **`ask`**) → global config default.
 - **Web**: optional **`session_mode`** on **`POST /chat*`**. Status-bar Ask/Plan/Act segmented control; prefs **`session_mode`**; **`GET /status`** exposes **`default_session_mode`** and **`agent_role_default_session_modes`**; **`GET /conversation/messages`** returns **`active_session_mode`**. Ask/Plan apply readonly in `run_dispatch`. Successful turns save/keep **`active_session_mode`**.
 - **vs intent classification**: L2 and intent-gate config keys removed (retirement **R4**); capability bounds come from Ask/Plan/Act; Act also runs utterance keyword readonly heuristics.
-- **REPL / TUI**: **`/mode`**, **`/mode ask|plan|act`** (refresh first `system` appendix; keep transcript). If there is no first `system`, the mode still switches and the appendix applies on the next turn.
 - **Per-role default**: optional **`default_session_mode`** on **`[[agent_roles]]`** / **`agent_roles.toml`** rows.
 
 ## Multi-role (agent_roles)
@@ -498,7 +497,7 @@ Besides the global `system_prompt`, you can define **named ids** with their own 
 - **Optional `allowed_tools` (multi-role workbench)**: On **`[[agent_roles]]`** rows or **`[agent_roles.roles.<id>]`**, you may set a string array **`allowed_tools`**. When non-empty, that role may call **only** those built-in tool names; include the literal **`mcp`** to allow all **`mcp__*`** MCP proxy tools, or list a full **`mcp__{slug}__{remote}`** name for precise allow. Omit or use an empty list for **no restriction** (legacy behavior). The effective named id for tool policy follows **`agent_role` request → persisted `active_agent_role` → `default_agent_role_id`**, aligned with the first `system` message role.
 - **Web**: optional JSON **`agent_role`** on **`POST /chat`** / **`POST /chat/stream`**. **New session** (no stored history for **`conversation_id`**): same as before, seeds first-turn `system`. **Existing session**: if **`agent_role`** differs from persisted **`active_agent_role`**, the server **refreshes only the first `system`** and updates the stored role, **keeping** the rest of the transcript; omitting **`agent_role`** keeps the last persisted role. With **`allowed_tools`**, each turn filters tools sent to the model and rejects disallowed execution.
 - **CLI**: Global **`--agent-role`** was removed with in-process **`chat`/`repl`** (D2.1). Use Web / API **`agent_role`**, or Client **`crabmate-tui`**; **`allowed_tools`** still follow the request/session role id (and configured default).
-- **REPL (historical)**: In-process **`/agent`** slash entry is removed; Web composer still has a control slash subset including **`/agent`**.
+- **Web composer**: built-in control slashes such as **`/agent`** (list / `set <id>`) (see the Client repo).
 - **Hot reload**: role table reloads with **`POST /config/reload`**.
 - **`GET /status`**: **`agent_role_ids`**, **`default_agent_role_id`**.
 

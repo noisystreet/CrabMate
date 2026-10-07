@@ -13,7 +13,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 | Built-in tools | **`docs/en/TOOLS.md`** |
 | Turn display order | **`docs/Turn布局设计.md`** (Chinese authoritative) |
 | Debug | **`docs/en/DEBUG.md`** |
-| Frontend layout | **`docs/frontend/`** (pointers in this repo) · source [crabmate-client `frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) |
+| Frontend layout | Source in [crabmate-client `frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) (Leptos / WASM); this repo keeps HTTP/SSE contracts only (`serve` is always API-only) |
 
 ## Documentation and collaboration (summary)
 
@@ -110,7 +110,7 @@ Implementations live under `src/cm_*` with root composition in `src/{agent,llm,r
 
 ## Frontend (summary)
 
-UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch); design notes: **`docs/frontend/README.md`**. Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
+UI **source is not in this repo** (path A). Leptos CSR lives under Client [`frontend/src/api/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/api) + [`sse_dispatch`](https://github.com/noisystreet/crabmate-client/tree/main/frontend/src/sse_dispatch). Build: clone [crabmate-client](https://github.com/noisystreet/crabmate-client) as a sibling, then `cd ../crabmate-client && make frontend`.
 
 Authority: prefs → `/user-data/prefs`; sessions → in-memory + per-workspace `web_sessions.json`; streaming tail → `stream_text_overlay` (merged on finish). Use overlay-aware helpers for full display text.
 

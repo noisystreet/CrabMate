@@ -110,7 +110,7 @@ REAL_LLM_E2E=1 cargo test e2e_http_ -- --include-ignored --nocapture
 
 ```bash
 # 终端 1：后端（本仓；serve 永远纯 API）
-cd ../crabmate_agent
+cd ../server
 cargo run -- serve --host 127.0.0.1 --port 18080
 
 # 终端 2：启动 Tauri 桌面应用（Client 仓；跳过连接页）

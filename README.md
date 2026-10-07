@@ -123,7 +123,7 @@ cd ../crabmate-client && make frontend
 cargo run -- serve   # this repo: API-only
 ```
 
-UI pointers: [`docs/frontend/`](docs/frontend/).
+UI pointers: the official Client repo [`crabmate-client`](https://github.com/noisystreet/crabmate-client) (its `frontend/`).
 
 ### Official Client (Desktop / Android)
 
@@ -176,7 +176,7 @@ Compat matrix: [`docs/design/client_compat_matrix.md`](docs/design/client_compat
 | [docs/BENCHMARK_RESULTS.md](docs/BENCHMARK_RESULTS.md) | Recorded bench scores (no secrets) | — |
 | [benchmark/README.md](benchmark/README.md) | HumanEval convert/run/smoke | — |
 
-**More**: backlog, roadmap, frontend drafts—under **`docs/`** ([docs/中英文文档对照.md](docs/中英文文档对照.md)).
+**More**: backlog and roadmap under **`docs/`** ([docs/中英文文档对照.md](docs/中英文文档对照.md)).
 
 **Maintenance**: keep user-visible docs in sync; conventions in [docs/en/DEVELOPMENT.md](docs/en/DEVELOPMENT.md).
 

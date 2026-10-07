@@ -62,7 +62,7 @@
 
 ```bash
 cd ../crabmate-client && make frontend   # UI 由 Client 仓构建/托管
-cd ../crabmate_agent
+cd ../server
 API_KEY='…' cargo run -- --workspace /path/to/ws serve --host 127.0.0.1
 # 浏览器打开 Client 仓托管的 UI（本仓 serve 只提供 API）；若配置了 Web Bearer，侧栏先保存同一共享密钥
 ```
@@ -95,7 +95,7 @@ curl -sS -o /tmp/cm_sse_too_new.json -w '%{http_code}\n' \
 
 ```bash
 # 终端 A：本仓 serve（永远纯 API，不托管 UI）
-cd ../crabmate_agent
+cd ../server
 cargo run -- serve --host 127.0.0.1 --port 8080
 # 终端 B：Client 仓
 cd ../crabmate-client/desktop-tauri/src-tauri

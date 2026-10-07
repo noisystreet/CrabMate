@@ -114,7 +114,7 @@
 - **`src/runtime/cli_repl_ui.rs`**：ANSI 与 **`NO_COLOR`** 约定。
 - **`src/runtime/workspace_session.rs`**：会话加载与保存。
 - **`src/tool_approval/`**：CLI 审批抽象。
-- **`docs/Web界面美化设计.md`**：Web 分区与样式层级（TUI 对齐语义分区即可）。
+- **`docs/design/archive/Web界面美化设计.md`**：Web 分区与样式层级（TUI 对齐语义分区即可）。
 - **`docs/命令行与路由.md`**：子命令与用户可见行为。
 - **`docs/design/archive/tui_align_tauri_display.md`**：终端 TUI 与 Tauri/Web **展示序 / 工具文案** 对齐路线图（本轮投影已落地；历史 flush、终答、按行渲染等后续阶段）。
 

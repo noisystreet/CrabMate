@@ -9,7 +9,7 @@
 - 偏好键与白名单：**`frontend/src/app_prefs.rs`**（`THEME_KEY`、`THEME_SLUGS`、`normalize_theme_slug`）
 - 设置 UI：**`frontend/src/app/settings_sections.rs`**、**`settings_modal.rs`**、**`settings_page.rs`**
 - 初始化：**`frontend/src/app/app_signals/shell_ui.rs`**（`ShellUISignals::new` → `shell_prefs_storage::read_shell_ui_initial_snapshot`）
-- 界面美化总览：**`docs/Web界面美化设计.md`**（若与本设计交叉，以本设计为准定义「多预设」契约，实现后可在该文增加指针）
+- 界面美化总览（历史稿）：**`docs/design/archive/Web界面美化设计.md`**（若与本设计交叉，以本设计为准定义「多预设」契约）
 
 ---
 
@@ -126,7 +126,7 @@
 | 项 | 动作 |
 |----|------|
 | **Client `frontend/`** | 更新 `crabmate-theme` 合法取值说明；为每个新预设增加一条视觉手测（聊天列、模态、侧栏、composer、状态栏）。 |
-| **`docs/frontend/README.md`** | 本仓 UI 指针；可链到本文。 |
+| **Client `frontend/`** | 主题取值与视觉手测清单随 UI 源码在 [crabmate-client](https://github.com/noisystreet/crabmate-client) 维护。 |
 
 ---
 
