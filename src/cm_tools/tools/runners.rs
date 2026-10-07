@@ -198,13 +198,6 @@ pub fn runner_cargo_check_try(
 
 define_runners_cwd_maxlen_try! {
     runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
-    runner_cargo_metadata_try => cargo_tools::cargo_metadata_try,
-    runner_cargo_tree_try => cargo_tools::cargo_tree_try,
-    runner_cargo_doc_try => cargo_tools::cargo_doc_try,
-    runner_cargo_outdated_try => cargo_tools::cargo_outdated_try,
-    runner_cargo_machete_try => cargo_tools::cargo_machete_try,
-    runner_cargo_udeps_try => cargo_tools::cargo_udeps_try,
-    runner_cargo_publish_dry_run_try => cargo_tools::cargo_publish_dry_run_try,
     runner_cargo_run_try => cargo_tools::cargo_run_try,
     runner_rust_rustc_try => cargo_tools::rust_rustc_try,
 }

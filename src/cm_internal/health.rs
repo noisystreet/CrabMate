@@ -234,12 +234,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         m.insert("codespell", check_cmd("codespell", &["--version"]));
         m.insert("ast_grep", check_cmd("ast-grep", &["--version"]));
 
-        m.insert(
-            "cargo_machete",
-            check_cmd("cargo", &["machete", "--version"]),
-        );
-        m.insert("cargo_udeps", check_cmd("cargo", &["udeps", "--version"]));
-
         m
     })
     .await
@@ -272,8 +266,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
             "typos" => "dep_typos",
             "codespell" => "dep_codespell",
             "ast_grep" => "dep_ast_grep",
-            "cargo_machete" => "dep_cargo_machete",
-            "cargo_udeps" => "dep_cargo_udeps",
             _ => continue,
         };
         checks.insert(key.to_string(), {
@@ -300,8 +292,6 @@ fn dep_check_label(check_key: &str) -> String {
         "strings_binutils" => "strings".to_string(),
         "docker_cli" => "docker".to_string(),
         "ast_grep" => "ast-grep".to_string(),
-        "cargo_machete" => "cargo machete".to_string(),
-        "cargo_udeps" => "cargo udeps".to_string(),
         other => other.replace('_', "-"),
     }
 }

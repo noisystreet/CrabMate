@@ -83,8 +83,8 @@
 
 | 家族 | 工具 | 说明 |
 |------|------|------|
-| cargo 元数据 / 旁路 | `cargo_metadata` / `cargo_tree` / `cargo_doc` / `cargo_nextest` / `cargo_outdated` / `cargo_machete` / `cargo_udeps` / `cargo_publish_dry_run` / `cargo_fmt_check` | 单条 `cargo <sub>`；低频者价值低，可整族收敛 |
-| cargo 审计 | `cargo_audit` / `cargo_deny` | `cargo audit` / `cargo deny check` |
+| cargo 元数据 / 旁路 | ~~`cargo_metadata`~~ / ~~`cargo_tree`~~ / ~~`cargo_doc`~~ / `cargo_nextest` / ~~`cargo_outdated`~~ / ~~`cargo_machete`~~ / ~~`cargo_udeps`~~ / ~~`cargo_publish_dry_run`~~ / `cargo_fmt_check` | 单条 `cargo <sub>`；低频者价值低，可整族收敛。**首片（Slice A）已收敛 2026-10-07**：`cargo_metadata` / `tree` / `doc` / `outdated` / `machete` / `udeps` / `publish_dry_run` 七个已删（`nextest` / `fmt_check` 见 Slice B）。 |
+| cargo 审计 | `cargo_audit` / `cargo_deny` | `cargo audit` / `cargo deny check`（**待 Slice B**）。 |
 | cargo 主链路 | `cargo_check` / `cargo_clippy` / `cargo_test` / `cargo_run` / `rust_test_one` | 经**共享子进程会话** + **测试结果缓存**；`cargo_test` / `pytest_run` 关联后台任务，收敛须保留缓存与装配 |
 | Rust 编译 | `rust_rustc` | `rustc` 已在白名单；含参数安全上限（64 个 / 8192 字节） |
 | Go | `go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint` | 单条 `go` / `gofmt` / `golangci-lint` |
@@ -121,7 +121,7 @@
 
 1. ~~**§3.1.1 试点**：`cargo_clean`~~（**已落地 2026-10-07**：删 ToolSpec + runner + `cargo_clean_try` + `CargoCleanArgs`，并同步 tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
 2. ~~**§3.1.2 写侧安全门族**（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）~~（**已落地 2026-10-07**：按「直接收敛、不新增机制」删 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`），并同步 `registry_policy` / `codebase_semantic_invalidation` / `dev_tag` / tests / `docs/工具说明.md` / `docs/en/TOOLS.md` / `docs/待办清单.md` / `CHANGELOG.md`；`fmt` / `clippy -D warnings` / `cargo test` 全绿）。
-3. **§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。
+3. **§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。**Slice A 已落地 2026-10-07**（7 个元数据 / 旁路工具）；**Slice B 待办**（`cargo_fmt_check` / `cargo_nextest` / `cargo_audit` / `cargo_deny`，须同步改写内置工作流模板 `rust_ci_fmt` 与 fixtures）。
 4. **§3.2 Go / Python 族**：按频率评估；`cargo_test` / `pytest_run` 收敛前须核对后台任务装配。
 5. **`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。
 6. **白名单外 CLI（`typos` / `codespell` / `ast-grep`）**：仅在决定扩白名单后再评估（风险最高，暂不推进）。
@@ -138,3 +138,4 @@
 | 2026-10-07 | 修订：§3.1 收窄为「写侧薄封装（无只读损失，但非零损失）」，拆 **3.1.1 首推（`cargo_clean`）** / **3.1.2 含 `confirm` 门或校验（`cargo_fix` / `go_mod_tidy` / `python_install_editable`）**；`gh_api`（校验密集 + stdin body，降级扩大安全面）与 `playbook_run_commands`（启发式执行半体，非薄封装）移入 §3.3 保留；§4 顺序同步调整。 |
 | 2026-10-07 | **§3.1.1 `cargo_clean` 试点已落地**：删除 ToolSpec + runner + `cargo_clean_try` + `CargoCleanArgs` + 写副作用 / `dev_tag` / tests 引用，改用 `run_command`；同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
 | 2026-10-07 | **§3.1.2 写侧安全门族已落地**：按「直接收敛、不新增机制」删除 `cargo_fix` / `go_mod_tidy` / `python_install_editable` 的 ToolSpec + runner + 实现 + 参数结构体（含 `PythonInstallBackend` / `summary_python_install_editable`）及写副作用 / `dev_tag` / tests 引用，改用 `run_command`；复核确认 `confirm` 门并非强制安全边界；同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md` / `tool_calling_evolution.md`。 |
+| 2026-10-07 | **§3.2 cargo 元数据 / 旁路族 Slice A 已落地**：删除 `cargo_metadata` / `cargo_tree` / `cargo_doc` / `cargo_outdated` / `cargo_machete` / `cargo_udeps` / `cargo_publish_dry_run` 七个只读薄封装的 ToolSpec + runner + 实现（`cargo_metadata_try` 等）+ 参数结构体 + 写副作用 / `dev_tag` / tests 引用，改用 `run_command`；`cargo_metadata_command` 等内部共享 helper 保留；删除 `/health` 的 `cargo-machete` / `cargo-udeps` 探测（`dep_cargo_machete` / `dep_cargo_udeps`）；`cargo_nextest` / `cargo_fmt_check` / `cargo_audit` / `cargo_deny` 留待 Slice B（须改写内置工作流模板 `rust_ci_fmt`）；同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
