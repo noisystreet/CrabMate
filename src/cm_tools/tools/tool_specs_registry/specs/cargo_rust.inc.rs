@@ -40,14 +40,6 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo tree"),
         },
         ToolSpec {
-            name: "cargo_clean",
-            description: "运行 cargo clean 清理构建产物。默认 dry_run=true，仅预览。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::CargoCleanArgs>,
-            runner: ToolRunner::Typed(runner_cargo_clean_try),
-            summary: ToolSummaryKind::Static("cargo clean"),
-        },
-        ToolSpec {
             name: "cargo_doc",
             description: "运行 cargo doc 生成文档。可选 no_deps/open/package。",
             category: ToolCategory::Development,

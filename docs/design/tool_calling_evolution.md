@@ -7,6 +7,7 @@
 - 内置工具契约与信封：**`docs/工具说明.md`**
 - 工具与分发：**`docs/工具说明.md`**、`tool_registry` / `tools/` 源码；架构入口见 **`docs/开发文档.md`**
 - 待办跟踪：**`docs/待办清单.md`** → **`tools/` 与 `tool_registry.rs`** 小节（与本文件交叉维护：落地后删待办、本文件可增修订记录）
+- 剩余家族逐工具候选盘点：**`docs/design/tool_thin_wrapper_candidates.md`**（§8.5 的落地配套）
 - 安全面：**`.cursor/rules/security-sensitive-surface.mdc`**、**`docs/配置说明.md`**（`allowed_commands`、`http_fetch_*`、沙盒等）
 
 ---
@@ -159,3 +160,4 @@
 | 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。 |
 | 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |
 | 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
+| 2026-10-07 | 新增配套文档 **`docs/design/tool_thin_wrapper_candidates.md`**：对 §8.5 之后的**剩余内置工具**逐家族盘点「适合 / 视情况 / 保留」判定与切片顺序（§8.5 负责方案与约束，该文件负责候选清单）。 |

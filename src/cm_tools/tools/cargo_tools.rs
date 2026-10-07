@@ -257,41 +257,6 @@ pub fn cargo_tree_try(
     run_and_format_try(cmd, max_output_len, "cargo tree", "cargo_tree", None)
 }
 
-pub fn cargo_clean_try(
-    args_json: &str,
-    workspace_root: &Path,
-    max_output_len: usize,
-) -> Result<String, ToolError> {
-    let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
-    if !workspace_root.join("Cargo.toml").is_file() {
-        return Err(ToolError::workspace(
-            "workspace_no_cargo_toml",
-            "错误：当前工作目录未找到 Cargo.toml".to_string(),
-        ));
-    }
-    let package = v.get("package").and_then(|x| x.as_str()).map(str::trim);
-    let release = v.get("release").and_then(|x| x.as_bool()).unwrap_or(false);
-    let doc = v.get("doc").and_then(|x| x.as_bool()).unwrap_or(false);
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("clean");
-    if let Some(p) = package.filter(|s| !s.is_empty()) {
-        cmd.arg("--package").arg(p);
-    }
-    if release {
-        cmd.arg("--release");
-    }
-    if doc {
-        cmd.arg("--doc");
-    }
-    if dry_run {
-        cmd.arg("--dry-run");
-    }
-    cmd.current_dir(workspace_root);
-    run_and_format_try(cmd, max_output_len, "cargo clean", "cargo_clean", None)
-}
-
 pub fn cargo_doc_try(
     args_json: &str,
     workspace_root: &Path,

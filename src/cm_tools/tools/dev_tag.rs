@@ -103,7 +103,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- Rust / Cargo ---
         "cargo_metadata"
         | "cargo_tree"
-        | "cargo_clean"
         | "cargo_doc"
         | "cargo_run"
         | "cargo_nextest"

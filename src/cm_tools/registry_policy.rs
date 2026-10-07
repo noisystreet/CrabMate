@@ -110,7 +110,6 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "ast_grep_rewrite",
             "structured_patch",
             "cargo_fix",
-            "cargo_clean",
             "python_install_editable",
             "go_mod_tidy",
             "long_term_remember",

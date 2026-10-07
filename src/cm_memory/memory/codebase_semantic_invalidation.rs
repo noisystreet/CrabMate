@@ -39,7 +39,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "write",
         "mkdir",
         "cargo_fix",
-        "cargo_clean",
         "python_install_editable",
         "go_mod_tidy",
         "long_term_remember",
@@ -273,7 +272,6 @@ pub fn invalidation_for_tool_call(
             | "workflow_execute"
             | "http_request"
             | "cargo_fix"
-            | "cargo_clean"
             | "python_install_editable"
             | "go_mod_tidy"
     ) || name.starts_with("git_")
