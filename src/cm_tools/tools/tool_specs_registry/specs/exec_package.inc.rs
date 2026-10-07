@@ -9,7 +9,7 @@ ToolSpec {
         },
 ToolSpec {
             name: "terminal_session",
-            description: "**Linux 专用**：伪终端（PTY）交互会话。与 **`run_command`** 共用 **`allowed_commands`**、路径安全与（可选）工作区外路径人工审批；输出通过 SSE **`tool_output_chunk`** 流式增量下发（最终以 **`tool_result`** 收束正文）。\n\n- **exec**：无 **`session_id`** 时启动新会话（必填 **`command`** + 可选 **`args`**）；已存在会话则写入 **`input`** 并读取一轮输出直至短时静默。\n- **list** / **close** / **resize** / **send_signal**：会话列举、关闭、窗口尺寸、`kill` 信号。\n\n受限：同时活跃会话 ≤8；超时与输出上限继承 **`command_exec`**（`command_timeout_secs`、`command_max_output_len`）。",
+            description: "**Linux 专用**：伪终端（PTY）交互会话。与 **`run_command`** 共用 **`allowed_commands`**、路径安全与（可选）工作区外路径人工审批；输出通过 SSE **`tool_output_chunk`** 流式增量下发（最终以 **`tool_result`** 收束正文）。\n\n- **exec**：无 **`session_id`** 时启动新会话（必填 **`command`** + 可选 **`args`**）；已存在会话则写入 **`input`** 并读取一轮输出直至短时静默。\n- **list** / **close** / **resize** / **send_signal** / **interrupt**：会话列举、关闭、窗口尺寸、`kill` 信号；**interrupt** 向会话前台进程组写 ETX（等价 Ctrl-C，优先用于中断前台任务），**send_signal** 默认发给前台进程组，无前台进程组时回落到会话首进程。\n\n受限：同时活跃会话 ≤8；输出上限继承 **`command_exec`**（`command_max_output_len`）。单轮读取的墙钟为 `command_timeout_secs`，到点仅结束本轮读取并**保留会话**以便后续 `exec` 继续交互；仅当**上层工具调用被取消**或**外层执行超时**时才回收会话，避免占用 8 路上限；会话期间的增量输出随 `tool_output_chunk` 下发。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::TerminalSessionArgs>,
             runner: ToolRunner::Legacy(runner_terminal_session),

@@ -18,7 +18,7 @@ use crate::cm_types::{CommandApprovalDecision, ToolCall};
 use super::meta::{HandlerId, HandlerLookupTable};
 use super::policy::{
     http_fetch_outer_wall_secs, http_request_outer_wall_secs, parallel_tool_wall_timeout_secs,
-    sync_default_runs_inline, web_search_outer_wall_secs,
+    sync_default_runs_inline, terminal_session_outer_wall_secs, web_search_outer_wall_secs,
 };
 use super::runtime::{ToolRuntime, WebToolRuntime};
 

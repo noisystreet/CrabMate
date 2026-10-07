@@ -184,6 +184,10 @@ impl ToolSummaryLine for TerminalSessionSummaryArgs {
                 "terminal_session signal {}",
                 self.session_id.as_deref().unwrap_or("?")
             )),
+            "interrupt" => Some(format!(
+                "terminal_session interrupt {}",
+                self.session_id.as_deref().unwrap_or("?")
+            )),
             "exec" => {
                 let sid = self.session_id.as_deref().unwrap_or("").trim();
                 let cmd = self.command.as_deref().unwrap_or("").trim();

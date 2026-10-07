@@ -1,34 +1,35 @@
 //! Linux PTY **`terminal_session`**：`forkpty` + 会话表；输出经 SSE **`tool_output_chunk`** 增量下发。
 
 use std::collections::HashMap;
-use std::ffi::CString;
-use std::os::fd::{AsFd, AsRawFd, OwnedFd};
-use std::os::unix::ffi::OsStrExt;
+use std::os::fd::{AsFd, OwnedFd};
 use std::path::Path;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use libc::ioctl;
 use nix::errno::Errno;
-use nix::fcntl::{FcntlArg, OFlag, fcntl};
-use nix::pty::{ForkptyResult, Winsize, forkpty};
 use nix::sys::signal::{Signal, kill};
 use nix::sys::wait::{WaitPidFlag, WaitStatus, waitpid};
-use nix::unistd::{Pid, chdir, dup, execvp, read, write};
+use nix::unistd::{Pid, dup, read, tcgetpgrp, write};
 use serde::Deserialize;
 use tokio::sync::mpsc::Sender;
 
-use crate::cm_internal::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
-use crate::cm_config::AgentConfig;
-use crate::cm_sse_protocol::sse::{
-    SseEncoder, SsePayload, ToolOutputChunkBody, send_sse_control_payload_optional,
+use super::TerminalSseSink;
+use super::pty_io::{
+    child_gone_after_poll, fork_pty_session, reap_child_background, reap_child_blocking,
+    resize_session_master,
 };
+use super::sse_chunk::{emit_tool_chunk, push_truncated};
+use crate::cm_config::AgentConfig;
+use crate::cm_internal::tools::{PreparedRunCommand, prepare_run_command_for_pty_spawn};
+use crate::cm_sse_protocol::sse::SseEncoder;
 
 const MAX_SESSIONS: usize = 8;
 /// 连续无可读数据达到此时长后，认为本轮 PTY 输出暂告一段落。
 const IDLE_DRAIN: Duration = Duration::from_secs(30);
 const POLL_SLEEP: Duration = Duration::from_millis(25);
+/// 单次 PTY 写入等待全部字节排空的最长时长（非阻塞 master 上遇 `EAGAIN` 时短睡重试）。
+const WRITE_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 static NEXT_SESSION_N: AtomicU64 = AtomicU64::new(1);
 
@@ -80,97 +81,6 @@ fn session_id_trimmed(a: &TerminalSessionArgs) -> Option<&str> {
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty())
-}
-
-fn exec_strings_for_prepared(p: &PreparedRunCommand) -> Result<(CString, Vec<CString>), String> {
-    let prog = if let Some(ep) = &p.exec_path {
-        CString::new(ep.as_os_str().as_bytes()).map_err(|e| e.to_string())?
-    } else {
-        CString::new(p.cmd_name.as_bytes()).map_err(|e| e.to_string())?
-    };
-    let mut argv = Vec::with_capacity(1 + p.cmd_args.len());
-    argv.push(CString::new(p.cmd_raw.as_str()).map_err(|e| e.to_string())?);
-    for x in &p.cmd_args {
-        argv.push(CString::new(x.as_str()).map_err(|e| e.to_string())?);
-    }
-    Ok((prog, argv))
-}
-
-fn set_nonblocking(master: &OwnedFd) -> Result<(), String> {
-    let bits = fcntl(master.as_fd(), FcntlArg::F_GETFL).map_err(|e| format!("fcntl GETFL: {e}"))?;
-    let flags = OFlag::from_bits_truncate(bits);
-    fcntl(master.as_fd(), FcntlArg::F_SETFL(flags | OFlag::O_NONBLOCK))
-        .map_err(|e| format!("fcntl SETFL: {e}"))?;
-    Ok(())
-}
-
-fn push_truncated(acc: &mut String, chunk: &str, max_len: usize) {
-    let remain = max_len.saturating_sub(acc.len());
-    if remain == 0 {
-        return;
-    }
-    if chunk.len() <= remain {
-        acc.push_str(chunk);
-    } else {
-        let mut end = remain;
-        while end > 0 && !chunk.is_char_boundary(end) {
-            end -= 1;
-        }
-        acc.push_str(&chunk[..end]);
-    }
-}
-
-async fn emit_tool_chunk(
-    seq: &mut u64,
-    tool_call_id: &str,
-    text: &str,
-    out: Option<&Sender<String>>,
-    mirror: Option<&crate::cm_sse_protocol::sse::SseControlMirror>,
-    encoder: &dyn SseEncoder,
-) {
-    if text.is_empty() {
-        return;
-    }
-    *seq = seq.saturating_add(1);
-    let body = ToolOutputChunkBody {
-        tool_call_id: tool_call_id.to_string(),
-        name: Some("terminal_session".to_string()),
-        seq: *seq,
-        chunk: text.to_string(),
-        stream: Some("combined".to_string()),
-    };
-    let _ = send_sse_control_payload_optional(
-        out,
-        mirror,
-        SsePayload::ToolOutputChunk {
-            tool_output_chunk: body,
-        },
-        "terminal_session::pty_chunk",
-        encoder,
-    )
-    .await;
-}
-
-/// 从 dup 的 master 端读 PTY，直到空闲或墙上时钟；返回本轮捕获文本（用于 tool_result 正文）。
-/// 子进程已退出或已不可 `wait`（`ECHILD`）：可能已由本次 `WNOHANG` 收尸。
-fn child_gone_after_poll(pid: Pid) -> bool {
-    match waitpid(Some(pid), Some(WaitPidFlag::WNOHANG)) {
-        Ok(WaitStatus::StillAlive) => false,
-        Ok(_) => true,
-        Err(Errno::ECHILD) => true,
-        Err(_) => false,
-    }
-}
-
-fn reap_child_blocking(pid: Pid) {
-    match waitpid(Some(pid), None) {
-        Ok(_) | Err(Errno::ECHILD) => {}
-        Err(_) => {}
-    }
-}
-
-async fn reap_child_background(pid: Pid) {
-    let _ = tokio::task::spawn_blocking(move || reap_child_blocking(pid)).await;
 }
 
 /// 会话表中子进程已退出或内核已无该子进程：移除条目（`waitpid` 非阻塞收尸或判死）。
@@ -225,20 +135,82 @@ enum MasterWriteOutcome {
 }
 
 fn write_master_for_sid(sid: &str, to_write: &[u8]) -> MasterWriteOutcome {
-    let guard = match SESSIONS.lock() {
-        Ok(g) => g,
-        Err(_) => return MasterWriteOutcome::Err("会话表锁中毒".to_string()),
+    // 锁内仅 dup master，写出在锁外进行：非阻塞 master 上遇 `EAGAIN` 需短睡重试，不应持锁。
+    let master = {
+        let guard = match SESSIONS.lock() {
+            Ok(g) => g,
+            Err(_) => return MasterWriteOutcome::Err("会话表锁中毒".to_string()),
+        };
+        let Some(sess) = guard.get(sid) else {
+            return MasterWriteOutcome::Err("会话已丢失".to_string());
+        };
+        match dup(sess.master.as_fd()) {
+            Ok(d) => d,
+            Err(e) => return MasterWriteOutcome::Err(format!("dup PTY 失败: {e}")),
+        }
     };
-    let Some(sess) = guard.get(sid) else {
-        return MasterWriteOutcome::Err("会话已丢失".to_string());
-    };
-    match write(sess.master.as_fd(), to_write) {
-        Ok(_) => MasterWriteOutcome::Ok,
-        Err(Errno::EPIPE) => MasterWriteOutcome::BrokenPipe,
-        Err(e) => MasterWriteOutcome::Err(format!("{e}")),
+    let deadline = Instant::now() + WRITE_DRAIN_TIMEOUT;
+    let mut written = 0usize;
+    while written < to_write.len() {
+        match write(master.as_fd(), &to_write[written..]) {
+            // 0 字节：对端已关闭。
+            Ok(0) => return MasterWriteOutcome::BrokenPipe,
+            Ok(n) => written = written.saturating_add(n),
+            Err(Errno::EPIPE) => return MasterWriteOutcome::BrokenPipe,
+            Err(Errno::EINTR) => {
+                // 被信号打断：重试但受 deadline 约束，避免信号风暴下空转。
+                if Instant::now() >= deadline {
+                    return MasterWriteOutcome::Err(format!(
+                        "PTY 写入被信号中断（已写 {written}/{} 字节）",
+                        to_write.len()
+                    ));
+                }
+            }
+            Err(Errno::EAGAIN) => {
+                // 非阻塞 master 的写缓冲已满：短睡后重试，直至超时。
+                if Instant::now() >= deadline {
+                    return MasterWriteOutcome::Err(format!(
+                        "PTY 写入未排空（已写 {written}/{} 字节）",
+                        to_write.len()
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(e) => return MasterWriteOutcome::Err(format!("{e}")),
+        }
     }
+    MasterWriteOutcome::Ok
 }
 
+fn cancel_is_set(cancel: Option<&Arc<AtomicBool>>) -> bool {
+    cancel.is_some_and(|c| c.load(Ordering::Relaxed))
+}
+
+/// 每轮读取开始前的停止判定：取消优先于墙上时钟（取消须走会话回收路径）。
+fn round_stop_reason(cancel: Option<&Arc<AtomicBool>>, deadline: Instant) -> Option<DrainStop> {
+    if cancel_is_set(cancel) {
+        return Some(DrainStop::Cancelled);
+    }
+    if Instant::now() >= deadline {
+        return Some(DrainStop::Wall);
+    }
+    None
+}
+
+/// `drain_until_idle` 一轮结束的原因。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DrainStop {
+    /// 子进程退出 / master 半关闭（`EIO` 等）——会话已终止。
+    Eof,
+    /// 连续静默达 `IDLE_DRAIN`——会话仍打开。
+    Idle,
+    /// 墙上时钟到期——会话仍打开。
+    Wall,
+    /// 上层取消——调用方应关闭会话。
+    Cancelled,
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn drain_until_idle(
     dup_master: OwnedFd,
     cfg: DrainIdleCfg,
@@ -247,7 +219,8 @@ async fn drain_until_idle(
     out: Option<&Sender<String>>,
     mirror: Option<&crate::cm_sse_protocol::sse::SseControlMirror>,
     encoder: &dyn SseEncoder,
-) -> (String, bool) {
+    cancel: Option<&Arc<AtomicBool>>,
+) -> (String, DrainStop) {
     let DrainIdleCfg {
         wall,
         max_capture,
@@ -257,11 +230,16 @@ async fn drain_until_idle(
     let deadline = Instant::now() + wall;
     let mut acc = String::new();
     let mut empty_streak = Duration::ZERO;
-    let mut saw_eof = false;
 
-    while Instant::now() < deadline {
+    loop {
+        if let Some(stop) = round_stop_reason(cancel, deadline) {
+            return (acc, stop);
+        }
         let mut read_any = false;
         loop {
+            if cancel_is_set(cancel) {
+                return (acc, DrainStop::Cancelled);
+            }
             let d = Arc::clone(&dup_arc);
             let r = tokio::task::spawn_blocking(move || {
                 let mut buf = [0u8; 8192];
@@ -271,8 +249,7 @@ async fn drain_until_idle(
             match r {
                 Ok(Ok((buf, n))) => {
                     if n == 0 {
-                        saw_eof = true;
-                        break;
+                        return (acc, DrainStop::Eof);
                     }
                     read_any = true;
                     empty_streak = Duration::ZERO;
@@ -285,74 +262,22 @@ async fn drain_until_idle(
                         break;
                     }
                     // Master 半关闭、slave 挂断等：Linux 上常见 EIO；其余错误亦结束本轮以免悬挂会话。
-                    saw_eof = true;
-                    break;
+                    return (acc, DrainStop::Eof);
                 }
                 Err(_) => break,
             }
         }
-        if saw_eof {
-            break;
-        }
         if child_pid.is_some_and(child_gone_after_poll) {
-            saw_eof = true;
-            break;
+            return (acc, DrainStop::Eof);
         }
-        if read_any {
-            tokio::time::sleep(POLL_SLEEP).await;
-            continue;
-        }
-        empty_streak += POLL_SLEEP;
-        if empty_streak >= IDLE_DRAIN {
-            break;
+        if !read_any {
+            empty_streak += POLL_SLEEP;
+            if empty_streak >= IDLE_DRAIN {
+                return (acc, DrainStop::Idle);
+            }
         }
         tokio::time::sleep(POLL_SLEEP).await;
     }
-    (acc, saw_eof)
-}
-
-fn fork_pty_session(
-    prepared: &PreparedRunCommand,
-    cols: u16,
-    rows: u16,
-) -> Result<(Pid, OwnedFd), String> {
-    let (prog, argv) = exec_strings_for_prepared(prepared)?;
-    let ws = Winsize {
-        ws_row: rows,
-        ws_col: cols,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-
-    // SAFETY: `forkpty` 仅在此处分叉；子进程尽快 `exec`/`_exit`，不做额外分配。
-    let pair = unsafe { forkpty(Some(&ws), None).map_err(|e| format!("forkpty 失败: {e}"))? };
-
-    match pair {
-        ForkptyResult::Child => {
-            let _ = chdir(prepared.effective_working_dir.as_path());
-            let _ = execvp(&prog, &argv);
-            unsafe { libc::_exit(127) };
-        }
-        ForkptyResult::Parent { child, master } => {
-            set_nonblocking(&master)?;
-            Ok((child, master))
-        }
-    }
-}
-
-fn resize_session_master(master: &OwnedFd, cols: u16, rows: u16) -> Result<(), String> {
-    let ws = libc::winsize {
-        ws_row: rows,
-        ws_col: cols,
-        ws_xpixel: 0,
-        ws_ypixel: 0,
-    };
-    // SAFETY: `TIOCSWINSZ`  ioctl，第三个参数为 winsize 指针。
-    let r = unsafe { ioctl(master.as_raw_fd(), libc::TIOCSWINSZ, &ws) };
-    if r != 0 {
-        return Err(format!("ioctl TIOCSWINSZ 失败: {:?}", Errno::last()));
-    }
-    Ok(())
 }
 
 async fn kill_session_and_wait(child: Pid) {
@@ -360,6 +285,60 @@ async fn kill_session_and_wait(child: Pid) {
     tokio::time::sleep(Duration::from_millis(90)).await;
     let _ = kill(child, Signal::SIGKILL);
     reap_child_background(child).await;
+}
+
+/// 同步兜底关闭会话：摘除条目、`SIGKILL` 子进程并后台收尸（供 `Drop` 使用，不做异步等待）。
+fn close_session_sync(sid: &str) {
+    if let Some(pid) = remove_session_pid_skip_on_poison(sid) {
+        let _ = kill(pid, Signal::SIGKILL);
+        std::thread::spawn(move || reap_child_blocking(pid));
+    }
+}
+
+/// 异步关闭会话：摘除条目后走 `SIGTERM`→`SIGKILL` 等待收尸。
+async fn close_session_by_id(sid: &str) -> Result<(), String> {
+    if let Some(pid) = remove_session_pid_trusting_lock(sid)? {
+        kill_session_and_wait(pid).await;
+    }
+    Ok(())
+}
+
+/// 上层取消后收束正文：关闭会话并附注提示。
+async fn close_session_after_cancel(sid: &str, captured: String) -> String {
+    let mut body = captured;
+    match close_session_by_id(sid).await {
+        Ok(()) => body.push_str(&format!("\n\n已按取消请求关闭会话 `{sid}`（PTY 已清理）。")),
+        Err(e) => body.push_str(&format!("\n\n取消后关闭会话 `{sid}` 失败：{e}")),
+    }
+    body
+}
+
+/// 会话清理守卫：exec 路径在会话存在后 `armed`，正常返回前 `disarm`。
+///
+/// 若外层墙钟（`parallel_tool_wall_timeout_secs`）或取消导致本工具 future 被 drop，
+/// 尚未 `disarm` 的守卫在 `Drop` 中同步关闭会话，避免 PTY 长期占满 8 路上限。
+struct ExecSessionGuard {
+    sid: Option<String>,
+}
+
+impl ExecSessionGuard {
+    fn armed(sid: &str) -> Self {
+        Self {
+            sid: Some(sid.to_string()),
+        }
+    }
+
+    fn disarm(&mut self) {
+        self.sid = None;
+    }
+}
+
+impl Drop for ExecSessionGuard {
+    fn drop(&mut self) {
+        if let Some(sid) = self.sid.take() {
+            close_session_sync(&sid);
+        }
+    }
 }
 
 fn run_command_json_from_exec_fields(command: &str, args: &[String]) -> String {
@@ -468,7 +447,7 @@ fn terminal_action_send_signal(a: &TerminalSessionArgs) -> String {
         Ok(s) => s,
         Err(_) => return format!("错误：无效 signal 编号 {sig_n}。"),
     };
-    let child = {
+    let (child, fg_pgid) = {
         let guard = match sessions_lock() {
             Ok(g) => g,
             Err(e) => return e,
@@ -476,12 +455,38 @@ fn terminal_action_send_signal(a: &TerminalSessionArgs) -> String {
         let Some(sess) = guard.get(&sid) else {
             return format!("错误：未知 session_id \"{sid}\"。");
         };
-        sess.child
+        // 终端前台进程组：与 Ctrl-C 等信号语义一致的目标；取不到时回落到会话首进程。
+        let fg = tcgetpgrp(sess.master.as_fd()).ok().map(Pid::as_raw);
+        (sess.child, fg)
     };
-    if let Err(e) = kill(child, sig) {
+    let (target, scope) = match fg_pgid {
+        Some(pgid) if pgid > 0 => (Pid::from_raw(-pgid), format!("前台进程组 {pgid}")),
+        _ => (child, format!("会话首进程 {child}")),
+    };
+    if let Err(e) = kill(target, sig) {
         return format!("错误：发送信号失败: {e}");
     }
-    format!("已向会话 \"{sid}\" 的进程发送信号 {sig_n}。")
+    format!("已向会话 \"{sid}\" 的{scope}发送信号 {sig_n}。")
+}
+
+/// 通过向 PTY master 写入 `ETX`（`Ctrl-C`）中断会话前台进程组，语义等同终端按键。
+async fn terminal_action_interrupt(a: &TerminalSessionArgs) -> String {
+    let sid = match session_id_trimmed(a) {
+        Some(s) => s.to_string(),
+        None => return "错误：interrupt 须提供 session_id。".to_string(),
+    };
+    let sid_owned = sid.clone();
+    let wres = tokio::task::spawn_blocking(move || write_master_for_sid(&sid_owned, &[0x03])).await;
+    match wres {
+        Ok(MasterWriteOutcome::Ok) => format!("已向会话 \"{sid}\" 发送 Ctrl-C（ETX）。"),
+        Ok(MasterWriteOutcome::BrokenPipe) => {
+            format!("错误：会话 \"{sid}\" 的 PTY 已断开，无法发送 Ctrl-C。")
+        }
+        Ok(MasterWriteOutcome::Err(msg)) => {
+            format!("错误：向会话 \"{sid}\" 发送 Ctrl-C 失败：{msg}")
+        }
+        Err(_) => "错误：向会话发送 Ctrl-C 失败（任务异常）。".to_string(),
+    }
 }
 
 /// exec 分支：`drain_until_idle` / SSE 共用字段。
@@ -493,6 +498,7 @@ struct TerminalStreamCtx<'a> {
     sse_out_tx: Option<&'a Sender<String>>,
     sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     encoder: &'a dyn SseEncoder,
+    cancel: Option<&'a Arc<AtomicBool>>,
 }
 
 async fn reap_removed_session_child_or_return_captured(sid: &str, captured: String) -> String {
@@ -620,7 +626,8 @@ async fn terminal_exec_resume_existing(
             Err(_) => return "错误：向 PTY 写入失败（任务异常）。".to_string(),
         }
     }
-    let (captured, eof) = drain_until_idle(
+    let mut guard = ExecSessionGuard::armed(sid);
+    let (captured, stop) = drain_until_idle(
         dup_fd,
         DrainIdleCfg {
             wall: ctx.wall,
@@ -632,12 +639,14 @@ async fn terminal_exec_resume_existing(
         ctx.sse_out_tx,
         ctx.sse_control_mirror,
         ctx.encoder,
+        ctx.cancel,
     )
     .await;
-    let captured = if eof {
-        reap_removed_session_child_or_return_captured(sid, captured).await
-    } else {
-        captured
+    guard.disarm();
+    let captured = match stop {
+        DrainStop::Eof => reap_removed_session_child_or_return_captured(sid, captured).await,
+        DrainStop::Cancelled => close_session_after_cancel(sid, captured).await,
+        DrainStop::Idle | DrainStop::Wall => captured,
     };
     let capped = captured.len() >= ctx.max_capture;
     let mut body = captured;
@@ -682,17 +691,19 @@ async fn terminal_exec_spawn_new(
         Err(e) => return e,
     };
 
+    // 从会话创建起 armed：若本 future 在初始写入 / drain 期间被 drop（外层超时/取消），Drop 兜底清理。
+    let mut guard = ExecSessionGuard::armed(&sid);
     let input = a.input.clone().unwrap_or_default().into_bytes();
     if let Err(msg) = terminal_spawn_write_stdin_if_nonempty(&sid, input).await {
         return msg;
     }
 
     let (dup_fd, child_pid) = {
-        let guard = match sessions_lock() {
+        let sessions = match sessions_lock() {
             Ok(g) => g,
             Err(e) => return e,
         };
-        let Some(sess) = guard.get(&sid) else {
+        let Some(sess) = sessions.get(&sid) else {
             return "错误：会话尚未就绪。".to_string();
         };
         match dup(sess.master.as_fd()) {
@@ -701,7 +712,7 @@ async fn terminal_exec_spawn_new(
         }
     };
 
-    let (captured, eof_flag) = drain_until_idle(
+    let (captured, stop) = drain_until_idle(
         dup_fd,
         DrainIdleCfg {
             wall: ctx.wall,
@@ -713,17 +724,19 @@ async fn terminal_exec_spawn_new(
         ctx.sse_out_tx,
         ctx.sse_control_mirror,
         ctx.encoder,
+        ctx.cancel,
     )
     .await;
-    let captured = if eof_flag {
-        reap_removed_session_child_or_return_captured(&sid, captured).await
-    } else {
-        captured
+    guard.disarm();
+    let captured = match stop {
+        DrainStop::Eof => reap_removed_session_child_or_return_captured(&sid, captured).await,
+        DrainStop::Cancelled => close_session_after_cancel(&sid, captured).await,
+        DrainStop::Idle | DrainStop::Wall => captured,
     };
 
     let capped = captured.len() >= ctx.max_capture;
     let mut body = captured;
-    if !eof_flag {
+    if matches!(stop, DrainStop::Idle | DrainStop::Wall) {
         body.push_str(&format!(
             "\n\n会话 `{sid}` 仍打开（子 PID {child}）；后续可用 {{ \"action\": \"exec\", \"session_id\": \"{sid}\", \"input\": \"…\" }} 继续交互。"
         ));
@@ -746,6 +759,7 @@ struct TerminalActionExecArgs<'a> {
     allowed_commands: &'a [String],
     skip_arg_safety: bool,
     encoder: Option<&'a dyn SseEncoder>,
+    cancel: Option<Arc<AtomicBool>>,
 }
 
 async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
@@ -761,6 +775,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
         allowed_commands,
         skip_arg_safety,
         encoder,
+        cancel,
     } = args;
     let cols = a.cols.unwrap_or(80);
     let rows = a.rows.unwrap_or(24);
@@ -776,6 +791,7 @@ async fn terminal_action_exec(args: TerminalActionExecArgs<'_>) -> String {
         sse_out_tx,
         sse_control_mirror,
         encoder: encoder_ref,
+        cancel: cancel.as_ref(),
     };
     if let Some(sid) = session_id_trimmed(a) {
         terminal_exec_resume_existing(sid, a, &mut ctx).await
@@ -800,12 +816,16 @@ pub async fn execute_terminal_session(
     workspace: &Path,
     args_json: &str,
     tool_call_id: &str,
-    sse_out_tx: Option<&Sender<String>>,
-    sse_control_mirror: Option<&crate::cm_sse_protocol::sse::SseControlMirror>,
+    sse: TerminalSseSink<'_>,
     allowed_commands: &[String],
-    encoder: Option<&dyn SseEncoder>,
     skip_arg_safety: bool,
+    cancel: Option<Arc<AtomicBool>>,
 ) -> String {
+    let TerminalSseSink {
+        out_tx: sse_out_tx,
+        control_mirror: sse_control_mirror,
+        encoder,
+    } = sse;
     let a: TerminalSessionArgs = match serde_json::from_str(args_json) {
         Ok(v) => v,
         Err(e) => return format!("错误：参数 JSON 无效: {e}"),
@@ -820,6 +840,7 @@ pub async fn execute_terminal_session(
         "close" => terminal_action_close(&a).await,
         "resize" => terminal_action_resize(&a),
         "send_signal" => terminal_action_send_signal(&a),
+        "interrupt" => terminal_action_interrupt(&a).await,
         "exec" => {
             terminal_action_exec(TerminalActionExecArgs {
                 workspace,
@@ -833,11 +854,12 @@ pub async fn execute_terminal_session(
                 allowed_commands,
                 skip_arg_safety,
                 encoder,
+                cancel,
             })
             .await
         }
         _ => format!(
-            "错误：未知 action \"{}\"；应为 exec / send_signal / resize / list / close。",
+            "错误：未知 action \"{}\"；应为 exec / send_signal / interrupt / resize / list / close。",
             a.action
         ),
     }
