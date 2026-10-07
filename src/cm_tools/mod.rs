@@ -7,6 +7,7 @@ pub(crate) use crate::cm_types as types;
 
 pub mod cargo_metadata;
 pub mod clarification_questionnaire;
+pub mod fs_atomic;
 pub mod github_token;
 pub mod health_dep_compat;
 pub mod memory_tool_host;
