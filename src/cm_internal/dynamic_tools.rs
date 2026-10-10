@@ -144,7 +144,7 @@ pub fn load_dynamic_tools(working_dir: &Path) -> Vec<Tool> {
     defs
 }
 
-/// `GET /tools/plugins` 单条文件探测结果（只读、不执行）。
+/// `GET /tools/plugins` / `GET /tools/plugins/{file}` 单条文件探测结果（只读、不执行）。
 #[derive(Debug, Clone)]
 pub struct DynamicToolFileProbe {
     pub file: String,
@@ -153,6 +153,72 @@ pub struct DynamicToolFileProbe {
     pub valid: bool,
     pub error: Option<String>,
     pub command_allowed: bool,
+    /// 原始 `parameters` 字段（解析失败时为 `Null`）。
+    pub parameters: Value,
+    /// 原始 `args` 字段（解析失败时为空）。
+    pub args: Vec<String>,
+    /// 原始 `pass_args_json` 字段（解析失败时为 `false`）。
+    pub pass_args_json: bool,
+}
+
+/// 探测单个已存在的 `plugins/*.json`：读/解析/校验失败均记录 `error`（不 panic、不跳过）。
+fn probe_file(path: &Path, allowed_commands: &[String]) -> DynamicToolFileProbe {
+    let file = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default()
+        .to_string();
+    let text = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            return DynamicToolFileProbe {
+                file,
+                name: String::new(),
+                description: String::new(),
+                valid: false,
+                error: Some(format!("读取失败：{e}")),
+                command_allowed: false,
+                parameters: Value::Null,
+                args: Vec::new(),
+                pass_args_json: false,
+            };
+        }
+    };
+    let spec: DynamicToolFile = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            return DynamicToolFileProbe {
+                file,
+                name: String::new(),
+                description: String::new(),
+                valid: false,
+                error: Some(format!("JSON 解析失败：{e}")),
+                command_allowed: false,
+                parameters: Value::Null,
+                args: Vec::new(),
+                pass_args_json: false,
+            };
+        }
+    };
+    let error = validate_file(&spec, path).err();
+    let mut prog = spec.command.trim().to_string();
+    let mut merged_args = spec.args.clone();
+    split_command_prefix_if_embedded(&mut prog, &mut merged_args);
+    let cmd_key = prog.to_ascii_lowercase();
+    let command_allowed = allowed_commands
+        .iter()
+        .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
+    DynamicToolFileProbe {
+        file,
+        name: spec.name,
+        description: spec.description,
+        valid: error.is_none(),
+        error,
+        command_allowed,
+        parameters: spec.parameters,
+        args: spec.args,
+        pass_args_json: spec.pass_args_json,
+    }
 }
 
 /// 只读枚举 `<workspace>/plugins/*.json`：读/解析/校验失败均记录 `error`，**不**跳过（与
@@ -171,57 +237,24 @@ pub fn probe_dynamic_tool_files(
         if path.extension().and_then(|s| s.to_str()) != Some("json") {
             continue;
         }
-        let file = path
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or_default()
-            .to_string();
-        let text = match std::fs::read_to_string(&path) {
-            Ok(s) => s,
-            Err(e) => {
-                out.push(DynamicToolFileProbe {
-                    file,
-                    name: String::new(),
-                    description: String::new(),
-                    valid: false,
-                    error: Some(format!("读取失败：{e}")),
-                    command_allowed: false,
-                });
-                continue;
-            }
-        };
-        let spec: DynamicToolFile = match serde_json::from_str(&text) {
-            Ok(v) => v,
-            Err(e) => {
-                out.push(DynamicToolFileProbe {
-                    file,
-                    name: String::new(),
-                    description: String::new(),
-                    valid: false,
-                    error: Some(format!("JSON 解析失败：{e}")),
-                    command_allowed: false,
-                });
-                continue;
-            }
-        };
-        let error = validate_file(&spec, &path).err();
-        let mut prog = spec.command.trim().to_string();
-        let mut merged_args = spec.args.clone();
-        split_command_prefix_if_embedded(&mut prog, &mut merged_args);
-        let cmd_key = prog.to_ascii_lowercase();
-        let command_allowed = allowed_commands
-            .iter()
-            .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
-        out.push(DynamicToolFileProbe {
-            file,
-            name: spec.name,
-            description: spec.description,
-            valid: error.is_none(),
-            error,
-            command_allowed,
-        });
+        out.push(probe_file(&path, allowed_commands));
     }
     out
+}
+
+/// 只读探测 `<workspace>/plugins/{file}` 单文件；文件不存在/非普通文件返回 `None`。
+///
+/// 调用方须先做 `{file}` 路径守卫（仅 `[A-Za-z0-9_-]+\.json`），本函数按字面拼接、不做规范化。
+pub fn probe_dynamic_tool_file(
+    working_dir: &Path,
+    file: &str,
+    allowed_commands: &[String],
+) -> Option<DynamicToolFileProbe> {
+    let path = plugins_dir(working_dir).join(file);
+    if !path.is_file() {
+        return None;
+    }
+    Some(probe_file(&path, allowed_commands))
 }
 
 pub fn resolve_runtime_def(

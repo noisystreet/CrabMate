@@ -60,6 +60,8 @@ pub const INVALID_TOOL_NAME: &str = "INVALID_TOOL_NAME";
 pub const TOOL_NOT_FOUND: &str = "TOOL_NOT_FOUND";
 /// 工作区动态工具定义文件校验失败（`plugins/*.json`）。
 pub const INVALID_PLUGIN_DEFINITION: &str = "INVALID_PLUGIN_DEFINITION";
+/// 工作区动态工具文件不存在（`GET /tools/plugins/{file}`）。
+pub const PLUGIN_NOT_FOUND: &str = "PLUGIN_NOT_FOUND";
 /// skills 元工具调用失败。
 pub const SKILL_INVOKE_FAILED: &str = "SKILL_INVOKE_FAILED";
 /// `GET /tools` 的 `source` / `category` 查询参数不是受支持的枚举值（或 `limit`/`offset` 非法）。

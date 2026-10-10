@@ -117,3 +117,24 @@ pub struct PluginsListResponse {
     pub plugins: Vec<DynamicToolFileView>,
     pub total: usize,
 }
+
+/// `GET /tools/plugins/{file}` 单文件详情投影（只读）。
+#[derive(Debug, Clone, Serialize)]
+pub struct DynamicToolFileDetail {
+    /// 文件名（相对 `<workspace>/plugins/`）。
+    pub file: String,
+    pub name: String,
+    pub description: String,
+    /// 是否通过 `plugins/*.json` 校验。
+    pub valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// 其 `command` 程序名是否在 `allowed_commands` 白名单中。
+    pub command_allowed: bool,
+    /// 原始 `parameters` JSON Schema（解析失败时为 `null`）。
+    pub parameters: serde_json::Value,
+    /// 原始 `args` 字段。
+    pub args: Vec<String>,
+    /// 原始 `pass_args_json` 字段。
+    pub pass_args_json: bool,
+}

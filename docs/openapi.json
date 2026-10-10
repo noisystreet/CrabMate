@@ -3180,6 +3180,84 @@
         ]
       }
     },
+    "/tools/plugins/{file}": {
+      "get": {
+        "description": "返回该文件的 `parameters` / `args` / `pass_args_json` 与校验结果；不做写/删。`file` 仅允许 `[A-Za-z0-9_-]+\\.json`（显式拒绝分隔符与 `..`）。",
+        "parameters": [
+          {
+            "description": "插件文件名，须匹配 `[A-Za-z0-9_-]+\\.json`",
+            "in": "path",
+            "name": "file",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "args": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "command_allowed": {
+                      "type": "boolean"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "error": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "parameters": {
+                      "type": "object"
+                    },
+                    "pass_args_json": {
+                      "type": "boolean"
+                    },
+                    "valid": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "单文件详情（含校验结果与原始参数）"
+          },
+          "400": {
+            "description": "文件名不合法（INVALID_PLUGIN_DEFINITION）"
+          },
+          "404": {
+            "description": "未找到动态工具文件（PLUGIN_NOT_FOUND）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "读取工作区单个动态工具文件（`<workspace>/plugins/{file}`，只读）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
     "/tools/{tool_name}": {
       "get": {
         "parameters": [
