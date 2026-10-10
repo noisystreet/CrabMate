@@ -104,6 +104,17 @@ pub struct LlmOverridesFile {
     pub saved_models: Vec<Value>,
 }
 
+/// `~/.local/share/crabmate/tool_overrides.json`：进程级工具启停覆写（`name -> enabled`）。
+///
+/// 覆写整段替换 `tool_registry_disabled_tools` 的语义：`false` 入禁用集、`true` 从禁用集移除。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ToolOverridesFile {
+    #[serde(default = "default_schema_version")]
+    pub schema_version: u32,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, bool>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WebSessionsFile {
     #[serde(default = "default_schema_version")]

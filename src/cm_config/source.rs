@@ -112,6 +112,12 @@ pub(super) struct ToolRegistrySection {
     /// 额外排除的工具名（精确匹配；默认已按只读/免审批门排除写类与交互审批类工具）。
     #[serde(default)]
     pub(super) tool_retry_denied_tools: Option<Vec<String>>,
+    /// 工具**启停**：禁止在场的工具名（精确匹配）；省略 = 不按名单禁用。可被 `tool_overrides.json` 覆写。
+    #[serde(default)]
+    pub(super) disabled_tools: Option<Vec<String>>,
+    /// 工具**启停**：禁止在场的工具名前缀（通配）；省略/空 = 不按前缀禁用。可被 `tool_overrides.json` 覆写。
+    #[serde(default)]
+    pub(super) disabled_tool_prefixes: Option<Vec<String>>,
 }
 
 /// 与 `config/agent_roles.toml` 中 `[[agent_roles]]` 一行对应

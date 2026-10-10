@@ -6,6 +6,7 @@ mod openapi_paths;
 mod openapi_paths_chat_stream;
 mod openapi_paths_memory;
 mod openapi_paths_tool_jobs;
+mod openapi_paths_tools;
 mod openapi_paths_user_data;
 mod openapi_paths_user_data_mcp;
 mod openapi_paths_workspace;
@@ -37,6 +38,8 @@ pub fn build_openapi_spec() -> Value {
             { "name": "workspace", "description": "工作区浏览与文件" },
             { "name": "system", "description": "健康检查与状态" },
             { "name": "tasks", "description": "进程内任务清单" },
+            { "name": "skills", "description": "工作区技能（元工具 skill_manage）" },
+            { "name": "tools", "description": "工具清单、详情与进程级启停" },
             { "name": "tool_jobs", "description": "后台工具任务轮询与取消" },
             { "name": "config", "description": "配置热重载" },
             { "name": "memory", "description": "长期记忆只读列表与按 id 删除" },

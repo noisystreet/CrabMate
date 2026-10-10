@@ -1,6 +1,6 @@
-# 设计草案：工具管理 API 补齐
+# 设计：工具管理 API 补齐
 
-> **状态**：草案 / Proposed（2026-09-20）。**尚未评审、尚未实现**。§7.1 是本轮给出的建议默认取值（P0 契约口径，需确认后才算冻结）；§7.2 为遗留待评审。
+> **状态**：已确认（2026-10-10）。**作用域已拍板为进程级**（见 §7.2 Q1）。**P0 + P1 已实现**：`GET /tools`、`GET /tools/{tool_name}`、`PUT /tools/{tool_name}/enabled`、`GET /tools/plugins`（只读）——HTTP 面（[`http_types::tools`](../../src/cm_web_host/http_types/tools.rs) / [`tools_handlers`](../../src/web/tools_handlers.rs) / [路由](../../src/web/routes/tools/mod.rs) / OpenAPI 与快照）与文档已同步。**前置层**：配置层（`[tool_registry] disabled_tools` / `disabled_tool_prefixes`）、user_data 落点（`tool_overrides.json` + `apply_user_data_tool_overrides`）与生效落点（`prepare_tools_for_turn` 第 6 步）。§7.1 取值已冻结；§7.2 除 Q1 外为遗留。P2（`plugins` 写盘/删除）未实现。
 > **关联**：[`memory_management_api.md`](./memory_management_api.md)（同一批「资源补口」的姊妹设计，禁用态/幂等口径对齐它）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（工具面演进总清单）、[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)、[`server_api_completeness.md`](./server_api_completeness.md)、[`user_data_dir.md`](./user_data_dir.md)
 > **契约真源**：[`docs/命令行与路由.md`](../命令行与路由.md)（路由与鉴权矩阵）、[`docs/openapi.json`](../openapi.json) 快照、[`docs/命令行契约.md`](../命令行契约.md)（错误码表）、[`docs/配置说明.md`](../配置说明.md)（配置项）、[`src/cm_api_contract/error_codes.rs`](../../src/cm_api_contract/error_codes.rs)
 > **非目标**：MCP 服务器管理（`/user-data/mcp-servers*` 12 端点已完备）；工具**执行**通道（`POST /tools/{name}/invoke` 之类，见 §3.6）；审批策略与 `tool_approval` 语义变更；`ToolSpec` 静态表结构改造；子代理工具放行策略变更；前端工具面板（官方 UI 在 [`crabmate-client`](https://github.com/noisystreet/crabmate-client)，本仓只负责契约）。
@@ -42,21 +42,22 @@
 
 第 3/4 步是**两个彼此独立的硬编码特判**：新增一个「某工具可由配置关闭」的需求，就要再插一段 `retain`。这既是可维护性问题，也是「工具面不可观测」的根因——除了读源码，没人能说出当前有哪些工具在场、为什么某项不在场。
 
-### 1.4 `[tool_registry]`：已有完整的「行为策略」面，零「启停」语义
+### 1.4 `[tool_registry]`：已有完整的「行为策略」面，启停语义由本设计补入
 
-[`ToolRegistryPolicyConfig`](../../src/cm_config/types/agent_config_sections.rs#L268-L304) 共 22 个字段，**全部是「怎么写 / 怎么并发 / 怎么重试」**，没有一项控制「哪些工具在场」：
+[`ToolRegistryPolicyConfig`](../../src/cm_config/types/agent_config_sections.rs#L270-L314) 共 25 个字段：其中 23 项是「怎么写 / 怎么并发 / 怎么重试」的**行为策略**，另 2 项（`disabled_tools` / `disabled_tool_prefixes`）是本设计新增的**启停**字段（§3.3）：
 
 | 分组 | 字段（节选） | 语义 |
 |------|--------------|------|
-| 写类工具集 | `write_effect_tools` | 判定写盘效应（[registry_policy.rs](../../src/cm_tools/registry_policy.rs#L94) 内置 44 项，含 `skill_manage`） |
-| 并行拒绝集 | `parallel_sync_denied_tools` / `parallel_sync_denied_prefixes` | 禁止并行（[L175](../../src/cm_tools/registry_policy.rs#L175) 内置 8 项精确 + 17 前缀） |
-| 内联集 | `sync_default_inline_tools` | 免 spawn（[L281](../../src/cm_tools/registry_policy.rs#L281) 内置 2 项） |
+| 写类工具集 | `write_effect_tools` | 判定写盘效应（[registry_policy.rs](../../src/cm_tools/registry_policy.rs#L105) 内置 34 项，含 `skill_manage`） |
+| 并行拒绝集 | `parallel_sync_denied_tools` / `parallel_sync_denied_prefixes` | 禁止并行（[L186](../../src/cm_tools/registry_policy.rs#L186) 内置 8 项精确 + 17 前缀） |
+| 内联集 | `sync_default_inline_tools` | 免 spawn（[L292](../../src/cm_tools/registry_policy.rs#L292) 内置 2 项） |
 | 墙上时钟 | `parallel_wall_timeout_secs` 等 3 项 | 外圈超时覆盖 |
 | 后台任务 | `background_jobs_enabled` 等 8 项 | 见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md) |
-| 透明重试 | `tool_retry_enabled` 等 6 项 | 瞬时失败重试 |
+| 透明重试 | `tool_retry_enabled` 等 5 项 | 瞬时失败重试 |
 | 子代理放行 | `sub_agent_*_extra_tools` / `_deny_tools` | 分阶段子代理的额外放行/拒绝 |
+| **启停**（本设计新增） | `disabled_tools` / `disabled_tool_prefixes` | 禁止在场的工具名（精确）/ 前缀（通配）（§3.3） |
 
-有利条件：该段**已在热重载白名单内**（[hot_reload.rs](../../src/cm_config/hot_reload.rs) 整体 `clone_from`），且在 [validate.rs](../../src/cm_config/validate.rs) 有范围校验先例（如 `1..=86400`），用户在 [config/tools.toml](../../config/tools.toml#L195-L242) 已见惯 `[tool_registry]` 段。**因此新增启停字段的改造成本极低；缺的只是字段本身。**
+有利条件：该段**已在热重载白名单内**（[hot_reload.rs](../../src/cm_config/hot_reload.rs) 整体 `clone_from`），且在 [validate.rs](../../src/cm_config/validate.rs) 有范围校验先例（如 `1..=86400`），用户在 [config/tools.toml](../../config/tools.toml#L195-L242) 已见惯 `[tool_registry]` 段。**因此新增启停字段的改造成本极低；两个字段已按 §3.3 补入。**
 
 ### 1.5 已完备的部分（本设计不重复造）
 
@@ -68,7 +69,7 @@
 
 ### 1.6 观测面与文档/契约漂移
 
-- **观测面缺口**：模型可读的 `self_config_info` 中，`tool_registry_section` **只输出 2 个字段**（`background_jobs_enabled`、`parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/self_config_info.rs#L266-L273)），22 字段里的策略集合与超时表全部不可见。
+- **观测面缺口**：模型可读的 `self_config_info` 中，`tool_registry_section` **只输出 2 个字段**（`background_jobs_enabled`、`parallel_wall_timeout_overrides_count`，[self_config_info.rs](../../src/cm_tools/tools/self_config_info.rs#L266-L273)），25 字段里的策略集合与超时表全部不可见。
 - **文档漂移（双缺口）**：[`docs/命令行与路由.md`](../命令行与路由.md) 自称路由真源，但其受保护 API 鉴权矩阵与路由表**均无 `/tools/jobs/*`**；该端点契约目前只存在于 `docs/openapi.json` 快照、[openapi_paths_tool_jobs.rs](../../src/web/openapi/openapi_paths_tool_jobs.rs) 与 `docs/命令行契约.md`。
 - **错误码缺口**：[error_codes.rs](../../src/cm_api_contract/error_codes.rs) 共 23 条常量，**无任何 `TOOL_*` / `PLUGIN_*` / `SKILLS_*`**；`SKILL_INVOKE_FAILED` 只以字面量出现在 handler 与 `命令行契约.md` 表中，未登记为常量。
 - **OpenAPI tag 缺口**：顶层 `tags` 数组为 chat / workspace / system / tasks / tool_jobs / config / user_data / uploads（[openapi/mod.rs](../../src/web/openapi/mod.rs#L34-L43)），**没有 `skills`**，但 `/skills` 片段自带 `"tags": ["skills"]`（[openapi_paths_workspace.rs](../../src/web/openapi/openapi_paths_workspace.rs#L151-L171)）。
@@ -81,7 +82,7 @@
 | 缺口 | 判定 | 理由 |
 |------|------|------|
 | **工具清单 HTTP 入口**（`GET /tools`） | **应补（P0）** | 「当前有哪些工具在场、来自哪个源、为什么不在场」目前只能读源码回答；四类来源已全部可就地枚举，只差一层只读投影 |
-| **单工具详情 + 策略投影**（`GET /tools/{name}`） | **应补（P1）** | `[tool_registry]` 22 字段与 `registry_policy` 的判定结果（只读/写类/可并行/内联/可后台/可重试）已有公开函数可调，却完全不可见；这是 §1.6 观测面缺口的直接补口 |
+| **单工具详情 + 策略投影**（`GET /tools/{name}`） | **应补（P1）** | `[tool_registry]` 25 字段与 `registry_policy` 的判定结果（只读/写类/可并行/内联/可后台/可重试）已有公开函数可调，却完全不可见；这是 §1.6 观测面缺口的直接补口 |
 | **单工具启停**（`PUT /tools/{name}/enabled`） | **应补（P1）** | 现在关一个工具必须改代码（加 `retain` 特判）或整体关掉某子系统的全部工具（如 `long_term_memory_enabled=false` 连带关三个工具）；「临时停用某个危险工具」是最常见的运维诉求 |
 | **启停的配置落点**（`[tool_registry] disabled_tools`） | **应补（P1）** | 是 §1.4 已就绪段落的自然延伸：热重载白名单、范围校验先例、TOML 段位置都已具备 |
 | **工作区动态工具 HTTP 只读列表** | **应补（P1）** | `plugins/*.json` 现在是黑盒：加载失败一律 `log::warn!` 后静默跳过（[dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L83-L90)），用户看不到「文件写错在哪」 |
@@ -145,10 +146,10 @@
 
   | 字段 | 来源 |
   |------|------|
-  | `read_only` | `is_readonly_tool`（[L161](../../src/cm_tools/registry_policy.rs#L161)） |
-  | `write_effect` | `write_effect_tools` 命中（内置 44 项，[L94](../../src/cm_tools/registry_policy.rs#L94)） |
-  | `parallel_readonly_batch_allowed` | `tool_ok_for_parallel_readonly_batch_piece`（[L255](../../src/cm_tools/registry_policy.rs#L255)）与并行拒绝集（内置 8 精确 + 17 前缀，[L175](../../src/cm_tools/registry_policy.rs#L175)） |
-  | `sync_default_inline` | `sync_default_runs_inline`（[L292](../../src/cm_tools/registry_policy.rs#L292)） |
+  | `read_only` | `is_readonly_tool`（[L151](../../src/cm_tools/registry_policy.rs#L151)） |
+  | `write_effect` | `write_effect_tools` 命中（内置 34 项，[L105](../../src/cm_tools/registry_policy.rs#L105)） |
+  | `parallel_readonly_batch_allowed` | `tool_ok_for_parallel_readonly_batch_piece`（[L266](../../src/cm_tools/registry_policy.rs#L266)）与并行拒绝集（内置 8 精确 + 17 前缀，[L186](../../src/cm_tools/registry_policy.rs#L186)） |
+  | `sync_default_inline` | `sync_default_runs_inline`（[L303](../../src/cm_tools/registry_policy.rs#L303)） |
   | `wall_timeout_secs` | 生效后的墙上时钟（含 `parallel_wall_timeout_secs` 覆盖） |
   | `sub_agent_extra_allow: [string]` | 命中的 `sub_agent_*_extra_tools` 集合名 |
   | `background_job_capable` | 仅 `run_command` 为 `true`（且受 `background_jobs_enabled` 约束）；`background_job_async_tools` 白名单为空时全部为 `false` |
@@ -164,10 +165,12 @@
 
 | 情况 | 响应 |
 |------|------|
-| 已注册、写入成功 | **200** + `{ name, enabled, source, effective_after_reload: true }` |
+| 已注册、写入成功 | **200** + `{ name, enabled, source, effective_after_reload: true, present, absent_reason? }`（`present` 为**按 D1 口径重算**的真实在场态；`absent_reason` 仅在场时省略） |
 | 重复写入同值 | **200**（幂等） |
 | `{tool_name}` 字符集/长度非法 | **400** `INVALID_TOOL_NAME` |
 | 未注册的工具名 | **404** `TOOL_NOT_FOUND` |
+
+> **前缀禁用不可经此接口解除**：`tool_overrides.json` 只改写精确集 `disabled_tools`；若该名仍被 `disabled_tool_prefixes` 命中，接口**如实回报** `present:false` + `absent_reason:"disabled_by_policy"`（不谎报生效），解除需改配置。
 
 **持久化落点：本机用户数据**，而非 TOML 写回。理由与既有先例一致：
 
@@ -195,9 +198,9 @@ else if !prefixes.is_empty() { … retain … }
 
 **语义边界**：禁用只影响**本会话后续回合的工具在场性**，不追溯已产生的历史工具调用；被禁用工具的既有 `tool_job` 轮询/取消端点仍可正常访问（`/tools/jobs/*` 与在场性无关）。
 
-### 3.4 D4（P2，暂缓）工作区动态工具（`plugins/*.json`）HTTP 读写
+### 3.4 D4（只读部分 P1 待实现；写/删 P2 暂缓）工作区动态工具（`plugins/*.json`）HTTP 读写
 
-- `GET /tools/plugins`（**只读列表，建议提前到 P1**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。直接暴露 §2 表格中「加载失败静默跳过」的问题。
+- `GET /tools/plugins`（**只读列表，属 P1 待实现**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。直接暴露 §2 表格中「加载失败静默跳过」的问题。
 - `GET /tools/plugins/{file}`：含 `parameters` / `args` / `pass_args_json`。
 - `PUT /tools/plugins/{file}`（创建/覆盖）与 `DELETE /tools/plugins/{file}`（**204 幂等**）。
 - 服务端复用同一套校验：`validate_file` 的 4 条（`dyn__` 前缀 / `description` 非空 / `parameters` 须 JSON 对象 / `command` 非空，[dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；失败 **400 `INVALID_PLUGIN_DEFINITION`**。
@@ -251,17 +254,17 @@ else if !prefixes.is_empty() { … retain … }
 
 | 期 | 内容 | 验收 |
 |----|------|------|
-| **P0** | `GET /tools` + 三源枚举（**只读、不建会话**）+ 路由/OpenAPI/文档同步（含补齐 `/tools/jobs/*` 路由表行） | §5 中 D1 用例与契约测试全绿；`cargo clippy --all-targets --all-features -- -D warnings` 通过 |
-| **P1** | `GET /tools/{tool_name}`（策略投影）+ `PUT /tools/{tool_name}/enabled`（`tool_overrides.json` + `[tool_registry] disabled_tools` + `prepare_tools_for_turn` 第 6 步）+ `GET /tools/plugins` | D2/D3 用例全绿；热重载与重启两条路径均有断言 |
-| **P2** | `plugins` 写入/删除、`parameters` 体量与分页策略再评估 | 需另开安全评审（路径守卫 + `confirm` 语义 + changelist 归属） |
+| **P0（已实现）** | `GET /tools` + 三源枚举（**只读、不建会话**）+ 路由/OpenAPI/文档同步（含补齐 `/tools/jobs/*` 路由表行） | §5 中 D1 用例与契约测试全绿；`cargo clippy --all-targets --all-features -- -D warnings` 通过 |
+| **P1（已实现）** | `GET /tools/{tool_name}`（策略投影）+ `PUT /tools/{tool_name}/enabled`（`tool_overrides.json` + `[tool_registry] disabled_tools`/`disabled_tool_prefixes` + `prepare_tools_for_turn` 第 6 步）+ `GET /tools/plugins`（只读） | D2/D3 用例全绿；热重载与重启两条路径均有断言 |
+| **P2（未实现）** | `plugins` 写入/删除、`parameters` 体量与分页策略再评估 | 需另开安全评审（路径守卫 + `confirm` 语义 + changelist 归属） |
 
 ---
 
 ## 7. 评审结论与遗留问题
 
-### 7.1 本轮建议默认取值（待确认；P0 契约口径）
+### 7.1 已冻结取值（P0/P1 契约口径）
 
-| # | 问题 | 建议取值 | 影响 |
+| # | 问题 | 取值 | 影响 |
 |---|------|----------|------|
 | Q1 | 路径形态 | `/tools`（清单）+ `/tools/{tool_name}`（详情/启停），`{tool_name}` 走路径段；`GET /tools/jobs` 落 404 `TOOL_NOT_FOUND` | §3 全部接口形态；无需引入嵌套路由解析 |
 | Q2 | 是否需要禁用态（503） | **不需要**：本设计不引入进程级工具总开关；skills 沿用既有 `200 + enabled:false` | §3 约定；**不新增** `TOOLS_DISABLED` 一类错误码 |
@@ -270,9 +273,9 @@ else if !prefixes.is_empty() { … retain … }
 | Q5 | 是否给 `ToolSpec` 加 `enabled` | **不加**；启停只走配置名单 + 回合过滤 | 注册表保持编译期 `&'static` |
 | Q6 | 清单是否回显 `parameters` | **不回显**（仅 D2 单工具详情回显） | 控制清单体积；与「不回显 `command` / `args`」并列 |
 
-### 7.2 遗留待评审
+### 7.2 评审结论与遗留问题
 
-1. **启停的作用域**：`tool_overrides.json` 在 `~/.local/share/crabmate`，是**本机/本进程**语义。多人共享同一 `serve` 实例时，「我关掉 `run_command`」会影响他人；是否需要在工作区级（`<workspace>/.crabmate/`）也提供一份覆写？若需要，需先定优先级与冲突提示。
-2. **`dynamic` / `mcp` 工具的 `category` 归类**：动态与 MCP 工具没有 `ToolCategory`，D1 现在需要替它们选一个（建议 `development`）。若后续要让它们在 `basic` 场景也可见，需扩 `ToolCategory` 或改为可空。
-3. **`codebase_semantic_search_enabled` / `long_term_memory_enabled` 是否迁入新名单**：迁入能让「关工具」只剩一条语义，但会改变既有配置的等价性与文档口径（§3.3 明确本轮不动）。
-4. **禁用名的前缀通配是否够用**：`disabled_tool_prefixes` 可一次关掉整栈（如 `cargo_*`），但也会误伤；是否需要 `re` 或显式列举约束需按真实工单定。
+1. **启停的作用域（已确认：进程级）**：`tool_overrides.json` 落 `$XDG_DATA_HOME/crabmate/`（与 `prefs.json` / `llm_overrides.json` / `mcp_servers.json` 同级，`CM_CRABMATE_USER_DATA_DIR` 可覆盖），复用 `apply_user_data_tool_overrides` 管线，在 `cli_run.rs` 与 `runtime/config_reload.rs` 两处调用点接入。**不带工作区分区键**——`serve` 是单进程全局 `SharedAgentConfig` + 单全局工作区覆写，进程级与既有 cfg 单一真源一致；多人共享同一 `serve` 实例时启停「各自进程生效」，工作区级无法解决隔离诉求（同一进程仍共享同一 `cfg`）。
+2. **`dynamic` / `mcp` 工具的 `category` 归类**：动态与 MCP 工具没有 `ToolCategory`，D1 统一按 `development` 归入。
+3. **`codebase_semantic_search_enabled` / `long_term_memory_enabled` 是否迁入新名单**：本轮**不迁**（保持既有配置等价性与文档口径，§3.3）；D1/D2 的 `absent_reason` 对两者分别识别为 `config_disabled`。
+4. **禁用名的前缀通配是否够用**：`disabled_tool_prefixes` 可一次关掉整栈（如 `cargo_*`），但也会误伤；本轮先提供前缀通配，按真实工单再评估 `re` 或显式列举约束。

@@ -54,3 +54,13 @@ pub const INVALID_MEMORY_ID: &str = "INVALID_MEMORY_ID";
 pub const INVALID_MEMORY_KIND: &str = "INVALID_MEMORY_KIND";
 /// 长期记忆（LTM）未启用（配置关闭或运行时未装配）。
 pub const LONG_TERM_MEMORY_DISABLED: &str = "LONG_TERM_MEMORY_DISABLED";
+/// 工具名路径参数格式非法（长度 > 128 或含 `[A-Za-z0-9_.:-]` 之外字符）。
+pub const INVALID_TOOL_NAME: &str = "INVALID_TOOL_NAME";
+/// 工具名未在任一来源注册（`GET/PUT /tools/{tool_name}*`）。
+pub const TOOL_NOT_FOUND: &str = "TOOL_NOT_FOUND";
+/// 工作区动态工具定义文件校验失败（`plugins/*.json`）。
+pub const INVALID_PLUGIN_DEFINITION: &str = "INVALID_PLUGIN_DEFINITION";
+/// skills 元工具调用失败。
+pub const SKILL_INVOKE_FAILED: &str = "SKILL_INVOKE_FAILED";
+/// `GET /tools` 的 `source` / `category` 查询参数不是受支持的枚举值（或 `limit`/`offset` 非法）。
+pub const INVALID_TOOL_FILTER: &str = "INVALID_TOOL_FILTER";

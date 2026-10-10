@@ -92,6 +92,7 @@ fn load_cli_agent_config(
         llm_context_tokens_cli,
     );
     crate::user_data::apply_user_data_llm_overrides(&mut cfg);
+    crate::user_data::apply_user_data_tool_overrides(&mut cfg);
     crate::user_data::apply_user_data_web_api_bearer(&mut cfg);
     Ok(cfg)
 }

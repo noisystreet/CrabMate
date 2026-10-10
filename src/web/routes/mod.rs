@@ -11,7 +11,7 @@
 //! | [`github`] | `/github/*` | GitHub 在线模式（PR 列表、checks、合并） |
 //! | [`memory`] | `/memory/*` | 长期记忆只读列表与按 id 删除（scope 走 `conversation_id`） |
 //! | [`system`] | `/health`、`/status` | 探活与运行态摘要 |
-//! | [`tools`] | `/tools/jobs/*` | 后台工具任务轮询与取消 |
+//! | [`tools`] | `/tools`、`/tools/plugins`、`/tools/{tool_name}`、`/tools/{tool_name}/enabled`、`/tools/jobs/*` | 工具清单/详情/插件列表/进程级启停 + 后台任务轮询取消 |
 //! | [`e2e_fixtures`] | `/e2e/fixtures/*` | 仅 **`CM_E2E_FIXTURES=1`**；[`E2eConversationFixtureFacet`](crate::web::app_state_facets::E2eConversationFixtureFacet) |
 
 pub(crate) mod chat;

@@ -31,5 +31,6 @@ pub mod server;
 pub(crate) mod skills_handlers;
 pub mod task;
 pub(crate) mod tool_jobs;
+pub(crate) mod tools_handlers;
 mod user_data;
 pub mod workspace;
