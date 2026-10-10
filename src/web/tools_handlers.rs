@@ -16,8 +16,9 @@ use serde_json::Value;
 use super::app_state::AppStateHttpCore;
 use super::http_types::chat::ApiError;
 use super::http_types::tools::{
-    DynamicToolFileView, PluginsListResponse, ToolDetailView, ToolEnabledBody, ToolEnabledResponse,
-    ToolListItem, ToolPolicyView, ToolSourceCounts, ToolsListResponse,
+    DynamicToolFileDetail, DynamicToolFileView, PluginsListResponse, ToolDetailView,
+    ToolEnabledBody, ToolEnabledResponse, ToolListItem, ToolPolicyView, ToolSourceCounts,
+    ToolsListResponse,
 };
 use crate::cm_api_contract::error_codes;
 use crate::cm_tools::registry_policy;
@@ -74,6 +75,24 @@ fn validate_tool_name(name: &str) -> Result<(), ApiErr> {
             StatusCode::BAD_REQUEST,
             error_codes::INVALID_TOOL_NAME,
             format!("工具名不合法：{name}"),
+        ))
+    }
+}
+
+/// 动态工具文件名守卫：须为 `<stem>.json`，`stem` 非空且仅含 `[A-Za-z0-9_-]`。
+///
+/// 显式拒绝路径分隔符、`..` 等（对齐 `/workspace/file` 风格），不做任何规范化。
+fn validate_plugin_file_name(file: &str) -> Result<(), ApiErr> {
+    let stem_ok = file.strip_suffix(".json").is_some_and(|stem| {
+        !stem.is_empty() && stem.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
+    });
+    if stem_ok {
+        Ok(())
+    } else {
+        Err(err(
+            StatusCode::BAD_REQUEST,
+            error_codes::INVALID_PLUGIN_DEFINITION,
+            format!("动态工具文件名不合法：{file}（须为 [A-Za-z0-9_-]+.json）"),
         ))
     }
 }
@@ -499,6 +518,46 @@ pub(crate) async fn tools_plugins_handler(
     Json(PluginsListResponse { plugins, total })
 }
 
+/// `GET /tools/plugins/{file}`：工作区动态工具单文件只读详情（`parameters`/`args`/`pass_args_json`）。
+pub(crate) async fn tool_plugin_detail_handler(
+    State(http): State<AppStateHttpCore>,
+    AxumPath(file): AxumPath<String>,
+) -> Result<Json<DynamicToolFileDetail>, ApiErr> {
+    validate_plugin_file_name(&file)?;
+    let ws = http.effective_workspace_path().await;
+    if ws.trim().is_empty() {
+        return Err(err(
+            StatusCode::NOT_FOUND,
+            error_codes::PLUGIN_NOT_FOUND,
+            format!("未找到动态工具文件：{file}（未设置工作区）"),
+        ));
+    }
+    let allowed: Vec<String> = {
+        let cfg = http.cfg.read().await;
+        cfg.command_exec.allowed_commands.to_vec()
+    };
+    let Some(p) =
+        crate::cm_internal::dynamic_tools::probe_dynamic_tool_file(Path::new(&ws), &file, &allowed)
+    else {
+        return Err(err(
+            StatusCode::NOT_FOUND,
+            error_codes::PLUGIN_NOT_FOUND,
+            format!("未找到动态工具文件：{file}"),
+        ));
+    };
+    Ok(Json(DynamicToolFileDetail {
+        file: p.file,
+        name: p.name,
+        description: p.description,
+        valid: p.valid,
+        error: p.error,
+        command_allowed: p.command_allowed,
+        parameters: p.parameters,
+        args: p.args,
+        pass_args_json: p.pass_args_json,
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -549,6 +608,21 @@ mod tests {
         let (status, json) = err_of(validate_tool_name("bad name"));
         assert_eq!(status, StatusCode::BAD_REQUEST);
         assert_eq!(json.0.code, error_codes::INVALID_TOOL_NAME);
+    }
+
+    #[test]
+    fn validate_plugin_file_name_accepts_and_rejects() {
+        assert!(validate_plugin_file_name("echo_tool.json").is_ok());
+        assert!(validate_plugin_file_name("A-1_b.json").is_ok());
+        assert!(validate_plugin_file_name("noext").is_err());
+        assert!(validate_plugin_file_name(".json").is_err());
+        assert!(validate_plugin_file_name("a/b.json").is_err());
+        assert!(validate_plugin_file_name("../a.json").is_err());
+        assert!(validate_plugin_file_name("a b.json").is_err());
+        assert!(validate_plugin_file_name("a.JSON").is_err());
+        let (status, json) = err_of(validate_plugin_file_name("../a.json"));
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json.0.code, error_codes::INVALID_PLUGIN_DEFINITION);
     }
 
     #[test]

@@ -1,5 +1,5 @@
-//! OpenAPI `paths` 中工具管理端点片段（`/tools`、`/tools/plugins`、`/tools/{tool_name}`、
-//! `/tools/{tool_name}/enabled`）。
+//! OpenAPI `paths` 中工具管理端点片段（`/tools`、`/tools/plugins`、
+//! `/tools/plugins/{file}`、`/tools/{tool_name}`、`/tools/{tool_name}/enabled`）。
 
 use serde_json::{Value, json};
 
@@ -7,6 +7,7 @@ pub(super) fn openapi_paths_fragment_tools() -> Value {
     json!({
         "/tools": tools_list_path(),
         "/tools/plugins": tools_plugins_path(),
+        "/tools/plugins/{file}": tool_plugin_detail_path(),
         "/tools/{tool_name}": tool_detail_path(),
         "/tools/{tool_name}/enabled": tool_enabled_path(),
     })
@@ -120,6 +121,52 @@ fn tools_plugins_path() -> Value {
                         }
                     }
                 }
+            }
+        }
+    })
+}
+
+/// `GET /tools/plugins/{file}`：工作区动态工具单文件只读详情。
+fn tool_plugin_detail_path() -> Value {
+    json!({
+        "get": {
+            "tags": ["tools"],
+            "summary": "读取工作区单个动态工具文件（`<workspace>/plugins/{file}`，只读）",
+            "description": "返回该文件的 `parameters` / `args` / `pass_args_json` 与校验结果；不做写/删。`file` 仅允许 `[A-Za-z0-9_-]+\\.json`（显式拒绝分隔符与 `..`）。",
+            "security": [{ "bearerAuth": [] }, { "apiKeyAuth": [] }],
+            "parameters": [
+                {
+                    "name": "file",
+                    "in": "path",
+                    "required": true,
+                    "description": "插件文件名，须匹配 `[A-Za-z0-9_-]+\\.json`",
+                    "schema": { "type": "string" }
+                }
+            ],
+            "responses": {
+                "200": {
+                    "description": "单文件详情（含校验结果与原始参数）",
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": { "type": "string" },
+                                    "name": { "type": "string" },
+                                    "description": { "type": "string" },
+                                    "valid": { "type": "boolean" },
+                                    "error": { "type": "string" },
+                                    "command_allowed": { "type": "boolean" },
+                                    "parameters": { "type": "object" },
+                                    "args": { "type": "array", "items": { "type": "string" } },
+                                    "pass_args_json": { "type": "boolean" }
+                                }
+                            }
+                        }
+                    }
+                },
+                "400": { "description": "文件名不合法（INVALID_PLUGIN_DEFINITION）" },
+                "404": { "description": "未找到动态工具文件（PLUGIN_NOT_FOUND）" }
             }
         }
     })

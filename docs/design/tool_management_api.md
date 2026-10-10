@@ -198,10 +198,10 @@ else if !prefixes.is_empty() { … retain … }
 
 **语义边界**：禁用只影响**本会话后续回合的工具在场性**，不追溯已产生的历史工具调用；被禁用工具的既有 `tool_job` 轮询/取消端点仍可正常访问（`/tools/jobs/*` 与在场性无关）。
 
-### 3.4 D4（只读部分 P1 待实现；写/删 P2 暂缓）工作区动态工具（`plugins/*.json`）HTTP 读写
+### 3.4 D4（只读部分 P1 已实现；写/删 P2 暂缓）工作区动态工具（`plugins/*.json`）HTTP 读写
 
-- `GET /tools/plugins`（**只读列表，属 P1 待实现**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。直接暴露 §2 表格中「加载失败静默跳过」的问题。
-- `GET /tools/plugins/{file}`：含 `parameters` / `args` / `pass_args_json`。
+- `GET /tools/plugins`（**只读列表，属 P1 已实现**）：`file` / `name` / `description` / `valid: bool` / `error: string?` / `command_allowed: bool`。直接暴露 §2 表格中「加载失败静默跳过」的问题。
+- `GET /tools/plugins/{file}`（**只读单文件详情，属 P1 已实现**）：含 `parameters` / `args` / `pass_args_json`（未设置工作区或文件不存在 **404 `PLUGIN_NOT_FOUND`**）。
 - `PUT /tools/plugins/{file}`（创建/覆盖）与 `DELETE /tools/plugins/{file}`（**204 幂等**）。
 - 服务端复用同一套校验：`validate_file` 的 4 条（`dyn__` 前缀 / `description` 非空 / `parameters` 须 JSON 对象 / `command` 非空，[dynamic_tools.rs](../../src/cm_internal/dynamic_tools.rs#L55-L81)）+ `command` 必须命中 `allowed_commands`；失败 **400 `INVALID_PLUGIN_DEFINITION`**。
 - **路径守卫**：`{file}` 仅允许 `[A-Za-z0-9_-]+\.json`，显式拒绝分隔符与 `..`（对齐 `/workspace/file` 的既有风格）。
@@ -255,7 +255,7 @@ else if !prefixes.is_empty() { … retain … }
 | 期 | 内容 | 验收 |
 |----|------|------|
 | **P0（已实现）** | `GET /tools` + 三源枚举（**只读、不建会话**）+ 路由/OpenAPI/文档同步（含补齐 `/tools/jobs/*` 路由表行） | §5 中 D1 用例与契约测试全绿；`cargo clippy --all-targets --all-features -- -D warnings` 通过 |
-| **P1（已实现）** | `GET /tools/{tool_name}`（策略投影）+ `PUT /tools/{tool_name}/enabled`（`tool_overrides.json` + `[tool_registry] disabled_tools`/`disabled_tool_prefixes` + `prepare_tools_for_turn` 第 6 步）+ `GET /tools/plugins`（只读） | D2/D3 用例全绿；热重载与重启两条路径均有断言 |
+| **P1（已实现）** | `GET /tools/{tool_name}`（策略投影）+ `PUT /tools/{tool_name}/enabled`（`tool_overrides.json` + `[tool_registry] disabled_tools`/`disabled_tool_prefixes` + `prepare_tools_for_turn` 第 6 步）+ `GET /tools/plugins` / `GET /tools/plugins/{file}`（只读） | D2/D3 用例全绿；热重载与重启两条路径均有断言 |
 | **P2（未实现）** | `plugins` 写入/删除、`parameters` 体量与分页策略再评估 | 需另开安全评审（路径守卫 + `confirm` 语义 + changelist 归属） |
 
 ---
