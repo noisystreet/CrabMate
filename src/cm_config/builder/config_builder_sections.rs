@@ -296,6 +296,8 @@ pub(crate) struct ConfigBuilderToolRegistryPolicy {
     pub(crate) tool_registry_tool_retry_backoff_ms: Option<u64>,
     pub(crate) tool_registry_tool_retry_error_codes: Option<Vec<String>>,
     pub(crate) tool_registry_tool_retry_denied_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_disabled_tools: Option<Vec<String>>,
+    pub(crate) tool_registry_disabled_tool_prefixes: Option<Vec<String>>,
 }
 
 /// 配置累加器：依次接受嵌入默认 TOML → 用户配置文件 → 环境变量的覆盖，最终 `finalize` 为 `AgentConfig`。

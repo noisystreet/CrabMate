@@ -381,6 +381,8 @@ fn finalize_section_tool_registry_policy(mid: &FinalizeAfterRoles) -> types::Too
         tool_registry_tool_retry_backoff_ms: tr.tool_registry_tool_retry_backoff_ms,
         tool_registry_tool_retry_error_codes: tr.tool_registry_tool_retry_error_codes.clone(),
         tool_registry_tool_retry_denied_tools: tr.tool_registry_tool_retry_denied_tools.clone(),
+        tool_registry_disabled_tools: tr.tool_registry_disabled_tools.clone(),
+        tool_registry_disabled_tool_prefixes: tr.tool_registry_disabled_tool_prefixes.clone(),
     }
 }
 

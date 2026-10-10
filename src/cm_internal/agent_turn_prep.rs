@@ -93,6 +93,21 @@ pub async fn prepare_tools_for_turn(
             )
         });
     }
+    // 第 6 步：工具启停（D3）。`disabled_tools`（精确）与 `disabled_tool_prefixes`（前缀）
+    // 为两个独立条件，命中任一即剔除；二者由 `tool_overrides.json` 覆写。
+    let policy = &cfg.tool_registry_policy;
+    if let Some(disabled) = policy.tool_registry_disabled_tools.as_ref() {
+        tools_for_turn.retain(|t| !disabled.contains(t.function.name.as_str()));
+    }
+    if let Some(prefixes) = policy.tool_registry_disabled_tool_prefixes.as_ref()
+        && !prefixes.is_empty()
+    {
+        tools_for_turn.retain(|t| {
+            !prefixes
+                .iter()
+                .any(|p| !p.is_empty() && t.function.name.starts_with(p.as_str()))
+        });
+    }
     ToolsForTurnPrepared {
         tools_for_turn,
         mcp_turn,

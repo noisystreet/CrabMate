@@ -2814,6 +2814,151 @@
         ]
       }
     },
+    "/tools": {
+      "get": {
+        "description": "只读投影；**绝不建立 MCP 会话**，MCP 源仅取已缓存会话快照与已配置 server。`counts` 为过滤后、分页前计数。",
+        "parameters": [
+          {
+            "description": "按来源过滤，可重复；取值 builtin / dynamic / mcp。非法取值 400 INVALID_TOOL_FILTER",
+            "in": "query",
+            "name": "source",
+            "required": false,
+            "schema": {
+              "items": {
+                "enum": [
+                  "builtin",
+                  "dynamic",
+                  "mcp"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          {
+            "description": "按分类过滤；取值 basic / development。非法取值 400 INVALID_TOOL_FILTER",
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "schema": {
+              "enum": [
+                "basic",
+                "development"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "按开发标签过滤（仅内置工具有标签）",
+            "in": "query",
+            "name": "dev_tag",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "名称/描述大小写不敏感子串匹配",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "分页大小，默认 50，clamp 到 1..=200；非数值 400 INVALID_TOOL_FILTER",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "分页偏移，默认 0；非数值 400 INVALID_TOOL_FILTER",
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "counts": {
+                      "properties": {
+                        "builtin": {
+                          "type": "integer"
+                        },
+                        "dynamic": {
+                          "type": "integer"
+                        },
+                        "mcp": {
+                          "type": "integer"
+                        },
+                        "present": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "offset": {
+                      "type": "integer"
+                    },
+                    "tools": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "workspace_root": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "工具清单（含 total/limit/offset/has_more/counts）"
+          },
+          "400": {
+            "description": "非法过滤参数（INVALID_TOOL_FILTER）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "枚举工具（内置 / 工作区动态 / MCP 三源只读清单）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
     "/tools/jobs/{tool_job_id}": {
       "get": {
         "parameters": [
@@ -2993,6 +3138,237 @@
         "summary": "轮询后台工具任务实时输出（增量游标；tail -f 语义）",
         "tags": [
           "tool_jobs"
+        ]
+      }
+    },
+    "/tools/plugins": {
+      "get": {
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "plugins": {
+                      "items": {
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "动态工具文件清单（含校验失败原因与命令白名单判定）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "列出工作区动态工具文件（`<workspace>/plugins/*.json`，只读）",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/{tool_name}": {
+      "get": {
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "absent_reason": {
+                      "type": "string"
+                    },
+                    "category": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": "string"
+                    },
+                    "dev_tags": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "parameters": {
+                      "type": "object"
+                    },
+                    "policy": {
+                      "properties": {
+                        "background_job_capable": {
+                          "type": "boolean"
+                        },
+                        "parallel_readonly_batch_allowed": {
+                          "type": "boolean"
+                        },
+                        "read_only": {
+                          "type": "boolean"
+                        },
+                        "retry_eligible": {
+                          "type": "boolean"
+                        },
+                        "sub_agent_extra_allow": {
+                          "description": "命中的 sub_agent_*_extra_tools 集合名",
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        },
+                        "sync_default_inline": {
+                          "type": "boolean"
+                        },
+                        "wall_timeout_secs": {
+                          "type": "integer"
+                        },
+                        "write_effect": {
+                          "type": "boolean"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "工具详情（含 parameters 与 policy）"
+          },
+          "400": {
+            "description": "工具名不合法（INVALID_TOOL_NAME）"
+          },
+          "404": {
+            "description": "未注册的工具（TOOL_NOT_FOUND）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "单工具详情与策略投影",
+        "tags": [
+          "tools"
+        ]
+      }
+    },
+    "/tools/{tool_name}/enabled": {
+      "put": {
+        "description": "幂等：始终写入显式 bool。写入后立即更新运行中配置，无需重启；重启/reload 亦生效。`tool_overrides.json` 仅解除精确禁用集；若该名仍被 `disabled_tool_prefixes` 命中，响应 `present:false` 且带 `absent_reason`（不谎报生效）。",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tool_name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ],
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "absent_reason": {
+                      "type": "string"
+                    },
+                    "effective_after_reload": {
+                      "type": "boolean"
+                    },
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "present": {
+                      "type": "boolean"
+                    },
+                    "source": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              }
+            },
+            "description": "已写入并生效"
+          },
+          "400": {
+            "description": "工具名不合法（INVALID_TOOL_NAME）"
+          },
+          "404": {
+            "description": "未注册的工具（TOOL_NOT_FOUND）"
+          },
+          "500": {
+            "description": "写入 tool_overrides.json 失败（INTERNAL_ERROR）"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          },
+          {
+            "apiKeyAuth": []
+          }
+        ],
+        "summary": "启用/停用工具（写 tool_overrides.json 并就地生效）",
+        "tags": [
+          "tools"
         ]
       }
     },
@@ -4436,6 +4812,14 @@
     {
       "description": "进程内任务清单",
       "name": "tasks"
+    },
+    {
+      "description": "工作区技能（元工具 skill_manage）",
+      "name": "skills"
+    },
+    {
+      "description": "工具清单、详情与进程级启停",
+      "name": "tools"
     },
     {
       "description": "后台工具任务轮询与取消",

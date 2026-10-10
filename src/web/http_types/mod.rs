@@ -6,5 +6,6 @@ pub mod memory;
 pub mod skills;
 pub mod tasks;
 pub mod tool_jobs;
+pub mod tools;
 pub(crate) mod validation;
 pub mod workspace;

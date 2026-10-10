@@ -634,4 +634,20 @@ fn apply_tool_registry_tool_lists(
     if let Some(v) = tr.tool_retry_denied_tools {
         p.tool_registry_tool_retry_denied_tools = Some(v);
     }
+    // 工具启停名单/前缀（D3；可由 `tool_overrides.json` 在后续管线覆写）。
+    apply_tool_registry_enable_lists(p, tr.disabled_tools, tr.disabled_tool_prefixes);
+}
+
+/// 工具启停名单/前缀赋值（拆出以守住 `apply_tool_registry_tool_lists` 的 CCN 预算）。
+fn apply_tool_registry_enable_lists(
+    p: &mut config_builder_sections::ConfigBuilderToolRegistryPolicy,
+    disabled_tools: Option<Vec<String>>,
+    disabled_tool_prefixes: Option<Vec<String>>,
+) {
+    if let Some(v) = disabled_tools {
+        p.tool_registry_disabled_tools = Some(v);
+    }
+    if let Some(v) = disabled_tool_prefixes {
+        p.tool_registry_disabled_tool_prefixes = Some(v);
+    }
 }

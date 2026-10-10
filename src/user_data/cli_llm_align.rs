@@ -2,8 +2,10 @@
 
 use crate::cm_config::{AgentConfig, ExposeSecret};
 use secrecy::SecretString;
+use std::collections::HashSet;
+use std::sync::Arc;
 
-use super::{LlmEndpointOverride, load_llm_overrides, read_secret_web_api_bearer};
+use super::{LlmEndpointOverride, load_llm_overrides, load_tool_overrides, read_secret_web_api_bearer};
 
 fn fill_nonempty_string(dst: &mut String, src: Option<&String>) {
     if let Some(s) = src.map(|x| x.trim()).filter(|x| !x.is_empty()) {
@@ -73,6 +75,36 @@ pub fn apply_user_data_llm_overrides(cfg: &mut AgentConfig) {
     let disk = load_llm_overrides();
     apply_client_endpoint(cfg, &disk.client_llm);
     apply_executor_endpoint(cfg, &disk.executor_llm);
+}
+
+/// 用 **`$XDG_DATA_HOME/crabmate/tool_overrides.json`** 覆盖进程级工具启停（D3）。
+///
+/// 语义：以已 finalize 的 `tool_registry_disabled_tools`（来自 TOML/环境变量）为基线，
+/// 对本机覆写逐条覆盖——`false` 入禁用集、`true` 从禁用集移除；本机覆写优先于 TOML。
+/// 文件缺失或空表时不改动配置。
+pub fn apply_user_data_tool_overrides(cfg: &mut AgentConfig) {
+    let disk = load_tool_overrides();
+    if disk.tools.is_empty() {
+        return;
+    }
+    let mut disabled: HashSet<String> = cfg
+        .tool_registry_policy
+        .tool_registry_disabled_tools
+        .as_ref()
+        .map(|s| s.iter().cloned().collect())
+        .unwrap_or_default();
+    for (name, enabled) in &disk.tools {
+        let name = name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        if *enabled {
+            disabled.remove(name);
+        } else {
+            disabled.insert(name.to_string());
+        }
+    }
+    cfg.tool_registry_policy.tool_registry_disabled_tools = Some(Arc::new(disabled));
 }
 
 /// 当 TOML / **`CM_WEB_API_BEARER_TOKEN`** 均为空时，从系统钥匙串填入 **`web_api_bearer_token`**

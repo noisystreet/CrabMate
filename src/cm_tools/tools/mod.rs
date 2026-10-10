@@ -117,6 +117,16 @@ pub enum ToolCategory {
     Development,
 }
 
+impl ToolCategory {
+    /// 对外稳定枚举字面量：`basic` / `development`（供 `GET /tools` 投影）。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ToolCategory::Basic => "basic",
+            ToolCategory::Development => "development",
+        }
+    }
+}
+
 pub struct ToolContext<'a> {
     /// 主 Agent / `tool_context_for*` 路径填充；工作流节点等自建上下文可为 `None`（部分工具将报错）。
     pub cfg: Option<&'a AgentConfig>,
@@ -339,6 +349,37 @@ fn cached_params(spec: &ToolSpec) -> serde_json::Value {
 /// 内置工具 `name` 的 parameters JSON Schema（供工作流等静态校验复用）。
 pub fn cached_params_for_tool_name(name: &str) -> Option<serde_json::Value> {
     find_spec(name).map(cached_params)
+}
+
+/// 编译期注册表项的只读投影（`GET /tools` 内置源）。
+///
+/// 暴露**全部**注册项（含 `fastembed` 特性门剔除者），是否「在场」由调用方按
+/// [`tool_passes_filters`] 语义自行判定，便于报告 `absent_reason`。
+pub struct BuiltinToolDescriptor {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub category: ToolCategory,
+    /// `Development` 类工具的子域标签；`Basic` 类为空。
+    pub dev_tags: &'static [&'static str],
+    /// 是否需要 `fastembed` Cargo feature（当前构建未启用则不在场）。
+    pub requires_fastembed: bool,
+}
+
+/// 枚举内置工具注册表（进程级 `&'static` 表，一次构建）。
+pub fn builtin_tool_descriptors() -> Vec<BuiltinToolDescriptor> {
+    tool_specs()
+        .iter()
+        .map(|s| BuiltinToolDescriptor {
+            name: s.name,
+            description: s.description,
+            category: s.category,
+            dev_tags: match s.category {
+                ToolCategory::Development => dev_tag::tags_for_tool_name(s.name),
+                ToolCategory::Basic => &[],
+            },
+            requires_fastembed: tool_spec_requires_fastembed(s.name),
+        })
+        .collect()
 }
 
 /// 执行本地工具并返回结果字符串。

@@ -320,6 +320,8 @@ struct ToolRegistryDerived {
     tool_registry_tool_retry_backoff_ms: u64,
     tool_registry_tool_retry_error_codes: Arc<HashSet<String>>,
     tool_registry_tool_retry_denied_tools: Arc<HashSet<String>>,
+    tool_registry_disabled_tools: Option<Arc<HashSet<String>>>,
+    tool_registry_disabled_tool_prefixes: Option<Arc<[String]>>,
 }
 
 fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
@@ -480,7 +482,24 @@ fn derive_tool_registry_fields(b: &ConfigBuilder) -> ToolRegistryDerived {
                 .filter(|s| !s.is_empty())
                 .collect::<HashSet<_>>(),
         ),
+        // 工具启停：名单/前缀去空白、剔除空串；`None` 保持 `None`（= 不按名单禁用）。
+        tool_registry_disabled_tools: tr
+            .tool_registry_disabled_tools
+            .as_ref()
+            .map(|v| Arc::new(clean_str_list(v).into_iter().collect::<HashSet<_>>())),
+        tool_registry_disabled_tool_prefixes: tr
+            .tool_registry_disabled_tool_prefixes
+            .as_ref()
+            .map(|v| Arc::from(clean_str_list(v).into_boxed_slice())),
     }
+}
+
+/// 去空白、剔除空串（工具启停名单/前缀类字段共用）。
+fn clean_str_list(v: &[String]) -> Vec<String> {
+    v.iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// 允许 `async=true` 的内建工具默认白名单（用户可用 `background_job_async_tools` 覆盖；空数组 = 全部禁用）。

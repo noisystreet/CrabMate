@@ -15,6 +15,7 @@ pub async fn reload_shared_agent_config(
 ) -> Result<(), String> {
     let mut fresh = crate::load_config(config_path)?;
     crate::user_data::apply_user_data_llm_overrides(&mut fresh);
+    crate::user_data::apply_user_data_tool_overrides(&mut fresh);
     crate::user_data::apply_user_data_web_api_bearer(&mut fresh);
     {
         let mut w = holder.write().await;

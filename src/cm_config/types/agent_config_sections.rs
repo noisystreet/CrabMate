@@ -306,6 +306,11 @@ pub struct ToolRegistryPolicyConfig {
     pub tool_registry_tool_retry_error_codes: Arc<HashSet<String>>,
     /// 额外排除的工具名（精确匹配；默认已按只读/免审批门排除写类与交互审批类）。
     pub tool_registry_tool_retry_denied_tools: Arc<HashSet<String>>,
+    /// 工具**启停**：禁止在场的工具名（精确匹配）；`None` = 全部启用。
+    /// 生效落点为 `prepare_tools_for_turn` 末步；可由 `tool_overrides.json` 覆写。
+    pub tool_registry_disabled_tools: Option<Arc<HashSet<String>>>,
+    /// 工具**启停**：禁止在场的工具名前缀（通配）；`None`/空 = 无前缀禁用。
+    pub tool_registry_disabled_tool_prefixes: Option<Arc<[String]>>,
 }
 
 #[derive(Debug, Clone)]

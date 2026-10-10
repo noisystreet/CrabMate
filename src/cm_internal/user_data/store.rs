@@ -13,7 +13,8 @@ use super::path::{
 use super::types::{
     LlmOverridesFile, McpServerEntry, McpServersFile, McpServersFilePublic,
     McpServersImportResponse, SCHEMA_VERSION, SecretSlotStatus, SecretsStatusResponse,
-    UserDataMeta, UserPrefs, WebSessionsFile, WorkspaceListEntry, WorkspaceManifest,
+    ToolOverridesFile, UserDataMeta, UserPrefs, WebSessionsFile, WorkspaceListEntry,
+    WorkspaceManifest,
 };
 
 fn root() -> PathBuf {
@@ -34,6 +35,10 @@ fn llm_path(root: &Path) -> PathBuf {
 
 fn mcp_servers_path(root: &Path) -> PathBuf {
     root.join("mcp_servers.json")
+}
+
+fn tool_overrides_path(root: &Path) -> PathBuf {
+    root.join("tool_overrides.json")
 }
 
 pub fn now_ms() -> i64 {
@@ -103,6 +108,17 @@ pub fn save_llm_overrides(file: &LlmOverridesFile) -> Result<(), String> {
 
 pub fn load_mcp_servers() -> McpServersFile {
     read_json_file_or_default(&mcp_servers_path(&root()))
+}
+
+/// 读取进程级工具启停覆写（`tool_overrides.json`；缺失时返回默认空表）。
+pub fn load_tool_overrides() -> ToolOverridesFile {
+    read_json_file_or_default(&tool_overrides_path(&root()))
+}
+
+pub fn save_tool_overrides(file: &ToolOverridesFile) -> Result<(), String> {
+    let r = root();
+    ensure_tree(&r)?;
+    write_json_atomic(&tool_overrides_path(&r), file)
 }
 
 pub fn save_mcp_servers(file: &McpServersFile) -> Result<(), String> {

@@ -144,6 +144,86 @@ pub fn load_dynamic_tools(working_dir: &Path) -> Vec<Tool> {
     defs
 }
 
+/// `GET /tools/plugins` 单条文件探测结果（只读、不执行）。
+#[derive(Debug, Clone)]
+pub struct DynamicToolFileProbe {
+    pub file: String,
+    pub name: String,
+    pub description: String,
+    pub valid: bool,
+    pub error: Option<String>,
+    pub command_allowed: bool,
+}
+
+/// 只读枚举 `<workspace>/plugins/*.json`：读/解析/校验失败均记录 `error`，**不**跳过（与
+/// [`load_dynamic_tools`] 的静默跳过互补，供管理面展示）。
+pub fn probe_dynamic_tool_files(
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Vec<DynamicToolFileProbe> {
+    let dir = plugins_dir(working_dir);
+    let Ok(entries) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let file = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let text = match std::fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(e) => {
+                out.push(DynamicToolFileProbe {
+                    file,
+                    name: String::new(),
+                    description: String::new(),
+                    valid: false,
+                    error: Some(format!("读取失败：{e}")),
+                    command_allowed: false,
+                });
+                continue;
+            }
+        };
+        let spec: DynamicToolFile = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                out.push(DynamicToolFileProbe {
+                    file,
+                    name: String::new(),
+                    description: String::new(),
+                    valid: false,
+                    error: Some(format!("JSON 解析失败：{e}")),
+                    command_allowed: false,
+                });
+                continue;
+            }
+        };
+        let error = validate_file(&spec, &path).err();
+        let mut prog = spec.command.trim().to_string();
+        let mut merged_args = spec.args.clone();
+        split_command_prefix_if_embedded(&mut prog, &mut merged_args);
+        let cmd_key = prog.to_ascii_lowercase();
+        let command_allowed = allowed_commands
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
+        out.push(DynamicToolFileProbe {
+            file,
+            name: spec.name,
+            description: spec.description,
+            valid: error.is_none(),
+            error,
+            command_allowed,
+        });
+    }
+    out
+}
+
 pub fn resolve_runtime_def(
     working_dir: &Path,
     name: &str,
