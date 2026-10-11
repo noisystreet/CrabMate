@@ -65,7 +65,7 @@ pub fn assistant_output_kind(m: &Message) -> AssistantOutputKind {
 #[cfg(test)]
 mod assistant_output_kind_tests {
     use super::*;
-    use crate::types::{FunctionCall, MessageContent, ToolCall};
+    use crate::cm_types::{FunctionCall, MessageContent, ToolCall};
 
     fn with_reasoning(mut m: Message, reasoning: &str) -> Message {
         m.reasoning_content = Some(reasoning.to_string());
