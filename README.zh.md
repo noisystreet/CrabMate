@@ -73,7 +73,7 @@ cd ../crabmate-client && make frontend   # 再指向 http://127.0.0.1:8080/ 并�
 
 ## 后端模型支持
 
-`POST {api_base}/chat/completions`（OpenAI 兼容）。`[agent]` 里配置 **`api_base`**、**`model`**、**`max_tokens`**（嵌入默认 **4096**）、**`llm_http_auth_mode`**；**`bearer`** 时 **`API_KEY`** 走环境变量，**勿**写入仓库配置（[docs/配置说明.md](docs/配置说明.md)）。
+`POST {api_base}/chat/completions`（OpenAI 兼容）。`[agent]` 里配置 **`api_base`**、**`model`**、**`max_tokens`**（嵌入默认 **16384**）、**`llm_http_auth_mode`**；**`bearer`** 时 **`API_KEY`** 走环境变量，**勿**写入仓库配置（[docs/配置说明.md](docs/配置说明.md)）。
 
 | 场景 | 配置要点 |
 | --- | --- |

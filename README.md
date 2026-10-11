@@ -73,7 +73,7 @@ Full flags, HTTP routes, **`man crabmate`**: [docs/en/CLI.md](docs/en/CLI.md).
 
 ## Backend models
 
-`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **4096**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
+`POST {api_base}/chat/completions` (OpenAI-compatible). Under **`[agent]`** set **`api_base`**, **`model`**, **`max_tokens`** (embedded default **16384**), **`llm_http_auth_mode`**; with **`bearer`**, use env **`API_KEY`**—**never** commit real keys ([docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md)).
 
 | Scenario | Notes |
 | --- | --- |
