@@ -2,6 +2,8 @@
 #[serde(rename_all = "snake_case")]
 pub enum StreamEndReason {
     Completed,
+    /// 层 1：上游 `finish_reason == "length"` 或流在 `[DONE]` 前被切断（无正常收尾）。
+    Truncated,
     Cancelled,
     Conflict,
     Fallback,
@@ -13,6 +15,7 @@ impl StreamEndReason {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Completed => "completed",
+            Self::Truncated => "truncated",
             Self::Cancelled => "cancelled",
             Self::Conflict => "conflict",
             Self::Fallback => "fallback",
@@ -24,6 +27,7 @@ impl StreamEndReason {
     fn parse_str(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "completed" => Some(Self::Completed),
+            "truncated" => Some(Self::Truncated),
             "cancelled" => Some(Self::Cancelled),
             "conflict" => Some(Self::Conflict),
             "fallback" => Some(Self::Fallback),
@@ -36,6 +40,7 @@ impl StreamEndReason {
     pub fn label_zh_hans(self) -> &'static str {
         match self {
             Self::Completed => "完成",
+            Self::Truncated => "输出被截断",
             Self::Cancelled => "已取消",
             Self::Conflict => "会话冲突",
             Self::Fallback => "补偿收尾",
@@ -47,6 +52,7 @@ impl StreamEndReason {
     pub fn label_en(self) -> &'static str {
         match self {
             Self::Completed => "completed",
+            Self::Truncated => "truncated",
             Self::Cancelled => "cancelled",
             Self::Conflict => "conflict",
             Self::Fallback => "fallback",
@@ -78,6 +84,7 @@ mod tests {
     fn parse_and_labels_roundtrip() {
         let all = [
             StreamEndReason::Completed,
+            StreamEndReason::Truncated,
             StreamEndReason::Cancelled,
             StreamEndReason::Conflict,
             StreamEndReason::Fallback,

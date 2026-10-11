@@ -185,6 +185,14 @@ pub enum CommandApprovalDecision {
 /// 流式输出被用户中止时 `stream_chat` 返回的 `finish_reason` 占位（非上游 API 原义）。
 pub const USER_CANCELLED_FINISH_REASON: &str = "user_cancelled";
 
+/// 层 1：流在 `[DONE]` 之前被切断且上游未给 `finish_reason` 时，`stream_chat` 返回的占位（非上游 API 原义）。
+pub const STREAM_TRUNCATED_FINISH_REASON: &str = "stream_truncated";
+
+/// 层 1：判定 `finish_reason` 是否表示「输出被截断」。命中 `length`（token 上限）或流未正常收尾的占位。
+pub fn llm_finish_reason_is_truncation(finish_reason: &str) -> bool {
+    finish_reason == STREAM_TRUNCATED_FINISH_REASON || finish_reason.eq_ignore_ascii_case("length")
+}
+
 /// 用户取消时协作路径使用的错误消息（与 `llm::LlmCompleteError::Cancelled` / `RunAgentTurnError` 识别一致）。
 pub const LLM_CANCELLED_ERROR: &str = "已取消";
 
