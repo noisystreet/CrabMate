@@ -95,7 +95,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
         effective_working_dir: &work_dir,
         workspace_is_set,
         cancel: rt.cancel.clone(),
-        per_flight: rt.flight,
+        per_flight: std::sync::Arc::clone(&rt.flight),
         web_tool_ctx: rt.web_tool_ctx.as_ref(),
         temperature_override,
         model_override: rt.client_model_override,
@@ -130,11 +130,17 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     }
 
     let cancelled_by_signal = rt.cancel.load(std::sync::atomic::Ordering::SeqCst);
+    // 层 1：`run_agent_turn` 通过 `PerTurnFlight` 记录本轮最后一次 assistant 输出是否被截断。
+    let assistant_finish_truncated =
+        rt.flight
+            .last_assistant_finish_truncated
+            .load(std::sync::atomic::Ordering::Relaxed);
     let mut stream_ended_sent = false;
     let (ok, cancelled, err, stream_end_reason) =
         stream_job_outcome_after_agent_turn(StreamJobOutcomeCtx {
             r,
             cancelled_by_signal,
+            truncated: assistant_finish_truncated,
             queue_deps: queue_deps.as_ref(),
             sse_tx: &rt.sse_tx,
             job_id,

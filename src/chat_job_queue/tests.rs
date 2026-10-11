@@ -261,7 +261,7 @@ fn turn_end_reason_fallback_wins_over_visible_output() {
         Message::assistant_only("有正文"),
     ];
     assert_eq!(
-        completed_turn_end_reason(true, &messages),
+        completed_turn_end_reason(true, false, &messages),
         StreamEndReason::Fallback,
         "层 4 兜底已补发终答时应返回 Fallback"
     );
@@ -274,7 +274,7 @@ fn turn_end_reason_completed_for_assistant_answer() {
         Message::assistant_only("这是正文回答。"),
     ];
     assert_eq!(
-        completed_turn_end_reason(false, &messages),
+        completed_turn_end_reason(false, false, &messages),
         StreamEndReason::Completed,
         "本轮有正文终答应返回 Completed"
     );
@@ -295,7 +295,7 @@ fn turn_end_reason_completed_for_tool_calls_only() {
     }]);
     let messages = vec![Message::user_only("问"), tool_only];
     assert_eq!(
-        completed_turn_end_reason(false, &messages),
+        completed_turn_end_reason(false, false, &messages),
         StreamEndReason::Completed,
         "仅工具调用也算可见输出，应返回 Completed"
     );
@@ -309,7 +309,7 @@ fn turn_end_reason_no_output_for_reasoning_only_without_fallback() {
     reasoning_only.reasoning_content = Some("只思考未作答".to_string());
     let messages = vec![Message::user_only("问"), reasoning_only];
     assert_eq!(
-        completed_turn_end_reason(false, &messages),
+        completed_turn_end_reason(false, false, &messages),
         StreamEndReason::NoOutput,
         "仅思维链且未兜底时不得判为 completed"
     );
@@ -321,9 +321,28 @@ fn turn_end_reason_no_output_for_empty_assistant() {
     empty.content = None;
     let messages = vec![Message::user_only("问"), empty];
     assert_eq!(
-        completed_turn_end_reason(false, &messages),
+        completed_turn_end_reason(false, false, &messages),
         StreamEndReason::NoOutput,
         "无任何输出时应返回 NoOutput"
+    );
+}
+
+// 层 1 预期固化：截断优先于「有可见输出」与「兜底」，终态须为 Truncated。
+#[test]
+fn turn_end_reason_truncated_wins_over_fallback_and_visible_output() {
+    let messages = vec![
+        Message::user_only("问"),
+        Message::assistant_only("被截断的半句正文"),
+    ];
+    assert_eq!(
+        completed_turn_end_reason(true, true, &messages),
+        StreamEndReason::Truncated,
+        "截断标志应优先于兜底与可见输出，返回 Truncated"
+    );
+    assert_eq!(
+        completed_turn_end_reason(false, true, &messages),
+        StreamEndReason::Truncated,
+        "无兜底但被截断时也应返回 Truncated"
     );
 }
 

@@ -336,7 +336,7 @@ pub struct StreamDrainingBody {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StreamEndedBody {
     pub job_id: u64,
-    /// `completed` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
+    /// `completed` | `truncated` | `cancelled` | `conflict` | `fallback` | `no_output` | `gone`
     pub reason: StreamEndReason,
     /// 回合结束时的 prompt token 粗估（成功路径通常已先发 `conversation_saved`；便于底栏即时更新）。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -638,13 +638,14 @@ mod tests {
         }
 
         #[test]
-        fn prop_stream_ended_reason_is_parsable(job_id in any::<u64>(), reason_idx in 0usize..6usize) {
+        fn prop_stream_ended_reason_is_parsable(job_id in any::<u64>(), reason_idx in 0usize..7usize) {
             let reason = match reason_idx {
                 0 => StreamEndReason::Completed,
-                1 => StreamEndReason::Cancelled,
-                2 => StreamEndReason::Conflict,
-                3 => StreamEndReason::Fallback,
-                4 => StreamEndReason::NoOutput,
+                1 => StreamEndReason::Truncated,
+                2 => StreamEndReason::Cancelled,
+                3 => StreamEndReason::Conflict,
+                4 => StreamEndReason::Fallback,
+                5 => StreamEndReason::NoOutput,
                 _ => StreamEndReason::Gone,
             };
             let encoded = encode_message_v1(&SsePayload::StreamEnded {

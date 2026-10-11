@@ -403,6 +403,11 @@ async fn outer_loop_call_planner_and_push(
     if let Some(f) = p.ctx.attach.per_flight.as_ref() {
         f.awaiting_plan_rewrite_model
             .store(false, Ordering::Relaxed);
+        // 层 1：记录本轮最后一次 assistant 输出是否为截断，供 `stream_ended` 终态区分。
+        f.last_assistant_finish_truncated.store(
+            crate::types::llm_finish_reason_is_truncation(&finish_reason),
+            Ordering::Relaxed,
+        );
     }
     debug!(
         target: "crabmate",

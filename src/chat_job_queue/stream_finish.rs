@@ -252,16 +252,20 @@ fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
         .any(|m| assistant_output_kind(m).counts_as_visible_output())
 }
 
-/// 层 2/4：一轮成功收尾时的 `stream_ended` 终态判定（单一事实来源，便于单独测试）。
+/// 层 2/4/1：一轮成功收尾时的 `stream_ended` 终态判定（单一事实来源，便于单独测试）。
 ///
+/// - `truncated==true` → [`StreamEndReason::Truncated`]（层 1：上游 `finish_reason=="length"` 或流被切断）；
 /// - `fallback_emitted==true` → [`StreamEndReason::Fallback`]（层 4 兜底已补发终答）；
 /// - 否则本轮存在可见助手输出（正文或工具调用）→ [`StreamEndReason::Completed`]；
 /// - 否则（仅思维链 / 空）→ [`StreamEndReason::NoOutput`]。
 pub(crate) fn completed_turn_end_reason(
     fallback_emitted: bool,
+    truncated: bool,
     messages: &[Message],
 ) -> StreamEndReason {
-    if fallback_emitted {
+    if truncated {
+        StreamEndReason::Truncated
+    } else if fallback_emitted {
         StreamEndReason::Fallback
     } else if current_turn_has_visible_assistant_output(messages) {
         StreamEndReason::Completed
@@ -306,6 +310,8 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
 pub(super) struct StreamJobOutcomeCtx<'a> {
     pub(super) r: Result<(), crate::agent::agent_turn::RunAgentTurnError>,
     pub(super) cancelled_by_signal: bool,
+    /// 层 1：本轮最后一次 assistant 输出是否被截断（来自 [`crate::per_turn_flight::PerTurnFlight`]）。
+    pub(super) truncated: bool,
     pub(super) queue_deps: &'a WebChatQueueDeps,
     pub(super) sse_tx: &'a mpsc::Sender<String>,
     pub(super) job_id: u64,
@@ -328,6 +334,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
     let StreamJobOutcomeCtx {
         r,
         cancelled_by_signal,
+        truncated,
         queue_deps,
         sse_tx,
         job_id,
@@ -356,7 +363,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 messages,
             )
             .await;
-            let end_reason = completed_turn_end_reason(fallback_emitted, messages);
+            let end_reason = completed_turn_end_reason(fallback_emitted, truncated, messages);
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,

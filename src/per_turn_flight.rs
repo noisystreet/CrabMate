@@ -13,6 +13,9 @@ pub struct PerTurnFlight {
     pub awaiting_plan_rewrite_model: AtomicBool,
     pub plan_rewrite_attempts: AtomicUsize,
     pub require_plan_in_final_content: AtomicBool,
+    /// 层 1：本轮最后一次 assistant 输出的上游 `finish_reason` 是否表示「输出被截断」。
+    /// 供编排层在 `stream_ended` 终态里区分「截断」与「正常完成 / 无输出」。
+    pub last_assistant_finish_truncated: AtomicBool,
 }
 
 impl PerTurnFlight {

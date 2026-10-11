@@ -11,8 +11,9 @@ use crate::cm_sse_protocol::StreamEndReason;
 use crate::cm_types::llm_config::LlmHttpAuthMode;
 use crate::cm_types::{
     ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
-    OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON, Usage,
-    assistant_output_kind, merge_reasoning_details_into_reasoning_content, message_content_as_str,
+    OPENAI_CHAT_COMPLETIONS_REL_PATH, STREAM_TRUNCATED_FINISH_REASON, ToolCall,
+    USER_CANCELLED_FINISH_REASON, Usage, assistant_output_kind, llm_finish_reason_is_truncation,
+    merge_reasoning_details_into_reasoning_content, message_content_as_str,
     message_content_byte_len_for_estimate, prepare_tool_call_arguments_for_local_execution,
 };
 
@@ -124,6 +125,10 @@ fn stream_end_reason_from_finish_and_message(
 ) -> StreamEndReason {
     if finish_reason == USER_CANCELLED_FINISH_REASON {
         return StreamEndReason::Cancelled;
+    }
+    // 层 1：`finish_reason == "length"`（token 上限）或流被切断的占位，优先于「有无可见输出」判定。
+    if llm_finish_reason_is_truncation(finish_reason) {
+        return StreamEndReason::Truncated;
     }
     // 层 2：可见输出类别由 `assistant_output_kind` 单一判定；仅思维链不算产出，
     // 否则会与「无正文 / 无 `assistant_answer_phase`」自相矛盾地报 `completed`。
@@ -268,8 +273,14 @@ async fn streaming_chat_response(
     )
     .await?;
 
-    let finish = if params.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
+    let cancelled = params.cancel.is_some_and(|c| c.load(Ordering::SeqCst));
+    let stream_done = acc.stream_done;
+    let finish = if cancelled {
         USER_CANCELLED_FINISH_REASON.to_string()
+    } else if acc.finish_reason.is_empty() && !stream_done {
+        // 层 1：流在 `[DONE]` 前被切断且上游未给 `finish_reason`（如连接中断/超时）→ 用占位标记截断，
+        // 避免静默按「完成」收尾。给了 `finish_reason` 的供应商（即使不发 `[DONE]`）不受影响。
+        STREAM_TRUNCATED_FINISH_REASON.to_string()
     } else {
         acc.finish_reason.clone()
     };
@@ -427,6 +438,22 @@ mod tests {
         assert_eq!(
             stream_end_reason_from_finish_and_message("stop", &Message::assistant_only("")),
             StreamEndReason::NoOutput
+        );
+    }
+
+    // 层 1 回归：`length`（token 上限）与流切断占位优先判为 `Truncated`，不再被误报 completed/no_output。
+    #[test]
+    fn truncation_finish_reasons_map_to_truncated() {
+        assert_eq!(
+            stream_end_reason_from_finish_and_message("length", &Message::assistant_only("半句")),
+            StreamEndReason::Truncated
+        );
+        assert_eq!(
+            stream_end_reason_from_finish_and_message(
+                STREAM_TRUNCATED_FINISH_REASON,
+                &reasoning_only_message(),
+            ),
+            StreamEndReason::Truncated
         );
     }
 }

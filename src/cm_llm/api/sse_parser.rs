@@ -464,6 +464,8 @@ pub(super) struct SseStreamAccum {
     pub(super) finish_reason: String,
     /// SSE 末尾帧携带的 usage（含缓存统计）。
     pub(super) usage: Option<crate::cm_types::Usage>,
+    /// 层 1：是否观察到正常的 `[DONE]`/收尾帧；为 `false` 且 `finish_reason` 为空说明流被切断。
+    pub(super) stream_done: bool,
 }
 
 pub(super) struct ConsumeSseStreamOpts<'a> {
@@ -483,6 +485,7 @@ struct SseConsumeScratch {
     turn_segment_emitted_ids: HashSet<String>,
     minimax_reasoning_snaps: Vec<String>,
     usage: Option<crate::cm_types::Usage>,
+    stream_done: bool,
 }
 
 impl SseConsumeScratch {
@@ -498,6 +501,7 @@ impl SseConsumeScratch {
             turn_segment_emitted_ids: HashSet::new(),
             minimax_reasoning_snaps: Vec::new(),
             usage: None,
+            stream_done: false,
         }
     }
 
@@ -533,6 +537,7 @@ impl SseConsumeScratch {
             tool_calls_acc: self.tool_calls_acc,
             finish_reason: self.finish_reason,
             usage: self.usage,
+            stream_done: self.stream_done,
         }
     }
 }
@@ -587,7 +592,6 @@ where
 {
     let mut buf = Vec::new();
     let mut scratch = SseConsumeScratch::new();
-    let mut stream_done = false;
 
     while let Some(chunk) = stream.next().await {
         if opts.cancel.is_some_and(|c| c.load(Ordering::SeqCst)) {
@@ -599,7 +603,7 @@ where
         match drain_sse_newlines_from_buf(&mut buf, host, &opts, &mut scratch).await? {
             DrainSseLinesOutcome::Continue => {}
             DrainSseLinesOutcome::StreamDone => {
-                stream_done = true;
+                scratch.stream_done = true;
                 break;
             }
             DrainSseLinesOutcome::Cancelled => break,
@@ -607,7 +611,7 @@ where
     }
 
     ingest_sse_residual_buffer_if_needed(
-        stream_done,
+        scratch.stream_done,
         buf.as_slice(),
         scratch.ingest_state(host, opts.out, opts.cancel, opts.thinking_trace_enabled),
     )
@@ -649,5 +653,127 @@ mod reasoning_delta_tests {
     #[test]
     fn reasoning_content_delta_duplicate_snapshot_yields_empty() {
         assert_eq!(reasoning_content_delta_fragment("same", "same"), "");
+    }
+}
+
+#[cfg(test)]
+mod stream_done_tests {
+    use super::*;
+    use crate::cm_types::{ChatRequest, Message};
+
+    /// 最小宿主：测试仅关心 `stream_done` 置位，故除 `sse_out_send` 外均不产生副作用。
+    struct NoopHost;
+
+    #[async_trait::async_trait]
+    impl StreamChatHost for NoopHost {
+        fn log_chat_request_json_preview_if_enabled(&self, _req: &ChatRequest) {}
+
+        fn assistant_message_preview_for_log(&self, _msg: &Message) -> String {
+            String::new()
+        }
+
+        fn append_stream_diagnostic_event(&self, _stream_ended: &str, _msg: &Message) {}
+
+        fn llm_call_error_from_http_api(
+            &self,
+            _status_code: u16,
+            _body: &str,
+        ) -> LlmCallError {
+            unreachable!("stream_done 测试不触发 HTTP 错误映射")
+        }
+
+        fn boxed_non_stream_chat_parse_error(
+            &self,
+            _body: &str,
+            _parse_err: &serde_json::Error,
+        ) -> Box<dyn std::error::Error + Send + Sync> {
+            unreachable!("stream_done 测试不触发非流式解析错误")
+        }
+
+        async fn sse_out_send(
+            &self,
+            _tx: &Sender<String>,
+            _line: String,
+            _context: &'static str,
+            _coop_cancel: Option<&AtomicBool>,
+        ) -> bool {
+            true
+        }
+
+        fn encode_assistant_answer_phase_sse(&self) -> String {
+            String::new()
+        }
+
+        fn encode_parsing_tool_calls_sse(&self) -> String {
+            String::new()
+        }
+
+        fn encode_turn_segment_start_sse(&self, _tool_call_id: &str) -> String {
+            String::new()
+        }
+
+        fn encode_turn_segment_end_sse(&self, _segment_id: &str) -> String {
+            String::new()
+        }
+
+        fn encode_thinking_trace_reasoning_delta_sse(&self, _chunk: &str) -> String {
+            String::new()
+        }
+
+        fn encode_thinking_trace_answer_phase_sse(&self) -> String {
+            String::new()
+        }
+
+        fn encode_reasoning_content_sse(&self, chunk: &str) -> String {
+            chunk.to_string()
+        }
+
+        fn encode_answer_content_sse(&self, chunk: &str) -> String {
+            chunk.to_string()
+        }
+
+        fn encode_text_message_start_sse(&self) -> String {
+            String::new()
+        }
+    }
+
+    async fn consume(lines: &[&str]) -> SseStreamAccum {
+        let mut bytes = Vec::new();
+        for line in lines {
+            bytes.extend_from_slice(line.as_bytes());
+            bytes.push(b'\n');
+        }
+        let stream = futures_util::stream::iter(vec![Ok::<Vec<u8>, reqwest::Error>(bytes)]);
+        consume_openai_sse_byte_stream(
+            &NoopHost,
+            stream,
+            ConsumeSseStreamOpts {
+                cancel: None,
+                out: None,
+                thinking_trace_enabled: false,
+            },
+        )
+        .await
+        .expect("SSE 流消费失败")
+    }
+
+    // 层 1 回归根基：仅末尾 `[DONE]` 置 `stream_done=true`，缺失时保持 `false`，
+    // 供 `streaming_chat_response` 判定「流被切断」。
+    #[tokio::test]
+    async fn stream_done_true_when_done_sentinel_present() {
+        let acc = consume(&[
+            "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}",
+            "data: [DONE]",
+        ])
+        .await;
+        assert!(acc.stream_done);
+        assert!(acc.finish_reason.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stream_done_false_when_cut_before_done_sentinel() {
+        let acc = consume(&["data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}"]).await;
+        assert!(!acc.stream_done);
+        assert!(acc.finish_reason.is_empty());
     }
 }
