@@ -11,7 +11,7 @@ use crate::agent::agent_turn::AgentTurnJobOutcomeKind;
 use crate::agent_role_turn::persisted_agent_role_after_turn;
 use crate::config::AgentConfig;
 use crate::sse::SseStreamHub;
-use crate::types::{Message, message_content_as_str};
+use crate::types::{Message, assistant_output_kind, message_content_as_str};
 use crate::web::WebChatJobAppFacet;
 
 use super::WebChatQueueDeps;
@@ -196,21 +196,47 @@ async fn stream_job_has_final_response_timeline_eventually(
     false
 }
 
+/// 层 4 兜底终答取自思维链时，向用户标明来源（该文本此前已随流式思维链下发过）。
+const REASONING_FALLBACK_PREFIX: &str =
+    "（本轮模型未输出正文，以下为从思考内容回填的兜底内容）\n\n";
+/// 层 4 兜底终答取自思维链时的字符上限，超出即截断并追加省略号（避免整段 CoT 外泄）。
+const REASONING_FALLBACK_MAX_CHARS: usize = 2000;
+
+fn reasoning_fallback_text(reasoning: &str) -> String {
+    let mut out = String::from(REASONING_FALLBACK_PREFIX);
+    let mut chars = reasoning.chars();
+    out.extend(chars.by_ref().take(REASONING_FALLBACK_MAX_CHARS));
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
+}
+
 fn last_assistant_text_for_fallback(messages: &[Message]) -> Option<String> {
     let range_start = messages
         .iter()
         .rposition(|m| m.role == "user")
         .map(|idx| idx.saturating_add(1))
         .unwrap_or(0);
-    messages
+    let last = messages
         .iter()
         .skip(range_start)
         .rev()
-        .find(|m| m.role == "assistant")
-        .and_then(|m| message_content_as_str(&m.content))
+        .find(|m| m.role == "assistant")?;
+    if let Some(text) = message_content_as_str(&last.content)
         .map(str::trim)
         .filter(|s| !s.is_empty())
-        .map(String::from)
+    {
+        return Some(text.to_string());
+    }
+    // 层 4：末条助手仅有思维链（`ReasoningOnly`，无正文 / 无工具调用）时，用思维链作为兜底
+    // 终答，避免「`completed` + 无 `assistant_answer_phase` + 无 `final_response`」矛盾收尾。
+    // 加来源前缀并截断：思维链已随流式下发，直接复用会重复展示且外泄 CoT。
+    last.reasoning_content
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(reasoning_fallback_text)
 }
 
 fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
@@ -219,20 +245,29 @@ fn current_turn_has_visible_assistant_output(messages: &[Message]) -> bool {
         .rposition(|m| m.role == "user")
         .map(|idx| idx.saturating_add(1))
         .unwrap_or(0);
-    messages.iter().skip(range_start).any(|m| {
-        if m.role != "assistant" {
-            return false;
-        }
-        let text_visible = message_content_as_str(&m.content)
-            .map(str::trim)
-            .is_some_and(|s| !s.is_empty());
-        let reasoning_visible = m
-            .reasoning_content
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|s| !s.is_empty());
-        text_visible || reasoning_visible
-    })
+    // 层 2：与 `stream_end_reason_from_finish_and_message` 共用同一判定；仅思维链不算可见输出。
+    messages
+        .iter()
+        .skip(range_start)
+        .any(|m| assistant_output_kind(m).counts_as_visible_output())
+}
+
+/// 层 2/4：一轮成功收尾时的 `stream_ended` 终态判定（单一事实来源，便于单独测试）。
+///
+/// - `fallback_emitted==true` → [`StreamEndReason::Fallback`]（层 4 兜底已补发终答）；
+/// - 否则本轮存在可见助手输出（正文或工具调用）→ [`StreamEndReason::Completed`]；
+/// - 否则（仅思维链 / 空）→ [`StreamEndReason::NoOutput`]。
+pub(crate) fn completed_turn_end_reason(
+    fallback_emitted: bool,
+    messages: &[Message],
+) -> StreamEndReason {
+    if fallback_emitted {
+        StreamEndReason::Fallback
+    } else if current_turn_has_visible_assistant_output(messages) {
+        StreamEndReason::Completed
+    } else {
+        StreamEndReason::NoOutput
+    }
 }
 
 pub(crate) async fn emit_missing_final_response_fallback_if_needed(
@@ -321,14 +356,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 messages,
             )
             .await;
-            let has_visible_output = current_turn_has_visible_assistant_output(messages);
-            let end_reason = if fallback_emitted {
-                StreamEndReason::Fallback
-            } else if has_visible_output {
-                StreamEndReason::Completed
-            } else {
-                StreamEndReason::NoOutput
-            };
+            let end_reason = completed_turn_end_reason(fallback_emitted, messages);
             let tiktoken_prompt_tokens =
                 crate::agent::tiktoken_prompt_tokens::prompt_token_count_vendor_shaped_for_session(
                     cfg_snap, messages,
