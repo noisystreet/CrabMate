@@ -16,7 +16,9 @@ use super::outer_loop_build_idle::{
 };
 use super::outer_loop_fsm::ReflectBranchCtl;
 use super::outer_loop_reflect_reason::OuterLoopReflectPreGateReason;
-use super::turn_completion::outer_loop_missing_final_answer_feedback_if_needed;
+use super::turn_completion::{
+    outer_loop_missing_final_answer_feedback_if_needed, outer_loop_truncated_feedback_if_needed,
+};
 use crate::agent::agent_turn::errors::sse_plan_rewrite_exhausted_body;
 use crate::agent::agent_turn::params::RunLoopParams;
 use crate::agent::agent_turn::reflect::ReflectOnAssistantOutcome;
@@ -39,6 +41,15 @@ fn push_pre_gate_user_feedback(p: &mut RunLoopParams<'_>, feedback: String) {
     });
 }
 
+/// 读本轮最后一次 assistant 输出的截断信号（层 1 写入 `PerTurnFlight`）。
+fn last_assistant_finish_truncated(p: &RunLoopParams<'_>) -> bool {
+    p.ctx
+        .attach
+        .per_flight
+        .as_ref()
+        .is_some_and(|f| f.last_assistant_finish_truncated.load(Ordering::Relaxed))
+}
+
 /// `StopTurn`：build-idle / 终答缺失纠偏 → 继续外循环，否则结束。
 fn reflect_branch_on_stop_turn(
     p: &mut RunLoopParams<'_>,
@@ -47,6 +58,21 @@ fn reflect_branch_on_stop_turn(
 ) -> ReflectBranchCtl {
     let messages = p.turn.messages();
     if let Some(task) = crate::types::last_real_user_task_content(messages, false) {
+        // 截断纠偏优先：截断是最具体的根因信号，其「继续/收敛」文案优于泛化的 idle / 空答纠偏。
+        if let Some(feedback) = outer_loop_truncated_feedback_if_needed(
+            last_assistant_finish_truncated(p),
+            per_coord.outer_loop_truncated_feedback_injected(),
+        ) {
+            info!(
+                target: "crabmate::agent_turn",
+                "outer loop pre-gate: {}",
+                OuterLoopReflectPreGateReason::TruncatedAnswerFeedback.as_str(),
+            );
+            push_pre_gate_user_feedback(p, feedback);
+            per_coord.record_outer_loop_truncated_feedback_injected();
+            sync_per_flight_from_coord(p, per_coord);
+            return ReflectBranchCtl::ContinueOuter;
+        }
         if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
             per_coord.reset_outer_loop_build_idle_streak();
         } else if outer_loop_assistant_is_build_idle_without_tools(msg) {

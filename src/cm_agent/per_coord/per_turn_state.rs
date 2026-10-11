@@ -23,6 +23,7 @@ pub(crate) struct OuterLoopReflectMemo {
     pub(crate) build_idle_streak: u32,
     pub(crate) build_idle_feedback_injected: u32,
     pub(crate) missing_final_answer_feedback_injected: u32,
+    pub(crate) truncated_feedback_injected: u32,
 }
 
 impl OuterLoopReflectMemo {
@@ -55,6 +56,14 @@ impl OuterLoopReflectMemo {
 
     pub(crate) fn missing_final_answer_feedback_injected(&self) -> u32 {
         self.missing_final_answer_feedback_injected
+    }
+
+    pub(crate) fn record_truncated_feedback_injected(&mut self) {
+        self.truncated_feedback_injected = self.truncated_feedback_injected.saturating_add(1);
+    }
+
+    pub(crate) fn truncated_feedback_injected(&self) -> u32 {
+        self.truncated_feedback_injected
     }
 }
 
@@ -101,6 +110,14 @@ impl PerTurnCounters {
     pub(crate) fn outer_loop_missing_final_answer_feedback_injected(&self) -> u32 {
         self.outer_loop_reflect
             .missing_final_answer_feedback_injected()
+    }
+
+    pub(crate) fn record_outer_loop_truncated_feedback_injected(&mut self) {
+        self.outer_loop_reflect.record_truncated_feedback_injected();
+    }
+
+    pub(crate) fn outer_loop_truncated_feedback_injected(&self) -> u32 {
+        self.outer_loop_reflect.truncated_feedback_injected()
     }
 }
 
