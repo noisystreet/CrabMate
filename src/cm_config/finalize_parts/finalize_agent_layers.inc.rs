@@ -129,7 +129,7 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
             .command_exec
             .allow_external_path_with_approval
             .unwrap_or(true),
-        max_tokens: b.llm_sampling.max_tokens.unwrap_or(4096).clamp(256, 32768) as u32,
+        max_tokens: b.llm_sampling.max_tokens.unwrap_or(16384).clamp(256, 32768) as u32,
         llm_context_tokens: b
             .llm_sampling
             .llm_context_tokens
