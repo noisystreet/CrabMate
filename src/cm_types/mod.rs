@@ -58,6 +58,7 @@ mod llm_seed_tests {
     }
 }
 
+mod assistant_output_kind;
 mod chat_api;
 mod mcp_types;
 mod message;
@@ -70,6 +71,7 @@ mod tiktoken_snapshot;
 pub mod path_utils;
 pub mod text_utils;
 
+pub use assistant_output_kind::*;
 pub use chat_api::*;
 pub use mcp_types::*;
 pub use message::*;

@@ -12,7 +12,7 @@ use crate::cm_types::llm_config::LlmHttpAuthMode;
 use crate::cm_types::{
     ChatRequest, FunctionCall, LLM_CANCELLED_ERROR, Message, MessageContent,
     OPENAI_CHAT_COMPLETIONS_REL_PATH, ToolCall, USER_CANCELLED_FINISH_REASON, Usage,
-    merge_reasoning_details_into_reasoning_content, message_content_as_str,
+    assistant_output_kind, merge_reasoning_details_into_reasoning_content, message_content_as_str,
     message_content_byte_len_for_estimate, prepare_tool_call_arguments_for_local_execution,
 };
 
@@ -125,15 +125,9 @@ fn stream_end_reason_from_finish_and_message(
     if finish_reason == USER_CANCELLED_FINISH_REASON {
         return StreamEndReason::Cancelled;
     }
-    let has_content = message_content_as_str(&msg.content)
-        .map(str::trim)
-        .is_some_and(|s| !s.is_empty());
-    let has_reasoning = msg
-        .reasoning_content
-        .as_deref()
-        .map(str::trim)
-        .is_some_and(|s| !s.is_empty());
-    if has_content || has_reasoning {
+    // 层 2：可见输出类别由 `assistant_output_kind` 单一判定；仅思维链不算产出，
+    // 否则会与「无正文 / 无 `assistant_answer_phase`」自相矛盾地报 `completed`。
+    if assistant_output_kind(msg).counts_as_visible_output() {
         StreamEndReason::Completed
     } else {
         StreamEndReason::NoOutput
@@ -389,5 +383,50 @@ pub async fn stream_chat(
         .await
     } else {
         streaming_chat_response(host, res, params, &model).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn reasoning_only_message() -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: None,
+            reasoning_content: Some("先分析一下…".to_string()),
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn reasoning_only_is_no_output_not_completed() {
+        // 层 2 回归：仅有思维链不得判 `completed`（否则与「无 phase / 无 final_response」矛盾）。
+        assert_eq!(
+            stream_end_reason_from_finish_and_message("stop", &reasoning_only_message()),
+            StreamEndReason::NoOutput
+        );
+    }
+
+    #[test]
+    fn content_and_cancellation_map_as_expected() {
+        assert_eq!(
+            stream_end_reason_from_finish_and_message("stop", &Message::assistant_only("终答")),
+            StreamEndReason::Completed
+        );
+        assert_eq!(
+            stream_end_reason_from_finish_and_message(
+                USER_CANCELLED_FINISH_REASON,
+                &Message::assistant_only("终答"),
+            ),
+            StreamEndReason::Cancelled
+        );
+        assert_eq!(
+            stream_end_reason_from_finish_and_message("stop", &Message::assistant_only("")),
+            StreamEndReason::NoOutput
+        );
     }
 }

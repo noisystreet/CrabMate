@@ -710,7 +710,7 @@ fn strip_user_skill_slash_in_message_for_api(m: &mut Message) {
 }
 
 #[inline]
-fn assistant_has_non_empty_tool_calls(m: &Message) -> bool {
+pub(super) fn assistant_has_non_empty_tool_calls(m: &Message) -> bool {
     m.tool_calls.as_ref().is_some_and(|c| !c.is_empty())
 }
 
