@@ -11,7 +11,7 @@
 |---|---|---|---|
 | **`RunLoopTurnState`** | `src/agent/agent_turn/host/params.rs` | `messages_buf` / `messages_revision`、`sub_phase`（观测）、`TurnPlannerHints`、模型/温度覆盖、共享 **`Arc<TurnBudgetCounter>`** | Gate 计数、工作流反思 FSM、工具失败短路表 |
 | **`PerCoordinator`** | `src/cm_agent/per_coord/` | 配置镜像、`PlanRequirementSource`、**`plan_rewrite_attempts`**、workflow validate 缓存、工具失败 / `run_command` 去重、内嵌 **`WorkflowReflectionController`** | 整场只读 LLM 句柄、前端 UI 相位 |
-| **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环 Gate **前**纠偏：build-idle streak / 注入次数、终答缺失注入次数、截断纠偏注入次数（R 轨 3） | 终答 Gate 相位、`plan_rewrite` |
+| **`OuterLoopReflectMemo`**（暂住 `PerTurnCounters`） | `per_coord/per_turn_state.rs` | 外循环纠偏：build-idle streak / 注入次数、终答缺失注入次数、截断纠偏注入次数（R 轨 3；stop-turn **与**工具执行后共用同一预算） | 终答 Gate 相位、`plan_rewrite` |
 | **`PerTurnFlight`** | `src/per_turn_flight.rs` | 只读镜像（如 `plan_rewrite_attempts`、`require_plan`）供 `/status` | 权威可变源（权威在 PerCoord） |
 
 **消息写入约定**：会话正文以 **`RunLoopTurnState`** 为权威缓冲；`append_tool_result_and_reflection` 仍接 `&mut Vec<Message>`（历史接合），调用方须随后经 `prepare_turn_messages_for_model`（或等价路径）递增 **`messages_revision`** 并失效 workflow 层缓存。
@@ -24,7 +24,7 @@
 |---|---|---|
 | 终答 Gate | `plan_rewrite_attempts`、`plan_requirement_source` | `after_final_assistant` / `final_plan_gate` |
 | 工作流反思 | `WorkflowReflectionController` 内部相位 | `prepare_workflow_execute` / `append_*` → 置位 `PlanRequirementSource::WorkflowReflection` |
-| 外循环 pre-gate | **`OuterLoopReflectMemo`** | `outer_loop_reflect`；**不**改 Gate `require_plan` |
+| 外循环 pre-gate / post-tools | **`OuterLoopReflectMemo`** | `outer_loop_reflect`（stop-turn）与 `outer_loop_post_tools_exit`（截断+工具调用续写）；**不**改 Gate `require_plan` |
 
 衔接金样：`fixtures/workflow_to_plan_requirement_golden.jsonl`（`cargo test golden_workflow_to_plan_requirement`）。
 

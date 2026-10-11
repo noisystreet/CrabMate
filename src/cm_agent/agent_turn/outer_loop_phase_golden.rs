@@ -7,7 +7,9 @@ use std::path::PathBuf;
 
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
-use super::outer_loop_iteration_reduce::reduce_outer_loop_post_tools_exit;
+use super::outer_loop_iteration_reduce::{
+    reduce_outer_loop_post_tools_exit, reduce_outer_loop_post_tools_exit_with_truncation,
+};
 
 #[derive(Debug, Deserialize)]
 struct GoldenLine {
@@ -67,6 +69,15 @@ fn apply_step(driver: &mut OuterLoopDriver, step: &Value, last_reduce: &mut Opti
     }
     if let Some(e) = step.get("record_exit").and_then(|v| v.as_str()) {
         driver.record_iteration_exit(exit_from(e));
+        return;
+    }
+    if let Some(trunc) = step.get("post_tools_truncated_feedback").and_then(|v| v.as_bool()) {
+        let early = step
+            .get("post_tools_early_stop")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let exit = reduce_outer_loop_post_tools_exit_with_truncation(trunc, early);
+        driver.record_iteration_exit(exit);
         return;
     }
     if let Some(early) = step.get("post_tools_early_stop").and_then(|v| v.as_bool()) {

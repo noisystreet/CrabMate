@@ -116,6 +116,33 @@ fn reflect_branch_on_stop_turn(
     ReflectBranchCtl::BreakOuter
 }
 
+/// 工具执行后（`ProceedToExecuteTools` 路径）的截断续写纠偏。
+///
+/// 「截断 + 工具调用」在 reflect 阶段经 `ProceedToExecuteTools` 跳过 stop-turn 纠偏，
+/// 故在工具结果回到下一轮模型前补注入；与 stop-turn 路径共享
+/// [`OUTER_LOOP_TRUNCATED_FEEDBACK_MAX`](super::turn_completion::OUTER_LOOP_TRUNCATED_FEEDBACK_MAX)
+/// 预算，天然有界。注入成功返回 `true`。
+pub(super) fn outer_loop_inject_truncated_feedback_after_tools(
+    p: &mut RunLoopParams<'_>,
+    per_coord: &mut PerCoordinator,
+) -> bool {
+    let Some(feedback) = outer_loop_truncated_feedback_if_needed(
+        last_assistant_finish_truncated(p),
+        per_coord.outer_loop_truncated_feedback_injected(),
+    ) else {
+        return false;
+    };
+    info!(
+        target: "crabmate::agent_turn",
+        "outer loop pre-gate after tools: {}",
+        OuterLoopReflectPreGateReason::TruncatedAnswerFeedback.as_str(),
+    );
+    push_pre_gate_user_feedback(p, feedback);
+    per_coord.record_outer_loop_truncated_feedback_injected();
+    sync_per_flight_from_coord(p, per_coord);
+    true
+}
+
 async fn reflect_branch_on_plan_rewrite_exhausted(
     p: &mut RunLoopParams<'_>,
     per_coord: &mut PerCoordinator,

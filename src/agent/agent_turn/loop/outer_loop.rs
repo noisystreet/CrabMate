@@ -23,9 +23,12 @@ use super::outer_loop_build_idle::outer_loop_window_has_build_progress_since_las
 use super::outer_loop_driver::OuterLoopDriver;
 use super::outer_loop_fsm::{OuterLoopIterationExit, OuterLoopIterationPhase, ReflectBranchCtl};
 use super::outer_loop_iteration_reduce::{
-    outer_loop_iteration_exit_from_reflect_reduce, reduce_outer_loop_post_tools_exit,
+    outer_loop_iteration_exit_from_reflect_reduce,
+    reduce_outer_loop_post_tools_exit_with_truncation,
 };
-use super::outer_loop_reflect::map_reflect_outcome_to_branch_ctl;
+use super::outer_loop_reflect::{
+    map_reflect_outcome_to_branch_ctl, outer_loop_inject_truncated_feedback_after_tools,
+};
 use super::turn_completion::{
     redundant_tool_names_for_log, turn_early_stop_allowed,
     turn_redundant_tools_after_completion_allowed,
@@ -345,14 +348,21 @@ async fn outer_loop_post_tools_exit(
     if outer_loop_window_has_build_progress_since_last_user(p.turn.messages()) {
         per_coord.reset_outer_loop_build_idle_streak();
     }
+    // 「截断 + 工具调用」经 `ProceedToExecuteTools` 跳过 stop-turn 纠偏；
+    // 工具结果回到下一轮模型前补注入续写纠偏，并强制继续外循环以消费之。
+    let truncated_feedback_injected =
+        outer_loop_inject_truncated_feedback_after_tools(p, per_coord);
     let task_level_early_stop = turn_early_stop_allowed(p.turn.messages());
-    if task_level_early_stop {
+    if task_level_early_stop && !truncated_feedback_injected {
         tracing::info!(
             target: "crabmate::agent_turn",
             "当前用户目标已有完成证据且允许早停，外循环收敛停轮"
         );
     }
-    Ok(reduce_outer_loop_post_tools_exit(task_level_early_stop))
+    Ok(reduce_outer_loop_post_tools_exit_with_truncation(
+        truncated_feedback_injected,
+        task_level_early_stop,
+    ))
 }
 
 async fn outer_loop_call_planner_and_push(
