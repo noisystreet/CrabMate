@@ -311,11 +311,11 @@ mod tests {
     fn safe_input_budget_reserves_output_and_configured_margin() {
         let cfg = crate::config::load_config(None).expect("embedded config");
         let budget = ContextTokenBudget::from_config(&cfg).expect("token budget enabled");
-        assert_eq!(budget.reserved_output_tokens, 4_096);
+        assert_eq!(budget.reserved_output_tokens, 16_384);
         assert_eq!(budget.safety_margin_tokens, 2_048);
-        assert_eq!(budget.max_input_tokens, 59_392);
-        assert_eq!(budget.trigger_tokens, 50_483);
-        assert_eq!(budget.target_tokens, 41_574);
+        assert_eq!(budget.max_input_tokens, 243_712);
+        assert_eq!(budget.trigger_tokens, 207_155);
+        assert_eq!(budget.target_tokens, 170_598);
     }
 
     #[test]
