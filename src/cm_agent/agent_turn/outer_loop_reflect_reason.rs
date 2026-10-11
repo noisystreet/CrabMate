@@ -6,6 +6,8 @@
 /// Gate 前外循环纠偏注入原因（仅 `tracing` / 单测）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OuterLoopReflectPreGateReason {
+    /// assistant 输出被上游截断（`finish_reason == length` 或流未正常收尾），终答不完整。
+    TruncatedAnswerFeedback,
     /// 构建/编译意图下 assistant 空转无工具（`outer_loop_build_idle`）。
     BuildIdleFeedback,
     /// 有工具成功但终答未给出可验收结论（`outer_loop_missing_final_answer`）。
@@ -15,6 +17,7 @@ pub enum OuterLoopReflectPreGateReason {
 impl OuterLoopReflectPreGateReason {
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::TruncatedAnswerFeedback => "truncated_answer_feedback",
             Self::BuildIdleFeedback => "build_idle_feedback",
             Self::MissingFinalAnswerFeedback => "missing_final_answer_feedback",
         }
@@ -27,6 +30,10 @@ mod tests {
 
     #[test]
     fn pre_gate_reason_trace_strings_stable() {
+        assert_eq!(
+            OuterLoopReflectPreGateReason::TruncatedAnswerFeedback.as_str(),
+            "truncated_answer_feedback"
+        );
         assert_eq!(
             OuterLoopReflectPreGateReason::BuildIdleFeedback.as_str(),
             "build_idle_feedback"
