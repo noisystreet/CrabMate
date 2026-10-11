@@ -9,10 +9,10 @@ model = "deepseek-v4-flash"
 # 鉴权密钥：仅认环境变量 API_KEY（或进程继承）；勿将真实密钥写入本文件。本程序不读取 TOML 中的 api_key 键。
 # 模型 HTTP 鉴权：bearer（默认，需环境变量 API_KEY）| none（不向 chat/models 发 Authorization；本地 Ollama 等可不设 API_KEY）
 # llm_http_auth_mode = "bearer"
-# 完成段上限；开启推理/思维链时易占满较小额度导致 finish_reason=length。可按供应商与费用调高。
-max_tokens = 4096
-# 模型上下文窗口 Token 上限（输入+输出）；非零时启用最终请求 Token 预算器。示例：DeepSeek 常见 64k；设为 0 则回退 context_char_budget。
-llm_context_tokens = 65536
+# 完成段（输出）上限；开启推理/思维链时 reasoning 计入 completion，额度偏小易导致 finish_reason=length 截断。默认 16384（可按供应商 max output 与费用调整，允许 256–32768）。
+max_tokens = 16384
+# 模型上下文窗口 Token 上限（输入+输出）；非零时启用最终请求 Token 预算器。默认 262144（256k，按默认模型 deepseek-v4-flash 约 1M 窗口取保守档）；设为 0 则回退 context_char_budget。
+llm_context_tokens = 262144
 # 注意：一些模型只支持设置固定的温度，如kimi-k2.5系列模型。
 temperature = 0.7
 
