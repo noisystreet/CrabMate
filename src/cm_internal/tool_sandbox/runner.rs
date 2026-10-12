@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::cm_internal::memory::codebase_semantic_index::CodebaseSemanticToolParams;
 use crate::cm_internal::memory_tool_hosts::CodebaseSemanticHost;
 use crate::cm_internal::tools::http_fetch;
-use crate::cm_internal::tools::{ToolContext, run_tool};
+use crate::cm_internal::tools::{ToolContext, run_tool_async};
 use crate::cm_config::{AgentConfig, ExposeSecret, WebSearchProvider};
 
 fn default_test_result_cache_enabled() -> bool {
@@ -98,7 +98,7 @@ pub struct ToolInvocationLine {
 }
 
 /// 容器内入口：读 `CM_TOOL_RUNNER_CONFIG_FILE`，从 stdin 读一行 JSON，向 stdout 打印工具输出。
-pub fn tool_runner_internal_main() -> Result<(), String> {
+pub async fn tool_runner_internal_main() -> Result<(), String> {
     let path = std::env::var("CM_TOOL_RUNNER_CONFIG_FILE")
         .map_err(|_| "缺少环境变量 CM_TOOL_RUNNER_CONFIG_FILE".to_string())?;
     let raw = std::fs::read_to_string(&path)
@@ -153,7 +153,7 @@ pub fn tool_runner_internal_main() -> Result<(), String> {
         tool_jobs_host: None,
     };
     let k = inv.kind.trim();
-    let out = dispatch_tool_runner_kind(k, &inv, &ctx, &http_cfg)?;
+    let out = dispatch_tool_runner_kind(k, &inv, &ctx, &http_cfg).await?;
     print!("{out}");
     Ok(())
 }
@@ -164,7 +164,7 @@ struct ToolRunnerHttpCfg {
     max_response_bytes: usize,
 }
 
-fn dispatch_tool_runner_kind(
+async fn dispatch_tool_runner_kind(
     kind: &str,
     inv: &ToolInvocationLine,
     ctx: &ToolContext<'_>,
@@ -176,13 +176,13 @@ fn dispatch_tool_runner_kind(
             .as_deref()
             .filter(|s| !s.is_empty())
             .ok_or_else(|| "sync_default 须提供非空 tool".to_string())?;
-        return Ok(run_tool(tool, &inv.args_json, ctx));
+        return Ok(run_tool_async(tool, &inv.args_json, ctx).await);
     }
     if matches!(
         kind,
         "get_weather" | "web_search" | "run_command" | "run_executable"
     ) {
-        return Ok(run_tool(kind, &inv.args_json, ctx));
+        return Ok(run_tool_async(kind, &inv.args_json, ctx).await);
     }
     if kind == "http_fetch" {
         return Ok(run_tool_runner_http_fetch(inv, http));

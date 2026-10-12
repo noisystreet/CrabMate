@@ -442,7 +442,7 @@ pub fn run_try(
     .map_err(RunCommandError::into_tool_error)
 }
 
-/// 与 [`run_try`] 相同，并传入墙钟/取消（workflow `run_tool_result` / `run_tool_dispatch`）。
+/// 与 [`run_try`] 相同，并传入墙钟/取消（异步 funnel `run_command_dispatch_async` / workflow `run_tool_result_async`）。
 #[allow(clippy::result_large_err)]
 pub fn run_try_wait(
     args_json: &str,
@@ -483,28 +483,6 @@ pub fn run_checked(
         skip_arg_safety,
         &SubprocessWaitCtl::default(),
     )
-}
-
-/// 与 [`run`] 相同，并传入墙钟/取消（宿主 `dispatch_tool` / `runner_run_command`）。
-pub fn run_with_wait(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-    wait: &SubprocessWaitCtl,
-) -> String {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
-    )
-    .unwrap_or_else(|e| e.extended_user_message())
 }
 
 /// 与 [`run_checked`] 相同，并传入墙钟/取消。

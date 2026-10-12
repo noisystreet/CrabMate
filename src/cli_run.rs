@@ -134,7 +134,7 @@ fn try_early_save_session(
     Ok(true)
 }
 
-fn try_early_tool_replay(
+async fn try_early_tool_replay(
     d: &EarlyCliDispatch<'_>,
     tokens: Option<u32>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
@@ -142,7 +142,7 @@ fn try_early_tool_replay(
         return Ok(false);
     };
     let cfg = load_cli_agent_config(d.config_path.as_deref(), tokens)?;
-    crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr)?;
+    crate::runtime::cli::run_tool_replay_command(&cfg, d.workspace_cli, tr).await?;
     Ok(true)
 }
 
@@ -294,7 +294,7 @@ async fn try_dispatch_early_extra_cli(
     }
 }
 
-/// `save-session` / `tool-replay` / `plugin *` 等非默认主流程。
+/// `save-session` / `plugin *` 等非默认主流程（同步）。
 fn try_dispatch_early_workspace_commands(
     d: &EarlyCliDispatch<'_>,
     tokens: Option<u32>,
@@ -305,7 +305,6 @@ fn try_dispatch_early_workspace_commands(
     // 接受 tokens 参数的子命令
     let with_tokens: &[DispatchFn] = &[
         try_early_save_session,
-        try_early_tool_replay,
         try_early_plugin_init,
         try_early_plugin_validate,
         try_early_plugin_list,
@@ -330,6 +329,19 @@ fn try_dispatch_early_workspace_commands(
     Ok(None)
 }
 
+/// 组合分流：`tool-replay`（异步）与 `save-session` / `plugin *` 等（同步）。
+///
+/// 二者合并为单一 helper，避免 `run_early_commands` 中重复的 `if ... ?` 抬升圈复杂度。
+async fn try_dispatch_early_tool_replay_and_workspace(
+    d: &EarlyCliDispatch<'_>,
+    tokens: Option<u32>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    if try_early_tool_replay(d, tokens).await? {
+        return Ok(true);
+    }
+    Ok(try_dispatch_early_workspace_commands(d, tokens)?.is_some())
+}
+
 async fn run_early_commands(
     d: EarlyCliDispatch<'_>,
     llm_context_tokens_cli: Option<u32>,
@@ -337,7 +349,7 @@ async fn run_early_commands(
     if let Some(true) = try_dispatch_early_extra_cli(&d, llm_context_tokens_cli).await? {
         return Ok(true);
     }
-    if let Some(true) = try_dispatch_early_workspace_commands(&d, llm_context_tokens_cli)? {
+    if try_dispatch_early_tool_replay_and_workspace(&d, llm_context_tokens_cli).await? {
         return Ok(true);
     }
     if try_early_workflow_run(&d, llm_context_tokens_cli).await? {

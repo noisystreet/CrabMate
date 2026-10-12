@@ -5,11 +5,11 @@ use crate::config::AgentConfig;
 
 #[cfg(feature = "mcp")]
 mod full {
-    use std::path::Path;
     use std::path::PathBuf;
 
     use crate::config::AgentConfig;
     use crate::runtime::cli::cli_effective_work_dir;
+    use futures_util::FutureExt;
 
     use crate::mcp::server::ToolCallbacks;
 
@@ -23,19 +23,22 @@ mod full {
                 crate::tool_call_explain::annotate_tool_defs_for_explain_card(&mut defs, cfg);
                 defs
             },
-            |name: &str, args_json: &str, work_dir: &Path, cfg: &AgentConfig| {
-                let ctx = crate::tools::tool_context_for(
-                    cfg,
-                    &cfg.command_exec.allowed_commands,
-                    work_dir,
-                );
-                let args_for_tool = match crate::tool_call_explain::require_explain_for_mutation(
-                    cfg, name, args_json,
-                ) {
-                    Ok(cow) => cow.into_owned(),
-                    Err(msg) => return Err(msg),
-                };
-                Ok(crate::tools::run_tool(name, &args_for_tool, &ctx))
+            |name: String, args_json: String, work_dir: PathBuf, cfg: AgentConfig| {
+                async move {
+                    let ctx = crate::tools::tool_context_for(
+                        &cfg,
+                        &cfg.command_exec.allowed_commands,
+                        &work_dir,
+                    );
+                    let args_for_tool = match crate::tool_call_explain::require_explain_for_mutation(
+                        &cfg, &name, &args_json,
+                    ) {
+                        Ok(cow) => cow.into_owned(),
+                        Err(msg) => return Err(msg),
+                    };
+                    Ok(crate::tools::run_tool_async(&name, &args_for_tool, &ctx).await)
+                }
+                .boxed()
             },
         )
     }

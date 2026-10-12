@@ -5,10 +5,10 @@
 //! 与 `cm_internal` 解耦：工具列表构建与工具执行业务通过 `ToolCallbacks` 注入。
 
 use std::borrow::Cow;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use futures_util::future::BoxFuture;
 use rmcp::ServerHandler;
 use rmcp::model::{
     CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ErrorData as McpError,
@@ -26,19 +26,32 @@ use crate::cm_types::Tool as OpenAiTool;
 pub struct ToolCallbacks {
     /// 构建工具列表（`no_tools` 为 true 时返回空列表）。
     pub build_tool_list: Arc<dyn Fn(&AgentConfig, bool) -> Vec<OpenAiTool> + Send + Sync>,
-    /// 执行工具（名称、参数字符串、工作目录）→ 输出字符串。
-    /// 返回 `Err` 表示执行被阻止（如审批失败）。
-    pub run_tool:
-        Arc<dyn Fn(&str, &str, &Path, &AgentConfig) -> Result<String, String> + Send + Sync>,
+    /// 执行工具（名称、参数字符串、工作目录、配置）→ 异步输出。
+    /// 返回 `Err` 表示执行被阻止（如审批失败）。参数按值传入以支持返回 `'static` future。
+    pub run_tool: Arc<
+        dyn Fn(
+                String,
+                String,
+                PathBuf,
+                AgentConfig,
+            ) -> BoxFuture<'static, Result<String, String>>
+            + Send
+            + Sync,
+    >,
 }
 
 impl ToolCallbacks {
     pub fn new(
         build_tool_list: impl Fn(&AgentConfig, bool) -> Vec<OpenAiTool> + Send + Sync + 'static,
-        run_tool: impl Fn(&str, &str, &Path, &AgentConfig) -> Result<String, String>
-        + Send
-        + Sync
-        + 'static,
+        run_tool: impl Fn(
+                String,
+                String,
+                PathBuf,
+                AgentConfig,
+            ) -> BoxFuture<'static, Result<String, String>>
+            + Send
+            + Sync
+            + 'static,
     ) -> Self {
         Self {
             build_tool_list: Arc::new(build_tool_list),
@@ -148,7 +161,7 @@ impl ServerHandler for CrabmateMcpServer {
                 }
             };
 
-            match (callbacks.run_tool)(&name, &args_json, &work_dir, &cfg) {
+            match (callbacks.run_tool)(name, args_json, work_dir, cfg).await {
                 Ok(output) => Ok(CallToolResult::success(vec![ContentBlock::text(output)]).into()),
                 Err(msg) => Ok(CallToolResult::error(vec![ContentBlock::text(msg)]).into()),
             }

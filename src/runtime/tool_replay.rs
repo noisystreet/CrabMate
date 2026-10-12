@@ -1,8 +1,8 @@
 //! 从会话消息中提取工具调用时间线，导出为 JSON fixture，并在本地重放（不调用大模型）。
-//! 用于复现工具链路与回归对比；**与正常对话相同**走 `tools::run_tool`，须在可信工作区使用。
+//! 用于复现工具链路与回归对比；**与正常对话相同**走 `tools::run_tool_async`，须在可信工作区使用。
 
 use crate::runtime::chat_export::ChatSessionFile;
-use crate::tools::{run_tool, tool_context_for};
+use crate::tools::{run_tool_async, tool_context_for};
 use crate::types::{Message, ToolCall};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -209,7 +209,7 @@ fn compare_replay_step_output(
 
 /// 重放 fixture；若 `compare_recorded` 为 true，对含 `recorded_output` 的步骤做字符串全等比较。
 /// 返回 (执行步数, 比较不匹配数)。
-pub fn run_tool_replay_fixture(
+pub async fn run_tool_replay_fixture(
     fixture_path: &Path,
     cfg: &crate::config::AgentConfig,
     working_dir: &Path,
@@ -233,7 +233,7 @@ pub fn run_tool_replay_fixture(
             "[{}] {} id={} args={}",
             step.index, step.name, step.tool_call_id, step.arguments
         )?;
-        let fresh = run_tool(&step.name, &step.arguments, &ctx);
+        let fresh = run_tool_async(&step.name, &step.arguments, &ctx).await;
         writeln!(out, "—— 本次输出 ——\n{fresh}")?;
         if compare_replay_step_output(&mut out, compare_recorded, &step.recorded_output, &fresh)? {
             mismatches += 1;

@@ -55,71 +55,99 @@ async fn execute_node_tool_phase(
     };
     let run_command_reaps_self = tool_name == "run_command";
 
-    let output_fut = async {
-        let handle = tokio::task::spawn_blocking(move || {
-            let tool_ctx = crate::cm_tools::tools::ToolContext {
-                cfg: None,
-                codebase_semantic_host: None,
-                command_max_output_len,
-                weather_timeout_secs,
-                allowed_commands: &allowed,
-                working_dir: &working_dir,
-                web_search_timeout_secs: ws_timeout,
-                web_search_provider: ws_provider,
-                web_search_api_key: &web_search_api_key,
-                web_search_max_results: ws_max,
-                web_search_proxy: &ws_proxy,
-                http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
-                http_fetch_timeout_secs: hf_to,
-                http_fetch_max_response_bytes: hf_mb,
-                command_timeout_secs,
-                read_file_turn_cache: None,
-                workspace_changelist: None,
-                test_result_cache_enabled,
-                test_result_cache_max_entries,
-                long_term_memory_host: None,
-                tool_jobs_host: None,
-            };
-            crate::cm_tools::tools::run_tool_result(&tool_name_owned, &exec_args, &tool_ctx)
-        });
-        handle
-            .await
-            .unwrap_or(crate::cm_tools::tool_result::ToolResult {
-                ok: false,
-                exit_code: None,
-                message: "工具执行异常".to_string(),
-                stdout: String::new(),
-                stderr: String::new(),
-                error_code: Some("workflow_tool_join_error".to_string()),
-            })
-    };
-
     let tool_result = if run_command_reaps_self {
-        output_fut.await
-    } else if let Some(ts) = timeout_secs {
-        match tokio::time::timeout(std::time::Duration::from_secs(ts), output_fut).await {
-            Ok(s) => s,
-            Err(_) => {
-                log::warn!(
-                    target: "crabmate",
-                    "workflow 节点超时（{} 秒）：tool={} node_id={} —— 非 run_command 的 spawn_blocking 任务无法取消，后台子进程可能仍在运行。",
-                    ts,
-                    tool_name,
-                    node_id,
-                );
-                return NodeRunResult {
-                    id: node_id.to_string(),
-                    status: NodeRunStatus::Failed,
-                    output: format!("workflow 节点超时（{} 秒）：tool={}", ts, tool_name).into(),
-                    workspace_changed: false,
-                    exit_code: None,
-                    error_code: Some("timeout".to_string()),
-                    attempt: 0,
-                };
-            }
-        }
+        // `run_command`：直接走异步 funnel（内部 `spawn_blocking` + 墙钟超时），不再外层包超时。
+        // `ToolContext` 与 else 分支重复构造：else 分支须把字段引用 move 进 `'static` 闭包，
+        // 无法与本分支共享同一借用，故按分支各构造一次。
+        let tool_ctx = crate::cm_tools::tools::ToolContext {
+            cfg: None,
+            codebase_semantic_host: None,
+            command_max_output_len,
+            weather_timeout_secs,
+            allowed_commands: &allowed,
+            working_dir: &working_dir,
+            web_search_timeout_secs: ws_timeout,
+            web_search_provider: ws_provider,
+            web_search_api_key: &web_search_api_key,
+            web_search_max_results: ws_max,
+            web_search_proxy: &ws_proxy,
+            http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
+            http_fetch_timeout_secs: hf_to,
+            http_fetch_max_response_bytes: hf_mb,
+            command_timeout_secs,
+            read_file_turn_cache: None,
+            workspace_changelist: None,
+            test_result_cache_enabled,
+            test_result_cache_max_entries,
+            long_term_memory_host: None,
+            tool_jobs_host: None,
+        };
+        crate::cm_tools::tools::run_tool_result_async(&tool_name_owned, &exec_args, &tool_ctx).await
     } else {
-        output_fut.await
+        let output_fut = async {
+            let handle = tokio::task::spawn_blocking(move || {
+                let tool_ctx = crate::cm_tools::tools::ToolContext {
+                    cfg: None,
+                    codebase_semantic_host: None,
+                    command_max_output_len,
+                    weather_timeout_secs,
+                    allowed_commands: &allowed,
+                    working_dir: &working_dir,
+                    web_search_timeout_secs: ws_timeout,
+                    web_search_provider: ws_provider,
+                    web_search_api_key: &web_search_api_key,
+                    web_search_max_results: ws_max,
+                    web_search_proxy: &ws_proxy,
+                    http_fetch_allowed_prefixes: &http_fetch_allowed_prefixes,
+                    http_fetch_timeout_secs: hf_to,
+                    http_fetch_max_response_bytes: hf_mb,
+                    command_timeout_secs,
+                    read_file_turn_cache: None,
+                    workspace_changelist: None,
+                    test_result_cache_enabled,
+                    test_result_cache_max_entries,
+                    long_term_memory_host: None,
+                    tool_jobs_host: None,
+                };
+                crate::cm_tools::tools::run_tool_result(&tool_name_owned, &exec_args, &tool_ctx)
+            });
+            handle
+                .await
+                .unwrap_or(crate::cm_tools::tool_result::ToolResult {
+                    ok: false,
+                    exit_code: None,
+                    message: "工具执行异常".to_string(),
+                    stdout: String::new(),
+                    stderr: String::new(),
+                    error_code: Some("workflow_tool_join_error".to_string()),
+                })
+        };
+
+        if let Some(ts) = timeout_secs {
+            match tokio::time::timeout(std::time::Duration::from_secs(ts), output_fut).await {
+                Ok(s) => s,
+                Err(_) => {
+                    log::warn!(
+                        target: "crabmate",
+                        "workflow 节点超时（{} 秒）：tool={} node_id={} —— 非 run_command 的 spawn_blocking 任务无法取消，后台子进程可能仍在运行。",
+                        ts,
+                        tool_name,
+                        node_id,
+                    );
+                    return NodeRunResult {
+                        id: node_id.to_string(),
+                        status: NodeRunStatus::Failed,
+                        output: format!("workflow 节点超时（{} 秒）：tool={}", ts, tool_name).into(),
+                        workspace_changed: false,
+                        exit_code: None,
+                        error_code: Some("timeout".to_string()),
+                        attempt: 0,
+                    };
+                }
+            }
+        } else {
+            output_fut.await
+        }
     };
 
     let mut workspace_changed = false;
