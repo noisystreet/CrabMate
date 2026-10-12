@@ -20,8 +20,7 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs,
-        FindSymbolArgs, FormatOnePathArgs, GitStatusArgs, GoBuildArgs, GolangciLintArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatOnePathArgs, GitStatusArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
         ModifyFileArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
@@ -70,13 +69,6 @@ mod tests {
         assert!(v.pointer("/properties/filter").is_some());
         assert!(v.pointer("/properties/user_only").is_some());
         assert!(v.pointer("/properties/max_count").is_some());
-    }
-
-    #[test]
-    fn golangci_lint_schema_has_fix_fast() {
-        let v = tool_parameters_schema_value::<GolangciLintArgs>();
-        assert!(v.pointer("/properties/fix").is_some());
-        assert!(v.pointer("/properties/fast").is_some());
     }
 
     #[test]
@@ -150,14 +142,6 @@ mod tests {
         assert!(e.iter().any(|x| x == "auto"));
         assert!(e.iter().any(|x| x == "lcov"));
         assert!(e.iter().any(|x| x == "tarpaulin_json"));
-    }
-
-    #[test]
-    fn go_build_schema_has_race_verbose_tags() {
-        let v = tool_parameters_schema_value::<GoBuildArgs>();
-        assert!(v.pointer("/properties/race").is_some());
-        assert!(v.pointer("/properties/verbose").is_some());
-        assert!(v.pointer("/properties/tags").is_some());
     }
 
     #[test]

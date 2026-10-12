@@ -16,7 +16,6 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
             | "cargo_check"
             | "cargo_clippy"
             | "pytest_run"
-            | "go_test"
     ) {
         return true;
     }
@@ -39,6 +38,7 @@ pub(crate) fn tool_message_indicates_build_progress(m: &Message) -> bool {
         "meson compile",
         "meson test",
         "go build",
+        "go test",
         "npm run build",
         "npm test",
         "ctest ",

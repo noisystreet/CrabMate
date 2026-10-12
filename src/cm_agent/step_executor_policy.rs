@@ -35,7 +35,6 @@ fn default_test_runner_tool_names() -> &'static HashSet<&'static str> {
             "cargo_test",
             "rust_test_one",
             "pytest_run",
-            "go_test",
             "run_command",
         ]
         .into_iter()

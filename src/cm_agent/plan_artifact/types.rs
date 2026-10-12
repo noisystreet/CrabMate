@@ -36,7 +36,7 @@ pub enum PlanStepExecutorKind {
     ReviewReadonly,
     /// 只读工具 + 受限写补丁类（`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_file` / `ast_grep_rewrite`）。
     PatchWrite,
-    /// 只读工具 + 常见测试运行器（如 `cargo_test` / `pytest_run` / `go_test` 等）；**不含**任意 `run_command`。
+    /// 只读工具 + 常见测试运行器（如 `cargo_test` / `pytest_run` 等）；**不含**任意 `run_command`。
     TestRunner,
 }
 

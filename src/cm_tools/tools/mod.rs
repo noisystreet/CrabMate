@@ -45,7 +45,6 @@ mod format;
 mod frontend_tools;
 mod git;
 mod github_cli;
-mod go_tools;
 mod grep_try;
 #[cfg(feature = "web-fetch-tools")]
 pub mod http_fetch;
