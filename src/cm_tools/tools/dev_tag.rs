@@ -108,10 +108,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
             &[GENERAL, RUST]
         }
 
-        // --- Go ---
-        "go_build" | "go_test" => &[GENERAL, GO],
-        "go_vet" | "go_fmt_check" | "golangci_lint" => &[GENERAL, GO, QUALITY],
-
         // --- Python ---
         "ruff_check" | "mypy_check" => &[GENERAL, PYTHON, QUALITY],
         "pytest_run" | "uv_sync" | "uv_run" | "python_snippet_run" => {

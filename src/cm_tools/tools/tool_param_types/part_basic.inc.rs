@@ -225,18 +225,6 @@ pub struct BackgroundJobCancelArgs {
     pub tool_job_id: String,
 }
 
-/// [`super::go_tools::golangci_lint`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GolangciLintArgs {
-    /// 是否 `--fix` 自动修复，默认 false
-    #[serde(default)]
-    pub fix: bool,
-    /// 是否 `--fast` 快速模式，默认 false
-    #[serde(default)]
-    pub fast: bool,
-}
-
 /// [`super::markdown_links::markdown_check_links`] 的 `output_format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
