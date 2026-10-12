@@ -157,46 +157,50 @@ fn test_run_tool_typos_check_invokes_cli() {
     );
 }
 
-#[test]
-fn test_run_tool_run_command_pwd() {
+#[tokio::test]
+async fn test_run_tool_run_command_pwd() {
     crate::cm_tools::tools::command::reset_run_command_rate_limit_for_tests();
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let out = run_tool("run_command", r#"{"command":"pwd"}"#, &ctx);
+    let out = run_tool_async("run_command", r#"{"command":"pwd"}"#, &ctx).await;
     assert!(out.contains("命令：pwd"), "应含命令行，得到: {}", out);
     assert!(out.contains("退出码：0"), "pwd 应成功，得到: {}", out);
 }
 
-#[test]
-fn test_run_tool_run_command_find_maxdepth() {
+#[tokio::test]
+async fn test_run_tool_run_command_find_maxdepth() {
     crate::cm_tools::tools::command::reset_run_command_rate_limit_for_tests();
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let out = run_tool(
+    let out = run_tool_async(
         "run_command",
         r#"{"command":"find","args":[".","-maxdepth","1","-type","f"]}"#,
         &ctx,
-    );
+    )
+    .await;
     assert!(
         out.contains("退出码：0") || out.contains("无法启动") || out.contains("未找到命令"),
         "find 应成功或未安装，得到: {out}"
     );
 }
 
-#[test]
-fn test_run_tool_run_command_disallowed() {
+#[tokio::test]
+async fn test_run_tool_run_command_disallowed() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let out = run_tool("run_command", r#"{"command":"rm"}"#, &ctx);
+    let out = run_tool_async("run_command", r#"{"command":"rm"}"#, &ctx).await;
     assert!(out.contains("不允许的命令"), "应拒绝 rm，得到: {}", out);
 }
 
-#[test]
-fn test_run_tool_try_run_command_disallowed_tool_error() {
+#[tokio::test]
+async fn test_run_tool_async_run_command_disallowed_tool_error() {
     use crate::cm_tools::tool_result::ToolFailureCategory;
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let e = run_tool_try("run_command", r#"{"command":"rm"}"#, &ctx).expect_err("disallowed");
+    // 直调私有异步分派以取回结构化 `ToolError`（`run_tool_result_async` 会降级为 `ToolResult`）。
+    let e = run_command_dispatch_async("run_command", r#"{"command":"rm"}"#, &ctx)
+        .await
+        .expect_err("disallowed");
     assert_eq!(e.code, "approval_required");
     assert_eq!(e.category, ToolFailureCategory::PolicyDenied);
     assert!(!e.retryable);
@@ -609,17 +613,18 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
 }
 
 #[cfg(unix)]
-#[test]
-fn run_tool_result_run_command_honors_command_timeout_secs() {
+#[tokio::test]
+async fn run_tool_result_run_command_honors_command_timeout_secs() {
     let allowed = vec!["bash".into(), "sleep".into(), "echo".into()];
     let mut ctx = test_ctx(&allowed);
     ctx.command_timeout_secs = 1;
     let t0 = std::time::Instant::now();
-    let result = run_tool_result(
+    let result = run_tool_result_async(
         "run_command",
         r#"{"command":"bash","args":["-c","echo wf-partial; sleep 60"]}"#,
         &ctx,
-    );
+    )
+    .await;
     assert!(
         t0.elapsed() < std::time::Duration::from_secs(8),
         "dispatch must apply wall clock, elapsed={:?}",

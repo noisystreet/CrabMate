@@ -154,25 +154,14 @@ pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
     calc::run(&parsed.expression)
 }
 
-pub fn runner_run_command(args: &str, ctx: &ToolContext<'_>) -> String {
-    let test_cache = ctx
-        .test_result_cache_enabled
-        .then_some(command::RunCommandTestCacheOpts {
-            enabled: true,
-            max_entries: ctx.test_result_cache_max_entries,
-            workspace_root: ctx.working_dir,
-        });
-    command::run_with_wait(
-        args,
-        ctx.command_max_output_len,
-        ctx.allowed_commands,
-        ctx.working_dir,
-        test_cache,
-        false,
-        &crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
-            ctx.command_timeout_secs,
-        ),
-    )
+/// `run_command` 的同步 runner 已下线：`run_command` 一律经专用异步入口
+/// [`super::run_tool_async`] / [`super::run_tool_result_async`] 执行，不再走同步 `run_tool` 面。
+///
+/// 本 stub 仅为 [`crate::cm_tools::tools::tool_specs_registry`] 的 spec 注册占位
+/// （工具名、参数 schema、摘要仍由 spec 提供）；同步 `run_tool("run_command", …)` 不再执行命令。
+pub fn runner_run_command(args: &str, _ctx: &ToolContext<'_>) -> String {
+    let _ = args;
+    "错误：run_command 须经服务端异步入口执行（同步 run_tool 不再执行命令）。".to_string()
 }
 
 pub fn runner_terminal_session(args: &str, _ctx: &ToolContext<'_>) -> String {

@@ -410,9 +410,12 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     }
 }
 
-/// 仅 **`run_command`** / **`terminal_session`** 走特判（前者经 `run_try_wait` 返回显式 [`ToolError`]，后者须异步调度）；
+/// 仅 **`terminal_session`** 走特判（须异步调度，拒绝同步执行）；
 /// 其余工具按 `spec.runner` 双路径执行：已迁移的 [`ToolRunner::Typed`] 显式透传 [`ToolError`]，
 /// [`ToolRunner::Legacy`] 仍经 `parse_legacy_output` 从正文推断。
+///
+/// **`run_command` 不在本函数执行**：它经专用异步入口 [`run_tool_async`] / [`run_tool_result_async`]
+/// 走 [`run_command_dispatch_async`]；其 spec runner 为占位 stub，故经本函数调用只会得到提示性错误。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
@@ -438,28 +441,6 @@ fn run_tool_dispatch(
         "terminal_session" => Err(ToolError::invalid_args(
             "terminal_session 须由服务端异步调度执行。".to_string(),
         )),
-        "run_command" => {
-            let test_cache =
-                ctx.test_result_cache_enabled
-                    .then_some(command::RunCommandTestCacheOpts {
-                        enabled: true,
-                        max_entries: ctx.test_result_cache_max_entries,
-                        workspace_root: ctx.working_dir,
-                    });
-            let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
-                ctx.command_timeout_secs,
-            );
-            command::run_try_wait(
-                args_ref,
-                ctx.command_max_output_len,
-                ctx.allowed_commands,
-                ctx.working_dir,
-                test_cache,
-                false,
-                &wait,
-            )
-            .and_then(|output| finish_dispatch_legacy(name, args_ref, output))
-        }
         _ => run_tool_dispatch_fallback(name, args_ref, spec, ctx),
     }
 }
@@ -509,8 +490,8 @@ fn finish_dispatch_legacy(
 
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`run_command`** / **`terminal_session`** 在 [`run_tool_dispatch`] 中特判（前者经 `run_try_wait` 返回显式 [`ToolError`]）；
-/// 其余工具按 `spec.runner` 双路径：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
+/// **`terminal_session`** 在 [`run_tool_dispatch`] 中特判（须异步调度）；`run_command` 已改走异步入口
+/// [`run_tool_async`] / [`run_tool_result_async`]；其余工具按 `spec.runner` 双路径：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,
@@ -525,6 +506,97 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
     match run_tool_dispatch(name, args_json, ctx) {
         Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
         Err(e) => ToolResult::from_parsed(e.message, e.legacy_parsed),
+    }
+}
+
+/// 异步工具执行入口（面向非 chat 消费点：tool-replay / MCP / workflow / 容器 runner）。
+///
+/// **`run_command`** 经本文件新增的异步实现 [`run_command_dispatch_async`]（[`run_tool_async`] 的 String 面）；
+/// 其余工具直接委派既有同步 [`run_tool`]，行为逐字节保持不变。
+///
+/// PR0（当前）：`run_command` 实现体内部用 [`tokio::task::spawn_blocking`] 复用既有同步
+/// `command::run_try_wait`（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存）；后续 PR 将实现体
+/// 替换为基于 `tokio::process` 的事件驱动版本，接口契约不变。
+pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
+    if name == "run_command" {
+        match run_command_dispatch_async(name, args_json, ctx).await {
+            Ok((output, _)) => output,
+            Err(e) => e.message,
+        }
+    } else {
+        run_tool(name, args_json, ctx)
+    }
+}
+
+/// 异步版 [`run_tool_result`]：`run_command` 走 [`run_command_dispatch_async`]，其余委派同步路径。
+pub async fn run_tool_result_async(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> ToolResult {
+    if name == "run_command" {
+        match run_command_dispatch_async(name, args_json, ctx).await {
+            Ok((output, parsed)) => ToolResult::from_parsed(output, parsed),
+            Err(e) => ToolResult::from_parsed(e.message, e.legacy_parsed),
+        }
+    } else {
+        run_tool_result(name, args_json, ctx)
+    }
+}
+
+/// 新的异步 `run_command` 实现（与 [`run_tool_dispatch`] 中 run_command 分支逐字节等价）。
+///
+/// PR0 实现体：在 [`tokio::task::spawn_blocking`] 内复用同步 `command::run_try_wait`，
+/// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以满足 `'static` 闭包。
+/// 进入 blocking 前捕获 github token（task-local 不跨 blocking，对齐 chat 宿主
+/// `spawn_run_command_host_blocking`）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
+#[allow(clippy::result_large_err)]
+async fn run_command_dispatch_async(
+    name: &str,
+    args_json: &str,
+    ctx: &ToolContext<'_>,
+) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
+    let name_owned = name.to_string();
+    let args_owned = args_json.to_string();
+    let max_out = ctx.command_max_output_len;
+    let allowed: Vec<String> = ctx.allowed_commands.to_vec();
+    let work_dir = ctx.working_dir.to_path_buf();
+    let test_cache_enabled = ctx.test_result_cache_enabled;
+    let test_cache_max = ctx.test_result_cache_max_entries;
+    let timeout_secs = ctx.command_timeout_secs;
+    // task-local 不继承进 `spawn_blocking`：先在本任务作用域捕获，再于闭包内重设。
+    let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
+    let join = tokio::task::spawn_blocking(move || {
+        crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
+            let test_cache = test_cache_enabled.then_some(command::RunCommandTestCacheOpts {
+                enabled: true,
+                max_entries: test_cache_max,
+                workspace_root: work_dir.as_path(),
+            });
+            let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
+                timeout_secs,
+            );
+            command::run_try_wait(
+                &args_owned,
+                max_out,
+                &allowed,
+                work_dir.as_path(),
+                test_cache,
+                false,
+                &wait,
+            )
+            .and_then(|output| finish_dispatch_legacy(&name_owned, &args_owned, output))
+        })
+    })
+    .await;
+    match join {
+        Ok(r) => r,
+        Err(e) => {
+            tracing::error!(target: "crabmate", "异步 run_command 执行异常 error={:?}", e);
+            Err(ToolError::invalid_args(format!(
+                "异步 run_command 执行异常：{e}"
+            )))
+        }
     }
 }
 

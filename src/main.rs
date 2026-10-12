@@ -3,15 +3,7 @@
 //! **`tool-runner-internal`**：Docker 沙盒内由 `docker run … crabmate tool-runner-internal` 调用，非交互；见 [`crabmate::tool_sandbox`]。
 
 fn main() {
-    let argv: Vec<String> = std::env::args().collect();
-    if argv.len() >= 2 && argv[1] == "tool-runner-internal" {
-        if let Err(e) = crabmate::tool_sandbox::tool_runner_internal_main() {
-            eprintln!("{}", e);
-            std::process::exit(1);
-        }
-        std::process::exit(0);
-    }
-
+    // 先构建 tokio runtime：`tool-runner-internal`（容器内）现为 async，需经 `block_on` 驱动。
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -22,6 +14,16 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.len() >= 2 && argv[1] == "tool-runner-internal" {
+        if let Err(e) = rt.block_on(crabmate::tool_sandbox::tool_runner_internal_main()) {
+            eprintln!("{}", e);
+            std::process::exit(1);
+        }
+        std::process::exit(0);
+    }
+
     let args = match crabmate::parse_args() {
         Ok(a) => a,
         Err(e) => {

@@ -11,7 +11,7 @@ use std::io::ErrorKind;
 use std::path::PathBuf;
 
 /// `crabmate tool-replay export|run`（不要求 API_KEY；重放路径与对话相同执行真实工具，须在可信工作区）。
-pub fn run_tool_replay_command(
+pub async fn run_tool_replay_command(
     cfg: &AgentConfig,
     workspace_cli: &Option<String>,
     cmd: ToolReplayCli,
@@ -72,7 +72,8 @@ pub fn run_tool_replay_command(
                 &workspace,
                 compare_recorded,
                 &mut buf,
-            )?;
+            )
+            .await?;
             let text = String::from_utf8_lossy(&buf);
             print!("{text}");
             if compare_recorded && mismatches > 0 {
