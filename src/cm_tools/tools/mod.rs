@@ -17,7 +17,7 @@ pub use command::{
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
     join_run_command_argv_tail, join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy,
     posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, run_checked, run_checked_wait,
+    prepare_run_command_for_pty_spawn, run_checked, run_checked_wait, run_checked_wait_async,
     scan_run_command_unsafe_args_json,
 };
 mod command_line_prepare;
@@ -514,9 +514,8 @@ pub fn run_tool_result(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> To
 /// **`run_command`** 经本文件新增的异步实现 [`run_command_dispatch_async`]（[`run_tool_async`] 的 String 面）；
 /// 其余工具直接委派既有同步 [`run_tool`]，行为逐字节保持不变。
 ///
-/// PR0（当前）：`run_command` 实现体内部用 [`tokio::task::spawn_blocking`] 复用既有同步
-/// `command::run_try_wait`（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存）；后续 PR 将实现体
-/// 替换为基于 `tokio::process` 的事件驱动版本，接口契约不变。
+/// `run_command` 实现体基于 [`tokio::process`] 事件驱动等待（含 `ctx.command_timeout_secs` 墙钟超时与测试缓存），
+/// 不再占用阻塞线程。
 pub async fn run_tool_async(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
     if name == "run_command" {
         match run_command_dispatch_async(name, args_json, ctx).await {
@@ -546,10 +545,10 @@ pub async fn run_tool_result_async(
 
 /// 新的异步 `run_command` 实现（与 [`run_tool_dispatch`] 中 run_command 分支逐字节等价）。
 ///
-/// PR0 实现体：在 [`tokio::task::spawn_blocking`] 内复用同步 `command::run_try_wait`，
-/// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以满足 `'static` 闭包。
-/// 进入 blocking 前捕获 github token（task-local 不跨 blocking，对齐 chat 宿主
-/// `spawn_run_command_host_blocking`）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
+/// PR1 实现体：直接以 [`tokio::process`] 异步等待 [`command::run_try_wait_async`]（不占用阻塞线程）；
+/// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以延长生命周期；github token 经
+/// [`with_request_github_token`](crate::cm_tools::github_token::with_request_github_token) 以 async 作用域注入
+/// （命令构建与等待同一 async 任务，task-local 自然可用）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
 #[allow(clippy::result_large_err)]
 async fn run_command_dispatch_async(
     name: &str,
@@ -564,40 +563,28 @@ async fn run_command_dispatch_async(
     let test_cache_enabled = ctx.test_result_cache_enabled;
     let test_cache_max = ctx.test_result_cache_max_entries;
     let timeout_secs = ctx.command_timeout_secs;
-    // task-local 不继承进 `spawn_blocking`：先在本任务作用域捕获，再于闭包内重设。
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
-    let join = tokio::task::spawn_blocking(move || {
-        crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            let test_cache = test_cache_enabled.then_some(command::RunCommandTestCacheOpts {
-                enabled: true,
-                max_entries: test_cache_max,
-                workspace_root: work_dir.as_path(),
-            });
-            let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
-                timeout_secs,
-            );
-            command::run_try_wait(
-                &args_owned,
-                max_out,
-                &allowed,
-                work_dir.as_path(),
-                test_cache,
-                false,
-                &wait,
-            )
-            .and_then(|output| finish_dispatch_legacy(&name_owned, &args_owned, output))
-        })
-    })
-    .await;
-    match join {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::error!(target: "crabmate", "异步 run_command 执行异常 error={:?}", e);
-            Err(ToolError::invalid_args(format!(
-                "异步 run_command 执行异常：{e}"
-            )))
-        }
-    }
+    let fut = async move {
+        let test_cache = test_cache_enabled.then_some(command::RunCommandTestCacheOpts {
+            enabled: true,
+            max_entries: test_cache_max,
+            workspace_root: work_dir.as_path(),
+        });
+        let wait =
+            crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(timeout_secs);
+        command::run_try_wait_async(
+            &args_owned,
+            max_out,
+            &allowed,
+            work_dir.as_path(),
+            test_cache,
+            false,
+            &wait,
+        )
+        .await
+        .and_then(|output| finish_dispatch_legacy(&name_owned, &args_owned, output))
+    };
+    crate::cm_tools::github_token::with_request_github_token(github_token, fut).await
 }
 
 /// 判断本次 run_command 是否为“成功的编译命令”（常见 C/C++ 构建工具且退出码为 0）

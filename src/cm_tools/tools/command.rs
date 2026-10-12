@@ -7,7 +7,8 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cm_tools::subprocess_session::{
-    SessionStopKind, SubprocessWaitCtl, prepare_piped_process_group, wait_child_session,
+    SessionStopKind, SessionWaitResult, SubprocessWaitCtl, prepare_piped_process_group,
+    wait_child_session, wait_child_session_async,
 };
 
 use thiserror::Error;
@@ -338,40 +339,99 @@ pub fn scan_run_command_unsafe_args_json(
     scan_run_command_unsafe_args(&args, working_dir, allowed_commands)
 }
 
-fn run_command_execute_workspace_binary(
-    cmd_raw: &str,
-    cmd_args: &[String],
-    working_dir: &Path,
-    target_path: &Path,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let invocation = format_invocation_for_display(cmd_raw, cmd_args);
-    let mut cmd = Command::new(target_path);
-    cmd.args(cmd_args).current_dir(working_dir);
-    run_spawned_command(&mut cmd, cmd_raw, working_dir, &invocation, max_output_len, wait)
+/// `run_command` 执行计划：命中缓存直接返回正文，否则给出待 spawn 的 [`SpawnPlan`]。
+#[allow(clippy::large_enum_variant)] // `SpawnPlan` 内嵌已配置的 `Command`，天然偏大；短生命周期，无需为其加间接层
+enum RunCommandPlan {
+    CacheHit(String),
+    Spawn(SpawnPlan),
 }
 
-fn run_cargo_test_with_optional_cache(
-    prepared: &PreparedRunCommand,
+/// 待执行命令：`cmd` 已配好 argv / cwd / 环境；`cache_write` 非空时在成功退出后写回测试缓存。
+struct SpawnPlan {
+    cmd: Command,
+    cmd_label: String,
+    working_dir: PathBuf,
+    invocation: String,
+    cache_write: Option<CacheWritePlan>,
+}
+
+/// `cargo test` 结果缓存的写回参数（未命中且可缓存时携带）。
+struct CacheWritePlan {
+    enabled: bool,
+    max_entries: usize,
+    key: TestCacheKey,
+}
+
+/// 解析参数、校验、限流并规划执行路径；sync / async 共用（[`run_impl`] / [`run_impl_async`]）。
+fn plan_run_command(
+    args_json: &str,
+    allowed_commands: &[String],
     working_dir: &Path,
-    invocation: &str,
-    max_output_len: usize,
     test_cache: Option<&RunCommandTestCacheOpts<'_>>,
-    wait: &SubprocessWaitCtl,
-) -> Result<Option<String>, RunCommandError> {
-    let Some(opts) = test_cache else {
-        return Ok(None);
-    };
+    skip_arg_safety: bool,
+) -> Result<RunCommandPlan, RunCommandError> {
+    let args = parse_run_command_args_with_repair(args_json)?;
+    let prepared =
+        prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
+    check_rate_limit()?;
+    Ok(plan_prepared(prepared, test_cache))
+}
+
+fn plan_prepared(
+    prepared: PreparedRunCommand,
+    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+) -> RunCommandPlan {
+    let invocation = format_invocation_for_display(&prepared.cmd_raw, &prepared.cmd_args);
+    if let Some(target_path) = prepared.exec_path.as_ref() {
+        let mut cmd = Command::new(target_path);
+        cmd.args(&prepared.cmd_args)
+            .current_dir(prepared.effective_working_dir.as_path());
+        return RunCommandPlan::Spawn(SpawnPlan {
+            cmd,
+            cmd_label: prepared.cmd_raw.clone(),
+            working_dir: prepared.effective_working_dir.clone(),
+            invocation,
+            cache_write: None,
+        });
+    }
+    if let Some(plan) = plan_cargo_test_cache(&prepared, test_cache, invocation.clone()) {
+        return plan;
+    }
+    RunCommandPlan::Spawn(default_spawn_plan(prepared, invocation))
+}
+
+fn default_spawn_plan(prepared: PreparedRunCommand, invocation: String) -> SpawnPlan {
+    let mut cmd = Command::new(&prepared.cmd_name);
+    cmd.args(&prepared.cmd_args)
+        .current_dir(&prepared.effective_working_dir);
+    if prepared.inject_gh_token {
+        crate::cm_tools::github_token::apply_gh_token_env(&mut cmd);
+    } else {
+        crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
+    }
+    SpawnPlan {
+        cmd,
+        cmd_label: prepared.cmd_name,
+        working_dir: prepared.effective_working_dir,
+        invocation,
+        cache_write: None,
+    }
+}
+
+/// `cargo test …` 命中缓存 → `CacheHit`；未命中但可缓存 → 带写回参数的 `Spawn`；不适用 → `None`。
+fn plan_cargo_test_cache(
+    prepared: &PreparedRunCommand,
+    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+    invocation: String,
+) -> Option<RunCommandPlan> {
+    let opts = test_cache?;
     if prepared.cmd_name != "cargo"
         || !opts.enabled
         || !cargo_test_argv_cache_eligible(&prepared.cmd_args)
     {
-        return Ok(None);
+        return None;
     }
-    let Some(inputs_fp) = fingerprint_rust_workspace_sources(opts.workspace_root) else {
-        return Ok(None);
-    };
+    let inputs_fp = fingerprint_rust_workspace_sources(opts.workspace_root)?;
     let args_fp = cargo_test_run_command_args_fingerprint(&prepared.cmd_args);
     let key = TestCacheKey {
         workspace_root: opts.workspace_root.to_path_buf(),
@@ -380,21 +440,22 @@ fn run_cargo_test_with_optional_cache(
         inputs_fingerprint: inputs_fp.clone(),
     };
     if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
-        return Ok(Some(wrap_cache_hit(&inputs_fp, &hit)));
+        return Some(RunCommandPlan::CacheHit(wrap_cache_hit(&inputs_fp, &hit)));
     }
     let mut cmd = Command::new(&prepared.cmd_name);
     cmd.args(&prepared.cmd_args)
-        .current_dir(working_dir);
-    let formatted = run_spawned_command(
-        &mut cmd,
-        &prepared.cmd_name,
-        working_dir,
+        .current_dir(prepared.effective_working_dir.as_path());
+    Some(RunCommandPlan::Spawn(SpawnPlan {
+        cmd,
+        cmd_label: prepared.cmd_name.clone(),
+        working_dir: prepared.effective_working_dir.clone(),
         invocation,
-        max_output_len,
-        wait,
-    )?;
-    store_cached(opts.enabled, opts.max_entries, key, formatted.clone());
-    Ok(Some(formatted))
+        cache_write: Some(CacheWritePlan {
+            enabled: opts.enabled,
+            max_entries: opts.max_entries,
+            key,
+        }),
+    }))
 }
 
 /// 在指定工作目录下执行白名单内的 Linux 命令；若 argv 需 glob/`$VAR`/`~` 且白名单含 `bash`/`sh`，则经 `bash -c`（或 `sh -c`）跑整行。
@@ -442,29 +503,6 @@ pub fn run_try(
     .map_err(RunCommandError::into_tool_error)
 }
 
-/// 与 [`run_try`] 相同，并传入墙钟/取消（异步 funnel `run_command_dispatch_async` / workflow `run_tool_result_async`）。
-#[allow(clippy::result_large_err)]
-pub fn run_try_wait(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, ToolError> {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
-    )
-    .map_err(RunCommandError::into_tool_error)
-}
-
 /// 与 [`run`] 相同，失败时返回结构化错误（成功仍为格式化输出字符串）。
 pub fn run_checked(
     args_json: &str,
@@ -506,6 +544,52 @@ pub fn run_checked_wait(
     )
 }
 
+/// 与 [`run_try`] 相同，但以 `tokio::process` 异步等待（不占用阻塞线程）。
+#[allow(clippy::result_large_err)]
+pub async fn run_try_wait_async(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, ToolError> {
+    run_impl_async(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .await
+    .map_err(RunCommandError::into_tool_error)
+}
+
+/// 与 [`run_checked_wait`] 相同，但以 `tokio::process` 异步等待。
+pub async fn run_checked_wait_async(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    run_impl_async(
+        args_json,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .await
+}
+
 fn run_impl(
     args_json: &str,
     max_output_len: usize,
@@ -515,51 +599,93 @@ fn run_impl(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
-    let args: serde_json::Value = parse_run_command_args_with_repair(args_json)?;
-    let prepared =
-        prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
-    check_rate_limit()?;
-
-    let invocation = format_invocation_for_display(&prepared.cmd_raw, &prepared.cmd_args);
-
-    if let Some(ref target_path) = prepared.exec_path {
-        return run_command_execute_workspace_binary(
-            &prepared.cmd_raw,
-            &prepared.cmd_args,
-            prepared.effective_working_dir.as_path(),
-            target_path,
-            max_output_len,
-            wait,
-        );
+    match plan_run_command(
+        args_json,
+        allowed_commands,
+        working_dir,
+        test_cache.as_ref(),
+        skip_arg_safety,
+    )? {
+        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, max_output_len, wait),
     }
+}
 
-    if let Some(cached) = run_cargo_test_with_optional_cache(
-        &prepared,
-        prepared.effective_working_dir.as_path(),
+/// 异步版 [`run_impl`]：同一 [`plan_run_command`]，spawn/wait 走 `tokio::process`。
+async fn run_impl_async(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    match plan_run_command(
+        args_json,
+        allowed_commands,
+        working_dir,
+        test_cache.as_ref(),
+        skip_arg_safety,
+    )? {
+        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::Spawn(plan) => execute_spawn_plan_async(plan, max_output_len, wait).await,
+    }
+}
+
+fn execute_spawn_plan_sync(
+    plan: SpawnPlan,
+    max_output_len: usize,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    let SpawnPlan {
+        mut cmd,
+        cmd_label,
+        working_dir,
+        invocation,
+        cache_write,
+    } = plan;
+    let formatted = run_spawned_command(
+        &mut cmd,
+        &cmd_label,
+        &working_dir,
         &invocation,
         max_output_len,
-        test_cache.as_ref(),
         wait,
-    )? {
-        return Ok(cached);
-    }
+    )?;
+    write_test_cache(cache_write, &formatted);
+    Ok(formatted)
+}
 
-    let mut cmd = Command::new(&prepared.cmd_name);
-    cmd.args(&prepared.cmd_args)
-        .current_dir(&prepared.effective_working_dir);
-    if prepared.inject_gh_token {
-        crate::cm_tools::github_token::apply_gh_token_env(&mut cmd);
-    } else {
-        crate::cm_tools::github_token::apply_gh_token_env_if_gh_command(&mut cmd, &prepared.cmd_name);
-    }
-    run_spawned_command(
-        &mut cmd,
-        &prepared.cmd_name,
-        prepared.effective_working_dir.as_path(),
+async fn execute_spawn_plan_async(
+    plan: SpawnPlan,
+    max_output_len: usize,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    let SpawnPlan {
+        cmd,
+        cmd_label,
+        working_dir,
+        invocation,
+        cache_write,
+    } = plan;
+    let formatted = run_spawned_command_async(
+        cmd,
+        &cmd_label,
+        &working_dir,
         &invocation,
         max_output_len,
         wait,
     )
+    .await?;
+    write_test_cache(cache_write, &formatted);
+    Ok(formatted)
+}
+
+fn write_test_cache(cache_write: Option<CacheWritePlan>, formatted: &str) {
+    if let Some(w) = cache_write {
+        store_cached(w.enabled, w.max_entries, w.key, formatted.to_string());
+    }
 }
 
 fn parse_run_command_args_with_repair(
@@ -661,12 +787,41 @@ fn run_spawned_command(
         .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
     let session = wait_child_session(child, wait, max_output_len)
         .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
+    finish_session(session, invocation, max_output_len, wait)
+}
+
+/// 异步版 [`run_spawned_command`]：`std::process::Command` 转 `tokio::process::Command` 后 await。
+///
+/// `kill_on_drop(true)` 保证 session 被未来取消时子进程组随 drop 终止。
+async fn run_spawned_command_async(
+    mut cmd: Command,
+    cmd_label: &str,
+    working_dir: &Path,
+    invocation: &str,
+    max_output_len: usize,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    prepare_piped_process_group(&mut cmd);
+    let mut cmd = tokio::process::Command::from(cmd);
+    cmd.kill_on_drop(true);
+    let child = cmd
+        .spawn()
+        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
+    let session = wait_child_session_async(child, wait, max_output_len)
+        .await
+        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
+    finish_session(session, invocation, max_output_len, wait)
+}
+
+fn finish_session(
+    session: SessionWaitResult,
+    invocation: &str,
+    max_output_len: usize,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
     let stdout = String::from_utf8_lossy(&session.stdout);
     let stderr = String::from_utf8_lossy(&session.stderr);
-    let exit_code = session
-        .status
-        .and_then(|s| s.code())
-        .unwrap_or(-1);
+    let exit_code = session.status.and_then(|s| s.code()).unwrap_or(-1);
     let body = format_command_streams(invocation, exit_code, &stdout, &stderr, max_output_len);
     match session.kind {
         SessionStopKind::Exited => Ok(body),

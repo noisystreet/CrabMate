@@ -4,7 +4,6 @@ struct RunCommandHostInvoke<'a> {
     workspace_is_set: bool,
     workspace_changed: &'a mut bool,
     web_ctx: Option<&'a WebToolRuntime>,
-    name: &'a str,
     args: &'a str,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
