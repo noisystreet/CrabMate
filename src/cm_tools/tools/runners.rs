@@ -405,11 +405,6 @@ pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
 
 define_runners_cwd_maxlen! {
     runner_rust_compiler_json => rust_ide::rust_compiler_json,
-    runner_ruff_check => python_tools::ruff_check,
-    runner_mypy_check => python_tools::mypy_check,
-    runner_uv_sync => python_tools::uv_sync,
-    runner_uv_run => python_tools::uv_run,
-    runner_pre_commit_run => precommit_tools::pre_commit_run,
     runner_typos_check => spell_astgrep_tools::typos_check,
     runner_codespell_check => spell_astgrep_tools::codespell_check,
     runner_ast_grep_run => spell_astgrep_tools::ast_grep_run,

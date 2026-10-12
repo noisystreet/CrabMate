@@ -1,43 +1,11 @@
 [
 ToolSpec {
-            name: "ruff_check",
-            description: "在工作区运行 `ruff check`（需已安装 ruff）。默认检查 `.`；可通过 paths 指定相对路径。无 pyproject.toml/setup/requirements 等标记时跳过。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::RuffCheckArgs>,
-            runner: ToolRunner::Legacy(runner_ruff_check),
-            summary: ToolSummaryKind::Static("ruff check"),
-        },
-        ToolSpec {
             name: "pytest_run",
             description: "在工作区运行 `python3 -m pytest`（需已安装 pytest）。可选 test_path、keyword（-k）、markers（-m）、quiet、maxfail、nocapture。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::PytestRunArgs>,
             runner: ToolRunner::Legacy(runner_pytest_run),
             summary: ToolSummaryKind::Static("python3 -m pytest"),
-        },
-        ToolSpec {
-            name: "mypy_check",
-            description: "在工作区运行 `mypy`（需已安装 mypy）。默认检查 `.`；可选 paths 与 strict。无 Python 项目标记时跳过。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::MypyCheckArgs>,
-            runner: ToolRunner::Legacy(runner_mypy_check),
-            summary: ToolSummaryKind::Static("mypy"),
-        },
-        ToolSpec {
-            name: "uv_sync",
-            description: "在工作区根运行 `uv sync`（须存在 pyproject.toml）。可选 frozen（--frozen）、no_dev（--no-dev）、all_packages（--all-packages）。需本机已安装 uv。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::UvSyncArgs>,
-            runner: ToolRunner::Legacy(runner_uv_sync),
-            summary: ToolSummaryKind::Static("uv sync"),
-        },
-        ToolSpec {
-            name: "uv_run",
-            description: "在工作区根运行 `uv run`：`args` 为非空字符串数组（如 [\"pytest\",\"-q\"]），逐项作为子进程参数、不经 shell。须存在 pyproject.toml。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::UvRunArgs>,
-            runner: ToolRunner::Legacy(runner_uv_run),
-            summary: ToolSummaryKind::Dynamic(ts::summary_uv_run),
         },
         ToolSpec {
             name: "python_snippet_run",

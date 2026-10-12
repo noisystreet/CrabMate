@@ -1,4 +1,7 @@
-//! Python 生态工具：ruff、pytest、mypy、uv sync/run、可编辑安装（uv / pip）、临时脚本执行（`python_snippet_run`）。
+//! Python 生态工具：ruff、pytest、mypy、临时脚本执行（`python_snippet_run`）。
+//!
+//! `ruff_check` / `mypy_check` 的公开函数体保留，供 `ci_pipeline_local` / `quality_workspace`
+//! / `run_lints` 等聚合器复用（其 ToolSpec 已按薄 CLI 封装收敛移除，模型改用 `run_command`）。
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -11,8 +14,6 @@ use crate::cm_tools::subprocess_session::{
 };
 
 const MAX_OUTPUT_LINES: usize = 800;
-const MAX_UV_RUN_ARGS: usize = 48;
-const MAX_UV_RUN_ARG_LEN: usize = 512;
 
 /// 单次 `python_snippet_run` 源码上限（UTF-8 字节）。
 const MAX_PYTHON_SNIPPET_BYTES: usize = 256 * 1024;
@@ -206,105 +207,6 @@ pub fn mypy_check(args_json: &str, workspace_root: &Path, max_output_len: usize)
     run_and_format(cmd, max_output_len, "mypy", None)
 }
 
-/// 在工作区根执行 `uv sync`（须存在 `pyproject.toml`）。
-pub fn uv_sync(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    if !workspace_root.join("pyproject.toml").is_file() {
-        return "uv sync: 跳过（工作区根未找到 pyproject.toml）".to_string();
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = Command::new("uv");
-    cmd.arg("sync").current_dir(&base);
-    if v.get("frozen").and_then(|x| x.as_bool()).unwrap_or(false) {
-        cmd.arg("--frozen");
-    }
-    if v.get("no_dev").and_then(|x| x.as_bool()).unwrap_or(false) {
-        cmd.arg("--no-dev");
-    }
-    if v.get("all_packages")
-        .and_then(|x| x.as_bool())
-        .unwrap_or(false)
-    {
-        cmd.arg("--all-packages");
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "uv sync", None)
-}
-
-/// 在工作区根执行 `uv run <args...>`：`args` 为**非空**字符串数组，逐项传给子进程（不经 shell）。
-/// 每项须通过保守字符校验，禁止空白与 shell 元字符。
-pub fn uv_run(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    if !workspace_root.join("pyproject.toml").is_file() {
-        return "uv run: 跳过（工作区根未找到 pyproject.toml）".to_string();
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let Some(arr) = v.get("args").and_then(|x| x.as_array()) else {
-        return "错误：缺少 args 数组（至少一项，如 [\"pytest\",\"-q\"]）".to_string();
-    };
-    let argv = match collect_uv_run_argv(arr) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = Command::new("uv");
-    cmd.arg("run").current_dir(&base);
-    for a in &argv {
-        cmd.arg(a);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let title = format!(
-        "uv run {}",
-        argv.iter().take(4).cloned().collect::<Vec<_>>().join(" ")
-    );
-    let title = if argv.len() > 4 {
-        format!("{} …(+{} 项)", title, argv.len() - 4)
-    } else {
-        title
-    };
-    run_and_format(cmd, max_output_len, &title, None)
-}
-
-/// 校验 `uv run` 的 args 数组并逐项做安全字符检查，返回可执行 argv。
-fn collect_uv_run_argv(arr: &[serde_json::Value]) -> Result<Vec<String>, String> {
-    if arr.is_empty() || arr.len() > MAX_UV_RUN_ARGS {
-        return Err(format!("错误：args 须非空且最多 {} 项", MAX_UV_RUN_ARGS));
-    }
-    let mut argv: Vec<String> = Vec::new();
-    for x in arr {
-        let s = match x.as_str() {
-            Some(t) => t.trim(),
-            None => return Err("错误：args 须全部为字符串".to_string()),
-        };
-        if !is_safe_uv_run_arg(s) {
-            return Err(format!(
-                "错误：非法参数项（禁止空白与 shell 元字符，单段最长 {} 字符）：{:?}",
-                MAX_UV_RUN_ARG_LEN, s
-            ));
-        }
-        argv.push(s.to_string());
-    }
-    Ok(argv)
-}
-
 /// `python_snippet_run`：临时脚本路径、命令参数等（`_tmp` 须存活至子进程结束）。
 struct PythonSnippetPrep {
     base: PathBuf,
@@ -341,7 +243,7 @@ fn python_snippet_prepare_temp_file(
 
     if use_uv && !base.join("pyproject.toml").is_file() {
         return Err(
-            "错误：use_uv 为 true 时需要工作区根存在 pyproject.toml（与 uv_run 一致）".to_string(),
+            "错误：use_uv 为 true 时需要工作区根存在 pyproject.toml".to_string(),
         );
     }
 
@@ -516,18 +418,6 @@ fn pythonpath_with_workspace(workspace_root: &Path) -> String {
 
 fn is_safe_rel_path(s: &str) -> bool {
     !s.is_empty() && !s.starts_with('/') && !s.contains("..")
-}
-
-fn is_safe_uv_run_arg(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= MAX_UV_RUN_ARG_LEN
-        && !s.chars().any(|c| {
-            c.is_whitespace()
-                || matches!(
-                    c,
-                    ';' | '|' | '&' | '`' | '$' | '<' | '>' | '(' | ')' | '\'' | '"' | '\\' | '*'
-                )
-        })
 }
 
 /// 用于 pytest `-k` / `-m` 的保守校验（避免注入）。
@@ -716,12 +606,6 @@ mod tests {
     fn safe_expr_rejects_shellish() {
         assert!(!is_safe_py_expr("foo; rm -rf"));
         assert!(is_safe_py_expr("test_foo and not slow"));
-    }
-
-    #[test]
-    fn uv_run_arg_accepts_pytest_node_id() {
-        assert!(is_safe_uv_run_arg("tests/test_x.py::test_foo[case1]"));
-        assert!(!is_safe_uv_run_arg("pytest;rm"));
     }
 
     #[test]

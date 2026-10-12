@@ -101,9 +101,11 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `long_term_remember` / `long_term_forget` / `long_term_memory_list`: Explicit long-term memory tools (requires **`long_term_memory_enabled`** and a mounted DB for the session). `remember` supports optional `tags` and `ttl_secs` (`0` = no expiry); `forget` deletes by `memory_id` or exact `memory_text`; `list` shows recent rows. **Do not store secrets.**
   - `error_output_playbook`: Heuristic classification of **sanitized** rustc/cargo/npm/pytest errors → **2–3** suggested **`run_command`** strings (**not executed**; filtered to allowlist, e.g. `cargo`/`git`/`python3`/`npm`). `ecosystem`: `auto`/`rust`/`node`/`python`/`generic`; optional `max_chars`. Light redaction for `API_KEY=` patterns; still sanitize before paste.
   - `playbook_run_commands`: Same heuristics; **executes** **1–3** suggestions via internal **`run_command`** (same safety rules; may contend on cargo/npm locks). Same args as `error_output_playbook` + optional **`max_commands`** (default 3, max 3). **Trusted workspace**; on CLI tool failure a one-line JSON may be printed for the model to run this “diagnostic bundle”.
-  - **Python / uv / pre-commit** (workspace root; CLIs must exist): `ruff_check`, `pytest_run` (`python3 -m pytest`), `mypy_check`, `uv_sync`, `uv_run` (`args` array, no shell), `pre_commit_run` (needs `.pre-commit-config.yaml`). **Format**: `format_file` / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
+  - **Python** (workspace root; CLIs must exist): `pytest_run` (`python3 -m pytest`), `python_snippet_run`. **Format**: `format_file` / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
   - **JVM / Container / Node frontend (now via `run_command`)**: `mvn`/`gradle` (or `gradlew`), `docker`/`podman`, and `npm`/`npx`/`tsc` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly via `run_command` (e.g. `mvn -q test`, `gradle classes`, `docker compose ps`, `podman images`, `npm run build`, `npx tsc --noEmit`). The former thin wrappers (`maven_*`/`gradle_*`/`docker_build`/`docker_compose_ps`/`podman_images`/`npm_install`/`npm_run`/`npx_run`/`tsc_check`/`frontend_lint`/`frontend_build`/`frontend_test`) were removed per design doc §8.5.4 **track A**; their implementations remain shared by the `quality_workspace`/`ci_pipeline_local` flags (`run_maven_*`/`run_gradle_*`/`run_frontend_build`, …).
   - **Go (now via `run_command`)**: `go`/`gofmt`/`golangci-lint` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `go build ./...`, `go test ./...`, `go vet ./...`, `gofmt -l .`, `golangci-lint run`). The former thin wrappers (`go_build`/`go_test`/`go_vet`/`go_fmt_check`/`golangci_lint`) were removed as a family per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `go_` prefix was already excluded from the parallel read-only batch). Note: the former tools skipped when `go.mod` was absent — that guard is gone with `run_command`.
+  - **Python (now via `run_command`)**: `ruff`/`mypy`/`uv` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ruff check .`, `mypy src`, `uv sync`, `uv run pytest -q`). The former thin wrappers (`ruff_check`/`mypy_check`/`uv_sync`/`uv_run`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `ruff_`/`mypy_`/`uv_` prefixes were already excluded from the parallel read-only batch). The `ruff_check`/`mypy_check` function bodies remain shared by the `ci_pipeline_local` / `quality_workspace` / `run_lints` flags; `pytest_run` is **kept** because of its background-job wiring.
+  - **pre-commit (now via `run_command`)**: `pre-commit` is on the `run_command` allowlist (`config/tools.toml`), so call it directly (e.g. `pre-commit run --all-files`, `pre-commit run <hook> --files <path>`). The former thin wrapper (`pre_commit_run`) was removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `pre_commit` prefix was already excluded from the parallel read-only batch). Note: the former tool skipped when `.pre-commit-config.yaml` / `.yml` was absent — that guard is gone with `run_command`.
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port** (read-only): `port_check` (ss/lsof), `process_list` (ps filter).
@@ -283,7 +285,7 @@ Structured function-calling JSON examples:
 
 Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, `rust_rustc` (invoke `rustc` at workspace root with the same arg safety rules as `run_command`), rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`, `package_query`.
 
-**Python / uv / pre-commit**: `ruff_check`, `pytest_run`, `mypy_check`, `uv_sync`, `uv_run`, `pre_commit_run`; aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
+**Python**: `pytest_run`, `python_snippet_run` (`ruff` / `mypy` / `uv` / `pre-commit` now via `run_command`, see above); aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
 **JVM / Container / Node frontend**: wrappers removed per §8.5.4 **track A**; use `run_command` (`mvn` / `gradle` / `docker` / `podman` / `npm` / `npx` / `tsc` are allowlisted). The aggregate flags (`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images` / `run_frontend_build`, …) remain shared by `quality_workspace` / `ci_pipeline_local`.
 
@@ -307,25 +309,11 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 ### Python & pre-commit examples
 
-- `ruff_check`:
-  ```json
-  {}
-  ```
+> `ruff_check` / `mypy_check` / `uv_sync` / `uv_run` are consolidated into **`run_command`** (e.g. `ruff check .` / `mypy src` / `uv sync` / `uv run pytest -q`); no dedicated tool or JSON args remain. Likewise, `pre_commit_run` is consolidated into **`run_command`** (e.g. `pre-commit run --all-files`).
+
 - `pytest_run`:
   ```json
   {"test_path":"tests","quiet":true}
-  ```
-- `uv_sync`:
-  ```json
-  {"frozen":false,"no_dev":false}
-  ```
-- `uv_run` (args are argv tokens, no shell):
-  ```json
-  {"args":["pytest","-q"]}
-  ```
-- `pre_commit_run` (default: staged files; combine with `all_files` / `files`):
-  ```json
-  {"all_files":true}
   ```
 
 ## Git tool examples
