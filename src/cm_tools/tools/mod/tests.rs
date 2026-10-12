@@ -359,13 +359,8 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_analyzer_document_highlight"));
     assert!(names.contains(&"rust_analyzer_workspace_symbol"));
     assert!(names.contains(&"rust_test_one"));
-    assert!(names.contains(&"ruff_check"));
     assert!(names.contains(&"pytest_run"));
-    assert!(names.contains(&"mypy_check"));
-    assert!(names.contains(&"uv_sync"));
-    assert!(names.contains(&"uv_run"));
     assert!(names.contains(&"python_snippet_run"));
-    assert!(names.contains(&"pre_commit_run"));
     assert!(names.contains(&"typos_check"));
     assert!(names.contains(&"codespell_check"));
     assert!(names.contains(&"ast_grep_run"));

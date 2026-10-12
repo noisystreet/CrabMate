@@ -375,30 +375,7 @@ impl ToolSummaryLine for RustAnalyzerWorkspaceSymbolSummaryArgs {
     }
 }
 
-// ── python / uv / pre-commit / ast-grep ───────────────────────
-
-#[derive(Debug, Deserialize)]
-pub(super) struct UvRunSummaryArgs {
-    #[serde(default)]
-    args: Vec<serde_json::Value>,
-}
-
-impl ToolSummaryLine for UvRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let args = self
-            .args
-            .iter()
-            .filter_map(|x| x.as_str())
-            .take(3)
-            .collect::<Vec<_>>()
-            .join(" ");
-        if args.is_empty() {
-            Some("uv run".to_string())
-        } else {
-            Some(format!("uv run {}", args))
-        }
-    }
-}
+// ── python / ast-grep ─────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub(super) struct PythonSnippetRunSummaryArgs {
@@ -431,23 +408,6 @@ impl ToolSummaryLine for ErrorOutputPlaybookSummaryArgs {
             .filter(|s| !s.is_empty())
             .unwrap_or("auto");
         Some(format!("error playbook ({})", eco))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct PreCommitRunSummaryArgs {
-    #[serde(default)]
-    hook: Option<String>,
-}
-
-impl ToolSummaryLine for PreCommitRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let hook = self.hook.as_deref().unwrap_or("").trim();
-        if hook.is_empty() {
-            Some("pre-commit run".to_string())
-        } else {
-            Some(format!("pre-commit run {}", hook))
-        }
     }
 }
 

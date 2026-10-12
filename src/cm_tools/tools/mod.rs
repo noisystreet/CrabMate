@@ -56,7 +56,6 @@ pub mod output_util;
 mod package_query;
 mod parse_args;
 mod patch;
-mod precommit_tools;
 mod process_tools;
 pub(crate) mod python_tools;
 mod quality_tools;

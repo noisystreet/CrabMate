@@ -305,12 +305,6 @@ pub struct GhApiArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
-pub struct RuffCheckArgs {
-    pub paths: Option<Vec<String>>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
 pub struct PytestRunArgs {
     pub test_path: Option<String>,
     pub keyword: Option<String>,
@@ -328,25 +322,6 @@ pub struct PytestRunArgs {
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
-pub struct MypyCheckArgs {
-    pub paths: Option<Vec<String>>,
-    pub strict: Option<bool>,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(default)]
-pub struct UvSyncArgs {
-    pub frozen: Option<bool>,
-    pub no_dev: Option<bool>,
-    pub all_packages: Option<bool>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct UvRunArgs {
-    pub args: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct PythonSnippetRunArgs {
     pub code: String,
     pub use_uv: Option<bool>,

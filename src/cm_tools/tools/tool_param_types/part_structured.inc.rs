@@ -198,20 +198,6 @@ pub struct ReleaseReadyCheckArgs {
     pub summary_only: bool,
 }
 
-// ── `pre_commit_run` ──────────────────────────────────────────
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct PreCommitRunArgs {
-    pub hook: Option<String>,
-    #[serde(default)]
-    pub all_files: bool,
-    #[serde(default)]
-    pub files: Vec<String>,
-    #[serde(default)]
-    pub verbose: bool,
-}
-
 // ── 拼写 / ast-grep（`spell_astgrep_tools`）────────────────────
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

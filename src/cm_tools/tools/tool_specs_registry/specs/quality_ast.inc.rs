@@ -1,13 +1,5 @@
 [
 ToolSpec {
-            name: "pre_commit_run",
-            description: "在工作区根运行 `pre-commit run`。须存在 .pre-commit-config.yaml（或 .yml）。可选 hook、all_files、files（--files 相对路径）、verbose。默认检查暂存文件。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::PreCommitRunArgs>,
-            runner: ToolRunner::Legacy(runner_pre_commit_run),
-            summary: ToolSummaryKind::Dynamic(ts::summary_pre_commit_run),
-        },
-        ToolSpec {
             name: "typos_check",
             description: "运行 [typos](https://github.com/crate-ci/typos) 拼写检查（**只读**）。默认检查存在的 `README.md` 与 `docs/`；可用 `paths` 指定更多相对路径。需本机已安装 `typos` CLI。适合文档与注释中的常见错别字。",
             category: ToolCategory::Development,
