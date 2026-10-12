@@ -210,6 +210,6 @@ P0 可先合入，但**整条待办**删除须满足：
 
 ## 仍开放（实现时写入 PR，不必再改目标）
 
-- 共享模块的精确路径与是否 `tokio::process` 一次到位，还是先 blocking `try_wait` 再迁。
+- 共享模块的精确路径与是否 `tokio::process` 一次到位，还是先 blocking `try_wait` 再迁。**已定稿一次到位**：方案见 [`subprocess_session_tokio_migration_todo.md`](./subprocess_session_tokio_migration_todo.md)。
 - `timeout_secs` 对 `run_command` 的 Schema 字段名是否与 snippet 完全一致。
 - 无输出「已耗时」是否做产品（默认不做新 SSE 键）。
