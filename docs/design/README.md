@@ -20,7 +20,7 @@
 | [client_turn_smoke_runbook.md](client_turn_smoke_runbook.md) | 三端真实回合冒烟（B3 Runbook） |
 | [vscode_extension.md](vscode_extension.md) | 官方 VS Code 扩展：设计备忘与路线图 |
 
-## 2. 后台工具任务（7）
+## 2. 后台工具任务（8）
 
 | 文档 | 说明 |
 |---|---|
@@ -31,6 +31,7 @@
 | [background_tool_jobs_output_streaming_contract.md](background_tool_jobs_output_streaming_contract.md) | 实时输出流：字段级接口规格 |
 | [background_tool_jobs_output_streaming_todo.md](background_tool_jobs_output_streaming_todo.md) | 实时输出流：实施计划 |
 | [long_running_tool_execution_todo.md](long_running_tool_execution_todo.md) | 长耗时工具执行：待办 |
+| [subprocess_session_tokio_migration_todo.md](subprocess_session_tokio_migration_todo.md) | 子进程会话 tokio 化迁移：实施计划 |
 
 ## 3. 工具系统（3）
 
