@@ -4,7 +4,6 @@ struct RunCommandSyncHostInvoke<'a> {
     workspace_is_set: bool,
     workspace_changed: &'a mut bool,
     web_ctx: Option<&'a WebToolRuntime>,
-    name: &'a str,
     args: &'a str,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
@@ -22,7 +21,6 @@ async fn execute_run_command_sync_host(
         workspace_is_set,
         workspace_changed,
         web_ctx,
-        name,
         args,
         tool_call_id,
         sse_out_tx,
@@ -81,14 +79,13 @@ async fn execute_run_command_sync_host(
         return (s, inj);
     }
 
-    let s = spawn_run_command_host_blocking(SpawnRunCommandHost {
+    let s = spawn_run_command_host(SpawnRunCommandHost {
         cfg: cfg.as_ref(),
         args,
         work_dir: effective_working_dir.to_path_buf(),
         allowed: Arc::clone(&effective_allowed_arc),
         skip_arg_safety,
         timeout_secs,
-        name,
         tool_call_id,
         sse_out_tx,
         sse_control_mirror,
@@ -108,14 +105,13 @@ struct SpawnRunCommandHost<'a> {
     allowed: Arc<[String]>,
     skip_arg_safety: bool,
     timeout_secs: Option<u64>,
-    name: &'a str,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
-async fn spawn_run_command_host_blocking(p: SpawnRunCommandHost<'_>) -> String {
+async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
     let SpawnRunCommandHost {
         cfg,
         args,
@@ -123,7 +119,6 @@ async fn spawn_run_command_host_blocking(p: SpawnRunCommandHost<'_>) -> String {
         allowed,
         skip_arg_safety,
         timeout_secs,
-        name,
         tool_call_id,
         sse_out_tx,
         sse_control_mirror,
@@ -153,37 +148,26 @@ async fn spawn_run_command_host_blocking(p: SpawnRunCommandHost<'_>) -> String {
         ),
         uncapped_live: false,
     };
-    let handle = tokio::task::spawn_blocking(move || {
-        crate::cm_tools::github_token::with_request_github_token_blocking(github_token, || {
-            let test_cache = test_cache_enabled.then_some(tools::RunCommandTestCacheOpts {
-                enabled: true,
-                max_entries: test_cache_max,
-                workspace_root: work_dir.as_path(),
-            });
-            match tools::run_checked_wait(
-                &args_cloned,
-                max_out,
-                allowed.as_ref(),
-                work_dir.as_path(),
-                test_cache,
-                skip_arg_safety,
-                &wait,
-            ) {
-                Ok(s) => s,
-                Err(e) => e.extended_user_message(),
-            }
-        })
-    });
-    match handle.await {
-        Ok(s) => s,
-        Err(e) => {
-            error!(
-                target: "crabmate",
-                "工具执行异常 tool={} error={:?}",
-                name,
-                e
-            );
-            format!("工具执行异常：{:?}", e)
+    let fut = async move {
+        let test_cache = test_cache_enabled.then_some(tools::RunCommandTestCacheOpts {
+            enabled: true,
+            max_entries: test_cache_max,
+            workspace_root: work_dir.as_path(),
+        });
+        match tools::run_checked_wait_async(
+            &args_cloned,
+            max_out,
+            allowed.as_ref(),
+            work_dir.as_path(),
+            test_cache,
+            skip_arg_safety,
+            &wait,
+        )
+        .await
+        {
+            Ok(s) => s,
+            Err(e) => e.extended_user_message(),
         }
-    }
+    };
+    crate::cm_tools::github_token::with_request_github_token(github_token, fut).await
 }

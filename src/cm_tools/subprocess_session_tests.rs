@@ -85,6 +85,52 @@ fn wait_session_echo_exits_cleanly() {
     assert!(stdout.contains("p0-ok"), "{stdout:?}");
 }
 
+#[tokio::test]
+async fn wait_session_async_echo_exits_cleanly() {
+    let mut cmd = Command::new("echo");
+    cmd.arg("p1-async-ok");
+    prepare_piped_process_group(&mut cmd);
+    let child = tokio::process::Command::from(cmd)
+        .spawn()
+        .expect("spawn echo");
+    let r = wait_child_session_async(child, &SubprocessWaitCtl::default(), 4096)
+        .await
+        .expect("wait");
+    assert_eq!(r.kind, SessionStopKind::Exited);
+    assert!(!r.killed);
+    let stdout = String::from_utf8_lossy(&r.stdout);
+    assert!(stdout.contains("p1-async-ok"), "{stdout:?}");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn wait_session_async_timeout_kills_bash_sleep_grandchild() {
+    let marker = format!("cm_p1_async_sleep_{}", std::process::id());
+    let mut cmd = Command::new("bash");
+    cmd.args(["-c", &format!("echo async-partial; sleep 60 # {marker}")]);
+    prepare_piped_process_group(&mut cmd);
+    let child = tokio::process::Command::from(cmd)
+        .spawn()
+        .expect("spawn bash");
+    let pid = child.id();
+    let r = wait_child_session_async(child, &SubprocessWaitCtl::with_wall_secs(1), 4096)
+        .await
+        .expect("wait");
+    assert_eq!(r.kind, SessionStopKind::Timeout);
+    assert!(r.killed);
+    assert_eq!(r.child_pid, pid.unwrap_or(0));
+    assert!(
+        String::from_utf8_lossy(&r.stdout).contains("async-partial"),
+        "{:?}",
+        r.stdout
+    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(
+        !proc_cmdline_contains(&marker),
+        "grandchild sleep still listed for {marker}"
+    );
+}
+
 #[test]
 fn take_drain_returns_before_blocked_pipe_eof() {
     let buf = spawn_drain(Some(BlockForever), 64, SessionStream::Stdout, None, false);

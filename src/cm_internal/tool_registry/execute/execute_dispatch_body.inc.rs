@@ -396,7 +396,6 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
                 workspace_is_set,
                 workspace_changed,
                 web_ctx: ctx,
-                name,
                 args,
                 tool_call_id: tc.id.as_str(),
                 sse_out_tx,

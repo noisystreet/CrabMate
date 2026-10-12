@@ -1,7 +1,10 @@
 //! 可取消的子进程会话：进程组、并发排空管道、墙钟超时。
 //!
-//! 当前实现走 **`std::process` + 阻塞轮询**（`run_command` 仍在 `spawn_blocking` 内调用）。
-//! 长命令仍占用阻塞线程；迁 `tokio::process` 见 `docs/design/long_running_tool_execution_todo.md`。
+//! 提供 **sync + async 两条并行入口**（strangler 过渡；见 `docs/design/subprocess_session_tokio_migration_todo.md`）：
+//! - **同步** [`wait_child_session`] / [`run_and_capture`]：`std::process` + 阻塞轮询，供仍在 `spawn_blocking`
+//!   内运行的同步工具（`python_snippet_run` / `pytest_run` / `error_output_playbook` 等）复用。
+//! - **异步** [`wait_child_session_async`]：`tokio::process` + `tokio::time`，供 chat 宿主 / async funnel 直接 `.await`，
+//!   不再占用阻塞线程。
 //!
 //! 观测：进程内原子计数 + 时长直方图（见 [`session_stats_snapshot`]），供日志、测试与未来 metrics 端点读取。
 
@@ -13,6 +16,9 @@ use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
+
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::Child as TokioChild;
 
 /// SIGTERM 之后、SIGKILL 之前的宽限。
 pub const TERM_GRACE: Duration = Duration::from_millis(400);
@@ -331,6 +337,205 @@ pub fn run_and_capture(
         ..SubprocessWaitCtl::default()
     };
     wait_child_session(child, &ctl, max_output_len)
+}
+
+/// 异步版 [`wait_child_session`]：`tokio::process` + `tokio::time`，供 async 宿主直接 `.await`。
+///
+/// 语义与同步版一一对应（新进程组、SIGTERM→SIGKILL、并发排空、墙钟/取消、增量回调、观测计数），
+/// 但等待不占用阻塞线程：主循环用 `try_wait` + `tokio::time::sleep`，每路管道排空走 `tokio::spawn`。
+pub async fn wait_child_session_async(
+    mut child: TokioChild,
+    ctl: &SubprocessWaitCtl,
+    max_capture_bytes: usize,
+) -> io::Result<SessionWaitResult> {
+    let child_pid = child.id().unwrap_or(0);
+    STAT_SPAWNS.fetch_add(1, Ordering::Relaxed);
+    STAT_LIVE.fetch_add(1, Ordering::Relaxed);
+    let t0 = Instant::now();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let cap = max_capture_bytes.max(1);
+    let live = ctl
+        .chunk_sink
+        .is_some()
+        .then(|| Arc::new(Mutex::new(VecDeque::new())));
+    let out_buf = spawn_drain_async(
+        stdout,
+        cap,
+        SessionStream::Stdout,
+        live.clone(),
+        ctl.uncapped_live,
+    );
+    let err_buf = spawn_drain_async(
+        stderr,
+        cap,
+        SessionStream::Stderr,
+        live.clone(),
+        ctl.uncapped_live,
+    );
+    let deadline = ctl.wall.map(|d| Instant::now() + d);
+
+    let mut killed = false;
+    let mut kind = SessionStopKind::Exited;
+    let mut wait_err = None;
+    let mut reap_failed = false;
+    let status: io::Result<Option<ExitStatus>> = loop {
+        flush_live_chunks(live.as_ref(), ctl.chunk_sink.as_ref());
+        if stop_requested(ctl) {
+            kind = SessionStopKind::Cancelled;
+            killed = true;
+            reap_failed = terminate_and_reap_async(&mut child, child_pid, "cancel").await;
+            break Ok(None);
+        }
+        if deadline.is_some_and(|d| Instant::now() >= d) {
+            kind = SessionStopKind::Timeout;
+            killed = true;
+            reap_failed = terminate_and_reap_async(&mut child, child_pid, "timeout").await;
+            break Ok(None);
+        }
+        match child.try_wait() {
+            Ok(Some(st)) => break Ok(Some(st)),
+            Ok(None) => tokio::time::sleep(POLL).await,
+            Err(e) => {
+                wait_err = Some(e);
+                killed = true;
+                reap_failed = terminate_and_reap_async(&mut child, child_pid, "try_wait").await;
+                break Ok(None);
+            }
+        }
+    };
+
+    let stdout = take_drain_async(out_buf, DRAIN_JOIN).await;
+    let stderr = take_drain_async(err_buf, DRAIN_JOIN).await;
+    drain_live_chunks_after_reap(live.as_ref(), ctl.chunk_sink.as_ref());
+    finish_chunk_sink(ctl.chunk_sink.as_ref());
+    record_session_stats(
+        child_pid,
+        kind,
+        killed,
+        reap_failed,
+        t0.elapsed().as_millis() as u64,
+    );
+    STAT_LIVE.fetch_sub(1, Ordering::Relaxed);
+    if let Some(e) = wait_err {
+        return Err(e);
+    }
+    Ok(SessionWaitResult {
+        kind,
+        status: status.ok().flatten(),
+        stdout,
+        stderr,
+        killed,
+        child_pid,
+    })
+}
+
+struct DrainBufAsync {
+    done_rx: tokio::sync::oneshot::Receiver<()>,
+    kept: Arc<Mutex<Vec<u8>>>,
+}
+
+fn spawn_drain_async<R: AsyncRead + Unpin + Send + 'static>(
+    pipe: Option<R>,
+    max_bytes: usize,
+    stream: SessionStream,
+    live: Option<LiveChunks>,
+    uncapped_live: bool,
+) -> DrainBufAsync {
+    let kept = Arc::new(Mutex::new(Vec::new()));
+    let kept_th = Arc::clone(&kept);
+    let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(async move {
+        if let Some(mut r) = pipe {
+            let mut chunk = [0u8; 8192];
+            loop {
+                match r.read(&mut chunk).await {
+                    Ok(0) => break,
+                    Ok(n) => append_captured(
+                        &kept_th,
+                        &chunk[..n],
+                        max_bytes,
+                        stream,
+                        live.as_ref(),
+                        uncapped_live,
+                    ),
+                    Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+        }
+        let _ = done_tx.send(());
+    });
+    DrainBufAsync { done_rx, kept }
+}
+
+async fn take_drain_async(buf: DrainBufAsync, limit: Duration) -> Vec<u8> {
+    let _ = tokio::time::timeout(limit, buf.done_rx).await;
+    snapshot_kept(&buf.kept)
+}
+
+/// 杀进程组并尝试在 `REAP_WAIT` 内确认退出；返回 `true` 表示**未**确认（残留风险）。
+async fn terminate_and_reap_async(child: &mut TokioChild, pid: u32, reason: &'static str) -> bool {
+    terminate_child_group_async(child, pid, reason).await;
+    reap_not_confirmed(reap_after_kill_async(child).await)
+}
+
+async fn terminate_child_group_async(child: &mut TokioChild, pid: u32, reason: &'static str) {
+    log::warn!(
+        target: "crabmate",
+        "subprocess session kill pid={} reason={}",
+        pid,
+        reason
+    );
+    #[cfg(unix)]
+    unix_term_then_kill_async(pid).await;
+    #[cfg(not(unix))]
+    {
+        let _ = child.start_kill();
+        tokio::time::sleep(TERM_GRACE).await;
+    }
+    let _ = child.start_kill();
+}
+
+async fn reap_after_kill_async(child: &mut TokioChild) -> io::Result<Option<ExitStatus>> {
+    let until = Instant::now() + REAP_WAIT;
+    loop {
+        match child.try_wait() {
+            Ok(Some(st)) => return Ok(Some(st)),
+            Ok(None) if Instant::now() < until => tokio::time::sleep(POLL).await,
+            Ok(None) => {
+                let _ = child.start_kill();
+                let hard = Instant::now() + POLL.saturating_mul(4);
+                while Instant::now() < hard {
+                    if let Ok(Some(st)) = child.try_wait() {
+                        return Ok(Some(st));
+                    }
+                    tokio::time::sleep(POLL).await;
+                }
+                return Ok(None);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+#[cfg(unix)]
+async fn unix_term_then_kill_async(pid: u32) {
+    use nix::sys::signal::{self, Signal};
+    use nix::unistd::Pid;
+
+    let child = Pid::from_raw(pid as i32);
+    let self_pg = nix::unistd::getpgrp();
+    if child == self_pg {
+        let _ = signal::kill(child, Signal::SIGTERM);
+        tokio::time::sleep(TERM_GRACE).await;
+        let _ = signal::kill(child, Signal::SIGKILL);
+        return;
+    }
+    let _ = signal::killpg(child, Signal::SIGTERM);
+    tokio::time::sleep(TERM_GRACE).await;
+    let _ = signal::killpg(child, Signal::SIGKILL);
+    let _ = signal::kill(child, Signal::SIGKILL);
 }
 
 /// 杀进程后是否在 `REAP_WAIT` 内**未**确认退出（残留风险）；`Err` 视同残留。
