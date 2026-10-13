@@ -33,7 +33,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "search_replace",
-            description: "在工作区内**单个文件**中搜索并替换文本。支持字面量或正则表达式匹配。默认 dry_run=true 仅预览变更（显示行级替换对比）；写盘需 dry_run=false + confirm=true。可限制最大替换次数。文件上限 4MiB。",
+            description: "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配。默认 dry_run=true 仅预览变更（显示行级替换对比）；写盘需 dry_run=false + confirm=true。可限制最大替换次数。文件上限 4MiB。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::SearchReplaceArgs>,
             runner: ToolRunner::Legacy(runner_search_replace),
