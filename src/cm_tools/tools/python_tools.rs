@@ -369,6 +369,8 @@ pub fn python_snippet_run(
     };
 
     let ctl = SubprocessWaitCtl::with_wall_secs(prep.wall_secs);
+    // 路线 A（strangler 过渡）：`python_snippet_run` 仍在同步 `run_tool` 面执行，沿用 `subprocess_session`
+    // 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
     let session = match wait_child_session(child, &ctl, max_output_len) {
         Ok(s) => s,
         Err(e) => return format!("{}: 收集子进程输出失败（{}）", title, e),
@@ -468,6 +470,8 @@ fn run_and_format(
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| s.to_string())
     });
+    // 路线 A（strangler 过渡）：ruff / pytest / mypy 仍在同步 `run_tool` 面执行，沿用 `subprocess_session`
+    // 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
     match run_and_capture(cmd, max_output_len, wall_secs) {
         Ok(session) => {
             let stdout = String::from_utf8_lossy(&session.stdout);

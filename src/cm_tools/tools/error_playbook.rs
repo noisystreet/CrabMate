@@ -477,6 +477,8 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
             }
         };
         out.push_str(&format!("—— 步骤 {}: `{}` ——\n", i + 1, t));
+        // 路线 A（strangler 过渡）：`playbook_run_commands` 仍在同步 `run_tool` 面执行（外层 `spawn_blocking`），
+        // 沿用 `command::run_checked_wait` 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
         let r = match command::run_checked_wait(
             &args_s,
             ctx.command_max_output_len,

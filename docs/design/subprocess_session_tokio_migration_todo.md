@@ -1,6 +1,6 @@
 # 子进程会话 tokio 化迁移：实施计划（todo）
 
-> **状态**：设计定稿，**实施中**（PR0 调用面收敛、PR1 原语 + chat 同步宿主、PR2 后台 job + workflow 已完成；PR3 其余 `run_and_capture` 调用方、PR4 收尾与文档待实施）。本文件回应 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §共享原语 L102 与 §仍开放 L211–214 的开放项。  
+> **状态**：设计定稿，**实施中**（PR0 调用面收敛、PR1 原语 + chat 同步宿主、PR2 后台 job + workflow、PR3 其余 `run_and_capture` 调用方已完成；PR4 收尾与文档待实施）。本文件回应 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §共享原语 L102 与 §仍开放 L211–214 的开放项。  
 > **受众**：维护 `cm_tools::subprocess_session`、`run_command`（`cm_tools/tools/command.rs`）、`tool_registry/execute_run_command*`、`cm_internal/tool_jobs`、`cm_workflow/execute/node.rs` 的开发者。  
 > **语言**：中文。  
 > **依据**：决策口径见 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（§共享原语 / §仍开放）；字段级契约见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（本迁移**不得**改动其外部行为）。  
@@ -168,9 +168,9 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 | 3 | `cm_internal/tool_registry/execute/execute_run_command_sync.inc.rs` | `spawn_blocking` + `with_request_github_token_blocking` + `tools::run_checked_wait` | 去 `spawn_blocking`，直接 `await tools::run_checked_wait(...)`；token 改 `with_request_github_token`（见「坑」） |
 | 4 | `cm_internal/tool_jobs/worker.rs` | **PR2 已实施**：原 `run_job_blocking`（同步）+ `launch_job` 的 `spawn_blocking` + `catch_unwind` | 改名 `run_job_async`，`prepare_piped_process_group` + `wait_child_session_async` 全 `await`；`launch_job` 去 `spawn_blocking`，panic 由内层 `tokio::spawn` 的 `JoinError` 兜底（保留 terminate 进程组后再标 `failed(internal)` 的逻辑）；`chunk_sink_from_output` 不变；命令转 `tokio::process::Command` 后 `kill_on_drop(true)` 兜底 abort/drop |
 | 5 | `cm_workflow/execute/node.rs` | **PR0 / S5 已实施**：原 `spawn_blocking` 调 `run_tool_result`；`run_command_reaps_self` 特判 | run_command 节点：走 `async` 路径直接 `await`；非 run_command 的同步工具仍可保留 `spawn_blocking`；「非 run_command 无法取消」警告相应修订 |
-| 6 | `cm_tools/tools/python_tools.rs` | L357–372 `prepare_piped_process_group`+`wait_child_session`；L471 `run_and_capture` | **PR0 决策**（S8）：路线 A 保留同步入口；路线 B `await`（需 `run_tool` 一并 async 化）。见「调用面收敛」 |
-| 7 | `cm_tools/tools/cargo_subcommand.rs` | L182 `run_and_capture` | 同 #6 |
-| 8 | `cm_tools/tools/error_playbook.rs` | L480 `run_checked_wait` | 同 #6；路线 A 下保留外层 `spawn_blocking`（本 PR 允许残留并写明） |
+| 6 | `cm_tools/tools/python_tools.rs` | **PR3 已实施**：路线 A 保留同步入口；L357–374 `prepare_piped_process_group`+`wait_child_session`；L475 `run_and_capture` | **PR0 决策**（S8）：路线 A 保留同步入口；路线 B `await`（需 `run_tool` 一并 async 化）。见「调用面收敛」 |
+| 7 | `cm_tools/tools/cargo_subcommand.rs` | **PR3 已实施**：路线 A 保留同步入口；L184 `run_and_capture` | 同 #6 |
+| 8 | `cm_tools/tools/error_playbook.rs` | **PR3 已实施**：路线 A 保留同步入口；L482 `run_checked_wait` | 同 #6；路线 A 下保留外层 `spawn_blocking`（本 PR 允许残留并写明） |
 | 9 | `cm_tools/tools/mod.rs` | `run_tool` / `run_tool_dispatch`（**同步**）中 `"run_command"` 特判走 `run_try_wait` | **PR0 / S1**：消费点 re-route 后删除特判 |
 | 10 | `cm_tools/tools/runners.rs` | `runner_run_command`（`ToolRunner::Legacy`，因 `#9` 特判实际已近似死代码） | **PR0 / S2**：确认为死代码 → 置提示性 stub（spec runner 注册占位，范本同 `runner_terminal_session`），不再执行命令 |
 | 11 | `runtime/cli/commands.rs`（sync 入口）/ `runtime/tool_replay.rs`（`run_tool` 调用）/ `runtime/cli_mcp.rs` | 同步上下文内 `run_tool` | **PR0 / S3、S4**：S3 改 `async fn`；S4 改 `ToolCallbacks` 契约。见「调用面收敛」 |
@@ -267,6 +267,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 3. **PR2 — 后台 job + workflow**：`worker.rs` `run_job_async`；`launch_job` 去 `spawn_blocking`；`node.rs` run_command 节点 async。
    - **已实施**：`worker.rs` `run_job_blocking` → `run_job_async`（`tokio::process::Command` + `kill_on_drop(true)` + `wait_child_session_async`）；`launch_job` 去 `spawn_blocking` / `catch_unwind`，改内层 `tokio::spawn(run_job_async(...)).await`，`JoinError` → `failed(internal)`（不卡 `running`）；`mod.rs` 导出同步改名。`node.rs` run_command 节点在 **PR0 / S5** 已 async 直连，本 PR 无改动；测试改 `#[tokio::test]`（`thread::sleep` → `tokio::time::sleep`）。
 4. **PR3 — 其余 `run_and_capture` 调用方**：`python_tools.rs` / `cargo_subcommand.rs` / `error_playbook.rs`（路线 A 下注明残留 sync 入口）。
+   - **已实施**：三个调用方在路线 A 下**保持同步** `run_tool` 面，沿用 `subprocess_session` 同步等待入口（`wait_child_session` / `run_and_capture` / `command::run_checked_wait`）；在三处调用点补注释说明残留 sync 入口的过渡性质。**未**改异步（需 `run_tool*` 整体 async 化，见「路线 B」）。
 5. **PR4 — 收尾与文档**：`docs/开发文档.md`（若涉及执行类别/线程模型描述）、`docs/design/README.md` 计数、`long_running_tool_execution_todo.md` §仍开放划项。
 
 > 每个 PR 独立可构建、可测试、可回滚；**PR0** 合入后 `run_command` 不再有新的同步调用方，PR1 起仅做原语与宿主 async 化。
