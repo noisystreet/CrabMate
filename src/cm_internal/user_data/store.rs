@@ -1,6 +1,7 @@
 //! 本机用户数据读写 API（供 HTTP handler 与 CLI 共用）。
 
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::Value;
 
@@ -70,14 +71,40 @@ pub fn load_meta() -> UserDataMeta {
     read_json_file_or_default(&meta_path(&r))
 }
 
+/// 进程内 `prefs.json` 缓存：`(绝对路径, 值)`；路径变化即失效。
+fn prefs_cache() -> &'static Mutex<Option<(PathBuf, UserPrefs)>> {
+    static SLOT: OnceLock<Mutex<Option<(PathBuf, UserPrefs)>>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new(None))
+}
+
+/// 读取本机偏好；进程内缓存，写入经 [`save_prefs`] 时同步刷新。
+///
+/// 缓存以 `prefs.json` 绝对路径为键（`CM_CRABMATE_USER_DATA_DIR` 变更等自动失效）；
+/// 盘上改动须经 [`save_prefs`] 才会反映到缓存。
 pub fn load_prefs() -> UserPrefs {
-    read_json_file_or_default(&prefs_path(&root()))
+    let path = prefs_path(&root());
+    let mut guard = prefs_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((cached_path, prefs)) = guard.as_ref()
+        && cached_path == &path
+    {
+        return prefs.clone();
+    }
+    let prefs: UserPrefs = read_json_file_or_default(&path);
+    *guard = Some((path, prefs.clone()));
+    prefs
 }
 
 pub fn save_prefs(prefs: &UserPrefs) -> Result<(), String> {
     let r = root();
     ensure_tree(&r)?;
-    write_json_atomic(&prefs_path(&r), prefs)
+    let path = prefs_path(&r);
+    write_json_atomic(&path, prefs)?;
+    *prefs_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some((path, prefs.clone()));
+    Ok(())
 }
 
 pub fn load_llm_overrides() -> LlmOverridesFile {
@@ -432,8 +459,17 @@ mod tests {
         super::super::credential_store::lock_test_named_secret_suite()
     }
 
+    /// 共享 `CM_CRABMATE_USER_DATA_DIR` 下的 `prefs.json` 不可并行写。
+    fn lock_prefs_tests() -> MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn prefs_roundtrip() {
+        let _g = lock_prefs_tests();
         let _root = test_root();
         let p = UserPrefs {
             locale: Some("zh-Hans".to_string()),
@@ -449,6 +485,34 @@ mod tests {
             vec!["/tmp/a".to_string(), "/tmp/b".to_string()]
         );
         assert_eq!(loaded.last_workspace_root.as_deref(), Some("/tmp/a"));
+    }
+
+    #[test]
+    fn prefs_cache_refreshes_on_save_and_ignores_out_of_band_disk_edits() {
+        let _g = lock_prefs_tests();
+        let root = test_root();
+        let p = UserPrefs {
+            locale: Some("en-US".to_string()),
+            ..UserPrefs::default()
+        };
+        save_prefs(&p).expect("save");
+        assert_eq!(load_prefs().locale.as_deref(), Some("en-US"));
+
+        // 缓存命中：绕过 save_prefs 直接改盘不反映到缓存。
+        std::fs::write(
+            prefs_path(&root),
+            serde_json::to_string(&UserPrefs::default()).expect("serialize"),
+        )
+        .expect("overwrite on disk");
+        assert_eq!(load_prefs().locale.as_deref(), Some("en-US"));
+
+        // 经 save_prefs 写回则同步刷新缓存。
+        let p2 = UserPrefs {
+            locale: Some("ja".to_string()),
+            ..UserPrefs::default()
+        };
+        save_prefs(&p2).expect("save2");
+        assert_eq!(load_prefs().locale.as_deref(), Some("ja"));
     }
 
     #[test]
