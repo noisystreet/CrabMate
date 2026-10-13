@@ -166,7 +166,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```json
   {"path":"repos/octocat/Hello-World/pulls","method":"GET"}
   ```
-  `path` is a **relative endpoint path only** (no leading `/`, restricted charset) and **must not contain a query string `?`**; pass query parameters via **`extra_args`**, e.g. `{"path":"repos/octocat/Hello-World/issues","extra_args":["--method","GET","-f","state=open"]}`. Note that `gh` switches to POST by default when it sees `-f`/`-F`, so force `--method GET` explicitly.
+  `path` is a **relative endpoint path only** (no leading `/`, restricted charset) and **must not contain a query string `?`**; pass query parameters via the **`query`** object, e.g. `{"path":"repos/octocat/Hello-World/issues","query":{"state":"open","per_page":5}}`. The tool converts `query` to `-f key=value` and always passes `--method` explicitly, so a request won't be flipped to POST just because `gh` sees `-f`; use `extra_args` only for the few flags `query` doesn't cover.
 
 ## Rust dev tool examples
 
