@@ -19,7 +19,7 @@ pub use types::{
     MAX_ITEMS_PER_RESPONSE, MAX_OUTPUT_ITEMS, OutputEvent, OutputLogRead,
 };
 pub use worker::{
-    JobOutputSink, JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_blocking,
+    JobOutputSink, JobSpawn, drain_queued, enqueue_and_launch, launch_job, run_job_async,
     spawn_cleanup_task,
 };
 

@@ -43,7 +43,7 @@
 **1.2 job 环形输出缓冲**（`src/cm_internal/tool_jobs/`）
 - [ ] `types.rs`：`JobOutputLog`（`seq` 单调自 1、`VecDeque<(u64 seq, SessionStream, String)>`、字节合计）；常量 `MAX_OUTPUT_ITEMS=8192`、`MAX_ITEMS_PER_RESPONSE=500`。
 - [ ] `registry.rs`：侧表 `outputs: HashMap<String, JobOutputLog>`（**不并入 `JobRecord`**，避免状态轮询克隆缓冲）；`register` 建、TTL 清理/容量淘汰随记录删；方法 `push_output(id, stream, text)`（超字节/条数上限丢最旧）、`read_output(id, cursor) -> OutputRead { items, next_cursor, truncated, eof }`（eof 判定需 job 终态信息）、`complete()` 时终态裁剪（各流尾部 ≤ `command_max_output_len`）。
-- [ ] `worker.rs`：`run_job_blocking` 增 `chunk_sink` 参数（内部置 `uncapped_live=true`），把 `(SessionStream, bytes)` 经 `take_utf8_text` lossy 后 `push_output`；sink 恒返回 `true`；`launch_job`/`enqueue_and_launch` 接线。
+- [ ] `worker.rs`：`run_job_async` 增 `chunk_sink` 参数（内部置 `uncapped_live=true`），把 `(SessionStream, bytes)` 经 `take_utf8_text` lossy 后 `push_output`；sink 恒返回 `true`；`launch_job`/`enqueue_and_launch` 接线。
 
 **1.3 配置**（`config/tools.toml` `[tool_registry]` + `cm_config`）
 - [ ] 新增 `background_job_output_buffer_bytes`（默认 `262144`，范围 4096–16777216）；TOML 注释钉默认值；finalize 默认 + 钳制测试（对齐 `finalize_tests.rs` 风格）。

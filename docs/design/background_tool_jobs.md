@@ -52,10 +52,10 @@
 
 - job worker **不持有** `TurnControlSink` / `RunLoopIo.cancel` / SSE sender；取消改为显式 `POST …/cancel`（置 job 级 `AtomicBool`，`wait_child_session` 走既有 `Cancelled` 路径）。
 - **级联取消**：发起时把当前回合流任务 `job_id` 写入 `JobRecord.source_turn_job_id`（经 `WebToolRuntime.turn_job_id`）；用户 `POST /chat/stream/{job_id}/cancel` 停止回合时，一并取消本回合尚未终态的后台任务（响应 `background_tools_cancelled` 为命中数）。
-- 复用 `subprocess_session::wait_child_session`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；`tokio::spawn_blocking` 包一层（与现 run_command 一致；迁 `tokio::process` 时随共享会话一并升级）。
+- 复用 `subprocess_session::wait_child_session_async`（wall + 可取消 + 截断缓冲 + 统计）作为 worker 执行层；`tokio::spawn` 内直接 `await`（与迁 `tokio::process` 后的 chat / workflow 宿主一致）。
 - 注册表：进程内 `Mutex<HashMap<tool_job_id, JobState>>` + 过期清理（TTL 与条目上限）。**多副本**需外部代理/持久化（与 `chat_job_queue` 既有声明一致），另立项。
 - **排队语义**：超过 `background_job_max_concurrent` 的 async 调用进入 `queued`（FIFO，排队上限 `background_job_max_queued`，超限拒绝）；`queued` 状态取消**不**走杀进程路径（直接标 `cancelled`）。
-- **worker 异常兜底**：`spawn_blocking` 闭包包 `catch_unwind`；`JoinHandle` 出错/panic → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。
+- **worker 异常兜底**：作业体在独立 `tokio::spawn` 任务内 `await`；该任务 panic → 外层 `JoinHandle` 返回 `JoinError` → **先 terminate 进程组**，再标 `failed`（`error_code=internal`），**不得**卡 `running` 直至 TTL。子进程另由 `kill_on_drop` 兜底（任务被 abort / 提前 drop 时 SIGKILL）。
 - **启动清理**：serve 启动时清空残留 job 注册表记录。**单副本不承诺崩溃恢复**（内存注册表，进程死亡即丢，子进程成孤儿）：第一版 sweep **只清记录**，孤儿进程无法可靠识别（子进程无标记），交由系统/进程组自生自灭并在文档明示。
 - **并发写约束**：async 开放工具 = **装配表**（`cargo_test` / `pytest_run`，参数可装配为单条 argv）∩ **`background_job_async_tools` 白名单**（默认仅含 `run_command`，故这两个工具须显式加入白名单才可用）；不按命令/argv 分类禁（与 P2「不做 argv 启发式」一致）。**`run_command` 之外的装配表工具复用 `JobSpawn` 进程载荷**（前台 `Command` → `get_program()` / `get_args()`），因此取消/超时/输出流全部复用，`tool_jobs` 无改动。并行 job 写 workspace 的冲突责任在模型/调用方，`docs/工具说明.md` 明示。
 

@@ -25,7 +25,7 @@
 | 终态裁剪 | 各流尾部 ≤ `command_max_output_len`（**内存优先、尽力**） | `complete()` 时执行：合并时序下把 stdout、stderr 各自尾部压到 ≤ 该值（不拆元素）。末尾单条超大元素允许该流单独越界；无法同时达标时可能把另一流一并丢弃，**至少保留 1 条**兜底 |
 
 - 裁剪语义 = 只影响「可重放的历史」；`seq` 编号不回填，保留段仍连续。
-- 写入路径：worker `wait_child_session` 的 `chunk_sink` 回调（调用方线程同步 flush，单流内保序；双流按管道排空时序**近似**交错）。回调恒返回 `true`（无背压）。
+- 写入路径：worker `wait_child_session_async` 的 `chunk_sink` 回调（调用方线程同步 flush，单流内保序；双流按管道排空时序**近似**交错）。回调恒返回 `true`（无背压）。
 - **前置改造**：`SubprocessWaitCtl` 增 `uncapped_live: bool`（默认 `false`）。后台 worker 置 `true`：`append_captured` 无论 kept 捕获缓冲是否已满都把读到的字节入 live 队列（详见 [ADR §2](./background_tool_jobs_output_streaming.md)）。同步路径保持 `false` → 行为零变化。
 
 ---
@@ -147,7 +147,7 @@ Poll M  GET /output?cursor=10       → items=[] eof=true  (succeeded)
 | 面 | 后端 | Client |
 |----|------|--------|
 | 子进程层 | `SubprocessWaitCtl.uncapped_live` + `append_captured`（`cm_tools/subprocess_session.rs`） | — |
-| job 缓冲 | `src/cm_internal/tool_jobs/`：`types.rs`（`JobOutputLog`/元素）、`registry.rs`（侧表 `outputs` + `push_output`/`read_output(cursor)`/终态裁剪）、`worker.rs`（`chunk_sink` 接线，`run_job_blocking` 置 `uncapped_live`） | — |
+| job 缓冲 | `src/cm_internal/tool_jobs/`：`types.rs`（`JobOutputLog`/元素）、`registry.rs`（侧表 `outputs` + `push_output`/`read_output(cursor)`/终态裁剪）、`worker.rs`（`chunk_sink` 接线，`run_job_async` 置 `uncapped_live`） | — |
 | 配置 | `cm_config` `ToolRegistryPolicyConfig` + `config/tools.toml` | — |
 | HTTP 端点 | `src/cm_api_contract/tool_jobs.rs`（响应体）+ `src/web/routes/tools/`（handler，Bearer + 归属校验 + `get_checked` 过期语义） | — |
 | 观测 | `JobRegistryStats` 增 `output_retained_bytes` / `output_events_dropped`；日志带 `tool_job_id` | — |

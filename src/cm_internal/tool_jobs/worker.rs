@@ -1,10 +1,10 @@
-//! 后台任务执行：`tokio::spawn_blocking` + `catch_unwind`，复用 `subprocess_session`
-//! （进程组 kill、并发排空管道、墙钟、截断缓冲）。
+//! 后台任务执行：作业体在独立 `tokio::spawn` 任务内 `await`，复用 `subprocess_session`
+//! 的异步原语（进程组 kill、并发排空管道、墙钟、截断缓冲）。
 //!
 //! - 命令由调用方（`run_command` 的 `async=true` 路径）完成白名单 / 路径 / 审批校验后传入。
-//! - panic 兜底：`catch_unwind` + `JoinError` → `failed(internal)`，**不**卡 `running` 直至 TTL。
-//!   （`wait_child_session` 内部错误路径均已处理，正常不 panic；极端 panic 时子进程随会话对象
-//!   drop 释放，进程组清理不承诺，见 ADR「崩溃不恢复」。）
+//! - panic 兜底：作业任务 panic 时 `tokio::spawn` 的 `JoinError` → `failed(internal)`，**不**卡
+//!   `running` 直至 TTL。（`wait_child_session_async` 内部错误路径均已处理，正常不 panic；
+//!   极端 panic 时子进程由 `kill_on_drop` 兜底释放，进程组清理不承诺，见 ADR「崩溃不恢复」。）
 //! - 调度：`enqueue_and_launch` 登记后立即 `drain_queued`；任一任务完成（`launch_job` 回调）
 //!   空出并发位后再次 `drain_queued`，FIFO 领取队列中的下一个。
 
@@ -15,7 +15,7 @@ use std::time::Duration;
 
 use crate::cm_tools::subprocess_session::{
     SessionChunkSink, SessionStopKind, SessionStream, SubprocessWaitCtl,
-    prepare_piped_process_group, take_utf8_text, wait_child_session,
+    prepare_piped_process_group, take_utf8_text, wait_child_session_async,
 };
 
 use super::registry::{OutputPollOutcome, RegisterError, ToolJobRegistry};
@@ -46,16 +46,20 @@ fn chunk_sink_from_output(output: JobOutputSink) -> SessionChunkSink {
     })
 }
 
-/// 同步执行（阻塞调用线程）。超时/取消/正常退出按会话结果映射为 [`JobOutcome`]。
+/// 异步执行作业体（在当前任务内 `.await`，不占用阻塞线程）。
+/// 超时/取消/正常退出按会话结果映射为 [`JobOutcome`]。
 /// `cancel` 为注册表持有的取消信号（与 `registry.cancel` 共享同一 `Arc`）。
 /// `output` 为实时输出回调（`Some` 时 `uncapped_live=true`，输出不被 `max_output_len` 截断）。
-pub fn run_job_blocking(
+pub async fn run_job_async(
     spawn: JobSpawn,
     cancel: Arc<AtomicBool>,
     output: Option<JobOutputSink>,
 ) -> JobOutcome {
     let mut cmd = spawn.to_command();
     prepare_piped_process_group(&mut cmd);
+    let mut cmd = tokio::process::Command::from(cmd);
+    // 极端 panic（作业任务被 abort / 提前 drop）时兜底 SIGKILL 子进程。
+    cmd.kill_on_drop(true);
     let child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -72,7 +76,7 @@ pub fn run_job_blocking(
         chunk_sink,
         uncapped_live: output.is_some(),
     };
-    let session = match wait_child_session(child, &ctl, spawn.max_output_len) {
+    let session = match wait_child_session_async(child, &ctl, spawn.max_output_len).await {
         Ok(s) => s,
         Err(e) => {
             let mut out = JobOutcome::failed("wait_failed");
@@ -105,7 +109,7 @@ pub fn run_job_blocking(
     }
 }
 
-/// 后台启动：`spawn_blocking` 内执行 + `catch_unwind`（panic → `failed(internal)`），
+/// 后台启动：作业体在独立 `tokio::spawn` 任务内 `await`（panic → `JoinError` → `failed(internal)`），
 /// 完成后把结果（含调用方判定的 `workspace_changed`）写回注册表，并尝试领取队列中的下一个任务。
 ///
 /// 返回 `JoinHandle` 供观测/测试等待。
@@ -126,14 +130,9 @@ pub fn launch_job(
                 let _ = reg.push_output(&id, stream, text);
             })
         };
-        let outcome = tokio::task::spawn_blocking(move || {
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_job_blocking(spawn, cancel, Some(output))
-            }))
-            .unwrap_or_else(|_| JobOutcome::failed("internal"))
-        })
-        .await
-        .unwrap_or_else(|_| JobOutcome::failed("internal"));
+        let outcome = tokio::spawn(run_job_async(spawn, cancel, Some(output)))
+            .await
+            .unwrap_or_else(|_| JobOutcome::failed("internal"));
         let wc = workspace_changed(&outcome);
         registry.complete(&job_id, outcome, wc);
         // 空出并发位后按 FIFO 领取下一个排队任务。
@@ -215,12 +214,13 @@ mod tests {
     use super::*;
     use std::process::Command;
 
-    fn outcome_from(cmd: &mut Command, wall: Duration) -> JobOutcome {
-        run_job_blocking(
+    async fn outcome_from(cmd: &mut Command, wall: Duration) -> JobOutcome {
+        run_job_async(
             JobSpawn::from_command(cmd, wall, 4096),
             Arc::new(AtomicBool::new(false)),
             None,
         )
+        .await
     }
 
     fn test_limits() -> crate::cm_internal::tool_jobs::types::JobLimits {
@@ -234,36 +234,36 @@ mod tests {
         }
     }
 
-    #[test]
-    fn run_job_success_captures_stdout() {
+    #[tokio::test]
+    async fn run_job_success_captures_stdout() {
         let mut cmd = Command::new("echo");
         cmd.arg("job-ok");
-        let o = outcome_from(&mut cmd, Duration::from_secs(5));
+        let o = outcome_from(&mut cmd, Duration::from_secs(5)).await;
         assert_eq!(o.status, JobStatus::Succeeded);
         assert_eq!(o.exit_code, Some(0));
         assert!(String::from_utf8_lossy(&o.stdout).contains("job-ok"));
     }
 
-    #[test]
-    fn run_job_nonzero_exit_is_failed() {
+    #[tokio::test]
+    async fn run_job_nonzero_exit_is_failed() {
         let mut cmd = Command::new("sh");
         cmd.args(["-c", "exit 3"]);
-        let o = outcome_from(&mut cmd, Duration::from_secs(5));
+        let o = outcome_from(&mut cmd, Duration::from_secs(5)).await;
         assert_eq!(o.status, JobStatus::Failed);
         assert_eq!(o.exit_code, Some(3));
         assert_eq!(o.error_code, None);
     }
 
     #[cfg(unix)]
-    #[test]
-    fn run_job_timeout_kills_process_group() {
+    #[tokio::test]
+    async fn run_job_timeout_kills_process_group() {
         let marker = format!("cm_job_timeout_{}", std::process::id());
         let mut cmd = Command::new("bash");
         cmd.args(["-c", &format!("sleep 60 # {marker}")]);
-        let o = outcome_from(&mut cmd, Duration::from_secs(1));
+        let o = outcome_from(&mut cmd, Duration::from_secs(1)).await;
         assert_eq!(o.status, JobStatus::TimedOut);
         assert_eq!(o.error_code.as_deref(), Some("timeout"));
-        std::thread::sleep(std::time::Duration::from_millis(200));
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         assert!(
             !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
             "孙进程 sleep 仍在运行（进程组未杀干净）"
@@ -271,22 +271,23 @@ mod tests {
     }
 
     #[cfg(unix)]
-    #[test]
-    fn run_job_cancel_stops_sleep() {
+    #[tokio::test]
+    async fn run_job_cancel_stops_sleep() {
         let cancel = Arc::new(AtomicBool::new(false));
         let mut cmd = Command::new("sleep");
         cmd.arg("60");
-        let cancel_th = Arc::clone(&cancel);
-        let handle = std::thread::spawn(move || {
-            run_job_blocking(
+        let cancel_run = Arc::clone(&cancel);
+        let handle = tokio::spawn(async move {
+            run_job_async(
                 JobSpawn::from_command(&mut cmd, Duration::from_secs(30), 1024),
-                cancel_th,
+                cancel_run,
                 None,
             )
+            .await
         });
-        std::thread::sleep(std::time::Duration::from_millis(150));
+        tokio::time::sleep(std::time::Duration::from_millis(150)).await;
         cancel.store(true, std::sync::atomic::Ordering::SeqCst);
-        let o = handle.join().expect("join");
+        let o = handle.await.expect("join");
         assert_eq!(o.status, JobStatus::Cancelled);
         assert_eq!(o.error_code.as_deref(), Some("cancelled"));
     }
