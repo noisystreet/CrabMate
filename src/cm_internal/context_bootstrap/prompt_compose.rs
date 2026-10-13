@@ -26,9 +26,61 @@ fn append_session_mode_appendix(system: String, mode: SessionMode) -> String {
 }
 
 fn resolve_role_system_base(cfg: &AgentConfig, agent_role: Option<&str>) -> Result<String, String> {
-    cfg.system_prompt_for_new_conversation(agent_role)
+    let base = cfg
+        .system_prompt_for_new_conversation(agent_role)
         .map(|s| s.to_string())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    let locale = crate::cm_internal::user_data::load_prefs().locale;
+    Ok(append_locale_output_directive(base, locale.as_deref()))
+}
+
+/// 环境/界面 locale（BCP-47，如 `zh-Hans` / `en-US`）→ 模型可读的语言名；未知值原样回传。
+fn locale_output_language_label(locale: &str) -> Option<String> {
+    let t = locale.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let primary = t
+        .split(['-', '_'])
+        .next()
+        .unwrap_or(t)
+        .to_ascii_lowercase();
+    let label = match primary.as_str() {
+        "zh" => {
+            let lower = t.to_ascii_lowercase();
+            if lower.contains("hant")
+                || lower.contains("tw")
+                || lower.contains("hk")
+                || lower.contains("mo")
+            {
+                "繁體中文"
+            } else {
+                "简体中文"
+            }
+        }
+        "en" => "English",
+        "ja" => "日本語",
+        "ko" => "한국어",
+        "fr" => "Français",
+        "de" => "Deutsch",
+        "es" => "Español",
+        "ru" => "Русский",
+        "pt" => "Português",
+        "it" => "Italiano",
+        _ => return Some(t.to_string()),
+    };
+    Some(label.to_string())
+}
+
+/// 按环境/界面语言追加面向用户输出语言指令；`locale` 为空时不追加（退回 base 原行为）。
+fn append_locale_output_directive(system: String, locale: Option<&str>) -> String {
+    let Some(label) = locale.and_then(locale_output_language_label) else {
+        return system;
+    };
+    format!(
+        "{}\n\n## 输出语言\n\n当前界面/环境语言为「{label}」。面向用户的说明与回答默认使用该语言；若用户消息明确使用其它语言，以其为准。代码、命令、标识符与专有名词保留原文。",
+        system.trim_end()
+    )
 }
 
 /// 解析本回合用于组装的命名 `agent_role`。
@@ -424,5 +476,50 @@ mod tests {
         assert!(system.contains("alpha body"));
         assert!(!system.contains("beta body"));
         assert!(diag.skills_selected_labels[0].contains("[forced]"));
+    }
+
+    #[test]
+    fn locale_label_maps_common_tags() {
+        assert_eq!(
+            locale_output_language_label("zh-Hans").as_deref(),
+            Some("简体中文")
+        );
+        assert_eq!(
+            locale_output_language_label("zh-CN").as_deref(),
+            Some("简体中文")
+        );
+        assert_eq!(
+            locale_output_language_label("zh-Hant").as_deref(),
+            Some("繁體中文")
+        );
+        assert_eq!(
+            locale_output_language_label("zh-TW").as_deref(),
+            Some("繁體中文")
+        );
+        assert_eq!(
+            locale_output_language_label("en-US").as_deref(),
+            Some("English")
+        );
+        assert_eq!(locale_output_language_label("ja").as_deref(), Some("日本語"));
+        assert_eq!(
+            locale_output_language_label("de-DE").as_deref(),
+            Some("Deutsch")
+        );
+        assert_eq!(
+            locale_output_language_label("xx-YY").as_deref(),
+            Some("xx-YY")
+        );
+        assert_eq!(locale_output_language_label("  "), None);
+    }
+
+    #[test]
+    fn locale_directive_appended_only_when_locale_present() {
+        let base = "BASE".to_string();
+        assert_eq!(append_locale_output_directive(base.clone(), None), "BASE");
+        assert_eq!(append_locale_output_directive(base.clone(), Some("")), "BASE");
+        let out = append_locale_output_directive(base, Some("en-US"));
+        assert!(out.starts_with("BASE"));
+        assert!(out.contains("## 输出语言"));
+        assert!(out.contains("English"));
     }
 }
