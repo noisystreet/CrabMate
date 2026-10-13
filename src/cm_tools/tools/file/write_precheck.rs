@@ -3,11 +3,18 @@
 //! 语义（供写盘工具调用 [`precheck_before_write`]）：
 //! - 校验失败默认**拒写**，返回编译器风格的 `path:行: 信息` 错误（首行含 `校验失败（CODE）`，便于
 //!   `tool_result` 分类为 `write_precheck_failed` 与模型扫读）；
+//! - 拒写时末尾统一附 [`NOT_WRITTEN_HINT`]（「未写盘，文件保持原样」），明确目标文件未被改动（等价于回滚）；
 //! - `skip_precheck=true` 可显式绕过（渐进式编辑 / 中间态）；
 //! - 校验器缺失（如无 `python3`）、启动失败或超时 → **跳过**，不阻塞写盘。
 
 use std::path::Path;
 use std::time::Duration;
+
+/// 写盘未发生（校验失败 / 守卫拒绝 / I/O 失败）时统一追加的提示：目标文件保持原样（等价于回滚）。
+///
+/// 各文件写盘工具（`modify_file` 各模式、`create_file`、`append_file`、`search_replace`）失败路径共享，
+/// 保证模型读到的失败措辞一致。
+pub(super) const NOT_WRITTEN_HINT: &str = "未写盘，文件保持原样";
 
 /// 写盘前校验结论。
 #[derive(Debug)]
@@ -32,13 +39,16 @@ pub struct PrecheckFailure {
 }
 
 impl PrecheckFailure {
-    /// 首行形如 `校验失败（CODE）：rel_path:行: 信息`。
+    /// 首行形如 `校验失败（CODE）：rel_path:行: 信息`；末行统一附 [`NOT_WRITTEN_HINT`]。
     pub fn tool_message(&self, rel_path: &str) -> String {
         let loc = match self.line {
             Some(l) => format!("{rel_path}:{l}"),
             None => rel_path.to_string(),
         };
-        format!("校验失败（{}）：{}: {}", self.code, loc, self.message)
+        format!(
+            "校验失败（{}）：{}: {}\n{NOT_WRITTEN_HINT}（如需跳过校验写入，可设 skip_precheck=true）。",
+            self.code, loc, self.message
+        )
     }
 }
 

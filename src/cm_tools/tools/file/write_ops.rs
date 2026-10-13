@@ -17,6 +17,8 @@ use crate::cm_tools::workspace::fs::{
     copy_opened_file_under_root, rename_file_under_root, write_bytes_under_root,
 };
 
+use super::write_precheck::NOT_WRITTEN_HINT;
+
 /// 工具正文首行统一 `路径：…`，便于 Web 紧凑条与模型扫读（与 `run_command` 的 `命令：` 同理）。
 #[inline]
 fn tool_output_prepend_path(rel_display: &str, message: impl AsRef<str>) -> String {
@@ -257,8 +259,10 @@ fn modify_file_write_full_overwrite(
     if full_overwrite_requires_user_confirm(before_str, &content) && !confirm_full_overwrite {
         let body = tool_output_prepend_path(
             &disp,
-            "错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。**未写盘**。\
-下方为本次写入的 diff 预览；确认后使用 confirm_full_overwrite=true 再次调用，或改用 mode=replace_lines / mode=insert_after_line / search_replace 做局部修改。",
+            format!(
+                "错误：本次整文件覆盖将大幅缩短、删去大量行或清空非空文件。{NOT_WRITTEN_HINT}。\
+下方为本次写入的 diff 预览；确认后使用 confirm_full_overwrite=true 再次调用，或改用 mode=replace_lines / mode=insert_after_line / search_replace 做局部修改。"
+            ),
         );
         return format_tool_output_with_write_diff_preview(
             "modify_file",
