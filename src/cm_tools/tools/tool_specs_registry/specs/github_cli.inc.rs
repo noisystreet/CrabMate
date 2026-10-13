@@ -89,7 +89,7 @@
     },
     ToolSpec {
         name: "gh_api",
-        description: "调用 **`gh api`**（受限）：`path` 为**无前导 /** 的相对路径（如 `repos/owner/repo/pulls`）；`method` 默认 GET，支持 HEAD/POST/PATCH/PUT/DELETE；可选 JSON `body`（经 stdin 传入）。**写操作**（POST 等）可能修改远端资源，属非只读工具。`path` 字符集受限以降低注入面；勿在 body 中放入密钥。",
+        description: "调用 **`gh api`**（受限）：`path` 为**无前导 /** 的相对端点路径（如 `repos/owner/repo/pulls`），字符集受限（仅字母数字与 `/ _ . @ - :`），**不得含查询串 `?`**——查询参数请改用 **`extra_args`**（如 `[\"--method\",\"GET\",\"-f\",\"state=open\"]`；`gh` 见到 `-f`/`-F` 会默认改用 POST，须显式传 `--method GET`）。`method` 默认 GET，支持 HEAD/POST/PATCH/PUT/DELETE；可选 JSON `body`（经 stdin 传入）。**写操作**（POST 等）可能修改远端资源，属非只读工具。勿在 body 中放入密钥。",
         category: ToolCategory::Development,
         parameters: schema_of::<args::GhApiArgs>,
         runner: ToolRunner::Legacy(runner_gh_api),

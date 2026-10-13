@@ -295,9 +295,11 @@ pub enum GhApiMethod {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GhApiArgs {
+    /// `gh api` 相对端点路径（无前导 `/`，如 `repos/owner/repo/pulls`）。字符集受限：仅字母数字与 `/ _ . @ - :`，且不得含查询串 `?`；查询参数请改用 `extra_args`。
     pub path: String,
     pub method: Option<GhApiMethod>,
     pub body: Option<String>,
+    /// 追加给 `gh api` 的原始参数。查询参数经此传入（如 `["--method","GET","-f","state=open"]`）；`gh` 见到 `-f`/`-F` 会默认改用 POST，须显式带 `--method GET`。不得含 `..` 或以 `/` 开头。
     pub extra_args: Option<Vec<String>>,
 }
 
