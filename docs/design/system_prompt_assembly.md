@@ -21,14 +21,14 @@
 | **L0b** | `coding_workbench_increment*`（可按角色跳过） | `finalize` |
 | **L1** | `.cursor/rules`、可选 `AGENTS.md` | `finalize` |
 | **L2** | Skills **索引**（非全文；工作区 + 用户级 + 系统级合并） | `finalize` |
-| **L3** | `agent_roles` 每角色正文后再跑 L1+L2 | `finalize_agent_role_catalog` |
+| **L3** | `agent_roles` 每角色正文后再跑 L1+L2；首条 `system` 构建时在其**末尾追加环境/界面 locale 输出语言指令**（`resolve_role_system_base`） | `finalize_agent_role_catalog`（+ 首条构建追加） |
 | **L4** | thinking 附录、工具统计等运行时附录 | 首条 `system` 构建 |
 | **L5** | 按轮 Skills top-k 或 `/<skill-id>`（同源三层合并） | Web `build_messages_for_turn` / CLI 刷新首条 |
 | **L6** | 首轮工作区画像等（专用 **user**） | `compose_new_conversation_messages` |
 | **L7** | Act 句启发式 hint（`system_execution_constraint_hint`；形如「【执行约束】本轮：…。勿越过。」） | 外循环 P 步前 |
 | **L8** | 记忆 / 变更集等 | `prepare_messages_for_model` / 管道 |
 
-运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，调用方再叠 L4（及 Web/CLI 的 L5）。
+运行时选用：`AgentConfig::system_prompt_for_new_conversation` 选 L3 与全局 system 后，由 `resolve_role_system_base` 在 L3 基底末尾追加 locale 输出语言指令，调用方再叠 L4（及 Web/CLI 的 L5）。
 
 ## 会话生命周期（摘要）
 
