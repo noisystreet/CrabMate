@@ -295,11 +295,13 @@ pub enum GhApiMethod {
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GhApiArgs {
-    /// `gh api` 相对端点路径（无前导 `/`，如 `repos/owner/repo/pulls`）。字符集受限：仅字母数字与 `/ _ . @ - :`，且不得含查询串 `?`；查询参数请改用 `extra_args`。
+    /// `gh api` 相对端点路径（无前导 `/`，如 `repos/owner/repo/pulls`）。字符集受限：仅字母数字与 `/ _ . @ - :`，且不得含查询串 `?`；查询参数请改用 `query`。
     pub path: String,
     pub method: Option<GhApiMethod>,
     pub body: Option<String>,
-    /// 追加给 `gh api` 的原始参数。查询参数经此传入（如 `["--method","GET","-f","state=open"]`）；`gh` 见到 `-f`/`-F` 会默认改用 POST，须显式带 `--method GET`。不得含 `..` 或以 `/` 开头。
+    /// URL 查询参数（对象，如 `{"state":"open","per_page":50}`）。值须为字符串/数字/布尔，键仅字母数字与 `- _ .`。工具自动转为 `-f key=value` 并**显式传 `--method`**（避免 `gh` 见到 `-f` 默认改用 POST），无需手动拼接查询串。
+    pub query: Option<JsonValue>,
+    /// 追加给 `gh api` 的原始参数（如 `["--paginate"]`），用于 `query` 未覆盖的少量 flag。不得含 `..` 或以 `/` 开头。
     pub extra_args: Option<Vec<String>>,
 }
 

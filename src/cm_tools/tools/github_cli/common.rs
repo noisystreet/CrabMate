@@ -57,7 +57,7 @@ pub fn validate_api_path(path: &str) -> Result<(), String> {
     }
     if t.contains('?') {
         return Err(
-            "错误：path 不得包含查询串 \"?\"（path 仅传相对端点路径；查询参数请改用 extra_args，如 [\"--method\",\"GET\",\"-f\",\"state=open\"]；注意 gh 见到 -f/-F 时会默认改用 POST，须显式强制 GET）".to_string(),
+            "错误：path 不得包含查询串 \"?\"（path 仅传相对端点路径；查询参数请改用 query 对象，如 {\"state\":\"open\"}）".to_string(),
         );
     }
     if !t
@@ -65,7 +65,7 @@ pub fn validate_api_path(path: &str) -> Result<(), String> {
         .all(|c| c.is_ascii_alphanumeric() || "/_.@-:".contains(c))
     {
         return Err(
-            "错误：path 仅允许字母数字与 / _ . @ - :（查询参数请放入 extra_args，勿写入 path）"
+            "错误：path 仅允许字母数字与 / _ . @ - :（查询参数请放入 query 对象，勿写入 path）"
                 .to_string(),
         );
     }
@@ -395,9 +395,9 @@ mod tests {
     }
 
     #[test]
-    fn validate_api_path_rejects_query_string_with_extra_args_hint() {
+    fn validate_api_path_rejects_query_string_with_query_field_hint() {
         let err = validate_api_path("repos/foo/bar/issues?state=open").unwrap_err();
-        assert!(err.contains("extra_args"), "{err}");
+        assert!(err.contains("query"), "{err}");
     }
 
     #[test]
