@@ -166,6 +166,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   ```json
   {"path":"repos/octocat/Hello-World/pulls","method":"GET"}
   ```
+  `path` is a **relative endpoint path only** (no leading `/`, restricted charset) and **must not contain a query string `?`**; pass query parameters via **`extra_args`**, e.g. `{"path":"repos/octocat/Hello-World/issues","extra_args":["--method","GET","-f","state=open"]}`. Note that `gh` switches to POST by default when it sees `-f`/`-F`, so force `--method GET` explicitly.
 
 ## Rust dev tool examples
 

@@ -55,11 +55,19 @@ pub fn validate_api_path(path: &str) -> Result<(), String> {
             "错误：path 不得以 \"/\" 开头（请用相对路径，如 repos/owner/repo/issues）".to_string(),
         );
     }
+    if t.contains('?') {
+        return Err(
+            "错误：path 不得包含查询串 \"?\"（path 仅传相对端点路径；查询参数请改用 extra_args，如 [\"--method\",\"GET\",\"-f\",\"state=open\"]；注意 gh 见到 -f/-F 时会默认改用 POST，须显式强制 GET）".to_string(),
+        );
+    }
     if !t
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "/_.@-:".contains(c))
     {
-        return Err("错误：path 仅允许字母数字与 / _ . @ - :".to_string());
+        return Err(
+            "错误：path 仅允许字母数字与 / _ . @ - :（查询参数请放入 extra_args，勿写入 path）"
+                .to_string(),
+        );
     }
     Ok(())
 }
@@ -384,6 +392,12 @@ mod tests {
         assert!(validate_api_path("repos/foo/bar/issues").is_ok());
         assert!(validate_api_path("/repos/x").is_err());
         assert!(validate_api_path("repos/../x").is_err());
+    }
+
+    #[test]
+    fn validate_api_path_rejects_query_string_with_extra_args_hint() {
+        let err = validate_api_path("repos/foo/bar/issues?state=open").unwrap_err();
+        assert!(err.contains("extra_args"), "{err}");
     }
 
     #[test]
