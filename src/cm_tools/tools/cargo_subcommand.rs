@@ -179,6 +179,8 @@ pub(super) fn run_and_format_try(
     tool_code: &str,
     wall_secs: Option<u64>,
 ) -> Result<String, ToolError> {
+    // 路线 A（strangler 过渡）：`cargo <subcmd>` 仍在同步 `run_tool` 面执行，沿用 `subprocess_session`
+    // 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
     match subprocess_session::run_and_capture(cmd, max_output_len, wall_secs) {
         Ok(session) => match session.kind {
             SessionStopKind::Exited => {
