@@ -17,7 +17,7 @@
 
 ### 1. 数据底座：job 级有界环形输出缓冲
 
-- worker（`spawn_blocking` 内 `wait_child_session`）设置 `chunk_sink` → 把增量写入**注册表侧表**（`outputs: HashMap<tool_job_id, JobOutputLog>`，随 job 注册/清理同生命周期），**不放**进 `JobRecord`——避免状态端点克隆记录时把缓冲一并拷贝。
+- worker（`tokio::spawn` 任务内 `wait_child_session_async`）设置 `chunk_sink` → 把增量写入**注册表侧表**（`outputs: HashMap<tool_job_id, JobOutputLog>`，随 job 注册/清理同生命周期），**不放**进 `JobRecord`——避免状态端点克隆记录时把缓冲一并拷贝。
 - 缓冲元素 = `{ seq, stream, text }`：
   - `seq`：**全局单调**（自 1 起，只在 append 处自增；裁剪只丢头部 → 保留段始终是连续区间）。
   - `stream`：`stdout` | `stderr`（与 `SessionStream::as_sse_label` 同值）。
@@ -29,7 +29,7 @@
 ### 2. 子进程层小改造：`uncapped_live`（opt-in，不改同步路径）
 
 - `SubprocessWaitCtl` 增字段 **`uncapped_live: bool`**（默认 `false`）。为 `true` 时 `append_captured` **无论 kept 捕获缓冲是否已满**都把读到的字节入 live 队列；`max_capture_bytes` 仍只约束终态快照，**不再截断实时流**。
-- 后台 worker（`run_job_blocking`）置 `true`；同步 `run_command` 等既有路径保持 `false` → **行为零变化**（现同步路径的输出超限即停发 chunk 的语义保留）。
+- 后台 worker（`run_job_async`）置 `true`；同步 `run_command` 等既有路径保持 `false` → **行为零变化**（现同步路径的输出超限即停发 chunk 的语义保留）。
 - 这是共享会话层的扩展点：未来同步工具要"全量流"可直接复用。
 
 ### 3. 读取通道：增量轮询（主，本稿范围）

@@ -1,6 +1,6 @@
 # 子进程会话 tokio 化迁移：实施计划（todo）
 
-> **状态**：设计定稿，**待实施**（尚未改动任何代码）；实施前须先完成 **PR0 调用面收敛**（见 §PR 切片）。本文件回应 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §共享原语 L102 与 §仍开放 L211–214 的开放项。  
+> **状态**：设计定稿，**实施中**（PR0 调用面收敛、PR1 原语 + chat 同步宿主、PR2 后台 job + workflow 已完成；PR3 其余 `run_and_capture` 调用方、PR4 收尾与文档待实施）。本文件回应 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §共享原语 L102 与 §仍开放 L211–214 的开放项。  
 > **受众**：维护 `cm_tools::subprocess_session`、`run_command`（`cm_tools/tools/command.rs`）、`tool_registry/execute_run_command*`、`cm_internal/tool_jobs`、`cm_workflow/execute/node.rs` 的开发者。  
 > **语言**：中文。  
 > **依据**：决策口径见 [`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（§共享原语 / §仍开放）；字段级契约见 [`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)（本迁移**不得**改动其外部行为）。  
@@ -166,8 +166,8 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 | 1 | `cm_tools/subprocess_session.rs` | `wait_child_session` / `run_and_capture` / `spawn_drain` / `take_drain` / `terminate_child_group` / `reap_after_kill` / `unix_term_then_kill` 同步 | 全部 `async`；`thread::{sleep,spawn,join}` → `tokio::{time::sleep/spawn/time::timeout}`；模块头注释更新（删「阻塞轮询」） |
 | 2 | `cm_tools/tools/command.rs` | `run_try` / `run_try_wait` / `run_checked` / `run_checked_wait` / `run_impl` / `run_spawned_command` 同步（`run_with_wait` 已随 PR0 删除） | 全部 `async fn`，内部 `.await`；`RunCommandError::TimedOut` 映射不变 |
 | 3 | `cm_internal/tool_registry/execute/execute_run_command_sync.inc.rs` | `spawn_blocking` + `with_request_github_token_blocking` + `tools::run_checked_wait` | 去 `spawn_blocking`，直接 `await tools::run_checked_wait(...)`；token 改 `with_request_github_token`（见「坑」） |
-| 4 | `cm_internal/tool_jobs/worker.rs` | `run_job_blocking`（同步）+ `launch_job` 的 `spawn_blocking` + `catch_unwind` | 改名 `run_job_async`，`prepare_piped_process_group` + `wait_child_session` 全 `await`；`launch_job` 去 `spawn_blocking`，panic 由 `tokio::spawn` 的 `JoinError` 兜底（保留 terminate 进程组后再标 `failed(internal)` 的逻辑）；`chunk_sink_from_output` 不变 |
-| 5 | `cm_workflow/execute/node.rs` | `spawn_blocking` 调 `run_tool_result`；`run_command_reaps_self` 特判 | run_command 节点：走 `async` 路径直接 `await`；非 run_command 的同步工具仍可保留 `spawn_blocking`；「非 run_command 无法取消」警告相应修订 |
+| 4 | `cm_internal/tool_jobs/worker.rs` | **PR2 已实施**：原 `run_job_blocking`（同步）+ `launch_job` 的 `spawn_blocking` + `catch_unwind` | 改名 `run_job_async`，`prepare_piped_process_group` + `wait_child_session_async` 全 `await`；`launch_job` 去 `spawn_blocking`，panic 由内层 `tokio::spawn` 的 `JoinError` 兜底（保留 terminate 进程组后再标 `failed(internal)` 的逻辑）；`chunk_sink_from_output` 不变；命令转 `tokio::process::Command` 后 `kill_on_drop(true)` 兜底 abort/drop |
+| 5 | `cm_workflow/execute/node.rs` | **PR0 / S5 已实施**：原 `spawn_blocking` 调 `run_tool_result`；`run_command_reaps_self` 特判 | run_command 节点：走 `async` 路径直接 `await`；非 run_command 的同步工具仍可保留 `spawn_blocking`；「非 run_command 无法取消」警告相应修订 |
 | 6 | `cm_tools/tools/python_tools.rs` | L357–372 `prepare_piped_process_group`+`wait_child_session`；L471 `run_and_capture` | **PR0 决策**（S8）：路线 A 保留同步入口；路线 B `await`（需 `run_tool` 一并 async 化）。见「调用面收敛」 |
 | 7 | `cm_tools/tools/cargo_subcommand.rs` | L182 `run_and_capture` | 同 #6 |
 | 8 | `cm_tools/tools/error_playbook.rs` | L480 `run_checked_wait` | 同 #6；路线 A 下保留外层 `spawn_blocking`（本 PR 允许残留并写明） |
@@ -263,7 +263,9 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 1. **PR0 — 调用面收敛（前置，独立可回滚）**：按上文「调用面收敛」节 re-route 同步消费点——S3 `run_tool_replay_command` 改 `async fn`（调用点 `await`）；S4 `ToolCallbacks::run_tool` 契约改返回 `Future`；S5 workflow `run_command` 节点改 async 直连；S6 容器 runner 定路线（(a) runtime 提前 + `block_on` / (b) 保留 sync 入口）；随后**删除** S1 `run_tool_dispatch` 的 `"run_command"` 特判与 S2 Legacy `runner_run_command`。**本切片确定路线 A/B 并写进 PR 描述**。仅做 re-route + 删死代码，**不改** `subprocess_session` / `command.rs` 内部实现，独立可构建、可回滚。
    - **已实施**：路线取 **A**，落地形式为「`run_tool_async` / `run_tool_result_async` 专用入口 + 两阶段 strangler」（见上「路线 A 落地形式」）；S6 取路线 **(a)**；S1/S2 已删除，受影响单测（`tools/mod/tests.rs`）已迁移至 `#[tokio::test]` + async 入口。
 2. **PR1 — 原语 + chat 同步宿主**：`subprocess_session` / `command.rs` async 化；`execute_run_command_sync.inc.rs` 去 `spawn_blocking`，token 改 async 版；模块头注释更新；`subprocess_session_tests.rs` 改 `#[tokio::test]`。路线已由 **PR0** 决定（见上）。
+   - **已实施**：新增 `wait_child_session_async` 与 `command.rs` async 入口（`run_checked_wait_async` / `run_try_wait_async`），sync / async 共用同一 plan 层；chat 宿主与异步 funnel 去 `spawn_blocking`（token 走 task-local，无需 `*_blocking`）；`subprocess_session_tests.rs` 增 async 用例。**未**删同步 `wait_child_session`（路线 A 保留同步入口，供非 `run_command` 工具与 PR3 调用方复用）。
 3. **PR2 — 后台 job + workflow**：`worker.rs` `run_job_async`；`launch_job` 去 `spawn_blocking`；`node.rs` run_command 节点 async。
+   - **已实施**：`worker.rs` `run_job_blocking` → `run_job_async`（`tokio::process::Command` + `kill_on_drop(true)` + `wait_child_session_async`）；`launch_job` 去 `spawn_blocking` / `catch_unwind`，改内层 `tokio::spawn(run_job_async(...)).await`，`JoinError` → `failed(internal)`（不卡 `running`）；`mod.rs` 导出同步改名。`node.rs` run_command 节点在 **PR0 / S5** 已 async 直连，本 PR 无改动；测试改 `#[tokio::test]`（`thread::sleep` → `tokio::time::sleep`）。
 4. **PR3 — 其余 `run_and_capture` 调用方**：`python_tools.rs` / `cargo_subcommand.rs` / `error_playbook.rs`（路线 A 下注明残留 sync 入口）。
 5. **PR4 — 收尾与文档**：`docs/开发文档.md`（若涉及执行类别/线程模型描述）、`docs/design/README.md` 计数、`long_running_tool_execution_todo.md` §仍开放划项。
 
