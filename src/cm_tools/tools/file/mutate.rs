@@ -23,6 +23,8 @@ use crate::cm_tools::workspace::fs::{
     write_bytes_under_root,
 };
 
+use super::write_precheck::NOT_WRITTEN_HINT;
+
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
     crate::cm_tools::tools::parse_args_typed(args_json)
 }
@@ -579,7 +581,9 @@ fn search_replace_confirm_and_precheck(
     new_content: &str,
 ) -> Result<(), String> {
     if !confirm {
-        return Err("拒绝执行：search_replace 写盘需要 confirm=true".to_string());
+        return Err(format!(
+            "拒绝执行：search_replace 写盘需要 confirm=true（{NOT_WRITTEN_HINT}）"
+        ));
     }
     super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
 }

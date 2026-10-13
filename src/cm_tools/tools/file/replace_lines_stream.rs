@@ -14,6 +14,8 @@ use crate::cm_tools::tools::write_sse_preview::{
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 
+use super::write_precheck::NOT_WRITTEN_HINT;
+
 #[inline]
 fn tool_output_prepend_path(rel_display: &str, message: impl AsRef<str>) -> String {
     format!("路径：{}\n{}", rel_display.trim(), message.as_ref())
@@ -22,11 +24,19 @@ fn tool_output_prepend_path(rel_display: &str, message: impl AsRef<str>) -> Stri
 fn parse_replace_line_range(v: &Value) -> Result<(usize, usize, String), String> {
     let start_line = match v.get("start_line").and_then(|n| n.as_u64()) {
         Some(n) if n >= 1 => n as usize,
-        _ => return Err("错误：replace_lines 需要 start_line（>=1）".to_string()),
+        _ => {
+            return Err(format!(
+                "错误：replace_lines 需要 start_line（>=1）（{NOT_WRITTEN_HINT}）"
+            ));
+        }
     };
     let end_line = match v.get("end_line").and_then(|n| n.as_u64()) {
         Some(n) if n >= 1 => n as usize,
-        _ => return Err("错误：replace_lines 需要 end_line（>=1）".to_string()),
+        _ => {
+            return Err(format!(
+                "错误：replace_lines 需要 end_line（>=1）（{NOT_WRITTEN_HINT}）"
+            ));
+        }
     };
     let new_body = v
         .get("content")
@@ -39,7 +49,11 @@ fn parse_replace_line_range(v: &Value) -> Result<(usize, usize, String), String>
 fn parse_insert_after_line(v: &Value) -> Result<(usize, String), String> {
     let after_line = match v.get("after_line").and_then(|n| n.as_u64()) {
         Some(n) => n as usize,
-        _ => return Err("错误：insert_after_line 需要 after_line（>=0）".to_string()),
+        _ => {
+            return Err(format!(
+                "错误：insert_after_line 需要 after_line（>=0）（{NOT_WRITTEN_HINT}）"
+            ));
+        }
     };
     let new_body = v
         .get("content")
@@ -52,7 +66,7 @@ fn parse_insert_after_line(v: &Value) -> Result<(usize, String), String> {
 fn write_tmp_bytes<W: Write>(writer: &mut W, bytes: &[u8]) -> Result<(), String> {
     writer
         .write_all(bytes)
-        .map_err(|e| format!("写入临时文件失败: {}", e))
+        .map_err(|e| format!("写入临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))
 }
 
 fn stream_replace_lines_to_writer<W: Write>(
@@ -70,7 +84,7 @@ fn stream_replace_lines_to_writer<W: Write>(
         buf.clear();
         let n = reader
             .read_line(&mut buf)
-            .map_err(|e| format!("读取原文件失败: {}", e))?;
+            .map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
         if n == 0 {
             break;
         }
@@ -96,18 +110,20 @@ fn validate_replace_coverage(
 ) -> Result<(), String> {
     if line_no < start_line {
         return Err(format!(
-            "错误：start_line={} 超出文件行数（文件共 {} 行）",
+            "错误：start_line={} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             start_line, line_no
         ));
     }
     if line_no < end_line {
         return Err(format!(
-            "错误：end_line={} 超出文件行数（文件共 {} 行）",
+            "错误：end_line={} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             end_line, line_no
         ));
     }
     if !replaced {
-        return Err("错误：未执行替换（内部状态异常）".to_string());
+        return Err(format!(
+            "错误：未执行替换（内部状态异常）（{NOT_WRITTEN_HINT}）"
+        ));
     }
     Ok(())
 }
@@ -153,7 +169,7 @@ pub(super) fn verify_expect_content(
     let expect_lines: Vec<&str> = expect_body.lines().collect();
     if start_line > lines.len() || end_line > lines.len() {
         return Err(format!(
-            "错误：expect_content 校验失败，未写盘：行区间 {}-{} 超出文件行数（文件共 {} 行）",
+            "错误：expect_content 校验失败，行区间 {}-{} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             start_line,
             end_line,
             lines.len()
@@ -162,7 +178,7 @@ pub(super) fn verify_expect_content(
     let span = end_line.saturating_sub(start_line) + 1;
     if expect_lines.len() != span {
         return Err(format!(
-            "错误：expect_content 校验失败，未写盘：期望内容共 {} 行，与替换区间行 {}-{}（共 {} 行）行数不一致。",
+            "错误：expect_content 校验失败，期望内容共 {} 行，与替换区间行 {}-{}（共 {} 行）行数不一致（{NOT_WRITTEN_HINT}）。",
             expect_lines.len(),
             start_line,
             end_line,
@@ -186,7 +202,7 @@ pub(super) fn verify_expect_content(
         return Ok(());
     }
     let mut err = format!(
-        "错误：expect_content 校验失败，未写盘。行 {}-{} 当前内容与期望不符：\n{}",
+        "错误：expect_content 校验失败。行 {}-{} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n{}",
         start_line,
         end_line,
         mismatches.join("\n")
@@ -207,14 +223,13 @@ pub(super) fn verify_expect_line_content(
 ) -> Result<(), String> {
     let expect_body = expect.trim_end_matches('\n');
     if after_line == 0 {
-        return Err(
-            "错误：expect_line_content 校验失败，未写盘：after_line=0 表示插入到文件开头，无锚点行可校验；请去掉 expect_line_content 或改用 after_line>=1。"
-                .to_string(),
-        );
+        return Err(format!(
+            "错误：expect_line_content 校验失败：after_line=0 表示插入到文件开头，无锚点行可校验；请去掉 expect_line_content 或改用 after_line>=1（{NOT_WRITTEN_HINT}）。"
+        ));
     }
     let Some(actual) = lines.get(after_line - 1) else {
         return Err(format!(
-            "错误：expect_line_content 校验失败，未写盘：锚点行 {} 超出文件行数（文件共 {} 行）",
+            "错误：expect_line_content 校验失败，锚点行 {} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             after_line,
             lines.len()
         ));
@@ -223,7 +238,7 @@ pub(super) fn verify_expect_line_content(
         return Ok(());
     }
     let mut err = format!(
-        "错误：expect_line_content 校验失败，未写盘。锚点行 {} 当前内容与期望不符：\n  行 {}|实际: {}\n        期望: {}",
+        "错误：expect_line_content 校验失败。锚点行 {} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n  行 {}|实际: {}\n        期望: {}",
         after_line, after_line, actual, expect_body
     );
     if !expect_body.is_empty() {
@@ -277,21 +292,21 @@ fn stream_insert_after_line_to_writer<W: Write>(
         buf.clear();
         let n = reader
             .read_line(&mut buf)
-            .map_err(|e| format!("读取原文件失败: {}", e))?;
+            .map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
         if n == 0 {
             break;
         }
         line_no += 1;
         writer
             .write_all(buf.as_bytes())
-            .map_err(|e| format!("写入临时文件失败: {}", e))?;
+            .map_err(|e| format!("写入临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
         if line_no == after_line {
             write_insert_body(writer, new_body)?;
         }
     }
     if after_line > line_no {
         return Err(format!(
-            "错误：after_line={} 超出文件行数（文件共 {} 行）",
+            "错误：after_line={} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             after_line, line_no
         ));
     }
@@ -304,7 +319,7 @@ fn replace_lines_after_content_in_memory(
     end_line: usize,
     new_body: &str,
 ) -> Result<String, String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {}", e))?;
+    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     let mut reader = BufReader::new(src);
     let mut out_buf: Vec<u8> = Vec::new();
     {
@@ -312,11 +327,12 @@ fn replace_lines_after_content_in_memory(
         let (line_no, replaced) =
             stream_replace_lines_to_writer(&mut reader, &mut w, start_line, end_line, new_body)?;
         validate_replace_coverage(line_no, start_line, end_line, replaced)?;
-        w.flush().map_err(|e| format!("刷新缓冲失败: {}", e))?;
+        w.flush()
+            .map_err(|e| format!("刷新缓冲失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     }
     String::from_utf8(out_buf).map_err(|e| {
         format!(
-            "错误：dry_run 生成内容非合法 UTF-8（首个无效偏移 {}）",
+            "错误：dry_run 生成内容非合法 UTF-8（首个无效偏移 {}）（{NOT_WRITTEN_HINT}）",
             e.utf8_error().valid_up_to()
         )
     })
@@ -327,17 +343,18 @@ fn insert_after_content_in_memory(
     after_line: usize,
     new_body: &str,
 ) -> Result<String, String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {}", e))?;
+    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     let mut reader = BufReader::new(src);
     let mut out_buf: Vec<u8> = Vec::new();
     {
         let mut w = BufWriter::new(&mut out_buf);
         stream_insert_after_line_to_writer(&mut reader, &mut w, after_line, new_body)?;
-        w.flush().map_err(|e| format!("刷新缓冲失败: {}", e))?;
+        w.flush()
+            .map_err(|e| format!("刷新缓冲失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     }
     String::from_utf8(out_buf).map_err(|e| {
         format!(
-            "错误：dry_run 生成内容非合法 UTF-8（首个无效偏移 {}）",
+            "错误：dry_run 生成内容非合法 UTF-8（首个无效偏移 {}）（{NOT_WRITTEN_HINT}）",
             e.utf8_error().valid_up_to()
         )
     })
@@ -348,8 +365,9 @@ fn open_stream_edit_pair(
     tmp_path: &Path,
     inherit_metadata: bool,
 ) -> Result<(BufReader<File>, BufWriter<File>), String> {
-    let src = File::open(target).map_err(|e| format!("读取原文件失败: {}", e))?;
-    let tmp_file = File::create(tmp_path).map_err(|e| format!("创建临时文件失败: {}", e))?;
+    let src = File::open(target).map_err(|e| format!("读取原文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
+    let tmp_file =
+        File::create(tmp_path).map_err(|e| format!("创建临时文件失败: {e}（{NOT_WRITTEN_HINT}）"))?;
     if inherit_metadata {
         // 临时文件随后会 rename 覆盖目标，需继承原文件属主/权限/扩展属性，否则会退化为默认值。
         // 写回原 inode（硬链接）时目标元数据不变，无需复制。
@@ -361,11 +379,11 @@ fn open_stream_edit_pair(
 fn flush_or_abort_tmp(writer: &mut BufWriter<File>, tmp_path: &Path) -> Result<(), String> {
     writer.flush().map_err(|e| {
         let _ = std::fs::remove_file(tmp_path);
-        format!("刷新临时文件失败: {}", e)
+        format!("刷新临时文件失败: {e}（{NOT_WRITTEN_HINT}）")
     })?;
     writer.get_ref().sync_all().map_err(|e| {
         let _ = std::fs::remove_file(tmp_path);
-        format!("落盘临时文件失败: {}", e)
+        format!("落盘临时文件失败: {e}（{NOT_WRITTEN_HINT}）")
     })
 }
 
@@ -474,17 +492,15 @@ fn check_replace_expect_guards(
     end_line: usize,
 ) -> Result<(), String> {
     if v.get("expect_line_content").is_some() {
-        return Err(
-            "错误：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content。"
-                .to_string(),
-        );
+        return Err(format!(
+            "错误：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content（{NOT_WRITTEN_HINT}）。"
+        ));
     }
     if let Some(expect) = v.get("expect_content").and_then(|c| c.as_str()) {
         let Some(orig) = original else {
-            return Err(
-                "错误：无法读取原文件内容进行 expect_content 校验（文件可能不是 UTF-8 文本），未写盘。"
-                    .to_string(),
-            );
+            return Err(format!(
+                "错误：无法读取原文件内容进行 expect_content 校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
+            ));
         };
         let view: Vec<&str> = orig.lines().collect();
         verify_expect_content(&view, start_line, end_line, expect)?;
@@ -499,23 +515,20 @@ fn check_insert_expect_guards(
     after_line: usize,
 ) -> Result<(), String> {
     if v.get("expect_content").is_some() {
-        return Err(
-            "错误：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content。"
-                .to_string(),
-        );
+        return Err(format!(
+            "错误：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content（{NOT_WRITTEN_HINT}）。"
+        ));
     }
     if let Some(expect) = v.get("expect_line_content").and_then(|c| c.as_str()) {
         if after_line == 0 {
-            return Err(
-                "错误：after_line=0 表示插入到文件开头，无锚点行可校验；expect_line_content 需 after_line>=1。"
-                    .to_string(),
-            );
+            return Err(format!(
+                "错误：after_line=0 表示插入到文件开头，无锚点行可校验；expect_line_content 需 after_line>=1（{NOT_WRITTEN_HINT}）。"
+            ));
         }
         let Some(orig) = original else {
-            return Err(
-                "错误：无法读取原文件内容进行 expect_line_content 校验（文件可能不是 UTF-8 文本），未写盘。"
-                    .to_string(),
-            );
+            return Err(format!(
+                "错误：无法读取原文件内容进行 expect_line_content 校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
+            ));
         };
         let view: Vec<&str> = orig.lines().collect();
         verify_expect_line_content(&view, after_line, expect)?;

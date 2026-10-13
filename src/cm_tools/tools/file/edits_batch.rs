@@ -16,6 +16,7 @@ use crate::cm_tools::workspace::fs::write_bytes_under_root;
 
 use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path};
 use super::replace_lines_stream::{verify_expect_content, verify_expect_line_content};
+use super::write_precheck::NOT_WRITTEN_HINT;
 
 /// 单次 `edits` 批量的条数上限，防止一次调用写坏大文件。
 const MAX_EDITS: usize = 16;
@@ -220,7 +221,7 @@ fn check_edits_conflicts(edits: &[BatchEdit]) -> Result<(), String> {
             };
             if conflict {
                 return Err(format!(
-                    "错误：{} 与 {} 的行区间/锚点在原文件中重叠冲突；请合并为一条编辑或拆分调用",
+                    "错误：{} 与 {} 的行区间/锚点在原文件中重叠冲突；请合并为一条编辑或拆分调用（{NOT_WRITTEN_HINT}）",
                     a.desc, b.desc
                 ));
             }
@@ -238,7 +239,7 @@ fn check_edits_bounds(edits: &[BatchEdit], total: usize) -> Result<(), String> {
         };
         if bad {
             return Err(format!(
-                "错误：{}：行号超出文件行数（文件共 {} 行）",
+                "错误：{}：行号超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
                 e.desc, total
             ));
         }
