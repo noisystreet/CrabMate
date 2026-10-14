@@ -541,12 +541,8 @@ fn search_replace_dry_run_preview(
     let mut shown = 0usize;
     for (i, (old, new)) in orig_lines.iter().zip(lines.iter()).enumerate() {
         if old != new && shown < 20 {
-            preview.push_str(&format!(
-                "  L{}: \"{}\" → \"{}\"\n",
-                i + 1,
-                old.trim(),
-                new.trim()
-            ));
+            // 保留原始前导/尾随空白：缩进敏感语言（Python）下 `trim()` 会让缩进差异不可见、误导判断。
+            preview.push_str(&format!("  L{}: \"{}\" → \"{}\"\n", i + 1, old, new));
             shown += 1;
         }
     }
@@ -566,11 +562,13 @@ fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, St
         s if !s.is_empty() => s.to_string(),
         _ => return Err("缺少 path 参数".to_string()),
     };
-    let search = match args.search.trim() {
-        s if !s.is_empty() => s.to_string(),
-        _ => return Err("缺少 search 参数".to_string()),
-    };
-    Ok((path, search))
+    // 仅用 `trim()` 做空值校验，**保留 `search` 原文**（含首行前导空白）。
+    // 若对 `search` 取 `trim()`，会剥掉首行缩进：锚点变短后按子串替换，文件原缩进前缀与
+    // `replace` 自带缩进叠加 → 写出「缩进翻倍」的坏文件（Python 等缩进敏感语言尤甚）。
+    if args.search.trim().is_empty() {
+        return Err("缺少 search 参数".to_string());
+    }
+    Ok((path, args.search.clone()))
 }
 
 /// 写盘前闸门：`confirm` 确认 + 语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
@@ -851,6 +849,27 @@ mod tests {
         assert!(fs::read_to_string(tmp.path().join("app.py"))
             .unwrap()
             .contains("x = 1"));
+    }
+
+    /// 缩进敏感回归：`search` 首行带缩进时按字面量替换，不得出现「缩进翻倍」。
+    /// 修复前 `search` 被 `trim()` 剥掉首行缩进，与 `replace` 自带缩进叠加，且叠加后语法常仍合法（`write_precheck` 拦不住）。
+    /// 另外 `replace` 只改缩进层级也可精确生效（`search` 不再被剥掉前导空白）。
+    #[test]
+    fn search_replace_keeps_indentation_of_indented_anchor() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "app.py", "def f():\n    if x:\n        return 1\n");
+        let ctx = test_ctx(tmp.path());
+        let out = search_replace(
+            r#"{"path":"app.py","search":"        return 1","replace":"        return 2","dry_run":false,"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("已替换"), "{out}");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("app.py")).unwrap(),
+            "def f():\n    if x:\n        return 2\n",
+            "应保持原缩进（8 空格），而非翻倍"
+        );
     }
 
     /// create_file 创建非法 Python → 拒写；`skip_precheck` 后写盘。
