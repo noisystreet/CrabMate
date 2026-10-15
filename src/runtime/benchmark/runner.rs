@@ -203,7 +203,7 @@ async fn run_single_task(
 
     let (status, agent_error) = if timeout_secs > 0 {
         match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), run_fut).await {
-            Ok(Ok(())) => (TaskStatus::Success, None),
+            Ok(Ok(_)) => (TaskStatus::Success, None),
             Ok(Err(e)) => {
                 let msg = e.to_string();
                 warn!(
@@ -225,7 +225,7 @@ async fn run_single_task(
         }
     } else {
         match run_fut.await {
-            Ok(()) => (TaskStatus::Success, None),
+            Ok(_) => (TaskStatus::Success, None),
             Err(e) => {
                 let msg = e.to_string();
                 (TaskStatus::Error, Some(msg))

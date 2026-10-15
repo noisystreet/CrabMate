@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::json;
 
+use crate::agent::model_context_view::StructuralCommit;
 use crate::cm_api_contract::chat::ConversationLayoutMeta;
 use crate::types::Message;
 
@@ -313,6 +314,64 @@ pub fn save_if_revision(
     Ok(SaveConversationOutcome::Saved)
 }
 
+/// A3：canonical 落盘与归档 INSERT **同事务**提交（设计文档 §3.8 / §4.2）。
+///
+/// 先 `save_if_revision` 落 `Saved`，再于同一事务内追加本次被移出的原文；
+/// 任一步失败整体回滚，维持不变式「归档 ∪ canonical 原文 = 完整原始历史」。
+#[allow(clippy::too_many_arguments)]
+pub fn save_with_archive_if_revision(
+    conn: &Connection,
+    id: &str,
+    messages: Vec<Message>,
+    active_agent_role: Option<&str>,
+    active_session_mode: Option<&str>,
+    expected_revision: Option<u64>,
+    archive_rows: &[ArchiveRow],
+    codec_min_bytes: usize,
+) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    let outcome = save_if_revision(
+        &tx,
+        id,
+        messages,
+        active_agent_role,
+        active_session_mode,
+        expected_revision,
+    )?;
+    if outcome == SaveConversationOutcome::Saved && !archive_rows.is_empty() {
+        append_archive_rows(&tx, id, archive_rows, codec_min_bytes)?;
+    }
+    tx.commit()?;
+    Ok(outcome)
+}
+
+/// 由结构性提交结果构造待归档行（A3，见 §3.8）。
+#[must_use]
+pub fn archive_rows_from_structural_commit(commit: &StructuralCommit) -> Vec<ArchiveRow> {
+    let mut rows = Vec::new();
+    if !commit.archived_prefix.is_empty() {
+        rows.push(ArchiveRow {
+            reason: if commit.prefix_summarized {
+                ArchiveReason::Summarized
+            } else {
+                ArchiveReason::RemovedTurnGroup
+            },
+            range_start: commit.range_start as i64,
+            range_end: commit.range_end as i64,
+            messages: commit.archived_prefix.clone(),
+        });
+    }
+    if !commit.archived_artifacts.is_empty() {
+        rows.push(ArchiveRow {
+            reason: ArchiveReason::Artifact,
+            range_start: commit.range_start as i64,
+            range_end: commit.range_end as i64,
+            messages: commit.archived_artifacts.clone(),
+        });
+    }
+    rows
+}
+
 /// 按 id 删除一行（E2E 夹具 `replace` 等；不存在时静默成功）。
 pub fn delete_by_id(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> {
     conn.execute(&format!("DELETE FROM {TABLE} WHERE id = ?1"), params![id])?;
@@ -353,12 +412,23 @@ pub fn count(conn: &Connection) -> Result<usize, rusqlite::Error> {
 }
 
 /// 全部会话的 `messages_json` 原文（供扫描 `/uploads/` 引用，避免清掉仍在用的附图）。
+///
+/// A4：同时合并归档表中的被移出原文，确保 canonical 收缩后附图引用不丢失（见 §4.2）。
 pub fn list_all_messages_json(conn: &Connection) -> Result<Vec<String>, rusqlite::Error> {
     let mut stmt = conn.prepare(&format!("SELECT messages_json FROM {TABLE}"))?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
     let mut out = Vec::new();
     for row in rows {
         out.push(row?);
+    }
+    match list_all_archive_messages_json(conn) {
+        Ok(archived) => out.extend(archived),
+        Err(e) => {
+            log::warn!(
+                target: "crabmate",
+                "归档原文读取失败，/uploads 引用扫描仅覆盖 canonical: {e}"
+            );
+        }
     }
     Ok(out)
 }

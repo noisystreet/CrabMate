@@ -7,8 +7,6 @@ use super::{ARCHIVE_TABLE, messages_from_json, messages_to_json, now_unix};
 use crate::types::Message;
 
 /// 归档区间被移出 canonical 的原因（设计文档 §3.8）。
-// A3/A4 接线前，lib 构建下暂无调用方；与下方 Phase C 项同理抑制告警。
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveReason {
     /// 被 LLM / 基线摘要覆盖的原文。
@@ -20,7 +18,6 @@ pub enum ArchiveReason {
 }
 
 impl ArchiveReason {
-    #[allow(dead_code)]
     pub fn as_str(self) -> &'static str {
         match self {
             ArchiveReason::Summarized => "summarized",
@@ -31,7 +28,6 @@ impl ArchiveReason {
 }
 
 /// 一条待写入归档的原文区间。
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ArchiveRow {
     pub reason: ArchiveReason,
@@ -42,7 +38,6 @@ pub struct ArchiveRow {
 }
 
 /// 归档读取 / 解码失败——不得静默丢弃（设计文档 §3.8）。
-#[allow(dead_code)]
 #[derive(Debug)]
 pub enum ArchiveError {
     Sqlite(rusqlite::Error),
@@ -74,13 +69,21 @@ impl From<rusqlite::Error> for ArchiveError {
     }
 }
 
+/// 归一到 `rusqlite::Error`，供「canonical UPDATE + 归档 INSERT 同事务」路径直接 `?`（见 §4.2）。
+impl From<ArchiveError> for rusqlite::Error {
+    fn from(e: ArchiveError) -> Self {
+        match e {
+            ArchiveError::Sqlite(inner) => inner,
+            other => rusqlite::Error::ToSqlConversionFailure(Box::new(other)),
+        }
+    }
+}
+
 /// 归档 `codec` 选择阈值默认值（设计文档 §3.8：默认 4 KiB）。
-#[allow(dead_code)]
 pub const ARCHIVE_CODEC_MIN_BYTES_DEFAULT: usize = 4 * 1024;
 
 /// 按 `codec_min_bytes` 选择编码，返回 `(codec, payload)`。
 /// `payload` 为 `TEXT` 列内容：`identity` 直接存 JSON；`gzip` 存 base64(gzip(json))。
-#[allow(dead_code)]
 fn encode_archive_payload(
     messages: &[Message],
     codec_min_bytes: usize,
@@ -110,7 +113,6 @@ fn encode_archive_payload(
 }
 
 /// 解码单条归档行，失败返回可诊断错误（不静默丢弃，见 §3.8）。
-#[allow(dead_code)]
 fn decode_archive_payload(
     seq: i64,
     payload: &str,
@@ -146,7 +148,6 @@ fn decode_archive_payload(
 ///
 /// 若 `conn` 处于 autocommit（无外层事务），本函数自建事务包裹整批插入；
 /// 否则复用调用方事务——供 A3「canonical UPDATE + 归档 INSERT 同事务」原子提交（见 §3.8 / §4.2）。
-#[allow(dead_code)]
 pub fn append_archive_rows(
     conn: &Connection,
     conversation_id: &str,
@@ -167,7 +168,6 @@ pub fn append_archive_rows(
 }
 
 /// 在当前连接（含调用方事务）内逐行插入归档行。
-#[allow(dead_code)]
 fn insert_archive_rows(
     conn: &Connection,
     conversation_id: &str,
@@ -206,6 +206,7 @@ fn insert_archive_rows(
 
 /// 按 `seq` 升序读出会话全部归档原文（re-expand 用，见 §3.11）。
 /// 解码失败返回可诊断错误、**不静默丢弃**。
+// Phase C 才会接线（re-expand，见设计文档 §5.3.2 C4）。
 #[allow(dead_code)]
 pub fn load_archive_messages(
     conn: &Connection,
@@ -225,6 +226,32 @@ pub fn load_archive_messages(
     for row in rows {
         let (seq, payload, codec) = row?;
         out.extend(decode_archive_payload(seq, &payload, &codec)?);
+    }
+    Ok(out)
+}
+
+/// 读出**全库**归档原文（跨会话），逐行 decode 后重序列化为 JSON 数组字符串。
+/// 供 `list_all_messages_json` 合并归档内容（A4，见 §4.2）。
+pub fn list_all_archive_messages_json(conn: &Connection) -> Result<Vec<String>, ArchiveError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT seq, messages_json, codec FROM {ARCHIVE_TABLE} ORDER BY conversation_id ASC, seq ASC"
+    ))?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut out = Vec::new();
+    for row in rows {
+        let (seq, payload, codec) = row?;
+        let messages = decode_archive_payload(seq, &payload, &codec)?;
+        let json = messages_to_json(&messages).map_err(|e| ArchiveError::Decode {
+            seq,
+            reason: format!("归档重序列化失败: {e}"),
+        })?;
+        out.push(json);
     }
     Ok(out)
 }

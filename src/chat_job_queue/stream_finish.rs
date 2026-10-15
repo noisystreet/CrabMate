@@ -28,6 +28,8 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
     pub(super) persisted_active_agent_role: Option<&'a str>,
     pub(super) request_session_mode: Option<&'a str>,
     pub(super) persisted_active_session_mode: Option<&'a str>,
+    /// 本轮结构性提交结果（A2/A3）：canonical 收缩区间，作为归档行落盘。
+    pub(super) structural_commit: crate::agent::model_context_view::StructuralCommit,
 }
 
 /// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
@@ -45,6 +47,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
         persisted_active_agent_role,
         request_session_mode,
         persisted_active_session_mode,
+        structural_commit,
     } = p;
     let scope = conversation_id.to_string();
     let to_index = messages.clone();
@@ -64,6 +67,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
         persisted_active_session_mode,
         request_session_mode,
     );
+    let archive_rows = crate::conversation_store::archive_rows_from_structural_commit(&structural_commit);
     app.conversation
         .save_conversation_messages_if_revision(
             conversation_id.to_string(),
@@ -71,6 +75,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
             active_save.as_deref(),
             mode_save.as_deref(),
             expected_revision,
+            archive_rows,
         )
         .await
 }
@@ -308,7 +313,7 @@ pub(crate) async fn emit_missing_final_response_fallback_if_needed(
 
 /// `run_agent_turn` 之后的流式任务收尾：落盘、SSE 错误/冲突、`stream_ended` 等。
 pub(super) struct StreamJobOutcomeCtx<'a> {
-    pub(super) r: Result<(), crate::agent::agent_turn::RunAgentTurnError>,
+    pub(super) r: crate::turn_runner::TurnRunOutcome,
     pub(super) cancelled_by_signal: bool,
     /// 层 1：本轮最后一次 assistant 输出是否被截断（来自 [`crate::per_turn_flight::PerTurnFlight`]）。
     pub(super) truncated: bool,
@@ -351,11 +356,12 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
         stream_ended_sent,
     } = ctx;
     match r {
-        Ok(()) if cancelled_by_signal => {
+        Ok(commit) if cancelled_by_signal => {
             info!(target: "crabmate", "chat stream 任务已取消 job_id={}", job_id);
+            let _ = commit;
             (false, true, None, StreamEndReason::Cancelled)
         }
-        Ok(()) => {
+        Ok(commit) => {
             let fallback_emitted = emit_missing_final_response_fallback_if_needed(
                 queue_deps.sse_stream_hub.as_ref(),
                 sse_tx,
@@ -382,6 +388,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 persisted_active_agent_role,
                 request_session_mode,
                 persisted_active_session_mode,
+                structural_commit: commit,
             })
             .await
             {

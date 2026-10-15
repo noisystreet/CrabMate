@@ -119,7 +119,7 @@ pub(super) async fn run_stream_queued_job(p: StreamQueuedJobParams) -> JobOutcom
     params.transport.llm_backend = queue_deps.llm_backend;
     // 排队期间已 cancel：仍发过 setup 帧，但不再进 LLM/工具。
     let r = if rt.cancel.load(std::sync::atomic::Ordering::SeqCst) {
-        Ok(())
+        Ok(crate::agent::model_context_view::StructuralCommit::default())
     } else {
         queue_deps.turn_runner.run(params).await
     };

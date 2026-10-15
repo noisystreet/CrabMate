@@ -377,6 +377,7 @@ impl AppStateConversationRuntime {
         active_agent_role: Option<&str>,
         active_session_mode: Option<&str>,
         expected_revision: Option<u64>,
+        archive_rows: Vec<crate::conversation_store::ArchiveRow>,
     ) -> SaveConversationOutcome {
         let (ttl_secs, max_entries) = self.conversation_retention().await;
         let backing = self.conversation_backing.read().await;
@@ -433,13 +434,15 @@ impl AppStateConversationRuntime {
                 let active_for_sql = active_agent_role.map(|s| s.to_string());
                 let mode_for_sql = active_session_mode.map(|s| s.to_string());
                 sqlite_conversation_store_op(c, id_log, "保存", move |g| {
-                    let outcome = conversation_store::save_if_revision(
+                    let outcome = conversation_store::save_with_archive_if_revision(
                         g,
                         &id,
                         messages,
                         active_for_sql.as_deref(),
                         mode_for_sql.as_deref(),
                         exp,
+                        &archive_rows,
+                        conversation_store::ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
                     )?;
                     if outcome == SaveConversationOutcome::Saved {
                         conversation_store::prune(g, ttl_secs, max_entries)?;
@@ -661,6 +664,7 @@ mod tests {
                 None,
                 None,
                 None,
+                Vec::new(),
             )
             .await,
             SaveConversationOutcome::Saved
