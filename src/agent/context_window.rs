@@ -237,6 +237,52 @@ struct MaybeSummarizeParams<'a> {
     force_for_token_budget: bool,
 }
 
+/// 同步裁剪 + 估算「发请求前」的 token 视图（不触发 LLM、不落盘）。
+///
+/// 供 [`prepare_session_messages_shared`] 与 [`prepare_readonly_model_messages`] 共用。
+fn sync_trim_and_estimate_before(
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    tools: &[Tool],
+    model_override: Option<&str>,
+    turn_budget: Option<&std::sync::Arc<crate::agent::turn_budget::TurnBudgetCounter>>,
+) -> (
+    crate::agent::message_pipeline::MessagePipelineDelta,
+    crate::agent::context_compaction::ContextTokenEstimate,
+) {
+    let pipeline = prepare_messages_before_model_call_sync_with_budget(messages, cfg, turn_budget);
+    let before_tokens = crate::agent::context_compaction::estimate_final_request_tokens(
+        cfg,
+        messages,
+        tools,
+        model_override,
+    );
+    (pipeline, before_tokens)
+}
+
+/// 应用 token 预算压缩，并在移除了完整回合组时清理孤儿工具消息。
+fn finalize_token_budget_compaction(
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    tools: &[Tool],
+    model_override: Option<&str>,
+    before: crate::agent::context_compaction::ContextTokenEstimate,
+    summarized_for_token_budget: bool,
+) -> crate::agent::context_compaction::ContextCompactionReport {
+    let compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
+        cfg,
+        messages,
+        tools,
+        model_override,
+        before,
+        summarized_for_token_budget,
+    );
+    if compaction.removed_turn_groups > 0 {
+        let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+    }
+    compaction
+}
+
 /// 主 Agent 外循环的「同步裁剪 + 可选 LLM 摘要」核心路径。
 async fn prepare_session_messages_shared(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -246,13 +292,12 @@ async fn prepare_session_messages_shared(
     messages: &mut Vec<Message>,
     params: PrepareSessionMessagesParams<'_>,
 ) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
-    let pipeline =
-        prepare_messages_before_model_call_sync_with_budget(messages, cfg, params.turn_budget);
-    let before_tokens = crate::agent::context_compaction::estimate_final_request_tokens(
+    let (pipeline, before_tokens) = sync_trim_and_estimate_before(
         cfg,
         messages,
         params.tools,
         params.model_override,
+        params.turn_budget,
     );
     let force_summary_for_token_budget =
         crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
@@ -520,7 +565,7 @@ pub async fn prepare_messages_for_model(
         cfg.session_workspace_changelist
             .session_workspace_changelist_max_chars,
     );
-    delta.compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
+    delta.compaction = finalize_token_budget_compaction(
         cfg,
         messages,
         hooks.tools,
@@ -528,9 +573,6 @@ pub async fn prepare_messages_for_model(
         delta.compaction.before,
         delta.compaction.summarized_for_token_budget,
     );
-    if delta.compaction.removed_turn_groups > 0 {
-        let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
-    }
     if let Some(budget) = delta.compaction.budget {
         log::debug!(
             target: "crabmate::context_compaction",
@@ -564,6 +606,35 @@ pub async fn prepare_messages_for_model(
     }
     delta.pipeline.n_after = messages.iter().filter(|m| !is_chat_timeline_marker(m)).count();
     Ok(delta)
+}
+
+/// 只读、dry-run 的「发请求前」模型视图构建（旁路提问等不需要落盘的场景）。
+///
+/// 仅对传入的 `messages` 副本做**同步裁剪 + token 预算压缩**，**不**触发 LLM 摘要、
+/// **不**写 canonical / 归档 / artifact。返回的 [`PrepareMessagesDelta`] 便于时间线与测试观察。
+pub fn prepare_readonly_model_messages(
+    cfg: &AgentConfig,
+    messages: &mut Vec<Message>,
+    tools: &[Tool],
+    model_override: Option<&str>,
+) -> PrepareMessagesDelta {
+    let (pipeline, before_tokens) =
+        sync_trim_and_estimate_before(cfg, messages, tools, model_override, None);
+    let compaction = finalize_token_budget_compaction(
+        cfg,
+        messages,
+        tools,
+        model_override,
+        before_tokens,
+        false,
+    );
+    PrepareMessagesDelta {
+        pipeline,
+        summarized: false,
+        summary_tail_kept: None,
+        summary_removed_prefix: crate::agent::message_pipeline::RemovedPrefix::default(),
+        compaction,
+    }
 }
 
 #[cfg(test)]
@@ -601,6 +672,52 @@ mod tests {
         assert!(
             tight.len() <= loose.len(),
             "budget pressure should trim at least as aggressively"
+        );
+    }
+
+    /// 只读 dry-run 入口（旁路提问）：把输入 token 收敛到窗口内，但**不**触发 LLM 摘要，
+    /// 也不写 canonical / 归档 / artifact（该入口无 store 参数，落盘由调用方另择，属结构性保证）。
+    #[test]
+    fn readonly_entry_bounds_tokens_without_summary_or_persistence() {
+        let mut cfg = crate::config::load_config(None).expect("embed default");
+        cfg.llm_sampling.llm_context_tokens = 4_096;
+        cfg.llm_sampling.max_tokens = 512;
+        // 让同步字符/条数裁剪不先行兜底，从而真实检验「token 预算压缩」路径。
+        cfg.session_ui.max_message_history = 1_000;
+        cfg.context_pipeline.context_char_budget = 1_000_000;
+        cfg.tool_transcript.tool_message_max_chars = 1_000_000;
+        cfg.context_pipeline.context_summary_trigger_chars = 0;
+
+        let mut messages = vec![Message::system_only("sys")];
+        for turn in 0..30 {
+            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
+            messages.push(Message::assistant_only(format!("a{turn}")));
+        }
+        let budget = crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg)
+            .expect("token budget enabled");
+        let before = crate::agent::context_compaction::estimate_final_request_tokens(
+            &cfg, &messages, &[], None,
+        );
+        assert!(before.used_input_tokens > budget.trigger_tokens);
+
+        let delta = prepare_readonly_model_messages(&cfg, &mut messages, &[], None);
+
+        assert!(!delta.summarized, "只读入口不得触发 LLM 摘要");
+        assert!(delta.summary_tail_kept.is_none());
+        assert_eq!(delta.summary_removed_prefix.removed, 0);
+        assert!(delta.compaction.token_triggered);
+        assert!(delta.compaction.removed_turn_groups > 0);
+        assert!(
+            delta.compaction.after.used_input_tokens < before.used_input_tokens,
+            "只读入口应实际收缩输入: before={} after={}",
+            before.used_input_tokens,
+            delta.compaction.after.used_input_tokens
+        );
+        assert!(
+            delta.compaction.after.used_input_tokens <= budget.max_input_tokens,
+            "只读入口必须把输入 token 收敛到窗口内: after={} max_input={}",
+            delta.compaction.after.used_input_tokens,
+            budget.max_input_tokens
         );
     }
 
