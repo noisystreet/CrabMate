@@ -3,7 +3,8 @@
 //! 本模块只派生模型视图所需的计量与确定性删组；LLM 摘要仍由 `context_window` 编排。
 
 use crate::agent::message_pipeline::{
-    conversation_messages_to_vendor_body, conversation_turn_groups, remove_oldest_turn_group,
+    RemovedPrefix, conversation_messages_to_vendor_body, conversation_turn_groups,
+    remove_oldest_turn_group,
 };
 use crate::agent::tiktoken_prompt_tokens::{
     count_prompt_tokens_openai_compat_vendor_slice, count_serialized_text_tokens_openai_compat,
@@ -116,6 +117,10 @@ pub struct ContextCompactionReport {
     pub summarized_for_token_budget: bool,
     /// 上游响应 usage 的输入 Token；请求结束后补齐，用于估算校准。
     pub provider_input_tokens: Option<u64>,
+    /// 被移出视图前缀的连续区间（以本次 Token 压缩输入的会话坐标为基准）。
+    /// 仅用于提交阶段从 canonical 逐字切片归档，**不**参与 wire 序列化。
+    #[serde(skip)]
+    pub removed_prefix: RemovedPrefix,
 }
 
 impl ContextCompactionReport {
@@ -238,18 +243,20 @@ pub fn compact_messages_to_token_budget(
     });
     let mut removed_turn_groups = 0usize;
     let mut removed_messages = 0usize;
+    let mut removed_prefix = RemovedPrefix::default();
     if let Some(value) = budget
         && token_triggered
     {
         while after.used_input_tokens > value.target_tokens
             && conversation_turn_groups(messages).len() > MIN_RECENT_TURN_GROUPS
         {
-            let removed = remove_oldest_turn_group(messages, MIN_RECENT_TURN_GROUPS);
-            if removed == 0 {
+            let step = remove_oldest_turn_group(messages, MIN_RECENT_TURN_GROUPS);
+            if step.is_empty() {
                 break;
             }
             removed_turn_groups = removed_turn_groups.saturating_add(1);
-            removed_messages = removed_messages.saturating_add(removed);
+            removed_messages = removed_messages.saturating_add(step.removed);
+            removed_prefix = removed_prefix.union(step);
             after = estimate_final_request_tokens(cfg, messages, tools, model_override);
         }
     }
@@ -262,6 +269,7 @@ pub fn compact_messages_to_token_budget(
         token_triggered,
         summarized_for_token_budget,
         provider_input_tokens: None,
+        removed_prefix,
     }
 }
 

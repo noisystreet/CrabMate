@@ -5,6 +5,76 @@ use crate::cm_types::{
     message_content_byte_len_for_estimate, user_message_counts_for_branch_truncation,
 };
 
+/// 被移出视图前缀的连续区间（以「摘除旁注前的会话视图」坐标为基准）。
+///
+/// 会话侧管道对消息列表的删除**恒从最旧一端连续进行**，因此被移出的消息总构成
+/// 一个连续前缀区间 `[start, start + removed)`。本类型仅记录该**范围**，不持有消息内容：
+/// 提交阶段据此从 canonical **逐字切片**取原文，避免捕获到就地压缩后的 tool 正文。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RemovedPrefix {
+    /// 区间起点（0 基，含）。
+    pub start: usize,
+    /// 区间长度；`0` 表示未移除任何消息。
+    pub removed: usize,
+}
+
+impl RemovedPrefix {
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.removed == 0
+    }
+
+    #[must_use]
+    pub const fn end(self) -> usize {
+        self.start.saturating_add(self.removed)
+    }
+
+    /// 并入「在当前列表坐标中移除 `[local_start, local_start + local_removed)`」这一段。
+    ///
+    /// `local_start` 以**已移除本区间后**的列表坐标给出；删除恒从最旧一端连续进行，
+    /// 故把局部起点映射回原始坐标后与既有区间取并集，结果仍是连续区间。
+    #[must_use]
+    pub fn record_local(self, local_start: usize, local_removed: usize) -> Self {
+        if local_removed == 0 {
+            return self;
+        }
+        if self.removed == 0 {
+            return Self {
+                start: local_start,
+                removed: local_removed,
+            };
+        }
+        let orig_start = if local_start >= self.start {
+            local_start.saturating_add(self.removed)
+        } else {
+            local_start
+        };
+        let new_start = self.start.min(orig_start);
+        let new_end = self.end().max(orig_start.saturating_add(local_removed));
+        Self {
+            start: new_start,
+            removed: new_end.saturating_sub(new_start),
+        }
+    }
+
+    /// 与另一区间取并集（两区间均以原始坐标为基准）。
+    #[must_use]
+    pub fn union(self, other: Self) -> Self {
+        if other.removed == 0 {
+            return self;
+        }
+        if self.removed == 0 {
+            return other;
+        }
+        let start = self.start.min(other.start);
+        let end = self.end().max(other.end());
+        Self {
+            start,
+            removed: end.saturating_sub(start),
+        }
+    }
+}
+
 /// 一个完整用户交互组在会话切片中的半开区间：真实 `user` 到下一条真实 `user` 之前。
 ///
 /// 该区间自然覆盖其后的 `assistant(tool_calls)`、一个或多个 `tool` 结果以及最终 assistant，
@@ -38,14 +108,20 @@ pub fn conversation_turn_groups(messages: &[Message]) -> Vec<ConversationTurnGro
 
 /// 删除最旧完整交互组，同时至少保留 `min_groups_to_keep` 个最近组。
 ///
-/// 返回删除的消息条数；没有可删除完整组时返回 0。
-pub fn remove_oldest_turn_group(messages: &mut Vec<Message>, min_groups_to_keep: usize) -> usize {
+/// 返回被移除的**连续前缀区间**；没有可删除完整组时返回空区间。
+pub fn remove_oldest_turn_group(
+    messages: &mut Vec<Message>,
+    min_groups_to_keep: usize,
+) -> RemovedPrefix {
     let groups = conversation_turn_groups(messages);
     if groups.len() <= min_groups_to_keep {
-        return 0;
+        return RemovedPrefix::default();
     }
     let oldest = groups[0];
-    let removed = oldest.end.saturating_sub(oldest.start);
+    let removed = RemovedPrefix {
+        start: oldest.start,
+        removed: oldest.end.saturating_sub(oldest.start),
+    };
     messages.drain(oldest.start..oldest.end);
     removed
 }
@@ -146,27 +222,37 @@ fn trim_tail_after_system(after: &[Message], tail_keep: usize) -> Vec<Message> {
 /// 保留首条 `system`，其后最多保留 `max_after_system` 条消息（与历史 `max_message_history` 语义一致）。
 ///
 /// 与 `runtime/workspace_session` 加载截断一致：若保留的尾部以**两条连续** `assistant` 开头，且被裁掉的前缀里仍有 `user`，则插回其中最后一条 `user`（并丢掉一条较旧消息以维持条数上限），避免 `[system, assistant, assistant, …]` 触发 400。
-/// 返回是否**删除了**至少一条消息（条数裁剪生效）。
-pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usize) -> bool {
+/// 返回被移除的**连续前缀区间**（按完整交互组删除的部分）；病理兜底分支不构成纯前缀删除，返回空区间。
+/// 「是否发生裁剪」请由调用方比较调用前后的条数判定。
+pub fn trim_messages_by_count(
+    messages: &mut Vec<Message>,
+    max_after_system: usize,
+) -> RemovedPrefix {
     if messages.is_empty() || max_after_system == 0 {
-        return false;
+        return RemovedPrefix::default();
     }
-    let before = messages.len();
     let has_system_head = messages[0].role == "system";
     let max_total = max_after_system.saturating_add(usize::from(has_system_head));
-    while messages.len() > max_total && remove_oldest_turn_group(messages, 1) > 0 {}
+    let mut removed = RemovedPrefix::default();
+    while messages.len() > max_total {
+        let step = remove_oldest_turn_group(messages, 1);
+        if step.is_empty() {
+            break;
+        }
+        removed = removed.union(step);
+    }
     if messages.len() <= max_total {
-        return messages.len() < before;
+        return removed;
     }
     if !conversation_turn_groups(messages).is_empty() {
         // 最近完整组本身可超过条数兜底；结构完整性优先于硬切消息条数。
-        return messages.len() < before;
+        return removed;
     }
 
     // 无完整 user 组的病理历史沿用旧尾部兜底；正常 ReAct 历史不会进入此分支。
     if messages[0].role == "system" {
         if messages.len() <= 1 + max_after_system {
-            return false;
+            return removed;
         }
         let sys = messages[0].clone();
         let tail = trim_tail_after_system(&messages[1..], max_after_system);
@@ -177,15 +263,15 @@ pub fn trim_messages_by_count(messages: &mut Vec<Message>, max_after_system: usi
         let skip = messages.len() - max_after_system;
         *messages = messages.iter().skip(skip).cloned().collect();
     }
-    messages.len() < before
+    removed
 }
 
 fn trim_complete_turn_groups_by_char_budget(
     messages: &mut Vec<Message>,
     budget: usize,
     min_total: usize,
-) -> bool {
-    let mut removed_any = false;
+) -> RemovedPrefix {
+    let mut removed = RemovedPrefix::default();
     while estimate_non_system_chars(messages) > budget {
         let groups = conversation_turn_groups(messages);
         let Some(oldest) = groups.first().copied() else {
@@ -198,16 +284,19 @@ fn trim_complete_turn_groups_by_char_budget(
             break;
         }
         messages.drain(oldest.start..oldest.end);
-        removed_any = true;
+        removed = removed.record_local(
+            oldest.start,
+            oldest.end.saturating_sub(oldest.start),
+        );
     }
-    removed_any
+    removed
 }
 
 fn trim_ungrouped_messages_by_char_budget(
     messages: &mut Vec<Message>,
     budget: usize,
     min_total: usize,
-) -> bool {
+) -> RemovedPrefix {
     let start_idx = usize::from(messages[0].role == "system");
     let removable = messages.len().saturating_sub(min_total);
     let mut remaining_chars = estimate_non_system_chars(messages);
@@ -222,25 +311,28 @@ fn trim_ungrouped_messages_by_char_budget(
     if remove_count > 0 {
         messages.drain(start_idx..start_idx + remove_count);
     }
-    remove_count > 0
+    RemovedPrefix {
+        start: start_idx,
+        removed: remove_count,
+    }
 }
 
 /// 在已压缩 tool 的前提下删除最旧完整交互组，直到非 system 字符 ≤ `budget` 或条数触底。
-/// 无 user 组的病理历史保留逐消息兼容兜底。返回是否**删除了**至少一条消息。
+/// 无 user 组的病理历史保留逐消息兼容兜底。返回被移除的**连续前缀区间**。
 pub fn trim_messages_by_char_budget(
     messages: &mut Vec<Message>,
     budget: usize,
     min_messages_after_system: usize,
-) -> bool {
+) -> RemovedPrefix {
     if budget == 0 || messages.len() <= 1 {
-        return false;
+        return RemovedPrefix::default();
     }
     let min_total = 1 + min_messages_after_system;
     if messages.len() <= min_total {
-        return false;
+        return RemovedPrefix::default();
     }
     if estimate_non_system_chars(messages) <= budget {
-        return false;
+        return RemovedPrefix::default();
     }
     if conversation_turn_groups(messages).is_empty() {
         // 无 user 组时保留旧的逐消息兜底，避免损坏历史兼容性。

@@ -196,7 +196,7 @@ fn count_fallback_keeps_parallel_tool_chain_in_latest_group() {
         first_tool,
         second_tool,
     ];
-    assert!(trim_messages_by_count(&mut messages, 2));
+    assert!(!trim_messages_by_count(&mut messages, 2).is_empty());
     assert_eq!(messages.len(), 5);
     assert_eq!(messages[1].role, "user");
     assert_eq!(messages[2].tool_calls.as_ref().map(Vec::len), Some(2));
@@ -228,7 +228,7 @@ fn server_injected_user_does_not_split_real_user_turn_group() {
     assert_eq!(groups[1].start, 3);
     assert_eq!(groups[1].end, 6);
 
-    assert!(trim_messages_by_count(&mut messages, 3));
+    assert!(!trim_messages_by_count(&mut messages, 3).is_empty());
     assert_eq!(messages.len(), 4);
     assert_eq!(
         crate::cm_types::message_content_as_str(&messages[1].content),
