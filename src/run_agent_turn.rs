@@ -70,7 +70,8 @@ async fn emit_mcp_servers_skipped_notice(
 /// 自定义 `ChatCompletionsBackend` 见 [`AgentTurnTransport::llm_backend`]。
 pub async fn run_agent_turn<'a>(
     p: RunAgentTurnParams<'a>,
-) -> Result<(), crate::agent::agent_turn::RunAgentTurnError> {
+) -> Result<crate::agent::model_context_view::StructuralCommit, crate::agent::agent_turn::RunAgentTurnError>
+{
     let RunAgentTurnParams {
         shared,
         session,
@@ -265,14 +266,13 @@ pub async fn run_agent_turn<'a>(
     });
     let mut model_context_artifacts = std::mem::take(&mut loop_params.turn.model_context_artifacts);
     drop(loop_params);
-    if res.is_ok() {
+    res.map(|()| {
         commit_successful_model_context_view(
             messages,
             &model_context_view,
             &mut model_context_artifacts,
-        );
-    }
-    res
+        )
+    })
 }
 
 fn record_turn_start_replay(
@@ -297,7 +297,7 @@ fn commit_successful_model_context_view(
     canonical: &mut Vec<crate::types::Message>,
     model_context_view: &crate::agent::model_context_view::ModelContextView,
     artifacts: &mut Vec<crate::agent::model_context_view::ModelContextArtifact>,
-) {
+) -> crate::agent::model_context_view::StructuralCommit {
     for artifact in artifacts.iter_mut() {
         artifact.canonical_message_count_before_turn =
             model_context_view.canonical_message_count_before_turn();
@@ -306,7 +306,7 @@ fn commit_successful_model_context_view(
     for marker in artifacts.drain(..).filter_map(|artifact| artifact.into_marker()) {
         canonical.push(marker);
     }
-    model_context_view.commit_current_turn_to(canonical);
+    model_context_view.commit_current_turn_to(canonical)
 }
 
 async fn run_agent_turn_common_with_optional_trace(

@@ -8,11 +8,15 @@ use async_trait::async_trait;
 
 use crate::RunAgentTurnParams;
 use crate::agent::agent_turn::RunAgentTurnError;
+use crate::agent::model_context_view::StructuralCommit;
+
+/// 一轮 Agent 的返回：成功时为结构性提交结果（供归档落盘），失败为执行错误。
+pub type TurnRunOutcome = Result<StructuralCommit, RunAgentTurnError>;
 
 /// 跑完整一轮 Agent 的窄注入面（参数袋仍为 [`RunAgentTurnParams`]）。
 #[async_trait]
 pub trait TurnRunner: Send + Sync {
-    async fn run(&self, params: RunAgentTurnParams<'_>) -> Result<(), RunAgentTurnError>;
+    async fn run(&self, params: RunAgentTurnParams<'_>) -> TurnRunOutcome;
 }
 
 /// 默认实现：调用 [`crate::run_agent_turn`]。
@@ -21,7 +25,7 @@ pub struct DefaultTurnRunner;
 
 #[async_trait]
 impl TurnRunner for DefaultTurnRunner {
-    async fn run(&self, params: RunAgentTurnParams<'_>) -> Result<(), RunAgentTurnError> {
+    async fn run(&self, params: RunAgentTurnParams<'_>) -> TurnRunOutcome {
         crate::run_agent_turn(params).await
     }
 }

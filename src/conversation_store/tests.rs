@@ -507,3 +507,85 @@ fn prune_archive_ttl_and_per_conversation_cap() {
     assert!(load_archive_messages(&conn, "c2").unwrap().is_empty());
     assert_eq!(load_archive_messages(&conn, "c1").unwrap().len(), 2);
 }
+
+#[test]
+fn save_with_archive_writes_canonical_and_rows_in_one_transaction() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    let msgs = vec![
+        Message::system_only("s".to_string()),
+        Message::user_only("keep".to_string()),
+    ];
+    let rows = vec![arow(ArchiveReason::Summarized, 1, 3, "dropped")];
+    let outcome = save_with_archive_if_revision(
+        &conn,
+        "c1",
+        msgs,
+        None,
+        None,
+        None,
+        &rows,
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    assert_eq!(outcome, SaveConversationOutcome::Saved);
+    let loaded = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(loaded.messages.len(), 2);
+    let archived = load_archive_messages(&conn, "c1").unwrap();
+    assert_eq!(archived.len(), 1);
+    assert_eq!(
+        message_content_as_str(&archived[0].content),
+        Some("dropped")
+    );
+}
+
+#[test]
+fn save_with_archive_conflict_leaves_archive_untouched() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    save_if_revision(
+        &conn,
+        "c1",
+        vec![Message::user_only("hi".to_string())],
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    let rows = vec![arow(ArchiveReason::RemovedTurnGroup, 0, 1, "dropped")];
+    let outcome = save_with_archive_if_revision(
+        &conn,
+        "c1",
+        vec![Message::user_only("new".to_string())],
+        None,
+        None,
+        Some(999),
+        &rows,
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    assert_eq!(outcome, SaveConversationOutcome::Conflict);
+    assert!(load_archive_messages(&conn, "c1").unwrap().is_empty());
+}
+
+#[test]
+fn archive_rows_from_structural_commit_maps_prefix_and_artifacts() {
+    let commit = StructuralCommit {
+        archived_prefix: vec![Message::user_only("p".to_string())],
+        prefix_summarized: true,
+        archived_artifacts: vec![Message::system_only("a".to_string())],
+        appended: 1,
+        range_start: 1,
+        range_end: 4,
+    };
+    let rows = archive_rows_from_structural_commit(&commit);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].reason, ArchiveReason::Summarized);
+    assert_eq!((rows[0].range_start, rows[0].range_end), (1, 4));
+    assert_eq!(rows[0].messages.len(), 1);
+    assert_eq!(rows[1].reason, ArchiveReason::Artifact);
+    assert_eq!(rows[1].messages.len(), 1);
+
+    // 空提交不产生归档行。
+    assert!(archive_rows_from_structural_commit(&StructuralCommit::default()).is_empty());
+}

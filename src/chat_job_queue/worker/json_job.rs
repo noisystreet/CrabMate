@@ -214,11 +214,11 @@ struct JsonTurnFinishParams<'a> {
 }
 
 async fn finish_json_queued_job_after_turn(
-    r: Result<(), crate::agent::agent_turn::RunAgentTurnError>,
+    r: crate::turn_runner::TurnRunOutcome,
     p: JsonTurnFinishParams<'_>,
 ) -> (bool, bool, Option<String>) {
     match r {
-        Ok(()) => match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
+        Ok(commit) => match post_turn_web_prepare_and_save(PostTurnWebPrepareParams {
             app: p.app,
             queue_deps: p.queue_deps,
             cfg_snap: p.cfg_snap,
@@ -229,6 +229,7 @@ async fn finish_json_queued_job_after_turn(
             persisted_active_agent_role: p.persisted_active_agent_role,
             request_session_mode: p.request_session_mode,
             persisted_active_session_mode: p.persisted_active_session_mode,
+            structural_commit: commit,
         })
         .await
         {

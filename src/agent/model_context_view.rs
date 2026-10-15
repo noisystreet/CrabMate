@@ -195,25 +195,20 @@ impl ModelContextView {
         self.canonical_message_count_before_turn
     }
 
-    /// 将派生视图中当前真实用户回合新增的消息追加回规范历史。
+    /// 将派生视图的结构差异提交回规范历史（reconcile，见设计文档 §3.7）。
     ///
-    /// 历史压缩、摘要替换和删除只发生在视图副本，不会覆盖规范历史。
-    pub fn commit_current_turn_to(&self, canonical: &mut Vec<Message>) -> usize {
-        let Some(model_anchor) = self
+    /// 只提交**结构**变化：被移出的连续原文前缀（交由调用方归档）、可选插入的基线摘要、
+    /// 以及当前真实用户回合之后新增的消息。窗口内其后原文逐字保留；就地内容改写不回写。
+    pub fn commit_current_turn_to(&self, canonical: &mut Vec<Message>) -> StructuralCommit {
+        let Some(view_anchor) = self
             .messages
             .iter()
             .rposition(user_message_counts_for_branch_truncation)
         else {
-            return 0;
+            return StructuralCommit::default();
         };
-        let additions = &self.messages[model_anchor.saturating_add(1)..];
-        if additions
-            .iter()
-            .any(crate::cm_agent::context_timeline::is_context_window_timeline_marker)
-        {
-            crate::cm_agent::context_timeline::strip_context_window_timeline_markers(canonical);
-        }
-        let additions: Vec<Message> = additions
+        let view_head = &self.messages[..=view_anchor];
+        let additions: Vec<Message> = self.messages[view_anchor.saturating_add(1)..]
             .iter()
             .filter(|message| {
                 crate::cm_agent::context_timeline::is_context_window_timeline_marker(message)
@@ -224,10 +219,123 @@ impl ModelContextView {
             })
             .cloned()
             .collect();
-        let added = additions.len();
-        canonical.extend(additions);
-        added
+
+        let removed_users =
+            count_real_users(canonical).saturating_sub(count_real_users(view_head));
+        let view_summary = last_summary_message(&self.messages).cloned();
+        let summary_replaced = match (view_summary.as_ref(), last_summary_message(canonical)) {
+            (Some(view), Some(existing)) => view != existing,
+            (Some(_), None) => true,
+            _ => false,
+        };
+        let first_removal = if summary_replaced {
+            usize::from(
+                canonical
+                    .first()
+                    .is_some_and(|message| message.role == "system"),
+            )
+        } else {
+            nth_real_user_index(canonical, 0).unwrap_or(canonical.len())
+        };
+        let tail_start = nth_real_user_index(canonical, removed_users)
+            .unwrap_or(canonical.len())
+            .max(first_removal);
+        let archived_prefix = canonical[first_removal..tail_start].to_vec();
+
+        let mut next = canonical[..first_removal].to_vec();
+        if summary_replaced && let Some(summary) = view_summary {
+            next.push(summary);
+        }
+        next.extend_from_slice(&canonical[tail_start..]);
+        if additions
+            .iter()
+            .any(crate::cm_agent::context_timeline::is_context_window_timeline_marker)
+        {
+            crate::cm_agent::context_timeline::strip_context_window_timeline_markers(&mut next);
+        }
+        let appended = additions.len();
+        next.extend(additions);
+        let archived_artifacts = enforce_single_artifact(&mut next);
+        *canonical = next;
+
+        StructuralCommit {
+            archived_prefix,
+            prefix_summarized: summary_replaced,
+            archived_artifacts,
+            appended,
+            range_start: first_removal,
+            range_end: tail_start,
+        }
     }
+}
+
+/// 结构性提交结果：本轮被移出 canonical 的原文（归档候选）与追加条数（见 §3.7）。
+#[derive(Clone, Debug, Default)]
+pub struct StructuralCommit {
+    /// 被移出 canonical 的连续原文前缀（逐字原文，交由调用方归档）。
+    pub archived_prefix: Vec<Message>,
+    /// 该前缀是否由摘要替换移出（`true` → `summarized`，否则 `removed_turn_group`）。
+    pub prefix_summarized: bool,
+    /// 超出「canonical 至多 1 条」上限、被回收的旧 artifact 旁注（见 §3.9）。
+    pub archived_artifacts: Vec<Message>,
+    /// 本次追加回 canonical 的当前回合消息条数。
+    pub appended: usize,
+    /// 移出区间在提交前 canonical 中的下标快照（**仅**人审 / 排查）。
+    pub range_start: usize,
+    pub range_end: usize,
+}
+
+impl StructuralCommit {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.archived_prefix.is_empty() && self.archived_artifacts.is_empty() && self.appended == 0
+    }
+}
+
+fn count_real_users(messages: &[Message]) -> usize {
+    messages
+        .iter()
+        .filter(|message| user_message_counts_for_branch_truncation(message))
+        .count()
+}
+
+fn nth_real_user_index(messages: &[Message], n: usize) -> Option<usize> {
+    messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| user_message_counts_for_branch_truncation(message))
+        .nth(n)
+        .map(|(index, _)| index)
+}
+
+fn last_summary_message(messages: &[Message]) -> Option<&Message> {
+    messages.iter().rev().find(|message| {
+        message.role == "user" && message.name.as_deref() == Some(CRABMATE_CONTEXT_SUMMARY_NAME)
+    })
+}
+
+/// 回收多余的 artifact 旁注：只保留最后 1 条，其余按序返回（见 §3.9）。
+fn enforce_single_artifact(messages: &mut Vec<Message>) -> Vec<Message> {
+    let indices: Vec<usize> = messages
+        .iter()
+        .enumerate()
+        .filter(|(_, message)| crate::types::is_model_context_artifact_marker(message))
+        .map(|(index, _)| index)
+        .collect();
+    let Some((&keep, recycled)) = indices.split_last() else {
+        return Vec::new();
+    };
+    let archived = recycled
+        .iter()
+        .map(|&index| messages[index].clone())
+        .collect();
+    let mut cursor = 0usize;
+    messages.retain(|_| {
+        let index = cursor;
+        cursor += 1;
+        index == keep || !recycled.contains(&index)
+    });
+    archived
 }
 
 #[cfg(test)]
@@ -235,7 +343,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn view_compaction_does_not_delete_canonical_history() {
+    fn view_compaction_archives_removed_prefix_and_keeps_canonical_tail() {
         let mut canonical = vec![
             Message::system_only("system"),
             Message::user_only("old user"),
@@ -249,9 +357,14 @@ mod tests {
             .push(Message::assistant_only("current answer"));
 
         assert_eq!(canonical, original);
-        assert_eq!(view.commit_current_turn_to(&mut canonical), 1);
-        assert_eq!(canonical.len(), original.len() + 1);
-        assert!(canonical.iter().any(|message| {
+        let commit = view.commit_current_turn_to(&mut canonical);
+        assert_eq!(commit.appended, 1);
+        assert!(!commit.prefix_summarized);
+        assert_eq!(commit.archived_prefix, original[1..3].to_vec());
+        assert_eq!(commit.range_start, 1);
+        assert_eq!(commit.range_end, 3);
+        // 被移出的原文前缀内容仍在归档候选里，可从 canonical 之外无损取回。
+        assert!(commit.archived_prefix.iter().any(|message| {
             crate::types::message_content_as_str(&message.content) == Some("old answer")
         }));
     }
@@ -340,11 +453,81 @@ mod tests {
         view.messages_mut().push(Message::assistant_only("new answer"));
         view.messages_mut().push(old_timeline.clone());
 
-        assert_eq!(view.commit_current_turn_to(&mut canonical), 2);
+        assert_eq!(view.commit_current_turn_to(&mut canonical).appended, 2);
         assert_eq!(
             canonical
                 .iter()
                 .filter(|message| *message == &old_timeline)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn commit_replaces_prefix_with_summary_and_archives_original_prefix() {
+        let mut canonical = vec![
+            Message::system_only("system"),
+            Message::user_only("old user"),
+            Message::assistant_only("old answer"),
+            Message::user_only("current user"),
+        ];
+        let original = canonical.clone();
+        let mut view = ModelContextView::derive(&canonical);
+        view.messages_mut().drain(1..3);
+        view.messages_mut()
+            .insert(1, Message::user_context_summary_injection("summary"));
+        view.messages_mut()
+            .push(Message::assistant_only("current answer"));
+
+        let commit = view.commit_current_turn_to(&mut canonical);
+        assert!(commit.prefix_summarized);
+        assert_eq!(commit.appended, 1);
+        assert_eq!(commit.archived_prefix, original[1..3].to_vec());
+        assert_eq!(canonical.len(), 4);
+        assert_eq!(canonical[0], original[0]);
+        assert_eq!(
+            canonical[1].name.as_deref(),
+            Some(CRABMATE_CONTEXT_SUMMARY_NAME)
+        );
+        assert_eq!(canonical[2], original[3]);
+    }
+
+    #[test]
+    fn commit_recycles_old_context_artifacts_beyond_single_canonical_marker() {
+        let artifact_a = ModelContextArtifact::capture(
+            1,
+            0,
+            &[],
+            ContextCompactionReport::default(),
+            None,
+        )
+        .into_marker()
+        .expect("marker a");
+        let artifact_b = ModelContextArtifact::capture(
+            2,
+            0,
+            &[],
+            ContextCompactionReport::default(),
+            None,
+        )
+        .into_marker()
+        .expect("marker b");
+        let mut canonical = vec![
+            Message::system_only("system"),
+            artifact_a.clone(),
+            artifact_b.clone(),
+            Message::user_only("current user"),
+        ];
+        let mut view = ModelContextView::derive(&canonical);
+        view.messages_mut()
+            .push(Message::assistant_only("current answer"));
+
+        let commit = view.commit_current_turn_to(&mut canonical);
+        assert_eq!(commit.archived_artifacts, vec![artifact_a]);
+        assert_eq!(
+            canonical
+                .iter()
+                .filter(|message| crate::types::is_model_context_artifact_marker(message))
                 .count(),
             1
         );

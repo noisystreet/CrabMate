@@ -148,6 +148,7 @@ impl E2eConversationFixtureFacet {
         active_agent_role: Option<&str>,
         active_session_mode: Option<&str>,
         expected_revision: Option<u64>,
+        archive_rows: Vec<crate::conversation_store::ArchiveRow>,
     ) -> SaveConversationOutcome {
         self.conversation
             .save_conversation_messages_if_revision(
@@ -156,6 +157,7 @@ impl E2eConversationFixtureFacet {
                 active_agent_role,
                 active_session_mode,
                 expected_revision,
+                archive_rows,
             )
             .await
     }
