@@ -206,8 +206,7 @@ fn insert_archive_rows(
 
 /// 按 `seq` 升序读出会话全部归档原文（re-expand 用，见 §3.11）。
 /// 解码失败返回可诊断错误、**不静默丢弃**。
-// Phase C 才会接线（re-expand，见设计文档 §5.3.2 C4）。
-#[allow(dead_code)]
+// Phase A 仅被 `archive_real_user_count`（分支序号补偿）使用；完整 re-expand 见 Phase C §5.3.2 C4。
 pub fn load_archive_messages(
     conn: &Connection,
     conversation_id: &str,
@@ -228,6 +227,22 @@ pub fn load_archive_messages(
         out.extend(decode_archive_payload(seq, &payload, &codec)?);
     }
     Ok(out)
+}
+
+/// 归档中**真实用户回合**的条数（分支序号补偿用，见 §3.11）。
+///
+/// 客户端提交的 `before_user_ordinal` 是**会话级**序号（含已归档回合），而
+/// [`super::truncate_before_user_ordinal_if_revision`] 按 canonical 内序号执行；两者
+/// 相差的正是归档中的真实用户回合数。Phase A **不做 re-expand**，仅用此值做换算 / 下界判断。
+pub fn archive_real_user_count(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<usize, rusqlite::Error> {
+    let messages = load_archive_messages(conn, conversation_id)?;
+    Ok(messages
+        .iter()
+        .filter(|message| crate::types::user_message_counts_for_branch_truncation(message))
+        .count())
 }
 
 /// 读出**全库**归档原文（跨会话），逐行 decode 后重序列化为 JSON 数组字符串。

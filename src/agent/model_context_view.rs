@@ -240,7 +240,15 @@ impl ModelContextView {
         let tail_start = nth_real_user_index(canonical, removed_users)
             .unwrap_or(canonical.len())
             .max(first_removal);
-        let archived_prefix = canonical[first_removal..tail_start].to_vec();
+        // 归档恒为**被移出的原文前缀**（§3.8）：旧基线摘要注入条是派生旁注、非原文，
+        // 不得混入归档，否则 re-expand 会得到「旧摘要 + 原文」重复。
+        let mut removal_start = first_removal;
+        while removal_start < tail_start
+            && crate::types::is_context_summary_injection(&canonical[removal_start])
+        {
+            removal_start += 1;
+        }
+        let archived_prefix = canonical[removal_start..tail_start].to_vec();
 
         let mut next = canonical[..first_removal].to_vec();
         if summary_replaced && let Some(summary) = view_summary {
@@ -263,7 +271,7 @@ impl ModelContextView {
             prefix_summarized: summary_replaced,
             archived_artifacts,
             appended,
-            range_start: first_removal,
+            range_start: removal_start,
             range_end: tail_start,
         }
     }
@@ -490,6 +498,43 @@ mod tests {
             Some(CRABMATE_CONTEXT_SUMMARY_NAME)
         );
         assert_eq!(canonical[2], original[3]);
+    }
+
+    #[test]
+    fn commit_does_not_archive_stale_summary_injection_as_original_prefix() {
+        // canonical 已含一条旧基线摘要；新摘要替换它时，旧摘要注入条**不得**混入归档候选
+        // （归档恒为原文前缀，见 §3.8；否则 re-expand 会出现「旧摘要 + 原文」重复）。
+        let old_summary = Message::user_context_summary_injection("old summary");
+        let mut canonical = vec![
+            Message::system_only("system"),
+            old_summary.clone(),
+            Message::user_only("u0"),
+            Message::assistant_only("a0"),
+            Message::user_only("u1"),
+        ];
+        let original = canonical.clone();
+        let mut view = ModelContextView::derive(&canonical);
+        view.messages_mut().drain(1..4);
+        view.messages_mut()
+            .insert(1, Message::user_context_summary_injection("new summary"));
+        view.messages_mut().push(Message::assistant_only("a1"));
+
+        let commit = view.commit_current_turn_to(&mut canonical);
+        assert!(commit.prefix_summarized);
+        assert_eq!(commit.archived_prefix, original[2..4].to_vec());
+        assert!(
+            commit
+                .archived_prefix
+                .iter()
+                .all(|message| !crate::types::is_context_summary_injection(message))
+        );
+        assert_eq!(commit.range_start, 2);
+        assert_eq!(commit.range_end, 4);
+        assert_eq!(canonical.len(), 4);
+        assert_eq!(
+            canonical[1].name.as_deref(),
+            Some(CRABMATE_CONTEXT_SUMMARY_NAME)
+        );
     }
 
     #[test]
