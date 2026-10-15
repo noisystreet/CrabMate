@@ -4,6 +4,8 @@ clen = "clen"
 hel = "hel"
 # 历史依赖名（D2.2 已移除；设计文档仍会提及）
 ratatui = "ratatui"
+# 依赖 crate 名 flate2（gzip/deflate 实现）会被拆词为 flate + 2，故白名单 flate
+flate = "flate"
 
 [files]
 extend-exclude = [

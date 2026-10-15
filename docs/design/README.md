@@ -60,7 +60,7 @@
 |---|---|
 | [context_trimming_scheme.md](context_trimming_scheme.md) | 上下文裁剪方案设计 |
 | [context_window_management_react_pruning.md](context_window_management_react_pruning.md) | 上下文窗口管理（ReAct 循环裁剪） |
-| [context_window_token_aware_compaction.md](context_window_token_aware_compaction.md) | ADR：Token 主导、交互组完整的压缩策略 |
+| [context_window_compaction.md](context_window_compaction.md) | ADR：上下文窗口压缩 — Token 主导 + 跨回合基线化 + 原文归档 |
 | [design_prompt_caching.md](design_prompt_caching.md) | Prompt Caching 支持 — 设计文档 |
 | [system_prompt_assembly.md](system_prompt_assembly.md) | 系统提示词动态组装 |
 
