@@ -1,6 +1,6 @@
 # ADR：上下文窗口压缩策略（Token 主导 + 跨回合基线化 + 原文归档）
 
-**状态**：Phase 1–3（Token 主导压缩）已实施；跨回合基线化 + 原文归档为 Proposed（尚未实施）
+**状态**：Phase 1–3（Token 主导压缩）已实施；**Phase A（canonical 基线化 + 原文归档 + `derive` 简化）已实施**；**Phase B（旁路收口）已实施**；Phase C（耦合面与配置）为 Proposed（待实施）
 **日期**：2026-08-24（初稿）；2026-10-15（合并两篇 ADR 并修订边界）
 **决策范围**：Server 上下文计量、模型请求视图派生、裁剪/压缩事件、会话持久化（`conversation_store`）、`ModelContextView` 派生、`run_agent_turn` 回合提交、旁路调用点（`builtin_btw` 等）；无 SSE / HTTP 协议变更，旧 Client 无需改动
 **关联文档**：
@@ -262,7 +262,7 @@ Client 进度条分母使用 `max_input_tokens`，不再使用未扣除输出预
 - 后续可在 `detail` 增加可选 `reason` / Token 字段，旧 Client 可安全忽略；
 - 若未来新增顶层控制键，须执行 Server/Client 协议金样与版本清单。
 
-### 第二部分：跨回合压缩——canonical 基线化 + 原文归档（Proposed）
+### 第二部分：跨回合压缩——canonical 基线化 + 原文归档（Phase A / B 已实施；Phase C 待实施）
 
 四项决策，合起来构成“彻底方案”。
 
@@ -378,9 +378,9 @@ CREATE INDEX IF NOT EXISTS idx_crabmate_conversation_archive_conv
 
 | 既有函数 / 接口 | 影响 | 处理 | 阶段 |
 |---|---|---|---|
-| [`list_all_messages_json`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L333) | 供 `/uploads/` 引用扫描；不覆盖归档会误删仍在引用的上传文件 | **必须**合并归档表内容 | **Phase A**（与归档写入同 PR） |
-| `save_if_revision` / revision 原子性 | canonical + 归档 + artifact 旁注必须**同 revision 原子写** | 在同一事务内完成，避免半提交（会话行不新增水位列，见 §4.1） | **Phase A** |
-| `GET /conversation/messages.context_artifacts` | 契约面：`artifacts_from_messages` 从 canonical 解析旁注 | 数组形状不变；canonical 至多保留最近一条 artifact（见 §3.9） | **Phase A** |
+| [`list_all_messages_json`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L333) | 供 `/uploads/` 引用扫描；不覆盖归档会误删仍在引用的上传文件 | **必须**合并归档表内容 | **Phase A（已实施）**（与归档写入同 PR） |
+| `save_if_revision` / revision 原子性 | canonical + 归档 + artifact 旁注必须**同 revision 原子写** | 在同一事务内完成，避免半提交（会话行不新增水位列，见 §4.1） | **Phase A（已实施）** |
+| `GET /conversation/messages.context_artifacts` | 契约面：`artifacts_from_messages` 从 canonical 解析旁注 | 数组形状不变；canonical 至多保留最近一条 artifact（见 §3.9） | **Phase A（已实施）** |
 | [`truncate_before_user_ordinal_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L435-L466) | 现按 `user_message_counts_for_branch_truncation` 统计 **canonical 内**真实用户序号后 `messages.truncate(cut)`；**基线化后 canonical 内序号会偏移，且早期回合原文已不在 canonical，直接沿用会截错或无法定位** | 分支锚点改用**会话级 `user_turn_ordinal`（含归档，见 §3.11）**；分支点落在归档前缀时先 **re-expand（§3.11）** 还原完整原文再截断；`canonical 更新 + 归档清除` 同事务；补“分支到已归档早期回合”用例 | Phase C |
 | [`prune`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L300) | 按会话条数 / TTL 淘汰；删除会话时归档行也必须删；超 `context_archive_max_rows_per_conversation` 的归档行需回收 | 同事务 `DELETE ... WHERE conversation_id = ?`；回收会使**早于保留窗口的分支点无法 re-expand**，须由分支接口返回显式错误（见 §3.8 / §3.11） | Phase C |
 
@@ -436,11 +436,11 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 4. OpenAI 兼容 `usage.prompt_tokens` / `completion_tokens` 与 `input_tokens` / `output_tokens` 均可解析；上游返回输入用量时写入 `provider_input_tokens`，`counting_source=provider_usage`，供本轮最终快照校准。未返回时保留 tokenizer/保守估算来源；
 5. 所有新增 HTTP/SSE 字段均为可选软字段；旧 Client 继续读取原有两字段，新 Client 对旧 Server 回退本地配置窗口。
 
-### 5.2 待实施：跨回合压缩（Phase A–C）
+### 5.2 跨回合压缩（Phase A–B 已实施；Phase C 待实施）
 
 分三阶段，每阶段可独立回滚。
 
-#### Phase A：基线化 + 归档 + derive 简化（含 `list_all_messages_json` 收口）
+#### Phase A：基线化 + 归档 + derive 简化（含 `list_all_messages_json` 收口）（已实施）
 
 1. 新增归档表（含 `codec`）与读写 / 裁剪 / re-expand 读取 API（会话行**不新增水位列**，见 §4.1 / §3.11）；
 2. **`list_all_messages_json` 合并归档表内容**（与归档写入同一 PR，堵住孤儿文件不可逆清理窗口——见 §4.2）;
@@ -448,11 +448,24 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 4. `ModelContextArtifact` 保留落盘（审计 / 导出）；canonical 至多保留最近一条旁注，旧旁注以 `reason = 'artifact'` 写入归档；`derive` 简化为读 canonical；
 5. 回归：`view_compaction_does_not_delete_canonical_history` 等既有测试改为断言“原文在归档中仍可回放”；新增“被归档消息引用的 `/uploads/` 文件不被判为孤儿”用例。
 
-#### Phase B：旁路收口
+**Phase A 落地状态与遗留**（2026-10-16 复核）：
+
+- 已落地：归档表与读写 API（[`archive.rs`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs)）；结构性提交 reconcile（[`commit_current_turn_to`](file:///home/gzz/crabmate/server/src/agent/model_context_view.rs#L202-L277)）；同事务原子落盘（[`save_with_archive_if_revision`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L322-L346)）；`list_all_messages_json` 合并归档（A4）；`derive` 直读 canonical（A5）。
+- Phase A 的临时口径：分支点落回归档前缀时**返回 `Conflict`**（不作 re-expand），由 Phase C1 替换为 re-expand + 超窗显式错误；归档 `codec` 阈值仍为常量 [`ARCHIVE_CODEC_MIN_BYTES_DEFAULT`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L83)（配置化见 C3）。
+- 待接线的已实现 API：[`delete_archive_for_conversation`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L277) / [`prune_archive`](file:///home/gzz/crabmate/server/src/conversation_store/archive.rs#L292)（Phase C4 接线）。
+
+#### Phase B：旁路收口（已实施）
 
 1. 抽出“只读模型请求视图构建”入口（dry-run 压缩，不落盘；**默认不触发 LLM 摘要**，见 §3.10）；
 2. `builtin_btw` 改走该入口；
 3. 回归：长会话 btw 的 `before_tokens` 不再等于“全量原文”，且 btw **不写** canonical / 归档。
+
+**Phase B 落地状态**（2026-10-16）：
+
+- 新增只读入口 [`prepare_readonly_model_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L615-L638)：复用同步裁剪 + token 预算压缩，`summarized = false`，无 store 参数（结构性保证不落盘）。
+- 共用助手 [`sync_trim_and_estimate_before`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L243-L261) / [`finalize_token_budget_compaction`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L264-L284) 由主路径与只读入口共用。
+- [`answer_btw`](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L154-L163) 在组装后调用该入口（`tools = &[]`，与 `no_tools_chat_request` 一致）。
+- 回归：`readonly_entry_bounds_tokens_without_summary_or_persistence`（`agent::context_window::tests`）。
 
 #### Phase C：耦合面与配置
 
@@ -472,7 +485,7 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 - **R3**（`builtin_btw` 零压缩）→ 旁路收口（§3.10）；
 - 必须由测试守护的不变式：**「归档 ∪ canonical 原文 = 完整原始历史」**；归档恒为**被移出的原文前缀**（§3.8）；分支锚点为**会话级 `user_turn_ordinal`（含归档）**（§3.11）。
 
-#### 5.3.2 Phase A 工程拆解
+#### 5.3.2 Phase A 工程拆解（已实施）
 
 **A0 — 归档表与迁移**：在 [`migrate()`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L28-L45) 新增 `crabmate_conversation_archive`（列见 §4.1，PK `(conversation_id, seq)`）+ 会话索引；幂等迁移，**不新增会话行水位列**；`codec ∈ { identity, gzip }`，`gzip` 走已有 `flate2`。
 
@@ -493,7 +506,7 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 **A5 — derive 退化 + 回归**：`derive` 语义变为「读已基线化的 canonical」，不再额外应用 artifact；回归见 §5.3.5。
 
-#### 5.3.3 Phase B 工程拆解
+#### 5.3.3 Phase B 工程拆解（已实施）
 
 1. 抽出**只读模型请求视图构建**入口（dry-run 压缩，不落盘；**默认不触发 LLM 摘要**，§3.10）；
 2. `builtin_btw` 改走该入口；
@@ -700,3 +713,5 @@ make frontend-check
 | 2026-10-15 | 合并：将上述两篇 ADR 合并为本文（`context_window_compaction.md`），统一编号、去重原则表述，并删除原两文件 |
 | 2026-10-15 | 合并后复核修订（P0/P1/P2）：① 分支锚点由 canonical 内序号改为**会话级 `user_turn_ordinal`（含归档）**并新增 §3.11 re-expand，取代 `archived_through_seq` 水位（P0-1/P0-2）；② §3.7 明确 reconcile **只提交结构差异**，工具正文压缩 / reasoning 剥离仅视图层（P1-3）；③ 归档 `codec` 由 `zstd` 改为 `gzip`（复用 `flate2`）并定义 `context_archive_codec_min_bytes` 选择阈值，`range_*` 限定为审计快照（P1-4/P2-5/P2-7）；④ 「只追加 / 永久可查」改为「保留窗口内可回放」+ 超窗显式错误（P2-6）；⑤ 同步 §4.1、§4.2、§5.2、§6.4、§9.2 |
 | 2026-10-15 | 新增 §5.3 实施拆解（§5.2 工程附录）：按 Phase A–C 细化文件级落点、顺序与依赖（A0/A1 先于 A2）、验证矩阵（映射 §9.2）与关键风险；仅细化实施，不改变 §3–§4 契约 |
+| 2026-10-16 | Phase A 已实施并合入（归档表 + 读写 API、结构性提交 reconcile、同事务原子落盘、`list_all_messages_json` 合并归档、`derive` 直读 canonical）；状态头、§4.2 阶段列与 §5.2/§5.3.2 标注「已实施」，并记录两处临时口径（归档前缀分支返回 `Conflict`、`codec` 阈值暂为常量）以待 Phase B/C 收口 |
+| 2026-10-16 | Phase B（旁路收口）已实施：新增只读入口 `prepare_readonly_model_messages`（dry-run 压缩、默认不触发 LLM 摘要、无 store 参数）并抽出共用助手 `sync_trim_and_estimate_before` / `finalize_token_budget_compaction`；`builtin_btw` 改走该入口；补回归 `readonly_entry_bounds_tokens_without_summary_or_persistence`；状态头、§5.2 与 §5.3.3 标注「已实施」。Phase C 待实施 |

@@ -150,8 +150,28 @@ async fn answer_btw(
     )
     .await
     .map_err(BtwFailure::Other)?;
-    let messages = seed.messages;
+    let mut messages = seed.messages;
     let model_override = req.llm_override.and_then(|o| o.model.as_deref());
+    // 旁路提问同样受「上下文窗口」约束：走只读 dry-run 压缩（不落盘、不触发 LLM 摘要）。
+    let compact_delta = crate::agent::context_window::prepare_readonly_model_messages(
+        eff_cfg.as_ref(),
+        &mut messages,
+        &[],
+        model_override,
+    );
+    if let Some(budget) = compact_delta.compaction.budget {
+        log::debug!(
+            target: "crabmate::context_compaction",
+            "btw_readonly_compaction before_tokens={} after_tokens={} max_input_tokens={} trigger_tokens={} removed_turn_groups={} removed_messages={} reason={}",
+            compact_delta.compaction.before.used_input_tokens,
+            compact_delta.compaction.after.used_input_tokens,
+            budget.max_input_tokens,
+            budget.trigger_tokens,
+            compact_delta.compaction.removed_turn_groups,
+            compact_delta.compaction.removed_messages,
+            compact_delta.compaction.compaction_reason(),
+        );
+    }
 
     let llm_cfg = crate::cm_types::llm_config::LlmConfig {
         llm: eff_cfg.llm.clone(),
