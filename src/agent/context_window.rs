@@ -217,6 +217,8 @@ pub struct PrepareMessagesDelta {
     pub pipeline: crate::agent::message_pipeline::MessagePipelineDelta,
     pub summarized: bool,
     pub summary_tail_kept: Option<usize>,
+    /// LLM 摘要替换「中间」时被移出的连续前缀区间（以摘要输入的会话坐标为基准）。
+    pub summary_removed_prefix: crate::agent::message_pipeline::RemovedPrefix,
     pub compaction: crate::agent::context_compaction::ContextCompactionReport,
 }
 
@@ -262,7 +264,7 @@ async fn prepare_session_messages_shared(
             .context_summary_tail_messages
             .clamp(4, 64),
     );
-    let summarized = maybe_summarize_with_llm(
+    let (summarized, summary_removed_prefix) = maybe_summarize_with_llm(
         llm_backend,
         client,
         api_key,
@@ -290,11 +292,13 @@ async fn prepare_session_messages_shared(
         token_triggered: force_summary_for_token_budget,
         summarized_for_token_budget: summarized && force_summary_for_token_budget,
         provider_input_tokens: None,
+        removed_prefix: crate::agent::message_pipeline::RemovedPrefix::default(),
     };
     Ok(PrepareMessagesDelta {
         pipeline,
         summarized,
         summary_tail_kept,
+        summary_removed_prefix,
         compaction,
     })
 }
@@ -375,7 +379,11 @@ fn build_context_summary_chat_request(cfg: &AgentConfig, transcript: &str) -> Ch
     }
 }
 
-fn apply_llm_summary_to_messages(messages: &mut Vec<Message>, tail: usize, summary_text: &str) {
+fn apply_llm_summary_to_messages(
+    messages: &mut Vec<Message>,
+    tail: usize,
+    summary_text: &str,
+) -> crate::agent::message_pipeline::RemovedPrefix {
     let tail_start = messages.len() - tail;
     let tail_part: Vec<Message> = messages[tail_start..].to_vec();
     messages.truncate(1);
@@ -388,9 +396,15 @@ fn apply_llm_summary_to_messages(messages: &mut Vec<Message>, tail: usize, summa
         messages.len()
     );
     let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
+    // 保留首条 system，删掉其后的「中间」`[1, tail_start)`，再插入单条摘要 user。
+    crate::agent::message_pipeline::RemovedPrefix {
+        start: 1,
+        removed: tail_start.saturating_sub(1),
+    }
 }
 
 /// 当非 system 文本超过 `context_summary_trigger_chars` 时，调用模型生成摘要并替换「中间」为单条 user。
+/// 返回 `(是否已替换, 被移出的连续前缀区间)`。
 async fn maybe_summarize_with_llm(
     llm_backend: &dyn ChatCompletionsBackend,
     client: &Client,
@@ -398,7 +412,9 @@ async fn maybe_summarize_with_llm(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
     params: MaybeSummarizeParams<'_>,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(bool, crate::agent::message_pipeline::RemovedPrefix), Box<dyn std::error::Error + Send + Sync>>
+{
+    let no_removal = crate::agent::message_pipeline::RemovedPrefix::default();
     let Some((tail, transcript)) = context_summary_attempt_prep(
         cfg,
         messages,
@@ -406,7 +422,7 @@ async fn maybe_summarize_with_llm(
         params.force_for_token_budget,
     )
     else {
-        return Ok(false);
+        return Ok((false, no_removal));
     };
 
     if let Some(budget) = params.turn_budget
@@ -417,7 +433,7 @@ async fn maybe_summarize_with_llm(
             "上下文摘要跳过：单轮预算已耗尽（{}）",
             deny.as_str()
         );
-        return Ok(false);
+        return Ok((false, no_removal));
     }
 
     let req = build_context_summary_chat_request(cfg, &transcript);
@@ -439,17 +455,17 @@ async fn maybe_summarize_with_llm(
             let summary_text = message_content_into_text_lossy(msg.content);
             if summary_text.trim().is_empty() {
                 warn!(target: "crabmate", "上下文摘要模型返回空正文，跳过替换");
-                return Ok(false);
+                return Ok((false, no_removal));
             }
             if summary_text.trim().chars().count() < 20 {
                 warn!(
                     "context_window: LLM summary too short ({} chars), skipping replacement",
                     summary_text.trim().chars().count()
                 );
-                return Ok(false);
+                return Ok((false, no_removal));
             }
-            apply_llm_summary_to_messages(messages, tail, &summary_text);
-            Ok(true)
+            let removed = apply_llm_summary_to_messages(messages, tail, &summary_text);
+            Ok((true, removed))
         }
         Err(e) => {
             warn!(
@@ -457,7 +473,7 @@ async fn maybe_summarize_with_llm(
                 "上下文摘要请求失败，继续使用裁剪后的消息 error={}",
                 e
             );
-            Ok(false)
+            Ok((false, no_removal))
         }
     }
 }

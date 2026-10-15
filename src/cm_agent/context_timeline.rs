@@ -435,6 +435,7 @@ mod tests {
                 trim_count_hit: false,
                 trim_char_hit: false,
                 tool_compress_hits: 1,
+                ..MessagePipelineDelta::default()
             },
             summarized: false,
             summary_tail_kept: None,
@@ -500,6 +501,7 @@ mod tests {
                 trim_count_hit: true,
                 trim_char_hit: false,
                 tool_compress_hits: 2,
+                ..MessagePipelineDelta::default()
             },
             summarized: true,
             summary_tail_kept: Some(6),
@@ -520,6 +522,7 @@ mod tests {
                 trim_count_hit: true,
                 trim_char_hit: true,
                 tool_compress_hits: 1,
+                ..MessagePipelineDelta::default()
             },
             summarized: false,
             summary_tail_kept: None,
@@ -597,6 +600,7 @@ mod tests {
                 trim_count_hit: true,
                 trim_char_hit: false,
                 tool_compress_hits: 0,
+                ..MessagePipelineDelta::default()
             },
             summarized: false,
             summary_tail_kept: None,

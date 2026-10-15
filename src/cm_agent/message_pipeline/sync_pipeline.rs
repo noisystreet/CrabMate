@@ -6,8 +6,9 @@ use crate::cm_config::AgentConfig;
 use crate::cm_types::Message;
 
 use super::transforms::{
-    compress_tool_message_contents, drop_orphan_tool_messages, estimate_non_system_chars,
-    take_chat_timeline_markers, trim_messages_by_char_budget, trim_messages_by_count,
+    RemovedPrefix, compress_tool_message_contents, drop_orphan_tool_messages,
+    estimate_non_system_chars, take_chat_timeline_markers, trim_messages_by_char_budget,
+    trim_messages_by_count,
 };
 use super::{MESSAGE_PIPELINE_COUNTERS, MessagePipelineConfig, MessagePipelineCounters};
 
@@ -54,6 +55,8 @@ pub struct MessagePipelineDelta {
     pub trim_count_hit: bool,
     pub trim_char_hit: bool,
     pub tool_compress_hits: usize,
+    /// 被移出视图前缀的连续区间（以「摘除旁注后、`n_before` 时」的会话坐标为基准）。
+    pub removed_prefix: RemovedPrefix,
 }
 
 /// 会话同步管道的一次执行轨迹（仅 debug 启用时填充 `steps`）。
@@ -139,7 +142,9 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
-    let trim_count_hit = trim_messages_by_count(messages, cfg.max_message_history);
+    let before_count_trim = messages.len();
+    let count_removed = trim_messages_by_count(messages, cfg.max_message_history);
+    let trim_count_hit = messages.len() < before_count_trim;
     if trim_count_hit {
         ctr.trim_count_hits.fetch_add(1, Ordering::Relaxed);
     }
@@ -149,13 +154,17 @@ pub fn apply_session_sync_pipeline_with_config(
         messages,
     );
 
+    let mut removed_prefix = count_removed;
     let mut trim_char_hit = false;
     if cfg.context_char_budget > 0 {
-        trim_char_hit = trim_messages_by_char_budget(
+        let before_char_trim = messages.len();
+        let char_removed = trim_messages_by_char_budget(
             messages,
             cfg.context_char_budget,
             cfg.context_min_messages_after_system,
         );
+        trim_char_hit = messages.len() < before_char_trim;
+        removed_prefix = removed_prefix.record_local(char_removed.start, char_removed.removed);
         if trim_char_hit {
             ctr.trim_char_budget_hits.fetch_add(1, Ordering::Relaxed);
         }
@@ -195,6 +204,7 @@ pub fn apply_session_sync_pipeline_with_config(
         trim_count_hit,
         trim_char_hit,
         tool_compress_hits,
+        removed_prefix,
     }
 }
 
