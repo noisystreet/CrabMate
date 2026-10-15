@@ -197,10 +197,14 @@ server = [
     "dep:nix",
 ]
 ## Axum HTTP、`serve`、会话 SQLite、`/chat` 队列等。
+## `flate2`（纯 Rust miniz_oxide）/ `base64`：上下文原文归档表的 `codec = gzip` 编解码
+## （`conversation_store`，见 docs/design/context_window_compaction.md §3.8）。
 web = [
     "dep:axum",
     "dep:tokio-cron-scheduler",
     "dep:tower-http",
+    "dep:flate2",
+    "dep:base64",
 ]
 ## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
 gen-man = ["dep:clap_mangen"]
