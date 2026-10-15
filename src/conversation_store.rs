@@ -525,12 +525,25 @@ fn update_messages_json_if_revision(
 
 /// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
 /// 计数不含长期记忆 / 变更集 / 首轮工作区画像 / 上下文摘要等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
+///
+/// `user_ordinal` 是客户端**会话级**序号（含已归档回合，见 §3.11）。Phase A 不做 re-expand：
+/// 先用归档中的真实用户回合数把会话级序号换算为 canonical 内序号；若目标落在归档前缀内
+/// （`user_ordinal < archived_users`）则返回 [`SaveConversationOutcome::Conflict`]——
+/// 即 §3.8 要求的「归档保留上限被突破时分支接口必须返回显式错误」。
 pub fn truncate_before_user_ordinal_if_revision(
     conn: &Connection,
     id: &str,
     user_ordinal: usize,
     expected_revision: u64,
 ) -> Result<SaveConversationOutcome, rusqlite::Error> {
+    let archived_users = archive::archive_real_user_count(conn, id)?;
+    let Some(canonical_ordinal) = user_ordinal.checked_sub(archived_users) else {
+        log::warn!(
+            "分支截断目标序号 {user_ordinal} 落在归档前缀内（已归档真实用户回合 {archived_users} 条）；\
+Phase A 暂无 re-expand，返回 Conflict（见设计文档 §3.8/§3.11）"
+        );
+        return Ok(SaveConversationOutcome::Conflict);
+    };
     update_messages_json_if_revision(
         conn,
         id,
@@ -542,7 +555,7 @@ pub fn truncate_before_user_ordinal_if_revision(
             let mut cut = messages.len();
             for (i, m) in messages.iter().enumerate() {
                 if crate::types::user_message_counts_for_branch_truncation(m) {
-                    if u == user_ordinal {
+                    if u == canonical_ordinal {
                         cut = i;
                         break;
                     }

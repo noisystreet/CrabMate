@@ -569,6 +569,80 @@ fn save_with_archive_conflict_leaves_archive_untouched() {
 }
 
 #[test]
+fn truncate_before_user_ordinal_compensates_archived_users() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    // 归档中已有 2 条真实用户回合（会话级序号 0、1）。
+    append_archive_rows(
+        &conn,
+        "c1",
+        &[
+            arow(ArchiveReason::RemovedTurnGroup, 0, 1, "a0"),
+            arow(ArchiveReason::RemovedTurnGroup, 1, 2, "a1"),
+        ],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    // canonical 仅剩会话级序号 2、3 两个真实回合。
+    let msgs = vec![
+        Message::system_only("s".to_string()),
+        Message::user_only("u2".to_string()),
+        Message::assistant_only("r2".to_string()),
+        Message::user_only("u3".to_string()),
+        Message::assistant_only("r3".to_string()),
+    ];
+    assert_eq!(
+        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
+    // 会话级序号 2 → canonical 内序号 0 → 截断至 [system]。
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 2, rev).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(after.messages.len(), 1);
+    assert_eq!(after.messages[0].role, "system");
+}
+
+#[test]
+fn truncate_before_user_ordinal_in_archive_prefix_returns_conflict() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    append_archive_rows(
+        &conn,
+        "c1",
+        &[
+            arow(ArchiveReason::RemovedTurnGroup, 0, 1, "a0"),
+            arow(ArchiveReason::RemovedTurnGroup, 1, 2, "a1"),
+        ],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    let msgs = vec![
+        Message::system_only("s".to_string()),
+        Message::user_only("u2".to_string()),
+    ];
+    assert_eq!(
+        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
+    // 会话级序号 1 落在归档前缀内（已归档 2 条）→ 显式 Conflict，canonical 不变。
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 1, rev).unwrap(),
+        SaveConversationOutcome::Conflict
+    );
+    let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(after.messages.len(), 2);
+    assert_eq!(
+        message_content_as_str(&after.messages[1].content),
+        Some("u2")
+    );
+}
+
+#[test]
 fn archive_rows_from_structural_commit_maps_prefix_and_artifacts() {
     let commit = StructuralCommit {
         archived_prefix: vec![Message::user_only("p".to_string())],
