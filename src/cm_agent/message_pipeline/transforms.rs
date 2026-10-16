@@ -1,7 +1,7 @@
 //! 会话侧逐步变换：条数/字符裁剪、tool 压缩、孤立 tool 剔除等（由 [`super::sync_pipeline::apply_session_sync_pipeline_with_config`] 编排）。
 
 use crate::cm_types::{
-    Message, is_chat_timeline_marker, is_model_context_artifact_marker,
+    Message, MessageContent, is_chat_timeline_marker, is_model_context_artifact_marker,
     message_content_byte_len_for_estimate, user_message_counts_for_branch_truncation,
 };
 
@@ -378,4 +378,67 @@ pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) -> usize {
         k
     });
     before_len.saturating_sub(messages.len())
+}
+
+/// 中断回合补齐的占位 `tool` 正文（纯文本，非工具信封）：说明该工具因用户中断未执行完成。
+const INTERRUPTED_TOOL_RESULT_PLACEHOLDER: &str =
+    "本轮已被用户中断，该工具调用未执行完成，无结果。";
+
+/// 补齐**最后一条**带 `tool_calls` 的 `assistant` 里尚未得到响应的 `tool` 消息，返回新增条数。
+///
+/// 用户在工具批执行中途点「停止生成」时，落盘的 `messages` 可能停在
+/// `assistant(tool_calls=[A, B]) + tool(A)` 这种**部分响应**状态：末条是 `tool`（不是 assistant），
+/// [`crate::cm_types::normalize_messages_for_openai_compatible_request`] 只清理「末条 assistant 的悬空 `tool_calls`」，
+/// 覆盖不到该形态 ⇒ 下一轮请求会因「assistant 的 `tool_calls` 缺少对应 tool 响应」被上游 400。
+/// 这里为缺失的 `tool_call_id` 合成占位 `tool` 消息（`content` 为纯文本说明），使序列合法。
+///
+/// **仅用于中断 / 取消落盘路径**（写回 canonical 前调用），不改动正常完成回合的既有行为。
+pub fn complete_pending_tool_responses_for_persistence(messages: &mut Vec<Message>) -> usize {
+    let Some(assistant_idx) = messages.iter().rposition(|message| {
+        message.role.trim().eq_ignore_ascii_case("assistant")
+            && message
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty())
+    }) else {
+        return 0;
+    };
+    let tool_calls = messages[assistant_idx]
+        .tool_calls
+        .clone()
+        .unwrap_or_default();
+    let mut insert_at = assistant_idx + 1;
+    let mut responded: Vec<String> = Vec::new();
+    // 角色判定与 assistant 分支同口径（trim + 忽略大小写），避免上游写入 `"Tool"` / 带空白时漏判。
+    // 已响应的 `tool` 消息若 `tool_call_id == None`，继续推进 `insert_at` 而不 panic：该消息无法
+    // 对应到任何 pending call，只能靠后续按 id 补齐，直接丢弃它会破坏既有序列。
+    while insert_at < messages.len()
+        && messages[insert_at].role.trim().eq_ignore_ascii_case("tool")
+    {
+        if let Some(id) = messages[insert_at].tool_call_id.clone() {
+            responded.push(id);
+        }
+        insert_at += 1;
+    }
+    let placeholders: Vec<Message> = tool_calls
+        .into_iter()
+        .filter(|call| !responded.contains(&call.id))
+        .map(|call| Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text(format!(
+                "{INTERRUPTED_TOOL_RESULT_PLACEHOLDER}（工具：{}）",
+                call.function.name
+            ))),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some(call.id),
+        })
+        .collect();
+    let added = placeholders.len();
+    if added > 0 {
+        messages.splice(insert_at..insert_at, placeholders);
+    }
+    added
 }

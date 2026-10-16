@@ -410,6 +410,24 @@ impl RunAgentTurnError {
         )
     }
 
+    /// 中断类取消（含 SSE 断开）：用于判断「本轮已产出的部分是否要写回 canonical」。
+    ///
+    /// 与 [`Self::is_user_flow_cancelled`] 的差异：后者只覆盖 `UserCancelled`（SseDisconnected
+    /// 不算用户取消，故不用于落盘判定）；但 `check_abort!` 在 SSE 已关闭时**优先**归为
+    /// `SseDisconnected`（即便 `cancel` 已置位），而 job 队列据 `cancelled_by_signal` 仍会把它
+    /// 归为 `UserCancelled` —— 因此落盘判定必须同时覆盖 `SseDisconnected`，否则该轮部分输出
+    /// 会在「用户点停止 → SSE 先断开」的竞态路径上丢失。
+    pub(crate) fn is_interrupted_cancel(&self) -> bool {
+        self.is_user_flow_cancelled()
+            || matches!(
+                self,
+                Self::TurnAborted {
+                    reason: TurnAbortReason::SseDisconnected,
+                    ..
+                }
+            )
+    }
+
     /// `GET /status` 等任务摘要用短串（取消路径返回 `None`）。
     pub(crate) fn short_detail_for_job_log(&self) -> Option<String> {
         if self.is_user_flow_cancelled() {

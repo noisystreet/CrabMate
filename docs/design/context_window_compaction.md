@@ -647,7 +647,7 @@ Client 缺少最终 tools、供应商消息变换和 Server 动态注入的完�
 2. 图片先使用保守固定预算，供应商返回 usage 时在最终快照标记校准来源；
 3. tool schema 按每次真实下发工具集计数；
 4. reasoning 按现有供应商 round-trip 规则进入消息估算；
-5. `ConversationTurnGroup` 以真实 user 为边界，并行 tool calls 保持同组；取消回合不提交派生视图；
+5. `ConversationTurnGroup` 以真实 user 为边界，并行 tool calls 保持同组；取消回合**不**提交派生视图（中断路径不压缩、不归档），但会把本轮已产出的消息**仅追加**写回 canonical 并尽力落盘，供下一轮上下文可见（见 `docs/SSE协议.md`「取消 / 中断回合的落盘语义」）；
 6. Token 统计以兼容方式扩展现有 `tiktoken_prompt_tokens`，不提升 SSE 版本；
 7. 规范历史沿用会话 revision；每次模型调用的 `ModelContextArtifact.schema_version = 1` 作为隐藏旁注随同一 revision 原子保存，`model_call_sequence` 区分回合内调用。
 
