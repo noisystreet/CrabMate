@@ -156,36 +156,8 @@ pub struct EnvVarCheckArgs {
     pub show_prefix_chars: Option<u64>,
 }
 
-/// [`super::process_tools::port_check`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PortCheckArgs {
-    /// 要检查的端口号（1–65535）
-    #[schemars(range(min = 1, max = 65535))]
-    pub port: u32,
-}
-
-/// [`super::process_tools::process_list`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ProcessListArgs {
-    /// 按进程名/命令行关键词过滤（不区分大小写）
-    pub filter: Option<String>,
-    /// 是否仅当前用户进程，默认 true
-    #[serde(default = "default_true")]
-    pub user_only: bool,
-    /// 最多返回条数，默认 100，上限 500
-    #[serde(default = "default_process_list_max_count")]
-    #[schemars(range(min = 1, max = 500))]
-    pub max_count: u32,
-}
-
 fn default_true() -> bool {
     true
-}
-
-fn default_process_list_max_count() -> u32 {
-    100
 }
 
 /// [`super::background_job_tools::background_job_status`] 入参。
@@ -354,46 +326,4 @@ pub struct CoverageReportArgs {
     pub path: Option<String>,
     #[serde(default)]
     pub format: Option<CoverageReportFormat>,
-}
-
-/// [`super::package_query::run`] 的包管理器偏好。
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum PackageQueryManagerPref {
-    #[default]
-    Auto,
-    Apt,
-    Rpm,
-}
-
-/// [`super::package_query::run`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PackageQueryArgs {
-    pub package: String,
-    #[serde(default, deserialize_with = "deserialize_package_query_manager")]
-    pub manager: PackageQueryManagerPref,
-}
-
-fn deserialize_package_query_manager<'de, D>(
-    deserializer: D,
-) -> Result<PackageQueryManagerPref, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::Error;
-    let opt = Option::<String>::deserialize(deserializer)?;
-    let raw = opt
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("auto");
-    match raw.to_ascii_lowercase().as_str() {
-        "auto" => Ok(PackageQueryManagerPref::Auto),
-        "apt" => Ok(PackageQueryManagerPref::Apt),
-        "rpm" => Ok(PackageQueryManagerPref::Rpm),
-        _ => Err(Error::custom(
-            "manager 仅支持 auto / apt / rpm（大小写不敏感；可省略）",
-        )),
-    }
 }

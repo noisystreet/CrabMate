@@ -30,7 +30,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "run_command" | "run_executable" | "terminal_session" => &[GENERAL, CPP],
         // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
         "workflow_execute" => &[GENERAL, RUST, QUALITY],
-        "package_query" => &[GENERAL],
         "diagnostic_summary"
         | "self_config_info"
         | "error_output_playbook"
@@ -101,7 +100,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "rust_analyzer_goto_type_definition"
         | "rust_analyzer_document_highlight"
         | "rust_analyzer_workspace_symbol" => &[GENERAL, RUST],
-        "cargo_check" | "cargo_test" | "cargo_clippy" | "rust_compiler_json" | "rust_rustc" => {
+        "cargo_check" | "cargo_test" | "cargo_clippy" | "rust_compiler_json" => {
             &[GENERAL, RUST, QUALITY]
         }
         "find_symbol" | "find_references" | "rust_file_outline" | "call_graph_sketch" => {
@@ -130,9 +129,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- 格式化（多语言由实现按扩展名分流）---
         "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
-
-        // --- 进程与端口 ---
-        "port_check" | "process_list" => &[GENERAL],
 
         // --- 后台任务查询 ---
         "background_job_status" | "background_job_list" => &[GENERAL],
@@ -260,21 +256,9 @@ mod tests {
     }
 
     #[test]
-    fn rust_rustc_is_rust_and_quality() {
-        let t = tags_for_tool_name("rust_rustc");
-        assert!(t.contains(&RUST) && t.contains(&QUALITY));
-    }
-
-    #[test]
     fn git_status_is_vcs() {
         let t = tags_for_tool_name("git_status");
         assert!(t.contains(&VCS));
-    }
-
-    #[test]
-    fn package_query_is_general() {
-        let t = tags_for_tool_name("package_query");
-        assert!(t.contains(&GENERAL));
     }
 
     #[test]

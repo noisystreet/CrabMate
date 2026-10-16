@@ -375,29 +375,6 @@ impl ToolSummaryLine for ApplyPatchSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct PackageQuerySummaryArgs {
-    package: String,
-    #[serde(default)]
-    manager: Option<String>,
-}
-
-impl ToolSummaryLine for PackageQuerySummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let pkg = self.package.trim();
-        if pkg.is_empty() {
-            return None;
-        }
-        let mgr = self
-            .manager
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .unwrap_or("auto");
-        Some(format!("package query: {} ({})", pkg, mgr))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct FindSymbolSummaryArgs {
     symbol: String,
 }

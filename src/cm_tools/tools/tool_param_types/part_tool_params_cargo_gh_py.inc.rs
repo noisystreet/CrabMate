@@ -47,12 +47,6 @@ pub struct RustTestOneArgs {
     pub nocapture: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct RustRustcArgs {
-    pub args: Vec<String>,
-}
-
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(default)]
 pub struct RustCompilerJsonArgs {
