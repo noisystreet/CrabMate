@@ -32,6 +32,22 @@ pub(super) struct PostTurnWebPrepareParams<'a> {
     pub(super) structural_commit: crate::agent::model_context_view::StructuralCommit,
 }
 
+/// 落盘 / 结构性提交前的注入净化链（ADR §3.7.1，必须显式复用、不得依赖隐式副作用）。
+///
+/// 契约：
+/// - [`crate::memory::long_term_memory::strip_long_term_memory_injections`] — 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`；
+/// - [`crate::workspace::changelist::strip_workspace_changelist_injections`] — 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`；
+/// - [`crate::types::strip_orchestration_injected_users_for_conversation_store`] — 其余编排注入 user
+///   （**保留**基线摘要 `CRABMATE_CONTEXT_SUMMARY_NAME` 与首轮工作区画像 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`）；
+/// - [`crate::types::is_execution_constraint_ephemeral_system`] 的执行约束临时 system 正常由
+///   `outer_loop` 每轮 retain 移出，异常残留须在此一并剔除。
+pub(crate) fn strip_persist_injections(messages: &mut Vec<Message>) {
+    crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
+    crate::workspace::changelist::strip_workspace_changelist_injections(messages);
+    crate::types::strip_orchestration_injected_users_for_conversation_store(messages);
+    messages.retain(|m| !crate::types::is_execution_constraint_ephemeral_system(m));
+}
+
 /// Web 队列：`run_agent_turn` 成功后的 LTM 异步索引、剥离注入与会话按 revision 落盘。
 pub(super) async fn post_turn_web_prepare_and_save(
     p: PostTurnWebPrepareParams<'_>,
@@ -58,9 +74,7 @@ pub(super) async fn post_turn_web_prepare_and_save(
         ltm.clone()
             .spawn_turn_memory_postprocess(Arc::clone(cfg_snap), scope, to_index);
     }
-    crate::memory::long_term_memory::strip_long_term_memory_injections(messages);
-    crate::workspace::changelist::strip_workspace_changelist_injections(messages);
-    crate::types::strip_orchestration_injected_users_for_conversation_store(messages);
+    strip_persist_injections(messages);
     let active_save =
         persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
     let mode_save = crate::session_mode_turn::persisted_session_mode_after_turn(
@@ -493,5 +507,39 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_persist_injections;
+    use crate::types::{
+        CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
+        CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
+        CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
+    };
+
+    /// ADR §3.7.1：净化链**保留**基线摘要与首轮工作区画像，**剔除**其余注入。
+    #[test]
+    fn strip_persist_injections_keeps_summary_and_profile_drops_rest() {
+        let mut messages = vec![
+            Message::user_only("真实问题"),
+            Message::user_server_injection(CRABMATE_LONG_TERM_MEMORY_NAME, "长期记忆注入"),
+            Message::user_server_injection(CRABMATE_WORKSPACE_CHANGELIST_NAME, "变更集注入"),
+            Message::user_server_injection(CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME, "规划轮拒绝重写"),
+            Message::user_context_summary_injection("基线摘要"),
+            Message::user_first_turn_workspace_context("首轮工作区画像"),
+            Message::system_execution_constraint_hint("执行约束临时 system"),
+        ];
+        strip_persist_injections(&mut messages);
+        let names: Vec<Option<String>> = messages.iter().map(|m| m.name.clone()).collect();
+        assert_eq!(
+            names,
+            vec![
+                None,
+                Some(CRABMATE_CONTEXT_SUMMARY_NAME.to_string()),
+                Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.to_string()),
+            ]
+        );
     }
 }

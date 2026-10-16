@@ -215,6 +215,7 @@ fn finalize_section_context_pipeline(
         context_summary_tail_messages: tail.context_summary_tail_messages,
         context_summary_max_tokens: tail.context_summary_max_tokens,
         context_summary_transcript_max_chars: tail.context_summary_transcript_max_chars,
+        context_btw_summary_enabled: tail.context_btw_summary_enabled,
         context_summary_system,
         context_summary_user_template,
     }

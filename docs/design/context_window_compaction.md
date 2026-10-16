@@ -330,7 +330,7 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
 `builtin_btw` 等旁路必须走**同一套**“构建模型请求视图”逻辑，但保持其“**不落盘**”语义（btw 是旁路查询，不得改写 canonical）。做法：
 
 - 抽出只读入口：输入 `canonical` + 本轮 user，输出“发模型的 messages”，内部复用 `prepare_messages_for_model` 的**同步压缩路径**，但**不写回 canonical、不写归档、不写 artifact**；
-- **btw 默认不触发 LLM 摘要**：只做同步裁剪 + 旧工具输出压缩。btw 是交互式旁路（[`try_acquire_owned` 队列满立即失败](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L119-L122)），长会话下额外摘要调用会抬高延迟与费用；确需摘要时通过显式配置开关启用；
+- **btw 默认不触发 LLM 摘要**：只做同步裁剪 + 旧工具输出压缩。btw 是交互式旁路（[`try_acquire_owned` 队列满立即失败](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L119-L122)），长会话下额外摘要调用会抬高延迟与费用；确需摘要时通过显式配置开关 `context_btw_summary_enabled`（默认 `false`）启用——开启后只读入口按与主路径**相同**的触发规则尝试一次摘要，但仍**不**写 canonical / 归档 / artifact；
 - 主路径（`run_agent_turn`）用同一入口的“可提交”变体；
 - 通过类型/参数区分“dry-run 视图”与“可提交视图”，避免未来再出现“忘记压缩”的新旁路。
 
@@ -462,16 +462,16 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 **Phase B 落地状态**（2026-10-16）：
 
-- 新增只读入口 [`prepare_readonly_model_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L615-L638)：复用同步裁剪 + token 预算压缩，`summarized = false`，无 store 参数（结构性保证不落盘）。
+- 新增只读入口 [`prepare_readonly_model_messages`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L626-L685)（**async**）：复用同步裁剪 + token 预算压缩，无 store 参数（结构性保证不落盘）；**默认不触发 LLM 摘要**，仅当传入 `Some(ReadonlySummaryLlm)`（由 `context_btw_summary_enabled=true` 提供）时才按主路径**相同**的触发规则尝试一次摘要。
 - 共用助手 [`sync_trim_and_estimate_before`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L243-L261) / [`finalize_token_budget_compaction`](file:///home/gzz/crabmate/server/src/agent/context_window.rs#L264-L284) 由主路径与只读入口共用。
-- [`answer_btw`](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L154-L163) 在组装后调用该入口（`tools = &[]`，与 `no_tools_chat_request` 一致）。
-- 回归：`readonly_entry_bounds_tokens_without_summary_or_persistence`（`agent::context_window::tests`）。
+- [`answer_btw`](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/builtin_btw.rs#L157-L173) 在组装后调用该入口（`tools = &[]`，与 `no_tools_chat_request` 一致）；`summary_llm` 由 `context_btw_summary_enabled` 门控（默认 `false` → 不传）。
+- 回归：`readonly_entry_bounds_tokens_without_summary_or_persistence`、`btw_readonly_summary_flag_defaults_off`（`agent::context_window::tests`）。
 
 #### Phase C：耦合面与配置（C1 / C2 / C3 / C4 全部已实施）
 
 1. **（已实施，C1）** 分支路径改造：`truncate_before_user_ordinal_if_revision` 改用**会话级 `user_turn_ordinal`**（含归档）并接入 **re-expand**；`prune` 覆盖归档表并补测（含分支点落回归档前缀时先 re-expand 再截断、回滚后同事务清除该会话归档；见 §3.11）；
 2. **（已实施，C2）** 导出（`/conversation/messages`）支持可选携带归档（默认不返回，保持体积与兼容）：新增可选查询参数 `include_archive` 与可选响应字段 `archive`（`skip_serializing_if = "Vec::is_empty"`）；
-3. **（已实施，C3）** 新增 / 复用配置项并同步 `配置说明.md`：本项目前**只落两个已定名键**——归档保留上限 `context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）与 `context_archive_codec_min_bytes`（codec 选择阈值，默认 4096，见 §3.8）；`context_baseline_*` 与 btw 摘要开关的**键名 / 默认值仍待定**（见 §5.3.6），待确认后另行补齐；
+3. **（已实施，C3）** 新增 / 复用配置项并同步 `配置说明.md`：归档保留上限 `context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、归档 codec 选择阈值 `context_archive_codec_min_bytes`（默认 4096，见 §3.8），以及旁路摘要开关 `context_btw_summary_enabled`（默认 `false`，见 §3.10）；`context_baseline_*` **已确认不再需要（废弃）**——基线摘要复用既有 `context_summary_*` 配置，不引入独立基线键；
 4. **（已完成）** 更新 `CHANGELOG.md`；C2 完成后本文状态已改为 **Accepted**（见状态头）。
 
 ### 5.3 实施拆解（§5.2 工程附录）
@@ -518,7 +518,7 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 
 **C2 — 导出携带归档（已实施）**：`GET /conversation/messages` 新增可选查询参数 `include_archive`（boolean，默认 `false`）与可选响应字段 `archive`（`skip_serializing_if = "Vec::is_empty"`，默认不返回以保持体积与旧客户端兼容）。落点：契约 [`ConversationMessagesQuery`](file:///home/gzz/crabmate/server/src/cm_api_contract/chat.rs) / [`ConversationMessagesResponseBody`](file:///home/gzz/crabmate/server/src/cm_api_contract/chat.rs)；读归档 [`load_conversation_archive_messages`](file:///home/gzz/crabmate/server/src/web/app_state.rs)（仅 SQLite 有归档，内存后端返回空，失败容错返回空）；handler [`conversation_messages_handler`](file:///home/gzz/crabmate/server/src/web/chat_handlers/chat/mod.rs)；OpenAPI 参数 [`openapi_paths.rs`](file:///home/gzz/crabmate/server/src/web/openapi/openapi_paths.rs) 与快照 `docs/openapi.json` 同步。`archive` 与 `messages` 同为 `WebClientSnapshotMessage` 形状（复用泛型响应体 `<M>`）。回归：契约解析、app_state 内存 / SQLite / 不存在会话、OpenAPI schema 与空值省略。
 
-**C3 — 配置与文档（已实施，仅两个已定名键）**：新增并同步 `docs/配置说明.md` / `docs/en/CONFIGURATION.md` / `config/default_config.toml` / `CHANGELOG.md`：`context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、`context_archive_codec_min_bytes`（默认 4096）；同步 `cm_config/{builder,env_overrides,validate,hot_reload}` 与 `finalize_*`。**`context_baseline_*` 与 btw 摘要开关本轮未落**（键名 / 默认值待定，见 §5.3.6）。C3 本身无新增导出字段；导出字段变更由 C2 引入并已同步 OpenAPI。
+**C3 — 配置与文档（已实施）**：新增并同步 `docs/配置说明.md` / `docs/en/CONFIGURATION.md` / `config/default_config.toml` / `CHANGELOG.md`：`context_archive_max_rows_per_conversation`（默认 256，`0` = 不限）、`context_archive_codec_min_bytes`（默认 4096）、`context_btw_summary_enabled`（默认 `false`，旁路摘要开关，见 §3.10）；同步 `cm_config/{builder,env_overrides,validate,hot_reload}` 与 `finalize_*`。`context_baseline_*` **已确认不再需要（废弃）**（见 §5.3.6）。C3 本身无新增导出字段；导出字段变更由 C2 引入并已同步 OpenAPI。
 
 **C4 — `prune` 覆盖归档（已实施）**：[`prune`](file:///home/gzz/crabmate/server/src/conversation_store.rs#L300-L324) 删除会话 / 超限时同事务删除归档行。
 
@@ -543,7 +543,7 @@ canonical.len() ≲ 1(system) + 1(基线摘要) + 1(artifact 旁注, 见 §3.9) 
 - **R-A2（最大）**：现有压缩函数只返回计数、丢失被移出原文，需把「前缀捕获」贯穿 `prepare_messages_for_model` 全链路——Phase A 的主要工作量；
 - **R-A3**：`run_agent_turn` 无 DB 句柄，归档行须经 `stream_finish` 保存路径透传；需定夺「扩展 `save_if_revision`」还是「新增 `save_with_archive_if_revision`」；
 - **R-内存后端**：`ConversationBacking::Memory` 是否也持久化归档（建议：仅内存维护、重启失效，并在文档标注差异）；
-- **待定（本轮未落）**：`context_baseline_*` 与 btw 摘要开关的具体**键名 / 默认值**——C3 只落 `context_archive_max_rows_per_conversation` / `context_archive_codec_min_bytes` 两个**已定名**键（沿用 ADR 原名，作为 `[agent]` 扁平键），上述项待定后再另行补齐；归档 `range_*` 已明确**仅作审计快照**、不用于回放定位（§3.8）。
+- **已收口（2026-10-16）**：btw 摘要开关定为 `context_btw_summary_enabled`（默认 `false`，`[agent]` 扁平键，见 §3.10）；`context_baseline_*` **确认不再需要（废弃）**——基线摘要复用既有 `context_summary_*` 配置，不引入独立基线键。归档 `range_*` 已明确**仅作审计快照**、不用于回放定位（§3.8）。
 
 ---
 
@@ -717,3 +717,4 @@ make frontend-check
 | 2026-10-16 | Phase B（旁路收口）已实施：新增只读入口 `prepare_readonly_model_messages`（dry-run 压缩、默认不触发 LLM 摘要、无 store 参数）并抽出共用助手 `sync_trim_and_estimate_before` / `finalize_token_budget_compaction`；`builtin_btw` 改走该入口；补回归 `readonly_entry_bounds_tokens_without_summary_or_persistence`；状态头、§5.2 与 §5.3.3 标注「已实施」。Phase C 待实施 |
 | 2026-10-16 | Phase C 部分实施：**C1**（分支锚点改用会话级 `user_turn_ordinal` + re-expand + 超窗显式错误 + 同事务清归档）、**C4**（`prune` 同事务级联删除 / 回收归档行）、**C3**（新增两键 `context_archive_max_rows_per_conversation` 默认 256 / `context_archive_codec_min_bytes` 默认 4096，同步 `cm_config` 管道 + `config/default_config.toml` + `配置说明.md` + `CONFIGURATION.md` + `CHANGELOG.md` 并补回归）。`context_baseline_*` 与 btw 摘要开关因键名 / 默认值待定**本轮未落**（§5.2 / §5.3.4 / §5.3.6 已标注）；状态头改为「实施中：C1/C3/C4 已实施，C2 待实施」。**C2（导出携带归档）** 与状态改 Accepted 待后续 |
 | 2026-10-16 | Phase C 收尾：**C2（导出携带归档）** 已实施——`GET /conversation/messages` 新增可选查询参数 `include_archive`（默认 `false`）与可选响应字段 `archive`（`skip_serializing_if = "Vec::is_empty"`，默认不返回以保持体积与旧客户端兼容）；读归档走 `AppStateConversationRuntime::load_conversation_archive_messages`（仅 SQLite 有归档，内存后端返回空，失败容错返回空）并经 `WebChatAppFacet` 委派；`archive` 与 `messages` 同为 `WebClientSnapshotMessage` 形状复用泛型响应体 `<M>`；同步 `docs/openapi.json`（`include_archive` 参数 + `archive` schema）与 `docs/命令行与路由.md`；补契约 / app_state / OpenAPI 回归。Phase C **C1–C4 全部落地**，本文状态改为 **Accepted** |
+| 2026-10-16 | 收口 §5.3.6 两项待定：① 旁路摘要开关定为 `context_btw_summary_enabled`（默认 `false`，`[agent]` 扁平键）——只读入口 `prepare_readonly_model_messages` 改为 **async** 并接受可选 `ReadonlySummaryLlm`，`answer_btw` 按该键门控；② `context_baseline_*` **确认不再需要（废弃）**——基线摘要复用既有 `context_summary_*` 配置。补齐 §9.2 验收测试：item1（跨回合收敛）、item2（canonical 封顶，60 回合）、item6（归档消息引用的 `/uploads/` 不判孤儿）、item7（`context_btw_summary_enabled` 默认关闭）、item8（抽取纯函数 `strip_persist_injections`，补 `is_execution_constraint_ephemeral_system` 剔除，断言保留摘要与首轮画像）、item10（归档 ∪ canonical 原文 = 完整原始历史）；同步 §3.10 / §5.3.3 / §5.3.4 / §5.3.6 |

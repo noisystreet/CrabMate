@@ -137,6 +137,8 @@ pub struct ContextPipelineConfig {
     pub context_summary_tail_messages: usize,
     pub context_summary_max_tokens: u32,
     pub context_summary_transcript_max_chars: usize,
+    /// 旁路 `/btw` 是否允许触发 LLM 摘要；默认 `false`（btw 只做同步裁剪 + token 预算压缩，不额外调用模型）。
+    pub context_btw_summary_enabled: bool,
     /// 已解析的上下文 LLM 摘要 system（读盘 + 嵌入回退）。
     pub context_summary_system: String,
     /// 已解析的摘要 user 模板；占位符 `{max_tokens}`（或别名 `{max_chars}`）与 `{transcript}`。

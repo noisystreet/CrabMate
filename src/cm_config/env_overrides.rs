@@ -349,6 +349,10 @@ fn env_override_context_budget_and_summary(b: &mut ConfigBuilder) {
         &mut b.context_pipeline.context_summary_max_tokens,
         "CM_CONTEXT_SUMMARY_MAX_TOKENS",
     );
+    apply_bool(
+        &mut b.context_pipeline.context_btw_summary_enabled,
+        "CM_CONTEXT_BTW_SUMMARY_ENABLED",
+    );
 }
 
 fn apply_env_overrides_part_7(b: &mut ConfigBuilder) {

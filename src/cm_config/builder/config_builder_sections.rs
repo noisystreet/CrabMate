@@ -153,6 +153,7 @@ pub(crate) struct ConfigBuilderContextPipeline {
     pub(crate) context_summary_tail_messages: Option<u64>,
     pub(crate) context_summary_max_tokens: Option<u64>,
     pub(crate) context_summary_transcript_max_chars: Option<u64>,
+    pub(crate) context_btw_summary_enabled: Option<bool>,
     pub(crate) context_summary_system_file: Option<String>,
     pub(crate) context_summary_user_file: Option<String>,
 }

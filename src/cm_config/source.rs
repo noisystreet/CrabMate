@@ -228,6 +228,8 @@ pub(super) struct AgentSection {
     pub(super) context_summary_tail_messages: Option<u64>,
     pub(super) context_summary_max_tokens: Option<u64>,
     pub(super) context_summary_transcript_max_chars: Option<u64>,
+    /// 旁路 `/btw` 是否允许触发 LLM 摘要；默认 `false`。
+    pub(super) context_btw_summary_enabled: Option<bool>,
     /// 上下文 LLM 摘要 system 文件（与 `system_prompt_file` 相同路径解析）；省略则用默认路径/嵌入。
     pub(super) context_summary_system_file: Option<String>,
     /// 上下文 LLM 摘要 user 模板文件；占位符 `{max_tokens}`（或 `{max_chars}`）与 `{transcript}`。
