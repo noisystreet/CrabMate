@@ -13,7 +13,7 @@ mod code_metrics;
 mod code_nav;
 mod command;
 pub use command::{
-    PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts,
+    PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
     join_run_command_argv_tail, join_run_command_shell_script, peel_cd_prefix_argv_for_shell_policy,
     posix_shell_on_allowlist,

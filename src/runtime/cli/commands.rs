@@ -239,6 +239,12 @@ fn collect_plugin_paths(
     Ok(v)
 }
 
+/// 命令是否不在白名单中（`allowed_commands` 含 `*` 时视为全放行，始终返回 `false`）。
+fn command_not_on_allowlist(allowed: &[String], cmd: &str) -> bool {
+    !crate::cm_tools::tools::allowlist_allows_all(allowed)
+        && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
+}
+
 fn validate_plugin_file(path: &PathBuf, cfg: &AgentConfig) -> PluginCheckResult {
     let mut out = PluginCheckResult {
         path: path.clone(),
@@ -297,12 +303,7 @@ fn validate_plugin_file(path: &PathBuf, cfg: &AgentConfig) -> PluginCheckResult 
     }
     if cmd.is_empty() {
         out.errors.push("command 不能为空".to_string());
-    } else if !cfg
-        .command_exec
-        .allowed_commands
-        .iter()
-        .any(|c| c.eq_ignore_ascii_case(cmd))
-    {
+    } else if command_not_on_allowlist(&cfg.command_exec.allowed_commands, cmd) {
         out.errors
             .push(format!("command `{cmd}` 不在 allowed_commands 白名单"));
     }

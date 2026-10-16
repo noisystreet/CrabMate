@@ -45,6 +45,11 @@ pub struct ServeCmd {
     /// 旗标名 `--desktop-ready-json` 已弃用命名，请优先使用可见别名 `--web-ready-json`。
     #[arg(long = "desktop-ready-json", visible_alias = "web-ready-json")]
     pub desktop_ready_json: bool,
+
+    /// 跳过命令白名单（`allowed_commands`）：`run_command` 不再做命令名校验，一律放行。
+    /// 仅供完全信任或已隔离（容器/专属主机）的环境使用；**不**影响工作区外路径审批与参数安全检查。
+    #[arg(long = "yes")]
+    pub yes: bool,
 }
 
 /// 批量测评
@@ -484,6 +489,8 @@ pub struct ParsedCliArgs {
     pub serve_port: Option<u16>,
     /// `serve --desktop-ready-json` / `--web-ready-json`：监听成功后打印 `web_ready`（已弃用命名；壳不依赖）
     pub serve_desktop_ready_json: bool,
+    /// `serve --yes`：跳过命令白名单（`allowed_commands` → `*`），`run_command` 一律放行
+    pub serve_yes: bool,
     /// `serve` 时使用；来自 `serve --host`、`CM_HTTP_HOST` 或默认 `127.0.0.1`。
     pub http_bind_host: String,
     pub workspace_cli: Option<String>,

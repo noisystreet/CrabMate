@@ -56,6 +56,7 @@ impl CliParseCtx {
             llm_context_tokens_cli: self.llm_context_tokens_cli,
             serve_port: None,
             serve_desktop_ready_json: false,
+            serve_yes: false,
             http_bind_host: resolve_http_bind_host(None),
             workspace_cli: self.workspace_cli.clone(),
             no_tools: self.no_tools,
@@ -106,6 +107,7 @@ fn build_parsed_cli_args(root: RootCli) -> ParsedCliArgs {
         Commands::Serve(s) => {
             b.serve_port = s.port.or(s.port_positional).or(Some(8080));
             b.serve_desktop_ready_json = s.desktop_ready_json;
+            b.serve_yes = s.yes;
             b.http_bind_host = resolve_http_bind_host(s.host);
         }
         Commands::Bench(be) => {

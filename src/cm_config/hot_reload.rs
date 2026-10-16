@@ -18,9 +18,18 @@ use super::types::AgentConfig;
 /// - **`chat_uploads_dir`**：`serve` 启动时钉到会话库旁，**不**热更、**不**随工作区切换。
 /// - **`chat_workspace_root`**：`serve` / **`POST /workspace`** 注入，**不**热更（`src` 里恒为 `None`）。
 pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) {
+    // `serve --yes`（或 CM_ALLOWED_COMMANDS=*）写入的「全放行」哨兵不因热重载被覆盖。
+    let allowlist_allows_all = dst
+        .command_exec
+        .allowed_commands
+        .iter()
+        .any(|c| c.trim() == "*");
     dst.llm.clone_from(&src.llm);
     dst.session_ui.clone_from(&src.session_ui);
     dst.command_exec.clone_from(&src.command_exec);
+    if allowlist_allows_all {
+        dst.command_exec.allowed_commands = std::sync::Arc::from(vec!["*".to_string()]);
+    }
     dst.llm_sampling.clone_from(&src.llm_sampling);
     dst.llm_vendor_flags.clone_from(&src.llm_vendor_flags);
     dst.llm_http_retry.clone_from(&src.llm_http_retry);

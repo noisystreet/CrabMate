@@ -886,8 +886,15 @@ async fn run_cli_default_main(args: ParsedCliArgs) -> Result<(), Box<dyn std::er
 /// 载入配置并进入 `serve` / `bench` 分发。
 async fn run_cli_interactive_session(
     args: ParsedCliArgs,
-    cfg: config::AgentConfig,
+    mut cfg: config::AgentConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if args.serve_yes {
+        cfg.command_exec.allowed_commands = std::sync::Arc::from(vec!["*".to_string()]);
+        log::warn!(
+            target: "crabmate",
+            "serve --yes：已跳过命令白名单（allowed_commands → \"*\"），run_command 不再校验命令名；仅请在完全信任或已隔离的环境使用"
+        );
+    }
     let session = cli_run_session::init_cli_session_start(cfg, args.no_tools).await?;
 
     Box::pin(cli_run_session::run_cli_main_routes(

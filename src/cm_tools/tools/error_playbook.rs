@@ -238,7 +238,7 @@ fn cmd_allowed(cmd: &str, allowed: &HashSet<String>) -> bool {
     if bin.is_empty() {
         return false;
     }
-    allowed.contains(&bin)
+    allowed.contains("*") || allowed.contains(&bin)
 }
 
 fn push_suggestion(out: &mut Vec<String>, allowed: &HashSet<String>, s: &str) {

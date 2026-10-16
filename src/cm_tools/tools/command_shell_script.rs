@@ -22,9 +22,18 @@ fn arg_is_shell_c_flag(a: &str) -> bool {
     a.starts_with('-') && !a.starts_with("--") && a.contains('c')
 }
 
-/// 白名单中优先 `bash`，否则 `sh`。
+/// 白名单是否为「全放行」哨兵：含 `*` 表示不校验命令名（`serve --yes` / `CM_ALLOWED_COMMANDS=*`）。
+#[must_use]
+pub fn allowlist_allows_all(allowed: &[String]) -> bool {
+    allowed.iter().any(|c| c.trim() == "*")
+}
+
+/// 白名单中优先 `bash`，否则 `sh`；`*`（全放行）视为含 `bash`。
 #[must_use]
 pub fn posix_shell_on_allowlist(allowed: &[String]) -> Option<&'static str> {
+    if allowlist_allows_all(allowed) {
+        return Some("bash");
+    }
     let has_bash = allowed.iter().any(|c| c.eq_ignore_ascii_case("bash"));
     if has_bash {
         return Some("bash");
@@ -357,5 +366,36 @@ mod tests {
         assert_eq!(cmd, "ls");
         assert!(argv_has_shell_operators(&cmd, &args));
         assert!(argv_needs_posix_shell_wrap(&cmd, &args));
+    }
+
+    #[test]
+    fn allowlist_allows_all_detects_star_sentinel() {
+        assert!(allowlist_allows_all(&["*".into()]));
+        assert!(allowlist_allows_all(&["ls".into(), " * ".into()]));
+        assert!(!allowlist_allows_all(&["ls".into(), "git".into()]));
+        assert!(!allowlist_allows_all(&[]));
+    }
+
+    #[test]
+    fn posix_shell_on_allowlist_prefers_bash_then_sh() {
+        assert_eq!(posix_shell_on_allowlist(&["bash".into()]), Some("bash"));
+        assert_eq!(posix_shell_on_allowlist(&["sh".into()]), Some("sh"));
+        assert_eq!(
+            posix_shell_on_allowlist(&["sh".into(), "BASH".into()]),
+            Some("bash")
+        );
+        assert_eq!(posix_shell_on_allowlist(&["ls".into()]), None);
+        assert_eq!(posix_shell_on_allowlist(&[]), None);
+    }
+
+    #[test]
+    fn star_sentinel_behaves_as_bash_allowed() {
+        let star = vec!["*".to_string()];
+        assert_eq!(posix_shell_on_allowlist(&star), Some("bash"));
+        let mut cmd = "ls".to_string();
+        let mut args = vec!["*.rs".to_string()];
+        assert!(maybe_wrap_argv_with_posix_shell(&mut cmd, &mut args, &star));
+        assert_eq!(cmd, "bash");
+        assert_eq!(args, vec!["-c".to_string(), "ls *.rs".to_string()]);
     }
 }
