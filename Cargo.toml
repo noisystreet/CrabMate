@@ -80,6 +80,8 @@ nix = { version = "0.31", default-features = false }
 name = "crabmate"
 version = "0.6.0"
 edition = "2024"
+# zip 9(x) requires Rust 1.88; edition 2024 alone would allow 1.85.
+rust-version = "1.88"
 license = "Apache-2.0"
 description = "Rust AI agent: OpenAI-compatible chat/completions, function calling, HTTP serve, ops CLI"
 repository = "https://github.com/noisystreet/CrabMate"
