@@ -188,7 +188,6 @@ pub fn runner_cargo_check_try(
 define_runners_cwd_maxlen_try! {
     runner_cargo_clippy_try => cargo_tools::cargo_clippy_try,
     runner_cargo_run_try => cargo_tools::cargo_run_try,
-    runner_rust_rustc_try => cargo_tools::rust_rustc_try,
 }
 
 /// `cargo_test` 的 Typed runner：额外透传 `ctx`（测试结果缓存 / 超时）。
@@ -376,18 +375,6 @@ pub fn runner_error_output_playbook(args: &str, ctx: &ToolContext<'_>) -> String
 
 pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
     contract_map::crate_contract_map(args, ctx)
-}
-
-pub fn runner_package_query(args: &str, ctx: &ToolContext<'_>) -> String {
-    package_query::run(args, ctx.command_max_output_len)
-}
-
-pub fn runner_port_check(args: &str, ctx: &ToolContext<'_>) -> String {
-    process_tools::port_check(args, ctx.command_max_output_len)
-}
-
-pub fn runner_process_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    process_tools::process_list(args, ctx.command_max_output_len)
 }
 
 // ── 同构薄封装实例（形态 1：f(args, cwd, max_len)）────────────

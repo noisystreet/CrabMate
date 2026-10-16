@@ -144,7 +144,7 @@
 - **归档（2）**：`7z` / `unrar`
 - **系统与包查询（5）**：`dpkg-query` / `rpm` / `ss` / `lsof` / `bc`
 
-**定位**：这是路线 **C（扩白名单）的局部落地**，但**仅扩白名单、不删对应专用工具**——与 C 档「扩白名单**再收敛**」不同。对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*` / `package_query` / `port_check` / `process_list`）**保留**，因其为**只读**工具，降级会失去 §8.5.2 的四项只读能力。
+**定位**：这是路线 **C（扩白名单）的局部落地**，但**仅扩白名单、不删对应专用工具**——与 C 档「扩白名单**再收敛**」不同。对应专用工具（`format_*` / `ruff_check` / `mypy_check` / `uv_*` / `go_*` / `package_query` / `port_check` / `process_list`）在当时**保留**，因其为**只读**工具，降级会失去 §8.5.2 的四项只读能力。（**2026-10 后续演进**：除 `format_*` 外，`go_*` / `ruff_check` / `mypy_check` / `uv_*` / `package_query` / `port_check` / `process_list` 已在「薄 CLI 封装收敛」中陆续改用 `run_command` 并接受上述只读语义代价，见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2。）
 
 **安全面**：白名单仍是硬闸门，仅扩充允许的命令集合；新增 CLI 均为常规开发工具，未引入任意命令执行面。
 

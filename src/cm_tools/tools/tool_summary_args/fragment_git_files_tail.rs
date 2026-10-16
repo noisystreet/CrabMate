@@ -1,33 +1,3 @@
-// ── Process & ports ───────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub(super) struct PortCheckSummaryArgs {
-    port: u64,
-}
-
-impl ToolSummaryLine for PortCheckSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        Some(format!("port check: {}", self.port))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct ProcessListSummaryArgs {
-    #[serde(default)]
-    filter: Option<String>,
-}
-
-impl ToolSummaryLine for ProcessListSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let filter = self.filter.as_deref().unwrap_or("").trim();
-        if filter.is_empty() {
-            Some("list processes".to_string())
-        } else {
-            Some(format!("list processes (filter: {})", filter))
-        }
-    }
-}
-
 // ── Background jobs ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

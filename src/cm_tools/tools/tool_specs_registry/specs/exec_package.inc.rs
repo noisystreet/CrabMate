@@ -15,12 +15,4 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_terminal_session),
             summary: ToolSummaryKind::Dynamic(ts::summary_terminal_session),
         },
-ToolSpec {
-            name: "package_query",
-            description: "只读查询 Linux 包信息（apt/rpm 统一抽象）：是否安装、版本、来源。默认 manager=auto（优先 dpkg-query，再尝试 rpm）；不执行安装/卸载操作。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::PackageQueryArgs>,
-            runner: ToolRunner::Legacy(runner_package_query),
-            summary: ToolSummaryKind::Dynamic(ts::summary_package_query),
-        },
 ]

@@ -223,45 +223,6 @@ fn test_run_tool_try_cargo_check_workspace_no_cargo_toml() {
 }
 
 #[test]
-fn test_run_tool_try_rust_rustc_rejects_unsafe_arg() {
-    use crate::cm_tools::tool_result::ToolFailureCategory;
-    let allowed = test_allowed_commands();
-    let dir = std::env::temp_dir().join(format!("crabmate_rustc_arg_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir temp workspace");
-    let ctx = ToolContext {
-        working_dir: &dir,
-        ..test_ctx(&allowed)
-    };
-    let e = run_tool_try(
-        "rust_rustc",
-        r#"{"args":["--crate-type","lib","/tmp/evil.rs"]}"#,
-        &ctx,
-    )
-    .expect_err("absolute path arg");
-    assert_eq!(e.code, "invalid_args");
-    assert_eq!(e.category, ToolFailureCategory::InvalidInput);
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn test_run_tool_try_rust_rustc_vv_succeeds_without_cargo_toml() {
-    let allowed = test_allowed_commands();
-    let dir = std::env::temp_dir().join(format!("crabmate_rustc_vv_{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("mkdir temp workspace");
-    let ctx = ToolContext {
-        working_dir: &dir,
-        ..test_ctx(&allowed)
-    };
-    let out = run_tool_try("rust_rustc", r#"{"args":["-vV"]}"#, &ctx).expect("rustc -vV");
-    assert!(
-        out.contains("rustc") || out.contains("host:"),
-        "expected rustc version output, got: {}",
-        out
-    );
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn test_run_tool_get_weather_missing_param() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
@@ -307,25 +268,6 @@ fn test_run_tool_call_graph_sketch_smoke() {
 }
 
 #[test]
-fn test_run_tool_package_query_smoke() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool("package_query", r#"{"package":"bash"}"#, &ctx);
-    if out.trim_start().starts_with('{') {
-        let v: serde_json::Value = serde_json::from_str(&out).expect("package_query 输出应为 JSON");
-        assert_eq!(v.get("package").and_then(|x| x.as_str()), Some("bash"));
-        assert!(v.get("installed").is_some());
-        assert!(v.get("manager").is_some());
-    } else {
-        assert!(
-            out.contains("未检测到可用的包管理查询命令"),
-            "非 JSON 输出应是缺少包管理器的说明，得到: {}",
-            out
-        );
-    }
-}
-
-#[test]
 fn test_build_tools_names() {
     let tools = build_tools();
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
@@ -353,7 +295,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"cargo_clippy"));
     assert!(names.contains(&"cargo_run"));
     assert!(names.contains(&"rust_compiler_json"));
-    assert!(names.contains(&"rust_rustc"));
     assert!(names.contains(&"rust_analyzer_goto_definition"));
     assert!(names.contains(&"rust_analyzer_find_references"));
     assert!(names.contains(&"rust_analyzer_hover"));
@@ -425,7 +366,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"quality_workspace"));
     assert!(names.contains(&"apply_patch"));
-    assert!(names.contains(&"package_query"));
 }
 
 #[test]
@@ -499,7 +439,7 @@ fn test_summarize_search_in_files_truncates_long_pattern() {
     let s = summarize_tool_call("search_in_files", &format!(r#"{{"pattern":"{pat}"}}"#))
         .expect("summary");
     assert!(s.starts_with("search in files: "));
-    assert!(s.ends_with('…'), "expected ellipsis for long pattern: {s}");
+    assert!(s.ends_with("…"), "expected ellipsis for long pattern: {s}");
     assert!(
         s.chars().count() <= 64,
         "summary should stay short, got {} chars: {s}",

@@ -243,7 +243,7 @@ pub fn structured_payload_for_tool(tool_name: &str, raw_output: &str) -> Option<
     if matches!(tool_name, "http_fetch" | "http_request") {
         return http_tool_response_v1_payload(tool_name, raw_output);
     }
-    if tool_name.starts_with("cargo_") || tool_name == "rust_rustc" {
+    if tool_name.starts_with("cargo_") {
         return subprocess_exit_v1_payload(tool_name, raw_output);
     }
     None

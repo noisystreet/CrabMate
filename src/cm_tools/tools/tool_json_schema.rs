@@ -22,7 +22,7 @@ mod tests {
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatOnePathArgs, GitStatusArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
-        ModifyFileArgs, PackageQueryArgs, PortCheckArgs, ProcessListArgs,
+        ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
     };
@@ -48,30 +48,6 @@ mod tests {
     }
 
     #[test]
-    fn port_check_schema_requires_port_in_range() {
-        let v = tool_parameters_schema_value::<PortCheckArgs>();
-        assert_eq!(v.get("type"), Some(&json!("object")));
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required array");
-        assert!(req.iter().any(|x| x == "port"));
-        let port = v.pointer("/properties/port").expect("port schema");
-        // schemars 1.x emits integer bounds (1) where 0.8 emitted floats (1.0); compare as f64.
-        assert_eq!(port.get("minimum").and_then(|x| x.as_f64()), Some(1.0));
-        assert_eq!(port.get("maximum").and_then(|x| x.as_f64()), Some(65535.0));
-    }
-
-    #[test]
-    fn process_list_schema_allows_optional_filter() {
-        let v = tool_parameters_schema_value::<ProcessListArgs>();
-        assert_eq!(v.get("type"), Some(&json!("object")));
-        assert!(v.pointer("/properties/filter").is_some());
-        assert!(v.pointer("/properties/user_only").is_some());
-        assert!(v.pointer("/properties/max_count").is_some());
-    }
-
-    #[test]
     fn markdown_check_links_schema_has_output_format_enum() {
         let v = tool_parameters_schema_value::<MarkdownCheckLinksArgs>();
         let defs = v.get("$defs").expect("schema $defs");
@@ -85,21 +61,6 @@ mod tests {
         assert!(fmt.iter().any(|x| x == "text"));
         assert!(fmt.iter().any(|x| x == "json"));
         assert!(fmt.iter().any(|x| x == "sarif"));
-    }
-
-    #[test]
-    fn package_query_schema_requires_package() {
-        let v = tool_parameters_schema_value::<PackageQueryArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required array");
-        assert!(req.iter().any(|x| x == "package"));
-        assert_eq!(
-            v.pointer("/additionalProperties"),
-            Some(&json!(false)),
-            "deny_unknown_fields"
-        );
     }
 
     #[test]

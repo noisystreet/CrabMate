@@ -40,14 +40,6 @@ ToolSpec {
             summary: ToolSummaryKind::Static("cargo check JSON diagnostics"),
         },
         ToolSpec {
-            name: "rust_rustc",
-            description: "在工作区根目录执行 **rustc**（不经 shell）。`args` 为参数数组，规则与 `run_command` 一致：不得含 `..` 或绝对路径。用于 `rustc --explain E0xxx`、`-vV`、`--print=cfg` 等；**不要求** Cargo.toml。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::RustRustcArgs>,
-            runner: ToolRunner::Typed(runner_rust_rustc_try),
-            summary: ToolSummaryKind::Static("rustc"),
-        },
-        ToolSpec {
             name: "rust_analyzer_goto_definition",
             description: "启动 **rust-analyzer**（stdio LSP），对指定 **path + 0-based line/character** 执行 `textDocument/definition`。需本机已安装 rust-analyzer；单文件 didOpen，适合跳转定义。大文件 >512KiB 请换 read_file 分段。",
             category: ToolCategory::Development,
