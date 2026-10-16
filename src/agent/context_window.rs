@@ -283,6 +283,32 @@ fn finalize_token_budget_compaction(
     compaction
 }
 
+/// 摘要触发判定与「摘要后保留尾部长度」的共用计算（ADR §5.3.4）。
+///
+/// 主路径 [`prepare_session_messages_shared`] 与只读入口
+/// [`prepare_readonly_model_messages`] 必须使用**相同**的触发规则；此 helper 收敛
+/// `force_for_token_budget` 与 `planned_summary_tail` 的计算，避免两处实现静默漂移。
+///
+/// 必须在任何 `maybe_summarize_with_llm` 调用**之前**执行：尾部长度按摘要前的
+/// `messages` 快照计算。
+fn summary_trigger_and_tail(
+    cfg: &AgentConfig,
+    messages: &[Message],
+    before_tokens: &crate::agent::context_compaction::ContextTokenEstimate,
+) -> (bool, Option<usize>) {
+    let force_summary_for_token_budget =
+        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
+            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
+        );
+    let planned_summary_tail = complete_turn_group_tail_len(
+        messages,
+        cfg.context_pipeline
+            .context_summary_tail_messages
+            .clamp(4, 64),
+    );
+    (force_summary_for_token_budget, planned_summary_tail)
+}
+
 /// 主 Agent 外循环的「同步裁剪 + 可选 LLM 摘要」核心路径。
 async fn prepare_session_messages_shared(
     llm_backend: &dyn ChatCompletionsBackend,
@@ -299,16 +325,8 @@ async fn prepare_session_messages_shared(
         params.model_override,
         params.turn_budget,
     );
-    let force_summary_for_token_budget =
-        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
-            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
-        );
-    let planned_summary_tail = complete_turn_group_tail_len(
-        messages,
-        cfg.context_pipeline
-            .context_summary_tail_messages
-            .clamp(4, 64),
-    );
+    let (force_summary_for_token_budget, planned_summary_tail) =
+        summary_trigger_and_tail(cfg, messages, &before_tokens);
     let (summarized, summary_removed_prefix) = maybe_summarize_with_llm(
         llm_backend,
         client,
@@ -632,16 +650,10 @@ pub async fn prepare_readonly_model_messages(
 ) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
     let (pipeline, before_tokens) =
         sync_trim_and_estimate_before(cfg, messages, tools, model_override, None);
-    let force_summary_for_token_budget =
-        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
-            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
-        );
+    let (force_summary_for_token_budget, planned_summary_tail) =
+        summary_trigger_and_tail(cfg, messages, &before_tokens);
     let (summarized, summary_removed_prefix, summary_tail_kept) = match summary_llm {
         Some(llm) => {
-            let planned_summary_tail = complete_turn_group_tail_len(
-                messages,
-                cfg.context_pipeline.context_summary_tail_messages.clamp(4, 64),
-            );
             let (summarized, removed) = maybe_summarize_with_llm(
                 llm.llm_backend,
                 llm.client,
