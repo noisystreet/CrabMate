@@ -63,7 +63,7 @@ walkdir = "2"
 # （worbrow 0.2.5 ADR-016，issue #62）
 worbrow = { version = "0.2.5", default-features = false, features = ["tls-aws-lc"] }
 xz2 = "0.1"
-zip = { version = "8.6", default-features = false, features = ["deflate", "time"] }
+zip = { version = "9.0", default-features = false, features = ["deflate", "time"] }
 
 # HTTP / optional UI (feature-gated)
 axum = { version = "0.8", default-features = false }

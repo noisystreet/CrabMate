@@ -466,7 +466,8 @@ fn unpack_zip(
 
     for i in 0..zip.len() {
         let mut file = zip.by_index(i)?;
-        let Some(outpath) = zip_member_outpath(file.name(), opts, output) else {
+        let name = file.name()?.into_owned();
+        let Some(outpath) = zip_member_outpath(&name, opts, output) else {
             continue;
         };
         count += write_member_to_disk(file.is_dir(), &mut file, &outpath)?;
@@ -600,7 +601,7 @@ fn list_zip(
 
     for i in 0..zip.len() {
         let file = zip.by_index(i)?;
-        let name = file.name().to_string();
+        let name = file.name()?.into_owned();
         all_paths.push(name.clone());
         let detail = zip_list_detail(file.size(), file.last_modified());
         maybe_push_list_line(
