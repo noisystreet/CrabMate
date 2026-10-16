@@ -24,7 +24,7 @@ use axum::http::{HeaderMap, StatusCode};
 use log::debug;
 
 use super::parse::{normalize_approval_session_id, normalize_client_conversation_id};
-use crate::conversation_store::SaveConversationOutcome;
+use crate::conversation_store::BranchTruncateOutcome;
 use crate::types::{CommandApprovalDecision, filter_messages_for_web_client_snapshot};
 use crate::web::app_state_facets::{WebChatAppFacet, WebChatTurnAppFacet};
 use crate::web::http_types::chat::{
@@ -213,13 +213,22 @@ pub(crate) async fn chat_branch_handler(
         )
         .await
     {
-        SaveConversationOutcome::Saved => {}
-        SaveConversationOutcome::Conflict => {
+        BranchTruncateOutcome::Saved => {}
+        BranchTruncateOutcome::Conflict => {
             return Err((
                 StatusCode::CONFLICT,
                 Json(ApiError::new(
                     "CONVERSATION_CONFLICT",
                     "会话已被其他请求更新或 revision 不匹配".to_string(),
+                )),
+            ));
+        }
+        BranchTruncateOutcome::ArchiveIncomplete => {
+            return Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(ApiError::new(
+                    "CONVERSATION_BRANCH_ARCHIVE_INCOMPLETE",
+                    "分支点早于归档保留窗口，无法安全回放".to_string(),
                 )),
             ));
         }
@@ -310,6 +319,12 @@ pub(crate) async fn conversation_messages_handler(
     );
     let messages =
         crate::runtime::message_snapshot_display::web_client_snapshot_messages(&window.messages);
+    let archive = if q.include_archive == Some(true) {
+        let archived = state.load_conversation_archive_messages(&cid).await;
+        crate::runtime::message_snapshot_display::web_client_snapshot_messages(&archived)
+    } else {
+        Vec::new()
+    };
     let active_agent_role = seed
         .persisted_active_agent_role
         .as_deref()
@@ -341,6 +356,7 @@ pub(crate) async fn conversation_messages_handler(
         tiktoken_prompt_tokens,
         layout: seed.layout,
         context_artifacts,
+        archive,
         messages,
         total_count: window.meta.total_count,
         window_start_index: window.meta.window_start_index,

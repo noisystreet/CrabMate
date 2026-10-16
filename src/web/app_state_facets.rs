@@ -11,7 +11,7 @@ use std::sync::atomic::Ordering;
 use axum::extract::FromRef;
 
 use crate::config::SharedAgentConfig;
-use crate::conversation_store::SaveConversationOutcome;
+use crate::conversation_store::{BranchTruncateOutcome, SaveConversationOutcome};
 use crate::health::CachedLlmModelsHealthProbe;
 use crate::process_handles::ProcessHandles;
 use crate::sse::SseStreamHub;
@@ -195,12 +195,22 @@ impl WebChatAppFacet {
             .await
     }
 
+    /// 读取会话归档原文（`GET /conversation/messages` 带 `include_archive=true`）。
+    pub(crate) async fn load_conversation_archive_messages(
+        &self,
+        conversation_id: &str,
+    ) -> Vec<crate::types::Message> {
+        self.conversation
+            .load_conversation_archive_messages(conversation_id)
+            .await
+    }
+
     pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
         &self,
         conversation_id: String,
         user_ordinal: usize,
         expected_revision: u64,
-    ) -> SaveConversationOutcome {
+    ) -> BranchTruncateOutcome {
         self.conversation
             .truncate_conversation_before_user_ordinal_if_revision(
                 conversation_id,

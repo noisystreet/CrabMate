@@ -199,11 +199,13 @@ Transcript persistence is controlled by **`conversation_store_sqlite_path`** (ab
 
 | Key (in `[agent]`) | Env var | Description |
 | --- | --- | --- |
-| `conversation_store_ttl_secs` | `CM_CONVERSATION_STORE_TTL_SECS` | Retention TTL (seconds). Conversations not updated within this window are pruned. **`0` = never expires** (still capped by `max_entries`). Default **`86400`** (24h). |
-| `conversation_store_max_entries` | `CM_CONVERSATION_STORE_MAX_ENTRIES` | Max conversations; oldest (`updated_at`) are evicted beyond it. **`0` = unlimited**. Default **`512`**. |
+| `conversation_store_ttl_secs` | `CM_CONVERSATION_STORE_TTL_SECS` | Retention TTL (seconds). Conversations not updated within this window are pruned (**along with their archived rows**). **`0` = never expires** (still capped by `max_entries`). Default **`86400`** (24h). |
+| `conversation_store_max_entries` | `CM_CONVERSATION_STORE_MAX_ENTRIES` | Max conversations; oldest (`updated_at`) are evicted beyond it (**along with their archived rows**). **`0` = unlimited**. Default **`512`**. |
+| `context_archive_max_rows_per_conversation` | `CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION` | Per-conversation **archived-prefix row cap**; oldest archived rows are reclaimed beyond it (a reclaimed prefix makes branch points older than the retained window fail to re-expand; the branch API returns an explicit error). **`0` = unlimited**. Default **`256`**. See design doc [`context_window_compaction.md`](../design/context_window_compaction.md) §3.8 / §4.2. |
+| `context_archive_codec_min_bytes` | `CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES` | Archive-body **codec threshold** (bytes): below it `identity`, otherwise `gzip`. Default **`4096`**. See design doc §3.8. |
 
 - Pruning: the in-memory backend prunes on every save/truncate using current config; the SQLite backend prunes after a successful save and in an **hourly** background task (also run once at `serve` startup), so idle processes still reclaim space.
-- Both keys are **hot-reloadable** (`POST /config/reload`); lowering a limit does not delete sessions immediately—it applies on the next save / background prune. **`conversation_store_sqlite_path` is not hot-reloaded**; changing it requires a `serve` restart.
+- The **retention / archive** keys (`conversation_store_ttl_secs`, `conversation_store_max_entries`, `context_archive_max_rows_per_conversation`, `context_archive_codec_min_bytes`) are **hot-reloadable** (`POST /config/reload`); lowering a limit does not delete sessions/archives immediately—it applies on the next save / background prune. **`conversation_store_sqlite_path` is not hot-reloaded**; changing it requires a `serve` restart.
 - **`0` disables that dimension of eviction** (consistent with `--llm-context-tokens 0`), not "clear now".
 - Delete a single conversation explicitly with **`DELETE /conversation/{conversation_id}`** (idempotent; see `docs/en/CLI.md`).
 

@@ -304,6 +304,14 @@ mod tests {
             conv.pointer("/properties/context_artifacts").is_some(),
             "context_artifacts property must be documented"
         );
+        assert!(
+            !required.iter().any(|v| v.as_str() == Some("archive")),
+            "archive must stay optional (C2 expand)"
+        );
+        assert!(
+            conv.pointer("/properties/archive").is_some(),
+            "archive property must be documented"
+        );
     }
 
     #[test]
@@ -316,6 +324,7 @@ mod tests {
             tiktoken_prompt_tokens: None,
             layout: None,
             context_artifacts: Vec::new(),
+            archive: Vec::new(),
             messages: Vec::<Value>::new(),
             total_count: 0,
             window_start_index: 0,
@@ -323,6 +332,7 @@ mod tests {
         };
         let v = serde_json::to_value(&body).expect("serialize");
         assert!(v.get("layout").is_none());
+        assert!(v.get("archive").is_none(), "empty archive must be omitted");
     }
 
     fn assert_no_json_schema_null_type(path: &str, node: &Value) {

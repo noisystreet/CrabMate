@@ -613,6 +613,14 @@
             "nullable": true,
             "type": "string"
           },
+          "archive": {
+            "description": "可选：该会话已归档（被移出 canonical）的原文行；仅查询带 `include_archive=true` 时非空。",
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array"
+          },
           "context_artifacts": {
             "description": "可选的模型视图回放配方；旧会话为空。",
             "items": {
@@ -2167,6 +2175,16 @@
               "format": "int32",
               "minimum": 0,
               "type": "integer"
+            }
+          },
+          {
+            "description": "为 true 时在响应 archive 字段返回该会话已归档（被移出 canonical）的原文；默认 false 不返回（保持体积与旧客户端兼容）",
+            "in": "query",
+            "name": "include_archive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "type": "boolean"
             }
           }
         ],

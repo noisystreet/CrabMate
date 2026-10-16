@@ -293,6 +293,13 @@ fn openapi_paths_fragment_chat_extras() -> Value {
                         "required": false,
                         "description": "取该下标之前的更早消息；省略表示尾部一页",
                         "schema": { "type": "integer", "format": "int32", "minimum": 0 }
+                    },
+                    {
+                        "name": "include_archive",
+                        "in": "query",
+                        "required": false,
+                        "description": "为 true 时在响应 archive 字段返回该会话已归档（被移出 canonical）的原文；默认 false 不返回（保持体积与旧客户端兼容）",
+                        "schema": { "type": "boolean", "default": false }
                     }
                 ],
                 "responses": {

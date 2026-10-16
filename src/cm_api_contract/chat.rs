@@ -207,6 +207,10 @@ pub struct ConversationMessagesResponseBodyOpenApi {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     #[schemars(schema_with = "schema_open_object_array")]
     pub context_artifacts: Vec<serde_json::Value>,
+    /// 可选：该会话已归档（被移出 canonical）的原文行；仅查询带 `include_archive=true` 时非空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(schema_with = "schema_open_object_array")]
+    pub archive: Vec<serde_json::Value>,
     #[schemars(schema_with = "schema_open_object_array")]
     pub messages: Vec<serde_json::Value>,
     #[serde(default)]
@@ -335,6 +339,10 @@ pub struct ConversationMessagesQuery {
     /// 分页：取该下标**之前**的更早消息；省略表示取尾部一页。
     #[serde(default)]
     pub before_index: Option<u32>,
+    /// 可选：为 `true` 时在响应 `archive` 字段返回该会话已归档（被移出 canonical）的原文；
+    /// 默认 `false` 不返回（保持体积与旧客户端兼容）。
+    #[serde(default)]
+    pub include_archive: Option<bool>,
 }
 
 /// `GET /conversation/messages` 响应（消息行类型由调用方绑定）。
@@ -353,6 +361,9 @@ pub struct ConversationMessagesResponseBody<M> {
     pub layout: Option<ConversationLayoutMeta>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub context_artifacts: Vec<serde_json::Value>,
+    /// 可选：该会话已归档（被移出 canonical）的原文行；仅查询带 `include_archive=true` 时非空。
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub archive: Vec<M>,
     pub messages: Vec<M>,
     #[serde(default)]
     pub total_count: u32,
@@ -478,5 +489,18 @@ mod b5_roundtrip_serde_tests {
             serde_json::from_value(v).expect("deserialize approval");
         assert_eq!(back.approval_session_id, req.approval_session_id);
         assert_eq!(back.decision, req.decision);
+    }
+
+    #[test]
+    fn conversation_messages_query_include_archive_optional() {
+        let q: ConversationMessagesQuery =
+            serde_json::from_value(serde_json::json!({ "conversation_id": "c1" }))
+                .expect("parse query without include_archive");
+        assert_eq!(q.include_archive, None, "省略时默认不返回归档");
+        let q: ConversationMessagesQuery = serde_json::from_value(
+            serde_json::json!({ "conversation_id": "c1", "include_archive": true }),
+        )
+        .expect("parse query with include_archive");
+        assert_eq!(q.include_archive, Some(true));
     }
 }

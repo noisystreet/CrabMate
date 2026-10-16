@@ -117,10 +117,7 @@ mod web_api_require_bearer_defaults_tests {
             let path = dir.path().join("minimal.toml");
             fs::write(
                 &path,
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-"#,
+                "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\n",
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
@@ -146,11 +143,7 @@ model = "deepseek-chat"
             let path = dir.path().join("minimal.toml");
             fs::write(
                 &path,
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-web_api_require_bearer = true
-"#,
+                "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\nweb_api_require_bearer = true\n",
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
@@ -165,11 +158,7 @@ web_api_require_bearer = true
             let path = dir.path().join("cors.toml");
             fs::write(
                 &path,
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-web_cors_allowed_origins = ["http://127.0.0.1:8081", "https://ui.example.com"]
-"#,
+                "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\nweb_cors_allowed_origins = [\"http://127.0.0.1:8081\", \"https://ui.example.com\"]\n",
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
@@ -220,10 +209,7 @@ mod removed_config_key_load_tests {
         let path = dir.path().join("removed_env.toml");
         fs::write(
             &path,
-            r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-"#,
+            "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\n",
         )
         .expect("write");
         load_config(Some(path.to_str().unwrap())).expect("removed env keys must be ignored");
@@ -252,10 +238,7 @@ mod http_fetch_user_agent_load_tests {
         let path = dir.path().join("http_fetch_ua.toml");
         fs::write(
             &path,
-            r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-"#,
+            "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\n",
         )
         .expect("write");
         path.to_str().unwrap().to_string()
@@ -306,11 +289,7 @@ mod http_fetch_allowed_prefixes_load_tests {
         fs::write(
             &path,
             format!(
-                r#"[agent]
-api_base = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-{extra}
-"#
+                "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\n{extra}\n"
             ),
         )
         .expect("write");
@@ -384,10 +363,7 @@ mod llm_reasoning_split_default_tests {
             let path = dir.path().join("agent.toml");
             fs::write(
                 &path,
-                r#"[agent]
-api_base = "https://api.minimaxi.com/v1"
-model = "MiniMax-M2.7"
-"#,
+                "[agent]\napi_base = \"https://api.minimaxi.com/v1\"\nmodel = \"MiniMax-M2.7\"\n",
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
@@ -412,11 +388,7 @@ model = "MiniMax-M2.7"
             let path = dir.path().join("agent.toml");
             fs::write(
                 &path,
-                r#"[agent]
-api_base = "https://api.minimaxi.com/v1"
-model = "MiniMax-M2.7"
-llm_reasoning_split = false
-"#,
+                "[agent]\napi_base = \"https://api.minimaxi.com/v1\"\nmodel = \"MiniMax-M2.7\"\nllm_reasoning_split = false\n",
             )
             .expect("write");
             let cfg = load_config(Some(path.to_str().unwrap())).expect("load");
@@ -500,6 +472,26 @@ mod hot_reload_tests {
             "cron_smoke"
         );
     }
+
+    /// C3：`context_archive_*` 两键可热更（从 `src` 覆盖 `dst`）。
+    #[test]
+    fn apply_hot_reload_updates_context_archive_keys() {
+        let mut dst = without_cm_env_overrides(|| load_config(None).expect("default config"));
+        let mut src = dst.clone();
+        src.conversation_persistence
+            .context_archive_max_rows_per_conversation = 13;
+        src.conversation_persistence.context_archive_codec_min_bytes = 9999;
+        apply_hot_reload_config_subset(&mut dst, &src);
+        assert_eq!(
+            dst.conversation_persistence
+                .context_archive_max_rows_per_conversation,
+            13
+        );
+        assert_eq!(
+            dst.conversation_persistence.context_archive_codec_min_bytes,
+            9999
+        );
+    }
 }
 
 #[cfg(test)]
@@ -571,5 +563,108 @@ mod numeric_validate_tests {
         b.tool_registry_policy.tool_registry_tool_retry_backoff_ms = Some(20_000);
         let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
         assert!(err.contains("tool_retry_backoff_ms"), "err: {err}");
+    }
+
+    /// C3：归档保留键的范围校验（含 `0` 合法、越界报错）。
+    #[test]
+    fn context_archive_keys_out_of_range() {
+        let mut b = ConfigBuilder::default();
+        b.conversation_persistence
+            .context_archive_max_rows_per_conversation = Some(10_000_001);
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(
+            err.contains("context_archive_max_rows_per_conversation"),
+            "err: {err}"
+        );
+
+        let mut b = ConfigBuilder::default();
+        b.conversation_persistence.context_archive_codec_min_bytes = Some(4_194_305);
+        let err = validate::validate_builder_numeric_ranges(&b).unwrap_err();
+        assert!(
+            err.contains("context_archive_codec_min_bytes"),
+            "err: {err}"
+        );
+    }
+
+    /// `context_archive_max_rows_per_conversation = 0`（不限）不应被判为越界。
+    #[test]
+    fn context_archive_zero_rows_is_allowed() {
+        let mut b = ConfigBuilder::default();
+        b.conversation_persistence
+            .context_archive_max_rows_per_conversation = Some(0);
+        assert!(validate::validate_builder_numeric_ranges(&b).is_ok());
+    }
+}
+
+/// C3：`context_archive_*` 两键的加载管道回归（默认值 / TOML / env 覆盖）。
+#[cfg(test)]
+mod context_archive_config_tests {
+    use super::env_override_apply::scoped_env;
+    use super::load_config;
+    use super::load_config_test_env::without_cm_env_overrides;
+    use std::fs;
+
+    fn write_agent_toml(body: &str) -> (tempfile::TempDir, String) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("agent.toml");
+        fs::write(&path, body).expect("write");
+        let p = path.to_str().unwrap().to_string();
+        (dir, p)
+    }
+
+    #[test]
+    fn defaults_come_from_conversation_store_constants() {
+        without_cm_env_overrides(|| {
+            let cfg = load_config(None).expect("default config");
+            assert_eq!(
+                cfg.conversation_persistence
+                    .context_archive_max_rows_per_conversation,
+                crate::conversation_store::ARCHIVE_MAX_ROWS_PER_CONVERSATION_DEFAULT
+            );
+            assert_eq!(
+                cfg.conversation_persistence.context_archive_codec_min_bytes,
+                crate::conversation_store::ARCHIVE_CODEC_MIN_BYTES_DEFAULT
+            );
+        });
+    }
+
+    #[test]
+    fn agent_toml_overrides_apply() {
+        without_cm_env_overrides(|| {
+            let (_dir, path) = write_agent_toml(
+                "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\ncontext_archive_max_rows_per_conversation = 0\ncontext_archive_codec_min_bytes = 8192\n",
+            );
+            let cfg = load_config(Some(&path)).expect("load");
+            assert_eq!(
+                cfg.conversation_persistence
+                    .context_archive_max_rows_per_conversation,
+                0
+            );
+            assert_eq!(
+                cfg.conversation_persistence.context_archive_codec_min_bytes,
+                8192
+            );
+        });
+    }
+
+    #[test]
+    fn env_overrides_win_over_toml() {
+        let _env = scoped_env::scope(&[
+            ("CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION", "7"),
+            ("CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES", "1024"),
+        ]);
+        let (_dir, path) = write_agent_toml(
+            "[agent]\napi_base = \"https://api.deepseek.com/v1\"\nmodel = \"deepseek-chat\"\ncontext_archive_max_rows_per_conversation = 128\ncontext_archive_codec_min_bytes = 4096\n",
+        );
+        let cfg = load_config(Some(&path)).expect("load");
+        assert_eq!(
+            cfg.conversation_persistence
+                .context_archive_max_rows_per_conversation,
+            7
+        );
+        assert_eq!(
+            cfg.conversation_persistence.context_archive_codec_min_bytes,
+            1024
+        );
     }
 }

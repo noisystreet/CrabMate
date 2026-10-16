@@ -103,6 +103,10 @@ conversation_store_sqlite_path = ".crabmate/conversations.db"
 conversation_store_ttl_secs = 86400
 # 会话条数上限：超出时淘汰最旧的会话；0 = 不限。CM_CONVERSATION_STORE_MAX_ENTRIES
 conversation_store_max_entries = 512
+# 单会话归档行数上限：超限时回收最旧的归档前缀（会使其更早的分支点无法 re-expand）；0 = 不限。CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION
+context_archive_max_rows_per_conversation = 256
+# 归档正文 codec 选择阈值（字节）：不足该值用 identity，否则 gzip。CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES
+context_archive_codec_min_bytes = 4096
 # 受保护 API（/chat*、/workspace* 等）：非空时要求 Authorization: Bearer <本值> 或 X-API-Key: <本值>（二选一）
 # web_api_bearer_token = ""
 # 为 true 时 serve 启动前必须配置非空的 web_api_bearer_token（含仅监听 127.0.0.1）。本地纯匿名调试可设为 false。CM_WEB_API_REQUIRE_BEARER

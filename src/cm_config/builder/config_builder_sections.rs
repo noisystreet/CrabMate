@@ -208,6 +208,8 @@ pub(crate) struct ConfigBuilderConversationPersistence {
     pub(crate) conversation_store_sqlite_path: Option<String>,
     pub(crate) conversation_store_ttl_secs: Option<u64>,
     pub(crate) conversation_store_max_entries: Option<u64>,
+    pub(crate) context_archive_max_rows_per_conversation: Option<u64>,
+    pub(crate) context_archive_codec_min_bytes: Option<u64>,
 }
 
 #[derive(Default)]

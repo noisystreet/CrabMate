@@ -18,7 +18,7 @@ fn truncate_before_user_ordinal_skips_first_turn_workspace_injection() {
     assert_eq!(loaded.messages.len(), 3);
     assert_eq!(
         truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.revision).unwrap(),
-        SaveConversationOutcome::Saved
+        BranchTruncateOutcome::Saved
     );
     let after = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(after.messages.len(), 2);
@@ -199,7 +199,7 @@ fn truncate_before_user_rewrites_layout_meta() {
     assert!(!loaded.layout.as_ref().unwrap().segments.is_empty());
     assert_eq!(
         truncate_before_user_ordinal_if_revision(&conn, "c1", 0, loaded.revision).unwrap(),
-        SaveConversationOutcome::Saved
+        BranchTruncateOutcome::Saved
     );
     let after = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert!(after.messages.is_empty());
@@ -237,7 +237,7 @@ fn prune_removes_rows_older_than_ttl() {
     migrate(&conn).unwrap();
     seed_ids(&conn, &["old", "fresh"]);
     backdate(&conn, "old", now_unix() - 10_000);
-    prune(&conn, 3600, 0).unwrap();
+    prune(&conn, 3600, 0, 0).unwrap();
     assert_eq!(count(&conn).unwrap(), 1);
     assert!(load(&conn, "old", 0).unwrap().is_none());
     assert!(load(&conn, "fresh", 0).unwrap().is_some());
@@ -249,7 +249,7 @@ fn prune_ttl_zero_keeps_expired_rows() {
     migrate(&conn).unwrap();
     seed_ids(&conn, &["ancient", "fresh"]);
     backdate(&conn, "ancient", 0);
-    prune(&conn, 0, 0).unwrap();
+    prune(&conn, 0, 0, 0).unwrap();
     assert_eq!(count(&conn).unwrap(), 2);
 }
 
@@ -258,7 +258,7 @@ fn prune_max_entries_zero_keeps_all_rows() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
     seed_ids(&conn, &["a", "b", "c"]);
-    prune(&conn, 0, 0).unwrap();
+    prune(&conn, 0, 0, 0).unwrap();
     assert_eq!(count(&conn).unwrap(), 3);
 }
 
@@ -271,11 +271,89 @@ fn prune_evicts_oldest_beyond_max_entries() {
     backdate(&conn, "a", now - 300);
     backdate(&conn, "b", now - 200);
     backdate(&conn, "c", now - 100);
-    prune(&conn, 0, 2).unwrap();
+    prune(&conn, 0, 2, 0).unwrap();
     assert_eq!(count(&conn).unwrap(), 2);
     assert!(load(&conn, "a", 0).unwrap().is_none(), "oldest evicted");
     assert!(load(&conn, "b", 0).unwrap().is_some());
     assert!(load(&conn, "c", 0).unwrap().is_some());
+}
+
+#[test]
+fn prune_cascade_removes_archive_when_conversation_ttl_expires() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    seed_ids(&conn, &["old", "fresh"]);
+    backdate(&conn, "old", now_unix() - 10_000);
+    append_archive_rows(
+        &conn,
+        "old",
+        &[arow(ArchiveReason::Summarized, 0, 1, "gone")],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    append_archive_rows(
+        &conn,
+        "fresh",
+        &[arow(ArchiveReason::Summarized, 0, 1, "kept")],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    prune(&conn, 3600, 0, 0).unwrap();
+    assert!(
+        load_archive_messages(&conn, "old").unwrap().is_empty(),
+        "过期会话的归档行应随会话同事务删除"
+    );
+    assert_eq!(load_archive_messages(&conn, "fresh").unwrap().len(), 1);
+}
+
+#[test]
+fn prune_cascade_removes_archive_when_conversation_evicted() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    seed_ids(&conn, &["a", "b", "c"]);
+    let now = now_unix();
+    backdate(&conn, "a", now - 300);
+    backdate(&conn, "b", now - 200);
+    backdate(&conn, "c", now - 100);
+    for id in ["a", "b", "c"] {
+        append_archive_rows(
+            &conn,
+            id,
+            &[arow(ArchiveReason::Summarized, 0, 1, id)],
+            ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+        )
+        .unwrap();
+    }
+    prune(&conn, 0, 2, 0).unwrap();
+    assert!(
+        load_archive_messages(&conn, "a").unwrap().is_empty(),
+        "被淘汰会话的归档行应随会话同事务删除"
+    );
+    assert_eq!(load_archive_messages(&conn, "b").unwrap().len(), 1);
+    assert_eq!(load_archive_messages(&conn, "c").unwrap().len(), 1);
+}
+
+#[test]
+fn prune_reclaims_archive_beyond_per_conversation_cap() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    seed_ids(&conn, &["c1"]);
+    append_archive_rows(
+        &conn,
+        "c1",
+        &[
+            arow(ArchiveReason::Summarized, 0, 1, "a"),
+            arow(ArchiveReason::Summarized, 1, 2, "b"),
+            arow(ArchiveReason::Summarized, 2, 3, "c"),
+        ],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    prune(&conn, 0, 0, 2).unwrap();
+    let kept = load_archive_messages(&conn, "c1").unwrap();
+    assert_eq!(kept.len(), 2);
+    assert_eq!(message_content_as_str(&kept[0].content), Some("b"));
+    assert_eq!(message_content_as_str(&kept[1].content), Some("c"));
 }
 
 #[test]
@@ -599,7 +677,7 @@ fn truncate_before_user_ordinal_compensates_archived_users() {
     // 会话级序号 2 → canonical 内序号 0 → 截断至 [system]。
     assert_eq!(
         truncate_before_user_ordinal_if_revision(&conn, "c1", 2, rev).unwrap(),
-        SaveConversationOutcome::Saved
+        BranchTruncateOutcome::Saved
     );
     let after = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(after.messages.len(), 1);
@@ -607,7 +685,7 @@ fn truncate_before_user_ordinal_compensates_archived_users() {
 }
 
 #[test]
-fn truncate_before_user_ordinal_in_archive_prefix_returns_conflict() {
+fn truncate_before_user_ordinal_in_archive_prefix_reexpands() {
     let conn = Connection::open_in_memory().unwrap();
     migrate(&conn).unwrap();
     append_archive_rows(
@@ -629,16 +707,111 @@ fn truncate_before_user_ordinal_in_archive_prefix_returns_conflict() {
         SaveConversationOutcome::Saved
     );
     let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
-    // 会话级序号 1 落在归档前缀内（已归档 2 条）→ 显式 Conflict，canonical 不变。
+    // 会话级序号 1 落在归档前缀内；归档完整（MIN(seq)==0）→ re-expand 后按会话级序号截断。
     assert_eq!(
         truncate_before_user_ordinal_if_revision(&conn, "c1", 1, rev).unwrap(),
-        SaveConversationOutcome::Conflict
+        BranchTruncateOutcome::Saved
+    );
+    let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+    // 完整原文历史 = [system, a0, a1, u2]；截到第 1 条真实用户（a1）之前 → [system, a0]。
+    assert_eq!(after.messages.len(), 2);
+    assert_eq!(after.messages[0].role, "system");
+    assert_eq!(
+        message_content_as_str(&after.messages[1].content),
+        Some("a0")
+    );
+    // re-expand 在同一事务内清除该会话归档。
+    assert!(load_archive_messages(&conn, "c1").unwrap().is_empty());
+}
+
+#[test]
+fn truncate_before_user_ordinal_in_recycled_archive_prefix_returns_archive_incomplete() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    // 构造「归档前缀已被回收」：MIN(seq) == 1（首条归档行 seq=0 已被 prune 掉）。
+    append_archive_rows(
+        &conn,
+        "c1",
+        &[
+            arow(ArchiveReason::RemovedTurnGroup, 0, 1, "a0"),
+            arow(ArchiveReason::RemovedTurnGroup, 1, 2, "a1"),
+        ],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    conn.execute(
+        &format!("DELETE FROM {ARCHIVE_TABLE} WHERE conversation_id = ?1 AND seq = 0"),
+        params!["c1"],
+    )
+    .unwrap();
+    let msgs = vec![
+        Message::system_only("s".to_string()),
+        Message::user_only("u2".to_string()),
+    ];
+    save_if_revision(&conn, "c1", msgs, None, None, None).unwrap();
+    let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
+    // 会话级序号 0 落在归档前缀内且归档不完整 → 显式 ArchiveIncomplete，canonical 不变。
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 0, rev).unwrap(),
+        BranchTruncateOutcome::ArchiveIncomplete
     );
     let after = load(&conn, "c1", 3600).unwrap().expect("exists");
     assert_eq!(after.messages.len(), 2);
     assert_eq!(
         message_content_as_str(&after.messages[1].content),
         Some("u2")
+    );
+    // 归档前缀被回收后，序号换算不可信：即便分支点落在 canonical 保留窗口内
+    // （会话级序号 1、2 >= 已归档真实用户数 1），也须显式 ArchiveIncomplete 而非静默截错。
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 1, rev).unwrap(),
+        BranchTruncateOutcome::ArchiveIncomplete
+    );
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 2, rev).unwrap(),
+        BranchTruncateOutcome::ArchiveIncomplete
+    );
+}
+
+#[test]
+fn prune_recycles_archive_prefix_then_branch_reports_incomplete() {
+    let conn = Connection::open_in_memory().unwrap();
+    migrate(&conn).unwrap();
+    // 3 条归档行（各 1 条真实用户，会话级序号 0、1、2）。
+    append_archive_rows(
+        &conn,
+        "c1",
+        &[
+            arow(ArchiveReason::RemovedTurnGroup, 0, 1, "a0"),
+            arow(ArchiveReason::RemovedTurnGroup, 1, 2, "a1"),
+            arow(ArchiveReason::RemovedTurnGroup, 2, 3, "a2"),
+        ],
+        ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
+    )
+    .unwrap();
+    let msgs = vec![
+        Message::system_only("s".to_string()),
+        Message::user_only("u3".to_string()),
+    ];
+    assert_eq!(
+        save_if_revision(&conn, "c1", msgs, None, None, None).unwrap(),
+        SaveConversationOutcome::Saved
+    );
+    // 顶层 prune 按单会话上限回收归档前缀（丢 seq 0，保留 seq 1、2）。
+    prune(&conn, 0, 0, 2).unwrap();
+    assert_eq!(load_archive_messages(&conn, "c1").unwrap().len(), 2);
+    let rev = load(&conn, "c1", 3600).unwrap().expect("exists").revision;
+    // 会话级序号 3 走「换算分支」（>= 已归档真实用户数 2）；但归档前缀已被回收，
+    // 真实被移出回合数已低估，换算不可信 → 显式 ArchiveIncomplete，canonical 不变。
+    assert_eq!(
+        truncate_before_user_ordinal_if_revision(&conn, "c1", 3, rev).unwrap(),
+        BranchTruncateOutcome::ArchiveIncomplete
+    );
+    let after = load(&conn, "c1", 3600).unwrap().expect("exists");
+    assert_eq!(after.messages.len(), 2);
+    assert_eq!(
+        message_content_as_str(&after.messages[1].content),
+        Some("u3")
     );
 }
 

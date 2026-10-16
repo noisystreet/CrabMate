@@ -61,6 +61,16 @@ fn env_override_conversation_sqlite_path(b: &mut ConfigBuilder) {
         &mut b.conversation_persistence.conversation_store_max_entries,
         "CM_CONVERSATION_STORE_MAX_ENTRIES",
     );
+    apply_parse(
+        &mut b
+            .conversation_persistence
+            .context_archive_max_rows_per_conversation,
+        "CM_CONTEXT_ARCHIVE_MAX_ROWS_PER_CONVERSATION",
+    );
+    apply_parse(
+        &mut b.conversation_persistence.context_archive_codec_min_bytes,
+        "CM_CONTEXT_ARCHIVE_CODEC_MIN_BYTES",
+    );
 }
 
 fn env_override_agent_memory_file(b: &mut ConfigBuilder) {

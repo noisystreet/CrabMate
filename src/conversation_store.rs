@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::json;
 
 use crate::agent::model_context_view::StructuralCommit;
@@ -28,6 +28,15 @@ const ARCHIVE_TABLE: &str = "crabmate_conversation_archive";
 pub enum SaveConversationOutcome {
     Saved,
     Conflict,
+}
+
+/// 分支截断结果（含「归档前缀不完整」显式错误，见设计文档 §3.11）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BranchTruncateOutcome {
+    Saved,
+    Conflict,
+    /// 分支点早于归档保留窗口、且归档前缀已被回收，无法安全回放（§3.11）。
+    ArchiveIncomplete,
 }
 
 fn now_unix() -> i64 {
@@ -378,25 +387,59 @@ pub fn delete_by_id(conn: &Connection, id: &str) -> Result<(), rusqlite::Error> 
     Ok(())
 }
 
-/// 删除过期行并按条数淘汰最旧记录。
-pub fn prune(conn: &Connection, ttl_secs: u64, max_entries: usize) -> Result<(), rusqlite::Error> {
-    let now = now_unix();
+/// 删除过期行并按条数淘汰最旧记录；**同事务**级联回收归档行（设计文档 §4.2 / §5.3.2 C4）。
+///
+/// - 会话被删（TTL / 超 `max_entries`）时，其归档行一并删除；
+/// - `archive_max_rows_per_conversation` 控制单会话归档行数上限（`0` 不限），
+///   与 TTL 维度一同交给 [`archive::prune_archive`] 处理。
+pub fn prune(
+    conn: &Connection,
+    ttl_secs: u64,
+    max_entries: usize,
+    archive_max_rows_per_conversation: usize,
+) -> Result<(), rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
     if ttl_secs > 0 {
-        let cutoff = now - ttl_secs as i64;
-        conn.execute(
-            &format!("DELETE FROM {TABLE} WHERE updated_at_unix < ?1"),
-            params![cutoff],
-        )?;
+        prune_expired_by_ttl(&tx, now_unix() - ttl_secs as i64)?;
     }
-    if max_entries == 0 {
-        return Ok(());
+    if max_entries > 0 {
+        prune_overflow_entries(&tx, max_entries)?;
     }
-    let count: i64 = conn.query_row(&format!("SELECT COUNT(*) FROM {TABLE}"), [], |r| r.get(0))?;
+    archive::prune_archive(&tx, ttl_secs, archive_max_rows_per_conversation)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// TTL 维度：先删归档（会话表未变故子查询稳定），再删会话，保证不遗留孤儿归档行。
+fn prune_expired_by_ttl(tx: &Connection, cutoff: i64) -> Result<(), rusqlite::Error> {
+    tx.execute(
+        &format!(
+            "DELETE FROM {ARCHIVE_TABLE} WHERE conversation_id IN (SELECT id FROM {TABLE} WHERE updated_at_unix < ?1)"
+        ),
+        params![cutoff],
+    )?;
+    tx.execute(
+        &format!("DELETE FROM {TABLE} WHERE updated_at_unix < ?1"),
+        params![cutoff],
+    )?;
+    Ok(())
+}
+
+/// 条数维度：超出 `max_entries` 时按 `updated_at_unix` 升序淘汰最旧会话（连同其归档行）。
+fn prune_overflow_entries(tx: &Connection, max_entries: usize) -> Result<(), rusqlite::Error> {
+    let count: i64 = tx.query_row(&format!("SELECT COUNT(*) FROM {TABLE}"), [], |r| r.get(0))?;
     if count <= max_entries as i64 {
         return Ok(());
     }
     let to_drop = count - max_entries as i64;
-    conn.execute(
+    // 同上：先删归档，再删会话。
+    tx.execute(
+        &format!(
+            "DELETE FROM {ARCHIVE_TABLE} WHERE conversation_id IN (SELECT id FROM {TABLE} ORDER BY updated_at_unix ASC LIMIT ?1)"
+        ),
+        params![to_drop],
+    )?;
+    tx.execute(
         &format!(
             "DELETE FROM {TABLE} WHERE id IN (SELECT id FROM {TABLE} ORDER BY updated_at_unix ASC LIMIT ?1)"
         ),
@@ -505,68 +548,143 @@ fn persist_messages_bump_revision(
     Ok(SaveConversationOutcome::Saved)
 }
 
-fn update_messages_json_if_revision(
-    conn: &Connection,
-    id: &str,
-    expected_revision: u64,
-    corrupt_log: &'static str,
-    serialize_fail_log: &'static str,
-    mut mutate: impl FnMut(&mut Vec<Message>) -> bool,
-) -> Result<SaveConversationOutcome, rusqlite::Error> {
-    let Some(mut messages) = load_messages_at_revision(conn, id, expected_revision, corrupt_log)?
-    else {
-        return Ok(SaveConversationOutcome::Conflict);
-    };
-    if !mutate(&mut messages) {
-        return Ok(SaveConversationOutcome::Saved);
+/// 返回第 `ordinal` 条**真实用户**消息在 `messages` 中的下标（0-based）。
+/// 不足 `ordinal + 1` 条真实用户时返回 `messages.len()`（表示无需截断）。
+pub(crate) fn branch_cut_index(messages: &[Message], ordinal: usize) -> usize {
+    let mut u = 0usize;
+    for (i, m) in messages.iter().enumerate() {
+        if crate::types::user_message_counts_for_branch_truncation(m) {
+            if u == ordinal {
+                return i;
+            }
+            u += 1;
+        }
     }
-    persist_messages_bump_revision(conn, id, expected_revision, &messages, serialize_fail_log)
+    messages.len()
 }
 
-/// 截断到「第 `ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
+/// 把归档原文重放回 canonical，得**完整原文历史**（re-expand，见 §3.11）：
+/// - 先剔除 canonical 中的基线摘要注入条（re-expand 后不再保留基线摘要）；
+/// - 再把归档原文拼在「首个真实用户之前」（无真实用户时退化为「首个非 `system` 条之前」，
+///   再退化为末尾），使归档前缀回到 canonical 早期真实用户之前。
+fn reexpand_canonical(canonical: &[Message], archived_original: Vec<Message>) -> Vec<Message> {
+    let mut stripped: Vec<Message> = canonical
+        .iter()
+        .filter(|m| !crate::types::is_context_summary_injection(m))
+        .cloned()
+        .collect();
+    let insert_at = stripped
+        .iter()
+        .position(crate::types::user_message_counts_for_branch_truncation)
+        .or_else(|| stripped.iter().position(|m| m.role != "system"))
+        .unwrap_or(stripped.len());
+    let mut out = Vec::with_capacity(stripped.len() + archived_original.len());
+    out.extend(stripped.drain(..insert_at));
+    out.extend(archived_original);
+    out.extend(stripped);
+    out
+}
+
+/// 截断到「第 `user_ordinal` 条用户消息」之前（`ordinal` 为 0-based：0 表示删掉从首条用户起的尾部，仅保留 system 等）。
 /// 计数不含长期记忆 / 变更集 / 首轮工作区画像 / 上下文摘要等注入条（见 [`crate::types::user_message_counts_for_branch_truncation`]）。
 ///
-/// `user_ordinal` 是客户端**会话级**序号（含已归档回合，见 §3.11）。Phase A 不做 re-expand：
-/// 先用归档中的真实用户回合数把会话级序号换算为 canonical 内序号；若目标落在归档前缀内
-/// （`user_ordinal < archived_users`）则返回 [`SaveConversationOutcome::Conflict`]——
-/// 即 §3.8 要求的「归档保留上限被突破时分支接口必须返回显式错误」。
+/// `user_ordinal` 是客户端**会话级**序号（含已归档回合，见 §3.11）：
+/// - 分支点落在 canonical 保留窗口内（`user_ordinal >= 已归档真实用户数`）时，换算为 canonical 内序号直接截断；
+/// - 分支点落在归档前缀内时做 **re-expand**（把归档原文重放回 canonical 得完整原文历史后按会话级序号截断），
+///   并在同一事务内清除该会话归档（已被重放消费／属于被丢弃的未来）；
+/// - 若归档前缀已被回收（`MIN(seq) > 0`），归档不再是完整原始前缀：会话级序号换算不可信、re-expand 亦不可能，
+///   故**两个分支**都应返回 [`BranchTruncateOutcome::ArchiveIncomplete`]（显式错误，绝不静默截错，见 §3.8/§5.3.6）。
 pub fn truncate_before_user_ordinal_if_revision(
     conn: &Connection,
     id: &str,
     user_ordinal: usize,
     expected_revision: u64,
-) -> Result<SaveConversationOutcome, rusqlite::Error> {
-    let archived_users = archive::archive_real_user_count(conn, id)?;
-    let Some(canonical_ordinal) = user_ordinal.checked_sub(archived_users) else {
-        log::warn!(
-            "分支截断目标序号 {user_ordinal} 落在归档前缀内（已归档真实用户回合 {archived_users} 条）；\
-Phase A 暂无 re-expand，返回 Conflict（见设计文档 §3.8/§3.11）"
-        );
-        return Ok(SaveConversationOutcome::Conflict);
-    };
-    update_messages_json_if_revision(
-        conn,
+) -> Result<BranchTruncateOutcome, rusqlite::Error> {
+    let tx = conn.unchecked_transaction()?;
+    let Some(canonical) = load_messages_at_revision(
+        &tx,
         id,
         expected_revision,
         "truncate_before_user 会话 JSON 损坏",
+    )?
+    else {
+        return Ok(BranchTruncateOutcome::Conflict);
+    };
+    if archive::archive_prefix_incomplete(&tx, id)? {
+        log::warn!(
+            "分支截断目标序号 {user_ordinal} 对应会话的归档前缀已被回收（MIN(seq) > 0），\
+归档不再是完整原始前缀、序号换算不可信；返回 ArchiveIncomplete（见设计文档 §3.11）"
+        );
+        return Ok(BranchTruncateOutcome::ArchiveIncomplete);
+    }
+    let archived_users = archive::archive_real_user_count(&tx, id)?;
+    if user_ordinal >= archived_users {
+        // 分支点落在 canonical 保留窗口内：无需 re-expand，归档不动。
+        truncate_within_canonical(
+            tx,
+            id,
+            canonical,
+            user_ordinal - archived_users,
+            expected_revision,
+        )
+    } else {
+        truncate_and_clear_archive(tx, id, &canonical, user_ordinal, expected_revision)
+    }
+}
+
+/// 落盘并 bump revision；返回是否成功（`false` 为并发冲突，事务由调用方回滚）。
+fn persist_truncated_or_conflict(
+    tx: &Connection,
+    id: &str,
+    expected_revision: u64,
+    messages: &[Message],
+) -> Result<bool, rusqlite::Error> {
+    Ok(persist_messages_bump_revision(
+        tx,
+        id,
+        expected_revision,
+        messages,
         "truncate_before_user 序列化失败",
-        |messages| {
-            let mut u = 0usize;
-            let mut cut = messages.len();
-            for (i, m) in messages.iter().enumerate() {
-                if crate::types::user_message_counts_for_branch_truncation(m) {
-                    if u == canonical_ordinal {
-                        cut = i;
-                        break;
-                    }
-                    u += 1;
-                }
-            }
-            if cut >= messages.len() {
-                return false;
-            }
-            messages.truncate(cut);
-            true
-        },
-    )
+    )? == SaveConversationOutcome::Saved)
+}
+
+/// 分支点落在 canonical 保留窗口内：按 canonical 内序号直接截断并落盘（归档不动）。
+fn truncate_within_canonical(
+    tx: Transaction<'_>,
+    id: &str,
+    canonical: Vec<Message>,
+    canonical_ordinal: usize,
+    expected_revision: u64,
+) -> Result<BranchTruncateOutcome, rusqlite::Error> {
+    let cut = branch_cut_index(&canonical, canonical_ordinal);
+    if cut >= canonical.len() {
+        return Ok(BranchTruncateOutcome::Saved);
+    }
+    let mut truncated = canonical;
+    truncated.truncate(cut);
+    if !persist_truncated_or_conflict(&tx, id, expected_revision, &truncated)? {
+        return Ok(BranchTruncateOutcome::Conflict);
+    }
+    tx.commit()?;
+    Ok(BranchTruncateOutcome::Saved)
+}
+
+/// 分支点落在归档前缀内：re-expand 后按会话级序号截断，并在同一事务内清除该会话归档
+/// （已被重放消费／属于被丢弃的未来）。**调用方已确认归档为完整原始前缀**（见 `archive_prefix_incomplete`）。
+fn truncate_and_clear_archive(
+    tx: Transaction<'_>,
+    id: &str,
+    canonical: &[Message],
+    user_ordinal: usize,
+    expected_revision: u64,
+) -> Result<BranchTruncateOutcome, rusqlite::Error> {
+    let archived_original = archive::load_archive_original_messages(&tx, id)?;
+    let mut full = reexpand_canonical(canonical, archived_original);
+    full.truncate(branch_cut_index(&full, user_ordinal));
+    if !persist_truncated_or_conflict(&tx, id, expected_revision, &full)? {
+        return Ok(BranchTruncateOutcome::Conflict);
+    }
+    archive::delete_archive_for_conversation(&tx, id)?;
+    tx.commit()?;
+    Ok(BranchTruncateOutcome::Saved)
 }

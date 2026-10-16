@@ -82,6 +82,9 @@ impl From<ArchiveError> for rusqlite::Error {
 /// 归档 `codec` 选择阈值默认值（设计文档 §3.8：默认 4 KiB）。
 pub const ARCHIVE_CODEC_MIN_BYTES_DEFAULT: usize = 4 * 1024;
 
+/// 单会话归档行数上限默认值（设计文档 §3.8 / §5.3.2 C4；`0` 表示不启用该维度）。
+pub const ARCHIVE_MAX_ROWS_PER_CONVERSATION_DEFAULT: usize = 256;
+
 /// 按 `codec_min_bytes` 选择编码，返回 `(codec, payload)`。
 /// `payload` 为 `TEXT` 列内容：`identity` 直接存 JSON；`gzip` 存 base64(gzip(json))。
 fn encode_archive_payload(
@@ -142,6 +145,19 @@ fn decode_archive_payload(
             reason: format!("未知归档 codec: {other}"),
         }),
     }
+}
+
+/// 逐行解码 `(seq, messages_json, codec)`，按出现顺序拼接；解码失败返回可诊断错误、**不静默丢弃**。
+fn decode_archive_rows<I>(rows: I) -> Result<Vec<Message>, ArchiveError>
+where
+    I: Iterator<Item = Result<(i64, String, String), rusqlite::Error>>,
+{
+    let mut out = Vec::new();
+    for row in rows {
+        let (seq, payload, codec) = row?;
+        out.extend(decode_archive_payload(seq, &payload, &codec)?);
+    }
+    Ok(out)
 }
 
 /// 追加归档行：`seq` 会话内单调递增，按 `codec_min_bytes` 选择 `codec`（设计文档 §3.8）。
@@ -206,7 +222,6 @@ fn insert_archive_rows(
 
 /// 按 `seq` 升序读出会话全部归档原文（re-expand 用，见 §3.11）。
 /// 解码失败返回可诊断错误、**不静默丢弃**。
-// Phase A 仅被 `archive_real_user_count`（分支序号补偿）使用；完整 re-expand 见 Phase C §5.3.2 C4。
 pub fn load_archive_messages(
     conn: &Connection,
     conversation_id: &str,
@@ -221,19 +236,66 @@ pub fn load_archive_messages(
             r.get::<_, String>(2)?,
         ))
     })?;
-    let mut out = Vec::new();
-    for row in rows {
-        let (seq, payload, codec) = row?;
-        out.extend(decode_archive_payload(seq, &payload, &codec)?);
-    }
-    Ok(out)
+    decode_archive_rows(rows)
+}
+
+/// 会话归档行的最小 `seq`；无归档行返回 `None`。
+///
+/// 用于判定归档是否为**完整原始前缀**（§3.11）：`MIN(seq) == 0`（或无归档行）说明归档从
+/// 会话首条原文起、可安全 re-expand；`MIN(seq) > 0` 说明归档前缀已被回收，分支点落在其中
+/// 时无法回放，必须返回显式错误。
+pub fn archive_min_seq(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<Option<i64>, rusqlite::Error> {
+    conn.query_row(
+        &format!("SELECT MIN(seq) FROM {ARCHIVE_TABLE} WHERE conversation_id = ?1"),
+        params![conversation_id],
+        |r| r.get::<_, Option<i64>>(0),
+    )
+}
+
+/// 会话归档是否为**不完整的原始前缀**（§3.11）：存在归档行且 `MIN(seq) > 0`。
+///
+/// `true` 表示归档前缀已被回收（如 C4 行数上限 / TTL 回收），此时归档**不代表**会话完整
+/// 原始前缀：既无法安全 re-expand，归档内真实用户回合数也会**低估**被移出 canonical 的回合数，
+/// 使会话级序号换算不可信，故分支接口必须返回显式错误（见 §3.8 / §5.3.6 P1）。
+pub fn archive_prefix_incomplete(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<bool, rusqlite::Error> {
+    Ok(archive_min_seq(conn, conversation_id)?.is_some_and(|min| min > 0))
+}
+
+/// 按 `seq` 升序读出会话归档的**原文**（**排除** `reason='artifact'` 的派生旁注，保 §3.9
+/// 「canonical 至多保留最近 1 条 artifact」不变式），供 re-expand 重放回 canonical（见 §3.11）。
+/// 解码失败返回可诊断错误、**不静默丢弃**。
+pub fn load_archive_original_messages(
+    conn: &Connection,
+    conversation_id: &str,
+) -> Result<Vec<Message>, ArchiveError> {
+    let mut stmt = conn.prepare(&format!(
+        "SELECT seq, messages_json, codec FROM {ARCHIVE_TABLE} WHERE conversation_id = ?1 AND reason <> ?2 ORDER BY seq ASC"
+    ))?;
+    let rows = stmt.query_map(
+        params![conversation_id, ArchiveReason::Artifact.as_str()],
+        |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        },
+    )?;
+    decode_archive_rows(rows)
 }
 
 /// 归档中**真实用户回合**的条数（分支序号补偿用，见 §3.11）。
 ///
 /// 客户端提交的 `before_user_ordinal` 是**会话级**序号（含已归档回合），而
 /// [`super::truncate_before_user_ordinal_if_revision`] 按 canonical 内序号执行；两者
-/// 相差的正是归档中的真实用户回合数。Phase A **不做 re-expand**，仅用此值做换算 / 下界判断。
+/// 相差的正是归档中的真实用户回合数。该换算仅在归档为**完整原始前缀**时成立
+/// （即 [`archive_prefix_incomplete`] 为 `false`）。
 pub fn archive_real_user_count(
     conn: &Connection,
     conversation_id: &str,
@@ -272,8 +334,7 @@ pub fn list_all_archive_messages_json(conn: &Connection) -> Result<Vec<String>, 
 }
 
 /// 删除某会话的全部归档行（会话删除 / re-expand 后清理由调用方在同一事务内完成）。
-// Phase C 才会接线（会话删除 / re-expand 清理，见设计文档 §3.11 / §5.3.2 C4）。
-#[allow(dead_code)]
+/// re-expand 路径见设计文档 §3.11；会话删除见 §5.3.2 C4。
 pub fn delete_archive_for_conversation(
     conn: &Connection,
     conversation_id: &str,
@@ -287,8 +348,8 @@ pub fn delete_archive_for_conversation(
 
 /// 归档回收：按 `created_at_unix` 的 TTL 淘汰，并按会话保留最近 `max_rows_per_conversation` 行。
 /// `ttl_secs == 0` / `max_rows_per_conversation == 0` 分别表示不启用对应维度（见 §3.8）。
-// Phase C 才会接线（归档回收配置，见设计文档 §3.8 / §5.3.2 C4）。
-#[allow(dead_code)]
+/// 由 [`super::prune`] 在同一事务内调用（见设计文档 §4.2 / §5.3.2 C4）；
+/// 前缀被回收后，早于保留窗口的分支点无法 re-expand，由分支接口返回显式错误（§3.11）。
 pub fn prune_archive(
     conn: &Connection,
     ttl_secs: u64,
