@@ -201,6 +201,10 @@ pub struct ConversationPersistenceConfig {
     pub conversation_store_ttl_secs: u64,
     /// 会话条数上限；**`0` = 不限**。默认 `512`。
     pub conversation_store_max_entries: usize,
+    /// 单会话归档行数上限；**`0` = 不限**。默认 `256`（见设计文档 §3.8 / §4.2）。
+    pub context_archive_max_rows_per_conversation: usize,
+    /// 归档正文 codec 选择阈值（字节）：不足该值用 `identity`，否则 `gzip`。默认 `4096`（见设计文档 §3.8）。
+    pub context_archive_codec_min_bytes: usize,
     pub scheduled_agent_tasks: Vec<ScheduledAgentTask>,
 }
 

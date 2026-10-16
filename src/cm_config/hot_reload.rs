@@ -59,5 +59,11 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
         src.conversation_persistence.conversation_store_ttl_secs;
     dst.conversation_persistence.conversation_store_max_entries =
         src.conversation_persistence.conversation_store_max_entries;
+    dst.conversation_persistence
+        .context_archive_max_rows_per_conversation =
+        src.conversation_persistence
+            .context_archive_max_rows_per_conversation;
+    dst.conversation_persistence.context_archive_codec_min_bytes =
+        src.conversation_persistence.context_archive_codec_min_bytes;
     // `chat_uploads_dir` / `chat_workspace_root`：serve 注入；热重载不覆盖。
 }

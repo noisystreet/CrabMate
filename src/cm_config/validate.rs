@@ -252,6 +252,21 @@ fn u64_range_rows_a2() -> &'static [U64RangeRow] {
             2_000_000,
         ),
         (
+            "context_archive_max_rows_per_conversation",
+            |b| {
+                b.conversation_persistence
+                    .context_archive_max_rows_per_conversation
+            },
+            0,
+            10_000_000,
+        ),
+        (
+            "context_archive_codec_min_bytes",
+            |b| b.conversation_persistence.context_archive_codec_min_bytes,
+            0,
+            4_194_304,
+        ),
+        (
             "health_llm_models_probe_cache_secs",
             |b| b.web_api.health_llm_models_probe_cache_secs,
             5,

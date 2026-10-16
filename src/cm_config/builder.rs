@@ -389,6 +389,12 @@ impl ConfigBuilder {
         self.conversation_persistence.conversation_store_max_entries = agent
             .conversation_store_max_entries
             .or(self.conversation_persistence.conversation_store_max_entries);
+        self.conversation_persistence.context_archive_max_rows_per_conversation = agent
+            .context_archive_max_rows_per_conversation
+            .or(self.conversation_persistence.context_archive_max_rows_per_conversation);
+        self.conversation_persistence.context_archive_codec_min_bytes = agent
+            .context_archive_codec_min_bytes
+            .or(self.conversation_persistence.context_archive_codec_min_bytes);
     }
 
     /// 上下文引导注入与工具调用解释字段合并。

@@ -278,6 +278,10 @@ pub(super) struct AgentSection {
     pub(super) conversation_store_ttl_secs: Option<u64>,
     /// 会话条数上限；`0` = 不限。默认 `512`。
     pub(super) conversation_store_max_entries: Option<u64>,
+    /// 单会话归档行数上限；`0` = 不限。默认 `256`（见设计文档 §3.8 / §4.2）。
+    pub(super) context_archive_max_rows_per_conversation: Option<u64>,
+    /// 归档正文 codec 选择阈值（字节）。默认 `4096`（见设计文档 §3.8）。
+    pub(super) context_archive_codec_min_bytes: Option<u64>,
     pub(super) agent_memory_file_enabled: Option<bool>,
     pub(super) agent_memory_file: Option<String>,
     pub(super) agent_memory_file_max_chars: Option<u64>,

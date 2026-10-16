@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 use crate::chat_job_queue::{ChatJobQueue, WebChatQueueDeps};
 use crate::config::SharedAgentConfig;
 use crate::cm_api_contract::chat::ConversationLayoutMeta;
-use crate::conversation_store::{self, SaveConversationOutcome};
+use crate::conversation_store::{self, BranchTruncateOutcome, SaveConversationOutcome};
 use crate::memory::long_term_memory::LongTermMemoryRuntime;
 use crate::types::{CommandApprovalDecision, Message};
 
@@ -202,14 +202,16 @@ impl ConversationBacking {
     }
 }
 
-async fn sqlite_conversation_store_op(
+async fn sqlite_conversation_store_op<T>(
     conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
     id_log: String,
     op_zh: &'static str,
-    run: impl FnOnce(&rusqlite::Connection) -> Result<SaveConversationOutcome, rusqlite::Error>
-    + Send
-    + 'static,
-) -> SaveConversationOutcome {
+    fallback: T,
+    run: impl FnOnce(&rusqlite::Connection) -> Result<T, rusqlite::Error> + Send + 'static,
+) -> T
+where
+    T: Copy + Send + 'static,
+{
     match tokio::task::spawn_blocking(move || {
         let g = conn
             .lock()
@@ -227,7 +229,7 @@ async fn sqlite_conversation_store_op(
                 id_log,
                 e
             );
-            SaveConversationOutcome::Conflict
+            fallback
         }
         Err(e) => {
             log::error!(
@@ -237,25 +239,40 @@ async fn sqlite_conversation_store_op(
                 id_log,
                 e
             );
-            SaveConversationOutcome::Conflict
+            fallback
         }
     }
 }
 
+/// 会话保留与归档回收策略快照（一次读锁内取齐，见设计文档 §3.8 / §4.2）。
+struct ConversationRetention {
+    /// `0` = 不过期。
+    ttl_secs: u64,
+    /// `0` = 不限条数。
+    max_entries: usize,
+    /// 单会话归档行数上限；`0` = 不限（§4.2 / C4）。
+    archive_max_rows_per_conversation: usize,
+    /// 归档 codec 选择阈值（字节，§3.8）。
+    archive_codec_min_bytes: usize,
+}
+
 impl AppStateConversationRuntime {
-    /// 当前配置的会话保留策略：`ttl_secs == 0` 不过期；`max_entries == 0` 不限条数。
-    async fn conversation_retention(&self) -> (u64, usize) {
+    /// 当前配置的会话保留 / 归档策略：`ttl_secs == 0` 不过期；`max_entries == 0` 不限条数；
+    /// `archive_max_rows_per_conversation == 0` 不限归档行数。
+    async fn conversation_retention(&self) -> ConversationRetention {
         let cfg = self.cfg.read().await;
         let p = &cfg.conversation_persistence;
-        (
-            p.conversation_store_ttl_secs,
-            p.conversation_store_max_entries,
-        )
+        ConversationRetention {
+            ttl_secs: p.conversation_store_ttl_secs,
+            max_entries: p.conversation_store_max_entries,
+            archive_max_rows_per_conversation: p.context_archive_max_rows_per_conversation,
+            archive_codec_min_bytes: p.context_archive_codec_min_bytes,
+        }
     }
 
     /// 按当前配置清理过期 / 超量会话（`serve` 启动时与低频定时任务调用）。
     pub(crate) async fn prune_conversations_now(&self) {
-        let (ttl_secs, max_entries) = self.conversation_retention().await;
+        let r = self.conversation_retention().await;
         let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
@@ -263,15 +280,20 @@ impl AppStateConversationRuntime {
                 Self::prune_memory_locked(
                     &mut guard,
                     std::time::Instant::now(),
-                    ttl_secs,
-                    max_entries,
+                    r.ttl_secs,
+                    r.max_entries,
                 );
             }
             ConversationBacking::Sqlite(conn) => {
                 let c = Arc::clone(conn);
                 let _ = tokio::task::spawn_blocking(move || {
                     if let Ok(g) = c.lock() {
-                        let _ = conversation_store::prune(&g, ttl_secs, max_entries);
+                        let _ = conversation_store::prune(
+                            &g,
+                            r.ttl_secs,
+                            r.max_entries,
+                            r.archive_max_rows_per_conversation,
+                        );
                     }
                 })
                 .await;
@@ -283,7 +305,7 @@ impl AppStateConversationRuntime {
         &self,
         conversation_id: &str,
     ) -> Option<ConversationTurnSeed> {
-        let (ttl_secs, _) = self.conversation_retention().await;
+        let ttl_secs = self.conversation_retention().await.ttl_secs;
         let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
@@ -346,6 +368,45 @@ impl AppStateConversationRuntime {
         }
     }
 
+    /// 读取会话归档原文（`GET /conversation/messages` 带 `include_archive=true`，见设计文档 §5.3.4 C2）。
+    ///
+    /// 仅 SQLite 后端持久化归档；内存后端无归档，返回空。锁 / 读取 / 解码失败记录日志并返回空，
+    /// 不阻断快照响应（与 `list_all_messages_json` 对归档失败的容错口径一致）。
+    pub(crate) async fn load_conversation_archive_messages(
+        &self,
+        conversation_id: &str,
+    ) -> Vec<Message> {
+        let backing = self.conversation_backing.read().await;
+        let ConversationBacking::Sqlite(conn) = &*backing else {
+            return Vec::new();
+        };
+        let id = conversation_id.to_string();
+        let c = Arc::clone(conn);
+        tokio::task::spawn_blocking(move || {
+            let g = match c.lock() {
+                Ok(g) => g,
+                Err(e) => {
+                    log::error!(target: "crabmate", "会话归档 SQLite 锁失败: {}", e);
+                    return Vec::new();
+                }
+            };
+            match conversation_store::load_archive_messages(&g, &id) {
+                Ok(messages) => messages,
+                Err(e) => {
+                    log::warn!(
+                        target: "crabmate",
+                        "会话归档读取失败 id={} error={}",
+                        id,
+                        e
+                    );
+                    Vec::new()
+                }
+            }
+        })
+        .await
+        .unwrap_or_default()
+    }
+
     fn prune_memory_locked(
         guard: &mut HashMap<String, MemoryConversationEntry>,
         now: std::time::Instant,
@@ -379,7 +440,7 @@ impl AppStateConversationRuntime {
         expected_revision: Option<u64>,
         archive_rows: Vec<crate::conversation_store::ArchiveRow>,
     ) -> SaveConversationOutcome {
-        let (ttl_secs, max_entries) = self.conversation_retention().await;
+        let r = self.conversation_retention().await;
         let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
@@ -423,7 +484,7 @@ impl AppStateConversationRuntime {
                         },
                     );
                 }
-                Self::prune_memory_locked(&mut guard, now, ttl_secs, max_entries);
+                Self::prune_memory_locked(&mut guard, now, r.ttl_secs, r.max_entries);
                 SaveConversationOutcome::Saved
             }
             ConversationBacking::Sqlite(conn) => {
@@ -433,67 +494,67 @@ impl AppStateConversationRuntime {
                 let exp = expected_revision;
                 let active_for_sql = active_agent_role.map(|s| s.to_string());
                 let mode_for_sql = active_session_mode.map(|s| s.to_string());
-                sqlite_conversation_store_op(c, id_log, "保存", move |g| {
-                    let outcome = conversation_store::save_with_archive_if_revision(
-                        g,
-                        &id,
-                        messages,
-                        active_for_sql.as_deref(),
-                        mode_for_sql.as_deref(),
-                        exp,
-                        &archive_rows,
-                        conversation_store::ARCHIVE_CODEC_MIN_BYTES_DEFAULT,
-                    )?;
-                    if outcome == SaveConversationOutcome::Saved {
-                        conversation_store::prune(g, ttl_secs, max_entries)?;
-                    }
-                    Ok(outcome)
-                })
+                sqlite_conversation_store_op(
+                    c,
+                    id_log,
+                    "保存",
+                    SaveConversationOutcome::Conflict,
+                    move |g| {
+                        let outcome = conversation_store::save_with_archive_if_revision(
+                            g,
+                            &id,
+                            messages,
+                            active_for_sql.as_deref(),
+                            mode_for_sql.as_deref(),
+                            exp,
+                            &archive_rows,
+                            r.archive_codec_min_bytes,
+                        )?;
+                        if outcome == SaveConversationOutcome::Saved {
+                            conversation_store::prune(
+                                g,
+                                r.ttl_secs,
+                                r.max_entries,
+                                r.archive_max_rows_per_conversation,
+                            )?;
+                        }
+                        Ok(outcome)
+                    },
+                )
                 .await
             }
         }
     }
 
-    /// 第 `user_ordinal` 条（0-based）**普通**用户消息在 `messages` 中的下标；不足该条数时返回 `messages.len()`（即不截断）。
-    fn branch_truncation_cut_index(messages: &[crate::types::Message], user_ordinal: usize) -> usize {
-        let mut seen = 0usize;
-        for (i, m) in messages.iter().enumerate() {
-            if crate::types::user_message_counts_for_branch_truncation(m) {
-                if seen == user_ordinal {
-                    return i;
-                }
-                seen += 1;
-            }
-        }
-        messages.len()
-    }
-
     /// 截断到第 `user_ordinal` 条**普通**用户消息之前（0-based，不含长期记忆/变更集/首轮工作区画像等注入），且仅当 `revision` 匹配时成功。
+    ///
+    /// 内存后端无归档，不做 re-expand，故只可能返回 [`BranchTruncateOutcome::Saved`] / [`BranchTruncateOutcome::Conflict`]；
+    /// SQLite 后端可能因归档前缀被回收而返回 [`BranchTruncateOutcome::ArchiveIncomplete`]（见 §3.11 / §5.3.6）。
     pub(crate) async fn truncate_conversation_before_user_ordinal_if_revision(
         &self,
         conversation_id: String,
         user_ordinal: usize,
         expected_revision: u64,
-    ) -> SaveConversationOutcome {
-        let (ttl_secs, max_entries) = self.conversation_retention().await;
+    ) -> BranchTruncateOutcome {
+        let r = self.conversation_retention().await;
         let backing = self.conversation_backing.read().await;
         match &*backing {
             ConversationBacking::Memory(map) => {
                 let mut guard = map.write().await;
                 let Some(entry) = guard.get_mut(&conversation_id) else {
-                    return SaveConversationOutcome::Conflict;
+                    return BranchTruncateOutcome::Conflict;
                 };
-                if ttl_secs > 0 && entry.updated_at.elapsed() > Duration::from_secs(ttl_secs) {
+                if r.ttl_secs > 0 && entry.updated_at.elapsed() > Duration::from_secs(r.ttl_secs) {
                     guard.remove(&conversation_id);
-                    return SaveConversationOutcome::Conflict;
+                    return BranchTruncateOutcome::Conflict;
                 }
                 if entry.revision != expected_revision {
-                    return SaveConversationOutcome::Conflict;
+                    return BranchTruncateOutcome::Conflict;
                 }
-                let cut = Self::branch_truncation_cut_index(&entry.messages, user_ordinal);
+                let cut = conversation_store::branch_cut_index(&entry.messages, user_ordinal);
                 if cut >= entry.messages.len() {
                     entry.updated_at = std::time::Instant::now();
-                    return SaveConversationOutcome::Saved;
+                    return BranchTruncateOutcome::Saved;
                 }
                 entry.messages.truncate(cut);
                 entry.layout = Some(crate::cm_turn_layout::layout_meta_from_messages(
@@ -504,27 +565,39 @@ impl AppStateConversationRuntime {
                 Self::prune_memory_locked(
                     &mut guard,
                     std::time::Instant::now(),
-                    ttl_secs,
-                    max_entries,
+                    r.ttl_secs,
+                    r.max_entries,
                 );
-                SaveConversationOutcome::Saved
+                BranchTruncateOutcome::Saved
             }
             ConversationBacking::Sqlite(conn) => {
                 let id = conversation_id;
                 let id_log = id.clone();
                 let c = Arc::clone(conn);
-                sqlite_conversation_store_op(c, id_log, "截断", move |g| {
-                    let outcome = conversation_store::truncate_before_user_ordinal_if_revision(
-                        g,
-                        &id,
-                        user_ordinal,
-                        expected_revision,
-                    )?;
-                    if outcome == SaveConversationOutcome::Saved {
-                        conversation_store::prune(g, ttl_secs, max_entries)?;
-                    }
-                    Ok(outcome)
-                })
+                sqlite_conversation_store_op(
+                    c,
+                    id_log,
+                    "截断",
+                    BranchTruncateOutcome::Conflict,
+                    move |g| {
+                        let outcome =
+                            conversation_store::truncate_before_user_ordinal_if_revision(
+                                g,
+                                &id,
+                                user_ordinal,
+                                expected_revision,
+                            )?;
+                        if outcome == BranchTruncateOutcome::Saved {
+                            conversation_store::prune(
+                                g,
+                                r.ttl_secs,
+                                r.max_entries,
+                                r.archive_max_rows_per_conversation,
+                            )?;
+                        }
+                        Ok(outcome)
+                    },
+                )
                 .await
             }
         }
@@ -716,5 +789,39 @@ mod tests {
             rt.prune_conversations_now().await;
             assert_eq!(rt.conversation_count().await, 2, "sqlite={sqlite}");
         }
+    }
+
+    #[tokio::test]
+    async fn load_conversation_archive_messages_only_for_sqlite() {
+        // 内存后端不持久化归档：恒为空（C2 语义）。
+        let mem = runtime(false).await;
+        save(&mem, "c1").await;
+        assert!(mem.load_conversation_archive_messages("c1").await.is_empty());
+
+        // SQLite 后端：带归档行保存后可读回（按 seq 升序）。
+        let sq = runtime(true).await;
+        let archive_rows = vec![crate::conversation_store::ArchiveRow {
+            reason: crate::conversation_store::ArchiveReason::RemovedTurnGroup,
+            range_start: 0,
+            range_end: 1,
+            messages: one_user_msg("archived"),
+        }];
+        assert_eq!(
+            sq.save_conversation_messages_if_revision(
+                "c1".to_string(),
+                one_user_msg("hi"),
+                None,
+                None,
+                None,
+                archive_rows,
+            )
+            .await,
+            SaveConversationOutcome::Saved
+        );
+        let archive = sq.load_conversation_archive_messages("c1").await;
+        assert_eq!(archive.len(), 1);
+        assert_eq!(archive[0].role, "user");
+        // 未归档 / 不存在的会话返回空。
+        assert!(sq.load_conversation_archive_messages("nope").await.is_empty());
     }
 }
