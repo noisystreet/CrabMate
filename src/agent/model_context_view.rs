@@ -275,6 +275,45 @@ impl ModelContextView {
             range_end: tail_start,
         }
     }
+
+    /// **仅追加**写回：把当前回合在视图中新增的消息（锚点之后、非 parked sidecar）原样追加回
+    /// `canonical`，**不移动 / 不删除** canonical 前缀，返回追加条数。
+    ///
+    /// 用于**中断 / 取消**路径：该路径必须仍向调用方返回 `Err`（`Result<StructuralCommit, _>`
+    /// 无法回传归档行），若改用 [`Self::commit_current_turn_to`] 会「前缀被移出但归档行丢失」
+    /// 造成数据丢失；此处只做安全追加，`canonical` 的既有内容逐字保留。
+    pub fn append_current_turn_to(&self, canonical: &mut Vec<Message>) -> usize {
+        let Some(view_anchor) = self
+            .messages
+            .iter()
+            .rposition(user_message_counts_for_branch_truncation)
+        else {
+            return 0;
+        };
+        let additions: Vec<Message> = self.messages[view_anchor.saturating_add(1)..]
+            .iter()
+            .filter(|message| {
+                crate::cm_agent::context_timeline::is_context_window_timeline_marker(message)
+                    || !self
+                        .original_parked_sidecars
+                        .iter()
+                        .any(|original| original == *message)
+            })
+            .cloned()
+            .collect();
+        if additions.is_empty() {
+            return 0;
+        }
+        if additions
+            .iter()
+            .any(crate::cm_agent::context_timeline::is_context_window_timeline_marker)
+        {
+            crate::cm_agent::context_timeline::strip_context_window_timeline_markers(canonical);
+        }
+        let appended = additions.len();
+        canonical.extend(additions);
+        appended
+    }
 }
 
 /// 结构性提交结果：本轮被移出 canonical 的原文（归档候选）与追加条数（见 §3.7）。
@@ -469,6 +508,50 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    #[test]
+    fn append_current_turn_to_adds_new_messages_and_keeps_prefix_verbatim() {
+        let canonical = vec![
+            Message::system_only("system"),
+            Message::user_only("old user"),
+            Message::assistant_only("old answer"),
+            Message::user_only("current user"),
+        ];
+        let mut view = ModelContextView::derive(&canonical);
+        // 视图中压缩掉旧前缀 —— 仅追加路径**不得**回写这个结构变化（否则前缀被移出却无归档行）。
+        view.messages_mut().drain(1..3);
+        view.messages_mut()
+            .push(Message::assistant_only("partial answer"));
+
+        let mut target = canonical.clone();
+        let appended = view.append_current_turn_to(&mut target);
+
+        assert_eq!(appended, 1);
+        assert_eq!(&target[..canonical.len()], canonical.as_slice());
+        assert_eq!(
+            crate::types::message_content_as_str(&target.last().unwrap().content),
+            Some("partial answer")
+        );
+    }
+
+    #[test]
+    fn append_current_turn_to_returns_zero_without_anchor_or_additions() {
+        let mut empty: Vec<Message> = Vec::new();
+        assert_eq!(
+            ModelContextView::derive(&[Message::system_only("system")])
+                .append_current_turn_to(&mut empty),
+            0
+        );
+        assert!(empty.is_empty());
+
+        let canonical = vec![Message::system_only("system"), Message::user_only("current user")];
+        let mut target = canonical.clone();
+        assert_eq!(
+            ModelContextView::derive(&canonical).append_current_turn_to(&mut target),
+            0
+        );
+        assert_eq!(target, canonical);
     }
 
     #[test]

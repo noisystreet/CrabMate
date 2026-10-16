@@ -165,6 +165,15 @@ Approximate category of the **last** failed final answer when the rewrite budget
 
 **Client-only hints** (in `onError` text from official Leptos when **`sse_capabilities`** disagrees): **`SSE_SERVER_TOO_NEW`**, **`SSE_SERVER_TOO_OLD`**.
 
+### Persistence semantics for cancelled / interrupted turns
+
+When the user stops generation (`POST /chat/stream/{job_id}/cancel`) or the SSE receiver drops while a cooperative cancel is pending, the content already produced in that turn (assistant text / `tool_calls` / completed `tool` results) is **best-effort persisted** to the conversation store, so the **next** turn's model context includes "what I already produced before the interruption". Notes:
+
+- Persistence goes through `save_conversation_messages_if_revision` (CAS); a `Conflict` is logged only and is not treated as a cancel failure.
+- The interrupted path writes back **append-only** (no compaction, no archive); if the turn stopped mid tool batch (`assistant(tool_calls=[A, B]) + tool(A)`), placeholder `tool` messages are synthesized for the missing responses so the persisted sequence stays legal (otherwise the next request would be rejected with an upstream **400**).
+- No persistence when the turn produced no visible assistant output.
+- **SSE semantics are unchanged**: only `STREAM_CANCELLED` is still emitted; the cancel path does **not** emit `conversation_saved` / state snapshot / `stream_draining` and does no long-term-memory async indexing.
+
 ## `tool_result.error_code` (tools / workflow)
 
 Machine-readable failure classification (separate from stream `code`). Common values:

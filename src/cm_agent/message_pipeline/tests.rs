@@ -2,9 +2,9 @@ use crate::cm_types::{FunctionCall, Message, ToolCall};
 
 use super::{
     MessagePipelineConfig, MessagePipelineReport, MessagePipelineStage,
-    apply_session_sync_pipeline_with_config, compress_tool_message_contents,
-    conversation_messages_to_vendor_body, conversation_turn_groups, drop_orphan_tool_messages,
-    trim_messages_by_char_budget, trim_messages_by_count,
+    apply_session_sync_pipeline_with_config, complete_pending_tool_responses_for_persistence,
+    compress_tool_message_contents, conversation_messages_to_vendor_body, conversation_turn_groups,
+    drop_orphan_tool_messages, trim_messages_by_char_budget, trim_messages_by_count,
 };
 
 fn tool_msg(s: &str) -> Message {
@@ -488,4 +488,48 @@ fn pipeline_parks_timeline_so_history_budget_keeps_users() {
     assert_eq!(v.iter().filter(|m| is_chat_timeline_marker(m)).count(), 2);
     let snap = crate::cm_types::filter_messages_for_web_client_snapshot(&v);
     assert!(snap.iter().any(is_chat_timeline_marker));
+}
+
+#[test]
+fn complete_pending_tool_responses_fills_missing_response() {
+    let mut assistant = assistant_with_tool_calls();
+    assistant
+        .tool_calls
+        .as_mut()
+        .expect("tool calls")
+        .push(ToolCall {
+            id: "call_2".to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "y".to_string(),
+                arguments: "{}".to_string(),
+            },
+        });
+    let mut first_tool = tool_msg("done");
+    first_tool.tool_call_id = Some("call_1".to_string());
+    let mut messages = vec![Message::user_only("u"), assistant, first_tool];
+
+    let added = complete_pending_tool_responses_for_persistence(&mut messages);
+
+    assert_eq!(added, 1);
+    assert_eq!(messages.len(), 4);
+    let last = messages.last().expect("last message");
+    assert_eq!(last.role, "tool");
+    assert_eq!(last.tool_call_id.as_deref(), Some("call_2"));
+    let content = crate::cm_types::message_content_as_str(&last.content).expect("content");
+    assert!(content.contains("中断"));
+    assert!(content.contains("y"));
+}
+
+#[test]
+fn complete_pending_tool_responses_noop_when_all_responded() {
+    let assistant = assistant_with_tool_calls();
+    let mut first_tool = tool_msg("done");
+    first_tool.tool_call_id = Some("call_1".to_string());
+    let mut messages = vec![assistant, first_tool];
+
+    let added = complete_pending_tool_responses_for_persistence(&mut messages);
+
+    assert_eq!(added, 0);
+    assert_eq!(messages.len(), 2);
 }

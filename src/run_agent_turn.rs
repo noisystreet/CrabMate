@@ -233,7 +233,10 @@ pub async fn run_agent_turn<'a>(
     };
 
     let res = run_agent_turn_common_with_optional_trace(&mut loop_params, wall_ms).await;
-    if res.is_ok() {
+    // 中断 / 取消路径同样要 flush：本轮已产出的 timeline 标记须随部分输出一起落盘，
+    // 否则下一轮上下文看不到「已产出到哪一步」。
+    let interrupted_cancel = matches!(res.as_ref(), Err(e) if e.is_interrupted_cancel());
+    if res.is_ok() || interrupted_cancel {
         loop_params.turn.flush_context_timeline_markers();
     }
     // 失败时向 trace_sink emit Error 事件（最小化 emit；完整 LLM/工具事件由后续 PR 接入）
@@ -266,13 +269,53 @@ pub async fn run_agent_turn<'a>(
     });
     let mut model_context_artifacts = std::mem::take(&mut loop_params.turn.model_context_artifacts);
     drop(loop_params);
-    res.map(|()| {
-        commit_successful_model_context_view(
+    finish_turn_result(
+        res,
+        interrupted_cancel,
+        messages,
+        &model_context_view,
+        &mut model_context_artifacts,
+    )
+}
+
+/// `run_agent_turn` 收尾：正常完成 → 提交视图；中断 / 取消 → 仅追加写回部分输出后仍返回 `Err`。
+///
+/// 中断 / 取消时调用方（job 队列）会据部分输出落盘，故这里把本轮已产出的消息**仅追加**写回
+/// canonical（不压缩、不归档，见 [`ModelContextView::append_current_turn_to`]），并补齐可能停在
+/// 半途的 tool 响应（`assistant(tool_calls=[A,B]) + tool(A)` 是非法序列，下一轮会 400）。
+/// 错误语义不变，仍返回 `Err`。
+fn finish_turn_result(
+    res: Result<(), crate::agent::agent_turn::RunAgentTurnError>,
+    interrupted_cancel: bool,
+    messages: &mut Vec<crate::types::Message>,
+    model_context_view: &crate::agent::model_context_view::ModelContextView,
+    model_context_artifacts: &mut Vec<crate::agent::model_context_view::ModelContextArtifact>,
+) -> Result<
+    crate::agent::model_context_view::StructuralCommit,
+    crate::agent::agent_turn::RunAgentTurnError,
+> {
+    match res {
+        Ok(()) => Ok(commit_successful_model_context_view(
             messages,
-            &model_context_view,
-            &mut model_context_artifacts,
-        )
-    })
+            model_context_view,
+            model_context_artifacts,
+        )),
+        Err(e) if interrupted_cancel => {
+            let appended = model_context_view.append_current_turn_to(messages);
+            let completed = crate::cm_agent::message_pipeline::
+                complete_pending_tool_responses_for_persistence(messages);
+            // 中断分支**不做**结构性提交：本轮模型视图的压缩配方（artifacts）描述的是一个
+            // 未被 commit 的视图，若转成 marker 写入 canonical，下一轮会把压缩区间重放到
+            // 实际并不存在的位置。显式丢弃，也让「中断路径不消费 artifacts」成为显式契约。
+            model_context_artifacts.clear();
+            log::debug!(
+                target: "crabmate",
+                "中断回合写回部分输出：appended={appended} completed_tool_responses={completed}"
+            );
+            Err(e)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 fn record_turn_start_replay(
@@ -347,4 +390,75 @@ fn write_agent_turn_replay_dump(params: crate::turn_replay_dump::TurnReplayDumpP
         })),
     );
     crate::turn_replay_dump::clear_turn_replay_event_context();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::agent_turn::errors::TurnAbortReason;
+    use crate::agent::agent_turn::{AgentTurnSubPhase, RunAgentTurnError};
+    use crate::agent::model_context_view::{ModelContextArtifact, ModelContextView};
+    use crate::types::Message;
+
+    #[test]
+    fn finish_turn_result_on_interrupt_appends_partial_output_and_returns_err() {
+        let canonical = vec![
+            Message::system_only("system"),
+            Message::user_only("current user"),
+        ];
+        let mut view = ModelContextView::derive(&canonical);
+        view.messages_mut()
+            .push(Message::assistant_only("partial output"));
+
+        let mut messages = canonical.clone();
+        let mut artifacts = vec![ModelContextArtifact::capture(
+            1,
+            canonical.len(),
+            &canonical,
+            Default::default(),
+            None,
+        )];
+
+        let result = finish_turn_result(
+            Err(RunAgentTurnError::TurnAborted {
+                phase: AgentTurnSubPhase::Planner,
+                reason: TurnAbortReason::UserCancelled,
+            }),
+            true,
+            &mut messages,
+            &view,
+            &mut artifacts,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(messages.len(), canonical.len() + 1);
+        assert_eq!(
+            crate::types::message_content_as_str(&messages.last().unwrap().content),
+            Some("partial output")
+        );
+        // 中断分支不做结构性提交，显式丢弃 artifacts。
+        assert!(artifacts.is_empty());
+    }
+
+    #[test]
+    fn finish_turn_result_on_non_interrupt_err_leaves_messages_untouched() {
+        let mut messages = vec![Message::user_only("current user")];
+        let before = messages.clone();
+        let view = ModelContextView::derive(&messages);
+        let mut artifacts = Vec::new();
+
+        let result = finish_turn_result(
+            Err(RunAgentTurnError::Other {
+                phase: AgentTurnSubPhase::Planner,
+                message: "boom".to_string(),
+            }),
+            false,
+            &mut messages,
+            &view,
+            &mut artifacts,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(messages, before);
+    }
 }

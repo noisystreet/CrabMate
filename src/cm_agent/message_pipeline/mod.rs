@@ -49,9 +49,10 @@ pub use sync_pipeline::{
     apply_session_sync_pipeline, apply_session_sync_pipeline_with_config,
 };
 pub use transforms::{
-    ConversationTurnGroup, RemovedPrefix, compress_tool_message_contents, conversation_turn_groups,
-    drop_orphan_tool_messages, estimate_message_chars, estimate_non_system_chars,
-    remove_oldest_turn_group, trim_messages_by_char_budget, trim_messages_by_count,
+    ConversationTurnGroup, RemovedPrefix, complete_pending_tool_responses_for_persistence,
+    compress_tool_message_contents, conversation_turn_groups, drop_orphan_tool_messages,
+    estimate_message_chars, estimate_non_system_chars, remove_oldest_turn_group,
+    trim_messages_by_char_budget, trim_messages_by_count,
 };
 
 /// 进程内累计：每次 `prepare_messages_for_model` 内同步管道实际发生裁剪/剔除时递增（供 `GET /status` 排障）。

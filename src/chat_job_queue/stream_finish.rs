@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use crate::cm_sse_protocol::StreamEndReason;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 
@@ -92,6 +92,81 @@ pub(super) async fn post_turn_web_prepare_and_save(
             archive_rows,
         )
         .await
+}
+
+/// 取消 / 中断回合落盘入参（避免过长形参列表）。
+pub(super) struct CancelledTurnSaveParams<'a> {
+    pub(super) app: &'a WebChatJobAppFacet,
+    pub(super) conversation_id: &'a str,
+    pub(super) messages: &'a mut Vec<Message>,
+    pub(super) expected_revision: Option<u64>,
+    pub(super) request_agent_role: Option<&'a str>,
+    pub(super) persisted_active_agent_role: Option<&'a str>,
+    pub(super) request_session_mode: Option<&'a str>,
+    pub(super) persisted_active_session_mode: Option<&'a str>,
+    pub(super) job_id: u64,
+    /// 归档行：`Ok(commit)` 取消分支须传结构性提交的归档行（本轮若发生压缩，canonical 已收缩，
+    /// 归档行丢了就是数据丢失）；`Err` 取消分支只做仅追加写回，传空。
+    pub(super) archive_rows: Vec<crate::conversation_store::ArchiveRow>,
+}
+
+/// 取消 / 中断路径的**尽力落盘**：把本轮已产出的部分输出写入会话 store，
+/// 使下一轮模型上下文包含「我已产出这些、被用户中断」。
+///
+/// 与 [`post_turn_web_prepare_and_save`] 的刻意差异：
+/// - **跳过** LTM 异步索引（本轮未正常完成，不索引半成品）；
+/// - **不**发 `conversation_saved` / state snapshot / `stream_draining`——取消路径的 SSE 语义保持
+///   不变（worker 随后只补 `STREAM_CANCELLED`）；
+/// - 本轮无可见助手输出时**不落盘**（空回合不写 store）；
+/// - CAS `Conflict` 仅记日志，不当成取消失败。
+pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'_>) {
+    let CancelledTurnSaveParams {
+        app,
+        conversation_id,
+        messages,
+        expected_revision,
+        request_agent_role,
+        persisted_active_agent_role,
+        request_session_mode,
+        persisted_active_session_mode,
+        job_id,
+        archive_rows,
+    } = p;
+    strip_persist_injections(messages);
+    if !current_turn_has_visible_assistant_output(messages) {
+        return;
+    }
+    let active_save =
+        persisted_agent_role_after_turn(persisted_active_agent_role, request_agent_role);
+    let mode_save = crate::session_mode_turn::persisted_session_mode_after_turn(
+        persisted_active_session_mode,
+        request_session_mode,
+    );
+    match app
+        .conversation
+        .save_conversation_messages_if_revision(
+            conversation_id.to_string(),
+            messages.clone(),
+            active_save.as_deref(),
+            mode_save.as_deref(),
+            expected_revision,
+            archive_rows,
+        )
+        .await
+    {
+        crate::SaveConversationOutcome::Saved => info!(
+            target: "crabmate",
+            "chat stream 取消回合已落盘部分输出 job_id={}",
+            job_id
+        ),
+        crate::SaveConversationOutcome::Conflict => warn!(
+            target: "crabmate",
+            "chat stream 取消回合落盘冲突（会话已被并发更新，本轮部分输出未落盘）job_id={} conversation_id={} expected_revision={:?}",
+            job_id,
+            conversation_id,
+            expected_revision
+        ),
+    }
 }
 
 /// 流任务被取消且 **mpsc 仍有接收端** 时补发一条带 `code: STREAM_CANCELLED` 的控制面，便于前端与代理统一收尾（接收端已 drop 时仅 debug，避免误报）。
@@ -372,7 +447,22 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
     match r {
         Ok(commit) if cancelled_by_signal => {
             info!(target: "crabmate", "chat stream 任务已取消 job_id={}", job_id);
-            let _ = commit;
+            // 本轮 partial 输出已在 `messages`（agent 已 push + 提交视图）；落盘使下一轮上下文可见。
+            save_cancelled_turn_best_effort(CancelledTurnSaveParams {
+                app,
+                conversation_id,
+                messages,
+                expected_revision,
+                request_agent_role,
+                persisted_active_agent_role,
+                request_session_mode,
+                persisted_active_session_mode,
+                job_id,
+                archive_rows: crate::conversation_store::archive_rows_from_structural_commit(
+                    &commit,
+                ),
+            })
+            .await;
             (false, true, None, StreamEndReason::Cancelled)
         }
         Ok(commit) => {
@@ -479,6 +569,21 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
                         job_id,
                         e_text
                     );
+                    // `run_agent_turn` 已在 Err 中断路径把本轮部分输出**仅追加**写回 `messages`
+                    // （无压缩 ⇒ 无归档行）；此处落盘使下一轮上下文可见。
+                    save_cancelled_turn_best_effort(CancelledTurnSaveParams {
+                        app,
+                        conversation_id,
+                        messages,
+                        expected_revision,
+                        request_agent_role,
+                        persisted_active_agent_role,
+                        request_session_mode,
+                        persisted_active_session_mode,
+                        job_id,
+                        archive_rows: Vec::new(),
+                    })
+                    .await;
                     (false, true, None, StreamEndReason::Cancelled)
                 }
                 AgentTurnJobOutcomeKind::FailureEmitSseError => {
@@ -512,7 +617,7 @@ pub(crate) async fn stream_job_outcome_after_agent_turn(
 
 #[cfg(test)]
 mod tests {
-    use super::strip_persist_injections;
+    use super::{current_turn_has_visible_assistant_output, strip_persist_injections};
     use crate::types::{
         CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
         CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
@@ -540,6 +645,28 @@ mod tests {
                 Some(CRABMATE_CONTEXT_SUMMARY_NAME.to_string()),
                 Some(CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME.to_string()),
             ]
+        );
+    }
+
+    /// 中断回落时 `messages` 尾部可能残留注入的 `role==user` 消息（编排 / LTM / 变更集）；
+    /// 可见性判定必须在 strip **之后**进行，否则 `rposition(role=="user")` 的锚点会落到尾部注入上，
+    /// 令本轮真正的助手部分输出被判为「非本轮」而静默跳过落盘。
+    #[test]
+    fn visibility_check_after_strip_keeps_interrupted_partial_output() {
+        let mut messages = vec![
+            Message::user_only("真实问题"),
+            Message::assistant_only("被中断前的部分输出"),
+            Message::user_server_injection(CRABMATE_LONG_TERM_MEMORY_NAME, "尾部注入"),
+        ];
+        // strip 前：锚点被尾部注入顶走，助手输出被判为非本轮。
+        assert!(
+            !current_turn_has_visible_assistant_output(&messages),
+            "strip 前应因注入锚点错位而判定为无可见输出"
+        );
+        strip_persist_injections(&mut messages);
+        assert!(
+            current_turn_has_visible_assistant_output(&messages),
+            "strip 后应识别到本轮被中断的部分助手输出"
         );
     }
 }

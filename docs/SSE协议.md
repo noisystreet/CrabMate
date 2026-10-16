@@ -171,6 +171,15 @@
 
 **客户端仅日志/文案用（非服务端下发的 SSE `code`）**：官方 Leptos 在 **`sse_capabilities`** 与本地版本不一致时，`onError` 字符串中含 **`SSE_SERVER_TOO_NEW`** 或 **`SSE_SERVER_TOO_OLD`**。
 
+### 取消 / 中断回合的落盘语义
+
+用户点「停止生成」（`POST /chat/stream/{job_id}/cancel`）或 SSE 接收端在协作取消待决时先断开，该回合**已产出**的内容（助手正文 / `tool_calls` / 已完成的 `tool` 结果）会**尽力落盘**到会话 store，使**下一轮**模型上下文包含「本轮已产出这些、被中断」。要点：
+
+- 落盘经 `save_conversation_messages_if_revision`（CAS）；`Conflict` 仅记日志，不当成取消失败。
+- 中断路径**仅追加**写回 canonical（不压缩、不归档）；若该回合停在 `assistant(tool_calls=[A, B]) + tool(A)` 这类半途工具批，落盘前会为缺失的 `tool` 响应合成占位消息，避免下一轮请求因非法序列被上游 **400**。
+- 本轮**无可见助手输出**时不落盘。
+- **SSE 语义不变**：仍只补发 `STREAM_CANCELLED`；取消路径**不**发 `conversation_saved` / state snapshot / `stream_draining`，也不做长期记忆异步索引。
+
 ## `tool_result.error_code`（工具 / 工作流）
 
 工具失败时 **`tool_result.error_code`** 为机器可读分类（与流错误 `code` 不同通道）。常见值：
