@@ -61,10 +61,16 @@ fn print_doctor_config_block(cfg: &AgentConfig) {
         "  llm_http_auth_mode: {}",
         cfg.llm.llm_http_auth_mode.as_str()
     );
-    println!(
-        "  allowed_commands: {} 条（默认见 config/tools.toml；可被覆盖配置或 CM_ALLOWED_COMMANDS 替换）",
-        cfg.command_exec.allowed_commands.len()
-    );
+    if crate::cm_tools::tools::allowlist_allows_all(&cfg.command_exec.allowed_commands) {
+        println!(
+            "  allowed_commands: 全部放行（`*`；命令名不做校验，通常来自 `serve --yes` 或 CM_ALLOWED_COMMANDS=*）"
+        );
+    } else {
+        println!(
+            "  allowed_commands: {} 条（默认见 config/tools.toml；可被覆盖配置或 CM_ALLOWED_COMMANDS 替换）",
+            cfg.command_exec.allowed_commands.len()
+        );
+    }
     println!(
         "  run_command_working_dir: {}",
         cfg.command_exec.run_command_working_dir.trim()

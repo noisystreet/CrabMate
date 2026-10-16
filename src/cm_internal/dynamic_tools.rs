@@ -205,9 +205,10 @@ fn probe_file(path: &Path, allowed_commands: &[String]) -> DynamicToolFileProbe 
     let mut merged_args = spec.args.clone();
     split_command_prefix_if_embedded(&mut prog, &mut merged_args);
     let cmd_key = prog.to_ascii_lowercase();
-    let command_allowed = allowed_commands
-        .iter()
-        .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
+    let command_allowed = crate::cm_tools::tools::allowlist_allows_all(allowed_commands)
+        || allowed_commands
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
     DynamicToolFileProbe {
         file,
         name: spec.name,
@@ -285,9 +286,10 @@ pub fn run_dynamic_tool(
     split_command_prefix_if_embedded(&mut prog, &mut merged_args);
 
     let cmd_key = prog.to_ascii_lowercase();
-    let allowed = allowed_commands
-        .iter()
-        .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
+    let allowed = crate::cm_tools::tools::allowlist_allows_all(allowed_commands)
+        || allowed_commands
+            .iter()
+            .any(|c| c.eq_ignore_ascii_case(cmd_key.as_str()));
     if !allowed {
         return format!(
             "错误：动态工具可执行名 `{}`（来自 command 字段 `{}`）不在 allowed_commands 白名单中",

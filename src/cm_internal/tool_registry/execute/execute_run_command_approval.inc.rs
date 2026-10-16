@@ -36,7 +36,9 @@ fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
 }
 
 fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
-    !cmd.is_empty() && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
+    !tools::allowlist_allows_all(allowed)
+        && !cmd.is_empty()
+        && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
 }
 
 async fn request_unknown_cmd_approval(
@@ -233,6 +235,9 @@ async fn approve_posix_shell_wrap_if_needed(
     sse_command: &str,
     async_mode: bool,
 ) -> Result<Arc<[String]>, String> {
+    if tools::allowlist_allows_all(effective_allowed.as_ref()) {
+        return Ok(effective_allowed);
+    }
     if !posix_shell_wrap_needs_interactive_approval(
         command_raw,
         cmd_args,

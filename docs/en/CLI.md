@@ -61,6 +61,7 @@ The only remaining argv normalization is the **`help` subcommand**: `crabmate he
 | `--port 0` | With `serve`: OS-assigned free port; startup log and **`web_ready`** **`port`/`url`** use **`local_addr()`** after bind |
 | `--desktop-ready-json` | With `serve`: after listen succeeds, print one **`web_ready`** JSON line to **stdout** (for scripts/tools; the desktop shell **no longer** depends on it). **Deprecated name**; prefer alias **`--web-ready-json`** (same behavior) |
 | `--web-ready-json` | Alias of `--desktop-ready-json` |
+| `--yes` | With `serve`: skip the command allowlist (`allowed_commands` → `*`), so **`run_command` no longer checks the command name** and allows everything. Trusted/isolated (container or dedicated host) environments only; does **not** affect workspace-external path approval or argument safety checks |
 | `--workspace <path>` | Override initial workspace |
 | `--no-tools` | Disable tools |
 | `--llm-context-tokens <N>` | Override **`[agent] llm_context_tokens`** / **`CM_LLM_CONTEXT_TOKENS`** (`0` = do not override) |

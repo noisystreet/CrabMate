@@ -10,8 +10,8 @@ use super::super::command_line_prepare::{
 use super::{
     PreparedRunCommand, RunCommandError, check_shell_variable_references,
     command_shell_script::{
-        argv_needs_posix_shell_wrap, is_shell_dash_c_invocation, maybe_wrap_argv_with_posix_shell,
-        posix_shell_on_allowlist,
+        allowlist_allows_all, argv_needs_posix_shell_wrap, is_shell_dash_c_invocation,
+        maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
     },
 };
 
@@ -73,6 +73,7 @@ fn resolve_run_command_exec_path(
     };
 
     if exec_path.is_none()
+        && !allowlist_allows_all(allowed_commands)
         && !allowed_commands
             .iter()
             .any(|c| c.eq_ignore_ascii_case(&cmd_name))
@@ -301,7 +302,7 @@ pub(super) fn prepare_run_command_invocation(
 mod tests {
     use std::path::Path;
 
-    use super::scan_run_command_unsafe_args;
+    use super::{prepare_run_command_invocation, scan_run_command_unsafe_args, RunCommandError};
 
     fn test_allowed() -> Vec<String> {
         vec![
@@ -342,5 +343,18 @@ mod tests {
             serde_json::from_str(r#"{"command":"cd","args":["..","&&","ls"]}"#).expect("json");
         let u = scan_run_command_unsafe_args(&v, Path::new("."), &test_allowed()).expect("scan");
         assert!(u.iter().any(|a| a == ".."), "{u:?}");
+    }
+
+    #[test]
+    fn star_sentinel_allows_arbitrary_command_name() {
+        let args: serde_json::Value =
+            serde_json::from_str(r#"{"command":"whoami","args":[]}"#).expect("json");
+        let star = vec!["*".to_string()];
+        let prepared =
+            prepare_run_command_invocation(&args, Path::new("."), &star, false).expect("star");
+        assert_eq!(prepared.cmd_name, "whoami");
+
+        let denied = prepare_run_command_invocation(&args, Path::new("."), &test_allowed(), false);
+        assert!(matches!(denied, Err(RunCommandError::DisallowedCommand { .. })));
     }
 }
