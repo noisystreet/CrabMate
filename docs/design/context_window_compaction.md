@@ -288,12 +288,12 @@ canonical_after := canonical 去掉「已被摘要 / 被移出的前缀原文」
 
 ##### 3.7.1 提交前的净化链（必须显式复用，不得依赖隐式副作用）
 
-虽然 reconcile 只提交结构差异，但本回合**新增**的 assistant / tool / 时间线消息取自模型视图，仍可能连带把本回合的**临时注入**一起固化进 `canonical`。因此提交前必须经过与落盘**完全相同**的剥离链（当前逻辑位于 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L58-L60)），并写死为契约：
+虽然 reconcile 只提交结构差异，但本回合**新增**的 assistant / tool / 时间线消息取自模型视图，仍可能连带把本回合的**临时注入**一起固化进 `canonical`。因此提交前必须经过与落盘**完全相同**的剥离链（抽为单一命名函数 [`strip_persist_injections`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L44-L49)，由 [`post_turn_web_prepare_and_save`](file:///home/gzz/crabmate/server/src/chat_job_queue/stream_finish.rs#L77) 调用），并写死为契约：
 
 - [`strip_long_term_memory_injections`](file:///home/gzz/crabmate/server/src/cm_memory/memory/long_term_memory.rs#L730) — 长期记忆 `CRABMATE_LONG_TERM_MEMORY_NAME`；
 - [`strip_workspace_changelist_injections`](file:///home/gzz/crabmate/server/src/cm_tools/workspace/changelist.rs#L213) — 变更集 `CRABMATE_WORKSPACE_CHANGELIST_NAME`；
 - [`strip_orchestration_injected_users_for_conversation_store`](file:///home/gzz/crabmate/server/src/cm_types/server_injected_user.rs#L37-L47) — 其余编排注入 user；
-- `is_execution_constraint_ephemeral_system` 的 **system** 注入已由 [`outer_loop` 在每次模型调用后 retain 移出](file:///home/gzz/crabmate/server/src/agent/agent_turn/loop/outer_loop.rs#L403-L404)，正常情况下不进入提交；如异常残留须在此一并剔除。
+- `is_execution_constraint_ephemeral_system` 的 **system** 注入已由 [`outer_loop` 在每次模型调用后 retain 移出](file:///home/gzz/crabmate/server/src/agent/agent_turn/loop/outer_loop.rs#L403-L404)，正常情况下不进入提交；该步已并入 `strip_persist_injections`（**行为变更**：残留的执行约束 system 现于落盘前被显式剔除，不再依赖 `outer_loop` 的隐式副作用；原先此类残留会被固化进 `canonical`）。
 
 **基线摘要的优先级（关键）**：`CRABMATE_CONTEXT_SUMMARY_NAME` 恰在上述 strip 的**保留名单**内（与首轮工作区画像 `CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME` 一致），因此“摘要进 canonical”与“注入剥离”并不冲突——剥离链**保留摘要、剔除其余注入**。此优先级必须在实现中显式声明，不得依赖调用顺序的偶然性。
 
