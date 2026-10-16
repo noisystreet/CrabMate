@@ -41,6 +41,8 @@ context_summary_trigger_chars = 0
 context_summary_tail_messages = 12
 context_summary_max_tokens = 1024
 context_summary_transcript_max_chars = 120000
+# 旁路 `/btw` 是否允许触发 LLM 摘要；默认 false（btw 只做同步裁剪 + token 预算压缩，不额外调用模型）。
+context_btw_summary_enabled = false
 # LLM 摘要提示词（读盘优先；失败/空则用编译嵌入）。可直接改 Markdown 无需重编。
 # CM_CONTEXT_SUMMARY_SYSTEM_FILE / CM_CONTEXT_SUMMARY_USER_FILE
 context_summary_system_file = "config/prompts/context_summary_system.md"

@@ -824,4 +824,57 @@ mod tests {
         // 未归档 / 不存在的会话返回空。
         assert!(sq.load_conversation_archive_messages("nope").await.is_empty());
     }
+
+    /// §9.2 item6：被归档消息引用的 `/uploads/<filename>` 不得被清理逻辑判为孤儿。
+    #[tokio::test]
+    async fn referenced_upload_filenames_include_archived_messages() {
+        // 内存后端不持久化归档（C2 语义）：归档引用无法被扫描到。
+        let mem = runtime(false).await;
+        assert_eq!(
+            mem.save_conversation_messages_if_revision(
+                "c1".to_string(),
+                one_user_msg("canonical 无引用"),
+                None,
+                None,
+                None,
+                vec![crate::conversation_store::ArchiveRow {
+                    reason: crate::conversation_store::ArchiveReason::Summarized,
+                    range_start: 0,
+                    range_end: 1,
+                    messages: one_user_msg("附图 /uploads/archived_pic.png 见上"),
+                }],
+            )
+            .await,
+            SaveConversationOutcome::Saved
+        );
+        assert!(
+            mem.referenced_upload_filenames().await.is_empty(),
+            "内存后端不落盘归档，扫描不到被归档引用"
+        );
+
+        // SQLite 后端：归档行随 canonical 一同落盘，引用必须被扫描到。
+        let sq = runtime(true).await;
+        assert_eq!(
+            sq.save_conversation_messages_if_revision(
+                "c1".to_string(),
+                one_user_msg("canonical 正文无附件引用"),
+                None,
+                None,
+                None,
+                vec![crate::conversation_store::ArchiveRow {
+                    reason: crate::conversation_store::ArchiveReason::Summarized,
+                    range_start: 0,
+                    range_end: 1,
+                    messages: one_user_msg("附图 /uploads/archived_pic.png 见上"),
+                }],
+            )
+            .await,
+            SaveConversationOutcome::Saved
+        );
+        let refs = sq.referenced_upload_filenames().await;
+        assert!(
+            refs.contains("archived_pic.png"),
+            "被归档消息引用的 /uploads 文件不得判为孤儿: {refs:?}"
+        );
+    }
 }

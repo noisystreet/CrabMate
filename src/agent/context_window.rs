@@ -608,301 +608,81 @@ pub async fn prepare_messages_for_model(
     Ok(delta)
 }
 
+/// 只读入口 [`prepare_readonly_model_messages`] 的可选 LLM 摘要依赖。
+///
+/// 仅在配置显式开启（`context_btw_summary_enabled`）时由调用方提供；`None` 即保持
+/// 「只同步裁剪 + token 预算压缩、不额外调用模型」的旧行为。
+pub struct ReadonlySummaryLlm<'a> {
+    pub llm_backend: &'a dyn ChatCompletionsBackend,
+    pub client: &'a Client,
+    pub api_key: &'a str,
+}
+
 /// 只读、dry-run 的「发请求前」模型视图构建（旁路提问等不需要落盘的场景）。
 ///
-/// 仅对传入的 `messages` 副本做**同步裁剪 + token 预算压缩**，**不**触发 LLM 摘要、
-/// **不**写 canonical / 归档 / artifact。返回的 [`PrepareMessagesDelta`] 便于时间线与测试观察。
-pub fn prepare_readonly_model_messages(
+/// 对传入的 `messages` 副本做**同步裁剪 + token 预算压缩**；当 `summary_llm` 为 `Some`
+/// 时，还会按与主路径**相同**的触发规则尝试一次 LLM 摘要（仍**不**写 canonical / 归档 / artifact）。
+/// 返回的 [`PrepareMessagesDelta`] 便于时间线与测试观察。
+pub async fn prepare_readonly_model_messages(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
     tools: &[Tool],
     model_override: Option<&str>,
-) -> PrepareMessagesDelta {
+    summary_llm: Option<ReadonlySummaryLlm<'_>>,
+) -> Result<PrepareMessagesDelta, Box<dyn std::error::Error + Send + Sync>> {
     let (pipeline, before_tokens) =
         sync_trim_and_estimate_before(cfg, messages, tools, model_override, None);
+    let force_summary_for_token_budget =
+        crate::agent::context_compaction::ContextTokenBudget::from_config(cfg).is_some_and(
+            |budget| before_tokens.used_input_tokens > budget.trigger_tokens,
+        );
+    let (summarized, summary_removed_prefix, summary_tail_kept) = match summary_llm {
+        Some(llm) => {
+            let planned_summary_tail = complete_turn_group_tail_len(
+                messages,
+                cfg.context_pipeline.context_summary_tail_messages.clamp(4, 64),
+            );
+            let (summarized, removed) = maybe_summarize_with_llm(
+                llm.llm_backend,
+                llm.client,
+                llm.api_key,
+                cfg,
+                messages,
+                MaybeSummarizeParams {
+                    cancel: None,
+                    turn_budget: None,
+                    force_for_token_budget: force_summary_for_token_budget,
+                },
+            )
+            .await?;
+            (
+                summarized,
+                removed,
+                summarized.then_some(planned_summary_tail.unwrap_or(0)),
+            )
+        }
+        None => (
+            false,
+            crate::agent::message_pipeline::RemovedPrefix::default(),
+            None,
+        ),
+    };
     let compaction = finalize_token_budget_compaction(
         cfg,
         messages,
         tools,
         model_override,
         before_tokens,
-        false,
+        summarized && force_summary_for_token_budget,
     );
-    PrepareMessagesDelta {
+    Ok(PrepareMessagesDelta {
         pipeline,
-        summarized: false,
-        summary_tail_kept: None,
-        summary_removed_prefix: crate::agent::message_pipeline::RemovedPrefix::default(),
+        summarized,
+        summary_tail_kept,
+        summary_removed_prefix,
         compaction,
-    }
+    })
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 验收辅助：摘要正文是否覆盖给定锚点（路径/错误串等）。
-    fn context_summary_covers_anchors(summary: &str, anchors: &[&str]) -> bool {
-        anchors
-            .iter()
-            .all(|a| !a.is_empty() && summary.contains(*a))
-    }
-
-    #[test]
-    fn budget_pressure_tightens_sync_pipeline_char_budget() {
-        let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.context_pipeline.context_char_budget = 20_000;
-        cfg.session_ui.max_message_history = 100;
-        cfg.tool_transcript.tool_message_max_chars = 1_000_000;
-        cfg.llm_sampling.llm_context_tokens = 0;
-        cfg.turn_budget.max_turn_tokens = 100;
-
-        let budget = crate::agent::turn_budget::TurnBudgetCounter::new_shared();
-        budget.record_estimated_tokens(75);
-
-        let mut loose = vec![Message::system_only("s")];
-        let mut tight = loose.clone();
-        for i in 0..30 {
-            let m = Message::user_only(format!("u{i}: {}", "x".repeat(800)));
-            loose.push(m.clone());
-            tight.push(m);
-        }
-        prepare_messages_before_model_call_sync(&mut loose, &cfg);
-        prepare_messages_before_model_call_sync_with_budget(&mut tight, &cfg, Some(&budget));
-        assert!(
-            tight.len() <= loose.len(),
-            "budget pressure should trim at least as aggressively"
-        );
-    }
-
-    /// 只读 dry-run 入口（旁路提问）：把输入 token 收敛到窗口内，但**不**触发 LLM 摘要，
-    /// 也不写 canonical / 归档 / artifact（该入口无 store 参数，落盘由调用方另择，属结构性保证）。
-    #[test]
-    fn readonly_entry_bounds_tokens_without_summary_or_persistence() {
-        let mut cfg = crate::config::load_config(None).expect("embed default");
-        cfg.llm_sampling.llm_context_tokens = 4_096;
-        cfg.llm_sampling.max_tokens = 512;
-        // 让同步字符/条数裁剪不先行兜底，从而真实检验「token 预算压缩」路径。
-        cfg.session_ui.max_message_history = 1_000;
-        cfg.context_pipeline.context_char_budget = 1_000_000;
-        cfg.tool_transcript.tool_message_max_chars = 1_000_000;
-        cfg.context_pipeline.context_summary_trigger_chars = 0;
-
-        let mut messages = vec![Message::system_only("sys")];
-        for turn in 0..30 {
-            messages.push(Message::user_only(format!("u{turn}: {}", "x".repeat(1_500))));
-            messages.push(Message::assistant_only(format!("a{turn}")));
-        }
-        let budget = crate::agent::context_compaction::ContextTokenBudget::from_config(&cfg)
-            .expect("token budget enabled");
-        let before = crate::agent::context_compaction::estimate_final_request_tokens(
-            &cfg, &messages, &[], None,
-        );
-        assert!(before.used_input_tokens > budget.trigger_tokens);
-
-        let delta = prepare_readonly_model_messages(&cfg, &mut messages, &[], None);
-
-        assert!(!delta.summarized, "只读入口不得触发 LLM 摘要");
-        assert!(delta.summary_tail_kept.is_none());
-        assert_eq!(delta.summary_removed_prefix.removed, 0);
-        assert!(delta.compaction.token_triggered);
-        assert!(delta.compaction.removed_turn_groups > 0);
-        assert!(
-            delta.compaction.after.used_input_tokens < before.used_input_tokens,
-            "只读入口应实际收缩输入: before={} after={}",
-            before.used_input_tokens,
-            delta.compaction.after.used_input_tokens
-        );
-        assert!(
-            delta.compaction.after.used_input_tokens <= budget.max_input_tokens,
-            "只读入口必须把输入 token 收敛到窗口内: after={} max_input={}",
-            delta.compaction.after.used_input_tokens,
-            budget.max_input_tokens
-        );
-    }
-
-    #[test]
-    fn summary_tail_starts_at_complete_turn_group_boundary() {
-        let mut messages = vec![Message::system_only("s")];
-        for turn in 0..4 {
-            messages.push(Message::user_only(format!("u{turn}")));
-            messages.push(Message::assistant_only(format!("a{turn}")));
-            messages.push(Message::assistant_only(format!("done{turn}")));
-        }
-        let tail = complete_turn_group_tail_len(&messages, 4).expect("four complete groups");
-        let start = messages.len() - tail;
-        assert_eq!(messages[start].role, "user");
-        assert_eq!(
-            crate::types::message_content_as_str(&messages[start].content),
-            Some("u2")
-        );
-    }
-
-    #[test]
-    fn format_context_summary_user_replaces_placeholders() {
-        let out = format_context_summary_user(
-            "上限 {max_tokens}\n---\n{transcript}\n---",
-            512,
-            "user: 修 src/foo.rs\nerror: E0308",
-        );
-        assert!(out.contains("512"));
-        assert!(out.contains("src/foo.rs"));
-        assert!(out.contains("E0308"));
-        assert!(!out.contains("{max_tokens}"));
-        assert!(!out.contains("{transcript}"));
-    }
-
-    #[test]
-    fn format_context_summary_user_accepts_max_chars_alias() {
-        let out = format_context_summary_user("n={max_chars}\n{transcript}", 256, "path.rs");
-        assert!(out.contains("n=256"));
-        assert!(out.contains("path.rs"));
-    }
-
-    #[test]
-    fn format_context_summary_user_appends_when_transcript_placeholder_missing() {
-        let out = format_context_summary_user("只有骨架无占位", 128, "crates/demo/src/path_bug.rs");
-        assert!(out.contains("只有骨架无占位"));
-        assert!(out.contains("crates/demo/src/path_bug.rs"));
-        assert!(out.contains("对话记录："));
-    }
-
-    #[test]
-    fn loaded_summary_prompts_require_retention_and_structure() {
-        let cfg = crate::config::load_config(None).expect("embed default");
-        let sys = &cfg.context_pipeline.context_summary_system;
-        for needle in ["必须保留", "禁止编造", "关键路径", "错误信息", "未决"] {
-            assert!(
-                sys.contains(needle),
-                "context_summary_system missing `{needle}`"
-            );
-        }
-        let user_t = &cfg.context_pipeline.context_summary_user_template;
-        for needle in [
-            "## 目标",
-            "## 已完成",
-            "## 未决",
-            "## 关键路径与错误",
-            "{transcript}",
-        ] {
-            assert!(
-                user_t.contains(needle),
-                "context_summary_user_template missing `{needle}`"
-            );
-        }
-        assert!(
-            user_t.contains("{max_tokens}") || user_t.contains("{max_chars}"),
-            "user template should mention a length placeholder"
-        );
-    }
-
-    #[test]
-    fn side_messages_embed_fixture_transcript_anchors() {
-        let cfg = crate::config::load_config(None).expect("embed default");
-        let transcript = concat!(
-            "user: 修复 crates/demo/src/path_bug.rs 的类型错误\n",
-            "assistant: [tool_calls] read_file({\"path\":\"crates/demo/src/path_bug.rs\"})\n",
-            "tool: error[E0308]: mismatched types in path_bug.rs\n",
-        );
-        let msgs = build_context_summary_side_messages(&cfg, transcript);
-        assert_eq!(msgs.len(), 2);
-        assert_eq!(msgs[0].role, "system");
-        assert_eq!(msgs[1].role, "user");
-        let user = crate::types::message_content_as_str(&msgs[1].content).unwrap_or("");
-        assert!(
-            context_summary_covers_anchors(
-                user,
-                &[
-                    "crates/demo/src/path_bug.rs",
-                    "error[E0308]",
-                    "## 目标",
-                    "## 关键路径与错误",
-                ]
-            ),
-            "summary side user must carry transcript anchors and skeleton; got:\n{user}"
-        );
-    }
-
-    #[test]
-    fn fixture_good_summary_covers_path_and_error() {
-        // 文档化验收：合格摘要须保留路径与错误锚点（供日后接 mock LLM 评测复用）。
-        let good = concat!(
-            "## 目标\n修复 path_bug 类型错误\n\n",
-            "## 已完成\nread_file crates/demo/src/path_bug.rs\n\n",
-            "## 未决\n尚未 patch\n\n",
-            "## 关键路径与错误\ncrates/demo/src/path_bug.rs；error[E0308]: mismatched types\n",
-        );
-        assert!(context_summary_covers_anchors(
-            good,
-            &["crates/demo/src/path_bug.rs", "error[E0308]"]
-        ));
-        let bad = "## 目标\n修个文件\n\n## 关键路径与错误\n某个源码里类型不对\n";
-        assert!(!context_summary_covers_anchors(
-            bad,
-            &["crates/demo/src/path_bug.rs", "error[E0308]"]
-        ));
-    }
-
-    #[test]
-    fn apply_llm_summary_writes_named_injection_and_keeps_tail() {
-        let mut messages = vec![
-            Message::system_only("sys"),
-            Message::user_only("old-1"),
-            Message::assistant_only("a1"),
-            Message::user_only("tail-user"),
-            Message::assistant_only("tail-a"),
-        ];
-        apply_llm_summary_to_messages(&mut messages, 2, "要点：修了 path_bug");
-        assert_eq!(messages[0].role, "system");
-        assert!(crate::types::is_context_summary_injection(&messages[1]));
-        assert_eq!(
-            messages[1].name.as_deref(),
-            Some(crate::types::CRABMATE_CONTEXT_SUMMARY_NAME)
-        );
-        assert!(!crate::types::user_message_counts_for_branch_truncation(
-            &messages[1]
-        ));
-        assert_eq!(messages.len(), 4);
-        assert_eq!(
-            crate::types::message_content_as_str(&messages[2].content),
-            Some("tail-user")
-        );
-        let snap = crate::types::filter_messages_for_web_client_snapshot(&messages);
-        assert!(
-            snap.iter()
-                .all(|m| !crate::types::is_context_summary_injection(m))
-        );
-        assert!(
-            snap.iter()
-                .any(|m| crate::types::message_content_as_str(&m.content) == Some("tail-user"))
-        );
-        let vendor = crate::types::messages_for_api_stripping_reasoning_skip_ui_separators(
-            &messages, false, false,
-        );
-        assert!(
-            vendor
-                .iter()
-                .any(crate::types::is_context_summary_injection),
-            "summary must still go to the vendor"
-        );
-    }
-
-    #[test]
-    fn legacy_unnamed_summary_prefix_stays_persisted_and_hidden() {
-        let legacy = Message::user_only(format!(
-            "{}\n旧会话无 name",
-            crate::types::CONTEXT_SUMMARY_INJECTION_CONTENT_PREFIX
-        ));
-        assert!(crate::types::is_context_summary_injection(&legacy));
-        assert!(!crate::types::user_message_counts_for_branch_truncation(
-            &legacy
-        ));
-        let mut v = vec![Message::user_only("真实"), legacy.clone()];
-        crate::types::strip_orchestration_injected_users_for_conversation_store(&mut v);
-        assert_eq!(v.len(), 2);
-        assert_eq!(
-            crate::types::filter_messages_for_web_client_snapshot(&v).len(),
-            1
-        );
-    }
-}
+mod tests;

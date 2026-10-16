@@ -299,6 +299,9 @@ impl ConfigBuilder {
         cp.context_summary_transcript_max_chars = agent
             .context_summary_transcript_max_chars
             .or(cp.context_summary_transcript_max_chars);
+        cp.context_btw_summary_enabled = agent
+            .context_btw_summary_enabled
+            .or(cp.context_btw_summary_enabled);
         if let Some(ref p) = agent.context_summary_system_file {
             cp.context_summary_system_file = Some(p.clone());
         }

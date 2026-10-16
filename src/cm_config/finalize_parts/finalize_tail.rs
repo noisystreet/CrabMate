@@ -37,6 +37,7 @@ struct FinalizeTailScalars {
     context_summary_tail_messages: usize,
     context_summary_max_tokens: u32,
     context_summary_transcript_max_chars: usize,
+    context_btw_summary_enabled: bool,
     health_llm_models_probe: bool,
     health_llm_models_probe_cache_secs: u64,
     chat_queue_max_concurrent: usize,
@@ -212,6 +213,7 @@ struct TailContextQueuesSessionScalars {
     test_result_cache_max_entries: usize,
     session_workspace_changelist_enabled: bool,
     session_workspace_changelist_max_chars: usize,
+    context_btw_summary_enabled: bool,
 }
 
 fn derive_tail_context_queues_session_scalars(
@@ -259,9 +261,11 @@ fn derive_tail_context_queues_session_scalars(
         .unwrap_or(1024)
         .clamp(256, 8192) as u32;
     let context_summary_transcript_max_chars = b
-        .context_pipeline.context_summary_transcript_max_chars
+        .context_pipeline
+        .context_summary_transcript_max_chars
         .unwrap_or(120_000)
         .clamp(10_000, 2_000_000) as usize;
+    let context_btw_summary_enabled = b.context_pipeline.context_btw_summary_enabled.unwrap_or(false);
     let health_llm_models_probe = b.web_api.health_llm_models_probe.unwrap_or(false);
     let health_llm_models_probe_cache_secs = b
         .web_api.health_llm_models_probe_cache_secs
@@ -321,6 +325,7 @@ fn derive_tail_context_queues_session_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
+        context_btw_summary_enabled,
     }
 }
 
@@ -668,6 +673,7 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
+        context_btw_summary_enabled,
     } = cqs;
 
     FinalizeTailScalars {
@@ -719,6 +725,7 @@ fn assemble_finalize_tail_scalars(
         test_result_cache_max_entries,
         session_workspace_changelist_enabled,
         session_workspace_changelist_max_chars,
+        context_btw_summary_enabled,
         sync_default_tool_sandbox_mode: ssw.sync_default_tool_sandbox_mode,
         sync_default_tool_sandbox_docker_image: ssw.sync_default_tool_sandbox_docker_image.clone(),
         sync_default_tool_sandbox_docker_network: ssw.sync_default_tool_sandbox_docker_network.clone(),

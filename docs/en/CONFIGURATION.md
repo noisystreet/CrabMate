@@ -283,6 +283,7 @@ Optional table **`[tool_registry]`** in **`config/tools.toml`** or your **`confi
 | `CM_CONTEXT_SUMMARY_TAIL_MESSAGES` | Tail messages kept after summary. |
 | `CM_CONTEXT_SUMMARY_MAX_TOKENS` | Summary request max_tokens. |
 | `CM_CONTEXT_SUMMARY_TRANSCRIPT_MAX_CHARS` | Summary transcript max chars. |
+| `CM_CONTEXT_BTW_SUMMARY_ENABLED` | Whether the `/btw` side-channel may trigger an LLM summary; default **false** (btw only sync-trims and applies Token-budget compaction, no extra model call). |
 
 **`[agent]` TOML keys (tool stats)**: `agent_tool_stats_enabled`, `agent_tool_stats_window_events`, `agent_tool_stats_min_samples`, `agent_tool_stats_max_chars`, `agent_tool_stats_warn_below_success_ratio`. Stats are **per-process**, **global** (not bucketed by `conversation_id`); **no** tool args or full outputs stored. Web attaches the stats appendix only for **new** chats (no stored seed). In-process **`chat` / `repl` / TUI** entries and **`workspace_session::initial_workspace_messages`** are removed (Client shell / D2.2).
 
@@ -514,6 +515,8 @@ Before each model call, Server estimates the final-request input from vendor-sha
 Trimming, summarization, and tool-output compression now modify only a per-turn **`ModelContextView`**. A successful turn appends its new messages to the complete canonical history instead of overwriting SQLite with the compacted view. Hidden `ModelContextArtifact` sidecars retain summary text and canonical ranges; **`GET /conversation/messages.context_artifacts`** exposes their optional replay recipes. Its **`tiktoken_prompt_tokens`** may also include `used_input_tokens`, `max_input_tokens`, reserved output, message/tools/attachment components, `counting_source`, and `provider_input_tokens`. Provider usage wins when present; otherwise tokenizer/conservative estimates remain. All additions are optional for backward compatibility.
 
 Crossing the Token trigger can force an LLM-summary attempt; an explicit **`context_summary_trigger_chars > 0`** may still trigger earlier by characters. Summary tails align to complete turn-group boundaries. Prompts default from **`context_summary_system_file`** / **`context_summary_user_file`** (**`config/prompts/context_summary_system.md`**, **`context_summary_user.md`**; disk-first, embedded fallback). User template placeholders: **`{max_tokens}`** (alias **`{max_chars}`**, both filled from `context_summary_max_tokens`), **`{transcript}`** (if missing, runtime warns and appends the transcript). Env: **`CM_CONTEXT_SUMMARY_SYSTEM_FILE`**, **`CM_CONTEXT_SUMMARY_USER_FILE`**.
+
+The `/btw` side-channel reuses the same readonly compaction path (`prepare_readonly_model_messages`) and **never** writes canonical / archive / artifact. By default it only sync-trims and applies Token-budget compaction; an LLM summary is attempted only when **`context_btw_summary_enabled = true`** (**`CM_CONTEXT_BTW_SUMMARY_ENABLED`**), still subject to the same trigger rules.
 
 ## Web chat queue (`chat_queue_*`)
 
