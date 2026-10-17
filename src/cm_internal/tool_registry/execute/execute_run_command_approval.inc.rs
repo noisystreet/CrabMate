@@ -1,37 +1,22 @@
 struct ParsedRunCommandJson {
+    spec: tools::CommandSpec,
     cmd: String,
-    command_raw: String,
-    cmd_args: Vec<String>,
     script: String,
     argv_tail: String,
 }
 
+/// 与执行侧共用 [`tools::parse_command_spec`]（含 JSON 修复、路径归一化与命令拆分）。
 fn parse_run_command_json(
     args: &str,
+    working_dir: &Path,
 ) -> Result<ParsedRunCommandJson, tools::RunCommandError> {
-    let v = tools::parse_run_command_value_with_repair(args)?;
-    let command_raw = v
-        .get("command")
-        .and_then(|x| x.as_str())
-        .unwrap_or("")
-        .trim()
-        .to_string();
-    let cmd = command_raw.to_lowercase();
-    let cmd_args: Vec<String> = v
-        .get("args")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-    let argv_tail = tools::join_run_command_argv_tail(&cmd_args);
-    let script = tools::join_run_command_shell_script(&command_raw, &cmd_args);
+    let spec = tools::parse_command_spec(args, working_dir)?;
+    let cmd = spec.command.to_lowercase();
+    let argv_tail = tools::join_run_command_argv_tail(&spec.args);
+    let script = tools::join_run_command_shell_script(&spec.command, &spec.args);
     Ok(ParsedRunCommandJson {
+        spec,
         cmd,
-        command_raw,
-        cmd_args,
         script,
         argv_tail,
     })
@@ -287,14 +272,14 @@ async fn resolve_run_command_shell_allowlist(
     async_mode: bool,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
     let (policy_cmd, policy_args) =
-        tools::peel_cd_prefix_argv_for_shell_policy(&parsed.command_raw, &parsed.cmd_args);
+        tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
     let needs_shell = tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
     let allowed = run_command_resolve_effective_allowlist(
         cfg,
         effective_working_dir,
         web_ctx,
         parsed.cmd.as_str(),
-        parsed.command_raw.as_str(),
+        parsed.spec.command.as_str(),
         parsed.script.as_str(),
         parsed.argv_tail.as_str(),
         needs_shell,
@@ -328,7 +313,7 @@ enum ExternalPathGate {
 /// `async_mode=true` 时拒绝需要交互审批的工作区外路径。
 async fn approve_external_run_command_paths_if_needed(
     cfg: &AgentConfig,
-    args_json: &str,
+    spec: &tools::CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
     web_ctx: Option<&WebToolRuntime>,
@@ -338,14 +323,11 @@ async fn approve_external_run_command_paths_if_needed(
     if !cfg.command_exec.allow_external_path_with_approval {
         return Ok(ExternalPathGate::NotNeeded);
     }
-    let unsafe_args = match tools::scan_run_command_unsafe_args_json(
-        args_json,
-        working_dir,
-        allowed_commands,
-    ) {
-        Ok(v) => v,
-        Err(e) => return Err(e.extended_user_message()),
-    };
+    let unsafe_args =
+        match tools::scan_run_command_unsafe_args_spec(spec, working_dir, allowed_commands) {
+            Ok(v) => v,
+            Err(e) => return Err(e.extended_user_message()),
+        };
     if unsafe_args.is_empty() {
         return Ok(ExternalPathGate::NotNeeded);
     }

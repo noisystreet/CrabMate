@@ -2,19 +2,7 @@ use std::collections::VecDeque;
 use std::path::Path;
 
 pub(super) fn parse_run_command_payload(args_json: &str) -> Option<(String, Vec<String>)> {
-    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
-    let command = v.get("command")?.as_str()?.trim().to_string();
-    let args = v
-        .get("args")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str())
-                .map(|s| s.to_string())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    Some((command, args))
+    crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)
 }
 
 pub(super) fn classify_run_command_failure_family_from_invocation(

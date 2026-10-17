@@ -13,14 +13,15 @@ mod code_metrics;
 mod code_nav;
 mod command;
 pub use command::{
-    PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts, allowlist_allows_all,
+    CommandSpec, PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
-    join_run_command_argv_tail, join_run_command_shell_script,
+    join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, run_checked, run_checked_wait, run_checked_wait_async,
-    scan_run_command_unsafe_args_json,
+    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run_checked,
+    run_checked_wait, run_checked_wait_async, run_checked_wait_async_spec, run_try_wait_async_spec,
+    scan_run_command_unsafe_args_json, scan_run_command_unsafe_args_spec,
 };
-pub(crate) use command::parse_run_command_value_with_repair;
+pub(crate) use command::{parse_run_command_payload_lenient, parse_run_command_value_with_repair};
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
 mod container_tools;
@@ -544,7 +545,8 @@ pub async fn run_tool_result_async(
 
 /// 新的异步 `run_command` 实现（与 [`run_tool_dispatch`] 中 run_command 分支逐字节等价）。
 ///
-/// PR1 实现体：直接以 [`tokio::process`] 异步等待 [`command::run_try_wait_async`]（不占用阻塞线程）；
+/// PR1 实现体：解析一次 [`command::CommandSpec`] 后，以 [`tokio::process`] 异步等待
+/// [`command::run_try_wait_async_spec`]（不占用阻塞线程）；
 /// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以延长生命周期；github token 经
 /// [`with_request_github_token`](crate::cm_tools::github_token::with_request_github_token) 以 async 作用域注入
 /// （命令构建与等待同一 async 任务，task-local 自然可用）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
@@ -555,7 +557,8 @@ async fn run_command_dispatch_async(
     ctx: &ToolContext<'_>,
 ) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
     let name_owned = name.to_string();
-    let args_owned = args_json.to_string();
+    let spec = command::parse_command_spec(args_json, ctx.working_dir)
+        .map_err(RunCommandError::into_tool_error)?;
     let max_out = ctx.command_max_output_len;
     let allowed: Vec<String> = ctx.allowed_commands.to_vec();
     let work_dir = ctx.working_dir.to_path_buf();
@@ -571,8 +574,8 @@ async fn run_command_dispatch_async(
         });
         let wait =
             crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(timeout_secs);
-        command::run_try_wait_async(
-            &args_owned,
+        command::run_try_wait_async_spec(
+            &spec,
             max_out,
             &allowed,
             work_dir.as_path(),
@@ -581,7 +584,7 @@ async fn run_command_dispatch_async(
             &wait,
         )
         .await
-        .and_then(|output| finish_dispatch_legacy(&name_owned, &args_owned, output))
+        .and_then(|output| finish_dispatch_legacy(&name_owned, &spec.args_json, output))
     };
     crate::cm_tools::github_token::with_request_github_token(github_token, fut).await
 }

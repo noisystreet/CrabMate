@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use super::super::command_line_prepare::{
     arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
-    peel_workspace_cd_prefix, split_command_prefix_if_embedded,
+    parse_cd_prefix, peel_workspace_cd_prefix, split_command_prefix_if_embedded,
 };
 use super::{
     PreparedRunCommand, RunCommandError, check_shell_variable_references,
@@ -14,6 +14,51 @@ use super::{
         maybe_wrap_argv_with_posix_shell, posix_shell_on_allowlist,
     },
 };
+
+/// 规范化后的 `run_command` 调用参数（纯解析；不含工作目录/白名单裁定）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandSpec {
+    /// 原始 args JSON 文本（`workspace_image_chat_hint` 等消费方需要原文）。
+    pub args_json: String,
+    /// 已 trim，并已做 `./` 合并与整段命令拆分的命令名。
+    pub command: String,
+    pub args: Vec<String>,
+}
+
+/// 解析 `run_command` 参数：JSON 修复 → 字段提取 → 规范化。
+///
+/// `working_dir` 仅用于把工作区内绝对路径改写成相对路径；不做文件系统存在性校验，也不做白名单裁定。
+pub fn parse_command_spec(
+    args_json: &str,
+    working_dir: &Path,
+) -> Result<CommandSpec, RunCommandError> {
+    let value = super::parse_run_command_value_with_repair(args_json)?;
+    let (command, args) = extract_run_command_name_and_args(&value, working_dir)?;
+    Ok(CommandSpec {
+        args_json: args_json.to_string(),
+        command,
+        args,
+    })
+}
+
+/// 宽松解析：供去重 / 预算守卫 / 只读缓存等只读消费方。
+///
+/// 不走 JSON 修复链、不做路径规范化；`args` 非数组时视为空，缺失/非字符串 `command` 返回 `None`。
+/// 空 `command` 是否接受由调用方决定。
+pub fn parse_run_command_payload_lenient(args_json: &str) -> Option<(String, Vec<String>)> {
+    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    let command = v.get("command")?.as_str()?.trim().to_string();
+    let args = v
+        .get("args")
+        .and_then(|x| x.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|x| x.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some((command, args))
+}
 
 fn normalize_workspace_absolute_arg(arg: &str, working_dir: &Path) -> String {
     let a = arg.trim();
@@ -164,11 +209,12 @@ fn advance_cd_prefixes_collecting_unsafe(
         if !cmd_raw.eq_ignore_ascii_case("cd") {
             break;
         }
-        if cmd_args.len() < 3 || cmd_args[1] != "&&" {
-            // 与 peel 一致：交给后续 peel/prepare 报 CdPrefixInvalid
+        let Some((dir, rest)) = parse_cd_prefix(cmd_args) else {
+            // 与 peel 一致：不完整前缀交给后续 peel/prepare 报 CdPrefixInvalid
             break;
-        }
-        let dir = cmd_args[0].trim().to_string();
+        };
+        let dir = dir.to_string();
+        let mut rest = rest.to_vec();
         let pattern_unsafe = !is_arg_safe("cd", &dir);
         let candidate = effective_working_dir.join(&dir);
         let escape_unsafe =
@@ -176,26 +222,22 @@ fn advance_cd_prefixes_collecting_unsafe(
         if (pattern_unsafe || escape_unsafe) && !unsafe_out.iter().any(|u| u == &dir) {
             unsafe_out.push(dir);
         }
-        *cmd_args = cmd_args[2..].to_vec();
-        if cmd_args.is_empty() {
-            return Err(RunCommandError::MissingCommand);
-        }
-        *cmd_raw = cmd_args[0].clone();
-        let rest: Vec<String> = cmd_args[1..].to_vec();
+        *cmd_raw = rest.remove(0);
         *cmd_args = rest;
         split_command_prefix_if_embedded(cmd_raw, cmd_args);
     }
     Ok(())
 }
 
-/// 与 [`prepare_run_command_invocation`] 同源解析后，返回按 validate 规则判定为不安全的参数。
+/// 与 [`prepare_run_command_spec`] 同源解析后，返回按 validate 规则判定为不安全的参数。
 /// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 [`is_arg_safe`] 一致）。
-pub fn scan_run_command_unsafe_args(
-    args: &serde_json::Value,
+pub fn scan_run_command_unsafe_args_spec(
+    spec: &CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
 ) -> Result<Vec<String>, RunCommandError> {
-    let (mut cmd_raw, mut cmd_args) = extract_run_command_name_and_args(args, working_dir)?;
+    let mut cmd_raw = spec.command.clone();
+    let mut cmd_args = spec.args.clone();
     let mut effective_working_dir = working_dir.to_path_buf();
     let mut unsafe_args = Vec::new();
     advance_cd_prefixes_collecting_unsafe(
@@ -230,6 +272,17 @@ pub fn scan_run_command_unsafe_args(
     Ok(unsafe_args)
 }
 
+/// 与 [`scan_run_command_unsafe_args_spec`] 同源：从原始 args JSON 解析后扫描
+/// argv 级不安全参数（空 = 无需外部路径审批）。
+pub fn scan_run_command_unsafe_args_json(
+    args_json: &str,
+    working_dir: &Path,
+    allowed_commands: &[String],
+) -> Result<Vec<String>, RunCommandError> {
+    let spec = parse_command_spec(args_json, working_dir)?;
+    scan_run_command_unsafe_args_spec(&spec, working_dir, allowed_commands)
+}
+
 fn skip_shell_variable_check(cmd_raw: &str, cmd_args: &[String], allowed: &[String]) -> bool {
     is_shell_dash_c_invocation(cmd_raw, cmd_args)
         || (posix_shell_on_allowlist(allowed).is_some()
@@ -252,13 +305,14 @@ fn wrap_posix_shell_reresolve(
     Ok(())
 }
 
-pub(super) fn prepare_run_command_invocation(
-    args: &serde_json::Value,
+pub(super) fn prepare_run_command_spec(
+    spec: &CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
     skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
-    let (mut cmd_raw, mut cmd_args) = extract_run_command_name_and_args(args, working_dir)?;
+    let mut cmd_raw = spec.command.clone();
+    let mut cmd_args = spec.args.clone();
 
     let mut effective_working_dir = working_dir.to_path_buf();
     peel_workspace_cd_prefix(
@@ -302,7 +356,10 @@ pub(super) fn prepare_run_command_invocation(
 mod tests {
     use std::path::Path;
 
-    use super::{prepare_run_command_invocation, scan_run_command_unsafe_args, RunCommandError};
+    use super::super::RunCommandError;
+    use super::{
+        parse_command_spec, prepare_run_command_spec, scan_run_command_unsafe_args_spec,
+    };
 
     fn test_allowed() -> Vec<String> {
         vec![
@@ -314,23 +371,34 @@ mod tests {
         ]
     }
 
+    fn spec(args_json: &str) -> super::CommandSpec {
+        parse_command_spec(args_json, Path::new(".")).expect("spec")
+    }
+
     #[test]
     fn scan_lists_external_absolute_path_not_cmake_dotdot() {
-        let abs: serde_json::Value =
-            serde_json::from_str(r#"{"command":"cat","args":["/etc/passwd"]}"#).expect("json");
-        let u = scan_run_command_unsafe_args(&abs, Path::new("."), &test_allowed()).expect("scan");
+        let u = scan_run_command_unsafe_args_spec(
+            &spec(r#"{"command":"cat","args":["/etc/passwd"]}"#),
+            Path::new("."),
+            &test_allowed(),
+        )
+        .expect("scan");
         assert_eq!(u, vec!["/etc/passwd".to_string()]);
 
-        let cmake: serde_json::Value =
-            serde_json::from_str(r#"{"command":"cmake","args":[".."]}"#).expect("json");
-        let u =
-            scan_run_command_unsafe_args(&cmake, Path::new("."), &test_allowed()).expect("scan");
+        let u = scan_run_command_unsafe_args_spec(
+            &spec(r#"{"command":"cmake","args":[".."]}"#),
+            Path::new("."),
+            &test_allowed(),
+        )
+        .expect("scan");
         assert!(u.is_empty(), "{u:?}");
 
-        let git_range: serde_json::Value =
-            serde_json::from_str(r#"{"command":"git","args":["log","main..HEAD"]}"#).expect("json");
-        let u = scan_run_command_unsafe_args(&git_range, Path::new("."), &test_allowed())
-            .expect("scan");
+        let u = scan_run_command_unsafe_args_spec(
+            &spec(r#"{"command":"git","args":["log","main..HEAD"]}"#),
+            Path::new("."),
+            &test_allowed(),
+        )
+        .expect("scan");
         assert!(
             u.is_empty(),
             "git A..B must not look like path traversal: {u:?}"
@@ -339,22 +407,27 @@ mod tests {
 
     #[test]
     fn scan_lists_cd_parent_dir_prefix() {
-        let v: serde_json::Value =
-            serde_json::from_str(r#"{"command":"cd","args":["..","&&","ls"]}"#).expect("json");
-        let u = scan_run_command_unsafe_args(&v, Path::new("."), &test_allowed()).expect("scan");
+        let u = scan_run_command_unsafe_args_spec(
+            &spec(r#"{"command":"cd","args":["..","&&","ls"]}"#),
+            Path::new("."),
+            &test_allowed(),
+        )
+        .expect("scan");
         assert!(u.iter().any(|a| a == ".."), "{u:?}");
     }
 
     #[test]
     fn star_sentinel_allows_arbitrary_command_name() {
-        let args: serde_json::Value =
-            serde_json::from_str(r#"{"command":"whoami","args":[]}"#).expect("json");
+        let args_json = r#"{"command":"whoami","args":[]}"#;
+        let spec = parse_command_spec(args_json, Path::new(".")).expect("spec");
         let star = vec!["*".to_string()];
-        let prepared =
-            prepare_run_command_invocation(&args, Path::new("."), &star, false).expect("star");
+        let prepared = prepare_run_command_spec(&spec, Path::new("."), &star, false).expect("star");
         assert_eq!(prepared.cmd_name, "whoami");
 
-        let denied = prepare_run_command_invocation(&args, Path::new("."), &test_allowed(), false);
-        assert!(matches!(denied, Err(RunCommandError::DisallowedCommand { .. })));
+        let denied = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false);
+        assert!(matches!(
+            denied,
+            Err(RunCommandError::DisallowedCommand { .. })
+        ));
     }
 }

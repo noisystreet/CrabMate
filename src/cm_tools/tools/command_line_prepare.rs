@@ -8,7 +8,6 @@ use std::path::{Path, PathBuf};
 pub enum CdPeelError {
     CdPrefixInvalid { detail: String, work_dir: String },
     UnsafeArg,
-    MissingCommand,
     SpawnOther { cmd: String, source: io::Error },
 }
 
@@ -95,6 +94,17 @@ pub fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec
     *cmd_raw = head;
 }
 
+/// 识别一层 `cd <dir> && <rest…>`（`args` 形如 `[dir, "&&", cmd, rest…]`）。
+///
+/// 仅做纯字符串判定；是否接受该目录、如何推进工作目录由各调用方决定。
+#[must_use]
+pub fn parse_cd_prefix(args: &[String]) -> Option<(&str, &[String])> {
+    if args.len() < 3 || args[1] != "&&" {
+        return None;
+    }
+    Some((args[0].trim(), &args[2..]))
+}
+
 fn cd_prefix_invalid(work_dir: &Path, detail: impl Into<String>) -> CdPeelError {
     CdPeelError::CdPrefixInvalid {
         detail: detail.into(),
@@ -152,21 +162,17 @@ pub fn peel_workspace_cd_prefix(
         if !cmd_raw.eq_ignore_ascii_case("cd") {
             break;
         }
-        if cmd_args.len() < 3 || cmd_args[1] != "&&" {
+        let Some((dir, rest)) = parse_cd_prefix(cmd_args) else {
             return Err(cd_prefix_invalid(
                 effective_working_dir,
                 "run_command 不经过 shell；`cd` 仅支持参数形式 [相对目录, \"&&\", 命令, …]，例如 [\"frontend\", \"&&\", \"cargo\", \"check\", …]",
             ));
-        }
-        let dir = cmd_args[0].trim();
+        };
+        let dir = dir.to_string();
+        let mut rest = rest.to_vec();
         *effective_working_dir =
-            resolve_cd_prefix_dir(effective_working_dir, dir, &anchor, allow_external_paths)?;
-        *cmd_args = cmd_args[2..].to_vec();
-        if cmd_args.is_empty() {
-            return Err(CdPeelError::MissingCommand);
-        }
-        *cmd_raw = cmd_args[0].clone();
-        let rest: Vec<String> = cmd_args[1..].to_vec();
+            resolve_cd_prefix_dir(effective_working_dir, &dir, &anchor, allow_external_paths)?;
+        *cmd_raw = rest.remove(0);
         *cmd_args = rest;
         split_command_prefix_if_embedded(cmd_raw, cmd_args);
     }

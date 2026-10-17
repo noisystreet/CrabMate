@@ -13,21 +13,14 @@ pub struct RunCommandInvocation {
 }
 
 pub fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
-    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
-    let command = v.get("command")?.as_str()?.trim().to_string();
+    let (command, args) = crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)?;
     if command.is_empty() {
         return None;
     }
-    let args = v
-        .get("args")
-        .and_then(|x| x.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_str().map(str::trim).map(str::to_string))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-    Some(RunCommandInvocation { command, args })
+    Some(RunCommandInvocation {
+        command,
+        args: args.into_iter().map(|s| s.trim().to_string()).collect(),
+    })
 }
 
 pub fn normalize_run_command_key(args_json: &str) -> Option<String> {
