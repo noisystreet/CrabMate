@@ -128,7 +128,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, JVM, DOCKER, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
-        "format_file" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
+        "format_files" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
 
         // --- 后台任务查询 ---
         "background_job_status" | "background_job_list" => &[GENERAL],
@@ -330,8 +330,8 @@ mod tests {
     }
 
     #[test]
-    fn format_file_tag_includes_cpp() {
-        let t = tags_for_tool_name("format_file");
+    fn format_files_tag_includes_cpp() {
+        let t = tags_for_tool_name("format_files");
         assert!(t.contains(&CPP));
     }
 }

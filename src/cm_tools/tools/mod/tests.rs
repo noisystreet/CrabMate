@@ -361,7 +361,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"find_references"));
     assert!(names.contains(&"call_graph_sketch"));
     assert!(names.contains(&"rust_file_outline"));
-    assert!(names.contains(&"format_file"));
+    assert!(names.contains(&"format_files"));
     assert!(names.contains(&"format_check_file"));
     assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"quality_workspace"));

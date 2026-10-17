@@ -442,7 +442,7 @@ define_runners_cwd! {
     runner_find_references => code_nav::find_references,
     runner_rust_file_outline => code_nav::rust_file_outline,
     runner_call_graph_sketch => call_graph_sketch::run,
-    runner_format_file => format::run,
+    runner_format_files => format::run,
     runner_format_check_file => format::run_check,
     runner_add_reminder => schedule::add_reminder,
     runner_list_reminders => schedule::list_reminders,
