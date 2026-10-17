@@ -511,6 +511,46 @@ fn test_summarize_tool_call_none() {
     assert_eq!(s, None);
 }
 
+// ── `is_compile_command_success` 判定边界（S0.5-3：仅钉现状，修复留到 S5）──
+
+fn legacy_run_output(command: &str, exit_code: i32) -> String {
+    format!("命令：{command}\n退出码：{exit_code}\n")
+}
+
+#[test]
+fn is_compile_command_success_requires_zero_exit_and_compile_command() {
+    assert!(is_compile_command_success(
+        r#"{"command":"gcc","args":["-c","a.c"]}"#,
+        &legacy_run_output("gcc -c a.c", 0)
+    ));
+    assert!(!is_compile_command_success(
+        r#"{"command":"gcc","args":["-c","a.c"]}"#,
+        &legacy_run_output("gcc -c a.c", 1)
+    ));
+    assert!(!is_compile_command_success(
+        r#"{"command":"ls","args":[]}"#,
+        &legacy_run_output("ls", 0)
+    ));
+    assert!(!is_compile_command_success(
+        "not json",
+        &legacy_run_output("gcc -c a.c", 0)
+    ));
+}
+
+#[test]
+fn is_compile_command_success_misses_script_shaped_payload() {
+    // 现状边界：识别只看 `command` 字段；`bash -c "gcc …"` 与 command 为空、
+    // 编译工具落在 args 首项的 payload 均判为 false。修复留到 S5。
+    assert!(!is_compile_command_success(
+        r#"{"command":"bash","args":["-c","gcc -c a.c"]}"#,
+        &legacy_run_output("gcc -c a.c", 0)
+    ));
+    assert!(!is_compile_command_success(
+        r#"{"command":"","args":["gcc","-c","a.c"]}"#,
+        &legacy_run_output("gcc -c a.c", 0)
+    ));
+}
+
 #[test]
 fn test_summarize_tool_call_unknown_tool() {
     let s = summarize_tool_call("nonexistent_tool_xyz", "{}");

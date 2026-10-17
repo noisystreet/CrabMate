@@ -42,7 +42,10 @@ async fn execute_run_command_async(
         );
     }
 
-    let parsed = parse_run_command_json(args);
+    let parsed = match parse_run_command_json(args) {
+        Ok(p) => p,
+        Err(e) => return (e.extended_user_message(), None),
+    };
     let effective_allowed_arc =
         match resolve_run_command_shell_allowlist(cfg, effective_working_dir, web_ctx, &parsed, "run_command", true)
             .await

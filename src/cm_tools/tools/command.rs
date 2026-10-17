@@ -323,7 +323,7 @@ pub fn prepare_run_command_for_pty_spawn(
     allowed_commands: &[String],
     skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
-    let args = parse_run_command_args_with_repair(args_json)?;
+    let args = parse_run_command_value_with_repair(args_json)?;
     let p = prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
     Ok(p)
@@ -335,7 +335,7 @@ pub fn scan_run_command_unsafe_args_json(
     working_dir: &Path,
     allowed_commands: &[String],
 ) -> Result<Vec<String>, RunCommandError> {
-    let args = parse_run_command_args_with_repair(args_json)?;
+    let args = parse_run_command_value_with_repair(args_json)?;
     scan_run_command_unsafe_args(&args, working_dir, allowed_commands)
 }
 
@@ -370,7 +370,7 @@ fn plan_run_command(
     test_cache: Option<&RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> Result<RunCommandPlan, RunCommandError> {
-    let args = parse_run_command_args_with_repair(args_json)?;
+    let args = parse_run_command_value_with_repair(args_json)?;
     let prepared =
         prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
@@ -432,7 +432,10 @@ fn plan_cargo_test_cache(
         return None;
     }
     let inputs_fp = fingerprint_rust_workspace_sources(opts.workspace_root)?;
-    let args_fp = cargo_test_run_command_args_fingerprint(&prepared.cmd_args);
+    let args_fp = cargo_test_run_command_args_fingerprint(
+        &prepared.cmd_args,
+        prepared.effective_working_dir.as_path(),
+    );
     let key = TestCacheKey {
         workspace_root: opts.workspace_root.to_path_buf(),
         kind: TestCacheKind::CargoTestViaRunCommand,
@@ -688,7 +691,7 @@ fn write_test_cache(cache_write: Option<CacheWritePlan>, formatted: &str) {
     }
 }
 
-fn parse_run_command_args_with_repair(
+pub(crate) fn parse_run_command_value_with_repair(
     args_json: &str,
 ) -> Result<serde_json::Value, RunCommandError> {
     match serde_json::from_str::<serde_json::Value>(args_json) {
@@ -719,34 +722,6 @@ fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
     } else {
         format!("{} {}", cmd, args.join(" "))
     }
-}
-
-fn format_command_output(
-    invocation: &str,
-    output: std::process::Output,
-    max_output_len: usize,
-) -> String {
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let truncate =
-        |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
-    let status = output.status;
-    let mut out = format!(
-        "命令：{invocation}\n退出码：{}\n",
-        status.code().unwrap_or(-1)
-    );
-    if !stdout.is_empty() {
-        out.push_str("标准输出：\n");
-        out.push_str(&truncate(&stdout));
-    }
-    if !stderr.is_empty() {
-        out.push_str("标准错误：\n");
-        out.push_str(&truncate(&stderr));
-    }
-    if stdout.is_empty() && stderr.is_empty() && status.success() {
-        out.push_str("(无输出)");
-    }
-    out.trim_end().to_string()
 }
 
 fn format_command_streams(

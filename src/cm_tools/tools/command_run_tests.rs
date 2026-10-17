@@ -34,6 +34,7 @@ const TEST_ALLOWED: &[&str] = &[
     "bash",
     "sh",
     "sleep",
+    "git",
 ];
 
 fn test_allowed() -> Vec<String> {
@@ -396,6 +397,131 @@ fn bash_wraps_operators_and_gh_dollar_keeps_token_flag() {
     assert!(p.inject_gh_token);
     assert_eq!(p.cmd_name, "bash");
     assert_eq!(p.cmd_args.first().map(String::as_str), Some("-c"));
+}
+
+#[test]
+fn prepare_peels_multiple_cd_prefixes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(dir.path().join("a/b")).expect("mkdir");
+    let v: serde_json::Value =
+        serde_json::from_str(r#"{"command":"cd","args":["a","&&","cd","b","&&","echo","x"]}"#)
+            .expect("json");
+    let p = prepare_run_command_invocation(&v, dir.path(), &test_allowed(), false).expect("prep");
+    assert_eq!(p.cmd_name, "echo");
+    assert_eq!(p.cmd_args, vec!["x".to_string()]);
+    assert!(
+        p.effective_working_dir.ends_with("a/b"),
+        "{:?}",
+        p.effective_working_dir
+    );
+}
+
+#[test]
+fn prepare_allows_cmake_parent_dir_arg() {
+    let v: serde_json::Value =
+        serde_json::from_str(r#"{"command":"cmake","args":[".."]}"#).expect("json");
+    let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+        .expect("cmake .. must stay allowed");
+    assert_eq!(p.cmd_name, "cmake");
+    assert_eq!(p.cmd_args, vec!["..".to_string()]);
+}
+
+#[test]
+fn prepare_allows_git_revision_range_arg() {
+    let v: serde_json::Value =
+        serde_json::from_str(r#"{"command":"git","args":["log","main..HEAD"]}"#).expect("json");
+    let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+        .expect("git rev range must stay allowed");
+    assert_eq!(p.cmd_name, "git");
+    assert_eq!(
+        p.cmd_args,
+        vec!["log".to_string(), "main..HEAD".to_string()]
+    );
+}
+
+#[test]
+fn bash_on_allowlist_wraps_glob() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.rs"), "fn main() {}\n").expect("write");
+    let out = run(
+        r#"{"command":"ls","args":["*.rs"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &test_allowed(),
+        dir.path(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("命令：ls *.rs"), "{out}");
+}
+
+#[test]
+fn bash_on_allowlist_wraps_pipe() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("a.rs"), "fn main() {}\n").expect("write");
+    let out = run(
+        r#"{"command":"ls","args":["|","wc","-l"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &test_allowed(),
+        dir.path(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("命令：ls | wc -l"), "{out}");
+}
+
+fn cargo_test_prepared(cwd: std::path::PathBuf) -> PreparedRunCommand {
+    PreparedRunCommand {
+        cmd_raw: "cargo".to_string(),
+        cmd_name: "cargo".to_string(),
+        exec_path: None,
+        cmd_args: vec!["test".to_string()],
+        effective_working_dir: cwd,
+        inject_gh_token: false,
+    }
+}
+
+fn cache_write_key(plan: RunCommandPlan) -> TestCacheKey {
+    match plan {
+        RunCommandPlan::Spawn(spawn) => spawn
+            .cache_write
+            .expect("eligible cargo test should carry cache_write")
+            .key,
+        RunCommandPlan::CacheHit(_) => panic!("fresh key must not hit cache"),
+    }
+}
+
+#[test]
+fn cargo_test_cache_key_includes_effective_working_dir() {
+    let root = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(root.path().join("a")).expect("mkdir a");
+    std::fs::create_dir_all(root.path().join("b")).expect("mkdir b");
+    let opts = RunCommandTestCacheOpts {
+        enabled: true,
+        max_entries: 8,
+        workspace_root: root.path(),
+    };
+    let key_a = cache_write_key(
+        plan_cargo_test_cache(
+            &cargo_test_prepared(root.path().join("a")),
+            Some(&opts),
+            "cargo test".to_string(),
+        )
+        .expect("plan a"),
+    );
+    let key_b = cache_write_key(
+        plan_cargo_test_cache(
+            &cargo_test_prepared(root.path().join("b")),
+            Some(&opts),
+            "cargo test".to_string(),
+        )
+        .expect("plan b"),
+    );
+    assert_ne!(
+        key_a, key_b,
+        "cargo test cache key must distinguish working directory"
+    );
 }
 
 #[cfg(unix)]

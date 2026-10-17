@@ -151,4 +151,52 @@ mod tests {
         let b = normalize_run_command_key(r#"{"command":"./build/hello","args":[]}"#);
         assert_ne!(a, b);
     }
+
+    #[test]
+    fn normalize_key_exact_shape() {
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cmake","args":["--build","build"]}"#).as_deref(),
+            Some("run_command|cmake|--build\u{1f}build")
+        );
+    }
+
+    #[test]
+    fn normalize_key_trims_command_and_args() {
+        assert_eq!(
+            normalize_run_command_key(
+                r#"{"command":"  cmake  ","args":[" --build "," build "],"other":1}"#
+            )
+            .as_deref(),
+            Some("run_command|cmake|--build\u{1f}build")
+        );
+    }
+
+    #[test]
+    fn normalize_key_defaults_missing_or_non_array_args_to_empty() {
+        let expected = Some("run_command|cmake|");
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cmake"}"#).as_deref(),
+            expected
+        );
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cmake","args":"--build"}"#).as_deref(),
+            expected
+        );
+    }
+
+    #[test]
+    fn normalize_key_filters_non_string_args() {
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cmake","args":["--build",1,null,"build"]}"#)
+                .as_deref(),
+            Some("run_command|cmake|--build\u{1f}build")
+        );
+    }
+
+    #[test]
+    fn normalize_key_rejects_unparsable_or_empty_command() {
+        assert!(normalize_run_command_key("not json").is_none());
+        assert!(normalize_run_command_key(r#"{"args":["x"]}"#).is_none());
+        assert!(normalize_run_command_key(r#"{"command":"   ","args":[]}"#).is_none());
+    }
 }

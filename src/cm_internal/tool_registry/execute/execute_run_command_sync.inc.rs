@@ -29,7 +29,10 @@ async fn execute_run_command_sync_host(
         timeout_secs,
     } = invoke;
     let cfg = env.cfg;
-    let parsed = parse_run_command_json(args);
+    let parsed = match parse_run_command_json(args) {
+        Ok(p) => p,
+        Err(e) => return (e.extended_user_message(), None),
+    };
     let effective_allowed_arc = match resolve_run_command_shell_allowlist(
         cfg,
         effective_working_dir,

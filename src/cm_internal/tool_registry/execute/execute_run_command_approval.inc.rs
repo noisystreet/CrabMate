@@ -6,8 +6,10 @@ struct ParsedRunCommandJson {
     argv_tail: String,
 }
 
-fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
-    let v: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+fn parse_run_command_json(
+    args: &str,
+) -> Result<ParsedRunCommandJson, tools::RunCommandError> {
+    let v = tools::parse_run_command_value_with_repair(args)?;
     let command_raw = v
         .get("command")
         .and_then(|x| x.as_str())
@@ -26,13 +28,13 @@ fn parse_run_command_json(args: &str) -> ParsedRunCommandJson {
         .unwrap_or_default();
     let argv_tail = tools::join_run_command_argv_tail(&cmd_args);
     let script = tools::join_run_command_shell_script(&command_raw, &cmd_args);
-    ParsedRunCommandJson {
+    Ok(ParsedRunCommandJson {
         cmd,
         command_raw,
         cmd_args,
         script,
         argv_tail,
-    }
+    })
 }
 
 fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {

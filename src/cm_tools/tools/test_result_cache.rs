@@ -190,8 +190,13 @@ pub fn cargo_test_args_fingerprint(v: &serde_json::Value) -> String {
 }
 
 /// `run_command`：`cargo` + `test` 子命令的参数指纹（`args` 为完整数组）。
-pub fn cargo_test_run_command_args_fingerprint(cmd_args: &[String]) -> String {
-    serde_json::to_string(&json!({ "argv": cmd_args })).unwrap_or_else(|_| "[]".to_string())
+/// 纳入生效工作目录：`cd sub && cargo test` 与工作区根目录的 `cargo test` 不可共享缓存。
+pub fn cargo_test_run_command_args_fingerprint(cmd_args: &[String], cwd: &Path) -> String {
+    serde_json::to_string(&json!({
+        "cwd": cwd.to_string_lossy(),
+        "argv": cmd_args,
+    }))
+    .unwrap_or_else(|_| "[]".to_string())
 }
 
 pub fn try_get_cached(enabled: bool, max_entries: usize, key: &TestCacheKey) -> Option<String> {
