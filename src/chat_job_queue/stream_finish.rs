@@ -117,7 +117,8 @@ pub(super) struct CancelledTurnSaveParams<'a> {
 /// - **跳过** LTM 异步索引（本轮未正常完成，不索引半成品）；
 /// - **不**发 `conversation_saved` / state snapshot / `stream_draining`——取消路径的 SSE 语义保持
 ///   不变（worker 随后只补 `STREAM_CANCELLED`）；
-/// - 本轮无可见助手输出时**不落盘**（空回合不写 store）；
+/// - 本轮无可见助手输出时**不落盘**（空回合不写 store）；可见性按**结构修复前**的形态
+///   判定，因此「只有半截 `tool_calls`、没有正文」的取消回合仍会落盘（用户消息得以保留）；
 /// - CAS `Conflict` 仅记日志，不当成取消失败。
 pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'_>) {
     let CancelledTurnSaveParams {
@@ -133,6 +134,11 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
         archive_rows,
     } = p;
     strip_persist_injections(messages);
+    // 可见性按**修复前**的形态判定：取消常停在 `assistant(tool_calls=[半截 arguments])`
+    // 且本轮没有正文，修复会丢弃该残片使助手变空。若修复后再判定，这一轮（连同本轮
+    // user 消息）会被整体跳过落盘，用户在服务端历史里丢失自己的输入。修复后留下的空
+    // 助手出站时由 `normalize_messages_for_openai_compatible_request` 剔除，安全。
+    let had_visible_output = current_turn_has_visible_assistant_output(messages);
     // 取消可能停在 `assistant(tool_calls=[A, B]) + tool(A)` 或半截 arguments 上；
     // 落盘前修复结构，避免下一轮请求被上游以「tool_calls 缺少 tool 响应」拒绝。
     let repaired = crate::cm_agent::message_pipeline::
@@ -145,7 +151,7 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
             repaired
         );
     }
-    if !current_turn_has_visible_assistant_output(messages) {
+    if !had_visible_output {
         return;
     }
     let active_save =
@@ -633,7 +639,7 @@ mod tests {
     use crate::types::{
         CRABMATE_CONTEXT_SUMMARY_NAME, CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME,
         CRABMATE_LONG_TERM_MEMORY_NAME, CRABMATE_PLANNER_TOOL_CALL_REJECT_NAME,
-        CRABMATE_WORKSPACE_CHANGELIST_NAME, Message,
+        CRABMATE_WORKSPACE_CHANGELIST_NAME, FunctionCall, Message, ToolCall,
     };
 
     /// ADR §3.7.1：净化链**保留**基线摘要与首轮工作区画像，**剔除**其余注入。
@@ -679,6 +685,46 @@ mod tests {
         assert!(
             current_turn_has_visible_assistant_output(&messages),
             "strip 后应识别到本轮被中断的部分助手输出"
+        );
+    }
+
+    /// 取消常停在 `assistant(tool_calls=[半截 arguments])` 且本轮没有正文：结构修复会丢弃该残片，
+    /// 使助手变成空消息。可见性必须在修复**之前**取快照，否则这一轮（连同本轮 user 消息）
+    /// 会被整体跳过落盘，用户在服务端历史里丢失自己的输入。
+    #[test]
+    fn visibility_snapshot_before_tool_call_repair_keeps_cancelled_turn() {
+        let mut messages = vec![
+            Message::user_only("继续"),
+            Message {
+                role: "assistant".to_string(),
+                content: None,
+                reasoning_content: None,
+                reasoning_details: None,
+                tool_calls: Some(vec![ToolCall {
+                    id: "call_truncated".to_string(),
+                    typ: "function".to_string(),
+                    function: FunctionCall {
+                        name: "run_command".to_string(),
+                        arguments: "{\"command\":\"sleep\"".to_string(),
+                    },
+                }]),
+                name: None,
+                tool_call_id: None,
+            },
+        ];
+        assert!(
+            current_turn_has_visible_assistant_output(&messages),
+            "半截 tool_calls 在修复前应算作可见输出"
+        );
+        let repaired =
+            crate::cm_agent::message_pipeline::complete_pending_tool_responses_for_persistence(
+                &mut messages,
+            );
+        assert_eq!(repaired, 0, "非法 arguments 的残片应被丢弃而不是补占位");
+        assert!(messages[1].tool_calls.is_none(), "残片应已丢弃");
+        assert!(
+            !current_turn_has_visible_assistant_output(&messages),
+            "修复后助手为空；因此调用方必须使用修复前的快照判定可见性"
         );
     }
 }
