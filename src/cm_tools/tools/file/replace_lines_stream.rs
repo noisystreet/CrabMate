@@ -597,7 +597,15 @@ pub(super) fn modify_file_replace_lines(
     drop(writer);
     drop(reader);
 
-    if let Err(e) = fs_atomic::commit_tmp_over_target(guard.path(), target, preserve_inode) {
+    // 统一提交入口：流式改写期间文件仍可能被其他进程改动，校验紧贴 rename 前一刻。
+    if let Err(e) = super::commit_guard::commit_tmp_with_revision_guard(
+        guard.path(),
+        target,
+        preserve_inode,
+        v,
+        ctx,
+        true,
+    ) {
         return e;
     }
     guard.keep();
@@ -666,7 +674,15 @@ pub(super) fn modify_file_insert_after_line(
     drop(writer);
     drop(reader);
 
-    if let Err(e) = fs_atomic::commit_tmp_over_target(guard.path(), target, preserve_inode) {
+    // 统一提交入口：流式改写期间文件仍可能被其他进程改动，校验紧贴 rename 前一刻。
+    if let Err(e) = super::commit_guard::commit_tmp_with_revision_guard(
+        guard.path(),
+        target,
+        preserve_inode,
+        v,
+        ctx,
+        true,
+    ) {
         return e;
     }
     guard.keep();

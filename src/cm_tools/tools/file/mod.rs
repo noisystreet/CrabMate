@@ -2,6 +2,7 @@
 //!
 //! 路径均为**相对于工作目录**的相对路径；`path` 子模块集中 `resolve_for_read` / `resolve_for_write` 等安全边界。
 
+mod commit_guard;
 mod directory;
 mod display_fmt;
 mod edits_batch;
@@ -13,6 +14,7 @@ mod perm;
 mod read_file_pipeline;
 mod read_tool;
 mod replace_lines_stream;
+mod revision;
 mod rust_brace_scan;
 mod symlink;
 mod tree_glob;
@@ -39,3 +41,5 @@ mod tests;
 mod tests_guards_batch;
 #[cfg(test)]
 mod tests_metadata;
+#[cfg(test)]
+mod tests_revision;

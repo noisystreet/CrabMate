@@ -230,6 +230,7 @@ fn modify_file_write_full_overwrite(
     target: &Path,
     working_dir: &Path,
     ctx: &ToolContext<'_>,
+    v: &serde_json::Value,
     content: String,
     dry_run: bool,
     confirm_full_overwrite: bool,
@@ -279,38 +280,40 @@ fn modify_file_write_full_overwrite(
     if let Err(e) = super::write_precheck::precheck_before_write(path, &content, skip_precheck) {
         return e;
     }
-
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    match write_bytes_under_root(&base, target, content.as_bytes(), false, false) {
-        Ok(()) => {
-            let before_preview = before.clone();
-            record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);
-            let old_b = before_preview.as_ref().map(String::len).unwrap_or(0);
-            let shrink_warn = full_overwrite_shrink_heuristic_warn(old_b, content.len());
-            let mut body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
-            if shrink_warn {
-                body.push_str(
-                    "\n\n警告：新正文显著短于原文件，疑似未传完整全文（整文件覆盖不可逆）。\
-若非有意清空/大幅缩短，请尽快用 Git 或备份恢复原内容；后续局部改动请使用 mode=replace_lines。",
-                );
-            }
-            let after = std::fs::read_to_string(target).ok();
-            format_tool_output_with_write_diff_preview(
-                "modify_file",
-                body,
-                vec![WriteDiffFileState {
-                    rel_path: path.to_string(),
-                    before: before_preview,
-                    after,
-                }],
-                WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-            )
-        }
-        Err(e) => format!("写入文件失败: {}", e),
+    // 统一提交入口：写入临时文件后、rename 前一刻再做 revision 校验（显式 base_revision
+    // 始终校验；full 模式不做轮次自动绑定，因为整文件覆盖不依赖行号快照）。
+    if let Err(e) = super::commit_guard::write_bytes_with_revision_guard(
+        target,
+        content.as_bytes(),
+        v,
+        ctx,
+        false,
+    ) {
+        return format!("写入文件失败: {}", e);
     }
+
+    let before_preview = before.clone();
+    record_file_state_after_write(ctx.workspace_changelist, working_dir, path, before);
+    let old_b = before_preview.as_ref().map(String::len).unwrap_or(0);
+    let shrink_warn = full_overwrite_shrink_heuristic_warn(old_b, content.len());
+    let mut body = tool_output_prepend_path(&disp, format!("已整文件覆盖: {}", disp));
+    if shrink_warn {
+        body.push_str(
+            "\n\n警告：新正文显著短于原文件，疑似未传完整全文（整文件覆盖不可逆）。\
+若非有意清空/大幅缩短，请尽快用 Git 或备份恢复原内容；后续局部改动请使用 mode=replace_lines。",
+        );
+    }
+    let after = std::fs::read_to_string(target).ok();
+    format_tool_output_with_write_diff_preview(
+        "modify_file",
+        body,
+        vec![WriteDiffFileState {
+            rel_path: path.to_string(),
+            before: before_preview,
+            after,
+        }],
+        WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+    )
 }
 
 fn modify_file_path_arg(v: &serde_json::Value) -> Result<String, String> {
@@ -340,6 +343,16 @@ fn modify_file_mode_arg(v: &serde_json::Value) -> (Option<&str>, String) {
 
 fn modify_file_display(working_dir: &Path, target: &Path, path: &str) -> String {
     path_for_tool_display(working_dir, target, Some(path))
+}
+
+/// 行号类模式依赖“当前文件坐标”，默认使用本轮 `read_file` 的 revision 自动校验；
+/// 整文件覆盖不依赖行号，不做自动绑定。
+fn modify_file_auto_bind_revision(v: &serde_json::Value, mode: &str) -> bool {
+    v.get("edits").is_some()
+        || matches!(
+            mode,
+            "replace_lines" | "lines" | "replacelines" | "insert_after_line"
+        )
 }
 
 fn modify_file_dispatch_local_mode(
@@ -409,6 +422,7 @@ fn modify_file_dispatch_full_mode(
         target,
         working_dir,
         ctx,
+        v,
         content,
         dry_run,
         confirm_full_overwrite,
@@ -466,6 +480,10 @@ pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     };
     if !target.is_file() {
         return "错误：路径不是文件或不存在，无法仅修改".to_string();
+    }
+    let auto_bind = modify_file_auto_bind_revision(&v, &mode);
+    if let Err(e) = super::revision::verify_write_revision(&v, &target, ctx, auto_bind) {
+        return e;
     }
 
     modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode)

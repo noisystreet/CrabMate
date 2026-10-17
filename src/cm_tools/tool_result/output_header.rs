@@ -81,6 +81,8 @@ pub fn prepend_crabmate_tool_output<T: Serialize>(tool: &str, fields: T, body: &
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReadFileOutputFields {
     pub path: String,
+    /// 文件内容快照票据（`sha256:<hex>`）；可传给 `modify_file` 的 `base_revision` 做写前校验。
+    pub revision: String,
     pub start_line: usize,
     pub end_line_shown: usize,
     pub line_count_returned: usize,
@@ -152,6 +154,7 @@ mod tests {
             "read_file",
             ReadFileOutputFields {
                 path: "a.py".into(),
+                revision: "sha256:abc".into(),
                 start_line: 1,
                 end_line_shown: 2,
                 line_count_returned: 2,
