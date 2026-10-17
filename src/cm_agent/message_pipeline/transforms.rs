@@ -384,19 +384,6 @@ pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) -> usize {
 const INTERRUPTED_TOOL_RESULT_PLACEHOLDER: &str =
     "本轮已被用户中断，该工具调用未执行完成，无结果。";
 
-/// 紧邻 `assistant_idx` 起的连续 `tool` 消息已有的 `tool_call_id`。
-fn responded_tool_call_ids(messages: &[Message], assistant_idx: usize) -> Vec<String> {
-    let mut ids = Vec::new();
-    let mut idx = assistant_idx + 1;
-    while idx < messages.len() && messages[idx].role.trim().eq_ignore_ascii_case("tool") {
-        if let Some(id) = messages[idx].tool_call_id.as_ref() {
-            ids.push(id.clone());
-        }
-        idx += 1;
-    }
-    ids
-}
-
 /// 丢弃「未得到 tool 响应且 `arguments` 不是合法 JSON」的 `tool_call`，返回丢弃条数。
 ///
 /// 这类调用是**流式输出被中断**的残片：模型只吐出半截 JSON，工具从未执行（也没有 tool 响应）。
@@ -411,7 +398,7 @@ fn drop_unresponded_incomplete_tool_calls(messages: &mut [Message]) -> usize {
         {
             continue;
         }
-        let responded = responded_tool_call_ids(messages, idx);
+        let responded = crate::cm_types::contiguous_tool_response_ids(messages, idx + 1).0;
         let calls = messages[idx].tool_calls.take().unwrap_or_default();
         let mut kept = Vec::with_capacity(calls.len());
         for call in calls {

@@ -8,7 +8,10 @@ fn is_tool_role(role: &str) -> bool {
 }
 
 /// 紧邻 `start` 起的连续 `tool` 消息的 `tool_call_id` 与结束下标。
-fn contiguous_tool_response_ids(messages: &[Message], start: usize) -> (Vec<String>, usize) {
+///
+/// 「连续」是上游的结构要求：`assistant(tool_calls)` 之后必须紧跟每个 id 的 `tool` 消息，
+/// 因此判断某调用是否已有响应时只能看紧邻的这一段，不能全表搜索。
+pub fn contiguous_tool_response_ids(messages: &[Message], start: usize) -> (Vec<String>, usize) {
     let mut ids = Vec::new();
     let mut idx = start;
     while idx < messages.len() && is_tool_role(&messages[idx].role) {
