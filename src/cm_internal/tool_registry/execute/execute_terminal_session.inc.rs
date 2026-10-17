@@ -159,7 +159,10 @@ async fn terminal_session_effective_allowed(
     let Some(rc) = exec_rc_json else {
         return Ok(Arc::clone(&cfg.command_exec.allowed_commands));
     };
-    let parsed = parse_run_command_json(rc);
+    let parsed = match parse_run_command_json(rc) {
+        Ok(p) => p,
+        Err(e) => return Err((e.extended_user_message(), None)),
+    };
     resolve_run_command_shell_allowlist(
         cfg,
         effective_working_dir,

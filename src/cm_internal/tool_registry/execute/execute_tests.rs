@@ -213,6 +213,238 @@ fn posix_shell_wrap_web_operators_need_approval_even_with_bash() {
     ));
 }
 
+/// 带审批通道的 Web 运行时；预置决策后可由 gate 直接消费。
+struct ApprovalFixture {
+    web: crate::cm_tools::tool_runtime::WebToolRuntime,
+    _out_rx: tokio::sync::mpsc::Receiver<String>,
+}
+
+fn approval_fixture(decision: CommandApprovalDecision) -> ApprovalFixture {
+    use tokio::sync::{Mutex as TokioMutex, mpsc};
+    let (out_tx, out_rx) = mpsc::channel::<String>(8);
+    let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
+    approval_tx.try_send(decision).expect("preseed decision");
+    let web = crate::cm_tools::tool_runtime::WebToolRuntime {
+        out_tx,
+        approval_rx_shared: Arc::new(TokioMutex::new(approval_rx)),
+        approval_request_guard: Arc::new(TokioMutex::new(())),
+        persistent_allowlist_shared: Arc::new(TokioMutex::new(std::collections::HashSet::new())),
+        turn_job_id: Some(1),
+        cancel: None,
+    };
+    ApprovalFixture {
+        web,
+        _out_rx: out_rx,
+    }
+}
+
+fn contains_cmd(allowed: &[String], cmd: &str) -> bool {
+    allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
+}
+
+#[tokio::test]
+async fn unknown_cmd_gate_decision_matrix() {
+    use CommandApprovalDecision::{AllowAlways, AllowOnce, Deny};
+
+    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    let cmd = "crabmate_unknown_gate_cmd";
+
+    let (msg, _) = request_unknown_cmd_approval(&cfg, None, cmd, cmd, "", false, false)
+        .await
+        .expect_err("no channel");
+    assert!(msg.contains("审批通道不可用"), "{msg}");
+
+    let (msg, _) = request_unknown_cmd_approval(&cfg, None, cmd, cmd, "", false, true)
+        .await
+        .expect_err("async");
+    assert!(msg.contains("async"), "{msg}");
+
+    let fixture = approval_fixture(Deny);
+    let (msg, _) = request_unknown_cmd_approval(
+        &cfg,
+        Some(&fixture.web),
+        cmd,
+        cmd,
+        "",
+        false,
+        false,
+    )
+    .await
+    .expect_err("deny");
+    assert!(msg.contains("用户拒绝执行命令"), "{msg}");
+
+    let fixture = approval_fixture(AllowOnce);
+    let allowed = request_unknown_cmd_approval(
+        &cfg,
+        Some(&fixture.web),
+        cmd,
+        cmd,
+        "",
+        true,
+        false,
+    )
+    .await
+    .expect("allow once");
+    assert!(contains_cmd(&allowed, cmd), "{allowed:?}");
+    assert!(contains_cmd(&allowed, "bash"), "{allowed:?}");
+
+    let fixture = approval_fixture(AllowAlways);
+    let allowed = request_unknown_cmd_approval(
+        &cfg,
+        Some(&fixture.web),
+        cmd,
+        cmd,
+        "",
+        true,
+        false,
+    )
+    .await
+    .expect("allow always");
+    assert!(contains_cmd(&allowed, cmd), "{allowed:?}");
+    assert!(contains_cmd(&allowed, "bash"), "{allowed:?}");
+    assert!(
+        fixture
+            .web
+            .persistent_allowlist_shared
+            .lock()
+            .await
+            .contains(cmd),
+        "AllowAlways should persist the command"
+    );
+}
+
+#[tokio::test]
+async fn shell_wrap_gate_decision_matrix() {
+    use CommandApprovalDecision::{AllowAlways, AllowOnce, Deny};
+
+    let allowed: Arc<[String]> = vec!["echo".to_string()].into();
+    let args = vec!["$HOME".to_string()];
+    let script = "echo $HOME";
+
+    let fixture = approval_fixture(AllowOnce);
+    let out = approve_posix_shell_wrap_if_needed(
+        "echo",
+        &args,
+        script,
+        Arc::clone(&allowed),
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect("allow once");
+    assert!(contains_cmd(&out, "bash"), "{out:?}");
+
+    let fixture = approval_fixture(AllowAlways);
+    let out = approve_posix_shell_wrap_if_needed(
+        "echo",
+        &args,
+        script,
+        Arc::clone(&allowed),
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect("allow always");
+    assert!(contains_cmd(&out, "bash"), "{out:?}");
+
+    let fixture = approval_fixture(Deny);
+    let err = approve_posix_shell_wrap_if_needed(
+        "echo",
+        &args,
+        script,
+        Arc::clone(&allowed),
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect_err("deny");
+    assert!(err.contains("已拒绝"), "{err}");
+
+    let fixture = approval_fixture(AllowOnce);
+    let err = approve_posix_shell_wrap_if_needed(
+        "echo",
+        &args,
+        script,
+        Arc::clone(&allowed),
+        Some(&fixture.web),
+        "run_command",
+        true,
+    )
+    .await
+    .expect_err("async");
+    assert!(err.contains("async"), "{err}");
+}
+
+#[tokio::test]
+async fn external_path_gate_decision_matrix() {
+    use CommandApprovalDecision::{AllowAlways, AllowOnce, Deny};
+
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.command_exec.allow_external_path_with_approval = true;
+    let allowed = cfg.command_exec.allowed_commands.to_vec();
+    let args = r#"{"command":"cat","args":["/etc/passwd"]}"#;
+    let wd = std::path::Path::new(".");
+
+    let fixture = approval_fixture(AllowOnce);
+    let gate = approve_external_run_command_paths_if_needed(
+        &cfg,
+        args,
+        wd,
+        &allowed,
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect("allow once");
+    assert_eq!(gate, ExternalPathGate::Approved);
+
+    let fixture = approval_fixture(AllowAlways);
+    let gate = approve_external_run_command_paths_if_needed(
+        &cfg,
+        args,
+        wd,
+        &allowed,
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect("allow always");
+    assert_eq!(gate, ExternalPathGate::Approved);
+
+    let fixture = approval_fixture(Deny);
+    let err = approve_external_run_command_paths_if_needed(
+        &cfg,
+        args,
+        wd,
+        &allowed,
+        Some(&fixture.web),
+        "run_command",
+        false,
+    )
+    .await
+    .expect_err("deny");
+    assert!(err.contains("已拒绝"), "{err}");
+
+    let fixture = approval_fixture(AllowOnce);
+    let err = approve_external_run_command_paths_if_needed(
+        &cfg,
+        args,
+        wd,
+        &allowed,
+        Some(&fixture.web),
+        "run_command",
+        true,
+    )
+    .await
+    .expect_err("async");
+    assert!(err.contains("async"), "{err}");
+}
+
 #[test]
 fn run_command_chunk_seq_is_monotonic_on_mirror() {
     use crate::cm_sse_protocol::sse::protocol::SsePayload;
@@ -640,4 +872,28 @@ async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal
         );
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
+}
+
+// ── 审批侧与执行侧共用同一 argv 解析（含裸 token 修复）──────────────────────
+
+#[test]
+fn parse_run_command_json_repairs_bare_arg_tokens() {
+    let parsed =
+        parse_run_command_json(r#"{"command":"ls","args":[-la]}"#).expect("裸 token 应可修复");
+    assert_eq!(parsed.cmd, "ls");
+    assert_eq!(parsed.cmd_args, vec!["-la".to_string()]);
+    assert_eq!(parsed.script, "ls -la");
+}
+
+#[test]
+fn parse_run_command_json_reports_invalid_json() {
+    let err = parse_run_command_json("{not json")
+        .err()
+        .expect("非法 JSON 必须显式报错");
+    assert_eq!(err.kind(), "json_parse");
+    assert!(
+        err.extended_user_message().contains("参数解析错误"),
+        "{}",
+        err.extended_user_message()
+    );
 }
