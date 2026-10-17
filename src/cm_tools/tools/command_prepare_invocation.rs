@@ -48,15 +48,7 @@ pub fn parse_command_spec(
         return Err(RunCommandError::UnsafeArg);
     }
     if let Some(script) = script {
-        let command_non_empty = value
-            .get("command")
-            .and_then(|c| c.as_str())
-            .is_some_and(|c| !c.trim().is_empty());
-        let args_non_empty = value
-            .get("args")
-            .and_then(|a| a.as_array())
-            .is_some_and(|a| !a.is_empty());
-        if command_non_empty || args_non_empty {
+        if script_conflicts_with_command_or_args(&value)? {
             return Err(RunCommandError::ScriptCommandConflict);
         }
         return Ok(CommandSpec {
@@ -95,6 +87,23 @@ fn read_optional_string_field(
         }
         Some(_) => Err(RunCommandError::FieldNotString { field }),
     }
+}
+
+/// `script` 与旧字段的互斥校验：对字段类型的要求与旧 `command`/`args` 路径一致。
+fn script_conflicts_with_command_or_args(
+    value: &serde_json::Value,
+) -> Result<bool, RunCommandError> {
+    let command_non_empty = match value.get("command") {
+        Some(serde_json::Value::String(c)) => !c.trim().is_empty(),
+        Some(_) => return Err(RunCommandError::MissingCommand),
+        None => false,
+    };
+    let args_non_empty = match value.get("args") {
+        Some(serde_json::Value::Array(a)) => !a.is_empty(),
+        Some(_) => return Err(RunCommandError::ArgsNotArray),
+        None => false,
+    };
+    Ok(command_non_empty || args_non_empty)
 }
 
 /// 宽松解析：供去重 / 预算守卫 / 只读缓存等只读消费方。
@@ -618,6 +627,20 @@ mod tests {
         )
         .expect_err("conflict");
         assert!(matches!(err, RunCommandError::ScriptCommandConflict));
+    }
+
+    #[test]
+    fn explicit_script_validates_legacy_field_types() {
+        let err = parse_command_spec(
+            r#"{"script":"cargo build","args":"--release"}"#,
+            Path::new("."),
+        )
+        .expect_err("args not array");
+        assert!(matches!(err, RunCommandError::ArgsNotArray));
+
+        let err = parse_command_spec(r#"{"script":"cargo build","command":5}"#, Path::new("."))
+            .expect_err("command not string");
+        assert!(matches!(err, RunCommandError::MissingCommand));
     }
 
     #[test]

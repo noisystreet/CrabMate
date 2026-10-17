@@ -23,9 +23,26 @@ pub fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
     })
 }
 
+/// 规范化 `run_command` 签名；显式 `cwd` 字段也会纳入 key（与 `cd` 前缀语义对齐）。
 pub fn normalize_run_command_key(args_json: &str) -> Option<String> {
     let inv = parse_run_command_args(args_json)?;
-    Some(CommandDigest::from_invocation(inv.command, inv.args).key())
+    let digest = CommandDigest::from_invocation(inv.command, inv.args);
+    Some(
+        match explicit_cwd_from_args(args_json) {
+            Some(cwd) => digest.with_cwd(Path::new(&cwd)),
+            None => digest,
+        }
+        .key(),
+    )
+}
+
+fn explicit_cwd_from_args(args_json: &str) -> Option<String> {
+    let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    v.get("cwd")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
 }
 
 /// 与 [`normalize_run_command_key`] 相同，但把执行目录纳入 key。
@@ -217,6 +234,30 @@ mod tests {
             "{key}"
         );
         assert!(key.contains(r#""cwd":"/tmp/ws""#), "{key}");
+    }
+
+    #[test]
+    fn normalize_key_includes_explicit_cwd_field() {
+        let a = normalize_run_command_key(r#"{"command":"cargo","args":["test"],"cwd":"a"}"#)
+            .expect("key");
+        let b = normalize_run_command_key(r#"{"command":"cargo","args":["test"],"cwd":"b"}"#)
+            .expect("key");
+        assert_ne!(a, b);
+        assert!(a.contains(r#""cwd":"a""#), "{a}");
+        assert!(b.contains(r#""cwd":"b""#), "{b}");
+    }
+
+    #[test]
+    fn normalize_key_ignores_blank_or_non_string_cwd() {
+        let base = normalize_run_command_key(r#"{"command":"cargo","args":["test"]}"#);
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cargo","args":["test"],"cwd":"  "}"#),
+            base
+        );
+        assert_eq!(
+            normalize_run_command_key(r#"{"command":"cargo","args":["test"],"cwd":5}"#),
+            base
+        );
     }
 
     #[test]
