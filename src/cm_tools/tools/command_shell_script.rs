@@ -1,5 +1,7 @@
 //! 将 `run_command` 的 command+args 拼成一行脚本，并在白名单含 `bash`/`sh` 时经 `bash -c` 执行。
 
+use super::super::command_line_prepare::parse_cd_prefix;
+
 /// POSIX 登录/非登录 shell 名（小写比较）。
 pub fn is_posix_shell_name(cmd: &str) -> bool {
     matches!(cmd.trim().to_ascii_lowercase().as_str(), "bash" | "sh")
@@ -61,11 +63,12 @@ pub fn peel_cd_prefix_argv_for_shell_policy(cmd: &str, args: &[String]) -> (Stri
         if !cmd.eq_ignore_ascii_case("cd") {
             break;
         }
-        if args.len() < 3 || args[1] != "&&" {
+        let Some((_, rest)) = parse_cd_prefix(&args) else {
             break;
-        }
-        cmd = args[2].clone();
-        args = args[3..].to_vec();
+        };
+        let mut rest = rest.to_vec();
+        cmd = rest.remove(0);
+        args = rest;
     }
     (cmd, args)
 }

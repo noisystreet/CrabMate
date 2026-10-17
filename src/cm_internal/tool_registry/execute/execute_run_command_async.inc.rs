@@ -42,7 +42,7 @@ async fn execute_run_command_async(
         );
     }
 
-    let parsed = match parse_run_command_json(args) {
+    let parsed = match parse_run_command_json(args, effective_working_dir) {
         Ok(p) => p,
         Err(e) => return (e.extended_user_message(), None),
     };
@@ -55,7 +55,7 @@ async fn execute_run_command_async(
         };
     let gate = match approve_external_run_command_paths_if_needed(
         cfg.as_ref(),
-        args,
+        &parsed.spec,
         effective_working_dir,
         effective_allowed_arc.as_ref(),
         web_ctx,
@@ -70,8 +70,8 @@ async fn execute_run_command_async(
     let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
 
     let prepared =
-        match tools::prepare_run_command_for_pty_spawn(
-            args,
+        match tools::prepare_run_command_for_pty_spawn_spec(
+            &parsed.spec,
             effective_working_dir,
             effective_allowed_arc.as_ref(),
             skip_arg_safety,

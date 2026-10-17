@@ -79,11 +79,21 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     let allowed = cfg.command_exec.allowed_commands.to_vec();
     let wd = std::path::Path::new(".");
+    let external = crate::cm_tools::tools::parse_command_spec(
+        r#"{"command":"cat","args":["/etc/passwd"]}"#,
+        wd,
+    )
+    .expect("spec");
+    let git_range = crate::cm_tools::tools::parse_command_spec(
+        r#"{"command":"git","args":["log","main..HEAD"]}"#,
+        wd,
+    )
+    .expect("spec");
 
     cfg.command_exec.allow_external_path_with_approval = false;
     let g = approve_external_run_command_paths_if_needed(
         &cfg,
-        r#"{"command":"cat","args":["/etc/passwd"]}"#,
+        &external,
         wd,
         &allowed,
         None,
@@ -97,7 +107,7 @@ async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     cfg.command_exec.allow_external_path_with_approval = true;
     let g = approve_external_run_command_paths_if_needed(
         &cfg,
-        r#"{"command":"git","args":["log","main..HEAD"]}"#,
+        &git_range,
         wd,
         &allowed,
         None,
@@ -115,10 +125,11 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     cfg.command_exec.allow_external_path_with_approval = true;
     let allowed = cfg.command_exec.allowed_commands.to_vec();
     let wd = std::path::Path::new(".");
-    let abs = r#"{"command":"cat","args":["/etc/passwd"]}"#;
+    let abs_json = r#"{"command":"cat","args":["/etc/passwd"]}"#;
+    let abs = crate::cm_tools::tools::parse_command_spec(abs_json, wd).expect("spec");
 
     let err =
-        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command", false)
+        approve_external_run_command_paths_if_needed(&cfg, &abs, wd, &allowed, None, "run_command", false)
             .await
             .expect_err("no channel");
     assert!(err.contains("需要审批通道"), "{err}");
@@ -126,7 +137,7 @@ async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
         crate::cm_config::SyncDefaultToolSandboxMode::Docker;
     let err =
-        approve_external_run_command_paths_if_needed(&cfg, abs, wd, &allowed, None, "run_command", false)
+        approve_external_run_command_paths_if_needed(&cfg, &abs, wd, &allowed, None, "run_command", false)
             .await
             .expect_err("docker");
     assert!(err.contains("Docker"), "{err}");
@@ -387,11 +398,12 @@ async fn external_path_gate_decision_matrix() {
     let allowed = cfg.command_exec.allowed_commands.to_vec();
     let args = r#"{"command":"cat","args":["/etc/passwd"]}"#;
     let wd = std::path::Path::new(".");
+    let spec = crate::cm_tools::tools::parse_command_spec(args, wd).expect("spec");
 
     let fixture = approval_fixture(AllowOnce);
     let gate = approve_external_run_command_paths_if_needed(
         &cfg,
-        args,
+        &spec,
         wd,
         &allowed,
         Some(&fixture.web),
@@ -405,7 +417,7 @@ async fn external_path_gate_decision_matrix() {
     let fixture = approval_fixture(AllowAlways);
     let gate = approve_external_run_command_paths_if_needed(
         &cfg,
-        args,
+        &spec,
         wd,
         &allowed,
         Some(&fixture.web),
@@ -419,7 +431,7 @@ async fn external_path_gate_decision_matrix() {
     let fixture = approval_fixture(Deny);
     let err = approve_external_run_command_paths_if_needed(
         &cfg,
-        args,
+        &spec,
         wd,
         &allowed,
         Some(&fixture.web),
@@ -433,7 +445,7 @@ async fn external_path_gate_decision_matrix() {
     let fixture = approval_fixture(AllowOnce);
     let err = approve_external_run_command_paths_if_needed(
         &cfg,
-        args,
+        &spec,
         wd,
         &allowed,
         Some(&fixture.web),
@@ -878,16 +890,16 @@ async fn background_async_cargo_test_end_to_end_creates_job_and_reaches_terminal
 
 #[test]
 fn parse_run_command_json_repairs_bare_arg_tokens() {
-    let parsed =
-        parse_run_command_json(r#"{"command":"ls","args":[-la]}"#).expect("裸 token 应可修复");
+    let parsed = parse_run_command_json(r#"{"command":"ls","args":[-la]}"#, Path::new("."))
+        .expect("裸 token 应可修复");
     assert_eq!(parsed.cmd, "ls");
-    assert_eq!(parsed.cmd_args, vec!["-la".to_string()]);
+    assert_eq!(parsed.spec.args, vec!["-la".to_string()]);
     assert_eq!(parsed.script, "ls -la");
 }
 
 #[test]
 fn parse_run_command_json_reports_invalid_json() {
-    let err = parse_run_command_json("{not json")
+    let err = parse_run_command_json("{not json", Path::new("."))
         .err()
         .expect("非法 JSON 必须显式报错");
     assert_eq!(err.kind(), "json_parse");

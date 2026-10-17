@@ -29,7 +29,7 @@ async fn execute_run_command_sync_host(
         timeout_secs,
     } = invoke;
     let cfg = env.cfg;
-    let parsed = match parse_run_command_json(args) {
+    let parsed = match parse_run_command_json(args, effective_working_dir) {
         Ok(p) => p,
         Err(e) => return (e.extended_user_message(), None),
     };
@@ -49,7 +49,7 @@ async fn execute_run_command_sync_host(
 
     let gate = match approve_external_run_command_paths_if_needed(
         cfg.as_ref(),
-        args,
+        &parsed.spec,
         effective_working_dir,
         effective_allowed_arc.as_ref(),
         web_ctx,
@@ -84,7 +84,7 @@ async fn execute_run_command_sync_host(
 
     let s = spawn_run_command_host(SpawnRunCommandHost {
         cfg: cfg.as_ref(),
-        args,
+        spec: &parsed.spec,
         work_dir: effective_working_dir.to_path_buf(),
         allowed: Arc::clone(&effective_allowed_arc),
         skip_arg_safety,
@@ -103,7 +103,7 @@ async fn execute_run_command_sync_host(
 
 struct SpawnRunCommandHost<'a> {
     cfg: &'a AgentConfig,
-    args: &'a str,
+    spec: &'a tools::CommandSpec,
     work_dir: PathBuf,
     allowed: Arc<[String]>,
     skip_arg_safety: bool,
@@ -117,7 +117,7 @@ struct SpawnRunCommandHost<'a> {
 async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
     let SpawnRunCommandHost {
         cfg,
-        args,
+        spec,
         work_dir,
         allowed,
         skip_arg_safety,
@@ -133,7 +133,6 @@ async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
     let max_out = cfg.command_exec.command_max_output_len;
     let test_cache_enabled = cfg.chat_queues_cache.test_result_cache_enabled;
     let test_cache_max = cfg.chat_queues_cache.test_result_cache_max_entries;
-    let args_cloned = args.to_string();
     let github_token = crate::cm_tools::github_token::resolve_token_plaintext();
     let cancel = cancel.clone();
     let sse_closed = sse_out_tx.cloned();
@@ -157,8 +156,8 @@ async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
             max_entries: test_cache_max,
             workspace_root: work_dir.as_path(),
         });
-        match tools::run_checked_wait_async(
-            &args_cloned,
+        match tools::run_checked_wait_async_spec(
+            spec,
             max_out,
             allowed.as_ref(),
             work_dir.as_path(),

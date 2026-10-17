@@ -47,6 +47,25 @@ fn terminal_session_exec_new_session(v: &serde_json::Value, action_raw: &str) ->
             .unwrap_or(false)
 }
 
+/// exec 新会话：把 `terminal_session` 的 `command` / `args` 投影成 `run_command` 载荷并解析一次。
+fn parse_terminal_session_exec(
+    v: &serde_json::Value,
+    action_raw: &str,
+    effective_working_dir: &Path,
+) -> Result<Option<ParsedRunCommandJson>, (String, Option<serde_json::Value>)> {
+    if !terminal_session_exec_new_session(v, action_raw) {
+        return Ok(None);
+    }
+    let rc_json = serde_json::json!({
+        "command": v.get("command"),
+        "args": v.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
+    })
+    .to_string();
+    parse_run_command_json(&rc_json, effective_working_dir)
+        .map(Some)
+        .map_err(|e| (e.extended_user_message(), None))
+}
+
 async fn execute_terminal_session_impl(
     invoke: TerminalSessionExecInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
@@ -82,20 +101,16 @@ async fn execute_terminal_session_impl(
         .trim()
         .to_ascii_lowercase();
 
-    let exec_new_session = terminal_session_exec_new_session(&v, &action_raw);
-    let exec_rc_json = exec_new_session.then(|| {
-        serde_json::json!({
-            "command": v.get("command"),
-            "args": v.get("args").cloned().unwrap_or_else(|| serde_json::json!([])),
-        })
-        .to_string()
-    });
+    let exec_parsed = match parse_terminal_session_exec(&v, &action_raw, effective_working_dir) {
+        Ok(p) => p,
+        Err(e) => return e,
+    };
 
     let effective_allowed = match terminal_session_effective_allowed(
         cfg,
         effective_working_dir,
         web_ctx,
-        exec_rc_json.as_deref(),
+        exec_parsed.as_ref(),
     )
     .await
     {
@@ -107,7 +122,7 @@ async fn execute_terminal_session_impl(
         cfg.as_ref(),
         effective_working_dir,
         web_ctx,
-        exec_rc_json.as_deref(),
+        exec_parsed.as_ref(),
         effective_allowed.as_ref(),
     )
     .await
@@ -141,8 +156,8 @@ async fn execute_terminal_session_impl(
         ),
     };
 
-    if let Some(rc_line) = exec_rc_json.as_ref()
-        && tools::is_compile_command_success(rc_line.as_str(), &result)
+    if let Some(parsed) = exec_parsed.as_ref()
+        && tools::is_compile_command_success(parsed.spec.args_json.as_str(), &result)
     {
         *workspace_changed = true;
     }
@@ -154,20 +169,16 @@ async fn terminal_session_effective_allowed(
     cfg: &Arc<AgentConfig>,
     effective_working_dir: &Path,
     web_ctx: Option<&WebToolRuntime>,
-    exec_rc_json: Option<&str>,
+    parsed: Option<&ParsedRunCommandJson>,
 ) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let Some(rc) = exec_rc_json else {
+    let Some(parsed) = parsed else {
         return Ok(Arc::clone(&cfg.command_exec.allowed_commands));
-    };
-    let parsed = match parse_run_command_json(rc) {
-        Ok(p) => p,
-        Err(e) => return Err((e.extended_user_message(), None)),
     };
     resolve_run_command_shell_allowlist(
         cfg,
         effective_working_dir,
         web_ctx,
-        &parsed,
+        parsed,
         "terminal_session",
         false,
     )
@@ -178,15 +189,15 @@ async fn terminal_session_skip_arg_safety(
     cfg: &AgentConfig,
     effective_working_dir: &Path,
     web_ctx: Option<&WebToolRuntime>,
-    exec_rc_json: Option<&str>,
+    parsed: Option<&ParsedRunCommandJson>,
     effective_allowed: &[String],
 ) -> Result<bool, String> {
-    let Some(rc) = exec_rc_json else {
+    let Some(parsed) = parsed else {
         return Ok(false);
     };
     match approve_external_run_command_paths_if_needed(
         cfg,
-        rc,
+        &parsed.spec,
         effective_working_dir,
         effective_allowed,
         web_ctx,

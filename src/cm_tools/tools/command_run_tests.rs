@@ -172,11 +172,12 @@ fn test_run_workspace_absolute_arg_auto_normalized() {
 
 #[test]
 fn prepare_peels_cd_prefix_into_effective_workdir() {
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"cd","args":["src","&&","echo","peeled"]}"#)
-            .expect("json");
-    let p =
-        prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false).expect("prep");
+    let spec = parse_command_spec(
+        r#"{"command":"cd","args":["src","&&","echo","peeled"]}"#,
+        Path::new("."),
+    )
+    .expect("spec");
+    let p = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false).expect("prep");
     assert_eq!(p.cmd_name, "echo");
     assert_eq!(p.cmd_args, vec!["peeled".to_string()]);
     assert!(
@@ -188,9 +189,9 @@ fn prepare_peels_cd_prefix_into_effective_workdir() {
 
 #[test]
 fn prepare_cd_without_and_is_rejected() {
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"cd","args":["src"]}"#).expect("json");
-    let e = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+    let spec = parse_command_spec(r#"{"command":"cd","args":["src"]}"#, Path::new("."))
+        .expect("spec");
+    let e = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .err()
         .expect("cd alone");
     assert_eq!(e.kind(), "cd_prefix_invalid");
@@ -198,11 +199,12 @@ fn prepare_cd_without_and_is_rejected() {
 
 #[test]
 fn prepare_splits_embedded_command_prefix() {
-    let v = serde_json::from_str::<serde_json::Value>(
+    let spec = parse_command_spec(
         r#"{"command":"pre-commit run --all-files","args":[]}"#,
+        Path::new("."),
     )
-    .expect("json");
-    let p = prepare_run_command_invocation(&v, Path::new("."), &["pre-commit".to_string()], false)
+    .expect("spec");
+    let p = prepare_run_command_spec(&spec, Path::new("."), &["pre-commit".to_string()], false)
         .expect("prep");
     assert_eq!(p.cmd_name, "pre-commit");
     assert_eq!(
@@ -224,9 +226,9 @@ fn prepare_merges_dot_slash_command_with_single_relative_executable() {
     perms.set_mode(0o755);
     std::fs::set_permissions(&bin, perms).expect("chmod");
 
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"./","args":["hello/build/hello"]}"#).expect("json");
-    let p = prepare_run_command_invocation(&v, dir.path(), &[], false).expect("prep");
+    let spec = parse_command_spec(r#"{"command":"./","args":["hello/build/hello"]}"#, dir.path())
+        .expect("spec");
+    let p = prepare_run_command_spec(&spec, dir.path(), &[], false).expect("prep");
     assert_eq!(p.cmd_raw, "./hello/build/hello");
     assert!(p.cmd_args.is_empty());
     assert!(
@@ -403,10 +405,12 @@ fn bash_wraps_operators_and_gh_dollar_keeps_token_flag() {
 fn prepare_peels_multiple_cd_prefixes() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(dir.path().join("a/b")).expect("mkdir");
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"cd","args":["a","&&","cd","b","&&","echo","x"]}"#)
-            .expect("json");
-    let p = prepare_run_command_invocation(&v, dir.path(), &test_allowed(), false).expect("prep");
+    let spec = parse_command_spec(
+        r#"{"command":"cd","args":["a","&&","cd","b","&&","echo","x"]}"#,
+        dir.path(),
+    )
+    .expect("spec");
+    let p = prepare_run_command_spec(&spec, dir.path(), &test_allowed(), false).expect("prep");
     assert_eq!(p.cmd_name, "echo");
     assert_eq!(p.cmd_args, vec!["x".to_string()]);
     assert!(
@@ -418,9 +422,9 @@ fn prepare_peels_multiple_cd_prefixes() {
 
 #[test]
 fn prepare_allows_cmake_parent_dir_arg() {
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"cmake","args":[".."]}"#).expect("json");
-    let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+    let spec = parse_command_spec(r#"{"command":"cmake","args":[".."]}"#, Path::new("."))
+        .expect("spec");
+    let p = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .expect("cmake .. must stay allowed");
     assert_eq!(p.cmd_name, "cmake");
     assert_eq!(p.cmd_args, vec!["..".to_string()]);
@@ -428,9 +432,9 @@ fn prepare_allows_cmake_parent_dir_arg() {
 
 #[test]
 fn prepare_allows_git_revision_range_arg() {
-    let v: serde_json::Value =
-        serde_json::from_str(r#"{"command":"git","args":["log","main..HEAD"]}"#).expect("json");
-    let p = prepare_run_command_invocation(&v, Path::new("."), &test_allowed(), false)
+    let spec = parse_command_spec(r#"{"command":"git","args":["log","main..HEAD"]}"#, Path::new("."))
+        .expect("spec");
+    let p = prepare_run_command_spec(&spec, Path::new("."), &test_allowed(), false)
         .expect("git rev range must stay allowed");
     assert_eq!(p.cmd_name, "git");
     assert_eq!(

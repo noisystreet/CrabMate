@@ -3,8 +3,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::cm_tools::subprocess_session::{
     SessionStopKind, SessionWaitResult, SubprocessWaitCtl, prepare_piped_process_group,
@@ -28,7 +26,15 @@ use super::command_line_prepare::CdPeelError;
 mod command_shell_script;
 #[path = "command_prepare_invocation.rs"]
 mod prepare_invocation;
-use prepare_invocation::{prepare_run_command_invocation, scan_run_command_unsafe_args};
+#[path = "command_rate_limit.rs"]
+mod command_rate_limit;
+use command_rate_limit::check_rate_limit;
+use prepare_invocation::prepare_run_command_spec;
+
+pub use command_rate_limit::reset_run_command_rate_limit_for_tests;
+pub use prepare_invocation::{CommandSpec, parse_command_spec, scan_run_command_unsafe_args_json};
+pub use prepare_invocation::scan_run_command_unsafe_args_spec;
+pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
 pub use command_shell_script::{
     allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
@@ -244,7 +250,6 @@ impl From<CdPeelError> for RunCommandError {
                 RunCommandError::CdPrefixInvalid { detail, work_dir }
             }
             CdPeelError::UnsafeArg => RunCommandError::UnsafeArg,
-            CdPeelError::MissingCommand => RunCommandError::MissingCommand,
             CdPeelError::SpawnOther { cmd, source } => RunCommandError::SpawnOther { cmd, source },
         }
     }
@@ -268,20 +273,6 @@ fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> RunCommandErr
         },
     }
 }
-
-/// 简单的每秒调用限流器状态
-struct RateLimitState {
-    window_sec: u64,
-    count: u32,
-}
-
-/// 全局限流器：在任意 1 秒窗口内最多允许执行的命令数
-const MAX_COMMANDS_PER_SEC: u32 = 5;
-
-static RATE_LIMIT: Mutex<RateLimitState> = Mutex::new(RateLimitState {
-    window_sec: 0,
-    count: 0,
-});
 
 const MAX_OUTPUT_LINES: usize = 500;
 
@@ -323,20 +314,20 @@ pub fn prepare_run_command_for_pty_spawn(
     allowed_commands: &[String],
     skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
-    let args = parse_run_command_value_with_repair(args_json)?;
-    let p = prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
-    check_rate_limit()?;
-    Ok(p)
+    let spec = parse_command_spec(args_json, working_dir)?;
+    prepare_run_command_for_pty_spawn_spec(&spec, working_dir, allowed_commands, skip_arg_safety)
 }
 
-/// 与 [`prepare_run_command_invocation`] 同源：列出 argv 级不安全参数（空 = 无需外部路径审批）。
-pub fn scan_run_command_unsafe_args_json(
-    args_json: &str,
+/// [`prepare_run_command_for_pty_spawn`] 的已解析版本；调用方不应再重复解析原始 JSON。
+pub fn prepare_run_command_for_pty_spawn_spec(
+    spec: &CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
-) -> Result<Vec<String>, RunCommandError> {
-    let args = parse_run_command_value_with_repair(args_json)?;
-    scan_run_command_unsafe_args(&args, working_dir, allowed_commands)
+    skip_arg_safety: bool,
+) -> Result<PreparedRunCommand, RunCommandError> {
+    let p = prepare_run_command_spec(spec, working_dir, allowed_commands, skip_arg_safety)?;
+    check_rate_limit()?;
+    Ok(p)
 }
 
 /// `run_command` 执行计划：命中缓存直接返回正文，否则给出待 spawn 的 [`SpawnPlan`]。
@@ -370,9 +361,26 @@ fn plan_run_command(
     test_cache: Option<&RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> Result<RunCommandPlan, RunCommandError> {
-    let args = parse_run_command_value_with_repair(args_json)?;
+    let spec = parse_command_spec(args_json, working_dir)?;
+    plan_run_command_spec(
+        &spec,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+    )
+}
+
+/// [`plan_run_command`] 的已解析版本；调用方不应再重复解析原始 JSON。
+fn plan_run_command_spec(
+    spec: &CommandSpec,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> Result<RunCommandPlan, RunCommandError> {
     let prepared =
-        prepare_run_command_invocation(&args, working_dir, allowed_commands, skip_arg_safety)?;
+        prepare_run_command_spec(spec, working_dir, allowed_commands, skip_arg_safety)?;
     check_rate_limit()?;
     Ok(plan_prepared(prepared, test_cache))
 }
@@ -593,6 +601,52 @@ pub async fn run_checked_wait_async(
     .await
 }
 
+/// 与 [`run_try_wait_async`] 相同，但消费已解析的 [`CommandSpec`]（避免重复解析 JSON）。
+#[allow(clippy::result_large_err)]
+pub async fn run_try_wait_async_spec(
+    spec: &CommandSpec,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, ToolError> {
+    run_impl_async_spec(
+        spec,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .await
+    .map_err(RunCommandError::into_tool_error)
+}
+
+/// 与 [`run_checked_wait_async`] 相同，但消费已解析的 [`CommandSpec`]。
+pub async fn run_checked_wait_async_spec(
+    spec: &CommandSpec,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    run_impl_async_spec(
+        spec,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .await
+}
+
 fn run_impl(
     args_json: &str,
     max_output_len: usize,
@@ -624,8 +678,31 @@ async fn run_impl_async(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
-    match plan_run_command(
-        args_json,
+    let spec = parse_command_spec(args_json, working_dir)?;
+    run_impl_async_spec(
+        &spec,
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    )
+    .await
+}
+
+/// [`run_impl_async`] 的已解析版本；调用方不应再重复解析原始 JSON。
+async fn run_impl_async_spec(
+    spec: &CommandSpec,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    match plan_run_command_spec(
+        spec,
         allowed_commands,
         working_dir,
         test_cache.as_ref(),
@@ -817,33 +894,6 @@ fn finish_session(
     }
 }
 
-fn now_sec() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
-}
-
-fn check_rate_limit() -> Result<(), RunCommandError> {
-    // 单元测试并行调用 `run`/`run_gh_vec` 时共享进程级计数，易误触 5/s 上限导致偶发失败。
-    if cfg!(test) {
-        return Ok(());
-    }
-    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
-    let now = now_sec();
-    if now != state.window_sec {
-        state.window_sec = now;
-        state.count = 0;
-    }
-    if state.count >= MAX_COMMANDS_PER_SEC {
-        return Err(RunCommandError::RateLimited {
-            max_per_sec: MAX_COMMANDS_PER_SEC,
-        });
-    }
-    state.count += 1;
-    Ok(())
-}
-
 pub(super) fn check_shell_variable_references(
     cmd: &str,
     args: &[String],
@@ -856,13 +906,6 @@ pub(super) fn check_shell_variable_references(
         }
     }
     Ok(())
-}
-
-/// 仅 **`cargo test`**：清空 [`RATE_LIMIT`] 窗口计数，避免与其它测试共享限流状态。
-pub fn reset_run_command_rate_limit_for_tests() {
-    let mut state = RATE_LIMIT.lock().unwrap_or_else(|e| e.into_inner());
-    state.window_sec = 0;
-    state.count = 0;
 }
 
 #[cfg(test)]
