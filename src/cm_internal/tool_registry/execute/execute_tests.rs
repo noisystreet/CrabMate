@@ -74,132 +74,115 @@ async fn prefetch_http_fetch_skips_approval_when_prefix_matches() {
     assert!(failures.is_empty());
 }
 
+pub(super) fn parsed_run_command(args_json: &str) -> ParsedRunCommandJson {
+    parse_run_command_json(args_json, std::path::Path::new(".")).expect("parse run_command json")
+}
+
+pub(super) fn test_policy_context<'a>(
+    cfg: &'a Arc<AgentConfig>,
+    web_ctx: Option<&'a crate::cm_tools::tool_runtime::WebToolRuntime>,
+    mode: ExecMode,
+) -> PolicyContext<'a> {
+    PolicyContext {
+        cfg,
+        workspace: std::path::Path::new("."),
+        web_ctx,
+        mode,
+        sse_command: "run_command",
+    }
+}
+
 #[tokio::test]
 async fn external_run_command_gate_not_needed_when_disabled_or_safe_args() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
-    let allowed = cfg.command_exec.allowed_commands.to_vec();
-    let wd = std::path::Path::new(".");
-    let external = crate::cm_tools::tools::parse_command_spec(
-        r#"{"command":"cat","args":["/etc/passwd"]}"#,
-        wd,
-    )
-    .expect("spec");
-    let git_range = crate::cm_tools::tools::parse_command_spec(
-        r#"{"command":"git","args":["log","main..HEAD"]}"#,
-        wd,
-    )
-    .expect("spec");
+    let external = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
+    let git_range = parsed_run_command(r#"{"command":"git","args":["log","main..HEAD"]}"#);
 
     cfg.command_exec.allow_external_path_with_approval = false;
-    let g = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &external,
-        wd,
-        &allowed,
-        None,
-        "run_command",
-        false,
-    )
-    .await
-    .expect("disabled → NotNeeded");
-    assert_eq!(g, ExternalPathGate::NotNeeded);
+    let cfg = Arc::new(cfg);
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let d = evaluate_policy(&external, &ctx)
+        .await
+        .expect("disabled → NotNeeded");
+    assert!(!d.skip_arg_safety);
 
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     cfg.command_exec.allow_external_path_with_approval = true;
-    let g = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &git_range,
-        wd,
-        &allowed,
-        None,
-        "run_command",
-        false,
-    )
-    .await
-    .expect("git range → NotNeeded");
-    assert_eq!(g, ExternalPathGate::NotNeeded);
+    let cfg = Arc::new(cfg);
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let d = evaluate_policy(&git_range, &ctx)
+        .await
+        .expect("git range → NotNeeded");
+    assert!(!d.skip_arg_safety);
 }
 
 #[tokio::test]
 async fn external_run_command_gate_errs_without_channel_or_in_docker() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     cfg.command_exec.allow_external_path_with_approval = true;
-    let allowed = cfg.command_exec.allowed_commands.to_vec();
-    let wd = std::path::Path::new(".");
-    let abs_json = r#"{"command":"cat","args":["/etc/passwd"]}"#;
-    let abs = crate::cm_tools::tools::parse_command_spec(abs_json, wd).expect("spec");
+    let mut cfg = Arc::new(cfg);
+    let abs = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
 
-    let err =
-        approve_external_run_command_paths_if_needed(&cfg, &abs, wd, &allowed, None, "run_command", false)
-            .await
-            .expect_err("no channel");
-    assert!(err.contains("需要审批通道"), "{err}");
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&abs, &ctx)
+        .await
+        .expect_err("no channel")
+        .into_message();
+    assert!(msg.contains("需要审批通道"), "{msg}");
 
-    cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode =
-        crate::cm_config::SyncDefaultToolSandboxMode::Docker;
-    let err =
-        approve_external_run_command_paths_if_needed(&cfg, &abs, wd, &allowed, None, "run_command", false)
-            .await
-            .expect_err("docker");
-    assert!(err.contains("Docker"), "{err}");
+    Arc::get_mut(&mut cfg)
+        .expect("sole owner")
+        .sync_tool_sandbox
+        .sync_default_tool_sandbox_mode = crate::cm_config::SyncDefaultToolSandboxMode::Docker;
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&abs, &ctx)
+        .await
+        .expect_err("docker")
+        .into_message();
+    assert!(msg.contains("Docker"), "{msg}");
 }
 
 #[tokio::test]
 async fn posix_shell_wrap_gate_errs_without_channel() {
-    let allowed: Arc<[String]> = vec!["echo".to_string()].into();
-    let err = approve_posix_shell_wrap_if_needed(
-        "echo",
-        &["$HOME".to_string()],
-        "echo $HOME",
-        allowed,
-        None,
-        "run_command",
-        false,
-    )
-    .await
-    .expect_err("no channel");
-    assert!(err.contains("无审批通道"), "{err}");
-    assert!(err.contains("echo $HOME"), "{err}");
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.command_exec.allowed_commands = vec!["echo".to_string()].into();
+    let cfg = Arc::new(cfg);
+    let parsed = parsed_run_command(r#"{"command":"echo","args":["$HOME"]}"#);
+
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("no channel")
+        .into_message();
+    assert!(msg.contains("无审批通道"), "{msg}");
+    assert!(msg.contains("echo $HOME"), "{msg}");
 }
 
 #[tokio::test]
 async fn posix_shell_wrap_skips_glob_when_bash_allowlisted() {
-    let allowed: Arc<[String]> = vec!["ls".to_string(), "bash".to_string()].into();
-    approve_posix_shell_wrap_if_needed(
-        "ls",
-        &["*.rs".to_string()],
-        "ls *.rs",
-        allowed,
-        None,
-        "run_command",
-        false,
-    )
-    .await
-    .expect("glob + bash → no extra approval");
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.command_exec.allowed_commands = vec!["ls".to_string(), "bash".to_string()].into();
+    let cfg = Arc::new(cfg);
+    let parsed = parsed_run_command(r#"{"command":"ls","args":["*.rs"]}"#);
+
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect("glob + bash → no extra approval");
+    assert!(!d.skip_arg_safety);
 }
 
 #[tokio::test]
 async fn posix_shell_wrap_skips_cd_prefix_without_expansion() {
-    let allowed: Arc<[String]> = vec!["cd".into(), "git".into(), "bash".into()].into();
-    let (cmd, args) = tools::peel_cd_prefix_argv_for_shell_policy(
-        "cd",
-        &[
-            "src".to_string(),
-            "&&".to_string(),
-            "git".to_string(),
-            "status".to_string(),
-        ],
-    );
-    approve_posix_shell_wrap_if_needed(
-        &cmd,
-        &args,
-        "cd src && git status",
-        allowed,
-        None,
-        "run_command",
-        false,
-    )
-    .await
-    .expect("cd peel → git status");
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.command_exec.allowed_commands = vec!["cd".into(), "git".into(), "bash".into()].into();
+    let cfg = Arc::new(cfg);
+    let parsed = parsed_run_command(r#"{"command":"cd","args":["src","&&","git","status"]}"#);
+
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    evaluate_policy(&parsed, &ctx)
+        .await
+        .expect("cd peel → git status");
 }
 
 #[test]
@@ -225,12 +208,12 @@ fn posix_shell_wrap_web_operators_need_approval_even_with_bash() {
 }
 
 /// 带审批通道的 Web 运行时；预置决策后可由 gate 直接消费。
-struct ApprovalFixture {
-    web: crate::cm_tools::tool_runtime::WebToolRuntime,
+pub(super) struct ApprovalFixture {
+    pub(super) web: crate::cm_tools::tool_runtime::WebToolRuntime,
     _out_rx: tokio::sync::mpsc::Receiver<String>,
 }
 
-fn approval_fixture(decision: CommandApprovalDecision) -> ApprovalFixture {
+pub(super) fn approval_fixture(decision: CommandApprovalDecision) -> ApprovalFixture {
     use tokio::sync::{Mutex as TokioMutex, mpsc};
     let (out_tx, out_rx) = mpsc::channel::<String>(8);
     let (approval_tx, approval_rx) = mpsc::channel::<CommandApprovalDecision>(8);
@@ -249,7 +232,7 @@ fn approval_fixture(decision: CommandApprovalDecision) -> ApprovalFixture {
     }
 }
 
-fn contains_cmd(allowed: &[String], cmd: &str) -> bool {
+pub(super) fn contains_cmd(allowed: &[String], cmd: &str) -> bool {
     allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
 }
 
@@ -259,60 +242,44 @@ async fn unknown_cmd_gate_decision_matrix() {
 
     let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
     let cmd = "crabmate_unknown_gate_cmd";
+    // `$HOME` 触发 shell 包装需求，批准后应同时把 bash 纳入生效白名单。
+    let parsed = parsed_run_command(&format!(
+        r#"{{"command":"{cmd}","args":["$HOME"]}}"#
+    ));
 
-    let (msg, _) = request_unknown_cmd_approval(&cfg, None, cmd, cmd, "", false, false)
+    let ctx = test_policy_context(&cfg, None, ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
         .await
-        .expect_err("no channel");
+        .expect_err("no channel")
+        .into_message();
     assert!(msg.contains("审批通道不可用"), "{msg}");
 
-    let (msg, _) = request_unknown_cmd_approval(&cfg, None, cmd, cmd, "", false, true)
+    let ctx = test_policy_context(&cfg, None, ExecMode::Async);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
         .await
-        .expect_err("async");
+        .expect_err("async")
+        .into_message();
     assert!(msg.contains("async"), "{msg}");
 
     let fixture = approval_fixture(Deny);
-    let (msg, _) = request_unknown_cmd_approval(
-        &cfg,
-        Some(&fixture.web),
-        cmd,
-        cmd,
-        "",
-        false,
-        false,
-    )
-    .await
-    .expect_err("deny");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("deny")
+        .into_message();
     assert!(msg.contains("用户拒绝执行命令"), "{msg}");
 
     let fixture = approval_fixture(AllowOnce);
-    let allowed = request_unknown_cmd_approval(
-        &cfg,
-        Some(&fixture.web),
-        cmd,
-        cmd,
-        "",
-        true,
-        false,
-    )
-    .await
-    .expect("allow once");
-    assert!(contains_cmd(&allowed, cmd), "{allowed:?}");
-    assert!(contains_cmd(&allowed, "bash"), "{allowed:?}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
+    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(AllowAlways);
-    let allowed = request_unknown_cmd_approval(
-        &cfg,
-        Some(&fixture.web),
-        cmd,
-        cmd,
-        "",
-        true,
-        false,
-    )
-    .await
-    .expect("allow always");
-    assert!(contains_cmd(&allowed, cmd), "{allowed:?}");
-    assert!(contains_cmd(&allowed, "bash"), "{allowed:?}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    assert!(contains_cmd(&d.allowed_commands, cmd), "{:?}", d.allowed_commands);
+    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
     assert!(
         fixture
             .web
@@ -328,65 +295,36 @@ async fn unknown_cmd_gate_decision_matrix() {
 async fn shell_wrap_gate_decision_matrix() {
     use CommandApprovalDecision::{AllowAlways, AllowOnce, Deny};
 
-    let allowed: Arc<[String]> = vec!["echo".to_string()].into();
-    let args = vec!["$HOME".to_string()];
-    let script = "echo $HOME";
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    cfg.command_exec.allowed_commands = vec!["echo".to_string()].into();
+    let cfg = Arc::new(cfg);
+    let parsed = parsed_run_command(r#"{"command":"echo","args":["$HOME"]}"#);
 
     let fixture = approval_fixture(AllowOnce);
-    let out = approve_posix_shell_wrap_if_needed(
-        "echo",
-        &args,
-        script,
-        Arc::clone(&allowed),
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect("allow once");
-    assert!(contains_cmd(&out, "bash"), "{out:?}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(AllowAlways);
-    let out = approve_posix_shell_wrap_if_needed(
-        "echo",
-        &args,
-        script,
-        Arc::clone(&allowed),
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect("allow always");
-    assert!(contains_cmd(&out, "bash"), "{out:?}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    assert!(contains_cmd(&d.allowed_commands, "bash"), "{:?}", d.allowed_commands);
 
     let fixture = approval_fixture(Deny);
-    let err = approve_posix_shell_wrap_if_needed(
-        "echo",
-        &args,
-        script,
-        Arc::clone(&allowed),
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect_err("deny");
-    assert!(err.contains("已拒绝"), "{err}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("deny")
+        .into_message();
+    assert!(msg.contains("已拒绝"), "{msg}");
 
     let fixture = approval_fixture(AllowOnce);
-    let err = approve_posix_shell_wrap_if_needed(
-        "echo",
-        &args,
-        script,
-        Arc::clone(&allowed),
-        Some(&fixture.web),
-        "run_command",
-        true,
-    )
-    .await
-    .expect_err("async");
-    assert!(err.contains("async"), "{err}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Async);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("async")
+        .into_message();
+    assert!(msg.contains("async"), "{msg}");
 }
 
 #[tokio::test]
@@ -395,66 +333,34 @@ async fn external_path_gate_decision_matrix() {
 
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     cfg.command_exec.allow_external_path_with_approval = true;
-    let allowed = cfg.command_exec.allowed_commands.to_vec();
-    let args = r#"{"command":"cat","args":["/etc/passwd"]}"#;
-    let wd = std::path::Path::new(".");
-    let spec = crate::cm_tools::tools::parse_command_spec(args, wd).expect("spec");
+    let cfg = Arc::new(cfg);
+    let parsed = parsed_run_command(r#"{"command":"cat","args":["/etc/passwd"]}"#);
 
     let fixture = approval_fixture(AllowOnce);
-    let gate = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &spec,
-        wd,
-        &allowed,
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect("allow once");
-    assert_eq!(gate, ExternalPathGate::Approved);
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow once");
+    assert!(d.skip_arg_safety);
 
     let fixture = approval_fixture(AllowAlways);
-    let gate = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &spec,
-        wd,
-        &allowed,
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect("allow always");
-    assert_eq!(gate, ExternalPathGate::Approved);
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let d = evaluate_policy(&parsed, &ctx).await.expect("allow always");
+    assert!(d.skip_arg_safety);
 
     let fixture = approval_fixture(Deny);
-    let err = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &spec,
-        wd,
-        &allowed,
-        Some(&fixture.web),
-        "run_command",
-        false,
-    )
-    .await
-    .expect_err("deny");
-    assert!(err.contains("已拒绝"), "{err}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Sync);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("deny")
+        .into_message();
+    assert!(msg.contains("已拒绝"), "{msg}");
 
     let fixture = approval_fixture(AllowOnce);
-    let err = approve_external_run_command_paths_if_needed(
-        &cfg,
-        &spec,
-        wd,
-        &allowed,
-        Some(&fixture.web),
-        "run_command",
-        true,
-    )
-    .await
-    .expect_err("async");
-    assert!(err.contains("async"), "{err}");
+    let ctx = test_policy_context(&cfg, Some(&fixture.web), ExecMode::Async);
+    let (msg, _) = evaluate_policy(&parsed, &ctx)
+        .await
+        .expect_err("async")
+        .into_message();
+    assert!(msg.contains("async"), "{msg}");
 }
 
 #[test]
@@ -517,12 +423,12 @@ async fn run_command_chunk_try_send_full_does_not_bump_seq() {
     assert_eq!(seq.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
 
-fn async_test_sandbox(
+pub(super) fn async_test_sandbox(
 ) -> Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend> {
     crate::cm_internal::tool_sandbox::default_sync_default_sandbox_backend()
 }
 
-fn async_test_env<'a>(
+pub(super) fn async_test_env<'a>(
     cfg: &'a Arc<AgentConfig>,
     sandbox: &'a Arc<dyn crate::cm_internal::tool_sandbox::SyncDefaultSandboxBackend>,
 ) -> ToolExecEnv<'a> {
@@ -530,6 +436,31 @@ fn async_test_env<'a>(
         cfg,
         sandbox_backend: sandbox,
     }
+}
+
+/// 经装配入口（workspace 检查 → 能力快照 → 解析 → 审批 → façade）执行 `run_command`。
+pub(super) async fn run_command_impl_for_test<'a>(
+    env: &'a ToolExecEnv<'a>,
+    wd: &'a Path,
+    web_ctx: Option<&'a WebToolRuntime>,
+    registry: Option<Arc<crate::cm_internal::tool_jobs::ToolJobRegistry>>,
+    args: &'a str,
+) -> (String, Option<serde_json::Value>) {
+    let mut workspace_changed = false;
+    execute_run_command_impl(RunCommandHostInvoke {
+        env,
+        effective_working_dir: wd,
+        workspace_is_set: true,
+        workspace_changed: &mut workspace_changed,
+        web_ctx,
+        args,
+        tool_call_id: "tc_run_command_test",
+        sse_out_tx: None,
+        sse_control_mirror: None,
+        cancel: None,
+        tool_jobs: registry,
+    })
+    .await
 }
 
 #[tokio::test]
@@ -541,13 +472,13 @@ async fn run_command_async_disabled_returns_invalid_args() {
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
-    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
-        env: &env,
-        effective_working_dir: wd,
-        web_ctx: None,
-        args: r#"{"command":"echo","args":["hi"],"async":true}"#,
-        tool_jobs: None,
-    })
+    let (out, inject) = run_command_impl_for_test(
+        &env,
+        wd,
+        None,
+        None,
+        r#"{"command":"echo","args":["hi"],"async":true}"#,
+    )
     .await;
     assert!(out.contains("未启用"), "{out}");
     assert!(inject.is_none());
@@ -563,13 +494,13 @@ async fn run_command_async_enabled_creates_job_and_returns_start_frame() {
     let sandbox = async_test_sandbox();
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
-    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
-        env: &env,
-        effective_working_dir: wd,
-        web_ctx: None,
-        args: r#"{"command":"echo","args":["async-hi"],"async":true,"timeout_secs":5}"#,
-        tool_jobs: Some(Arc::clone(&registry)),
-    })
+    let (out, inject) = run_command_impl_for_test(
+        &env,
+        wd,
+        None,
+        Some(Arc::clone(&registry)),
+        r#"{"command":"echo","args":["async-hi"],"async":true,"timeout_secs":5}"#,
+    )
     .await;
     let tj = inject
         .as_ref()
@@ -631,13 +562,13 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
     };
 
     // 用长睡眠命令确保任务在取消前仍处于非终态。
-    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
-        env: &env,
-        effective_working_dir: wd,
-        web_ctx: Some(&web_ctx),
-        args: r#"{"command":"sleep","args":["30"],"async":true,"timeout_secs":60}"#,
-        tool_jobs: Some(Arc::clone(&registry)),
-    })
+    let (out, inject) = run_command_impl_for_test(
+        &env,
+        wd,
+        Some(&web_ctx),
+        Some(Arc::clone(&registry)),
+        r#"{"command":"sleep","args":["30"],"async":true,"timeout_secs":60}"#,
+    )
     .await;
     let id = inject
         .as_ref()
@@ -679,13 +610,13 @@ async fn run_command_async_rejects_allow_once_requiring_command() {
     let env = async_test_env(&cfg, &sandbox);
     let wd = std::path::Path::new(".");
     // `definitely_not_allowlisted_cmd_xyz` 不在白名单且无审批通道（web_ctx=None）→ 拒绝 async。
-    let (out, inject) = execute_run_command_async(RunCommandAsyncInvoke {
-        env: &env,
-        effective_working_dir: wd,
-        web_ctx: None,
-        args: r#"{"command":"definitely_not_allowlisted_cmd_xyz","async":true}"#,
-        tool_jobs: Some(Arc::clone(&registry)),
-    })
+    let (out, inject) = run_command_impl_for_test(
+        &env,
+        wd,
+        None,
+        Some(Arc::clone(&registry)),
+        r#"{"command":"definitely_not_allowlisted_cmd_xyz","async":true}"#,
+    )
     .await;
     assert!(out.contains("AllowAlways"), "{out}");
     assert!(inject.is_none());

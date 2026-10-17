@@ -158,14 +158,25 @@ pub fn run_gh_vec(
         Ok(s) => s,
         Err(e) => return format!("错误：构造 gh 参数失败：{e}"),
     };
-    let out = command::run(
-        &args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        None,
-        false,
-    );
+    let spec = match command::parse_command_spec(&args_json, working_dir) {
+        Ok(s) => s,
+        Err(e) => return e.extended_user_message(),
+    };
+    let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::default();
+    let out = match command::run(
+        &spec,
+        command::RunOptions {
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache: None,
+            skip_arg_safety: false,
+            wait: &wait,
+        },
+    ) {
+        Ok(s) => s,
+        Err(e) => e.extended_user_message(),
+    };
     let stdout = extract_stdout_from_formatted(&out).to_string();
     attach_json_if_exit_zero(out, stdout.as_str())
 }

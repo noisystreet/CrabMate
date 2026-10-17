@@ -1,4 +1,5 @@
 use super::*;
+use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
 use std::path::Path;
 
 const TEST_MAX_OUTPUT_LEN: usize = 8192;
@@ -43,6 +44,79 @@ fn test_allowed() -> Vec<String> {
 
 fn test_work_dir() -> &'static Path {
     Path::new(".")
+}
+
+/// 旧 6 参入口的测试壳：解析 JSON 后调用 [`super::run`]，避免测试依赖已弃用签名。
+fn run(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> String {
+    let wait = SubprocessWaitCtl::default();
+    match parse_command_spec(args_json, working_dir) {
+        Ok(spec) => super::run(
+            &spec,
+            RunOptions {
+                max_output_len,
+                allowed_commands,
+                working_dir,
+                test_cache,
+                skip_arg_safety,
+                wait: &wait,
+            },
+        )
+        .unwrap_or_else(|e| e.extended_user_message()),
+        Err(e) => e.extended_user_message(),
+    }
+}
+
+fn run_checked(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+) -> Result<String, RunCommandError> {
+    let wait = SubprocessWaitCtl::default();
+    let spec = parse_command_spec(args_json, working_dir)?;
+    super::run(
+        &spec,
+        RunOptions {
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait: &wait,
+        },
+    )
+}
+
+fn run_checked_wait(
+    args_json: &str,
+    max_output_len: usize,
+    allowed_commands: &[String],
+    working_dir: &Path,
+    test_cache: Option<RunCommandTestCacheOpts<'_>>,
+    skip_arg_safety: bool,
+    wait: &SubprocessWaitCtl,
+) -> Result<String, RunCommandError> {
+    let spec = parse_command_spec(args_json, working_dir)?;
+    super::run(
+        &spec,
+        RunOptions {
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        },
+    )
 }
 
 #[test]

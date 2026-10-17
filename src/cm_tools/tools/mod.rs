@@ -12,15 +12,23 @@ mod ci_tools;
 mod code_metrics;
 mod code_nav;
 mod command;
+mod command_error;
+mod command_exec;
 pub use command::{
-    CommandSpec, PreparedRunCommand, RunCommandError, RunCommandTestCacheOpts, allowlist_allows_all,
+    CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
     join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
-    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run_checked,
-    run_checked_wait, run_checked_wait_async, run_checked_wait_async_spec, run_try_wait_async_spec,
-    scan_run_command_unsafe_args_json, scan_run_command_unsafe_args_spec,
+    prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run, run_async,
+    scan_run_command_unsafe_args_spec,
 };
+// 旧执行入口保留一个 PR 周期的可用性；调用方应迁移到 `run` / `run_async` + `RunOptions`。
+#[allow(deprecated)]
+pub use command::{
+    run_args_json, run_checked, run_checked_wait, run_checked_wait_async,
+    run_checked_wait_async_spec, run_try, run_try_wait_async, run_try_wait_async_spec,
+};
+pub use command_error::RunCommandError;
 pub(crate) use command::{parse_run_command_payload_lenient, parse_run_command_value_with_repair};
 mod command_line_prepare;
 pub use command_line_prepare::split_command_prefix_if_embedded;
@@ -546,7 +554,7 @@ pub async fn run_tool_result_async(
 /// 新的异步 `run_command` 实现（与 [`run_tool_dispatch`] 中 run_command 分支逐字节等价）。
 ///
 /// PR1 实现体：解析一次 [`command::CommandSpec`] 后，以 [`tokio::process`] 异步等待
-/// [`command::run_try_wait_async_spec`]（不占用阻塞线程）；
+/// [`command::run_async`]（不占用阻塞线程）；
 /// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以延长生命周期；github token 经
 /// [`with_request_github_token`](crate::cm_tools::github_token::with_request_github_token) 以 async 作用域注入
 /// （命令构建与等待同一 async 任务，task-local 自然可用）；成功/失败收尾复用 [`finish_dispatch_legacy`]。
@@ -574,16 +582,19 @@ async fn run_command_dispatch_async(
         });
         let wait =
             crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(timeout_secs);
-        command::run_try_wait_async_spec(
+        command::run_async(
             &spec,
-            max_out,
-            &allowed,
-            work_dir.as_path(),
-            test_cache,
-            false,
-            &wait,
+            command::RunOptions {
+                max_output_len: max_out,
+                allowed_commands: &allowed,
+                working_dir: work_dir.as_path(),
+                test_cache,
+                skip_arg_safety: false,
+                wait: &wait,
+            },
         )
         .await
+        .map_err(RunCommandError::into_tool_error)
         .and_then(|output| finish_dispatch_legacy(&name_owned, &spec.args_json, output))
     };
     crate::cm_tools::github_token::with_request_github_token(github_token, fut).await

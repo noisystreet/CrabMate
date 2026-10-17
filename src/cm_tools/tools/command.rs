@@ -1,26 +1,15 @@
 //! 有限的 Linux 命令执行工具（白名单、工作目录限制、无 shell 注入）
 
-use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::cm_tools::subprocess_session::{
-    SessionStopKind, SessionWaitResult, SubprocessWaitCtl, prepare_piped_process_group,
-    wait_child_session, wait_child_session_async,
-};
+use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
 
-use thiserror::Error;
-
-use super::output_util;
 use super::test_result_cache::{
     TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
-    fingerprint_rust_workspace_sources, store_cached, try_get_cached, wrap_cache_hit,
+    fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
 };
-use crate::cm_tools::tool_result::{
-    ParsedLegacyOutput, ToolError, ToolFailureCategory, parse_legacy_output,
-};
-
-use super::command_line_prepare::CdPeelError;
+use crate::cm_tools::tool_result::ToolError;
 
 #[path = "command_shell_script.rs"]
 mod command_shell_script;
@@ -28,11 +17,14 @@ mod command_shell_script;
 mod prepare_invocation;
 #[path = "command_rate_limit.rs"]
 mod command_rate_limit;
+
+use super::command_error::RunCommandError;
+use super::command_exec::{execute_spawn_plan_async, execute_spawn_plan_sync};
 use command_rate_limit::check_rate_limit;
 use prepare_invocation::prepare_run_command_spec;
 
 pub use command_rate_limit::reset_run_command_rate_limit_for_tests;
-pub use prepare_invocation::{CommandSpec, parse_command_spec, scan_run_command_unsafe_args_json};
+pub use prepare_invocation::{CommandSpec, parse_command_spec};
 pub use prepare_invocation::scan_run_command_unsafe_args_spec;
 pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
@@ -42,245 +34,22 @@ pub use command_shell_script::{
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
 };
 
-/// `run_command` 在参数校验、限流、启动进程前的失败原因（可判别；成功路径仍返回带退出码的 `String` 正文）。
-#[derive(Debug, Error)]
-pub enum RunCommandError {
-    #[error("参数解析错误：{0}")]
-    JsonParse(#[from] serde_json::Error),
-    #[error("错误：缺少 command 参数")]
-    MissingCommand,
-    #[error("不允许的命令：{attempted}。允许的命令：{allowed}")]
-    DisallowedCommand { attempted: String, allowed: String },
-    #[error("错误：args 必须是字符串数组")]
-    ArgsNotArray,
-    #[error("错误：参数不允许包含父目录穿越（如 ..、../）或绝对路径（以 / 开头）")]
-    UnsafeArg,
-    /// 参数含 Shell 展开（`$(…)` / `$VAR` / glob 等），且白名单无 `bash`/`sh`、也未经脚本审批。
-    #[error(
-        "错误：参数含 Shell 展开 `{pattern}`。请将 bash 或 sh 加入 allowed_commands，或经 Web 审批后以 bash -c 执行整行脚本"
-    )]
-    ShellVariableDetected { pattern: String },
-    /// `cd` 在无 shell 下不可直接 `exec`；仅支持前缀 `cd <相对目录> && <命令…>`（可多次串联），见 `command_line_prepare::peel_workspace_cd_prefix`.
-    #[error("错误：`cd` 前缀无效：{detail}（当前工作目录：{work_dir}）")]
-    CdPrefixInvalid { detail: String, work_dir: String },
-    #[error("命令调用过于频繁：每秒最多允许 {max_per_sec} 次，请稍后再试")]
-    RateLimited { max_per_sec: u32 },
-    #[error("错误：命令 \"{cmd}\" 不存在或在当前环境中不可用（工作目录：{work_dir}）")]
-    CommandNotFound {
-        cmd: String,
-        work_dir: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("错误：没有权限执行命令 \"{cmd}\"（请检查可执行权限或安全策略）")]
-    PermissionDenied {
-        cmd: String,
-        #[source]
-        source: io::Error,
-    },
-    #[error("错误：无法执行命令 \"{cmd}\"（系统错误：{source}）")]
-    SpawnOther {
-        cmd: String,
-        #[source]
-        source: io::Error,
-    },
-    /// 墙钟超时；`formatted` 含截断后的部分 stdout/stderr。
-    #[error("命令执行超时（{timeout_secs} 秒）")]
-    TimedOut {
-        timeout_secs: u64,
-        formatted: String,
-    },
-    /// 用户取消或 SSE 关闭；`formatted` 含截断后的部分输出。
-    #[error("命令已取消")]
-    Cancelled { formatted: String },
-}
-
-impl RunCommandError {
-    /// 转为 [`ToolError`]，供 `run_command` runner 显式返回（与信封 `error_code` 对齐）。
-    #[must_use]
-    pub fn into_tool_error(self) -> ToolError {
-        let msg = match &self {
-            RunCommandError::CommandNotFound { .. }
-            | RunCommandError::TimedOut { .. }
-            | RunCommandError::Cancelled { .. } => self.extended_user_message(),
-            _ => self.user_message(),
-        };
-        match self {
-            RunCommandError::JsonParse(_) => ToolError::invalid_args(msg),
-            RunCommandError::MissingCommand => ToolError {
-                category: ToolFailureCategory::InvalidInput,
-                code: "missing_command".to_string(),
-                message: msg,
-                retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("missing_command".to_string()),
-                },
-            },
-            RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
-            RunCommandError::ArgsNotArray
-            | RunCommandError::UnsafeArg
-            | RunCommandError::CdPrefixInvalid { .. } => ToolError::invalid_args(msg),
-            RunCommandError::ShellVariableDetected { .. } => ToolError {
-                category: ToolFailureCategory::InvalidInput,
-                code: "shell_variable_detected".to_string(),
-                message: msg,
-                retryable: true,
-                legacy_parsed: ParsedLegacyOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("shell_variable_detected".to_string()),
-                },
-            },
-            RunCommandError::RateLimited { .. } => ToolError::rate_limited(msg),
-            RunCommandError::CommandNotFound { .. } => ToolError {
-                category: ToolFailureCategory::External,
-                code: "command_not_found".to_string(),
-                message: msg,
-                retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("command_not_found".to_string()),
-                },
-            },
-            RunCommandError::PermissionDenied { .. } => ToolError {
-                category: ToolFailureCategory::External,
-                code: "permission_denied".to_string(),
-                message: msg,
-                retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("permission_denied".to_string()),
-                },
-            },
-            RunCommandError::SpawnOther { .. } => ToolError {
-                category: ToolFailureCategory::External,
-                code: "spawn_failed".to_string(),
-                message: msg,
-                retryable: false,
-                legacy_parsed: ParsedLegacyOutput {
-                    ok: false,
-                    exit_code: None,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                    error_code: Some("spawn_failed".to_string()),
-                },
-            },
-            RunCommandError::TimedOut { formatted, .. } => {
-                session_stop_tool_error(formatted, "timeout", true)
-            }
-            RunCommandError::Cancelled { formatted } => {
-                session_stop_tool_error(formatted, "cancelled", false)
-            }
-        }
-    }
-
-    /// 简短分类键，供 metrics / 结构化日志（不含命令名等细节时可只记此项）。
-    #[must_use]
-    pub fn kind(&self) -> &'static str {
-        match self {
-            RunCommandError::JsonParse(_) => "json_parse",
-            RunCommandError::MissingCommand => "missing_command",
-            RunCommandError::DisallowedCommand { .. } => "disallowed_command",
-            RunCommandError::ArgsNotArray => "args_not_array",
-            RunCommandError::UnsafeArg => "unsafe_arg",
-            RunCommandError::CdPrefixInvalid { .. } => "cd_prefix_invalid",
-            RunCommandError::RateLimited { .. } => "rate_limited",
-            RunCommandError::CommandNotFound { .. } => "command_not_found",
-            RunCommandError::PermissionDenied { .. } => "permission_denied",
-            RunCommandError::SpawnOther { .. } => "spawn_other",
-            RunCommandError::ShellVariableDetected { .. } => "shell_variable_detected",
-            RunCommandError::TimedOut { .. } => "timeout",
-            RunCommandError::Cancelled { .. } => "cancelled",
-        }
-    }
-
-    /// 与历史工具输出一致的完整说明。
-    #[must_use]
-    pub fn user_message(&self) -> String {
-        match self {
-            RunCommandError::TimedOut { formatted, .. }
-            | RunCommandError::Cancelled { formatted } => formatted.clone(),
-            _ => self.to_string(),
-        }
-    }
-
-    /// 与 [`user_message`] 相同；若为本变体为 [`RunCommandError::CommandNotFound`] 且命中内置表，文末追加 CLI 安装提示。
-    #[must_use]
-    pub fn extended_user_message(&self) -> String {
-        let mut s = self.user_message();
-        if let RunCommandError::CommandNotFound { cmd, .. } = self
-            && let Some(h) = output_util::cli_missing_install_hint(cmd)
-        {
-            s.push_str("\n\n");
-            s.push_str(h);
-        }
-        s
-    }
-}
-
-fn session_stop_tool_error(formatted: String, code: &str, retryable: bool) -> ToolError {
-    let mut parsed = parse_legacy_output("run_command", &formatted);
-    parsed.ok = false;
-    parsed.error_code = Some(code.to_string());
-    ToolError {
-        category: ToolFailureCategory::Timeout,
-        code: code.to_string(),
-        message: formatted,
-        retryable,
-        legacy_parsed: parsed,
-    }
-}
-
-impl From<CdPeelError> for RunCommandError {
-    fn from(e: CdPeelError) -> Self {
-        match e {
-            CdPeelError::CdPrefixInvalid { detail, work_dir } => {
-                RunCommandError::CdPrefixInvalid { detail, work_dir }
-            }
-            CdPeelError::UnsafeArg => RunCommandError::UnsafeArg,
-            CdPeelError::SpawnOther { cmd, source } => RunCommandError::SpawnOther { cmd, source },
-        }
-    }
-}
-
-fn map_spawn_error(cmd: &str, working_dir: &Path, e: io::Error) -> RunCommandError {
-    use io::ErrorKind::*;
-    match e.kind() {
-        NotFound => RunCommandError::CommandNotFound {
-            cmd: cmd.to_string(),
-            work_dir: working_dir.display().to_string(),
-            source: e,
-        },
-        PermissionDenied => RunCommandError::PermissionDenied {
-            cmd: cmd.to_string(),
-            source: e,
-        },
-        _ => RunCommandError::SpawnOther {
-            cmd: cmd.to_string(),
-            source: e,
-        },
-    }
-}
-
-const MAX_OUTPUT_LINES: usize = 500;
-
 /// 可选：`cargo test …` 的进程内结果缓存（与内置 `cargo_test` 工具共用指纹逻辑）。
 pub struct RunCommandTestCacheOpts<'a> {
     pub enabled: bool,
     pub max_entries: usize,
     pub workspace_root: &'a Path,
+}
+
+/// [`run`] / [`run_async`] 的执行选项（替代 6–7 个位置参数）。
+pub struct RunOptions<'a> {
+    pub max_output_len: usize,
+    pub allowed_commands: &'a [String],
+    pub working_dir: &'a Path,
+    pub test_cache: Option<RunCommandTestCacheOpts<'a>>,
+    /// 仅当调用方已完成工作区外路径人工审批后为 `true`。
+    pub skip_arg_safety: bool,
+    pub wait: &'a SubprocessWaitCtl,
 }
 
 fn cargo_test_argv_cache_eligible(cmd_args: &[String]) -> bool {
@@ -338,40 +107,22 @@ enum RunCommandPlan {
 }
 
 /// 待执行命令：`cmd` 已配好 argv / cwd / 环境；`cache_write` 非空时在成功退出后写回测试缓存。
-struct SpawnPlan {
-    cmd: Command,
-    cmd_label: String,
-    working_dir: PathBuf,
-    invocation: String,
-    cache_write: Option<CacheWritePlan>,
+pub(super) struct SpawnPlan {
+    pub(super) cmd: Command,
+    pub(super) cmd_label: String,
+    pub(super) working_dir: PathBuf,
+    pub(super) invocation: String,
+    pub(super) cache_write: Option<CacheWritePlan>,
 }
 
 /// `cargo test` 结果缓存的写回参数（未命中且可缓存时携带）。
-struct CacheWritePlan {
-    enabled: bool,
-    max_entries: usize,
-    key: TestCacheKey,
+pub(super) struct CacheWritePlan {
+    pub(super) enabled: bool,
+    pub(super) max_entries: usize,
+    pub(super) key: TestCacheKey,
 }
 
-/// 解析参数、校验、限流并规划执行路径；sync / async 共用（[`run_impl`] / [`run_impl_async`]）。
-fn plan_run_command(
-    args_json: &str,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<&RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-) -> Result<RunCommandPlan, RunCommandError> {
-    let spec = parse_command_spec(args_json, working_dir)?;
-    plan_run_command_spec(
-        &spec,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-    )
-}
-
-/// [`plan_run_command`] 的已解析版本；调用方不应再重复解析原始 JSON。
+/// 校验、限流并规划执行路径；sync / async 共用（[`run`] / [`run_async`]）。
 fn plan_run_command_spec(
     spec: &CommandSpec,
     allowed_commands: &[String],
@@ -469,10 +220,61 @@ fn plan_cargo_test_cache(
     }))
 }
 
-/// 在指定工作目录下执行白名单内的 Linux 命令；若 argv 需 glob/`$VAR`/`~` 且白名单含 `bash`/`sh`，则经 `bash -c`（或 `sh -c`）跑整行。
-/// `allowed_commands` 为可执行命令名列表（小写）；`working_dir` 为命令的工作目录（已校验为存在目录）。
-/// `skip_arg_safety`：仅当 async 层已完成工作区外路径人工审批后为 `true`。
-pub fn run(
+/// 在指定工作目录下执行白名单内的 Linux 命令（同步等待）。
+pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<String, RunCommandError> {
+    match plan_run_command_spec(
+        spec,
+        opts.allowed_commands,
+        opts.working_dir,
+        opts.test_cache.as_ref(),
+        opts.skip_arg_safety,
+    )? {
+        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, opts.max_output_len, opts.wait),
+    }
+}
+
+/// [`run`] 的异步版：同一规划路径，spawn/wait 走 `tokio::process`。
+pub async fn run_async(
+    spec: &CommandSpec,
+    opts: RunOptions<'_>,
+) -> Result<String, RunCommandError> {
+    match plan_run_command_spec(
+        spec,
+        opts.allowed_commands,
+        opts.working_dir,
+        opts.test_cache.as_ref(),
+        opts.skip_arg_safety,
+    )? {
+        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::Spawn(plan) => {
+            execute_spawn_plan_async(plan, opts.max_output_len, opts.wait).await
+        }
+    }
+}
+
+fn options_for<'a>(
+    max_output_len: usize,
+    allowed_commands: &'a [String],
+    working_dir: &'a Path,
+    test_cache: Option<RunCommandTestCacheOpts<'a>>,
+    skip_arg_safety: bool,
+    wait: &'a SubprocessWaitCtl,
+) -> RunOptions<'a> {
+    RunOptions {
+        max_output_len,
+        allowed_commands,
+        working_dir,
+        test_cache,
+        skip_arg_safety,
+        wait,
+    }
+}
+
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run`]。
+#[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
+pub fn run_args_json(
     args_json: &str,
     max_output_len: usize,
     allowed_commands: &[String],
@@ -480,19 +282,28 @@ pub fn run(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> String {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        &SubprocessWaitCtl::default(),
+    let wait = SubprocessWaitCtl::default();
+    let spec = match parse_command_spec(args_json, working_dir) {
+        Ok(s) => s,
+        Err(e) => return e.extended_user_message(),
+    };
+    run(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            &wait,
+        ),
     )
     .unwrap_or_else(|e| e.extended_user_message())
 }
 
-/// 与 [`run`] 相同，失败时返回 [`ToolError`]（显式 `error_code` / 分类，不经字符串启发式）。
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run`] 并映射错误。
+#[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 #[allow(clippy::result_large_err)] // `ToolError` 含 legacy 解析快照，与 `run_tool_dispatch` 一致
 pub fn run_try(
     args_json: &str,
@@ -502,19 +313,26 @@ pub fn run_try(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> Result<String, ToolError> {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        &SubprocessWaitCtl::default(),
+    let wait = SubprocessWaitCtl::default();
+    let spec =
+        parse_command_spec(args_json, working_dir).map_err(RunCommandError::into_tool_error)?;
+    run(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            &wait,
+        ),
     )
     .map_err(RunCommandError::into_tool_error)
 }
 
-/// 与 [`run`] 相同，失败时返回结构化错误（成功仍为格式化输出字符串）。
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run`]。
+#[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 pub fn run_checked(
     args_json: &str,
     max_output_len: usize,
@@ -523,18 +341,24 @@ pub fn run_checked(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
 ) -> Result<String, RunCommandError> {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        &SubprocessWaitCtl::default(),
+    let wait = SubprocessWaitCtl::default();
+    let spec = parse_command_spec(args_json, working_dir)?;
+    run(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            &wait,
+        ),
     )
 }
 
-/// 与 [`run_checked`] 相同，并传入墙钟/取消。
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run`] 并传入 `wait`。
+#[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 pub fn run_checked_wait(
     args_json: &str,
     max_output_len: usize,
@@ -544,18 +368,23 @@ pub fn run_checked_wait(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
-    run_impl(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
+    let spec = parse_command_spec(args_json, working_dir)?;
+    run(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        ),
     )
 }
 
-/// 与 [`run_try`] 相同，但以 `tokio::process` 异步等待（不占用阻塞线程）。
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run_async`]。
+#[deprecated(note = "use parse_command_spec + run_async(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 #[allow(clippy::result_large_err)]
 pub async fn run_try_wait_async(
     args_json: &str,
@@ -566,20 +395,26 @@ pub async fn run_try_wait_async(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, ToolError> {
-    run_impl_async(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
+    let spec =
+        parse_command_spec(args_json, working_dir).map_err(RunCommandError::into_tool_error)?;
+    run_async(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        ),
     )
     .await
     .map_err(RunCommandError::into_tool_error)
 }
 
-/// 与 [`run_checked_wait`] 相同，但以 `tokio::process` 异步等待。
+/// 已弃用：请先 `parse_command_spec`，再调用 [`run_async`]。
+#[deprecated(note = "use parse_command_spec + run_async(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 pub async fn run_checked_wait_async(
     args_json: &str,
     max_output_len: usize,
@@ -589,19 +424,24 @@ pub async fn run_checked_wait_async(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
-    run_impl_async(
-        args_json,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
+    let spec = parse_command_spec(args_json, working_dir)?;
+    run_async(
+        &spec,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        ),
     )
     .await
 }
 
-/// 与 [`run_try_wait_async`] 相同，但消费已解析的 [`CommandSpec`]（避免重复解析 JSON）。
+/// 已弃用：请直接调用 [`run_async`]。
+#[deprecated(note = "use run_async(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 #[allow(clippy::result_large_err)]
 pub async fn run_try_wait_async_spec(
     spec: &CommandSpec,
@@ -612,20 +452,24 @@ pub async fn run_try_wait_async_spec(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, ToolError> {
-    run_impl_async_spec(
+    run_async(
         spec,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        ),
     )
     .await
     .map_err(RunCommandError::into_tool_error)
 }
 
-/// 与 [`run_checked_wait_async`] 相同，但消费已解析的 [`CommandSpec`]。
+/// 已弃用：请直接调用 [`run_async`]。
+#[deprecated(note = "use run_async(&CommandSpec, RunOptions)")]
+#[allow(dead_code)]
 pub async fn run_checked_wait_async_spec(
     spec: &CommandSpec,
     max_output_len: usize,
@@ -635,137 +479,18 @@ pub async fn run_checked_wait_async_spec(
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
 ) -> Result<String, RunCommandError> {
-    run_impl_async_spec(
+    run_async(
         spec,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
+        options_for(
+            max_output_len,
+            allowed_commands,
+            working_dir,
+            test_cache,
+            skip_arg_safety,
+            wait,
+        ),
     )
     .await
-}
-
-fn run_impl(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    match plan_run_command(
-        args_json,
-        allowed_commands,
-        working_dir,
-        test_cache.as_ref(),
-        skip_arg_safety,
-    )? {
-        RunCommandPlan::CacheHit(body) => Ok(body),
-        RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, max_output_len, wait),
-    }
-}
-
-/// 异步版 [`run_impl`]：同一 [`plan_run_command`]，spawn/wait 走 `tokio::process`。
-async fn run_impl_async(
-    args_json: &str,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let spec = parse_command_spec(args_json, working_dir)?;
-    run_impl_async_spec(
-        &spec,
-        max_output_len,
-        allowed_commands,
-        working_dir,
-        test_cache,
-        skip_arg_safety,
-        wait,
-    )
-    .await
-}
-
-/// [`run_impl_async`] 的已解析版本；调用方不应再重复解析原始 JSON。
-async fn run_impl_async_spec(
-    spec: &CommandSpec,
-    max_output_len: usize,
-    allowed_commands: &[String],
-    working_dir: &Path,
-    test_cache: Option<RunCommandTestCacheOpts<'_>>,
-    skip_arg_safety: bool,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    match plan_run_command_spec(
-        spec,
-        allowed_commands,
-        working_dir,
-        test_cache.as_ref(),
-        skip_arg_safety,
-    )? {
-        RunCommandPlan::CacheHit(body) => Ok(body),
-        RunCommandPlan::Spawn(plan) => execute_spawn_plan_async(plan, max_output_len, wait).await,
-    }
-}
-
-fn execute_spawn_plan_sync(
-    plan: SpawnPlan,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let SpawnPlan {
-        mut cmd,
-        cmd_label,
-        working_dir,
-        invocation,
-        cache_write,
-    } = plan;
-    let formatted = run_spawned_command(
-        &mut cmd,
-        &cmd_label,
-        &working_dir,
-        &invocation,
-        max_output_len,
-        wait,
-    )?;
-    write_test_cache(cache_write, &formatted);
-    Ok(formatted)
-}
-
-async fn execute_spawn_plan_async(
-    plan: SpawnPlan,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let SpawnPlan {
-        cmd,
-        cmd_label,
-        working_dir,
-        invocation,
-        cache_write,
-    } = plan;
-    let formatted = run_spawned_command_async(
-        cmd,
-        &cmd_label,
-        &working_dir,
-        &invocation,
-        max_output_len,
-        wait,
-    )
-    .await?;
-    write_test_cache(cache_write, &formatted);
-    Ok(formatted)
-}
-
-fn write_test_cache(cache_write: Option<CacheWritePlan>, formatted: &str) {
-    if let Some(w) = cache_write {
-        store_cached(w.enabled, w.max_entries, w.key, formatted.to_string());
-    }
 }
 
 pub(crate) fn parse_run_command_value_with_repair(
@@ -798,99 +523,6 @@ fn format_invocation_for_display(cmd_raw: &str, args: &[String]) -> String {
         cmd.to_string()
     } else {
         format!("{} {}", cmd, args.join(" "))
-    }
-}
-
-fn format_command_streams(
-    invocation: &str,
-    exit_code: i32,
-    stdout: &str,
-    stderr: &str,
-    max_output_len: usize,
-) -> String {
-    let truncate =
-        |s: &str| output_util::truncate_output_lines(s, max_output_len, MAX_OUTPUT_LINES);
-    let mut out = format!("命令：{invocation}\n退出码：{exit_code}\n");
-    if !stdout.is_empty() {
-        out.push_str("标准输出：\n");
-        out.push_str(&truncate(stdout));
-    }
-    if !stderr.is_empty() {
-        out.push_str("标准错误：\n");
-        out.push_str(&truncate(stderr));
-    }
-    if stdout.is_empty() && stderr.is_empty() && exit_code == 0 {
-        out.push_str("(无输出)");
-    }
-    out.trim_end().to_string()
-}
-
-fn run_spawned_command(
-    cmd: &mut Command,
-    cmd_label: &str,
-    working_dir: &Path,
-    invocation: &str,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    prepare_piped_process_group(cmd);
-    let child = cmd
-        .spawn()
-        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
-    let session = wait_child_session(child, wait, max_output_len)
-        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
-    finish_session(session, invocation, max_output_len, wait)
-}
-
-/// 异步版 [`run_spawned_command`]：`std::process::Command` 转 `tokio::process::Command` 后 await。
-///
-/// `kill_on_drop(true)` 保证 session 被未来取消时子进程组随 drop 终止。
-async fn run_spawned_command_async(
-    mut cmd: Command,
-    cmd_label: &str,
-    working_dir: &Path,
-    invocation: &str,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    prepare_piped_process_group(&mut cmd);
-    let mut cmd = tokio::process::Command::from(cmd);
-    cmd.kill_on_drop(true);
-    let child = cmd
-        .spawn()
-        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
-    let session = wait_child_session_async(child, wait, max_output_len)
-        .await
-        .map_err(|e| map_spawn_error(cmd_label, working_dir, e))?;
-    finish_session(session, invocation, max_output_len, wait)
-}
-
-fn finish_session(
-    session: SessionWaitResult,
-    invocation: &str,
-    max_output_len: usize,
-    wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let stdout = String::from_utf8_lossy(&session.stdout);
-    let stderr = String::from_utf8_lossy(&session.stderr);
-    let exit_code = session.status.and_then(|s| s.code()).unwrap_or(-1);
-    let body = format_command_streams(invocation, exit_code, &stdout, &stderr, max_output_len);
-    match session.kind {
-        SessionStopKind::Exited => Ok(body),
-        SessionStopKind::Timeout => {
-            let timeout_secs = wait.wall.map(|d| d.as_secs()).unwrap_or(0);
-            let formatted = format!(
-                "命令执行超时（{timeout_secs} 秒）；子进程已发送终止信号。\n{body}"
-            );
-            Err(RunCommandError::TimedOut {
-                timeout_secs,
-                formatted,
-            })
-        }
-        SessionStopKind::Cancelled => {
-            let formatted = format!("命令已取消；子进程已发送终止信号。\n{body}");
-            Err(RunCommandError::Cancelled { formatted })
-        }
     }
 }
 

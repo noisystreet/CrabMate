@@ -3,15 +3,18 @@ struct RunCommandSyncHostInvoke<'a> {
     effective_working_dir: &'a Path,
     workspace_is_set: bool,
     workspace_changed: &'a mut bool,
-    web_ctx: Option<&'a WebToolRuntime>,
     args: &'a str,
     tool_call_id: &'a str,
     sse_out_tx: Option<&'a tokio::sync::mpsc::Sender<String>>,
     sse_control_mirror: Option<&'a crate::cm_sse_protocol::sse::SseControlMirror>,
     cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
     timeout_secs: Option<u64>,
+    parsed: ParsedRunCommandJson,
+    decision: PolicyDecision,
+    capabilities: RunCommandCapabilities,
 }
 
+/// 同步宿主执行：解析与审批已由 [`execute_run_command_impl`] 完成，此处只做 Docker 转交与宿主 spawn。
 async fn execute_run_command_sync_host(
     invoke: RunCommandSyncHostInvoke<'_>,
 ) -> (String, Option<serde_json::Value>) {
@@ -20,61 +23,33 @@ async fn execute_run_command_sync_host(
         effective_working_dir,
         workspace_is_set,
         workspace_changed,
-        web_ctx,
         args,
         tool_call_id,
         sse_out_tx,
         sse_control_mirror,
         cancel,
         timeout_secs,
+        parsed,
+        decision,
+        capabilities,
     } = invoke;
     let cfg = env.cfg;
-    let parsed = match parse_run_command_json(args, effective_working_dir) {
-        Ok(p) => p,
-        Err(e) => return (e.extended_user_message(), None),
-    };
-    let effective_allowed_arc = match resolve_run_command_shell_allowlist(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        &parsed,
-        "run_command",
-        false,
-    )
-    .await
-    {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+    let effective_allowed_arc = decision.allowed_commands;
+    let skip_arg_safety = decision.skip_arg_safety;
 
-    let gate = match approve_external_run_command_paths_if_needed(
-        cfg.as_ref(),
-        &parsed.spec,
-        effective_working_dir,
-        effective_allowed_arc.as_ref(),
-        web_ctx,
-        "run_command",
-        false,
-    )
-    .await
-    {
-        Ok(g) => g,
-        Err(e) => return (e, None),
-    };
-    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
-
-    if let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
-        env,
-        effective_working_dir,
-        workspace_is_set,
-        "run_command",
-        args,
-        crate::cm_internal::tool_sandbox::write_runner_config_json_with_allowed_commands(
-            cfg.as_ref(),
-            effective_allowed_arc.as_ref(),
-        ),
-    )
-    .await
+    if capabilities.docker_sandbox
+        && let Some((s, inj)) = dispatch_non_sync_tool_to_docker(
+            env,
+            effective_working_dir,
+            workspace_is_set,
+            "run_command",
+            args,
+            crate::cm_internal::tool_sandbox::write_runner_config_json_with_allowed_commands(
+                cfg.as_ref(),
+                effective_allowed_arc.as_ref(),
+            ),
+        )
+        .await
     {
         if tools::is_compile_command_success(args, &s) {
             *workspace_changed = true;
@@ -156,14 +131,16 @@ async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
             max_entries: test_cache_max,
             workspace_root: work_dir.as_path(),
         });
-        match tools::run_checked_wait_async_spec(
+        match tools::run_async(
             spec,
-            max_out,
-            allowed.as_ref(),
-            work_dir.as_path(),
-            test_cache,
-            skip_arg_safety,
-            &wait,
+            tools::RunOptions {
+                max_output_len: max_out,
+                allowed_commands: allowed.as_ref(),
+                working_dir: work_dir.as_path(),
+                test_cache,
+                skip_arg_safety,
+                wait: &wait,
+            },
         )
         .await
         {
