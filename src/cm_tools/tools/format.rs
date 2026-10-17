@@ -11,40 +11,120 @@
 //! - `.xml`  -> `xmllint --format`
 //! - `.sql`  -> `sqlfluff fix` / `pg_format`
 //!
-//! 参数：{ "path": "相对工作区根目录的文件路径" }
-//! 会直接对目标文件就地格式化，并返回简要的结果说明。
+//! 参数：{ "paths": ["相对工作区根目录的文件路径", ...] }
+//! 会直接对目标文件就地格式化，并返回每个文件的简要结果说明。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use super::output_util;
 use super::python_tools;
-use super::tool_param_types::FormatOnePathArgs;
+use super::tool_param_types::{FormatOnePathArgs, FormatPathsArgs};
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let FormatOnePathArgs { path } = match serde_json::from_value(v) {
+    let FormatPathsArgs { paths } = match serde_json::from_value(v) {
         Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 format_file 形状不一致: {e}"),
+        Err(e) => return format!("参数 JSON 与 format_files 形状不一致: {e}"),
     };
-    let path = path.trim();
-    if path.is_empty() {
-        return "错误：缺少 path 参数".to_string();
+    if paths.is_empty() {
+        return "错误：缺少 paths 参数（至少一个文件路径）".to_string();
+    }
+    let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+    run_paths(&refs, workspace_root)
+}
+
+fn run_paths(paths: &[&str], workspace_root: &Path) -> String {
+    // 保序去重，避免同一文件重复调用格式化器。
+    let mut seen = HashSet::new();
+    let paths: Vec<&str> = paths
+        .iter()
+        .copied()
+        .map(str::trim)
+        .filter(|p| seen.insert(*p))
+        .collect();
+
+    let mut outputs: Vec<Option<String>> = vec![None; paths.len()];
+    let mut prettier_targets: Vec<(usize, PathBuf)> = Vec::new();
+    let mut succeeded = 0usize;
+    let mut failed = 0usize;
+
+    for (idx, path) in paths.iter().enumerate() {
+        if path.is_empty() {
+            failed += 1;
+            outputs[idx] = Some("错误：paths 中含有空路径".to_string());
+            continue;
+        }
+        match prepare_one(path, workspace_root) {
+            // prettier 逐文件启动 npx 开销大，集中到最后一次批处理。
+            Ok((Formatter::Prettier, target)) => prettier_targets.push((idx, target)),
+            Ok((formatter, target)) => {
+                match run_formatter(formatter, &target, workspace_root, false) {
+                    Ok(msg) => {
+                        succeeded += 1;
+                        outputs[idx] = Some(msg);
+                    }
+                    Err(e) => {
+                        failed += 1;
+                        outputs[idx] = Some(format!("{}: {}", path, e));
+                    }
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                outputs[idx] = Some(format!("{}: {}", path, e));
+            }
+        }
     }
 
-    let target = match resolve_target(workspace_root, path) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    if !prettier_targets.is_empty() {
+        let targets: Vec<&Path> = prettier_targets.iter().map(|(_, t)| t.as_path()).collect();
+        match run_prettier_files(&targets, workspace_root, false) {
+            Ok(msgs) => {
+                succeeded += prettier_targets.len();
+                for ((idx, _), msg) in prettier_targets.iter().zip(msgs) {
+                    outputs[*idx] = Some(msg);
+                }
+            }
+            Err(e) => {
+                failed += prettier_targets.len();
+                for (idx, target) in &prettier_targets {
+                    outputs[*idx] = Some(format!(
+                        "{}: {}",
+                        display_in_workspace(workspace_root, target),
+                        e
+                    ));
+                }
+            }
+        }
+    }
+
+    let mut results: Vec<String> = outputs.into_iter().flatten().collect();
+    if results.len() == 1 {
+        return results.pop().unwrap_or_default();
+    }
+    results.push(format!(
+        "完成：共 {} 个文件，成功 {} 个，失败 {} 个",
+        results.len(),
+        succeeded,
+        failed
+    ));
+    results.join("\n")
+}
+
+/// 校验并解析单个路径、选出格式化器；不执行格式化。
+fn prepare_one(path: &str, workspace_root: &Path) -> Result<(Formatter, PathBuf), String> {
+    let target = resolve_target(workspace_root, path)?;
 
     if !target.exists() {
-        return "错误：指定的文件不存在".to_string();
+        return Err("错误：指定的文件不存在".to_string());
     }
     if !target.is_file() {
-        return "错误：只能格式化普通文件，不能对目录执行格式化".to_string();
+        return Err("错误：只能格式化普通文件，不能对目录执行格式化".to_string());
     }
 
     let ext = target
@@ -53,13 +133,9 @@ pub fn run(args_json: &str, workspace_root: &Path) -> String {
         .unwrap_or("")
         .to_lowercase();
 
-    let formatter = select_formatter(&ext);
-    match formatter {
-        Some(f) => match run_formatter(f, &target, workspace_root, false) {
-            Ok(msg) => msg,
-            Err(e) => e,
-        },
-        None => format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext),
+    match select_formatter(&ext) {
+        Some(f) => Ok((f, target)),
+        None => Err(format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext)),
     }
 }
 
@@ -262,14 +338,22 @@ fn run_rustfmt(target: &Path, workspace_root: &Path, check_only: bool) -> Result
 }
 
 fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Result<String, String> {
+    run_prettier_files(&[target], workspace_root, check_only)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "prettier 未返回结果".to_string())
+}
+
+/// 一次 `npx prettier` 调用处理多个文件，避免逐文件启动 npx。
+fn run_prettier_files(
+    targets: &[&Path],
+    workspace_root: &Path,
+    check_only: bool,
+) -> Result<Vec<String>, String> {
     // 使用项目内的 prettier（若存在），否则依赖全局 npx
-    let relative = target
-        .strip_prefix(
-            workspace_root
-                .canonicalize()
-                .map_err(|e| format!("工作区根目录无法解析: {}", e))?,
-        )
-        .unwrap_or(target);
+    let base = workspace_root
+        .canonicalize()
+        .map_err(|e| format!("工作区根目录无法解析: {}", e))?;
 
     let mut cmd = Command::new("npx");
     cmd.arg("prettier");
@@ -278,7 +362,10 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
     } else {
         cmd.arg("--write");
     }
-    cmd.arg(relative).current_dir(workspace_root);
+    for target in targets {
+        cmd.arg(target.strip_prefix(&base).unwrap_or(*target));
+    }
+    cmd.current_dir(workspace_root);
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -292,13 +379,10 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        let detail = if !stderr.trim().is_empty() {
-            stderr.trim_end().to_string()
-        } else if !stdout.trim().is_empty() {
-            stdout.trim_end().to_string()
-        } else {
-            String::new()
-        };
+        let detail = [stderr.trim_end(), stdout.trim_end()]
+            .into_iter()
+            .find(|s| !s.is_empty())
+            .unwrap_or("");
         let suffix = if detail.is_empty() {
             String::new()
         } else {
@@ -311,15 +395,20 @@ fn run_prettier(target: &Path, workspace_root: &Path, check_only: bool) -> Resul
             suffix
         ));
     }
-    Ok(format!(
-        "已使用 prettier {}：{}",
-        if check_only {
-            "检查通过"
-        } else {
-            "格式化"
-        },
-        display_in_workspace(workspace_root, target)
-    ))
+    Ok(targets
+        .iter()
+        .map(|target| {
+            format!(
+                "已使用 prettier {}：{}",
+                if check_only {
+                    "检查通过"
+                } else {
+                    "格式化"
+                },
+                display_in_workspace(workspace_root, target)
+            )
+        })
+        .collect())
 }
 
 fn run_clang_format(
@@ -567,4 +656,55 @@ fn run_sql_format(
     }
 
     Err("SQL 格式化需要安装 sqlfluff 或 pg_format".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_paths_rejected() {
+        let out = run(r#"{"paths":[]}"#, Path::new("."));
+        assert!(out.starts_with("错误：缺少 paths 参数"), "{out}");
+    }
+
+    #[test]
+    fn duplicate_paths_are_reported_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = run(
+            r#"{"paths":["missing.txt","missing.txt","other.txt"]}"#,
+            dir.path(),
+        );
+        assert!(
+            out.contains("完成：共 2 个文件，成功 0 个，失败 2 个"),
+            "{out}"
+        );
+        assert_eq!(out.matches("missing.txt:").count(), 1, "{out}");
+    }
+
+    #[test]
+    fn batch_reports_partial_failure_summary() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = run(r#"{"paths":["a.rs","b.txt"]}"#, dir.path());
+        assert!(out.contains("a.rs: 目标文件路径无法解析"), "{out}");
+        assert!(out.contains("b.txt: 目标文件路径无法解析"), "{out}");
+        assert!(
+            out.contains("完成：共 2 个文件，成功 0 个，失败 2 个"),
+            "{out}"
+        );
+    }
+
+    #[test]
+    fn single_path_keeps_single_message() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = run(r#"{"paths":["missing.rs"]}"#, dir.path());
+        assert!(out.starts_with("missing.rs: 目标文件路径无法解析"), "{out}");
+        assert!(!out.contains("完成：共"), "{out}");
+    }
+
+    #[test]
+    fn blank_path_entry_is_reported() {
+        let out = run(r#"{"paths":["   "]}"#, Path::new("."));
+        assert_eq!(out, "错误：paths 中含有空路径");
+    }
 }

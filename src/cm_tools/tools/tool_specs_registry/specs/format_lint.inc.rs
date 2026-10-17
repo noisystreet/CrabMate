@@ -1,10 +1,10 @@
 [
 ToolSpec {
-            name: "format_file",
-            description: "对工作区内的文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 使用 rustfmt，C/C++ 使用 clang-format，前端 TypeScript/JavaScript 使用项目内的 Prettier，Python 使用 ruff format。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具。",
+            name: "format_files",
+            description: "对工作区内的多个文件进行代码格式化。根据文件扩展名自动选择合适的本地格式化器，例如 Rust 使用 rustfmt，C/C++ 使用 clang-format，前端 TypeScript/JavaScript 使用项目内的 Prettier，Python 使用 ruff format。适合在修改代码后统一整理缩进和风格。注意：需要本地已安装相应格式化工具。",
             category: ToolCategory::Development,
-            parameters: schema_of::<args::FormatOnePathArgs>,
-            runner: ToolRunner::Legacy(runner_format_file),
+            parameters: schema_of::<args::FormatPathsArgs>,
+            runner: ToolRunner::Legacy(runner_format_files),
             summary: ToolSummaryKind::None,
         },
         ToolSpec {

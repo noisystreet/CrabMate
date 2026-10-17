@@ -20,7 +20,7 @@ fn default_patch_write_tool_names() -> &'static HashSet<&'static str> {
             "create_file",
             "modify_file",
             "append_file",
-            "format_file",
+            "format_files",
             "ast_grep_rewrite",
         ]
         .into_iter()

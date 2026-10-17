@@ -29,7 +29,7 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "move_file",
         "copy_file",
         "create_symlink",
-        "format_file",
+        "format_files",
         "format_check_file",
         "set_env_var",
         "set_dot_env_var",
@@ -116,7 +116,7 @@ fn fill_dir_path_tools(name: &str, v: &serde_json::Value, scopes: &mut Vec<RelSc
     Some(InvalScopesFill::Ok)
 }
 
-fn is_single_file_path_tool(name: &str) -> bool {
+fn is_file_path_arg_tool(name: &str) -> bool {
     matches!(
         name,
         "create_file"
@@ -125,7 +125,7 @@ fn is_single_file_path_tool(name: &str) -> bool {
             | "append_file"
             | "search_replace"
             | "chmod_file"
-            | "format_file"
+            | "format_files"
             | "format_check_file"
             | "extract_in_file"
             | "read_binary_meta"
@@ -133,15 +133,20 @@ fn is_single_file_path_tool(name: &str) -> bool {
     )
 }
 
-fn fill_single_file_path_tools(
+fn fill_file_path_arg_tools(
     name: &str,
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !is_single_file_path_tool(name) {
+    if !is_file_path_arg_tool(name) {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
+    if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
+        for x in ps {
+            push_invalidation_scope(scopes, x.as_str(), false);
+        }
+    }
     Some(InvalScopesFill::Ok)
 }
 
@@ -233,7 +238,7 @@ fn fill_invalidation_scopes_for_tool(
     if let Some(r) = fill_dir_path_tools(name, v, scopes) {
         return r;
     }
-    if let Some(r) = fill_single_file_path_tools(name, v, scopes) {
+    if let Some(r) = fill_file_path_arg_tools(name, v, scopes) {
         return r;
     }
     if let Some(r) = fill_copy_move_tools(name, v, scopes) {
@@ -500,5 +505,35 @@ mod tests {
         assert_eq!(sc.len(), 1);
         assert!(!sc[0].is_dir);
         assert_eq!(sc[0].path, "a/b.rs");
+    }
+
+    #[test]
+    fn format_files_uses_each_paths_entry() {
+        let cfg = default_cfg();
+        let inv = invalidation_for_tool_call(
+            &cfg,
+            "format_files",
+            r#"{"paths":["b.rs","a.rs","a.rs"]}"#,
+        );
+        let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
+            panic!("expected RelScopes");
+        };
+        let paths: Vec<(&str, bool)> = sc.iter().map(|s| (s.path.as_str(), s.is_dir)).collect();
+        assert_eq!(paths, vec![("a.rs", false), ("b.rs", false)]);
+    }
+
+    #[test]
+    fn delete_files_uses_each_paths_entry() {
+        let cfg = default_cfg();
+        let inv = invalidation_for_tool_call(
+            &cfg,
+            "delete_files",
+            r#"{"paths":["src/a.rs","src/b.rs"]}"#,
+        );
+        let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
+            panic!("expected RelScopes");
+        };
+        let paths: Vec<&str> = sc.iter().map(|s| s.path.as_str()).collect();
+        assert_eq!(paths, vec!["src/a.rs", "src/b.rs"]);
     }
 }

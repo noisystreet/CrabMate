@@ -20,7 +20,7 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatOnePathArgs, GitStatusArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatOnePathArgs, FormatPathsArgs, GitStatusArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
         ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
@@ -106,13 +106,13 @@ mod tests {
     }
 
     #[test]
-    fn format_file_schema_requires_path() {
-        let v = tool_parameters_schema_value::<FormatOnePathArgs>();
+    fn format_files_schema_requires_paths() {
+        let v = tool_parameters_schema_value::<FormatPathsArgs>();
         let req = v
             .pointer("/required")
             .and_then(|r| r.as_array())
             .expect("req");
-        assert!(req.iter().any(|x| x == "path"));
+        assert!(req.iter().any(|x| x == "paths"));
     }
 
     #[test]
