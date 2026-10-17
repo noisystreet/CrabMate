@@ -41,7 +41,7 @@
 | [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) | 工具薄 CLI 封装：剩余家族候选盘点与判定（§8.5 配套） |
 | [tool_management_api.md](tool_management_api.md) | 设计草案：工具管理 API 补齐 |
 
-## 4. 回合 / Agent 运行时（8）
+## 4. 回合 / Agent 运行时（9）
 
 | 文档 | 说明 |
 |---|---|
@@ -53,6 +53,7 @@
 | [run_loop_state_ownership.md](run_loop_state_ownership.md) | 回合可变状态归属 |
 | [per_state_machine_consolidation.md](per_state_machine_consolidation.md) | PER 编排：用显式状态机收拢分支 |
 | [audience_critic_role.md](audience_critic_role.md) | 观众角色（侧向点评）：设计草案 |
+| [multi_agent_collaboration.md](multi_agent_collaboration.md) | 多 Agent 协作：分层演进设计草案（L0–L4 与 A2A 定位） |
 
 ## 5. 上下文 / 提示词（5）
 

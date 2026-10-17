@@ -57,6 +57,7 @@ Compared with mainstream open-source agents (CrewAI, AutoGen, Mastra, LangChain 
 | Improvement | Effort |
 |-------------|--------|
 | Multi-agent collaboration framework (agent instance abstraction + shared message bus/queue; cf. CrewAI role-based agent + task) | High |
+| └ Layered roadmap and Task/Result contract draft: **`docs/design/multi_agent_collaboration.md`** (L0–L4, A2A last) | — |
 | Proactive autonomous agent mode (goal → self-loop until done; can combine with `workflow_execute` DAG) | High |
 | MCP server exposure (stdio shipped as `crabmate mcp serve`; remaining: streamable HTTP egress and transport auth) | Low–med |
 
