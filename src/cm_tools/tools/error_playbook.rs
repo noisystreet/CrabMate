@@ -478,17 +478,35 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
         };
         out.push_str(&format!("—— 步骤 {}: `{}` ——\n", i + 1, t));
         // 路线 A（strangler 过渡）：`playbook_run_commands` 仍在同步 `run_tool` 面执行（外层 `spawn_blocking`），
-        // 沿用 `command::run_checked_wait` 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
-        let r = match command::run_checked_wait(
-            &args_s,
-            ctx.command_max_output_len,
-            ctx.allowed_commands,
-            ctx.working_dir,
-            None,
-            false,
-            &crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
-                ctx.command_timeout_secs,
-            ),
+        // 沿用 [`command::run`] 同步等待入口；见 `docs/design/subprocess_session_tokio_migration_todo.md`（PR3）。
+        let spec = match command::parse_command_spec(&args_s, ctx.working_dir) {
+            Ok(s) => s,
+            Err(e) => {
+                warn!(
+                    target: "crabmate",
+                    "playbook_run_commands step={} kind={} err={}",
+                    i + 1,
+                    e.kind(),
+                    e
+                );
+                out.push_str(&e.user_message());
+                out.push_str("\n\n");
+                continue;
+            }
+        };
+        let wait = crate::cm_tools::subprocess_session::SubprocessWaitCtl::with_wall_secs(
+            ctx.command_timeout_secs,
+        );
+        let r = match command::run(
+            &spec,
+            command::RunOptions {
+                max_output_len: ctx.command_max_output_len,
+                allowed_commands: ctx.allowed_commands,
+                working_dir: ctx.working_dir,
+                test_cache: None,
+                skip_arg_safety: false,
+                wait: &wait,
+            },
         ) {
             Ok(s) => s,
             Err(e) => {

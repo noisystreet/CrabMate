@@ -28,25 +28,187 @@ fn cmd_missing_from_allowlist(cmd: &str, allowed: &[String]) -> bool {
         && !allowed.iter().any(|c| c.eq_ignore_ascii_case(cmd))
 }
 
+/// 执行/审批模式：由 [`evaluate_policy`] 统一消费，避免各 gate 自行判断 async / Docker。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecMode {
+    Sync,
+    Async,
+    Docker,
+    Pty,
+}
+
+/// 一次策略评估期间生效的能力快照。
+#[derive(Debug, Clone, Copy)]
+struct PolicyCapabilities {
+    mode: ExecMode,
+    has_approval_channel: bool,
+}
+
+/// 策略评估上下文。
+struct PolicyContext<'a> {
+    cfg: &'a Arc<AgentConfig>,
+    workspace: &'a Path,
+    web_ctx: Option<&'a WebToolRuntime>,
+    mode: ExecMode,
+    sse_command: &'a str,
+}
+
+impl PolicyContext<'_> {
+    fn capabilities(&self) -> PolicyCapabilities {
+        let docker = self.cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode
+            == SyncDefaultToolSandboxMode::Docker;
+        // 同步宿主调用在 Docker 沙盒下仍先过同一套审批，因此这里把 Sync 提升为 Docker。
+        let mode = if docker && self.mode == ExecMode::Sync {
+            ExecMode::Docker
+        } else {
+            self.mode
+        };
+        PolicyCapabilities {
+            mode,
+            has_approval_channel: self.web_ctx.is_some(),
+        }
+    }
+}
+
+/// 策略拒绝/不可用的归因（顺序与现网三道 gate 一致）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicyReason {
+    UnknownCommand,
+    PosixShellWrap,
+    ExternalPath,
+}
+
+#[derive(Debug)]
+enum PolicyError {
+    /// 用户拒绝，或交互审批返回拒绝。
+    Denied {
+        reason: PolicyReason,
+        message: String,
+    },
+    /// 缺少审批通道，或当前执行模式不支持交互审批。
+    ApprovalUnavailable {
+        reason: PolicyReason,
+        message: String,
+    },
+    /// 参数扫描失败等非审批类错误。
+    InvalidArgs {
+        reason: PolicyReason,
+        message: String,
+    },
+}
+
+impl PolicyError {
+    fn reason(&self) -> PolicyReason {
+        match self {
+            Self::Denied { reason, .. }
+            | Self::ApprovalUnavailable { reason, .. }
+            | Self::InvalidArgs { reason, .. } => *reason,
+        }
+    }
+
+    /// 转成工具调用返回的 `(正文, 注入)`；审批错误不注入结构化数据。
+    fn into_message(self) -> (String, Option<serde_json::Value>) {
+        let reason = self.reason();
+        let message = match self {
+            Self::Denied { message, .. }
+            | Self::ApprovalUnavailable { message, .. }
+            | Self::InvalidArgs { message, .. } => message,
+        };
+        log::debug!("run_command policy rejected: reason={reason:?}");
+        (message, None)
+    }
+}
+
+/// 已发生的审批（`AllowAlways` 的持久化副作用仍留在本层）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicyApproval {
+    UnknownCommandAllowOnce,
+    UnknownCommandAllowAlways,
+    PosixShellWrap,
+    ExternalPath,
+}
+
+/// 一次策略评估的最终生效参数。
+#[derive(Debug)]
+struct PolicyDecision {
+    allowed_commands: Arc<[String]>,
+    skip_arg_safety: bool,
+    capabilities: PolicyCapabilities,
+    approvals: Vec<PolicyApproval>,
+}
+
+/// 收敛三道审批 gate：未知命令 → shell 包装 → 工作区外路径。
+///
+/// 顺序、弹窗次数与错误文案与拆分前逐字一致；`async` / Docker / 通道可用性统一由
+/// [`PolicyCapabilities`] 判定。
+async fn evaluate_policy(
+    parsed: &ParsedRunCommandJson,
+    ctx: &PolicyContext<'_>,
+) -> Result<PolicyDecision, PolicyError> {
+    let capabilities = ctx.capabilities();
+    let (policy_cmd, policy_args) =
+        tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
+    let needs_shell = tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
+
+    let mut approvals = Vec::new();
+    let (allowed_commands, approval) = resolve_unknown_cmd_allowlist(parsed, needs_shell, ctx).await?;
+    approvals.extend(approval);
+    let (allowed_commands, approval) = approve_posix_shell_wrap_if_needed(
+        parsed,
+        policy_cmd.as_str(),
+        &policy_args,
+        allowed_commands,
+        ctx,
+    )
+    .await?;
+    approvals.extend(approval);
+    let gate = approve_external_run_command_paths_if_needed(parsed, &allowed_commands, ctx).await?;
+    let skip_arg_safety = matches!(gate, ExternalPathGate::Approved);
+    if skip_arg_safety {
+        approvals.push(PolicyApproval::ExternalPath);
+    }
+
+    let decision = PolicyDecision {
+        allowed_commands,
+        skip_arg_safety,
+        capabilities,
+        approvals,
+    };
+    log::debug!(
+        "run_command policy: mode={:?} skip_arg_safety={} approvals={:?}",
+        decision.capabilities.mode,
+        decision.skip_arg_safety,
+        decision.approvals
+    );
+    Ok(decision)
+}
+
 async fn request_unknown_cmd_approval(
-    cfg: &Arc<AgentConfig>,
-    web_ctx: Option<&WebToolRuntime>,
+    ctx: &PolicyContext<'_>,
     cmd: &str,
     script: &str,
     argv_tail: &str,
     needs_shell: bool,
-    async_mode: bool,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    if async_mode {
-        return Err((
-            format!(
+) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
+    if ctx.capabilities().mode == ExecMode::Async {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::UnknownCommand,
+            message: format!(
                 "错误：后台任务（async）要求命令 '{}' 已在白名单或已 AllowAlways 批准；请先 AllowAlways，或去掉 async 参数。",
                 cmd
             ),
-            None,
-        ));
+        });
     }
-    let allow_handles = crate::cm_internal::tool_approval::shared_allowlist_handles_web(web_ctx);
+    let Some(web_ctx) = ctx.web_ctx else {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::UnknownCommand,
+            message: format!(
+                "命令 '{}' 不在白名单中，且审批通道不可用。请在请求中提供 approval_session_id 以启用命令审批流程。",
+                cmd
+            ),
+        });
+    };
+    let allow_handles = crate::cm_internal::tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
     let cmd_show = if script.is_empty() {
         cmd.to_string()
     } else {
@@ -57,29 +219,30 @@ async fn request_unknown_cmd_approval(
         argv_tail,
         &cmd_show,
     );
-    let decision_opt = if web_ctx.is_some() {
-        match crate::cm_internal::tool_approval::request_tool_interactive_approval(
-            web_ctx.map(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink),
-            &spec,
-            "tool_registry::run_command approval",
-        )
-        .await
-        {
-            Ok(d) => Some(d),
-            Err(e) => {
-                return Err((e.user_message_zh().to_string(), None));
-            }
+    let decision = match crate::cm_internal::tool_approval::request_tool_interactive_approval(
+        Some(crate::cm_internal::tool_approval::web_tool_runtime_approval_sink(web_ctx)),
+        &spec,
+        "tool_registry::run_command approval",
+    )
+    .await
+    {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(PolicyError::ApprovalUnavailable {
+                reason: PolicyReason::UnknownCommand,
+                message: e.user_message_zh().to_string(),
+            });
         }
-    } else {
-        return Err((
-            format!(
-                "命令 '{}' 不在白名单中，且审批通道不可用。请在请求中提供 approval_session_id 以启用命令审批流程。",
-                cmd
-            ),
-            None,
-        ));
     };
-    apply_unknown_cmd_decision(cfg, cmd, needs_shell, &cmd_show, decision_opt, &allow_handles).await
+    apply_unknown_cmd_decision(
+        ctx.cfg,
+        cmd,
+        needs_shell,
+        &cmd_show,
+        decision,
+        &allow_handles,
+    )
+    .await
 }
 
 async fn apply_unknown_cmd_decision(
@@ -87,95 +250,61 @@ async fn apply_unknown_cmd_decision(
     cmd: &str,
     needs_shell: bool,
     cmd_show: &str,
-    decision_opt: Option<CommandApprovalDecision>,
+    decision: CommandApprovalDecision,
     allow_handles: &crate::cm_internal::tool_approval::SharedAllowlistHandles<'_>,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let Some(decision) = decision_opt else {
-        return Ok(Arc::clone(&cfg.command_exec.allowed_commands));
-    };
-    match decision {
-        CommandApprovalDecision::Deny => {
-            Err((format!("用户拒绝执行命令：{}", cmd_show.trim()), None))
-        }
-        CommandApprovalDecision::AllowOnce => Ok(extend_allowlist_with_cmd_and_optional_bash(
-            &cfg.command_exec.allowed_commands,
-            cmd,
-            needs_shell,
-        )),
-        CommandApprovalDecision::AllowAlways => {
-            crate::cm_internal::tool_approval::persist_allowlist_key(allow_handles, cmd).await;
-            Ok(extend_allowlist_with_cmd_and_optional_bash(
+) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
+    let extended = |approval| {
+        (
+            extend_allowlist_with_cmd_and_optional_bash(
                 &cfg.command_exec.allowed_commands,
                 cmd,
                 needs_shell,
-            ))
+            ),
+            Some(approval),
+        )
+    };
+    match decision {
+        CommandApprovalDecision::Deny => Err(PolicyError::Denied {
+            reason: PolicyReason::UnknownCommand,
+            message: format!("用户拒绝执行命令：{}", cmd_show.trim()),
+        }),
+        CommandApprovalDecision::AllowOnce => Ok(extended(PolicyApproval::UnknownCommandAllowOnce)),
+        CommandApprovalDecision::AllowAlways => {
+            crate::cm_internal::tool_approval::persist_allowlist_key(allow_handles, cmd).await;
+            Ok(extended(PolicyApproval::UnknownCommandAllowAlways))
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)] // 与 run_command_resolve_effective_allowlist 同组参数
 async fn resolve_unknown_cmd_allowlist(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
-    cmd: &str,
-    command_raw: &str,
-    script: &str,
-    argv_tail: &str,
+    parsed: &ParsedRunCommandJson,
     needs_shell: bool,
-    async_mode: bool,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
+    ctx: &PolicyContext<'_>,
+) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
+    let base = Arc::clone(&ctx.cfg.command_exec.allowed_commands);
+    if !cmd_missing_from_allowlist(&parsed.cmd, base.as_ref()) {
+        return Ok((base, None));
+    }
     if crate::cm_internal::tools::run_command_invocation_targets_workspace_script_or_executable(
-        effective_working_dir,
-        command_raw,
+        ctx.workspace,
+        &parsed.spec.command,
     ) {
-        return Ok(extend_allowed_commands_arc(
-            &cfg.command_exec.allowed_commands,
-            cmd,
-        ));
+        return Ok((extend_allowed_commands_arc(&base, &parsed.cmd), None));
     }
-    let already_allowed = match web_ctx {
-        Some(w) => w.persistent_allowlist_shared.lock().await.contains(cmd),
-        None => false,
-    };
-    if already_allowed {
-        return Ok(extend_allowed_commands_arc(
-            &cfg.command_exec.allowed_commands,
-            cmd,
-        ));
+    if let Some(w) = ctx.web_ctx
+        && w.persistent_allowlist_shared
+            .lock()
+            .await
+            .contains(parsed.cmd.as_str())
+    {
+        return Ok((extend_allowed_commands_arc(&base, &parsed.cmd), None));
     }
-    request_unknown_cmd_approval(cfg, web_ctx, cmd, script, argv_tail, needs_shell, async_mode)
-        .await
-}
-
-/// 解析 `run_command` 白名单与交互审批，返回最终生效的 `allowed_commands` 快照（可能与配置不同）。
-/// `async_mode=true` 时**拒绝**任何会触发交互审批的路径（后台任务无法关联单次 AllowOnce 审批）。
-#[allow(clippy::too_many_arguments)] // 白名单解析：配置、目录、Web 上下文、命令/脚本与审批模式
-async fn run_command_resolve_effective_allowlist(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
-    cmd: &str,
-    command_raw: &str,
-    script: &str,
-    argv_tail: &str,
-    needs_shell: bool,
-    async_mode: bool,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let effective_allowed_arc = Arc::clone(&cfg.command_exec.allowed_commands);
-    if !cmd_missing_from_allowlist(cmd, effective_allowed_arc.as_ref()) {
-        return Ok(effective_allowed_arc);
-    }
-    resolve_unknown_cmd_allowlist(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        cmd,
-        command_raw,
-        script,
-        argv_tail,
+    request_unknown_cmd_approval(
+        ctx,
+        parsed.cmd.as_str(),
+        parsed.script.as_str(),
+        parsed.argv_tail.as_str(),
         needs_shell,
-        async_mode,
     )
     .await
 }
@@ -212,93 +341,67 @@ fn posix_shell_wrap_needs_interactive_approval(
 }
 
 /// 白名单无 bash/sh 但 argv 需要 glob/`$VAR` 时，或 Web 上 argv 含 `&&`/`|` 等操作符时：审批完整脚本。
-/// `async_mode=true` 时拒绝需要交互审批的 bash 包装。
+/// `async` 模式拒绝需要交互审批的 bash 包装。
 async fn approve_posix_shell_wrap_if_needed(
-    command_raw: &str,
-    cmd_args: &[String],
-    script: &str,
+    parsed: &ParsedRunCommandJson,
+    policy_cmd: &str,
+    policy_args: &[String],
     effective_allowed: Arc<[String]>,
-    web_ctx: Option<&WebToolRuntime>,
-    sse_command: &str,
-    async_mode: bool,
-) -> Result<Arc<[String]>, String> {
+    ctx: &PolicyContext<'_>,
+) -> Result<(Arc<[String]>, Option<PolicyApproval>), PolicyError> {
     if tools::allowlist_allows_all(effective_allowed.as_ref()) {
-        return Ok(effective_allowed);
+        return Ok((effective_allowed, None));
     }
     if !posix_shell_wrap_needs_interactive_approval(
-        command_raw,
-        cmd_args,
+        policy_cmd,
+        policy_args,
         tools::posix_shell_on_allowlist(effective_allowed.as_ref()).is_some(),
-        web_ctx.is_some(),
+        ctx.web_ctx.is_some(),
     ) {
-        return Ok(effective_allowed);
+        return Ok((effective_allowed, None));
     }
-    if web_ctx.is_none() {
-        return Err(format!(
-            "错误：{sse_command} 脚本含 glob / 变量 / 管道等，需经 bash -c 执行，但白名单无 bash/sh 且无审批通道。完整脚本：{}",
-            script.trim()
-        ));
+    let capabilities = ctx.capabilities();
+    if !capabilities.has_approval_channel {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::PosixShellWrap,
+            message: format!(
+                "错误：{} 脚本含 glob / 变量 / 管道等，需经 bash -c 执行，但白名单无 bash/sh 且无审批通道。完整脚本：{}",
+                ctx.sse_command,
+                parsed.script.trim()
+            ),
+        });
     }
-    if async_mode {
-        return Err(format!(
-            "错误：后台任务（async）不允许 bash -c 包装的交互审批；请先将 bash/sh 列入白名单，或去掉 async 参数。完整脚本：{}",
-            script.trim()
-        ));
+    if capabilities.mode == ExecMode::Async {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::PosixShellWrap,
+            message: format!(
+                "错误：后台任务（async）不允许 bash -c 包装的交互审批；请先将 bash/sh 列入白名单，或去掉 async 参数。完整脚本：{}",
+                parsed.script.trim()
+            ),
+        });
     }
-    let spec = tool_approval::approval_spec_shell_script(sse_command, script);
-    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
+    let spec = tool_approval::approval_spec_shell_script(ctx.sse_command, parsed.script.as_str());
+    let allow_handles = tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
     match tool_approval::interactive_gate_after_whitelist_miss(
-        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
         "tool_registry::run_command shell script approval",
         &allow_handles,
     )
     .await
     {
-        Ok(InteractiveGateOutcome::Allowed) => {
-            Ok(extend_allowed_commands_arc(&effective_allowed, "bash"))
-        }
-        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{msg}")),
-        Err(e) => Err(e.user_message_zh().to_string()),
-    }
-}
-
-async fn resolve_run_command_shell_allowlist(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
-    parsed: &ParsedRunCommandJson,
-    sse_command: &str,
-    async_mode: bool,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let (policy_cmd, policy_args) =
-        tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
-    let needs_shell = tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
-    let allowed = run_command_resolve_effective_allowlist(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        parsed.cmd.as_str(),
-        parsed.spec.command.as_str(),
-        parsed.script.as_str(),
-        parsed.argv_tail.as_str(),
-        needs_shell,
-        async_mode,
-    )
-    .await?;
-    match approve_posix_shell_wrap_if_needed(
-        policy_cmd.as_str(),
-        &policy_args,
-        parsed.script.as_str(),
-        allowed,
-        web_ctx,
-        sse_command,
-        async_mode,
-    )
-    .await
-    {
-        Ok(a) => Ok(a),
-        Err(e) => Err((e, None)),
+        Ok(InteractiveGateOutcome::Allowed) => Ok((
+            extend_allowed_commands_arc(&effective_allowed, "bash"),
+            Some(PolicyApproval::PosixShellWrap),
+        )),
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(PolicyError::Denied {
+            reason: PolicyReason::PosixShellWrap,
+            message: format!("已拒绝：{msg}"),
+        }),
+        Err(e) => Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::PosixShellWrap,
+            message: e.user_message_zh().to_string(),
+        }),
     }
 }
 
@@ -310,51 +413,66 @@ enum ExternalPathGate {
 }
 
 /// 配置关或无危险参数 → [`NotNeeded`]；Docker / 无通道 / 拒绝 → `Err`；批准 → [`Approved`]。
-/// `async_mode=true` 时拒绝需要交互审批的工作区外路径。
+/// `async` 模式拒绝需要交互审批的工作区外路径。
 async fn approve_external_run_command_paths_if_needed(
-    cfg: &AgentConfig,
-    spec: &tools::CommandSpec,
-    working_dir: &Path,
+    parsed: &ParsedRunCommandJson,
     allowed_commands: &[String],
-    web_ctx: Option<&WebToolRuntime>,
-    sse_command: &str,
-    async_mode: bool,
-) -> Result<ExternalPathGate, String> {
-    if !cfg.command_exec.allow_external_path_with_approval {
+    ctx: &PolicyContext<'_>,
+) -> Result<ExternalPathGate, PolicyError> {
+    if !ctx.cfg.command_exec.allow_external_path_with_approval {
         return Ok(ExternalPathGate::NotNeeded);
     }
-    let unsafe_args =
-        match tools::scan_run_command_unsafe_args_spec(spec, working_dir, allowed_commands) {
-            Ok(v) => v,
-            Err(e) => return Err(e.extended_user_message()),
-        };
+    let unsafe_args = match tools::scan_run_command_unsafe_args_spec(
+        &parsed.spec,
+        ctx.workspace,
+        allowed_commands,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(PolicyError::InvalidArgs {
+                reason: PolicyReason::ExternalPath,
+                message: e.extended_user_message(),
+            });
+        }
+    };
     if unsafe_args.is_empty() {
         return Ok(ExternalPathGate::NotNeeded);
     }
-    if cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker {
-        return Err(format!(
-            "错误：Docker 同步工具沙盒模式下不支持工作区外路径参数（{}）。请改用宿主模式或去掉外部路径 / 路径穿越形 \"..\"。",
-            unsafe_args.join(", ")
-        ));
+    let capabilities = ctx.capabilities();
+    if capabilities.mode == ExecMode::Docker {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::ExternalPath,
+            message: format!(
+                "错误：Docker 同步工具沙盒模式下不支持工作区外路径参数（{}）。请改用宿主模式或去掉外部路径 / 路径穿越形 \"..\"。",
+                unsafe_args.join(", ")
+            ),
+        });
     }
-    if web_ctx.is_none() {
-        return Err(format!(
-            "错误：{sse_command} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
-            unsafe_args.join(", ")
-        ));
+    if !capabilities.has_approval_channel {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::ExternalPath,
+            message: format!(
+                "错误：{} 访问工作区外路径（{}）需要审批通道（当前无可用会话）。",
+                ctx.sse_command,
+                unsafe_args.join(", ")
+            ),
+        });
     }
-    if async_mode {
-        return Err(format!(
-            "错误：后台任务（async）不支持工作区外路径（{}）的交互审批；请去掉外部路径 / 路径穿越形 \"..\"，或去掉 async 参数。",
-            unsafe_args.join(", ")
-        ));
+    if capabilities.mode == ExecMode::Async {
+        return Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::ExternalPath,
+            message: format!(
+                "错误：后台任务（async）不支持工作区外路径（{}）的交互审批；请去掉外部路径 / 路径穿越形 \"..\"，或去掉 async 参数。",
+                unsafe_args.join(", ")
+            ),
+        });
     }
     let detail_paths = unsafe_args.join(", ");
     let spec =
-        tool_approval::approval_spec_workspace_external_path(sse_command, &detail_paths);
-    let allow_handles = tool_approval::shared_allowlist_handles_web(web_ctx);
+        tool_approval::approval_spec_workspace_external_path(ctx.sse_command, &detail_paths);
+    let allow_handles = tool_approval::shared_allowlist_handles_web(ctx.web_ctx);
     match tool_approval::interactive_gate_after_whitelist_miss(
-        web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
+        ctx.web_ctx.map(tool_approval::web_tool_runtime_approval_sink),
         &spec,
         "tool_registry::run_command external path approval",
         &allow_handles,
@@ -362,7 +480,13 @@ async fn approve_external_run_command_paths_if_needed(
     .await
     {
         Ok(InteractiveGateOutcome::Allowed) => Ok(ExternalPathGate::Approved),
-        Ok(InteractiveGateOutcome::Denied(msg)) => Err(format!("已拒绝：{}", msg)),
-        Err(e) => Err(e.user_message_zh().to_string()),
+        Ok(InteractiveGateOutcome::Denied(msg)) => Err(PolicyError::Denied {
+            reason: PolicyReason::ExternalPath,
+            message: format!("已拒绝：{}", msg),
+        }),
+        Err(e) => Err(PolicyError::ApprovalUnavailable {
+            reason: PolicyReason::ExternalPath,
+            message: e.user_message_zh().to_string(),
+        }),
     }
 }

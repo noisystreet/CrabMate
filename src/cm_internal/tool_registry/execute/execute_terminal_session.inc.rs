@@ -106,29 +106,21 @@ async fn execute_terminal_session_impl(
         Err(e) => return e,
     };
 
-    let effective_allowed = match terminal_session_effective_allowed(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        exec_parsed.as_ref(),
-    )
-    .await
-    {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-
-    let skip_arg_safety = match terminal_session_skip_arg_safety(
-        cfg.as_ref(),
-        effective_working_dir,
-        web_ctx,
-        exec_parsed.as_ref(),
-        effective_allowed.as_ref(),
-    )
-    .await
-    {
-        Ok(v) => v,
-        Err(e) => return (e, None),
+    let (effective_allowed, skip_arg_safety) = match exec_parsed.as_ref() {
+        None => (Arc::clone(&cfg.command_exec.allowed_commands), false),
+        Some(parsed) => {
+            let policy_ctx = PolicyContext {
+                cfg,
+                workspace: effective_working_dir,
+                web_ctx,
+                mode: ExecMode::Pty,
+                sse_command: "terminal_session",
+            };
+            match evaluate_policy(parsed, &policy_ctx).await {
+                Ok(d) => (d.allowed_commands, d.skip_arg_safety),
+                Err(e) => return e.into_message(),
+            }
+        }
     };
 
     let wall_secs = terminal_session_outer_wall_secs(cfg.as_ref());
@@ -163,51 +155,4 @@ async fn execute_terminal_session_impl(
     }
 
     (result, None)
-}
-
-async fn terminal_session_effective_allowed(
-    cfg: &Arc<AgentConfig>,
-    effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
-    parsed: Option<&ParsedRunCommandJson>,
-) -> Result<Arc<[String]>, (String, Option<serde_json::Value>)> {
-    let Some(parsed) = parsed else {
-        return Ok(Arc::clone(&cfg.command_exec.allowed_commands));
-    };
-    resolve_run_command_shell_allowlist(
-        cfg,
-        effective_working_dir,
-        web_ctx,
-        parsed,
-        "terminal_session",
-        false,
-    )
-    .await
-}
-
-async fn terminal_session_skip_arg_safety(
-    cfg: &AgentConfig,
-    effective_working_dir: &Path,
-    web_ctx: Option<&WebToolRuntime>,
-    parsed: Option<&ParsedRunCommandJson>,
-    effective_allowed: &[String],
-) -> Result<bool, String> {
-    let Some(parsed) = parsed else {
-        return Ok(false);
-    };
-    match approve_external_run_command_paths_if_needed(
-        cfg,
-        &parsed.spec,
-        effective_working_dir,
-        effective_allowed,
-        web_ctx,
-        "terminal_session",
-        false,
-    )
-    .await
-    {
-        Ok(ExternalPathGate::Approved) => Ok(true),
-        Ok(ExternalPathGate::NotNeeded) => Ok(false),
-        Err(e) => Err(e),
-    }
 }

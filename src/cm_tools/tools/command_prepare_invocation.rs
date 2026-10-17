@@ -272,17 +272,6 @@ pub fn scan_run_command_unsafe_args_spec(
     Ok(unsafe_args)
 }
 
-/// 与 [`scan_run_command_unsafe_args_spec`] 同源：从原始 args JSON 解析后扫描
-/// argv 级不安全参数（空 = 无需外部路径审批）。
-pub fn scan_run_command_unsafe_args_json(
-    args_json: &str,
-    working_dir: &Path,
-    allowed_commands: &[String],
-) -> Result<Vec<String>, RunCommandError> {
-    let spec = parse_command_spec(args_json, working_dir)?;
-    scan_run_command_unsafe_args_spec(&spec, working_dir, allowed_commands)
-}
-
 fn skip_shell_variable_check(cmd_raw: &str, cmd_args: &[String], allowed: &[String]) -> bool {
     is_shell_dash_c_invocation(cmd_raw, cmd_args)
         || (posix_shell_on_allowlist(allowed).is_some()

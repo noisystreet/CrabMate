@@ -17,23 +17,50 @@ async fn execute_run_command_impl(
     if !workspace_is_set {
         return (web_tool_err_workspace_not_set("执行命令"), None);
     }
+    let cfg = env.cfg;
     let args_value: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
     let async_flag = args_value
         .get("async")
         .and_then(|x| x.as_bool())
         .unwrap_or(false);
     let timeout_secs = args_value.get("timeout_secs").and_then(|x| x.as_u64());
-    if async_flag {
-        return execute_run_command_async(RunCommandAsyncInvoke {
-            env,
-            effective_working_dir,
-            web_ctx,
-            args,
-            tool_jobs: tool_jobs.clone(),
-        })
-        .await;
+    let docker_sandbox =
+        cfg.sync_tool_sandbox.sync_default_tool_sandbox_mode == SyncDefaultToolSandboxMode::Docker;
+    let capabilities = RunCommandCapabilities {
+        mode: if async_flag {
+            ExecMode::Async
+        } else if docker_sandbox {
+            ExecMode::Docker
+        } else {
+            ExecMode::Sync
+        },
+        background_jobs_enabled: cfg
+            .tool_registry_policy
+            .tool_registry_background_jobs_enabled,
+        has_job_registry: tool_jobs.is_some(),
+        docker_sandbox,
+    };
+    if async_flag
+        && let Some(message) = capabilities.async_unavailable_reason()
+    {
+        return (message.to_string(), None);
     }
-    execute_run_command_sync_host(RunCommandSyncHostInvoke {
+    let parsed = match parse_run_command_json(args, effective_working_dir) {
+        Ok(p) => p,
+        Err(e) => return (e.extended_user_message(), None),
+    };
+    let policy_ctx = PolicyContext {
+        cfg,
+        workspace: effective_working_dir,
+        web_ctx,
+        mode: capabilities.mode,
+        sse_command: "run_command",
+    };
+    let decision = match evaluate_policy(&parsed, &policy_ctx).await {
+        Ok(d) => d,
+        Err(e) => return e.into_message(),
+    };
+    execute_run_command_facade(RunCommandFacadeInvoke {
         env,
         effective_working_dir,
         workspace_is_set,
@@ -44,7 +71,11 @@ async fn execute_run_command_impl(
         sse_out_tx,
         sse_control_mirror,
         cancel,
+        tool_jobs,
         timeout_secs,
+        parsed,
+        decision,
+        capabilities,
     })
     .await
 }
