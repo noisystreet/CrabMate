@@ -6,10 +6,12 @@ use std::process::Command;
 use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
 
 use super::test_result_cache::{
-    TestCacheKey, TestCacheKind, cargo_test_run_command_args_fingerprint,
-    fingerprint_rust_workspace_sources, try_get_cached, wrap_cache_hit,
+    TestCacheKey, TestCacheKind, fingerprint_rust_workspace_sources, try_get_cached,
+    wrap_cache_hit,
 };
 use crate::cm_tools::tool_result::ToolError;
+
+use super::command_outcome::{CommandDigest, CommandOutcome};
 
 #[path = "command_shell_script.rs"]
 mod command_shell_script;
@@ -191,10 +193,12 @@ fn plan_cargo_test_cache(
         return None;
     }
     let inputs_fp = fingerprint_rust_workspace_sources(opts.workspace_root)?;
-    let args_fp = cargo_test_run_command_args_fingerprint(
-        &prepared.cmd_args,
-        prepared.effective_working_dir.as_path(),
-    );
+    let args_fp = CommandDigest::from_invocation(
+        prepared.cmd_name.clone(),
+        prepared.cmd_args.clone(),
+    )
+    .with_cwd(prepared.effective_working_dir.as_path())
+    .key();
     let key = TestCacheKey {
         workspace_root: opts.workspace_root.to_path_buf(),
         kind: TestCacheKind::CargoTestViaRunCommand,
@@ -221,7 +225,13 @@ fn plan_cargo_test_cache(
 }
 
 /// 在指定工作目录下执行白名单内的 Linux 命令（同步等待）。
-pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<String, RunCommandError> {
+///
+/// 返回 [`CommandOutcome`]：进程启动后的成功 / 非零退出 / 超时 / 取消都在 `status` 中；
+/// `Err` 仅表示未启动（解析、策略、限流、spawn 失败）。
+pub fn run(
+    spec: &CommandSpec,
+    opts: RunOptions<'_>,
+) -> Result<CommandOutcome, RunCommandError> {
     match plan_run_command_spec(
         spec,
         opts.allowed_commands,
@@ -229,7 +239,7 @@ pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<String, RunComman
         opts.test_cache.as_ref(),
         opts.skip_arg_safety,
     )? {
-        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::CacheHit(body) => Ok(CommandOutcome::cached(body)),
         RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, opts.max_output_len, opts.wait),
     }
 }
@@ -238,7 +248,7 @@ pub fn run(spec: &CommandSpec, opts: RunOptions<'_>) -> Result<String, RunComman
 pub async fn run_async(
     spec: &CommandSpec,
     opts: RunOptions<'_>,
-) -> Result<String, RunCommandError> {
+) -> Result<CommandOutcome, RunCommandError> {
     match plan_run_command_spec(
         spec,
         opts.allowed_commands,
@@ -246,10 +256,20 @@ pub async fn run_async(
         opts.test_cache.as_ref(),
         opts.skip_arg_safety,
     )? {
-        RunCommandPlan::CacheHit(body) => Ok(body),
+        RunCommandPlan::CacheHit(body) => Ok(CommandOutcome::cached(body)),
         RunCommandPlan::Spawn(plan) => {
             execute_spawn_plan_async(plan, opts.max_output_len, opts.wait).await
         }
+    }
+}
+
+/// 将 [`CommandOutcome`] 渲染为历史文本；超时 / 取消转回 `ToolError`。
+#[allow(clippy::result_large_err)]
+fn finish_legacy(outcome: &CommandOutcome, max_output_len: usize) -> Result<String, ToolError> {
+    let rendered = outcome.render(max_output_len);
+    match outcome.session_stop_tool_error(&rendered) {
+        Some(e) => Err(e),
+        None => Ok(rendered),
     }
 }
 
@@ -287,7 +307,7 @@ pub fn run_args_json(
         Ok(s) => s,
         Err(e) => return e.extended_user_message(),
     };
-    run(
+    match run(
         &spec,
         options_for(
             max_output_len,
@@ -297,8 +317,11 @@ pub fn run_args_json(
             skip_arg_safety,
             &wait,
         ),
-    )
-    .unwrap_or_else(|e| e.extended_user_message())
+    ) {
+        Ok(outcome) => finish_legacy(&outcome, max_output_len)
+            .unwrap_or_else(|e| e.message),
+        Err(e) => e.extended_user_message(),
+    }
 }
 
 /// 已弃用：请先 `parse_command_spec`，再调用 [`run`] 并映射错误。
@@ -328,11 +351,13 @@ pub fn run_try(
         ),
     )
     .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请先 `parse_command_spec`，再调用 [`run`]。
 #[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 pub fn run_checked(
     args_json: &str,
     max_output_len: usize,
@@ -340,9 +365,10 @@ pub fn run_checked(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
-) -> Result<String, RunCommandError> {
+) -> Result<String, ToolError> {
     let wait = SubprocessWaitCtl::default();
-    let spec = parse_command_spec(args_json, working_dir)?;
+    let spec =
+        parse_command_spec(args_json, working_dir).map_err(RunCommandError::into_tool_error)?;
     run(
         &spec,
         options_for(
@@ -354,11 +380,14 @@ pub fn run_checked(
             &wait,
         ),
     )
+    .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请先 `parse_command_spec`，再调用 [`run`] 并传入 `wait`。
 #[deprecated(note = "use parse_command_spec + run(&CommandSpec, RunOptions)")]
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 pub fn run_checked_wait(
     args_json: &str,
     max_output_len: usize,
@@ -367,8 +396,9 @@ pub fn run_checked_wait(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let spec = parse_command_spec(args_json, working_dir)?;
+) -> Result<String, ToolError> {
+    let spec =
+        parse_command_spec(args_json, working_dir).map_err(RunCommandError::into_tool_error)?;
     run(
         &spec,
         options_for(
@@ -380,6 +410,8 @@ pub fn run_checked_wait(
             wait,
         ),
     )
+    .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请先 `parse_command_spec`，再调用 [`run_async`]。
@@ -410,11 +442,13 @@ pub async fn run_try_wait_async(
     )
     .await
     .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请先 `parse_command_spec`，再调用 [`run_async`]。
 #[deprecated(note = "use parse_command_spec + run_async(&CommandSpec, RunOptions)")]
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 pub async fn run_checked_wait_async(
     args_json: &str,
     max_output_len: usize,
@@ -423,8 +457,9 @@ pub async fn run_checked_wait_async(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
-    let spec = parse_command_spec(args_json, working_dir)?;
+) -> Result<String, ToolError> {
+    let spec =
+        parse_command_spec(args_json, working_dir).map_err(RunCommandError::into_tool_error)?;
     run_async(
         &spec,
         options_for(
@@ -437,6 +472,8 @@ pub async fn run_checked_wait_async(
         ),
     )
     .await
+    .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请直接调用 [`run_async`]。
@@ -465,11 +502,13 @@ pub async fn run_try_wait_async_spec(
     )
     .await
     .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 /// 已弃用：请直接调用 [`run_async`]。
 #[deprecated(note = "use run_async(&CommandSpec, RunOptions)")]
 #[allow(dead_code)]
+#[allow(clippy::result_large_err)]
 pub async fn run_checked_wait_async_spec(
     spec: &CommandSpec,
     max_output_len: usize,
@@ -478,7 +517,7 @@ pub async fn run_checked_wait_async_spec(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
+) -> Result<String, ToolError> {
     run_async(
         spec,
         options_for(
@@ -491,6 +530,8 @@ pub async fn run_checked_wait_async_spec(
         ),
     )
     .await
+    .map_err(RunCommandError::into_tool_error)
+    .and_then(|outcome| finish_legacy(&outcome, max_output_len))
 }
 
 pub(crate) fn parse_run_command_value_with_repair(

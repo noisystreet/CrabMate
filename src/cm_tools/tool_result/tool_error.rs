@@ -78,7 +78,9 @@ impl std::error::Error for ToolError {}
 /// 由 `error_code` 推导粗粒度 **`failure_category`**（与 SSE / `crabmate_tool` 同源；启发式，新增码可能落入 `unknown`）。
 pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
     match code {
-        "invalid_args" | "missing_command" => ToolFailureCategory::InvalidInput,
+        "invalid_args" | "missing_command" | "unsafe_arg" | "cd_prefix_invalid" => {
+            ToolFailureCategory::InvalidInput
+        }
         "unknown_tool" => ToolFailureCategory::Unknown,
         "command_not_allowed"
         | "command_denied"

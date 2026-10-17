@@ -9,9 +9,11 @@ pub(super) fn classify_run_command_failure_family_from_invocation(
     command: &str,
     args: &[String],
 ) -> Option<&'static str> {
-    // `run_command` 不经 shell：`cd` 不可 exec。支持 `cd <相对> && <cmd…>` 由实现换目录，勿归为「cd 不可用」。
+    // `run_command` 不经 shell：`cd` 仅支持 `[相对目录, "&&", 命令, …]`（可串联）。
+    // 其余形态在剥离阶段即报 `CdPrefixInvalid`（`error_code = "cd_prefix_invalid"`），
+    // 此处必须使用同一家族键，否则执行前后标记无法互相命中。
     if command == "cd" && !(args.len() >= 3 && args.get(1).is_some_and(|s| s == "&&")) {
-        return Some("shell_builtin_cd_unavailable");
+        return Some("cd_prefix_invalid");
     }
     if args.iter().any(|a| a.contains("..") || a.starts_with('/')) {
         return Some("path_parent_or_absolute_forbidden");
@@ -19,25 +21,29 @@ pub(super) fn classify_run_command_failure_family_from_invocation(
     None
 }
 
+/// 依据调用参数与结构化结果（退出码 / stdout / stderr / error_code）判定失败家族。
+///
+/// 进程已启动（`exit_code` 非空）：只按输出内容判定；启动前失败：优先信任结构化 `error_code`，
+/// 仅在没有 `error_code` 的旧式输出上才回退到参数形态判定。
 pub(super) fn classify_run_command_failure_family_from_result(
-    result: &str,
+    args_json: &str,
+    parsed: &crate::cm_tools::tool_result::ParsedLegacyOutput,
 ) -> Option<&'static str> {
-    if result.contains("参数不允许包含 \"..\" 或绝对路径（以 / 开头）") {
-        return Some("path_parent_or_absolute_forbidden");
+    if parsed.exit_code.is_some() {
+        let output_has_no_tests = parsed.stdout.contains("No tests were found")
+            || parsed.stderr.contains("No tests were found");
+        return output_has_no_tests.then_some("ctest_no_tests_found");
     }
-    if result.contains("`cd` 前缀无效") {
-        return Some("cd_prefix_invalid");
+    let (command, args) = parse_run_command_payload(args_json)?;
+    if let Some(code) = parsed.error_code.as_deref() {
+        return match code {
+            "cd_prefix_invalid" => Some("cd_prefix_invalid"),
+            "unsafe_arg" => Some("path_parent_or_absolute_forbidden"),
+            "command_not_found" if command == "cd" => Some("shell_builtin_cd_unavailable"),
+            _ => None,
+        };
     }
-    if result.contains("命令 \"cd\" 不存在或在当前环境中不可用") {
-        return Some("shell_builtin_cd_unavailable");
-    }
-    if result.contains("当前目录缺少 Cargo.toml") {
-        return Some("cargo_manifest_missing");
-    }
-    if result.contains("No tests were found") {
-        return Some("ctest_no_tests_found");
-    }
-    None
+    classify_run_command_failure_family_from_invocation(&command, &args)
 }
 
 fn cargo_subcommand_needs_manifest(args: &[String]) -> bool {
@@ -154,13 +160,36 @@ mod tests {
         classify_run_command_failure_family_from_invocation,
         classify_run_command_failure_family_from_result,
     };
+    use crate::cm_tools::tool_result::ParsedLegacyOutput;
+
+    fn launch_failure(exit_code: Option<i32>) -> ParsedLegacyOutput {
+        ParsedLegacyOutput {
+            ok: false,
+            exit_code,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: None,
+        }
+    }
+
+    fn launch_failure_with_code(code: &str) -> ParsedLegacyOutput {
+        let mut parsed = launch_failure(None);
+        parsed.error_code = Some(code.to_string());
+        parsed
+    }
 
     #[test]
     fn classify_family_from_invocation_forbidden_path_and_cd() {
         let cd_args = vec!["tmp".to_string()];
         assert_eq!(
             classify_run_command_failure_family_from_invocation("cd", cd_args.as_slice()),
-            Some("shell_builtin_cd_unavailable")
+            Some("cd_prefix_invalid")
+        );
+
+        let cd_incomplete = vec!["tmp".to_string(), "&&".to_string()];
+        assert_eq!(
+            classify_run_command_failure_family_from_invocation("cd", cd_incomplete.as_slice()),
+            Some("cd_prefix_invalid")
         );
 
         let cd_peel = vec![
@@ -185,34 +214,93 @@ mod tests {
     }
 
     #[test]
-    fn classify_family_from_result_known_failures() {
+    fn classify_family_from_result_launch_failures() {
         assert_eq!(
             classify_run_command_failure_family_from_result(
-                "错误：参数不允许包含 \"..\" 或绝对路径（以 / 开头）"
+                r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
+                &launch_failure_with_code("unsafe_arg")
             ),
             Some("path_parent_or_absolute_forbidden")
         );
         assert_eq!(
             classify_run_command_failure_family_from_result(
-                "错误：命令 \"cd\" 不存在或在当前环境中不可用（工作目录：/tmp）"
-            ),
-            Some("shell_builtin_cd_unavailable")
-        );
-        assert_eq!(
-            classify_run_command_failure_family_from_result(
-                "错误：`cd` 前缀无效：…（当前工作目录：/tmp）"
+                r#"{"command":"cd","args":["tmp"]}"#,
+                &launch_failure_with_code("cd_prefix_invalid")
             ),
             Some("cd_prefix_invalid")
         );
         assert_eq!(
             classify_run_command_failure_family_from_result(
-                "错误：当前目录缺少 Cargo.toml，已阻止重复无效执行。"
+                r#"{"command":"cd","args":["tmp","&&"]}"#,
+                &launch_failure_with_code("cd_prefix_invalid")
             ),
-            Some("cargo_manifest_missing")
+            Some("cd_prefix_invalid")
         );
         assert_eq!(
-            classify_run_command_failure_family_from_result("No tests were found!!!"),
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"cd","args":["tmp"]}"#,
+                &launch_failure_with_code("command_not_found")
+            ),
+            Some("shell_builtin_cd_unavailable")
+        );
+        // 非 `cd` 的启动失败不被参数形态误归类（如 skip_arg_safety 路径）。
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"ls","args":["../x"]}"#,
+                &launch_failure_with_code("command_not_found")
+            ),
+            None
+        );
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"cargo","args":["test"]}"#,
+                &launch_failure(None)
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn classify_family_consistent_between_invocation_and_result() {
+        for (args_json, code) in [
+            (r#"{"command":"cd","args":["tmp"]}"#, "cd_prefix_invalid"),
+            (r#"{"command":"cd","args":["tmp","&&"]}"#, "cd_prefix_invalid"),
+            (
+                r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
+                "unsafe_arg",
+            ),
+        ] {
+            let (command, args) = super::parse_run_command_payload(args_json).expect("payload");
+            assert_eq!(
+                classify_run_command_failure_family_from_invocation(&command, &args),
+                classify_run_command_failure_family_from_result(
+                    args_json,
+                    &launch_failure_with_code(code)
+                ),
+                "args_json={args_json}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_family_from_result_exited_process() {
+        let mut parsed = launch_failure(Some(0));
+        parsed.stdout = "No tests were found!!!".to_string();
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"ctest","args":["--test-dir","build"]}"#,
+                &parsed
+            ),
             Some("ctest_no_tests_found")
+        );
+
+        let parsed = launch_failure(Some(1));
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
+                &parsed
+            ),
+            None
         );
     }
 

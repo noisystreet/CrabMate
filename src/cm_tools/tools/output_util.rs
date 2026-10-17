@@ -388,7 +388,7 @@ pub(super) fn truncate_output_lines(s: &str, max_bytes: usize, max_lines: usize)
 }
 
 /// 带 `标准输出：` / `标准错误：` 标记的部分输出块，供 `parse_legacy_output` 提取到 `stdout`/`stderr`；
-/// 超时/取消信封与 `run_command` 的 `format_command_streams` 同构。
+/// 超时/取消信封与 `run_command` 的 `CommandOutcome::render` 同构。
 #[must_use]
 pub fn format_marked_streams_block(stdout: &str, stderr: &str, max_bytes: usize, max_lines: usize) -> String {
     let mut out = String::new();

@@ -261,6 +261,7 @@ async fn serial_execute_one_tool_call(
 
     serial_bookkeep_run_command_failure(
         st.per_coord,
+        st.effective_working_dir,
         name.as_str(),
         args.as_str(),
         result.as_str(),

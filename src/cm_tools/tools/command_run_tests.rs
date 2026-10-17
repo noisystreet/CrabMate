@@ -1,5 +1,6 @@
 use super::*;
 use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
+use crate::cm_tools::tools::ExitStatusKind;
 use std::path::Path;
 
 const TEST_MAX_OUTPUT_LEN: usize = 8192;
@@ -57,7 +58,7 @@ fn run(
 ) -> String {
     let wait = SubprocessWaitCtl::default();
     match parse_command_spec(args_json, working_dir) {
-        Ok(spec) => super::run(
+        Ok(spec) => match super::run(
             &spec,
             RunOptions {
                 max_output_len,
@@ -67,8 +68,16 @@ fn run(
                 skip_arg_safety,
                 wait: &wait,
             },
-        )
-        .unwrap_or_else(|e| e.extended_user_message()),
+        ) {
+            Ok(outcome) => {
+                let rendered = outcome.render(max_output_len);
+                match outcome.session_stop_tool_error(&rendered) {
+                    Some(e) => e.message,
+                    None => rendered,
+                }
+            }
+            Err(e) => e.extended_user_message(),
+        },
         Err(e) => e.extended_user_message(),
     }
 }
@@ -80,7 +89,7 @@ fn run_checked(
     working_dir: &Path,
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
-) -> Result<String, RunCommandError> {
+) -> Result<CommandOutcome, RunCommandError> {
     let wait = SubprocessWaitCtl::default();
     let spec = parse_command_spec(args_json, working_dir)?;
     super::run(
@@ -104,7 +113,7 @@ fn run_checked_wait(
     test_cache: Option<RunCommandTestCacheOpts<'_>>,
     skip_arg_safety: bool,
     wait: &SubprocessWaitCtl,
-) -> Result<String, RunCommandError> {
+) -> Result<CommandOutcome, RunCommandError> {
     let spec = parse_command_spec(args_json, working_dir)?;
     super::run(
         &spec,
@@ -610,7 +619,7 @@ fn run_command_timeout_includes_partial_output_and_kills() {
     let args = format!(
         r#"{{"command":"bash","args":["-c","echo partial-out; sleep 60 # {marker}"]}}"#
     );
-    let err = run_checked_wait(
+    let outcome = run_checked_wait(
         &args,
         TEST_MAX_OUTPUT_LEN,
         &test_allowed(),
@@ -619,11 +628,20 @@ fn run_command_timeout_includes_partial_output_and_kills() {
         false,
         &SubprocessWaitCtl::with_wall_secs(1),
     )
-    .expect_err("timeout");
-    assert_eq!(err.kind(), "timeout");
-    let msg = err.user_message();
+    .expect("timeout outcome");
+    assert!(
+        matches!(outcome.status, ExitStatusKind::TimedOut { .. }),
+        "{:?}",
+        outcome.status
+    );
+    let msg = outcome.render(TEST_MAX_OUTPUT_LEN);
     assert!(msg.contains("命令执行超时"), "{msg}");
     assert!(msg.contains("partial-out"), "{msg}");
+    let te = outcome
+        .session_stop_tool_error(&msg)
+        .expect("timeout tool error");
+    assert_eq!(te.code, "timeout");
+    assert!(te.retryable);
     std::thread::sleep(std::time::Duration::from_millis(250));
     assert!(
         !crate::cm_tools::subprocess_session::proc_cmdline_contains(&marker),
@@ -635,7 +653,7 @@ fn run_command_timeout_includes_partial_output_and_kills() {
 #[test]
 fn run_command_timeout_legacy_parsed_keeps_stdout() {
     use crate::cm_tools::subprocess_session::SubprocessWaitCtl;
-    let err = run_checked_wait(
+    let outcome = run_checked_wait(
         r#"{"command":"bash","args":["-c","echo partial-out; sleep 60"]}"#,
         TEST_MAX_OUTPUT_LEN,
         &test_allowed(),
@@ -644,8 +662,11 @@ fn run_command_timeout_legacy_parsed_keeps_stdout() {
         false,
         &SubprocessWaitCtl::with_wall_secs(1),
     )
-    .expect_err("timeout");
-    let te = err.into_tool_error();
+    .expect("timeout outcome");
+    let rendered = outcome.render(TEST_MAX_OUTPUT_LEN);
+    let te = outcome
+        .session_stop_tool_error(&rendered)
+        .expect("timeout tool error");
     assert_eq!(te.code, "timeout");
     assert!(
         te.legacy_parsed.stdout.contains("partial-out"),
@@ -681,7 +702,16 @@ fn run_command_cancel_sets_cancelled_code() {
     });
     std::thread::sleep(std::time::Duration::from_millis(150));
     cancel.store(true, Ordering::SeqCst);
-    let err = handle.join().expect("join").expect_err("cancelled");
-    assert_eq!(err.kind(), "cancelled");
-    assert!(err.user_message().contains("命令已取消"));
+    let outcome = handle.join().expect("join").expect("cancelled outcome");
+    assert!(
+        matches!(outcome.status, ExitStatusKind::Cancelled),
+        "{:?}",
+        outcome.status
+    );
+    let rendered = outcome.render(TEST_MAX_OUTPUT_LEN);
+    let te = outcome
+        .session_stop_tool_error(&rendered)
+        .expect("cancelled tool error");
+    assert_eq!(te.code, "cancelled");
+    assert!(te.message.contains("命令已取消"), "{}", te.message);
 }
