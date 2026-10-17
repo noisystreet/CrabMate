@@ -133,6 +133,18 @@ pub(super) async fn save_cancelled_turn_best_effort(p: CancelledTurnSaveParams<'
         archive_rows,
     } = p;
     strip_persist_injections(messages);
+    // 取消可能停在 `assistant(tool_calls=[A, B]) + tool(A)` 或半截 arguments 上；
+    // 落盘前修复结构，避免下一轮请求被上游以「tool_calls 缺少 tool 响应」拒绝。
+    let repaired = crate::cm_agent::message_pipeline::
+        complete_pending_tool_responses_for_persistence(messages);
+    if repaired > 0 {
+        info!(
+            target: "crabmate",
+            "chat stream 取消回合落盘前补齐缺失的 tool 响应 job_id={} added={}",
+            job_id,
+            repaired
+        );
+    }
     if !current_turn_has_visible_assistant_output(messages) {
         return;
     }
