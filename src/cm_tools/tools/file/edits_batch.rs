@@ -12,9 +12,7 @@ use crate::cm_tools::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
-use crate::cm_tools::workspace::fs::write_bytes_under_root;
 
-use super::path::{canonical_workspace_root, tool_user_error_from_workspace_path};
 use super::replace_lines_stream::{verify_expect_content, verify_expect_line_content};
 use super::write_precheck::NOT_WRITTEN_HINT;
 
@@ -421,12 +419,8 @@ pub(super) fn modify_file_batch_edits(
     if let Err(e) = super::write_precheck::precheck_before_write(path, &out, skip_precheck) {
         return e;
     }
-
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    match write_bytes_under_root(&base, target, out.as_bytes(), false, false) {
+    // 统一提交入口：临时文件写满并 fsync 后、rename 前一刻校验 revision（TOCTOU 窗口最小化）。
+    match super::commit_guard::write_bytes_with_revision_guard(target, out.as_bytes(), v, ctx, true) {
         Ok(()) => finish_batch_success(ctx, working_dir, path, &edits, &original, target),
         Err(e) => format!("写入文件失败: {}", e),
     }

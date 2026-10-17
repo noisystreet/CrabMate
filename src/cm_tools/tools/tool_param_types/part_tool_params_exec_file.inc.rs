@@ -114,6 +114,13 @@ pub struct ModifyFileArgs {
     pub edits: Option<Vec<ModifyFileEditArgs>>,
     /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。
     pub dry_run: Option<bool>,
+    /// 可选写前校验：最近一次 `read_file` 成功输出头中的 `revision`。与当前磁盘内容不一致时**拒绝写入**
+    /// （`错误[stale_revision]`），避免基于过期快照按已漂移的行号误改；适用于所有 `mode` 与 `edits`。
+    /// 显式传入时**优先**于本轮自动绑定，且始终校验。
+    pub base_revision: Option<String>,
+    /// 行号类模式（`replace_lines` / `insert_after_line` / `edits`）默认使用本轮最近一次 `read_file`
+    /// 的 revision 自动校验；设为 `true` 可跳过该自动绑定（显式 `base_revision` 仍会校验）。
+    pub allow_stale_revision: Option<bool>,
     /// 当整文件覆盖被判定为高危（大幅缩短、大量删行、清空非空文件）时须显式 `true` 才执行写入。
     pub confirm_full_overwrite: Option<bool>,
     /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。

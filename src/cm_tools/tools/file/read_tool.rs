@@ -71,6 +71,7 @@ fn prepend_read_file_output_header(body: &str, meta: &ReadFileOutputMeta<'_>) ->
         "read_file",
         crate::cm_tools::tool_result::ReadFileOutputFields {
             path: path_for_tool_display(meta.working_dir, meta.target, Some(meta.user_path)),
+            revision: meta.revision.to_string(),
             start_line: meta.start_line,
             end_line_shown: meta.end_line_shown,
             line_count_returned: meta.line_count_returned,
@@ -87,6 +88,7 @@ struct ReadFileOutputMeta<'a> {
     working_dir: &'a Path,
     target: &'a Path,
     user_path: &'a str,
+    revision: &'a str,
     start_line: usize,
     end_line_shown: usize,
     line_count_returned: usize,
@@ -133,6 +135,7 @@ fn read_file_build_empty_response(
     working_dir: &Path,
     target: &Path,
     path: &str,
+    revision: &str,
     start_line: usize,
 ) -> String {
     let body = format!(
@@ -145,6 +148,7 @@ fn read_file_build_empty_response(
             working_dir,
             target,
             user_path: path,
+            revision,
             start_line,
             end_line_shown: 0,
             line_count_returned: 0,
@@ -177,25 +181,33 @@ fn read_file_require_regular_file(
 
 fn read_file_turn_cache_get(
     ctx: &super::super::ToolContext<'_>,
+    target: &Path,
     cache_key: &str,
     meta: &std::fs::Metadata,
 ) -> Option<String> {
     let cache = ctx.read_file_turn_cache?;
-    let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-    cache.try_get(cache_key, modified, meta.len())
+    let stamp = crate::cm_tools::read_file_turn_cache::FileStamp::from_metadata(meta);
+    let (out, revision) = cache.try_get(cache_key, &stamp)?;
+    // 命中同样刷新 revision 绑定：后续行号类写入据此校验。
+    cache.record_revision(target, &revision);
+    Some(out)
 }
 
 fn read_file_turn_cache_put(
     ctx: &super::super::ToolContext<'_>,
+    target: &Path,
     cache_key: String,
     meta: &std::fs::Metadata,
+    revision: &str,
     out: &str,
 ) {
     let Some(cache) = ctx.read_file_turn_cache else {
         return;
     };
-    let modified = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-    cache.insert(cache_key, modified, meta.len(), out.to_string());
+    // 先记录绑定：即使正文缓存被关闭（max_entries=0）或已满，自动绑定仍然有效。
+    cache.record_revision(target, revision);
+    let stamp = crate::cm_tools::read_file_turn_cache::FileStamp::from_metadata(meta);
+    cache.insert(cache_key, stamp, out.to_string(), revision.to_string());
 }
 
 #[allow(clippy::result_large_err)]
@@ -203,6 +215,7 @@ fn read_file_pipeline_body(
     working_dir: &Path,
     target: &Path,
     path: &str,
+    revision: &str,
     parsed: &ReadFileParsedArgs,
     file: std::fs::File,
 ) -> Result<String, crate::cm_tools::tool_result::ToolError> {
@@ -256,6 +269,7 @@ fn read_file_pipeline_body(
             working_dir,
             target,
             user_path: path,
+            revision,
             start_line: *start_line,
             end_line_shown,
             line_count_returned,
@@ -285,27 +299,43 @@ pub fn read_file_try(
     let parsed = parse_read_file_args(&v)?;
     let path = parsed.path.as_str();
 
-    let opened = resolve_for_read_open(working_dir, path)
+    let mut opened = resolve_for_read_open(working_dir, path)
         .map_err(read_file_workspace_tool_error_maybe_hint)?;
     read_file_require_regular_file(&opened.metadata)?;
 
     let target = opened.resolved_path;
     let meta = opened.metadata;
     let cache_key = read_file_logical_cache_key(&target, &v);
-    if let Some(hit) = read_file_turn_cache_get(ctx, &cache_key, &meta) {
+    if let Some(hit) = read_file_turn_cache_get(ctx, &target, &cache_key, &meta) {
         return Ok(hit);
     }
+
+    // 缓存未命中：基于同一打开句柄计算内容 revision（读完复位到文件开头），避免额外 open 与 TOCTOU。
+    let revision = super::revision::revision_of_open_file(&mut opened.file).map_err(|e| {
+        crate::cm_tools::tool_result::ToolError::external_code(
+            "read_file_revision_failed",
+            format!("计算文件 revision 失败: {e}"),
+        )
+    })?;
+
     if meta.len() == 0 {
-        let out = read_file_build_empty_response(working_dir, &target, path, parsed.start_line);
-        read_file_turn_cache_put(ctx, cache_key, &meta, &out);
+        let out = read_file_build_empty_response(
+            working_dir,
+            &target,
+            path,
+            &revision,
+            parsed.start_line,
+        );
+        read_file_turn_cache_put(ctx, &target, cache_key, &meta, &revision, &out);
         return Ok(out);
     }
 
     // 与原先一致：在 sniff 前用已知长度做 count_total 体积守卫。
     guard_read_file_count_total_size(meta.len(), parsed.count_total)?;
 
-    let out = read_file_pipeline_body(working_dir, &target, path, &parsed, opened.file)?;
-    read_file_turn_cache_put(ctx, cache_key, &meta, &out);
+    let out =
+        read_file_pipeline_body(working_dir, &target, path, &revision, &parsed, opened.file)?;
+    read_file_turn_cache_put(ctx, &target, cache_key, &meta, &revision, &out);
     Ok(out)
 }
 
