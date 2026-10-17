@@ -149,7 +149,7 @@ async fn execute_terminal_session_impl(
     };
 
     if let Some(parsed) = exec_parsed.as_ref()
-        && tools::is_compile_command_success(parsed.spec.args_json.as_str(), &result)
+        && tools::is_compile_command_success_spec(&parsed.spec, &result)
     {
         *workspace_changed = true;
     }

@@ -28,9 +28,13 @@ pub struct TerminalSessionArgs {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct RunCommandArgs {
-    /// 纯命令名（详见工具说明；禁止嵌入参数）
-    pub command: String,
+    /// 纯命令名（详见工具说明；禁止嵌入参数）。与 `script` 二选一。
+    pub command: Option<String>,
     pub args: Option<Vec<String>>,
+    /// 工作区内的相对目录（等价于 `cd <cwd> && ...`）；禁止绝对路径与 `..`。
+    pub cwd: Option<String>,
+    /// 交给 POSIX shell（`bash -c` / `sh -c`）执行的脚本；与 `command`/`args` 互斥。
+    pub script: Option<String>,
     /// 墙钟秒（钳制 1～600，对齐 `python_snippet_run`）；`async` 与非 `async` 均生效。
     #[schemars(range(min = 1, max = 600))]
     pub timeout_secs: Option<u64>,

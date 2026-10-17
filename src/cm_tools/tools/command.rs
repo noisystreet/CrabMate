@@ -32,7 +32,8 @@ pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
 pub use command_shell_script::{
     allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
-    argv_needs_shell_expansion, join_run_command_argv_tail, join_run_command_shell_script,
+    argv_needs_shell_expansion, dash_c_script_body, is_shell_dash_c_invocation,
+    join_run_command_argv_tail, join_run_command_shell_script,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
 };
 
@@ -75,6 +76,8 @@ pub struct PreparedRunCommand {
     pub effective_working_dir: PathBuf,
     /// 包装成 `bash -c` 前原命令为 `gh` 时仍注入 token。
     pub inject_gh_token: bool,
+    /// 解析 / 准备阶段发生的入参改写（仅用于可选回显，不参与执行）。
+    pub rewrites: Vec<String>,
 }
 
 /// `terminal_session`（PTY）等路径：复用 `run_command` 同级别校验与白名单逻辑（不经 `Command::output`）。
@@ -104,7 +107,10 @@ pub fn prepare_run_command_for_pty_spawn_spec(
 /// `run_command` 执行计划：命中缓存直接返回正文，否则给出待 spawn 的 [`SpawnPlan`]。
 #[allow(clippy::large_enum_variant)] // `SpawnPlan` 内嵌已配置的 `Command`，天然偏大；短生命周期，无需为其加间接层
 enum RunCommandPlan {
-    CacheHit(String),
+    CacheHit {
+        body: String,
+        rewrites: Vec<String>,
+    },
     Spawn(SpawnPlan),
 }
 
@@ -115,6 +121,7 @@ pub(super) struct SpawnPlan {
     pub(super) working_dir: PathBuf,
     pub(super) invocation: String,
     pub(super) cache_write: Option<CacheWritePlan>,
+    pub(super) rewrites: Vec<String>,
 }
 
 /// `cargo test` 结果缓存的写回参数（未命中且可缓存时携带）。
@@ -153,6 +160,7 @@ fn plan_prepared(
             working_dir: prepared.effective_working_dir.clone(),
             invocation,
             cache_write: None,
+            rewrites: prepared.rewrites.clone(),
         });
     }
     if let Some(plan) = plan_cargo_test_cache(&prepared, test_cache, invocation.clone()) {
@@ -176,6 +184,7 @@ fn default_spawn_plan(prepared: PreparedRunCommand, invocation: String) -> Spawn
         working_dir: prepared.effective_working_dir,
         invocation,
         cache_write: None,
+        rewrites: prepared.rewrites,
     }
 }
 
@@ -206,7 +215,10 @@ fn plan_cargo_test_cache(
         inputs_fingerprint: inputs_fp.clone(),
     };
     if let Some(hit) = try_get_cached(opts.enabled, opts.max_entries, &key) {
-        return Some(RunCommandPlan::CacheHit(wrap_cache_hit(&inputs_fp, &hit)));
+        return Some(RunCommandPlan::CacheHit {
+            body: wrap_cache_hit(&inputs_fp, &hit),
+            rewrites: prepared.rewrites.clone(),
+        });
     }
     let mut cmd = Command::new(&prepared.cmd_name);
     cmd.args(&prepared.cmd_args)
@@ -221,6 +233,7 @@ fn plan_cargo_test_cache(
             max_entries: opts.max_entries,
             key,
         }),
+        rewrites: prepared.rewrites.clone(),
     }))
 }
 
@@ -239,7 +252,9 @@ pub fn run(
         opts.test_cache.as_ref(),
         opts.skip_arg_safety,
     )? {
-        RunCommandPlan::CacheHit(body) => Ok(CommandOutcome::cached(body)),
+        RunCommandPlan::CacheHit { body, rewrites } => {
+            Ok(CommandOutcome::cached(body).with_rewrites(rewrites))
+        }
         RunCommandPlan::Spawn(plan) => execute_spawn_plan_sync(plan, opts.max_output_len, opts.wait),
     }
 }
@@ -256,7 +271,9 @@ pub async fn run_async(
         opts.test_cache.as_ref(),
         opts.skip_arg_safety,
     )? {
-        RunCommandPlan::CacheHit(body) => Ok(CommandOutcome::cached(body)),
+        RunCommandPlan::CacheHit { body, rewrites } => {
+            Ok(CommandOutcome::cached(body).with_rewrites(rewrites))
+        }
         RunCommandPlan::Spawn(plan) => {
             execute_spawn_plan_async(plan, opts.max_output_len, opts.wait).await
         }

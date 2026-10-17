@@ -112,7 +112,7 @@ fn cd_prefix_invalid(work_dir: &Path, detail: impl Into<String>) -> CdPeelError 
     }
 }
 
-fn resolve_cd_prefix_dir(
+pub(crate) fn resolve_cd_prefix_dir(
     effective_working_dir: &Path,
     dir: &str,
     anchor: &Path,

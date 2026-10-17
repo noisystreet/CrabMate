@@ -40,6 +40,8 @@ pub struct CommandOutcome {
     pub stderr: String,
     /// 缓存命中：正文已带缓存横幅，渲染时原样返回。
     cached_body: Option<String>,
+    /// 入参改写记录；仅在 `CM_RUN_COMMAND_ECHO_REWRITES` 开启时追加到渲染末尾。
+    pub rewrites: Vec<String>,
 }
 
 impl CommandOutcome {
@@ -56,6 +58,7 @@ impl CommandOutcome {
             stdout,
             stderr,
             cached_body: None,
+            rewrites: Vec::new(),
         }
     }
 
@@ -68,12 +71,34 @@ impl CommandOutcome {
             stdout: String::new(),
             stderr: String::new(),
             cached_body: Some(body),
+            rewrites: Vec::new(),
         }
+    }
+
+    /// 附带入参改写记录（不改变正文；仅影响 [`render`] 的末尾追加）。
+    #[must_use]
+    pub fn with_rewrites(mut self, rewrites: Vec<String>) -> Self {
+        self.rewrites = rewrites;
+        self
     }
 
     /// 渲染为模型可见文本；输出格式与历史实现逐字一致。
     #[must_use]
     pub fn render(&self, max_output_len: usize) -> String {
+        let mut body = self.render_body(max_output_len);
+        if self.rewrites.is_empty() || !echo_rewrites_enabled() {
+            return body;
+        }
+        for r in &self.rewrites {
+            body.push_str("\n[rewrite] ");
+            body.push_str(r);
+        }
+        body
+    }
+
+    /// 不包含 `[rewrite]` 回显的正文（供缓存写回，避免命中时重复追加）。
+    #[must_use]
+    pub fn render_body(&self, max_output_len: usize) -> String {
         if let Some(body) = &self.cached_body {
             return body.clone();
         }
@@ -117,6 +142,16 @@ impl CommandOutcome {
             }
         }
     }
+}
+
+/// `CM_RUN_COMMAND_ECHO_REWRITES`：默认关闭；开启后在输出末尾逐行追加 `[rewrite]`。
+fn echo_rewrites_enabled() -> bool {
+    std::env::var("CM_RUN_COMMAND_ECHO_REWRITES").is_ok_and(|v| {
+        matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "1" | "true" | "yes" | "on"
+        )
+    })
 }
 
 /// `run_command` 调用摘要：去重与测试结果缓存共用的稳定 key。

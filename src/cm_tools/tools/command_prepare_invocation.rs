@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 use super::super::command_line_prepare::{
     arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
-    parse_cd_prefix, peel_workspace_cd_prefix, split_command_prefix_if_embedded,
+    parse_cd_prefix, peel_workspace_cd_prefix, resolve_cd_prefix_dir,
+    split_command_prefix_if_embedded,
 };
 use super::{
     PreparedRunCommand, RunCommandError, check_shell_variable_references,
@@ -20,9 +21,15 @@ use super::{
 pub struct CommandSpec {
     /// 原始 args JSON 文本（`workspace_image_chat_hint` 等消费方需要原文）。
     pub args_json: String,
-    /// 已 trim，并已做 `./` 合并与整段命令拆分的命令名。
+    /// 已 trim，并已做 `./` 合并与整段命令拆分的命令名；`script` 形态为空。
     pub command: String,
     pub args: Vec<String>,
+    /// 显式工作目录（工作区内相对路径）；`.args` 中的 `cd` 前缀仍会叠加在其上。
+    pub cwd: Option<String>,
+    /// 显式脚本正文；非空时经 `bash -c` / `sh -c` 执行。
+    pub script: Option<String>,
+    /// 解析阶段发生的兼容性改写（仅用于可选回显）。
+    pub rewrites: Vec<String>,
 }
 
 /// 解析 `run_command` 参数：JSON 修复 → 字段提取 → 规范化。
@@ -33,20 +40,77 @@ pub fn parse_command_spec(
     working_dir: &Path,
 ) -> Result<CommandSpec, RunCommandError> {
     let value = super::parse_run_command_value_with_repair(args_json)?;
-    let (command, args) = extract_run_command_name_and_args(&value, working_dir)?;
+    let script = read_optional_string_field(&value, "script")?;
+    let cwd = read_optional_string_field(&value, "cwd")?;
+    if let Some(cwd) = cwd.as_deref()
+        && !is_arg_safe("cd", cwd)
+    {
+        return Err(RunCommandError::UnsafeArg);
+    }
+    if let Some(script) = script {
+        let command_non_empty = value
+            .get("command")
+            .and_then(|c| c.as_str())
+            .is_some_and(|c| !c.trim().is_empty());
+        let args_non_empty = value
+            .get("args")
+            .and_then(|a| a.as_array())
+            .is_some_and(|a| !a.is_empty());
+        if command_non_empty || args_non_empty {
+            return Err(RunCommandError::ScriptCommandConflict);
+        }
+        return Ok(CommandSpec {
+            args_json: args_json.to_string(),
+            command: String::new(),
+            args: Vec::new(),
+            cwd,
+            script: Some(script),
+            rewrites: Vec::new(),
+        });
+    }
+    let (command, args, rewrites) = extract_run_command_name_and_args(&value, working_dir)?;
     Ok(CommandSpec {
         args_json: args_json.to_string(),
         command,
         args,
+        cwd,
+        script: None,
+        rewrites,
     })
+}
+
+fn read_optional_string_field(
+    value: &serde_json::Value,
+    field: &'static str,
+) -> Result<Option<String>, RunCommandError> {
+    match value.get(field) {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(s)) => {
+            let s = s.trim();
+            if s.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(s.to_string()))
+            }
+        }
+        Some(_) => Err(RunCommandError::FieldNotString { field }),
+    }
 }
 
 /// 宽松解析：供去重 / 预算守卫 / 只读缓存等只读消费方。
 ///
 /// 不走 JSON 修复链、不做路径规范化；`args` 非数组时视为空，缺失/非字符串 `command` 返回 `None`。
-/// 空 `command` 是否接受由调用方决定。
+/// 空 `command` 是否接受由调用方决定。显式 `script` 归一为 `bash -c <script>`。
 pub fn parse_run_command_payload_lenient(args_json: &str) -> Option<(String, Vec<String>)> {
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
+    if let Some(script) = v
+        .get("script")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    {
+        return Some(("bash".to_string(), vec!["-c".to_string(), script.to_string()]));
+    }
     let command = v.get("command")?.as_str()?.trim().to_string();
     let args = v
         .get("args")
@@ -79,7 +143,7 @@ fn normalize_workspace_absolute_arg(arg: &str, working_dir: &Path) -> String {
 fn extract_run_command_name_and_args(
     args: &serde_json::Value,
     working_dir: &Path,
-) -> Result<(String, Vec<String>), RunCommandError> {
+) -> Result<(String, Vec<String>, Vec<String>), RunCommandError> {
     let mut cmd_raw = match args.get("command").and_then(|c| c.as_str()) {
         Some(s) => s.trim().to_string(),
         None => return Err(RunCommandError::MissingCommand),
@@ -93,14 +157,33 @@ fn extract_run_command_name_and_args(
         Some(_) => return Err(RunCommandError::ArgsNotArray),
         None => vec![],
     };
+    let mut rewrites = Vec::new();
+    let before_norm = render_spec_invocation(&cmd_raw, &cmd_args);
     cmd_args = cmd_args
         .into_iter()
         .map(|a| normalize_workspace_absolute_arg(&a, working_dir))
         .collect();
+    let after_norm = render_spec_invocation(&cmd_raw, &cmd_args);
+    if after_norm != before_norm {
+        rewrites.push(format!("{before_norm} → {after_norm}"));
+    }
 
     merge_dot_slash_with_single_relative_path(&mut cmd_raw, &mut cmd_args);
     split_command_prefix_if_embedded(&mut cmd_raw, &mut cmd_args);
-    Ok((cmd_raw, cmd_args))
+    let after_fix = render_spec_invocation(&cmd_raw, &cmd_args);
+    if after_fix != after_norm {
+        rewrites.push(format!("{after_norm} → {after_fix}"));
+    }
+    Ok((cmd_raw, cmd_args, rewrites))
+}
+
+fn render_spec_invocation(command: &str, args: &[String]) -> String {
+    let cmd = command.trim();
+    if args.is_empty() {
+        cmd.to_string()
+    } else {
+        format!("{cmd} {}", args.join(" "))
+    }
 }
 
 /// 解析工作区可执行路径；否则要求命令名在白名单内。
@@ -229,6 +312,52 @@ fn advance_cd_prefixes_collecting_unsafe(
     Ok(())
 }
 
+/// `cwd` 字段的越界判定；命中时由调用方把原始 `cwd` 记入不安全参数。
+fn scan_explicit_cwd_unsafe(
+    cwd: &str,
+    working_dir: &Path,
+    effective_working_dir: &mut PathBuf,
+) -> Result<bool, RunCommandError> {
+    let anchor = working_dir
+        .canonicalize()
+        .map_err(|e| RunCommandError::SpawnOther {
+            cmd: "canonicalize(workspace)".to_string(),
+            source: e,
+        })?;
+    let pattern_unsafe = !is_arg_safe("cd", cwd);
+    let candidate = effective_working_dir.join(cwd);
+    let escape_unsafe =
+        scan_cd_join_escape(&candidate, &anchor, pattern_unsafe, effective_working_dir)?;
+    Ok(pattern_unsafe || escape_unsafe)
+}
+
+/// 命令名解析 + argv 危险参数收集（扫描阶段；命令未在白名单时仍收集）。
+fn collect_unsafe_after_resolve(
+    cmd_raw: &str,
+    cmd_args: &[String],
+    effective_working_dir: &Path,
+    allowed_commands: &[String],
+    unsafe_args: &mut Vec<String>,
+) -> Result<(), RunCommandError> {
+    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
+    let workspace_exec = is_workspace_executable
+        && crate::cm_tools::tools::resolve_workspace_executable(effective_working_dir, cmd_raw)
+            .is_ok();
+    let fallback_name = cmd_raw.to_lowercase();
+    let (cmd_name, has_exec) =
+        match resolve_run_command_exec_path(cmd_raw, effective_working_dir, allowed_commands) {
+            Ok((name, exec)) => (name, exec.is_some()),
+            Err(RunCommandError::DisallowedCommand { .. }) => (fallback_name, workspace_exec),
+            Err(e) => return Err(e),
+        };
+    for a in collect_unsafe_cmd_args(&cmd_name, cmd_args, has_exec) {
+        if !unsafe_args.iter().any(|u| u == &a) {
+            unsafe_args.push(a);
+        }
+    }
+    Ok(())
+}
+
 /// 与 [`prepare_run_command_spec`] 同源解析后，返回按 validate 规则判定为不安全的参数。
 /// 空 `Vec` = 无需外部路径审批。`cmake` 的 `..` 不入列（与 [`is_arg_safe`] 一致）。
 pub fn scan_run_command_unsafe_args_spec(
@@ -240,6 +369,15 @@ pub fn scan_run_command_unsafe_args_spec(
     let mut cmd_args = spec.args.clone();
     let mut effective_working_dir = working_dir.to_path_buf();
     let mut unsafe_args = Vec::new();
+    if let Some(cwd) = spec.cwd.as_deref()
+        && scan_explicit_cwd_unsafe(cwd, working_dir, &mut effective_working_dir)?
+    {
+        unsafe_args.push(cwd.to_string());
+    }
+    // 显式 `script` 的正文由 shell 审批覆盖，不再逐 argv 扫描。
+    if spec.script.is_some() {
+        return Ok(unsafe_args);
+    }
     advance_cd_prefixes_collecting_unsafe(
         working_dir,
         &mut effective_working_dir,
@@ -247,28 +385,14 @@ pub fn scan_run_command_unsafe_args_spec(
         &mut cmd_args,
         &mut unsafe_args,
     )?;
-    // 扫描阶段：命令未在白名单时仍收集 argv 危险参数（调用方通常已先做命令名审批）。
-    // 不在此拦截 glob/`$VAR`：展开改由 bash -c 或异步审批处理。
-    let cmd_name = cmd_raw.to_lowercase();
-    let is_workspace_executable = cmd_raw.starts_with("./") || cmd_raw.contains('/');
-    let has_workspace_exec = if is_workspace_executable {
-        crate::cm_tools::tools::resolve_workspace_executable(effective_working_dir.as_path(), &cmd_raw)
-            .is_ok()
-    } else {
-        false
-    };
-    let (cmd_name, has_exec) =
-        match resolve_run_command_exec_path(&cmd_raw, &effective_working_dir, allowed_commands) {
-            Ok((name, exec)) => (name, exec.is_some()),
-            Err(RunCommandError::DisallowedCommand { .. }) => (cmd_name, has_workspace_exec),
-            Err(e) => return Err(e),
-        };
-    let more = collect_unsafe_cmd_args(&cmd_name, &cmd_args, has_exec);
-    for a in more {
-        if !unsafe_args.iter().any(|u| u == &a) {
-            unsafe_args.push(a);
-        }
-    }
+    // 扫描阶段不拦截 glob/`$VAR`：展开改由 bash -c 或异步审批处理。
+    collect_unsafe_after_resolve(
+        &cmd_raw,
+        &cmd_args,
+        &effective_working_dir,
+        allowed_commands,
+        &mut unsafe_args,
+    )?;
     Ok(unsafe_args)
 }
 
@@ -294,16 +418,77 @@ fn wrap_posix_shell_reresolve(
     Ok(())
 }
 
+/// 初始 argv：显式 `script` 走 `shell -c`，否则沿用 `command` + `args`。
+fn initial_invocation(
+    spec: &CommandSpec,
+    allowed_commands: &[String],
+) -> Result<(String, Vec<String>), RunCommandError> {
+    match spec.script.as_deref() {
+        Some(script) => {
+            let shell = posix_shell_on_allowlist(allowed_commands)
+                .ok_or(RunCommandError::ScriptShellUnavailable)?;
+            Ok((shell.to_string(), vec!["-c".to_string(), script.to_string()]))
+        }
+        None => Ok((spec.command.clone(), spec.args.clone())),
+    }
+}
+
+/// `cd` 前缀剥离的改写回显文案。
+fn cd_rewrite_label(before: &str, after: &str, anchor: &Path, effective: &Path) -> String {
+    let cwd_label = effective
+        .strip_prefix(anchor)
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| effective.display().to_string());
+    format!("{before} → {after} (cwd={cwd_label})")
+}
+
+/// 最终解析命令名/可执行路径、参数安全校验与 shell 重解析。
+fn finalize_invocation(
+    cmd_raw: &mut String,
+    cmd_args: &mut Vec<String>,
+    working_dir: &Path,
+    allowed_commands: &[String],
+    skip_arg_safety: bool,
+    validate_args: bool,
+) -> Result<(String, Option<PathBuf>), RunCommandError> {
+    let (mut cmd_name, mut exec_path) =
+        resolve_run_command_exec_path(cmd_raw, working_dir, allowed_commands)?;
+    if validate_args && !skip_arg_safety {
+        validate_run_command_args_safety(&cmd_name, cmd_args, exec_path.is_some())?;
+    }
+    wrap_posix_shell_reresolve(
+        cmd_raw,
+        cmd_args,
+        &mut cmd_name,
+        &mut exec_path,
+        working_dir,
+        allowed_commands,
+    )?;
+    Ok((cmd_name, exec_path))
+}
+
 pub(super) fn prepare_run_command_spec(
     spec: &CommandSpec,
     working_dir: &Path,
     allowed_commands: &[String],
     skip_arg_safety: bool,
 ) -> Result<PreparedRunCommand, RunCommandError> {
-    let mut cmd_raw = spec.command.clone();
-    let mut cmd_args = spec.args.clone();
-
+    let mut rewrites = spec.rewrites.clone();
+    let anchor = working_dir
+        .canonicalize()
+        .map_err(|e| RunCommandError::SpawnOther {
+            cmd: "canonicalize(workspace)".to_string(),
+            source: e,
+        })?;
     let mut effective_working_dir = working_dir.to_path_buf();
+    if let Some(cwd) = spec.cwd.as_deref() {
+        effective_working_dir =
+            resolve_cd_prefix_dir(&effective_working_dir, cwd, &anchor, skip_arg_safety)?;
+    }
+    let explicit_script = spec.script.as_deref();
+    let (mut cmd_raw, mut cmd_args) = initial_invocation(spec, allowed_commands)?;
+
+    let before_peel = super::format_invocation_for_display(&cmd_raw, &cmd_args);
     peel_workspace_cd_prefix(
         working_dir,
         &mut effective_working_dir,
@@ -311,24 +496,28 @@ pub(super) fn prepare_run_command_spec(
         &mut cmd_args,
         skip_arg_safety,
     )?;
+    let after_peel = super::format_invocation_for_display(&cmd_raw, &cmd_args);
+    if after_peel != before_peel {
+        rewrites.push(cd_rewrite_label(
+            &before_peel,
+            &after_peel,
+            &anchor,
+            &effective_working_dir,
+        ));
+    }
 
     let inject_gh_token = crate::cm_tools::github_token::command_basename_is_gh(&cmd_raw);
     if !skip_shell_variable_check(&cmd_raw, &cmd_args, allowed_commands) {
         check_shell_variable_references(&cmd_raw, &cmd_args)?;
     }
 
-    let (mut cmd_name, mut exec_path) =
-        resolve_run_command_exec_path(&cmd_raw, &effective_working_dir, allowed_commands)?;
-    if !skip_arg_safety {
-        validate_run_command_args_safety(&cmd_name, &cmd_args, exec_path.is_some())?;
-    }
-    wrap_posix_shell_reresolve(
+    let (cmd_name, exec_path) = finalize_invocation(
         &mut cmd_raw,
         &mut cmd_args,
-        &mut cmd_name,
-        &mut exec_path,
         &effective_working_dir,
         allowed_commands,
+        skip_arg_safety,
+        explicit_script.is_none(),
     )?;
 
     Ok(PreparedRunCommand {
@@ -338,6 +527,7 @@ pub(super) fn prepare_run_command_spec(
         cmd_args,
         effective_working_dir,
         inject_gh_token,
+        rewrites,
     })
 }
 
@@ -418,5 +608,67 @@ mod tests {
             denied,
             Err(RunCommandError::DisallowedCommand { .. })
         ));
+    }
+
+    #[test]
+    fn explicit_script_conflicts_with_command_and_args() {
+        let err = parse_command_spec(
+            r#"{"script":"cargo build","command":"cargo","args":["test"]}"#,
+            Path::new("."),
+        )
+        .expect_err("conflict");
+        assert!(matches!(err, RunCommandError::ScriptCommandConflict));
+    }
+
+    #[test]
+    fn explicit_script_requires_shell_on_allowlist() {
+        let err = prepare_run_command_spec(
+            &spec(r#"{"script":"cargo build"}"#),
+            Path::new("."),
+            &test_allowed(),
+            false,
+        )
+        .err()
+        .expect("no shell");
+        assert!(matches!(err, RunCommandError::ScriptShellUnavailable));
+    }
+
+    #[test]
+    fn explicit_script_runs_via_shell_dash_c() {
+        let mut allowed = test_allowed();
+        allowed.push("bash".into());
+        let prepared = prepare_run_command_spec(
+            &spec(r#"{"script":"cargo build"}"#),
+            Path::new("."),
+            &allowed,
+            false,
+        )
+        .expect("prepared");
+        assert_eq!(prepared.cmd_name, "bash");
+        assert_eq!(
+            prepared.cmd_args,
+            vec!["-c".to_string(), "cargo build".to_string()]
+        );
+    }
+
+    #[test]
+    fn explicit_cwd_must_be_relative_and_within_workspace() {
+        for cwd in ["../x", "/tmp"] {
+            let args_json = format!(r#"{{"command":"ls","cwd":"{cwd}"}}"#);
+            let err = parse_command_spec(&args_json, Path::new(".")).expect_err("unsafe cwd");
+            assert!(
+                matches!(err, RunCommandError::UnsafeArg),
+                "cwd {cwd}: {err:?}"
+            );
+        }
+
+        let prepared = prepare_run_command_spec(
+            &spec(r#"{"command":"ls","cwd":"src"}"#),
+            Path::new("."),
+            &test_allowed(),
+            false,
+        )
+        .expect("prepared");
+        assert!(prepared.effective_working_dir.ends_with("src"));
     }
 }

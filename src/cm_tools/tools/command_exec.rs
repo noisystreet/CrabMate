@@ -27,6 +27,7 @@ pub(super) fn execute_spawn_plan_sync(
         working_dir,
         invocation,
         cache_write,
+        rewrites,
     } = plan;
     let outcome = run_spawned_command(
         &mut cmd,
@@ -35,7 +36,8 @@ pub(super) fn execute_spawn_plan_sync(
         &invocation,
         max_output_len,
         wait,
-    )?;
+    )?
+    .with_rewrites(rewrites);
     write_test_cache(cache_write, &outcome, max_output_len);
     Ok(outcome)
 }
@@ -51,6 +53,7 @@ pub(super) async fn execute_spawn_plan_async(
         working_dir,
         invocation,
         cache_write,
+        rewrites,
     } = plan;
     let outcome = run_spawned_command_async(
         cmd,
@@ -60,7 +63,8 @@ pub(super) async fn execute_spawn_plan_async(
         max_output_len,
         wait,
     )
-    .await?;
+    .await?
+    .with_rewrites(rewrites);
     write_test_cache(cache_write, &outcome, max_output_len);
     Ok(outcome)
 }
@@ -79,7 +83,7 @@ fn write_test_cache(
             w.enabled,
             w.max_entries,
             w.key,
-            outcome.render(max_output_len),
+            outcome.render_body(max_output_len),
         );
     }
 }

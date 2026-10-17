@@ -51,7 +51,7 @@ async fn execute_run_command_sync_host(
         )
         .await
     {
-        if tools::is_compile_command_success(args, &s) {
+        if tools::is_compile_command_success_spec(&parsed.spec, &s) {
             *workspace_changed = true;
         }
         return (s, inj);
@@ -70,7 +70,7 @@ async fn execute_run_command_sync_host(
         cancel,
     })
     .await;
-    if tools::is_compile_command_success(args, &s) {
+    if tools::is_compile_command_success_spec(&parsed.spec, &s) {
         *workspace_changed = true;
     }
     (s, None)

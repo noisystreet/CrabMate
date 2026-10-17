@@ -295,13 +295,14 @@ mod tests {
     }
 
     #[test]
-    fn run_command_schema_requires_command() {
+    fn run_command_schema_makes_command_optional_and_exposes_cwd_script() {
         let v = tool_parameters_schema_value::<RunCommandArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required array");
-        assert!(req.iter().any(|x| x == "command"));
+        if let Some(req) = v.pointer("/required").and_then(|r| r.as_array()) {
+            assert!(!req.iter().any(|x| x == "command"));
+        }
+        assert!(v.pointer("/properties/command").is_some());
+        assert!(v.pointer("/properties/cwd").is_some());
+        assert!(v.pointer("/properties/script").is_some());
     }
 
     #[test]

@@ -13,7 +13,10 @@ fn parse_run_command_json(
     let spec = tools::parse_command_spec(args, working_dir)?;
     let cmd = spec.command.to_lowercase();
     let argv_tail = tools::join_run_command_argv_tail(&spec.args);
-    let script = tools::join_run_command_shell_script(&spec.command, &spec.args);
+    let script = match spec.script.as_deref() {
+        Some(s) => s.to_string(),
+        None => tools::join_run_command_shell_script(&spec.command, &spec.args),
+    };
     Ok(ParsedRunCommandJson {
         spec,
         cmd,
@@ -148,7 +151,8 @@ async fn evaluate_policy(
     let capabilities = ctx.capabilities();
     let (policy_cmd, policy_args) =
         tools::peel_cd_prefix_argv_for_shell_policy(&parsed.spec.command, &parsed.spec.args);
-    let needs_shell = tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
+    let needs_shell = parsed.spec.script.is_some()
+        || tools::argv_needs_posix_shell_wrap(&policy_cmd, &policy_args);
 
     let mut approvals = Vec::new();
     let (allowed_commands, approval) = resolve_unknown_cmd_allowlist(parsed, needs_shell, ctx).await?;
@@ -352,12 +356,19 @@ async fn approve_posix_shell_wrap_if_needed(
     if tools::allowlist_allows_all(effective_allowed.as_ref()) {
         return Ok((effective_allowed, None));
     }
-    if !posix_shell_wrap_needs_interactive_approval(
-        policy_cmd,
-        policy_args,
-        tools::posix_shell_on_allowlist(effective_allowed.as_ref()).is_some(),
-        ctx.web_ctx.is_some(),
-    ) {
+    let bash_on_allowlist = tools::posix_shell_on_allowlist(effective_allowed.as_ref()).is_some();
+    // 显式 `script` 一律交给 shell 执行：白名单无 bash/sh 时必须走交互审批。
+    let needs_approval = if parsed.spec.script.is_some() {
+        !bash_on_allowlist
+    } else {
+        posix_shell_wrap_needs_interactive_approval(
+            policy_cmd,
+            policy_args,
+            bash_on_allowlist,
+            ctx.web_ctx.is_some(),
+        )
+    };
+    if !needs_approval {
         return Ok((effective_allowed, None));
     }
     let capabilities = ctx.capabilities();
