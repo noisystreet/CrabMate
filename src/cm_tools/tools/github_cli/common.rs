@@ -174,7 +174,7 @@ pub fn run_gh_vec(
             wait: &wait,
         },
     ) {
-        Ok(s) => s,
+        Ok(outcome) => outcome.render(max_output_len),
         Err(e) => e.extended_user_message(),
     };
     let stdout = extract_stdout_from_formatted(&out).to_string();

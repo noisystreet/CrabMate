@@ -6,9 +6,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use super::output_util;
-use crate::cm_tools::tool_result::{
-    ParsedLegacyOutput, ToolError, ToolFailureCategory, parse_legacy_output,
-};
+use crate::cm_tools::tool_result::{ParsedLegacyOutput, ToolError, ToolFailureCategory};
 
 use super::command_line_prepare::CdPeelError;
 
@@ -54,15 +52,6 @@ pub enum RunCommandError {
         #[source]
         source: io::Error,
     },
-    /// 墙钟超时；`formatted` 含截断后的部分 stdout/stderr。
-    #[error("命令执行超时（{timeout_secs} 秒）")]
-    TimedOut {
-        timeout_secs: u64,
-        formatted: String,
-    },
-    /// 用户取消或 SSE 关闭；`formatted` 含截断后的部分输出。
-    #[error("命令已取消")]
-    Cancelled { formatted: String },
 }
 
 impl RunCommandError {
@@ -70,9 +59,7 @@ impl RunCommandError {
     #[must_use]
     pub fn into_tool_error(self) -> ToolError {
         let msg = match &self {
-            RunCommandError::CommandNotFound { .. }
-            | RunCommandError::TimedOut { .. }
-            | RunCommandError::Cancelled { .. } => self.extended_user_message(),
+            RunCommandError::CommandNotFound { .. } => self.extended_user_message(),
             _ => self.user_message(),
         };
         match self {
@@ -91,9 +78,11 @@ impl RunCommandError {
                 },
             },
             RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
-            RunCommandError::ArgsNotArray
-            | RunCommandError::UnsafeArg
-            | RunCommandError::CdPrefixInvalid { .. } => ToolError::invalid_args(msg),
+            RunCommandError::ArgsNotArray => ToolError::invalid_args(msg),
+            RunCommandError::UnsafeArg => invalid_input_with_code("unsafe_arg", msg),
+            RunCommandError::CdPrefixInvalid { .. } => {
+                invalid_input_with_code("cd_prefix_invalid", msg)
+            }
             RunCommandError::ShellVariableDetected { .. } => ToolError {
                 category: ToolFailureCategory::InvalidInput,
                 code: "shell_variable_detected".to_string(),
@@ -147,12 +136,6 @@ impl RunCommandError {
                     error_code: Some("spawn_failed".to_string()),
                 },
             },
-            RunCommandError::TimedOut { formatted, .. } => {
-                session_stop_tool_error(formatted, "timeout", true)
-            }
-            RunCommandError::Cancelled { formatted } => {
-                session_stop_tool_error(formatted, "cancelled", false)
-            }
         }
     }
 
@@ -171,19 +154,13 @@ impl RunCommandError {
             RunCommandError::PermissionDenied { .. } => "permission_denied",
             RunCommandError::SpawnOther { .. } => "spawn_other",
             RunCommandError::ShellVariableDetected { .. } => "shell_variable_detected",
-            RunCommandError::TimedOut { .. } => "timeout",
-            RunCommandError::Cancelled { .. } => "cancelled",
         }
     }
 
     /// 与历史工具输出一致的完整说明。
     #[must_use]
     pub fn user_message(&self) -> String {
-        match self {
-            RunCommandError::TimedOut { formatted, .. }
-            | RunCommandError::Cancelled { formatted } => formatted.clone(),
-            _ => self.to_string(),
-        }
+        self.to_string()
     }
 
     /// 与 [`user_message`] 相同；若为本变体为 [`RunCommandError::CommandNotFound`] 且命中内置表，文末追加 CLI 安装提示。
@@ -200,16 +177,19 @@ impl RunCommandError {
     }
 }
 
-fn session_stop_tool_error(formatted: String, code: &str, retryable: bool) -> ToolError {
-    let mut parsed = parse_legacy_output("run_command", &formatted);
-    parsed.ok = false;
-    parsed.error_code = Some(code.to_string());
+fn invalid_input_with_code(code: &'static str, message: String) -> ToolError {
     ToolError {
-        category: ToolFailureCategory::Timeout,
+        category: ToolFailureCategory::InvalidInput,
         code: code.to_string(),
-        message: formatted,
-        retryable,
-        legacy_parsed: parsed,
+        message,
+        retryable: false,
+        legacy_parsed: ParsedLegacyOutput {
+            ok: false,
+            exit_code: None,
+            stdout: String::new(),
+            stderr: String::new(),
+            error_code: Some(code.to_string()),
+        },
     }
 }
 

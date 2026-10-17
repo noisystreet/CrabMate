@@ -5,7 +5,7 @@ use log::{info, warn};
 use crate::cm_agent::agent_turn::{ToolPolicyEarlyDenyParams, tool_policy_early_deny_message};
 
 use crate::agent::agent_turn::run_command_dedupe::{
-    RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key,
+    RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key_with_cwd,
 };
 use crate::agent::per_coord::PerCoordinator;
 use crate::tool_registry;
@@ -198,6 +198,7 @@ struct SerialRunCommandDupShortCircuitEmitCtx<'a> {
     tool_outcome_recorder: &'a std::sync::Arc<crate::tool_stats::ToolOutcomeRecorder>,
     control: crate::agent::agent_turn::TurnControlSink<'a>,
     tool_result_envelope_v1: bool,
+    effective_working_dir: &'a std::path::Path,
     name: &'a str,
     args: &'a str,
     id: &'a str,
@@ -215,11 +216,14 @@ async fn serial_emit_run_command_success_dedupe(
         tool_outcome_recorder,
         control,
         tool_result_envelope_v1,
+        effective_working_dir,
         name,
         args,
         id,
     } = p;
-    let Some(suppress_key) = run_command_duplicate_suppress_key(args) else {
+    let Some(suppress_key) =
+        run_command_duplicate_suppress_key_with_cwd(args, effective_working_dir)
+    else {
         return false;
     };
     let Some(cached) = per_coord
@@ -262,6 +266,7 @@ async fn serial_emit_run_command_failure_short_circuits(
         tool_outcome_recorder,
         control,
         tool_result_envelope_v1,
+        effective_working_dir: _,
         name,
         args,
         id,
@@ -387,6 +392,7 @@ async fn serial_emit_run_command_and_readonly_cache_hits(
             tool_outcome_recorder: p.tool_outcome_recorder,
             control: p.control.clone(),
             tool_result_envelope_v1: p.tool_result_envelope_v1,
+            effective_working_dir: p.effective_working_dir,
             name: p.name,
             args: p.args,
             id: p.id,
@@ -403,6 +409,7 @@ async fn serial_emit_run_command_and_readonly_cache_hits(
             tool_outcome_recorder: p.tool_outcome_recorder,
             control: p.control.clone(),
             tool_result_envelope_v1: p.tool_result_envelope_v1,
+            effective_working_dir: p.effective_working_dir,
             name: p.name,
             args: p.args,
             id: p.id,

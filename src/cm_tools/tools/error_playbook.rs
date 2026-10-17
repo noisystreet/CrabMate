@@ -508,7 +508,19 @@ pub fn playbook_run_commands(args_json: &str, ctx: &ToolContext<'_>) -> String {
                 wait: &wait,
             },
         ) {
-            Ok(s) => s,
+            Ok(outcome) => {
+                let rendered = outcome.render(ctx.command_max_output_len);
+                if let Some(e) = outcome.session_stop_tool_error(&rendered) {
+                    warn!(
+                        target: "crabmate",
+                        "playbook_run_commands step={} kind={} err={}",
+                        i + 1,
+                        e.code,
+                        e
+                    );
+                }
+                rendered
+            }
             Err(e) => {
                 warn!(
                     target: "crabmate",

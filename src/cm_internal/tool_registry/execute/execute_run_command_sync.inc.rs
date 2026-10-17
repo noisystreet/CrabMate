@@ -144,7 +144,13 @@ async fn spawn_run_command_host(p: SpawnRunCommandHost<'_>) -> String {
         )
         .await
         {
-            Ok(s) => s,
+            Ok(outcome) => {
+                let rendered = outcome.render(max_out);
+                match outcome.session_stop_tool_error(&rendered) {
+                    Some(e) => e.message,
+                    None => rendered,
+                }
+            }
             Err(e) => e.extended_user_message(),
         }
     };

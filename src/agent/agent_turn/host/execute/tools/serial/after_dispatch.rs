@@ -15,6 +15,7 @@ use super::SerialToolIterationSsePreface;
 
 pub(super) fn serial_bookkeep_run_command_failure(
     per_coord: &mut PerCoordinator,
+    effective_working_dir: &Path,
     name: &str,
     args: &str,
     result: &str,
@@ -26,11 +27,11 @@ pub(super) fn serial_bookkeep_run_command_failure(
     if parsed.ok {
         per_coord.clear_tool_failure_signature(name, args);
         per_coord.clear_tool_failure_families_for_tool(name);
-        if name == "run_command"
-            && let Some(suppress_key) =
-                crate::agent::agent_turn::run_command_dedupe::run_command_duplicate_suppress_key(
-                    args,
-                )
+        if let Some(suppress_key) =
+            crate::agent::agent_turn::run_command_dedupe::run_command_duplicate_suppress_key_with_cwd(
+                args,
+                effective_working_dir,
+            )
         {
             per_coord.record_successful_run_command(suppress_key, result.to_string());
         }
@@ -38,14 +39,14 @@ pub(super) fn serial_bookkeep_run_command_failure(
             per_coord.clear_all_run_command_failure_state();
         }
     } else {
-        let marker = parsed.error_code.unwrap_or_else(|| {
+        let marker = parsed.error_code.clone().unwrap_or_else(|| {
             parsed
                 .exit_code
                 .map(|c| format!("exit_code:{c}"))
                 .unwrap_or_else(|| "unknown".to_string())
         });
         per_coord.mark_tool_failure_signature(name, args, marker.clone());
-        if let Some(family) = classify_run_command_failure_family_from_result(result) {
+        if let Some(family) = classify_run_command_failure_family_from_result(args, &parsed) {
             per_coord.mark_tool_failure_family(name, family, marker);
         }
     }

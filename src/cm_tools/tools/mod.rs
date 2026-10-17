@@ -14,6 +14,8 @@ mod code_nav;
 mod command;
 mod command_error;
 mod command_exec;
+mod command_outcome;
+pub use command_outcome::{CommandDigest, CommandOutcome, ExitStatusKind};
 pub use command::{
     CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
@@ -595,7 +597,13 @@ async fn run_command_dispatch_async(
         )
         .await
         .map_err(RunCommandError::into_tool_error)
-        .and_then(|output| finish_dispatch_legacy(&name_owned, &spec.args_json, output))
+        .and_then(|outcome| {
+            let rendered = outcome.render(max_out);
+            match outcome.session_stop_tool_error(&rendered) {
+                Some(e) => Err(e),
+                None => finish_dispatch_legacy(&name_owned, &spec.args_json, rendered),
+            }
+        })
     };
     crate::cm_tools::github_token::with_request_github_token(github_token, fut).await
 }

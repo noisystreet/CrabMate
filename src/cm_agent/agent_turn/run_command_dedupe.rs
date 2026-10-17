@@ -1,10 +1,10 @@
 //! `run_command` 签名规范化与同轮精确去重（外循环完成抑制 + 单轮成功缓存共用）。
 
 use std::collections::HashSet;
+use std::path::Path;
 
+use crate::cm_tools::tools::CommandDigest;
 use crate::cm_types::{Message, message_content_as_str};
-
-const KEY_SEP: &str = "\u{1f}";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunCommandInvocation {
@@ -25,16 +25,28 @@ pub fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
 
 pub fn normalize_run_command_key(args_json: &str) -> Option<String> {
     let inv = parse_run_command_args(args_json)?;
-    Some(format!(
-        "run_command|{}|{}",
-        inv.command,
-        inv.args.join(KEY_SEP)
-    ))
+    Some(CommandDigest::from_invocation(inv.command, inv.args).key())
+}
+
+/// 与 [`normalize_run_command_key`] 相同，但把执行目录纳入 key。
+pub fn normalize_run_command_key_with_cwd(args_json: &str, cwd: &Path) -> Option<String> {
+    let inv = parse_run_command_args(args_json)?;
+    Some(
+        CommandDigest::from_invocation(inv.command, inv.args)
+            .with_cwd(cwd)
+            .key(),
+    )
 }
 
 /// 单轮内可对已成功执行过的 `run_command` 做精确签名去重（不限工具链）。
+#[cfg(test)]
 pub fn run_command_duplicate_suppress_key(args_json: &str) -> Option<String> {
     normalize_run_command_key(args_json)
+}
+
+/// 单轮成功缓存使用的 key：同一命令在不同 `cwd` 下视为不同调用。
+pub fn run_command_duplicate_suppress_key_with_cwd(args_json: &str, cwd: &Path) -> Option<String> {
+    normalize_run_command_key_with_cwd(args_json, cwd)
 }
 
 fn tool_exit_ok_from_raw(raw: &str) -> bool {
@@ -191,5 +203,41 @@ mod tests {
         assert!(normalize_run_command_key("not json").is_none());
         assert!(normalize_run_command_key(r#"{"args":["x"]}"#).is_none());
         assert!(normalize_run_command_key(r#"{"command":"   ","args":[]}"#).is_none());
+    }
+
+    #[test]
+    fn normalize_key_with_cwd_extends_legacy_shape() {
+        let key = normalize_run_command_key_with_cwd(
+            r#"{"command":"cmake","args":["--build","build"]}"#,
+            Path::new("/tmp/ws"),
+        )
+        .expect("key");
+        assert!(
+            key.starts_with("run_command|cmake|--build\u{1f}build|meta="),
+            "{key}"
+        );
+        assert!(key.contains(r#""cwd":"/tmp/ws""#), "{key}");
+    }
+
+    #[test]
+    fn normalize_key_with_cwd_distinguishes_working_dir() {
+        let args = r#"{"command":"cargo","args":["test"]}"#;
+        let a = normalize_run_command_key_with_cwd(args, Path::new("/tmp/a"));
+        let b = normalize_run_command_key_with_cwd(args, Path::new("/tmp/b"));
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn normalize_key_with_cwd_keeps_shell_invocation_but_no_extra_meta() {
+        let no_cwd = normalize_run_command_key(r#"{"command":"bash","args":["-c","echo hi"]}"#)
+            .expect("key");
+        assert_eq!(no_cwd, "run_command|bash|-c\u{1f}echo hi");
+
+        let with_cwd =
+            normalize_run_command_key_with_cwd(r#"{"command":"bash","args":["-c","echo hi"]}"#, Path::new("."))
+                .expect("key");
+        assert!(!with_cwd.contains(r#""shell""#), "{with_cwd}");
+        assert!(!with_cwd.contains(r#""script""#), "{with_cwd}");
+        assert!(with_cwd.contains(r#""cwd":".""#), "{with_cwd}");
     }
 }
