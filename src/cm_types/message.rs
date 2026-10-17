@@ -716,7 +716,7 @@ pub(super) fn assistant_has_non_empty_tool_calls(m: &Message) -> bool {
 
 /// 与供应商对齐：部分会话/导入里 `role` 可能带空白或大小写不一致，严格 `== "assistant"` 会漏合并。
 #[inline]
-fn is_assistant_role(role: &str) -> bool {
+pub(super) fn is_assistant_role(role: &str) -> bool {
     role.trim().eq_ignore_ascii_case("assistant")
 }
 

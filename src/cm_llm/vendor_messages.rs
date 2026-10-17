@@ -87,6 +87,26 @@ fn sanitize_assistant_tool_call_arguments_for_vendor_in_place(msgs: &mut [Messag
     }
 }
 
+/// 出站补齐的占位 `tool` 正文：历史里该调用没有结果（多为取消 / 裁剪 / 旧版本落盘）。
+const VENDOR_MISSING_TOOL_RESULT_PLACEHOLDER: &str =
+    "该工具调用在会话历史中没有结果（可能因生成被中断或历史被裁剪），未执行完成，无结果。";
+
+/// 出站前补齐缺失的 tool 响应，并记录条数。
+///
+/// 存量脏会话（`assistant.tool_calls` 后没有对应 `tool` 消息）若不在此自愈，每一次后续请求
+/// 都会被上游以 HTTP 400 拒绝，表现为「停止后再发消息永远拿不到回复」。
+fn complete_missing_tool_responses_for_vendor_body(v: &mut Vec<Message>) {
+    let added =
+        crate::cm_types::complete_missing_tool_responses(v, VENDOR_MISSING_TOOL_RESULT_PLACEHOLDER);
+    if added > 0 {
+        log::warn!(
+            target: "crabmate",
+            "出站消息补齐 {} 条缺失的 tool 响应（会话历史中 assistant.tool_calls 无对应 tool 消息）",
+            added
+        );
+    }
+}
+
 /// 从会话切片构造发往 OpenAI 兼容 API 的 `messages`：**跳过** UI 分隔线与长期记忆注入、按 `preserve_reasoning_on_assistant_tool_calls` 剥离或保留 `reasoning_content`、再 normalize（合并相邻 assistant 等）；`fold_system_into_user` 为真时再 [`crate::cm_types::fold_system_messages_into_following_user`]。
 #[inline]
 pub fn conversation_messages_to_vendor_body(
@@ -96,13 +116,15 @@ pub fn conversation_messages_to_vendor_body(
     preserve_deepseek_thinking_reasoning_roundtrip: bool,
 ) -> Vec<Message> {
     log_system_prompt_stability(messages);
-    let mut v = crate::cm_types::normalize_messages_for_openai_compatible_request(
-        crate::cm_types::messages_for_api_stripping_reasoning_skip_ui_separators(
-            messages,
-            preserve_reasoning_on_assistant_tool_calls,
-            preserve_deepseek_thinking_reasoning_roundtrip,
-        ),
+    let mut stripped = crate::cm_types::messages_for_api_stripping_reasoning_skip_ui_separators(
+        messages,
+        preserve_reasoning_on_assistant_tool_calls,
+        preserve_deepseek_thinking_reasoning_roundtrip,
     );
+    // 在 strip 之后、normalize / fold 之前补齐：此时 assistant 与其 tool 响应仍紧邻，
+    // 后续合并相邻 assistant 也不会跨过新插入的 tool 消息。
+    complete_missing_tool_responses_for_vendor_body(&mut stripped);
+    let mut v = crate::cm_types::normalize_messages_for_openai_compatible_request(stripped);
     if fold_system_into_user {
         v = crate::cm_types::fold_system_messages_into_following_user(v);
     }
@@ -113,13 +135,57 @@ pub fn conversation_messages_to_vendor_body(
 /// 与 [`conversation_messages_to_vendor_body`] 相同，但输入已是「已 strip」的 `Vec`（避免重复遍历），仅做 normalize（及可选 system 折叠）。
 #[inline]
 pub fn normalize_stripped_messages_for_vendor_body(
-    messages: Vec<Message>,
+    mut messages: Vec<Message>,
     fold_system_into_user: bool,
 ) -> Vec<Message> {
+    complete_missing_tool_responses_for_vendor_body(&mut messages);
     let mut v = crate::cm_types::normalize_messages_for_openai_compatible_request(messages);
     if fold_system_into_user {
         v = crate::cm_types::fold_system_messages_into_following_user(v);
     }
     sanitize_assistant_tool_call_arguments_for_vendor_in_place(&mut v);
     v
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cm_types::{FunctionCall, ToolCall};
+
+    fn assistant_with_call(args: &str) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(crate::cm_types::MessageContent::Text("calling".to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: Some(vec![ToolCall {
+                id: "call_1".to_string(),
+                typ: "function".to_string(),
+                function: FunctionCall {
+                    name: "run_command".to_string(),
+                    arguments: args.to_string(),
+                },
+            }]),
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    #[test]
+    fn dirty_history_gets_missing_tool_response_before_send() {
+        let messages = vec![
+            Message::user_only("u"),
+            assistant_with_call("{\"command\":\"bash\""),
+            Message::user_only("continue"),
+        ];
+
+        let v = conversation_messages_to_vendor_body(&messages, false, false, false);
+
+        let assistant_idx = v
+            .iter()
+            .position(|m| m.role == "assistant")
+            .expect("assistant");
+        assert_eq!(v[assistant_idx + 1].role, "tool");
+        assert_eq!(v[assistant_idx + 1].tool_call_id.as_deref(), Some("call_1"));
+    }
 }

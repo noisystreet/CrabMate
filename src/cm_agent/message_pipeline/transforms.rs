@@ -1,7 +1,7 @@
 //! 会话侧逐步变换：条数/字符裁剪、tool 压缩、孤立 tool 剔除等（由 [`super::sync_pipeline::apply_session_sync_pipeline_with_config`] 编排）。
 
 use crate::cm_types::{
-    Message, MessageContent, is_chat_timeline_marker, is_model_context_artifact_marker,
+    Message, is_chat_timeline_marker, is_model_context_artifact_marker,
     message_content_byte_len_for_estimate, user_message_counts_for_branch_truncation,
 };
 
@@ -384,61 +384,80 @@ pub fn drop_orphan_tool_messages(messages: &mut Vec<Message>) -> usize {
 const INTERRUPTED_TOOL_RESULT_PLACEHOLDER: &str =
     "本轮已被用户中断，该工具调用未执行完成，无结果。";
 
-/// 补齐**最后一条**带 `tool_calls` 的 `assistant` 里尚未得到响应的 `tool` 消息，返回新增条数。
+/// 紧邻 `assistant_idx` 起的连续 `tool` 消息已有的 `tool_call_id`。
+fn responded_tool_call_ids(messages: &[Message], assistant_idx: usize) -> Vec<String> {
+    let mut ids = Vec::new();
+    let mut idx = assistant_idx + 1;
+    while idx < messages.len() && messages[idx].role.trim().eq_ignore_ascii_case("tool") {
+        if let Some(id) = messages[idx].tool_call_id.as_ref() {
+            ids.push(id.clone());
+        }
+        idx += 1;
+    }
+    ids
+}
+
+/// 丢弃「未得到 tool 响应且 `arguments` 不是合法 JSON」的 `tool_call`，返回丢弃条数。
+///
+/// 这类调用是**流式输出被中断**的残片：模型只吐出半截 JSON，工具从未执行（也没有 tool 响应）。
+/// 把它们原样落盘会让下一次出站请求带上无法解析的 arguments；补占位响应只会把垃圾数据永久固化。
+/// 已有 tool 响应的非法 arguments 不在此处理——出站前由
+/// [`crate::cm_llm::vendor_messages`] 的 sanitize 规范为 `{}`，保留响应与调用的对应关系。
+fn drop_unresponded_incomplete_tool_calls(messages: &mut [Message]) -> usize {
+    let mut dropped = 0usize;
+    for idx in 0..messages.len() {
+        if !messages[idx].role.trim().eq_ignore_ascii_case("assistant")
+            || messages[idx].tool_calls.as_ref().is_none_or(Vec::is_empty)
+        {
+            continue;
+        }
+        let responded = responded_tool_call_ids(messages, idx);
+        let calls = messages[idx].tool_calls.take().unwrap_or_default();
+        let mut kept = Vec::with_capacity(calls.len());
+        for call in calls {
+            if responded.contains(&call.id)
+                || serde_json::from_str::<serde_json::Value>(call.function.arguments.trim())
+                    .is_ok()
+            {
+                kept.push(call);
+            } else {
+                dropped += 1;
+                log::info!(
+                    target: "crabmate",
+                    "已丢弃无响应且 arguments 非 JSON 的残留 tool_call tool_call_id={} tool={}",
+                    call.id,
+                    call.function.name
+                );
+            }
+        }
+        messages[idx].tool_calls = if kept.is_empty() { None } else { Some(kept) };
+    }
+    dropped
+}
+
+/// 取消 / 中断落盘前修复 `tool_calls` 结构，返回补齐的占位 `tool` 消息条数。
 ///
 /// 用户在工具批执行中途点「停止生成」时，落盘的 `messages` 可能停在
-/// `assistant(tool_calls=[A, B]) + tool(A)` 这种**部分响应**状态：末条是 `tool`（不是 assistant），
-/// [`crate::cm_types::normalize_messages_for_openai_compatible_request`] 只清理「末条 assistant 的悬空 `tool_calls`」，
-/// 覆盖不到该形态 ⇒ 下一轮请求会因「assistant 的 `tool_calls` 缺少对应 tool 响应」被上游 400。
-/// 这里为缺失的 `tool_call_id` 合成占位 `tool` 消息（`content` 为纯文本说明），使序列合法。
+/// `assistant(tool_calls=[A, B]) + tool(A)` 这种**部分响应**状态，或带着流式截断的半截
+/// `arguments`：`normalize_messages_for_openai_compatible_request` 只清理「末条 assistant 的悬空
+/// `tool_calls`」，覆盖不到既有中间助手、也覆盖不到部分响应形态 ⇒ 下一轮请求会因
+/// 「assistant 的 `tool_calls` 缺少对应 tool 响应」或非法 arguments 被上游 400。
+///
+/// 先丢弃从未执行、arguments 也无法解析的残片，再为其余缺失响应的调用合成占位 `tool` 消息
+/// （`content` 为纯文本说明），使序列合法。
 ///
 /// **仅用于中断 / 取消落盘路径**（写回 canonical 前调用），不改动正常完成回合的既有行为。
 pub fn complete_pending_tool_responses_for_persistence(messages: &mut Vec<Message>) -> usize {
-    let Some(assistant_idx) = messages.iter().rposition(|message| {
-        message.role.trim().eq_ignore_ascii_case("assistant")
-            && message
-                .tool_calls
-                .as_ref()
-                .is_some_and(|calls| !calls.is_empty())
-    }) else {
-        return 0;
-    };
-    let tool_calls = messages[assistant_idx]
-        .tool_calls
-        .clone()
-        .unwrap_or_default();
-    let mut insert_at = assistant_idx + 1;
-    let mut responded: Vec<String> = Vec::new();
-    // 角色判定与 assistant 分支同口径（trim + 忽略大小写），避免上游写入 `"Tool"` / 带空白时漏判。
-    // 已响应的 `tool` 消息若 `tool_call_id == None`，继续推进 `insert_at` 而不 panic：该消息无法
-    // 对应到任何 pending call，只能靠后续按 id 补齐，直接丢弃它会破坏既有序列。
-    while insert_at < messages.len()
-        && messages[insert_at].role.trim().eq_ignore_ascii_case("tool")
-    {
-        if let Some(id) = messages[insert_at].tool_call_id.clone() {
-            responded.push(id);
-        }
-        insert_at += 1;
+    let dropped = drop_unresponded_incomplete_tool_calls(messages);
+    if dropped > 0 {
+        log::info!(
+            target: "crabmate",
+            "取消回合落盘前丢弃 {} 个未执行完的残留 tool_call",
+            dropped
+        );
     }
-    let placeholders: Vec<Message> = tool_calls
-        .into_iter()
-        .filter(|call| !responded.contains(&call.id))
-        .map(|call| Message {
-            role: "tool".to_string(),
-            content: Some(MessageContent::Text(format!(
-                "{INTERRUPTED_TOOL_RESULT_PLACEHOLDER}（工具：{}）",
-                call.function.name
-            ))),
-            reasoning_content: None,
-            reasoning_details: None,
-            tool_calls: None,
-            name: None,
-            tool_call_id: Some(call.id),
-        })
-        .collect();
-    let added = placeholders.len();
-    if added > 0 {
-        messages.splice(insert_at..insert_at, placeholders);
-    }
-    added
+    crate::cm_types::complete_missing_tool_responses(
+        messages,
+        INTERRUPTED_TOOL_RESULT_PLACEHOLDER,
+    )
 }

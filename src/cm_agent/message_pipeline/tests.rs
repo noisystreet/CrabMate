@@ -533,3 +533,76 @@ fn complete_pending_tool_responses_noop_when_all_responded() {
     assert_eq!(added, 0);
     assert_eq!(messages.len(), 2);
 }
+
+fn assistant_with_call_args(id: &str, args: &str) -> Message {
+    Message {
+        role: "assistant".to_string(),
+        content: None,
+        reasoning_content: None,
+        reasoning_details: None,
+        tool_calls: Some(vec![ToolCall {
+            id: id.to_string(),
+            typ: "function".to_string(),
+            function: FunctionCall {
+                name: "run_command".to_string(),
+                arguments: args.to_string(),
+            },
+        }]),
+        name: None,
+        tool_call_id: None,
+    }
+}
+
+#[test]
+fn persistence_drops_unresponded_truncated_tool_call() {
+    let mut messages = vec![
+        Message::user_only("u"),
+        assistant_with_call_args("call_1", "{\"command\":\"bash\""),
+    ];
+
+    let added = complete_pending_tool_responses_for_persistence(&mut messages);
+
+    assert_eq!(added, 0);
+    assert_eq!(messages.len(), 2);
+    assert!(messages[1].tool_calls.is_none());
+}
+
+#[test]
+fn persistence_keeps_valid_call_and_drops_truncated_sibling() {
+    let mut assistant = assistant_with_call_args("call_1", "{\"path\":\"a\"}");
+    assistant
+        .tool_calls
+        .as_mut()
+        .expect("tool calls")
+        .extend(
+            assistant_with_call_args("call_2", "{\"command\":\"bash\"")
+                .tool_calls
+                .expect("tool calls"),
+        );
+    let mut messages = vec![assistant];
+
+    let added = complete_pending_tool_responses_for_persistence(&mut messages);
+
+    assert_eq!(added, 1);
+    assert_eq!(messages.len(), 2);
+    let calls = messages[0].tool_calls.as_ref().expect("remaining call");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id, "call_1");
+    assert_eq!(messages[1].tool_call_id.as_deref(), Some("call_1"));
+}
+
+#[test]
+fn persistence_keeps_truncated_call_that_already_has_response() {
+    let mut responded = tool_msg("done");
+    responded.tool_call_id = Some("call_1".to_string());
+    let mut messages = vec![
+        assistant_with_call_args("call_1", "{\"command\":\"bash\""),
+        responded,
+    ];
+
+    let added = complete_pending_tool_responses_for_persistence(&mut messages);
+
+    assert_eq!(added, 0);
+    assert_eq!(messages.len(), 2);
+    assert_eq!(messages[0].tool_calls.as_ref().expect("call").len(), 1);
+}

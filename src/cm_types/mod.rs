@@ -67,6 +67,7 @@ pub mod server_injected_user;
 pub mod session_mode;
 mod skill_slash_strip;
 mod tiktoken_snapshot;
+mod tool_response_completion;
 
 pub mod path_utils;
 pub mod text_utils;
@@ -85,6 +86,7 @@ pub use server_injected_user::{
 pub use session_mode::{SessionMode, parse_optional_session_mode, parse_session_mode};
 pub use skill_slash_strip::{is_reserved_slash_head, strip_explicit_skill_slash_prefix_for_model};
 pub use tiktoken_snapshot::TiktokenPromptTokensSnapshot;
+pub use tool_response_completion::*;
 #[cfg(test)]
 mod server_injected_user_store_tests {
     use super::*;
@@ -572,6 +574,90 @@ mod normalize_messages_tests {
         assert_eq!(n[0].role, "system");
         assert_eq!(n[1].role, "user");
         assert_eq!(n[2].role, "user");
+    }
+}
+
+#[cfg(test)]
+mod complete_missing_tool_responses_tests {
+    use super::*;
+
+    fn assistant_with_calls(ids: &[(&str, &str)]) -> Message {
+        Message {
+            role: "assistant".to_string(),
+            content: Some(MessageContent::Text("calling".to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: Some(
+                ids.iter()
+                    .map(|(id, name)| ToolCall {
+                        id: (*id).to_string(),
+                        typ: "function".to_string(),
+                        function: FunctionCall {
+                            name: (*name).to_string(),
+                            arguments: "{}".to_string(),
+                        },
+                    })
+                    .collect(),
+            ),
+            name: None,
+            tool_call_id: None,
+        }
+    }
+
+    fn tool_response(id: &str) -> Message {
+        Message {
+            role: "tool".to_string(),
+            content: Some(MessageContent::Text("ok".to_string())),
+            reasoning_content: None,
+            reasoning_details: None,
+            tool_calls: None,
+            name: None,
+            tool_call_id: Some(id.to_string()),
+        }
+    }
+
+    #[test]
+    fn fills_every_missing_response_in_partial_batch() {
+        let mut v = vec![
+            Message::user_only("u"),
+            assistant_with_calls(&[("a", "read"), ("b", "write")]),
+            tool_response("a"),
+        ];
+        let added = complete_missing_tool_responses(&mut v, "missing");
+
+        assert_eq!(added, 1);
+        assert_eq!(v.len(), 4);
+        assert_eq!(v[2].tool_call_id.as_deref(), Some("a"));
+        assert_eq!(v[3].role, "tool");
+        assert_eq!(v[3].tool_call_id.as_deref(), Some("b"));
+        let text = message_content_as_str(&v[3].content).expect("content");
+        assert!(text.contains("missing"));
+        assert!(text.contains("write"));
+    }
+
+    #[test]
+    fn fills_orphan_assistant_in_dirty_history() {
+        let mut v = vec![
+            assistant_with_calls(&[("a", "run_command")]),
+            Message::system_only("timeline"),
+            Message::user_only("continue"),
+        ];
+        let added = complete_missing_tool_responses(&mut v, "missing");
+
+        assert_eq!(added, 1);
+        assert_eq!(v.len(), 4);
+        assert_eq!(v[1].role, "tool");
+        assert_eq!(v[1].tool_call_id.as_deref(), Some("a"));
+        assert_eq!(v[2].role, "system");
+    }
+
+    #[test]
+    fn noop_when_all_calls_responded() {
+        let mut v = vec![assistant_with_calls(&[("a", "x")]), tool_response("a")];
+        let added = complete_missing_tool_responses(&mut v, "missing");
+
+        assert_eq!(added, 0);
+        assert_eq!(v.len(), 2);
     }
 }
 
