@@ -19,6 +19,7 @@ pub use command_outcome::{CommandDigest, CommandOutcome, ExitStatusKind};
 pub use command::{
     CommandSpec, PreparedRunCommand, RunCommandTestCacheOpts, RunOptions, allowlist_allows_all,
     argv_has_shell_operators, argv_needs_posix_shell_wrap, argv_needs_shell_expansion,
+    dash_c_script_body, is_shell_dash_c_invocation,
     join_run_command_argv_tail, join_run_command_shell_script, parse_command_spec,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
     prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run, run_async,
@@ -610,25 +611,82 @@ async fn run_command_dispatch_async(
 
 /// 判断本次 run_command 是否为“成功的编译命令”（常见 C/C++ 构建工具且退出码为 0）
 pub fn is_compile_command_success(args_json: &str, result: &str) -> bool {
-    let v: serde_json::Value = match serde_json::from_str(args_json) {
-        Ok(v) => v,
-        Err(_) => return false,
+    let Ok(spec) = parse_command_spec(args_json, std::path::Path::new(".")) else {
+        return false;
     };
-    let cmd = v
-        .get("command")
-        .and_then(|c| c.as_str())
-        .map(|s| s.trim().to_lowercase());
-    let is_compile_cmd = cmd.as_deref().is_some_and(|c| {
-        matches!(
-            c,
-            "gcc" | "g++" | "clang" | "clang++" | "make" | "cmake" | "ninja"
-        )
-    });
-    if !is_compile_cmd {
+    is_compile_command_success_spec(&spec, result)
+}
+
+/// [`is_compile_command_success`] 的已解析版本。
+#[must_use]
+pub fn is_compile_command_success_spec(spec: &CommandSpec, result: &str) -> bool {
+    if !is_compile_command_spec(spec) {
         return false;
     }
     let parsed = crate::cm_tools::tool_result::parse_legacy_output("run_command", result);
     parsed.ok && parsed.exit_code == Some(0)
+}
+
+/// 仅判断命令形态是否为编译命令（供后台任务等没有结果正文的消费方）。
+#[must_use]
+pub fn is_compile_command_spec(spec: &CommandSpec) -> bool {
+    if let Some(script) = spec.script.as_deref() {
+        return script_contains_compile_command(script);
+    }
+    let mut cmd = spec.command.trim().to_string();
+    let mut args = spec.args.clone();
+    // 兼容 `command` 为空、编译工具落在 `args` 首项的旧形态。
+    if cmd.is_empty() {
+        if args.is_empty() {
+            return false;
+        }
+        cmd = args.remove(0);
+    }
+    let (cmd, args) = peel_cd_prefix_argv_for_shell_policy(&cmd, &args);
+    if is_shell_dash_c_invocation(&cmd, &args) {
+        return dash_c_script_body(&args).is_some_and(script_contains_compile_command);
+    }
+    command_invocation_is_compile(&cmd, &args)
+}
+
+fn script_contains_compile_command(script: &str) -> bool {
+    for part in script.split(['&', '|', ';', '\n', '\r']) {
+        let words = crate::cmd_mate::split_command_line(part);
+        let Some((cmd, rest)) = words.split_first() else {
+            continue;
+        };
+        if cmd.trim().is_empty() {
+            continue;
+        }
+        let (cmd, args) = peel_cd_prefix_argv_for_shell_policy(cmd, rest);
+        if is_shell_dash_c_invocation(&cmd, &args) {
+            if dash_c_script_body(&args).is_some_and(script_contains_compile_command) {
+                return true;
+            }
+            continue;
+        }
+        if command_invocation_is_compile(&cmd, &args) {
+            return true;
+        }
+    }
+    false
+}
+
+fn command_invocation_is_compile(cmd: &str, args: &[String]) -> bool {
+    let base = cmd
+        .rsplit('/')
+        .next()
+        .unwrap_or(cmd)
+        .trim()
+        .to_ascii_lowercase();
+    match base.as_str() {
+        "gcc" | "g++" | "cc" | "c++" | "clang" | "clang++" | "make" | "cmake" | "ninja"
+        | "rustc" => true,
+        "cargo" => args
+            .first()
+            .is_some_and(|a| matches!(a.as_str(), "build" | "check" | "rustc")),
+        _ => false,
+    }
 }
 
 /// 为前端生成简短的工具调用摘要，便于在 Chat 面板中展示

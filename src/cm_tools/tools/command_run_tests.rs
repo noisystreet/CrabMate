@@ -566,6 +566,7 @@ fn cargo_test_prepared(cwd: std::path::PathBuf) -> PreparedRunCommand {
         cmd_args: vec!["test".to_string()],
         effective_working_dir: cwd,
         inject_gh_token: false,
+        rewrites: Vec::new(),
     }
 }
 
@@ -575,7 +576,7 @@ fn cache_write_key(plan: RunCommandPlan) -> TestCacheKey {
             .cache_write
             .expect("eligible cargo test should carry cache_write")
             .key,
-        RunCommandPlan::CacheHit(_) => panic!("fresh key must not hit cache"),
+        RunCommandPlan::CacheHit { .. } => panic!("fresh key must not hit cache"),
     }
 }
 

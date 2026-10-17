@@ -147,18 +147,12 @@ pub fn job_outcome_workspace_changed(args_json: &str, outcome: &JobOutcome) -> b
     if outcome.status != JobStatus::Succeeded {
         return false;
     }
-    let cmd = match serde_json::from_str::<serde_json::Value>(args_json).ok() {
-        Some(v) => v
-            .get("command")
-            .and_then(|c| c.as_str())
-            .map(|s| s.trim().to_lowercase())
-            .unwrap_or_default(),
-        None => String::new(),
+    let Ok(spec) =
+        crate::cm_tools::tools::parse_command_spec(args_json, std::path::Path::new("."))
+    else {
+        return false;
     };
-    matches!(
-        cmd.as_str(),
-        "gcc" | "g++" | "clang" | "clang++" | "make" | "cmake" | "ninja"
-    )
+    crate::cm_tools::tools::is_compile_command_spec(&spec)
 }
 
 /// 尽最大努力领取队列任务（FIFO）并启动；无空位/队列空即返回。
@@ -440,6 +434,14 @@ mod tests {
         };
         assert!(job_outcome_workspace_changed(
             r#"{"command":"make","args":["-j4"]}"#,
+            &ok
+        ));
+        assert!(job_outcome_workspace_changed(
+            r#"{"script":"cargo build"}"#,
+            &ok
+        ));
+        assert!(!job_outcome_workspace_changed(
+            r#"{"script":"cargo test"}"#,
             &ok
         ));
         assert!(!job_outcome_workspace_changed(

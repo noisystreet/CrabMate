@@ -21,6 +21,13 @@ pub enum RunCommandError {
     DisallowedCommand { attempted: String, allowed: String },
     #[error("错误：args 必须是字符串数组")]
     ArgsNotArray,
+    /// 入参字段类型错误（例如 `cwd` 传了非字符串）。
+    #[error("错误：字段 `{field}` 必须是字符串")]
+    FieldNotString { field: &'static str },
+    #[error("错误：`script` 与 `command`/`args` 互斥，只能二选一")]
+    ScriptCommandConflict,
+    #[error("错误：`script` 需要白名单内提供 `bash` 或 `sh`")]
+    ScriptShellUnavailable,
     #[error("错误：参数不允许包含父目录穿越（如 ..、../）或绝对路径（以 / 开头）")]
     UnsafeArg,
     /// 参数含 Shell 展开（`$(…)` / `$VAR` / glob 等），且白名单无 `bash`/`sh`、也未经脚本审批。
@@ -79,6 +86,15 @@ impl RunCommandError {
             },
             RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
             RunCommandError::ArgsNotArray => ToolError::invalid_args(msg),
+            RunCommandError::FieldNotString { .. } => {
+                invalid_input_with_code("field_not_string", msg)
+            }
+            RunCommandError::ScriptCommandConflict => {
+                invalid_input_with_code("script_command_conflict", msg)
+            }
+            RunCommandError::ScriptShellUnavailable => {
+                invalid_input_with_code("script_shell_unavailable", msg)
+            }
             RunCommandError::UnsafeArg => invalid_input_with_code("unsafe_arg", msg),
             RunCommandError::CdPrefixInvalid { .. } => {
                 invalid_input_with_code("cd_prefix_invalid", msg)
@@ -147,6 +163,9 @@ impl RunCommandError {
             RunCommandError::MissingCommand => "missing_command",
             RunCommandError::DisallowedCommand { .. } => "disallowed_command",
             RunCommandError::ArgsNotArray => "args_not_array",
+            RunCommandError::FieldNotString { .. } => "field_not_string",
+            RunCommandError::ScriptCommandConflict => "script_command_conflict",
+            RunCommandError::ScriptShellUnavailable => "script_shell_unavailable",
             RunCommandError::UnsafeArg => "unsafe_arg",
             RunCommandError::CdPrefixInvalid { .. } => "cd_prefix_invalid",
             RunCommandError::RateLimited { .. } => "rate_limited",
