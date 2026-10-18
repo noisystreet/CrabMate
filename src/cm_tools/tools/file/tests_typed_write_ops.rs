@@ -1,4 +1,4 @@
-//! PR-1a Typed 迁移回归：`create_file` / `copy_file` / `move_file`。
+//! PR-1a / PR-1b Typed 迁移回归：`create_file` / `copy_file` / `move_file` / `modify_file`。
 //!
 //! 覆盖三类契约：成功正文与 String 面逐字节一致；失败返回显式 `code` / `category` / `retryable`；
 //! 成功正文含「失败」「超时」等词时仍判成功（Typed 收尾注入 `ok=true` 头）。
@@ -7,7 +7,10 @@ use std::path::Path;
 
 use super::test_support::test_ctx;
 use super::tests::make_test_dir;
-use super::{copy_file, copy_file_try, create_file, create_file_try, move_file, move_file_try};
+use super::{
+    copy_file, copy_file_try, create_file, create_file_try, modify_file, modify_file_try, move_file,
+    move_file_try,
+};
 use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory};
 
 fn assert_invalid_input(err: &ToolError) {
@@ -238,5 +241,120 @@ fn move_file_try_missing_source_is_workspace_resolve_failed() {
     assert_eq!(err.code, "workspace_resolve_failed");
     assert_eq!(err.category, ToolFailureCategory::External);
     assert!(!err.retryable);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn modify_file_try_success_matches_string_face() {
+    let dir_legacy = make_test_dir();
+    let dir_typed = make_test_dir();
+    std::fs::write(dir_legacy.join("a.txt"), "L1\nL2\nL3\n").unwrap();
+    std::fs::write(dir_typed.join("a.txt"), "L1\nL2\nL3\n").unwrap();
+    let args = r#"{"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#;
+
+    let legacy = modify_file(args, &dir_legacy, &test_ctx(&dir_legacy));
+    let typed = modify_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("替换应成功");
+
+    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
+    assert!(typed.contains("已按行替换"), "{typed}");
+    assert!(typed.contains("\"ok\":true"), "{typed}");
+    assert_eq!(read(&dir_typed, "a.txt"), "L1\nX\nL3\n");
+
+    let _ = std::fs::remove_dir_all(&dir_legacy);
+    let _ = std::fs::remove_dir_all(&dir_typed);
+}
+
+#[test]
+fn modify_file_try_missing_path_is_invalid_input() {
+    let dir = make_test_dir();
+
+    let err = modify_file_try(r#"{"content":"x"}"#, &dir, &test_ctx(&dir))
+        .expect_err("缺少 path 须失败");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("缺少 path"), "{}", err.message);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn modify_file_try_non_file_path_is_invalid_input() {
+    let dir = make_test_dir();
+    std::fs::create_dir(dir.join("sub")).unwrap();
+
+    let err = modify_file_try(r#"{"path":"sub","content":"x"}"#, &dir, &test_ctx(&dir))
+        .expect_err("目录不可作为修改目标");
+
+    assert_invalid_input(&err);
+    assert!(
+        err.message.contains("路径不是文件或不存在"),
+        "{}",
+        err.message
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn modify_file_try_stale_revision_keeps_body_and_code() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "L1\nL2\n").unwrap();
+
+    let err = modify_file_try(
+        r#"{"path":"a.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","base_revision":"deadbeef"}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("过期 base_revision 须拒写");
+
+    assert_eq!(err.code, "stale_revision");
+    // `stale_revision` 无 `_failed` 后缀，按现有错误码映射归入 `Unknown`（与 Legacy 推断一致）。
+    assert_eq!(err.category, ToolFailureCategory::Unknown);
+    assert!(!err.retryable);
+    assert!(err.message.contains("错误[stale_revision]"), "{}", err.message);
+    assert_eq!(read(&dir, "a.txt"), "L1\nL2\n", "被拒绝的写入不得改动文件");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn modify_file_try_full_overwrite_guard_keeps_preview_and_failure() {
+    let dir = make_test_dir();
+    let original = "a\n".repeat(200);
+    std::fs::write(dir.join("big.txt"), &original).unwrap();
+
+    let err = modify_file_try(
+        r#"{"path":"big.txt","mode":"full","content":""}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("高危整文件覆盖未确认须拒写");
+
+    assert_eq!(err.code, "modify_file_failed");
+    assert_eq!(err.category, ToolFailureCategory::External);
+    assert!(err.message.contains("未写盘"), "{}", err.message);
+    assert!(
+        err.message.contains("workspace_write_diff"),
+        "拒绝路径仍须返回 diff 预览: {}",
+        err.message
+    );
+    assert_eq!(read(&dir, "big.txt"), original, "拒绝时不得写盘");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn modify_file_failure_exposes_typed_error_code_to_legacy_parse() {
+    let dir = make_test_dir();
+    std::fs::create_dir(dir.join("sub")).unwrap();
+
+    // 主 Agent 路径只返回 String，精确错误码须经显式头保留。
+    // Schema 校验可通过的目录路径：Legacy 正文会推断为 `modify_file_failed`，
+    // Typed 面返回 `invalid_args`，以此验证头部确实覆盖了正文启发式。
+    let output = crate::cm_tools::tools::run_tool(
+        "modify_file",
+        r#"{"path":"sub","content":"x"}"#,
+        &test_ctx(&dir),
+    );
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
+    assert!(!parsed.ok, "{output}");
+    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
+
     let _ = std::fs::remove_dir_all(&dir);
 }

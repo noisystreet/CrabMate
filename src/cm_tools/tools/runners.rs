@@ -433,7 +433,6 @@ define_runners_cwd_ctx! {
     runner_archive_pack => archive::archive_pack,
     runner_archive_unpack => archive::archive_unpack,
     runner_archive_list => archive::archive_list,
-    runner_modify_file => file::modify_file,
     runner_structured_patch => structured_data::structured_patch,
     runner_delete_files => file::delete_files,
     runner_append_file => file::append_file,
@@ -446,6 +445,7 @@ define_runners_cwd_ctx_try! {
     runner_create_file_try => file::create_file_try,
     runner_copy_file_try => file::copy_file_try,
     runner_move_file_try => file::move_file_try,
+    runner_modify_file_try => file::modify_file_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
