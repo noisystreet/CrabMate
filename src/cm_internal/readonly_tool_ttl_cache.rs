@@ -212,15 +212,16 @@ pub fn run_command_invocation_ttl_cache_eligible(args_json: &str) -> bool {
     {
         return false;
     }
-    let Some((command, args)) =
-        crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)
+    let Ok(spec) = crate::cm_tools::tools::parse_command_spec(args_json, std::path::Path::new("."))
     else {
         return false;
     };
-    // 宽容入口已 trim；空命令直接视为不可缓存。
-    if command.is_empty() || args_forbid_absolute_or_dotdot(&args) {
+    // 解析入口已 trim；`script` 形态（`command` 为空）与空命令一律不可缓存。
+    if spec.command.is_empty() || args_forbid_absolute_or_dotdot(&spec.args) {
         return false;
     }
+    let command = spec.command;
+    let args = spec.args;
     let cmd = command.as_str();
     if matches!(
         cmd,
