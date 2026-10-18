@@ -9,6 +9,10 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-18
+
+**crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.7.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): this release is dominated by **tool-surface consolidation** — dozens of thin CLI wrappers are removed and replaced by generic **`run_command`** (the default allowlist is expanded accordingly), so read the **BREAKING** entries below before upgrading. Additive highlights: **`serve --yes`**, background-job monitoring tools, **`GET /tools/plugins/{file}`**, context-archive retention keys, and **`GET /conversation/messages?include_archive=true`**.
+
 ### Added
 
 - **`serve --yes` to bypass the command allowlist**: a new `serve` flag replaces `allowed_commands` with the allow-all sentinel **`["*"]`**, so **`run_command`** (and `terminal_session` first-frame `exec`) no longer validates the command name and runs any program. The sentinel is honored at the single host-side gate (`resolve_run_command_exec_path`), the approval layer (`cmd_missing_from_allowlist`, shell-wrap approval), and the peripheral consumers (`gh_allowed`, `error_output_playbook`, plugin/dynamic-tool validation, `doctor`), and is preserved across `POST /config/reload`. It is equivalent to **`CM_ALLOWED_COMMANDS=*`** and is intended **only** for fully trusted or already-isolated (container / dedicated host) environments; it does **not** disable workspace-external path approval or argument-safety checks. See `docs/命令行与路由.md` / `docs/工具说明.md` / `docs/配置说明.md`.
@@ -282,7 +286,8 @@ First public **server** release tag (`v0.1.0`). Cargo package version was alread
 - Systemd service user has a **minimal `PATH`**; extend via `/etc/crabmate/crabmate.env` for host toolchains. Bypass HTTP proxies for `127.0.0.1` when probing locally.
 - Compatibility-layer shrink items **B2–B4**, full unwrap audits, and agent benchmarks remain backlog ([`docs/待办清单.md`](docs/待办清单.md)).
 
-[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/noisystreet/CrabMate/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/noisystreet/CrabMate/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/noisystreet/CrabMate/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/noisystreet/CrabMate/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/noisystreet/CrabMate/compare/v0.5.0...v0.5.1
