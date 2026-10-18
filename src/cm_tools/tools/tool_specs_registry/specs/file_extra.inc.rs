@@ -20,7 +20,7 @@ ToolSpec {
             description: "在工作区内文件末尾追加内容。默认文件须已存在；create_if_missing=true 时不存在则创建。不覆盖已有内容。支持 dry_run=true 预览；默认 ensure_leading_newline=true，会在原文件非空且末尾无换行时先补一个换行，避免新内容接在旧末行后。`content` 可用 body/text/code 等别名。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::AppendFileArgs>,
-            runner: ToolRunner::Legacy(runner_append_file),
+            runner: ToolRunner::Typed(runner_append_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_append_file),
         },
         ToolSpec {
@@ -36,7 +36,7 @@ ToolSpec {
             description: "在工作区内**单个文件**中搜索并替换文本，**局部内容改动的首选**（按文本锚定、无需行号，不受行号漂移影响；比按行号编辑的 `modify_file` 更不易改错行）。支持字面量或正则表达式匹配。默认 dry_run=true 仅预览变更（显示行级替换对比）；写盘需 dry_run=false + confirm=true。可限制最大替换次数。文件上限 4MiB。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::SearchReplaceArgs>,
-            runner: ToolRunner::Legacy(runner_search_replace),
+            runner: ToolRunner::Typed(runner_search_replace_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_search_replace),
         },
         ToolSpec {

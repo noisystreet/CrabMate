@@ -9,6 +9,7 @@ use super::path::{
     canonical_workspace_root, path_for_tool_display, resolve_for_read, resolve_for_write,
     tool_user_error_from_workspace_path,
 };
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::tool_param_types::{
     AppendFileArgs, CreateDirArgs, DeleteDirArgs, DeleteFilesArgs, SearchReplaceArgs,
@@ -23,6 +24,7 @@ use crate::cm_tools::workspace::fs::{
     write_bytes_under_root,
 };
 
+use super::write_ops::{workspace_path_tool_error, write_precheck_tool_error};
 use super::write_precheck::NOT_WRITTEN_HINT;
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
@@ -73,29 +75,31 @@ fn delete_dir_result_message(
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn append_resolve_target_path(
     working_dir: &Path,
     path: &str,
     create_if_missing: bool,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, ToolError> {
     if create_if_missing {
-        resolve_for_write(working_dir, path).map_err(tool_user_error_from_workspace_path)
+        resolve_for_write(working_dir, path).map_err(workspace_path_tool_error)
     } else {
         match resolve_for_read(working_dir, path) {
             Ok(p) => Ok(p),
-            Err(e) => Err(format!(
+            Err(e) => Err(ToolError::invalid_args(format!(
                 "文件不存在（可设置 create_if_missing=true）：{}",
                 e
-            )),
+            ))),
         }
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn append_create_parent_if_needed(
     base: &Path,
     create_if_missing: bool,
     target: &Path,
-) -> Result<(), String> {
+) -> Result<(), ToolError> {
     if !create_if_missing {
         return Ok(());
     }
@@ -103,8 +107,9 @@ fn append_create_parent_if_needed(
         && !parent.as_os_str().is_empty()
         && !parent.exists()
     {
-        create_directory_under_root(base, parent, true)
-            .map_err(|e| format!("创建父目录失败：{}", e))?;
+        create_directory_under_root(base, parent, true).map_err(|e| {
+            ToolError::external_code("append_file_failed", format!("创建父目录失败：{}", e))
+        })?;
     }
     Ok(())
 }
@@ -158,17 +163,17 @@ fn append_file_after_preview(plan: &AppendFilePlan) -> Option<String> {
         .or_else(|| plan.create_if_missing.then(|| plan.append_body.clone()))
 }
 
+#[allow(clippy::result_large_err)]
 fn append_file_prepare(
     args: AppendFileArgs,
     working_dir: &Path,
-) -> Result<(bool, AppendFilePlan), String> {
+) -> Result<(bool, AppendFilePlan), ToolError> {
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return Err("缺少 path 参数".to_string()),
+        _ => return Err(ToolError::invalid_args("缺少 path 参数".to_string())),
     };
     let target = append_resolve_target_path(working_dir, &path, args.create_if_missing)?;
-    let base =
-        canonical_workspace_root(working_dir).map_err(tool_user_error_from_workspace_path)?;
+    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
     append_create_parent_if_needed(&base, args.create_if_missing, &target)?;
     let before = std::fs::read_to_string(&target).ok();
     let inserted_leading_newline = append_file_needs_leading_newline(
@@ -212,21 +217,24 @@ fn append_file_preview(working_dir: &Path, plan: AppendFilePlan) -> String {
     )
 }
 
-fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFilePlan) -> String {
-    let mut file =
-        match open_file_append_under_root(&plan.base, &plan.target, plan.create_if_missing) {
-            Ok(f) => f,
-            Err(e) => return format!("打开文件失败：{}", e),
-        };
-    if let Err(e) = file.write_all(plan.append_body.as_bytes()) {
-        return format!("写入失败：{}", e);
-    }
+#[allow(clippy::result_large_err)]
+fn append_file_write(
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+    plan: AppendFilePlan,
+) -> Result<String, ToolError> {
+    let mut file = open_file_append_under_root(&plan.base, &plan.target, plan.create_if_missing)
+        .map_err(|e| {
+            ToolError::external_code("append_file_failed", format!("打开文件失败：{}", e))
+        })?;
+    file.write_all(plan.append_body.as_bytes())
+        .map_err(|e| ToolError::external_code("append_file_failed", format!("写入失败：{}", e)))?;
     let after = std::fs::read_to_string(&plan.target).ok();
     if let Some(c) = ctx.workspace_changelist {
         c.record_mutation(&plan.path, plan.before.clone(), after.clone());
     }
     let body = append_file_build_body("已追加", working_dir, &plan);
-    format_tool_output_with_write_diff_preview(
+    Ok(format_tool_output_with_write_diff_preview(
         "append_file",
         true,
         body,
@@ -236,7 +244,7 @@ fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFile
             after,
         }],
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-    )
+    ))
 }
 
 /// 单次 `delete_files` 允许的最大文件数（防输出 / diff 预览爆炸）。
@@ -405,17 +413,21 @@ pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
 // ── append_file ─────────────────────────────────────────────
 
 pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let args = match parse_append_file_args(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+    append_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`append_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn append_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let args = parse_append_file_args(args_json).map_err(ToolError::invalid_args)?;
     let skip_precheck = args.skip_precheck;
-    let (dry_run, plan) = match append_file_prepare(args, working_dir) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let (dry_run, plan) = append_file_prepare(args, working_dir)?;
     if dry_run {
-        return append_file_preview(working_dir, plan);
+        return Ok(append_file_preview(working_dir, plan));
     }
     // 校验「原内容 + 追加内容」的拼接结果（原文件二进制/不可读时退化为仅校验追加段）。
     let merged = format!(
@@ -425,7 +437,7 @@ pub fn append_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
     );
     if let Err(e) = super::write_precheck::precheck_before_write(&plan.path, &merged, skip_precheck)
     {
-        return e;
+        return Err(write_precheck_tool_error("append_file", e));
     }
     append_file_write(working_dir, ctx, plan)
 }
@@ -575,85 +587,90 @@ fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, St
 }
 
 /// 写盘前闸门：`confirm` 确认 + 语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
+#[allow(clippy::result_large_err)]
 fn search_replace_confirm_and_precheck(
     confirm: bool,
     skip_precheck: bool,
     path: &str,
     new_content: &str,
-) -> Result<(), String> {
+) -> Result<(), ToolError> {
     if !confirm {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "拒绝执行：search_replace 写盘需要 confirm=true（{NOT_WRITTEN_HINT}）"
-        ));
+        )));
     }
     super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
+        .map_err(|e| write_precheck_tool_error("search_replace", e))
 }
 
+#[allow(clippy::result_large_err)]
 fn load_search_replace_file_bytes(
     working_dir: &Path,
     path: &str,
-) -> Result<(PathBuf, String), String> {
-    let target =
-        resolve_for_read(working_dir, path).map_err(tool_user_error_from_workspace_path)?;
+) -> Result<(PathBuf, String), ToolError> {
+    let target = resolve_for_read(working_dir, path).map_err(workspace_path_tool_error)?;
     if !target.is_file() {
-        return Err(format!("错误：{} 不是文件", path));
+        return Err(ToolError::invalid_args(format!("错误：{} 不是文件", path)));
     }
-    let content = std::fs::read_to_string(&target).map_err(|e| format!("读取文件失败：{}", e))?;
+    let content = std::fs::read_to_string(&target).map_err(|e| {
+        ToolError::external_code("search_replace_failed", format!("读取文件失败：{}", e))
+    })?;
     const MAX_FILE_SIZE: usize = 4 * 1024 * 1024;
     if content.len() > MAX_FILE_SIZE {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "错误：文件过大（{} 字节，上限 4MiB）",
             content.len()
-        ));
+        )));
     }
     Ok((target, content))
 }
 
 pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let args = match parse_search_replace_args(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
-    let (path, search) = match search_replace_path_and_query(&args) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    search_replace_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`search_replace`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn search_replace_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let args = parse_search_replace_args(args_json).map_err(ToolError::invalid_args)?;
+    let (path, search) = search_replace_path_and_query(&args).map_err(ToolError::invalid_args)?;
     let replace = args.replace;
     let is_regex = args.regex;
     let dry_run = args.dry_run;
     let confirm = args.confirm;
     let max_replacements = args.max_replacements.unwrap_or(0) as usize;
 
-    let (target, content) = match load_search_replace_file_bytes(working_dir, &path) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+    let (target, content) = load_search_replace_file_bytes(working_dir, &path)?;
 
     let (new_content, count) =
-        match apply_search_replace_inner(&content, &search, &replace, is_regex, max_replacements) {
-            Ok(x) => x,
-            Err(e) => return e,
-        };
+        apply_search_replace_inner(&content, &search, &replace, is_regex, max_replacements)
+            .map_err(ToolError::invalid_args)?;
 
     if count == 0 {
-        return format!("未找到匹配：\"{}\" 在 {}", search, path);
+        return Err(ToolError::invalid_args(format!(
+            "未找到匹配：\"{}\" 在 {}",
+            search, path
+        )));
     }
 
     let display = path_for_tool_display(working_dir, &target, Some(&path));
     if dry_run {
-        return search_replace_dry_run_preview(&display, count, &content, &new_content);
+        return Ok(search_replace_dry_run_preview(
+            &display,
+            count,
+            &content,
+            &new_content,
+        ));
     }
 
-    if let Err(e) = search_replace_confirm_and_precheck(confirm, args.skip_precheck, &path, &new_content)
-    {
-        return e;
-    }
+    search_replace_confirm_and_precheck(confirm, args.skip_precheck, &path, &new_content)?;
 
     let before = content.clone();
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
     match write_bytes_under_root(&base, &target, new_content.as_bytes(), false, false) {
         Ok(()) => {
             record_file_state_after_write(
@@ -666,7 +683,7 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
                 "已替换 {} 处匹配（\"{}\" → \"{}\"）：{}",
                 count, search, replace, display
             );
-            format_tool_output_with_write_diff_preview(
+            Ok(format_tool_output_with_write_diff_preview(
                 "search_replace",
                 true,
                 body,
@@ -676,9 +693,12 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
                     after: Some(new_content),
                 }],
                 WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-            )
+            ))
         }
-        Err(e) => format!("写入文件失败：{}", e),
+        Err(e) => Err(ToolError::external_code(
+            "search_replace_failed",
+            format!("写入文件失败：{}", e),
+        )),
     }
 }
 

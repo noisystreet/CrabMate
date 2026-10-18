@@ -39,7 +39,7 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
 }
 
 /// 路径解析失败：正文保持 `错误：…`，错误码以 `_failed` 结尾归入 `external`（与 Legacy 正文推断一致）。
-fn workspace_path_tool_error(e: WorkspacePathError) -> ToolError {
+pub(super) fn workspace_path_tool_error(e: WorkspacePathError) -> ToolError {
     ToolError::external_code(
         "workspace_resolve_failed",
         tool_user_error_from_workspace_path(e),
@@ -47,7 +47,7 @@ fn workspace_path_tool_error(e: WorkspacePathError) -> ToolError {
 }
 
 /// 写盘前校验失败：沿用 `校验失败（CODE）` 正文，并按该正文保留 `write_precheck_failed` 错误码。
-fn write_precheck_tool_error(tool: &str, message: String) -> ToolError {
+pub(super) fn write_precheck_tool_error(tool: &str, message: String) -> ToolError {
     let parsed = crate::cm_tools::tool_result::parse_legacy_output(tool, &message);
     ToolError::from_parsed_legacy(tool, &parsed, message)
 }
