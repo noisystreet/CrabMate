@@ -82,7 +82,7 @@ fn token_needs_shell_expansion(t: &str) -> bool {
     !t.is_empty() && detect_shell_expansion_token(t).is_some()
 }
 
-/// glob / `$VAR` / 反引号 / `~`（不含整段 `&&`/`|` 等操作符）。
+/// glob / `$VAR` / `~`（不含整段 `&&`/`|` 等操作符；命令替换不算展开）。
 #[must_use]
 pub fn argv_needs_shell_expansion(cmd: &str, args: &[String]) -> bool {
     if is_shell_dash_c_invocation(cmd, args) {
@@ -107,6 +107,9 @@ pub fn argv_needs_posix_shell_wrap(cmd: &str, args: &[String]) -> bool {
 }
 
 /// 返回第一个命中的模式标签（供错误/审批文案）。
+///
+/// 反引号与 `$(` 属于**命令替换**，不在此列出：它们不触发 shell 包装，
+/// 且在包装时会被转义为字面量（见 [`escape_command_substitution`]）。
 #[must_use]
 pub fn detect_shell_expansion_token(s: &str) -> Option<&'static str> {
     let bytes = s.as_bytes();
@@ -117,7 +120,9 @@ pub fn detect_shell_expansion_token(s: &str) -> Option<&'static str> {
             b'$' if i + 1 < len => {
                 let n = bytes[i + 1];
                 if n == b'(' {
-                    return Some("$(...)");
+                    // 命令替换：跳过 `$(`，继续扫描其余部分（若另有 `$VAR` 仍会命中）。
+                    i += 2;
+                    continue;
                 }
                 if n == b'{' {
                     return Some("${...}");
@@ -128,7 +133,6 @@ pub fn detect_shell_expansion_token(s: &str) -> Option<&'static str> {
                 }
                 i += 2;
             }
-            b'`' => return Some("`...`"),
             b'~' if i == 0 || bytes[i.saturating_sub(1)] == b'=' => return Some("~"),
             b'*' => return Some("glob"),
             b'?' => {
@@ -158,10 +162,67 @@ fn token_looks_like_path_glob(t: &str) -> bool {
     t.contains('/') || t.contains('.')
 }
 
+/// token 是否含命令替换（未转义的反引号或 `$(`）。
+fn contains_command_substitution(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\\' => i = i.saturating_add(2),
+            '`' => return true,
+            '$' if chars.get(i + 1) == Some(&'(') => return true,
+            _ => i += 1,
+        }
+    }
+    false
+}
+
+/// 把命令替换转义为字面量（供不经双引号的 token 使用）。
+///
+/// - 未转义的 `` ` `` 改写为 `` \` ``；
+/// - 未转义的 `$(` 改写为 `\$(`；
+/// - 已有的 `\X` 原样保留，避免二次转义把 `\$` 变成 `\\$`；
+/// - `$VAR` / glob / `~` 等既有展开行为不受影响。
+fn escape_command_substitution(arg: &str) -> String {
+    let chars: Vec<char> = arg.chars().collect();
+    let mut s = String::with_capacity(arg.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\\' {
+            s.push('\\');
+            if let Some(next) = chars.get(i + 1) {
+                s.push(*next);
+                i += 2;
+            } else {
+                i += 1;
+            }
+            continue;
+        }
+        if ch == '`' {
+            s.push('\\');
+            s.push('`');
+            i += 1;
+            continue;
+        }
+        if ch == '$' && chars.get(i + 1) == Some(&'(') {
+            s.push('\\');
+            s.push('$');
+            s.push('(');
+            i += 2;
+            continue;
+        }
+        s.push(ch);
+        i += 1;
+    }
+    s
+}
+
 /// 用双引号包裹 token，尽量保持其 shell 原文语义。
 ///
 /// - 已有的 `\X` 转义（如 `\$`、`\"`、`\\`）原样保留，避免二次转义把 `\$` 变成 `\\$`（后者会先还原成 `\` 再展开变量）；
 /// - 未转义的 `"` 补 `\`，防止提前闭合；
+/// - 未转义的反引号与 `$(` 补 `\`，避免命令替换被执行；
 /// - 结尾的 `\` 需自身转义，避免吃掉收尾引号。
 fn double_quote_token(arg: &str) -> String {
     let chars: Vec<char> = arg.chars().collect();
@@ -184,8 +245,18 @@ fn double_quote_token(arg: &str) -> String {
             }
             continue;
         }
-        if ch == '"' {
+        if ch == '"' || ch == '`' {
             s.push('\\');
+            s.push(ch);
+            i += 1;
+            continue;
+        }
+        if ch == '$' && chars.get(i + 1) == Some(&'(') {
+            s.push('\\');
+            s.push('$');
+            s.push('(');
+            i += 2;
+            continue;
         }
         s.push(ch);
         i += 1;
@@ -202,9 +273,14 @@ fn quote_script_token(arg: &str) -> String {
     if token_is_shell_operator(arg) {
         return arg.to_string();
     }
-    if detect_shell_expansion_token(arg).is_some() {
+    let has_expansion = detect_shell_expansion_token(arg).is_some();
+    let has_substitution = contains_command_substitution(arg);
+    if has_expansion || has_substitution {
         if arg.chars().any(char::is_whitespace) {
             return double_quote_token(arg);
+        }
+        if has_substitution {
+            return escape_command_substitution(arg);
         }
         return arg.to_string();
     }
@@ -305,6 +381,45 @@ mod tests {
         assert_eq!(s, r#"echo "say \"hi\" now""#);
         let s = join_run_command_shell_script("echo", &["end\\".into()]);
         assert_eq!(s, r#"echo "end\\""#);
+    }
+
+    #[test]
+    fn command_substitution_is_not_a_wrap_trigger() {
+        assert!(detect_shell_expansion_token("`id`").is_none());
+        assert!(detect_shell_expansion_token("$(id)").is_none());
+        assert!(!argv_needs_posix_shell_wrap(
+            "git",
+            &["commit".into(), "-m".into(), "fix `id`".into()]
+        ));
+        let mut cmd = "git".to_string();
+        let mut args = vec!["commit".to_string(), "-m".to_string(), "fix `id`".to_string()];
+        let allowed = vec!["git".to_string(), "bash".to_string()];
+        assert!(!maybe_wrap_argv_with_posix_shell(
+            &mut cmd, &mut args, &allowed
+        ));
+        assert_eq!(cmd, "git");
+    }
+
+    #[test]
+    fn join_escapes_command_substitution_when_wrapping() {
+        let s = join_run_command_shell_script(
+            "git",
+            &["commit".into(), "-m".into(), "fix `id`".into()],
+        );
+        assert_eq!(s, r#"git commit -m "fix \`id\`""#);
+        let s = join_run_command_shell_script("echo", &["$(id)".into()]);
+        assert_eq!(s, r"echo \$(id)");
+        let s = join_run_command_shell_script("echo", &[r"a \`id\`".into()]);
+        assert_eq!(s, r#"echo "a \`id\`""#);
+        // 既有展开行为不变
+        let s = join_run_command_shell_script("echo", &["$HOME".into()]);
+        assert_eq!(s, "echo $HOME");
+    }
+
+    #[test]
+    fn command_substitution_inside_expanding_token_stays_literal() {
+        let s = join_run_command_shell_script("echo", &["$HOME/`id`".into()]);
+        assert_eq!(s, r"echo $HOME/\`id\`");
     }
 
     #[test]

@@ -489,6 +489,48 @@ fn wrapped_shell_script_keeps_escaped_dollar_literal() {
 }
 
 #[test]
+fn backticks_in_commit_message_stay_literal() {
+    let mut allowed = test_allowed();
+    allowed.push("bash".into());
+    let out = run(
+        r#"{"command":"echo","args":["fix `id` in docs"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &allowed,
+        test_work_dir(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("fix `id` in docs"), "{out}");
+}
+
+#[test]
+fn command_substitution_is_not_executed_when_wrapped() {
+    let mut allowed = test_allowed();
+    allowed.push("bash".into());
+    let out = run(
+        r#"{"command":"echo","args":["*.rs","fix `echo pwned`"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &allowed,
+        test_work_dir(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("fix `echo pwned`"), "{out}");
+    let out = run(
+        r#"{"command":"echo","args":["*.rs","fix $(echo pwned)"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &allowed,
+        test_work_dir(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("fix $(echo pwned)"), "{out}");
+}
+
+#[test]
 fn bash_wraps_operators_and_gh_dollar_keeps_token_flag() {
     let mut allowed = test_allowed();
     allowed.push("bash".into());
