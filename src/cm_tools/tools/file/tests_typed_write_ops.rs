@@ -439,6 +439,47 @@ fn append_file_try_precheck_failure_keeps_legacy_body_and_code() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn append_file_try_path_escape_is_workspace_resolve_failed() {
+    let dir = make_test_dir();
+    let outside = make_test_dir();
+    std::fs::write(outside.join("a.txt"), "x").unwrap();
+    let outside_name = outside.file_name().unwrap().to_string_lossy().to_string();
+    let args = serde_json::json!({
+        "path": format!("../{outside_name}/a.txt"),
+        "content": "y",
+    })
+    .to_string();
+
+    let err = append_file_try(&args, &dir, &test_ctx(&dir)).expect_err("越界路径须失败");
+
+    assert_eq!(err.code, "workspace_resolve_failed");
+    assert_eq!(err.category, ToolFailureCategory::External);
+    assert!(!err.retryable);
+    assert!(!err.message.contains("文件不存在"), "{}", err.message);
+    assert_eq!(read(&outside, "a.txt"), "x", "越界路径不得写入");
+    let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&outside);
+}
+
+#[test]
+fn append_file_success_body_with_failure_wording_stays_ok() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a失败.txt"), "hello").unwrap();
+
+    let output = crate::cm_tools::tools::run_tool(
+        "append_file",
+        r#"{"path":"a失败.txt","content":"world\n"}"#,
+        &test_ctx(&dir),
+    );
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("append_file", &output);
+    assert!(parsed.ok, "路径含「失败」不得影响成功判定: {output}");
+    assert!(parsed.error_code.is_none(), "{output}");
+    assert_eq!(read(&dir, "a失败.txt"), "hello\nworld\n");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 // ── PR-1c：「search_replace」 ─────────────────────────────────
 
 #[test]
@@ -591,6 +632,26 @@ fn search_replace_no_match_exposes_invalid_args_to_legacy_parse() {
     let parsed = crate::cm_tools::tool_result::parse_legacy_output("search_replace", &output);
     assert!(!parsed.ok, "{output}");
     assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_dry_run_body_with_failure_wording_stays_ok() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a失败.txt"), "hello world\n").unwrap();
+
+    // dry-run 预览正文不含结构化头；路径含「失败」时 Legacy 启发式会误判，Typed 收尾须注入 `ok=true`。
+    let output = crate::cm_tools::tools::run_tool(
+        "search_replace",
+        r#"{"path":"a失败.txt","search":"world","replace":"rust"}"#,
+        &test_ctx(&dir),
+    );
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("search_replace", &output);
+    assert!(parsed.ok, "dry-run 成功不得被判失败: {output}");
+    assert!(parsed.error_code.is_none(), "{output}");
+    assert!(output.contains("\"ok\":true"), "{output}");
+    assert_eq!(read(&dir, "a失败.txt"), "hello world\n", "dry-run 不得写盘");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
