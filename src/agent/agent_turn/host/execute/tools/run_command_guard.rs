@@ -1,8 +1,20 @@
 use std::collections::VecDeque;
 use std::path::Path;
 
-pub(super) fn parse_run_command_payload(args_json: &str) -> Option<(String, Vec<String>)> {
-    crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)
+use crate::cm_tools::tools::{CommandSpec, parse_command_spec};
+
+/// 失败家族判定只看 `CommandSpec` 的规范化结果，与审批/执行消费同一解析入口。
+pub(super) fn classify_run_command_failure_family_from_spec(
+    spec: &CommandSpec,
+) -> Option<&'static str> {
+    if let Some(script) = spec.script.as_deref() {
+        let argv = ["-c".to_string(), script.to_string()];
+        return classify_run_command_failure_family_from_invocation("bash", &argv);
+    }
+    if spec.command.is_empty() {
+        return None;
+    }
+    classify_run_command_failure_family_from_invocation(&spec.command, &spec.args)
 }
 
 pub(super) fn classify_run_command_failure_family_from_invocation(
@@ -27,23 +39,35 @@ pub(super) fn classify_run_command_failure_family_from_invocation(
 /// 仅在没有 `error_code` 的旧式输出上才回退到参数形态判定。
 pub(super) fn classify_run_command_failure_family_from_result(
     args_json: &str,
+    effective_working_dir: &Path,
     parsed: &crate::cm_tools::tool_result::ParsedLegacyOutput,
 ) -> Option<&'static str> {
     if parsed.exit_code.is_some() {
+        // `ctest` 的“无测试”只能从输出识别：退出码无法区分“无测试”与普通测试失败。
         let output_has_no_tests = parsed.stdout.contains("No tests were found")
             || parsed.stderr.contains("No tests were found");
         return output_has_no_tests.then_some("ctest_no_tests_found");
     }
-    let (command, args) = parse_run_command_payload(args_json)?;
+    // 严格解析可能因 `cwd` 非法等原因失败，但 `error_code` 仍能独立判定家族；
+    // 不能因解析失败而丢掉 `unsafe_arg` / `command_not_found` 的既有分类。
+    let spec = parse_command_spec(args_json, effective_working_dir).ok();
     if let Some(code) = parsed.error_code.as_deref() {
+        let command_is_cd = spec
+            .as_ref()
+            .map(|spec| spec.command == "cd")
+            .or_else(|| {
+                crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)
+                    .map(|(command, _)| command == "cd")
+            })
+            .unwrap_or(false);
         return match code {
             "cd_prefix_invalid" => Some("cd_prefix_invalid"),
             "unsafe_arg" => Some("path_parent_or_absolute_forbidden"),
-            "command_not_found" if command == "cd" => Some("shell_builtin_cd_unavailable"),
+            "command_not_found" if command_is_cd => Some("shell_builtin_cd_unavailable"),
             _ => None,
         };
     }
-    classify_run_command_failure_family_from_invocation(&command, &args)
+    classify_run_command_failure_family_from_spec(spec.as_ref()?)
 }
 
 fn cargo_subcommand_needs_manifest(args: &[String]) -> bool {
@@ -92,10 +116,11 @@ pub(super) fn run_command_cargo_workdir_preflight_error(
     if tool_name != "run_command" {
         return None;
     }
-    let (command, args) = parse_run_command_payload(tool_args_json)?;
-    if command != "cargo" {
+    let spec = parse_command_spec(tool_args_json, effective_working_dir).ok()?;
+    if spec.command != "cargo" {
         return None;
     }
+    let args = spec.args;
     if args.iter().any(|a| a == "--manifest-path") {
         return None;
     }
@@ -129,14 +154,16 @@ pub(super) fn run_command_cargo_workdir_preflight_error(
 pub(super) fn run_command_ctest_preflight_error(
     tool_name: &str,
     tool_args_json: &str,
+    effective_working_dir: &Path,
 ) -> Option<String> {
     if tool_name != "run_command" {
         return None;
     }
-    let (command, args) = parse_run_command_payload(tool_args_json)?;
-    if command != "ctest" {
+    let spec = parse_command_spec(tool_args_json, effective_working_dir).ok()?;
+    if spec.command != "ctest" {
         return None;
     }
+    let args = spec.args;
     if args.iter().any(|a| a == "--test-dir") {
         return None;
     }
@@ -156,11 +183,15 @@ pub(super) fn run_command_ctest_preflight_error(
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::{
         classify_run_command_failure_family_from_invocation,
         classify_run_command_failure_family_from_result,
+        classify_run_command_failure_family_from_spec, run_command_cargo_workdir_preflight_error,
     };
     use crate::cm_tools::tool_result::ParsedLegacyOutput;
+    use crate::cm_tools::tools::parse_command_spec;
 
     fn launch_failure(exit_code: Option<i32>) -> ParsedLegacyOutput {
         ParsedLegacyOutput {
@@ -215,9 +246,11 @@ mod tests {
 
     #[test]
     fn classify_family_from_result_launch_failures() {
+        let workdir = Path::new(".");
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
+                workdir,
                 &launch_failure_with_code("unsafe_arg")
             ),
             Some("path_parent_or_absolute_forbidden")
@@ -225,6 +258,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"cd","args":["tmp"]}"#,
+                workdir,
                 &launch_failure_with_code("cd_prefix_invalid")
             ),
             Some("cd_prefix_invalid")
@@ -232,6 +266,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"cd","args":["tmp","&&"]}"#,
+                workdir,
                 &launch_failure_with_code("cd_prefix_invalid")
             ),
             Some("cd_prefix_invalid")
@@ -239,6 +274,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"cd","args":["tmp"]}"#,
+                workdir,
                 &launch_failure_with_code("command_not_found")
             ),
             Some("shell_builtin_cd_unavailable")
@@ -247,6 +283,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"ls","args":["../x"]}"#,
+                workdir,
                 &launch_failure_with_code("command_not_found")
             ),
             None
@@ -254,6 +291,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"cargo","args":["test"]}"#,
+                workdir,
                 &launch_failure(None)
             ),
             None
@@ -261,7 +299,21 @@ mod tests {
     }
 
     #[test]
+    fn classify_family_from_result_keeps_unsafe_cwd_family() {
+        // `cwd` 非法会让严格解析失败，但 `unsafe_arg` 仍应归入路径越界家族。
+        assert_eq!(
+            classify_run_command_failure_family_from_result(
+                r#"{"command":"ls","cwd":"../x"}"#,
+                Path::new("."),
+                &launch_failure_with_code("unsafe_arg")
+            ),
+            Some("path_parent_or_absolute_forbidden")
+        );
+    }
+
+    #[test]
     fn classify_family_consistent_between_invocation_and_result() {
+        let workdir = Path::new(".");
         for (args_json, code) in [
             (r#"{"command":"cd","args":["tmp"]}"#, "cd_prefix_invalid"),
             (r#"{"command":"cd","args":["tmp","&&"]}"#, "cd_prefix_invalid"),
@@ -270,11 +322,12 @@ mod tests {
                 "unsafe_arg",
             ),
         ] {
-            let (command, args) = super::parse_run_command_payload(args_json).expect("payload");
+            let spec = parse_command_spec(args_json, workdir).expect("spec");
             assert_eq!(
-                classify_run_command_failure_family_from_invocation(&command, &args),
+                classify_run_command_failure_family_from_spec(&spec),
                 classify_run_command_failure_family_from_result(
                     args_json,
+                    workdir,
                     &launch_failure_with_code(code)
                 ),
                 "args_json={args_json}"
@@ -284,11 +337,13 @@ mod tests {
 
     #[test]
     fn classify_family_from_result_exited_process() {
+        let workdir = Path::new(".");
         let mut parsed = launch_failure(Some(0));
         parsed.stdout = "No tests were found!!!".to_string();
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"ctest","args":["--test-dir","build"]}"#,
+                workdir,
                 &parsed
             ),
             Some("ctest_no_tests_found")
@@ -298,6 +353,7 @@ mod tests {
         assert_eq!(
             classify_run_command_failure_family_from_result(
                 r#"{"command":"sh","args":["-c","cd build && ../configure"]}"#,
+                workdir,
                 &parsed
             ),
             None
@@ -307,7 +363,46 @@ mod tests {
     #[test]
     fn ctest_preflight_rejects_dash_c_build_misuse() {
         let args_json = r#"{"command":"ctest","args":["-C","build","-N"]}"#;
-        let got = super::run_command_ctest_preflight_error("run_command", args_json);
+        let got = super::run_command_ctest_preflight_error("run_command", args_json, Path::new("."));
         assert!(got.is_some());
+    }
+
+    #[test]
+    fn ctest_preflight_consumes_parsed_command_spec() {
+        // `command` 中内嵌整段命令，需经与执行相同的解析入口拆出 argv。
+        let embedded = r#"{"command":"ctest -C build"}"#;
+        assert!(
+            super::run_command_ctest_preflight_error("run_command", embedded, Path::new(".")).is_some()
+        );
+
+        // 显式 `script` 不算 `ctest` 直接调用，不应触发预检。
+        let scripted = r#"{"script":"ctest -C build"}"#;
+        assert_eq!(
+            super::run_command_ctest_preflight_error("run_command", scripted, Path::new(".")),
+            None
+        );
+    }
+
+    #[test]
+    fn cargo_preflight_reports_missing_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let got = run_command_cargo_workdir_preflight_error(
+            "run_command",
+            r#"{"command":"cargo","args":["test"]}"#,
+            dir.path(),
+        )
+        .expect("missing manifest");
+        assert!(got.contains("Cargo.toml"), "{got}");
+
+        let with_manifest = dir.path().join("Cargo.toml");
+        std::fs::write(&with_manifest, "[package]\nname = \"x\"\n").expect("write");
+        assert_eq!(
+            run_command_cargo_workdir_preflight_error(
+                "run_command",
+                r#"{"command":"cargo","args":["test"]}"#,
+                dir.path()
+            ),
+            None
+        );
     }
 }

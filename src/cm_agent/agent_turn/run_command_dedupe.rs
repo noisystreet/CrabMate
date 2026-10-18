@@ -127,6 +127,10 @@ pub fn successful_run_command_keys_from_messages(messages: &[Message]) -> HashSe
     keys
 }
 
+/// 仅用于**历史消息回放**：旧版工具输出没有结构化 `args_json`，只能从 `命令：…` / `$ …` 文本反推。
+///
+/// 禁止新代码依赖此函数；新输出必须经 [`run_command_args_from_tool_message`] 读取结构化字段。
+/// 保留它是为了让跨版本的历史会话仍能参与同轮去重。
 fn infer_args_json_from_legacy_run_output(raw: &str) -> Option<String> {
     let line = raw
         .lines()

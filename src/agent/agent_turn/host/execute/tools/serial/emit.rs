@@ -8,13 +8,14 @@ use crate::agent::agent_turn::run_command_dedupe::{
     RUN_COMMAND_DUPLICATE_SUPPRESSED_MSG, run_command_duplicate_suppress_key_with_cwd,
 };
 use crate::agent::per_coord::PerCoordinator;
+use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
 
 use super::super::batch_dispatch::emit_tool_batch_result;
 use super::super::run_command_guard::{
-    classify_run_command_failure_family_from_invocation, parse_run_command_payload,
-    run_command_cargo_workdir_preflight_error, run_command_ctest_preflight_error,
+    classify_run_command_failure_family_from_spec, run_command_cargo_workdir_preflight_error,
+    run_command_ctest_preflight_error,
 };
 
 use super::{
@@ -266,7 +267,7 @@ async fn serial_emit_run_command_failure_short_circuits(
         tool_outcome_recorder,
         control,
         tool_result_envelope_v1,
-        effective_working_dir: _,
+        effective_working_dir,
         name,
         args,
         id,
@@ -297,11 +298,8 @@ async fn serial_emit_run_command_failure_short_circuits(
         .await;
         return true;
     }
-    if let Some((command, command_args)) = parse_run_command_payload(args)
-        && let Some(family) = classify_run_command_failure_family_from_invocation(
-            command.as_str(),
-            command_args.as_slice(),
-        )
+    if let Ok(spec) = parse_command_spec(args, effective_working_dir)
+        && let Some(family) = classify_run_command_failure_family_from_spec(&spec)
         && let Some(prev_error) = per_coord.repeated_tool_failure_family_marker(name, family)
     {
         let short_circuit = format!(
@@ -360,7 +358,9 @@ async fn serial_emit_run_command_preflight_errors(
         .await;
         return true;
     }
-    if let Some(preflight_error) = run_command_ctest_preflight_error(p.name, p.args) {
+    if let Some(preflight_error) =
+        run_command_ctest_preflight_error(p.name, p.args, p.effective_working_dir)
+    {
         mark_ctest_preflight_failure_signature(p.per_coord, p.name, p.args);
         emit_serial_tool_result(SerialEmitToolResultParams {
             messages: p.messages,
