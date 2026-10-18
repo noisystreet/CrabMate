@@ -6,7 +6,6 @@ mod commit_guard;
 mod directory;
 mod display_fmt;
 mod edits_batch;
-mod extract;
 mod inspect;
 mod mutate;
 mod path;
@@ -15,15 +14,12 @@ mod read_file_pipeline;
 mod read_tool;
 mod replace_lines_stream;
 mod revision;
-mod rust_brace_scan;
-mod symlink;
 mod tree_glob;
 mod write_ops;
 mod write_precheck;
 
 pub use directory::read_dir;
-pub use extract::extract_in_file;
-pub use inspect::{file_exists, hash_file, read_binary_meta};
+pub use inspect::{hash_file, read_binary_meta};
 pub use mutate::{append_file, create_dir, delete_dir, delete_files, search_replace};
 pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 pub use perm::chmod_file;
@@ -31,7 +27,6 @@ pub use read_tool::read_file;
 pub use read_tool::read_file_try;
 #[cfg(test)]
 pub use read_tool::strip_read_file_output_header_for_tests;
-pub use symlink::symlink_info;
 pub use tree_glob::{glob_files, list_tree};
 pub use write_ops::{copy_file, create_file, modify_file, move_file};
 

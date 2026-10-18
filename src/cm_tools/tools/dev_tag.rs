@@ -49,10 +49,8 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "read_dir"
         | "glob_files"
         | "list_tree"
-        | "file_exists"
         | "read_binary_meta"
         | "hash_file"
-        | "extract_in_file"
         | "apply_patch"
         | "search_in_files"
         | "codebase_semantic_search"
@@ -62,8 +60,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "append_file"
         | "create_dir"
         | "search_replace"
-        | "chmod_file"
-        | "symlink_info" => &[GENERAL],
+        | "chmod_file" => &[GENERAL],
         "structured_validate"
         | "structured_query"
         | "structured_diff"
@@ -115,9 +112,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
             &[GENERAL, QUALITY]
         }
 
-        // --- TODO/标记扫描 ---
-        "todo_scan" => &[GENERAL, QUALITY],
-
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local"
         | "release_ready_check"
@@ -128,7 +122,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, JVM, DOCKER, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
-        "format_files" | "format_check_file" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
+        "format_files" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
 
         // --- 后台任务查询 ---
         "background_job_status" | "background_job_list" => &[GENERAL],

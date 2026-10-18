@@ -590,51 +590,6 @@ fn test_read_file_reject_invalid_range() {
 }
 
 #[test]
-fn test_extract_rust_fn_block() {
-    let dir = make_test_dir();
-    let file = dir.join("a.rs");
-    let content = r##"
-pub fn foo(x: i32) -> i32 {
-// braces in line comment: { }
-let s1 = "{";
-let s2 = "}";
-let s3 = r#"{"a":1}"#; // braces inside raw string
-let s4 = r#"}"#;        // raw string with '}' earlier than function end
-/* block comment with { and } should be ignored: { } */
-let c = '}';
-
-let _ = some_macro!({
-    // comment with { } inside macro invocation should not break extraction
-    println!("macro {{ }} {}", x);
-    if x > 0 { x + 1 } else { x - 1 }
-});
-
-// The real return is still from the outer if/else, so braces above must not affect boundaries.
-if x > 0 {
-    x + 1 // { in comment { }
-} else {
-    x - 1
-}
-}
-
-pub fn bar() { println!("hi"); }
-"##;
-    std::fs::write(&file, content).unwrap();
-
-    let out = extract_in_file(
-        r#"{"path":"a.rs","pattern":"pub\\s+fn\\s+foo","mode":"rust_fn_block","max_matches":1,"max_block_lines":200,"max_block_chars":2000}"#,
-        &dir,
-    );
-    assert!(out.contains("pub fn foo"));
-    assert!(out.contains("else"));
-    assert!(out.contains("x - 1"));
-    assert!(out.contains("let s4 = r#\"}\"#;"));
-    assert!(out.trim_end().ends_with('}'));
-
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn test_read_file_gb18030_and_utf8_strict_error() {
     use encoding_rs::GB18030;
 

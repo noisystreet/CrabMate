@@ -8,14 +8,6 @@ ToolSpec {
             summary: ToolSummaryKind::None,
         },
         ToolSpec {
-            name: "format_check_file",
-            description: "对单个文件做格式检查（不修改磁盘）：Rust 使用 rustfmt --check，C/C++ 使用 clang-format --dry-run --Werror，前端类文件使用 prettier --check，Python 使用 ruff format --check。适合在提交前确认风格一致。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::FormatOnePathArgs>,
-            runner: ToolRunner::Legacy(runner_format_check_file),
-            summary: ToolSummaryKind::Dynamic(ts::summary_format_check_file),
-        },
-        ToolSpec {
             name: "run_lints",
             description: "运行项目的静态检查工具并聚合结果。目前包括：后端的 cargo clippy 和（若存在 frontend 目录与 package.json）前端的 npm run lint。可用于在改动后检查潜在问题。",
             category: ToolCategory::Development,

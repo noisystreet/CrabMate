@@ -298,21 +298,6 @@ mod tests {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct FileExistsSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for FileExistsSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("file exists: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct ReadBinaryMetaSummaryArgs {
     path: String,
 }
@@ -374,21 +359,6 @@ impl ToolSummaryLine for CreateDirSummaryArgs {
             return None;
         }
         Some(format!("create directory: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct SymlinkInfoSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for SymlinkInfoSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("symlink info: {}", path))
     }
 }
 

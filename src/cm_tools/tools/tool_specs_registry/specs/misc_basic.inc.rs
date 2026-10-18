@@ -31,12 +31,4 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_env_var_check),
             summary: ToolSummaryKind::None,
         },
-        ToolSpec {
-            name: "todo_scan",
-            description: "扫描工作区代码中的 TODO/FIXME/HACK/XXX 等标记，返回文件路径、行号和内容预览。可自定义标记列表和排除目录。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::TodoScanArgs>,
-            runner: ToolRunner::Legacy(runner_todo_scan),
-            summary: ToolSummaryKind::None,
-        },
 ]

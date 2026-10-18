@@ -74,7 +74,6 @@ pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
             | "list_dir"
             | "grep"
             | "search_in_files"
-            | "file_exists"
             | "stat"
             | "git_diff"
             | "git_show"

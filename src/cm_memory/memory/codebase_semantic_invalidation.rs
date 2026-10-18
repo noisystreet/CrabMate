@@ -30,7 +30,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "copy_file",
         "create_symlink",
         "format_files",
-        "format_check_file",
         "set_env_var",
         "set_dot_env_var",
         "upsert_secret_file",
@@ -126,8 +125,6 @@ fn is_file_path_arg_tool(name: &str) -> bool {
             | "search_replace"
             | "chmod_file"
             | "format_files"
-            | "format_check_file"
-            | "extract_in_file"
             | "read_binary_meta"
             | "hash_file"
     )

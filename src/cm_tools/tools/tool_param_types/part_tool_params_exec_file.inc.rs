@@ -181,21 +181,6 @@ pub struct ListTreeArgs {
     pub include_hidden: Option<bool>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum FileExistsKind {
-    File,
-    Dir,
-    Any,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FileExistsArgs {
-    pub path: String,
-    pub kind: Option<FileExistsKind>,
-}
-
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ReadBinaryMetaArgs {
@@ -220,35 +205,6 @@ pub struct HashFileArgs {
     /// 仅哈希前若干字节；整文件时省略
     #[schemars(range(min = 1, max = 4294967295u64))]
     pub max_bytes: Option<u64>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ExtractInFileMode {
-    Lines,
-    RustFnBlock,
-}
-
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct ExtractInFileArgs {
-    pub path: String,
-    pub pattern: String,
-    #[schemars(range(min = 1))]
-    pub start_line: Option<u32>,
-    #[schemars(range(min = 1))]
-    pub end_line: Option<u32>,
-    #[schemars(range(min = 1))]
-    pub max_matches: Option<u32>,
-    pub case_insensitive: Option<bool>,
-    #[schemars(range(min = 1))]
-    pub max_snippet_chars: Option<u32>,
-    pub mode: Option<ExtractInFileMode>,
-    #[schemars(range(min = 1))]
-    pub max_block_chars: Option<u32>,
-    #[schemars(range(min = 1))]
-    pub max_block_lines: Option<u32>,
-    pub encoding: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

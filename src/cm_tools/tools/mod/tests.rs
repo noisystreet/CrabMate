@@ -345,10 +345,8 @@ fn test_build_tools_names() {
     #[cfg(not(feature = "fastembed"))]
     assert!(!names.contains(&"codebase_semantic_search"));
     assert!(names.contains(&"list_tree"));
-    assert!(names.contains(&"file_exists"));
     assert!(names.contains(&"read_binary_meta"));
     assert!(names.contains(&"hash_file"));
-    assert!(names.contains(&"extract_in_file"));
     assert!(names.contains(&"markdown_check_links"));
     assert!(names.contains(&"structured_validate"));
     assert!(names.contains(&"structured_query"));
@@ -362,7 +360,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"call_graph_sketch"));
     assert!(names.contains(&"rust_file_outline"));
     assert!(names.contains(&"format_files"));
-    assert!(names.contains(&"format_check_file"));
     assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"quality_workspace"));
     assert!(names.contains(&"apply_patch"));

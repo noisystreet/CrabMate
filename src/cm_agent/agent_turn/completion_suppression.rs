@@ -14,7 +14,6 @@ const READONLY_PROBE_TOOL_NAMES: &[&str] = &[
     "list_tree",
     "glob",
     "search",
-    "extract_in_file",
 ];
 
 const RUN_COMMAND_VERIFY_MARKERS: &[&str] = &[

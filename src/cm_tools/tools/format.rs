@@ -20,7 +20,7 @@ use std::process::{Command, Stdio};
 
 use super::output_util;
 use super::python_tools;
-use super::tool_param_types::{FormatOnePathArgs, FormatPathsArgs};
+use super::tool_param_types::FormatPathsArgs;
 
 pub fn run(args_json: &str, workspace_root: &Path) -> String {
     let v = match crate::cm_tools::tools::parse_args_json(args_json) {
@@ -136,49 +136,6 @@ fn prepare_one(path: &str, workspace_root: &Path) -> Result<(Formatter, PathBuf)
     match select_formatter(&ext) {
         Some(f) => Ok((f, target)),
         None => Err(format!("错误：暂不支持扩展名为 .{} 的文件格式化", ext)),
-    }
-}
-
-/// 对单个文件做格式「检查」（不写入）。
-pub fn run_check(args_json: &str, workspace_root: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let FormatOnePathArgs { path } = match serde_json::from_value(v) {
-        Ok(a) => a,
-        Err(e) => return format!("参数 JSON 与 format_check_file 形状不一致: {e}"),
-    };
-    let path = path.trim();
-    if path.is_empty() {
-        return "错误：缺少 path 参数".to_string();
-    }
-
-    let target = match resolve_target(workspace_root, path) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
-    if !target.exists() {
-        return "错误：指定的文件不存在".to_string();
-    }
-    if !target.is_file() {
-        return "错误：只能检查普通文件".to_string();
-    }
-
-    let ext = target
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-
-    let formatter = select_formatter(&ext);
-    match formatter {
-        Some(f) => match run_formatter(f, &target, workspace_root, true) {
-            Ok(msg) => msg,
-            Err(e) => e,
-        },
-        None => format!("错误：暂不支持扩展名为 .{} 的格式检查", ext),
     }
 }
 

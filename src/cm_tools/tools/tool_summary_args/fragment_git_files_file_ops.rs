@@ -323,31 +323,6 @@ impl ToolSummaryLine for HashFileSummaryArgs {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct ExtractInFileSummaryArgs {
-    path: String,
-    pattern: String,
-    #[serde(default)]
-    encoding: Option<String>,
-}
-
-impl ToolSummaryLine for ExtractInFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        let pattern = self.pattern.trim();
-        if path.is_empty() || pattern.is_empty() {
-            return None;
-        }
-        let enc = self
-            .encoding
-            .as_deref()
-            .map(str::trim)
-            .filter(|s| !s.is_empty());
-        let enc_s = enc.map(|e| format!(" enc={}", e)).unwrap_or_default();
-        Some(format!("extract in file: {} / {}{}", path, pattern, enc_s))
-    }
-}
-
-#[derive(Debug, Deserialize)]
 pub(super) struct ApplyPatchSummaryArgs {
     patch: String,
 }
@@ -453,21 +428,6 @@ impl ToolSummaryLine for RustFileOutlineSummaryArgs {
             return None;
         }
         Some(format!("Rust outline: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct FormatCheckFileSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for FormatCheckFileSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("format check: {}", path))
     }
 }
 
