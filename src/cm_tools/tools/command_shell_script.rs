@@ -158,14 +158,37 @@ fn token_looks_like_path_glob(t: &str) -> bool {
     t.contains('/') || t.contains('.')
 }
 
+/// 用双引号包裹 token，尽量保持其 shell 原文语义。
+///
+/// - 已有的 `\X` 转义（如 `\$`、`\"`、`\\`）原样保留，避免二次转义把 `\$` 变成 `\\$`（后者会先还原成 `\` 再展开变量）；
+/// - 未转义的 `"` 补 `\`，防止提前闭合；
+/// - 结尾的 `\` 需自身转义，避免吃掉收尾引号。
 fn double_quote_token(arg: &str) -> String {
+    let chars: Vec<char> = arg.chars().collect();
     let mut s = String::with_capacity(arg.len().saturating_add(2));
     s.push('"');
-    for ch in arg.chars() {
-        if ch == '"' || ch == '\\' {
+    let mut i = 0;
+    while i < chars.len() {
+        let ch = chars[i];
+        if ch == '\\' {
+            s.push('\\');
+            match chars.get(i + 1) {
+                Some(next) => {
+                    s.push(*next);
+                    i += 2;
+                }
+                None => {
+                    s.push('\\');
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        if ch == '"' {
             s.push('\\');
         }
         s.push(ch);
+        i += 1;
     }
     s.push('"');
     s
@@ -272,6 +295,16 @@ mod tests {
     fn join_quotes_spaces_without_expansion() {
         let s = join_run_command_shell_script("echo", &["hello world".into()]);
         assert_eq!(s, r#"echo "hello world""#);
+    }
+
+    #[test]
+    fn join_preserves_shell_escapes_inside_double_quotes() {
+        let s = join_run_command_shell_script("echo", &[r"a \$HOME b".into()]);
+        assert_eq!(s, r#"echo "a \$HOME b""#);
+        let s = join_run_command_shell_script("echo", &[r#"say "hi" now"#.into()]);
+        assert_eq!(s, r#"echo "say \"hi\" now""#);
+        let s = join_run_command_shell_script("echo", &["end\\".into()]);
+        assert_eq!(s, r#"echo "end\\""#);
     }
 
     #[test]

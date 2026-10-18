@@ -3,6 +3,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use super::command::is_posix_shell_name;
+
 /// [`crate::cm_tools::tools::command::RunCommandError`] 在剥离 `cd` 前缀阶段的子集，避免 `command` ↔ 本模块循环依赖。
 #[derive(Debug)]
 pub enum CdPeelError {
@@ -75,8 +77,15 @@ pub fn merge_dot_slash_with_single_relative_path(cmd_raw: &mut String, cmd_args:
 /// 将 `command` 写成 `prog arg1 arg2` 整段而 `args` 为空（或需前缀拼接）的常见误用，规范为
 /// `prog` + `["arg1","arg2", …原 args…]`，以便 [`std::process::Command::new`] 能解析到真实可执行文件。
 ///
-/// 含 `/` 的值视为路径（含 `./` 与 `subdir/tool`），不做拆分，避免误伤带空格的可执行路径。
+/// 含 `/` 的值视为路径（含 `./` 与 `subdir/tool`），不做拆分，避免误伤带空格的可执行路径；
+/// 但 `bash -c` / `sh -c`（脚本正文允许含 `/`）在此检查之前按 shell 语义处理。
 pub fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec<String>) {
+    if let Some((head, mut prefix)) = split_embedded_shell_script(cmd_raw) {
+        prefix.append(cmd_args);
+        *cmd_args = prefix;
+        *cmd_raw = head;
+        return;
+    }
     if cmd_raw.contains('/') {
         return;
     }
@@ -92,6 +101,72 @@ pub fn split_command_prefix_if_embedded(cmd_raw: &mut String, cmd_args: &mut Vec
     prefix.append(cmd_args);
     *cmd_args = prefix;
     *cmd_raw = head;
+}
+
+/// 整段 `command` 写成 `bash -c '<脚本>'` 时，按 shell 语义拆分并**原样保留**脚本正文。
+///
+/// POSIX 分词会消费 `\$` / `\\` 并丢弃引号，使脚本内的转义失效；此处只剥离一层完整包裹的外层引号，
+/// 其余字符（含反斜杠、`$`、换行）保持原样。返回 `(程序名, 脚本前的 argv)`。
+fn split_embedded_shell_script(cmd_raw: &str) -> Option<(String, Vec<String>)> {
+    let (head, mut rest) = split_first_token(cmd_raw)?;
+    if !is_posix_shell_name(head) {
+        return None;
+    }
+    let mut prefix: Vec<String> = Vec::new();
+    loop {
+        let (tok, tail) = split_first_token(rest)?;
+        if tok == "--" || !tok.starts_with('-') {
+            return None;
+        }
+        if tok.starts_with("--") || !tok.contains('c') {
+            prefix.push(tok.to_string());
+            rest = tail;
+            continue;
+        }
+        let script = strip_one_pair_of_outer_quotes(tail.trim());
+        if script.is_empty() {
+            return None;
+        }
+        prefix.push(tok.to_string());
+        prefix.push(script.to_string());
+        return Some((head.to_string(), prefix));
+    }
+}
+
+fn split_first_token(s: &str) -> Option<(&str, &str)> {
+    let s = s.trim_start();
+    if s.is_empty() {
+        return None;
+    }
+    let end = s.find(char::is_whitespace).unwrap_or(s.len());
+    Some((&s[..end], &s[end..]))
+}
+
+/// 若 `s` 由一对引号**完整包裹**（引号内部不再提前闭合），返回去掉这层引号的内容；否则原样返回。
+///
+/// 双引号内按 shell 规则跳过 `\X` 转义；转义字符本身不还原，调用方保持原样即可。
+fn strip_one_pair_of_outer_quotes(s: &str) -> &str {
+    let Some(open @ ('\'' | '"')) = s.chars().next() else {
+        return s;
+    };
+    if s.len() < 2 || !s.ends_with(open) {
+        return s;
+    }
+    let inner = &s[1..s.len() - 1];
+    if open == '\'' {
+        return if inner.contains('\'') { s } else { inner };
+    }
+    let mut escaped = false;
+    for ch in inner.chars() {
+        if escaped {
+            escaped = false;
+        } else if ch == '\\' {
+            escaped = true;
+        } else if ch == '"' {
+            return s;
+        }
+    }
+    inner
 }
 
 /// 识别一层 `cd <dir> && <rest…>`（`args` 形如 `[dir, "&&", cmd, rest…]`）。
@@ -181,7 +256,10 @@ pub fn peel_workspace_cd_prefix(
 
 #[cfg(test)]
 mod tests {
-    use super::{arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path};
+    use super::{
+        arg_has_parent_dir_ref, is_arg_safe, merge_dot_slash_with_single_relative_path,
+        split_command_prefix_if_embedded,
+    };
 
     #[test]
     fn parent_dir_ref_detects_path_traversal_not_git_range() {
@@ -266,5 +344,103 @@ mod tests {
         merge_dot_slash_with_single_relative_path(&mut cmd, &mut args);
         assert_eq!(cmd, "./");
         assert_eq!(args, vec!["../outside".to_string()]);
+    }
+
+    #[test]
+    fn embedded_bash_dash_c_preserves_escaped_dollar() {
+        let mut cmd = r#"bash -c "echo \$HOME""#.to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "bash");
+        assert_eq!(args, vec!["-c".to_string(), r#"echo \$HOME"#.to_string()]);
+    }
+
+    #[test]
+    fn embedded_bash_dash_c_preserves_single_quoted_script() {
+        let mut cmd = r#"bash -c 'printf "%s\n" x'"#.to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "bash");
+        assert_eq!(
+            args,
+            vec!["-c".to_string(), r#"printf "%s\n" x"#.to_string()]
+        );
+    }
+
+    #[test]
+    fn embedded_sh_combined_flags_keep_script() {
+        let mut cmd = "sh -lc 'cd sub && ls'".to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "sh");
+        assert_eq!(
+            args,
+            vec!["-lc".to_string(), "cd sub && ls".to_string()]
+        );
+    }
+
+    #[test]
+    fn embedded_bash_keeps_long_options_before_dash_c() {
+        let mut cmd = "bash --norc -c 'echo $HOME'".to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "bash");
+        assert_eq!(
+            args,
+            vec![
+                "--norc".to_string(),
+                "-c".to_string(),
+                "echo $HOME".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn embedded_bash_dash_c_keeps_quotes_not_wrapping_whole_script() {
+        let mut cmd = r#"bash -c "echo hi" more"#.to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "bash");
+        assert_eq!(
+            args,
+            vec!["-c".to_string(), r#""echo hi" more"#.to_string()]
+        );
+    }
+
+    #[test]
+    fn embedded_bash_dash_c_script_may_contain_slash() {
+        let mut cmd = r#"bash -c "ls /tmp && echo \$HOME""#.to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "bash");
+        assert_eq!(
+            args,
+            vec!["-c".to_string(), r#"ls /tmp && echo \$HOME"#.to_string()]
+        );
+    }
+
+    #[test]
+    fn path_with_slash_is_not_split_unless_shell_dash_c() {
+        let mut cmd = "./build/hello -g Hi".to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "./build/hello -g Hi");
+        assert!(args.is_empty());
+    }
+
+    #[test]
+    fn non_shell_command_still_uses_posix_split() {
+        let mut cmd = r#"git log -5 --format="%h %ai""#.to_string();
+        let mut args = vec![];
+        split_command_prefix_if_embedded(&mut cmd, &mut args);
+        assert_eq!(cmd, "git");
+        assert_eq!(
+            args,
+            vec![
+                "log".to_string(),
+                "-5".to_string(),
+                "--format=%h %ai".to_string(),
+            ]
+        );
     }
 }

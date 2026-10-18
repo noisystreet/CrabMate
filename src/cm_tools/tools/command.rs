@@ -31,7 +31,8 @@ pub(crate) use prepare_invocation::parse_run_command_payload_lenient;
 
 pub use command_shell_script::{
     allowlist_allows_all, argv_has_shell_operators, argv_needs_posix_shell_wrap,
-    argv_needs_shell_expansion, dash_c_script_body, is_shell_dash_c_invocation,
+    argv_needs_shell_expansion, dash_c_script_body, is_posix_shell_name,
+    is_shell_dash_c_invocation,
     join_run_command_argv_tail, join_run_command_shell_script,
     peel_cd_prefix_argv_for_shell_policy, posix_shell_on_allowlist,
 };
