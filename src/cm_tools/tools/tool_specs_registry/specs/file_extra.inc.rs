@@ -4,7 +4,7 @@ ToolSpec {
             description: "删除工作区内一个或多个文件（受控写入，需 confirm=true）。`paths` 为相对路径列表（最多 32 个，同路径去重）；任一路径非法则整批拒绝、不产生部分删除；不能删除目录（请用 delete_dir）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DeleteFilesArgs>,
-            runner: ToolRunner::Legacy(runner_delete_files),
+            runner: ToolRunner::Typed(runner_delete_files_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_delete_files),
         },
         ToolSpec {
@@ -12,7 +12,7 @@ ToolSpec {
             description: "删除工作区内的目录（受控写入，需 confirm=true）。默认仅删除空目录；recursive=true 时递归删除含子目录和文件。不能删除工作区根目录。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::DeleteDirArgs>,
-            runner: ToolRunner::Legacy(runner_delete_dir),
+            runner: ToolRunner::Typed(runner_delete_dir_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_delete_dir),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "在工作区内创建目录。默认 parents=true（递归创建父目录，类似 mkdir -p）。目录已存在时不报错。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::CreateDirArgs>,
-            runner: ToolRunner::Legacy(runner_create_dir),
+            runner: ToolRunner::Typed(runner_create_dir_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_create_dir),
         },
         ToolSpec {
@@ -44,7 +44,7 @@ ToolSpec {
             description: "修改文件或目录权限（仅 Unix/Linux，受控写入需 confirm=true）。mode 为八进制数字（如 \"755\"、\"644\"）。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ChmodFileArgs>,
-            runner: ToolRunner::Legacy(runner_chmod_file),
+            runner: ToolRunner::Typed(runner_chmod_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_chmod_file),
         },
         // ── 新增纯内存 / 开发辅助工具 ────────────────────────

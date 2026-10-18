@@ -34,43 +34,43 @@ fn parse_append_file_args(args_json: &str) -> Result<AppendFileArgs, String> {
     crate::cm_tools::tools::parse_args_typed(args_json)
 }
 
-fn delete_dir_validate_target(working_dir: &Path, path: &str) -> Result<PathBuf, String> {
-    let target =
-        resolve_for_read(working_dir, path).map_err(tool_user_error_from_workspace_path)?;
+#[allow(clippy::result_large_err)]
+fn delete_dir_validate_target(working_dir: &Path, path: &str) -> Result<PathBuf, ToolError> {
+    let target = resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_dir() {
-        return Err(format!(
+        return Err(ToolError::invalid_args(format!(
             "错误：{} 不是目录",
             path_for_tool_display(working_dir, &target, Some(path))
-        ));
+        )));
     }
     let base_canonical =
-        canonical_workspace_root(working_dir).map_err(tool_user_error_from_workspace_path)?;
+        canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
     if target == base_canonical {
-        return Err("错误：不能删除工作区根目录".to_string());
+        return Err(ToolError::invalid_args(
+            "错误：不能删除工作区根目录".to_string(),
+        ));
     }
     Ok(target)
 }
 
-fn delete_dir_result_message(
+fn delete_dir_success_message(
     recursive: bool,
     working_dir: &Path,
     target: &Path,
     path: &str,
-    result: std::io::Result<()>,
 ) -> String {
-    match result {
-        Ok(()) => format!(
-            "已删除目录{}：{}",
-            if recursive { "（递归）" } else { "" },
-            path_for_tool_display(working_dir, target, Some(path))
-        ),
-        Err(e) => {
-            if !recursive && e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
-                "删除失败：目录非空，需要 recursive=true 才能删除非空目录".to_string()
-            } else {
-                format!("删除目录失败：{}", e)
-            }
-        }
+    format!(
+        "已删除目录{}：{}",
+        if recursive { "（递归）" } else { "" },
+        path_for_tool_display(working_dir, target, Some(path))
+    )
+}
+
+fn delete_dir_failure_message(recursive: bool, e: &std::io::Error) -> String {
+    if !recursive && e.kind() == std::io::ErrorKind::DirectoryNotEmpty {
+        "删除失败：目录非空，需要 recursive=true 才能删除非空目录".to_string()
+    } else {
+        format!("删除目录失败：{}", e)
     }
 }
 
@@ -294,20 +294,21 @@ fn delete_file_remove(working_dir: &Path, target: &Path) -> Result<(), String> {
 }
 
 /// 校验阶段：全部路径须可解析且在根内、且是文件；任一非法则整批拒绝、不产生部分删除。
-fn delete_files_validate(working_dir: &Path, paths: &[String]) -> Result<Vec<PathBuf>, String> {
+#[allow(clippy::result_large_err)]
+fn delete_files_validate(
+    working_dir: &Path,
+    paths: &[String],
+) -> Result<Vec<PathBuf>, ToolError> {
     let mut targets = Vec::with_capacity(paths.len());
     for path in paths {
-        match resolve_for_read(working_dir, path) {
-            Ok(p) => targets.push(p),
-            Err(e) => return Err(tool_user_error_from_workspace_path(e)),
-        }
+        targets.push(resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?);
     }
     for (path, target) in paths.iter().zip(&targets) {
         if !target.is_file() {
-            return Err(format!(
+            return Err(ToolError::invalid_args(format!(
                 "错误：{} 不是文件（可能是目录，请用 delete_dir）",
                 path_for_tool_display(working_dir, target, Some(path))
-            ));
+            )));
         }
     }
     Ok(targets)
@@ -343,14 +344,18 @@ fn delete_files_execute(
 /// 批量删除工作区内文件：先**整体校验**（任一非法则整批拒绝、不产生部分删除），
 /// 再**逐个删除**并汇总成功/失败（删除阶段继续删完）。
 pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let paths = match parse_delete_files_args(args_json) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let targets = match delete_files_validate(working_dir, &paths) {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
+    delete_files_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`delete_files`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn delete_files_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let paths = parse_delete_files_args(args_json).map_err(ToolError::invalid_args)?;
+    let targets = delete_files_validate(working_dir, &paths)?;
     let (deleted, failed) = delete_files_execute(working_dir, ctx, &paths, &targets);
 
     let mut body = format!("已删除 {} 个文件：", deleted.len());
@@ -372,43 +377,59 @@ pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) 
             after: None,
         })
         .collect();
-    format_tool_output_with_write_diff_preview(
+    let output = format_tool_output_with_write_diff_preview(
         "delete_files",
         failed.is_empty(),
         body,
         diff_states,
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-    )
+    );
+    if failed.is_empty() {
+        Ok(output)
+    } else {
+        Err(ToolError::external_code("delete_files_failed", output))
+    }
 }
 
 // ── delete_dir ──────────────────────────────────────────────
 
 pub fn delete_dir(args_json: &str, working_dir: &Path) -> String {
-    let args = match parse_delete_dir_args(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+    delete_dir_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+}
+
+/// [`delete_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn delete_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args = parse_delete_dir_args(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("缺少 path 参数".to_string())),
     };
-    let confirm = args.confirm.unwrap_or(false);
-    if !confirm {
-        return "拒绝执行：delete_dir 需要 confirm=true".to_string();
+    if !args.confirm.unwrap_or(false) {
+        return Err(ToolError::invalid_args(
+            "拒绝执行：delete_dir 需要 confirm=true".to_string(),
+        ));
     }
     let recursive = args.recursive;
 
-    let target = match delete_dir_validate_target(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-
+    let target = delete_dir_validate_target(working_dir, &path)?;
     let result = if recursive {
         std::fs::remove_dir_all(&target)
     } else {
         std::fs::remove_dir(&target)
     };
-    delete_dir_result_message(recursive, working_dir, &target, &path, result)
+    match result {
+        Ok(()) => Ok(delete_dir_success_message(
+            recursive,
+            working_dir,
+            &target,
+            &path,
+        )),
+        Err(e) => Err(ToolError::external_code(
+            "delete_dir_failed",
+            delete_dir_failure_message(recursive, &e),
+        )),
+    }
 }
 
 // ── append_file ─────────────────────────────────────────────
@@ -446,43 +467,43 @@ pub fn append_file_try(
 // ── create_dir ──────────────────────────────────────────────
 
 pub fn create_dir(args_json: &str, working_dir: &Path) -> String {
-    let args: CreateDirArgs = match crate::cm_tools::tools::parse_args_typed(args_json) {
-        Ok(a) => a,
-        Err(e) => return e,
-    };
+    create_dir_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+}
+
+/// [`create_dir`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn create_dir_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+    let args: CreateDirArgs =
+        crate::cm_tools::tools::parse_args_typed(args_json).map_err(ToolError::invalid_args)?;
     let path = match args.path.trim() {
         s if !s.is_empty() => s.to_string(),
-        _ => return "缺少 path 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("缺少 path 参数".to_string())),
     };
     let parents = args.parents;
 
-    let target = match resolve_for_write(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let target = resolve_for_write(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         if target.is_dir() {
-            return format!(
+            return Ok(format!(
                 "目录已存在：{}",
                 path_for_tool_display(working_dir, &target, Some(&path))
-            );
+            ));
         }
-        return format!(
+        return Err(ToolError::invalid_args(format!(
             "错误：路径已存在且为文件：{}",
             path_for_tool_display(working_dir, &target, Some(&path))
-        );
+        )));
     }
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    let result = create_directory_under_root(&base, &target, parents);
-    match result {
-        Ok(()) => format!(
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
+    match create_directory_under_root(&base, &target, parents) {
+        Ok(()) => Ok(format!(
             "已创建目录：{}",
             path_for_tool_display(working_dir, &target, Some(&path))
-        ),
-        Err(e) => format!("创建目录失败：{}", e),
+        )),
+        Err(e) => Err(ToolError::external_code(
+            "create_dir_failed",
+            format!("创建目录失败：{}", e),
+        )),
     }
 }
 

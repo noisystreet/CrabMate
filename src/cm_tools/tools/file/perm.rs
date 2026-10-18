@@ -3,8 +3,9 @@
 
 use std::path::Path;
 
-use super::path::{path_for_tool_display, resolve_for_read, tool_user_error_from_workspace_path};
+use super::path::{path_for_tool_display, resolve_for_read};
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::tool_param_types::ChmodFileArgs;
 
 // ── chmod_file ──────────────────────────────────────────────
@@ -40,30 +41,44 @@ fn parse_chmod_args(args_json: &str) -> Result<(String, String, u32), String> {
 
 #[cfg(unix)]
 pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
+    chmod_file_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+}
+
+/// [`chmod_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[cfg(unix)]
+#[allow(clippy::result_large_err)]
+pub fn chmod_file_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let (path, mode_str, mode) = match parse_chmod_args(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
+    let (path, mode_str, mode) = parse_chmod_args(args_json).map_err(ToolError::invalid_args)?;
 
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let target = resolve_for_read(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
 
     let perms = std::fs::Permissions::from_mode(mode);
     match std::fs::set_permissions(&target, perms) {
-        Ok(()) => format!(
+        Ok(()) => Ok(format!(
             "已设置权限 {} → {}",
             path_for_tool_display(working_dir, &target, Some(&path)),
             mode_str
-        ),
-        Err(e) => format!("设置权限失败：{}", e),
+        )),
+        Err(e) => Err(ToolError::external_code(
+            "chmod_file_failed",
+            format!("设置权限失败：{}", e),
+        )),
     }
 }
 
 #[cfg(not(unix))]
-pub fn chmod_file(_args_json: &str, _working_dir: &Path) -> String {
-    "错误：chmod_file 仅在 Unix/Linux 系统上可用".to_string()
+pub fn chmod_file(args_json: &str, working_dir: &Path) -> String {
+    chmod_file_try(args_json, working_dir).unwrap_or_else(|e| e.message)
+}
+
+/// [`chmod_file`] 的显式失败版本（非 Unix 平台恒失败）。
+#[cfg(not(unix))]
+#[allow(clippy::result_large_err)]
+pub fn chmod_file_try(_args_json: &str, _working_dir: &Path) -> Result<String, ToolError> {
+    Err(ToolError::external_code(
+        "chmod_file_failed",
+        "错误：chmod_file 仅在 Unix/Linux 系统上可用",
+    ))
 }

@@ -21,11 +21,11 @@ mod write_precheck;
 pub use directory::read_dir;
 pub use inspect::{hash_file, read_binary_meta};
 pub use mutate::{
-    append_file, append_file_try, create_dir, delete_dir, delete_files, search_replace,
-    search_replace_try,
+    append_file, append_file_try, create_dir, create_dir_try, delete_dir, delete_dir_try,
+    delete_files, delete_files_try, search_replace, search_replace_try,
 };
 pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
-pub use perm::chmod_file;
+pub use perm::{chmod_file, chmod_file_try};
 pub use read_tool::read_file;
 pub use read_tool::read_file_try;
 #[cfg(test)]
@@ -48,5 +48,7 @@ mod tests_guards_batch;
 mod tests_metadata;
 #[cfg(test)]
 mod tests_revision;
+#[cfg(test)]
+mod tests_typed_dir_perm;
 #[cfg(test)]
 mod tests_typed_write_ops;
