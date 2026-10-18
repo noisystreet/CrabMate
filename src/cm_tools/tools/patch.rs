@@ -8,6 +8,7 @@
 //! - 禁止 `..` 路径穿越
 //! - 必须落在工作区根目录下
 
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
     format_tool_output_with_write_diff_preview,
@@ -19,54 +20,73 @@ use crate::cm_tools::workspace::path::{
 use std::path::Path;
 use std::sync::Arc;
 
+#[cfg(test)]
 pub fn run_with_changelist(
     args_json: &str,
     workspace_root: &Path,
     changelist: Option<&Arc<WorkspaceChangelist>>,
 ) -> String {
-    let args = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
+    run_with_changelist_try(args_json, workspace_root, changelist)
+        .unwrap_or_else(|e| e.message)
+}
+
+/// `run_with_changelist` 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn run_with_changelist_try(
+    args_json: &str,
+    workspace_root: &Path,
+    changelist: Option<&Arc<WorkspaceChangelist>>,
+) -> Result<String, ToolError> {
+    let args = crate::cm_tools::tools::parse_args_json(args_json)
+        .map_err(ToolError::invalid_args)?;
 
     let patch_text = match args.get("patch").and_then(|p| p.as_str()) {
         Some(s) if !s.trim().is_empty() => s,
-        _ => return "错误：缺少 patch 参数".to_string(),
+        _ => return Err(ToolError::invalid_args("错误：缺少 patch 参数".to_string())),
     };
     let strip = args
         .get("strip")
         .and_then(|v| v.as_u64())
         .unwrap_or_default() as usize;
 
-    let root = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
+    let root = workspace_root.canonicalize().map_err(|e| {
+        ToolError::external_code(
+            "apply_patch_failed",
+            format!("工作区根目录无法解析: {}", e),
+        )
+    })?;
 
     if let Err(e) = validate_patch_paths(patch_text, &root) {
-        return format!("补丁路径校验失败: {}", e);
+        return Err(ToolError::invalid_args(format!("补丁路径校验失败: {}", e)));
     }
 
-    apply_unified_patch(patch_text, &root, strip, changelist)
+    apply_unified_patch_try(patch_text, &root, strip, changelist)
 }
 
-fn apply_unified_patch(
+#[allow(clippy::result_large_err)]
+fn apply_unified_patch_try(
     patch_text: &str,
     root: &Path,
     strip: usize,
     changelist: Option<&Arc<WorkspaceChangelist>>,
-) -> String {
-    if let Err(e) = diffy::Patch::from_str(patch_text) {
-        return format!("解析 unified diff 失败: {}", e);
+) -> Result<String, ToolError> {
+    let chunks = split_patch_by_file(patch_text);
+    for chunk in &chunks {
+        if let Err(e) = diffy::Patch::from_str(chunk) {
+            return Err(ToolError::invalid_args(format!(
+                "解析 unified diff 失败: {}",
+                e
+            )));
+        }
     }
 
     let mut preview_files: Vec<WriteDiffFileState> = Vec::new();
     let mut applied_files = Vec::new();
     let mut errors = Vec::new();
 
-    for hunk_patch in split_patch_by_file(patch_text) {
+    for hunk_patch in &chunks {
         apply_single_unified_hunk(
-            &hunk_patch,
+            hunk_patch,
             root,
             strip,
             changelist,
@@ -76,14 +96,20 @@ fn apply_unified_patch(
         );
     }
 
+    let ok = errors.is_empty();
     let outcome = unified_patch_format_outcome(&applied_files, &errors);
-    format_tool_output_with_write_diff_preview(
+    let output = format_tool_output_with_write_diff_preview(
         "apply_patch",
-        errors.is_empty(),
+        ok,
         outcome,
         preview_files,
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-    )
+    );
+    if ok {
+        Ok(output)
+    } else {
+        Err(ToolError::external_code("apply_patch_failed", output))
+    }
 }
 
 fn unified_patch_format_outcome(applied_files: &[String], errors: &[String]) -> String {
@@ -467,3 +493,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&outside);
     }
 }
+
+#[cfg(test)]
+mod tests_typed;
