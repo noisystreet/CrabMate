@@ -33,8 +33,6 @@ define_summaries! {
     summary_rust_analyzer_workspace_symbol => RustAnalyzerWorkspaceSymbolSummaryArgs,
     summary_python_snippet_run => PythonSnippetRunSummaryArgs,
     summary_error_output_playbook => ErrorOutputPlaybookSummaryArgs,
-    summary_ast_grep_run => AstGrepRunSummaryArgs,
-    summary_ast_grep_rewrite => AstGrepRewriteSummaryArgs,
     summary_git_diff => GitDiffSummaryArgs,
     summary_create_file => CreateFileSummaryArgs,
     summary_modify_file => ModifyFileSummaryArgs,

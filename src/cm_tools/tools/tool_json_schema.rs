@@ -18,7 +18,7 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
+        AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
@@ -252,17 +252,6 @@ mod tests {
             Some(&json!(false)),
             "{v}"
         );
-    }
-
-    #[test]
-    fn ast_grep_run_schema_requires_pattern_and_lang() {
-        let v = tool_parameters_schema_value::<AstGrepRunArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "pattern"));
-        assert!(req.iter().any(|x| x == "lang"));
     }
 
     #[test]

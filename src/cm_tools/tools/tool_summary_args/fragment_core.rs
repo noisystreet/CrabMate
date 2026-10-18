@@ -375,7 +375,7 @@ impl ToolSummaryLine for RustAnalyzerWorkspaceSymbolSummaryArgs {
     }
 }
 
-// ── python / ast-grep ─────────────────────────────────────────
+// ── python ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
 pub(super) struct PythonSnippetRunSummaryArgs {
@@ -411,56 +411,7 @@ impl ToolSummaryLine for ErrorOutputPlaybookSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct AstGrepRunSummaryArgs {
-    #[serde(default)]
-    lang: Option<String>,
-    #[serde(default)]
-    pattern: Option<String>,
-}
-
-impl ToolSummaryLine for AstGrepRunSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let lang = self.lang.as_deref().unwrap_or("?");
-        let p = self.pattern.as_deref().unwrap_or("");
-        let short = if p.chars().count() > 48 {
-            format!("{}…", p.chars().take(48).collect::<String>())
-        } else {
-            p.to_string()
-        };
-        Some(format!("ast-grep [{}] {}", lang, short))
-    }
-}
-
 fn default_true() -> bool {
     true
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct AstGrepRewriteSummaryArgs {
-    #[serde(default)]
-    lang: Option<String>,
-    #[serde(default)]
-    pattern: Option<String>,
-    #[serde(default = "default_true")]
-    dry_run: bool,
-}
-
-impl ToolSummaryLine for AstGrepRewriteSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let lang = self.lang.as_deref().unwrap_or("?");
-        let p = self.pattern.as_deref().unwrap_or("");
-        let short = if p.chars().count() > 42 {
-            format!("{}…", p.chars().take(42).collect::<String>())
-        } else {
-            p.to_string()
-        };
-        Some(format!(
-            "ast-grep rewrite [{}] {}{}",
-            lang,
-            short,
-            if self.dry_run { " (dry-run)" } else { "" }
-        ))
-    }
 }
 

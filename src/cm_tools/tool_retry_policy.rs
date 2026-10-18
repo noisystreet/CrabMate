@@ -214,8 +214,7 @@ mod tests {
             "codebase_semantic_search",
             r#"{"query":"fn main","rebuild_index":true}"#
         ));
-        // 写类工具由 is_readonly_tool 排除（覆盖 ast_grep_rewrite / structured_patch 等默认写表项）。
-        assert!(!spec.tool_retry_eligible(&cfg, "ast_grep_rewrite", "{}"));
+        // 写类工具由 is_readonly_tool 排除（覆盖 structured_patch 等默认写表项）。
         assert!(!spec.tool_retry_eligible(&cfg, "structured_patch", "{}"));
     }
 

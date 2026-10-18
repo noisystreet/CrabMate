@@ -34,7 +34,7 @@ pub struct AgentReplyPlanV1 {
 pub enum PlanStepExecutorKind {
     /// 仅允许语义只读工具（`is_readonly_tool`）；禁止 MCP 代理工具。
     ReviewReadonly,
-    /// 只读工具 + 受限写补丁类（`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_files` / `ast_grep_rewrite`）。
+    /// 只读工具 + 受限写补丁类（`apply_patch` / `search_replace` / `structured_patch` / `create_file` / `modify_file` / `append_file` / `format_files`）。
     PatchWrite,
     /// 只读工具 + 常见测试运行器（如 `cargo_test` / `pytest_run` 等）；**不含**任意 `run_command`。
     TestRunner,

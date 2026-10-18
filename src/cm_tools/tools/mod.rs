@@ -72,7 +72,7 @@ mod schedule;
 mod security_tools;
 mod self_config_info;
 mod skill_manage;
-mod spell_astgrep_tools;
+mod spell_tools;
 #[cfg(feature = "csv-tools")]
 mod structured_data;
 pub mod structured_preview;

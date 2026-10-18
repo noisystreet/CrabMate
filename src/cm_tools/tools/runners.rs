@@ -372,10 +372,6 @@ pub fn runner_crate_contract_map(args: &str, ctx: &ToolContext<'_>) -> String {
 
 define_runners_cwd_maxlen! {
     runner_rust_compiler_json => rust_ide::rust_compiler_json,
-    runner_typos_check => spell_astgrep_tools::typos_check,
-    runner_codespell_check => spell_astgrep_tools::codespell_check,
-    runner_ast_grep_run => spell_astgrep_tools::ast_grep_run,
-    runner_ast_grep_rewrite => spell_astgrep_tools::ast_grep_rewrite,
     runner_changelog_draft => release_docs::changelog_draft,
     runner_license_notice => release_docs::license_notice,
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,

@@ -146,17 +146,6 @@ fn test_run_tool_convert_units() {
     assert!(out.contains("换算结果"), "应成功换算，得到: {out}");
 }
 
-#[test]
-fn test_run_tool_typos_check_invokes_cli() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool("typos_check", r#"{"paths":["README.md"]}"#, &ctx);
-    assert!(
-        out.starts_with("typos (exit=") || out.contains("无法启动"),
-        "应调用 typos 或报告未安装，得到: {out}"
-    );
-}
-
 #[tokio::test]
 async fn test_run_tool_run_command_pwd() {
     crate::cm_tools::tools::command::reset_run_command_rate_limit_for_tests();
@@ -306,10 +295,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"pytest_run"));
     assert!(names.contains(&"python_snippet_run"));
-    assert!(names.contains(&"typos_check"));
-    assert!(names.contains(&"codespell_check"));
-    assert!(names.contains(&"ast_grep_run"));
-    assert!(names.contains(&"ast_grep_rewrite"));
     assert!(names.contains(&"ci_pipeline_local"));
     assert!(names.contains(&"release_ready_check"));
     assert!(names.contains(&"workflow_execute"));

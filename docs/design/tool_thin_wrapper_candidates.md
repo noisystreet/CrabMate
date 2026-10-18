@@ -36,11 +36,11 @@
 - `SessionMode::Ask` / `Plan` 的 `requires_readonly_tools()` 门控；
 - 只读结果 TTL 缓存 / 同轮去重（`readonly_tool_ttl_cache_secs`）。
 
-> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `typos_` / `codespell_` / `npm_` / `frontend_` / `maven_` / `gradle_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。
+> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `npm_` / `frontend_` / `maven_` / `gradle_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。（`typos_` / `codespell_` 前缀已于 2026-10-18 随对应工具删除一并清理。）
 
 ### 2.2 白名单与后台任务
 
-- **白名单外 CLI**：`typos` / `codespell` / `ast-grep`（`sg`）/ `rust-analyzer` 等**不在** `allowed_commands`；删掉专用工具等于功能净丢失，除非先扩白名单（§8.5.3 边界，风险最高）。
+- **白名单外 CLI**：`rust-analyzer` / `pytest` 等**不在** `allowed_commands`；删掉专用工具等于功能净丢失，除非先扩白名单（§8.5.3 边界，风险最高）。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（`sg` 仍未加入，见 §3.2）。
 - **后台任务装配**：`background_job_async_tools` 默认仅 `["run_command"]`；`cargo_test` / `pytest_run` 须**显式加入**才走后台，收敛前须确认不破坏该链路。
 
 ### 2.3 运行时语义差异
@@ -95,12 +95,12 @@
 | 系统查询 | ~~`package_query`~~ / ~~`port_check`~~ / ~~`process_list`~~ | 只读，但含抽象 / 输出后处理，收敛会丢结构化输出。**已收敛 2026-10-16**（改用 `run_command`；`dpkg-query` / `rpm` / `ss` / `lsof` / `ps` 均在 `allowed_commands` 白名单；三者前缀本就不在并行只读批；实现无聚合器复用，`package_query.rs` / `process_tools.rs` 整文件删除）。 |
 | GitHub CLI | ~~`gh_pr_list`~~ / ~~`gh_pr_view`~~ / `gh_pr_checks` / ~~`gh_pr_diff`~~ / ~~`gh_issue_list`~~ / ~~`gh_issue_view`~~ / ~~`gh_run_list`~~ / ~~`gh_run_view`~~ / `gh_run_failure_summary` / ~~`gh_release_list`~~ / ~~`gh_release_view`~~ / ~~`gh_search`~~（读类）；`gh_pr_create` / `gh_pr_merge` / `gh_pr_review` / `gh_pr_comment` / `gh_pr_edit` / `gh_issue_create` / `gh_run_rerun` / `gh_release_create`（写类） | **注**：`github_cli/common.rs` 的 `run_gh_vec` **本身已构造 `{command:"gh",args:[…]}` 调 `command::run`**——读类已是 `run_command` 之上的一层；真正增值为参数校验、`--json` 结构化与 body 走临时文件。**读类纯薄封装 10 个已收敛 2026-10-07**（`gh_pr_list` / `gh_pr_view` / `gh_pr_diff` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_run_view` / `gh_release_list` / `gh_release_view` / `gh_search`），改用 `run_command`；保留读类增值 2 个（`gh_pr_checks` / `gh_run_failure_summary`）、写类 8 个，以及 §3.3 的 `gh_pr_body_draft` / `gh_api`。 |
 
-**白名单外 CLI（须先扩白名单）**：
+**原白名单外 CLI（已扩白名单并收敛，2026-10-18）**：
 
 | 工具 | 底层 CLI | 说明 |
 |------|----------|------|
-| `typos_check` / `codespell_check` | `typos` / `codespell` | 不在白名单；含路径安全与存在性校验 |
-| `ast_grep_run` | `ast-grep` / `sg` | 不在白名单；`ast_grep_rewrite` 另含写盘 `confirm` 门 |
+| ~~`typos_check`~~ / ~~`codespell_check`~~ | `typos` / `codespell` | **已收敛 2026-10-18**：`typos` / `codespell` 已加入 `allowed_commands`；删 ToolSpec + runner + summary，改用 `run_command`。**函数体与参数结构体保留**供 `docs_health_sweep` 复用。失去路径安全 / 存在性校验与只读语义 |
+| ~~`ast_grep_run`~~ / ~~`ast_grep_rewrite`~~ | `ast-grep`（不扩 `sg`，避免与系统 switch-group 工具冲突） | **已收敛 2026-10-18**：`ast-grep` 已加入 `allowed_commands`；删 ToolSpec + runner + summary + 参数结构体（`AstGrepRunArgs` / `AstGrepRewriteArgs`）+ 全部实现，改用 `run_command`。`ast_grep_rewrite` 的写盘 `confirm` 门消失（`ast-grep run --rewrite` 须自行加 `--update-all`） |
 
 ### 3.3 保留（无 CLI 对应 / 结构化 / 编排 / 状态 / 网络 / 高增值解析）
 
@@ -124,7 +124,7 @@
 3. ~~**§3.2 cargo 元数据 / 审计族**（`cargo_metadata` / `tree` / `doc` / `nextest` / `outdated` / `machete` / `udeps` / `publish_dry_run` / `fmt_check` / `audit` / `deny`）：低频只读，接受 §2.1 代价。~~ **Slice A 已落地 2026-10-07**（7 个元数据 / 旁路工具）；**Slice B 已落地 2026-10-07**（`cargo_fmt_check` / `cargo_nextest` / `cargo_audit` / `cargo_deny`，并改写内置工作流模板 `rust_ci_fmt` 与 fixtures / examples）。
 4. ~~**§3.2 Go / Python 族**：按频率评估；`cargo_test` / `pytest_run` 收敛前须核对后台任务装配。~~ **Go 族已落地 2026-10-12**（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`，接受 §2.1 代价；Go 族无后台任务装配耦合）。**Python 族已落地 2026-10-12**（`ruff_check` / `mypy_check` / `uv_sync` / `uv_run` 四个只读薄封装改用 `run_command`；评估确认 `ruff_check` / `mypy_check` 函数体被 `ci_tools` / `quality_tools` / `run_lints` 复用，故**保留函数体**、仅删 ToolSpec / runner / 参数结构体，`uv_sync` / `uv_run` 无复用则整函数删除；`pytest_run` 因后台任务装配**保留**；接受 §2.1 代价，`ruff_` / `mypy_` / `uv_` 前缀本就不在并行只读批）。**质量族 `pre_commit_run` 已落地 2026-10-12**（改用 `run_command`；`pre-commit` 已在 `allowed_commands` 白名单；`precommit_tools.rs` 整文件删除，无聚合器复用；原「无 `.pre-commit-config.yaml` 时跳过」保护消失；接受 §2.1 代价，`pre_commit` 前缀本就不在并行只读批）。
 5. ~~**`gh_*` 家族**：读类已轻量，优先级低于 1–4；写类因类型化参数价值高，暂缓。~~ **读类纯薄封装 10 个已落地 2026-10-07**（`gh_pr_list` / `gh_pr_view` / `gh_pr_diff` / `gh_issue_list` / `gh_issue_view` / `gh_run_list` / `gh_run_view` / `gh_release_list` / `gh_release_view` / `gh_search`，接受 §2.1 代价；`gh_` 前缀本就不在并行只读批）。保留读类增值 2 个（`gh_pr_checks` / `gh_run_failure_summary`）、写类 8 个与 `gh_pr_body_draft` / `gh_api`；写类因类型化参数价值高，**暂缓**。
-6. **白名单外 CLI（`typos` / `codespell` / `ast-grep`）**：仅在决定扩白名单后再评估（风险最高，暂不推进）。
+6. ~~**白名单外 CLI（`typos` / `codespell` / `ast-grep`）**：仅在决定扩白名单后再评估（风险最高，暂不推进）。~~ **已落地 2026-10-18**：先向 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装；typos/codespell 函数体保留供 `docs_health_sweep` 复用。
 
 保留项（§3.3，含 `gh_api` / `playbook_run_commands`）不动；Git 只读（§3.2）维持 §8.5 的**保留**决策。
 
@@ -144,4 +144,5 @@
 | 2026-10-12 | **§3.2 Go 族已落地**：删除 `go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint` 五个只读薄封装（整文件删 `go_tools.rs`、`specs/go.inc.rs`、`specs/golangci.inc.rs`）的 ToolSpec + runner + 参数结构体（`GoBuildArgs` / `GoTestArgs` / `GoVetArgs` / `GoFmtCheckArgs` / `GolangciLintArgs`）+ `dev_tag` / `tool_json_schema` / 计划执行器测试运行器名单 / 构建进展识别引用，改用 `run_command`；复核确认 `./...` 能通过 `run_command` 参数安全校验（`arg_has_parent_dir_ref` 只拦 `..`），且 Go 族无后台任务装配耦合；接受 §2.1 代价（`go_` 前缀本就不在并行只读批）。同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
 | 2026-10-12 | **§3.2 Python 族已落地**：删除 `ruff_check` / `mypy_check` / `uv_sync` / `uv_run` 四个只读薄封装的 ToolSpec（`specs/frontend_python.inc.rs`）+ runner 绑定 + 参数结构体（`RuffCheckArgs` / `MypyCheckArgs` / `UvSyncArgs` / `UvRunArgs`）+ `uv_run` summary 绑定与 `UvRunSummaryArgs` + `dev_tag` / tests 引用，改用 `run_command`（`ruff` / `mypy` / `uv` 均在白名单）；评估确认 `ruff_check` / `mypy_check` 函数体被 `ci_tools.rs` / `quality_tools/mod.rs` / `lint.rs`（`run_lints`）复用，故**保留 `python_tools::ruff_check` / `mypy_check` 公开函数体**，仅删其 ToolSpec / runner / Args；`uv_sync` / `uv_run` 无内部复用则整函数删除（连同 `MAX_UV_RUN_*` 常量、`collect_uv_run_argv` / `is_safe_uv_run_arg` helper 与相关单测）；`run_ruff_check` 系聚合器**参数字段名**（非工具名），5 处引用保留；`pytest_run` 因后台任务装配**保留**；接受 §2.1 代价，`ruff_` / `mypy_` / `uv_` 前缀本就不在并行只读批。同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
 | 2026-10-18 | **A 档低风险 5 个已移除**：删除 `todo_scan` / `extract_in_file` / `file_exists` / `symlink_info` / `format_check_file` 的 ToolSpec + runner + summary 映射 + 参数结构体（`TodoScanArgs` / `ExtractInFileArgs` + `ExtractInFileMode` / `FileExistsArgs` + `FileExistsKind` / `SymlinkInfoArgs` / `FormatOnePathArgs`）+ 实现（`todo_scan.rs` / `file/extract.rs` / `file/symlink.rs` / `file/rust_brace_scan.rs` 整文件删除；`file/inspect.rs::file_exists` 与 `format.rs::run_check` 删除）+ `dev_tag` / 策略名单 / schema 测试 / 文档引用；替代方式：`run_command stat`、`run_command readlink`·`realpath`、`search_in_files`、各格式化器 `--check`。`format_files` 与 `run_formatter(..., check_only)` 保留。 |
+| 2026-10-18 | **B 档白名单外 CLI 已落地（先扩白名单再删）**：先向 `config/tools.toml` 的 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126，不扩 `sg`），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装的 ToolSpec（`specs/docs_health.inc.rs`（原 `quality_ast.inc.rs`，重命名后仅留 `docs_health_sweep`）+ runner + summary（含 `AstGrepRunSummaryArgs` / `AstGrepRewriteSummaryArgs`）+ 参数结构体（`AstGrepRunArgs` / `AstGrepRewriteArgs`）+ 全部 ast-grep 实现（`spell_astgrep_tools.rs` → `spell_tools.rs`）+ `dev_tag` / 写副作用名单 / 并行前缀 / 记忆失效填充 / schema 测试引用，改用 `run_command`。**`typos_check` / `codespell_check` 函数体与 `TyposCheckArgs` / `CodespellCheckArgs` 保留**供 `docs_health_sweep` 复用。失去路径安全 / 存在性校验、只读语义，以及 `ast_grep_rewrite` 的写盘 `confirm` 门。 |
 | 2026-10-12 | **§3.2 质量族 `pre_commit_run` 已落地**：删除这一只读薄封装的 ToolSpec（`specs/quality_ast.inc.rs`）+ runner 绑定 + 参数结构体（`PreCommitRunArgs`）+ summary 绑定与 `PreCommitRunSummaryArgs` + 实现整文件（`precommit_tools.rs`，含 `has_precommit_config` / `parse_pre_commit_json` / `validate_pre_commit_hook_id` / `apply_pre_commit_cli_flags` / `is_safe_hook_id` / `parse_files_array` 及相关单测）+ `dev_tag` / tests 引用，改用 `run_command`（`pre-commit` 已在白名单）；复核确认实现文件**无任何聚合器复用**，故整文件删除；接受 §2.1 代价，`pre_commit` 前缀本就不在并行只读批；原「无 `.pre-commit-config.yaml` 时跳过」保护消失。同步 `docs/工具说明.md` / `docs/en/TOOLS.md` / `CHANGELOG.md` / `docs/待办清单.md`。 |
