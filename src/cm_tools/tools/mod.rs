@@ -407,8 +407,8 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
                 // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
                 // 显式 `ok` 头，供下游 `parse_legacy_output` 复用（见 `typed_outcome_output`）。
                 ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
-                    Ok(output) => typed_outcome_output(name, true, output),
-                    Err(e) => typed_outcome_output(name, false, e.message),
+                    Ok(output) => typed_outcome_output(name, true, None, output),
+                    Err(e) => typed_outcome_output(name, false, Some(e.code.as_str()), e.message),
                 },
                 ToolRunner::AsyncOnly => async_only_sync_error(name),
             }
@@ -477,18 +477,27 @@ fn async_only_sync_error(name: &str) -> String {
     format!("错误：{}", async_only_message(name))
 }
 
-/// Typed 结果 → String 面：仅在正文启发式与真实成败不一致时注入显式 `ok` 头。
+/// Typed 结果 → String 面：仅在正文启发式与真实成败/错误码不一致时注入显式头。
 ///
 /// 主 Agent 路径（[`run_tool`]）丢失了 [`ToolError`]，下游 `dispatch_tool` 重试判定、
 /// timeline / 模型信封、统计与验收又都用 `parse_legacy_output` 重新推断。正文一致时
-/// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败。
-fn typed_outcome_output(name: &str, ok: bool, output: String) -> String {
-    if crate::cm_tools::tool_result::parse_legacy_output(name, &output).ok == ok {
+/// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败与 `error_code`。
+fn typed_outcome_output(
+    name: &str,
+    ok: bool,
+    error_code: Option<&str>,
+    output: String,
+) -> String {
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+    if parsed.ok == ok
+        && (ok || error_code.is_none() || parsed.error_code.as_deref() == error_code)
+    {
         return output;
     }
-    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
+    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok_and_error_code(
         name,
         ok,
+        error_code,
         serde_json::json!({}),
         &output,
     )
@@ -510,7 +519,7 @@ fn finish_dispatch_typed_ok(
     if parsed.exit_code.is_some_and(|code| code != 0) {
         parsed.exit_code = None;
     }
-    let output = typed_outcome_output(name, true, output);
+    let output = typed_outcome_output(name, true, None, output);
     let output = workspace_image_chat_hint::append_if_needed(args_json, output);
     (output, parsed)
 }

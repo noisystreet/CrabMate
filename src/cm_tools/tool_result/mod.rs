@@ -25,6 +25,7 @@ pub use output_header::{
     CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
     ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
     WorkspaceWriteDiffFile, prepend_crabmate_tool_output, prepend_crabmate_tool_output_with_ok,
+    prepend_crabmate_tool_output_with_ok_and_error_code,
 };
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
@@ -102,8 +103,9 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
     let exit_code = parse_exit_code(first);
     let (stdout, stderr) = extract_streams(output);
 
-    let ok = if let Some(header) = CrabmateToolOutputMeta::parse_line(first) {
-        structured_header_output_ok(&header, body)
+    let header = CrabmateToolOutputMeta::parse_line(first);
+    let ok = if let Some(header) = header.as_ref() {
+        structured_header_output_ok(header, body)
     } else if is_tool_output_header(first) {
         !body_after_header_looks_like_failure(body)
     } else if let Some(code) = exit_code {
@@ -111,10 +113,17 @@ pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput 
     } else {
         !looks_like_failure(first)
     };
+    // 生产者显式声明的 `error_code` 优先于正文启发式，避免精确码（如 `invalid_args`）
+    // 在主 Agent / SSE 路径退化为 `{tool}_failed`。
     let error_code = if ok {
         None
     } else {
-        Some(classify_error_code(first, tool_name))
+        header
+            .as_ref()
+            .and_then(|h| h.error_code.as_deref())
+            .filter(|code| !code.is_empty())
+            .map(str::to_string)
+            .or_else(|| Some(classify_error_code(first, tool_name)))
     };
 
     ParsedLegacyOutput {

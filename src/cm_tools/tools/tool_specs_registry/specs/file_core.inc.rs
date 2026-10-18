@@ -4,7 +4,7 @@ ToolSpec {
             description: "在工作区内创建新文件。仅当文件不存在时创建；若路径已存在则报错。**必填** `path`（相对工作目录，禁止 `..`）与 `content`（可为 `\"\"`）；请把 `path` 写在 arguments 靠前位置。别名如 `file_path`/`filename`/`file` 会归一到 `path`。**JSON 中 content 须正确转义**：换行 `\\n`、制表 `\\t`、双引号 `\\\"`、反斜杠 `\\\\`（未转义常导致整段 arguments 非法）。大文件可分多次写入。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::FileWriteArgs>,
-            runner: ToolRunner::Legacy(runner_create_file),
+            runner: ToolRunner::Typed(runner_create_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_create_file),
         },
         ToolSpec {
@@ -20,7 +20,7 @@ ToolSpec {
             description: "在工作区内复制**文件**（非目录）。路径校验与 create/read 一致（禁止绝对路径与 `..` 越界、借助 symlink 逃逸）。目标为已存在文件时须 `overwrite=true` 才覆盖；目标为已存在目录会报错。适合批量整理而无需把内容读进对话。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::FileFromToOverwriteArgs>,
-            runner: ToolRunner::Legacy(runner_copy_file),
+            runner: ToolRunner::Typed(runner_copy_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_copy_file),
         },
         ToolSpec {
@@ -28,7 +28,7 @@ ToolSpec {
             description: "在工作区内移动/重命名**文件**。`overwrite` 语义同 `copy_file`。跨文件系统时 `rename` 失败会自动回退为复制后删除源文件。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::FileFromToOverwriteArgs>,
-            runner: ToolRunner::Legacy(runner_move_file),
+            runner: ToolRunner::Typed(runner_move_file_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_move_file),
         },
         ToolSpec {
