@@ -107,11 +107,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- Python ---
         "pytest_run" | "python_snippet_run" => &[GENERAL, PYTHON],
 
-        // --- 拼写 / ast-grep（跨语言）---
-        "typos_check" | "codespell_check" | "ast_grep_run" | "ast_grep_rewrite" => {
-            &[GENERAL, QUALITY]
-        }
-
         // --- 质量聚合（跨栈）---
         "ci_pipeline_local"
         | "release_ready_check"

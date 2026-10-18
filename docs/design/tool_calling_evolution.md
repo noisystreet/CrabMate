@@ -119,7 +119,7 @@
 
 ### 8.5.3 不可收敛的边界
 
-- **白名单外 CLI**：如 `rust-analyzer` / `pytest` / `typos` / `codespell` / `ast-grep` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界。**Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，接受 §8.5.2 的四项只读能力损失。**仍保留**：`format_*` / `ruff_check` / `mypy_check` / `uv_*`（它们与组合工具 `ci_tools` / `quality_tools` 有复用耦合，须单独评估）。
+- **白名单外 CLI**：如 `rust-analyzer` / `pytest` 等——不在 `allowed_commands` 中，删掉专用工具等于**功能净丢失**，除非先扩白名单（见路线 C，风险最高）。**注（2026-10）**：`rustfmt` / `clang-format` / `ruff` / `mypy` / `uv` / `go` 系（`go` / `gofmt` / `golangci-lint`）等已随白名单扩充（见 §8.5.5）进入 `allowed_commands`，故不再属于本边界。**Go 族（`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`）已整族移除（2026-10-12）**，改用 `run_command`，接受 §8.5.2 的四项只读能力损失。**`typos` / `codespell` / `ast-grep` 已于 2026-10-18 扩入白名单并删除对应薄封装**（见 §8.5.5）。**仍保留**：`format_*` / `ruff_check` / `mypy_check` / `uv_*`（它们与组合工具 `ci_tools` / `quality_tools` 有复用耦合，须单独评估）。
 - **纯 Rust 工具**：结构化输出 / 内部状态（记忆、schedule、后台任务、workflow、skill、self-config 等），无 CLI 对应，**保留**。
 - **Agent / 编排类**：保留。
 - **`cargo_test`** 等已接入**后台任务装配**（`background_job_async_tools` 默认 `["run_command"]`，`cargo_test` / `pytest_run` 须显式加入才走后台），收敛前须确认不破坏该链路。
@@ -148,6 +148,8 @@
 
 **安全面**：白名单仍是硬闸门，仅扩充允许的命令集合；新增 CLI 均为常规开发工具，未引入任意命令执行面。
 
+**追加（2026-10-18，B 档「先扩白名单再删」）**：再扩 **3 项**（123 → 126）：`typos` / `codespell`（文档拼写）与 `ast-grep`（AST 结构化搜索 / 改写）。**未**扩 `sg`（系统 `/usr/bin/sg` 为 switch-group 工具，避免扩大执行面）。白名单落地后即删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装，改用 `run_command`；`typos` / `codespell` 的函数体保留供 `docs_health_sweep` 复用。这是路线 **C「扩白名单再收敛」的首次按档落地**，代价是失去路径安全 / 存在性校验与只读语义（`ast_grep_rewrite` 另失去写盘 `confirm` 门，`ast-grep run --rewrite` 须自行加 `--update-all`）。详见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2 / §4。
+
 **后续**：可评估「工具 spawn 的 CLI ⊆ 白名单」的一致性测试，从机制上防止再次漂移。
 
 ---
@@ -163,3 +165,4 @@
 | 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
 | 2026-10-07 | 新增配套文档 **`docs/design/tool_thin_wrapper_candidates.md`**：对 §8.5 之后的**剩余内置工具**逐家族盘点「适合 / 视情况 / 保留」判定与切片顺序（§8.5 负责方案与约束，该文件负责候选清单）。 |
 | 2026-10-07 | **落地 §3.1.2 写侧安全门族**（见 `tool_thin_wrapper_candidates.md`）：移除 **`cargo_fix`** / **`go_mod_tidy`** / **`python_install_editable`** 三个薄封装，改用 `run_command`（`cargo` / `go` / `uv` / `python3` 均已在白名单）。复核确认 `confirm` 门并非强制安全边界（`run_command` 无子命令级审批），故按「直接收敛、不新增机制」执行；三者均为写副作用工具，只读语义无损失。 |
+| 2026-10-18 | **路线 C 首次按档落地（B 档「先扩白名单再删」）**：先向 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126，不扩 `sg`），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装，改用 `run_command`；typos/codespell 函数体保留供 `docs_health_sweep` 复用。§8.5.3 边界与 §8.5.5 白名单记录同步更新；细节见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2 / §4 / §5。 |

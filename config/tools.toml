@@ -160,6 +160,10 @@ allowed_commands = [
     "ss",
     "lsof",
     "bc",
+    # 文档拼写 / AST 结构化搜索（原 typos_check / codespell_check / ast_grep_* 专用工具已收敛）
+    "typos",
+    "codespell",
+    "ast-grep",
 ]
 run_command_working_dir = "."
 

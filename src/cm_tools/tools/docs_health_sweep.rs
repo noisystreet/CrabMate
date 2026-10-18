@@ -6,7 +6,7 @@ use super::ToolContext;
 use super::file::read_file;
 use super::output_util::truncate_output_bytes;
 use super::repo_overview;
-use super::spell_astgrep_tools;
+use super::spell_tools;
 use crate::cm_tools::tools::tool_param_types::DocsHealthSweepArgs;
 
 fn default_doc_preview_paths() -> Vec<String> {
@@ -192,7 +192,7 @@ fn run_typos_phase(ctx: TyposPhaseCtx<'_>) -> Option<String> {
         Ok(s) => s,
         Err(e) => return Some(e),
     };
-    let r = spell_astgrep_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len);
+    let r = spell_tools::typos_check(&typos_args, env.workspace_root, env.max_output_len);
     let failed = spell_tool_failed(&r);
     summary.push((
         "typos_check".to_string(),
@@ -269,7 +269,7 @@ fn run_codespell_phase(ctx: CodespellPhaseCtx<'_>) -> Option<String> {
         Ok(s) => s,
         Err(e) => return Some(e),
     };
-    let r = spell_astgrep_tools::codespell_check(
+    let r = spell_tools::codespell_check(
         &codespell_args,
         env.workspace_root,
         env.max_output_len,

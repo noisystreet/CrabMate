@@ -198,7 +198,7 @@ pub struct ReleaseReadyCheckArgs {
     pub summary_only: bool,
 }
 
-// ── 拼写 / ast-grep（`spell_astgrep_tools`）────────────────────
+// ── 拼写（`spell_tools`，供 `docs_health_sweep` 复用）────
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields, default)]
@@ -217,33 +217,6 @@ pub struct CodespellCheckArgs {
     #[serde(default)]
     pub dictionary_paths: Vec<String>,
     pub ignore_words_list: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AstGrepRunArgs {
-    pub pattern: String,
-    pub lang: String,
-    #[serde(default)]
-    pub paths: Vec<String>,
-    #[serde(default)]
-    pub globs: Vec<String>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AstGrepRewriteArgs {
-    pub pattern: String,
-    pub rewrite: String,
-    pub lang: String,
-    #[serde(default)]
-    pub paths: Vec<String>,
-    #[serde(default)]
-    pub globs: Vec<String>,
-    #[serde(default = "default_true")]
-    pub dry_run: bool,
-    #[serde(default)]
-    pub confirm: bool,
 }
 
 // ── `docs_health_sweep` ───────────────────────────────────────

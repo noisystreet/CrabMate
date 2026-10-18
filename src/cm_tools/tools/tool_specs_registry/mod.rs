@@ -17,7 +17,7 @@ static SPECS_BASIC_NETWORK: &[ToolSpec] = &include!("specs/basic_network.inc.rs"
 static SPECS_EXEC_PACKAGE: &[ToolSpec] = &include!("specs/exec_package.inc.rs");
 static SPECS_CARGO_RUST: &[ToolSpec] = &include!("specs/cargo_rust.inc.rs");
 static SPECS_FRONTEND_PYTHON: &[ToolSpec] = &include!("specs/frontend_python.inc.rs");
-static SPECS_QUALITY_AST: &[ToolSpec] = &include!("specs/quality_ast.inc.rs");
+static SPECS_DOCS_HEALTH: &[ToolSpec] = &include!("specs/docs_health.inc.rs");
 static SPECS_FRONTEND_AUDIT_CI: &[ToolSpec] = &include!("specs/frontend_audit_ci.inc.rs");
 static SPECS_DIAGNOSTICS_DOCS: &[ToolSpec] = &include!("specs/diagnostics_docs.inc.rs");
 static SPECS_GITHUB_CLI: &[ToolSpec] = &include!("specs/github_cli.inc.rs");
@@ -42,7 +42,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
             + SPECS_EXEC_PACKAGE.len()
             + SPECS_CARGO_RUST.len()
             + SPECS_FRONTEND_PYTHON.len()
-            + SPECS_QUALITY_AST.len()
+            + SPECS_DOCS_HEALTH.len()
             + SPECS_FRONTEND_AUDIT_CI.len()
             + SPECS_DIAGNOSTICS_DOCS.len()
             + SPECS_GITHUB_CLI.len()
@@ -63,7 +63,7 @@ pub(super) fn tool_specs() -> &'static [ToolSpec] {
         v.extend_from_slice(SPECS_EXEC_PACKAGE);
         v.extend_from_slice(SPECS_CARGO_RUST);
         v.extend_from_slice(SPECS_FRONTEND_PYTHON);
-        v.extend_from_slice(SPECS_QUALITY_AST);
+        v.extend_from_slice(SPECS_DOCS_HEALTH);
         v.extend_from_slice(SPECS_FRONTEND_AUDIT_CI);
         v.extend_from_slice(SPECS_DIAGNOSTICS_DOCS);
         v.extend_from_slice(SPECS_GITHUB_CLI);

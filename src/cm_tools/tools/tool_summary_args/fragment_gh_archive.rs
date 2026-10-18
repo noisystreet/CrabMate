@@ -289,12 +289,6 @@ mod tests {
         assert_eq!(s, r#"bash -c "echo hello world""#);
     }
 
-    #[test]
-    fn ast_grep_rewrite_dry_run_defaults_true() {
-        let v = json!({ "lang": "rust", "pattern": "foo" });
-        let s = summarize_from_value::<AstGrepRewriteSummaryArgs>(&v).expect("summary");
-        assert!(s.contains("(dry-run)"), "got {s}");
-    }
 }
 
 #[derive(Debug, Deserialize)]

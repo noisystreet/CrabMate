@@ -118,7 +118,6 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "chmod_file",
             "apply_patch",
             "format_files",
-            "ast_grep_rewrite",
             "structured_patch",
             "long_term_remember",
             "long_term_forget",
@@ -218,8 +217,6 @@ fn builtin_parallel_sync_prefix_hit(name: &str) -> bool {
         "uv_",
         "pre_commit",
         "python_",
-        "typos_",
-        "codespell_",
         "gh_",
     ];
     PREFIXES.iter().any(|p| name.starts_with(p))

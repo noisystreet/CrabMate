@@ -180,15 +180,12 @@ fn fill_apply_patch_tool(
     }
 }
 
-fn fill_structured_spell_tools(
+fn fill_structured_doc_tools(
     name: &str,
     v: &serde_json::Value,
     scopes: &mut Vec<RelScope>,
 ) -> Option<InvalScopesFill> {
-    if !matches!(
-        name,
-        "structured_patch" | "markdown_check_links" | "typos_check" | "codespell_check"
-    ) {
+    if !matches!(name, "structured_patch" | "markdown_check_links") {
         return None;
     }
     push_invalidation_scope(scopes, v.get("path").and_then(|p| p.as_str()), false);
@@ -199,32 +196,7 @@ fn fill_structured_spell_tools(
             push_invalidation_scope(scopes, x.as_str(), false);
         }
     }
-    if matches!(name, "typos_check" | "codespell_check")
-        && let Some(ps) = v.get("paths").and_then(|p| p.as_array())
-    {
-        for x in ps {
-            push_invalidation_scope(scopes, x.as_str(), false);
-        }
-    }
     Some(InvalScopesFill::Ok)
-}
-
-fn fill_ast_grep_tool(
-    name: &str,
-    v: &serde_json::Value,
-    scopes: &mut Vec<RelScope>,
-) -> Option<InvalScopesFill> {
-    if name != "ast_grep_rewrite" {
-        return None;
-    }
-    if let Some(ps) = v.get("paths").and_then(|p| p.as_array()) {
-        for x in ps {
-            push_invalidation_scope(scopes, x.as_str(), false);
-        }
-        Some(InvalScopesFill::Ok)
-    } else {
-        Some(InvalScopesFill::FullWorkspace)
-    }
 }
 
 fn fill_invalidation_scopes_for_tool(
@@ -244,10 +216,7 @@ fn fill_invalidation_scopes_for_tool(
     if let Some(r) = fill_apply_patch_tool(name, v, scopes) {
         return r;
     }
-    if let Some(r) = fill_structured_spell_tools(name, v, scopes) {
-        return r;
-    }
-    if let Some(r) = fill_ast_grep_tool(name, v, scopes) {
+    if let Some(r) = fill_structured_doc_tools(name, v, scopes) {
         return r;
     }
     InvalScopesFill::FullWorkspace
