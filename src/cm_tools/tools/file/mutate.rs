@@ -86,6 +86,8 @@ fn append_resolve_target_path(
     } else {
         match resolve_for_read(working_dir, path) {
             Ok(p) => Ok(p),
+            // 越界 / 敏感目录 / 绝对路径等策略拒绝与「文件不存在」无关，须保留统一错误码。
+            Err(e) if e.is_policy_denied() => Err(workspace_path_tool_error(e)),
             Err(e) => Err(ToolError::invalid_args(format!(
                 "文件不存在（可设置 create_if_missing=true）：{}",
                 e
