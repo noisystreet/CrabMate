@@ -457,6 +457,38 @@ fn bash_c_script_with_substitution_is_allowed() {
 }
 
 #[test]
+fn embedded_bash_c_keeps_escaped_dollar_literal() {
+    let mut allowed = test_allowed();
+    allowed.push("bash".into());
+    let out = run(
+        r#"{"command":"bash -c echo \\$HOME"}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &allowed,
+        test_work_dir(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("$HOME"), "{out}");
+}
+
+#[test]
+fn wrapped_shell_script_keeps_escaped_dollar_literal() {
+    let mut allowed = test_allowed();
+    allowed.push("bash".into());
+    let out = run(
+        r#"{"command":"echo","args":["a \\$HOME b"]}"#,
+        TEST_MAX_OUTPUT_LEN,
+        &allowed,
+        test_work_dir(),
+        None,
+        false,
+    );
+    assert!(out.contains("退出码：0"), "{out}");
+    assert!(out.contains("a $HOME b"), "{out}");
+}
+
+#[test]
 fn bash_wraps_operators_and_gh_dollar_keeps_token_flag() {
     let mut allowed = test_allowed();
     allowed.push("bash".into());
