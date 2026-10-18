@@ -207,8 +207,6 @@ fn builtin_parallel_sync_prefix_hit(name: &str) -> bool {
         "npm_",
         "frontend_",
         "go_",
-        "maven_",
-        "gradle_",
         "docker_",
         "podman_",
         "ruff_",

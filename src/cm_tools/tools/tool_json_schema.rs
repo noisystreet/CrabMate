@@ -21,8 +21,7 @@ mod tests {
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
-        GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
-        ModifyFileArgs,
+        ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
     };
@@ -134,18 +133,6 @@ mod tests {
     fn list_reminders_schema_has_include_done() {
         let v = tool_parameters_schema_value::<ListRemindersArgs>();
         assert!(v.pointer("/properties/include_done").is_some());
-    }
-
-    #[test]
-    fn maven_compile_schema_has_optional_profile() {
-        let v = tool_parameters_schema_value::<MavenCompileArgs>();
-        assert!(v.pointer("/properties/profile").is_some());
-    }
-
-    #[test]
-    fn gradle_tasks_schema_has_tasks_array() {
-        let v = tool_parameters_schema_value::<GradleTasksArgs>();
-        assert_eq!(v.pointer("/properties/tasks/type"), Some(&json!("array")));
     }
 
     #[test]

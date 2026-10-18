@@ -70,31 +70,6 @@ pub struct UpdateEventArgs {
     pub notes: Option<String>,
 }
 
-// ── JVM（`jvm_tools`）──────────────────────────────────────────
-
-/// [`super::jvm_tools::maven_compile`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct MavenCompileArgs {
-    pub profile: Option<String>,
-}
-
-/// [`super::jvm_tools::maven_test`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct MavenTestArgs {
-    pub profile: Option<String>,
-    pub test: Option<String>,
-}
-
-/// [`super::jvm_tools::gradle_compile`] / [`super::jvm_tools::gradle_test`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct GradleTasksArgs {
-    #[serde(default)]
-    pub tasks: Vec<String>,
-}
-
 // ── 归档（`archive`）──────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
