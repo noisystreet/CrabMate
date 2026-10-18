@@ -1,4 +1,4 @@
-//! PR-1a / PR-1b Typed 迁移回归：`create_file` / `copy_file` / `move_file` / `modify_file`。
+//! PR-1a / PR-1b / PR-1c Typed 迁移回归：写盘类文件工具。
 //!
 //! 覆盖三类契约：成功正文与 String 面逐字节一致；失败返回显式 `code` / `category` / `retryable`；
 //! 成功正文含「失败」「超时」等词时仍判成功（Typed 收尾注入 `ok=true` 头）。
@@ -8,8 +8,8 @@ use std::path::Path;
 use super::test_support::test_ctx;
 use super::tests::make_test_dir;
 use super::{
-    copy_file, copy_file_try, create_file, create_file_try, modify_file, modify_file_try, move_file,
-    move_file_try,
+    append_file, append_file_try, copy_file, copy_file_try, create_file, create_file_try,
+    modify_file, modify_file_try, move_file, move_file_try, search_replace, search_replace_try,
 };
 use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory};
 
@@ -353,6 +353,242 @@ fn modify_file_failure_exposes_typed_error_code_to_legacy_parse() {
         &test_ctx(&dir),
     );
     let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
+    assert!(!parsed.ok, "{output}");
+    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── PR-1c：「append_file」 ─────────────────────────────────────
+
+#[test]
+fn append_file_try_success_matches_string_face() {
+    let dir_legacy = make_test_dir();
+    let dir_typed = make_test_dir();
+    std::fs::write(dir_legacy.join("a.txt"), "hello").unwrap();
+    std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
+    let args = r#"{"path":"a.txt","content":"world\n"}"#;
+
+    let legacy = append_file(args, &dir_legacy, &test_ctx(&dir_legacy));
+    let typed = append_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("追加应成功");
+
+    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
+    assert!(typed.contains("\"ok\":true"), "{typed}");
+    assert_eq!(read(&dir_typed, "a.txt"), "hello\nworld\n");
+
+    let _ = std::fs::remove_dir_all(&dir_legacy);
+    let _ = std::fs::remove_dir_all(&dir_typed);
+}
+
+#[test]
+fn append_file_try_dry_run_matches_string_face_and_does_not_write() {
+    let dir_legacy = make_test_dir();
+    let dir_typed = make_test_dir();
+    std::fs::write(dir_legacy.join("a.txt"), "hello").unwrap();
+    std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
+    let args = r#"{"path":"a.txt","content":"world","dry_run":true}"#;
+
+    let legacy = append_file(args, &dir_legacy, &test_ctx(&dir_legacy));
+    let typed = append_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("dry-run 应成功");
+
+    assert_eq!(legacy, typed, "dry-run 正文必须与 String 面逐字节一致");
+    assert_eq!(read(&dir_typed, "a.txt"), "hello", "dry-run 不得写盘");
+
+    let _ = std::fs::remove_dir_all(&dir_legacy);
+    let _ = std::fs::remove_dir_all(&dir_typed);
+}
+
+#[test]
+fn append_file_try_missing_file_is_invalid_input() {
+    let dir = make_test_dir();
+
+    let err = append_file_try(
+        r#"{"path":"missing.txt","content":"x"}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("未设 create_if_missing 时缺失文件须失败");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("文件不存在"), "{}", err.message);
+    assert!(!dir.join("missing.txt").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn append_file_try_precheck_failure_keeps_legacy_body_and_code() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("bad.json"), "{\"a\":1}").unwrap();
+
+    let err = append_file_try(
+        r#"{"path":"bad.json","content":",","ensure_leading_newline":false}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("写盘前校验失败须拒绝写入");
+
+    assert_eq!(err.code, "write_precheck_failed");
+    assert_eq!(err.category, ToolFailureCategory::InvalidInput);
+    assert!(!err.retryable);
+    assert!(
+        err.message.contains("校验失败（JSON_SYNTAX_ERROR）"),
+        "{}",
+        err.message
+    );
+    assert_eq!(read(&dir, "bad.json"), "{\"a\":1}", "校验失败不得写盘");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ── PR-1c：「search_replace」 ─────────────────────────────────
+
+#[test]
+fn search_replace_try_success_matches_string_face() {
+    let dir_legacy = make_test_dir();
+    let dir_typed = make_test_dir();
+    std::fs::write(dir_legacy.join("a.txt"), "hello world\n").unwrap();
+    std::fs::write(dir_typed.join("a.txt"), "hello world\n").unwrap();
+    let args = r#"{"path":"a.txt","search":"world","replace":"rust","dry_run":false,"confirm":true}"#;
+
+    let legacy = search_replace(args, &dir_legacy, &test_ctx(&dir_legacy));
+    let typed = search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("替换应成功");
+
+    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
+    assert!(typed.contains("已替换"), "{typed}");
+    assert!(typed.contains("\"ok\":true"), "{typed}");
+    assert_eq!(read(&dir_typed, "a.txt"), "hello rust\n");
+
+    let _ = std::fs::remove_dir_all(&dir_legacy);
+    let _ = std::fs::remove_dir_all(&dir_typed);
+}
+
+#[test]
+fn search_replace_try_dry_run_matches_string_face_and_does_not_write() {
+    let dir_legacy = make_test_dir();
+    let dir_typed = make_test_dir();
+    std::fs::write(dir_legacy.join("a.txt"), "hello world\n").unwrap();
+    std::fs::write(dir_typed.join("a.txt"), "hello world\n").unwrap();
+    let args = r#"{"path":"a.txt","search":"world","replace":"rust"}"#;
+
+    let legacy = search_replace(args, &dir_legacy, &test_ctx(&dir_legacy));
+    let typed = search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("dry-run 应成功");
+
+    assert_eq!(legacy, typed, "dry-run 正文必须与 String 面逐字节一致");
+    assert_eq!(read(&dir_typed, "a.txt"), "hello world\n", "dry-run 不得写盘");
+
+    let _ = std::fs::remove_dir_all(&dir_legacy);
+    let _ = std::fs::remove_dir_all(&dir_typed);
+}
+
+#[test]
+fn search_replace_try_no_match_is_invalid_input_and_does_not_write() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
+
+    let err = search_replace_try(
+        r#"{"path":"a.txt","search":"zzz","replace":"x"}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("未找到匹配须失败");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("未找到匹配"), "{}", err.message);
+    assert_eq!(read(&dir, "a.txt"), "hello\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_try_missing_confirm_is_invalid_input() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
+
+    let err = search_replace_try(
+        r#"{"path":"a.txt","search":"hello","replace":"bye","dry_run":false}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("写盘未确认须失败");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("confirm=true"), "{}", err.message);
+    assert_eq!(read(&dir, "a.txt"), "hello\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_try_invalid_regex_is_invalid_input() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
+
+    let err = search_replace_try(
+        r#"{"path":"a.txt","search":"(","replace":"x","regex":true}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("无效正则须失败");
+
+    assert_invalid_input(&err);
+    assert!(err.message.contains("正则表达式无效"), "{}", err.message);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_try_precheck_failure_keeps_legacy_body_and_code() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("app.py"), "def f():\n    return 1\n").unwrap();
+
+    let err = search_replace_try(
+        r#"{"path":"app.py","search":"    return 1","replace":"x = 1\nreturn 2","dry_run":false,"confirm":true}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("写盘前校验失败须拒绝写入");
+
+    assert_eq!(err.code, "write_precheck_failed");
+    assert_eq!(err.category, ToolFailureCategory::InvalidInput);
+    assert!(!err.retryable);
+    assert!(
+        err.message.contains("校验失败（PY_SYNTAX_ERROR）"),
+        "{}",
+        err.message
+    );
+    assert_eq!(
+        read(&dir, "app.py"),
+        "def f():\n    return 1\n",
+        "校验失败不得写盘"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_try_path_escape_is_workspace_resolve_failed() {
+    let dir = make_test_dir();
+
+    let err = search_replace_try(
+        r#"{"path":"../a.txt","search":"a","replace":"b"}"#,
+        &dir,
+        &test_ctx(&dir),
+    )
+    .expect_err("越界路径须失败");
+
+    assert_eq!(err.code, "workspace_resolve_failed");
+    assert_eq!(err.category, ToolFailureCategory::External);
+    assert!(!err.retryable);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn search_replace_no_match_exposes_invalid_args_to_legacy_parse() {
+    let dir = make_test_dir();
+    std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
+
+    // 正文「未找到匹配」不含失败词，Legacy 启发式会判成功；Typed 须经显式头暴露真实失败。
+    let output = crate::cm_tools::tools::run_tool(
+        "search_replace",
+        r#"{"path":"a.txt","search":"zzz","replace":"x"}"#,
+        &test_ctx(&dir),
+    );
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("search_replace", &output);
     assert!(!parsed.ok, "{output}");
     assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
 

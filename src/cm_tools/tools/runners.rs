@@ -435,8 +435,6 @@ define_runners_cwd_ctx! {
     runner_archive_list => archive::archive_list,
     runner_structured_patch => structured_data::structured_patch,
     runner_delete_files => file::delete_files,
-    runner_append_file => file::append_file,
-    runner_search_replace => file::search_replace,
 }
 
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
@@ -446,6 +444,8 @@ define_runners_cwd_ctx_try! {
     runner_copy_file_try => file::copy_file_try,
     runner_move_file_try => file::move_file_try,
     runner_modify_file_try => file::modify_file_try,
+    runner_append_file_try => file::append_file_try,
+    runner_search_replace_try => file::search_replace_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────

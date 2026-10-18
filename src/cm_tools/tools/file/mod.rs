@@ -20,7 +20,10 @@ mod write_precheck;
 
 pub use directory::read_dir;
 pub use inspect::{hash_file, read_binary_meta};
-pub use mutate::{append_file, create_dir, delete_dir, delete_files, search_replace};
+pub use mutate::{
+    append_file, append_file_try, create_dir, delete_dir, delete_files, search_replace,
+    search_replace_try,
+};
 pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 pub use perm::chmod_file;
 pub use read_tool::read_file;
