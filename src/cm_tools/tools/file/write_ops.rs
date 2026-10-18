@@ -499,27 +499,48 @@ fn modify_file_dispatch_mode(
 /// - `dry_run=true`：仅返回 diff 预览，不写盘（`replace_lines` 与整文件覆盖均支持）。
 /// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let path = match modify_file_path_arg(&v) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    modify_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`modify_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+///
+/// 顶层参数 / 路径 / 非文件判定直接返回 [`ToolError`]；行号替换、批量 `edits` 与
+/// 整文件覆盖仍以正文返回，这里用 `parse_legacy_output` 兜底，保留正文可识别的
+/// 精确码（如 `stale_revision` / `write_precheck_failed`）。
+#[allow(clippy::result_large_err)]
+pub fn modify_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let v =
+        crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
+    let path = modify_file_path_arg(&v).map_err(ToolError::invalid_args)?;
     let (explicit_mode, mode) = modify_file_mode_arg(&v);
 
-    let target = match resolve_for_read(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let target = resolve_for_read(working_dir, &path).map_err(workspace_path_tool_error)?;
     if !target.is_file() {
-        return "错误：路径不是文件或不存在，无法仅修改".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：路径不是文件或不存在，无法仅修改".to_string(),
+        ));
     }
     let auto_bind = modify_file_auto_bind_revision(&v, &mode);
     if let Err(e) = super::revision::verify_write_revision(&v, &target, ctx, auto_bind) {
-        return e;
+        return Err(modify_file_legacy_body_error(e));
     }
 
-    modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode)
+    let output =
+        modify_file_dispatch_mode(&v, &target, working_dir, ctx, &path, explicit_mode, &mode);
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
+    if parsed.ok {
+        return Ok(output);
+    }
+    Err(ToolError::from_parsed_legacy("modify_file", &parsed, output))
+}
+
+/// dispatch 内部仍返回正文：失败码由正文可识别标记保留（如 `错误[stale_revision]`）。
+#[allow(clippy::result_large_err)]
+fn modify_file_legacy_body_error(output: String) -> ToolError {
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
+    ToolError::from_parsed_legacy("modify_file", &parsed, output)
 }
