@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
-  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust" alt="Rust 1.88+" /></a>
   <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
 </p>
@@ -39,7 +39,7 @@ This repo is the **Server**: HTTP **`serve`** (always API-only — it never host
 
 ## Quick start
 
-Requires **Rust 1.85+** (edition 2024).
+Requires **Rust 1.88+** (edition 2024).
 
 ```bash
 # Backend (API-only)
@@ -100,7 +100,7 @@ Details: [docs/en/CONFIGURATION.md](docs/en/CONFIGURATION.md). Debug / **`GET /w
 
 | Method | Command / notes |
 | --- | --- |
-| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.6.0`**, default feature **`server`**; git tag **`v0.6.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
+| **Install to PATH** | **`cargo install crabmate`** (crates.io **stable `0.7.0`**, default feature **`server`**; git tag **`v0.7.0`**). Does **not** ship **man**; install **[man/crabmate.1](man/crabmate.1)** manually if needed. |
 | **Tarball / .deb** | **`make package`** (or **`./scripts/package-release.sh`**) → **`dist/`** (binary, `config/`, man, **`systemd/`**, **`etc/crabmate/`**; **server-only, no UI**). Tar only: **`make package-tar`**; deb only: **`make package-deb`** (needs **`cargo-deb`**). |
 | **Desktop / APK** | **Only** the Client repo ([`crabmate-client`](https://github.com/noisystreet/crabmate-client)). |
 | **Regenerate man** | **`cargo run --features gen-man --bin crabmate-gen-man`**. |
