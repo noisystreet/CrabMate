@@ -404,9 +404,12 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
             }
             match spec.runner {
                 ToolRunner::Legacy(f) => f(args_eff.as_ref(), ctx),
-                // Typed 失败回退到 `e.message`（与历史 `*_try().unwrap_or_else(|e| e.message)` 包装
-                // 逐字节一致），保证 `run_tool` 的 String API 行为不变。
-                ToolRunner::Typed(f) => f(args_eff.as_ref(), ctx).unwrap_or_else(|e| e.message),
+                // Typed 的成败由 `Result` 决定；`run_tool` 只返回 String，故在不一致时注入
+                // 显式 `ok` 头，供下游 `parse_legacy_output` 复用（见 `typed_outcome_output`）。
+                ToolRunner::Typed(f) => match f(args_eff.as_ref(), ctx) {
+                    Ok(output) => typed_outcome_output(name, true, output),
+                    Err(e) => typed_outcome_output(name, false, e.message),
+                },
                 ToolRunner::AsyncOnly => async_only_sync_error(name),
             }
         }
@@ -446,7 +449,7 @@ fn run_tool_dispatch(
 
 /// dispatch 兜底：按 `spec.runner` 执行。
 ///
-/// Typed：`Ok` 正文走与 Legacy 相同的收尾，`Err(ToolError)` 显式透传；
+/// Typed：`Ok` 即成功（正文只用于抽取流/退出码），`Err(ToolError)` 显式透传；
 /// Legacy：正文推断失败状态（与历史 `run_tool` fallback 行为一致）；
 /// AsyncOnly：同步面不可执行。
 #[allow(clippy::result_large_err)]
@@ -457,7 +460,9 @@ fn run_tool_dispatch_fallback(
     ctx: &ToolContext<'_>,
 ) -> Result<(String, crate::cm_tools::tool_result::ParsedLegacyOutput), ToolError> {
     match spec.runner {
-        ToolRunner::Typed(f) => f(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output)),
+        ToolRunner::Typed(f) => {
+            f(args_ref, ctx).map(|output| finish_dispatch_typed_ok(name, args_ref, output))
+        }
         ToolRunner::Legacy(f) => finish_dispatch_legacy(name, args_ref, f(args_ref, ctx)),
         ToolRunner::AsyncOnly => Err(ToolError::invalid_args(async_only_message(name))),
     }
@@ -472,13 +477,41 @@ fn async_only_sync_error(name: &str) -> String {
     format!("错误：{}", async_only_message(name))
 }
 
-fn finish_dispatch_parsed(
+/// Typed 结果 → String 面：仅在正文启发式与真实成败不一致时注入显式 `ok` 头。
+///
+/// 主 Agent 路径（[`run_tool`]）丢失了 [`ToolError`]，下游 `dispatch_tool` 重试判定、
+/// timeline / 模型信封、统计与验收又都用 `parse_legacy_output` 重新推断。正文一致时
+/// 保持逐字节不变；不一致时用 `crabmate_tool_output` 头声明真实成败。
+fn typed_outcome_output(name: &str, ok: bool, output: String) -> String {
+    if crate::cm_tools::tool_result::parse_legacy_output(name, &output).ok == ok {
+        return output;
+    }
+    crate::cm_tools::tool_result::prepend_crabmate_tool_output_with_ok(
+        name,
+        ok,
+        serde_json::json!({}),
+        &output,
+    )
+}
+
+/// Typed 收尾：`Ok` 即成功，正文只用于抽取 `exit_code/stdout/stderr`。
+///
+/// 成功正文（如搜索结果）可能含「失败」「超时」等词，因此**不能**再把正文交给
+/// [`crate::cm_tools::tool_result::parse_legacy_output`] 推断 `ok`；失败必须由执行体
+/// 返回 [`ToolError`]。返回值同样注入显式 `ok` 头（若必要），保证下游再次解析一致。
+fn finish_dispatch_typed_ok(
     name: &str,
     args_json: &str,
     output: String,
 ) -> (String, crate::cm_tools::tool_result::ParsedLegacyOutput) {
+    let mut parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
+    parsed.ok = true;
+    parsed.error_code = None;
+    if parsed.exit_code.is_some_and(|code| code != 0) {
+        parsed.exit_code = None;
+    }
+    let output = typed_outcome_output(name, true, output);
     let output = workspace_image_chat_hint::append_if_needed(args_json, output);
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output(name, &output);
     (output, parsed)
 }
 

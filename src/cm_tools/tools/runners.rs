@@ -5,7 +5,7 @@ use super::*;
 ///
 /// - [`ToolRunner::Legacy`]：返回 `String`，失败状态由 `parse_legacy_output` 从正文推断（历史形态）。
 /// - [`ToolRunner::Typed`]：返回 `Result<String, ToolError>`，失败路径显式（与各 `*_try` 函数同签名）；
-///   成功侧仍为 `String` 正文，结构化载荷由 `parse_legacy_output` 生成（行为与 Legacy 一致）。
+///   `Ok` 即成功，正文只用于抽取 `exit_code/stdout/stderr`（不再按正文关键词判定失败）。
 /// - [`ToolRunner::AsyncOnly`]：仅作 spec 注册占位（工具名 / 参数 schema / 摘要仍可用），
 ///   同步面没有执行体，须由服务端异步调度执行（`run_command` 经
 ///   [`super::run_tool_async`] / [`super::run_tool_result_async`]；`terminal_session`
@@ -89,11 +89,37 @@ macro_rules! define_runners_cwd_ctx {
     };
 }
 
+/// 形态：`f(args, working_dir, ctx) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
+#[allow(unused_macros)] // 供后续 Legacy 迁移批次启用
+macro_rules! define_runners_cwd_ctx_try {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+                $func(args, ctx.working_dir, ctx)
+            }
+        )*
+    };
+}
+
 /// 形态：`f(args, working_dir)`。
 macro_rules! define_runners_cwd {
     ($( $runner:ident => $func:path ),* $(,)?) => {
         $(
             pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {
+                $func(args, ctx.working_dir)
+            }
+        )*
+    };
+}
+
+/// 形态：`f(args, working_dir) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
+#[allow(unused_macros)] // 供后续 Legacy 迁移批次启用
+macro_rules! define_runners_cwd_try {
+    ($( $runner:ident => $func:path ),* $(,)?) => {
+        $(
+            #[allow(clippy::result_large_err)]
+            pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
                 $func(args, ctx.working_dir)
             }
         )*
@@ -138,6 +164,23 @@ macro_rules! gh_runner {
             )
         }
     };
+}
+
+/// 编译期 smoke：用真实的 `_try` 实现展开 Typed 孪生宏，防止签名漂移后宏静默失效。
+///
+/// git / gh / args-only 形态尚无返回 `Result` 的实现，对应宏留到各自迁移 PR 再引入。
+#[cfg(test)]
+#[allow(dead_code)]
+mod try_macro_typecheck {
+    use super::*;
+
+    define_runners_cwd_ctx_try! {
+        runner_read_file_try_smoke => crate::cm_tools::tools::file::read_file_try,
+    }
+
+    define_runners_cwd_try! {
+        runner_search_in_files_try_smoke => crate::cm_tools::tools::grep_try::search_in_files_try,
+    }
 }
 
 // ── 需要定制逻辑的 runner（不适用同构宏）─────────────────────
