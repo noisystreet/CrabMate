@@ -285,8 +285,9 @@ pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {
     skill_manage::skill_manage(parsed, &cfg.skills, ctx.working_dir)
 }
 
-pub fn runner_apply_patch(args: &str, ctx: &ToolContext<'_>) -> String {
-    patch::run_with_changelist(args, ctx.working_dir, ctx.workspace_changelist)
+#[allow(clippy::result_large_err)]
+pub fn runner_apply_patch_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    patch::run_with_changelist_try(args, ctx.working_dir, ctx.workspace_changelist)
 }
 
 pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {

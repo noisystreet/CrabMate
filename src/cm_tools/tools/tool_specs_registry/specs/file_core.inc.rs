@@ -84,7 +84,7 @@ ToolSpec {
             description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** / **git checkout** 回滚。先 dry-run。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ApplyPatchArgs>,
-            runner: ToolRunner::Legacy(runner_apply_patch),
+            runner: ToolRunner::Typed(runner_apply_patch_try),
             summary: ToolSummaryKind::Dynamic(ts::summary_apply_patch),
         },
         ToolSpec {
