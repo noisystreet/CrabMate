@@ -12,6 +12,10 @@ pub struct RunCommandInvocation {
     pub args: Vec<String>,
 }
 
+/// 宽松解析：仅用于规范化去重 key（不做执行裁定）。
+///
+/// 与执行路径的 [`crate::cm_tools::tools::parse_command_spec`] 刻意解耦：这里容忍 `args` 非数组
+/// （视为空）并过滤非字符串元素，使历史消息与不规范入参也能得到稳定 key。
 pub fn parse_run_command_args(args_json: &str) -> Option<RunCommandInvocation> {
     let (command, args) = crate::cm_tools::tools::parse_run_command_payload_lenient(args_json)?;
     if command.is_empty() {

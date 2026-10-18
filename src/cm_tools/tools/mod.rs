@@ -25,12 +25,6 @@ pub use command::{
     prepare_run_command_for_pty_spawn, prepare_run_command_for_pty_spawn_spec, run, run_async,
     scan_run_command_unsafe_args_spec,
 };
-// 旧执行入口保留一个 PR 周期的可用性；调用方应迁移到 `run` / `run_async` + `RunOptions`。
-#[allow(deprecated)]
-pub use command::{
-    run_args_json, run_checked, run_checked_wait, run_checked_wait_async,
-    run_checked_wait_async_spec, run_try, run_try_wait_async, run_try_wait_async_spec,
-};
 pub use command_error::RunCommandError;
 pub(crate) use command::{parse_run_command_payload_lenient, parse_run_command_value_with_repair};
 mod command_line_prepare;
@@ -415,18 +409,19 @@ pub fn run_tool(name: &str, args_json: &str, ctx: &ToolContext<'_>) -> String {
                 // Typed 失败回退到 `e.message`（与历史 `*_try().unwrap_or_else(|e| e.message)` 包装
                 // 逐字节一致），保证 `run_tool` 的 String API 行为不变。
                 ToolRunner::Typed(f) => f(args_eff.as_ref(), ctx).unwrap_or_else(|e| e.message),
+                ToolRunner::AsyncOnly => async_only_sync_error(name),
             }
         }
         None => format!("未知工具：{}", name),
     }
 }
 
-/// 仅 **`terminal_session`** 走特判（须异步调度，拒绝同步执行）；
-/// 其余工具按 `spec.runner` 双路径执行：已迁移的 [`ToolRunner::Typed`] 显式透传 [`ToolError`]，
-/// [`ToolRunner::Legacy`] 仍经 `parse_legacy_output` 从正文推断。
+/// 按 `spec.runner` 执行：已迁移的 [`ToolRunner::Typed`] 显式透传 [`ToolError`]，
+/// [`ToolRunner::Legacy`] 经 `parse_legacy_output` 从正文推断；
+/// [`ToolRunner::AsyncOnly`] 在同步面无执行体，返回提示性 [`ToolError`]。
 ///
 /// **`run_command` 不在本函数执行**：它经专用异步入口 [`run_tool_async`] / [`run_tool_result_async`]
-/// 走 [`run_command_dispatch_async`]；其 spec runner 为占位 stub，故经本函数调用只会得到提示性错误。
+/// 走 [`run_command_dispatch_async`]。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch(
     name: &str,
@@ -448,18 +443,14 @@ fn run_tool_dispatch(
     if let Some(Err(e)) = tool_args_validate::validate_parsed_str_for_builtin(name, args_ref) {
         return Err(ToolError::invalid_args(e));
     }
-    match name {
-        "terminal_session" => Err(ToolError::invalid_args(
-            "terminal_session 须由服务端异步调度执行。".to_string(),
-        )),
-        _ => run_tool_dispatch_fallback(name, args_ref, spec, ctx),
-    }
+    run_tool_dispatch_fallback(name, args_ref, spec, ctx)
 }
 
-/// dispatch 兜底：按 `spec.runner` 双路径执行。
+/// dispatch 兜底：按 `spec.runner` 执行。
 ///
-/// Typed：`Ok` 正文走与特判相同的收尾，`Err(ToolError)` 显式透传；
-/// Legacy：正文推断失败状态（与历史 `run_tool` fallback 行为一致）。
+/// Typed：`Ok` 正文走与 Legacy 相同的收尾，`Err(ToolError)` 显式透传；
+/// Legacy：正文推断失败状态（与历史 `run_tool` fallback 行为一致）；
+/// AsyncOnly：同步面不可执行。
 #[allow(clippy::result_large_err)]
 fn run_tool_dispatch_fallback(
     name: &str,
@@ -470,7 +461,17 @@ fn run_tool_dispatch_fallback(
     match spec.runner {
         ToolRunner::Typed(f) => f(args_ref, ctx).map(|output| finish_dispatch_parsed(name, args_ref, output)),
         ToolRunner::Legacy(f) => finish_dispatch_legacy(name, args_ref, f(args_ref, ctx)),
+        ToolRunner::AsyncOnly => Err(ToolError::invalid_args(async_only_message(name))),
     }
+}
+
+/// 同步面无执行体时的统一说明（[`run_tool`] 前置「错误：」，[`run_tool_try`] 包成 [`ToolError`]）。
+fn async_only_message(name: &str) -> String {
+    format!("{name} 须由服务端异步调度执行。")
+}
+
+fn async_only_sync_error(name: &str) -> String {
+    format!("错误：{}", async_only_message(name))
 }
 
 fn finish_dispatch_parsed(
@@ -501,8 +502,8 @@ fn finish_dispatch_legacy(
 
 /// 与 [`run_tool`] 相同，但失败时返回 [`crate::cm_tools::tool_result::ToolError`]（含 **分类 / 错误码 / retryable**）。
 ///
-/// **`terminal_session`** 在 [`run_tool_dispatch`] 中特判（须异步调度）；`run_command` 已改走异步入口
-/// [`run_tool_async`] / [`run_tool_result_async`]；其余工具按 `spec.runner` 双路径：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
+/// `run_command` / `terminal_session` 的 spec runner 为 [`ToolRunner::AsyncOnly`]（须经服务端异步调度）；
+/// 其余工具按 `spec.runner` 执行：已迁移的 [`ToolRunner::Typed`] 显式透传，[`ToolRunner::Legacy`] 由 [`crate::cm_tools::tool_result::parse_legacy_output`] 从正文推断。
 #[allow(dead_code, clippy::result_large_err)] // 供编排与单测显式 `Result` 分支；主路径现经 [`run_tool_dispatch`] + [`run_tool_result`]
 pub fn run_tool_try(
     name: &str,
@@ -554,9 +555,9 @@ pub async fn run_tool_result_async(
     }
 }
 
-/// 新的异步 `run_command` 实现（与 [`run_tool_dispatch`] 中 run_command 分支逐字节等价）。
+/// 新的异步 `run_command` 实现（解析一次 `CommandSpec`，再以 [`command::run_async`] 异步等待）。
 ///
-/// PR1 实现体：解析一次 [`command::CommandSpec`] 后，以 [`tokio::process`] 异步等待
+/// 实现体：解析一次 [`command::CommandSpec`] 后，以 [`tokio::process`] 异步等待
 /// [`command::run_async`]（不占用阻塞线程）；
 /// 借用字段（`allowed_commands` / `working_dir`）先 owned 化以延长生命周期；github token 经
 /// [`with_request_github_token`](crate::cm_tools::github_token::with_request_github_token) 以 async 作用域注入

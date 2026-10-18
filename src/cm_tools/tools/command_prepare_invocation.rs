@@ -106,10 +106,11 @@ fn script_conflicts_with_command_or_args(
     Ok(command_non_empty || args_non_empty)
 }
 
-/// 宽松解析：供去重 / 预算守卫 / 只读缓存等只读消费方。
+/// 宽松解析：仅供只读消费方（去重 key 规范化、失败家族分类兜底）。
 ///
 /// 不走 JSON 修复链、不做路径规范化；`args` 非数组时视为空，缺失/非字符串 `command` 返回 `None`。
 /// 空 `command` 是否接受由调用方决定。显式 `script` 归一为 `bash -c <script>`。
+/// **不用于实际执行**：执行路径一律先 [`parse_command_spec`]。
 pub fn parse_run_command_payload_lenient(args_json: &str) -> Option<(String, Vec<String>)> {
     let v: serde_json::Value = serde_json::from_str(args_json).ok()?;
     if let Some(script) = v

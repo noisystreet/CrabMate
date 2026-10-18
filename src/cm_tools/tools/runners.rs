@@ -1,11 +1,15 @@
 //! 内置工具的 `runner_*` 薄封装与 [`ToolSpec`] 类型（由 [`super::tool_specs_registry`] 引用）。
 use super::*;
 
-/// 工具执行体的两种签名形态（strangler 迁移期并存；全部工具迁完后删除 [`ToolRunner::Legacy`]）。
+/// 工具执行体的签名形态（strangler 迁移期并存；全部工具迁完后删除 [`ToolRunner::Legacy`]）。
 ///
 /// - [`ToolRunner::Legacy`]：返回 `String`，失败状态由 `parse_legacy_output` 从正文推断（历史形态）。
 /// - [`ToolRunner::Typed`]：返回 `Result<String, ToolError>`，失败路径显式（与各 `*_try` 函数同签名）；
 ///   成功侧仍为 `String` 正文，结构化载荷由 `parse_legacy_output` 生成（行为与 Legacy 一致）。
+/// - [`ToolRunner::AsyncOnly`]：仅作 spec 注册占位（工具名 / 参数 schema / 摘要仍可用），
+///   同步面没有执行体，须由服务端异步调度执行（`run_command` 经
+///   [`super::run_tool_async`] / [`super::run_tool_result_async`]；`terminal_session`
+///   经内部 tool_registry）。
 #[derive(Clone, Copy)]
 pub enum ToolRunner {
     /// 历史签名：错误状态从正文推断；PR3+ 按族迁移为 [`ToolRunner::Typed`]。
@@ -13,6 +17,8 @@ pub enum ToolRunner {
     /// 显式失败签名：`Err(ToolError)` 直接透传给编排层（与 `*_try` 函数一致）。
     #[allow(clippy::result_large_err)]
     Typed(fn(args_json: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError>),
+    /// 仅异步可执行：同步 `run_tool` 面没有执行体。
+    AsyncOnly,
 }
 
 pub type ParamBuilder = fn() -> serde_json::Value;
@@ -152,21 +158,6 @@ pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
         Err(e) => return e,
     };
     calc::run(&parsed.expression)
-}
-
-/// `run_command` 的同步 runner 已下线：`run_command` 一律经专用异步入口
-/// [`super::run_tool_async`] / [`super::run_tool_result_async`] 执行，不再走同步 `run_tool` 面。
-///
-/// 本 stub 仅为 [`crate::cm_tools::tools::tool_specs_registry`] 的 spec 注册占位
-/// （工具名、参数 schema、摘要仍由 spec 提供）；同步 `run_tool("run_command", …)` 不再执行命令。
-pub fn runner_run_command(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let _ = args;
-    "错误：run_command 须经服务端异步入口执行（同步 run_tool 不再执行命令）。".to_string()
-}
-
-pub fn runner_terminal_session(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let _ = args;
-    "错误：terminal_session 须由服务端异步调度执行（不走同步 run_tool）。".to_string()
 }
 
 pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
