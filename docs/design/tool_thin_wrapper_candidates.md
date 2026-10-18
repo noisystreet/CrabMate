@@ -36,7 +36,7 @@
 - `SessionMode::Ask` / `Plan` 的 `requires_readonly_tools()` 门控；
 - 只读结果 TTL 缓存 / 同轮去重（`readonly_tool_ttl_cache_secs`）。
 
-> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `npm_` / `frontend_` / `maven_` / `gradle_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。（`typos_` / `codespell_` 前缀已于 2026-10-18 随对应工具删除一并清理。）
+> **缓解事实**：多数语言栈前缀（`cargo_` / `gh_` / `go_` / `ruff_` / `pytest` / `mypy_` / `uv_` / `pre_commit` / `python_` / `npm_` / `frontend_` / `docker_` / `podman_`）已被 `builtin_parallel_sync_prefix_hit` **排除出并行只读批**，故其中「并行只读批」一项**本就不适用**；但**只读重试 / Plan·Ask 门控 / TTL 缓存**三项仍会丢失。（`typos_` / `codespell_` 前缀已于 2026-10-18 随对应工具删除一并清理；`maven_` / `gradle_` 前缀随 `jvm_tools` 整体删除同步清理。）
 
 ### 2.2 白名单与后台任务
 
