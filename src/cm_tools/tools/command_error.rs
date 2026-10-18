@@ -70,7 +70,7 @@ impl RunCommandError {
             _ => self.user_message(),
         };
         match self {
-            RunCommandError::JsonParse(_) => ToolError::invalid_args(msg),
+            RunCommandError::JsonParse(_) => invalid_input_with_code("json_parse", msg),
             RunCommandError::MissingCommand => ToolError {
                 category: ToolFailureCategory::InvalidInput,
                 code: "missing_command".to_string(),
@@ -85,7 +85,7 @@ impl RunCommandError {
                 },
             },
             RunCommandError::DisallowedCommand { .. } => ToolError::approval_required(msg),
-            RunCommandError::ArgsNotArray => ToolError::invalid_args(msg),
+            RunCommandError::ArgsNotArray => invalid_input_with_code("args_not_array", msg),
             RunCommandError::FieldNotString { .. } => {
                 invalid_input_with_code("field_not_string", msg)
             }
