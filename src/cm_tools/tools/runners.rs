@@ -419,10 +419,8 @@ define_runners_cwd! {
     runner_read_dir => file::read_dir,
     runner_glob_files => file::glob_files,
     runner_list_tree => file::list_tree,
-    runner_file_exists => file::file_exists,
     runner_read_binary_meta => file::read_binary_meta,
     runner_hash_file => file::hash_file,
-    runner_extract_in_file => file::extract_in_file,
     runner_markdown_check_links => markdown_links::markdown_check_links,
     runner_structured_validate => structured_data::structured_validate,
     runner_structured_query => structured_data::structured_query,
@@ -434,7 +432,6 @@ define_runners_cwd! {
     runner_rust_file_outline => code_nav::rust_file_outline,
     runner_call_graph_sketch => call_graph_sketch::run,
     runner_format_files => format::run,
-    runner_format_check_file => format::run_check,
     runner_add_reminder => schedule::add_reminder,
     runner_list_reminders => schedule::list_reminders,
     runner_complete_reminder => schedule::complete_reminder,
@@ -447,8 +444,6 @@ define_runners_cwd! {
     runner_delete_dir => file::delete_dir,
     runner_create_dir => file::create_dir,
     runner_chmod_file => file::chmod_file,
-    runner_symlink_info => file::symlink_info,
-    runner_todo_scan => todo_scan::run,
 }
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────

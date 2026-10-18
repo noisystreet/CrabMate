@@ -64,14 +64,6 @@ ToolSpec {
             summary: ToolSummaryKind::Dynamic(ts::summary_list_tree),
         },
         ToolSpec {
-            name: "file_exists",
-            description: "检查工作区内某路径（文件或目录）是否存在，并可按 kind=file|dir|any 过滤。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::FileExistsArgs>,
-            runner: ToolRunner::Legacy(runner_file_exists),
-            summary: ToolSummaryKind::Dynamic(ts::summary_file_exists),
-        },
-        ToolSpec {
             name: "read_binary_meta",
             description: "读取任意文件的元数据（大小、可选修改时间）及**文件头一段的 SHA256**，不把整文件读入上下文；适合二进制/大文件比对。prefix_hash_bytes 默认 8192，0 表示跳过哈希。",
             category: ToolCategory::Development,
@@ -86,14 +78,6 @@ ToolSpec {
             parameters: schema_of::<args::HashFileArgs>,
             runner: ToolRunner::Legacy(runner_hash_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_hash_file),
-        },
-        ToolSpec {
-            name: "extract_in_file",
-            description: "在指定文件内按正则抽取匹配行（只读）。返回带行号的匹配行，并支持截断。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::ExtractInFileArgs>,
-            runner: ToolRunner::Legacy(runner_extract_in_file),
-            summary: ToolSummaryKind::Dynamic(ts::summary_extract_in_file),
         },
         ToolSpec {
             name: "apply_patch",

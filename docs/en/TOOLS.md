@@ -101,13 +101,12 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `long_term_remember` / `long_term_forget` / `long_term_memory_list`: Explicit long-term memory tools (requires **`long_term_memory_enabled`** and a mounted DB for the session). `remember` supports optional `tags` and `ttl_secs` (`0` = no expiry); `forget` deletes by `memory_id` or exact `memory_text`; `list` shows recent rows. **Do not store secrets.**
   - `error_output_playbook`: Heuristic classification of **sanitized** rustc/cargo/npm/pytest errors → **2–3** suggested **`run_command`** strings (**not executed**; filtered to allowlist, e.g. `cargo`/`git`/`python3`/`npm`). `ecosystem`: `auto`/`rust`/`node`/`python`/`generic`; optional `max_chars`. Light redaction for `API_KEY=` patterns; still sanitize before paste.
   - `playbook_run_commands`: Same heuristics; **executes** **1–3** suggestions via internal **`run_command`** (same safety rules; may contend on cargo/npm locks). Same args as `error_output_playbook` + optional **`max_commands`** (default 3, max 3). **Trusted workspace**; on CLI tool failure a one-line JSON may be printed for the model to run this “diagnostic bundle”.
-  - **Python** (workspace root; CLIs must exist): `pytest_run` (`python3 -m pytest`), `python_snippet_run`. **Format**: `format_files` (`paths` array; one or more files) / `format_check_file` pick **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
+  - **Python** (workspace root; CLIs must exist): `pytest_run` (`python3 -m pytest`), `python_snippet_run`. **Format**: `format_files` (`paths` array; one or more files) picks **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
   - **JVM / Container / Node frontend (now via `run_command`)**: `mvn`/`gradle` (or `gradlew`), `docker`/`podman`, and `npm`/`npx`/`tsc` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly via `run_command` (e.g. `mvn -q test`, `gradle classes`, `docker compose ps`, `podman images`, `npm run build`, `npx tsc --noEmit`). The former thin wrappers (`maven_*`/`gradle_*`/`docker_build`/`docker_compose_ps`/`podman_images`/`npm_install`/`npm_run`/`npx_run`/`tsc_check`/`frontend_lint`/`frontend_build`/`frontend_test`) were removed per design doc §8.5.4 **track A**; their implementations remain shared by the `quality_workspace`/`ci_pipeline_local` flags (`run_maven_*`/`run_gradle_*`/`run_frontend_build`, …).
   - **Go (now via `run_command`)**: `go`/`gofmt`/`golangci-lint` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `go build ./...`, `go test ./...`, `go vet ./...`, `gofmt -l .`, `golangci-lint run`). The former thin wrappers (`go_build`/`go_test`/`go_vet`/`go_fmt_check`/`golangci_lint`) were removed as a family per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `go_` prefix was already excluded from the parallel read-only batch). Note: the former tools skipped when `go.mod` was absent — that guard is gone with `run_command`.
   - **Python (now via `run_command`)**: `ruff`/`mypy`/`uv` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ruff check .`, `mypy src`, `uv sync`, `uv run pytest -q`). The former thin wrappers (`ruff_check`/`mypy_check`/`uv_sync`/`uv_run`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `ruff_`/`mypy_`/`uv_` prefixes were already excluded from the parallel read-only batch). The `ruff_check`/`mypy_check` function bodies remain shared by the `ci_pipeline_local` / `quality_workspace` / `run_lints` flags; `pytest_run` is **kept** because of its background-job wiring.
   - **pre-commit (now via `run_command`)**: `pre-commit` is on the `run_command` allowlist (`config/tools.toml`), so call it directly (e.g. `pre-commit run --all-files`, `pre-commit run <hook> --files <path>`). The former thin wrapper (`pre_commit_run`) was removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `pre_commit` prefix was already excluded from the parallel read-only batch). Note: the former tool skipped when `.pre-commit-config.yaml` / `.yml` was absent — that guard is gone with `run_command`.
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
-  - `symlink_info` (read-only): target, dangling?, points outside workspace?.
   - **Process/port (now via `run_command`)**: `ps` / `ss` / `lsof` are on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ps aux`, `ss -ltnp`, `lsof -i :<port>`). The former thin wrappers (`port_check` / `process_list`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache, and no longer post-processes process/port output).
   - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100), `background_job_output` (incremental output pull, `tail -f` semantics; pass `tool_job_id` and optional `cursor` (the previous `next_cursor`), returns stdout/stderr deltas and prints the cursor plus an `eof` marker at the end of the text; omit `cursor` to start from the earliest available; at most 500 items per call, keep pulling with the cursor while not `eof`), `background_job_cancel` (cancel a job: `queued` moves straight to `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success, other terminal states cannot be cancelled).
   - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
@@ -284,7 +283,7 @@ Structured function-calling JSON examples:
   {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":false}
   ```
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `format_check_file`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `ast_grep_rewrite`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
 
 **Python**: `pytest_run`, `python_snippet_run` (`ruff` / `mypy` / `uv` / `pre-commit` now via `run_command`, see above); aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff), `quality_workspace` (optional **`run_cargo_check`** / **`run_frontend_build`** / ruff / pytest / mypy, plus optional **`run_maven_*` / `run_gradle_*` / `run_docker_compose_ps` / `run_podman_images`**).
 
@@ -417,18 +416,6 @@ Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or
   ```json
   {"path":"src","max_entries":50,"include_hidden":false}
   ```
-- `file_exists`:
-  ```json
-  {"path":"src/main.rs","kind":"file"}
-  ```
-- `extract_in_file` (regex lines; optional **`encoding`**):
-  ```json
-  {"path":"src/main.rs","pattern":"workflow_execute","max_matches":20,"case_insensitive":true}
-  ```
-  Rust function block mode:
-  ```json
-  {"path":"src/main.rs","pattern":"pub\\s+fn\\s+run_agent_turn","mode":"rust_fn_block","max_matches":1}
-  ```
 - `markdown_check_links`:
   ```json
   {"roots":["README.md","docs"],"max_files":300,"check_fragments":true,"output_format":"text","allowed_external_prefixes":["https://example.com/docs/"],"external_timeout_secs":10}
@@ -519,10 +506,6 @@ Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or
 - `format_files` (format one or more files):
   ```json
   {"paths":["src/main.rs","src/lib.rs"]}
-  ```
-- `format_check_file` (check a single file without writing):
-  ```json
-  {"path":"src/main.rs"}
   ```
 - `quality_workspace` (default fmt check + clippy; optional `run_cargo_check` for `cargo check --all-targets`; optional test / frontend lint / `run_frontend_build` / prettier):
   ```json

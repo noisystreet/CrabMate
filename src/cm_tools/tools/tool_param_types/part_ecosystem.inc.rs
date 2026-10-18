@@ -26,13 +26,6 @@ pub struct FormatPathsArgs {
     pub paths: Vec<String>,
 }
 
-/// [`super::format::run_check`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FormatOnePathArgs {
-    pub path: String,
-}
-
 // ── `lint::run` ───────────────────────────────────────────────
 
 /// [`super::lint::run`] 入参。

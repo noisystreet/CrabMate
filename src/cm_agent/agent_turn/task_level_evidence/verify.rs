@@ -363,7 +363,6 @@ fn generic_tool_is_readonly_success(tool_name: &str, lower: &str) -> bool {
             | "list_tree"
             | "glob"
             | "search"
-            | "extract_in_file"
             | "repo_overview_sweep"
     ) || ["read file:", "read dir:", "list tree:"]
         .iter()

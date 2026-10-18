@@ -47,13 +47,5 @@ ToolSpec {
             runner: ToolRunner::Legacy(runner_chmod_file),
             summary: ToolSummaryKind::Dynamic(ts::summary_chmod_file),
         },
-        ToolSpec {
-            name: "symlink_info",
-            description: "查看符号链接信息（只读）：目标路径、是否悬空、是否指向工作区外。非符号链接则报告实际类型。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::SymlinkInfoArgs>,
-            runner: ToolRunner::Legacy(runner_symlink_info),
-            summary: ToolSummaryKind::Dynamic(ts::summary_symlink_info),
-        },
         // ── 新增纯内存 / 开发辅助工具 ────────────────────────
 ]

@@ -490,9 +490,3 @@ pub struct ChmodFileArgs {
     pub mode: String,
     pub confirm: Option<bool>,
 }
-
-/// [`super::file::symlink::symlink_info`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct SymlinkInfoArgs {
-    pub path: String,
-}

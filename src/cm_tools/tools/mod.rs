@@ -84,7 +84,6 @@ mod test_result_cache;
 mod text_diff;
 mod text_transform;
 mod time;
-mod todo_scan;
 #[cfg(feature = "schema-tools")]
 mod tool_args_validate;
 mod tool_json_schema;

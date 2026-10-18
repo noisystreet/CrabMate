@@ -1,6 +1,6 @@
 //! 工作区文本文件编码：显式声明或 BOM/嗅探，解码遇非法序列时返回明确错误（不做有损替换静默乱码）。
 //!
-//! 供 `read_file`、`extract_in_file`、`GET /workspace/file` 等复用。
+//! 供 `read_file`、`GET /workspace/file` 等复用。
 
 use std::fs::File;
 use std::io::Read;

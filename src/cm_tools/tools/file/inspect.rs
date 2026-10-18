@@ -17,48 +17,6 @@ const READ_BINARY_META_PREFIX_MAX: usize = 256 * 1024;
 const HASH_FILE_MAX_PREFIX_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 /// 流式读缓冲区
 const HASH_FILE_BUF_SIZE: usize = 256 * 1024;
-pub fn file_exists(args_json: &str, working_dir: &Path) -> String {
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let path = match v
-        .get("path")
-        .and_then(|p| p.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-    {
-        Some(p) => p,
-        None => return "错误：缺少 path 参数".to_string(),
-    };
-
-    if path.starts_with('/') || path.contains("..") {
-        return "错误：path 必须是工作区内相对路径，且不能包含 .. 或绝对路径".to_string();
-    }
-
-    let kind = v
-        .get("kind")
-        .and_then(|k| k.as_str())
-        .unwrap_or("any")
-        .trim()
-        .to_lowercase();
-
-    let target = working_dir.join(path);
-    let exists = target.exists();
-    let type_ok = match kind.as_str() {
-        "file" => target.is_file(),
-        "dir" => target.is_dir(),
-        "any" => exists,
-        _ => return "错误：kind 仅支持 file|dir|any".to_string(),
-    };
-
-    let mut out = String::new();
-    out.push_str(&format!("path: {}\n", path));
-    out.push_str(&format!("exists: {}\n", exists));
-    out.push_str(&format!("type_match: {}\n", type_ok));
-    out.push_str(&format!("kind: {}\n", kind));
-    out.trim_end().to_string()
-}
 
 fn required_json_path(v: &serde_json::Value) -> Result<String, String> {
     v.get("path")

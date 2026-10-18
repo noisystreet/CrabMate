@@ -238,18 +238,6 @@ pub struct MarkdownCheckLinksArgs {
     pub output_format: Option<MarkdownCheckLinksOutputFormat>,
 }
 
-/// [`super::todo_scan::run`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct TodoScanArgs {
-    /// 扫描路径（相对工作区，默认 `[\".\"]`）
-    pub paths: Option<Vec<String>>,
-    /// 标记列表（默认 TODO / FIXME / HACK / XXX）
-    pub markers: Option<Vec<String>>,
-    /// 排除目录名（默认 target、node_modules 等）
-    pub exclude: Option<Vec<String>>,
-}
-
 /// [`super::code_metrics::code_stats`] 的 `format`。
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]

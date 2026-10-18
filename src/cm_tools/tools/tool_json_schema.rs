@@ -20,11 +20,11 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, AstGrepRunArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatOnePathArgs, FormatPathsArgs, GitStatusArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
         GradleTasksArgs, ListRemindersArgs, MarkdownCheckLinksArgs, MavenCompileArgs,
         ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
-        StructuredValidateArgs, SymlinkInfoArgs, TableTextArgs, TodoScanArgs, WorkflowExecuteArgs,
+        StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
 
@@ -61,14 +61,6 @@ mod tests {
         assert!(fmt.iter().any(|x| x == "text"));
         assert!(fmt.iter().any(|x| x == "json"));
         assert!(fmt.iter().any(|x| x == "sarif"));
-    }
-
-    #[test]
-    fn todo_scan_schema_has_paths_markers_exclude() {
-        let v = tool_parameters_schema_value::<TodoScanArgs>();
-        assert!(v.pointer("/properties/paths").is_some());
-        assert!(v.pointer("/properties/markers").is_some());
-        assert!(v.pointer("/properties/exclude").is_some());
     }
 
     #[test]
@@ -281,17 +273,6 @@ mod tests {
             .and_then(|r| r.as_array())
             .expect("required");
         assert!(req.iter().any(|x| x == "action"));
-    }
-
-    #[test]
-    fn symlink_info_schema_requires_path() {
-        let v = tool_parameters_schema_value::<SymlinkInfoArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "path"));
-        assert!(v.pointer("/properties/path").is_some());
     }
 
     #[test]
