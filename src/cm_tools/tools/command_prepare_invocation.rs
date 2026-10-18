@@ -637,7 +637,8 @@ mod tests {
             Path::new("."),
         )
         .expect_err("args not array");
-        assert!(matches!(err, RunCommandError::ArgsNotArray));
+        assert!(matches!(&err, RunCommandError::ArgsNotArray));
+        assert_eq!(err.into_tool_error().code, "args_not_array");
 
         let err = parse_command_spec(r#"{"script":"cargo build","command":5}"#, Path::new("."))
             .expect_err("command not string");

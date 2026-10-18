@@ -187,6 +187,8 @@
 | `error_code` | 典型场景 |
 |--------------|-----------|
 | `invalid_args` | 参数解析错误（`tool_result` 解析启发式） |
+| `json_parse` | 工具参数 JSON 无法解析（如 `run_command`） |
+| `args_not_array` | `run_command` 的 `args` 不是字符串数组 |
 | `command_not_allowed` | 命令不在白名单 |
 | `command_denied` | 用户/策略拒绝命令 |
 | `workspace_not_set` | 未设置工作区 |

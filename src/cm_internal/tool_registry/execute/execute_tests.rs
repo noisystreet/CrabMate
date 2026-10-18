@@ -839,4 +839,9 @@ fn parse_run_command_json_reports_invalid_json() {
         "{}",
         err.extended_user_message()
     );
+    assert_eq!(
+        err.into_tool_error().code,
+        "json_parse",
+        "JSON 解析失败应有独立 error_code，而非通用 invalid_args"
+    );
 }

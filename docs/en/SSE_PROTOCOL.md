@@ -181,6 +181,8 @@ Machine-readable failure classification (separate from stream `code`). Common va
 | `error_code` | Typical case |
 |--------------|--------------|
 | `invalid_args` | Argument parse error |
+| `json_parse` | Tool arguments are not valid JSON (e.g. `run_command`) |
+| `args_not_array` | `run_command` `args` is not an array of strings |
 | `command_not_allowed` | Command not on allowlist |
 | `command_denied` | User/policy denied |
 | `workspace_not_set` | No workspace |
