@@ -2,7 +2,7 @@ use super::*;
 
 use std::path::Path;
 
-use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tools::tool_result::{ToolFailureCategory, parse_legacy_output};
 
 const TEST_COMMAND_MAX_OUTPUT_LEN: usize = 8192;
 const TEST_WEATHER_TIMEOUT_SECS: u64 = 15;
@@ -647,5 +647,80 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
         run_tool("self_config_info", r#"{"sections":["bogus"]}"#, &ctx).contains("未匹配到任何配置小节")
     );
     assert!(run_tool("self_config_info", r#"{"sections":1}"#, &ctx).contains("参数与工具 JSON Schema 不一致"));
+}
+
+#[test]
+fn builtin_legacy_runner_count_matches_baseline() {
+    // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
+    // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 114 } else { 111 };
+    let legacy = tool_specs()
+        .iter()
+        .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
+        .count();
+    assert_eq!(
+        legacy, LEGACY_BASELINE,
+        "ToolRunner::Legacy 数量应为 {LEGACY_BASELINE}，实际 {legacy}；迁移后请同步下调基线，新工具请直接使用 Typed"
+    );
+}
+
+#[test]
+fn typed_ok_is_success_even_if_body_looks_like_failure() {
+    let (output, parsed) =
+        finish_dispatch_typed_ok("demo_tool", "{}", "失败：示例正文\n超时 3s".to_string());
+    assert!(parsed.ok, "Typed Ok 必须判定为成功");
+    assert_eq!(parsed.error_code, None);
+    // 正文启发式会误判失败，故输出须带显式 `ok` 头，供下游再次解析时保持一致。
+    let reparsed = parse_legacy_output("demo_tool", &output);
+    assert!(reparsed.ok, "下游再次解析仍应为成功: {output}");
+    assert!(output.ends_with("失败：示例正文\n超时 3s"), "正文应保留: {output}");
+}
+
+#[test]
+fn typed_outcome_output_only_prepends_header_on_mismatch() {
+    let success_body = "正常输出".to_string();
+    assert_eq!(
+        typed_outcome_output("demo_tool", true, success_body.clone()),
+        success_body,
+        "启发式与真实成败一致时不得改写正文"
+    );
+    let failure_body = "错误：示例".to_string();
+    assert_eq!(
+        typed_outcome_output("demo_tool", false, failure_body.clone()),
+        failure_body,
+        "启发式与真实成败一致时不得改写正文"
+    );
+
+    let looks_ok_but_failed = typed_outcome_output("demo_tool", false, "无法解析路径".to_string());
+    assert!(!parse_legacy_output("demo_tool", &looks_ok_but_failed).ok);
+}
+
+#[test]
+fn typed_ok_end_to_end_survives_failure_like_file_body() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("failure_like.txt");
+    std::fs::write(&path, "失败：示例正文\n超时 3s\n").expect("write");
+
+    let allowed = test_allowed_commands();
+    let ctx = ToolContext {
+        working_dir: dir.path(),
+        ..test_ctx(&allowed)
+    };
+    let result = run_tool_result("read_file", r#"{"path":"failure_like.txt"}"#, &ctx);
+    assert!(result.ok, "Typed Ok 必须为成功: {}", result.message);
+    assert!(result.message.contains("失败：示例正文"));
+}
+
+#[test]
+fn typed_error_without_failure_keywords_is_still_failed_on_string_surface() {
+    // `read_file` 的空白 path 走到 `ToolError::invalid_args("缺少 path 参数")`，
+    // 消息不含「错误 / 失败 / 超时」；主 Agent 路径只能拿到 String，须由显式 `ok` 头保证下游判失败。
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("read_file", r#"{"path":"   "}"#, &ctx);
+    assert!(out.contains("缺少 path 参数"), "{out}");
+    let parsed = parse_legacy_output("read_file", &out);
+    assert!(!parsed.ok, "无关键词的 Typed 失败必须判失败: {out}");
+    assert!(parsed.error_code.is_some(), "失败时应能分类错误码: {out}");
 }
 
