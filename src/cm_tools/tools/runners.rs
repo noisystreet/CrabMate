@@ -113,7 +113,6 @@ macro_rules! define_runners_cwd {
 }
 
 /// 形态：`f(args, working_dir) -> Result<String, ToolError>`（[`ToolRunner::Typed`] 孪生）。
-#[allow(unused_macros)] // 供后续 Legacy 迁移批次启用
 macro_rules! define_runners_cwd_try {
     ($( $runner:ident => $func:path ),* $(,)?) => {
         $(
@@ -434,7 +433,6 @@ define_runners_cwd_ctx! {
     runner_archive_unpack => archive::archive_unpack,
     runner_archive_list => archive::archive_list,
     runner_structured_patch => structured_data::structured_patch,
-    runner_delete_files => file::delete_files,
 }
 
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──
@@ -446,6 +444,15 @@ define_runners_cwd_ctx_try! {
     runner_modify_file_try => file::modify_file_try,
     runner_append_file_try => file::append_file_try,
     runner_search_replace_try => file::search_replace_try,
+    runner_delete_files_try => file::delete_files_try,
+}
+
+// ── 同构薄封装实例（形态 3 孪生：f(args, cwd) -> Result）──────
+
+define_runners_cwd_try! {
+    runner_delete_dir_try => file::delete_dir_try,
+    runner_create_dir_try => file::create_dir_try,
+    runner_chmod_file_try => file::chmod_file_try,
 }
 
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
@@ -484,9 +491,6 @@ define_runners_cwd! {
     runner_list_events => schedule::list_events,
     runner_delete_event => schedule::delete_event,
     runner_update_event => schedule::update_event,
-    runner_delete_dir => file::delete_dir,
-    runner_create_dir => file::create_dir,
-    runner_chmod_file => file::chmod_file,
 }
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
