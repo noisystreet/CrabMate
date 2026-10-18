@@ -72,7 +72,7 @@ pub(crate) struct WebExecuteCtx<'a> {
     /// MCP stdio 会话；`None` 时 `mcp__*` 工具会报错。
     pub mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
     pub workspace_changelist: Option<&'a Arc<WorkspaceChangelist>>,
-    /// 整请求 Chrome trace；与 `workflow_execute` 合并写 `turn-*.json`。
+    /// 整请求 Chrome trace；写入本轮 `turn-*.json`。
     pub request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     /// 分阶段规划当前步子代理约束；与 `RunLoopTurnState::turn_planner_hints.step_executor_constraint` 同步。
     pub step_executor_constraint: Option<PlanStepExecutorKind>,
@@ -157,7 +157,6 @@ struct ExecuteToolsCommonCtx<'a> {
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a tool_registry::WebToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
-    request_chrome_trace: Option<Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<PlanStepExecutorKind>,
     tools_defs_full: &'a [Tool],
     turn_allow: Option<&'a HashSet<String>>,
@@ -349,7 +348,6 @@ pub(crate) async fn per_execute_tools_web(
         tool_result_envelope_v1: cfg.tool_transcript.tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn,
-        request_chrome_trace,
         step_executor_constraint,
         tools_defs_full,
         turn_allow,

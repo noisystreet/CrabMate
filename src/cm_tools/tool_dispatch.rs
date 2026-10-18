@@ -7,7 +7,6 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolExecutionClass {
-    Workflow,
     CommandSpawnTimeout,
     WeatherSpawnTimeout,
     WebSearchSpawnTimeout,
@@ -24,7 +23,6 @@ pub struct ToolDispatchMeta {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum HandlerId {
-    Workflow,
     RunCommand,
     TerminalSession,
     GetWeather,
@@ -58,7 +56,6 @@ macro_rules! tool_dispatch_registry {
 }
 
 tool_dispatch_registry! {
-    ("workflow_execute", false, Workflow, Workflow),
     ("run_command", true, CommandSpawnTimeout, RunCommand),
     ("terminal_session", true, CommandSpawnTimeout, TerminalSession),
     ("get_weather", false, WeatherSpawnTimeout, GetWeather),

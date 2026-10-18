@@ -418,9 +418,9 @@ mod tests {
         r.apply(
             &mut turn,
             TurnEvent::ToolCall {
-                tool_call_id: "tc_archive".into(),
-                name: "archive_list".into(),
-                summary: "list archive".into(),
+                tool_call_id: "tc_list".into(),
+                name: "read_dir".into(),
+                summary: "list source dir".into(),
             },
         );
         r.apply(
@@ -471,7 +471,7 @@ mod tests {
         );
         let rows = project_turn_web(&turn);
         assert_eq!(rows[0].kind, "tool");
-        assert_eq!(rows[0].tool_call_id.as_deref(), Some("tc_archive"));
+        assert_eq!(rows[0].tool_call_id.as_deref(), Some("tc_list"));
         assert_eq!(rows[1].kind, "assistant_batch_narration");
         assert_eq!(rows[1].text, "好的，先解压。读取 INSTALL。");
         assert_eq!(rows[1].tool_call_id.as_deref(), Some("tc_unpack"));

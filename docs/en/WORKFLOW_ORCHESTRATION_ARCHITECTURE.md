@@ -4,7 +4,7 @@
 
 **Status**: design draft (**no committed implementation timeline**).  
 **Audience**: maintainers and product/protocol designers.  
-**Related docs**: runtime behavior remains defined by `workflow_execute` / `workflow_validate` contracts in **`docs/en/TOOLS.md`** and architecture sections in **`docs/en/DEVELOPMENT.md`**. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging from today's DAG semantics.
+**Related docs**: runtime behavior remains defined by the workflow CLI (**`crabmate workflow run`**, see **`docs/工作流编写教程.md`**) and architecture sections in **`docs/en/DEVELOPMENT.md`**. The `workflow_execute` agent tool was removed on 2026-10-18; workflows run through the CLI. This document defines **capability boundaries** and **recommended evolution directions** to avoid silently diverging from today's DAG semantics.
 
 ---
 
@@ -12,7 +12,7 @@
 
 CrabMate already has:
 
-- **In-turn DAG orchestration** via `workflow_execute` (`src/cm_workflow/`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
+- **DAG engine** (`src/cm_workflow/`, CLI `crabmate workflow run`): topological deps, per-layer parallelism, `fail_fast`, `compensate_on_failure` / `compensate_with`, node-level `max_retries` (retryable errors only), `trace` / `workflow_run_id`, and optional Chrome Trace.
 - **Session-level multi-step orchestration** in `agent_turn`: outer P/R/E loop, final `agent_reply_plan` v1, and workflow reflection (`workflow_reflection_controller`, `workflow_node_id` alignment with DAG nodes).
 
 Roadmap and product expectations are moving toward state-machine-style configurations and readable conditional/loop expression. The core tension is that current `WorkflowSpec` is a **DAG**, not a native FSM/cyclic graph runtime.
@@ -34,8 +34,8 @@ If we add syntax without explicit boundaries, risks include scheduler complexity
 
 ## 3. Current orchestration taxonomy
 
-1. **Intra-turn orchestration**  
-   `workflow_execute` triggered by tool calls, completed inside one execution step in a single turn.
+1. **DAG orchestration (CLI)**  
+   A `WorkflowSpec` executed via `crabmate workflow run`. (The agent tool entry point was removed on 2026-10-18.)
 
 2. **Inter-turn orchestration**
    Multi-turn P → E → P flows via outer loop and PER-related components.
@@ -87,7 +87,7 @@ Principle: no unbounded cycles in single-turn DAG execution. Safe subsets:
 
 ## 5. Relation with workflow reflection
 
-- **`workflow_execute` DAG** fits intra-turn parallel dependency chains.
+- **DAG executor** fits parallel dependency chains within one run.
 - **Workflow reflection + `workflow_node_id`** should remain valid even if FSM is compiled into physical DAG nodes; mapping rules must stay explicit when logical and physical node IDs differ.
 
 Recommended product narrative:
@@ -101,7 +101,7 @@ Recommended product narrative:
 
 Any extension should explicitly define:
 
-1. Result shape compatibility (`workflow_execute_result` or sibling result) with at least `workflow_run_id + status + trace`
+1. Result shape compatibility (DAG or sibling FSM result) with at least `workflow_run_id + status + trace`
 2. Approval semantics for dynamic branches (lazy approval vs branch-scoped approval keys)
 3. Compatibility with Chrome Trace / request-trace merge behavior
 4. Workspace change semantics (whether new executors inherit current `ToolContext` behavior)
@@ -117,7 +117,7 @@ Any extension should explicitly define:
 | Phase 2 | choice-node support + trace branch-pruning semantics | parser/scheduler updates + golden fixtures |
 | Phase 3 | dynamic guards + bounded loops + approval policy integration | design + security reviews |
 
-Out of scope for current consensus: making `workflow_execute` simultaneously support unrestricted Turing-complete scripting and unbounded loops without additional resource caps.
+Out of scope for current consensus: making the single DAG entry point simultaneously support unrestricted Turing-complete scripting and unbounded loops without additional resource caps.
 
 ---
 
@@ -129,7 +129,7 @@ Out of scope for current consensus: making `workflow_execute` simultaneously sup
 | Parsing | `src/cm_workflow/parse.rs` | `parse_workflow_spec` |
 | Topology | `src/cm_workflow/dag.rs` | `topo_layers` |
 | Scheduling/execution | `src/cm_workflow/execute/` | schedule / retry / compensation |
-| Tool dispatch | `src/agent/workflow_tool_dispatch.rs` | `dispatch_workflow_execute_tool` |
+| CLI entry | `src/runtime/cli_workflow.rs` | `workflow run` / `workflow validate` / `workflow compile` |
 | Plan alignment | `src/cm_agent/plan_artifact/` etc. | `workflow_node_id` and validate-only binding |
 
 ---
@@ -139,3 +139,4 @@ Out of scope for current consensus: making `workflow_execute` simultaneously sup
 | Date | Summary |
 |---|---|
 | 2026-04-12 | Initial draft in Chinese: layered model (intra-turn DAG / inter-turn orchestration / declarative plan), FSM-compile-first direction, condition/loop boundaries. |
+| 2026-10-18 | Removed the `workflow_execute` agent tool; entry point is now the `crabmate workflow run` CLI. Updated source index and related wording. |

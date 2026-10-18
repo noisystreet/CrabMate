@@ -2,14 +2,11 @@
 //!
 //! 每个子模块对应一类工具，便于扩展新工具。
 
-#[cfg(feature = "archive-tools")]
-mod archive;
 mod background_job_tools;
 mod calc;
 mod call_graph_sketch;
 pub(crate) mod cargo_tools;
 mod ci_tools;
-mod code_metrics;
 mod code_nav;
 mod command;
 mod command_error;
@@ -32,7 +29,6 @@ pub use command_line_prepare::split_command_prefix_if_embedded;
 mod container_tools;
 mod contract_map;
 mod date_calc;
-mod debug_tools;
 mod diagnostics;
 mod docs_health_sweep;
 pub use diagnostics::capture_trimmed;
@@ -68,7 +64,6 @@ mod release_docs;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
-mod security_tools;
 mod self_config_info;
 mod skill_manage;
 mod spell_tools;

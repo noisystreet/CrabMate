@@ -57,7 +57,6 @@ struct SerialToolLoopState<'a> {
     tool_result_envelope_v1: bool,
     web_tool_ctx: Option<&'a crate::tool_registry::WebToolRuntime>,
     mcp_turn: Option<&'a crate::mcp::McpTurnHandle>,
-    request_chrome_trace: Option<std::sync::Arc<crate::request_chrome_trace::RequestTurnTrace>>,
     step_executor_constraint: Option<crate::agent::plan_artifact::PlanStepExecutorKind>,
     tools_defs_full: &'a [crate::types::Tool],
     turn_allow: Option<&'a std::collections::HashSet<String>>,
@@ -91,7 +90,6 @@ impl<'a> SerialToolLoopState<'a> {
             tool_result_envelope_v1,
             web_tool_ctx,
             mcp_turn,
-            request_chrome_trace,
             step_executor_constraint,
             tools_defs_full,
             turn_allow,
@@ -119,7 +117,6 @@ impl<'a> SerialToolLoopState<'a> {
             tool_result_envelope_v1,
             web_tool_ctx,
             mcp_turn,
-            request_chrome_trace,
             step_executor_constraint,
             tools_defs_full,
             turn_allow,
@@ -200,10 +197,7 @@ async fn serial_execute_one_tool_call(
         ctx: st.web_tool_ctx,
     };
     let (result, reflection_inject) = {
-        let mut host = CrabmateToolExecutionHost {
-            per_coord: st.per_coord,
-            request_chrome_trace: st.request_chrome_trace.clone(),
-        };
+        let mut host = CrabmateToolExecutionHost;
         host.dispatch_tool_call(
             name.as_str(),
             tool_registry::DispatchToolParams {

@@ -70,66 +70,6 @@ pub struct UpdateEventArgs {
     pub notes: Option<String>,
 }
 
-// ── 归档（`archive`）──────────────────────────────────────────
-
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
-pub enum ArchivePackFormat {
-    #[serde(rename = "auto")]
-    Auto,
-    #[serde(rename = "tar")]
-    Tar,
-    #[serde(rename = "zip")]
-    Zip,
-    #[serde(rename = "tar.gz")]
-    TarGz,
-    #[serde(rename = "tar.bz2")]
-    TarBz2,
-    #[serde(rename = "tar.xz")]
-    TarXz,
-}
-
-/// [`super::archive::archive_pack`] 入参（`exclude` / `format` 与 schema 对齐，当前实现仍按输出扩展名推断格式）。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ArchivePackArgs {
-    pub output: String,
-    pub sources: Vec<String>,
-    #[serde(default)]
-    pub exclude: Vec<String>,
-    pub format: Option<ArchivePackFormat>,
-}
-
-/// [`super::archive::archive_unpack`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ArchiveUnpackArgs {
-    pub archive: String,
-    #[serde(default = "default_dot_str")]
-    pub output_dir: String,
-    #[serde(default)]
-    pub files: Vec<String>,
-    #[serde(default)]
-    #[schemars(range(min = 0))]
-    pub strip_components: Option<u32>,
-}
-
-fn default_dot_str() -> String {
-    ".".to_string()
-}
-
-/// [`super::archive::archive_list`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct ArchiveListArgs {
-    pub archive: String,
-    #[serde(default)]
-    pub verbose: bool,
-    /// 最多列出的条目数；超大归档默认 250，避免灌满上下文。
-    #[serde(default)]
-    #[schemars(range(min = 1, max = 5000))]
-    pub max_entries: Option<u32>,
-}
-
 // ── 代码导航（`symbol` / `code_nav` / `call_graph_sketch`）──────
 
 /// [`super::symbol::run`]（`find_symbol`）入参。

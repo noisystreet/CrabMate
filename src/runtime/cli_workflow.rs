@@ -26,7 +26,7 @@ fn load_author_yaml_source(path: &Path) -> Result<String, String> {
     }
 }
 
-/// `workflow compile`：将作者层 YAML 编译为 `workflow_execute` 可消费的 JSON 并打印到 stdout。
+/// `workflow compile`：将作者层 YAML 编译为工作流 DAG JSON 并打印到 stdout。
 pub fn run_workflow_compile_command(cli: &WorkflowFileCli) -> Result<(), String> {
     let path = Path::new(&cli.file);
     let yaml = load_author_yaml_source(path)?;

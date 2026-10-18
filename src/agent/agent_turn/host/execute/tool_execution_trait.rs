@@ -25,7 +25,7 @@ pub struct ParallelPrefetchParams<'a> {
     pub handler_lookup: &'a HandlerLookupTable,
 }
 
-/// 根包实现的工具分发（经 [`super::ToolDispatch`] 与 `workflow_execute` 等）。
+/// 根包实现的工具分发（经 [`super::ToolDispatch`]）。
 #[async_trait]
 pub trait ToolExecutionHost: Send + Sync {
     async fn dispatch_tool_call(

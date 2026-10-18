@@ -28,8 +28,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
     match name {
         // --- 语言无关 / 工作区 ---
         "run_command" | "run_executable" | "terminal_session" => &[GENERAL, CPP],
-        // 编排入口：`workflow_execute` 常与 Rust CI DAG 模板叠用；归入 rust+quality 便于 `build_tools_with_options` 栈裁剪。
-        "workflow_execute" => &[GENERAL, RUST, QUALITY],
         "diagnostic_summary"
         | "self_config_info"
         | "error_output_playbook"
@@ -40,7 +38,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "long_term_forget"
         | "long_term_memory_list"
         | "summarize_experience" => &[GENERAL],
-        "rust_backtrace_analyze" => &[GENERAL, RUST],
         "create_file"
         | "modify_file"
         | "copy_file"
@@ -108,9 +105,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "pytest_run" | "python_snippet_run" => &[GENERAL, PYTHON],
 
         // --- 质量聚合（跨栈）---
-        "ci_pipeline_local"
-        | "release_ready_check"
-        | "repo_overview_sweep"
+        "repo_overview_sweep"
         | "crate_contract_map"
         | "docs_health_sweep" => &[GENERAL, QUALITY],
         "run_lints" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
@@ -121,11 +116,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
 
         // --- 后台任务查询 ---
         "background_job_status" | "background_job_list" => &[GENERAL],
-
-        // --- 代码度量与分析 ---
-        "code_stats" => &[GENERAL],
-        "dependency_graph" => &[GENERAL, RUST, FRONTEND, GO, JVM],
-        "coverage_report" => &[GENERAL, RUST, FRONTEND, PYTHON, GO, QUALITY],
 
         _ => &[GENERAL],
     }
@@ -231,12 +221,6 @@ fn suggest_shell_tag_if_scripts(root: &std::path::Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn workflow_execute_tags_rust_and_quality() {
-        let t = tags_for_tool_name("workflow_execute");
-        assert!(t.contains(&RUST) && t.contains(&QUALITY) && t.contains(&GENERAL));
-    }
 
     #[test]
     fn cargo_check_is_rust_and_quality() {

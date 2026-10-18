@@ -4,15 +4,15 @@
 
 This document describes built-in tools, common function-calling JSON examples, and release-check troubleshooting. Workspace browsing, streaming, and session export remain in the root [`README.md`](../../README.md) “Features”; day-to-day use also starts there.
 
-**Optional “explain card”** (`tool_call_explain_enabled`): When enabled, every **non-read-only** built-in tool (same notion as `tool_registry::is_readonly_tool(&AgentConfig, name)`, including `run_command`, `run_executable`, file writers, `http_request`, **`gh_api`**, mutating git, `workflow_execute`, …; overridable via **`[tool_registry] write_effect_tools`**) must include top-level string **`crabmate_explain_why`** describing intent in natural language; the server validates length and **strips** it before execution to avoid conflicting with `additionalProperties: false`. Read-only tools and MCP proxies do not require it; MCP still strips the key before forwarding. Complements command/HTTP **approval** (approval authorizes, explain card improves traceability).
+**Optional “explain card”** (`tool_call_explain_enabled`): When enabled, every **non-read-only** built-in tool (same notion as `tool_registry::is_readonly_tool(&AgentConfig, name)`, including `run_command`, `run_executable`, file writers, `http_request`, **`gh_api`**, mutating git, …; overridable via **`[tool_registry] write_effect_tools`**) must include top-level string **`crabmate_explain_why`** describing intent in natural language; the server validates length and **strips** it before execution to avoid conflicting with `additionalProperties: false`. Read-only tools and MCP proxies do not require it; MCP still strips the key before forwarding. Complements command/HTTP **approval** (approval authorizes, explain card improves traceability).
 
 **Long outputs in model context** (`tool_result_envelope_v1`, default on): History `role: tool` uses the **`crabmate_tool`** JSON envelope (`summary`, `output`, …). Optional **`structured_payload`** bundles stable **`schema`** values: **`run_command_exit_v1`** (`run_command`), **`subprocess_exit_v1`** (`cargo_*`; matches `{title} (exit=N):` first line), **`http_tool_response_v1`** (`http_fetch` / `http_request` successful bodies with `method:` / `请求 URL:` / `状态:` lines; omitted on prefix errors / allowlist misses). The envelope also includes **`tool_call_id`**, **`execution_mode`** (`serial` / `parallel_readonly_batch`), **`parallel_batch_id`** (shared within a parallel read-only batch); failures include **`error_code`**, optional **`failure_category`** (stable bucket aligned with **`tool_result::ToolFailureCategory`**, derived from `error_code`; see **`docs/en/SSE_PROTOCOL.md`**), and **`retryable`** (heuristic with `error_code`, not a guarantee). **Parallel read-only batches** use the same wall-clock as serial **`dispatch_tool`** (`tool_registry::parallel_tool_wall_timeout_secs`; e.g. **`http_fetch`** uses **`max(http_fetch_timeout_secs, command_timeout_secs)`**, **`get_weather` / `web_search`** use their own timeouts, others often **`command_timeout_secs`**); on timeout the text mentions timeout and **`tool_result.error_code`** is **`timeout`**. Before each model request, if over **`tool_message_max_chars`**, the server head/tail-samples **`output`** and sets **`output_truncated`**, **`output_original_chars`**, **`output_kept_head_chars`**, **`output_kept_tail_chars`** so one grep/build log cannot fill the window; full text may still appear via SSE/export depending on UI. SSE **`tool_result`** carries the same correlation fields; **`structured_preview`** may merge first-line **`crabmate_tool_output`** with **`structured_payload`**. Pre-run SSE **`tool_call`** also includes **`arguments_preview`** (single-line truncation aligned with `execute_tools` logs); when **`sse_tool_call_include_arguments`** / **`CM_SSE_TOOL_CALL_INCLUDE_ARGUMENTS`** is on, the server adds heuristically redacted **`arguments`** (longer cap, still not a full-fidelity guarantee). See **`docs/en/DEVELOPMENT.md`**, **`docs/en/SSE_PROTOCOL.md`**, **`docs/en/CONFIGURATION.md`**. **Transparent tool-failure retry** (**`[tool_registry] tool_retry_*`**, off by default): when enabled, read-only approval-free tools (`http_fetch` requires a URL matching `http_fetch_allowed_prefixes`, `read_dir` requires a non-external path; `codebase_semantic_search` and other tools whose params can write side effects are hard-excluded) transparently retry transient errors (default `timeout` / `http_timeout` / `rate_limited` / `http_network_error`) at the dispatch layer with backoff `min(backoff*2^(n-1), 5000)`; intermediate failures are **not** written to model context, only the final result is; user cancel stops retrying. See **`docs/en/CONFIGURATION.md`**.
 
 **`run_command` + Web diff preview**: When the **stdout** section (after CrabMate’s `run_command` framing) looks like a **git unified diff** (first non-empty line starts with **`diff --git`** or **`diff --cc`**), or the invocation is **`git … status`** (after skipping common globals like **`-C` / `--git-dir`**) and stdout looks like typical **`git status`** output (e.g. **`On branch` / `##`**, **`nothing to commit`**, **`Changes not staged`**, short **`XY `** porcelain lines, …), SSE **`tool_result.structured_preview`** also attaches the same **`workspace_write_diff`**-shaped header as file-write tools, and the Web tool card reuses the “Change preview (unified diff)” block (subject to the same preview size cap).
 
-**Session workspace changelist** (default on, `session_workspace_changelist_*`): Successful writes from **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** accumulate **relative paths** and a unified diff vs first touch this session; before **each** model request a **`user`** is injected (**`name=crabmate_workspace_changelist`**). Web strips this before saving sessions (like long-term memory injection). Tools inside **`workflow_execute`** DAG use a separate `ToolContext` and **do not** hit this table.
+**Session workspace changelist** (default on, `session_workspace_changelist_*`): Successful writes from **`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `append_file` / `search_replace` / `apply_patch` / `structured_patch`** accumulate **relative paths** and a unified diff vs first touch this session; before **each** model request a **`user`** is injected (**`name=crabmate_workspace_changelist`**). Web strips this before saving sessions (like long-term memory injection). Tools inside workflow nodes (CLI `workflow run`) use a separate `ToolContext` and **do not** hit this table.
 
-**Final answer `agent_reply_plan` v1** (validated on workflow reflection / final-plan gate paths): `steps[].id` must be unique and match stable character rules (enforced by validators alongside **`workflow_execute`**; see JSON examples below). Optional **`workflow_node_id`** aligns with **`nodes[].id`** from the latest **`workflow_execute`** tool result (subset check). Optional **`steps[].executor_kind`** (`review_readonly` / `patch_write` / `test_runner`) may still appear in plan JSON for tooling/docs; the **staged step runner / `step_verifier` path has been removed**—runtime orchestration is **session_mode → (Act utterance heuristics) → ReAct**. See **`docs/en/CONFIGURATION.md`**.
+**Final answer `agent_reply_plan` v1** (validated on workflow reflection / final-plan gate paths): `steps[].id` must be unique and match stable character rules (enforced by validators). Optional **`steps[].executor_kind`** (`review_readonly` / `patch_write` / `test_runner`) may still appear in plan JSON for tooling/docs; the **staged step runner / `step_verifier` path has been removed**—runtime orchestration is **session_mode → (Act utterance heuristics) → ReAct**. See **`docs/en/CONFIGURATION.md`**.
 
 **Copy-paste plan JSON (placeholders, one step per rolling plan round is typical)**:
 
@@ -50,7 +50,7 @@ This document describes built-in tools, common function-calling JSON examples, a
 }
 ```
 
-**Optional Docker sandbox** (`sync_default_tool_sandbox_mode = docker`): **SyncDefault** and **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** run in a **one-shot Docker container** (bollard → Engine API) after host approval/allowlist; **`workflow_execute`** and **MCP** stay on the host. Requires reachable **Docker daemon** and non-empty **`sync_default_tool_sandbox_docker_image`** with the CLIs you need (`git`, `rg`, `cargo`, …) and **same CPU arch** as the host `crabmate` binary (mounted read-only; repo ships no fixed image). Default **no network** (`docker_network` empty); for weather/search/HTTP egress set **`sync_default_tool_sandbox_docker_network`** (e.g. `bridge`). Steps, sample Dockerfile, env, and safety notes: [`docs/en/CONFIGURATION.md`](CONFIGURATION.md) § SyncDefault Docker sandbox.
+**Optional Docker sandbox** (`sync_default_tool_sandbox_mode = docker`): **SyncDefault** and **`run_command` / `run_executable` / `get_weather` / `web_search` / `http_fetch` / `http_request`** run in a **one-shot Docker container** (bollard → Engine API) after host approval/allowlist; **MCP** stays on the host (workflow nodes run via CLI `workflow run` also stay on the host). Requires reachable **Docker daemon** and non-empty **`sync_default_tool_sandbox_docker_image`** with the CLIs you need (`git`, `rg`, `cargo`, …) and **same CPU arch** as the host `crabmate` binary (mounted read-only; repo ships no fixed image). Default **no network** (`docker_network` empty); for weather/search/HTTP egress set **`sync_default_tool_sandbox_docker_network`** (e.g. `bridge`). Steps, sample Dockerfile, env, and safety notes: [`docs/en/CONFIGURATION.md`](CONFIGURATION.md) § SyncDefault Docker sandbox.
 
 ## Built-in tools (model-callable)
 
@@ -67,7 +67,7 @@ This document describes built-in tools, common function-calling JSON examples, a
   - `get_weather`: Weather by city/region ([Open-Meteo](https://open-meteo.com/), no key).
   - `web_search`: **Web search**. Default **`web_search_provider = worbrow`** ([worbrow](https://crates.io/crates/worbrow) **≥0.2.0** drives local **Firefox / Chrome/Edge** headless; engine chain **bing→duckduckgo**; **no API key**; alias `browser`; results may include quality flags such as ads/dictionary). Optional **`brave`** ([Brave Search API](https://brave.com/search/api/)) or **`tavily`** ([Tavily](https://tavily.com/)) with `web_search_api_key` / `CM_WEB_SEARCH_API_KEY`. Prefer `search_in_files` for exact string/regex; use `codebase_semantic_search` for **hybrid FTS + vector** retrieval (default `retrieve_mode: hybrid`; needs `rebuild_index`; see below and **`docs/en/CONFIGURATION.md`**).
   - `http_fetch`: **GET** (default) or **HEAD**. GET returns status, Content-Type, **redirect chain**, body (timeouts/size caps); **HEAD** skips body. Body decoding: **`Content-Type` charset**, HTML **`<meta charset>`** / **http-equiv=Content-Type**, `<?xml encoding=…?>`, else **`chardetng`** sniffing; `application/json` prefers UTF-8; binary types (`image/*`, etc.) still use lossy UTF-8 preview. Optional **`text_format: html_text`**: turn **HTML documents** into plain text with **`scraper` (html5ever)** (skip `script`/`style`/`noscript`, prefer `main` / `article` / `[role=main]`, else `body`); non-HTML / JSON / binary responses keep the decoded source and note why in the decode line. Requests are curl-aligned: automatically send **`Accept: */*`** and **`Accept-Encoding`** (gzip/brotli/deflate; response bodies are decompressed); **`User-Agent`** defaults to **`crabmate/<version>`**, overridable via **`http_fetch_user_agent`** / **`CM_HTTP_FETCH_USER_AGENT`** (e.g. a browser or curl UA for anti-bot sites). Environment proxies follow **`ALL_PROXY` / `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY`** (HTTP(S) proxies work; **reqwest 0.13 does not support SOCKS** — with a `socks5://` proxy, the tool fails and hints at unsetting or using the same port as `http://`). **URL gate**: `http_fetch_allowed_prefixes` entry **`"*"`** allows any **http/https** immediately (embedded default; still rejects `file:` and other schemes). Otherwise match **same origin + path prefix boundary**. Unmatched URLs: **Web only** (`/chat/stream` + `approval_session_id`) can approve via SSE **deny / once / always** (GET/HEAD share normalized whitelist key; ops CLI has no in-process terminal approval). **`"*"` lets the model fetch loopback / RFC1918 / cloud metadata URLs** (SSRF); on multi-tenant or exposed `serve`, use concrete prefixes or an explicit empty list (`[]` / empty env) to override the embed (empty = all URLs need approval). `http_request` uses the same list. **Failure error codes**: `http_fetch` / `http_request` failure bodies carry an explicit first-line marker `错误[code]：` (server-classified precisely) — connect/DNS failures are **`http_network_error`**, request timeouts **`http_timeout`** (envelope `retryable=true`), response-body read failures **`http_body_read_error`**; `get_weather` network/API failures are **`weather_api_error`**, `web_search` **`web_search_api_error`**, and both timeouts are **`timeout`**.
-  - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same `http_fetch_allowed_prefixes` rules (`"*"` = any http/https); unmatched URLs use the same **Web SSE** approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). **`workflow_execute` nodes** still require a prefix match (no approval on sync path). Returns status, Content-Type, redirects, body (same decoding and optional **`text_format: html_text`** as `http_fetch`; dry-run first; never put real secrets in bodies).
+  - `http_request`: **POST / PUT / PATCH / DELETE** (optional `json_body`). Same `http_fetch_allowed_prefixes` rules (`"*"` = any http/https); unmatched URLs use the same **Web SSE** approval path (**permanent key** `http_request:<METHOD>:<URL>` vs `http_fetch:`). Workflow nodes (CLI `workflow run`) still require a prefix match (no approval on sync path). Returns status, Content-Type, redirects, body (same decoding and optional **`text_format: html_text`** as `http_fetch`; dry-run first; never put real secrets in bodies).
   - **GitHub CLI wrappers** (local **`gh`**, **`allowed_commands` must include `gh`**): **PR** — **`gh_pr_checks`** (optional **`structured: true`** failure summary) / **`gh_pr_create`** (**writes**; default **`auto_body`** from template + git log when `body` omitted) / **`gh_pr_merge`** / **`gh_pr_review`** / **`gh_pr_comment`** / **`gh_pr_body_draft`** (read-only); **Issue** — **`gh_issue_create`**; **Actions** — **`gh_run_failure_summary`** (failed jobs + log tails) / **`gh_run_rerun`**; **Release** — **`gh_release_create`** (optional **`auto_notes`**); **`gh_api`**. Pretty JSON appended on exit 0 when stdout is JSON. Remote writes (incl. mutating **`gh_api`**) are non-read-only. The read-only list/view/search wrappers (`gh pr list`, `gh pr view`, `gh pr diff`, `gh issue list`, `gh issue view`, `gh run list`, `gh run view`, `gh release list`, `gh release view`, `gh search`) were removed in favor of raw `run_command`.
   - `run_command`: When `allowed_commands` is `*` (`serve --yes` or `CM_ALLOWED_COMMANDS=*`), the command name is not checked and everything is allowed. When argv needs glob / `$VAR` / `~` and **`bash`/`sh`** are allowlisted, join `command`+`args` and run **`bash -c`**. Web re-approves standalone `&&` / `|` even if bash is already allowlisted. Approval shows the full script. Plain argv still `execve`s. You may still pass **`bash`/`sh`** with **`args` `["-c","whole script"]`**. Whitelisted read/query Linux commands (`ls`, `pwd`, `whoami`, `date`, `cat`, `file`, `head`, `tail`, `wc`, `cmake`, `ctest`, `mkdir`, `ninja`, `gcc`, `g++`, `clang`, `clang++`, `c++filt`, `autoreconf`, `autoconf`, `automake`, `aclocal`, `make`, GNU Binutils read-only tools `objdump`, `nm`, `readelf`, `strings`, `size`, default also `ar`, …) with timeout and output truncation. **GitHub CLI**: allowlist includes **`gh`** (install locally and authenticate, e.g. `gh auth login`); same arg rules as `git`—no `..` and no `/`-prefixed args—use `owner/repo` or relative paths, not absolute filesystem paths in arguments. Missing CLI → **`dep_gh`** degraded on **`GET /health`**; **`crabmate doctor`** reports `gh` availability in the toolchain section. **CMake/ctest** are allowlisted; args must not contain `..` or start with `/`; prefer relative build dirs (avoid absolute `-D`). Missing tools may show `dep_cmake` / `dep_ctest` degraded on `/health`. **mkdir**: creates dirs (complements **`create_dir`**). **c++filt**: demangle C++ symbols. **Binutils**: missing → corresponding `dep_*` degraded. **Autotools**: trusted workspaces only. **Test output cache** (`test_result_cache_enabled`): when **`command` is `cargo` and `args` start with `test`** and **omit** `--nocapture` / `--test-threads`, shares in-process LRU with `cargo_test`; hits prefix output with **`[CrabMate test output cache hit]`**.
   - `terminal_session`: **Linux PTY only** (`forkpty` in the workspace). First **`action":"exec"`** without **`session_id`** requires **`command`** (optional **`args`**), same allowlist/approval rules as **`run_command`**; for compound commands prefer **`bash`/`sh` + `-c`** on that **`exec`** (do not split `&&` across **`args`**); if an interactive shell is already up, **`input`** can carry a full line. Streaming output via SSE **`tool_output_chunk`**, finalized in **`tool_result`**. **`list` / `close` / `resize` / `send_signal` / `interrupt`**: **`interrupt`** writes **ETX** (`\x03`, i.e. Ctrl-C) to the session's foreground process group; **`send_signal`** targets the **foreground process group** (`tcgetpgrp`), falling back to the session leader when unavailable. **Cancellation of the tool call / outer execution timeout** recycles the session (avoiding long-term use of the 8-session cap); the per-round read wall is `command_timeout_secs`, which only ends the current round and **keeps the session** open for a later `exec`. Unavailable when **`sync_default_tool_sandbox_mode = docker`**; up to **8** concurrent sessions; output caps follow **`command_exec`** (`command_max_output_len`).
@@ -102,12 +102,11 @@ This document describes built-in tools, common function-calling JSON examples, a
   - **Python** (workspace root; CLIs must exist): `pytest_run` (`python3 -m pytest`), `python_snippet_run`. **Format**: `format_files` (`paths` array; one or more files) picks **ruff format** (`.py`), **clang-format** (C/C++ headers/sources), `rustfmt` / `prettier`, …. **Tag filtering**: `build_tools_with_options` / `ToolsBuildOptions` + `dev_tag` (`python`, `cpp`, …; see `src/cm_tools/tools/dev_tag.rs`). **Custom LLM backend**: `RunAgentTurnParams.transport.llm_backend` optional `ChatCompletionsBackend`. New-tool checklist: `.cursor/rules/tools-registry.mdc`.
   - **JVM / Container / Node frontend (now via `run_command`)**: `mvn`/`gradle` (or `gradlew`), `docker`/`podman`, and `npm`/`npx`/`tsc` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly via `run_command` (e.g. `mvn -q test`, `gradle classes`, `docker compose ps`, `podman images`, `npm run build`, `npx tsc --noEmit`). The former thin wrappers (`maven_*`/`gradle_*`/`docker_build`/`docker_compose_ps`/`podman_images`/`npm_install`/`npm_run`/`npx_run`/`tsc_check`/`frontend_lint`/`frontend_build`/`frontend_test`) were removed per design doc §8.5.4 **track A**; the JVM implementation (`jvm_tools`) and the `quality_workspace` `run_maven_*`/`run_gradle_*` flags have since been **deleted entirely**, while the container/frontend flags (`run_docker_compose_ps`/`run_podman_images`/`run_frontend_*`) are still backed by their implementations.
   - **Go (now via `run_command`)**: `go`/`gofmt`/`golangci-lint` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `go build ./...`, `go test ./...`, `go vet ./...`, `gofmt -l .`, `golangci-lint run`). The former thin wrappers (`go_build`/`go_test`/`go_vet`/`go_fmt_check`/`golangci_lint`) were removed as a family per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `go_` prefix was already excluded from the parallel read-only batch). Note: the former tools skipped when `go.mod` was absent — that guard is gone with `run_command`.
-  - **Python (now via `run_command`)**: `ruff`/`mypy`/`uv` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ruff check .`, `mypy src`, `uv sync`, `uv run pytest -q`). The former thin wrappers (`ruff_check`/`mypy_check`/`uv_sync`/`uv_run`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `ruff_`/`mypy_`/`uv_` prefixes were already excluded from the parallel read-only batch). The `ruff_check`/`mypy_check` function bodies remain shared by the `ci_pipeline_local` / `quality_workspace` / `run_lints` flags; `pytest_run` is **kept** because of its background-job wiring.
+  - **Python (now via `run_command`)**: `ruff`/`mypy`/`uv` are all on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ruff check .`, `mypy src`, `uv sync`, `uv run pytest -q`). The former thin wrappers (`ruff_check`/`mypy_check`/`uv_sync`/`uv_run`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `ruff_`/`mypy_`/`uv_` prefixes were already excluded from the parallel read-only batch). The `ruff_check`/`mypy_check` function bodies remain shared by the `quality_workspace` / `run_lints` flags; `pytest_run` is **kept** because of its background-job wiring.
   - **pre-commit (now via `run_command`)**: `pre-commit` is on the `run_command` allowlist (`config/tools.toml`), so call it directly (e.g. `pre-commit run --all-files`, `pre-commit run <hook> --files <path>`). The former thin wrapper (`pre_commit_run`) was removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache; the `pre_commit` prefix was already excluded from the parallel read-only batch). Note: the former tool skipped when `.pre-commit-config.yaml` / `.yml` was absent — that guard is gone with `run_command`.
   - `chmod_file` (needs `confirm`, Unix): octal mode e.g. `755`.
   - **Process/port (now via `run_command`)**: `ps` / `ss` / `lsof` are on the `run_command` allowlist (`config/tools.toml`), so call them directly (e.g. `ps aux`, `ss -ltnp`, `lsof -i :<port>`). The former thin wrappers (`port_check` / `process_list`) were removed per [tool_thin_wrapper_candidates.md](../design/tool_thin_wrapper_candidates.md) §3.2; cost is per §2.1 (loses read-only retry / `SessionMode::Ask`·`Plan` read-only gating / read-only TTL cache, and no longer post-processes process/port output).
   - **Background jobs** (read-only; retrieve results of long-running `run_command` started with `async: true` in the same session; reads the in-process registry, no allowlist approval): `background_job_status` (query status/output by `tool_job_id`; returns current state while running, exit code plus stdout/stderr when finished), `background_job_list` (list jobs for the workspace, newest first; optional `limit`, default 20 / max 100), `background_job_output` (incremental output pull, `tail -f` semantics; pass `tool_job_id` and optional `cursor` (the previous `next_cursor`), returns stdout/stderr deltas and prints the cursor plus an `eof` marker at the end of the text; omit `cursor` to start from the earliest available; at most 500 items per call, keep pulling with the cursor while not `eof`), `background_job_cancel` (cancel a job: `queued` moves straight to `cancelled`, `running` sets the cancel flag, already-`cancelled` is idempotent success, other terminal states cannot be cancelled).
-  - **Metrics/analysis** (read-only): `code_stats` (tokei/cloc/fallback), `dependency_graph` (Cargo/Go/npm, Mermaid/DOT/tree), `coverage_report` (LCOV, Tarpaulin JSON, Cobertura XML).
 
 ## GitHub CLI (`gh_*`) examples
 
@@ -177,14 +176,6 @@ Structured function-calling JSON examples:
   ```json
   {"test_name":"tools::tests::test_build_tools_names","nocapture":true}
   ```
-- `ci_pipeline_local` (local CI; optional frontend `npm run build` via `run_frontend_build`; optional Python `run_ruff_check` / `run_pytest` / `run_mypy`):
-  ```json
-  {"run_fmt":true,"run_clippy":true,"run_test":true,"run_frontend_lint":true,"run_frontend_build":false,"run_ruff_check":true,"run_pytest":false,"run_mypy":false,"fail_fast":true,"summary_only":false}
-  ```
-- `release_ready_check`:
-  ```json
-  {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":true}
-  ```
 - `rust_compiler_json` (`cargo check --message-format=json` diagnostics):
   ```json
   {"all_targets":true,"max_diagnostics":80,"message_format":"json"}
@@ -211,75 +202,8 @@ Structured function-calling JSON examples:
   ```json
   {"path":"src/lib.rs","query":"run_agent_turn","max_results":32}
   ```
-- `rust_backtrace_analyze`:
-  ```json
-  {"backtrace":"thread 'main' panicked at src/main.rs:10:5\nstack backtrace:\n   0: ...","crate_hint":"crabmate"}
-  ```
 - `frontend_lint` / `frontend_build` / `frontend_test` (frontend lint / build / test): removed per §8.5.4 **track A**; use `run_command` instead (e.g. `npm run lint` / `npm run build` / `npm run test`).
-- `workflow_execute` (DAG: parallelism, approval, SLA, compensation):
-  - **Built-in template**: set **`workflow.workflow_template`** (currently **`rust_ci_light`**) to expand a serial **`run_command` (`cargo fmt --check`) → `cargo_check` (`all_targets`) → `cargo_clippy` (`all_targets`) → `cargo_test`** DAG without hand-writing **`nodes`**. Mutually exclusive with a fully custom **`nodes`** unless you override after expansion: other **`workflow`** keys merge on top; a provided **`nodes`** array replaces the template’s nodes.
-  - Node **`max_retries`** (0–5, default 0): auto backoff retry for **`timeout`**, **`workflow_tool_join_error`**, **`workflow_semaphore_closed`**, …; **not** for business failures (tests, non-zero exit) to avoid duplicate side effects.
-  - **Static check**: each **`tool_name`** must be a built-in tool; **`tool_args`** must include schema **`required`** keys (recursive into nested objects/arrays; full validation still in runners).
-  - **Result JSON** (`workflow_execute_result` / `workflow_validate_result`): **`workflow_run_id`** (matches logs), **`trace`** (`dag_start`, `node_attempt_*`, `node_retry_backoff`, `dag_end`, …), **`completion_order`**, **`nodes[].attempt`** final count.
-  ```json
-  {"workflow":{
-    "max_parallelism":2,
-    "fail_fast":true,
-    "compensate_on_failure":true,
-    "nodes":[
-      {"id":"clean","tool_name":"run_command","tool_args":{"command":"cargo","args":["clean","--dry-run"]},"deps":[],"compensate_with":[]},
-      {"id":"clippy","tool_name":"cargo_clippy","tool_args":{"all_targets":true},"deps":["clean"],"compensate_with":["clean"]},
-      {"id":"test","tool_name":"cargo_test","tool_args":{},"deps":["clippy"],"compensate_with":[]},
-      {"id":"deny","tool_name":"run_command","tool_args":{"command":"cargo","args":["deny","check","advisories","licenses","bans","sources","--all-features"]},"deps":["test"],"requires_approval":true,"compensate_with":["clean"]}
-    ]
-  }}
-  ```
- - `workflow_execute` (Git: inject `git_log` hash into `git_show`):
-   ```json
-   {"workflow":{
-     "max_parallelism":2,
-     "fail_fast":true,
-     "compensate_on_failure":false,
-     "nodes":[
-       {"id":"log","tool_name":"git_log","tool_args":{"max_count":1,"oneline":true},"deps":[],"compensate_with":[]},
-       {"id":"show","tool_name":"git_show","tool_args":{"rev":"{{log.stdout_first_token}}"},"deps":["log"],"compensate_with":[]}
-     ]
-   }}
-   ```
-
- - `workflow_execute` (Git: diff base + patch approval):
-   ```json
-   {"workflow":{
-     "max_parallelism":1,
-     "fail_fast":true,
-     "compensate_on_failure":false,
-     "nodes":[
-       {"id":"diff","tool_name":"git_diff","tool_args":{"base":"main","context_lines":3},"deps":[],"compensate_with":[]},
-       {"id":"patch_check","tool_name":"run_command","tool_args":{"command":"git","args":["apply","--check","patches/fix.diff"]},"deps":["diff"],"compensate_with":[]},
-       {"id":"patch_apply","tool_name":"run_command","tool_args":{"command":"git","args":["apply","patches/fix.diff"]},"deps":["patch_check"],"requires_approval":true,"compensate_with":[]}
-     ]
-   }}
-   ```
-
-   `patch_path` must point to an existing workspace patch (e.g. `patches/fix.diff`) you or a prior step created; write operations (e.g. `git apply`) are downgraded to `run_command` per §8.5.4 **track B**.
-
-  Downstream string fields may use placeholders (recursive into JSON objects/arrays):
-  - `{{node_id.output}}`: full output from `node_id` (truncated to `output_inject_max_chars`, default `2000`)
-  - `{{node_id.status}}`: `passed`/`failed`
-  - `{{node_id.stdout_first_line}}`: first line (truncated)
-  - `{{node_id.stdout_first_token}}`: first token of first line (e.g. `git log --oneline` hash)
-
-### Release-check templates
-
-- `release_ready_check` (fast local loop):
-  ```json
-  {"run_ci":true,"run_audit":false,"run_deny":false,"require_clean_worktree":false,"fail_fast":true,"summary_only":true}
-  ```
-
-- `release_ready_check` (strict pre-release):
-  ```json
-  {"run_ci":true,"run_audit":true,"run_deny":true,"require_clean_worktree":true,"fail_fast":true,"summary_only":false}
-  ```
+- **Workflow (DAG) execution (now via CLI)**: the agent tool surface has been removed; run workspace YAML/Markdown via **`crabmate workflow run <path>`** (no `API_KEY`). Syntax, built-in templates, and examples: **`docs/工作流编写教程.md`**, **`docs/工作流编排架构.md`**, and **`examples/workflows/`**.
 
 Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `quality_workspace`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
 
@@ -307,7 +231,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Git**: read-only tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`; `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`). Write operations (`git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`, `git_commit`, `git_stage_files`, `git_fetch`, `git_clone`, `git_remote_set_url`, `git_apply`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted) instead.
 
-**Metrics**: `code_stats`, `dependency_graph`, `coverage_report`.
+**Metrics / archives / CI aggregators (now via `run_command`)**: `code_stats` / `dependency_graph` / `coverage_report`, `archive_pack` / `archive_unpack` / `archive_list`, `ci_pipeline_local`, `release_ready_check`, and `rust_backtrace_analyze` were removed so the model uses native commands instead (e.g. `tokei` / `cargo tree` / `tar` / `unzip` / `cargo audit` / `cargo deny check` / `c++filt`). Workflow DAG execution remains available through the CLI (`crabmate workflow run`).
 
 **Static analysis / lint CLIs**: `shellcheck`, `cppcheck`, `semgrep`, `hadolint`, `bandit`, `lizard` are on the default `run_command` allowlist and are invoked via generic `run_command` (the dedicated `shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity` tools were removed). Install hints for missing CLIs are still surfaced by `error_output_playbook`.
 
@@ -358,7 +282,7 @@ Write operations (`add` / `commit` / `push` / `fetch` / `checkout` / `apply` / `
 
 ## Common failure handling
 
-Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or direct `run_command` invocations of `cargo audit` / `cargo deny check` issues:
+Typical issues when running `cargo audit` / `cargo deny check` directly via `run_command`:
 
 - `cargo deny check` (license/policy):
   ```bash
@@ -372,7 +296,7 @@ Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or
   ```
   Causes: RustSec advisories, stale lockfile. Fix: `cargo update` / targeted updates; if upstream unfixed, mitigate; re-run audit + tests.
 
-- Dirty tree (`require_clean_worktree=true`): `git_clean_check` fails—inspect `git status` / `git diff`; commit, stash, or set `require_clean_worktree=false` for quick local runs.
+- Dirty tree: `git status` shows uncommitted changes—inspect `git status` / `git diff`; commit or stash before release checks.
 
 - Missing tools:
   ```bash
@@ -382,8 +306,17 @@ Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or
 
 ### Suggested pre-release order
 
-1. Fast `release_ready_check` to smoke-test.
-2. Strict `release_ready_check` after fixes.
+1. Fast local smoke test:
+   ```bash
+   cargo fmt --check
+   cargo clippy --all-targets --all-features -- -D warnings
+   cargo test
+   ```
+2. Strict security/policy checks after fixes:
+   ```bash
+   cargo audit
+   cargo deny check advisories licenses bans sources
+   ```
 3. Clean tree + key tests.
 4. Tag / release workflow.
 

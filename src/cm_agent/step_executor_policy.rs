@@ -81,7 +81,6 @@ pub fn tool_name_implies_readonly_probe(name: &str) -> bool {
             | "git_blame"
             | "find_references"
             | "call_graph_sketch"
-            | "archive_list"
             | "http_fetch"
             | "diagnostic_summary"
             | "self_config_info"

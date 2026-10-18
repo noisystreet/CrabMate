@@ -295,10 +295,6 @@ fn test_build_tools_names() {
     assert!(names.contains(&"rust_test_one"));
     assert!(names.contains(&"pytest_run"));
     assert!(names.contains(&"python_snippet_run"));
-    assert!(names.contains(&"ci_pipeline_local"));
-    assert!(names.contains(&"release_ready_check"));
-    assert!(names.contains(&"workflow_execute"));
-    assert!(names.contains(&"rust_backtrace_analyze"));
     assert!(names.contains(&"diagnostic_summary"));
     assert!(names.contains(&"self_config_info"));
     assert!(names.contains(&"error_output_playbook"));
@@ -652,8 +648,7 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 #[test]
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
-    // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 103 } else { 100 };
+    const LEGACY_BASELINE: usize = 93;
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

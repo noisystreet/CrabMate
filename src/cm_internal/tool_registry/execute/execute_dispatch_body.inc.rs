@@ -378,13 +378,6 @@ async fn dispatch_tool_inner(p: &mut DispatchToolParams<'_>) -> (String, Option<
     }
 
     match hid {
-        HandlerId::Workflow => {
-            // `workflow_execute` 由 `agent::workflow_tool_dispatch` 调度（避免本模块依赖 `PerCoordinator` / `workflow`）。
-            (
-                "内部错误：workflow_execute 须由 agent 层调度，不应进入 dispatch_tool".to_string(),
-                None,
-            )
-        }
         HandlerId::RunCommand => {
             let ToolRuntime {
                 workspace_changed,

@@ -63,54 +63,6 @@ impl ToolSummaryLine for BackgroundJobCancelSummaryArgs {
     }
 }
 
-// ── Code metrics ──────────────────────────────────────────────
-
-#[derive(Debug, Deserialize)]
-pub(super) struct CodeStatsSummaryArgs {
-    #[serde(default)]
-    path: Option<String>,
-}
-
-impl ToolSummaryLine for CodeStatsSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.as_deref().unwrap_or(".").trim();
-        Some(format!("code stats: {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct DependencyGraphSummaryArgs {
-    #[serde(default)]
-    format: Option<String>,
-    #[serde(default)]
-    kind: Option<String>,
-}
-
-impl ToolSummaryLine for DependencyGraphSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let format = self.format.as_deref().unwrap_or("mermaid");
-        let kind = self.kind.as_deref().unwrap_or("auto");
-        Some(format!("dependency graph ({}/{})", kind, format))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct CoverageReportSummaryArgs {
-    #[serde(default)]
-    path: Option<String>,
-}
-
-impl ToolSummaryLine for CoverageReportSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.as_deref().unwrap_or("").trim();
-        if path.is_empty() {
-            Some("coverage report (auto-detect)".to_string())
-        } else {
-            Some(format!("coverage report: {}", path))
-        }
-    }
-}
-
 // ── More file tools ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]

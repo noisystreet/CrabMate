@@ -743,8 +743,8 @@ mod tests {
     fn unpack_only_then_completion_claim_does_not_satisfy_build_task() {
         let messages = vec![
             tool_env(
-                "archive_unpack",
-                "unpack hpcg",
+                "run_command",
+                "tar -xzf hpcg.tar.gz",
                 "已解压 187 个文件到: .\n顶层条目: hpcg-HPCG-release-3-1-0",
             ),
             msg("assistant", "解压完成，编译成功。"),

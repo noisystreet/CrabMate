@@ -49,7 +49,7 @@ impl WorkspaceCodeStats {
     }
 }
 
-/// 与 `code_stats` / 项目画像共用的排除目录。
+/// 与项目画像共用的排除目录。
 pub const DEFAULT_EXCLUDED_DIRS: &[&str] =
     &["target", "node_modules", "vendor", "dist", "build", ".git"];
 

@@ -104,7 +104,7 @@ pub(crate) fn outer_loop_build_idle_feedback_body(streak: u32) -> String {
     format!(
         "{prefix}用户目标涉及编译/构建，但已连续 {streak} 轮助手回复未产生任何构建类工具结果（如 `run_command` 的 make/cmake/cargo build 等）。\
          **禁止**再用自然语言承诺「将要编译/读取 Makefile」；本轮必须通过 `tool_calls` 实际执行构建或读取构建说明（`read_file` / `read_dir`），\
-         且若需解压源码包请优先 `archive_unpack` 到 `output_dir=\".\"`（勿自创嵌套目录名）。",
+         且若需解压源码包请优先用 `run_command`（如 `tar -xzf <pkg> -C .`，勿自创嵌套目录名）。",
         prefix = OUTER_LOOP_BUILD_IDLE_ORCHESTRATION_PREFIX
     )
 }

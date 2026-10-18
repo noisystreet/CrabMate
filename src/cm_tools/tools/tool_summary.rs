@@ -62,9 +62,6 @@ define_summaries! {
     summary_background_job_list => BackgroundJobListSummaryArgs,
     summary_background_job_output => BackgroundJobOutputSummaryArgs,
     summary_background_job_cancel => BackgroundJobCancelSummaryArgs,
-    summary_code_stats => CodeStatsSummaryArgs,
-    summary_dependency_graph => DependencyGraphSummaryArgs,
-    summary_coverage_report => CoverageReportSummaryArgs,
     summary_delete_files => DeleteFilesSummaryArgs,
     summary_delete_dir => DeleteDirSummaryArgs,
     summary_append_file => AppendFileSummaryArgs,
@@ -83,7 +80,4 @@ define_summaries! {
     summary_gh_run_failure_summary => GhRunFailureSummarySummaryArgs,
     summary_gh_release_create => GhReleaseCreateSummaryArgs,
     summary_gh_api => GhApiSummaryArgs,
-    summary_archive_pack => ArchivePackSummaryArgs,
-    summary_archive_unpack => ArchiveUnpackSummaryArgs,
-    summary_archive_list => ArchiveListSummaryArgs,
 }

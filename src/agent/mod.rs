@@ -23,8 +23,6 @@ pub use crate::cm_workflow as workflow;
 mod workflow_compile_golden;
 #[cfg(test)]
 mod workflow_reflection_golden;
-/// `workflow_execute` 与 PER 协调的接合点（从 `tool_registry` 拆出以降低 `tool_registry → agent` 耦合）。
-pub mod workflow_tool_dispatch;
 
 pub use crate::cm_agent::{
     plan_artifact, text_sanitize, turn_budget, workflow_reflection_controller, workspace_snapshot,

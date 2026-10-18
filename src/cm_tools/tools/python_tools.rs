@@ -1,6 +1,6 @@
 //! Python 生态工具：ruff、pytest、mypy、临时脚本执行（`python_snippet_run`）。
 //!
-//! `ruff_check` / `mypy_check` 的公开函数体保留，供 `ci_pipeline_local` / `quality_workspace`
+//! `ruff_check` / `mypy_check` 的公开函数体保留，供 `quality_workspace`
 //! / `run_lints` 等聚合器复用（其 ToolSpec 已按薄 CLI 封装收敛移除，模型改用 `run_command`）。
 
 use std::io::Write;

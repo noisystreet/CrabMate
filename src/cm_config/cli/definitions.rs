@@ -167,11 +167,11 @@ pub struct WorkflowCmd {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum WorkflowSubCmd {
-    /// 编译作者层 YAML 为 `workflow_execute` JSON（stdout）
+    /// 编译作者层 YAML 为工作流 DAG JSON（stdout）
     Compile(WorkflowFileCmd),
     /// 编译并校验 DAG（拓扑层、工具参数 schema）
     Validate(WorkflowFileCmd),
-    /// 编译并执行 DAG（与 Agent 调 `workflow_execute` + `workflow_file` 相同；**不要**求 API_KEY）
+    /// 编译并执行 DAG（**不要**求 API_KEY）
     Run(WorkflowFileCmd),
 }
 

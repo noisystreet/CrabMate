@@ -6,7 +6,7 @@
 use async_trait::async_trait;
 use crate::cm_internal::tool_registry::{DispatchToolParams, dispatch_tool};
 
-/// 单次工具调用的 registry 分发面（不含 `workflow_execute`）。
+/// 单次工具调用的 registry 分发面。
 #[async_trait]
 pub trait ToolDispatch: Send + Sync {
     async fn dispatch(&self, p: DispatchToolParams<'_>) -> (String, Option<serde_json::Value>);

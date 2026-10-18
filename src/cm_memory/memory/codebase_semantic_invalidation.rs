@@ -44,7 +44,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "playbook_run_commands",
         "python_snippet_run",
         "run_executable",
-        "workflow_execute",
         "http_request",
         "gh_api",
         "gh_pr_create",
@@ -232,13 +231,12 @@ pub fn invalidation_for_tool_call(
         return None;
     }
 
-    // 子进程 / 工作流 / 网络写：无法可靠解析受影响路径 → 整表失效。
+    // 子进程 / 网络写：无法可靠解析受影响路径 → 整表失效。
     if matches!(
         name,
         "run_command"
             | "run_executable"
             | "playbook_run_commands"
-            | "workflow_execute"
             | "http_request"
     ) || name.starts_with("git_")
     {

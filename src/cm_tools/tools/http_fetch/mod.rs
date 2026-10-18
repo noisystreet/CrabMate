@@ -1,5 +1,5 @@
 //! 受控 HTTP：`http_fetch`（GET/HEAD）与 `http_request`（POST/PUT/PATCH/DELETE + 可选 JSON body）。
-//! `http_fetch_allowed_prefixes` 含 **`"*"`** 时任意 http/https 直接执行（嵌入默认）；否则未匹配前缀时 **Web 流式**走 SSE 审批（**`tool_approval`**）。`workflow_execute` 等 **`run_tool` 同步路径**仍仅当前缀匹配（含 `"*"`）才请求。
+//! `http_fetch_allowed_prefixes` 含 **`"*"`** 时任意 http/https 直接执行（嵌入默认）；否则未匹配前缀时 **Web 流式**走 SSE 审批（**`tool_approval`**）。**`run_tool` 同步路径**仍仅当前缀匹配（含 `"*"`）才请求。
 //!
 //! 响应正文解码：`Content-Type` 的 **`charset`**、HTML **`<meta charset>`** / **http-equiv**、**BOM**，否则 **`chardetng`** 嗅探。
 //! 请求对齐 curl：自动发送 **`Accept: */*`** 与 **`Accept-Encoding`**（gzip/brotli/deflate，自动解压），**`User-Agent`** 默认 **`crabmate/<版本>`**、可经 `http_fetch_user_agent` / `CM_HTTP_FETCH_USER_AGENT` 覆盖。

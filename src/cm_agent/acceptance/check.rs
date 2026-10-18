@@ -93,7 +93,7 @@ fn combined_haystack(ev: &AcceptanceEvidence<'_>) -> String {
     format!("{} {}", ev.stdout, ev.stderr)
 }
 
-/// `run_command` 的 stdout/stderr 由解析器填入；其它工具（如 `archive_unpack`）正文在 `tool_output`。
+/// `run_command` 的 stdout/stderr 由解析器填入；其它工具（如 `read_file`）正文在 `tool_output`。
 fn haystack_for_stream_contains<'a>(
     ev: &'a AcceptanceEvidence<'_>,
     stream: &'a str,
@@ -380,13 +380,13 @@ mod tests {
     }
 
     #[test]
-    fn archive_unpack_stdout_contains_matches_tool_output_body() {
+    fn non_command_stdout_contains_matches_tool_output_body() {
         let spec = AcceptanceSpec {
             expect_stdout_contains: Some("已解压".to_string()),
             ..Default::default()
         };
         let ev = AcceptanceEvidence {
-            tool_name: "archive_unpack",
+            tool_name: "read_file",
             tool_output: "已解压 187 个文件到: .",
             stdout: "",
             stderr: "",

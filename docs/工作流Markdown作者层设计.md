@@ -364,10 +364,10 @@ LLM 路径的额外风险：模型生成**无界** `for_each` → 编译器 **�
 | 解析 | `src/cm_workflow/parse.rs` |
 | 模板 | `src/cm_workflow/workflow_templates.rs` |
 | 调度 | `src/cm_workflow/execute/` |
-| 工具分发 | `src/agent/workflow_tool_dispatch.rs` |
+| CLI 入口 | `src/runtime/cli_workflow.rs` |
 | 规划对齐 | `src/cm_agent/plan_artifact/` |
 
-**建议新增**：`src/cm_workflow/compile_spec.rs`、`src/cm_workflow/md_extract.rs`、`runtime/cli_workflow.rs`（或 `cli` 子模块）。
+**现状**：`src/cm_workflow/compile_spec.rs`、`src/cm_workflow/md_extract.rs`、`src/runtime/cli_workflow.rs` 均已落地。
 
 ---
 

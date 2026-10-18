@@ -17,7 +17,7 @@
 | 层次 | 现状摘要 |
 |------|-----------|
 | **契约** | `ToolSpec` + JSON Schema（`tool_specs_registry`）；`workflow_tool_args_satisfy_required` 等与内置表对齐。 |
-| **分发** | `HandlerId` + `tool_dispatch_registry!`；`dispatch_tool` / `run_tool`；`workflow_execute` 走 `agent::workflow_tool_dispatch`。 |
+| **分发** | `HandlerId` + `tool_dispatch_registry!`；`dispatch_tool` / `run_tool`。 |
 | **上下文** | `ToolContext` 聚合配置、工作目录、白名单、超时、变更集等。 |
 | **策略** | `ToolCategory`、`dev_tag` 裁剪；`step_executor_policy` 与分阶段 / DAG `node_tool_role`；`is_readonly_tool` 与并行批。 |
 | **薄弱带** | **`run_command`** 仍以字符串命令为主；**MCP** 动态工具语义弱于内置；各 `runner_*` 结构化程度依赖单工具实现。 |
@@ -30,7 +30,7 @@
 
 | 方向 | 说明 | 与仓库关系 |
 |------|------|------------|
-| **同轮并行与依赖** | 多 `tool_calls` 的并行、失败策略、依赖图 | 已有 **`workflow_execute` DAG**；可补：**非 DAG 的批策略在文档与提示词中显式化**（与 `parallel_readonly` 策略一致）。 |
+| **同轮并行与依赖** | 多 `tool_calls` 的并行、失败策略、依赖图 | 已有 **CLI 工作流 DAG**（`crabmate workflow run`；Agent 工具 `workflow_execute` 已于 2026-10-18 移除）；可补：**非 DAG 的批策略在文档与提示词中显式化**（与 `parallel_readonly` 策略一致）。 |
 | **工具结果部分接受** | 用户只批准部分 `tool_calls` 或跳过失败条 | 可增强 **Web 粒度审批** 与 **重试单条**（与 `tool_approval` 同向）。 |
 | **强制结构化输出** | 某工具或某步要求 JSON schema 结果 | 与 **`agent_reply_plan`**、**`structured_payload`** 同谱系；可扩展：**特定工具注册「结果 JSON profile」** 供下游节点消费。 |
 | **长任务进度事件** | 构建/索引等分阶段 SSE | 在 **`sse/`** 与 **`execute_tools`** 增加 **可订阅进度**（注意体积与脱敏）。落地切片（共享 Child 会话、杀进程组、chunk、按工具名墙钟）见 **`docs/design/long_running_tool_execution_todo.md`**。 |
@@ -102,7 +102,7 @@
 ### 8.5.1 已落地
 
 - **移除 6 个源码分析专用工具**（`shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity`）：统一改用 **`run_command`**（6 个 CLI 已进 `config/tools.toml` 白名单）；`/health` 不再探测 `dep_*`；缺失安装提示仍由 `error_output_playbook` 提供。详见 CHANGELOG `[Unreleased]` 与 **`docs/工具说明.md`**。
-- **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：`ci_pipeline_local` / `lint.rs` 仍**直接调用** `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，不影响这些组合工具的开关语义（如 `run_frontend_build`）。`jvm_tools` 及其 `run_maven_*` / `run_gradle_*` 开关后续已整体删除（2026-10-18），JVM 构建统一走 `run_command`。
+- **移除 14 个 JVM/容器 + Node/前端薄封装（A 档）**：`maven_compile` / `maven_test` / `gradle_compile` / `gradle_test` / `docker_build` / `docker_compose_ps` / `podman_images` / `npm_install` / `npm_run` / `npx_run` / `tsc_check` / `frontend_lint` / `frontend_build` / `frontend_test`，统一改用 **`run_command`**（相关 CLI 已在 `config/tools.toml` 白名单）。**实现函数与参数类型按需保留**：`lint.rs` 仍**直接调用** `container_tools` / `frontend_tools` 的实现，仅删除对外 `ToolSpec` + runner 注册，不影响这些组合工具的开关语义（如 `run_frontend_build`）。`jvm_tools` 及其 `run_maven_*` / `run_gradle_*` 开关后续已整体删除（2026-10-18），JVM 构建统一走 `run_command`；`ci_pipeline_local` 亦已于 2026-10-18 删除。
 - **移除 5 个 Go 族薄封装（§3.2 整族，2026-10-12）**：`go_build` / `go_test` / `go_vet` / `go_fmt_check` / `golangci_lint`，统一改用 **`run_command`**（`go` / `gofmt` / `golangci-lint` 已在 `config/tools.toml` 白名单；`go build ./...` 等经 `./...` 可通过参数安全校验）。**无聚合器 / 后台任务 / workflow 耦合**；`go_` 前缀本就不在并行只读批。**Python 族暂缓**（`pytest_run` 关联后台任务装配，`ruff_check` / `mypy_check` / `uv_*` 与 `ci_tools` / `quality_tools` 有复用耦合）。详见 CHANGELOG `[Unreleased]` 与 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2。
 - **移除 17 个写侧 Git 工具（B 档）**：`git_stage_files` / `git_commit` / `git_checkout` / `git_branch_create` / `git_branch_delete` / `git_push` / `git_merge` / `git_rebase` / `git_stash` / `git_tag` / `git_reset` / `git_cherry_pick` / `git_revert` / `git_clone` / `git_remote_set_url` / `git_apply` / `git_fetch`，统一改用 **`run_command`** 调用 `git`（`git` 已在 `config/tools.toml` 白名单），能力零损失。**只读 Git 工具保留并做同构合并**：`git_diff` 吸收原 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增可选 `stat` / `name_only` / `base`），保留 `git_status` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`。**为何不一并降级只读**：`run_command` 非只读，降级会连带失去 8.5.2 的四项只读能力（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）——这与 A 档「低频低价值只读」的取舍不同（Git 只读查询在代码审查工作流中使用频率高）。
 
@@ -160,10 +160,11 @@
 |------|------|
 | 2026-05-01 | 初稿：对标开源 Agent 的工具调用演进维度、与现有模块映射、优先级建议。 |
 | 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
-| 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。（`jvm_tools` 已于 2026-10-18 删除，见下行。） |
+| 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。（`jvm_tools` 于 2026-10-18 删除；`ci_pipeline_local` 于 2026-10-18 删除，见下行。） |
 | 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |
 | 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
 | 2026-10-07 | 新增配套文档 **`docs/design/tool_thin_wrapper_candidates.md`**：对 §8.5 之后的**剩余内置工具**逐家族盘点「适合 / 视情况 / 保留」判定与切片顺序（§8.5 负责方案与约束，该文件负责候选清单）。 |
 | 2026-10-07 | **落地 §3.1.2 写侧安全门族**（见 `tool_thin_wrapper_candidates.md`）：移除 **`cargo_fix`** / **`go_mod_tidy`** / **`python_install_editable`** 三个薄封装，改用 `run_command`（`cargo` / `go` / `uv` / `python3` 均已在白名单）。复核确认 `confirm` 门并非强制安全边界（`run_command` 无子命令级审批），故按「直接收敛、不新增机制」执行；三者均为写副作用工具，只读语义无损失。 |
 | 2026-10-18 | **路线 C 首次按档落地（B 档「先扩白名单再删」）**：先向 `allowed_commands` 扩入 `typos` / `codespell` / `ast-grep`（123 → 126，不扩 `sg`），再删除 `typos_check` / `codespell_check` / `ast_grep_run` / `ast_grep_rewrite` 四个薄封装，改用 `run_command`；typos/codespell 函数体保留供 `docs_health_sweep` 复用。§8.5.3 边界与 §8.5.5 白名单记录同步更新；细节见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §3.2 / §4 / §5。 |
 | 2026-10-18 | **A 档 JVM 收尾（BREAKING）**：整文件删除 `jvm_tools`，同步移除 `quality_workspace` 的 `run_maven_compile` / `run_maven_test` / `run_gradle_compile` / `run_gradle_test` 开关、`QualityStep` 四个变体、`MavenCompileArgs` / `MavenTestArgs` / `GradleTasksArgs` 参数类型与 `maven_` / `gradle_` 并行批前缀；`QualityWorkspaceArgs` 仍 `deny_unknown_fields`，旧调用方会得到形状错误。`mvn` / `gradle` 白名单、`/health` 的 `dep_mvn`、安装提示与 `mvn` 命令识别保持不变；Maven/Gradle 统一走 `run_command`。 |
+| 2026-10-18 | **移除 10 个可被原生命令替代的工具**：`code_stats` / `dependency_graph` / `coverage_report`、`archive_pack` / `archive_unpack` / `archive_list`、`ci_pipeline_local` / `release_ready_check` / `workflow_execute` / `rust_backtrace_analyze`，模型改用 `run_command`（`tokei` / `cargo tree` / `cargo llvm-cov` / `tar` / `unzip` / `cargo audit` / `cargo deny check` / `c++filt` / `addr2line`）。删除 `ToolExecutionClass::Workflow` / `HandlerId::Workflow` 与 `agent::workflow_tool_dispatch`；`cm_workflow` 引擎与 CLI `workflow compile/run` 保留，作为唯一工作流入口。详见 [tool_thin_wrapper_candidates.md](tool_thin_wrapper_candidates.md) §5。 |

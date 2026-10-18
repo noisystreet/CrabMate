@@ -57,17 +57,12 @@ fn parallel_sync_batch_mixed_readonly_http_and_search() {
 }
 
 #[test]
-fn parallel_sync_batch_denied_for_cargo_or_workflow() {
+fn parallel_sync_batch_denied_for_cargo() {
     let cfg = test_cfg();
     assert!(!tool_calls_allow_parallel_sync_batch(
         &default_lookup(),
         &cfg,
         &[tc("read_file"), tc("cargo_check")]
-    ));
-    assert!(!tool_calls_allow_parallel_sync_batch(
-        &default_lookup(),
-        &cfg,
-        &[tc("workflow_execute"), tc("read_file")]
     ));
 }
 
@@ -94,7 +89,6 @@ fn parallel_sync_batch_single_tool_false() {
 #[test]
 fn handler_map_resolves_known_tools() {
     let table = default_lookup();
-    assert_eq!(table.id_for("workflow_execute"), HandlerId::Workflow);
     assert_eq!(table.id_for("run_command"), HandlerId::RunCommand);
     assert_eq!(table.id_for("terminal_session"), HandlerId::TerminalSession);
     assert_eq!(table.id_for("web_search"), HandlerId::WebSearch);
@@ -105,10 +99,6 @@ fn handler_map_resolves_known_tools() {
 #[test]
 fn try_dispatch_meta_unknown_is_none() {
     assert!(try_dispatch_meta("calc").is_none());
-    assert_eq!(
-        try_dispatch_meta("workflow_execute").map(|m| m.name),
-        Some("workflow_execute")
-    );
 }
 
 #[test]
@@ -122,9 +112,6 @@ fn sync_default_inline_tools() {
 
 #[test]
 fn meta_fields_and_default_class() {
-    let wf = try_dispatch_meta("workflow_execute").unwrap();
-    assert!(!wf.requires_workspace);
-    assert_eq!(wf.class, ToolExecutionClass::Workflow);
     let rc = try_dispatch_meta("run_command").unwrap();
     assert!(rc.requires_workspace);
     assert_eq!(rc.class, ToolExecutionClass::CommandSpawnTimeout);

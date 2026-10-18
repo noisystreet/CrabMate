@@ -427,7 +427,6 @@ pub(super) async fn execute_tools_parallel(
             tool_result_envelope_v1,
         web_tool_ctx,
         mcp_turn: _,
-        request_chrome_trace: _,
         step_executor_constraint,
         tools_defs_full,
         turn_allow,

@@ -201,11 +201,6 @@ pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
     calc::run(&parsed.expression)
 }
 
-pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
-    // 由 runtime 在 run_agent_turn 中拦截实际执行。
-    "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
-}
-
 /// `cargo_check` 的 Typed runner：显式 `ToolError`（试点归并，原 dispatch 特判移入 spec）。
 #[allow(clippy::result_large_err)]
 pub fn runner_cargo_check_try(
@@ -418,21 +413,13 @@ define_runners_cwd_maxlen! {
     runner_license_notice => release_docs::license_notice,
     runner_repo_overview_sweep => repo_overview::repo_overview_sweep,
     runner_docs_health_sweep => docs_health_sweep::docs_health_sweep,
-    runner_ci_pipeline_local => ci_tools::ci_pipeline_local,
-    runner_release_ready_check => ci_tools::release_ready_check,
     runner_run_lints => lint::run,
     runner_quality_workspace => quality_tools::quality_workspace,
-    runner_code_stats => code_metrics::code_stats,
-    runner_dependency_graph => code_metrics::dependency_graph,
-    runner_coverage_report => code_metrics::coverage_report,
 }
 
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
 
 define_runners_cwd_ctx! {
-    runner_archive_pack => archive::archive_pack,
-    runner_archive_unpack => archive::archive_unpack,
-    runner_archive_list => archive::archive_list,
     runner_structured_patch => structured_data::structured_patch,
 }
 
@@ -498,7 +485,6 @@ define_runners_cwd! {
 
 define_runners_args_only! {
     runner_convert_units => unit_convert::run,
-    runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
     runner_text_transform => text_transform::run,
     runner_regex_test => regex_test::run,

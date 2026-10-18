@@ -20,7 +20,6 @@ pub const TERMINAL_SESSION_OUTER_GRACE_SECS: u64 = 5;
 
 fn execution_class_parallel_wall_key(class: ToolExecutionClass) -> &'static str {
     match class {
-        ToolExecutionClass::Workflow => "workflow",
         ToolExecutionClass::CommandSpawnTimeout => "command_spawn_timeout",
         ToolExecutionClass::WeatherSpawnTimeout => "weather_spawn_timeout",
         ToolExecutionClass::WebSearchSpawnTimeout => "web_search_spawn_timeout",
@@ -50,7 +49,7 @@ pub fn parallel_tool_wall_timeout_secs(cfg: &AgentConfig, tool_name: &str) -> u6
         WeatherSpawnTimeout => cfg.weather_tool.weather_timeout_secs.max(1),
         WebSearchSpawnTimeout => web_search_outer_wall_secs(cfg),
         CommandSpawnTimeout => cfg.command_exec.command_timeout_secs.max(1),
-        Workflow | BlockingSync => cfg.command_exec.command_timeout_secs.max(1),
+        BlockingSync => cfg.command_exec.command_timeout_secs.max(1),
     }
 }
 
@@ -126,7 +125,6 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "playbook_run_commands",
             "python_snippet_run",
             "run_executable",
-            "workflow_execute",
             "http_request",
             "gh_api",
             "gh_pr_create",
@@ -188,7 +186,6 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
         [
             "rust_compiler_json",
             "quality_workspace",
-            "ci_pipeline_local",
             "repo_overview_sweep",
             "crate_contract_map",
             "codebase_semantic_search",

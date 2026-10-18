@@ -18,12 +18,12 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
-        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
+        AddReminderArgs, CalcArgs,
+        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs,
+        DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
-        StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
+        StructuredValidateArgs, TableTextArgs,
     };
     use serde_json::json;
 
@@ -63,40 +63,6 @@ mod tests {
     }
 
     #[test]
-    fn code_stats_schema_has_format_enum() {
-        let v = tool_parameters_schema_value::<CodeStatsArgs>();
-        let defs = v.get("$defs").expect("$defs");
-        let def = defs.get("CodeStatsFormat").expect("CodeStatsFormat");
-        let e = def.get("enum").and_then(|x| x.as_array()).expect("enum");
-        assert!(e.iter().any(|x| x == "table"));
-        assert!(e.iter().any(|x| x == "json"));
-    }
-
-    #[test]
-    fn dependency_graph_schema_has_depth_range() {
-        let v = tool_parameters_schema_value::<DependencyGraphArgs>();
-        let depth = v.pointer("/properties/depth").expect("depth");
-        let dumped = depth.to_string();
-        assert!(
-            dumped.contains("\"minimum\"") && dumped.contains("\"maximum\""),
-            "expected range on depth: {dumped}"
-        );
-    }
-
-    #[test]
-    fn coverage_report_schema_has_format_variants() {
-        let v = tool_parameters_schema_value::<CoverageReportArgs>();
-        let defs = v.get("$defs").expect("$defs");
-        let def = defs
-            .get("CoverageReportFormat")
-            .expect("CoverageReportFormat");
-        let e = def.get("enum").and_then(|x| x.as_array()).expect("enum");
-        assert!(e.iter().any(|x| x == "auto"));
-        assert!(e.iter().any(|x| x == "lcov"));
-        assert!(e.iter().any(|x| x == "tarpaulin_json"));
-    }
-
-    #[test]
     fn format_files_schema_requires_paths() {
         let v = tool_parameters_schema_value::<FormatPathsArgs>();
         let req = v
@@ -133,17 +99,6 @@ mod tests {
     fn list_reminders_schema_has_include_done() {
         let v = tool_parameters_schema_value::<ListRemindersArgs>();
         assert!(v.pointer("/properties/include_done").is_some());
-    }
-
-    #[test]
-    fn archive_pack_schema_requires_output_sources() {
-        let v = tool_parameters_schema_value::<ArchivePackArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "output"));
-        assert!(req.iter().any(|x| x == "sources"));
     }
 
     #[test]
@@ -189,46 +144,6 @@ mod tests {
             .and_then(|r| r.as_array())
             .expect("required");
         assert!(req.iter().any(|x| x == "path"));
-    }
-
-    #[test]
-    fn workflow_execute_schema_exposes_workflow_or_file() {
-        let v = tool_parameters_schema_value::<WorkflowExecuteArgs>();
-        let props = v
-            .pointer("/properties")
-            .and_then(|p| p.as_object())
-            .expect("properties");
-        assert!(props.contains_key("workflow"));
-        assert!(props.contains_key("workflow_file"));
-        let has_required_workflow_key = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .is_some_and(|req| req.iter().any(|x| x == "workflow" || x == "workflow_file"));
-        assert!(
-            !has_required_workflow_key,
-            "runtime resolves workflow vs workflow_file; schema keeps both optional: {v}"
-        );
-        assert_eq!(
-            v.pointer("/additionalProperties"),
-            Some(&json!(false)),
-            "{v}"
-        );
-    }
-
-    #[test]
-    fn backtrace_analyze_schema_requires_backtrace() {
-        let v = tool_parameters_schema_value::<BacktraceAnalyzeArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "backtrace"));
-    }
-
-    #[test]
-    fn ci_pipeline_local_schema_has_run_fmt() {
-        let v = tool_parameters_schema_value::<CiPipelineLocalArgs>();
-        assert!(v.pointer("/properties/run_fmt").is_some());
     }
 
     #[test]
