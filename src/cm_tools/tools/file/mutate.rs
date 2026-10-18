@@ -24,7 +24,6 @@ use crate::cm_tools::workspace::fs::{
     write_bytes_under_root,
 };
 
-use super::write_ops::{workspace_path_tool_error, write_precheck_tool_error};
 use super::write_precheck::NOT_WRITTEN_HINT;
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
@@ -82,12 +81,12 @@ fn append_resolve_target_path(
     create_if_missing: bool,
 ) -> Result<PathBuf, ToolError> {
     if create_if_missing {
-        resolve_for_write(working_dir, path).map_err(workspace_path_tool_error)
+        resolve_for_write(working_dir, path).map_err(ToolError::path_resolve_failed)
     } else {
         match resolve_for_read(working_dir, path) {
             Ok(p) => Ok(p),
             // 越界 / 敏感目录 / 绝对路径等策略拒绝与「文件不存在」无关，须保留统一错误码。
-            Err(e) if e.is_policy_denied() => Err(workspace_path_tool_error(e)),
+            Err(e) if e.is_policy_denied() => Err(ToolError::path_resolve_failed(e)),
             Err(e) => Err(ToolError::invalid_args(format!(
                 "文件不存在（可设置 create_if_missing=true）：{}",
                 e
@@ -175,7 +174,7 @@ fn append_file_prepare(
         _ => return Err(ToolError::invalid_args("缺少 path 参数".to_string())),
     };
     let target = append_resolve_target_path(working_dir, &path, args.create_if_missing)?;
-    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
     append_create_parent_if_needed(&base, args.create_if_missing, &target)?;
     let before = std::fs::read_to_string(&target).ok();
     let inserted_leading_newline = append_file_needs_leading_newline(
@@ -439,7 +438,7 @@ pub fn append_file_try(
     );
     if let Err(e) = super::write_precheck::precheck_before_write(&plan.path, &merged, skip_precheck)
     {
-        return Err(write_precheck_tool_error("append_file", e));
+        return Err(ToolError::write_precheck_failed("append_file", e));
     }
     append_file_write(working_dir, ctx, plan)
 }
@@ -602,7 +601,7 @@ fn search_replace_confirm_and_precheck(
         )));
     }
     super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
-        .map_err(|e| write_precheck_tool_error("search_replace", e))
+        .map_err(|e| ToolError::write_precheck_failed("search_replace", e))
 }
 
 #[allow(clippy::result_large_err)]
@@ -610,7 +609,7 @@ fn load_search_replace_file_bytes(
     working_dir: &Path,
     path: &str,
 ) -> Result<(PathBuf, String), ToolError> {
-    let target = resolve_for_read(working_dir, path).map_err(workspace_path_tool_error)?;
+    let target = resolve_for_read(working_dir, path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(format!("错误：{} 不是文件", path)));
     }
@@ -672,7 +671,7 @@ pub fn search_replace_try(
     search_replace_confirm_and_precheck(confirm, args.skip_precheck, &path, &new_content)?;
 
     let before = content.clone();
-    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
     match write_bytes_under_root(&base, &target, new_content.as_bytes(), false, false) {
         Ok(()) => {
             record_file_state_after_write(

@@ -11,28 +11,30 @@ use super::{
     append_file, append_file_try, copy_file, copy_file_try, create_file, create_file_try,
     modify_file, modify_file_try, move_file, move_file_try, search_replace, search_replace_try,
 };
-use crate::cm_tools::tool_result::{ToolError, ToolFailureCategory};
-
-fn assert_invalid_input(err: &ToolError) {
-    assert_eq!(err.code, "invalid_args");
-    assert_eq!(err.category, ToolFailureCategory::InvalidInput);
-    assert!(!err.retryable);
-}
+use crate::cm_tools::tool_result::ToolFailureCategory;
+use crate::cm_tools::tools::testing::{
+    assert_invalid_input, assert_run_tool_error_code, assert_run_tool_result_ok,
+    assert_success_parity, assert_success_with_failure_wording,
+};
 
 fn read(dir: &Path, rel: &str) -> String {
     std::fs::read_to_string(dir.join(rel)).unwrap()
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn create_file_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
     let args = r#"{"path":"a.txt","content":"hello\nworld\n"}"#;
 
-    let legacy = create_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = create_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("创建应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || create_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || create_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(typed.contains("\"ok\":true"), "{typed}");
     assert_eq!(read(&dir_typed, "a.txt"), "hello\nworld\n");
 
@@ -100,6 +102,7 @@ fn create_file_try_path_escape_is_workspace_resolve_failed() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn copy_file_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -107,10 +110,13 @@ fn copy_file_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
     let args = r#"{"from":"a.txt","to":"sub/b.txt"}"#;
 
-    let legacy = copy_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = copy_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("复制应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || copy_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || copy_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(typed.contains("\"ok\":true"), "{typed}");
     assert_eq!(read(&dir_typed, "sub/b.txt"), "hello");
 
@@ -150,6 +156,7 @@ fn copy_file_try_missing_from_is_invalid_input() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn move_file_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -157,10 +164,13 @@ fn move_file_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "mv").unwrap();
     let args = r#"{"from":"a.txt","to":"c.txt"}"#;
 
-    let legacy = move_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = move_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("移动应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || move_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || move_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(!dir_typed.join("a.txt").exists());
     assert_eq!(read(&dir_typed, "c.txt"), "mv");
 
@@ -174,18 +184,12 @@ fn move_file_success_with_failure_word_in_path_stays_ok() {
     std::fs::write(dir.join("a.txt"), "mv").unwrap();
 
     // 目标文件名含「失败」：Legacy 正文启发式会误判，Typed 收尾须注入 `ok=true`。
-    let result = crate::cm_tools::tools::run_tool_result(
+    let result = assert_run_tool_result_ok(
         "move_file",
         r#"{"from":"a.txt","to":"失败.txt"}"#,
         &test_ctx(&dir),
     );
 
-    assert!(
-        result.ok,
-        "错误码 {:?} 正文 {}",
-        result.error_code, result.message
-    );
-    assert_eq!(result.error_code, None);
     assert!(
         result.message.contains("\"ok\":true"),
         "应注入显式成功头: {}",
@@ -202,26 +206,17 @@ fn run_tool_failure_exposes_typed_error_code_to_legacy_parse() {
     std::fs::write(dir.join("a.txt"), "old").unwrap();
 
     // 主 Agent 路径只返回 String，精确错误码须经显式头保留。
-    let output = crate::cm_tools::tools::run_tool(
+    assert_run_tool_error_code(
         "create_file",
         r#"{"path":"a.txt","content":"new"}"#,
         &test_ctx(&dir),
+        "invalid_args",
     );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("create_file", &output);
-    assert!(!parsed.ok, "{output}");
-    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
-
-    let output = crate::cm_tools::tools::run_tool(
+    assert_run_tool_error_code(
         "copy_file",
         r#"{"from":"../escape.txt","to":"b.txt"}"#,
         &test_ctx(&dir),
-    );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("copy_file", &output);
-    assert!(!parsed.ok, "{output}");
-    assert_eq!(
-        parsed.error_code.as_deref(),
-        Some("workspace_resolve_failed"),
-        "{output}"
+        "workspace_resolve_failed",
     );
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -245,6 +240,7 @@ fn move_file_try_missing_source_is_workspace_resolve_failed() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn modify_file_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -252,10 +248,13 @@ fn modify_file_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "L1\nL2\nL3\n").unwrap();
     let args = r#"{"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#;
 
-    let legacy = modify_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = modify_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("替换应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || modify_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || modify_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(typed.contains("已按行替换"), "{typed}");
     assert!(typed.contains("\"ok\":true"), "{typed}");
     assert_eq!(read(&dir_typed, "a.txt"), "L1\nX\nL3\n");
@@ -347,14 +346,12 @@ fn modify_file_failure_exposes_typed_error_code_to_legacy_parse() {
     // 主 Agent 路径只返回 String，精确错误码须经显式头保留。
     // Schema 校验可通过的目录路径：Legacy 正文会推断为 `modify_file_failed`，
     // Typed 面返回 `invalid_args`，以此验证头部确实覆盖了正文启发式。
-    let output = crate::cm_tools::tools::run_tool(
+    assert_run_tool_error_code(
         "modify_file",
         r#"{"path":"sub","content":"x"}"#,
         &test_ctx(&dir),
+        "invalid_args",
     );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("modify_file", &output);
-    assert!(!parsed.ok, "{output}");
-    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -362,6 +359,7 @@ fn modify_file_failure_exposes_typed_error_code_to_legacy_parse() {
 // ── PR-1c：「append_file」 ─────────────────────────────────────
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn append_file_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -369,10 +367,13 @@ fn append_file_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
     let args = r#"{"path":"a.txt","content":"world\n"}"#;
 
-    let legacy = append_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = append_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("追加应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || append_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(typed.contains("\"ok\":true"), "{typed}");
     assert_eq!(read(&dir_typed, "a.txt"), "hello\nworld\n");
 
@@ -381,6 +382,7 @@ fn append_file_try_success_matches_string_face() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn append_file_try_dry_run_matches_string_face_and_does_not_write() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -388,10 +390,13 @@ fn append_file_try_dry_run_matches_string_face_and_does_not_write() {
     std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
     let args = r#"{"path":"a.txt","content":"world","dry_run":true}"#;
 
-    let legacy = append_file(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = append_file_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("dry-run 应成功");
+    assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || append_file(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || append_file_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "dry-run 正文必须与 String 面逐字节一致");
     assert_eq!(read(&dir_typed, "a.txt"), "hello", "dry-run 不得写盘");
 
     let _ = std::fs::remove_dir_all(&dir_legacy);
@@ -467,14 +472,11 @@ fn append_file_success_body_with_failure_wording_stays_ok() {
     let dir = make_test_dir();
     std::fs::write(dir.join("a失败.txt"), "hello").unwrap();
 
-    let output = crate::cm_tools::tools::run_tool(
+    assert_success_with_failure_wording(
         "append_file",
         r#"{"path":"a失败.txt","content":"world\n"}"#,
         &test_ctx(&dir),
     );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("append_file", &output);
-    assert!(parsed.ok, "路径含「失败」不得影响成功判定: {output}");
-    assert!(parsed.error_code.is_none(), "{output}");
     assert_eq!(read(&dir, "a失败.txt"), "hello\nworld\n");
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -483,6 +485,7 @@ fn append_file_success_body_with_failure_wording_stays_ok() {
 // ── PR-1c：「search_replace」 ─────────────────────────────────
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn search_replace_try_success_matches_string_face() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -490,10 +493,13 @@ fn search_replace_try_success_matches_string_face() {
     std::fs::write(dir_typed.join("a.txt"), "hello world\n").unwrap();
     let args = r#"{"path":"a.txt","search":"world","replace":"rust","dry_run":false,"confirm":true}"#;
 
-    let legacy = search_replace(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("替换应成功");
+    let typed = assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "成功正文必须与 String 面逐字节一致");
     assert!(typed.contains("已替换"), "{typed}");
     assert!(typed.contains("\"ok\":true"), "{typed}");
     assert_eq!(read(&dir_typed, "a.txt"), "hello rust\n");
@@ -503,6 +509,7 @@ fn search_replace_try_success_matches_string_face() {
 }
 
 #[test]
+#[allow(clippy::result_large_err)] // 闭包返回 `Result<String, ToolError>`
 fn search_replace_try_dry_run_matches_string_face_and_does_not_write() {
     let dir_legacy = make_test_dir();
     let dir_typed = make_test_dir();
@@ -510,10 +517,13 @@ fn search_replace_try_dry_run_matches_string_face_and_does_not_write() {
     std::fs::write(dir_typed.join("a.txt"), "hello world\n").unwrap();
     let args = r#"{"path":"a.txt","search":"world","replace":"rust"}"#;
 
-    let legacy = search_replace(args, &dir_legacy, &test_ctx(&dir_legacy));
-    let typed = search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)).expect("dry-run 应成功");
+    assert_success_parity(
+        &dir_legacy,
+        &dir_typed,
+        || search_replace(args, &dir_legacy, &test_ctx(&dir_legacy)),
+        || search_replace_try(args, &dir_typed, &test_ctx(&dir_typed)),
+    );
 
-    assert_eq!(legacy, typed, "dry-run 正文必须与 String 面逐字节一致");
     assert_eq!(read(&dir_typed, "a.txt"), "hello world\n", "dry-run 不得写盘");
 
     let _ = std::fs::remove_dir_all(&dir_legacy);
@@ -624,14 +634,12 @@ fn search_replace_no_match_exposes_invalid_args_to_legacy_parse() {
     std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
 
     // 正文「未找到匹配」不含失败词，Legacy 启发式会判成功；Typed 须经显式头暴露真实失败。
-    let output = crate::cm_tools::tools::run_tool(
+    assert_run_tool_error_code(
         "search_replace",
         r#"{"path":"a.txt","search":"zzz","replace":"x"}"#,
         &test_ctx(&dir),
+        "invalid_args",
     );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("search_replace", &output);
-    assert!(!parsed.ok, "{output}");
-    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{output}");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -642,14 +650,11 @@ fn search_replace_dry_run_body_with_failure_wording_stays_ok() {
     std::fs::write(dir.join("a失败.txt"), "hello world\n").unwrap();
 
     // dry-run 预览正文不含结构化头；路径含「失败」时 Legacy 启发式会误判，Typed 收尾须注入 `ok=true`。
-    let output = crate::cm_tools::tools::run_tool(
+    let output = assert_success_with_failure_wording(
         "search_replace",
         r#"{"path":"a失败.txt","search":"world","replace":"rust"}"#,
         &test_ctx(&dir),
     );
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output("search_replace", &output);
-    assert!(parsed.ok, "dry-run 成功不得被判失败: {output}");
-    assert!(parsed.error_code.is_none(), "{output}");
     assert!(output.contains("\"ok\":true"), "{output}");
     assert_eq!(read(&dir, "a失败.txt"), "hello world\n", "dry-run 不得写盘");
 
