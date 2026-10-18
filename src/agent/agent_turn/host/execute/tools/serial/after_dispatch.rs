@@ -4,11 +4,11 @@ use std::sync::Arc;
 use log::info;
 
 use crate::agent::per_coord::PerCoordinator;
+use crate::cm_tools::tools::parse_command_spec;
 use crate::tool_registry;
 use crate::tool_result::parse_legacy_output;
 
 use super::super::run_command_guard::classify_run_command_failure_family_from_result;
-use super::super::run_command_guard::parse_run_command_payload;
 use super::super::{emit_timeline_log_sse, emit_tool_call_summary_sse};
 
 use super::SerialToolIterationSsePreface;
@@ -35,7 +35,7 @@ pub(super) fn serial_bookkeep_run_command_failure(
         {
             per_coord.record_successful_run_command(suppress_key, result.to_string());
         }
-        if run_command_invocation_is_make_clean(args) {
+        if run_command_invocation_is_make_clean(args, effective_working_dir) {
             per_coord.clear_all_run_command_failure_state();
         }
     } else {
@@ -46,20 +46,22 @@ pub(super) fn serial_bookkeep_run_command_failure(
                 .unwrap_or_else(|| "unknown".to_string())
         });
         per_coord.mark_tool_failure_signature(name, args, marker.clone());
-        if let Some(family) = classify_run_command_failure_family_from_result(args, &parsed) {
+        if let Some(family) =
+            classify_run_command_failure_family_from_result(args, effective_working_dir, &parsed)
+        {
             per_coord.mark_tool_failure_family(name, family, marker);
         }
     }
 }
 
-fn run_command_invocation_is_make_clean(args_json: &str) -> bool {
-    let Some((command, command_args)) = parse_run_command_payload(args_json) else {
+fn run_command_invocation_is_make_clean(args_json: &str, effective_working_dir: &Path) -> bool {
+    let Ok(spec) = parse_command_spec(args_json, effective_working_dir) else {
         return false;
     };
-    if command != "make" {
+    if spec.command != "make" {
         return false;
     }
-    command_args.iter().any(|a| a == "clean")
+    spec.args.iter().any(|a| a == "clean")
 }
 
 /// 工作区写操作成功后清除 `run_command` 失败短路，便于 patch 后重试 make/cmake。
