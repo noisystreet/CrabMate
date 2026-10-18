@@ -415,11 +415,6 @@ pub(super) struct ServeBranchArgs<'a> {
 }
 
 #[cfg(feature = "web")]
-struct ServeRuntimeBuilt {
-    state: Arc<AppState>,
-}
-
-#[cfg(feature = "web")]
 struct ServeRuntimeBuildInput<'a> {
     cfg_holder: &'a config::SharedAgentConfig,
     config_path: &'a Option<String>,
@@ -428,12 +423,13 @@ struct ServeRuntimeBuildInput<'a> {
     api_key: String,
     initial_workspace: Option<String>,
     process_handles: Arc<crate::process_handles::ProcessHandles>,
+    paths: cli_run_serve::ServeResolvedPaths,
 }
 
 #[cfg(feature = "web")]
 async fn build_serve_runtime_state(
     input: ServeRuntimeBuildInput<'_>,
-) -> Result<ServeRuntimeBuilt, Box<dyn std::error::Error>> {
+) -> Result<Arc<AppState>, Box<dyn std::error::Error>> {
     let ServeRuntimeBuildInput {
         cfg_holder,
         config_path,
@@ -442,46 +438,28 @@ async fn build_serve_runtime_state(
         api_key,
         initial_workspace,
         process_handles,
+        paths,
     } = input;
-    let (default_ws, uploads_dir, conv_sqlite, cq_conc, cq_pending, ltm_enabled, ltm_store_path) = {
+    let (cq_conc, cq_pending) = {
         let g = cfg_holder.read().await;
-        let ws = initial_workspace
-            .as_ref()
-            .map(std::path::PathBuf::from)
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| {
-                std::path::PathBuf::from(g.command_exec.run_command_working_dir.clone())
-            });
-        let conv_sqlite = g
-            .conversation_persistence
-            .conversation_store_sqlite_path
-            .clone();
-        let uploads = crate::web::chat_uploads_dir_beside_session_store(&conv_sqlite, &ws);
-        std::fs::create_dir_all(&uploads).ok();
         (
-            ws,
-            uploads,
-            conv_sqlite,
             g.chat_queues_cache.chat_queue_max_concurrent,
             g.chat_queues_cache.chat_queue_max_pending,
-            g.long_term_memory.long_term_memory_enabled,
-            g.long_term_memory
-                .long_term_memory_store_sqlite_path
-                .clone(),
         )
     };
+    std::fs::create_dir_all(&paths.uploads_dir).ok();
     {
         let mut g = cfg_holder.write().await;
-        g.chat_uploads_dir = Some(uploads_dir.clone());
-        g.chat_workspace_root = Some(default_ws);
+        g.chat_uploads_dir = Some(paths.uploads_dir.clone());
+        g.chat_workspace_root = Some(paths.workspace_root.clone());
     }
     let chat_queue = chat_job_queue::ChatJobQueue::new(cq_conc, cq_pending);
     let conversation_backing =
-        cli_run_serve::conversation_backing_from_sqlite_path(conv_sqlite.trim())?;
+        cli_run_serve::conversation_backing_from_sqlite_path(paths.conversation_sqlite.trim())?;
     let long_term_memory = cli_run_serve::serve_long_term_memory_runtime(
-        ltm_enabled,
+        paths.long_term_memory_enabled,
         &conversation_backing,
-        ltm_store_path.trim(),
+        paths.long_term_memory_sqlite.trim(),
     );
     let sse_stream_hub = std::sync::Arc::new(crate::sse::SseStreamHub::new());
     let tool_job_registry = {
@@ -505,42 +483,38 @@ async fn build_serve_runtime_state(
         llm_backend: None,
         turn_runner: crate::default_turn_runner(),
     });
-    Ok(ServeRuntimeBuilt {
-        state: Arc::new(AppState {
-            http: web::AppStateHttpCore {
-                cfg: Arc::clone(cfg_holder),
-                config_path_for_reload: config_path.clone(),
-                api_key,
-                client,
-                tools,
-                workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(
-                    initial_workspace,
-                )),
-                uploads_dir,
-            },
-            chat: web::AppStateChatRuntime {
-                chat_queue,
-                chat_queue_job_deps,
-            },
-            conversation: web::AppStateConversationRuntime {
-                conversation_backing: std::sync::Arc::new(tokio::sync::RwLock::new(
-                    conversation_backing,
-                )),
-                conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
-                cfg: std::sync::Arc::clone(cfg_holder),
-            },
-            aux: web::AppStateWebAux {
-                approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-                long_term_memory,
-                llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-                tiktoken_baseline_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
-                sse_stream_hub,
-                process_handles: Arc::clone(&process_handles),
-                async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
-                tool_job_registry,
-            },
-        }),
-    })
+    Ok(Arc::new(AppState {
+        http: web::AppStateHttpCore {
+            cfg: Arc::clone(cfg_holder),
+            config_path_for_reload: config_path.clone(),
+            api_key,
+            client,
+            tools,
+            workspace_override: std::sync::Arc::new(tokio::sync::RwLock::new(initial_workspace)),
+            uploads_dir: paths.uploads_dir,
+        },
+        chat: web::AppStateChatRuntime {
+            chat_queue,
+            chat_queue_job_deps,
+        },
+        conversation: web::AppStateConversationRuntime {
+            conversation_backing: std::sync::Arc::new(tokio::sync::RwLock::new(
+                conversation_backing,
+            )),
+            conversation_id_counter: std::sync::Arc::new(AtomicU64::new(1)),
+            cfg: std::sync::Arc::clone(cfg_holder),
+        },
+        aux: web::AppStateWebAux {
+            approval_sessions: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            long_term_memory,
+            llm_models_health_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            tiktoken_baseline_cache: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            sse_stream_hub,
+            process_handles: Arc::clone(&process_handles),
+            async_chat_jobs: std::sync::Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            tool_job_registry,
+        },
+    }))
 }
 
 #[cfg(feature = "web")]
@@ -591,14 +565,16 @@ fn serve_log_bind_warnings(bind_ip: std::net::IpAddr, auth_enabled: bool, actual
 }
 
 #[cfg(feature = "web")]
-fn print_desktop_ready_json(actual_addr: SocketAddr, web_api_bearer_layer_enabled: bool) {
-    let ready = serde_json::json!({
-        "event": "web_ready",
-        "host": actual_addr.ip().to_string(),
-        "port": actual_addr.port(),
-        "url": format!("http://{}/", actual_addr),
-        "auth_enabled": web_api_bearer_layer_enabled,
-    });
+fn print_desktop_ready_json(
+    actual_addr: SocketAddr,
+    web_api_bearer_layer_enabled: bool,
+    instance_id: Option<&str>,
+) {
+    let ready = cli_run_serve::serve_ready_json(
+        actual_addr,
+        web_api_bearer_layer_enabled,
+        instance_id,
+    );
     println!("{}", serde_json::to_string(&ready).unwrap_or_default());
 }
 
@@ -656,7 +632,18 @@ pub(super) async fn run_serve_branch(
         http_bind_host,
         process_handles,
     } = args;
-    let runtime = build_serve_runtime_state(ServeRuntimeBuildInput {
+    let cli_run_serve::ServePrecheck {
+        instance_id,
+        paths,
+        // 绑定保留到函数结束，确保持锁覆盖整个进程生命周期。
+        instance_locks: _instance_locks,
+    } = cli_run_serve::serve_precheck(
+        cfg_holder,
+        workspace_cli.as_deref(),
+        config_path.as_deref(),
+    )
+    .await?;
+    let state = build_serve_runtime_state(ServeRuntimeBuildInput {
         cfg_holder,
         config_path,
         client,
@@ -664,9 +651,9 @@ pub(super) async fn run_serve_branch(
         api_key: api_key.clone(),
         initial_workspace: workspace_cli.clone(),
         process_handles,
+        paths,
     })
     .await?;
-    let state = runtime.state;
     let sched_tasks = {
         let g = cfg_holder.read().await;
         g.conversation_persistence.scheduled_agent_tasks.clone()
@@ -695,7 +682,11 @@ pub(super) async fn run_serve_branch(
     serve_log_bind_warnings(bind_ip, auth_enabled, actual_addr);
     cli_run_serve::serve_log_cors_startup(&cors_allowed_origins);
     if desktop_ready_json {
-        print_desktop_ready_json(actual_addr, web_api_bearer_layer_enabled);
+        print_desktop_ready_json(
+            actual_addr,
+            web_api_bearer_layer_enabled,
+            instance_id.as_deref(),
+        );
     }
     info!(target: "crabmate", "Web 服务监听 addr={}", actual_addr);
     spawn_uploads_cleanup(state.clone());
