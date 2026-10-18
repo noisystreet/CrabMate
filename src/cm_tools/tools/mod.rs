@@ -56,7 +56,6 @@ mod grep_try;
 #[cfg(feature = "web-fetch-tools")]
 pub mod http_fetch;
 mod json_format;
-mod jvm_tools;
 mod lint;
 mod markdown_links;
 pub mod output_util;

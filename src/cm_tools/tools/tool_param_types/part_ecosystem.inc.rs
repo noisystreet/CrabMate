@@ -71,14 +71,6 @@ pub struct QualityWorkspaceArgs {
     #[serde(default)]
     pub run_mypy: bool,
     #[serde(default)]
-    pub run_maven_compile: bool,
-    #[serde(default)]
-    pub run_maven_test: bool,
-    #[serde(default)]
-    pub run_gradle_compile: bool,
-    #[serde(default)]
-    pub run_gradle_test: bool,
-    #[serde(default)]
     pub run_docker_compose_ps: bool,
     #[serde(default)]
     pub run_podman_images: bool,

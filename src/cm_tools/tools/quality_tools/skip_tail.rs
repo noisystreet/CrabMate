@@ -32,10 +32,6 @@ mod tests {
             run_ruff_check: false,
             run_pytest: false,
             run_mypy: false,
-            run_maven_compile: false,
-            run_maven_test: false,
-            run_gradle_compile: false,
-            run_gradle_test: false,
             run_docker_compose_ps: false,
             run_podman_images: false,
             fail_fast: true,
@@ -58,16 +54,16 @@ mod tests {
     }
 
     #[test]
-    fn skip_tail_after_gradle_test_only_docker_tail() {
+    fn skip_tail_after_pytest_only_container_tail() {
         let f = QualityFlags {
-            run_gradle_test: true,
+            run_pytest: true,
             run_docker_compose_ps: true,
             run_podman_images: true,
             fail_fast: true,
             ..flags_cargo_chain()
         };
         let mut summary = Vec::new();
-        skip_tail_after_failure(QualityStep::GradleTest, f, &mut summary);
+        skip_tail_after_failure(QualityStep::Pytest, f, &mut summary);
         let names: Vec<_> = summary.iter().map(|(n, _)| *n).collect();
         assert_eq!(names, vec!["docker compose ps", "podman images"]);
     }

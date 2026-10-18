@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use super::tool_param_types::QualityWorkspaceArgs;
-use super::{cargo_tools, ci_tools, container_tools, frontend_tools, jvm_tools, python_tools};
+use super::{cargo_tools, ci_tools, container_tools, frontend_tools, python_tools};
 
 mod skip_tail;
 
@@ -19,10 +19,6 @@ struct QualityFlags {
     run_ruff_check: bool,
     run_pytest: bool,
     run_mypy: bool,
-    run_maven_compile: bool,
-    run_maven_test: bool,
-    run_gradle_compile: bool,
-    run_gradle_test: bool,
     run_docker_compose_ps: bool,
     run_podman_images: bool,
     fail_fast: bool,
@@ -49,16 +45,12 @@ enum QualityStep {
     RuffCheck,
     Pytest,
     Mypy,
-    MavenCompile,
-    MavenTest,
-    GradleCompile,
-    GradleTest,
     DockerComposePs,
     PodmanImages,
 }
 
 impl QualityStep {
-    const ORDER: [Self; 16] = [
+    const ORDER: [Self; 12] = [
         Self::CargoFmtCheck,
         Self::CargoCheck,
         Self::CargoClippy,
@@ -69,10 +61,6 @@ impl QualityStep {
         Self::RuffCheck,
         Self::Pytest,
         Self::Mypy,
-        Self::MavenCompile,
-        Self::MavenTest,
-        Self::GradleCompile,
-        Self::GradleTest,
         Self::DockerComposePs,
         Self::PodmanImages,
     ];
@@ -89,10 +77,6 @@ impl QualityStep {
             Self::RuffCheck => "ruff check",
             Self::Pytest => "pytest",
             Self::Mypy => "mypy",
-            Self::MavenCompile => "maven compile",
-            Self::MavenTest => "maven test",
-            Self::GradleCompile => "gradle compile",
-            Self::GradleTest => "gradle test",
             Self::DockerComposePs => "docker compose ps",
             Self::PodmanImages => "podman images",
         }
@@ -110,10 +94,6 @@ impl QualityStep {
             Self::RuffCheck => f.run_ruff_check,
             Self::Pytest => f.run_pytest,
             Self::Mypy => f.run_mypy,
-            Self::MavenCompile => f.run_maven_compile,
-            Self::MavenTest => f.run_maven_test,
-            Self::GradleCompile => f.run_gradle_compile,
-            Self::GradleTest => f.run_gradle_test,
             Self::DockerComposePs => f.run_docker_compose_ps,
             Self::PodmanImages => f.run_podman_images,
         }
@@ -128,10 +108,6 @@ impl QualityStep {
                 | Self::RuffCheck
                 | Self::Pytest
                 | Self::Mypy
-                | Self::MavenCompile
-                | Self::MavenTest
-                | Self::GradleCompile
-                | Self::GradleTest
                 | Self::DockerComposePs
                 | Self::PodmanImages
         )
@@ -185,12 +161,6 @@ fn run_quality_step(step: QualityStep, workspace_root: &Path, max_output_len: us
         QualityStep::RuffCheck => python_tools::ruff_check("{}", workspace_root, max_output_len),
         QualityStep::Pytest => python_tools::pytest_run("{}", workspace_root, max_output_len, None),
         QualityStep::Mypy => python_tools::mypy_check("{}", workspace_root, max_output_len),
-        QualityStep::MavenCompile => jvm_tools::maven_compile("{}", workspace_root, max_output_len),
-        QualityStep::MavenTest => jvm_tools::maven_test("{}", workspace_root, max_output_len),
-        QualityStep::GradleCompile => {
-            jvm_tools::gradle_compile("{}", workspace_root, max_output_len)
-        }
-        QualityStep::GradleTest => jvm_tools::gradle_test("{}", workspace_root, max_output_len),
         QualityStep::DockerComposePs => {
             container_tools::docker_compose_ps("{}", workspace_root, max_output_len)
         }
@@ -229,10 +199,6 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
         run_ruff_check: a.run_ruff_check,
         run_pytest: a.run_pytest,
         run_mypy: a.run_mypy,
-        run_maven_compile: a.run_maven_compile,
-        run_maven_test: a.run_maven_test,
-        run_gradle_compile: a.run_gradle_compile,
-        run_gradle_test: a.run_gradle_test,
         run_docker_compose_ps: a.run_docker_compose_ps,
         run_podman_images: a.run_podman_images,
         fail_fast: a.fail_fast,
@@ -240,7 +206,7 @@ pub fn quality_workspace(args_json: &str, workspace_root: &Path, max_output_len:
     };
 
     if !flags.any_step_enabled() {
-        return "错误：至少启用一项检查（含 run_cargo_* / run_frontend_* / run_python_* / run_maven_* / run_gradle_* / run_docker_compose_ps / run_podman_images）".to_string();
+        return "错误：至少启用一项检查（含 run_cargo_* / run_frontend_* / run_python_* / run_docker_compose_ps / run_podman_images）".to_string();
     }
 
     let mut sections: Vec<String> = Vec::new();
@@ -284,7 +250,7 @@ fn section_failed_first_line_exit_patterns(text: &str) -> bool {
         || section_failed_npm_run_exit(line)
         || section_failed_npx_prettier_exit(line)
         || section_failed_python_linters_exit(line)
-        || section_failed_jvm_docker_exit(line)
+        || section_failed_container_exit(line)
 }
 
 fn exit_suffix_nonzero(line: &str) -> bool {
@@ -316,11 +282,8 @@ fn section_failed_python_linters_exit(line: &str) -> bool {
         && exit_suffix_nonzero(line)
 }
 
-fn section_failed_jvm_docker_exit(line: &str) -> bool {
-    (line.starts_with("mvn ")
-        || line.starts_with("gradle ")
-        || line.contains("docker compose ps")
-        || line.starts_with("podman images"))
+fn section_failed_container_exit(line: &str) -> bool {
+    (line.contains("docker compose ps") || line.starts_with("podman images"))
         && exit_suffix_nonzero(line)
 }
 
