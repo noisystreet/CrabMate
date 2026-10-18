@@ -65,6 +65,7 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
             let body = tool_output_prepend_path(&disp, format!("已创建文件: {}", disp));
             format_tool_output_with_write_diff_preview(
                 "create_file",
+                true,
                 body,
                 vec![WriteDiffFileState {
                     rel_path: path.clone(),
@@ -148,6 +149,7 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
             let after = std::fs::read_to_string(&dst).ok();
             format_tool_output_with_write_diff_preview(
                 "copy_file",
+                true,
                 body,
                 vec![WriteDiffFileState {
                     rel_path: to.clone(),
@@ -247,6 +249,7 @@ fn modify_file_write_full_overwrite(
         );
         return format_tool_output_with_write_diff_preview(
             "modify_file",
+            true,
             body,
             vec![WriteDiffFileState {
                 rel_path: path.to_string(),
@@ -267,6 +270,7 @@ fn modify_file_write_full_overwrite(
         );
         return format_tool_output_with_write_diff_preview(
             "modify_file",
+            false,
             body,
             vec![WriteDiffFileState {
                 rel_path: path.to_string(),
@@ -306,6 +310,7 @@ fn modify_file_write_full_overwrite(
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: path.to_string(),

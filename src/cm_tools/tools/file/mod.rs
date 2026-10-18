@@ -31,6 +31,10 @@ pub use tree_glob::{glob_files, list_tree};
 pub use write_ops::{copy_file, create_file, modify_file, move_file};
 
 #[cfg(test)]
+mod mutate_delete_tests;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_guards_batch;

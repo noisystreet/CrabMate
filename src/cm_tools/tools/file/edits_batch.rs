@@ -312,6 +312,7 @@ fn batch_dry_run_preview(path: &str, edits: &[BatchEdit], original: &str, out: S
     );
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: path.to_string(),
@@ -348,6 +349,7 @@ fn finish_batch_success(
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: path.to_string(),

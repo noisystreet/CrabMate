@@ -201,6 +201,7 @@ fn append_file_preview(working_dir: &Path, plan: AppendFilePlan) -> String {
     let after = append_file_after_preview(&plan);
     format_tool_output_with_write_diff_preview(
         "append_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: plan.path,
@@ -227,6 +228,7 @@ fn append_file_write(working_dir: &Path, ctx: &ToolContext<'_>, plan: AppendFile
     let body = append_file_build_body("已追加", working_dir, &plan);
     format_tool_output_with_write_diff_preview(
         "append_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: plan.path,
@@ -363,6 +365,7 @@ pub fn delete_files(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) 
         .collect();
     format_tool_output_with_write_diff_preview(
         "delete_files",
+        failed.is_empty(),
         body,
         diff_states,
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
@@ -665,6 +668,7 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
             );
             format_tool_output_with_write_diff_preview(
                 "search_replace",
+                true,
                 body,
                 vec![WriteDiffFileState {
                     rel_path: path,
@@ -680,136 +684,9 @@ pub fn search_replace(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_support::{test_ctx, write};
     use super::*;
-    use crate::cm_config::WebSearchProvider;
     use std::fs;
-
-    fn test_ctx(working_dir: &std::path::Path) -> ToolContext<'_> {
-        ToolContext {
-            cfg: None,
-            codebase_semantic_host: None,
-            command_max_output_len: 1 << 20,
-            weather_timeout_secs: 5,
-            allowed_commands: &[],
-            working_dir,
-            web_search_timeout_secs: 5,
-            web_search_provider: WebSearchProvider::Worbrow,
-            web_search_api_key: "",
-            web_search_max_results: 3,
-            web_search_proxy: "",
-            http_fetch_allowed_prefixes: &[],
-            http_fetch_timeout_secs: 5,
-            http_fetch_max_response_bytes: 1024,
-            command_timeout_secs: 5,
-            read_file_turn_cache: None,
-            workspace_changelist: None,
-            test_result_cache_enabled: false,
-            test_result_cache_max_entries: 0,
-            long_term_memory_host: None,
-            tool_jobs_host: None,
-        }
-    }
-
-    fn write(ws: &std::path::Path, rel: &str, content: &str) {
-        let p = ws.join(rel);
-        fs::create_dir_all(p.parent().unwrap()).unwrap();
-        fs::write(p, content).unwrap();
-    }
-
-    #[test]
-    fn delete_files_batch_success_dedup() {
-        let tmp = tempfile::tempdir().unwrap();
-        write(tmp.path(), "a.txt", "A");
-        write(tmp.path(), "b.txt", "B");
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(
-            r#"{"paths":["a.txt","b.txt","a.txt"],"confirm":true}"#,
-            tmp.path(),
-            &ctx,
-        );
-        assert!(out.contains("已删除 2 个文件"), "{out}");
-        assert!(!tmp.path().join("a.txt").exists());
-        assert!(!tmp.path().join("b.txt").exists());
-    }
-
-    #[test]
-    fn delete_files_requires_confirm() {
-        let tmp = tempfile::tempdir().unwrap();
-        write(tmp.path(), "a.txt", "A");
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(r#"{"paths":["a.txt"]}"#, tmp.path(), &ctx);
-        assert!(out.contains("需要 confirm=true"), "{out}");
-        assert!(tmp.path().join("a.txt").exists());
-    }
-
-    #[test]
-    fn delete_files_validation_rejects_whole_batch() {
-        let tmp = tempfile::tempdir().unwrap();
-        write(tmp.path(), "a.txt", "A");
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(
-            r#"{"paths":["a.txt","missing.txt"],"confirm":true}"#,
-            tmp.path(),
-            &ctx,
-        );
-        assert!(!out.contains("已删除"), "{out}");
-        assert!(out.contains("路径无法解析") || out.contains("错误"), "{out}");
-        assert!(
-            tmp.path().join("a.txt").exists(),
-            "任一路径非法时整批拒绝，不应删除任何文件"
-        );
-    }
-
-    #[test]
-    fn delete_files_rejects_directory() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::create_dir(tmp.path().join("d")).unwrap();
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(r#"{"paths":["d"],"confirm":true}"#, tmp.path(), &ctx);
-        assert!(out.contains("不是文件"), "{out}");
-        assert!(tmp.path().join("d").is_dir());
-    }
-
-    #[test]
-    fn delete_files_caps_batch_size() {
-        let tmp = tempfile::tempdir().unwrap();
-        let ctx = test_ctx(tmp.path());
-        let paths: Vec<String> = (0..33).map(|i| format!("f{i}.txt")).collect();
-        let args = serde_json::json!({ "paths": paths, "confirm": true }).to_string();
-        let out = delete_files(&args, tmp.path(), &ctx);
-        assert!(out.contains("最多删除 32"), "{out}");
-    }
-
-    #[test]
-    fn delete_files_empty_paths_rejected() {
-        let tmp = tempfile::tempdir().unwrap();
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(r#"{"paths":[],"confirm":true}"#, tmp.path(), &ctx);
-        assert!(out.contains("缺少 paths"), "{out}");
-    }
-
-    /// 删除阶段遇个别失败（只读目录内的文件）时继续删完并汇总。
-    #[cfg(unix)]
-    #[test]
-    fn delete_files_partial_failure_continues() {
-        use std::os::unix::fs::PermissionsExt;
-        let tmp = tempfile::tempdir().unwrap();
-        write(tmp.path(), "a.txt", "A");
-        fs::create_dir(tmp.path().join("ro")).unwrap();
-        write(tmp.path(), "ro/x.txt", "X");
-        fs::set_permissions(tmp.path().join("ro"), fs::Permissions::from_mode(0o555)).unwrap();
-        let ctx = test_ctx(tmp.path());
-        let out = delete_files(
-            r#"{"paths":["a.txt","ro/x.txt"],"confirm":true}"#,
-            tmp.path(),
-            &ctx,
-        );
-        fs::set_permissions(tmp.path().join("ro"), fs::Permissions::from_mode(0o755)).unwrap();
-        assert!(out.contains("已删除 1 个文件"), "{out}");
-        assert!(out.contains("删除失败（1 个）"), "{out}");
-        assert!(!tmp.path().join("a.txt").exists());
-        assert!(tmp.path().join("ro/x.txt").exists());
-    }
 
     // ── 写盘前校验（write_precheck）集成 ──────────────────────────
 
@@ -869,6 +746,32 @@ mod tests {
             fs::read_to_string(tmp.path().join("app.py")).unwrap(),
             "def f():\n    if x:\n        return 2\n",
             "应保持原缩进（8 空格），而非翻倍"
+        );
+    }
+
+    /// 复现：成功正文内嵌 search/replace 原文；若原文含「失败」/「超时」，
+    /// 不应被工具结果状态启发式误判为失败（否则报错但文件已写入）。
+    #[test]
+    fn search_replace_success_with_failure_word_in_body_is_ok() {
+        let tmp = tempfile::tempdir().unwrap();
+        write(tmp.path(), "a.txt", "old\n");
+        let ctx = test_ctx(tmp.path());
+        let out = search_replace(
+            r#"{"path":"a.txt","search":"old","replace":"写入文件失败：x","dry_run":false,"confirm":true}"#,
+            tmp.path(),
+            &ctx,
+        );
+        assert!(out.contains("已替换"), "{out}");
+        assert_eq!(
+            fs::read_to_string(tmp.path().join("a.txt")).unwrap(),
+            "写入文件失败：x\n",
+            "写盘应已成功"
+        );
+        let r = crate::cm_tools::tool_result::ToolResult::from_legacy_output("search_replace", out);
+        assert!(
+            r.ok,
+            "文件已成功写入，工具结果不应判失败: error_code={:?}",
+            r.error_code
         );
     }
 

@@ -24,7 +24,7 @@ pub use output_header::{
     CRABMATE_TOOL_OUTPUT_KIND, CRABMATE_TOOL_OUTPUT_VERSION, CrabmateToolOutputEnvelope,
     CrabmateToolOutputMeta, ListTreeOutputFields, PREVIEW_WORKSPACE_WRITE_DIFF,
     ReadDirOutputFields, ReadFileOutputFields, SearchInFilesOutputFields, WorkspaceWriteDiffFields,
-    WorkspaceWriteDiffFile, prepend_crabmate_tool_output,
+    WorkspaceWriteDiffFile, prepend_crabmate_tool_output, prepend_crabmate_tool_output_with_ok,
 };
 #[allow(unused_imports)] // `pub use` 再导出供外部使用，本文件不直接引用
 pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_code};
@@ -83,7 +83,7 @@ fn body_after_header_looks_like_failure(body: &str) -> bool {
 
 /// 按 **header 契约** 判断，不维护工具名白名单：
 /// 1. 头上显式 `ok` → 以它为准（生产端已知成败）；
-/// 2. `preview=workspace_write_diff` → 写预览可与失败正文并存，扫 header **之后**的状态行；
+/// 2. `preview=workspace_write_diff` → 写预览可与失败正文并存，扫 header **之后**的状态行（仅旧输出无 `ok` 时兜底）；
 /// 3. 其余（`read_file` 等载荷头）错误路径不带该头，有头即成功，避免扫文件/命中正文。
 fn structured_header_output_ok(header: &CrabmateToolOutputMeta, body: &str) -> bool {
     if let Some(ok) = header.ok {
