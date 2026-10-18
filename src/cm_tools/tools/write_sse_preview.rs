@@ -5,7 +5,7 @@
 use similar::TextDiff;
 
 use crate::cm_tools::tool_result::{
-    WorkspaceWriteDiffFields, WorkspaceWriteDiffFile, prepend_crabmate_tool_output,
+    WorkspaceWriteDiffFields, WorkspaceWriteDiffFile, prepend_crabmate_tool_output_with_ok,
 };
 
 /// 与 [`crate::cm_tools::workspace::changelist`] 单文件块上限同量级；**`structured_preview`** 中 **`git diff`**
@@ -43,16 +43,17 @@ fn one_unified_diff(rel_path: &str, before: Option<&str>, after: Option<&str>) -
 }
 
 /// 在工具正文前插入**单行** JSON，供 [`crate::cm_tools::tools::structured_preview`] 与 Web 展示解析。
+///
+/// `ok` 由调用方按真实执行结果显式声明（成功 / dry_run 预览为 `true`，部分或整体失败为 `false`），
+/// 避免解析端扫描正文关键词时被用户内容（如替换文本里的「失败」）误判。
+/// 失败时即使没有可展示的 diff 文件也写头（`files: []`），保证 `ok=false` 不会被早退丢弃。
 pub fn format_tool_output_with_write_diff_preview(
     tool_name: &str,
+    ok: bool,
     body: String,
     files: Vec<WriteDiffFileState>,
     budget_chars: usize,
 ) -> String {
-    if files.is_empty() {
-        return body;
-    }
-
     let mut remaining = budget_chars;
     let mut out_files: Vec<WorkspaceWriteDiffFile> = Vec::new();
     let mut preview_truncated = false;
@@ -87,12 +88,13 @@ pub fn format_tool_output_with_write_diff_preview(
         });
     }
 
-    if out_files.is_empty() {
+    if out_files.is_empty() && ok {
         return body;
     }
 
-    prepend_crabmate_tool_output(
+    prepend_crabmate_tool_output_with_ok(
         tool_name,
+        ok,
         WorkspaceWriteDiffFields::new(out_files, preview_truncated),
         &body,
     )
@@ -107,6 +109,7 @@ mod tests {
     fn prepends_header_and_diff() {
         let s = format_tool_output_with_write_diff_preview(
             "create_file",
+            true,
             "路径：a\nok".to_string(),
             vec![WriteDiffFileState {
                 rel_path: "a.rs".to_string(),
@@ -119,7 +122,39 @@ mod tests {
         let v: Value = serde_json::from_str(first).unwrap();
         assert_eq!(v["preview"], "workspace_write_diff");
         assert_eq!(v["tool"], "create_file");
+        assert_eq!(v["ok"], true);
         assert!(s.contains("路径：a"));
         assert!(first.contains("crabmate_tool_output"));
+    }
+
+    /// 全部失败时没有 diff 文件，仍须写头声明 `ok=false`，否则解析端会按正文首行误判成功。
+    #[test]
+    fn failure_without_files_still_declares_ok_false() {
+        let s = format_tool_output_with_write_diff_preview(
+            "delete_files",
+            false,
+            "已删除 0 个文件：\n\n删除失败（1 个）：\n- a.txt: 拒绝访问".to_string(),
+            vec![],
+            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+        );
+        let first = s.lines().next().unwrap();
+        let v: Value = serde_json::from_str(first).unwrap();
+        assert_eq!(v["tool"], "delete_files");
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["files"].as_array().map(Vec::len), Some(0));
+        assert!(s.contains("已删除 0 个文件"));
+    }
+
+    #[test]
+    fn success_without_files_keeps_body_without_header() {
+        let body = "已删除 0 个文件：".to_string();
+        let s = format_tool_output_with_write_diff_preview(
+            "delete_files",
+            true,
+            body.clone(),
+            vec![],
+            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+        );
+        assert_eq!(s, body);
     }
 }

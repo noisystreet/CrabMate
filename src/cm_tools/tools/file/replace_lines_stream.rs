@@ -414,6 +414,7 @@ fn modify_replace_dry_run(
     );
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: rel_path.to_string(),
@@ -447,6 +448,7 @@ fn modify_insert_dry_run(
     );
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: rel_path.to_string(),
@@ -474,6 +476,7 @@ fn finish_modify_file_success(
     let after = std::fs::read_to_string(target).ok();
     format_tool_output_with_write_diff_preview(
         "modify_file",
+        true,
         body,
         vec![WriteDiffFileState {
             rel_path: rel_path.to_string(),

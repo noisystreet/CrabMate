@@ -54,11 +54,16 @@ pub struct CrabmateToolOutputEnvelope<T> {
 
 impl<T> CrabmateToolOutputEnvelope<T> {
     pub fn new(tool: impl Into<String>, fields: T) -> Self {
+        Self::new_with_ok(tool, fields, None)
+    }
+
+    /// 生产者已确知成败时显式写入 `ok`；解析端优先采用该值，不再猜测正文。
+    pub fn new_with_ok(tool: impl Into<String>, fields: T, ok: Option<bool>) -> Self {
         Self {
             kind: CRABMATE_TOOL_OUTPUT_KIND.to_string(),
             tool: tool.into(),
             version: CRABMATE_TOOL_OUTPUT_VERSION,
-            ok: None,
+            ok,
             fields,
         }
     }
@@ -75,6 +80,19 @@ impl<T> CrabmateToolOutputEnvelope<T> {
 pub fn prepend_crabmate_tool_output<T: Serialize>(tool: &str, fields: T, body: &str) -> String {
     let line = serde_json::to_string(&CrabmateToolOutputEnvelope::new(tool, fields))
         .unwrap_or_else(|e| panic!("crabmate_tool_output 头序列化失败（内部错误）: {e}"));
+    format!("{line}\n{body}")
+}
+
+/// 同上，并在头中显式写入 `ok`（写预览等生产者已确知成败的场景使用）。
+pub fn prepend_crabmate_tool_output_with_ok<T: Serialize>(
+    tool: &str,
+    ok: bool,
+    fields: T,
+    body: &str,
+) -> String {
+    let line =
+        serde_json::to_string(&CrabmateToolOutputEnvelope::new_with_ok(tool, fields, Some(ok)))
+            .unwrap_or_else(|e| panic!("crabmate_tool_output 头序列化失败（内部错误）: {e}"));
     format!("{line}\n{body}")
 }
 

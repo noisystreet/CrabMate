@@ -79,6 +79,7 @@ fn apply_unified_patch(
     let outcome = unified_patch_format_outcome(&applied_files, &errors);
     format_tool_output_with_write_diff_preview(
         "apply_patch",
+        errors.is_empty(),
         outcome,
         preview_files,
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
