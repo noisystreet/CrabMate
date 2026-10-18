@@ -1,7 +1,8 @@
 //! 工具正文首行 **`crabmate_tool_output`** 头：serde 真源，避免各工具手写 `json!` 漂移。
 //!
 //! JSON 形状保持扁平（`kind` / `tool` / `version` + flatten 字段），与既有 Web / 卡片解析兼容。
-//! 错误路径不带该头；写预览（[`PREVIEW_WORKSPACE_WRITE_DIFF`]）可与失败正文并存。
+//! 可选 `ok` / `error_code` 供生产者显式声明成败与错误码；写预览（[`PREVIEW_WORKSPACE_WRITE_DIFF`]）
+//! 可与失败正文并存。
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,9 @@ pub struct CrabmateToolOutputMeta {
     pub tool: Option<String>,
     #[serde(default)]
     pub ok: Option<bool>,
+    /// 生产者显式声明的错误码（仅失败时有意义）；解析端优先采用，避免正文启发式降级。
+    #[serde(default)]
+    pub error_code: Option<String>,
     #[serde(default)]
     pub preview: Option<String>,
 }
@@ -48,6 +52,8 @@ pub struct CrabmateToolOutputEnvelope<T> {
     pub version: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ok: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
     #[serde(flatten)]
     pub fields: T,
 }
@@ -59,11 +65,22 @@ impl<T> CrabmateToolOutputEnvelope<T> {
 
     /// 生产者已确知成败时显式写入 `ok`；解析端优先采用该值，不再猜测正文。
     pub fn new_with_ok(tool: impl Into<String>, fields: T, ok: Option<bool>) -> Self {
+        Self::new_with_ok_and_error_code(tool, fields, ok, None)
+    }
+
+    /// 同上，并显式写入失败 `error_code`（`ok=false` 时生效）。
+    pub fn new_with_ok_and_error_code(
+        tool: impl Into<String>,
+        fields: T,
+        ok: Option<bool>,
+        error_code: Option<String>,
+    ) -> Self {
         Self {
             kind: CRABMATE_TOOL_OUTPUT_KIND.to_string(),
             tool: tool.into(),
             version: CRABMATE_TOOL_OUTPUT_VERSION,
             ok,
+            error_code,
             fields,
         }
     }
@@ -90,9 +107,24 @@ pub fn prepend_crabmate_tool_output_with_ok<T: Serialize>(
     fields: T,
     body: &str,
 ) -> String {
-    let line =
-        serde_json::to_string(&CrabmateToolOutputEnvelope::new_with_ok(tool, fields, Some(ok)))
-            .unwrap_or_else(|e| panic!("crabmate_tool_output 头序列化失败（内部错误）: {e}"));
+    prepend_crabmate_tool_output_with_ok_and_error_code(tool, ok, None, fields, body)
+}
+
+/// 同上，并显式写入失败 `error_code`（成功时传 `None`）。
+pub fn prepend_crabmate_tool_output_with_ok_and_error_code<T: Serialize>(
+    tool: &str,
+    ok: bool,
+    error_code: Option<&str>,
+    fields: T,
+    body: &str,
+) -> String {
+    let line = serde_json::to_string(&CrabmateToolOutputEnvelope::new_with_ok_and_error_code(
+        tool,
+        fields,
+        Some(ok),
+        error_code.map(str::to_string),
+    ))
+    .unwrap_or_else(|e| panic!("crabmate_tool_output 头序列化失败（内部错误）: {e}"));
     format!("{line}\n{body}")
 }
 
@@ -209,6 +241,39 @@ mod tests {
         assert_eq!(v["files"][0]["path"], "a.rs");
         let meta = CrabmateToolOutputMeta::parse_line(&v.to_string()).unwrap();
         assert!(meta.is_workspace_write_diff());
+    }
+
+    #[test]
+    fn header_error_code_is_parsed_and_preferred_over_body_heuristics() {
+        let output = prepend_crabmate_tool_output_with_ok_and_error_code(
+            "create_file",
+            false,
+            Some("invalid_args"),
+            json!({}),
+            "错误：文件已存在，无法仅创建",
+        );
+
+        let first = output.lines().next().unwrap();
+        let meta = CrabmateToolOutputMeta::parse_line(first).unwrap();
+        assert_eq!(meta.ok, Some(false));
+        assert_eq!(meta.error_code.as_deref(), Some("invalid_args"));
+
+        let parsed = crate::cm_tools::tool_result::parse_legacy_output("create_file", &output);
+        assert!(!parsed.ok);
+        assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"));
+    }
+
+    #[test]
+    fn success_header_omits_error_code() {
+        let output = prepend_crabmate_tool_output_with_ok(
+            "create_file",
+            true,
+            json!({}),
+            "已创建文件",
+        );
+        let v: serde_json::Value = serde_json::from_str(output.lines().next().unwrap()).unwrap();
+        assert_eq!(v["ok"], true);
+        assert!(v.get("error_code").is_none());
     }
 
     #[test]

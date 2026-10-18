@@ -653,7 +653,7 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
     // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 114 } else { 111 };
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 111 } else { 108 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -680,18 +680,19 @@ fn typed_ok_is_success_even_if_body_looks_like_failure() {
 fn typed_outcome_output_only_prepends_header_on_mismatch() {
     let success_body = "正常输出".to_string();
     assert_eq!(
-        typed_outcome_output("demo_tool", true, success_body.clone()),
+        typed_outcome_output("demo_tool", true, None, success_body.clone()),
         success_body,
         "启发式与真实成败一致时不得改写正文"
     );
     let failure_body = "错误：示例".to_string();
     assert_eq!(
-        typed_outcome_output("demo_tool", false, failure_body.clone()),
+        typed_outcome_output("demo_tool", false, None, failure_body.clone()),
         failure_body,
         "启发式与真实成败一致时不得改写正文"
     );
 
-    let looks_ok_but_failed = typed_outcome_output("demo_tool", false, "无法解析路径".to_string());
+    let looks_ok_but_failed =
+        typed_outcome_output("demo_tool", false, None, "无法解析路径".to_string());
     assert!(!parse_legacy_output("demo_tool", &looks_ok_but_failed).ok);
 }
 

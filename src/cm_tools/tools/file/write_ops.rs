@@ -7,12 +7,14 @@ use super::path::{
     canonical_workspace_root, parse_path_content, path_for_tool_display, resolve_for_read,
     resolve_for_read_open, resolve_for_write, tool_user_error_from_workspace_path,
 };
+use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
     format_tool_output_with_write_diff_preview,
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
+use crate::cm_tools::workspace::path::WorkspacePathError;
 use crate::cm_tools::workspace::fs::{
     copy_opened_file_under_root, rename_file_under_root, write_bytes_under_root,
 };
@@ -36,30 +38,47 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
     )
 }
 
+/// 路径解析失败：正文保持 `错误：…`，错误码以 `_failed` 结尾归入 `external`（与 Legacy 正文推断一致）。
+fn workspace_path_tool_error(e: WorkspacePathError) -> ToolError {
+    ToolError::external_code(
+        "workspace_resolve_failed",
+        tool_user_error_from_workspace_path(e),
+    )
+}
+
+/// 写盘前校验失败：沿用 `校验失败（CODE）` 正文，并按该正文保留 `write_precheck_failed` 错误码。
+fn write_precheck_tool_error(tool: &str, message: String) -> ToolError {
+    let parsed = crate::cm_tools::tool_result::parse_legacy_output(tool, &message);
+    ToolError::from_parsed_legacy(tool, &parsed, message)
+}
+
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let (path, content) = match parse_path_content(args_json) {
-        Ok(pc) => pc,
-        Err(e) => return e,
-    };
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    let target = match resolve_for_write(working_dir, &path) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    create_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`create_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn create_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let (path, content) = parse_path_content(args_json).map_err(ToolError::invalid_args)?;
+    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
+    let target = resolve_for_write(working_dir, &path).map_err(workspace_path_tool_error)?;
     if target.exists() {
-        return "错误：文件已存在，无法仅创建".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：文件已存在，无法仅创建".to_string(),
+        ));
     }
     let skip_precheck = super::write_precheck::arg_skip_precheck(args_json);
     if let Err(e) = super::write_precheck::precheck_before_write(&path, &content, skip_precheck) {
-        return e;
+        return Err(write_precheck_tool_error("create_file", e));
     }
-    match write_bytes_under_root(&base, &target, content.as_bytes(), true, false) {
-        Ok(()) => {
+    write_bytes_under_root(&base, &target, content.as_bytes(), true, false)
+        .map(|()| {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &path, None);
             let disp = path_for_tool_display(working_dir, &target, Some(&path));
             let body = tool_output_prepend_path(&disp, format!("已创建文件: {}", disp));
@@ -70,13 +89,12 @@ pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -
                 vec![WriteDiffFileState {
                     rel_path: path.clone(),
                     before: None,
-                    after: Some(content.clone()),
+                    after: Some(content),
                 }],
                 WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
             )
-        }
-        Err(e) => format!("写入文件失败: {}", e),
-    }
+        })
+        .map_err(|e| ToolError::external_code("create_file_failed", format!("写入文件失败: {}", e)))
 }
 
 fn parse_from_to_overwrite(args_json: &str) -> Result<(String, String, bool), String> {
@@ -117,37 +135,40 @@ fn check_dest_for_write_file(dst: &Path, overwrite: bool) -> Result<(), String> 
 /// 在工作区内复制**文件**（非目录）。源须已存在；路径规则与 `create_file` / `read_file` 相同（相对路径、`..` 与 symlink 逃逸校验）。
 /// 参数：`from`、`to` 为相对工作目录路径；`overwrite` 可选，默认 `false`（目标已存在且为文件时须显式 `true` 才覆盖）。
 pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    let opened = match resolve_for_read_open(working_dir, &from) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    copy_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`copy_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn copy_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let (from, to, overwrite) =
+        parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
+    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
+    let opened = resolve_for_read_open(working_dir, &from).map_err(workspace_path_tool_error)?;
     if !opened.file.metadata().map(|m| m.is_file()).unwrap_or(false) {
-        return "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string(),
+        ));
     }
-    let dst = match resolve_for_write(working_dir, &to) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let dst = resolve_for_write(working_dir, &to).map_err(workspace_path_tool_error)?;
     if opened.resolved_path == dst {
-        return "错误：源与目标解析后相同，无需复制".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：源与目标解析后相同，无需复制".to_string(),
+        ));
     }
     if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
-        return e;
+        return Err(ToolError::invalid_args(e));
     }
     match copy_opened_file_under_root(&base, &opened, &dst, overwrite) {
         Ok(n) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
             let body = tool_output_prepend_from_to(&from, &to, format!("已复制（{} 字节）", n));
             let after = std::fs::read_to_string(&dst).ok();
-            format_tool_output_with_write_diff_preview(
+            Ok(format_tool_output_with_write_diff_preview(
                 "copy_file",
                 true,
                 body,
@@ -157,47 +178,56 @@ pub fn copy_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> 
                     after,
                 }],
                 WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
-            )
+            ))
         }
-        Err(e) => format!("复制失败: {}", e),
+        Err(e) => Err(ToolError::external_code(
+            "copy_file_failed",
+            format!("复制失败: {}", e),
+        )),
     }
 }
 
 /// 在工作区内移动**文件**（重命名或迁路径）。`rename` 失败且为跨设备时自动回退为复制后删除源文件。
 /// `overwrite` 默认 `false`：目标已存在为文件时须 `true` 才覆盖（与 `copy_file` 一致）。
 pub fn move_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
-    let (from, to, overwrite) = match parse_from_to_overwrite(args_json) {
-        Ok(x) => x,
-        Err(e) => return e,
-    };
-    let base = match canonical_workspace_root(working_dir) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
-    let src = match resolve_for_read(working_dir, &from) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    move_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
+}
+
+/// [`move_file`] 的显式失败版本（成功正文与 String 面逐字节一致）。
+#[allow(clippy::result_large_err)]
+pub fn move_file_try(
+    args_json: &str,
+    working_dir: &Path,
+    ctx: &ToolContext<'_>,
+) -> Result<String, ToolError> {
+    let (from, to, overwrite) =
+        parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
+    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
+    let src = resolve_for_read(working_dir, &from).map_err(workspace_path_tool_error)?;
     if !src.is_file() {
-        return "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string(),
+        ));
     }
-    let dst = match resolve_for_write(working_dir, &to) {
-        Ok(p) => p,
-        Err(e) => return tool_user_error_from_workspace_path(e),
-    };
+    let dst = resolve_for_write(working_dir, &to).map_err(workspace_path_tool_error)?;
     if src == dst {
-        return "错误：源与目标解析后相同".to_string();
+        return Err(ToolError::invalid_args(
+            "错误：源与目标解析后相同".to_string(),
+        ));
     }
     if let Err(e) = check_dest_for_write_file(&dst, overwrite) {
-        return e;
+        return Err(ToolError::invalid_args(e));
     }
     match rename_file_under_root(&base, &src, &dst) {
         Ok(()) => {
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &from, None);
             record_file_state_after_write(ctx.workspace_changelist, working_dir, &to, None);
-            tool_output_prepend_from_to(&from, &to, "已移动")
+            Ok(tool_output_prepend_from_to(&from, &to, "已移动"))
         }
-        Err(e) => format!("移动失败: {}", e),
+        Err(e) => Err(ToolError::external_code(
+            "move_file_failed",
+            format!("移动失败: {}", e),
+        )),
     }
 }
 

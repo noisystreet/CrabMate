@@ -28,7 +28,9 @@ pub use read_tool::read_file_try;
 #[cfg(test)]
 pub use read_tool::strip_read_file_output_header_for_tests;
 pub use tree_glob::{glob_files, list_tree};
-pub use write_ops::{copy_file, create_file, modify_file, move_file};
+pub use write_ops::{
+    copy_file, copy_file_try, create_file, create_file_try, modify_file, move_file, move_file_try,
+};
 
 #[cfg(test)]
 mod mutate_delete_tests;
@@ -42,3 +44,5 @@ mod tests_guards_batch;
 mod tests_metadata;
 #[cfg(test)]
 mod tests_revision;
+#[cfg(test)]
+mod tests_typed_write_ops;
