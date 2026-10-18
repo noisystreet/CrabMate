@@ -765,3 +765,6 @@ pub use github_cli::web_api;
 #[cfg(test)]
 #[path = "mod/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod testing;

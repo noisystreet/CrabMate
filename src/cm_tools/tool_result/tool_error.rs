@@ -164,6 +164,17 @@ impl ToolError {
         }
     }
 
+    /// 工作区路径解析 / 越界失败（`error_code`：`workspace_resolve_failed`；正文保持 `错误：…`）。
+    pub fn path_resolve_failed(e: crate::cm_tools::workspace::path::WorkspacePathError) -> Self {
+        Self::external_code("workspace_resolve_failed", e.prefixed_user_message())
+    }
+
+    /// 写盘前校验失败：正文沿用 Legacy 文案，并按正文推断 `write_precheck_failed` 等错误码。
+    pub fn write_precheck_failed(tool: &str, message: String) -> Self {
+        let parsed = super::parse_legacy_output(tool, &message);
+        Self::from_parsed_legacy(tool, &parsed, message)
+    }
+
     /// 工作区布局或前置条件问题（如缺少 `Cargo.toml`）；`code` 须与 [`failure_category_for_error_code`] 一致。
     pub fn workspace(code: &'static str, message: String) -> Self {
         let parsed = ParsedLegacyOutput {

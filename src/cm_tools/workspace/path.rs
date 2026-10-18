@@ -135,6 +135,12 @@ impl WorkspacePathError {
     pub fn user_message(&self) -> String {
         self.to_string()
     }
+
+    /// 工具返回给模型的前缀文案（与历史 `错误：…` 一致）。
+    #[must_use]
+    pub fn prefixed_user_message(&self) -> String {
+        format!("错误：{}", self.user_message())
+    }
 }
 
 /// 校验用于切换工作区根的 `path`（Web **`POST /workspace`** 与 REPL **`/workspace`** 共用）。

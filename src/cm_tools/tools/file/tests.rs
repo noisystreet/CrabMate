@@ -1,26 +1,7 @@
 use super::*;
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-
-static TEST_COUNTER: AtomicU64 = AtomicU64::new(1);
-
-/// 临时测试目录；被兄弟测试模块 `tests_guards_batch` 复用。
-pub(super) fn make_test_dir() -> PathBuf {
-    let ts = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let seq = TEST_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let dir = std::env::temp_dir().join(format!(
-        "crabmate_file_tool_test_{}_{}_{}",
-        std::process::id(),
-        ts,
-        seq
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    dir
-}
+/// 临时测试目录；实现见共享脚手架，被兄弟测试模块复用。
+pub(super) use crate::cm_tools::tools::testing::make_test_dir;
 
 #[test]
 fn test_read_file_with_line_range() {
@@ -649,9 +630,8 @@ fn test_create_file_reject_symlink_escape() {
 
     let dir = make_test_dir();
     let outside = std::env::temp_dir().join(format!(
-        "crabmate_outside_symlink_{}_{}",
-        std::process::id(),
-        TEST_COUNTER.fetch_add(1, Ordering::Relaxed)
+        "{}_outside",
+        dir.file_name().unwrap().to_string_lossy()
     ));
     std::fs::create_dir_all(&outside).unwrap();
     let link = dir.join("link_out");

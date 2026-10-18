@@ -16,7 +16,7 @@ pub use crate::cm_tools::workspace::path::canonical_workspace_root;
 /// 将 [`WorkspacePathError`] 格式化为工具返回给模型的前缀文案（与历史 `错误：…` 一致）。
 #[must_use]
 pub fn tool_user_error_from_workspace_path(e: WorkspacePathError) -> String {
-    format!("错误：{}", e.user_message())
+    e.prefixed_user_message()
 }
 
 /// 若 `sub` 为**已落在工作区根下**的绝对路径，则转为工作区相对路径；否则原样返回（并 trim）。  

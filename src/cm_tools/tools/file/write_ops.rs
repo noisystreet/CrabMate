@@ -5,7 +5,7 @@ use std::path::Path;
 
 use super::path::{
     canonical_workspace_root, parse_path_content, path_for_tool_display, resolve_for_read,
-    resolve_for_read_open, resolve_for_write, tool_user_error_from_workspace_path,
+    resolve_for_read_open, resolve_for_write,
 };
 use crate::cm_tools::tool_result::ToolError;
 use crate::cm_tools::tools::ToolContext;
@@ -14,7 +14,6 @@ use crate::cm_tools::tools::write_sse_preview::{
     format_tool_output_with_write_diff_preview,
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
-use crate::cm_tools::workspace::path::WorkspacePathError;
 use crate::cm_tools::workspace::fs::{
     copy_opened_file_under_root, rename_file_under_root, write_bytes_under_root,
 };
@@ -38,20 +37,6 @@ fn tool_output_prepend_from_to(from: &str, to: &str, message: impl AsRef<str>) -
     )
 }
 
-/// 路径解析失败：正文保持 `错误：…`，错误码以 `_failed` 结尾归入 `external`（与 Legacy 正文推断一致）。
-pub(super) fn workspace_path_tool_error(e: WorkspacePathError) -> ToolError {
-    ToolError::external_code(
-        "workspace_resolve_failed",
-        tool_user_error_from_workspace_path(e),
-    )
-}
-
-/// 写盘前校验失败：沿用 `校验失败（CODE）` 正文，并按该正文保留 `write_precheck_failed` 错误码。
-pub(super) fn write_precheck_tool_error(tool: &str, message: String) -> ToolError {
-    let parsed = crate::cm_tools::tool_result::parse_legacy_output(tool, &message);
-    ToolError::from_parsed_legacy(tool, &parsed, message)
-}
-
 /// 创建文件：仅在文件不存在时创建；若已存在则报错。
 /// 参数 args_json: { "path": string, "content": string }
 pub fn create_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
@@ -66,8 +51,8 @@ pub fn create_file_try(
     ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let (path, content) = parse_path_content(args_json).map_err(ToolError::invalid_args)?;
-    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
-    let target = resolve_for_write(working_dir, &path).map_err(workspace_path_tool_error)?;
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
+    let target = resolve_for_write(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
     if target.exists() {
         return Err(ToolError::invalid_args(
             "错误：文件已存在，无法仅创建".to_string(),
@@ -75,7 +60,7 @@ pub fn create_file_try(
     }
     let skip_precheck = super::write_precheck::arg_skip_precheck(args_json);
     if let Err(e) = super::write_precheck::precheck_before_write(&path, &content, skip_precheck) {
-        return Err(write_precheck_tool_error("create_file", e));
+        return Err(ToolError::write_precheck_failed("create_file", e));
     }
     write_bytes_under_root(&base, &target, content.as_bytes(), true, false)
         .map(|()| {
@@ -147,14 +132,15 @@ pub fn copy_file_try(
 ) -> Result<String, ToolError> {
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
-    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
-    let opened = resolve_for_read_open(working_dir, &from).map_err(workspace_path_tool_error)?;
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
+    let opened =
+        resolve_for_read_open(working_dir, &from).map_err(ToolError::path_resolve_failed)?;
     if !opened.file.metadata().map(|m| m.is_file()).unwrap_or(false) {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持复制文件".to_string(),
         ));
     }
-    let dst = resolve_for_write(working_dir, &to).map_err(workspace_path_tool_error)?;
+    let dst = resolve_for_write(working_dir, &to).map_err(ToolError::path_resolve_failed)?;
     if opened.resolved_path == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同，无需复制".to_string(),
@@ -202,14 +188,14 @@ pub fn move_file_try(
 ) -> Result<String, ToolError> {
     let (from, to, overwrite) =
         parse_from_to_overwrite(args_json).map_err(ToolError::invalid_args)?;
-    let base = canonical_workspace_root(working_dir).map_err(workspace_path_tool_error)?;
-    let src = resolve_for_read(working_dir, &from).map_err(workspace_path_tool_error)?;
+    let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;
+    let src = resolve_for_read(working_dir, &from).map_err(ToolError::path_resolve_failed)?;
     if !src.is_file() {
         return Err(ToolError::invalid_args(
             "错误：源路径不是常规文件（或为目录），仅支持移动文件".to_string(),
         ));
     }
-    let dst = resolve_for_write(working_dir, &to).map_err(workspace_path_tool_error)?;
+    let dst = resolve_for_write(working_dir, &to).map_err(ToolError::path_resolve_failed)?;
     if src == dst {
         return Err(ToolError::invalid_args(
             "错误：源与目标解析后相同".to_string(),
@@ -518,7 +504,7 @@ pub fn modify_file_try(
     let path = modify_file_path_arg(&v).map_err(ToolError::invalid_args)?;
     let (explicit_mode, mode) = modify_file_mode_arg(&v);
 
-    let target = resolve_for_read(working_dir, &path).map_err(workspace_path_tool_error)?;
+    let target = resolve_for_read(working_dir, &path).map_err(ToolError::path_resolve_failed)?;
     if !target.is_file() {
         return Err(ToolError::invalid_args(
             "错误：路径不是文件或不存在，无法仅修改".to_string(),
