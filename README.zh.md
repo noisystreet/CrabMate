@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml"><img src="https://github.com/noisystreet/CrabMate/actions/workflows/dependency-security.yml/badge.svg?branch=main" alt="Dependency security" /></a>
-  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.85%2B-orange?logo=rust" alt="Rust 1.85+" /></a>
+  <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/rust-1.88%2B-orange?logo=rust" alt="Rust 1.88+" /></a>
   <a href="https://crates.io/crates/crabmate"><img src="https://img.shields.io/crates/v/crabmate.svg" alt="crates.io" /></a>
   <a href="https://github.com/noisystreet/CrabMate/blob/main/LICENSE"><img src="https://img.shields.io/github/license/noisystreet/CrabMate" alt="License" /></a>
 </p>
@@ -39,7 +39,7 @@
 
 ## 快速开始
 
-需要 **Rust 1.85+**（edition 2024）。
+需要 **Rust 1.88+**（edition 2024）。
 
 ```bash
 # 后端（纯 API）
@@ -100,7 +100,7 @@ cd ../crabmate-client && make frontend   # 再指向 http://127.0.0.1:8080/ 并�
 
 | 方式 | 命令 / 说明 |
 | --- | --- |
-| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.6.0`**，默认 feature **`server`**；git tag **`v0.6.0`**）。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
+| **安装到 PATH** | **`cargo install crabmate`**（crates.io **稳定版 `0.7.0`**，默认 feature **`server`**；git tag **`v0.7.0`**）。**不**附带 **man**；可手动安装 **[man/crabmate.1](man/crabmate.1)**。 |
 | **一键 tar.gz / .deb** | **`make package`**（或 **`./scripts/package-release.sh`**）→ **`dist/`**（二进制、`config/`、man、**`systemd/`**、**`etc/crabmate/`**；**server-only，不附带 UI**）。仅 tar：**`make package-tar`**；仅 deb：**`make package-deb`**（需 **`cargo-deb`**）。 |
 | **桌面 / APK** | **仅** Client 仓（[`crabmate-client`](https://github.com/noisystreet/crabmate-client)）。 |
 | **同步 man 页** | **`cargo run --features gen-man --bin crabmate-gen-man`**。 |
