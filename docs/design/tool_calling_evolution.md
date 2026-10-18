@@ -160,7 +160,7 @@
 |------|------|
 | 2026-05-01 | 初稿：对标开源 Agent 的工具调用演进维度、与现有模块映射、优先级建议。 |
 | 2026-10-05 | 补 **§8.5 工具收敛分析**：已移除 6 个源码分析工具（改 `run_command`）；记录只读语义约束（`run_command` 非只读 → 失去并行只读批 / 重试 / Plan·Ask 门控）、不可收敛边界与 A/B/C 三档候选路线；决策接受低频只读封装的能力损失。 |
-| 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。 |
+| 2026-10-05 | **落地 §8.5.4 A 档**：移除 14 个 JVM/容器 + Node/前端薄封装，改用 `run_command`；保留 `jvm_tools` / `container_tools` / `frontend_tools` 实现以支撑 `quality_workspace` / `ci_pipeline_local` / `lint.rs`。（`jvm_tools` 已于 2026-10-18 删除，见下行。） |
 | 2026-10-05 | **落地 §8.5.4 B 档（写侧 + diff 合并）**：移除 17 个写 Git 工具（降级 `run_command`，能力零损失）；只读 Git 工具保留，`git_diff` 吸收 `git_diff_stat` / `git_diff_names` / `git_diff_base`（新增 `stat` / `name_only` / `base`）。保留只读侧是为维持「按工具名」的只读语义（并行只读批 / 只读重试 / Plan·Ask 门控 / TTL 缓存）。 |
 | 2026-10-05 | **白名单扩充（§8.5.5）**：向 `allowed_commands` 新增 21 个常用开发 CLI（语言工具链 / 归档 / 系统与包查询），修复「专用工具内部 spawn 的 CLI 不在白名单」的能力割裂与文档不一致；仅扩白名单、不删对应只读专用工具。 |
 | 2026-10-07 | 新增配套文档 **`docs/design/tool_thin_wrapper_candidates.md`**：对 §8.5 之后的**剩余内置工具**逐家族盘点「适合 / 视情况 / 保留」判定与切片顺序（§8.5 负责方案与约束，该文件负责候选清单）。 |
