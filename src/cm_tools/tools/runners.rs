@@ -529,21 +529,26 @@ define_git_runners! {
 
 // ── GitHub CLI 工具 ─────────────────────────────────────────
 
-gh_runner!(runner_gh_pr_checks, github_cli::gh_pr_checks);
-gh_runner!(runner_gh_pr_create, github_cli::gh_pr_create);
-gh_runner!(runner_gh_pr_merge, github_cli::gh_pr_merge);
-gh_runner!(runner_gh_pr_review, github_cli::gh_pr_review);
-gh_runner!(runner_gh_pr_comment, github_cli::gh_pr_comment);
-gh_runner!(runner_gh_pr_edit, github_cli::gh_pr_edit);
 gh_runner!(runner_gh_issue_create, github_cli::gh_issue_create);
-gh_runner!(runner_gh_run_rerun, github_cli::gh_run_rerun);
-gh_runner!(
-    runner_gh_run_failure_summary,
-    github_cli::gh_run_failure_summary
-);
 gh_runner!(runner_gh_release_create, github_cli::gh_release_create);
 gh_runner!(runner_gh_api, github_cli::gh_api);
 
-pub fn runner_gh_pr_body_draft(args: &str, ctx: &ToolContext<'_>) -> String {
-    github_cli::gh_pr_body_draft(args, ctx.working_dir, ctx.command_max_output_len)
+/// `gh_pr` / `gh_run` 是动作分发器（见 `github_cli::gh_pr` / `gh_run`），
+/// 形参与 [`gh_runner!`] 生成的一致，但需要独立入口。
+pub fn runner_gh_pr(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_pr(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
+}
+
+pub fn runner_gh_run(args: &str, ctx: &ToolContext<'_>) -> String {
+    github_cli::gh_run(
+        args,
+        ctx.command_max_output_len,
+        ctx.allowed_commands,
+        ctx.working_dir,
+    )
 }

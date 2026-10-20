@@ -326,3 +326,92 @@ pub struct PythonSnippetRunArgs {
     #[schemars(range(min = 1, max = 600))]
     pub timeout_secs: Option<u32>,
 }
+
+// ── 合并后的动作分发工具（`gh_pr` / `gh_run`）─────────────────────
+
+/// [`super::github_cli::gh_pr`] 的动作选择器。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GhPrAction {
+    Checks,
+    Create,
+    Merge,
+    Review,
+    Comment,
+    Edit,
+    BodyDraft,
+}
+
+/// [`super::github_cli::gh_pr`] 入参：动作 + 各动作字段的并集。
+///
+/// 只取用 `action` 对应动作的字段，其余字段被忽略；`deny_unknown_fields` 仍拦住拼错的键。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GhPrArgs {
+    pub action: GhPrAction,
+    pub repo: Option<String>,
+    pub number: Option<u32>,
+    /// 仅 `checks`：附加 `--json` 并在末尾汇总失败/进行中检查项。
+    pub structured: Option<bool>,
+    /// 仅 `create`：PR 标题（必填）。
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub base: Option<String>,
+    /// 仅 `create`：源分支。
+    pub head: Option<String>,
+    /// `create` 置为草稿；`edit` 亦可用于 `--draft`。
+    pub draft: Option<bool>,
+    /// 仅 `edit`：取消草稿（`--undraft`）。
+    pub undraft: Option<bool>,
+    pub web: Option<bool>,
+    /// 仅 `create`：`body` 为空时从 PR 模板 + `git log` 生成正文。
+    pub auto_body: Option<bool>,
+    /// 仅 `merge`：默认 `rebase`。
+    pub merge_method: Option<GhPrMergeMethod>,
+    /// 仅 `merge`：`--auto`。
+    pub auto: Option<bool>,
+    pub delete_branch: Option<bool>,
+    pub admin: Option<bool>,
+    /// 仅 `review`：必填事件类型。
+    pub event: Option<GhPrReviewEvent>,
+    pub add_label: Option<Vec<String>>,
+    pub remove_label: Option<Vec<String>>,
+    pub add_reviewer: Option<Vec<String>>,
+    pub remove_reviewer: Option<Vec<String>>,
+    pub add_assignee: Option<Vec<String>>,
+    pub remove_assignee: Option<Vec<String>>,
+    /// 仅 `body_draft`：`git log` 摘要的最大 commit 数。
+    #[schemars(range(min = 1, max = 200))]
+    pub max_commits: Option<u32>,
+    /// 仅 `body_draft`。
+    pub include_template: Option<bool>,
+    /// 仅 `body_draft`。
+    pub include_commit_log: Option<bool>,
+    pub extra_args: Option<Vec<String>>,
+}
+
+/// [`super::github_cli::gh_run`] 的动作选择器。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum GhRunAction {
+    Rerun,
+    FailureSummary,
+}
+
+/// [`super::github_cli::gh_run`] 入参。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GhRunArgs {
+    pub action: GhRunAction,
+    pub run_id: String,
+    pub repo: Option<String>,
+    /// 仅 `rerun`：只重跑失败的 job。
+    pub failed: Option<bool>,
+    /// 仅 `failure_summary`：日志尾部行数（默认 60）。
+    #[schemars(range(min = 10, max = 500))]
+    pub tail_lines: Option<u32>,
+    /// 仅 `failure_summary`：最多摘要几个失败 job（默认 5）。
+    #[schemars(range(min = 1, max = 20))]
+    pub max_failed_jobs: Option<u32>,
+    pub extra_args: Option<Vec<String>>,
+}

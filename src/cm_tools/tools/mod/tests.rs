@@ -268,16 +268,10 @@ fn test_build_tools_names() {
     assert!(names.contains(&"http_fetch"));
     assert!(names.contains(&"http_request"));
     assert!(names.contains(&"run_command"));
-    assert!(names.contains(&"gh_pr_checks"));
-    assert!(names.contains(&"gh_pr_create"));
-    assert!(names.contains(&"gh_pr_merge"));
-    assert!(names.contains(&"gh_pr_review"));
-    assert!(names.contains(&"gh_pr_comment"));
-    assert!(names.contains(&"gh_pr_body_draft"));
+    assert!(names.contains(&"gh_pr"));
+    assert!(names.contains(&"gh_run"));
     assert!(names.contains(&"gh_issue_create"));
     assert!(names.contains(&"gh_api"));
-    assert!(names.contains(&"gh_run_rerun"));
-    assert!(names.contains(&"gh_run_failure_summary"));
     assert!(names.contains(&"gh_release_create"));
     assert!(names.contains(&"cargo_check"));
     assert!(names.contains(&"cargo_test"));
