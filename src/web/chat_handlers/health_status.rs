@@ -113,6 +113,15 @@ struct StatusResponse {
     /// 键为命名角色 id；空字符串表示未选角色 / 全局默认 `system_prompt`。
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     tiktoken_new_session_baseline_by_agent_role: std::collections::BTreeMap<String, u32>,
+    /// **全量**注册工具表序列化为 `tools` JSON 后的 tiktoken 粗估（`--no-tools` 时为 0；
+    /// 序列化失败时省略该键）。
+    ///
+    /// 这是「Act + 未配置 `allowed_tools` 的角色」的**上界**：Ask / Plan 与按角色收窄的回合
+    /// 实际下发更少——收窄发生在 `run_dispatch` / `session_mode_turn` 的回合执行期，本视图看不到。
+    /// 与 `tiktoken_new_session_baseline_by_agent_role`（只含 `messages`）互补：**二者之和**
+    /// 才是每次请求重发的固定底噪。工具定义随工具数线性增长，是「省 token」最直接的观察指标。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tiktoken_tool_definitions_tokens: Option<u32>,
     context_summary_trigger_chars: usize,
     chat_queue_max_concurrent: usize,
     chat_queue_max_pending: usize,
@@ -350,6 +359,77 @@ pub(crate) async fn tiktoken_baselines_cached_or_compute(
     baseline_by_role
 }
 
+#[derive(Clone)]
+struct CachedToolDefsTokens {
+    model: String,
+    tool_count: usize,
+    first_name: String,
+    last_name: String,
+    computed_at: std::time::Instant,
+    /// `None` = 序列化失败。用 `Option` 而不是 `0`，避免「统计失败」与「没有工具」混成同一个值。
+    tokens: Option<u32>,
+}
+
+static TOOL_DEFS_TOKENS_CACHE: std::sync::LazyLock<std::sync::Mutex<Option<CachedToolDefsTokens>>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
+
+/// `tools` 数组 JSON 的 tiktoken 粗估（缓存）。
+///
+/// 键取「模型 + 工具数 + 首末工具名」：足以区分正常启动、`--no-tools`、以及按角色收窄后的工具集；
+/// TTL 复用 [`BASELINE_CACHE_TTL`]——两者服务同一个 `GET /status`，刷新节奏一致即可。
+pub(crate) async fn tool_definitions_tokens_cached(
+    model: &str,
+    tools: &[crate::types::Tool],
+) -> Option<u32> {
+    let first_name = tools
+        .first()
+        .map(|t| t.function.name.clone())
+        .unwrap_or_default();
+    let last_name = tools
+        .last()
+        .map(|t| t.function.name.clone())
+        .unwrap_or_default();
+    if let Some(hit) = TOOL_DEFS_TOKENS_CACHE
+        .lock()
+        .ok()
+        .and_then(|cell| cell.clone())
+        .filter(|cached| {
+            cached.model == model
+                && cached.tool_count == tools.len()
+                && cached.first_name == first_name
+                && cached.last_name == last_name
+                && cached.computed_at.elapsed() < BASELINE_CACHE_TTL
+        })
+    {
+        return hit.tokens;
+    }
+    let model_owned = model.to_string();
+    let tools_owned = tools.to_vec();
+    let tokens = match tokio::task::spawn_blocking(move || {
+        crate::agent::tiktoken_prompt_tokens::tool_definitions_token_count(
+            model_owned.as_str(),
+            &tools_owned,
+        )
+        .map(|snap| snap.prompt_tokens)
+    })
+    .await
+    {
+        Ok(tokens) => tokens,
+        Err(join_err) => std::panic::resume_unwind(join_err.into_panic()),
+    };
+    if let Ok(mut cell) = TOOL_DEFS_TOKENS_CACHE.lock() {
+        *cell = Some(CachedToolDefsTokens {
+            model: model.to_string(),
+            tool_count: tools.len(),
+            first_name,
+            last_name,
+            computed_at: std::time::Instant::now(),
+            tokens,
+        });
+    }
+    tokens
+}
+
 /// serve 启动后后台预热 tiktoken 基线缓存：大工作区首次计算可达数十秒，
 /// 预热后官方 Client 启动时的首笔 `GET /status` 即可命中缓存。
 pub(crate) fn spawn_tiktoken_baseline_warmup(state: std::sync::Arc<crate::AppState>) {
@@ -431,6 +511,9 @@ pub(crate) async fn status_handler(
         }))
         .into_response();
     }
+    // 与 baseline 同属「每次请求的固定底噪」；shell 视图不含 tiktoken 分项，故只在此处计算。
+    let tiktoken_tool_definitions_tokens =
+        tool_definitions_tokens_cached(cfg.llm.model.as_str(), &state.http.tools).await;
     Json(StatusResponse {
         status: "ok",
         model: cfg.llm.model.clone(),
@@ -485,6 +568,7 @@ pub(crate) async fn status_handler(
                 cfg.llm.model.as_str(),
             ),
         tiktoken_new_session_baseline_by_agent_role,
+        tiktoken_tool_definitions_tokens,
         context_summary_trigger_chars: cfg.context_pipeline.context_summary_trigger_chars,
         chat_queue_max_concurrent: state.chat_queue.max_concurrent(),
         chat_queue_max_pending: state.chat_queue.max_pending(),
@@ -704,5 +788,103 @@ mod tiktoken_baseline_cache_tests {
             None,
             "expired TTL must trigger recompute"
         );
+    }
+}
+
+#[cfg(test)]
+mod tool_defs_tokens_cache_tests {
+    use super::*;
+
+    fn sample_tool(name: &str) -> crate::types::Tool {
+        crate::types::Tool {
+            typ: "function".to_string(),
+            function: crate::types::FunctionDef {
+                name: name.to_string(),
+                description: "sample tool description".to_string(),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+        }
+    }
+
+    fn reset_cache() {
+        *TOOL_DEFS_TOKENS_CACHE.lock().expect("cache lock") = None;
+    }
+
+    /// 写入一个「不可能由真实计数产生」的哨兵值：随后观察到 424242 就说明命中了缓存。
+    fn plant_sentinel() {
+        *TOOL_DEFS_TOKENS_CACHE.lock().expect("cache lock") = Some(CachedToolDefsTokens {
+            model: "gpt-4".to_string(),
+            tool_count: 1,
+            first_name: "a".to_string(),
+            last_name: "a".to_string(),
+            computed_at: std::time::Instant::now(),
+            tokens: Some(424242),
+        });
+    }
+
+    /// 缓存是进程级 `static`，因此把全部断言放进**同一个**测试顺序执行，
+    /// 避免并行测试互相踩踏缓存内容（参数注入式的隔离见 `tiktoken_baseline_cache_tests`）。
+    #[tokio::test]
+    async fn tool_definitions_tokens_cache_hit_miss_and_ttl() {
+        // 1) `--no-tools`：空工具集报 0。
+        reset_cache();
+        assert_eq!(
+            tool_definitions_tokens_cached("gpt-4", &[]).await,
+            Some(0),
+            "empty tool set must report 0"
+        );
+
+        // 2) 非空工具集必须给出正数。
+        reset_cache();
+        let one = vec![sample_tool("a")];
+        let tokens_one = tool_definitions_tokens_cached("gpt-4", &one)
+            .await
+            .expect("token count");
+        assert!(tokens_one > 0, "non-empty tool set must be positive");
+
+        // 3) 同键再次调用必须命中缓存（哨兵值证明没有重算）。
+        plant_sentinel();
+        assert_eq!(
+            tool_definitions_tokens_cached("gpt-4", &one).await,
+            Some(424242),
+            "same model+count+names within TTL must hit cache"
+        );
+
+        // 4) 工具数变化必须绕开缓存。
+        let three = vec![sample_tool("a"), sample_tool("b"), sample_tool("c")];
+        let tokens_three = tool_definitions_tokens_cached("gpt-4", &three)
+            .await
+            .expect("token count");
+        assert_ne!(tokens_three, 424242, "tool count change must bypass cache");
+        assert!(
+            tokens_three > tokens_one,
+            "more tools must cost more: {} vs {}",
+            tokens_three,
+            tokens_one
+        );
+
+        // 5) 模型变化必须绕开缓存。
+        plant_sentinel();
+        assert_ne!(
+            tool_definitions_tokens_cached("gpt-4o", &one).await,
+            Some(424242),
+            "model change must bypass cache"
+        );
+
+        // 6) TTL 过期必须触发重算。
+        plant_sentinel();
+        {
+            let mut cell = TOOL_DEFS_TOKENS_CACHE.lock().expect("cache lock");
+            let cached = cell.as_mut().expect("cache filled");
+            cached.computed_at = std::time::Instant::now()
+                - (BASELINE_CACHE_TTL + std::time::Duration::from_secs(1));
+        }
+        assert_ne!(
+            tool_definitions_tokens_cached("gpt-4", &one).await,
+            Some(424242),
+            "expired TTL must trigger recompute"
+        );
+
+        reset_cache();
     }
 }

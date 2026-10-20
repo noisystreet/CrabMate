@@ -103,6 +103,35 @@ pub fn count_serialized_text_tokens_openai_compat(
     }
 }
 
+/// 给定工具数组序列化为 `tools` JSON 后的 token 粗估。
+///
+/// 工具定义与 `system` 一起构成**每次请求都要重发的固定前缀**（也是供应商前缀缓存的命中对象），
+/// 但 [`prompt_token_count_vendor_shaped_for_session`] 只数 `messages`、不含工具 JSON，
+/// 于是这部分开销在 `/status` 上一直是隐形的。工具数达到三位数时它通常已是固定前缀里最大的单项，
+/// 需要单独可见才能做取舍（收窄任务角色的 `allowed_tools`、给 description 瘦身等）。
+///
+/// 空数组返回 `0`（不把 `[]` 本身的 1 token 算进去）。序列化失败时返回 `None`。
+#[must_use]
+pub fn tool_definitions_token_count(
+    configured_model: &str,
+    tools: &[crate::types::Tool],
+) -> Option<TiktokenPromptTokensSnapshot> {
+    // 空工具集（`--no-tools`）不产生 `tools` 开销。此处不数 `[]` 本身的 1 token：
+    // 那个值对使用者没有意义，却会让"没有工具却报 1"看起来像统计错误。
+    if tools.is_empty() {
+        return Some(TiktokenPromptTokensSnapshot {
+            prompt_tokens: 0,
+            tiktoken_model: tiktoken_model_id_for_config_model(configured_model),
+            ..Default::default()
+        });
+    }
+    let json = serde_json::to_string(tools).ok()?;
+    Some(count_serialized_text_tokens_openai_compat(
+        configured_model,
+        &json,
+    ))
+}
+
 fn try_count_with_model(model: &str, tik_messages: &[ChatCompletionRequestMessage]) -> Option<u32> {
     let m = model.trim();
     if m.is_empty() {
@@ -260,6 +289,38 @@ pub fn estimate_chat_exchange_tokens(
 mod tests {
     use super::*;
     use crate::types::Message;
+
+    fn sample_tool(name: &str) -> crate::types::Tool {
+        crate::types::Tool {
+            typ: "function".to_string(),
+            function: crate::types::FunctionDef {
+                name: name.to_string(),
+                description: "sample tool".to_string(),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            },
+        }
+    }
+
+    #[test]
+    fn tool_definitions_token_count_grows_with_tool_count() {
+        // 空工具集（`--no-tools`）必须精确为 0，不能把 `[]` 本身的 1 token 算进去。
+        let empty = tool_definitions_token_count("gpt-4", &[]).expect("empty tools");
+        assert_eq!(empty.prompt_tokens, 0, "空 tools 数组应为 0");
+
+        let one = tool_definitions_token_count("gpt-4", &[sample_tool("a")]).expect("serialize");
+        let three = tool_definitions_token_count(
+            "gpt-4",
+            &[sample_tool("a"), sample_tool("b"), sample_tool("c")],
+        )
+        .expect("serialize");
+        assert!(one.prompt_tokens > empty.prompt_tokens);
+        assert!(
+            three.prompt_tokens > one.prompt_tokens,
+            "工具越多，固定底噪越大：{} vs {}",
+            three.prompt_tokens,
+            one.prompt_tokens
+        );
+    }
 
     #[test]
     fn vendor_user_only_has_positive_tokens() {

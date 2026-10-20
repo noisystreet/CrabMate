@@ -8,8 +8,13 @@
 # --- run_command（子进程）---
 # 墙上时钟上限（秒）。超时会杀进程组（SIGTERM→SIGKILL）并返回已捕获的部分输出；不要靠把此值调到数十分钟「解决」长构建。
 command_timeout_secs = 600
-# 提高到 512KiB：避免 `git_diff` / 长命令输出在默认 8KiB 处被字节截断，导致模型看不到完整 patch。
-command_max_output_len = 524288
+# `run_command` 正文进入模型上下文前的字节上限。原 512KiB / 8KiB 两个极端都不合适：
+# 512KiB 时单条长命令（全量 `cargo test` 日志、大目录 `grep -rn`）一次就能吃掉数十万 token，
+# 直接顶到上下文压缩线，换来一轮摘要 + 重复探索。64KiB 约 1.6 万 token，配合工具结果的
+# head/tail 采样与 token 预算器，属于「够定位、不至于失控」的档位。
+# 需要完整 patch 时不受本值影响：内置 `git diff` / `git diff_base` 自带 ≥512KiB 下限
+# （`GIT_DIFF_MIN_CAP_BYTES`）；其它长输出请重定向到文件后按行读（`read_file` 支持 anchor 分段）。
+command_max_output_len = 65536
 # 为 true（嵌入默认）时：argv 含工作区外绝对路径或 `..` 可经人工审批后执行；设 false 则仍无条件拒绝。
 # 不审计 bash/sh -c 脚本字符串内部路径。
 allow_external_path_with_approval = true

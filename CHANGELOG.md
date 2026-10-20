@@ -9,6 +9,14 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- **`GET /status` reports the tool-definition token cost**: new optional field **`tiktoken_tool_definitions_tokens`** on the full (non-`view=shell`) status payload — the `tiktoken` estimate for the serialized **`tools`** array. It closes the last blind spot of the per-request fixed prefix: `tiktoken_new_session_baseline_by_agent_role` counts `messages` only, so tool JSON (the single largest fixed constant once the registry reaches three digits) was invisible. Computed once per **300s** — same TTL as the baseline cache, keyed by model + tool count + first/last tool name — via `spawn_blocking`, then cached. The value is an **upper bound** for "Act + a role without `allowed_tools`": Ask/Plan and role-filtered turns narrow the array at turn-execution time (`run_dispatch` / `session_mode_turn`), which this view cannot see. Reports `0` under `--no-tools`; the key is omitted when serialization fails. See `docs/命令行与路由.md`.
+
+### Changed
+
+- **`command_max_output_len` default lowered from 512KiB to 64KiB**: a single long command (a full `cargo test` log, a `grep -rn` over a large tree) could previously dump hundreds of thousands of tokens into the model context in one tool result, tripping the compaction threshold and paying for a summary plus re-exploration. **`git diff` / `git diff_base` are unaffected** — they clamp to `max(config, GIT_DIFF_MIN_CAP_BYTES)` (512KiB) — so full patches are still delivered; for other long output, redirect to a file and read it back by line or anchor. **Background jobs are affected too**: `run_command` with `async:true` trims each stream's terminal tail to the output cap, so a finished job's captured output now maxes out at 64KiB (live streaming via `GET /tools/jobs/{id}/output` stays bounded by `background_job_output_buffer_bytes`, default 256KiB). Raise the key explicitly if a workflow depends on the old ceiling. See `docs/配置说明.md`.
+
 ## [0.7.0] - 2026-10-18
 
 **crates.io** release of the single crate **`crabmate`** (default feature **`server`**; Client pins **`protocol`**). Install: **`cargo install crabmate`**. Git tag **`v0.7.0`** matches this package. SSE wire protocol stays **v2**. Cut as a **minor** per [`docs/design/client_contract_versioning.md`](docs/design/client_contract_versioning.md) §2.2 (at **`0.y.z`** a minor may denote a breaking change): this release is dominated by **tool-surface consolidation** — dozens of thin CLI wrappers are removed and replaced by generic **`run_command`** (the default allowlist is expanded accordingly), so read the **BREAKING** entries below before upgrading. Additive highlights: **`serve --yes`**, background-job monitoring tools, **`GET /tools/plugins/{file}`**, context-archive retention keys, and **`GET /conversation/messages?include_archive=true`**.
