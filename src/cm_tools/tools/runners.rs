@@ -430,10 +430,15 @@ define_runners_cwd_maxlen! {
 // ── 同构薄封装实例（形态 2：f(args, cwd, ctx)）────────────────
 
 define_runners_cwd_ctx! {
+    runner_structured_patch => structured_data::structured_patch,
+}
+
+// `archive-tools` 未启用时 `archive` 模块不参与编译（见 `tools/mod.rs` 的 cfg）。
+#[cfg(feature = "archive-tools")]
+define_runners_cwd_ctx! {
     runner_archive_pack => archive::archive_pack,
     runner_archive_unpack => archive::archive_unpack,
     runner_archive_list => archive::archive_list,
-    runner_structured_patch => structured_data::structured_patch,
 }
 
 // ── 同构薄封装实例（形态 2 孪生：f(args, cwd, ctx) -> Result）──

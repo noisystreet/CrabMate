@@ -4,7 +4,6 @@ mod clone_stream;
 mod clone_validate;
 mod handlers;
 mod handlers_dir_archive;
-#[cfg(feature = "archive-tools")]
 mod handlers_dir_archive_zip;
 mod handlers_dir_tests;
 mod handlers_file_delete;

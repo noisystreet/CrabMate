@@ -1,4 +1,7 @@
 //! `GET /workspace/dir/archive`：工作区目录 zip（供 Client 保存整个文件夹）。
+//!
+//! 只依赖 `zip` crate（`web` feature），与 `archive-tools`（tar/bz2/xz 的模型工具）解耦：
+//! 归档工具按 feature 裁剪时，本端点仍须可用。
 
 use axum::extract::{Query, State};
 use axum::http::{header, StatusCode};
@@ -15,23 +18,10 @@ pub async fn workspace_dir_archive_handler(
     State(http): State<AppStateHttpCore>,
     Query(query): Query<WorkspaceDirArchiveQuery>,
 ) -> Result<Response, RawErr> {
-    #[cfg(not(feature = "archive-tools"))]
-    {
-        let _ = (http, query);
-        return Err(raw_err(
-            StatusCode::NOT_IMPLEMENTED,
-            "WORKSPACE_ARCHIVE_UNAVAILABLE",
-            "当前构建未启用 archive-tools，无法打包目录",
-        ));
-    }
-    #[cfg(feature = "archive-tools")]
-    {
-        archive_dir_enabled(&http, query).await
-    }
+    archive_dir(&http, query).await
 }
 
-#[cfg(feature = "archive-tools")]
-async fn archive_dir_enabled(
+async fn archive_dir(
     http: &AppStateHttpCore,
     query: WorkspaceDirArchiveQuery,
 ) -> Result<Response, RawErr> {
@@ -60,19 +50,16 @@ async fn archive_dir_enabled(
         };
         raw_err(status, e.code, e.message)
     })?;
-    #[cfg(feature = "archive-tools")]
     zip_ok_response(
         bytes,
         &super::handlers_dir_archive_zip::archive_zip_filename(rel),
     )
 }
 
-#[cfg(feature = "archive-tools")]
 fn zip_prefix_for_rel(rel: &str) -> String {
     super::handlers_dir_archive_zip::archive_dir_stem(rel).to_string()
 }
 
-#[cfg(feature = "archive-tools")]
 async fn resolve_archive_dir(
     http: &AppStateHttpCore,
     rel: &str,
@@ -107,7 +94,6 @@ async fn resolve_archive_dir(
     Ok((base, canonical))
 }
 
-#[cfg(feature = "archive-tools")]
 fn zip_ok_response(bytes: Vec<u8>, filename: &str) -> Result<Response, RawErr> {
     let mut resp = bytes_ok_response(
         bytes,

@@ -159,7 +159,6 @@ server = [
     "protocol",
     "web",
     "mcp",
-    "archive-tools",
     "web-fetch-tools",
     "schema-tools",
     "csv-tools",
@@ -207,6 +206,7 @@ web = [
     "dep:tower-http",
     "dep:flate2",
     "dep:base64",
+    "dep:zip",
 ]
 ## `cargo run --bin crabmate-gen-man` 生成 troff 手册页。
 gen-man = ["dep:clap_mangen"]
