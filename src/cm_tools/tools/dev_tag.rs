@@ -73,18 +73,9 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "git_file_history" | "git_branch_list" | "git_remote_status" | "git_remote_list" => {
             &[GENERAL, VCS]
         }
-        "gh_pr_checks"
-        | "gh_pr_create"
-        | "gh_pr_merge"
-        | "gh_pr_review"
-        | "gh_pr_comment"
-        | "gh_pr_edit"
-        | "gh_pr_body_draft"
-        | "gh_issue_create"
-        | "gh_run_rerun"
-        | "gh_run_failure_summary"
-        | "gh_release_create"
-        | "gh_api" => &[GENERAL, VCS],
+        "gh_pr" | "gh_run" | "gh_issue_create" | "gh_release_create" | "gh_api" => {
+            &[GENERAL, VCS]
+        }
 
         // --- Rust / Cargo ---
         "cargo_run"
