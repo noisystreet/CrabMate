@@ -117,7 +117,6 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "search_replace",
             "chmod_file",
             "apply_patch",
-            "format_files",
             "structured_patch",
             "long_term_remember",
             "long_term_forget",

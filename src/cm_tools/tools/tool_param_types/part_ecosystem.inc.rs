@@ -16,16 +16,6 @@ pub struct PodmanImagesArgs {
     pub reference: Option<String>,
 }
 
-// ── 文件路径（`format`）──────────────────────────────────────
-
-/// [`super::format::run`] 入参（一次可格式化多个文件）。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FormatPathsArgs {
-    #[schemars(length(min = 1))]
-    pub paths: Vec<String>,
-}
-
 // ── `lint::run` ───────────────────────────────────────────────
 
 /// [`super::lint::run`] 入参。

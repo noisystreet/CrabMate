@@ -48,7 +48,6 @@ mod file;
 pub use file::canonical_workspace_root;
 pub use file::list_tree;
 pub(crate) use file::resolve_for_read_open;
-mod format;
 mod frontend_tools;
 mod git;
 mod github_cli;
