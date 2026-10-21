@@ -273,6 +273,21 @@ fn test_build_tools_names() {
     assert!(names.contains(&"gh_issue_create"));
     assert!(names.contains(&"gh_api"));
     assert!(names.contains(&"gh_release_create"));
+    // 已移除的工具不应复活：gh_* 已合并为 gh_pr / gh_run；format_files 已收敛到 run_command。
+    for gone in [
+        "format_files",
+        "gh_pr_checks",
+        "gh_pr_create",
+        "gh_pr_merge",
+        "gh_pr_review",
+        "gh_pr_comment",
+        "gh_pr_edit",
+        "gh_pr_body_draft",
+        "gh_run_rerun",
+        "gh_run_failure_summary",
+    ] {
+        assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
+    }
     assert!(names.contains(&"cargo_check"));
     assert!(names.contains(&"cargo_test"));
     assert!(names.contains(&"cargo_clippy"));
