@@ -661,7 +661,7 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
     // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 103 } else { 100 };
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 95 } else { 92 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
