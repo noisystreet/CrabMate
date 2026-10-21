@@ -29,7 +29,6 @@ fn builtin_write_effect_tools() -> HashSet<&'static str> {
         "move_file",
         "copy_file",
         "create_symlink",
-        "format_files",
         "set_env_var",
         "set_dot_env_var",
         "upsert_secret_file",
@@ -120,7 +119,6 @@ fn is_file_path_arg_tool(name: &str) -> bool {
             | "append_file"
             | "search_replace"
             | "chmod_file"
-            | "format_files"
             | "read_binary_meta"
             | "hash_file"
     )
@@ -467,21 +465,6 @@ mod tests {
         assert_eq!(sc.len(), 1);
         assert!(!sc[0].is_dir);
         assert_eq!(sc[0].path, "a/b.rs");
-    }
-
-    #[test]
-    fn format_files_uses_each_paths_entry() {
-        let cfg = default_cfg();
-        let inv = invalidation_for_tool_call(
-            &cfg,
-            "format_files",
-            r#"{"paths":["b.rs","a.rs","a.rs"]}"#,
-        );
-        let Some(CodebaseSemanticInvalidation::RelScopes(sc)) = inv else {
-            panic!("expected RelScopes");
-        };
-        let paths: Vec<(&str, bool)> = sc.iter().map(|s| (s.path.as_str(), s.is_dir)).collect();
-        assert_eq!(paths, vec![("a.rs", false), ("b.rs", false)]);
     }
 
     #[test]

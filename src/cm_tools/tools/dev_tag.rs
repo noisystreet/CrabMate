@@ -108,7 +108,6 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, DOCKER, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
-        "format_files" => &[GENERAL, RUST, FRONTEND, PYTHON, CPP],
 
         // --- 后台任务查询 ---
         "background_job_status" | "background_job_list" => &[GENERAL],
@@ -307,11 +306,5 @@ mod tests {
         let s = suggest_dev_tags_for_workspace(&dir);
         assert!(s.contains(&CPP));
         let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn format_files_tag_includes_cpp() {
-        let t = tags_for_tool_name("format_files");
-        assert!(t.contains(&CPP));
     }
 }

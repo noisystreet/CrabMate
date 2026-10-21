@@ -20,7 +20,7 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, FormatPathsArgs, GitStatusArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitStatusArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
@@ -94,16 +94,6 @@ mod tests {
         assert!(e.iter().any(|x| x == "auto"));
         assert!(e.iter().any(|x| x == "lcov"));
         assert!(e.iter().any(|x| x == "tarpaulin_json"));
-    }
-
-    #[test]
-    fn format_files_schema_requires_paths() {
-        let v = tool_parameters_schema_value::<FormatPathsArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("req");
-        assert!(req.iter().any(|x| x == "paths"));
     }
 
     #[test]

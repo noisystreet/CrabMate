@@ -78,6 +78,7 @@ allowed_commands = [
     "uv",
     "rustfmt",
     "clang-format",
+    "prettier",
     "shfmt",
     "xmllint",
     "sqlfluff",
