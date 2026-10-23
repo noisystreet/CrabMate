@@ -615,8 +615,7 @@ pub(super) fn modify_file_replace_lines(
     working_dir: &Path,
     rel_path: &str,
 ) -> String {
-    // 默认只预览：显式 `dry_run=false` 才写盘（与 `search_replace` / `structured_patch` 统一）。
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let dry_run = super::write_ops::dry_run_arg(v);
     let original = std::fs::read_to_string(target).ok();
     let (start_line, end_line, new_body) = match parse_replace_line_range(v) {
         Ok(x) => x,
@@ -703,8 +702,7 @@ pub(super) fn modify_file_insert_after_line(
     working_dir: &Path,
     rel_path: &str,
 ) -> String {
-    // 默认只预览：显式 `dry_run=false` 才写盘（与 `search_replace` / `structured_patch` 统一）。
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let dry_run = super::write_ops::dry_run_arg(v);
     let original = std::fs::read_to_string(target).ok();
     let (after_line, new_body) = match parse_insert_after_line(v) {
         Ok(x) => x,

@@ -366,6 +366,16 @@ fn modify_file_display(working_dir: &Path, target: &Path, path: &str) -> String 
     path_for_tool_display(working_dir, target, Some(path))
 }
 
+/// 写盘旋钮的**唯一**解析点（`modify_file` 的裸 `Value` 分支）：不传 `dry_run` = 只预览，
+/// 显式 `dry_run=false` 才写盘。
+///
+/// `modify_file` 的四个分发分支（`replace_lines` / `insert_after_line` / 批量 `edits` /
+/// 整文件覆盖）都走这里，避免默认值散落在各处、新增分支时漏改；`append_file` /
+/// `search_replace` / `structured_patch` 已由 typed 结构提供同一个默认值。
+pub(super) fn dry_run_arg(v: &serde_json::Value) -> bool {
+    v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true)
+}
+
 /// 行号类模式依赖“当前文件坐标”，默认使用本轮 `read_file` 的 revision 自动校验；
 /// 整文件覆盖不依赖行号，不做自动绑定。
 fn modify_file_auto_bind_revision(v: &serde_json::Value, mode: &str) -> bool {
@@ -429,8 +439,7 @@ fn modify_file_dispatch_full_mode(
         .and_then(|c| c.as_str())
         .map(String::from)
         .unwrap_or_default();
-    // 默认只预览：显式 `dry_run=false` 才写盘（与 `search_replace` / `structured_patch` 统一）。
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
+    let dry_run = dry_run_arg(v);
     let confirm_full_overwrite = v
         .get("confirm_full_overwrite")
         .and_then(|x| x.as_bool())
@@ -483,7 +492,9 @@ fn modify_file_dispatch_mode(
 /// - 未显式给出 `mode` 但带有 `start_line`/`end_line` 时自动使用 `replace_lines`，带有 `after_line` 时自动使用 `insert_after_line`；否则默认 `mode`=`full`。
 /// - `mode`=`replace_lines`：`start_line`..=`end_line`（1-based，含边界）替换为 `content`（流式读写，适合大文件）。
 /// - `mode`=`insert_after_line`：在 `after_line` 之后插入 `content`；`after_line=0` 表示文件开头。
-/// - `dry_run=true`：仅返回 diff 预览，不写盘（`replace_lines` 与整文件覆盖均支持）。
+/// - `dry_run` **默认 `true`**：仅返回 diff 预览、不写盘（`replace_lines` 与整文件覆盖均支持）；
+///   显式 `dry_run=false` 才写入。预览跳过**本轮自动绑定**的基线校验（不落盘即无按旧行号误改的
+///   风险），但显式 `base_revision` 仍始终校验。
 /// - 整文件覆盖若命中高危启发式，须 `confirm_full_overwrite=true`（`dry_run` 不受此限）。
 pub fn modify_file(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     modify_file_try(args_json, working_dir, ctx).unwrap_or_else(|e| e.message)
@@ -511,7 +522,9 @@ pub fn modify_file_try(
             "错误：路径不是文件或不存在，无法仅修改".to_string(),
         ));
     }
-    let auto_bind = modify_file_auto_bind_revision(&v, &mode);
+    // 预览不落盘，因此跳过「本轮自动绑定」的基线校验（没有误改风险）；但显式 `base_revision`
+    // 仍然始终校验——调用方已声明自己依赖那份快照，过期就该立刻告知，而不是让预览看起来没问题。
+    let auto_bind = !dry_run_arg(&v) && modify_file_auto_bind_revision(&v, &mode);
     if let Err(e) = super::revision::verify_write_revision(&v, &target, ctx, auto_bind) {
         return Err(modify_file_legacy_body_error(e));
     }

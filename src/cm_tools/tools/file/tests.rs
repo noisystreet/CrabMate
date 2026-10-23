@@ -477,7 +477,7 @@ fn test_modify_file_replace_lines_dry_run_unchanged() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true,"allow_stale_revision":true}"#,
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true}"#,
         &dir,
         &ctx,
     );
@@ -533,7 +533,7 @@ fn test_append_file_adds_leading_newline_by_default() {
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
-    let out = append_file(r#"{"path":"a.txt","content":"new\n"}"#, &dir, &ctx);
+    let out = append_file(r#"{"path":"a.txt","content":"new\n","dry_run":false}"#, &dir, &ctx);
     assert!(out.contains("前导换行"), "{}", out);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "old\nnew\n");
     let _ = std::fs::remove_dir_all(&dir);
@@ -548,7 +548,7 @@ fn test_append_file_can_disable_leading_newline() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = append_file(
-        r#"{"path":"a.txt","content":"new","ensure_leading_newline":false}"#,
+        r#"{"path":"a.txt","content":"new","ensure_leading_newline":false,"dry_run":false}"#,
         &dir,
         &ctx,
     );

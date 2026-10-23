@@ -124,7 +124,7 @@ pub struct StructuredPatchArgs {
     pub create_missing: bool,
     #[serde(default = "default_true")]
     pub dry_run: bool,
-    /// 兼容保留：写盘只需 `dry_run=false`，本字段不再被校验。
+    /// **已废弃**：写盘只需 `dry_run=false`，本字段不再被校验；仅为兼容既有调用保留。
     #[serde(default)]
     pub confirm: bool,
 }
@@ -417,8 +417,8 @@ pub struct AppendFileArgs {
     pub content: String,
     #[serde(default)]
     pub create_if_missing: bool,
-    /// 为 `true` 时只返回 unified diff 预览，**不写盘**。
-    #[serde(default)]
+    /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入。
+    #[serde(default = "default_true")]
     pub dry_run: bool,
     /// 原文件非空且末尾无换行时，追加前自动补一个 `\n`，避免把新内容接在旧末行后。
     #[serde(default = "default_true")]
@@ -450,7 +450,7 @@ pub struct SearchReplaceArgs {
     pub max_replacements: Option<u64>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
-    /// 兼容保留：写盘只需 `dry_run=false`，本字段不再被校验。
+    /// **已废弃**：写盘只需 `dry_run=false`，本字段不再被校验；仅为兼容既有调用保留。
     #[serde(default)]
     pub confirm: bool,
     /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。
