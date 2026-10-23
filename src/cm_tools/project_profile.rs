@@ -1,4 +1,5 @@
-//! 工作区「项目画像」：只读扫描清单文件、目录结构与代码行数占比，供 Web 侧栏与首轮对话注入。
+//! 工作区「项目画像」：只读扫描清单文件、目录结构与代码行数占比，供 Web 侧栏（`GET /workspace/profile`）
+//! 与 `repo_overview_sweep` 按需使用；**不进首轮上下文注入**（避免每次新会话的全仓扫描与 `cargo metadata` 子进程）。
 //! 不执行任意用户命令；可选 `cargo metadata --no-deps` 仅用于依赖数量（失败则省略）。
 
 use std::collections::HashSet;

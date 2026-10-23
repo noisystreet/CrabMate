@@ -767,7 +767,8 @@ fn workspace_dir_delete_sync(canonical: std::path::PathBuf, recursive: bool) -> 
     }
 }
 
-/// 返回当前工作区的项目画像（Markdown）。与 `project_profile_inject_max_chars` 上限一致；为 0 时返回空正文。
+/// 返回当前工作区的项目画像（Markdown）。受 `project_profile_inject_enabled`（总开关）与
+/// `project_profile_inject_max_chars`（为 0 时返回空正文）控制。
 pub async fn workspace_profile_handler(
     State(http): State<AppStateHttpCore>,
 ) -> Json<WorkspaceProfileResponse> {
@@ -780,12 +781,23 @@ pub async fn workspace_profile_handler(
             });
         }
     };
-    let max_chars = http
-        .cfg
-        .read()
-        .await
-        .context_bootstrap_inject
-        .project_profile_inject_max_chars;
+    let (enabled, max_chars) = {
+        let cfg = http.cfg.read().await;
+        (
+            cfg.context_bootstrap_inject
+                .project_profile_inject_enabled,
+            cfg.context_bootstrap_inject
+                .project_profile_inject_max_chars,
+        )
+    };
+    // 画像已不再进首轮注入；`project_profile_inject_enabled` 作为侧栏画像的总开关，
+    // 避免该配置变成无人读取的死键。`max_chars == 0` 同样直接返回空正文，省掉一次 `spawn_blocking`。
+    if !enabled || max_chars == 0 {
+        return Json(WorkspaceProfileResponse {
+            markdown: String::new(),
+            error: None,
+        });
+    }
     let md_result = tokio::task::spawn_blocking(move || {
         crate::context_bootstrap::project_profile::build_project_profile_markdown(
             &base_canonical,

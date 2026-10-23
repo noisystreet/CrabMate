@@ -1,4 +1,5 @@
-//! Web `/chat*` 与 CLI 首轮消息共用的**项目画像 / 依赖摘要**注入与消息拼装（与 `project_profile::build_first_turn_user_context_markdown` 同源）。
+//! Web `/chat*` 与 CLI 首轮消息共用的**首轮工作区上下文**注入与消息拼装（活文档摘要 / 备忘 / 依赖摘要）。
+//! 项目画像不在首轮注入，见 `first_turn_inject` 模块注释。
 //!
 //! - **Web**：新会话可带 `agent_memory` 片段；重扫描可走 `spawn_blocking`。
 //! - **CLI**：`chat` / REPL 在 `[system, user]` 间插入可选 `user` 上下文条；无备忘文件路径。
@@ -11,15 +12,10 @@ use crate::cm_internal::context_bootstrap::first_turn_inject::build_first_turn_u
 use crate::cm_config::{AgentConfig, SharedAgentConfig};
 use crate::cm_types::Message;
 
-/// 项目画像 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。
+/// 活文档摘要 / `cargo metadata` 等重扫描是否应放到阻塞线程（与 Web `build_messages_for_turn`、CLI `prepend_cli_first_turn_injection` 对齐）。
 pub fn project_scan_needs_spawn_blocking(cfg: &AgentConfig) -> bool {
     (cfg.context_bootstrap_inject.living_docs_inject_enabled
         && cfg.context_bootstrap_inject.living_docs_inject_max_chars > 0)
-        || (cfg.context_bootstrap_inject.project_profile_inject_enabled
-            && cfg
-                .context_bootstrap_inject
-                .project_profile_inject_max_chars
-                > 0)
         || (cfg
             .context_bootstrap_inject
             .project_dependency_brief_inject_enabled
@@ -126,7 +122,7 @@ pub fn compose_new_conversation_messages(
     }
 }
 
-/// `chat` / REPL：在已有 `[system, user]`（如 `messages_chat_seed`）之间插入项目画像 `user` 条（与 Web 新会话同源）。
+/// `chat` / REPL：在已有 `[system, user]`（如 `messages_chat_seed`）之间插入首轮上下文 `user` 条（与 Web 新会话同源）。
 pub async fn prepend_first_turn_project_context_between_system_and_user(
     cfg_holder: &SharedAgentConfig,
     work_dir: &Path,
@@ -156,7 +152,7 @@ mod tests {
         let out =
             first_turn_project_context_user_message_for_web(std::path::Path::new("."), &cfg, None)
                 .await;
-        // 默认配置下 living docs / profile 可能为空，但路径门控不应再阻断注入尝试。
+        // 默认配置下 living docs / 依赖摘要可能为空，但路径门控不应再阻断注入尝试。
         let _ = out;
     }
 }

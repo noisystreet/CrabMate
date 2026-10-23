@@ -152,9 +152,9 @@ struct StatusResponse {
     long_term_memory_store_ready: bool,
     /// 异步索引累计失败次数（成功回合不递增；仅排障用）。
     long_term_memory_index_errors: u64,
-    /// Web 新会话首轮是否注入自动生成的项目画像 Markdown。
+    /// 项目画像总开关：控制 `GET /workspace/profile`（Web 侧栏）是否生成；**不再影响首轮注入**。
     project_profile_inject_enabled: bool,
-    /// 项目画像注入正文最大字符数（0 表示关闭生成）。
+    /// 项目画像正文最大字符数（0 表示关闭生成）。
     project_profile_inject_max_chars: usize,
     /// 首轮是否追加 `cargo metadata` + package.json 的结构化摘要与 Mermaid workspace 图。
     project_dependency_brief_inject_enabled: bool,
