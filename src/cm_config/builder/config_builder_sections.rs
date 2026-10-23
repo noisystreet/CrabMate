@@ -96,11 +96,9 @@ pub(crate) struct ConfigBuilderPerPlanPolicy {
 }
 
 #[derive(Default)]
-pub(crate) struct ConfigBuilderCursorRules {
-    pub(crate) cursor_rules_enabled: Option<bool>,
-    pub(crate) cursor_rules_dir: Option<String>,
-    pub(crate) cursor_rules_include_agents_md: Option<bool>,
-    pub(crate) cursor_rules_max_chars: Option<u64>,
+pub(crate) struct ConfigBuilderAgentsMd {
+    pub(crate) agents_md_enabled: Option<bool>,
+    pub(crate) agents_md_max_chars: Option<u64>,
 }
 
 #[derive(Default)]
@@ -317,7 +315,7 @@ pub(crate) struct ConfigBuilder {
     pub(crate) web_search: ConfigBuilderWebSearch,
     pub(crate) http_fetch: ConfigBuilderHttpFetch,
     pub(crate) per_plan_policy: ConfigBuilderPerPlanPolicy,
-    pub(crate) cursor_rules: ConfigBuilderCursorRules,
+    pub(crate) agents_md: ConfigBuilderAgentsMd,
     pub(crate) skills: ConfigBuilderSkills,
     pub(crate) tool_transcript: ConfigBuilderToolTranscript,
     pub(crate) agent_thinking_trace: ConfigBuilderAgentThinkingTrace,

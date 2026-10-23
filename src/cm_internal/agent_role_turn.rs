@@ -95,6 +95,7 @@ pub fn apply_agent_role_switch_to_messages(
             agent_role: resolved_role.as_deref(),
             user_msg_for_skills: skills_user,
             skills_base_dir: skills_base,
+            workspace_root: workspace_root.map(Path::to_path_buf),
             forced_skill: None,
             role_resolution: RoleSystemResolution::Strict,
             session_mode,

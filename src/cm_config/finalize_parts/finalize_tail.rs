@@ -1,10 +1,8 @@
 /// `finalize_agent_config_tail` 中解析与 clamp 后的标量字段（降低单函数 `nloc`）。
 #[allow(clippy::struct_excessive_bools)]
 struct FinalizeTailScalars {
-    cursor_rules_enabled: bool,
-    cursor_rules_dir: String,
-    cursor_rules_include_agents_md: bool,
-    cursor_rules_max_chars: u64,
+    agents_md_enabled: bool,
+    agents_md_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
     skills_user_dir: String,
@@ -571,11 +569,9 @@ fn derive_tail_storage_inject_net_scalars(
 }
 
 #[allow(clippy::struct_excessive_bools)]
-struct TailCursorSkillsPack {
-    cursor_rules_enabled: bool,
-    cursor_rules_dir: String,
-    cursor_rules_include_agents_md: bool,
-    cursor_rules_max_chars: u64,
+struct TailAgentsMdSkillsPack {
+    agents_md_enabled: bool,
+    agents_md_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
     skills_user_dir: String,
@@ -584,15 +580,11 @@ struct TailCursorSkillsPack {
     skills_top_k: usize,
 }
 
-fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPack {
-    let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
-    let cursor_rules_dir = b
-        .cursor_rules.cursor_rules_dir
-        .clone()
-        .unwrap_or_else(|| ".cursor/rules".to_string());
-    let cursor_rules_include_agents_md = b.cursor_rules.cursor_rules_include_agents_md.unwrap_or(true);
-    let cursor_rules_max_chars = b
-        .cursor_rules.cursor_rules_max_chars
+fn tail_agents_md_and_skills_fields(b: &ConfigBuilder) -> TailAgentsMdSkillsPack {
+    let agents_md_enabled = b.agents_md.agents_md_enabled.unwrap_or(true);
+    let agents_md_max_chars = b
+        .agents_md
+        .agents_md_max_chars
         .unwrap_or(48_000)
         .clamp(1024, 1_000_000);
     let skills_enabled = b.skills.skills_enabled.unwrap_or(true);
@@ -610,11 +602,9 @@ fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPac
         });
     let skills_max_chars = b.skills.skills_max_chars.unwrap_or(32_000).clamp(1024, 1_000_000);
     let skills_top_k = b.skills.skills_top_k.unwrap_or(4).clamp(1, 64) as usize;
-    TailCursorSkillsPack {
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
+    TailAgentsMdSkillsPack {
+        agents_md_enabled,
+        agents_md_max_chars,
         skills_enabled,
         skills_dir,
         skills_user_dir,
@@ -626,7 +616,7 @@ fn tail_cursor_rules_and_skills_fields(b: &ConfigBuilder) -> TailCursorSkillsPac
 
 #[allow(clippy::too_many_lines)]
 fn assemble_finalize_tail_scalars(
-    pack: TailCursorSkillsPack,
+    pack: TailAgentsMdSkillsPack,
     ptt: TailPlanToolThinkingScalars,
     cqs: TailContextQueuesSessionScalars,
     ssw: TailSandboxWebScalars,
@@ -677,10 +667,8 @@ fn assemble_finalize_tail_scalars(
     } = cqs;
 
     FinalizeTailScalars {
-        cursor_rules_enabled: pack.cursor_rules_enabled,
-        cursor_rules_dir: pack.cursor_rules_dir,
-        cursor_rules_include_agents_md: pack.cursor_rules_include_agents_md,
-        cursor_rules_max_chars: pack.cursor_rules_max_chars,
+        agents_md_enabled: pack.agents_md_enabled,
+        agents_md_max_chars: pack.agents_md_max_chars,
         skills_enabled: pack.skills_enabled,
         skills_dir: pack.skills_dir,
         skills_user_dir: pack.skills_user_dir,
@@ -780,7 +768,7 @@ fn derive_finalize_tail_scalars(mid: &FinalizeAfterRoles) -> Result<FinalizeTail
         ..
     } = *mid;
 
-    let pack = tail_cursor_rules_and_skills_fields(b);
+    let pack = tail_agents_md_and_skills_fields(b);
     let ptt = derive_tail_plan_tool_thinking_scalars(
         b,
         system_prompt_search_bases,

@@ -3,6 +3,7 @@
 //!
 //! 与 [`crate::cm_config`] 中的注入开关对应；路径解析依赖 [`crate::cm_internal::workspace`]。
 
+pub mod agents_md;
 pub mod conversation_turn_bootstrap;
 pub mod first_turn_inject;
 pub mod living_docs;

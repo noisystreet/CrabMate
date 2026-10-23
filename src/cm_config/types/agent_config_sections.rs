@@ -79,11 +79,11 @@ pub struct RolesPromptsConfig {
 }
 
 #[derive(Debug, Clone)]
-pub struct CursorRulesConfigSection {
-    pub cursor_rules_enabled: bool,
-    pub cursor_rules_dir: String,
-    pub cursor_rules_include_agents_md: bool,
-    pub cursor_rules_max_chars: usize,
+pub struct AgentsMdConfigSection {
+    /// 是否把会话工作区根 `AGENTS.md` 追加到首条 `system`（L3 之后）。
+    pub agents_md_enabled: bool,
+    /// 追加正文的字符上限；`0` 关闭。
+    pub agents_md_max_chars: usize,
 }
 
 #[derive(Debug, Clone)]

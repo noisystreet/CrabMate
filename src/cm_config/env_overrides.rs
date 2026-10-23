@@ -216,24 +216,16 @@ fn env_override_system_prompt_and_default_role(b: &mut ConfigBuilder) {
 }
 
 fn apply_env_overrides_part_5(b: &mut ConfigBuilder) {
-    env_override_cursor_rules_part_5(b);
+    env_override_agents_md_part_5(b);
     env_override_skills_part_5(b);
     env_override_tool_streaming_flags(b);
 }
 
-fn env_override_cursor_rules_part_5(b: &mut ConfigBuilder) {
-    apply_bool(
-        &mut b.cursor_rules.cursor_rules_enabled,
-        "CM_CURSOR_RULES_ENABLED",
-    );
-    apply_nonempty_opt(&mut b.cursor_rules.cursor_rules_dir, "CM_CURSOR_RULES_DIR");
-    apply_bool(
-        &mut b.cursor_rules.cursor_rules_include_agents_md,
-        "CM_CURSOR_RULES_INCLUDE_AGENTS_MD",
-    );
+fn env_override_agents_md_part_5(b: &mut ConfigBuilder) {
+    apply_bool(&mut b.agents_md.agents_md_enabled, "CM_AGENTS_MD_ENABLED");
     apply_parse(
-        &mut b.cursor_rules.cursor_rules_max_chars,
-        "CM_CURSOR_RULES_MAX_CHARS",
+        &mut b.agents_md.agents_md_max_chars,
+        "CM_AGENTS_MD_MAX_CHARS",
     );
 }
 

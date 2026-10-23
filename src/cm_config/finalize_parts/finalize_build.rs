@@ -15,7 +15,7 @@ fn assemble_agent_config_from_finalize(mid: &FinalizeAfterRoles, tail: &Finalize
         http_fetch: finalize_section_http_fetch(tail),
         per_plan_policy: finalize_section_per_plan_policy(mid, tail),
         roles_prompts: finalize_section_roles_prompts(mid),
-        cursor_rules: finalize_section_cursor_rules(tail),
+        agents_md: finalize_section_agents_md(tail),
         skills: finalize_section_skills(tail),
         tool_transcript: finalize_section_tool_transcript(tail),
         agent_thinking_trace: finalize_section_agent_thinking_trace(tail),
@@ -144,12 +144,10 @@ fn finalize_section_roles_prompts(mid: &FinalizeAfterRoles) -> types::RolesPromp
     }
 }
 
-fn finalize_section_cursor_rules(tail: &FinalizeTailScalars) -> types::CursorRulesConfigSection {
-    types::CursorRulesConfigSection {
-        cursor_rules_enabled: tail.cursor_rules_enabled,
-        cursor_rules_dir: tail.cursor_rules_dir.clone(),
-        cursor_rules_include_agents_md: tail.cursor_rules_include_agents_md,
-        cursor_rules_max_chars: tail.cursor_rules_max_chars as usize,
+fn finalize_section_agents_md(tail: &FinalizeTailScalars) -> types::AgentsMdConfigSection {
+    types::AgentsMdConfigSection {
+        agents_md_enabled: tail.agents_md_enabled,
+        agents_md_max_chars: tail.agents_md_max_chars as usize,
     }
 }
 

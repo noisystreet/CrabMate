@@ -38,7 +38,7 @@ pub fn apply_hot_reload_config_subset(dst: &mut AgentConfig, src: &AgentConfig) 
     dst.http_fetch.clone_from(&src.http_fetch);
     dst.per_plan_policy.clone_from(&src.per_plan_policy);
     dst.roles_prompts.clone_from(&src.roles_prompts);
-    dst.cursor_rules.clone_from(&src.cursor_rules);
+    dst.agents_md.clone_from(&src.agents_md);
     dst.skills.clone_from(&src.skills);
     dst.tool_transcript.clone_from(&src.tool_transcript);
     dst.agent_thinking_trace

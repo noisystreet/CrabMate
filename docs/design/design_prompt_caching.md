@@ -274,8 +274,8 @@ pub fn cache_stats() -> String {
 
 DeepSeek 缓存从 **第 0 个 token 起** 开始匹配。Agent 的 system prompt 通常占 2000-5000 tokens，是最重要的缓存前缀。但当前 CrabMate 的 system prompt 构建路径中：
 
-- `cursor_rules`、`skills`、`living_docs` 等动态内容累积到 system prompt
-- 内容在轮次之间可能发生变化（文件被修改、cursor_rules 扩容等），导致前缀不一致
+- `agents_md`、`skills`、`living_docs` 等动态内容累积到 system prompt
+- 内容在轮次之间可能发生变化（文件被修改、技能索引增减等），导致前缀不一致；`agents_md` 段虽按会话工作区根读取，但**续聊每轮都会重算首条 `system`**（`refresh_existing_turn_system`），因此 `AGENTS.md` 一改，该会话前缀即失效
 
 **不需要消息重排**：工具定义在 `ChatRequest.tools` 字段（不在 `messages` 中），DeepSeek V4 的公共前缀检测已能处理常见前缀变动。
 

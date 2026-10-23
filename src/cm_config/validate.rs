@@ -156,8 +156,8 @@ fn u64_range_rows_a1() -> &'static [U64RangeRow] {
             1024,
         ),
         (
-            "cursor_rules_max_chars",
-            |b| b.cursor_rules.cursor_rules_max_chars,
+            "agents_md_max_chars",
+            |b| b.agents_md.agents_md_max_chars,
             1024,
             1_000_000,
         ),
