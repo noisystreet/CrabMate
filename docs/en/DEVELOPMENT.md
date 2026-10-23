@@ -19,7 +19,7 @@ For **contributors and maintainers**: major modules and data flow. **No** per-fi
 
 - **TODOLIST**: open items only; remove when done; history in Git.
 - **User-visible changes**: update **`README.md`**; protocol boundaries → **SSE_PROTOCOL**.
-- **Architecture changes**: update **Main modules** + Mermaid below; see **`.cursor/rules/architecture-docs-sync.mdc`**. Keep this page an **overview**—put deep detail in design docs, not here.
+- **Architecture changes**: update **Main modules** + Mermaid below; see **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync**. Keep this page an **overview**—put deep detail in design docs, not here.
 - **Quality**: `.pre-commit-config.yaml`; Conventional Commits (bilingual subject in this repo).
 - **Deps**: `deny.toml` + CI when touching manifests / lockfiles.
 

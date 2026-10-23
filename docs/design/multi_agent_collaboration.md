@@ -189,7 +189,7 @@
 - **预算维度缺口**：现有计数仅 `llm_calls` / `estimated_tokens` / 墙钟，**不含工具调用次数**。而子 Agent 的主要扇出消耗恰恰是工具调用，首版**显式以墙钟兜底**，并把「新增工具调用计数维」列为后续项，而不是默认它已被覆盖。
 - **状态归属**：子 Agent 的 `messages` 为**独立会话对象**，生命周期不越过单次委托；父的可变 `messages` 由 `run_loop_state_ownership.md` 的既有规则拥有。
 - **可观测**：委托开始 / 结束 / 拒绝以 tracing span + 可选 SSE 事件暴露；若新增 SSE 事件，**必须**走 `docs/SSE协议.md` 契约与 golden fixtures。
-- **安全**：子 Agent 请求与日志遵守脱敏 / 截断（`.cursor/rules/secrets-and-logging.mdc`）；写类工具默认**不**下放给子 Agent，如需下放须经 `tool_approval` 并单独文档化风险。
+- **安全**：子 Agent 请求与日志遵守脱敏 / 截断（`AGENTS.md` → Repository engineering rules → Secrets & logging）；写类工具默认**不**下放给子 Agent，如需下放须经 `tool_approval` 并单独文档化风险。
 
 ### 6.5 工具权限裁决链（唯一顺序，不可各自发明）
 
@@ -268,7 +268,7 @@ A2A 解决的是**跨进程、跨组织的 Agent 互操作**，与本设计的 L
 5. **默认关闭 + fail-open + 可整体降级**：任一层出问题都能退回 L0/L1。
 6. **外部契约先行**：新增 SSE 事件 / API 字段走 `docs/SSE协议.md` 与 `docs/命令行与路由.md`，并同步 golden fixtures 与 `scripts/check-sse-protocol.sh`。
 7. **工具越权在实现层拒绝**，而不只靠提示词约束（沿用 `agent_role_turn.rs` 的既有做法）。
-8. **文档同步**：改动模块布局 / 分层时更新 `docs/开发文档.md`（见 `.trae/rules/architecture-docs-sync.mdc`）。
+8. **文档同步**：改动模块布局 / 分层时更新 `docs/开发文档.md`（见 `AGENTS.md` → Repository engineering rules → Architecture & documentation sync）。
 9. **契约不承载内部表示**：`context_slice` 是结构化 DTO，**不得**是 `messages`；渲染成 `messages` 是子 Agent 侧的责任（§0-1、§5）。
 10. **粒度先于委托**：委托前必须过 §6.6 门限；单次读文件 / 单次检索**禁止**委托。
 11. **权限裁决链唯一**：所有工具授权按 §6.5 的固定顺序取交，**不允许**在此之外另设一条授权路径。

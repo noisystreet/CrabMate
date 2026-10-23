@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides HTTP **`serve`** (Axum) and ops CLIs; **official Web UI / Desktop / remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui`** (clap entry **and** implementation) **are removed** (D2.2; see `docs/design/client_shell_split.md`). See `README.md` for quick start; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview. If you change module layout or layering, update `docs/开发文档.md` per **Repository engineering rules → Architecture & documentation sync** below (long form: `.cursor/rules/architecture-docs-sync.mdc`).
+CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides HTTP **`serve`** (Axum) and ops CLIs; **official Web UI / Desktop / remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui`** (clap entry **and** implementation) **are removed** (D2.2; see `docs/design/client_shell_split.md`). See `README.md` for quick start; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview. If you change module layout or layering, update `docs/开发文档.md` per **Repository engineering rules → Architecture & documentation sync** below.
 
 ### Agent workspace
 
@@ -73,7 +73,7 @@ Standard commands from `README.md`:
 - Default **`allowed_commands`** includes common Linux utilities (e.g. `stat`, `grep`, `diff`, `jq`, `ps`, `zcat`), **`python3` / `npm`**, **`bash` / `sh`** (for **`bash -c` / `sh -c`** when you need `&&` / pipes / `;` in one shot—equivalent to arbitrary command execution), and **`git` / `gh` / `cargo` / `rustc`**; they can modify repos or run build scripts—treat workspaces as trusted.
 - **GitHub CLI `gh`** is on the default `run_command` allowlist. If not installed, **`GET /health`** reports **`dep_gh`** as degraded (like other optional CLIs); install `gh` and run **`gh auth login`** (or equivalent) for API access.
 - Static-analysis / lint CLIs (`shellcheck`, `cppcheck`, `semgrep`, `hadolint`, `bandit`, `lizard`) are on the default `run_command` allowlist and are invoked via generic `run_command` (the dedicated `shellcheck_check` / `cppcheck_analyze` / `semgrep_scan` / `hadolint_check` / `bandit_scan` / `lizard_complexity` tools have been removed). `/health` no longer probes them, so there are no `dep_shellcheck` / `dep_cppcheck` / `dep_semgrep` / `dep_hadolint` / `dep_bandit` / `dep_lizard` entries; missing-CLI install hints are still surfaced by `error_output_playbook`. These are read-only analysis commands and do not modify files.
-- **Lint**：仓库 **pre-commit** 使用 **`cargo clippy --all-targets --all-features -- -D warnings`**（见 **`.pre-commit-config.yaml`** 与 **`.cursor/rules/pre-commit-before-commit.mdc`**）。**提交前**须通过；仅本地快速试探时可运行不带 `-D warnings` 的 **`cargo clippy`**，但不应在 hook 未通过时代为提交。
+- **Lint**：仓库 **pre-commit** 使用 **`cargo clippy --all-targets --all-features -- -D warnings`**（见 **`.pre-commit-config.yaml`** 与上文 **Repository engineering rules → Commit & push**）。**提交前**须通过；仅本地快速试探时可运行不带 `-D warnings` 的 **`cargo clippy`**，但不应在 hook 未通过时代为提交。
 - **`cargo fmt --check`**：若与 **`cargo fmt`** 结果不一致，先执行 **`cargo fmt --all`** 再提交；pre-commit 也会格式化 Rust 代码。
 - The `rfd` crate (file dialog) is a dependency but won't work headlessly; this doesn't affect the web server mode.
 - **pre-commit install** may fail with `core.hooksPath` set. Run `git config --unset-all core.hooksPath` first, then `pre-commit install && pre-commit install --hook-type commit-msg`.
@@ -83,7 +83,7 @@ Standard commands from `README.md`:
 
 ## Repository engineering rules
 
-**This section is authoritative for agents.** Each subsection mirrors one `.cursor/rules/*.mdc` file; those files are kept for the Cursor/Trae IDE, but the agent reads *this* section — open the matching `.mdc` only when you need the long-form rationale. If a rule changes, update both (see `.cursor/rules/README.md`).
+**This section is authoritative for agents and is the only rule source.** The former `.cursor/rules/*.mdc` files (and the `.trae/rules/` copy) are deleted — do not reintroduce them; edit this section instead.
 
 ### Commit & push
 

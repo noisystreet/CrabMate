@@ -15,4 +15,4 @@ This page mirrors [docs/调试指南.md](../调试指南.md) in English. For the
 - **SSE**: [docs/SSE协议.md](../SSE协议.md); keep **`src/cm_sse_protocol`** (`control_classify`), **`sse_dispatch`**, and **`fixtures/sse_control_golden.jsonl`** in sync when changing control JSON.
 - **Replay dump (`CM_REPLAY_DUMP_DIR`)**: JSONL lines include **`replay_schema_version`** (currently `1`) and per-turn **`replay_turn_seq`**; lines are redacted before append. See [docs/调试指南.md](../调试指南.md) §9.
 
-**Secrets**: Do not paste real API keys or tokens into logs or issues; see project rules under **`.cursor/rules/secrets-and-logging.mdc`**.
+**Secrets**: Do not paste real API keys or tokens into logs or issues; see project rules under **`AGENTS.md` → Repository engineering rules → Secrets & logging**.

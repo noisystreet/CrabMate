@@ -13,7 +13,7 @@
 - 实时输出流：[`background_tool_jobs_output_streaming.md`](./background_tool_jobs_output_streaming.md)
 - 工具契约与信封：`docs/工具说明.md`；超时与 `[tool_registry]`：`docs/配置说明.md`
 - SSE `tool_output_chunk` / `error_code`：`docs/SSE协议.md`
-- 安全面：`.cursor/rules/security-sensitive-surface.mdc`（`run_command` 白名单、路径、审批）
+- 安全面：`AGENTS.md` → Repository engineering rules → Security-sensitive surfaces（`run_command` 白名单、路径、审批）
 
 ---
 
@@ -291,7 +291,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 
 - **已完成（PR1）**：`subprocess_session.rs` 模块头注释删「当前实现走 `std::process` + 阻塞轮询」，改述 tokio 模型（sync + async 双入口）。
 - **已完成（PR4）**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md) §仍开放 L211–214：已划掉「是否 `tokio::process` 一次到位」一行。
-- **已核对（PR4）**：**`docs/开发文档.md`** 未描述执行类别 / `spawn_blocking` 策略 / 线程模型，无需同步（若后续新增相关描述，按 `.trae/rules/architecture-docs-sync.mdc` 同步）。
+- **已核对（PR4）**：**`docs/开发文档.md`** 未描述执行类别 / `spawn_blocking` 策略 / 线程模型，无需同步（若后续新增相关描述，按 `AGENTS.md` → Repository engineering rules → Architecture & documentation sync 同步）。
 - **已登记**：本文件登记于 `docs/design/README.md` §2。
 
 ---

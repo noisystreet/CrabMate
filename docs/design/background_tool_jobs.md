@@ -1,6 +1,6 @@
 # ADR: 后台工具任务（background tool jobs）
 
-> **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：[`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：`.cursor/rules/api-sse-chat-protocol.mdc`。
+> **状态**：Accepted（已落地；§1–§7 为后端 + Client 核心链路，§9 为模型侧只读查询工具 P0）。**接口规格**（字段级，实现照此编码）：[`background_tool_jobs_contract.md`](./background_tool_jobs_contract.md)。**实施计划**：[`background_tool_jobs_todo.md`](./background_tool_jobs_todo.md)。**关联**：[`long_running_tool_execution_todo.md`](./long_running_tool_execution_todo.md)（P3 第 4 条）、[`tool_calling_evolution.md`](./tool_calling_evolution.md)（「长任务进度事件」）。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**双端对齐**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
 
 ## Context
 
@@ -80,7 +80,7 @@
 ### 7. 兼容与版本
 
 - 全部新增为**软字段/新端点/默认 false 参数** → **不 bump `SSE_PROTOCOL_VERSION`**（对齐 `client_contract_versioning.md` §2.1/§3.1：新服务端 + 旧客户端同版本下忽略新键继续工作）。
-- `tool_job_finished` 新顶层键若实现：按 `.cursor/rules/api-sse-chat-protocol.mdc` 同步 `control_classify.rs`、金样、Client `parser_v2.rs`；本仓跑 `golden_ag_ui_classify_matches_expected`，Client 跑 `golden_ag_ui_v2_parser_matches_expected`。
+- `tool_job_finished` 新顶层键若实现：按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs`、金样、Client `parser_v2.rs`；本仓跑 `golden_ag_ui_classify_matches_expected`，Client 跑 `golden_ag_ui_v2_parser_matches_expected`。
 - HTTP 新端点同步 `docs/命令行契约.md` / OpenAPI。
 
 ### 8. 观测

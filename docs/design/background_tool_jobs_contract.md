@@ -1,6 +1,6 @@
 # 后台工具任务：字段级接口规格（Contract）
 
-> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**金样**：`.cursor/rules/api-sse-chat-protocol.mdc`。
+> **状态**：Proposed（随 [ADR：后台工具任务](./background_tool_jobs.md) 一起评审）。本文件是**可执行契约**：实现切片照此编码，双端对齐照此检查。**人读协议**：[`docs/SSE协议.md`](../SSE协议.md)、[`docs/命令行契约.md`](../命令行契约.md)。**版本轴**：[`client_contract_versioning.md`](./client_contract_versioning.md)。**金样**：`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)。
 
 ---
 
@@ -196,7 +196,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 | | `summary`（string?） | 终态摘要 |
 | | `error_code`（string?） | 失败词汇（§8） |
 
-实现此键时按 `.cursor/rules/api-sse-chat-protocol.mdc` 同步 `control_classify.rs` + 金样 + Client `parser_v2.rs`，本仓跑 `golden_ag_ui_classify_matches_expected`。
+实现此键时按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 同步 `control_classify.rs` + 金样 + Client `parser_v2.rs`，本仓跑 `golden_ag_ui_classify_matches_expected`。
 
 ---
 
@@ -229,7 +229,7 @@ job 终态时以 `try_send` 非阻塞投递，失败（连接关闭/背压满）
 
 - **不 bump `SSE_PROTOCOL_VERSION`**：新增均为软字段（`tool_result.tool_job_*`）、新端点、默认 false 参数、默认关配置。旧客户端：忽略软字段；不认识 `async` 的模型不会发起。
 - 旧服务端 + 新客户端：`run_command` 的 `async` 参数被 `deny_unknown_fields` 拒绝——**不在**兼容窗口，文档明示。
-- 改动控制面分发（`tool_job_finished`）时按 `.cursor/rules/api-sse-chat-protocol.mdc` 执行：
+- 改动控制面分发（`tool_job_finished`）时按 `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) 执行：
   - [ ] `src/cm_sse_protocol/control_classify.rs`（若动分类）
   - [ ] 金样：本仓 `fixtures/sse_ag_ui_golden.jsonl` + `cargo test --lib golden_ag_ui_classify_matches_expected`
   - [ ] Client：`parser_v2.rs` / `sse_dispatch/types.rs` + `cargo test golden_ag_ui_v2_parser_matches_expected`

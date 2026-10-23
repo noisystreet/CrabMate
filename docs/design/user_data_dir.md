@@ -321,5 +321,5 @@ WebView 连上后，**用户级**状态应由 **`/user-data`** 读写，而非 `
 - `frontend/src/api/client_llm_storage.rs` — LLM 覆盖经 `/user-data/llm-overrides`  
 - `docs/命令行与路由.md` — CLI 与 Web 会话持久对照  
 - `docs/配置说明.md` — `API_KEY`、`client_llm`、鉴权  
-- `.cursor/rules/secrets-and-logging.mdc` — 密钥与日志  
-- `.cursor/rules/api-sse-chat-protocol.mdc` — HTTP 变更须同步前端  
+- `AGENTS.md` → Repository engineering rules → Secrets & logging — 密钥与日志  
+- `AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends) — HTTP 变更须同步前端  

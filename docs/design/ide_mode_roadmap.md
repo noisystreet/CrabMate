@@ -14,7 +14,7 @@
 - 并行产品路线（外部编辑器壳）：**`docs/design/vscode_extension.md`**
 - 用户数据偏好：**`docs/design/user_data_dir.md`**（**`editor_layout_mode`**、**`ide_editor_*`**）
 - E2E：Client [`desktop-tauri/src-tauri/tests/victauri_ide_layout.rs`](https://github.com/noisystreet/crabmate-client/blob/main/desktop-tauri/src-tauri/tests/victauri_ide_layout.rs)
-- CLI / TUI / Web 复用原则：**.cursor/rules/cli-tui-web-shared-logic.mdc**（IDE UI 不必三端复刻；路径/事件契约宜共享）
+- CLI / TUI / Web 复用原则：**`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**（IDE UI 不必三端复刻；路径/事件契约宜共享）
 
 ---
 
@@ -215,7 +215,7 @@ Leptos + CM，同进程 Web UI      Extension Host + Webview 客户端
 - [ ] 相关 Victauri 用例更新或新增（IDE 布局套件）
 - [ ] 若改 SSE 控制面：同步 **`docs/SSE协议.md`**、**`classify_sse_control_outcome`** / 金测、前端 dispatch
 - [ ] 用户可见行为：更新 **`README.md`**；维护者模块说明：按需更新 **`docs/开发文档.md`**
-- [ ] 安全敏感路径改动：对照 **`.cursor/rules/security-sensitive-surface.mdc`**
+- [ ] 安全敏感路径改动：对照 **`AGENTS.md` → Repository engineering rules → Security-sensitive surfaces**
 
 落地任务写入 **`docs/待办清单.md`**（`frontend/` 章）并随实现删除条目；**本文保留方向共识**，不堆已完成 checkbox。
 

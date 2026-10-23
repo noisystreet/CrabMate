@@ -89,7 +89,7 @@ repos:
       - id: conventional-pre-commit
         stages: [commit-msg]
         args:
-          # 与 .cursor/rules/conventional-commits.mdc 中的 type 对齐
+          # 与 AGENTS.md → Repository engineering rules → Commit & push 的 type 列表对齐
           - build
           - chore
           - ci

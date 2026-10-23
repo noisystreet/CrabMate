@@ -80,7 +80,7 @@ This document captures a **design analysis** (not an implementation commitment) 
 ## 5. Related docs
 
 - **`docs/en/DEVELOPMENT.md`**: high-level module map, layering, and where to update when contracts change.
-- **`.cursor/rules/cli-tui-web-shared-logic.mdc`**: avoid diverging business rules across interfaces.
+- **`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**: avoid diverging business rules across interfaces.
 - **`docs/en/SSE_PROTOCOL.md`**: streaming contract; any new non-HTTP embedding API should define mapping rules explicitly.
 
 ---
