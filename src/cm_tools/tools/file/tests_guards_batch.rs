@@ -387,3 +387,110 @@ fn test_modify_file_batch_edits_top_level_expect_rejected() {
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_modify_file_expect_edge_lines_match_writes() {
+    // F2：长区间只锚定首尾两行即可校验，不必整段复述 `expect_content`。
+    // 这里删除 L2..L4，只声明「首行是 L2、末行是 L4」。
+    let dir = make_test_dir();
+    let file = dir.join("edge.txt");
+    std::fs::write(&file, "L1\nL2\nL3\nL4\nL5\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"edge.txt","mode":"replace_lines","start_line":2,"end_line":4,"content":"","expect_first_line":"L2","expect_last_line":"L4","allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL5\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_expect_edge_lines_mismatch_rejects_and_relocates() {
+    let dir = make_test_dir();
+    let file = dir.join("edge.txt");
+    std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    // 声称首行是 L2 却给了 start_line=1；实际 L2 在行 2，应拒写并给纠偏行号。
+    let out = modify_file(
+        r#"{"path":"edge.txt","mode":"replace_lines","start_line":1,"end_line":2,"content":"X","expect_first_line":"L2","allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("expect_first_line 校验失败"), "{}", out);
+    assert!(out.contains("实际位于行 2"), "{}", out);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "L1\nL2\nL3\nL4\n",
+        "拒写后文件必须保持原样"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_expect_edge_lines_exclusive_with_expect_content() {
+    let dir = make_test_dir();
+    let file = dir.join("edge.txt");
+    std::fs::write(&file, "L1\nL2\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"edge.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","expect_content":"L1","expect_first_line":"L1","allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("互斥"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_expect_edge_lines_rejected_for_insert_and_batch_insert() {
+    let dir = make_test_dir();
+    let file = dir.join("edge.txt");
+    std::fs::write(&file, "L1\nL2\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+
+    let out = modify_file(
+        r#"{"path":"edge.txt","mode":"insert_after_line","after_line":1,"content":"NEW","expect_first_line":"L1","allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("仅用于 replace_lines"), "{}", out);
+
+    // 批量 edits 里的 insert 项同样拒绝（应改用 expect_line_content）。
+    let out = modify_file(
+        r#"{"path":"edge.txt","edits":[{"after_line":1,"content":"NEW","expect_first_line":"L1"}],"allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("expect_line_content"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_modify_file_batch_edits_supports_expect_edge_lines() {
+    let dir = make_test_dir();
+    let file = dir.join("edge.txt");
+    std::fs::write(&file, "L1\nL2\nL3\nL4\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"path":"edge.txt","edits":[{"start_line":2,"end_line":3,"content":"X","expect_first_line":"L2","expect_last_line":"L3"}],"allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已应用 1 条局部编辑"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nX\nL4\n");
+    let _ = std::fs::remove_dir_all(&dir);
+}
