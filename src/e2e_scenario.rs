@@ -191,7 +191,7 @@ pub async fn run_scenario(scenario: &TestScenario, e2e_cfg: &E2eRunConfig) -> Te
 
     // 2. 构建配置和 messages
     let cfg = cfg_single_agent();
-    let mut messages = build_turn_messages(&cfg, &scenario.user_message);
+    let mut messages = build_turn_messages(&cfg, &scenario.user_message, &work_dir);
     let workspace_is_set = !scenario.workspace_files.is_empty();
 
     // 3. 执行 agent turn
@@ -441,7 +441,9 @@ fn cfg_single_agent() -> Arc<AgentConfig> {
 }
 
 /// 使用生产路径构建首轮 messages（system prompt + user message）。
-fn build_turn_messages(cfg: &AgentConfig, user_text: &str) -> Vec<Message> {
+///
+/// `workspace_root` 传入场景临时工作区，确保与生产一致地注入 `AGENTS.md`（e2e 保真度）。
+fn build_turn_messages(cfg: &AgentConfig, user_text: &str, workspace_root: &Path) -> Vec<Message> {
     let recorder = Arc::new(ToolOutcomeRecorder::new());
     let system = compose_first_system_for_turn(
         cfg,
@@ -450,6 +452,7 @@ fn build_turn_messages(cfg: &AgentConfig, user_text: &str) -> Vec<Message> {
             agent_role: None,
             user_msg_for_skills: None,
             skills_base_dir: None,
+            workspace_root: Some(workspace_root.to_path_buf()),
             forced_skill: None,
             role_resolution: RoleSystemResolution::Strict,
             session_mode: None,

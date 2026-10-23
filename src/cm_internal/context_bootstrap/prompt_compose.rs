@@ -1,4 +1,4 @@
-//! 首条 `system` 动态组装（L3 角色基底 + L4 运行时附录 + L5 按轮 Skills）。
+//! 首条 `system` 动态组装（L3 角色基底 + AGENTS.md 项目规则 + L4 运行时附录 + L5 按轮 Skills）。
 //!
 //! Web **`build_messages_for_turn`**、CLI REPL/`chat`、会话恢复与角色切换应共用本模块语义。
 
@@ -10,6 +10,8 @@ use tracing::warn;
 use crate::cm_internal::tool_stats::ToolOutcomeRecorder;
 use crate::cm_config::AgentConfig;
 use crate::cm_types::SessionMode;
+
+use super::agents_md;
 
 /// 保留占位：组装路径恒为 Strict；角色容错见 [`resolve_agent_role_for_prompt_compose`]。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -122,6 +124,8 @@ pub struct SkillsComposeContext<'a> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FirstSystemComposeDiagnostics {
     pub layers_applied: Vec<String>,
+    /// L3 基底字符数**含**已注入的 `AGENTS.md` 段（`layers_applied` 含 `"AGENTS"` 时），
+    /// 即「L3 + 项目规则」合并后的长度；命名沿用以兼容既有日志解析。
     pub chars_l3_base: usize,
     pub chars_l4_augmented: usize,
     pub chars_final: usize,
@@ -167,6 +171,8 @@ pub struct FirstSystemComposeOpts<'a> {
     pub agent_role: Option<&'a str>,
     pub user_msg_for_skills: Option<&'a str>,
     pub skills_base_dir: Option<PathBuf>,
+    /// 会话工作区根：用于读取 `<root>/AGENTS.md` 并追加到 L3 之后；`None` 时跳过。
+    pub workspace_root: Option<PathBuf>,
     /// 用户 `/<id>` 强制选用的 skill（与 [`SkillsComposeContext::forced_skill`] 同源）。
     pub forced_skill: Option<crate::cm_config::skills::SkillDoc>,
     /// 保留字段；实现恒按 [`RoleSystemResolution::Strict`] 解析已传入的 `agent_role`。
@@ -199,6 +205,7 @@ pub fn compose_first_system_for_turn_with_diagnostics(
         agent_role,
         user_msg_for_skills,
         skills_base_dir,
+        workspace_root,
         forced_skill,
         role_resolution: _,
         session_mode,
@@ -212,13 +219,30 @@ pub fn compose_first_system_for_turn_with_diagnostics(
             forced_skill,
         });
     let base = resolve_role_system_base(cfg, agent_role)?;
+    // 项目规则（AGENTS.md）按**会话工作区根**读取，紧接 L3 基底之后。
+    // 注意：Web 续聊每轮都会重算首条 system，因此 AGENTS.md 的改动会在下一轮生效，
+    // 同时使该会话的 system 前缀缓存失效（规则实时性优先于缓存命中率）。
+    let (base, has_agents_md) = match workspace_root.as_deref().and_then(|root| {
+        agents_md::load_agents_md_block(
+            root,
+            cfg.agents_md.agents_md_enabled,
+            cfg.agents_md.agents_md_max_chars,
+        )
+    }) {
+        Some(block) => (format!("{}\n\n{}", base.trim_end(), block), true),
+        None => (base, false),
+    };
     let augmented = tool_recorder.augment_system_prompt(&base, cfg);
     let chars_l4_augmented = augmented.chars().count();
     let (merged, skills_meta) = merge_skills_into_system_with_meta(augmented, cfg, skills_ctx);
     let mode = session_mode.unwrap_or(cfg.roles_prompts.default_session_mode);
     let merged = append_session_mode_appendix(merged, mode);
     let chars_final = merged.chars().count();
-    let mut layers = vec!["L3".to_string(), "L4".to_string()];
+    let mut layers = vec!["L3".to_string()];
+    if has_agents_md {
+        layers.push("AGENTS".to_string());
+    }
+    layers.push("L4".to_string());
     if !skills_meta.selected_labels.is_empty() {
         layers.push("L5".to_string());
     }
@@ -374,6 +398,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: None,
                 skills_base_dir: None,
+                workspace_root: None,
                 forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
                 session_mode: None,
@@ -416,6 +441,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: Some("请帮我跑 cargo test"),
                 skills_base_dir: Some(tmp.path().to_path_buf()),
+                workspace_root: Some(tmp.path().to_path_buf()),
                 forced_skill: None,
                 role_resolution: RoleSystemResolution::Strict,
                 session_mode: None,
@@ -467,6 +493,7 @@ mod tests {
                 agent_role: None,
                 user_msg_for_skills: Some("cargo"),
                 skills_base_dir: Some(tmp.path().to_path_buf()),
+                workspace_root: Some(tmp.path().to_path_buf()),
                 forced_skill: Some(forced),
                 role_resolution: RoleSystemResolution::Strict,
                 session_mode: None,
@@ -476,6 +503,37 @@ mod tests {
         assert!(system.contains("alpha body"));
         assert!(!system.contains("beta body"));
         assert!(diag.skills_selected_labels[0].contains("[forced]"));
+    }
+
+    #[test]
+    fn compose_first_system_appends_agents_md_after_l3() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        std::fs::write(tmp.path().join("AGENTS.md"), "规则：必须跑 cargo fmt\n").expect("write");
+        let cfg = embed_default_config();
+        assert!(cfg.agents_md.agents_md_enabled, "默认应启用 AGENTS.md");
+        let rec = Arc::new(ToolOutcomeRecorder::new());
+        let (system, diag) = compose_first_system_for_turn_with_diagnostics(
+            &cfg,
+            &rec,
+            FirstSystemComposeOpts {
+                agent_role: None,
+                user_msg_for_skills: None,
+                skills_base_dir: None,
+                workspace_root: Some(tmp.path().to_path_buf()),
+                forced_skill: None,
+                role_resolution: RoleSystemResolution::Strict,
+                session_mode: None,
+            },
+        )
+        .expect("compose");
+        assert!(system.contains("项目规则（AGENTS.md）"), "system: {system}");
+        assert!(system.contains("必须跑 cargo fmt"), "system: {system}");
+        assert_eq!(diag.layers_applied.first().map(String::as_str), Some("L3"));
+        assert!(
+            diag.layers_applied.contains(&"AGENTS".to_string()),
+            "{:?}",
+            diag.layers_applied
+        );
     }
 
     #[test]

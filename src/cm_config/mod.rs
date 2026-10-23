@@ -6,7 +6,6 @@ mod agent_roles;
 mod assembly;
 mod builder;
 pub mod cli;
-mod cursor_rules;
 mod env_override_apply;
 mod env_overrides;
 mod final_plan_requirement_mode;
@@ -18,7 +17,7 @@ mod scheduled_agent_task;
 pub mod skills;
 pub mod skills_slash;
 mod source;
-mod text_util;
+pub(crate) mod text_util;
 mod types;
 mod user_config_layers;
 mod user_config_xdg;
@@ -56,9 +55,9 @@ pub use finalize::{
 pub use agent_role_spec::AgentRoleSpec;
 #[allow(unused_imports)]
 pub use types::{
-    AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig,
-    CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, CursorRulesConfigSection, ExposeSecret, HttpFetchConfigSection,
+    AgentsMdConfigSection, AgentConfig, AgentThinkingTraceConfig, AgentToolStatsConfig,
+    ChatQueuesCacheConfig, CodebaseSemanticConfig, CommandExecConfig, ContextBootstrapInjectConfig,
+    ContextPipelineConfig, ConversationPersistenceConfig, ExposeSecret, HttpFetchConfigSection,
     LlmConnectionConfig, LlmHttpAuthMode, LlmHttpRetryConfig, LlmSamplingConfig,
     LlmVendorFlagsConfig, LongTermMemoryConfig, LongTermMemoryVectorBackend, McpClientConfig,
     PerPlanPolicyConfig, RolesPromptsConfig, ScheduledAgentTask, SessionUiConfig,

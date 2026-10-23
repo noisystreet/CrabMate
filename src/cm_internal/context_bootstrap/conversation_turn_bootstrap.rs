@@ -73,19 +73,30 @@ pub fn first_turn_project_context_user_message_sync(
     build_first_turn_user_context_markdown(workspace_root, cfg, memory_snippet)
 }
 
-/// L3+L4（无 L5）；`agent_role` 为显式选用（CLI `--agent-role` / REPL 内存态），未知 id → `Err`。
+/// 新会话 `system` 基线：L3 + **L1'（`AGENTS.md`，按 `workspace_root`）** + L4 + 会话模式附录（无 L5）。
+/// `agent_role` 为显式选用（CLI `--agent-role` / REPL 内存态），未知 id → `Err`。
+///
+/// 与真实首条 `system` 走同一入口 `prompt_compose::compose_first_system_for_turn`，
+/// 以保证 `/status` 的 token 基线不漏算项目规则。
 pub fn augmented_system_for_new_conversation(
     cfg: &AgentConfig,
     agent_role: Option<&str>,
     tool_recorder: &std::sync::Arc<crate::cm_internal::tool_stats::ToolOutcomeRecorder>,
+    workspace_root: Option<&Path>,
 ) -> Result<String, String> {
     let role = super::prompt_compose::resolve_agent_role_for_prompt_compose(cfg, agent_role, None)?;
-    super::prompt_compose::compose_system_for_turn_arc(
+    super::prompt_compose::compose_first_system_for_turn(
         cfg,
-        role.as_deref(),
         tool_recorder,
-        None,
-        super::prompt_compose::RoleSystemResolution::Strict,
+        super::prompt_compose::FirstSystemComposeOpts {
+            agent_role: role.as_deref(),
+            user_msg_for_skills: None,
+            skills_base_dir: None,
+            workspace_root: workspace_root.map(Path::to_path_buf),
+            forced_skill: None,
+            role_resolution: super::prompt_compose::RoleSystemResolution::Strict,
+            session_mode: None,
+        },
     )
 }
 

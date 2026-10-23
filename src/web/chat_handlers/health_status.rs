@@ -261,6 +261,7 @@ fn tiktoken_new_session_baselines_by_role(
             cfg,
             role,
             tool_recorder,
+            Some(workspace_root),
         ) {
             Ok(s) => s,
             Err(_) => return,

@@ -195,10 +195,8 @@ pub(super) struct AgentSection {
     pub(super) coding_workbench_increment_file: Option<String>,
     /// 默认会话模式 ask / plan / act；`CM_DEFAULT_SESSION_MODE`
     pub(super) default_session_mode: Option<String>,
-    pub(super) cursor_rules_enabled: Option<bool>,
-    pub(super) cursor_rules_dir: Option<String>,
-    pub(super) cursor_rules_include_agents_md: Option<bool>,
-    pub(super) cursor_rules_max_chars: Option<u64>,
+    pub(super) agents_md_enabled: Option<bool>,
+    pub(super) agents_md_max_chars: Option<u64>,
     pub(super) skills_enabled: Option<bool>,
     pub(super) skills_dir: Option<String>,
     pub(super) skills_user_dir: Option<String>,
@@ -460,6 +458,11 @@ typo_unknown_key = 1
             "mcp_command = \"npx\"",
             "planner_executor_mode = \"single_agent\"",
             "long_term_memory_scope_mode = \"conversation\"",
+            // 已移除：`.cursor/rules` 兼容改为 `agents_md_*`（只认工作区根 `AGENTS.md`）。
+            "cursor_rules_enabled = true",
+            "cursor_rules_dir = \".cursor/rules\"",
+            "cursor_rules_include_agents_md = true",
+            "cursor_rules_max_chars = 48000",
         ] {
             let toml = format!(
                 r#"

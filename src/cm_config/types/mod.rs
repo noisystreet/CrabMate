@@ -1,9 +1,9 @@
 mod agent_config_sections;
 
 pub use agent_config_sections::{
-    AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
+    AgentsMdConfigSection, AgentThinkingTraceConfig, AgentToolStatsConfig, ChatQueuesCacheConfig, CodebaseSemanticConfig,
     CommandExecConfig, ContextBootstrapInjectConfig, ContextPipelineConfig,
-    ConversationPersistenceConfig, CursorRulesConfigSection, HttpFetchConfigSection,
+    ConversationPersistenceConfig, HttpFetchConfigSection,
     LongTermMemoryConfig, McpClientConfig, PerPlanPolicyConfig, RolesPromptsConfig,
     SessionUiConfig, SessionWorkspaceChangelistConfig, SkillsConfigSection, SyncToolSandboxConfig,
     ThinkingEchoConfig, ToolCallExplainConfig, ToolRegistryPolicyConfig, ToolTranscriptConfig,
@@ -252,7 +252,7 @@ pub struct AgentConfig {
     pub http_fetch: HttpFetchConfigSection,
     pub per_plan_policy: PerPlanPolicyConfig,
     pub roles_prompts: RolesPromptsConfig,
-    pub cursor_rules: CursorRulesConfigSection,
+    pub agents_md: AgentsMdConfigSection,
     pub skills: SkillsConfigSection,
     pub tool_transcript: ToolTranscriptConfig,
     pub agent_thinking_trace: AgentThinkingTraceConfig,

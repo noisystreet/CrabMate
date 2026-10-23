@@ -148,18 +148,17 @@ fn clamp_finalize_mid_layer_scalars(b: &ConfigBuilder) -> FinalizeMidLayerScalar
     }
 }
 
-/// 载入 system_prompt 并与 Cursor Rules / Skills 合并；供角色目录解析使用路径字段。
+/// 载入 system_prompt 并与 Skills 索引合并；供角色目录解析使用路径字段。
+///
+/// 项目规则 `AGENTS.md` 不再于 finalize 读盘（原 `.cursor/rules` 兼容已移除）：
+/// 它按**会话工作区根**在首条 `system` 组装时追加，见 `context_bootstrap::prompt_compose`。
 struct PromptMergeForRoles {
-    /// 通用 L0（`base_system_prompt.md` 等），未叠加编程层 / cursor rules / skills。
+    /// 通用 L0（`base_system_prompt.md` 等），未叠加编程层 / skills。
     universal_l0_system_prompt: String,
     coding_workbench_enabled: bool,
     coding_workbench_increment_file: String,
     coding_workbench_increment: String,
     system_prompt: String,
-    cursor_rules_enabled: bool,
-    cursor_rules_dir: String,
-    cursor_rules_include_agents_md: bool,
-    cursor_rules_max_chars: u64,
     skills_enabled: bool,
     skills_dir: String,
     skills_user_dir: String,
@@ -224,28 +223,6 @@ fn merge_system_prompt_layers_for_finalize(
     )?;
     let system_prompt =
         stack_l0_with_coding_workbench(&universal_l0_system_prompt, &coding_workbench_increment);
-    let cursor_rules_enabled = b.cursor_rules.cursor_rules_enabled.unwrap_or(true);
-    let cursor_rules_dir = b
-        .cursor_rules
-        .cursor_rules_dir
-        .clone()
-        .unwrap_or_else(|| ".cursor/rules".to_string());
-    let cursor_rules_include_agents_md = b
-        .cursor_rules
-        .cursor_rules_include_agents_md
-        .unwrap_or(true);
-    let cursor_rules_max_chars = b
-        .cursor_rules
-        .cursor_rules_max_chars
-        .unwrap_or(48_000)
-        .clamp(1024, 1_000_000);
-    let system_prompt = cursor_rules::merge_system_prompt_with_cursor_rules(
-        system_prompt,
-        cursor_rules_enabled,
-        &cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars as usize,
-    )?;
     let skills_enabled = b.skills.skills_enabled.unwrap_or(true);
     let skills_dir = b
         .skills
@@ -284,10 +261,6 @@ fn merge_system_prompt_layers_for_finalize(
         coding_workbench_increment_file,
         coding_workbench_increment,
         system_prompt,
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
         skills_enabled,
         skills_dir,
         skills_user_dir,

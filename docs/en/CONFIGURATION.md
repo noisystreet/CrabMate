@@ -70,10 +70,8 @@ The shell **does not** spawn **`crabmate serve`**. Start the backend yourself (l
 | --- | --- |
 | `CM_WORKSPACE_ALLOWED_ROOTS` | Comma-separated; same as `[agent] workspace_allowed_roots`. |
 | `CM_WEB_WORKSPACE_POOL` | Web remote project-pool root (e.g. `/workspace`). When set, the browser can open/create named workspaces without typing absolute paths. **Requires** a non-empty `workspace_allowed_roots` / `CM_WORKSPACE_ALLOWED_ROOTS`, and the pool must lie under that allowlist (sensitive prefixes like `/etc` are rejected at startup). |
-| `CM_CURSOR_RULES_ENABLED` | Enable rule file injection (default **true**; set `0`/`false` to disable). |
-| `CM_CURSOR_RULES_DIR` | Directory of `*.mdc`. |
-| `CM_CURSOR_RULES_INCLUDE_AGENTS_MD` | Append `AGENTS.md`. |
-| `CM_CURSOR_RULES_MAX_CHARS` | Max injected chars. |
+| `CM_AGENTS_MD_ENABLED` | Append the **session workspace root** `AGENTS.md` to the first `system` (default **true**; set `0`/`false` to disable). |
+| `CM_AGENTS_MD_MAX_CHARS` | Max chars appended (default 48000, valid range 1024–1000000; out-of-range values **fail startup validation**). Set `CM_AGENTS_MD_ENABLED=0` to disable. |
 | `CM_SKILLS_ENABLED` | Enable skills injection (default `true`; L2 index, L5 per-turn bodies, and **`/<skill-id>`** force-select). Merges workspace / user / system layers (`*.md` and `<id>/SKILL.md`). |
 | `CM_SKILLS_DIR` | **Workspace** skills dir (default `.crabmate/skills`). Relative paths resolve against the selected workspace root on Web. |
 | `CM_SKILLS_USER_DIR` | **User** skills dir. When omitted, defaults to **`$XDG_CONFIG_HOME/crabmate/skills`** (root overridable via **`CM_CRABMATE_CONFIG_DIR`**); set **`-`** / **`none`** / empty to disable. Missing dirs are empty; unreadable layers are skipped without blocking workspace skills. |
@@ -391,8 +389,8 @@ api_base = "https://api.deepseek.com/v1"
 model = "deepseek-reasoner"
 # system_prompt = "…"
 # system_prompt_file = "my_prompt.txt"
-# cursor_rules_enabled = false   # default true; if `.cursor/rules` or `*.mdc` are absent, behavior matches off
-# cursor_rules_dir = ".cursor/rules"
+# agents_md_enabled = false   # default true; if `<workspace root>/AGENTS.md` is absent, behavior matches off
+# agents_md_max_chars = 48000
 ```
 
 ## Final answer plan (`final_plan_requirement`)
@@ -493,7 +491,7 @@ Orthogonal to **`agent_role`**. Controls write/build tools and a short mode appe
 
 ## Multi-role (agent_roles)
 
-Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with **`cursor_rules_*`** and a lightweight skills index at finalize; full skills bodies are injected per-turn by L5).
+Besides the global `system_prompt`, you can define **named ids** with their own first-turn `system` text (each merged with a lightweight skills index at finalize; full skills bodies are injected per-turn by L5). Project rules **`AGENTS.md`** are **not** part of role systems: they are appended at runtime to the first `system` from the session workspace root (see below).
 
 - **Sources** (later overlays win for the same id):  
   1. **`[[agent_roles]]`** rows in the main config: **`id`**, plus **`system_prompt`** and/or **`system_prompt_file`**. Empty inline **`system_prompt`** means **inherit** the global merged system. Optional **`prepend_coding_workbench`** (default true): when false, that role skips L0b (still gated by global **`coding_workbench_enabled`**).  
@@ -506,9 +504,14 @@ Besides the global `system_prompt`, you can define **named ids** with their own 
 - **Hot reload**: role table reloads with **`POST /config/reload`**.
 - **`GET /status`**: **`agent_role_ids`**, **`default_agent_role_id`**.
 
-## Cursor-like rules
+## Project rules (AGENTS.md)
 
-When **`cursor_rules_enabled`** (**default `true`**), append sorted **`cursor_rules_dir`/*.mdc** (optional **`AGENTS.md`**) to system prompt, capped by **`cursor_rules_max_chars`**. If the directory is missing or no rule files load, nothing is appended (same effect as disabled).
+When **`agents_md_enabled`** (**default `true`**), the server reads `AGENTS.md` from the **session workspace root** while composing the first `system`, renders it as a "Project rules (AGENTS.md)" section right after the L3 base (before L4/L5), and caps it by **`agents_md_max_chars`** (truncation adds a notice; the total block never exceeds the cap). If the file is missing or empty, nothing is appended (same effect as disabled).
+
+- **`agents_md_max_chars` must be within 1024–1000000**: out-of-range values **fail startup validation** (a `0` does **not** disable it). To disable, set `agents_md_enabled = false` / `CM_AGENTS_MD_ENABLED=0`.
+- **Layer**: `system`, not the first `user` turn — rules must stay authoritative on every turn and must not be lost to long-session context folding. Note it is **not** composed only once: for existing Web conversations the first `system` is recomputed on **every** turn (`refresh_existing_turn_system`), so edits to `AGENTS.md` take effect on the next turn and invalidate that session's `system` prefix cache (current trade-off: rule freshness over prefix-cache hit rate).
+- **Removed**: the old `.cursor/rules/*.mdc` compatibility plus `cursor_rules_*` / `CM_CURSOR_RULES_*` keys (**BREAKING**). Move any `.cursor/rules` content into the workspace root `AGENTS.md`; old keys now fail as unknown keys.
+- **Process cwd is no longer used**: the path is always the session workspace root, so switching workspaces on Web switches the rules too.
 
 ## Context window
 

@@ -115,10 +115,6 @@ impl ConfigBuilder {
             &mut self.per_plan_policy.final_plan_requirement_str,
             agent.final_plan_requirement.clone(),
         );
-        override_opt_string_non_empty(
-            &mut self.cursor_rules.cursor_rules_dir,
-            agent.cursor_rules_dir.clone(),
-        );
         override_opt_string_non_empty(&mut self.skills.skills_dir, agent.skills_dir.clone());
         // 允许空串 / `-`：finalize 时关闭用户/系统层。
         override_opt_string_trimmed(
@@ -219,12 +215,9 @@ impl ConfigBuilder {
         pp.final_plan_semantic_check_max_tokens = agent
             .final_plan_semantic_check_max_tokens
             .or(pp.final_plan_semantic_check_max_tokens);
-        let cr = &mut self.cursor_rules;
-        cr.cursor_rules_enabled = agent.cursor_rules_enabled.or(cr.cursor_rules_enabled);
-        cr.cursor_rules_include_agents_md = agent
-            .cursor_rules_include_agents_md
-            .or(cr.cursor_rules_include_agents_md);
-        cr.cursor_rules_max_chars = agent.cursor_rules_max_chars.or(cr.cursor_rules_max_chars);
+        let am = &mut self.agents_md;
+        am.agents_md_enabled = agent.agents_md_enabled.or(am.agents_md_enabled);
+        am.agents_md_max_chars = agent.agents_md_max_chars.or(am.agents_md_max_chars);
         let sk = &mut self.skills;
         sk.skills_enabled = agent.skills_enabled.or(sk.skills_enabled);
         sk.skills_max_chars = agent.skills_max_chars.or(sk.skills_max_chars);

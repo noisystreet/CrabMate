@@ -8,7 +8,6 @@ use crate::cm_config::FinalPlanRequirementMode;
 
 use super::agent_roles;
 use super::builder::ConfigBuilder;
-use super::cursor_rules;
 use super::skills;
 use super::types::{
     self, AgentConfig, LongTermMemoryVectorBackend, ScheduledAgentTask, WebSearchProvider,
@@ -861,10 +860,6 @@ fn finalize_agent_config(
             coding_workbench_enabled: pm.coding_workbench_enabled,
             system_prompt_search_bases: &system_prompt_search_bases,
             run_command_working_dir: run_command_working_dir.as_path(),
-            cursor_rules_enabled: pm.cursor_rules_enabled,
-            cursor_rules_dir: &pm.cursor_rules_dir,
-            cursor_rules_include_agents_md: pm.cursor_rules_include_agents_md,
-            cursor_rules_max_chars: pm.cursor_rules_max_chars as usize,
             skills_enabled: pm.skills_enabled,
             skills_dir: &pm.skills_dir,
             skills_user_dir: &pm.skills_user_dir,

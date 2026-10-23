@@ -8,7 +8,6 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use super::agent_role_spec::AgentRoleSpec;
-use super::cursor_rules;
 use super::skills;
 
 pub(super) type AgentRoleCatalogBuilt = Arc<HashMap<String, AgentRoleSpec>>;
@@ -147,10 +146,6 @@ struct RoleSystemMergeCtx<'a> {
     coding_workbench_enabled: bool,
     system_prompt_search_bases: &'a [PathBuf],
     run_command_working_dir: &'a Path,
-    cursor_rules_enabled: bool,
-    cursor_rules_dir: &'a str,
-    cursor_rules_include_agents_md: bool,
-    cursor_rules_max_chars: usize,
     skills_enabled: bool,
     skills_list_opts: skills::SkillsListOpts<'a>,
     skills_max_chars: usize,
@@ -169,15 +164,8 @@ fn merge_role_delta_with_layers(
         ctx.coding_workbench_enabled,
         delta,
     );
-    let with_rules = cursor_rules::merge_system_prompt_with_cursor_rules(
-        combined,
-        ctx.cursor_rules_enabled,
-        ctx.cursor_rules_dir,
-        ctx.cursor_rules_include_agents_md,
-        ctx.cursor_rules_max_chars,
-    )?;
     skills::merge_system_prompt_with_skills_index(
-        with_rules,
+        combined,
         ctx.skills_list_opts,
         ctx.skills_enabled,
         ctx.skills_max_chars,
@@ -306,22 +294,18 @@ pub(super) fn prepend_l0_base_to_role_body(base_l0: &str, role_body: &str) -> St
     }
 }
 
-/// 由累加后的角色条目生成 `id -> 已合并 cursor rules 的 system`；并校验 `default_role_id`。
+/// 由累加后的角色条目生成 `id -> 已合并 skills 索引的 system`；并校验 `default_role_id`。
 pub(super) struct FinalizeAgentRoleCatalogParams<'a> {
     pub entries: HashMap<String, AgentRoleEntryBuilder>,
     pub default_role_id: Option<String>,
     pub global_effective_system_prompt: &'a str,
-    /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未合并编程层 / cursor rules / skills。
+    /// 通用 L0（`system_prompt_file`，默认 `base_system_prompt.md`），尚未合并编程层 / skills。
     pub universal_l0_system_prompt: &'a str,
     /// 编程工作台增量正文（已解析）；空串表示不叠加。
     pub coding_workbench_increment: &'a str,
     pub coding_workbench_enabled: bool,
     pub system_prompt_search_bases: &'a [PathBuf],
     pub run_command_working_dir: &'a Path,
-    pub cursor_rules_enabled: bool,
-    pub cursor_rules_dir: &'a str,
-    pub cursor_rules_include_agents_md: bool,
-    pub cursor_rules_max_chars: usize,
     pub skills_enabled: bool,
     pub skills_dir: &'a str,
     pub skills_user_dir: &'a str,
@@ -342,10 +326,6 @@ pub(super) fn finalize_agent_role_catalog(
         coding_workbench_enabled,
         system_prompt_search_bases,
         run_command_working_dir,
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
         skills_enabled,
         skills_dir,
         skills_user_dir,
@@ -366,10 +346,6 @@ pub(super) fn finalize_agent_role_catalog(
         coding_workbench_enabled,
         system_prompt_search_bases,
         run_command_working_dir,
-        cursor_rules_enabled,
-        cursor_rules_dir,
-        cursor_rules_include_agents_md,
-        cursor_rules_max_chars,
         skills_enabled,
         skills_list_opts,
         skills_max_chars,

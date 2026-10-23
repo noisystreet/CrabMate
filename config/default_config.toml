@@ -72,11 +72,14 @@ chat_queue_max_pending = 32
 # 6. 规划 / 反思 / 编排模式
 # 默认见 **`config/planning.toml`**
 
-# 7. 系统提示词与 Cursor 式规则注入
-cursor_rules_enabled = true
-cursor_rules_dir = ".cursor/rules"
-cursor_rules_include_agents_md = true
-cursor_rules_max_chars = 48000
+# 7. 系统提示词与项目规则（AGENTS.md）
+# 规则来源：**会话工作区根** `AGENTS.md`，追加到首条 `system`（L3 之后）。
+# 原 `.cursor/rules/*.mdc` 兼容已移除，旧键 `cursor_rules_*` / `CM_CURSOR_RULES_*` 已删除。
+# 未启用 / 文件缺失或为空时 `system` 保持原样，不报错。
+# `agents_md_max_chars` 有效范围 1024–1000000，越界会在启动时校验失败（不能靠设 0 关闭；
+# 要关闭请用 `agents_md_enabled = false`）。注意 Web 续聊每轮都会重算首条 `system`。
+agents_md_enabled = true
+agents_md_max_chars = 48000
 # Skills：工作区 / 用户级 / 系统级三层合并（同 id：工作区 > 用户 > 系统）。读取 `*.md` 与 `<id>/SKILL.md`（Cursor 同形）。
 skills_enabled = true
 skills_dir = ".crabmate/skills"
