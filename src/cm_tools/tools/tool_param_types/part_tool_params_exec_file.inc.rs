@@ -95,6 +95,10 @@ pub struct ModifyFileEditArgs {
     pub expect_content: Option<String>,
     /// `insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致，不一致即拒写并提示纠偏行号。
     pub expect_line_content: Option<String>,
+    /// `replace_lines` 守卫：只校验区间**首行**（`start_line`）内容，免去整段复述；与 `expect_content` 互斥。
+    pub expect_first_line: Option<String>,
+    /// `replace_lines` 守卫：只校验区间**末行**（`end_line`）内容；可与 `expect_first_line` 同时使用。
+    pub expect_last_line: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -114,6 +118,10 @@ pub struct ModifyFileArgs {
     pub expect_content: Option<String>,
     /// `mode=insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致；不一致即拒写并提示纠偏行号。
     pub expect_line_content: Option<String>,
+    /// `mode=replace_lines` 守卫：只校验区间**首行**（`start_line`）内容，免去整段复述；与 `expect_content` 互斥。
+    pub expect_first_line: Option<String>,
+    /// `mode=replace_lines` 守卫：只校验区间**末行**（`end_line`）内容；可与 `expect_first_line` 同时使用。
+    pub expect_last_line: Option<String>,
     /// 批量局部编辑：一次调用基于**同一磁盘快照**自底向上应用全部编辑，行号互不偏移；与 `mode`/`content`/`start_line`/`end_line`/`after_line` 互斥。
     pub edits: Option<Vec<ModifyFileEditArgs>>,
     /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。

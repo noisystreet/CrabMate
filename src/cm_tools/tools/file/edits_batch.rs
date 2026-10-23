@@ -13,7 +13,9 @@ use crate::cm_tools::tools::write_sse_preview::{
 };
 use crate::cm_tools::workspace::changelist::record_file_state_after_write;
 
-use super::replace_lines_stream::{verify_expect_content, verify_expect_line_content};
+use super::replace_lines_stream::{
+    verify_expect_content, verify_expect_edge_lines, verify_expect_line_content,
+};
 use super::write_precheck::NOT_WRITTEN_HINT;
 
 /// 单次 `edits` 批量的条数上限，防止一次调用写坏大文件。
@@ -34,6 +36,8 @@ struct BatchEdit {
     body: String,
     expect_content: Option<String>,
     expect_line_content: Option<String>,
+    expect_first_line: Option<String>,
+    expect_last_line: Option<String>,
     /// 错误信息中的条目描述，如 `edits[0] replace_lines 3-5`。
     desc: String,
 }
@@ -152,15 +156,37 @@ fn check_edit_expect_kinds(
     kind: EditKind,
     expect_content: Option<&String>,
     expect_line_content: Option<&String>,
+    expect_first_line: Option<&String>,
+    expect_last_line: Option<&String>,
 ) -> Result<(), String> {
+    let edge_given = expect_first_line.is_some() || expect_last_line.is_some();
     match kind {
-        EditKind::Replace if expect_line_content.is_some() => Err(format!(
-            "错误：{prefix}：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content。"
-        )),
-        EditKind::Insert if expect_content.is_some() => Err(format!(
-            "错误：{prefix}：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content。"
-        )),
-        _ => Ok(()),
+        EditKind::Replace => {
+            if expect_line_content.is_some() {
+                return Err(format!(
+                    "错误：{prefix}：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content 或 expect_first_line/expect_last_line。"
+                ));
+            }
+            if expect_content.is_some() && edge_given {
+                return Err(format!(
+                    "错误：{prefix}：expect_content 与 expect_first_line/expect_last_line 互斥（前者校验整段，后者只锚定首尾）；请二选一。"
+                ));
+            }
+            Ok(())
+        }
+        EditKind::Insert => {
+            if expect_content.is_some() {
+                return Err(format!(
+                    "错误：{prefix}：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content。"
+                ));
+            }
+            if edge_given {
+                return Err(format!(
+                    "错误：{prefix}：expect_first_line/expect_last_line 仅用于 replace_lines 的区间边界校验；insert_after_line 请使用 expect_line_content。"
+                ));
+            }
+            Ok(())
+        }
     }
 }
 
@@ -181,7 +207,22 @@ fn parse_one_edit(i: usize, item: &Value) -> Result<BatchEdit, String> {
         .get("expect_line_content")
         .and_then(|c| c.as_str())
         .map(String::from);
-    check_edit_expect_kinds(&prefix, kind, expect_content.as_ref(), expect_line_content.as_ref())?;
+    let expect_first_line = item
+        .get("expect_first_line")
+        .and_then(|c| c.as_str())
+        .map(String::from);
+    let expect_last_line = item
+        .get("expect_last_line")
+        .and_then(|c| c.as_str())
+        .map(String::from);
+    check_edit_expect_kinds(
+        &prefix,
+        kind,
+        expect_content.as_ref(),
+        expect_line_content.as_ref(),
+        expect_first_line.as_ref(),
+        expect_last_line.as_ref(),
+    )?;
     let desc = match kind {
         EditKind::Replace => format!("{prefix} replace_lines {start_line}-{end_line}"),
         EditKind::Insert => format!("{prefix} insert_after_line {start_line}"),
@@ -193,6 +234,8 @@ fn parse_one_edit(i: usize, item: &Value) -> Result<BatchEdit, String> {
         body,
         expect_content,
         expect_line_content,
+        expect_first_line,
+        expect_last_line,
         desc,
     })
 }
@@ -250,9 +293,18 @@ fn verify_edit_expectations(view: &[&str], edits: &[BatchEdit]) -> Result<(), St
     for e in edits {
         match e.kind {
             EditKind::Replace => {
-                if let Some(expect) = &e.expect_content
-                    && let Err(err) = verify_expect_content(view, e.start_line, e.end_line, expect)
-                {
+                // 二选一（`check_edit_expect_kinds` 已保证互斥）：整段校验或首尾行锚定。
+                let checked = match &e.expect_content {
+                    Some(expect) => verify_expect_content(view, e.start_line, e.end_line, expect),
+                    None => verify_expect_edge_lines(
+                        view,
+                        e.start_line,
+                        e.end_line,
+                        e.expect_first_line.as_deref(),
+                        e.expect_last_line.as_deref(),
+                    ),
+                };
+                if let Err(err) = checked {
                     return Err(format!("{}：{}", e.desc, err));
                 }
             }
