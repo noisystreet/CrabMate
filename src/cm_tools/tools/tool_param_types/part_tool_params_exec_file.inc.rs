@@ -124,7 +124,7 @@ pub struct ModifyFileArgs {
     pub expect_last_line: Option<String>,
     /// 批量局部编辑：一次调用基于**同一磁盘快照**自底向上应用全部编辑，行号互不偏移；与 `mode`/`content`/`start_line`/`end_line`/`after_line` 互斥。
     pub edits: Option<Vec<ModifyFileEditArgs>>,
-    /// 为 `true` 时只返回 unified diff 预览，**不写盘**（与 `search_replace` 的 `dry_run` 一致）。
+    /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入（与 `search_replace` / `structured_patch` 一致）。
     pub dry_run: Option<bool>,
     /// 可选写前校验：最近一次 `read_file` 成功输出头中的 `revision`。与当前磁盘内容不一致时**拒绝写入**
     /// （`错误[stale_revision]`），避免基于过期快照按已漂移的行号误改；适用于所有 `mode` 与 `edits`。

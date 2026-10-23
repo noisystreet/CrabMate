@@ -56,7 +56,7 @@ fn test_read_file_empty_file_reports_empty_content_revision_and_is_writable() {
     );
 
     let args = format!(
-        r#"{{"path":"empty.txt","mode":"insert_after_line","after_line":0,"content":"hello","base_revision":"{revision}"}}"#
+        r#"{{"dry_run":false,"path":"empty.txt","mode":"insert_after_line","after_line":0,"content":"hello","base_revision":"{revision}"}}"#
     );
     let written = modify_file(&args, &dir, &ctx);
     assert!(written.contains("已插入内容"), "{}", written);
@@ -76,7 +76,7 @@ fn test_modify_file_accepts_matching_base_revision() {
     let out = read_file(r#"{"path":"ok.txt"}"#, &dir, &ctx);
     let revision = read_file_header_str(&out, "revision");
     let args = format!(
-        r#"{{"path":"ok.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","base_revision":"{revision}"}}"#
+        r#"{{"dry_run":false,"path":"ok.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","base_revision":"{revision}"}}"#
     );
     let written = modify_file(&args, &dir, &ctx);
     assert!(written.contains("已按行替换"), "{}", written);
@@ -194,7 +194,7 @@ fn test_allow_stale_revision_skips_turn_binding_but_not_explicit_base_revision()
     std::fs::write(&file, "L1\nL2 changed\nL3\n").unwrap();
 
     let out = modify_file(
-        r#"{"path":"escape.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"escape.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -225,7 +225,7 @@ fn test_turn_binding_survives_cache_clear_for_second_write() {
 
     let _ = read_file(r#"{"path":"twice.txt"}"#, &dir, &ctx);
     let first = modify_file(
-        r#"{"path":"twice.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
+        r#"{"dry_run":false,"path":"twice.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
         &dir,
         &ctx,
     );
@@ -234,7 +234,7 @@ fn test_turn_binding_survives_cache_clear_for_second_write() {
     // 模拟写类工具执行后的正文缓存清理：绑定必须保留，否则第二次写入会漏检。
     cache.clear();
     let second = modify_file(
-        r#"{"path":"twice.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Y"}"#,
+        r#"{"dry_run":false,"path":"twice.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Y"}"#,
         &dir,
         &ctx,
     );
@@ -257,7 +257,7 @@ fn test_zero_max_entries_still_auto_binds_turn_revision() {
     let after_external = std::fs::read_to_string(&file).unwrap();
 
     let out = modify_file(
-        r#"{"path":"nocache.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
+        r#"{"dry_run":false,"path":"nocache.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
         &dir,
         &ctx,
     );
@@ -280,7 +280,7 @@ fn test_full_mode_is_not_auto_bound_to_turn_revision() {
 
     // full 模式不依赖行号，不应被自动绑定拦截。
     let out = modify_file(
-        r#"{"path":"full.txt","mode":"full","content":"M1\nM2\nM3\n"}"#,
+        r#"{"dry_run":false,"path":"full.txt","mode":"full","content":"M1\nM2\nM3\n"}"#,
         &dir,
         &ctx,
     );
@@ -305,7 +305,7 @@ fn test_full_and_edits_commit_via_atomic_rename() {
     let ino_before = std::fs::metadata(&file).unwrap().ino();
 
     let out = modify_file(
-        r#"{"path":"atomic.txt","mode":"full","content":"M1\nM2\nM3\n"}"#,
+        r#"{"dry_run":false,"path":"atomic.txt","mode":"full","content":"M1\nM2\nM3\n"}"#,
         &dir,
         &ctx,
     );
@@ -314,7 +314,7 @@ fn test_full_and_edits_commit_via_atomic_rename() {
     assert_ne!(ino_before, ino_after_full, "full 应为 rename 原子替换");
 
     let out = modify_file(
-        r#"{"path":"atomic.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}],"allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"atomic.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}],"allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -362,7 +362,7 @@ fn test_line_mode_without_read_baseline_is_rejected_with_code() {
 
     // 显式承担风险后放行（仍须按当前行号写入）。
     let out = modify_file(
-        r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );

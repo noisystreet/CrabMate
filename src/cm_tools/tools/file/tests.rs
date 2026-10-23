@@ -263,7 +263,7 @@ fn test_modify_file_ok_ignores_failure_word_inside_diff_preview() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r##"{"path":"conf.py","mode":"replace_lines","start_line":2,"end_line":3,"content":"# 新内容","allow_stale_revision":true}"##,
+        r##"{"dry_run":false,"path":"conf.py","mode":"replace_lines","start_line":2,"end_line":3,"content":"# 新内容","allow_stale_revision":true}"##,
         &dir,
         &ctx,
     );
@@ -284,7 +284,7 @@ fn test_modify_file_replace_lines() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -303,7 +303,7 @@ fn test_modify_file_infers_replace_lines_when_line_range_present() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"m.txt","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -321,7 +321,7 @@ fn test_modify_file_replace_lines_swaps_inverted_range() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":3,"end_line":2,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"m.txt","mode":"replace_lines","start_line":3,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -339,7 +339,7 @@ fn test_modify_file_insert_after_line() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"INS","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"INS","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -357,7 +357,7 @@ fn test_modify_file_line_range_out_of_bounds_shows_tail_context() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":9,"end_line":9,"content":"X","allow_stale_revision":true}"#,
+        r#"{"dry_run":false,"path":"m.txt","mode":"replace_lines","start_line":9,"end_line":9,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -377,7 +377,7 @@ fn test_modify_file_full_emits_shrink_warning() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"big.txt","mode":"full","content":"xx","confirm_full_overwrite":true}"#,
+        r#"{"dry_run":false,"path":"big.txt","mode":"full","content":"xx","confirm_full_overwrite":true}"#,
         &dir,
         &ctx,
     );
@@ -404,7 +404,8 @@ fn test_modify_file_full_no_shrink_warning_when_size_similar() {
     let args = serde_json::json!({
         "path": "mid.txt",
         "mode": "full",
-        "content": new_body
+        "content": new_body,
+        "dry_run": false
     });
     let out = modify_file(&args.to_string(), &dir, &ctx);
     assert!(out.contains("已整文件覆盖"), "{}", out);
@@ -422,7 +423,7 @@ fn test_modify_file_full_shrink_rejected_without_confirm() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"big.txt","mode":"full","content":"xx"}"#,
+        r#"{"dry_run":false,"path":"big.txt","mode":"full","content":"xx"}"#,
         &dir,
         &ctx,
     );
@@ -440,7 +441,7 @@ fn test_modify_file_overwrite_mode_writes_like_full() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"x.txt","mode":"overwrite","content":"new"}"#,
+        r#"{"dry_run":false,"path":"x.txt","mode":"overwrite","content":"new"}"#,
         &dir,
         &ctx,
     );
@@ -493,11 +494,11 @@ fn test_modify_file_full_clear_nonempty_requires_confirm() {
     let cfg = crate::cm_config::load_config(None).expect("embedded default config");
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
-    let blocked = modify_file(r#"{"path":"e.txt","mode":"full","content":""}"#, &dir, &ctx);
+    let blocked = modify_file(r#"{"dry_run":false,"path":"e.txt","mode":"full","content":""}"#, &dir, &ctx);
     assert!(blocked.contains("未写盘"), "{}", blocked);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "x");
     let ok = modify_file(
-        r#"{"path":"e.txt","mode":"full","content":"","confirm_full_overwrite":true}"#,
+        r#"{"dry_run":false,"path":"e.txt","mode":"full","content":"","confirm_full_overwrite":true}"#,
         &dir,
         &ctx,
     );

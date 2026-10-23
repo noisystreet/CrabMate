@@ -246,7 +246,7 @@ fn modify_file_try_success_matches_string_face() {
     let dir_typed = make_test_dir();
     std::fs::write(dir_legacy.join("a.txt"), "L1\nL2\nL3\n").unwrap();
     std::fs::write(dir_typed.join("a.txt"), "L1\nL2\nL3\n").unwrap();
-    let args = r#"{"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#;
+    let args = r#"{"dry_run":false,"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#;
 
     let typed = assert_success_parity(
         &dir_legacy,
@@ -320,7 +320,7 @@ fn modify_file_try_full_overwrite_guard_keeps_preview_and_failure() {
     std::fs::write(dir.join("big.txt"), &original).unwrap();
 
     let err = modify_file_try(
-        r#"{"path":"big.txt","mode":"full","content":""}"#,
+        r#"{"path":"big.txt","mode":"full","content":"","dry_run":false}"#,
         &dir,
         &test_ctx(&dir),
     )
@@ -549,20 +549,20 @@ fn search_replace_try_no_match_is_invalid_input_and_does_not_write() {
 }
 
 #[test]
-fn search_replace_try_missing_confirm_is_invalid_input() {
+fn search_replace_try_writes_without_confirm_when_dry_run_false() {
+    // F4：写盘口径统一为「一个旋钮」——`dry_run=false` 即写，不再要求 `confirm=true`。
     let dir = make_test_dir();
     std::fs::write(dir.join("a.txt"), "hello\n").unwrap();
 
-    let err = search_replace_try(
+    let out = search_replace_try(
         r#"{"path":"a.txt","search":"hello","replace":"bye","dry_run":false}"#,
         &dir,
         &test_ctx(&dir),
     )
-    .expect_err("写盘未确认须失败");
+    .expect("dry_run=false 应直接写盘，无需 confirm");
 
-    assert_invalid_input(&err);
-    assert!(err.message.contains("confirm=true"), "{}", err.message);
-    assert_eq!(read(&dir, "a.txt"), "hello\n");
+    assert!(out.contains("已替换"), "{}", out);
+    assert_eq!(read(&dir, "a.txt"), "bye\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
