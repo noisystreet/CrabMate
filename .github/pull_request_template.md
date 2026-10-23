@@ -7,11 +7,11 @@
 请勾选已完成的项（不适用的标为 N/A 并简短说明）：
 
 - [ ] 已在仓库根目录运行 **`pre-commit run --all-files`**（或等价的 `cargo fmt` + **`cargo clippy --all-targets --all-features -- -D warnings`**），且通过
-- [ ] 若改动 **`src/`** 或共享契约：已按 **`.cursor/rules/rust-clippy-and-tests.mdc`** 运行相应范围的 **`cargo test`**
-- [ ] 若改动聊天 / SSE / 契约 crate：已核对双端协议一致（见 **`.cursor/rules/api-sse-chat-protocol.mdc`**）；业务 UI 在 Client 仓 `crabmate-client`
+- [ ] 若改动 **`src/`** 或共享契约：已按 **`AGENTS.md` → Repository engineering rules → Commit & push** 的测试范围表运行相应范围的 **`cargo test`**（长版：**`.cursor/rules/rust-clippy-and-tests.mdc`**）
+- [ ] 若改动聊天 / SSE / 契约 crate：已核对双端协议一致（见 **`AGENTS.md` → Chat / SSE contract (both ends)**）；业务 UI 在 Client 仓 `crabmate-client`
 - [ ] 若改动 **`config/default_config.toml`**、**`config/session.toml`**、**`config/context_inject.toml`**、**`config/tools.toml`**、**`config/sandbox.toml`**、**`config/planning.toml`**、**`config/memory.toml`**、**`CM_*` 环境变量** 或 Axum 路由契约：已更新 **`README.md`** 与 **`docs/开发文档.md`**
-- [ ] 若改动架构或 **`src/` 模块组织**：已更新 **`docs/开发文档.md`**（见 **`.cursor/rules/architecture-docs-sync.mdc`**）
-- [ ] 无真实密钥、token、私钥进入 diff；日志与错误信息已脱敏（见 **`.cursor/rules/secrets-and-logging.mdc`**）
+- [ ] 若改动架构或 **`src/` 模块组织**：已更新 **`docs/开发文档.md`**（见 **`AGENTS.md` → Architecture & documentation sync**）
+- [ ] 无真实密钥、token、私钥进入 diff；日志与错误信息已脱敏（见 **`AGENTS.md` → Secrets & logging**）
 
 ## 相关 Issue
 

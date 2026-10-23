@@ -43,7 +43,5 @@ To protect users and maintainers:
 - Redact logs, traces, and request/response payloads before sharing.
 - If credentials may be exposed, rotate/revoke them immediately.
 
-This repository follows strict secret redaction and logging guidance in:
-
-- `.cursor/rules/secrets-and-logging.mdc`
+This repository follows strict secret redaction and logging guidance in `AGENTS.md` → **Repository engineering rules → Secrets & logging** (long form: `.cursor/rules/secrets-and-logging.mdc`).
 

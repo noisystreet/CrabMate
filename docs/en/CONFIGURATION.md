@@ -512,6 +512,7 @@ When **`agents_md_enabled`** (**default `true`**), the server reads `AGENTS.md` 
 - **Layer**: `system`, not the first `user` turn — rules must stay authoritative on every turn and must not be lost to long-session context folding. Note it is **not** composed only once: for existing Web conversations the first `system` is recomputed on **every** turn (`refresh_existing_turn_system`), so edits to `AGENTS.md` take effect on the next turn and invalidate that session's `system` prefix cache (current trade-off: rule freshness over prefix-cache hit rate).
 - **Removed**: the old `.cursor/rules/*.mdc` compatibility plus `cursor_rules_*` / `CM_CURSOR_RULES_*` keys (**BREAKING**). Move any `.cursor/rules` content into the workspace root `AGENTS.md`; old keys now fail as unknown keys.
 - **Process cwd is no longer used**: the path is always the session workspace root, so switching workspaces on Web switches the rules too.
+- **Symlinks**: if `AGENTS.md` is a symlink pointing **outside** the workspace, the server resolves the real path and **ignores** the file — its content goes into `system` and out to the model, so a workspace must not be able to read arbitrary local files that way. Symlinks pointing **inside** the workspace still work. This check is Unix-only.
 
 ## Context window
 

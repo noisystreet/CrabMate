@@ -790,6 +790,31 @@ mod tiktoken_baseline_cache_tests {
             "expired TTL must trigger recompute"
         );
     }
+
+    /// 回归守卫：基线必须计入工作区根 `AGENTS.md`——该段改为运行时注入后，
+    /// 基线曾走另一入口而静默漏算（`/status` 上报的固定开销偏乐观）。
+    #[tokio::test]
+    async fn baseline_includes_agents_md() {
+        let cfg = default_cfg();
+        let ids = role_ids(&cfg);
+        let bare = tempfile::tempdir().expect("tempdir");
+        let ws = tempfile::tempdir().expect("tempdir");
+        std::fs::write(ws.path().join("AGENTS.md"), "项目规则条目。".repeat(400)).expect("write");
+        let (c1, c2) = (
+            Mutex::new(None::<CachedTiktokenBaseline>),
+            Mutex::new(None::<CachedTiktokenBaseline>),
+        );
+        let r = test_recorder();
+        let without = tiktoken_baselines_cached_or_compute(&c1, &cfg, &r, bare.path(), &ids).await;
+        let with = tiktoken_baselines_cached_or_compute(&c2, &cfg, &r, ws.path(), &ids).await;
+        assert!(!without.is_empty(), "baseline must be computed at all");
+        for (role, base) in &without {
+            assert!(
+                with.get(role).copied().unwrap_or(*base) > *base,
+                "role {role}: AGENTS.md must raise the baseline above {base}"
+            );
+        }
+    }
 }
 
 #[cfg(test)]
