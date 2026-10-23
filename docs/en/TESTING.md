@@ -52,7 +52,7 @@ bash scripts/fn-param-ratchet.sh
 bash scripts/fn-nloc-ratchet.sh
 ```
 
-Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see [`.cursor/rules/conventional-commits.mdc`](../../.cursor/rules/conventional-commits.mdc)).
+Note: `pre-commit run --all-files` does **not** run `commit-msg`; message format is checked on **`git commit`** (see `AGENTS.md` → Repository engineering rules → Commit & push).
 
 ## Rust: unit and integration tests
 
@@ -90,7 +90,7 @@ Example: `src/web/workspace/handlers_file_raw_http_tests.rs`.
 cargo test tool_result_envelope_golden
 ```
 
-If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see [`.cursor/rules/rust-clippy-and-tests.mdc`](../../.cursor/rules/rust-clippy-and-tests.mdc)).
+If you change AG-UI control-plane dispatch, update **`fixtures/sse_ag_ui_golden.jsonl`** and run the frontend golden test (see [`SSE_PROTOCOL.md`](SSE_PROTOCOL.md)). For cross-crate or public API changes before merge/release, prefer full **`cargo test`** (see `AGENTS.md` → Repository engineering rules → Commit & push (test scope)).
 
 ### Optional: nightly
 

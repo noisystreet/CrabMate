@@ -232,7 +232,7 @@ TUI **`sse_mirror`**：工具 / `ThinkingTrace` / `TimelineLog` 等经 **`turn_p
 - Client [`frontend/`](https://github.com/noisystreet/crabmate-client/tree/main/frontend) — `composer_stream` 分层与 `wire_*`（UI 源码不在本仓）  
 - **`docs/开发文档.md`** — Web 流式概要  
 - **`docs/design/archive/tui_align_tauri_display.md`** — 终端 TUI 对齐 Tauri/Web 展示规划（历史投影、终答、控制面收敛等）  
-- **`.cursor/rules/api-sse-chat-protocol.mdc`** — 协议双端同步规则
+- **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** — 协议双端同步规则
 
 ---
 

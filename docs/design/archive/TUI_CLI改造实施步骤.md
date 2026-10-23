@@ -12,7 +12,7 @@
 **原则（历史）**
 
 1. **编排复用**：会话消息、`run_agent_turn`、工具执行、审批与 **`CliToolRuntime`** 等与现有 REPL/`chat` 子命令共用；TUI 仅替换「渲染 + 输入 + 焦点」层（与 Web 前端的职责划分对称）。
-2. **三端约定**：新能力优先落在共享层；若某能力明确仅适合某一界面，须在注释或 **`docs/待办清单.md`** 中写明。参见仓库 **`.cursor/rules/cli-tui-web-shared-logic.mdc`**。
+2. **三端约定**：新能力优先落在共享层；若某能力明确仅适合某一界面，须在注释或 **`docs/待办清单.md`** 中写明。参见仓库 **`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic**。
 3. **非 TTY 降级**：管道、CI、`ssh -T` 等场景**不得**假设全屏 TUI；保留 **`repl`**（或 **`chat` 单次**）作为 fallback。
 4. **对齐 Web 的是「分区」而非「控件」**：左侧 ≈ 工作区/列表，中间 ≈ 消息流 + 输入，右侧或底栏 ≈ 任务/状态/快捷入口；不要求像素级一致。
 
@@ -50,7 +50,7 @@
 **目标**：可启动、可退出、resize 不崩，不占死终端。
 
 - 新增子命令，例如 **`crabmate tui`**（或与 **`repl --tui`** 二选一，需在 **`docs/命令行与路由.md`** 与 **`README.md`** 写明）。
-- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；合并后按 **`.cursor/rules/architecture-docs-sync.mdc`** 更新 **`docs/开发文档.md`**「主要模块」）。
+- 新建模块目录（示例）：**`src/runtime/tui/`**（并在 **`src/runtime/mod.rs`**、必要时 **`src/lib.rs`** / **`cli`** 路由注册；合并后按 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync** 更新 **`docs/开发文档.md`**「主要模块」）。
 - 实现：**raw mode**、**alt screen**（若使用）、**Drop 时恢复终端**、**Ctrl+Q / Ctrl+C** 退出策略。
 - 验收：TTY 下进入全屏占位 UI；非 TTY 直接报错退出或提示使用 **`repl`** / **`chat`**。
 
@@ -95,7 +95,7 @@
 - **键盘**：焦点在侧栏 / 主区 / 输入之间切换（**Tab** / **hjkl** 等），**`?` / F1** 帮助。
 - **大会话**：虚拟滚动或截断显示 + 「展开全文」。
 - **默认入口**：是否将 **`crabmate`** 无子命令时导向 TUI，属于产品决策；建议长期保留 **`repl`** 作为脚本与 SSH 友好默认。
-- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（主要模块与架构图）；若有新配置键或 **`CM_*`**，同步 **`docs/配置说明.md`**（见 **`.cursor/rules/todolist-and-documentation.mdc`**）。
+- **文档**：更新 **`README.md`**、**`docs/命令行与路由.md`**、**`docs/开发文档.md`**（主要模块与架构图）；若有新配置键或 **`CM_*`**，同步 **`docs/配置说明.md`**（见 **`AGENTS.md` → Repository engineering rules → Architecture & documentation sync**）。
 
 ---
 

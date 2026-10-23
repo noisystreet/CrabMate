@@ -66,7 +66,7 @@
 
 1. **SSE 断线重连缓冲为单进程内存**：进程重启或任务结束后重连可能收到 **410**（**`STREAM_JOB_GONE`**）。多副本负载均衡时，若无会话粘性，集成方须自行接受「重连仅同实例有效」或只用单实例承接流式任务。
 2. **单一共享 Bearer 密钥**为常见部署形态：多租户、多 IM 机器人共用同一 CrabMate 时，**租户隔离**宜放在桥接或 API 网关（见第 5 节）。
-3. **`client_llm` 请求体覆盖**：自动化场景可用 **`client_llm.api_key` / `api_base` / `model`** 做按次覆盖；须遵守日志与响应脱敏规则（**`.cursor/rules/secrets-and-logging.mdc`**）。
+3. **`client_llm` 请求体覆盖**：自动化场景可用 **`client_llm.api_key` / `api_base` / `model`** 做按次覆盖；须遵守日志与响应脱敏规则（**`AGENTS.md` → Repository engineering rules → Secrets & logging**）。
 4. **工具审批无原生 IM UI**：桥接层须将审批映射为卡片交互、或预先收紧 **`allowed_commands`** / **`http_fetch_allowed_prefixes`** / 禁用工具，避免无人值守时卡死。
 
 ---
@@ -106,7 +106,7 @@
 凡新增或变更 HTTP 路由、请求/响应体、SSE 控制面键、错误码：
 
 - 更新 **`src/web/openapi/`**、**`docs/命令行与路由.md`**、相关 **`docs/配置说明.md`** / **`README.md`** 使用者段落；
-- SSE 变更遵循 **`.cursor/rules/api-sse-chat-protocol.mdc`**（含 **`golden_sse_control`** 等）。
+- SSE 变更遵循 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**（含 **`golden_sse_control`** 等）。
 
 ---
 

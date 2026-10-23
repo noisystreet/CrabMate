@@ -104,7 +104,7 @@ Trunk 要求 **`index.html`** 中 **`data-trunk` 的 `link rel="css"`** 与磁�
 
 ## 6. 实施与自检清单
 
-改动样式或 `index.html` 后建议至少执行其一（与 **`.cursor/rules/frontend.mdc`** 一致；均在 [crabmate-client](https://github.com/noisystreet/crabmate-client)，本机命令假定同级克隆）：
+改动样式或 `index.html` 后建议至少执行其一（与 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)** 一致；均在 [crabmate-client](https://github.com/noisystreet/crabmate-client)，本机命令假定同级克隆）：
 
 ```bash
 cd ../crabmate-client && make frontend-check
@@ -115,7 +115,7 @@ cd ../crabmate-client && make frontend
 **提交前自检（样式相关）**
 
 - [ ] 新增/重命名 CSS 文件已写入 Client [`frontend/index.html`](https://github.com/noisystreet/crabmate-client/blob/main/frontend/index.html) 的 `data-trunk` 链。
-- [ ] 未在源码中引入可误认的真实密钥或 token（见 **`.cursor/rules/secrets-and-logging.mdc`**）。
+- [ ] 未在源码中引入可误认的真实密钥或 token（见 **`AGENTS.md` → Repository engineering rules → Secrets & logging**）。
 - [ ] 若变更 **用户可见** 行为或显著外观，按 **`docs/待办清单.md`** / **`README.md`** 约定评估是否同步文档。
 
 ---
@@ -123,8 +123,8 @@ cd ../crabmate-client && make frontend
 ## 7. 相关文档
 
 - **架构与前端位置**：**`docs/开发文档.md`**（总览中的 Web 前端一节）。
-- **开发与构建**：**`AGENTS.md`**、**`.cursor/rules/frontend.mdc`**。
-- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/api/chat_stream/parser_v2.rs`**；若同时改协议消费路径，遵守 **`.cursor/rules/api-sse-chat-protocol.mdc`**。
+- **开发与构建**：**`AGENTS.md`**、**`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**。
+- **SSE 与 UI 逻辑**：样式变更一般不触及 **`frontend/src/api/chat_stream/parser_v2.rs`**；若同时改协议消费路径，遵守 **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**。
 
 ---
 

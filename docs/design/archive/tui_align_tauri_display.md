@@ -14,7 +14,7 @@
 | **`docs/design/archive/TUI_CLI改造实施步骤.md`** | **历史**：CLI→TUI 壳与对话闭环 |
 | **`docs/design/web_tui_stream_to_opencode_style.md`** | **Web** `ChatTuiStreamView` 流式跟底演进 |
 | **`docs/命令行与路由.md`** | 运维 CLI；官方终端指向 Client **`crabmate-tui`** |
-| **`.cursor/rules/cli-tui-web-shared-logic.mdc`** | 三端共享逻辑原则 |
+| **`AGENTS.md` → Repository engineering rules → CLI / TUI / Web shared logic** | 三端共享逻辑原则 |
 
 ---
 

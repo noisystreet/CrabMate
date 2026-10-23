@@ -154,4 +154,4 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 
 ---
 
-*Completed work does not belong in this file. When changing `src/` module layout, update [DEVELOPMENT.md](DEVELOPMENT.md). Security surface: `.cursor/rules/security-sensitive-surface.mdc`.*
+*Completed work does not belong in this file. When changing `src/` module layout, update [DEVELOPMENT.md](DEVELOPMENT.md). Security surface: `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces.*

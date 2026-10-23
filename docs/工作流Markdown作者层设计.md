@@ -352,7 +352,7 @@ LLM 路径的额外风险：模型生成**无界** `for_each` → 编译器 **�
 - **`docs/工作流编排架构.md`**：choice / `for_each` 与编译器关系  
 - **`docs/开发文档.md`**：架构概要（workflow 接合见「主要模块」/`agent`）  
 - **`docs/命令行与路由.md`**（若有 CLI 子命令）  
-- **`.cursor/rules/api-sse-chat-protocol.mdc`**（若 Web 增加编译预览事件）
+- **`AGENTS.md` → Repository engineering rules → Chat / SSE contract (both ends)**（若 Web 增加编译预览事件）
 
 ---
 

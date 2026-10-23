@@ -4,7 +4,7 @@
 
 **Revision (implemented)**: the `codebase_semantic_search` SQLite store includes **`crabmate_codebase_files`** (`size` / `mtime_ns` / `content_sha256`), **workspace-wide** incremental `rebuild_index`, subtree **`path`** replacement, Rust **symbol hints**, and (schema **v4**+) **FTS5** **`crabmate_codebase_chunks_fts`** with **hybrid** query (BM25 + vector). See **`docs/en/TOOLS.md`** (`codebase_semantic_search`).
 
-Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**, and **gateway-side identity / multi-tenant isolation** (CrabMate keeps a shared service secret; see [FUTURE_PLANS.md](../../en/FUTURE_PLANS.md)). See `.cursor/rules/security-sensitive-surface.mdc` and [TODOLIST.md](../../en/TODOLIST.md) for related backlog items.
+Directional plan for a **persistent, incrementally updated** unified index of repository source + metadata to speed browsing and search. Implementation must align with **workspace path safety** (`resolve_for_read`, allowed roots, `..` and symlink policy), **secrets and log redaction**, and **gateway-side identity / multi-tenant isolation** (CrabMate keeps a shared service secret; see [FUTURE_PLANS.md](../../en/FUTURE_PLANS.md)). See `AGENTS.md` → Repository engineering rules → Security-sensitive surfaces and [TODOLIST.md](../../en/TODOLIST.md) for related backlog items.
 
 ---
 
@@ -126,7 +126,7 @@ Four layers (same SQLite or multiple files; one external **index runtime** handl
 ## 10. Doc maintenance
 
 - After each phase: remove or merge TODOLIST items; optional short revision note at top of this file (or rely on Git).
-- New tools/config keys: follow `.cursor/rules/todolist-and-documentation.mdc`.
+- New tools/config keys: follow `AGENTS.md` → Repository engineering rules → Architecture & documentation sync.
 
 ---
 

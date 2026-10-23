@@ -11,7 +11,7 @@
 - **`docs/开发文档.md`**：`agent_turn` / `per_coord` / `llm::complete_chat_retrying` 调用约定。  
 - **`docs/design/run_loop_state_ownership.md`**：可变状态归属；侧向调用挂现有 P/R，**不**新开并行阶段机。  
 - **`docs/SSE协议.md`**：若新增控制面事件，须与 **`frontend`** 及 **`src/cm_sse_protocol`** 对齐。  
-- **`.cursor/rules/secrets-and-logging.mdc`**：侧向请求的摘要与日志脱敏为**硬性**约束。
+- **`AGENTS.md` → Repository engineering rules → Secrets & logging**：侧向请求的摘要与日志脱敏为**硬性**约束。
 
 ### 现行锚点（ReAct-only，2026-08）
 
