@@ -689,7 +689,7 @@ pub fn structured_diff(args_json: &str, working_dir: &Path) -> String {
 #[path = "structured_data_patch/mod.rs"]
 mod structured_data_patch;
 
-/// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（默认 dry-run，写入需 confirm=true）。
+/// 结构化补丁：对 JSON/YAML/TOML 进行 set/remove（`dry_run` 默认 `true` 只预览，显式 `dry_run=false` 才写盘）。
 pub fn structured_patch(args_json: &str, working_dir: &Path, ctx: &ToolContext<'_>) -> String {
     structured_data_patch::structured_patch_execute(args_json, working_dir, ctx)
 }

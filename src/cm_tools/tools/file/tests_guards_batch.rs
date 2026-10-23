@@ -507,7 +507,9 @@ fn test_write_tools_default_to_preview_without_dry_run() {
 
     // modify_file：不传 dry_run → 预览，磁盘不变。
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","allow_stale_revision":true}"#,
+        // 预览不落盘，无需快照基线：这里刻意不传 `allow_stale_revision`，验证默认预览不会被
+        // `missing_revision_baseline` 拦住（只有 `dry_run=false` 写盘才要求基线）。
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X"}"#,
         &dir,
         &ctx,
     );

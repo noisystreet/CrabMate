@@ -102,16 +102,16 @@ fn test_modify_file_rejects_stale_base_revision_without_writing() {
 
     let cases = [
         format!(
-            r#"{{"path":"stale.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","base_revision":"{stale}"}}"#
+            r#"{{"path":"stale.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","base_revision":"{stale}","dry_run":false}}"#
         ),
         format!(
-            r#"{{"path":"stale.txt","mode":"insert_after_line","after_line":1,"content":"INS","base_revision":"{stale}"}}"#
+            r#"{{"path":"stale.txt","mode":"insert_after_line","after_line":1,"content":"INS","base_revision":"{stale}","dry_run":false}}"#
         ),
         format!(
-            r#"{{"path":"stale.txt","mode":"full","content":"ALL NEW\n","base_revision":"{stale}"}}"#
+            r#"{{"path":"stale.txt","mode":"full","content":"ALL NEW\n","base_revision":"{stale}","dry_run":false}}"#
         ),
         format!(
-            r#"{{"path":"stale.txt","edits":[{{"start_line":2,"end_line":2,"content":"X"}}],"base_revision":"{stale}"}}"#
+            r#"{{"path":"stale.txt","edits":[{{"start_line":2,"end_line":2,"content":"X"}}],"base_revision":"{stale}","dry_run":false}}"#
         ),
         format!(
             r#"{{"path":"stale.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","dry_run":true,"base_revision":"{stale}"}}"#
@@ -168,9 +168,9 @@ fn test_line_mode_auto_binds_turn_revision_and_rejects_after_external_change() {
 
     // 未传 base_revision：行号类模式应使用本轮 read_file 的 revision 自动拒绝。
     let args = [
-        r#"{"path":"auto.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
-        r#"{"path":"auto.txt","mode":"insert_after_line","after_line":1,"content":"INS"}"#,
-        r#"{"path":"auto.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}]}"#,
+        r#"{"path":"auto.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","dry_run":false}"#,
+        r#"{"path":"auto.txt","mode":"insert_after_line","after_line":1,"content":"INS","dry_run":false}"#,
+        r#"{"path":"auto.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}],"dry_run":false}"#,
     ];
     for a in args {
         let out = modify_file(a, &dir, &ctx);
@@ -204,7 +204,7 @@ fn test_allow_stale_revision_skips_turn_binding_but_not_explicit_base_revision()
     // 显式 base_revision 仍须校验，allow_stale_revision 不能绕过。
     let out = modify_file(
         &format!(
-            r#"{{"path":"escape.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Y","base_revision":"{stale}","allow_stale_revision":true}}"#
+            r#"{{"path":"escape.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Y","base_revision":"{stale}","allow_stale_revision":true,"dry_run":false}}"#
         ),
         &dir,
         &ctx,
@@ -348,7 +348,7 @@ fn test_line_mode_without_read_baseline_is_rejected_with_code() {
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
 
     let err = modify_file_try(
-        r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
+        r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","dry_run":false}"#,
         &dir,
         &ctx,
     )

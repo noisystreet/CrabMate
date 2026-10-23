@@ -365,7 +365,7 @@ fn append_file_try_success_matches_string_face() {
     let dir_typed = make_test_dir();
     std::fs::write(dir_legacy.join("a.txt"), "hello").unwrap();
     std::fs::write(dir_typed.join("a.txt"), "hello").unwrap();
-    let args = r#"{"path":"a.txt","content":"world\n"}"#;
+    let args = r#"{"path":"a.txt","content":"world\n","dry_run":false}"#;
 
     let typed = assert_success_parity(
         &dir_legacy,
@@ -426,7 +426,7 @@ fn append_file_try_precheck_failure_keeps_legacy_body_and_code() {
     std::fs::write(dir.join("bad.json"), "{\"a\":1}").unwrap();
 
     let err = append_file_try(
-        r#"{"path":"bad.json","content":",","ensure_leading_newline":false}"#,
+        r#"{"path":"bad.json","content":",","ensure_leading_newline":false,"dry_run":false}"#,
         &dir,
         &test_ctx(&dir),
     )
@@ -474,7 +474,7 @@ fn append_file_success_body_with_failure_wording_stays_ok() {
 
     assert_success_with_failure_wording(
         "append_file",
-        r#"{"path":"a失败.txt","content":"world\n"}"#,
+        r#"{"path":"a失败.txt","content":"world\n","dry_run":false}"#,
         &test_ctx(&dir),
     );
     assert_eq!(read(&dir, "a失败.txt"), "hello\nworld\n");

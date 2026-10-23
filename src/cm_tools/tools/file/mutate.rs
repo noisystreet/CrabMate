@@ -843,7 +843,7 @@ mod tests {
         let before = fs::read_to_string(tmp.path().join("app.py")).unwrap();
         let ctx = test_ctx(tmp.path());
         let out = append_file(
-            r#"{"path":"app.py","content":"x = 1\nreturn 2\n"}"#,
+            r#"{"path":"app.py","content":"x = 1\nreturn 2\n","dry_run":false}"#,
             tmp.path(),
             &ctx,
         );
