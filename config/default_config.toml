@@ -124,7 +124,7 @@ web_api_require_bearer = false
 # Web 远程浏览器「项目池」：配置后用户可用项目名切换/新建子工作区（须同时配置非空 workspace_allowed_roots，见 docs/配置说明.md）
 # web_workspace_pool = "/workspace"
 
-# 9. 首轮上下文注入：备忘、项目画像、依赖摘要
+# 9. 首轮上下文注入：备忘、活文档摘要、依赖摘要（项目画像**不进首轮**，仅 Web 侧栏 / repo_overview_sweep 按需）
 # 默认见 **`config/context_inject.toml`**
 
 # 10. 长期记忆（可选）

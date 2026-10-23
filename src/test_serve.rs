@@ -51,6 +51,14 @@ pub async fn start_test_serve(
     llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
 ) -> TestServeHandle {
     let cfg = crate::config::load_config(None).expect("默认配置加载失败");
+    start_test_serve_with_config(cfg, llm_backend).await
+}
+
+/// 同 [`start_test_serve`]，但由调用方注入已改好的配置（如定向覆盖单个开关的 handler 测试）。
+pub async fn start_test_serve_with_config(
+    cfg: crate::config::AgentConfig,
+    llm_backend: Option<&'static (dyn ChatCompletionsBackend + 'static)>,
+) -> TestServeHandle {
     let cfg_holder: SharedAgentConfig = Arc::new(tokio::sync::RwLock::new(cfg));
     let client = build_shared_api_client(&cfg_holder.read().await.llm_http_retry)
         .expect("构建 HTTP 客户端失败");

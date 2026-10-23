@@ -102,7 +102,7 @@ pub struct WorkspaceSearchResponse {
     pub error: Option<String>,
 }
 
-/// `GET /workspace/profile`：只读生成的项目画像 Markdown（与首轮注入同源逻辑）。
+/// `GET /workspace/profile`：只读生成的项目画像 Markdown（供 Web 侧栏按需拉取；不进首轮注入）。
 #[derive(Serialize, Deserialize)]
 pub struct WorkspaceProfileResponse {
     pub markdown: String,

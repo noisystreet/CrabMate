@@ -238,7 +238,7 @@ pub fn is_message_excluded_from_llm_context_except_memory(m: &Message) -> bool {
 /// 供 **`GET /conversation/messages`** 等客户端只读视图：省略聊天区不应展示的条目。
 ///
 /// 与落盘前 [`crate::cm_types::strip_orchestration_injected_users_for_conversation_store`] **不完全相同**：
-/// 规划拒绝 / `plan_rewrite` 等编排注入落盘时也会剥离；**首轮工作区画像**与**上下文摘要**仍落盘并送模型，仅从本快照省略。
+/// 规划拒绝 / `plan_rewrite` 等编排注入落盘时也会剥离；**首轮工作区上下文**与**上下文摘要**仍落盘并送模型，仅从本快照省略。
 /// 另：**不**返回普通 **`system`** 正文（[`Message::system_only`] 等）；仅保留 **`name == crabmate_timeline`** 的时间线旁注。
 pub fn filter_messages_for_web_client_snapshot(messages: &[Message]) -> Vec<Message> {
     messages
@@ -256,7 +256,7 @@ fn is_system_role_hidden_from_web_transcript(m: &Message) -> bool {
 
 /// Web 聊天区与 TUI transcript 是否展示该条（与 [`filter_messages_for_web_client_snapshot`] 过滤条件一致）。
 ///
-/// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区画像 / 上下文摘要等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
+/// 省略：普通 **`system`**（含系统提示词）、长期记忆 / 工作区变更集 / 首轮工作区上下文 / 上下文摘要等 **`user.name`** 注入；保留 **`crabmate_timeline`** 等时间线 **`system`**。
 #[inline]
 pub fn is_message_visible_in_chat_transcript(m: &Message) -> bool {
     !crate::cm_types::server_injected_user::is_server_injected_user_message(m)
@@ -269,7 +269,7 @@ pub const CRABMATE_LONG_TERM_MEMORY_NAME: &str = "crabmate_long_term_memory";
 /// 会话工作区变更集注入（`user.name`）；每次调模型前由运行时刷新，**不应**持久化到会话存储。
 pub const CRABMATE_WORKSPACE_CHANGELIST_NAME: &str = "crabmate_workspace_changelist";
 
-/// 新会话首轮「工作区 / 项目画像」等上下文注入（`user.name`）；供模型读取，**不向** Web 快照与聊天水合展示。
+/// 新会话首轮工作区上下文（活文档摘要 / 备忘 / 依赖摘要；`user.name`）；供模型读取，**不向** Web 快照与聊天水合展示。
 pub const CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME: &str =
     "crabmate_first_turn_workspace_context";
 
@@ -529,7 +529,7 @@ impl Message {
         )
     }
 
-    /// 首轮工作区 / 项目画像等上下文（`user` + [`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`]）；送模型，Web 快照过滤。
+    /// 首轮工作区上下文（活文档摘要 / 备忘 / 依赖摘要；`user` + [`CRABMATE_FIRST_TURN_WORKSPACE_CONTEXT_NAME`]）；送模型，Web 快照过滤。
     pub fn user_first_turn_workspace_context(content: impl Into<String>) -> Self {
         Self {
             role: "user".to_string(),
