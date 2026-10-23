@@ -314,7 +314,7 @@ fn test_full_and_edits_commit_via_atomic_rename() {
     assert_ne!(ino_before, ino_after_full, "full 应为 rename 原子替换");
 
     let out = modify_file(
-        r#"{"path":"atomic.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}]}"#,
+        r#"{"path":"atomic.txt","edits":[{"start_line":2,"end_line":2,"content":"X"}],"allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -333,5 +333,40 @@ fn test_full_and_edits_commit_via_atomic_rename() {
         .filter(|n| n.contains("crabmate_write_tmp"))
         .collect();
     assert!(leftovers.is_empty(), "不应残留临时文件: {leftovers:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_line_mode_without_read_baseline_is_rejected_with_code() {
+    // F1 回归：本轮没 `read_file` 过、调用方也没传 `base_revision` 时，行号类模式必须拒写，
+    // 而不是凭记忆的行号直接落盘；`allow_stale_revision=true` 仍是显式逃生门。
+    let dir = make_test_dir();
+    let file = dir.join("nobase.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+
+    let err = modify_file_try(
+        r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#,
+        &dir,
+        &ctx,
+    )
+    .expect_err("无快照基线的行号编辑应被拒绝");
+    assert_eq!(err.code, "missing_revision_baseline", "{}", err.message);
+    assert_eq!(
+        std::fs::read_to_string(&file).unwrap(),
+        "L1\nL2\nL3\n",
+        "拒写后文件必须保持原样"
+    );
+
+    // 显式承担风险后放行（仍须按当前行号写入）。
+    let out = modify_file(
+        r#"{"path":"nobase.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nX\nL3\n");
     let _ = std::fs::remove_dir_all(&dir);
 }

@@ -6,6 +6,8 @@
 //!   的行号类模式（`replace_lines` / `insert_after_line` / `edits`）默认拿它做写前校验，
 //!   模型不传 `base_revision` 也生效，避免同一条消息内多个工具调用都基于旧快照、
 //!   按已漂移的行号误改文件；
+//! - 若本轮没有该文件的 `read_file` 记录且调用方未传 `base_revision`，行号类模式**拒绝写入**
+//!   （`错误[missing_revision_baseline]`），不再静默放行；
 //! - 显式 `base_revision` 优先且始终校验；`allow_stale_revision=true` 只跳过轮次自动绑定；
 //! - `mode=full/overwrite` 不依赖行号，不做自动绑定。
 
@@ -74,7 +76,7 @@ pub(super) fn allow_stale_revision_arg(v: &Value) -> bool {
 }
 
 /// 写前 revision 校验：显式 `base_revision` 优先且始终校验；否则在 `auto_bind` 时
-/// 使用本轮 `read_file` 记录的 revision。`allow_stale_revision` 只影响后者。
+/// 使用本轮 `read_file` 记录的 revision；**没有记录即拒写**。`allow_stale_revision` 只影响后者。
 pub(super) fn verify_write_revision(
     v: &Value,
     target: &Path,
@@ -91,9 +93,25 @@ pub(super) fn verify_write_revision(
         .read_file_turn_cache
         .and_then(|c| c.last_read_revision(target))
     else {
-        return Ok(());
+        return Err(missing_revision_baseline(target));
     };
     verify_revision(target, &expected, RevisionSource::TurnRead)
+}
+
+/// 行号类编辑拿不到快照基线时的拒写提示。
+///
+/// 「本轮没读过该文件」曾直接放行，等于允许凭记忆写 `start_line` 落盘——恰是「按过期快照定位」
+/// 最危险的形态。现在要求先取得基线，或由调用方显式承担风险（`allow_stale_revision=true`）。
+fn missing_revision_baseline(target: &Path) -> String {
+    format!(
+        "错误[missing_revision_baseline]：行号类编辑缺少快照基线，拒绝写入（{NOT_WRITTEN_HINT}）。\n\
+         路径：{}\n\
+         原因：本轮尚未对目标文件调用 read_file，调用方也未传 base_revision，无法校验行号是否仍对应当前内容。\n\
+         请先 read_file 该文件（输出头含 revision，服务端同时登记本轮绑定）再按当前行号修改；\
+         或显式传入 read_file 得到的 base_revision；或改用 search_replace 按文本锚定编辑；\
+         若确认要基于当前内容写入，可显式传 allow_stale_revision=true。",
+        target.display()
+    )
 }
 
 /// 校验 `expected` 与目标文件当前 revision；不一致返回可直接作为工具输出的错误正文。
