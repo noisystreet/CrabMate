@@ -223,16 +223,9 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         m.insert("ar", check_cmd("ar", &["--version"]));
         m.insert("npm", check_cmd("npm", &["--version"]));
         m.insert("python3", check_cmd("python3", &["--version"]));
-        m.insert("mvn", check_cmd("mvn", &["--version"]));
-        m.insert("gradle", check_cmd("gradle", &["--version"]));
         m.insert("docker", check_cmd("docker", &["--version"]));
-        m.insert("podman", check_cmd("podman", &["--version"]));
         // GitHub CLI：默认 run_command 白名单含 `gh`；未安装时工具调用会失败
         m.insert("gh", check_cmd("gh", &["version"]));
-
-        m.insert("typos", check_cmd("typos", &["--version"]));
-        m.insert("codespell", check_cmd("codespell", &["--version"]));
-        m.insert("ast_grep", check_cmd("ast-grep", &["--version"]));
 
         m
     })
@@ -258,14 +251,8 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
             "ar" => "dep_ar",
             "npm" => "dep_npm",
             "python3" => "dep_python3",
-            "mvn" => "dep_mvn",
-            "gradle" => "dep_gradle",
             "docker" => "dep_docker_cli",
-            "podman" => "dep_podman",
             "gh" => "dep_gh",
-            "typos" => "dep_typos",
-            "codespell" => "dep_codespell",
-            "ast_grep" => "dep_ast_grep",
             _ => continue,
         };
         checks.insert(key.to_string(), {
@@ -291,7 +278,6 @@ fn dep_check_label(check_key: &str) -> String {
         "clang_format" => "clang-format".to_string(),
         "strings_binutils" => "strings".to_string(),
         "docker_cli" => "docker".to_string(),
-        "ast_grep" => "ast-grep".to_string(),
         other => other.replace('_', "-"),
     }
 }
@@ -447,14 +433,14 @@ mod health_status_tests {
             },
         );
         checks.insert(
-            "dep_typos".into(),
+            "dep_gh".into(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("No such file or directory (os error 2)".into()),
             },
         );
         checks.insert(
-            "dep_codespell".into(),
+            "dep_npm".into(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("No such file or directory (os error 2)".into()),
@@ -465,8 +451,8 @@ mod health_status_tests {
             checks,
         });
         assert!(summary.contains("【可选 CLI 未安装 2 项】"));
-        assert!(summary.contains("typos"));
-        assert!(summary.contains("codespell"));
+        assert!(summary.contains("gh"));
+        assert!(summary.contains("npm"));
     }
 
     #[test]
