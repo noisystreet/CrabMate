@@ -4,7 +4,7 @@
 
 ### Project overview
 
-CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides HTTP **`serve`** (Axum) and ops CLIs; **official Web UI / Desktop / remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui`** (clap entry **and** implementation) **are removed** (D2.2; see `docs/design/client_shell_split.md`). See `README.md` for quick start; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview. If you change module layout or layering, update `docs/开发文档.md` per `.trae/rules/architecture-docs-sync.mdc` (or `.cursor/rules/` for Cursor IDE).
+CrabMate is a Rust-based AI Agent that calls **OpenAI-compatible** `chat/completions` backends (e.g. **DeepSeek**, **MiniMax**, **Zhipu GLM**, **Moonshot Kimi**, **Ollama**). It provides HTTP **`serve`** (Axum) and ops CLIs; **official Web UI / Desktop / remote terminal (`crabmate-tui`)** live in **[`crabmate-client`](https://github.com/noisystreet/crabmate-client)** (local sibling `../crabmate-client`; Playwright forwarding honors **`CRABMATE_CLIENT_DIR`**). In-process **`repl` / `chat` / `tui`** (clap entry **and** implementation) **are removed** (D2.2; see `docs/design/client_shell_split.md`). See `README.md` for quick start; `docs/配置说明.md` for env vars and TOML; `docs/命令行与路由.md` for subcommands and routes; `docs/工具说明.md` for built-in tools; `docs/开发文档.md` for architecture overview. If you change module layout or layering, update `docs/开发文档.md` per **Repository engineering rules → Architecture & documentation sync** below (long form: `.cursor/rules/architecture-docs-sync.mdc`).
 
 ### Agent workspace
 
@@ -80,3 +80,105 @@ Standard commands from `README.md`:
 - When starting the server with `--host 0.0.0.0` (non-loopback), you must either set `CM_WEB_API_BEARER_TOKEN` or `CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`; otherwise the server refuses to start.
 - **Temporary skip of Web Bearer while testing**: middleware checks only when the server secret is non-empty. Prefer `unset CM_WEB_API_BEARER_TOKEN` (and clear TOML **`web_api_bearer_token`**) then **`serve --host 127.0.0.1`**. For **`0.0.0.0`** without auth: clear the secret first, then **`CM_ALLOW_INSECURE_NO_AUTH_FOR_NON_LOOPBACK=true`** (trusted LAN only; a non-empty secret still yields 401). See **`docs/配置说明.md`**.
 - Optional hardening: set **`web_api_require_bearer=true`** and a non-empty **`CM_WEB_API_BEARER_TOKEN`** / **`web_api_bearer_token`** / **`crabmate web-bearer set`** before **`serve`** so startup fails without a shared secret; embedded default is **`web_api_require_bearer=false`** (UI can load without server-side token, but protected routes stay open until you configure a secret—see auth middleware). The browser must also save the **same** shared secret under Web **Settings → “Web API shared secret (Bearer)”** (in-page + **`localStorage`** key **`crabmate-api-bearer-token`**); this is **not** the LLM **`API_KEY`**. See **`README.md`** / **`docs/配置说明.md`**.
+
+## Repository engineering rules
+
+**This section is authoritative for agents.** Each subsection mirrors one `.cursor/rules/*.mdc` file; those files are kept for the Cursor/Trae IDE, but the agent reads *this* section — open the matching `.mdc` only when you need the long-form rationale. If a rule changes, update both (see `.cursor/rules/README.md`).
+
+### Commit & push
+
+- Before **every** `git commit`: `pre-commit run --all-files`. If `pre-commit` is not installed, run at least, from the repo root: `cargo fmt --all`; `cargo clippy --all-targets --all-features -- -D warnings`; `bash scripts/lizard-rust.sh` (Rust CCN ≤ 10); `bash scripts/fn-param-ratchet.sh` (≤ 9 params); `bash scripts/fn-nloc-ratchet.sh` (fn nloc ≤ 200, file ≤ 920 lines).
+- Fix hook failures and re-run until green; `git add` any file the hooks rewrote, then commit. **`--no-verify` is prohibited** — if the user explicitly demands an exception, state the risk in the reply.
+- **Subject format**: `type(scope): 中文简述 / English brief` — Conventional Commits + bilingual, `scope` written **once in English**, both sides verb-first and symmetric. Mark incompatible changes with `!` after the type/scope or a `BREAKING CHANGE:` footer. Bare messages like「更新」「修改」are rejected by the `commit-msg` hook.
+- **Before `git push`**: `git fetch origin main` → `git rebase origin/main` → resolve conflicts (`git add` + `git rebase --continue`) → re-run the checks above → push. A `--force-with-lease` needed by the rebase requires explicit user authorization.
+- **`cargo test` is not part of pre-commit.** Scope it yourself:
+
+| Change | Test scope |
+|--------|-----------|
+| Single module / file | `cargo test -p crabmate <filter>` or just the related tests |
+| `Cargo.toml`, workspace, cross-module types, `src/lib.rs` / public API, protocol / SSE / config loading | full `cargo test` |
+| Pre-merge, release, CI alignment | full `cargo test` |
+
+- New logic without test coverage: add a unit or minimal integration test if feasible; if not, state the risk and plan in the PR / reply.
+
+### Rust error handling
+
+- **No bare `unwrap()` / `expect("…")` on production paths.** Prefer `?` plus context (`.map_err` with an explanation).
+- `expect` is allowed only where the invariant is documented in the message: startup-path init in `src/main.rs` that should abort the process anyway, and one-shot `LazyLock` / `OnceLock` initialization. `#[cfg(test)]` / `tests/` / `benches/` may use them freely, but failure messages must stay readable.
+- **`unsafe`: do not write it by default.** If unavoidable — smallest possible scope, a comment directly above the block stating *why it is sound* (invariant, preconditions, which FFI/library contract it binds), and never copy the same unsafe logic in several places without wrapping it.
+- `panic!` is for unreachable branches only, never for expected IO/parse failures (return `Result`).
+
+### Secrets & logging
+
+- Never put real **API keys, tokens, private keys, DB passwords** into `src/`, `config/*.toml`, fixtures, scripts, **commit messages**, PR/Issue bodies, or comments that look like real values.
+- `.env` / `.env.*`: keep local only (gitignored); never paste their **contents** into chat, docs, patches, or screenshots. Examples use placeholders (`YOUR_DEEPSEEK_API_KEY`); any `sk-…` sample must be marked fictitious.
+- If a real secret was committed: **rotate it immediately** and rewrite history — a plain `git revert` is not enough.
+- `tracing` / `log` / `eprintln!` / error strings returned to clients: never emit a full key, a whole `Authorization: Bearer …`, or a URL carrying a real `?key=` / `?token=`. Log only *whether set*, length, or a few leading/trailing chars (or use the shared redact helpers).
+- Tool arguments, subprocess stdout, and third-party response bodies may contain credentials — truncate/redact before writing them to disk or logs. User-facing text stays generic (e.g.「API 密钥无效」).
+- While reviewing a diff, check for newly added key-shaped constants and for `std::env` / `process.env` values concatenated straight into logs.
+
+### Security-sensitive surfaces
+
+When touching any of these, explicitly check the boundary and state risk + mitigation in the PR / reply:
+
+| Area | Entry points | Focus |
+|------|--------------|-------|
+| Workspace switching & paths | `src/web/workspace/`, `src/workspace/path.rs`, `src/workspace/fs.rs`, `src/tools/file/path.rs` | Normalization, no unauthorized arbitrary directories, `..` / symlink handling; Linux already uses `openat2` `RESOLVE_IN_ROOT` on some paths — residual TOCTOU is documented in `path_workspace` / `workspace_fs` and must not be softened. |
+| Command execution | `src/tools/command.rs`, allowlist config, `run_command` in `tool_registry` | Allowlisted commands only; `..` / absolute-path argument rejections stay as-is unless intentionally changed *and* documented. |
+| HTTP fetching | `src/tools/http_fetch.rs`, `http_fetch` / `http_request`, `http_fetch_allowed_prefixes` | Conservative prefixes; approval semantics for unmatched URLs (including the `http_request` METHOD key) must match the docs. |
+| File read/write tools | `src/tools/file.rs` and friends | `resolve_for_read` / `resolve_for_write` semantics must not be bypassed. |
+
+Do **not** weaken security notes in comments or docs to hide an unmitigated path; known gaps live in `docs/待办清单.md`.
+
+### Architecture & documentation sync
+
+- Changing **architecture** or `src/` module organization ⇒ review and update `docs/开发文档.md`: the「架构设计」section (layering, Web data-flow summary, Mermaid nodes/edges) and the「主要模块」responsibility table. Keep it an overview — details belong in topical docs; do not re-grow a per-file table there (tool inventory lives in `docs/工具说明.md` / the registry).
+- Triggers: adding/removing `mod` in `src/lib.rs`, reorganizing `Router` / `AppState`, creating/renaming/deleting `src/` files or directories, a file's primary responsibility changing, `tool_registry` gaining a new execution class, `runtime/` / `web/` submodule boundaries moving.
+- Not needed: pure implementation changes, private renames, comments/formatting, `tests/` / `#[cfg(test)]` / fixtures only.
+- **User-visible changes** (CLI flags, API, config keys, TUI/Web behavior, tools) ⇒ also `README.md` (usage) and `docs/工具说明.md` (tools). Internal refactors with no behavior change may update only `DEVELOPMENT.md` / comments.
+- Changing `config/*.toml`, axum routes/handlers (path, method, request/response body, new endpoints), or adding/renaming/removing a `CM_*` env var ⇒ **must** update `README.md` (users: how to configure, defaults, names) and `docs/开发文档.md` (maintainers: key meaning, module boundaries).
+- `docs/待办清单.md`: delete an item once implemented (never park `- [x]` entries; use git history for "when"); drop a heading when its last item is gone.
+
+### Chat / SSE contract (both ends)
+
+These paths and concepts are **coupled** — when one changes, verify the Rust routes/handlers, the Client parser, and the docs together:
+
+- **Routes & bodies**: `/chat`, `/chat/stream` in `src/lib.rs`; request/response JSON fields.
+- **SSE wire protocol**: `src/cm_sse_protocol/` (root re-export `crate::sse`); `SSE_PROTOCOL_VERSION`; payload types, error codes, `data:` framing. Authoritative table: `docs/SSE协议.md`, aligned with `../crabmate-client/frontend/src/api/chat_stream/parser_v2.rs`, `frontend/src/sse_dispatch/types.rs`, `frontend/src/api/`.
+- **`src/cm_sse_protocol/sse/line.rs`** (`classify_agent_sse_line`) has no production consumer on purpose — it is a deliberately kept anchor for single-implementation semantics. **Do not** clean it up as dead code; keep it consistent with the Web consumer, or document an intentional divergence in both the code comment and `docs/SSE协议.md`.
+- Checklist: field add/remove/rename ⇒ serde types + Client `parser_v2.rs` + `sse_dispatch/types.rs` + protocol docs. Control-plane dispatch order or new top-level keys ⇒ `src/cm_sse_protocol/control_classify.rs`, `fixtures/sse_ag_ui_golden.jsonl` (+ `fixtures/sse_control_golden.jsonl` if still maintained), and Client `parser_v2.rs`; run `cargo test --lib golden_ag_ui_classify_matches_expected` (and `cd ../crabmate-client/frontend && cargo test golden_ag_ui_v2_parser_matches_expected`). New error codes ⇒ front-end display/retry path, and no secrets in the response body.
+- **This repo has no `frontend/` sources.** UI checks run in the Client repo: `make frontend-check` (wasm `cargo check`) / `make frontend` (trunk build); contract pin `client-contract-v*`.
+
+### Tool registry (`src/tools/`)
+
+Adding or renaming a tool — check in order:
+
+1. `src/tools/tool_specs_registry/specs/*.inc.rs`: add the `ToolSpec` (`name`, `description`, `category`, `parameters` = `schema_of::<XArgs>`, `runner`, `summary`). A new shard also needs `include!`, `extend_from_slice` and `cap` updates in `mod.rs`.
+2. `src/tools/mod.rs` / `runners.rs`: submodule + a thin `runner_*` wrapper (implementation in `runners.rs`, re-exported via `pub(crate) use runners::*`). Parse args with `parse_args_json`, not ad-hoc `serde_json::from_str`.
+3. `tool_summary_args.rs` + `tool_summary.rs`: `Deserialize` struct + `ToolSummaryLine` impl, then a `summary_xxx` wrapper calling `summarize_from_value::<…>`.
+4. Args structs (`Deserialize` + `schemars::JsonSchema`) live in `src/cm_tools/tools/tool_param_types/` (`mod.rs` + `part_*.inc.rs`); the schema and the runtime parse share one definition.
+5. Dispatch/timeout: only complex strategies need `tool_registry` registration; most `SyncDefault` tools need none.
+6. `src/tools/dev_tag.rs` `tags_for_tool_name`: add the mapping for `Development`-only tools (`Basic` may skip).
+7. Whitelist/approval: if it runs commands, touches the network, or writes to disk, keep it consistent with the `run_command` allowlist, `http_fetch` prefixes, and TUI `CommandApproval` — do not widen the attack surface.
+8. Docs: user-visible capability ⇒ `README.md` + `docs/工具说明.md`; do not dump per-tool implementation notes back into `docs/开发文档.md`.
+9. Only update the「主要模块」table when the tool system's responsibilities/boundaries change.
+
+### Dependencies & licenses
+
+Triggers: edits to the root `Cargo.toml` / `Cargo.lock` (new crate, major bump, new feature); shell dependencies live in the Client repo (`../crabmate-client/desktop-tauri/src-tauri/Cargo.toml`).
+
+- Check the new crate's **license** against how the project is distributed; watch **copyleft** (GPL) and **network clauses** (AGPL). `deny.toml` backs `cargo deny check licenses bans sources` (CI: `.github/workflows/dependency-security.yml`) — a new identifier not in the allowlist means updating `deny.toml` **with a stated reason**.
+- `cargo audit` covers known vulnerabilities; it and `cargo deny` advisories are intentionally split (see `docs/开发文档.md`).
+- Keep lockfiles (`Cargo.lock`, `package-lock.json`) consistent with the manifests so reproducible builds hold.
+- Local path / git dependencies: explain the source and update strategy in the PR or `docs/开发文档.md`.
+- This is not legal advice; material compliance decisions need a human.
+
+### CLI / TUI / Web shared logic
+
+After D2.2 the in-process `chat` / `repl` / `tui` are hard-deleted. Surfaces: this repo's ops CLIs (`serve`, `doctor`, `web-bearer`, `save-session`, `tool-replay`), Client **`crabmate-tui`** (HTTP + SSE), Client Web/Desktop UI (this repo's `lib` HTTP + SSE).
+
+- For each new capability, first decide whether it is **inherently one surface** (Web-only route, TUI-only shortcut, ops-only subcommand form).
+- If **not** inherent: make it reachable from the ops CLI, `crabmate-tui`, and Web; differences should be interaction and presentation only.
+- If **inherent**: implementing it on one surface is fine, but the **data model, tool execution and config keys** still belong in the shared layer (`agent/`, contract types) so the others can adopt it.
+- Put UI-independent rules in reusable modules (`agent/`, `types`, `sse::protocol`, `tool_registry`, UI-agnostic parts of `runtime/`); session/export shapes already live in `runtime/workspace_session` and `runtime/chat_export` — extend the same contract.
+- Pure UI details (keyboard, focus, components, terminal drawing) and genuinely surface-specific needs are exempt, but core data structures and tool execution still go through the shared layer.

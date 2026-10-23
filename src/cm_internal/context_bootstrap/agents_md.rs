@@ -8,10 +8,36 @@
 //! （`refresh_existing_turn_system`），因此 `AGENTS.md` 的改动会在下一轮生效，同时使该会话的
 //! `system` 前缀缓存失效——「规则实时生效」与「前缀命中率」之间当前选前者。
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// 规则文件名（固定位于会话工作区根）。
 pub const AGENTS_MD_FILE: &str = "AGENTS.md";
+
+/// 解析 `<root>/AGENTS.md`，并挡住**逃出工作区**的软链。
+///
+/// 该文件内容会进入 `system` 并发往模型，因此一个指向白名单外文件的 symlink
+/// 等于让工作区把任意本机文件（如 `/etc/passwd`）读进对话。工作区**内部**的软链仍允许。
+/// 非 Unix 平台不做该检查（沿用读取失败即忽略的旧行为）。
+#[cfg(unix)]
+fn resolve_agents_md_path(workspace_root: &Path) -> Option<PathBuf> {
+    let path = workspace_root.join(AGENTS_MD_FILE);
+    let real = std::fs::canonicalize(path).ok()?;
+    let root = std::fs::canonicalize(workspace_root).ok()?;
+    if real.starts_with(&root) {
+        return Some(real);
+    }
+    log::debug!(
+        target: "crabmate",
+        "AGENTS.md 解析到工作区外（symlink 逃逸？），已忽略：{}",
+        real.display()
+    );
+    None
+}
+
+#[cfg(not(unix))]
+fn resolve_agents_md_path(workspace_root: &Path) -> Option<PathBuf> {
+    Some(workspace_root.join(AGENTS_MD_FILE))
+}
 
 /// 读取 `<workspace_root>/AGENTS.md` 并渲染为可追加到 `system` 的段落。
 ///
@@ -27,7 +53,7 @@ pub fn load_agents_md_block(
     if !enabled || max_chars == 0 || workspace_root.as_os_str().is_empty() {
         return None;
     }
-    let raw = std::fs::read_to_string(workspace_root.join(AGENTS_MD_FILE)).ok()?;
+    let raw = std::fs::read_to_string(resolve_agents_md_path(workspace_root)?).ok()?;
     let body = raw.trim();
     if body.is_empty() {
         return None;
@@ -102,6 +128,29 @@ mod tests {
             "超上限：{}",
             block.chars().count()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_agents_md_symlinked_outside_workspace() {
+        // 内容会进 `system` 并发往模型：指向白名单外文件的软链必须被忽略。
+        let ws = tempfile::tempdir().expect("tempdir");
+        let outside = tempfile::tempdir().expect("tempdir");
+        let secret = outside.path().join("secret.md");
+        std::fs::write(&secret, "外部内容").expect("write");
+        std::os::unix::fs::symlink(&secret, ws.path().join("AGENTS.md")).expect("symlink");
+        assert!(load_agents_md_block(ws.path(), true, 16_000).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_agents_md_symlink_inside_workspace() {
+        let ws = tempfile::tempdir().expect("tempdir");
+        std::fs::write(ws.path().join("real.md"), "内部规则\n").expect("write");
+        std::os::unix::fs::symlink(ws.path().join("real.md"), ws.path().join("AGENTS.md"))
+            .expect("symlink");
+        let block = load_agents_md_block(ws.path(), true, 16_000).expect("block");
+        assert!(block.contains("内部规则"), "{block}");
     }
 
     #[test]
