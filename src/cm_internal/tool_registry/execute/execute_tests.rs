@@ -240,7 +240,12 @@ pub(super) fn contains_cmd(allowed: &[String], cmd: &str) -> bool {
 async fn unknown_cmd_gate_decision_matrix() {
     use CommandApprovalDecision::{AllowAlways, AllowOnce, Deny};
 
-    let cfg = Arc::new(crate::cm_config::load_config(None).expect("embed default"));
+    let mut cfg = crate::cm_config::load_config(None).expect("embed default");
+    // `load_config` 会读环境覆盖：外部 shell 若设了 `CM_ALLOWED_COMMANDS=*`（本地跑 `serve` 常见），
+    // 「该命令不在白名单」的前提就失效，断言会与外部环境绑定。这里固定成窄白名单，
+    // 且**不含 `bash`**——下面的断言要验证「批准后把 bash 纳入生效白名单」。
+    cfg.command_exec.allowed_commands = vec!["cargo".to_string()].into();
+    let cfg = Arc::new(cfg);
     let cmd = "crabmate_unknown_gate_cmd";
     // `$HOME` 触发 shell 包装需求，批准后应同时把 bash 纳入生效白名单。
     let parsed = parsed_run_command(&format!(
@@ -604,6 +609,9 @@ async fn run_command_async_records_source_turn_job_id_and_cascades_cancel() {
 async fn run_command_async_rejects_allow_once_requiring_command() {
     let mut cfg = crate::cm_config::load_config(None).expect("embed default");
     cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
+    // 同 `unknown_cmd_gate_decision_matrix`：外部 `CM_ALLOWED_COMMANDS=*` 会让「未知命令」
+    // 变成放行、断言失真；固定成窄白名单（`definitely_not_allowlisted_cmd_xyz` 不在其中）。
+    cfg.command_exec.allowed_commands = vec!["cargo".to_string()].into();
     let cfg = Arc::new(cfg);
     let registry = crate::cm_internal::tool_jobs::registry_from_config(&cfg);
     let sandbox = async_test_sandbox();
