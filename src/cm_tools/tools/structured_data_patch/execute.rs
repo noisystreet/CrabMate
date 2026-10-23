@@ -78,7 +78,6 @@ fn prepare_structured_patch(
     args_json: &str,
 ) -> Result<(StructuredPatchArgs, String, String, &'static str), String> {
     let args = parse_structured_patch_args(args_json)?;
-    validate_write_intent(&args)?;
     let path = nonempty_trimmed(&args.path)
         .ok_or_else(|| "错误：缺少 path".to_string())?
         .to_string();
@@ -94,15 +93,6 @@ fn prepare_structured_patch(
 
 fn parse_structured_patch_args(args_json: &str) -> Result<StructuredPatchArgs, String> {
     crate::cm_tools::tools::parse_args_typed(args_json)
-}
-
-fn validate_write_intent(args: &StructuredPatchArgs) -> Result<(), String> {
-    if !args.dry_run && !args.confirm {
-        return Err(
-            "错误：structured_patch 写盘需 confirm=true；建议先 dry_run=true 预览".to_string(),
-        );
-    }
-    Ok(())
 }
 
 fn nonempty_trimmed(s: &str) -> Option<&str> {

@@ -24,7 +24,7 @@ use crate::cm_tools::workspace::fs::{
     write_bytes_under_root,
 };
 
-use super::write_precheck::NOT_WRITTEN_HINT;
+use super::write_precheck;
 
 fn parse_delete_dir_args(args_json: &str) -> Result<DeleteDirArgs, String> {
     crate::cm_tools::tools::parse_args_typed(args_json)
@@ -586,7 +586,7 @@ fn search_replace_dry_run_preview(
     if shown >= 20 {
         preview.push_str("  ... (更多变更已省略)\n");
     }
-    preview.push_str("\n设置 dry_run=false, confirm=true 以实际写入");
+    preview.push_str("\n设置 dry_run=false 以实际写入");
     preview
 }
 
@@ -608,19 +608,16 @@ fn search_replace_path_and_query(args: &SearchReplaceArgs) -> Result<(String, St
     Ok((path, args.search.clone()))
 }
 
-/// 写盘前闸门：`confirm` 确认 + 语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
+/// 写盘前闸门：语法预检（失败返回 `校验失败（CODE）…` 拒写消息）。
+///
+/// 写盘口径已统一为「一个旋钮」——显式 `dry_run=false` 即写，不再要求 `confirm=true`；
+/// `confirm` 字段保留以兼容既有调用（继续传也不会被拒）。
 #[allow(clippy::result_large_err)]
-fn search_replace_confirm_and_precheck(
-    confirm: bool,
+fn search_replace_precheck(
     skip_precheck: bool,
     path: &str,
     new_content: &str,
 ) -> Result<(), ToolError> {
-    if !confirm {
-        return Err(ToolError::invalid_args(format!(
-            "拒绝执行：search_replace 写盘需要 confirm=true（{NOT_WRITTEN_HINT}）"
-        )));
-    }
     super::write_precheck::precheck_before_write(path, new_content, skip_precheck)
         .map_err(|e| ToolError::write_precheck_failed("search_replace", e))
 }
@@ -663,7 +660,6 @@ pub fn search_replace_try(
     let replace = args.replace;
     let is_regex = args.regex;
     let dry_run = args.dry_run;
-    let confirm = args.confirm;
     let max_replacements = args.max_replacements.unwrap_or(0) as usize;
 
     let (target, content) = load_search_replace_file_bytes(working_dir, &path)?;
@@ -689,7 +685,7 @@ pub fn search_replace_try(
         ));
     }
 
-    search_replace_confirm_and_precheck(confirm, args.skip_precheck, &path, &new_content)?;
+    search_replace_precheck(args.skip_precheck, &path, &new_content)?;
 
     let before = content.clone();
     let base = canonical_workspace_root(working_dir).map_err(ToolError::path_resolve_failed)?;

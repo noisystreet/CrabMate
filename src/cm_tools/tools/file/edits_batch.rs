@@ -455,7 +455,8 @@ pub(super) fn modify_file_batch_edits(
         Ok(e) => e,
         Err(e) => return e,
     };
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+    // 默认只预览：显式 `dry_run=false` 才写盘（与 `search_replace` / `structured_patch` 统一）。
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
     let skip_precheck = v
         .get("skip_precheck")
         .and_then(|x| x.as_bool())

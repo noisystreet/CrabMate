@@ -124,6 +124,7 @@ pub struct StructuredPatchArgs {
     pub create_missing: bool,
     #[serde(default = "default_true")]
     pub dry_run: bool,
+    /// 兼容保留：写盘只需 `dry_run=false`，本字段不再被校验。
     #[serde(default)]
     pub confirm: bool,
 }
@@ -449,6 +450,7 @@ pub struct SearchReplaceArgs {
     pub max_replacements: Option<u64>,
     #[serde(default = "default_true")]
     pub dry_run: bool,
+    /// 兼容保留：写盘只需 `dry_run=false`，本字段不再被校验。
     #[serde(default)]
     pub confirm: bool,
     /// 为 `true` 时跳过写盘前语法校验（默认 `.py`/`.json`/`.toml` 会校验，失败拒写）。

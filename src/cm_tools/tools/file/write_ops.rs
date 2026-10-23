@@ -429,7 +429,8 @@ fn modify_file_dispatch_full_mode(
         .and_then(|c| c.as_str())
         .map(String::from)
         .unwrap_or_default();
-    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(false);
+    // 默认只预览：显式 `dry_run=false` 才写盘（与 `search_replace` / `structured_patch` 统一）。
+    let dry_run = v.get("dry_run").and_then(|x| x.as_bool()).unwrap_or(true);
     let confirm_full_overwrite = v
         .get("confirm_full_overwrite")
         .and_then(|x| x.as_bool())
