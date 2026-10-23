@@ -15,6 +15,7 @@
 
 mod normalize;
 mod output_header;
+mod run_command;
 mod tool_error;
 
 pub use normalize::{
@@ -33,6 +34,11 @@ pub use tool_error::{ToolError, ToolFailureCategory, failure_category_for_error_
 use std::borrow::Cow;
 
 use serde_json::Value;
+
+use run_command::{
+    exit_code_in_header_region, extract_streams, looks_like_failure, parse_exit_code,
+    run_command_structured_payload, strip_leading_command_invocation_line,
+};
 
 #[derive(Debug, Clone)]
 pub struct ToolResult {
@@ -58,18 +64,6 @@ pub struct ParsedLegacyOutput {
     pub stdout: String,
     pub stderr: String,
     pub error_code: Option<String>,
-}
-
-/// 跳过 `run_command` 正文可能开头的 `命令：…` 行，使后续仍以 `退出码：` 行为准。
-fn strip_leading_command_invocation_line(output: &str) -> &str {
-    let mut s = output.trim_start();
-    if let Some(idx) = s.find('\n') {
-        let first = s[..idx].trim();
-        if first.starts_with("命令：") {
-            s = s[idx + 1..].trim_start();
-        }
-    }
-    s
 }
 
 /// 首行是否为 `crabmate_tool_output` 结构化头。
@@ -100,7 +94,8 @@ fn structured_header_output_ok(header: &CrabmateToolOutputMeta, body: &str) -> b
 pub fn parse_legacy_output(tool_name: &str, output: &str) -> ParsedLegacyOutput {
     let body = strip_leading_command_invocation_line(output);
     let first = body.lines().next().unwrap_or("").trim();
-    let exit_code = parse_exit_code(first);
+    // 首行通常即 `退出码：N`；多行 `命令：` 回显会让首行落在参数正文上，故再扫头部区域。
+    let exit_code = parse_exit_code(first).or_else(|| exit_code_in_header_region(output));
     let (stdout, stderr) = extract_streams(output);
 
     let header = CrabmateToolOutputMeta::parse_line(first);
@@ -153,28 +148,6 @@ impl ToolResult {
             error_code: parsed.error_code,
         }
     }
-}
-
-fn parse_exit_code(first_line: &str) -> Option<i32> {
-    if let Some(rest) = first_line.strip_prefix("退出码：") {
-        return rest.trim().parse::<i32>().ok();
-    }
-    let idx = first_line.find("(exit=")?;
-    let rest = &first_line[idx + "(exit=".len()..];
-    let end = rest.find(')')?;
-    rest[..end].trim().parse::<i32>().ok()
-}
-
-fn looks_like_failure(first_line: &str) -> bool {
-    if first_line.is_empty() {
-        return false;
-    }
-    first_line.starts_with("错误")
-        || first_line.starts_with("未知工具")
-        || first_line.starts_with("参数解析错误")
-        || first_line.starts_with("执行失败")
-        || first_line.contains("失败")
-        || first_line.contains("超时")
 }
 
 /// 与 `error_code` 配套的**启发式**：是否值得由编排层自动重试（超时、工作流汇合类）；多数业务失败为 `false`。
@@ -351,59 +324,6 @@ fn capture_http_v1_field(
     } else if let Some(rest) = t.strip_prefix("状态:") {
         *status_line = Some(rest.trim().to_string());
     }
-}
-
-fn run_command_structured_payload(raw_output: &str) -> Value {
-    let invocation = raw_output
-        .lines()
-        .next()
-        .and_then(|line| line.strip_prefix("命令："))
-        .map(str::trim)
-        .unwrap_or("")
-        .to_string();
-    let body = strip_leading_command_invocation_line(raw_output);
-    let first = body.lines().next().unwrap_or("").trim();
-    let exit_code = parse_exit_code(first);
-    let ok = if let Some(code) = exit_code {
-        code == 0
-    } else {
-        !looks_like_failure(first)
-    };
-    let (stdout, stderr) = extract_streams(raw_output);
-    serde_json::json!({
-        "kind": "crabmate_structured_payload",
-        "tool": "run_command",
-        "version": 1_u64,
-        "schema": "run_command_exit_v1",
-        "invocation": invocation,
-        "ok": ok,
-        "exit_code": exit_code,
-        "stdout_nonempty": !stdout.is_empty(),
-        "stderr_nonempty": !stderr.is_empty(),
-    })
-}
-
-fn extract_streams(output: &str) -> (String, String) {
-    let stdout_marker = "标准输出：\n";
-    let stderr_marker = "标准错误：\n";
-
-    let stdout = if let Some(pos) = output.find(stdout_marker) {
-        let start = pos + stdout_marker.len();
-        let end = output[start..]
-            .find(stderr_marker)
-            .map(|i| start + i)
-            .unwrap_or(output.len());
-        output[start..end].trim().to_string()
-    } else {
-        String::new()
-    };
-    let stderr = if let Some(pos) = output.find(stderr_marker) {
-        let start = pos + stderr_marker.len();
-        output[start..].trim().to_string()
-    } else {
-        String::new()
-    };
-    (stdout, stderr)
 }
 
 /// 写入 `crabmate_tool` 时的可选关联字段（与 SSE `tool_result` 对齐）。
