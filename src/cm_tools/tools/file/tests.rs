@@ -263,7 +263,7 @@ fn test_modify_file_ok_ignores_failure_word_inside_diff_preview() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r##"{"path":"conf.py","mode":"replace_lines","start_line":2,"end_line":3,"content":"# 新内容"}"##,
+        r##"{"path":"conf.py","mode":"replace_lines","start_line":2,"end_line":3,"content":"# 新内容","allow_stale_revision":true}"##,
         &dir,
         &ctx,
     );
@@ -284,7 +284,7 @@ fn test_modify_file_replace_lines() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X"}"#,
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -303,7 +303,7 @@ fn test_modify_file_infers_replace_lines_when_line_range_present() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","start_line":2,"end_line":2,"content":"X"}"#,
+        r#"{"path":"m.txt","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -321,7 +321,7 @@ fn test_modify_file_replace_lines_swaps_inverted_range() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":3,"end_line":2,"content":"X"}"#,
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":3,"end_line":2,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -339,7 +339,7 @@ fn test_modify_file_insert_after_line() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"INS"}"#,
+        r#"{"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"INS","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -357,7 +357,7 @@ fn test_modify_file_line_range_out_of_bounds_shows_tail_context() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":9,"end_line":9,"content":"X"}"#,
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":9,"end_line":9,"content":"X","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
@@ -476,7 +476,7 @@ fn test_modify_file_replace_lines_dry_run_unchanged() {
     let ctx =
         crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
     let out = modify_file(
-        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true}"#,
+        r#"{"path":"m.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"Z","dry_run":true,"allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );

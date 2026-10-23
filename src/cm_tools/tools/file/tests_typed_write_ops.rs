@@ -246,7 +246,7 @@ fn modify_file_try_success_matches_string_face() {
     let dir_typed = make_test_dir();
     std::fs::write(dir_legacy.join("a.txt"), "L1\nL2\nL3\n").unwrap();
     std::fs::write(dir_typed.join("a.txt"), "L1\nL2\nL3\n").unwrap();
-    let args = r#"{"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X"}"#;
+    let args = r#"{"path":"a.txt","mode":"replace_lines","start_line":2,"end_line":2,"content":"X","allow_stale_revision":true}"#;
 
     let typed = assert_success_parity(
         &dir_legacy,
