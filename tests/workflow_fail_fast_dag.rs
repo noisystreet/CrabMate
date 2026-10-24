@@ -25,7 +25,7 @@ async fn workflow_fail_fast_marks_downstream_skipped_and_returns() {
                 },
                 {
                     "id": "downstream",
-                    "tool_name": "get_current_time",
+                    "tool_name": "json_format",
                     "tool_args": {},
                     "deps": ["fail"]
                 }

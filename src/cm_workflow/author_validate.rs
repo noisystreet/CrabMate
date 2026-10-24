@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn rejects_unsupported_version() {
         let root =
-            json!({ "version": 1, "workflow": {}, "steps": [{"id":"a","tool":"calc","args":{}}] });
+            json!({ "version": 1, "workflow": {}, "steps": [{"id":"a","tool":"json_format","args":{}}] });
         let err = validate_workflow_author_document(&root).unwrap_err();
         assert!(err.contains("不支持 version"));
     }
@@ -190,7 +190,7 @@ mod tests {
         let root = json!({
             "version": 2,
             "workflow": { "nodes": [] },
-            "steps": [{"id":"a","tool":"calc","args":{}}]
+            "steps": [{"id":"a","tool":"json_format","args":{}}]
         });
         let err = detect_author_document_mode(&root).unwrap_err();
         assert!(err.contains("不能同时"));

@@ -18,7 +18,7 @@ pub fn tool_parameters_schema_value<T: JsonSchema>() -> serde_json::Value {
 mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
-        AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
+        AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, JsonFormatArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
@@ -28,16 +28,16 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn calc_schema_has_required_expression() {
-        let v = tool_parameters_schema_value::<CalcArgs>();
+    fn json_format_schema_has_required_text_and_closed_object() {
+        let v = tool_parameters_schema_value::<JsonFormatArgs>();
         assert_eq!(v.get("type"), Some(&json!("object")));
         let req = v
             .pointer("/required")
             .and_then(|r| r.as_array())
             .expect("required array");
         assert!(
-            req.iter().any(|x| x == "expression"),
-            "schema missing required expression: {v}"
+            req.iter().any(|x| x == "text"),
+            "schema missing required text: {v}"
         );
         assert_eq!(
             v.pointer("/additionalProperties"),

@@ -644,7 +644,7 @@ mod health_view_tests {
             },
         );
         checks.insert(
-            "dep_bc".to_string(),
+            "dep_rustfmt".to_string(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("missing".into()),

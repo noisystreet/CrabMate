@@ -573,7 +573,7 @@ mod tests {
         let bad_deps = r#"{
           "workflow":{
             "validate_only":false,
-            "nodes":[{"id":"a","tool_name":"calc","deps":"not_array"}]
+            "nodes":[{"id":"a","tool_name":"json_format","deps":"not_array"}]
           }
         }"#;
         let err = validate_workflow_execute_do_contract(bad_deps).unwrap_err();
@@ -587,7 +587,7 @@ mod tests {
           "workflow":{
             "validate_only":false,
             "nodes":[
-              {"id":"a","tool_name":"calc","deps":["b"]}
+              {"id":"a","tool_name":"json_format","deps":["b"]}
             ]
           }
         }"#;
@@ -602,7 +602,7 @@ mod tests {
           "workflow":{
             "validate_only":false,
             "nodes":[
-              {"id":"a","tool_name":"calc","deps":[]}
+              {"id":"a","tool_name":"json_format","deps":[]}
             ]
           }
         }"#;
@@ -613,7 +613,7 @@ mod tests {
           "workflow":{
             "validate_only":false,
             "nodes":[
-              {"id":"a","tool_name":"calc"}
+              {"id":"a","tool_name":"json_format"}
             ]
           }
         }"#;

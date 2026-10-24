@@ -87,64 +87,14 @@ fn test_run_tool_try_unknown_is_err() {
 }
 
 #[test]
-fn test_run_tool_try_calc_ok() {
+fn test_run_tool_try_schema_rejects_wrong_type() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
-    let out = run_tool_try("calc", r#"{"expression":"1+1"}"#, &ctx).expect("calc");
-    assert!(out.contains('2'), "got {out:?}");
-}
-
-#[test]
-fn test_run_tool_try_calc_schema_rejects_wrong_type() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let e = run_tool_try("calc", r#"{"expression":1}"#, &ctx).expect_err("schema");
+    let e = run_tool_try("json_format", r#"{"text":1}"#, &ctx).expect_err("schema");
     assert_eq!(e.code, "invalid_args");
     assert!(e.message.contains("JSON Schema"), "{}", e.message);
 }
 
-#[test]
-fn test_run_tool_calc_missing_expression() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool("calc", "{}", &ctx);
-    assert!(
-        out.starts_with("错误：") && out.contains("JSON Schema"),
-        "应拒绝缺 expression（schema required），得到: {out}"
-    );
-}
-
-#[test]
-fn test_run_tool_calc_expression() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool("calc", r#"{"expression":"1+1"}"#, &ctx);
-    assert!(out.contains("2"), "calc 1+1 应得到 2，得到: {}", out);
-}
-
-#[test]
-fn test_run_tool_get_current_time() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool("get_current_time", "{}", &ctx);
-    assert!(
-        out.contains("当前时间"),
-        "时间工具应包含「当前时间」，得到: {}",
-        out
-    );
-}
-
-#[test]
-fn test_run_tool_convert_units() {
-    let allowed = test_allowed_commands();
-    let ctx = test_ctx(&allowed);
-    let out = run_tool(
-        "convert_units",
-        r#"{"category":"length","value":1,"from":"km","to":"mile"}"#,
-        &ctx,
-    );
-    assert!(out.contains("换算结果"), "应成功换算，得到: {out}");
-}
 
 #[tokio::test]
 async fn test_run_tool_run_command_pwd() {
@@ -260,9 +210,6 @@ fn test_run_tool_call_graph_sketch_smoke() {
 fn test_build_tools_names() {
     let tools = build_tools();
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
-    assert!(names.contains(&"get_current_time"));
-    assert!(names.contains(&"calc"));
-    assert!(names.contains(&"convert_units"));
     assert!(names.contains(&"get_weather"));
     assert!(names.contains(&"web_search"));
     assert!(names.contains(&"http_fetch"));
@@ -365,15 +312,13 @@ fn test_build_tools_filtered_basic_vs_development() {
     let full = build_tools();
     assert_eq!(basic.len() + dev.len(), full.len());
     let bn: Vec<_> = basic.iter().map(|t| t.function.name.as_str()).collect();
-    assert!(bn.contains(&"get_current_time"));
-    assert!(bn.contains(&"convert_units"));
     assert!(bn.contains(&"text_transform"));
     assert!(bn.contains(&"reminder"));
     assert!(!bn.contains(&"cargo_check"));
     let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
     assert!(dn.contains(&"cargo_check"));
     assert!(dn.contains(&"text_diff"));
-    assert!(!dn.contains(&"get_current_time"));
+    assert!(!dn.contains(&"text_transform"));
 }
 
 #[test]
@@ -543,7 +488,7 @@ fn test_search_in_files_try_invalid_regex_error_code() {
 
 #[test]
 fn test_summarize_tool_call_none() {
-    let s = summarize_tool_call("get_current_time", "{}");
+    let s = summarize_tool_call("text_transform", "{}");
     assert_eq!(s, None);
 }
 
@@ -634,8 +579,7 @@ fn test_build_tools_dev_tags_basic_plus_rust() {
         dev_tags: Some(rust_only.as_slice()),
     });
     let names: Vec<_> = tools.iter().map(|t| t.function.name.as_str()).collect();
-    assert!(names.contains(&"calc"));
-    assert!(names.contains(&"convert_units"));
+    assert!(names.contains(&"text_transform"));
     assert!(names.contains(&"cargo_check"));
     assert!(!names.contains(&"git_status"));
 }
@@ -710,7 +654,8 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 本轮下调：`add_reminder` / `list_reminders` / `complete_reminder` / `delete_reminder` /
     // `update_reminder` / `add_event` / `list_events` / `delete_event` / `update_event`
     // 九个 Legacy 合并为 `reminder` + `event`（−7）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 67 } else { 64 };
+    // 再下调：`get_current_time` / `calc` / `convert_units` 三个 Legacy 整体移除（−3）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 64 } else { 61 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

@@ -302,11 +302,11 @@ pub fn preset_scenarios() -> Vec<TestScenario> {
         },
         TestScenario {
             name: "orch_single_agent_tool".to_string(),
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
+            user_message: "请调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。"
                 .to_string(),
             workspace_files: vec![],
             expected_output_contains: vec![],
-            expected_tool_used: Some("get_current_time".to_string()),
+            expected_tool_used: Some("text_transform".to_string()),
             allowed_tools: None,
         },
         TestScenario {

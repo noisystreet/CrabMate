@@ -245,21 +245,6 @@ pub fn diagnostic_summary(args_json: &str, working_dir: &Path, extra_lines: &[St
         } else {
             out.push_str("  rustup default: 不可用或未安装\n");
         }
-        match Command::new("bc").arg("--version").output() {
-            Ok(o) if o.status.success() => {
-                let v = String::from_utf8_lossy(&o.stdout);
-                let line = v.lines().next().unwrap_or("").trim();
-                out.push_str(&format!(
-                    "  bc(calc 工具): 可用{}\n",
-                    if line.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" ({})", line)
-                    }
-                ));
-            }
-            _ => out.push_str("  bc(calc 工具): 不可用（/health 可能报 dep_bc 降级）\n"),
-        }
         if let Some(s) = capture_trimmed("gh", &["version"]) {
             let line = s.lines().next().unwrap_or(&s).trim();
             out.push_str(&format!("  gh(GitHub CLI): 可用 ({line})\n"));

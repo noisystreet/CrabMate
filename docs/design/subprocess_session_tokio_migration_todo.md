@@ -191,7 +191,7 @@ match tokio::time::timeout(REAP_WAIT, child.wait()).await { ... }
 | S6 | 沙盒容器 runner | [runner.rs](../../src/cm_internal/tool_sandbox/runner.rs#L181-L186)，入口 [main.rs](../../src/main.rs#L7-L13) | 是 | 见下「容器 runner」 | 中 |
 | S7 | chat `SyncDefault` 兜底（inline / `spawn_blocking` 两处 `run_tool`） | [execute_dispatch_body.inc.rs](../../src/cm_internal/tool_registry/execute/execute_dispatch_body.inc.rs#L154)、[同文件](../../src/cm_internal/tool_registry/execute/execute_dispatch_body.inc.rs#L189) | **否**（已被 `HandlerId` 分流） | 本次无需为 `run_command` 改动 | — |
 
-> `sync_default_runs_inline` 内联集合仅 `get_current_time` / `convert_units`（[registry_policy.rs](../../src/cm_tools/registry_policy.rs#L292-L300)），不涉及子进程工具。
+> `sync_default_runs_inline` 的内联集合原为 `get_current_time` / `convert_units`，二者已于 2026-10-24 移除、现默认为空集（见 [registry_policy.rs](../../src/cm_tools/registry_policy.rs#L292-L300)），不涉及子进程工具。
 
 **这不是 `run_command` 独有问题**——下列同步子进程工具同样挂在 `run_tool` 面上，共同决定「`run_tool` 是否要整体 async 化」的边界：
 

@@ -67,7 +67,7 @@ mod tests {
             id: "call_mock".into(),
             typ: "function".into(),
             function: FunctionCall {
-                name: "get_current_time".into(),
+                name: "json_format".into(),
                 arguments: "{}".into(),
             },
         };
@@ -81,7 +81,7 @@ mod tests {
             .dispatch(DispatchToolParams {
                 runtime,
                 call: DispatchToolCall {
-                    name: "get_current_time",
+                    name: "json_format",
                     args: "{}",
                     tc: &tc,
                 },

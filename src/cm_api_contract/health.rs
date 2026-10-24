@@ -41,7 +41,7 @@ mod tests {
             },
         );
         checks.insert(
-            "dep_bc".to_string(),
+            "dep_rustfmt".to_string(),
             HealthCheckItemView {
                 ok: false,
                 detail: Some("missing".into()),
@@ -63,7 +63,8 @@ mod tests {
             .expect("workspace_writable object");
         assert!(ws.get("detail").is_none(), "absent detail must be omitted");
         assert_eq!(
-            v.pointer("/checks/dep_bc/detail").and_then(|d| d.as_str()),
+            v.pointer("/checks/dep_rustfmt/detail")
+                .and_then(|d| d.as_str()),
             Some("missing")
         );
 
@@ -71,7 +72,10 @@ mod tests {
         assert_eq!(round.status, view.status);
         assert_eq!(round.checks.len(), 2);
         assert_eq!(round.checks["workspace_writable"].detail, None);
-        assert_eq!(round.checks["dep_bc"].detail.as_deref(), Some("missing"));
+        assert_eq!(
+            round.checks["dep_rustfmt"].detail.as_deref(),
+            Some("missing")
+        );
     }
 
     #[test]

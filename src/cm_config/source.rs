@@ -57,7 +57,7 @@ pub(super) struct ToolRegistrySection {
     pub(super) parallel_sync_denied_tools: Option<Vec<String>>,
     /// 禁止并行批的工具名前缀；省略则用内建默认前缀规则。
     pub(super) parallel_sync_denied_prefixes: Option<Vec<String>>,
-    /// 在当前 async 任务上**内联**执行的 SyncDefault 工具名（跳过 `spawn_blocking`）；省略则仅 `get_current_time`、`convert_units`。
+    /// 在当前 async 任务上**内联**执行的 SyncDefault 工具名（跳过 `spawn_blocking`）；省略则为空集。
     pub(super) sync_default_inline_tools: Option<Vec<String>>,
     /// 视为「有写副作用」的工具名（`is_readonly_tool` 为假）；省略则用内建默认表。
     pub(super) write_effect_tools: Option<Vec<String>>,

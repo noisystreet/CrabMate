@@ -168,10 +168,6 @@ fn cli_missing_install_hint_for_base_name(key: &str) -> Option<&'static str> {
             "安装提示：`pip install bandit` 或 `pipx install bandit`。验证：`bandit --version` 或 `python3 -m bandit --version`。",
         ),
         (
-            "bc",
-            "安装提示：Debian/Ubuntu `sudo apt install bc`；macOS `brew install bc`；验证：`bc --version`。",
-        ),
-        (
             "clang-format",
             "安装提示：Debian/Ubuntu `sudo apt install clang-format`；macOS `brew install clang-format`。验证：`clang-format --version`。",
         ),

@@ -80,7 +80,7 @@ async fn e2e_single_agent_smoke() {
     assert!(!metrics.final_output_preview.is_empty(), "回复不应为空");
 }
 
-/// 单场景工具调用测试：使用 get_current_time 工具。
+/// 单场景工具调用测试：使用 text_transform 工具（无网络、无副作用、输出可预期）。
 ///
 /// 默认 `#[ignore]`；设置 `REAL_LLM_E2E=1` 时自动启用。
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -90,11 +90,12 @@ async fn e2e_single_agent_tool_round() {
     let metrics = run_scenario(
         &TestScenario {
             name: "orch_single_agent_tool".to_string(),
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
-                .to_string(),
+            user_message:
+                "请调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。"
+                    .to_string(),
             workspace_files: vec![],
             expected_output_contains: vec![],
-            expected_tool_used: Some("get_current_time".to_string()),
+            expected_tool_used: Some("text_transform".to_string()),
             allowed_tools: None,
         },
         &e2e_cfg,
@@ -103,7 +104,7 @@ async fn e2e_single_agent_tool_round() {
 
     assert!(metrics.success, "工具调用测试应成功");
     assert!(metrics.tool_call_count > 0, "应有工具调用");
-    assert!(metrics.expected_tool_matched, "应调用了 get_current_time");
+    assert!(metrics.expected_tool_matched, "应调用了 text_transform");
     assert!(metrics.last_role == "assistant", "末条应为 assistant");
 }
 
@@ -265,11 +266,11 @@ async fn e2e_all_scenarios() {
         },
         TestScenario {
             name: "orch_single_agent_tool".to_string(),
-            user_message: "请调用 get_current_time 工具查询当前时间，然后用一句话总结。"
+            user_message: "请调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。"
                 .to_string(),
             workspace_files: vec![],
             expected_output_contains: vec![],
-            expected_tool_used: Some("get_current_time".to_string()),
+            expected_tool_used: Some("text_transform".to_string()),
             allowed_tools: None,
         },
         TestScenario {

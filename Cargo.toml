@@ -56,7 +56,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false }
 unicodeit = "0.2"
 urlencoding = "2.1"
-uom = { version = "0.38", features = ["si"] }
 walkdir = "2"
 # 联网搜索默认后端：本机浏览器 SERP（库路径；关闭 mcp 以免拉入 rmcp；≥0.2.2 含质量信号/抓取 API）
 # tls-aws-lc：显式选择 rustls provider，与 reqwest(aws-lc-rs) 对齐，避免 ring/aws-lc-rs 双套编译并拖入 cmake
@@ -163,7 +162,6 @@ server = [
     "schema-tools",
     "csv-tools",
     "diff-tools",
-    "unit-tools",
     "dep:reqwest",
     "dep:futures-util",
     "dep:secrecy",
@@ -228,8 +226,6 @@ schema-tools = []
 csv-tools = ["dep:csv"]
 ## 文本差异对比
 diff-tools = ["dep:similar"]
-## 单位换算
-unit-tools = ["dep:uom"]
 
 [dependencies]
 # protocol（始终编译 `cm_types` / SSE 分类 / Turn 布局等）
@@ -331,7 +327,6 @@ scraper = { workspace = true, optional = true }
 ego-tree = { workspace = true, optional = true }
 csv = { workspace = true, optional = true }
 similar = { workspace = true, optional = true }
-uom = { workspace = true, optional = true }
 nix = { workspace = true, optional = true, features = ["fs", "dir", "signal", "term", "process"] }
 
 [[bin]]

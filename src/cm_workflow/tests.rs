@@ -88,8 +88,8 @@ fn test_parse_workflow_spec_array_nodes() {
           "fail_fast":true,
           "compensate_on_failure":true,
           "nodes":[
-            {"id":"a","tool_name":"get_current_time","tool_args":{},"deps":[]},
-            {"id":"b","tool_name":"calc","tool_args":{"expression":"1+1"},"deps":["a"]}
+            {"id":"a","tool_name":"json_format","tool_args":{},"deps":[]},
+            {"id":"b","tool_name":"json_format","tool_args":{"expression":"1+1"},"deps":["a"]}
           ]
         }
     }"#;
@@ -104,7 +104,7 @@ fn test_validate_dag_cycle_detection() {
     let nodes = vec![
         WorkflowNodeSpec {
             id: "a".to_string(),
-            tool_name: "calc".to_string(),
+            tool_name: "json_format".to_string(),
             tool_args: serde_json::json!({}),
             deps: vec!["b".to_string()],
             requires_approval: false,
@@ -116,7 +116,7 @@ fn test_validate_dag_cycle_detection() {
         },
         WorkflowNodeSpec {
             id: "b".to_string(),
-            tool_name: "calc".to_string(),
+            tool_name: "json_format".to_string(),
             tool_args: serde_json::json!({}),
             deps: vec!["a".to_string()],
             requires_approval: false,
@@ -185,7 +185,7 @@ fn test_parse_max_retries_defaults_to_zero() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"}}
+            {"id":"a","tool_name":"json_format","tool_args":{"expression":"1"}}
           ]
         }
     }"#;
@@ -198,7 +198,7 @@ fn test_parse_max_retries_capped_at_five() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"},"max_retries":99}
+            {"id":"a","tool_name":"json_format","tool_args":{"expression":"1"},"max_retries":99}
           ]
         }
     }"#;
@@ -222,7 +222,7 @@ fn test_parse_max_retries_explicit_value() {
     let json = r#"{
         "workflow":{
           "nodes":[
-            {"id":"a","tool_name":"calc","tool_args":{"expression":"1"},"max_retries":3}
+            {"id":"a","tool_name":"json_format","tool_args":{"expression":"1"},"max_retries":3}
           ]
         }
     }"#;
@@ -331,7 +331,7 @@ steps:
 fn test_author_validate_rejects_steps_without_version() {
     let root = serde_json::json!({
         "workflow": { "fail_fast": true },
-        "steps": [{"id": "a", "tool": "calc", "args": {}}]
+        "steps": [{"id": "a", "tool": "json_format", "args": {}}]
     });
     let err = super::author_validate::validate_workflow_author_document(&root).unwrap_err();
     assert!(err.contains("version"));

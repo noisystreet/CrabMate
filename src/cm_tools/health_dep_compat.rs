@@ -12,7 +12,6 @@ pub enum DepCompatKind {
     Python3,
     Npm,
     Gh,
-    Bc,
     ClangFormat,
 }
 
@@ -21,7 +20,7 @@ pub fn validate_dep_version(kind: DepCompatKind, version_output: &str) -> Option
     let parsed = match kind {
         DepCompatKind::Rustc | DepCompatKind::Cargo => parse_rust_tool_version(version_output),
         DepCompatKind::Python3 => parse_python_version(version_output),
-        DepCompatKind::Npm | DepCompatKind::Gh | DepCompatKind::Bc | DepCompatKind::ClangFormat => {
+        DepCompatKind::Npm | DepCompatKind::Gh | DepCompatKind::ClangFormat => {
             parse_loose_semver(version_output)
         }
     }?;
@@ -45,7 +44,7 @@ fn min_version_for(kind: DepCompatKind) -> (u64, u64, u64) {
         DepCompatKind::Python3 => (3, 8, 0),
         DepCompatKind::Npm => (6, 0, 0),
         DepCompatKind::Gh => (2, 50, 0),
-        DepCompatKind::Bc | DepCompatKind::ClangFormat => (0, 0, 0),
+        DepCompatKind::ClangFormat => (0, 0, 0),
     }
 }
 
@@ -110,7 +109,6 @@ pub fn dep_compat_kind_for_health_key(dep_key: &str) -> Option<DepCompatKind> {
         "python3" => Some(DepCompatKind::Python3),
         "npm" => Some(DepCompatKind::Npm),
         "gh" => Some(DepCompatKind::Gh),
-        "bc" => Some(DepCompatKind::Bc),
         "clang_format" => Some(DepCompatKind::ClangFormat),
         _ => None,
     }

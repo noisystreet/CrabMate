@@ -10,6 +10,6 @@ fn load_config_errors_on_missing_explicit_file() {
 fn build_tools_returns_definitions() {
     let tools = crabmate::build_tools();
     assert!(!tools.is_empty());
-    assert!(tools.iter().any(|t| t.function.name == "get_current_time"));
+    assert!(tools.iter().any(|t| t.function.name == "text_transform"));
     assert!(tools.iter().any(|t| t.function.name == "web_search"));
 }
