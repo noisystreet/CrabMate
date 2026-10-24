@@ -6,8 +6,9 @@ workflow:
 steps:
   - id: diff
     label: 查看改动
-    tool: git_diff
+    tool: git
     args:
+      action: diff
       mode: all
   - id: clippy
     label: Clippy

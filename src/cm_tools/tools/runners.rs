@@ -507,16 +507,7 @@ define_runners_args_only! {
 // ── Git 工具 ────────────────────────────────────────────────
 
 define_git_runners! {
-    runner_git_status => status,
-    runner_git_diff => diff,
-    runner_git_clean_check => clean_check,
-    runner_git_log => log,
-    runner_git_show => show,
-    runner_git_blame => blame,
-    runner_git_file_history => file_history,
-    runner_git_branch_list => branch_list,
-    runner_git_remote_status => remote_status,
-    runner_git_remote_list => remote_list,
+    runner_git => dispatch,
 }
 
 // ── GitHub CLI 工具 ─────────────────────────────────────────

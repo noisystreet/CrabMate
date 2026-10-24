@@ -69,10 +69,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         | "table_text" => &[GENERAL],
 
         // --- Git ---
-        "git_status" | "git_diff" | "git_clean_check" | "git_log" | "git_show" | "git_blame"
-        | "git_file_history" | "git_branch_list" | "git_remote_status" | "git_remote_list" => {
-            &[GENERAL, VCS]
-        }
+        "git" => &[GENERAL, VCS],
         "gh_pr" | "gh_run" | "gh_issue_create" | "gh_release_create" | "gh_api" => {
             &[GENERAL, VCS]
         }
@@ -228,8 +225,8 @@ mod tests {
     }
 
     #[test]
-    fn git_status_is_vcs() {
-        let t = tags_for_tool_name("git_status");
+    fn git_is_vcs() {
+        let t = tags_for_tool_name("git");
         assert!(t.contains(&VCS));
     }
 

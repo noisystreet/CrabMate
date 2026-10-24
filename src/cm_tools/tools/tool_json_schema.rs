@@ -20,7 +20,7 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitStatusArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
@@ -297,11 +297,32 @@ mod tests {
     }
 
     #[test]
-    fn git_status_schema_optional_flags() {
-        let v = tool_parameters_schema_value::<GitStatusArgs>();
+    fn git_schema_requires_action_and_keeps_union_fields() {
+        let v = tool_parameters_schema_value::<GitArgs>();
         assert_eq!(v.get("type"), Some(&json!("object")));
-        assert!(v.pointer("/properties/porcelain").is_some());
-        assert!(v.pointer("/properties/branch").is_some());
+        // `action` 必填（合并前是 10 个无此参数的工具）。
+        assert!(v.pointer("/required").is_some(), "action 应为 required");
+        assert!(v.pointer("/properties/action").is_some());
+        // 各 action 的字段全部在并集里可见，且都是可选。
+        for field in [
+            "porcelain",
+            "branch",
+            "mode",
+            "path",
+            "stat",
+            "name_only",
+            "base",
+            "max_count",
+            "rev",
+            "start_line",
+            "end_line",
+            "include_remote",
+        ] {
+            assert!(
+                v.pointer(&format!("/properties/{field}")).is_some(),
+                "{field} 应出现在 GitArgs schema 中"
+            );
+        }
     }
 
     #[test]

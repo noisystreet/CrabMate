@@ -47,15 +47,15 @@ pub(crate) fn workflow_template_code_review() -> serde_json::Value {
         "nodes": [
             {
                 "id": "cr_diff_names",
-                "tool_name": "git_diff",
-                "tool_args": { "mode": "all", "name_only": true },
+                "tool_name": "git",
+                "tool_args": { "action": "diff", "mode": "all", "name_only": true },
                 "deps": [],
                 "node_tool_role": "review_readonly"
             },
             {
                 "id": "cr_diff",
-                "tool_name": "git_diff",
-                "tool_args": { "mode": "all", "context_lines": 3 },
+                "tool_name": "git",
+                "tool_args": { "action": "diff", "mode": "all", "context_lines": 3 },
                 "deps": ["cr_diff_names"],
                 "node_tool_role": "review_readonly"
             },

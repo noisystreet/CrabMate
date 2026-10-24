@@ -273,8 +273,8 @@ fn test_build_tools_names() {
     assert!(names.contains(&"gh_issue_create"));
     assert!(names.contains(&"gh_api"));
     assert!(names.contains(&"gh_release_create"));
-    // 已移除的工具不应复活：gh_* 已合并为 gh_pr / gh_run；format_files 已收敛到 run_command；
-    // rust_analyzer_* 八个已合并为单个 rust_analyzer（action 选择器）。
+    // 已移除的工具不应复活：gh_* 已合并为 gh_pr / gh_run；git_* 已合并为 git（action 选择器）；
+    // format_files 已收敛到 run_command；rust_analyzer_* 八个已合并为单个 rust_analyzer。
     for gone in [
         "format_files",
         "gh_pr_checks",
@@ -294,6 +294,16 @@ fn test_build_tools_names() {
         "rust_analyzer_goto_type_definition",
         "rust_analyzer_document_highlight",
         "rust_analyzer_workspace_symbol",
+        "git_status",
+        "git_diff",
+        "git_clean_check",
+        "git_log",
+        "git_show",
+        "git_blame",
+        "git_file_history",
+        "git_branch_list",
+        "git_remote_status",
+        "git_remote_list",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -319,16 +329,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"repo_overview_sweep"));
     assert!(names.contains(&"crate_contract_map"));
     assert!(names.contains(&"docs_health_sweep"));
-    assert!(names.contains(&"git_status"));
-    assert!(names.contains(&"git_clean_check"));
-    assert!(names.contains(&"git_diff"));
-    assert!(names.contains(&"git_log"));
-    assert!(names.contains(&"git_show"));
-    assert!(names.contains(&"git_blame"));
-    assert!(names.contains(&"git_file_history"));
-    assert!(names.contains(&"git_branch_list"));
-    assert!(names.contains(&"git_remote_status"));
-    assert!(names.contains(&"git_remote_list"));
+    assert!(names.contains(&"git"));
     assert!(names.contains(&"create_file"));
     assert!(names.contains(&"modify_file"));
     assert!(names.contains(&"copy_file"));
@@ -663,7 +664,7 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
     // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 88 } else { 85 };
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 85 } else { 82 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

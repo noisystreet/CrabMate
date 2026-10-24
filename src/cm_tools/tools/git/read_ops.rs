@@ -10,6 +10,39 @@ use crate::cm_tools::tools::output_util;
 /// `git diff` 正文常大于默认 `command_max_output_len`；在配置值之上保证至少本题字节预算，避免工具结果过早按字节截断。
 const GIT_DIFF_MIN_CAP_BYTES: usize = 512 * 1024;
 
+/// `git` 工具的 action 可选值（错误提示与 spec description 共用一份）。
+const GIT_ACTIONS: &str = "status / diff / clean_check / log / show / blame / \
+file_history / branch_list / remote_status / remote_list";
+
+/// `git` 工具统一入口：按入参 `action` 分发到对应只读查询。
+///
+/// 合并自原 10 个 `git_*` 工具——它们都是同一个 `git` CLI 的只读子命令包装，
+/// 合并只改变了「从哪里拿到要跑哪个子命令」。各查询仍自行 `parse_args` 取所需字段，
+/// 因此 `action` 之外的字段被忽略，仓库校验与错误文案与逐工具时代一致。
+pub fn dispatch(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+    let v = match parse_args(args_json) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
+    let action = match v.get("action").and_then(|x| x.as_str()).map(str::trim) {
+        Some(a) if !a.is_empty() => a,
+        _ => return format!("错误：缺少 action（可选值：{GIT_ACTIONS}）"),
+    };
+    match action {
+        "status" => status(args_json, max_output_len, working_dir),
+        "diff" => diff(args_json, max_output_len, working_dir),
+        "clean_check" => clean_check(args_json, max_output_len, working_dir),
+        "log" => log(args_json, max_output_len, working_dir),
+        "show" => show(args_json, max_output_len, working_dir),
+        "blame" => blame(args_json, max_output_len, working_dir),
+        "file_history" => file_history(args_json, max_output_len, working_dir),
+        "branch_list" => branch_list(args_json, max_output_len, working_dir),
+        "remote_status" => remote_status(args_json, max_output_len, working_dir),
+        "remote_list" => remote_list(args_json, max_output_len, working_dir),
+        other => format!("错误：未知 action `{other}`（可选值：{GIT_ACTIONS}）"),
+    }
+}
+
 pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
@@ -262,4 +295,38 @@ pub fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -
     let mut cmd = Command::new("git");
     cmd.arg("remote").arg("-v").current_dir(working_dir);
     run_and_format(cmd, max_output_len, "git remote -v")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dispatch;
+
+    /// `action` 必须显式给出：合并前是 10 个各自独立的工具名，缺参不会有歧义。
+    #[test]
+    fn dispatch_rejects_missing_action() {
+        let out = dispatch("{}", 4096, std::path::Path::new("."));
+        assert!(out.contains("缺少 action"), "{out}");
+        assert!(out.contains("clean_check"), "错误应列出可选值：{out}");
+    }
+
+    /// 未知 action 不能静默落到某个默认子命令上。
+    #[test]
+    fn dispatch_rejects_unknown_action() {
+        let out = dispatch(r#"{"action":"nope"}"#, 4096, std::path::Path::new("."));
+        assert!(out.contains("未知 action"), "{out}");
+    }
+
+    /// 合法 action 应被真正转发（这里用非仓库临时目录，命中各查询共有的仓库校验）。
+    #[test]
+    fn dispatch_forwards_known_actions() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for action in ["status", "diff", "clean_check", "log", "show", "remote_list"] {
+            let args = format!(r#"{{"action":"{action}"}}"#);
+            let out = dispatch(&args, 4096, dir.path());
+            assert!(
+                !out.contains("未知 action") && !out.contains("缺少 action"),
+                "{action} 应被分发给具体查询而不是被拒绝：{out}"
+            );
+        }
+    }
 }

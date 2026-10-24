@@ -6,8 +6,9 @@
       {
         "deps": [],
         "id": "diff",
-        "tool": "git_diff",
+        "tool": "git",
         "tool_args": {
+          "action": "diff",
           "mode": "all"
         }
       },
