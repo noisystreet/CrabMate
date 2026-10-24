@@ -81,9 +81,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "cargo_check" | "cargo_test" | "cargo_clippy" | "rust_compiler_json" => {
             &[GENERAL, RUST, QUALITY]
         }
-        "find_symbol" | "find_references" | "rust_file_outline" | "call_graph_sketch" => {
-            &[GENERAL, RUST]
-        }
+        "code_nav" => &[GENERAL, RUST],
 
         // --- Python ---
         "pytest_run" | "python_snippet_run" => &[GENERAL, PYTHON],

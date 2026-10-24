@@ -349,85 +349,139 @@ impl ToolSummaryLine for ApplyPatchSummaryArgs {
     }
 }
 
+/// `code_nav` 的摘要行：一个结构体接住四个 action（原四个 `*SummaryArgs` 已合并；
+/// 差异只在文案前缀与读哪个字段）。缺/未知 action 时给中性文案，不静默丢卡片。
 #[derive(Debug, Deserialize)]
-pub(super) struct FindSymbolSummaryArgs {
-    symbol: String,
-}
-
-impl ToolSummaryLine for FindSymbolSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let s = self.symbol.trim();
-        if s.is_empty() {
-            return None;
-        }
-        Some(format!("find symbol: {}", s))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct FindReferencesSummaryArgs {
-    symbol: String,
-}
-
-impl ToolSummaryLine for FindReferencesSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let s = self.symbol.trim();
-        if s.is_empty() {
-            return None;
-        }
-        Some(format!("find references: {}", s))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct CallGraphSketchSummaryArgs {
+pub(super) struct CodeNavSummaryArgs {
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    symbol: Option<String>,
     #[serde(default)]
     symbols: Vec<String>,
     #[serde(default)]
-    symbol: Option<String>,
+    path: Option<String>,
 }
 
-impl ToolSummaryLine for CallGraphSketchSummaryArgs {
+impl ToolSummaryLine for CodeNavSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        let mut v: Vec<String> = self
-            .symbols
-            .into_iter()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect();
-        if let Some(s) = self.symbol {
-            let t = s.trim().to_string();
-            if !t.is_empty() {
-                v.push(t);
-            }
+        let action = self.action.trim().to_string();
+        // 只做分发：每个 action 的文案各自一个小函数，避免这里堆成分支丛林（lizard CCN≤10）。
+        match action.as_str() {
+            "file_outline" => outline_line(self.path.as_deref()),
+            "find_references" => references_line(self.symbol.as_deref()),
+            "call_graph_sketch" => sketch_line(self.symbol.as_deref(), self.symbols),
+            "find_symbol" => symbol_line(self.symbol.as_deref()),
+            other => unknown_action_line(other, self.symbol.as_deref()),
         }
-        v.sort();
-        v.dedup();
-        if v.is_empty() {
-            return None;
-        }
-        const MAX: usize = 3;
-        let head: Vec<_> = v.iter().take(MAX).cloned().collect();
-        let mut out = format!("impact sketch: {}", head.join(", "));
-        if v.len() > MAX {
-            out.push_str(&format!(" +{}", v.len() - MAX));
-        }
-        Some(out)
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct RustFileOutlineSummaryArgs {
-    path: String,
+fn outline_line(path: Option<&str>) -> Option<String> {
+    let path = path.unwrap_or("").trim();
+    (!path.is_empty()).then(|| format!("Rust outline: {path}"))
 }
 
-impl ToolSummaryLine for RustFileOutlineSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("Rust outline: {}", path))
+fn references_line(symbol: Option<&str>) -> Option<String> {
+    let s = symbol.unwrap_or("").trim();
+    (!s.is_empty()).then(|| format!("find references: {s}"))
+}
+
+fn symbol_line(symbol: Option<&str>) -> Option<String> {
+    let s = symbol.unwrap_or("").trim();
+    (!s.is_empty()).then(|| format!("find symbol: {s}"))
+}
+
+/// 缺 / 未知 action：中性文案，不把一次注定失败的调用显示成成功的 `find_symbol`。
+fn unknown_action_line(action: &str, symbol: Option<&str>) -> Option<String> {
+    let s = symbol.unwrap_or("").trim();
+    if s.is_empty() {
+        return None;
+    }
+    Some(if action.is_empty() {
+        format!("code_nav: {s}")
+    } else {
+        format!("code_nav {action}: {s}")
+    })
+}
+
+fn sketch_line(symbol: Option<&str>, symbols: Vec<String>) -> Option<String> {
+    let mut v: Vec<String> = symbols
+        .into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if let Some(s) = symbol.map(str::trim)
+        && !s.is_empty()
+    {
+        v.push(s.to_string());
+    }
+    v.sort();
+    v.dedup();
+    if v.is_empty() {
+        return None;
+    }
+    const MAX: usize = 3;
+    let head: Vec<_> = v.iter().take(MAX).cloned().collect();
+    let mut out = format!("impact sketch: {}", head.join(", "));
+    if v.len() > MAX {
+        out.push_str(&format!(" +{}", v.len() - MAX));
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod code_nav_summary_tests {
+    use super::*;
+
+    fn line(v: serde_json::Value) -> Option<String> {
+        serde_json::from_value::<CodeNavSummaryArgs>(v)
+            .ok()?
+            .summary_line()
+    }
+
+    #[test]
+    fn covers_all_four_actions() {
+        assert_eq!(
+            line(serde_json::json!({"action":"find_symbol","symbol":"run_tool"})).as_deref(),
+            Some("find symbol: run_tool")
+        );
+        assert_eq!(
+            line(serde_json::json!({"action":"find_references","symbol":"run_tool"})).as_deref(),
+            Some("find references: run_tool")
+        );
+        assert_eq!(
+            line(serde_json::json!({"action":"file_outline","path":"src/a.rs"})).as_deref(),
+            Some("Rust outline: src/a.rs")
+        );
+        assert_eq!(
+            line(serde_json::json!({
+                "action": "call_graph_sketch",
+                "symbols": ["b", "a"],
+                "symbol": "c"
+            }))
+            .as_deref(),
+            Some("impact sketch: a, b, c")
+        );
+    }
+
+    #[test]
+    fn blank_inputs_yield_no_line() {
+        assert_eq!(line(serde_json::json!({"action":"find_symbol"})), None);
+        assert_eq!(line(serde_json::json!({"action":"file_outline"})), None);
+        assert_eq!(line(serde_json::json!({"action":"call_graph_sketch"})), None);
+    }
+
+    #[test]
+    fn unknown_action_is_not_labelled_as_find_symbol() {
+        // 缺 / 未知 action 曾复用 `find symbol:` 文案，与真实失败原因不符。
+        assert_eq!(
+            line(serde_json::json!({"action":"nope","symbol":"x"})).as_deref(),
+            Some("code_nav nope: x")
+        );
+        assert_eq!(
+            line(serde_json::json!({"symbol":"x"})).as_deref(),
+            Some("code_nav: x")
+        );
     }
 }
-

@@ -9,6 +9,7 @@ mod call_graph_sketch;
 pub(crate) mod cargo_tools;
 mod code_metrics;
 mod code_nav;
+mod code_nav_dispatch;
 mod command;
 mod command_error;
 mod command_exec;

@@ -11,7 +11,7 @@ steps:
       mode: all
 
   - id: outline_each
-    tool: rust_file_outline
+    tool: code_nav
     after: [diff]
     for_each:
       from: diff
@@ -20,4 +20,5 @@ steps:
       max_items: 10
       parallel: false
     args:
+      action: file_outline
       path: "{{path}}"

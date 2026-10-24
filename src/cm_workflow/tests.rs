@@ -62,8 +62,24 @@ fn test_parse_workflow_template_refactor_precheck_with_symbol() {
         r#"{"workflow":{"workflow_template":"refactor_precheck","refactor_symbol":"MyService"}}"#;
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes.len(), 2);
-    assert_eq!(spec.nodes[0].tool_name, "call_graph_sketch");
-    assert_eq!(spec.nodes[1].tool_name, "find_references");
+    assert_eq!(spec.nodes[0].tool_name, "code_nav");
+    assert_eq!(spec.nodes[1].tool_name, "code_nav");
+    // 合并后两个节点是同一个工具，靠 `action` 区分：模板必须把它一并写进 tool_args，
+    // 否则展开出来就是两次缺 action 的调用。
+    assert_eq!(
+        spec.nodes[0]
+            .tool_args
+            .get("action")
+            .and_then(|x| x.as_str()),
+        Some("call_graph_sketch")
+    );
+    assert_eq!(
+        spec.nodes[1]
+            .tool_args
+            .get("action")
+            .and_then(|x| x.as_str()),
+        Some("find_references")
+    );
     assert_eq!(
         spec.nodes[0]
             .tool_args

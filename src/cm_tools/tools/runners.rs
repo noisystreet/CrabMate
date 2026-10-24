@@ -440,10 +440,7 @@ define_runners_cwd! {
     runner_structured_diff => structured_data::structured_diff,
     runner_text_diff => text_diff::run,
     runner_table_text => table_text::run,
-    runner_find_symbol => symbol::run,
-    runner_find_references => code_nav::find_references,
-    runner_rust_file_outline => code_nav::rust_file_outline,
-    runner_call_graph_sketch => call_graph_sketch::run,
+    runner_code_nav => code_nav_dispatch::dispatch,
     runner_reminder => schedule_dispatch::reminder,
     runner_event => schedule_dispatch::event,
 }

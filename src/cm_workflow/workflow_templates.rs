@@ -82,7 +82,7 @@ pub(crate) fn workflow_template_code_review() -> serde_json::Value {
     })
 }
 
-/// `refactor_precheck`：`call_graph_sketch` → `find_references`（须在 workflow 上提供 `refactor_symbol`）。
+/// `refactor_precheck`：`code_nav`（`action=call_graph_sketch`）→ `code_nav`（`action=find_references`），须在 workflow 上提供 `refactor_symbol`。
 pub(crate) fn workflow_template_refactor_precheck() -> serde_json::Value {
     serde_json::json!({
         "max_parallelism": 2,
@@ -91,15 +91,15 @@ pub(crate) fn workflow_template_refactor_precheck() -> serde_json::Value {
         "nodes": [
             {
                 "id": "rpc_graph",
-                "tool_name": "call_graph_sketch",
-                "tool_args": { "symbol": "" },
+                "tool_name": "code_nav",
+                "tool_args": { "action": "call_graph_sketch", "symbol": "" },
                 "deps": [],
                 "node_tool_role": "review_readonly"
             },
             {
                 "id": "rpc_refs",
-                "tool_name": "find_references",
-                "tool_args": { "symbol": "", "exclude_definitions": true },
+                "tool_name": "code_nav",
+                "tool_args": { "action": "find_references", "symbol": "", "exclude_definitions": true },
                 "deps": ["rpc_graph"],
                 "node_tool_role": "review_readonly"
             }

@@ -281,7 +281,7 @@ The former `release_ready_check` presets (fast / strict) went away with the aggr
   ```
 
 
-Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `find_references`, `call_graph_sketch`, `rust_file_outline`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
+Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `cargo_clippy`, `rust_compiler_json`, rust-analyzer tools, `read_binary_meta`, `frontend_lint`, `code_nav`, `markdown_check_links`, `structured_*`, `table_text`, `text_diff`, `diagnostic_summary`, `error_output_playbook`, `playbook_run_commands`.
 
 **Python**: `pytest_run`, `python_snippet_run` (`ruff` / `mypy` / `uv` / `pre-commit` now via `run_command`, see above); aggregates `run_lints` (Rust: optional `cargo check` before `clippy`; optional `npm run lint` / `run_frontend_build`; optional ruff).
 
@@ -495,19 +495,17 @@ Typical `run_command` invocations of `cargo audit` / `cargo deny check` issues:
   ```json
   {"patch":"--- src/example.rs\n+++ src/example.rs\n@@ -4,6 +4,7 @@ fn demo() {\n ...\n"}
   ```
-- `find_symbol`:
+- `code_nav` (Rust code navigation; `action` picks the verb — the four tools `find_symbol` / `find_references` / `rust_file_outline` / `call_graph_sketch` were merged into it on 2026-10-25):
   ```json
-  {"symbol":"run_agent_turn","kind":"fn","path":"src","context_lines":2,"max_results":10}
+  {"action":"find_symbol","symbol":"run_agent_turn","kind":"fn","path":"src","context_lines":2,"max_results":10}
   ```
-- `find_references`:
   ```json
-  {"symbol":"run_tool","path":"src/tools","max_results":50,"case_sensitive":false,"exclude_definitions":true}
+  {"action":"find_references","symbol":"run_tool","path":"src/cm_tools/tools","max_results":50,"case_sensitive":false,"exclude_definitions":true}
   ```
-- `call_graph_sketch` (heuristic impact checklist before API changes: `use` + non-definition word-boundary hits, grouped by directory; not a real call graph):
   ```json
-  {"symbols":["run_tool_dispatch","RunAgentTurnParams"],"path":"src","max_edges":600}
+  {"action":"call_graph_sketch","symbols":["run_tool_dispatch","RunAgentTurnParams"],"path":"src","max_edges":600}
   ```
-- `rust_file_outline`:
   ```json
-  {"path":"src/cm_tools/mod.rs","include_use":false,"max_items":200}
+  {"action":"file_outline","path":"src/cm_tools/mod.rs","include_use":false,"max_items":200}
   ```
+  **Required**: `find_symbol` / `find_references` / `call_graph_sketch` need `symbol` (`call_graph_sketch` also accepts `symbols`), `file_outline` needs `path`; fields unrelated to the chosen `action` are ignored (unknown keys still fail), though each call still has to satisfy the schema ranges (e.g. `max_results` 1–300). `call_graph_sketch` is a **heuristic** impact checklist (`use` + non-definition word-boundary hits grouped by directory; not a real call graph). Use `rust_analyzer` when you need LSP-grade precision.
