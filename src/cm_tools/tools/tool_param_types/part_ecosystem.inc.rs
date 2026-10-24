@@ -34,41 +34,6 @@ pub struct RunLintsArgs {
     pub run_python_ruff: bool,
 }
 
-// ── `quality_tools::quality_workspace` ────────────────────────
-
-/// [`super::quality_tools::quality_workspace`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct QualityWorkspaceArgs {
-    #[serde(default = "default_true")]
-    pub run_cargo_fmt_check: bool,
-    #[serde(default)]
-    pub run_cargo_check: bool,
-    #[serde(default = "default_true")]
-    pub run_cargo_clippy: bool,
-    #[serde(default)]
-    pub run_cargo_test: bool,
-    #[serde(default)]
-    pub run_frontend_lint: bool,
-    #[serde(default)]
-    pub run_frontend_build: bool,
-    #[serde(default)]
-    pub run_frontend_prettier_check: bool,
-    #[serde(default)]
-    pub run_ruff_check: bool,
-    #[serde(default)]
-    pub run_pytest: bool,
-    #[serde(default)]
-    pub run_mypy: bool,
-    #[serde(default)]
-    pub run_docker_compose_ps: bool,
-    #[serde(default)]
-    pub run_podman_images: bool,
-    #[serde(default = "default_true")]
-    pub fail_fast: bool,
-    #[serde(default)]
-    pub summary_only: bool,
-}
 
 
 

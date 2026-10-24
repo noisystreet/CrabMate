@@ -28,7 +28,7 @@ pub enum CommandSpawnErrorStyle {
     CannotStartCommand,
     /// `title: 无法启动（reason）。请确认已安装对应 CLI 且在 PATH 中。`
     CannotStartWithPathHint,
-    /// `title: 执行失败（reason）`（与历史 `git` / `security_tools` 文案一致）
+    /// `title: 执行失败（reason）`（与 `git` 等工具的失败文案一致）
     ExecuteFailed,
 }
 

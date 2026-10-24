@@ -163,52 +163,6 @@ pub struct BacktraceAnalyzeArgs {
     pub crate_hint: Option<String>,
 }
 
-// ── 本地 CI / 发版检查（`ci_tools`）──────────────────────────
-
-/// [`super::ci_tools::ci_pipeline_local`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct CiPipelineLocalArgs {
-    #[serde(default = "default_true")]
-    pub run_fmt: bool,
-    #[serde(default = "default_true")]
-    pub run_clippy: bool,
-    #[serde(default = "default_true")]
-    pub run_test: bool,
-    #[serde(default = "default_true")]
-    pub run_frontend_lint: bool,
-    #[serde(default)]
-    pub run_frontend_build: bool,
-    #[serde(default = "default_true")]
-    pub run_ruff_check: bool,
-    #[serde(default)]
-    pub run_pytest: bool,
-    #[serde(default)]
-    pub run_mypy: bool,
-    #[serde(default)]
-    pub fail_fast: bool,
-    #[serde(default)]
-    pub summary_only: bool,
-}
-
-/// [`super::ci_tools::release_ready_check`] 入参。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields, default)]
-pub struct ReleaseReadyCheckArgs {
-    #[serde(default = "default_true")]
-    pub run_ci: bool,
-    #[serde(default = "default_true")]
-    pub run_audit: bool,
-    #[serde(default = "default_true")]
-    pub run_deny: bool,
-    #[serde(default = "default_true")]
-    pub require_clean_worktree: bool,
-    #[serde(default)]
-    pub fail_fast: bool,
-    #[serde(default = "default_true")]
-    pub summary_only: bool,
-}
-
 // ── 拼写（`spell_tools`，供 `docs_health_sweep` 复用）────
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]

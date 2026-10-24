@@ -19,10 +19,10 @@ mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
-        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
+        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CodeStatsArgs,
         CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
-        PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
+        PytestRunArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
     };
     use serde_json::json;
@@ -100,13 +100,6 @@ mod tests {
     fn run_lints_schema_has_run_cargo_defaults() {
         let v = tool_parameters_schema_value::<RunLintsArgs>();
         assert!(v.pointer("/properties/run_cargo").is_some());
-    }
-
-    #[test]
-    fn quality_workspace_schema_has_many_flags() {
-        let v = tool_parameters_schema_value::<QualityWorkspaceArgs>();
-        assert!(v.pointer("/properties/run_cargo_fmt_check").is_some());
-        assert!(v.pointer("/properties/run_podman_images").is_some());
     }
 
     #[test]
@@ -213,12 +206,6 @@ mod tests {
             .and_then(|r| r.as_array())
             .expect("required");
         assert!(req.iter().any(|x| x == "backtrace"));
-    }
-
-    #[test]
-    fn ci_pipeline_local_schema_has_run_fmt() {
-        let v = tool_parameters_schema_value::<CiPipelineLocalArgs>();
-        assert!(v.pointer("/properties/run_fmt").is_some());
     }
 
     #[test]
