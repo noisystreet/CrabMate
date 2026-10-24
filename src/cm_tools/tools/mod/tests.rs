@@ -659,7 +659,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // 再下调：`get_current_time` / `calc` / `convert_units` 三个 Legacy 整体移除（−3）。
     // 本轮：`find_symbol` / `find_references` / `rust_file_outline` / `call_graph_sketch`
     // 四个只读导航 Legacy 合并为单个 `code_nav`（−3）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 61 } else { 58 };
+    // 本轮：`misc_basic` 整族（`regex_test` / `date_calc` / `json_format` / `env_var_check`）
+    // 迁为 Typed（−4）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 57 } else { 54 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
@@ -731,3 +733,78 @@ fn typed_error_without_failure_keywords_is_still_failed_on_string_surface() {
     assert!(parsed.error_code.is_some(), "失败时应能分类错误码: {out}");
 }
 
+// ── `misc_basic` 迁 Typed 后：错误码显式化，成功正文逐字节不变 ──
+
+#[test]
+fn misc_basic_typed_error_codes() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+
+    // 原本靠正文「失败 / 错误」关键词判失败的输入：迁移后码从 `{tool}_failed` 精化为 `invalid_args`。
+    let e = run_tool_try(
+        "date_calc",
+        r#"{"mode":"diff","from":"2024-13-01","to":"2024-01-31"}"#,
+        &ctx,
+    )
+    .expect_err("非法 from 日期必须失败");
+    assert_eq!(e.code, "invalid_args");
+    assert_eq!(e.category, ToolFailureCategory::InvalidInput);
+
+    let e = run_tool_try("regex_test", r#"{"pattern":"(","test_strings":["x"]}"#, &ctx)
+        .expect_err("非法正则必须失败");
+    assert_eq!(e.code, "regex_test_invalid_regex");
+    assert_eq!(e.category, ToolFailureCategory::InvalidInput);
+    assert!(e.message.contains("正则编译失败"), "{}", e.message);
+
+    let e =
+        run_tool_try("json_format", r#"{"text":"{oops"}"#, &ctx).expect_err("非法 JSON 必须失败");
+    assert_eq!(e.code, "invalid_args");
+    assert!(e.message.starts_with("JSON 解析失败"), "{}", e.message);
+
+    let e = run_tool_try("env_var_check", r#"{"names":[]}"#, &ctx).expect_err("空 names 必须失败");
+    assert_eq!(e.code, "invalid_args");
+    // 钉住失败发生在 runner 层：`EnvVarCheckArgs.names` 目前没有 `minItems`；
+    // 若将来加了，这条会先红，提示改断言而不是静默退化成「测 schema 层」。
+    assert!(e.message.contains("names 不能为空"), "{}", e.message);
+}
+
+#[test]
+fn misc_basic_typed_ok_keeps_body_verbatim() {
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+
+    // 成功路径不注入 `crabmate_tool_output` 头，正文与迁移前逐字节一致。
+    let out = run_tool("json_format", r#"{"text":"{\"a\":1}"}"#, &ctx);
+    assert_eq!(out, "{\n  \"a\": 1\n}");
+
+    let out = run_tool(
+        "date_calc",
+        r#"{"mode":"diff","from":"2024-01-01","to":"2024-01-31"}"#,
+        &ctx,
+    );
+    assert!(out.starts_with("从 2024-01-01 到 2024-01-31："), "{out}");
+    assert!(
+        !out.contains("crabmate_tool_output"),
+        "成功路径不得注入 ok 头: {out}"
+    );
+
+    let out = run_tool(
+        "regex_test",
+        r#"{"pattern":"\\d+","test_strings":["abc123"]}"#,
+        &ctx,
+    );
+    assert!(out.contains("匹配: 1/1"), "{out}");
+}
+
+#[test]
+fn misc_basic_typed_failure_reaches_string_surface_with_code() {
+    // 主 Agent 走 `run_tool`（String 面）：真实错误码靠 `crabmate_tool_output` 头兜住，
+    // 否则「JSON 解析失败」只会被关键词启发式归成 `json_format_failed`。
+    let allowed = test_allowed_commands();
+    let ctx = test_ctx(&allowed);
+    let out = run_tool("json_format", r#"{"text":"{oops"}"#, &ctx);
+    assert!(out.contains("JSON 解析失败"), "{out}");
+    let parsed = parse_legacy_output("json_format", &out);
+    assert!(!parsed.ok, "{out}");
+    assert_eq!(parsed.error_code.as_deref(), Some("invalid_args"), "{out}");
+}
