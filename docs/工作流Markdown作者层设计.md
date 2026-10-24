@@ -156,7 +156,7 @@ workflow:
 1. 先看 git diff（含 staged）
 2. 跑 cargo clippy（all targets）
 3. 若 clippy 失败，再 cargo test
-4. 对改动列表里最多 10 个 .rs 文件各跑 rust_file_outline
+4. 对改动列表里最多 10 个 .rs 文件各跑 code_nav（action=file_outline）
 ```
 
 模型输出（强制 JSON 围栏或 tool result）：

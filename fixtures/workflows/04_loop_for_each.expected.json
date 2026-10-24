@@ -12,8 +12,9 @@
         "json_path": "/changed_rs_paths",
         "max_items": 10,
         "parallel": false,
-        "tool": "rust_file_outline",
+        "tool": "code_nav",
         "tool_args": {
+          "action": "file_outline",
           "path": "{{path}}"
         }
       }

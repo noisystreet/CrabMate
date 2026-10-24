@@ -186,12 +186,12 @@ fn test_run_tool_web_search_no_api_key() {
 }
 
 #[test]
-fn test_run_tool_call_graph_sketch_smoke() {
+fn test_run_tool_code_nav_call_graph_sketch_smoke() {
     let allowed = test_allowed_commands();
     let ctx = test_ctx(&allowed);
     let out = run_tool(
-        "call_graph_sketch",
-        r#"{"symbols":["run_tool"],"path":"src/cm_tools/tools","max_edges":80}"#,
+        "code_nav",
+        r#"{"action":"call_graph_sketch","symbols":["run_tool"],"path":"src/cm_tools/tools","max_edges":80}"#,
         &ctx,
     );
     assert!(
@@ -251,6 +251,11 @@ fn test_build_tools_names() {
         "git_branch_list",
         "git_remote_status",
         "git_remote_list",
+        // code_nav 四合一：四个旧工具名不应复活
+        "find_symbol",
+        "find_references",
+        "call_graph_sketch",
+        "rust_file_outline",
     ] {
         assert!(!names.contains(&gone), "{gone} 已移除，不应重新出现");
     }
@@ -297,10 +302,7 @@ fn test_build_tools_names() {
     assert!(names.contains(&"text_transform"));
     assert!(names.contains(&"text_diff"));
     assert!(names.contains(&"table_text"));
-    assert!(names.contains(&"find_symbol"));
-    assert!(names.contains(&"find_references"));
-    assert!(names.contains(&"call_graph_sketch"));
-    assert!(names.contains(&"rust_file_outline"));
+    assert!(names.contains(&"code_nav"));
     assert!(names.contains(&"run_lints"));
     assert!(names.contains(&"apply_patch"));
 }
@@ -655,7 +657,9 @@ fn builtin_legacy_runner_count_matches_baseline() {
     // `update_reminder` / `add_event` / `list_events` / `delete_event` / `update_event`
     // 九个 Legacy 合并为 `reminder` + `event`（−7）。
     // 再下调：`get_current_time` / `calc` / `convert_units` 三个 Legacy 整体移除（−3）。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 64 } else { 61 };
+    // 本轮：`find_symbol` / `find_references` / `rust_file_outline` / `call_graph_sketch`
+    // 四个只读导航 Legacy 合并为单个 `code_nav`（−3）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 61 } else { 58 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))

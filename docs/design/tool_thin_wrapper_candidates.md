@@ -105,7 +105,7 @@
 ### 3.3 保留（无 CLI 对应 / 结构化 / 编排 / 状态 / 网络 / 高增值解析）
 
 - **文件与结构化**：全部 `file_core` / `file_extra`（`create_file` / `modify_file` / `copy_file` / `move_file` / `delete_files` / `delete_dir` / `append_file` / `create_dir` / `search_replace` / `chmod_file` / `read_file` / `read_dir` / `glob_files` / `list_tree` / `read_binary_meta` / `hash_file` / `search_in_files` / `codebase_semantic_search`）、`structured_*`、`markdown_check_links`。`symlink_info` / `file_exists` / `extract_in_file` 已于 2026-10-18 移除（改用 `run_command readlink`·`realpath`·`stat` 与 `search_in_files`）。
-- **代码导航 / 度量**：`find_symbol` / `find_references` / `rust_file_outline` / `call_graph_sketch`、`code_stats` / `dependency_graph` / `coverage_report`。
+- **代码导航 / 度量**：`code_nav`（`find_symbol` / `find_references` / `file_outline` / `call_graph_sketch` 四个只读工具已于 2026-10-25 合并为一个 `action` 选择器）、`code_stats` / `dependency_graph` / `coverage_report`。
 - **归档**：`archive_pack` / `archive_unpack` / `archive_list`（用 Rust crate，非 CLI）。
 - **状态 / 记忆 / 配置**：`reminder` / `event`（reminders / events，2026-10-24 由九个工具合并为两个 `action` 选择器）、`long_term_*`、`self_config_info`、`skill_manage`。
 - **诊断 / 文档渲染**：`diagnostic_summary` / `error_output_playbook` / `present_clarification_questionnaire` / `changelog_draft` / `license_notice` / `repo_overview_sweep` / `crate_contract_map` / `summarize_experience` / `gh_pr_body_draft`。

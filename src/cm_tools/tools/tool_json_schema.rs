@@ -19,8 +19,8 @@ mod tests {
     use super::*;
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, JsonFormatArgs,
-        CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitAction, GitArgs,
+        CargoTestArgs, ChmodFileArgs, CodeNavArgs, CodeStatsArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
@@ -130,33 +130,16 @@ mod tests {
     }
 
     #[test]
-    fn find_symbol_schema_requires_symbol() {
-        let v = tool_parameters_schema_value::<FindSymbolArgs>();
+    fn code_nav_schema_requires_action_and_denies_unknown() {
+        let v = tool_parameters_schema_value::<CodeNavArgs>();
         let req = v
             .pointer("/required")
             .and_then(|r| r.as_array())
             .expect("required");
-        assert!(req.iter().any(|x| x == "symbol"));
-        assert_eq!(
-            v.pointer("/additionalProperties"),
-            Some(&json!(false)),
-            "{v}"
-        );
-    }
-
-    #[test]
-    fn find_references_schema_requires_symbol() {
-        let v = tool_parameters_schema_value::<FindReferencesArgs>();
-        let req = v
-            .pointer("/required")
-            .and_then(|r| r.as_array())
-            .expect("required");
-        assert!(req.iter().any(|x| x == "symbol"));
-    }
-
-    #[test]
-    fn call_graph_sketch_schema_denies_unknown() {
-        let v = tool_parameters_schema_value::<CallGraphSketchArgs>();
+        // union 结构体只有 `action` 是硬必填；per-action 必填（`symbol` / `path`）
+        // 由 `code_nav_dispatch` 校验，schema 表达不了这种条件约束。
+        assert_eq!(req.len(), 1, "{v}");
+        assert!(req.iter().any(|x| x == "action"), "{v}");
         assert_eq!(
             v.pointer("/additionalProperties"),
             Some(&json!(false)),

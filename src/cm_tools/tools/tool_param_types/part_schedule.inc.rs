@@ -309,3 +309,82 @@ fn default_call_graph_max_edges() -> Option<u64> {
 fn default_call_graph_max_files() -> Option<u64> {
     Some(12_000)
 }
+
+// ── `code_nav`：代码导航四合一（2026-10-25）──────────────────
+//
+// 四个只读导航动作共用一份 schema：`action` 选动作，其余字段按 action 被**选择性读取**
+// （不相关字段被忽略而非报错，与 `git` / `background_job` 同口径）。per-action 必填
+// 在 `code_nav_dispatch` 里校验，因为 union 结构体表达不了「`find_symbol` 必须有 `symbol`、
+// `file_outline` 必须有 `path`」这类条件约束。
+
+/// [`super::code_nav_dispatch::dispatch`]（`code_nav`）的动作选择器。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CodeNavAction {
+    /// 递归定位 Rust 符号的定义位置（原 `find_symbol`）。
+    FindSymbol,
+    /// 按词边界搜索标识符引用（原 `find_references`）。
+    FindReferences,
+    /// 单个 `.rs` 文件的顶层结构大纲（原 `rust_file_outline`）。
+    FileOutline,
+    /// 启发式变更影响面草图（原 `call_graph_sketch`）。
+    CallGraphSketch,
+}
+
+impl CodeNavAction {
+    /// 序列化后的名字（须与 `#[serde(rename_all = "snake_case")]` 一致）。
+    ///
+    /// 供分派层的错误文案与工具卡片使用：`match` 在这里被编译器强制穷尽，
+    /// 避免手写字符串字面量与 enum 变体悄悄漂移。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::FindSymbol => "find_symbol",
+            Self::FindReferences => "find_references",
+            Self::FileOutline => "file_outline",
+            Self::CallGraphSketch => "call_graph_sketch",
+        }
+    }
+}
+
+/// `code_nav` 入参：`action` + 四个动作字段的并集（按 `action` 取用，多余字段被忽略）。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CodeNavArgs {
+    pub action: CodeNavAction,
+    /// `find_symbol` / `find_references` / `call_graph_sketch`：目标符号。
+    pub symbol: Option<String>,
+    /// `call_graph_sketch`：批量符号（与 `symbol` 至少给一个非空）。
+    #[serde(default)]
+    pub symbols: Vec<String>,
+    /// `file_outline` 必填（单个 `.rs` 文件）；其余动作为搜索根目录（缺省工作区根）。
+    pub path: Option<String>,
+    /// `find_symbol`：定义种类过滤（`fn` / `struct` / `enum` / `trait` 等）。
+    pub kind: Option<String>,
+    /// `find_symbol`（内部上限 200）/ `find_references`（内部上限 300）。
+    /// schema 取两者较宽者，按 action 在实现内部各自 clamp。
+    #[schemars(range(min = 1, max = 300))]
+    pub max_results: Option<u64>,
+    /// `find_symbol`：每处命中前后的上下文行数（默认 2）。
+    #[schemars(range(min = 0))]
+    pub context_lines: Option<u64>,
+    /// `find_symbol`：大小写不敏感（默认 true）。
+    pub case_insensitive: Option<bool>,
+    /// `find_references`：大小写敏感（默认 false）。
+    pub case_sensitive: Option<bool>,
+    /// `find_references`：跳过疑似定义行（默认 true）。
+    pub exclude_definitions: Option<bool>,
+    /// `find_symbol` / `find_references` / `call_graph_sketch`：是否扫描隐藏文件 / 目录
+    /// （默认 false；`file_outline` 只读单个文件，不读该字段）。
+    pub include_hidden: Option<bool>,
+    /// `file_outline`：是否包含 `use` 行（默认 false）。
+    pub include_use: Option<bool>,
+    /// `file_outline`：最多列出的条目数（默认 200，上限 500）。
+    #[schemars(range(min = 1, max = 500))]
+    pub max_items: Option<u32>,
+    /// `call_graph_sketch`：最多边数（默认 400，上限 3000）。
+    #[schemars(range(min = 1, max = 3000))]
+    pub max_edges: Option<u64>,
+    /// `call_graph_sketch`：最多扫描文件数（默认 12000，上限 50000）。
+    #[schemars(range(min = 1, max = 50000))]
+    pub max_files: Option<u64>,
+}
