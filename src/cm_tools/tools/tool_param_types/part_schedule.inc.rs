@@ -70,6 +70,110 @@ pub struct UpdateEventArgs {
     pub notes: Option<String>,
 }
 
+// ── 日程工具（`action` 选择器，2026-10-24 九合一）───────────────
+//
+// 下面两个是**工具 schema**；上面 `AddReminderArgs` / `UpdateEventArgs` 等旧结构保留为
+// 内部 DTO —— `schedule.rs` 的既有实现仍按它们解析，分派层负责把 union 拆回旧形状，
+// 这样合并的是对外 schema，而不是重写已验证的读写流程。
+
+/// [`super::schedule_dispatch::reminder`] 的 `action`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum ReminderAction {
+    /// 列出提醒（**只读**）。
+    List,
+    /// 新增提醒（`title` 必填）。
+    Add,
+    /// 更新提醒（按 `id`，`title` / `due_at` / `done` 任填）。
+    Update,
+    /// 删除提醒（按 `id`）。
+    Delete,
+    /// 标记完成（按 `id`）。
+    Complete,
+}
+
+/// [`super::schedule_dispatch::reminder`] 入参：`action` 选择器 + 字段并集。
+///
+/// `list` 只读；`add` / `update` / `delete` / `complete` 写 `.crabmate/reminders.json`。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ReminderArgs {
+    /// 要执行的提醒操作。
+    pub action: ReminderAction,
+    /// `add` 必填（非空）；`update` 用于改标题。
+    #[serde(default)]
+    pub title: Option<String>,
+    /// `add` / `update`：到期时间，支持 RFC3339 或 `YYYY-MM-DD HH:MM` / `YYYY-MM-DD`；空串表示清空。
+    #[serde(default)]
+    pub due_at: Option<String>,
+    /// `list`：是否包含已完成（默认 false）。
+    #[serde(default)]
+    pub include_done: bool,
+    /// `list`：仅看未来 N 天（含今天）。
+    #[serde(default)]
+    #[schemars(range(min = 0))]
+    pub future_days: Option<u64>,
+    /// `update` / `delete` / `complete`：提醒 id。
+    #[serde(default)]
+    pub id: Option<String>,
+    /// `update`：完成状态。
+    #[serde(default)]
+    pub done: Option<bool>,
+}
+
+/// [`super::schedule_dispatch::event`] 的 `action`。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum EventAction {
+    /// 列出日程（**只读**）。
+    List,
+    /// 新增日程（`title` / `start_at` 必填）。
+    Add,
+    /// 更新日程（按 `id`，其余任填）。
+    Update,
+    /// 删除日程（按 `id`）。
+    Delete,
+}
+
+/// [`super::schedule_dispatch::event`] 入参：`action` 选择器 + 字段并集。
+///
+/// `list` 只读；`add` / `update` / `delete` 写 `.crabmate/events.json`。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EventArgs {
+    /// 要执行的日程操作。
+    pub action: EventAction,
+    /// `add` / `update`：标题（`add` 必填、非空）。
+    #[serde(default)]
+    pub title: Option<String>,
+    /// `add` 必填；`update` 用于改开始时间。
+    #[serde(default)]
+    pub start_at: Option<String>,
+    /// `add` / `update`：结束时间；空串表示清空。
+    #[serde(default)]
+    pub end_at: Option<String>,
+    /// `add` / `update`：地点；空串表示清空。
+    #[serde(default)]
+    pub location: Option<String>,
+    /// `add` / `update`：备注；空串表示清空。
+    #[serde(default)]
+    pub notes: Option<String>,
+    /// `update` / `delete`：日程 id。
+    #[serde(default)]
+    pub id: Option<String>,
+    /// `list`：按年份过滤。
+    #[serde(default)]
+    pub year: Option<i32>,
+    /// `list`：按月份过滤（1–12）。
+    #[serde(default)]
+    #[schemars(range(min = 1, max = 12))]
+    pub month: Option<u32>,
+    /// `list`：仅看未来 N 天。
+    #[serde(default)]
+    #[schemars(range(min = 0))]
+    pub future_days: Option<u64>,
+}
+
 // ── 归档（`archive`）──────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema)]

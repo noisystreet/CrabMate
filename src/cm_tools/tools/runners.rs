@@ -462,15 +462,8 @@ define_runners_cwd! {
     runner_find_references => code_nav::find_references,
     runner_rust_file_outline => code_nav::rust_file_outline,
     runner_call_graph_sketch => call_graph_sketch::run,
-    runner_add_reminder => schedule::add_reminder,
-    runner_list_reminders => schedule::list_reminders,
-    runner_complete_reminder => schedule::complete_reminder,
-    runner_delete_reminder => schedule::delete_reminder,
-    runner_update_reminder => schedule::update_reminder,
-    runner_add_event => schedule::add_event,
-    runner_list_events => schedule::list_events,
-    runner_delete_event => schedule::delete_event,
-    runner_update_event => schedule::update_event,
+    runner_reminder => schedule_dispatch::reminder,
+    runner_event => schedule_dispatch::event,
 }
 
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────

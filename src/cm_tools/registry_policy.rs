@@ -134,6 +134,10 @@ fn builtin_write_effect_tools() -> &'static HashSet<String> {
             "gh_release_create",
             "skill_manage",
             "background_job_cancel",
+            // 日程/提醒：除 `list` 外都会写 `.crabmate/*.json`；整工具按写处理（合并前这两族
+            // 九个工具全被漏掉，写操作被当只读进了只读 TTL / 同轮去重缓存）。
+            "reminder",
+            "event",
         ]
         .into_iter()
         .map(|s| s.to_string())

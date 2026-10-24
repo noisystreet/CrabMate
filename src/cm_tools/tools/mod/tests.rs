@@ -368,7 +368,7 @@ fn test_build_tools_filtered_basic_vs_development() {
     assert!(bn.contains(&"get_current_time"));
     assert!(bn.contains(&"convert_units"));
     assert!(bn.contains(&"text_transform"));
-    assert!(bn.contains(&"add_reminder"));
+    assert!(bn.contains(&"reminder"));
     assert!(!bn.contains(&"cargo_check"));
     let dn: Vec<_> = dev.iter().map(|t| t.function.name.as_str()).collect();
     assert!(dn.contains(&"cargo_check"));
@@ -707,9 +707,10 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
     // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    // 本轮下调：`background_job_status` / `background_job_list` / `background_job_output`
-    // 三个只读 Legacy 合并为单个 `background_job`（−2）；`background_job_cancel` 因写副作用保持独立。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 74 } else { 71 };
+    // 本轮下调：`add_reminder` / `list_reminders` / `complete_reminder` / `delete_reminder` /
+    // `update_reminder` / `add_event` / `list_events` / `delete_event` / `update_event`
+    // 九个 Legacy 合并为 `reminder` + `event`（−7）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 67 } else { 64 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
