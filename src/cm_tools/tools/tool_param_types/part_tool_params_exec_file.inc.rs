@@ -230,6 +230,20 @@ pub struct ApplyPatchArgs {
     pub patch: String,
     #[schemars(range(min = 0))]
     pub strip: Option<u32>,
+    /// **默认 `false`**：保持 `apply_patch`「就是应用」的既有语义。设为 `true` 时只试算并返回
+    /// diff 预览、不落盘。
+    ///
+    /// 与 `dry_run` 正交的一点：多文件补丁**总是**先整体试算，任一文件对不上就整体不写，
+    /// 不会出现「部分应用」。
+    pub dry_run: bool,
+    /// 写前校验（**仅限单文件补丁**）：`read_file` 输出头里的 `revision`。
+    /// 与目标当前内容不一致即拒写（`错误[stale_revision]`）。补丁涉及多个文件时传此参数会
+    /// 直接报错——一个 revision 无法表达多个文件的基线。
+    ///
+    /// **此字段仅用于 schema 声明与文档**：取值由写侧守卫（`file::verify_write_revision`）
+    /// 从**原始入参 JSON** 读取，与 `modify_file` / `structured_patch` 同模式。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
