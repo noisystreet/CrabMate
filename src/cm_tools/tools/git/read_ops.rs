@@ -6,6 +6,7 @@ use super::helpers::{
     run_and_format, run_diff_mode,
 };
 use crate::cm_tools::tools::output_util;
+use crate::cm_tools::tools::tool_param_types::GitAction;
 
 /// `git diff` 正文常大于默认 `command_max_output_len`；在配置值之上保证至少本题字节预算，避免工具结果过早按字节截断。
 const GIT_DIFF_MIN_CAP_BYTES: usize = 512 * 1024;
@@ -19,31 +20,40 @@ file_history / branch_list / remote_status / remote_list";
 /// 合并自原 10 个 `git_*` 工具——它们都是同一个 `git` CLI 的只读子命令包装，
 /// 合并只改变了「从哪里拿到要跑哪个子命令」。各查询仍自行 `parse_args` 取所需字段，
 /// 因此 `action` 之外的字段被忽略，仓库校验与错误文案与逐工具时代一致。
+///
+/// 分发**经由 `GitAction` 反序列化**而不是匹配字符串字面量：`GitAction` 同时是 schema 的
+/// enum 真源，新增/改名 action 时下面的 `match` 不穷尽会直接编译失败，避免「schema 放行、
+/// 运行时却报未知 action」这种只改一半的静默不一致。
 pub fn dispatch(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
     };
-    let action = match v.get("action").and_then(|x| x.as_str()).map(str::trim) {
-        Some(a) if !a.is_empty() => a,
-        _ => return format!("错误：缺少 action（可选值：{GIT_ACTIONS}）"),
+    let unknown = |name: &str| format!("错误：未知 action `{name}`（可选值：{GIT_ACTIONS}）");
+    let raw = v.get("action").cloned().unwrap_or(serde_json::Value::Null);
+    let Some(name) = raw.as_str().map(str::trim).filter(|s| !s.is_empty()) else {
+        return format!("错误：缺少 action（可选值：{GIT_ACTIONS}）");
+    };
+    // 先取出原值再反序列化，失败时能把拼错的 action 原样回显给调用方。
+    let action: GitAction = match serde_json::from_value(serde_json::Value::String(name.to_string())) {
+        Ok(a) => a,
+        Err(_) => return unknown(name),
     };
     match action {
-        "status" => status(args_json, max_output_len, working_dir),
-        "diff" => diff(args_json, max_output_len, working_dir),
-        "clean_check" => clean_check(args_json, max_output_len, working_dir),
-        "log" => log(args_json, max_output_len, working_dir),
-        "show" => show(args_json, max_output_len, working_dir),
-        "blame" => blame(args_json, max_output_len, working_dir),
-        "file_history" => file_history(args_json, max_output_len, working_dir),
-        "branch_list" => branch_list(args_json, max_output_len, working_dir),
-        "remote_status" => remote_status(args_json, max_output_len, working_dir),
-        "remote_list" => remote_list(args_json, max_output_len, working_dir),
-        other => format!("错误：未知 action `{other}`（可选值：{GIT_ACTIONS}）"),
+        GitAction::Status => status(args_json, max_output_len, working_dir),
+        GitAction::Diff => diff(args_json, max_output_len, working_dir),
+        GitAction::CleanCheck => clean_check(args_json, max_output_len, working_dir),
+        GitAction::Log => log(args_json, max_output_len, working_dir),
+        GitAction::Show => show(args_json, max_output_len, working_dir),
+        GitAction::Blame => blame(args_json, max_output_len, working_dir),
+        GitAction::FileHistory => file_history(args_json, max_output_len, working_dir),
+        GitAction::BranchList => branch_list(args_json, max_output_len, working_dir),
+        GitAction::RemoteStatus => remote_status(args_json, max_output_len, working_dir),
+        GitAction::RemoteList => remote_list(args_json, max_output_len, working_dir),
     }
 }
 
-pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -76,7 +86,7 @@ pub fn status(args_json: &str, max_output_len: usize, working_dir: &Path) -> Str
     run_and_format(cmd, max_output_len, "git status")
 }
 
-pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -131,7 +141,7 @@ pub fn diff(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
     )
 }
 
-pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     if let Err(e) = ensure_git_repo(working_dir) {
         return e;
     }
@@ -164,7 +174,7 @@ pub fn clean_check(_args_json: &str, max_output_len: usize, working_dir: &Path) 
     }
 }
 
-pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -183,7 +193,7 @@ pub fn log(args_json: &str, max_output_len: usize, working_dir: &Path) -> String
     run_and_format(cmd, max_output_len, "git log")
 }
 
-pub fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -202,7 +212,7 @@ pub fn show(args_json: &str, max_output_len: usize, working_dir: &Path) -> Strin
     run_and_format(cmd, max_output_len, &format!("git show {}", rev))
 }
 
-pub fn blame(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn blame(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -225,7 +235,7 @@ pub fn blame(args_json: &str, max_output_len: usize, working_dir: &Path) -> Stri
     run_and_format(cmd, max_output_len, &format!("git blame {}", path))
 }
 
-pub fn file_history(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn file_history(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -250,7 +260,7 @@ pub fn file_history(args_json: &str, max_output_len: usize, working_dir: &Path) 
     run_and_format(cmd, max_output_len, &format!("git log --follow {}", path))
 }
 
-pub fn branch_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn branch_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -271,7 +281,7 @@ pub fn branch_list(args_json: &str, max_output_len: usize, working_dir: &Path) -
     run_and_format(cmd, max_output_len, "git branch")
 }
 
-pub fn remote_status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn remote_status(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let _v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -284,7 +294,7 @@ pub fn remote_status(args_json: &str, max_output_len: usize, working_dir: &Path)
     run_and_format(cmd, max_output_len, "git status -sb")
 }
 
-pub fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
+fn remote_list(args_json: &str, max_output_len: usize, working_dir: &Path) -> String {
     let _v = match parse_args(args_json) {
         Ok(v) => v,
         Err(e) => return e,
@@ -316,11 +326,23 @@ mod tests {
         assert!(out.contains("未知 action"), "{out}");
     }
 
-    /// 合法 action 应被真正转发（这里用非仓库临时目录，命中各查询共有的仓库校验）。
+    /// 每个 action 都应被真正转发到对应子命令（这里用非仓库临时目录，
+    /// 命中各查询共有的仓库校验——只要不是「未知/缺少 action」，就说明分发命中）。
     #[test]
-    fn dispatch_forwards_known_actions() {
+    fn dispatch_forwards_every_action() {
         let dir = tempfile::tempdir().expect("tempdir");
-        for action in ["status", "diff", "clean_check", "log", "show", "remote_list"] {
+        for action in [
+            "status",
+            "diff",
+            "clean_check",
+            "log",
+            "show",
+            "blame",
+            "file_history",
+            "branch_list",
+            "remote_status",
+            "remote_list",
+        ] {
             let args = format!(r#"{{"action":"{action}"}}"#);
             let out = dispatch(&args, 4096, dir.path());
             assert!(

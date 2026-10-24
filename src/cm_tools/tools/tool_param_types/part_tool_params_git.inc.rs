@@ -1,8 +1,4 @@
-// 原 `tool_params/{git_read,git_write}.rs` 手写 JSON；与 `git` runner 的 Value 解析形状对齐。
-
-/// 无参工具（如 `git_remote_list`）的 JSON 对象。
-#[derive(Debug, Default, Deserialize, Serialize, JsonSchema)]
-pub struct EmptyToolArgs {}
+// `git` 的入参：单一 `action` 选择器 + 各只读子命令的字段并集（见下方 `GitArgs`）。
 
 // ── git read ────────────────────────────────────────────────────
 

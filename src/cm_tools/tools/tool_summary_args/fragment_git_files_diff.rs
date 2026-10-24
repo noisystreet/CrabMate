@@ -78,9 +78,9 @@ impl ToolSummaryLine for GitSummaryArgs {
                     "branch_list" => "git branch",
                     "remote_status" => "git remote tracking status",
                     "remote_list" => "git remote -v",
-                    // 缺 action 时仍给一行可读文案（不静默丢卡片）。
-                    "" => "git",
-                    other => other,
+                    // 缺 action 或未识别的 action 都回落到工具名，避免把原始字符串
+                    // （如拼错的 `nope`）当成卡片标题显示。
+                    _ => "git",
                 };
                 Some(label.to_string())
             }
