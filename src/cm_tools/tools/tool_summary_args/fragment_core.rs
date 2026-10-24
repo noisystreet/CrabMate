@@ -215,163 +215,52 @@ impl ToolSummaryLine for TerminalSessionSummaryArgs {
     }
 }
 
-// ── rust_analyzer * ───────────────────────────────────────────
+// ── rust_analyzer ──────────────────────────────────────
 
+/// `rust_analyzer` 的摘要行：同一结构体接住所有 action（原 8 个近乎相同的
+/// `RustAnalyzer*SummaryArgs` 已合并；差异只在文案前缀与是否需要 `line`）。
 #[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerGotoDefSummaryArgs {
+pub(super) struct RustAnalyzerSummaryArgs {
+    #[serde(default)]
+    action: String,
     path: String,
     #[serde(default)]
     line: Option<u64>,
-}
-
-impl ToolSummaryLine for RustAnalyzerGotoDefSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "rust-analyzer goto definition {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerFindRefsSummaryArgs {
-    path: String,
     #[serde(default)]
-    line: Option<u64>,
+    query: Option<String>,
 }
 
-impl ToolSummaryLine for RustAnalyzerFindRefsSummaryArgs {
+impl ToolSummaryLine for RustAnalyzerSummaryArgs {
     fn summary_line(self) -> Option<String> {
         let path = self.path.trim();
         if path.is_empty() {
             return None;
         }
-        Some(format!(
-            "rust-analyzer find references {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerHoverSummaryArgs {
-    path: String,
-    #[serde(default)]
-    line: Option<u64>,
-}
-
-impl ToolSummaryLine for RustAnalyzerHoverSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
+        match self.action.trim() {
+            "workspace_symbol" => {
+                let q = self.query.as_deref().unwrap_or("").trim();
+                (!q.is_empty()).then(|| format!("rust-analyzer workspace/symbol {q} (prime {path})"))
+            }
+            "document_symbol" => Some(format!("rust-analyzer document symbols {path}")),
+            action => {
+                let label = match action {
+                    "goto_definition" => "goto definition",
+                    "find_references" => "find references",
+                    "hover" => "hover",
+                    "goto_implementation" => "goto implementation",
+                    "goto_type_definition" => "goto type definition",
+                    "document_highlight" => "document highlight",
+                    // 缺 action 时仍给一行可读文案（不静默丢卡片）。
+                    "" => "request",
+                    other => other,
+                };
+                Some(format!(
+                    "rust-analyzer {label} {}:{}",
+                    path,
+                    self.line.unwrap_or(0)
+                ))
+            }
         }
-        Some(format!(
-            "rust-analyzer hover {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerDocSymbolSummaryArgs {
-    path: String,
-}
-
-impl ToolSummaryLine for RustAnalyzerDocSymbolSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!("rust-analyzer document symbols {}", path))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerGotoImplSummaryArgs {
-    path: String,
-    #[serde(default)]
-    line: Option<u64>,
-}
-
-impl ToolSummaryLine for RustAnalyzerGotoImplSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "rust-analyzer goto implementation {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerGotoTypeDefSummaryArgs {
-    path: String,
-    #[serde(default)]
-    line: Option<u64>,
-}
-
-impl ToolSummaryLine for RustAnalyzerGotoTypeDefSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "rust-analyzer goto type definition {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerDocHighlightSummaryArgs {
-    path: String,
-    #[serde(default)]
-    line: Option<u64>,
-}
-
-impl ToolSummaryLine for RustAnalyzerDocHighlightSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        if path.is_empty() {
-            return None;
-        }
-        Some(format!(
-            "rust-analyzer document highlight {}:{}",
-            path,
-            self.line.unwrap_or(0)
-        ))
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct RustAnalyzerWorkspaceSymbolSummaryArgs {
-    path: String,
-    query: String,
-}
-
-impl ToolSummaryLine for RustAnalyzerWorkspaceSymbolSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let path = self.path.trim();
-        let q = self.query.trim();
-        if path.is_empty() || q.is_empty() {
-            return None;
-        }
-        Some(format!("rust-analyzer workspace/symbol {q} (prime {path})"))
     }
 }
 
@@ -415,3 +304,52 @@ fn default_true() -> bool {
     true
 }
 
+
+// 各 fragment 被 `include!` 进同一模块，`tests` 名字不能复用，故带前缀。
+#[cfg(test)]
+mod rust_analyzer_summary_tests {
+    use super::*;
+
+    fn line(v: serde_json::Value) -> Option<String> {
+        serde_json::from_value::<RustAnalyzerSummaryArgs>(v)
+            .ok()?
+            .summary_line()
+    }
+
+    /// 合并后一个结构体要覆盖全部 action 的文案（原为 8 个独立 summary 结构）。
+    #[test]
+    fn rust_analyzer_summary_covers_actions() {
+        assert_eq!(
+            line(serde_json::json!({"action":"goto_definition","path":"a.rs","line":3})).as_deref(),
+            Some("rust-analyzer goto definition a.rs:3")
+        );
+        assert_eq!(
+            line(serde_json::json!({"action":"find_references","path":"a.rs","line":7})).as_deref(),
+            Some("rust-analyzer find references a.rs:7")
+        );
+        assert_eq!(
+            line(serde_json::json!({"action":"document_symbol","path":"a.rs"})).as_deref(),
+            Some("rust-analyzer document symbols a.rs")
+        );
+        assert_eq!(
+            line(serde_json::json!({"action":"workspace_symbol","path":"a.rs","query":"Foo"}))
+                .as_deref(),
+            Some("rust-analyzer workspace/symbol Foo (prime a.rs)")
+        );
+        // `line` 缺失时仍出摘要（与逐工具时代一致：unwrap_or(0)）。
+        assert_eq!(
+            line(serde_json::json!({"action":"hover","path":"a.rs"})).as_deref(),
+            Some("rust-analyzer hover a.rs:0")
+        );
+    }
+
+    #[test]
+    fn rust_analyzer_summary_omits_when_uninformative() {
+        // 缺 query 的 workspace_symbol、空 path 都不生成摘要行。
+        assert_eq!(
+            line(serde_json::json!({"action":"workspace_symbol","path":"a.rs"})),
+            None
+        );
+        assert_eq!(line(serde_json::json!({"action":"hover","path":"  "})), None);
+    }
+}

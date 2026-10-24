@@ -80,14 +80,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- Rust / Cargo ---
         "cargo_run"
         | "rust_test_one"
-        | "rust_analyzer_goto_definition"
-        | "rust_analyzer_find_references"
-        | "rust_analyzer_hover"
-        | "rust_analyzer_document_symbol"
-        | "rust_analyzer_goto_implementation"
-        | "rust_analyzer_goto_type_definition"
-        | "rust_analyzer_document_highlight"
-        | "rust_analyzer_workspace_symbol" => &[GENERAL, RUST],
+        | "rust_analyzer" => &[GENERAL, RUST],
         "cargo_check" | "cargo_test" | "cargo_clippy" | "rust_compiler_json" => {
             &[GENERAL, RUST, QUALITY]
         }

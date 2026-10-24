@@ -464,14 +464,7 @@ define_runners_cwd_try! {
 // ── 同构薄封装实例（形态 3：f(args, cwd)）────────────────────
 
 define_runners_cwd! {
-    runner_rust_analyzer_goto_definition => rust_ide::rust_analyzer_goto_definition,
-    runner_rust_analyzer_find_references => rust_ide::rust_analyzer_find_references,
-    runner_rust_analyzer_hover => rust_ide::rust_analyzer_hover,
-    runner_rust_analyzer_document_symbol => rust_ide::rust_analyzer_document_symbol,
-    runner_rust_analyzer_goto_implementation => rust_ide::rust_analyzer_goto_implementation,
-    runner_rust_analyzer_goto_type_definition => rust_ide::rust_analyzer_goto_type_definition,
-    runner_rust_analyzer_document_highlight => rust_ide::rust_analyzer_document_highlight,
-    runner_rust_analyzer_workspace_symbol => rust_ide::rust_analyzer_workspace_symbol,
+    runner_rust_analyzer => rust_ide::rust_analyzer,
     runner_read_dir => file::read_dir,
     runner_glob_files => file::glob_files,
     runner_list_tree => file::list_tree,

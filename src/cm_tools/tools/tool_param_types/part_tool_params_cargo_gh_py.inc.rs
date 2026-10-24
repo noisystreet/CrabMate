@@ -59,51 +59,64 @@ pub struct RustCompilerJsonArgs {
     pub message_format: Option<String>,
 }
 
+/// `rust_analyzer` 入参：`action` 选择器 + 各动作字段的并集（按 action 取用，多余字段被忽略）。
+///
+/// 合并自原 8 个 `rust_analyzer_*` 工具——它们的 parameters 只是同一组字段的不同子集，
+/// 合并后 schema 不再把 `path` / `line` / `character` / `server_path` 重复发 8 遍。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct RustAnalyzerPositionArgs {
+pub struct RustAnalyzerArgs {
+    /// 要执行的 LSP 请求。
+    pub action: RustAnalyzerAction,
+    /// 工作区内相对路径。**全部 action 必填**（`workspace_symbol` 也用它做 `didOpen` 的锚点）。
     pub path: String,
+    /// **0-based**；`document_symbol` / `workspace_symbol` 不需要。
     #[schemars(range(min = 0))]
-    pub line: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
     #[schemars(range(min = 0))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub character: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub server_path: Option<String>,
     #[schemars(range(min = 0, max = 5000))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wait_after_open_ms: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct RustAnalyzerReferencesArgs {
-    pub path: String,
-    #[schemars(range(min = 0))]
-    pub line: u32,
-    #[schemars(range(min = 0))]
-    pub character: Option<u32>,
+    /// 仅 `find_references`（默认 true）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_declaration: Option<bool>,
-    pub server_path: Option<String>,
-    #[schemars(range(min = 0))]
-    pub wait_after_open_ms: Option<u32>,
-}
-
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct RustAnalyzerDocumentSymbolArgs {
-    pub path: String,
+    /// 仅 `document_symbol`（默认 500，上限 5000）。
     #[schemars(range(min = 1, max = 5000))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max_symbols: Option<u32>,
-    pub server_path: Option<String>,
-    #[schemars(range(min = 0, max = 5000))]
-    pub wait_after_open_ms: Option<u32>,
+    /// 仅 `workspace_symbol`（**必填**，符号名/模糊串）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub query: Option<String>,
+    /// 仅 `workspace_symbol`（默认 64，上限 500）。
+    #[schemars(range(min = 1, max = 500))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>,
 }
 
-/// `workspace/symbol`：仍须 `path` 指向工作区内一 Rust 源以触发 `didOpen`（与现有 LSP 会话一致），`query` 为符号名/模糊串。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-pub struct RustAnalyzerWorkspaceSymbolArgs {
-    pub path: String,
-    pub query: String,
-    #[schemars(range(min = 1, max = 500))]
-    pub max_results: Option<u32>,
-    pub server_path: Option<String>,
-    #[schemars(range(min = 0, max = 5000))]
-    pub wait_after_open_ms: Option<u32>,
+/// `rust_analyzer` 的 action 取值；与 `rust_ide::RaLspOp` 一一对应。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RustAnalyzerAction {
+    /// `textDocument/definition`
+    GotoDefinition,
+    /// `textDocument/references`
+    FindReferences,
+    /// `textDocument/hover`
+    Hover,
+    /// `textDocument/documentSymbol`
+    DocumentSymbol,
+    /// `textDocument/implementation`
+    GotoImplementation,
+    /// `textDocument/typeDefinition`
+    GotoTypeDefinition,
+    /// `textDocument/documentHighlight`
+    DocumentHighlight,
+    /// `workspace/symbol`
+    WorkspaceSymbol,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
