@@ -24,7 +24,7 @@ const DEFAULT_RA_WAIT_MS: u64 = 500;
 const DEFAULT_MAX_DOCUMENT_SYMBOLS: u64 = 500;
 const LSP_IO_TIMEOUT: Duration = Duration::from_secs(25);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum RaLspOp {
     Definition,
     References,
@@ -274,67 +274,46 @@ mod lsp_request;
 
 // ---------- rust-analyzer LSP（stdio）----------
 
-/// `textDocument/definition`：path 相对工作区，**line / character 为 0-based**（与 LSP 一致）。
-pub fn rust_analyzer_goto_definition(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::Definition) {
+/// `rust_analyzer` 的 action 可选值（错误提示与 `description` 共用一份）。
+const RA_ACTIONS: &str = "goto_definition / find_references / hover / document_symbol / \
+goto_implementation / goto_type_definition / document_highlight / workspace_symbol";
+
+/// 统一入口：按入参 `action` 分发到对应 LSP 请求。
+///
+/// 合并自原 8 个 `rust_analyzer_*` 工具——它们本来都只是
+/// `lsp_rust_analyzer_request(.., RaLspOp::X)` 的薄包装，合并只改了「从哪里拿到 `RaLspOp`」。
+/// 参数校验仍留在 [`lsp_rust_analyzer_request`] 内（`path` 必填、position 类另需 0-based `line`），
+/// 因此错误文案与逐工具时代保持一致。
+pub fn rust_analyzer(args_json: &str, workspace_root: &Path) -> String {
+    let op = match ra_lsp_op_from_json(args_json) {
+        Ok(op) => op,
+        Err(msg) => return msg,
+    };
+    match lsp_rust_analyzer_request(args_json, workspace_root, op) {
         Ok(s) => s,
         Err(e) => e,
     }
 }
 
-/// `textDocument/references`（`include_declaration` 默认 true）。
-pub fn rust_analyzer_find_references(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::References) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `textDocument/hover`：path + 0-based line/character。
-pub fn rust_analyzer_hover(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::Hover) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `textDocument/documentSymbol`：整文件符号树（或 `SymbolInformation` 列表），条数由 `max_symbols` 限制。
-pub fn rust_analyzer_document_symbol(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::DocumentSymbol) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `textDocument/implementation`：path + 0-based line/character（trait 实现等跳转）。
-pub fn rust_analyzer_goto_implementation(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::Implementation) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `textDocument/typeDefinition`：path + 0-based line/character。
-pub fn rust_analyzer_goto_type_definition(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::TypeDefinition) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `textDocument/documentHighlight`：path + 0-based line/character（同一符号在文件内的读/写高亮）。
-pub fn rust_analyzer_document_highlight(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::DocumentHighlight) {
-        Ok(s) => s,
-        Err(e) => e,
-    }
-}
-
-/// `workspace/symbol`：按名称模糊查工作区符号。`path` 须为工作区内一 `.rs` 源（用于 `didOpen` 与现有会话一致），`query` 为搜索串。
-pub fn rust_analyzer_workspace_symbol(args_json: &str, workspace_root: &Path) -> String {
-    match lsp_rust_analyzer_request(args_json, workspace_root, RaLspOp::WorkspaceSymbol) {
-        Ok(s) => s,
-        Err(e) => e,
+/// 从入参 JSON 的 `action` 解析出 [`RaLspOp`]；缺失与未知都给出可选值清单。
+fn ra_lsp_op_from_json(args_json: &str) -> Result<RaLspOp, String> {
+    let v = crate::cm_tools::tools::parse_args_json(args_json)?;
+    let action = match v.get("action").and_then(|x| x.as_str()).map(str::trim) {
+        Some(a) if !a.is_empty() => a,
+        _ => return Err(format!("错误：缺少 action（可选值：{RA_ACTIONS}）")),
+    };
+    match action {
+        "goto_definition" => Ok(RaLspOp::Definition),
+        "find_references" => Ok(RaLspOp::References),
+        "hover" => Ok(RaLspOp::Hover),
+        "document_symbol" => Ok(RaLspOp::DocumentSymbol),
+        "goto_implementation" => Ok(RaLspOp::Implementation),
+        "goto_type_definition" => Ok(RaLspOp::TypeDefinition),
+        "document_highlight" => Ok(RaLspOp::DocumentHighlight),
+        "workspace_symbol" => Ok(RaLspOp::WorkspaceSymbol),
+        other => Err(format!(
+            "错误：未知 action `{other}`（可选值：{RA_ACTIONS}）"
+        )),
     }
 }
 
@@ -594,6 +573,54 @@ fn read_one_lsp_message<R: BufRead>(reader: &mut R) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 8 个 `action` 都能解析到对应 LSP 操作（合并前它们是 8 个独立工具）。
+    #[test]
+    fn ra_action_maps_to_every_lsp_op() {
+        let cases = [
+            ("goto_definition", RaLspOp::Definition),
+            ("find_references", RaLspOp::References),
+            ("hover", RaLspOp::Hover),
+            ("document_symbol", RaLspOp::DocumentSymbol),
+            ("goto_implementation", RaLspOp::Implementation),
+            ("goto_type_definition", RaLspOp::TypeDefinition),
+            ("document_highlight", RaLspOp::DocumentHighlight),
+            ("workspace_symbol", RaLspOp::WorkspaceSymbol),
+        ];
+        for (action, want) in cases {
+            let args = format!(r#"{{"action":"{action}","path":"src/lib.rs","line":3}}"#);
+            assert_eq!(
+                ra_lsp_op_from_json(&args),
+                Ok(want),
+                "action={action} 应映射到 {want:?}"
+            );
+        }
+    }
+
+    /// 缺 `action` / 未知 `action` 都把可选值清单写进错误，便于模型自纠。
+    #[test]
+    fn ra_missing_or_unknown_action_lists_choices() {
+        for args in [
+            r#"{"path":"src/lib.rs","line":1}"#,
+            r#"{"action":"","path":"src/lib.rs"}"#,
+            r#"{"action":"   ","path":"src/lib.rs"}"#,
+        ] {
+            let err = ra_lsp_op_from_json(args).expect_err("缺 action 须失败");
+            assert!(err.contains("缺少 action"), "{err}");
+            assert!(err.contains("workspace_symbol"), "应列出可选值: {err}");
+        }
+
+        let err = ra_lsp_op_from_json(r#"{"action":"nope","path":"src/lib.rs"}"#)
+            .expect_err("未知 action 须失败");
+        assert!(err.contains("未知 action `nope`"), "{err}");
+        assert!(err.contains("goto_definition"), "应列出可选值: {err}");
+    }
+
+    #[test]
+    fn ra_invalid_json_is_reported() {
+        let err = ra_lsp_op_from_json("{").expect_err("非法 JSON 须失败");
+        assert!(err.starts_with("参数 JSON 无效"), "{err}");
+    }
 
     #[test]
     fn format_compiler_message_smoke() {
