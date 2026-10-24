@@ -5,8 +5,9 @@ workflow:
   max_parallelism: 4
 steps:
   - id: diff
-    tool: git_diff
+    tool: git
     args:
+      action: diff
       mode: all
 
   - id: scan_each

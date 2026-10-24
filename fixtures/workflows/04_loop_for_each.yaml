@@ -5,8 +5,9 @@ workflow:
   max_parallelism: 2
 steps:
   - id: diff
-    tool: git_diff
+    tool: git
     args:
+      action: diff
       mode: all
 
   - id: outline_each

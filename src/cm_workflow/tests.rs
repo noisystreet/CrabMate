@@ -43,8 +43,8 @@ fn test_parse_workflow_template_code_review() {
     let spec = parse_workflow_spec(json).unwrap();
     assert_eq!(spec.nodes.len(), 4);
     assert!(!spec.fail_fast);
-    assert_eq!(spec.nodes[0].tool_name, "git_diff");
-    assert_eq!(spec.nodes[1].tool_name, "git_diff");
+    assert_eq!(spec.nodes[0].tool_name, "git");
+    assert_eq!(spec.nodes[1].tool_name, "git");
     assert_eq!(spec.nodes[2].tool_name, "search_in_files");
     assert_eq!(spec.nodes[3].tool_name, "cargo_clippy");
 }
@@ -255,7 +255,7 @@ fn test_compile_workflow_author_yaml_serial_after() {
     assert_eq!(spec.nodes.len(), 3);
     assert!(spec.fail_fast);
     assert_eq!(spec.nodes[0].id, "diff");
-    assert_eq!(spec.nodes[0].tool_name, "git_diff");
+    assert_eq!(spec.nodes[0].tool_name, "git");
     assert!(spec.nodes[0].deps.is_empty());
     assert_eq!(spec.nodes[1].id, "clippy");
     assert_eq!(spec.nodes[1].deps, vec!["diff".to_string()]);
@@ -367,7 +367,7 @@ fn test_parse_workflow_spec_accepts_inline_steps_json() {
         "version": 2,
         "workflow": { "fail_fast": true },
         "steps": [
-            {"id":"a","tool":"git_diff","args":{"mode":"all"}},
+            {"id":"a","tool":"git","args":{"action":"diff","mode":"all"}},
             {"id":"b","tool":"cargo_clippy","after":["a"],"args":{}}
         ]
     }"#;

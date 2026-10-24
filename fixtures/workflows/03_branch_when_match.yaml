@@ -9,7 +9,9 @@ steps:
     args: {}
 
   - id: hotfix_flow
-    tool: git_diff
+    tool: git
+    args:
+      action: diff
     after: [classify]
     when:
       from: classify

@@ -19,8 +19,9 @@
           "branch": "success",
           "from": "lint"
         },
-        "tool": "git_diff",
+        "tool": "git",
         "tool_args": {
+          "action": "diff",
           "mode": "staged"
         }
       },

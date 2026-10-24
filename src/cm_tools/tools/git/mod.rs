@@ -9,6 +9,6 @@ mod read_ops;
 
 pub use helpers::ensure_git_repo;
 pub use read_ops::{
-    blame, branch_list, clean_check, diff, file_history, log, remote_list, remote_status, show,
-    status,
+    blame, branch_list, clean_check, diff, dispatch, file_history, log, remote_list, remote_status,
+    show, status,
 };

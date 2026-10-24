@@ -17,8 +17,9 @@ steps:
           branch: success
         steps:
           - id: ship
-            tool: git_diff
+            tool: git
             args:
+              action: diff
               mode: staged
       - when:
           from: lint

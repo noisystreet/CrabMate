@@ -20,8 +20,10 @@
             "field": "branch"
           }
         },
-        "tool": "git_diff",
-        "tool_args": {}
+        "tool": "git",
+        "tool_args": {
+          "action": "diff"
+        }
       },
       {
         "deps": [

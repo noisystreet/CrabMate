@@ -233,15 +233,15 @@ Structured function-calling JSON examples:
     ]
   }}
   ```
- - `workflow_execute` (Git: inject `git_log` hash into `git_show`):
+ - `workflow_execute` (Git: inject `git log` hash into `git show`):
    ```json
    {"workflow":{
      "max_parallelism":2,
      "fail_fast":true,
      "compensate_on_failure":false,
      "nodes":[
-       {"id":"log","tool_name":"git_log","tool_args":{"max_count":1,"oneline":true},"deps":[],"compensate_with":[]},
-       {"id":"show","tool_name":"git_show","tool_args":{"rev":"{{log.stdout_first_token}}"},"deps":["log"],"compensate_with":[]}
+       {"id":"log","tool_name":"git","tool_args":{"action":"log","max_count":1,"oneline":true},"deps":[],"compensate_with":[]},
+       {"id":"show","tool_name":"git","tool_args":{"action":"show","rev":"{{log.stdout_first_token}}"},"deps":["log"],"compensate_with":[]}
      ]
    }}
    ```
@@ -253,7 +253,7 @@ Structured function-calling JSON examples:
      "fail_fast":true,
      "compensate_on_failure":false,
      "nodes":[
-       {"id":"diff","tool_name":"git_diff","tool_args":{"base":"main","context_lines":3},"deps":[],"compensate_with":[]},
+       {"id":"diff","tool_name":"git","tool_args":{"action":"diff","base":"main","context_lines":3},"deps":[],"compensate_with":[]},
        {"id":"patch_check","tool_name":"run_command","tool_args":{"command":"git","args":["apply","--check","patches/fix.diff"]},"deps":["diff"],"compensate_with":[]},
        {"id":"patch_apply","tool_name":"run_command","tool_args":{"command":"git","args":["apply","patches/fix.diff"]},"deps":["patch_check"],"requires_approval":true,"compensate_with":[]}
      ]
@@ -304,7 +304,7 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 **Background jobs**: `background_job_status` (query status/output by `tool_job_id`), `background_job_list` (list workspace jobs, newest first), `background_job_output` (incremental output pull, `tail -f` semantics, optional `cursor`), `background_job_cancel` (cancel a job).
 
-**Git**: read-only tools are kept (`git_status` / `git_diff` / `git_log` / `git_show` / `git_blame` / `git_file_history` / `git_branch_list` / `git_remote_status` / `git_remote_list` / `git_clean_check`; `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`). Write operations (`git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`, `git_commit`, `git_stage_files`, `git_fetch`, `git_clone`, `git_remote_set_url`, `git_apply`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted) instead.
+**Git**: read-only queries are one tool, **`git`**, with a required `action` selector (`status` / `diff` / `clean_check` / `log` / `show` / `blame` / `file_history` / `branch_list` / `remote_status` / `remote_list`; `action=diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`). Write operations (`git_checkout`, `git_branch_create`/`git_branch_delete`, `git_push`, `git_merge`, `git_rebase`, `git_stash`, `git_tag`, `git_reset`, `git_cherry_pick`, `git_revert`, `git_commit`, `git_stage_files`, `git_fetch`, `git_clone`, `git_remote_set_url`, `git_apply`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted) instead.
 
 **Metrics**: `code_stats`, `dependency_graph`, `coverage_report`.
 
@@ -321,23 +321,31 @@ Also: `cargo_check`, `cargo_test` (cache with `rust_test_one` when enabled), `ca
 
 ## Git tool examples
 
-Read-only tools only. `git_diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`:
+Read-only Git queries are one tool, `git`, selected by a required `action` (`status` / `diff` / `clean_check` / `log` / `show` / `blame` / `file_history` / `branch_list` / `remote_status` / `remote_list`). Each action reads only its own field group; extra fields are ignored. `action=diff` absorbed the former `git_diff_stat` / `git_diff_names` / `git_diff_base` via `stat` / `name_only` / `base`:
 
-- `git_clean_check`:
+- `clean_check`:
   ```json
-  {}
+  {"action":"clean_check"}
   ```
-- `git_diff` (working-tree stat, equivalent to the old `git_diff_stat`):
+- `diff` (working-tree stat, equivalent to the old `git_diff_stat`):
   ```json
-  {"mode":"working","stat":true}
+  {"action":"diff","mode":"working","stat":true}
   ```
-- `git_diff` (changed file names vs `main`, equivalent to the old `git_diff_names` / `git_diff_base`):
+- `diff` (changed file names vs `main`, equivalent to the old `git_diff_names` / `git_diff_base`):
   ```json
-  {"mode":"all","base":"main","name_only":true}
+  {"action":"diff","mode":"all","base":"main","name_only":true}
   ```
-- `git_remote_list`:
+- `show` (default HEAD):
   ```json
-  {}
+  {"action":"show","rev":"HEAD~1"}
+  ```
+- `blame` / `file_history` (`path` required):
+  ```json
+  {"action":"file_history","path":"src/main.rs","max_count":10}
+  ```
+- `remote_list`:
+  ```json
+  {"action":"remote_list"}
   ```
 
 Write operations (`add` / `commit` / `push` / `fetch` / `checkout` / `apply` / `clone`, …) were removed per §8.5.4 **track B**; invoke `git` via `run_command` (allowlisted):
@@ -371,7 +379,7 @@ Typical `release_ready_check` (which runs `cargo audit` / `cargo deny check`) or
   ```
   Causes: RustSec advisories, stale lockfile. Fix: `cargo update` / targeted updates; if upstream unfixed, mitigate; re-run audit + tests.
 
-- Dirty tree (`require_clean_worktree=true`): `git_clean_check` fails—inspect `git status` / `git diff`; commit, stash, or set `require_clean_worktree=false` for quick local runs.
+- Dirty tree (`require_clean_worktree=true`): `git` with `action=clean_check` fails—inspect `git status` / `git diff`; commit, stash, or set `require_clean_worktree=false` for quick local runs.
 
 - Missing tools:
   ```bash
