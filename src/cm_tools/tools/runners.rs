@@ -451,10 +451,32 @@ define_runners_args_only! {
     runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
     runner_text_transform => text_transform::run,
-    runner_regex_test => regex_test::run,
-    runner_date_calc => date_calc::run,
-    runner_json_format => json_format::run,
-    runner_env_var_check => env_var_check::run,
+}
+
+// ── misc_basic 族（args-only 形态；仅 4 个条目，手写具名 runner，不抽宏）──
+
+/// `regex_test`：缺参/超限为 `invalid_args`，正则编译失败为 `regex_test_invalid_regex`。
+#[allow(clippy::result_large_err)]
+pub fn runner_regex_test_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    regex_test::run_try(args)
+}
+
+/// `date_calc`：diff/offset 的缺参与日期解析失败均为 `invalid_args`。
+#[allow(clippy::result_large_err)]
+pub fn runner_date_calc_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    date_calc::run_try(args)
+}
+
+/// `json_format`：解析失败为 `invalid_args`；序列化失败为内部错误。
+#[allow(clippy::result_large_err)]
+pub fn runner_json_format_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    json_format::run_try(args)
+}
+
+/// `env_var_check`：参数缺失 / 为空 / 超上限均为 `invalid_args`。
+#[allow(clippy::result_large_err)]
+pub fn runner_env_var_check_try(args: &str, _ctx: &ToolContext<'_>) -> Result<String, ToolError> {
+    env_var_check::run_try(args)
 }
 
 // ── Git 工具 ────────────────────────────────────────────────

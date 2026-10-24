@@ -112,9 +112,9 @@ pub fn failure_category_for_error_code(code: &str) -> ToolFailureCategory {
         | "read_file_internal" => ToolFailureCategory::External,
         c if c.starts_with("read_file_workspace_") => ToolFailureCategory::Workspace,
         "write_precheck_failed" => ToolFailureCategory::InvalidInput,
-        "search_in_files_invalid_regex" | "search_in_files_invalid_glob" => {
-            ToolFailureCategory::InvalidInput
-        }
+        "search_in_files_invalid_regex"
+        | "search_in_files_invalid_glob"
+        | "regex_test_invalid_regex" => ToolFailureCategory::InvalidInput,
         "search_in_files_workspace_base_resolve_failed"
         | "search_in_files_workspace_subpath_resolve_failed"
         | "search_in_files_workspace_outside_root"
