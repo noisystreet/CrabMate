@@ -1,7 +1,7 @@
 //! Python 生态工具：ruff、pytest、mypy、临时脚本执行（`python_snippet_run`）。
 //!
-//! `ruff_check` / `mypy_check` 的公开函数体保留，供 `run_lints` 聚合器复用
-//! （其 ToolSpec 已按薄 CLI 封装收敛移除，模型改用 `run_command`）。
+//! `ruff_check` 的公开函数体保留，供 `run_lints` 聚合器复用
+//! （其 ToolSpec 已按薄 CLI 封装收敛移除；`ruff` / `mypy` / `uv` 统一改用 `run_command`）。
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -172,39 +172,6 @@ fn pytest_append_common_pytest_cli_flags(v: &serde_json::Value, cmd: &mut Comman
     {
         cmd.arg("--capture=no");
     }
-}
-
-/// `mypy`：可选相对路径列表（默认 `["."]`）。
-pub fn mypy_check(args_json: &str, workspace_root: &Path, max_output_len: usize) -> String {
-    if !workspace_has_python_project(workspace_root) {
-        return "mypy: 跳过（未找到 pyproject.toml / setup.py / setup.cfg / requirements.txt）"
-            .to_string();
-    }
-    let v = match crate::cm_tools::tools::parse_args_json(args_json) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    let paths = match parse_rel_paths(&v, "paths", &["."]) {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
-    let base = match workspace_root.canonicalize() {
-        Ok(p) => p,
-        Err(e) => return format!("工作区根目录无法解析: {}", e),
-    };
-
-    let mut cmd = Command::new("mypy");
-    if v.get("strict").and_then(|x| x.as_bool()).unwrap_or(false) {
-        cmd.arg("--strict");
-    }
-    cmd.current_dir(&base);
-    for p in &paths {
-        cmd.arg(p);
-    }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    run_and_format(cmd, max_output_len, "mypy", None)
 }
 
 /// `python_snippet_run`：临时脚本路径、命令参数等（`_tmp` 须存活至子进程结束）。

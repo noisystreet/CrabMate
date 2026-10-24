@@ -661,8 +661,8 @@ fn self_config_info_dumps_runtime_config_and_redacts_secrets() {
 fn builtin_legacy_runner_count_matches_baseline() {
     // 迁移 ratchet：每批迁移后把基线下调；禁止新增 Legacy 工具。
     // `archive-tools` 提供 3 个 Legacy 工具，基线随 feature 变化。
-    // 本轮下调 3：`ci_pipeline_local` / `release_ready_check` / `quality_workspace` 已整体移除。
-    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 85 } else { 82 };
+    // 本轮下调：`git_*` 十个 Legacy 合并为单个 `git`（−9），三个聚合工具整体移除（−3）。
+    const LEGACY_BASELINE: usize = if cfg!(feature = "archive-tools") { 76 } else { 73 };
     let legacy = tool_specs()
         .iter()
         .filter(|spec| matches!(spec.runner, ToolRunner::Legacy(_)))
