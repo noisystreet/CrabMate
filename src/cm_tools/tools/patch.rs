@@ -9,6 +9,8 @@
 //! - 必须落在工作区根目录下
 
 use crate::cm_tools::tool_result::ToolError;
+use crate::cm_tools::tools::ToolContext;
+use crate::cm_tools::tools::file;
 use crate::cm_tools::tools::write_sse_preview::{
     WORKSPACE_WRITE_DIFF_BUDGET_CHARS, WriteDiffFileState,
     format_tool_output_with_write_diff_preview,
@@ -20,22 +22,29 @@ use crate::cm_tools::workspace::path::{
 use std::path::Path;
 use std::sync::Arc;
 
+/// 一次 `apply_patch` 调用的执行上下文（root / 工具上下文 / 是否预览 / 原始入参）。
+///
+/// 收成一个结构体是为了让每个 hunk 处理函数只接 2～3 个参数：原先 7 个平铺参数的写法
+/// 在加 `dry_run` / `base_revision` 后会直接撞上仓库的形参上限。
+struct PatchApply<'a> {
+    root: &'a Path,
+    ctx: &'a ToolContext<'a>,
+    changelist: Option<&'a Arc<WorkspaceChangelist>>,
+    dry_run: bool,
+    /// 原始入参：`base_revision` 由 `file::verify_write_revision` 直接从这里读。
+    args: &'a serde_json::Value,
+}
+
 #[cfg(test)]
-pub fn run_with_changelist(
-    args_json: &str,
-    workspace_root: &Path,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
-) -> String {
-    run_with_changelist_try(args_json, workspace_root, changelist)
-        .unwrap_or_else(|e| e.message)
+pub fn run_with_changelist(args_json: &str, ctx: &ToolContext<'_>) -> String {
+    run_with_changelist_try(args_json, ctx).unwrap_or_else(|e| e.message)
 }
 
 /// `run_with_changelist` 的显式失败版本（成功正文与 String 面逐字节一致）。
 #[allow(clippy::result_large_err)]
 pub fn run_with_changelist_try(
     args_json: &str,
-    workspace_root: &Path,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
+    ctx: &ToolContext<'_>,
 ) -> Result<String, ToolError> {
     let args = crate::cm_tools::tools::parse_args_json(args_json)
         .map_err(ToolError::invalid_args)?;
@@ -48,8 +57,12 @@ pub fn run_with_changelist_try(
         .get("strip")
         .and_then(|v| v.as_u64())
         .unwrap_or_default() as usize;
+    let dry_run = args
+        .get("dry_run")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
-    let root = workspace_root.canonicalize().map_err(|e| {
+    let root = ctx.working_dir.canonicalize().map_err(|e| {
         ToolError::external_code(
             "apply_patch_failed",
             format!("工作区根目录无法解析: {}", e),
@@ -60,15 +73,21 @@ pub fn run_with_changelist_try(
         return Err(ToolError::invalid_args(format!("补丁路径校验失败: {}", e)));
     }
 
-    apply_unified_patch_try(patch_text, &root, strip, changelist)
+    let apply = PatchApply {
+        root: &root,
+        ctx,
+        changelist: ctx.workspace_changelist,
+        dry_run,
+        args: &args,
+    };
+    apply_unified_patch_try(&apply, patch_text, strip)
 }
 
 #[allow(clippy::result_large_err)]
 fn apply_unified_patch_try(
+    apply: &PatchApply<'_>,
     patch_text: &str,
-    root: &Path,
     strip: usize,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
 ) -> Result<String, ToolError> {
     let chunks = split_patch_by_file(patch_text);
     for chunk in &chunks {
@@ -80,36 +99,69 @@ fn apply_unified_patch_try(
         }
     }
 
+    // 两阶段：先把每个 hunk **试算**成「计划变更」，全部成功才落盘。
+    // 原实现边算边写，多文件补丁在第 3 个文件对不上时会留下前 2 个已改的残局
+    // （只靠「部分应用」文案告知），与「不可逆操作要先能整体确认」相悖。
+    let mut plans: Vec<PlannedPatch> = Vec::new();
+    let mut errors: Vec<String> = Vec::new();
+    for hunk_patch in &chunks {
+        match plan_single_hunk(apply, hunk_patch, strip) {
+            Ok(Some(plan)) => plans.push(plan),
+            Ok(None) => {}
+            Err(e) => errors.push(e),
+        }
+    }
+    if !errors.is_empty() {
+        // 失败正文同样走带显式头的格式化：`apply_patch` 的既有契约是「失败正文里只有
+        // 一个 `crabmate_tool_output` 头」，别因为提前返回就绕过它。
+        let output = format_tool_output_with_write_diff_preview(
+            "apply_patch",
+            false,
+            unified_patch_format_outcome(&[], &errors),
+            Vec::new(),
+            WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
+        );
+        return Err(ToolError::external_code("apply_patch_failed", output));
+    }
+    ensure_single_file_base_revision(apply, &plans)?;
+
     let mut preview_files: Vec<WriteDiffFileState> = Vec::new();
     let mut applied_files = Vec::new();
-    let mut errors = Vec::new();
-
-    for hunk_patch in &chunks {
-        apply_single_unified_hunk(
-            hunk_patch,
-            root,
-            strip,
-            changelist,
-            &mut preview_files,
-            &mut applied_files,
-            &mut errors,
-        );
+    for plan in &plans {
+        commit_planned(apply, plan, &mut preview_files, &mut applied_files)
+            .map_err(|e| ToolError::external_code("apply_patch_failed", e))?;
     }
 
-    let ok = errors.is_empty();
-    let outcome = unified_patch_format_outcome(&applied_files, &errors);
     let output = format_tool_output_with_write_diff_preview(
         "apply_patch",
-        ok,
-        outcome,
+        true,
+        unified_patch_format_outcome(&applied_files, &[]),
         preview_files,
         WORKSPACE_WRITE_DIFF_BUDGET_CHARS,
     );
-    if ok {
-        Ok(output)
-    } else {
-        Err(ToolError::external_code("apply_patch_failed", output))
+    Ok(output)
+}
+
+/// `base_revision` 只能表达**一个**文件的版本基线；多文件补丁无法用它做 CAS。
+///
+/// 与其静默忽略（调用方以为有保护），不如明确拒绝并给出改法。
+#[allow(clippy::result_large_err)] // 与同文件其它入口一致：`ToolError` 是既有错误类型
+fn ensure_single_file_base_revision(
+    apply: &PatchApply<'_>,
+    plans: &[PlannedPatch],
+) -> Result<(), ToolError> {
+    let has_base_revision = apply
+        .args
+        .get("base_revision")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.trim().is_empty());
+    if has_base_revision && plans.len() > 1 {
+        return Err(ToolError::invalid_args(format!(
+            "错误：base_revision 只能用于单文件补丁，当前补丁涉及 {} 个文件；请拆成多次 apply_patch，或去掉 base_revision",
+            plans.len()
+        )));
     }
+    Ok(())
 }
 
 fn unified_patch_format_outcome(applied_files: &[String], errors: &[String]) -> String {
@@ -145,149 +197,156 @@ fn classify_dev_null_hunk(file_path: &str, original_path: &str) -> Option<DevNul
     }
 }
 
-fn apply_single_unified_hunk(
+/// 一个待提交的文件变更（先全部试算，再统一提交）。
+enum PlannedPatch {
+    Modify {
+        rel: String,
+        before: String,
+        after: String,
+    },
+    Create {
+        rel: String,
+        after: String,
+    },
+    Delete {
+        rel: String,
+        before: Option<String>,
+    },
+}
+
+/// 试算单个 hunk：只读 + 计算，**不落盘**。`Ok(None)` 表示无需变更（如删除的目标本就不存在）。
+fn plan_single_hunk(
+    apply: &PatchApply<'_>,
     hunk_patch: &str,
-    root: &Path,
     strip: usize,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
-    preview_files: &mut Vec<WriteDiffFileState>,
-    applied_files: &mut Vec<String>,
-    errors: &mut Vec<String>,
-) {
-    let (file_path, original_path) = match extract_target_path(hunk_patch, strip) {
-        Some(p) => p,
+) -> Result<Option<PlannedPatch>, String> {
+    let (file_path, original_path) =
+        extract_target_path(hunk_patch, strip).ok_or_else(|| "无法提取文件路径".to_string())?;
+
+    match classify_dev_null_hunk(&file_path, &original_path) {
+        Some(DevNullHunkKind::Create) => {
+            let single = diffy::Patch::from_str(hunk_patch)
+                .map_err(|e| format!("{}: 解析失败: {}", file_path, e))?;
+            let after = diffy::apply("", &single)
+                .map_err(|e| format!("{}: 应用失败: {}", file_path, e))?;
+            Ok(Some(PlannedPatch::Create {
+                rel: file_path,
+                after,
+            }))
+        }
+        Some(DevNullHunkKind::Delete) => {
+            let source = apply.root.join(&original_path);
+            if !source.exists() {
+                return Ok(None);
+            }
+            Ok(Some(PlannedPatch::Delete {
+                before: std::fs::read_to_string(&source).ok(),
+                rel: original_path,
+            }))
+        }
         None => {
-            errors.push("无法提取文件路径".to_string());
-            return;
+            let target = apply.root.join(&file_path);
+            let before = std::fs::read_to_string(&target)
+                .map_err(|e| format!("{}: 读取失败: {}", file_path, e))?;
+            let single = diffy::Patch::from_str(hunk_patch)
+                .map_err(|e| format!("{}: 解析失败: {}", file_path, e))?;
+            let after = diffy::apply(&before, &single)
+                .map_err(|e| format!("{}: 应用失败: {}", file_path, e))?;
+            Ok(Some(PlannedPatch::Modify {
+                rel: file_path,
+                before,
+                after,
+            }))
         }
-    };
-
-    if let Some(kind) = classify_dev_null_hunk(&file_path, &original_path) {
-        match kind {
-            DevNullHunkKind::Create => unified_hunk_create_new_file(
-                hunk_patch,
-                root,
-                &file_path,
-                changelist,
-                preview_files,
-                applied_files,
-                errors,
-            ),
-            DevNullHunkKind::Delete => unified_hunk_delete_file(
-                root,
-                &original_path,
-                changelist,
-                preview_files,
-                applied_files,
-                errors,
-            ),
-        }
-        return;
-    }
-
-    let target = root.join(&file_path);
-    let original = match std::fs::read_to_string(&target) {
-        Ok(s) => s,
-        Err(e) => {
-            errors.push(format!("{}: 读取失败: {}", file_path, e));
-            return;
-        }
-    };
-
-    let single = match diffy::Patch::from_str(hunk_patch) {
-        Ok(p) => p,
-        Err(e) => {
-            errors.push(format!("{}: 解析失败: {}", file_path, e));
-            return;
-        }
-    };
-
-    match diffy::apply(&original, &single) {
-        Ok(patched) => {
-            if let Err(e) = std::fs::write(&target, patched.as_bytes()) {
-                errors.push(format!("{}: 写入失败: {}", file_path, e));
-            } else {
-                if let Some(cl) = changelist {
-                    cl.record_mutation(&file_path, Some(original.clone()), Some(patched.clone()));
-                }
-                preview_files.push(WriteDiffFileState {
-                    rel_path: file_path.clone(),
-                    before: Some(original),
-                    after: Some(patched),
-                });
-                applied_files.push(file_path);
-            }
-        }
-        Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
     }
 }
 
-fn unified_hunk_create_new_file(
-    hunk_patch: &str,
-    root: &Path,
-    file_path: &str,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
+/// 提交单个计划变更：`dry_run` 只记账不落盘；否则走原子替换 + 可选 CAS。
+fn commit_planned(
+    apply: &PatchApply<'_>,
+    plan: &PlannedPatch,
     preview_files: &mut Vec<WriteDiffFileState>,
     applied_files: &mut Vec<String>,
-    errors: &mut Vec<String>,
-) {
-    let target = root.join(file_path);
-    let single = match diffy::Patch::from_str(hunk_patch) {
-        Ok(p) => p,
-        Err(e) => {
-            errors.push(format!("{}: 解析失败: {}", file_path, e));
-            return;
+) -> Result<(), String> {
+    match plan {
+        PlannedPatch::Modify { rel, before, after } => {
+            write_planned(apply, rel, after)?;
+            record_mutation(apply, rel, Some(before.clone()), Some(after.clone()));
+            preview_files.push(WriteDiffFileState {
+                rel_path: rel.clone(),
+                before: Some(before.clone()),
+                after: Some(after.clone()),
+            });
+            applied_files.push(rel.clone());
         }
-    };
-    let new_content = diffy::apply("", &single);
-    match new_content {
-        Ok(content) => {
-            if let Some(parent) = target.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            if let Err(e) = std::fs::write(&target, content.as_bytes()) {
-                errors.push(format!("{}: 创建文件失败: {}", file_path, e));
-            } else {
-                if let Some(cl) = changelist {
-                    cl.record_mutation(file_path, None, Some(content.clone()));
-                }
-                preview_files.push(WriteDiffFileState {
-                    rel_path: file_path.to_string(),
-                    before: None,
-                    after: Some(content),
-                });
-                applied_files.push(format!("新建: {}", file_path));
-            }
+        PlannedPatch::Create { rel, after } => {
+            ensure_parent_dir(apply, rel)?;
+            write_planned(apply, rel, after)?;
+            record_mutation(apply, rel, None, Some(after.clone()));
+            preview_files.push(WriteDiffFileState {
+                rel_path: rel.clone(),
+                before: None,
+                after: Some(after.clone()),
+            });
+            applied_files.push(format!("新建: {}", rel));
         }
-        Err(e) => errors.push(format!("{}: 应用失败: {}", file_path, e)),
+        PlannedPatch::Delete { rel, before } => {
+            if !apply.dry_run {
+                let target = apply.root.join(rel);
+                file::verify_write_revision(apply.args, &target, apply.ctx, false)?;
+                std::fs::remove_file(&target)
+                    .map_err(|e| format!("{}: 删除失败: {}", rel, e))?;
+            }
+            record_mutation(apply, rel, before.clone(), None);
+            preview_files.push(WriteDiffFileState {
+                rel_path: rel.clone(),
+                before: before.clone(),
+                after: None,
+            });
+            applied_files.push(format!("删除: {}", rel));
+        }
     }
+    Ok(())
 }
 
-fn unified_hunk_delete_file(
-    root: &Path,
-    original_path: &str,
-    changelist: Option<&Arc<WorkspaceChangelist>>,
-    preview_files: &mut Vec<WriteDiffFileState>,
-    applied_files: &mut Vec<String>,
-    errors: &mut Vec<String>,
+/// 统一写盘入口：`dry_run` 直接返回；否则 `tmp → 继承元数据 → fsync → 校验 → rename`。
+///
+/// 走 `file::write_bytes_with_revision_guard` 而不是 `fs::write`：校验与写入之间的窗口
+/// 更短，且并发读者不会看到写了一半的文件。
+fn write_planned(apply: &PatchApply<'_>, rel: &str, content: &str) -> Result<(), String> {
+    if apply.dry_run {
+        return Ok(());
+    }
+    let target = apply.root.join(rel);
+    file::write_bytes_with_revision_guard(&target, content.as_bytes(), apply.args, apply.ctx, false)
+        .map_err(|e| format!("{}: {}", rel, e))
+}
+
+/// 新建文件前补父目录（与 `create_file` 一致：补丁不负责创建整条目录树的语义之外的东西）。
+fn ensure_parent_dir(apply: &PatchApply<'_>, rel: &str) -> Result<(), String> {
+    if apply.dry_run {
+        return Ok(());
+    }
+    let target = apply.root.join(rel);
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("{}: 创建父目录失败: {}", rel, e))?;
+    }
+    Ok(())
+}
+
+/// 变更集记账：预览（`dry_run`）不得污染 changelist。
+fn record_mutation(
+    apply: &PatchApply<'_>,
+    rel: &str,
+    before: Option<String>,
+    after: Option<String>,
 ) {
-    let source = root.join(original_path);
-    if !source.exists() {
+    if apply.dry_run {
         return;
     }
-    let before = std::fs::read_to_string(&source).ok();
-    if let Err(e) = std::fs::remove_file(&source) {
-        errors.push(format!("{}: 删除失败: {}", original_path, e));
-    } else {
-        if let Some(cl) = changelist {
-            cl.record_mutation(original_path, before.clone(), None);
-        }
-        preview_files.push(WriteDiffFileState {
-            rel_path: original_path.to_string(),
-            before,
-            after: None,
-        });
-        applied_files.push(format!("删除: {}", original_path));
+    if let Some(cl) = apply.changelist {
+        cl.record_mutation(rel, before, after);
     }
 }
 
@@ -496,3 +555,5 @@ mod tests {
 
 #[cfg(test)]
 mod tests_typed;
+#[cfg(test)]
+mod tests_write;

@@ -287,7 +287,7 @@ pub fn runner_skill_manage(args: &str, ctx: &ToolContext<'_>) -> String {
 
 #[allow(clippy::result_large_err)]
 pub fn runner_apply_patch_try(args: &str, ctx: &ToolContext<'_>) -> Result<String, ToolError> {
-    patch::run_with_changelist_try(args, ctx.working_dir, ctx.workspace_changelist)
+    patch::run_with_changelist_try(args, ctx)
 }
 
 pub fn runner_codebase_semantic_search(args: &str, ctx: &ToolContext<'_>) -> String {

@@ -39,8 +39,8 @@ fn apply_patch_try_success_matches_string_face() {
     let typed = assert_success_parity(
         &dir_legacy,
         &dir_typed,
-        || run_with_changelist(&args, &dir_legacy, None),
-        || run_with_changelist_try(&args, &dir_typed, None),
+        || run_with_changelist(&args, &test_ctx(&dir_legacy)),
+        || run_with_changelist_try(&args, &test_ctx(&dir_typed)),
     );
 
     assert!(typed.contains("\"ok\":true"), "{typed}");
@@ -56,11 +56,11 @@ fn apply_patch_try_missing_patch_is_invalid_input() {
     let dir = make_test_dir();
 
     for args in [r#"{}"#, r#"{"patch":"   "}"#] {
-        let err = run_with_changelist_try(args, &dir, None).expect_err("缺少 patch 须失败");
+        let err = run_with_changelist_try(args, &test_ctx(&dir)).expect_err("缺少 patch 须失败");
         assert_invalid_input(&err);
         assert_eq!(err.message, "错误：缺少 patch 参数");
         // String 面必须逐字节保留历史文案。
-        assert_eq!(run_with_changelist(args, &dir, None), err.message);
+        assert_eq!(run_with_changelist(args, &test_ctx(&dir)), err.message);
     }
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -70,14 +70,14 @@ fn apply_patch_try_missing_patch_is_invalid_input() {
 fn apply_patch_try_invalid_json_is_invalid_input() {
     let dir = make_test_dir();
 
-    let err = run_with_changelist_try("{", &dir, None).expect_err("非法 JSON 须失败");
+    let err = run_with_changelist_try("{", &test_ctx(&dir)).expect_err("非法 JSON 须失败");
     assert_invalid_input(&err);
     assert!(
         err.message.starts_with("参数 JSON 无效:"),
         "{}",
         err.message
     );
-    assert_eq!(run_with_changelist("{", &dir, None), err.message);
+    assert_eq!(run_with_changelist("{", &test_ctx(&dir)), err.message);
 
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -93,7 +93,7 @@ fn apply_patch_try_rejects_escaping_paths_as_invalid_input() {
     ];
     for patch in cases {
         let args = args_with_patch(patch);
-        let err = run_with_changelist_try(&args, &dir, None).expect_err("越界路径须失败");
+        let err = run_with_changelist_try(&args, &test_ctx(&dir)).expect_err("越界路径须失败");
         assert_invalid_input(&err);
         assert!(
             err.message.starts_with("补丁路径校验失败: "),
@@ -111,7 +111,7 @@ fn apply_patch_try_rejects_escaping_paths_as_invalid_input() {
 fn apply_patch_try_requires_unified_diff_header() {
     let dir = make_test_dir();
 
-    let err = run_with_changelist_try(&args_with_patch("hello\n"), &dir, None)
+    let err = run_with_changelist_try(&args_with_patch("hello\n"), &test_ctx(&dir))
         .expect_err("无文件头须失败");
     assert_invalid_input(&err);
     assert_eq!(
@@ -129,7 +129,7 @@ fn apply_patch_try_malformed_diff_is_invalid_input() {
     // hunk 正文每行必须以空格 / `-` / `+` / `\` 开头；`old` 缺前缀。
     let patch = "--- a.txt\n+++ a.txt\n@@ -1,1 +1,1 @@\nold\n+new\n";
 
-    let err = run_with_changelist_try(&args_with_patch(patch), &dir, None)
+    let err = run_with_changelist_try(&args_with_patch(patch), &test_ctx(&dir))
         .expect_err("非法 hunk 须失败");
     assert_invalid_input(&err);
     assert!(
@@ -148,7 +148,7 @@ fn apply_patch_try_all_failure_keeps_single_header() {
     let patch = "--- missing.txt\n+++ missing.txt\n@@ -1,1 +1,1 @@\n-old\n+new\n";
     let args = args_with_patch(patch);
 
-    let err = run_with_changelist_try(&args, &dir, None).expect_err("目标不存在须失败");
+    let err = run_with_changelist_try(&args, &test_ctx(&dir)).expect_err("目标不存在须失败");
     assert_eq!(err.code, "apply_patch_failed");
     assert_eq!(err.category, ToolFailureCategory::External);
     assert!(!err.retryable);
@@ -159,7 +159,7 @@ fn apply_patch_try_all_failure_keeps_single_header() {
         "失败正文只应有一个显式头: {}",
         err.message
     );
-    assert_eq!(run_with_changelist(&args, &dir, None), err.message);
+    assert_eq!(run_with_changelist(&args, &test_ctx(&dir)), err.message);
 
     let output = assert_run_tool_error_code(
         "apply_patch",
@@ -172,8 +172,12 @@ fn apply_patch_try_all_failure_keeps_single_header() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// 两阶段提交：多文件补丁里任一文件对不上 → **整体不写**。
+///
+/// 旧实现边算边写，会把 `good.txt` 先改掉、只在文案里说「部分应用」。现在先全部试算，
+/// 失败时一个字节都不落盘——这条测试钉住「不留半套修改」。
 #[test]
-fn apply_patch_try_partial_failure_keeps_single_header() {
+fn apply_patch_try_partial_failure_writes_nothing() {
     let dir = make_test_dir();
     std::fs::write(dir.join("good.txt"), "old\n").unwrap();
     let patch = r#"--- good.txt
@@ -189,22 +193,21 @@ fn apply_patch_try_partial_failure_keeps_single_header() {
 "#;
     let args = args_with_patch(patch);
 
-    let err = run_with_changelist_try(&args, &dir, None).expect_err("部分失败须失败");
+    let err = run_with_changelist_try(&args, &test_ctx(&dir)).expect_err("部分失败须失败");
     assert_eq!(err.code, "apply_patch_failed");
     assert_eq!(err.category, ToolFailureCategory::External);
     assert!(!err.retryable);
-    assert!(err.message.contains("补丁部分应用"), "{}", err.message);
+    assert!(err.message.contains("补丁应用失败"), "{}", err.message);
     assert_eq!(
         err.message.matches("crabmate_tool_output").count(),
         1,
         "失败正文只应有一个显式头: {}",
         err.message
     );
-    assert_eq!(read(&dir, "good.txt"), "new\n");
-    std::fs::write(dir.join("good.txt"), "old\n").unwrap();
-    assert_eq!(run_with_changelist(&args, &dir, None), err.message);
+    // 关键断言：先试算后落盘 ⇒ 能应用的那个文件也**不得**被改动。
+    assert_eq!(read(&dir, "good.txt"), "old\n", "部分失败不得留下半套修改");
+    assert_eq!(run_with_changelist(&args, &test_ctx(&dir)), err.message);
 
-    std::fs::write(dir.join("good.txt"), "old\n").unwrap();
     let output = assert_run_tool_error_code(
         "apply_patch",
         &args,
@@ -212,6 +215,7 @@ fn apply_patch_try_partial_failure_keeps_single_header() {
         "apply_patch_failed",
     );
     assert_eq!(output.matches("crabmate_tool_output").count(), 1);
+    assert_eq!(read(&dir, "good.txt"), "old\n");
 
     let _ = std::fs::remove_dir_all(&dir);
 }

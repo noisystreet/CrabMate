@@ -81,7 +81,7 @@ ToolSpec {
         },
         ToolSpec {
             name: "apply_patch",
-            description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** / **git checkout** 回滚。先 dry-run。",
+            description: "应用 **unified diff**。路径：--- src/…（strip=0）或 --- a/src/…（strip=1）；hunk **带 2～3 行上下文**；**小步**单主题；可 **patch -R** 或 `git checkout` 回滚。**多文件补丁整体试算、全部能应用才写**（不会部分应用）；`dry_run: true` 只预览 diff。写盘为原子替换；单文件补丁可传 `base_revision` 做写前校验。",
             category: ToolCategory::Development,
             parameters: schema_of::<args::ApplyPatchArgs>,
             runner: ToolRunner::Typed(runner_apply_patch_try),
