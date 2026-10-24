@@ -75,6 +75,26 @@ pub enum ModifyFileEditMode {
     InsertAfterLine,
 }
 
+/// 局部编辑的内容守卫：`modify_file` 顶层与 `edits[i]` 共用同一类型
+/// （原先四个 `expect_*` 平铺字段在两处各定义一遍）。
+///
+/// - `replace_lines`：`content`（整段逐行比对）或 `first_line`+`last_line`（只锚首尾）；两者互斥。
+/// - `insert_after_line`：`anchor_line`（比对 `after_line` 那一行）。
+///
+/// 键名与旧平铺参数一一对应，旧写法仍被接受，但 schema / description 只暴露本结构。
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct WriteGuard {
+    /// `replace_lines`：逐行校验 `[start_line..=end_line]`；与 `first_line`/`last_line` 互斥。
+    pub content: Option<String>,
+    /// `replace_lines`：只校验区间首行（`start_line`）。
+    pub first_line: Option<String>,
+    /// `replace_lines`：只校验区间末行（`end_line`）。
+    pub last_line: Option<String>,
+    /// `insert_after_line`：校验插入锚点行（`after_line`）。
+    pub anchor_line: Option<String>,
+}
+
 /// `edits` 内单条编辑：`start_line`/`end_line`（或仅 `end_line` 缺省时同 `start_line`）→ 行区间替换；
 /// `after_line` → 锚点行后插入。行号均基于**调用时的磁盘快照**，由服务端自底向上应用，互不偏移。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -91,14 +111,8 @@ pub struct ModifyFileEditArgs {
     /// 0 表示文件开头，N 表示第 N 行之后。
     #[schemars(range(min = 0))]
     pub after_line: Option<u32>,
-    /// `replace_lines` 守卫：写盘前校验该区间当前内容与此一致（按行精确比对），不一致即拒写并提示纠偏行号。
-    pub expect_content: Option<String>,
-    /// `insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致，不一致即拒写并提示纠偏行号。
-    pub expect_line_content: Option<String>,
-    /// `replace_lines` 守卫：只校验区间**首行**（`start_line`）内容，免去整段复述；与 `expect_content` 互斥。
-    pub expect_first_line: Option<String>,
-    /// `replace_lines` 守卫：只校验区间**末行**（`end_line`）内容；可与 `expect_first_line` 同时使用。
-    pub expect_last_line: Option<String>,
+    /// 内容守卫：见 [`WriteGuard`]。
+    pub guard: Option<WriteGuard>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -114,14 +128,9 @@ pub struct ModifyFileArgs {
     /// `mode=insert_after_line` 时使用；0 表示文件开头，N 表示第 N 行之后。
     #[schemars(range(min = 0))]
     pub after_line: Option<u32>,
-    /// `mode=replace_lines` 守卫：写盘前校验 [start_line..=end_line] 当前内容与此一致（按行精确比对）；不一致即**拒写**并提示纠偏行号。同文件多次/并行编辑导致行号过期时，可避免误删误写。
-    pub expect_content: Option<String>,
-    /// `mode=insert_after_line` 守卫：写盘前校验锚点行（`after_line`）当前内容与此一致；不一致即拒写并提示纠偏行号。
-    pub expect_line_content: Option<String>,
-    /// `mode=replace_lines` 守卫：只校验区间**首行**（`start_line`）内容，免去整段复述；与 `expect_content` 互斥。
-    pub expect_first_line: Option<String>,
-    /// `mode=replace_lines` 守卫：只校验区间**末行**（`end_line`）内容；可与 `expect_first_line` 同时使用。
-    pub expect_last_line: Option<String>,
+    /// 内容守卫：见 [`WriteGuard`]（`replace_lines` 用 `content` 或 `first_line`+`last_line`，
+    /// `insert_after_line` 用 `anchor_line`）。与 `mode=full/overwrite` 互斥。
+    pub guard: Option<WriteGuard>,
     /// 批量局部编辑：一次调用基于**同一磁盘快照**自底向上应用全部编辑，行号互不偏移；与 `mode`/`content`/`start_line`/`end_line`/`after_line` 互斥。
     pub edits: Option<Vec<ModifyFileEditArgs>>,
     /// **默认 `true`**：只返回 unified diff 预览、**不写盘**；显式 `false` 才写入（与 `search_replace` / `structured_patch` 一致）。

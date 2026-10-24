@@ -67,9 +67,9 @@ fn parse_batch_edits(v: &Value) -> Result<Vec<BatchEdit>, String> {
             "错误：edits 批量编辑与顶层 mode={mode:?} 互斥；mode 请写在每条 edits[i] 内。"
         ));
     }
-    if v.get("expect_content").is_some() || v.get("expect_line_content").is_some() {
+    if super::write_guard::guard_view(v).any() {
         return Err(
-            "错误：edits 批量编辑与顶层 expect_content/expect_line_content 互斥；守卫参数请写入对应的 edits[i] 条目内，否则会被静默忽略。"
+            "错误：edits 批量编辑与顶层 guard 互斥；守卫请写入对应的 edits[i] 条目内，否则会被静默忽略。"
                 .to_string(),
         );
     }
@@ -150,7 +150,7 @@ fn parse_edit_range(prefix: &str, item: &Value, kind: EditKind) -> Result<(usize
     }
 }
 
-/// expect_* 与编辑类型的交叉校验：expect_content 只配 replace，expect_line_content 只配 insert。
+/// guard 子键与编辑类型的交叉校验：`guard.content` 只配 replace，`guard.anchor_line` 只配 insert。
 fn check_edit_expect_kinds(
     prefix: &str,
     kind: EditKind,
@@ -164,12 +164,12 @@ fn check_edit_expect_kinds(
         EditKind::Replace => {
             if expect_line_content.is_some() {
                 return Err(format!(
-                    "错误：{prefix}：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content 或 expect_first_line/expect_last_line。"
+                    "错误：{prefix}：guard.anchor_line 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 guard.content 或 guard.first_line/guard.last_line。"
                 ));
             }
             if expect_content.is_some() && edge_given {
                 return Err(format!(
-                    "错误：{prefix}：expect_content 与 expect_first_line/expect_last_line 互斥（前者校验整段，后者只锚定首尾）；请二选一。"
+                    "错误：{prefix}：guard.content 与 guard.first_line/guard.last_line 互斥（前者校验整段，后者只锚定首尾）；请二选一。"
                 ));
             }
             Ok(())
@@ -177,12 +177,12 @@ fn check_edit_expect_kinds(
         EditKind::Insert => {
             if expect_content.is_some() {
                 return Err(format!(
-                    "错误：{prefix}：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content。"
+                    "错误：{prefix}：guard.content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 guard.anchor_line。"
                 ));
             }
             if edge_given {
                 return Err(format!(
-                    "错误：{prefix}：expect_first_line/expect_last_line 仅用于 replace_lines 的区间边界校验；insert_after_line 请使用 expect_line_content。"
+                    "错误：{prefix}：guard.first_line/guard.last_line 仅用于 replace_lines 的区间边界校验；insert_after_line 请使用 guard.anchor_line。"
                 ));
             }
             Ok(())
@@ -199,22 +199,11 @@ fn parse_one_edit(i: usize, item: &Value) -> Result<BatchEdit, String> {
         .ok_or_else(|| format!("错误：{prefix} 缺少 content"))?
         .to_string();
     let (start_line, end_line) = parse_edit_range(&prefix, item, kind)?;
-    let expect_content = item
-        .get("expect_content")
-        .and_then(|c| c.as_str())
-        .map(String::from);
-    let expect_line_content = item
-        .get("expect_line_content")
-        .and_then(|c| c.as_str())
-        .map(String::from);
-    let expect_first_line = item
-        .get("expect_first_line")
-        .and_then(|c| c.as_str())
-        .map(String::from);
-    let expect_last_line = item
-        .get("expect_last_line")
-        .and_then(|c| c.as_str())
-        .map(String::from);
+    let guard = super::write_guard::guard_view(item);
+    let expect_content = guard.content.map(String::from);
+    let expect_line_content = guard.anchor_line.map(String::from);
+    let expect_first_line = guard.first_line.map(String::from);
+    let expect_last_line = guard.last_line.map(String::from);
     check_edit_expect_kinds(
         &prefix,
         kind,
