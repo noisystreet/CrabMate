@@ -306,8 +306,17 @@ fn run_multi_turn_once(
     let mut view = crate::agent::model_context_view::ModelContextView::derive(canonical);
     let (_pipeline, before) =
         sync_trim_and_estimate_before(cfg, view.messages_mut(), &[], None, None);
-    let report =
-        finalize_token_budget_compaction(cfg, view.messages_mut(), &[], None, before, false);
+    let report = finalize_token_budget_compaction(
+        cfg,
+        view.messages_mut(),
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: None,
+        },
+    );
     view.messages_mut().push(Message::assistant_only(format!("a{turn}")));
     let commit = view.commit_current_turn_to(canonical);
     assert!(commit.archived_artifacts.is_empty());
@@ -398,5 +407,69 @@ fn archive_union_canonical_preserves_full_original_history() {
     assert_eq!(
         combined, pushed,
         "归档 ∪ canonical[1..] 应与完整原始历史逐字一致"
+    );
+}
+
+/// 尾部底线取「摘要**实际**保留条数」而非配置值：实际更大时不许删到配置值。
+#[test]
+fn finalize_uses_actual_summary_tail_as_group_removal_floor() {
+    let mut cfg = crate::config::load_config(None).expect("embed default");
+    cfg.llm_sampling.llm_context_tokens = 4_096;
+    cfg.llm_sampling.max_tokens = 512;
+    cfg.context_pipeline.context_summary_tail_messages = 4;
+    let bulky = |tag: &str| -> String {
+        (0..300)
+            .map(|i| format!("第{i}行 {tag} 内容 value_{i}\n"))
+            .collect()
+    };
+    let build = || {
+        let mut messages = vec![Message::system_only("system")];
+        for turn in 0..8 {
+            messages.push(Message::user_only(bulky(&format!("turn{turn}"))));
+            messages.push(Message::assistant_only("answer"));
+        }
+        messages
+    };
+
+    let mut with_actual_tail = build();
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &with_actual_tail, &[], None);
+    let actual_tail = finalize_token_budget_compaction(
+        &cfg,
+        &mut with_actual_tail,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: Some(12),
+        },
+    );
+
+    let mut with_config_tail = build();
+    let before =
+        crate::agent::context_compaction::estimate_final_request_tokens(&cfg, &with_config_tail, &[], None);
+    let config_tail = finalize_token_budget_compaction(
+        &cfg,
+        &mut with_config_tail,
+        FinalizeTokenBudgetCompactionParams {
+            tools: &[],
+            model_override: None,
+            before,
+            summarized_for_token_budget: false,
+            summary_tail_kept: Some(4),
+        },
+    );
+
+    assert!(
+        config_tail.removed_turn_groups > actual_tail.removed_turn_groups,
+        "实际尾部更大时应删得更少: actual={} config={}",
+        actual_tail.removed_turn_groups,
+        config_tail.removed_turn_groups
+    );
+    assert!(
+        with_actual_tail.len() >= 12,
+        "摘要实际保留的 12 条不应被删: {}",
+        with_actual_tail.len()
     );
 }

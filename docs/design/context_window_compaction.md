@@ -211,6 +211,27 @@ user
 - 关键文件、符号和决策；
 - 未完成步骤与下一动作。
 
+**实施状态（分级释放已部分落地）**：**仅第 1 级**（旧 `tool` 正文二次压缩到 `DEGRADE_TOOL_MAX_CHARS`）已在
+[`compact_messages_to_token_budget`](file:///home/gzz/crabmate/server/src/agent/context_compaction.rs) 中实现，作为**删除整组之前**的释放步骤，
+且在压缩后已达标时不再删组；命中数记入 `ContextCompactionReport.compressed_old_tool_messages`。
+该级只作用于**最近 `MIN_RECENT_TURN_GROUPS` 组之外**的消息，且是**视图层**变换（不回写 canonical，见 §3.7）。
+第 3～5 级中，删组已实现，结构化摘要仍由 `context_window` 的 LLM 摘要承担，降级视图尚未实现。
+
+关于第 2 级（剥离旧 `reasoning`）：**经评审不落地**。出站路径默认已剥离 `reasoning_content`
+（`conversation_messages_to_vendor_body`），估算里本就不含旧思维链，剥离没有 Token 收益；而在启用
+「工具调用回传思维链」的供应商（Kimi k2.5 thinking / DeepSeek thinking）上剥离会让上游要求回传的正文变空串，
+属契约冲突。若将来要恢复，须先按供应商能力分支，并在本 ADR 记录取舍。
+
+两处实现约束：
+
+- `DEGRADE_TOOL_MAX_CHARS` 必须**显著小于** `tool_message_max_chars`；否则正文早已被同步管道压到该值以下，本档永不命中。
+- 信封形状的 `tool` 正文走首尾采样（保 `ok` / 错误码 / 截断元数据）；非信封 legacy 正文仍是「前 N 字符 + 尾注」，
+  二次压缩后若错误信息写在尾部则不可见——这是既有语义的延伸，不是本 ADR 新增的取舍。
+
+同时收紧一处跨步骤语义：本回合发生过 LLM 摘要时，随后的删组以 `min_tail_messages` 为底线，取
+**配置值 `context_summary_tail_messages`（clamp 4..=64）与摘要实际保留条数 `summary_tail_kept` 的较大者**，
+不会把摘要刻意保留的尾部再删掉——否则那次摘要等于白烧一次模型调用。
+
 #### 3.4 持久化历史与模型视图分离
 
 长期目标是：
