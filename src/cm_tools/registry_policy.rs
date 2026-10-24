@@ -163,7 +163,7 @@ pub fn is_readonly_tool(cfg: &AgentConfig, name: &str) -> bool {
 fn builtin_dedup_cache_exempt_tools() -> &'static HashSet<String> {
     static E: OnceLock<HashSet<String>> = OnceLock::new();
     E.get_or_init(|| {
-        ["background_job_status", "background_job_list", "background_job_output"]
+        ["background_job"]
             .into_iter()
             .map(|s| s.to_string())
             .collect()

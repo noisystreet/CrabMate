@@ -1,48 +1,40 @@
 // ── Background jobs ───────────────────────────────────────────
 
 #[derive(Debug, Deserialize)]
-pub(super) struct BackgroundJobStatusSummaryArgs {
-    tool_job_id: String,
-}
-
-impl ToolSummaryLine for BackgroundJobStatusSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let id = self.tool_job_id.trim();
-        if id.is_empty() {
-            Some("background job status".to_string())
-        } else {
-            Some(format!("background job status: {id}"))
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct BackgroundJobListSummaryArgs {
+pub(super) struct BackgroundJobSummaryArgs {
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    tool_job_id: Option<String>,
     #[serde(default)]
     limit: Option<u64>,
 }
 
-impl ToolSummaryLine for BackgroundJobListSummaryArgs {
+impl ToolSummaryLine for BackgroundJobSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        match self.limit {
-            Some(n) => Some(format!("list background jobs (limit: {n})")),
-            None => Some("list background jobs".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Deserialize)]
-pub(super) struct BackgroundJobOutputSummaryArgs {
-    tool_job_id: String,
-}
-
-impl ToolSummaryLine for BackgroundJobOutputSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let id = self.tool_job_id.trim();
-        if id.is_empty() {
-            Some("background job output".to_string())
-        } else {
-            Some(format!("background job output: {id}"))
+        let BackgroundJobSummaryArgs {
+            action,
+            tool_job_id,
+            limit,
+        } = self;
+        let id = tool_job_id.as_deref().unwrap_or("").trim();
+        match action.trim() {
+            "status" => Some(if id.is_empty() {
+                "background job status".to_string()
+            } else {
+                format!("background job status: {id}")
+            }),
+            "list" => Some(match limit {
+                Some(n) => format!("list background jobs (limit: {n})"),
+                None => "list background jobs".to_string(),
+            }),
+            "output" => Some(if id.is_empty() {
+                "background job output".to_string()
+            } else {
+                format!("background job output: {id}")
+            }),
+            "" => Some("background job".to_string()),
+            other => Some(format!("background job: {other}")),
         }
     }
 }
@@ -183,3 +175,30 @@ impl ToolSummaryLine for ChmodFileSummaryArgs {
     }
 }
 
+
+#[cfg(test)]
+mod background_job_summary_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn status_summary_uses_job_id() {
+        let v = json!({ "action": "status", "tool_job_id": " j1 " });
+        let s = summarize_from_value::<BackgroundJobSummaryArgs>(&v).expect("summary");
+        assert_eq!(s, "background job status: j1");
+    }
+
+    #[test]
+    fn list_summary_reports_limit() {
+        let v = json!({ "action": "list", "limit": 5 });
+        let s = summarize_from_value::<BackgroundJobSummaryArgs>(&v).expect("summary");
+        assert_eq!(s, "list background jobs (limit: 5)");
+    }
+
+    #[test]
+    fn missing_action_falls_back_to_generic_line() {
+        let v = json!({ "tool_job_id": "j1" });
+        let s = summarize_from_value::<BackgroundJobSummaryArgs>(&v).expect("summary");
+        assert_eq!(s, "background job");
+    }
+}

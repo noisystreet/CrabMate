@@ -336,7 +336,7 @@ async fn dispatch_tool_retry_skips_http_fetch_requiring_approval() {
 /// 全程走真实 `dispatch_tool` 分发路径（`SyncDefault` / HandlerLookupTable / 宿主注入），
 /// 而非直接调用内部函数——覆盖「模型能取回后台任务结果」这一 P0 目标的可验收路径。
 #[tokio::test]
-async fn background_job_status_reads_async_run_command_result_end_to_end() {
+async fn background_job_reads_async_run_command_result_end_to_end() {
     let mut cfg = test_cfg();
     cfg.tool_registry_policy.tool_registry_background_jobs_enabled = true;
     let cfg = std::sync::Arc::new(cfg);
@@ -419,12 +419,12 @@ async fn background_job_status_reads_async_run_command_result_end_to_end() {
     }
 
     // 模型侧只读工具取回结果：这一步即 P0「模型能取回后台任务结果」。
-    let status_args = format!(r#"{{"tool_job_id":"{job_id}"}}"#);
+    let status_args = format!(r#"{{"action":"status","tool_job_id":"{job_id}"}}"#);
     let status_tc = ToolCall {
         id: "call_status".into(),
         typ: "function".into(),
         function: FunctionCall {
-            name: "background_job_status".into(),
+            name: "background_job".into(),
             arguments: status_args.clone(),
         },
     };
@@ -435,7 +435,7 @@ async fn background_job_status_reads_async_run_command_result_end_to_end() {
             ctx: None,
         },
         call: DispatchToolCall {
-            name: "background_job_status",
+            name: "background_job",
             args: &status_args,
             tc: &status_tc,
         },
@@ -476,8 +476,8 @@ async fn background_job_status_reads_async_run_command_result_end_to_end() {
         id: "call_list".into(),
         typ: "function".into(),
         function: FunctionCall {
-            name: "background_job_list".into(),
-            arguments: "{}".into(),
+            name: "background_job".into(),
+            arguments: r#"{"action":"list"}"#.into(),
         },
     };
     let mut wc_list = false;
@@ -487,8 +487,8 @@ async fn background_job_status_reads_async_run_command_result_end_to_end() {
             ctx: None,
         },
         call: DispatchToolCall {
-            name: "background_job_list",
-            args: "{}",
+            name: "background_job",
+            args: r#"{"action":"list"}"#,
             tc: &list_tc,
         },
         workspace: DispatchToolWorkspace {

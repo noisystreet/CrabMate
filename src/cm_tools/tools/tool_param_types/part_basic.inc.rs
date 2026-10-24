@@ -160,33 +160,39 @@ fn default_true() -> bool {
     true
 }
 
-/// [`super::background_job_tools::background_job_status`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BackgroundJobStatusArgs {
-    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
-    pub tool_job_id: String,
+/// `background_job` 的 action 取值；与 `background_job_tools` 的三个只读查询一一对应。
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BackgroundJobAction {
+    /// 按 `tool_job_id` 查任务状态与（终态）输出。
+    Status,
+    /// 列出当前工作区的后台任务（最新创建在前）。
+    List,
+    /// 增量拉取任务输出（`tail -f` 语义）。
+    Output,
 }
 
-/// [`super::background_job_tools::background_job_list`] 入参。
+/// [`super::background_job_tools::background_job`] 入参：`action` 选择器 + 字段并集。
+///
+/// 合并自原 `background_job_status` / `background_job_list` / `background_job_output` 三个只读
+/// 工具。`background_job_cancel` 会改变任务状态（写副作用），**保持独立工具名**，避免把这三个
+/// 只读查询一并拖出并行只读批 / 只读重试 / `Ask`·`Plan` 门控 / TTL 缓存
+/// （见 `registry_policy::builtin_write_effect_tools`）。
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct BackgroundJobListArgs {
-    /// 最多返回条数，默认 20，上限 100
-    #[serde(default)]
+pub struct BackgroundJobArgs {
+    /// 要执行的后台任务查询（只读）。
+    pub action: BackgroundJobAction,
+    /// `status` / `output`：后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_job_id: Option<String>,
+    /// `output`：增量游标（上次返回的 `next_cursor`）；省略/非法则从最早可用起
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<u64>,
+    /// `list`：最多返回条数，默认 20，上限 100
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1, max = 100))]
     pub limit: Option<u32>,
-}
-
-/// [`super::background_job_tools::background_job_output`] 入参。
-#[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct BackgroundJobOutputArgs {
-    /// 后台任务 id（`run_command` 以 `async: true` 启动时返回，形如 `tooljob_...`）
-    pub tool_job_id: String,
-    /// 增量游标：上次返回的 `next_cursor`；省略/非法则从最早可用起（宁从头，不错序）
-    #[serde(default)]
-    pub cursor: Option<u64>,
 }
 
 /// [`super::background_job_tools::background_job_cancel`] 入参。

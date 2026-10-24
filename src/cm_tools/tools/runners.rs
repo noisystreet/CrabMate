@@ -325,27 +325,11 @@ pub fn runner_long_term_memory_list(args: &str, ctx: &ToolContext<'_>) -> String
     dispatch_long_term_tool("long_term_memory_list", args, ctx)
 }
 
-pub fn runner_background_job_status(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_status(
-        args,
-        ctx.tool_jobs_host,
-        ctx.command_max_output_len,
-    )
-}
-
-pub fn runner_background_job_list(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_list(
+pub fn runner_background_job(args: &str, ctx: &ToolContext<'_>) -> String {
+    background_job_tools::background_job(
         args,
         ctx.tool_jobs_host,
         ctx.working_dir,
-        ctx.command_max_output_len,
-    )
-}
-
-pub fn runner_background_job_output(args: &str, ctx: &ToolContext<'_>) -> String {
-    background_job_tools::background_job_output(
-        args,
-        ctx.tool_jobs_host,
         ctx.command_max_output_len,
     )
 }
