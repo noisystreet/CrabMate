@@ -2,6 +2,9 @@
 
 mod execute;
 
+#[cfg(test)]
+mod tests_revision;
+
 pub(super) fn structured_patch_execute(
     args_json: &str,
     working_dir: &std::path::Path,

@@ -35,7 +35,7 @@ pub(super) fn commit_tmp_with_revision_guard(
 /// 按字节覆盖目标文件：临时文件写入 → 继承元数据 → `fsync` → revision 校验 → 原子替换。
 ///
 /// `target` 须已存在；多硬链接（`nlink > 1`）时退化为写回原 inode 以保留硬链接。
-pub(super) fn write_bytes_with_revision_guard(
+pub(crate) fn write_bytes_with_revision_guard(
     target: &Path,
     bytes: &[u8],
     v: &Value,

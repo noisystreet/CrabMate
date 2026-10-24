@@ -68,7 +68,14 @@ fn read_workspace_text(path: &str, base: &Path) -> Result<String, String> {
     fs::read_to_string(&pb).map_err(|e| format!("读取文件失败（须为 UTF-8 文本）: {}", e))
 }
 
-fn diff_unified(left: &str, right: &str, header_a: &str, header_b: &str, context: usize) -> String {
+/// 生成 unified diff；供本工具与 `structured_patch` 的写前预览共用（同一套 diff 渲染）。
+pub(super) fn diff_unified(
+    left: &str,
+    right: &str,
+    header_a: &str,
+    header_b: &str,
+    context: usize,
+) -> String {
     let diff = TextDiff::from_lines(left, right);
     diff.unified_diff()
         .context_radius(context)
