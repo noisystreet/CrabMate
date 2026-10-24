@@ -260,22 +260,42 @@ fn sync_trim_and_estimate_before(
     (pipeline, before_tokens)
 }
 
+/// [`finalize_token_budget_compaction`] 入参。
+#[derive(Clone, Copy)]
+struct FinalizeTokenBudgetCompactionParams<'a> {
+    tools: &'a [Tool],
+    model_override: Option<&'a str>,
+    before: crate::agent::context_compaction::ContextTokenEstimate,
+    /// 是否「因 Token 预算触发的摘要」：决定 `ContextCompactionReport.compaction_reason`，
+    /// 不得纳入按字符阈值触发的摘要，否则原因字段会与真实触发路径不符（ADR §3.6）。
+    summarized_for_token_budget: bool,
+    /// 本回合摘要**实际**保留的尾部消息条数；`None` 表示本回合未做摘要。
+    summary_tail_kept: Option<usize>,
+}
+
 /// 应用 token 预算压缩，并在移除了完整回合组时清理孤儿工具消息。
 fn finalize_token_budget_compaction(
     cfg: &AgentConfig,
     messages: &mut Vec<Message>,
-    tools: &[Tool],
-    model_override: Option<&str>,
-    before: crate::agent::context_compaction::ContextTokenEstimate,
-    summarized_for_token_budget: bool,
+    params: FinalizeTokenBudgetCompactionParams<'_>,
 ) -> crate::agent::context_compaction::ContextCompactionReport {
+    // 本回合做过 LLM 摘要时，摘要刻意保留了尾部 N 条（按组边界上取整后的**实际**值）；
+    // 紧接着的删组不得把这些尾部吃掉，否则那次摘要白烧一次模型调用。
+    // 用实际值而非配置值：实际保留通常多于 `context_summary_tail_messages`。
+    let min_tail_messages = params.summary_tail_kept.map_or(0, |actual| {
+        cfg.context_pipeline
+            .context_summary_tail_messages
+            .clamp(4, 64)
+            .max(actual)
+    });
     let compaction = crate::agent::context_compaction::compact_messages_to_token_budget(
         cfg,
         messages,
-        tools,
-        model_override,
-        before,
-        summarized_for_token_budget,
+        params.tools,
+        params.model_override,
+        params.before,
+        params.summarized_for_token_budget,
+        min_tail_messages,
     );
     if compaction.removed_turn_groups > 0 {
         let _ = crate::agent::message_pipeline::drop_orphan_tool_messages(messages);
@@ -354,6 +374,7 @@ async fn prepare_session_messages_shared(
         removed_messages: 0,
         token_triggered: force_summary_for_token_budget,
         summarized_for_token_budget: summarized && force_summary_for_token_budget,
+        compressed_old_tool_messages: 0,
         provider_input_tokens: None,
         removed_prefix: crate::agent::message_pipeline::RemovedPrefix::default(),
     };
@@ -586,10 +607,13 @@ pub async fn prepare_messages_for_model(
     delta.compaction = finalize_token_budget_compaction(
         cfg,
         messages,
-        hooks.tools,
-        hooks.model_override,
-        delta.compaction.before,
-        delta.compaction.summarized_for_token_budget,
+        FinalizeTokenBudgetCompactionParams {
+            tools: hooks.tools,
+            model_override: hooks.model_override,
+            before: delta.compaction.before,
+            summarized_for_token_budget: delta.compaction.summarized_for_token_budget,
+            summary_tail_kept: delta.summary_tail_kept,
+        },
     );
     if let Some(budget) = delta.compaction.budget {
         log::debug!(
@@ -682,10 +706,13 @@ pub async fn prepare_readonly_model_messages(
     let compaction = finalize_token_budget_compaction(
         cfg,
         messages,
-        tools,
-        model_override,
-        before_tokens,
-        summarized && force_summary_for_token_budget,
+        FinalizeTokenBudgetCompactionParams {
+            tools,
+            model_override,
+            before: before_tokens,
+            summarized_for_token_budget: summarized && force_summary_for_token_budget,
+            summary_tail_kept,
+        },
     );
     Ok(PrepareMessagesDelta {
         pipeline,
