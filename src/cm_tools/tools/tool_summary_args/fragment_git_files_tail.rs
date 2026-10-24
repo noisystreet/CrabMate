@@ -158,7 +158,7 @@ impl ToolSummaryLine for SearchReplaceSummaryArgs {
             search.to_string()
         };
         Some(format!(
-            "search-replace{}: {} / \"{}\"",
+            "search_replace{}: {} / \"{}\"",
             if self.dry_run { " (preview)" } else { "" },
             path,
             short
