@@ -111,7 +111,9 @@ fn run_command_arg_display_tokens(args: &serde_json::Value) -> Vec<String> {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct RunCommandSummaryArgs {
-    command: String,
+    /// 模型常把整条命令写成数组（`["git","status"]`）；字段声明为 `String` 时反序列化会
+    /// 整体失败，摘要退化成占位串 `tool: <name>`，客户端只能再解析一遍参数才补回来。
+    command: serde_json::Value,
     /// 模型常把 `args` 写成数组或整段字符串；缺省为 JSON null。
     #[serde(default)]
     args: serde_json::Value,
@@ -119,16 +121,30 @@ pub(super) struct RunCommandSummaryArgs {
 
 impl ToolSummaryLine for RunCommandSummaryArgs {
     fn summary_line(self) -> Option<String> {
-        let cmd = self.command.trim();
-        if cmd.is_empty() {
+        let mut tokens = command_display_tokens(&self.command);
+        if tokens.is_empty() {
             return None;
         }
-        let args = run_command_arg_display_tokens(&self.args);
-        if args.is_empty() {
-            Some(cmd.to_string())
-        } else {
-            Some(format!("{} {}", cmd, args.join(" ")))
+        tokens.extend(run_command_arg_display_tokens(&self.args));
+        Some(tokens.join(" "))
+    }
+}
+
+/// `command` 的展示 token：数组即一整条命令行，字符串原样保留（它本身就是要显示的命令，
+/// 加引号反而奇怪）。参数位置另由 [`run_command_arg_display_tokens`] 逐 token 处理。
+fn command_display_tokens(command: &serde_json::Value) -> Vec<String> {
+    match command {
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                Vec::new()
+            } else {
+                vec![t.to_string()]
+            }
         }
+        serde_json::Value::Array(items) => items.iter().filter_map(json_arg_display_token).collect(),
+        serde_json::Value::Null => Vec::new(),
+        other => vec![terminal_session_arg_display_token(&other.to_string())],
     }
 }
 

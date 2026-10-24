@@ -90,6 +90,10 @@ Directional backlog distilled from comparisons with ecosystems such as AutoGen, 
 - [ ] More stacks under `dev_tag` as needed (whitelist and path safety).
 - [ ] MCP (continued): Streamable HTTP/SSE clients, multi-server, auth; optional HTTP (streamable) server aligned with Web auth. Stdio server: **`crabmate mcp serve`** (see **`docs/en/CLI.md`**). Keep documenting boundaries vs `run_command` / workspace policy.
 
+- [ ] **Tool-card placeholder summary and the `TOOL_CALL_ARGS` frame split (continued)**: both stem from "summary and arguments are handed over in full on the START frame", so decide them together rather than half-fixing either.
+  1. **Keep or drop the placeholder**: `tool_call_summary_from_args` still emits `tool: <name>` when no summary can be derived. The Client's `tool_display` already recognises that string and rebuilds a display line from the argument JSON (and the Server now summarises array-shaped `run_command` commands too), so the placeholder's only remaining job is "keep the protocol field non-empty". It could become an empty string or an optional field, making "no summary" an explicit state — that is an SSE field-semantics change, so third-party consumer contracts and a compatibility window have to be settled at the same time.
+  2. **`TOOL_CALL_ARGS` duplicates `TOOL_CALL_START`**: START already carries the full `arguments` (or the 240-character `argsPreview` when absent), so the ARGS frame adds nothing, and the Client's `on_tool_call_args` / `StreamSink::on_tool_args` hooks are empty wiring today. Making the second frame worthwhile (incremental or chunked delivery, or moving large arguments out of START so the first frame stays small) is a contract change with both shells and the golden fixtures to keep in step.
+
 ---
 
 ## `sse/`
