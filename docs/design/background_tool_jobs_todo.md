@@ -48,7 +48,7 @@
 - [x] `run_command` ToolSpec description 宣传 `async` / `timeout_secs` 与两个查询工具（纯文案）。
 - [x] 文档：`docs/工具说明.md` / `docs/en/TOOLS.md`。
 - [x] 测试：`ToolJobsHost` 单测（`NotFound` / `Queued` / `Succeeded` / `Failed` / 终态无 outcome / TTL 过期 / 截断 / 多字节边界 / list 空结果 / 工作区过滤 + 最新在前 + 命令摘要 / limit）与工具参数层单测；async 端到端（真实 `dispatch_tool` 闭环）。
-- **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。
+- **未做（本切片范围外，理由见 ADR §9）**：工作区门闩特例放行；并行只读批注入 registry（现为宿主 `None` 降级文案）；`background_job_cancel` 之类**发起/变更型**工具（ADR Alternatives 明确否决）。**后续更新（2026-10-24）**：`background_job_cancel` 后来**已实现并独立注册**（终止语义，计入 `write_effect_tools`，见 `background_tool_jobs_contract.md` §9）；此处「否决」仅针对**发起执行型**工具（`start_job` / 会重复实现审批与白名单的 `job_cancel`），不含只读查询与终止语义。同日后 `background_job_status` / `list` / `output` 合并为单个 `background_job` 的 `action` 选择器。
 
 ### Slice 5：非 `run_command` 工具的后台执行（装配表，`cargo_test` / `pytest_run`）
 **背景**：`async` 原先只对 `run_command` 开放；测试类工具（`cargo_test` / `pytest_run`）是长耗时主力，但参数是结构化字段而非现成 argv。

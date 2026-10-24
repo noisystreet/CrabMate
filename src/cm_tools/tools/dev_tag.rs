@@ -97,7 +97,7 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         // --- 格式化（多语言由实现按扩展名分流）---
 
         // --- 后台任务查询 ---
-        "background_job_status" | "background_job_list" => &[GENERAL],
+        "background_job" | "background_job_cancel" => &[GENERAL],
 
         // --- 代码度量与分析 ---
         "code_stats" => &[GENERAL],

@@ -1,27 +1,11 @@
 [
 ToolSpec {
-            name: "background_job_status",
-            description: "查询后台工具任务的状态与输出（只读，不走白名单审批）。用于 run_command 以 async: true 启动的长任务：传入 tool_job_id；任务未结束时返回当前状态（稍后再查即可），结束时返回退出码与 stdout/stderr（超长会被截断）。",
+            name: "background_job",
+            description: "查询后台工具任务（只读，不走白名单审批）。**`action` 必填**：`status` 按 `tool_job_id` 查状态与（终态）输出；`list` 列出当前工作区任务（最新创建在前，可选 `limit`，默认 20、上限 100）；`output` 按 `tool_job_id` 增量拉取输出（`tail -f` 语义，可选 `cursor` = 上次返回的 `next_cursor`）。**`status` / `output` 必须传 `tool_job_id`**。与本 `action` 无关的字段会被忽略，但 `limit` 无论 action 都受 1–100 约束（超出即参数校验失败）。用于 `run_command` 以 `async: true` 启动的长任务。取消任务请用 `background_job_cancel`。",
             category: ToolCategory::Development,
-            parameters: schema_of::<args::BackgroundJobStatusArgs>,
-            runner: ToolRunner::Legacy(runner_background_job_status),
-            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_status),
-        },
-        ToolSpec {
-            name: "background_job_list",
-            description: "列出当前工作区的后台工具任务（只读，最新创建在前），含任务 id、状态与命令摘要。可用返回的 id 调用 background_job_status 查看详情。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::BackgroundJobListArgs>,
-            runner: ToolRunner::Legacy(runner_background_job_list),
-            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_list),
-        },
-        ToolSpec {
-            name: "background_job_output",
-            description: "增量拉取后台工具任务的输出（只读，tail -f 语义）。用于 run_command 以 async: true 启动的长任务：传入 tool_job_id 与可选 cursor（上次返回的 next_cursor）；返回 stdout/stderr 增量与 next_cursor、eof。省略 cursor 则从最早可用起。",
-            category: ToolCategory::Development,
-            parameters: schema_of::<args::BackgroundJobOutputArgs>,
-            runner: ToolRunner::Legacy(runner_background_job_output),
-            summary: ToolSummaryKind::Dynamic(ts::summary_background_job_output),
+            parameters: schema_of::<args::BackgroundJobArgs>,
+            runner: ToolRunner::Legacy(runner_background_job),
+            summary: ToolSummaryKind::Dynamic(ts::summary_background_job),
         },
         ToolSpec {
             name: "background_job_cancel",
