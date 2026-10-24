@@ -430,8 +430,8 @@ fn modify_file_dispatch_full_mode(
         return "错误：mode=full/overwrite 是整文件覆盖，不能与 start_line/end_line 混用；局部修改请使用 mode=replace_lines。"
             .to_string();
     }
-    if v.get("expect_content").is_some() || v.get("expect_line_content").is_some() {
-        return "错误：expect_content/expect_line_content 是按行局部编辑的守卫参数，不能与 mode=full/overwrite 混用；请改用 mode=replace_lines / insert_after_line。"
+    if super::write_guard::guard_view(v).any() {
+        return "错误：guard 是按行局部编辑的内容守卫，不能与 mode=full/overwrite 混用；请改用 mode=replace_lines / insert_after_line。"
             .to_string();
     }
     let content = v

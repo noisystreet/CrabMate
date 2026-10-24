@@ -18,7 +18,7 @@ fn test_modify_file_expect_content_mismatch_rejects_and_relocates() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_content 校验失败"), "{}", out);
+    assert!(out.contains("guard.content 校验失败"), "{}", out);
     assert!(out.contains("实际位于行 3"), "{}", out);
     // 未写盘。
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\nL3\nL4\n");
@@ -74,7 +74,7 @@ fn test_modify_file_expect_line_content_mismatch_rejects() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_line_content 校验失败"), "{}", out);
+    assert!(out.contains("guard.anchor_line 校验失败"), "{}", out);
     assert!(out.contains("实际位于行 3"), "{}", out);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\nL3\n");
     let _ = std::fs::remove_dir_all(&dir);
@@ -110,13 +110,13 @@ fn test_modify_file_expect_guard_cross_field_rejected() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_line_content 仅用于 insert_after_line"), "{}", out);
+    assert!(out.contains("guard.anchor_line 仅用于 insert_after_line"), "{}", out);
     let out = modify_file(
         r#"{"dry_run":false,"path":"m.txt","mode":"insert_after_line","after_line":1,"content":"X","expect_content":"L1","allow_stale_revision":true}"#,
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_content 仅用于 replace_lines"), "{}", out);
+    assert!(out.contains("guard.content 仅用于 replace_lines"), "{}", out);
     let out = modify_file(
         r#"{"dry_run":false,"path":"m.txt","mode":"full","content":"X","expect_content":"L1"}"#,
         &dir,
@@ -249,7 +249,7 @@ fn test_modify_file_batch_edits_expect_guard_per_edit() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_line_content 校验失败"), "{}", out);
+    assert!(out.contains("guard.anchor_line 校验失败"), "{}", out);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\nL3\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -422,7 +422,7 @@ fn test_modify_file_expect_edge_lines_mismatch_rejects_and_relocates() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_first_line 校验失败"), "{}", out);
+    assert!(out.contains("guard.first_line 校验失败"), "{}", out);
     assert!(out.contains("实际位于行 2"), "{}", out);
     assert_eq!(
         std::fs::read_to_string(&file).unwrap(),
@@ -472,7 +472,7 @@ fn test_modify_file_expect_edge_lines_rejected_for_insert_and_batch_insert() {
         &dir,
         &ctx,
     );
-    assert!(out.contains("expect_line_content"), "{}", out);
+    assert!(out.contains("guard.anchor_line"), "{}", out);
     assert_eq!(std::fs::read_to_string(&file).unwrap(), "L1\nL2\n");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -544,5 +544,57 @@ fn test_write_tools_default_to_preview_without_dry_run() {
     assert!(out.contains("dry_run") || out.contains("预览"), "{}", out);
     assert_eq!(std::fs::read_to_string(&j).unwrap(), "{\"a\":1}");
 
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 新写法（`guard` 子对象）的 runner 层正向路径：不经 `run_tool` 的 uplift，直接走守卫。
+#[test]
+fn test_modify_file_guard_subobject_content_match_writes() {
+    let dir = make_test_dir();
+    let file = dir.join("g.txt");
+    std::fs::write(&file, "L1\nL2\nL3\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    let out = modify_file(
+        r#"{"dry_run":false,"path":"g.txt","mode":"replace_lines","start_line":2,"end_line":3,"content":"X","guard":{"content":"L2\nL3"},"allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("已按行替换"), "{}", out);
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(
+        after.contains("X") && !after.contains("L2") && !after.contains("L3"),
+        "{after}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 空串守卫表示「校验该行为空行」，不是「未设置」——不能静默跳过（曾因过滤空串而退化）。
+#[test]
+fn test_modify_file_guard_empty_anchor_line_still_checks() {
+    let dir = make_test_dir();
+    let file = dir.join("blank.txt");
+    std::fs::write(&file, "A\n\nB\n").unwrap();
+    let cfg = crate::cm_config::load_config(None).expect("embedded default config");
+    let ctx =
+        crate::cm_tools::tools::tool_context_for(&cfg, cfg.command_exec.allowed_commands.as_ref(), &dir);
+    // 锚点行 1 实际是 "A"：声明为空行必须拒写。
+    let out = modify_file(
+        r#"{"dry_run":false,"path":"blank.txt","mode":"insert_after_line","after_line":1,"content":"X","guard":{"anchor_line":""},"allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(out.contains("guard.anchor_line 校验失败"), "{}", out);
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "A\n\nB\n");
+    // 锚点行 2 确实是空行：守卫通过并写入。
+    let out = modify_file(
+        r#"{"dry_run":false,"path":"blank.txt","mode":"insert_after_line","after_line":2,"content":"X","guard":{"anchor_line":""},"allow_stale_revision":true}"#,
+        &dir,
+        &ctx,
+    );
+    assert!(!out.contains("校验失败"), "{}", out);
+    let after = std::fs::read_to_string(&file).unwrap();
+    assert!(after.contains('X') && after.contains("A") && after.contains("B"), "{after}");
     let _ = std::fs::remove_dir_all(&dir);
 }

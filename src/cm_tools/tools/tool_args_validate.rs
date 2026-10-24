@@ -176,9 +176,44 @@ fn coerce_read_file_count_total_lines(map: &mut serde_json::Map<String, Value>) 
     }
 }
 
+/// 旧平铺守卫键迁移到 `guard` 子对象。
+///
+/// schema 只暴露 `guard`（`deny_unknown_fields` 会拒收平铺旧键），但历史会话回放与沿用旧习惯的
+/// 调用仍应可用，故在校验前把 `expect_content` 等上抬为 `guard.content` 等；`guard` 已有的同名
+/// 子键优先，不覆盖调用方显式写的值。
+fn uplift_guard_keys(map: &mut serde_json::Map<String, Value>) -> bool {
+    const LEGACY: [(&str, &str); 4] = [
+        ("content", "expect_content"),
+        ("first_line", "expect_first_line"),
+        ("last_line", "expect_last_line"),
+        ("anchor_line", "expect_line_content"),
+    ];
+    let mut moved: Vec<(&str, Value)> = Vec::new();
+    for (new, old) in LEGACY {
+        if let Some(v) = map.remove(old) {
+            moved.push((new, v));
+        }
+    }
+    if moved.is_empty() {
+        return false;
+    }
+    let slot = map
+        .entry("guard".to_string())
+        .or_insert_with(|| Value::Object(serde_json::Map::new()));
+    if !slot.is_object() {
+        *slot = Value::Object(serde_json::Map::new());
+    }
+    if let Value::Object(guard) = slot {
+        for (key, val) in moved {
+            guard.entry(key.to_string()).or_insert(val);
+        }
+    }
+    true
+}
+
 /// `modify_file` 的 `replace_lines` 与 `read_file` 一样常用字符串行号；`mode` 常被写成大小写变体或 `lines`。
 fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
+    let mut changed = uplift_guard_keys(map);
     for key in ["start_line", "end_line"] {
         let Some(val) = map.get_mut(key) else {
             continue;
@@ -218,7 +253,7 @@ fn coerce_modify_file_extra_fields(map: &mut serde_json::Map<String, Value>) -> 
 
 /// `modify_file.edits[i]` 的确定性纠错：字符串行号 → 整型；`mode` 同义词/大小写归一。
 fn coerce_modify_file_edit_fields(obj: &mut serde_json::Map<String, Value>) -> bool {
-    let mut changed = false;
+    let mut changed = uplift_guard_keys(obj);
     for key in ["start_line", "end_line"] {
         let Some(val) = obj.get_mut(key) else {
             continue;
@@ -713,5 +748,40 @@ mod tests {
         );
         let r = validate_parsed_str_for_builtin("create_file", cow.as_ref()).expect("validator");
         assert!(r.is_ok(), "{r:?}");
+    }
+
+    /// 旧平铺键在校验前被上抬到 `guard`，因此旧调用不会因 `deny_unknown_fields` 被拒。
+    #[test]
+    fn modify_file_legacy_guard_keys_uplift_into_guard_and_pass_schema() {
+        let raw = r#"{"path":"a.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","expect_content":"L1","expect_first_line":""}"#;
+        let cow = effective_builtin_tool_args_json("modify_file", raw).expect("ok");
+        assert!(matches!(cow, Cow::Owned(_)));
+        let v: Value = serde_json::from_str(cow.as_ref()).expect("json");
+        assert_eq!(v["guard"]["content"], "L1");
+        assert_eq!(v["guard"]["first_line"], "");
+        assert!(v.get("expect_content").is_none(), "{v}");
+        assert!(v.get("expect_first_line").is_none(), "{v}");
+        let r = validate_parsed_str_for_builtin("modify_file", cow.as_ref()).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    /// schema 只暴露 `guard`：四个旧键名不再出现在工具定义里（否则模型会照旧写）。
+    #[test]
+    fn modify_file_guard_schema_exposes_guard_only() {
+        let raw = r#"{"path":"a.txt","mode":"replace_lines","start_line":1,"end_line":1,"content":"X","guard":{"first_line":"L1","last_line":"L1"}}"#;
+        let r = validate_parsed_str_for_builtin("modify_file", raw).expect("validator");
+        assert!(r.is_ok(), "{r:?}");
+        let schema =
+            schemars::schema_for!(crate::cm_tools::tools::tool_param_types::ModifyFileArgs);
+        let s = serde_json::to_string(&schema).expect("schema json");
+        assert!(s.contains("\"guard\""), "{s}");
+        for legacy in [
+            "expect_content",
+            "expect_first_line",
+            "expect_last_line",
+            "expect_line_content",
+        ] {
+            assert!(!s.contains(legacy), "schema 不应再暴露 {legacy}: {s}");
+        }
     }
 }

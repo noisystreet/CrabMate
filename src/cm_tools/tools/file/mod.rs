@@ -15,6 +15,7 @@ mod read_tool;
 mod replace_lines_stream;
 mod revision;
 mod tree_glob;
+mod write_guard;
 mod write_ops;
 mod write_precheck;
 

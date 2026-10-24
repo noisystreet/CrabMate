@@ -157,7 +157,7 @@ fn append_relocate_hint(err: &mut String, lines: &[&str], needle: &str, arg_name
     }
 }
 
-/// `mode=replace_lines` 的 `expect_content` 守卫：逐行精确比对 [start_line..=end_line]
+/// `mode=replace_lines` 的 `guard.content` 守卫：逐行精确比对 [start_line..=end_line]
 /// 当前内容与期望；不一致即拒绝写盘，并给出实际内容与纠偏行号。
 pub(super) fn verify_expect_content(
     lines: &[&str],
@@ -169,7 +169,7 @@ pub(super) fn verify_expect_content(
     let expect_lines: Vec<&str> = expect_body.lines().collect();
     if start_line > lines.len() || end_line > lines.len() {
         return Err(format!(
-            "错误：expect_content 校验失败，行区间 {}-{} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
+            "错误：guard.content 校验失败，行区间 {}-{} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             start_line,
             end_line,
             lines.len()
@@ -178,7 +178,7 @@ pub(super) fn verify_expect_content(
     let span = end_line.saturating_sub(start_line) + 1;
     if expect_lines.len() != span {
         return Err(format!(
-            "错误：expect_content 校验失败，期望内容共 {} 行，与替换区间行 {}-{}（共 {} 行）行数不一致（{NOT_WRITTEN_HINT}）。",
+            "错误：guard.content 校验失败，期望内容共 {} 行，与替换区间行 {}-{}（共 {} 行）行数不一致（{NOT_WRITTEN_HINT}）。",
             expect_lines.len(),
             start_line,
             end_line,
@@ -202,20 +202,20 @@ pub(super) fn verify_expect_content(
         return Ok(());
     }
     let mut err = format!(
-        "错误：expect_content 校验失败。行 {}-{} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n{}",
+        "错误：guard.content 校验失败。行 {}-{} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n{}",
         start_line,
         end_line,
         mismatches.join("\n")
     );
     let first = expect_lines.iter().find(|l| !l.trim().is_empty());
     if let Some(first) = first {
-        append_relocate_hint(&mut err, lines, first, "expect_content");
+        append_relocate_hint(&mut err, lines, first, "guard.content");
     }
     Err(err)
 }
 
-/// `replace_lines` 的区间边界守卫：`expect_first_line` 校验 `start_line` 行、
-/// `expect_last_line` 校验 `end_line` 行，只锚定首尾——删改长区间时不必整段复述 `expect_content`。
+/// `replace_lines` 的区间边界守卫：`guard.first_line` 校验 `start_line` 行、
+/// `guard.last_line` 校验 `end_line` 行，只锚定首尾——删改长区间时不必整段复述 `guard.content`。
 pub(super) fn verify_expect_edge_lines(
     lines: &[&str],
     start_line: usize,
@@ -224,10 +224,10 @@ pub(super) fn verify_expect_edge_lines(
     last: Option<&str>,
 ) -> Result<(), String> {
     if let Some(expect) = first {
-        check_edge_line(lines, start_line, expect, "expect_first_line")?;
+        check_edge_line(lines, start_line, expect, "guard.first_line")?;
     }
     if let Some(expect) = last {
-        check_edge_line(lines, end_line, expect, "expect_last_line")?;
+        check_edge_line(lines, end_line, expect, "guard.last_line")?;
     }
     Ok(())
 }
@@ -263,7 +263,7 @@ fn check_edge_line(
     Err(err)
 }
 
-/// `mode=insert_after_line` 的 `expect_line_content` 守卫：校验锚点行 `after_line`
+/// `mode=insert_after_line` 的 `guard.anchor_line` 守卫：校验锚点行 `after_line`
 /// 当前内容与期望一致；不一致即拒绝写盘，并给出纠偏行号。
 pub(super) fn verify_expect_line_content(
     lines: &[&str],
@@ -273,12 +273,12 @@ pub(super) fn verify_expect_line_content(
     let expect_body = expect.trim_end_matches('\n');
     if after_line == 0 {
         return Err(format!(
-            "错误：expect_line_content 校验失败：after_line=0 表示插入到文件开头，无锚点行可校验；请去掉 expect_line_content 或改用 after_line>=1（{NOT_WRITTEN_HINT}）。"
+            "错误：guard.anchor_line 校验失败：after_line=0 表示插入到文件开头，无锚点行可校验；请去掉 guard.anchor_line 或改用 after_line>=1（{NOT_WRITTEN_HINT}）。"
         ));
     }
     let Some(actual) = lines.get(after_line - 1) else {
         return Err(format!(
-            "错误：expect_line_content 校验失败，锚点行 {} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
+            "错误：guard.anchor_line 校验失败，锚点行 {} 超出文件行数（文件共 {} 行）（{NOT_WRITTEN_HINT}）",
             after_line,
             lines.len()
         ));
@@ -287,11 +287,11 @@ pub(super) fn verify_expect_line_content(
         return Ok(());
     }
     let mut err = format!(
-        "错误：expect_line_content 校验失败。锚点行 {} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n  行 {}|实际: {}\n        期望: {}",
+        "错误：guard.anchor_line 校验失败。锚点行 {} 当前内容与期望不符（{NOT_WRITTEN_HINT}）：\n  行 {}|实际: {}\n        期望: {}",
         after_line, after_line, actual, expect_body
     );
     if !expect_body.is_empty() {
-        append_relocate_hint(&mut err, lines, expect_body, "expect_line_content");
+        append_relocate_hint(&mut err, lines, expect_body, "guard.anchor_line");
     }
     Err(err)
 }
@@ -536,69 +536,68 @@ fn finish_modify_file_success(
     )
 }
 
-/// replace_lines 的 expect 守卫：交叉参数拒绝 + 区间内容校验（基于当前磁盘快照）。
+/// replace_lines 的守卫：交叉参数拒绝 + 区间内容校验（基于当前磁盘快照）。
 ///
-/// 两种写法**互斥**：`expect_content` 逐行校验整段（最严格，但删除长区间时要整段复述）；
-/// `expect_first_line` / `expect_last_line` 只锚定首尾两行，够用于「确认改的是这一段」。
+/// 两种写法**互斥**：`guard.content` 逐行校验整段（最严格，但删除长区间时要整段复述）；
+/// `guard.first_line` / `guard.last_line` 只锚定首尾两行，够用于「确认改的是这一段」。
 fn check_replace_expect_guards(
     v: &Value,
     original: Option<&str>,
     start_line: usize,
     end_line: usize,
 ) -> Result<(), String> {
-    if v.get("expect_line_content").is_some() {
+    let guard = super::write_guard::guard_view(v);
+    if guard.anchor_line.is_some() {
         return Err(format!(
-            "错误：expect_line_content 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 expect_content 或 expect_first_line/expect_last_line（{NOT_WRITTEN_HINT}）。"
+            "错误：guard.anchor_line 仅用于 insert_after_line 的锚点行校验；replace_lines 请使用 guard.content 或 guard.first_line/guard.last_line（{NOT_WRITTEN_HINT}）。"
         ));
     }
-    let expect_content = v.get("expect_content").and_then(|c| c.as_str());
-    let expect_first = v.get("expect_first_line").and_then(|c| c.as_str());
-    let expect_last = v.get("expect_last_line").and_then(|c| c.as_str());
-    if expect_content.is_some() && (expect_first.is_some() || expect_last.is_some()) {
+    if guard.content.is_some() && guard.edge_any() {
         return Err(format!(
-            "错误：expect_content 与 expect_first_line/expect_last_line 互斥（前者校验整段，后者只锚定首尾）；请二选一（{NOT_WRITTEN_HINT}）。"
+            "错误：guard.content 与 guard.first_line/guard.last_line 互斥（前者校验整段，后者只锚定首尾）；请二选一（{NOT_WRITTEN_HINT}）。"
         ));
     }
-    if expect_content.is_none() && expect_first.is_none() && expect_last.is_none() {
+    if !guard.any() {
         return Ok(());
     }
     let Some(orig) = original else {
         return Err(format!(
-            "错误：无法读取原文件内容进行区间守卫校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
+            "错误：无法读取原文件内容进行 guard 校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
         ));
     };
     let view: Vec<&str> = orig.lines().collect();
-    match expect_content {
+    match guard.content {
         Some(expect) => verify_expect_content(&view, start_line, end_line, expect),
-        None => verify_expect_edge_lines(&view, start_line, end_line, expect_first, expect_last),
+        None => verify_expect_edge_lines(&view, start_line, end_line, guard.first_line, guard.last_line),
     }
 }
 
-/// insert_after_line 的 expect 守卫：交叉参数拒绝 + `expect_line_content` 锚点行校验。
+/// insert_after_line 的守卫：交叉参数拒绝 + `guard.anchor_line` 锚点行校验。
 fn check_insert_expect_guards(
     v: &Value,
     original: Option<&str>,
     after_line: usize,
 ) -> Result<(), String> {
-    if v.get("expect_first_line").is_some() || v.get("expect_last_line").is_some() {
+    let guard = super::write_guard::guard_view(v);
+    if guard.edge_any() {
         return Err(format!(
-            "错误：expect_first_line/expect_last_line 仅用于 replace_lines 的区间边界校验；insert_after_line 请使用 expect_line_content（{NOT_WRITTEN_HINT}）。"
+            "错误：guard.first_line/guard.last_line 仅用于 replace_lines 的区间边界校验；insert_after_line 请使用 guard.anchor_line（{NOT_WRITTEN_HINT}）。"
         ));
     }
-    if v.get("expect_content").is_some() {
+    if guard.content.is_some() {
         return Err(format!(
-            "错误：expect_content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 expect_line_content（{NOT_WRITTEN_HINT}）。"
+            "错误：guard.content 仅用于 replace_lines 的区间内容校验；insert_after_line 请使用 guard.anchor_line（{NOT_WRITTEN_HINT}）。"
         ));
     }
-    if let Some(expect) = v.get("expect_line_content").and_then(|c| c.as_str()) {
+    if let Some(expect) = guard.anchor_line {
         if after_line == 0 {
             return Err(format!(
-                "错误：after_line=0 表示插入到文件开头，无锚点行可校验；expect_line_content 需 after_line>=1（{NOT_WRITTEN_HINT}）。"
+                "错误：after_line=0 表示插入到文件开头，无锚点行可校验；guard.anchor_line 需 after_line>=1（{NOT_WRITTEN_HINT}）。"
             ));
         }
         let Some(orig) = original else {
             return Err(format!(
-                "错误：无法读取原文件内容进行 expect_line_content 校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
+                "错误：无法读取原文件内容进行 guard.anchor_line 校验（文件可能不是 UTF-8 文本）（{NOT_WRITTEN_HINT}）。"
             ));
         };
         let view: Vec<&str> = orig.lines().collect();
