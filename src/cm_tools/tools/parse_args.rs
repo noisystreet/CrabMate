@@ -8,7 +8,16 @@ pub fn parse_args_json(args_json: &str) -> Result<serde_json::Value, String> {
 
 /// 将工具入参 JSON 直接反序列化为目标类型（`parse_args_json` + `serde_json::from_value` 一步到位）。
 pub fn parse_args_typed<T: serde::de::DeserializeOwned>(args_json: &str) -> Result<T, String> {
-    let v = parse_args_json(args_json)?;
+    parse_args_from_value(parse_args_json(args_json)?)
+}
+
+/// 将**已解析**的 [`serde_json::Value`] 反序列化为目标类型；错误文案与 [`parse_args_typed`] 一致。
+///
+/// 供「同一份入参既要保留原始 JSON、又要类型化视图」的 runner 使用（例如写侧守卫直接读
+/// `base_revision`，同时又要 `Args` 结构体），避免把 `args_json` 解析两次。
+pub fn parse_args_from_value<T: serde::de::DeserializeOwned>(
+    v: serde_json::Value,
+) -> Result<T, String> {
     serde_json::from_value(v).map_err(|e| format!("参数解析错误: {e}"))
 }
 

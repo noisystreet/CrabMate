@@ -127,6 +127,16 @@ pub struct StructuredPatchArgs {
     /// **已废弃**：写盘只需 `dry_run=false`，本字段不再被校验；仅为兼容既有调用保留。
     #[serde(default)]
     pub confirm: bool,
+    /// 写前校验：`read_file` 输出头里的 `revision`（`sha256:<hex>`）。
+    /// 与目标文件当前内容不一致即拒写（`错误[stale_revision]`），避免覆盖别人刚改过的文件。
+    /// 不传则不做 CAS，保持「按 key 路径改」的既有行为（键路径不受行号漂移影响，
+    /// 故不像行号类编辑那样强制要求基线）。
+    ///
+    /// **此字段仅用于 schema 声明与文档**：实际取值由写侧守卫
+    /// （`file::verify_write_revision`）从**原始入参 JSON** 读取，与 `modify_file` 同模式。
+    /// 改校验语义请改那里，不要以为改这里的类型就能生效。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_revision: Option<String>,
 }
 
 // ── 工作流执行（`workflow_execute` 占位 runner）───────────────

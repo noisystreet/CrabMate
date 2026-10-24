@@ -36,6 +36,7 @@ mod debug_tools;
 mod diagnostics;
 mod docs_health_sweep;
 pub use diagnostics::capture_trimmed;
+pub use parse_args::parse_args_from_value;
 pub use parse_args::parse_args_json;
 pub use parse_args::parse_args_typed;
 mod env_var_check;

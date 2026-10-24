@@ -27,6 +27,12 @@ pub use mutate::{
 };
 pub use path::{canonical_workspace_root, resolve_for_read, resolve_for_read_open};
 pub use perm::{chmod_file, chmod_file_try};
+// 写侧统一提交入口：其它工具（`structured_patch`）也要「tmp → 继承元数据 → fsync →
+// revision 校验 → 原子替换」，复用同一实现而不是各自 `fs::write`。
+pub(crate) use commit_guard::write_bytes_with_revision_guard;
+// 只校验不写：`structured_patch` 的**预览**也要按显式 `base_revision` 早失败，
+// 否则预览会基于过期快照给出一份「看起来安全」的 diff。
+pub(crate) use revision::verify_write_revision;
 pub use read_tool::read_file;
 pub use read_tool::read_file_try;
 #[cfg(test)]

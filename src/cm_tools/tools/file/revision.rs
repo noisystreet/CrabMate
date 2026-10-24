@@ -77,7 +77,7 @@ pub(super) fn allow_stale_revision_arg(v: &Value) -> bool {
 
 /// 写前 revision 校验：显式 `base_revision` 优先且始终校验；否则在 `auto_bind` 时
 /// 使用本轮 `read_file` 记录的 revision；**没有记录即拒写**。`allow_stale_revision` 只影响后者。
-pub(super) fn verify_write_revision(
+pub(crate) fn verify_write_revision(
     v: &Value,
     target: &Path,
     ctx: &ToolContext<'_>,
