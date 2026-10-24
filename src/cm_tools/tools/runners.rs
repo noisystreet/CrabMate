@@ -135,7 +135,8 @@ macro_rules! define_runners_args_only {
     };
 }
 
-/// 生成 `fn runner_git_* -> git::impl(args, max_len, cwd)`；新增 Git 工具时在列表中增一行并注册 `tool_specs_registry`。
+/// 生成 `fn runner_git -> git::dispatch(args, max_len, cwd)`。`git` 是 action 选择器，
+/// 新增只读子命令时改 `GitAction` + `git::read_ops::dispatch`，这里不必增行。
 macro_rules! define_git_runner {
     ($runner:ident, $git_fn:ident) => {
         pub fn $runner(args: &str, ctx: &ToolContext<'_>) -> String {

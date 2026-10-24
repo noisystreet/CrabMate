@@ -20,7 +20,7 @@ mod tests {
     use crate::cm_tools::tools::tool_param_types::{
         AddReminderArgs, ArchivePackArgs, BacktraceAnalyzeArgs, CalcArgs,
         CallGraphSketchArgs, CargoTestArgs, ChmodFileArgs, CiPipelineLocalArgs, CodeStatsArgs,
-        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitArgs,
+        CoverageReportArgs, DependencyGraphArgs, DocsHealthSweepArgs, FindReferencesArgs, FindSymbolArgs, GitAction, GitArgs,
         ListRemindersArgs, MarkdownCheckLinksArgs, ModifyFileArgs,
         PytestRunArgs, QualityWorkspaceArgs, RunCommandArgs, RunLintsArgs,
         StructuredValidateArgs, TableTextArgs, WorkflowExecuteArgs,
@@ -294,6 +294,56 @@ mod tests {
                 "{name}.async 字段（serde rename）应为 boolean（Option → 含 null）：{prop}"
             );
         }
+    }
+
+    /// 递归收集 schema 中的枚举字面量：schemars 对枚举可能内联成 `enum: [...]`，
+    /// 也可能拆成 `oneOf` + `const`，还可能经 `$ref` / `$defs` 呈现——三种都要能取到。
+    fn collect_enum_values<'a>(v: &'a serde_json::Value, out: &mut Vec<&'a str>) {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(serde_json::Value::Array(items)) = map.get("enum") {
+                    out.extend(items.iter().filter_map(|x| x.as_str()));
+                }
+                if let Some(serde_json::Value::String(konst)) = map.get("const") {
+                    out.push(konst);
+                }
+                for child in map.values() {
+                    collect_enum_values(child, out);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for child in items {
+                    collect_enum_values(child, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// `GitAction` 同时是 schema enum 与 `git::read_ops::dispatch` 的分发真源：
+    /// dispatch 已改为对它 `match`（新增变体不穷尽即编译失败），这里钉住 schema 侧的字符串，
+    /// 避免 `rename_all` 或变体名被改后，`dispatch` 反序列化与文档示例悄悄错位。
+    #[test]
+    fn git_schema_action_enum_matches_documented_names() {
+        let v = tool_parameters_schema_value::<GitAction>();
+        let mut values = Vec::new();
+        collect_enum_values(&v, &mut values);
+        for expected in [
+            "status",
+            "diff",
+            "clean_check",
+            "log",
+            "show",
+            "blame",
+            "file_history",
+            "branch_list",
+            "remote_status",
+            "remote_list",
+        ] {
+            assert!(values.contains(&expected), "schema enum 缺少 {expected}：{values:?}");
+        }
+        // 数量对齐：新增 action 时这里会失败，提醒同步 `GIT_ACTIONS` 文案与文档示例。
+        assert_eq!(values.len(), 10, "action 数量变化：{values:?}");
     }
 
     #[test]
