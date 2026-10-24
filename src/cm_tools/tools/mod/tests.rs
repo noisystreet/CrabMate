@@ -428,6 +428,30 @@ fn test_summarize_tool_call_run_command_empty_command() {
     assert_eq!(s, None);
 }
 
+/// 卡片行要用注册名 `search_replace`：曾硬编码 `search-replace{}: …`，客户端因此显示
+/// 了一个工具列表里不存在的连字符名（TUI 还得再归一化一次才不重复打印名字）。
+#[test]
+fn test_summarize_tool_call_search_replace_preview_uses_registry_name() {
+    let s = summarize_tool_call(
+        "search_replace",
+        r#"{"path":"a.rs","search":"foo","dry_run":true}"#,
+    );
+    assert_eq!(
+        s.as_deref(),
+        Some(r#"search_replace (preview): a.rs / "foo""#)
+    );
+}
+
+/// 写入形态同样不带连字符，`(preview)` 后缀只在预览时出现。
+#[test]
+fn test_summarize_tool_call_search_replace_write_uses_registry_name() {
+    let s = summarize_tool_call(
+        "search_replace",
+        r#"{"path":"a.rs","search":"foo","dry_run":false}"#,
+    );
+    assert_eq!(s.as_deref(), Some(r#"search_replace: a.rs / "foo""#));
+}
+
 #[test]
 fn test_summarize_read_file_range_normalizes_inverted_order() {
     let s = summarize_tool_call(
