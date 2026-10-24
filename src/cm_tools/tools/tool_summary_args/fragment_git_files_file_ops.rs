@@ -431,22 +431,3 @@ impl ToolSummaryLine for RustFileOutlineSummaryArgs {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(super) struct ConvertUnitsSummaryArgs {
-    category: String,
-    from: String,
-    to: String,
-}
-
-impl ToolSummaryLine for ConvertUnitsSummaryArgs {
-    fn summary_line(self) -> Option<String> {
-        let cat = self.category.trim();
-        let from = self.from.trim();
-        let to = self.to.trim();
-        if cat.is_empty() || from.is_empty() || to.is_empty() {
-            return None;
-        }
-        Some(format!("convert units: {} ({} → {})", cat, from, to))
-    }
-}
-

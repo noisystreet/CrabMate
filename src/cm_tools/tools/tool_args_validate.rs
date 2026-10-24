@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn known_tool_rejects_wrong_type() {
-        let r = validate_parsed_value_if_known("calc", &json!({ "expression": 1 })).expect("known");
+        let r = validate_parsed_value_if_known("json_format", &json!({ "text": 1 })).expect("known");
         assert!(r.is_err());
         let msg = r.unwrap_err();
         assert!(msg.contains("参数与工具 JSON Schema"), "{}", msg);

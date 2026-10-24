@@ -204,11 +204,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         m.insert("rustc", check_cmd("rustc", &["-V"]));
         m.insert("cargo", check_cmd("cargo", &["-V"]));
 
-        let bc = check_cmd("bc", &["--version"])
-            .or_else(|_| check_cmd("bc", &["-v"]))
-            .or_else(|_| check_cmd("bc", &["-V"]));
-        m.insert("bc", bc);
-
         m.insert("rustfmt", check_cmd("rustfmt", &["--version"]));
         m.insert("clang_format", check_cmd("clang-format", &["--version"]));
         m.insert("cmake", check_cmd("cmake", &["--version"]));
@@ -237,7 +232,6 @@ pub async fn build_health_report(workspace_dir: &Path) -> HealthReport {
         let key = match k {
             "rustc" => "dep_toolchain_rustc",
             "cargo" => "dep_toolchain_cargo",
-            "bc" => "dep_bc",
             "rustfmt" => "dep_rustfmt",
             "clang_format" => "dep_clang_format",
             "cmake" => "dep_cmake",
@@ -393,7 +387,7 @@ mod health_status_tests {
             },
         );
         checks.insert(
-            "dep_bc".into(),
+            "dep_rustfmt".into(),
             HealthCheckItem {
                 ok: true,
                 detail: Some("ok".into()),
@@ -413,7 +407,7 @@ mod health_status_tests {
             },
         );
         checks.insert(
-            "dep_bc".into(),
+            "dep_rustfmt".into(),
             HealthCheckItem {
                 ok: false,
                 detail: Some("missing".into()),

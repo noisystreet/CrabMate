@@ -104,7 +104,7 @@ fn handler_map_resolves_known_tools() {
 
 #[test]
 fn try_dispatch_meta_unknown_is_none() {
-    assert!(try_dispatch_meta("calc").is_none());
+    assert!(try_dispatch_meta("json_format").is_none());
     assert_eq!(
         try_dispatch_meta("workflow_execute").map(|m| m.name),
         Some("workflow_execute")
@@ -114,10 +114,10 @@ fn try_dispatch_meta_unknown_is_none() {
 #[test]
 fn sync_default_inline_tools() {
     let cfg = test_cfg();
-    assert!(sync_default_runs_inline(&cfg, "get_current_time"));
-    assert!(sync_default_runs_inline(&cfg, "convert_units"));
+    // 默认集合为空：原 `get_current_time` / `convert_units` 已整体移除；
+    // 仍可通过 `tool_registry_sync_default_inline_tools` 配置覆盖。
     assert!(!sync_default_runs_inline(&cfg, "read_file"));
-    assert!(!sync_default_runs_inline(&cfg, "calc"));
+    assert!(!sync_default_runs_inline(&cfg, "json_format"));
 }
 
 #[test]
@@ -132,7 +132,7 @@ fn meta_fields_and_default_class() {
     assert!(ts.requires_workspace);
     assert_eq!(ts.class, ToolExecutionClass::CommandSpawnTimeout);
     assert_eq!(
-        execution_class_for_tool("calc"),
+        execution_class_for_tool("json_format"),
         ToolExecutionClass::BlockingSync
     );
 }
@@ -172,8 +172,8 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
         id: "call_t".into(),
         typ: "function".into(),
         function: FunctionCall {
-            name: "get_current_time".into(),
-            arguments: "{}".into(),
+            name: "json_format".into(),
+            arguments: "{\"text\":\"{\\\"a\\\":1}\"}".into(),
         },
     };
     let lookup = default_lookup();
@@ -181,8 +181,8 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
     let (out, payload) = dispatch_tool(DispatchToolParams {
         runtime,
         call: DispatchToolCall {
-            name: "get_current_time",
-            args: "{}",
+            name: "json_format",
+            args: "{\"text\":\"{\\\"a\\\":1}\"}",
             tc: &tc,
         },
         workspace: DispatchToolWorkspace {
@@ -210,7 +210,7 @@ async fn dispatch_tool_single_call_when_retry_disabled() {
         },
     })
     .await;
-    assert!(out.contains("当前时间"), "unexpected: {out}");
+    assert!(out.contains("\"a\""), "unexpected: {out}");
     assert!(payload.is_none());
 }
 
@@ -229,8 +229,8 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
         id: "call_t".into(),
         typ: "function".into(),
         function: FunctionCall {
-            name: "get_current_time".into(),
-            arguments: "{}".into(),
+            name: "json_format".into(),
+            arguments: "{\"text\":\"{\\\"a\\\":1}\"}".into(),
         },
     };
     let lookup = default_lookup();
@@ -238,8 +238,8 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
     let (out, _) = dispatch_tool(DispatchToolParams {
         runtime,
         call: DispatchToolCall {
-            name: "get_current_time",
-            args: "{}",
+            name: "json_format",
+            args: "{\"text\":\"{\\\"a\\\":1}\"}",
             tc: &tc,
         },
         workspace: DispatchToolWorkspace {
@@ -267,7 +267,7 @@ async fn dispatch_tool_retry_enabled_success_still_single_call() {
         },
     })
     .await;
-    assert!(out.contains("当前时间"), "unexpected: {out}");
+    assert!(out.contains("\"a\""), "unexpected: {out}");
 }
 
 #[tokio::test]

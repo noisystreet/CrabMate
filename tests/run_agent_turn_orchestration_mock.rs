@@ -69,7 +69,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
     let mut messages = vec![
         Message::system_only("test system".to_string()),
         Message::user_only(
-            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+            "请分析当前项目的目录结构，并调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。".to_string(),
         ),
     ];
     let tool_round = Message {
@@ -81,7 +81,7 @@ async fn run_agent_turn_outer_loop_tool_round_then_final_assistant() {
             id: "call_mock_1".to_string(),
             typ: "function".to_string(),
             function: FunctionCall {
-                name: "get_current_time".to_string(),
+                name: "text_transform".to_string(),
                 arguments: "{}".to_string(),
             },
         }]),
@@ -376,7 +376,7 @@ async fn run_agent_turn_outer_loop_post_tools_early_stop_mock() {
     let mut messages = vec![
         Message::system_only("test system".to_string()),
         Message::user_only(
-            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+            "请分析当前项目的目录结构，并调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。".to_string(),
         ),
         Message {
             role: "tool".to_string(),
@@ -386,7 +386,7 @@ async fn run_agent_turn_outer_loop_post_tools_early_stop_mock() {
             reasoning_content: None,
             reasoning_details: None,
             tool_calls: None,
-            name: Some("get_current_time".to_string()),
+            name: Some("text_transform".to_string()),
             tool_call_id: Some("call_mock_0".to_string()),
         },
         Message::assistant_only(
@@ -414,7 +414,7 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
             id: "call_mock_1".to_string(),
             typ: "function".to_string(),
             function: FunctionCall {
-                name: "get_current_time".to_string(),
+                name: "text_transform".to_string(),
                 arguments: "{}".to_string(),
             },
         }]),
@@ -431,7 +431,7 @@ async fn run_agent_turn_outer_loop_post_tools_continue_then_stop_mock() {
     let mut messages = vec![
         Message::system_only("test system".to_string()),
         Message::user_only(
-            "请分析当前项目的目录结构，并调用 get_current_time 工具查询当前时间，然后用一句话总结。".to_string(),
+            "请分析当前项目的目录结构，并调用 text_transform 工具对字符串 hello 做 sha256 短哈希，然后用一句话总结。".to_string(),
         ),
     ];
     run_mock_agent_turn(cfg, &mut messages, backend).await;

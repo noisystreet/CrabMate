@@ -1,28 +1,4 @@
 [
-ToolSpec {
-            name: "get_current_time",
-            description: "获取当前时间或打印日历。支持 mode=time|calendar|both（默认 time）。用于回答「现在几点」「今天几号」「打印本月日历」「打印 2026 年 3 月日历」等问题。",
-            category: ToolCategory::Basic,
-            parameters: schema_of::<args::GetCurrentTimeArgs>,
-            runner: ToolRunner::Legacy(runner_get_current_time),
-            summary: ToolSummaryKind::None,
-        },
-        ToolSpec {
-            name: "calc",
-            description: "使用 Linux 的 bc -l 计算器执行数学表达式。支持：四则 + - * / %、乘方 ^；sqrt(x)、s(x)=sin、c(x)=cos、a(x)=atan、l(x)=ln、e(x)=exp；常量 pi、e（在 bc 中为 pi=4*a(1), e=e(1)）。可写 math::sqrt(2)、math::sin(pi/2)、math::log10(100) 等，会转为 bc 语法后执行。示例：1+2*3、2^10、sqrt(2)、s(3.14159/2)。参数 expression 为单个数学表达式。",
-            category: ToolCategory::Basic,
-            parameters: schema_of::<args::CalcArgs>,
-            runner: ToolRunner::Legacy(runner_calc),
-            summary: ToolSummaryKind::None,
-        },
-        ToolSpec {
-            name: "convert_units",
-            description: "物理量与数据量单位换算（Rust uom 库，不调用外部程序）。category：length|mass|temperature|data|time|area|pressure|speed（或中文如 温度、数据量）。参数 value、from、to：如 {\"category\":\"length\",\"value\":5,\"from\":\"km\",\"to\":\"mile\"}；数据量区分十进制 KB/MB/GB 与二进制 KiB/MiB/GiB。",
-            category: ToolCategory::Basic,
-            parameters: schema_of::<args::ConvertUnitsArgs>,
-            runner: ToolRunner::Legacy(runner_convert_units),
-            summary: ToolSummaryKind::Dynamic(ts::summary_convert_units),
-        },
         ToolSpec {
             name: "text_transform",
             description: "纯内存字符串变换（不落盘）：Base64 编解码、URL 百分号编解码、短哈希（sha256 取 16 位十六进制前缀）、lines_join（按行拆开后以 delimiter 连接，默认空格）、lines_split（按 delimiter 切分，段数上限 50000）。输入 text 单次上限 256KiB，输出上限 512KiB。",

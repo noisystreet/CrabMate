@@ -283,12 +283,9 @@ pub fn tool_calls_allow_parallel_sync_batch(
 
 fn builtin_sync_default_inline_tools() -> &'static HashSet<String> {
     static S: OnceLock<HashSet<String>> = OnceLock::new();
-    S.get_or_init(|| {
-        ["get_current_time", "convert_units"]
-            .into_iter()
-            .map(|s| s.to_string())
-            .collect()
-    })
+    // 2026-10-24：原默认两项（`get_current_time` / `convert_units`）已随工具移除，故默认为空集；
+    // 仍可通过 `tool_registry_sync_default_inline_tools` 覆盖。
+    S.get_or_init(HashSet::new)
 }
 
 /// 无子进程、无阻塞网络/磁盘的 `SyncDefault` 工具：跳过 `spawn_blocking`。

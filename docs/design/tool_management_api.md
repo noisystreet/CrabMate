@@ -241,7 +241,7 @@ else if !prefixes.is_empty() { … retain … }
 ## 5. 测试计划
 
 - **handler（D1）**：三源合并计数与 `counts` 自洽；`source` / `category` / `dev_tag` / `q` 过滤各自命中与叠加；分页切片（`limit` / `offset` / `has_more` / `total`）；超 `limit` 被 clamp；**`absent_reason` 三值各自命中**（`feature_not_built` 需在未启用 `fastembed` 的构建下断言）；**无工作区 → 200 且 `dynamic` 为空**（反向断言：不得返回 `WORKSPACE_NOT_SET`）；**`GET /tools` 不建立 MCP 会话**（断言无副作用，可用 mock/计数桩）；Bearer 开启未带密钥 → 401。
-- **handler（D2）**：`run_command` 的 `policy` 全字段与 `registry_policy` 判定一致（写类/可并行/内联/后台/重试各一条断言）；`sync_default_inline` 命中 `get_current_time`；未知名 → 404；非法名 → 400。
+- **handler（D2）**：`run_command` 的 `policy` 全字段与 `registry_policy` 判定一致（写类/可并行/内联/后台/重试各一条断言）；`sync_default_inline` 命中配置项 `json_format`；未知名 → 404；非法名 → 400。
 - **handler（D3）**：写入后立即读 D1 该工具 `present:false` / `absent_reason:"disabled_by_policy"`；重复写入同值 → 200 且文件内容不变（幂等）；前缀通配命中多个工具；`POST /config/reload` 后仍生效；`tool_overrides.json` 重启后仍生效；非法名 → 400、未注册名 → 404；被禁用工具的 `/tools/jobs/*` 访问不受影响（反向断言）。
 - **handler（D4，P2）**：只读列表能报出「`parameters` 非对象」这类校验失败（对应现状静默跳过）；`{file}` 含 `..` / `/` / 非 `.json` → 400；`command` 不在白名单 → 400；`DELETE` 幂等 204。
 - **配置层**：`apply_user_data_tool_overrides` 的合并优先级单测（TOML 被本机覆写覆盖）；`validate.rs` 对新字段的格式校验。

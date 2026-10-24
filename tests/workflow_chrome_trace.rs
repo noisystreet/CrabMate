@@ -59,7 +59,7 @@ async fn workflow_execute_writes_chrome_trace_and_reports_path() {
             "fail_fast": true,
             "compensate_on_failure": false,
             "nodes": [
-                {"id": "t", "tool_name": "get_current_time", "tool_args": {}, "deps": [], "compensate_with": []}
+                {"id": "t", "tool_name": "json_format", "tool_args": {}, "deps": [], "compensate_with": []}
             ]
         }
     }"#;

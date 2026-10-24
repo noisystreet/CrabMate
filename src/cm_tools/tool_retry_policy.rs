@@ -142,11 +142,11 @@ mod tests {
     fn eligible_requires_enabled_and_readonly() {
         let cfg_off = crate::cm_config::load_config(None).expect("embed default");
         let spec_off = ToolRetrySpec::from_config(&cfg_off);
-        assert!(!spec_off.tool_retry_eligible(&cfg_off, "get_current_time", "{}"));
+        assert!(!spec_off.tool_retry_eligible(&cfg_off, "json_format", "{}"));
 
         let cfg = cfg_with_retry_enabled();
         let spec = ToolRetrySpec::from_config(&cfg);
-        assert!(spec.tool_retry_eligible(&cfg, "get_current_time", "{}"));
+        assert!(spec.tool_retry_eligible(&cfg, "json_format", "{}"));
         // run_command 非只读 → 不重试
         assert!(!spec.tool_retry_eligible(&cfg, "run_command", r#"{"command":"ls"}"#));
         // http_request 非只读 → 不重试
@@ -199,9 +199,9 @@ mod tests {
     fn eligible_respects_denied_tools() {
         let mut cfg = cfg_with_retry_enabled();
         cfg.tool_registry_policy.tool_registry_tool_retry_denied_tools =
-            Arc::new(["get_current_time".to_string()].into_iter().collect());
+            Arc::new(["json_format".to_string()].into_iter().collect());
         let spec = ToolRetrySpec::from_config(&cfg);
-        assert!(!spec.tool_retry_eligible(&cfg, "get_current_time", "{}"));
+        assert!(!spec.tool_retry_eligible(&cfg, "json_format", "{}"));
     }
 
     #[test]

@@ -236,7 +236,7 @@ mod tests {
                 status: None,
                 elapsed_ms: None,
                 error_code: None,
-                tool_name: Some("calc".into()),
+                tool_name: Some("json_format".into()),
                 phase: Some("main".into()),
             },
             WorkflowTraceEvent {
@@ -249,7 +249,7 @@ mod tests {
                 status: Some("passed".into()),
                 elapsed_ms: Some(150),
                 error_code: None,
-                tool_name: Some("calc".into()),
+                tool_name: Some("json_format".into()),
                 phase: Some("main".into()),
             },
         ]
@@ -292,7 +292,7 @@ mod tests {
             status: Some("passed".into()),
             elapsed_ms: Some(50),
             error_code: None,
-            tool_name: Some("get_current_time".into()),
+            tool_name: Some("json_format".into()),
             phase: Some("main".into()),
         }];
         let v = workflow_trace_to_chrome_json(&trace);

@@ -50,7 +50,6 @@ define_summaries! {
     summary_find_references => FindReferencesSummaryArgs,
     summary_call_graph_sketch => CallGraphSketchSummaryArgs,
     summary_rust_file_outline => RustFileOutlineSummaryArgs,
-    summary_convert_units => ConvertUnitsSummaryArgs,
     summary_background_job => BackgroundJobSummaryArgs,
     summary_background_job_cancel => BackgroundJobCancelSummaryArgs,
     summary_code_stats => CodeStatsSummaryArgs,

@@ -1,11 +1,10 @@
-//! 工具定义与执行：时间、计算(bc)、有限 Linux 命令
+//! 工具定义与执行：文件、命令、网络与开发工具
 //!
 //! 每个子模块对应一类工具，便于扩展新工具。
 
 #[cfg(feature = "archive-tools")]
 mod archive;
 mod background_job_tools;
-mod calc;
 mod call_graph_sketch;
 pub(crate) mod cargo_tools;
 mod code_metrics;
@@ -79,7 +78,6 @@ mod test_result_cache;
 #[cfg(feature = "diff-tools")]
 mod text_diff;
 mod text_transform;
-mod time;
 #[cfg(feature = "schema-tools")]
 mod tool_args_validate;
 mod tool_json_schema;
@@ -87,8 +85,6 @@ mod tool_param_types;
 mod tool_specs_registry;
 mod tool_summary;
 mod tool_summary_args;
-#[cfg(feature = "unit-tools")]
-mod unit_convert;
 mod weather;
 mod web_search;
 mod workspace_image_chat_hint;
@@ -109,7 +105,7 @@ use crate::cm_types::{FunctionDef, Tool};
 /// 工具顶层分类（用于 `build_tools_filtered`、文档与后续按场景裁剪工具列表）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolCategory {
-    /// 基础工具：时间/计算/天气、联网搜索与受控 HTTP、日程与提醒等（不依赖「在仓库里写代码」）。
+    /// 基础工具：天气、联网搜索与受控 HTTP、文本/格式转换、日程与提醒等（不依赖「在仓库里写代码」）。
     Basic,
     /// 开发工具：工作区文件、Git、Cargo/前端构建与测试、Lint、补丁、符号搜索、工作流等。
     Development,

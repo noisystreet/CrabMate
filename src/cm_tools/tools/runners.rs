@@ -184,24 +184,6 @@ mod try_macro_typecheck {
 
 // ── 需要定制逻辑的 runner（不适用同构宏）─────────────────────
 
-pub fn runner_get_current_time(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let parsed: super::tool_param_types::GetCurrentTimeArgs =
-        super::parse_args_typed(args).unwrap_or_default();
-    let mode = parsed
-        .mode
-        .map(super::tool_param_types::GetCurrentTimeMode::to_time_output)
-        .unwrap_or(time::TimeOutputMode::Time);
-    time::run(mode, parsed.year, parsed.month)
-}
-
-pub fn runner_calc(args: &str, _ctx: &ToolContext<'_>) -> String {
-    let parsed: super::tool_param_types::CalcArgs = match super::parse_args_typed(args) {
-        Ok(v) => v,
-        Err(e) => return e,
-    };
-    calc::run(&parsed.expression)
-}
-
 pub fn runner_workflow_execute(_args: &str, _ctx: &ToolContext<'_>) -> String {
     // 由 runtime 在 run_agent_turn 中拦截实际执行。
     "workflow_execute：由运行时引擎执行（若你看到这条，说明拦截未生效）。".to_string()
@@ -469,7 +451,6 @@ define_runners_cwd! {
 // ── 同构薄封装实例（形态 4：f(args)）─────────────────────────
 
 define_runners_args_only! {
-    runner_convert_units => unit_convert::run,
     runner_backtrace_analyze => debug_tools::rust_backtrace_analyze,
     runner_present_clarification_questionnaire => crate::cm_tools::clarification_questionnaire::run_present_clarification_questionnaire,
     runner_text_transform => text_transform::run,
