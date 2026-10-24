@@ -89,13 +89,10 @@ pub fn tags_for_tool_name(name: &str) -> &'static [&'static str] {
         "pytest_run" | "python_snippet_run" => &[GENERAL, PYTHON],
 
         // --- 质量聚合（跨栈）---
-        "ci_pipeline_local"
-        | "release_ready_check"
-        | "repo_overview_sweep"
-        | "crate_contract_map"
-        | "docs_health_sweep" => &[GENERAL, QUALITY],
+        "repo_overview_sweep" | "crate_contract_map" | "docs_health_sweep" => {
+            &[GENERAL, QUALITY]
+        }
         "run_lints" => &[GENERAL, RUST, FRONTEND, PYTHON, QUALITY],
-        "quality_workspace" => &[GENERAL, RUST, FRONTEND, PYTHON, DOCKER, QUALITY],
 
         // --- 格式化（多语言由实现按扩展名分流）---
 

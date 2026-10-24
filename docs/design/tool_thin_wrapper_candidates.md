@@ -84,7 +84,7 @@
 | 家族 | 工具 | 说明 |
 |------|------|------|
 | cargo 元数据 / 旁路 | ~~`cargo_metadata`~~ / ~~`cargo_tree`~~ / ~~`cargo_doc`~~ / ~~`cargo_nextest`~~ / ~~`cargo_outdated`~~ / ~~`cargo_machete`~~ / ~~`cargo_udeps`~~ / ~~`cargo_publish_dry_run`~~ / ~~`cargo_fmt_check`~~ | 单条 `cargo <sub>`；低频者价值低，整族已收敛。**首片（Slice A）已收敛 2026-10-07**：`cargo_metadata` / `tree` / `doc` / `outdated` / `machete` / `udeps` / `publish_dry_run` 七个已删。**Slice B 已收敛 2026-10-07**：`cargo_nextest` / `cargo_fmt_check` 已删，并同步改写内置工作流模板 `rust_ci_fmt`（改为 `run_command` + `cargo fmt --check`）与 fixtures / examples。 |
-| cargo 审计 | ~~`cargo_audit`~~ / ~~`cargo_deny`~~ | `cargo audit` / `cargo deny check`。**Slice B 已收敛 2026-10-07**：`cargo_audit` / `cargo_deny` 已删；内部 `security_tools::cargo_audit` / `cargo_deny` 函数体保留供 `ci_pipeline_local` / `release_ready_check` 聚合器复用。 |
+| cargo 审计 | ~~`cargo_audit`~~ / ~~`cargo_deny`~~ | `cargo audit` / `cargo deny check`。**Slice B 已收敛 2026-10-07**：`cargo_audit` / `cargo_deny` 的 ToolSpec 已删。**后续更新**：其复用方 `ci_pipeline_local` / `release_ready_check` 已整族删除，`security_tools` 整个模块随之移除；现直接经 `run_command` 调用。 |
 | cargo 主链路 | `cargo_check` / `cargo_clippy` / `cargo_test` / `cargo_run` / `rust_test_one` | 经**共享子进程会话** + **测试结果缓存**；`cargo_test` / `pytest_run` 关联后台任务，收敛须保留缓存与装配 |
 | Rust 编译 | ~~`rust_rustc`~~ | `rustc` 已在白名单；含参数安全上限（64 个 / 8192 字节）。**已收敛 2026-10-16**（改用 `run_command`；`rustc` 已在 `allowed_commands` 白名单；`rustc` 前缀本就不在并行只读批；`rust_rustc_try` 无聚合器复用，整函数删除）。 |
 | Go | ~~`go_build`~~ / ~~`go_test`~~ / ~~`go_vet`~~ / ~~`go_fmt_check`~~ / ~~`golangci_lint`~~ | 单条 `go` / `gofmt` / `golangci-lint`。**整族已收敛 2026-10-12**（改用 `run_command`；`go` / `gofmt` / `golangci-lint` 均在 `allowed_commands` 白名单；`go_` 前缀本就不在并行只读批）。 |
@@ -112,7 +112,7 @@
 - **Rust 专属**：`rust_compiler_json`（编译 JSON 解析）、`rust_backtrace_analyze`、`rust_analyzer_*`（LSP stdio，非白名单 CLI，不可替代）。
 - **纯计算 / 文本**：`get_current_time` / `calc` / `convert_units` / `text_transform` / `json_format` / `regex_test` / `env_var_check` / `text_diff` / `table_text`（`todo_scan` 已于 2026-10-18 移除，改用 `search_in_files`）。
 - **网络 / 执行 / 会话**：`get_weather` / `web_search` / `http_fetch` / `http_request` / `terminal_session` / `background_job_*` / `workflow_execute` / `run_command`。
-- **聚合编排**：`ci_pipeline_local` / `release_ready_check` / `quality_workspace` / `run_lints` / `docs_health_sweep` / `playbook_run_commands`（后者是 `error_output_playbook` 启发式的**执行半体**，含多命令编排与启发式归类，非单条 CLI 薄封装）。
+- **聚合编排**：`run_lints` / `docs_health_sweep` / `playbook_run_commands`（后者是 `error_output_playbook` 启发式的**执行半体**，含多命令编排与启发式归类，非单条 CLI 薄封装）；原 `ci_pipeline_local` / `release_ready_check` / `quality_workspace` 已于后续整体删除，改用 `run_command`。
 - **校验密集 / 安全面敏感**：`gh_api`——含 `validate_api_path`（禁 `/` 开头、禁 `..`、字符白名单）+ 方法白名单（GET/HEAD/POST/PATCH/PUT/DELETE）+ body 须合法 JSON + **body 经 stdin 传入**；降级 `run_command` 无 stdin 通道、无 path 限制，属**扩大安全面**，不收敛（`src/cm_tools/tools/github_cli/api.rs:101-157`）。
 
 ---

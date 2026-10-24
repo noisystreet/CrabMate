@@ -182,8 +182,6 @@ fn builtin_parallel_sync_denied_exact() -> &'static HashSet<String> {
     S.get_or_init(|| {
         [
             "rust_compiler_json",
-            "quality_workspace",
-            "ci_pipeline_local",
             "repo_overview_sweep",
             "crate_contract_map",
             "codebase_semantic_search",
