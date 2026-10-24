@@ -406,6 +406,28 @@ fn test_summarize_tool_call_dynamic_run_command() {
     assert_eq!(s, Some("ls -la".to_string()));
 }
 
+/// 模型把整条命令写成数组时摘要仍要出来：字段是 `String` 时反序列化失败，
+/// 摘要会退化成占位串 `tool: run_command`，客户端只能再解析一遍参数补回来。
+#[test]
+fn test_summarize_tool_call_run_command_array_command() {
+    let s = summarize_tool_call("run_command", r#"{"command":["git","status","-sb"]}"#);
+    assert_eq!(s, Some("git status -sb".to_string()));
+}
+
+/// 数组只放程序名、参数另起 `args`：两者都要出现在摘要里。
+#[test]
+fn test_summarize_tool_call_run_command_array_plus_args() {
+    let s = summarize_tool_call("run_command", r#"{"command":["git"],"args":["status","-sb"]}"#);
+    assert_eq!(s, Some("git status -sb".to_string()));
+}
+
+/// `command` 为空串时仍返回 `None`，由上层决定是否用占位串。
+#[test]
+fn test_summarize_tool_call_run_command_empty_command() {
+    let s = summarize_tool_call("run_command", r#"{"command":"","args":["ls"]}"#);
+    assert_eq!(s, None);
+}
+
 #[test]
 fn test_summarize_read_file_range_normalizes_inverted_order() {
     let s = summarize_tool_call(
