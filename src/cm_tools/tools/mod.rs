@@ -65,6 +65,7 @@ mod release_docs;
 mod repo_overview;
 mod rust_ide;
 mod schedule;
+mod schedule_dispatch;
 mod self_config_info;
 mod skill_manage;
 mod spell_tools;
