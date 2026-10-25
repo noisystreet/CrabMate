@@ -8,7 +8,7 @@ use walkdir::DirEntry;
 use crate::cm_tools::tool_result::ToolError;
 
 use super::path::{
-    WorkspacePathCodes, canonical_workspace_root, path_for_tool_display, resolve_for_read,
+    PathAccess, WorkspacePathCodes, canonical_workspace_root, path_for_tool_display,
     tool_user_error_from_workspace_path, workspace_path_tool_error_with_message,
 };
 
@@ -215,11 +215,11 @@ fn format_glob_files_output(args: &GlobFilesArgs<'_>, results: &[String]) -> Str
 /// 按 glob 模式递归查找工作区内文件路径（相对起始目录）。
 /// 参数：`pattern`（必填，如 `**/*.rs`）、`path`（可选起始子目录，默认 `.`）、`max_depth`、`max_results`、`include_hidden`
 #[allow(clippy::result_large_err)]
-pub fn glob_files_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn glob_files_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let args = parse_glob_files_args(&v)?;
 
-    let scan_root = resolve_for_read(working_dir, args.root).map_err(|e| {
+    let scan_root = paths.for_read(args.root).map_err(|e| {
         workspace_path_tool_error_with_message(
             &e,
             GLOB_FILES_PATH_CODES,
@@ -231,11 +231,11 @@ pub fn glob_files_try(args_json: &str, working_dir: &Path) -> Result<String, Too
             "glob_files_path_not_dir",
             format!(
                 "错误：path 不是目录：{}",
-                path_for_tool_display(working_dir, &scan_root, Some(args.root))
+                path_for_tool_display(paths.root(), &scan_root, Some(args.root))
             ),
         ));
     }
-    let workspace_canonical = canonical_workspace_root(working_dir).map_err(|e| {
+    let workspace_canonical = canonical_workspace_root(paths.root()).map_err(|e| {
         ToolError::workspace(
             "glob_files_workspace_root_resolve_failed",
             tool_user_error_from_workspace_path(e),
@@ -370,10 +370,10 @@ fn format_list_tree_body(root: &str, args: &ListTreeArgs<'_>, lines: &[(String, 
 /// 自起始目录起递归列出子路径（先序、字典序），含 `dir:` / `file:` 前缀。
 /// 参数：`path`（可选，默认 `.`）、`max_depth`、`max_entries`、`include_hidden`
 #[allow(clippy::result_large_err)]
-pub fn list_tree_try(args_json: &str, working_dir: &Path) -> Result<String, ToolError> {
+pub fn list_tree_try(args_json: &str, paths: &PathAccess<'_>) -> Result<String, ToolError> {
     let v = crate::cm_tools::tools::parse_args_json(args_json).map_err(ToolError::invalid_args)?;
     let args = parse_list_tree_args(&v)?;
-    let scan_root = resolve_for_read(working_dir, args.root).map_err(|e| {
+    let scan_root = paths.for_read(args.root).map_err(|e| {
         workspace_path_tool_error_with_message(
             &e,
             LIST_TREE_PATH_CODES,
@@ -385,11 +385,11 @@ pub fn list_tree_try(args_json: &str, working_dir: &Path) -> Result<String, Tool
             "list_tree_path_not_dir",
             format!(
                 "错误：path 不是目录：{}",
-                path_for_tool_display(working_dir, &scan_root, Some(args.root))
+                path_for_tool_display(paths.root(), &scan_root, Some(args.root))
             ),
         ));
     }
-    let workspace_canonical = canonical_workspace_root(working_dir).map_err(|e| {
+    let workspace_canonical = canonical_workspace_root(paths.root()).map_err(|e| {
         ToolError::workspace(
             "list_tree_workspace_root_resolve_failed",
             tool_user_error_from_workspace_path(e),

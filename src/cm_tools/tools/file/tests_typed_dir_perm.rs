@@ -342,7 +342,7 @@ fn chmod_file_try_success_matches_string_face() {
         &dir_legacy,
         &dir_typed,
         || chmod_file(args, &dir_legacy),
-        || chmod_file_try(args, &dir_typed),
+        || chmod_file_try(args, &super::PathAccess::new(&dir_typed)),
     );
 
     assert!(typed.contains("已设置权限"), "{typed}");
@@ -358,7 +358,10 @@ fn chmod_file_try_invalid_mode_is_invalid_input() {
     let dir = make_test_dir();
     write(&dir, "a.txt", "A");
 
-    let err = chmod_file_try(r#"{"path":"a.txt","mode":"888","confirm":true}"#, &dir)
+    let err = chmod_file_try(
+        r#"{"path":"a.txt","mode":"888","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("非法八进制权限须失败");
 
     // 正文含「错误」会被 Legacy 误判为 `chmod_file_failed`，显式头须覆盖为 `invalid_args`。
@@ -378,7 +381,10 @@ fn chmod_file_try_invalid_mode_is_invalid_input() {
 fn chmod_file_try_missing_file_is_workspace_resolve_failed() {
     let dir = make_test_dir();
 
-    let err = chmod_file_try(r#"{"path":"missing.txt","mode":"600","confirm":true}"#, &dir)
+    let err = chmod_file_try(
+        r#"{"path":"missing.txt","mode":"600","confirm":true}"#,
+        &super::PathAccess::new(&dir),
+    )
         .expect_err("缺失文件须失败");
 
     assert_eq!(err.code, "workspace_resolve_failed");
