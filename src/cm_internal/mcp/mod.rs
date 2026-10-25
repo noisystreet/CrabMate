@@ -18,7 +18,7 @@ use crate::cm_config::AgentConfig;
 pub use crate::cm_mcp::{
     McpClientSession, McpServerRuntimeStatus, McpServerSkipInfo, McpTurnHandle, McpTurnOpenResult,
     McpTurnSessions, call_mcp_tool, clear_mcp_process_cache, connect_stdio_client,
-    connect_stdio_client_launch, is_mcp_proxy_tool, mcp_servers_runtime_status,
+    connect_stdio_client_launch, mcp_servers_runtime_status,
     mcp_tool_openai_name, mcp_tools_as_openai, merge_tool_lists, parse_mcp_openai_tool_name,
     probe_mcp_server, sanitize_mcp_json_schema, server, try_open_turn_handle,
 };
@@ -27,7 +27,7 @@ pub use crate::cm_mcp::{
 pub use crate::cm_mcp::{
     McpClientSession, McpServerRuntimeStatus, McpServerSkipInfo, McpTurnHandle, McpTurnOpenResult,
     McpTurnSessions, call_mcp_tool, clear_mcp_process_cache, connect_stdio_client,
-    connect_stdio_client_launch, is_mcp_proxy_tool, mcp_servers_runtime_status,
+    connect_stdio_client_launch, mcp_servers_runtime_status,
     mcp_tools_as_openai, merge_tool_lists, parse_mcp_openai_tool_name, probe_mcp_server,
     sanitize_mcp_json_schema, server, try_open_turn_handle,
 };

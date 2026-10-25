@@ -16,9 +16,6 @@ use crate::cm_mcp::resolve::{McpStdioLaunch, ResolvedMcpConfig, ResolvedMcpServe
 #[derive(Debug)]
 pub struct McpClientSession;
 
-/// OpenAI 兼容工具名前缀（`mcp__{slug}__{remote_name}`）。
-pub use crate::cm_tools::tool_naming::is_mcp_proxy_tool;
-
 pub fn parse_mcp_openai_tool_name(openai_name: &str) -> Option<(String, String)> {
     if !openai_name.starts_with("mcp__") {
         return None;

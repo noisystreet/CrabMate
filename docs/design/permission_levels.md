@@ -703,7 +703,8 @@ impl PathAccess<'_> {
 - 载体：`cm_tools::tool_naming::{ToolOrigin, tool_origin}`；判定规则原样搬入，**未新增任何分支**。
 - 已转换：`step_executor_policy.rs`×2、`registry_policy.rs`×3（`is_readonly_tool` 的两条早退合并为 `!= Builtin` 一条）、`web/tools_handlers.rs`×1、`execute_dispatch_body.inc.rs`×2、`tool_call_explain.rs`×2，以及 `tool_naming.rs` 自身 1 处。
 - **故意没转** `dynamic_tools.rs:56`：它校验的是「插件 spec 的 `name` 必须以 `dyn__` 开头」，属**规格校验**而非来源分派；写成 `tool_origin != Dynamic` 只会更难读。
-- 附带发现（未在 R2 处理）：转换后 `cm_mcp/stub.rs` / `cm_mcp/mcp_impl.rs` / `cm_internal/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链**已无消费者**，属死代码，留待与其它转发壳一并清理。
+- 附带发现（已随 R2 后续清理）：转换后 `cm_mcp/stub.rs` / `cm_mcp/mcp_impl.rs` / `cm_internal/mcp/mod.rs` 对 `is_mcp_proxy_tool` 的 `pub use` 转发链已无消费者，**三处转发已删除**；`is_mcp_proxy_tool` 只保留在 `cm_tools/tool_naming.rs` 内部供 `tool_origin` 使用。
+- 清理时的额外发现（**未处理**，属更大范围的死分支）：`cm_mcp` 只在 `feature = "server"` 下 `mod`（`src/lib_server.rs:23`），而 `server` 强制含 `mcp`（`Cargo.toml`）——所以 `#[cfg(not(feature = "mcp"))] mod stub` 的整个分支在当前 feature 图下**不可达**。删桩本体会牵动 `Cargo.toml` feature 图，留待单独评估。
 
 **问题**（历史记录）：`is_mcp_proxy_tool` / `is_dynamic_tool_name` 原散在 **10+ 处**（`step_executor_policy.rs:65/98`、`registry_policy.rs:150/153/263`、`web/tools_handlers.rs:358`、`execute_dispatch_body.inc.rs:8/57`、`tool_call_explain.rs:28/46`、`dynamic_tools.rs:56`）。`external_tools = Denied` 若逐点判断，必漏。
 
